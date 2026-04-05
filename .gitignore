@@ -22,6 +22,7 @@ Thumbs.db
 dist/
 build/
 *.log
+.gradle/
 
 # Test coverage
 coverage/

@@ -1,0 +1,8 @@
+schema_format: "1.0"
+name: "E001 Test"
+version: "1.0.0"
+
+tables:
+  empty_table:
+    columns: {}
+    primary_key: [id]

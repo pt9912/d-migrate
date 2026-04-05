@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "E015 Test"
+version: "1.0.0"
+
+tables:
+  data:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      tags:
+        type: array
+        element_type: ""
+    primary_key: [id]

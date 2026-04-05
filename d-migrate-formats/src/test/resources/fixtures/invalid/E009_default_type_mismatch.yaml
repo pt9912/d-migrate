@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "E009 Test"
+version: "1.0.0"
+
+tables:
+  items:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      quantity:
+        type: integer
+        default: true
+    primary_key: [id]

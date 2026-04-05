@@ -1,0 +1,20 @@
+schema_format: "1.0"
+name: "E013 Test"
+version: "1.0.0"
+
+custom_types:
+  status_type:
+    kind: enum
+    values: [active, inactive]
+
+tables:
+  items:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      status:
+        type: enum
+        ref_type: status_type
+        values: [active, inactive]
+    primary_key: [id]

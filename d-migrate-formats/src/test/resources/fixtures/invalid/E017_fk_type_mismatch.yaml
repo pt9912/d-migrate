@@ -1,0 +1,26 @@
+schema_format: "1.0"
+name: "E017 Test"
+version: "1.0.0"
+
+tables:
+  categories:
+    columns:
+      id:
+        type: text
+        max_length: 50
+      name:
+        type: text
+        max_length: 100
+    primary_key: [id]
+
+  products:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      category_id:
+        type: integer
+        references:
+          table: categories
+          column: id
+    primary_key: [id]

@@ -1,0 +1,15 @@
+schema_format: "1.0"
+name: "E010 Test"
+version: "1.0.0"
+
+tables:
+  products:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      price:
+        type: decimal
+        precision: 0
+        scale: -1
+    primary_key: [id]

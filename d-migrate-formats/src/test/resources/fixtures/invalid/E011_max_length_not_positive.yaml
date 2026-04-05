@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "E011 Test"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: -1
+    primary_key: [id]
