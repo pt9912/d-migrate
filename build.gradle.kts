@@ -32,6 +32,10 @@ subprojects {
 
 dependencies {
     kover(project(":d-migrate-core"))
+    kover(project(":d-migrate-driver-api"))
+    kover(project(":d-migrate-driver-postgresql"))
+    kover(project(":d-migrate-driver-mysql"))
+    kover(project(":d-migrate-driver-sqlite"))
     kover(project(":d-migrate-formats"))
     kover(project(":d-migrate-cli"))
 }
