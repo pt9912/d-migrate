@@ -331,10 +331,13 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             return DdlStatement(sql, listOf(note))
         }
 
+        val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
+        val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
+
         return if (view.materialized) {
-            DdlStatement("CREATE MATERIALIZED VIEW ${quoteIdentifier(name)} AS\n$query;")
+            DdlStatement("CREATE MATERIALIZED VIEW ${quoteIdentifier(name)} AS\n$transformedQuery;", queryNotes)
         } else {
-            DdlStatement("CREATE OR REPLACE VIEW ${quoteIdentifier(name)} AS\n$query;")
+            DdlStatement("CREATE OR REPLACE VIEW ${quoteIdentifier(name)} AS\n$transformedQuery;", queryNotes)
         }
     }
 

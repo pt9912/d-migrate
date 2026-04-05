@@ -390,7 +390,11 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             )
         }
 
-        val sql = "CREATE VIEW IF NOT EXISTS ${quoteIdentifier(name)} AS\n$query;"
+        val transformer = ViewQueryTransformer(DatabaseDialect.SQLITE)
+        val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
+        notes += queryNotes
+
+        val sql = "CREATE VIEW IF NOT EXISTS ${quoteIdentifier(name)} AS\n$transformedQuery;"
         return DdlStatement(sql, notes)
     }
 

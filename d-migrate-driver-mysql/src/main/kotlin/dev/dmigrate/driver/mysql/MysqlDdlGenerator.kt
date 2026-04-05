@@ -407,7 +407,11 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             )
         }
 
-        return DdlStatement("CREATE OR REPLACE VIEW ${quoteIdentifier(name)} AS\n$query;", notes)
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
+        notes += queryNotes
+
+        return DdlStatement("CREATE OR REPLACE VIEW ${quoteIdentifier(name)} AS\n$transformedQuery;", notes)
     }
 
     // ── Functions ────────────────────────────────

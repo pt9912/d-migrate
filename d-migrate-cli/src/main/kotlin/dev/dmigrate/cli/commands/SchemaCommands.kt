@@ -13,10 +13,12 @@ import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.mysql.MysqlDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
+import dev.dmigrate.format.report.TransformationReportWriter
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 import java.nio.file.Path
 import kotlin.io.path.writeText
@@ -68,6 +70,8 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val target by option("--target", help = "Target database dialect (postgresql, mysql, sqlite)")
         .required()
     val output by option("--output", help = "Output file path (default: stdout)")
+        .path()
+    val report by option("--report", help = "Report file path (default: <output>.report.yaml)")
         .path()
     val generateRollback by option("--generate-rollback", help = "Generate rollback DDL")
         .flag()
@@ -121,17 +125,22 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
 
         // Write DDL output
         val ddl = result.render()
-        if (output != null) {
+        if (ctx.outputFormat == "json") {
+            println(formatJsonOutput(result, schema, dialect.name.lowercase()))
+        } else if (output != null) {
             output!!.writeText(ddl + "\n")
             if (!ctx.quiet) System.err.println("DDL written to $output")
 
             // Generate rollback if requested
             if (generateRollback) {
                 val rollbackResult = generator.generateRollback(schema)
-                val rollbackPath = rollbackPath(output!!)
-                rollbackPath.writeText(rollbackResult.render() + "\n")
-                if (!ctx.quiet) System.err.println("Rollback DDL written to $rollbackPath")
+                val rbPath = rollbackPath(output!!)
+                rbPath.writeText(rollbackResult.render() + "\n")
+                if (!ctx.quiet) System.err.println("Rollback DDL written to $rbPath")
             }
+
+            // Write transformation report (sidecar or explicit --report)
+            writeReport(result, schema, dialect.name.lowercase())
         } else {
             println(ddl)
             if (generateRollback) {
@@ -140,6 +149,11 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                 println("-- ═══════════════════════════════════════\n")
                 println(generator.generateRollback(schema).render())
             }
+
+            // Write report if explicitly requested (even without --output)
+            if (report != null) {
+                writeReport(result, schema, dialect.name.lowercase())
+            }
         }
     }
 
@@ -147,6 +161,54 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         DatabaseDialect.POSTGRESQL -> PostgresDdlGenerator()
         DatabaseDialect.MYSQL -> MysqlDdlGenerator()
         DatabaseDialect.SQLITE -> SqliteDdlGenerator()
+    }
+
+    private fun writeReport(result: DdlResult, schema: dev.dmigrate.core.model.SchemaDefinition, dialect: String) {
+        val reportPath = report ?: sidecarPath(output!!, ".report.yaml")
+        TransformationReportWriter().write(reportPath, result, schema, dialect, source)
+        val root = currentContext.parent?.parent?.command as? DMigrate
+        val ctx = root?.cliContext() ?: dev.dmigrate.cli.CliContext()
+        if (!ctx.quiet) System.err.println("Report written to $reportPath")
+    }
+
+    private fun formatJsonOutput(result: DdlResult, schema: dev.dmigrate.core.model.SchemaDefinition, dialect: String): String {
+        val esc = { s: String -> s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") }
+        val notes = result.notes.joinToString(",\n") { n ->
+            """    {"type": "${n.type.name.lowercase()}", "code": "${n.code}", "object": "${esc(n.objectName)}", "message": "${esc(n.message)}"}"""
+        }
+        val skipped = result.skippedObjects.joinToString(",\n") { s ->
+            """    {"type": "${s.type}", "name": "${esc(s.name)}", "reason": "${esc(s.reason)}"}"""
+        }
+        return buildString {
+            appendLine("{")
+            appendLine("""  "command": "schema.generate",""")
+            appendLine("""  "status": "completed",""")
+            appendLine("""  "exit_code": 0,""")
+            appendLine("""  "target": "$dialect",""")
+            appendLine("""  "schema": {"name": "${esc(schema.name)}", "version": "${esc(schema.version)}"},""")
+            appendLine("""  "ddl": "${esc(result.render())}",""")
+            appendLine("""  "warnings": ${result.notes.count { it.type == NoteType.WARNING }},""")
+            appendLine("""  "action_required": ${result.notes.count { it.type == NoteType.ACTION_REQUIRED }},""")
+            appendLine("""  "skipped_objects_count": ${result.skippedObjects.size},""")
+            if (notes.isEmpty()) appendLine("""  "notes": [],""") else {
+                appendLine("""  "notes": ["""); appendLine(notes); appendLine("  ],")
+            }
+            if (skipped.isEmpty()) appendLine("""  "skipped_objects": []""") else {
+                appendLine("""  "skipped_objects": ["""); appendLine(skipped); appendLine("  ]")
+            }
+            append("}")
+        }
+    }
+
+    private fun sidecarPath(outputPath: Path, suffix: String): Path {
+        val fileName = outputPath.fileName.toString()
+        val dotIndex = fileName.lastIndexOf('.')
+        val sidecarName = if (dotIndex > 0) {
+            "${fileName.substring(0, dotIndex)}$suffix"
+        } else {
+            "$fileName$suffix"
+        }
+        return outputPath.parent?.resolve(sidecarName) ?: Path.of(sidecarName)
     }
 
     private fun rollbackPath(outputPath: Path): Path {
