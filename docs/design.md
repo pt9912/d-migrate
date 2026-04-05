@@ -1,0 +1,476 @@
+# Design-Dokument: d-migrate
+
+**Framework für datenbankunabhängige Migrationen und Datenverwaltung**
+
+---
+
+## 1. Design-Philosophie
+
+### 1.1 Leitprinzipien
+
+- **Database-Agnostic First**: Alle internen Datenstrukturen sind datenbankunabhängig. Datenbankspezifisches Verhalten wird ausschließlich in austauschbaren Adaptern gekapselt.
+- **Convention over Configuration**: Sinnvolle Defaults für alle Einstellungen, explizite Konfiguration nur wo nötig.
+- **Streaming by Default**: Datenverarbeitung erfolgt grundsätzlich streaming-basiert, um beliebig große Datenmengen zu unterstützen.
+- **Fail-Safe**: Keine Operation darf einen inkonsistenten Zustand hinterlassen. Transaktionale Verarbeitung mit Checkpoint/Resume.
+- **Privacy by Design**: Lokale Verarbeitung als Standard, externe APIs nur opt-in.
+
+### 1.2 Technologie-Entscheidung: Kotlin/JVM
+
+**Gewählt**: Kotlin 2.x auf JVM 21 (LTS)
+
+**Begründung**:
+- JDBC bietet die breiteste Datenbankabdeckung aller Plattformen
+- Kotlin Coroutines ermöglichen elegante parallele Verarbeitung ohne Thread-Management
+- Null-Safety auf Sprachebene — kritisch bei nullable Datenbank-Feldern
+- 100% Interoperabilität mit dem Java-Ökosystem (Flyway, Liquibase, Jackson, etc.)
+- GraalVM Native Image ermöglicht Single-Binary-Distribution
+- DSL-Fähigkeit für intuitive Schema-Definitionen und Konfiguration
+
+---
+
+## 2. Domänenmodell
+
+### 2.1 Neutrales Schema-Modell
+
+Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das als Zwischenformat zwischen allen unterstützten Datenbanken dient.
+
+```
+┌─────────────────────────────────────────────┐
+│              SchemaDefinition               │
+│  - name: String                             │
+│  - version: String                          │
+│  - tables: List<TableDefinition>            │
+│  - procedures: List<ProcedureDefinition>    │
+│  - views: List<ViewDefinition>              │
+│  - triggers: List<TriggerDefinition>        │
+│  - sequences: List<SequenceDefinition>      │
+│  - customTypes: List<CustomTypeDefinition>  │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│              TableDefinition                │
+│  - name: String                             │
+│  - description: String?                     │
+│  - columns: List<ColumnDefinition>          │
+│  - indices: List<IndexDefinition>           │
+│  - constraints: List<ConstraintDefinition>  │
+│  - partitioning: PartitionConfig?           │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│             ColumnDefinition                │
+│  - name: String                             │
+│  - type: NeutralType                        │
+│  - required: Boolean                        │
+│  - unique: Boolean                          │
+│  - default: DefaultValue?                   │
+│  - references: ReferenceDefinition?         │
+└─────────────────────────────────────────────┘
+```
+
+### 2.2 Neutrales Typsystem
+
+Statt datenbankspezifische Typen direkt zu verwenden, definiert d-migrate ein neutrales Typsystem:
+
+| Neutraler Typ  | PostgreSQL           | MySQL              | SQLite                            |
+| -------------- | -------------------- | ------------------ | --------------------------------- |
+| `identifier`   | SERIAL / BIGSERIAL   | INT AUTO_INCREMENT | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `text`         | VARCHAR(n) / TEXT    | VARCHAR(n) / TEXT  | TEXT                              |
+| `integer`      | INTEGER              | INT                | INTEGER                           |
+| `biginteger`   | BIGINT               | BIGINT             | INTEGER                           |
+| `decimal(p,s)` | DECIMAL(p,s)         | DECIMAL(p,s)       | REAL                              |
+| `boolean`      | BOOLEAN              | TINYINT(1)         | INTEGER                           |
+| `datetime`     | TIMESTAMP            | DATETIME           | TEXT (ISO 8601)                   |
+| `date`         | DATE                 | DATE               | TEXT (ISO 8601)                   |
+| `time`         | TIME                 | TIME               | TEXT (ISO 8601)                   |
+| `uuid`         | UUID                 | CHAR(36)           | TEXT                              |
+| `json`         | JSONB                | JSON               | TEXT                              |
+| `binary`       | BYTEA                | BLOB               | BLOB                              |
+| `email`        | VARCHAR(254)         | VARCHAR(254)       | TEXT                              |
+| `enum(values)` | CREATE TYPE ... ENUM | ENUM(...)          | TEXT + CHECK                      |
+| `array(type)`  | type[]               | JSON               | TEXT (JSON)                       |
+
+### 2.3 Datenfluss-Modell
+
+```
+  Quelle                  Neutral                    Ziel
+┌──────────┐         ┌──────────────┐          ┌──────────┐
+│PostgreSQL│──extract─▶│              │──generate─▶│  MySQL   │
+│  MySQL   │         │   Schema-    │          │  SQLite  │
+│  SQLite  │◀─reverse─│   Modell     │◀─parse────│  YAML    │
+│  SQL-DDL │  engineer│   (Kotlin)   │          │  JSON    │
+└──────────┘         └──────┬───────┘          └──────────┘
+                            │
+                    ┌───────▼───────┐
+                    │  Validierung  │
+                    │  - Syntax     │
+                    │  - Referenzen │
+                    │  - Typen      │
+                    └───────────────┘
+```
+
+---
+
+## 3. Datenverarbeitungs-Design
+
+### 3.1 Streaming-Pipeline
+
+Für Datenexport/-import wird eine Streaming-Pipeline verwendet, die Daten chunkweise verarbeitet:
+
+```
+Source DB ──▶ ResultSet Stream ──▶ Transformer ──▶ Serializer ──▶ Output
+                  │                     │               │
+                  │              ┌──────▼──────┐        │
+                  │              │ Type Mapping │        │
+                  │              │ Encoding     │        │
+                  │              │ Validation   │        │
+                  │              └─────────────┘        │
+                  │                                      │
+              Chunk-Size                          Format (JSON,
+              (Default: 10.000)                   YAML, CSV, SQL)
+```
+
+### 3.2 Checkpoint/Resume
+
+Langläufige Operationen erzeugen Checkpoints zur Wiederaufnahme:
+
+```kotlin
+// Konzept: Checkpoint-Datei
+data class MigrationCheckpoint(
+    val operationId: UUID,
+    val table: String,
+    val lastProcessedId: Long,
+    val processedCount: Long,
+    val totalCount: Long?,
+    val checksum: String,       // SHA-256 der bisher verarbeiteten Daten
+    val timestamp: Instant
+)
+```
+
+### 3.3 Parallele Verarbeitung
+
+Tabellen werden parallel verarbeitet, wobei Abhängigkeiten (Foreign Keys) respektiert werden:
+
+```
+1. Dependency-Graph aufbauen (topologische Sortierung)
+2. Unabhängige Tabellen parallel verarbeiten (Coroutines)
+3. Abhängige Tabellen sequentiell nach Reihenfolge
+4. Konfigurierbare Parallelität (Default: CPU-Kerne)
+```
+
+---
+
+## 4. KI-Integrations-Design
+
+### 4.1 Provider-Abstraktion
+
+```kotlin
+// Einheitliche Schnittstelle für alle KI-Provider
+interface AiProvider {
+    val name: String
+    val isLocal: Boolean
+
+    suspend fun transform(request: TransformRequest): TransformResult
+    suspend fun isAvailable(): Boolean
+}
+
+data class TransformRequest(
+    val sourceCode: String,
+    val sourceDialect: DatabaseDialect,
+    val targetDialect: DatabaseDialect,
+    val context: TransformContext       // Tabellen-Schema, Abhängigkeiten
+)
+
+data class TransformResult(
+    val targetCode: String,
+    val intermediateFormat: String,     // Markdown-Zwischenformat
+    val metadata: TransformMetadata,    // Modell, Dauer, Token-Verbrauch
+    val warnings: List<String>
+)
+```
+
+### 4.2 Provider-Hierarchie
+
+```
+AiProvider (Interface)
+├── OllamaProvider        — Lokale Modelle (Default bei privacy.prefer_local)
+├── OpenAiProvider        — GPT-4 / GPT-4o
+├── AnthropicProvider     — Claude
+├── XaiProvider           — Grok
+├── GoogleProvider        — Gemini
+├── VllmProvider          — Self-Hosted vLLM
+└── NoOpProvider          — Fallback ohne KI (regelbasiert)
+```
+
+### 4.3 Datenschutz-Strategie
+
+```
+Konfiguration: privacy.prefer_local = true (Default)
+
+1. Prüfe ob lokales Modell verfügbar (Ollama, LM Studio)
+2. Falls ja → lokales Modell verwenden
+3. Falls nein → Prüfe ob allow_external = true
+4. Falls ja → externes API verwenden
+5. Falls nein → Fehler mit Hinweis auf Konfiguration
+```
+
+---
+
+## 5. CLI-Design
+
+### 5.1 Kommando-Struktur
+
+```bash
+d-migrate <command> <subcommand> [options]
+
+# Schema-Verwaltung
+d-migrate schema validate     --source schema.yaml
+d-migrate schema generate     --source schema.yaml --target postgres
+d-migrate schema compare      --source db1 --target db2
+d-migrate schema reverse      --source postgres://... --output schema.yaml
+
+# Daten-Management
+d-migrate data export         --source postgres://... --format json
+d-migrate data import         --source data.json --target mysql://...
+d-migrate data seed           --schema schema.yaml --target postgres://...
+
+# Stored Procedure Migration
+d-migrate transform procedure --source schema.yaml --procedure name --ai-backend ollama
+d-migrate generate procedure  --source spec.md --target mysql
+
+# Integrations-Export
+d-migrate export flyway       --source schema.yaml --output migrations/
+d-migrate export liquibase    --source schema.yaml --output changelog/
+d-migrate export django       --source schema.yaml --output migrations/
+d-migrate export knex         --source schema.yaml --output migrations/
+
+# Validierung
+d-migrate validate data       --source data.json --schema schema.yaml
+d-migrate validate procedure  --source proc.sql --target mysql://...
+```
+
+### 5.2 Output-Design
+
+```
+# Fortschrittsanzeige bei langen Operationen
+Exporting table 'orders' [████████░░░░░░░░] 52% | 520,000/1,000,000 | ~45s remaining
+
+# Validierungsergebnis
+✓ Schema validation passed (12 tables, 87 columns, 15 constraints)
+⚠ Warning: Column 'price' uses FLOAT — consider DECIMAL for monetary values
+✗ Error: Foreign key 'orders.customer_id' references non-existent table 'clients'
+```
+
+### 5.3 Konfiguration
+
+Hierarchische Konfiguration mit Overrides:
+
+```
+1. Built-in Defaults
+2. Globale Config: ~/.d-migrate/config.yaml
+3. Projekt-Config: .d-migrate.yaml (im Projektverzeichnis)
+4. Umgebungsvariablen: D_MIGRATE_*
+5. CLI-Argumente (höchste Priorität)
+```
+
+---
+
+## 6. Format-Design
+
+### 6.1 Schema-Definition (YAML)
+
+```yaml
+name: "E-Commerce System"
+version: "1.0"
+encoding: "utf-8"
+locale: "de_DE"
+
+tables:
+  customers:
+    description: "Kundenstammdaten"
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      email:
+        type: email
+        required: true
+        unique: true
+      name:
+        type: text
+        max_length: 100
+        required: true
+    indices:
+      - columns: [email]
+        type: btree
+        unique: true
+
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      customer_id:
+        type: reference
+        references: customers.id
+        on_delete: restrict
+      total_amount:
+        type: decimal
+        precision: 10
+        scale: 2
+```
+
+### 6.2 Datenexport-Formate
+
+**JSON** (strukturiert, UTF-8):
+```json
+{
+  "table": "customers",
+  "schema_version": "1.0",
+  "exported_at": "2025-10-22T14:30:00Z",
+  "encoding": "UTF-8",
+  "records": [
+    {"id": 1, "email": "kunde@example.de", "name": "Müller"}
+  ]
+}
+```
+
+**CSV** (mit Metadaten-Header):
+```csv
+# d-migrate export | table=customers | encoding=UTF-8 | exported=2025-10-22T14:30:00Z
+id,email,name
+1,kunde@example.de,Müller
+```
+
+**YAML** (für kleinere Datensätze / Konfiguration):
+```yaml
+table: customers
+records:
+  - id: 1
+    email: kunde@example.de
+    name: Müller
+```
+
+---
+
+## 7. Fehlerbehandlung
+
+### 7.1 Fehlerkategorien
+
+```kotlin
+sealed class MigrateError {
+    // Konfigurationsfehler — vor Ausführung erkennbar
+    data class ConfigError(val field: String, val reason: String) : MigrateError()
+
+    // Validierungsfehler — Schema/Daten ungültig
+    data class ValidationError(val path: String, val violations: List<Violation>) : MigrateError()
+
+    // Verbindungsfehler — DB nicht erreichbar
+    data class ConnectionError(val target: String, val cause: Throwable) : MigrateError()
+
+    // Migrationsfehler — Fehler während Datenverarbeitung
+    data class MigrationError(val table: String, val row: Long?, val cause: Throwable) : MigrateError()
+
+    // KI-Fehler — Provider nicht erreichbar oder Transformation fehlgeschlagen
+    data class AiError(val provider: String, val cause: Throwable) : MigrateError()
+}
+```
+
+### 7.2 Fehlerbehandlungsstrategie
+
+| Szenario                         | Verhalten                                                 |
+| -------------------------------- | --------------------------------------------------------- |
+| Einzelner Datensatz fehlerhaft   | Loggen, überspringen (konfigurierbar), weitermachen       |
+| Constraint-Verletzung bei Import | Transaktion auf Chunk-Ebene zurückrollen                  |
+| DB-Verbindung unterbrochen       | Retry mit Backoff (3 Versuche), dann Checkpoint schreiben |
+| KI-Provider nicht erreichbar     | Fallback auf nächsten Provider, dann regelbasiert         |
+| Unbekannter Datentyp             | Warnung + Fallback auf `text`, kein Abbruch               |
+
+---
+
+## 8. Internationalisierung (i18n)
+
+### 8.1 Architektur
+
+```
+src/main/resources/messages/
+├── messages_de.properties    # Deutsch (Default)
+├── messages_en.properties    # Englisch
+└── messages.properties       # Fallback (Englisch)
+```
+
+### 8.2 Sprachauswahl
+
+```
+1. CLI-Argument: --lang de
+2. Umgebungsvariable: LANG=de_DE.UTF-8
+3. System-Locale
+4. Fallback: Englisch
+```
+
+### 8.3 Unicode-Verarbeitung
+
+- Alle internen Strings als UTF-8
+- Grapheme-aware String-Längenberechnung via ICU4J
+- Normalisierung (NFC) bei Schema-Vergleichen
+- BOM-Erkennung und -Behandlung bei CSV-Import
+
+---
+
+## 9. Testbarkeit
+
+### 9.1 Design for Testability
+
+- **Dependency Injection** via Constructor Injection (kein Framework nötig für Core)
+- **Interface-basierte Abstraktion** für alle externen Abhängigkeiten (DB, Dateisystem, KI)
+- **Pure Functions** für Type-Mapping und Schema-Transformation
+- **Determinismus**: Kein versteckter globaler State, Zeitstempel injizierbar
+
+### 9.2 Test-Pyramide
+
+```
+         ╱╲
+        ╱  ╲         E2E-Tests (CLI gegen Docker-DBs)
+       ╱    ╲         ~50 Tests, <15 Min
+      ╱──────╲
+     ╱        ╲       Integration-Tests (Adapter gegen Testcontainers)
+    ╱          ╲       ~200 Tests, <5 Min
+   ╱────────────╲
+  ╱              ╲    Unit-Tests (Pure Logic, Type-Mapping, Parsing)
+ ╱                ╲    ~1000 Tests, <2 Min
+╱──────────────────╲
+```
+
+### 9.3 Test-Infrastruktur
+
+- **Unit-Tests**: Kotest + Jqwik (Property-Based Testing)
+- **Integration-Tests**: Testcontainers (PostgreSQL, MySQL)
+- **E2E-Tests**: CLI-Prozess gegen Docker-Datenbanken
+- **Fixtures**: Versioniert in `src/test/resources/fixtures/`
+
+---
+
+## 10. Versionierung und Kompatibilität
+
+### 10.1 Schema-Versionierung
+
+```yaml
+# Jede Schema-Datei hat eine Version
+schema_format: "1.0"    # Format-Version von d-migrate
+name: "My Schema"
+version: "2.3.1"         # Anwendungs-Schema-Version
+```
+
+### 10.2 Kompatibilitätsmatrix
+
+- **Schema-Format**: Rückwärtskompatibel für 2 Major-Versionen
+- **CLI-Argumente**: Deprecated Flags bleiben 2 Minor-Versionen erhalten
+- **Export-Formate**: Stabile Formate ab 1.0, versioniert im Header
+
+---
+
+**Version**: 1.0
+**Stand**: 2026-04-05
+**Status**: Entwurf
