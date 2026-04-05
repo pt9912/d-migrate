@@ -106,6 +106,10 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - PostgreSQL (Version 12+)
 - MySQL (Version 8.0+)
 - SQLite (Version 3.30+)
+- Räumliche Datentypen und Geometrie-Spalten müssen für unterstützte Zielsysteme abbildbar sein:
+  - PostgreSQL über PostGIS (`GEOMETRY`, `GEOGRAPHY` und abgeleitete Typen)
+  - MySQL über native Spatial Data Types (`GEOMETRY`, `POINT`, `LINESTRING`, `POLYGON`)
+  - SQLite über SpatiaLite (`GEOMETRY`, `POINT`, `LINESTRING`, `POLYGON`), sofern die Erweiterung im Zielsystem verfügbar ist
 
 **LF-004** Das System muss aus datenbankspezifischen Strukturen und Objekten (SQL-Skripten oder Datenbankschema-Abfragen) ein neutrales Format erzeugen können.
 - Unterstützung für Reverse-Engineering von SQL-DDL-Statements (z. B. CREATE TABLE, ALTER TABLE, CREATE PROCEDURE, CREATE FUNCTION, CREATE TRIGGER, CREATE VIEW)
