@@ -76,7 +76,7 @@ class YamlSchemaCodecTest : FunSpec({
         cols["col_json"]!!.type shouldBe NeutralType.Json
         cols["col_xml"]!!.type shouldBe NeutralType.Xml
         cols["col_binary"]!!.type shouldBe NeutralType.Binary
-        cols["col_email"]!!.type shouldBe NeutralType.Email()
+        cols["col_email"]!!.type shouldBe NeutralType.Email
         (cols["col_enum"]!!.type as NeutralType.Enum).values shouldBe listOf("a", "b", "c")
         (cols["col_array"]!!.type as NeutralType.Array).elementType shouldBe "text"
     }

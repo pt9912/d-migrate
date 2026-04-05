@@ -72,8 +72,9 @@ class NeutralTypeTest : FunSpec({
         type.elementType shouldBe "text"
     }
 
-    test("Email with default max_length") {
-        NeutralType.Email().maxLength shouldBe 254
+    test("Email is a singleton with fixed MAX_LENGTH") {
+        NeutralType.Email shouldBe NeutralType.Email
+        NeutralType.Email.MAX_LENGTH shouldBe 254
     }
 
     test("data class equality") {
@@ -101,7 +102,7 @@ class NeutralTypeTest : FunSpec({
             is NeutralType.Json -> "json"
             is NeutralType.Xml -> "xml"
             is NeutralType.Binary -> "binary"
-            is NeutralType.Email -> "email"
+            NeutralType.Email -> "email"
             is NeutralType.Enum -> "enum"
             is NeutralType.Array -> "array"
         }

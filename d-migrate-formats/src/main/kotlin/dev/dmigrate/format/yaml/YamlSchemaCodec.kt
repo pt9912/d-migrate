@@ -1,5 +1,6 @@
 package dev.dmigrate.format.yaml
 
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
@@ -10,7 +11,11 @@ import java.io.OutputStream
 
 class YamlSchemaCodec : SchemaCodec {
 
-    private val mapper = ObjectMapper(YAMLFactory())
+    private val mapper = ObjectMapper(YAMLFactory()).apply {
+        enable(DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY) // C1: detect duplicate keys
+        // C2: Jackson YAML 2.18 uses SnakeYAML Engine with safe defaults for alias expansion.
+        // Document size is bounded by JVM heap; for additional safety, callers should limit InputStream size.
+    }
 
     override fun read(input: InputStream): SchemaDefinition {
         val root = mapper.readTree(input)
@@ -51,7 +56,7 @@ class YamlSchemaCodec : SchemaCodec {
     private fun parseTable(node: JsonNode): TableDefinition = TableDefinition(
         description = node.optionalText("description"),
         columns = parseColumns(node["columns"]),
-        primaryKey = node["primary_key"]?.toStringList(),
+        primaryKey = node["primary_key"]?.toStringList() ?: emptyList(),
         indices = parseIndices(node["indices"]),
         constraints = parseConstraints(node["constraints"]),
         partitioning = parsePartitioning(node["partitioning"])
@@ -109,9 +114,7 @@ class YamlSchemaCodec : SchemaCodec {
             "json" -> NeutralType.Json
             "xml" -> NeutralType.Xml
             "binary" -> NeutralType.Binary
-            "email" -> NeutralType.Email(
-                maxLength = node.optionalInt("max_length") ?: 254
-            )
+            "email" -> NeutralType.Email
             "enum" -> NeutralType.Enum(
                 values = node["values"]?.toStringList(),
                 refType = node.optionalText("ref_type")

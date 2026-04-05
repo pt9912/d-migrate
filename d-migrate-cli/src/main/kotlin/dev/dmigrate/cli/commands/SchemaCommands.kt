@@ -25,7 +25,7 @@ class SchemaCommand : CliktCommand(name = "schema") {
 class SchemaValidateCommand : CliktCommand(name = "validate") {
     override fun help(context: Context) = "Validate a schema definition"
 
-    val source by option("--source", help = "Path to schema file (YAML/JSON)")
+    val source by option("--source", help = "Path to schema file (YAML)")
         .path(mustExist = true, canBeDir = false)
         .required()
 

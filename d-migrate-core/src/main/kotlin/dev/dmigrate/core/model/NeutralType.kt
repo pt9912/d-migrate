@@ -17,7 +17,9 @@ sealed class NeutralType {
     data object Json : NeutralType()
     data object Xml : NeutralType()
     data object Binary : NeutralType()
-    data class Email(val maxLength: Int = 254) : NeutralType()
+    data object Email : NeutralType() {
+        const val MAX_LENGTH = 254
+    }
     data class Enum(val values: List<String>? = null, val refType: String? = null) : NeutralType()
     data class Array(val elementType: String) : NeutralType()
 }

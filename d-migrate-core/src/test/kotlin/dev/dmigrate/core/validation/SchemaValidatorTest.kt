@@ -15,7 +15,7 @@ class SchemaValidatorTest : FunSpec({
         SchemaDefinition(name = "Test", version = "1.0", tables = tables, customTypes = customTypes)
 
     fun table(columns: Map<String, ColumnDefinition>,
-              primaryKey: List<String>? = null,
+              primaryKey: List<String> = emptyList(),
               indices: List<IndexDefinition> = emptyList(),
               constraints: List<ConstraintDefinition> = emptyList(),
               partitioning: PartitionConfig? = null) =
@@ -323,7 +323,7 @@ class SchemaValidatorTest : FunSpec({
                     "id" to col(NeutralType.Identifier(true)),
                     "name" to col(NeutralType.Text(100), default = DefaultValue.StringLiteral("unknown")),
                     "code" to col(NeutralType.Char(2), default = DefaultValue.StringLiteral("XX")),
-                    "mail" to col(NeutralType.Email(), default = DefaultValue.StringLiteral("a@b.c")),
+                    "mail" to col(NeutralType.Email, default = DefaultValue.StringLiteral("a@b.c")),
                     "uid" to col(NeutralType.Uuid, default = DefaultValue.StringLiteral("abc")),
                     "status" to col(NeutralType.Enum(values = listOf("a", "b")), default = DefaultValue.StringLiteral("a"))
                 ),
@@ -447,17 +447,105 @@ class SchemaValidatorTest : FunSpec({
         result.errors.none { it.code == "E012" } shouldBe true
     }
 
-    test("W001: FLOAT column generates warning") {
+    test("W001: FLOAT column with monetary name generates warning") {
         val s = schema(tables = mapOf(
             "items" to table(
                 columns = mapOf(
                     "id" to col(NeutralType.Identifier(true)),
-                    "price" to col(NeutralType.Float())
+                    "total_price" to col(NeutralType.Float())
                 ),
                 primaryKey = listOf("id")
             )
         ))
         val result = validator.validate(s)
         result.warnings.any { it.code == "W001" } shouldBe true
+    }
+
+    test("W001: FLOAT column with non-monetary name does NOT generate warning") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "latitude" to col(NeutralType.Float())
+                ),
+                primaryKey = listOf("id")
+            )
+        ))
+        val result = validator.validate(s)
+        result.warnings.none { it.code == "W001" } shouldBe true
+    }
+
+    test("E018: trigger references non-existent table") {
+        val s = SchemaDefinition(
+            name = "Test", version = "1.0",
+            tables = mapOf(
+                "items" to table(
+                    columns = mapOf("id" to col(NeutralType.Identifier(true))),
+                    primaryKey = listOf("id")
+                )
+            ),
+            triggers = mapOf(
+                "trg_test" to TriggerDefinition(
+                    table = "missing_table",
+                    event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER
+                )
+            )
+        )
+        val result = validator.validate(s)
+        result.errors.any { it.code == "E018" } shouldBe true
+    }
+
+    test("trigger referencing existing table validates successfully") {
+        val s = SchemaDefinition(
+            name = "Test", version = "1.0",
+            tables = mapOf(
+                "items" to table(
+                    columns = mapOf("id" to col(NeutralType.Identifier(true))),
+                    primaryKey = listOf("id")
+                )
+            ),
+            triggers = mapOf(
+                "trg_test" to TriggerDefinition(
+                    table = "items",
+                    event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER
+                )
+            )
+        )
+        val result = validator.validate(s)
+        result.errors.none { it.code == "E018" } shouldBe true
+    }
+
+    test("check expression with string literals does not produce false E012") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "status" to col(NeutralType.Text(50))
+                ),
+                primaryKey = listOf("id"),
+                constraints = listOf(ConstraintDefinition(
+                    name = "chk_status", type = ConstraintType.CHECK,
+                    expression = "status IN ('active', 'deleted')"
+                ))
+            )
+        ))
+        val result = validator.validate(s)
+        result.errors.none { it.code == "E012" } shouldBe true
+    }
+
+    test("array with invalid element_type name produces E015") {
+        val s = schema(tables = mapOf(
+            "items" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "tags" to col(NeutralType.Array(elementType = "money"))
+                ),
+                primaryKey = listOf("id")
+            )
+        ))
+        val result = validator.validate(s)
+        result.errors.any { it.code == "E015" } shouldBe true
     }
 })

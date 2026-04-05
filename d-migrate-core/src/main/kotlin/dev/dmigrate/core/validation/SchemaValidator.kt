@@ -4,6 +4,14 @@ import dev.dmigrate.core.model.*
 
 class SchemaValidator {
 
+    companion object {
+        val VALID_TYPE_NAMES = setOf(
+            "identifier", "text", "char", "integer", "smallint", "biginteger",
+            "float", "decimal", "boolean", "datetime", "date", "time",
+            "uuid", "json", "xml", "binary", "email", "enum", "array"
+        )
+    }
+
     fun validate(schema: SchemaDefinition): ValidationResult {
         val errors = mutableListOf<ValidationError>()
         val warnings = mutableListOf<ValidationWarning>()
@@ -28,6 +36,8 @@ class SchemaValidator {
             checkFloatWarning(tableName, table, warnings)
         }
 
+        validateTriggerTableReferences(schema, errors)
+
         return ValidationResult(errors, warnings)
     }
 
@@ -44,7 +54,7 @@ class SchemaValidator {
     private fun validatePrimaryKey(
         tableName: String, table: TableDefinition, errors: MutableList<ValidationError>
     ) {
-        val hasExplicitPk = !table.primaryKey.isNullOrEmpty()
+        val hasExplicitPk = table.primaryKey.isNotEmpty()
         val hasIdentifierColumn = table.columns.values.any { it.type is NeutralType.Identifier }
         if (!hasExplicitPk && !hasIdentifierColumn) {
             errors += ValidationError("E008", "Table has no primary key", "tables.$tableName")
@@ -144,6 +154,8 @@ class SchemaValidator {
             is NeutralType.Array -> {
                 if (type.elementType.isBlank()) {
                     errors += ValidationError("E015", "array: element_type is required", path)
+                } else if (type.elementType !in VALID_TYPE_NAMES) {
+                    errors += ValidationError("E015", "array: unknown element_type '${type.elementType}'", path)
                 }
             }
             else -> { /* no type-specific validation */ }
@@ -231,13 +243,20 @@ class SchemaValidator {
     private fun checkFloatWarning(
         tableName: String, table: TableDefinition, warnings: MutableList<ValidationWarning>
     ) {
+        val monetaryPatterns = setOf(
+            "price", "amount", "cost", "total", "balance", "fee", "tax",
+            "salary", "wage", "revenue", "profit", "discount", "payment"
+        )
         for ((colName, col) in table.columns) {
             if (col.type is NeutralType.Float) {
-                warnings += ValidationWarning(
-                    "W001",
-                    "Column uses FLOAT — consider DECIMAL for monetary values",
-                    "tables.$tableName.columns.$colName"
-                )
+                val lowerName = colName.lowercase()
+                if (monetaryPatterns.any { lowerName.contains(it) }) {
+                    warnings += ValidationWarning(
+                        "W001",
+                        "Column uses FLOAT — consider DECIMAL for monetary values",
+                        "tables.$tableName.columns.$colName"
+                    )
+                }
             }
         }
     }
@@ -257,7 +276,7 @@ class SchemaValidator {
 
     private fun isDefaultCompatible(default: DefaultValue, type: NeutralType): Boolean = when (default) {
         is DefaultValue.StringLiteral -> type is NeutralType.Text || type is NeutralType.Char
-                || type is NeutralType.Enum || type is NeutralType.Email || type is NeutralType.Uuid
+                || type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid
         is DefaultValue.NumberLiteral -> type is NeutralType.Integer || type is NeutralType.SmallInt
                 || type is NeutralType.BigInteger || type is NeutralType.Float
                 || type is NeutralType.Decimal || type is NeutralType.Identifier
@@ -270,16 +289,33 @@ class SchemaValidator {
         }
     }
 
+    // I1: Trigger table must reference existing table
+    private fun validateTriggerTableReferences(
+        schema: SchemaDefinition, errors: MutableList<ValidationError>
+    ) {
+        for ((triggerName, trigger) in schema.triggers) {
+            if (trigger.table !in schema.tables) {
+                errors += ValidationError(
+                    "E018",
+                    "Trigger references non-existent table '${trigger.table}'",
+                    "triggers.$triggerName.table"
+                )
+            }
+        }
+    }
+
     private fun extractIdentifiers(expression: String): List<String> {
-        // Simple identifier extraction: words that look like column names
-        // Excludes SQL keywords, numbers, and string literals
+        // Strip single-quoted string literals before scanning to avoid false positives
+        val stripped = expression.replace(Regex("'[^']*'"), "")
         val sqlKeywords = setOf(
             "AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE",
-            "BETWEEN", "LIKE", "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END",
-            "CHECK", "VALUE", "CURRENT_TIMESTAMP"
+            "BETWEEN", "LIKE", "ILIKE", "SIMILAR", "ANY", "ALL", "SOME",
+            "EXISTS", "CASE", "WHEN", "THEN", "ELSE", "END",
+            "CHECK", "VALUE", "CURRENT_TIMESTAMP",
+            "ASC", "DESC", "HAVING", "OLD", "NEW"
         )
         return Regex("[a-zA-Z_][a-zA-Z0-9_]*")
-            .findAll(expression)
+            .findAll(stripped)
             .map { it.value }
             .filter { it.uppercase() !in sqlKeywords }
             .distinct()

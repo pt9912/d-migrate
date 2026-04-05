@@ -17,7 +17,7 @@ class OutputFormatter(private val context: CliContext) {
     fun printError(message: String, source: String) {
         when (context.outputFormat) {
             "json" -> System.err.println("""{"error": "${escapeJson(message)}", "file": "${escapeJson(source)}"}""")
-            "yaml" -> System.err.println("error: \"${message}\"\nfile: \"${source}\"")
+            "yaml" -> System.err.println("error: \"${escapeYaml(message)}\"\nfile: \"${escapeYaml(source)}\"")
             else -> System.err.println("[ERROR] $message\n  → File: $source")
         }
     }
@@ -42,13 +42,13 @@ class OutputFormatter(private val context: CliContext) {
         }
 
         for (warning in result.warnings) {
-            println("  ${yellow("⚠")} Warning [${warning.code}]: ${warning.message}")
-            if (!context.quiet) println("    → ${warning.objectPath}")
+            System.err.println("  ${yellow("⚠")} Warning [${warning.code}]: ${warning.message}")
+            if (!context.quiet) System.err.println("    → ${warning.objectPath}")
         }
 
         for (error in result.errors) {
-            println("  ${red("✗")} Error [${error.code}]: ${error.message}")
-            if (!context.quiet) println("    → ${error.objectPath}")
+            System.err.println("  ${red("✗")} Error [${error.code}]: ${error.message}")
+            if (!context.quiet) System.err.println("    → ${error.objectPath}")
         }
 
         if (!context.quiet) {
@@ -77,9 +77,13 @@ class OutputFormatter(private val context: CliContext) {
             appendLine("""  "schema": {"name": "${escapeJson(schema.name)}", "version": "${escapeJson(schema.version)}"},""")
             appendLine("""  "errors": ${result.errors.size},""")
             appendLine("""  "warnings": ${result.warnings.size},""")
-            appendLine("""  "results": [""")
-            appendLine(results.joinToString(",\n"))
-            appendLine("  ]")
+            if (results.isEmpty()) {
+                appendLine("""  "results": []""")
+            } else {
+                appendLine("""  "results": [""")
+                appendLine(results.joinToString(",\n"))
+                appendLine("  ]")
+            }
             append("}")
         })
     }
@@ -89,22 +93,26 @@ class OutputFormatter(private val context: CliContext) {
         println("status: ${if (result.isValid) "passed" else "failed"}")
         println("exit_code: ${if (result.isValid) 0 else 3}")
         println("schema:")
-        println("  name: \"${schema.name}\"")
-        println("  version: \"${schema.version}\"")
+        println("  name: \"${escapeYaml(schema.name)}\"")
+        println("  version: \"${escapeYaml(schema.version)}\"")
         println("errors: ${result.errors.size}")
         println("warnings: ${result.warnings.size}")
-        println("results:")
-        for (w in result.warnings) {
-            println("  - level: warning")
-            println("    code: ${w.code}")
-            println("    object: \"${w.objectPath}\"")
-            println("    message: \"${w.message}\"")
-        }
-        for (e in result.errors) {
-            println("  - level: error")
-            println("    code: ${e.code}")
-            println("    object: \"${e.objectPath}\"")
-            println("    message: \"${e.message}\"")
+        if (result.warnings.isEmpty() && result.errors.isEmpty()) {
+            println("results: []")
+        } else {
+            println("results:")
+            for (w in result.warnings) {
+                println("  - level: warning")
+                println("    code: ${w.code}")
+                println("    object: \"${escapeYaml(w.objectPath)}\"")
+                println("    message: \"${escapeYaml(w.message)}\"")
+            }
+            for (e in result.errors) {
+                println("  - level: error")
+                println("    code: ${e.code}")
+                println("    object: \"${escapeYaml(e.objectPath)}\"")
+                println("    message: \"${escapeYaml(e.message)}\"")
+            }
         }
     }
 
@@ -114,5 +122,15 @@ class OutputFormatter(private val context: CliContext) {
 
     private fun useColor(): Boolean = !context.noColor && System.console() != null
 
-    private fun escapeJson(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
+    private fun escapeJson(s: String) = s
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+
+    private fun escapeYaml(s: String) = s
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
 }
