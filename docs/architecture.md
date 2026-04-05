@@ -763,6 +763,45 @@ Tools:
 | Dependency Vulnerabilities | 0 Critical/High |
 | Build-Dauer                | < 5 Minuten     |
 
+### 6.2 Test-Fixture-Layout
+
+```
+src/test/resources/fixtures/
+├── schemas/                          # Neutrale Schema-Definitionen
+│   ├── minimal.yaml                  # 1 Tabelle, 2 Spalten (Smoke-Test)
+│   ├── e-commerce.yaml               # Referenz-Schema (Lastenheft Anhang B)
+│   ├── all-types.yaml                # Alle 18 neutralen Typen
+│   └── edge-cases.yaml               # Unicode, Sonderzeichen, zirkuläre FKs
+│
+├── ddl/                              # Erwartete DDL-Ausgaben (Golden Masters)
+│   ├── minimal.postgresql.sql
+│   ├── minimal.mysql.sql
+│   ├── minimal.sqlite.sql
+│   ├── e-commerce.postgresql.sql
+│   ├── e-commerce.mysql.sql
+│   └── e-commerce.sqlite.sql
+│
+├── invalid/                          # Ungültige Schemas (Validierungstests)
+│   ├── missing-primary-key.yaml      # → E008
+│   ├── broken-reference.yaml         # → E002
+│   ├── duplicate-column.yaml         # → E004
+│   ├── invalid-default.yaml          # → E009
+│   └── missing-decimal-precision.yaml # → E010
+│
+└── data/                             # Testdaten für Import/Export (ab 0.3.0)
+    ├── customers.json
+    ├── customers.csv
+    └── customers.yaml
+```
+
+**Namenskonvention**: `<schema-name>.<dialekt>.<format>`
+
+**Golden-Master-Workflow**:
+1. Schema-Fixture laden (`schemas/minimal.yaml`)
+2. DDL generieren (z.B. für PostgreSQL)
+3. Ergebnis gegen Golden Master vergleichen (`ddl/minimal.postgresql.sql`)
+4. Bei gewollten Änderungen: Golden Master aktualisieren und committen
+
 ---
 
 ## 7. Architekturentscheidungen (ADR-Übersicht)
