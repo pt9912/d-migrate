@@ -13,7 +13,7 @@ CREATE TABLE "customers" (
     "created_at" TEXT DEFAULT (datetime('now'))
 );
 
--- [W101] Decimal(10,2) mapped to REAL in SQLite. Precision may be lost.
+-- [W200] Decimal(10,2) mapped to REAL in SQLite. Precision may be lost.
 -- Hint: Store as TEXT if exact decimal precision is required.
 CREATE TABLE "orders" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,

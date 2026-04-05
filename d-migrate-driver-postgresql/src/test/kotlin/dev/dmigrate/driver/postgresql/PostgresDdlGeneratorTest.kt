@@ -232,11 +232,11 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val ddl = generator.generate(s).render()
         ddl shouldContain "CREATE SEQUENCE \"order_seq\""
-        ddl shouldContain "START 100"
-        ddl shouldContain "INCREMENT 5"
+        ddl shouldContain "START WITH 100"
+        ddl shouldContain "INCREMENT BY 5"
         ddl shouldContain "MINVALUE 1"
         ddl shouldContain "MAXVALUE 999999"
-        ddl shouldContain "CYCLE"
+        ddl shouldContain " CYCLE"
         ddl shouldContain "CACHE 10"
     }
 
@@ -422,13 +422,13 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val ddl = generator.generate(s).render()
         // Trigger function
-        ddl shouldContain "CREATE OR REPLACE FUNCTION \"audit_orders_fn\"() RETURNS TRIGGER"
+        ddl shouldContain "CREATE OR REPLACE FUNCTION \"trg_fn_audit_orders\"() RETURNS TRIGGER"
         ddl shouldContain "LANGUAGE plpgsql;"
         // Trigger itself
         ddl shouldContain "CREATE TRIGGER \"audit_orders\""
         ddl shouldContain "AFTER INSERT ON \"orders\""
         ddl shouldContain "FOR EACH ROW"
-        ddl shouldContain "EXECUTE FUNCTION \"audit_orders_fn\"();"
+        ddl shouldContain "EXECUTE FUNCTION \"trg_fn_audit_orders\"();"
     }
 
     // 19. Circular FK generates ALTER TABLE ADD CONSTRAINT
@@ -765,17 +765,16 @@ class PostgresDdlGeneratorTest : FunSpec({
         ddl shouldContain "LANGUAGE plpgsql;"
     }
 
-    test("sequence without optional fields omits MINVALUE MAXVALUE CYCLE CACHE") {
+    test("sequence without optional fields omits MINVALUE MAXVALUE CACHE and includes NO CYCLE") {
         val s = schema(
             sequences = mapOf(
                 "simple_seq" to SequenceDefinition(start = 1, increment = 1)
             )
         )
         val ddl = generator.generate(s).render()
-        ddl shouldContain "CREATE SEQUENCE \"simple_seq\" START 1 INCREMENT 1;"
+        ddl shouldContain "CREATE SEQUENCE \"simple_seq\" START WITH 1 INCREMENT BY 1 NO CYCLE;"
         ddl shouldNotContain "MINVALUE"
         ddl shouldNotContain "MAXVALUE"
-        ddl shouldNotContain "CYCLE"
         ddl shouldNotContain "CACHE"
     }
 

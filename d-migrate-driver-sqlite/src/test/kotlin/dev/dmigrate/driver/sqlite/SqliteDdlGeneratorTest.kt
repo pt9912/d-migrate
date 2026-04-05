@@ -660,9 +660,9 @@ class SqliteDdlGeneratorTest : FunSpec({
         result.notes.any { it.code == "E052" && it.objectName == "trg_pg_notify" } shouldBe true
     }
 
-    // ── 20. Decimal type maps to REAL with W101 precision warning ───
+    // ── 20. Decimal type maps to REAL with W200 precision warning ───
 
-    test("decimal column maps to REAL with W101 precision loss warning") {
+    test("decimal column maps to REAL with W200 precision loss warning") {
         val s = schema(
             tables = mapOf(
                 "invoices" to table(
@@ -679,7 +679,7 @@ class SqliteDdlGeneratorTest : FunSpec({
 
         sql shouldContain "\"amount\" REAL NOT NULL"
         result.notes.any {
-            it.code == "W101" && it.objectName == "invoices.amount" && it.message.contains("Decimal(18,4)")
+            it.code == "W200" && it.objectName == "invoices.amount" && it.message.contains("Decimal(18,4)")
         } shouldBe true
     }
 

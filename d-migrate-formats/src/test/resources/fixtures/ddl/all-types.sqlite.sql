@@ -2,7 +2,7 @@
 -- Source: neutral schema v1.0.0 "All Types"
 -- Target: sqlite
 
--- [W101] Decimal(10,2) mapped to REAL in SQLite. Precision may be lost.
+-- [W200] Decimal(10,2) mapped to REAL in SQLite. Precision may be lost.
 -- Hint: Store as TEXT if exact decimal precision is required.
 CREATE TABLE "type_test" (
     "col_identifier" INTEGER PRIMARY KEY AUTOINCREMENT,

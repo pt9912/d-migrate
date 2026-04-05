@@ -9,7 +9,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
 
     // -- Quoting -----------------------------------------------
 
-    override fun quoteIdentifier(name: String): String = "\"$name\""
+    override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
 
     // -- Custom types (ENUM, COMPOSITE, DOMAIN) ----------------
 
@@ -100,7 +100,8 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
     override fun generateTable(
         name: String,
         table: TableDefinition,
-        schema: SchemaDefinition
+        schema: SchemaDefinition,
+        deferredFks: Set<Pair<String, String>>
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
@@ -116,7 +117,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
 
         // Columns
         for ((colName, col) in table.columns) {
-            columnLines += generateColumnSql(colName, col, schema, name, notes)
+            columnLines += generateColumnSql(colName, col, schema, name, notes, deferredFks)
         }
 
         // Explicit constraints (CHECK, UNIQUE, EXCLUDE, FOREIGN_KEY)
@@ -159,7 +160,8 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         col: ColumnDefinition,
         schema: SchemaDefinition,
         tableName: String,
-        notes: MutableList<TransformationNote>
+        notes: MutableList<TransformationNote>,
+        deferredFks: Set<Pair<String, String>> = emptySet()
     ): String {
         val type = col.type
 
@@ -189,7 +191,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
             }
             // Inline reference if present
-            if (col.references != null) {
+            if (col.references != null && (tableName to colName) !in deferredFks) {
                 parts += inlineForeignKey(col.references!!)
             }
             return parts.joinToString(" ")
@@ -206,7 +208,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             val allowed = type.values!!.joinToString(", ") { "'$it'" }
             parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
             // Inline reference if present
-            if (col.references != null) {
+            if (col.references != null && (tableName to colName) !in deferredFks) {
                 parts += inlineForeignKey(col.references!!)
             }
             return parts.joinToString(" ")
@@ -216,7 +218,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         if (type is NeutralType.Decimal) {
             notes += TransformationNote(
                 type = NoteType.WARNING,
-                code = "W101",
+                code = "W200",
                 objectName = "$tableName.$colName",
                 message = "Decimal(${type.precision},${type.scale}) mapped to REAL in SQLite. Precision may be lost.",
                 hint = "Store as TEXT if exact decimal precision is required."
@@ -225,7 +227,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
 
         // Default path: use base columnSql and then append inline FK if present
         val baseSql = columnSql(colName, col, schema)
-        return if (col.references != null) {
+        return if (col.references != null && (tableName to colName) !in deferredFks) {
             "$baseSql ${inlineForeignKey(col.references!!)}"
         } else {
             baseSql

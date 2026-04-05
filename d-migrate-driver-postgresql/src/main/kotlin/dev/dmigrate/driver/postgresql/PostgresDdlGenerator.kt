@@ -9,7 +9,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
     // ── Quoting ──────────────────────────────────
 
-    override fun quoteIdentifier(name: String): String = "\"$name\""
+    override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 
@@ -33,8 +33,16 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             }
             CustomTypeKind.DOMAIN -> {
                 val baseType = typeDef.baseType ?: return emptyList()
+                val sqlType = buildString {
+                    append(baseType.uppercase())
+                    if (typeDef.precision != null) {
+                        append("(${typeDef.precision}")
+                        if (typeDef.scale != null) append(",${typeDef.scale}")
+                        append(")")
+                    }
+                }
                 val sql = buildString {
-                    append("CREATE DOMAIN ${quoteIdentifier(name)} AS $baseType")
+                    append("CREATE DOMAIN ${quoteIdentifier(name)} AS $sqlType")
                     if (typeDef.check != null) {
                         append(" CHECK (${typeDef.check})")
                     }
@@ -57,11 +65,11 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement {
         val sql = buildString {
             append("CREATE SEQUENCE ${quoteIdentifier(name)}")
-            append(" START ${seq.start}")
-            append(" INCREMENT ${seq.increment}")
+            append(" START WITH ${seq.start}")
+            append(" INCREMENT BY ${seq.increment}")
             if (seq.minValue != null) append(" MINVALUE ${seq.minValue}")
             if (seq.maxValue != null) append(" MAXVALUE ${seq.maxValue}")
-            if (seq.cycle) append(" CYCLE")
+            if (seq.cycle) append(" CYCLE") else append(" NO CYCLE")
             if (seq.cache != null) append(" CACHE ${seq.cache}")
             append(";")
         }
@@ -73,7 +81,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     override fun generateTable(
         name: String,
         table: TableDefinition,
-        schema: SchemaDefinition
+        schema: SchemaDefinition,
+        deferredFks: Set<Pair<String, String>>
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
@@ -87,6 +96,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         // Inline foreign key constraints (non-circular, from column references)
         for ((colName, col) in table.columns) {
             val ref = col.references ?: continue
+            if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
         }
@@ -377,9 +387,13 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
         val params = fn.parameters.joinToString(", ") { param ->
             val direction = if (param.direction != ParameterDirection.IN) "${param.direction.name} " else ""
-            "$direction${quoteIdentifier(param.name)} ${ param.type}"
+            "$direction${quoteIdentifier(param.name)} ${param.type.uppercase()}"
         }
-        val returns = fn.returns?.let { " RETURNS ${it.type}" } ?: ""
+        val returns = fn.returns?.let {
+            val type = it.type.uppercase()
+            val params = if (it.precision != null) "(${it.precision}${if (it.scale != null) ",${it.scale}" else ""})" else ""
+            " RETURNS $type$params"
+        } ?: ""
         val language = fn.language ?: "plpgsql"
 
         val sql = buildString {
@@ -439,7 +453,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
         val params = proc.parameters.joinToString(", ") { param ->
             val direction = if (param.direction != ParameterDirection.IN) "${param.direction.name} " else ""
-            "$direction${quoteIdentifier(param.name)} ${param.type}"
+            "$direction${quoteIdentifier(param.name)} ${param.type.uppercase()}"
         }
         val language = proc.language ?: "plpgsql"
 
@@ -504,7 +518,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         }
 
         // PostgreSQL triggers require a separate trigger function
-        val funcName = "${name}_fn"
+        val funcName = "trg_fn_${name}"
         val statements = mutableListOf<DdlStatement>()
 
         // 1. Create trigger function

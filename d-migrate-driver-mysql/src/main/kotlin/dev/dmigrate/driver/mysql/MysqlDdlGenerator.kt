@@ -9,7 +9,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     // ── Quoting ──────────────────────────────────
 
-    override fun quoteIdentifier(name: String): String = "`$name`"
+    override fun quoteIdentifier(name: String): String = "`${name.replace("`", "``")}`"
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 
@@ -68,7 +68,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     override fun generateTable(
         name: String,
         table: TableDefinition,
-        schema: SchemaDefinition
+        schema: SchemaDefinition,
+        deferredFks: Set<Pair<String, String>>
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
@@ -77,11 +78,22 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // Columns
         for ((colName, col) in table.columns) {
             columnLines += generateColumnSql(colName, col, schema, notes)
+            // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
+            if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
+                notes += TransformationNote(
+                    type = NoteType.WARNING,
+                    code = "W100",
+                    objectName = "$name.$colName",
+                    message = "DATETIME with timezone on column '$colName' mapped to DATETIME in MySQL which does not support time zones.",
+                    hint = "Store timezone information in a separate column or use UTC consistently."
+                )
+            }
         }
 
         // Inline foreign key constraints (non-circular, from column references)
         for ((colName, col) in table.columns) {
             val ref = col.references ?: continue
+            if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
         }
@@ -106,7 +118,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             val partitioning = table.partitioning
             if (partitioning != null) {
                 append("\n")
-                append(generatePartitionClause(partitioning))
+                append(generatePartitionClause(partitioning, notes))
             }
             append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;")
         }
@@ -236,7 +248,16 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         }
     }
 
-    private fun generatePartitionClause(partitioning: PartitionConfig): String {
+    private fun generatePartitionClause(partitioning: PartitionConfig, notes: MutableList<TransformationNote>): String {
+        if (partitioning.type == PartitionType.RANGE) {
+            notes += TransformationNote(
+                type = NoteType.WARNING,
+                code = "W112",
+                objectName = partitioning.key.joinToString(","),
+                message = "RANGE partition expressions may need manual adjustment for MySQL (e.g., wrapping date columns with YEAR()).",
+                hint = "Review the partition key expressions and adjust for MySQL-specific syntax if needed."
+            )
+        }
         val key = partitioning.key.joinToString(", ") { quoteIdentifier(it) }
         return buildString {
             append("PARTITION BY ${partitioning.type.name} ($key)")
@@ -438,9 +459,13 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         val params = fn.parameters.joinToString(", ") { param ->
             val direction = if (param.direction != ParameterDirection.IN) "${param.direction.name} " else ""
-            "$direction${quoteIdentifier(param.name)} ${param.type}"
+            "$direction${quoteIdentifier(param.name)} ${param.type.uppercase()}"
         }
-        val returns = fn.returns?.let { "\nRETURNS ${it.type}" } ?: ""
+        val returns = fn.returns?.let {
+            val type = it.type.uppercase()
+            val typeParams = if (it.precision != null) "(${it.precision}${if (it.scale != null) ",${it.scale}" else ""})" else ""
+            "\nRETURNS $type$typeParams"
+        } ?: ""
         val deterministic = when (fn.deterministic) {
             true -> "\nDETERMINISTIC"
             false -> "\nNOT DETERMINISTIC"
@@ -507,7 +532,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         val params = proc.parameters.joinToString(", ") { param ->
             val direction = if (param.direction != ParameterDirection.IN) "${param.direction.name} " else ""
-            "$direction${quoteIdentifier(param.name)} ${param.type}"
+            "$direction${quoteIdentifier(param.name)} ${param.type.uppercase()}"
         }
 
         val sql = buildString {
