@@ -17,13 +17,35 @@ schema.yaml → d-migrate schema generate --target postgresql → CREATE TABLE .
 
 ### 2.1 `d-migrate-driver-api` (Port-Interface)
 
-Reines Interface-Modul. Hängt nur von `d-migrate-core` ab. Keine Implementierung.
+Reines Interface-Modul. Exportiert `d-migrate-core` transitiv an Consumer.
+
+**Gradle-Plugin**: Das API-Modul verwendet `java-library` statt nur `kotlin("jvm")`, damit `api(project(":d-migrate-core"))` die Core-Typen (SchemaDefinition, NeutralType, etc.) transitiv an die konkreten Treiber weitergibt. Ohne `java-library` sind die in den Interface-Signaturen verwendeten Core-Typen für Consumer nicht sichtbar.
+
+```kotlin
+// d-migrate-driver-api/build.gradle.kts
+plugins {
+    `java-library`
+}
+
+dependencies {
+    api(project(":d-migrate-core"))  // transitiv: Treiber sehen Core-Typen
+}
+```
+
+Die konkreten Treiber brauchen dann nur:
+```kotlin
+// d-migrate-driver-postgresql/build.gradle.kts
+dependencies {
+    implementation(project(":d-migrate-driver-api"))  // Core-Typen kommen transitiv mit
+}
+```
 
 ```
 d-migrate-driver-api/
 └── src/main/kotlin/dev/dmigrate/driver/
     ├── DatabaseDialect.kt        # Enum: POSTGRESQL, MYSQL, SQLITE
     ├── DdlGenerator.kt           # Port-Interface
+    ├── DdlStatement.kt           # Statement + zugehörige Notes
     └── TypeMapper.kt             # Port-Interface
 ```
 
@@ -32,13 +54,33 @@ d-migrate-driver-api/
 interface DdlGenerator {
     val dialect: DatabaseDialect
     fun generate(schema: SchemaDefinition): DdlResult
+    fun generateRollback(schema: SchemaDefinition): DdlResult
 }
 
 data class DdlResult(
-    val statements: List<String>,           // Geordnete DDL-Statements
-    val notes: List<TransformationNote>,    // Warnungen und Hinweise
+    val statements: List<DdlStatement>,     // Geordnete Statements MIT zugehörigen Notes
     val skippedObjects: List<SkippedObject>  // Übersprungene Objekte (action_required)
-)
+) {
+    /** Alle Notes aus allen Statements aggregiert */
+    val notes: List<TransformationNote> get() = statements.flatMap { it.notes }
+}
+
+/**
+ * Ein DDL-Statement mit zugehörigen Transformationshinweisen.
+ * Die Notes werden als SQL-Kommentare direkt vor dem Statement gerendert.
+ */
+data class DdlStatement(
+    val sql: String,
+    val notes: List<TransformationNote> = emptyList()
+) {
+    /** Rendert Notes als Kommentare + Statement */
+    fun render(): String = buildString {
+        for (note in notes) {
+            appendLine("-- [${note.code}] ${note.message}")
+        }
+        append(sql)
+    }
+}
 
 data class TransformationNote(
     val type: NoteType,                     // INFO, WARNING, ACTION_REQUIRED
@@ -115,30 +157,48 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val source by option("--source").path(mustExist = true).required()
     val target by option("--target").choice("postgresql", "postgres", "mysql", "maria", "mariadb", "sqlite").required()
     val output by option("--output").path()
+    val report by option("--report").path()
     val generateRollback by option("--generate-rollback").flag()
 
     override fun run() {
         // 1. YAML lesen
         // 2. Schema validieren
         // 3. Dialekt normalisieren
-        // 4. DdlGenerator via ServiceLoader oder Registry laden
-        // 5. DDL generieren
-        // 6. Output schreiben (stdout oder --output Datei)
-        // 7. Report schreiben (wenn --output: Sidecar .report.yaml)
-        // 8. Warnungen nach stderr
+        // 4. DdlGenerator via Registry laden
+        // 5. DDL generieren (Up-Statements)
+        // 6. Optional: Rollback generieren (Down-Statements via generateRollback())
+        // 7. Output schreiben (stdout oder --output Datei)
+        //    Bei --generate-rollback: <name>.rollback.sql als Sidecar
+        // 8. Report schreiben (--report oder <output>.report.yaml)
+        // 9. Warnungen nach stderr
     }
 }
 ```
 
+**Rollback-Ausgabe**: Wenn `--generate-rollback` und `--output` gesetzt:
+- `schema.sql` — Up-Statements
+- `schema.rollback.sql` — Down-Statements (inverse Reihenfolge)
+- `schema.report.yaml` — Transformations-Report
+
+Ohne `--output` werden Up- und Down-Statements beide nach stdout geschrieben, getrennt durch `-- ROLLBACK` Marker.
+
 ### 3.3 `d-migrate-formats`
 
-Neues `ReportCodec` zum Schreiben des Transformations-Reports als YAML:
+Neues `TransformationReportWriter` zum Schreiben des Reports als YAML:
 
 ```kotlin
 class TransformationReportWriter {
-    fun write(output: Path, result: DdlResult, schema: SchemaDefinition, dialect: String)
+    fun write(
+        output: Path,
+        result: DdlResult,
+        schema: SchemaDefinition,
+        dialect: String,
+        sourceFile: Path       // Quellpfad für Report (docs/ddl-generation-rules.md §14.2)
+    )
 }
 ```
+
+Der Report enthält `source.file` mit dem Pfad zur Schema-Datei, wie in der DDL-Generierungsregeln-Spezifikation §14.2 gefordert.
 
 ### 3.4 `settings.gradle.kts`
 
@@ -157,10 +217,11 @@ include("d-migrate-cli")
 ### Phase A: Driver-API-Modul
 
 1. `settings.gradle.kts` um 4 neue Module erweitern
-2. `d-migrate-driver-api/build.gradle.kts` — nur `d-migrate-core` Dependency
+2. `d-migrate-driver-api/build.gradle.kts` — `java-library` Plugin + `api(project(":d-migrate-core"))`
 3. `DatabaseDialect.kt` — Enum mit Normalisierung (`postgres` → `POSTGRESQL`)
 4. `TypeMapper.kt` — Interface
-5. `DdlGenerator.kt` — Interface + `DdlResult`, `TransformationNote`, `SkippedObject`
+5. `DdlGenerator.kt` — Interface + `DdlResult`, `DdlStatement`, `TransformationNote`, `SkippedObject`
+6. `AbstractDdlGenerator.kt` — Basisklasse mit topologischer Sortierung, Rollback-Invertierung
 
 ### Phase B: TypeMapper pro Dialekt
 
@@ -207,20 +268,44 @@ Jeder Generator implementiert:
 ## 5. Abhängigkeiten zwischen Modulen
 
 ```
+d-migrate-driver-api
+└── api(d-migrate-core)              # transitiv: Core-Typen sichtbar für Consumer
+
+d-migrate-driver-postgresql
+└── implementation(d-migrate-driver-api)  # Core-Typen kommen transitiv mit
+
+d-migrate-driver-mysql
+└── implementation(d-migrate-driver-api)
+
+d-migrate-driver-sqlite
+└── implementation(d-migrate-driver-api)
+
 d-migrate-cli
-├── d-migrate-core
-├── d-migrate-formats
-├── d-migrate-driver-api ──▶ d-migrate-core
-├── d-migrate-driver-postgresql ──▶ d-migrate-driver-api
-├── d-migrate-driver-mysql ──▶ d-migrate-driver-api
-└── d-migrate-driver-sqlite ──▶ d-migrate-driver-api
+├── implementation(d-migrate-core)
+├── implementation(d-migrate-formats)
+├── implementation(d-migrate-driver-api)
+├── implementation(d-migrate-driver-postgresql)
+├── implementation(d-migrate-driver-mysql)
+└── implementation(d-migrate-driver-sqlite)
 ```
+
+**Wichtig**: `d-migrate-driver-api` verwendet das `java-library`-Plugin und exportiert `d-migrate-core` via `api()`. Die konkreten Treiber brauchen deshalb **keine** direkte Dependency auf `d-migrate-core`.
 
 ## 6. Zentrale Design-Entscheidungen
 
-### 6.1 DdlGenerator-Registrierung
+### 6.1 Abweichung von der Architektur-Spezifikation
 
-Kein ServiceLoader für 0.2.0 — stattdessen eine einfache Registry in der CLI:
+> **Bewusste temporäre Abweichung**: Die Architektur (architecture.md §3.1) beschreibt ein `SchemaWriter`-Interface mit `generateDdl()` und `generateRollback()` plus ServiceLoader-Registrierung. Für 0.2.0 verwenden wir stattdessen ein schlankeres `DdlGenerator`-Interface mit einer einfachen CLI-Registry. Begründung:
+>
+> - `SchemaWriter` in der Architektur umfasst auch `generateMigration(diff)` — Diff-basierte Migrationen sind erst für 0.5.0 geplant
+> - ServiceLoader erfordert META-INF/services-Dateien und erschwert GraalVM Native Image — beides irrelevant solange keine externen Treiber existieren
+> - Die Registry wird in 0.6.0 durch ServiceLoader ersetzt, wenn Oracle/MSSQL-Treiber als separate JARs hinzukommen
+>
+> Das `DdlGenerator`-Interface ist so designed, dass es in Zukunft als Implementierung von `SchemaWriter.generateDdl()` und `SchemaWriter.generateRollback()` wiederverwendet werden kann.
+
+### 6.2 DdlGenerator-Registrierung
+
+Einfache Registry in der CLI (kein ServiceLoader für 0.2.0):
 
 ```kotlin
 object DdlGeneratorRegistry {
@@ -237,7 +322,7 @@ object DdlGeneratorRegistry {
 
 ServiceLoader wird erst relevant wenn externe Treiber als JARs hinzugefügt werden (0.6.0+).
 
-### 6.2 DdlGenerator-Architektur
+### 6.3 DdlGenerator-Architektur
 
 Jeder Generator erbt von einer abstrakten Basisklasse die das Ordering und die Gesamtstruktur vorgibt:
 
@@ -247,53 +332,98 @@ abstract class AbstractDdlGenerator(
 ) : DdlGenerator {
 
     override fun generate(schema: SchemaDefinition): DdlResult {
-        val statements = mutableListOf<String>()
-        val notes = mutableListOf<TransformationNote>()
+        val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
 
         statements += generateHeader(schema)
-        statements += generateCustomTypes(schema.customTypes, notes)
-        statements += generateSequences(schema.sequences, notes, skipped)
+        statements += generateCustomTypes(schema.customTypes)
+        statements += generateSequences(schema.sequences, skipped)
 
-        val sortedTables = topologicalSort(schema.tables)
-        for ((name, table) in sortedTables) {
-            statements += generateTable(name, table, schema, notes)
+        val (sorted, circularEdges) = topologicalSort(schema.tables)
+        for ((name, table) in sorted) {
+            statements += generateTable(name, table, schema)
         }
-        for ((name, table) in sortedTables) {
-            statements += generateIndices(name, table, notes)
+        for ((name, table) in sorted) {
+            statements += generateIndices(name, table)
         }
-        // Zirkuläre FK-Constraints nachträglich
-        statements += generateDeferredConstraints(schema.tables, notes)
+        // Zirkuläre FK-Constraints — dialektspezifisch
+        statements += handleCircularReferences(circularEdges, skipped)
 
-        statements += generateViews(schema.views, notes, skipped)
-        statements += generateFunctions(schema.functions, notes, skipped)
-        statements += generateProcedures(schema.procedures, notes, skipped)
-        statements += generateTriggers(schema.triggers, schema.tables, notes, skipped)
+        statements += generateViews(schema.views, skipped)
+        statements += generateFunctions(schema.functions, skipped)
+        statements += generateProcedures(schema.procedures, skipped)
+        statements += generateTriggers(schema.triggers, schema.tables, skipped)
 
-        return DdlResult(statements, notes, skipped)
+        return DdlResult(statements, skipped)
+    }
+
+    override fun generateRollback(schema: SchemaDefinition): DdlResult {
+        // Inverse Reihenfolge: Triggers → Procedures → Functions → Views → Indices → Tables → Sequences → Types
+        // Jedes Up-Statement wird in sein Down-Statement invertiert (siehe ddl-generation-rules.md §12)
+        val up = generate(schema)
+        val downStatements = up.statements.reversed().mapNotNull { invertStatement(it) }
+        return DdlResult(downStatements, emptyList())
     }
 
     // Abstrakte Methoden die jeder Dialekt implementiert:
     abstract fun quoteIdentifier(name: String): String
-    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, notes: MutableList<TransformationNote>): List<String>
-    abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, notes: MutableList<TransformationNote>): List<String>
+    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition): List<DdlStatement>
+    abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
+    abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     // ... etc.
 
     // Gemeinsame Logik:
-    protected fun topologicalSort(tables: Map<String, TableDefinition>): List<Pair<String, TableDefinition>> { ... }
-    protected fun generateHeader(schema: SchemaDefinition): List<String> { ... }
+    protected fun topologicalSort(tables: Map<String, TableDefinition>): TopologicalSortResult { ... }
+    protected fun generateHeader(schema: SchemaDefinition): List<DdlStatement> { ... }
+    protected open fun invertStatement(stmt: DdlStatement): DdlStatement? { ... }
 }
+
+data class TopologicalSortResult(
+    val sorted: List<Pair<String, TableDefinition>>,
+    val circularEdges: List<CircularFkEdge>
+)
+
+data class CircularFkEdge(
+    val fromTable: String,
+    val fromColumn: String,
+    val toTable: String,
+    val toColumn: String
+)
 ```
 
-### 6.3 Topologische Sortierung
+Notes werden direkt an `DdlStatement` angehängt (nicht separat gesammelt), sodass die Zuordnung "welche Note gehört vor welches Statement" erhalten bleibt. Beim Rendern erzeugt `DdlStatement.render()` automatisch die Inline-Kommentare vor dem SQL.
+
+### 6.3 Topologische Sortierung und zirkuläre FKs
 
 Tabellen werden nach FK-Abhängigkeiten sortiert. Algorithmus:
 
 1. Abhängigkeitsgraph aus `references`-Feldern aufbauen
 2. Kahn's Algorithmus (BFS-basiert) für topologische Sortierung
-3. Zirkuläre Referenzen erkennen → diese FKs werden als nachträgliche `ALTER TABLE ADD CONSTRAINT` emittiert
+3. Zirkuläre Referenzen erkennen
 
-### 6.4 View-Query-Transformation
+**Dialektspezifische Behandlung zirkulärer FKs:**
+
+| Dialekt | Verhalten | Begründung |
+|---|---|---|
+| PostgreSQL | Zirkuläre FKs als nachträgliches `ALTER TABLE ADD CONSTRAINT` | PostgreSQL unterstützt deferred constraints |
+| MySQL | Zirkuläre FKs als nachträgliches `ALTER TABLE ADD CONSTRAINT` | MySQL unterstützt ADD CONSTRAINT |
+| SQLite | **Fehler (E019)** — DDL-Generierung bricht für dieses Schema ab | SQLite unterstützt kein `ALTER TABLE ADD CONSTRAINT`; FKs müssen inline sein. Zirkuläre Schemas sind in SQLite nicht darstellbar. |
+
+Die Basisklasse ruft `handleCircularReferences()` auf, das von jedem Dialekt überschrieben wird:
+
+```kotlin
+abstract class AbstractDdlGenerator {
+    // PostgreSQL/MySQL: ALTER TABLE ADD CONSTRAINT
+    // SQLite: Error E019 "Circular foreign keys not supported for SQLite"
+    abstract fun handleCircularReferences(
+        circularEdges: List<CircularFkEdge>,
+        notes: MutableList<TransformationNote>,
+        skipped: MutableList<SkippedObject>
+    ): List<DdlStatement>
+}
+```
+
+### 6.5 View-Query-Transformation
 
 Einfache String-Substitution (kein SQL-Parser):
 
@@ -305,7 +435,7 @@ class ViewQueryTransformer(val dialect: DatabaseDialect) {
 
 Transformationsregeln aus ddl-generation-rules.md §8.3 (17 Funktionen).
 
-### 6.5 Quoting-Helfer
+### 6.6 Quoting-Helfer
 
 ```kotlin
 interface DialectQuoting {
@@ -407,7 +537,8 @@ docker run --rm -v $(pwd):/work dmigrate/d-migrate schema generate --source /wor
 
 | Risiko | Mitigation |
 |---|---|
-| Topologische Sortierung bei zirkulären FKs | Kahn's Algorithmus erkennt Zyklen; zirkuläre FKs als ALTER TABLE |
+| Zirkuläre FKs bei PostgreSQL/MySQL | Kahn's Algorithmus erkennt Zyklen; deferred ALTER TABLE ADD CONSTRAINT |
+| Zirkuläre FKs bei SQLite | Fehler E019 — SQLite unterstützt kein ADD CONSTRAINT; Schema muss angepasst werden |
 | View-Query-Transformation unvollständig | Best-Effort + W111 Warnung bei unbekannten Funktionen |
 | DELIMITER-Handling bei MySQL verschachtelt | Pro-Statement-Wrapping, kein Nesting |
 | Golden Masters brechen bei Format-Änderungen | Header-Zeilen beim Vergleich ignorieren |
