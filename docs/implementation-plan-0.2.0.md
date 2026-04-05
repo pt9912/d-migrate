@@ -1,0 +1,421 @@
+# Implementierungsplan: Milestone 0.2.0 — DDL-Generierung
+
+> Dieses Dokument beschreibt den konkreten Implementierungsplan für Milestone 0.2.0.
+> Es dient als Review-Grundlage vor Beginn der Umsetzung.
+
+---
+
+## 1. Ziel
+
+Aus neutralen YAML-Schema-Definitionen datenbankspezifisches DDL für PostgreSQL, MySQL und SQLite generieren.
+
+```
+schema.yaml → d-migrate schema generate --target postgresql → CREATE TABLE ...
+```
+
+## 2. Neue Module
+
+### 2.1 `d-migrate-driver-api` (Port-Interface)
+
+Reines Interface-Modul. Hängt nur von `d-migrate-core` ab. Keine Implementierung.
+
+```
+d-migrate-driver-api/
+└── src/main/kotlin/dev/dmigrate/driver/
+    ├── DatabaseDialect.kt        # Enum: POSTGRESQL, MYSQL, SQLITE
+    ├── DdlGenerator.kt           # Port-Interface
+    └── TypeMapper.kt             # Port-Interface
+```
+
+**`DdlGenerator`** (neues Interface):
+```kotlin
+interface DdlGenerator {
+    val dialect: DatabaseDialect
+    fun generate(schema: SchemaDefinition): DdlResult
+}
+
+data class DdlResult(
+    val statements: List<String>,           // Geordnete DDL-Statements
+    val notes: List<TransformationNote>,    // Warnungen und Hinweise
+    val skippedObjects: List<SkippedObject>  // Übersprungene Objekte (action_required)
+)
+
+data class TransformationNote(
+    val type: NoteType,                     // INFO, WARNING, ACTION_REQUIRED
+    val code: String,                       // W100, W102, E052, etc.
+    val objectName: String,
+    val message: String,
+    val hint: String? = null
+)
+
+enum class NoteType { INFO, WARNING, ACTION_REQUIRED }
+
+data class SkippedObject(
+    val type: String,                       // "function", "trigger", etc.
+    val name: String,
+    val reason: String
+)
+```
+
+**`TypeMapper`** (neues Interface):
+```kotlin
+interface TypeMapper {
+    val dialect: DatabaseDialect
+    fun toSql(type: NeutralType): String
+    fun toDefaultSql(default: DefaultValue, type: NeutralType): String
+}
+```
+
+### 2.2 `d-migrate-driver-postgresql`
+
+```
+d-migrate-driver-postgresql/
+└── src/main/kotlin/dev/dmigrate/driver/postgresql/
+    ├── PostgresTypeMapper.kt
+    ├── PostgresDdlGenerator.kt
+    └── PostgresDialect.kt        # Quoting, reservierte Wörter
+```
+
+### 2.3 `d-migrate-driver-mysql`
+
+```
+d-migrate-driver-mysql/
+└── src/main/kotlin/dev/dmigrate/driver/mysql/
+    ├── MysqlTypeMapper.kt
+    ├── MysqlDdlGenerator.kt
+    └── MysqlDialect.kt
+```
+
+### 2.4 `d-migrate-driver-sqlite`
+
+```
+d-migrate-driver-sqlite/
+└── src/main/kotlin/dev/dmigrate/driver/sqlite/
+    ├── SqliteTypeMapper.kt
+    ├── SqliteDdlGenerator.kt
+    └── SqliteDialect.kt
+```
+
+## 3. Bestehende Module — Änderungen
+
+### 3.1 `d-migrate-core`
+
+Keine Änderungen am Modell nötig. Alles was der DDL-Generator braucht, existiert bereits:
+- `SchemaDefinition`, `TableDefinition`, `ColumnDefinition`, `NeutralType` (18 Typen)
+- `IndexDefinition`, `ConstraintDefinition`, `CustomTypeDefinition`
+- `PartitionConfig`, `ReferenceDefinition`, `DefaultValue`
+- `ViewDefinition`, `FunctionDefinition`, `ProcedureDefinition`, `TriggerDefinition`, `SequenceDefinition`
+
+### 3.2 `d-migrate-cli`
+
+Neues Kommando `SchemaGenerateCommand` in `SchemaCommands.kt`:
+
+```kotlin
+class SchemaGenerateCommand : CliktCommand(name = "generate") {
+    val source by option("--source").path(mustExist = true).required()
+    val target by option("--target").choice("postgresql", "postgres", "mysql", "maria", "mariadb", "sqlite").required()
+    val output by option("--output").path()
+    val generateRollback by option("--generate-rollback").flag()
+
+    override fun run() {
+        // 1. YAML lesen
+        // 2. Schema validieren
+        // 3. Dialekt normalisieren
+        // 4. DdlGenerator via ServiceLoader oder Registry laden
+        // 5. DDL generieren
+        // 6. Output schreiben (stdout oder --output Datei)
+        // 7. Report schreiben (wenn --output: Sidecar .report.yaml)
+        // 8. Warnungen nach stderr
+    }
+}
+```
+
+### 3.3 `d-migrate-formats`
+
+Neues `ReportCodec` zum Schreiben des Transformations-Reports als YAML:
+
+```kotlin
+class TransformationReportWriter {
+    fun write(output: Path, result: DdlResult, schema: SchemaDefinition, dialect: String)
+}
+```
+
+### 3.4 `settings.gradle.kts`
+
+```kotlin
+include("d-migrate-core")
+include("d-migrate-driver-api")
+include("d-migrate-driver-postgresql")
+include("d-migrate-driver-mysql")
+include("d-migrate-driver-sqlite")
+include("d-migrate-formats")
+include("d-migrate-cli")
+```
+
+## 4. Implementierungsreihenfolge
+
+### Phase A: Driver-API-Modul
+
+1. `settings.gradle.kts` um 4 neue Module erweitern
+2. `d-migrate-driver-api/build.gradle.kts` — nur `d-migrate-core` Dependency
+3. `DatabaseDialect.kt` — Enum mit Normalisierung (`postgres` → `POSTGRESQL`)
+4. `TypeMapper.kt` — Interface
+5. `DdlGenerator.kt` — Interface + `DdlResult`, `TransformationNote`, `SkippedObject`
+
+### Phase B: TypeMapper pro Dialekt
+
+Jeder TypeMapper implementiert die vollständige Typ-Mapping-Tabelle aus neutral-model-spec.md §3:
+
+6. `PostgresTypeMapper` — 18 Typen → PostgreSQL SQL (SERIAL, JSONB, BOOLEAN, etc.)
+7. `MysqlTypeMapper` — 18 Typen → MySQL SQL (AUTO_INCREMENT, JSON, TINYINT(1), etc.)
+8. `SqliteTypeMapper` — 18 Typen → SQLite SQL (INTEGER, TEXT, REAL, BLOB)
+9. `TypeMapperTest` pro Dialekt — **100% Coverage** über alle 18 Typen
+
+### Phase C: DdlGenerator pro Dialekt
+
+Jeder Generator implementiert:
+- Header-Kommentar
+- Custom Types (CREATE TYPE / inline ENUM / CHECK)
+- Sequences (CREATE SEQUENCE / Emulation)
+- Tabellen (topologisch sortiert, Spalten, Constraints)
+- Indizes (BTREE, HASH, etc. mit Fallback)
+- Views (Query-Transformation)
+- Functions/Procedures (Hülle + Body/action_required)
+- Triggers (inkl. PostgreSQL Trigger-Function-Split)
+
+10. `PostgresDdlGenerator` — Quoting `"`, CREATE TYPE, SERIAL, $$-Blocks
+11. `MysqlDdlGenerator` — Quoting `` ` ``, DELIMITER, ENGINE=InnoDB, CHARSET
+12. `SqliteDdlGenerator` — Quoting `"`, inline FK, TEXT+CHECK für Enums
+
+### Phase D: CLI-Integration
+
+13. `SchemaGenerateCommand` in `SchemaCommands.kt` registrieren
+14. `TransformationReportWriter` in `d-migrate-formats`
+15. `OutputFormatter` erweitern für DDL-Generate-Output (JSON/YAML-Format)
+16. Dialekt-Registry: Mapping von String → DdlGenerator
+
+### Phase E: Golden-Master-Tests
+
+17. 12 Golden-Master-Dateien erstellen:
+    - `minimal.postgresql.sql`, `minimal.mysql.sql`, `minimal.sqlite.sql`
+    - `e-commerce.postgresql.sql`, `e-commerce.mysql.sql`, `e-commerce.sqlite.sql`
+    - `all-types.postgresql.sql`, `all-types.mysql.sql`, `all-types.sqlite.sql`
+    - `full-featured.postgresql.sql`, `full-featured.mysql.sql`, `full-featured.sqlite.sql`
+18. `DdlGoldenMasterTest` — 12 parametrisierte Tests
+19. CLI-Integration-Tests für `schema generate`
+
+## 5. Abhängigkeiten zwischen Modulen
+
+```
+d-migrate-cli
+├── d-migrate-core
+├── d-migrate-formats
+├── d-migrate-driver-api ──▶ d-migrate-core
+├── d-migrate-driver-postgresql ──▶ d-migrate-driver-api
+├── d-migrate-driver-mysql ──▶ d-migrate-driver-api
+└── d-migrate-driver-sqlite ──▶ d-migrate-driver-api
+```
+
+## 6. Zentrale Design-Entscheidungen
+
+### 6.1 DdlGenerator-Registrierung
+
+Kein ServiceLoader für 0.2.0 — stattdessen eine einfache Registry in der CLI:
+
+```kotlin
+object DdlGeneratorRegistry {
+    private val generators = mapOf(
+        DatabaseDialect.POSTGRESQL to { PostgresDdlGenerator() },
+        DatabaseDialect.MYSQL to { MysqlDdlGenerator() },
+        DatabaseDialect.SQLITE to { SqliteDdlGenerator() }
+    )
+
+    fun get(dialect: DatabaseDialect): DdlGenerator =
+        generators[dialect]?.invoke() ?: throw IllegalArgumentException("Unsupported dialect: $dialect")
+}
+```
+
+ServiceLoader wird erst relevant wenn externe Treiber als JARs hinzugefügt werden (0.6.0+).
+
+### 6.2 DdlGenerator-Architektur
+
+Jeder Generator erbt von einer abstrakten Basisklasse die das Ordering und die Gesamtstruktur vorgibt:
+
+```kotlin
+abstract class AbstractDdlGenerator(
+    protected val typeMapper: TypeMapper
+) : DdlGenerator {
+
+    override fun generate(schema: SchemaDefinition): DdlResult {
+        val statements = mutableListOf<String>()
+        val notes = mutableListOf<TransformationNote>()
+        val skipped = mutableListOf<SkippedObject>()
+
+        statements += generateHeader(schema)
+        statements += generateCustomTypes(schema.customTypes, notes)
+        statements += generateSequences(schema.sequences, notes, skipped)
+
+        val sortedTables = topologicalSort(schema.tables)
+        for ((name, table) in sortedTables) {
+            statements += generateTable(name, table, schema, notes)
+        }
+        for ((name, table) in sortedTables) {
+            statements += generateIndices(name, table, notes)
+        }
+        // Zirkuläre FK-Constraints nachträglich
+        statements += generateDeferredConstraints(schema.tables, notes)
+
+        statements += generateViews(schema.views, notes, skipped)
+        statements += generateFunctions(schema.functions, notes, skipped)
+        statements += generateProcedures(schema.procedures, notes, skipped)
+        statements += generateTriggers(schema.triggers, schema.tables, notes, skipped)
+
+        return DdlResult(statements, notes, skipped)
+    }
+
+    // Abstrakte Methoden die jeder Dialekt implementiert:
+    abstract fun quoteIdentifier(name: String): String
+    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, notes: MutableList<TransformationNote>): List<String>
+    abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>, notes: MutableList<TransformationNote>): List<String>
+    // ... etc.
+
+    // Gemeinsame Logik:
+    protected fun topologicalSort(tables: Map<String, TableDefinition>): List<Pair<String, TableDefinition>> { ... }
+    protected fun generateHeader(schema: SchemaDefinition): List<String> { ... }
+}
+```
+
+### 6.3 Topologische Sortierung
+
+Tabellen werden nach FK-Abhängigkeiten sortiert. Algorithmus:
+
+1. Abhängigkeitsgraph aus `references`-Feldern aufbauen
+2. Kahn's Algorithmus (BFS-basiert) für topologische Sortierung
+3. Zirkuläre Referenzen erkennen → diese FKs werden als nachträgliche `ALTER TABLE ADD CONSTRAINT` emittiert
+
+### 6.4 View-Query-Transformation
+
+Einfache String-Substitution (kein SQL-Parser):
+
+```kotlin
+class ViewQueryTransformer(val dialect: DatabaseDialect) {
+    fun transform(query: String, sourceDialect: String?): Pair<String, List<TransformationNote>>
+}
+```
+
+Transformationsregeln aus ddl-generation-rules.md §8.3 (17 Funktionen).
+
+### 6.5 Quoting-Helfer
+
+```kotlin
+interface DialectQuoting {
+    val quoteChar: kotlin.Char
+    fun quote(identifier: String): String = "$quoteChar${identifier.replace("$quoteChar", "$quoteChar$quoteChar")}$quoteChar"
+}
+```
+
+## 7. Dateien (geschätzt ~35 neue Dateien)
+
+```
+# Neue Module
+d-migrate-driver-api/build.gradle.kts
+d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/DatabaseDialect.kt
+d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/DdlGenerator.kt
+d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/TypeMapper.kt
+d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt
+
+d-migrate-driver-postgresql/build.gradle.kts
+d-migrate-driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMapper.kt
+d-migrate-driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt
+d-migrate-driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMapperTest.kt
+d-migrate-driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorTest.kt
+
+d-migrate-driver-mysql/build.gradle.kts
+d-migrate-driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlTypeMapper.kt
+d-migrate-driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt
+d-migrate-driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlTypeMapperTest.kt
+d-migrate-driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt
+
+d-migrate-driver-sqlite/build.gradle.kts
+d-migrate-driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapper.kt
+d-migrate-driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt
+d-migrate-driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapperTest.kt
+d-migrate-driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGeneratorTest.kt
+
+# Geänderte Dateien
+settings.gradle.kts                                          # +4 Module
+d-migrate-cli/build.gradle.kts                               # +3 Driver Dependencies
+d-migrate-cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCommands.kt  # +SchemaGenerateCommand
+d-migrate-formats/src/main/kotlin/dev/dmigrate/format/TransformationReportWriter.kt
+
+# Golden Masters (12 Dateien)
+d-migrate-formats/src/test/resources/fixtures/ddl/minimal.postgresql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/minimal.mysql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/minimal.sqlite.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/e-commerce.postgresql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/e-commerce.mysql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/e-commerce.sqlite.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/all-types.postgresql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/all-types.mysql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/all-types.sqlite.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/full-featured.postgresql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/full-featured.mysql.sql
+d-migrate-formats/src/test/resources/fixtures/ddl/full-featured.sqlite.sql
+
+# Tests
+d-migrate-driver-api/src/test/kotlin/.../DdlGeneratorTest.kt  # Topologische Sortierung
+d-migrate-formats/src/test/kotlin/.../DdlGoldenMasterTest.kt  # 12 parametrisierte Tests
+d-migrate-cli/src/test/kotlin/dev/dmigrate/cli/CliGenerateTest.kt
+```
+
+## 8. Coverage-Ziele
+
+| Modul | Ziel | Schwerpunkt |
+|---|---|---|
+| d-migrate-driver-api | 90% | Topologische Sortierung, DdlResult |
+| d-migrate-driver-postgresql | 90% | TypeMapper 100%, DdlGenerator Kernpfade |
+| d-migrate-driver-mysql | 90% | TypeMapper 100%, DELIMITER-Handling |
+| d-migrate-driver-sqlite | 90% | TypeMapper 100%, Inline-FK, CHECK-Enums |
+| d-migrate-cli | 50% → 60% | +SchemaGenerateCommand Tests |
+
+**TypeMapper-Tests: 100% Coverage** — jeder der 18 neutralen Typen wird in jedem Dialekt getestet.
+
+## 9. Verifikation
+
+```bash
+# Kompilierung aller Module
+./gradlew build
+
+# TypeMapper-Tests (100% Coverage)
+./gradlew :d-migrate-driver-postgresql:test :d-migrate-driver-mysql:test :d-migrate-driver-sqlite:test
+
+# Golden-Master-Tests
+./gradlew :d-migrate-formats:test --tests "*GoldenMaster*"
+
+# Coverage
+./gradlew :d-migrate-driver-api:koverVerify :d-migrate-driver-postgresql:koverVerify :d-migrate-driver-mysql:koverVerify :d-migrate-driver-sqlite:koverVerify
+
+# CLI Smoke-Test
+./gradlew :d-migrate-cli:run --args="schema generate --source d-migrate-formats/src/test/resources/fixtures/schemas/e-commerce.yaml --target postgresql"
+
+# Docker
+./gradlew :d-migrate-cli:jibDockerBuild
+docker run --rm -v $(pwd):/work dmigrate/d-migrate schema generate --source /work/schema.yaml --target mysql
+```
+
+## 10. Risiken
+
+| Risiko | Mitigation |
+|---|---|
+| Topologische Sortierung bei zirkulären FKs | Kahn's Algorithmus erkennt Zyklen; zirkuläre FKs als ALTER TABLE |
+| View-Query-Transformation unvollständig | Best-Effort + W111 Warnung bei unbekannten Funktionen |
+| DELIMITER-Handling bei MySQL verschachtelt | Pro-Statement-Wrapping, kein Nesting |
+| Golden Masters brechen bei Format-Änderungen | Header-Zeilen beim Vergleich ignorieren |
+
+---
+
+**Referenzen**:
+- [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Ordering, Dialekt-Regeln
+- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typ-Mapping-Tabelle §3
+- [CLI-Spezifikation](./cli-spec.md) — `schema generate` Command
+- [Architektur](./architecture.md) — Modul-Struktur, TypeMapper §3.4, SchemaWriter §3.1
