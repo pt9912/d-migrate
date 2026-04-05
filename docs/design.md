@@ -1,6 +1,6 @@
 # Design-Dokument: d-migrate
 
-**Framework für datenbankunabhängige Migrationen und Datenverwaltung**
+**CLI-Tool für datenbankunabhängige Migrationen und Datenverwaltung**
 
 > Dokumenttyp: Zieldesign / Soll-Zustand
 >

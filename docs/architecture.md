@@ -1,6 +1,6 @@
 # Architektur-Dokument: d-migrate
 
-**Framework für datenbankunabhängige Migrationen und Datenverwaltung**
+**CLI-Tool für datenbankunabhängige Migrationen und Datenverwaltung**
 
 > Dokumenttyp: Zielarchitektur / Soll-Zustand
 >

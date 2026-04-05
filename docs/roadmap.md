@@ -1,6 +1,6 @@
 # Roadmap: d-migrate
 
-**Framework für datenbankunabhängige Migrationen und Datenverwaltung**
+**CLI-Tool für datenbankunabhängige Migrationen und Datenverwaltung**
 
 ---
 
