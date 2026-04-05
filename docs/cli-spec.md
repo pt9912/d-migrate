@@ -3,6 +3,8 @@
 **Kommandozeilen-Schnittstelle — Referenz für Implementierung und Nutzung**
 
 > Dokumenttyp: Spezifikation / Referenz
+>
+> **Implementierungsstatus**: Aktuell ist nur `schema validate` implementiert (Milestone 0.1.0). Alle weiteren Kommandos sind für spätere Milestones geplant und hier als Spezifikation dokumentiert.
 
 ---
 
@@ -218,6 +220,7 @@ W200 - W299: Performance-Warnungen
 | E015 | array: element_type is required | Attribut ergänzen |
 | E016 | Partition key references non-existent column | Spaltenname prüfen |
 | E017 | Foreign key type incompatible with referenced column | Typen angleichen |
+| E018 | Trigger references non-existent table | Tabellennamen prüfen |
 
 ### 4.3 Validierungswarnungen (W001-W099)
 
@@ -301,7 +304,7 @@ Jede Fehlermeldung enthält:
 
 ### 6.1 schema
 
-#### `schema validate`
+#### `schema validate` ✅
 
 Validiert eine Schema-Definition.
 
@@ -315,7 +318,7 @@ d-migrate schema validate --source <path>
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
-#### `schema generate`
+#### `schema generate` *(geplant: 0.2.0)*
 
 Generiert datenbankspezifisches DDL aus einer Schema-Definition.
 
@@ -334,7 +337,7 @@ Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
 
 Exit: `0` bei Erfolg. DDL wird nach stdout geschrieben (oder in `--output` Datei).
 
-#### `schema reverse`
+#### `schema reverse` *(geplant: 0.6.0)*
 
 Reverse-Engineering einer bestehenden Datenbank.
 
@@ -355,7 +358,7 @@ d-migrate schema reverse --source <url|path> [--source-dialect <dialect>] --outp
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema compare`
+#### `schema compare` *(geplant: 0.5.0)*
 
 Vergleicht zwei Schemas und zeigt Unterschiede.
 
@@ -371,7 +374,7 @@ d-migrate schema compare --source <path|url> --target <path|url>
 
 Exit: `0` wenn identisch, `1` wenn Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`), `3` bei Validierungsfehlern.
 
-#### `schema migrate`
+#### `schema migrate` *(geplant: 0.5.0)*
 
 Generiert Migrationsskript (Up + optional Down) aus Schema-Diff.
 
@@ -388,7 +391,7 @@ d-migrate schema migrate --source <path> --target <url> [--generate-rollback]
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema rollback`
+#### `schema rollback` *(geplant: 0.5.0)*
 
 Führt ein Rollback-Migrationsskript gegen eine Datenbank aus.
 
@@ -406,7 +409,7 @@ Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Migrationsfehlern.
 
 ### 6.2 data
 
-#### `data export`
+#### `data export` *(geplant: 0.3.0)*
 
 Exportiert Daten aus einer Datenbank.
 
@@ -427,7 +430,7 @@ d-migrate data export --source <url> --format <format> [--output <path>]
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Exportfehlern.
 
-#### `data import`
+#### `data import` *(geplant: 0.4.0)*
 
 Importiert Daten in eine Datenbank.
 
@@ -446,7 +449,7 @@ d-migrate data import --source <path> --target <url>
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Importfehlern.
 
-#### `data seed`
+#### `data seed` *(geplant: 1.3.0)*
 
 Generiert Testdaten und importiert sie.
 
@@ -468,7 +471,7 @@ Exit: `0` bei Erfolg.
 
 ### 6.3 transform
 
-#### `transform procedure`
+#### `transform procedure` *(geplant: 1.1.0)*
 
 Transformiert Stored Procedures/Functions zwischen Dialekten.
 
@@ -490,7 +493,7 @@ Exit: `0` bei Erfolg, `6` bei KI-Fehlern.
 
 ### 6.4 generate
 
-#### `generate procedure`
+#### `generate procedure` *(geplant: 1.1.0)*
 
 Generiert DB-spezifischen Code aus Markdown-Zwischenformat.
 
@@ -508,7 +511,7 @@ Exit: `0` bei Erfolg.
 
 ### 6.5 export (Integrationen)
 
-#### `export flyway` / `export liquibase` / `export django` / `export knex`
+#### `export flyway` / `export liquibase` / `export django` / `export knex` *(geplant: 0.7.0)*
 
 Generiert Migrationsdateien für externe Tools.
 
@@ -527,7 +530,7 @@ Exit: `0` bei Erfolg.
 
 ### 6.6 validate
 
-#### `validate data`
+#### `validate data` *(geplant: 0.4.0)*
 
 Validiert Daten gegen ein Schema.
 
@@ -542,7 +545,7 @@ d-migrate validate data --source <path> --schema <path>
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
-#### `validate procedure`
+#### `validate procedure` *(geplant: 1.1.0)*
 
 Validiert eine generierte Stored Procedure gegen eine Ziel-Datenbank.
 
@@ -563,7 +566,7 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
 ### 6.7 config
 
-#### `config credentials set`
+#### `config credentials set` *(geplant: 1.0.0)*
 
 Speichert verschlüsselte Datenbank-Credentials.
 
@@ -581,7 +584,7 @@ Ergebnis: Credentials werden in `~/.d-migrate/credentials.enc` (AES-256) gespeic
 
 Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
-#### `config credentials list`
+#### `config credentials list` *(geplant: 1.0.0)*
 
 Listet gespeicherte Verbindungsnamen (ohne Passwörter).
 
@@ -591,7 +594,7 @@ d-migrate config credentials list
 
 Exit: `0` bei Erfolg.
 
-#### `config show`
+#### `config show` *(geplant: 1.0.0)*
 
 Zeigt die aktive Konfiguration (gemerged aus allen Quellen).
 
@@ -750,6 +753,6 @@ cat create_tables.sql | d-migrate schema reverse --source - --source-dialect pos
 
 ---
 
-**Version**: 1.0
+**Version**: 1.1
 **Stand**: 2026-04-05
-**Status**: Entwurf
+**Status**: `schema validate` implementiert (0.1.0), weitere Kommandos in Planung

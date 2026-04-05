@@ -24,18 +24,18 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ziel**: Funktionaler Prototyp für Early Adopters
 
-### Milestone 0.1.0 — Projekt-Grundgerüst
+### Milestone 0.1.0 — Projekt-Grundgerüst ✅ (2026-04-05)
 
-| Bereich | Aufgabe                                                 | LF-Ref |
-| ------- | ------------------------------------------------------- | ------ |
-| Build   | Gradle Multi-Module Setup (core, cli, drivers, formats) | —      |
-| Build   | CI/CD-Pipeline mit GitHub Actions (Build, Test, Lint)   | —      |
-| Core    | Neutrales Schema-Modell (Kotlin Data Classes)           | LF-001 |
-| Core    | YAML-Parser für Schema-Definitionen                     | LF-001 |
-| Core    | Basis-Validierung (Syntax, Referenzen)                  | LF-002 |
-| CLI     | Clikt-basiertes CLI-Grundgerüst                         | LF-012 |
-| CLI     | `d-migrate schema validate` Kommando                    | LF-002 |
-| Test    | Kotest Setup, erste Unit-Tests für Schema-Modell        | LN-043 |
+| Bereich | Aufgabe                                                 | LF-Ref | Status |
+| ------- | ------------------------------------------------------- | ------ | ------ |
+| Build   | Gradle Multi-Module Setup (core, cli, formats)          | —      | ✅ |
+| Build   | CI/CD-Pipeline mit GitHub Actions (Build, Test, Kover)  | —      | ✅ |
+| Core    | Neutrales Schema-Modell (Kotlin Data Classes)           | LF-001 | ✅ |
+| Core    | YAML-Parser für Schema-Definitionen                     | LF-001 | ✅ |
+| Core    | Basis-Validierung (E001-E018, W001)                     | LF-002 | ✅ |
+| CLI     | Clikt-basiertes CLI-Grundgerüst                         | LF-012 | ✅ |
+| CLI     | `d-migrate schema validate` Kommando                    | LF-002 | ✅ |
+| Test    | Kotest Setup, 83 Tests, Kover Coverage >= 90%           | LN-043 | ✅ |
 
 **Ergebnis**: Schema-Dateien können geladen und validiert werden.
 
@@ -326,6 +326,6 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 ---
 
-**Version**: 1.0
+**Version**: 1.1
 **Stand**: 2026-04-05
-**Status**: Entwurf
+**Status**: Milestone 0.1.0 abgeschlossen, weitere Milestones in Planung

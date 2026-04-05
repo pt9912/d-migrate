@@ -2,9 +2,9 @@
 
 **CLI-Tool für datenbankunabhängige Migrationen und Datenverwaltung**
 
-> Dokumenttyp: Zieldesign / Soll-Zustand
+> Dokumenttyp: Design-Spezifikation
 >
-> Hinweis: Dieses Dokument beschreibt das fachliche und technische Zielbild. Der aktuelle Repository-Stand kann davon noch abweichen, solange dieses Dokument den Status `Entwurf` trägt.
+> Milestone 0.1.0 (Schema-Modell, Validierung, YAML-Parsing, CLI `schema validate`) ist implementiert. Abschnitte zu späteren Milestones (DDL-Generierung, Streaming, KI-Integration) beschreiben den geplanten Soll-Zustand.
 
 ---
 
@@ -43,13 +43,13 @@ Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das a
 │              SchemaDefinition               │
 │  - name: String                             │
 │  - version: String                          │
-│  - tables: List<TableDefinition>            │
-│  - procedures: List<ProcedureDefinition>    │
-│  - functions: List<FunctionDefinition>      │
-│  - views: List<ViewDefinition>              │
-│  - triggers: List<TriggerDefinition>        │
-│  - sequences: List<SequenceDefinition>      │
-│  - customTypes: List<CustomTypeDefinition>  │
+│  - tables: Map<String, TableDefinition>     │
+│  - procedures: Map<String, ProcedureDef>    │
+│  - functions: Map<String, FunctionDef>      │
+│  - views: Map<String, ViewDefinition>       │
+│  - triggers: Map<String, TriggerDef>        │
+│  - sequences: Map<String, SequenceDef>      │
+│  - customTypes: Map<String, CustomTypeDef>  │
 └─────────────────────────────────────────────┘
          │
          ▼
@@ -57,7 +57,8 @@ Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das a
 │              TableDefinition                │
 │  - name: String                             │
 │  - description: String?                     │
-│  - columns: List<ColumnDefinition>          │
+│  - columns: Map<String, ColumnDefinition>   │
+│  - primaryKey: List<String>                 │
 │  - indices: List<IndexDefinition>           │
 │  - constraints: List<ConstraintDefinition>  │
 │  - partitioning: PartitionConfig?           │
@@ -65,8 +66,7 @@ Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das a
          │
          ▼
 ┌─────────────────────────────────────────────┐
-│             ColumnDefinition                │
-│  - name: String                             │
+│     ColumnDefinition (Key = Spaltenname)    │
 │  - type: NeutralType                        │
 │  - required: Boolean                        │
 │  - unique: Boolean                          │
@@ -95,7 +95,7 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 | `uuid`         | UUID                 | CHAR(36)           | TEXT                              |
 | `json`         | JSONB                | JSON               | TEXT                              |
 | `binary`       | BYTEA                | BLOB               | BLOB                              |
-| `email`        | VARCHAR(254)         | VARCHAR(254)       | TEXT                              |
+| `email`        | VARCHAR(254)         | VARCHAR(254)       | TEXT (Singleton, MAX_LENGTH=254)  |
 | `float`        | REAL / DOUBLE PREC.  | FLOAT / DOUBLE     | REAL                              |
 | `smallint`     | SMALLINT             | SMALLINT           | INTEGER                           |
 | `char(n)`      | CHAR(n)              | CHAR(n)            | TEXT                              |
@@ -650,6 +650,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.3
+**Version**: 1.4
 **Stand**: 2026-04-05
-**Status**: Entwurf
+**Status**: Milestone 0.1.0 implementiert, spätere Milestones im Entwurf

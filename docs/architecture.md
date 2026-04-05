@@ -2,9 +2,9 @@
 
 **CLI-Tool für datenbankunabhängige Migrationen und Datenverwaltung**
 
-> Dokumenttyp: Zielarchitektur / Soll-Zustand
+> Dokumenttyp: Architektur-Spezifikation
 >
-> Hinweis: Die nachfolgend beschriebene Modul- und Build-Struktur ist das geplante Zielbild. Der aktuelle Repository-Stand kann davon noch abweichen, solange dieses Dokument den Status `Entwurf` trägt.
+> Die Module `d-migrate-core`, `d-migrate-formats` und `d-migrate-cli` sind seit Milestone 0.1.0 implementiert. Weitere Module (drivers, integrations, ai, streaming, testdata, docs) beschreiben den geplanten Soll-Zustand für spätere Milestones.
 
 ---
 
@@ -898,6 +898,6 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.3
+**Version**: 1.4
 **Stand**: 2026-04-05
-**Status**: Zielarchitektur (Entwurf)
+**Status**: Milestone 0.1.0 implementiert (core, formats, cli), weitere Module im Entwurf

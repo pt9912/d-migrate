@@ -186,12 +186,12 @@ columns:
 
 Neben den technischen Typen bietet das Modell semantische Typen, die als Alias mit eingebauter Validierung fungieren:
 
-| Semantischer Typ | Technischer Typ    | Eingebaute Validierung         |
+| Semantischer Typ | Technischer Typ    | Eingebaute Einschränkung       |
 | ---------------- | ------------------ | ------------------------------ |
-| `email`          | `text(254)`        | RFC 5322 Format                |
+| `email`          | `text(254)`        | Feste Maximallänge 254 (Singleton, keine Parameter) |
 | `identifier`     | `integer`/`bigint` | Auto-Increment, Primary Key    |
 
-Semantische Typen werden beim DDL-Export in ihren technischen Typ aufgelöst, die Validierungsinformation bleibt im neutralen Modell erhalten.
+Semantische Typen werden beim DDL-Export in ihren technischen Typ aufgelöst. `email` ist als Singleton implementiert (`data object Email` mit `MAX_LENGTH = 254`) — die Länge ist nicht konfigurierbar.
 
 ---
 
