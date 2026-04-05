@@ -38,12 +38,10 @@ class TransformationReportWriter {
         val notes = result.notes
         val warnings = notes.count { it.type == NoteType.WARNING }
         val actionRequired = notes.count { it.type == NoteType.ACTION_REQUIRED }
-        val infos = notes.count { it.type == NoteType.INFO }
 
         appendLine("summary:")
         appendLine("  statements: ${result.statements.size}")
         appendLine("  notes: ${notes.size}")
-        appendLine("  info: $infos")
         appendLine("  warnings: $warnings")
         appendLine("  action_required: $actionRequired")
         appendLine("  skipped_objects: ${result.skippedObjects.size}")

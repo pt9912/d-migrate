@@ -51,7 +51,10 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         TransformRule("""EXTRACT\s*\(\s*MONTH\s+FROM\s+(\w+)\s*\)""", """MONTH($1)"""),
         // String functions
         TransformRule("""SUBSTRING\s*\(\s*(\w+)\s+FROM\s+(\d+)\s+FOR\s+(\d+)\s*\)""", """SUBSTRING($1, $2, $3)"""),
-        TransformRule("""LENGTH\s*\(""", """CHAR_LENGTH("""),
+        TransformRule("""\bLENGTH\s*\(""", """CHAR_LENGTH("""),
+        // Date/time literals
+        TransformRule("""\bCURRENT_DATE\b""", """CURDATE()"""),
+        TransformRule("""\bCURRENT_TIME\b""", """CURTIME()"""),
         // Boolean literals
         TransformRule("""\bTRUE\b""", "1"),
         TransformRule("""\bFALSE\b""", "0"),

@@ -9,7 +9,7 @@ import io.kotest.matchers.shouldBe
 
 class DdlGoldenMasterTest : FunSpec({
 
-    val schemas = listOf("minimal", "e-commerce", "all-types")
+    val schemas = listOf("minimal", "e-commerce", "all-types", "full-featured")
     val dialects: List<Pair<String, DdlGenerator>> = listOf(
         "postgresql" to PostgresDdlGenerator(),
         "mysql" to MysqlDdlGenerator(),

@@ -150,7 +150,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             val customType = schema.customTypes[type.refType]
             val enumValues = customType?.values
             if (enumValues != null) {
-                val enumDef = enumValues.joinToString(", ") { "'$it'" }
+                val enumDef = enumValues.joinToString(", ") { "'${it.replace("'", "''")}'" }
                 val parts = mutableListOf<String>()
                 parts += quoteIdentifier(colName)
                 parts += "ENUM($enumDef)"
@@ -163,7 +163,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // For enum columns with inline values, inline ENUM(...)
         if (type is NeutralType.Enum && type.values != null) {
-            val enumDef = type.values!!.joinToString(", ") { "'$it'" }
+            val enumDef = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
             val parts = mutableListOf<String>()
             parts += quoteIdentifier(colName)
             parts += "ENUM($enumDef)"

@@ -187,7 +187,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             if (col.unique) parts += "UNIQUE"
             // If the custom type has enum values, add inline CHECK
             if (customType != null && customType.kind == CustomTypeKind.ENUM && customType.values != null) {
-                val allowed = customType.values!!.joinToString(", ") { "'$it'" }
+                val allowed = customType.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
                 parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
             }
             // Inline reference if present
@@ -205,7 +205,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             if (col.required) parts += "NOT NULL"
             if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
             if (col.unique) parts += "UNIQUE"
-            val allowed = type.values!!.joinToString(", ") { "'$it'" }
+            val allowed = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
             parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
             // Inline reference if present
             if (col.references != null && (tableName to colName) !in deferredFks) {

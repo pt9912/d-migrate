@@ -21,7 +21,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         return when (typeDef.kind) {
             CustomTypeKind.ENUM -> {
                 val values = typeDef.values ?: return emptyList()
-                val enumValues = values.joinToString(", ") { "'$it'" }
+                val enumValues = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
                 listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS ENUM ($enumValues);"))
             }
             CustomTypeKind.COMPOSITE -> {
@@ -181,7 +181,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                 if (col.required) parts += "NOT NULL"
                 if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
                 if (col.unique) parts += "UNIQUE"
-                val allowed = enumValues.joinToString(", ") { "'$it'" }
+                val allowed = enumValues.joinToString(", ") { "'${it.replace("'", "''")}'" }
                 parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
                 return parts.joinToString(" ")
             }

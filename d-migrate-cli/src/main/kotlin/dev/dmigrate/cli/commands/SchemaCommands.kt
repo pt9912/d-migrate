@@ -140,7 +140,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             }
 
             // Write transformation report (sidecar or explicit --report)
-            writeReport(result, schema, dialect.name.lowercase())
+            writeReport(result, schema, dialect.name.lowercase(), output!!)
         } else {
             println(ddl)
             if (generateRollback) {
@@ -152,7 +152,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
 
             // Write report if explicitly requested (even without --output)
             if (report != null) {
-                writeReport(result, schema, dialect.name.lowercase())
+                writeReport(result, schema, dialect.name.lowercase(), report!!)
             }
         }
     }
@@ -163,8 +163,8 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         DatabaseDialect.SQLITE -> SqliteDdlGenerator()
     }
 
-    private fun writeReport(result: DdlResult, schema: dev.dmigrate.core.model.SchemaDefinition, dialect: String) {
-        val reportPath = report ?: sidecarPath(output!!, ".report.yaml")
+    private fun writeReport(result: DdlResult, schema: dev.dmigrate.core.model.SchemaDefinition, dialect: String, outputPath: Path) {
+        val reportPath = report ?: sidecarPath(outputPath, ".report.yaml")
         TransformationReportWriter().write(reportPath, result, schema, dialect, source)
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: dev.dmigrate.cli.CliContext()
@@ -189,7 +189,6 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             appendLine("""  "ddl": "${esc(result.render())}",""")
             appendLine("""  "warnings": ${result.notes.count { it.type == NoteType.WARNING }},""")
             appendLine("""  "action_required": ${result.notes.count { it.type == NoteType.ACTION_REQUIRED }},""")
-            appendLine("""  "skipped_objects_count": ${result.skippedObjects.size},""")
             if (notes.isEmpty()) appendLine("""  "notes": [],""") else {
                 appendLine("""  "notes": ["""); appendLine(notes); appendLine("  ],")
             }
