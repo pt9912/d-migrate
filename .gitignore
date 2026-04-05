@@ -30,5 +30,8 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# d-migrate runtime data (credentials, checkpoints, cache, audit)
+.d-migrate/
 # Codex
 .codex

@@ -377,7 +377,7 @@ Exporting table 'orders' [████████░░░░░░░░] 52% 
 
 ### 5.3 Konfiguration
 
-Hierarchische Konfiguration mit Overrides:
+Hierarchische Konfiguration mit Overrides (vollständiges Schema in der [Connection- und Konfigurationsspezifikation](./connection-config-spec.md)):
 
 ```
 1. Built-in Defaults
@@ -642,6 +642,9 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 - [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
 - [Architektur](./architecture.md) — Modul-Struktur, Komponenten, Build und Distribution
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
+- [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
+- [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
+- [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
 - [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
 - [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 

@@ -981,6 +981,8 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 - [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation (LF-001 bis LF-004)
 - [Design](./design.md) — Design-Philosophie, Streaming-Pipeline, KI-Integration
 - [Architektur](./architecture.md) — Modul-Struktur, TypeMapper-Implementierung, Driver-SPI
+- [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
+- [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes, Kommando-Referenz
 - [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
 - [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 

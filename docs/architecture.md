@@ -851,6 +851,9 @@ Entwickler-Maschine                    CI/CD-Pipeline
 - [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
 - [Design](./design.md) — Design-Philosophie, Datenflüsse, CLI, Fehlerbehandlung
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
+- [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
+- [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
+- [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
 - [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
 - [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
