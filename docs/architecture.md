@@ -48,7 +48,7 @@
 
 **Hexagonale Architektur (Ports & Adapters)** mit klarer Trennung zwischen:
 
-- **Domain Core**: Neutrales Schema-Modell, Validierungslogik, Diff- und Planungslogik - keine externen Abhängigkeiten
+- **Domain Core**: Neutrales Schema-Modell (spezifiziert in [neutral-model-spec.md](./neutral-model-spec.md)), Validierungslogik, Diff- und Planungslogik - keine externen Abhängigkeiten
 - **Ports**: Interfaces für Datenbank-Zugriff, Datei-I/O, KI-Provider und datenbankspezifisches Type-Mapping
 - **Adapters**: Konkrete Implementierungen (JDBC-Driver, Jackson-Serializer, HTTP-Clients, Dialekt-spezifische TypeMapper)
 
@@ -161,7 +161,9 @@ d-migrate/
 │           │   ├── CsvCodec.kt
 │           │   └── CsvBomHandler.kt
 │           └── sql/
-│               └── SqlCodec.kt
+│               ├── SqlCodec.kt
+│               └── DdlParser.kt        # SQL-DDL-Dateien → neutrales Modell (LF-004)
+│                                        # Details: neutral-model-spec.md §12
 │
 ├── d-migrate-integrations/             # Tool-Integrationen
 │   └── src/main/kotlin/
@@ -200,13 +202,25 @@ d-migrate/
 │           └── noop/
 │               └── RuleBasedProvider.kt
 │
+├── d-migrate-testdata/                 # Testdaten-Generierung (LF-024)
+│   └── src/main/kotlin/
+│       └── dev/dmigrate/testdata/
+│           ├── TestdataGenerator.kt    # Port-Interface
+│           ├── GeneratorConfig.kt      # Seed, Menge, Locale, Regeln
+│           ├── faker/
+│           │   └── FakerGenerator.kt   # Regelbasiert (Faker-Bibliothek)
+│           └── ai/
+│               └── AiGenerator.kt      # KI-gestützt (optional, nutzt AiProvider)
+│
 ├── d-migrate-streaming/                # Streaming-Pipeline
 │   └── src/main/kotlin/
 │       └── dev/dmigrate/streaming/
 │           ├── Pipeline.kt
 │           ├── ChunkProcessor.kt
 │           ├── Checkpoint.kt
-│           └── ParallelExecutor.kt
+│           ├── ParallelExecutor.kt
+│           ├── PartitionHandler.kt     # Partition-aware Export/Import (LN-008)
+│           └── DeltaDetector.kt        # Inkrementelle Delta-Erkennung (LN-006)
 │
 ├── d-migrate-i18n/                     # Internationalisierung
 │   └── src/main/
@@ -259,6 +273,7 @@ d-migrate-cli
 ├── d-migrate-formats ──▶ d-migrate-core
 ├── d-migrate-integrations ──▶ d-migrate-core
 ├── d-migrate-ai ──▶ d-migrate-core
+├── d-migrate-testdata ──▶ d-migrate-core, d-migrate-ai (optional)
 ├── d-migrate-streaming ──▶ d-migrate-core, d-migrate-driver-api
 ├── d-migrate-i18n
 └── d-migrate-docs ──▶ d-migrate-core, d-migrate-i18n
@@ -291,6 +306,7 @@ interface SchemaReader {
     /** Reverse-Engineering: DB → Neutrales Modell */
     fun readSchema(connection: DatabaseConnection): SchemaDefinition
     fun readProcedures(connection: DatabaseConnection): List<ProcedureDefinition>
+    fun readFunctions(connection: DatabaseConnection): List<FunctionDefinition>
     fun readViews(connection: DatabaseConnection): List<ViewDefinition>
     fun readTriggers(connection: DatabaseConnection): List<TriggerDefinition>
 }
@@ -299,6 +315,8 @@ interface SchemaWriter {
     /** DDL-Generierung: Neutrales Modell → DB-spezifisches SQL */
     fun generateDdl(schema: SchemaDefinition): List<DdlStatement>
     fun generateMigration(diff: DiffResult): List<DdlStatement>
+    /** Rollback-Generierung: Inverse Operationen für eine Migration (LF-014) */
+    fun generateRollback(diff: DiffResult): List<DdlStatement>
 }
 
 interface DataReader {
@@ -431,6 +449,8 @@ class StreamingPipeline(
 
 ### 3.4 Type-Mapping-Engine
 
+Die vollständige Typ-Mapping-Tabelle (18 neutrale Typen mit Attributen) und die Validierungsregeln sind in der [Neutrales-Modell-Spezifikation §3](./neutral-model-spec.md#3-neutrales-typsystem) definiert.
+
 ```kotlin
 /**
  * Bidirektionales Type-Mapping zwischen neutralem Typ und DB-spezifischem Typ.
@@ -451,6 +471,11 @@ class PostgresTypeMapper : TypeMapper {
             "BIGINT"         -> NeutralType.BigInteger
             "TEXT"           -> NeutralType.Text()
             "VARCHAR"        -> NeutralType.Text(maxLength = metadata.length)
+            "CHAR"           -> NeutralType.Char(length = metadata.length ?: 1)
+            "SMALLINT"       -> NeutralType.SmallInt
+            "REAL"           -> NeutralType.Float(precision = FloatPrecision.SINGLE)
+            "DOUBLE PRECISION" -> NeutralType.Float(precision = FloatPrecision.DOUBLE)
+            "XML"            -> NeutralType.Xml
             "BOOLEAN"        -> NeutralType.Boolean
             "JSONB", "JSON"  -> NeutralType.Json
             "BYTEA"          -> NeutralType.Binary
@@ -469,6 +494,13 @@ class PostgresTypeMapper : TypeMapper {
             is NeutralType.Text         -> if (neutralType.maxLength != null)
                                               "VARCHAR(${neutralType.maxLength})"
                                            else "TEXT"
+            is NeutralType.Char          -> "CHAR(${neutralType.length})"
+            is NeutralType.SmallInt      -> "SMALLINT"
+            is NeutralType.Float         -> when (neutralType.precision) {
+                                              FloatPrecision.SINGLE -> "REAL"
+                                              FloatPrecision.DOUBLE -> "DOUBLE PRECISION"
+                                           }
+            is NeutralType.Xml           -> "XML"
             is NeutralType.Boolean       -> "BOOLEAN"
             is NeutralType.Json          -> "JSONB"
             is NeutralType.Binary        -> "BYTEA"
@@ -557,6 +589,7 @@ data class DocumentationConfig(
 - **Framework**: SLF4J + Logback
 - **Strukturiertes Logging**: JSON-Format für maschinelle Auswertung
 - **Audit-Log**: Separate Datei für alle DB-verändernden Operationen
+- **KI-Audit-Log**: Archivierung von Quell-/Zielcode und Metadaten aller KI-Transformationen (LN-030, LN-031)
 - **Sensible Daten**: Passwörter und API-Keys werden NICHT geloggt
 
 ### 4.3 Sicherheit
@@ -575,6 +608,11 @@ Verbindungen:
 - TLS/SSL für alle DB-Verbindungen (konfigurierbar)
 - Certificate Pinning optional
 - Connection-String-Validierung gegen Injection
+
+Rollenbasierte Zugriffskontrolle (LN-028):
+- Rollen: reader (Export, Schema-Ansicht), writer (Import, Migration), admin (Konfiguration, Rollback)
+- Konfiguration über .d-migrate.yaml oder Umgebungsvariablen
+- Enforcement in CLI-Commands vor Ausführung kritischer Operationen
 ```
 
 ### 4.4 Fehlerbehandlung und Resilienz
@@ -806,6 +844,18 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.1
+---
+
+## Verwandte Dokumentation
+
+- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
+- [Design](./design.md) — Design-Philosophie, Datenflüsse, CLI, Fehlerbehandlung
+- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
+- [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
+- [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
+
+---
+
+**Version**: 1.3
 **Stand**: 2026-04-05
 **Status**: Zielarchitektur (Entwurf)

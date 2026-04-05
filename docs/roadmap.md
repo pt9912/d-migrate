@@ -7,8 +7,8 @@
 ## Übersicht
 
 Diese Roadmap beschreibt den geplanten Entwicklungsverlauf von d-migrate in vier Phasen.
-Sie basiert auf den Anforderungen des [Lastenhefts](./lastenheft-d-migrate.md) und der
-[Architektur](./architecture.md). Die Roadmap wird quartalsweise aktualisiert und ist
+Sie basiert auf den Anforderungen des [Lastenhefts](./lastenheft-d-migrate.md), der
+[Architektur](./architecture.md) und der [Neutrales-Modell-Spezifikation](./neutral-model-spec.md). Die Roadmap wird quartalsweise aktualisiert und ist
 öffentlich auf GitHub Projects einsehbar.
 
 ```

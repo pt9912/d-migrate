@@ -36,7 +36,7 @@
 
 ### 2.1 Neutrales Schema-Modell
 
-Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das als Zwischenformat zwischen allen unterstützten Datenbanken dient.
+Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das als Zwischenformat zwischen allen unterstützten Datenbanken dient. Die vollständige Spezifikation mit YAML-Syntax, Validierungsregeln und Beispielen (PostgreSQL → Neutral → MySQL/SQLite) findet sich in der [Neutrales-Modell-Spezifikation](./neutral-model-spec.md).
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -45,6 +45,7 @@ Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das a
 │  - version: String                          │
 │  - tables: List<TableDefinition>            │
 │  - procedures: List<ProcedureDefinition>    │
+│  - functions: List<FunctionDefinition>      │
 │  - views: List<ViewDefinition>              │
 │  - triggers: List<TriggerDefinition>        │
 │  - sequences: List<SequenceDefinition>      │
@@ -76,9 +77,9 @@ Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das a
 
 ### 2.2 Neutrales Typsystem
 
-Statt datenbankspezifische Typen direkt zu verwenden, definiert d-migrate ein neutrales Typsystem:
+Statt datenbankspezifische Typen direkt zu verwenden, definiert d-migrate ein neutrales Typsystem. Typ-Attribute, semantische Typen und Custom Types (Enum, Composite, Domain) sind in der [Neutrales-Modell-Spezifikation §3-5](./neutral-model-spec.md#3-neutrales-typsystem) detailliert beschrieben.
 
-Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Referenz-Metadaten an einer skalaren Spalte.
+Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Referenz-Metadaten an einer skalaren Spalte (siehe [Neutrales-Modell-Spezifikation §4.2](./neutral-model-spec.md#42-referenzen-foreign-keys)).
 
 | Neutraler Typ  | PostgreSQL           | MySQL              | SQLite                            |
 | -------------- | -------------------- | ------------------ | --------------------------------- |
@@ -95,26 +96,38 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 | `json`         | JSONB                | JSON               | TEXT                              |
 | `binary`       | BYTEA                | BLOB               | BLOB                              |
 | `email`        | VARCHAR(254)         | VARCHAR(254)       | TEXT                              |
+| `float`        | REAL / DOUBLE PREC.  | FLOAT / DOUBLE     | REAL                              |
+| `smallint`     | SMALLINT             | SMALLINT           | INTEGER                           |
+| `char(n)`      | CHAR(n)              | CHAR(n)            | TEXT                              |
+| `xml`          | XML                  | TEXT (Fallback)    | TEXT                              |
 | `enum(values)` | CREATE TYPE ... ENUM | ENUM(...)          | TEXT + CHECK                      |
 | `array(type)`  | type[]               | JSON               | TEXT (JSON)                       |
 
 ### 2.3 Datenfluss-Modell
 
+Es gibt zwei Pfade für Reverse-Engineering (LF-004). Unterstützte Statements und die Dialekt-Erkennung sind in der [Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser) beschrieben.
+
+1. **DB-Connection-basiert**: JDBC-SchemaReader liest Metadaten direkt aus der Datenbank
+2. **DDL-Datei-basiert**: DDL-Parser analysiert SQL-Dateien (CREATE TABLE, CREATE PROCEDURE, etc.)
+
 ```
   Quelle                  Neutral                    Ziel
 ┌──────────┐         ┌──────────────┐          ┌──────────┐
-│PostgreSQL│──extract─▶│              │──generate─▶│  MySQL   │
-│  MySQL   │         │   Schema-    │          │  SQLite  │
-│  SQLite  │◀─reverse─│   Modell     │◀─parse────│  YAML    │
-│  SQL-DDL │  engineer│   (Kotlin)   │          │  JSON    │
+│PostgreSQL│──JDBC────▶│              │──generate─▶│  MySQL   │
+│  MySQL   │ extract  │   Schema-    │          │  SQLite  │
+│  SQLite  │         │   Modell     │◀─parse────│  YAML    │
+│          │         │   (Kotlin)   │          │  JSON    │
 └──────────┘         └──────┬───────┘          └──────────┘
-                            │
-                    ┌───────▼───────┐
-                    │  Validierung  │
-                    │  - Syntax     │
-                    │  - Referenzen │
-                    │  - Typen      │
-                    └───────────────┘
+                       ▲    │
+┌──────────┐          │    │
+│ SQL-DDL  │──parse───┘    │
+│ Dateien  │  (DDL-Parser) │
+└──────────┘         ┌─────▼───────┐
+                     │  Validierung │
+                     │  - Syntax    │
+                     │  - Referenzen│
+                     │  - Typen     │
+                     └─────────────┘
 ```
 
 ---
@@ -169,6 +182,41 @@ Tabellen werden parallel verarbeitet, wobei Abhängigkeiten (Foreign Keys) respe
 4. Konfigurierbare Parallelität (Default: CPU-Kerne)
 ```
 
+### 3.4 Partitionierte Tabellen (LN-008)
+
+Partitionierte Tabellen werden partition-aware verarbeitet:
+
+```
+1. Erkennung der Partitionierung (Typ, Schlüssel, Anzahl) via SchemaReader
+2. Export/Import pro Partition als eigenständiger Stream
+3. Partitionen werden parallel verarbeitet (unabhängig voneinander)
+4. Checkpoint-Granularität: pro Partition statt pro Tabelle
+5. Zusammenführung der Ergebnisse nach Abschluss aller Partitionen
+```
+
+### 3.5 Inkrementelle Migration (LF-013, LN-006)
+
+Für inkrementelle Exports/Imports wird eine Delta-Erkennung unterstützt:
+
+**Strategien zur Identifikation geänderter Datensätze**:
+
+| Strategie | Voraussetzung | Eignung |
+|---|---|---|
+| Timestamp-basiert | Spalte `updated_at` vorhanden | Schnell, gängigster Fall |
+| ID-basiert | Monoton steigende IDs | Nur für neue Datensätze (kein Update/Delete) |
+| Hash-basiert | Keine (berechnet SHA-256 pro Zeile) | Universell, aber langsamer |
+| Change-Tracking | DB-natives CDC (z.B. PostgreSQL Logical Replication) | Performant, aber DB-spezifisch |
+
+```
+Konfiguration:
+  incremental:
+    strategy: timestamp          # timestamp | id | hash | cdc
+    timestamp_column: updated_at # Nur für strategy=timestamp
+    last_sync: 2025-10-20T14:00:00Z  # Automatisch verwaltet
+```
+
+Das System speichert den letzten Synchronisationszeitpunkt pro Tabelle, sodass nachfolgende Läufe nur geänderte Datensätze verarbeiten.
+
 ---
 
 ## 4. KI-Integrations-Design
@@ -197,6 +245,15 @@ data class TransformResult(
     val intermediateFormat: String,     // Markdown-Zwischenformat
     val metadata: TransformMetadata,    // Modell, Dauer, Token-Verbrauch
     val warnings: List<String>
+)
+
+data class TransformMetadata(
+    val provider: String,              // z.B. "ollama", "anthropic"
+    val model: String,                 // z.B. "llama3.1:70b", "claude-3-5-sonnet"
+    val modelVersion: String?,         // Versionierung für Reproduzierbarkeit (LN-036)
+    val durationMs: Long,
+    val tokenCount: TokenCount?,       // Input/Output-Token (sofern vom Provider geliefert)
+    val timestamp: Instant
 )
 ```
 
@@ -227,6 +284,43 @@ Konfiguration: privacy.prefer_local = true (Default)
 5. Falls nein → Fehler mit Hinweis auf Konfiguration
 ```
 
+### 4.4 KI-Audit-Trail (LN-030, LN-031)
+
+KI-generierter Code wird als solcher gekennzeichnet und für Auditing archiviert:
+
+**Kennzeichnung im generierten Code**:
+```sql
+-- Generated by d-migrate (AI-assisted)
+-- Source: PostgreSQL PL/pgSQL | Target: MySQL
+-- Model: ollama/llama3.1:70b | Date: 2025-10-22T14:30:00Z
+-- Original: audit/20251022_143000_calculate_order_total_source.sql
+CREATE PROCEDURE calculate_order_total(IN p_order_id INT)
+...
+```
+
+**Persistenter Audit-Trail**:
+```
+.d-migrate/audit/
+├── 20251022_143000_calculate_order_total_source.sql    # Quell-Code
+├── 20251022_143000_calculate_order_total_target.sql    # Ziel-Code
+├── 20251022_143000_calculate_order_total_spec.md       # Zwischenformat
+└── 20251022_143000_calculate_order_total_meta.yaml     # TransformMetadata
+```
+
+### 4.5 A/B-Testing für KI-Modelle (LN-036)
+
+Zur Evaluierung verschiedener Modelle kann eine Transformation parallel mit mehreren Providern ausgeführt werden:
+
+```bash
+d-migrate transform procedure \
+  --source schema.yaml \
+  --procedure calculate_order_total \
+  --ai-backend ollama,anthropic \
+  --compare
+```
+
+Das Ergebnis ist ein Vergleichsbericht mit Diff, Syntax-Validierung und optionalem semantischem Test für jedes Modell. Konfigurierbare Parameter (Temperatur, Max-Tokens) ermöglichen kontrollierte Vergleiche.
+
 ---
 
 ## 5. CLI-Design
@@ -256,6 +350,13 @@ d-migrate export flyway       --source schema.yaml --output migrations/
 d-migrate export liquibase    --source schema.yaml --output changelog/
 d-migrate export django       --source schema.yaml --output migrations/
 d-migrate export knex         --source schema.yaml --output migrations/
+
+# Migrations-Rollback (LF-014)
+d-migrate schema migrate      --source schema.yaml --target postgres://... --generate-rollback
+d-migrate schema rollback     --source rollback-001.sql --target postgres://...
+
+# Inkrementeller Export (LF-013)
+d-migrate data export         --source postgres://... --format json --incremental
 
 # Validierung
 d-migrate validate data       --source data.json --schema schema.yaml
@@ -384,9 +485,36 @@ exported_at: 2025-10-22T14:30:00Z
 
 ---
 
-## 7. Fehlerbehandlung
+## 7. Migrations-Rollback (LF-014)
 
-### 7.1 Fehlerkategorien
+Jede Schema-Migration wird als Up/Down-Paar generiert:
+
+```
+migrations/
+├── V001__create_customers_up.sql
+├── V001__create_customers_down.sql
+├── V002__add_orders_up.sql
+└── V002__add_orders_down.sql
+```
+
+Die Rollback-Generierung leitet aus dem `DiffResult` die inverse Operation ab:
+
+| Up-Operation | Down-Operation |
+|---|---|
+| CREATE TABLE | DROP TABLE |
+| ADD COLUMN | DROP COLUMN |
+| ADD INDEX | DROP INDEX |
+| ADD CONSTRAINT | DROP CONSTRAINT |
+| ALTER COLUMN (Typ) | ALTER COLUMN (alter Typ) — erfordert Speicherung des Vor-Zustands |
+| DROP COLUMN | Warnung: Datenverlust, kein automatischer Rollback |
+
+Nicht-reversible Operationen (z.B. DROP COLUMN, DROP TABLE) erzeugen eine Warnung und erfordern explizite Bestätigung. Der Vor-Zustand wird als Snapshot im Audit-Trail gespeichert.
+
+---
+
+## 8. Fehlerbehandlung
+
+### 8.1 Fehlerkategorien
 
 ```kotlin
 sealed class MigrateError {
@@ -407,7 +535,7 @@ sealed class MigrateError {
 }
 ```
 
-### 7.2 Fehlerbehandlungsstrategie
+### 8.2 Fehlerbehandlungsstrategie
 
 | Szenario                         | Verhalten                                                 |
 | -------------------------------- | --------------------------------------------------------- |
@@ -419,9 +547,9 @@ sealed class MigrateError {
 
 ---
 
-## 8. Internationalisierung (i18n)
+## 9. Internationalisierung (i18n)
 
-### 8.1 Architektur
+### 9.1 Architektur
 
 ```
 src/main/resources/messages/
@@ -430,7 +558,7 @@ src/main/resources/messages/
 └── messages.properties       # Fallback (Englisch)
 ```
 
-### 8.2 Sprachauswahl
+### 9.2 Sprachauswahl
 
 ```
 1. CLI-Argument: --lang de
@@ -439,14 +567,14 @@ src/main/resources/messages/
 4. Fallback: Englisch
 ```
 
-### 8.3 Unicode-Verarbeitung
+### 9.3 Unicode-Verarbeitung
 
 - Interne Strings als Unicode; UTF-8 ist das Standard-Encoding an Datei-, CLI- und API-Grenzen
 - Grapheme-aware String-Längenberechnung via ICU4J
 - Unicode-Normalisierung fuer NFC, NFD, NFKC und NFKD; Standardvergleich erfolgt auf NFC-normalisierten Werten
 - BOM-Erkennung und -Behandlung bei CSV-Import
 
-### 8.4 Internationale Datenformate
+### 9.4 Internationale Datenformate
 
 - Temporale Werte werden intern zeitzonenbewusst verarbeitet; Export erfolgt standardmaessig in UTC, Import kann Quell- und Zielzeitzonen explizit konfigurieren.
 - Datum, Uhrzeit und Timestamp werden formatuebergreifend auf ISO 8601 normalisiert.
@@ -455,16 +583,16 @@ src/main/resources/messages/
 
 ---
 
-## 9. Testbarkeit
+## 10. Testbarkeit
 
-### 9.1 Design for Testability
+### 10.1 Design for Testability
 
 - **Dependency Injection** via Constructor Injection (kein Framework nötig für Core)
 - **Interface-basierte Abstraktion** für alle externen Abhängigkeiten (DB, Dateisystem, KI)
 - **Pure Functions** für Type-Mapping und Schema-Transformation
 - **Determinismus**: Kein versteckter globaler State, Zeitstempel injizierbar
 
-### 9.2 Test-Pyramide
+### 10.2 Test-Pyramide
 
 ```
          ╱╲
@@ -479,7 +607,7 @@ src/main/resources/messages/
 ╱──────────────────╲
 ```
 
-### 9.3 Test-Infrastruktur
+### 10.3 Test-Infrastruktur
 
 - **Unit-Tests**: Kotest + Jqwik (Property-Based Testing)
 - **Integration-Tests**: Testcontainers (PostgreSQL, MySQL)
@@ -488,9 +616,9 @@ src/main/resources/messages/
 
 ---
 
-## 10. Versionierung und Kompatibilität
+## 11. Versionierung und Kompatibilität
 
-### 10.1 Schema-Versionierung
+### 11.1 Schema-Versionierung
 
 ```yaml
 # Jede Schema-Datei hat eine Version
@@ -499,7 +627,7 @@ name: "My Schema"
 version: "2.3.1"         # Anwendungs-Schema-Version
 ```
 
-### 10.2 Kompatibilitätsmatrix
+### 11.2 Kompatibilitätsmatrix
 
 - **Schema-Format**: Rückwärtskompatibel für 2 Major-Versionen
 - **CLI-Argumente**: Deprecated Flags bleiben 2 Minor-Versionen erhalten
@@ -507,6 +635,18 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.1
+---
+
+## Verwandte Dokumentation
+
+- [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
+- [Architektur](./architecture.md) — Modul-Struktur, Komponenten, Build und Distribution
+- [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — YAML-Format, Typsystem, DDL-Parser, Validierung
+- [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
+- [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
+
+---
+
+**Version**: 1.3
 **Stand**: 2026-04-05
 **Status**: Entwurf
