@@ -667,7 +667,7 @@ plugins {
 
 allprojects {
     group = "dev.dmigrate"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.1.0"
 }
 
 subprojects {
