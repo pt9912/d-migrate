@@ -3,6 +3,8 @@
 **Use Case**: UC-04 - KI-gestützte Stored Procedure Migration
 **Szenario**: Ein Entwickler möchte eine Stored Procedure von PostgreSQL nach MySQL migrieren
 
+Status: Draft
+
 ---
 
 ## Übersicht
