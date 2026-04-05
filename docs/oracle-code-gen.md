@@ -1,4 +1,4 @@
-# Eigenes Oracle-Codegen-Tool statt jOOQ-Codegen
+# Eigenes Oracle-Codegen-Tool
 
 **Konzept- und Entscheidungsdokument fuer ein eigenes CLI-Tool zur Oracle-Schema-Introspektion und Codegenerierung**
 
