@@ -967,4 +967,150 @@ class PostgresDdlGeneratorTest : FunSpec({
         ddl shouldContain "FOR VALUES WITH"
         ddl shouldContain "logs_p0"
     }
+
+    // ── Coverage gap: generateConstraintClause ──
+
+    test("EXCLUDE constraint generates CONSTRAINT EXCLUDE") {
+        val s = schema(tables = mapOf(
+            "rooms" to table(
+                columns = mapOf("id" to col(NeutralType.Integer), "range" to col(NeutralType.Text())),
+                primaryKey = listOf("id"),
+                constraints = listOf(ConstraintDefinition(
+                    name = "no_overlap", type = ConstraintType.EXCLUDE,
+                    expression = "range WITH &&"
+                ))
+            )
+        ))
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CONSTRAINT \"no_overlap\" EXCLUDE (range WITH &&)"
+    }
+
+    test("FOREIGN_KEY constraint via constraint table generates FK clause") {
+        val s = schema(tables = mapOf(
+            "parents" to table(
+                columns = mapOf("id" to col(NeutralType.Integer)),
+                primaryKey = listOf("id")
+            ),
+            "children" to table(
+                columns = mapOf("id" to col(NeutralType.Integer), "parent_id" to col(NeutralType.Integer)),
+                primaryKey = listOf("id"),
+                constraints = listOf(ConstraintDefinition(
+                    name = "fk_child_parent", type = ConstraintType.FOREIGN_KEY,
+                    columns = listOf("parent_id"),
+                    references = ConstraintReferenceDefinition(
+                        table = "parents", columns = listOf("id"),
+                        onDelete = ReferentialAction.CASCADE, onUpdate = ReferentialAction.SET_NULL
+                    )
+                ))
+            )
+        ))
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "CONSTRAINT \"fk_child_parent\" FOREIGN KEY (\"parent_id\") REFERENCES \"parents\" (\"id\")"
+        ddl shouldContain "ON DELETE CASCADE"
+        ddl shouldContain "ON UPDATE SET NULL"
+    }
+
+    // ── Coverage gap: generateTrigger edge cases ──
+
+    test("trigger without body is skipped with E052") {
+        val s = schema(
+            tables = mapOf("t" to table(columns = mapOf("id" to col(NeutralType.Integer)))),
+            triggers = mapOf("trg_no_body" to TriggerDefinition(
+                table = "t", event = TriggerEvent.INSERT, timing = TriggerTiming.AFTER
+            ))
+        )
+        val result = generator.generate(s)
+        result.skippedObjects.any { it.name == "trg_no_body" } shouldBe true
+        result.render() shouldContain "E052"
+    }
+
+    test("trigger with non-postgresql source_dialect is skipped") {
+        val s = schema(
+            tables = mapOf("t" to table(columns = mapOf("id" to col(NeutralType.Integer)))),
+            triggers = mapOf("trg_mysql" to TriggerDefinition(
+                table = "t", event = TriggerEvent.UPDATE, timing = TriggerTiming.BEFORE,
+                body = "SET NEW.x = 1;", sourceDialect = "mysql"
+            ))
+        )
+        val result = generator.generate(s)
+        result.skippedObjects.any { it.name == "trg_mysql" } shouldBe true
+    }
+
+    test("trigger with FOR EACH STATEMENT") {
+        val s = schema(
+            tables = mapOf("t" to table(columns = mapOf("id" to col(NeutralType.Integer)))),
+            triggers = mapOf("trg_stmt" to TriggerDefinition(
+                table = "t", event = TriggerEvent.DELETE, timing = TriggerTiming.AFTER,
+                forEach = TriggerForEach.STATEMENT,
+                body = "BEGIN\n    PERFORM 1;\nEND;"
+            ))
+        )
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "FOR EACH STATEMENT"
+        ddl shouldContain "AFTER DELETE"
+    }
+
+    // ── Coverage gap: generateView edge cases ──
+
+    test("view without query is skipped") {
+        val s = schema(views = mapOf("no_query_view" to ViewDefinition()))
+        val result = generator.generate(s)
+        result.skippedObjects.any { it.name == "no_query_view" } shouldBe true
+    }
+
+    // ── Coverage gap: generateProcedure edge cases ──
+
+    test("procedure without body is skipped with E052") {
+        val s = schema(procedures = mapOf("no_body_proc" to ProcedureDefinition()))
+        val result = generator.generate(s)
+        result.skippedObjects.any { it.name == "no_body_proc" } shouldBe true
+        result.render() shouldContain "E052"
+    }
+
+    test("procedure with non-postgresql source_dialect is skipped") {
+        val s = schema(procedures = mapOf("mysql_proc" to ProcedureDefinition(
+            body = "BEGIN SELECT 1; END;", sourceDialect = "mysql"
+        )))
+        val result = generator.generate(s)
+        result.skippedObjects.any { it.name == "mysql_proc" } shouldBe true
+    }
+
+    test("procedure with INOUT parameter") {
+        val s = schema(procedures = mapOf("swap" to ProcedureDefinition(
+            parameters = listOf(
+                ParameterDefinition(name = "a", type = "INTEGER", direction = ParameterDirection.INOUT),
+                ParameterDefinition(name = "b", type = "INTEGER", direction = ParameterDirection.INOUT)
+            ),
+            body = "BEGIN\n    -- swap logic\nEND;"
+        )))
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "INOUT \"a\" INTEGER"
+        ddl shouldContain "INOUT \"b\" INTEGER"
+    }
+
+    // ── Coverage gap: resolveElementType ──
+
+    test("array with integer element type") {
+        val s = schema(tables = mapOf("t" to table(
+            columns = mapOf("ids" to col(NeutralType.Array("integer")))
+        )))
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "INTEGER[]"
+    }
+
+    test("array with boolean element type") {
+        val s = schema(tables = mapOf("t" to table(
+            columns = mapOf("flags" to col(NeutralType.Array("boolean")))
+        )))
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "BOOLEAN[]"
+    }
+
+    test("array with uuid element type") {
+        val s = schema(tables = mapOf("t" to table(
+            columns = mapOf("refs" to col(NeutralType.Array("uuid")))
+        )))
+        val ddl = generator.generate(s).render()
+        ddl shouldContain "UUID[]"
+    }
 })

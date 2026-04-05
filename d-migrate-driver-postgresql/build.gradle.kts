@@ -7,7 +7,7 @@ kover {
         verify {
             rule {
                 // TypeMapper: 100% via own tests; DdlGenerator: tested via golden masters in d-migrate-formats
-                minBound(84)
+                minBound(90)
             }
         }
     }
