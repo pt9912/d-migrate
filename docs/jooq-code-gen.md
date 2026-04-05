@@ -1,300 +1,252 @@
-# jOOQ Codegen via CLI in d-migrate
+# Eigenes Oracle-Codegen-Tool statt jOOQ-Codegen
 
-**Konzept- und Entscheidungsdokument fuer die Generierung von jOOQ-Klassen ueber ein separates CLI-Tool**
+**Konzept- und Entscheidungsdokument fuer ein eigenes CLI-Tool zur Oracle-Schema-Introspektion und Codegenerierung**
 
-> Dokumenttyp: Architektur-Notiz / Integrationskonzept
+> Dokumenttyp: Architektur-Notiz / Entscheidungsgrundlage
 
 ---
 
 ## 1. Ziel
 
-Fuer `d-migrate` soll bewertet werden, ob und wie sich jOOQ-Klassen ueber ein eigenes CLI-Kommando generieren lassen, insbesondere fuer Oracle-basierte Quellschemata.
+Fuer `d-migrate` soll bewertet werden, ob ein **eigenes Tool** geschrieben werden kann, das ein Oracle-Schema ausliest und daraus Java/Kotlin-Code erzeugt, **ohne** den offiziellen `jooq-codegen`-Generator und moeglichst auch **ohne jOOQ-Bibliotheken** zu verwenden.
 
-Ziel ist **nicht**, einen eigenen jOOQ-Ersatz zu bauen, sondern eine robuste und wartbare Integration in die bestehende CLI-Architektur zu definieren.
+Der zentrale Beweggrund ist, das jOOQ-Oracle-Lizenzthema zu vermeiden, solange `d-migrate` nur Metadaten aus Oracle lesen und daraus eigenen Code erzeugen soll.
 
 ---
 
 ## 2. Kurzfassung
 
-Ja, `d-migrate` kann jOOQ-Klassen per CLI-Tool generieren lassen.
+Ja, dieser Ansatz ist technisch moeglich.
 
-Die empfohlene Umsetzung ist:
+Wenn `d-migrate`:
 
-- eigenes CLI-Kommando in `d-migrate`
-- programmgesteuerter Aufruf des offiziellen jOOQ-Codegenerators
-- optional zwei Eingangswege:
-  - Codegen aus einer Live-Datenbank per JDBC
-  - Codegen aus DDL-Dateien statt aus einer Live-Datenbank
+- Oracle-Metadaten per JDBC selbst ausliest
+- die Modellierung selbst durchfuehrt
+- den Zielcode selbst erzeugt
+- und dabei **weder `jooq-codegen` noch andere `org.jooq.*`-Bibliotheken** verwendet
 
-**Nicht empfohlen** ist ein komplett eigener Generator, der jOOQ-Klassen ohne Nutzung von `jooq-codegen` selbst erzeugt. Das waere technisch moeglich, aber deutlich fehleranfaelliger und langfristig teurer in der Wartung.
+dann ist das **kein jOOQ-Codegen**, sondern ein eigener Generator.
 
----
+In diesem Fall wird das jOOQ-Lizenzthema fuer den Generierungsschritt grundsaetzlich vermieden.
 
-## 3. Warum kein eigener jOOQ-Klassengenerator
+Der wichtige Vorbehalt ist:
 
-Ein eigener Generator muesste einen grossen Teil der Funktionalitaet nachbauen, die jOOQ bereits mitliefert:
-
-- Tabellen, Spalten, Primary Keys, Foreign Keys, Indizes
-- korrekte Datentyp-Abbildung
-- Naming-Strategien und Paketstruktur
-- Generierung von `Table`, `Record`, `Field` und zugehoerigen Artefakten
-- Verhalten ueber mehrere jOOQ-Versionen hinweg
-
-Das fuehrt zu folgenden Nachteilen:
-
-- hohe Kopplung an jOOQ-Interne Strukturen
-- dauerhafter Pflegeaufwand bei jOOQ-Upgrades
-- erhoehte Gefahr von API-Inkompatibilitaeten
-- doppelter Implementierungsaufwand fuer ein bereits geloestes Problem
-
-Fazit: Wenn jOOQ-Zielartefakte benoetigt werden, sollte moeglichst auch der offizielle jOOQ-Generator verwendet werden.
+- Sobald der erzeugte Code oder die spaetere Anwendung doch wieder auf `org.jooq.*` basiert, ist die jOOQ-Frage nicht weg, sondern nur vom Generator in die Runtime oder in den Anwendungscode verschoben.
 
 ---
 
-## 4. Empfohlene Architektur
+## 3. Entscheidende Abgrenzung
 
-### 4.1 CLI-Ebene
+Es gibt drei klar zu unterscheidende Varianten.
 
-Erweiterung der bestehenden CLI um ein neues Kommando, zum Beispiel:
+### 3.1 Eigener Generator ohne jOOQ
 
-```bash
-d-migrate jooq generate --jdbc-url jdbc:oracle:thin:@//dbhost:1521/ORCLCDB --user app --password-env DB_PASSWORD
-```
+`d-migrate` liest Oracle selbst aus und erzeugt eigenen Code, zum Beispiel:
 
-oder alternativ:
+- Metadaten-Klassen
+- DAO-Klassen
+- Query-Helper
+- Record-/Table-Wrapper im eigenen Format
+- Dokumentation oder Mapping-Dateien
 
-```bash
-d-migrate jooq generate --ddl build/schema/oracle.sql --target-dir src/generated/jooq
-```
+Merkmale:
 
-Moegliche Kommandoformen:
+- keine Nutzung von `jooq-codegen`
+- keine Nutzung von `org.jooq.*`
+- keine technische Abhaengigkeit von jOOQ
 
-- `d-migrate jooq generate`
-- `d-migrate generate jooq`
+Das ist der sauberste Weg, wenn das Ziel ist, das jOOQ-Oracle-Thema zu vermeiden.
 
-Beides ist technisch moeglich. Aus Konsistenzgruenden mit anderen Themenbereichen wirkt `d-migrate jooq generate` als eigener Command-Baum klarer.
+### 3.2 Eigener Generator, aber jOOQ-kompatibler Output
 
-### 4.2 Integrationsschicht
+`d-migrate` erzeugt Klassen, die wie generierte jOOQ-Artefakte aussehen oder direkt auf `org.jooq.*` aufsetzen.
 
-Empfohlen wird ein dediziertes Integrationsmodul, zum Beispiel:
+Merkmale:
 
-```text
-d-migrate-integrations/
-  src/main/kotlin/dev/dmigrate/integration/jooq/
-    JooqCodegenAdapter.kt
-    JooqCodegenConfig.kt
-    JooqCodegenRunner.kt
-```
+- Generator ist selbst geschrieben
+- aber der Output oder die Zielanwendung benutzt weiterhin jOOQ
 
-Verantwortung dieser Schicht:
+Dann wird zwar `jooq-codegen` umgangen, aber nicht automatisch die jOOQ-Nutzung insgesamt.
 
-- Aufbereitung der CLI-Parameter
-- Erzeugung der jOOQ-Konfiguration
-- Aufruf von `org.jooq.codegen.GenerationTool`
-- Fehlerbehandlung und Ausgabe fuer die CLI
+### 3.3 Offizielle jOOQ-Integration
 
-### 4.3 Codegen-Backend
+`d-migrate` ruft intern `jooq-codegen` oder andere jOOQ-Bibliotheken auf.
 
-Intern sollte **nicht** eigener Java/Kotlin-Code fuer die eigentliche Artefakt-Erzeugung geschrieben werden. Stattdessen sollte `GenerationTool.generate(...)` genutzt werden.
-
-Damit bleibt `d-migrate` Orchestrator, waehrend jOOQ die Generierung selbst uebernimmt.
+Das ist der direkte jOOQ-Weg und damit gerade **nicht** der gewuenschte Ansatz.
 
 ---
 
-## 5. Empfohlene Betriebsmodi
+## 4. Lizenz-Einordnung
 
-### 5.1 Modus A: Live-Datenbank per JDBC
+Stand **5. April 2026** ordnen die offiziellen jOOQ-Seiten Oracle den kommerziellen Editionen zu. In der Support-Matrix wird Oracle nur unter kommerziellen Editionen aufgefuehrt.
 
-Geeignet fuer:
+Quellen:
 
-- bestehende Oracle-, PostgreSQL- oder MySQL-Datenbanken
-- Reverse Engineering aus dem realen Schemazustand
+- https://www.jooq.org/download/
+- https://www.jooq.org/download/support-matrix
+- https://www.jooq.org/legal/licensing
 
-Vorteile:
+Die technische Schlussfolgerung fuer `d-migrate` ist:
 
-- kein vorgeschalteter DDL-Export noetig
-- echte Metadaten aus dem Zielsystem
-- gut fuer produktionsnahe Schemaquellen
+- Wenn das Tool **gar kein jOOQ** verwendet, ist es aus technischer Sicht kein jOOQ-Anwendungsfall.
+- Wenn das Tool oder der erzeugte Code spaeter doch auf jOOQ basiert, muss die jOOQ-Lizenzfrage weiterhin betrachtet werden.
 
-Nachteile:
+Wichtig:
 
-- Datenbankzugriff und Treiberkonfiguration erforderlich
-- in CI/CD haeufig schwerer reproduzierbar
-
-### 5.2 Modus B: DDL-Dateien
-
-Geeignet fuer:
-
-- reproduzierbare Builds
-- Generierung aus versionierten SQL-Dateien
-- spaetere Kopplung mit `d-migrate schema generate`
-
-Vorteile:
-
-- kein Live-DB-Zugriff erforderlich
-- gut fuer CI/CD und lokale Entwicklung
-- leichter deterministisch testbar
-
-Nachteile:
-
-- nur so gut wie die zugrundeliegende DDL
-- vendor-spezifische Feinheiten koennen verloren gehen
+- Das ist eine technische Einordnung der Architektur.
+- Es ist **keine Rechtsberatung**.
+- Vor einer produktiven Einfuehrung sollte die konkrete Nutzungsform bei Bedarf rechtlich oder direkt mit dem Hersteller geklaert werden.
 
 ---
 
-## 6. Oracle-spezifische Einordnung
+## 5. Empfohlene Richtung fuer d-migrate
 
-Oracle ist fuer diesen Anwendungsfall der wichtigste Sonderfall.
+Die Zielrichtung sollte daher **nicht** sein:
 
-### 6.1 Technische Aspekte
+- "jOOQ-Codegen in `d-migrate` einbauen"
 
-Bei Oracle muessen unter anderem sauber behandelt werden:
+sondern:
 
-- `NUMBER` und seine Varianten
-- `VARCHAR2`, `CHAR`, `CLOB`, `BLOB`
-- `TIMESTAMP WITH TIME ZONE`
+- "ein eigenes Oracle-Introspection- und Codegen-Tool in `d-migrate` bereitstellen"
+
+Das bedeutet konkret:
+
+- Oracle-Schema per JDBC oder `DatabaseMetaData` auslesen
+- internes neutrales Modell fuer Tabellen, Spalten, Keys, Indizes, Sequences aufbauen
+- daraus eigene Artefakte generieren
+- bewusst **keine** Abhaengigkeit zu `org.jooq.*` einziehen
+
+Damit bleibt `d-migrate` in seiner eigenen Architektur und vermeidet eine enge Kopplung an jOOQ.
+
+---
+
+## 6. Technische Konsequenzen
+
+Der Preis fuer diese Lizenz- und Entkopplungsstrategie ist, dass mehr Eigenlogik gebaut werden muss.
+
+Ein eigener Oracle-Generator muss unter anderem behandeln:
+
+- Tabellen und Spalten
+- Primary Keys und Foreign Keys
+- Unique Constraints und Indizes
+- Oracle-Datentypen wie `NUMBER`, `VARCHAR2`, `CHAR`, `CLOB`, `BLOB`
+- `TIMESTAMP`, `TIMESTAMP WITH TIME ZONE`
 - Sequences
-- ggf. Synonyms und mehrere Schemas
+- ggf. Synonyms und Schema-/Owner-Grenzen
 
-Diese Details sprechen **gegen** einen selbstgebauten Generator und **fuer** die Wiederverwendung von jOOQ-Codegen.
-
-### 6.2 Lizenzaspekt
-
-Die Nutzung von jOOQ mit Oracle ist in der Praxis ein Lizenzthema und sollte frueh geprueft werden. Die Oracle-Unterstuetzung ist bei jOOQ nicht mit der Open-Source-Edition gleichzusetzen.
-
-Fuer die Projektplanung bedeutet das:
-
-- Oracle-Codegen nicht als "kostenlose Selbstverstaendlichkeit" annehmen
-- Abhaengigkeiten und Distribution bewusst planen
-- Lizenzpruefung vor produktiver Einfuehrung abschliessen
+Das ist machbar, aber es ist ein echtes Produktfeature und kein kleiner Adapter.
 
 ---
 
-## 7. Vorschlag fuer CLI-API
+## 7. Empfohlene Architektur
 
-### 7.1 Minimaler erster Zuschnitt
+### 7.1 CLI-Ebene
+
+Moegliches Kommando:
 
 ```bash
-d-migrate jooq generate \
+d-migrate oracle generate-model \
   --jdbc-url jdbc:oracle:thin:@//localhost:1521/ORCLCDB \
   --user app \
   --password-env DB_PASSWORD \
   --schema APP \
-  --package-name com.example.jooq \
-  --target-dir src/generated/jooq
+  --target-dir build/generated/oracle-model
 ```
 
-### 7.2 Alternative ueber DDL
+Alternative Namensgebung:
 
-```bash
-d-migrate jooq generate \
-  --ddl build/schema/oracle.sql \
-  --package-name com.example.jooq \
-  --target-dir src/generated/jooq
-```
+- `d-migrate oracle introspect`
+- `d-migrate oracle generate-code`
+- `d-migrate generate oracle-model`
 
-### 7.3 Sinnvolle Optionen
+### 7.2 Modulstruktur
 
-| Option | Bedeutung |
-|---|---|
-| `--jdbc-url` | JDBC-Quelle fuer Live-Codegen |
-| `--user` | Datenbankbenutzer |
-| `--password` | Passwort direkt (nur falls wirklich noetig) |
-| `--password-env` | Passwort aus Umgebungsvariable |
-| `--schema` | Quellschema |
-| `--ddl` | Eingabe ueber SQL-DDL-Datei(en) |
-| `--package-name` | Zielpaket fuer generierten Code |
-| `--target-dir` | Zielverzeichnis |
-| `--includes` | Regex fuer einzuschliessende Objekte |
-| `--excludes` | Regex fuer auszuschliessende Objekte |
-| `--forced-type` | Optionale Type-Mappings / Overrides |
-| `--dry-run` | Konfiguration pruefen, aber nichts schreiben |
-
----
-
-## 8. Beziehung zu d-migrate
-
-Diese Integration sollte als **optionale Zusatzfunktion** behandelt werden.
-
-`d-migrate` bleibt primaer:
-
-- Schema-Modellierer
-- Validator
-- DDL-Generator
-- spaeter ggf. Reverse-Engineering- und Migrationswerkzeug
-
-Die jOOQ-Integration ist dagegen:
-
-- ein Downstream-Use-Case
-- ein Adapter fuer Java-Anwendungen, die jOOQ verwenden
-
-Das ist architektonisch sauber, weil die Kernlogik von `d-migrate` nicht von jOOQ abhaengen muss.
-
----
-
-## 9. Empfohlene Ausbaustufen
-
-### Stufe 1
-
-Direkter CLI-Aufruf von jOOQ-Codegen gegen JDBC.
-
-Ziel:
-
-- schnellster Nutzwert
-- geringste Eigenimplementierung
-
-### Stufe 2
-
-Codegen aus DDL-Dateien ueber jOOQ `DDLDatabase`.
-
-Ziel:
-
-- reproduzierbare Builds ohne Live-Datenbank
-- gute CI/CD-Integration
-
-### Stufe 3
-
-Kopplung mit `d-migrate`:
+Empfohlenes Zielbild:
 
 ```text
-schema.yaml -> d-migrate DDL -> jOOQ Codegen
+d-migrate-integrations/
+  src/main/kotlin/dev/dmigrate/integration/oracle/
+    OracleMetadataReader.kt
+    OracleIntrospectionConfig.kt
+    OracleTypeMapper.kt
+    OracleModelGenerator.kt
 ```
 
-Ziel:
+### 7.3 Interne Schritte
 
-- neutral definiertes Schema
-- daraus DB-DDL
-- daraus jOOQ-Artefakte
-
-Diese Stufe ist besonders interessant, sobald Oracle als Dialekt im Projekt selbst unterstuetzt wird.
+1. JDBC-Verbindung zu Oracle herstellen
+2. Metadaten aus Systemkatalog und JDBC-Metadaten lesen
+3. Internes Modell aufbauen
+4. Optional validieren und normalisieren
+5. Zielartefakte in Dateien rendern
 
 ---
 
-## 10. Entscheidung
+## 8. Zielartefakte
 
-Empfohlen wird:
+Wenn das jOOQ-Thema wirklich umgangen werden soll, sollten die Zielartefakte **eigene** Artefakte sein.
 
-1. `docs/jooq-code-gen.md` als Referenz fuer die Architekturentscheidung
-2. spaeter ein CLI-Kommando `d-migrate jooq generate`
-3. intern Nutzung von `jooq-codegen` statt eigenem Artefaktgenerator
-4. zuerst JDBC-Modus, danach optional DDL-Modus
-5. Oracle frueh unter Lizenz- und Distributionsgesichtspunkten klaeren
+Geeignete Ziele:
+
+- Kotlin/Java-Modelle fuer Tabellen und Spalten
+- interne DSL-Metadaten
+- Generator-Input fuer spaetere SQL- oder DAO-Erzeugung
+- Mapping-Dateien fuer andere Frameworks
+
+Weniger geeignet fuer dieses Ziel:
+
+- Klassen, die von jOOQ-Typen erben
+- Klassen, die direkt `org.jooq.Table`, `org.jooq.Field` oder `org.jooq.Record` voraussetzen
+
+Denn genau dort wuerde wieder eine inhaltliche Bindung an jOOQ entstehen.
+
+---
+
+## 9. Risiken und Trade-offs
+
+### Vorteile
+
+- keine direkte Abhaengigkeit von `jooq-codegen`
+- keine enge Bindung an jOOQ-Interna
+- bessere Kontrolle ueber Naming, Output und interne Modellierung
+- lizenzseitig sauberer, **wenn** jOOQ komplett vermieden wird
+
+### Nachteile
+
+- hoeherer Implementierungsaufwand
+- mehr Verantwortung fuer Oracle-Spezifika
+- eigener Wartungsaufwand fuer Typmapping und Metadatenlogik
+- keine automatische Kompatibilitaet mit jOOQ-Artefakten
+
+---
+
+## 10. Empfehlung
+
+Fuer `d-migrate` wird folgende Entscheidung empfohlen:
+
+1. Kein programmgesteuerter Aufruf von `jooq-codegen`
+2. Kein Einbau von `org.jooq.*` in den Generator
+3. Eigenes Oracle-Introspection-Modul bauen
+4. Eigene Zielartefakte definieren statt jOOQ-Artefakte nachzubauen
+5. Falls spaeter echte jOOQ-Integration gewuenscht wird, diese als **separate** bewusste Produktentscheidung behandeln
 
 Nicht empfohlen wird:
 
-- ein vollstaendig eigener Generator fuer jOOQ-Klassen
+- ein halb-eigener Generator, der offiziell kein `jooq-codegen` nutzt, aber am Ende trotzdem voll auf jOOQ-Runtime aufsetzt
+
+Das waere technisch moeglich, aber fuer das eigentliche Ziel "jOOQ-/Oracle-Lizenzthema vermeiden" nur ein unvollstaendiger Ausweg.
 
 ---
 
 ## 11. Externe Referenzen
 
-Offizielle jOOQ-Dokumentation:
+Offizielle jOOQ-Seiten:
 
-- Programmatic code generation:
-  - https://www.jooq.org/doc/latest/manual/code-generation/codegen-programmatic/
-- Code generation from DDL:
-  - https://www.jooq.org/doc/latest/manual/code-generation/codegen-meta-sources/codegen-ddl/
-- Download / Edition overview:
+- Download / Editions:
   - https://www.jooq.org/download/
+- Support-Matrix:
+  - https://www.jooq.org/download/support-matrix
+- Licensing FAQ:
+  - https://www.jooq.org/legal/licensing
 
-Hinweis: Diese Links sollten bei einer spaeteren Implementierung erneut geprueft werden, falls sich Editionsmodell, Oracle-Unterstuetzung oder Konfigurationsdetails in neueren jOOQ-Versionen aendern.
+Diese Referenzen sollten bei spaeteren Architekturentscheidungen erneut geprueft werden, falls sich das Editionsmodell oder die Oracle-Zuordnung in einer spaeteren jOOQ-Version aendert.

@@ -40,6 +40,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - **Qualitätssteigerung** durch standardisierte, validierte Prozesse
 - **Flexibilität** für zukünftige Technologieentscheidungen
 - **Beschleunigung** von Entwicklungs- und Migrationsprozessen
+- **Werkzeugunabhängigkeit** für Reverse-Engineering und Codeerzeugung, insbesondere bei kommerziellen Datenbanksystemen
 
 ### 2.3 Nicht-Ziele
 
@@ -115,6 +116,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Unterstützung für Reverse-Engineering von SQL-DDL-Statements (z. B. CREATE TABLE, ALTER TABLE, CREATE PROCEDURE, CREATE FUNCTION, CREATE TRIGGER, CREATE VIEW)
 - Extraktion von Tabellen, Datentypen, Constraints, Indizes, Beziehungen und anderen datenbankeigenen Objekten
 - Kompatibilität mit den in LF-003 genannten Datenbanksystemen
+- Reverse-Engineering muss über eigene Adapter und Metadatenleser möglich sein und darf keine verpflichtende Abhängigkeit von externen proprietären Codegenerierungswerkzeugen voraussetzen
 
 #### 4.1.2 Internationalisierung und Zeichensätze
 
@@ -167,6 +169,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Liquibase-Changesets
 - Django-Migrations
 - Knex.js-Migrationsdateien
+- Diese Integrationen sind optionale Ausgabepfade und dürfen keine Voraussetzung für die Kernfunktionen des Systems sein
 
 **LF-012** Das System muss über eine Kommandozeilen-Schnittstelle verfügen
 - Alle Funktionen müssen per CLI erreichbar sein
@@ -208,6 +211,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 **LF-019** Das System kann weitere Datenbanksysteme unterstützen (Oracle, MS SQL Server)
 - Inklusive deren spezifischer Kollations- und Encoding-Einstellungen
+- Die Unterstützung muss über eigene, austauschbare Reader-, Mapper- und Generator-Komponenten realisierbar sein
 
 **LF-020** Das System kann Schema-Optimierungsvorschläge generieren
 
