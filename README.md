@@ -1,6 +1,6 @@
 # d-migrate
 
-**Database-agnostic schema migration framework for the JVM.**
+**Database-agnostic CLI tool for schema migration and data management.**
 
 <!-- Badges -->
 ![Build](https://github.com/pt9912/d-migrate/actions/workflows/build.yml/badge.svg)
@@ -11,7 +11,7 @@
 
 ## What is d-migrate?
 
-d-migrate lets you define your database schema once in a neutral, database-agnostic format (YAML) and then validate, diff, and generate DDL for multiple target databases. No more maintaining separate migration scripts per database engine.
+d-migrate is a command-line tool that lets you define your database schema once in a neutral, database-agnostic format (YAML) and then validate, diff, and generate DDL for multiple target databases. No more maintaining separate migration scripts per database engine.
 
 **Current capabilities:**
 - Neutral schema model with 18 built-in types
