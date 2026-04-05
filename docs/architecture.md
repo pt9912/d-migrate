@@ -2,6 +2,10 @@
 
 **Framework für datenbankunabhängige Migrationen und Datenverwaltung**
 
+> Dokumenttyp: Zielarchitektur / Soll-Zustand
+>
+> Hinweis: Die nachfolgend beschriebene Modul- und Build-Struktur ist das geplante Zielbild. Der aktuelle Repository-Stand kann davon noch abweichen, solange dieses Dokument den Status `Entwurf` trägt.
+
 ---
 
 ## 1. Architektur-Übersicht
@@ -32,10 +36,11 @@
                             │           │             │
                     ┌───────▼──┐  ┌─────▼────┐  ┌─────▼──────┐
                     │PostgreSQL│  │JSON/YAML │  │Ollama      │
-                    │MySQL     │  │CSV/SQL   │  │OpenAI      │
-                    │SQLite    │  │          │  │Anthropic   │
-                    │(Oracle)  │  │          │  │Grok        │
-                    │(MSSQL)   │  │          │  │(lokal/ext.)│
+                    │MySQL     │  │CSV/SQL   │  │LM Studio   │
+                    │SQLite    │  │          │  │OpenAI      │
+                    │(Oracle)  │  │          │  │Anthropic   │
+                    │(MSSQL)   │  │          │  │xAI/Gemini  │
+                    │          │  │          │  │vLLM/TGI    │
                     └──────────┘  └──────────┘  └────────────┘
 ```
 
@@ -43,9 +48,9 @@
 
 **Hexagonale Architektur (Ports & Adapters)** mit klarer Trennung zwischen:
 
-- **Domain Core**: Neutrales Schema-Modell, Validierungslogik, Type-Mapping — keine externen Abhängigkeiten
-- **Ports**: Interfaces für Datenbank-Zugriff, Datei-I/O, KI-Provider
-- **Adapters**: Konkrete Implementierungen (JDBC-Driver, Jackson-Serializer, HTTP-Clients)
+- **Domain Core**: Neutrales Schema-Modell, Validierungslogik, Diff- und Planungslogik - keine externen Abhängigkeiten
+- **Ports**: Interfaces für Datenbank-Zugriff, Datei-I/O, KI-Provider und datenbankspezifisches Type-Mapping
+- **Adapters**: Konkrete Implementierungen (JDBC-Driver, Jackson-Serializer, HTTP-Clients, Dialekt-spezifische TypeMapper)
 
 ```
                     Driving Adapters              Driven Adapters
@@ -67,9 +72,9 @@
               ┌───▼──────────────────────────────▼───┐
               │           Domain Core                 │
               │                                       │
-              │  SchemaDefinition  TypeMapper          │
-              │  Validator         Transformer         │
-              │  MigrationPlan     DiffEngine          │
+              │  SchemaDefinition  NeutralTypes        │
+              │  Validator         MigrationPlan       │
+              │  DependencyGraph   DiffEngine          │
               └───────────────────────────────────────┘
 ```
 
@@ -77,7 +82,9 @@
 
 ## 2. Modul-Struktur
 
-### 2.1 Projekt-Layout (Gradle Multi-Module)
+### 2.1 Zielbild: Projekt-Layout (Gradle Multi-Module)
+
+Die folgende Struktur beschreibt den geplanten Soll-Zustand der Codebasis:
 
 ```
 d-migrate/
@@ -96,8 +103,8 @@ d-migrate/
 │           ├── validation/             # Schema-Validierung
 │           │   ├── SchemaValidator.kt
 │           │   └── ValidationResult.kt
-│           ├── typemap/                # Neutrales Typsystem
-│           │   └── TypeMapper.kt
+│           ├── types/                  # Neutrales Typsystem
+│           │   └── TypeCompatibility.kt
 │           ├── diff/                   # Schema-Vergleich
 │           │   ├── SchemaDiff.kt
 │           │   └── DiffResult.kt
@@ -113,7 +120,8 @@ d-migrate/
 │   │           ├── SchemaReader.kt
 │   │           ├── SchemaWriter.kt
 │   │           ├── DataReader.kt
-│   │           └── DataWriter.kt
+│   │           ├── DataWriter.kt
+│   │           └── TypeMapper.kt              # Dialekt-Port
 │   │
 │   ├── d-migrate-driver-postgresql/
 │   │   └── src/main/kotlin/
@@ -143,12 +151,15 @@ d-migrate/
 │   └── src/main/kotlin/
 │       └── dev/dmigrate/format/
 │           ├── FormatCodec.kt          # Port-Interface
+│           ├── TextEncoding.kt         # UTF-8/UTF-16/ISO-8859-1, BOM
+│           ├── ImportParser.kt         # Datei → neutrales Datenmodell
 │           ├── json/
 │           │   └── JsonCodec.kt
 │           ├── yaml/
 │           │   └── YamlCodec.kt
 │           ├── csv/
-│           │   └── CsvCodec.kt
+│           │   ├── CsvCodec.kt
+│           │   └── CsvBomHandler.kt
 │           └── sql/
 │               └── SqlCodec.kt
 │
@@ -172,10 +183,20 @@ d-migrate/
 │           ├── TransformService.kt     # Orchestrierung
 │           ├── ollama/
 │           │   └── OllamaProvider.kt
+│           ├── lmstudio/
+│           │   └── LmStudioProvider.kt
 │           ├── openai/
 │           │   └── OpenAiProvider.kt
 │           ├── anthropic/
 │           │   └── AnthropicProvider.kt
+│           ├── xai/
+│           │   └── XaiProvider.kt
+│           ├── google/
+│           │   └── GeminiProvider.kt
+│           ├── vllm/
+│           │   └── VllmProvider.kt
+│           ├── tgi/
+│           │   └── TgiProvider.kt
 │           └── noop/
 │               └── RuleBasedProvider.kt
 │
@@ -192,11 +213,23 @@ d-migrate/
 │       ├── kotlin/
 │       │   └── dev/dmigrate/i18n/
 │       │       ├── Messages.kt
-│       │       └── UnicodeUtils.kt
+│       │       ├── UnicodeUtils.kt
+│       │       ├── LocaleFormats.kt    # Datum/Zeit/Zahl/Waehrung
+│       │       ├── TimezonePolicy.kt   # UTC-Default, Konvertierung
+│       │       └── PhoneNumberValidator.kt # Optionale E.164-Validierung
 │       └── resources/
 │           └── messages/
 │               ├── messages_de.properties
 │               └── messages_en.properties
+│
+├── d-migrate-docs/                     # Dokumentationsgenerierung
+│   └── src/main/kotlin/
+│       └── dev/dmigrate/docs/
+│           ├── DocumentationGenerator.kt
+│           ├── MarkdownRenderer.kt
+│           ├── HtmlRenderer.kt
+│           ├── PdfRenderer.kt
+│           └── ErDiagramGenerator.kt
 │
 └── d-migrate-cli/                      # CLI-Anwendung (Einstiegspunkt)
     └── src/main/kotlin/
@@ -220,17 +253,18 @@ d-migrate-cli
 ├── d-migrate-core
 ├── d-migrate-drivers
 │   ├── d-migrate-driver-api ──▶ d-migrate-core
-│   ├── d-migrate-driver-postgresql ──▶ d-migrate-driver-api
-│   ├── d-migrate-driver-mysql ──▶ d-migrate-driver-api
-│   └── d-migrate-driver-sqlite ──▶ d-migrate-driver-api
+│   ├── d-migrate-driver-postgresql ──▶ d-migrate-driver-api, d-migrate-core
+│   ├── d-migrate-driver-mysql ──▶ d-migrate-driver-api, d-migrate-core
+│   └── d-migrate-driver-sqlite ──▶ d-migrate-driver-api, d-migrate-core
 ├── d-migrate-formats ──▶ d-migrate-core
 ├── d-migrate-integrations ──▶ d-migrate-core
 ├── d-migrate-ai ──▶ d-migrate-core
 ├── d-migrate-streaming ──▶ d-migrate-core, d-migrate-driver-api
-└── d-migrate-i18n
+├── d-migrate-i18n
+└── d-migrate-docs ──▶ d-migrate-core, d-migrate-i18n
 ```
 
-**Regel**: `d-migrate-core` hat KEINE Abhängigkeit auf andere Module. Alle anderen Module hängen von `core` ab, aber nie umgekehrt.
+**Regel**: `d-migrate-core` hat KEINE Abhängigkeit auf andere Module. Port-Module wie `d-migrate-driver-api` dürfen `core` referenzieren, wenn ihre Signaturen das neutrale Modell verwenden. Konkrete Adapter hängen an Ports und bei Bedarf direkt an `core`, aber nie umgekehrt.
 
 ---
 
@@ -285,6 +319,19 @@ interface DataWriter {
         chunk: DataChunk
     ): ImportResult
 }
+
+interface FormatCodec<T> {
+    val format: DataFormat
+
+    fun read(input: InputStream, options: FormatOptions): T
+    fun write(output: OutputStream, value: T, options: FormatOptions)
+}
+
+data class FormatOptions(
+    val encoding: TextEncoding = TextEncoding.UTF8,
+    val bomMode: BomMode = BomMode.AUTO,
+    val timezone: ZoneId = ZoneOffset.UTC
+)
 ```
 
 ### 3.2 Driver-Registrierung (SPI)
@@ -300,6 +347,11 @@ dev.dmigrate.driver.sqlite.SqliteDriver
 
 Dadurch können neue Treiber (Oracle, MSSQL) als separate JARs hinzugefügt werden, ohne den Core zu ändern.
 
+Wichtig für Distribution und Deployment:
+
+- **JVM/Fat-JAR und Docker**: Dynamisches Nachladen separater Treiber-JARs wird direkt unterstützt.
+- **GraalVM Native Image**: Unterstützte Treiber werden zur Build-Zeit eingebunden. Zusätzliche Treiber erfordern ein neues Native-Build-Profil oder den Wechsel auf die JVM-Distribution.
+
 ### 3.3 Streaming-Pipeline
 
 ```kotlin
@@ -308,8 +360,8 @@ Dadurch können neue Treiber (Oracle, MSSQL) als separate JARs hinzugefügt werd
  * Verarbeitet Daten chunkweise ohne vollständiges Laden in den Speicher.
  */
 class StreamingPipeline(
-    private val source: DataReader,
-    private val target: DataWriter,
+    private val sourceDriver: DatabaseDriver,
+    private val targetDriver: DatabaseDriver,
     private val transformer: DataTransformer,
     private val checkpointStore: CheckpointStore
 ) {
@@ -317,36 +369,59 @@ class StreamingPipeline(
         sourceConnection: DatabaseConnection,
         targetConnection: DatabaseConnection,
         tables: List<String>,
+        foreignKeys: List<ForeignKeyDefinition>,
         config: PipelineConfig
     ): PipelineResult {
         val graph = DependencyGraph.build(tables, foreignKeys)
         val executionOrder = graph.topologicalSort()
+        val sourceReader = sourceDriver.dataReader()
+        val targetWriter = targetDriver.dataWriter()
 
         // Unabhängige Tabellen parallel, abhängige sequentiell
         return coroutineScope {
-            executionOrder.parallelGroups().map { group ->
+            for (group in executionOrder.parallelGroups()) {
                 group.map { table ->
                     async(Dispatchers.IO) {
-                        processTable(table, sourceConnection, targetConnection, config)
+                        processTable(
+                            table = table,
+                            sourceConnection = sourceConnection,
+                            targetConnection = targetConnection,
+                            sourceReader = sourceReader,
+                            targetWriter = targetWriter,
+                            config = config
+                        )
                     }
                 }.awaitAll()
             }
+
+            PipelineResult.success(processedTables = tables)
         }
     }
 
     private suspend fun processTable(
         table: String,
-        source: DatabaseConnection,
-        target: DatabaseConnection,
+        sourceConnection: DatabaseConnection,
+        targetConnection: DatabaseConnection,
+        sourceReader: DataReader,
+        targetWriter: DataWriter,
         config: PipelineConfig
     ) {
         val checkpoint = checkpointStore.load(table)
 
-        source.dataReader()
-            .streamTable(table, startAfter = checkpoint?.lastProcessedId)
+        sourceReader
+            .streamTable(
+                connection = sourceConnection,
+                table = table,
+                filter = checkpoint?.let { DataFilter.resumeAfter(it.lastProcessedId) },
+                chunkSize = config.chunkSize
+            )
             .onEach { chunk ->
                 val transformed = transformer.transform(chunk)
-                target.dataWriter().importChunk(table, transformed)
+                targetWriter.importChunk(
+                    connection = targetConnection,
+                    table = table,
+                    chunk = transformed
+                )
                 checkpointStore.save(table, chunk.lastId, chunk.count)
             }
             .collect()
@@ -424,7 +499,8 @@ data class DmigrateConfig(
     val export: ExportConfig,
     val ai: AiConfig,
     val i18n: I18nConfig,
-    val pipeline: PipelineConfig
+    val pipeline: PipelineConfig,
+    val documentation: DocumentationConfig = DocumentationConfig()
 )
 
 data class AiConfig(
@@ -444,6 +520,18 @@ data class PipelineConfig(
     val checkpointInterval: Int = 10_000,
     val retryAttempts: Int = 3,
     val retryDelayMs: Long = 1_000
+)
+
+data class I18nConfig(
+    val defaultLocale: String = "en",
+    val defaultTimezone: String = "UTC",
+    val normalizeUnicode: UnicodeNormalization = UnicodeNormalization.NFC
+)
+
+data class DocumentationConfig(
+    val enabledFormats: Set<String> = setOf("markdown"),
+    val includeErDiagrams: Boolean = true,
+    val includeLocalizedLabels: Boolean = true
 )
 ```
 
@@ -513,6 +601,15 @@ suspend fun <T> withRetry(
 }
 ```
 
+### 4.5 Encoding und internationale Datenformate
+
+- Textbasierte Formate verwenden standardmaessig UTF-8.
+- Dateiimporte erkennen UTF-8/UTF-16 sowie BOM-Markierungen automatisch; weitere Encodings sind explizit konfigurierbar.
+- Exportformate erhalten Encoding-Metadaten, sofern das Zielformat diese transportieren kann; fuer CSV erfolgt dies optional ueber Sidecar-Dateien.
+- Temporale Werte werden intern zeitzonenbewusst verarbeitet; Standard fuer Serialisierung und Export ist UTC.
+- Locale-sensible Werte wie Zahlen- und Waehrungsdarstellungen werden an Ein-/Ausgabegrenzen normalisiert, damit interne Verarbeitung formatunabhaengig bleibt.
+- Optionale Validierungsbausteine fuer E.164-Telefonnummern werden als Querschnittskomponente im `d-migrate-i18n`-Modul bereitgestellt.
+
 ---
 
 ## 5. Build und Distribution
@@ -520,6 +617,8 @@ suspend fun <T> withRetry(
 ### 5.1 Build-System
 
 **Gradle (Kotlin DSL)** mit Multi-Module-Setup:
+
+Das folgende Build-Skript ist als Zielbild fuer die geplante Multi-Module-Codebasis zu verstehen:
 
 ```kotlin
 // build.gradle.kts (Root)
@@ -571,15 +670,16 @@ subprojects {
 ```
 Distribution-Formate:
 
-1. GraalVM Native Image (bevorzugt)
+1. JVM/Fat JAR (Standard für Entwicklung und dynamische Erweiterbarkeit)
+   → java -jar d-migrate.jar
+   → Unterstützt ServiceLoader-basierte Erweiterungen zur Laufzeit
+   → Distribution: Maven Central, SDKMAN
+
+2. GraalVM Native Image (optimiertes Deployment für vordefinierte Bundles)
    → Single Binary für Linux/macOS/Windows
    → ~50 MB, Start in <100ms
+   → Enthält nur die beim Build eingebundenen Treiber/Provider
    → Distribution: GitHub Releases, Homebrew
-
-2. Fat JAR (Fallback)
-   → java -jar d-migrate.jar
-   → Für Umgebungen ohne Native-Image-Support
-   → Distribution: Maven Central, SDKMAN
 
 3. Docker Image
    → docker run dmigrate/d-migrate schema validate ...
@@ -661,9 +761,9 @@ Tools:
 
 ```
 1. Interface AiProvider implementieren
-2. HTTP-Client für Provider-API
+2. HTTP-Client oder lokales Adapter-Protokoll für Provider-API ergänzen
 3. Konfiguration in AiBackendConfig ergänzen
-4. ServiceLoader-Registrierung
+4. ServiceLoader-Registrierung für JVM/Docker oder Native-Build-Profil erweitern
 → Kein Core-Code muss geändert werden
 ```
 
@@ -706,6 +806,6 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.0
+**Version**: 1.1
 **Stand**: 2026-04-05
-**Status**: Entwurf
+**Status**: Zielarchitektur (Entwurf)
