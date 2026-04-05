@@ -2,6 +2,10 @@
 
 **Framework für datenbankunabhängige Migrationen und Datenverwaltung**
 
+> Dokumenttyp: Zieldesign / Soll-Zustand
+>
+> Hinweis: Dieses Dokument beschreibt das fachliche und technische Zielbild. Der aktuelle Repository-Stand kann davon noch abweichen, solange dieses Dokument den Status `Entwurf` trägt.
+
 ---
 
 ## 1. Design-Philosophie
@@ -11,7 +15,7 @@
 - **Database-Agnostic First**: Alle internen Datenstrukturen sind datenbankunabhängig. Datenbankspezifisches Verhalten wird ausschließlich in austauschbaren Adaptern gekapselt.
 - **Convention over Configuration**: Sinnvolle Defaults für alle Einstellungen, explizite Konfiguration nur wo nötig.
 - **Streaming by Default**: Datenverarbeitung erfolgt grundsätzlich streaming-basiert, um beliebig große Datenmengen zu unterstützen.
-- **Fail-Safe**: Keine Operation darf einen inkonsistenten Zustand hinterlassen. Transaktionale Verarbeitung mit Checkpoint/Resume.
+- **Fail-Safe**: Standardmaessig transaktionale Verarbeitung ohne stillschweigende Teilmigrationen. Best-Effort-Verhalten ist nur explizit konfigurierbar.
 - **Privacy by Design**: Lokale Verarbeitung als Standard, externe APIs nur opt-in.
 
 ### 1.2 Technologie-Entscheidung: Kotlin/JVM
@@ -73,6 +77,8 @@ Das Herzstück von d-migrate ist ein datenbankunabhängiges Schema-Modell, das a
 ### 2.2 Neutrales Typsystem
 
 Statt datenbankspezifische Typen direkt zu verwenden, definiert d-migrate ein neutrales Typsystem:
+
+Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Referenz-Metadaten an einer skalaren Spalte.
 
 | Neutraler Typ  | PostgreSQL           | MySQL              | SQLite                            |
 | -------------- | -------------------- | ------------------ | --------------------------------- |
@@ -141,13 +147,16 @@ Langläufige Operationen erzeugen Checkpoints zur Wiederaufnahme:
 data class MigrationCheckpoint(
     val operationId: UUID,
     val table: String,
-    val lastProcessedId: Long,
+    val orderBy: List<String>,                 // Deterministische Verarbeitungsreihenfolge
+    val lastProcessedKey: Map<String, String>, // Serialisierte Resume-Position, auch fuer UUID/String/Composite Keys
     val processedCount: Long,
     val totalCount: Long?,
     val checksum: String,       // SHA-256 der bisher verarbeiteten Daten
     val timestamp: Instant
 )
 ```
+
+Die konkrete Typkonvertierung zwischen `lastProcessedKey` und datenbankspezifischen Schluesseltypen erfolgt im jeweiligen Treiber.
 
 ### 3.3 Parallele Verarbeitung
 
@@ -196,11 +205,13 @@ data class TransformResult(
 ```
 AiProvider (Interface)
 ├── OllamaProvider        — Lokale Modelle (Default bei privacy.prefer_local)
+├── LmStudioProvider      — Lokale OpenAI-kompatible Runtime
 ├── OpenAiProvider        — GPT-4 / GPT-4o
 ├── AnthropicProvider     — Claude
 ├── XaiProvider           — Grok
 ├── GoogleProvider        — Gemini
 ├── VllmProvider          — Self-Hosted vLLM
+├── TgiProvider           — Self-Hosted Text Generation Inference
 └── NoOpProvider          — Fallback ohne KI (regelbasiert)
 ```
 
@@ -313,7 +324,7 @@ tables:
         type: identifier
         auto_increment: true
       customer_id:
-        type: reference
+        type: integer
         references: customers.id
         on_delete: restrict
       total_amount:
@@ -321,6 +332,8 @@ tables:
         precision: 10
         scale: 2
 ```
+
+`references` beschreibt eine Beziehung auf Constraint-Ebene. Der Spaltentyp bleibt ein regulaerer neutraler Skalartyp.
 
 ### 6.2 Datenexport-Formate
 
@@ -337,12 +350,13 @@ tables:
 }
 ```
 
-**CSV** (mit Metadaten-Header):
+**CSV** (maximale Tool-Kompatibilitaet, Metadaten optional als Sidecar-Datei):
 ```csv
-# d-migrate export | table=customers | encoding=UTF-8 | exported=2025-10-22T14:30:00Z
 id,email,name
 1,kunde@example.de,Müller
 ```
+
+CSV-Export und -Import unterstuetzen konfigurierbares Encoding sowie optionale BOM-Erzeugung bzw. BOM-Erkennung.
 
 **YAML** (für kleinere Datensätze / Konfiguration):
 ```yaml
@@ -352,6 +366,21 @@ records:
     email: kunde@example.de
     name: Müller
 ```
+
+Optionale CSV-Sidecar-Metadaten:
+```yaml
+table: customers
+schema_version: "1.0"
+encoding: UTF-8
+exported_at: 2025-10-22T14:30:00Z
+```
+
+### 6.3 Dateiimport und Parsing
+
+- Dateiimporte validieren Daten vor dem Schreiben gegen das neutrale Schema.
+- Textformate verwenden standardmaessig UTF-8; UTF-16 und BOM-markierte Dateien werden automatisch erkannt.
+- Weitere Encodings wie ISO-8859-1 sind explizit konfigurierbar, damit Importe reproduzierbar bleiben.
+- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden.
 
 ---
 
@@ -382,7 +411,7 @@ sealed class MigrateError {
 
 | Szenario                         | Verhalten                                                 |
 | -------------------------------- | --------------------------------------------------------- |
-| Einzelner Datensatz fehlerhaft   | Loggen, überspringen (konfigurierbar), weitermachen       |
+| Einzelner Datensatz fehlerhaft   | Standard: aktuellen Chunk/Tabelle abbrechen; optional Best-Effort: loggen und überspringen |
 | Constraint-Verletzung bei Import | Transaktion auf Chunk-Ebene zurückrollen                  |
 | DB-Verbindung unterbrochen       | Retry mit Backoff (3 Versuche), dann Checkpoint schreiben |
 | KI-Provider nicht erreichbar     | Fallback auf nächsten Provider, dann regelbasiert         |
@@ -412,10 +441,17 @@ src/main/resources/messages/
 
 ### 8.3 Unicode-Verarbeitung
 
-- Alle internen Strings als UTF-8
+- Interne Strings als Unicode; UTF-8 ist das Standard-Encoding an Datei-, CLI- und API-Grenzen
 - Grapheme-aware String-Längenberechnung via ICU4J
-- Normalisierung (NFC) bei Schema-Vergleichen
+- Unicode-Normalisierung fuer NFC, NFD, NFKC und NFKD; Standardvergleich erfolgt auf NFC-normalisierten Werten
 - BOM-Erkennung und -Behandlung bei CSV-Import
+
+### 8.4 Internationale Datenformate
+
+- Temporale Werte werden intern zeitzonenbewusst verarbeitet; Export erfolgt standardmaessig in UTC, Import kann Quell- und Zielzeitzonen explizit konfigurieren.
+- Datum, Uhrzeit und Timestamp werden formatuebergreifend auf ISO 8601 normalisiert.
+- Geldbetraege werden ueber `decimal(p,s)` und locale-unabhaengige Serialisierung verarbeitet, um Punkt/Komma-Konflikte zu vermeiden.
+- Telefonnummern koennen optional gegen E.164 validiert und in kanonischer Form exportiert werden.
 
 ---
 
@@ -467,10 +503,10 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 - **Schema-Format**: Rückwärtskompatibel für 2 Major-Versionen
 - **CLI-Argumente**: Deprecated Flags bleiben 2 Minor-Versionen erhalten
-- **Export-Formate**: Stabile Formate ab 1.0, versioniert im Header
+- **Export-Formate**: Stabile Formate ab 1.0; JSON/YAML versionieren Metadaten im Dokument, CSV optional ueber Sidecar-Datei
 
 ---
 
-**Version**: 1.0
+**Version**: 1.1
 **Stand**: 2026-04-05
 **Status**: Entwurf
