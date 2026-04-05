@@ -41,6 +41,20 @@ d-migrate is a command-line tool that lets you define your database schema once 
 ./gradlew :d-migrate-cli:run --args="schema validate --source schema.yaml"
 ```
 
+### Docker
+
+No JDK required — just pull the image and run:
+
+```bash
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:0.1.0 schema validate --source /work/schema.yaml
+```
+
+Or use `latest` for the most recent release:
+
+```bash
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
+```
+
 ### Minimal Schema Example
 
 Create a file called `schema.yaml`:
@@ -75,15 +89,14 @@ Then validate it:
 
 ## Current Status
 
-**Milestone 0.1.0** (in development on `develop` branch):
+**[v0.1.0](https://github.com/pt9912/d-migrate/releases/tag/v0.1.0)** released:
 
-- Gradle multi-module project: `d-migrate-core`, `d-migrate-formats`, `d-migrate-cli`
-- `NeutralType` sealed class with 18 database-agnostic types
-- `SchemaDefinition` model for representing schemas
-- `SchemaValidator` with error codes E001 through E018
-- `YamlSchemaCodec` for YAML parsing
-- CLI command `schema validate` with plain, JSON, and YAML output formats
-- 83 tests with Kover coverage enforcement (>= 90% core/formats, >= 50% CLI)
+- Neutral schema model with 18 database-agnostic types
+- YAML-based schema definition and parsing
+- Schema validation with 18 error codes (E001-E018)
+- CLI command `schema validate` with plain, JSON, and YAML output
+- OCI image on `ghcr.io/pt9912/d-migrate`
+- 83 tests, coverage >= 90% (core/formats)
 
 ## Supported Databases
 

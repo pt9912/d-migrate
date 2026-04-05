@@ -4,7 +4,17 @@ Diese Anleitung beschreibt die ersten Schritte mit d-migrate: Projekt bauen, ein
 
 ---
 
-## Voraussetzungen
+## Option A: Docker (empfohlen)
+
+Kein JDK nötig — nur Docker:
+
+```bash
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:0.1.0 schema validate --source /work/mein-schema.yaml
+```
+
+## Option B: Aus Quellcode bauen
+
+### Voraussetzungen
 
 - **JDK 21** oder neuer
 - **Git**
@@ -16,7 +26,7 @@ git clone https://github.com/pt9912/d-migrate.git
 cd d-migrate
 ```
 
-## Projekt bauen
+### Projekt bauen
 
 ```bash
 ./gradlew build
