@@ -1,0 +1,204 @@
+schema_format: "1.0"
+name: "Full Featured Schema"
+version: "1.0.0"
+description: "Schema that exercises all parsing paths"
+encoding: "utf-8"
+locale: "de_DE"
+
+custom_types:
+  order_status:
+    kind: enum
+    values: [pending, shipped, delivered]
+    description: "Order status enum"
+  address:
+    kind: composite
+    fields:
+      street:
+        type: text
+        max_length: 200
+      city:
+        type: text
+        max_length: 100
+  positive_amount:
+    kind: domain
+    base_type: decimal
+    precision: 10
+    scale: 2
+    check: "VALUE >= 0"
+
+tables:
+  customers:
+    description: "Customer table"
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: 100
+        required: true
+    primary_key: [id]
+
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      customer_id:
+        type: integer
+        required: true
+        references:
+          table: customers
+          column: id
+          on_delete: cascade
+          on_update: no_action
+      status:
+        type: enum
+        ref_type: order_status
+        default: "pending"
+      date:
+        type: datetime
+        timezone: true
+        default: current_timestamp
+      uuid_field:
+        type: uuid
+        default: gen_uuid
+      active:
+        type: boolean
+        default: true
+      amount:
+        type: decimal
+        precision: 10
+        scale: 2
+        default: 0
+    primary_key: [id]
+    indices:
+      - name: idx_customer
+        columns: [customer_id]
+        type: hash
+        unique: false
+    constraints:
+      - name: chk_amount
+        type: check
+        expression: "amount >= 0"
+      - name: uq_uuid
+        type: unique
+        columns: [uuid_field]
+      - name: fk_composite
+        type: foreign_key
+        columns: [customer_id]
+        references:
+          table: customers
+          columns: [id]
+          on_delete: restrict
+          on_update: cascade
+    partitioning:
+      type: range
+      key: [date]
+      partitions:
+        - name: orders_2024
+          from: "2024-01-01"
+          to: "2025-01-01"
+        - name: orders_2025
+          from: "2025-01-01"
+          to: "2026-01-01"
+
+procedures:
+  update_status:
+    description: "Update order status"
+    parameters:
+      - name: p_order_id
+        type: integer
+        direction: in
+      - name: p_status
+        type: text
+        direction: in
+      - name: p_affected
+        type: integer
+        direction: out
+    language: plpgsql
+    body: |
+      BEGIN
+          UPDATE orders SET status = p_status WHERE id = p_order_id;
+      END;
+    dependencies:
+      tables: [orders]
+      columns:
+        orders: [id, status]
+    source_dialect: postgresql
+
+functions:
+  calc_total:
+    description: "Calculate order total"
+    parameters:
+      - name: p_order_id
+        type: integer
+        direction: in
+    returns:
+      type: decimal
+      precision: 10
+      scale: 2
+    language: plpgsql
+    deterministic: false
+    body: |
+      BEGIN
+          RETURN 0;
+      END;
+    dependencies:
+      tables: [orders]
+      columns:
+        orders: [amount]
+    source_dialect: postgresql
+
+views:
+  active_orders:
+    description: "Active orders view"
+    materialized: false
+    query: |
+      SELECT * FROM orders WHERE status != 'delivered'
+    dependencies:
+      tables: [orders]
+    source_dialect: postgresql
+  monthly_stats:
+    description: "Monthly stats"
+    materialized: true
+    refresh: on_demand
+    query: |
+      SELECT COUNT(*) FROM orders
+    dependencies:
+      tables: [orders]
+    source_dialect: postgresql
+
+triggers:
+  trg_updated:
+    description: "Set updated_at on update"
+    table: orders
+    event: update
+    timing: before
+    for_each: row
+    condition: "OLD.status != NEW.status"
+    body: |
+      NEW.updated_at = CURRENT_TIMESTAMP;
+    dependencies:
+      tables: [orders]
+      columns:
+        orders: [status]
+    source_dialect: postgresql
+  trg_insert:
+    table: orders
+    event: insert
+    timing: after
+    for_each: statement
+    source_dialect: postgresql
+
+sequences:
+  invoice_seq:
+    description: "Invoice number sequence"
+    start: 10000
+    increment: 1
+    min_value: 10000
+    max_value: 99999999
+    cycle: false
+    cache: 20
+  simple_seq:
+    start: 1

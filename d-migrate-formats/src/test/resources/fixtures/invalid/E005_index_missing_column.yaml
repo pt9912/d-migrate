@@ -1,0 +1,18 @@
+schema_format: "1.0"
+name: "E005 Test"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: 100
+    primary_key: [id]
+    indices:
+      - name: idx_users_email
+        columns: [nonexistent_column]
+        type: btree

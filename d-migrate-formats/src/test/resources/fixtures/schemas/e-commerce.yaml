@@ -1,0 +1,73 @@
+schema_format: "1.0"
+name: "E-Commerce System"
+version: "1.0.0"
+encoding: "utf-8"
+
+custom_types:
+  order_status:
+    kind: enum
+    values: [pending, processing, shipped, delivered, cancelled]
+
+tables:
+  customers:
+    description: "Kundenstammdaten"
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      email:
+        type: text
+        max_length: 254
+        required: true
+        unique: true
+      name:
+        type: text
+        max_length: 100
+        required: true
+      metadata:
+        type: json
+      created_at:
+        type: datetime
+        timezone: true
+        default: current_timestamp
+    primary_key: [id]
+    indices:
+      - name: idx_customers_email
+        columns: [email]
+        type: btree
+
+  orders:
+    description: "Bestellungen"
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      customer_id:
+        type: integer
+        required: true
+        references:
+          table: customers
+          column: id
+          on_delete: restrict
+      order_date:
+        type: datetime
+        required: true
+      total_amount:
+        type: decimal
+        precision: 10
+        scale: 2
+      status:
+        type: enum
+        ref_type: order_status
+        default: "pending"
+      notes:
+        type: text
+    primary_key: [id]
+    indices:
+      - name: idx_orders_customer_date
+        columns: [customer_id, order_date]
+        type: btree
+    constraints:
+      - name: chk_total_positive
+        type: check
+        expression: "total_amount >= 0"

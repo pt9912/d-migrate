@@ -1,0 +1,13 @@
+schema_format: "1.0"
+name: "E008 Test"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      name:
+        type: text
+        max_length: 100
+      email:
+        type: text
+        max_length: 254

@@ -1,0 +1,19 @@
+schema_format: "1.0"
+name: "E012 Test"
+version: "1.0.0"
+
+tables:
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      total:
+        type: decimal
+        precision: 10
+        scale: 2
+    primary_key: [id]
+    constraints:
+      - name: chk_amount_positive
+        type: check
+        expression: "nonexistent_column >= 0"

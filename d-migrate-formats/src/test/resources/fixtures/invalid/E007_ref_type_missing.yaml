@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "E007 Test"
+version: "1.0.0"
+
+tables:
+  items:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      status:
+        type: enum
+        ref_type: missing_type
+    primary_key: [id]

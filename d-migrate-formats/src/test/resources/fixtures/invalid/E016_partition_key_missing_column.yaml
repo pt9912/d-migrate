@@ -1,0 +1,16 @@
+schema_format: "1.0"
+name: "E016 Test"
+version: "1.0.0"
+
+tables:
+  events:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      event_date:
+        type: date
+    primary_key: [id]
+    partitioning:
+      type: range
+      key: [nonexistent_column]

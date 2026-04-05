@@ -1,0 +1,57 @@
+schema_format: "1.0"
+name: "All Types"
+version: "1.0.0"
+
+tables:
+  type_test:
+    columns:
+      col_identifier:
+        type: identifier
+        auto_increment: true
+      col_text:
+        type: text
+        max_length: 255
+      col_char:
+        type: char
+        length: 2
+      col_integer:
+        type: integer
+      col_smallint:
+        type: smallint
+      col_biginteger:
+        type: biginteger
+      col_float_single:
+        type: float
+        float_precision: single
+      col_float_double:
+        type: float
+      col_decimal:
+        type: decimal
+        precision: 10
+        scale: 2
+      col_boolean:
+        type: boolean
+      col_datetime:
+        type: datetime
+        timezone: true
+      col_date:
+        type: date
+      col_time:
+        type: time
+      col_uuid:
+        type: uuid
+      col_json:
+        type: json
+      col_xml:
+        type: xml
+      col_binary:
+        type: binary
+      col_email:
+        type: email
+      col_enum:
+        type: enum
+        values: [a, b, c]
+      col_array:
+        type: array
+        element_type: text
+    primary_key: [col_identifier]

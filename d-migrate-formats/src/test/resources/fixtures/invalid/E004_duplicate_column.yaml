@@ -1,0 +1,21 @@
+# E004: Duplicate column name
+# Note: YAML maps silently deduplicate keys, so the parser will only see
+# the last definition of "name". This file tests parser-level behavior
+# where a true duplicate cannot be represented in a YAML map.
+schema_format: "1.0"
+name: "E004 Test"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: 50
+      name:
+        type: text
+        max_length: 100
+    primary_key: [id]

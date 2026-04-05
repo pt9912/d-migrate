@@ -1,0 +1,16 @@
+schema_format: "1.0"
+name: "E002 Test"
+version: "1.0.0"
+
+tables:
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      customer_id:
+        type: integer
+        references:
+          table: nonexistent_table
+          column: id
+    primary_key: [id]

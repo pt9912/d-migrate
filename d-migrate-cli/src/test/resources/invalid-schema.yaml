@@ -1,0 +1,10 @@
+schema_format: "1.0"
+name: "Invalid Schema"
+version: "1.0.0"
+
+tables:
+  bad_table:
+    columns:
+      name:
+        type: text
+        max_length: 100
