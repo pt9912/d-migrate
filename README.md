@@ -16,11 +16,15 @@ d-migrate is a command-line tool that lets you define your database schema once 
 **Current capabilities:**
 - Neutral schema model with 18 built-in types
 - YAML-based schema definition and parsing
-- Schema validation with 18 error codes (E001 -- E018)
-- CLI for schema validation
+- Schema validation with 18 error codes (E001-E018)
+- DDL generation for PostgreSQL, MySQL, and SQLite
+- View query transformation (17 SQL functions)
+- Transformation reports (YAML sidecar)
+- CLI with `schema validate` and `schema generate`
+- OCI image for Docker usage
 
 **Planned:**
-- DDL generation for multiple databases
+- Data export/import (JSON, YAML, CSV)
 - Schema diffing and migration generation
 
 ## Quick Start
@@ -38,7 +42,14 @@ d-migrate is a command-line tool that lets you define your database schema once 
 ### Run the CLI
 
 ```bash
+# Validate a schema
 ./gradlew :d-migrate-cli:run --args="schema validate --source schema.yaml"
+
+# Generate PostgreSQL DDL
+./gradlew :d-migrate-cli:run --args="schema generate --source schema.yaml --target postgresql"
+
+# Generate MySQL DDL with rollback
+./gradlew :d-migrate-cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
 ```
 
 ### Docker
@@ -46,13 +57,11 @@ d-migrate is a command-line tool that lets you define your database schema once 
 No JDK required — just pull the image and run:
 
 ```bash
-docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:0.1.0 schema validate --source /work/schema.yaml
-```
-
-Or use `latest` for the most recent release:
-
-```bash
+# Validate
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
+
+# Generate DDL
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
 ```
 
 ### Minimal Schema Example
@@ -89,24 +98,28 @@ Then validate it:
 
 ## Current Status
 
+**v0.2.0** (in development):
+
+- DDL generation for PostgreSQL, MySQL, SQLite
+- TypeMapper with 18 neutral types per dialect
+- View query transformation (17 SQL functions)
+- Transformation reports (YAML sidecar, JSON output)
+- `schema generate` CLI command with `--output`, `--generate-rollback`, `--report`
+- 374 tests, coverage >= 90%
+
 **[v0.1.0](https://github.com/pt9912/d-migrate/releases/tag/v0.1.0)** released:
 
-- Neutral schema model with 18 database-agnostic types
-- YAML-based schema definition and parsing
-- Schema validation with 18 error codes (E001-E018)
-- CLI command `schema validate` with plain, JSON, and YAML output
-- OCI image on `ghcr.io/pt9912/d-migrate`
-- 83 tests, coverage >= 90% (core/formats)
+- Neutral schema model, YAML parsing, schema validation, CLI `schema validate`
 
 ## Supported Databases
 
-| Database   | Status  |
-|------------|---------|
-| PostgreSQL | Planned |
-| MySQL      | Planned |
-| SQLite     | Planned |
-| Oracle     | Future  |
-| MSSQL      | Future  |
+| Database   | Status           |
+|------------|------------------|
+| PostgreSQL | DDL Generation   |
+| MySQL      | DDL Generation   |
+| SQLite     | DDL Generation   |
+| Oracle     | Future           |
+| MSSQL      | Future           |
 
 ## Roadmap
 

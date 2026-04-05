@@ -900,6 +900,6 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.4
+**Version**: 1.5
 **Stand**: 2026-04-05
-**Status**: Milestone 0.1.0 implementiert (core, formats, cli), weitere Module im Entwurf
+**Status**: Milestone 0.1.0 + 0.2.0 implementiert (core, formats, cli, driver-api, driver-postgresql, driver-mysql, driver-sqlite), weitere Module im Entwurf

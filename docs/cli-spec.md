@@ -318,7 +318,7 @@ d-migrate schema validate --source <path>
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
-#### `schema generate` *(geplant: 0.2.0)*
+#### `schema generate` ✅
 
 Generiert datenbankspezifisches DDL aus einer Schema-Definition.
 
@@ -766,6 +766,6 @@ cat create_tables.sql | d-migrate schema reverse --source - --source-dialect pos
 
 ---
 
-**Version**: 1.2
+**Version**: 1.3
 **Stand**: 2026-04-05
-**Status**: `schema validate` implementiert (0.1.0), `schema generate` spezifiziert (0.2.0)
+**Status**: `schema validate` (0.1.0) und `schema generate` (0.2.0) implementiert, weitere Kommandos in Planung

@@ -39,19 +39,23 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ergebnis**: Schema-Dateien können geladen und validiert werden.
 
-### Milestone 0.2.0 — DDL-Generierung
+### Milestone 0.2.0 — DDL-Generierung ✅ (2026-04-05)
 
-| Bereich | Aufgabe                                                              | LF-Ref |
-| ------- | -------------------------------------------------------------------- | ------ |
-| Core    | Neutrales Typsystem (NeutralType Sealed Class)                       | LF-001 |
-| Core    | TypeMapper-Interface und Basislogik                                  | LF-003 |
-| Driver  | Driver-SPI (ServiceLoader-basiert)                                   | LN-037 |
-| Driver  | PostgreSQL-Treiber: DDL-Generierung (Tabellen, Constraints, Indizes) | LF-003 |
-| Driver  | MySQL-Treiber: DDL-Generierung                                       | LF-003 |
-| Driver  | SQLite-Treiber: DDL-Generierung                                      | LF-003 |
-| CLI     | `d-migrate schema generate --target <db>`                            | LF-003 |
-| Test    | Type-Mapping-Tests (100% Coverage)                                   | LN-045 |
-| Test    | Golden-Master-Tests für DDL-Output                                   | LN-043 |
+| Bereich | Aufgabe                                                              | LF-Ref | Status |
+| ------- | -------------------------------------------------------------------- | ------ | ------ |
+| Core    | TypeMapper-Interface und Basislogik                                  | LF-003 | ✅ |
+| Core    | AbstractDdlGenerator mit topologischer Sortierung                    | LF-003 | ✅ |
+| Core    | ViewQueryTransformer (17 SQL-Funktionen)                             | LF-003 | ✅ |
+| Driver  | PostgreSQL-Treiber: DDL-Generierung                                  | LF-003 | ✅ |
+| Driver  | MySQL-Treiber: DDL-Generierung                                       | LF-003 | ✅ |
+| Driver  | SQLite-Treiber: DDL-Generierung                                      | LF-003 | ✅ |
+| CLI     | `d-migrate schema generate --target <db>`                            | LF-003 | ✅ |
+| CLI     | `--output`, `--generate-rollback`, `--report` Flags                  | LF-003 | ✅ |
+| CLI     | TransformationReportWriter (YAML-Sidecar)                            | LF-003 | ✅ |
+| Test    | TypeMapper-Tests (100% Coverage, 3 Dialekte)                         | LN-045 | ✅ |
+| Test    | DdlGenerator Unit-Tests (44+53+57 Tests)                             | LN-043 | ✅ |
+| Test    | Golden-Master-Tests (4 Schemas × 3 Dialekte = 12)                    | LN-043 | ✅ |
+| Test    | 374 Tests gesamt, Coverage >= 90%                                    | LN-045 | ✅ |
 
 **Ergebnis**: Aus YAML-Schemas wird datenbankspezifisches DDL generiert.
 
