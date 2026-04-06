@@ -293,8 +293,22 @@ SQLite-Spezifika:
 
 ### 3.5 `d-migrate-formats`
 
-Erweitert um Streaming-Writer für Datenexport. Jackson ist bereits Dependency
-(0.1.0), neu hinzu: `jackson-dataformat-csv`.
+Erweitert um Streaming-Writer für Datenexport.
+
+**Bibliotheks-Wahl** (Plan §11.5 — Performance-orientierte Wahl gegen das
+Jackson-Monorepo, das in 0.1.0/0.2.0 für die Schema-Codecs verwendet wurde):
+
+| Format | Bibliothek | Begründung |
+|---|---|---|
+| **JSON** | [DSL-JSON](https://github.com/ngs-doo/dsl-json) | Compile-time Code-Gen, vermeidet Reflection, oft Testsieger im Java-JSON-Benchmark |
+| **YAML** | [SnakeYAML Engine](https://bitbucket.org/snakeyaml/snakeyaml-engine/) | Low-Level, sehr speichereffizient, bildet die Basis für viele Wrapper inkl. Jacksons YAML-Modul |
+| **CSV** | [uniVocity-parsers](https://github.com/uniVocity/univocity-parsers) | Architektur-optimiert, gilt als die schnellste JVM-Bibliothek für CSV (~2 Mio Records/s); robustes BOM-Handling |
+
+Jackson (databind/yaml/kotlin) bleibt für die Schema-Codecs in 0.1.0/0.2.0
+erhalten — wir verwenden zwei verschiedene Toolchains: Jackson für die
+strukturierten Schema-YAMLs (selten, aber typsicher) und die schlanken,
+performance-orientierten Bibliotheken für den row-streaming-heavy
+Datenexport (heiß, viele Millionen Rows).
 
 **Wichtig**: Die Format-Writer importieren `DataChunk`/`ColumnDescriptor`
 aus **`d-migrate-core/data/`** (siehe §3.7) — `d-migrate-formats` bekommt
@@ -348,9 +362,9 @@ interface DataChunkWriter : AutoCloseable {
 
 | Format | Strategie | Container | Leere Tabelle | NULL |
 |---|---|---|---|---|
-| JSON | JsonGenerator (Jackson Streaming-API), Array-of-Objects | `[\n  {...},\n  {...}\n]` | `[]` | `null` |
-| YAML | YAMLGenerator, Sequence-of-Maps | `- col1: ...\n  col2: ...\n- col1: ...` | `[]` | `~` |
-| CSV | CsvSchema dynamisch aus columns; Header steuerbar via `--csv-no-header` (Default: an) | Header + Datenzeilen | nur Header-Zeile (oder leere Datei mit `--csv-no-header`) | `--null-string` (Default: leerer String) |
+| JSON | DSL-JSON `JsonWriter` (compile-time, reflection-frei), Array-of-Objects | `[\n  {...},\n  {...}\n]` | `[]` | `null` |
+| YAML | SnakeYAML Engine `Emit` mit `StreamDataWriter`, Sequence-of-Maps | `- col1: ...\n  col2: ...\n- col1: ...` | `[]` | `~` |
+| CSV | uniVocity `CsvWriter` mit dynamischem Header; Header steuerbar via `--csv-no-header` (Default: an); BOM-Bytes optional vorgeschaltet | Header + Datenzeilen | nur Header-Zeile (oder leere Datei mit `--csv-no-header`) | `--null-string` (Default: leerer String) |
 
 Detaillierte Java-Klasse → Format-Mapping in §6.4.1.
 
@@ -508,7 +522,7 @@ Modul-spezifische Dependencies:
 | `d-migrate-driver-postgresql` | `org.postgresql:postgresql` |
 | `d-migrate-driver-mysql` | `com.mysql:mysql-connector-j` |
 | `d-migrate-driver-sqlite` | `org.xerial:sqlite-jdbc` |
-| `d-migrate-formats` | `com.fasterxml.jackson.dataformat:jackson-dataformat-csv` |
+| `d-migrate-formats` | `com.dslplatform:dsl-json-java8`, `com.univocity:univocity-parsers`, `org.snakeyaml:snakeyaml-engine` |
 | `d-migrate-streaming` | (neu, hängt von core + driver-api + formats ab — siehe §5) |
 | `d-migrate-cli` | `implementation(project(":d-migrate-streaming"))` |
 | Tests (PG/MySQL) | `org.testcontainers:postgresql`, `org.testcontainers:mysql`, `org.testcontainers:junit-jupiter` |
@@ -552,9 +566,12 @@ Modul-spezifische Dependencies:
 
 18. `DataChunkWriter`-Interface, `DataChunkWriterFactory`, `DataExportFormat`,
     `ExportOptions`, `ValueSerializer` (implementiert §6.4.1 Mapping-Tabelle)
-19. `JsonChunkWriter` (Jackson Streaming-API)
-20. `YamlChunkWriter` (jackson-dataformat-yaml)
-21. `CsvChunkWriter` (jackson-dataformat-csv) inkl. BOM-Handling
+19. `JsonChunkWriter` mit **DSL-JSON** (compile-time `JsonWriter`,
+    reflection-frei) — siehe §11.5
+20. `YamlChunkWriter` mit **SnakeYAML Engine** (`Emit` + `StreamDataWriter`) —
+    siehe §11.5
+21. `CsvChunkWriter` mit **uniVocity-parsers** (`CsvWriter`) inkl. BOM-Bytes-
+    Vorschaltung — siehe §11.5
 22. Unit-Tests pro Writer mit Golden-Master-Output (inkl. leerer Tabelle, §6.17)
 
 ### Phase E: CLI-Integration
@@ -597,7 +614,9 @@ d-migrate-driver-sqlite                # implementation(driver-api) + JDBC
 
 d-migrate-formats
 ├── implementation(d-migrate-core)         # bestand — KEINE neue Kante zu driver-api (siehe F3 / §3.7)
-└── implementation(jackson-dataformat-csv) # neu
+├── implementation("com.dslplatform:dsl-json-java8")     # neu — JSON
+├── implementation("com.univocity:univocity-parsers")    # neu — CSV
+└── implementation("org.snakeyaml:snakeyaml-engine")     # neu — YAML
 
 d-migrate-streaming                    # neu
 ├── implementation(d-migrate-core)         # für DataChunk
@@ -1287,15 +1306,23 @@ Driver-Module ergänzt werden** — `docs/releasing.md` §3.4 weist darauf hin.
 ## 9. Verifikation
 
 ```bash
-# Vollständiger Build inkl. Tests
+# Vollständiger Build inkl. Tests (ohne Testcontainers — die laufen separat)
 docker build -t d-migrate:dev .
 
 # Nur die neuen Module
 ./gradlew :d-migrate-streaming:test :d-migrate-driver-api:test
 
-# Testcontainers-Tests (benötigen laufenden Docker-Daemon)
-./gradlew :d-migrate-driver-postgresql:test --tests "*DataReaderTest*"
-./gradlew :d-migrate-driver-mysql:test --tests "*DataReaderTest*"
+# ─── Integration-Tests (Testcontainers PostgreSQL + MySQL) ────────
+# Variante A — empfohlener Helper, läuft in einem disposable Container
+# mit gemountetem Docker-Socket (siehe scripts/test-integration-docker.sh):
+./scripts/test-integration-docker.sh
+
+# Nur ein Treiber:
+./scripts/test-integration-docker.sh :d-migrate-driver-postgresql:test
+./scripts/test-integration-docker.sh :d-migrate-driver-mysql:test
+
+# Variante B — direkt über Gradle (lokales JDK 21 + Docker-Daemon nötig):
+./gradlew test -PintegrationTests :d-migrate-driver-postgresql:test :d-migrate-driver-mysql:test
 
 # CLI Smoke-Test mit SQLite (kein Container)
 ./gradlew :d-migrate-cli:installDist
@@ -1310,6 +1337,12 @@ docker run --rm --network host ghcr.io/pt9912/d-migrate:0.3.0 \
 docker stop pg-test
 ```
 
+> **Wichtig**: Die Testcontainers-basierten Integration-Tests laufen
+> bewusst NICHT im `docker build`-Schritt — Docker-in-Docker im Build-
+> Container ist unnötig fragil. Lokale Verifikation via
+> `scripts/test-integration-docker.sh`, in CI über
+> `.github/workflows/integration.yml` (siehe §6.16).
+
 ## 10. Risiken
 
 | Risiko | Mitigation |
@@ -1323,7 +1356,9 @@ docker stop pg-test
 | Connection-Leak durch offene Transaktion / abweichendes autoCommit | §6.12 Transaktions-Lifecycle mit idempotentem `close()`; `ConnectionLeakTest` über `ConnectionPool.activeConnections()` |
 | **Leere Tabellen verlieren Header (F2)** | §6.17: Reader MUSS bei 0 Rows einen Chunk mit `rows=emptyList()` und gefüllten `columns` liefern; Format-Outputs sind explizit definiert |
 | **Architekturverletzung formats↔driver-api (F3)** | §3.7: `DataChunk`/`ColumnDescriptor`/`DataFilter` wandern nach `core/data/`; `formats` hängt nur an `core` |
-| Jackson `jackson-dataformat-csv` Encoding-Bugs mit BOM | Eigener BOM-Writer vor dem CsvSchema-Output, nicht Jackson überlassen |
+| **uniVocity-parsers BOM-Handling für non-UTF-8** | uniVocity hat zuverlässiges BOM-Reading aber wir prüfen das Schreiben pro Encoding (`UTF-8`, `UTF-16LE`, `UTF-16BE`); Tests mit Hex-Dump-Vergleich des ersten Datei-Headers |
+| **DSL-JSON Compile-time-Code-Gen** für unsere Domain-Klassen nicht passend | Wir verwenden DSL-JSON nur über `JsonWriter` (low-level Streaming-API), KEIN `@CompiledJson` auf `DataChunk`/`Row` — der Iterator schreibt Felder Stück für Stück über `JsonWriter.writeString`/`writeLong`/`writeDouble` etc. Damit wird kein Code-Gen benötigt |
+| **SnakeYAML Engine Memory-Footprint bei großen Strings** | `Emit` mit `StreamDataWriter` schreibt zeilenweise in den Output-Stream; pro Row wird höchstens ein `MappingNode` aufgebaut, nicht das ganze Dokument |
 | Type-Serialisierung uneindeutig (BigDecimal, byte[], PG-Spezifika) | Verbindliche Mapping-Tabelle in §6.4.1 mit Fallback-Policy (W202) und Forward-Compat-Notiz für 0.5.5 |
 | Schema-qualifizierte Tabellen kollidieren bei FilePerTable | Dateinamen-Schema `<schema>.<table>.<format>` (§6.9) |
 | `--filter` öffnet SQL-Injection (CLI ist Trust-Boundary, REST-API später nicht) | Doku-Warnung; minimale read-only Credentials empfohlen; striktes `--tables`-Identifier-Pattern; §6.7 Forward-Compat-Hinweis für REST-API (2.0.0) |
@@ -1384,6 +1419,62 @@ docker stop pg-test
 | F12 | Mittel | CLI-Snippet zeigte `parent.config` — bei Hierarchie `d-migrate → data → export` falsch (config liegt am Root, zwei Parent-Hops weiter) | Snippet auf `currentContext.parent?.parent?.command as? DMigrate` korrigiert (identisches Pattern wie `SchemaCommands.kt:44`); zusätzlicher Hinweis-Block erklärt warum | §3.6 |
 | F13 | Niedrig | `${ENV_VAR}`-Substitution + URL-Encoding nicht abgegrenzt | Explizite Regel: ENV-Werte werden **literal** substituiert, kein Auto-URL-Encoding. Sonderzeichen müssen vom Nutzer vorab encoded werden (`%40` statt `@`). Begründung: Auto-Encoding bricht bereits-encodete Werte und ist segment-blind | §6.14 (ENV-Substitution) |
 | F14 | Niedrig | Dependency-Tabelle §3.9 zeigte für `streaming` nur "driver-api + formats", `core` fehlte (Drift gegen §5 und §2.1) | §3.9 Tabelleneintrag aktualisiert auf "core + driver-api + formats" mit Verweis auf §5 | §3.9 |
+
+### 11.5 Phase-D-Bibliothekswahl: DSL-JSON, uniVocity, SnakeYAML Engine
+
+Phase D verwendet **nicht** Jacksons `JsonGenerator` / `YAMLGenerator` /
+`jackson-dataformat-csv` (wie im ursprünglichen Plan-Entwurf), sondern drei
+spezialisierte, performance-orientierte Bibliotheken:
+
+| Format | Bibliothek | Performance (1 Mio rows, geschätzt) | Speicherlast | Begründung |
+|---|---|---|---|---|
+| **JSON** | DSL-JSON | extrem hoch (oft Testsieger im Java-JSON-Benchmark) | minimal | Compile-time Code-Gen, keine Reflection. Wir nutzen die low-level `JsonWriter`-API ohne `@CompiledJson`-Annotations auf unseren Datenklassen. |
+| **YAML** | SnakeYAML Engine | ~120k msg/s | sehr niedrig | Low-Level Java-Bibliothek; bildet die Basis für viele Wrapper inkl. Jacksons YAML-Modul. Sehr speichereffizient. |
+| **CSV** | uniVocity-parsers | ~2 Mio msg/s | minimal | Architektur-optimiert, gilt als die schnellste JVM-Bibliothek für CSV. Mächtige API mit robustem BOM-Handling. |
+
+**Vergleichstabelle** (Schätzungen für 1 Mio Records, größere Zahlen sind besser):
+
+```
+JSON:  DSL-JSON              ★★★★★ (compile-time, reflection-frei)
+       FastJSON2             ★★★★★ (security-history, daher abgelehnt)
+       Jackson Streaming     ★★★★  (Status quo, schwerer)
+       Moshi                 ★★★★  (gut, aber weniger Features beim Streaming)
+       Gson                  ★★    (legacy, reflection-heavy)
+
+YAML:  SnakeYAML Engine      ★★★★★ (~120k msg/s, sehr speichereffizient)
+       Jackson YAML          ★★★★  (~100k msg/s, viel "Überbau")
+       Kaml                  ★★★   (~80k msg/s, kotlinx.serialization-Plugin)
+
+CSV:   uniVocity-parsers     ★★★★★ (~2 Mio msg/s)
+       FastCSV               ★★★★★ (~1.8 Mio msg/s, leichtgewichtig)
+       Jackson CSV           ★★★   (~900k msg/s)
+       Apache Commons CSV    ★★★   (Industriestandard, nicht auf Speed getrimmt)
+```
+
+**Begründung der Wahl**:
+
+- **JSON**: DSL-JSON gewinnt regelmäßig Java-JSON-Benchmarks. Wir nutzen
+  ausschließlich die low-level `JsonWriter`-API (write field by field, keine
+  Reflection, keine `@CompiledJson`-Annotations) — das vermeidet sowohl die
+  Reflection-Last als auch das Compile-Time-Code-Gen-Setup.
+- **YAML**: SnakeYAML Engine ist die Java-Referenz-Implementierung für YAML
+  und liegt unter den meisten anderen Bibliotheken (auch Jackson YAML). Wir
+  nutzen `Emit` mit einem `StreamDataWriter` für zeilenweises Schreiben.
+- **CSV**: uniVocity-parsers ist im Java-Ökosystem nahezu konkurrenzlos für
+  reine Schreibperformance. Wir nutzen `CsvWriter` direkt mit unserem
+  `ValueSerializer` als Stage zwischen `DataChunk` und Output-Stream.
+  FastCSV wäre die schlanke Alternative — uniVocity hat aber das robustere
+  BOM-Handling, das wir für `--csv-bom` brauchen.
+
+**Toolchain-Trennung**: Jackson (databind/yaml/kotlin) bleibt für die
+**Schema**-Codecs aus 0.1.0/0.2.0 erhalten — typsicheres Mapping zu/von
+`SchemaDefinition`, selten aufgerufen, sehr strukturiert. Die neuen
+Bibliotheken sind ausschließlich für die **Daten**-Writer in Phase D —
+heißer Pfad mit Millionen von Rows, anderes Performance-Profil.
+
+**Was passiert mit der `jackson-dataformat-csv`-Erwähnung in §3.9?**
+Entfernt. Phase D zieht stattdessen `dsl-json-java8`, `univocity-parsers`
+und `snakeyaml-engine` als neue Dependencies.
 
 ---
 
