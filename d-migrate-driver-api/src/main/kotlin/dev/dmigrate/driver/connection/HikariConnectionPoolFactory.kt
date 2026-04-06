@@ -4,6 +4,8 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import com.zaxxer.hikari.HikariPoolMXBean
 import dev.dmigrate.driver.DatabaseDialect
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.sql.Connection
 
 /**
@@ -49,31 +51,67 @@ object HikariConnectionPoolFactory {
     }
 
     /**
+     * Dialekt-spezifische Default-Parameter, die in die JDBC-URL injiziert
+     * werden, sofern der User sie nicht bereits explizit gesetzt hat.
+     *
+     * - **SQLite** (siehe `connection-config-spec.md` §1.5):
+     *   - `journal_mode=wal` — WAL-Modus für bessere Concurrency
+     *   - `foreign_keys=true` — d-migrate verlässt sich auf referenzielle
+     *     Integrität, in SQLite sind FKs sonst standardmäßig deaktiviert
+     *
+     * Phase B wird die `*JdbcUrlBuilder`-Klassen pro Treiber hinzufügen,
+     * dann wandert dieses Mapping dorthin und MySQL/PostgreSQL bekommen
+     * ihre eigenen Defaults (`useCursorFetch=true`, `application_name=d-migrate`).
+     */
+    private fun defaultsFor(dialect: DatabaseDialect): Map<String, String> = when (dialect) {
+        DatabaseDialect.SQLITE -> mapOf(
+            "journal_mode" to "wal",
+            "foreign_keys" to "true",
+        )
+        DatabaseDialect.POSTGRESQL -> emptyMap()  // Phase B: application_name etc.
+        DatabaseDialect.MYSQL -> emptyMap()       // Phase B: useCursorFetch etc.
+    }
+
+    /**
      * Baut eine minimale JDBC-URL aus der [ConnectionConfig]. Wird in Phase B
-     * durch die dialekt-spezifischen `*JdbcUrlBuilder`-Klassen ersetzt, die
-     * dann auch dialekt-spezifische Defaults wie `useCursorFetch=true`
-     * (MySQL) oder `application_name=d-migrate` (PostgreSQL) injizieren.
+     * durch die dialekt-spezifischen `*JdbcUrlBuilder`-Klassen ersetzt.
+     *
+     * Die Query-Parameter werden korrekt URL-encoded zusammengesetzt — der
+     * [ConnectionUrlParser] dekodiert sie beim Parsen, also müssen sie hier
+     * wieder kodiert werden, damit Werte mit Sonderzeichen (Leerzeichen, `&`,
+     * `=`, etc.) round-trip-sicher sind. Dialekt-Defaults aus [defaultsFor]
+     * werden eingefügt, ohne explizit gesetzte User-Werte zu überschreiben.
      */
     private fun buildJdbcUrl(config: ConnectionConfig): String {
-        val params = if (config.params.isEmpty()) {
+        // User-Params haben Vorrang vor Defaults — defaults zuerst, dann user.
+        val mergedParams = LinkedHashMap<String, String>().apply {
+            putAll(defaultsFor(config.dialect))
+            putAll(config.params)
+        }
+        val paramString = if (mergedParams.isEmpty()) {
             ""
         } else {
-            "?" + config.params.entries.joinToString("&") { (k, v) -> "$k=$v" }
+            "?" + mergedParams.entries.joinToString("&") { (k, v) ->
+                "${urlEncode(k)}=${urlEncode(v)}"
+            }
         }
         return when (config.dialect) {
             DatabaseDialect.POSTGRESQL -> {
                 val port = config.port ?: 5432
-                "jdbc:postgresql://${config.host}:$port/${config.database}$params"
+                "jdbc:postgresql://${config.host}:$port/${config.database}$paramString"
             }
             DatabaseDialect.MYSQL -> {
                 val port = config.port ?: 3306
-                "jdbc:mysql://${config.host}:$port/${config.database}$params"
+                "jdbc:mysql://${config.host}:$port/${config.database}$paramString"
             }
             DatabaseDialect.SQLITE -> {
-                "jdbc:sqlite:${config.database}$params"
+                "jdbc:sqlite:${config.database}$paramString"
             }
         }
     }
+
+    private fun urlEncode(s: String): String =
+        URLEncoder.encode(s, StandardCharsets.UTF_8)
 }
 
 /** Hikari-basierte [ConnectionPool]-Implementierung. Internal: nicht direkt instanzieren. */
