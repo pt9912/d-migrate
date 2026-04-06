@@ -6,7 +6,9 @@ Diese Anleitung beschreibt die ersten Schritte mit d-migrate: Projekt bauen, ein
 
 ## Option A: Docker (empfohlen)
 
-Kein JDK nötig — nur Docker:
+Kein JDK nötig — nur Docker.
+
+### A.1 Vorgefertigtes Image aus GHCR verwenden
 
 ```bash
 # Schema validieren
@@ -14,6 +16,25 @@ docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate 
 
 # DDL generieren
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/mein-schema.yaml --target postgresql
+```
+
+### A.2 Image lokal aus dem Dockerfile bauen
+
+Das Repository enthält ein mehrstufiges [`Dockerfile`](../Dockerfile), das den
+kompletten Gradle-Build (inkl. Tests und Kover-Coverage-Verifikation) in einem
+Container ausführt und die CLI in ein schlankes JRE-Runtime-Image packt:
+
+```bash
+# Vollständiger Build inkl. Tests und Coverage-Verifikation (Standard)
+docker build -t d-migrate:dev .
+
+# Test/Coverage-Lauf ohne Cache erzwingen (Docker-Layer- UND Gradle-Build-Cache umgehen)
+docker build --no-cache \
+  --build-arg GRADLE_TASKS="build :d-migrate-cli:installDist --rerun-tasks" \
+  -t d-migrate:dev .
+
+# CLI aus dem lokal gebauten Image ausführen
+docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/mein-schema.yaml
 ```
 
 ## Option B: Aus Quellcode bauen
@@ -36,7 +57,13 @@ cd d-migrate
 ./gradlew build
 ```
 
-Damit werden alle drei Module (`d-migrate-core`, `d-migrate-formats`, `d-migrate-cli`) kompiliert und die Tests ausgeführt.
+Damit werden alle sieben Module kompiliert und ihre Tests ausgeführt:
+
+- `d-migrate-core` — neutrales Schemamodell, Parser, Validator
+- `d-migrate-driver-api` — gemeinsame DDL-Generator-Abstraktionen
+- `d-migrate-driver-postgresql` / `-mysql` / `-sqlite` — dialektspezifische DDL-Generatoren
+- `d-migrate-formats` — YAML-Codec und Report-Writer
+- `d-migrate-cli` — Clikt-basiertes Command-Line-Interface
 
 ## Erstes Schema erstellen
 
@@ -175,6 +202,11 @@ Nach erfolgreicher Validierung kann DDL für eine Zieldatenbank erzeugt werden:
 ```
 
 Erzeugt automatisch `schema.sql` (DDL) und `schema.report.yaml` (Transformations-Report).
+Den Report-Pfad explizit überschreiben:
+
+```bash
+./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql --report mein-report.yaml"
+```
 
 ### Rollback-DDL generieren
 
@@ -215,13 +247,32 @@ CREATE TABLE "orders" (
 
 ## CLI-Optionen
 
-| Option            | Beschreibung                                      |
-| ----------------- | ------------------------------------------------- |
-| `--output-format` | Ausgabeformat: `plain` (Standard), `json`, `yaml` |
-| `--quiet`         | Nur Fehler ausgeben, keine Zusammenfassung         |
-| `--no-color`      | Farbige Ausgabe deaktivieren                       |
-| `--verbose`       | Erweiterte Ausgabe (DEBUG-Level)                   |
-| `--version`       | Version anzeigen                                   |
+### Globale Optionen (vor dem Subcommand)
+
+| Option                | Beschreibung                                              |
+| --------------------- | --------------------------------------------------------- |
+| `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
+| `--lang`              | Sprache der Ausgabe (`de`, `en`)                          |
+| `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
+| `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
+| `-q`, `--quiet`       | Nur Fehler ausgeben                                       |
+| `--no-color`          | Farbige Ausgabe deaktivieren                              |
+| `--no-progress`       | Fortschrittsanzeige deaktivieren                          |
+| `-y`, `--yes`         | Rückfragen automatisch bestätigen                         |
+| `--version`           | Version anzeigen                                          |
+| `-h`, `--help`        | Hilfe anzeigen                                            |
+
+`--verbose` und `--quiet` schließen sich gegenseitig aus.
+
+### Optionen für `schema generate`
+
+| Option                | Beschreibung                                              |
+| --------------------- | --------------------------------------------------------- |
+| `--source`            | Pfad zur Schema-Datei (YAML, Pflicht)                     |
+| `--target`            | Zieldialekt: `postgresql`, `mysql`, `sqlite` (Pflicht)    |
+| `--output`            | Ausgabedatei (Standard: stdout)                           |
+| `--report`            | Report-Datei (Standard: `<output>.report.yaml`)           |
+| `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
 
 ### Beispiel: JSON-Ausgabe
 
