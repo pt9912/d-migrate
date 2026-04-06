@@ -80,13 +80,21 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 | ------- | ----------------------------------------------- | ------ |
 | Core    | Transaktionale Import-Logik (Chunk-basiert)     | LN-010 |
 | Driver  | JDBC-basierter DataWriter (Batch-Insert)        | LF-010 |
+| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import | LF-010 |
+| Driver  | Dialektspezifisches Trigger-Handling beim Import | LF-010 |
 | Formats | Deserialisierung aus JSON/YAML/CSV              | LF-010 |
 | Core    | Validierung gegen Schema-Definition beim Import | LF-010 |
 | Core    | Encoding-Erkennung (UTF-8, UTF-16, ISO-8859-1)  | LF-010 |
 | CLI     | `d-migrate data import` Kommando                | LF-010 |
 | Test    | Round-Trip-Tests (Export → Import → Vergleich)  | LN-043 |
+| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten | LN-043 |
 
 **Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert.
+
+Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
+Trigger-Verhalten beim Import werden im Draft
+[design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
+konkretisiert.
 
 ### Milestone 0.5.0 — MVP-Release
 

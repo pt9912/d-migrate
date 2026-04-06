@@ -161,6 +161,9 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Transaktionale Verarbeitung
 - Automatische Encoding-Erkennung (UTF-8, UTF-16, ISO-8859-1, etc.)
 - Behandlung von BOM (Byte Order Mark) in Eingabedateien
+- Sequenz-, Identity- und Auto-Increment-Zähler müssen nach Importen mit expliziten Schlüsselwerten in einen konsistenten Folgezustand überführt werden
+- Das Verhalten von Datenbank-Triggern beim Import muss explizit steuerbar und dokumentiert sein (z.B. normal ausführen, temporär deaktivieren, oder Import mit Hinweis ablehnen, falls das Zielsystem dies nicht sicher unterstützt)
+- Importvorgänge dürfen keine inkonsistenten Folgezustände in datenbankeigenen Objekten wie Sequenzen oder Triggern hinterlassen
 
 #### 4.1.4 Integrationsfähigkeit
 
@@ -663,6 +666,8 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Cascade-Operationen (ON DELETE CASCADE, ON UPDATE CASCADE) funktionieren
 - Check-Constraints werden validiert
 - Unique-Constraints verhindern Duplikate
+- Sequenz-, Identity- und Auto-Increment-Zähler liefern nach dem Import den nächsten gültigen Wert und erzeugen keine Schlüsselkonflikte
+- Das konfigurierte Trigger-Verhalten beim Import ist verlässlich: Trigger werden entweder wie vorgesehen ausgeführt oder kontrolliert deaktiviert/abgelehnt, ohne stillschweigende Semantikänderung
 
 **Transaktionale Konsistenz:**
 - Rollback bei Fehlern: Keine Teil-Importe bei Constraint-Verletzungen
