@@ -59,20 +59,25 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ergebnis**: Aus YAML-Schemas wird datenbankspezifisches DDL generiert.
 
-### Milestone 0.3.0 — Datenexport (in Arbeit)
+### Milestone 0.3.0 — Datenexport ✅ (2026-04-06)
 
-| Bereich | Aufgabe                                               | LF-Ref |
-| ------- | ----------------------------------------------------- | ------ |
-| Core    | Streaming-Pipeline (Basis)                            | LN-005 |
-| Driver  | JDBC-basierter DataReader (ResultSet-Streaming)       | LF-008 |
-| Driver  | Connection-Management mit HikariCP                    | —      |
-| Formats | JSON-Codec (Jackson)                                  | LF-009 |
-| Formats | YAML-Codec                                            | LF-009 |
-| Formats | CSV-Codec (mit Encoding-Optionen)                     | LF-009 |
-| CLI     | `d-migrate data export` Kommando                      | LF-008 |
-| Test    | Export-Tests gegen Testcontainers (PostgreSQL, MySQL) | LN-048 |
+| Bereich | Aufgabe                                                              | LF-Ref | Status |
+| ------- | -------------------------------------------------------------------- | ------ | ------ |
+| Core    | Streaming-Pipeline (pull-basiert, chunk-weise)                       | LN-005 | ✅ |
+| Driver  | JDBC-basierter DataReader (ResultSet-Streaming, PG/MySQL/SQLite)     | LF-008 | ✅ |
+| Driver  | Connection-Management mit HikariCP + ConnectionUrlParser             | —      | ✅ |
+| Formats | JSON-Codec (DSL-JSON statt Jackson — Performance)                    | LF-009 | ✅ |
+| Formats | YAML-Codec (SnakeYAML Engine)                                        | LF-009 | ✅ |
+| Formats | CSV-Codec (uniVocity-parsers, mit Encoding/BOM/Delimiter)            | LF-009 | ✅ |
+| CLI     | `d-migrate data export` Kommando                                     | LF-008 | ✅ |
+| CLI     | `NamedConnectionResolver` (`.d-migrate.yaml`, `${ENV_VAR}`)          | —      | ✅ |
+| Test    | Export-Tests gegen Testcontainers (PostgreSQL 16, MySQL 8.0)         | LN-048 | ✅ |
 
-**Ergebnis**: Daten können aus Datenbanken in JSON/YAML/CSV exportiert werden.
+**Ergebnis**: Daten können aus PostgreSQL, MySQL und SQLite streamingbasiert
+in JSON, YAML oder CSV exportiert werden — chunk-weise, ohne die Tabelle in
+den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
+`--split-files`-Multi-Tabellen-Export, vollständige Exit-Code-Matrix
+(0/2/4/5/7) und §6.17 Empty-Table-Vertrag pro Format.
 
 ### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade
 
@@ -396,6 +401,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 1.4
+**Version**: 1.5
 **Stand**: 2026-04-06
-**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, 0.3.0 in Arbeit (Phase A–E umgesetzt, Phase F Testcontainers offen), 0.5.5 neu aufgenommen, LF-013 von 0.9.0 nach 0.4.0 vorverlegt, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen, 0.5.5 neu aufgenommen, LF-013 von 0.9.0 nach 0.4.0 vorverlegt, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung

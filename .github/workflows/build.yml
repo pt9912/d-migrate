@@ -45,6 +45,7 @@ jobs:
           :d-migrate-driver-mysql:koverVerify
           :d-migrate-driver-sqlite:koverVerify
           :d-migrate-formats:koverVerify
+          :d-migrate-streaming:koverVerify
           :d-migrate-cli:koverVerify
 
       - name: Generate coverage reports
@@ -57,6 +58,7 @@ jobs:
           :d-migrate-driver-mysql:koverHtmlReport
           :d-migrate-driver-sqlite:koverHtmlReport
           :d-migrate-formats:koverHtmlReport
+          :d-migrate-streaming:koverHtmlReport
           :d-migrate-cli:koverHtmlReport
 
       - name: Upload test results

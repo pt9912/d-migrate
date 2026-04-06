@@ -39,7 +39,7 @@ class DMigrate : CliktCommand(name = "d-migrate") {
     val yes by option("--yes", "-y", help = "Accept confirmations automatically").flag()
 
     init {
-        versionOption("0.3.0-SNAPSHOT")
+        versionOption("0.3.0")
     }
 
     override fun run() {

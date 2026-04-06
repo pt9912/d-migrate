@@ -156,6 +156,18 @@ Then validate it:
 
 ## Current Status
 
+**[v0.3.0](https://github.com/pt9912/d-migrate/releases/tag/v0.3.0)** released:
+
+- Streaming `data export` CLI command (JSON / YAML / CSV) for PostgreSQL, MySQL, SQLite
+- HikariCP-backed connection layer with `ConnectionUrlParser` per dialect
+- Pull-based `StreamingExporter` (chunk streaming, no full-table buffering)
+- Performance-oriented format writers: DSL-JSON, SnakeYAML Engine, uniVocity-parsers
+- Named connections via `.d-migrate.yaml` with `${ENV_VAR}` substitution (`NamedConnectionResolver`)
+- `--source`, `--format`, `--output`, `--tables`, `--filter`, `--split-files`, `--csv-*`, `--encoding`, `--chunk-size`
+- §6.17 empty-table contract: `[]` (JSON/YAML), CSV header line, or empty file
+- Testcontainers end-to-end coverage for PostgreSQL 16 and MySQL 8.0
+- 600+ tests, coverage >= 90% (CLI >= 60%)
+
 **[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** released:
 
 - DDL generation for PostgreSQL, MySQL, SQLite
@@ -171,13 +183,13 @@ Then validate it:
 
 ## Supported Databases
 
-| Database   | Status           |
-|------------|------------------|
-| PostgreSQL | DDL Generation   |
-| MySQL      | DDL Generation   |
-| SQLite     | DDL Generation   |
-| Oracle     | Future           |
-| MSSQL      | Future           |
+| Database   | Status                          |
+|------------|---------------------------------|
+| PostgreSQL | DDL Generation, Data Export     |
+| MySQL      | DDL Generation, Data Export     |
+| SQLite     | DDL Generation, Data Export     |
+| Oracle     | Future                          |
+| MSSQL      | Future                          |
 
 ## Roadmap
 

@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = "dev.dmigrate"
-    version = "0.3.0-SNAPSHOT"
+    version = "0.3.0"
 
     repositories {
         mavenCentral()
@@ -55,5 +55,6 @@ dependencies {
     kover(project(":d-migrate-driver-mysql"))
     kover(project(":d-migrate-driver-sqlite"))
     kover(project(":d-migrate-formats"))
+    kover(project(":d-migrate-streaming"))
     kover(project(":d-migrate-cli"))
 }
