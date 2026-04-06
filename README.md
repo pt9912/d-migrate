@@ -77,6 +77,11 @@ installing a JDK locally.
 # Full build incl. tests and coverage verification (default)
 docker build -t d-migrate:dev .
 
+# Force a full test/coverage run (bypass Docker layer cache AND Gradle build cache)
+docker build --no-cache \
+  --build-arg GRADLE_TASKS="build :d-migrate-cli:installDist --rerun-tasks" \
+  -t d-migrate:dev .
+
 # Skip tests — only assemble the CLI distribution
 docker build --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" \
   -t d-migrate:dev .
