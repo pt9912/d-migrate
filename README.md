@@ -138,7 +138,7 @@ Then validate it:
 
 ## Current Status
 
-**v0.2.0** (in development):
+**[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** released:
 
 - DDL generation for PostgreSQL, MySQL, SQLite
 - TypeMapper with 18 neutral types per dialect
@@ -176,6 +176,7 @@ Detailed documentation is available in the [docs/](docs/) directory:
 - [DDL Generation Rules](docs/ddl-generation-rules.md)
 - [Connection & Config Specification](docs/connection-config-spec.md)
 - [Roadmap](docs/roadmap.md)
+- [Release Guide](docs/releasing.md)
 - [Requirements (German)](docs/lastenheft-d-migrate.md)
 
 ## Contributing

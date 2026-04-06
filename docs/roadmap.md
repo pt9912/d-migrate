@@ -39,7 +39,7 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ergebnis**: Schema-Dateien können geladen und validiert werden.
 
-### Milestone 0.2.0 — DDL-Generierung ✅ (2026-04-05)
+### Milestone 0.2.0 — DDL-Generierung ✅ (2026-04-06)
 
 | Bereich | Aufgabe                                                              | LF-Ref | Status |
 | ------- | -------------------------------------------------------------------- | ------ | ------ |
@@ -330,6 +330,6 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 ---
 
-**Version**: 1.1
-**Stand**: 2026-04-05
-**Status**: Milestone 0.1.0 abgeschlossen, weitere Milestones in Planung
+**Version**: 1.2
+**Stand**: 2026-04-06
+**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, weitere Milestones in Planung
