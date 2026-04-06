@@ -26,10 +26,24 @@ import java.io.OutputStream
  * Pro Chunk wird die `JsonWriter`-buffer in den Output-Stream geflusht.
  */
 class JsonChunkWriter(
-    private val output: OutputStream,
-    @Suppress("unused") private val options: ExportOptions = ExportOptions(),
-    private val warningSink: ((ValueSerializer.W202) -> Unit)? = null,
+    output: OutputStream,
+    private val options: ExportOptions = ExportOptions(),
+    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
 ) : DataChunkWriter {
+
+    /**
+     * F25: DSL-JSON schreibt rohe UTF-8-Bytes. Wenn der User ein anderes
+     * Encoding verlangt (`--encoding utf-16`, `iso-8859-1` etc.), wrappen
+     * wir den Ziel-Stream in einen [CharsetReencodingOutputStream], der
+     * UTF-8-Bytes aus DSL-JSON in das Ziel-Encoding re-encodet.
+     *
+     * Für UTF-8 (Default) bleibt der Pfad direkt — kein Overhead.
+     */
+    private val output: OutputStream = if (options.encoding == Charsets.UTF_8) {
+        output
+    } else {
+        CharsetReencodingOutputStream(output, options.encoding)
+    }
 
     private val dslJson = DslJson<Any>()
     private val writer: JsonWriter = dslJson.newWriter()

@@ -9,6 +9,9 @@ import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayOutputStream
 import java.math.BigDecimal
 
+/**
+ * Golden-Master-Tests für YamlChunkWriter (SnakeYAML Engine).
+ */
 class YamlChunkWriterTest : FunSpec({
 
     val cols = listOf(
@@ -16,56 +19,76 @@ class YamlChunkWriterTest : FunSpec({
         ColumnDescriptor("name", nullable = false),
     )
 
-    test("two rows produce a YAML sequence of maps") {
+    fun runWriter(
+        options: ExportOptions = ExportOptions(),
+        block: (writer: dev.dmigrate.format.data.DataChunkWriter) -> Unit,
+    ): String {
         val out = ByteArrayOutputStream()
-        YamlChunkWriter(out).use { w ->
+        YamlChunkWriter(out, options).use { block(it) }
+        return out.toString(options.encoding)
+    }
+
+    // ─── Golden Masters ──────────────────────────────────────────
+
+    test("golden: two rows of two columns produce sequence of maps") {
+        val actual = runWriter { w ->
             w.begin("users", cols)
             w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, "alice"), arrayOf<Any?>(2, "bob")), 0))
             w.end()
         }
-        val yaml = out.toString(Charsets.UTF_8)
-        yaml shouldContain "- "
-        yaml shouldContain "id:"
-        yaml shouldContain "name:"
-        yaml shouldContain "alice"
-        yaml shouldContain "bob"
+        // Mindest-Form: zwei Sequence-Items mit BLOCK-Style
+        actual shouldContain "- id: 1\n  name: alice\n"
+        actual shouldContain "- id: 2\n  name: bob\n"
     }
 
-    test("§6.17: empty table produces []") {
-        val out = ByteArrayOutputStream()
-        YamlChunkWriter(out).use { w ->
+    test("golden: §6.17 empty table → []") {
+        val actual = runWriter { w ->
             w.begin("empty", cols)
             w.write(DataChunk("empty", cols, emptyList(), 0))
             w.end()
         }
-        out.toString(Charsets.UTF_8).trim() shouldBe "[]"
+        actual shouldBe "[]\n"
     }
 
-    test("null values are YAML null") {
-        val out = ByteArrayOutputStream()
-        YamlChunkWriter(out).use { w ->
+    test("null values are YAML null (renders as 'null' or '~')") {
+        val actual = runWriter { w ->
             w.begin("users", cols)
             w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, null)), 0))
             w.end()
         }
-        // SnakeYAML rendert null als 'null' (oder ~), je nach Settings
-        val yaml = out.toString(Charsets.UTF_8)
-        (yaml.contains("null") || yaml.contains("~")) shouldBe true
+        // SnakeYAML Engine rendert null per default als 'null' (oder ~)
+        (actual.contains("name: null") || actual.contains("name: ~")) shouldBe true
     }
 
     test("BigDecimal is encoded as YAML string for precision") {
-        val out = ByteArrayOutputStream()
-        YamlChunkWriter(out).use { w ->
+        val actual = runWriter { w ->
             w.begin("users", cols)
             w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(BigDecimal("12345.6789"), "x")), 0))
             w.end()
         }
-        out.toString(Charsets.UTF_8) shouldContain "12345.6789"
+        actual shouldContain "12345.6789"
     }
 
     test("close() without begin() does not write content") {
         val out = ByteArrayOutputStream()
         YamlChunkWriter(out).close()
         out.toString(Charsets.UTF_8) shouldBe ""
+    }
+
+    test("multi-row chunk produces correct sequence ordering") {
+        val actual = runWriter { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(
+                arrayOf<Any?>(1, "a"),
+                arrayOf<Any?>(2, "b"),
+                arrayOf<Any?>(3, "c"),
+            ), 0))
+            w.end()
+        }
+        val idxA = actual.indexOf("name: a")
+        val idxB = actual.indexOf("name: b")
+        val idxC = actual.indexOf("name: c")
+        (idxA < idxB) shouldBe true
+        (idxB < idxC) shouldBe true
     }
 })

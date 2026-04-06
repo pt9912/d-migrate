@@ -11,10 +11,10 @@ import java.io.OutputStream
  * den [dev.dmigrate.streaming.StreamingExporter] übergeben.
  *
  * Optional kann ein [warningSink] übergeben werden, der pro
- * [ValueSerializer.W202] aufgerufen wird (für Export-Reports).
+ * [ValueSerializer.Warning] aufgerufen wird (für Export-Reports).
  */
 class DefaultDataChunkWriterFactory(
-    private val warningSink: ((ValueSerializer.W202) -> Unit)? = null,
+    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
 ) : DataChunkWriterFactory {
 
     override fun create(

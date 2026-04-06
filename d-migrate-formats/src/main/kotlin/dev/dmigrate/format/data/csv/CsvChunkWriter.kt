@@ -30,19 +30,19 @@ import java.nio.charset.StandardCharsets
 class CsvChunkWriter(
     private val output: OutputStream,
     private val options: ExportOptions = ExportOptions(),
-    private val warningSink: ((ValueSerializer.W202) -> Unit)? = null,
+    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     private val serializer = ValueSerializer(warningSink)
     private var csvWriter: CsvWriter? = null
     private var beginCalled: Boolean = false
     private var closed: Boolean = false
-    private var columnCount: Int = 0
+    private var columnNames: List<String> = emptyList()
 
     override fun begin(table: String, columns: List<ColumnDescriptor>) {
         check(!beginCalled) { "begin() called twice on the same CsvChunkWriter" }
         beginCalled = true
-        columnCount = columns.size
+        columnNames = columns.map { it.name }
 
         // BOM-Bytes vor allem anderen schreiben (falls gewünscht).
         // uniVocity hat keine eingebaute BOM-Option — wir machen das selbst,
@@ -71,10 +71,13 @@ class CsvChunkWriter(
     override fun write(chunk: DataChunk) {
         if (chunk.rows.isEmpty()) return
         val w = checkNotNull(csvWriter) { "write() called before begin()" }
+        val n = columnNames.size
         for (row in chunk.rows) {
-            val rendered = arrayOfNulls<String>(columnCount)
-            for (i in 0 until columnCount) {
-                rendered[i] = renderValue(serializer.serialize(chunk.table, "col$i", row[i]))
+            val rendered = arrayOfNulls<String>(n)
+            for (i in 0 until n) {
+                // F27: echte Spaltennamen an den Serializer übergeben, damit
+                // W202-Warnings korrekt attribuiert sind.
+                rendered[i] = renderValue(serializer.serialize(chunk.table, columnNames[i], row[i]))
             }
             w.writeRow(rendered)
         }

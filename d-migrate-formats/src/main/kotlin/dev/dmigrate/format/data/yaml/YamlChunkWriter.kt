@@ -31,7 +31,7 @@ import java.io.OutputStreamWriter
 class YamlChunkWriter(
     private val output: OutputStream,
     private val options: ExportOptions = ExportOptions(),
-    private val warningSink: ((ValueSerializer.W202) -> Unit)? = null,
+    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     private val streamWriter = OutputStreamWriter(output, options.encoding)

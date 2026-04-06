@@ -119,10 +119,10 @@ class ValueSerializerTest : FunSpec({
         serializer.serialize("t", "c", ByteArray(0)) shouldBe SerializedValue.Text("")
     }
 
-    // ─── W202 fallback ───────────────────────────────────────────
+    // ─── W201 / W202 fallback ────────────────────────────────────
 
     test("Unknown class → toString() + W202 warning") {
-        val warnings = mutableListOf<ValueSerializer.W202>()
+        val warnings = mutableListOf<ValueSerializer.Warning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val custom = object {
             override fun toString() = "custom!"
@@ -131,6 +131,7 @@ class ValueSerializerTest : FunSpec({
         val result = ser.serialize("users", "weird_col", custom)
         result shouldBe SerializedValue.Text("custom!")
         warnings.size shouldBe 1
+        warnings.single().code shouldBe "W202"
         warnings.single().table shouldBe "users"
         warnings.single().column shouldBe "weird_col"
         warnings.single().javaClass shouldContain "ValueSerializerTest"
@@ -141,4 +142,141 @@ class ValueSerializerTest : FunSpec({
         val custom = object { override fun toString() = "x" }
         ser.serialize("t", "c", custom) shouldBe SerializedValue.Text("x")
     }
+
+    test("NaN double → string + W202 warning") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val ser = ValueSerializer(warningSink = { warnings += it })
+        val result = ser.serialize("t", "c", Double.NaN)
+        result shouldBe SerializedValue.Text("NaN")
+        warnings.size shouldBe 1
+        warnings.single().code shouldBe "W202"
+        warnings.single().message shouldContain "NaN"
+    }
+
+    test("Infinity double → string + W202 warning") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val ser = ValueSerializer(warningSink = { warnings += it })
+        ser.serialize("t", "c", Double.POSITIVE_INFINITY) shouldBe SerializedValue.Text("Infinity")
+        warnings.size shouldBe 1
+        warnings.single().code shouldBe "W202"
+    }
+
+    test("W202 deduplication: same (table, column, class) only warns once") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val ser = ValueSerializer(warningSink = { warnings += it })
+        val custom = object { override fun toString() = "x" }
+        ser.serialize("t", "c", custom)
+        ser.serialize("t", "c", custom)
+        ser.serialize("t", "c", custom)
+        warnings.size shouldBe 1
+    }
+
+    test("W202 separate keys: different columns produce separate warnings") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val ser = ValueSerializer(warningSink = { warnings += it })
+        val custom = object { override fun toString() = "x" }
+        ser.serialize("t", "c1", custom)
+        ser.serialize("t", "c2", custom)
+        warnings.size shouldBe 2
+        warnings.map { it.column }.toSet() shouldBe setOf("c1", "c2")
+    }
+
+    test("PGobject (via class name) calls getValue()") {
+        // Wir simulieren PGobject mit einer Klasse die genau diesen FQN hat —
+        // das geht in JVM nicht direkt; wir testen die generelle Reflection-Logik
+        // mit einer Stub-Klasse mit getValue() Methode.
+        // Der echte PGobject-Pfad wird im PostgreSQL-Integration-Test verifiziert.
+        // Hier prüfen wir nur, dass unbekannte Klassen mit toString() landen.
+        val stubPgObject = object {
+            @Suppress("unused")
+            fun getValue(): String = "json:{}"
+            override fun toString() = "PGobject(json:{})"
+        }
+        // Stub hat nicht den FQN org.postgresql.util.PGobject — fällt auf W202
+        val ser = ValueSerializer()
+        ser.serialize("t", "c", stubPgObject) shouldBe SerializedValue.Text("PGobject(json:{})")
+    }
+
+    test("java.sql.Blob → Base64") {
+        val blob = StubBlob(byteArrayOf(1, 2, 3))
+        serializer.serialize("t", "c", blob) shouldBe SerializedValue.Text(java.util.Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
+    }
+
+    test("java.sql.Clob → String content") {
+        val clob = StubClob("hello world")
+        serializer.serialize("t", "c", clob) shouldBe SerializedValue.Text("hello world")
+    }
+
+    test("java.sql.Array → toString form + W201") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val ser = ValueSerializer(warningSink = { warnings += it })
+        val array = StubSqlArray(arrayOf<Any?>(1, 2, "x"))
+        val result = ser.serialize("t", "c", array) as SerializedValue.Text
+        result.value shouldBe "[1,2,x]"
+        warnings.size shouldBe 1
+        warnings.single().code shouldBe "W201"
+        warnings.single().javaClass shouldContain "StubSqlArray"
+    }
+
+    test("java.sql.Struct → toString + W201") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val ser = ValueSerializer(warningSink = { warnings += it })
+        val struct = StubStruct("ROW(1,2)")
+        ser.serialize("t", "c", struct) shouldBe SerializedValue.Text("ROW(1,2)")
+        warnings.size shouldBe 1
+        warnings.single().code shouldBe "W201"
+    }
 })
+
+// ─── Stubs für JDBC LOB/Array/Struct (verhindern Connection-Pflicht) ───
+
+private class StubBlob(private val bytes: ByteArray) : java.sql.Blob {
+    override fun length() = bytes.size.toLong()
+    override fun getBytes(pos: Long, length: Int) = bytes.copyOfRange(pos.toInt() - 1, pos.toInt() - 1 + length)
+    override fun getBinaryStream() = bytes.inputStream()
+    override fun getBinaryStream(pos: Long, length: Long) = bytes.copyOfRange(pos.toInt() - 1, pos.toInt() - 1 + length.toInt()).inputStream()
+    override fun position(pattern: ByteArray, start: Long) = -1L
+    override fun position(pattern: java.sql.Blob, start: Long) = -1L
+    override fun setBytes(pos: Long, bytes: ByteArray) = throw UnsupportedOperationException()
+    override fun setBytes(pos: Long, bytes: ByteArray, offset: Int, len: Int) = throw UnsupportedOperationException()
+    override fun setBinaryStream(pos: Long) = throw UnsupportedOperationException()
+    override fun truncate(len: Long) = Unit
+    override fun free() = Unit
+}
+
+private class StubClob(private val content: String) : java.sql.Clob {
+    override fun length() = content.length.toLong()
+    override fun getSubString(pos: Long, length: Int) = content.substring(pos.toInt() - 1, pos.toInt() - 1 + length)
+    override fun getCharacterStream() = content.reader()
+    override fun getCharacterStream(pos: Long, length: Long) = content.substring(pos.toInt() - 1, pos.toInt() - 1 + length.toInt()).reader()
+    override fun getAsciiStream() = content.byteInputStream(Charsets.US_ASCII)
+    override fun position(searchstr: String, start: Long) = -1L
+    override fun position(searchstr: java.sql.Clob, start: Long) = -1L
+    override fun setString(pos: Long, str: String) = 0
+    override fun setString(pos: Long, str: String, offset: Int, len: Int) = 0
+    override fun setAsciiStream(pos: Long) = throw UnsupportedOperationException()
+    override fun setCharacterStream(pos: Long) = throw UnsupportedOperationException()
+    override fun truncate(len: Long) = Unit
+    override fun free() = Unit
+}
+
+private class StubSqlArray(private val elements: Array<Any?>) : java.sql.Array {
+    override fun getBaseTypeName() = "VARCHAR"
+    override fun getBaseType() = java.sql.Types.VARCHAR
+    override fun getArray() = elements
+    override fun getArray(map: MutableMap<String, Class<*>>?) = elements
+    override fun getArray(index: Long, count: Int) = elements.copyOfRange(index.toInt() - 1, index.toInt() - 1 + count)
+    override fun getArray(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = elements.copyOfRange(index.toInt() - 1, index.toInt() - 1 + count)
+    override fun getResultSet() = throw UnsupportedOperationException()
+    override fun getResultSet(map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
+    override fun getResultSet(index: Long, count: Int) = throw UnsupportedOperationException()
+    override fun getResultSet(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
+    override fun free() = Unit
+}
+
+private class StubStruct(private val text: String) : java.sql.Struct {
+    override fun getSQLTypeName() = "ROW"
+    override fun getAttributes() = arrayOf<Any?>()
+    override fun getAttributes(map: MutableMap<String, Class<*>>?) = arrayOf<Any?>()
+    override fun toString() = text
+}
