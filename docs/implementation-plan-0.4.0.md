@@ -12,13 +12,14 @@
 Daten aus JSON-, YAML- und CSV-Dateien wieder in PostgreSQL, MySQL und SQLite
 einlesen — chunkbasiert, transaktional, mit korrekter Nachführung von
 Sequenzen/Identity-Spalten und einem klaren Trigger-Vertrag. Außerdem die
-inkrementelle Marker-Spalten-Variante von Export und Import (LF-013), die im
-Roadmap-Update von 0.9.0 nach 0.4.0 vorgezogen wurde.
+inkrementelle Marker-Spalten-Variante des Exports (LF-013), die im
+Roadmap-Update von 0.9.0 nach 0.4.0 vorgezogen wurde. Der Delta-Import läuft
+über idempotenten UPSERT (`--on-conflict update`) — siehe §6.12.2.
 
 ```
-Datei → d-migrate data import --target <url|name> --source <path> [--format <fmt>] → DB
-DB    → d-migrate data export ... --since-column updated_at --since "<ts>"      → Datei (delta)
-Datei → d-migrate data import ... --since-column updated_at                     → DB (delta)
+Datei → d-migrate data import --target <url|name> --source <path> --table <name>      → DB
+DB    → d-migrate data export ... --since-column updated_at --since "<ts>"             → Datei (delta)
+Datei → d-migrate data import ... --table <name> --on-conflict update                  → DB (delta, idempotent)
 ```
 
 **Was gehört zu 0.4.0:**
@@ -473,7 +474,11 @@ Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 
 ```kotlin
 class DataImportCommand : CliktCommand(name = "import") {
-    val target by option("--target").required()
+    // F47: --target ist NICHT hart .required() — der NamedConnectionResolver
+    // löst es zusammen mit `database.default_target` aus .d-migrate.yaml auf.
+    // Pflicht ist es nur, wenn weder --target noch ein default_target greift
+    // (siehe §3.7.3 Auflösungstabelle).
+    val target by option("--target")
     val source by option("--source").required()                        // Pfad oder "-" für Stdin
     val format by option("--format").choice("json", "yaml", "csv")     // Default: aus Endung
     // F40: Tabellen-Auflösung ist explizit mehrere Pfade:
@@ -553,12 +558,23 @@ In 0.3.0 wurde `default_source` gelesen aber für `data export` ignoriert.
 Für 0.4.0 wird `default_target` aktiv für `data import` — die Quelle bleibt
 Pflichtparameter (eine Datei), das Ziel kann aus `default_target` kommen.
 
+**Auflösungstabelle (autoritativ — F47)**: Das CLI-Snippet in §3.7.1 macht
+`--target` bewusst **nicht** mit `.required()` pflichtig. Stattdessen
+entscheidet diese Tabelle, ob ein effektives Ziel bestimmbar ist:
+
 | `--target` | `default_target` in `.d-migrate.yaml` | Verhalten |
 |---|---|---|
 | gesetzt | irrelevant | wird benutzt |
 | nicht gesetzt | gesetzt, ist URL | URL wird benutzt |
 | nicht gesetzt | gesetzt, ist Connection-Name | über `connections`-Map auflösen |
-| nicht gesetzt | nicht gesetzt | Exit 2 (`--target` ist Pflicht ohne Default) |
+| nicht gesetzt | nicht gesetzt | **Exit 2** mit Meldung „`--target` ist Pflicht, wenn `database.default_target` nicht gesetzt ist" |
+
+`DataImportCommand.run()` ruft den `NamedConnectionResolver` mit dem
+optionalen `target`-Wert; der Resolver wird in 0.4.0 um eine
+`resolveTarget(target: String?)`-Methode erweitert, die die obige Tabelle
+implementiert. Damit ist der „Pflicht"-Status von `--target` an genau einer
+Stelle festgelegt — der Auflösungstabelle — und nicht doppelt im
+Clikt-Snippet plus im Fließtext.
 
 ### 3.8 `d-migrate-core`
 
@@ -597,7 +613,9 @@ reichen aus — die Reader-Pfade benutzen die gleichen Bibliotheken.
 
 1. `DataChunkReader`-Interface + `DataChunkReaderFactory`
 2. `ImportOptions` (parallel zu `ExportOptions`)
-3. `EncodingDetector` mit BOM-Sniff für UTF-8/UTF-16 LE/BE/ISO-8859-1
+3. `EncodingDetector` mit BOM-Sniff nur für UTF-8/UTF-16 BE/LE; alle anderen
+   Encodings (ISO-8859-1, Windows-1252, …) ausschließlich über
+   `--encoding`-Fallback (siehe §6.9)
 4. `ValueDeserializer` mit der Mapping-Tabelle aus §3.5.2 plus Tests
 5. `DataFilter.ParameterizedClause` und Erweiterung von
    `AbstractJdbcDataReader` für parametrisierte WHERE-Klauseln
@@ -1264,7 +1282,7 @@ mitziehen:
 
 ## 12. Aufgelöste Review-Fragen und Findings
 
-### 12.1 Initiale Open Questions
+### 12.1 Initiale offene Fragen
 
 - **Soll `--format` aus der Endung abgeleitet werden?** Ja, mit Fallback auf
   Exit 2 wenn keine Endung erkennbar (§6.3).
