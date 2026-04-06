@@ -17,6 +17,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import java.io.OutputStream
 import java.nio.file.Files
 import java.sql.Connection
@@ -363,6 +364,133 @@ class StreamingExporterTest : FunSpec({
         shouldThrow<IllegalArgumentException> { PipelineConfig(chunkSize = 0) }
         shouldThrow<IllegalArgumentException> { PipelineConfig(chunkSize = -1) }
     }
+
+    // ─── F23: Stdout-Wrapper darf System.out NICHT schließen ─────
+
+    test("F23: real-style writer.close() does NOT close System.out") {
+        // Wir tauschen System.out gegen einen Spy, der closeCallCount trackt.
+        val spy = SpyOutputStream()
+        val originalOut = System.out
+        System.setOut(java.io.PrintStream(spy, /* autoFlush = */ true))
+        try {
+            val reader = FakeDataReader(
+                mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
+            )
+            // RealStreamClosingChunkWriterFactory simuliert echte Writer:
+            // close() schließt den darunterliegenden OutputStream.
+            val factory = RealStreamClosingChunkWriterFactory()
+            val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), factory)
+
+            exporter.export(
+                pool = pool,
+                tables = listOf("users"),
+                output = ExportOutput.Stdout,
+                format = DataExportFormat.JSON,
+            )
+
+            // Der Writer hat close() auf seinen OutputStream weitergegeben — und der
+            // war ein NonClosingOutputStream(System.out). System.out selbst darf NICHT
+            // geschlossen worden sein.
+            spy.closeCallCount shouldBe 0
+            // Nach dem Export muss System.out weiter benutzbar sein
+            spy.bytesWritten shouldNotBe 0L
+        } finally {
+            System.setOut(originalOut)
+        }
+    }
+
+    test("F23: SingleFile-Branch closes the file stream as expected") {
+        // Sanity-Check: für File-Output sollen Streams normal geschlossen werden
+        val tmp = Files.createTempFile("streaming-test-f23-", ".json")
+        try {
+            val reader = FakeDataReader(
+                mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
+            )
+            val exporter = StreamingExporter(
+                reader,
+                FakeTableLister(emptyList()),
+                RealStreamClosingChunkWriterFactory(),
+            )
+
+            exporter.export(
+                pool = pool,
+                tables = listOf("users"),
+                output = ExportOutput.SingleFile(tmp),
+                format = DataExportFormat.JSON,
+            )
+
+            // Datei wurde geschrieben und kann gelesen werden — das funktioniert nur
+            // wenn die OutputStreams ordentlich geschlossen wurden
+            tmp.readText() shouldContain "alice"
+        } finally {
+            tmp.deleteIfExists()
+        }
+    }
+
+    // ─── F24: end() darf nur nach erfolgreichem begin() laufen ───
+
+    test("F24: §6.17 violation (Reader emits zero chunks) → begin and end are NOT called") {
+        val reader = FakeDataReader(mapOf("broken" to emptyList()))
+        val factory = RecordingChunkWriterFactory()
+        val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), factory)
+
+        exporter.export(
+            pool = pool,
+            tables = listOf("broken"),
+            output = ExportOutput.Stdout,
+            format = DataExportFormat.JSON,
+        )
+
+        // create und close MÜSSEN aufgerufen werden (Resource-Cleanup),
+        // begin/write/end DÜRFEN NICHT laufen.
+        factory.events.filter { it.startsWith("create:") }.size shouldBe 1
+        factory.events.filter { it.startsWith("close:") }.size shouldBe 1
+        factory.events.any { it.startsWith("begin:") } shouldBe false
+        factory.events.any { it.startsWith("write:") } shouldBe false
+        factory.events.any { it.startsWith("end:") } shouldBe false
+    }
+
+    test("F24: Exception in begin() → end() is NOT called") {
+        val reader = FakeDataReader(
+            mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
+        )
+        // Writer schlägt in begin() fehl, end() würde sonst einen halben Container schreiben
+        val factory = FailingBeginChunkWriterFactory()
+        val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), factory)
+
+        val result = exporter.export(
+            pool = pool,
+            tables = listOf("users"),
+            output = ExportOutput.Stdout,
+            format = DataExportFormat.JSON,
+        )
+
+        result.tables.single().error shouldNotBe null
+        factory.events.any { it == "begin-throw" } shouldBe true
+        factory.events.any { it == "end" } shouldBe false
+        factory.events.any { it == "close" } shouldBe true   // Resource-Cleanup MUSS laufen
+    }
+
+    test("F24: Exception in write() AFTER successful begin() → end() IS called for cleanup") {
+        // Wenn begin() bereits durchlief und write() später failt, MUSS end()
+        // defensiv aufgerufen werden — der Writer kann z.B. ein offenes JSON-Array
+        // schließen müssen.
+        val reader = FakeDataReader(
+            mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
+        )
+        val factory = FailingWriteChunkWriterFactory()
+        val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), factory)
+
+        val result = exporter.export(
+            pool = pool,
+            tables = listOf("users"),
+            output = ExportOutput.Stdout,
+            format = DataExportFormat.JSON,
+        )
+
+        result.tables.single().error shouldNotBe null
+        factory.events shouldContainExactly listOf("begin", "write-throw", "end", "close")
+    }
 })
 
 // ───────────────────────────────────────────────────────────────
@@ -431,6 +559,10 @@ private class FakeTableLister(private val tables: List<String>) : TableLister {
  * (`create`/`begin`/`write:N`/`end`/`close`) als globale Liste, sodass
  * Tests die Aufruf-Reihenfolge prüfen können. Schreibt ein einfaches
  * `<table>:<row>\n` als Marker in den Output-Stream.
+ *
+ * Wichtig: `close()` darf laut DataChunkWriter-Vertrag auch ohne vorheriges
+ * `begin()` aufgerufen werden — der Recorder benutzt dann `close:?` als
+ * Marker, weil der Tabellenname unbekannt ist.
  */
 private class RecordingChunkWriterFactory : DataChunkWriterFactory {
     val events = mutableListOf<String>()
@@ -441,12 +573,11 @@ private class RecordingChunkWriterFactory : DataChunkWriterFactory {
 
             override fun begin(table: String, columns: List<ColumnDescriptor>) {
                 this.table = table
-                if (events.lastOrNull()?.startsWith("create:") != true) {
-                    // Defensive falls Test create vergessen hat
-                    events += "create:$table"
-                } else {
+                if (events.lastOrNull() == "create:?") {
                     // Aktualisiere "create:?" auf "create:<table>"
                     events[events.lastIndex] = "create:$table"
+                } else {
+                    events += "create:$table"
                 }
                 events += "begin:$table"
             }
@@ -466,5 +597,109 @@ private class RecordingChunkWriterFactory : DataChunkWriterFactory {
                 events += "close:$table"
             }
         }.also { events += "create:?" }
+    }
+}
+
+/**
+ * Spy-OutputStream der die Anzahl der `close()`-Aufrufe und der geschriebenen
+ * Bytes trackt. Für F23-Tests: verifiziert, dass `System.out` NIE geschlossen
+ * wird, auch wenn der Writer seinen Stream eigentlich schließen würde.
+ */
+private class SpyOutputStream : OutputStream() {
+    var closeCallCount: Int = 0
+    var bytesWritten: Long = 0L
+    private val sink = java.io.ByteArrayOutputStream()
+
+    override fun write(b: Int) {
+        sink.write(b)
+        bytesWritten += 1
+    }
+    override fun write(b: ByteArray, off: Int, len: Int) {
+        sink.write(b, off, len)
+        bytesWritten += len.toLong()
+    }
+    override fun flush() = sink.flush()
+    override fun close() {
+        closeCallCount += 1
+    }
+}
+
+/**
+ * Realistischer DataChunkWriter, der seinen [OutputStream] in `close()`
+ * tatsächlich schließt — wie es echte JSON/YAML/CSV-Writer aus Phase D
+ * tun werden. Für F23-Tests, um sicherzustellen, dass der StreamingExporter
+ * den Stdout-Stream NICHT zerstört.
+ */
+private class RealStreamClosingChunkWriterFactory : DataChunkWriterFactory {
+    override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
+        return object : DataChunkWriter {
+            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+                output.write("[\n".toByteArray())
+            }
+            override fun write(chunk: DataChunk) {
+                for (row in chunk.rows) {
+                    output.write("  ${row.joinToString(",")}\n".toByteArray())
+                }
+            }
+            override fun end() {
+                output.write("]\n".toByteArray())
+            }
+            override fun close() {
+                output.close()  // Real-world Writer-Verhalten: schließt den Stream
+            }
+        }
+    }
+}
+
+/**
+ * Writer der in `begin()` failt. Verifiziert F24: `end()` darf nicht
+ * gerufen werden, weil `begin()` nicht erfolgreich war.
+ */
+private class FailingBeginChunkWriterFactory : DataChunkWriterFactory {
+    val events = mutableListOf<String>()
+
+    override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
+        return object : DataChunkWriter {
+            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+                events += "begin-throw"
+                throw RuntimeException("begin failed for $table")
+            }
+            override fun write(chunk: DataChunk) {
+                events += "write"
+            }
+            override fun end() {
+                events += "end"
+            }
+            override fun close() {
+                events += "close"
+            }
+        }
+    }
+}
+
+/**
+ * Writer der in `write()` failt — nach erfolgreichem `begin()`. Verifiziert
+ * F24: `end()` MUSS hier doch gerufen werden (defensive cleanup, der Writer
+ * kann offene Container schließen müssen).
+ */
+private class FailingWriteChunkWriterFactory : DataChunkWriterFactory {
+    val events = mutableListOf<String>()
+
+    override fun create(format: DataExportFormat, output: OutputStream, options: ExportOptions): DataChunkWriter {
+        return object : DataChunkWriter {
+            override fun begin(table: String, columns: List<ColumnDescriptor>) {
+                events += "begin"
+            }
+            override fun write(chunk: DataChunk) {
+                events += "write-throw"
+                throw RuntimeException("write failed")
+            }
+            override fun end() {
+                events += "end"
+            }
+            override fun close() {
+                events += "close"
+            }
+        }
     }
 }

@@ -81,12 +81,20 @@ class StreamingExporter(
                     "Stdout output supports exactly one table, got ${effectiveTables.size}"
                 }
                 val table = effectiveTables.single()
-                val counting = CountingOutputStream(System.out)
+                // F23: System.out NIE schließen, sonst zerstören wir stdout für den Rest
+                // des Prozesses. Realer DataChunkWriter.close() schließt aber laut Vertrag
+                // den darunterliegenden Stream — daher wrappen wir System.out in einen
+                // NonClosingOutputStream, der close() ignoriert (flush() weitergereicht).
+                val nonClosing = NonClosingOutputStream(System.out)
+                val counting = CountingOutputStream(nonClosing)
                 val writer = writerFactory.create(format, counting, options)
-                tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                try {
+                    tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                } finally {
+                    runCatching { writer.close() }   // schließt counting → nonClosing → no-op
+                    runCatching { System.out.flush() }
+                }
                 totalBytes += counting.count
-                // System.out NICHT schließen — würde stdout zerstören.
-                writer.close()
             }
 
             is ExportOutput.SingleFile -> {
@@ -103,9 +111,12 @@ class StreamingExporter(
                     BufferedOutputStream(fileOut).use { buffered ->
                         val counting = CountingOutputStream(buffered)
                         val writer = writerFactory.create(format, counting, options)
-                        tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                        try {
+                            tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                        } finally {
+                            runCatching { writer.close() }
+                        }
                         totalBytes += counting.count
-                        writer.close()
                     }
                 }
             }
@@ -123,9 +134,12 @@ class StreamingExporter(
                         BufferedOutputStream(fileOut).use { buffered ->
                             val counting = CountingOutputStream(buffered)
                             val writer = writerFactory.create(format, counting, options)
-                            tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                            try {
+                                tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                            } finally {
+                                runCatching { writer.close() }
+                            }
                             totalBytes += counting.count
-                            writer.close()
                         }
                     }
                 }
@@ -144,8 +158,17 @@ class StreamingExporter(
 
     /**
      * Exportiert genau eine Tabelle in den übergebenen Writer. Der Writer
-     * wird hier NICHT geschlossen — das macht der Caller, weil er auch den
-     * darunterliegenden OutputStream besitzt.
+     * wird hier NICHT geschlossen — das macht der Caller im finally-Block.
+     *
+     * Vertrag-Garantien (F24):
+     * - `writer.end()` wird **ausschließlich** dann aufgerufen, wenn vorher
+     *   `writer.begin()` erfolgreich gelaufen ist. Sonst könnte ein realer
+     *   Format-Writer einen schließenden Delimiter (z.B. JSON `]`) ohne
+     *   öffnenden Anfang in den Output schreiben.
+     * - Bei Reader-Vertragsverletzung (kein Chunk geliefert, §6.17) wird
+     *   `begin/end` NICHT aufgerufen; der Output bleibt leer.
+     * - Bei Exception nach `begin()` wird `end()` defensiv versucht, damit
+     *   der Writer offene Container schließen kann (z.B. JSON `]`).
      */
     private fun exportSingleTable(
         pool: ConnectionPool,
@@ -160,11 +183,11 @@ class StreamingExporter(
         var rows = 0L
         var chunks = 0L
         var error: String? = null
+        var beginCalled = false
         val bytesBefore = counting.count
 
         try {
             reader.streamTable(pool, table, filter, config.chunkSize).use { sequence ->
-                var beginCalled = false
                 for (chunk in sequence) {
                     if (!beginCalled) {
                         // §6.17: der erste Chunk hat columns, auch wenn rows leer ist
@@ -176,18 +199,23 @@ class StreamingExporter(
                     chunks += 1L
                 }
                 if (!beginCalled) {
-                    // Defensiv: sollte nach §6.17 nicht passieren, aber falls ein Reader
-                    // den Vertrag bricht und gar keinen Chunk liefert, schreiben wir
-                    // wenigstens einen leeren Output (kein Header, weil keine columns).
+                    // Defensiv: sollte nach §6.17 nicht passieren. Reader hat den
+                    // Vertrag verletzt — wir lassen den Output absichtlich leer und
+                    // rufen weder begin() noch end() auf.
                     error = "Reader returned no chunks for table '$table' " +
                         "(violates Plan §6.17 — empty tables must still emit one chunk)"
+                } else {
+                    writer.end()
                 }
-                writer.end()
             }
         } catch (t: Throwable) {
             error = t.message ?: t::class.simpleName
-            // Trotzdem versuchen, end() zu rufen — Writer kann noch offene Container haben
-            try { writer.end() } catch (_: Throwable) {}
+            // F24: end() NUR wenn begin() erfolgreich war. Sonst würde ein realer
+            // JSON-Writer ein `]` ohne `[` schreiben, ein YAML-Writer einen
+            // hängenden Doc-End-Marker, ein CSV-Writer eine fehlende Header-Zeile etc.
+            if (beginCalled) {
+                runCatching { writer.end() }
+            }
         }
 
         val durationMs = (System.nanoTime() - tableStart) / 1_000_000
@@ -204,8 +232,10 @@ class StreamingExporter(
 
 /**
  * Wrapper-OutputStream, der die Anzahl der durchgeschriebenen Bytes mitzählt.
- * Für die [ExportResult.totalBytes]-Statistik. Schließt den Underlying-Stream
- * NICHT — das macht der Caller via use {}.
+ * Für die [ExportResult.totalBytes]-Statistik. `close()` wird an den
+ * darunterliegenden Stream weitergereicht — bei Stdout wird das via
+ * [NonClosingOutputStream] abgefangen, sodass `System.out` nie geschlossen
+ * wird.
  */
 internal class CountingOutputStream(private val delegate: OutputStream) : OutputStream() {
     var count: Long = 0L
@@ -226,9 +256,27 @@ internal class CountingOutputStream(private val delegate: OutputStream) : Output
     }
 
     override fun close() {
-        // delegieren — der Caller übernimmt den Lifecycle, aber close() darf
-        // weitergereicht werden, weil System.out.close() in der Stdout-Variante
-        // nie aufgerufen wird (siehe StreamingExporter.export Stdout-Branch).
         delegate.close()
+    }
+}
+
+/**
+ * Wrapper-OutputStream, der `close()` zu einem No-Op macht. `flush()` und
+ * `write()` werden weitergereicht. Wird im [StreamingExporter] für den
+ * Stdout-Branch verwendet, damit ein realer [DataChunkWriter.close]
+ * (der laut Vertrag den darunterliegenden Stream schließt) `System.out`
+ * NICHT zerstört.
+ *
+ * Siehe F23 (Plan-Review-Runde 6) — vorher rief der StreamingExporter
+ * `writer.close()` direkt auf einem `CountingOutputStream(System.out)`,
+ * was bei produktiven Writer-Implementierungen `System.out` schließen
+ * würde.
+ */
+internal class NonClosingOutputStream(private val delegate: OutputStream) : OutputStream() {
+    override fun write(b: Int) = delegate.write(b)
+    override fun write(b: ByteArray, off: Int, len: Int) = delegate.write(b, off, len)
+    override fun flush() = delegate.flush()
+    override fun close() {
+        // bewusst no-op — flush() wird im StreamingExporter explizit aufgerufen
     }
 }
