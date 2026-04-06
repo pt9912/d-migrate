@@ -125,9 +125,22 @@ class JsonChunkWriter(
                     writer.writeAscii(value.value.toString())
                 }
             }
-            // Präzisionsschutz: BigDecimal/BigInteger als JSON-String
-            is SerializedValue.PreciseNumber -> writer.writeString(value.value)
+            // Plan §6.4.1: BigInteger und BigDecimal als JSON-String (Präzisionsschutz)
+            is SerializedValue.PreciseInteger -> writer.writeString(value.value.toString())
+            is SerializedValue.PreciseDecimal -> writer.writeString(value.value)
             is SerializedValue.Text -> writer.writeString(value.value)
+            // F29: java.sql.Array → rekursives JSON-Array
+            is SerializedValue.Sequence -> {
+                writer.writeByte('['.code.toByte())
+                for ((i, element) in value.elements.withIndex()) {
+                    if (i > 0) {
+                        writer.writeByte(','.code.toByte())
+                        writer.writeByte(' '.code.toByte())
+                    }
+                    writeValue(element)
+                }
+                writer.writeByte(']'.code.toByte())
+            }
         }
     }
 

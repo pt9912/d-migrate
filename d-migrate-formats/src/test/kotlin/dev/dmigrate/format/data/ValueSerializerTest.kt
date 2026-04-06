@@ -1,6 +1,7 @@
 package dev.dmigrate.format.data
 
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.math.BigDecimal
@@ -50,19 +51,19 @@ class ValueSerializerTest : FunSpec({
         serializer.serialize("t", "c", 2.5) shouldBe SerializedValue.FloatingPoint(2.5)
     }
 
-    test("BigInteger → PreciseNumber (string-encoded for precision)") {
+    test("BigInteger → PreciseInteger (raw BigInteger for precision)") {
         val big = BigInteger("123456789012345678901234567890")
-        serializer.serialize("t", "c", big) shouldBe SerializedValue.PreciseNumber(big.toString())
+        serializer.serialize("t", "c", big) shouldBe SerializedValue.PreciseInteger(big)
     }
 
-    test("BigDecimal → PreciseNumber (toPlainString for stability)") {
+    test("BigDecimal → PreciseDecimal (toPlainString for stability)") {
         val dec = BigDecimal("12345.6789")
-        serializer.serialize("t", "c", dec) shouldBe SerializedValue.PreciseNumber("12345.6789")
+        serializer.serialize("t", "c", dec) shouldBe SerializedValue.PreciseDecimal("12345.6789")
     }
 
     test("BigDecimal preserves trailing zeros via toPlainString") {
         val dec = BigDecimal("100.00")
-        serializer.serialize("t", "c", dec) shouldBe SerializedValue.PreciseNumber("100.00")
+        serializer.serialize("t", "c", dec) shouldBe SerializedValue.PreciseDecimal("100.00")
     }
 
     test("java.sql.Date → ISO 8601") {
@@ -207,15 +208,37 @@ class ValueSerializerTest : FunSpec({
         serializer.serialize("t", "c", clob) shouldBe SerializedValue.Text("hello world")
     }
 
-    test("java.sql.Array → toString form + W201") {
+    test("F29: java.sql.Array → recursive Sequence (no warning on success)") {
         val warnings = mutableListOf<ValueSerializer.Warning>()
         val ser = ValueSerializer(warningSink = { warnings += it })
         val array = StubSqlArray(arrayOf<Any?>(1, 2, "x"))
+        val result = ser.serialize("t", "c", array) as SerializedValue.Sequence
+        result.elements shouldBe listOf(
+            SerializedValue.Integer(1),
+            SerializedValue.Integer(2),
+            SerializedValue.Text("x"),
+        )
+        // §6.4.1: erfolgreiche Array-Enumeration soll *keine* W201 produzieren —
+        // die formatspezifische Warnung emittiert der CsvChunkWriter selbst.
+        warnings.shouldBeEmpty()
+    }
+
+    test("F29: java.sql.Array with primitive long[] → Sequence of Integer") {
+        val ser = ValueSerializer()
+        val array = StubSqlArray(longArrayOf(10L, 20L, 30L))
+        val result = ser.serialize("t", "c", array) as SerializedValue.Sequence
+        result.elements shouldBe listOf(
+            SerializedValue.Integer(10),
+            SerializedValue.Integer(20),
+            SerializedValue.Integer(30),
+        )
+    }
+
+    test("F29: java.sql.Array with byte[] payload → Base64 Text (binary fallback)") {
+        val ser = ValueSerializer()
+        val array = StubSqlArray(byteArrayOf(0x01, 0x02, 0x03))
         val result = ser.serialize("t", "c", array) as SerializedValue.Text
-        result.value shouldBe "[1,2,x]"
-        warnings.size shouldBe 1
-        warnings.single().code shouldBe "W201"
-        warnings.single().javaClass shouldContain "StubSqlArray"
+        result.value shouldBe java.util.Base64.getEncoder().encodeToString(byteArrayOf(0x01, 0x02, 0x03))
     }
 
     test("java.sql.Struct → toString + W201") {
@@ -260,13 +283,13 @@ private class StubClob(private val content: String) : java.sql.Clob {
     override fun free() = Unit
 }
 
-private class StubSqlArray(private val elements: Array<Any?>) : java.sql.Array {
+private class StubSqlArray(private val payload: Any) : java.sql.Array {
     override fun getBaseTypeName() = "VARCHAR"
     override fun getBaseType() = java.sql.Types.VARCHAR
-    override fun getArray() = elements
-    override fun getArray(map: MutableMap<String, Class<*>>?) = elements
-    override fun getArray(index: Long, count: Int) = elements.copyOfRange(index.toInt() - 1, index.toInt() - 1 + count)
-    override fun getArray(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = elements.copyOfRange(index.toInt() - 1, index.toInt() - 1 + count)
+    override fun getArray(): Any = payload
+    override fun getArray(map: MutableMap<String, Class<*>>?) = payload
+    override fun getArray(index: Long, count: Int) = payload
+    override fun getArray(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = payload
     override fun getResultSet() = throw UnsupportedOperationException()
     override fun getResultSet(map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
     override fun getResultSet(index: Long, count: Int) = throw UnsupportedOperationException()

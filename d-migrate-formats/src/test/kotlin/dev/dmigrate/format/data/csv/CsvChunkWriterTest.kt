@@ -114,6 +114,40 @@ class CsvChunkWriterTest : FunSpec({
         out.toString(Charsets.UTF_8) shouldBe ""
     }
 
+    // ─── F29: java.sql.Array → W201 + null in CSV ────────────────
+
+    test("F29: java.sql.Array column is rendered as null and emits W201 once per column") {
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val out = ByteArrayOutputStream()
+        val sqlArray = object : java.sql.Array {
+            override fun getBaseTypeName() = "int4"
+            override fun getBaseType() = java.sql.Types.INTEGER
+            override fun getArray(): Any = intArrayOf(1, 2, 3)
+            override fun getArray(map: MutableMap<String, Class<*>>?) = array
+            override fun getArray(index: Long, count: Int) = array
+            override fun getArray(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = array
+            override fun getResultSet(): java.sql.ResultSet = throw UnsupportedOperationException()
+            override fun getResultSet(map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
+            override fun getResultSet(index: Long, count: Int) = throw UnsupportedOperationException()
+            override fun getResultSet(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
+            override fun free() {}
+        }
+        CsvChunkWriter(out, warningSink = { warnings += it }).use { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(
+                arrayOf<Any?>(1, sqlArray),
+                arrayOf<Any?>(2, sqlArray),
+            ), 0))
+            w.end()
+        }
+        val text = out.toString(Charsets.UTF_8)
+        text shouldBe "id,name\n1,\n2,\n"
+        // W201 only emitted once per (table, column)
+        warnings.size shouldBe 1
+        warnings.single().code shouldBe "W201"
+        warnings.single().column shouldBe "name"
+    }
+
     // ─── F27: echte Spaltennamen werden an ValueSerializer übergeben ───
 
     test("F27: W202 warning is attributed to the real column name, not col0/col1") {

@@ -36,9 +36,7 @@ class YamlChunkWriterTest : FunSpec({
             w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, "alice"), arrayOf<Any?>(2, "bob")), 0))
             w.end()
         }
-        // Mindest-Form: zwei Sequence-Items mit BLOCK-Style
-        actual shouldContain "- id: 1\n  name: alice\n"
-        actual shouldContain "- id: 2\n  name: bob\n"
+        actual shouldBe "- id: 1\n  name: alice\n- id: 2\n  name: bob\n"
     }
 
     test("golden: §6.17 empty table → []") {
@@ -50,23 +48,34 @@ class YamlChunkWriterTest : FunSpec({
         actual shouldBe "[]\n"
     }
 
-    test("null values are YAML null (renders as 'null' or '~')") {
+    test("golden: null values are YAML null") {
         val actual = runWriter { w ->
             w.begin("users", cols)
             w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, null)), 0))
             w.end()
         }
-        // SnakeYAML Engine rendert null per default als 'null' (oder ~)
-        (actual.contains("name: null") || actual.contains("name: ~")) shouldBe true
+        actual shouldBe "- id: 1\n  name: null\n"
     }
 
-    test("BigDecimal is encoded as YAML string for precision") {
+    test("golden: BigDecimal is encoded as quoted YAML string for precision") {
         val actual = runWriter { w ->
             w.begin("users", cols)
             w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(BigDecimal("12345.6789"), "x")), 0))
             w.end()
         }
-        actual shouldContain "12345.6789"
+        // SnakeYAML emits a numeric-looking String in single quotes so it
+        // round-trips as a String (and not as a YAML float). This is the
+        // §6.4.1 precision-protection contract.
+        actual shouldBe "- id: '12345.6789'\n  name: x\n"
+    }
+
+    test("golden: BigInteger is encoded as YAML number") {
+        val actual = runWriter { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(java.math.BigInteger("99999999999999999999"), "x")), 0))
+            w.end()
+        }
+        actual shouldBe "- id: 99999999999999999999\n  name: x\n"
     }
 
     test("close() without begin() does not write content") {
@@ -75,7 +84,7 @@ class YamlChunkWriterTest : FunSpec({
         out.toString(Charsets.UTF_8) shouldBe ""
     }
 
-    test("multi-row chunk produces correct sequence ordering") {
+    test("golden: multi-row chunk produces correct sequence ordering") {
         val actual = runWriter { w ->
             w.begin("users", cols)
             w.write(DataChunk("users", cols, listOf(
@@ -85,10 +94,31 @@ class YamlChunkWriterTest : FunSpec({
             ), 0))
             w.end()
         }
-        val idxA = actual.indexOf("name: a")
-        val idxB = actual.indexOf("name: b")
-        val idxC = actual.indexOf("name: c")
-        (idxA < idxB) shouldBe true
-        (idxB < idxC) shouldBe true
+        actual shouldBe "- id: 1\n  name: a\n- id: 2\n  name: b\n- id: 3\n  name: c\n"
+    }
+
+    // ─── F29: java.sql.Array → YAML-Sequence (rekursiv) ─────────
+
+    test("golden: java.sql.Array is rendered as nested YAML sequence") {
+        val sqlArray = object : java.sql.Array {
+            override fun getBaseTypeName() = "int4"
+            override fun getBaseType() = java.sql.Types.INTEGER
+            override fun getArray(): Any = arrayOf<Any?>(10, 20, 30)
+            override fun getArray(map: MutableMap<String, Class<*>>?) = array
+            override fun getArray(index: Long, count: Int) = array
+            override fun getArray(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = array
+            override fun getResultSet(): java.sql.ResultSet = throw UnsupportedOperationException()
+            override fun getResultSet(map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
+            override fun getResultSet(index: Long, count: Int) = throw UnsupportedOperationException()
+            override fun getResultSet(index: Long, count: Int, map: MutableMap<String, Class<*>>?) = throw UnsupportedOperationException()
+            override fun free() {}
+        }
+        val actual = runWriter { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, sqlArray)), 0))
+            w.end()
+        }
+        // SnakeYAML rendert eine Sequence-of-Numbers im BLOCK-Style innerhalb der Map
+        actual shouldBe "- id: 1\n  name:\n  - 10\n  - 20\n  - 30\n"
     }
 })

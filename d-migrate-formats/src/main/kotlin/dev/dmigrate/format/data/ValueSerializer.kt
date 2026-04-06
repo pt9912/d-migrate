@@ -76,9 +76,12 @@ class ValueSerializer(
             is Float -> serializeFloating(table, column, value.toDouble())
             is Double -> serializeFloating(table, column, value)
 
-            // ─── Präzisions-relevante Numerik ───────────────────
-            is BigInteger -> SerializedValue.PreciseNumber(value.toString())
-            is BigDecimal -> SerializedValue.PreciseNumber(value.toPlainString())
+            // ─── Präzisions-relevante Numerik (F30) ─────────────
+            // Plan §6.4.1:
+            //   BigInteger → JSON-String (Präzisionsschutz), YAML-Number, CSV dezimal
+            //   BigDecimal → JSON-String, YAML-String,        CSV unformatiert
+            is BigInteger -> SerializedValue.PreciseInteger(value)
+            is BigDecimal -> SerializedValue.PreciseDecimal(value.toPlainString())
 
             // ─── Datum/Zeit als ISO 8601 ────────────────────────
             is SqlDate -> SerializedValue.Text(value.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE))
@@ -101,13 +104,16 @@ class ValueSerializer(
             is Blob -> SerializedValue.Text(base64(readBlob(value)))
             is Clob -> SerializedValue.Text(readClob(value))
 
-            // ─── JDBC Array (W201, best-effort toString) ────────
-            // Für JSON/YAML rekursiv darstellbar (in 0.5.0), für CSV nicht
-            // — in 0.3.0 einheitlich als toString-form mit W201.
-            is SqlArray -> {
-                emit("W201", table, column, value, "java.sql.Array is not first-class supported in 0.3.0; using toString()")
-                SerializedValue.Text(arrayToString(value))
-            }
+            // ─── JDBC Array — F29: rekursive Sequence ───────────
+            // Plan §6.4.1:
+            //   JSON → rekursive JSON-Array-Serialisierung
+            //   YAML → YAML-Sequence
+            //   CSV  → nicht unterstützt → W201 + null
+            //
+            // SerializedValue.Sequence trägt die rekursiv serialisierten
+            // Elemente; CsvChunkWriter erkennt Sequence und ersetzt sie
+            // beim Render durch null + W201 (siehe CsvChunkWriter.renderValue).
+            is SqlArray -> serializeSqlArray(table, column, value)
 
             // ─── JDBC Struct (W201) ─────────────────────────────
             is Struct -> {
@@ -119,6 +125,42 @@ class ValueSerializer(
             // (Wir referenzieren die Klassen NICHT direkt, weil das eine
             // Compile-Time-Dependency auf den PG-Treiber wäre.)
             else -> serializeByClassName(table, column, value)
+        }
+    }
+
+    /**
+     * F29: java.sql.Array → SerializedValue.Sequence (rekursiv).
+     * Jedes Element wird wieder durch [serialize] geschickt, sodass nested
+     * Arrays oder Strings korrekt typisiert ankommen.
+     */
+    private fun serializeSqlArray(table: String, column: String, array: SqlArray): SerializedValue {
+        return try {
+            val raw = array.array
+            val list = when (raw) {
+                is Array<*> -> raw.toList()
+                is IntArray -> raw.toList()
+                is LongArray -> raw.toList()
+                is ShortArray -> raw.toList()
+                is ByteArray -> {
+                    // Ein BYTE-Array ist eigentlich Binärdaten — als Base64 String, nicht als Sequence
+                    return SerializedValue.Text(base64(raw))
+                }
+                is FloatArray -> raw.toList()
+                is DoubleArray -> raw.toList()
+                is BooleanArray -> raw.toList()
+                else -> {
+                    // Unbekannter Element-Typ → toString-Fallback (W201)
+                    emit("W201", table, column, array, "java.sql.Array element type is not enumerable; using toString()")
+                    return SerializedValue.Text(array.toString())
+                }
+            }
+            val elements = list.map { element ->
+                serialize(table, column, element)
+            }
+            SerializedValue.Sequence(elements)
+        } catch (t: Throwable) {
+            emit("W201", table, column, array, "java.sql.Array could not be enumerated (${t.message}); using toString()")
+            SerializedValue.Text(array.toString())
         }
     }
 
@@ -180,19 +222,6 @@ class ValueSerializer(
         return if (length == 0L) "" else clob.getSubString(1, length.toInt())
     }
 
-    private fun arrayToString(array: SqlArray): String {
-        return try {
-            val elements = array.array
-            if (elements is Array<*>) {
-                elements.joinToString(",", prefix = "[", postfix = "]") { it?.toString() ?: "null" }
-            } else {
-                elements?.toString() ?: "null"
-            }
-        } catch (_: Throwable) {
-            array.toString()
-        }
-    }
-
     private fun invokeNoArgString(target: Any, methodName: String): String? {
         return try {
             val method = target.javaClass.getMethod(methodName)
@@ -210,11 +239,45 @@ class ValueSerializer(
  * Output-Form — siehe Plan §6.4.1 für die vollständige Mapping-Tabelle.
  */
 sealed class SerializedValue {
+    /** SQL NULL → JSON `null`, YAML `null`/`~`, CSV `csvNullString`. */
     object Null : SerializedValue()
+
+    /** Boolean → JSON/YAML `true`/`false`, CSV `true`/`false`. */
     data class Bool(val value: Boolean) : SerializedValue()
+
+    /** Integer (Byte/Short/Int/Long) → JSON/YAML Number, CSV dezimal. */
     data class Integer(val value: Long) : SerializedValue()
+
+    /** Float/Double → JSON/YAML Number. NaN/Infinity werden vorher zu Text umgewandelt. */
     data class FloatingPoint(val value: Double) : SerializedValue()
-    /** Als String repräsentiert um Präzision bei BigDecimal/BigInteger zu erhalten. */
-    data class PreciseNumber(val value: String) : SerializedValue()
+
+    /**
+     * BigInteger — Plan §6.4.1: JSON-String (Präzisionsschutz),
+     * YAML-Number, CSV dezimal.
+     *
+     * Wir tragen das raw [java.math.BigInteger] mit, sodass YAML es als
+     * native Number rendern kann (SnakeYAML serialisiert BigInteger als
+     * unquoted Number).
+     */
+    data class PreciseInteger(val value: java.math.BigInteger) : SerializedValue()
+
+    /**
+     * BigDecimal — Plan §6.4.1: JSON-String, YAML-String, CSV unformatiert
+     * (kein Double-Roundtrip).
+     *
+     * Wir tragen den `toPlainString()`-Wert, weil weder JSON noch YAML
+     * BigDecimal als Number ohne Präzisionsverlust darstellen können.
+     */
+    data class PreciseDecimal(val value: String) : SerializedValue()
+
+    /** Text → JSON String, YAML String, CSV-Wert (mit Quoting wenn nötig). */
     data class Text(val value: String) : SerializedValue()
+
+    /**
+     * Sequence (rekursiv) — F29 / Plan §6.4.1 für `java.sql.Array`:
+     * - JSON  → JSON-Array `[v1, v2, ...]`
+     * - YAML  → YAML-Sequence (block oder flow style)
+     * - CSV   → wird vom CsvChunkWriter durch `null` + W201 ersetzt
+     */
+    data class Sequence(val elements: List<SerializedValue>) : SerializedValue()
 }

@@ -127,8 +127,14 @@ class YamlChunkWriter(
         is SerializedValue.FloatingPoint -> {
             if (value.value.isNaN() || value.value.isInfinite()) value.value.toString() else value.value
         }
-        is SerializedValue.PreciseNumber -> value.value  // als String, Präzisionsschutz
+        // F30: BigInteger → YAML-Number (das raw BigInteger; SnakeYAML rendert
+        // es als unquoted Number)
+        is SerializedValue.PreciseInteger -> value.value
+        // BigDecimal → YAML-String (Präzisionsschutz)
+        is SerializedValue.PreciseDecimal -> value.value
         is SerializedValue.Text -> value.value
+        // F29: java.sql.Array → YAML-Sequence (rekursiv)
+        is SerializedValue.Sequence -> value.elements.map { toYamlValue(it) }
     }
 }
 

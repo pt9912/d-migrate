@@ -39,6 +39,16 @@ class CsvChunkWriter(
     private var closed: Boolean = false
     private var columnNames: List<String> = emptyList()
 
+    /**
+     * F29: Wir tracken pro `(table, column)`-Tupel, ob wir bereits eine
+     * W201-Warnung für eine Sequence in dieser Spalte gemeldet haben —
+     * Plan §6.4.1 sagt CSV unterstützt Arrays nicht und produziert eine
+     * W201 + null. Die Warnung wird hier (nicht im ValueSerializer) erzeugt,
+     * weil ValueSerializer formatübergreifend ist und nicht weiß, dass
+     * der Output gerade CSV ist.
+     */
+    private val sequenceWarnedColumns = HashSet<String>()
+
     override fun begin(table: String, columns: List<ColumnDescriptor>) {
         check(!beginCalled) { "begin() called twice on the same CsvChunkWriter" }
         beginCalled = true
@@ -77,7 +87,25 @@ class CsvChunkWriter(
             for (i in 0 until n) {
                 // F27: echte Spaltennamen an den Serializer übergeben, damit
                 // W202-Warnings korrekt attribuiert sind.
-                rendered[i] = renderValue(serializer.serialize(chunk.table, columnNames[i], row[i]))
+                val serialized = serializer.serialize(chunk.table, columnNames[i], row[i])
+                // F29: CSV kann java.sql.Array nicht darstellen → W201 + null.
+                // Die Warnung wird hier (nicht im ValueSerializer) erzeugt, weil
+                // sie format-spezifisch ist (JSON/YAML können Arrays darstellen).
+                if (serialized is SerializedValue.Sequence) {
+                    val key = "${chunk.table}|${columnNames[i]}"
+                    if (sequenceWarnedColumns.add(key)) {
+                        warningSink?.invoke(
+                            ValueSerializer.Warning(
+                                code = "W201",
+                                table = chunk.table,
+                                column = columnNames[i],
+                                javaClass = "java.sql.Array",
+                                message = "java.sql.Array cannot be represented in CSV; column rendered as null",
+                            )
+                        )
+                    }
+                }
+                rendered[i] = renderValue(serialized)
             }
             w.writeRow(rendered)
         }
@@ -119,7 +147,11 @@ class CsvChunkWriter(
         is SerializedValue.Bool -> value.value.toString()
         is SerializedValue.Integer -> value.value.toString()
         is SerializedValue.FloatingPoint -> value.value.toString()
-        is SerializedValue.PreciseNumber -> value.value
+        is SerializedValue.PreciseInteger -> value.value.toString()
+        is SerializedValue.PreciseDecimal -> value.value
         is SerializedValue.Text -> value.value
+        // F29: java.sql.Array kann CSV nicht darstellen → null. Die zugehörige
+        // W201-Warnung wird in [write] vor dem Render emittiert.
+        is SerializedValue.Sequence -> null
     }
 }
