@@ -87,18 +87,20 @@ den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
 | Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                          | LF-010 |
 | Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                     | LF-010 |
 | Driver  | Dialektspezifisches Trigger-Handling beim Import                                                  | LF-010 |
-| Formats | Deserialisierung aus JSON/YAML/CSV                                                                | LF-010 |
-| Core    | Validierung gegen Schema-Definition beim Import                                                   | LF-010 |
-| Core    | Encoding-Erkennung (UTF-8, UTF-16, ISO-8859-1)                                                    | LF-010 |
+| Formats | Deserialisierung aus JSON/YAML/CSV (Streaming-Reader)                                             | LF-010 |
+| Core    | Validierung gegen Schema-Definition beim Import (Target-Schema autoritativ)                       | LF-010 |
+| Core    | Encoding-Unterstützung: BOM-Detection für UTF-8/UTF-16, alle anderen via `--encoding`-Flag        | LF-010 |
 | CLI     | `d-migrate data import` Kommando                                                                  | LF-010 |
-| Core    | Inkrementeller Export/Import (explizite Marker-Spalte: `--since-column`, `--since`)              | LF-013 |
-| CLI     | `--incremental` Flag für `data export` und `data import`                                          | LF-013 |
+| Core    | Inkrementeller **Export** über explizite Marker-Spalte (`--since-column`, `--since`)              | LF-013 |
+| CLI     | `--incremental` Flag für `data export`; idempotenter Import via `--on-conflict update`            | LF-013 |
 | Test    | Round-Trip-Tests (Export → Import → Vergleich)                                                    | LN-043 |
 | Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                         | LN-043 |
-| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → import → Vergleich)                   | LN-043 |
+| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → idempotenter Import → Vergleich)      | LN-043 |
 
-**Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert, inklusive
-inkrementellem Modus auf Basis einer expliziten Marker-Spalte.
+**Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert. Inkrementell
+ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
+Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
+implementation-plan-0.4.0.md §6.12.
 
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
