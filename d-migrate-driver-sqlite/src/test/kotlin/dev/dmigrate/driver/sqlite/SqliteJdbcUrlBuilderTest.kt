@@ -49,6 +49,22 @@ class SqliteJdbcUrlBuilderTest : FunSpec({
         url shouldContain "foreign_keys=true"
     }
 
+    test("buildJdbcUrl uses file::memory: URI form for :memory: with params") {
+        val url = builder.buildJdbcUrl(
+            cfg(
+                params = linkedMapOf(
+                    "cache" to "shared",
+                    "app name" to "d migrate",
+                ),
+                database = ":memory:",
+            )
+        )
+        url shouldContain "jdbc:sqlite:file::memory:"
+        url shouldContain "cache=shared"
+        url shouldContain "app+name=d+migrate"
+        url shouldNotContain "jdbc:sqlite::memory:?"
+    }
+
     test("buildJdbcUrl: user can disable foreign_keys") {
         val url = builder.buildJdbcUrl(cfg(mapOf("foreign_keys" to "false")))
         url shouldContain "foreign_keys=false"

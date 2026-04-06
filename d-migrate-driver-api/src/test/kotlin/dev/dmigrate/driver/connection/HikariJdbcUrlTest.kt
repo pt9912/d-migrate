@@ -105,6 +105,22 @@ class HikariJdbcUrlTest : FunSpec({
         url shouldContain "foreign_keys=true"
     }
 
+    test("SQLite :memory: with params uses file::memory: URI form, not a literal filename") {
+        val cfg = sqliteConfig(
+            params = linkedMapOf(
+                "cache" to "shared",
+                "app name" to "d migrate",
+            ),
+        ).copy(database = ":memory:")
+
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(cfg)
+
+        url shouldContain "jdbc:sqlite:file::memory:"
+        url shouldContain "cache=shared"
+        url shouldContain "app+name=d+migrate"
+        url shouldNotContain "jdbc:sqlite::memory:?"
+    }
+
     // ─── User params with special chars are re-encoded ──────────
 
     test("query parameter values with special chars are URL-encoded") {

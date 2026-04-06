@@ -41,12 +41,24 @@ interface JdbcUrlBuilder {
             putAll(defaultParams())
             putAll(config.params)
         }
+        // SQLite treats `jdbc:sqlite::memory:?...` as a literal file path
+        // instead of an in-memory database. As soon as query parameters are
+        // present we must switch to the URI form `file::memory:?...`.
+        val base = if (
+            dialect == DatabaseDialect.SQLITE &&
+            config.database == ":memory:" &&
+            merged.isNotEmpty()
+        ) {
+            "jdbc:sqlite:file::memory:"
+        } else {
+            baseJdbcUrl(config)
+        }
         val params = if (merged.isEmpty()) {
             ""
         } else {
             "?" + merged.entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
         }
-        return baseJdbcUrl(config) + params
+        return base + params
     }
 
     /** Treiber-spezifisches Schema + host/port/database (ohne Query-Params). */
