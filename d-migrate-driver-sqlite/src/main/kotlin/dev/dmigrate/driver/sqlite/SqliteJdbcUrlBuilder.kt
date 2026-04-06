@@ -30,6 +30,11 @@ class SqliteJdbcUrlBuilder : JdbcUrlBuilder {
     }
 
     companion object {
+        /**
+         * Registriert eine Instanz in der globalen [JdbcUrlBuilderRegistry].
+         * Konsumenten sollten in der Regel [SqliteDriver.register] verwenden,
+         * das zusätzlich auch DataReader und TableLister registriert.
+         */
         fun register() {
             JdbcUrlBuilderRegistry.register(SqliteJdbcUrlBuilder())
         }

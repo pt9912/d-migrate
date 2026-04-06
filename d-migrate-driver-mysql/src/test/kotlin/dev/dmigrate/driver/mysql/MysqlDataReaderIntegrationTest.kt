@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
+import dev.dmigrate.driver.data.DataReaderRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
@@ -44,7 +45,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
 
     beforeSpec {
         container.start()
-        MysqlJdbcUrlBuilder.register()
+        MysqlDriver.register()
 
         val cfg = ConnectionConfig(
             dialect = DatabaseDialect.MYSQL,
@@ -83,6 +84,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
         pool?.close()
         if (container.isRunning) container.stop()
         JdbcUrlBuilderRegistry.clear()
+        DataReaderRegistry.clear()
     }
 
     fun pool() = pool!!

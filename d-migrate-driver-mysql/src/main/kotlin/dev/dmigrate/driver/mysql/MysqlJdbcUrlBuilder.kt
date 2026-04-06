@@ -36,6 +36,11 @@ class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
     }
 
     companion object {
+        /**
+         * Registriert eine Instanz in der globalen [JdbcUrlBuilderRegistry].
+         * Konsumenten sollten in der Regel [MysqlDriver.register] verwenden,
+         * das zusätzlich auch DataReader und TableLister registriert.
+         */
         fun register() {
             JdbcUrlBuilderRegistry.register(MysqlJdbcUrlBuilder())
         }

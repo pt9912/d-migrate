@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
+import dev.dmigrate.driver.data.DataReaderRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
@@ -47,9 +48,10 @@ class PostgresDataReaderIntegrationTest : FunSpec({
 
     beforeSpec {
         container.start()
-        // Treiber-Builder für die Test-JVM registrieren — der CLI-Bootstrap macht das
-        // in Produktion zentral; hier brauchen wir ihn explizit.
-        PostgresJdbcUrlBuilder.register()
+        // Treiber-Bootstrap für die Test-JVM — registriert JdbcUrlBuilder,
+        // DataReader und TableLister auf einmal in den globalen Registries.
+        // In Phase E wird das in dev.dmigrate.cli.Main zentral gemacht.
+        PostgresDriver.register()
 
         val cfg = ConnectionConfig(
             dialect = DatabaseDialect.POSTGRESQL,
@@ -83,6 +85,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
         pool?.close()
         if (container.isRunning) container.stop()
         JdbcUrlBuilderRegistry.clear()
+        DataReaderRegistry.clear()
     }
 
     /** Convenience: liefert den initialisierten Pool. Wirft NPE wenn beforeSpec nicht lief. */

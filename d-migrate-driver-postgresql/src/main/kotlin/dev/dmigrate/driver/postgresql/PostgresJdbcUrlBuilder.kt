@@ -12,7 +12,9 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
  * - `ApplicationName=d-migrate` — sichtbar in `pg_stat_activity`,
  *   hilft beim Identifizieren der Verbindung in der DB
  *
- * Self-registers in der [JdbcUrlBuilderRegistry] beim ersten Klassenladen.
+ * **Bootstrap**: Wird via [PostgresDriver.register] in der globalen
+ * [JdbcUrlBuilderRegistry] registriert. Es gibt KEINE automatische
+ * Self-Registration beim Klassenladen — siehe [PostgresDriver]-KDoc.
  */
 class PostgresJdbcUrlBuilder : JdbcUrlBuilder {
 
@@ -31,7 +33,12 @@ class PostgresJdbcUrlBuilder : JdbcUrlBuilder {
     }
 
     companion object {
-        /** Registriert eine Instanz in der globalen Registry. Idempotent. */
+        /**
+         * Registriert eine Instanz in der globalen [JdbcUrlBuilderRegistry].
+         * Wird vom [PostgresDriver.register] Bootstrap aufgerufen — Konsumenten
+         * sollten in der Regel `PostgresDriver.register()` verwenden, das
+         * zusätzlich auch DataReader und TableLister registriert.
+         */
         fun register() {
             JdbcUrlBuilderRegistry.register(PostgresJdbcUrlBuilder())
         }

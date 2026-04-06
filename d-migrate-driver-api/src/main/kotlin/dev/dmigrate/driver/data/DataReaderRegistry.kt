@@ -5,20 +5,25 @@ import dev.dmigrate.driver.DatabaseDialect
 /**
  * Registry für [DataReader] und [TableLister] pro [DatabaseDialect].
  *
- * Für 0.3.0 ein einfacher In-Memory-Mechanismus mit Registrierung beim
- * Klassenladen — kein ServiceLoader, weil die Treiber ohnehin kompiliert
- * mitgeliefert werden. ServiceLoader wird in 0.6.0 relevant, wenn externe
- * Treiber als separate JARs hinzukommen (analog zur DDL-Registry-Diskussion
- * im 0.2.0-Plan §6.2).
+ * **Bootstrap (Phase E)**: Es gibt KEINE automatische Self-Registration beim
+ * Klassenladen. Treiber werden über ihre `*Driver.register()`-Bootstrap-
+ * Objects (z.B. `dev.dmigrate.driver.postgresql.PostgresDriver`) in der
+ * globalen Registry eingetragen. Diese werden in Phase E (CLI-Integration,
+ * [dev.dmigrate.cli.Main]) einmalig vor dem ersten Command-Dispatch
+ * aufgerufen — siehe [JdbcUrlBuilderRegistry] für das vollständige Beispiel.
  *
- * Nutzung im CLI:
+ * **Phase B (heute)**: Tests rufen `*Driver.register()` direkt in ihrem
+ * `beforeSpec` auf. Im normalen Build-Pfad wird die Registry noch nicht
+ * benutzt, weil Phase E den CLI-Aufruf-Pfad noch nicht implementiert hat.
+ *
+ * Nutzung im CLI (ab Phase E):
  * ```
  * val reader = DataReaderRegistry.dataReader(dialect)
  * val lister = DataReaderRegistry.tableLister(dialect)
  * ```
  *
- * Treiber registrieren sich beim Klassenladen über ihre
- * `*Driver.register()`-Methode oder direkt aus dem CLI-Bootstrap.
+ * ServiceLoader-basierte Auto-Discovery kommt in 0.6.0, wenn externe
+ * Treiber-JARs dazukommen.
  */
 object DataReaderRegistry {
 

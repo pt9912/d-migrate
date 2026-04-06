@@ -5,22 +5,32 @@ import dev.dmigrate.driver.DatabaseDialect
 /**
  * Registry für [JdbcUrlBuilder] pro [DatabaseDialect].
  *
- * Treiber registrieren ihren Builder beim Klassenladen über ihre statische
- * Initialisierung (z.B. ein `init { JdbcUrlBuilderRegistry.register(...) }`
- * im jeweiligen `*JdbcUrlBuilder`-Companion).
+ * **Bootstrap (Phase E)**: Es gibt KEINE automatische Self-Registration beim
+ * Klassenladen. Treiber werden über ihre `*Driver.register()`-Bootstrap-
+ * Objects in der globalen Registry eingetragen. Diese werden in Phase E
+ * (CLI-Integration, [dev.dmigrate.cli.Main]) einmalig vor dem ersten
+ * Command-Dispatch aufgerufen:
  *
- * Wenn ein Builder für einen Dialekt nicht registriert ist, wirft [get] eine
- * IllegalStateException — der CLI-Bootstrap muss sicherstellen, dass die
- * benötigten Treiber-Module auf dem Classpath sind und ihre Builder
- * registriert haben.
+ * ```kotlin
+ * // d-migrate-cli/src/main/kotlin/dev/dmigrate/cli/Main.kt
+ * fun main(args: Array<String>) {
+ *     PostgresDriver.register()
+ *     MysqlDriver.register()
+ *     SqliteDriver.register()
+ *     DMigrate().subcommands(...).main(args)
+ * }
+ * ```
  *
- * Für Tests in `driver-api` ohne konkrete Treiber-Implementierung gibt es
- * [HikariConnectionPoolFactory.fallbackBuilder], der eine generische
- * Default-Logik bereitstellt.
+ * **Tests** in den Treiber-Modulen rufen `*Driver.register()` direkt in
+ * ihrem `beforeSpec` auf.
  *
- * Analog zu [dev.dmigrate.driver.data.DataReaderRegistry], kein
- * ServiceLoader für 0.3.0 — kommt in 0.6.0 wenn externe Treiber-JARs
- * dazukommen.
+ * **Fallback** für Unit-Tests im `driver-api`-Modul ohne konkreten Treiber:
+ * [HikariConnectionPoolFactory] benutzt automatisch einen internen
+ * `FallbackJdbcUrlBuilder` mit denselben Defaults wie die produktiven
+ * Builder, wenn die Registry leer ist.
+ *
+ * ServiceLoader-basierte Auto-Discovery kommt in 0.6.0, wenn externe
+ * Treiber-JARs dazukommen — analog zur DDL-Registry-Diskussion im 0.2.0-Plan §6.2.
  */
 object JdbcUrlBuilderRegistry {
 
