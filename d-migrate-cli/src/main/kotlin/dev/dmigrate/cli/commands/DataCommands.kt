@@ -15,6 +15,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -93,10 +94,10 @@ class DataExportCommand : CliktCommand(name = "export") {
         help = "Comma-separated list of tables to export; default: all",
     ).split(",")
 
-    @Suppress("unused") // Reserved for §6.7 — wired in Phase F via DataFilter.WhereClause
     val filter by option(
         "--filter",
-        help = "SQL WHERE clause applied to all tables (without 'WHERE' keyword)",
+        help = "Raw SQL WHERE clause applied to all tables (without the 'WHERE' keyword). " +
+            "WARNING: not parameterized — see Plan §6.7 for the trust-boundary contract.",
     )
 
     val encoding by option(
@@ -189,7 +190,24 @@ class DataExportCommand : CliktCommand(name = "export") {
             }
 
             // ─── 6. Tabellen ermitteln (--tables oder Auto-Discovery) ────
-            val effectiveTables = tables?.takeIf { it.isNotEmpty() } ?: try {
+            // F33 / Plan §6.7: --tables wird strikt validiert. Nur Identifier
+            // im Muster `[A-Za-z_][A-Za-z0-9_]*` (optional schema-qualifiziert
+            // als `schema.table`) sind erlaubt. Auto-discovered tables aus
+            // dem TableLister werden NICHT gegen das Pattern geprüft, weil
+            // sie aus dem information_schema kommen und keine User-Eingabe
+            // sind.
+            val explicitTables = tables?.takeIf { it.isNotEmpty() }
+            if (explicitTables != null) {
+                val invalid = explicitTables.firstOrNull { !TABLE_IDENTIFIER.matches(it) }
+                if (invalid != null) {
+                    System.err.println(
+                        "Error: --tables value '$invalid' is not a valid identifier. " +
+                            "Expected '<name>' or '<schema>.<name>' matching $TABLE_IDENTIFIER_PATTERN."
+                    )
+                    throw ProgramResult(2)
+                }
+            }
+            val effectiveTables = explicitTables ?: try {
                 tableLister.listTables(pool)
             } catch (e: Throwable) {
                 System.err.println("Error: Failed to list tables: ${e.message}")
@@ -214,8 +232,13 @@ class DataExportCommand : CliktCommand(name = "export") {
             }
 
             // ─── 8. ExportOptions aus den CLI-Flags bauen ────────────────
-            require(csvDelimiter.length == 1) {
-                "Error: --csv-delimiter must be a single character, got '$csvDelimiter'"
+            // F35: harte Validierung mit klarem Exit-2-Mapping statt rohem
+            // require()/IllegalArgumentException.
+            if (csvDelimiter.length != 1) {
+                System.err.println(
+                    "Error: --csv-delimiter must be a single character, got '$csvDelimiter'"
+                )
+                throw ProgramResult(2)
             }
             val exportOptions = ExportOptions(
                 encoding = charset,
@@ -228,6 +251,13 @@ class DataExportCommand : CliktCommand(name = "export") {
             val warnings = mutableListOf<ValueSerializer.Warning>()
             val factory = DefaultDataChunkWriterFactory(warningSink = { warnings += it })
 
+            // F32 / Plan §6.7: --filter wird unverändert als Roh-WHERE-Klausel
+            // an alle Tabellen weitergegeben. Trust-Boundary ist die lokale
+            // Shell — Re-Validation an einer zukünftigen REST-API ist eine
+            // separate Voraussetzung (siehe §6.7 Forward-Compat-Hinweis).
+            val effectiveFilter: DataFilter? = filter?.takeIf { it.isNotBlank() }
+                ?.let { DataFilter.WhereClause(it) }
+
             // ─── 9. Streamen ──────────────────────────────────────────────
             val exporter = StreamingExporter(reader, tableLister, factory)
             val result: ExportResult = try {
@@ -238,6 +268,7 @@ class DataExportCommand : CliktCommand(name = "export") {
                     format = DataExportFormat.fromCli(format),
                     options = exportOptions,
                     config = PipelineConfig(chunkSize = chunkSize),
+                    filter = effectiveFilter,
                 )
             } catch (e: Throwable) {
                 System.err.println("Error: Export failed: ${e.message}")
@@ -261,8 +292,11 @@ class DataExportCommand : CliktCommand(name = "export") {
             }
 
             // ─── 12. ProgressSummary auf stderr (Plan §6.10 / §3.6) ──────
+            // F34: ProgressSummary wird sowohl bei --quiet als auch bei
+            // --no-progress unterdrückt (cli-spec.md §1.3 / §6.4).
             val ctx = root?.cliContext()
-            if (ctx?.quiet != true) {
+            val suppressProgress = ctx?.quiet == true || ctx?.noProgress == true
+            if (!suppressProgress) {
                 System.err.println(formatProgressSummary(result))
             }
         } finally {
@@ -276,5 +310,17 @@ class DataExportCommand : CliktCommand(name = "export") {
         return "Exported ${result.tables.size} table(s) " +
             "(${result.totalRows} rows, ${"%.2f".format(mb)} MB) " +
             "in ${"%.2f".format(seconds)} s"
+    }
+
+    companion object {
+        /**
+         * F33 / Plan §6.7: Identifier-Pattern für `--tables`. Erlaubt
+         * `<name>` und `<schema>.<name>`. Beide Segmente folgen den
+         * SQL-Identifier-Regeln (`[A-Za-z_][A-Za-z0-9_]*`). Der Plan nennt
+         * `weird name` (mit Whitespace) explizit als abzulehnenden Wert.
+         */
+        internal const val TABLE_IDENTIFIER_PATTERN =
+            "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)?$"
+        internal val TABLE_IDENTIFIER = Regex(TABLE_IDENTIFIER_PATTERN)
     }
 }

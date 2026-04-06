@@ -14,6 +14,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -445,6 +446,283 @@ class CliDataExportTest : FunSpec({
                 )
             }
             ex.statusCode shouldBe 5
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    // ─── F32: --filter wird tatsächlich ans SELECT durchgereicht ─
+
+    test("F32: --filter narrows the JSON output via WHERE clause") {
+        val db = createSampleDatabase()
+        try {
+            val out = captureStdout {
+                shouldNotThrowAny {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--filter", "id = 2",
+                        )
+                    )
+                }
+            }
+            // Nur 'bob' (id=2) darf im Output landen, alice und charlie nicht.
+            out shouldContain "\"id\": 2"
+            out shouldContain "\"name\": \"bob\""
+            out shouldNotContain "\"name\": \"alice\""
+            out shouldNotContain "\"name\": \"charlie\""
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("F32: --filter applies to multiple tables in --split-files mode") {
+        val db = createSampleDatabase()
+        val outDir = Files.createTempDirectory("d-migrate-filter-")
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "users,empty_table",
+                        "--output", outDir.toString(),
+                        "--split-files",
+                        "--filter", "id > 1",
+                    )
+                )
+            }
+            // users.json darf alice nicht enthalten — nur bob (id=2), charlie (id=3)
+            val users = outDir.resolve("users.json").readText()
+            users shouldContain "\"name\": \"bob\""
+            users shouldContain "\"name\": \"charlie\""
+            users shouldNotContain "\"name\": \"alice\""
+            // empty_table bleibt leer (`[]`), das WHERE matched einfach keine Row.
+            outDir.resolve("empty_table.json").readText().trim() shouldBe "[]"
+        } finally {
+            Files.deleteIfExists(db)
+            Files.walk(outDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+        }
+    }
+
+    test("F32: --filter empty/blank value behaves like no filter") {
+        val db = createSampleDatabase()
+        try {
+            val out = captureStdout {
+                shouldNotThrowAny {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--filter", "   ",
+                        )
+                    )
+                }
+            }
+            // Alle drei Rows müssen drin sein
+            out shouldContain "\"name\": \"alice\""
+            out shouldContain "\"name\": \"bob\""
+            out shouldContain "\"name\": \"charlie\""
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    // ─── F33: --tables Identifier-Validierung (§6.7) ─────────────
+
+    test("F33 §6.7: --tables 'weird name' (whitespace) → Exit 2") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "weird name",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("F33 §6.7: --tables with SQL injection attempt → Exit 2") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "users; DROP TABLE users",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("F33 §6.7: --tables with hyphen → Exit 2 (not in [A-Za-z0-9_])") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "user-table",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("F33 §6.7: --tables 'public.users' (schema-qualified) → accepted") {
+        // SQLite hat keine echten Schemas, der Name 'public.users' wird im
+        // SELECT zu '"public"."users"' und SQLite wirft Exit 5 (Tabelle
+        // existiert nicht). Wichtig hier: der Validator AKZEPTIERT das Pattern,
+        // d.h. wir sollten Exit 5 (nicht 2) sehen.
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "public.users",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 5   // not 2 — pattern was accepted
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("F33 §6.7: leading digit in --tables → Exit 2") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "1users",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    // ─── F34: --no-progress unterdrückt die ProgressSummary ──────
+
+    test("F34: --no-progress suppresses the ProgressSummary on stderr") {
+        val db = createSampleDatabase()
+        // Wir capturen stderr, indem wir System.err umlenken — analog zu
+        // captureStdout, aber für stderr.
+        val originalErr = System.err
+        val captured = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "--no-progress",
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "users",
+                    )
+                )
+            }
+        } finally {
+            System.setErr(originalErr)
+            Files.deleteIfExists(db)
+        }
+        captured.toString(Charsets.UTF_8) shouldNotContain "Exported"
+    }
+
+    test("F34: ProgressSummary is shown by default (no --no-progress)") {
+        val db = createSampleDatabase()
+        val originalErr = System.err
+        val captured = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "users",
+                    )
+                )
+            }
+        } finally {
+            System.setErr(originalErr)
+            Files.deleteIfExists(db)
+        }
+        captured.toString(Charsets.UTF_8) shouldContain "Exported"
+    }
+
+    // ─── F35: --csv-delimiter wird sauber auf Exit 2 gemappt ─────
+
+    test("F35: --csv-delimiter '::' (multi-char) → Exit 2 (not raw IAE)") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "csv",
+                        "--tables", "users",
+                        "--csv-delimiter", "::",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("F35: --csv-delimiter '' (empty) → Exit 2") {
+        val db = createSampleDatabase()
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "csv",
+                        "--tables", "users",
+                        "--csv-delimiter", "",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
         } finally {
             Files.deleteIfExists(db)
         }

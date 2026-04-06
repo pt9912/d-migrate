@@ -21,7 +21,8 @@ data class CliContext(
     val outputFormat: String = "plain",
     val verbose: Boolean = false,
     val quiet: Boolean = false,
-    val noColor: Boolean = false
+    val noColor: Boolean = false,
+    val noProgress: Boolean = false,
 )
 
 class DMigrate : CliktCommand(name = "d-migrate") {
@@ -47,7 +48,7 @@ class DMigrate : CliktCommand(name = "d-migrate") {
         }
     }
 
-    fun cliContext() = CliContext(outputFormat, verbose, quiet, noColor)
+    fun cliContext() = CliContext(outputFormat, verbose, quiet, noColor, noProgress)
 }
 
 fun main(args: Array<String>) {
