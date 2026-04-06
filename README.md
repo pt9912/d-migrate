@@ -86,6 +86,11 @@ docker build --no-cache \
 docker build --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" \
   -t d-migrate:dev .
 
+# Run only a build-stage subset without producing the final runtime image
+docker build --target build \
+  --build-arg GRADLE_TASKS=":d-migrate-core:test :d-migrate-driver-api:test" \
+  -t d-migrate:phase-a .
+
 # Run the locally built CLI
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 ```
@@ -96,6 +101,9 @@ Notes:
   dependencies via BuildKit cache mounts, so repeated builds are fast.
 - The runtime stage uses `eclipse-temurin:21-jre-noble` (the same base image as
   the published OCI image produced by `:d-migrate-cli:jibDockerBuild`).
+- A full `docker build` always reaches the runtime stage. If you override
+  `GRADLE_TASKS`, include `:d-migrate-cli:installDist`; otherwise use
+  `--target build` for build/test-only subsets.
 - To extract build artifacts from the build stage:
   ```bash
   docker build --target build -t d-migrate:build .
