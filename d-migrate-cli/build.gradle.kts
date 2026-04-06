@@ -14,9 +14,21 @@ dependencies {
     implementation(project(":d-migrate-driver-mysql"))
     implementation(project(":d-migrate-driver-sqlite"))
     implementation(project(":d-migrate-formats"))
+    implementation(project(":d-migrate-streaming"))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
+    // .d-migrate.yaml-Loader (Plan §6.14 — minimaler NamedConnectionResolver)
+    implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
+
+    // Phase F (0.3.0): Testcontainers-basierte E2E-Tests für `data export`
+    // gegen PostgreSQL und MySQL. Markiert mit Kotest's NamedTag("integration"),
+    // läuft nur mit `-PintegrationTests` (siehe Plan §6.16).
+    // 2.0.0 hat alle Module umbenannt: `org.testcontainers:postgresql` →
+    // `org.testcontainers:testcontainers-postgresql` etc.
+    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 jib {
@@ -45,8 +57,12 @@ kover {
     reports {
         verify {
             rule {
-                // TODO: Increase to 90% once CLI integration tests are added
-                minBound(50)
+                // implementation-plan-0.3.0.md §11 — CLI-Ziel ist 60% (statt 90%
+                // wie für die anderen Module), weil CLI-Code zum großen Teil
+                // I/O-Glue ist, der nur durch Integration-Tests sinnvoll
+                // abdeckbar ist. Die fachliche Logik liegt in den anderen
+                // Modulen mit jeweils 90%.
+                minBound(60)
             }
         }
     }

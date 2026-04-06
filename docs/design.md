@@ -482,6 +482,10 @@ exported_at: 2025-10-22T14:30:00Z
 - Textformate verwenden standardmaessig UTF-8; UTF-16 und BOM-markierte Dateien werden automatisch erkannt.
 - Weitere Encodings wie ISO-8859-1 sind explizit konfigurierbar, damit Importe reproduzierbar bleiben.
 - Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden.
+- Der geplante Umgang mit Sequence-/Identity-/`AUTO_INCREMENT`-Folgezustand
+  und Trigger-Verhalten beim Datenimport ist im Draft
+  [design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
+  beschrieben.
 
 ---
 

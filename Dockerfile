@@ -8,7 +8,13 @@
 #     docker build -t d-migrate:dev .
 #
 #   Build image, skipping tests (faster, assembly only):
-#     docker build -t d-migrate:dev --build-arg GRADLE_TASKS="assemble" .
+#     docker build -t d-migrate:dev --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" .
+#
+#   Run only a build-stage subset (for example Phase-A tests) without producing
+#   the final runtime image:
+#     docker build --target build \
+#       --build-arg GRADLE_TASKS=":d-migrate-core:test :d-migrate-driver-api:test" \
+#       -t d-migrate:phase-a .
 #
 #   Run the CLI from the final stage:
 #     docker run --rm -v "$(pwd):/work" d-migrate:dev schema validate --source /work/schema.yaml
@@ -24,8 +30,12 @@
 FROM eclipse-temurin:21-jdk-noble AS build
 
 # Gradle tasks executed during the image build. Override with --build-arg to
-# skip tests or run a different subset (e.g. "assemble installDist" or "check").
-# `installDist` produces the runnable distribution copied into the runtime stage.
+# skip tests or run a different subset (e.g. "assemble :d-migrate-cli:installDist"
+# or "check").
+# Important: a full multi-stage `docker build` reaches the runtime stage below,
+# so `GRADLE_TASKS` must produce `:d-migrate-cli:installDist`. If you want to
+# run only a subset that does not build the CLI distribution, use
+# `docker build --target build ...` instead.
 ARG GRADLE_TASKS="build :d-migrate-cli:installDist"
 
 ENV GRADLE_USER_HOME=/gradle-cache \

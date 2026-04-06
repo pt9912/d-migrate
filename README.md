@@ -86,8 +86,19 @@ docker build --no-cache \
 docker build --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" \
   -t d-migrate:dev .
 
+# Run only a build-stage subset without producing the final runtime image
+docker build --target build \
+  --build-arg GRADLE_TASKS=":d-migrate-core:test :d-migrate-driver-api:test" \
+  -t d-migrate:phase-a .
+
 # Run the locally built CLI
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
+
+# Run the Testcontainers-based integration suite
+./scripts/test-integration-docker.sh
+
+# Or run only a subset of the integration tasks
+./scripts/test-integration-docker.sh :d-migrate-driver-postgresql:test
 ```
 
 Notes:
@@ -96,6 +107,13 @@ Notes:
   dependencies via BuildKit cache mounts, so repeated builds are fast.
 - The runtime stage uses `eclipse-temurin:21-jre-noble` (the same base image as
   the published OCI image produced by `:d-migrate-cli:jibDockerBuild`).
+- A full `docker build` always reaches the runtime stage. If you override
+  `GRADLE_TASKS`, include `:d-migrate-cli:installDist`; otherwise use
+  `--target build` for build/test-only subsets.
+- Testcontainers-based integration tests should not run inside `docker build`.
+  Use [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
+  which starts a disposable JDK container and mounts the host Docker socket so
+  Testcontainers can launch PostgreSQL/MySQL normally.
 - To extract build artifacts from the build stage:
   ```bash
   docker build --target build -t d-migrate:build .
@@ -138,6 +156,18 @@ Then validate it:
 
 ## Current Status
 
+**[v0.3.0](https://github.com/pt9912/d-migrate/releases/tag/v0.3.0)** released:
+
+- Streaming `data export` CLI command (JSON / YAML / CSV) for PostgreSQL, MySQL, SQLite
+- HikariCP-backed connection layer with `ConnectionUrlParser` per dialect
+- Pull-based `StreamingExporter` (chunk streaming, no full-table buffering)
+- Performance-oriented format writers: DSL-JSON, SnakeYAML Engine, uniVocity-parsers
+- Named connections via `.d-migrate.yaml` with `${ENV_VAR}` substitution (`NamedConnectionResolver`)
+- `--source`, `--format`, `--output`, `--tables`, `--filter`, `--split-files`, `--csv-*`, `--encoding`, `--chunk-size`
+- §6.17 empty-table contract: `[]` (JSON/YAML), CSV header line, or empty file
+- Testcontainers end-to-end coverage for PostgreSQL 16 and MySQL 8.0
+- 600+ tests, coverage >= 90% (CLI >= 60%)
+
 **[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** released:
 
 - DDL generation for PostgreSQL, MySQL, SQLite
@@ -153,13 +183,13 @@ Then validate it:
 
 ## Supported Databases
 
-| Database   | Status           |
-|------------|------------------|
-| PostgreSQL | DDL Generation   |
-| MySQL      | DDL Generation   |
-| SQLite     | DDL Generation   |
-| Oracle     | Future           |
-| MSSQL      | Future           |
+| Database   | Status                          |
+|------------|---------------------------------|
+| PostgreSQL | DDL Generation, Data Export     |
+| MySQL      | DDL Generation, Data Export     |
+| SQLite     | DDL Generation, Data Export     |
+| Oracle     | Future                          |
+| MSSQL      | Future                          |
 
 ## Roadmap
 

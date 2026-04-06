@@ -422,26 +422,90 @@ Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Migrationsfehlern.
 
 ### 6.2 data
 
-#### `data export` *(geplant: 0.3.0)*
+#### `data export` *(0.3.0, umgesetzt)*
 
-Exportiert Daten aus einer Datenbank.
+Streamt Tabellen aus einer Datenbank in JSON, YAML oder CSV. Pull-basiert,
+chunk-weise — geeignet auch für Tabellen, die größer sind als der verfügbare
+Heap (Plan §2.1, §6.4).
 
 ```
-d-migrate data export --source <url> --format <format> [--output <path>]
+d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 ```
 
-| Flag | Pflicht | Typ | Beschreibung |
+**Auflösung von `--source`** (siehe §1.4 und implementation-plan-0.3.0.md §6.14):
+
+- enthält der Wert `://`, wird er als vollständige Connection-URL behandelt
+  und unverändert an den `ConnectionUrlParser` übergeben
+- sonst wird er als Connection-Name interpretiert und in
+  `database.connections.<name>` der `.d-migrate.yaml` aufgelöst (CLI > ENV >
+  Default-Pfad-Priorität, `${ENV_VAR}`-Substitution mit `$${VAR}`-Escape)
+
+| Flag | Pflicht | Typ | Default | Beschreibung |
+|---|---|---|---|---|
+| `--source` | Ja | URL oder Name | — | Connection-URL oder Name aus `.d-migrate.yaml` |
+| `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv` (kein Default — explizit setzen, §6.15) |
+| `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
+| `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
+| `--filter` | Nein | String | — | Roh-WHERE-Klausel ohne `WHERE`-Keyword. **Nicht parametrisiert** — Trust-Boundary ist die lokale Shell (Plan §6.7). |
+| `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
+| `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
+| `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
+| `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
+| `--csv-bom` | Nein | Boolean | aus | UTF-8 BOM-Bytes vor dem CSV-Output schreiben |
+| `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
+| `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
+
+**Output-Auflösung** (Plan §6.9):
+
+| `--output` | `--split-files` | Tabellen | Resultat |
 |---|---|---|---|
-| `--source` | Ja | URL | Quell-Datenbank |
-| `--format` | Ja | String | Ausgabeformat: `json`, `yaml`, `csv` |
-| `--output` | Nein | Pfad | Ausgabeverzeichnis (Default: stdout) |
-| `--tables` | Nein | Liste | Nur diese Tabellen exportieren (kommasepariert) |
-| `--filter` | Nein | String | SQL WHERE-Klausel für selektiven Export |
-| `--incremental` | Nein | Boolean | Nur seit letztem Export geänderte Datensätze |
-| `--encoding` | Nein | String | Ausgabe-Encoding (Default: `utf-8`) |
-| `--chunk-size` | Nein | Integer | Datensätze pro Chunk (Default: 10000) |
+| nicht gesetzt | aus | 1 | stdout |
+| nicht gesetzt | aus | ≥2 | **Exit 2** (Hinweis auf `--split-files`) |
+| nicht gesetzt | an | beliebig | **Exit 2** (`--split-files` braucht `--output <dir>`) |
+| Datei | aus | 1 | Single-File |
+| Datei | aus | ≥2 | **Exit 2** |
+| Verzeichnis | an | beliebig | One file per table (`<table>.<format>`) |
+| Verzeichnis | aus | beliebig | **Exit 2** |
 
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Exportfehlern.
+**Exit-Codes** (vereinfachte Sicht der globalen Tabelle in §2):
+
+| Code | Trigger |
+|---|---|
+| `0` | Erfolg, alle Tabellen geschrieben |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`-Identifier, unverträgliche `--output`/`--split-files`-Kombi |
+| `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
+| `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
+| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect) |
+
+**Beispiele**:
+
+```bash
+# stdout, eine Tabelle, JSON
+d-migrate data export --source sqlite:///tmp/app.db --format json --tables users
+
+# Named Connection aus .d-migrate.yaml
+d-migrate data export --source local_pg --format yaml --tables users
+
+# Mehrere Tabellen, eine Datei pro Tabelle
+d-migrate data export --source local_pg --format csv \
+    --tables users,orders,products --output ./exports --split-files
+
+# CSV mit Semikolon-Delimiter und BOM für Excel
+d-migrate data export --source local_pg --format csv --tables customers \
+    --csv-delimiter ';' --csv-bom --output customers.csv
+
+# Filter (Trust-Boundary: lokale Shell, nicht parametrisiert!)
+d-migrate data export --source prod --format json --tables orders \
+    --filter "created_at > '2026-01-01'" --output recent.json
+
+# Auto-Discovery aller Tabellen mit Split-Files
+d-migrate data export --source local_pg --format json \
+    --output ./full-dump --split-files
+```
+
+> **0.4.0**: `--incremental` für inkrementellen Export anhand einer
+> expliziten Marker-Spalte (`--since-column updated_at --since "<timestamp>"`).
+> Siehe `roadmap.md` Milestone 0.4.0 (LF-013). In 0.3.0 nicht enthalten.
 
 #### `data import` *(geplant: 0.4.0)*
 
