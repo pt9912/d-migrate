@@ -21,7 +21,10 @@ class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
     override fun defaultParams(): Map<String, String> = mapOf(
         "useCursorFetch" to "true",
         "useUnicode" to "true",
-        "characterEncoding" to "utf8mb4",
+        // Java-Charset-Name (NICHT "utf8mb4" — das ist ein MySQL-server-side
+        // Encoding, kein Java-Charset). Connector/J wirft UnsupportedEncoding-
+        // Exception bei "utf8mb4". MySQL mapped "UTF-8" serverseitig auf utf8mb4.
+        "characterEncoding" to "UTF-8",
     )
 
     override fun baseJdbcUrl(config: ConnectionConfig): String {

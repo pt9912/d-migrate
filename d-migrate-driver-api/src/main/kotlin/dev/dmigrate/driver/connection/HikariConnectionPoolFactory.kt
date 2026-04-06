@@ -77,7 +77,8 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
         DatabaseDialect.MYSQL -> mapOf(
             "useCursorFetch" to "true",
             "useUnicode" to "true",
-            "characterEncoding" to "utf8mb4",
+            // Java-Charset-Name (siehe MysqlJdbcUrlBuilder).
+            "characterEncoding" to "UTF-8",
         )
     }
 

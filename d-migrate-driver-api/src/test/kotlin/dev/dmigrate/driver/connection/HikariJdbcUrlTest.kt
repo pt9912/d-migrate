@@ -76,10 +76,11 @@ class HikariJdbcUrlTest : FunSpec({
         url shouldContain "useCursorFetch=true"
     }
 
-    test("MySQL JDBC URL injects useUnicode=true and characterEncoding=utf8mb4") {
+    test("MySQL JDBC URL injects useUnicode=true and characterEncoding=UTF-8") {
         val url = HikariConnectionPoolFactory.buildJdbcUrl(mysqlConfig())
         url shouldContain "useUnicode=true"
-        url shouldContain "characterEncoding=utf8mb4"
+        // Java-Charset-Name; MySQL mapped serverseitig auf utf8mb4
+        url shouldContain "characterEncoding=UTF-8"
     }
 
     test("user can override MySQL useCursorFetch") {
