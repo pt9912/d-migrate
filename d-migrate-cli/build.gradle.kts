@@ -14,9 +14,12 @@ dependencies {
     implementation(project(":d-migrate-driver-mysql"))
     implementation(project(":d-migrate-driver-sqlite"))
     implementation(project(":d-migrate-formats"))
+    implementation(project(":d-migrate-streaming"))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
+    // .d-migrate.yaml-Loader (Plan §6.14 — minimaler NamedConnectionResolver)
+    implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 }
 
 jib {

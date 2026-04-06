@@ -360,4 +360,4 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 **Version**: 1.3
 **Stand**: 2026-04-06
-**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, 0.3.0 in Arbeit (Phase A), 0.5.5 neu aufgenommen, weitere Milestones in Planung
+**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, 0.3.0 in Arbeit (Phase A–E umgesetzt, Phase F Testcontainers offen), 0.5.5 neu aufgenommen, weitere Milestones in Planung

@@ -11,7 +11,11 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
+import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
+import dev.dmigrate.driver.mysql.MysqlDriver
+import dev.dmigrate.driver.postgresql.PostgresDriver
+import dev.dmigrate.driver.sqlite.SqliteDriver
 
 data class CliContext(
     val outputFormat: String = "plain",
@@ -34,7 +38,7 @@ class DMigrate : CliktCommand(name = "d-migrate") {
     val yes by option("--yes", "-y", help = "Accept confirmations automatically").flag()
 
     init {
-        versionOption("0.2.0-SNAPSHOT")
+        versionOption("0.3.0-SNAPSHOT")
     }
 
     override fun run() {
@@ -46,6 +50,15 @@ class DMigrate : CliktCommand(name = "d-migrate") {
     fun cliContext() = CliContext(outputFormat, verbose, quiet, noColor)
 }
 
-fun main(args: Array<String>) = DMigrate()
-    .subcommands(SchemaCommand())
-    .main(args)
+fun main(args: Array<String>) {
+    // Bootstrap §6.18 / Phase E: Treiber registrieren ihre JdbcUrlBuilder,
+    // DataReader und TableLister einmal beim Programmstart vor dem ersten
+    // Command-Dispatch. Siehe JdbcUrlBuilderRegistry / DataReaderRegistry KDoc.
+    PostgresDriver.register()
+    MysqlDriver.register()
+    SqliteDriver.register()
+
+    DMigrate()
+        .subcommands(SchemaCommand(), DataCommand())
+        .main(args)
+}
