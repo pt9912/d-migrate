@@ -36,3 +36,6 @@ temp/
 .d-migrate/
 # Codex
 .codex
+
+#
+.kotlin/

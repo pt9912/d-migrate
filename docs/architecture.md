@@ -719,9 +719,11 @@ Distribution-Formate:
    → Enthält nur die beim Build eingebundenen Treiber/Provider
    → Distribution: GitHub Releases, Homebrew
 
-3. Docker Image
-   → docker run dmigrate/d-migrate schema validate ...
-   → Für CI/CD-Pipelines
+3. OCI Image (ghcr.io/pt9912/d-migrate) ✅
+   → docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
+   → Basis: eclipse-temurin:21-jre-noble (Ubuntu 24.04, glibc, ZGC)
+   → Build: ./gradlew :d-migrate-cli:jibDockerBuild (Jib, kein Dockerfile nötig)
+   → Für CI/CD-Pipelines und Nutzer ohne JDK
 
 4. Package Manager
    → brew install d-migrate        (macOS/Linux)
@@ -898,6 +900,6 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.4
+**Version**: 1.5
 **Stand**: 2026-04-05
-**Status**: Milestone 0.1.0 implementiert (core, formats, cli), weitere Module im Entwurf
+**Status**: Milestone 0.1.0 + 0.2.0 implementiert (core, formats, cli, driver-api, driver-postgresql, driver-mysql, driver-sqlite), weitere Module im Entwurf

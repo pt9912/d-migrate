@@ -16,18 +16,22 @@ d-migrate is a command-line tool that lets you define your database schema once 
 **Current capabilities:**
 - Neutral schema model with 18 built-in types
 - YAML-based schema definition and parsing
-- Schema validation with 18 error codes (E001 -- E018)
-- CLI for schema validation
+- Schema validation with 18 error codes (E001-E018)
+- DDL generation for PostgreSQL, MySQL, and SQLite
+- View query transformation (17 SQL functions)
+- Transformation reports (YAML sidecar)
+- CLI with `schema validate` and `schema generate`
+- OCI image for Docker usage
 
 **Planned:**
-- DDL generation for multiple databases
+- Data export/import (JSON, YAML, CSV)
 - Schema diffing and migration generation
 
 ## Quick Start
 
 ### Prerequisites
 
-- **JDK 21** or later
+- **JDK 21** or later — _or_ Docker (see below, no local JDK required)
 
 ### Build
 
@@ -38,8 +42,67 @@ d-migrate is a command-line tool that lets you define your database schema once 
 ### Run the CLI
 
 ```bash
+# Validate a schema
 ./gradlew :d-migrate-cli:run --args="schema validate --source schema.yaml"
+
+# Generate PostgreSQL DDL
+./gradlew :d-migrate-cli:run --args="schema generate --source schema.yaml --target postgresql"
+
+# Generate MySQL DDL with rollback
+./gradlew :d-migrate-cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
 ```
+
+### Docker
+
+#### Use the published image
+
+No JDK required — just pull the image and run:
+
+```bash
+# Validate
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
+
+# Generate DDL
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
+```
+
+#### Build and test locally with the Dockerfile
+
+The repository ships a multi-stage [`Dockerfile`](Dockerfile) that builds and
+tests the project inside a container, then packages the CLI distribution into a
+slim JRE runtime image. This is the easiest way to run the full build without
+installing a JDK locally.
+
+```bash
+# Full build incl. tests and coverage verification (default)
+docker build -t d-migrate:dev .
+
+# Force a full test/coverage run (bypass Docker layer cache AND Gradle build cache)
+docker build --no-cache \
+  --build-arg GRADLE_TASKS="build :d-migrate-cli:installDist --rerun-tasks" \
+  -t d-migrate:dev .
+
+# Skip tests — only assemble the CLI distribution
+docker build --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" \
+  -t d-migrate:dev .
+
+# Run the locally built CLI
+docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
+```
+
+Notes:
+
+- The build stage uses `eclipse-temurin:21-jdk-noble` and caches Gradle
+  dependencies via BuildKit cache mounts, so repeated builds are fast.
+- The runtime stage uses `eclipse-temurin:21-jre-noble` (the same base image as
+  the published OCI image produced by `:d-migrate-cli:jibDockerBuild`).
+- To extract build artifacts from the build stage:
+  ```bash
+  docker build --target build -t d-migrate:build .
+  docker create --name d-migrate-tmp d-migrate:build
+  docker cp d-migrate-tmp:/src/d-migrate-cli/build/distributions ./dist
+  docker rm d-migrate-tmp
+  ```
 
 ### Minimal Schema Example
 
@@ -75,25 +138,28 @@ Then validate it:
 
 ## Current Status
 
-**Milestone 0.1.0** (in development on `develop` branch):
+**[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** released:
 
-- Gradle multi-module project: `d-migrate-core`, `d-migrate-formats`, `d-migrate-cli`
-- `NeutralType` sealed class with 18 database-agnostic types
-- `SchemaDefinition` model for representing schemas
-- `SchemaValidator` with error codes E001 through E018
-- `YamlSchemaCodec` for YAML parsing
-- CLI command `schema validate` with plain, JSON, and YAML output formats
-- 83 tests with Kover coverage enforcement (>= 90% core/formats, >= 50% CLI)
+- DDL generation for PostgreSQL, MySQL, SQLite
+- TypeMapper with 18 neutral types per dialect
+- View query transformation (17 SQL functions)
+- Transformation reports (YAML sidecar, JSON output)
+- `schema generate` CLI command with `--output`, `--generate-rollback`, `--report`
+- 374 tests, coverage >= 90%
+
+**[v0.1.0](https://github.com/pt9912/d-migrate/releases/tag/v0.1.0)** released:
+
+- Neutral schema model, YAML parsing, schema validation, CLI `schema validate`
 
 ## Supported Databases
 
-| Database   | Status  |
-|------------|---------|
-| PostgreSQL | Planned |
-| MySQL      | Planned |
-| SQLite     | Planned |
-| Oracle     | Future  |
-| MSSQL      | Future  |
+| Database   | Status           |
+|------------|------------------|
+| PostgreSQL | DDL Generation   |
+| MySQL      | DDL Generation   |
+| SQLite     | DDL Generation   |
+| Oracle     | Future           |
+| MSSQL      | Future           |
 
 ## Roadmap
 
@@ -110,6 +176,7 @@ Detailed documentation is available in the [docs/](docs/) directory:
 - [DDL Generation Rules](docs/ddl-generation-rules.md)
 - [Connection & Config Specification](docs/connection-config-spec.md)
 - [Roadmap](docs/roadmap.md)
+- [Release Guide](docs/releasing.md)
 - [Requirements (German)](docs/lastenheft-d-migrate.md)
 
 ## Contributing

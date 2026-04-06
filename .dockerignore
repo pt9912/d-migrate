@@ -1,0 +1,43 @@
+# Keep the build context small and reproducible.
+
+# VCS
+.git
+.gitignore
+.github
+
+# Gradle / Kotlin caches and build outputs
+.gradle
+.kotlin
+build/
+**/build/
+**/.gradle/
+
+# IDE / editor
+.idea
+.vscode
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker (don't copy itself into the context)
+Dockerfile
+.dockerignore
+
+# Tool / runtime data
+.d-migrate/
+.codex
+.claude
+
+# Env files and logs
+.env
+.env.*
+*.log
+
+# Temporary files
+tmp/
+temp/
+dist/

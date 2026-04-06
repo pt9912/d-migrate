@@ -650,6 +650,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.4
+**Version**: 1.5
 **Stand**: 2026-04-05
-**Status**: Milestone 0.1.0 implementiert, spätere Milestones im Entwurf
+**Status**: Milestone 0.1.0 + 0.2.0 implementiert, spätere Milestones im Entwurf

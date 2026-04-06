@@ -318,7 +318,7 @@ d-migrate schema validate --source <path>
 
 Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 
-#### `schema generate` *(geplant: 0.2.0)*
+#### `schema generate` ✅
 
 Generiert datenbankspezifisches DDL aus einer Schema-Definition.
 
@@ -333,9 +333,22 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>]
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
 | `--generate-rollback` | Nein | Boolean | Zusätzlich Rollback-DDL generieren |
 
+| `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
+
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
 
-Exit: `0` bei Erfolg. DDL wird nach stdout geschrieben (oder in `--output` Datei).
+**Ausgabeverhalten**:
+- **stdout**: DDL-Output (wenn kein `--output`)
+- **stderr**: Warnungen (W1xx) und action_required-Hinweise (E052)
+- **`--output`**: DDL in Datei + automatisch `<name>.report.yaml` als Sidecar
+- **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
+
+**Exit-Codes**:
+- `0`: DDL erfolgreich generiert (auch bei Warnungen und übersprungenen Objekten)
+- `3`: Schema-Validierung fehlgeschlagen (DDL wird nicht erzeugt)
+- `7`: Schema-Datei nicht lesbar oder ungültiges YAML
+
+**action_required-Objekte** (z.B. Functions mit anderem source_dialect) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
 
 #### `schema reverse` *(geplant: 0.6.0)*
 
@@ -753,6 +766,6 @@ cat create_tables.sql | d-migrate schema reverse --source - --source-dialect pos
 
 ---
 
-**Version**: 1.1
+**Version**: 1.3
 **Stand**: 2026-04-05
-**Status**: `schema validate` implementiert (0.1.0), weitere Kommandos in Planung
+**Status**: `schema validate` (0.1.0) und `schema generate` (0.2.0) implementiert, weitere Kommandos in Planung

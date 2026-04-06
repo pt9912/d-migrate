@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-06
+
+### Added
+
+- DDL generation for PostgreSQL, MySQL, and SQLite via `d-migrate schema generate --target <dialect>`
+- 4 new Gradle modules: `d-migrate-driver-api`, `d-migrate-driver-postgresql`, `d-migrate-driver-mysql`, `d-migrate-driver-sqlite`
+- `TypeMapper` interface with full 18-type mapping per dialect (SERIAL, AUTO_INCREMENT, AUTOINCREMENT, JSONB, TINYINT(1), etc.)
+- `AbstractDdlGenerator` base class with topological sort (Kahn's algorithm) and rollback generation
+- `DdlStatement` model pairing SQL with inline `TransformationNote`s
+- `ViewQueryTransformer` with 17 regex-based SQL function transformations between dialects
+- `TransformationReportWriter` generating YAML sidecar reports (`<output>.report.yaml`)
+- `--output`, `--target`, `--generate-rollback`, `--report` flags on `schema generate`
+- `--output-format json` support for `schema generate` with ddl, notes, skipped_objects
+- Circular FK handling: PostgreSQL/MySQL via ALTER TABLE ADD CONSTRAINT, SQLite via E019 error
+- MySQL DELIMITER wrapping for triggers, functions, procedures
+- 12 golden master test files (4 schemas x 3 dialects)
+- 374 tests across all modules (was 83 in 0.1.0)
+- Kover coverage enforcement >= 90% for all driver modules
+
+### Fixed
+
+- SQL injection prevention: identifier quoting escapes embedded quote characters
+- Enum values with single quotes are properly escaped (`''`)
+
 ## [0.1.0] - 2026-04-05
 
 ### Added

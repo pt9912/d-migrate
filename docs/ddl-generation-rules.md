@@ -305,6 +305,15 @@ INSERT INTO "orders" (col1, col2, ...)
 DROP TABLE "_orders_old";
 ```
 
+**Wann wird der Rebuild erzeugt?**
+
+| Kommando | Verhalten |
+|---|---|
+| `schema generate` | **Kein Rebuild** — erzeugt nur `CREATE TABLE` DDL (Neuerstellung). Der Rebuild ist nur bei Schema-Änderungen an bestehenden Tabellen relevant. |
+| `schema migrate` *(0.5.0)* | **Rebuild wird generiert** wenn eine ALTER-Operation für SQLite nicht unterstützt wird (z.B. ALTER COLUMN TYPE, ADD CONSTRAINT). |
+
+Für `schema generate` (0.2.0) ist der Rebuild-Workaround also **nicht relevant** — er wird erst mit `schema migrate` (0.5.0) implementiert.
+
 ---
 
 ## 4. Constraint-Generierung
@@ -524,17 +533,49 @@ CREATE MATERIALIZED VIEW "monthly_revenue" AS
 
 ### 8.3 View-Query-Transformation
 
-View-Queries können dialektspezifische Funktionen enthalten. Automatische Transformationen:
+View-Queries können dialektspezifische Funktionen enthalten. Der DDL-Generator führt **regelbasierte Textsubstitution** auf dem Query-String durch.
+
+#### Automatisch transformierte Funktionen
 
 | Funktion | PostgreSQL | MySQL | SQLite |
 |---|---|---|---|
-| `DATE_TRUNC('month', col)` | Nativ | `DATE_FORMAT(col, '%Y-%m-01')` | `strftime('%Y-%m-01', col)` |
 | `NOW()` | Nativ | Nativ | `datetime('now')` |
 | `CURRENT_TIMESTAMP` | Nativ | Nativ | `datetime('now')` |
+| `CURRENT_DATE` | Nativ | `CURDATE()` | `date('now')` |
+| `CURRENT_TIME` | Nativ | `CURTIME()` | `time('now')` |
+| `DATE_TRUNC('month', col)` | Nativ | `DATE_FORMAT(col, '%Y-%m-01')` | `strftime('%Y-%m-01', col)` |
+| `DATE_TRUNC('year', col)` | Nativ | `DATE_FORMAT(col, '%Y-01-01')` | `strftime('%Y-01-01', col)` |
+| `DATE_TRUNC('day', col)` | Nativ | `DATE(col)` | `date(col)` |
+| `EXTRACT(YEAR FROM col)` | Nativ | `YEAR(col)` | `CAST(strftime('%Y', col) AS INTEGER)` |
+| `EXTRACT(MONTH FROM col)` | Nativ | `MONTH(col)` | `CAST(strftime('%m', col) AS INTEGER)` |
 | `COALESCE(a, b)` | Nativ | Nativ | Nativ |
+| `NULLIF(a, b)` | Nativ | Nativ | Nativ |
 | `CAST(x AS type)` | Nativ | Nativ (Typ-Mapping) | Nativ (Typ-Mapping) |
+| `CONCAT(a, b)` | Nativ | Nativ | `a \|\| b` |
+| `LENGTH(s)` | Nativ | `CHAR_LENGTH(s)` | `LENGTH(s)` |
+| `SUBSTRING(s FROM n FOR m)` | Nativ | `SUBSTRING(s, n, m)` | `SUBSTR(s, n, m)` |
+| `BOOLEAN` Literale (`TRUE`/`FALSE`) | Nativ | `1`/`0` | `1`/`0` |
 
-Nicht automatisch transformierbare Funktionen erzeugen `action_required`.
+#### Transparente Funktionen (in allen Dialekten identisch)
+
+Diese Funktionen werden **nicht transformiert**, da sie überall unterstützt werden:
+`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `ABS`, `ROUND`, `UPPER`, `LOWER`, `TRIM`, `REPLACE`, `LIKE`, `IN`, `BETWEEN`, `CASE...WHEN`, `GROUP BY`, `ORDER BY`, `HAVING`, `LIMIT`, `OFFSET`, `DISTINCT`, `JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `UNION`, `EXISTS`, `NOT EXISTS`.
+
+#### Nicht transformierbare Funktionen
+
+Funktionen die nicht in der obigen Tabelle stehen und dialektspezifisch sind, werden **nicht automatisch transformiert**. Verhalten:
+
+| Situation | Verhalten |
+|---|---|
+| `source_dialect` = Ziel-Dialekt | Query wird 1:1 übernommen |
+| `source_dialect` ≠ Ziel-Dialekt, unbekannte Funktion erkannt | Query wird 1:1 übernommen + Warnung W111: "View query may contain dialect-specific functions" |
+| Kein `source_dialect` gesetzt | Query wird 1:1 übernommen (Annahme: Standard-SQL) |
+
+Die Erkennung unbekannter Funktionen erfolgt über eine einfache Heuristik: Wenn der Query Funktionsnamen enthält, die weder in der Transformationstabelle noch in der transparenten Liste stehen, wird W111 erzeugt. Für 0.2.0 ist dies eine Best-Effort-Prüfung — false positives sind akzeptabel.
+
+#### Identifier-Quoting in View-Queries
+
+Identifier in View-Queries werden gemäß Ziel-Dialekt gequotet (§2). Der Query-String wird dafür nicht vollständig geparst, sondern nur die bekannten Tabellen- und Spaltennamen (aus `dependencies`) werden ersetzt.
 
 ---
 
@@ -622,6 +663,37 @@ END //
 DELIMITER ;
 ```
 
+### 10.4 MySQL DELIMITER-Regeln
+
+`DELIMITER` wird für alle Statements benötigt, die einen `BEGIN...END`-Block enthalten:
+
+| Objekt-Typ | DELIMITER nötig | Begründung |
+|---|---|---|
+| CREATE TABLE | Nein | Kein BEGIN...END |
+| CREATE INDEX | Nein | Kein BEGIN...END |
+| CREATE VIEW | Nein | Kein BEGIN...END |
+| CREATE TRIGGER | **Ja** | Enthält BEGIN...END |
+| CREATE FUNCTION | **Ja** | Enthält BEGIN...END |
+| CREATE PROCEDURE | **Ja** | Enthält BEGIN...END |
+| CREATE EVENT | **Ja** | Kann BEGIN...END enthalten |
+
+**Gruppierung**: DELIMITER-Wechsel werden pro Statement gesetzt, nicht für die gesamte Datei:
+
+```sql
+-- Tabellen, Indizes, Views (ohne DELIMITER)
+CREATE TABLE `customers` (...);
+CREATE INDEX `idx_email` ON `customers` (`email`);
+
+-- Trigger, Functions, Procedures (mit DELIMITER)
+DELIMITER //
+CREATE TRIGGER `trg_updated` ... BEGIN ... END //
+DELIMITER ;
+
+DELIMITER //
+CREATE FUNCTION `calc_total`(...) ... BEGIN ... END //
+DELIMITER ;
+```
+
 ### 10.3 SQLite
 
 ```sql
@@ -635,6 +707,25 @@ END;
 ```
 
 SQLite-Besonderheit: Kein direktes `NEW.col = value`; stattdessen `UPDATE`-Statement nötig.
+
+### 10.5 Trigger-Body-Transformation
+
+Trigger-Bodies können dialektspezifische prozedurale Logik enthalten. Es gelten die **gleichen Regeln wie für Functions/Procedures** (§11):
+
+| Situation | Verhalten |
+|---|---|
+| `source_dialect` = Ziel-Dialekt | Body wird 1:1 übernommen |
+| `source_dialect` ≠ Ziel-Dialekt, Body vorhanden | Body wird übersprungen, `action_required` (E052) erzeugt |
+| `source_dialect` ≠ Ziel-Dialekt, Body leer/null | Nur CREATE TRIGGER-Hülle erzeugt (Warnung W110) |
+| Kein `source_dialect` angegeben | Body wird 1:1 übernommen (Annahme: dialektneutral) |
+
+**PostgreSQL-Sonderfall**: Trigger-Logik liegt in einer separaten Function. Wenn ein Trigger nach PostgreSQL generiert wird, erzeugt der Generator automatisch eine Trigger-Function aus dem Body:
+
+```
+Trigger-Body → CREATE FUNCTION trg_fn_<name>() ... + CREATE TRIGGER ... EXECUTE FUNCTION trg_fn_<name>()
+```
+
+Wenn ein PostgreSQL-Trigger in einen anderen Dialekt transformiert werden soll, wird die Trigger-Function aufgelöst und der Body in den Trigger integriert (oder `action_required` bei komplexer Logik).
 
 ---
 
@@ -752,18 +843,197 @@ CREATE INDEX "idx_orders_customer_date" ON "orders" ("customer_id", "order_date"
 
 ---
 
-## 14. Transformationshinweise
+## 14. Transformationshinweise und Report
 
-Bei jeder DDL-Generierung wird ein Transformationsbericht erzeugt. Details zum Format und den Hinweis-Typen sind in der [Neutrales-Modell-Spezifikation §11](./neutral-model-spec.md#11-transformationshinweise) beschrieben.
+### 14.1 Inline-Hinweise im DDL
 
-Der DDL-Generator erzeugt Hinweise inline als SQL-Kommentare:
+Hinweise werden als SQL-Kommentare direkt vor dem betroffenen Statement eingefügt:
 
 ```sql
 -- [W102] HASH index not supported on InnoDB, using BTREE
 CREATE INDEX `idx_orders_status` ON `orders` (`status`);
+
+-- [E052] action_required: Function body requires KI-assisted transformation
+-- Use: d-migrate transform procedure --procedure calculate_total --ai-backend ollama
+-- Skipped: CREATE FUNCTION `calculate_total` (source_dialect: postgresql, target: mysql)
 ```
 
-Zusätzlich wird ein vollständiger Bericht als separates Dokument erzeugt (YAML/JSON), wenn `--output` verwendet wird.
+### 14.2 Transformations-Report (Sidecar-Datei)
+
+Wenn `--output` verwendet wird, erzeugt der Generator neben der DDL-Datei einen Report:
+
+```
+--output schema.sql     → schema.sql + schema.report.yaml
+--output out/ddl.sql    → out/ddl.sql + out/ddl.report.yaml
+```
+
+**Report-Schema (YAML)**:
+
+```yaml
+source:
+  schema: "E-Commerce System"
+  version: "1.0.0"
+  file: "schema.yaml"
+target:
+  dialect: mysql
+  generated_at: "2026-04-05T10:30:00Z"
+  generator: "d-migrate 0.2.0"
+
+summary:
+  tables: 5
+  indices: 8
+  constraints: 3
+  custom_types: 2
+  views: 1
+  functions: 1
+  triggers: 1
+  notes: 4
+  warnings: 2
+  action_required: 1
+
+notes:
+  - type: info
+    code: W100
+    object: customers.created_at
+    source_type: "TIMESTAMP WITH TIME ZONE"
+    target_type: "DATETIME"
+    message: "Timezone information lost in MySQL DATETIME"
+
+  - type: warning
+    code: W102
+    object: idx_orders_status
+    message: "HASH index not supported on InnoDB, using BTREE"
+
+  - type: action_required
+    code: E052
+    object: calculate_total
+    message: "Function body requires KI-assisted transformation"
+    hint: "d-migrate transform procedure --procedure calculate_total --ai-backend ollama"
+
+skipped_objects:
+  - type: function
+    name: calculate_total
+    reason: "source_dialect (postgresql) differs from target (mysql), KI transformation required"
+```
+
+### 14.3 Verhalten bei action_required
+
+| Situation | DDL-Output | Report | Exit-Code | stderr |
+|---|---|---|---|---|
+| Nur info/warning | Vollständig generiert | Alle Notes | `0` | Warnungen ausgeben |
+| action_required vorhanden | Generiert ohne übersprungene Objekte | Alle Notes + skipped_objects | `0` | Warnungen + Hinweise auf übersprungene Objekte |
+| Fehler (z.B. ungültiges Schema) | Nicht generiert | Nicht erzeugt | `3` | Fehler ausgeben |
+
+**Wichtig**: `action_required` ist **kein Fehler** — die DDL-Generierung wird fortgesetzt, das betroffene Objekt (Function, Trigger-Body, etc.) wird übersprungen und im Report dokumentiert. Der Exit-Code bleibt `0`, damit CI/CD-Pipelines nicht abbrechen. Die `skipped_objects`-Liste im Report macht die Lücken transparent.
+
+**stderr-Ausgabe bei action_required**:
+
+```
+⚠ Warning [E052]: Function 'calculate_total' skipped — requires KI-assisted transformation
+  → Hint: d-migrate transform procedure --procedure calculate_total --ai-backend ollama
+```
+
+### 14.4 CLI-Ausgabe bei `schema generate`
+
+**stdout**: DDL-Output (oder in `--output`-Datei)
+**stderr**: Warnungen und action_required-Hinweise
+
+Bei `--output-format json` wird die DDL als `ddl`-Feld im JSON eingebettet:
+
+```json
+{
+  "command": "schema.generate",
+  "status": "completed",
+  "exit_code": 0,
+  "target": "mysql",
+  "ddl": "CREATE TABLE `customers` (...);\\n...",
+  "notes": [...],
+  "skipped_objects": [...],
+  "warnings": 2,
+  "action_required": 1
+}
+```
+
+---
+
+## 15. Golden-Master-Teststrategie (0.2.0)
+
+### 15.1 Fixture-Layout
+
+```
+d-migrate-formats/src/test/resources/fixtures/
+├── schemas/                          # Eingabe-Schemas (bestehend aus 0.1.0)
+│   ├── minimal.yaml
+│   ├── e-commerce.yaml
+│   ├── all-types.yaml
+│   └── full-featured.yaml
+│
+└── ddl/                              # Erwartete DDL-Ausgaben (Golden Masters)
+    ├── minimal.postgresql.sql
+    ├── minimal.mysql.sql
+    ├── minimal.sqlite.sql
+    ├── e-commerce.postgresql.sql
+    ├── e-commerce.mysql.sql
+    ├── e-commerce.sqlite.sql
+    ├── all-types.postgresql.sql
+    ├── all-types.mysql.sql
+    └── all-types.sqlite.sql
+```
+
+**Namenskonvention**: `<schema>.<dialekt>.sql`
+
+### 15.2 Coverage-Matrix
+
+| Schema | Feature-Schwerpunkt | PG | MY | SQ |
+|---|---|---|---|---|
+| minimal | Basis (1 Tabelle, PK, 2 Spalten) | ✓ | ✓ | ✓ |
+| e-commerce | FK, Enum (ref_type), Indizes, CHECK, Defaults | ✓ | ✓ | ✓ |
+| all-types | Alle 18 neutralen Typen | ✓ | ✓ | ✓ |
+| full-featured | Custom Types, Partitioning, Procedures, Functions, Views, Triggers, Sequences | ✓ | ✓ | ✓ |
+
+**Gesamt**: 4 Schemas × 3 Dialekte = **12 Golden-Master-Dateien**
+
+### 15.3 Test-Methodik
+
+```kotlin
+class DdlGoldenMasterTest : FunSpec({
+    val schemas = listOf("minimal", "e-commerce", "all-types", "full-featured")
+    val dialects = listOf("postgresql", "mysql", "sqlite")
+
+    for (schema in schemas) {
+        for (dialect in dialects) {
+            test("$schema generates correct $dialect DDL") {
+                val input = loadSchema("schemas/$schema.yaml")
+                val expected = loadGoldenMaster("ddl/$schema.$dialect.sql")
+                val actual = generateDdl(input, dialect)
+                actual shouldBe expected
+            }
+        }
+    }
+})
+```
+
+### 15.4 Nicht-deterministische Elemente
+
+Der DDL-Header enthält einen Timestamp (`Generated: <ISO-8601>`). Für Golden-Master-Tests:
+
+- **Option A** (empfohlen): Header-Zeilen bei Vergleich ignorieren (Zeilen die mit `-- Generated:` beginnen)
+- **Option B**: Timestamp via Clock-Injection fixieren
+
+### 15.5 Golden-Master-Aktualisierung
+
+Bei gewollten DDL-Änderungen:
+
+```bash
+# Golden Masters neu generieren
+./gradlew :d-migrate-drivers:updateGoldenMasters
+
+# Diff prüfen
+git diff d-migrate-formats/src/test/resources/fixtures/ddl/
+
+# Committen wenn korrekt
+git add d-migrate-formats/src/test/resources/fixtures/ddl/
+```
 
 ---
 
@@ -776,6 +1046,6 @@ Zusätzlich wird ein vollständiger Bericht als separates Dokument erzeugt (YAML
 
 ---
 
-**Version**: 1.0
+**Version**: 1.1
 **Stand**: 2026-04-05
-**Status**: Entwurf
+**Status**: Spezifikation für 0.2.0
