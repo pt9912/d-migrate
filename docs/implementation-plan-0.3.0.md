@@ -27,8 +27,8 @@ DB → d-migrate data export --source <url> --format <fmt> [--output <path>] →
 **Was bewusst NICHT zu 0.3.0 gehört:**
 
 - Datenimport (`data import` → 0.4.0, LF-010)
-- Inkrementeller Export (`--incremental` → 0.4.0, LF-013)
 - Checkpoint-Erstellung und Resume (LN-012/LN-013 → 0.5.0)
+- Inkrementeller Export (`--incremental` → 0.9.0, LF-013 — siehe roadmap.md)
 - Parallele Tabellenverarbeitung (LN-007 → 1.0.0)
 - Schema-Reader / Reverse-Engineering (LF-004 → 0.6.0)
 - Partition-aware Export (LN-008 → 1.0.0)
