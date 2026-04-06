@@ -38,6 +38,9 @@ docker build --target build \
   --build-arg GRADLE_TASKS=":d-migrate-core:test :d-migrate-driver-api:test" \
   -t d-migrate:phase-a .
 
+# Testcontainers-Integrationstests separat über einen Laufzeit-Container ausführen
+./scripts/test-integration-docker.sh
+
 # CLI aus dem lokal gebauten Image ausführen
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/mein-schema.yaml
 ```
@@ -49,6 +52,11 @@ Wichtig:
   weiterhin `:d-migrate-cli:installDist` enthalten sein.
 - Für reine Build-/Test-Teilmengen ohne CLI-Distribution sollte `--target build`
   verwendet werden.
+- Testcontainers-Tests für PostgreSQL/MySQL laufen nicht verlässlich innerhalb
+  von `docker build`, weil der Build-Container keinen nutzbaren Docker-Daemon
+  für `container.start()` durchreicht. Dafür gibt es
+  [`scripts/test-integration-docker.sh`](../scripts/test-integration-docker.sh),
+  das einen separaten JDK-Container mit gemountetem Host-Docker-Socket startet.
 
 ## Option B: Aus Quellcode bauen
 

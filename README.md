@@ -93,6 +93,12 @@ docker build --target build \
 
 # Run the locally built CLI
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
+
+# Run the Testcontainers-based integration suite
+./scripts/test-integration-docker.sh
+
+# Or run only a subset of the integration tasks
+./scripts/test-integration-docker.sh :d-migrate-driver-postgresql:test
 ```
 
 Notes:
@@ -104,6 +110,10 @@ Notes:
 - A full `docker build` always reaches the runtime stage. If you override
   `GRADLE_TASKS`, include `:d-migrate-cli:installDist`; otherwise use
   `--target build` for build/test-only subsets.
+- Testcontainers-based integration tests should not run inside `docker build`.
+  Use [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
+  which starts a disposable JDK container and mounts the host Docker socket so
+  Testcontainers can launch PostgreSQL/MySQL normally.
 - To extract build artifacts from the build stage:
   ```bash
   docker build --target build -t d-migrate:build .
