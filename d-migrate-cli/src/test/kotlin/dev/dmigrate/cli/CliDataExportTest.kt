@@ -686,6 +686,89 @@ class CliDataExportTest : FunSpec({
         captured.toString(Charsets.UTF_8) shouldContain "Exported"
     }
 
+    // ─── F37: --quiet unterdrückt auch Warnings ──────────────────
+
+    /**
+     * Erzeugt eine SQLite-DB mit einer Tabelle `metrics(id, value REAL)`,
+     * deren `value`-Spalte eine IEEE-754-Infinity enthält. Beim Export wird
+     * `ValueSerializer.serializeFloating()` daraus eine W202-Warnung
+     * machen, weil Infinity in JSON/YAML nicht als Number darstellbar ist.
+     *
+     * Wir verwenden den SQL-Literal `1e1000`, weil
+     * `PreparedStatement.setDouble(Double.POSITIVE_INFINITY)` von sqlite-jdbc
+     * via `Double.toString()` zu einem TEXT-Wert "Infinity" konvertiert wird
+     * und dann beim Lesen als String zurückkommt — keine W202.
+     * SQLite parst `1e1000` dagegen als numerisches Literal und überlauft
+     * direkt zu IEEE-754 Infinity, was beim Read-Path als `Double` ankommt.
+     */
+    fun createDatabaseWithInfinity(): Path {
+        val db = Files.createTempFile("d-migrate-warn-test-", ".db")
+        db.deleteIfExists()
+        DriverManager.getConnection("jdbc:sqlite:${db.absolutePathString()}").use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("CREATE TABLE metrics (id INTEGER PRIMARY KEY, value REAL)")
+                // SQL-Literal überlauft zu Double.POSITIVE_INFINITY
+                stmt.execute("INSERT INTO metrics (id, value) VALUES (1, 1e1000)")
+            }
+        }
+        return db
+    }
+
+    test("F37: --quiet suppresses ValueSerializer warnings on stderr") {
+        val db = createDatabaseWithInfinity()
+        val originalErr = System.err
+        val captured = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "--quiet",
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "metrics",
+                        "--output", Files.createTempFile("dmigrate-out-", ".json").toString(),
+                    )
+                )
+            }
+        } finally {
+            System.setErr(originalErr)
+            Files.deleteIfExists(db)
+        }
+        val stderr = captured.toString(Charsets.UTF_8)
+        // cli-spec §1.3: --quiet = "Nur Fehler" — weder W201/W202 noch
+        // ProgressSummary dürfen sichtbar sein.
+        stderr shouldNotContain "W202"
+        stderr shouldNotContain "Exported"
+    }
+
+    test("F37: without --quiet the W202 warning is visible on stderr") {
+        val db = createDatabaseWithInfinity()
+        val originalErr = System.err
+        val captured = java.io.ByteArrayOutputStream()
+        System.setErr(java.io.PrintStream(captured, true, Charsets.UTF_8))
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "data", "export",
+                        "--source", "sqlite:///${db.absolutePathString()}",
+                        "--format", "json",
+                        "--tables", "metrics",
+                        "--output", Files.createTempFile("dmigrate-out-", ".json").toString(),
+                    )
+                )
+            }
+        } finally {
+            System.setErr(originalErr)
+            Files.deleteIfExists(db)
+        }
+        val stderr = captured.toString(Charsets.UTF_8)
+        stderr shouldContain "W202"
+        stderr shouldContain "metrics.value"
+    }
+
     // ─── F35: --csv-delimiter wird sauber auf Exit 2 gemappt ─────
 
     test("F35: --csv-delimiter '::' (multi-char) → Exit 2 (not raw IAE)") {

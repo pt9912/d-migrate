@@ -284,17 +284,24 @@ class DataExportCommand : CliktCommand(name = "export") {
                 throw ProgramResult(5)
             }
 
+            val ctx = root?.cliContext()
+
             // ─── 11. Warnings auf stderr ausgeben ────────────────────────
-            for (warning in warnings) {
-                System.err.println(
-                    "  ⚠ ${warning.code} ${warning.table}.${warning.column} (${warning.javaClass}): ${warning.message}"
-                )
+            // F37: --quiet bedeutet laut cli-spec §1.3 "Nur Fehler" — also
+            // unterdrücken wir hier sowohl die ValueSerializer-Warnings als
+            // auch die ProgressSummary unten. Echte Fehlermeldungen
+            // (Exit 2/4/5/7) bleiben unverändert sichtbar.
+            if (ctx?.quiet != true) {
+                for (warning in warnings) {
+                    System.err.println(
+                        "  ⚠ ${warning.code} ${warning.table}.${warning.column} (${warning.javaClass}): ${warning.message}"
+                    )
+                }
             }
 
             // ─── 12. ProgressSummary auf stderr (Plan §6.10 / §3.6) ──────
             // F34: ProgressSummary wird sowohl bei --quiet als auch bei
             // --no-progress unterdrückt (cli-spec.md §1.3 / §6.4).
-            val ctx = root?.cliContext()
             val suppressProgress = ctx?.quiet == true || ctx?.noProgress == true
             if (!suppressProgress) {
                 System.err.println(formatProgressSummary(result))
