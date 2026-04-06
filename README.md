@@ -31,7 +31,7 @@ d-migrate is a command-line tool that lets you define your database schema once 
 
 ### Prerequisites
 
-- **JDK 21** or later
+- **JDK 21** or later — _or_ Docker (see below, no local JDK required)
 
 ### Build
 
@@ -54,6 +54,8 @@ d-migrate is a command-line tool that lets you define your database schema once 
 
 ### Docker
 
+#### Use the published image
+
 No JDK required — just pull the image and run:
 
 ```bash
@@ -63,6 +65,39 @@ docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate 
 # Generate DDL
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
 ```
+
+#### Build and test locally with the Dockerfile
+
+The repository ships a multi-stage [`Dockerfile`](Dockerfile) that builds and
+tests the project inside a container, then packages the CLI distribution into a
+slim JRE runtime image. This is the easiest way to run the full build without
+installing a JDK locally.
+
+```bash
+# Full build incl. tests and coverage verification (default)
+docker build -t d-migrate:dev .
+
+# Skip tests — only assemble the CLI distribution
+docker build --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" \
+  -t d-migrate:dev .
+
+# Run the locally built CLI
+docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
+```
+
+Notes:
+
+- The build stage uses `eclipse-temurin:21-jdk-noble` and caches Gradle
+  dependencies via BuildKit cache mounts, so repeated builds are fast.
+- The runtime stage uses `eclipse-temurin:21-jre-noble` (the same base image as
+  the published OCI image produced by `:d-migrate-cli:jibDockerBuild`).
+- To extract build artifacts from the build stage:
+  ```bash
+  docker build --target build -t d-migrate:build .
+  docker create --name d-migrate-tmp d-migrate:build
+  docker cp d-migrate-tmp:/src/d-migrate-cli/build/distributions ./dist
+  docker rm d-migrate-tmp
+  ```
 
 ### Minimal Schema Example
 
