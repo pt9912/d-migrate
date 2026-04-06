@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 IMAGE="${DMIGRATE_INTEGRATION_IMAGE:-eclipse-temurin:21-jdk-noble}"
 CACHE_VOLUME="${DMIGRATE_GRADLE_CACHE_VOLUME:-d-migrate-gradle-cache}"
-DEFAULT_TASKS="-PintegrationTests :d-migrate-driver-postgresql:test :d-migrate-driver-mysql:test :d-migrate-cli:test :d-migrate-driver-postgresql:koverVerify :d-migrate-driver-mysql:koverVerify :d-migrate-cli:koverVerify"
+DEFAULT_TASKS="-PintegrationTests test koverVerify"
 
 usage() {
     cat <<'EOF'

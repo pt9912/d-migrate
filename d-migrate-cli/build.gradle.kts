@@ -57,8 +57,12 @@ kover {
     reports {
         verify {
             rule {
-                // TODO: Increase to 90% once CLI integration tests are added
-                minBound(50)
+                // implementation-plan-0.3.0.md §11 — CLI-Ziel ist 60% (statt 90%
+                // wie für die anderen Module), weil CLI-Code zum großen Teil
+                // I/O-Glue ist, der nur durch Integration-Tests sinnvoll
+                // abdeckbar ist. Die fachliche Logik liegt in den anderen
+                // Modulen mit jeweils 90%.
+                minBound(60)
             }
         }
     }

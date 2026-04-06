@@ -41,21 +41,12 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Run integration tests (Testcontainers PostgreSQL + MySQL)
-        run: >-
-          ./gradlew
-          -PintegrationTests
-          :d-migrate-driver-postgresql:test
-          :d-migrate-driver-mysql:test
-          :d-migrate-cli:test
-
-      - name: Verify driver coverage with integration tests
-        run: >-
-          ./gradlew
-          -PintegrationTests
-          :d-migrate-driver-postgresql:koverVerify
-          :d-migrate-driver-mysql:koverVerify
-          :d-migrate-cli:koverVerify
+      - name: Run integration tests (all modules with @integration tag)
+        # Plan §6.16: generischer Aufruf, sodass neue integration-Tests in
+        # beliebigen Modulen automatisch mitlaufen, ohne dass dieser Workflow
+        # angepasst werden muss. Mit -PintegrationTests aktiviert das
+        # Root-build.gradle.kts den `integration`-Tag für alle Test-Tasks.
+        run: ./gradlew test koverVerify -PintegrationTests
 
       - name: Upload integration test results
         if: always()
@@ -65,14 +56,9 @@ jobs:
           path: '**/build/test-results/test/*.xml'
           retention-days: 14
 
-      - name: Upload integration coverage reports
+      - name: Generate integration coverage HTML
         if: always()
-        run: >-
-          ./gradlew
-          -PintegrationTests
-          :d-migrate-driver-postgresql:koverHtmlReport
-          :d-migrate-driver-mysql:koverHtmlReport
-          :d-migrate-cli:koverHtmlReport
+        run: ./gradlew koverHtmlReport -PintegrationTests
 
       - name: Upload coverage HTML
         if: always()
