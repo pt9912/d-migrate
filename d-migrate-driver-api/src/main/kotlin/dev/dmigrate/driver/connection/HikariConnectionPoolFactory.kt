@@ -4,30 +4,26 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import com.zaxxer.hikari.HikariPoolMXBean
 import dev.dmigrate.driver.DatabaseDialect
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.sql.Connection
 
 /**
  * Erzeugt einen [ConnectionPool] (HikariCP-basiert) aus einer [ConnectionConfig].
  *
- * Dialekt-spezifische Defaults:
- * - **SQLite**: `maximumPoolSize = 1` (SQLite unterstützt keine parallelen
- *   Schreibzugriffe; siehe `connection-config-spec.md` §2.2)
- * - **PostgreSQL** und **MySQL**: HikariCP-Defaults aus [PoolSettings]
+ * Die JDBC-URL wird über einen registrierten [JdbcUrlBuilder] gebaut (siehe
+ * [JdbcUrlBuilderRegistry]). Wenn keiner registriert ist — typischerweise in
+ * Unit-Tests im `driver-api`-Modul ohne konkreten Treiber — wird der
+ * [FallbackJdbcUrlBuilder] verwendet, der die gleichen Defaults injiziert wie
+ * die produktiven Builder, damit Tests nicht vom Bootstrap-Zustand abhängen.
  *
- * **JDBC-URL-Konstruktion**: Phase A baut eine minimale JDBC-URL pro Dialekt
- * direkt hier. In Phase B (DataReader-Implementierung) übernehmen die
- * dialektspezifischen `*JdbcUrlBuilder`-Klassen pro Treibermodul die
- * vollständige Parameter-Behandlung (z.B. `useCursorFetch=true` für MySQL,
- * `application_name` für PostgreSQL).
+ * Dialekt-spezifische Pool-Anpassungen:
+ * - **SQLite**: `maximumPoolSize = 1` (SQLite erlaubt keine parallelen
+ *   Schreibzugriffe; siehe `connection-config-spec.md` §2.2)
  */
 object HikariConnectionPoolFactory {
 
     /** Erzeugt einen offenen [ConnectionPool]. Caller MUSS `pool.close()` aufrufen. */
     fun create(config: ConnectionConfig): ConnectionPool {
         val effectivePool = if (config.dialect == DatabaseDialect.SQLITE) {
-            // SQLite kann nicht parallel schreiben — Pool auf 1 zwingen
             config.pool.copy(maximumPoolSize = 1, minimumIdle = 1)
         } else {
             config.pool
@@ -51,67 +47,51 @@ object HikariConnectionPoolFactory {
     }
 
     /**
-     * Dialekt-spezifische Default-Parameter, die in die JDBC-URL injiziert
-     * werden, sofern der User sie nicht bereits explizit gesetzt hat.
-     *
-     * - **SQLite** (siehe `connection-config-spec.md` §1.5):
-     *   - `journal_mode=wal` — WAL-Modus für bessere Concurrency
-     *   - `foreign_keys=true` — d-migrate verlässt sich auf referenzielle
-     *     Integrität, in SQLite sind FKs sonst standardmäßig deaktiviert
-     *
-     * Phase B wird die `*JdbcUrlBuilder`-Klassen pro Treiber hinzufügen,
-     * dann wandert dieses Mapping dorthin und MySQL/PostgreSQL bekommen
-     * ihre eigenen Defaults (`useCursorFetch=true`, `application_name=d-migrate`).
+     * Baut die JDBC-URL über einen registrierten [JdbcUrlBuilder] oder den
+     * [FallbackJdbcUrlBuilder]. `internal` für Tests.
      */
-    private fun defaultsFor(dialect: DatabaseDialect): Map<String, String> = when (dialect) {
+    internal fun buildJdbcUrl(config: ConnectionConfig): String {
+        val builder = JdbcUrlBuilderRegistry.find(config.dialect) ?: FallbackJdbcUrlBuilder(config.dialect)
+        return builder.buildJdbcUrl(config)
+    }
+}
+
+/**
+ * Fallback-Builder mit den gleichen Default-Parametern wie die produktiven
+ * Treiber-Builder. Wird verwendet, wenn kein Builder über die
+ * [JdbcUrlBuilderRegistry] registriert ist (z.B. in driver-api Unit-Tests).
+ *
+ * **Wichtig**: Diese Klasse darf nicht aus dem `driver-api`-Modul herauslecken
+ * und sollte nicht von Tests in den Treiber-Modulen verwendet werden — dort
+ * kommt der echte registrierte Builder zum Einsatz.
+ */
+internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : JdbcUrlBuilder {
+    override fun defaultParams(): Map<String, String> = when (dialect) {
         DatabaseDialect.SQLITE -> mapOf(
             "journal_mode" to "wal",
             "foreign_keys" to "true",
         )
-        DatabaseDialect.POSTGRESQL -> emptyMap()  // Phase B: application_name etc.
-        DatabaseDialect.MYSQL -> emptyMap()       // Phase B: useCursorFetch etc.
+        DatabaseDialect.POSTGRESQL -> mapOf(
+            "ApplicationName" to "d-migrate",
+        )
+        DatabaseDialect.MYSQL -> mapOf(
+            "useCursorFetch" to "true",
+            "useUnicode" to "true",
+            "characterEncoding" to "utf8mb4",
+        )
     }
 
-    /**
-     * Baut eine minimale JDBC-URL aus der [ConnectionConfig]. Wird in Phase B
-     * durch die dialekt-spezifischen `*JdbcUrlBuilder`-Klassen ersetzt.
-     *
-     * Die Query-Parameter werden korrekt URL-encoded zusammengesetzt — der
-     * [ConnectionUrlParser] dekodiert sie beim Parsen, also müssen sie hier
-     * wieder kodiert werden, damit Werte mit Sonderzeichen (Leerzeichen, `&`,
-     * `=`, etc.) round-trip-sicher sind. Dialekt-Defaults aus [defaultsFor]
-     * werden eingefügt, ohne explizit gesetzte User-Werte zu überschreiben.
-     */
-    private fun buildJdbcUrl(config: ConnectionConfig): String {
-        // User-Params haben Vorrang vor Defaults — defaults zuerst, dann user.
-        val mergedParams = LinkedHashMap<String, String>().apply {
-            putAll(defaultsFor(config.dialect))
-            putAll(config.params)
+    override fun baseJdbcUrl(config: ConnectionConfig): String = when (config.dialect) {
+        DatabaseDialect.POSTGRESQL -> {
+            val port = config.port ?: 5432
+            "jdbc:postgresql://${config.host}:$port/${config.database}"
         }
-        val paramString = if (mergedParams.isEmpty()) {
-            ""
-        } else {
-            "?" + mergedParams.entries.joinToString("&") { (k, v) ->
-                "${urlEncode(k)}=${urlEncode(v)}"
-            }
+        DatabaseDialect.MYSQL -> {
+            val port = config.port ?: 3306
+            "jdbc:mysql://${config.host}:$port/${config.database}"
         }
-        return when (config.dialect) {
-            DatabaseDialect.POSTGRESQL -> {
-                val port = config.port ?: 5432
-                "jdbc:postgresql://${config.host}:$port/${config.database}$paramString"
-            }
-            DatabaseDialect.MYSQL -> {
-                val port = config.port ?: 3306
-                "jdbc:mysql://${config.host}:$port/${config.database}$paramString"
-            }
-            DatabaseDialect.SQLITE -> {
-                "jdbc:sqlite:${config.database}$paramString"
-            }
-        }
+        DatabaseDialect.SQLITE -> "jdbc:sqlite:${config.database}"
     }
-
-    private fun urlEncode(s: String): String =
-        URLEncoder.encode(s, StandardCharsets.UTF_8)
 }
 
 /** Hikari-basierte [ConnectionPool]-Implementierung. Internal: nicht direkt instanzieren. */

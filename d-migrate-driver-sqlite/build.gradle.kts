@@ -1,5 +1,7 @@
 dependencies {
     implementation(project(":d-migrate-driver-api"))
+    // 0.3.0 Phase B: SQLite JDBC für DataReader / TableLister
+    implementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
 }
 
 kover {
