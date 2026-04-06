@@ -13,14 +13,14 @@ Sie basiert auf den Anforderungen des [Lastenhefts](./lastenheft-d-migrate.md), 
 
 ```
 Phase 1: MVP          Phase 2: Beta         Phase 3: Stable       Phase 4: Growth
-0.1.0 - 0.5.0        0.6.0 - 0.9.0         1.0.0                 1.1.0 - 2.0.0
+0.1.0 - 0.5.5        0.6.0 - 0.9.0         1.0.0                 1.1.0 - 2.0.0
 Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 ──────────────────────────────────────────────────────────────────────────────────▶
 ```
 
 ---
 
-## Phase 1: MVP (0.1.0 - 0.5.0) — Monate 1-6
+## Phase 1: MVP (0.1.0 - 0.5.5) — Monate 1-6
 
 **Ziel**: Funktionaler Prototyp für Early Adopters
 
@@ -104,6 +104,27 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung und Daten-Export/Import nutzen.
 
+### Milestone 0.5.5 — Erweitertes Typsystem
+
+| Bereich | Aufgabe                                                                             | LF-Ref |
+| ------- | ----------------------------------------------------------------------------------- | ------ |
+| Core    | Neutraler Typ `geometry` mit `geometry_type` und `srid`                             | LF-003 |
+| Core    | Spatial-Profil als Generator-Option (`postgis`, `native`, `spatialite`, `none`)     | LF-003 |
+| Core    | Validierungsregeln und Hinweis-Codes `E120`, `E121`, `W120`, `E052`                 | LF-002 |
+| Driver  | PostgreSQL/PostGIS: `geometry(<type>, <srid>)`-Mapping                              | LF-003 |
+| Driver  | MySQL: native Spatial Types (`POINT`, `POLYGON`, `MULTIPOLYGON`, ...)               | LF-003 |
+| Driver  | SQLite/SpatiaLite: `AddGeometryColumn(...)`-Strategie                               | LF-003 |
+| Core    | Erweiterte Typen im neutralen Modell: JSON, Arrays, Binary, UUID                    | LF-001 |
+| CLI     | `--spatial-profile` Option für `schema generate`                                    | LF-003 |
+| Test    | Golden-Master-Tests: `spatial.{postgresql,mysql,sqlite}.sql`                        | LN-043 |
+| Test    | Negativtests für ungültige `geometry_type`/`srid` und Profil-Mismatches             | LN-043 |
+| Docs    | CR `docs/change-request-spatial-types.md` in den Status _Approved_ überführen       | —      |
+| Docs    | `docs/neutral-model-spec.md` und `docs/ddl-generation-rules.md` um Spatial erweitern | —      |
+
+**Ergebnis**: Das neutrale Typsystem ist vor Reverse-Engineering (0.6.0) vollständig. Spatial-Daten können ohne Datenverlust zwischen PostgreSQL/PostGIS, MySQL und SQLite/SpatiaLite transportiert werden; JSON/Arrays/Binary/UUID sind modelliert und getestet.
+
+Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request-spatial-types.md) (Phase 1) und zieht die vormals für 0.8.0 geplanten erweiterten Typen vor, damit `schema reverse` ab 0.6.0 von Anfang an gegen ein vollständiges Typsystem arbeiten kann.
+
 ---
 
 ## Phase 2: Beta (0.6.0 - 0.9.0) — Monate 7-12
@@ -139,7 +160,7 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
-### Milestone 0.8.0 — Internationalisierung und erweiterte Datentypen
+### Milestone 0.8.0 — Internationalisierung
 
 | Bereich | Aufgabe                                                          | LF-Ref |
 | ------- | ---------------------------------------------------------------- | ------ |
@@ -147,12 +168,11 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 | i18n    | Lokalisierte CLI-Meldungen und Fehlertexte                       | LN-023 |
 | i18n    | ICU4J-Integration für Unicode-Verarbeitung                       | LF-005 |
 | i18n    | Grapheme-aware String-Längenberechnung                           | LN-021 |
-| Core    | Erweiterte Typen im neutralen Modell: JSON, Arrays, Binary, UUID | LF-001 |
 | Core    | Zeitzonen-Handling (UTC als Standard, konfigurierbar)            | LF-007 |
 | Formats | BOM-Erkennung und -Behandlung bei CSV                            | LF-010 |
 | Test    | Unicode-Integritätstests (Emoji, Kyrillisch, CJK)                | 8.5    |
 
-**Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und alle gängigen Datentypen.
+**Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
 ### Milestone 0.9.0 — Beta-Release
 
@@ -330,6 +350,6 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 ---
 
-**Version**: 1.2
+**Version**: 1.3
 **Stand**: 2026-04-06
-**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, weitere Milestones in Planung
+**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, 0.5.5 neu aufgenommen, weitere Milestones in Planung
