@@ -503,9 +503,9 @@ d-migrate data export --source local_pg --format json \
     --output ./full-dump --split-files
 ```
 
-> **0.9.0**: `--incremental` für inkrementellen Export anhand einer
-> Trigger-Spalte (LF-013, siehe `roadmap.md` Milestone 0.9.0). In 0.3.0
-> nicht enthalten.
+> **0.4.0**: `--incremental` für inkrementellen Export anhand einer
+> expliziten Marker-Spalte (`--since-column updated_at --since "<timestamp>"`).
+> Siehe `roadmap.md` Milestone 0.4.0 (LF-013). In 0.3.0 nicht enthalten.
 
 #### `data import` *(geplant: 0.4.0)*
 

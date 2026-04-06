@@ -13,7 +13,7 @@ Sie basiert auf den Anforderungen des [Lastenhefts](./lastenheft-d-migrate.md), 
 
 ```
 Phase 1: MVP          Phase 2: Beta         Phase 3: Stable       Phase 4: Growth
-0.1.0 - 0.5.5        0.6.0 - 0.9.0         1.0.0                 1.1.0 - 2.0.0
+0.1.0 - 0.5.5        0.6.0 - 0.9.5         1.0.0                 1.1.0 - 2.0.0
 Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 ──────────────────────────────────────────────────────────────────────────────────▶
 ```
@@ -74,27 +74,45 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 **Ergebnis**: Daten können aus Datenbanken in JSON/YAML/CSV exportiert werden.
 
-### Milestone 0.4.0 — Datenimport
+### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade
 
-| Bereich | Aufgabe                                         | LF-Ref |
-| ------- | ----------------------------------------------- | ------ |
-| Core    | Transaktionale Import-Logik (Chunk-basiert)     | LN-010 |
-| Driver  | JDBC-basierter DataWriter (Batch-Insert)        | LF-010 |
-| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import | LF-010 |
-| Driver  | Dialektspezifisches Trigger-Handling beim Import | LF-010 |
-| Formats | Deserialisierung aus JSON/YAML/CSV              | LF-010 |
-| Core    | Validierung gegen Schema-Definition beim Import | LF-010 |
-| Core    | Encoding-Erkennung (UTF-8, UTF-16, ISO-8859-1)  | LF-010 |
-| CLI     | `d-migrate data import` Kommando                | LF-010 |
-| Test    | Round-Trip-Tests (Export → Import → Vergleich)  | LN-043 |
-| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten | LN-043 |
+| Bereich | Aufgabe                                                                                           | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------------------- | ------ |
+| Core    | Transaktionale Import-Logik (Chunk-basiert)                                                       | LN-010 |
+| Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                          | LF-010 |
+| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                     | LF-010 |
+| Driver  | Dialektspezifisches Trigger-Handling beim Import                                                  | LF-010 |
+| Formats | Deserialisierung aus JSON/YAML/CSV                                                                | LF-010 |
+| Core    | Validierung gegen Schema-Definition beim Import                                                   | LF-010 |
+| Core    | Encoding-Erkennung (UTF-8, UTF-16, ISO-8859-1)                                                    | LF-010 |
+| CLI     | `d-migrate data import` Kommando                                                                  | LF-010 |
+| Core    | Inkrementeller Export/Import (explizite Marker-Spalte: `--since-column`, `--since`)              | LF-013 |
+| CLI     | `--incremental` Flag für `data export` und `data import`                                          | LF-013 |
+| Test    | Round-Trip-Tests (Export → Import → Vergleich)                                                    | LN-043 |
+| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                         | LN-043 |
+| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → import → Vergleich)                   | LN-043 |
 
-**Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert.
+**Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert, inklusive
+inkrementellem Modus auf Basis einer expliziten Marker-Spalte.
 
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
 [design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
 konkretisiert.
+
+> **Begründung der LF-013-Vorverlegung von 0.9.0 nach 0.4.0**: Inkrementeller
+> Export/Import gehört semantisch zum Daten-Pfad, nicht zur Beta-Reife.
+> Sobald `data import` (LF-010) steht, ist die nötige Schreib-Infrastruktur
+> vorhanden; die einfache Variante `--since-column updated_at --since
+> "<timestamp>"` braucht weder Auto-Discovery noch einen vollständigen
+> `SchemaReader` (LF-004 → 0.6.0). Eine spätere Erweiterung um automatische
+> Marker-Spalten-Erkennung kann in 0.6.0 nachgezogen werden, ohne den
+> 0.4.0-CLI-Vertrag zu brechen. Die ursprüngliche Einordnung in 0.9.0
+> hätte LF-013 künstlich zurückgehalten, obwohl die fachlichen
+> Voraussetzungen schon mit 0.4.0 erfüllt sind. Checkpoint/Resume (LN-012)
+> bleibt in 0.9.0 — Inkrement und Checkpoint sind technisch unabhängig
+> (Inkrement kennzeichnet *was* exportiert wird, Checkpoint *wo* der
+> Export aufgesetzt hat).
 
 ### Milestone 0.5.0 — MVP-Release
 
@@ -135,7 +153,7 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 ---
 
-## Phase 2: Beta (0.6.0 - 0.9.0) — Monate 7-12
+## Phase 2: Beta (0.6.0 - 0.9.5) — Monate 7-12
 
 **Ziel**: Production-ready für erste Projekte
 
@@ -182,21 +200,41 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
-### Milestone 0.9.0 — Beta-Release
+### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
 
-| Bereich | Aufgabe                                       | LF-Ref |
-| ------- | --------------------------------------------- | ------ |
-| Core    | Checkpoint/Resume für langläufige Operationen | LN-012 |
-| Core    | Inkrementeller Export/Import                  | LF-013 |
-| CLI     | `--lang` Flag für Sprachauswahl               | LF-006 |
-| Docs    | Vollständiges Anwenderhandbuch                | —      |
-| Docs    | Administrationshandbuch                       | —      |
-| Docs    | Migrations-Leitfaden                          | —      |
-| Docs    | API-Dokumentation                             | —      |
-| QA      | Performance-Benchmarks dokumentiert           | —      |
-| QA      | Pilotanwender-Tests (mindestens 5 Tester)     | 9.2    |
+| Bereich | Aufgabe                                                                | LF-Ref |
+| ------- | ---------------------------------------------------------------------- | ------ |
+| Core    | Checkpoint/Resume für langläufige Operationen                          | LN-012 |
+| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu)  | LF-006 |
 
-**Ergebnis**: Feature-Complete für Kernfunktionalität. Bereit für Produktivtests.
+**Ergebnis**: Langläufige Export-/Import-Operationen sind unterbrechbar und
+können wieder aufgesetzt werden; die in 0.8.0 eingeführte i18n-Infrastruktur
+ist über `--lang` vom Nutzer steuerbar. Damit ist die Kern-Funktionalität
+für Beta-Tester abgeschlossen.
+
+> Hinweis: LF-013 (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
+> — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.5** ausgelagert,
+> damit dieser Milestone klein und fokussiert bleibt.
+
+### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
+
+| Bereich | Aufgabe                                          | LF-Ref |
+| ------- | ------------------------------------------------ | ------ |
+| Docs    | Vollständiges Anwenderhandbuch                   | —      |
+| Docs    | Administrationshandbuch                          | —      |
+| Docs    | Migrations-Leitfaden                             | —      |
+| Docs    | API-Dokumentation                                | —      |
+| QA      | Performance-Benchmarks dokumentiert              | —      |
+| QA      | Pilotanwender-Tests (mindestens 5 Tester)        | 9.2    |
+
+**Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
+das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
+
+> **Warum ein eigener Milestone für Docs und QA?** Dokumentations- und
+> Pilot-Tasks haben eine deutlich andere Cadence als Code-Features (sie
+> brauchen Reviews durch Domain-Experten und externe Tester). Wenn sie im
+> 0.9.0-Code-Milestone hängen, verschiebt sich der Beta-Cut auf das
+> langsamste Element. 0.9.5 entkoppelt das, ohne die Inhalte zu streichen.
 
 ---
 
@@ -358,6 +396,6 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 ---
 
-**Version**: 1.3
+**Version**: 1.4
 **Stand**: 2026-04-06
-**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, 0.3.0 in Arbeit (Phase A–E umgesetzt, Phase F Testcontainers offen), 0.5.5 neu aufgenommen, weitere Milestones in Planung
+**Status**: Milestone 0.1.0 und 0.2.0 abgeschlossen, 0.3.0 in Arbeit (Phase A–E umgesetzt, Phase F Testcontainers offen), 0.5.5 neu aufgenommen, LF-013 von 0.9.0 nach 0.4.0 vorverlegt, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
