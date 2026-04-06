@@ -383,8 +383,14 @@ class DataExportCommand : CliktCommand(name = "export") {
     val nullString by option("--null-string").default("")      // CSV-NULL-Repräsentation
 
     override fun run() {
-        // 1. NamedConnectionResolver(configPath = parent.config ?: System.getenv("D_MIGRATE_CONFIG")?.let(::Path))
-        //      .resolve(source) → vollständige URL
+        // 0. Root-Command holen — analog zu SchemaValidateCommand in 0.2.0
+        //    (SchemaCommands.kt:44). Hierarchie ist d-migrate → data → export,
+        //    der Root-Command sitzt also ZWEI Parent-Hops weiter oben:
+        val root = currentContext.parent?.parent?.command as? DMigrate
+        val configPath: Path? = root?.config
+            ?: System.getenv("D_MIGRATE_CONFIG")?.let(::Path)
+
+        // 1. NamedConnectionResolver(configPath).resolve(source) → vollständige URL
         //    Behandelt URL-Direktnutzung, Connection-Name-Lookup, ${ENV_VAR}-Substitution.
         //    default_source aus YAML wird gelesen aber für data export ignoriert (§6.14)
         // 2. ConnectionUrlParser.parse(url) → ConnectionConfig
@@ -398,6 +404,14 @@ class DataExportCommand : CliktCommand(name = "export") {
     }
 }
 ```
+
+> **Hinweis zum Root-Command-Zugriff**: Das `--config`/`-c` Flag liegt am
+> Root-Command `DMigrate` (`Main.kt:26`), nicht am direkten Parent
+> `DataCommand`. Bei der Hierarchie `d-migrate → data → export` sind das
+> ZWEI Parent-Hops, also `currentContext.parent?.parent?.command as? DMigrate`.
+> Das identische Pattern wird in `SchemaCommands.kt:44` für `cliContext()`
+> verwendet — bitte nicht durch `parent.config` o.ä. ersetzen, das wäre der
+> falsche Hop.
 
 Registrierung in `Main.kt` (analog zu `SchemaCommand` in 0.2.0).
 
@@ -495,7 +509,7 @@ Modul-spezifische Dependencies:
 | `d-migrate-driver-mysql` | `com.mysql:mysql-connector-j` |
 | `d-migrate-driver-sqlite` | `org.xerial:sqlite-jdbc` |
 | `d-migrate-formats` | `com.fasterxml.jackson.dataformat:jackson-dataformat-csv` |
-| `d-migrate-streaming` | (neu, hängt nur von driver-api + formats ab) |
+| `d-migrate-streaming` | (neu, hängt von core + driver-api + formats ab — siehe §5) |
 | `d-migrate-cli` | `implementation(project(":d-migrate-streaming"))` |
 | Tests (PG/MySQL) | `org.testcontainers:postgresql`, `org.testcontainers:mysql`, `org.testcontainers:junit-jupiter` |
 
@@ -964,6 +978,32 @@ einen späteren Migration-Bruch — Nutzer können in 0.3.0 schon
 `postgresql://app:${DB_PROD_PW}@host/db` schreiben, ohne dass sich das
 Verhalten in 0.4.0 ändert.
 
+**ENV-Werte werden literal substituiert — kein Auto-URL-Encoding** (F13).
+Der Resolver weiß nicht, in welchem URL-Segment eine ENV-Variable landet
+(Passwort? Hostname? Pfad?), und Auto-Encoding würde:
+
+1. Bereits-encodete Werte doppelt encoden (`%40` → `%2540`)
+2. Hostnames und Pfade fälschlich verändern
+3. Mit dem Standard-Verhalten von shell-style `${VAR}`-Substitution brechen
+
+**Verantwortlichkeit des Nutzers**: Sonderzeichen in Passwörtern (`@`, `:`,
+`/`, `?`, `#`, `%` — siehe `connection-config-spec.md` §1.7) müssen **vor**
+dem Schreiben in die ENV-Variable URL-encoded werden:
+
+```bash
+# Korrekt: Passwort 'p@ss:word' → URL-encoded
+export DB_PROD_PW='p%40ss%3Aword'
+d-migrate data export --source prod --format json
+
+# Falsch: Klartext mit Sonderzeichen, der ConnectionUrlParser bricht
+export DB_PROD_PW='p@ss:word'
+```
+
+Der `ConnectionUrlParser` würde im falschen Beispiel über das `@` in der
+Passwort-Position stolpern und Exit 7 werfen — das ist die natürliche
+URL-Validierung, kein Sonder-Pfad. Eine entsprechende Doku-Notiz gehört in
+`docs/guide.md` und in die Fehlermeldung des `ConnectionUrlParser`.
+
 **`database.default_source`**: Wird **gelesen aber für `data export`
 ignoriert**, weil `--source` Pflicht ist. Kein Fehler. In 0.4.0 wird
 `default_source` für die zweite CLI-Familie `data import` benutzt, dort
@@ -1209,7 +1249,7 @@ d-migrate-formats/build.gradle.kts                                           # +
 d-migrate-cli/build.gradle.kts                                               # +streaming
 .github/workflows/build.yml                                                  # +streaming + driver-* koverVerify (rückwirkend für 0.2.0-Module)
 .github/workflows/integration.yml                                            # NEU — @Tag("integration")-Job
-docs/cli-spec.md                                                             # `--incremental` aus 0.3.0-Block entfernen → 0.4.0
+docs/cli-spec.md                                                             # §6.2 `data export` vollständig aktualisieren: alle 0.3.0-Flags (--split-files, --csv-delimiter, --csv-bom, --csv-no-header, --null-string, --tables, --filter, --encoding, --chunk-size) ergänzen, --incremental → 0.4.0 verschieben, Exit-Codes 0/2/4/5/7 (siehe Plan §6.10)
 docs/architecture.md                                                         # §2.2 streaming-Dependency, §3.1 DataReader-Signatur (Pool statt Connection), neutrales Daten-Modell in core
 docs/connection-config-spec.md                                               # Status: Entwurf → Stand 0.3.0 (URL-Parser + minimaler Named-Connection-Loader umgesetzt; Tabelle "Status pro Feature" nach §6.14)
 ```
@@ -1297,6 +1337,10 @@ docker stop pg-test
 | **NamedConnectionResolver bricht globalen CLI-Vertrag (F8)** | §6.14 entstrikten: `--config`/`D_MIGRATE_CONFIG`/`${ENV}` werden respektiert, `default_source` ignoriert (kein Fehler) |
 | **CSV-Header-Semantik mehrdeutig (F9)** | §6.17 + §3.5/§3.6: explizites `--csv-no-header` Flag, Default Header an, `ExportOptions.csvHeader: Boolean = true` |
 | **Exit-Code-Matrix veraltet (F10)** | §6.10 Exit 7 Beispielmeldung aktualisiert auf "Connection name '...' is not defined ..." |
+| **cli-spec.md inkomplett (F11)** | §7 Liste der zu pflegenden cli-spec.md-Änderungen vollständig: alle 9 neuen Flags + Exit-Codes 2/7, nicht nur `--incremental` |
+| **--config Zugriff falsche Parent-Hops (F12)** | §3.6 Snippet auf `currentContext.parent?.parent?.command as? DMigrate` (Pattern aus SchemaCommands.kt:44) korrigiert + Hinweis-Block |
+| **ENV-Substitution + URL-Encoding undefiniert (F13)** | §6.14: ENV-Werte werden literal substituiert; Nutzer ist verantwortlich für URL-Encoding (`%40` statt `@`); Begründung dokumentiert |
+| **Dependency-Tabelle Drift (F14)** | §3.9 streaming-Eintrag auf "core + driver-api + formats" korrigiert |
 
 ## 11. Aufgelöste Review-Fragen und Findings
 
@@ -1331,6 +1375,15 @@ docker stop pg-test
 | F8 | Mittel | `NamedConnectionResolver` lehnt `--config`/`D_MIGRATE_CONFIG`/`default_source`/`${ENV_VAR}` aktiv ab — bricht globalen CLI-Vertrag | Resolver respektiert alle vier: `--config`/`-c` und `D_MIGRATE_CONFIG` aus `Main.kt` werden gelesen; `default_source` wird für `data export` ignoriert (kein Fehler); `${ENV_VAR}` wird trivial substituiert. Reduktion statt Bruch | §6.14, §3.6, §4 Phase E |
 | F9 | Niedrig | CSV-Header-Semantik mehrdeutig (kein Flag für Default an/aus) | Neues `--csv-no-header`-Flag (Default: Header an); `ExportOptions.csvHeader: Boolean = true`; §6.17-Tabelle referenziert das Flag explizit | §3.5, §3.6, §6.17 |
 | F10 | Niedrig | Exit-Code-Matrix §6.10 zeigte alte URL-only-Meldung für Exit 7 | Beispielmeldung aktualisiert auf `Connection name 'staging' is not defined in .d-migrate.yaml under database.connections` — passt zum neuen §6.14 | §6.10 |
+
+### 11.4 Vierte Review-Runde — Findings F11–F14
+
+| # | Severity | Finding | Auflösung | Verankert in |
+|---|---|---|---|---|
+| F11 | Mittel | `cli-spec.md` §6.2 fehlen die neuen 0.3.0-Flags und Exit-Codes 2/7; Plan §7 listete nur `--incremental` als zu entfernen | §7-Eintrag erweitert: Vollständige Liste der nachzuziehenden Flags (`--split-files`, `--csv-delimiter`, `--csv-bom`, `--csv-no-header`, `--null-string`, `--tables`, `--filter`, `--encoding`, `--chunk-size`) plus Exit-Codes 0/2/4/5/7 — wird mit der Implementation in cli-spec.md eingearbeitet | §7 |
+| F12 | Mittel | CLI-Snippet zeigte `parent.config` — bei Hierarchie `d-migrate → data → export` falsch (config liegt am Root, zwei Parent-Hops weiter) | Snippet auf `currentContext.parent?.parent?.command as? DMigrate` korrigiert (identisches Pattern wie `SchemaCommands.kt:44`); zusätzlicher Hinweis-Block erklärt warum | §3.6 |
+| F13 | Niedrig | `${ENV_VAR}`-Substitution + URL-Encoding nicht abgegrenzt | Explizite Regel: ENV-Werte werden **literal** substituiert, kein Auto-URL-Encoding. Sonderzeichen müssen vom Nutzer vorab encoded werden (`%40` statt `@`). Begründung: Auto-Encoding bricht bereits-encodete Werte und ist segment-blind | §6.14 (ENV-Substitution) |
+| F14 | Niedrig | Dependency-Tabelle §3.9 zeigte für `streaming` nur "driver-api + formats", `core` fehlte (Drift gegen §5 und §2.1) | §3.9 Tabelleneintrag aktualisiert auf "core + driver-api + formats" mit Verweis auf §5 | §3.9 |
 
 ---
 
