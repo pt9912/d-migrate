@@ -20,6 +20,15 @@ dependencies {
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
     // .d-migrate.yaml-Loader (Plan §6.14 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
+
+    // Phase F (0.3.0): Testcontainers-basierte E2E-Tests für `data export`
+    // gegen PostgreSQL und MySQL. Markiert mit Kotest's NamedTag("integration"),
+    // läuft nur mit `-PintegrationTests` (siehe Plan §6.16).
+    // 2.0.0 hat alle Module umbenannt: `org.testcontainers:postgresql` →
+    // `org.testcontainers:testcontainers-postgresql` etc.
+    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 jib {

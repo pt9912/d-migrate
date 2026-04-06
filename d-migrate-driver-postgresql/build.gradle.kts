@@ -5,8 +5,11 @@ dependencies {
 
     // Testcontainers für Integration-Tests (markiert mit @Tag("integration"),
     // siehe Plan §6.16 — laufen nur in integration.yml mit -PintegrationTests).
+    // 2.0.0 hat alle Module umbenannt: `org.testcontainers:postgresql` →
+    // `org.testcontainers:testcontainers-postgresql`. Klassen sind ebenfalls
+    // verschoben: `containers.PostgreSQLContainer` → `postgresql.PostgreSQLContainer`.
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:postgresql:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 kover {

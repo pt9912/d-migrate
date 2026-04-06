@@ -23,6 +23,11 @@ subprojects {
     dependencies {
         "testImplementation"("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
         "testImplementation"("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+        // SLF4J-Provider für Tests, damit Testcontainers-Diagnostics nicht im
+        // NOP-Logger verschwinden. Ohne dieses Fragment ist die
+        // Strategy-Detection-Fehlermeldung "Could not find a valid Docker
+        // environment" nicht diagnostizierbar (siehe Phase F Debug-Session).
+        "testRuntimeOnly"("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     }
 
     tasks.withType<Test> {

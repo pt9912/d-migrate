@@ -525,7 +525,7 @@ Modul-spezifische Dependencies:
 | `d-migrate-formats` | `com.dslplatform:dsl-json-java8`, `com.univocity:univocity-parsers`, `org.snakeyaml:snakeyaml-engine` |
 | `d-migrate-streaming` | (neu, hängt von core + driver-api + formats ab — siehe §5) |
 | `d-migrate-cli` | `implementation(project(":d-migrate-streaming"))` |
-| Tests (PG/MySQL) | `org.testcontainers:postgresql`, `org.testcontainers:mysql`, `org.testcontainers:junit-jupiter` |
+| Tests (PG/MySQL) | `org.testcontainers:testcontainers-postgresql`, `org.testcontainers:testcontainers-mysql` (TC ≥ 2.0 hat alle Module umbenannt) |
 
 ## 4. Implementierungsreihenfolge
 

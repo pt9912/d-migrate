@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 IMAGE="${DMIGRATE_INTEGRATION_IMAGE:-eclipse-temurin:21-jdk-noble}"
 CACHE_VOLUME="${DMIGRATE_GRADLE_CACHE_VOLUME:-d-migrate-gradle-cache}"
-DEFAULT_TASKS="-PintegrationTests :d-migrate-driver-postgresql:test :d-migrate-driver-mysql:test :d-migrate-driver-postgresql:koverVerify :d-migrate-driver-mysql:koverVerify"
+DEFAULT_TASKS="-PintegrationTests :d-migrate-driver-postgresql:test :d-migrate-driver-mysql:test :d-migrate-cli:test :d-migrate-driver-postgresql:koverVerify :d-migrate-driver-mysql:koverVerify :d-migrate-cli:koverVerify"
 
 usage() {
     cat <<'EOF'
@@ -53,11 +53,14 @@ echo "  repo:         ${REPO_ROOT}"
 echo "  gradle tasks: ${GRADLE_TASKS}"
 
 exec docker run --rm ${TTY_FLAG} \
+    --network=host \
     -v "${REPO_ROOT}:/src" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${CACHE_VOLUME}:/gradle-cache" \
     -e GRADLE_USER_HOME=/gradle-cache \
     -e GRADLE_TASKS="${GRADLE_TASKS}" \
+    -e DOCKER_HOST=unix:///var/run/docker.sock \
+    -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     -w /src \
     "${IMAGE}" \
     bash -lc './gradlew --no-daemon ${GRADLE_TASKS}'

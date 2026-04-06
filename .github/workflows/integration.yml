@@ -47,6 +47,7 @@ jobs:
           -PintegrationTests
           :d-migrate-driver-postgresql:test
           :d-migrate-driver-mysql:test
+          :d-migrate-cli:test
 
       - name: Verify driver coverage with integration tests
         run: >-
@@ -54,6 +55,7 @@ jobs:
           -PintegrationTests
           :d-migrate-driver-postgresql:koverVerify
           :d-migrate-driver-mysql:koverVerify
+          :d-migrate-cli:koverVerify
 
       - name: Upload integration test results
         if: always()
@@ -70,6 +72,7 @@ jobs:
           -PintegrationTests
           :d-migrate-driver-postgresql:koverHtmlReport
           :d-migrate-driver-mysql:koverHtmlReport
+          :d-migrate-cli:koverHtmlReport
 
       - name: Upload coverage HTML
         if: always()

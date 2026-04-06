@@ -5,8 +5,11 @@ dependencies {
 
     // Testcontainers für Integration-Tests (markiert mit @Tag("integration"),
     // siehe Plan §6.16 — laufen nur in integration.yml mit -PintegrationTests).
+    // 2.0.0 hat alle Module umbenannt: `org.testcontainers:mysql` →
+    // `org.testcontainers:testcontainers-mysql`. Klassen sind ebenfalls
+    // verschoben: `containers.MySQLContainer` → `mysql.MySQLContainer`.
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:mysql:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 kover {
