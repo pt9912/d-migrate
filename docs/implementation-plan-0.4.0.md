@@ -49,8 +49,7 @@ Datei → d-migrate data import ... --table <name> --on-conflict update         
   (siehe §6.12).
 - `database.default_source` in `.d-migrate.yaml` wird ab 0.4.0 für
   `data export` aktiv; `database.default_target` analog für `data import`
-- `database.default_target` in `.d-migrate.yaml` wird aktiv (war in 0.3.0
-  noch ignoriert, siehe Plan-0.3.0 §6.14)
+  (war in 0.3.0 noch ignoriert, siehe Plan-0.3.0 §6.14)
 - Round-Trip-Integration-Tests Export → Import → Vergleich (LN-043), inkl.
   inkrementellem Round-Trip
 - Testcontainers-E2E für `data import` analog zu Phase F aus 0.3.0
@@ -84,7 +83,7 @@ statt — die Architektur aus 0.3.0 trägt: `formats` bekommt Reader-Klassen
 parallel zu den Writern, `driver-api` einen `DataWriter`-Port parallel zum
 `DataReader`, `streaming` einen `StreamingImporter` parallel zum
 `StreamingExporter`, `cli` ein neues `DataImportCommand` und einen
-`--incremental`-Flow für `DataExportCommand`.
+`--since-column`/`--since`-Flow für `DataExportCommand`.
 
 > **Wichtig**: Wir vermeiden bewusst ein neues Modul „d-migrate-import". Die
 > bestehenden Module sind nach **Schicht** organisiert, nicht nach Read-/Write-
@@ -187,8 +186,6 @@ data class WriteResult(
     val rowsInserted: Long,
     val rowsUpdated: Long,
     val rowsSkipped: Long,
-    /** Grobe Chunk-Diagnostik für skip/log; in 0.4.0 also 0 oder chunk.size. */
-    val rowsFailed: Long,
 )
 
 class ImportSchemaMismatchException(message: String) : RuntimeException(message)
@@ -434,10 +431,13 @@ interface DataChunkReaderFactory {
 | CSV | uniVocity `CsvParser` mit `IterableResult` — schon nativ chunked. Wir wrappen das in unseren `DataChunkReader`-Vertrag. | Header-Zeile, sofern nicht `csvNoHeader = true` |
 
 Für JSON/YAML mit Objekt-/Mapping-Rows gilt zusätzlich: das Feldset der
-ersten Row ist für die Tabelle autoritativ. Später fehlende Schlüssel
-werden als SQL-`NULL` an den entsprechenden Bind-Slots materialisiert;
-zusätzliche, in der ersten Row unbekannte Schlüssel gelten als
-Schema-Mismatch dieser Row und laufen über die `--on-error`-Politik.
+ersten Row ist für die Tabelle autoritativ. Der Reader ist dafür
+verantwortlich, spätere Rows gegen dieses Feldset zu normalisieren:
+fehlende bekannte Schlüssel werden bereits im Reader als `null` in den
+positionalen Slots materialisiert; zusätzliche, in der ersten Row
+unbekannte Schlüssel führen bereits im Reader zu einem
+`ImportSchemaMismatchException`, der dann über die `--on-error`-Politik
+des Importers läuft.
 
 #### 3.5.2 `ValueDeserializer`
 
@@ -451,7 +451,7 @@ neutralen Typen vollständig abdecken.
 | Format-Eingabe | Spalten-Hint (JDBC-Typ aus `ResultSetMetaData`) | Resultat |
 |---|---|---|
 | JSON String | `VARCHAR`/`TEXT`/`CLOB` | String |
-| JSON String | `BOOLEAN` | `Boolean.parseBoolean` |
+| JSON String `true`/`false` (case-insensitive) | `BOOLEAN` | Boolean |
 | JSON String | `DATE` | `LocalDate.parse` |
 | JSON String | `TIMESTAMP` | `LocalDateTime.parse` |
 | JSON String | `TIMESTAMP WITH TIME ZONE` | `OffsetDateTime.parse` |
@@ -459,8 +459,7 @@ neutralen Typen vollständig abdecken.
 | JSON String | `INTERVAL` | String (dialektspezifisches Binding später im Writer) |
 | JSON Number | `REAL`/`FLOAT`/`DOUBLE` | Double |
 | JSON Number ohne `.`/`e`/`E` im Token | `INTEGER`/`BIGINT` | Long |
-| JSON Number mit `.`/`e`/`E` im Token | `NUMERIC`/`DECIMAL` | `BigDecimal` |
-| JSON Number | `NUMERIC`/`DECIMAL` mit `scale > 0` oder `precision > 18` | `BigDecimal` |
+| JSON Number | `NUMERIC`/`DECIMAL` | Entscheidungsbaum: `scale > 0` oder Token mit `.`/`e`/`E` oder `precision > 18` → `BigDecimal`, sonst ganzzahliger Parse mit Präzisionscheck |
 | JSON `null` | beliebig | SQL NULL |
 | JSON `null` | `JSON`/`JSONB` | ebenfalls SQL NULL, NICHT JSON-Literal `null` |
 | JSON Array | `ARRAY` | `List<Any?>` (JDBC-`createArrayOf()` erst im Writer) |
@@ -482,6 +481,10 @@ aus Symmetriegründen beim 0.3.0-CSV-Writer auf leerem String (`""`); damit
 sind SQL-NULL und leerer String im CSV-Defaultpfad bewusst NICHT verlustfrei
 unterscheidbar. Wer diese Unterscheidung braucht, muss beim Export und
 Import explizit einen Sentinel wie `--csv-null-string NULL` setzen.
+
+Für BOOLEAN gilt bewusst: nur `true`/`false` (case-insensitive) sind
+zulässig. Werte wie `1`, `0`, `yes`, `no` werden nicht still interpretiert,
+sondern laufen in den normalen Fehlerpfad.
 
 Primärer Typ-Anker ist dabei der JDBC-Typcode (`ResultSetMetaData` /
 `java.sql.Types`), nicht der rohe `sqlTypeName`-String. Dialektspezifische
@@ -608,10 +611,17 @@ ohne SQL-Quoting aus der CLI heraus.
 Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 
 - `rowsInserted`, `rowsUpdated`, `rowsSkipped`, `rowsFailed`
+- `chunkFailures: List<String>` für `--on-error log` auf Chunk-Granularität
 - `sequenceAdjustments: List<SequenceAdjustment>` (für den Report)
 - `targetColumns: List<ColumnDescriptor>` (für Debug/JSON-Output)
 - `triggerMode: TriggerMode` (welcher Modus tatsächlich angewendet wurde)
 - `error: String?`
+
+`rowsFailed` ist dabei ausdrücklich KEIN Teil von `WriteResult`. Der Wert
+wird vom `StreamingImporter` aggregiert, wenn ein Chunk write/commit-seitig
+scheitert und die `--on-error`-Politik `skip` oder `log` ein Weitermachen
+erlaubt. In 0.4.0 ist das daher auf Summary-Ebene effektiv `0` oder
+`chunk.size` pro fehlgeschlagenem Chunk.
 
 ### 3.7 `d-migrate-cli`
 
@@ -704,12 +714,11 @@ Registrierung: `DataCommand` aus 0.3.0 bekommt zusätzlich
 ```kotlin
 val sinceColumn by option("--since-column")
 val since by option("--since")     // ISO-Datum/Datetime/Number — abhängig vom Spalten-Typ
-val incremental by option("--incremental").flag()
 ```
 
-`--incremental` ist ein „Convenience-Schalter": wenn gesetzt, müssen
-`--since-column` und `--since` ebenfalls gesetzt sein, sonst Exit 2. Der
-Filter wird intern als `DataFilter.ParameterizedClause("\"<col>\" >= ?", listOf(typedSince))` gebaut —
+LF-013 braucht in 0.4.0 keinen separaten `--incremental`-Schalter. Der
+Filter wird direkt über `--since-column` plus `--since` aktiviert und intern
+als `DataFilter.ParameterizedClause("\"<col>\" >= ?", listOf(typedSince))` gebaut —
 mit **Parameter-Binding** statt String-Konkatenation, weil hier ein vom
 Nutzer kommender Wert in ein SQL-Statement landet (siehe §6.7 im 0.3.0-Plan
 hat `--filter` die Trust-Boundary „lokale Shell" akzeptiert; für `--since`
@@ -765,6 +774,11 @@ Analog ruft `DataExportCommand.run()` in 0.4.0 einen
 aktiviert. Die zugehörige `connection-config-spec.md`-Tabelle wird in §7
 explizit für BEIDE Defaults nachgezogen, um den 0.3.0-Doku-Drift zu
 beenden.
+
+Der bestehende 0.3.0-Pfad `resolve(source: String)` bleibt in 0.4.0 als
+kompatibler Wrapper erhalten und delegiert intern auf `resolveSource(source)`.
+Damit bleiben die bestehenden Export-Tests stabil; neue Tests decken
+zusätzlich `resolveSource(null)` und `resolveTarget(null)` mit Defaults ab.
 
 ### 3.8 `d-migrate-core`
 
@@ -860,8 +874,8 @@ Schritt, der beide Pfade zusammenführt.
 ### Phase E: CLI-Integration
 
 24. `DataImportCommand` mit allen Flags aus §3.7.1
-25. `DataExportCommand` Erweiterung um `--incremental`/`--since-column`/
-    `--since` (Phase E aus 0.3.0 + dieser Schritt)
+25. `DataExportCommand` Erweiterung um `--since-column`/`--since`
+    (Phase E aus 0.3.0 + dieser Schritt)
 26. `NamedConnectionResolver` aktiviert `default_source` und `default_target`
 27. Exit-Code-Mapping für `data import` (§6.11)
 28. CLI-Integration-Tests gegen SQLite — JSON/YAML/CSV-Round-Trips,
@@ -1020,12 +1034,14 @@ entsteht eine **Header-Validierung**, kein Typ-System:
    `headerColumns()[i] -> targetColumns[j]` und reordert jede Row vor
    `session.write(...)` in Binding-Reihenfolge der tatsächlich
    gebundenen Spalten-Teilmenge.
-   Bei JSON/YAML ist das Header-Schema der ersten Row autoritativ: fehlen
-   in späteren Rows bekannte Felder, werden deren Bind-Slots mit SQL-`NULL`
-   gefüllt; tauchen später zusätzliche, zuvor unbekannte Felder auf, ist
-   das ein `ImportSchemaMismatchException` für diese Row und folgt
-   `--on-error`. Verletzt ein so materialisiertes `NULL` eine NOT-NULL- oder
-   Constraint-Regel im Ziel, greift der normale Chunk-Fehlerpfad aus §6.5.
+   Bei JSON/YAML ist das Header-Schema der ersten Row autoritativ; die
+   konkrete Per-Row-Normalisierung passiert bereits im Reader. Fehlen in
+   späteren Rows bekannte Felder, materialisiert der Reader `NULL` in den
+   positionalen Slots; tauchen zusätzliche, zuvor unbekannte Felder auf,
+   wirft bereits der Reader ein `ImportSchemaMismatchException`, das dann
+   `--on-error` folgt. Verletzt ein so materialisiertes `NULL` eine
+   NOT-NULL- oder Constraint-Regel im Ziel, greift der normale
+   Chunk-Fehlerpfad aus §6.5.
 2. Wenn `headerColumns()` `null` ist (leeres JSON-/YAML-Array, oder
    `csvNoHeader = true`), wird die Header-Validierung übersprungen — dann
    muss die Reihenfolge der `Array<Any?>`-Werte im Chunk implizit der
@@ -1052,18 +1068,21 @@ entsteht eine **Header-Validierung**, kein Typ-System:
 > normalisierten `chunk.columns`-Subset in Target-Reihenfolge; die
 > vollständigen `session.targetColumns` bleiben Referenz für Typ-Hints und
 > Header-Mapping. Bei headerlosen Inputs gilt der positionale Vertrag.
+> Es gibt bewusst KEINE Case-Folding-Heuristik: ein Header `userId` matcht
+> also nicht still auf eine Target-Spalte `userid`. Der CLI-Help-Text weist
+> darauf explizit hin.
 
 ### 6.5 Chunk-Transaktionsmodell
 
 Pro Tabelle eine Connection mit `autoCommit=false`. Pro Chunk:
 
 ```
-session.write(chunk)            -- batch Insert
-  ├── Erfolg → conn.commit()    -- chunk persistiert
-  └── Fehler → conn.rollback()  -- chunk verworfen
-                ├── --on-error abort → Tabellen-Import-Abbruch, Exit 5
-                ├── --on-error skip  → next Chunk (CHUNK-Granularität)
-                └── --on-error log   → next Chunk + im Report vermerken (CHUNK-Granularität)
+session.write(chunk)                   -- batch Insert
+  ├── Erfolg → session.commitChunk()   -- chunk persistiert
+  └── Fehler → session.rollbackChunk() -- chunk verworfen
+                  ├── --on-error abort → Tabellen-Import-Abbruch, Exit 5
+                  ├── --on-error skip  → next Chunk (CHUNK-Granularität)
+                  └── --on-error log   → next Chunk + im Report vermerken (CHUNK-Granularität)
 ```
 
 **Wichtig**: Der vorherige Chunk bleibt persistiert. Kein „alles oder
@@ -1169,7 +1188,11 @@ Für PG werden in 0.4.0 stattdessen zwei sichere Wege unterstützt:
 | Pfad | Voraussetzung | Implementierung |
 |---|---|---|
 | **(a)** Topologische Sortierung der Tabellen | `--schema <path>` mit der neutralen Schema-Definition | Wiederverwendung der Kahn-Sortierung aus `AbstractDdlGenerator` (0.2.0). Importe laufen in FK-respektierender Reihenfolge, FK-Checks bleiben aktiv. |
-| **(b)** `SET CONSTRAINTS ALL DEFERRED` | Constraints sind im Ziel-Schema mit `DEFERRABLE` deklariert | Pro Tabellen-Transaktion vor dem ersten Insert ausgeführt. Vorab prüft ein PG-Pre-Flight `pg_constraint.condeferrable` und loggt/reportet `N deferrable / M non-deferrable` FK-Constraints für die betroffenen Tabellen. Bei FK-abhängigem Multi-Table-Import ohne `--schema` und ohne passende deferrable Constraints → Exit 2 mit klarem Hinweis statt stillem No-Op. |
+| **(b)** `SET CONSTRAINTS ALL DEFERRED` | Constraints sind im Ziel-Schema mit `DEFERRABLE` deklariert | Pro Chunk-Transaktion vor dem ersten Insert ausgeführt. Vorab prüft ein PG-Pre-Flight `pg_constraint.condeferrable` und loggt/reportet `N deferrable / M non-deferrable` FK-Constraints für die betroffenen Tabellen. Bei FK-abhängigem Multi-Table-Import ohne `--schema` und ohne passende deferrable Constraints → Exit 2 mit klarem Hinweis statt stillem No-Op. |
+
+Wichtig: Pfad (b) verzögert Constraints nur bis zum nächsten Chunk-Commit.
+Er ist also keine generische Alternative zu Cross-Table- oder Cross-Chunk-
+Reihenfolgeproblemen; dafür bleibt Pfad (a) via `--schema` der saubere Weg.
 
 Wer FK-Checks **wirklich** deaktivieren muss, läuft den Import als
 Superuser oder bereitet die Constraints vorab als `DEFERRABLE` vor. Beide
@@ -1328,8 +1351,8 @@ für die Schema-Validierung zurück (analog zu `schema validate` aus 0.1.0).
 
 LF-013 ist in 0.4.0 **explizit zweigeteilt**:
 
-- **Export-Seite**: bekommt funktionale Inkrement-Flags (`--incremental`,
-  `--since-column`, `--since`), die einen WHERE-Filter ans SELECT anhängen.
+- **Export-Seite**: bekommt funktionale Inkrement-Flags `--since-column`
+  und `--since`, die einen WHERE-Filter ans SELECT anhängen.
 - **Import-Seite**: bekommt **keine** Inkrement-Flags. Wer einen
   Delta-Datensatz idempotent einspielen will, benutzt `--on-conflict update`
   — das ist mechanisch identisch zu „inkrementeller Import" und verhält
@@ -1364,7 +1387,8 @@ Intern:
    dann für `ParameterizedClause` und `WhereClause`, inklusive korrekter
    Parameter-Positionsbindung im zusammengesetzten WHERE)
 
-`--incremental` ohne `--since-column` und `--since` → Exit 2.
+`--since-column` und `--since` sind nur zusammen gültig; fehlt einer der
+beiden Werte, endet der Export mit Exit 2.
 
 #### 6.12.2 Import-Seite: idempotenter UPSERT statt eigenem Modus
 
@@ -1522,6 +1546,8 @@ Imported 3 tables (12 345 inserted, 1 200 updated, 1 245 skipped) in 4.2 s
   customers: 5 000 inserted, 0 updated, 0 skipped, 0 failed
   orders:    6 000 inserted, 1 200 updated, 1 245 skipped, 0 failed
   products:    145 inserted, 0 updated, 0 skipped, 0 failed
+Chunk failures logged: 1
+  orders: chunk 47 skipped after schema mismatch in input row
 Sequence adjustments: 2
   customers.id  → 5001
   products.id   → 146
@@ -1538,9 +1564,9 @@ liefert das `ImportResult` als JSON auf stdout.
 
 | Datei | Änderung |
 |---|---|
-| `docs/cli-spec.md` §6.2 `data import` | Vollständiger Block analog zu 0.3.0-`data export`: alle Flags aus §3.7.1, veraltetes `--resume` entfernen, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/1/2/3/4/5/7, Beispiele mit Round-Trip und Inkrement |
-| `docs/cli-spec.md` §6.2 `data export` | LF-013-Block ergänzen: `--incremental`, `--since-column`, `--since` mit Beispielen |
-| `docs/connection-config-spec.md` §6.14.2 | „Status pro Feature"-Tabelle aktualisieren: `default_source` ist ab 0.4.0 aktiv für `data export`, `default_target` analog für `data import` |
+| `docs/cli-spec.md` §6.2 `data import` | Vollständiger Block analog zu 0.3.0-`data export`: alle Flags aus §3.7.1, veraltetes `--resume` entfernen, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/1/2/3/4/5/7, Beispiele mit Round-Trip und UPSERT-Import |
+| `docs/cli-spec.md` §6.2 `data export` | LF-013-Block ergänzen: `--since-column`, `--since` mit Beispielen |
+| `docs/connection-config-spec.md` | Neue Sektion „Status pro Feature" anlegen und die bisher nur im 0.3.0-Plan referenzierte Tabelle dorthin migrieren; dabei `default_source` als aktiv für `data export` und `default_target` als aktiv für `data import` markieren |
 | `docs/cli-spec.md` §6.2 `data import` | Block REWRITE statt Extend: der heutige Kurzblock wird ersetzt, nicht um einen zweiten Import-Block ergänzt |
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
 | `docs/roadmap.md` | Milestone 0.4.0 als „in Arbeit" markieren bei Phase A; bei jedem abgeschlossenen Phase-Schritt aktualisieren |
@@ -1604,6 +1630,9 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
    - Import mit `--trigger-mode disable` (PG): Werte sind unverändert
    - Import mit `--trigger-mode disable` (MySQL/SQLite): Exit 2 mit
      `UnsupportedTriggerModeException`
+   - Für MySQL/SQLite reicht darüber hinaus die normale Round-Trip-Suite als
+     `fire`-Pfad-Abdeckung; eine eigene Trigger-Fixture ist dort in 0.4.0
+     nicht Pflicht-Gate
 5. **`--truncate`-Pre-Step ist NICHT atomar** (F41 — explizit dokumentiert):
    - Tabelle mit 1000 Rows, Import mit `--truncate` und einer absichtlich
      fehlerhaften Row → der Test asserted, dass die Tabelle danach **leer**
@@ -1627,6 +1656,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 | **Inkrementeller Import läuft mehrfach und führt zu doppelten UPSERTs** (= idempotent, also OK) — aber der User bekommt kein Feedback, dass nichts geändert wurde | `WriteResult.rowsInserted` vs `rowsUpdated` getrennt zählen und im Report ausgeben |
 | **`ParameterizedClause` aus User-Eingabe** wird falsch parametrisiert | Strikte Identifier-Validierung für `--since-column` (gleiches Pattern wie `--tables`); `--since` wird typisiert gebunden, kein String-Concat |
 | **JDBC-Treiber liefern unterschiedliche `sqlTypeName`-Strings** | `ValueDeserializer` normiert primär über JDBC-Typcodes und nutzt `sqlTypeName` nur als sekundären Dialekt-Hint; Dialekt-Tests decken PG/MySQL/SQLite explizit ab |
+| **MySQL `VALUES(col)`-UPSERT-Syntax altert weg** | In 0.4.0 noch dokumentiert, aber als Follow-up in §11 behalten; neuere MySQL-Versionen bevorzugen Alias-basiertes Update |
 
 ---
 
@@ -1641,8 +1671,9 @@ mitziehen:
 | Atomare Multi-Tabellen-Transaktionen über Chunks hinweg | 1.0.0 (LN-013) |
 | **`--replace-table`** (atomares DELETE+Import in einer Tabellen-Transaktion) | 0.5.0 oder später (§6.14, F41) |
 | **PG `--disable-fk-checks`** als generischer Mechanismus | nie — F42, siehe §6.8.1; Nutzer wählen `--schema` oder `DEFERRABLE`-Constraints |
+| Alias-basiertes MySQL-UPSERT statt `VALUES(col)` | Follow-up nach 0.4.0; 0.4.0 dokumentiert noch das kompatible Alt-Idiom |
 | Parallele Tabellen-Imports | 1.0.0 (LN-007) |
-| `schema reverse` und Auto-Marker-Discovery für `--incremental` | 0.6.0 (LF-004) |
+| `schema reverse` und Auto-Marker-Discovery für `--since-column` | 0.6.0 (LF-004) |
 | `--incremental` als Flag auf der Import-Seite | nie — F44, siehe §6.12.2; idempotenter Import läuft über `--on-conflict update` |
 | Auto-Mapping vom Dateinamen auf die Zieltabelle (`users.json` → `users`) | später (additiv) — F40, siehe §3.7.1; 0.4.0 verlangt explizit `--table` |
 | Auto-detect Encoding ohne BOM (ICU/chardet) | nie — F45; User setzt `--encoding` für Non-UTF-Streams |
