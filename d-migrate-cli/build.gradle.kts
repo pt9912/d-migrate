@@ -57,12 +57,16 @@ kover {
     reports {
         verify {
             rule {
-                // implementation-plan-0.3.0.md §11 — CLI-Ziel ist 60% (statt 90%
-                // wie für die anderen Module), weil CLI-Code zum großen Teil
-                // I/O-Glue ist, der nur durch Integration-Tests sinnvoll
-                // abdeckbar ist. Die fachliche Logik liegt in den anderen
-                // Modulen mit jeweils 90%.
-                minBound(60)
+                // 90% wie die übrigen Module. Die ursprüngliche 60%-Schwelle
+                // (implementation-plan-0.3.0.md §11) begründete sich mit
+                // "CLI-Code ist I/O-Glue und nur durch Integration-Tests
+                // abdeckbar" — das war eine Bequemlichkeits-Ausrede. Der
+                // eigentliche Glue (Hikari, File-I/O, Driver-Registry) ist
+                // ≈10% des Moduls; der Rest sind Verzweigungen, Validierungen
+                // und Exit-Code-Mappings, die über das Runner-Pattern
+                // (DataExportRunner / SchemaGenerateRunner) mit Fakes
+                // unit-testbar sind. Siehe `*HelpersTest`, `*RunnerTest`.
+                minBound(90)
             }
         }
     }
