@@ -170,6 +170,15 @@ interface TableImportSession : AutoCloseable {
      * Sequence-/Identity-Nachführung (§6.6) aus, reaktiviert ggf. Trigger
      * (§6.7) und liefert die Sequence-Anpassungen für den Import-Report.
      *
+     * Reihenfolge in 0.4.0:
+     * 1. `reseedGenerators(...)`
+     * 2. `enableTriggers(...)`
+     * 3. `return adjustments`
+     *
+     * Wenn Schritt 1 wirft, bleibt `enableTriggers(...)` Aufgabe des
+     * anschließenden `close()`-Cleanup-Pfads. Es gibt bewusst keine zweite
+     * Erfolgs-/Fehler-Statusmaschine nur für `finishTable()`.
+     *
      * Darf NUR nach erfolgreichem Schreiben aller Chunks aufgerufen werden.
      */
     fun finishTable(): List<SequenceAdjustment>
@@ -188,9 +197,14 @@ data class WriteResult(
     val rowsSkipped: Long,
 )
 
-class ImportSchemaMismatchException(message: String) : RuntimeException(message)
 class UnsupportedTriggerModeException(message: String) : RuntimeException(message)
 ```
+
+`ImportSchemaMismatchException` liegt bewusst **nicht** in
+`d-migrate-driver-api`, sondern in `d-migrate-core` (z.B.
+`dev.dmigrate.core.data`), weil sowohl `d-migrate-formats` (Reader) als
+auch `streaming` und die Writer-Schicht dieselbe fachliche Ausnahme
+verwenden, ohne dass `formats` eine Modul-Kante zu `driver-api` bekommt.
 
 #### 3.1.2 Erweiterung der bestehenden Registries
 
@@ -290,6 +304,14 @@ PG-spezifika:
 - **Batch-INSERT**: `INSERT INTO "schema"."tab" ("c1", "c2") VALUES (?, ?)`
   mit `addBatch()` pro Row und `executeBatch()` einmal pro Chunk.
   COPY-FROM ist ~10× schneller, kommt aber erst in 1.0.0 als Performance-Pfad.
+- **Identity-/Sequence-Support**: PostgreSQL `SERIAL`/`BIGSERIAL` sowie
+  `GENERATED { BY DEFAULT | ALWAYS } AS IDENTITY` werden in 0.4.0 explizit
+  unterstützt. `pg_get_serial_sequence(quoted_table, column)` wird für alle
+  drei Varianten als Sequence-Lookup benutzt.
+- **INSERT gegen `GENERATED ALWAYS AS IDENTITY`**: wenn eine importierte
+  Spalte im Ziel als `GENERATED ALWAYS` erkannt wird, erzeugt der Writer
+  `INSERT ... OVERRIDING SYSTEM VALUE ...`, damit explizite Importwerte
+  zulässig sind statt erst beim ersten betroffenen Datensatz zu scheitern.
 - **Sequence-Reseeding**: pro Identity-/SERIAL-Spalte die zugehörige Sequence
   via `pg_get_serial_sequence(quoted_table, column)` ermitteln und mit
   dem üblichen `setval(sequence, MAX(column), true)`-Idiom nachführen
@@ -298,6 +320,10 @@ PG-spezifika:
   unnötig einen Sequence-Wert verbrennen. Die Nachführung ist ein
   Erfolgsabschluss nach Tabellen-Import, aber kein Lock gegen parallele
   Writer in anderen Sessions.
+- **JSON/JSONB-Binding**: PG-Writer bindet `JSONB` nicht als plain
+  `VARCHAR`, sondern über den JDBC-Pfad für `Types.OTHER` bzw. ein
+  passendes PG-Objekt, damit `json`/`jsonb`-Spalten nicht am
+  Treiber-Typecheck scheitern.
 - **Trigger-Disable** (User-Trigger): `ALTER TABLE … DISABLE TRIGGER USER`
   pro Tabelle. `session_replication_role = replica` ist nicht zulässig
   (siehe §6.7) — zu breite Wirkung, Sicherheitsrisiko.
@@ -325,6 +351,11 @@ MySQL-spezifika:
   Writer-Pfad in Phase C/F).
 - **AUTO_INCREMENT-Reseeding**: `ALTER TABLE \`table\` AUTO_INCREMENT = N`
   mit `N = MAX(autoinc_column) + 1`. Dialect-Quote ist Backtick.
+- **UPSERT-Zählung**: für `ON DUPLICATE KEY UPDATE` muss der Writer die
+  per-Row-Rückgabewerte aus `executeBatch()` auswerten, nicht nur eine
+  Gesamtsumme. MySQL wird auf `WriteResult` normalisiert als
+  `1 -> rowsInserted`, `2 -> rowsUpdated`, `0 -> rowsUpdated`
+  (idempotentes No-Op-Update auf bestehender Row).
 - **Trigger-Disable**: in 0.4.0 **nicht generisch unterstützt**. Versuch,
   Trigger zu deaktivieren, wirft `UnsupportedTriggerModeException` mit
   Verweis auf Design-Doc §6.2. Default `fire` läuft normal.
@@ -439,6 +470,11 @@ unbekannte Schlüssel führen bereits im Reader zu einem
 `ImportSchemaMismatchException`, der dann über die `--on-error`-Politik
 des Importers läuft.
 
+Für JSON gilt außerdem: 0.4.0 akzeptiert nur ein Top-Level-Array von
+Objekten. Ein nacktes Top-Level-Objekt oder Wrapper-Formen wie
+`{ "rows": [...] }` sind Formatfehler. NDJSON ist in 0.4.0 bewusst
+out-of-scope und wird nicht heuristisch erkannt.
+
 #### 3.5.2 `ValueDeserializer`
 
 Inverse zur `ValueSerializer`-Mapping-Tabelle aus Plan-0.3.0 §6.4.1. Für jeden
@@ -453,7 +489,7 @@ neutralen Typen vollständig abdecken.
 | JSON String | `VARCHAR`/`TEXT`/`CLOB` | String |
 | JSON String `true`/`false` (case-insensitive) | `BOOLEAN` | Boolean |
 | JSON String | `DATE` | `LocalDate.parse` |
-| JSON String | `TIMESTAMP` | `LocalDateTime.parse` |
+| JSON String ohne Offset/Zone | `TIMESTAMP` | `LocalDateTime.parse` |
 | JSON String | `TIMESTAMP WITH TIME ZONE` | `OffsetDateTime.parse` |
 | JSON String | `UUID` | `UUID.fromString` |
 | JSON String | `INTERVAL` | String (dialektspezifisches Binding später im Writer) |
@@ -466,7 +502,8 @@ neutralen Typen vollständig abdecken.
 | YAML Block-Sequence | `ARRAY` | wie JSON Array |
 | JSON/YAML Binärwert oder Base64-String | `BLOB`/`BYTEA`/binary | `ByteArray` |
 | JSON/YAML Objekt oder JSON-String | `JSON`/`JSONB` | JSON-String |
-| JSON/YAML String | `BIT` | `Boolean` oder `BitSet` je nach Zieltyp |
+| JSON/YAML String | `BIT(1)` | Boolean |
+| JSON/YAML String | `BIT(N>1)` | `BitSet` |
 | CSV `csvNullString` | beliebig | SQL NULL |
 | CSV String | `NUMERIC`/`DECIMAL` | `BigDecimal` |
 | CSV String | `REAL`/`FLOAT`/`DOUBLE` | `toDouble()` mit festem Punkt-Format, nie Locale-abhängig |
@@ -485,6 +522,10 @@ Import explizit einen Sentinel wie `--csv-null-string NULL` setzen.
 Für BOOLEAN gilt bewusst: nur `true`/`false` (case-insensitive) sind
 zulässig. Werte wie `1`, `0`, `yes`, `no` werden nicht still interpretiert,
 sondern laufen in den normalen Fehlerpfad.
+
+Für `TIMESTAMP` ohne Zeitzone gilt ebenso: ein Eingabewert mit explizitem
+Offset/Zone (`2026-04-07T10:00:00+02:00`) wird nicht still „abgeschnitten",
+sondern als Typfehler behandelt und läuft über `--on-error`.
 
 Primärer Typ-Anker ist dabei der JDBC-Typcode (`ResultSetMetaData` /
 `java.sql.Types`), nicht der rohe `sqlTypeName`-String. Dialektspezifische
@@ -782,9 +823,13 @@ zusätzlich `resolveSource(null)` und `resolveTarget(null)` mit Defaults ab.
 
 ### 3.8 `d-migrate-core`
 
-Daten-Modell aus 0.3.0 bleibt unverändert. Wir ergänzen einen neuen Filter-Typ:
+`d-migrate-core` bleibt weitgehend unverändert, bekommt für 0.4.0 aber zwei
+kleine, schichtneutrale Ergänzungen: `ImportSchemaMismatchException` und den
+neuen Filter-Typ `DataFilter.ParameterizedClause`.
 
 ```kotlin
+class ImportSchemaMismatchException(message: String) : RuntimeException(message)
+
 sealed class DataFilter {
     data class WhereClause(val sql: String) : DataFilter()
     data class ColumnSubset(val columns: List<String>) : DataFilter()
@@ -853,7 +898,8 @@ Schritt, der beide Pfade zusammenführt.
 13. `SchemaSync` Interface + `SequenceAdjustment`
 14. `DataWriterRegistry` (object) mit `clear()` für Tests
 15. `PostgresDataWriter` + `PostgresSchemaSync` (setval, ALTER TABLE
-    DISABLE TRIGGER USER, inkl. Test für
+    DISABLE TRIGGER USER, `OVERRIDING SYSTEM VALUE` für PG-Identity-ALWAYS,
+    inkl. Test für
     `pg_get_serial_sequence('"schema"."table"', 'col')`-Quoting)
 16. `MysqlDataWriter` + `MysqlSchemaSync` (ALTER TABLE … AUTO_INCREMENT,
     `disable` → UnsupportedTriggerModeException; `rewriteBatchedStatements`
@@ -889,8 +935,8 @@ Schritt, der beide Pfade zusammenführt.
     via `nextval()` checken
 30. `DataImportE2EMysqlTest` mit `AUTO_INCREMENT`-Verifikation
 31. SQLite-E2E direkt ohne Container
-32. Inkrementeller Round-Trip-E2E: initial export → 2× delta export →
-    delta import → Vergleich
+32. Inkrementeller Round-Trip-E2E: initial export → Änderungen in der
+    Source → ein Delta-Export → Delta-Import → Vergleich
 33. `integration.yml` läuft schon generisch (siehe F39 aus 0.3.0) — keine
     Workflow-Anpassung nötig
 
@@ -900,7 +946,7 @@ Schritt, der beide Pfade zusammenführt.
 
 ```
 d-migrate-core
-└── (unverändert)
+└── plus `ImportSchemaMismatchException`
 
 d-migrate-driver-api
 ├── api(d-migrate-core)
@@ -969,7 +1015,8 @@ Die Reader-Implementierungen MÜSSEN echtes Streaming machen, nicht
 - **JSON**: DSL-JSON's `JsonReader` über `InputStream`. Wir lesen die
   Top-Level-`[`-Klammer, dann pro `getNextToken()`-Iteration ein Objekt,
   bauen daraus eine `Array<Any?>`-Row und sammeln `chunkSize` Rows zu einem
-  `DataChunk`. Wenn `]` erreicht ist → Stream zu Ende.
+  `DataChunk`. Wenn `]` erreicht ist → Stream zu Ende. Andere Top-Level-
+  Formen (`{...}`, `{ "rows": [...] }`, NDJSON) sind in 0.4.0 Formatfehler.
 - **YAML**: SnakeYAML Engine `Parse(LoadSettings)` liefert einen
   `Iterable<Event>`. Wir tracken den Document-/Sequence-/Mapping-Stack und
   emittieren beim Schließen jedes Top-Level-Mappings eine Row.
@@ -1046,8 +1093,13 @@ entsteht eine **Header-Validierung**, kein Typ-System:
    `csvNoHeader = true`), wird die Header-Validierung übersprungen — dann
    muss die Reihenfolge der `Array<Any?>`-Werte im Chunk implizit der
    Spalten-Reihenfolge der Zieltabelle entsprechen. Bei CSV ohne Header
-   ist das die einzige Möglichkeit; bei leerem JSON/YAML gibt es schlicht
-   keine Rows zu importieren — der Import endet mit `0 rows inserted`.
+   ist das die einzige Möglichkeit. Für headerlose CSV ist der Vertrag in
+   0.4.0 bewusst **strikt**: `len(row)` muss genau
+   `len(session.targetColumns)` entsprechen; zu kurze oder zu lange Rows
+   sind Schema-Mismatch mit klarer Meldung
+   (`headerless CSV row has 3 columns, target expects 5`) und folgen
+   `--on-error`. Bei leerem JSON/YAML gibt es schlicht keine Rows zu
+   importieren — der Import endet mit `0 rows inserted`.
    Header-only-CSV ist davon ausgenommen: dort darf `headerColumns()` trotz
    `nextChunk() == null` gesetzt sein, so dass die Header-Validierung noch
    vor dem Ergebnis `0 rows inserted` laufen kann.
@@ -1070,7 +1122,18 @@ entsteht eine **Header-Validierung**, kein Typ-System:
 > Header-Mapping. Bei headerlosen Inputs gilt der positionale Vertrag.
 > Es gibt bewusst KEINE Case-Folding-Heuristik: ein Header `userId` matcht
 > also nicht still auf eine Target-Spalte `userid`. Der CLI-Help-Text weist
-> darauf explizit hin.
+> darauf explizit hin. Das ist auf MySQL bewusst strenger als die DB selbst;
+> wer dort abweichende Header-Cases hat, muss sie vor dem Import angleichen.
+>
+> **Verantwortungsmatrix**:
+> Reader:
+> normalisiert JSON/YAML-Rows gegen das First-Row-Feldset und validiert
+> headerlose CSV-Rowlängen.
+> StreamingImporter:
+> mapped File-Header gegen Target-Spalten, leitet die gebundene
+> Spalten-Teilmenge ab und castet Werte in Target-Reihenfolge.
+> Writer:
+> erzeugt daraus den finalen INSERT-/UPSERT-SQL-Pfad gegen das Zielschema.
 
 ### 6.5 Chunk-Transaktionsmodell
 
@@ -1108,7 +1171,8 @@ Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
 `session.finishTable()`):
 
 1. Pro Spalte aus `importedColumns` prüfen: ist sie eine Generator-Spalte
-   im Ziel? (PG: `pg_get_serial_sequence`; MySQL: Spalten-Metadata
+   im Ziel? (PG: `pg_get_serial_sequence` für `SERIAL` sowie
+   `GENERATED { BY DEFAULT | ALWAYS } AS IDENTITY`; MySQL: Spalten-Metadata
    `EXTRA = 'auto_increment'`; SQLite: `INTEGER PRIMARY KEY AUTOINCREMENT`
    in `sqlite_master`)
 2. Wenn ja: höchsten Wert der Spalte **im Ziel nach Abschluss aller Chunks**
@@ -1124,6 +1188,12 @@ qualifizierten Tabellennamen als SQL-Stringargument mit eingebetteten Quotes
 (`'"public"."orders"'`), nicht den Identifier selbst. Die Implementierung
 nutzt dafür die vorhandene Identifier-Quoting-Logik aus 0.3.0 statt eine
 zweite Quoting-Variante im Writer zu erfinden.
+
+Wenn das Ziel eine `GENERATED ALWAYS AS IDENTITY`-Spalte enthält und diese
+Spalte importiert wird, muss der PG-Writer den Insert-Pfad mit
+`OVERRIDING SYSTEM VALUE` erzeugen; `BY DEFAULT` funktioniert auch ohne
+diesen Zusatz, darf aber vom Writer auf denselben Identity-Pfad gezogen
+werden.
 
 **Abschalten**: `--reseed-sequences=false` überspringt Schritt 1–3
 komplett. Default ist `true`. Begründung: stilles Auslassen wäre genau die
@@ -1294,9 +1364,11 @@ dass der eigentliche Reader sie noch sehen kann — der CSV-Parser zum Beispiel
 verschluckt das BOM nicht zuverlässig, wir müssen es selbst überspringen.
 
 Bei explizitem `--encoding utf-8|utf-16le|...` findet KEINE Auto-Detection
-statt, aber bekannte UTF-BOMs werden trotzdem konsumiert, damit sie nicht als
-erstes Zeichen in CSV/JSON/YAML landen. Das BOM überschreibt in diesem Pfad
-nicht das angeforderte Charset; es wird nur als Prefix entfernt.
+statt. Ein UTF-BOM wird in diesem Pfad nur dann konsumiert, wenn er zum
+angeforderten Charset passt; bei einem Mismatch (`--encoding iso-8859-1`,
+aber Datei beginnt mit UTF-8-BOM) bleiben die Bytes im Stream und werden
+nicht still „weginterpretiert". Das BOM überschreibt in diesem Pfad nie das
+angeforderte Charset.
 
 **Keine Heuristik** für Non-BOM-Dateien (chardet, ICU). Konkret bedeutet
 das:
@@ -1425,7 +1497,9 @@ MySQL-Versionen Alias-basiertes Update bevorzugen.
 
 `WriteResult` normalisiert dabei den Schreibeffekt pro Chunk auf
 `rowsInserted` und `rowsUpdated`, auch wenn einzelne JDBC-Treiber
-unterschiedliche Affected-Row-Konventionen haben.
+unterschiedliche Affected-Row-Konventionen haben. Für MySQL ist das
+verbindlich über die Batch-Rückgabewerte definiert: `1 -> inserted`,
+`2 -> updated`, `0 -> updated` (idempotenter No-Op auf bestehender Row).
 
 **Bewusst nicht enthalten** (F44):
 
@@ -1570,7 +1644,7 @@ liefert das `ImportResult` als JSON auf stdout.
 | `docs/cli-spec.md` §6.2 `data import` | Block REWRITE statt Extend: der heutige Kurzblock wird ersetzt, nicht um einen zweiten Import-Block ergänzt |
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
 | `docs/roadmap.md` | Milestone 0.4.0 als „in Arbeit" markieren bei Phase A; bei jedem abgeschlossenen Phase-Schritt aktualisieren |
-| `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen |
+| `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen, inkl. explizitem Hinweis: `database.default_source` wird für `data export` ab 0.4.0 wirksam (Behavior Change gegenüber 0.3.0) |
 
 ---
 
@@ -1676,6 +1750,7 @@ mitziehen:
 | `schema reverse` und Auto-Marker-Discovery für `--since-column` | 0.6.0 (LF-004) |
 | `--incremental` als Flag auf der Import-Seite | nie — F44, siehe §6.12.2; idempotenter Import läuft über `--on-conflict update` |
 | Auto-Mapping vom Dateinamen auf die Zieltabelle (`users.json` → `users`) | später (additiv) — F40, siehe §3.7.1; 0.4.0 verlangt explizit `--table` |
+| NDJSON / JSON Lines als Importformat | später (additiv); 0.4.0 akzeptiert nur Top-Level-JSON-Arrays |
 | Auto-detect Encoding ohne BOM (ICU/chardet) | nie — F45; User setzt `--encoding` für Non-UTF-Streams |
 | PG `COPY FROM` Performance-Pfad | 1.0.0 |
 | Tombstone-/Soft-Delete-Synchronisation für Inkrement | 1.0.0+ |
