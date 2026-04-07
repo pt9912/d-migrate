@@ -137,22 +137,26 @@ interface TableImportSession : AutoCloseable {
     /**
      * Autoritative Target-Spalten in Binding-Reihenfolge. Der Writer liest
      * sie beim Öffnen der Tabelle selbst über JDBC-Metadaten ein (§6.4).
-     * Der Importer benutzt diese Liste für Type-Hints und ggf. Reordering.
+     * Der Importer benutzt diese Liste für Type-Hints und Reorder-Mapping.
      */
     val targetColumns: List<ColumnDescriptor>
 
     /**
      * Schreibt einen Chunk im aktuellen Transaktionskontext.
      *
-     * Der Importer liefert Chunks in der Reihenfolge von [targetColumns].
-     * `chunk.columns` ist auf dem Import-Pfad nur noch Debug-/Report-Metadatum,
-     * nicht die Quelle für Bind-Indizes oder Typ-Hints.
+     * Vor `write(...)` normalisiert der Importer `chunk.columns` auf die
+     * tatsächlich im File vorhandene Target-Spalten-TEILMENGE in
+     * Target-Reihenfolge. Der Writer erzeugt seinen INSERT-Spalten-Block aus
+     * genau dieser Liste und lässt alle übrigen [targetColumns] weg, so dass
+     * DB-DEFAULTs erhalten bleiben.
      */
     fun write(chunk: DataChunk): WriteResult
 
     /**
-     * Bestätigt den letzten geschriebenen Chunk und beginnt den nächsten.
-     * Implementiert das Chunk-Transaktionsmodell aus §6.5.
+     * Bestätigt den letzten geschriebenen Chunk. In JDBC mit
+     * `autoCommit=false` entspricht das semantisch exakt `conn.commit()`;
+     * ein „nächster Chunk" entsteht implizit durch die nächste
+     * Schreiboperation, nicht durch zusätzliche Session-Logik.
      */
     fun commitChunk()
 
@@ -188,6 +192,7 @@ data class WriteResult(
 )
 
 class ImportSchemaMismatchException(message: String) : RuntimeException(message)
+class UnsupportedTriggerModeException(message: String) : RuntimeException(message)
 ```
 
 #### 3.1.2 Erweiterung der bestehenden Registries
@@ -388,8 +393,9 @@ interface DataChunkReader : AutoCloseable {
      * Die im zurückgelieferten [DataChunk] enthaltenen `columns` sind
      * file-derived (nur Namen, `sqlTypeName = null`) und werden vom
      * Importer nur für Header-Validierung, Reorder-Mapping und Debugging
-     * verwendet. Vor `session.write(...)` normalisiert der Importer die
-     * Row-Reihenfolge auf `session.targetColumns`.
+     * verwendet. Vor `session.write(...)` normalisiert der Importer
+     * `chunk.columns` auf die tatsächlich gebundene Target-Teilmenge und die
+     * Row-Reihenfolge auf eben diese Binding-Liste.
      */
     fun nextChunk(chunkSize: Int): DataChunk?
 
@@ -426,6 +432,12 @@ interface DataChunkReaderFactory {
 | JSON | DSL-JSON's pull-Parser (`JsonReader.next()`/`getNextToken()`) — wir parsen das Top-Level-Array tokenweise und produzieren `DataChunk`s zu je `chunkSize` Objekten. Vor Beginn von Phase B gibt es einen Go/No-Go-Spike mit 100-MB-Fixture; wenn die Pull-API dabei keinen konstanten Speicherpfad liefert, wird die Library-Entscheidung VOR der Reader-Implementierung neu geöffnet. | Schlüssel des ersten Objekts; bei `[]` → `null` |
 | YAML | SnakeYAML Engine `Parse` API (Event-basiert). Der bestehende `Dump`-Pfad ist Tree-basiert; für das Lesen benutzen wir den Event-Stream-Pfad, der auch sehr große Sequenzen verträgt. | Schlüssel des ersten Mappings; bei `[]` → `null` |
 | CSV | uniVocity `CsvParser` mit `IterableResult` — schon nativ chunked. Wir wrappen das in unseren `DataChunkReader`-Vertrag. | Header-Zeile, sofern nicht `csvNoHeader = true` |
+
+Für JSON/YAML mit Objekt-/Mapping-Rows gilt zusätzlich: das Feldset der
+ersten Row ist für die Tabelle autoritativ. Später fehlende Schlüssel
+werden als SQL-`NULL` an den entsprechenden Bind-Slots materialisiert;
+zusätzliche, in der ersten Row unbekannte Schlüssel gelten als
+Schema-Mismatch dieser Row und laufen über die `--on-error`-Politik.
 
 #### 3.5.2 `ValueDeserializer`
 
@@ -471,6 +483,12 @@ sind SQL-NULL und leerer String im CSV-Defaultpfad bewusst NICHT verlustfrei
 unterscheidbar. Wer diese Unterscheidung braucht, muss beim Export und
 Import explizit einen Sentinel wie `--csv-null-string NULL` setzen.
 
+Primärer Typ-Anker ist dabei der JDBC-Typcode (`ResultSetMetaData` /
+`java.sql.Types`), nicht der rohe `sqlTypeName`-String. Dialektspezifische
+`sqlTypeName`-Werte (`int4` vs. `INT` vs. `INTEGER`) werden nur als
+sekundärer Hint normalisiert, damit PG/MySQL/SQLite nicht an reinen
+Treiber-Strings auseinanderlaufen.
+
 Array-/Treiberobjekte werden bewusst NICHT in `d-migrate-formats` erzeugt.
 `formats` bleibt JDBC-frei; konkrete `java.sql.Array`- oder PG-`PGobject`-
 Materialisierung passiert erst im Writer-Layer.
@@ -479,6 +497,8 @@ ImportOptions enthält für 0.4.0 mindestens die reader-/writerrelevanten
 Schalter aus diesem Plan (`triggerMode`, `csvNoHeader`, `csvNullString`,
 `encoding`, `reseedSequences`, `disableFkChecks`, `truncate`,
 `onConflict`, `onError`).
+`chunkSize` gehört bewusst NICHT hier hinein, sondern bleibt in
+`PipelineConfig(chunkSize = ...)` wie im 0.3.0-Exportpfad.
 
 ### 3.6 `d-migrate-streaming`
 
@@ -507,7 +527,7 @@ Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
   3. Importer ruft `firstChunk = reader.nextChunk(...)`
   4. Danach ist `reader.headerColumns()` deterministisch verfügbar
   5. Importer baut aus `headerColumns()` und `session.targetColumns` das
-     Reorder-Mapping
+     Reorder-Mapping und die gebundene Spalten-Teilmenge für diese Tabelle
   6. Header-Mismatch wird HIER als `ImportSchemaMismatchException`
      geworfen, bevor der erste `session.write(...)` läuft
   7. Erst danach schreibt der Importer `firstChunk` (falls nicht `null`)
@@ -516,12 +536,15 @@ Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
   und denselben Datensatz anschließend regulär als Teil von `firstChunk`
   zurückgeben
 - Pro Tabelle: `reader.nextChunk()` → Importer normalisiert/castet die Row-
-  Reihenfolge auf `session.targetColumns` → `session.write(chunk)` → bei Erfolg
+  Reihenfolge auf die gebundene Spalten-Teilmenge und setzt `chunk.columns`
+  auf genau diese Liste → `session.write(chunk)` → bei Erfolg
   `session.commitChunk()`, bei Fehler `session.rollbackChunk()` plus
   `--on-error`-Auswertung
 - `commitChunk()` und `rollbackChunk()` kapseln dabei die eigentlichen
-  JDBC-`commit()`/`rollback()`-Operationen; der Importer arbeitet nur gegen
-  den Session-Vertrag, nicht direkt gegen `Connection`
+  JDBC-`commit()`/`rollback()`-Operationen; `commitChunk()` ist also
+  semantisch nur `conn.commit()` ohne zusätzliche Session-State-Maschine.
+  Der Importer arbeitet nur gegen den Session-Vertrag, nicht direkt gegen
+  `Connection`
 - Pro Tabelle wird genau eine `TableImportSession` über alle Chunks hinweg
   benutzt — bei erfolgreichem Tabellenabschluss ruft der Importer
   `session.finishTable()` auf; `session.close()` bleibt reiner Cleanup-Pfad
@@ -531,6 +554,10 @@ Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
   `SchemaSync.disableTriggers(...)` auf. Gleiches gilt für
   `SchemaSync.assertNoUserTriggers(...)` im `strict`-Modus.
 - Multi-Tabellen-Imports laufen sequentiell; Parallelisierung ist 1.0.0
+- Es gibt auch bei Directory-/Multi-Table-Imports KEINE Gesamt-Atomarität:
+  wenn Tabelle 3 scheitert, bleiben erfolgreich abgeschlossene Tabellen 1
+  und 2 persistiert; Tabelle 3 folgt weiter dem chunkweisen Teil-Erfolg
+  aus §6.5
 - `ImportInput` ist eine sealed class analog zu `ExportOutput`. Das CLI muss
   vor der Konstruktion entscheiden, in welche Zieltabelle die Daten gehören
   — `--table` (singular, Pflicht) für Stdin und SingleFile, `--tables`
@@ -617,6 +644,10 @@ class DataImportCommand : CliktCommand(name = "import") {
     val chunkSize by option("--chunk-size").int().default(10_000)
 }
 ```
+
+`chunkSize` wird im Command bewusst über
+`PipelineConfig(chunkSize = chunkSize)` an `StreamingImporter.import(...)`
+durchgereicht, nicht über `ImportOptions`.
 
 **`--table` vs `--tables` Auflösungsregeln** (F40):
 
@@ -808,7 +839,8 @@ Schritt, der beide Pfade zusammenführt.
 13. `SchemaSync` Interface + `SequenceAdjustment`
 14. `DataWriterRegistry` (object) mit `clear()` für Tests
 15. `PostgresDataWriter` + `PostgresSchemaSync` (setval, ALTER TABLE
-    DISABLE TRIGGER USER)
+    DISABLE TRIGGER USER, inkl. Test für
+    `pg_get_serial_sequence('"schema"."table"', 'col')`-Quoting)
 16. `MysqlDataWriter` + `MysqlSchemaSync` (ALTER TABLE … AUTO_INCREMENT,
     `disable` → UnsupportedTriggerModeException; `rewriteBatchedStatements`
     im echten Writer-Pfad verifizieren)
@@ -822,7 +854,8 @@ Schritt, der beide Pfade zusammenführt.
 20. `ImportInput` sealed class (Stdin / SingleFile / Directory)
 21. `ImportResult` + `TableImportSummary`
 22. Chunk-Transaktionsmodell (§6.5) mit `--on-error`-Politik
-23. Round-Trip-Tests gegen SQLite (kein Container nötig)
+23. Streaming-Layer-Tests gegen SQLite (direkter `StreamingImporter`,
+    kein CLI-Wrapper, kein Container nötig)
 
 ### Phase E: CLI-Integration
 
@@ -966,8 +999,8 @@ SELECT * FROM "schema"."table" WHERE 1=0
 
 und liest `ResultSetMetaData` aus. Daraus entsteht die
 `List<ColumnDescriptor>` in `session.targetColumns`, die für
-PreparedStatement-Bindings, Type-Hints beim `ValueDeserializer` und für die
-Aufteilung der Insert-Spalten benutzt wird.
+PreparedStatement-Type-Hints beim `ValueDeserializer` und als Referenz für
+die Ableitung der tatsächlich gebundenen Insert-Spalten benutzt wird.
 
 **Was der Reader beiträgt**: nur die `headerColumns()` aus §3.5.1 — eine
 Liste von Spaltennamen, die das File explizit kennt. Daraus
@@ -977,13 +1010,22 @@ entsteht eine **Header-Validierung**, kein Typ-System:
    mindestens einem Objekt), muss jeder Header-Name eine EXAKT gleich
    geschriebene Spalte in der Zieltabelle haben. Es gibt keine
    Case-Folding-Heuristik über Dialekte hinweg. Ein Fehler nennt die
-   fehlende Spalte und, wenn eindeutig bestimmbar, den nächsten Treffer
-   aus dem Target (`column 'userId' has no exact match; closest target:
-   'userid'`). Zusätzliche Spalten im Target sind erlaubt und bekommen
-   DEFAULT-Werte oder NULL.
+   fehlende Spalte; ein „closest target"-Vorschlag ist nur ein
+   BEST-EFFORT-Hinweis und darf entfallen, wenn kein günstig eindeutig
+   bestimmbarer Kandidat existiert. Zusätzliche Spalten im Target sind
+   erlaubt; Spalten, die im File über die ganze Tabelle hinweg fehlen,
+   werden aus dem INSERT-Spaltenblock weggelassen und bekommen dadurch
+   DB-DEFAULT-Werte oder NULL.
    Danach baut der Importer genau einmal pro Tabelle ein Mapping
    `headerColumns()[i] -> targetColumns[j]` und reordert jede Row vor
-   `session.write(...)` in Target-Reihenfolge.
+   `session.write(...)` in Binding-Reihenfolge der tatsächlich
+   gebundenen Spalten-Teilmenge.
+   Bei JSON/YAML ist das Header-Schema der ersten Row autoritativ: fehlen
+   in späteren Rows bekannte Felder, werden deren Bind-Slots mit SQL-`NULL`
+   gefüllt; tauchen später zusätzliche, zuvor unbekannte Felder auf, ist
+   das ein `ImportSchemaMismatchException` für diese Row und folgt
+   `--on-error`. Verletzt ein so materialisiertes `NULL` eine NOT-NULL- oder
+   Constraint-Regel im Ziel, greift der normale Chunk-Fehlerpfad aus §6.5.
 2. Wenn `headerColumns()` `null` ist (leeres JSON-/YAML-Array, oder
    `csvNoHeader = true`), wird die Header-Validierung übersprungen — dann
    muss die Reihenfolge der `Array<Any?>`-Werte im Chunk implizit der
@@ -1006,9 +1048,10 @@ entsteht eine **Header-Validierung**, kein Typ-System:
 > `sqlTypeName` — diese Information existiert in den drei Format-Dateien
 > nicht. Alle Typ-bezogenen Entscheidungen (Casting, Bind-Index,
 > Nullability-Check) hängen am Target-Schema, nie am File.
-> `TableImportSession.write()` arbeitet deshalb nur gegen
-> `session.targetColumns`. Bei JSON/YAML/CSV mit Header sorgt der Importer
-> für das Reordering; bei headerlosen Inputs gilt der positionale Vertrag.
+> `TableImportSession.write()` arbeitet deshalb gegen den vom Importer
+> normalisierten `chunk.columns`-Subset in Target-Reihenfolge; die
+> vollständigen `session.targetColumns` bleiben Referenz für Typ-Hints und
+> Header-Mapping. Bei headerlosen Inputs gilt der positionale Vertrag.
 
 ### 6.5 Chunk-Transaktionsmodell
 
@@ -1028,6 +1071,11 @@ nichts" auf Tabellen-Ebene — das wäre ein Checkpoint/Resume-Problem (LN-012,
 0.9.0). Einen generischen atomaren Tabellen-Import über mehrere Chunks gibt
 es in 0.4.0 bewusst NICHT; wer dieses Verhalten braucht, wartet auf den
 späteren `--replace-table`-Pfad aus §6.14/§11.
+
+Dasselbe gilt eine Ebene höher für Multi-Tabellen-Imports: bereits
+erfolgreich abgeschlossene Tabellen bleiben stehen, wenn eine spätere
+Tabelle scheitert. 0.4.0 kennt keine transaktionsübergreifende
+„alles-oder-nichts"-Klammer über mehrere Tabellen.
 
 **Wichtig 2**: `skip` und `log` sind in 0.4.0 bewusst **keine
 Row-Recovery-Modi**. Wenn eine Row einen Chunk scheitern lässt, gehen die
@@ -1079,7 +1127,7 @@ Direkter Übernahme des Vertrags aus `design-import-sequences-triggers.md`
 |---|---|---|---|
 | `fire` (Default) | nativ | nativ | nativ |
 | `disable` | `ALTER TABLE ... DISABLE TRIGGER USER` pro Tabelle | **nicht unterstützt** → Exit 2 | **nicht unterstützt** → Exit 2 |
-| `strict` | Tabelle hat Trigger? → Exit 2 mit Hinweis | dito | dito |
+| `strict` | Tabelle hat Trigger? → Exit 3 mit Hinweis | dito | dito |
 
 `disable` ist **explizit nicht** über `session_replication_role = replica`
 implementiert (zu breit, Sicherheitsrisiko). Pro Tabelle `ALTER TABLE`
@@ -1089,7 +1137,7 @@ wird der Zustand symmetrisch zurückgeführt.
 
 `strict` benutzt `SchemaSync.assertNoUserTriggers(...)` als writer-internen
 Pre-Flight (dialektspezifisch gegen `pg_trigger`/`information_schema.triggers`/
-`sqlite_master`) und bricht ab, wenn die Tabelle Trigger hat.
+`sqlite_master`) und bricht mit Exit 3 ab, wenn die Tabelle Trigger hat.
 Der Name meint hier also **Sicherheits-Pre-Flight**, nicht einen
 „strengeren Trigger-Modus" zur Laufzeit.
 
@@ -1175,6 +1223,12 @@ laufen dann in deterministischer lexikographischer Reihenfolge der
 Datei-/Tabellennamen. Für FK-abhängige Datensätze ist `--schema` damit
 praktisch Pflicht; der CLI-Help-Text soll das explizit empfehlen.
 
+Wenn zusätzlich `--tables a,b,c` gesetzt ist, wird die Reihenfolge aus dem
+vollständigen Schema-DAG abgeleitet und danach auf das gewünschte Subset
+gefiltert. Der Plan schließt also keine Kanten „weg", nur weil der User
+einen Teilgraphen importieren will; fehlende Abhängigkeitstabellen werden
+dadurch aber nicht automatisch mitimportiert.
+
 Wenn zusätzlich `--truncate` gesetzt ist, wird die Reihenfolge pro Tabelle
 für Single-Table-Imports als `truncate/delete -> import -> finishTable`
 auf derselben Session-Connection gefahren.
@@ -1240,7 +1294,7 @@ ist, fällt der Detector auf UTF-8 zurück und protokolliert eine Hinweis-
 Zeile auf stderr (`Hint: input file has no BOM, using UTF-8. Set --encoding
 to override.`). Das verhindert, dass ein still falsch dekodierter ISO-8859-1-
 Import als „funktioniert" durchgewunken wird, ohne dass jemand Mojibake
-bemerkt.
+bemerkt. Unter `--quiet` wird dieser reine Hinweis unterdrückt.
 
 ### 6.10 Getrennte Reader/Writer-Registries
 
@@ -1262,7 +1316,7 @@ eine zusammengelegte `DataAdapterRegistry` mit beiden Maps — aber:
 | `0` | Erfolgreicher Import, alle Tabellen geschrieben | `Imported 3 tables (12 345 inserted, 1 200 updated) in 4.2 s; reseeded 2 sequences` |
 | `1` | Unerwarteter interner Fehler / ungefangene Exception | `Unexpected error while importing table 'orders'` |
 | `2` | CLI-Fehler, ungültige Optionen, fehlendes `--target` oder `--table`, `--trigger-mode disable` auf MySQL/SQLite, `--disable-fk-checks` auf PG, unbekannte Endung ohne `--format`, `--truncate` zusammen mit explizitem `--on-conflict`, PK-lose Tabelle mit `--on-conflict update` | `--trigger-mode disable is not supported for dialect MYSQL` |
-| `3` | Header-/Target-Schema-Mismatch oder Schema-Validierung gegen `--schema <path>` fehlgeschlagen | `column 'userId' has no exact match; closest target: 'userid'` |
+| `3` | Header-/Target-Schema-Mismatch, `trigger-mode strict` mit gefundenen Triggern oder Schema-Validierung gegen `--schema <path>` fehlgeschlagen | `column 'userId' has no exact match` |
 | `4` | Connection-Fehler (HikariCP, fehlendes Target) | `Connection refused: localhost:5432` |
 | `5` | Import-Fehler während Streaming (SQL-Constraint-Verletzung, IO-Exception, Sequence-Reseeding gescheitert) | `Failed to import table 'orders' at chunk 47: duplicate key value violates unique constraint` |
 | `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml`, fehlende ENV-Variable) | wie 0.3.0 |
@@ -1572,6 +1626,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 | **`--truncate` löscht produktive Daten** ohne Rückfrage | `--yes` Pflicht im non-interaktiven Modus; cli-spec.md §8 dokumentiert das schon |
 | **Inkrementeller Import läuft mehrfach und führt zu doppelten UPSERTs** (= idempotent, also OK) — aber der User bekommt kein Feedback, dass nichts geändert wurde | `WriteResult.rowsInserted` vs `rowsUpdated` getrennt zählen und im Report ausgeben |
 | **`ParameterizedClause` aus User-Eingabe** wird falsch parametrisiert | Strikte Identifier-Validierung für `--since-column` (gleiches Pattern wie `--tables`); `--since` wird typisiert gebunden, kein String-Concat |
+| **JDBC-Treiber liefern unterschiedliche `sqlTypeName`-Strings** | `ValueDeserializer` normiert primär über JDBC-Typcodes und nutzt `sqlTypeName` nur als sekundären Dialekt-Hint; Dialekt-Tests decken PG/MySQL/SQLite explizit ab |
 
 ---
 
