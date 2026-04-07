@@ -147,7 +147,10 @@ interface TableImportSession : AutoCloseable {
      * tatsächlich im File vorhandene Target-Spalten-TEILMENGE in
      * Target-Reihenfolge. Der Writer erzeugt seinen INSERT-Spalten-Block aus
      * genau dieser Liste und lässt alle übrigen [targetColumns] weg, so dass
-     * DB-DEFAULTs erhalten bleiben.
+     * DB-DEFAULTs erhalten bleiben. Weicht `chunk.columns` von der beim
+     * Session-Start abgeleiteten Binding-Liste ab, ist das ein harter
+     * Programmierfehler und der Writer darf früh mit `IllegalStateException`
+     * abbrechen.
      */
     fun write(chunk: DataChunk): WriteResult
 
@@ -161,7 +164,11 @@ interface TableImportSession : AutoCloseable {
 
     /**
      * Verwirft den letzten geschriebenen Chunk. Idempotent, kein
-     * Rückgabewert.
+     * Rückgabewert. Mehrfaches `rollbackChunk()` ohne dazwischenliegenden
+     * neuen `write(...)`-Aufruf ist ein No-op; nach einem erfolgreichen
+     * `commitChunk()` ist ein nachträgliches `rollbackChunk()` ebenfalls
+     * ein No-op und darf nicht mit einer eigenen Session-State-Maschine
+     * scheitern.
      */
     fun rollbackChunk()
 
@@ -179,9 +186,12 @@ interface TableImportSession : AutoCloseable {
      * anschließenden `close()`-Cleanup-Pfads. Es gibt bewusst keine zweite
      * Erfolgs-/Fehler-Statusmaschine nur für `finishTable()`.
      * Wenn Schritt 2 wirft, gelten die Adjustments aus Schritt 1 als nicht
-     * erfolgreich reportbar: sie werden nicht zurückgegeben, der Tabellen-
-     * Import schlägt fehl und `close()` versucht `enableTriggers(...)`
-     * idempotent erneut.
+     * erfolgreich reportbar: sie werden nicht regulär zurückgegeben, der
+     * Tabellen-Import schlägt fehl und `close()` versucht
+     * `enableTriggers(...)` idempotent erneut. Die bereits berechneten
+     * Adjustments MÜSSEN dann zumindest in die Exit-5-Fehlermeldung bzw.
+     * stderr-Hinweise aufgenommen werden, damit der tatsächlich geänderte
+     * DB-Status nicht unsichtbar bleibt.
      *
      * Darf NUR nach erfolgreichem Schreiben aller Chunks aufgerufen werden.
      */
@@ -727,6 +737,11 @@ durchgereicht, nicht über `ImportOptions`.
 `--yes` wird wie in 0.3.0 vom gemeinsamen Root-/Confirmations-Pfad
 bereitgestellt und erscheint deshalb nicht noch einmal lokal im
 `DataImportCommand`-Snippet.
+`--truncate` plus explizites `--on-conflict abort` bleibt in 0.4.0
+bewusst Exit 2: der Effektivpfad wäre zwar derselbe wie beim impliziten
+Default, aber der explizite Konflikt-Flag auf einem zuvor geleerten Ziel
+gilt hier als User-Intent-Signal, dass die gewählte Kombination fachlich
+missverstanden wurde. Dieser Hinweis gehört in den CLI-Help-Text.
 
 **`--table` vs `--tables` Auflösungsregeln** (F40):
 
@@ -910,8 +925,10 @@ Phase B explizit neu entschieden statt still fortgeschrieben.
    Test für `Compound([WhereClause, ParameterizedClause])` mit korrekter
    SQL-Erzeugung und Parameter-Positionsbindung
 6. Go/No-Go-Spike für DSL-JSON Pull-Parsing auf einem 100-MB-Top-Level-Array
-   mit konstantem Speicherbudget; bei Fehlschlag wird die JSON-Library-
-   Entscheidung vor Phase B neu geöffnet
+   mit konstantem Speicherbudget; der Spike verifiziert dabei zusätzlich,
+   dass die für §3.5.2 benötigte Integer-vs-Decimal-Diskriminierung auf
+   Token-Ebene zuverlässig verfügbar ist. Bei Fehlschlag wird die JSON-
+   Library-Entscheidung vor Phase B neu geöffnet
 
 ### Phase B: Format-Reader
 
@@ -1223,9 +1240,13 @@ Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
    ermitteln (`SELECT MAX(col) FROM target` direkt nach dem letzten Commit
    auf derselben Session-Connection; ohne zusätzliche cross-session-
    Garantien — siehe §10)
-3. Sequence/AUTO_INCREMENT/sqlite_sequence auf den nächsten gültigen Wert
-   anheben
-4. Ein `SequenceAdjustment` ins `ImportResult` aufnehmen
+3. Ergibt `MAX(col)` dabei `NULL` (leere Tabelle oder nur NULL-Werte in der
+   Generator-Spalte), ist der Reseed-Pfad ein expliziter No-op: keine
+   `setval`-/`AUTO_INCREMENT`-/`sqlite_sequence`-Änderung und kein
+   `SequenceAdjustment` im Report
+4. Sonst Sequence/AUTO_INCREMENT/sqlite_sequence auf den nächsten gültigen
+   Wert anheben
+5. Ein `SequenceAdjustment` ins `ImportResult` aufnehmen
 
 Für PostgreSQL gilt zusätzlich: `pg_get_serial_sequence(...)` erwartet den
 qualifizierten Tabellennamen als SQL-Stringargument mit eingebetteten Quotes
@@ -1420,6 +1441,10 @@ aber Datei beginnt mit UTF-8-BOM) bleiben die Bytes im Stream und werden
 nicht still „weginterpretiert". Das BOM überschreibt in diesem Pfad nie das
 angeforderte Charset.
 
+Ungültige Charset-Namen (`--encoding latin42`) führen in 0.4.0 zu Exit 2
+mit klarer Meldung aus dem `Charset.forName(...)`-Pfad
+(`unsupported encoding: latin42`).
+
 **Keine Heuristik** für Non-BOM-Dateien (chardet, ICU). Konkret bedeutet
 das:
 
@@ -1460,7 +1485,7 @@ eine zusammengelegte `DataAdapterRegistry` mit beiden Maps — aber:
 
 | Code | Trigger | Beispiel-Meldung |
 |---|---|---|
-| `0` | Erfolgreicher Import, alle Tabellen geschrieben | `Imported 3 tables (12 345 inserted, 1 200 updated) in 4.2 s; reseeded 2 sequences` |
+| `0` | Erfolgreicher Import, alle Tabellen geschrieben | `Imported 3 tables (12 345 inserted, 1 200 updated, 0 failed) in 4.2 s; reseeded 2 sequences` |
 | `1` | Unerwarteter interner Fehler / ungefangene Exception | `Unexpected error while importing table 'orders'` |
 | `2` | CLI-Fehler, ungültige Optionen, fehlendes `--target` oder `--table`, `--trigger-mode disable` auf MySQL/SQLite, `--disable-fk-checks` auf PG, unbekannte Endung ohne `--format`, `--truncate` zusammen mit explizitem `--on-conflict`, PK-lose Tabelle mit `--on-conflict update` | `--trigger-mode disable is not supported for dialect MYSQL` |
 | `3` | Header-/Target-Schema-Mismatch, `trigger-mode strict` mit gefundenen Triggern oder Schema-Validierung gegen `--schema <path>` fehlgeschlagen | `column 'userId' has no exact match` |
@@ -1469,7 +1494,8 @@ eine zusammengelegte `DataAdapterRegistry` mit beiden Maps — aber:
 | `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml`, fehlende ENV-Variable) | wie 0.3.0 |
 
 Code 3 ist in 0.3.0 für `data export` nicht relevant gewesen, kommt hier
-für die Schema-Validierung zurück (analog zu `schema validate` aus 0.1.0).
+als allgemeiner **Pre-Flight-Verstoß vor dem ersten Insert** zurück
+(analog zu `schema validate` aus 0.1.0).
 Bei Exit 5 nach bereits geschriebenen Daten (z.B. Sequence-Reseeding oder
 Trigger-Reenable scheitert) muss die Fehlermeldung explizit sagen, dass die
 Daten schon committed sind und ein manueller Post-Import-Fix nötig ist.
@@ -1541,6 +1567,11 @@ erkannt, ähnlich wie der Spalten-Hint in §6.4. Composite-PKs sind unterstützt
 PK-lose Tabellen können **nicht** mit `--on-conflict update` importiert
 werden → Exit 2 mit klarer Meldung.
 
+Für schema-qualifizierte Namen (`public.orders`) muss der Writer/Importer
+dabei Schema und Tabellenname vor dem `getPrimaryKeys(catalog, schema, table)`-
+Aufruf sauber trennen. Phase C/F enthält dafür explizit einen PG-Test mit
+nicht-`public`-Schema und Composite-PK.
+
 Wichtiger Dialekt-Unterschied: PostgreSQL/SQLite binden den Konflikt-Target
 explizit an den erkannten PK; MySQLs `ON DUPLICATE KEY UPDATE` feuert dagegen
 auf JEDEM verletzten Unique-Index. Diese Asymmetrie wird dokumentiert, nicht
@@ -1555,6 +1586,11 @@ MySQL-Versionen Alias-basiertes Update bevorzugen.
 unterschiedliche Affected-Row-Konventionen haben. Für MySQL ist das
 verbindlich über die Batch-Rückgabewerte definiert: `1 -> inserted`,
 `2 -> updated`, `0 -> updated` (idempotenter No-Op auf bestehender Row).
+Liefert der Treiber stattdessen `Statement.SUCCESS_NO_INFO (-2)`, fällt die
+saubere Trennung für diesen Batch weg: 0.4.0 zählt den Batch dann
+konservativ als `rowsInserted += chunk.size` und meldet im Report einen
+Hinweis, dass Insert/Update für diesen MySQL-Batch nicht exakt
+unterscheidbar waren.
 
 **Bewusst nicht enthalten** (F44):
 
@@ -1671,7 +1707,7 @@ Der `ImportResult` wird vom CLI als ProgressSummary (analog `data export`)
 auf stderr ausgegeben:
 
 ```
-Imported 3 tables (12 345 inserted, 1 200 updated, 1 245 skipped) in 4.2 s
+Imported 3 tables (12 345 inserted, 1 200 updated, 1 245 skipped, 0 failed) in 4.2 s
   customers: 5 000 inserted, 0 updated, 0 skipped, 0 failed
   orders:    6 000 inserted, 1 200 updated, 1 245 skipped, 0 failed
   products:    145 inserted, 0 updated, 0 skipped, 0 failed
@@ -1699,6 +1735,7 @@ liefert das `ImportResult` als JSON auf stdout.
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
 | `docs/roadmap.md` | Milestone 0.4.0 als „in Arbeit" markieren bei Phase A; bei jedem abgeschlossenen Phase-Schritt aktualisieren |
 | `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen, inkl. explizitem Hinweis: `database.default_source` wird für `data export` ab 0.4.0 wirksam (Behavior Change gegenüber 0.3.0) |
+| `docs/cli-spec.md` Help-Texte | Explizit erwähnen: bei JSON/YAML werden fehlende bekannte Schlüssel als `NULL` materialisiert; bei MySQL ist Header-Matching bewusst case-sensitiv trotz DB-seitiger Toleranz; `--truncate` + explizites `--on-conflict abort` wird als missverständliche Kombination abgelehnt |
 
 ---
 
@@ -1750,6 +1787,8 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
    - Tabelle mit 100 Rows, höchste ID = 100, importieren
    - Anschließend `INSERT INTO ... DEFAULT VALUES` muss ID 101 vergeben,
      nicht 1 oder 2 (wäre der Fall ohne Reseeding)
+   - Zusätzlicher Fall: leerer Import bzw. `MAX(col) = NULL` führt zu
+     keinem Reseed und keinem `SequenceAdjustment`
 4. **Trigger-Modus-Verifikation**:
    - Tabelle mit `BEFORE INSERT`-Trigger, der `value = value * 2` setzt
    - PG-Fixture enthält dafür eine echte `plpgsql`-Funktion plus
@@ -1770,6 +1809,11 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
      ist (NICHT wieder mit den 1000 Rows gefüllt). Der Test schützt damit
      das in §6.14 dokumentierte Verhalten gegen versehentliche Atomarisierung
      in einer späteren Refactoring-Runde.
+6. **MySQL UPSERT-Accounting-Verifikation**:
+   - Batch-Import mit `--on-conflict update` gegen MySQL
+   - Test deckt sowohl per-Row-Counts als auch `SUCCESS_NO_INFO (-2)` ab
+   - Bei `-2` muss der Report den Fallback-Hinweis auf nicht exakt
+     trennbare Inserts/Updates enthalten
 
 ---
 
@@ -1779,6 +1823,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 |---|---|
 | **Streaming-Reader leakt Speicher** bei großen Eingaben | Phase B Schritt 7: 100-MB-Heap-Sample-Test pro Reader |
 | **Sequence-Reseeding race** zwischen Import-Ende und nächster INSERT | PG verwendet das normale nicht-mutierende `setval(seq, maxImported, true)`-Muster ohne `nextval()`-Side-Effect; der Plan beansprucht bewusst KEINE cross-session-Serialisierung. MySQL bleibt bei `ALTER TABLE ... AUTO_INCREMENT`. |
+| **MySQL liefert `SUCCESS_NO_INFO (-2)` statt per-Row-Counts** | Fallback: Batch konservativ als inserted zählen, Hinweis im Report ausgeben; Phase F testet den degradierten Accounting-Pfad explizit |
 | **Trigger-Reaktivierung scheitert** nach Fehler im Import | Design-Doc §7.3: harter Fehler mit Tabellen-Name; `close()` versucht trotz vorheriger Exceptions die Reaktivierung, aber nie das Reseeding |
 | **`--on-conflict update` ohne PK** wird stillschweigend zu Insert | Pre-Flight-Check via `DatabaseMetaData.getPrimaryKeys()`; Tabelle ohne PK + `update` → Exit 2 |
 | **Encoding-Auto-Fallback verschluckt Mojibake** | Wenn `auto` ohne BOM auf UTF-8 fällt, stderr-Hinweis ausgeben; in den Tests prüfen, dass ISO-8859-1 ohne expliziten Flag mit „Decoding error"-Meldung scheitert |
