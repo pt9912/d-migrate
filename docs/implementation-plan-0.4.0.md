@@ -120,6 +120,27 @@ interface DataWriter {
      * Plan 0.3.0). Die Connection wird in der Session gehalten und beim
      * `close()` zurückgegeben.
      *
+     * **Cleanup-Vertrag (H1)**: `openTable(...)` führt schon vor dem
+     * `return session` dialektspezifische Side-Effects aus — namentlich
+     * `disableTriggers(...)` (bei `triggerMode = disable`) und das
+     * `assertNoUserTriggers(...)`-Pre-Flight (bei `triggerMode = strict`).
+     * Wirft die Methode danach noch — etwa weil `prepareStatement(...)`
+     * scheitert oder die JDBC-Metadatenabfrage einen späten Fehler liefert
+     * — bekommt der Caller **keine Session** zurück und kann `close()`
+     * folglich nicht aufrufen. Der Writer MUSS solche Pfade intern in
+     * `try { ... } catch (t) { ... }` wrappen und vor dem `throw`:
+     *
+     * 1. `enableTriggers(...)` idempotent erneut aufrufen, wenn
+     *    `disableTriggers(...)` in dieser Methode bereits gelaufen ist
+     * 2. die ausgeliehene Connection an den Pool zurückgeben
+     * 3. ggf. `autoCommit` zurücksetzen, falls bereits umgeschaltet
+     *
+     * Erst danach darf die ursprüngliche Exception weiterreichen. Ohne
+     * diesen Wrapper bliebe die Tabelle in einem inkonsistenten
+     * Trigger-Zustand stehen und es gäbe niemanden mehr, der das aufräumen
+     * könnte — ein hartes Recovery-Loch, das nicht durch `session.close()`
+     * abgedeckt ist.
+     *
      * @throws ImportSchemaMismatchException bei Target-seitigen
      *   Metadaten-/Schemafehlern (z.B. Tabelle nicht vorhanden oder
      *   unlesbare Spaltenmetadaten). Header-/Chunk-Mismatch wird erst im
@@ -132,6 +153,35 @@ interface DataWriter {
     ): TableImportSession
 }
 
+/**
+ * **Session-State-Maschine (M1)**:
+ *
+ * ```
+ *               write(chunk)         commitChunk() | rollbackChunk()
+ *   OPEN ─────────────────────► WRITTEN ─────────────────────► OPEN
+ *    │                             │
+ *    │                             │ finishTable() (nur aus OPEN!)
+ *    ▼                             ▼
+ *  CLOSED ◄───── close() ─── FINISHED
+ *                                  │
+ *                                  └─► CLOSED via close()
+ * ```
+ *
+ * - `OPEN`: frisch nach `openTable(...)` oder nach erfolgreichem
+ *   commit/rollback. Erlaubt: `write(...)`, `finishTable()`, `close()`.
+ * - `WRITTEN`: nach einem erfolgreichen `write(...)`. Erlaubt:
+ *   `commitChunk()`, `rollbackChunk()`, `close()`. Ein zweiter `write(...)`
+ *   ohne dazwischenliegenden Commit/Rollback ist ein State-Fehler.
+ * - `FINISHED`: nach erfolgreichem `finishTable()`. Erlaubt nur noch
+ *   `close()`.
+ * - `CLOSED`: terminal. Jeder weitere Aufruf außer `close()` (idempotent)
+ *   wirft `IllegalStateException`.
+ *
+ * Jeder Pfad, der gegen diese State-Maschine verstößt, ist ein
+ * Importer-Bug, KEIN tolerierter Edge-Case. Die Streaming-Layer-Tests in
+ * Phase D fahren die State-Maschine mit einem Fake Writer ab, sodass
+ * Container-Tests in Phase F nicht erst die echten Bugs finden müssen.
+ */
 interface TableImportSession : AutoCloseable {
     /**
      * Autoritative Target-Spalten in Binding-Reihenfolge. Der Writer liest
@@ -151,6 +201,15 @@ interface TableImportSession : AutoCloseable {
      * Session-Start abgeleiteten Binding-Liste ab, ist das ein harter
      * Programmierfehler und der Writer darf früh mit `IllegalStateException`
      * abbrechen.
+     *
+     * **M2 — Allocation-Profil**: Die Reorder-Normalisierung erzeugt heute
+     * pro Chunk einen neuen `DataChunk` plus pro Row ein neues
+     * `Array<Any?>`. Diese Kosten werden in Phase C Schritt 23 explizit
+     * profiliert; falls sie spürbar werden, gibt es einen additiven
+     * `write(reorderedRows, bindingColumns)`-Pfad, der `DataChunk` im
+     * Hot-Path ganz vermeidet (siehe §10 M2). 0.4.0 startet aber bewusst
+     * mit der einfacheren `DataChunk`-API und entscheidet die Optimierung
+     * messungsbasiert.
      */
     fun write(chunk: DataChunk): WriteResult
 
@@ -159,43 +218,68 @@ interface TableImportSession : AutoCloseable {
      * `autoCommit=false` entspricht das semantisch exakt `conn.commit()`;
      * ein „nächster Chunk" entsteht implizit durch die nächste
      * Schreiboperation, nicht durch zusätzliche Session-Logik.
+     *
+     * **State-Maschine (M1)**: erwartet `state == WRITTEN`. Aus jedem
+     * anderen Zustand (`OPEN` ohne Write, `COMMITTED` direkt hintereinander,
+     * `CLOSED`) wirft `commitChunk()` `IllegalStateException`. Nach
+     * erfolgreicher Bestätigung wechselt der Zustand zu `OPEN`, sodass der
+     * nächste `write(...)` wieder regulär `WRITTEN` setzt.
      */
     fun commitChunk()
 
     /**
-     * Verwirft den letzten geschriebenen Chunk. Idempotent, kein
-     * Rückgabewert. Mehrfaches `rollbackChunk()` ohne dazwischenliegenden
-     * neuen `write(...)`-Aufruf ist ein No-op; nach einem erfolgreichen
-     * `commitChunk()` ist ein nachträgliches `rollbackChunk()` ebenfalls
-     * ein No-op und darf nicht mit einer eigenen Session-State-Maschine
-     * scheitern.
+     * Verwirft den letzten geschriebenen Chunk.
+     *
+     * **State-Maschine (M1)**: erwartet `state == WRITTEN`. Mehrfacher
+     * Aufruf ohne dazwischenliegenden neuen `write(...)`-Aufruf wirft
+     * `IllegalStateException`; ein `rollbackChunk()` nach erfolgreichem
+     * `commitChunk()` wirft ebenfalls `IllegalStateException`. Diese
+     * Strenge ist Absicht (Finding M1): Importer-Bugs in der State-
+     * Maschine sollen schon im Phase-D-Streaming-Test (Fake Writer)
+     * auffallen, nicht erst in den Phase-F-Containertests.
+     *
+     * Nach erfolgreichem Rollback wechselt der Zustand zu `OPEN`. Die
+     * Connection bleibt im normalen `autoCommit=false`-Importzustand;
+     * Statement/Session können für den nächsten Chunk weiterverwendet
+     * werden.
      */
     fun rollbackChunk()
 
     /**
      * Regulärer Erfolgsabschluss einer Tabelle: führt etwaige
      * Sequence-/Identity-Nachführung (§6.6) aus, reaktiviert ggf. Trigger
-     * (§6.7) und liefert die Sequence-Anpassungen für den Import-Report.
+     * (§6.7) und liefert das Ergebnis als [FinishTableResult] zurück.
      *
      * Reihenfolge in 0.4.0:
      * 1. `reseedGenerators(...)`
      * 2. `enableTriggers(...)`
-     * 3. `return adjustments`
+     * 3. Ergebnis bauen und zurückgeben
      *
-     * Wenn Schritt 1 wirft, bleibt `enableTriggers(...)` Aufgabe des
-     * anschließenden `close()`-Cleanup-Pfads. Es gibt bewusst keine zweite
-     * Erfolgs-/Fehler-Statusmaschine nur für `finishTable()`.
-     * Wenn Schritt 2 wirft, gelten die Adjustments aus Schritt 1 als nicht
-     * erfolgreich reportbar: sie werden nicht regulär zurückgegeben, der
-     * Tabellen-Import schlägt fehl und `close()` versucht
-     * `enableTriggers(...)` idempotent erneut. Die bereits berechneten
-     * Adjustments MÜSSEN dann zumindest in die Exit-5-Fehlermeldung bzw.
-     * stderr-Hinweise aufgenommen werden, damit der tatsächlich geänderte
-     * DB-Status nicht unsichtbar bleibt.
+     * **Erfolgspfad**: liefert `FinishTableResult.Success(adjustments)`.
+     *
+     * **Schritt 1 wirft (Reseeding scheitert)**: `finishTable()` selbst
+     * wirft die ursprüngliche SQLException weiter. `enableTriggers(...)`
+     * bleibt Aufgabe des anschließenden `close()`-Cleanup-Pfads. Es gibt
+     * bewusst keine zweite Erfolgs-/Fehler-Statusmaschine nur für
+     * `finishTable()`. In diesem Pfad gibt es keine berechneten
+     * Adjustments — `reseedGenerators(...)` hat sie ja nicht erzeugt.
+     *
+     * **Schritt 2 wirft (Trigger-Reenable scheitert nach erfolgreichem
+     * Reseeding — H4)**: `finishTable()` wirft NICHT, sondern liefert
+     * `FinishTableResult.PartialFailure(adjustments, cause)`. Damit kommen
+     * die bereits durchgeführten Adjustments **strukturiert** beim
+     * `StreamingImporter` an und landen in
+     * `TableImportSummary.failedFinish` (§3.6.2). Der Importer kennzeichnet
+     * die Tabelle dann als „committed mit Reenable-Fehler", schlägt den
+     * Tabellen-Import fehl und ruft `close()` an, der `enableTriggers(...)`
+     * idempotent erneut versucht. So existiert kein zweiter, nur
+     * String-basierter Reporting-Pfad: §6.15 rendert den Fehler aus dem
+     * strukturierten `failedFinish`-Feld, und Phase F kann den Pfad gezielt
+     * asserten.
      *
      * Darf NUR nach erfolgreichem Schreiben aller Chunks aufgerufen werden.
      */
-    fun finishTable(): List<SequenceAdjustment>
+    fun finishTable(): FinishTableResult
 
     /**
      * Cleanup-Pfad: reaktiviert ggf. Trigger, setzt Transaktionszustand zurück
@@ -205,11 +289,50 @@ interface TableImportSession : AutoCloseable {
     override fun close()
 }
 
+/**
+ * Per-Chunk-Ergebnis eines [TableImportSession.write].
+ *
+ * - `rowsInserted`: regulär per `INSERT` geschriebene Rows
+ * - `rowsUpdated`: per `ON CONFLICT ... DO UPDATE` (PG/SQLite) bzw.
+ *   `ON DUPLICATE KEY UPDATE` (MySQL) modifizierte Rows — entsteht nur im
+ *   `--on-conflict update`-Pfad (§6.12.2)
+ * - `rowsSkipped`: per `ON CONFLICT DO NOTHING` (PG/SQLite) bzw.
+ *   `INSERT IGNORE` (MySQL) übersprungene Rows — entsteht nur im
+ *   `--on-conflict skip`-Pfad. **Bewusst nicht** für `--on-error skip|log`:
+ *   die `--on-error`-Politik aggregiert chunkweise verlorene Rows in
+ *   [TableImportSummary.rowsFailed], NICHT in `rowsSkipped` (siehe §3.6.2,
+ *   §6.5 und Finding M3/K2).
+ */
 data class WriteResult(
     val rowsInserted: Long,
     val rowsUpdated: Long,
     val rowsSkipped: Long,
 )
+
+/**
+ * Ergebnis von [TableImportSession.finishTable]. Trennt H4 explizit:
+ *
+ * - [Success]: Reseeding und Trigger-Reenable erfolgreich. Der Importer
+ *   übernimmt die `adjustments` in das reguläre `TableImportSummary`.
+ * - [PartialFailure]: Reseeding hat geklappt und ist in der DB sichtbar,
+ *   aber das anschließende Trigger-Reenable schlägt fehl. Der Importer
+ *   markiert die Tabelle als „committed mit Reenable-Fehler", legt
+ *   `adjustments` UND `cause` strukturiert in
+ *   `TableImportSummary.failedFinish` ab und mappt das Endergebnis auf
+ *   Exit 5. Diese Variante existiert ausschließlich, damit der Reporting-
+ *   Pfad nicht auf einer String-Fehlermeldung beruht.
+ *
+ * Wenn [reseedGenerators] selbst wirft, wird `finishTable()` die Exception
+ * direkt durchreichen — es gibt dann definitionsgemäß noch keine
+ * Adjustments und damit auch keinen `PartialFailure`-Fall.
+ */
+sealed class FinishTableResult {
+    data class Success(val adjustments: List<SequenceAdjustment>) : FinishTableResult()
+    data class PartialFailure(
+        val adjustments: List<SequenceAdjustment>,
+        val cause: Throwable,
+    ) : FinishTableResult()
+}
 
 class UnsupportedTriggerModeException(message: String) : RuntimeException(message)
 ```
@@ -326,6 +449,12 @@ PG-spezifika:
   Spalte im Ziel als `GENERATED ALWAYS` erkannt wird, erzeugt der Writer
   `INSERT ... OVERRIDING SYSTEM VALUE ...`, damit explizite Importwerte
   zulässig sind statt erst beim ersten betroffenen Datensatz zu scheitern.
+  **K1 — finale Entscheidung**: `OVERRIDING SYSTEM VALUE` wird
+  **ausschließlich** für `GENERATED ALWAYS` ausgegeben, NICHT für
+  `GENERATED BY DEFAULT`. Letzteres akzeptiert explizite Insert-Werte
+  ohnehin ohne Zusatz, und das selektive Spielen erzeugt klarere Test-
+  Pfade in Phase C/F (ein einziger Pfad pro Identity-Form, kein
+  „darf auch"-Schalter).
 - **Sequence-Reseeding**: pro Identity-/SERIAL-Spalte die zugehörige Sequence
   via `pg_get_serial_sequence(quoted_table, column)` ermitteln und mit
   dem üblichen `setval(sequence, MAX(column), true)`-Idiom nachführen
@@ -368,6 +497,23 @@ MySQL-spezifika:
   Writer-Pfad in Phase C/F).
 - **AUTO_INCREMENT-Reseeding**: `ALTER TABLE \`table\` AUTO_INCREMENT = N`
   mit `N = MAX(autoinc_column) + 1`. Dialect-Quote ist Backtick.
+  **H5-Spezialfall „leere Tabelle nach `--truncate` (DELETE FROM)"**: nach
+  einem `DELETE FROM` ohne anschließende neue Daten ist `MAX(col) = NULL`,
+  und die Standard-Reseed-Regel aus §6.6 Schritt 3 wäre ein No-op.
+  Trotzdem soll der nächste manuelle `INSERT` deterministisch wieder bei
+  `1` starten — sonst hängt der `AUTO_INCREMENT`-Zähler weiterhin auf dem
+  alten Wert (MySQL setzt ihn nach `DELETE FROM` ausdrücklich nicht
+  zurück). Der MySQL-Reseed-Pfad muss diesen Sonderfall daher explizit
+  behandeln: wenn der Importer dem Writer signalisiert, dass dieser Tabelle
+  ein `--truncate`-Pre-Step vorausging UND die Tabelle danach leer geblieben
+  ist (`MAX(col) = NULL`), führt der Writer ein
+  `ALTER TABLE \`table\` AUTO_INCREMENT = 1` aus und schreibt einen
+  entsprechenden `SequenceAdjustment(newValue = 1)` in den Report. Ohne
+  `--truncate` bleibt das Standardverhalten aus §6.6: `MAX = NULL` →
+  No-op. Die Information „Tabelle wurde im aktuellen Lauf truncated"
+  reicht der Importer dem Writer über `ImportOptions.truncatePerformed`
+  oder einen analogen Session-State weiter (Phase C entscheidet die
+  konkrete Form, der Vertrag steht hier).
 - **UPSERT-Zählung**: für `ON DUPLICATE KEY UPDATE` muss der Writer die
   per-Row-Rückgabewerte aus `executeBatch()` auswerten, nicht nur eine
   Gesamtsumme. MySQL wird auf `WriteResult` normalisiert als
@@ -427,6 +573,13 @@ interface DataChunkReader : AutoCloseable {
      * Liest die nächsten bis zu `chunkSize` Rows. Liefert `null`, wenn die
      * Eingabe vollständig konsumiert wurde.
      *
+     * **L1**: `chunkSize` wird einmalig bei [DataChunkReaderFactory.create]
+     * gesetzt und vom Reader für alle Folgeaufrufe gespeichert. `nextChunk()`
+     * nimmt deshalb kein Argument mehr — das spiegelt die 0.3.0-Streaming-
+     * API (`PipelineConfig.chunkSize`) und vermeidet Argument-Drift, wenn
+     * z.B. ein Reader-Refactor die Chunk-Größe pro Aufruf wechseln sollen
+     * würde.
+     *
      * **Anders als beim Reader-Vertrag in 0.3.0** (Plan §6.17) gibt es hier
      * KEINE Pflicht, einen "Empty-Chunk mit Spalten" zu emittieren: bei
      * leeren selbstbeschreibenden Eingaben (`[]` in JSON/YAML, leere
@@ -442,7 +595,7 @@ interface DataChunkReader : AutoCloseable {
      * `chunk.columns` auf die tatsächlich gebundene Target-Teilmenge und die
      * Row-Reihenfolge auf eben diese Binding-Liste.
      */
-    fun nextChunk(chunkSize: Int): DataChunk?
+    fun nextChunk(): DataChunk?
 
     /**
      * Optionale, file-derived Header-Spaltennamen. Wird vom [StreamingImporter]
@@ -461,10 +614,17 @@ interface DataChunkReader : AutoCloseable {
 }
 
 interface DataChunkReaderFactory {
+    /**
+     * `chunkSize` wird hier einmalig durchgereicht (L1) und im erzeugten
+     * Reader gespeichert. Der `StreamingImporter` ruft `create(...)` mit
+     * `chunkSize = config.chunkSize` aus dem [PipelineConfig], identisch
+     * zum 0.3.0-Exportpfad.
+     */
     fun create(
         format: DataExportFormat,
         input: InputStream,
         table: String,
+        chunkSize: Int,
         options: ImportOptions = ImportOptions(),
     ): DataChunkReader
 }
@@ -486,6 +646,20 @@ positionalen Slots materialisiert; zusätzliche, in der ersten Row
 unbekannte Schlüssel führen bereits im Reader zu einem
 `ImportSchemaMismatchException`, der dann über die `--on-error`-Politik
 des Importers läuft.
+
+> **H3 — Round-Trip-Garantie aus 0.3.0**: Diese „erste Row ist autoritativ"-
+> Regel funktioniert für Round-Trips nur, weil der 0.3.0-`data export`
+> jedes Format-Writer-Trio (`JsonChunkWriter.writeRow`,
+> `YamlChunkWriter.write`, `CsvChunkWriter.write`) alle in `begin(...)`
+> übergebenen `columns` **pro Row** materialisiert — auch dann, wenn der
+> Wert `null` ist. Damit ist garantiert, dass die erste Row eines
+> 0.3.0-Exports immer den vollständigen Spalten-Header trägt. Diese
+> Eigenschaft ist ab jetzt eine **Pflicht-Property** der 0.3.0-Writer und
+> wird in Phase B als Property-Test gegen alle drei Writer abgesichert
+> (siehe §4 Phase B Schritt 11). Wer einen externen Datensatz importieren
+> will, in dem optionale Felder per Row ausgelassen werden, muss vorab eine
+> „canonical first row" mit allen Feldern hinzufügen — der CLI-Help-Text
+> für `data import` weist explizit auf diese JSON/YAML-Asymmetrie hin.
 
 Für JSON gilt außerdem: 0.4.0 akzeptiert nur ein Top-Level-Array von
 Objekten. Ein nacktes Top-Level-Objekt oder Wrapper-Formen wie
@@ -593,6 +767,16 @@ Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
   6. Header-Mismatch wird HIER als `ImportSchemaMismatchException`
      geworfen, bevor der erste `session.write(...)` läuft
   7. Erst danach schreibt der Importer `firstChunk` (falls nicht `null`)
+- **M6 — Pre-Flight ist `--on-error abort`, immer**: die Schritte 1–6
+  laufen vor dem ersten `session.write(...)` und sind damit Teil der
+  Pre-Flight-Phase. Ein Fehlschlag in einem dieser Schritte (Reader-
+  Konstruktion, erstes `nextChunk(...)`, Header-Mapping, Pre-Flight-
+  Mismatch) wird **immer** als Abbruch behandelt — `--on-error skip|log`
+  hat in der Pre-Flight-Phase keine Wirkung. Konsequenz: wenn der Reader
+  beim Header-Sniffing schon Rows aus `firstChunk` materialisiert hat und
+  Schritt 6 scheitert, sind diese Rows verloren und es gibt KEINE
+  Recovery — das ist Vertrag, kein Bug. `--on-error` greift erst ab dem
+  ersten erfolgreichen `session.write(...)` aus Schritt 7.
 - Reader dürfen dafür intern die erste Row bzw. den ersten Chunk puffern;
   insbesondere JSON/YAML dürfen die Header aus dem ersten Objekt ableiten
   und denselben Datensatz anschließend regulär als Teil von `firstChunk`
@@ -669,6 +853,23 @@ Diese Trennung löst die Mehrdeutigkeit, die in der ersten Plan-Fassung
 hat. Für `Stdin` und `SingleFile` gibt es **immer genau eine** Zieltabelle
 und sie muss vom Aufrufer benannt werden.
 
+**L7 — Layer-Owner für Source-Auflösung**: das Mapping `--source` → konkrete
+`ImportInput`-Variante passiert ausschließlich im **CLI-Layer**
+(`DataImportCommand.run()` bzw. ein Helper in `DataImportHelpers`),
+NICHT im `StreamingImporter`. Konkret:
+
+1. `source == "-"` (oder das in 0.3.0 etablierte Stdin-Sentinel) →
+   `ImportInput.Stdin(table)`
+2. sonst `Path.of(source)` auflösen und `Files.isDirectory(...)` prüfen:
+   - Verzeichnis → `ImportInput.Directory(path, tableFilter, tableOrder)`
+   - reguläre Datei → `ImportInput.SingleFile(table, path)`
+   - nichts davon → Exit 2 mit `--source <path> not found`
+
+`StreamingImporter` bekommt also nie einen rohen `--source`-String. Das
+verhindert, dass Phase D versehentlich einen Filesystem-Test gegen Stdin
+schreibt oder umgekehrt — Stdin ist im Streaming-Layer eine simple
+`InputStream`-Quelle ohne Filesystem-Semantik.
+
 Schema-Qualifikation ist dabei explizit erlaubt: `table` folgt dem gleichen
 Identifier-Pattern wie 0.3.0-`--tables`, also `name` oder `schema.table`,
 ohne SQL-Quoting aus der CLI heraus.
@@ -691,13 +892,41 @@ Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 - `sequenceAdjustments: List<SequenceAdjustment>` (für den Report)
 - `targetColumns: List<ColumnDescriptor>` (für Debug/JSON-Output)
 - `triggerMode: TriggerMode` (welcher Modus tatsächlich angewendet wurde)
+- `failedFinish: FailedFinishInfo?` — H4: nur gesetzt, wenn
+  `finishTable()` ein `FinishTableResult.PartialFailure` geliefert hat.
+  Trägt die bereits durchgeführten Adjustments **und** die ursprüngliche
+  Reenable-Exception strukturiert mit, damit §6.15 sie sauber rendern und
+  Phase F sie gezielt asserten kann.
 - `error: String?`
 
-`rowsFailed` ist dabei ausdrücklich KEIN Teil von `WriteResult`. Der Wert
-wird vom `StreamingImporter` aggregiert, wenn ein Chunk write/commit-seitig
-scheitert und die `--on-error`-Politik `skip` oder `log` ein Weitermachen
-erlaubt. In 0.4.0 ist das daher auf Summary-Ebene effektiv `0` oder
-`chunk.size` pro fehlgeschlagenem Chunk.
+```kotlin
+/**
+ * H4: strukturierter Träger für „Daten committed, aber Trigger-Reenable
+ * gescheitert"-Fälle. Der StreamingImporter setzt das Feld direkt aus
+ * dem `FinishTableResult.PartialFailure` aus §3.1.1.
+ */
+data class FailedFinishInfo(
+    val adjustments: List<SequenceAdjustment>,
+    val cause: String,
+)
+```
+
+**M3 / K2 — `rowsSkipped` vs. `rowsFailed`** (siehe auch `WriteResult`-
+Kdoc in §3.1.1):
+
+- `rowsSkipped` aggregiert ausschließlich die `--on-conflict skip`-Treffer
+  (`ON CONFLICT DO NOTHING` / `INSERT IGNORE`). Es ist eine row-genaue
+  Zahl, die direkt aus den per-Row-Affected-Counts der UPSERT/Skip-Pfade
+  kommt.
+- `rowsFailed` aggregiert die per `--on-error skip|log` verlorenen Rows.
+  In 0.4.0 ist diese Politik bewusst chunk-granular: ein scheiternder
+  Chunk verliert ALLE Rows dieses Chunks. Damit ist `rowsFailed` auf
+  Summary-Ebene effektiv ein Vielfaches von `chunkSize` (bzw. die exakte
+  Größe des verlorenen Schlusschunks). `rowsFailed` ist NICHT Teil von
+  `WriteResult` und wird ausschließlich vom `StreamingImporter` aus den
+  fehlgeschlagenen Chunks aggregiert.
+- Diese Trennung muss auch in den `--quiet`/JSON-Output-Pfaden in §6.15
+  sichtbar bleiben (`skipped` und `failed` als getrennte Counter).
 
 ### 3.7 `d-migrate-cli`
 
@@ -723,7 +952,10 @@ class DataImportCommand : CliktCommand(name = "import") {
     val triggerMode by option("--trigger-mode").choice("fire", "disable", "strict").default("fire")
     val truncate by option("--truncate").flag()                        // §6.14 — nicht atomar
     val disableFkChecks by option("--disable-fk-checks").flag()        // §6.8 — PG nicht supported
-    val reseedSequences by option("--reseed-sequences", "--no-reseed-sequences").flag(default = true)
+    // H2: Negativ-Name MUSS in flag(...) selbst stehen, sonst aktiviert
+    // `--no-reseed-sequences` den Wert nicht — eine zweite Positional in
+    // option(...) wäre nur ein Alias auf denselben „on"-Wert.
+    val reseedSequences by option("--reseed-sequences").flag("--no-reseed-sequences", default = true)
     val encoding by option("--encoding").default("auto")               // Default: BOM-Detect für UTF-*
     val csvNoHeader by option("--csv-no-header").flag()
     val csvNullString by option("--csv-null-string").default("")       // symmetrisch zu 0.3.0; für lossless NULL/"": expliziten Sentinel setzen
@@ -777,13 +1009,17 @@ erlaubt sind `name` oder `schema.table`, jeweils ohne SQL-Quotes.
   `--on-conflict update` abgebildet (siehe §6.12).
 - `--resume` — Checkpoint-Resume kommt mit LN-012 in 0.9.0.
 
-**Pre-Flight-Reihenfolge in `DataImportCommand.run()`**:
+**Pre-Flight-Reihenfolge in `DataImportCommand.run()`** — autoritative
+Tabelle, alle Pre-Flight-Pfade landen genau hier:
 
 | Phase | Prüft |
 |---|---|
-| CLI-Parse/Helper | `--source`-Form (stdin/file/dir), Identifier-Validierung für `--table`/`--tables`, explizites `--on-conflict`, `--truncate`-Exklusivität |
+| CLI-Parse/Helper | `--source`-Form (stdin/file/dir), Identifier-Validierung für `--table`/`--tables`/`--since-column`, explizites `--on-conflict`, `--truncate`-Exklusivität, `--encoding`-Charset-Name |
+| Lokale `--schema`-Validierung (M4 Phase 1) | wenn `--schema <path>` gesetzt ist: Datei lesen, gegen das neutrale Schema-Modell parsen, intra-Schema-Konsistenz prüfen (Spalten, Nullability, Constraints). Schlägt fehl → Exit 3 ohne dass jemals eine Connection aufgemacht wurde. Diese Phase macht NICHT die Konsistenz „Schema deckt Target wirklich ab" — die kommt erst nach `openTable(...)`. |
 | Nach `resolveTarget(...)` | Dialekt-Auflösung, `--disable-fk-checks` auf PG, Connection-/Config-Fehler |
-| Während `openTable(...)` und direkt danach | writer-interne Trigger-Strict-/Disable-Prüfung; CLI-Wrapper mappt `UnsupportedTriggerModeException` daraus auf Exit 2, danach Header-Validierung/Reorder-Mapping, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
+| Topo-Sort (nur Directory + `--schema`) | wenn `ImportInput.Directory` UND `--schema` gesetzt: Tabellenreihenfolge per `kahnSort()` aus dem Schema-DAG ableiten und in `ImportInput.Directory.tableOrder` ablegen. Für Single-File/Stdin **kein** Topo-Sort (siehe M5 / §6.8.3). |
+| Während `openTable(...)` und direkt danach (writer-intern + CLI-Wrapper) | writer-interne Trigger-Strict-/Disable-Prüfung; CLI-Wrapper mappt `UnsupportedTriggerModeException` daraus auf Exit 2, danach Header-Validierung/Reorder-Mapping, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
+| Schema-vs-Target-Konsistenz (M4 Phase 2, nur wenn `--schema` gesetzt) | Direkt nach `openTable(...)` und dem Header-Mapping: das aus `session.targetColumns` aufgebaute Bild gegen die `--schema`-Definition prüfen (Spaltennamen, Nullability, Typkompatibilität). Mismatch → Exit 3, bevor der erste `write(...)` läuft. |
 
 `--truncate` ist nur mit einem explizit gesetzten `--on-conflict`
 gegenseitig ausschließend. `onConflict == null` bedeutet „kein Flag
@@ -872,6 +1108,30 @@ kompatibler Wrapper erhalten und delegiert intern auf `resolveSource(source)`.
 Damit bleiben die bestehenden Export-Tests stabil; neue Tests decken
 zusätzlich `resolveSource(null)` und `resolveTarget(null)` mit Defaults ab.
 
+**L6 — Behavior-Change-Analyse für `database.default_source`**: Der
+0.3.0-`NamedConnectionResolver` liest `database.default_source` heute
+**gar nicht** aus der `.d-migrate.yaml` aus — der Doc-Comment in
+`NamedConnectionResolver.kt` erwähnt es zwar als „in 0.4.0+ relevant",
+aber der Code-Pfad existiert nicht. Konsequenzen für die 0.4.0-Migration:
+
+- 0.3.0-Configs, die `database.default_source` historisch **versehentlich**
+  gesetzt hatten, hatten zur Laufzeit null Effekt — `data export`
+  verlangte immer ein explizites `--source`. Damit kann es **keine**
+  stille Verhaltensänderung gegen bestehende User-Workflows geben: jeder
+  funktionierende 0.3.0-Aufruf bleibt 0.4.0-funktionsfähig, weil das
+  `--source`-Argument weiterhin gewinnt.
+- Die einzige neue Wirkung ist, dass `data export` ohne `--source`, das in
+  0.3.0 mit Exit 2 abgebrochen ist, in 0.4.0 plötzlich mit `default_source`
+  arbeitet, falls dieser im Config gesetzt war. Dieser Pfad ist also
+  reines „vorher ignoriert → jetzt aktiv", kein „vorher A → jetzt B".
+- CHANGELOG-Eintrag im `[Unreleased]`-Block reicht damit aus; ein
+  separater Migrations-Hinweis im Help-Text oder in der README ist nicht
+  nötig. Trotzdem muss der CHANGELOG-Bullet explizit sagen
+  „`database.default_source` was previously parsed but ignored — in
+  0.4.0 it is honored as a fallback for `--source`", damit User mit
+  alten Configs nicht überrascht werden, wenn ein vergessener
+  `default_source: prod` plötzlich greift.
+
 ### 3.8 `d-migrate-core`
 
 `d-migrate-core` bleibt weitgehend unverändert, bekommt für 0.4.0 aber zwei
@@ -928,17 +1188,33 @@ Phase B explizit neu entschieden statt still fortgeschrieben.
    mit konstantem Speicherbudget; der Spike verifiziert dabei zusätzlich,
    dass die für §3.5.2 benötigte Integer-vs-Decimal-Diskriminierung auf
    Token-Ebene zuverlässig verfügbar ist. Bei Fehlschlag wird die JSON-
-   Library-Entscheidung vor Phase B neu geöffnet
+   Library-Entscheidung vor Phase B neu geöffnet.
+   **L5 — Fixture-Erzeugung**: das 100-MB-Array wird NICHT als Datei in
+   `src/test/resources/` eingecheckt (Repo-Bloat) und auch NICHT in der
+   Standard-CI-Pipeline mitgezogen. Stattdessen kommt ein
+   deterministischer Generator (`d-migrate-formats/src/test/kotlin/.../perf/
+   LargeJsonFixture.kt` oder als Gradle-Task), der die Datei einmalig in
+   `build/perf-fixtures/` erzeugt und dort cacht. Der zugehörige Test
+   trägt `@Tag("perf")` und ist im Gradle-Build über
+   `-PincludeTags=perf` opt-in. CI-Defaults laufen ohne `perf`; lokale
+   Performance-Runs aktivieren das Tag explizit.
 
 ### Phase B: Format-Reader
 
 7. `JsonChunkReader` mit DSL-JSON Pull-Parser, Streaming-Tests gegen
-   ein 100-MB-Fixture (kein Buffer-Aufbau über Chunk-Größe hinaus)
+   ein 100-MB-Fixture (kein Buffer-Aufbau über Chunk-Größe hinaus). Das
+   Fixture stammt aus dem L5-Generator-Pfad aus Phase A Schritt 6 und
+   ist `@Tag("perf")` — Standard-CI führt diesen Pfad nicht aus,
+   lokale Perf-Runs aktivieren das Tag.
 8. `YamlChunkReader` mit SnakeYAML Engine Event-API
 9. `CsvChunkReader` mit uniVocity `CsvParser`, inkl. Header-Auflösung
 10. `DefaultDataChunkReaderFactory`
 11. Golden-Master-Reader-Tests pro Format mit Round-Trip gegen die
-    Phase-D-Writer aus 0.3.0 (Schreiben → Lesen → Vergleich)
+    Phase-D-Writer aus 0.3.0 (Schreiben → Lesen → Vergleich). H3-Property-
+    Test: pro Writer (`JsonChunkWriter`, `YamlChunkWriter`, `CsvChunkWriter`)
+    explizit asserten, dass eine Row mit ausschließlich `null`-Werten alle
+    in `begin(...)` übergebenen Spalten als Schlüssel im Output
+    materialisiert — sonst kippt die First-Row-Schema-Garantie aus §3.5.1.
 
 Hinweis zur Parallelisierung: Nach Abschluss von Phase A sind Phase B
 (Reader) und Phase C (Writer) weitgehend unabhängig und können bei Bedarf
@@ -952,8 +1228,14 @@ Schritt, der beide Pfade zusammenführt.
 14. `DataWriterRegistry` (object) mit `clear()` für Tests
 15. `PostgresDataWriter` + `PostgresSchemaSync` (setval, ALTER TABLE
     DISABLE TRIGGER USER, `OVERRIDING SYSTEM VALUE` für PG-Identity-ALWAYS,
-    inkl. Test für
-    `pg_get_serial_sequence('"schema"."table"', 'col')`-Quoting)
+    inkl. Test für `pg_get_serial_sequence('"schema"."table"', 'col')`-
+    Quoting). **L2-Pflichttests** für das Quoting:
+    - Tabelle in einem nicht-`public`-Schema (z.B. `app.users`)
+    - Tabellenname mit Sonderzeichen, der Quoting erzwingt
+      (z.B. `"Order Items"` mit Whitespace und Mixed-Case)
+    - Tabellenname mit eingebettetem Doublequote (`"a""b"`) als
+      Pathologic-Test, dass die 0.3.0-Quoting-Logik tatsächlich escapet
+      und nicht naiv konkateniert
 16. `MysqlDataWriter` + `MysqlSchemaSync` (ALTER TABLE … AUTO_INCREMENT,
     `disable` → UnsupportedTriggerModeException; `rewriteBatchedStatements`
     im echten Writer-Pfad verifizieren)
@@ -968,7 +1250,13 @@ Schritt, der beide Pfade zusammenführt.
 21. `ImportResult` + `TableImportSummary`
 22. Chunk-Transaktionsmodell (§6.5) mit `--on-error`-Politik
 23. Streaming-Layer-Tests gegen SQLite (direkter `StreamingImporter`,
-    kein CLI-Wrapper, kein Container nötig)
+    kein CLI-Wrapper, kein Container nötig). **M2-Pflichtschritt**: ein
+    JFR-/Allocation-Profiling-Run auf dem Reorder-Pfad mit einem
+    1-Million-Row-Fixture (im `@Tag("perf")`-Set, also nicht in der
+    Standard-CI). Wenn der Allocation-Anteil im Reorder-Pfad
+    `> 25 %` der Importzeit ausmacht, wird vor Phase F ein additiver
+    Vertrag entschieden (`session.write(reorderedRows, bindingColumns)`
+    oder ein `RowBuffer`-Pool, siehe §10).
 
 ### Phase E: CLI-Integration
 
@@ -985,7 +1273,12 @@ Schritt, der beide Pfade zusammenführt.
 
 29. `DataImportE2EPostgresTest` analog zur Export-E2E aus 0.3.0:
     Schema anlegen, Datei einlesen, Daten verifizieren, Sequence-Reseeding
-    via `nextval()` checken
+    via `nextval()` checken; **H4-Pflichtfall**: `enableTriggers(...)`
+    gezielt scheitern lassen (z.B. via Test-Subclass-`SchemaSync`, die in
+    `enableTriggers` nach erfolgreichem Reseeding wirft) und asserten,
+    dass `TableImportSummary.failedFinish` strukturiert beide Felder
+    (`adjustments`, `cause`) trägt und der CLI-Output den
+    `PARTIAL FAILURE`-Block enthält.
 30. `DataImportE2EMysqlTest` mit `AUTO_INCREMENT`-Verifikation
 31. SQLite-E2E direkt ohne Container
 32. Inkrementeller Round-Trip-E2E: initial export → Änderungen in der
@@ -1243,7 +1536,13 @@ Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
 3. Ergibt `MAX(col)` dabei `NULL` (leere Tabelle oder nur NULL-Werte in der
    Generator-Spalte), ist der Reseed-Pfad ein expliziter No-op: keine
    `setval`-/`AUTO_INCREMENT`-/`sqlite_sequence`-Änderung und kein
-   `SequenceAdjustment` im Report
+   `SequenceAdjustment` im Report. **H5-Ausnahme** nur für MySQL: wenn der
+   Tabelle in diesem Lauf ein `--truncate`-Pre-Step (also `DELETE FROM`,
+   siehe §6.14) vorausging und sie danach leer geblieben ist, setzt der
+   MySQL-Reseed-Pfad zusätzlich `AUTO_INCREMENT = 1` und reportet einen
+   entsprechenden `SequenceAdjustment` (siehe §3.3). PG bekommt das
+   automatisch vom `TRUNCATE`-Pfad geschenkt; SQLite hat keinen
+   persistenten Folge-Zähler in dem Pfad und braucht den Sonderfall nicht.
 4. Sonst Sequence/AUTO_INCREMENT/sqlite_sequence auf den nächsten gültigen
    Wert anheben
 5. Ein `SequenceAdjustment` ins `ImportResult` aufnehmen
@@ -1256,9 +1555,11 @@ zweite Quoting-Variante im Writer zu erfinden.
 
 Wenn das Ziel eine `GENERATED ALWAYS AS IDENTITY`-Spalte enthält und diese
 Spalte importiert wird, muss der PG-Writer den Insert-Pfad mit
-`OVERRIDING SYSTEM VALUE` erzeugen; `BY DEFAULT` funktioniert auch ohne
-diesen Zusatz, darf aber vom Writer auf denselben Identity-Pfad gezogen
-werden.
+`OVERRIDING SYSTEM VALUE` erzeugen. **K1 — finale Entscheidung** (siehe
+auch §3.2): für `GENERATED BY DEFAULT AS IDENTITY` wird der Zusatz
+**bewusst nicht** ausgegeben, weil PG dort explizite Insert-Werte ohnehin
+akzeptiert und ein Einheits-Pfad die Phase-C/F-Tests komplexer macht,
+ohne fachlichen Mehrwert.
 
 **Abschalten**: `--reseed-sequences=false` überspringt Schritt 1–3
 komplett. Default ist `true`. Begründung: stilles Auslassen wäre genau die
@@ -1288,6 +1589,30 @@ implementiert (zu breit, Sicherheitsrisiko). Pro Tabelle `ALTER TABLE`
 ist deutlich enger und reverskompatibel. Der Aufruf erfolgt beim Öffnen
 der `TableImportSession` writer-intern; bei `finishTable()` oder `close()`
 wird der Zustand symmetrisch zurückgeführt.
+
+**M8 — Transaktions-Scope von `disableTriggers(...)` auf PG**:
+`ALTER TABLE … DISABLE TRIGGER USER` ist eine DDL-artige Operation. Sie
+darf NICHT Teil der späteren Chunk-Transaktionen sein, sonst würde ein
+`rollbackChunk()` (z.B. nach einer Constraint-Verletzung im ersten Chunk)
+die Trigger plötzlich wieder reaktivieren — und der nächste Chunk liefe
+unter einem anderen Modus, ohne dass das jemand sieht. Konkreter
+Vertrag:
+
+1. `openTable(...)` schaltet die Connection auf `autoCommit = true`,
+   bevor `disableTriggers(...)` aufgerufen wird
+2. Nach erfolgreichem `disableTriggers(...)` wird sofort `commit()`
+   aufgerufen (idempotent unter `autoCommit = true`)
+3. Erst danach setzt `openTable(...)` `autoCommit = false` und beginnt
+   den Chunk-Transaktionspfad aus §6.5
+4. `enableTriggers(...)` läuft beim Erfolgsabschluss bzw. im
+   `close()`-Cleanup symmetrisch wieder unter `autoCommit = true` mit
+   eigenem `commit()`
+
+Damit existieren `disableTriggers` und `enableTriggers` immer als ihre
+eigenen Mini-Transaktionen, völlig getrennt vom Chunk-Pfad. Phase C
+verifiziert das mit einem PG-Test, der nach `disableTriggers` einen
+expliziten Chunk-Rollback provoziert und prüft, dass die Trigger danach
+weiterhin deaktiviert sind.
 
 `strict` benutzt `SchemaSync.assertNoUserTriggers(...)` als writer-internen
 Pre-Flight (dialektspezifisch gegen `pg_trigger`/`information_schema.triggers`/
@@ -1369,8 +1694,21 @@ Bei `--truncate` ist zusätzlich relevant:
 
 #### 6.8.3 Topologische Sortierung mit `--schema`
 
-Wenn `--schema <path>` gesetzt ist, wird **immer** topologisch sortiert
-(unabhängig vom Dialekt). Das ist der einzige Weg, der ohne jeden
+`--schema <path>` hat zwei Wirkungen, die strikt getrennt sind (M5):
+
+1. **Schema-Validierung** (immer aktiv, sobald `--schema` gesetzt ist —
+   für `Stdin`, `SingleFile` und `Directory` gleichermaßen): die in §6.4
+   Punkt 4 beschriebene Pre-Validierung gegen die neutrale Schema-
+   Definition läuft. Das ist die einzige Wirkung von `--schema` für
+   Single-File- und Stdin-Imports.
+2. **FK-respektierende Topologische Sortierung** (nur für `Directory`):
+   wenn `ImportInput.Directory` aktiv ist UND `--schema` gesetzt ist, wird
+   die Tabellenreihenfolge per Kahn-Sort aus dem Schema-DAG abgeleitet.
+   Für `Stdin` und `SingleFile` macht Topo-Sort fachlich keinen Sinn (es
+   gibt nur eine Tabelle) und der Plan macht hier ausdrücklich KEINEN
+   Topo-Sort, auch wenn `--schema` gesetzt ist.
+
+Innerhalb von Pfad (2) ist das der einzige Weg, der ohne jeden
 FK-Disable-Trick funktioniert und auf allen Dialekten gleichermaßen sauber
 ist. Implementierung kommt direkt aus dem 0.2.0
 `AbstractDdlGenerator.kahnSort()` — derselbe Algorithmus, andere Eingabe
@@ -1527,8 +1865,14 @@ d-migrate data export --source local_pg --format json \
 
 Intern:
 
-1. `--since-column` strikt validieren wie `--tables` (Plan-0.3.0 §6.7
-   Identifier-Pattern)
+1. `--since-column` strikt gegen das exakte 0.3.0-Identifier-Pattern
+   validieren (L8): `^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$`
+   — identisch zur `DataExportHelpers.TABLE_IDENTIFIER_PATTERN`-Konstante
+   aus 0.3.0. Erlaubt sind also `name` oder `schema.column`, jeweils
+   ohne SQL-Quotes; Whitespace, Doublequotes oder Sonderzeichen führen
+   zu Exit 2. Der `DataImportCommand` und der erweiterte
+   `DataExportCommand` rufen für diese Validierung dieselbe Konstante,
+   damit Export- und Import-Pfad nie auseinanderdriften können.
 2. JDBC-Metadaten der Marker-Spalte lesen und `--since` einmal in den
    passenden Java-Typ konvertieren (`LocalDate`, `LocalDateTime`,
    `OffsetDateTime`, `Long`, `BigDecimal`, sonst `String`)
@@ -1646,9 +1990,27 @@ d-migrate data import --target local_pg --source orders.json --format json \
 `--truncate` läuft als **destruktiver Pre-Step** vor dem eigentlichen
 Import. Für Single-Table-Imports geschieht das auf derselben
 Session-Connection, die anschließend auch für den Tabellen-Import verwendet
-wird: `TRUNCATE TABLE` (PG), `DELETE FROM` (MySQL und SQLite) in einer
+wird: `TRUNCATE TABLE` (PG), `DELETE FROM` (MySQL **und** SQLite) in einer
 eigenen, sofort committeten Transaktion, danach der reguläre chunkbasierte
 Import-Pfad aus §6.5.
+
+**H5 — MySQL-Truncate-Pfad ist `DELETE FROM`, immer**: 0.4.0 versucht auf
+MySQL bewusst KEIN `TRUNCATE TABLE` zuerst und kein „auf 1701 fallback"-
+Probieren. Das hat zwei Gründe:
+
+1. `TRUNCATE TABLE` scheitert auf FK-referenzierten MySQL-Tabellen mit
+   Fehlercode `1701` und ist ohne FK-Disable ohnehin unbrauchbar
+2. Ein „erst TRUNCATE versuchen, sonst DELETE" wäre eine versteckte
+   Verhaltens-Variante, die die AUTO_INCREMENT-Semantik je nach Tabelle
+   anders aussehen ließe — unangenehmes Debugging
+
+Konsequenz: nach `DELETE FROM` ist der `AUTO_INCREMENT`-Zähler bei MySQL
+ausdrücklich NICHT zurückgesetzt. Der MySQL-Writer hat dafür den
+H5-Spezialfall in §3.3 implementiert (`AUTO_INCREMENT = 1` nach
+truncate-mit-Leerzustand). Der Effekt für den User ist damit derselbe wie
+bei PG-`TRUNCATE` plus §6.6-Reseed: nach `--truncate` ohne neue Daten
+startet der nächste manuelle Insert wieder bei `1`. Mit neuen Daten
+startet er bei `MAX(col) + 1`.
 
 Für Multi-Table-Imports mit `--schema` und FK-Abhängigkeiten wird der
 Pre-Step in einen separaten Vorlauf gezogen: zuerst alle destruktiven
@@ -1719,9 +2081,33 @@ Sequence adjustments: 2
 Trigger mode:    fire
 ```
 
+**H4 — Reporting bei `failedFinish`**: wenn eine Tabelle mit
+`TableImportSummary.failedFinish != null` zurückkommt (Daten committed,
+aber Trigger-Reenable gescheitert), rendert das CLI einen zusätzlichen
+Block aus dem strukturierten Feld — kein Rückgriff auf String-
+Fehlermeldungen:
+
+```
+Imported 1 table (5 000 inserted, 0 updated, 0 skipped, 0 failed) in 1.8 s
+  events:  5 000 inserted, 0 updated, 0 skipped, 0 failed
+Sequence adjustments: 1
+  events.id → 5001
+PARTIAL FAILURE on 'events': data committed, sequence adjusted, but
+  trigger re-enable failed:
+    org.postgresql.util.PSQLException: ALTER TABLE … ENABLE TRIGGER USER
+    rejected by managed-PG policy
+  → manual fix required: re-enable triggers on table 'events'.
+```
+
+`failedFinish` ist auch im JSON-Output-Pfad (`--output-format json`)
+strukturiert sichtbar — das ist die Bedingung, die Phase F gezielt
+asserten kann (kein Regex auf einer stderr-Zeile).
+
 `--quiet` unterdrückt die Summary (wie in 0.3.0); `--no-progress` ebenfalls.
-Für eine maschinenlesbare Variante: `--output-format json` am Root-Command
-liefert das `ImportResult` als JSON auf stdout.
+`PARTIAL FAILURE`-Blöcke bleiben auch unter `--quiet` erhalten, weil sie
+einen manuellen Folge-Eingriff erfordern. Für eine maschinenlesbare
+Variante: `--output-format json` am Root-Command liefert das `ImportResult`
+als JSON auf stdout.
 
 ---
 
@@ -1734,8 +2120,8 @@ liefert das `ImportResult` als JSON auf stdout.
 | `docs/connection-config-spec.md` | Neue Sektion „Status pro Feature" anlegen und die bisher nur im 0.3.0-Plan referenzierte Tabelle dorthin migrieren; dabei `default_source` als aktiv für `data export` und `default_target` als aktiv für `data import` markieren |
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
 | `docs/roadmap.md` | Milestone 0.4.0 als „in Arbeit" markieren bei Phase A; bei jedem abgeschlossenen Phase-Schritt aktualisieren |
-| `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen, inkl. explizitem Hinweis: `database.default_source` wird für `data export` ab 0.4.0 wirksam (Behavior Change gegenüber 0.3.0) |
-| `docs/cli-spec.md` Help-Texte | Explizit erwähnen: bei JSON/YAML werden fehlende bekannte Schlüssel als `NULL` materialisiert; bei MySQL ist Header-Matching bewusst case-sensitiv trotz DB-seitiger Toleranz; `--truncate` + explizites `--on-conflict abort` wird als missverständliche Kombination abgelehnt |
+| `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen, inkl. explizitem L6-Hinweis: `database.default_source` was previously parsed but ignored — in 0.4.0 it is honored as a fallback for `--source` (kein „A → B"-Bruch, aber „vorher ignoriert → jetzt aktiv") |
+| `docs/cli-spec.md` Help-Texte | Explizit erwähnen: bei JSON/YAML werden fehlende bekannte Schlüssel als `NULL` materialisiert; bei MySQL ist Header-Matching bewusst case-sensitiv trotz DB-seitiger Toleranz; `--truncate` + explizites `--on-conflict abort` wird als missverständliche Kombination abgelehnt; **JSON/YAML First-Row-Schema (H3)**: das Feldset der ersten Row ist für die ganze Datei autoritativ — wer Rows mit unterschiedlichen Optional-Feldsets importieren will, muss vorab eine kanonische Header-Row mit allen Feldern (Werte dürfen `null` sein) vorne anhängen; **BOOLEAN (L3)**: nur `true`/`false` (case-insensitive) sind zulässige Quellwerte, `0`/`1`/`yes`/`no`/`y`/`n` werden NICHT still interpretiert und führen zu einem Typfehler über `--on-error`; **Sequence-Race (L4)**: parallele Writer auf der Zieltabelle während des Imports werden NICHT serialisiert — wer Identity-Reseeding will, muss konkurrierende Schreibsessions selbst pausieren |
 
 ---
 
@@ -1768,9 +2154,20 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
    - 1000 Rows, die in 0.3.0 bereits unterstützten neutralen Typen
      (Roadmap-Erweiterungen aus späteren Milestones sind hierfür kein
      Release-Gate von 0.4.0)
-   - Für CSV mit nullable Text-Spalten wird im Test ein explizites
-     `csvNullString` gesetzt; der Default `""` ist symmetrisch, aber nicht
-     verlustfrei für `NULL` vs. leerer String
+   - **H3-Pflichtfall**: die erste Row der Test-Fixture enthält `NULL` in
+     mindestens einer nullable Spalte, idealerweise `NULL` in **allen**
+     nullable Spalten. Das schützt aktiv die First-Row-Schema-Garantie
+     aus §3.5.1: würde der 0.3.0-Writer das `null`-Feld weglassen, würde
+     der Reader die Spalte nicht in den Header aufnehmen und der
+     Round-Trip kollabiert mit `ImportSchemaMismatchException`. Der Test
+     muss diesen Pfad aktiv prüfen, nicht zufällig durch eine
+     „erste Row hat überall Werte"-Fixture umgehen.
+   - **H3 + M7-Pflichtfall**: die Fixture vermeidet entweder die
+     `""`-vs-`NULL`-Kollision in nullable Text-Spalten, oder sie setzt
+     beim CSV-Pfad einen expliziten `--csv-null-string NULL` (siehe M7
+     unten). Andernfalls ist das Daten-Äquivalenz-Gate für CSV mit dem
+     Default `csvNullString = ""` strukturell nicht erfüllbar, ohne dass
+     der Test still falsch grün wird.
    - Pflicht-Gate: Daten-Äquivalenz nach Re-Parsing/SELECT-Vergleich muss
      identisch sein
    - Zusatzsignal: SHA-256-Hash der Original- und Re-Export-Datei SOLL
@@ -1833,6 +2230,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 | **`ParameterizedClause` aus User-Eingabe** wird falsch parametrisiert | Strikte Identifier-Validierung für `--since-column` (gleiches Pattern wie `--tables`); `--since` wird typisiert gebunden, kein String-Concat |
 | **JDBC-Treiber liefern unterschiedliche `sqlTypeName`-Strings** | `ValueDeserializer` normiert primär über JDBC-Typcodes und nutzt `sqlTypeName` nur als sekundären Dialekt-Hint; Dialekt-Tests decken PG/MySQL/SQLite explizit ab |
 | **MySQL `VALUES(col)`-UPSERT-Syntax altert weg** | In 0.4.0 noch dokumentiert, aber als Follow-up in §11 behalten; neuere MySQL-Versionen bevorzugen Alias-basiertes Update |
+| **M2: Per-Chunk Allocation-Last durch Reorder-Mapping** — der Importer baut pro Chunk einen neuen `DataChunk` plus pro Row ein neues `Array<Any?>`, weil `DataChunk` eine `data class` mit `val`-Feldern ist. Bei 30 k rows/s und `chunkSize = 10 000` läuft das in einen spürbaren GC-Druck. | Phase C Schritt 12 + 23 enthält explizit ein JFR-/Allocation-Profiling auf dem Reorder-Pfad gegen ein 1-M-Row-Fixture. Wenn der Allocation-Anteil > 25 % der Importzeit ausmacht, kommt vor Phase F ein additiver Reorder-Vertrag dazu: entweder eine neue Session-Methode `write(reorderedRows: List<Array<Any?>>, bindingColumns: List<ColumnDescriptor>)` oder ein wiederverwendbarer `RowBuffer`-Pool im Importer. Beide Varianten sind additiv und brechen die in §3.1.1 dokumentierte API nicht. Die Entscheidung wird vor Phase F getroffen, damit Phase F kein Performance-Surprise-Refactoring auslöst. |
 
 ---
 
