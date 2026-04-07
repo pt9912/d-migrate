@@ -169,21 +169,29 @@ interface DataWriter {
  * **Session-State-Maschine (M1)**:
  *
  * ```
- *               write(chunk)         commitChunk() | rollbackChunk()
- *   OPEN ─────────────────────► WRITTEN ─────────────────────► OPEN
- *    │                             │
- *    │                             │ finishTable() (nur aus OPEN!)
- *    ▼                             ▼
- *  CLOSED ◄───── close() ─── FINISHED
- *                                  │
- *                                  └─► CLOSED via close()
+ *                  write(chunk)              commitChunk() | rollbackChunk()
+ *     OPEN ──────────────────────────► WRITTEN ──────────────────────────► OPEN
+ *      │                                  │                                  │
+ *      │                                  │                                  │ finishTable()
+ *      │ finishTable() (0-Chunk-Pfad, F1) │ close()                          │
+ *      ▼                                  ▼                                  ▼
+ *   FINISHED                           CLOSED                            FINISHED
+ *      │                                                                     │
+ *      │ close()                                              close()        │
+ *      └──────────────────────────► CLOSED ◄──────────────────────────────────┘
  * ```
  *
  * - `OPEN`: frisch nach `openTable(...)` oder nach erfolgreichem
  *   commit/rollback. Erlaubt: `write(...)`, `finishTable()`, `close()`.
+ *   `finishTable()` aus `OPEN` ist sowohl der reguläre Pfad nach dem
+ *   letzten erfolgreichen `commitChunk()` als auch der 0-Chunk-Pfad (F1)
+ *   für leere selbstbeschreibende Eingaben.
  * - `WRITTEN`: nach einem erfolgreichen `write(...)`. Erlaubt:
  *   `commitChunk()`, `rollbackChunk()`, `close()`. Ein zweiter `write(...)`
- *   ohne dazwischenliegenden Commit/Rollback ist ein State-Fehler.
+ *   ohne dazwischenliegenden Commit/Rollback ist ein State-Fehler. Ein
+ *   `finishTable()` aus `WRITTEN` ist ebenfalls ein State-Fehler — der
+ *   Importer MUSS vorher `commitChunk()` aufrufen, sonst gibt es kein
+ *   implizites Commit-on-Finish.
  * - `FINISHED`: nach erfolgreichem `finishTable()`. Erlaubt nur noch
  *   `close()`.
  * - `CLOSED`: terminal. Jeder weitere Aufruf außer `close()` (idempotent)
@@ -258,11 +266,40 @@ interface TableImportSession : AutoCloseable {
     fun rollbackChunk()
 
     /**
+     * **R3 — Truncate-Signal pro Tabelle**: vom [StreamingImporter]
+     * direkt nach einem erfolgreich ausgeführten `--truncate`-Pre-Step
+     * (§6.14) auf GENAU der `TableImportSession` der gerade truncated
+     * Zieltabelle aufgerufen. Idempotent; mehrfacher Aufruf hat keinen
+     * zusätzlichen Effekt.
+     *
+     * Mit dieser Methode landet der „Tabelle wurde im aktuellen Lauf
+     * truncated"-Zustand bewusst **per Session** am Writer und nicht über
+     * `ImportOptions` als globalen CLI-Flag — bei Multi-Tabellen-Imports
+     * mit `--truncate` kann der Pre-Step für einzelne Tabellen geskippt
+     * werden (z.B. weil die Tabelle nicht im Filter steht), und die
+     * H5/F4-Sonderpfade in §6.6 dürfen sich NICHT auf einen tabelle-
+     * fremden Zustand berufen. Der Writer wertet das Signal in
+     * [finishTable] für den MySQL-H5- und SQLite-F4-Pfad aus (§3.3 / §3.4 /
+     * §6.6 Schritt 3).
+     *
+     * **State-Maschine (M1)**: erlaubt aus `OPEN` (typischer Pfad: direkt
+     * nach `openTable(...)` und vor dem ersten `write(...)`). Nach dem
+     * ersten erfolgreichen `write(...)` liefert `markTruncatePerformed()`
+     * `IllegalStateException`, weil ein nachträgliches Truncate-Signal
+     * fachlich keinen Sinn ergibt.
+     */
+    fun markTruncatePerformed()
+
+    /**
      * Regulärer Erfolgsabschluss einer Tabelle: führt etwaige
      * Sequence-/Identity-Nachführung (§6.6) aus, reaktiviert ggf. Trigger
      * (§6.7) und liefert das Ergebnis als [FinishTableResult] zurück.
      *
      * Reihenfolge in 0.4.0:
+     * 0. `conn.commit()` idempotent (R2 — räumt jede offene Lese-/
+     *    Chunk-Transaktion ab, damit `SELECT MAX(col)` und das
+     *    dialektspezifische Reseeding in einem deterministischen
+     *    Transaktionszustand starten; siehe §6.6 Schritt 0)
      * 1. `reseedGenerators(...)`
      * 2. `enableTriggers(...)`
      * 3. Ergebnis bauen und zurückgeben
@@ -309,6 +346,27 @@ interface TableImportSession : AutoCloseable {
      * und gibt die Connection an den Pool zurück. Führt bewusst KEIN Reseeding
      * aus; `close()` läuft auch im Fehlerpfad nach Teilimporten.
      *
+     * **R6 — Cleanup-Reihenfolge** (verbindlich für Phase C, damit jeder
+     * Treiber denselben Pfad implementiert und §6.7/M8 nicht versehentlich
+     * unterläuft):
+     *
+     * 1. Wenn eine Chunk-Transaktion noch offen steht (state == `WRITTEN`,
+     *    oder state == `OPEN` aber `autoCommit = false` aus dem Chunk-Pfad),
+     *    `conn.rollback()` aufrufen — der Caller hat in diesem Pfad bewusst
+     *    nicht committet, also wird verworfen.
+     * 2. `conn.autoCommit = true` setzen (symmetrisch zur DDL-Phase aus
+     *    `openTable(...)` / §6.7 M8 — `enableTriggers(...)` MUSS unter
+     *    `autoCommit = true` laufen, sonst hängt der Reenable in einer
+     *    impliziten DDL-Transaktion).
+     * 3. Wenn `disableTriggers(...)` in dieser Session jemals erfolgreich
+     *    war (Tracking via internem Boolean), `enableTriggers(...)`
+     *    idempotent erneut aufrufen. Etwaige Exception aus diesem Schritt
+     *    landet in [FailedFinishInfo.closeCause] (siehe F3) — `close()`
+     *    selbst wirft NICHT.
+     * 4. Connection an den Pool zurückgeben (`pool.release(conn)` o.ä.).
+     *    Auch hier: Fehler werden geloggt und in den strukturierten
+     *    Reporting-Pfad eingespeist, NICHT geworfen.
+     *
      * **F3 — `close()` wirft nicht**: `close()` ist `AutoCloseable` und wird
      * üblicherweise aus `try-with-resources`/`use { ... }`-Blöcken
      * aufgerufen. Würde `close()` selbst werfen, würde das eine bereits
@@ -351,11 +409,24 @@ interface TableImportSession : AutoCloseable {
  *   die `--on-error`-Politik aggregiert chunkweise verlorene Rows in
  *   [TableImportSummary.rowsFailed], NICHT in `rowsSkipped` (siehe §3.6.2,
  *   §6.5 und Finding M3/K2).
+ * - `rowsUnknown`: **R10 — MySQL `SUCCESS_NO_INFO (-2)`-Fallback**.
+ *   Wenn der MySQL-JDBC-Batch pro-Row-Counts vorenthält und stattdessen
+ *   `Statement.SUCCESS_NO_INFO` liefert, kann der Writer `inserted` und
+ *   `updated` für diesen Batch nicht trennen. Statt die Unklarheit
+ *   stillschweigend als `inserted` zu zählen (was Delta-Imports per
+ *   `--on-conflict update` strukturell als 100 % Inserts maskieren
+ *   würde), legt der Writer die Row-Anzahl dieses Batches in
+ *   `rowsUnknown` ab. Im UPSERT-Pfad ist das die einzige Quelle für
+ *   `rowsUnknown`; alle anderen Writer-Pfade liefern `0L`. Reporting
+ *   und JSON-Output (§6.15) zeigen das Feld als getrennten Counter und
+ *   setzen den Hinweis „inserts/updates not exactly distinguishable
+ *   for N rows (MySQL SUCCESS_NO_INFO)".
  */
 data class WriteResult(
     val rowsInserted: Long,
     val rowsUpdated: Long,
     val rowsSkipped: Long,
+    val rowsUnknown: Long = 0L,
 )
 
 /**
@@ -559,15 +630,22 @@ MySQL-spezifika:
   `ALTER TABLE \`table\` AUTO_INCREMENT = 1` aus und schreibt einen
   entsprechenden `SequenceAdjustment(newValue = 1)` in den Report. Ohne
   `--truncate` bleibt das Standardverhalten aus §6.6: `MAX = NULL` →
-  No-op. Die Information „Tabelle wurde im aktuellen Lauf truncated"
-  reicht der Importer dem Writer über `ImportOptions.truncatePerformed`
-  oder einen analogen Session-State weiter (Phase C entscheidet die
-  konkrete Form, der Vertrag steht hier).
+  No-op. **R3 — Signaling**: die Information „Tabelle wurde im aktuellen
+  Lauf truncated" reicht der Importer dem Writer über
+  `TableImportSession.markTruncatePerformed()` (§3.1.1) GENAU auf der
+  Session der jeweiligen Tabelle weiter — bewusst NICHT über
+  `ImportOptions`, weil der CLI-Flag global ist und bei Multi-Tabellen-
+  Imports nicht zwingend für jede Tabelle gilt. Der MySQL-Writer
+  speichert das Signal als Boolean im Session-State und prüft es in
+  `finishTable()` zusammen mit `MAX(col) = NULL`.
 - **UPSERT-Zählung**: für `ON DUPLICATE KEY UPDATE` muss der Writer die
   per-Row-Rückgabewerte aus `executeBatch()` auswerten, nicht nur eine
   Gesamtsumme. MySQL wird auf `WriteResult` normalisiert als
   `1 -> rowsInserted`, `2 -> rowsUpdated`, `0 -> rowsUpdated`
-  (idempotentes No-Op-Update auf bestehender Row).
+  (idempotentes No-Op-Update auf bestehender Row), und
+  `Statement.SUCCESS_NO_INFO (-2) -> rowsUnknown` (R10 — der ganze
+  Batch wandert in `rowsUnknown` statt in `rowsInserted`, weil der
+  Treiber Insert/Update für diesen Batch nicht trennt; siehe §6.12.2).
 - **Trigger-Disable**: in 0.4.0 **nicht generisch unterstützt**. Versuch,
   Trigger zu deaktivieren, wirft `UnsupportedTriggerModeException` mit
   Verweis auf Design-Doc §6.2. Default `fire` läuft normal.
@@ -609,8 +687,10 @@ SQLite-spezifika:
   ließe — `DELETE` entspricht semantisch dem PG-`TRUNCATE`-Reset) und
   schreibt einen `SequenceAdjustment(newValue = 0)` in den Report. Ohne
   `--truncate` bleibt das Standardverhalten aus §6.6 Schritt 3:
-  `MAX = NULL` → No-op. Die `truncatePerformed`-Information wird über
-  denselben Session-State wie auf MySQL durchgereicht.
+  `MAX = NULL` → No-op. **R3**: die `truncatePerformed`-Information
+  kommt über `TableImportSession.markTruncatePerformed()` (§3.1.1)
+  rein, identisch zur MySQL-H5-Variante in §3.3 — es gibt nur einen
+  einzigen Signaling-Pfad pro Dialekt.
 - **Trigger-Disable**: nicht unterstützt (Design-Doc §6.3). `disable` →
   `UnsupportedTriggerModeException`.
 - **Foreign-Key-Checks**: temporär `PRAGMA foreign_keys = OFF` während des
@@ -728,6 +808,19 @@ beide auf `[1, 2]` und `[4, 3]` materialisiert werden, nicht auf
 `[1, 2]` und `[3, 4]`. Die Phase-B-Reader-Tests enthalten dafür eine
 explizite Permutations-Fixture mit reordered Keys, sodass eine
 versehentliche Position-by-Encounter-Implementierung sofort kippt.
+
+**R9 — Edge-Case „leere erste Row"**: Wenn die erste Row eines
+JSON-/YAML-Inputs ein **leeres Objekt/Mapping** ist (`[{}, {"a": 1}]`,
+`[\n  {}\n  {a: 1}\n]`), setzt der Reader das autoritative Feldset auf
+die **leere Menge**. `headerColumns()` liefert dann eine leere Liste,
+nicht `null`. Jede nicht-leere Folge-Row hat damit automatisch
+mindestens einen „zusätzlichen, in der ersten Row unbekannten Schlüssel"
+und löst die `ImportSchemaMismatchException`-Regel von oben aus, die
+über `--on-error` läuft. Das ist explizit Vertrag, kein Edge-Case-Bug:
+wer eine Datei mit lauter leeren Objekten am Anfang hat, soll früh
+einen klaren Schema-Mismatch sehen statt eines stillen No-op-Imports.
+Phase B nimmt dafür eine Mini-Fixture (`[{}, {"a": 1}]`) in die
+Reader-Tests auf.
 
 > **H3 — Round-Trip-Garantie aus 0.3.0**: Diese „erste Row ist autoritativ"-
 > Regel funktioniert für Round-Trips nur, weil der 0.3.0-`data export`
@@ -969,7 +1062,9 @@ data class ChunkFailure(
 
 Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 
-- `rowsInserted`, `rowsUpdated`, `rowsSkipped`, `rowsFailed`
+- `rowsInserted`, `rowsUpdated`, `rowsSkipped`, `rowsUnknown` (R10 —
+  MySQL `SUCCESS_NO_INFO`-Fallback, siehe `WriteResult`-Kdoc in §3.1.1
+  und §6.12.2), `rowsFailed`
 - `chunkFailures: List<ChunkFailure>` für `--on-error log` auf Chunk-Granularität
 - `sequenceAdjustments: List<SequenceAdjustment>` (für den Report)
 - `targetColumns: List<ColumnDescriptor>` (für Debug/JSON-Output)
@@ -1013,7 +1108,9 @@ Kdoc in §3.1.1):
   `WriteResult` und wird ausschließlich vom `StreamingImporter` aus den
   fehlgeschlagenen Chunks aggregiert.
 - Diese Trennung muss auch in den `--quiet`/JSON-Output-Pfaden in §6.15
-  sichtbar bleiben (`skipped` und `failed` als getrennte Counter).
+  sichtbar bleiben (`skipped`, `unknown` und `failed` als getrennte
+  Counter; `unknown` ist R10-spezifisch und nur im MySQL-`SUCCESS_NO_INFO`-
+  Pfad ungleich `0`).
 
 ### 3.7 `d-migrate-cli`
 
@@ -1103,8 +1200,8 @@ Tabelle, alle Pre-Flight-Pfade landen genau hier:
 |---|---|
 | CLI-Parse/Helper | `--source`-Form (stdin/file/dir), Identifier-Validierung für `--table`/`--tables`/`--since-column`, explizites `--on-conflict`, `--truncate`-Exklusivität, `--encoding`-Charset-Name |
 | Lokale `--schema`-Validierung (M4 Phase 1) | wenn `--schema <path>` gesetzt ist: Datei lesen, gegen das neutrale Schema-Modell parsen, intra-Schema-Konsistenz prüfen (Spalten, Nullability, Constraints). Schlägt fehl → Exit 3 ohne dass jemals eine Connection aufgemacht wurde. Diese Phase macht NICHT die Konsistenz „Schema deckt Target wirklich ab" — die kommt erst nach `openTable(...)`. |
+| Topo-Sort (nur Directory + `--schema`) | **R8**: läuft direkt im Anschluss an die M4-Phase-1-Validierung, BEVOR `resolveTarget(...)` aufgerufen wird. Wenn `ImportInput.Directory` UND `--schema` gesetzt: Tabellenreihenfolge per `kahnSort()` aus dem bereits geladenen Schema-DAG ableiten und in `ImportInput.Directory.tableOrder` ablegen (per `copy(tableOrder = ...)`). Der Sort braucht keine Connection und keinen Dialekt — er nutzt nur die in M4 Phase 1 ohnehin geladene Schema-Definition. Für Single-File/Stdin **kein** Topo-Sort (siehe M5 / §6.8.3). Schlägt der Sort selbst fehl (Schema-DAG hat einen Zyklus o.ä.) → Exit 3, weiterhin ohne Connection. |
 | Nach `resolveTarget(...)` | Dialekt-Auflösung, `--disable-fk-checks` auf PG, Connection-/Config-Fehler |
-| Topo-Sort (nur Directory + `--schema`) | wenn `ImportInput.Directory` UND `--schema` gesetzt: Tabellenreihenfolge per `kahnSort()` aus dem Schema-DAG ableiten und in `ImportInput.Directory.tableOrder` ablegen. Für Single-File/Stdin **kein** Topo-Sort (siehe M5 / §6.8.3). |
 | Während `openTable(...)` und direkt danach (writer-intern + CLI-Wrapper) | writer-interne Trigger-Strict-/Disable-Prüfung; CLI-Wrapper mappt `UnsupportedTriggerModeException` daraus auf Exit 2, danach Header-Validierung/Reorder-Mapping, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
 | Schema-vs-Target-Konsistenz (M4 Phase 2, nur wenn `--schema` gesetzt) | Direkt nach `openTable(...)` und dem Header-Mapping: das aus `session.targetColumns` aufgebaute Bild gegen die `--schema`-Definition prüfen (Spaltennamen, Nullability, Typkompatibilität). Mismatch → Exit 3, bevor der erste `write(...)` läuft. |
 
@@ -1285,6 +1382,16 @@ Phase B explizit neu entschieden statt still fortgeschrieben.
    trägt `@Tag("perf")` und ist im Gradle-Build über
    `-PincludeTags=perf` opt-in. CI-Defaults laufen ohne `perf`; lokale
    Performance-Runs aktivieren das Tag explizit.
+   **R7 — Cache-Invalidation**: der Generator schreibt neben dem
+   eigentlichen Fixture eine `<fixture>.stamp`-Datei mit dem SHA-256
+   seines eigenen Source-Inhalts plus aller relevanten Parameter
+   (Row-Anzahl, Spalten-Schema, Random-Seed). Vor Wiederverwendung
+   eines vorhandenen Caches vergleicht der Generator den aktuellen
+   Stamp gegen den auf Disk; bei Abweichung wird das Fixture neu
+   erzeugt. Damit kann eine spätere Generator-Änderung (z.B. Zahl-Range
+   oder zusätzliche Spalte) niemals stille stale-Test-Daten auf einem
+   lokalen `build/perf-fixtures/` produzieren — der nächste Lauf
+   regeneriert deterministisch.
 
 ### Phase B: Format-Reader
 
@@ -1344,6 +1451,15 @@ Schritt, der beide Pfade zusammenführt.
     `> 25 %` der Importzeit ausmacht, wird vor Phase F ein additiver
     Vertrag entschieden (`session.write(reorderedRows, bindingColumns)`
     oder ein `RowBuffer`-Pool, siehe §10).
+    **R5 — Phase-F-Gate**: Phase D gilt **erst dann** als
+    abgeschlossen, wenn der Perf-Run lokal ausgeführt UND sein Ergebnis
+    in `docs/perf/0.4.0-phase-d-reorder.md` (mit
+    Importzeit-Gesamt, Allocation-Anteil im Reorder-Pfad, GC-Druck und
+    Entscheidung „additiver Vertrag JA/NEIN" plus Begründung) abgelegt
+    ist. Phase F darf nicht starten, solange diese Datei fehlt — auch
+    wenn die Standard-CI grün ist. Das schützt aktiv davor, dass der
+    `@Tag("perf")`-Run unter Zeitdruck übersehen wird und Phase F dann
+    in ein Performance-Surprise-Refactoring läuft.
 
 ### Phase E: CLI-Integration
 
@@ -1611,25 +1727,44 @@ Row-by-Row-Replay-Pfad wäre ein additiver Milestone.
 Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
 `session.finishTable()`):
 
+0. **R2 — Transaktions-Reset vor dem Reseeding**: `finishTable()` ruft
+   als erste Aktion `conn.commit()` idempotent auf. Hintergrund: nach
+   dem letzten `commitChunk()` läuft die Connection weiter im
+   `autoCommit = false`-Modus aus dem Chunk-Pfad (§6.5), und der
+   anschließende `SELECT MAX(col) FROM target` würde sonst eine neue
+   implizite Lese-Transaktion eröffnen, die bis zum nächsten `commit()`
+   offen bleibt. Das ist auf MySQL aktiv gefährlich, weil
+   `ALTER TABLE … AUTO_INCREMENT = N` ein impliziter DDL-Commit ist und
+   damit eine Transaktion mitten im Reseeding-Pfad schließt; auf dem
+   0-Chunk-Pfad (F1) gibt es zudem überhaupt keinen vorherigen
+   `commit()`, sodass der `SELECT MAX(col)` die allererste Transaktion
+   der Session eröffnen würde. Der Step-0-Commit (no-op nach einem
+   regulär gerade frisch committeten Chunk, aktiv abräumend nach 0
+   Chunks oder nach einer impliziten Lese-Transaktion) macht den
+   Transaktionszustand vor dem dialektspezifischen Reseeding
+   deterministisch. Wirft Schritt 0 selbst (in der Praxis fast
+   ausgeschlossen, weil `commit()` auf einer leeren Transaktion ein
+   no-op ist), wird die Exception wie ein Reseeding-Fehler durchgereicht
+   (§3.1.1 „Schritt 1 wirft").
 1. Pro Spalte aus `importedColumns` prüfen: ist sie eine Generator-Spalte
    im Ziel? (PG: `pg_get_serial_sequence` für `SERIAL` sowie
    `GENERATED { BY DEFAULT | ALWAYS } AS IDENTITY`; MySQL: Spalten-Metadata
    `EXTRA = 'auto_increment'`; SQLite: `INTEGER PRIMARY KEY AUTOINCREMENT`
    in `sqlite_master`)
 2. Wenn ja: höchsten Wert der Spalte **im Ziel nach Abschluss aller Chunks**
-   ermitteln (`SELECT MAX(col) FROM target` direkt nach dem letzten Commit
+   ermitteln (`SELECT MAX(col) FROM target` direkt nach dem Step-0-Commit
    auf derselben Session-Connection; ohne zusätzliche cross-session-
    Garantien — siehe §10)
 3. Ergibt `MAX(col)` dabei `NULL` (leere Tabelle oder nur NULL-Werte in der
    Generator-Spalte), ist der Reseed-Pfad ein expliziter No-op: keine
    `setval`-/`AUTO_INCREMENT`-/`sqlite_sequence`-Änderung und kein
    `SequenceAdjustment` im Report. **H5/F4-Ausnahme** für MySQL und SQLite
-   `INTEGER PRIMARY KEY AUTOINCREMENT`: wenn der Tabelle in diesem Lauf
-   ein `--truncate`-Pre-Step (also `DELETE FROM`, siehe §6.14) vorausging
-   und sie danach leer geblieben ist, MUSS der Folge-Zähler dieser
-   Tabelle aktiv zurückgesetzt werden, damit der nächste Insert wieder
-   bei `1` startet — sonst kollidiert das Verhalten mit der intuitiven
-   PG-`TRUNCATE`-Semantik.
+   `INTEGER PRIMARY KEY AUTOINCREMENT`: wenn der Importer auf dieser
+   Session vorher `markTruncatePerformed()` aufgerufen hat (R3 — siehe
+   §3.1.1, §6.14) UND die Tabelle danach leer geblieben ist, MUSS der
+   Folge-Zähler dieser Tabelle aktiv zurückgesetzt werden, damit der
+   nächste Insert wieder bei `1` startet — sonst kollidiert das
+   Verhalten mit der intuitiven PG-`TRUNCATE`-Semantik.
    - **MySQL (H5)**: `ALTER TABLE \`table\` AUTO_INCREMENT = 1`,
      `SequenceAdjustment(newValue = 1)` (siehe §3.3).
    - **SQLite (F4)**: `DELETE FROM sqlite_sequence WHERE name = ?` für
@@ -1975,7 +2110,7 @@ eine zusammengelegte `DataAdapterRegistry` mit beiden Maps — aber:
 | `2` | CLI-Fehler, ungültige Optionen, fehlendes `--target` oder `--table`, `--trigger-mode disable` auf MySQL/SQLite, `--disable-fk-checks` auf PG, unbekannte Endung ohne `--format`, `--truncate` zusammen mit explizitem `--on-conflict`, PK-lose Tabelle mit `--on-conflict update` | `--trigger-mode disable is not supported for dialect MYSQL` |
 | `3` | Header-/Target-Schema-Mismatch, `trigger-mode strict` mit gefundenen Triggern oder Schema-Validierung gegen `--schema <path>` fehlgeschlagen | `column 'userId' has no exact match` |
 | `4` | Connection-Fehler (HikariCP, fehlendes Target) | `Connection refused: localhost:5432` |
-| `5` | Import-Fehler während Streaming (SQL-Constraint-Verletzung, IO-Exception, Sequence-Reseeding oder Trigger-Reenable nach erfolgreichem Schreiben gescheitert) | `Failed to import table 'orders' at chunk 47: duplicate key value violates unique constraint` |
+| `5` | Import-Fehler während Streaming **bei `--on-error abort`** (SQL-Constraint-Verletzung, IO-Exception), oder Post-Chunk-Finalisierungsfehler (Sequence-Reseeding bzw. Trigger-Reenable nach erfolgreichem Schreiben gescheitert). Unter `--on-error skip\|log` führen reine Chunk-Schreibfehler NICHT zu Exit 5; sie landen in `rowsFailed`/`chunkFailures` und der Lauf endet regulär mit Exit 0 (siehe §6.5 und R4). | `Failed to import table 'orders' at chunk 47: duplicate key value violates unique constraint` |
 | `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml`, fehlende ENV-Variable) | wie 0.3.0 |
 
 Code 3 ist in 0.3.0 für `data export` nicht relevant gewesen, kommt hier
@@ -2103,11 +2238,19 @@ MySQL-Versionen Alias-basiertes Update bevorzugen.
 unterschiedliche Affected-Row-Konventionen haben. Für MySQL ist das
 verbindlich über die Batch-Rückgabewerte definiert: `1 -> inserted`,
 `2 -> updated`, `0 -> updated` (idempotenter No-Op auf bestehender Row).
-Liefert der Treiber stattdessen `Statement.SUCCESS_NO_INFO (-2)`, fällt die
-saubere Trennung für diesen Batch weg: 0.4.0 zählt den Batch dann
-konservativ als `rowsInserted += chunk.size` und meldet im Report einen
-Hinweis, dass Insert/Update für diesen MySQL-Batch nicht exakt
-unterscheidbar waren.
+**R10 — `SUCCESS_NO_INFO (-2)`-Fallback**: Liefert der Treiber stattdessen
+`Statement.SUCCESS_NO_INFO`, fällt die saubere Trennung für diesen Batch
+weg. 0.4.0 zählt den Batch dann **NICHT** konservativ als
+`rowsInserted += chunk.size` (das würde Delta-Imports per
+`--on-conflict update` strukturell als 100 % Inserts maskieren und im
+Report einen falschen „5 000 inserted"-Eindruck erzeugen, obwohl real
+„5 000 updated" passierte). Stattdessen wandert die Batch-Größe in das
+neue `rowsUnknown`-Feld auf `WriteResult`/`TableImportSummary`. Die
+Summary in §6.15 zeigt `rowsUnknown` als getrennten Counter und hängt
+einen Hinweis an: „inserts/updates not exactly distinguishable for N
+rows (MySQL SUCCESS_NO_INFO)". So bleibt der Inserted/Updated-Counter
+ehrlich, und die Unschärfe ist explizit ablesbar — sowohl im
+Klartext-Report als auch im JSON-Output.
 
 **Bewusst nicht enthalten** (F44):
 
@@ -2166,6 +2309,18 @@ Session-Connection, die anschließend auch für den Tabellen-Import verwendet
 wird: `TRUNCATE TABLE` (PG), `DELETE FROM` (MySQL **und** SQLite) in einer
 eigenen, sofort committeten Transaktion, danach der reguläre chunkbasierte
 Import-Pfad aus §6.5.
+
+**R3 — Signaling-Vertrag pro Tabelle**: Direkt nachdem der Pre-Step für
+**genau eine** Tabelle erfolgreich gelaufen ist (für PG erfolgreich, für
+MySQL/SQLite nach `DELETE FROM`), ruft der `StreamingImporter` auf der
+zugehörigen `TableImportSession` `markTruncatePerformed()` auf — und
+zwar im `OPEN`-Zustand vor dem ersten `write(...)`. Damit landet der
+Truncate-Zustand bewusst **per Session** am Writer und nicht über
+`ImportOptions` als globaler CLI-Flag; bei Multi-Tabellen-Imports
+(§6.8.3) wird `markTruncatePerformed()` nur für die Tabellen
+aufgerufen, deren destruktiver Pre-Step im umgekehrt-topologischen
+Vorlauf tatsächlich gelaufen ist. Der Writer wertet das Signal in den
+H5/F4-Sonderpfaden in `finishTable()` aus (§3.3, §3.4, §6.6 Schritt 3).
 
 **H5 — MySQL-Truncate-Pfad ist `DELETE FROM`, immer**: 0.4.0 versucht auf
 MySQL bewusst KEIN `TRUNCATE TABLE` zuerst und kein „auf 1701 fallback"-
@@ -2258,6 +2413,24 @@ Sequence adjustments: 2
   products.id   → 146
 Trigger mode:    fire
 ```
+
+**R10 — `rowsUnknown` im MySQL-Fallback-Pfad**: Wenn auch nur ein Chunk
+auf einen `Statement.SUCCESS_NO_INFO`-Treiber gestoßen ist, taucht
+`rowsUnknown` als zusätzlicher Counter in der Summary-Zeile UND in der
+pro-Tabelle-Zeile auf, plus eine separate Hinweiszeile am Ende:
+
+```
+Imported 1 table (0 inserted, 0 updated, 0 skipped, 5 000 unknown, 0 failed) in 1.4 s
+  events:  0 inserted, 0 updated, 0 skipped, 5 000 unknown, 0 failed
+Note: 5 000 rows reported as unknown — MySQL JDBC driver returned
+  SUCCESS_NO_INFO for these batches; inserts and updates are not exactly
+  distinguishable. Consider --chunk-size 1 for forensic accounting, or
+  upgrade the driver.
+```
+
+`rowsUnknown` ist auch im JSON-Output (`--output-format json`) als
+eigenes Feld auf `TableImportSummary` und `ImportResult` sichtbar, damit
+Phase F den Pfad gezielt asserten kann.
 
 **H4 / F3 — Reporting bei `failedFinish`**: wenn eine Tabelle mit
 `TableImportSummary.failedFinish != null` zurückkommt (Daten committed,
@@ -2400,11 +2573,18 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
      ist (NICHT wieder mit den 1000 Rows gefüllt). Der Test schützt damit
      das in §6.14 dokumentierte Verhalten gegen versehentliche Atomarisierung
      in einer späteren Refactoring-Runde.
-6. **MySQL UPSERT-Accounting-Verifikation**:
+6. **MySQL UPSERT-Accounting-Verifikation** (R10):
    - Batch-Import mit `--on-conflict update` gegen MySQL
    - Test deckt sowohl per-Row-Counts als auch `SUCCESS_NO_INFO (-2)` ab
-   - Bei `-2` muss der Report den Fallback-Hinweis auf nicht exakt
-     trennbare Inserts/Updates enthalten
+   - Bei per-Row-Counts: `rowsInserted`/`rowsUpdated` korrekt getrennt,
+     `rowsUnknown == 0`
+   - Bei `-2`: `rowsUnknown` enthält die Batch-Größe, `rowsInserted` und
+     `rowsUpdated` bleiben für diesen Batch unverändert, und der Report
+     zeigt sowohl die separate `unknown`-Zahl in der Summary-Zeile als
+     auch die Hinweiszeile „inserts/updates not exactly distinguishable
+     for N rows (MySQL SUCCESS_NO_INFO)"
+   - JSON-Output (`--output-format json`) hat `rowsUnknown` als
+     eigenes Feld auf `TableImportSummary` und `ImportResult`
 
 ---
 
@@ -2414,7 +2594,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 |---|---|
 | **Streaming-Reader leakt Speicher** bei großen Eingaben | Phase B Schritt 7: 100-MB-Heap-Sample-Test pro Reader |
 | **Sequence-Reseeding race** zwischen Import-Ende und nächster INSERT | PG verwendet das normale nicht-mutierende `setval(seq, maxImported, true)`-Muster ohne `nextval()`-Side-Effect; der Plan beansprucht bewusst KEINE cross-session-Serialisierung. MySQL bleibt bei `ALTER TABLE ... AUTO_INCREMENT`. |
-| **MySQL liefert `SUCCESS_NO_INFO (-2)` statt per-Row-Counts** | Fallback: Batch konservativ als inserted zählen, Hinweis im Report ausgeben; Phase F testet den degradierten Accounting-Pfad explizit |
+| **MySQL liefert `SUCCESS_NO_INFO (-2)` statt per-Row-Counts** | **R10**: Batch landet im neuen `WriteResult.rowsUnknown`-Feld (NICHT in `rowsInserted`, weil das Delta-Imports als 100 % Inserts maskieren würde); Summary in §6.15 zeigt `rowsUnknown` als getrennten Counter plus Hinweiszeile; Phase F testet den degradierten Accounting-Pfad explizit gegen den `rowsUnknown`-Counter |
 | **Trigger-Reaktivierung scheitert** nach Fehler im Import | Design-Doc §7.3: harter Fehler mit Tabellen-Name; `close()` versucht trotz vorheriger Exceptions die Reaktivierung, aber nie das Reseeding |
 | **`--on-conflict update` ohne PK** wird stillschweigend zu Insert | Pre-Flight-Check via `DatabaseMetaData.getPrimaryKeys()`; Tabelle ohne PK + `update` → Exit 2 |
 | **Encoding-Auto-Fallback verschluckt Mojibake** | Wenn `auto` ohne BOM auf UTF-8 fällt, stderr-Hinweis ausgeben; in den Tests prüfen, dass ISO-8859-1 ohne expliziten Flag mit „Decoding error"-Meldung scheitert |
