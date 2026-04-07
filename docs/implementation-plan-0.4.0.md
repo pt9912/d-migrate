@@ -47,6 +47,8 @@ Datei → d-migrate data import ... --table <name> --on-conflict update         
   inkrementelle Imports sind fachlich identisch zu idempotenten
   UPSERT-Imports und werden über `--on-conflict update` abgewickelt
   (siehe §6.12).
+- `database.default_source` in `.d-migrate.yaml` wird ab 0.4.0 für
+  `data export` aktiv; `database.default_target` analog für `data import`
 - `database.default_target` in `.d-migrate.yaml` wird aktiv (war in 0.3.0
   noch ignoriert, siehe Plan-0.3.0 §6.14)
 - Round-Trip-Integration-Tests Export → Import → Vergleich (LN-043), inkl.
@@ -388,10 +390,12 @@ interface DataChunkReader : AutoCloseable {
      * → Exit 3 mit klarer Meldung). Spalten-**Typen** kommen IMMER aus dem
      * Zielschema, nie aus dem Reader.
      *
-     * Vor dem ersten erfolgreichen [nextChunk]-Aufruf bzw. bei Eingaben ohne
-     * Header-Information (`csvNoHeader = true` oder leeres JSON/YAML-Array)
-     * liefert die Methode `null`. Danach liefert sie einen stabilen Snapshot
-     * der file-derived Header-Namen.
+     * Nach `create(...)` bzw. spätestens nach dem ersten [nextChunk]-Aufruf
+     * liefert die Methode einen deterministischen Snapshot der bekannten
+     * Header. Für Header-only-CSV darf das also auch dann eine Liste sein,
+     * wenn `nextChunk()` direkt `null` liefert. Für Eingaben ohne
+     * Header-Information (`csvNoHeader = true`) oder leere JSON/YAML-Arrays
+     * bleibt der Wert `null`.
      */
     fun headerColumns(): List<String>?
 }
@@ -432,21 +436,26 @@ neutralen Typen vollständig abdecken.
 | JSON String | `TIMESTAMP WITH TIME ZONE` | `OffsetDateTime.parse` |
 | JSON String | `UUID` | `UUID.fromString` |
 | JSON String | `INTERVAL` | String (dialektspezifisches Binding später im Writer) |
+| JSON Number | `REAL`/`FLOAT`/`DOUBLE` | Double |
 | JSON Number ohne `.`/`e`/`E` im Token | `INTEGER`/`BIGINT` | Long |
 | JSON Number mit `.`/`e`/`E` im Token | `NUMERIC`/`DECIMAL` | `BigDecimal` |
 | JSON Number | `NUMERIC`/`DECIMAL` mit `scale > 0` oder `precision > 18` | `BigDecimal` |
 | JSON `null` | beliebig | SQL NULL |
+| JSON `null` | `JSON`/`JSONB` | ebenfalls SQL NULL, NICHT JSON-Literal `null` |
 | JSON Array | `ARRAY` | `List<Any?>` (JDBC-`createArrayOf()` erst im Writer) |
 | YAML Block-Sequence | `ARRAY` | wie JSON Array |
 | JSON/YAML Binärwert oder Base64-String | `BLOB`/`BYTEA`/binary | `ByteArray` |
 | JSON/YAML Objekt oder JSON-String | `JSON`/`JSONB` | JSON-String |
 | JSON/YAML String | `BIT` | `Boolean` oder `BitSet` je nach Zieltyp |
 | CSV `csvNullString` | beliebig | SQL NULL |
+| CSV String | `REAL`/`FLOAT`/`DOUBLE` | `toDouble()` mit festem Punkt-Format, nie Locale-abhängig |
 | CSV alles andere | bestimmt aus Spalten-Hint via Try-Parse-Kette | typisierter Wert oder Fehler |
 
 CSV ist der unangenehmste Fall, weil alle Werte als String reinkommen — die
 Typ-Inferenz hängt **vollständig** vom JDBC-Spalten-Hint ab. Wir holen den
 Hint via `SELECT * FROM target LIMIT 0` einmal vor dem Import (siehe §6.4).
+Das `csvNullString` kommt aus `ImportOptions.csvNullString` und wird in
+Phase A/CLI explizit über einen Import-Flag gespiegelt.
 
 Array-/Treiberobjekte werden bewusst NICHT in `d-migrate-formats` erzeugt.
 `formats` bleibt JDBC-frei; konkrete `java.sql.Array`- oder PG-`PGobject`-
@@ -477,6 +486,9 @@ Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
   Reihenfolge auf `session.targetColumns` → `session.write(chunk)` → bei Erfolg
   `session.commitChunk()`, bei Fehler `session.rollbackChunk()` plus
   `--on-error`-Auswertung
+- `commitChunk()` und `rollbackChunk()` kapseln dabei die eigentlichen
+  JDBC-`commit()`/`rollback()`-Operationen; der Importer arbeitet nur gegen
+  den Session-Vertrag, nicht direkt gegen `Connection`
 - Pro Tabelle wird genau eine `TableImportSession` über alle Chunks hinweg
   benutzt — bei erfolgreichem Tabellenabschluss ruft der Importer
   `session.finishTable()` auf; `session.close()` bleibt reiner Cleanup-Pfad
@@ -498,6 +510,8 @@ sealed class ImportInput {
     /**
      * Eine Tabelle, Daten aus einer Datei. CLI-Pflicht: `--table <name>`.
      * Format wird aus der Dateiendung oder `--format` abgeleitet (siehe §6.3).
+     * `table` darf schema-qualifiziert sein (`schema.table`) und folgt
+     * demselben Identifier-Pattern wie 0.3.0-`--tables`.
      * Kein automatisches Mapping vom Dateinamen auf den Tabellennamen — das
      * wäre eine Convenience-Erweiterung in einem späteren Milestone.
      */
@@ -524,6 +538,10 @@ Diese Trennung löst die Mehrdeutigkeit, die in der ersten Plan-Fassung
 hat. Für `Stdin` und `SingleFile` gibt es **immer genau eine** Zieltabelle
 und sie muss vom Aufrufer benannt werden.
 
+Schema-Qualifikation ist dabei explizit erlaubt: `table` folgt dem gleichen
+Identifier-Pattern wie 0.3.0-`--tables`, also `name` oder `schema.table`,
+ohne SQL-Quoting aus der CLI heraus.
+
 #### 3.6.2 `ImportResult` und `TableImportSummary`
 
 Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
@@ -547,7 +565,9 @@ class DataImportCommand : CliktCommand(name = "import") {
     val target by option("--target")
     val source by option("--source").required()                        // Pfad oder "-" für Stdin
     val format by option("--format").choice("json", "yaml", "csv")     // Default: aus Endung
-    // F40: Tabellen-Auflösung ist explizit mehrere Pfade:
+    // F40/F47: Tabellen-Auflösung ist explizit mehrere Pfade. `--table` und
+    // `--tables` akzeptieren denselben Identifier-Vertrag wie 0.3.0:
+    // `name` oder `schema.table`, ohne SQL-Quotes.
     val table by option("--table")                                     // Pflicht für Stdin/SingleFile
     val tables by option("--tables").split(",")                        // Subset-Filter für Directory
     val schema by option("--schema").path()                            // Optional Pre-Validation
@@ -558,6 +578,7 @@ class DataImportCommand : CliktCommand(name = "import") {
     val disableFkChecks by option("--disable-fk-checks").flag()        // §6.8 — PG nicht supported
     val reseedSequences by option().flag("--reseed-sequences", "--no-reseed-sequences", default = true)
     val encoding by option("--encoding").default("auto")               // Default: BOM-Detect für UTF-*
+    val csvNullString by option("--csv-null-string").default("")
     val chunkSize by option("--chunk-size").int().default(10_000)
 }
 ```
@@ -574,7 +595,7 @@ class DataImportCommand : CliktCommand(name = "import") {
 | Datei | gesetzt | gesetzt | **Exit 2** — `--tables` ist nur für Directory |
 | Verzeichnis | leer | leer | `ImportInput.Directory(path, null)` (alle Dateien) |
 | Verzeichnis | leer | gesetzt | `ImportInput.Directory(path, tables)` (Subset-Filter) |
-| Verzeichnis | gesetzt | beliebig | **Exit 2** — `--table` ist nur für Single/Stdin |
+| Verzeichnis | gesetzt | beliebig | **Exit 2** — `--table` ist nur für Single/Stdin; Hinweis auf `--tables <name>` |
 
 > **Bewusste Entscheidung**: keine automatische Ableitung der Zieltabelle
 > aus dem Dateinamen in 0.4.0. Sowohl `users.json` als auch
@@ -585,6 +606,9 @@ class DataImportCommand : CliktCommand(name = "import") {
 > einer stillen Fehlinterpretation. Eine `--auto-table-from-filename`-
 > Convenience kann später additiv kommen.
 
+`--table` und `--tables` werden wie 0.3.0-`--tables` strikt validiert:
+erlaubt sind `name` oder `schema.table`, jeweils ohne SQL-Quotes.
+
 **Bewusst nicht enthalten**:
 
 - `--incremental` / `--since-column` — auf der Import-Seite gibt es keinen
@@ -593,15 +617,18 @@ class DataImportCommand : CliktCommand(name = "import") {
   `--on-conflict update` abgebildet (siehe §6.12).
 - `--resume` — Checkpoint-Resume kommt mit LN-012 in 0.9.0.
 
-**Weitere Pre-Flight-Regeln in `DataImportCommand.run()`**:
+**Pre-Flight-Reihenfolge in `DataImportCommand.run()`**:
 
-- `--disable-fk-checks` auf PostgreSQL wird ERST nach
-  `NamedConnectionResolver.resolveTarget(...)` und Dialekt-Auflösung mit
-  Exit 2 geprüft.
-- `--truncate` ist nur mit einem explizit gesetzten `--on-conflict`
-  gegenseitig ausschließend. `onConflict == null` bedeutet „kein Flag
-  gesetzt"; der Effektivwert `"abort"` wird erst nach dieser Prüfung
-  aufgelöst.
+| Phase | Prüft |
+|---|---|
+| CLI-Parse/Helper | `--source`-Form (stdin/file/dir), Identifier-Validierung für `--table`/`--tables`, explizites `--on-conflict`, `--truncate`-Exklusivität |
+| Nach `resolveTarget(...)` | Dialekt-Auflösung, `--disable-fk-checks` auf PG, Connection-/Config-Fehler |
+| Nach `openTable(...)` | Header-Validierung/Reorder-Mapping, Trigger-Strict-/Disable-Prüfung, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
+
+`--truncate` ist nur mit einem explizit gesetzten `--on-conflict`
+gegenseitig ausschließend. `onConflict == null` bedeutet „kein Flag
+gesetzt"; der Effektivwert `"abort"` wird erst nach dieser Prüfung
+aufgelöst.
 
 Registrierung: `DataCommand` aus 0.3.0 bekommt zusätzlich
 `subcommands(DataExportCommand(), DataImportCommand())`.
@@ -631,15 +658,23 @@ passendes Java-Objekt konvertiert (`LocalDate`, `LocalDateTime`,
 > Phase A für `ParameterizedClause`, weil das den existierenden
 > `WhereClause`-Vertrag nicht bricht.
 
-#### 3.7.3 `NamedConnectionResolver` aktiviert `database.default_target`
+#### 3.7.3 `NamedConnectionResolver` aktiviert `database.default_source` und `database.default_target`
 
 In 0.3.0 wurde `default_source` gelesen aber für `data export` ignoriert.
-Für 0.4.0 wird `default_target` aktiv für `data import` — die Quelle bleibt
-Pflichtparameter (eine Datei), das Ziel kann aus `default_target` kommen.
+Für 0.4.0 wird die Symmetrie sauber gezogen:
 
-**Auflösungstabelle (autoritativ — F47)**: Das CLI-Snippet in §3.7.1 macht
-`--target` bewusst **nicht** mit `.required()` pflichtig. Stattdessen
-entscheidet diese Tabelle, ob ein effektives Ziel bestimmbar ist:
+- `resolveSource(source: String?)` aktiviert `database.default_source` für
+  `data export`
+- `resolveTarget(target: String?)` aktiviert `database.default_target` für
+  `data import`
+
+Die Datei-Quelle von `data import` bleibt natürlich Pflichtparameter; dort
+meint „source" den Input-Pfad, nicht die DB-Verbindung.
+
+**Auflösungstabelle für `data import` (autoritativ — F47)**: Das
+CLI-Snippet in §3.7.1 macht `--target` bewusst **nicht** mit `.required()`
+pflichtig. Stattdessen entscheidet diese Tabelle, ob ein effektives Ziel
+bestimmbar ist:
 
 | `--target` | `default_target` in `.d-migrate.yaml` | Verhalten |
 |---|---|---|
@@ -658,6 +693,12 @@ Clikt-Snippet plus im Fließtext. `resolveTarget(...)` wirft dafür wie der
 bestehende Resolver eine dedizierte Config-Resolution-Exception; der
 CLI-Wrapper mappt sie auf Exit 7 (Config-Fehler) bzw. Exit 2, wenn nur die
 Pflichtigkeit von `--target` verletzt ist.
+
+Analog ruft `DataExportCommand.run()` in 0.4.0 einen
+`resolveSource(source: String?)`-Pfad auf, der `database.default_source`
+aktiviert. Die zugehörige `connection-config-spec.md`-Tabelle wird in §7
+explizit für BEIDE Defaults nachgezogen, um den 0.3.0-Doku-Drift zu
+beenden.
 
 ### 3.8 `d-migrate-core`
 
@@ -748,7 +789,7 @@ Phase B explizit neu entschieden statt still fortgeschrieben.
 24. `DataImportCommand` mit allen Flags aus §3.7.1
 25. `DataExportCommand` Erweiterung um `--incremental`/`--since-column`/
     `--since` (Phase E aus 0.3.0 + dieser Schritt)
-26. `NamedConnectionResolver` aktiviert `default_target`
+26. `NamedConnectionResolver` aktiviert `default_source` und `default_target`
 27. Exit-Code-Mapping für `data import` (§6.11)
 28. CLI-Integration-Tests gegen SQLite — JSON/YAML/CSV-Round-Trips,
     `--truncate`, `--on-conflict update`, `--trigger-mode disable`
@@ -847,6 +888,17 @@ Die Reader-Implementierungen MÜSSEN echtes Streaming machen, nicht
   emittieren beim Schließen jedes Top-Level-Mappings eine Row.
 - **CSV**: uniVocity ist nativ chunk-fähig — nur ein Wrapper.
 
+**YAML-Mini-Design**: der Reader akzeptiert in 0.4.0 nur eine Top-Level-
+Sequenz von Mappings. Eine kleine interne State-Machine reicht:
+
+1. `StreamStart/DocumentStart/SequenceStart` initialisieren den Row-Kontext
+2. Jedes Top-Level-`MappingStart` beginnt eine neue Row
+3. Scalar-Key/Value-Paare werden in file-order gesammelt
+4. Beim korrespondierenden `MappingEnd` wird genau eine Row emittiert
+5. Andere YAML-Formen (Skalare am Top-Level, verschachtelte Dokumentformen
+   außerhalb des erwarteten Records-Schemas) führen zu einem klaren
+   Formatfehler statt stiller Interpretation
+
 **Test-Vertrag**: Pro Reader gibt es einen Spec-Test, der eine 100k-Row-
 Datei liest und gegen ein grobes Speicherbudget prüft. Für den Phase-A-
 Spike und die Reader-Tests reicht eine `MemoryMXBean`-Messung vor/nach
@@ -898,6 +950,9 @@ entsteht eine **Header-Validierung**, kein Typ-System:
    Spalten-Reihenfolge der Zieltabelle entsprechen. Bei CSV ohne Header
    ist das die einzige Möglichkeit; bei leerem JSON/YAML gibt es schlicht
    keine Rows zu importieren — der Import endet mit `0 rows inserted`.
+   Header-only-CSV ist davon ausgenommen: dort darf `headerColumns()` trotz
+   `nextChunk() == null` gesetzt sein, so dass die Header-Validierung noch
+   vor dem Ergebnis `0 rows inserted` laufen kann.
 3. JDBC-Typkompatibilität wird **nur** als Warnung geprüft, nicht als
    Fehler — der `ValueDeserializer` versucht den Cast und fällt sonst auf
    die `--on-error`-Politik zurück.
@@ -970,6 +1025,10 @@ komplett. Default ist `true`. Begründung: stilles Auslassen wäre genau die
 **Fehlerpfad**: `close()` führt bewusst KEIN Reseeding aus. Nach
 Teilimporten oder `--on-error abort` ist Cleanup korrekt, Generator-
 Nachführung aber fachlich falsch.
+
+**Grenze des Vertrags**: Eine echte cross-session-Race-Serialisierung gegen
+parallele Writer anderer Sessions ist in 0.4.0 explizit out-of-scope; siehe
+Risiko-Tabelle in §10.
 
 ### 6.7 Trigger-Modi
 
@@ -1308,6 +1367,11 @@ Kombinationen:
 | aus | skip | Insert mit Skip-on-Conflict |
 | aus | update | UPSERT |
 
+Phase-E-Testfall dafür explizit fest einplanen:
+
+- `--truncate` ohne `--on-conflict` → erlaubt (impliziter Default `abort`)
+- `--truncate --on-conflict abort` → Exit 2 (expliziter Wert)
+
 ### 6.15 Reporting
 
 Der `ImportResult` wird vom CLI als ProgressSummary (analog `data export`)
@@ -1336,7 +1400,8 @@ liefert das `ImportResult` als JSON auf stdout.
 |---|---|
 | `docs/cli-spec.md` §6.2 `data import` | Vollständiger Block analog zu 0.3.0-`data export`: alle Flags aus §3.7.1, veraltetes `--resume` entfernen, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/1/2/3/4/5/7, Beispiele mit Round-Trip und Inkrement |
 | `docs/cli-spec.md` §6.2 `data export` | LF-013-Block ergänzen: `--incremental`, `--since-column`, `--since` mit Beispielen |
-| `docs/connection-config-spec.md` §6.14.2 | „Status pro Feature"-Tabelle aktualisieren: `default_target` ist ab 0.4.0 aktiv |
+| `docs/connection-config-spec.md` §6.14.2 | „Status pro Feature"-Tabelle aktualisieren: `default_source` ist ab 0.4.0 aktiv für `data export`, `default_target` analog für `data import` |
+| `docs/cli-spec.md` §6.2 `data import` | Block REWRITE statt Extend: der heutige Kurzblock wird ersetzt, nicht um einen zweiten Import-Block ergänzt |
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
 | `docs/roadmap.md` | Milestone 0.4.0 als „in Arbeit" markieren bei Phase A; bei jedem abgeschlossenen Phase-Schritt aktualisieren |
 | `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen |
@@ -1372,8 +1437,11 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
    - 1000 Rows, die in 0.3.0 bereits unterstützten neutralen Typen
      (Roadmap-Erweiterungen aus späteren Milestones sind hierfür kein
      Release-Gate von 0.4.0)
-   - Ergebnis: SHA-256-Hash der Original- und Re-Export-Datei muss
+   - Pflicht-Gate: Daten-Äquivalenz nach Re-Parsing/SELECT-Vergleich muss
      identisch sein
+   - Zusatzsignal: SHA-256-Hash der Original- und Re-Export-Datei SOLL
+     identisch sein; Abweichungen sind ein Writer-/Stabilitäts-Hinweis,
+     aber nicht automatisch ein 0.4.0-Blocker
 2. **Inkrementeller Round-Trip**:
    - Initial-Export (10 000 Rows)
    - 100 Updates + 50 Inserts in der Source
