@@ -160,8 +160,8 @@ interface TableImportSession : AutoCloseable {
     fun commitChunk()
 
     /**
-     * Verwirft den letzten geschriebenen Chunk und liefert eine
-     * Abbruch-Information zurück. Idempotent.
+     * Verwirft den letzten geschriebenen Chunk. Idempotent, kein
+     * Rückgabewert.
      */
     fun rollbackChunk()
 
@@ -178,6 +178,10 @@ interface TableImportSession : AutoCloseable {
      * Wenn Schritt 1 wirft, bleibt `enableTriggers(...)` Aufgabe des
      * anschließenden `close()`-Cleanup-Pfads. Es gibt bewusst keine zweite
      * Erfolgs-/Fehler-Statusmaschine nur für `finishTable()`.
+     * Wenn Schritt 2 wirft, gelten die Adjustments aus Schritt 1 als nicht
+     * erfolgreich reportbar: sie werden nicht zurückgegeben, der Tabellen-
+     * Import schlägt fehl und `close()` versucht `enableTriggers(...)`
+     * idempotent erneut.
      *
      * Darf NUR nach erfolgreichem Schreiben aller Chunks aufgerufen werden.
      */
@@ -324,6 +328,9 @@ PG-spezifika:
   `VARCHAR`, sondern über den JDBC-Pfad für `Types.OTHER` bzw. ein
   passendes PG-Objekt, damit `json`/`jsonb`-Spalten nicht am
   Treiber-Typecheck scheitern.
+- **INTERVAL-Binding**: PG-Writer bindet `INTERVAL` nicht als generischen
+  Text, sondern über den PG-spezifischen JDBC-Pfad (`PGobject("interval", value)`
+  bzw. äquivalenten `Types.OTHER`-Pfad).
 - **Trigger-Disable** (User-Trigger): `ALTER TABLE … DISABLE TRIGGER USER`
   pro Tabelle. `session_replication_role = replica` ist nicht zulässig
   (siehe §6.7) — zu breite Wirkung, Sicherheitsrisiko.
@@ -487,12 +494,13 @@ neutralen Typen vollständig abdecken.
 | Format-Eingabe | Spalten-Hint (JDBC-Typ aus `ResultSetMetaData`) | Resultat |
 |---|---|---|
 | JSON String | `VARCHAR`/`TEXT`/`CLOB` | String |
+| JSON Boolean | `BOOLEAN` | Boolean |
 | JSON String `true`/`false` (case-insensitive) | `BOOLEAN` | Boolean |
 | JSON String | `DATE` | `LocalDate.parse` |
 | JSON String ohne Offset/Zone | `TIMESTAMP` | `LocalDateTime.parse` |
 | JSON String | `TIMESTAMP WITH TIME ZONE` | `OffsetDateTime.parse` |
 | JSON String | `UUID` | `UUID.fromString` |
-| JSON String | `INTERVAL` | String (dialektspezifisches Binding später im Writer) |
+| JSON String | `INTERVAL` | String (PostgreSQL-Writer bindet dialektspezifisch; siehe §3.2) |
 | JSON Number | `REAL`/`FLOAT`/`DOUBLE` | Double |
 | JSON Number ohne `.`/`e`/`E` im Token | `INTEGER`/`BIGINT` | Long |
 | JSON Number | `NUMERIC`/`DECIMAL` | Entscheidungsbaum: `scale > 0` oder Token mit `.`/`e`/`E` oder `precision > 18` → `BigDecimal`, sonst ganzzahliger Parse mit Präzisionscheck |
@@ -584,6 +592,11 @@ Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
   auf genau diese Liste → `session.write(chunk)` → bei Erfolg
   `session.commitChunk()`, bei Fehler `session.rollbackChunk()` plus
   `--on-error`-Auswertung
+- Wenn der Reader während `nextChunk()` mitten in einem Chunk mit
+  `ImportSchemaMismatchException` oder einem Formatfehler scheitert, gilt
+  der gerade gelesene Chunk als verloren; der Importer behandelt das wie
+  einen Chunk-Fehler und wendet darauf `--on-error abort|skip|log` an.
+  Eine Row-Recovery innerhalb des Chunks gibt es bewusst nicht.
 - `commitChunk()` und `rollbackChunk()` kapseln dabei die eigentlichen
   JDBC-`commit()`/`rollback()`-Operationen; `commitChunk()` ist also
   semantisch nur `conn.commit()` ohne zusätzliche Session-State-Maschine.
@@ -626,14 +639,17 @@ sealed class ImportInput {
      * Mehrere Tabellen aus einem Verzeichnis. Die Tabellen-zu-Datei-Zuordnung
      * folgt dem Schema `<table>.<format>` (siehe `ExportOutput.fileNameFor`
      * aus 0.3.0 Phase D). `tableFilter` ist optional und beschränkt den
-     * Import auf eine Untermenge der gefundenen Dateien. Die Ausführung ist
-     * deterministisch lexikographisch nach Tabellenname/Dateiname sortiert;
-     * für FK-abhängige Multi-Table-Imports ist ohne `--schema` dennoch nur
-     * Best-Effort möglich (siehe §6.8.3).
+     * Import auf eine Untermenge der gefundenen Dateien. `tableOrder`
+     * erlaubt dem CLI-Layer, bei `--schema` eine bereits topologisch
+     * sortierte Tabellenreihenfolge vorzugeben; ohne diesen Wert bleibt die
+     * Ausführung deterministisch lexikographisch nach Tabellenname/
+     * Dateiname sortiert. Für FK-abhängige Multi-Table-Imports ist ohne
+     * `--schema` dennoch nur Best-Effort möglich (siehe §6.8.3).
      */
     data class Directory(
         val path: Path,
         val tableFilter: List<String>? = null,
+        val tableOrder: List<String>? = null,
     ) : ImportInput()
 }
 ```
@@ -649,10 +665,19 @@ ohne SQL-Quoting aus der CLI heraus.
 
 #### 3.6.2 `ImportResult` und `TableImportSummary`
 
+```kotlin
+data class ChunkFailure(
+    val table: String,
+    val chunkIndex: Int,
+    val rowsLost: Long,
+    val reason: String,
+)
+```
+
 Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 
 - `rowsInserted`, `rowsUpdated`, `rowsSkipped`, `rowsFailed`
-- `chunkFailures: List<String>` für `--on-error log` auf Chunk-Granularität
+- `chunkFailures: List<ChunkFailure>` für `--on-error log` auf Chunk-Granularität
 - `sequenceAdjustments: List<SequenceAdjustment>` (für den Report)
 - `targetColumns: List<ColumnDescriptor>` (für Debug/JSON-Output)
 - `triggerMode: TriggerMode` (welcher Modus tatsächlich angewendet wurde)
@@ -699,6 +724,9 @@ class DataImportCommand : CliktCommand(name = "import") {
 `chunkSize` wird im Command bewusst über
 `PipelineConfig(chunkSize = chunkSize)` an `StreamingImporter.import(...)`
 durchgereicht, nicht über `ImportOptions`.
+`--yes` wird wie in 0.3.0 vom gemeinsamen Root-/Confirmations-Pfad
+bereitgestellt und erscheint deshalb nicht noch einmal lokal im
+`DataImportCommand`-Snippet.
 
 **`--table` vs `--tables` Auflösungsregeln** (F40):
 
@@ -740,7 +768,7 @@ erlaubt sind `name` oder `schema.table`, jeweils ohne SQL-Quotes.
 |---|---|
 | CLI-Parse/Helper | `--source`-Form (stdin/file/dir), Identifier-Validierung für `--table`/`--tables`, explizites `--on-conflict`, `--truncate`-Exklusivität |
 | Nach `resolveTarget(...)` | Dialekt-Auflösung, `--disable-fk-checks` auf PG, Connection-/Config-Fehler |
-| Nach `openTable(...)` | Header-Validierung/Reorder-Mapping, Trigger-Strict-/Disable-Prüfung, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
+| Während `openTable(...)` und direkt danach | writer-interne Trigger-Strict-/Disable-Prüfung; CLI-Wrapper mappt `UnsupportedTriggerModeException` daraus auf Exit 2, danach Header-Validierung/Reorder-Mapping, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
 
 `--truncate` ist nur mit einem explizit gesetzten `--on-conflict`
 gegenseitig ausschließend. `onConflict == null` bedeutet „kein Flag
@@ -773,6 +801,14 @@ passendes Java-Objekt konvertiert (`LocalDate`, `LocalDateTime`,
 > `DataFilter.ParameterizedClause(sql, params)`. Wir entscheiden uns in
 > Phase A für `ParameterizedClause`, weil das den existierenden
 > `WhereClause`-Vertrag nicht bricht.
+
+**Pre-Flight-Reihenfolge in `DataExportCommand.run()` für LF-013**:
+
+| Phase | Prüft |
+|---|---|
+| CLI-Parse/Helper | `--since-column`/`--since` sind nur gemeinsam gültig; Identifier-Validierung für `--since-column` |
+| Nach `resolveSource(...)` | Connection-/Config-Fehler, Dialekt-Auflösung |
+| Vor Start des Streamings | Marker-Spalten-Metadaten via JDBC lesen, `--since` in den Zieltyp konvertieren, `ParameterizedClause` aufbauen |
 
 #### 3.7.3 `NamedConnectionResolver` aktiviert `database.default_source` und `database.default_target`
 
@@ -1040,6 +1076,10 @@ explizitem GC; Akzeptanzkriterium ist „retained heap nach 100k Rows bleibt
 in derselben Größenordnung wie einige wenige Chunks, nicht proportional zur
 Gesamtdatei". `Runtime.freeMemory()` allein ist dafür zu GC-abhängig.
 
+Falls der DSL-JSON-Go/No-Go-Spike scheitert, ist Jackson Streaming der
+bevorzugte Fallback-Kandidat für Phase B; die Entscheidung wird dann vor
+Beginn von Phase B explizit neu geöffnet.
+
 ### 6.3 Keine Auto-Format-Detection ohne Endung
 
 Wenn `--format` nicht gesetzt ist, leitet das CLI das Format aus der
@@ -1147,6 +1187,10 @@ session.write(chunk)                   -- batch Insert
                   ├── --on-error skip  → next Chunk (CHUNK-Granularität)
                   └── --on-error log   → next Chunk + im Report vermerken (CHUNK-Granularität)
 ```
+
+Nach `rollbackChunk()` bleibt die Connection im normalen
+`autoCommit=false`-Importzustand; Statement/Session können für den nächsten
+Chunk weiterverwendet werden.
 
 **Wichtig**: Der vorherige Chunk bleibt persistiert. Kein „alles oder
 nichts" auf Tabellen-Ebene — das wäre ein Checkpoint/Resume-Problem (LN-012,
@@ -1322,6 +1366,12 @@ gefiltert. Der Plan schließt also keine Kanten „weg", nur weil der User
 einen Teilgraphen importieren will; fehlende Abhängigkeitstabellen werden
 dadurch aber nicht automatisch mitimportiert.
 
+Layer-Owner dafür ist der CLI-/Runner-Pfad: `DataImportCommand` bzw. sein
+Runner berechnet bei `--schema` die Tabellenreihenfolge vor dem Aufruf von
+`StreamingImporter.import(...)` und reicht sie über
+`ImportInput.Directory.tableOrder` hinein. `StreamingImporter` respektiert
+diese Reihenfolge, berechnet sie aber nicht selbst noch einmal.
+
 Wenn zusätzlich `--truncate` gesetzt ist, wird die Reihenfolge pro Tabelle
 für Single-Table-Imports als `truncate/delete -> import -> finishTable`
 auf derselben Session-Connection gefahren.
@@ -1389,7 +1439,9 @@ ist, fällt der Detector auf UTF-8 zurück und protokolliert eine Hinweis-
 Zeile auf stderr (`Hint: input file has no BOM, using UTF-8. Set --encoding
 to override.`). Das verhindert, dass ein still falsch dekodierter ISO-8859-1-
 Import als „funktioniert" durchgewunken wird, ohne dass jemand Mojibake
-bemerkt. Unter `--quiet` wird dieser reine Hinweis unterdrückt.
+bemerkt. Unter `--quiet` wird dieser reine Hinweis unterdrückt. Für
+`ImportInput.Stdin` wird er ebenfalls unterdrückt, weil Stdin-Pipes keinen
+sinnvollen BOM-Hinweis-Workflow haben.
 
 ### 6.10 Getrennte Reader/Writer-Registries
 
@@ -1413,11 +1465,14 @@ eine zusammengelegte `DataAdapterRegistry` mit beiden Maps — aber:
 | `2` | CLI-Fehler, ungültige Optionen, fehlendes `--target` oder `--table`, `--trigger-mode disable` auf MySQL/SQLite, `--disable-fk-checks` auf PG, unbekannte Endung ohne `--format`, `--truncate` zusammen mit explizitem `--on-conflict`, PK-lose Tabelle mit `--on-conflict update` | `--trigger-mode disable is not supported for dialect MYSQL` |
 | `3` | Header-/Target-Schema-Mismatch, `trigger-mode strict` mit gefundenen Triggern oder Schema-Validierung gegen `--schema <path>` fehlgeschlagen | `column 'userId' has no exact match` |
 | `4` | Connection-Fehler (HikariCP, fehlendes Target) | `Connection refused: localhost:5432` |
-| `5` | Import-Fehler während Streaming (SQL-Constraint-Verletzung, IO-Exception, Sequence-Reseeding gescheitert) | `Failed to import table 'orders' at chunk 47: duplicate key value violates unique constraint` |
+| `5` | Import-Fehler während Streaming (SQL-Constraint-Verletzung, IO-Exception, Sequence-Reseeding oder Trigger-Reenable nach erfolgreichem Schreiben gescheitert) | `Failed to import table 'orders' at chunk 47: duplicate key value violates unique constraint` |
 | `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml`, fehlende ENV-Variable) | wie 0.3.0 |
 
 Code 3 ist in 0.3.0 für `data export` nicht relevant gewesen, kommt hier
 für die Schema-Validierung zurück (analog zu `schema validate` aus 0.1.0).
+Bei Exit 5 nach bereits geschriebenen Daten (z.B. Sequence-Reseeding oder
+Trigger-Reenable scheitert) muss die Fehlermeldung explizit sagen, dass die
+Daten schon committed sind und ein manueller Post-Import-Fix nötig ist.
 
 ### 6.12 Inkrementeller Pfad (LF-013)
 
@@ -1638,10 +1693,9 @@ liefert das `ImportResult` als JSON auf stdout.
 
 | Datei | Änderung |
 |---|---|
-| `docs/cli-spec.md` §6.2 `data import` | Vollständiger Block analog zu 0.3.0-`data export`: alle Flags aus §3.7.1, veraltetes `--resume` entfernen, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/1/2/3/4/5/7, Beispiele mit Round-Trip und UPSERT-Import |
+| `docs/cli-spec.md` §6.2 `data import` | REWRITE des bestehenden Kurzblocks: vollständig analog zu 0.3.0-`data export`, alle Flags aus §3.7.1, veraltetes `--resume` entfernen, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/1/2/3/4/5/7, Beispiele mit Round-Trip und UPSERT-Import |
 | `docs/cli-spec.md` §6.2 `data export` | LF-013-Block ergänzen: `--since-column`, `--since` mit Beispielen |
 | `docs/connection-config-spec.md` | Neue Sektion „Status pro Feature" anlegen und die bisher nur im 0.3.0-Plan referenzierte Tabelle dorthin migrieren; dabei `default_source` als aktiv für `data export` und `default_target` als aktiv für `data import` markieren |
-| `docs/cli-spec.md` §6.2 `data import` | Block REWRITE statt Extend: der heutige Kurzblock wird ersetzt, nicht um einen zweiten Import-Block ergänzt |
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
 | `docs/roadmap.md` | Milestone 0.4.0 als „in Arbeit" markieren bei Phase A; bei jedem abgeschlossenen Phase-Schritt aktualisieren |
 | `CHANGELOG.md` | `[Unreleased]`-Block schon vorhanden (im 0.3.0-Post-Release-Bump angelegt); pro Phase Einträge nachziehen, inkl. explizitem Hinweis: `database.default_source` wird für `data export` ab 0.4.0 wirksam (Behavior Change gegenüber 0.3.0) |
@@ -1702,6 +1756,8 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
      `CREATE TRIGGER`-Statement im Test-Setup, nicht nur Pseudo-SQL
    - Import mit `--trigger-mode fire`: Werte sind verdoppelt
    - Import mit `--trigger-mode disable` (PG): Werte sind unverändert
+   - Import mit `--trigger-mode strict` auf eine Tabelle mit Trigger:
+     Exit 3, Meldung nennt Tabelle und Trigger-Pre-Flight
    - Import mit `--trigger-mode disable` (MySQL/SQLite): Exit 2 mit
      `UnsupportedTriggerModeException`
    - Für MySQL/SQLite reicht darüber hinaus die normale Round-Trip-Suite als
@@ -1709,6 +1765,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
      nicht Pflicht-Gate
 5. **`--truncate`-Pre-Step ist NICHT atomar** (F41 — explizit dokumentiert):
    - Tabelle mit 1000 Rows, Import mit `--truncate` und einer absichtlich
+     fehlerhaften Row bei explizitem oder implizitem `--on-error abort`
      fehlerhaften Row → der Test asserted, dass die Tabelle danach **leer**
      ist (NICHT wieder mit den 1000 Rows gefüllt). Der Test schützt damit
      das in §6.14 dokumentierte Verhalten gegen versehentliche Atomarisierung
