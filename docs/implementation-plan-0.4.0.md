@@ -141,6 +141,18 @@ interface DataWriter {
      * könnte — ein hartes Recovery-Loch, das nicht durch `session.close()`
      * abgedeckt ist.
      *
+     * **F2 — Exception-Chaining im Cleanup-Pfad**: wirft der idempotente
+     * `enableTriggers(...)`-Versuch in Schritt 1 oder das Schließen der
+     * Connection in Schritt 2 selbst, bleibt die ursprünglich aufgetretene
+     * Exception die **primäre** und wird weitergereicht; der sekundäre
+     * Cleanup-Fehler wird per `originalException.addSuppressed(cleanupError)`
+     * angehängt. Es darf NIEMALS passieren, dass ein Cleanup-Fehler die
+     * eigentliche Fehlerursache (z.B. die ursprüngliche
+     * `prepareStatement(...)`-Exception) verschluckt. Der Phase-C-Test für
+     * H1 prüft das explizit per `assertThat(thrown.suppressed).isNotEmpty()`
+     * gegen einen Test-Subclass-Writer, der den Reenable-Pfad gezielt
+     * scheitern lässt.
+     *
      * @throws ImportSchemaMismatchException bei Target-seitigen
      *   Metadaten-/Schemafehlern (z.B. Tabelle nicht vorhanden oder
      *   unlesbare Spaltenmetadaten). Header-/Chunk-Mismatch wird erst im
@@ -204,7 +216,7 @@ interface TableImportSession : AutoCloseable {
      *
      * **M2 — Allocation-Profil**: Die Reorder-Normalisierung erzeugt heute
      * pro Chunk einen neuen `DataChunk` plus pro Row ein neues
-     * `Array<Any?>`. Diese Kosten werden in Phase C Schritt 23 explizit
+     * `Array<Any?>`. Diese Kosten werden in Phase D Schritt 23 explizit
      * profiliert; falls sie spürbar werden, gibt es einen additiven
      * `write(reorderedRows, bindingColumns)`-Pfad, der `DataChunk` im
      * Hot-Path ganz vermeidet (siehe §10 M2). 0.4.0 startet aber bewusst
@@ -278,6 +290,17 @@ interface TableImportSession : AutoCloseable {
      * asserten.
      *
      * Darf NUR nach erfolgreichem Schreiben aller Chunks aufgerufen werden.
+     *
+     * **F1 — 0-Chunk-Pfad ist gültig**: „aller Chunks" schließt explizit die
+     * Anzahl null ein. Liefert der Reader für ein leeres
+     * selbstbeschreibendes Eingabeformat (`[]` in JSON/YAML) bereits bei
+     * `nextChunk()` ein `null`, ruft der Importer `finishTable()` direkt aus
+     * dem `OPEN`-Zustand ohne vorangegangenen `write(...)` auf — das ist
+     * KEIN State-Fehler, sondern der reguläre Pfad für „nichts zu
+     * importieren". `reseedGenerators(...)` läuft dann gemäß §6.6 Schritt 3
+     * als No-op (kein Adjustment im Report), und `enableTriggers(...)`
+     * verhält sich symmetrisch idempotent. Der Erfolgsabschluss liefert
+     * `FinishTableResult.Success(emptyList())`.
      */
     fun finishTable(): FinishTableResult
 
@@ -285,6 +308,32 @@ interface TableImportSession : AutoCloseable {
      * Cleanup-Pfad: reaktiviert ggf. Trigger, setzt Transaktionszustand zurück
      * und gibt die Connection an den Pool zurück. Führt bewusst KEIN Reseeding
      * aus; `close()` läuft auch im Fehlerpfad nach Teilimporten.
+     *
+     * **F3 — `close()` wirft nicht**: `close()` ist `AutoCloseable` und wird
+     * üblicherweise aus `try-with-resources`/`use { ... }`-Blöcken
+     * aufgerufen. Würde `close()` selbst werfen, würde das eine bereits
+     * im Block aufgetretene Nutzexception maskieren. Konkret bedeutet das
+     * für den H4-Folgepfad (`finishTable()` hat
+     * `FinishTableResult.PartialFailure` geliefert): der zweite,
+     * close-interne `enableTriggers(...)`-Versuch ist zwar
+     * fachlich relevant, aber sein Fehlschlag darf NICHT als Exception aus
+     * `close()` herausfallen. Stattdessen:
+     *
+     * 1. Der zweite Reenable-Fehler wird in
+     *    [FailedFinishInfo.closeCause] (§3.6.2) gespeichert; der Importer
+     *    setzt das Feld direkt nach dem `close()`-Aufruf.
+     * 2. `close()` selbst kehrt normal zurück.
+     * 3. Das Reporting in §6.15 rendert beide Causes (`cause` aus dem
+     *    ursprünglichen Reenable in `finishTable()`, `closeCause` aus dem
+     *    zweiten Versuch in `close()`) im `PARTIAL FAILURE`-Block.
+     *
+     * Für alle anderen `close()`-Fehlerpfade (Connection-Return scheitert,
+     * `autoCommit`-Reset wirft) gilt dieselbe Regel: loggen, in den
+     * strukturierten Reporting-Pfad einspeisen, NICHT werfen. Damit ist die
+     * `try-with-resources`-Semantik im Importer eindeutig: die einzige
+     * Exception, die der Importer aus dem Session-Lifecycle sehen kann,
+     * stammt aus `write(...)`/`commitChunk()`/`rollbackChunk()`/
+     * `finishTable()` — niemals aus `close()`.
      */
     override fun close()
 }
@@ -544,6 +593,24 @@ SQLite-spezifika:
   `INTEGER PRIMARY KEY`-Tabellen ist die Folge-ID-Vergabe nicht
   persistiert — kein Reseeding nötig (Design-Doc §6.3 offene Frage:
   geklärt → kein Eingriff).
+- **F4 — Truncate-mit-Leerzustand für `AUTOINCREMENT`-Tabellen**:
+  parallel zu MySQL H5 (§3.3) muss der SQLite-Reseed-Pfad einen
+  expliziten Sonderfall behandeln. Nach `--truncate` (= `DELETE FROM`,
+  siehe §6.14) bleibt der `sqlite_sequence`-Eintrag für eine
+  `INTEGER PRIMARY KEY AUTOINCREMENT`-Tabelle stehen — der nächste
+  Insert würde sonst mit dem alten Hochstand + 1 statt mit `1`
+  fortfahren, inkonsistent zu PG (`TRUNCATE` räumt das auf) und MySQL
+  H5 (Reset auf 1). Wenn der Importer dem Writer signalisiert, dass
+  dieser Tabelle ein `--truncate`-Pre-Step vorausging UND die Tabelle
+  danach leer geblieben ist (`MAX(rowid) = NULL` UND
+  `INTEGER PRIMARY KEY AUTOINCREMENT`), führt der SQLite-Writer ein
+  `DELETE FROM sqlite_sequence WHERE name = ?` aus (nicht
+  `INSERT OR REPLACE ... seq = 0`, weil das einen 0-Eintrag stehen
+  ließe — `DELETE` entspricht semantisch dem PG-`TRUNCATE`-Reset) und
+  schreibt einen `SequenceAdjustment(newValue = 0)` in den Report. Ohne
+  `--truncate` bleibt das Standardverhalten aus §6.6 Schritt 3:
+  `MAX = NULL` → No-op. Die `truncatePerformed`-Information wird über
+  denselben Session-State wie auf MySQL durchgereicht.
 - **Trigger-Disable**: nicht unterstützt (Design-Doc §6.3). `disable` →
   `UnsupportedTriggerModeException`.
 - **Foreign-Key-Checks**: temporär `PRAGMA foreign_keys = OFF` während des
@@ -646,6 +713,21 @@ positionalen Slots materialisiert; zusätzliche, in der ersten Row
 unbekannte Schlüssel führen bereits im Reader zu einem
 `ImportSchemaMismatchException`, der dann über die `--on-error`-Politik
 des Importers läuft.
+
+**F8 — lookup by name, not by encounter order**: JSON-Objektschlüssel
+sind per Spec ungeordnet, und auch YAML-Mappings dürfen ihre Keys in
+beliebiger Reihenfolge serialisieren. Der Reader MUSS daraus folgend
+die positionale Slot-Belegung jeder Row anhand des **Schlüsselnamens**
+aus der First-Row-Map ableiten — NICHT anhand der Encounter-Reihenfolge
+der Keys im aktuellen Objekt. Konkret baut der Reader nach der ersten
+Row eine `Map<String, Int>` vom Feldnamen auf den positionalen Slot;
+für jede Folge-Row wird pro `(key, value)`-Paar genau dieser Index
+nachgeschlagen und der Wert dort einsortiert. Schreibt z.B. die erste
+Row `{"a": 1, "b": 2}` und eine spätere Row `{"b": 3, "a": 4}`, müssen
+beide auf `[1, 2]` und `[4, 3]` materialisiert werden, nicht auf
+`[1, 2]` und `[3, 4]`. Die Phase-B-Reader-Tests enthalten dafür eine
+explizite Permutations-Fixture mit reordered Keys, sodass eine
+versehentliche Position-by-Encounter-Implementierung sofort kippt.
 
 > **H3 — Round-Trip-Garantie aus 0.3.0**: Diese „erste Row ist autoritativ"-
 > Regel funktioniert für Round-Trips nur, weil der 0.3.0-`data export`
@@ -896,18 +978,23 @@ Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
   `finishTable()` ein `FinishTableResult.PartialFailure` geliefert hat.
   Trägt die bereits durchgeführten Adjustments **und** die ursprüngliche
   Reenable-Exception strukturiert mit, damit §6.15 sie sauber rendern und
-  Phase F sie gezielt asserten kann.
+  Phase F sie gezielt asserten kann. F3: zusätzlich `closeCause`, falls
+  der zweite Reenable-Versuch im `close()`-Cleanup ebenfalls scheitert.
 - `error: String?`
 
 ```kotlin
 /**
- * H4: strukturierter Träger für „Daten committed, aber Trigger-Reenable
- * gescheitert"-Fälle. Der StreamingImporter setzt das Feld direkt aus
- * dem `FinishTableResult.PartialFailure` aus §3.1.1.
+ * H4 / F3: strukturierter Träger für „Daten committed, aber Trigger-
+ * Reenable gescheitert"-Fälle. Der StreamingImporter setzt das Feld
+ * direkt aus dem `FinishTableResult.PartialFailure` aus §3.1.1; das
+ * optionale [closeCause]-Feld wird nach dem `close()`-Aufruf befüllt,
+ * wenn der zweite, idempotente Reenable-Versuch im Cleanup-Pfad
+ * ebenfalls geworfen hat (siehe `close()`-Kdoc in §3.1.1, F3).
  */
 data class FailedFinishInfo(
     val adjustments: List<SequenceAdjustment>,
     val cause: String,
+    val closeCause: String? = null,
 )
 ```
 
@@ -1536,13 +1623,22 @@ Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
 3. Ergibt `MAX(col)` dabei `NULL` (leere Tabelle oder nur NULL-Werte in der
    Generator-Spalte), ist der Reseed-Pfad ein expliziter No-op: keine
    `setval`-/`AUTO_INCREMENT`-/`sqlite_sequence`-Änderung und kein
-   `SequenceAdjustment` im Report. **H5-Ausnahme** nur für MySQL: wenn der
-   Tabelle in diesem Lauf ein `--truncate`-Pre-Step (also `DELETE FROM`,
-   siehe §6.14) vorausging und sie danach leer geblieben ist, setzt der
-   MySQL-Reseed-Pfad zusätzlich `AUTO_INCREMENT = 1` und reportet einen
-   entsprechenden `SequenceAdjustment` (siehe §3.3). PG bekommt das
-   automatisch vom `TRUNCATE`-Pfad geschenkt; SQLite hat keinen
-   persistenten Folge-Zähler in dem Pfad und braucht den Sonderfall nicht.
+   `SequenceAdjustment` im Report. **H5/F4-Ausnahme** für MySQL und SQLite
+   `INTEGER PRIMARY KEY AUTOINCREMENT`: wenn der Tabelle in diesem Lauf
+   ein `--truncate`-Pre-Step (also `DELETE FROM`, siehe §6.14) vorausging
+   und sie danach leer geblieben ist, MUSS der Folge-Zähler dieser
+   Tabelle aktiv zurückgesetzt werden, damit der nächste Insert wieder
+   bei `1` startet — sonst kollidiert das Verhalten mit der intuitiven
+   PG-`TRUNCATE`-Semantik.
+   - **MySQL (H5)**: `ALTER TABLE \`table\` AUTO_INCREMENT = 1`,
+     `SequenceAdjustment(newValue = 1)` (siehe §3.3).
+   - **SQLite (F4)**: `DELETE FROM sqlite_sequence WHERE name = ?` für
+     `AUTOINCREMENT`-Tabellen, `SequenceAdjustment(newValue = 0)` (siehe
+     §3.4). Für nicht-`AUTOINCREMENT`-Tabellen mit gewöhnlicher
+     `INTEGER PRIMARY KEY` ist nichts zu tun, weil SQLite dort keinen
+     persistenten Folge-Zähler führt.
+   - **PG**: bekommt diesen Reset automatisch vom `TRUNCATE`-Pfad
+     geschenkt; kein Sonderfall nötig.
 4. Sonst Sequence/AUTO_INCREMENT/sqlite_sequence auf den nächsten gültigen
    Wert anheben
 5. Ein `SequenceAdjustment` ins `ImportResult` aufnehmen
@@ -1653,6 +1749,37 @@ Für PG werden in 0.4.0 stattdessen zwei sichere Wege unterstützt:
 Wichtig: Pfad (b) verzögert Constraints nur bis zum nächsten Chunk-Commit.
 Er ist also keine generische Alternative zu Cross-Table- oder Cross-Chunk-
 Reihenfolgeproblemen; dafür bleibt Pfad (a) via `--schema` der saubere Weg.
+
+**F6 — wofür Pfad (b) tatsächlich hilft (und wofür nicht)**: Der
+realistische Anwendungsbereich von `SET CONSTRAINTS ALL DEFERRED` am
+Chunk-Level ist eng. Konkret:
+
+- **Hilft** bei **intra-Chunk** Reihenfolge-Problemen innerhalb **einer**
+  Tabelle: z.B. selbstreferenzielle Hierarchien (Tree-Strukturen mit
+  `parent_id`-FK auf dieselbe Tabelle), wo eine Row in der Mitte des
+  Chunks auf eine Row weiter hinten im selben Chunk verweist. Die
+  Constraints sind erst beim Chunk-Commit hart, also dürfen die Rows in
+  beliebiger Reihenfolge innerhalb des Chunks geschrieben werden.
+- **Hilft NICHT** bei **Multi-Table** Parent/Child-Reihenfolgen, wenn
+  Parent- und Child-Tabelle in **separaten** Tabellen-Imports oder gar
+  in **separaten Chunks** geladen werden. Sobald der Chunk der
+  Parent-Tabelle commit-tet ist (oder umgekehrt der Chunk der
+  Child-Tabelle gelesen wird, bevor die Parent-Rows existieren), greift
+  der Constraint und der Insert wirft. `SET CONSTRAINTS ALL DEFERRED`
+  endet **am Chunk-Commit** — eine cross-table Verzögerung erreicht der
+  Pfad nicht. Wer Parent/Child in der richtigen Reihenfolge laden will,
+  braucht zwingend Pfad (a) (`--schema`) oder einen manuell
+  vorgeordneten Datenbestand.
+- **Hilft NICHT** bei **Cross-Chunk** Verweisen innerhalb derselben
+  Tabelle, wenn die referenzierte Row in einem späteren Chunk steht.
+  Auch hier ist der frühere Chunk längst committed, bevor der spätere
+  läuft.
+
+Faustregel: Pfad (b) ist eine punktuelle Erleichterung für
+selbstreferenzielle Strukturen in einer einzigen Tabelle, kein
+„FK-Disable für Multi-Table-Importe ohne `--schema`". Der CLI-Help-Text
+und die Pre-Flight-Meldung formulieren das entsprechend, damit kein
+User Pfad (b) als Parent/Child-Retter missversteht.
 
 Wer FK-Checks **wirklich** deaktivieren muss, läuft den Import als
 Superuser oder bereitet die Constraints vorab als `DEFERRABLE` vor. Beide
@@ -1798,13 +1925,33 @@ das:
   mit explizitem Override" interpretiert.
 
 Wenn der Default `auto` keine BOM findet und kein expliziter Wert gesetzt
-ist, fällt der Detector auf UTF-8 zurück und protokolliert eine Hinweis-
-Zeile auf stderr (`Hint: input file has no BOM, using UTF-8. Set --encoding
-to override.`). Das verhindert, dass ein still falsch dekodierter ISO-8859-1-
-Import als „funktioniert" durchgewunken wird, ohne dass jemand Mojibake
-bemerkt. Unter `--quiet` wird dieser reine Hinweis unterdrückt. Für
-`ImportInput.Stdin` wird er ebenfalls unterdrückt, weil Stdin-Pipes keinen
-sinnvollen BOM-Hinweis-Workflow haben.
+ist, fällt der Detector auf UTF-8 zurück. **F9 — Hinweis nur bei
+Verdacht oder `--verbose`**: Den stderr-Hinweis (`Hint: input file has
+no BOM, using UTF-8. Set --encoding to override.`) gibt der Importer
+NICHT für jeden BOM-losen Lauf aus — der häufigste reale Fall ist
+„UTF-8 ohne BOM" und ein unkonditionaler Hinweis erzeugt klassische
+Alarm-Fatigue, sodass User den Hinweis im einen Fall, in dem er
+wirklich kritisch wäre, übersehen. Stattdessen wird der Hinweis in
+**zwei** Fällen ausgegeben:
+
+1. **Verdachtsfall** (Default-Pfad): wenn der UTF-8-Decoder beim Lesen
+   einen `MalformedInputException`/`UnmappableCharacterException`
+   wirft, hängt der Importer den Hinweis an die Fehlermeldung an
+   („`Decoding error at byte offset N. Hint: input file has no BOM and
+   does not parse as UTF-8 — set --encoding explicitly.`"). Das
+   schließt genau den Fall ab, in dem ein still falsch dekodierter
+   ISO-8859-1-Import sonst als „funktioniert" durchgewunken würde.
+2. **`--verbose`-Pfad**: wenn der User explizit `--verbose` setzt,
+   wird die Hinweis-Zeile als reines Info-Signal beim Reader-Start
+   protokolliert, unabhängig vom Decoding-Erfolg. Das ist der Pfad
+   für Debugging und Workflow-Audits.
+
+Im Default-Pfad ohne `--verbose` und ohne Decoding-Fehler bleibt der
+BOM-lose UTF-8-Import damit komplett still. Unter `--quiet` ist der
+Hinweis ebenfalls unterdrückt — aber das war schon der bisherige
+Vertrag und ändert sich nicht. Für `ImportInput.Stdin` gilt zusätzlich:
+auch unter `--verbose` wird der Hinweis unterdrückt, weil Stdin-Pipes
+keinen sinnvollen BOM-Hinweis-Workflow haben.
 
 ### 6.10 Getrennte Reader/Writer-Registries
 
@@ -1916,6 +2063,32 @@ dabei Schema und Tabellenname vor dem `getPrimaryKeys(catalog, schema, table)`-
 Aufruf sauber trennen. Phase C/F enthält dafür explizit einen PG-Test mit
 nicht-`public`-Schema und Composite-PK.
 
+**F5 — Case-Handling pro Dialekt**: `getPrimaryKeys(catalog, schema, table)`
+ist auf den Identifier-Casing-Konventionen des jeweiligen Dialekts
+empfindlich, und ein naives Durchreichen des CLI-Strings würde auf PG
+oder strikt-konfigurierten MySQL-Instanzen still ein leeres Result
+liefern — die Tabelle würde fälschlich als „PK-los" klassifiziert und
+mit Exit 2 abgewiesen, obwohl sie tatsächlich einen PK hat. Der
+PK-Lookup MUSS deshalb pro Dialekt dieselbe Identifier-Normalisierung
+verwenden, die auch §6.4 für `SELECT * FROM "schema"."table" WHERE 1=0`
+nutzt — sonst driften die beiden Pfade auseinander, und ein Import
+findet die Spalten, aber nicht den PK.
+
+| Dialect | Normalisierung für `getPrimaryKeys` |
+|---|---|
+| PostgreSQL | unquoted Identifier werden zu lowercase gefoldet (PG-Standard); der Lookup nutzt deshalb den lowercase-Namen, ES SEI DENN der CLI-User hat den Namen in 0.3.0-Identifier-Notation `"Name"` quotiert übergeben (für 0.4.0 unsupported, siehe §3.7.1 — also: lowercase). Schema-Default ist `public`, wenn nicht qualifiziert. |
+| MySQL | hängt an `lower_case_table_names`: bei `1` (Default auf macOS/Windows) lowercase, bei `0` (Linux strikt) der Roh-Name. Der MySQL-Writer liest `lower_case_table_names` einmal beim ersten `openTable(...)` und cached das Setting in der Session. Schema = MySQL-Catalog (`USE`-DB). |
+| SQLite | Identifier sind case-insensitive in Lookups; der Roh-Name wird unverändert übergeben und SQLite matcht ihn in `sqlite_master` selbst case-insensitiv. Kein Schema-Konzept. |
+
+Diese Normalisierung MUSS in einer einzigen Helfer-Funktion pro Writer
+zentriert sein (`SqlIdentifierNormalizer.forMetadata(table)` o.ä.) und
+sowohl in §6.4 (`SELECT * WHERE 1=0`) als auch in §6.12.2
+(`getPrimaryKeys`) als auch in §6.6 (Sequence-Lookup) **identisch**
+aufgerufen werden. Phase C nimmt für jeden Dialekt einen expliziten
+Mixed-Case-Test in die L2-Pflichttests auf (z.B. CLI-Eingabe `Users`,
+PG-Tabelle `users`), der absichert, dass alle drei Pfade dieselbe
+Normalisierung sehen.
+
 Wichtiger Dialekt-Unterschied: PostgreSQL/SQLite binden den Konflikt-Target
 explizit an den erkannten PK; MySQLs `ON DUPLICATE KEY UPDATE` feuert dagegen
 auf JEDEM verletzten Unique-Index. Diese Asymmetrie wird dokumentiert, nicht
@@ -2007,10 +2180,15 @@ Probieren. Das hat zwei Gründe:
 Konsequenz: nach `DELETE FROM` ist der `AUTO_INCREMENT`-Zähler bei MySQL
 ausdrücklich NICHT zurückgesetzt. Der MySQL-Writer hat dafür den
 H5-Spezialfall in §3.3 implementiert (`AUTO_INCREMENT = 1` nach
-truncate-mit-Leerzustand). Der Effekt für den User ist damit derselbe wie
-bei PG-`TRUNCATE` plus §6.6-Reseed: nach `--truncate` ohne neue Daten
-startet der nächste manuelle Insert wieder bei `1`. Mit neuen Daten
-startet er bei `MAX(col) + 1`.
+truncate-mit-Leerzustand). **F4 — analog für SQLite**: nach
+`DELETE FROM` bleibt der `sqlite_sequence`-Eintrag einer
+`INTEGER PRIMARY KEY AUTOINCREMENT`-Tabelle ebenfalls stehen; der
+SQLite-Writer hat dafür einen parallelen F4-Spezialfall in §3.4
+(`DELETE FROM sqlite_sequence WHERE name = ?` nach
+truncate-mit-Leerzustand). Der Effekt für den User ist damit auf allen
+drei Dialekten derselbe wie bei PG-`TRUNCATE` plus §6.6-Reseed: nach
+`--truncate` ohne neue Daten startet der nächste manuelle Insert wieder
+bei `1`. Mit neuen Daten startet er bei `MAX(col) + 1`.
 
 Für Multi-Table-Imports mit `--schema` und FK-Abhängigkeiten wird der
 Pre-Step in einen separaten Vorlauf gezogen: zuerst alle destruktiven
@@ -2081,7 +2259,7 @@ Sequence adjustments: 2
 Trigger mode:    fire
 ```
 
-**H4 — Reporting bei `failedFinish`**: wenn eine Tabelle mit
+**H4 / F3 — Reporting bei `failedFinish`**: wenn eine Tabelle mit
 `TableImportSummary.failedFinish != null` zurückkommt (Daten committed,
 aber Trigger-Reenable gescheitert), rendert das CLI einen zusätzlichen
 Block aus dem strukturierten Feld — kein Rückgriff auf String-
@@ -2099,9 +2277,25 @@ PARTIAL FAILURE on 'events': data committed, sequence adjusted, but
   → manual fix required: re-enable triggers on table 'events'.
 ```
 
+Wenn zusätzlich der zweite, close-interne Reenable-Versuch geworfen hat
+(F3 — `FailedFinishInfo.closeCause != null`), hängt der Reporting-Pfad
+einen zweiten Block direkt an den ersten an, ohne dass `close()` selbst
+geworfen hätte:
+
+```
+PARTIAL FAILURE on 'events': data committed, sequence adjusted, but
+  trigger re-enable failed:
+    org.postgresql.util.PSQLException: ALTER TABLE … ENABLE TRIGGER USER
+    rejected by managed-PG policy
+  cleanup retry on close() also failed:
+    org.postgresql.util.PSQLException: connection has been closed
+  → manual fix required: re-enable triggers on table 'events'.
+```
+
 `failedFinish` ist auch im JSON-Output-Pfad (`--output-format json`)
-strukturiert sichtbar — das ist die Bedingung, die Phase F gezielt
-asserten kann (kein Regex auf einer stderr-Zeile).
+strukturiert sichtbar — inklusive `closeCause` als optionalem Feld. Das
+ist die Bedingung, die Phase F gezielt asserten kann (kein Regex auf
+einer stderr-Zeile).
 
 `--quiet` unterdrückt die Summary (wie in 0.3.0); `--no-progress` ebenfalls.
 `PARTIAL FAILURE`-Blöcke bleiben auch unter `--quiet` erhalten, weil sie
@@ -2230,7 +2424,7 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 | **`ParameterizedClause` aus User-Eingabe** wird falsch parametrisiert | Strikte Identifier-Validierung für `--since-column` (gleiches Pattern wie `--tables`); `--since` wird typisiert gebunden, kein String-Concat |
 | **JDBC-Treiber liefern unterschiedliche `sqlTypeName`-Strings** | `ValueDeserializer` normiert primär über JDBC-Typcodes und nutzt `sqlTypeName` nur als sekundären Dialekt-Hint; Dialekt-Tests decken PG/MySQL/SQLite explizit ab |
 | **MySQL `VALUES(col)`-UPSERT-Syntax altert weg** | In 0.4.0 noch dokumentiert, aber als Follow-up in §11 behalten; neuere MySQL-Versionen bevorzugen Alias-basiertes Update |
-| **M2: Per-Chunk Allocation-Last durch Reorder-Mapping** — der Importer baut pro Chunk einen neuen `DataChunk` plus pro Row ein neues `Array<Any?>`, weil `DataChunk` eine `data class` mit `val`-Feldern ist. Bei 30 k rows/s und `chunkSize = 10 000` läuft das in einen spürbaren GC-Druck. | Phase C Schritt 12 + 23 enthält explizit ein JFR-/Allocation-Profiling auf dem Reorder-Pfad gegen ein 1-M-Row-Fixture. Wenn der Allocation-Anteil > 25 % der Importzeit ausmacht, kommt vor Phase F ein additiver Reorder-Vertrag dazu: entweder eine neue Session-Methode `write(reorderedRows: List<Array<Any?>>, bindingColumns: List<ColumnDescriptor>)` oder ein wiederverwendbarer `RowBuffer`-Pool im Importer. Beide Varianten sind additiv und brechen die in §3.1.1 dokumentierte API nicht. Die Entscheidung wird vor Phase F getroffen, damit Phase F kein Performance-Surprise-Refactoring auslöst. |
+| **M2: Per-Chunk Allocation-Last durch Reorder-Mapping** — der Importer baut pro Chunk einen neuen `DataChunk` plus pro Row ein neues `Array<Any?>`, weil `DataChunk` eine `data class` mit `val`-Feldern ist. Bei 30 k rows/s und `chunkSize = 10 000` läuft das in einen spürbaren GC-Druck. | Phase D Schritt 23 enthält explizit ein JFR-/Allocation-Profiling auf dem Reorder-Pfad gegen ein 1-M-Row-Fixture (`@Tag("perf")`, nicht in Standard-CI). Wenn der Allocation-Anteil > 25 % der Importzeit ausmacht, kommt vor Phase F ein additiver Reorder-Vertrag dazu: entweder eine neue Session-Methode `write(reorderedRows: List<Array<Any?>>, bindingColumns: List<ColumnDescriptor>)` oder ein wiederverwendbarer `RowBuffer`-Pool im Importer. Beide Varianten sind additiv und brechen die in §3.1.1 dokumentierte API nicht. Die Entscheidung wird vor Phase F getroffen, damit Phase F kein Performance-Surprise-Refactoring auslöst. |
 
 ---
 
