@@ -168,18 +168,32 @@ interface DataWriter {
 /**
  * **Session-State-Maschine (M1)**:
  *
+ * Zustände: `OPEN`, `WRITTEN`, `FAILED`, `FINISHED`, `CLOSED`. Startzustand
+ * ist `OPEN` direkt nach `openTable(...)`. Erlaubte Transitions:
+ *
  * ```
- *                  write(chunk)              commitChunk() | rollbackChunk()
- *     OPEN ──────────────────────────► WRITTEN ──────────────────────────► OPEN
- *      │                                  │                                  │
- *      │                                  │                                  │ finishTable()
- *      │ finishTable() (0-Chunk-Pfad, F1) │ close()                          │
- *      ▼                                  ▼                                  ▼
- *   FINISHED                           CLOSED                            FINISHED
- *      │                                                                     │
- *      │ close()                                              close()        │
- *      └──────────────────────────► CLOSED ◄──────────────────────────────────┘
+ * OPEN     --write(...)------------------> WRITTEN
+ * OPEN     --finishTable() [0-Chunk, F1]-> FINISHED
+ * OPEN     --markTruncatePerformed()-----> OPEN          (idempotent, vor write)
+ * OPEN     --close()---------------------> CLOSED
+ *
+ * WRITTEN  --commitChunk() erfolgreich---> OPEN
+ * WRITTEN  --rollbackChunk() erfolgreich-> OPEN
+ * WRITTEN  --commitChunk() wirft (H-R1)--> FAILED        (Exception propagiert)
+ * WRITTEN  --rollbackChunk() wirft (H-R1)> FAILED        (Exception propagiert)
+ * WRITTEN  --close()---------------------> CLOSED
+ *
+ * FAILED   --close()---------------------> CLOSED        (einzige erlaubte Op)
+ *
+ * FINISHED --close()---------------------> CLOSED
+ *
+ * CLOSED   --close()---------------------> CLOSED        (idempotent)
  * ```
+ *
+ * Jede Transition, die nicht in dieser Tabelle steht, ist ein harter
+ * State-Fehler und wirft `IllegalStateException` (z.B. `write(...)` aus
+ * `WRITTEN`, `commitChunk()` aus `OPEN`, `write(...)` aus `FAILED`,
+ * irgendeine Non-close-Op aus `CLOSED`).
  *
  * - `OPEN`: frisch nach `openTable(...)` oder nach erfolgreichem
  *   commit/rollback. Erlaubt: `write(...)`, `finishTable()`, `close()`.
@@ -192,6 +206,42 @@ interface DataWriter {
  *   `finishTable()` aus `WRITTEN` ist ebenfalls ein State-Fehler — der
  *   Importer MUSS vorher `commitChunk()` aufrufen, sonst gibt es kein
  *   implizites Commit-on-Finish.
+ * - `FAILED` (**H-R1**): terminaler Fehler-Zustand, in den die Session
+ *   wechselt, sobald `commitChunk()` oder `rollbackChunk()` selbst eine
+ *   Exception werfen (z.B. connection lost beim Commit, DEFERRED-Constraint
+ *   schlägt erst am Commit zu, oder `conn.rollback()` scheitert, weil die
+ *   Connection bereits einseitig vom Server geschlossen wurde). In diesem
+ *   Pfad ist der tatsächliche Commit-Zustand der DB-seitigen Transaktion
+ *   **unbekannt** — der Chunk darf weder als erfolgreich committed noch
+ *   als sauber zurückgerollt verbucht werden. Der Writer MUSS den internen
+ *   State auf `FAILED` setzen, BEVOR die ursprüngliche Exception propagiert,
+ *   und darf danach keine JDBC-Aufrufe mehr auf der Connection ausführen
+ *   (insbesondere keinen zweiten `rollback()`-Versuch). Erlaubt aus
+ *   `FAILED` ist ausschließlich `close()`; jeder andere Aufruf
+ *   (`write(...)`, `commitChunk()`, `rollbackChunk()`, `finishTable()`,
+ *   `markTruncatePerformed()`) wirft `IllegalStateException`. Der
+ *   `close()`-Pfad überspringt in diesem Zustand seine Schritt-1-
+ *   `conn.rollback()`-Logik (§R6) bewusst — die Connection gilt als
+ *   verdächtig, und ein zweiter Rollback-Versuch würde im Regelfall nur
+ *   dieselbe Exception produzieren. Stattdessen führt `close()` Schritt 2–4
+ *   aus (autoCommit-Reset best-effort, Trigger-Reenable best-effort,
+ *   Connection-Return) und schluckt dabei auftretende Sekundärfehler in
+ *   den strukturierten Reporting-Pfad.
+ *   - **Importer-Verhalten**: der Aufrufer fängt die ursprüngliche
+ *     Exception aus `commitChunk()`/`rollbackChunk()` im `StreamingImporter`,
+ *     behandelt den betroffenen Chunk als verloren (`rowsFailed += chunk.size`
+ *     analog §6.5), und wendet `--on-error abort|skip|log` an. Bei
+ *     `abort` wird `close()` sofort aufgerufen und der Tabellen-Import
+ *     mit Exit 5 abgebrochen. Bei `skip|log` ruft der Importer ebenfalls
+ *     sofort `close()` (da die Session aus `FAILED` kein weiteres
+ *     `write(...)` akzeptiert) und öffnet bei Bedarf für die nächste
+ *     Tabelle eine neue `TableImportSession`; für die aktuelle Tabelle
+ *     ist nach einem `FAILED`-Zustand das Ende erreicht, weitere Chunks
+ *     DIESER Tabelle werden nicht mehr versucht. Das ist strenger als
+ *     der reguläre Chunk-Skip-Pfad (wo die Session nach
+ *     `rollbackChunk()` erfolgreich wieder in `OPEN` wechselt), aber
+ *     notwendig, weil der Zustand der zugrundeliegenden JDBC-Connection
+ *     nach einem Commit/Rollback-Fehler nicht mehr vertrauenswürdig ist.
  * - `FINISHED`: nach erfolgreichem `finishTable()`. Erlaubt nur noch
  *   `close()`.
  * - `CLOSED`: terminal. Jeder weitere Aufruf außer `close()` (idempotent)
@@ -201,6 +251,12 @@ interface DataWriter {
  * Importer-Bug, KEIN tolerierter Edge-Case. Die Streaming-Layer-Tests in
  * Phase D fahren die State-Maschine mit einem Fake Writer ab, sodass
  * Container-Tests in Phase F nicht erst die echten Bugs finden müssen.
+ * Der `FAILED`-Pfad wird dabei explizit über einen Test-Subclass-Writer
+ * geübt, der beim ersten `commitChunk()` wirft (und einen zweiten Test,
+ * der beim `rollbackChunk()` wirft), und der Phase-D-Test asserted, dass
+ * (a) der Importer die ursprüngliche Exception sieht, (b) `close()`
+ * idempotent durchläuft und (c) weitere State-Transitions aus `FAILED`
+ * mit `IllegalStateException` abgewiesen werden.
  */
 interface TableImportSession : AutoCloseable {
     /**
@@ -241,9 +297,33 @@ interface TableImportSession : AutoCloseable {
      *
      * **State-Maschine (M1)**: erwartet `state == WRITTEN`. Aus jedem
      * anderen Zustand (`OPEN` ohne Write, `COMMITTED` direkt hintereinander,
-     * `CLOSED`) wirft `commitChunk()` `IllegalStateException`. Nach
-     * erfolgreicher Bestätigung wechselt der Zustand zu `OPEN`, sodass der
-     * nächste `write(...)` wieder regulär `WRITTEN` setzt.
+     * `CLOSED`, `FAILED`) wirft `commitChunk()` `IllegalStateException`.
+     * Nach erfolgreicher Bestätigung wechselt der Zustand zu `OPEN`, sodass
+     * der nächste `write(...)` wieder regulär `WRITTEN` setzt.
+     *
+     * **H-R1 — Wenn `commitChunk()` selbst wirft**: Der zugrundeliegende
+     * `conn.commit()` kann aus mehreren Gründen scheitern: Connection
+     * während des Commits weggebrochen (Netzwerk-Reset, Idle-Timeout am
+     * Server), eine DEFERRED-Constraint schlägt erst jetzt zu, ein
+     * triggerbasierter serverseitiger Fehler kommt erst am Commit-Punkt
+     * zurück. In all diesen Pfaden ist der **tatsächliche** Commit-Zustand
+     * auf DB-Seite aus Sicht des Clients nicht eindeutig bestimmbar: die
+     * Transaktion kann teilweise, ganz oder gar nicht durchgelaufen sein.
+     * Der Writer MUSS in diesem Pfad:
+     *
+     * 1. den internen State auf `FAILED` setzen, **bevor** die Exception
+     *    weiterpropagiert
+     * 2. KEINE weiteren JDBC-Aufrufe auf der Connection machen —
+     *    insbesondere keinen zweiten `rollback()`-Versuch, keinen
+     *    `setAutoCommit(true)`-Reset
+     * 3. die ursprüngliche Exception unverändert weiterwerfen (keine
+     *    Wrapping, kein `IllegalStateException`)
+     *
+     * Der aufrufende `StreamingImporter` behandelt die Exception wie einen
+     * Chunk-Fehler (§6.5), muss aber — anders als beim regulären
+     * Rollback-Pfad — **sofort** `close()` aufrufen und darf nicht
+     * versuchen, die Session für den nächsten Chunk weiterzuverwenden.
+     * Aus `FAILED` gibt es keinen Weg zurück nach `OPEN`.
      */
     fun commitChunk()
 
@@ -253,15 +333,28 @@ interface TableImportSession : AutoCloseable {
      * **State-Maschine (M1)**: erwartet `state == WRITTEN`. Mehrfacher
      * Aufruf ohne dazwischenliegenden neuen `write(...)`-Aufruf wirft
      * `IllegalStateException`; ein `rollbackChunk()` nach erfolgreichem
-     * `commitChunk()` wirft ebenfalls `IllegalStateException`. Diese
-     * Strenge ist Absicht (Finding M1): Importer-Bugs in der State-
-     * Maschine sollen schon im Phase-D-Streaming-Test (Fake Writer)
-     * auffallen, nicht erst in den Phase-F-Containertests.
+     * `commitChunk()` wirft ebenfalls `IllegalStateException`; aus
+     * `FAILED` oder `CLOSED` wirft `rollbackChunk()` ebenfalls
+     * `IllegalStateException`. Diese Strenge ist Absicht (Finding M1):
+     * Importer-Bugs in der State-Maschine sollen schon im Phase-D-
+     * Streaming-Test (Fake Writer) auffallen, nicht erst in den
+     * Phase-F-Containertests.
      *
      * Nach erfolgreichem Rollback wechselt der Zustand zu `OPEN`. Die
      * Connection bleibt im normalen `autoCommit=false`-Importzustand;
      * Statement/Session können für den nächsten Chunk weiterverwendet
      * werden.
+     *
+     * **H-R1 — Wenn `rollbackChunk()` selbst wirft**: `conn.rollback()`
+     * kann scheitern, wenn die Connection bereits einseitig vom Server
+     * geschlossen wurde, oder in seltenen Pfaden, wenn eine
+     * Statement-Cancel-Race zwischen Writer-Timeout und Cleanup den
+     * Transaktionszustand zerreißt. Der Writer MUSS in diesem Pfad genau
+     * wie für `commitChunk()` den State auf `FAILED` setzen (bevor die
+     * Exception propagiert), KEINEN zweiten Rollback versuchen und die
+     * ursprüngliche Exception unverändert weiterreichen. Der
+     * `StreamingImporter` behandelt das wie einen Chunk-Fehler und ruft
+     * sofort `close()` auf; die Session ist für diese Tabelle verbraucht.
      */
     fun rollbackChunk()
 
@@ -354,16 +447,42 @@ interface TableImportSession : AutoCloseable {
      *    oder state == `OPEN` aber `autoCommit = false` aus dem Chunk-Pfad),
      *    `conn.rollback()` aufrufen — der Caller hat in diesem Pfad bewusst
      *    nicht committet, also wird verworfen.
+     *    **H-R1-Ausnahme**: im Zustand `FAILED` (commitChunk/rollbackChunk
+     *    haben zuvor geworfen) wird dieser Schritt **bewusst übersprungen**.
+     *    Die Connection gilt in diesem Pfad als verdächtig; ein zweiter
+     *    `rollback()`-Versuch würde typischerweise dieselbe Exception
+     *    nochmals produzieren (Connection-Reset etc.) und nur den
+     *    strukturierten Reporting-Pfad mit einer redundanten
+     *    Sekundär-Exception verlärmen.
      * 2. `conn.autoCommit = true` setzen (symmetrisch zur DDL-Phase aus
      *    `openTable(...)` / §6.7 M8 — `enableTriggers(...)` MUSS unter
      *    `autoCommit = true` laufen, sonst hängt der Reenable in einer
-     *    impliziten DDL-Transaktion).
+     *    impliziten DDL-Transaktion). Im `FAILED`-Pfad ist auch dieser
+     *    Schritt best-effort und fängt eigene Exceptions weg.
      * 3. Wenn `disableTriggers(...)` in dieser Session jemals erfolgreich
      *    war (Tracking via internem Boolean), `enableTriggers(...)`
      *    idempotent erneut aufrufen. Etwaige Exception aus diesem Schritt
-     *    landet in [FailedFinishInfo.closeCause] (siehe F3) — `close()`
-     *    selbst wirft NICHT.
-     * 4. Connection an den Pool zurückgeben (`pool.release(conn)` o.ä.).
+     *    landet als strukturierter Dreiklang in
+     *    `FailedFinishInfo.closeCauseMessage`/`closeCauseClass`/
+     *    `closeCauseStack` (siehe F3 / M-R7) — `close()` selbst wirft
+     *    NICHT.
+     * 4. **H-R3 — Session-lokale FK-Schalter zurücksetzen**: wenn der
+     *    Writer in dieser Session `SET FOREIGN_KEY_CHECKS = 0` (MySQL)
+     *    oder `PRAGMA foreign_keys = OFF` (SQLite) gesetzt hat (Tracking
+     *    via internem Boolean analog zum Trigger-Flag), MUSS der Writer
+     *    den jeweiligen Schalter hier explizit wieder aktivieren —
+     *    `SET FOREIGN_KEY_CHECKS = 1` bzw. `PRAGMA foreign_keys = ON` —
+     *    BEVOR die Connection an den Pool zurückgegeben wird. Hintergrund
+     *    ist §6.8.2: HikariCP setzt beliebige Session-Variablen beim
+     *    Check-in NICHT automatisch zurück; ohne dieses Schritt-4 würde
+     *    der nächste Borrower dieser Connection mit deaktivierten
+     *    FK-Checks weiterarbeiten (im selben `d-migrate`-Prozess bei
+     *    Multi-Table-Imports direkt reproduzierbar). Der Reset ist
+     *    ebenfalls best-effort: wenn er wirft, landet die Exception im
+     *    strukturierten Reporting-Pfad, `close()` selbst wirft NICHT. PG
+     *    überspringt Schritt 4 komplett, weil §6.8.1 auf PG gar keinen
+     *    `--disable-fk-checks`-Pfad hat.
+     * 5. Connection an den Pool zurückgeben (`pool.release(conn)` o.ä.).
      *    Auch hier: Fehler werden geloggt und in den strukturierten
      *    Reporting-Pfad eingespeist, NICHT geworfen.
      *
@@ -377,13 +496,17 @@ interface TableImportSession : AutoCloseable {
      * fachlich relevant, aber sein Fehlschlag darf NICHT als Exception aus
      * `close()` herausfallen. Stattdessen:
      *
-     * 1. Der zweite Reenable-Fehler wird in
-     *    [FailedFinishInfo.closeCause] (§3.6.2) gespeichert; der Importer
-     *    setzt das Feld direkt nach dem `close()`-Aufruf.
+     * 1. Der zweite Reenable-Fehler wird strukturiert in
+     *    `FailedFinishInfo.closeCauseMessage`/`closeCauseClass`/
+     *    `closeCauseStack` (§3.6.2, M-R7) gespeichert; der Importer
+     *    setzt die drei Felder direkt nach dem `close()`-Aufruf.
      * 2. `close()` selbst kehrt normal zurück.
-     * 3. Das Reporting in §6.15 rendert beide Causes (`cause` aus dem
-     *    ursprünglichen Reenable in `finishTable()`, `closeCause` aus dem
-     *    zweiten Versuch in `close()`) im `PARTIAL FAILURE`-Block.
+     * 3. Das Reporting in §6.15 rendert beide Causes (den ursprünglichen
+     *    Reenable-Fehler aus `finishTable()` als
+     *    `causeClass: causeMessage`, den zweiten Versuch aus `close()`
+     *    als `closeCauseClass: closeCauseMessage`) im
+     *    `PARTIAL FAILURE`-Block. Der gerenderte Stack-Trace landet nur
+     *    im JSON-Output-Pfad, nicht im Klartext-Report.
      *
      * Für alle anderen `close()`-Fehlerpfade (Connection-Return scheitert,
      * `autoCommit`-Reset wirft) gilt dieselbe Regel: loggen, in den
@@ -411,16 +534,32 @@ interface TableImportSession : AutoCloseable {
  *   §6.5 und Finding M3/K2).
  * - `rowsUnknown`: **R10 — MySQL `SUCCESS_NO_INFO (-2)`-Fallback**.
  *   Wenn der MySQL-JDBC-Batch pro-Row-Counts vorenthält und stattdessen
- *   `Statement.SUCCESS_NO_INFO` liefert, kann der Writer `inserted` und
- *   `updated` für diesen Batch nicht trennen. Statt die Unklarheit
- *   stillschweigend als `inserted` zu zählen (was Delta-Imports per
- *   `--on-conflict update` strukturell als 100 % Inserts maskieren
- *   würde), legt der Writer die Row-Anzahl dieses Batches in
- *   `rowsUnknown` ab. Im UPSERT-Pfad ist das die einzige Quelle für
- *   `rowsUnknown`; alle anderen Writer-Pfade liefern `0L`. Reporting
- *   und JSON-Output (§6.15) zeigen das Feld als getrennten Counter und
- *   setzen den Hinweis „inserts/updates not exactly distinguishable
- *   for N rows (MySQL SUCCESS_NO_INFO)".
+ *   `Statement.SUCCESS_NO_INFO` liefert, kann der Writer `inserted`,
+ *   `updated` und `skipped` für diesen Batch nicht trennen. Statt die
+ *   Unklarheit stillschweigend als `inserted` zu zählen (was sowohl
+ *   Delta-Imports per `--on-conflict update` strukturell als 100 %
+ *   Inserts maskieren würde als auch `--on-conflict skip` als 100 %
+ *   Inserts maskieren würde), legt der Writer die Row-Anzahl dieses
+ *   Batches in `rowsUnknown` ab.
+ *   **M-R8 — Regel gilt für UPSERT **und** Skip**: Sowohl der
+ *   `--on-conflict update`-Pfad (`ON DUPLICATE KEY UPDATE`) als auch
+ *   der `--on-conflict skip`-Pfad (`INSERT IGNORE`) laufen unter
+ *   MySQL über `executeBatch()` und können deshalb beide das
+ *   `SUCCESS_NO_INFO`-Verhalten des Treibers treffen. In beiden
+ *   Pfaden wandert die Batch-Größe bei `-2` in `rowsUnknown`, nicht
+ *   in `rowsInserted`, `rowsUpdated` oder `rowsSkipped`. Der
+ *   `--on-conflict abort`-Pfad kennt dagegen keine semantische
+ *   Mehrdeutigkeit (alle geschriebenen Rows sind per Definition
+ *   Inserts, weil eine Konflikt-Row den Batch ja abbrechen würde) und
+ *   rechnet `SUCCESS_NO_INFO` korrekt als `rowsInserted += batchSize`
+ *   weiter. Alle Nicht-MySQL-Writer-Pfade und alle nicht-
+ *   batch-basierten Pfade liefern `rowsUnknown = 0L`. Reporting und
+ *   JSON-Output (§6.15) zeigen das Feld als getrennten Counter und
+ *   setzen einen pfadspezifischen Hinweis:
+ *   - UPSERT-Fallback: „inserts/updates not exactly distinguishable
+ *     for N rows (MySQL SUCCESS_NO_INFO)"
+ *   - Skip-Fallback: „inserts/skips not exactly distinguishable for N
+ *     rows (MySQL SUCCESS_NO_INFO)"
  */
 data class WriteResult(
     val rowsInserted: Long,
@@ -435,12 +574,16 @@ data class WriteResult(
  * - [Success]: Reseeding und Trigger-Reenable erfolgreich. Der Importer
  *   übernimmt die `adjustments` in das reguläre `TableImportSummary`.
  * - [PartialFailure]: Reseeding hat geklappt und ist in der DB sichtbar,
- *   aber das anschließende Trigger-Reenable schlägt fehl. Der Importer
- *   markiert die Tabelle als „committed mit Reenable-Fehler", legt
- *   `adjustments` UND `cause` strukturiert in
- *   `TableImportSummary.failedFinish` ab und mappt das Endergebnis auf
+ *   aber das anschließende Trigger-Reenable schlägt fehl. [cause] trägt
+ *   in diesem Pfad den **originalen [Throwable]**, damit der Importer
+ *   (nicht der Writer) ihn beim Übertragen in
+ *   `TableImportSummary.failedFinish` in die strukturierten
+ *   `causeMessage`/`causeClass`/`causeStack`-Felder serialisieren kann
+ *   (siehe §3.6.2 / M-R7). Der Importer markiert die Tabelle als
+ *   „committed mit Reenable-Fehler" und mappt das Endergebnis auf
  *   Exit 5. Diese Variante existiert ausschließlich, damit der Reporting-
- *   Pfad nicht auf einer String-Fehlermeldung beruht.
+ *   Pfad nicht auf einer String-Fehlermeldung beruht und Phase F direkt
+ *   per `failedFinish.causeClass` asserten kann.
  *
  * Wenn [reseedGenerators] selbst wirft, wird `finishTable()` die Exception
  * direkt durchreichen — es gibt dann definitionsgemäß noch keine
@@ -615,6 +758,27 @@ MySQL-spezifika:
 - **Batch-INSERT** mit `rewriteBatchedStatements=true`-Hint im JDBC-URL
   (vom `MysqlJdbcUrlBuilder` bereits gesetzt — Verifikation im echten
   Writer-Pfad in Phase C/F).
+  **L14 — Verifikation ist strukturell, nicht performanceabhängig**: Ein
+  Durchsatz-basiertes Proxy („Batch schreibt mind. X rows/s") wäre
+  brüchig (Hardware-Jitter, Docker-Layer, CI-Last) und würde die
+  eigentliche Eigenschaft nicht absichern. Der Phase-C-Pflichttest
+  greift stattdessen **direkt auf die aktive Setting-Abfrage** des
+  MySQL-JDBC-Treibers zu: die offene `Connection` wird per
+  `conn.unwrap(com.mysql.cj.jdbc.JdbcConnection::class.java)`
+  entpackt, und der Test asserted
+  `unwrapped.propertySet.getBooleanProperty(PropertyKey.rewriteBatchedStatements).value
+  == true` (bzw. die zum verwendeten Treiber-Major passende
+  Property-Key-Variante). Damit ist die Garantie an die
+  Treiber-interne Config gekoppelt und nicht an fragile
+  Performance-Zahlen. Der Test bekommt einen Fallback-Pfad, der bei
+  älteren/modifizierten Treiber-Versionen, die den internen
+  `PropertyKey`-Enum nicht exportieren, per JDBC-URL-Parse prüft
+  (`MysqlJdbcUrlBuilder.build(...).contains("rewriteBatchedStatements=true")`).
+  Beide Wege sind strukturell und deterministisch; der Phase-F-E2E-Test
+  läuft dann zusätzlich einen echten Multi-Row-Insert gegen eine
+  Testcontainers-MySQL-Instanz und verifiziert per `SHOW VARIABLES`
+  bzw. Server-seitigem Logging, dass der konsolidierte
+  `INSERT INTO ... VALUES (...),(...),(...)`-Pfad tatsächlich greift.
 - **AUTO_INCREMENT-Reseeding**: `ALTER TABLE \`table\` AUTO_INCREMENT = N`
   mit `N = MAX(autoinc_column) + 1`. Dialect-Quote ist Backtick.
   **H5-Spezialfall „leere Tabelle nach `--truncate` (DELETE FROM)"**: nach
@@ -646,11 +810,28 @@ MySQL-spezifika:
   `Statement.SUCCESS_NO_INFO (-2) -> rowsUnknown` (R10 — der ganze
   Batch wandert in `rowsUnknown` statt in `rowsInserted`, weil der
   Treiber Insert/Update für diesen Batch nicht trennt; siehe §6.12.2).
+- **Skip-Zählung (`INSERT IGNORE`)**: `--on-conflict skip` nutzt auf
+  MySQL `INSERT IGNORE` und läuft ebenfalls über `executeBatch()`. Der
+  Writer zählt hier pro-Row: `1 -> rowsInserted`, `0 -> rowsSkipped`
+  (Row wurde wegen Unique-/PK-Konflikt ignoriert). **M-R8 —
+  `SUCCESS_NO_INFO` gilt analog zur UPSERT-Spalte**: liefert der
+  Treiber für einen `INSERT IGNORE`-Batch `-2`, wandert die Batch-
+  Größe in `rowsUnknown` (nicht in `rowsInserted` oder `rowsSkipped`),
+  und der Report hängt den Skip-spezifischen Hinweis
+  „inserts/skips not exactly distinguishable for N rows (MySQL
+  SUCCESS_NO_INFO)" an.
 - **Trigger-Disable**: in 0.4.0 **nicht generisch unterstützt**. Versuch,
   Trigger zu deaktivieren, wirft `UnsupportedTriggerModeException` mit
   Verweis auf Design-Doc §6.2. Default `fire` läuft normal.
 - **Foreign-Key-Checks**: optional via `SET FOREIGN_KEY_CHECKS=0` für die
   Session — nur wenn `--disable-fk-checks` gesetzt ist (siehe §6.8).
+  **H-R3**: der Writer merkt sich in einem internen Boolean
+  `fkChecksDisabled`, dass er den Schalter gesetzt hat, und reaktiviert
+  ihn im R6-Cleanup-Pfad (§3.1.1, Schritt 4) per
+  `SET FOREIGN_KEY_CHECKS=1` auf **derselben** Connection, BEVOR sie an
+  den HikariCP-Pool zurückgegeben wird. Ohne diesen Reset würde der
+  nächste Borrower der Connection im selben Prozess (z.B. der Import der
+  nächsten Tabelle) mit deaktivierten FK-Checks weiterarbeiten.
 
 ### 3.4 `d-migrate-driver-sqlite`
 
@@ -695,7 +876,13 @@ SQLite-spezifika:
   `UnsupportedTriggerModeException`.
 - **Foreign-Key-Checks**: temporär `PRAGMA foreign_keys = OFF` während des
   Imports, am Ende `PRAGMA foreign_keys = ON` zurückgesetzt — nur mit
-  `--disable-fk-checks`.
+  `--disable-fk-checks`. **H-R3**: der Reset läuft explizit im
+  R6-Cleanup-Pfad (§3.1.1, Schritt 4) auf **derselben** Connection,
+  BEVOR sie an den Pool zurückgegeben wird; der Writer hält dazu einen
+  internen Boolean `fkChecksDisabled` analog zum MySQL-Writer. Für
+  File-basierte SQLite-Instanzen greift dieselbe Pool-Leak-Semantik wie
+  bei MySQL — der nächste Borrower der Connection würde sonst mit
+  deaktivierten FK-Checks weiterarbeiten.
 
 ### 3.5 `d-migrate-formats`
 
@@ -1072,24 +1259,65 @@ Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 - `failedFinish: FailedFinishInfo?` — H4: nur gesetzt, wenn
   `finishTable()` ein `FinishTableResult.PartialFailure` geliefert hat.
   Trägt die bereits durchgeführten Adjustments **und** die ursprüngliche
-  Reenable-Exception strukturiert mit, damit §6.15 sie sauber rendern und
-  Phase F sie gezielt asserten kann. F3: zusätzlich `closeCause`, falls
-  der zweite Reenable-Versuch im `close()`-Cleanup ebenfalls scheitert.
+  Reenable-Exception strukturiert mit (als `causeMessage`/`causeClass`/
+  `causeStack`-Tripel, siehe M-R7), damit §6.15 sie sauber rendern und
+  Phase F sie gezielt asserten kann. F3: zusätzlich
+  `closeCauseMessage`/`closeCauseClass`/`closeCauseStack`, falls der
+  zweite Reenable-Versuch im `close()`-Cleanup ebenfalls scheitert.
 - `error: String?`
 
 ```kotlin
 /**
  * H4 / F3: strukturierter Träger für „Daten committed, aber Trigger-
  * Reenable gescheitert"-Fälle. Der StreamingImporter setzt das Feld
- * direkt aus dem `FinishTableResult.PartialFailure` aus §3.1.1; das
- * optionale [closeCause]-Feld wird nach dem `close()`-Aufruf befüllt,
- * wenn der zweite, idempotente Reenable-Versuch im Cleanup-Pfad
- * ebenfalls geworfen hat (siehe `close()`-Kdoc in §3.1.1, F3).
+ * direkt aus dem `FinishTableResult.PartialFailure` aus §3.1.1; die
+ * optionalen `closeCause*`-Felder werden nach dem `close()`-Aufruf
+ * befüllt, wenn der zweite, idempotente Reenable-Versuch im
+ * Cleanup-Pfad ebenfalls geworfen hat (siehe `close()`-Kdoc in §3.1.1,
+ * F3).
+ *
+ * **M-R7 — kein Info-Verlust zwischen `PartialFailure(Throwable)` und
+ * diesem Record**. Der `FinishTableResult.PartialFailure`-Fall aus
+ * §3.1.1 trägt den originalen `Throwable`, und der ganze Sinn der
+ * F3-Strukturierung war es, Phase-F-Assertions ohne stderr-Regex
+ * möglich zu machen UND Debug-Info (Typ, Stack) für den manuellen
+ * Folge-Eingriff zu erhalten. Der Importer serialisiert deshalb beim
+ * Übertragen in [FailedFinishInfo] den `Throwable` in **drei**
+ * getrennte Felder, nicht in eine einzelne Zeichenkette:
+ *
+ * - [causeMessage]: `throwable.message ?: ""` — die Klartext-
+ *   Fehlermeldung für den Standard-Report in §6.15.
+ * - [causeClass]: `throwable::class.qualifiedName` — der voll
+ *   qualifizierte Exception-Typ, auf dem Phase-F gezielt per
+ *   `assertThat(info.causeClass).isEqualTo("org.postgresql.util.
+ *   PSQLException")` asserten kann, ohne den Nachrichtenstring parsen
+ *   zu müssen.
+ * - [causeStack]: ein gerendeter Stack-Trace (`Throwable.stackTraceToString()`
+ *   bzw. äquivalent), der im JSON-Output und im Debug-Report
+ *   verfügbar ist, im Standard-Klartext-Report aber unterdrückt bleibt
+ *   (sonst wird §6.15 unlesbar). `null`, wenn `throwable.stackTrace`
+ *   leer ist (z.B. bei einer fabrizierten Exception aus einem
+ *   Test-Mock).
+ *
+ * Analog für [closeCauseMessage]/[closeCauseClass]/[closeCauseStack],
+ * die der Importer direkt nach dem `close()`-Aufruf befüllt, wenn der
+ * zweite Reenable-Versuch im Cleanup-Pfad ebenfalls geworfen hat.
+ * Wenn der zweite Versuch erfolgreich war (oder gar nicht stattfand),
+ * bleiben die drei Close-Felder `null`.
+ *
+ * Der Klartext-Report in §6.15 rendert bevorzugt `causeClass:
+ * causeMessage`; der JSON-Output (`--output-format json`) serialisiert
+ * alle sechs Felder strukturiert, sodass Phase F den Pfad per
+ * deterministischem Key-Access testen kann.
  */
 data class FailedFinishInfo(
     val adjustments: List<SequenceAdjustment>,
-    val cause: String,
-    val closeCause: String? = null,
+    val causeMessage: String,
+    val causeClass: String,
+    val causeStack: String? = null,
+    val closeCauseMessage: String? = null,
+    val closeCauseClass: String? = null,
+    val closeCauseStack: String? = null,
 )
 ```
 
@@ -1200,7 +1428,7 @@ Tabelle, alle Pre-Flight-Pfade landen genau hier:
 |---|---|
 | CLI-Parse/Helper | `--source`-Form (stdin/file/dir), Identifier-Validierung für `--table`/`--tables`/`--since-column`, explizites `--on-conflict`, `--truncate`-Exklusivität, `--encoding`-Charset-Name |
 | Lokale `--schema`-Validierung (M4 Phase 1) | wenn `--schema <path>` gesetzt ist: Datei lesen, gegen das neutrale Schema-Modell parsen, intra-Schema-Konsistenz prüfen (Spalten, Nullability, Constraints). Schlägt fehl → Exit 3 ohne dass jemals eine Connection aufgemacht wurde. Diese Phase macht NICHT die Konsistenz „Schema deckt Target wirklich ab" — die kommt erst nach `openTable(...)`. |
-| Topo-Sort (nur Directory + `--schema`) | **R8**: läuft direkt im Anschluss an die M4-Phase-1-Validierung, BEVOR `resolveTarget(...)` aufgerufen wird. Wenn `ImportInput.Directory` UND `--schema` gesetzt: Tabellenreihenfolge per `kahnSort()` aus dem bereits geladenen Schema-DAG ableiten und in `ImportInput.Directory.tableOrder` ablegen (per `copy(tableOrder = ...)`). Der Sort braucht keine Connection und keinen Dialekt — er nutzt nur die in M4 Phase 1 ohnehin geladene Schema-Definition. Für Single-File/Stdin **kein** Topo-Sort (siehe M5 / §6.8.3). Schlägt der Sort selbst fehl (Schema-DAG hat einen Zyklus o.ä.) → Exit 3, weiterhin ohne Connection. |
+| Topo-Sort (nur Directory + `--schema`) | **R8**: läuft direkt im Anschluss an die M4-Phase-1-Validierung, BEVOR `resolveTarget(...)` aufgerufen wird. Wenn `ImportInput.Directory` UND `--schema` gesetzt: Tabellenreihenfolge per **`AbstractDdlGenerator.topologicalSort(...)`-Helper** aus dem bereits geladenen Schema-DAG ableiten und in `ImportInput.Directory.tableOrder` ablegen (per `copy(tableOrder = ...)`). Der Sort braucht keine Connection und keinen Dialekt — er nutzt nur die in M4 Phase 1 ohnehin geladene Schema-Definition. Für Single-File/Stdin **kein** Topo-Sort (siehe M5 / §6.8.3). **H-R2 — Zyklus-Check ist Pflicht**: der heutige `AbstractDdlGenerator.topologicalSort(...)` wirft nicht bei Zyklen, sondern liefert `TopologicalSortResult(sorted, circularEdges)` und hängt zyklische Tabellen hinten an `sorted` an (0.2.0-Best-Effort für DDL-Generierung). Für den Import-Pfad ist diese Semantik **nicht akzeptabel**: ein FK-lastiger Zyklus würde zu einem nicht-topologischen „Sort" führen und den ganzen Multi-Table-Import in ein Reihenfolge-Raten kippen. Der Runner-Pfad MUSS daher nach dem Aufruf explizit `result.circularEdges.isNotEmpty() → Exit 3` prüfen, mit einer Fehlermeldung, die die zyklischen Kanten listet. Schlägt der Sort selbst fehl (Input-Schema inkonsistent o.ä.) → ebenfalls Exit 3, weiterhin ohne Connection. |
 | Nach `resolveTarget(...)` | Dialekt-Auflösung, `--disable-fk-checks` auf PG, Connection-/Config-Fehler |
 | Während `openTable(...)` und direkt danach (writer-intern + CLI-Wrapper) | writer-interne Trigger-Strict-/Disable-Prüfung; CLI-Wrapper mappt `UnsupportedTriggerModeException` daraus auf Exit 2, danach Header-Validierung/Reorder-Mapping, PK-/UPSERT-Prüfung, ggf. FK-Deferral-Pre-Flight |
 | Schema-vs-Target-Konsistenz (M4 Phase 2, nur wenn `--schema` gesetzt) | Direkt nach `openTable(...)` und dem Header-Mapping: das aus `session.targetColumns` aufgebaute Bild gegen die `--schema`-Definition prüfen (Spaltennamen, Nullability, Typkompatibilität). Mismatch → Exit 3, bevor der erste `write(...)` läuft. |
@@ -1315,6 +1543,18 @@ aber der Code-Pfad existiert nicht. Konsequenzen für die 0.4.0-Migration:
   0.4.0 it is honored as a fallback for `--source`", damit User mit
   alten Configs nicht überrascht werden, wenn ein vergessener
   `default_source: prod` plötzlich greift.
+- **L10 — KDoc-Drift explizit mit-fixen**: Der heutige Doc-Comment in
+  `d-migrate-cli/src/main/kotlin/dev/dmigrate/cli/config/
+  NamedConnectionResolver.kt:22` behauptet „liest `database.default_source`,
+  ignoriert es aber für `data export`" — tatsächlich liest der Code die
+  Option aktuell gar nicht (`lookupConnectionUrl` schaut ausschließlich
+  in `database.connections`). Der Doc-Kommentar ist also bereits heute
+  schief. Phase E Schritt 26 MUSS denselben PR, der
+  `resolveSource(...)`/`resolveTarget(...)` implementiert, auch den
+  KDoc-Block an den Klassen-Header aktualisieren (neue Rolle von
+  `default_source`/`default_target`, Verweis auf die Auflösungstabelle
+  in §3.7.3), sonst driftet die Doku weiter — die Lektion aus der
+  L6-Analyse darf sich nicht wiederholen.
 
 ### 3.8 `d-migrate-core`
 
@@ -1340,18 +1580,6 @@ so erweitert, dass `ParameterizedClause`-Parameter über
 konkateniert. Das ist auch der einzige Pfad, der `setObject(...)` für
 Daten-Reader braucht — der Volltext-Export benutzt `setObject` nicht.
 
-### 3.9 `gradle.properties` und `build.gradle.kts`
-
-Unter der Baseline-Entscheidung aus Phase A/B kommen keine neuen externen
-Dependencies hinzu. JSON/YAML/CSV-Lib-Versionen aus 0.3.0 reichen aus — die
-Reader-Pfade benutzen die gleichen Bibliotheken. Falls der DSL-JSON-Go/No-Go-
-Spike in Phase B scheitert, wird diese Annahme vor Implementierungsstart von
-Phase B explizit neu entschieden statt still fortgeschrieben.
-
-```properties
-# Keine neuen Versions-Properties — alle Bibliotheken aus 0.3.0 wiederverwendet.
-```
-
 ---
 
 ## 4. Implementierungsreihenfolge
@@ -1367,7 +1595,43 @@ Phase B explizit neu entschieden statt still fortgeschrieben.
 5. `DataFilter.ParameterizedClause` und Erweiterung von
    `AbstractJdbcDataReader` für parametrisierte WHERE-Klauseln, inkl.
    Test für `Compound([WhereClause, ParameterizedClause])` mit korrekter
-   SQL-Erzeugung und Parameter-Positionsbindung
+   SQL-Erzeugung und Parameter-Positionsbindung.
+   **M-R6 — Refactor-Umfang ist nicht trivial**: die heutige Impl
+   (`AbstractJdbcDataReader.kt:121-142`) liefert
+   `collectWhereClauses(filter: DataFilter?): List<String>` — reine
+   Strings, ohne Parameter-Tracking — und ruft direkt danach
+   `stmt.executeQuery()` ohne jeden `setObject`-Loop auf. Für
+   `ParameterizedClause` muss dieser Pfad in drei Schritten umgebaut
+   werden:
+   1. **Neue Fragment-Repräsentation**: ein interner Helper-Typ
+      `WhereFragment(val sql: String, val params: List<Any?>)` (oder ein
+      `Pair<String, List<Any?>>`), der sowohl `WhereClause` („SQL, keine
+      Params") als auch `ParameterizedClause` („SQL mit `?`-Platzhaltern,
+      params-Liste") einheitlich trägt.
+   2. **Rückgabetyp-Refactor**: `collectWhereClauses(...)` liefert ab
+      sofort `List<WhereFragment>` statt `List<String>`. Die Join-Logik
+      in `whereClause(...)` (derzeit `joinToString(" AND ") { "($it)" }`)
+      baut das zusammengesetzte SQL-Fragment und konkateniert gleichzeitig
+      die zugehörigen Parameter-Listen **in derselben Reihenfolge**,
+      sodass die `?`-Positionen im final erzeugten SQL deterministisch zu
+      den gebundenen Werten passen. Das zusammengesetzte Ergebnis wird
+      als zweiter `WhereFragment` an den Caller zurückgereicht (sql +
+      flat params).
+   3. **Bind-Loop im `streamTable`-Pfad**: zwischen `conn.prepareStatement(
+      sql, ...)` (line 65-69) und `stmt.executeQuery()` (line 70) wird
+      ein neuer Schritt eingezogen, der die flach aggregierte
+      Parameter-Liste per 1-basiertem `stmt.setObject(idx, value)` an
+      das Statement bindet. Null-Werte gehen über `setObject(idx, null,
+      Types.NULL)` (oder die Treiber-spezifische Variante), damit
+      Treiber-Idiosynkrasien nicht still kippen.
+   Phase A Schritt 5 hat damit drei harte Testfälle: (a) nur
+   `WhereClause` → kein Param-Binding, keine Regression gegen 0.3.0; (b)
+   nur `ParameterizedClause` → ein Param, korrekt gebunden; (c)
+   `Compound([WhereClause("status = 'new'"), ParameterizedClause(
+   "updated_at >= ?", [ts])])` → zusammengesetzte WHERE, Param an
+   Position 1 gebunden, Ergebnis über Fake-ResultSet verifiziert. Der
+   M-R5-Verbotstest (literales `?` im `WhereClause` + Compound) läuft
+   ebenfalls in diesem Schritt.
 6. Go/No-Go-Spike für DSL-JSON Pull-Parsing auf einem 100-MB-Top-Level-Array
    mit konstantem Speicherbudget; der Spike verifiziert dabei zusätzlich,
    dass die für §3.5.2 benötigte Integer-vs-Decimal-Diskriminierung auf
@@ -1460,6 +1724,23 @@ Schritt, der beide Pfade zusammenführt.
     wenn die Standard-CI grün ist. Das schützt aktiv davor, dass der
     `@Tag("perf")`-Run unter Zeitdruck übersehen wird und Phase F dann
     in ein Performance-Surprise-Refactoring läuft.
+    **L11 — Reproduzierbarkeits-Anforderungen an das Perf-Doc**: Die
+    25 %-Allocation-Schwelle aus M2 ist hardware-sensitiv (CPU-Takt,
+    JIT-Tier, GC-Variante, Heap-Größe und OS beeinflussen Allocation-
+    Anteil und GC-Druck direkt). Damit das JA/NEIN-Urteil später
+    überhaupt reproduzierbar oder zumindest kommentierbar ist, MUSS das
+    Perf-Doc mindestens die folgenden Messumgebungsdaten festhalten
+    (bevor der Inhalt als „Gate passed" gilt):
+    - CPU-Modell (z.B. „AMD Ryzen 9 7950X, 16 Cores @ 4.5 GHz base"),
+    - verfügbarer physischer RAM und tatsächlich genutzter JVM-Heap
+      (`-Xmx`/`-Xms` explizit),
+    - JDK-Distribution und -Version (`java -version` plus Vendor),
+    - aktiver GC (`-XX:+UseG1GC`/`-XX:+UseZGC`/default) plus ggf.
+      zusätzliche GC-Flags,
+    - OS und Kernel-Version,
+    - Datum des Laufs.
+    Ein Perf-Ergebnis ohne diese sechs Felder gilt als unvollständig;
+    das Gate bleibt dann auch bei vorhandener Datei „zu".
 
 ### Phase E: CLI-Integration
 
@@ -1476,12 +1757,17 @@ Schritt, der beide Pfade zusammenführt.
 
 29. `DataImportE2EPostgresTest` analog zur Export-E2E aus 0.3.0:
     Schema anlegen, Datei einlesen, Daten verifizieren, Sequence-Reseeding
-    via `nextval()` checken; **H4-Pflichtfall**: `enableTriggers(...)`
+    via `nextval()` checken; **H4/M-R7-Pflichtfall**: `enableTriggers(...)`
     gezielt scheitern lassen (z.B. via Test-Subclass-`SchemaSync`, die in
     `enableTriggers` nach erfolgreichem Reseeding wirft) und asserten,
-    dass `TableImportSummary.failedFinish` strukturiert beide Felder
-    (`adjustments`, `cause`) trägt und der CLI-Output den
-    `PARTIAL FAILURE`-Block enthält.
+    dass `TableImportSummary.failedFinish` strukturiert alle drei
+    Cause-Felder (`adjustments`, `causeMessage`, `causeClass`) trägt und
+    `causeClass` dem erwarteten qualifizierten Exception-Typ entspricht
+    (kein Regex auf `causeMessage`), plus zusätzlicher Test-Fall für
+    `closeCauseClass`, wenn auch der close-interne Retry scheitert.
+    Der CLI-Output MUSS ebenfalls den `PARTIAL FAILURE`-Block enthalten
+    und unter `--output-format json` alle sechs Felder strukturiert
+    serialisieren.
 30. `DataImportE2EMysqlTest` mit `AUTO_INCREMENT`-Verifikation
 31. SQLite-E2E direkt ohne Container
 32. Inkrementeller Round-Trip-E2E: initial export → Änderungen in der
@@ -1528,6 +1814,23 @@ weiterhin JDBC-frei, `streaming` koordiniert nur Reader und Writer. Auch
 ARRAY-/JSONB-Sonderfälle ändern daran nichts: JDBC-nahe Materialisierung
 (`Connection.createArrayOf()`, PG-Objekte etc.) bleibt im Writer-Layer und
 zieht keine zusätzliche Modul-Kante in `formats`.
+
+### 5.1 Build-Konfiguration (`gradle.properties` / `build.gradle.kts`)
+
+**L9**: Dieser Abschnitt stand in der ersten Plan-Fassung als „§3.9" unter
+„Bestehende Module — Änderungen", was strukturell falsch war —
+`gradle.properties` und `build.gradle.kts` sind keine Module. Jetzt als
+Unterabschnitt von §5, weil es thematisch um Dependencies geht.
+
+Unter der Baseline-Entscheidung aus Phase A/B kommen keine neuen externen
+Dependencies hinzu. JSON/YAML/CSV-Lib-Versionen aus 0.3.0 reichen aus — die
+Reader-Pfade benutzen die gleichen Bibliotheken. Falls der DSL-JSON-Go/No-Go-
+Spike in Phase B scheitert, wird diese Annahme vor Implementierungsstart von
+Phase B explizit neu entschieden statt still fortgeschrieben.
+
+```properties
+# Keine neuen Versions-Properties — alle Bibliotheken aus 0.3.0 wiederverwendet.
+```
 
 ---
 
@@ -1656,6 +1959,18 @@ entsteht eine **Header-Validierung**, kein Typ-System:
    Header-only-CSV ist davon ausgenommen: dort darf `headerColumns()` trotz
    `nextChunk() == null` gesetzt sein, so dass die Header-Validierung noch
    vor dem Ergebnis `0 rows inserted` laufen kann.
+   **M-R9 — Headered CSV mit falscher Row-Länge**: Derselbe strenge
+   Vertrag gilt auch für CSV **mit** Header. Liefert uniVocity für eine
+   Daten-Row eine andere Feldanzahl als die Header-Zeile definiert hat
+   (zu viele oder zu wenige Spalten), ist das ein Format-Fehler mit der
+   Meldung `headered CSV row has N columns, header defined M` und läuft
+   über `--on-error`. Der `CsvChunkReader` konfiguriert den uniVocity-
+   `CsvParserSettings` dafür explizit so, dass kurze Rows **nicht**
+   still mit `null` aufgefüllt werden und lange Rows **nicht** still
+   abgeschnitten werden — beide Fehlkonfigurationen würden den Import
+   still falsch durchlaufen lassen. Phase B Schritt 9 nimmt dafür zwei
+   Mini-Fixtures mit auf: eine Row mit zu wenigen Feldern und eine mit
+   zu vielen.
 3. JDBC-Typkompatibilität wird **nur** als Warnung geprüft, nicht als
    Fehler — der `ValueDeserializer` versucht den Cast und fällt sonst auf
    die `--on-error`-Politik zurück.
@@ -1693,17 +2008,52 @@ entsteht eine **Header-Validierung**, kein Typ-System:
 Pro Tabelle eine Connection mit `autoCommit=false`. Pro Chunk:
 
 ```
-session.write(chunk)                   -- batch Insert
-  ├── Erfolg → session.commitChunk()   -- chunk persistiert
-  └── Fehler → session.rollbackChunk() -- chunk verworfen
-                  ├── --on-error abort → Tabellen-Import-Abbruch, Exit 5
-                  ├── --on-error skip  → next Chunk (CHUNK-Granularität)
-                  └── --on-error log   → next Chunk + im Report vermerken (CHUNK-Granularität)
+session.write(chunk)                     -- batch Insert
+  ├── Erfolg → session.commitChunk()     -- chunk persistiert
+  │              ├── Erfolg → next Chunk (state: WRITTEN → OPEN)
+  │              └── wirft  → Session in FAILED (H-R1) → siehe unten
+  └── Fehler → session.rollbackChunk()   -- chunk verworfen
+                  ├── Erfolg → next Chunk (state: WRITTEN → OPEN)
+                  │              ├── --on-error abort → Tabellen-Import-Abbruch, Exit 5
+                  │              ├── --on-error skip  → next Chunk (CHUNK-Granularität)
+                  │              └── --on-error log   → next Chunk + im Report vermerken (CHUNK-Granularität)
+                  └── wirft  → Session in FAILED (H-R1) → siehe unten
 ```
 
-Nach `rollbackChunk()` bleibt die Connection im normalen
+Nach erfolgreichem `rollbackChunk()` bleibt die Connection im normalen
 `autoCommit=false`-Importzustand; Statement/Session können für den nächsten
 Chunk weiterverwendet werden.
+
+**H-R1 — Wenn `commitChunk()` oder `rollbackChunk()` selbst wirft**: Der
+Writer hat die Session in `FAILED` überführt (siehe State-Maschine in
+§3.1.1). Der DB-seitige Zustand der Transaktion ist in diesem Pfad
+**unbekannt**, und die Connection selbst ist verdächtig — ein zweiter
+Rollback-Versuch, ein weiterer `write(...)` oder gar `finishTable()` sind
+deshalb nicht erlaubt und werfen aus `FAILED` `IllegalStateException`.
+Der `StreamingImporter` muss diesen Pfad strenger behandeln als den
+regulären Chunk-Fehlerpfad:
+
+1. Der fehlerhafte Chunk wird als verloren gezählt (`rowsFailed +=
+   chunk.size`, analog zum Skip/Log-Pfad).
+2. `session.close()` wird **sofort** aufgerufen — die Session ist für
+   diese Tabelle verbraucht, auch unter `--on-error skip|log`. Das
+   weitere Abarbeiten weiterer Chunks DERSELBEN Tabelle ist bewusst
+   nicht erlaubt, weil der DB-Zustand nicht mehr vertrauenswürdig ist.
+3. `--on-error` wirkt dann nur noch auf die **Tabellen-Ebene**: bei
+   `abort` endet der Lauf mit Exit 5; bei `skip|log` macht der
+   Importer mit der nächsten Tabelle (Multi-Table-Pfad) weiter und
+   vermerkt den Tabellen-Abbruch in `chunkFailures`.
+
+Das ist strenger als „Chunk verloren, nächster Chunk derselben Tabelle"
+aus dem regulären Rollback-Pfad. Rationale: nach einem scheiternden
+Commit/Rollback kann der Writer nicht unterscheiden, ob der Insert
+teilweise persistiert wurde; weitere Schreibversuche auf derselben
+Session könnten den DB-Zustand still korrumpieren. Die strengere
+Behandlung ist in Phase D Pflichttest: ein Test-Subclass-Writer, der
+beim ersten `commitChunk()` wirft, plus ein zweiter, der beim
+`rollbackChunk()` wirft — und beide Tests asserten, dass der Importer
+nach dem Fehler keinen zweiten `write(...)` mehr auf derselben Session
+versucht.
 
 **Wichtig**: Der vorherige Chunk bleibt persistiert. Kein „alles oder
 nichts" auf Tabellen-Ebene — das wäre ein Checkpoint/Resume-Problem (LN-012,
@@ -1746,6 +2096,23 @@ Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
    ausgeschlossen, weil `commit()` auf einer leeren Transaktion ein
    no-op ist), wird die Exception wie ein Reseeding-Fehler durchgereicht
    (§3.1.1 „Schritt 1 wirft").
+   **L13 — Geltungsbereich explizit eingegrenzt**: R2 räumt
+   ausschließlich den Transaktionszustand **innerhalb der eigenen
+   Session-Connection** auf. Parallele Writer auf **anderen** Sessions
+   (eine zweite `d-migrate`-Instanz, ein manuell abgesetztes
+   `INSERT`-Statement aus `psql`, ein anderer Applikationsprozess)
+   sind davon nicht betroffen — zwischen dem `SELECT MAX(col)` in
+   Schritt 2 und dem dialektspezifischen Reseeding in Schritt 4 kann
+   ein Fremd-Writer auf derselben Tabelle inserten und damit den
+   gerade berechneten Reseed-Wert wieder „überholen", sodass der
+   `setval`/`AUTO_INCREMENT`-Wert nach Abschluss von `finishTable()`
+   bereits wieder hinter dem tatsächlichen Hochstand der Tabelle
+   liegt. Diese **cross-session-Race** ist in 0.4.0 explizit
+   out-of-scope (siehe §10, Risiko „Sequence-Reseeding race"); R2
+   selbst beansprucht bewusst KEINE cross-session-Garantie und darf
+   nicht als „race-frei" gelesen werden. Der CLI-Help-Text für
+   `data import` weist darauf hin (§7, Sequence-Race-Hinweis im
+   Help-Text-Block, vgl. L4 aus der ersten Review-Runde).
 1. Pro Spalte aus `importedColumns` prüfen: ist sie eine Generator-Spalte
    im Ziel? (PG: `pg_get_serial_sequence` für `SERIAL` sowie
    `GENERATED { BY DEFAULT | ALWAYS } AS IDENTITY`; MySQL: Spalten-Metadata
@@ -1878,7 +2245,7 @@ Für PG werden in 0.4.0 stattdessen zwei sichere Wege unterstützt:
 
 | Pfad | Voraussetzung | Implementierung |
 |---|---|---|
-| **(a)** Topologische Sortierung der Tabellen | `--schema <path>` mit der neutralen Schema-Definition | Wiederverwendung der Kahn-Sortierung aus `AbstractDdlGenerator` (0.2.0). Importe laufen in FK-respektierender Reihenfolge, FK-Checks bleiben aktiv. |
+| **(a)** Topologische Sortierung der Tabellen | `--schema <path>` mit der neutralen Schema-Definition | Wiederverwendung des `AbstractDdlGenerator.topologicalSort(...)`-Helpers (0.2.0, Kahn-Algorithmus intern). Importe laufen in FK-respektierender Reihenfolge, FK-Checks bleiben aktiv. **H-R2**: der Helper ist heute `protected` und liefert `TopologicalSortResult(sorted, circularEdges)` ohne bei Zyklen zu werfen. Phase E muss (a) die Sichtbarkeit anheben oder einen öffentlichen `topologicalSort`-Helper extrahieren und (b) im Runner explizit `circularEdges.isNotEmpty() → Exit 3` prüfen (siehe R8 in §3.7.1). |
 | **(b)** `SET CONSTRAINTS ALL DEFERRED` | Constraints sind im Ziel-Schema mit `DEFERRABLE` deklariert | Pro Chunk-Transaktion vor dem ersten Insert ausgeführt. Vorab prüft ein PG-Pre-Flight `pg_constraint.condeferrable` und loggt/reportet `N deferrable / M non-deferrable` FK-Constraints für die betroffenen Tabellen. Bei FK-abhängigem Multi-Table-Import ohne `--schema` und ohne passende deferrable Constraints → Exit 2 mit klarem Hinweis statt stillem No-Op. |
 
 Wichtig: Pfad (b) verzögert Constraints nur bis zum nächsten Chunk-Commit.
@@ -1943,6 +2310,34 @@ sind damit safe für `--disable-fk-checks`:
 `--disable-fk-checks` ohne Setzen des Flags → Default: FK-Checks bleiben
 aktiv, User muss die Eingabe-Reihenfolge selbst stimmig machen.
 
+**H-R3 — Pool-Leak-Vertrag**: „am Ende" meint hier **explizit** den
+R6-Cleanup-Pfad in `TableImportSession.close()` (siehe §3.1.1), Schritt 4,
+auf **genau derselben Connection**, auf der der Schalter gesetzt wurde —
+BEVOR `pool.release(conn)` die Connection an den HikariCP-Pool
+zurückgibt. Hintergrund: HikariCP setzt beliebige Session-Variablen beim
+Check-in der Connection **nicht automatisch** zurück. Ohne einen
+expliziten Reset würde der nächste Borrower derselben Connection — z.B.
+der Import der nächsten Tabelle in einem Multi-Table-Lauf, oder ein
+paralleler Reader-Pfad im selben Prozess — mit deaktivierten FK-Checks
+weiterarbeiten. Der Writer hält dafür einen internen Boolean
+`fkChecksDisabled`, den er beim ersten `SET FOREIGN_KEY_CHECKS=0` bzw.
+`PRAGMA foreign_keys = OFF` setzt, und wertet ihn in R6-Schritt 4 aus.
+Der Reset ist dort best-effort: wirft der Reset-Aufruf selbst, landet die
+Exception im strukturierten Reporting-Pfad, `close()` selbst wirft nicht,
+und die Connection wird trotzdem an den Pool zurückgegeben (weil eine
+zurückgehaltene kaputte Connection mehr Schaden anrichtet als eine
+zurückgegebene mit markiertem Fehler — HikariCP verifiziert beim nächsten
+Borrow).
+
+**Phase-C-Pflichttest für den Pool-Leak**: Sowohl für MySQL als auch für
+SQLite gibt es einen Test, der mit einem HikariCP-Pool der Größe 1 zwei
+sequenzielle `TableImportSession`-Läufe auf derselben Connection fährt:
+die erste Session setzt `--disable-fk-checks` und wird sauber geschlossen;
+die zweite Session öffnet eine neue `TableImportSession` (ohne
+`--disable-fk-checks`) und asserted via `SELECT @@FOREIGN_KEY_CHECKS`
+(MySQL) bzw. `PRAGMA foreign_keys` (SQLite), dass der Wert wieder `1`
+bzw. `ON` steht. Ein fehlender Reset ließe diesen Test sofort kippen.
+
 Bei `--truncate` ist zusätzlich relevant:
 
 - MySQL `TRUNCATE TABLE` auf FK-referenzierten Tabellen ist unzuverlässig bzw.
@@ -1965,16 +2360,44 @@ Bei `--truncate` ist zusätzlich relevant:
    Single-File- und Stdin-Imports.
 2. **FK-respektierende Topologische Sortierung** (nur für `Directory`):
    wenn `ImportInput.Directory` aktiv ist UND `--schema` gesetzt ist, wird
-   die Tabellenreihenfolge per Kahn-Sort aus dem Schema-DAG abgeleitet.
-   Für `Stdin` und `SingleFile` macht Topo-Sort fachlich keinen Sinn (es
-   gibt nur eine Tabelle) und der Plan macht hier ausdrücklich KEINEN
-   Topo-Sort, auch wenn `--schema` gesetzt ist.
+   die Tabellenreihenfolge per `AbstractDdlGenerator.topologicalSort(...)`
+   aus dem Schema-DAG abgeleitet. Für `Stdin` und `SingleFile` macht
+   Topo-Sort fachlich keinen Sinn (es gibt nur eine Tabelle) und der Plan
+   macht hier ausdrücklich KEINEN Topo-Sort, auch wenn `--schema` gesetzt
+   ist.
 
 Innerhalb von Pfad (2) ist das der einzige Weg, der ohne jeden
 FK-Disable-Trick funktioniert und auf allen Dialekten gleichermaßen sauber
 ist. Implementierung kommt direkt aus dem 0.2.0
-`AbstractDdlGenerator.kahnSort()` — derselbe Algorithmus, andere Eingabe
-(Tabellen statt DDL-Statements).
+`AbstractDdlGenerator.topologicalSort(...)` — derselbe Kahn-Algorithmus
+intern, andere Eingabe (Tabellen statt DDL-Statements).
+
+**H-R2 — Anpassungen für den Import-Pfad**: Der heutige Helper ist
+`protected` (nur aus Subklassen des `AbstractDdlGenerator` aufrufbar) und
+wirft **nicht** bei Zyklen — er liefert `TopologicalSortResult(sorted,
+circularEdges)` und hängt zyklische Tabellen hinten an `sorted` an (siehe
+`AbstractDdlGenerator.kt:208-213`). Für die 0.2.0-DDL-Generierung ist das
+Best-Effort-Verhalten vertretbar, weil der generierte DDL-Output danach
+manuell reviewt wird; für den Import-Pfad ist es **nicht** akzeptabel,
+weil ein Zyklus stillschweigend zu einer nicht-topologischen Reihenfolge
+führt und jeden FK-abhängigen Import in ein Reihenfolge-Raten kippt.
+
+Phase E zieht deshalb zwei kleine Refactorings mit:
+
+1. **Sichtbarkeit**: Entweder wird `topologicalSort(...)` auf `public` (oder
+   `internal` zwischen `d-migrate-driver-api` und `d-migrate-cli`/
+   `d-migrate-streaming`) angehoben, oder der Algorithmus wird in einen
+   eigenständigen, öffentlichen Helper `TableTopologicalSort.of(schema)`
+   im `d-migrate-driver-api` (oder im neuen Runner-Layer des CLI) ausgelagert
+   und aus dem `AbstractDdlGenerator` delegiert. Beide Varianten sind
+   additiv und brechen keine bestehenden Caller.
+2. **Zyklus-Check**: Der Runner-Pfad ruft den Helper, prüft
+   `result.circularEdges.isNotEmpty()` und wirft bei Zyklen eine eigene
+   Exception, die im CLI-Wrapper auf **Exit 3** mit einer Fehlermeldung
+   gemappt wird, die mindestens die betroffenen (from → to)-Kanten listet.
+   Das ist R8 (§3.7.1) und wird in Phase D/E mit einem expliziten Test
+   abgesichert, der ein Schema mit zwei Tabellen A→B→A übergibt und
+   asserted, dass der Import nicht stattfindet, sondern mit Exit 3 endet.
 
 Ohne `--schema` gibt es KEINE FK-basierte Sortierung. Directory-Imports
 laufen dann in deterministischer lexikographischer Reihenfolge der
@@ -2165,6 +2588,31 @@ Intern:
    kombiniert (der in Phase A erweiterte `AbstractJdbcDataReader` trägt das
    dann für `ParameterizedClause` und `WhereClause`, inklusive korrekter
    Parameter-Positionsbindung im zusammengesetzten WHERE)
+6. **M-R5 — Literale `?` in `WhereClause` + `ParameterizedClause`
+   sind verboten**: Der rohe `--filter`-String kann fachlich ein literales
+   `?`-Zeichen enthalten (z.B. `--filter "name LIKE 'Order?%'"` für einen
+   LIKE-Ausdruck mit Fragezeichen im Pattern, oder ein String-Vergleich
+   `--filter "note = 'really?'"`). Bei naivem Durchreichen in ein
+   `PreparedStatement.prepareStatement(...)` würde dieses `?` vom
+   JDBC-Parser als **zusätzlicher Bind-Parameter** interpretiert und mit
+   dem aus `ParameterizedClause` stammenden `--since`-Wert positional
+   durcheinandergebracht — im besten Fall ein Binding-Fehler, im
+   schlimmsten Fall eine still falsche WHERE-Klausel.
+   Der Runner-Pfad für LF-013 prüft deshalb explizit: wenn der Export
+   mit `--since-column`/`--since` (also mit einem `ParameterizedClause`
+   im Compound) läuft UND der Nutzer zusätzlich `--filter` gesetzt hat,
+   darf der `--filter`-String **kein literales `?`-Zeichen** enthalten.
+   Die Prüfung ist ein simpler String-Scan (`'?' in filterSql`) und
+   läuft im CLI-Pre-Flight; Verletzung → **Exit 2** mit Meldung
+   `--filter must not contain literal '?' when combined with --since
+   (parameterized query); use a rewritten predicate or escape the
+   literal differently`. Ohne `--since` (reiner `--filter`-Pfad aus
+   0.3.0) bleibt das Verhalten unverändert, weil es dort kein
+   `ParameterizedClause` gibt und das `?` bestenfalls den JDBC-Parser
+   verwirrt, aber nicht mit einem Bind-Wert kollidiert.
+   Phase A Schritt 5 nimmt dafür einen expliziten Test auf, der
+   `Compound([WhereClause("a = 'x?'"), ParameterizedClause("b >= ?",
+   [1])])` baut und asserted, dass der Runner mit Exit 2 abbricht.
 
 `--since-column` und `--since` sind nur zusammen gültig; fehlt einer der
 beiden Werte, endet der Export mit Exit 2.
@@ -2192,6 +2640,24 @@ Die Primärschlüssel-Spalten werden über JDBC `DatabaseMetaData.getPrimaryKeys
 erkannt, ähnlich wie der Spalten-Hint in §6.4. Composite-PKs sind unterstützt;
 PK-lose Tabellen können **nicht** mit `--on-conflict update` importiert
 werden → Exit 2 mit klarer Meldung.
+
+**M-R4 — PK-Spalten strikt nach `KEY_SEQ`**: `DatabaseMetaData.getPrimaryKeys(
+catalog, schema, table)` liefert die PK-Spalten **nicht** garantiert in
+PK-Definitionsreihenfolge — die Reihenfolge im `ResultSet` hängt vom
+Treiber ab, und die autoritative Reihenfolge kommt aus der Spalte
+`KEY_SEQ` (1-basierter Ordinalwert innerhalb der PK). Der Writer MUSS
+die zurückgelieferten Rows per `ORDER BY KEY_SEQ` (bzw. client-seitig
+per `sortedBy { rs.getShort("KEY_SEQ") }`) explizit sortieren und diese
+Reihenfolge sowohl für den `ON CONFLICT (...)`-Target (PG/SQLite) als
+auch für den MySQL-Pfad als „canonical PK order" für Phase-F-
+Assertions benutzen. Der PG-`ON CONFLICT`-Target ist zwar auf dem
+Matching-Pfad order-unabhängig (der Constraint wird per OID
+nachgeschlagen), aber ein stabil sortierter Spalten-Block verhindert
+Test-Flakiness zwischen Treiber-Versionen und macht die Phase-C/F-
+Mixed-Case-Tests (F5) deterministisch vergleichbar. Phase C nimmt dafür
+einen expliziten Test mit einer 3-spaltigen Composite-PK in eine
+Fixture auf, in der die `KEY_SEQ`-Reihenfolge nicht der alphabetischen
+Spaltenreihenfolge entspricht.
 
 Für schema-qualifizierte Namen (`public.orders`) muss der Writer/Importer
 dabei Schema und Tabellenname vor dem `getPrimaryKeys(catalog, schema, table)`-
@@ -2234,23 +2700,37 @@ ausreichend dokumentiert, wird aber als Follow-up beobachtet, weil neuere
 MySQL-Versionen Alias-basiertes Update bevorzugen.
 
 `WriteResult` normalisiert dabei den Schreibeffekt pro Chunk auf
-`rowsInserted` und `rowsUpdated`, auch wenn einzelne JDBC-Treiber
-unterschiedliche Affected-Row-Konventionen haben. Für MySQL ist das
-verbindlich über die Batch-Rückgabewerte definiert: `1 -> inserted`,
-`2 -> updated`, `0 -> updated` (idempotenter No-Op auf bestehender Row).
-**R10 — `SUCCESS_NO_INFO (-2)`-Fallback**: Liefert der Treiber stattdessen
-`Statement.SUCCESS_NO_INFO`, fällt die saubere Trennung für diesen Batch
-weg. 0.4.0 zählt den Batch dann **NICHT** konservativ als
-`rowsInserted += chunk.size` (das würde Delta-Imports per
-`--on-conflict update` strukturell als 100 % Inserts maskieren und im
-Report einen falschen „5 000 inserted"-Eindruck erzeugen, obwohl real
-„5 000 updated" passierte). Stattdessen wandert die Batch-Größe in das
-neue `rowsUnknown`-Feld auf `WriteResult`/`TableImportSummary`. Die
-Summary in §6.15 zeigt `rowsUnknown` als getrennten Counter und hängt
-einen Hinweis an: „inserts/updates not exactly distinguishable for N
-rows (MySQL SUCCESS_NO_INFO)". So bleibt der Inserted/Updated-Counter
-ehrlich, und die Unschärfe ist explizit ablesbar — sowohl im
-Klartext-Report als auch im JSON-Output.
+`rowsInserted`, `rowsUpdated` und `rowsSkipped`, auch wenn einzelne
+JDBC-Treiber unterschiedliche Affected-Row-Konventionen haben. Für
+MySQL ist das verbindlich über die Batch-Rückgabewerte definiert:
+`1 -> inserted`, `2 -> updated`, `0 -> updated` (idempotenter No-Op auf
+bestehender Row) im `ON DUPLICATE KEY UPDATE`-Pfad; im `INSERT IGNORE`-
+Pfad (`--on-conflict skip`) entsprechend `1 -> inserted`, `0 ->
+skipped` (Row ignoriert).
+**R10 / M-R8 — `SUCCESS_NO_INFO (-2)`-Fallback**: Liefert der Treiber
+stattdessen `Statement.SUCCESS_NO_INFO`, fällt die saubere Trennung für
+diesen Batch weg — in beiden Pfaden (UPSERT und Skip). 0.4.0 zählt den
+Batch dann **NICHT** konservativ als `rowsInserted += chunk.size` (das
+würde Delta-Imports per `--on-conflict update` strukturell als 100 %
+Inserts maskieren und im Report einen falschen „5 000 inserted"-
+Eindruck erzeugen, obwohl real „5 000 updated" passierte — und analog
+einen `--on-conflict skip`-Lauf, der in Wahrheit alle Rows wegen
+bestehender PKs verworfen hat, als „5 000 inserted" ausweisen).
+Stattdessen wandert die Batch-Größe in das neue `rowsUnknown`-Feld auf
+`WriteResult`/`TableImportSummary`. Die Summary in §6.15 zeigt
+`rowsUnknown` als getrennten Counter und hängt einen pfadspezifischen
+Hinweis an:
+- im UPSERT-Pfad: „inserts/updates not exactly distinguishable for N
+  rows (MySQL SUCCESS_NO_INFO)"
+- im Skip-Pfad (`INSERT IGNORE`): „inserts/skips not exactly
+  distinguishable for N rows (MySQL SUCCESS_NO_INFO)"
+
+So bleiben die Inserted/Updated/Skipped-Counter ehrlich, und die
+Unschärfe ist explizit ablesbar — sowohl im Klartext-Report als auch im
+JSON-Output. Der `--on-conflict abort`-Pfad ist bewusst ausgenommen:
+dort kann es keine Mehrdeutigkeit geben, weil jeder Konflikt den Batch
+abbrechen würde; dort zählt `SUCCESS_NO_INFO` regulär als
+`rowsInserted += batchSize`.
 
 **Bewusst nicht enthalten** (F44):
 
@@ -2417,7 +2897,19 @@ Trigger mode:    fire
 **R10 — `rowsUnknown` im MySQL-Fallback-Pfad**: Wenn auch nur ein Chunk
 auf einen `Statement.SUCCESS_NO_INFO`-Treiber gestoßen ist, taucht
 `rowsUnknown` als zusätzlicher Counter in der Summary-Zeile UND in der
-pro-Tabelle-Zeile auf, plus eine separate Hinweiszeile am Ende:
+pro-Tabelle-Zeile auf, plus eine separate Hinweiszeile am Ende.
+**L12 — Headline-Rauschen vermeiden**: `rowsUnknown` wird **nur dann**
+in der Headline-Summary-Zeile und in den pro-Tabelle-Zeilen
+ausgegeben, wenn der aggregierte Wert `> 0` ist. Wäre der Counter
+immer präsent, würde jeder Standard-Import (PG, SQLite, und der
+Normalpfad auf MySQL mit per-Row-Counts) die irrelevante Zusatzspalte
+„0 unknown" mitschleppen und das klassische Report-Layout unnötig
+verbreitern. Der Counter bleibt im strukturierten `ImportResult`-
+Objekt und im JSON-Output-Pfad natürlich immer sichtbar (auch als
+`0`), damit maschinenlesbare Consumer nicht raten müssen, ob das Feld
+existiert. Die unten gezeigte Beispiel-Ausgabe mit „5 000 unknown"
+entspricht also dem Fallback-Pfad; im Regelfall sieht der User das
+Feld gar nicht:
 
 ```
 Imported 1 table (0 inserted, 0 updated, 0 skipped, 5 000 unknown, 0 failed) in 1.4 s
@@ -2428,9 +2920,19 @@ Note: 5 000 rows reported as unknown — MySQL JDBC driver returned
   upgrade the driver.
 ```
 
+Der Hinweiszeilen-Text hängt dabei vom auslösenden `--on-conflict`-Pfad
+ab (M-R8): der UPSERT-Fallback zeigt „inserts and updates are not
+exactly distinguishable", der `INSERT IGNORE`-/Skip-Fallback zeigt
+„inserts and skips are not exactly distinguishable". Werden in einem
+Multi-Table-Lauf beide Fallback-Pfade getroffen, hängt der Report
+beide Hinweise an.
+
 `rowsUnknown` ist auch im JSON-Output (`--output-format json`) als
 eigenes Feld auf `TableImportSummary` und `ImportResult` sichtbar, damit
-Phase F den Pfad gezielt asserten kann.
+Phase F den Pfad gezielt asserten kann. Im JSON-Output wird das Feld
+immer serialisiert — auch als `0` — damit maschinenlesbare Consumer
+nicht raten müssen, ob der Key existiert (L12 betrifft nur den
+Klartext-Report).
 
 **H4 / F3 — Reporting bei `failedFinish`**: wenn eine Tabelle mit
 `TableImportSummary.failedFinish != null` zurückkommt (Daten committed,
@@ -2451,9 +2953,9 @@ PARTIAL FAILURE on 'events': data committed, sequence adjusted, but
 ```
 
 Wenn zusätzlich der zweite, close-interne Reenable-Versuch geworfen hat
-(F3 — `FailedFinishInfo.closeCause != null`), hängt der Reporting-Pfad
-einen zweiten Block direkt an den ersten an, ohne dass `close()` selbst
-geworfen hätte:
+(F3 / M-R7 — `FailedFinishInfo.closeCauseClass != null`), hängt der
+Reporting-Pfad einen zweiten Block direkt an den ersten an, ohne dass
+`close()` selbst geworfen hätte:
 
 ```
 PARTIAL FAILURE on 'events': data committed, sequence adjusted, but
@@ -2466,9 +2968,12 @@ PARTIAL FAILURE on 'events': data committed, sequence adjusted, but
 ```
 
 `failedFinish` ist auch im JSON-Output-Pfad (`--output-format json`)
-strukturiert sichtbar — inklusive `closeCause` als optionalem Feld. Das
-ist die Bedingung, die Phase F gezielt asserten kann (kein Regex auf
-einer stderr-Zeile).
+strukturiert sichtbar — inklusive aller sechs Felder (`causeMessage`,
+`causeClass`, `causeStack`, und ihre optionalen `closeCause*`-Pendants).
+Das ist die Bedingung, die Phase F gezielt asserten kann (kein Regex auf
+einer stderr-Zeile; Phase F liest den JSON-Output und asserted z.B.
+`result.tables[0].failedFinish.causeClass ==
+"org.postgresql.util.PSQLException"`).
 
 `--quiet` unterdrückt die Summary (wie in 0.3.0); `--no-progress` ebenfalls.
 `PARTIAL FAILURE`-Blöcke bleiben auch unter `--quiet` erhalten, weil sie
