@@ -125,19 +125,24 @@ interface DataWriter {
     fun openTable(
         pool: ConnectionPool,
         table: String,
-        columns: List<ColumnDescriptor>,
         options: ImportOptions,
     ): TableImportSession
 }
 
 interface TableImportSession : AutoCloseable {
     /**
+     * Autoritative Target-Spalten in Binding-Reihenfolge. Der Writer liest
+     * sie beim Öffnen der Tabelle selbst über JDBC-Metadaten ein (§6.4).
+     * Der Importer benutzt diese Liste für Type-Hints und ggf. Reordering.
+     */
+    val targetColumns: List<ColumnDescriptor>
+
+    /**
      * Schreibt einen Chunk im aktuellen Transaktionskontext.
      *
-     * `chunk.columns` ist auf dem Import-Pfad NICHT autoritativ; die Session
-     * bindet ausschließlich gegen die in `openTable(...)` übergebenen
-     * Target-Spalten. Die im Chunk enthaltenen Spaltennamen dürfen für
-     * Logging/Validierung genutzt werden, ändern aber nie das Binding.
+     * Der Importer liefert Chunks in der Reihenfolge von [targetColumns].
+     * `chunk.columns` ist auf dem Import-Pfad nur noch Debug-/Report-Metadatum,
+     * nicht die Quelle für Bind-Indizes oder Typ-Hints.
      */
     fun write(chunk: DataChunk): WriteResult
 
@@ -174,6 +179,7 @@ data class WriteResult(
     val rowsInserted: Long,
     val rowsUpdated: Long,
     val rowsSkipped: Long,
+    /** Verlorene Rows auf Chunk-Ebene; in 0.4.0 also 0 oder chunk.size. */
     val rowsFailed: Long,
 )
 
@@ -370,8 +376,9 @@ interface DataChunkReader : AutoCloseable {
      *
      * Die im zurückgelieferten [DataChunk] enthaltenen `columns` sind
      * file-derived (nur Namen, `sqlTypeName = null`) und werden vom
-     * Importer nur für Header-Validierung/Debugging verwendet. Der Writer
-     * bindet immer gegen die Target-Spalten aus `openTable(...)`.
+     * Importer nur für Header-Validierung, Reorder-Mapping und Debugging
+     * verwendet. Vor `session.write(...)` normalisiert der Importer die
+     * Row-Reihenfolge auf `session.targetColumns`.
      */
     fun nextChunk(chunkSize: Int): DataChunk?
 
@@ -381,11 +388,12 @@ interface DataChunkReader : AutoCloseable {
      * → Exit 3 mit klarer Meldung). Spalten-**Typen** kommen IMMER aus dem
      * Zielschema, nie aus dem Reader.
      *
-     * Wird nach dem ersten erfolgreichen [nextChunk]-Aufruf populiert. Vor
-     * dem ersten Aufruf bzw. bei Eingaben ohne Header-Information
-     * (`csvNoHeader = true` oder leeres JSON/YAML-Array) ist der Wert `null`.
+     * Vor dem ersten erfolgreichen [nextChunk]-Aufruf bzw. bei Eingaben ohne
+     * Header-Information (`csvNoHeader = true` oder leeres JSON/YAML-Array)
+     * liefert die Methode `null`. Danach liefert sie einen stabilen Snapshot
+     * der file-derived Header-Namen.
      */
-    val headerColumns: List<String>?
+    fun headerColumns(): List<String>?
 }
 
 interface DataChunkReaderFactory {
@@ -400,7 +408,7 @@ interface DataChunkReaderFactory {
 
 **Streaming-Vertrag pro Format**:
 
-| Format | Streaming-Mechanik | `headerColumns`-Quelle |
+| Format | Streaming-Mechanik | `headerColumns()`-Quelle |
 |---|---|---|
 | JSON | DSL-JSON's pull-Parser (`JsonReader.next()`/`getNextToken()`) — wir parsen das Top-Level-Array tokenweise und produzieren `DataChunk`s zu je `chunkSize` Objekten. Vor Beginn von Phase B gibt es einen Go/No-Go-Spike mit 100-MB-Fixture; wenn die Pull-API dabei keinen konstanten Speicherpfad liefert, wird die Library-Entscheidung VOR der Reader-Implementierung neu geöffnet. | Schlüssel des ersten Objekts; bei `[]` → `null` |
 | YAML | SnakeYAML Engine `Parse` API (Event-basiert). Der bestehende `Dump`-Pfad ist Tree-basiert; für das Lesen benutzen wir den Event-Stream-Pfad, der auch sehr große Sequenzen verträgt. | Schlüssel des ersten Mappings; bei `[]` → `null` |
@@ -410,25 +418,39 @@ interface DataChunkReaderFactory {
 
 Inverse zur `ValueSerializer`-Mapping-Tabelle aus Plan-0.3.0 §6.4.1. Für jeden
 Eingabe-Typ aus den drei Formaten bestimmt sie den entsprechenden Java-Wert,
-den der `DataWriter` per `PreparedStatement.setObject(...)` schreiben kann.
+den der Importer in Target-Reihenfolge an den Writer weitergeben kann.
+Wichtig: die Tabelle unten ist nur der Ausschnitt mit den kniffligen Fällen;
+die Implementierung MUSS die in 0.3.0/`neutral-model-spec.md` unterstützten
+neutralen Typen vollständig abdecken.
 
 | Format-Eingabe | Spalten-Hint (JDBC-Typ aus `ResultSetMetaData`) | Resultat |
 |---|---|---|
 | JSON String | `VARCHAR`/`TEXT`/`CLOB` | String |
+| JSON String | `BOOLEAN` | `Boolean.parseBoolean` |
 | JSON String | `DATE` | `LocalDate.parse` |
 | JSON String | `TIMESTAMP` | `LocalDateTime.parse` |
-| JSON String | `NUMERIC` mit `precision > 18` | `BigDecimal` |
-| JSON Number (integer) | `INTEGER`/`BIGINT` | Long |
-| JSON Number (decimal) | `NUMERIC`/`DECIMAL` | `BigDecimal` (toPlainString-Roundtrip) |
+| JSON String | `TIMESTAMP WITH TIME ZONE` | `OffsetDateTime.parse` |
+| JSON String | `UUID` | `UUID.fromString` |
+| JSON String | `INTERVAL` | String (dialektspezifisches Binding später im Writer) |
+| JSON Number ohne `.`/`e`/`E` im Token | `INTEGER`/`BIGINT` | Long |
+| JSON Number mit `.`/`e`/`E` im Token | `NUMERIC`/`DECIMAL` | `BigDecimal` |
+| JSON Number | `NUMERIC`/`DECIMAL` mit `scale > 0` oder `precision > 18` | `BigDecimal` |
 | JSON `null` | beliebig | SQL NULL |
-| JSON Array | `ARRAY` | `java.sql.Array` via `Connection.createArrayOf()` |
+| JSON Array | `ARRAY` | `List<Any?>` (JDBC-`createArrayOf()` erst im Writer) |
 | YAML Block-Sequence | `ARRAY` | wie JSON Array |
+| JSON/YAML Binärwert oder Base64-String | `BLOB`/`BYTEA`/binary | `ByteArray` |
+| JSON/YAML Objekt oder JSON-String | `JSON`/`JSONB` | JSON-String |
+| JSON/YAML String | `BIT` | `Boolean` oder `BitSet` je nach Zieltyp |
 | CSV `csvNullString` | beliebig | SQL NULL |
 | CSV alles andere | bestimmt aus Spalten-Hint via Try-Parse-Kette | typisierter Wert oder Fehler |
 
 CSV ist der unangenehmste Fall, weil alle Werte als String reinkommen — die
 Typ-Inferenz hängt **vollständig** vom JDBC-Spalten-Hint ab. Wir holen den
 Hint via `SELECT * FROM target LIMIT 0` einmal vor dem Import (siehe §6.4).
+
+Array-/Treiberobjekte werden bewusst NICHT in `d-migrate-formats` erzeugt.
+`formats` bleibt JDBC-frei; konkrete `java.sql.Array`- oder PG-`PGobject`-
+Materialisierung passiert erst im Writer-Layer.
 
 ### 3.6 `d-migrate-streaming`
 
@@ -451,7 +473,8 @@ class StreamingImporter(
 
 Das Spiegelbild von `StreamingExporter`. Die wichtigen Vertragspunkte:
 
-- Pro Tabelle: `reader.nextChunk()` → `session.write(chunk)` → bei Erfolg
+- Pro Tabelle: `reader.nextChunk()` → Importer normalisiert/castet die Row-
+  Reihenfolge auf `session.targetColumns` → `session.write(chunk)` → bei Erfolg
   `session.commitChunk()`, bei Fehler `session.rollbackChunk()` plus
   `--on-error`-Auswertung
 - Pro Tabelle wird genau eine `TableImportSession` über alle Chunks hinweg
@@ -507,6 +530,7 @@ Spiegelbild zu `ExportResult`. Zusätzlich pro Tabelle:
 
 - `rowsInserted`, `rowsUpdated`, `rowsSkipped`, `rowsFailed`
 - `sequenceAdjustments: List<SequenceAdjustment>` (für den Report)
+- `targetColumns: List<ColumnDescriptor>` (für Debug/JSON-Output)
 - `triggerMode: TriggerMode` (welcher Modus tatsächlich angewendet wurde)
 - `error: String?`
 
@@ -528,7 +552,7 @@ class DataImportCommand : CliktCommand(name = "import") {
     val tables by option("--tables").split(",")                        // Subset-Filter für Directory
     val schema by option("--schema").path()                            // Optional Pre-Validation
     val onError by option("--on-error").choice("abort", "skip", "log").default("abort")
-    val onConflict by option("--on-conflict").choice("abort", "skip", "update").default("abort")
+    val onConflict by option("--on-conflict").choice("abort", "skip", "update") // null = impliziter Default "abort"
     val triggerMode by option("--trigger-mode").choice("fire", "disable", "strict").default("fire")
     val truncate by option("--truncate").flag()                        // §6.14 — nicht atomar
     val disableFkChecks by option("--disable-fk-checks").flag()        // §6.8 — PG nicht supported
@@ -574,9 +598,10 @@ class DataImportCommand : CliktCommand(name = "import") {
 - `--disable-fk-checks` auf PostgreSQL wird ERST nach
   `NamedConnectionResolver.resolveTarget(...)` und Dialekt-Auflösung mit
   Exit 2 geprüft.
-- `--truncate` ist mit jedem expliziten `--on-conflict`-Wert gegenseitig
-  ausschließend; Kombinationen werden mit Exit 2 abgelehnt statt still
-  normalisiert.
+- `--truncate` ist nur mit einem explizit gesetzten `--on-conflict`
+  gegenseitig ausschließend. `onConflict == null` bedeutet „kein Flag
+  gesetzt"; der Effektivwert `"abort"` wird erst nach dieser Prüfung
+  aufgelöst.
 
 Registrierung: `DataCommand` aus 0.3.0 bekommt zusätzlich
 `subcommands(DataExportCommand(), DataImportCommand())`.
@@ -629,7 +654,10 @@ optionalen `target`-Wert; der Resolver wird in 0.4.0 um eine
 `resolveTarget(target: String?)`-Methode erweitert, die die obige Tabelle
 implementiert. Damit ist der „Pflicht"-Status von `--target` an genau einer
 Stelle festgelegt — der Auflösungstabelle — und nicht doppelt im
-Clikt-Snippet plus im Fließtext.
+Clikt-Snippet plus im Fließtext. `resolveTarget(...)` wirft dafür wie der
+bestehende Resolver eine dedizierte Config-Resolution-Exception; der
+CLI-Wrapper mappt sie auf Exit 7 (Config-Fehler) bzw. Exit 2, wenn nur die
+Pflichtigkeit von `--target` verletzt ist.
 
 ### 3.8 `d-migrate-core`
 
@@ -676,7 +704,9 @@ Phase B explizit neu entschieden statt still fortgeschrieben.
    `--encoding`-Fallback (siehe §6.9)
 4. `ValueDeserializer` mit der Mapping-Tabelle aus §3.5.2 plus Tests
 5. `DataFilter.ParameterizedClause` und Erweiterung von
-   `AbstractJdbcDataReader` für parametrisierte WHERE-Klauseln
+   `AbstractJdbcDataReader` für parametrisierte WHERE-Klauseln, inkl.
+   Test für `Compound([WhereClause, ParameterizedClause])` mit korrekter
+   SQL-Erzeugung und Parameter-Positionsbindung
 6. Go/No-Go-Spike für DSL-JSON Pull-Parsing auf einem 100-MB-Top-Level-Array
    mit konstantem Speicherbudget; bei Fehlschlag wird die JSON-Library-
    Entscheidung vor Phase B neu geöffnet
@@ -771,7 +801,10 @@ d-migrate-cli
 ```
 
 Keine neuen Modul-Kanten. Die hexagonale Architektur bleibt: `formats` ist
-weiterhin JDBC-frei, `streaming` koordiniert nur Reader und Writer.
+weiterhin JDBC-frei, `streaming` koordiniert nur Reader und Writer. Auch
+ARRAY-/JSONB-Sonderfälle ändern daran nichts: JDBC-nahe Materialisierung
+(`Connection.createArrayOf()`, PG-Objekte etc.) bleibt im Writer-Layer und
+zieht keine zusätzliche Modul-Kante in `formats`.
 
 ---
 
@@ -815,9 +848,11 @@ Die Reader-Implementierungen MÜSSEN echtes Streaming machen, nicht
 - **CSV**: uniVocity ist nativ chunk-fähig — nur ein Wrapper.
 
 **Test-Vertrag**: Pro Reader gibt es einen Spec-Test, der eine 100k-Row-
-Datei liest und garantiert, dass die Heap-Auslastung nie deutlich über die
-Chunk-Größe steigt (`Runtime.getRuntime().freeMemory()`-Sample reicht für
-0.4.0 — echtes Heap-Profiling kommt in 0.5.0/1.0.0).
+Datei liest und gegen ein grobes Speicherbudget prüft. Für den Phase-A-
+Spike und die Reader-Tests reicht eine `MemoryMXBean`-Messung vor/nach
+explizitem GC; Akzeptanzkriterium ist „retained heap nach 100k Rows bleibt
+in derselben Größenordnung wie einige wenige Chunks, nicht proportional zur
+Gesamtdatei". `Runtime.freeMemory()` allein ist dafür zu GC-abhängig.
 
 ### 6.3 Keine Auto-Format-Detection ohne Endung
 
@@ -831,22 +866,22 @@ Strings etc.).
 
 Der `SchemaReader` (LF-004) kommt erst in 0.6.0. Bis dahin ist das **Target-
 Schema die einzige autoritative Quelle** für Spalten-Typen und -Reihenfolge
-beim Import. `DataWriter.openTable()` holt die Spalten der Zieltabelle über
+beim Import. `DataWriter.openTable()` holt die Spalten der Zieltabelle intern über
 
 ```sql
 SELECT * FROM "schema"."table" WHERE 1=0
 ```
 
 und liest `ResultSetMetaData` aus. Daraus entsteht die
-`List<ColumnDescriptor>`, die für PreparedStatement-Bindings, Type-Hints
-beim `ValueDeserializer` und für die Aufteilung der Insert-Spalten benutzt
-wird.
+`List<ColumnDescriptor>` in `session.targetColumns`, die für
+PreparedStatement-Bindings, Type-Hints beim `ValueDeserializer` und für die
+Aufteilung der Insert-Spalten benutzt wird.
 
-**Was der Reader beiträgt**: nur die `headerColumns: List<String>?` aus
-§3.5.1 — eine Liste von Spaltennamen, die das File explizit kennt. Daraus
+**Was der Reader beiträgt**: nur die `headerColumns()` aus §3.5.1 — eine
+Liste von Spaltennamen, die das File explizit kennt. Daraus
 entsteht eine **Header-Validierung**, kein Typ-System:
 
-1. Wenn `headerColumns` gesetzt ist (CSV mit Header / JSON oder YAML mit
+1. Wenn `headerColumns()` gesetzt ist (CSV mit Header / JSON oder YAML mit
    mindestens einem Objekt), muss jeder Header-Name eine EXAKT gleich
    geschriebene Spalte in der Zieltabelle haben. Es gibt keine
    Case-Folding-Heuristik über Dialekte hinweg. Ein Fehler nennt die
@@ -854,7 +889,10 @@ entsteht eine **Header-Validierung**, kein Typ-System:
    aus dem Target (`column 'userId' has no exact match; closest target:
    'userid'`). Zusätzliche Spalten im Target sind erlaubt und bekommen
    DEFAULT-Werte oder NULL.
-2. Wenn `headerColumns` `null` ist (leeres JSON-/YAML-Array, oder
+   Danach baut der Importer genau einmal pro Tabelle ein Mapping
+   `headerColumns()[i] -> targetColumns[j]` und reordert jede Row vor
+   `session.write(...)` in Target-Reihenfolge.
+2. Wenn `headerColumns()` `null` ist (leeres JSON-/YAML-Array, oder
    `csvNoHeader = true`), wird die Header-Validierung übersprungen — dann
    muss die Reihenfolge der `Array<Any?>`-Werte im Chunk implizit der
    Spalten-Reihenfolge der Zieltabelle entsprechen. Bei CSV ohne Header
@@ -873,9 +911,9 @@ entsteht eine **Header-Validierung**, kein Typ-System:
 > `sqlTypeName` — diese Information existiert in den drei Format-Dateien
 > nicht. Alle Typ-bezogenen Entscheidungen (Casting, Bind-Index,
 > Nullability-Check) hängen am Target-Schema, nie am File.
-> `TableImportSession.write()` ignoriert deshalb `chunk.columns` als
-> Binding-Quelle und arbeitet nur gegen die beim `openTable(...)`
-> fixierten Target-Spalten.
+> `TableImportSession.write()` arbeitet deshalb nur gegen
+> `session.targetColumns`. Bei JSON/YAML/CSV mit Header sorgt der Importer
+> für das Reordering; bei headerlosen Inputs gilt der positionale Vertrag.
 
 ### 6.5 Chunk-Transaktionsmodell
 
@@ -886,8 +924,8 @@ session.write(chunk)            -- batch Insert
   ├── Erfolg → conn.commit()    -- chunk persistiert
   └── Fehler → conn.rollback()  -- chunk verworfen
                 ├── --on-error abort → Tabellen-Import-Abbruch, Exit 5
-                ├── --on-error skip  → next Chunk
-                └── --on-error log   → next Chunk + im Report vermerken
+                ├── --on-error skip  → next Chunk (CHUNK-Granularität)
+                └── --on-error log   → next Chunk + im Report vermerken (CHUNK-Granularität)
 ```
 
 **Wichtig**: Der vorherige Chunk bleibt persistiert. Kein „alles oder
@@ -895,6 +933,12 @@ nichts" auf Tabellen-Ebene — das wäre ein Checkpoint/Resume-Problem (LN-012,
 0.9.0). Einen generischen atomaren Tabellen-Import über mehrere Chunks gibt
 es in 0.4.0 bewusst NICHT; wer dieses Verhalten braucht, wartet auf den
 späteren `--replace-table`-Pfad aus §6.14/§11.
+
+**Wichtig 2**: `skip` und `log` sind in 0.4.0 bewusst **keine
+Row-Recovery-Modi**. Wenn eine Row einen Chunk scheitern lässt, gehen die
+anderen Rows dieses Chunks mit verloren. Wer vereinzelte kaputte Rows
+tolerieren will, arbeitet mit kleinerem `--chunk-size`. Ein späterer
+Row-by-Row-Replay-Pfad wäre ein additiver Milestone.
 
 ### 6.6 Sequence-Reseeding-Trigger
 
@@ -905,12 +949,19 @@ Nach dem letzten erfolgreich committed Chunk pro Tabelle (in
    im Ziel? (PG: `pg_get_serial_sequence`; MySQL: Spalten-Metadata
    `EXTRA = 'auto_increment'`; SQLite: `INTEGER PRIMARY KEY AUTOINCREMENT`
    in `sqlite_master`)
-2. Wenn ja: höchsten importierten Wert ermitteln (`SELECT MAX(col) FROM
-   target` mit der gleichen Connection — die Statistik-Lock ist akzeptabel,
-   weil wir noch in der Tabellen-Transaktion sind)
+2. Wenn ja: höchsten Wert der Spalte **im Ziel nach Abschluss aller Chunks**
+   ermitteln (`SELECT MAX(col) FROM target` mit der gleichen Connection —
+   die Statistik-Lock ist akzeptabel, weil wir noch in der Tabellen-
+   Transaktion sind)
 3. Sequence/AUTO_INCREMENT/sqlite_sequence auf den nächsten gültigen Wert
    anheben
 4. Ein `SequenceAdjustment` ins `ImportResult` aufnehmen
+
+Für PostgreSQL gilt zusätzlich: `pg_get_serial_sequence(...)` erwartet den
+qualifizierten Tabellennamen als SQL-Stringargument mit eingebetteten Quotes
+(`'"public"."orders"'`), nicht den Identifier selbst. Die Implementierung
+nutzt dafür die vorhandene Identifier-Quoting-Logik aus 0.3.0 statt eine
+zweite Quoting-Variante im Writer zu erfinden.
 
 **Abschalten**: `--reseed-sequences=false` überspringt Schritt 1–3
 komplett. Default ist `true`. Begründung: stilles Auslassen wäre genau die
@@ -939,6 +990,8 @@ wird der Zustand symmetrisch zurückgeführt.
 
 `strict` benutzt `pg_trigger`/`information_schema.triggers`/`sqlite_master`
 um zu prüfen, ob die Tabelle Trigger hat — und bricht ab, wenn ja.
+Der Name meint hier also **Sicherheits-Pre-Flight**, nicht einen
+„strengeren Trigger-Modus" zur Laufzeit.
 
 ### 6.8 Foreign-Key-Checks während Import
 
@@ -968,7 +1021,7 @@ Für PG werden in 0.4.0 stattdessen zwei sichere Wege unterstützt:
 | Pfad | Voraussetzung | Implementierung |
 |---|---|---|
 | **(a)** Topologische Sortierung der Tabellen | `--schema <path>` mit der neutralen Schema-Definition | Wiederverwendung der Kahn-Sortierung aus `AbstractDdlGenerator` (0.2.0). Importe laufen in FK-respektierender Reihenfolge, FK-Checks bleiben aktiv. |
-| **(b)** `SET CONSTRAINTS ALL DEFERRED` | Constraints sind im Ziel-Schema mit `DEFERRABLE` deklariert | Pro Tabellen-Transaktion vor dem ersten Insert ausgeführt. Erfordert keine Sonderrechte; wirkt aber nur auf bereits-deferrable Constraints (sonst No-Op mit Warnung im Report). |
+| **(b)** `SET CONSTRAINTS ALL DEFERRED` | Constraints sind im Ziel-Schema mit `DEFERRABLE` deklariert | Pro Tabellen-Transaktion vor dem ersten Insert ausgeführt. Vorab prüft ein PG-Pre-Flight `pg_constraint.condeferrable` und loggt/reportet `N deferrable / M non-deferrable` FK-Constraints für die betroffenen Tabellen. Bei FK-abhängigem Multi-Table-Import ohne `--schema` und ohne passende deferrable Constraints → Exit 2 mit klarem Hinweis statt stillem No-Op. |
 
 Wer FK-Checks **wirklich** deaktivieren muss, läuft den Import als
 Superuser oder bereitet die Constraints vorab als `DEFERRABLE` vor. Beide
@@ -1035,9 +1088,10 @@ Die geprüften Bytes werden via `unread()` zurück in den Stream gelegt, so
 dass der eigentliche Reader sie noch sehen kann — der CSV-Parser zum Beispiel
 verschluckt das BOM nicht zuverlässig, wir müssen es selbst überspringen.
 
-Bei explizitem `--encoding utf-8|utf-16le|...` wird dieser Schritt komplett
-übersprungen; der Reader verwendet das angeforderte Charset direkt. Ein
-vorhandenes BOM wird dann nicht als Override interpretiert.
+Bei explizitem `--encoding utf-8|utf-16le|...` findet KEINE Auto-Detection
+statt, aber bekannte UTF-BOMs werden trotzdem konsumiert, damit sie nicht als
+erstes Zeichen in CSV/JSON/YAML landen. Das BOM überschreibt in diesem Pfad
+nicht das angeforderte Charset; es wird nur als Prefix entfernt.
 
 **Keine Heuristik** für Non-BOM-Dateien (chardet, ICU). Konkret bedeutet
 das:
@@ -1078,7 +1132,8 @@ eine zusammengelegte `DataAdapterRegistry` mit beiden Maps — aber:
 | Code | Trigger | Beispiel-Meldung |
 |---|---|---|
 | `0` | Erfolgreicher Import, alle Tabellen geschrieben | `Imported 3 tables (12 345 rows, 1 200 updated) in 4.2 s; reseeded 2 sequences` |
-| `2` | CLI-Fehler, ungültige Optionen, fehlendes `--target` oder `--table`, `--trigger-mode disable` auf MySQL/SQLite, `--disable-fk-checks` auf PG, unbekannte Endung ohne `--format`, `--truncate` zusammen mit `--on-conflict`, PK-lose Tabelle mit `--on-conflict update` | `--trigger-mode disable is not supported for dialect MYSQL` |
+| `1` | Unerwarteter interner Fehler / ungefangene Exception | `Unexpected error while importing table 'orders'` |
+| `2` | CLI-Fehler, ungültige Optionen, fehlendes `--target` oder `--table`, `--trigger-mode disable` auf MySQL/SQLite, `--disable-fk-checks` auf PG, unbekannte Endung ohne `--format`, `--truncate` zusammen mit explizitem `--on-conflict`, PK-lose Tabelle mit `--on-conflict update` | `--trigger-mode disable is not supported for dialect MYSQL` |
 | `3` | Schema-Validierung gegen `--schema <path>` fehlgeschlagen | `Column 'orders.total' not found in target schema` |
 | `4` | Connection-Fehler (HikariCP, fehlendes Target) | `Connection refused: localhost:5432` |
 | `5` | Import-Fehler während Streaming (SQL-Constraint-Verletzung, IO-Exception, Sequence-Reseeding gescheitert) | `Failed to import table 'orders' at chunk 47: duplicate key value violates unique constraint` |
@@ -1124,7 +1179,8 @@ Intern:
 5. Wenn der Anwender zusätzlich `--filter` setzt, werden beide via
    `DataFilter.Compound([WhereClause(filter), ParameterizedClause(...)])`
    kombiniert (der in Phase A erweiterte `AbstractJdbcDataReader` trägt das
-   dann für `ParameterizedClause` und `WhereClause`)
+   dann für `ParameterizedClause` und `WhereClause`, inklusive korrekter
+   Parameter-Positionsbindung im zusammengesetzten WHERE)
 
 `--incremental` ohne `--since-column` und `--since` → Exit 2.
 
@@ -1143,14 +1199,19 @@ UPSERT baut:
 
 | Dialect | UPSERT-Syntax |
 |---|---|
-| PG | `INSERT INTO ... VALUES (...) ON CONFLICT ("pk_col") DO UPDATE SET col1 = EXCLUDED.col1, ...` |
+| PG | `INSERT INTO ... VALUES (...) ON CONFLICT ("pk_col1", "pk_col2") DO UPDATE SET col1 = EXCLUDED.col1, ...` |
 | MySQL | `INSERT INTO ... VALUES (...) ON DUPLICATE KEY UPDATE col1 = VALUES(col1), ...` |
-| SQLite | `INSERT INTO ... VALUES (...) ON CONFLICT(pk_col) DO UPDATE SET col1 = excluded.col1, ...` |
+| SQLite | `INSERT INTO ... VALUES (...) ON CONFLICT(pk_col1, pk_col2) DO UPDATE SET col1 = excluded.col1, ...` |
 
 Die Primärschlüssel-Spalten werden über JDBC `DatabaseMetaData.getPrimaryKeys()`
 erkannt, ähnlich wie der Spalten-Hint in §6.4. Composite-PKs sind unterstützt;
 PK-lose Tabellen können **nicht** mit `--on-conflict update` importiert
 werden → Exit 2 mit klarer Meldung.
+
+Wichtiger Dialekt-Unterschied: PostgreSQL/SQLite binden den Konflikt-Target
+explizit an den erkannten PK; MySQLs `ON DUPLICATE KEY UPDATE` feuert dagegen
+auf JEDEM verletzten Unique-Index. Diese Asymmetrie wird dokumentiert, nicht
+wegabstrahiert.
 
 `WriteResult` normalisiert dabei den Schreibeffekt pro Chunk auf
 `rowsInserted` und `rowsUpdated`, auch wenn einzelne JDBC-Treiber
@@ -1273,7 +1334,7 @@ liefert das `ImportResult` als JSON auf stdout.
 
 | Datei | Änderung |
 |---|---|
-| `docs/cli-spec.md` §6.2 `data import` | Vollständiger Block analog zu 0.3.0-`data export`: alle Flags aus §3.7.1, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/2/3/4/5/7, Beispiele mit Round-Trip und Inkrement |
+| `docs/cli-spec.md` §6.2 `data import` | Vollständiger Block analog zu 0.3.0-`data export`: alle Flags aus §3.7.1, veraltetes `--resume` entfernen, Output-Resolver (Stdin/SingleFile/Directory), Exit-Code-Matrix 0/1/2/3/4/5/7, Beispiele mit Round-Trip und Inkrement |
 | `docs/cli-spec.md` §6.2 `data export` | LF-013-Block ergänzen: `--incremental`, `--since-column`, `--since` mit Beispielen |
 | `docs/connection-config-spec.md` §6.14.2 | „Status pro Feature"-Tabelle aktualisieren: `default_target` ist ab 0.4.0 aktiv |
 | `docs/design-import-sequences-triggers.md` | Status `Draft` → `Approved`; offene Entscheidungen aus §10 mit den Antworten aus §6.6/§6.7/§6.8 dieses Plans befüllen |
@@ -1308,8 +1369,9 @@ Vor dem 0.4.0-Release müssen die folgenden Round-Trip-Tests grün sein
 
 1. **Voll-Roundtrip pro Format pro Dialect** (3×3 = 9 Permutationen):
    `data export → data import → SELECT-Vergleich`
-   - 1000 Rows, alle 18 neutralen Typen aus 0.5.5 (sofern bis dahin gemerged,
-     sonst die 0.3.0-Subset-Typen)
+   - 1000 Rows, die in 0.3.0 bereits unterstützten neutralen Typen
+     (Roadmap-Erweiterungen aus späteren Milestones sind hierfür kein
+     Release-Gate von 0.4.0)
    - Ergebnis: SHA-256-Hash der Original- und Re-Export-Datei muss
      identisch sein
 2. **Inkrementeller Round-Trip**:
@@ -1404,6 +1466,6 @@ mitziehen:
 | F40 (Hoch) | Single-File/Stdin-Import hatte keine eindeutige Tabellen-Auflösung — `--tables` ist als Liste mehrdeutig für Single-Source-Pfade | `--table` (singular) ist Pflicht für `Stdin` und `SingleFile`; `--tables` (plural) bleibt Subset-Filter nur für `Directory`. Tabelle der Auflösungsregeln in §3.7.1. Auto-Mapping vom Dateinamen ist explizit out-of-scope (§11) und kann später additiv kommen. |
 | F41 (Hoch) | `--truncate`-Vertrag war in sich widersprüchlich — chunkbasierte Commits + atomarer Pre-Truncate gehen nicht generisch zusammen | `--truncate` ist explizit ein **nicht-atomarer Pre-Step** (§6.14). Wenn der Import nach dem TRUNCATE scheitert, bleibt die Tabelle leer. Verifikationstest 5 wurde umgedreht und prüft jetzt aktiv das nicht-atomare Verhalten. Atomares Replace landet als zukünftiges `--replace-table` in §11. |
 | F42 (Hoch) | PG `--disable-fk-checks` über `ALTER TABLE … DISABLE TRIGGER ALL` braucht Superuser → unzuverlässig in der Praxis | PG bekommt **keinen** generischen `--disable-fk-checks`-Pfad in 0.4.0 (§6.8.1). Stattdessen zwei sichere Wege: topologische Sortierung mit `--schema` und `SET CONSTRAINTS ALL DEFERRED` für bereits-deferrable Constraints. `--disable-fk-checks` auf PG → Exit 2 mit Hinweis-Text. MySQL und SQLite behalten ihre session-lokalen Schalter (§6.8.2). |
-| F43 (Mittel) | Reader-Vertrag „erster Chunk hat immer columns" ist für leere JSON/YAML nicht erfüllbar | `nextChunk()` darf für leere selbstbeschreibende Eingaben sofort `null` liefern (§3.5.1). Spalten-Metadaten kommen aus dem Target-Schema (§6.4). Reader liefert nur `headerColumns: List<String>?` als file-derived Header-Namen — die Typen kommen IMMER aus JDBC-`ResultSetMetaData`, nie aus dem Reader. |
+| F43 (Mittel) | Reader-Vertrag „erster Chunk hat immer columns" ist für leere JSON/YAML nicht erfüllbar | `nextChunk()` darf für leere selbstbeschreibende Eingaben sofort `null` liefern (§3.5.1). Spalten-Metadaten kommen aus dem Target-Schema (§6.4). Reader liefert nur `headerColumns()` als file-derived Header-Namen — die Typen kommen IMMER aus JDBC-`ResultSetMetaData`, nie aus dem Reader. |
 | F44 (Mittel) | LF-013 Import-Seite war mit halb-funktionalem `--since-column` doppelt belegt | `--incremental` und `--since-column` sind komplett aus `DataImportCommand` entfernt (§3.7.1, §6.12.2). Inkrementeller Import = idempotenter UPSERT-Import via `--on-conflict update`. Roadmap-Zeile entsprechend angepasst. |
 | F45 (Niedrig) | „Encoding-Erkennung" war irreführend — ISO-8859-1 wird nicht erkannt | Wortlaut auf „Encoding-Unterstützung" geändert; in §1, §6.9 und der Roadmap explizit dokumentiert: BOM-Detection nur für UTF-8/UTF-16, alles andere via `--encoding`. |

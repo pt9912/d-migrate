@@ -522,7 +522,6 @@ d-migrate data import --source <path> --target <url>
 | `--schema` | Nein | Pfad | Schema zur Validierung |
 | `--on-error` | Nein | String | `abort` (Default), `skip`, `log` |
 | `--chunk-size` | Nein | Integer | Datensätze pro Transaktion (Default: 10000) |
-| `--resume` | Nein | Boolean | Ab letztem Checkpoint fortsetzen |
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Importfehlern.
 
