@@ -279,4 +279,49 @@ class NamedConnectionResolverTest : FunSpec({
         )
         resolver.resolve("postgresql://u:p@h/d") shouldBe "postgresql://u:p@h/d"
     }
+
+    // ─── Structural errors in the config file ──────────────────────
+
+    test("§6.14.3: top-level YAML is a scalar (not a mapping) → 'must be a mapping'") {
+        // Scalars at top level parse to a String, not a Map — the resolver
+        // must reject this with a clear error.
+        val cfg = tempConfig("\"just a string\"\n")
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("local_pg") }
+        ex.message!! shouldContain "top-level YAML must be a mapping"
+    }
+
+    test("§6.14.3: top-level YAML is a sequence (not a mapping) → 'must be a mapping'") {
+        val cfg = tempConfig("- foo\n- bar\n")
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("local_pg") }
+        ex.message!! shouldContain "top-level YAML must be a mapping"
+    }
+
+    test("§6.14.3: database.connections is a scalar (not a mapping) → clear error") {
+        val cfg = tempConfig(
+            """
+            database:
+              connections: "not a map"
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("local_pg") }
+        ex.message!! shouldContain "is not defined in"
+        ex.message!! shouldContain "database.connections"
+    }
+
+    test("§6.14.3: database.connections is a sequence (not a mapping) → clear error") {
+        val cfg = tempConfig(
+            """
+            database:
+              connections:
+                - foo
+                - bar
+            """.trimIndent()
+        )
+        val resolver = NamedConnectionResolver(configPathFromCli = cfg)
+        val ex = shouldThrow<ConfigResolveException> { resolver.resolve("local_pg") }
+        ex.message!! shouldContain "database.connections"
+    }
 })

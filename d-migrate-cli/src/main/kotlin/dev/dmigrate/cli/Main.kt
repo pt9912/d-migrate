@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
@@ -51,15 +52,44 @@ class DMigrate : CliktCommand(name = "d-migrate") {
     fun cliContext() = CliContext(outputFormat, verbose, quiet, noColor, noProgress)
 }
 
-fun main(args: Array<String>) {
-    // Bootstrap §6.18 / Phase E: Treiber registrieren ihre JdbcUrlBuilder,
-    // DataReader und TableLister einmal beim Programmstart vor dem ersten
-    // Command-Dispatch. Siehe JdbcUrlBuilderRegistry / DataReaderRegistry KDoc.
+/**
+ * Bootstrap §6.18 / Phase E: Treiber registrieren ihre JdbcUrlBuilder,
+ * DataReader und TableLister einmal beim Programmstart vor dem ersten
+ * Command-Dispatch.
+ *
+ * `internal` für [Main.kt]-Tests, die die Bootstrap-Sequenz ohne
+ * `exitProcess` ausführen wollen.
+ */
+internal fun registerDrivers() {
     PostgresDriver.register()
     MysqlDriver.register()
     SqliteDriver.register()
+}
 
-    DMigrate()
-        .subcommands(SchemaCommand(), DataCommand())
-        .main(args)
+/**
+ * Baut die Command-Hierarchie `d-migrate → {schema, data}`. Getrennt von
+ * [main], damit Tests die gleiche Struktur wie die Production-Entry ohne
+ * `exitProcess` instanziieren können.
+ */
+internal fun buildRootCommand(): DMigrate =
+    DMigrate().subcommands(SchemaCommand(), DataCommand())
+
+/**
+ * Test-freundlicher Einstieg: führt die Bootstrap-Sequenz aus und
+ * dispatched via [CliktCommand.parse]. Wirft bei Fehlern `CliktError`
+ * (statt sie über `exitProcess` in einen Prozess-Exit umzuwandeln), damit
+ * Unit-Tests den Bootstrap-Pfad abdecken können, ohne das Test-JVM zu
+ * killen.
+ *
+ * Production-Einstieg ist [main], der `runCli(args)`-Aufruf über Clikt's
+ * [CliktCommand.main] macht (inkl. Error-Formatierung und `exitProcess`).
+ */
+internal fun runCli(args: Array<String>) {
+    registerDrivers()
+    buildRootCommand().parse(args)
+}
+
+fun main(args: Array<String>) {
+    registerDrivers()
+    buildRootCommand().main(args)
 }
