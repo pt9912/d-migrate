@@ -404,5 +404,5 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 ---
 
 **Version**: 1.6
-**Stand**: 2026-04-06
-**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen, 0.4.0 in Planung (inkl. LF-013), 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Stand**: 2026-04-09
+**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen, 0.4.0 in Arbeit (inkl. LF-013), 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung

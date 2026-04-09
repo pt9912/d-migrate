@@ -1,9 +1,9 @@
 # Implementierungsplan: Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade
 
 > Dieses Dokument beschreibt den konkreten Implementierungsplan für Milestone 0.4.0.
-> Es dient als Review-Grundlage vor Beginn der Umsetzung.
+> Es dient als laufend gepflegte Spezifikation und Review-Grundlage während der Umsetzung.
 >
-> **Status**: Entwurf — vor Beginn von Phase A reviewen.
+> **Status**: In Arbeit — Phase A begonnen, Plan wird gegen den Implementierungsstand nachgeführt.
 
 ---
 
