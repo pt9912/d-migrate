@@ -3,7 +3,7 @@
 > Dieses Dokument beschreibt den konkreten Implementierungsplan für Milestone 0.4.0.
 > Es dient als laufend gepflegte Spezifikation und Review-Grundlage während der Umsetzung.
 >
-> **Status**: In Arbeit — Phase A begonnen, Plan wird gegen den Implementierungsstand nachgeführt.
+> **Status**: In Arbeit — Phase A umgesetzt, Phase B begonnen; Plan wird gegen den Implementierungsstand nachgeführt.
 
 ---
 
