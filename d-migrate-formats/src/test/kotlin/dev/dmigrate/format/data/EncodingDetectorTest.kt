@@ -43,7 +43,7 @@ class EncodingDetectorTest : FunSpec({
     test("detectOrFallback: UTF-32 BE BOM is rejected with a clear message") {
         val bom = byteArrayOf(0x00, 0x00, 0xFE.toByte(), 0xFF.toByte())
         val raw = ByteArrayInputStream(bom + byteArrayOf(1, 2, 3, 4))
-        val ex = shouldThrow<UnsupportedEncodingException> {
+        val ex = shouldThrow<UnsupportedFileEncodingException> {
             EncodingDetector.detectOrFallback(raw)
         }
         ex.message!!.contains("UTF-32") shouldBe true
@@ -53,7 +53,7 @@ class EncodingDetectorTest : FunSpec({
     test("detectOrFallback: UTF-32 LE BOM is rejected (not misread as UTF-16 LE)") {
         val bom = byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0x00, 0x00)
         val raw = ByteArrayInputStream(bom + byteArrayOf(1, 2))
-        val ex = shouldThrow<UnsupportedEncodingException> {
+        val ex = shouldThrow<UnsupportedFileEncodingException> {
             EncodingDetector.detectOrFallback(raw)
         }
         ex.message!!.contains("UTF-32") shouldBe true

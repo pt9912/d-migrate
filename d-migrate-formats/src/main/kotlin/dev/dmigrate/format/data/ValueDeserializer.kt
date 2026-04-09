@@ -30,10 +30,19 @@ import java.util.UUID
  *   `ResultSetMetaData.getColumnTypeName(i)`. Sekundärer Hint für
  *   Pfade, in denen der JDBC-Typcode mehrdeutig ist (PG `Types.OTHER`
  *   für UUID/JSON/JSONB/INTERVAL, MySQL `BIT(1)` vs `BIT(N)`).
+ * @property precision Optionale Dezimalpräzision aus JDBC-Metadaten.
+ *   Wird für `NUMERIC`/`DECIMAL` gebraucht, um Werte mit
+ *   `precision > 18` auf dem exakten `BigDecimal`-Pfad zu halten.
+ * @property scale Optionale Dezimalskala aus JDBC-Metadaten. Eine
+ *   positive Scale erzwingt für `NUMERIC`/`DECIMAL` den exakten
+ *   `BigDecimal`-Pfad, auch wenn das aktuelle Input-Token ganzzahlig
+ *   aussieht.
  */
 data class JdbcTypeHint(
     val jdbcType: Int,
     val sqlTypeName: String? = null,
+    val precision: Int? = null,
+    val scale: Int? = null,
 )
 
 /**
@@ -181,7 +190,7 @@ class ValueDeserializer(
         Types.REAL, Types.FLOAT, Types.DOUBLE -> toDouble(columnName, value)
 
         // ─── Exact numeric ────────────────────────────────────
-        Types.NUMERIC, Types.DECIMAL -> toBigDecimal(columnName, value)
+        Types.NUMERIC, Types.DECIMAL -> toNumericOrDecimal(hint, columnName, value, isCsvSource)
 
         // ─── Datum / Zeit ─────────────────────────────────────
         Types.DATE -> toLocalDate(columnName, value)
@@ -325,6 +334,49 @@ class ValueDeserializer(
         else -> throw ImportSchemaMismatchException(
             "column '$columnName' expects NUMERIC/DECIMAL, got ${value::class.simpleName}"
         )
+    }
+
+    private fun toNumericOrDecimal(
+        hint: JdbcTypeHint,
+        columnName: String,
+        value: Any,
+        isCsvSource: Boolean,
+    ): Any = when {
+        // CSV has no token-form signal; per spec it stays BigDecimal.
+        isCsvSource -> toBigDecimal(columnName, value)
+
+        // Fractional scale or very large precision force exact decimal handling.
+        (hint.scale ?: 0) > 0 -> toBigDecimal(columnName, value)
+        (hint.precision ?: 0) > 18 -> toBigDecimal(columnName, value)
+
+        // Token-form signal from the reader: floating-point token → BigDecimal.
+        value is Double || value is Float -> toBigDecimal(columnName, value)
+
+        // BigDecimal input is preserved as decimal unless it is provably an
+        // integer-shaped value inside the safe 64-bit precision envelope.
+        value is BigDecimal -> {
+            val canonical = value.stripTrailingZeros()
+            if (canonical.scale() <= 0) {
+                parseExactLong(hint, columnName, canonical.toPlainString())
+            } else {
+                value
+            }
+        }
+
+        // Integer-shaped tokens may become Long when precision allows it.
+        value is Long || value is Int || value is Short || value is Byte ->
+            checkedLong(hint, columnName, (value as Number).toLong())
+
+        value is String -> {
+            val trimmed = value.trim()
+            if (looksDecimalToken(trimmed)) {
+                BigDecimal(trimmed)
+            } else {
+                parseExactLong(hint, columnName, trimmed)
+            }
+        }
+
+        else -> toBigDecimal(columnName, value)
     }
 
     private fun toLocalDate(columnName: String, value: Any): LocalDate = when (value) {
@@ -498,6 +550,45 @@ class ValueDeserializer(
      */
     private fun simpleJsonString(value: Any?): String = buildString {
         append(jsonToken(value))
+    }
+
+    private fun looksDecimalToken(text: String): Boolean =
+        text.any { it == '.' || it == 'e' || it == 'E' }
+
+    private fun parseExactLong(hint: JdbcTypeHint, columnName: String, text: String): Long {
+        val numeric = try {
+            BigDecimal(text)
+        } catch (e: NumberFormatException) {
+            throw ImportSchemaMismatchException(
+                "column '$columnName' expects NUMERIC/DECIMAL, got '$text'"
+            )
+        }
+        val canonical = numeric.stripTrailingZeros()
+        if (canonical.scale() > 0) {
+            throw ImportSchemaMismatchException(
+                "column '$columnName' expects integer-shaped NUMERIC/DECIMAL, got decimal '$text'"
+            )
+        }
+        val longValue = try {
+            canonical.longValueExact()
+        } catch (_: ArithmeticException) {
+            throw ImportSchemaMismatchException(
+                "column '$columnName' expects integer-shaped NUMERIC/DECIMAL within 64-bit range, got '$text'"
+            )
+        }
+        return checkedLong(hint, columnName, longValue)
+    }
+
+    private fun checkedLong(hint: JdbcTypeHint, columnName: String, value: Long): Long {
+        hint.precision?.let { precision ->
+            val digits = value.toString().removePrefix("-").length
+            if (digits > precision) {
+                throw ImportSchemaMismatchException(
+                    "column '$columnName' expects NUMERIC/DECIMAL precision <= $precision, got $value"
+                )
+            }
+        }
+        return value
     }
 
     private fun jsonToken(value: Any?): String = when (value) {

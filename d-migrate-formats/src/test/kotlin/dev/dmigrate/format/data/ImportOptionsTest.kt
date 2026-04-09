@@ -11,7 +11,7 @@ class ImportOptionsTest : FunSpec({
         opts.triggerMode shouldBe TriggerMode.FIRE
         opts.csvNoHeader shouldBe false
         opts.csvNullString shouldBe ""
-        opts.encoding shouldBe StandardCharsets.UTF_8
+        opts.encoding shouldBe null
         opts.reseedSequences shouldBe true
         opts.disableFkChecks shouldBe false
         opts.truncate shouldBe false
@@ -22,6 +22,11 @@ class ImportOptionsTest : FunSpec({
     test("encoding can be null for --encoding auto path") {
         val opts = ImportOptions(encoding = null)
         opts.encoding shouldBe null
+    }
+
+    test("encoding can be set explicitly for programmatic callers") {
+        val opts = ImportOptions(encoding = StandardCharsets.UTF_8)
+        opts.encoding shouldBe StandardCharsets.UTF_8
     }
 
     test("copy is available via data class") {

@@ -62,28 +62,18 @@ object LargeJsonFixture {
     ) {
         /**
          * Deterministischer Stamp-Hash (SHA-256 hex) über Row-Count,
-         * Seed, Schema-Version und die Identität des Generator-Codes.
-         * Der Generator-Body ist in [generatorFingerprint] als
-         * String-Konstante enthalten — das ist gezielt eine manuelle,
-         * nicht reflection-basierte Identität, damit der Stamp nicht
-         * versehentlich durch unabhängige Code-Änderungen (z.B. Logging
-         * in dieser Datei) ausgelöst wird. Wer das Row-Schema ändert,
-         * MUSS manuell [generatorFingerprint] bumpen.
+         * Seed, Schema-Version und den SHA-256 des aktuellen Source-
+         * Inhalts dieses Generators. Damit invalidiert jede relevante
+         * Code-Änderung den Cache deterministisch, ohne manuelles
+         * Version-Bumping.
          */
         fun stampHex(): String {
             val md = MessageDigest.getInstance("SHA-256")
-            md.update("rows=$rows|seed=$seed|schema=$SCHEMA_VERSION|gen=$generatorFingerprint".toByteArray())
+            md.update("rows=$rows|seed=$seed|schema=$SCHEMA_VERSION|".toByteArray())
+            md.update(currentGeneratorSourceHash().toByteArray())
             return md.digest().joinToString("") { "%02x".format(it) }
         }
     }
-
-    /**
-     * Manuell verwalteter Generator-Identity-String. **Bei jeder
-     * Änderung am Row-Schema oder an [writeRow] muss dieser String
-     * gebumpt werden**, sonst erkennen Folge-Läufe den veralteten
-     * Cache nicht.
-     */
-    private const val generatorFingerprint = "v1-id+email+score+active+tag"
 
     /**
      * Stellt sicher, dass in [dir] eine Fixture-Datei mit den
@@ -187,6 +177,26 @@ object LargeJsonFixture {
     }
 
     private val TAGS = listOf("alpha", "bravo", "charlie", "delta", "echo")
+
+    private val sourcePathCandidates = listOf(
+        Path.of("d-migrate-formats", "src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
+        Path.of("src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
+    )
+
+    internal fun currentGeneratorSourcePath(): Path =
+        sourcePathCandidates
+            .map { it.toAbsolutePath() }
+            .firstOrNull { Files.isRegularFile(it) }
+            ?: throw IllegalStateException(
+                "Could not locate LargeJsonFixture source file for R7 stamp invalidation. " +
+                    "Tried: ${sourcePathCandidates.joinToString()}"
+            )
+
+    internal fun currentGeneratorSourceHash(): String {
+        val bytes = Files.readAllBytes(currentGeneratorSourcePath())
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(bytes).joinToString("") { "%02x".format(it) }
+    }
 
     private fun nextSeed(s: Long): Long {
         // Tiny LCG — deterministic, no allocation.

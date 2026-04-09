@@ -65,7 +65,7 @@ object EncodingDetector {
      * UTF-*-BOMs werden konsumiert (der Reader sieht sie nicht).
      * Fallback ist UTF-8, ohne dass Bytes verworfen werden.
      *
-     * @throws UnsupportedEncodingException für UTF-32-BOMs
+     * @throws UnsupportedFileEncodingException für UTF-32-BOMs
      */
     fun detectOrFallback(raw: InputStream): Detected {
         val pb = PushbackInputStream(raw, 4)
@@ -79,7 +79,7 @@ object EncodingDetector {
             first4[0] == 0x00.toByte() && first4[1] == 0x00.toByte() &&
             first4[2] == 0xFE.toByte() && first4[3] == 0xFF.toByte()
         ) {
-            throw UnsupportedEncodingException(
+            throw UnsupportedFileEncodingException(
                 "UTF-32 BE BOM detected — UTF-32 is not supported in 0.4.0. " +
                     "Set --encoding explicitly (e.g. UTF-16LE) or convert the file."
             )
@@ -88,7 +88,7 @@ object EncodingDetector {
             first4[0] == 0xFF.toByte() && first4[1] == 0xFE.toByte() &&
             first4[2] == 0x00.toByte() && first4[3] == 0x00.toByte()
         ) {
-            throw UnsupportedEncodingException(
+            throw UnsupportedFileEncodingException(
                 "UTF-32 LE BOM detected — UTF-32 is not supported in 0.4.0. " +
                     "Set --encoding explicitly (e.g. UTF-16LE) or convert the file."
             )
@@ -207,4 +207,4 @@ object EncodingDetector {
  * (z.B. UTF-32) oder der vom Nutzer angegebene Charset unbekannt ist.
  * Der CLI-Aufrufer mappt das auf Exit 2 mit Hinweis auf `--encoding`.
  */
-class UnsupportedEncodingException(message: String) : RuntimeException(message)
+class UnsupportedFileEncodingException(message: String) : RuntimeException(message)

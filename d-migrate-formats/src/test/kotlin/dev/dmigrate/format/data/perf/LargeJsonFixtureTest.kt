@@ -5,6 +5,7 @@ import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import java.nio.file.Files
+import java.security.MessageDigest
 import kotlin.io.path.absolutePathString
 
 /**
@@ -142,6 +143,14 @@ class LargeJsonFixtureTest : FunSpec({
     test("stamp hex is 64 chars (SHA-256)") {
         val stamp = LargeJsonFixture.Params(rows = 1, seed = 0L).stampHex()
         stamp.length shouldBe 64
+    }
+
+    test("R7: generator source hash is derived from the actual source file content") {
+        val sourceBytes = Files.readAllBytes(LargeJsonFixture.currentGeneratorSourcePath())
+        val expected = MessageDigest.getInstance("SHA-256")
+            .digest(sourceBytes)
+            .joinToString("") { "%02x".format(it) }
+        LargeJsonFixture.currentGeneratorSourceHash() shouldBe expected
     }
 
     test("usedHeapBytes returns a positive number (smoke)") {

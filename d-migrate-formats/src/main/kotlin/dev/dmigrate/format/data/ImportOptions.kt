@@ -1,7 +1,6 @@
 package dev.dmigrate.format.data
 
 import java.nio.charset.Charset
-import java.nio.charset.StandardCharsets
 
 /**
  * Konfigurations-Optionen für die [DataChunkReader]-Familie und den
@@ -50,14 +49,14 @@ data class ImportOptions(
     val csvNullString: String = "",
 
     /**
-     * Input-Encoding. Default UTF-8. Wenn `null` gesetzt wird, wechselt
-     * der EncodingDetector in den `--encoding auto`-Pfad mit BOM-Sniff
-     * für UTF-8 / UTF-16 BE/LE; siehe §6.9 und
+     * Input-Encoding. Default `null` = `--encoding auto`. In diesem
+     * Modus wechselt der [EncodingDetector] in den BOM-Sniff-Pfad für
+     * UTF-8 / UTF-16 BE/LE; siehe §6.9 und
      * [EncodingDetector.detectOrFallback]. Für Non-UTF-Encodings
      * (ISO-8859-1, Windows-1252, …) MUSS der User diesen Wert explizit
      * setzen.
      */
-    val encoding: Charset? = StandardCharsets.UTF_8,
+    val encoding: Charset? = null,
 
     /**
      * Ob Identity-/Sequence-Spalten nach dem Import dialektspezifisch

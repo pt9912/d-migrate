@@ -28,14 +28,25 @@ class ValueDeserializerTest : FunSpec({
      * suite need exactly one column, so the helper short-circuits the
      * map-construction boilerplate.
      */
-    fun forCol(jdbcType: Int, sqlTypeName: String? = null): ValueDeserializer {
-        val hint = JdbcTypeHint(jdbcType, sqlTypeName)
+    fun forCol(
+        jdbcType: Int,
+        sqlTypeName: String? = null,
+        precision: Int? = null,
+        scale: Int? = null,
+    ): ValueDeserializer {
+        val hint = JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)
         return ValueDeserializer(typeHintOf = { name -> if (name == "c") hint else null })
     }
 
     /** Same, but with an explicit CSV null sentinel. */
-    fun forColCsv(jdbcType: Int, sqlTypeName: String? = null, csvNullString: String = ""): ValueDeserializer {
-        val hint = JdbcTypeHint(jdbcType, sqlTypeName)
+    fun forColCsv(
+        jdbcType: Int,
+        sqlTypeName: String? = null,
+        csvNullString: String = "",
+        precision: Int? = null,
+        scale: Int? = null,
+    ): ValueDeserializer {
+        val hint = JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)
         return ValueDeserializer(
             typeHintOf = { name -> if (name == "c") hint else null },
             csvNullString = csvNullString,
@@ -174,8 +185,16 @@ class ValueDeserializerTest : FunSpec({
         forCol(Types.NUMERIC).deserialize(tableName, "c", bd) shouldBe bd
     }
 
-    test("NUMERIC: integer input becomes BigDecimal") {
-        forCol(Types.NUMERIC).deserialize(tableName, "c", 42) shouldBe BigDecimal(42)
+    test("NUMERIC: integer token with scale 0 and precision <= 18 becomes Long") {
+        forCol(Types.NUMERIC, precision = 10, scale = 0).deserialize(tableName, "c", 42) shouldBe 42L
+    }
+
+    test("NUMERIC: integer token with fractional scale stays BigDecimal") {
+        forCol(Types.NUMERIC, precision = 10, scale = 2).deserialize(tableName, "c", 42) shouldBe BigDecimal(42)
+    }
+
+    test("NUMERIC: integer token with precision > 18 stays BigDecimal") {
+        forCol(Types.NUMERIC, precision = 19, scale = 0).deserialize(tableName, "c", 42) shouldBe BigDecimal(42)
     }
 
     test("NUMERIC: Double input preserves value via String constructor (H-A1)") {
@@ -197,6 +216,25 @@ class ValueDeserializerTest : FunSpec({
     test("NUMERIC: string parses as BigDecimal") {
         forCol(Types.DECIMAL).deserialize(tableName, "c", "99999999999999.9999") shouldBe
             BigDecimal("99999999999999.9999")
+    }
+
+    test("NUMERIC: integer-shaped string with scale 0 and precision <= 18 becomes Long outside CSV") {
+        forCol(Types.DECIMAL, precision = 18, scale = 0).deserialize(tableName, "c", "42") shouldBe 42L
+    }
+
+    test("NUMERIC: CSV integer-shaped string stays BigDecimal because token form is unavailable") {
+        forColCsv(Types.DECIMAL, precision = 18, scale = 0).deserialize(
+            tableName,
+            "c",
+            "42",
+            isCsvSource = true,
+        ) shouldBe BigDecimal("42")
+    }
+
+    test("NUMERIC: precision overflow on integer path is rejected") {
+        shouldThrow<ImportSchemaMismatchException> {
+            forCol(Types.NUMERIC, precision = 3, scale = 0).deserialize(tableName, "c", 1234)
+        }
     }
 
     // ───────────── DATE / TIME / TIMESTAMP ─────────────
