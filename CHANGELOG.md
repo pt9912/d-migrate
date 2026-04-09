@@ -9,9 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Read-path foundation in `d-migrate-formats`: `DataChunkReader`, `DataChunkReaderFactory`, and `ImportOptions` for the upcoming 0.4.0 import pipeline
+- `EncodingDetector` with BOM sniffing for UTF-8 / UTF-16 BE / UTF-16 LE plus explicit unsupported-file-encoding handling
+- `ValueDeserializer` as the inverse of `ValueSerializer`, including JDBC-type-hint based conversion for import-side row materialization
+- `DataFilter.ParameterizedClause` and the corresponding `SelectQuery(sql, params)` path in JDBC readers for safely bound WHERE fragments
+- Incremental export flags `--since-column` and `--since` on `d-migrate data export`, including typed parameter binding and composition with `--filter`
+- Opt-in DSL-JSON go/no-go perf spike for a cached 100-MB top-level-array fixture under `build/perf-fixtures/`
+
 ### Changed
 
+- `d-migrate data export` now rejects literal `?` inside `--filter` when combined with `--since`, returning exit code 2 in the CLI preflight instead of relying only on the defensive reader guard
+- The Phase-A perf spike now reuses the persistent `build/perf-fixtures` cache path instead of generating and deleting a temporary fixture directory on each run
+
 ### Fixed
+
+- `ImportOptions.encoding` now defaults to auto-detect (`null`) instead of hard-coded UTF-8, aligning library defaults with the CLI `--encoding auto` path
+- `EncodingDetector.UnsupportedEncodingException` was renamed to `UnsupportedFileEncodingException` to avoid colliding with the JDK exception name
+- `ValueDeserializer` now distinguishes `NUMERIC` / `DECIMAL` via precision, scale, and token shape instead of forcing every value onto the `BigDecimal` path
+- Large-fixture cache invalidation now derives its stamp from the generator source hash instead of a manually bumped fingerprint string
 
 ## [0.3.0] - 2026-04-06
 

@@ -447,6 +447,8 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
 | `--filter` | Nein | String | — | Roh-WHERE-Klausel ohne `WHERE`-Keyword. **Nicht parametrisiert** — Trust-Boundary ist die lokale Shell (Plan §6.7). |
+| `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export (LF-013). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
+| `--since` | Nein | String | — | Untere Marker-Grenze für LF-013. Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
@@ -472,7 +474,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Code | Trigger |
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
-| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`-Identifier, unverträgliche `--output`/`--split-files`-Kombi |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`) oder unverträgliche `--output`/`--split-files`-Kombi |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
 | `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect) |
@@ -498,14 +500,38 @@ d-migrate data export --source local_pg --format csv --tables customers \
 d-migrate data export --source prod --format json --tables orders \
     --filter "created_at > '2026-01-01'" --output recent.json
 
+# Inkrementeller Export per Marker-Spalte (LF-013)
+d-migrate data export --source local_pg --format json --tables orders \
+    --since-column updated_at --since "2026-01-01T00:00:00" --output orders.delta.json
+
+# Inkrementeller Export kombiniert mit zusätzlichem Roh-Filter
+d-migrate data export --source local_pg --format csv --tables orders \
+    --filter "status = 'open'" \
+    --since-column updated_at --since "2026-01-01T00:00:00" \
+    --output orders-open.delta.csv
+
 # Auto-Discovery aller Tabellen mit Split-Files
 d-migrate data export --source local_pg --format json \
     --output ./full-dump --split-files
 ```
 
-> **0.4.0**: `--incremental` für inkrementellen Export anhand einer
-> expliziten Marker-Spalte (`--since-column updated_at --since "<timestamp>"`).
-> Siehe `roadmap.md` Milestone 0.4.0 (LF-013). In 0.3.0 nicht enthalten.
+**LF-013: Inkrementeller Export via `--since-column` / `--since`**
+
+- `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
+- `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
+- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. ISO-Datum/Datetime-Werte werden als Date-/Zeit-Typen behandelt, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String.
+- Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([WhereClause(filter), ParameterizedClause(...)])` kombiniert; der Reader bindet die Parameter in stabiler Reihenfolge.
+- **M-R5**: `--filter` darf in diesem kombinierten Pfad kein literales `?` enthalten. Beispiel eines verbotenen Aufrufs:
+
+```bash
+d-migrate data export --source local_pg --format json --tables orders \
+    --filter "note LIKE 'really?%'" \
+    --since-column updated_at --since "2026-01-01T00:00:00"
+```
+
+Verhalten:
+- Exit 2
+- stderr: `--filter must not contain literal '?' when combined with --since (parameterized query); use a rewritten predicate or escape the literal differently`
 
 #### `data import` *(geplant: 0.4.0)*
 
