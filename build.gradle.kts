@@ -32,6 +32,7 @@ subprojects {
 
     tasks.withType<Test> {
         useJUnitPlatform()
+        val explicitKotestTags = System.getProperty("kotest.tags")
         // Per default integration-Tests ausschließen — sie brauchen Docker
         // (Testcontainers) und überschreiten das 5-Minuten-CI-Budget des
         // Default-Workflows. Aktivieren via `./gradlew test -PintegrationTests`
@@ -42,8 +43,13 @@ subprojects {
         // nicht mit Kotest's Spec-Lifecycle zusammenspielt — ohne das hier
         // würden Specs mit @Tags("integration") trotzdem instanziiert und
         // beforeSpec ausgeführt.
-        if (!project.hasProperty("integrationTests")) {
-            systemProperty("kotest.tags", "!integration")
+        //
+        // Perf-Spikes (`perf`) sind ebenfalls opt-in und laufen nur, wenn
+        // `-Dkotest.tags=perf` (oder ein anderes explizites Tag-Filter) gesetzt
+        // wird. Ein explizit gesetzter `kotest.tags`-Wert gewinnt immer gegen
+        // den Default hier.
+        if (explicitKotestTags == null && !project.hasProperty("integrationTests")) {
+            systemProperty("kotest.tags", "!integration & !perf")
         }
     }
 }

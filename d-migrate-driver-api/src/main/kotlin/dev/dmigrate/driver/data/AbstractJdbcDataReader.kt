@@ -61,12 +61,17 @@ abstract class AbstractJdbcDataReader : DataReader {
             if (needsAutoCommitFalse) {
                 conn.autoCommit = false
             }
-            val sql = buildSelectSql(table, filter)
+            // M-R6: buildSelectQuery liefert jetzt SQL + zu bindende Params in einem
+            // WhereFragment-Tripel, damit DataFilter.ParameterizedClause (LF-013,
+            // siehe implementation-plan-0.4.0.md §3.8 / §6.12.1) sauber
+            // parametrisiert werden kann, ohne String-Konkatenation.
+            val query = buildSelectQuery(table, filter)
             stmt = conn.prepareStatement(
-                sql,
+                query.sql,
                 ResultSet.TYPE_FORWARD_ONLY,
                 ResultSet.CONCUR_READ_ONLY,
             ).also { it.fetchSize = fetchSize }
+            bindParams(stmt, query.params)
             rs = stmt.executeQuery()
 
             return JdbcChunkSequence(
@@ -96,16 +101,58 @@ abstract class AbstractJdbcDataReader : DataReader {
     /**
      * Baut das SELECT-Statement für den Stream. Default: `SELECT <cols> FROM <table> [WHERE <filter>]`.
      * Treiber können das überschreiben, wenn sie spezielle Tricks brauchen.
+     *
+     * **M-R6**: Rückgabe ist jetzt ein [SelectQuery] mit SQL + Bind-Params,
+     * damit [DataFilter.ParameterizedClause] positional gebundene Werte
+     * mitführen kann. Pure [DataFilter.WhereClause]/[DataFilter.ColumnSubset]-
+     * Pfade liefern `params = emptyList()` und verhalten sich identisch
+     * zum 0.3.0-Vertrag.
      */
-    protected open fun buildSelectSql(table: String, filter: DataFilter?): String {
+    protected open fun buildSelectQuery(table: String, filter: DataFilter?): SelectQuery {
+        validateM5LiteralQuestionMark(filter)
         val columnList = projection(filter)
-        val whereClause = whereClause(filter)
-        return buildString {
+        val fragments = collectWhereFragments(filter)
+        val sql = buildString {
             append("SELECT ").append(columnList)
             append(" FROM ").append(quoteTablePath(table))
-            if (whereClause != null) {
-                append(" WHERE ").append(whereClause)
+            if (fragments.isNotEmpty()) {
+                append(" WHERE ")
+                when (fragments.size) {
+                    1 -> append(fragments.single().sql)
+                    else -> fragments.joinTo(this, " AND ") { "(${it.sql})" }
+                }
             }
+        }
+        val flatParams = fragments.flatMap { it.params }
+        return SelectQuery(sql, flatParams)
+    }
+
+    /**
+     * Legacy-Shim für Treiber oder Tests aus 0.3.0, die nur den reinen
+     * SQL-String gebraucht haben. Baut [buildSelectQuery] auf und wirft,
+     * wenn der Filter Parameter enthalten würde — so fällt jeder
+     * fälschlich String-basierte Zugriff auf [DataFilter.ParameterizedClause]
+     * früh auf und verhindert stille Bind-Drift.
+     */
+    protected fun buildSelectSql(table: String, filter: DataFilter?): String {
+        val query = buildSelectQuery(table, filter)
+        check(query.params.isEmpty()) {
+            "buildSelectSql(...) does not support parameterized filters; use buildSelectQuery(...)"
+        }
+        return query.sql
+    }
+
+    /**
+     * Bindet die flach aggregierten Parameter aus [SelectQuery.params] per
+     * 1-basierter `setObject(idx, value)`-Folge an das vorbereitete
+     * Statement. Null-Werte gehen über den `setObject(idx, null)`-Pfad, der
+     * von PG/MySQL/SQLite unterstützt wird; treiberspezifische Sonderpfade
+     * können das bei Bedarf überschreiben.
+     */
+    protected open fun bindParams(stmt: PreparedStatement, params: List<Any?>) {
+        if (params.isEmpty()) return
+        for ((zeroBased, value) in params.withIndex()) {
+            stmt.setObject(zeroBased + 1, value)
         }
     }
 
@@ -118,29 +165,91 @@ abstract class AbstractJdbcDataReader : DataReader {
         return if (cols == null) "*" else cols.joinToString(", ") { quoteIdentifier(it) }
     }
 
-    private fun whereClause(filter: DataFilter?): String? {
-        val parts = collectWhereClauses(filter)
-        return when (parts.size) {
-            0 -> null
-            1 -> parts.single()
-            else -> parts.joinToString(" AND ") { "($it)" }
-        }
-    }
-
     private fun collectColumnSubset(filter: DataFilter?): List<String>? = when (filter) {
         null -> null
         is DataFilter.ColumnSubset -> filter.columns
         is DataFilter.WhereClause -> null
+        is DataFilter.ParameterizedClause -> null
         is DataFilter.Compound -> filter.parts.firstNotNullOfOrNull { collectColumnSubset(it) }
     }
 
-    private fun collectWhereClauses(filter: DataFilter?): List<String> = when (filter) {
-        null -> emptyList()
-        is DataFilter.WhereClause -> listOf(filter.sql)
-        is DataFilter.ColumnSubset -> emptyList()
-        is DataFilter.Compound -> filter.parts.flatMap { collectWhereClauses(it) }
+    /**
+     * M-R5: Ein roher [DataFilter.WhereClause] mit literalem `?` darf nicht
+     * im selben [DataFilter.Compound] wie eine [DataFilter.ParameterizedClause]
+     * auftauchen. Sonst driftet die JDBC-Bind-Position des echten
+     * Parameter-Clauses von den rohen `?`-Zeichen im String-Pfad weg.
+     *
+     * Der Plan ordnet die Prüfung dem CLI-Pre-Flight zu; wir erzwingen sie
+     * zusätzlich hier auf Reader-Ebene, damit jeder direkte Programmatic-
+     * Caller denselben Schutz bekommt und der Verbotstest nicht nur auf
+     * CLI-Verhalten beruht.
+     */
+    private fun validateM5LiteralQuestionMark(filter: DataFilter?) {
+        when (filter) {
+            null,
+            is DataFilter.WhereClause,
+            is DataFilter.ColumnSubset,
+            is DataFilter.ParameterizedClause,
+                -> return
+
+            is DataFilter.Compound -> {
+                if (containsParameterizedClause(filter)) {
+                    firstRawWhereClauseWithQuestionMark(filter)?.let { sql ->
+                        throw IllegalArgumentException(
+                            "Raw WhereClause must not contain '?' when combined with " +
+                                "ParameterizedClause in the same Compound: $sql"
+                        )
+                    }
+                }
+                filter.parts.forEach(::validateM5LiteralQuestionMark)
+            }
+        }
     }
+
+    private fun containsParameterizedClause(filter: DataFilter): Boolean = when (filter) {
+        is DataFilter.ParameterizedClause -> true
+        is DataFilter.Compound -> filter.parts.any(::containsParameterizedClause)
+        else -> false
+    }
+
+    private fun firstRawWhereClauseWithQuestionMark(filter: DataFilter): String? = when (filter) {
+        is DataFilter.WhereClause -> filter.sql.takeIf { it.contains('?') }
+        is DataFilter.Compound -> filter.parts.firstNotNullOfOrNull(::firstRawWhereClauseWithQuestionMark)
+        else -> null
+    }
+
+    /**
+     * Sammelt alle WHERE-Fragmente (rohe + parametrisierte) aus dem Filter-
+     * Baum in Traversierungsreihenfolge. [DataFilter.Compound] liefert
+     * seine Parts linker-nach-rechts; das garantiert eine deterministische
+     * `?`-Positionierung in der finalen SQL-Form.
+     */
+    private fun collectWhereFragments(filter: DataFilter?): List<WhereFragment> = when (filter) {
+        null -> emptyList()
+        is DataFilter.WhereClause -> listOf(WhereFragment(filter.sql, emptyList()))
+        is DataFilter.ColumnSubset -> emptyList()
+        is DataFilter.ParameterizedClause -> listOf(WhereFragment(filter.sql, filter.params))
+        is DataFilter.Compound -> filter.parts.flatMap { collectWhereFragments(it) }
+    }
+
+    /**
+     * Internes SQL-Fragment mit optionalen Bind-Params. [WhereClause] liefert
+     * immer `params = emptyList()`; [ParameterizedClause] trägt seine
+     * positional gebundenen Werte mit.
+     */
+    private data class WhereFragment(val sql: String, val params: List<Any?>)
 }
+
+/**
+ * Ergebnis von [AbstractJdbcDataReader.buildSelectQuery]: das finale
+ * SELECT-Statement plus die flach aggregierte Parameter-Liste in korrekter
+ * `?`-Bind-Reihenfolge. Top-Level statt nested, damit Treiber-Module
+ * (PG/MySQL/SQLite) den Rückgabetyp in eigenen `buildSelectQuery`-Overrides
+ * benutzen können; `AbstractJdbcDataReader.buildSelectQuery` ist protected,
+ * aber der Typ ist public, weil Kotlin-Module den eigenen `protected`-Scope
+ * nicht über Modul-Kanten hinweg vererben.
+ */
+data class SelectQuery(val sql: String, val params: List<Any?>)
 
 /**
  * Single-use [ChunkSequence] über ein offenes JDBC-[ResultSet].
