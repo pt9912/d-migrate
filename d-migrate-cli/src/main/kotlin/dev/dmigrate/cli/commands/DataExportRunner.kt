@@ -77,6 +77,8 @@ internal data class DataExportRequest(
     val output: Path?,
     val tables: List<String>?,
     val filter: String?,
+    val sinceColumn: String?,
+    val since: String?,
     val encoding: String,
     val chunkSize: Int,
     val splitFiles: Boolean,
@@ -143,6 +145,32 @@ internal class DataExportRunner(
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
             return 7
+        }
+
+        // ─── 2b. Incremental-export CLI-Preflight (LF-013 / M-R5) ──
+        val hasSinceColumn = !request.sinceColumn.isNullOrBlank()
+        val hasSinceValue = !request.since.isNullOrBlank()
+        if (hasSinceColumn != hasSinceValue) {
+            stderr("Error: --since-column and --since must be used together.")
+            return 2
+        }
+        if (hasSinceColumn) {
+            val invalidSinceColumn = DataExportHelpers.firstInvalidQualifiedIdentifier(request.sinceColumn!!)
+            if (invalidSinceColumn != null) {
+                stderr(
+                    "Error: --since-column value '$invalidSinceColumn' is not a valid identifier. " +
+                        "Expected '<name>' or '<schema>.<name>' matching " +
+                        DataExportHelpers.TABLE_IDENTIFIER_PATTERN + "."
+                )
+                return 2
+            }
+            if (DataExportHelpers.containsLiteralQuestionMark(request.filter)) {
+                stderr(
+                    "Error: --filter must not contain literal '?' when combined with --since " +
+                        "(parameterized query); use a rewritten predicate or escape the literal differently"
+                )
+                return 2
+            }
         }
 
         // ─── 3. Encoding parsen ─────────────────────────────────
@@ -240,7 +268,12 @@ internal class DataExportRunner(
 
         val warnings = mutableListOf<ValueSerializer.Warning>()
         val factory = writerFactoryBuilder { warnings += it }
-        val effectiveFilter = DataExportHelpers.resolveFilter(request.filter)
+        val effectiveFilter = DataExportHelpers.resolveFilter(
+            rawFilter = request.filter,
+            dialect = connectionConfig.dialect,
+            sinceColumn = request.sinceColumn,
+            since = request.since,
+        )
 
         // ─── 9. Streaming ─────────────────────────────────────
         val result: ExportResult = try {

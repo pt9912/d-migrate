@@ -90,6 +90,19 @@ class CliDataExportTest : FunSpec({
         return captured.toString(Charsets.UTF_8)
     }
 
+    fun captureStderr(block: () -> Unit): String {
+        val original = System.err
+        val captured = ByteArrayOutputStream()
+        val printStream = PrintStream(captured, true, Charsets.UTF_8)
+        System.setErr(printStream)
+        try {
+            block()
+        } finally {
+            System.setErr(original)
+        }
+        return captured.toString(Charsets.UTF_8)
+    }
+
     beforeSpec {
         // Plan §6.18 / Phase E Bootstrap — die echte Main.kt macht das beim
         // Programmstart, im Test-JVM müssen wir es selbst aufrufen.
@@ -529,6 +542,58 @@ class CliDataExportTest : FunSpec({
             out shouldContain "\"name\": \"alice\""
             out shouldContain "\"name\": \"bob\""
             out shouldContain "\"name\": \"charlie\""
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("LF-013: --since-column/--since narrow the export via a parameterized predicate") {
+        val db = createSampleDatabase()
+        try {
+            val out = captureStdout {
+                shouldNotThrowAny {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--since-column", "id",
+                            "--since", "2",
+                        )
+                    )
+                }
+            }
+            out shouldContain "\"id\": 2"
+            out shouldContain "\"name\": \"bob\""
+            out shouldContain "\"id\": 3"
+            out shouldContain "\"name\": \"charlie\""
+            out shouldNotContain "\"name\": \"alice\""
+        } finally {
+            Files.deleteIfExists(db)
+        }
+    }
+
+    test("M-R5: literal ? in --filter with --since exits 2 before export") {
+        val db = createSampleDatabase()
+        try {
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--filter", "name LIKE 'Order?%'",
+                            "--since-column", "id",
+                            "--since", "2",
+                        )
+                    )
+                }
+                ex.statusCode shouldBe 2
+            }
+            stderr shouldContain "--filter must not contain literal '?' when combined with --since"
         } finally {
             Files.deleteIfExists(db)
         }

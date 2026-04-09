@@ -8,7 +8,6 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.longs.shouldBeLessThan
 import io.kotest.matchers.shouldBe
-import java.nio.file.Files
 import kotlin.math.floor
 
 private val PerfTag = NamedTag("perf")
@@ -31,74 +30,73 @@ class LargeJsonPullSpikePerfTest : FunSpec({
     tags(PerfTag)
 
     test("perf 100MB fixture ensures constant-memory DSL-JSON pull parse") {
-        val dir = Files.createTempDirectory("d-migrate-largejson-perf-")
-        try {
-            val params = LargeJsonFixture.Params(
-                rows = 1_200_000L,
-                seed = 42L,
-            )
-            val fixture = LargeJsonFixture.ensureFixture(dir, "phase-a-100mb", params)
-            val fixtureBytes = Files.size(fixture)
+        val params = LargeJsonFixture.Params(
+            rows = 1_200_000L,
+            seed = 42L,
+        )
+        val fixture = LargeJsonFixture.ensureFixture(
+            dir = LargeJsonFixture.defaultCacheDir(),
+            name = "phase-a-100mb",
+            params = params,
+        )
+        val fixtureBytes = java.nio.file.Files.size(fixture)
 
-            // Gate: the spike must actually hit the intended size class.
-            fixtureBytes shouldBeGreaterThan (100L * 1024L * 1024L)
+        // Gate: the spike must actually hit the intended size class.
+        fixtureBytes shouldBeGreaterThan (100L * 1024L * 1024L)
 
-            val json = DslJson<Any>(Settings.withRuntime<Any>().includeServiceLoader())
-            val heapBefore = LargeJsonFixture.usedHeapBytes()
+        val json = DslJson<Any>(Settings.withRuntime<Any>().includeServiceLoader())
+        val heapBefore = LargeJsonFixture.usedHeapBytes()
 
-            var rowsSeen = 0L
-            var firstId = Long.MIN_VALUE
-            var firstScore = Double.NaN
-            var lastId = Long.MIN_VALUE
-            var maxRetainedHeap = heapBefore
+        var rowsSeen = 0L
+        var firstId = Long.MIN_VALUE
+        var firstScore = Double.NaN
+        var lastId = Long.MIN_VALUE
+        var maxRetainedHeap = heapBefore
 
-            Files.newInputStream(fixture).use { input ->
-                val iterator = requireNotNull(
-                    json.iterateOver(ProbeRow::class.java, input, ByteArray(64 * 1024))
-                ) {
-                    "DSL-JSON returned null iterator for top-level array"
+        java.nio.file.Files.newInputStream(fixture).use { input ->
+            val iterator = requireNotNull(
+                json.iterateOver(ProbeRow::class.java, input, ByteArray(64 * 1024))
+            ) {
+                "DSL-JSON returned null iterator for top-level array"
+            }
+            while (iterator.hasNext()) {
+                val row = iterator.next()
+                if (rowsSeen == 0L) {
+                    firstId = row.id
+                    firstScore = row.score
                 }
-                while (iterator.hasNext()) {
-                    val row = iterator.next()
-                    if (rowsSeen == 0L) {
-                        firstId = row.id
-                        firstScore = row.score
-                    }
-                    lastId = row.id
-                    rowsSeen++
+                lastId = row.id
+                rowsSeen++
 
-                    if (rowsSeen % 100_000L == 0L) {
-                        val retained = LargeJsonFixture.usedHeapBytes()
-                        if (retained > maxRetainedHeap) {
-                            maxRetainedHeap = retained
-                        }
+                if (rowsSeen % 100_000L == 0L) {
+                    val retained = LargeJsonFixture.usedHeapBytes()
+                    if (retained > maxRetainedHeap) {
+                        maxRetainedHeap = retained
                     }
                 }
             }
-
-            val heapAfter = LargeJsonFixture.usedHeapBytes()
-            maxRetainedHeap = maxOf(maxRetainedHeap, heapAfter)
-
-            rowsSeen shouldBe params.rows
-            lastId shouldBe params.rows - 1
-
-            // Integer-vs-decimal discrimination: the generator emits `id`
-            // as JSON integer and `score` as JSON decimal. A correct pull
-            // parse must preserve that distinction when bound into the probe.
-            firstId shouldBe 0L
-            firstScore.shouldBeFinite()
-            (firstScore != floor(firstScore)).shouldBeTrue()
-
-            val retainedGrowth = maxRetainedHeap - heapBefore
-
-            // Constant-memory gate: retained heap may grow somewhat due to
-            // warmup/runtime buffers, but it must stay far below the 100-MB
-            // payload size. 32 MiB leaves room for parser/runtime jitter
-            // while still failing any accidental buffer-the-whole-file path.
-            retainedGrowth shouldBeLessThan (32L * 1024L * 1024L)
-        } finally {
-            dir.toFile().deleteRecursively()
         }
+
+        val heapAfter = LargeJsonFixture.usedHeapBytes()
+        maxRetainedHeap = maxOf(maxRetainedHeap, heapAfter)
+
+        rowsSeen shouldBe params.rows
+        lastId shouldBe params.rows - 1
+
+        // Integer-vs-decimal discrimination: the generator emits `id`
+        // as JSON integer and `score` as JSON decimal. A correct pull
+        // parse must preserve that distinction when bound into the probe.
+        firstId shouldBe 0L
+        firstScore.shouldBeFinite()
+        (firstScore != floor(firstScore)).shouldBeTrue()
+
+        val retainedGrowth = maxRetainedHeap - heapBefore
+
+        // Constant-memory gate: retained heap may grow somewhat due to
+        // warmup/runtime buffers, but it must stay far below the 100-MB
+        // payload size. 32 MiB leaves room for parser/runtime jitter
+        // while still failing any accidental buffer-the-whole-file path.
+        retainedGrowth shouldBeLessThan (32L * 1024L * 1024L)
     }
 })
 

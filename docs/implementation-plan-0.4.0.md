@@ -1708,7 +1708,10 @@ Daten-Reader braucht — der Volltext-Export benutzt `setObject` nicht.
    `build/perf-fixtures/` erzeugt und dort cacht. Der zugehörige Test
    läuft als opt-in-Perf-Spec (`LargeJsonPullSpikePerfTest`) und wird im
    Gradle-Build über `-Dkotest.tags=perf` aktiviert. CI-Defaults laufen
-   ohne `perf`; lokale Performance-Runs aktivieren das Tag explizit.
+   ohne `perf`; lokale Performance-Runs aktivieren das Tag explizit. Der
+   echte Spike läuft dabei inzwischen ebenfalls direkt gegen diesen
+   `build/perf-fixtures/`-Cachepfad und löscht das Fixture nach dem Lauf
+   nicht mehr weg.
    **R7 — Cache-Invalidation**: der Generator schreibt neben dem
    eigentlichen Fixture eine `<fixture>.stamp`-Datei mit dem SHA-256
    seines eigenen Source-Inhalts plus aller relevanten Parameter
@@ -2686,7 +2689,9 @@ Intern:
    [1])])` baut und asserted, dass der Runner mit Exit 2 abbricht.
 
 `--since-column` und `--since` sind nur zusammen gültig; fehlt einer der
-beiden Werte, endet der Export mit Exit 2.
+beiden Werte, endet der Export mit Exit 2. Der aktuelle Runner erzwingt
+dies bereits im CLI-Preflight, bevor der Pool geöffnet oder der Export
+gestartet wird.
 
 #### 6.12.2 Import-Seite: idempotenter UPSERT statt eigenem Modus
 

@@ -20,10 +20,13 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
+import java.time.LocalDate
+import java.time.LocalDateTime
 
 /**
  * Unit-Tests für [DataExportRunner] mit Fakes für alle externen
@@ -102,6 +105,8 @@ class DataExportRunnerTest : FunSpec({
         output: Path? = null,
         tables: List<String>? = listOf("users"),
         filter: String? = null,
+        sinceColumn: String? = null,
+        since: String? = null,
         encoding: String = "utf-8",
         chunkSize: Int = 10_000,
         splitFiles: Boolean = false,
@@ -118,6 +123,8 @@ class DataExportRunnerTest : FunSpec({
         output = output,
         tables = tables,
         filter = filter,
+        sinceColumn = sinceColumn,
+        since = since,
         encoding = encoding,
         chunkSize = chunkSize,
         splitFiles = splitFiles,
@@ -253,6 +260,61 @@ class DataExportRunnerTest : FunSpec({
         capturedFilter shouldBe null
     }
 
+    test("Exit 0: --since builds a parameterized filter for the executor") {
+        var capturedFilter: DataFilter? = null
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter ->
+                capturedFilter = filter
+                ExportResult(
+                    tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
+                    totalRows = 1, totalChunks = 1, totalBytes = 1, durationMs = 1,
+                )
+            }
+        )
+
+        runner.execute(
+            request(
+                sinceColumn = "updated_at",
+                since = "2026-01-01",
+            )
+        ) shouldBe 0
+
+        val filter = capturedFilter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+        filter.sql shouldBe "\"updated_at\" >= ?"
+        filter.params shouldBe listOf(LocalDate.parse("2026-01-01"))
+    }
+
+    test("Exit 0: --filter and --since compose into a Compound in stable order") {
+        var capturedFilter: DataFilter? = null
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter ->
+                capturedFilter = filter
+                ExportResult(
+                    tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
+                    totalRows = 1, totalChunks = 1, totalBytes = 1, durationMs = 1,
+                )
+            }
+        )
+
+        runner.execute(
+            request(
+                filter = "active = 1",
+                sinceColumn = "updated_at",
+                since = "2026-01-01T10:15:30",
+            )
+        ) shouldBe 0
+
+        val filter = capturedFilter.shouldBeInstanceOf<DataFilter.Compound>()
+        filter.parts[0].shouldBeInstanceOf<DataFilter.WhereClause>().sql shouldBe "active = 1"
+        val marker = filter.parts[1].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+        marker.sql shouldBe "\"updated_at\" >= ?"
+        marker.params shouldBe listOf(LocalDateTime.parse("2026-01-01T10:15:30"))
+    }
+
     // ─── Exit 7: Config / URL / Registry ─────────────────────────
 
     test("Exit 7: ConfigResolveException maps to exit 7") {
@@ -364,6 +426,48 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         runner.execute(request(format = "csv", csvDelimiter = "")) shouldBe 2
+    }
+
+    test("Exit 2: --since-column without --since") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(sinceColumn = "updated_at")) shouldBe 2
+        stderr.joined() shouldContain "--since-column and --since must be used together"
+    }
+
+    test("Exit 2: --since without --since-column") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(since = "2026-01-01")) shouldBe 2
+        stderr.joined() shouldContain "--since-column and --since must be used together"
+    }
+
+    test("Exit 2: invalid --since-column identifier") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(sinceColumn = "bad column", since = "1")) shouldBe 2
+        stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
+    }
+
+    test("Exit 2: M-R5 preflight rejects literal ? in --filter when combined with --since") {
+        var poolOpened = false
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            poolFactory = {
+                poolOpened = true
+                FakeConnectionPool()
+            },
+        )
+        runner.execute(
+            request(
+                filter = "name LIKE 'Order?%'",
+                sinceColumn = "updated_at",
+                since = "2026-01-01",
+            )
+        ) shouldBe 2
+        poolOpened shouldBe false
+        stderr.joined() shouldContain "--filter must not contain literal '?' when combined with --since"
     }
 
     // ─── Exit 4: Connection / lister I/O ─────────────────────────

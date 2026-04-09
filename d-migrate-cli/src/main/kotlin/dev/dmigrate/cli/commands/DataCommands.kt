@@ -74,6 +74,16 @@ class DataExportCommand : CliktCommand(name = "export") {
             "WARNING: not parameterized — see Plan §6.7 for the trust-boundary contract.",
     )
 
+    val sinceColumn by option(
+        "--since-column",
+        help = "Marker column for incremental export; must be used together with --since",
+    )
+
+    val since by option(
+        "--since",
+        help = "Lower-bound marker value for incremental export; must be used together with --since-column",
+    )
+
     val encoding by option(
         "--encoding",
         help = "Output encoding (e.g. utf-8, iso-8859-1); default: utf-8",
@@ -119,6 +129,8 @@ class DataExportCommand : CliktCommand(name = "export") {
             output = output,
             tables = tables,
             filter = filter,
+            sinceColumn = sinceColumn,
+            since = since,
             encoding = encoding,
             chunkSize = chunkSize,
             splitFiles = splitFiles,

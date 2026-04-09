@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.data.DataFilter
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.streaming.ExportResult
 import dev.dmigrate.streaming.TableExportSummary
 import io.kotest.core.spec.style.FunSpec
@@ -10,6 +11,10 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.math.BigDecimal
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
 
 /**
  * Unit-Tests für [DataExportHelpers] — die reinen Helfer-Funktionen, die
@@ -74,6 +79,19 @@ class DataExportHelpersTest : FunSpec({
         }
     }
 
+    context("firstInvalidQualifiedIdentifier") {
+
+        test("accepts the same qualified identifier grammar as --tables") {
+            DataExportHelpers.firstInvalidQualifiedIdentifier("updated_at").shouldBeNull()
+            DataExportHelpers.firstInvalidQualifiedIdentifier("public.updated_at").shouldBeNull()
+        }
+
+        test("rejects invalid --since-column values") {
+            DataExportHelpers.firstInvalidQualifiedIdentifier("bad column") shouldBe "bad column"
+            DataExportHelpers.firstInvalidQualifiedIdentifier("a.b.c") shouldBe "a.b.c"
+        }
+    }
+
     // ─── parseCsvDelimiter ────────────────────────────────────────
 
     context("parseCsvDelimiter") {
@@ -127,6 +145,65 @@ class DataExportHelpersTest : FunSpec({
             // F32 contract: we only check isNotBlank(), we don't trim. The exact
             // value (with its leading/trailing spaces) is passed to the SQL layer.
             filter.sql shouldBe "  id = 42  "
+        }
+
+        test("builds a parameterized --since clause when no raw filter is present") {
+            val filter = DataExportHelpers.resolveFilter(
+                rawFilter = null,
+                dialect = DatabaseDialect.SQLITE,
+                sinceColumn = "updated_at",
+                since = "2026-01-01",
+            )
+            val clause = filter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+            clause.sql shouldBe "\"updated_at\" >= ?"
+            clause.params shouldBe listOf(LocalDate.parse("2026-01-01"))
+        }
+
+        test("combines raw filter and --since into a Compound") {
+            val filter = DataExportHelpers.resolveFilter(
+                rawFilter = "active = 1",
+                dialect = DatabaseDialect.MYSQL,
+                sinceColumn = "audit.updated_at",
+                since = "2026-01-01T10:15:30",
+            )
+            val compound = filter.shouldBeInstanceOf<DataFilter.Compound>()
+            compound.parts[0].shouldBeInstanceOf<DataFilter.WhereClause>().sql shouldBe "active = 1"
+            val marker = compound.parts[1].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+            marker.sql shouldBe "`audit`.`updated_at` >= ?"
+            marker.params shouldBe listOf(LocalDateTime.parse("2026-01-01T10:15:30"))
+        }
+    }
+
+    context("containsLiteralQuestionMark") {
+
+        test("returns false for null or question-mark-free filters") {
+            DataExportHelpers.containsLiteralQuestionMark(null) shouldBe false
+            DataExportHelpers.containsLiteralQuestionMark("id = 42") shouldBe false
+        }
+
+        test("returns true when the raw filter string contains ?") {
+            DataExportHelpers.containsLiteralQuestionMark("note = 'really?'") shouldBe true
+        }
+    }
+
+    context("parseSinceLiteral") {
+
+        test("parses ISO dates and datetimes into typed values") {
+            DataExportHelpers.parseSinceLiteral("2026-01-01") shouldBe LocalDate.parse("2026-01-01")
+            DataExportHelpers.parseSinceLiteral("2026-01-01T10:15:30") shouldBe LocalDateTime.parse("2026-01-01T10:15:30")
+            DataExportHelpers.parseSinceLiteral("2026-01-01T10:15:30+01:00") shouldBe
+                OffsetDateTime.parse("2026-01-01T10:15:30+01:00")
+        }
+
+        test("parses integer and decimal numerics conservatively") {
+            DataExportHelpers.parseSinceLiteral("42") shouldBe 42L
+            DataExportHelpers.parseSinceLiteral("3.14") shouldBe BigDecimal("3.14")
+            DataExportHelpers.parseSinceLiteral("9223372036854775808123") shouldBe
+                BigDecimal("9223372036854775808123")
+        }
+
+        test("falls back to raw string for non-typed values") {
+            DataExportHelpers.parseSinceLiteral("release-42") shouldBe "release-42"
         }
     }
 
