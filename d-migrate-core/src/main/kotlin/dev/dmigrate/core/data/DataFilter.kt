@@ -9,7 +9,11 @@ package dev.dmigrate.core.data
  * **Sicherheitsmodell**: [WhereClause] enthält rohes SQL und wird nicht
  * parametrisiert. Der CLI-Aufruf ist ein Trust-Boundary (lokale Shell),
  * siehe implementation-plan-0.3.0.md §6.7. Eine zukünftige REST-API muss
- * den Pfad re-validieren.
+ * den Pfad re-validieren. [ParameterizedClause] zieht die Grenze enger:
+ * der `sql`-String enthält ausschließlich `?`-Platzhalter, und die zu
+ * bindenden Werte stehen in [ParameterizedClause.params]. Damit können
+ * User-Werte (z.B. `--since`) sauber parametrisiert werden, ohne
+ * String-Konkatenation.
  */
 sealed class DataFilter {
     /**
@@ -31,4 +35,25 @@ sealed class DataFilter {
      * Schnittmenge (für ColumnSubsets).
      */
     data class Compound(val parts: List<DataFilter>) : DataFilter()
+
+    /**
+     * Parametrisierte WHERE-Klausel für User-Werte, die per
+     * `PreparedStatement.setObject(...)` gebunden werden müssen.
+     * Eingeführt in 0.4.0 für LF-013 (`--since-column` / `--since`),
+     * siehe implementation-plan-0.4.0.md §3.8 und §6.12.1.
+     *
+     * @property sql SQL-Fragment mit `?`-Platzhaltern, identisch zur
+     *   `PreparedStatement`-Syntax. Beispiel: `"\"updated_at\" >= ?"`.
+     * @property params Werte, die positional an die `?`-Platzhalter
+     *   gebunden werden. Die Liste muss exakt so viele Elemente haben,
+     *   wie `?`-Zeichen im `sql`-String stehen; der Reader bindet sie
+     *   1:1 per `setObject(idx, value)`.
+     *
+     * **M-R5**: Wenn dieser Filter-Typ im selben [Compound] mit einem
+     * rohen [WhereClause] kombiniert wird, darf der `WhereClause.sql`
+     * KEIN literales `?`-Zeichen enthalten — sonst driften die
+     * Bind-Positionen auseinander. Der CLI-Pre-Flight prüft das vor
+     * dem Aufruf des Readers.
+     */
+    data class ParameterizedClause(val sql: String, val params: List<Any?>) : DataFilter()
 }
