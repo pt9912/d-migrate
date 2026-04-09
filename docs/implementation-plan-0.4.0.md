@@ -262,9 +262,27 @@ interface TableImportSession : AutoCloseable {
     /**
      * Autoritative Target-Spalten in Binding-Reihenfolge. Der Writer liest
      * sie beim Öffnen der Tabelle selbst über JDBC-Metadaten ein (§6.4).
-     * Der Importer benutzt diese Liste für Type-Hints und Reorder-Mapping.
+     * Der Importer benutzt diese Liste für Header-Validierung,
+     * Reorder-Mapping und die JDBC-Typ-Hints für den
+     * [ValueDeserializer] (§3.5.2).
+     *
+     * **L15 — neuer `TargetColumn`-Typ in `driver-api`, NICHT
+     * `ColumnDescriptor`**: Phase A wollte ursprünglich
+     * `ColumnDescriptor` in `d-migrate-core` um ein `jdbcType: Int?`-Feld
+     * erweitern — das hätte aber gegen die 0.3.0-Architektur-Regel "kein
+     * JDBC-spezifisches Feld in core" verstoßen. Stattdessen definiert
+     * `d-migrate-driver-api` einen eigenen `TargetColumn(name, nullable,
+     * jdbcType, sqlTypeName)`-Typ, der die vom Writer aus
+     * `ResultSetMetaData` gelesenen Metadaten inklusive JDBC-Typcode
+     * trägt. `core.ColumnDescriptor` bleibt bitwise wie 0.3.0.
+     *
+     * Die Konversion von [TargetColumn] zu [JdbcTypeHint][dev.dmigrate.format.data.JdbcTypeHint]
+     * (für den `ValueDeserializer`) erfolgt erst im Phase-D
+     * `StreamingImporter` (`d-migrate-streaming`), das beide Module
+     * kennt. `driver-api` importiert `formats` nicht und bleibt damit
+     * innerhalb der hexagonalen Architektur.
      */
-    val targetColumns: List<ColumnDescriptor>
+    val targetColumns: List<TargetColumn>
 
     /**
      * Schreibt einen Chunk im aktuellen Transaktionskontext.
@@ -683,6 +701,53 @@ data class SequenceAdjustment(
     val sequenceName: String?,    // PG: explizit; MySQL/SQLite: null
     val newValue: Long,
 )
+
+/**
+ * Writer-side Spalten-Metadaten für eine Import-Zieltabelle. Trägt
+ * den JDBC-Typcode mit, den der [ValueDeserializer] (in `formats`)
+ * für die String-/Number-zu-Java-Konvertierung beim Import braucht.
+ *
+ * Lebt **in `driver-api`** (nicht in `core`), weil:
+ *
+ * - `core.ColumnDescriptor` soll JDBC-frei bleiben — die 0.3.0-
+ *   Architektur-Regel. Ein `jdbcType: Int?`-Slot dort wäre
+ *   semantisch JDBC-coupled, auch wenn syntaktisch nur ein Int.
+ * - `formats` darf von `driver-api` nicht abhängen (hexagonale
+ *   Schicht-Trennung), also kann `formats.JdbcTypeHint` nicht
+ *   direkt von `driver-api` referenziert werden.
+ * - `driver-api` ist der natürliche Ort für Writer-spezifische
+ *   Metadaten, weil der Writer hier lebt und `ResultSetMetaData`
+ *   ohnehin liest.
+ *
+ * Der Phase-D `StreamingImporter` (in `d-migrate-streaming`, das
+ * BEIDE Module kennt) konvertiert `TargetColumn` zu
+ * `formats.JdbcTypeHint` und baut daraus die Lookup-Closure für den
+ * `ValueDeserializer`. Damit bleibt jede Modul-Kante intakt.
+ *
+ * Vergleich mit [ColumnDescriptor]: `TargetColumn` enthält dieselben
+ * Felder (`name`, `nullable`, `sqlTypeName`) plus den nicht-nullable
+ * `jdbcType`. Bewusste leichte Duplikation statt Composition (kein
+ * `descriptor: ColumnDescriptor`-Wrapper), damit der Writer-Pfad
+ * direkt auf Felder zugreifen kann ohne `tc.descriptor.name`-
+ * Boilerplate.
+ *
+ * @property name Spaltenname
+ * @property nullable Ob die Spalte NULL erlauben darf
+ *   (`ResultSetMetaData.isNullable(i) != columnNoNulls`)
+ * @property jdbcType JDBC-Typcode aus
+ *   `ResultSetMetaData.getColumnType(i)` (`java.sql.Types.*`)
+ * @property sqlTypeName Optional: dialekt-spezifischer Type-Name aus
+ *   `ResultSetMetaData.getColumnTypeName(i)`. Sekundärer Hint für
+ *   Pfade, in denen [jdbcType] mehrdeutig ist (PG `Types.OTHER` →
+ *   `"uuid"`/`"jsonb"`/`"interval"`, MySQL `Types.BIT` → `"BIT(1)"`
+ *   vs `"BIT(8)"`).
+ */
+data class TargetColumn(
+    val name: String,
+    val nullable: Boolean,
+    val jdbcType: Int,
+    val sqlTypeName: String? = null,
+)
 ```
 
 `DataWriter.schemaSync()` ist **pflichtig**. Es gibt absichtlich keine
@@ -968,7 +1033,7 @@ interface DataChunkReaderFactory {
 
 | Format | Streaming-Mechanik | `headerColumns()`-Quelle |
 |---|---|---|
-| JSON | DSL-JSON's pull-Parser (`JsonReader.next()`/`getNextToken()`) — wir parsen das Top-Level-Array tokenweise und produzieren `DataChunk`s zu je `chunkSize` Objekten. Vor Beginn von Phase B gibt es einen Go/No-Go-Spike mit 100-MB-Fixture; wenn die Pull-API dabei keinen konstanten Speicherpfad liefert, wird die Library-Entscheidung VOR der Reader-Implementierung neu geöffnet. | Schlüssel des ersten Objekts; bei `[]` → `null` |
+| JSON | DSL-JSON's pull-Parser (`JsonReader.next()`/`getNextToken()`) — wir parsen das Top-Level-Array tokenweise und produzieren `DataChunk`s zu je `chunkSize` Objekten. Phase A enthält dafür explizit einen Go/No-Go-Spike mit 100-MB-Fixture; wenn die Pull-API dabei keinen konstanten Speicherpfad liefert, wird die Library-Entscheidung vor der eigentlichen Reader-Implementierung neu geöffnet. | Schlüssel des ersten Objekts; bei `[]` → `null` |
 | YAML | SnakeYAML Engine `Parse` API (Event-basiert). Der bestehende `Dump`-Pfad ist Tree-basiert; für das Lesen benutzen wir den Event-Stream-Pfad, der auch sehr große Sequenzen verträgt. | Schlüssel des ersten Mappings; bei `[]` → `null` |
 | CSV | uniVocity `CsvParser` mit `IterableResult` — schon nativ chunked. Wir wrappen das in unseren `DataChunkReader`-Vertrag. | Header-Zeile, sofern nicht `csvNoHeader = true` |
 
@@ -1036,6 +1101,17 @@ den der Importer in Target-Reihenfolge an den Writer weitergeben kann.
 Wichtig: die Tabelle unten ist nur der Ausschnitt mit den kniffligen Fällen;
 die Implementierung MUSS die in 0.3.0/`neutral-model-spec.md` unterstützten
 neutralen Typen vollständig abdecken.
+
+**Verbindliche Architekturentscheidung für 0.4.0**: der
+`ValueDeserializer` bekommt seinen JDBC-Typ-Hint **nicht** über ein neues
+Feld auf `core.ColumnDescriptor`, sondern über eine Lookup-Closure
+`(columnName: String) -> JdbcTypeHint?`, die der Phase-D-
+`StreamingImporter` einmal pro Tabelle aus den Writer-seitigen
+`TargetColumn`-Metadaten baut. `JdbcTypeHint` lebt damit lokal im
+`formats`-Modul, `core` bleibt JDBC-frei, und die einzige Modul-Grenze,
+die beide Schichten kennt, bleibt bewusst `streaming`. Das ist die
+kanonische Lösung; ein JDBC-Slot in `core` gehört ausdrücklich NICHT zum
+0.4.0-Zielbild.
 
 | Format-Eingabe | Spalten-Hint (JDBC-Typ aus `ResultSetMetaData`) | Resultat |
 |---|---|---|
@@ -1562,6 +1638,14 @@ aber der Code-Pfad existiert nicht. Konsequenzen für die 0.4.0-Migration:
 kleine, schichtneutrale Ergänzungen: `ImportSchemaMismatchException` und den
 neuen Filter-Typ `DataFilter.ParameterizedClause`.
 
+`ColumnDescriptor` bleibt dabei **bitwise wie in 0.3.0**: kein
+`jdbcType`-Feld, keine Import-spezifische Typinformation. Der
+JDBC-Typ-Hint für den Import lebt stattdessen als
+`formats.JdbcTypeHint(jdbcType, sqlTypeName)` im `formats`-Modul und wird
+dem `ValueDeserializer` über eine Lookup-Closure durchgereicht, die
+`streaming` aus `driver-api.TargetColumn` baut. Damit bleibt `core`
+schichtneutral; JDBC-nahe Metadaten bleiben auf der Writer-Seite.
+
 ```kotlin
 class ImportSchemaMismatchException(message: String) : RuntimeException(message)
 
@@ -1591,47 +1675,25 @@ Daten-Reader braucht — der Volltext-Export benutzt `setObject` nicht.
 3. `EncodingDetector` mit BOM-Sniff nur für UTF-8/UTF-16 BE/LE; alle anderen
    Encodings (ISO-8859-1, Windows-1252, …) ausschließlich über
    `--encoding`-Fallback (siehe §6.9)
-4. `ValueDeserializer` mit der Mapping-Tabelle aus §3.5.2 plus Tests
+4. `ValueDeserializer` mit der Mapping-Tabelle aus §3.5.2 plus Tests.
+   **Architektur-Festlegung**: Typ-Hints kommen über
+   `JdbcTypeHint` + Lookup-Closure `(columnName) -> JdbcTypeHint?`, die
+   der spätere `StreamingImporter` aus `TargetColumn` baut; `core`
+   bekommt KEIN `jdbcType`-Feld auf `ColumnDescriptor`.
 5. `DataFilter.ParameterizedClause` und Erweiterung von
    `AbstractJdbcDataReader` für parametrisierte WHERE-Klauseln, inkl.
    Test für `Compound([WhereClause, ParameterizedClause])` mit korrekter
    SQL-Erzeugung und Parameter-Positionsbindung.
-   **M-R6 — Refactor-Umfang ist nicht trivial**: die heutige Impl
-   (`AbstractJdbcDataReader.kt:121-142`) liefert
-   `collectWhereClauses(filter: DataFilter?): List<String>` — reine
-   Strings, ohne Parameter-Tracking — und ruft direkt danach
-   `stmt.executeQuery()` ohne jeden `setObject`-Loop auf. Für
-   `ParameterizedClause` muss dieser Pfad in drei Schritten umgebaut
-   werden:
-   1. **Neue Fragment-Repräsentation**: ein interner Helper-Typ
-      `WhereFragment(val sql: String, val params: List<Any?>)` (oder ein
-      `Pair<String, List<Any?>>`), der sowohl `WhereClause` („SQL, keine
-      Params") als auch `ParameterizedClause` („SQL mit `?`-Platzhaltern,
-      params-Liste") einheitlich trägt.
-   2. **Rückgabetyp-Refactor**: `collectWhereClauses(...)` liefert ab
-      sofort `List<WhereFragment>` statt `List<String>`. Die Join-Logik
-      in `whereClause(...)` (derzeit `joinToString(" AND ") { "($it)" }`)
-      baut das zusammengesetzte SQL-Fragment und konkateniert gleichzeitig
-      die zugehörigen Parameter-Listen **in derselben Reihenfolge**,
-      sodass die `?`-Positionen im final erzeugten SQL deterministisch zu
-      den gebundenen Werten passen. Das zusammengesetzte Ergebnis wird
-      als zweiter `WhereFragment` an den Caller zurückgereicht (sql +
-      flat params).
-   3. **Bind-Loop im `streamTable`-Pfad**: zwischen `conn.prepareStatement(
-      sql, ...)` (line 65-69) und `stmt.executeQuery()` (line 70) wird
-      ein neuer Schritt eingezogen, der die flach aggregierte
-      Parameter-Liste per 1-basiertem `stmt.setObject(idx, value)` an
-      das Statement bindet. Null-Werte gehen über `setObject(idx, null,
-      Types.NULL)` (oder die Treiber-spezifische Variante), damit
-      Treiber-Idiosynkrasien nicht still kippen.
-   Phase A Schritt 5 hat damit drei harte Testfälle: (a) nur
-   `WhereClause` → kein Param-Binding, keine Regression gegen 0.3.0; (b)
-   nur `ParameterizedClause` → ein Param, korrekt gebunden; (c)
-   `Compound([WhereClause("status = 'new'"), ParameterizedClause(
-   "updated_at >= ?", [ts])])` → zusammengesetzte WHERE, Param an
-   Position 1 gebunden, Ergebnis über Fake-ResultSet verifiziert. Der
-   M-R5-Verbotstest (literales `?` im `WhereClause` + Compound) läuft
-   ebenfalls in diesem Schritt.
+   **Umsetzungsstand Phase A**: der Reader-Pfad ist auf
+   `SelectQuery(sql, params)` plus internem `WhereFragment(sql, params)`
+   umgestellt; `streamTable(...)` bindet die flach aggregierten Parameter
+   deterministisch per 1-basiertem `stmt.setObject(idx, value)`, und
+   `Compound([...])` erhält damit stabile SQL-/Parameter-Reihenfolge ohne
+   String-Konkatenationsdrift. Phase A Schritt 5 hat dazu die harten
+   Regressionstests für (a) nur `WhereClause`, (b) nur
+   `ParameterizedClause`, (c) gemischtes `Compound(...)` mit korrekter
+   Bind-Reihenfolge und zusätzlich den M-R5-Verbotstest für literales `?`
+   im rohen `WhereClause`.
 6. Go/No-Go-Spike für DSL-JSON Pull-Parsing auf einem 100-MB-Top-Level-Array
    mit konstantem Speicherbudget; der Spike verifiziert dabei zusätzlich,
    dass die für §3.5.2 benötigte Integer-vs-Decimal-Diskriminierung auf
@@ -1643,9 +1705,9 @@ Daten-Reader braucht — der Volltext-Export benutzt `setObject` nicht.
    deterministischer Generator (`d-migrate-formats/src/test/kotlin/.../perf/
    LargeJsonFixture.kt` oder als Gradle-Task), der die Datei einmalig in
    `build/perf-fixtures/` erzeugt und dort cacht. Der zugehörige Test
-   trägt `@Tag("perf")` und ist im Gradle-Build über
-   `-PincludeTags=perf` opt-in. CI-Defaults laufen ohne `perf`; lokale
-   Performance-Runs aktivieren das Tag explizit.
+   läuft als opt-in-Perf-Spec (`LargeJsonPullSpikePerfTest`) und wird im
+   Gradle-Build über `-Dkotest.tags=perf` aktiviert. CI-Defaults laufen
+   ohne `perf`; lokale Performance-Runs aktivieren das Tag explizit.
    **R7 — Cache-Invalidation**: der Generator schreibt neben dem
    eigentlichen Fixture eine `<fixture>.stamp`-Datei mit dem SHA-256
    seines eigenen Source-Inhalts plus aller relevanten Parameter
@@ -1655,7 +1717,10 @@ Daten-Reader braucht — der Volltext-Export benutzt `setObject` nicht.
    erzeugt. Damit kann eine spätere Generator-Änderung (z.B. Zahl-Range
    oder zusätzliche Spalte) niemals stille stale-Test-Daten auf einem
    lokalen `build/perf-fixtures/` produzieren — der nächste Lauf
-   regeneriert deterministisch.
+   regeneriert deterministisch. Der aktuelle Phase-A-Spike liest das
+   Fixture erfolgreich über DSL-JSONs Streaming-Iterator-Pfad ein und
+   erzwingt dabei ein retained-heap-Budget deutlich unterhalb der
+   Fixture-Größe.
 
 ### Phase B: Format-Reader
 
@@ -1824,9 +1889,10 @@ Unterabschnitt von §5, weil es thematisch um Dependencies geht.
 
 Unter der Baseline-Entscheidung aus Phase A/B kommen keine neuen externen
 Dependencies hinzu. JSON/YAML/CSV-Lib-Versionen aus 0.3.0 reichen aus — die
-Reader-Pfade benutzen die gleichen Bibliotheken. Falls der DSL-JSON-Go/No-Go-
-Spike in Phase B scheitert, wird diese Annahme vor Implementierungsstart von
-Phase B explizit neu entschieden statt still fortgeschrieben.
+Reader-Pfade benutzen die gleichen Bibliotheken. Der DSL-JSON-Go/No-Go-Spike
+liegt bereits in Phase A; sollte dieser Gate-Test künftig auf realen
+Änderungen scheitern, wird die JSON-Library-Entscheidung vor dem eigentlichen
+Reader-Ausbau explizit neu geöffnet statt still fortgeschrieben.
 
 ```properties
 # Keine neuen Versions-Properties — alle Bibliotheken aus 0.3.0 wiederverwendet.
@@ -1892,7 +1958,7 @@ explizitem GC; Akzeptanzkriterium ist „retained heap nach 100k Rows bleibt
 in derselben Größenordnung wie einige wenige Chunks, nicht proportional zur
 Gesamtdatei". `Runtime.freeMemory()` allein ist dafür zu GC-abhängig.
 
-Falls der DSL-JSON-Go/No-Go-Spike scheitert, ist Jackson Streaming der
+Falls der DSL-JSON-Go/No-Go-Spike künftig scheitert, ist Jackson Streaming der
 bevorzugte Fallback-Kandidat für Phase B; die Entscheidung wird dann vor
 Beginn von Phase B explizit neu geöffnet.
 
@@ -2602,8 +2668,12 @@ Intern:
    mit `--since-column`/`--since` (also mit einem `ParameterizedClause`
    im Compound) läuft UND der Nutzer zusätzlich `--filter` gesetzt hat,
    darf der `--filter`-String **kein literales `?`-Zeichen** enthalten.
-   Die Prüfung ist ein simpler String-Scan (`'?' in filterSql`) und
-   läuft im CLI-Pre-Flight; Verletzung → **Exit 2** mit Meldung
+   Die Prüfung ist als simpler String-Scan (`'?' in filterSql`) im
+   CLI-Pre-Flight spezifiziert; zusätzlich erzwingt der aktuelle
+   `AbstractJdbcDataReader` dieselbe Regel defensiv auf Reader-Ebene,
+   damit auch programmatic Caller nicht in stille Bind-Drift laufen.
+   Verletzung → **Exit 2** im CLI-Pfad bzw. `IllegalArgumentException`
+   im direkten Reader-Pfad, jeweils mit klarer Meldung.
    `--filter must not contain literal '?' when combined with --since
    (parameterized query); use a rewritten predicate or escape the
    literal differently`. Ohne `--since` (reiner `--filter`-Pfad aus
@@ -3168,3 +3238,19 @@ mitziehen:
 | F45 (Niedrig) | „Encoding-Erkennung" war irreführend — ISO-8859-1 wird nicht erkannt | Wortlaut auf „Encoding-Unterstützung" geändert; in §1, §6.9 und der Roadmap explizit dokumentiert: BOM-Detection nur für UTF-8/UTF-16, alles andere via `--encoding`. |
 | F46 (Hoch) | `database.default_source` war im 0.3.0-Übergang unklar und im 0.4.0-Plan zunächst nicht adressiert | 0.4.0 aktiviert die Symmetrie explizit: `resolveSource(...)` für `data export`, `resolveTarget(...)` für `data import`; Spec-Pflege in §7 zieht beide Defaults nach. |
 | F47 (Mittel) | Schema-Qualifikation von `--table`/`--tables` war im Import-Plan implizit, aber nicht festgeschrieben | Import übernimmt den 0.3.0-Identifier-Vertrag explizit: erlaubt sind `name` oder `schema.table`, ohne SQL-Quotes aus der CLI; `ImportInput`/CLI/§6.4 wurden entsprechend präzisiert. |
+
+### 12.3 Phase-A-Review — Findings L15 und folgende
+
+Aufgetreten beim Self-Review nach Abschluss von Phase A. Die Findings
+ergänzen die vorherigen Review-Runden und werden hier separat gelistet,
+damit klar ist, was post-Implementation erkannt wurde.
+
+| ID | Finding | Auflösung |
+|---|---|---|
+| L15 (Hoch) | Frühere Phase-A-Arbeitsfassung hatte testweise ein `jdbcType: Int? = null` auf `core.ColumnDescriptor`. Das verletzte die 0.3.0-Architektur-Regel „kein JDBC-spezifisches Feld in core". | Historisch bereinigt und im Haupttext kanonisch festgeschrieben: `core.ColumnDescriptor` bleibt JDBC-frei; Writer-seitige Metadaten laufen über `driver-api.TargetColumn`, Deserializer-Hints über `formats.JdbcTypeHint`, und der `StreamingImporter` baut die Lookup-Closure `(columnName) -> JdbcTypeHint?` einmal pro Tabelle. |
+| L16 (Hoch) | `ValueDeserializer.toBigDecimal(Float)` ging über `BigDecimal.valueOf((value as Number).toDouble())`, was für Float-Werte die binäre Float-Repräsentation durchreicht — `0.1f` wäre als `BigDecimal("0.10000000149011612")` an eine `NUMERIC(10,2)`-Spalte gelandet. Klassischer stiller Datenkorruptions-Pfad. | Float-Zweig explizit auf `BigDecimal(value.toString())` umgestellt (String-Konstruktor umgeht die binäre Repräsentation). Phase A hat einen expliziten Test gegen diesen Pfad: `deserialize(tableName, "c", 0.1f) shouldBe BigDecimal("0.1")`. |
+| L17 (Hoch) | `ValueDeserializer.toLong(Double)` akzeptierte `1.0` als gültigen Integer, weil `d == d.toLong().toDouble()` für `1.0` true ist. Das widersprach der Plan-Regel aus §3.5.2, die token-basiert arbeitet: ein Reader, der `1.0` (mit Dezimalpunkt im Source-Token) liefert, hat bereits signalisiert, dass es ein Decimal-Token ist. Aus String-Pfad wurde `"1.0"` abgewiesen, aus Double-Pfad durchgewunken — Inkonsistenz. | `toLong(Number)` wirft jetzt konsequent bei allen Non-Integer-Number-Typen (Double/Float), auch wenn der Wert zufällig ganzzahlig ist. Test `H-A2 — Double 1.0 (decimal token) is rejected` sichert den Pfad ab. |
+| L18 (Mittel) | `ValueDeserializer.toBoolean("  true  ")` akzeptierte ein getrimmtes `true` nicht — der `toLong`/`toDouble`-Pfad trimmte, aber `toBoolean` nicht. Inkonsistenz zwischen Konvertern. | `toBoolean(String)` trimmt jetzt vor dem `lowercase()`-Check. Explizites Test-Case `"  true  " shouldBe true`. |
+| L19 (Niedrig) | `EncodingDetector.UnsupportedEncodingException` kollidierte namentlich mit `java.io.UnsupportedEncodingException`. Ein Caller mit Auto-Import würde den falschen Type catchen. | TODO für vor Phase B: umbenennen auf `UnsupportedFileEncodingException` (oder in das `EncodingDetector`-Object hineinverschieben). Nicht in Option-B-Refactor enthalten, separat tracken. |
+| L20 (Niedrig) | `ImportOptions.encoding` default war `StandardCharsets.UTF_8` — damit skippt der Default-Programmatic-Konstruktor die Auto-Detection, während der CLI-Default `--encoding auto` per Design auf `null` mappen sollte. Default-Inkonsistenz zwischen CLI und Library-Use. | TODO für vor Phase B: Default auf `null` (= auto-detect). Nicht in Option-B-Refactor enthalten, separat tracken. |
+| L21 (Mittel) | `JdbcChunkSequence.readColumnMetadata` (in `AbstractJdbcDataReader`) befüllte `jdbcType` nicht — war in der Phase-A-`ColumnDescriptor`-Version mit neuem Slot irrelevant, nach dem Rollback ist es weiterhin irrelevant, weil `ColumnDescriptor` den Slot nicht mehr hat. Der Finding bleibt als Hinweis: wenn Phase C den `DataWriter.openTable`-Pfad baut, muss er seine eigene Metadata-Funktion schreiben, die `TargetColumn` erzeugt (nicht `ColumnDescriptor`). | Dokumentiert in §3.1.2 `TargetColumn`-Kdoc. Phase C macht eine eigene `readTargetMetadata`-Funktion im Writer-Layer, analog zum `JdbcChunkSequence.readColumnMetadata`, aber mit `getColumnType(i)` statt nur `getColumnTypeName(i)`. |
