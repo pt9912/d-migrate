@@ -1,5 +1,5 @@
 dependencies {
-    implementation(project(":d-migrate-driver-api"))
+    implementation(project(":adapters:driven:driver-common"))
     // 0.3.0 Phase B: PostgreSQL JDBC für DataReader / TableLister
     implementation("org.postgresql:postgresql:${rootProject.properties["postgresqlJdbcVersion"]}")
 

@@ -13,7 +13,7 @@
 #   Run only a build-stage subset (for example Phase-A tests) without producing
 #   the final runtime image:
 #     docker build --target build \
-#       --build-arg GRADLE_TASKS=":hexagon:core:test :d-migrate-driver-api:test" \
+#       --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
 #       -t d-migrate:phase-a .
 #
 #   Run the CLI from the final stage:
@@ -50,7 +50,7 @@ COPY gradle ./gradle
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY hexagon/core/build.gradle.kts                hexagon/core/build.gradle.kts
 COPY hexagon/ports/build.gradle.kts               hexagon/ports/build.gradle.kts
-COPY d-migrate-driver-api/build.gradle.kts        d-migrate-driver-api/build.gradle.kts
+COPY adapters/driven/driver-common/build.gradle.kts adapters/driven/driver-common/build.gradle.kts
 COPY d-migrate-driver-postgresql/build.gradle.kts d-migrate-driver-postgresql/build.gradle.kts
 COPY d-migrate-driver-mysql/build.gradle.kts      d-migrate-driver-mysql/build.gradle.kts
 COPY d-migrate-driver-sqlite/build.gradle.kts     d-migrate-driver-sqlite/build.gradle.kts

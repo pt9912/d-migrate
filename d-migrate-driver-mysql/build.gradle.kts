@@ -1,5 +1,5 @@
 dependencies {
-    implementation(project(":d-migrate-driver-api"))
+    implementation(project(":adapters:driven:driver-common"))
     // 0.3.0 Phase B: MySQL JDBC für DataReader / TableLister
     implementation("com.mysql:mysql-connector-j:${rootProject.properties["mysqlJdbcVersion"]}")
 

@@ -10,7 +10,7 @@
 //                              es nur das Interface, Tests verwenden Fakes)
 dependencies {
     api(project(":hexagon:core"))
-    api(project(":d-migrate-driver-api"))
+    api(project(":adapters:driven:driver-common"))
     api(project(":d-migrate-formats"))
 }
 

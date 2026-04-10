@@ -5,7 +5,7 @@ plugins {
 dependencies {
     api(project(":hexagon:ports"))
     implementation(project(":hexagon:core"))
-    implementation(project(":d-migrate-driver-api"))
+    implementation(project(":adapters:driven:driver-common"))
 
     // Jackson — bleibt für die Schema-Codecs aus 0.1.0/0.2.0 (typsicheres
     // Mapping zu/von SchemaDefinition, selten aufgerufen).
@@ -20,7 +20,7 @@ dependencies {
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
     implementation("com.univocity:univocity-parsers:${rootProject.properties["univocityVersion"]}")
 
-    testImplementation(project(":d-migrate-driver-api"))
+    testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":d-migrate-driver-postgresql"))
     testImplementation(project(":d-migrate-driver-mysql"))
     testImplementation(project(":d-migrate-driver-sqlite"))
