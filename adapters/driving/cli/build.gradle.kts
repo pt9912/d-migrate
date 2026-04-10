@@ -4,6 +4,7 @@ plugins {
 }
 
 application {
+    applicationName = "d-migrate"
     mainClass.set("dev.dmigrate.cli.MainKt")
 }
 

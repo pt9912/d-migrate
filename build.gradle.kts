@@ -64,5 +64,5 @@ dependencies {
     kover(project(":adapters:driven:driver-sqlite"))
     kover(project(":adapters:driven:formats"))
     kover(project(":adapters:driven:streaming"))
-    kover(project(":d-migrate-cli"))
+    kover(project(":adapters:driving:cli"))
 }

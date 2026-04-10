@@ -8,7 +8,7 @@
 #     docker build -t d-migrate:dev .
 #
 #   Build image, skipping tests (faster, assembly only):
-#     docker build -t d-migrate:dev --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" .
+#     docker build -t d-migrate:dev --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" .
 #
 #   Run only a build-stage subset (for example Phase-A tests) without producing
 #   the final runtime image:
@@ -22,7 +22,7 @@
 #   Extract build artifacts (distribution tar) from the `build` stage:
 #     docker build --target build -t d-migrate:build .
 #     docker create --name d-migrate-tmp d-migrate:build
-#     docker cp d-migrate-tmp:/src/d-migrate-cli/build/distributions ./dist
+#     docker cp d-migrate-tmp:/src/adapters/driving/cli/build/distributions ./dist
 #     docker rm d-migrate-tmp
 # ---------------------------------------------------------------------------
 
@@ -30,13 +30,13 @@
 FROM eclipse-temurin:21-jdk-noble AS build
 
 # Gradle tasks executed during the image build. Override with --build-arg to
-# skip tests or run a different subset (e.g. "assemble :d-migrate-cli:installDist"
+# skip tests or run a different subset (e.g. "assemble :adapters:driving:cli:installDist"
 # or "check").
 # Important: a full multi-stage `docker build` reaches the runtime stage below,
-# so `GRADLE_TASKS` must produce `:d-migrate-cli:installDist`. If you want to
+# so `GRADLE_TASKS` must produce `:adapters:driving:cli:installDist`. If you want to
 # run only a subset that does not build the CLI distribution, use
 # `docker build --target build ...` instead.
-ARG GRADLE_TASKS="build :d-migrate-cli:installDist"
+ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
 ENV GRADLE_USER_HOME=/gradle-cache \
     GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.welcome=never"
@@ -57,7 +57,7 @@ COPY adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/
 COPY adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
 COPY adapters/driven/formats/build.gradle.kts     adapters/driven/formats/build.gradle.kts
 COPY adapters/driven/streaming/build.gradle.kts   adapters/driven/streaming/build.gradle.kts
-COPY d-migrate-cli/build.gradle.kts               d-migrate-cli/build.gradle.kts
+COPY adapters/driving/cli/build.gradle.kts        adapters/driving/cli/build.gradle.kts
 
 RUN chmod +x ./gradlew
 
@@ -72,7 +72,7 @@ RUN --mount=type=cache,target=/gradle-cache \
     ./gradlew --no-daemon ${GRADLE_TASKS}
 
 # ---- Stage 2: runtime ------------------------------------------------------
-# Uses the same JRE base as the Jib image produced by :d-migrate-cli:jibDockerBuild
+# Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
 FROM eclipse-temurin:21-jre-noble AS runtime
 
 LABEL org.opencontainers.image.title="d-migrate" \
@@ -83,7 +83,7 @@ LABEL org.opencontainers.image.title="d-migrate" \
 WORKDIR /opt/d-migrate
 
 # Install the distribution produced by the `application` plugin.
-COPY --from=build /src/d-migrate-cli/build/install/d-migrate-cli/ /opt/d-migrate/
+COPY --from=build /src/adapters/driving/cli/build/install/d-migrate/ /opt/d-migrate/
 
 ENV PATH="/opt/d-migrate/bin:${PATH}" \
     JAVA_OPTS="-XX:+UseZGC -XX:+ZGenerational"
@@ -91,5 +91,5 @@ ENV PATH="/opt/d-migrate/bin:${PATH}" \
 WORKDIR /work
 VOLUME ["/work"]
 
-ENTRYPOINT ["d-migrate-cli"]
+ENTRYPOINT ["d-migrate"]
 CMD ["--help"]
