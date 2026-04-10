@@ -52,6 +52,19 @@
 - **Ports**: Interfaces für Datenbank-Zugriff, Datei-I/O, KI-Provider und datenbankspezifisches Type-Mapping
 - **Adapters**: Konkrete Implementierungen (JDBC-Driver, Jackson-Serializer, HTTP-Clients, Dialekt-spezifische TypeMapper)
 
+**Zuordnung der Gradle-Module zu den Architekturschichten:**
+
+| Schicht | Modul | Rolle |
+|---------|-------|-------|
+| Domain Core | `d-migrate-core` | Neutrales Modell, Validierung, Diff, Typsystem — keine externen Deps |
+| Port (Output) | `d-migrate-driver-api` | SPI-Interfaces für Datenbank-Zugriff (`DatabaseDriver`, `TypeMapper`, …) |
+| Driven Adapter | `d-migrate-driver-postgresql` | PostgreSQL-Implementierung der Driver-SPI |
+| Driven Adapter | `d-migrate-driver-mysql` | MySQL-Implementierung der Driver-SPI |
+| Driven Adapter | `d-migrate-driver-sqlite` | SQLite-Implementierung der Driver-SPI |
+| Driven Adapter | `d-migrate-formats` | Serialisierung/Deserialisierung (JSON, YAML, CSV, SQL) |
+| Infrastruktur | `d-migrate-streaming` | Streaming-Pipeline, Chunk-Verarbeitung, Checkpoint — orchestriert Ports |
+| Driving Adapter | `d-migrate-cli` | CLI-Einstiegspunkt, Command-Parsing, Wiring aller Module |
+
 ```
                     Driving Adapters              Driven Adapters
                    (Input/Primary)              (Output/Secondary)
