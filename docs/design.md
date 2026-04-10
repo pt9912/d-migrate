@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Design-Spezifikation
 >
-> Milestone 0.1.0 (Schema-Modell, Validierung, YAML-Parsing, CLI `schema validate`) ist implementiert. Abschnitte zu späteren Milestones (DDL-Generierung, Streaming, KI-Integration) beschreiben den geplanten Soll-Zustand.
+> Milestones 0.1.0 (Schema-Modell, Validierung, YAML-Parsing), 0.2.0 (DDL-Generierung, Type-Mapping, Rollback) und 0.3.0 (Streaming-Datenexport, Chunk-Pipeline) sind implementiert. Abschnitte zu späteren Features (Datenimport, Reverse-Engineering, KI-Integration) beschreiben den geplanten Soll-Zustand.
 
 ---
 
@@ -136,8 +136,17 @@ Es gibt zwei Pfade für Reverse-Engineering (LF-004). Unterstützte Statements u
 
 ### 3.1 Streaming-Pipeline
 
-Für Datenexport/-import wird eine Streaming-Pipeline verwendet, die Daten chunkweise verarbeitet:
+Für Datenexport/-import wird eine Streaming-Pipeline verwendet, die Daten chunkweise verarbeitet.
 
+**Ist-Zustand (0.3.0)**: Pull-basierter Export via `StreamingExporter`:
+```
+Source DB ──DataReader──▶ DataChunk ──DataChunkWriter──▶ Output (JSON/YAML/CSV)
+                │                          │
+            ConnectionPool             ExportOptions
+            ChunkSize (10.000)         (Encoding, BOM, Delimiter)
+```
+
+**Soll-Zustand (spätere Milestones)**: Bidirektionale Pipeline mit Transformation:
 ```
 Source DB ──▶ ResultSet Stream ──▶ Transformer ──▶ Serializer ──▶ Output
                   │                     │               │
@@ -196,7 +205,12 @@ Partitionierte Tabellen werden partition-aware verarbeitet:
 
 ### 3.5 Inkrementelle Migration (LF-013, LN-006)
 
-Für inkrementelle Exports/Imports wird eine Delta-Erkennung unterstützt:
+Für inkrementelle Exports/Imports wird eine Delta-Erkennung unterstützt.
+
+**Ist-Zustand (0.3.0)**: `--since-column` + `--since` CLI-Flags für Timestamp-/ID-basierte
+inkrementelle Exports (parametrisierte WHERE-Klausel über `DataFilter`).
+
+**Soll-Zustand**: Vollständige Strategien mit persistiertem Synchronisationszeitpunkt:
 
 **Strategien zur Identifikation geänderter Datensätze**:
 
@@ -654,6 +668,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.5
-**Stand**: 2026-04-05
-**Status**: Milestone 0.1.0 + 0.2.0 implementiert, spätere Milestones im Entwurf
+**Version**: 1.6
+**Stand**: 2026-04-10
+**Status**: Milestone 0.1.0–0.3.0 implementiert, 0.4.0 in Arbeit (Datenimport), spätere Milestones im Entwurf
