@@ -54,48 +54,80 @@
 
 **Zuordnung der Gradle-Module zu den Architekturschichten:**
 
+```
+d-migrate/
+├── hexagon/                               ← Innerhalb des Hexagons
+│   ├── core/                              ← Domain (Modell, Validierung, Typsystem)
+│   ├── ports/                             ← Port-Interfaces (Output) + Datentypen
+│   └── application/                       ← Use Cases (Runner-Klassen)
+│
+├── adapters/                              ← Außerhalb des Hexagons
+│   ├── driving/
+│   │   └── cli/                           ← Clikt-Shells, Wiring, OutputFormatter
+│   └── driven/
+│       ├── driver-common/                 ← Abstract-Base-Klassen, HikariCP
+│       ├── driver-postgresql/
+│       ├── driver-mysql/
+│       ├── driver-sqlite/
+│       ├── formats/                       ← JSON/YAML/CSV Codec-Implementierungen
+│       └── streaming/                     ← Pipeline-Infrastruktur
+```
+
 | Schicht | Modul | Rolle |
 |---------|-------|-------|
-| Domain Core | `d-migrate-core` | Neutrales Modell, Validierung, Diff, Typsystem — keine externen Deps |
-| Port (Output) | `d-migrate-driver-api` | SPI-Interfaces für Datenbank-Zugriff (`DatabaseDriver`, `TypeMapper`, …) |
-| Driven Adapter | `d-migrate-driver-postgresql` | PostgreSQL-Implementierung der Driver-SPI |
-| Driven Adapter | `d-migrate-driver-mysql` | MySQL-Implementierung der Driver-SPI |
-| Driven Adapter | `d-migrate-driver-sqlite` | SQLite-Implementierung der Driver-SPI |
-| Driven Adapter | `d-migrate-formats` | Serialisierung/Deserialisierung (JSON, YAML, CSV, SQL) |
-| Infrastruktur | `d-migrate-streaming` | Streaming-Pipeline, Chunk-Verarbeitung, Checkpoint — orchestriert Ports |
-| Driving Adapter | `d-migrate-cli` | CLI-Einstiegspunkt, Command-Parsing, Wiring aller Module |
+| Domain Core | `hexagon:core` | Neutrales Modell, Validierung, Typsystem — keine externen Deps |
+| Ports | `hexagon:ports` | Port-Interfaces (`DatabaseDriver`, `DdlGenerator`, `DataReader`, `SchemaCodec`, `DataChunkWriter/Reader`, …) + zugehörige Datentypen |
+| Application | `hexagon:application` | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`) |
+| Driving Adapter | `adapters:driving:cli` | CLI-Einstiegspunkt (Clikt), Wiring aller Module |
+| Driven Adapter | `adapters:driven:driver-common` | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, …) |
+| Driven Adapter | `adapters:driven:driver-postgresql` | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade |
+| Driven Adapter | `adapters:driven:driver-mysql` | MySQL-Implementierung der `DatabaseDriver`-Fassade |
+| Driven Adapter | `adapters:driven:driver-sqlite` | SQLite-Implementierung der `DatabaseDriver`-Fassade |
+| Driven Adapter | `adapters:driven:formats` | Serialisierung/Deserialisierung (JSON, YAML, CSV) |
+| Driven Adapter | `adapters:driven:streaming` | Streaming-Pipeline (`StreamingExporter`) |
 
 ```
-                    Driving Adapters              Driven Adapters
-                   (Input/Primary)              (Output/Secondary)
-                         │                              │
-              ┌──────────┤                  ┌───────────┤
-              │          │                  │           │
-         ┌────▼───┐ ┌────▼───┐        ┌────▼───┐ ┌────▼────┐
-         │  CLI   │ │ Script │        │ JDBC   │ │ File    │
-         │Adapter │ │  API   │        │Adapter │ │ Adapter │
-         └────┬───┘ └────┬───┘        └────┬───┘ └────┬────┘
-              │          │                  │          │
-         ┌────▼──────────▼──┐        ┌─────▼──────────▼────┐
-         │   Input Ports    │        │   Output Ports       │
-         │  (Use Cases)     │        │  (Repositories,      │
-         │                  │        │   Gateways)           │
-         └────────┬─────────┘        └──────────┬───────────┘
-                  │                              │
-              ┌───▼──────────────────────────────▼───┐
-              │           Domain Core                 │
-              │                                       │
-              │  SchemaDefinition  NeutralTypes        │
-              │  Validator         MigrationPlan       │
-              │  DependencyGraph   DiffEngine          │
-              └───────────────────────────────────────┘
-```
+              adapters:driving:cli  (Clikt)
+                      │
+                      ▼
+         ┌────────────────────────────────┐
+         │            Hexagon             │
+         │                                │
+         │  ┌──────────────────────────┐  │
+         │  │  hexagon:application     │  │  ← Use Cases (Runner)
+         │  └────────────┬─────────────┘  │
+         │               │                │
+         │  ┌────────────▼─────────────┐  │
+         │  │  hexagon:ports           │  │  ← Port-Interfaces
+         │  └────────────┬─────────────┘  │
+         │               │                │
+         │  ┌────────────▼─────────────┐  │
+         │  │  hexagon:core            │  │  ← Domain-Modell
+         │  └──────────────────────────┘  │
+         └────────────────┬───────────────┘
+                          │
+            ┌─────────────┼──────────────┐
+            ▼             ▼              ▼
+      driver-common   formats      streaming
+      driver-pg/my/sl
+
+**Erzwungene Regeln** (durch Gradle-Abhängigkeiten garantiert):
+- `hexagon:core` hat keine Abhängigkeiten auf andere Module
+- `hexagon:ports` hängt nur von `hexagon:core` ab
+- `hexagon:application` hängt nur vom Hexagon-Inneren ab, nicht von Adaptern
+- Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`)
 
 ---
 
 ## 2. Modul-Struktur
 
 ### 2.1 Zielbild: Projekt-Layout (Gradle Multi-Module)
+
+> **Hinweis**: Die Modulstruktur wurde in 0.4.0 auf eine hexagonale
+> Verzeichnishierarchie umgestellt (`hexagon/`, `adapters/`). Die aktuelle
+> Struktur ist in §1.2 oben dokumentiert. Das folgende Layout zeigt den
+> detaillierten Package-Aufbau pro Modul und wird schrittweise an die
+> neue Hierarchie angepasst.
 
 Die folgende Struktur beschreibt den geplanten Soll-Zustand der Codebasis:
 
