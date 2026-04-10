@@ -100,7 +100,7 @@ adapters:driving:cli               → hexagon:application, hexagon:ports,
 - `hexagon:ports` hängt nur von `hexagon:core` ab — keine externen Libs (nur JDK `java.sql`)
 - `hexagon:application` hängt nur vom Hexagon-Inneren ab, **nicht** von Adaptern
 - Kein Adapter darf von `hexagon:application` abhängen außer `adapters:driving:cli`
-- Driven Adapters dürfen **nicht** voneinander abhängen
+- Driven Adapters dürfen in **main** nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common` als shared infrastructure; **test**-Dependencies auf andere Adapters sind erlaubt)
 
 ### 1.3 Architekturdiagramm
 
@@ -403,7 +403,13 @@ Die Port-Interfaces (`SchemaCodec`, `DataChunkReader/Writer`, Factories) sind na
 | `CharsetReencodingOutputStream.kt` | `dev.dmigrate.format.data.json` |
 | `CharsetTranscodingInputStream.kt` | `dev.dmigrate.format.data.json` |
 
-**Abhängigkeiten**: `hexagon:ports`, Jackson, DSL-JSON, SnakeYAML Engine, Univocity.
+**Abhängigkeiten (main)**: `hexagon:ports`, `hexagon:core`, Jackson, DSL-JSON, SnakeYAML Engine, Univocity.
+Kein `driver-common` in main — `DdlResult`/`NoteType` (für `TransformationReportWriter`)
+kommen über `hexagon:ports`.
+
+**Abhängigkeiten (test)**: `adapters:driven:driver-common` (benötigt weil DdlGoldenMasterTests
+konkrete DdlGeneratoren instanziieren, die von `AbstractDdlGenerator` erben — die
+Driver-Module exportieren driver-common nicht transitiv via `implementation`).
 
 ### 3.8 `adapters:driven:streaming` (vorher `d-migrate-streaming`)
 

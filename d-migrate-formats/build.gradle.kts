@@ -5,7 +5,6 @@ plugins {
 dependencies {
     api(project(":hexagon:ports"))
     implementation(project(":hexagon:core"))
-    implementation(project(":adapters:driven:driver-common"))
 
     // Jackson — bleibt für die Schema-Codecs aus 0.1.0/0.2.0 (typsicheres
     // Mapping zu/von SchemaDefinition, selten aufgerufen).
