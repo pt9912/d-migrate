@@ -14,6 +14,9 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
+import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
+import dev.dmigrate.driver.data.DataReaderRegistry
 import dev.dmigrate.driver.mysql.MysqlDriver
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.driver.sqlite.SqliteDriver
@@ -61,9 +64,15 @@ class DMigrate : CliktCommand(name = "d-migrate") {
  * `exitProcess` ausführen wollen.
  */
 internal fun registerDrivers() {
-    PostgresDriver.register()
-    MysqlDriver.register()
-    SqliteDriver.register()
+    val drivers = listOf(PostgresDriver(), MysqlDriver(), SqliteDriver())
+    for (driver in drivers) {
+        DatabaseDriverRegistry.register(driver)
+        // Legacy bridge: populate old per-concern registries until
+        // Runners are migrated to use DatabaseDriver facade (Phase F+G).
+        JdbcUrlBuilderRegistry.register(driver.urlBuilder())
+        DataReaderRegistry.registerDataReader(driver.dataReader())
+        DataReaderRegistry.registerTableLister(driver.tableLister())
+    }
 }
 
 /**

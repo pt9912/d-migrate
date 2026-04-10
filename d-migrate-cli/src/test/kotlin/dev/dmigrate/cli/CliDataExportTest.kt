@@ -106,7 +106,7 @@ class CliDataExportTest : FunSpec({
     beforeSpec {
         // Plan §6.18 / Phase E Bootstrap — die echte Main.kt macht das beim
         // Programmstart, im Test-JVM müssen wir es selbst aufrufen.
-        SqliteDriver.register()
+        registerDrivers()
     }
 
     afterSpec {

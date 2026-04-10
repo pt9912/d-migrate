@@ -75,7 +75,7 @@ class DataExportE2EMysqlTest : FunSpec({
     beforeSpec {
         container.start()
         // Treiber-Bootstrap für die Test-JVM
-        MysqlDriver.register()
+        registerDrivers()
 
         val rawJdbc = "jdbc:mysql://${container.host}:${container.firstMappedPort}/${container.databaseName}"
         DriverManager.getConnection(rawJdbc, container.username, container.password).use { conn ->

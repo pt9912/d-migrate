@@ -51,11 +51,11 @@ COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY hexagon/core/build.gradle.kts                hexagon/core/build.gradle.kts
 COPY hexagon/ports/build.gradle.kts               hexagon/ports/build.gradle.kts
 COPY adapters/driven/driver-common/build.gradle.kts adapters/driven/driver-common/build.gradle.kts
-COPY d-migrate-driver-postgresql/build.gradle.kts d-migrate-driver-postgresql/build.gradle.kts
-COPY d-migrate-driver-mysql/build.gradle.kts      d-migrate-driver-mysql/build.gradle.kts
-COPY d-migrate-driver-sqlite/build.gradle.kts     d-migrate-driver-sqlite/build.gradle.kts
-COPY d-migrate-formats/build.gradle.kts           d-migrate-formats/build.gradle.kts
-COPY d-migrate-streaming/build.gradle.kts         d-migrate-streaming/build.gradle.kts
+COPY adapters/driven/driver-postgresql/build.gradle.kts adapters/driven/driver-postgresql/build.gradle.kts
+COPY adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/build.gradle.kts
+COPY adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
+COPY adapters/driven/formats/build.gradle.kts     adapters/driven/formats/build.gradle.kts
+COPY adapters/driven/streaming/build.gradle.kts   adapters/driven/streaming/build.gradle.kts
 COPY d-migrate-cli/build.gradle.kts               d-migrate-cli/build.gradle.kts
 
 RUN chmod +x ./gradlew

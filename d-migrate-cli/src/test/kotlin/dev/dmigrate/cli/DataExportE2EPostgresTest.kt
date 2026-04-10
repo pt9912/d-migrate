@@ -83,7 +83,7 @@ class DataExportE2EPostgresTest : FunSpec({
         // Treiber-Bootstrap: registriert PostgresJdbcUrlBuilder, PostgresDataReader,
         // PostgresTableLister in den globalen Registries. Im echten CLI-Aufruf
         // macht das `Main.kt`; in der Test-JVM müssen wir es selbst starten.
-        PostgresDriver.register()
+        registerDrivers()
 
         // Schema und Daten einmal pro Spec anlegen — die einzelnen Tests
         // sind read-only und können sich die Tabellen teilen.
