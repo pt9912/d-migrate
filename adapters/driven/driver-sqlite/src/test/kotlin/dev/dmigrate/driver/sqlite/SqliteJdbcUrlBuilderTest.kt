@@ -2,7 +2,6 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -82,12 +81,8 @@ class SqliteJdbcUrlBuilderTest : FunSpec({
         shouldThrow<IllegalArgumentException> { builder.buildJdbcUrl(mismatched) }
     }
 
-    test("companion register adds an instance to the registry") {
-        try {
-            SqliteJdbcUrlBuilder.register()
-            JdbcUrlBuilderRegistry.find(DatabaseDialect.SQLITE)!!::class.simpleName shouldBe "SqliteJdbcUrlBuilder"
-        } finally {
-            JdbcUrlBuilderRegistry.clear()
-        }
+    test("SqliteDriver exposes SqliteJdbcUrlBuilder") {
+        val builder = SqliteDriver().urlBuilder()
+        builder::class.simpleName shouldBe "SqliteJdbcUrlBuilder"
     }
 })

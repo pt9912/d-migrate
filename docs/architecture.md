@@ -73,18 +73,18 @@ d-migrate/
 │       └── streaming/                     ← Pipeline-Infrastruktur
 ```
 
-| Schicht | Modul | Rolle |
-|---------|-------|-------|
-| Domain Core | `hexagon:core` | Neutrales Modell, Validierung, Typsystem — keine externen Deps |
-| Ports | `hexagon:ports` | Port-Interfaces (`DatabaseDriver`, `DdlGenerator`, `DataReader`, `SchemaCodec`, `DataChunkWriter/Reader`, …) + zugehörige Datentypen |
-| Application | `hexagon:application` | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`) |
-| Driving Adapter | `adapters:driving:cli` | CLI-Einstiegspunkt (Clikt), Wiring aller Module |
-| Driven Adapter | `adapters:driven:driver-common` | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, …) |
-| Driven Adapter | `adapters:driven:driver-postgresql` | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade |
-| Driven Adapter | `adapters:driven:driver-mysql` | MySQL-Implementierung der `DatabaseDriver`-Fassade |
-| Driven Adapter | `adapters:driven:driver-sqlite` | SQLite-Implementierung der `DatabaseDriver`-Fassade |
-| Driven Adapter | `adapters:driven:formats` | Serialisierung/Deserialisierung (JSON, YAML, CSV) |
-| Driven Adapter | `adapters:driven:streaming` | Streaming-Pipeline (`StreamingExporter`) |
+| Schicht         | Modul                               | Rolle                                                                                                                                |
+| --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Domain Core     | `hexagon:core`                      | Neutrales Modell, Validierung, Typsystem — keine externen Deps                                                                       |
+| Ports           | `hexagon:ports`                     | Port-Interfaces (`DatabaseDriver`, `DdlGenerator`, `DataReader`, `SchemaCodec`, `DataChunkWriter/Reader`, …) + zugehörige Datentypen |
+| Application     | `hexagon:application`               | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`)                                                                         |
+| Driving Adapter | `adapters:driving:cli`              | CLI-Einstiegspunkt (Clikt), Wiring aller Module                                                                                      |
+| Driven Adapter  | `adapters:driven:driver-common`     | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, …)                                               |
+| Driven Adapter  | `adapters:driven:driver-postgresql` | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade                                                                              |
+| Driven Adapter  | `adapters:driven:driver-mysql`      | MySQL-Implementierung der `DatabaseDriver`-Fassade                                                                                   |
+| Driven Adapter  | `adapters:driven:driver-sqlite`     | SQLite-Implementierung der `DatabaseDriver`-Fassade                                                                                  |
+| Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
+| Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`)                                                                                             |
 
 ```
               adapters:driving:cli  (Clikt)
@@ -110,7 +110,7 @@ d-migrate/
             ▼             ▼              ▼
       driver-common   formats      streaming
       driver-pg/my/sl
-
+```
 **Erzwungene Regeln** (durch Gradle-Abhängigkeiten garantiert):
 - `hexagon:core` hat keine Abhängigkeiten auf andere Module
 - `hexagon:ports` hängt nur von `hexagon:core` ab

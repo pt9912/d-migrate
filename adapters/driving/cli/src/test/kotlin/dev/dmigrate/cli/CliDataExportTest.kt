@@ -5,9 +5,7 @@ import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
-import dev.dmigrate.driver.data.DataReaderRegistry
-import dev.dmigrate.driver.sqlite.SqliteDriver
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -112,8 +110,7 @@ class CliDataExportTest : FunSpec({
     afterSpec {
         // Saubere Registry-Zustände zwischen Specs (andere CLI-Tests rufen
         // SchemaCommand auf, das die Registry nicht braucht — aber Hygiene).
-        DataReaderRegistry.clear()
-        JdbcUrlBuilderRegistry.clear()
+        DatabaseDriverRegistry.clear()
     }
 
     // ─── Round-Trip: --source <name> aus .d-migrate.yaml ─────────

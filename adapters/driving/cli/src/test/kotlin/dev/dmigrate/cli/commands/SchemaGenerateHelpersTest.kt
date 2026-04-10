@@ -1,20 +1,15 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
-import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
-import dev.dmigrate.driver.mysql.MysqlDdlGenerator
-import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
-import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
-import io.kotest.matchers.types.shouldBeInstanceOf
 import java.nio.file.Path
 
 /**
@@ -26,31 +21,6 @@ import java.nio.file.Path
  * Dialect→Generator-Auflösung ab.
  */
 class SchemaGenerateHelpersTest : FunSpec({
-
-    // ─── getGenerator ─────────────────────────────────────────────
-
-    context("getGenerator") {
-        test("POSTGRESQL → PostgresDdlGenerator") {
-            SchemaGenerateHelpers.getGenerator(DatabaseDialect.POSTGRESQL)
-                .shouldBeInstanceOf<PostgresDdlGenerator>()
-        }
-
-        test("MYSQL → MysqlDdlGenerator") {
-            SchemaGenerateHelpers.getGenerator(DatabaseDialect.MYSQL)
-                .shouldBeInstanceOf<MysqlDdlGenerator>()
-        }
-
-        test("SQLITE → SqliteDdlGenerator") {
-            SchemaGenerateHelpers.getGenerator(DatabaseDialect.SQLITE)
-                .shouldBeInstanceOf<SqliteDdlGenerator>()
-        }
-
-        test("returned generator has the matching dialect") {
-            SchemaGenerateHelpers.getGenerator(DatabaseDialect.POSTGRESQL).dialect shouldBe DatabaseDialect.POSTGRESQL
-            SchemaGenerateHelpers.getGenerator(DatabaseDialect.MYSQL).dialect shouldBe DatabaseDialect.MYSQL
-            SchemaGenerateHelpers.getGenerator(DatabaseDialect.SQLITE).dialect shouldBe DatabaseDialect.SQLITE
-        }
-    }
 
     // ─── sidecarPath ──────────────────────────────────────────────
 

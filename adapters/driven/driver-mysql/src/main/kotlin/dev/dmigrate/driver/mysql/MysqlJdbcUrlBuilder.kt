@@ -3,7 +3,6 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
 
 /**
  * MySQL [JdbcUrlBuilder].
@@ -35,14 +34,4 @@ class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
         return "jdbc:mysql://${config.host}:$port/${config.database}"
     }
 
-    companion object {
-        /**
-         * Registriert eine Instanz in der globalen [JdbcUrlBuilderRegistry].
-         * Konsumenten sollten in der Regel [MysqlDriver.register] verwenden,
-         * das zusätzlich auch DataReader und TableLister registriert.
-         */
-        fun register() {
-            JdbcUrlBuilderRegistry.register(MysqlJdbcUrlBuilder())
-        }
-    }
 }

@@ -2,7 +2,6 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -65,13 +64,9 @@ class PostgresJdbcUrlBuilderTest : FunSpec({
         shouldThrow<IllegalArgumentException> { builder.buildJdbcUrl(mismatched) }
     }
 
-    test("companion register adds an instance to the registry") {
-        try {
-            PostgresJdbcUrlBuilder.register()
-            JdbcUrlBuilderRegistry.find(DatabaseDialect.POSTGRESQL) shouldBe instanceOfPostgresBuilder()
-        } finally {
-            JdbcUrlBuilderRegistry.clear()
-        }
+    test("PostgresDriver exposes PostgresJdbcUrlBuilder") {
+        val builder = PostgresDriver().urlBuilder()
+        builder shouldBe instanceOfPostgresBuilder()
     }
 })
 

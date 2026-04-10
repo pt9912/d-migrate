@@ -12,6 +12,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.format.report.TransformationReportWriter
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 
@@ -93,7 +94,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         )
         val runner = SchemaGenerateRunner(
             schemaReader = { path -> YamlSchemaCodec().read(path) },
-            generatorLookup = SchemaGenerateHelpers::getGenerator,
+            generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
             reportWriter = { path, result, schema, dialect, src ->
                 TransformationReportWriter().write(path, result, schema, dialect, src)
             },

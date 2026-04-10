@@ -2,7 +2,6 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -66,12 +65,8 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         shouldThrow<IllegalArgumentException> { builder.buildJdbcUrl(mismatched) }
     }
 
-    test("companion register adds an instance to the registry") {
-        try {
-            MysqlJdbcUrlBuilder.register()
-            JdbcUrlBuilderRegistry.find(DatabaseDialect.MYSQL)!!::class.simpleName shouldBe "MysqlJdbcUrlBuilder"
-        } finally {
-            JdbcUrlBuilderRegistry.clear()
-        }
+    test("MysqlDriver exposes MysqlJdbcUrlBuilder") {
+        val builder = MysqlDriver().urlBuilder()
+        builder::class.simpleName shouldBe "MysqlJdbcUrlBuilder"
     }
 })

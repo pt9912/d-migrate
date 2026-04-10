@@ -5,8 +5,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
-import dev.dmigrate.driver.data.DataReaderRegistry
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
@@ -51,10 +50,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
         // Treiber-Bootstrap für die Test-JVM — registriert JdbcUrlBuilder,
         // DataReader und TableLister auf einmal in den globalen Registries.
         // In Phase E wird das in dev.dmigrate.cli.Main zentral gemacht.
-        val driver = PostgresDriver()
-        JdbcUrlBuilderRegistry.register(driver.urlBuilder())
-        DataReaderRegistry.registerDataReader(driver.dataReader())
-        DataReaderRegistry.registerTableLister(driver.tableLister())
+        DatabaseDriverRegistry.register(PostgresDriver())
 
         val cfg = ConnectionConfig(
             dialect = DatabaseDialect.POSTGRESQL,
@@ -87,8 +83,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
     afterSpec {
         pool?.close()
         if (container.isRunning) container.stop()
-        JdbcUrlBuilderRegistry.clear()
-        DataReaderRegistry.clear()
+        DatabaseDriverRegistry.clear()
     }
 
     /** Convenience: liefert den initialisierten Pool. Wirft NPE wenn beforeSpec nicht lief. */
@@ -180,7 +175,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
     // ─── PostgresJdbcUrlBuilder integration ──────────────────────
 
     test("PostgresJdbcUrlBuilder is registered and produces ApplicationName=d-migrate") {
-        val builder = JdbcUrlBuilderRegistry.find(DatabaseDialect.POSTGRESQL)
+        val builder = DatabaseDriverRegistry.get(DatabaseDialect.POSTGRESQL).urlBuilder()
         (builder is PostgresJdbcUrlBuilder) shouldBe true
 
         // Verify via PostgreSQL system view that the application_name made it through

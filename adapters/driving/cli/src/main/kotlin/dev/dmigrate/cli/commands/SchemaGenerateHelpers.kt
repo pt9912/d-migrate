@@ -1,33 +1,16 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
-import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
-import dev.dmigrate.driver.mysql.MysqlDdlGenerator
-import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
-import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
 import java.nio.file.Path
 
 /**
  * Reine Helfer-Funktionen für [SchemaGenerateCommand]. Ausgelagert, damit
- * die Pfad-Berechnung, JSON-Serialisierung und Dialect→Generator-Auflösung
- * unit-testbar sind, ohne einen Clikt-Command oder das Dateisystem zu
- * benötigen.
+ * die Pfad-Berechnung und JSON-Serialisierung unit-testbar sind, ohne einen
+ * Clikt-Command oder das Dateisystem zu benötigen.
  */
 internal object SchemaGenerateHelpers {
-
-    /**
-     * Wählt den konkreten [DdlGenerator] für den gegebenen [DatabaseDialect].
-     * Separate Helper-Funktion, damit das Routing auch ohne Clikt-Command
-     * testbar ist.
-     */
-    fun getGenerator(dialect: DatabaseDialect): DdlGenerator = when (dialect) {
-        DatabaseDialect.POSTGRESQL -> PostgresDdlGenerator()
-        DatabaseDialect.MYSQL -> MysqlDdlGenerator()
-        DatabaseDialect.SQLITE -> SqliteDdlGenerator()
-    }
 
     /**
      * Baut den Pfad für eine Sidecar-Datei, die neben dem eigentlichen

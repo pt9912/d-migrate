@@ -5,8 +5,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
-import dev.dmigrate.driver.data.DataReaderRegistry
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
@@ -45,10 +44,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
 
     beforeSpec {
         container.start()
-        val driver = MysqlDriver()
-        JdbcUrlBuilderRegistry.register(driver.urlBuilder())
-        DataReaderRegistry.registerDataReader(driver.dataReader())
-        DataReaderRegistry.registerTableLister(driver.tableLister())
+        DatabaseDriverRegistry.register(MysqlDriver())
 
         val cfg = ConnectionConfig(
             dialect = DatabaseDialect.MYSQL,
@@ -86,8 +82,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
     afterSpec {
         pool?.close()
         if (container.isRunning) container.stop()
-        JdbcUrlBuilderRegistry.clear()
-        DataReaderRegistry.clear()
+        DatabaseDriverRegistry.clear()
     }
 
     fun pool() = pool!!
@@ -175,7 +170,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
     // ─── MysqlJdbcUrlBuilder integration ─────────────────────────
 
     test("MysqlJdbcUrlBuilder is registered and useCursorFetch is active") {
-        val builder = JdbcUrlBuilderRegistry.find(DatabaseDialect.MYSQL)
+        val builder = DatabaseDriverRegistry.get(DatabaseDialect.MYSQL).urlBuilder()
         (builder is MysqlJdbcUrlBuilder) shouldBe true
 
         // Verify via SHOW SESSION VARIABLES that the connection uses the cursor

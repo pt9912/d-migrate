@@ -18,7 +18,7 @@ import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.data.DataReaderRegistry
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ValueSerializer
 import dev.dmigrate.streaming.StreamingExporter
@@ -161,8 +161,8 @@ class DataExportCommand : CliktCommand(name = "export") {
             },
             urlParser = ConnectionUrlParser::parse,
             poolFactory = HikariConnectionPoolFactory::create,
-            readerLookup = DataReaderRegistry::dataReader,
-            listerLookup = DataReaderRegistry::tableLister,
+            readerLookup = { DatabaseDriverRegistry.get(it).dataReader() },
+            listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
             writerFactoryBuilder = { DefaultDataChunkWriterFactory(warningSink = { warnings += it }) },
             collectWarnings = {
                 warnings.map {

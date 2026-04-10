@@ -4,16 +4,16 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import com.zaxxer.hikari.HikariPoolMXBean
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import java.sql.Connection
 
 /**
  * Erzeugt einen [ConnectionPool] (HikariCP-basiert) aus einer [ConnectionConfig].
  *
- * Die JDBC-URL wird über einen registrierten [JdbcUrlBuilder] gebaut (siehe
- * [JdbcUrlBuilderRegistry]). Wenn keiner registriert ist — typischerweise in
- * Unit-Tests im `driver-api`-Modul ohne konkreten Treiber — wird der
- * [FallbackJdbcUrlBuilder] verwendet, der die gleichen Defaults injiziert wie
- * die produktiven Builder, damit Tests nicht vom Bootstrap-Zustand abhängen.
+ * Die JDBC-URL wird über den [JdbcUrlBuilder] des registrierten [DatabaseDriver][dev.dmigrate.driver.DatabaseDriver]
+ * gebaut (via [DatabaseDriverRegistry]). Wenn kein Driver registriert ist —
+ * typischerweise in Unit-Tests ohne konkreten Treiber — wird der
+ * [FallbackJdbcUrlBuilder] verwendet.
  *
  * Dialekt-spezifische Pool-Anpassungen:
  * - **SQLite**: `maximumPoolSize = 1` (SQLite erlaubt keine parallelen
@@ -47,19 +47,23 @@ object HikariConnectionPoolFactory {
     }
 
     /**
-     * Baut die JDBC-URL über einen registrierten [JdbcUrlBuilder] oder den
-     * [FallbackJdbcUrlBuilder]. `internal` für Tests.
+     * Baut die JDBC-URL über den [JdbcUrlBuilder] des registrierten Drivers
+     * oder den [FallbackJdbcUrlBuilder]. `internal` für Tests.
      */
     internal fun buildJdbcUrl(config: ConnectionConfig): String {
-        val builder = JdbcUrlBuilderRegistry.find(config.dialect) ?: FallbackJdbcUrlBuilder(config.dialect)
+        val builder = try {
+            DatabaseDriverRegistry.get(config.dialect).urlBuilder()
+        } catch (_: IllegalArgumentException) {
+            FallbackJdbcUrlBuilder(config.dialect)
+        }
         return builder.buildJdbcUrl(config)
     }
 }
 
 /**
  * Fallback-Builder mit den gleichen Default-Parametern wie die produktiven
- * Treiber-Builder. Wird verwendet, wenn kein Builder über die
- * [JdbcUrlBuilderRegistry] registriert ist (z.B. in driver-api Unit-Tests).
+ * Treiber-Builder. Wird verwendet, wenn kein Driver in der
+ * [DatabaseDriverRegistry] registriert ist (z.B. in driver-common Unit-Tests).
  *
  * **Wichtig**: Diese Klasse darf nicht aus dem `driver-api`-Modul herauslecken
  * und sollte nicht von Tests in den Treiber-Modulen verwendet werden — dort

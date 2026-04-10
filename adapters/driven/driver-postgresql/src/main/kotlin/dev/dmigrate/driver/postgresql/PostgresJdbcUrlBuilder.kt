@@ -3,7 +3,6 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
 
 /**
  * PostgreSQL [JdbcUrlBuilder].
@@ -32,15 +31,4 @@ class PostgresJdbcUrlBuilder : JdbcUrlBuilder {
         return "jdbc:postgresql://${config.host}:$port/${config.database}"
     }
 
-    companion object {
-        /**
-         * Registriert eine Instanz in der globalen [JdbcUrlBuilderRegistry].
-         * Wird vom [PostgresDriver.register] Bootstrap aufgerufen — Konsumenten
-         * sollten in der Regel `PostgresDriver.register()` verwenden, das
-         * zusätzlich auch DataReader und TableLister registriert.
-         */
-        fun register() {
-            JdbcUrlBuilderRegistry.register(PostgresJdbcUrlBuilder())
-        }
-    }
 }

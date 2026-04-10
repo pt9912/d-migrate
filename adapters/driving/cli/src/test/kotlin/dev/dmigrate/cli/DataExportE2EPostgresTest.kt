@@ -4,9 +4,7 @@ import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
-import dev.dmigrate.driver.data.DataReaderRegistry
-import dev.dmigrate.driver.postgresql.PostgresDriver
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
@@ -142,8 +140,7 @@ class DataExportE2EPostgresTest : FunSpec({
 
     afterSpec {
         if (container.isRunning) container.stop()
-        JdbcUrlBuilderRegistry.clear()
-        DataReaderRegistry.clear()
+        DatabaseDriverRegistry.clear()
     }
 
     // ─── Round-Trip pro Format ───────────────────────────────────

@@ -3,7 +3,6 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
-import dev.dmigrate.driver.connection.JdbcUrlBuilderRegistry
 
 /**
  * SQLite [JdbcUrlBuilder].
@@ -29,14 +28,4 @@ class SqliteJdbcUrlBuilder : JdbcUrlBuilder {
         return "jdbc:sqlite:${config.database}"
     }
 
-    companion object {
-        /**
-         * Registriert eine Instanz in der globalen [JdbcUrlBuilderRegistry].
-         * Konsumenten sollten in der Regel [SqliteDriver.register] verwenden,
-         * das zusätzlich auch DataReader und TableLister registriert.
-         */
-        fun register() {
-            JdbcUrlBuilderRegistry.register(SqliteJdbcUrlBuilder())
-        }
-    }
 }

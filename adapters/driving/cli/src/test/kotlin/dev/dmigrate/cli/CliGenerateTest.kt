@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.SchemaCommand
+import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -14,6 +15,9 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 
 class CliGenerateTest : FunSpec({
+
+    beforeSpec { registerDrivers() }
+    afterSpec { DatabaseDriverRegistry.clear() }
 
     fun resourcePath(name: String): String =
         CliGenerateTest::class.java.getResource("/$name")!!.path
