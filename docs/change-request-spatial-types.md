@@ -431,10 +431,10 @@ Folgende Artefakte muessen bei Umsetzung angepasst werden:
 - `docs/neutral-model-spec.md`
 - `docs/ddl-generation-rules.md`
 - `docs/architecture.md`
-- `d-migrate-core`:
+- `hexagon:core`:
   - Erweiterung des Typsystems
   - neue Validierungsregeln
-- `d-migrate-formats`:
+- `adapters:driven:formats`:
   - YAML-Parsing und Serialisierung
 - Driver-Module:
   - TypeMapper und DDL-Generatoren

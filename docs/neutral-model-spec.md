@@ -960,7 +960,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 
 ### 14.1 Neue neutrale Typen hinzufügen
 
-1. `NeutralType` Sealed Class in `d-migrate-core` erweitern
+1. `NeutralType` Sealed Class in `hexagon:core` erweitern
 2. Typ-Mapping in jedem `TypeMapper` (PostgreSQL, MySQL, SQLite) ergänzen
 3. YAML-Parser um neuen Typ erweitern
 4. Validierungsregeln anpassen
