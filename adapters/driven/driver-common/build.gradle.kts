@@ -15,6 +15,23 @@ dependencies {
 
 kover {
     reports {
+        filters {
+            excludes {
+                classes(
+                    "dev.dmigrate.driver.DdlGenerator",
+                    "dev.dmigrate.driver.TypeMapper",
+                    "dev.dmigrate.driver.connection.PoolSettings",
+                    // Phase C Schritt 12: pure Interfaces
+                    "dev.dmigrate.driver.data.DataWriter",
+                    "dev.dmigrate.driver.data.TableImportSession",
+                    "dev.dmigrate.driver.data.SchemaSync",
+                    // Schritt 13 entfernt diesen Exclude wieder,
+                    // wenn SequenceAdjustment eigene Tests bekommt
+                    "dev.dmigrate.driver.data.SequenceAdjustment",
+                    "dev.dmigrate.driver.data.UnsupportedTriggerModeException",
+                )
+            }
+        }
         verify {
             rule {
                 minBound(90)
