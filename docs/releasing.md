@@ -50,7 +50,7 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 DOCKER_BUILDKIT=1 docker build -t d-migrate:pre-release .
 ```
 
-Das schließt `./gradlew build :d-migrate-cli:installDist` ein und führt alle
+Das schließt `./gradlew build :adapters:driving:cli:installDist` ein und führt alle
 Tests aller Module aus. Erwartetes Ergebnis: `BUILD SUCCESSFUL`.
 
 Für eine garantiert frische Test-Ausführung ohne Build-Cache:
@@ -64,10 +64,10 @@ docker run --rm -v "$(pwd):/src" -w /src --entrypoint /bin/sh \
 ### 3.2 Smoke-Test der CLI gegen die Fixture-Schemas
 
 ```bash
-docker run --rm -v "$(pwd)/d-migrate-formats/src/test/resources/fixtures/schemas:/work" \
+docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/schemas:/work" \
   d-migrate:pre-release schema generate --source /work/minimal.yaml --target postgresql
 
-docker run --rm -v "$(pwd)/d-migrate-formats/src/test/resources/fixtures/schemas:/work" \
+docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/schemas:/work" \
   d-migrate:pre-release schema generate --source /work/e-commerce.yaml --target sqlite --generate-rollback
 ```
 
@@ -85,8 +85,8 @@ Der CI-Workflow `.github/workflows/build.yml` ruft `koverVerify` aktuell nur fü
 hinzugekommen sind und ggf. den Workflow ergänzen.**
 
 ```bash
-./gradlew $(./gradlew :projects | grep "Project ':d-migrate-" | \
-  sed -n "s/.*':\(.*\)'/:\1:koverVerify/p" | tr '\n' ' ')
+./gradlew $(./gradlew :projects --quiet | grep "Project '" | \
+  sed -n "s/.*'\(.*\)'/\1:koverVerify/p" | tr '\n' ' ')
 ```
 
 ### 3.5 Dokumentations-Konsistenz
@@ -116,7 +116,7 @@ Alle folgenden Dateien anpassen:
 | `CHANGELOG.md` | `[Unreleased]` und neue Sektion `[X.Y.Z] - YYYY-MM-DD` einfügen, alle Einträge unter den neuen Header verschieben |
 | `README.md` | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen |
 | `docs/roadmap.md` | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen |
-| `d-migrate-driver-api/.../AbstractDdlGenerator.kt` | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen |
+| `adapters/driven/driver-common/.../AbstractDdlGenerator.kt` | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen |
 
 ### 4.2 Release-Commit auf `develop`
 
@@ -153,7 +153,7 @@ git push origin vX.Y.Z
 
 1. Build + Tests gegen den Tag-Commit
 2. Coverage-Verify
-3. Jib baut OCI-Image (`./gradlew :d-migrate-cli:jibDockerBuild`)
+3. Jib baut OCI-Image (`./gradlew :adapters:driving:cli:jibDockerBuild`)
 4. Login zu `ghcr.io` mit `GITHUB_TOKEN`
 5. Push zu `ghcr.io/pt9912/d-migrate:X.Y.Z` und `ghcr.io/pt9912/d-migrate:latest`
 
