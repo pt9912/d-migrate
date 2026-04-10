@@ -50,6 +50,7 @@ COPY gradle ./gradle
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY hexagon/core/build.gradle.kts                hexagon/core/build.gradle.kts
 COPY hexagon/ports/build.gradle.kts               hexagon/ports/build.gradle.kts
+COPY hexagon/application/build.gradle.kts         hexagon/application/build.gradle.kts
 COPY adapters/driven/driver-common/build.gradle.kts adapters/driven/driver-common/build.gradle.kts
 COPY adapters/driven/driver-postgresql/build.gradle.kts adapters/driven/driver-postgresql/build.gradle.kts
 COPY adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/build.gradle.kts

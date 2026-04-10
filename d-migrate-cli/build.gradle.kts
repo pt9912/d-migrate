@@ -9,6 +9,7 @@ application {
 
 dependencies {
     implementation(project(":hexagon:core"))
+    implementation(project(":hexagon:application"))
     implementation(project(":adapters:driven:driver-common"))
     implementation(project(":adapters:driven:driver-postgresql"))
     implementation(project(":adapters:driven:driver-mysql"))

@@ -30,7 +30,7 @@ import java.time.LocalDateTime
 
 /**
  * Unit-Tests für [DataExportRunner] mit Fakes für alle externen
- * Collaborators (NamedConnectionResolver, URL-Parser, Pool-Factory,
+ * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
  * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
  *
  * Damit wird **jeder Exit-Code-Pfad** aus Plan §6.10 (2/4/5/7/0) direkt
@@ -138,17 +138,19 @@ class DataExportRunnerTest : FunSpec({
     )
 
     /**
-     * Ein [NamedConnectionResolver], dessen Default-Lookup (env +
-     * `.d-migrate.yaml` im CWD) neutralisiert ist, damit Tests nicht vom
-     * Host-Environment abhängen. Wird für URL-basierte Sources verwendet
-     * (die die Resolver sowieso umgehen).
+     * Ein isolierter `sourceResolver`, der URLs mit "://" unverändert
+     * durchreicht und benannte Quellen über einen neutralisierten
+     * [NamedConnectionResolver] auflöst, damit Tests nicht vom
+     * Host-Environment abhängen.
      */
-    fun isolatedResolver(cliConfigPath: Path?): NamedConnectionResolver =
-        NamedConnectionResolver(
-            configPathFromCli = cliConfigPath,
+    fun isolatedSourceResolver(source: String, configPath: Path?): String {
+        val resolver = NamedConnectionResolver(
+            configPathFromCli = configPath,
             envLookup = { null },
             defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
         )
+        return resolver.resolve(source)
+    }
 
     /** Capture-Helper, der stderr-Zeilen in eine Liste puffert. */
     class StderrCapture {
@@ -164,20 +166,22 @@ class DataExportRunnerTest : FunSpec({
      */
     fun newRunner(
         stderr: StderrCapture,
-        resolverFactory: (Path?) -> NamedConnectionResolver = ::isolatedResolver,
+        sourceResolver: (String, Path?) -> String = ::isolatedSourceResolver,
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         readerLookup: (DatabaseDialect) -> DataReader = { FakeDataReader() },
         listerLookup: (DatabaseDialect) -> TableLister = { FakeTableLister() },
-        writerFactoryBuilder: ((ValueSerializer.Warning) -> Unit) -> DataChunkWriterFactory = { FakeWriterFactory() },
+        writerFactoryBuilder: () -> DataChunkWriterFactory = { FakeWriterFactory() },
+        collectWarnings: () -> List<String> = { emptyList() },
         exportExecutor: ExportExecutor = successExecutor,
     ): DataExportRunner = DataExportRunner(
-        resolverFactory = resolverFactory,
+        sourceResolver = sourceResolver,
         urlParser = urlParser,
         poolFactory = poolFactory,
         readerLookup = readerLookup,
         listerLookup = listerLookup,
         writerFactoryBuilder = writerFactoryBuilder,
+        collectWarnings = collectWarnings,
         exportExecutor = exportExecutor,
         stderr = stderr.sink,
     )
@@ -321,11 +325,12 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            resolverFactory = { cliPath ->
-                NamedConnectionResolver(
-                    configPathFromCli = cliPath,
+            sourceResolver = { source, configPath ->
+                val resolver = NamedConnectionResolver(
+                    configPathFromCli = configPath,
                     envLookup = { null },
                 )
+                resolver.resolve(source)
             },
         )
         // source is a connection name (no "://") and the config file doesn't exist
@@ -561,17 +566,10 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            writerFactoryBuilder = { sink ->
-                sink(
-                    ValueSerializer.Warning(
-                        code = "W202",
-                        table = "users",
-                        column = "balance",
-                        javaClass = "java.lang.Double",
-                        message = "IEEE-754 Infinity not representable in JSON",
-                    )
+            collectWarnings = {
+                listOf(
+                    "  \u26a0 W202 users.balance (java.lang.Double): IEEE-754 Infinity not representable in JSON"
                 )
-                FakeWriterFactory()
             },
         )
         runner.execute(request()) shouldBe 0
@@ -583,9 +581,8 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            writerFactoryBuilder = { sink ->
-                sink(ValueSerializer.Warning("W202", "users", "balance", "Double", "Infinity"))
-                FakeWriterFactory()
+            collectWarnings = {
+                listOf("  \u26a0 W202 users.balance (Double): Infinity")
             },
         )
         runner.execute(request(quiet = true)) shouldBe 0
@@ -597,9 +594,8 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            writerFactoryBuilder = { sink ->
-                sink(ValueSerializer.Warning("W202", "users", "balance", "Double", "Infinity"))
-                FakeWriterFactory()
+            collectWarnings = {
+                listOf("  \u26a0 W202 users.balance (Double): Infinity")
             },
         )
         runner.execute(request(noProgress = true)) shouldBe 0
@@ -631,10 +627,13 @@ class DataExportRunnerTest : FunSpec({
         // and is usable via the injected stderr + fake executor.
         val stderr = StderrCapture()
         val runner = DataExportRunner(
+            sourceResolver = ::isolatedSourceResolver,
+            urlParser = ConnectionUrlParser::parse,
             poolFactory = { FakeConnectionPool() },
             readerLookup = { FakeDataReader() },
             listerLookup = { FakeTableLister() },
             writerFactoryBuilder = { FakeWriterFactory() },
+            collectWarnings = { emptyList() },
             exportExecutor = successExecutor,
             stderr = stderr.sink,
         )

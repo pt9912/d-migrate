@@ -1,7 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.CliContext
-import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
@@ -9,69 +7,57 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
-import dev.dmigrate.format.report.TransformationReportWriter
-import dev.dmigrate.format.yaml.YamlSchemaCodec
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
 /**
- * Immutable DTO mit allen CLI-Eingaben für `d-migrate schema generate`.
- *
- * [SchemaGenerateCommand] baut aus seinen Clikt-Feldern einen Request und
- * delegiert an [SchemaGenerateRunner] — der Command bleibt ein reiner
- * Argument-Mapper, während die gesamte Verzweigungs-, Formatierungs- und
- * I/O-Koordinierung im Runner sitzt.
+ * Immutable DTO with all inputs for `d-migrate schema generate`.
  */
-internal data class SchemaGenerateRequest(
+data class SchemaGenerateRequest(
     val source: Path,
     val target: String,
     val output: Path?,
     val report: Path?,
     val generateRollback: Boolean,
-    val ctx: CliContext,
+    val outputFormat: String,
+    val verbose: Boolean,
+    val quiet: Boolean,
 )
 
 /**
- * Kern-Logik für `d-migrate schema generate`. Alle externen Abhängigkeiten
- * (Schema-Codec, Validator, DDL-Generator-Lookup, Report-Writer, File-Writer,
- * Output-Formatter, stdout/stderr) sind konstruktor-injiziert und damit
- * testbar ohne Clikt-Kontext, ohne Dateisystem und ohne echten DDL-Generator.
+ * Core logic for `d-migrate schema generate`. All external collaborators
+ * are constructor-injected so every branch is unit-testable without a
+ * CLI framework, filesystem, or real DDL generator.
  *
- * Exit-Code-Mapping (Plan §6.10):
- * - 0 Erfolg
- * - 2 ungültiger `--target`-Wert
- * - 3 Validation schlägt fehl
- * - 7 Schema-Datei kann nicht geparst werden
+ * Exit codes (Plan §6.10):
+ * - 0 success
+ * - 2 invalid --target
+ * - 3 validation failure
+ * - 7 schema file parse error
  */
-internal class SchemaGenerateRunner(
-    private val schemaReader: (Path) -> SchemaDefinition =
-        { path -> YamlSchemaCodec().read(path) },
+class SchemaGenerateRunner(
+    private val schemaReader: (Path) -> SchemaDefinition,
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
-    private val generatorLookup: (DatabaseDialect) -> DdlGenerator =
-        SchemaGenerateHelpers::getGenerator,
-    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path) -> Unit =
-        { path, result, schema, dialect, source ->
-            TransformationReportWriter().write(path, result, schema, dialect, source)
-        },
+    private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
+    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
         { path, content -> path.writeText(content) },
-    private val formatterFactory: (CliContext) -> OutputFormatter = ::OutputFormatter,
+    private val formatJsonOutput: (DdlResult, SchemaDefinition, String) -> String,
+    private val sidecarPath: (Path, String) -> Path,
+    private val rollbackPath: (Path) -> Path,
+    private val printError: (message: String, source: String) -> Unit,
+    private val printValidationResult: (ValidationResult, SchemaDefinition, String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
-    /**
-     * Führt die DDL-Generierung durch und gibt den CLI-Exit-Code zurück.
-     */
     fun execute(request: SchemaGenerateRequest): Int {
-        val formatter = formatterFactory(request.ctx)
-
         // ─── 1. Parse dialect ───────────────────────────────────
         val dialect = try {
             DatabaseDialect.fromString(request.target)
         } catch (e: IllegalArgumentException) {
-            formatter.printError(e.message ?: "Unknown dialect", request.source.toString())
+            printError(e.message ?: "Unknown dialect", request.source.toString())
             return 2
         }
 
@@ -79,14 +65,14 @@ internal class SchemaGenerateRunner(
         val schema = try {
             schemaReader(request.source)
         } catch (e: Exception) {
-            formatter.printError("Failed to parse schema file: ${e.message}", request.source.toString())
+            printError("Failed to parse schema file: ${e.message}", request.source.toString())
             return 7
         }
 
         // ─── 3. Validate ───────────────────────────────────────
         val validationResult = validator(schema)
         if (!validationResult.isValid) {
-            formatter.printValidationResult(validationResult, schema, request.source.toString())
+            printValidationResult(validationResult, schema, request.source.toString())
             return 3
         }
 
@@ -95,13 +81,13 @@ internal class SchemaGenerateRunner(
         val result = generator.generate(schema)
 
         // ─── 5. Print notes & skipped objects on stderr ───────
-        printNotes(result, request.ctx.verbose)
+        printNotes(result, request.verbose)
 
         // ─── 6. Route output (json | file | stdout) ──────────
         val ddl = result.render()
         when {
-            request.ctx.outputFormat == "json" -> {
-                stdout(SchemaGenerateHelpers.formatJsonOutput(result, schema, dialect.name.lowercase()))
+            request.outputFormat == "json" -> {
+                stdout(formatJsonOutput(result, schema, dialect.name.lowercase()))
             }
             request.output != null -> {
                 writeFileOutput(request, generator, schema, result, dialect, ddl)
@@ -142,13 +128,13 @@ internal class SchemaGenerateRunner(
     ) {
         val outputPath = request.output!!
         fileWriter(outputPath, ddl + "\n")
-        if (!request.ctx.quiet) stderr("DDL written to $outputPath")
+        if (!request.quiet) stderr("DDL written to $outputPath")
 
         if (request.generateRollback) {
             val rollbackResult = generator.generateRollback(schema)
-            val rbPath = SchemaGenerateHelpers.rollbackPath(outputPath)
+            val rbPath = rollbackPath(outputPath)
             fileWriter(rbPath, rollbackResult.render() + "\n")
-            if (!request.ctx.quiet) stderr("Rollback DDL written to $rbPath")
+            if (!request.quiet) stderr("Rollback DDL written to $rbPath")
         }
 
         writeReport(request, result, schema, dialect.name.lowercase(), outputPath)
@@ -170,7 +156,6 @@ internal class SchemaGenerateRunner(
             stdout(generator.generateRollback(schema).render())
         }
 
-        // --report without --output: still write the sidecar report
         if (request.report != null) {
             writeReport(request, result, schema, dialect.name.lowercase(), request.report)
         }
@@ -183,8 +168,8 @@ internal class SchemaGenerateRunner(
         dialect: String,
         outputPath: Path,
     ) {
-        val reportPath = request.report ?: SchemaGenerateHelpers.sidecarPath(outputPath, ".report.yaml")
+        val reportPath = request.report ?: sidecarPath(outputPath, ".report.yaml")
         reportWriter(reportPath, result, schema, dialect, request.source)
-        if (!request.ctx.quiet) stderr("Report written to $reportPath")
+        if (!request.quiet) stderr("Report written to $reportPath")
     }
 }

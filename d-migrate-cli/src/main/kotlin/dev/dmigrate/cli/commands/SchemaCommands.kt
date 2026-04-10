@@ -12,6 +12,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.format.report.TransformationReportWriter
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 
 class SchemaCommand : CliktCommand(name = "schema") {
@@ -79,15 +80,32 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        val formatter = OutputFormatter(ctx)
         val request = SchemaGenerateRequest(
             source = source,
             target = target,
             output = output,
             report = report,
             generateRollback = generateRollback,
-            ctx = ctx,
+            outputFormat = ctx.outputFormat,
+            verbose = ctx.verbose,
+            quiet = ctx.quiet,
         )
-        val exitCode = SchemaGenerateRunner().execute(request)
+        val runner = SchemaGenerateRunner(
+            schemaReader = { path -> YamlSchemaCodec().read(path) },
+            generatorLookup = SchemaGenerateHelpers::getGenerator,
+            reportWriter = { path, result, schema, dialect, src ->
+                TransformationReportWriter().write(path, result, schema, dialect, src)
+            },
+            formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
+            sidecarPath = SchemaGenerateHelpers::sidecarPath,
+            rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            printError = { msg, src -> formatter.printError(msg, src) },
+            printValidationResult = { result, schema, src ->
+                formatter.printValidationResult(result, schema, src)
+            },
+        )
+        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }

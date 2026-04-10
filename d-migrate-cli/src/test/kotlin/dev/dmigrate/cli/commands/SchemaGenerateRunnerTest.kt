@@ -1,7 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.CliContext
-import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationError
 import dev.dmigrate.core.validation.ValidationResult
@@ -18,8 +16,6 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.nio.file.Path
 
 /**
@@ -30,10 +26,10 @@ import java.nio.file.Path
  * quiet) direkt testbar, ohne echte YAML-Dateien, echte Generators oder
  * echtes Dateisystem.
  *
- * [OutputFormatter] selbst schreibt intern nach `System.out`/`System.err`
- * und kann nicht als Lambda abgefangen werden. Für die Tests, die
- * `printError`/`printValidationResult`-Ausgaben prüfen, capturen wir
- * kurzzeitig die Streams.
+ * `printError` and `printValidationResult` are injected as lambdas into
+ * the Runner; for tests that need to inspect their output we capture
+ * `System.out`/`System.err` streams because the production lambdas
+ * (from [OutputFormatter]) write there.
  */
 class SchemaGenerateRunnerTest : FunSpec({
 
@@ -76,14 +72,18 @@ class SchemaGenerateRunnerTest : FunSpec({
         output: Path? = null,
         report: Path? = null,
         generateRollback: Boolean = false,
-        ctx: CliContext = CliContext(),
+        outputFormat: String = "plain",
+        verbose: Boolean = false,
+        quiet: Boolean = false,
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
         output = output,
         report = report,
         generateRollback = generateRollback,
-        ctx = ctx,
+        outputFormat = outputFormat,
+        verbose = verbose,
+        quiet = quiet,
     )
 
     class StdoutCapture {
@@ -130,35 +130,17 @@ class SchemaGenerateRunnerTest : FunSpec({
                 reportWrites += ReportRecord(path, result, schema, dialect, source)
             },
             fileWriter = { path, content -> fileWrites += WriteRecord(path, content) },
-            formatterFactory = ::OutputFormatter,
+            formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
+            sidecarPath = SchemaGenerateHelpers::sidecarPath,
+            rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            printError = { msg, _ -> stderr.sink("Error: $msg") },
+            printValidationResult = { _, _, _ -> },
             stdout = stdout.sink,
             stderr = stderr.sink,
         )
     }
 
     val harness = { RunnerHarness() }
-
-    /**
-     * Führt [block] aus und liefert das Paar (stdoutString, stderrString)
-     * der auf `System.out`/`System.err` geschriebenen Bytes zurück. Wird
-     * verwendet, um die [OutputFormatter]-Ausgaben (die an die echten
-     * Streams gehen) in den 2/3/7-Exit-Tests zu prüfen.
-     */
-    fun captureStreams(block: () -> Unit): Pair<String, String> {
-        val originalOut = System.out
-        val originalErr = System.err
-        val outBytes = ByteArrayOutputStream()
-        val errBytes = ByteArrayOutputStream()
-        System.setOut(PrintStream(outBytes, true, Charsets.UTF_8))
-        System.setErr(PrintStream(errBytes, true, Charsets.UTF_8))
-        try {
-            block()
-        } finally {
-            System.setOut(originalOut)
-            System.setErr(originalErr)
-        }
-        return outBytes.toString(Charsets.UTF_8) to errBytes.toString(Charsets.UTF_8)
-    }
 
     // ─── Happy paths — stdout routing ────────────────────────────
 
@@ -240,7 +222,7 @@ class SchemaGenerateRunnerTest : FunSpec({
     test("Exit 0: --quiet suppresses 'DDL written to ...' and 'Report written to ...' messages") {
         val h = harness()
         h.runner().execute(
-            request(output = Path.of("/tmp/out.sql"), ctx = CliContext(quiet = true))
+            request(output = Path.of("/tmp/out.sql"), quiet = true)
         ) shouldBe 0
         h.stderr.lines.none { it.contains("DDL written to") } shouldBe true
         h.stderr.lines.none { it.contains("Report written to") } shouldBe true
@@ -262,7 +244,7 @@ class SchemaGenerateRunnerTest : FunSpec({
             request(
                 output = Path.of("/tmp/out.sql"),
                 generateRollback = true,
-                ctx = CliContext(quiet = true),
+                quiet = true,
             )
         ) shouldBe 0
         h.fileWrites.size shouldBe 2
@@ -274,7 +256,7 @@ class SchemaGenerateRunnerTest : FunSpec({
     test("Exit 0: --output-format=json routes the result through formatJsonOutput") {
         val h = harness()
         h.runner().execute(
-            request(ctx = CliContext(outputFormat = "json"))
+            request(outputFormat = "json")
         ) shouldBe 0
         h.stdout.joined() shouldContain "\"command\": \"schema.generate\""
         h.stdout.joined() shouldContain "\"target\": \"postgresql\""
@@ -375,7 +357,7 @@ class SchemaGenerateRunnerTest : FunSpec({
                 )
             )
         )
-        h.runner().execute(request(ctx = CliContext(verbose = true))) shouldBe 0
+        h.runner().execute(request(verbose = true)) shouldBe 0
         h.stderr.joined() shouldContain "Info [I001]"
         h.stderr.joined() shouldContain "fyi"
     }
@@ -399,10 +381,8 @@ class SchemaGenerateRunnerTest : FunSpec({
 
     test("Exit 2: unknown --target dialect") {
         val h = harness()
-        val (_, stderrStr) = captureStreams {
-            h.runner().execute(request(target = "oracle")) shouldBe 2
-        }
-        stderrStr shouldContain "oracle"
+        h.runner().execute(request(target = "oracle")) shouldBe 2
+        h.stderr.joined() shouldContain "oracle"
         // Nothing else happened: no schema read, no generator called
         h.generator.generateCalls shouldBe 0
     }
@@ -416,9 +396,7 @@ class SchemaGenerateRunnerTest : FunSpec({
                 errors = listOf(ValidationError("E001", "missing PK", "tables.users")),
             )
         }
-        val (_, _) = captureStreams {
-            h.runner().execute(request()) shouldBe 3
-        }
+        h.runner().execute(request()) shouldBe 3
         // Generator is NOT called if validation fails
         h.generator.generateCalls shouldBe 0
         // No file writes, no report writes
@@ -442,21 +420,17 @@ class SchemaGenerateRunnerTest : FunSpec({
     test("Exit 7: schemaReader throws → exit 7 and no further work") {
         val h = harness()
         h.schemaReader = { throw RuntimeException("invalid yaml: line 42") }
-        val (_, stderrStr) = captureStreams {
-            h.runner().execute(request()) shouldBe 7
-        }
-        stderrStr shouldContain "Failed to parse schema file"
-        stderrStr shouldContain "invalid yaml"
+        h.runner().execute(request()) shouldBe 7
+        h.stderr.joined() shouldContain "Failed to parse schema file"
+        h.stderr.joined() shouldContain "invalid yaml"
         h.generator.generateCalls shouldBe 0
     }
 
     test("Exit 7: schemaReader throws with null message still produces a useful error") {
         val h = harness()
         h.schemaReader = { throw RuntimeException() }
-        val (_, stderrStr) = captureStreams {
-            h.runner().execute(request()) shouldBe 7
-        }
-        stderrStr shouldContain "Failed to parse schema file"
+        h.runner().execute(request()) shouldBe 7
+        h.stderr.joined() shouldContain "Failed to parse schema file"
     }
 
     // ─── Sidecar path derivation ─────────────────────────────────
@@ -491,6 +465,11 @@ class SchemaGenerateRunnerTest : FunSpec({
             },
             reportWriter = { _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
+            formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
+            sidecarPath = SchemaGenerateHelpers::sidecarPath,
+            rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            printError = { _, _ -> },
+            printValidationResult = { _, _, _ -> },
             stdout = { },
             stderr = { },
         )
@@ -509,6 +488,11 @@ class SchemaGenerateRunnerTest : FunSpec({
             },
             reportWriter = { _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
+            formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
+            sidecarPath = SchemaGenerateHelpers::sidecarPath,
+            rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            printError = { _, _ -> },
+            printValidationResult = { _, _, _ -> },
             stdout = { },
             stderr = { },
         )

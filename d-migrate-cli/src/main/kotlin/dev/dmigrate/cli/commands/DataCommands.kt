@@ -14,6 +14,14 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.driver.connection.ConnectionUrlParser
+import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.data.DataReaderRegistry
+import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
+import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.streaming.StreamingExporter
 
 /**
  * `data` Top-Level-Kommando — bündelt alle Subcommands rund um Datenexport
@@ -142,7 +150,30 @@ class DataExportCommand : CliktCommand(name = "export") {
             quiet = ctx.quiet,
             noProgress = ctx.noProgress,
         )
-        val exitCode = DataExportRunner().execute(request)
+        val warnings = mutableListOf<ValueSerializer.Warning>()
+        val runner = DataExportRunner(
+            sourceResolver = { source, configPath ->
+                try {
+                    NamedConnectionResolver(configPathFromCli = configPath).resolve(source)
+                } catch (e: ConfigResolveException) {
+                    throw IllegalArgumentException(e.message, e)
+                }
+            },
+            urlParser = ConnectionUrlParser::parse,
+            poolFactory = HikariConnectionPoolFactory::create,
+            readerLookup = DataReaderRegistry::dataReader,
+            listerLookup = DataReaderRegistry::tableLister,
+            writerFactoryBuilder = { DefaultDataChunkWriterFactory(warningSink = { warnings += it }) },
+            collectWarnings = {
+                warnings.map {
+                    "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
+                }
+            },
+            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt ->
+                StreamingExporter(reader, lister, factory).export(pool, tbls, out, fmt, opts, cfg, flt)
+            },
+        )
+        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }

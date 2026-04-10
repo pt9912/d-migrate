@@ -3,6 +3,7 @@ rootProject.name = "d-migrate"
 // Hexagon (innen)
 include("hexagon:core")
 include("hexagon:ports")
+include("hexagon:application")
 
 // Adapters (außen)
 include("adapters:driven:driver-common")

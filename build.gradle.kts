@@ -56,6 +56,7 @@ subprojects {
 
 dependencies {
     kover(project(":hexagon:ports"))
+    kover(project(":hexagon:application"))
     kover(project(":hexagon:core"))
     kover(project(":adapters:driven:driver-common"))
     kover(project(":adapters:driven:driver-postgresql"))

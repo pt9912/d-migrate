@@ -1,38 +1,26 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
-import dev.dmigrate.driver.connection.ConnectionUrlParser
-import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataReader
-import dev.dmigrate.driver.data.DataReaderRegistry
 import dev.dmigrate.driver.data.TableLister
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
-import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ExportOptions
-import dev.dmigrate.format.data.ValueSerializer
 import dev.dmigrate.streaming.ExportOutput
 import dev.dmigrate.streaming.ExportResult
 import dev.dmigrate.streaming.PipelineConfig
-import dev.dmigrate.streaming.StreamingExporter
 import java.nio.charset.Charset
 import java.nio.file.Path
 
 /**
- * Dünne Naht über [StreamingExporter.export], damit der
- * `catch (Throwable) → Exit 5`-Pfad im [DataExportRunner] mit einem Fake
- * getestet werden kann, ohne dass [StreamingExporter] `open` werden muss.
- *
- * Production-Default baut einen echten [StreamingExporter] und ruft dessen
- * `export` auf; Tests übergeben eine eigene Lambda, die z.B. throws wirft
- * oder ein vorgefertigtes [ExportResult] zurückliefert.
+ * Thin seam over the streaming export, allowing the Runner to be tested
+ * without a real [StreamingExporter][dev.dmigrate.streaming.StreamingExporter].
+ * The production implementation is wired in the CLI module.
  */
-internal fun interface ExportExecutor {
+fun interface ExportExecutor {
     fun execute(
         pool: ConnectionPool,
         reader: DataReader,
@@ -48,30 +36,9 @@ internal fun interface ExportExecutor {
 }
 
 /**
- * Production-Implementierung von [ExportExecutor] — delegiert an einen
- * echten [StreamingExporter].
+ * Immutable DTO with all CLI inputs for `d-migrate data export`.
  */
-internal val defaultExportExecutor: ExportExecutor =
-    ExportExecutor { pool, reader, lister, factory, tables, output, format, options, config, filter ->
-        StreamingExporter(reader, lister, factory).export(
-            pool = pool,
-            tables = tables,
-            output = output,
-            format = format,
-            options = options,
-            config = config,
-            filter = filter,
-        )
-    }
-
-/**
- * Immutable DTO mit allen CLI-Eingaben für `d-migrate data export`.
- *
- * [DataExportCommand] baut aus seinen Clikt-Feldern einen Request und
- * delegiert an [DataExportRunner] — der Command bleibt dadurch ein reiner
- * Argument-Mapper, alle Verzweigungs- und Fehlerlogik sitzt im Runner.
- */
-internal data class DataExportRequest(
+data class DataExportRequest(
     val source: String,
     val format: String,
     val output: Path?,
@@ -92,49 +59,34 @@ internal data class DataExportRequest(
 )
 
 /**
- * Kern-Logik für `d-migrate data export`. Delegiert I/O und Registry-
- * Zugriffe über konstruktor-injizierte Collaborators, damit alle
- * Verzweigungen (inkl. Fehlerpfade und Exit-Codes) ohne echte Datenbank,
- * ohne HikariCP und ohne Clikt-Kontext unit-testbar sind.
+ * Core logic for `d-migrate data export`. All external collaborators are
+ * constructor-injected so every branch (including error paths and exit
+ * codes) is unit-testable without a real database or CLI framework.
  *
- * Der Runner gibt einen Integer-Exit-Code zurück (0 bei Erfolg, 2/4/5/7
- * bei Fehlern gemäß Plan §6.10) und schreibt Fehlermeldungen, Warnings
- * und die ProgressSummary über die injizierte [stderr]-Lambda.
- *
- * Production-Defaults zeigen auf die echten Kollaborateure
- * ([HikariConnectionPoolFactory], [DataReaderRegistry], [StreamingExporter],
- * [DefaultDataChunkWriterFactory]); Tests überschreiben sie mit Fakes.
+ * Exit codes (Plan §6.10):
+ * - 0 success
+ * - 2 CLI validation error
+ * - 4 connection / table-lister error
+ * - 5 export streaming error
+ * - 7 config / URL / registry error
  */
-internal class DataExportRunner(
-    private val resolverFactory: (Path?) -> NamedConnectionResolver =
-        { NamedConnectionResolver(configPathFromCli = it) },
-    private val urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
-    private val poolFactory: (ConnectionConfig) -> ConnectionPool = HikariConnectionPoolFactory::create,
-    private val readerLookup: (DatabaseDialect) -> DataReader = DataReaderRegistry::dataReader,
-    private val listerLookup: (DatabaseDialect) -> TableLister = DataReaderRegistry::tableLister,
-    private val writerFactoryBuilder: ((ValueSerializer.Warning) -> Unit) -> DataChunkWriterFactory =
-        { sink -> DefaultDataChunkWriterFactory(warningSink = sink) },
-    private val exportExecutor: ExportExecutor = defaultExportExecutor,
+class DataExportRunner(
+    private val sourceResolver: (source: String, configPath: Path?) -> String,
+    private val urlParser: (String) -> ConnectionConfig,
+    private val poolFactory: (ConnectionConfig) -> ConnectionPool,
+    private val readerLookup: (DatabaseDialect) -> DataReader,
+    private val listerLookup: (DatabaseDialect) -> TableLister,
+    private val writerFactoryBuilder: () -> DataChunkWriterFactory,
+    private val collectWarnings: () -> List<String>,
+    private val exportExecutor: ExportExecutor,
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
-    /**
-     * Führt den Export aus und gibt den CLI-Exit-Code zurück.
-     *
-     * Exit-Code-Mapping (Plan §6.10):
-     * - 0 Erfolg
-     * - 2 CLI-Validierungsfehler (bad encoding, bad identifier, bad delimiter,
-     *     Output-Konflikt, leere Tabellen-Liste)
-     * - 4 Connection- oder Tabellen-Lister-Fehler
-     * - 5 Export-Fehler während Streaming
-     * - 7 Konfigurations-/URL-Parser-/Registry-Fehler
-     */
     fun execute(request: DataExportRequest): Int {
         // ─── 1. Source auflösen → vollständige Connection-URL ───
-        val resolver = resolverFactory(request.cliConfigPath)
         val resolvedUrl = try {
-            resolver.resolve(request.source)
-        } catch (e: ConfigResolveException) {
+            sourceResolver(request.source, request.cliConfigPath)
+        } catch (e: Exception) {
             stderr("Error: ${e.message}")
             return 7
         }
@@ -266,8 +218,7 @@ internal class DataExportRunner(
             csvNullString = request.nullString,
         )
 
-        val warnings = mutableListOf<ValueSerializer.Warning>()
-        val factory = writerFactoryBuilder { warnings += it }
+        val factory = writerFactoryBuilder()
         val effectiveFilter = DataExportHelpers.resolveFilter(
             rawFilter = request.filter,
             dialect = connectionConfig.dialect,
@@ -303,8 +254,8 @@ internal class DataExportRunner(
 
         // ─── 11. Warnings auf stderr (unterdrückt mit --quiet) ──
         if (!request.quiet) {
-            for (warning in warnings) {
-                stderr("  ⚠ ${warning.code} ${warning.table}.${warning.column} (${warning.javaClass}): ${warning.message}")
+            for (line in collectWarnings()) {
+                stderr(line)
             }
         }
 
