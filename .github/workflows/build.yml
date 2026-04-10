@@ -39,27 +39,31 @@ jobs:
       - name: Verify code coverage
         run: >-
           ./gradlew
-          :d-migrate-core:koverVerify
-          :d-migrate-driver-api:koverVerify
-          :d-migrate-driver-postgresql:koverVerify
-          :d-migrate-driver-mysql:koverVerify
-          :d-migrate-driver-sqlite:koverVerify
-          :d-migrate-formats:koverVerify
-          :d-migrate-streaming:koverVerify
-          :d-migrate-cli:koverVerify
+          :hexagon:core:koverVerify
+          :hexagon:ports:koverVerify
+          :hexagon:application:koverVerify
+          :adapters:driven:driver-common:koverVerify
+          :adapters:driven:driver-postgresql:koverVerify
+          :adapters:driven:driver-mysql:koverVerify
+          :adapters:driven:driver-sqlite:koverVerify
+          :adapters:driven:formats:koverVerify
+          :adapters:driven:streaming:koverVerify
+          :adapters:driving:cli:koverVerify
 
       - name: Generate coverage reports
         if: always()
         run: >-
           ./gradlew
-          :d-migrate-core:koverHtmlReport
-          :d-migrate-driver-api:koverHtmlReport
-          :d-migrate-driver-postgresql:koverHtmlReport
-          :d-migrate-driver-mysql:koverHtmlReport
-          :d-migrate-driver-sqlite:koverHtmlReport
-          :d-migrate-formats:koverHtmlReport
-          :d-migrate-streaming:koverHtmlReport
-          :d-migrate-cli:koverHtmlReport
+          :hexagon:core:koverHtmlReport
+          :hexagon:ports:koverHtmlReport
+          :hexagon:application:koverHtmlReport
+          :adapters:driven:driver-common:koverHtmlReport
+          :adapters:driven:driver-postgresql:koverHtmlReport
+          :adapters:driven:driver-mysql:koverHtmlReport
+          :adapters:driven:driver-sqlite:koverHtmlReport
+          :adapters:driven:formats:koverHtmlReport
+          :adapters:driven:streaming:koverHtmlReport
+          :adapters:driving:cli:koverHtmlReport
 
       - name: Upload test results
         if: always()
@@ -96,7 +100,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build OCI image locally
-        run: ./gradlew :d-migrate-cli:jibDockerBuild
+        run: ./gradlew :adapters:driving:cli:jibDockerBuild
 
       - name: Login to GitHub Container Registry
         if: startsWith(github.ref, 'refs/tags/v')
