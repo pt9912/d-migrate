@@ -1,4 +1,9 @@
+plugins {
+    `java-library`
+}
+
 dependencies {
+    api(project(":hexagon:ports"))
     implementation(project(":d-migrate-core"))
     implementation(project(":d-migrate-driver-api"))
 

@@ -48,12 +48,14 @@ WORKDIR /src
 COPY gradlew gradlew.bat ./
 COPY gradle ./gradle
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY hexagon/ports/build.gradle.kts               hexagon/ports/build.gradle.kts
 COPY d-migrate-core/build.gradle.kts              d-migrate-core/build.gradle.kts
 COPY d-migrate-driver-api/build.gradle.kts        d-migrate-driver-api/build.gradle.kts
 COPY d-migrate-driver-postgresql/build.gradle.kts d-migrate-driver-postgresql/build.gradle.kts
 COPY d-migrate-driver-mysql/build.gradle.kts      d-migrate-driver-mysql/build.gradle.kts
 COPY d-migrate-driver-sqlite/build.gradle.kts     d-migrate-driver-sqlite/build.gradle.kts
 COPY d-migrate-formats/build.gradle.kts           d-migrate-formats/build.gradle.kts
+COPY d-migrate-streaming/build.gradle.kts         d-migrate-streaming/build.gradle.kts
 COPY d-migrate-cli/build.gradle.kts               d-migrate-cli/build.gradle.kts
 
 RUN chmod +x ./gradlew

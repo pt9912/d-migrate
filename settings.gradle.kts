@@ -1,5 +1,9 @@
 rootProject.name = "d-migrate"
 
+// Hexagon (innen)
+include("hexagon:ports")
+
+// Bestehende Module (werden in späteren Phasen unter hexagon/ bzw. adapters/ eingeordnet)
 include("d-migrate-core")
 include("d-migrate-driver-api")
 include("d-migrate-driver-postgresql")

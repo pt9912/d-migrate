@@ -55,6 +55,7 @@ subprojects {
 }
 
 dependencies {
+    kover(project(":hexagon:ports"))
     kover(project(":d-migrate-core"))
     kover(project(":d-migrate-driver-api"))
     kover(project(":d-migrate-driver-postgresql"))
