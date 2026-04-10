@@ -6,5 +6,5 @@ plugins {
 // No implementation classes, no external libraries (only JDK java.sql).
 
 dependencies {
-    api(project(":d-migrate-core"))
+    api(project(":hexagon:core"))
 }

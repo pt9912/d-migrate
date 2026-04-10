@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     api(project(":hexagon:ports"))
-    implementation(project(":d-migrate-core"))
+    implementation(project(":hexagon:core"))
     implementation(project(":d-migrate-driver-api"))
 
     // Jackson — bleibt für die Schema-Codecs aus 0.1.0/0.2.0 (typsicheres

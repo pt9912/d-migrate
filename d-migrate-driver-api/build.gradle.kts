@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     api(project(":hexagon:ports"))
-    api(project(":d-migrate-core"))
+    api(project(":hexagon:core"))
     // HikariCP wird über das public ConnectionPool-Interface verwendet —
     // konkrete Treiber sehen es transitiv via api(...).
     api("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")

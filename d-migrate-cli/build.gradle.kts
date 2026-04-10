@@ -8,7 +8,7 @@ application {
 }
 
 dependencies {
-    implementation(project(":d-migrate-core"))
+    implementation(project(":hexagon:core"))
     implementation(project(":d-migrate-driver-api"))
     implementation(project(":d-migrate-driver-postgresql"))
     implementation(project(":d-migrate-driver-mysql"))

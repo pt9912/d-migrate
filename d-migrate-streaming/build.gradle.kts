@@ -9,7 +9,7 @@
 // - d-migrate-formats         für DataChunkWriter (Phase D — bis dahin gibt
 //                              es nur das Interface, Tests verwenden Fakes)
 dependencies {
-    api(project(":d-migrate-core"))
+    api(project(":hexagon:core"))
     api(project(":d-migrate-driver-api"))
     api(project(":d-migrate-formats"))
 }
