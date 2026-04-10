@@ -1,7 +1,7 @@
 package dev.dmigrate.format.data.json
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
-import dev.dmigrate.format.data.ImportOptions
+import dev.dmigrate.driver.data.ImportOptions
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize

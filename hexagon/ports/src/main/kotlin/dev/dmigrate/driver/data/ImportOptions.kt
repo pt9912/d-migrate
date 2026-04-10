@@ -1,14 +1,14 @@
-package dev.dmigrate.format.data
+package dev.dmigrate.driver.data
 
 import java.nio.charset.Charset
 
 /**
- * Konfigurations-Optionen für die [DataChunkReader]-Familie und den
+ * Konfigurations-Optionen für die [dev.dmigrate.format.data.DataChunkReader]-Familie und den
  * Streaming-Importer. Wird vom CLI aus den `data import`-Flags
- * konstruiert und an die [DataChunkReaderFactory] sowie den
+ * konstruiert und an die [dev.dmigrate.format.data.DataChunkReaderFactory] sowie den
  * `StreamingImporter` weitergegeben.
  *
- * Parallel zu [ExportOptions], aber für den Lese-/Schreibpfad des
+ * Parallel zu [dev.dmigrate.format.data.ExportOptions], aber für den Lese-/Schreibpfad des
  * Imports. Plan: implementation-plan-0.4.0.md §3.5.2 (letzter Absatz)
  * und §3.7.1.
  *

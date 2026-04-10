@@ -1,5 +1,9 @@
 package dev.dmigrate.format.data
 
+import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.driver.data.OnConflict
+import dev.dmigrate.driver.data.OnError
+import dev.dmigrate.driver.data.TriggerMode
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.charset.StandardCharsets

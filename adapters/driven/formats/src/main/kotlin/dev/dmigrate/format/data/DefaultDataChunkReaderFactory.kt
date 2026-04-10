@@ -1,5 +1,6 @@
 package dev.dmigrate.format.data
 
+import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.format.data.csv.CsvChunkReader
 import dev.dmigrate.format.data.json.JsonChunkReader
 import dev.dmigrate.format.data.yaml.YamlChunkReader

@@ -1,5 +1,6 @@
 package dev.dmigrate.format.data
 
+import dev.dmigrate.driver.data.ImportOptions
 import java.io.InputStream
 
 /**

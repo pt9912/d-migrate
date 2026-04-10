@@ -2,6 +2,7 @@ package dev.dmigrate.format.data
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.format.data.csv.CsvChunkReader
 import dev.dmigrate.format.data.csv.CsvChunkWriter
 import dev.dmigrate.format.data.json.JsonChunkReader

@@ -8,7 +8,7 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.EncodingDetector
-import dev.dmigrate.format.data.ImportOptions
+import dev.dmigrate.driver.data.ImportOptions
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets

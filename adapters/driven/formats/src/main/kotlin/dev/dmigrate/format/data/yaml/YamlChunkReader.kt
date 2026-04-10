@@ -5,7 +5,7 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.EncodingDetector
-import dev.dmigrate.format.data.ImportOptions
+import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.format.data.json.CharsetTranscodingInputStream
 import org.snakeyaml.engine.v2.api.LoadSettings
 import org.snakeyaml.engine.v2.api.lowlevel.Parse
