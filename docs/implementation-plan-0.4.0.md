@@ -24,11 +24,11 @@ Datei → d-migrate data import ... --table <name> --on-conflict update         
 
 **Was gehört zu 0.4.0:**
 
-- Lese-Pfad in `d-migrate-formats`: `DataChunkReader` für JSON, YAML, CSV mit
+- Lese-Pfad in `adapters:driven:formats`: `DataChunkReader` für JSON, YAML, CSV mit
   echtem Streaming (kein Volltext-Parsen)
-- `DataWriter`-Port in `d-migrate-driver-api` plus JDBC-Adapter für PostgreSQL,
+- `DataWriter`-Port in `hexagon:ports` plus JDBC-Adapter für PostgreSQL,
   MySQL und SQLite (Batch-`INSERT` per `PreparedStatement.addBatch`)
-- `StreamingImporter` in `d-migrate-streaming` (Glue Reader → Writer, mit
+- `StreamingImporter` in `adapters:driven:streaming` (Glue Reader → Writer, mit
   Chunk-Transaktionen und konfigurierbarer Fehler-Politik)
 - Sequence- und `AUTO_INCREMENT`-Reseeding pro Dialekt (siehe
   [`design-import-sequences-triggers.md`](./design-import-sequences-triggers.md))
@@ -80,7 +80,7 @@ Datei → d-migrate data import ... --table <name> --on-conflict update         
 
 Kein neues Gradle-Modul. Alle Erweiterungen finden in den existierenden Modulen
 statt — die Architektur aus 0.3.0 trägt: `formats` bekommt Reader-Klassen
-parallel zu den Writern, `driver-api` einen `DataWriter`-Port parallel zum
+parallel zu den Writern, `hexagon:ports` einen `DataWriter`-Port parallel zum
 `DataReader`, `streaming` einen `StreamingImporter` parallel zum
 `StreamingExporter`, `cli` ein neues `DataImportCommand` und einen
 `--since-column`/`--since`-Flow für `DataExportCommand`.
@@ -94,7 +94,7 @@ parallel zu den Writern, `driver-api` einen `DataWriter`-Port parallel zum
 
 ## 3. Bestehende Module — Änderungen
 
-### 3.1 `d-migrate-driver-api`
+### 3.1 `hexagon:ports` / `adapters:driven:driver-common`
 
 #### 3.1.1 Neuer Port `DataWriter`
 
@@ -266,20 +266,20 @@ interface TableImportSession : AutoCloseable {
      * Reorder-Mapping und die JDBC-Typ-Hints für den
      * [ValueDeserializer] (§3.5.2).
      *
-     * **L15 — neuer `TargetColumn`-Typ in `driver-api`, NICHT
+     * **L15 — neuer `TargetColumn`-Typ in `hexagon:ports`, NICHT
      * `ColumnDescriptor`**: Phase A wollte ursprünglich
-     * `ColumnDescriptor` in `d-migrate-core` um ein `jdbcType: Int?`-Feld
+     * `ColumnDescriptor` in `hexagon:core` um ein `jdbcType: Int?`-Feld
      * erweitern — das hätte aber gegen die 0.3.0-Architektur-Regel "kein
      * JDBC-spezifisches Feld in core" verstoßen. Stattdessen definiert
-     * `d-migrate-driver-api` einen eigenen `TargetColumn(name, nullable,
+     * `hexagon:ports` einen eigenen `TargetColumn(name, nullable,
      * jdbcType, sqlTypeName)`-Typ, der die vom Writer aus
      * `ResultSetMetaData` gelesenen Metadaten inklusive JDBC-Typcode
      * trägt. `core.ColumnDescriptor` bleibt bitwise wie 0.3.0.
      *
      * Die Konversion von [TargetColumn] zu [JdbcTypeHint][dev.dmigrate.format.data.JdbcTypeHint]
      * (für den `ValueDeserializer`) erfolgt erst im Phase-D
-     * `StreamingImporter` (`d-migrate-streaming`), das beide Module
-     * kennt. `driver-api` importiert `formats` nicht und bleibt damit
+     * `StreamingImporter` (`adapters:driven:streaming`), das beide Module
+     * kennt. `hexagon:ports` importiert `formats` nicht und bleibt damit
      * innerhalb der hexagonalen Architektur.
      */
     val targetColumns: List<TargetColumn>
@@ -619,10 +619,10 @@ class UnsupportedTriggerModeException(message: String) : RuntimeException(messag
 ```
 
 `ImportSchemaMismatchException` liegt bewusst **nicht** in
-`d-migrate-driver-api`, sondern in `d-migrate-core` (z.B.
-`dev.dmigrate.core.data`), weil sowohl `d-migrate-formats` (Reader) als
-auch `streaming` und die Writer-Schicht dieselbe fachliche Ausnahme
-verwenden, ohne dass `formats` eine Modul-Kante zu `driver-api` bekommt.
+`hexagon:ports`, sondern in `hexagon:core` (z.B.
+`dev.dmigrate.core.data`), weil sowohl `adapters:driven:formats` (Reader) als
+auch `adapters:driven:streaming` und die Writer-Schicht dieselbe fachliche Ausnahme
+verwenden, ohne dass `formats` eine Modul-Kante zu `hexagon:ports` bekommt.
 
 #### 3.1.2 Erweiterung der bestehenden Registries
 
@@ -707,19 +707,19 @@ data class SequenceAdjustment(
  * den JDBC-Typcode mit, den der [ValueDeserializer] (in `formats`)
  * für die String-/Number-zu-Java-Konvertierung beim Import braucht.
  *
- * Lebt **in `driver-api`** (nicht in `core`), weil:
+ * Lebt **in `hexagon:ports`** (nicht in `hexagon:core`), weil:
  *
  * - `core.ColumnDescriptor` soll JDBC-frei bleiben — die 0.3.0-
  *   Architektur-Regel. Ein `jdbcType: Int?`-Slot dort wäre
  *   semantisch JDBC-coupled, auch wenn syntaktisch nur ein Int.
- * - `formats` darf von `driver-api` nicht abhängen (hexagonale
+ * - `formats` darf von `hexagon:ports` nicht abhängen (hexagonale
  *   Schicht-Trennung), also kann `formats.JdbcTypeHint` nicht
- *   direkt von `driver-api` referenziert werden.
- * - `driver-api` ist der natürliche Ort für Writer-spezifische
+ *   direkt von `hexagon:ports` referenziert werden.
+ * - `hexagon:ports` ist der natürliche Ort für Writer-spezifische
  *   Metadaten, weil der Writer hier lebt und `ResultSetMetaData`
  *   ohnehin liest.
  *
- * Der Phase-D `StreamingImporter` (in `d-migrate-streaming`, das
+ * Der Phase-D `StreamingImporter` (in `adapters:driven:streaming`, das
  * BEIDE Module kennt) konvertiert `TargetColumn` zu
  * `formats.JdbcTypeHint` und baut daraus die Lookup-Closure für den
  * `ValueDeserializer`. Damit bleibt jede Modul-Kante intakt.
@@ -755,10 +755,10 @@ Default-No-Op-Implementierung; vergessene Treiber-Overrides sollen zur
 Compile-Zeit oder spätestens im Review auffallen, nicht als stiller
 Laufzeit-Fehler.
 
-### 3.2 `d-migrate-driver-postgresql`
+### 3.2 `adapters:driven:driver-postgresql`
 
 ```
-d-migrate-driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/
+adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/
 ├── PostgresDataWriter.kt       # JDBC Batch-INSERT, COPY-Pfad als Optimierung in 1.0.0
 ├── PostgresSchemaSync.kt       # setval(), session_replication_role NICHT — siehe §6.8.1
 └── PostgresDriver.kt           # erweitert um registerDataWriter
@@ -809,10 +809,10 @@ PG-spezifika:
 - **`autoCommit=false`** für Chunk-Transaktionen (analog zu Read-Pfad
   Plan-0.3.0 §6.12).
 
-### 3.3 `d-migrate-driver-mysql`
+### 3.3 `adapters:driven:driver-mysql`
 
 ```
-d-migrate-driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/
+adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/
 ├── MysqlDataWriter.kt
 ├── MysqlSchemaSync.kt
 └── MysqlDriver.kt
@@ -898,10 +898,10 @@ MySQL-spezifika:
   nächste Borrower der Connection im selben Prozess (z.B. der Import der
   nächsten Tabelle) mit deaktivierten FK-Checks weiterarbeiten.
 
-### 3.4 `d-migrate-driver-sqlite`
+### 3.4 `adapters:driven:driver-sqlite`
 
 ```
-d-migrate-driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/
+adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/
 ├── SqliteDataWriter.kt
 ├── SqliteSchemaSync.kt
 └── SqliteDriver.kt
@@ -949,12 +949,12 @@ SQLite-spezifika:
   bei MySQL — der nächste Borrower der Connection würde sonst mit
   deaktivierten FK-Checks weiterarbeiten.
 
-### 3.5 `d-migrate-formats`
+### 3.5 `adapters:driven:formats`
 
 #### 3.5.1 Reader-Pendant zum Writer-Trio
 
 ```
-d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/
+adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/
 ├── DataChunkReader.kt              # neu, Interface
 ├── DataChunkReaderFactory.kt       # neu, Interface
 ├── DefaultDataChunkReaderFactory.kt# neu, Implementierung
@@ -1163,7 +1163,7 @@ Primärer Typ-Anker ist dabei der JDBC-Typcode (`ResultSetMetaData` /
 sekundärer Hint normalisiert, damit PG/MySQL/SQLite nicht an reinen
 Treiber-Strings auseinanderlaufen.
 
-Array-/Treiberobjekte werden bewusst NICHT in `d-migrate-formats` erzeugt.
+Array-/Treiberobjekte werden bewusst NICHT in `adapters:driven:formats` erzeugt.
 `formats` bleibt JDBC-frei; konkrete `java.sql.Array`- oder PG-`PGobject`-
 Materialisierung passiert erst im Writer-Layer.
 
@@ -1174,7 +1174,7 @@ Schalter aus diesem Plan (`triggerMode`, `csvNoHeader`, `csvNullString`,
 `chunkSize` gehört bewusst NICHT hier hinein, sondern bleibt in
 `PipelineConfig(chunkSize = ...)` wie im 0.3.0-Exportpfad.
 
-### 3.6 `d-migrate-streaming`
+### 3.6 `adapters:driven:streaming`
 
 #### 3.6.1 `StreamingImporter`
 
@@ -1416,7 +1416,7 @@ Kdoc in §3.1.1):
   Counter; `unknown` ist R10-spezifisch und nur im MySQL-`SUCCESS_NO_INFO`-
   Pfad ungleich `0`).
 
-### 3.7 `d-migrate-cli`
+### 3.7 `adapters:driving:cli`
 
 #### 3.7.1 Neues `DataImportCommand`
 
@@ -1620,7 +1620,7 @@ aber der Code-Pfad existiert nicht. Konsequenzen für die 0.4.0-Migration:
   alten Configs nicht überrascht werden, wenn ein vergessener
   `default_source: prod` plötzlich greift.
 - **L10 — KDoc-Drift explizit mit-fixen**: Der heutige Doc-Comment in
-  `d-migrate-cli/src/main/kotlin/dev/dmigrate/cli/config/
+  `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/
   NamedConnectionResolver.kt:22` behauptet „liest `database.default_source`,
   ignoriert es aber für `data export`" — tatsächlich liest der Code die
   Option aktuell gar nicht (`lookupConnectionUrl` schaut ausschließlich
@@ -1632,9 +1632,9 @@ aber der Code-Pfad existiert nicht. Konsequenzen für die 0.4.0-Migration:
   in §3.7.3), sonst driftet die Doku weiter — die Lektion aus der
   L6-Analyse darf sich nicht wiederholen.
 
-### 3.8 `d-migrate-core`
+### 3.8 `hexagon:core`
 
-`d-migrate-core` bleibt weitgehend unverändert, bekommt für 0.4.0 aber zwei
+`hexagon:core` bleibt weitgehend unverändert, bekommt für 0.4.0 aber zwei
 kleine, schichtneutrale Ergänzungen: `ImportSchemaMismatchException` und den
 neuen Filter-Typ `DataFilter.ParameterizedClause`.
 
@@ -1644,7 +1644,7 @@ JDBC-Typ-Hint für den Import lebt stattdessen als
 `formats.JdbcTypeHint(jdbcType, sqlTypeName, precision, scale)` im
 `formats`-Modul und wird
 dem `ValueDeserializer` über eine Lookup-Closure durchgereicht, die
-`streaming` aus `driver-api.TargetColumn` baut. Damit bleibt `core`
+`streaming` aus `hexagon:ports.TargetColumn` baut. Damit bleibt `core`
 schichtneutral; JDBC-nahe Metadaten bleiben auf der Writer-Seite.
 
 ```kotlin
@@ -1703,7 +1703,7 @@ Daten-Reader braucht — der Volltext-Export benutzt `setObject` nicht.
    **L5 — Fixture-Erzeugung**: das 100-MB-Array wird NICHT als Datei in
    `src/test/resources/` eingecheckt (Repo-Bloat) und auch NICHT in der
    Standard-CI-Pipeline mitgezogen. Stattdessen kommt ein
-   deterministischer Generator (`d-migrate-formats/src/test/kotlin/.../perf/
+   deterministischer Generator (`adapters/driven/formats/src/test/kotlin/.../perf/
    LargeJsonFixture.kt` oder als Gradle-Task), der die Datei einmalig in
    `build/perf-fixtures/` erzeugt und dort cacht. Der zugehörige Test
    läuft als opt-in-Perf-Spec (`LargeJsonPullSpikePerfTest`) und wird im
@@ -1750,7 +1750,7 @@ Schritt, der beide Pfade zusammenführt.
 
 ### Phase C: DataWriter-Port und JDBC-Treiber
 
-12. `DataWriter`/`TableImportSession` Interfaces in `driver-api`
+12. `DataWriter`/`TableImportSession` Interfaces in `hexagon:ports`
 13. `SchemaSync` Interface + `SequenceAdjustment`
 14. `DataWriterRegistry` (object) mit `clear()` für Tests
 15. `PostgresDataWriter` + `PostgresSchemaSync` (setval, ALTER TABLE
@@ -1772,7 +1772,7 @@ Schritt, der beide Pfade zusammenführt.
 
 ### Phase D: StreamingImporter
 
-19. `StreamingImporter` in `d-migrate-streaming`
+19. `StreamingImporter` in `adapters:driven:streaming`
 20. `ImportInput` sealed class (Stdin / SingleFile / Directory)
 21. `ImportResult` + `TableImportSummary`
 22. Chunk-Transaktionsmodell (§6.5) mit `--on-error`-Politik
@@ -1849,32 +1849,35 @@ Schritt, der beide Pfade zusammenführt.
 ## 5. Abhängigkeiten zwischen Modulen
 
 ```
-d-migrate-core
+hexagon:core
 └── plus `ImportSchemaMismatchException`
 
-d-migrate-driver-api
-├── api(d-migrate-core)
+hexagon:ports
+├── api(hexagon:core)
 ├── api("com.zaxxer:HikariCP")
 └── neu: DataWriter / TableImportSession / SchemaSync / DataWriterRegistry
 
-d-migrate-driver-postgresql      # implementation(driver-api) + JDBC
-d-migrate-driver-mysql           # dito
-d-migrate-driver-sqlite          # dito
+adapters:driven:driver-common
+├── api(hexagon:ports)
 
-d-migrate-formats
-├── implementation(d-migrate-core)
+adapters:driven:driver-postgresql      # implementation(hexagon:ports) + JDBC
+adapters:driven:driver-mysql           # dito
+adapters:driven:driver-sqlite          # dito
+
+adapters:driven:formats
+├── implementation(hexagon:core)
 ├── implementation("com.dslplatform:dsl-json-java8")     # bereits aus 0.3.0
 ├── implementation("com.univocity:univocity-parsers")    # bereits aus 0.3.0
 └── implementation("org.snakeyaml:snakeyaml-engine")     # bereits aus 0.3.0
 
-d-migrate-streaming
-├── api(d-migrate-core)
-├── api(d-migrate-driver-api)
-├── api(d-migrate-formats)
+adapters:driven:streaming
+├── api(hexagon:core)
+├── api(hexagon:ports)
+├── api(adapters:driven:formats)
 └── neu: StreamingImporter, ImportInput, ImportResult
 
-d-migrate-cli
-├── implementation(d-migrate-streaming)
+adapters:driving:cli
+├── implementation(adapters:driven:streaming)
 └── alle Treiber wie in 0.3.0
 ```
 
@@ -2455,10 +2458,10 @@ führt und jeden FK-abhängigen Import in ein Reihenfolge-Raten kippt.
 Phase E zieht deshalb zwei kleine Refactorings mit:
 
 1. **Sichtbarkeit**: Entweder wird `topologicalSort(...)` auf `public` (oder
-   `internal` zwischen `d-migrate-driver-api` und `d-migrate-cli`/
-   `d-migrate-streaming`) angehoben, oder der Algorithmus wird in einen
+   `internal` zwischen `adapters:driven:driver-common` und `adapters:driving:cli`/
+   `adapters:driven:streaming`) angehoben, oder der Algorithmus wird in einen
    eigenständigen, öffentlichen Helper `TableTopologicalSort.of(schema)`
-   im `d-migrate-driver-api` (oder im neuen Runner-Layer des CLI) ausgelagert
+   im `adapters:driven:driver-common` (oder im neuen Runner-Layer des CLI) ausgelagert
    und aus dem `AbstractDdlGenerator` delegiert. Beide Varianten sind
    additiv und brechen keine bestehenden Caller.
 2. **Zyklus-Check**: Der Runner-Pfad ruft den Helper, prüft
@@ -3075,20 +3078,20 @@ als JSON auf stdout.
 
 ## 8. Coverage-Ziele
 
-Pro Modul gilt der Projektstandard **90%**. Für `d-migrate-cli` übernehmen
+Pro Modul gilt der Projektstandard **90%**. Für `adapters:driving:cli` übernehmen
 wir die 0.3.0-Ausnahme bewusst NICHT; der Runner-/Helper-Split macht die
 Pfadabdeckung auch für Import und LF-013 direkt testbar.
 
 | Modul | Ziel | Anmerkung |
 |---|---|---|
-| `d-migrate-core` | 90% | `DataFilter.ParameterizedClause` direkt testen |
-| `d-migrate-driver-api` | 90% | DataWriter-Vertrag inline mit Stubs; `finishTable()`/`close()`-Pfad getrennt testen |
-| `d-migrate-driver-postgresql` | 90% via Testcontainers | `PostgresDataWriter` + `PostgresSchemaSync` Branch-Coverage |
-| `d-migrate-driver-mysql` | 90% via Testcontainers | dito; `disable`-Trigger-Pfad als Negativ-Test |
-| `d-migrate-driver-sqlite` | 90% inline | `sqlite_sequence` Reseeding mit File-DB |
-| `d-migrate-streaming` | 90% | `StreamingImporter` mit Fake Reader/Writer |
-| `d-migrate-formats` | 90% | je Reader Golden-Master-Round-Trip mit Phase-D-Writern aus 0.3.0; `EncodingDetector` mit allen 5 BOM-Varianten plus Fallback |
-| `d-migrate-cli` | 90% | `DataImportCommand`- und LF-013-Pfade direkt über Runner/Helper testen |
+| `hexagon:core` | 90% | `DataFilter.ParameterizedClause` direkt testen |
+| `hexagon:ports` / `adapters:driven:driver-common` | 90% | DataWriter-Vertrag inline mit Stubs; `finishTable()`/`close()`-Pfad getrennt testen |
+| `adapters:driven:driver-postgresql` | 90% via Testcontainers | `PostgresDataWriter` + `PostgresSchemaSync` Branch-Coverage |
+| `adapters:driven:driver-mysql` | 90% via Testcontainers | dito; `disable`-Trigger-Pfad als Negativ-Test |
+| `adapters:driven:driver-sqlite` | 90% inline | `sqlite_sequence` Reseeding mit File-DB |
+| `adapters:driven:streaming` | 90% | `StreamingImporter` mit Fake Reader/Writer |
+| `adapters:driven:formats` | 90% | je Reader Golden-Master-Round-Trip mit Phase-D-Writern aus 0.3.0; `EncodingDetector` mit allen 5 BOM-Varianten plus Fallback |
+| `adapters:driving:cli` | 90% | `DataImportCommand`- und LF-013-Pfade direkt über Runner/Helper testen |
 
 ---
 
@@ -3253,7 +3256,7 @@ damit klar ist, was post-Implementation erkannt wurde.
 
 | ID | Finding | Auflösung |
 |---|---|---|
-| L15 (Hoch) | Frühere Phase-A-Arbeitsfassung hatte testweise ein `jdbcType: Int? = null` auf `core.ColumnDescriptor`. Das verletzte die 0.3.0-Architektur-Regel „kein JDBC-spezifisches Feld in core". | Historisch bereinigt und im Haupttext kanonisch festgeschrieben: `core.ColumnDescriptor` bleibt JDBC-frei; Writer-seitige Metadaten laufen über `driver-api.TargetColumn`, Deserializer-Hints über `formats.JdbcTypeHint`, und der `StreamingImporter` baut die Lookup-Closure `(columnName) -> JdbcTypeHint?` einmal pro Tabelle. |
+| L15 (Hoch) | Frühere Phase-A-Arbeitsfassung hatte testweise ein `jdbcType: Int? = null` auf `core.ColumnDescriptor`. Das verletzte die 0.3.0-Architektur-Regel „kein JDBC-spezifisches Feld in core". | Historisch bereinigt und im Haupttext kanonisch festgeschrieben: `core.ColumnDescriptor` bleibt JDBC-frei; Writer-seitige Metadaten laufen über `hexagon:ports.TargetColumn`, Deserializer-Hints über `formats.JdbcTypeHint`, und der `StreamingImporter` baut die Lookup-Closure `(columnName) -> JdbcTypeHint?` einmal pro Tabelle. |
 | L16 (Hoch) | `ValueDeserializer.toBigDecimal(Float)` ging über `BigDecimal.valueOf((value as Number).toDouble())`, was für Float-Werte die binäre Float-Repräsentation durchreicht — `0.1f` wäre als `BigDecimal("0.10000000149011612")` an eine `NUMERIC(10,2)`-Spalte gelandet. Klassischer stiller Datenkorruptions-Pfad. | Float-Zweig explizit auf `BigDecimal(value.toString())` umgestellt (String-Konstruktor umgeht die binäre Repräsentation). Phase A hat einen expliziten Test gegen diesen Pfad: `deserialize(tableName, "c", 0.1f) shouldBe BigDecimal("0.1")`. |
 | L17 (Hoch) | `ValueDeserializer.toLong(Double)` akzeptierte `1.0` als gültigen Integer, weil `d == d.toLong().toDouble()` für `1.0` true ist. Das widersprach der Plan-Regel aus §3.5.2, die token-basiert arbeitet: ein Reader, der `1.0` (mit Dezimalpunkt im Source-Token) liefert, hat bereits signalisiert, dass es ein Decimal-Token ist. Aus String-Pfad wurde `"1.0"` abgewiesen, aus Double-Pfad durchgewunken — Inkonsistenz. | `toLong(Number)` wirft jetzt konsequent bei allen Non-Integer-Number-Typen (Double/Float), auch wenn der Wert zufällig ganzzahlig ist. Test `H-A2 — Double 1.0 (decimal token) is rejected` sichert den Pfad ab. |
 | L18 (Mittel) | `ValueDeserializer.toBoolean("  true  ")` akzeptierte ein getrimmtes `true` nicht — der `toLong`/`toDouble`-Pfad trimmte, aber `toBoolean` nicht. Inkonsistenz zwischen Konvertern. | `toBoolean(String)` trimmt jetzt vor dem `lowercase()`-Check. Explizites Test-Case `"  true  " shouldBe true`. |

@@ -12,7 +12,7 @@
 
 Definition der Writer-seitigen Port-Interfaces `DataWriter` und
 `TableImportSession` samt aller zugehörigen Typen in
-`d-migrate-driver-api`. Dies ist das symmetrische Gegenstück zum
+`hexagon:ports`. Dies ist das symmetrische Gegenstück zum
 bestehenden `DataReader`/`ChunkSequence`-Port und bildet den
 vollständigen Vertrag ab, gegen den die konkreten Treiber-Writer
 (Schritt 15–17) und der `StreamingImporter` (Phase D) implementieren.
@@ -35,8 +35,8 @@ Vertragsdokumentation und Tests für diese beiden Typen folgen in
 Schritt 13.
 
 **Vorbereitende Refaktorierung**: `ImportOptions` (samt `TriggerMode`,
-`OnConflict`, `OnError`) wird von `d-migrate-formats` nach
-`d-migrate-driver-api` verschoben (siehe §4.1).
+`OnConflict`, `OnError`) wird von `adapters:driven:formats` nach
+`hexagon:ports` verschoben (siehe §4.1).
 
 ---
 
@@ -44,8 +44,8 @@ Schritt 13.
 
 | Abhängigkeit | Schritt | Status |
 |---|---|---|
-| `ImportOptions`, `TriggerMode`, `OnConflict`, `OnError` | Phase A Schritt 2 | ✅ Vorhanden (in `d-migrate-formats`, wird nach `driver-api` verschoben) |
-| `ImportSchemaMismatchException` | Phase A Schritt 3 | ✅ Vorhanden (in `d-migrate-core`) |
+| `ImportOptions`, `TriggerMode`, `OnConflict`, `OnError` | Phase A Schritt 2 | ✅ Vorhanden (in `adapters:driven:formats`, wird nach `hexagon:ports` verschoben) |
+| `ImportSchemaMismatchException` | Phase A Schritt 3 | ✅ Vorhanden (in `hexagon:core`) |
 | `DataReader` / `DataReaderRegistry` (Symmetrie-Vorlage) | 0.3.0 | ✅ Vorhanden |
 | `ConnectionPool` | 0.3.0 | ✅ Vorhanden |
 | `DatabaseDialect` | 0.2.0 | ✅ Vorhanden |
@@ -59,83 +59,75 @@ Schritt 13.
 
 | Datei | Zweck |
 |---|---|
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/DataWriter.kt` | Writer-Port-Interface |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/TableImportSession.kt` | Session-Interface mit State-Maschine |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/WriteResult.kt` | Per-Chunk-Ergebnis |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/FinishTableResult.kt` | Sealed Result für `finishTable()` |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/TargetColumn.kt` | Writer-side Spalten-Metadaten |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/UnsupportedTriggerModeException.kt` | Exception für nicht-unterstützte Trigger-Modi |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/SchemaSync.kt` | Minimal-Interface (Detailvertrag in Schritt 13) |
-| `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/SequenceAdjustment.kt` | Data Class (Detailtests in Schritt 13) |
-| `d-migrate-driver-api/src/test/kotlin/dev/dmigrate/driver/data/WriteResultTest.kt` | Unit-Tests WriteResult |
-| `d-migrate-driver-api/src/test/kotlin/dev/dmigrate/driver/data/FinishTableResultTest.kt` | Unit-Tests FinishTableResult |
-| `d-migrate-driver-api/src/test/kotlin/dev/dmigrate/driver/data/TargetColumnTest.kt` | Unit-Tests TargetColumn |
-| `d-migrate-driver-api/src/test/kotlin/dev/dmigrate/driver/data/TableImportSessionContractTest.kt` | State-Maschine-Vertragstests mit Stub-Writer |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/DataWriter.kt` | Writer-Port-Interface |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/TableImportSession.kt` | Session-Interface mit State-Maschine |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/WriteResult.kt` | Per-Chunk-Ergebnis |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/FinishTableResult.kt` | Sealed Result für `finishTable()` |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/TargetColumn.kt` | Writer-side Spalten-Metadaten |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/UnsupportedTriggerModeException.kt` | Exception für nicht-unterstützte Trigger-Modi |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/SchemaSync.kt` | Minimal-Interface (Detailvertrag in Schritt 13) |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/SequenceAdjustment.kt` | Data Class (Detailtests in Schritt 13) |
+| `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/data/WriteResultTest.kt` | Unit-Tests WriteResult |
+| `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/data/FinishTableResultTest.kt` | Unit-Tests FinishTableResult |
+| `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/data/TargetColumnTest.kt` | Unit-Tests TargetColumn |
+| `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/data/TableImportSessionContractTest.kt` | State-Maschine-Vertragstests mit Stub-Writer |
 
 ### 3.2 Verschobene Dateien
 
 | Von | Nach | Grund |
 |---|---|---|
-| `d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/ImportOptions.kt` | `d-migrate-driver-api/src/main/kotlin/dev/dmigrate/driver/data/ImportOptions.kt` | Zirkuläre Abhängigkeit vermeiden; Port-Schicht ist der architektonisch korrekte Ort (siehe §4.1) |
+| `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/ImportOptions.kt` | `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/ImportOptions.kt` | Zirkuläre Abhängigkeit vermeiden; Port-Schicht ist der architektonisch korrekte Ort (siehe §4.1) |
 
 ### 3.3 Geänderte Dateien
 
 | Datei | Änderung |
 |---|---|
-| `d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/DataChunkReaderFactory.kt` | Import-Pfad: `dev.dmigrate.format.data.ImportOptions` → `dev.dmigrate.driver.data.ImportOptions` |
-| `d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/DefaultDataChunkReaderFactory.kt` | Import-Pfad analog |
-| `d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/csv/CsvChunkReader.kt` | Import-Pfad analog |
-| `d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/json/JsonChunkReader.kt` | Import-Pfad analog |
-| `d-migrate-formats/src/main/kotlin/dev/dmigrate/format/data/yaml/YamlChunkReader.kt` | Import-Pfad analog |
+| `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/DataChunkReaderFactory.kt` | Import-Pfad: `dev.dmigrate.format.data.ImportOptions` → `dev.dmigrate.driver.data.ImportOptions` |
+| `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/DefaultDataChunkReaderFactory.kt` | Import-Pfad analog |
+| `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/csv/CsvChunkReader.kt` | Import-Pfad analog |
+| `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/json/JsonChunkReader.kt` | Import-Pfad analog |
+| `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/data/yaml/YamlChunkReader.kt` | Import-Pfad analog |
 | Alle Test-Dateien, die `ImportOptions` referenzieren | Import-Pfad analog |
-| `d-migrate-driver-api/build.gradle.kts` | Kover-Excludes für neue pure Interfaces ergänzen |
+| `adapters/driven/driver-common/build.gradle.kts` | Kover-Excludes für neue pure Interfaces ergänzen |
 
 ---
 
 ## 4. Design
 
-### 4.1 ImportOptions-Verschiebung nach `d-migrate-driver-api`
+### 4.1 ImportOptions lebt jetzt in `hexagon:ports`
 
 `DataWriter.openTable()` nimmt laut Plan §3.1.1 `ImportOptions` als
-Parameter. `ImportOptions` lebt aktuell in `d-migrate-formats`
-(`dev.dmigrate.format.data`). `d-migrate-formats` hängt bereits von
-`d-migrate-driver-api` ab (`build.gradle.kts` Zeile 3:
-`implementation(project(":d-migrate-driver-api"))`). Eine Abhängigkeit
-von `driver-api` auf `formats` würde einen **Zyklus** erzeugen:
-
-```
-driver-api → formats → driver-api   ← ZIRKULÄR
-```
-
-Lösung: `ImportOptions.kt` (samt `TriggerMode`, `OnConflict`, `OnError`)
-wird nach `d-migrate-driver-api` verschoben — in das Package
-`dev.dmigrate.driver.data`.
+Parameter. `ImportOptions` lebte ursprünglich in `adapters:driven:formats`
+(`dev.dmigrate.format.data`). Durch die hexagonale Modul-Umstrukturierung
+wurde `ImportOptions` (als Port-Interface/Konfiguration) nach
+`hexagon:ports` verschoben — das ist der architektonisch korrekte Ort
+im neuen Modulschnitt.
 
 **Architektonische Begründung** (vgl. `docs/architecture.md` §1.2):
 
 | Schicht | Modul | Rolle |
 |---------|-------|-------|
-| Domain Core | `d-migrate-core` | Neutrales Modell — keine Import-/Export-Konfiguration |
-| Port (Output) | `d-migrate-driver-api` | SPI-Interfaces für Datenbank-Zugriff |
-| Driven Adapter | `d-migrate-formats` | Serialisierung/Deserialisierung |
+| Domain Core | `hexagon:core` | Neutrales Modell — keine Import-/Export-Konfiguration |
+| Ports | `hexagon:ports` | SPI-Interfaces für Datenbank-Zugriff |
+| Driven Adapter | `adapters:driven:formats` | Serialisierung/Deserialisierung |
 
 `ImportOptions` enthält Port-Level-Konfiguration: Trigger-Modi,
 FK-Check-Steuerung, Conflict-Verhalten, Sequence-Reseeding — das sind
 Vertragsparameter für den Writer-Port, nicht domänenneutrale
-Modelltypes. Eine Platzierung in `d-migrate-core` würde die
+Modelltypes. Eine Platzierung in `hexagon:core` würde die
 Domain-Core-Schicht mit adapterspezifischer Konfiguration
 verschmutzen und gegen den Architekturstil „Neutrales Modell —
 keine externen Deps" verstoßen.
 
-`d-migrate-driver-api` ist als Port-Schicht der architektonisch korrekte
+`hexagon:ports` ist als Port-Schicht der architektonisch korrekte
 Ort: Es definiert die SPI-Interfaces (`DataReader`, `DataWriter`) und
-die zugehörige Konfiguration. `d-migrate-formats` hängt bereits von
-`driver-api` ab und kann `ImportOptions` daher ohne neue Abhängigkeit
+die zugehörige Konfiguration. `adapters:driven:formats` hängt bereits von
+`hexagon:ports` ab und kann `ImportOptions` daher ohne neue Abhängigkeit
 konsumieren:
 
 ```
-core  ← driver-api (ImportOptions lebt hier)
-  ↑         ↑
+core  ← ports (ImportOptions lebt hier)
+  ↑       ↑
   └─── formats   (konsumiert ImportOptions über bestehende Dep)
 ```
 
@@ -243,7 +235,7 @@ sealed class FinishTableResult {
 ### 4.5 TargetColumn
 
 Writer-seitige Spalten-Metadaten mit JDBC-Typcode. Lebt bewusst in
-`driver-api` (nicht in `core`), weil `core.ColumnDescriptor` JDBC-frei
+`hexagon:ports` (nicht in `hexagon:core`), weil `core.ColumnDescriptor` JDBC-frei
 bleiben soll (L15).
 
 ```kotlin
@@ -303,18 +295,18 @@ data class SequenceAdjustment(
 
 ### 5.1 ImportOptions-Verschiebung
 
-1. `ImportOptions.kt` von `d-migrate-formats/.../format/data/` nach
-   `d-migrate-driver-api/.../driver/data/` verschieben.
+1. `ImportOptions.kt` von `adapters/driven/formats/.../format/data/` nach
+   `hexagon/ports/.../driver/data/` verschieben.
 2. Package-Deklaration ändern: `dev.dmigrate.format.data` →
    `dev.dmigrate.driver.data`.
 3. `import java.nio.charset.Charset` bleibt unverändert (JDK-Klasse,
-   keine neue Abhängigkeit für `driver-api`).
+   keine neue Abhängigkeit für `hexagon:ports`).
 4. Alle Import-Statements in Consumer-Klassen (Reader, Tests) anpassen:
    `dev.dmigrate.format.data.ImportOptions` →
    `dev.dmigrate.driver.data.ImportOptions` (analog für `TriggerMode`,
    `OnConflict`, `OnError`).
 5. Build verifizieren: `docker build --target build
-   --build-arg GRADLE_TASKS=":d-migrate-driver-api:test :d-migrate-formats:test"
+   --build-arg GRADLE_TASKS=":adapters:driven:driver-common:test :adapters:driven:formats:test"
    -t d-migrate:c12-prep .`
 
 ### 5.2 `DataWriter.kt`
@@ -529,7 +521,7 @@ package dev.dmigrate.driver.data
 /**
  * Writer-side Spalten-Metadaten für eine Import-Zieltabelle.
  *
- * Lebt in `driver-api` (nicht in `core`), weil [jdbcType] semantisch
+ * Lebt in `hexagon:ports` (nicht in `hexagon:core`), weil [jdbcType] semantisch
  * JDBC-coupled ist. `core.ColumnDescriptor` bleibt JDBC-frei (L15).
  *
  * Die Konversion zu `formats.JdbcTypeHint` erfolgt im Phase-D
@@ -830,12 +822,12 @@ Gesamtziel pro Modul: ≥ 90 % (Plan §8).
 ```bash
 # 1. ImportOptions-Verschiebung verifizieren
 docker build --target build \
-  --build-arg GRADLE_TASKS=":d-migrate-driver-api:test :d-migrate-formats:test" \
+  --build-arg GRADLE_TASKS=":adapters:driven:driver-common:test :adapters:driven:formats:test" \
   -t d-migrate:c12-prep .
 
-# 2. Neue Interfaces + Tests in driver-api
+# 2. Neue Interfaces + Tests in hexagon:ports / adapters:driven:driver-common
 docker build --target build \
-  --build-arg GRADLE_TASKS=":d-migrate-driver-api:test" \
+  --build-arg GRADLE_TASKS=":adapters:driven:driver-common:test" \
   -t d-migrate:c12 .
 
 # 3. Vollständiger Build inkl. Coverage-Verification
@@ -846,9 +838,9 @@ docker build -t d-migrate:dev .
 
 ## 9. Abnahmekriterien
 
-- [ ] `ImportOptions.kt` lebt in `d-migrate-driver-api` (`dev.dmigrate.driver.data`)
+- [ ] `ImportOptions.kt` lebt in `hexagon:ports` (`dev.dmigrate.driver.data`)
 - [ ] Alle bestehenden Tests grün nach der Verschiebung
-- [ ] `DataWriter` Interface in `d-migrate-driver-api`
+- [ ] `DataWriter` Interface in `hexagon:ports`
 - [ ] `TableImportSession` Interface mit dokumentierter State-Maschine (M1)
 - [ ] `WriteResult` mit `require`-Validierung und `totalRows`
 - [ ] `FinishTableResult` als Sealed Class (Success/PartialFailure)
@@ -860,7 +852,7 @@ docker build -t d-migrate:dev .
 - [ ] FinishTableResult-Tests (≥ 4 Tests) grün
 - [ ] TargetColumn-Tests (≥ 4 Tests) grün
 - [ ] Kover-Excludes für pure Interfaces gesetzt
-- [ ] Coverage ≥ 90 % für `d-migrate-driver-api`
+- [ ] Coverage ≥ 90 % für `adapters:driven:driver-common`
 - [ ] Docker-Build (`docker build -t d-migrate:dev .`) ist grün
 
 ---
@@ -868,7 +860,7 @@ docker build -t d-migrate:dev .
 ## 10. Offene Punkte
 
 Keine. Die Design-Entscheidungen folgen direkt aus Plan §3.1.1. Die
-ImportOptions-Verschiebung nach `driver-api` ist die einzige Abweichung
+ImportOptions-Verschiebung nach `hexagon:ports` ist die einzige Abweichung
 vom Plan und sowohl architektonisch (Port-Schicht gemäß
 `architecture.md` §1.2) als auch technisch (Zyklus-Vermeidung)
 zwingend.
