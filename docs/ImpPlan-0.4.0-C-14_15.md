@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: C (DataWriter-Port und JDBC-Treiber)
 > **Schritte**: 14 + 15
-> **Status**: Geplant
+> **Status**: Abgeschlossen (2026-04-11)
 > **Referenz**: `implementation-plan-0.4.0.md` §3.1.2, §3.2, §4 Phase C Schritte 14–15, §6.6, §6.7
 
 ---
@@ -318,19 +318,19 @@ docker build -t d-migrate:dev .
 
 ## 9. Abnahmekriterien
 
-- [ ] `DatabaseDriver` enthält `dataWriter()`
-- [ ] es gibt **keine** zusätzliche `DataWriterRegistry`
-- [ ] `DatabaseDriverRegistry.clear()` bleibt der einzige Reset-Pfad
-- [ ] `PostgresDriver` implementiert `dataWriter()`
-- [ ] `MysqlDriver` und `SqliteDriver` sind im selben Change auf das neue Interface angehoben
-- [ ] MySQL/SQLite bleiben dabei bewusst fail-fast bis Schritt 16/17
-- [ ] `PostgresDataWriter` schreibt Chunks erfolgreich in PostgreSQL
-- [ ] `PostgresSchemaSync` erfüllt Reseed-/Trigger-Vertrag
-- [ ] `SequenceAdjustment.newValue` wird im PG-Pfad als nächster impliziter Generatorwert reported
-- [ ] die drei L2-Quoting-Pflichttests für `pg_get_serial_sequence(...)` sind vorhanden
-- [ ] der Writer-Lookup-Test verwendet den echten `PostgresDriver` in einem Modul mit passender Abhängigkeit
-- [ ] der Aggregat-Change kompiliert in Ports, Driver- und CLI-Consumern
-- [ ] die PG-Testcontainers-Integrationstests laufen mit `-PintegrationTests`
+- [x] `DatabaseDriver` enthält `dataWriter()`
+- [x] es gibt **keine** zusätzliche `DataWriterRegistry`
+- [x] `DatabaseDriverRegistry.clear()` bleibt der einzige Reset-Pfad
+- [x] `PostgresDriver` implementiert `dataWriter()`
+- [x] `MysqlDriver` und `SqliteDriver` sind im selben Change auf das neue Interface angehoben
+- [x] MySQL/SQLite bleiben dabei bewusst fail-fast bis Schritt 16/17
+- [x] `PostgresDataWriter` schreibt Chunks erfolgreich in PostgreSQL
+- [x] `PostgresSchemaSync` erfüllt Reseed-/Trigger-Vertrag
+- [x] `SequenceAdjustment.newValue` wird im PG-Pfad als nächster impliziter Generatorwert reported
+- [x] die drei L2-Quoting-Pflichttests für `pg_get_serial_sequence(...)` sind vorhanden
+- [x] der Writer-Lookup-Test verwendet den echten `PostgresDriver` in einem Modul mit passender Abhängigkeit
+- [x] der Aggregat-Change kompiliert in Ports, Driver- und CLI-Consumern
+- [x] die PG-Testcontainers-Integrationstests laufen mit `-PintegrationTests`
 
 ---
 
