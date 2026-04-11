@@ -66,7 +66,9 @@ interface TableImportSession : AutoCloseable {
     fun markTruncatePerformed()
 
     /**
-     * Regulärer Erfolgsabschluss: Reseeding + Trigger-Reenable.
+     * Regulärer Erfolgsabschluss: Reseeding + post-import Cleanup
+     * (z. B. Trigger-/FK-Reenable, falls writerseitig im Erfolgsweg
+     * abbildbar).
      *
      * State-Maschine: OPEN → FINISHED.
      * 0-Chunk-Pfad (F1) ist gültig (OPEN ohne vorangegangenen write).
