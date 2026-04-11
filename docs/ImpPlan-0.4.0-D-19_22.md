@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: D (Streaming-Import-Orchestrierung)
 > **Schritte**: 19 + 20 + 21 + 22
-> **Status**: Geplant
+> **Status**: Abgeschlossen (2026-04-11)
 > **Referenz**: `implementation-plan-0.4.0.md` §3.6.1, §3.6.2, §4 Phase D Schritte 19–22, §6.5, §6.14, §6.15
 
 ---
@@ -397,6 +397,20 @@ docker build --target build \
 ./gradlew :adapters:driven:streaming:test
 ```
 
+Ausgeführt für den umgesetzten Stand:
+
+```bash
+docker build --target build \
+  --build-arg GRADLE_TASKS=":adapters:driven:streaming:test" \
+  -t d-migrate:d19-22 .
+```
+
+Ergebnis:
+
+```text
+BUILD SUCCESSFUL
+```
+
 Schritt 23 ergänzt danach:
 
 - echte SQLite-Streamingtests
@@ -406,18 +420,18 @@ Schritt 23 ergänzt danach:
 
 ## 9. Abnahmekriterien
 
-- [ ] `ImportInput` ist als sealed class mit `Stdin`, `SingleFile`, `Directory` vorhanden
-- [ ] `ImportInput.Stdin` trägt einen expliziten `InputStream` statt implizitem `System.in`-Zugriff
-- [ ] `ImportResult`, `TableImportSummary`, `ChunkFailure` und `FailedFinishInfo` sind vorhanden
-- [ ] `StreamingImporter` ist produktiv in `adapters:driven:streaming` implementiert
-- [ ] der Importer nutzt die reale Driver-Architektur und führt **keine** `DataWriterRegistry` neu ein
-- [ ] `Directory.tableFilter` und `Directory.tableOrder` werden verbindlich respektiert und getestet
-- [ ] Pre-Flight-Fehler laufen immer als Abort, unabhängig von `--on-error`
-- [ ] Chunk-Fehlerpolitik für `abort`, `skip` und `log` ist implementiert
-- [ ] `rowsSkipped`, `rowsFailed` und `rowsUnknown` bleiben semantisch sauber getrennt
-- [ ] `FinishTableResult.PartialFailure` wird strukturiert in `failedFinish` übertragen
-- [ ] der 0-Chunk-/Empty-Table-Pfad ist im Importer korrekt abgedeckt
-- [ ] die Phase-D-Unit-Tests laufen ohne CLI-Wrapper und ohne Container
+- [x] `ImportInput` ist als sealed class mit `Stdin`, `SingleFile`, `Directory` vorhanden
+- [x] `ImportInput.Stdin` trägt einen expliziten `InputStream` statt implizitem `System.in`-Zugriff
+- [x] `ImportResult`, `TableImportSummary`, `ChunkFailure` und `FailedFinishInfo` sind vorhanden
+- [x] `StreamingImporter` ist produktiv in `adapters:driven:streaming` implementiert
+- [x] der Importer nutzt die reale Driver-Architektur und führt **keine** `DataWriterRegistry` neu ein
+- [x] `Directory.tableFilter` und `Directory.tableOrder` werden verbindlich respektiert und getestet
+- [x] Pre-Flight-Fehler laufen immer als Abort, unabhängig von `--on-error`
+- [x] Chunk-Fehlerpolitik für `abort`, `skip` und `log` ist implementiert
+- [x] `rowsSkipped`, `rowsFailed` und `rowsUnknown` bleiben semantisch sauber getrennt
+- [x] `FinishTableResult.PartialFailure` wird strukturiert in `failedFinish` übertragen
+- [x] der 0-Chunk-/Empty-Table-Pfad ist im Importer korrekt abgedeckt
+- [x] die Phase-D-Unit-Tests laufen ohne CLI-Wrapper und ohne Container
 
 ---
 
