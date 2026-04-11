@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: C (DataWriter-Port und JDBC-Treiber)
 > **Schritt**: 13
-> **Status**: Geplant
+> **Status**: Abgeschlossen (2026-04-11)
 > **Referenz**: `implementation-plan-0.4.0.md` §3.1.1, §4 Phase C Schritt 13, §6.6, §6.7
 
 ---
@@ -257,12 +257,12 @@ docker build -t d-migrate:dev .
 
 ## 9. Abnahmekriterien
 
-- [ ] `SchemaSync.kt` enthält vollständige KDoc zu Reseed-/Trigger-Vertrag
-- [ ] `SequenceAdjustment.kt` dokumentiert die Feldsemantik präzise
-- [ ] `SequenceAdjustmentTest.kt` ist vorhanden und grün
-- [ ] Kein JDBC-/SQL-Code in Schritt 13
-- [ ] Dialekt-spezifische Implementierungsdetails bleiben sauber für Schritt 15–17 getrennt
-- [ ] `newValue` ist im Dokument und in der KDoc eindeutig als nächster generierter Wert definiert
+- [x] `SchemaSync.kt` enthält vollständige KDoc zu Reseed-/Trigger-Vertrag
+- [x] `SequenceAdjustment.kt` dokumentiert die Feldsemantik präzise
+- [x] `SequenceAdjustmentTest.kt` ist vorhanden und grün
+- [x] Kein JDBC-/SQL-Code in Schritt 13
+- [x] Dialekt-spezifische Implementierungsdetails bleiben sauber für Schritt 15–17 getrennt
+- [x] `newValue` ist im Dokument und in der KDoc eindeutig als nächster generierter Wert definiert
 
 ---
 
