@@ -17,7 +17,7 @@ kover {
         verify {
             rule {
                 // TypeMapper: 100% via own tests; DdlGenerator: tested via golden masters in d-migrate-formats
-                // MysqlDataReader/TableLister: tested via Testcontainers in @Tag("integration")
+                // MysqlDataReader/TableLister/DataWriter/SchemaSync: tested via Testcontainers in @Tag("integration")
                 // — Coverage wird bei -PintegrationTests gemessen.
                 minBound(if (project.hasProperty("integrationTests")) 90 else 80)
             }
@@ -28,6 +28,8 @@ kover {
                     classes(
                         "dev.dmigrate.driver.mysql.MysqlDataReader",
                         "dev.dmigrate.driver.mysql.MysqlTableLister",
+                        "dev.dmigrate.driver.mysql.MysqlDataWriter",
+                        "dev.dmigrate.driver.mysql.MysqlSchemaSync",
                     )
                 }
             }

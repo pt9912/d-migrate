@@ -26,9 +26,10 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         builder.dialect shouldBe DatabaseDialect.MYSQL
     }
 
-    test("defaultParams contains useCursorFetch + UTF-8 (Java charset name)") {
+    test("defaultParams contains cursor fetch, batched statements and UTF-8 (Java charset name)") {
         builder.defaultParams() shouldBe mapOf(
             "useCursorFetch" to "true",
+            "rewriteBatchedStatements" to "true",
             "useUnicode" to "true",
             "characterEncoding" to "UTF-8",
         )
@@ -42,10 +43,11 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         builder.baseJdbcUrl(cfg(port = null)) shouldBe "jdbc:mysql://mysql.example.com:3306/shop"
     }
 
-    test("buildJdbcUrl injects useCursorFetch=true") {
+    test("buildJdbcUrl injects useCursorFetch=true and rewriteBatchedStatements=true") {
         val url = builder.buildJdbcUrl(cfg())
         url shouldContain "jdbc:mysql://mysql.example.com:3306/shop"
         url shouldContain "useCursorFetch=true"
+        url shouldContain "rewriteBatchedStatements=true"
     }
 
     test("buildJdbcUrl injects UTF-8 character encoding (server-mapped to utf8mb4)") {

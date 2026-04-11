@@ -16,9 +16,6 @@ class MysqlDriver : DatabaseDriver {
     override fun ddlGenerator(): DdlGenerator = MysqlDdlGenerator()
     override fun dataReader(): DataReader = MysqlDataReader()
     override fun tableLister(): TableLister = MysqlTableLister()
-    override fun dataWriter(): DataWriter =
-        throw UnsupportedOperationException(
-            "Data import for MYSQL is planned for phase C step 16"
-        )
+    override fun dataWriter(): DataWriter = MysqlDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = MysqlJdbcUrlBuilder()
 }

@@ -6,9 +6,15 @@ import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.mysql.MysqlDataWriter
+import dev.dmigrate.driver.postgresql.PostgresDataWriter
+import dev.dmigrate.driver.sqlite.SqliteDataWriter
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 
@@ -133,6 +139,20 @@ class CliHelpAndBootstrapTest : FunSpec({
             registerDrivers()
             registerDrivers()
         }
+    }
+
+    test("registerDrivers() exposes dataWriter() for all production dialects") {
+        registerDrivers()
+
+        DatabaseDriverRegistry.get(DatabaseDialect.POSTGRESQL)
+            .dataWriter()
+            .shouldBeInstanceOf<PostgresDataWriter>()
+        DatabaseDriverRegistry.get(DatabaseDialect.MYSQL)
+            .dataWriter()
+            .shouldBeInstanceOf<MysqlDataWriter>()
+        DatabaseDriverRegistry.get(DatabaseDialect.SQLITE)
+            .dataWriter()
+            .shouldBeInstanceOf<SqliteDataWriter>()
     }
 
     test("buildRootCommand() returns a DMigrate with schema and data subcommands") {
