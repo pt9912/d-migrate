@@ -6,6 +6,10 @@ package dev.dmigrate.driver
  *
  * Drivers are registered at startup (see `Main.kt`) and looked up by
  * [DatabaseDialect] at runtime.
+ *
+ * The registry is the single lookup point for all driver-facing ports:
+ * DDL generation, data export, table listing, JDBC URL building, and
+ * data import via [DatabaseDriver.dataWriter].
  */
 object DatabaseDriverRegistry {
 

@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.TableLister
 
 /**
@@ -15,5 +16,9 @@ class SqliteDriver : DatabaseDriver {
     override fun ddlGenerator(): DdlGenerator = SqliteDdlGenerator()
     override fun dataReader(): DataReader = SqliteDataReader()
     override fun tableLister(): TableLister = SqliteTableLister()
+    override fun dataWriter(): DataWriter =
+        throw UnsupportedOperationException(
+            "Data import for SQLITE is planned for phase C step 17"
+        )
     override fun urlBuilder(): JdbcUrlBuilder = SqliteJdbcUrlBuilder()
 }

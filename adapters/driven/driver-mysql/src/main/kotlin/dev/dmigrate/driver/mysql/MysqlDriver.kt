@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.TableLister
 
 /**
@@ -15,5 +16,9 @@ class MysqlDriver : DatabaseDriver {
     override fun ddlGenerator(): DdlGenerator = MysqlDdlGenerator()
     override fun dataReader(): DataReader = MysqlDataReader()
     override fun tableLister(): TableLister = MysqlTableLister()
+    override fun dataWriter(): DataWriter =
+        throw UnsupportedOperationException(
+            "Data import for MYSQL is planned for phase C step 16"
+        )
     override fun urlBuilder(): JdbcUrlBuilder = MysqlJdbcUrlBuilder()
 }

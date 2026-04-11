@@ -2,6 +2,7 @@ package dev.dmigrate.driver
 
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.TableLister
 
 /**
@@ -20,5 +21,6 @@ interface DatabaseDriver {
     fun ddlGenerator(): DdlGenerator
     fun dataReader(): DataReader
     fun tableLister(): TableLister
+    fun dataWriter(): DataWriter
     fun urlBuilder(): JdbcUrlBuilder
 }

@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.TableLister
 
 /**
@@ -18,5 +19,6 @@ class PostgresDriver : DatabaseDriver {
     override fun ddlGenerator(): DdlGenerator = PostgresDdlGenerator()
     override fun dataReader(): DataReader = PostgresDataReader()
     override fun tableLister(): TableLister = PostgresTableLister()
+    override fun dataWriter(): DataWriter = PostgresDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = PostgresJdbcUrlBuilder()
 }
