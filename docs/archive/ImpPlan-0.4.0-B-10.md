@@ -57,18 +57,6 @@ Reader-Implementierungen werden unverändert konsumiert.
 Die Writer-Factory (0.3.0) folgt einem einfachen `when`-Dispatch auf
 `DataExportFormat`:
 
-```kotlin
-class DefaultDataChunkWriterFactory(
-    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
-) : DataChunkWriterFactory {
-    override fun create(format, output, options) = when (format) {
-        JSON -> JsonChunkWriter(output, options, warningSink)
-        YAML -> YamlChunkWriter(output, options, warningSink)
-        CSV  -> CsvChunkWriter(output, options, warningSink)
-    }
-}
-```
-
 Die Reader-Factory übernimmt dieses Muster 1:1. Es gibt bewusst keine
 zusätzliche Abstraktion (Registry, SPI o.Ä.) — die drei Formate sind
 hart kodiert und über das `DataExportFormat`-Enum vollständig
@@ -126,38 +114,6 @@ Bei einem Validierungsfehler übernimmt die Factory keine Ownership des
 
 ### 5.1 `DefaultDataChunkReaderFactory.kt`
 
-```kotlin
-package dev.dmigrate.format.data
-
-import dev.dmigrate.format.data.csv.CsvChunkReader
-import dev.dmigrate.format.data.json.JsonChunkReader
-import dev.dmigrate.format.data.yaml.YamlChunkReader
-import java.io.InputStream
-
-/**
- * Default-Implementierung der [DataChunkReaderFactory] mit den drei
- * Phase-B-Readern. Wird vom CLI in Phase E zentral instanziiert und
- * an den [dev.dmigrate.streaming.StreamingImporter] übergeben.
- */
-class DefaultDataChunkReaderFactory : DataChunkReaderFactory {
-
-    override fun create(
-        format: DataExportFormat,
-        input: InputStream,
-        table: String,
-        chunkSize: Int,
-        options: ImportOptions,
-    ): DataChunkReader {
-        require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
-        return when (format) {
-            DataExportFormat.JSON -> JsonChunkReader(input, table, chunkSize, options)
-            DataExportFormat.YAML -> YamlChunkReader(input, table, chunkSize, options)
-            DataExportFormat.CSV  -> CsvChunkReader(input, table, chunkSize, options)
-        }
-    }
-}
-```
-
 ### 5.2 Hinweise
 
 - Die Klasse hat keinen internen State und ist thread-safe.
@@ -201,106 +157,6 @@ Symmetrisch zu `DefaultDataChunkWriterFactoryTest.kt`. Vier Achsen:
 | 11 | `close() without read does not throw` | `create()` → `close()` → kein Fehler |
 
 ### 6.3 Test-Skeleton
-
-```kotlin
-package dev.dmigrate.format.data
-
-import dev.dmigrate.format.data.csv.CsvChunkReader
-import dev.dmigrate.format.data.json.JsonChunkReader
-import dev.dmigrate.format.data.yaml.YamlChunkReader
-import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeInstanceOf
-import java.io.ByteArrayInputStream
-
-class DefaultDataChunkReaderFactoryTest : FunSpec({
-
-    val factory = DefaultDataChunkReaderFactory()
-    val chunkSize = 100
-    val table = "test_table"
-
-    fun input(text: String) = ByteArrayInputStream(text.toByteArray())
-
-    test("JSON format → JsonChunkReader") {
-        factory.create(DataExportFormat.JSON, input("[]"), table, chunkSize)
-            .use { it.shouldBeInstanceOf<JsonChunkReader>() }
-    }
-
-    test("YAML format → YamlChunkReader") {
-        factory.create(DataExportFormat.YAML, input("[]"), table, chunkSize)
-            .use { it.shouldBeInstanceOf<YamlChunkReader>() }
-    }
-
-    test("CSV format → CsvChunkReader") {
-        factory.create(DataExportFormat.CSV, input("id\n"), table, chunkSize)
-            .use { it.shouldBeInstanceOf<CsvChunkReader>() }
-    }
-
-    test("JSON reader reads minimal input") {
-        factory.create(DataExportFormat.JSON, input("""[{"id":1}]"""), table, chunkSize).use { reader ->
-            val chunk = reader.nextChunk()!!
-            chunk.rows.size shouldBe 1
-            reader.nextChunk() shouldBe null
-        }
-    }
-
-    test("YAML reader reads minimal input") {
-        factory.create(DataExportFormat.YAML, input("- {id: 1}\n"), table, chunkSize).use { reader ->
-            val chunk = reader.nextChunk()!!
-            chunk.rows.size shouldBe 1
-            reader.nextChunk() shouldBe null
-        }
-    }
-
-    test("CSV reader reads minimal input") {
-        factory.create(DataExportFormat.CSV, input("id\n1\n"), table, chunkSize).use { reader ->
-            val chunk = reader.nextChunk()!!
-            chunk.rows.size shouldBe 1
-            reader.nextChunk() shouldBe null
-        }
-    }
-
-    test("chunkSize is propagated to reader") {
-        factory.create(
-            DataExportFormat.JSON,
-            input("""[{"id":1},{"id":2},{"id":3}]"""),
-            table,
-            chunkSize = 2,
-        ).use { reader ->
-            reader.nextChunk()!!.rows.size shouldBe 2
-            reader.nextChunk()!!.rows.size shouldBe 1
-            reader.nextChunk() shouldBe null
-        }
-    }
-
-    test("rejects non-positive chunkSize") {
-        shouldThrow<IllegalArgumentException> {
-            factory.create(DataExportFormat.JSON, input("[]"), table, chunkSize = 0)
-        }
-        shouldThrow<IllegalArgumentException> {
-            factory.create(DataExportFormat.JSON, input("[]"), table, chunkSize = -1)
-        }
-    }
-
-    test("options are propagated to CSV reader") {
-        val opts = ImportOptions(csvNoHeader = true)
-        factory.create(DataExportFormat.CSV, input("1\n"), table, chunkSize, opts).use { reader ->
-            reader.headerColumns() shouldBe null
-        }
-    }
-
-    test("empty JSON array → nextChunk() returns null") {
-        factory.create(DataExportFormat.JSON, input("[]"), table, chunkSize).use { reader ->
-            reader.nextChunk() shouldBe null
-        }
-    }
-
-    test("close() without read does not throw") {
-        factory.create(DataExportFormat.JSON, input("[]"), table, chunkSize).close()
-    }
-})
-```
 
 ---
 
