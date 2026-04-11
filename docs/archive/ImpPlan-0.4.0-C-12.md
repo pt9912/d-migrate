@@ -130,20 +130,6 @@ DataReader.streamTable(pool, table, ...) → ChunkSequence (pull)
 DataWriter.openTable(pool, table, options)  → TableImportSession (push)
 ```
 
-Aus dem Plan §3.1.1:
-
-```kotlin
-interface DataWriter {
-    val dialect: DatabaseDialect
-    fun schemaSync(): SchemaSync
-    fun openTable(
-        pool: ConnectionPool,
-        table: String,
-        options: ImportOptions,
-    ): TableImportSession
-}
-```
-
 - `dialect` — Symmetrie zu `DataReader.dialect`, für Registry-Lookup.
 - `schemaSync()` — pflichtig, keine Default-No-Op-Implementierung.
   Rückgabetyp `SchemaSync` wird als Vorab-Definition aus Schritt 13
@@ -191,34 +177,8 @@ einem minimalen Stub.
 
 ### 4.4 WriteResult und FinishTableResult
 
-**WriteResult** (Data Class):
-
-```kotlin
-data class WriteResult(
-    val rowsInserted: Long,
-    val rowsUpdated: Long,
-    val rowsSkipped: Long,
-    val rowsUnknown: Long = 0L,
-)
-```
-
 - `rowsUnknown` — R10: MySQL `SUCCESS_NO_INFO (-2)`-Fallback
 - Invariante: alle Felder `≥ 0`
-
-**FinishTableResult** (Sealed Class):
-
-```kotlin
-sealed class FinishTableResult {
-    data class Success(
-        val adjustments: List<SequenceAdjustment>,
-    ) : FinishTableResult()
-
-    data class PartialFailure(
-        val adjustments: List<SequenceAdjustment>,
-        val cause: Throwable,
-    ) : FinishTableResult()
-}
-```
 
 - `Success` — Reseeding + Trigger-Reenable erfolgreich
 - `PartialFailure` — Reseeding ok, Trigger-Reenable gescheitert (H4)
@@ -229,24 +189,10 @@ Writer-seitige Spalten-Metadaten mit JDBC-Typcode. Lebt bewusst in
 `hexagon:ports` (nicht in `hexagon:core`), weil `core.ColumnDescriptor` JDBC-frei
 bleiben soll (L15).
 
-```kotlin
-data class TargetColumn(
-    val name: String,
-    val nullable: Boolean,
-    val jdbcType: Int,
-    val sqlTypeName: String? = null,
-)
-```
-
 Die Konversion `TargetColumn → JdbcTypeHint` erfolgt erst im Phase-D
 `StreamingImporter`, der beide Module kennt.
 
 ### 4.6 UnsupportedTriggerModeException
-
-```kotlin
-class UnsupportedTriggerModeException(message: String) :
-    RuntimeException(message)
-```
 
 Geworfen von `SchemaSync.disableTriggers()` auf MySQL/SQLite (Plan
 §3.3/§3.4).
@@ -257,28 +203,6 @@ Damit `DataWriter` und `FinishTableResult` kompilieren, werden
 `SchemaSync` und `SequenceAdjustment` bereits als Minimal-Typen
 angelegt. Die vollständige Vertragsdokumentation, Tests und die
 `Connection`-Parameter-Signatur werden in Schritt 13 finalisiert.
-
-```kotlin
-// Minimal für Schritt 12 — Schritt 13 ergänzt KDoc und Tests
-interface SchemaSync {
-    fun reseedGenerators(
-        conn: java.sql.Connection,
-        table: String,
-        importedColumns: List<ColumnDescriptor>,
-    ): List<SequenceAdjustment>
-
-    fun disableTriggers(conn: java.sql.Connection, table: String)
-    fun assertNoUserTriggers(conn: java.sql.Connection, table: String)
-    fun enableTriggers(conn: java.sql.Connection, table: String)
-}
-
-data class SequenceAdjustment(
-    val table: String,
-    val column: String,
-    val sequenceName: String?,
-    val newValue: Long,
-)
-```
 
 ---
 
@@ -307,298 +231,32 @@ data class SequenceAdjustment(
 
 ### 5.2 `DataWriter.kt`
 
-```kotlin
-package dev.dmigrate.driver.data
-
-import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.connection.ConnectionPool
-
-/**
- * Port: Tabellen-Import über eine Session-basierte Push-API.
- *
- * Symmetrisches Gegenstück zu [DataReader] (Pull-basierter Lese-Port).
- *
- * Connection-Ownership (symmetrisch zu DataReader, §6.18):
- * - Der Writer bekommt einen [ConnectionPool], NICHT eine fertige Connection.
- * - Pro [openTable]-Aufruf borgt der Writer sich eine eigene Connection
- *   und hält sie für die Lifetime der zurückgegebenen [TableImportSession].
- * - Der Caller besitzt nie eine JDBC-Connection.
- *
- * Konkrete Treiber (PostgreSQL, MySQL, SQLite) implementieren dieses
- * Interface direkt (kein AbstractJdbcDataWriter in 0.4.0 — die
- * Writer-Mechanik ist hinreichend dialektspezifisch).
- */
-interface DataWriter {
-    val dialect: DatabaseDialect
-
-    /**
-     * Liefert die dialektspezifische Sequence-/Trigger-Synchronisation.
-     * Es gibt bewusst KEINE Default-No-Op-Implementierung: jeder Treiber
-     * muss den Vertrag explizit erfüllen.
-     */
-    fun schemaSync(): SchemaSync
-
-    /**
-     * Bereitet einen Tabellen-Import vor: prüft Spalten, baut die
-     * PreparedStatement-INSERT-Vorlage und liefert eine [TableImportSession]
-     * zurück, die der Caller pro Chunk benutzt und am Ende schließt.
-     *
-     * Borgt sich pro Aufruf eine Connection aus dem Pool.
-     * Die Connection wird in der Session gehalten und beim
-     * `close()` zurückgegeben.
-     *
-     * **Cleanup-Vertrag (H1)**: Führt vor dem Return ggf.
-     * `disableTriggers(...)` oder `assertNoUserTriggers(...)` aus. Wirft
-     * die Methode danach noch, MUSS der Writer intern aufräumen (Trigger
-     * re-enablen, Connection zurückgeben) bevor die Exception
-     * weiterreicht. Sekundäre Cleanup-Fehler werden per
-     * `addSuppressed()` angehängt.
-     *
-     * @throws dev.dmigrate.core.data.ImportSchemaMismatchException bei
-     *   Target-seitigen Metadaten-/Schemafehlern
-     */
-    fun openTable(
-        pool: ConnectionPool,
-        table: String,
-        options: ImportOptions,
-    ): TableImportSession
-}
-```
-
 ### 5.3 `TableImportSession.kt`
 
+Nutzungsbeispiel:
+
 ```kotlin
-package dev.dmigrate.driver.data
-
-import dev.dmigrate.core.data.DataChunk
-
-/**
- * Session für den Import einer einzelnen Tabelle. Implementiert eine
- * strikte State-Maschine (M1) mit den Zuständen OPEN, WRITTEN, FAILED,
- * FINISHED, CLOSED.
- *
- * Lifecycle:
- * ```
- * val session = writer.openTable(pool, table, options)
- * session.use {
- *     for (chunk in chunks) {
- *         it.write(chunk)
- *         it.commitChunk()   // oder rollbackChunk() bei Fehler
- *     }
- *     it.finishTable()
- * }
- * ```
- *
- * **F3**: `close()` wirft nicht — Sekundärfehler werden strukturiert
- * gemeldet, nicht als Exception propagiert.
- */
-interface TableImportSession : AutoCloseable {
-
-    /**
-     * Autoritative Target-Spalten in Binding-Reihenfolge. Vom Writer
-     * beim Öffnen der Tabelle über JDBC-Metadaten eingelesen (§6.4).
-     */
-    val targetColumns: List<TargetColumn>
-
-    /**
-     * Schreibt einen Chunk im aktuellen Transaktionskontext.
-     *
-     * State-Maschine: OPEN → WRITTEN.
-     * Aus jedem anderen Zustand: IllegalStateException.
-     */
-    fun write(chunk: DataChunk): WriteResult
-
-    /**
-     * Bestätigt den letzten geschriebenen Chunk.
-     *
-     * State-Maschine: WRITTEN → OPEN.
-     * Wirft commitChunk() selbst (H-R1): WRITTEN → FAILED.
-     */
-    fun commitChunk()
-
-    /**
-     * Verwirft den letzten geschriebenen Chunk.
-     *
-     * State-Maschine: WRITTEN → OPEN.
-     * Wirft rollbackChunk() selbst (H-R1): WRITTEN → FAILED.
-     */
-    fun rollbackChunk()
-
-    /**
-     * Truncate-Signal pro Tabelle (R3). Idempotent.
-     *
-     * State-Maschine: erlaubt aus OPEN, solange noch kein `write()`
-     * stattgefunden hat (auch nicht nach `commitChunk()` zurück in
-     * OPEN). Das `hasWritten`-Flag ist sticky.
-     * Aus jedem anderen Zustand oder nach erstem write:
-     * IllegalStateException.
-     */
-    fun markTruncatePerformed()
-
-    /**
-     * Regulärer Erfolgsabschluss: Reseeding + Trigger-Reenable.
-     *
-     * State-Maschine: OPEN → FINISHED.
-     * 0-Chunk-Pfad (F1) ist gültig (OPEN ohne vorangegangenen write).
-     * Aus WRITTEN: IllegalStateException (Importer MUSS vorher committen).
-     */
-    fun finishTable(): FinishTableResult
-
-    /**
-     * Cleanup: Rollback offener Transaktion, autoCommit-Reset,
-     * Trigger-Reenable (idempotent), Connection zurückgeben.
-     *
-     * Wirft NICHT (F3). Idempotent.
-     * R6-Cleanup-Reihenfolge: rollback → autoCommit → enableTriggers
-     * → FK-Reset → Connection-Return.
-     */
-    override fun close()
+val session = writer.openTable(pool, table, options)
+session.use {
+    for (chunk in chunks) {
+        it.write(chunk)
+        it.commitChunk()   // oder rollbackChunk() bei Fehler
+    }
+    it.finishTable()
 }
 ```
 
 ### 5.4 `WriteResult.kt`
 
-```kotlin
-package dev.dmigrate.driver.data
-
-/**
- * Per-Chunk-Ergebnis eines [TableImportSession.write].
- *
- * Alle Felder sind nicht-negativ. [rowsUnknown] ist > 0 nur im
- * MySQL-Pfad bei `Statement.SUCCESS_NO_INFO` (R10/M-R8).
- */
-data class WriteResult(
-    val rowsInserted: Long,
-    val rowsUpdated: Long,
-    val rowsSkipped: Long,
-    val rowsUnknown: Long = 0L,
-) {
-    init {
-        require(rowsInserted >= 0) { "rowsInserted must be >= 0, got $rowsInserted" }
-        require(rowsUpdated >= 0) { "rowsUpdated must be >= 0, got $rowsUpdated" }
-        require(rowsSkipped >= 0) { "rowsSkipped must be >= 0, got $rowsSkipped" }
-        require(rowsUnknown >= 0) { "rowsUnknown must be >= 0, got $rowsUnknown" }
-    }
-
-    /** Gesamtzahl verarbeiteter Rows in diesem Chunk. */
-    val totalRows: Long get() = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown
-}
-```
-
 ### 5.5 `FinishTableResult.kt`
-
-```kotlin
-package dev.dmigrate.driver.data
-
-/**
- * Ergebnis von [TableImportSession.finishTable].
- *
- * - [Success]: Reseeding und Trigger-Reenable erfolgreich.
- * - [PartialFailure]: Reseeding hat geklappt, Trigger-Reenable
- *   gescheitert (H4). [cause] ist der originale Throwable.
- *
- * Wenn `reseedGenerators` selbst wirft, reicht `finishTable()` die
- * Exception direkt durch — es gibt dann keinen FinishTableResult.
- */
-sealed class FinishTableResult {
-    data class Success(
-        val adjustments: List<SequenceAdjustment>,
-    ) : FinishTableResult()
-
-    data class PartialFailure(
-        val adjustments: List<SequenceAdjustment>,
-        val cause: Throwable,
-    ) : FinishTableResult()
-}
-```
 
 ### 5.6 `TargetColumn.kt`
 
-```kotlin
-package dev.dmigrate.driver.data
-
-/**
- * Writer-side Spalten-Metadaten für eine Import-Zieltabelle.
- *
- * Lebt in `hexagon:ports` (nicht in `hexagon:core`), weil [jdbcType] semantisch
- * JDBC-coupled ist. `core.ColumnDescriptor` bleibt JDBC-frei (L15).
- *
- * Die Konversion zu `formats.JdbcTypeHint` erfolgt im Phase-D
- * `StreamingImporter`, der beide Module kennt.
- *
- * @property name Spaltenname
- * @property nullable Ob die Spalte NULL erlaubt
- * @property jdbcType JDBC-Typcode aus `ResultSetMetaData.getColumnType()`
- * @property sqlTypeName Dialekt-spezifischer Type-Name (sekundärer Hint
- *   für mehrdeutige jdbcType-Werte, z.B. PG `Types.OTHER`)
- */
-data class TargetColumn(
-    val name: String,
-    val nullable: Boolean,
-    val jdbcType: Int,
-    val sqlTypeName: String? = null,
-)
-```
-
 ### 5.7 `UnsupportedTriggerModeException.kt`
-
-```kotlin
-package dev.dmigrate.driver.data
-
-/**
- * Geworfen von [SchemaSync.disableTriggers], wenn der Dialekt den
- * Trigger-Disable-Modus nicht sicher unterstützt (MySQL, SQLite).
- */
-class UnsupportedTriggerModeException(message: String) :
-    RuntimeException(message)
-```
 
 ### 5.8 `SchemaSync.kt` (Vorab-Definition)
 
-```kotlin
-package dev.dmigrate.driver.data
-
-import dev.dmigrate.core.data.ColumnDescriptor
-import java.sql.Connection
-
-/**
- * Dialekt-spezifische Operationen rund um den Schreib-Zyklus.
- *
- * Vollständige Vertragsdokumentation und Tests: Schritt 13.
- */
-interface SchemaSync {
-    fun reseedGenerators(
-        conn: Connection,
-        table: String,
-        importedColumns: List<ColumnDescriptor>,
-    ): List<SequenceAdjustment>
-
-    fun disableTriggers(conn: Connection, table: String)
-    fun assertNoUserTriggers(conn: Connection, table: String)
-    fun enableTriggers(conn: Connection, table: String)
-}
-```
-
 ### 5.9 `SequenceAdjustment.kt` (Vorab-Definition)
-
-```kotlin
-package dev.dmigrate.driver.data
-
-/**
- * Beschreibung einer durchgeführten Sequence-/Identity-Nachführung.
- *
- * @property table Tabellenname
- * @property column Identity-/SERIAL-Spaltenname
- * @property sequenceName PG: expliziter Sequence-Name; MySQL/SQLite: null
- * @property newValue Neuer Sequence-/AUTO_INCREMENT-Wert
- */
-data class SequenceAdjustment(
-    val table: String,
-    val column: String,
-    val sequenceName: String?,
-    val newValue: Long,
-)
-```
 
 ---
 
@@ -683,83 +341,6 @@ JDBC-Abhängigkeit.
 
 ### 6.6 Stub-Design für State-Maschine-Tests
 
-```kotlin
-/**
- * Minimaler Stub, der die State-Maschine aus §3.1.1 (M1)
- * implementiert. Kein JDBC, kein I/O — nur State-Tracking.
- */
-private class StubTableImportSession(
-    override val targetColumns: List<TargetColumn> = listOf(
-        TargetColumn("id", false, java.sql.Types.INTEGER),
-    ),
-    private val commitWillThrow: Boolean = false,
-    private val rollbackWillThrow: Boolean = false,
-) : TableImportSession {
-
-    enum class State { OPEN, WRITTEN, FAILED, FINISHED, CLOSED }
-
-    var state: State = State.OPEN
-        private set
-
-    var truncatePerformed: Boolean = false
-        private set
-
-    private var hasWritten: Boolean = false
-
-    override fun write(chunk: DataChunk): WriteResult {
-        check(state == State.OPEN) {
-            "write() requires OPEN, current state: $state"
-        }
-        state = State.WRITTEN
-        hasWritten = true
-        return WriteResult(chunk.rows.size.toLong(), 0, 0)
-    }
-
-    override fun commitChunk() {
-        check(state == State.WRITTEN) {
-            "commitChunk() requires WRITTEN, current state: $state"
-        }
-        if (commitWillThrow) {
-            state = State.FAILED
-            throw RuntimeException("simulated commit failure")
-        }
-        state = State.OPEN
-    }
-
-    override fun rollbackChunk() {
-        check(state == State.WRITTEN) {
-            "rollbackChunk() requires WRITTEN, current state: $state"
-        }
-        if (rollbackWillThrow) {
-            state = State.FAILED
-            throw RuntimeException("simulated rollback failure")
-        }
-        state = State.OPEN
-    }
-
-    override fun markTruncatePerformed() {
-        check(state == State.OPEN && !hasWritten) {
-            "markTruncatePerformed() requires OPEN before any write, " +
-                "current state: $state, hasWritten: $hasWritten"
-        }
-        truncatePerformed = true
-    }
-
-    override fun finishTable(): FinishTableResult {
-        check(state == State.OPEN) {
-            "finishTable() requires OPEN, current state: $state"
-        }
-        state = State.FINISHED
-        return FinishTableResult.Success(emptyList())
-    }
-
-    override fun close() {
-        if (state == State.CLOSED) return  // idempotent
-        state = State.CLOSED
-    }
-}
-```
-
 Dieser Stub wird ausschließlich in den Vertragstests verwendet. Die
 konkreten Treiber-Writer (Schritt 15–17) bauen ihre eigene
 State-Maschinen-Implementierung; Phase D fährt sie dann mit einem
@@ -782,35 +363,6 @@ Fake-Writer ab.
 | `UnsupportedTriggerModeException` | Exclude | Triviale Exception-Subclass |
 
 Kover-Excludes in `build.gradle.kts` hinzufügen (bisher keine Excludes vorhanden):
-
-```kotlin
-kover {
-    reports {
-        filters {
-            excludes {
-                classes(
-                    "dev.dmigrate.driver.DdlGenerator",
-                    "dev.dmigrate.driver.TypeMapper",
-                    "dev.dmigrate.driver.connection.PoolSettings",
-                    // Phase C Schritt 12: pure Interfaces
-                    "dev.dmigrate.driver.data.DataWriter",
-                    "dev.dmigrate.driver.data.TableImportSession",
-                    "dev.dmigrate.driver.data.SchemaSync",
-                    // Schritt 13 entfernt diesen Exclude wieder,
-                    // wenn SequenceAdjustment eigene Tests bekommt
-                    "dev.dmigrate.driver.data.SequenceAdjustment",
-                    "dev.dmigrate.driver.data.UnsupportedTriggerModeException",
-                )
-            }
-        }
-        verify {
-            rule {
-                minBound(90)
-            }
-        }
-    }
-}
-```
 
 Gesamtziel pro Modul: ≥ 90 % (Plan §8).
 

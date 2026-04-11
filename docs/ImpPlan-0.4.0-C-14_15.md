@@ -1,38 +1,39 @@
-# Implementierungsplan: Phase C – Schritt 14 – Writer-Lookup über die bestehende Driver-Registry
+# Implementierungsplan: Phase C – Schritte 14+15 – Writer-Lookup und PostgreSQL-Writer
 
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: C (DataWriter-Port und JDBC-Treiber)
-> **Schritt**: 14
+> **Schritte**: 14 + 15
 > **Status**: Geplant
-> **Referenz**: `implementation-plan-0.4.0.md` §3.1.2, §4 Phase C Schritt 14, §6.10
+> **Referenz**: `implementation-plan-0.4.0.md` §3.1.2, §3.2, §4 Phase C Schritte 14–15, §6.6, §6.7
 
 ---
 
 ## 1. Ziel
 
-Schritt 14 muss den Lookup-Pfad für `DataWriter` schaffen, damit CLI und
-`StreamingImporter` später pro `DatabaseDialect` den passenden Writer
-auflösen können.
+In der aktuellen Codebasis werden die ursprünglichen Schritte 14 und 15 als
+ein **atomarer** Change umgesetzt:
 
-Wichtige Besonderheit des aktuellen Repository-Stands: Die Codebasis verwendet
-bereits **nicht mehr** die im Masterplan erwähnten Einzel-Registries wie
-`DataReaderRegistry`, sondern ein zentrales Aggregat
-`DatabaseDriverRegistry` + `DatabaseDriver`.
+1. Writer-Lookup über das bestehende Aggregat `DatabaseDriver` /
+   `DatabaseDriverRegistry`
+2. erster echter Dialekt-Writer: PostgreSQL
 
-Deshalb wird Schritt 14 in der aktuellen Codebasis **nicht** als neue
-eigenständige `DataWriterRegistry` umgesetzt. Stattdessen wird der bestehende
-`DatabaseDriver` um `dataWriter()` erweitert, und der Lookup läuft weiter über
-`DatabaseDriverRegistry.get(dialect)`.
+Der Grund ist technisch zwingend: Sobald `DatabaseDriver` um
+`dataWriter(): DataWriter` erweitert wird, müssen mindestens ein realer Writer
+und ein realer Driver diesen Port im selben Change erfüllen. Ein isolierter
+„nur Registry"-Zwischenschritt wäre nicht kompilierbar.
 
-Das erfüllt das fachliche Ziel von Schritt 14, ohne eine zweite Registry neben
-dem bereits etablierten Aggregat einzuführen.
+Dieser kombinierte Plan liefert daher:
 
-Wichtig für die Umsetzbarkeit: Dieser Schritt ist in der aktuellen Codebasis
-**kein isoliert kompilierbarer Zwischenstand**. Sobald `DatabaseDriver` um
-`dataWriter()` erweitert wird, müssen mindestens ein echter Writer und die
-betroffenen Driver-Implementierungen im selben Change mitgezogen werden.
-Schritt 14 ist deshalb als **atomarer Aggregat-/Bootstrap-Teil von Schritt 15**
-zu lesen, nicht als eigenständiger Zwischencommit.
+- `DatabaseDriver.dataWriter()`
+- Lookup über `DatabaseDriverRegistry.get(dialect).dataWriter()`
+- `PostgresDataWriter`
+- `PostgresSchemaSync`
+- `PostgresDriver.dataWriter()`
+- fail-fast-Brücken in `MysqlDriver.dataWriter()` und `SqliteDriver.dataWriter()`
+  bis Schritt 16/17 die echten Writer liefern
+- Registry-/Integrationstests für den ersten vollständigen Writer-Pfad
+
+MySQL und SQLite folgen weiterhin separat in Schritt 16 bzw. 17.
 
 ---
 
@@ -40,49 +41,42 @@ zu lesen, nicht als eigenständiger Zwischencommit.
 
 | Abhängigkeit | Schritt | Status |
 |---|---|---|
-| `DataWriter` | Phase C Schritt 12 | ✅ Vorhanden |
+| `DataWriter`, `TableImportSession`, `WriteResult`, `FinishTableResult` | Phase C Schritt 12 | ✅ Vorhanden |
 | `SchemaSync`, `SequenceAdjustment` | Phase C Schritt 13 | ✅ Vorhanden |
-| `DatabaseDriver` | Bestand | ✅ Vorhanden |
-| `DatabaseDriverRegistry` | Bestand | ✅ Vorhanden |
-| `PostgresDriver`, `MysqlDriver`, `SqliteDriver` | Bestand | ✅ Vorhanden |
+| `DatabaseDriver`, `DatabaseDriverRegistry` | Bestand | ✅ Vorhanden |
+| `PostgresDriver`, `PostgresJdbcUrlBuilder`, `ConnectionPool` | Bestand | ✅ Vorhanden |
+| `ValueDeserializer`, `TargetColumn`, `ImportOptions` | Phase A / C12 | ✅ Vorhanden |
 
 ---
 
-## 3. Problemstellung
+## 3. Architekturentscheidung
 
-### 3.1 Plan-Stand vs. Codebasis
+### 3.1 Keine separate `DataWriterRegistry`
 
-Der Masterplan 0.4.0 sagt:
+Der 0.4.0-Masterplan spricht noch von einer separaten `DataWriterRegistry`.
+Die aktuelle Codebasis ist aber bereits auf ein zentrales Driver-Aggregat
+konsolidiert:
 
-- Schritt 14: `DataWriterRegistry` als eigenes `object` mit `clear()`
-- Schritt 18: Treiber-Bootstrap-Objects um `registerDataWriter` ergänzen
+- `DatabaseDriver` bündelt Dialekt-Fähigkeiten
+- `DatabaseDriverRegistry` ist der zentrale Lookup-Punkt
+- `Main.kt` registriert pro Dialekt genau einen Driver
 
-Die reale Codebasis ist aber bereits weiter konsolidiert:
+Darum wird **keine** zweite Writer-Registry eingeführt. Stattdessen wird das
+bestehende Aggregat ergänzt.
 
-- `DatabaseDriver` bündelt `ddlGenerator()`, `dataReader()`, `tableLister()`,
-  `urlBuilder()`
-- `DatabaseDriverRegistry` ist die zentrale Registry
-- `Main.kt` registriert pro Dialekt genau **ein** Driver-Aggregat
+### 3.2 Atomarer Aggregat-Change
 
-Eine neue `DataWriterRegistry` würde deshalb eine zweite parallele
-Lookup-Struktur einführen, obwohl die aktuelle Architektur gerade auf ein
-zentrales Driver-Aggregat vereinheitlicht wurde.
+Für dieses Repo gilt:
 
-### 3.2 Architekturentscheidung für die aktuelle Codebasis
+- `DatabaseDriver.dataWriter()` darf nicht separat landen
+- die Interface-Erweiterung wird zusammen mit `PostgresDataWriter` und
+  `PostgresDriver.dataWriter()` eingeführt
+- `MysqlDriver` und `SqliteDriver` müssen im selben Change zumindest
+  kompilierbare fail-fast-Implementierungen erhalten
+- `DatabaseDriverRegistry.clear()` bleibt der einzige Test-Reset
 
-Für das Repository gilt daher abweichend vom älteren Text in
-`implementation-plan-0.4.0.md`:
-
-1. `DatabaseDriver` bleibt das zentrale Aggregat pro Dialekt.
-2. Writer-Fähigkeiten werden **am Aggregat ergänzt**, nicht über eine zweite
-   Registry modelliert.
-3. `DatabaseDriverRegistry.clear()` bleibt der einzige Test-Reset-Punkt.
-
-Diese Abweichung ist bewusst und reduziert Komplexität:
-
-- kein doppelter Bootstrap-Pfad
-- keine Inkonsistenz zwischen Reader- und Writer-Lookup
-- keine zusätzliche globale Registry mit eigenem Test-Lifecycle
+Damit wird Schritt 14 fachlich erfüllt, ohne die existierende Architektur
+aufzubrechen.
 
 ---
 
@@ -93,24 +87,28 @@ Diese Abweichung ist bewusst und reduziert Komplexität:
 | Datei | Änderung |
 |---|---|
 | `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriver.kt` | um `fun dataWriter(): DataWriter` erweitern |
-| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriverRegistry.kt` | keine API-Änderung; KDoc auf Writer-Lookup erweitern |
+| `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriverRegistry.kt` | KDoc auf Writer-Lookup erweitern |
 | `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDriver.kt` | `dataWriter()` ergänzen |
-| `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDriver.kt` | `dataWriter()` ergänzen |
-| `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDriver.kt` | `dataWriter()` ergänzen |
+| `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDriver.kt` | temporäres fail-fast-`dataWriter()` ergänzen |
+| `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDriver.kt` | temporäres fail-fast-`dataWriter()` ergänzen |
 
 ### 4.2 Neue Dateien
 
 | Datei | Zweck |
 |---|---|
-| `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/DatabaseDriverRegistryWriterLookupTest.kt` | Verifiziert den Writer-Lookup über das bestehende Aggregat |
+| `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDataWriter.kt` | PostgreSQL-Writer |
+| `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaSync.kt` | PG Sequence-/Trigger-Synchronisation |
+| `adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDriverWriterLookupTest.kt` | Writer-Lookup-Test über das Driver-Aggregat mit echtem `PostgresDriver` |
+| `adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDataWriterIntegrationTest.kt` | PG-Writer-Integration |
+| `adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaSyncIntegrationTest.kt` | PG Reseed-/Trigger-/Quoting-Integration |
 
 ---
 
 ## 5. Design
 
-### 5.1 Erweiterung von `DatabaseDriver`
+### 5.1 `DatabaseDriver`-Erweiterung
 
-Das bestehende Aggregat wird um genau einen zusätzlichen Port ergänzt:
+Das Aggregat wird um einen zusätzlichen Port ergänzt:
 
 ```kotlin
 interface DatabaseDriver {
@@ -124,98 +122,159 @@ interface DatabaseDriver {
 }
 ```
 
-Damit bleibt der Lookup-Pfad für alle datenbankbezogenen Fähigkeiten
-konsistent:
+Damit bleibt der Lookup konsistent:
 
 - Export: `DatabaseDriverRegistry.get(dialect).dataReader()`
 - Import: `DatabaseDriverRegistry.get(dialect).dataWriter()`
 - Schema: `DatabaseDriverRegistry.get(dialect).ddlGenerator()`
 
-**Umsetzungsregel**: Diese Interface-Änderung darf nicht separat landen. Sie
-ist nur zusammen mit mindestens einer konkreten `dataWriter()`-Implementierung
-und den angepassten Driver-Klassen zulässig, weil das Repository sonst nicht
-mehr kompiliert.
+Da MySQL- und SQLite-Writer erst in Schritt 16/17 folgen, erhalten
+`MysqlDriver` und `SqliteDriver` in diesem Schritt nur eine explizite
+fail-fast-Bridge:
 
-### 5.2 Warum keine neue `DataWriterRegistry`
+```kotlin
+override fun dataWriter(): DataWriter =
+    throw UnsupportedOperationException(
+        "Data import for MYSQL is planned for phase C step 16"
+    )
+```
 
-Eine separate `DataWriterRegistry` wäre im aktuellen Repo ein Rückschritt:
+Analog für SQLite mit Verweis auf Schritt 17. So bleibt der Aggregat-Change
+kompilierbar, ohne eine zweite Registry einzuführen oder Fake-Writer zu bauen.
 
-- sie dupliziert die bereits existierende Dialekt-zu-Driver-Zuordnung
-- sie erzeugt eine zweite globale Mutable-State-Stelle
-- sie zwingt Tests zu zwei Reset-Pfaden (`DatabaseDriverRegistry.clear()` plus
-  `DataWriterRegistry.clear()`)
-- sie schwächt das bereits etablierte Driver-Aggregat statt es zu vervollständigen
+### 5.2 PostgreSQL-Writer
 
-### 5.3 Test-Reset
+Der erste echte Writer folgt direkt den PG-Vorgaben aus dem Masterplan:
 
-Der Masterplan fordert bei Schritt 14 explizit ein `clear()` für Tests. Diese
-Anforderung ist in der aktuellen Codebasis bereits erfüllt:
+- Batch-INSERT via `PreparedStatement.addBatch()` / `executeBatch()`
+- `autoCommit = false` im Chunk-Pfad
+- `OVERRIDING SYSTEM VALUE` **nur** für `GENERATED ALWAYS AS IDENTITY`
+- JSON/JSONB- und INTERVAL-Binding über PG-spezifische JDBC-Pfade
+- `TargetColumn`-Metadata aus JDBC
 
-- `DatabaseDriverRegistry.clear()` existiert
-- Tests für Reader/CLI verwenden diesen Reset schon heute
+### 5.3 PostgreSQL-`SchemaSync`
 
-Für Writer-Lookup-Tests wird deshalb **kein neuer Reset-Mechanismus** gebaut.
+`PostgresSchemaSync` übernimmt:
 
-### 5.4 Auswirkungen auf Schritt 18
+- Sequence-Lookup via `pg_get_serial_sequence(...)`
+- Reseeding via `setval(...)`
+- `ALTER TABLE ... DISABLE TRIGGER USER`
+- Trigger-Pre-Flight für `strict`
+- `enableTriggers(...)` symmetrisch zum Disable-Pfad
 
-Schritt 18 wird dadurch ebenfalls angepasst:
+Die zentrale Quoting-Anforderung aus dem Masterplan bleibt verbindlich:
 
-- statt „Bootstrap-Objects um `registerDataWriter` ergänzen“
-- gilt im aktuellen Repo: Driver-Implementierungen liefern ab dann
-  `dataWriter()`, und der bestehende `DatabaseDriverRegistry.register(driver)`
-  reicht unverändert aus
+- nicht-`public`-Schema
+- Tabellenname mit Sonderzeichen / Mixed-Case
+- Tabellenname mit eingebettetem Doublequote
+
+### 5.4 Transaktionsgrenze für Trigger-Disable
+
+PostgreSQL-Trigger-Disable läuft bewusst **außerhalb** der Chunk-Transaktionen:
+
+1. `openTable(...)` setzt `autoCommit = true`
+2. `disableTriggers(...)`
+3. eigenes `commit()`
+4. danach `autoCommit = false` für den Chunk-Pfad
+
+`enableTriggers(...)` läuft beim Erfolgsabschluss bzw. Cleanup symmetrisch
+wieder in eigener Mini-Transaktion.
+
+### 5.5 Reseed-Semantik
+
+`PostgresSchemaSync.reseedGenerators(...)` muss die in Schritt 13 definierte
+Report-Semantik einhalten:
+
+- `SequenceAdjustment.newValue` ist der **nächste implizit generierte Wert**
+- bei `setval(seq, maxValue, true)` also `maxValue + 1`
+- No-op bei `MAX(...) = NULL`
+- kein Reseeding aus `close()`
 
 ---
 
 ## 6. Implementierung
 
-### 6.1 `DatabaseDriver.kt`
+### 6.1 `DatabaseDriver.kt` und `DatabaseDriverRegistry.kt`
 
-`DatabaseDriver` wird um `fun dataWriter(): DataWriter` erweitert.
+- `DatabaseDriver` um `dataWriter()` erweitern
+- `DatabaseDriverRegistry` funktional unverändert lassen
+- KDoc ergänzen: Registry liefert jetzt auch Writer-seitige Fähigkeiten
 
-Wichtig:
+### 6.2 `PostgresDriver.kt`
 
-- keine Default-Implementierung
-- kein `UnsupportedOperationException`-Fallback
-- alle Dialekt-Driver müssen den Port explizit implementieren, sobald ihre
-  Writer in Schritt 15–17 existieren
+`PostgresDriver` implementiert zusätzlich:
 
-### 6.2 `DatabaseDriverRegistry.kt`
+- `override fun dataWriter(): DataWriter = PostgresDataWriter()`
 
-Die Registry selbst bleibt funktional unverändert. Optional wird nur die KDoc
-geschärft, damit klar ist, dass sie jetzt auch Writer-seitige Fähigkeiten
-bereitstellt.
+Damit wird der Writer-Lookup automatisch durch den bestehenden
+`DatabaseDriverRegistry.register(PostgresDriver())`-Pfad abgedeckt.
 
-### 6.3 Driver-Klassen
+### 6.2a `MysqlDriver.kt` und `SqliteDriver.kt`
 
-Die drei Driver-Klassen müssen mit der Aggregat-Signatur **im selben Change**
-mitgezogen werden, in dem `DatabaseDriver` erweitert wird.
+Beide Driver werden im selben Change auf das neue Aggregat gehoben:
 
-Für die aktuelle Implementierungsreihenfolge gilt deshalb:
+- `override fun dataWriter(): DataWriter = throw UnsupportedOperationException(...)`
+- Fehlermeldung benennt Dialekt und verweist auf den noch ausstehenden Schritt
+- keine Fake-Writer, keine zusätzliche Registry
 
-- Schritt 14 liefert die Architekturentscheidung und die Lookup-Regeln
-- der erste **reale** Code-Change dazu landet atomar mit Schritt 15
-  (`PostgresDataWriter` + `PostgresDriver.dataWriter()`)
-- `MysqlDriver` und `SqliteDriver` werden in ihren jeweiligen Writer-Schritten
-  (16/17) auf dieselbe Aggregat-Signatur gebracht
+Diese Bridge ist rein technisch motiviert, damit das erweiterte
+`DatabaseDriver`-Interface sofort in allen Consumern kompilierbar bleibt.
 
-Es gibt damit bewusst **keinen** Stand, in dem `DatabaseDriver` schon
-`dataWriter()` fordert, aber die Driver-Klassen oder Writer-Implementierungen
-noch fehlen.
+### 6.3 `PostgresDataWriter.kt`
 
-### 6.4 `DatabaseDriverRegistryWriterLookupTest.kt`
+Der Writer ist für den Tabellenimport verantwortlich:
 
-Geplante Testfälle:
+- Connection aus `ConnectionPool` borgen
+- Target-Metadaten lesen und `targetColumns` aufbauen
+- SQL-INSERT mit korrektem PG-Identifier-Quoting erzeugen
+- bei `GENERATED ALWAYS` den Insert um `OVERRIDING SYSTEM VALUE` ergänzen
+- `TableImportSession` mit Chunk-Commit/Rollback liefern
+
+### 6.4 `PostgresSchemaSync.kt`
+
+Pflichten:
+
+- Generator-Spalten aus `importedColumns` auflösen
+- `pg_get_serial_sequence(quoted_table, column)` korrekt quotiert aufrufen
+- `setval(...)` auf Basis von `MAX(col)` ausführen
+- `disableTriggers`, `assertNoUserTriggers`, `enableTriggers` gemäß PG-Vertrag
+
+### 6.5 Tests
+
+#### `PostgresDriverWriterLookupTest.kt`
 
 | # | Testname | Prüfung |
 |---|---|---|
-| 1 | `returns driver with writer capability for registered dialect` | `get(dialect).dataWriter()` liefert den registrierten Writer |
-| 2 | `clear removes registered writer lookup indirectly via driver registry` | nach `clear()` schlägt der Lookup fehl |
-| 3 | `missing dialect still reports registered dialects` | Fehlermeldung bleibt aussagekräftig |
+| 1 | `returns driver writer for registered dialect` | `get(dialect).dataWriter()` liefert Writer |
+| 2 | `clear removes writer lookup together with driver` | `clear()` entfernt den Lookup |
+| 3 | `missing dialect error still lists registered dialects` | Fehlermeldung bleibt hilfreich |
 
-Die Tests arbeiten mit einem Stub-`DatabaseDriver`, nicht mit echten
-JDBC-Writern. Sie landen zusammen mit dem ersten echten Aggregat-Change
-(voraussichtlich in Schritt 15), nicht als isolierter Vorab-Commit.
+#### `PostgresDataWriterIntegrationTest.kt`
+
+| # | Testname | Prüfung |
+|---|---|---|
+| 1 | `writes single chunk into target table` | Grundpfad |
+| 2 | `writes multiple chunks with commit boundaries` | Chunk-Verhalten |
+| 3 | `rollbackChunk discards current chunk only` | Chunk-Transaktionsmodell |
+| 4 | `finishTable from OPEN supports zero chunk path` | F1 |
+| 5 | `generated always uses overriding system value` | K1-Pflichtfall |
+| 6 | `jsonb binding uses PostgreSQL specific path` | JSON/JSONB-Binding |
+| 7 | `interval binding uses PostgreSQL specific path` | INTERVAL-Binding |
+
+#### `PostgresSchemaSyncIntegrationTest.kt`
+
+| # | Testname | Prüfung |
+|---|---|---|
+| 1 | `reseed serial column updates next generated value` | SERIAL |
+| 2 | `reseed generated by default identity` | IDENTITY BY DEFAULT |
+| 3 | `reseed generated always identity` | IDENTITY ALWAYS |
+| 4 | `no adjustment when max is null` | No-op |
+| 5 | `disable trigger mode uses disable trigger user` | PG disable-Pfad |
+| 6 | `strict mode fails when table has user trigger` | Pre-Flight |
+| 7 | `enable triggers is executed after disable path` | symmetrischer Cleanup |
+| 8 | `pg_get_serial_sequence quoting works for non public schema` | L2-Fall 1 |
+| 9 | `pg_get_serial_sequence quoting works for whitespace and mixed case` | L2-Fall 2 |
+| 10 | `pg_get_serial_sequence quoting escapes embedded double quotes` | L2-Fall 3 |
 
 ---
 
@@ -223,31 +282,33 @@ JDBC-Writern. Sie landen zusammen mit dem ersten echten Aggregat-Change
 
 ### 7.1 Teststrategie
 
-Schritt 14 ist in der aktuellen Codebasis primär ein Aggregat-/Registry-Schritt.
-Deshalb reichen:
+Der kombinierte Schritt hat drei Ebenen:
 
-- kleine Registry-Tests ohne Datenbank
-- ein Compile-Check, dass `DatabaseDriver`, alle Driver-Klassen und die
-  direkten Consumer sauber verdrahten
+- Aggregat-/Registry-Tests ohne DB
+- PostgreSQL-Integrationstests für Writer und SchemaSync
+- Compile-/CLI-Verifikation des erweiterten Driver-Aggregats
 
-### 7.2 Nicht Teil von Schritt 14
+Die PG-Registry-Tests liegen bewusst im PostgreSQL-Modul, damit der echte
+`PostgresDriver` ohne zusätzliche Test-Abhängigkeiten verwendet werden kann.
 
-- Verhalten der konkreten `PostgresDataWriter`/`MysqlDataWriter`/`SqliteDataWriter`
-- Trigger-/Reseed-Logik
-- echte JDBC-Integration
+### 7.2 Nicht Teil dieses Schritts
 
-Diese Pfade gehören in Schritt 15–17.
+- MySQL-Writer
+- SQLite-Writer
+- `StreamingImporter`
+- CLI-Import-Kommando
+
+Diese Themen bleiben in Schritt 16, 17 und Phase D/E.
 
 ---
 
 ## 8. Build & Verifizierung
 
 ```bash
-# Atomarer Aggregat-/Writer-Change:
-# Ports, erste Writer-Implementierung und direkte Consumer kompilieren/testen
+# Atomarer Aggregat + PostgreSQL-Writer Change
 docker build --target build \
-  --build-arg GRADLE_TASKS=":hexagon:ports:compileKotlin :adapters:driven:driver-common:test :adapters:driven:driver-postgresql:test :adapters:driving:cli:test" \
-  -t d-migrate:c14 .
+  --build-arg GRADLE_TASKS=":hexagon:ports:compileKotlin :adapters:driven:driver-common:test :adapters:driven:driver-postgresql:test -PintegrationTests :adapters:driven:driver-mysql:compileKotlin :adapters:driven:driver-sqlite:compileKotlin :adapters:driving:cli:test" \
+  -t d-migrate:c14-15 .
 
 # Optional kompletter Build
 docker build -t d-migrate:dev .
@@ -260,16 +321,21 @@ docker build -t d-migrate:dev .
 - [ ] `DatabaseDriver` enthält `dataWriter()`
 - [ ] es gibt **keine** zusätzliche `DataWriterRegistry`
 - [ ] `DatabaseDriverRegistry.clear()` bleibt der einzige Reset-Pfad
-- [ ] Lookup für Writer läuft über `DatabaseDriverRegistry.get(dialect).dataWriter()`
-- [ ] mindestens ein realer Driver (`PostgresDriver`) implementiert `dataWriter()` im selben Change
-- [ ] ein Registry-Test deckt den Writer-Lookup ab
-- [ ] der Aggregat-Change kompiliert nicht nur in `hexagon:ports`, sondern auch in Driver- und CLI-Consumern
-- [ ] Schritt 18 ist logisch vorbereitet, ohne doppelten Bootstrap-Pfad
+- [ ] `PostgresDriver` implementiert `dataWriter()`
+- [ ] `MysqlDriver` und `SqliteDriver` sind im selben Change auf das neue Interface angehoben
+- [ ] MySQL/SQLite bleiben dabei bewusst fail-fast bis Schritt 16/17
+- [ ] `PostgresDataWriter` schreibt Chunks erfolgreich in PostgreSQL
+- [ ] `PostgresSchemaSync` erfüllt Reseed-/Trigger-Vertrag
+- [ ] `SequenceAdjustment.newValue` wird im PG-Pfad als nächster impliziter Generatorwert reported
+- [ ] die drei L2-Quoting-Pflichttests für `pg_get_serial_sequence(...)` sind vorhanden
+- [ ] der Writer-Lookup-Test verwendet den echten `PostgresDriver` in einem Modul mit passender Abhängigkeit
+- [ ] der Aggregat-Change kompiliert in Ports, Driver- und CLI-Consumern
+- [ ] die PG-Testcontainers-Integrationstests laufen mit `-PintegrationTests`
 
 ---
 
 ## 10. Offene Punkte
 
-- Der 0.4.0-Masterplan sollte bei Gelegenheit nachgezogen werden: §3.1.2 und
-  Schritt 14/18 sprechen noch von einer separaten `DataWriterRegistry`, obwohl
-  die aktuelle Codebasis bereits auf `DatabaseDriverRegistry` konsolidiert ist.
+- Der 0.4.0-Masterplan sollte später nachgezogen werden: Aus den Schritten 14
+  und 15 wird in der realen Codebasis sinnvollerweise ein atomarer
+  Aggregat+PostgreSQL-Writer-Change statt zweier isolierter Schritte.
