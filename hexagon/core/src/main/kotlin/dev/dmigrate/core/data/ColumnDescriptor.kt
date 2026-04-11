@@ -3,7 +3,7 @@ package dev.dmigrate.core.data
 /**
  * Spaltenmetadaten für einen [DataChunk].
  *
- * Bewusst minimal gehalten und JDBC-frei (siehe implementation-plan-0.3.0.md
+ * Bewusst minimal gehalten und JDBC-frei (siehe docs/archive/implementation-plan-0.3.0.md
  * §3.7 / §6.4):
  *
  * - **kein `jdbcType: Int`** — JDBC-spezifisch, gehört nicht ins neutrale

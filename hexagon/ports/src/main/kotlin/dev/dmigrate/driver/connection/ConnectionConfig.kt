@@ -11,7 +11,7 @@ import dev.dmigrate.driver.DatabaseDialect
  *
  * **Sicherheitshinweis**: [password] ist sensitiv. Die [toString]-Implementierung
  * maskiert das Passwort als `***`, damit `ConnectionConfig`-Instanzen unbedenklich
- * geloggt werden können (siehe implementation-plan-0.3.0.md §6.11).
+ * geloggt werden können (siehe docs/archive/implementation-plan-0.3.0.md §6.11).
  */
 data class ConnectionConfig(
     val dialect: DatabaseDialect,

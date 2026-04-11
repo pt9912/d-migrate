@@ -20,7 +20,7 @@ import java.sql.Time as SqlTime
 
 /**
  * Verifiziert die §6.4.1 Java-Klasse → SerializedValue Mapping-Tabelle aus
- * dem implementation-plan-0.3.0.md zeilenweise.
+ * dem docs/archive/implementation-plan-0.3.0.md zeilenweise.
  */
 class ValueSerializerTest : FunSpec({
 

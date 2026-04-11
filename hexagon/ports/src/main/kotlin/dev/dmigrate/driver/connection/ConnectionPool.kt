@@ -6,7 +6,7 @@ import java.sql.Connection
 /**
  * Connection-Pool-Wrapper. Owner aller HikariDataSource-Operationen.
  *
- * **Lifecycle (siehe implementation-plan-0.3.0.md §6.12 / §6.18):**
+ * **Lifecycle (siehe docs/archive/implementation-plan-0.3.0.md §6.12 / §6.18):**
  *
  * - [borrow] liefert eine ausgeliehene [java.sql.Connection]. **HikariCP
  *   wrappt die Connection so, dass `connection.close()` sie NICHT physisch

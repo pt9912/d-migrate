@@ -51,38 +51,6 @@ d-migrate-streaming/
     └── ExportResult.kt             # Statistiken: rows, chunks, durationMs, bytesWritten
 ```
 
-```kotlin
-class StreamingExporter(
-    private val reader: DataReader,
-    private val tableLister: TableLister,
-    private val writerFactory: DataChunkWriterFactory
-) {
-    /**
-     * Orchestriert den Export. Bekommt einen ConnectionPool — Reader und
-     * TableLister borgen sich daraus selbst Connections (siehe §6.12).
-     * Der Exporter hält keine eigene JDBC-Connection.
-     */
-    fun export(
-        pool: ConnectionPool,
-        tables: List<String>,                  // leer = via tableLister.listTables(pool) ermitteln
-        output: ExportOutput,                  // file/stdout + format options
-        config: PipelineConfig
-    ): ExportResult
-}
-
-data class PipelineConfig(
-    val chunkSize: Int = 10_000               // einziger user-tunable Parameter; fetchSize ist treiberintern (§6.13)
-)
-
-data class ExportResult(
-    val tables: List<TableExportSummary>,
-    val totalRows: Long,
-    val totalChunks: Long,
-    val totalBytes: Long,
-    val durationMs: Long
-)
-```
-
 **Begründung für ein eigenes Modul** (statt Inline-Code in CLI):
 - Architektur §2.1 sieht es so vor; spätere Erweiterungen (Pipeline.kt,
   ChunkProcessor, Checkpoint, ParallelExecutor) sollen ohne Refactoring
@@ -120,123 +88,9 @@ d-migrate-driver-api/
         └── DataReaderRegistry.kt        # dialect → DataReader / TableLister (0.6.0: ServiceLoader)
 ```
 
-```kotlin
-/**
- * Pool-Wrapper. Owner aller HikariDataSource-Operationen.
- *
- * - borrow() liefert eine ausgeliehene java.sql.Connection. Hikari wrappt
- *   die Connection so, dass `connection.close()` sie NICHT physisch schließt,
- *   sondern in den Pool zurückgibt. Der Caller MUSS sie mit `close()`
- *   freigeben (idiomatisch via `pool.borrow().use { conn -> ... }`).
- *   Es gibt KEINE separate `return()`-Methode — das ist Hikari-Standard.
- * - close() schließt den gesamten Pool (am Ende des CLI-Aufrufs).
- *
- * Reader und TableLister bekommen den Pool, NICHT eine fertige Connection
- * (siehe F1-Klärung in §6.18). Damit vermeidet der Plan doppelten
- * Connection-Besitz.
- */
-interface ConnectionPool : AutoCloseable {
-    val dialect: DatabaseDialect
-    fun borrow(): java.sql.Connection
-    fun activeConnections(): Int       // für ConnectionLeakTest, siehe §6.12
-}
-
-interface DataReader {
-    val dialect: DatabaseDialect
-
-    /**
-     * Single-use, pull-basierter Stream über die Daten einer Tabelle.
-     *
-     * Connection-Ownership:
-     *   - Der Reader borgt sich die JDBC-Connection PRO Aufruf selbst aus
-     *     dem übergebenen Pool. Der Caller besitzt KEINE Connection.
-     *   - ChunkSequence.close() führt Rollback + autoCommit-Reset aus und
-     *     ruft conn.close() auf, was die Hikari-wrapped Connection in den
-     *     Pool zurückführt (siehe §6.12).
-     *
-     * Vertrag (siehe §6.1, §6.12, §6.17):
-     *   - Die zurückgegebene ChunkSequence darf GENAU EINMAL iteriert werden.
-     *     Eine zweite Iteration wirft IllegalStateException.
-     *   - Der Caller MUSS die Sequence vollständig konsumieren ODER via
-     *     use {} schließen, sonst leakt die Connection.
-     *   - Auch bei einer LEEREN Tabelle (0 Rows) MUSS mindestens ein Chunk
-     *     mit `columns` und `rows = emptyList()` emittiert werden, damit
-     *     Format-Writer ihren Header schreiben können (siehe §6.17).
-     *   - Die fetchSize-Tuningkonstante ist Treiber-intern und nicht
-     *     parametrisiert (siehe §6.13).
-     */
-    fun streamTable(
-        pool: ConnectionPool,
-        table: String,
-        filter: DataFilter? = null,
-        chunkSize: Int = 10_000
-    ): ChunkSequence
-}
-
-/**
- * Single-use Sequence + AutoCloseable.
- * Erlaubt sowohl `for (chunk in stream) { ... }` als auch
- * `stream.use { it.forEach { ... } }`.
- */
-interface ChunkSequence : Sequence<DataChunk>, AutoCloseable
-
-/**
- * Eigenständiger Port für Tabellen-Auflistung. Wird in 0.6.0 durch den
- * vollständigen SchemaReader (LF-004) abgelöst, ohne dass DataReader
- * angepasst werden muss (SRP).
- *
- * Connection-Ownership: borgt sich die Connection selbst aus dem Pool;
- * gibt sie nach dem Listing sofort zurück.
- */
-interface TableLister {
-    val dialect: DatabaseDialect
-    fun listTables(pool: ConnectionPool): List<String>
-}
-
-data class ConnectionConfig(
-    val dialect: DatabaseDialect,
-    val host: String?,
-    val port: Int?,
-    val database: String,
-    val user: String?,
-    val password: String?,                   // sensitiv — niemals loggen, siehe §6.11
-    val params: Map<String, String> = emptyMap(),
-    val pool: PoolSettings = PoolSettings()
-) {
-    /** Maskiert das Passwort als '***'. Siehe §6.11. */
-    override fun toString(): String { /* implementation */ }
-}
-
-data class PoolSettings(
-    val maximumPoolSize: Int = 10,
-    val minimumIdle: Int = 2,
-    val connectionTimeoutMs: Long = 10_000,
-    val idleTimeoutMs: Long = 300_000,
-    val maxLifetimeMs: Long = 600_000,
-    val keepaliveTimeMs: Long = 60_000
-)
-```
-
 **ConnectionUrlParser** implementiert das Format aus `connection-config-spec.md` §1:
 
-```kotlin
-object ConnectionUrlParser {
-    /**
-     * Parst URLs der Form <dialect>://[user[:pwd]@]host[:port]/database[?params]
-     * sowie SQLite-Sonderformen (sqlite:///path, sqlite::memory:).
-     */
-    fun parse(url: String): ConnectionConfig
-}
-```
-
 **HikariConnectionPoolFactory**:
-
-```kotlin
-object HikariConnectionPoolFactory {
-    fun create(config: ConnectionConfig): ConnectionPool
-    // SQLite-Sonderfall: maximumPoolSize=1 (kein paralleles Schreiben)
-}
-```
 
 ### 3.2 `d-migrate-driver-postgresql`
 
@@ -330,34 +184,6 @@ d-migrate-formats/
         └── csv/CsvChunkWriter.kt
 ```
 
-```kotlin
-data class ExportOptions(
-    val encoding: Charset = StandardCharsets.UTF_8,
-    val csvHeader: Boolean = true,            // Default: Header schreiben — siehe §6.17
-    val csvDelimiter: Char = ',',
-    val csvQuote: Char = '"',
-    val csvBom: Boolean = false,
-    val csvNullString: String = "",            // CSV NULL-Repräsentation
-)
-```
-
-```kotlin
-interface DataChunkWriter : AutoCloseable {
-    /** Wird einmal vor dem ersten Chunk aufgerufen. */
-    fun begin(table: String, columns: List<ColumnDescriptor>)
-
-    /**
-     * Wird pro Chunk aufgerufen. Schreibt die Rows direkt in den Output-Stream.
-     * Bei einem leeren Chunk (rows.isEmpty()) ist der Aufruf erlaubt — der
-     * Writer schreibt nichts (siehe §6.17).
-     */
-    fun write(chunk: DataChunk)
-
-    /** Wird nach dem letzten Chunk aufgerufen. Schließt offene Container (z.B. JSON-Array). */
-    fun end()
-}
-```
-
 **Format-spezifische Streaming-Strategien:**
 
 | Format | Strategie | Container | Leere Tabelle | NULL |
@@ -375,48 +201,6 @@ Neues Top-Level-Kommando `data` mit Subcommand `export`:
 ```
 d-migrate-cli/src/main/kotlin/dev/dmigrate/cli/commands/
 └── DataCommands.kt        # DataCommand + DataExportCommand
-```
-
-```kotlin
-class DataCommand : CliktCommand(name = "data") {
-    init { subcommands(DataExportCommand()) }
-}
-
-class DataExportCommand : CliktCommand(name = "export") {
-    val source by option("--source").required()                // URL ODER Name aus .d-migrate.yaml (§6.14)
-    val format by option("--format").choice("json", "yaml", "csv").required()  // PFLICHT (§6.15)
-    val output by option("--output").path()                    // default: stdout
-    val tables by option("--tables").split(",")                // optional, default: alle
-    val filter by option("--filter")                           // SQL WHERE clause (§6.7)
-    val encoding by option("--encoding").default("utf-8")
-    val chunkSize by option("--chunk-size").int().default(10_000)
-    val splitFiles by option("--split-files").flag()           // §6.9
-    val csvDelimiter by option("--csv-delimiter").default(",")
-    val csvBom by option("--csv-bom").flag()
-    val csvNoHeader by option("--csv-no-header").flag()        // §6.17 — Default: Header an
-    val nullString by option("--null-string").default("")      // CSV-NULL-Repräsentation
-
-    override fun run() {
-        // 0. Root-Command holen — analog zu SchemaValidateCommand in 0.2.0
-        //    (SchemaCommands.kt:44). Hierarchie ist d-migrate → data → export,
-        //    der Root-Command sitzt also ZWEI Parent-Hops weiter oben:
-        val root = currentContext.parent?.parent?.command as? DMigrate
-        val configPath: Path? = root?.config
-            ?: System.getenv("D_MIGRATE_CONFIG")?.let(::Path)
-
-        // 1. NamedConnectionResolver(configPath).resolve(source) → vollständige URL
-        //    Behandelt URL-Direktnutzung, Connection-Name-Lookup, ${ENV_VAR}-Substitution.
-        //    default_source aus YAML wird gelesen aber für data export ignoriert (§6.14)
-        // 2. ConnectionUrlParser.parse(url) → ConnectionConfig
-        // 3. HikariConnectionPoolFactory.create(config).use { pool -> ... }
-        // 4. DataReader + TableLister für Dialect aus DataReaderRegistry holen
-        // 5. tables ermitteln (--tables oder tableLister.listTables(pool))
-        //    Mehr-Tabellen-Output ohne --split-files → Exit 2 (§6.9)
-        // 6. DataChunkWriter aus format + ExportOptions (mit csvHeader = !csvNoHeader) erzeugen
-        // 7. StreamingExporter(reader, tableLister, factory).export(pool, ...)
-        // 8. ExportResult als ProgressSummary ausgeben (stderr)
-    }
-}
 ```
 
 > **Hinweis zum Root-Command-Zugriff**: Das `--config`/`-c` Flag liegt am
@@ -453,33 +237,6 @@ d-migrate-core/
         └── DataFilter.kt
 ```
 
-```kotlin
-data class DataChunk(
-    val table: String,
-    val columns: List<ColumnDescriptor>,     // wiederholt sich pro Chunk; günstig für Streaming-Writer
-    val rows: List<Array<Any?>>,             // raw Java-Werte (kein JDBC-Typ)
-    val chunkIndex: Long
-)
-
-data class ColumnDescriptor(
-    val name: String,
-    val nullable: Boolean,
-    /**
-     * Opaker DB-Type-Name aus ResultSetMetaData#getColumnTypeName().
-     * In 0.3.0 nur informativ; in 0.6.0 wird der vollständige Reverse-Mapper
-     * darauf einen `neutralType: NeutralType` ableiten.
-     */
-    val sqlTypeName: String? = null
-)
-
-sealed class DataFilter {
-    /** Roh-WHERE-Klausel — siehe SQL-Injection-Schutz §6.7. */
-    data class WhereClause(val sql: String) : DataFilter()
-    data class ColumnSubset(val columns: List<String>) : DataFilter()
-    data class Compound(val parts: List<DataFilter>) : DataFilter()
-}
-```
-
 **Begründung der Verortung in `core`** (statt in `driver-api`):
 - `core` enthält bereits das neutrale Schema-Modell (`SchemaDefinition`,
   `NeutralType`). Das Daten-Modell ist sein direktes Pendant.
@@ -496,10 +253,6 @@ sealed class DataFilter {
 das sind echte JDBC-/Pool-Konzepte und in `formats` nicht benötigt.
 
 ### 3.8 `settings.gradle.kts`
-
-```kotlin
-include("d-migrate-streaming")
-```
 
 ### 3.9 `gradle.properties` und `build.gradle.kts`
 
@@ -681,14 +434,6 @@ einen einzelnen Treiber. Im `driver-api` liegt er, weil
 
 ### 6.4 DataChunk-Modell und Type-Serialisierung
 
-```kotlin
-// d-migrate-core/data/
-DataChunk(
-    columns: List<ColumnDescriptor>,    // wiederholt pro Chunk — bewusst
-    rows: List<Array<Any?>>             // raw Java-Werte
-)
-```
-
 - **Verortung in `core/data/`** statt `driver-api/data/` — siehe §3.7 und
   F3-Begründung. `formats` darf nicht an JDBC koppeln.
 - **Spalten pro Chunk** (statt einmalig pro Tabelle), damit ein Streaming-Writer
@@ -811,14 +556,6 @@ abgelöst. Da `DataReader` und `TableLister` unabhängig sind, ist diese
 Migration ein additive Change ohne Auswirkung auf die row-streaming-Pfade.
 
 ### 6.9 ExportOutput: Datei vs. stdout
-
-```kotlin
-sealed class ExportOutput {
-    object Stdout : ExportOutput()
-    data class SingleFile(val path: Path) : ExportOutput()
-    data class FilePerTable(val directory: Path) : ExportOutput()
-}
-```
 
 **Auflösungsregel — explizit, keine Heuristik:**
 
@@ -950,22 +687,6 @@ existierenden Mechanismen, implementiert sie aber nur mit dem notwendigen
 Minimum.
 
 #### 6.14.1 Was wird in 0.3.0 implementiert
-
-```kotlin
-class NamedConnectionResolver(
-    /** Pfad zu config-Datei (CLI: --config / -c → ENV: D_MIGRATE_CONFIG → ./.d-migrate.yaml). */
-    private val configPath: Path?,
-) {
-    /**
-     * Liest die Config (falls vorhanden), löst `database.connections.<name>` auf,
-     * substituiert ${ENV_VAR} in den Werten und liefert eine vollständige URL.
-     *
-     * Wenn `source` ein "://" enthält, wird er unverändert zurückgegeben — die
-     * Config-Datei muss in diesem Fall nicht existieren.
-     */
-    fun resolve(source: String): String
-}
-```
 
 **Auflösungsreihenfolge des `configPath`** (übernimmt cli-spec.md §9
 Priorität CLI > ENV > Default):

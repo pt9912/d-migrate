@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Testcontainers-based integration tests for PostgreSQL 16 and MySQL 8.0 — both at the driver level and end-to-end via the CLI
 - New `.github/workflows/integration.yml` running `./gradlew test koverVerify -PintegrationTests`; default `build.yml` excludes the `integration` Kotest tag and stays under the 5-min CI budget
 - `scripts/test-integration-docker.sh` for running integration tests locally in a disposable Docker container
-- `docs/implementation-plan-0.3.0.md` (1400+ lines), `docs/releasing.md`
+- `docs/archive/implementation-plan-0.3.0.md` (1400+ lines), `docs/releasing.md`
 - `data export` section in `docs/cli-spec.md` §6.2 covering all flags, output resolution, exit codes, and 6 example invocations
 - 600+ tests across all modules (was 374 in 0.2.0)
 - Kover coverage gates: ≥ 90% for all production modules, ≥ 60% for `d-migrate-cli` (per Plan §11)

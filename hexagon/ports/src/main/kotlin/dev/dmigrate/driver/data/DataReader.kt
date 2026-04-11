@@ -7,7 +7,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
 /**
  * Port: row-streaming aus einer Tabelle.
  *
- * Connection-Ownership (siehe implementation-plan-0.3.0.md §6.18):
+ * Connection-Ownership (siehe docs/archive/implementation-plan-0.3.0.md §6.18):
  * - Der Reader bekommt einen [ConnectionPool], NICHT eine fertige Connection.
  * - Pro [streamTable]-Aufruf borgt der Reader sich eine eigene Connection
  *   aus dem Pool, hält sie für die Lifetime der zurückgegebenen

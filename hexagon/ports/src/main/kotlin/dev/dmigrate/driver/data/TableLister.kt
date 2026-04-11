@@ -7,7 +7,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
  * Port: Auflistung aller Tabellen in der aktuellen Datenbank/Schema.
  *
  * Wird vom CLI verwendet, wenn `--tables` nicht gesetzt ist (siehe
- * implementation-plan-0.3.0.md §3.6 / §6.8). Dieser Port ist bewusst
+ * docs/archive/implementation-plan-0.3.0.md §3.6 / §6.8). Dieser Port ist bewusst
  * **eigenständig** vom row-streaming-fokussierten [DataReader] (SRP) und
  * wird in 0.6.0 nahtlos durch den vollständigen `SchemaReader` (LF-004)
  * abgelöst.

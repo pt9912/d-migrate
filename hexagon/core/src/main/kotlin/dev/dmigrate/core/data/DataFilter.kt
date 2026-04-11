@@ -8,7 +8,7 @@ package dev.dmigrate.core.data
  *
  * **Sicherheitsmodell**: [WhereClause] enthält rohes SQL und wird nicht
  * parametrisiert. Der CLI-Aufruf ist ein Trust-Boundary (lokale Shell),
- * siehe implementation-plan-0.3.0.md §6.7. Eine zukünftige REST-API muss
+ * siehe docs/archive/implementation-plan-0.3.0.md §6.7. Eine zukünftige REST-API muss
  * den Pfad re-validieren. [ParameterizedClause] zieht die Grenze enger:
  * der `sql`-String enthält ausschließlich `?`-Platzhalter, und die zu
  * bindenden Werte stehen in [ParameterizedClause.params]. Damit können

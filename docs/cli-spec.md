@@ -432,7 +432,7 @@ Heap (Plan §2.1, §6.4).
 d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 ```
 
-**Auflösung von `--source`** (siehe §1.4 und implementation-plan-0.3.0.md §6.14):
+**Auflösung von `--source`** (siehe §1.4 und `docs/archive/implementation-plan-0.3.0.md` §6.14):
 
 - enthält der Wert `://`, wird er als vollständige Connection-URL behandelt
   und unverändert an den `ConnectionUrlParser` übergeben

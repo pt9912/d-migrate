@@ -20,7 +20,7 @@ package dev.dmigrate.core.data
  * - **Leere Chunks erlaubt**: Bei einer leeren Tabelle MUSS der Reader genau
  *   einen DataChunk mit `columns` korrekt gefüllt und `rows = emptyList()`
  *   liefern, damit Format-Writer ihren Header schreiben können (siehe
- *   implementation-plan-0.3.0.md §6.17).
+ *   docs/archive/implementation-plan-0.3.0.md §6.17).
  *
  * @property table Tabellenname (kann schema-qualifiziert sein, z.B. "public.orders")
  * @property columns Spaltenmetadaten in Reihenfolge der Werte in `rows`

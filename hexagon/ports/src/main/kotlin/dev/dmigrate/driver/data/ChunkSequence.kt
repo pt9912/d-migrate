@@ -8,7 +8,7 @@ import dev.dmigrate.core.data.DataChunk
  * Erlaubt sowohl `for (chunk in stream) { ... }` als auch
  * `stream.use { it.forEach { ... } }`.
  *
- * **Vertrag (siehe implementation-plan-0.3.0.md §6.1):**
+ * **Vertrag (siehe docs/archive/implementation-plan-0.3.0.md §6.1):**
  *
  * - Eine `ChunkSequence` darf **genau einmal** iteriert werden. Eine zweite
  *   Iteration wirft `IllegalStateException` — JDBC-Cursors sind nicht
