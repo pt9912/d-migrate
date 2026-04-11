@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: C (DataWriter-Port und JDBC-Treiber)
 > **Schritte**: 16 + 17 + 18
-> **Status**: Geplant
+> **Status**: Abgeschlossen (2026-04-11)
 > **Referenz**: `implementation-plan-0.4.0.md` §3.3, §3.4, §4 Phase C Schritte 16–18, §6.6, §6.8.2, §6.12.2
 
 ---
@@ -393,35 +393,35 @@ docker build --target build \
 
 ## 9. Abnahmekriterien
 
-- [ ] `MysqlDriver.dataWriter()` liefert einen echten `MysqlDataWriter`
-- [ ] `SqliteDriver.dataWriter()` liefert einen echten `SqliteDataWriter`
-- [ ] es gibt weiterhin **keine** separate `DataWriterRegistry`
-- [ ] Schritt 18 ist in der realen Architektur als Bootstrap-Abschluss über
+- [x] `MysqlDriver.dataWriter()` liefert einen echten `MysqlDataWriter`
+- [x] `SqliteDriver.dataWriter()` liefert einen echten `SqliteDataWriter`
+- [x] es gibt weiterhin **keine** separate `DataWriterRegistry`
+- [x] Schritt 18 ist in der realen Architektur als Bootstrap-Abschluss über
       `DatabaseDriver` dokumentiert und umgesetzt
-- [ ] `MysqlDataWriter` unterstützt `abort`, `skip` und `update`
-- [ ] `SqliteDataWriter` unterstützt `abort`, `skip` und `update`
-- [ ] PK-lose Tabellen werden bei `onConflict=update` in beiden Dialekten klar abgewiesen
-- [ ] MySQL-`rowsInserted` / `rowsUpdated` / `rowsSkipped` / `rowsUnknown` werden korrekt normalisiert
-- [ ] MySQL `rewriteBatchedStatements=true` ist im Writer-Pfad strukturell verifiziert
-- [ ] `disableFkChecks` ist in MySQL und SQLite nicht nur reset-sicher, sondern
+- [x] `MysqlDataWriter` unterstützt `abort`, `skip` und `update`
+- [x] `SqliteDataWriter` unterstützt `abort`, `skip` und `update`
+- [x] PK-lose Tabellen werden bei `onConflict=update` in beiden Dialekten klar abgewiesen
+- [x] MySQL-`rowsInserted` / `rowsUpdated` / `rowsSkipped` / `rowsUnknown` werden korrekt normalisiert
+- [x] MySQL `rewriteBatchedStatements=true` ist im Writer-Pfad strukturell verifiziert
+- [x] `disableFkChecks` ist in MySQL und SQLite nicht nur reset-sicher, sondern
       funktional im Schreibpfad wirksam getestet
-- [ ] `disableFkChecks` wird in MySQL und SQLite auf derselben Connection sauber zurückgesetzt
-- [ ] `triggerMode=disable` und `triggerMode=strict` bleiben in MySQL und SQLite explizit unsupported
-- [ ] `MysqlSchemaSync` setzt `AUTO_INCREMENT` korrekt nach
-- [ ] `SqliteSchemaSync` pflegt `sqlite_sequence` korrekt
-- [ ] Composite-PKs werden in MySQL und SQLite strikt nach `KEY_SEQ`
+- [x] `disableFkChecks` wird in MySQL und SQLite auf derselben Connection sauber zurückgesetzt
+- [x] `triggerMode=disable` und `triggerMode=strict` bleiben in MySQL und SQLite explizit unsupported
+- [x] `MysqlSchemaSync` setzt `AUTO_INCREMENT` korrekt nach
+- [x] `SqliteSchemaSync` pflegt `sqlite_sequence` korrekt
+- [x] Composite-PKs werden in MySQL und SQLite strikt nach `KEY_SEQ`
       verarbeitet und explizit getestet
-- [ ] Mixed-Case-/Identifier-Normalisierung für PK-Lookup ist in MySQL und
+- [x] Mixed-Case-/Identifier-Normalisierung für PK-Lookup ist in MySQL und
       SQLite explizit getestet
-- [ ] der Truncate-leer-Sonderfall ist in MySQL (`newValue = 1`) und SQLite
+- [x] der Truncate-leer-Sonderfall ist in MySQL (`newValue = 1`) und SQLite
       (`newValue = 1`) explizit abgedeckt
-- [ ] `SequenceAdjustment.newValue` bleibt in beiden Dialekten konsistent als
+- [x] `SequenceAdjustment.newValue` bleibt in beiden Dialekten konsistent als
       nächster generierter Wert definiert
-- [ ] MySQL-Integrationstests laufen mit `-PintegrationTests`
-- [ ] SQLite-Tests laufen ohne Container lokal im Standard-Testpfad
-- [ ] der echte CLI-/Bootstrap-Pfad registriert nach wie vor Writer für alle
+- [x] MySQL-Integrationstests laufen mit `-PintegrationTests`
+- [x] SQLite-Tests laufen ohne Container lokal im Standard-Testpfad
+- [x] der echte CLI-/Bootstrap-Pfad registriert nach wie vor Writer für alle
       drei Dialekte
-- [ ] CLI- und Driver-Consumer kompilieren gegen alle drei realen Writer
+- [x] CLI- und Driver-Consumer kompilieren gegen alle drei realen Writer
 
 ---
 
