@@ -102,6 +102,20 @@ ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
+**Aktueller Stand (2026-04-11)**: Milestone 0.4.0 ist weiterhin in Arbeit.
+Der JDBC-Import-Unterbau der Phase C ist jedoch abgeschlossen:
+
+- `DataWriter` / `TableImportSession` / `SchemaSync` / `SequenceAdjustment`
+  sind produktiv im Port-Vertrag verankert.
+- PostgreSQL, MySQL und SQLite liefern reale `dataWriter()`-Implementierungen
+  über das bestehende `DatabaseDriver`-Aggregat; eine separate
+  `DataWriterRegistry` wurde bewusst nicht eingeführt.
+- PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade und
+  Bootstrap-Lookup sind implementiert und testseitig abgedeckt.
+- Offen für 0.4.0 bleiben damit vor allem die noch ausstehenden Core-/CLI-/
+  Format-Schritte oberhalb des Driver-Layers sowie die finalen Round-Trip-
+  und End-to-End-Importpfade.
+
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
 [design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
@@ -403,6 +417,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 1.6
-**Stand**: 2026-04-09
-**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen, 0.4.0 in Arbeit (inkl. LF-013), 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Version**: 1.7
+**Stand**: 2026-04-11
+**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen; 0.4.0 in Arbeit mit abgeschlossenem Driver-/Writer-Unterbau der Phase C (inkl. LF-013-Vorbereitung); 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
