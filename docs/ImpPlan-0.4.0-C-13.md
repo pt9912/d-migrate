@@ -120,7 +120,7 @@ Bedeutung der Felder:
 | `table` | logischer Tabellenname des Imports |
 | `column` | Generator-/Identity-Spalte |
 | `sequenceName` | PostgreSQL: expliziter Sequence-Name; MySQL/SQLite: `null` |
-| `newValue` | neuer Zustand des Generators nach der Anpassung |
+| `newValue` | nächster ohne expliziten Generatorwert auszugebender Wert |
 
 `newValue` beschreibt **den nächsten von der Datenbank ohne expliziten Wert
 auszugebenden Generatorwert**. Er beschreibt also bewusst nicht den internen
@@ -193,7 +193,7 @@ Geplante Testfälle:
 
 | # | Testname | Prüfung |
 |---|---|---|
-| 1 | `stores PostgreSQL adjustment with explicit sequence name` | alle Felder werden korrekt gehalten |
+| 1 | `stores PostgreSQL adjustment with explicit sequence name` | alle Felder werden korrekt gehalten; `newValue` ist der nächste implizite Generatorwert |
 | 2 | `stores MySQL adjustment without sequence name` | `sequenceName == null` ist erlaubt |
 | 3 | `stores SQLite reset adjustment with next generated value one` | SQLite-Truncate-Reset ist mit Report-Semantik darstellbar |
 | 4 | `supports equality and copy semantics` | Data-Class-Verhalten bleibt stabil |

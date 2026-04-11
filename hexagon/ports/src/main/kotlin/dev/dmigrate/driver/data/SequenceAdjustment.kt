@@ -1,12 +1,16 @@
 package dev.dmigrate.driver.data
 
 /**
- * Beschreibung einer durchgeführten Sequence-/Identity-Nachführung.
+ * Beschreibung einer bereits durchgeführten Generator-/Sequence-Nachführung
+ * für den Import-Report.
  *
- * @property table Tabellenname
- * @property column Identity-/SERIAL-Spaltenname
- * @property sequenceName PG: expliziter Sequence-Name; MySQL/SQLite: null
- * @property newValue Neuer Sequence-/AUTO_INCREMENT-Wert
+ * @property table Logischer Tabellenname des Imports
+ * @property column Generator-/Identity-Spaltenname
+ * @property sequenceName PostgreSQL: expliziter Sequence-Name; MySQL/SQLite: null
+ * @property newValue Nächster von der Datenbank ohne expliziten Generatorwert
+ *   auszugebender Wert. Beschreibt bewusst die Report-Semantik und nicht den
+ *   internen Zustand einzelner DB-Mechanismen wie `setval(..., is_called)` oder
+ *   `sqlite_sequence.seq`.
  */
 data class SequenceAdjustment(
     val table: String,
