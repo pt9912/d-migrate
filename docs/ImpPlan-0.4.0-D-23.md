@@ -307,6 +307,7 @@ verpflichtend:
 - [ ] `docs/perf/0.4.0-phase-d-reorder.md` ist vorhanden
 - [ ] das Perf-Dokument enthält alle sechs Reproduzierbarkeitsfelder
 - [ ] das Perf-Dokument enthält die Entscheidung `additiver Vertrag JA/NEIN`
+- [ ] Modul `adapters/driven/streaming` erreicht ≥ 90 % Line-Coverage (Jacoco)
 - [ ] Phase D ist erst nach diesem Artefakt als abgeschlossen dokumentiert
 
 ---
