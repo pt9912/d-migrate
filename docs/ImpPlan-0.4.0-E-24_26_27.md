@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade  
 > **Phase**: E (CLI-Integration)  
 > **Schritte**: 24 + 26 + 27  
-> **Status**: Teilweise vorbereitet, noch offen  
+> **Status**: Abgeschlossen (per Docker verifiziert, 2026-04-12)  
 > **Referenz**: `implementation-plan-0.4.0.md` §3.7, §6.11
 
 ---
@@ -112,33 +112,33 @@
 
 ## 7. Akzeptanzkriterien
 
-- `data import` ist als CLI-Entry mit allen Flags aus §3.7.1 nutzbar.
-- `DataImportCommand` löst `ImportInput` für stdin/file/directory korrekt auf.
-- `DataImportRunner` existiert und kapselt die Exit-Entscheidung für `data import`.
-- `--target` ist in Clikt optional; Pflicht wird über Resolver-Logik entschieden.
-- `database.default_source` und `database.default_target` sind aktiv und konsistent auflösbar.
-- `NamedConnectionResolver`-Wrapper bleiben kompatibel.
-- `UnsupportedTriggerModeException` bei unsupported `disable` führt deterministisch zu Exit 2.
-- `--disable-fk-checks` auf PG liefert Exit 2.
-- `--on-error skip|log` mit Chunk-Write/Read-Fehlern bleibt Exit 0.
-- `--source -` erfordert zwingend `--format` (sonst Exit 2).
-- Dateiquelle ohne erkennbare Endung ohne `--format` liefert Exit 2.
-- `--truncate --on-conflict abort` liefert Exit 2.
-- `failedFinish`-Pfad liefert Exit 5.
-- Exit-Mapping entspricht im Scope Tabelle §6.11.
-- KDoc von `NamedConnectionResolver` beschreibt die reale Resolve-Logik.
+- [x] `data import` ist als CLI-Entry mit allen Flags aus §3.7.1 nutzbar.
+- [x] `DataImportCommand` löst `ImportInput` für stdin/file/directory korrekt auf.
+- [x] `DataImportRunner` existiert und kapselt die Exit-Entscheidung für `data import`.
+- [x] `--target` ist in Clikt optional; Pflicht wird über Resolver-Logik entschieden.
+- [x] `database.default_source` und `database.default_target` sind aktiv und konsistent auflösbar.
+- [x] `NamedConnectionResolver`-Wrapper bleiben kompatibel.
+- [x] `UnsupportedTriggerModeException` bei unsupported `disable` führt deterministisch zu Exit 2.
+- [x] `--disable-fk-checks` auf PG liefert Exit 2.
+- [x] `--on-error skip|log` mit Chunk-Write/Read-Fehlern bleibt Exit 0.
+- [x] `--source -` erfordert zwingend `--format` (sonst Exit 2).
+- [x] Dateiquelle ohne erkennbare Endung ohne `--format` liefert Exit 2.
+- [x] `--truncate --on-conflict abort` liefert Exit 2.
+- [x] `failedFinish`-Pfad liefert Exit 5.
+- [x] Exit-Mapping entspricht im Scope Tabelle §6.11.
+- [x] KDoc von `NamedConnectionResolver` beschreibt die reale Resolve-Logik.
 
 ## 8. Verifikation
 
-1. `NamedConnectionResolverTest`
-2. `DataImportRunnerTest` (Parsing-Fälle, Resolver-Defaultpfade, Pre-Flight, Exit-Matrix)
-3. `DataImportCommandTest` / `DataImportCommandParserTest` (CLI-Optionen, Source-/Table-Matrix, `ImportInput`-Ableitung)
-4. Optionaler CLI-Smoke:
-   - `data import` mit Directory + `--table[s]`
-   - `data import` mit `--trigger-mode disable` auf SQLite/MySQL -> Exit 2
-   - `data import` mit `--disable-fk-checks` auf PG -> Exit 2
-   - `data import` mit `--source -` ohne `--format` -> Exit 2
-   - `data import` mit `--source`-Datei ohne Endung und ohne `--format` -> Exit 2
-   - `data import` mit `--truncate --on-conflict abort` -> Exit 2
-5. Keine Standard-CI-Umgebungsänderung für die neuen Tests nötig; keine neuen externen Dependencies.
-6. Wenn lokal vorgesehen: `docker build -t d-migrate:dev .` als Build-Smoke (entsprechend README-Verweise) zur Validierung von CLI-Integration und Build-Lauffähigkeit.
+- [x] `NamedConnectionResolverTest`
+- [x] `DataImportRunnerTest` (Parsing-Fälle, Resolver-Defaultpfade, Pre-Flight, Exit-Matrix)
+- [x] `DataImportCommandTest` / `DataImportCommandParserTest`-Scope über `CliDataImportSmokeTest`, `DataImportRunnerTest` und `docker run ... data import --help` verifiziert
+- [x] Optionaler CLI-Smoke per Docker-Image `d-migrate:dev`:
+- [x] `data import` mit Directory + `--table[s]`
+- [x] `data import` mit `--trigger-mode disable` auf SQLite/MySQL -> Exit 2
+- [x] `data import` mit `--disable-fk-checks` auf PG -> Exit 2
+- [x] `data import` mit `--source -` ohne `--format` -> Exit 2
+- [x] `data import` mit `--source`-Datei ohne Endung und ohne `--format` -> Exit 2
+- [x] `data import` mit `--truncate --on-conflict abort` -> Exit 2
+- [x] Keine Standard-CI-Umgebungsänderung für die neuen Tests nötig; keine neuen externen Dependencies.
+- [x] Lokal verifiziert via `docker build -t d-migrate:dev .` als Build-Smoke gemäß README.
