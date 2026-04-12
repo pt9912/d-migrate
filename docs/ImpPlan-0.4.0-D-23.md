@@ -308,6 +308,7 @@ verpflichtend:
 - [ ] das Perf-Dokument enthält alle sechs Reproduzierbarkeitsfelder
 - [ ] das Perf-Dokument enthält die Entscheidung `additiver Vertrag JA/NEIN`
 - [ ] Modul `adapters/driven/streaming` erreicht ≥ 90 % Line-Coverage (Jacoco)
+- [ ] `docker build -t d-migrate:dev .` baut erfolgreich
 - [ ] Phase D ist erst nach diesem Artefakt als abgeschlossen dokumentiert
 
 ---
