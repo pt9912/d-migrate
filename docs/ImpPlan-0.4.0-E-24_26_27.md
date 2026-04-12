@@ -122,6 +122,7 @@
 ## 7. Akzeptanzkriterien
 
 - `data import` liefert einen funktionalen CLI-Entry mit allen Flags aus §3.7.1.
+- `docker build -t d-migrate:dev .` baut erfolgreich.
 - `DataImportCommand` löst `ImportInput` für stdin/file/directory korrekt auf.
 - `--target` ist optional in Clikt, Pflicht wird nur über Resolver-Logik entschieden.
 - `database.default_source` und `database.default_target` sind aktiv und konsistent auflösbar.
