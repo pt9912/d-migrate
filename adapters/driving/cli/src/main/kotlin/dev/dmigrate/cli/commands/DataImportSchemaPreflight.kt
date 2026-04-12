@@ -169,15 +169,16 @@ object DataImportSchemaPreflight {
         input: ImportInput.Directory,
         format: DataExportFormat,
     ): List<String> {
-        val suffix = ".${format.cliName}"
+        val suffixes = format.fileExtensions.map { ".$it" }
         val candidates = linkedMapOf<String, Path>()
 
         try {
             Files.newDirectoryStream(input.path).use { entries ->
                 for (entry in entries) {
                     val fileName = entry.fileName.toString()
-                    if (!Files.isRegularFile(entry) || !fileName.endsWith(suffix)) continue
-                    candidates[fileName.removeSuffix(suffix)] = entry
+                    if (!Files.isRegularFile(entry)) continue
+                    val matchedSuffix = suffixes.firstOrNull { fileName.endsWith(it) } ?: continue
+                    candidates.putIfAbsent(fileName.removeSuffix(matchedSuffix), entry)
                 }
             }
         } catch (t: Throwable) {

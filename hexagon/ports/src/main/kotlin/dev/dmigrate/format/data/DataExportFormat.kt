@@ -7,10 +7,10 @@ package dev.dmigrate.format.data
  * eingegeben und vom [DataChunkWriterFactory] in den passenden
  * [DataChunkWriter] aufgelöst.
  */
-enum class DataExportFormat(val cliName: String) {
-    JSON("json"),
-    YAML("yaml"),
-    CSV("csv");
+enum class DataExportFormat(val cliName: String, val fileExtensions: List<String>) {
+    JSON("json", listOf("json")),
+    YAML("yaml", listOf("yaml", "yml")),
+    CSV("csv", listOf("csv"));
 
     companion object {
         /** @throws IllegalArgumentException wenn der Name unbekannt ist. */

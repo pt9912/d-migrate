@@ -19,6 +19,7 @@ import dev.dmigrate.format.data.JdbcTypeHint
 import dev.dmigrate.format.data.ValueDeserializer
 import java.io.InputStream
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.name
 
 /**
@@ -475,16 +476,19 @@ class StreamingImporter(
         val tableFilter = input.tableFilter
         val tableOrder = input.tableOrder
 
-        val suffix = ".${format.cliName}"
+        val suffixes = format.fileExtensions.map { ".$it" }
         val candidates = Files.list(input.path).use { entries ->
+            val result = linkedMapOf<String, Path>()
             entries
                 .filter(Files::isRegularFile)
-                .filter { it.fileName.name.endsWith(suffix) }
-                .toList()
-                .associateBy(
-                    keySelector = { it.fileName.name.removeSuffix(suffix) },
-                    valueTransform = { it },
-                )
+                .forEach { path ->
+                    val fileName = path.fileName.name
+                    val matchedSuffix = suffixes.firstOrNull { fileName.endsWith(it) }
+                    if (matchedSuffix != null) {
+                        result.putIfAbsent(fileName.removeSuffix(matchedSuffix), path)
+                    }
+                }
+            result
         }.toMutableMap()
 
         if (tableFilter != null) {
