@@ -42,11 +42,19 @@ object DataImportSchemaPreflight {
         table: String,
         targetColumns: List<TargetColumn>,
     ) {
-        val schemaTable = schema.tables[table]
-            ?: schema.tables[table.substringAfterLast('.')]?.takeIf { '.' in table }
-            ?: throw ImportSchemaMismatchException(
-                "Table '$table' is not defined in the provided --schema file"
-            )
+        val matches = matchingSchemaTableNames(schema.tables.keys, table)
+        val schemaTableName = when {
+            matches.isEmpty() ->
+                throw ImportSchemaMismatchException(
+                    "Table '$table' is not defined in the provided --schema file"
+                )
+            matches.size > 1 ->
+                throw ImportSchemaMismatchException(
+                    "Table '$table' matches multiple tables in the provided --schema: ${matches.joinToString()}"
+                )
+            else -> matches.single()
+        }
+        val schemaTable = schema.tables.getValue(schemaTableName)
 
         val targetByName = targetColumns.associateBy { it.name }
         val missing = schemaTable.columns.keys.filterNot(targetByName::containsKey)
@@ -138,14 +146,20 @@ object DataImportSchemaPreflight {
         val candidateTables = resolveCandidateTables(input, format)
         if (candidateTables.isEmpty()) return emptyList()
 
-        val selectedTables = linkedMapOf<String, TableDefinition>()
-        for ((name, table) in schema.tables) {
-            if (name in candidateTables) {
-                selectedTables[name] = table
+        val candidateToSchema = linkedMapOf<String, String>()
+        val missingInSchema = mutableListOf<String>()
+        val ambiguousMatches = mutableListOf<String>()
+
+        for (candidate in candidateTables) {
+            val matches = matchingSchemaTableNames(schema.tables.keys, candidate)
+            when {
+                matches.isEmpty() -> missingInSchema += candidate
+                matches.size > 1 ->
+                    ambiguousMatches += "$candidate -> ${matches.joinToString()}"
+                else -> candidateToSchema[candidate] = matches.single()
             }
         }
 
-        val missingInSchema = candidateTables.filterNot(selectedTables::containsKey)
         if (missingInSchema.isNotEmpty()) {
             throw ImportPreflightException(
                 "Schema file '$schemaPath' does not define tables required for directory import: " +
@@ -153,7 +167,36 @@ object DataImportSchemaPreflight {
             )
         }
 
-        val sortResult = topologicalSort(selectedTables)
+        if (ambiguousMatches.isNotEmpty()) {
+            throw ImportPreflightException(
+                "Schema file '$schemaPath' matches directory import tables ambiguously: " +
+                    ambiguousMatches.joinToString("; ")
+            )
+        }
+
+        val duplicateSchemaTargets = candidateToSchema.entries
+            .groupBy({ it.value }, { it.key })
+            .filterValues { it.size > 1 }
+        if (duplicateSchemaTargets.isNotEmpty()) {
+            val details = duplicateSchemaTargets.entries.joinToString("; ") { (schemaTable, candidates) ->
+                "$schemaTable <- ${candidates.joinToString()}"
+            }
+            throw ImportPreflightException(
+                "Schema file '$schemaPath' maps multiple directory tables to the same schema table: $details"
+            )
+        }
+
+        val schemaToCandidate = candidateToSchema.entries.associate { (candidate, schemaTable) ->
+            schemaTable to candidate
+        }
+        val selectedTables = linkedMapOf<String, TableDefinition>()
+        for ((candidate, schemaTable) in candidateToSchema) {
+            selectedTables[candidate] = schema.tables.getValue(schemaTable)
+        }
+
+        val sortResult = topologicalSort(selectedTables) { referenceTable ->
+            schemaToCandidate[referenceTable]
+        }
         if (sortResult.circularEdges.isNotEmpty()) {
             val edges = sortResult.circularEdges.joinToString("; ") {
                 "${it.fromTable}.${it.fromColumn} -> ${it.toTable}.${it.toColumn}"
@@ -172,6 +215,7 @@ object DataImportSchemaPreflight {
     ): List<String> {
         val suffixes = format.fileExtensions.map { ".$it" }
         val candidates = linkedMapOf<String, Path>()
+        val candidateFiles = linkedMapOf<String, MutableList<String>>()
 
         try {
             Files.newDirectoryStream(input.path).use { entries ->
@@ -179,7 +223,9 @@ object DataImportSchemaPreflight {
                     val fileName = entry.fileName.toString()
                     if (!Files.isRegularFile(entry)) continue
                     val matchedSuffix = suffixes.firstOrNull { fileName.endsWith(it) } ?: continue
-                    candidates.putIfAbsent(fileName.removeSuffix(matchedSuffix), entry)
+                    val tableName = fileName.removeSuffix(matchedSuffix)
+                    candidateFiles.getOrPut(tableName) { mutableListOf() }.add(fileName)
+                    candidates.putIfAbsent(tableName, entry)
                 }
             }
         } catch (t: Throwable) {
@@ -191,21 +237,62 @@ object DataImportSchemaPreflight {
 
         val tableFilter = input.tableFilter
         if (tableFilter != null) {
-            val missing = tableFilter.filterNot { name ->
-                name in candidates || ('.' in name && name.substringAfterLast('.') in candidates)
-            }
+            val missing = tableFilter.filterNot(candidates::containsKey)
             if (missing.isNotEmpty()) {
                 throw ImportPreflightException(
                     "Directory import filter references tables without matching files: ${missing.joinToString()}"
                 )
             }
-            return tableFilter.map { name ->
-                if (name in candidates) name else name.substringAfterLast('.')
+            val duplicateDetails = duplicateCandidateDetails(candidateFiles, tableFilter)
+            if (duplicateDetails.isNotEmpty()) {
+                throw ImportPreflightException(
+                    "Directory import source contains multiple files for the same table: " +
+                        duplicateDetails.joinToString("; ")
+                )
             }
+            return tableFilter
+        }
+
+        val duplicateDetails = duplicateCandidateDetails(candidateFiles, candidates.keys)
+        if (duplicateDetails.isNotEmpty()) {
+            throw ImportPreflightException(
+                "Directory import source contains multiple files for the same table: " +
+                    duplicateDetails.joinToString("; ")
+            )
         }
 
         return candidates.keys.toList()
     }
+
+    private fun matchingSchemaTableNames(
+        schemaTables: Collection<String>,
+        requestedTable: String,
+    ): List<String> {
+        if (requestedTable in schemaTables) {
+            return listOf(requestedTable)
+        }
+
+        return if ('.' in requestedTable) {
+            val unqualified = requestedTable.substringAfterLast('.')
+            schemaTables.filter { it == unqualified }
+        } else {
+            schemaTables.filter { it.substringAfterLast('.') == requestedTable }
+        }
+    }
+
+    private fun duplicateCandidateDetails(
+        candidateFiles: Map<String, List<String>>,
+        selectedTables: Iterable<String>,
+    ): List<String> =
+        selectedTables.asSequence()
+            .distinct()
+            .mapNotNull { table ->
+                candidateFiles[table]
+                    ?.takeIf { it.size > 1 }
+                    ?.let { "$table <- ${it.sorted().joinToString()}" }
+            }
+            .sorted()
+            .toList()
 
     private data class CircularEdge(
         val fromTable: String,
@@ -219,7 +306,10 @@ object DataImportSchemaPreflight {
         val circularEdges: List<CircularEdge>,
     )
 
-    private fun topologicalSort(tables: Map<String, TableDefinition>): SortResult {
+    private fun topologicalSort(
+        tables: Map<String, TableDefinition>,
+        referenceToSelectedTable: (String) -> String? = { it },
+    ): SortResult {
         val deps = linkedMapOf<String, MutableSet<String>>()
         val allEdges = mutableListOf<CircularEdge>()
 
@@ -232,7 +322,7 @@ object DataImportSchemaPreflight {
                     edges = allEdges,
                     fromTable = tableName,
                     fromColumn = columnName,
-                    toTable = reference.table,
+                    toTable = referenceToSelectedTable(reference.table) ?: reference.table,
                     toColumn = reference.column,
                     tables = tables,
                 )
@@ -249,7 +339,7 @@ object DataImportSchemaPreflight {
                         edges = allEdges,
                         fromTable = tableName,
                         fromColumn = sourceColumns.getOrElse(index) { constraint.name },
-                        toTable = reference.table,
+                        toTable = referenceToSelectedTable(reference.table) ?: reference.table,
                         toColumn = targetColumns.getOrElse(index) { constraint.name },
                         tables = tables,
                     )
@@ -366,7 +456,8 @@ object DataImportSchemaPreflight {
                     targetColumn.jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.NCHAR, Types.NVARCHAR) ||
                     (targetColumn.jdbcType == Types.OTHER && sqlTypeName.isNotEmpty() &&
                         sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES &&
-                        (ref == null || sqlTypeName == ref))
+                        ref != null &&
+                        sqlTypeName == ref)
             }
             is NeutralType.Array ->
                 targetColumn.jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")

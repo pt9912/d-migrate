@@ -479,29 +479,32 @@ class StreamingImporter(
         val suffixes = format.fileExtensions.map { ".$it" }
         val candidates = Files.list(input.path).use { entries ->
             val result = linkedMapOf<String, Path>()
+            val candidateFiles = linkedMapOf<String, MutableList<String>>()
             entries
                 .filter(Files::isRegularFile)
                 .forEach { path ->
                     val fileName = path.fileName.name
                     val matchedSuffix = suffixes.firstOrNull { fileName.endsWith(it) }
                     if (matchedSuffix != null) {
-                        result.putIfAbsent(fileName.removeSuffix(matchedSuffix), path)
+                        val tableName = fileName.removeSuffix(matchedSuffix)
+                        candidateFiles.getOrPut(tableName) { mutableListOf() }.add(fileName)
+                        result.putIfAbsent(tableName, path)
                     }
                 }
+            val selectedTables = tableFilter ?: result.keys
+            val duplicateDetails = duplicateCandidateDetails(candidateFiles, selectedTables)
+            require(duplicateDetails.isEmpty()) {
+                "ImportInput.Directory contains multiple files for the same table: ${duplicateDetails.joinToString("; ")}"
+            }
             result
         }.toMutableMap()
 
         if (tableFilter != null) {
-            val resolved = tableFilter.map { name ->
-                if (name in candidates) name
-                else if ('.' in name && name.substringAfterLast('.') in candidates) name.substringAfterLast('.')
-                else name
-            }
-            val missing = resolved.filterNot(candidates::containsKey)
+            val missing = tableFilter.filterNot(candidates::containsKey)
             require(missing.isEmpty()) {
                 "ImportInput.Directory.tableFilter references tables without matching files: ${missing.joinToString()}"
             }
-            candidates.keys.retainAll(resolved.toSet())
+            candidates.keys.retainAll(tableFilter.toSet())
         }
 
         val orderedTables = if (tableOrder != null) {
@@ -529,6 +532,20 @@ class StreamingImporter(
             )
         }
     }
+
+    private fun duplicateCandidateDetails(
+        candidateFiles: Map<String, List<String>>,
+        selectedTables: Iterable<String>,
+    ): List<String> =
+        selectedTables.asSequence()
+            .distinct()
+            .mapNotNull { table ->
+                candidateFiles[table]
+                    ?.takeIf { it.size > 1 }
+                    ?.let { "$table <- ${it.sorted().joinToString()}" }
+            }
+            .sorted()
+            .toList()
 
     private fun attemptRollback(session: TableImportSession): Boolean =
         runCatching {
