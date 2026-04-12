@@ -1,6 +1,6 @@
 # d-migrate
 
-**Database-agnostic CLI tool for schema migration and data management.**
+**Datenbankunabhängiges CLI-Tool für Schema-Migration und Datenmanagement.**
 
 <!-- Badges -->
 ![Build](https://github.com/pt9912/d-migrate/actions/workflows/build.yml/badge.svg)
@@ -9,29 +9,29 @@
 
 ---
 
-## What is d-migrate?
+## Was ist d-migrate?
 
-d-migrate is a command-line tool that lets you define your database schema once in a neutral, database-agnostic format (YAML) and then validate, diff, and generate DDL for multiple target databases. No more maintaining separate migration scripts per database engine.
+d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmalig in einem neutralen, datenbankunabhängigen Format (YAML) definierst und anschließend für mehrere Zielsysteme validierst, vergleichst und DDL erzeugst. Damit entfallen getrennte Migrationsskripte pro Datenbankengine.
 
-**Current capabilities:**
-- Neutral schema model with 18 built-in types
-- YAML-based schema definition and parsing
-- Schema validation with 18 error codes (E001-E018)
-- DDL generation for PostgreSQL, MySQL, and SQLite
-- View query transformation (17 SQL functions)
-- Transformation reports (YAML sidecar)
-- CLI with `schema validate` and `schema generate`
-- OCI image for Docker usage
+**Aktuelle Fähigkeiten:**
+- Neutrales Schemamodell mit 18 integrierten Typen
+- YAML-basierte Schemadefinition und -parsing
+- Schemagültigkeitsprüfung mit 18 Fehlercodes (E001-E018)
+- DDL-Generierung für PostgreSQL, MySQL und SQLite
+- Transformation von View-Queries (17 SQL-Funktionen)
+- Transformationsberichte (YAML-Seitenschatten)
+- CLI mit `schema validate` und `schema generate`
+- OCI-Image für die Nutzung mit Docker
 
-**Planned:**
-- Data export/import (JSON, YAML, CSV)
-- Schema diffing and migration generation
+**Geplant:**
+- Datenexport/-import (JSON, YAML, CSV)
+- Schemadiff und Migrationsgenerierung
 
-## Quick Start
+## Schnellstart
 
-### Prerequisites
+### Voraussetzungen
 
-- **JDK 21** or later — _or_ Docker (see below, no local JDK required)
+- **JDK 21** oder neuer — _oder_ Docker (siehe unten, kein lokales JDK erforderlich)
 
 ### Build
 
@@ -39,82 +39,76 @@ d-migrate is a command-line tool that lets you define your database schema once 
 ./gradlew build
 ```
 
-### Run the CLI
+### CLI ausführen
 
 ```bash
-# Validate a schema
+# Schema validieren
 ./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
 
-# Generate PostgreSQL DDL
+# PostgreSQL-DDL generieren
 ./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target postgresql"
 
-# Generate MySQL DDL with rollback
+# MySQL-DDL mit Rollback generieren
 ./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
 ```
 
 ### Docker
 
-#### Use the published image
+#### Veröffentlichtes Image nutzen
 
-No JDK required — just pull the image and run:
+Kein lokales JDK erforderlich — einfach Image ziehen und ausführen:
 
 ```bash
-# Validate
+# Validierung
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
 
-# Generate DDL
+# DDL generieren
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
 ```
 
-#### Build and test locally with the Dockerfile
+#### Mit Dockerfile lokal bauen und testen
 
-The repository ships a multi-stage [`Dockerfile`](Dockerfile) that builds and
-tests the project inside a container, then packages the CLI distribution into a
-slim JRE runtime image. This is the easiest way to run the full build without
-installing a JDK locally.
+Das Repository liefert ein Multi-Stage [`Dockerfile`](Dockerfile), das das Projekt im Container baut
+und testet und danach die CLI-Distribution in ein schlankes JRE-Laufzeitimage verpackt. Das ist der einfachste Weg,
+den vollständigen Build ohne lokale JDK-Installation auszuführen.
 
 ```bash
-# Full build incl. tests and coverage verification (default)
+# Vollständiger Build inkl. Tests und Coverage-Validierung (Standard)
 docker build -t d-migrate:dev .
 
-# Force a full test/coverage run (bypass Docker layer cache AND Gradle build cache)
+# Erzwungener vollständiger Test/Coverage-Lauf (Docker-Layer-Cache UND Gradle-Cache werden umgangen)
 docker build --no-cache \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
-# Skip tests — only assemble the CLI distribution
+# Tests überspringen — nur CLI-Distribution erstellen
 docker build --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" \
   -t d-migrate:dev .
 
-# Run only a build-stage subset without producing the final runtime image
+# Nur einen Build-Stage-Teil ausführen, ohne finales Runtime-Image zu erzeugen
 docker build --target build \
   --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
   -t d-migrate:phase-a .
 
-# Run the locally built CLI
+# Lokal gebaute CLI ausführen
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 
-# Run the Testcontainers-based integration suite
+# Testcontainers-basierte Integrationssuite ausführen
 ./scripts/test-integration-docker.sh
 
-# Or run only a subset of the integration tasks
+# Oder nur eine Teilmenge der Integrationstests ausführen
 ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
 ```
 
-Notes:
+Hinweise:
 
-- The build stage uses `eclipse-temurin:21-jdk-noble` and caches Gradle
-  dependencies via BuildKit cache mounts, so repeated builds are fast.
-- The runtime stage uses `eclipse-temurin:21-jre-noble` (the same base image as
-  the published OCI image produced by `:adapters:driving:cli:jibDockerBuild`).
-- A full `docker build` always reaches the runtime stage. If you override
-  `GRADLE_TASKS`, include `:adapters:driving:cli:installDist`; otherwise use
-  `--target build` for build/test-only subsets.
-- Testcontainers-based integration tests should not run inside `docker build`.
-  Use [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
-  which starts a disposable JDK container and mounts the host Docker socket so
-  Testcontainers can launch PostgreSQL/MySQL normally.
-- To extract build artifacts from the build stage:
+- Die Build-Stage nutzt `eclipse-temurin:21-jdk-noble` und cached Gradle-Abhängigkeiten über BuildKit-Cache-Mounts, sodass wiederholte Builds schnell sind.
+- Die Runtime-Stage nutzt `eclipse-temurin:21-jre-noble` (dasselbe Basisimage wie das veröffentlichte OCI-Image aus `:adapters:driving:cli:jibDockerBuild`).
+- Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
+- Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
+  [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
+  das einen kurzlebigen JDK-Container startet und den Docker-Socket des Hosts mountet, damit Testcontainers PostgreSQL/MySQL normal starten kann.
+- Um Build-Artefakte aus der Build-Stage zu extrahieren:
   ```bash
   docker build --target build -t d-migrate:build .
   docker create --name d-migrate-tmp d-migrate:build
@@ -122,9 +116,9 @@ Notes:
   docker rm d-migrate-tmp
   ```
 
-### Minimal Schema Example
+### Minimales Schema-Beispiel
 
-Create a file called `schema.yaml`:
+Lege eine Datei namens `schema.yaml` an:
 
 ```yaml
 schema_format: "1.0"
@@ -148,77 +142,78 @@ tables:
     primary_key: [id]
 ```
 
-Then validate it:
+Dann validierst du es so:
 
 ```bash
 ./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
 ```
 
-## Current Status
+## Aktueller Stand
 
-**[v0.3.0](https://github.com/pt9912/d-migrate/releases/tag/v0.3.0)** released:
+**[v0.3.0](https://github.com/pt9912/d-migrate/releases/tag/v0.3.0)** veröffentlicht:
 
-- Streaming `data export` CLI command (JSON / YAML / CSV) for PostgreSQL, MySQL, SQLite
-- HikariCP-backed connection layer with `ConnectionUrlParser` per dialect
-- Pull-based `StreamingExporter` (chunk streaming, no full-table buffering)
-- Performance-oriented format writers: DSL-JSON, SnakeYAML Engine, uniVocity-parsers
-- Named connections via `.d-migrate.yaml` with `${ENV_VAR}` substitution (`NamedConnectionResolver`)
-- `--source`, `--format`, `--output`, `--tables`, `--filter`, `--split-files`, `--csv-*`, `--encoding`, `--chunk-size`
-- §6.17 empty-table contract: `[]` (JSON/YAML), CSV header line, or empty file
-- Testcontainers end-to-end coverage for PostgreSQL 16 and MySQL 8.0
-- 600+ tests, coverage >= 90% (CLI >= 60%)
+- Streaming-CLI-Befehl `data export` (JSON / YAML / CSV) für PostgreSQL, MySQL, SQLite
+- HikariCP-basiertes Verbindungs-Subsystem mit `ConnectionUrlParser` pro Dialekt
+- Pull-basiertes `StreamingExporter` (Chunk-Streaming, kein Full-Table-Buffering)
+- Performance-orientierte Formatwriter: DSL-JSON, SnakeYAML Engine, uniVocity-parsers
+- Benannte Verbindungen über `.d-migrate.yaml` mit `${ENV_VAR}`-Substitution (`NamedConnectionResolver`)
+- Optionen `--source`, `--format`, `--output`, `--tables`, `--filter`, `--split-files`, `--csv-*`, `--encoding`, `--chunk-size`
+- §6.17 Empty-Table-Vertrag: `[]` (JSON/YAML), CSV-Kopfzeile oder leere Datei
+- End-to-End-Testabdeckung via Testcontainers für PostgreSQL 16 und MySQL 8.0
+- 600+ Tests, Coverage ≥ 90% (CLI ≥ 60%)
 
-**[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** released:
+**[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** veröffentlicht:
 
-- DDL generation for PostgreSQL, MySQL, SQLite
-- TypeMapper with 18 neutral types per dialect
-- View query transformation (17 SQL functions)
-- Transformation reports (YAML sidecar, JSON output)
-- `schema generate` CLI command with `--output`, `--generate-rollback`, `--report`
-- 374 tests, coverage >= 90%
+- DDL-Generierung für PostgreSQL, MySQL, SQLite
+- TypeMapper mit 18 neutralen Typen pro Dialekt
+- Transformation von View-Queries (17 SQL-Funktionen)
+- Transformationsberichte (YAML-Seitenschatten, JSON-Ausgabe)
+- CLI-Befehl `schema generate` mit `--output`, `--generate-rollback`, `--report`
+- 374 Tests, Coverage ≥ 90%
 
-**[v0.1.0](https://github.com/pt9912/d-migrate/releases/tag/v0.1.0)** released:
+**[v0.1.0](https://github.com/pt9912/d-migrate/releases/tag/v0.1.0)** veröffentlicht:
 
-- Neutral schema model, YAML parsing, schema validation, CLI `schema validate`
+- Neutrales Schemamodell, YAML-Parsing, Schemagültigkeitsprüfung, CLI `schema validate`
 
-## Supported Databases
+## Unterstützte Datenbanken
 
-| Database   | Status                          |
-|------------|---------------------------------|
-| PostgreSQL | DDL Generation, Data Export     |
-| MySQL      | DDL Generation, Data Export     |
-| SQLite     | DDL Generation, Data Export     |
-| Oracle     | Future                          |
-| MSSQL      | Future                          |
+| Datenbank | Status                           |
+|-----------|----------------------------------|
+| PostgreSQL | DDL-Generierung, Datenexport    |
+| MySQL      | DDL-Generierung, Datenexport    |
+| SQLite     | DDL-Generierung, Datenexport    |
+| Oracle     | Geplant                         |
+| MSSQL      | Geplant                         |
 
 ## Roadmap
 
-See [docs/roadmap.md](docs/roadmap.md) for the full roadmap and milestone plan.
+Die vollständige Roadmap und den Meilensteinplan findest du in
+[docs/roadmap.md](docs/roadmap.md).
 
-## Documentation
+## Dokumentation
 
-Detailed documentation is available in the [docs/](docs/) directory:
+Detaillierte Dokumentation findest du im [docs/](docs/)-Verzeichnis:
 
-- [Quick Start Guide (German)](docs/guide.md)
-- [Design](docs/design.md) / [Architecture](docs/architecture.md)
-- [Neutral Model Specification](docs/neutral-model-spec.md)
-- [CLI Specification](docs/cli-spec.md)
-- [DDL Generation Rules](docs/ddl-generation-rules.md)
-- [Connection & Config Specification](docs/connection-config-spec.md)
+- [Quick Start Guide (Deutsch)](docs/guide.md)
+- [Entwurf](docs/design.md) / [Architektur](docs/architecture.md)
+- [Spezifikation des neutralen Modells](docs/neutral-model-spec.md)
+- [CLI-Spezifikation](docs/cli-spec.md)
+- [Regeln zur DDL-Generierung](docs/ddl-generation-rules.md)
+- [Verbindungs- und Konfigurationsspezifikation](docs/connection-config-spec.md)
 - [Roadmap](docs/roadmap.md)
-- [Release Guide](docs/releasing.md)
-- [Requirements (German)](docs/lastenheft-d-migrate.md)
+- [Release-Leitfaden](docs/releasing.md)
+- [Lastenheft (Deutsch)](docs/lastenheft-d-migrate.md)
 
-## Contributing
+## Mitmachen
 
-Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/pt9912/d-migrate).
+Beiträge sind willkommen! Bitte erstelle ein Issue oder einen Pull Request auf [GitHub](https://github.com/pt9912/d-migrate).
 
-1. Fork the repository
-2. Create a feature branch from `develop`
-3. Write tests for your changes
-4. Ensure all tests pass (`./gradlew build`)
-5. Submit a pull request against `develop`
+1. Forke das Repository
+2. Erstelle einen Feature-Branch von `develop`
+3. Schreibe Tests für deine Änderungen
+4. Stelle sicher, dass alle Tests laufen (`./gradlew build`)
+5. Reiche einen Pull Request gegen `develop` ein
 
-## License
+## Lizenz
 
-This project is licensed under the [MIT License](LICENSE).
+Dieses Projekt ist unter der [MIT-Lizenz](LICENSE) lizenziert.
