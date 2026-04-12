@@ -79,7 +79,7 @@ den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
 `--split-files`-Multi-Tabellen-Export, vollständige Exit-Code-Matrix
 (0/2/4/5/7) und §6.17 Empty-Table-Vertrag pro Format.
 
-### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade
+### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade ✅ (2026-04-12)
 
 | Bereich | Aufgabe                                                                                           | LF-Ref |
 | ------- | ------------------------------------------------------------------------------------------------- | ------ |
@@ -435,6 +435,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 1.9
+**Version**: 2.0
 **Stand**: 2026-04-12
-**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen; 0.4.0 feature-complete (Phase A–F abgeschlossen, inkl. LF-013, Truncate, Testcontainers-E2E und inkrementellem Round-Trip), Release-Vorbereitung steht aus; 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 in Umsetzung (Phase A erledigt); 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung

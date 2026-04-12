@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = "dev.dmigrate"
-    version = "0.4.0-SNAPSHOT"
+    version = "0.4.0"
 
     repositories {
         mavenCentral()

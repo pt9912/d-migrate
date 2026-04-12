@@ -7,26 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-12
+
 ### Added
 
-- Read-path foundation in `d-migrate-formats`: `DataChunkReader`, `DataChunkReaderFactory`, and `ImportOptions` for the upcoming 0.4.0 import pipeline
-- `EncodingDetector` with BOM sniffing for UTF-8 / UTF-16 BE / UTF-16 LE plus explicit unsupported-file-encoding handling
-- `ValueDeserializer` as the inverse of `ValueSerializer`, including JDBC-type-hint based conversion for import-side row materialization
-- `DataFilter.ParameterizedClause` and the corresponding `SelectQuery(sql, params)` path in JDBC readers for safely bound WHERE fragments
-- Incremental export flags `--since-column` and `--since` on `d-migrate data export`, including typed parameter binding and composition with `--filter`
-- Opt-in DSL-JSON go/no-go perf spike for a cached 100-MB top-level-array fixture under `build/perf-fixtures/`
+- `d-migrate data import` CLI command — transactional import of JSON, YAML, or CSV data into PostgreSQL, MySQL, and SQLite databases
+- `DataWriter` / `TableImportSession` port interfaces for hexagonal import pipeline
+- PostgreSQL, MySQL, and SQLite data writers with batch INSERT, UPSERT (`--on-conflict update`), and TRUNCATE support
+- Streaming import pipeline (chunk-based, transactional, no full-table buffering)
+- Schema preflight validation on import (target schema is authoritative)
+- Sequence / Identity / AUTO_INCREMENT reseeding after import for all three dialects
+- Dialect-specific trigger handling during import (`--trigger-mode disable`)
+- `--truncate` flag for clearing target tables before import
+- `--on-conflict update` flag for idempotent UPSERT imports
+- `--trigger-mode` flag for controlling trigger behavior during import
+- Format read path: `DataChunkReader`, `DataChunkReaderFactory`, `ImportOptions` with `JsonChunkReader`, `YamlChunkReader`, `CsvChunkReader` for streaming deserialization
+- `EncodingDetector` with BOM sniffing for UTF-8 / UTF-16 BE / UTF-16 LE
+- `ValueDeserializer` for JDBC-type-hint based conversion on import
+- `DefaultDataChunkReaderFactory` implementation
+- `SchemaSync` contract for pre-import schema matching and validation
+- `NamedConnectionResolver` extended with `resolveSource` / `resolveTarget`
+- Incremental export flags `--since-column` and `--since` on `d-migrate data export` (LF-013), including typed parameter binding and composition with `--filter`
+- `DataFilter.ParameterizedClause` and `SelectQuery(sql, params)` for safely bound WHERE fragments
+- Testcontainers E2E import tests for PostgreSQL and MySQL
+- Driver-level truncate integration tests
+- E2E CLI data import tests: JSON/YAML/CSV round-trips, `--truncate`, `--on-conflict update`, `--trigger-mode disable`
+- Round-trip tests (export → import → comparison) and incremental round-trip tests (initial export → delta export → UPSERT import → comparison)
+- Golden-Master round-trip and null-row property tests
 
 ### Changed
 
-- `d-migrate data export` now rejects literal `?` inside `--filter` when combined with `--since`, returning exit code 2 in the CLI preflight instead of relying only on the defensive reader guard
-- The Phase-A perf spike now reuses the persistent `build/perf-fixtures` cache path instead of generating and deleting a temporary fixture directory on each run
+- **Hexagonal architecture restructuring**: project reorganized from flat modules into `hexagon/core`, `hexagon/ports`, `hexagon/application`, `adapters/driven/*`, `adapters/driving/cli` — all module paths, imports, and CI workflows updated accordingly
+- `DatabaseDriverRegistry` replaces legacy per-dialect registries
+- `SchemaGenerateRunner` and `DataExportRunner` extracted from CLI command classes into `hexagon:application`
+- `DataExportCommand` extracted into its own file
+- `Main.kt` bootstrap split for testability; Help and edge-gap tests added
+- `AbstractDdlGenerator.getVersion()` returns `0.4.0`
+- CLI Kover coverage gate raised from 60% to 90%
+- `d-migrate data export` now rejects literal `?` inside `--filter` when combined with `--since`, returning exit code 2 in the CLI preflight
 
 ### Fixed
 
-- `ImportOptions.encoding` now defaults to auto-detect (`null`) instead of hard-coded UTF-8, aligning library defaults with the CLI `--encoding auto` path
-- `EncodingDetector.UnsupportedEncodingException` was renamed to `UnsupportedFileEncodingException` to avoid colliding with the JDK exception name
-- `ValueDeserializer` now distinguishes `NUMERIC` / `DECIMAL` via precision, scale, and token shape instead of forcing every value onto the `BigDecimal` path
-- Large-fixture cache invalidation now derives its stamp from the generator source hash instead of a manually bumped fingerprint string
+- `ImportOptions.encoding` defaults to auto-detect (`null`) instead of hard-coded UTF-8
+- `EncodingDetector.UnsupportedEncodingException` renamed to `UnsupportedFileEncodingException` to avoid JDK collision
+- `ValueDeserializer` distinguishes `NUMERIC` / `DECIMAL` via precision, scale, and token shape instead of forcing every value onto `BigDecimal`
+- Large-fixture cache invalidation uses generator source hash instead of manual fingerprint
+- Enum type check no longer rejects custom PG enums without `refType`
+- `Types.OTHER` cross-contamination in schema type compatibility check
+- Fragile `message.startsWith` check replaced with typed exception
+- Schema-qualified table names no longer break `--schema` validation
+- Directory import now includes `.yml` files for YAML format
+- Schema target validation decoupled from application layer for cleaner error handling
+- `autoCommit` guard before PostgreSQL `TRUNCATE` in `openTable`
+- Writer wiring and cleanup-failure reporting hardened
 
 ## [0.3.0] - 2026-04-06
 

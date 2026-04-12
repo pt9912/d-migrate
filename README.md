@@ -20,12 +20,15 @@ d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmal
 - DDL-Generierung für PostgreSQL, MySQL und SQLite
 - Transformation von View-Queries (17 SQL-Funktionen)
 - Transformationsberichte (YAML-Seitenschatten)
-- CLI mit `schema validate` und `schema generate`
+- Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
+- Transaktionaler Datenimport mit UPSERT, Truncate, Trigger-Handling und Reseeding
+- Inkrementeller Export über `--since-column` / `--since` (LF-013)
+- CLI mit `schema validate`, `schema generate`, `data export` und `data import`
 - OCI-Image für die Nutzung mit Docker
 
 **Geplant:**
-- Datenexport/-import (JSON, YAML, CSV)
-- Schemadiff und Migrationsgenerierung
+- Schema-Diff und `schema compare` (0.5.0)
+- Reverse-Engineering bestehender Datenbanken (0.6.0)
 
 ## Schnellstart
 
@@ -150,6 +153,15 @@ Dann validierst du es so:
 
 ## Aktueller Stand
 
+**[v0.4.0](https://github.com/pt9912/d-migrate/releases/tag/v0.4.0)** veröffentlicht:
+
+- `data import` CLI-Befehl: transaktionaler Import aus JSON/YAML/CSV in PostgreSQL, MySQL, SQLite
+- UPSERT (`--on-conflict update`), Truncate (`--truncate`), Trigger-Handling (`--trigger-mode`)
+- Sequence/Identity/AUTO_INCREMENT-Reseeding nach Import
+- Inkrementeller Export mit `--since-column` / `--since` (LF-013)
+- Hexagonale Architektur-Umstrukturierung (Ports & Adapters)
+- CLI Kover-Coverage-Gate auf 90% angehoben
+
 **[v0.3.0](https://github.com/pt9912/d-migrate/releases/tag/v0.3.0)** veröffentlicht:
 
 - Streaming-CLI-Befehl `data export` (JSON / YAML / CSV) für PostgreSQL, MySQL, SQLite
@@ -179,9 +191,9 @@ Dann validierst du es so:
 
 | Datenbank | Status                           |
 |-----------|----------------------------------|
-| PostgreSQL | DDL-Generierung, Datenexport    |
-| MySQL      | DDL-Generierung, Datenexport    |
-| SQLite     | DDL-Generierung, Datenexport    |
+| PostgreSQL | DDL-Generierung, Datenexport, Datenimport |
+| MySQL      | DDL-Generierung, Datenexport, Datenimport |
+| SQLite     | DDL-Generierung, Datenexport, Datenimport |
 | Oracle     | Geplant                         |
 | MSSQL      | Geplant                         |
 
