@@ -61,6 +61,7 @@ class PostgresDataWriter : DataWriter {
             // so the table stays empty even on failure. RESTART IDENTITY
             // resets attached sequences to their start values.
             if (options.truncate) {
+                if (!conn.autoCommit) conn.autoCommit = true
                 conn.createStatement().use { stmt ->
                     stmt.execute("TRUNCATE TABLE ${qualified.quotedPath()} RESTART IDENTITY CASCADE")
                 }
