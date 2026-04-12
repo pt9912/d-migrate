@@ -72,7 +72,7 @@
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `docker build -t d-migrate:dev .` baut erfolgreich.
+- [ ] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../README.md) verwendet und baut erfolgreich.
 - [ ] JSON, YAML und CSV je mindestens einmal über den vollen CLI-Importpfad auf SQLite verifiziert.
 - [ ] `--truncate` auf SQLite importseitig funktional getestet (bestehende Zieldaten werden in dem Lauf ersetzt).
 - [ ] `--on-conflict update` ist auf SQLite per CLI testabgedeckt.
