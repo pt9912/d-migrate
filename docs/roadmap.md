@@ -103,8 +103,8 @@ Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
 **Aktueller Stand (2026-04-12)**  
-Milestone 0.4.0 ist weiterhin in Arbeit.  
-Phase A bis E sind abgeschlossen und verifiziert.
+Milestone 0.4.0 ist feature-complete. Alle Phasen (A–F) sind abgeschlossen
+und verifiziert. Release-Vorbereitung steht aus.
 
 Abgeschlossene Phasen:
 
@@ -121,11 +121,10 @@ Abgeschlossene Phasen:
   Pläne: [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md),
   [ImpPlan-0.4.0-E-25](./ImpPlan-0.4.0-E-25.md),
   [ImpPlan-0.4.0-E-28](./ImpPlan-0.4.0-E-28.md)
-
-Offen für 0.4.0:
-
-- **Phase F**: Container-E2E-Tests gegen PostgreSQL und MySQL via Testcontainers
-- Inkrement-Round-Trip-Tests (initial export → delta export → UPSERT-Import → Vergleich)
+- **Phase F** (Schritte 29–33): Testcontainers-E2E gegen PostgreSQL und MySQL,
+  Truncate-Implementierung in allen drei Writern, Sequence-/AUTO_INCREMENT-Reseeding,
+  Trigger-Handling, inkrementeller Round-Trip (export → delta → UPSERT → Vergleich).
+  Plan: [ImpPlan-0.4.0-F](./ImpPlan-0.4.0-F.md)
 
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
@@ -434,6 +433,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 1.8
+**Version**: 1.9
 **Stand**: 2026-04-12
-**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen; 0.4.0 in Arbeit mit Phase A–E abgeschlossen (inkl. LF-013 und CLI-E2E gegen SQLite), Phase F (Container-E2E) noch offen; 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen; 0.4.0 feature-complete (Phase A–F abgeschlossen, inkl. LF-013, Truncate, Testcontainers-E2E und inkrementellem Round-Trip), Release-Vorbereitung steht aus; 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
