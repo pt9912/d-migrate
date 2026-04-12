@@ -354,20 +354,29 @@ Pragmatischer MVP-Schnitt:
 
 ### 6.3 ColumnDiff
 
-`ColumnDiff` soll auf `ColumnDefinition` arbeiten und Aenderungen an mindestens
-folgenden Aspekten sichtbar machen:
+`ColumnDiff` soll auf einer normalisierten **ColumnComparable**-Sicht arbeiten,
+nicht auf der rohen `ColumnDefinition`.
+
+Die normalisierte Spaltensicht enthaelt mindestens:
 
 - `type`
 - `required`
-- `unique`
 - `default`
-- `references`
+
+Zusaetzlich gilt:
+
+- `unique` bleibt nur dann Teil von `ColumnDiff`, wenn **kein** semantisch
+  aequivalenter single-column-`UNIQUE`-Constraint-Fall vorliegt
+- `references` bleibt nur dann Teil von `ColumnDiff`, wenn **kein** semantisch
+  aequivalenter single-column-`FOREIGN_KEY`-Constraint-Fall vorliegt
 
 Wichtig:
 
-- eine Aenderung an `references` ist eine fachliche FK-Aenderung und muss im
-  Diff auftauchen, auch wenn keine `ConstraintType.FOREIGN_KEY`-Liste
-  beteiligt ist
+- eine Aenderung an `references` ist weiterhin eine fachliche FK-Aenderung und
+  muss im Diff auftauchen, wenn sie **nicht** bereits ueber die normalisierte
+  single-column-FK-Semantik abgefangen wird
+- damit kollidiert `ColumnDiff` nicht mit der in Abschnitt 4.4 festgelegten
+  Semantik-Normalisierung
 
 ### 6.4 ChangeType
 
@@ -562,6 +571,11 @@ Pragmatische Regel:
   fixture-basierten Tests in einem hoeheren Testmodul liegen; fachlich gehoeren
   sie trotzdem zu Phase B und nicht erst zu Phase C
 
+Verbindliche Konsequenz fuer die Verifikation:
+
+- der Phase-B-Testlauf muss **auch** das Modul bzw. den Testpfad umfassen, in
+  dem diese Fixture-Tests real liegen
+
 ---
 
 ## 9. Akzeptanzkriterien fuer Phase B
@@ -589,13 +603,22 @@ Pragmatische Regel:
 
 ## 10. Verifikation
 
-Phase B wird mindestens ueber den gezielten Core-Testlauf verifiziert:
+Phase B wird mindestens ueber einen gezielten Testlauf verifiziert, der sowohl
+die reinen Core-Comparator-Tests als auch die verpflichtenden
+Fixture-Compare-Tests abdeckt.
 
 ```bash
 docker build --target build \
-  --build-arg GRADLE_TASKS=":hexagon:core:test --rerun-tasks" \
+  --build-arg GRADLE_TASKS=":hexagon:core:test <fixture-compare-test-task> --rerun-tasks" \
   -t d-migrate:0.5.0-phase-b .
 ```
+
+Dabei gilt:
+
+- `<fixture-compare-test-task>` ist der echte Gradle-Testtask des Moduls, in
+  dem `minimal.yaml`-/`e-commerce.yaml`-Compare-Tests liegen
+- wenn diese Tests doch in `:hexagon:core:test` liegen, entfaellt der
+  zusaetzliche Task entsprechend
 
 Wenn Phase B mit Phase C gemeinsam geprueft wird, gilt zusaetzlich der
 Milestone-Check aus `implementation-plan-0.5.0.md`:
