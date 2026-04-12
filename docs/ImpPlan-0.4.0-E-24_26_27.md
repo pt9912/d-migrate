@@ -1,19 +1,39 @@
 # Implementierungsplan: Phase E – Schritte 24, 26, 27 (gebündelt)
 
-## 1. Referenz
+> **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade  
+> **Phase**: E (CLI-Integration)  
+> **Schritte**: 24 + 26 + 27  
+> **Status**: Geplant  
+> **Referenz**: `implementation-plan-0.4.0.md` §3.7, §6.11
 
-- `docs/implementation-plan-0.4.0.md` §3.7 und §6.11
-- Fokus: `DataImportCommand`, `NamedConnectionResolver` und Exit-Code-Mapping für `data import`
-- Ziel: Schritte 24, 26, 27 als konsistenter Paketplan in `adapters:driving:cli`
+---
 
-## 2. Zielbild
+## 1. Ziel
 
 - `data import` vollständig in den CLI-Layer heben, inklusive aller Optionen aus §3.7.1
 - `NamedConnectionResolver` für Import/Export um `database.default_source` und `database.default_target` ergänzen
 - CLI-Fehlermodi für `data import` auf die Exit-Codes in §6.11 mappen
 - Die drei Punkte als ein zusammenhängender Implementierungsblock liefern, damit CLI-Parsing, Verbindungsauflösung und Exit-Verhalten in einem Sprint konsistent sind
+- Fokus: `DataImportCommand`, `NamedConnectionResolver` und Exit-Code-Mapping für `data import`
 
-## 3. Abgrenzung
+## 2. Vorbedingungen
+
+| Abhängigkeit | Schritt | Status |
+|---|---|---|
+| `docs/implementation-plan-0.4.0.md` §3.7 / §6.11 | Basis | ✅ Referenziert |
+| `Hexagon / Streaming`-Kontrakte (`ImportInput`, `StreamingImporter`) | Phase D (19–23) | ✅ Vorhanden |
+| Bestehender CLI-Bootstrap (`DataCommand`, `DataExportCommand`) | 0.3.0 / bestehend | ✅ Vorhanden |
+| Bestehender `NamedConnectionResolver`-Skeleton | 0.3.0 | ✅ Vorhanden |
+| Exit-Mapping-Stil im CLI-Runner | 0.3.0 | ✅ Vorhanden |
+
+## 3. Architekturentscheidung
+
+- `DataImportCommand`, `ImportInput`-Auflösung und Exit-Mapping bleiben vollständig im CLI/Runner-Layer (`adapters:driving:cli`).
+- Resolver-Defaults (`default_source`/`default_target`) werden zentral in `NamedConnectionResolver` abgebildet; keine zusätzliche lokale Resolver-Logik im `DataImportCommand`.
+- Exit-Mapping ist einheitlich im Runner/CLI-Error-Dispatch zu halten, nicht in Streaming-/Writer-Layern.
+- Bestehende Resolver-Overloads bleiben kompatibel und delegieren auf die neuen Null-fähigen Varianten (`resolveSource(null)` / `resolveTarget(null)`), um bestehende Aufrufer nicht zu brechen.
+
+## 4. Abgrenzung
 
 - Nicht Teil von Schritt 24/26/27
 - `--incremental`/`--since-column` auf der Import-Seite (kein Scope von `data import`)
@@ -21,9 +41,9 @@
 - Vollständige Docs-Überarbeitung in `docs/cli-spec.md` (kommt mit späteren Doku-Schritten)
 - Reader/Writer-Implementierungen außerhalb des CLI-Wrappers
 
-## 4. Betroffene Dateien
+## 5. Betroffene Dateien
 
-### 4.1 Primär
+### 5.1 Primär
 
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataImportCommand.kt` (neu/aktualisieren)
@@ -32,16 +52,16 @@
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/ErrorMapper.kt` oder bestehender CLI-Exit-Dispatcher
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Runner.kt`/Command-Dispatcher (Ort der Exit-Dispatch-Logik je bestehender Struktur)
 
-### 4.2 Tests
+### 5.2 Tests
 
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/config/NamedConnectionResolverTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataImportCommandTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataImportCommandParserTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/ErrorMapperTest.kt` oder entsprechender Exit-Mapping-Test
 
-## 5. Umsetzungsschritte
+## 6. Umsetzungsschritte
 
-## 5.1 Schritt 24 – `DataImportCommand` mit allen Flags aus §3.7.1
+## 6.1 Schritt 24 – `DataImportCommand` mit allen Flags aus §3.7.1
 
 1. Import-Command in einen klaren Helper/Runner-Fluss aufteilen (CLI-Parsing + Laufvorbereitung + Runner-Aufruf).
 2. Optionen vollständig nach §3.7.1 implementieren: `--target`, `--source` (required), `--format`, `--table`, `--tables`, `--schema`, `--on-error`, `--on-conflict`, `--trigger-mode`, `--truncate`, `--disable-fk-checks`, `--reseed-sequences` (inkl. `--no-reseed-sequences`), `--encoding`, `--csv-no-header`, `--csv-null-string`, `--chunk-size`.
@@ -63,7 +83,7 @@
    - nicht existierende Datei -> Exit 2
    - nicht direkt lesbare Quelle (Datei, Verzeichnis, Nicht-Datei) -> deterministischer Fehler mit präziser Meldung
 
-## 5.2 Schritt 26 – `NamedConnectionResolver` aktiviert Defaults
+## 6.2 Schritt 26 – `NamedConnectionResolver` aktiviert Defaults
 
 1. `resolveSource(source: String?)` um `database.default_source` erweitern.
 2. `resolveTarget(target: String?)` implementieren/ergänzen für `database.default_target`.
@@ -75,7 +95,7 @@
 5. Rückwärtskompatibilität erhalten: bestehende Wrapper-Signaturen (z. B. `resolve(source: String)` oder bestehende `resolveTarget(source: String)`-Varianten) unverändert lassen und intern auf die neuen `resolveSource(null)`/`resolveTarget(null)`-Pfad delegieren.
 6. `NamedConnectionResolver.kt` KDoc an neue Rollen von `default_source`/`default_target` und Auflösungstabelle binden (drift-frei, siehe L10).
 
-## 5.3 Schritt 27 – Exit-Code-Mapping für `data import`
+## 6.3 Schritt 27 – Exit-Code-Mapping für `data import`
 
 1. CLI/Runner-Fehlerpfad an Exit-Matrix §6.11 anbinden.
 2. Wichtige Abbildungen:
@@ -99,7 +119,7 @@
    - Datei ohne Endung ohne `--format` -> Exit 2
    - `--on-error skip|log` + Chunk-Write-Fehler bleibt Exit 0
 
-## 6. Akzeptanzkriterien
+## 7. Akzeptanzkriterien
 
 - `data import` liefert einen funktionalen CLI-Entry mit allen Flags aus §3.7.1.
 - `DataImportCommand` löst `ImportInput` für stdin/file/directory korrekt auf.
@@ -114,9 +134,7 @@
 - `Unknown extension`/kein `--format` bei Dateiquelle führt zu Exit 2.
 - Exit-Mapping entspricht Tabelle §6.11 für die im Scope liegenden Pfade.
 - `NamedConnectionResolver`-KDoc beschreibt die tatsächliche Resolve-Logik.
-- [ ] `docker build -t d-migrate:dev .` baut erfolgreich.
-
-## 7. Verifikation
+## 8. Verifikation
 
 1. `NamedConnectionResolverTest`
 2. `DataImportCommandTest` (Parsing, Source/Table-Typen, Flags, `ImportInput`-Ableitung)
