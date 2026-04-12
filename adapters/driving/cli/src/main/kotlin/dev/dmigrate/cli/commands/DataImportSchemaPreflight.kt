@@ -307,6 +307,8 @@ object DataImportSchemaPreflight {
         )
     }
 
+    private val WELL_KNOWN_OTHER_TYPE_NAMES = setOf("UUID", "JSON", "JSONB", "XML")
+
     private fun isTypeCompatible(
         schemaType: NeutralType,
         targetColumn: TargetColumn,
@@ -348,19 +350,24 @@ object DataImportSchemaPreflight {
                 targetColumn.jdbcType in setOf(Types.TIME, Types.TIME_WITH_TIMEZONE)
             NeutralType.Uuid ->
                 sqlTypeName == "UUID" ||
-                    targetColumn.jdbcType in setOf(Types.OTHER, Types.CHAR, Types.VARCHAR)
+                    targetColumn.jdbcType in setOf(Types.CHAR, Types.VARCHAR)
             NeutralType.Json ->
                 sqlTypeName in setOf("JSON", "JSONB") ||
-                    targetColumn.jdbcType in setOf(Types.OTHER, Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
+                    targetColumn.jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
             NeutralType.Xml ->
                 targetColumn.jdbcType == Types.SQLXML ||
                     sqlTypeName == "XML" ||
-                    targetColumn.jdbcType in setOf(Types.OTHER, Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
+                    targetColumn.jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
             NeutralType.Binary ->
                 targetColumn.jdbcType in setOf(Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY, Types.BLOB)
-            is NeutralType.Enum ->
+            is NeutralType.Enum -> {
+                val ref = schemaType.refType?.uppercase()
                 sqlTypeName == "ENUM" ||
-                    targetColumn.jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.NCHAR, Types.NVARCHAR, Types.OTHER)
+                    targetColumn.jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.NCHAR, Types.NVARCHAR) ||
+                    (targetColumn.jdbcType == Types.OTHER && sqlTypeName.isNotEmpty() &&
+                        sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES &&
+                        (ref == null || sqlTypeName == ref))
+            }
             is NeutralType.Array ->
                 targetColumn.jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
         }

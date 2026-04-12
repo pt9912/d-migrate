@@ -284,6 +284,128 @@ class DataImportSchemaPreflightTest : FunSpec({
         }
     }
 
+    test("validateTargetTable rejects Types.OTHER cross-contamination between UUID, JSON, XML, and Enum") {
+        fun schemaWith(colName: String, type: NeutralType): SchemaDefinition =
+            SchemaDefinition(
+                name = "OtherCheck", version = "1.0.0",
+                tables = mapOf(
+                    "t" to TableDefinition(columns = linkedMapOf(colName to ColumnDefinition(type)))
+                ),
+            )
+
+        // Schema=UUID, target=JSONB → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Uuid),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "jsonb")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // Schema=UUID, target=custom enum → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Uuid),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "mood")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // Schema=JSON, target=UUID → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Json),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // Schema=Enum, target=UUID → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Enum(values = listOf("A", "B"))),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // Schema=Enum, target=JSONB → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Enum(values = listOf("A", "B"))),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "jsonb")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // Schema=XML, target=UUID → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Xml),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // Schema=UUID, target=UUID (Types.OTHER) → must still accept
+        shouldNotThrowAny {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Uuid),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
+            )
+        }
+
+        // Schema=JSON, target=JSONB (Types.OTHER) → must still accept
+        shouldNotThrowAny {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Json),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "jsonb")),
+            )
+        }
+
+        // Schema=Enum (custom PG type), target=mood (Types.OTHER) → must accept
+        shouldNotThrowAny {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schemaWith("col", NeutralType.Enum(values = listOf("happy", "sad"))),
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "mood")),
+            )
+        }
+    }
+
+    test("validateTargetTable rejects Enum with mismatched refType") {
+        val schema = SchemaDefinition(
+            name = "RefType", version = "1.0.0",
+            tables = mapOf(
+                "t" to TableDefinition(
+                    columns = linkedMapOf(
+                        "col" to ColumnDefinition(NeutralType.Enum(values = listOf("A"), refType = "status"))
+                    )
+                ),
+            ),
+        )
+
+        // refType=status, target sqlTypeName=mood → must reject
+        shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schema,
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "mood")),
+            )
+        }.message!! shouldContain "type mismatch"
+
+        // refType=status, target sqlTypeName=status → must accept
+        shouldNotThrowAny {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schema,
+                table = "t",
+                targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "status")),
+            )
+        }
+    }
+
     test("validateTargetTable reports broad type mismatches across neutral types") {
         val ex = shouldThrow<ImportSchemaMismatchException> {
             DataImportSchemaPreflight.validateTargetTable(
