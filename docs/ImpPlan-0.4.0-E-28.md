@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade  
 > **Phase**: E (CLI-Integration)  
 > **Schritt**: 28  
-> **Status**: Geplant  
+> **Status**: In Umsetzung  
 > **Referenz**: `implementation-plan-0.4.0.md` §4 Phase E Schritt 28, §6.11, §6.14, §6.12.2
 
 ---
@@ -38,37 +38,64 @@
 ### 5.1 Primär (Tests)
 
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataImportTest.kt` (neu)
-- `adapters/driving/cli/src/test/resources` (bei Bedarf: feste JSON/YAML/CSV-Files)
 
-### 5.2 Begleitend
+### 5.2 Referenz (bestehendes Muster)
 
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataCommands.kt` (falls `subcommands(DataImportCommand())` noch offen)
-- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt` (optional Reuse kleiner Hilfsfunktionen)
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt` — Hilfsfunktionen und CLI-Aufrufmuster
 
 ## 6. Umsetzungsschritte
 
-1. Neue Testklasse `CliDataImportTest` einführen und eine lokale SQLite-Helferfunktion für Source/Target-DB + Seed/Query-Assertion bereitstellen.
-2. Round-Trip je Format:
-   - JSON-Export aus `source.db` → `data import` in `target.db`
-   - YAML-Export/-Import derselben Datenmenge
-   - CSV-Export/-Import (inkl. `--csv-no-header`/`--csv-null-string`, falls im CLI-Flow nötig)
-   - Danach SELECT-basierter Row-Äquivalenzcheck.
-3. `--truncate`-Pfad:
-   - Target vorab mit Seed-Daten befüllen.
-   - Import mit `--truncate` aus Datei durchführen.
-   - Vorherige Zielzeilen dürfen nicht erhalten bleiben, neue Daten müssen ersetzt werden.
-4. `--on-conflict update`:
-   - Target mit abweichenden Versionen derselben PK befüllen.
-   - Delta importieren (`--on-conflict update`).
-   - Erwartung: bestehende Zeilen werden aktualisiert, PK-kollisionsfrei ergänzt.
-5. `--trigger-mode disable` auf SQLite:
-   - Tabelle mit Trigger anlegen.
-   - Import mit `--trigger-mode disable` ausführen.
-   - CLI liefert Exit `2`; Stderr enthält eine klare `triggerMode=disable`-/`not supported for SQLite in 0.4.0`-Meldung.
-6. Exit und Robustheit:
-   - Erfolgsfälle liefern Exit `0`.
-   - Fehlschläge aus Schritt 5 liefern Exit `2` inkl. deterministischer Fehlermeldung.
-7. Testdaten/Fixture-Aufräumlogik so gestalten, dass Reihenfolge- und Wiederholbarkeit stabil bleiben.
+### 6.1 Testklasse und Hilfsfunktionen
+
+Neue Testklasse `CliDataImportTest` (Kotest FunSpec) mit folgenden Hilfsfunktionen,
+angelehnt an `CliDataExportTest`:
+
+- `cli()` = `DMigrate().subcommands(SchemaCommand(), DataCommand())`
+- `createSampleDatabase()` — SQLite mit `users(id INTEGER PK, name TEXT NOT NULL)`, 3 Rows (alice, bob, charlie)
+- `createTargetDatabase()` — leere SQLite mit demselben Schema `users` (Import-Ziel)
+- `captureStdout {}`, `captureStderr {}` — System.out/err Umleitung
+- `queryAll(db, table)` — `SELECT *` als `List<Map<String, Any?>>` für Assertions
+- `beforeSpec { registerDrivers() }` / `afterSpec { DatabaseDriverRegistry.clear() }`
+
+### 6.2 Round-Trip je Format
+
+Drei Tests, jeweils:
+
+1. **JSON-Round-Trip**: Export source.db → temp JSON-Datei → Import in target.db → SELECT-Vergleich (3 Rows)
+2. **YAML-Round-Trip**: Export → temp YAML → Import → SELECT-Vergleich
+3. **CSV-Round-Trip**: Export → temp CSV → Import → SELECT-Vergleich
+
+CLI-Invokation (Import):
+```
+data import --target sqlite:///target.db --source data.json --format json --table users
+```
+
+Kein `-c` Config nötig — `--target` akzeptiert direkte URLs.
+
+### 6.3 `--truncate`-Pfad
+
+- Target vorab mit Seed-Daten befüllen (id=10, name="pre-existing")
+- Import mit `--truncate` aus JSON-Datei durchführen
+- Assertion: pre-existing weg, nur die 3 importierten Rows vorhanden
+
+### 6.4 `--on-conflict update`
+
+- Target mit abweichenden Versionen befüllen: (id=1, "OLD_ALICE"), (id=2, "OLD_BOB")
+- Delta importieren mit `--on-conflict update`
+- Assertion: id=1 → "alice" (aktualisiert), id=2 → "bob" (aktualisiert), id=3 → "charlie" (neu eingefügt)
+
+### 6.5 `--trigger-mode disable` auf SQLite
+
+- Import-Versuch mit `--trigger-mode disable` gegen SQLite
+- `shouldThrow<ProgramResult> { ... }.statusCode shouldBe 2`
+- stderr `shouldContain "not supported"`
+- Kein Trigger-Setup nötig — die Prüfung erfolgt im Runner vor dem eigentlichen Import (Zeile 239-247 in `DataImportRunner.kt`)
+
+### 6.6 Directory Import
+
+- Export mit `--split-files` in temp-Verzeichnis
+- Import mit `--source <dir>` ohne `--table` (Tabellenerkennung aus Dateinamen)
+- SELECT-Vergleich
 
 ## 7. Akzeptanzkriterien
 
@@ -76,11 +103,21 @@
 - [ ] JSON, YAML und CSV je mindestens einmal über den vollen CLI-Importpfad auf SQLite verifiziert.
 - [ ] `--truncate` auf SQLite importseitig funktional getestet (bestehende Zieldaten werden in dem Lauf ersetzt).
 - [ ] `--on-conflict update` ist auf SQLite per CLI testabgedeckt.
-- [ ] `--trigger-mode disable` auf SQLite liefert Exit `2` mit klarer Meldung `triggerMode=disable is not supported for SQLite in 0.4.0` (oder äquivalent).
+- [ ] `--trigger-mode disable` auf SQLite liefert Exit `2` mit klarer Meldung (oder äquivalent).
 - [ ] Tests laufen ohne Testcontainer (lokale SQLite-Dateien).
 
 ## 8. Verifikation
 
-1. `./gradlew :adapters:driving:cli:test --tests "*CliDataImportTest*"`
-2. Bestehende `CliDataExportTest` als Negativ-/Vorbereitungsreferenz beibehalten.
-3. Optionaler zusätzlicher Smoke: `--truncate --on-conflict`-Explizitfall dokumentieren, falls im Implementierungsstand vorhanden.
+1. Gezielter Testlauf:
+```bash
+docker build --target build \
+  --build-arg GRADLE_TASKS=":adapters:driving:cli:test --tests *CliDataImportTest*" \
+  -t d-migrate:e28 .
+```
+
+2. Vollständiger Build inkl. Coverage:
+```bash
+docker build -t d-migrate:dev .
+```
+
+3. Bestehende `CliDataExportTest` als Negativ-/Vorbereitungsreferenz beibehalten.
