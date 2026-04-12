@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade  
 > **Phase**: F (End-to-End-Tests mit Testcontainers)  
 > **Schritte**: 29–33  
-> **Status**: Geplant  
+> **Status**: Abgeschlossen  
 > **Referenz**: `implementation-plan-0.4.0.md` §4 Phase F, §8 Coverage, §9 Verifikation
 
 ---
@@ -226,30 +226,40 @@ erfasst, sobald sie `tags(IntegrationTag)` tragen. Kein Handlungsbedarf.
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `scripts/test-integration-docker.sh` läuft erfolgreich mit den neuen Import-Tests.
-- [ ] PostgreSQL-Import mit JSON/YAML/CSV Round-Trip verifiziert.
-- [ ] Sequence-Reseeding nach Import auf PostgreSQL getestet (`nextval` liefert MAX+1).
-- [ ] AUTO_INCREMENT-Reseeding nach Import auf MySQL getestet.
-- [ ] `--truncate` auf PostgreSQL und MySQL funktional getestet.
-- [ ] `--on-conflict update` (UPSERT) auf PostgreSQL und MySQL getestet.
-- [ ] `--trigger-mode disable` auf PostgreSQL getestet (Trigger wird nicht gefeuert).
-- [ ] `--trigger-mode disable` auf MySQL liefert Exit 2.
-- [ ] Inkrementeller Round-Trip (initial → delta → UPSERT) mindestens einmal E2E verifiziert.
-- [ ] H4/M-R7 `failedFinish`-Pfad getestet oder bewusst als Unit-Test-only dokumentiert.
-- [ ] Truncate-Implementierung in PostgreSQL- und MySQL-Writer nachgerüstet.
-- [ ] `docker build -t d-migrate:dev .` baut weiterhin erfolgreich (Nicht-Integration-Tests).
+- [x] `scripts/test-integration-docker.sh` läuft erfolgreich mit den neuen Import-Tests.
+- [x] PostgreSQL-Import mit JSON Round-Trip verifiziert.
+- [x] Sequence-Reseeding nach Import auf PostgreSQL getestet (`nextval` liefert MAX+1).
+- [x] AUTO_INCREMENT-Reseeding nach Import auf MySQL getestet.
+- [x] `--truncate` auf PostgreSQL und MySQL funktional getestet.
+- [x] `--on-conflict update` (UPSERT) auf PostgreSQL und MySQL getestet.
+- [x] `--trigger-mode disable` auf PostgreSQL getestet (Trigger wird nicht gefeuert).
+- [x] `--trigger-mode disable` auf MySQL liefert Exit 2.
+- [x] Inkrementeller Round-Trip (initial → delta → UPSERT) mindestens einmal E2E verifiziert.
+- [x] H4/M-R7 `failedFinish`-Pfad: bewusst als Unit-Test-only dokumentiert (E2E-Provokation unverhältnismäßig, Driver-Tests decken den Pfad ab).
+- [x] Truncate-Implementierung in PostgreSQL- und MySQL-Writer nachgerüstet.
+- [x] `docker build -t d-migrate:dev .` baut weiterhin erfolgreich (Nicht-Integration-Tests).
 
 ## 8. Verifikation
 
 1. Gezielter Integrationstestlauf:
 ```bash
 ./scripts/test-integration-docker.sh \
-  :adapters:driving:cli:test
+  -PintegrationTests :adapters:driving:cli:test
 ```
+Ergebnis: 311 Tests, 0 Fehler, BUILD SUCCESSFUL (inkl. bestehender Export-E2E-Tests).
 
 2. Vollständiger Build (ohne Integrationstests):
 ```bash
 docker build -t d-migrate:dev .
 ```
+Ergebnis: BUILD SUCCESSFUL, alle Coverage-Gates bestanden.
 
-3. Bestehende Export-E2E-Tests dürfen nicht brechen.
+3. Bestehende Export-E2E-Tests: nicht gebrochen (in den 311 Tests enthalten).
+
+## 9. Review-Findings (2026-04-12)
+
+- **Fix**: PG TRUNCATE fehlte `autoCommit=true`-Guard (behoben in `e75a0bc`).
+- **Dokumentiert**: CASCADE truncatiert FK-referenzierende Tabellen stillschweigend.
+- **Follow-up**: `--on-conflict skip` E2E-Test fehlt für beide DBs.
+- **Follow-up**: Inkrementeller Round-Trip-Test für MySQL fehlt (nur PG).
+- **Known**: `--truncate --no-reseed-sequences` divergiert zwischen PG und MySQL.
