@@ -20,7 +20,7 @@ import kotlin.io.path.absolutePathString
  * ist NICHT Teil des Repos. Der zugehörige Test ist mit
  * `@Tag("perf")` markiert und läuft nicht in der Default-CI, sondern
  * nur in expliziten lokalen Perf-Runs (siehe §4 Phase A Schritt 6:
- * opt-in via `./gradlew :d-migrate-formats:test -Dkotest.tags=perf`).
+ * opt-in via `./gradlew :adapters:driven:formats:test -Dkotest.tags=perf`).
  *
  * **R7 — Cache-Invalidation via Stamp**: Neben dem Fixture schreibt der
  * Generator eine `<fixture>.stamp`-Datei mit dem SHA-256 über Row-Count,
@@ -179,7 +179,7 @@ object LargeJsonFixture {
     private val TAGS = listOf("alpha", "bravo", "charlie", "delta", "echo")
 
     private val sourcePathCandidates = listOf(
-        Path.of("d-migrate-formats", "src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
+        Path.of("adapters", "driven", "formats", "src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
         Path.of("src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
     )
 
@@ -223,7 +223,7 @@ object LargeJsonFixture {
     /**
      * Default-Verzeichnis im Gradle-`build/` des Formats-Moduls. Der
      * relative Pfad stimmt, wenn der Test mit Gradle als Working
-     * Directory das Modul-Root benutzt (`:d-migrate-formats:test`
+     * Directory das Modul-Root benutzt (`:adapters:driven:formats:test`
      * default).
      */
     fun defaultCacheDir(): Path = Path.of("build", "perf-fixtures").toAbsolutePath()

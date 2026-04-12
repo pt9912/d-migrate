@@ -6,10 +6,11 @@ package dev.dmigrate.core.data
  * YAML-Row bringt zusätzliche Felder mit, oder eine headerlose CSV-Row
  * hat eine falsche Feldanzahl.
  *
- * Lebt bewusst in `d-migrate-core` (statt in `d-migrate-driver-api`), weil
- * sowohl `d-migrate-formats` (Reader) als auch `d-migrate-streaming`
- * (Importer) und die Writer-Schicht dieselbe fachliche Ausnahme werfen
- * und fangen — ohne dass `formats` eine Modul-Kante zu `driver-api`
+ * Lebt bewusst in `hexagon:core` (statt in `adapters:driven:driver-common`),
+ * weil sowohl `adapters:driven:formats` (Reader) als auch
+ * `adapters:driven:streaming` (Importer) und die Writer-Schicht dieselbe
+ * fachliche Ausnahme werfen und fangen — ohne dass `formats` eine
+ * Modul-Kante zu `driver-common`
  * bekommt (siehe implementation-plan-0.4.0.md §3.1.1 letzter Absatz,
  * §3.8).
  *

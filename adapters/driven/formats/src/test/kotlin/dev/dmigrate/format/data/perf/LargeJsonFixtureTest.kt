@@ -30,7 +30,7 @@ import kotlin.io.path.absolutePathString
  *
  * ```
  * docker build --target build \
- *   --build-arg GRADLE_TASKS=":d-migrate-formats:test -Dkotest.tags=perf" \
+ *   --build-arg GRADLE_TASKS=":adapters:driven:formats:test -Dkotest.tags=perf" \
  *   -t d-migrate:phase-b-perf .
  * ```
  */

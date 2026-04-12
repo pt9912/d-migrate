@@ -43,13 +43,13 @@ d-migrate is a command-line tool that lets you define your database schema once 
 
 ```bash
 # Validate a schema
-./gradlew :d-migrate-cli:run --args="schema validate --source schema.yaml"
+./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
 
 # Generate PostgreSQL DDL
-./gradlew :d-migrate-cli:run --args="schema generate --source schema.yaml --target postgresql"
+./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target postgresql"
 
 # Generate MySQL DDL with rollback
-./gradlew :d-migrate-cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
+./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
 ```
 
 ### Docker
@@ -79,16 +79,16 @@ docker build -t d-migrate:dev .
 
 # Force a full test/coverage run (bypass Docker layer cache AND Gradle build cache)
 docker build --no-cache \
-  --build-arg GRADLE_TASKS="build :d-migrate-cli:installDist --rerun-tasks" \
+  --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
 # Skip tests — only assemble the CLI distribution
-docker build --build-arg GRADLE_TASKS="assemble :d-migrate-cli:installDist" \
+docker build --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" \
   -t d-migrate:dev .
 
 # Run only a build-stage subset without producing the final runtime image
 docker build --target build \
-  --build-arg GRADLE_TASKS=":d-migrate-core:test :d-migrate-driver-api:test" \
+  --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
   -t d-migrate:phase-a .
 
 # Run the locally built CLI
@@ -98,7 +98,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 ./scripts/test-integration-docker.sh
 
 # Or run only a subset of the integration tasks
-./scripts/test-integration-docker.sh :d-migrate-driver-postgresql:test
+./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
 ```
 
 Notes:
@@ -106,9 +106,9 @@ Notes:
 - The build stage uses `eclipse-temurin:21-jdk-noble` and caches Gradle
   dependencies via BuildKit cache mounts, so repeated builds are fast.
 - The runtime stage uses `eclipse-temurin:21-jre-noble` (the same base image as
-  the published OCI image produced by `:d-migrate-cli:jibDockerBuild`).
+  the published OCI image produced by `:adapters:driving:cli:jibDockerBuild`).
 - A full `docker build` always reaches the runtime stage. If you override
-  `GRADLE_TASKS`, include `:d-migrate-cli:installDist`; otherwise use
+  `GRADLE_TASKS`, include `:adapters:driving:cli:installDist`; otherwise use
   `--target build` for build/test-only subsets.
 - Testcontainers-based integration tests should not run inside `docker build`.
   Use [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
@@ -118,7 +118,7 @@ Notes:
   ```bash
   docker build --target build -t d-migrate:build .
   docker create --name d-migrate-tmp d-migrate:build
-  docker cp d-migrate-tmp:/src/d-migrate-cli/build/distributions ./dist
+  docker cp d-migrate-tmp:/src/adapters/driving/cli/build/distributions ./dist
   docker rm d-migrate-tmp
   ```
 
@@ -151,7 +151,7 @@ tables:
 Then validate it:
 
 ```bash
-./gradlew :d-migrate-cli:run --args="schema validate --source schema.yaml"
+./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
 ```
 
 ## Current Status
