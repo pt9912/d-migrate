@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade  
 > **Phase**: E (CLI-Integration)  
 > **Schritt**: 25  
-> **Status**: Geplant  
+> **Status**: Abgeschlossen  
 > **Referenz**: `implementation-plan-0.4.0.md` §3.7.2, §6.7, §6.12.1
 
 ---
@@ -69,12 +69,12 @@
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../README.md) verwendet und baut erfolgreich.
-- [ ] `--since-column` und `--since` sind nur gemeinsam zulässig und liefern bei fehlender Kombination Exit `2`.
-- [ ] `--since` wird typisiert gebunden, nicht string-concateniert (kein SQL-Injection-Vektor).
-- [ ] `--filter + --since` mit Literal `?` wird vor Datenbankzugriff mit Exit `2` hart abgelehnt.
-- [ ] Runner liefert bei gültigem Filter ein `DataFilter.ParameterizedClause` oder `DataFilter.Compound(..., ParameterizedClause)`.
-- [ ] `CliDataExportTest` enthält mindestens einen End-to-End-Fall, der `--since-column`/`--since` auf SQLite verifiziert.
+- [x] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../README.md) verwendet und baut erfolgreich.
+- [x] `--since-column` und `--since` sind nur gemeinsam zulässig und liefern bei fehlender Kombination Exit `2`.
+- [x] `--since` wird typisiert gebunden, nicht string-concateniert (kein SQL-Injection-Vektor).
+- [x] `--filter + --since` mit Literal `?` wird vor Datenbankzugriff mit Exit `2` hart abgelehnt.
+- [x] Runner liefert bei gültigem Filter ein `DataFilter.ParameterizedClause` oder `DataFilter.Compound(..., ParameterizedClause)`.
+- [x] `CliDataExportTest` enthält mindestens einen End-to-End-Fall, der `--since-column`/`--since` auf SQLite verifiziert.
 
 ## 8. Verifikation
 
