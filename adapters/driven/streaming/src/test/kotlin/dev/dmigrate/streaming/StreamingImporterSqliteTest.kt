@@ -52,8 +52,16 @@ class StreamingImporterSqliteTest : FunSpec({
     }
 
     afterEach {
-        pool.close()
-        dbFile.deleteIfExists()
+        runCatching {
+            if (::pool.isInitialized) {
+                pool.close()
+            }
+        }
+        runCatching {
+            if (::dbFile.isInitialized) {
+                dbFile.deleteIfExists()
+            }
+        }
     }
 
     fun buildImporter(): StreamingImporter {
