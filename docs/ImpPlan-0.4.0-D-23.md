@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: D (Streaming-Import-Verifikation und Perf-Gate)
 > **Schritt**: 23
-> **Status**: Teilweise abgeschlossen (lokal verifiziert)
+> **Status**: Abgeschlossen (lokal + docker build verifiziert)
 > **Referenz**: `implementation-plan-0.4.0.md` §4 Phase D Schritt 23, §6.5, §6.15, §10 M2
 
 ---

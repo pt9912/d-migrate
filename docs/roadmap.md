@@ -102,7 +102,7 @@ ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
-**Aktueller Stand (2026-04-12)**: Milestone 0.4.0 ist weiterhin in Arbeit.
+**Aktueller Stand (2026-04-12)**: Milestone 0.4.0 ist weiterhin in Arbeit. Phase D ist hingegen abgeschlossen und verifiziert.
 Der JDBC-Import-Unterbau der Phase C ist jedoch abgeschlossen:
 
 - `DataWriter` / `TableImportSession` / `SchemaSync` / `SequenceAdjustment`
