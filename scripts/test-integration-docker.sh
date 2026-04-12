@@ -14,8 +14,8 @@ Run the Testcontainers-based integration tests in a disposable Docker container.
 
 Usage:
   ./scripts/test-integration-docker.sh
-  ./scripts/test-integration-docker.sh :d-migrate-driver-postgresql:test
-  ./scripts/test-integration-docker.sh -PintegrationTests :d-migrate-driver-postgresql:test :d-migrate-driver-mysql:test
+  ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
+  ./scripts/test-integration-docker.sh -PintegrationTests :adapters:driven:driver-postgresql:test :adapters:driven:driver-mysql:test
 
 Environment:
   DMIGRATE_INTEGRATION_IMAGE        Base image to use

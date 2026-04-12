@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = "dev.dmigrate"
-    version = "0.3.0"
+    version = "0.4.0"
 
     repositories {
         mavenCentral()
@@ -32,6 +32,7 @@ subprojects {
 
     tasks.withType<Test> {
         useJUnitPlatform()
+        val explicitKotestTags = System.getProperty("kotest.tags")
         // Per default integration-Tests ausschließen — sie brauchen Docker
         // (Testcontainers) und überschreiten das 5-Minuten-CI-Budget des
         // Default-Workflows. Aktivieren via `./gradlew test -PintegrationTests`
@@ -42,19 +43,26 @@ subprojects {
         // nicht mit Kotest's Spec-Lifecycle zusammenspielt — ohne das hier
         // würden Specs mit @Tags("integration") trotzdem instanziiert und
         // beforeSpec ausgeführt.
-        if (!project.hasProperty("integrationTests")) {
-            systemProperty("kotest.tags", "!integration")
+        //
+        // Perf-Spikes (`perf`) sind ebenfalls opt-in und laufen nur, wenn
+        // `-Dkotest.tags=perf` (oder ein anderes explizites Tag-Filter) gesetzt
+        // wird. Ein explizit gesetzter `kotest.tags`-Wert gewinnt immer gegen
+        // den Default hier.
+        if (explicitKotestTags == null && !project.hasProperty("integrationTests")) {
+            systemProperty("kotest.tags", "!integration & !perf")
         }
     }
 }
 
 dependencies {
-    kover(project(":d-migrate-core"))
-    kover(project(":d-migrate-driver-api"))
-    kover(project(":d-migrate-driver-postgresql"))
-    kover(project(":d-migrate-driver-mysql"))
-    kover(project(":d-migrate-driver-sqlite"))
-    kover(project(":d-migrate-formats"))
-    kover(project(":d-migrate-streaming"))
-    kover(project(":d-migrate-cli"))
+    kover(project(":hexagon:ports"))
+    kover(project(":hexagon:application"))
+    kover(project(":hexagon:core"))
+    kover(project(":adapters:driven:driver-common"))
+    kover(project(":adapters:driven:driver-postgresql"))
+    kover(project(":adapters:driven:driver-mysql"))
+    kover(project(":adapters:driven:driver-sqlite"))
+    kover(project(":adapters:driven:formats"))
+    kover(project(":adapters:driven:streaming"))
+    kover(project(":adapters:driving:cli"))
 }

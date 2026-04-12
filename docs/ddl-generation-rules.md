@@ -961,7 +961,7 @@ Bei `--output-format json` wird die DDL als `ddl`-Feld im JSON eingebettet:
 ### 15.1 Fixture-Layout
 
 ```
-d-migrate-formats/src/test/resources/fixtures/
+adapters/driven/formats/src/test/resources/fixtures/
 ├── schemas/                          # Eingabe-Schemas (bestehend aus 0.1.0)
 │   ├── minimal.yaml
 │   ├── e-commerce.yaml
@@ -1026,13 +1026,13 @@ Bei gewollten DDL-Änderungen:
 
 ```bash
 # Golden Masters neu generieren
-./gradlew :d-migrate-drivers:updateGoldenMasters
+./gradlew :adapters:driven:driver-common:updateGoldenMasters
 
 # Diff prüfen
-git diff d-migrate-formats/src/test/resources/fixtures/ddl/
+git diff adapters/driven/formats/src/test/resources/fixtures/ddl/
 
 # Committen wenn korrekt
-git add d-migrate-formats/src/test/resources/fixtures/ddl/
+git add adapters/driven/formats/src/test/resources/fixtures/ddl/
 ```
 
 ---

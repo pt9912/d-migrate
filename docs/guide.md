@@ -30,12 +30,12 @@ docker build -t d-migrate:dev .
 
 # Test/Coverage-Lauf ohne Cache erzwingen (Docker-Layer- UND Gradle-Build-Cache umgehen)
 docker build --no-cache \
-  --build-arg GRADLE_TASKS="build :d-migrate-cli:installDist --rerun-tasks" \
+  --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
 # Nur einen Build-Stage-Teilcheck ausführen, ohne das finale Runtime-Image zu bauen
 docker build --target build \
-  --build-arg GRADLE_TASKS=":d-migrate-core:test :d-migrate-driver-api:test" \
+  --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
   -t d-migrate:phase-a .
 
 # Testcontainers-Integrationstests separat über einen Laufzeit-Container ausführen
@@ -49,7 +49,7 @@ Wichtig:
 
 - Ein voller `docker build` läuft immer bis in die Runtime-Stage.
 - Wenn `GRADLE_TASKS` überschrieben wird, muss für den vollständigen Multi-Stage-Build
-  weiterhin `:d-migrate-cli:installDist` enthalten sein.
+  weiterhin `:adapters:driving:cli:installDist` enthalten sein.
 - Für reine Build-/Test-Teilmengen ohne CLI-Distribution sollte `--target build`
   verwendet werden.
 - Testcontainers-Tests für PostgreSQL/MySQL laufen nicht verlässlich innerhalb
@@ -80,11 +80,11 @@ cd d-migrate
 
 Damit werden alle sieben Module kompiliert und ihre Tests ausgeführt:
 
-- `d-migrate-core` — neutrales Schemamodell, Parser, Validator
-- `d-migrate-driver-api` — gemeinsame DDL-Generator-Abstraktionen
-- `d-migrate-driver-postgresql` / `-mysql` / `-sqlite` — dialektspezifische DDL-Generatoren
-- `d-migrate-formats` — YAML-Codec und Report-Writer
-- `d-migrate-cli` — Clikt-basiertes Command-Line-Interface
+- `hexagon:core` — neutrales Schemamodell, Parser, Validator
+- `adapters:driven:driver-common` — gemeinsame DDL-Generator-Abstraktionen
+- `adapters:driven:driver-postgresql` / `driver-mysql` / `driver-sqlite` — dialektspezifische DDL-Generatoren
+- `adapters:driven:formats` — YAML-Codec und Report-Writer
+- `adapters:driving:cli` — Clikt-basiertes Command-Line-Interface
 
 ## Erstes Schema erstellen
 
@@ -163,7 +163,7 @@ tables:
 Führe die Validierung mit dem CLI aus:
 
 ```bash
-./gradlew :d-migrate-cli:run --args="schema validate --source mein-schema.yaml"
+./gradlew :adapters:driving:cli:run --args="schema validate --source mein-schema.yaml"
 ```
 
 ### Beispiel-Ausgabe (valides Schema)
@@ -207,32 +207,32 @@ Nach erfolgreicher Validierung kann DDL für eine Zieldatenbank erzeugt werden:
 
 ```bash
 # PostgreSQL
-./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target postgresql"
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target postgresql"
 
 # MySQL
-./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target mysql"
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target mysql"
 
 # SQLite
-./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target sqlite"
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target sqlite"
 ```
 
 ### DDL in Datei speichern
 
 ```bash
-./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql"
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql"
 ```
 
 Erzeugt automatisch `schema.sql` (DDL) und `schema.report.yaml` (Transformations-Report).
 Den Report-Pfad explizit überschreiben:
 
 ```bash
-./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql --report mein-report.yaml"
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target postgresql --output schema.sql --report mein-report.yaml"
 ```
 
 ### Rollback-DDL generieren
 
 ```bash
-./gradlew :d-migrate-cli:run --args="schema generate --source mein-schema.yaml --target mysql --output schema.sql --generate-rollback"
+./gradlew :adapters:driving:cli:run --args="schema generate --source mein-schema.yaml --target mysql --output schema.sql --generate-rollback"
 ```
 
 Erzeugt zusätzlich `schema.rollback.sql` mit den inversen DDL-Statements (DROP TABLE, DROP INDEX, etc.).
@@ -298,7 +298,7 @@ CREATE TABLE "orders" (
 ### Beispiel: JSON-Ausgabe
 
 ```bash
-./gradlew :d-migrate-cli:run --args="--output-format json schema validate --source mein-schema.yaml"
+./gradlew :adapters:driving:cli:run --args="--output-format json schema validate --source mein-schema.yaml"
 ```
 
 ## Neutrales Typsystem

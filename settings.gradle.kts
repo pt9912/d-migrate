@@ -1,10 +1,15 @@
 rootProject.name = "d-migrate"
 
-include("d-migrate-core")
-include("d-migrate-driver-api")
-include("d-migrate-driver-postgresql")
-include("d-migrate-driver-mysql")
-include("d-migrate-driver-sqlite")
-include("d-migrate-formats")
-include("d-migrate-streaming")
-include("d-migrate-cli")
+// Hexagon (innen)
+include("hexagon:core")
+include("hexagon:ports")
+include("hexagon:application")
+
+// Adapters (außen)
+include("adapters:driven:driver-common")
+include("adapters:driven:driver-postgresql")
+include("adapters:driven:driver-mysql")
+include("adapters:driven:driver-sqlite")
+include("adapters:driven:formats")
+include("adapters:driven:streaming")
+include("adapters:driving:cli")

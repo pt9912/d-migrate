@@ -371,23 +371,38 @@ d-migrate schema reverse --source <url|path> [--source-dialect <dialect>] --outp
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema compare` *(geplant: 0.5.0)*
+#### `schema compare` *(geplant: 0.5.0, file-based MVP-Slice von LF-015)*
 
-Vergleicht zwei Schemas und zeigt Unterschiede.
+Vergleicht zwei Schema-Dateien im neutralen Format und zeigt Unterschiede.
 
 ```
-d-migrate schema compare --source <path|url> --target <path|url>
+d-migrate schema compare --source <path> --target <path>
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad/URL | Erstes Schema (Datei oder DB) |
-| `--target` | Ja | Pfad/URL | Zweites Schema (Datei oder DB) |
+| `--source` | Ja | Pfad | Erstes Schema (Datei im neutralen Format) |
+| `--target` | Ja | Pfad | Zweites Schema (Datei im neutralen Format) |
 | `--output` | Nein | Pfad | Diff-Ergebnis in Datei schreiben |
 
-Exit: `0` wenn identisch, `1` wenn Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`), `3` bei Validierungsfehlern.
+**Ausgabeverhalten**:
+- **stdout**: Diff-Ausgabe im Textformat (wenn kein `--output`)
+- **stderr**: Fehler und ggf. Fortschrittshinweise
+- **`--output`**: Diff-Ergebnis in Datei statt stdout (Format folgt `--output-format`)
+- **`--output-format json|yaml`**: Diff als strukturiertes JSON bzw. YAML
 
-#### `schema migrate` *(geplant: 0.5.0)*
+**Exit-Codes**:
+- `0`: Schemas identisch (keine Unterschiede)
+- `1`: Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`)
+- `2`: Ungültige CLI-Argumente
+- `3`: Schema-Validierung fehlgeschlagen
+- `7`: Datei-/Parse-/I/O-Fehler
+
+Hinweis: Die vollständige LF-015-Abdeckung "Vergleich zwischen Umgebungen" ist
+nicht Teil des 0.5.0-MVP-Slices. DB-/Umgebungsvergleiche folgen erst nach
+Einführung des `SchemaReader` ab 0.6.0.
+
+#### `schema migrate` *(geplant: späterer Milestone)*
 
 Generiert Migrationsskript (Up + optional Down) aus Schema-Diff.
 
@@ -404,7 +419,10 @@ d-migrate schema migrate --source <path> --target <url> [--generate-rollback]
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema rollback` *(geplant: 0.5.0)*
+Hinweis: Nicht Teil des 0.5.0-MVP-Releases; hängt an weiterem Diff- und
+Migrationsmodell jenseits des file-based `schema compare`.
+
+#### `schema rollback` *(geplant: späterer Milestone)*
 
 Führt ein Rollback-Migrationsskript gegen eine Datenbank aus.
 
@@ -420,6 +438,9 @@ d-migrate schema rollback --source <path> --target <url>
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Migrationsfehlern.
 
+Hinweis: Nicht Teil des 0.5.0-MVP-Releases; wird zusammen mit dem
+Migrations-/Rollback-Pfad in einem späteren Milestone konkretisiert.
+
 ### 6.2 data
 
 #### `data export` *(0.3.0, umgesetzt)*
@@ -432,7 +453,7 @@ Heap (Plan §2.1, §6.4).
 d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 ```
 
-**Auflösung von `--source`** (siehe §1.4 und implementation-plan-0.3.0.md §6.14):
+**Auflösung von `--source`** (siehe §1.4 und `docs/archive/implementation-plan-0.3.0.md` §6.14):
 
 - enthält der Wert `://`, wird er als vollständige Connection-URL behandelt
   und unverändert an den `ConnectionUrlParser` übergeben
@@ -447,6 +468,8 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
 | `--filter` | Nein | String | — | Roh-WHERE-Klausel ohne `WHERE`-Keyword. **Nicht parametrisiert** — Trust-Boundary ist die lokale Shell (Plan §6.7). |
+| `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export (LF-013). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
+| `--since` | Nein | String | — | Untere Marker-Grenze für LF-013. Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
@@ -472,7 +495,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Code | Trigger |
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
-| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`-Identifier, unverträgliche `--output`/`--split-files`-Kombi |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`) oder unverträgliche `--output`/`--split-files`-Kombi |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
 | `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect) |
@@ -498,14 +521,38 @@ d-migrate data export --source local_pg --format csv --tables customers \
 d-migrate data export --source prod --format json --tables orders \
     --filter "created_at > '2026-01-01'" --output recent.json
 
+# Inkrementeller Export per Marker-Spalte (LF-013)
+d-migrate data export --source local_pg --format json --tables orders \
+    --since-column updated_at --since "2026-01-01T00:00:00" --output orders.delta.json
+
+# Inkrementeller Export kombiniert mit zusätzlichem Roh-Filter
+d-migrate data export --source local_pg --format csv --tables orders \
+    --filter "status = 'open'" \
+    --since-column updated_at --since "2026-01-01T00:00:00" \
+    --output orders-open.delta.csv
+
 # Auto-Discovery aller Tabellen mit Split-Files
 d-migrate data export --source local_pg --format json \
     --output ./full-dump --split-files
 ```
 
-> **0.4.0**: `--incremental` für inkrementellen Export anhand einer
-> expliziten Marker-Spalte (`--since-column updated_at --since "<timestamp>"`).
-> Siehe `roadmap.md` Milestone 0.4.0 (LF-013). In 0.3.0 nicht enthalten.
+**LF-013: Inkrementeller Export via `--since-column` / `--since`**
+
+- `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
+- `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
+- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. ISO-Datum/Datetime-Werte werden als Date-/Zeit-Typen behandelt, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String.
+- Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([WhereClause(filter), ParameterizedClause(...)])` kombiniert; der Reader bindet die Parameter in stabiler Reihenfolge.
+- **M-R5**: `--filter` darf in diesem kombinierten Pfad kein literales `?` enthalten. Beispiel eines verbotenen Aufrufs:
+
+```bash
+d-migrate data export --source local_pg --format json --tables orders \
+    --filter "note LIKE 'really?%'" \
+    --since-column updated_at --since "2026-01-01T00:00:00"
+```
+
+Verhalten:
+- Exit 2
+- stderr: `--filter must not contain literal '?' when combined with --since (parameterized query); use a rewritten predicate or escape the literal differently`
 
 #### `data import` *(geplant: 0.4.0)*
 
@@ -522,7 +569,6 @@ d-migrate data import --source <path> --target <url>
 | `--schema` | Nein | Pfad | Schema zur Validierung |
 | `--on-error` | Nein | String | `abort` (Default), `skip`, `log` |
 | `--chunk-size` | Nein | Integer | Datensätze pro Transaktion (Default: 10000) |
-| `--resume` | Nein | Boolean | Ab letztem Checkpoint fortsetzen |
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Importfehlern.
 
@@ -693,26 +739,32 @@ Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 ### 7.1 Format
 
-Langläufige Operationen (>2 Sekunden) zeigen automatisch eine Fortschrittsanzeige:
+Langläufige Operationen (>2 Sekunden) können automatisch
+Status-/Fortschrittszeilen auf `stderr` ausgeben.
+
+Im MVP-Umfang von 0.5.0 ist diese Anzeige ereignisbasiert: Start, laufender
+Status, Zwischenstände und Abschluss. Prozentwerte und ETA sind Best-Effort und
+nur verfügbar, wenn der jeweilige Command verlässliche Totals kennt.
 
 ```
-Exporting table 'orders' [████████░░░░░░░░] 52% | 520,000/1,000,000 | ~45s remaining
+Exporting table 'orders' | 520,000 rows processed
 ```
 
 Struktur:
 ```
-<Operation> '<Objekt>' [<Balken>] <Prozent> | <Fortschritt>/<Gesamt> | ~<Rest> remaining
+<Operation> '<Objekt>' | <Status>
+optional: | <Fortschritt>/<Gesamt> | ~<Rest>
 ```
 
 ### 7.2 Multi-Tabellen-Fortschritt
 
-Bei paralleler Verarbeitung mehrerer Tabellen:
+Bei Verarbeitung mehrerer Tabellen:
 
 ```
 Exporting 5 tables (2 active, 1 completed, 2 pending)
-  ✓ customers       1,234 records (0.2s)
-  ● orders          [████████░░░░░░░░] 52% | 520,000/1,000,000
-  ● order_items     [██░░░░░░░░░░░░░░] 12% | 240,000/2,000,000
+  ✓ customers       completed (1,234 records)
+  ● orders          active (520,000 rows processed)
+  ● order_items     active (240,000 rows processed)
   ○ products        pending
   ○ categories      pending
 ```
@@ -724,7 +776,8 @@ Symbole: `✓` abgeschlossen, `●` aktiv, `○` wartend
 - `--no-progress`: Keine Fortschrittsanzeige (für Scripting)
 - `--quiet`: Nur Fehler
 - Fortschrittsanzeige geht nach **stderr** (stdout bleibt sauber für Piping)
-- Bei `--output-format json`: Fortschritt als JSON-Events auf stderr
+- Bei `--output-format json` bleibt Fortschritt im MVP stderr-basierte
+  Textausgabe; JSON-Progress-Events sind nicht Teil des 0.5.0-Vertrags
 
 ---
 

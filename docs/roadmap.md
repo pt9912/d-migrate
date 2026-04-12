@@ -79,7 +79,7 @@ den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
 `--split-files`-Multi-Tabellen-Export, vollständige Exit-Code-Matrix
 (0/2/4/5/7) und §6.17 Empty-Table-Vertrag pro Format.
 
-### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade
+### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade ✅ (2026-04-12)
 
 | Bereich | Aufgabe                                                                                           | LF-Ref |
 | ------- | ------------------------------------------------------------------------------------------------- | ------ |
@@ -87,18 +87,44 @@ den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
 | Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                          | LF-010 |
 | Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                     | LF-010 |
 | Driver  | Dialektspezifisches Trigger-Handling beim Import                                                  | LF-010 |
-| Formats | Deserialisierung aus JSON/YAML/CSV                                                                | LF-010 |
-| Core    | Validierung gegen Schema-Definition beim Import                                                   | LF-010 |
-| Core    | Encoding-Erkennung (UTF-8, UTF-16, ISO-8859-1)                                                    | LF-010 |
+| Formats | Deserialisierung aus JSON/YAML/CSV (Streaming-Reader)                                             | LF-010 |
+| Core    | Validierung gegen Schema-Definition beim Import (Target-Schema autoritativ)                       | LF-010 |
+| Core    | Encoding-Unterstützung: BOM-Detection für UTF-8/UTF-16, alle anderen via `--encoding`-Flag        | LF-010 |
 | CLI     | `d-migrate data import` Kommando                                                                  | LF-010 |
-| Core    | Inkrementeller Export/Import (explizite Marker-Spalte: `--since-column`, `--since`)              | LF-013 |
-| CLI     | `--incremental` Flag für `data export` und `data import`                                          | LF-013 |
+| Core    | Inkrementeller **Export** über explizite Marker-Spalte (`--since-column`, `--since`)              | LF-013 |
+| CLI     | `--incremental` Flag für `data export`; idempotenter Import via `--on-conflict update`            | LF-013 |
 | Test    | Round-Trip-Tests (Export → Import → Vergleich)                                                    | LN-043 |
 | Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                         | LN-043 |
-| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → import → Vergleich)                   | LN-043 |
+| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → idempotenter Import → Vergleich)      | LN-043 |
 
-**Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert, inklusive
-inkrementellem Modus auf Basis einer expliziten Marker-Spalte.
+**Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert. Inkrementell
+ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
+Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
+implementation-plan-0.4.0.md §6.12.
+
+**Aktueller Stand (2026-04-12)**  
+Milestone 0.4.0 ist feature-complete. Alle Phasen (A–F) sind abgeschlossen
+und verifiziert. Release-Vorbereitung steht aus.
+
+Abgeschlossene Phasen:
+
+- **Phase C** (Schritte 12–18): `DataWriter`/`TableImportSession`/`SchemaSync`
+  Port-Vertrag; PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade.
+  Plan: [ImpPlan-0.4.0-C-16_18](./ImpPlan-0.4.0-C-16_18.md)
+- **Phase D** (Schritte 19–23): Streaming-Importer, SQLite-Streaming-Tests,
+  Reorder-Perf-Gate.
+  Plan: [ImpPlan-0.4.0-D-19_22](./ImpPlan-0.4.0-D-19_22.md),
+  [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
+- **Phase E** (Schritte 24–28): CLI-Integration `data import`, Schema-Preflight,
+  E2E-Tests (JSON/YAML/CSV Round-Trips, `--truncate`, `--on-conflict update`,
+  `--trigger-mode disable`), LF-013 inkrementeller Export (`--since-column`/`--since`).
+  Pläne: [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md),
+  [ImpPlan-0.4.0-E-25](./ImpPlan-0.4.0-E-25.md),
+  [ImpPlan-0.4.0-E-28](./ImpPlan-0.4.0-E-28.md)
+- **Phase F** (Schritte 29–33): Testcontainers-E2E gegen PostgreSQL und MySQL,
+  Truncate-Implementierung in allen drei Writern, Sequence-/AUTO_INCREMENT-Reseeding,
+  Trigger-Handling, inkrementeller Round-Trip (export → delta → UPSERT → Vergleich).
+  Plan: [ImpPlan-0.4.0-F](./ImpPlan-0.4.0-F.md)
 
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
@@ -123,17 +149,21 @@ konkretisiert.
 
 | Bereich | Aufgabe                                       | LF-Ref |
 | ------- | --------------------------------------------- | ------ |
-| Core    | Schema-Diff-Engine (Vergleich zweier Schemas) | LF-015 |
-| CLI     | `d-migrate schema compare` Kommando           | LF-015 |
+| Core    | Schema-Diff-Engine (Vergleich zweier Schemas, file-based MVP) | LF-015 |
+| CLI     | `d-migrate schema compare` Kommando (Datei-zu-Datei, MVP-Slice) | LF-015 |
 | CLI     | Fortschrittsanzeige für lange Operationen     | LN-017 |
 | Docs    | Anwenderhandbuch (Basis)                      | —      |
 | Docs    | CLI-Referenz                                  | —      |
-| Docs    | Beispiel-Projekte (E-Commerce-Schema)         | —      |
 | Build   | GitHub Releases (Fat JAR)                     | —      |
 | Build   | Homebrew-Formula (Basis)                      | —      |
 | QA      | Code-Coverage >= 80%                          | LN-045 |
 
-**Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung und Daten-Export/Import nutzen.
+**Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung
+und Daten-Export/Import nutzen. LF-015 ist in 0.5.0 bewusst nur teilweise
+abgedeckt: `schema compare` vergleicht zwei neutrale Schema-Dateien; der volle
+Vergleich zwischen Umgebungen bzw. Datenbanken folgt in 0.6.0.
+
+Detaillierter Plan: [implementation-plan-0.5.0.md](./implementation-plan-0.5.0.md)
 
 ### Milestone 0.5.5 — Erweitertes Typsystem
 
@@ -173,9 +203,13 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 | Driver  | MySQL-spezifisch: Engine, AUTO_INCREMENT, SET-Typen             | LF-004 |
 | Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                | LF-004 |
 | CLI     | `d-migrate schema reverse --source <db-url>`                    | LF-004 |
+| CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | LF-015 |
+| Docs    | Beispiel-Projekte (E-Commerce-Schema)                           | —      |
 | Test    | Reverse-Engineering gegen komplexe Test-Schemas                 | 8.4    |
 
-**Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt werden.
+**Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt
+werden. Damit wird auch LF-015 vervollständigt: Vergleiche sind dann nicht nur
+Datei-zu-Datei, sondern zwischen Umgebungen bzw. Datenbanken möglich.
 
 ### Milestone 0.7.0 — Tool-Integrationen
 
@@ -401,6 +435,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 1.5
-**Stand**: 2026-04-06
-**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen, 0.5.5 neu aufgenommen, LF-013 von 0.9.0 nach 0.4.0 vorverlegt, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Version**: 2.0
+**Stand**: 2026-04-12
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 in Umsetzung (Phase A erledigt); 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung

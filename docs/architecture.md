@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Architektur-Spezifikation
 >
-> Die Module `d-migrate-core`, `d-migrate-formats` und `d-migrate-cli` sind seit Milestone 0.1.0 implementiert. Weitere Module (drivers, integrations, ai, streaming, testdata, docs) beschreiben den geplanten Soll-Zustand für spätere Milestones.
+> Die Module unter `hexagon/` und `adapters/` sind seit Milestone 0.4.0 in der hexagonalen Verzeichnisstruktur implementiert (siehe §1.2 / §2.1). Weitere Module (integrations, ai, testdata, i18n, docs) beschreiben den geplanten Soll-Zustand für spätere Milestones.
 
 ---
 
@@ -52,234 +52,174 @@
 - **Ports**: Interfaces für Datenbank-Zugriff, Datei-I/O, KI-Provider und datenbankspezifisches Type-Mapping
 - **Adapters**: Konkrete Implementierungen (JDBC-Driver, Jackson-Serializer, HTTP-Clients, Dialekt-spezifische TypeMapper)
 
+**Zuordnung der Gradle-Module zu den Architekturschichten:**
+
 ```
-                    Driving Adapters              Driven Adapters
-                   (Input/Primary)              (Output/Secondary)
-                         │                              │
-              ┌──────────┤                  ┌───────────┤
-              │          │                  │           │
-         ┌────▼───┐ ┌────▼───┐        ┌────▼───┐ ┌────▼────┐
-         │  CLI   │ │ Script │        │ JDBC   │ │ File    │
-         │Adapter │ │  API   │        │Adapter │ │ Adapter │
-         └────┬───┘ └────┬───┘        └────┬───┘ └────┬────┘
-              │          │                  │          │
-         ┌────▼──────────▼──┐        ┌─────▼──────────▼────┐
-         │   Input Ports    │        │   Output Ports       │
-         │  (Use Cases)     │        │  (Repositories,      │
-         │                  │        │   Gateways)           │
-         └────────┬─────────┘        └──────────┬───────────┘
-                  │                              │
-              ┌───▼──────────────────────────────▼───┐
-              │           Domain Core                 │
-              │                                       │
-              │  SchemaDefinition  NeutralTypes        │
-              │  Validator         MigrationPlan       │
-              │  DependencyGraph   DiffEngine          │
-              └───────────────────────────────────────┘
+d-migrate/
+├── hexagon/                               ← Innerhalb des Hexagons
+│   ├── core/                              ← Domain (Modell, Validierung, Typsystem)
+│   ├── ports/                             ← Port-Interfaces (Output) + Datentypen
+│   └── application/                       ← Use Cases (Runner-Klassen)
+│
+├── adapters/                              ← Außerhalb des Hexagons
+│   ├── driving/
+│   │   └── cli/                           ← Clikt-Shells, Wiring, OutputFormatter
+│   └── driven/
+│       ├── driver-common/                 ← Abstract-Base-Klassen, HikariCP
+│       ├── driver-postgresql/
+│       ├── driver-mysql/
+│       ├── driver-sqlite/
+│       ├── formats/                       ← JSON/YAML/CSV Codec-Implementierungen
+│       └── streaming/                     ← Pipeline-Infrastruktur
 ```
+
+| Schicht         | Modul                               | Rolle                                                                                                                                |
+| --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Domain Core     | `hexagon:core`                      | Neutrales Modell, Validierung, Typsystem — keine externen Deps                                                                       |
+| Ports           | `hexagon:ports`                     | Port-Interfaces (`DatabaseDriver`, `DdlGenerator`, `DataReader`, `SchemaCodec`, `DataChunkWriter/Reader`, …) + zugehörige Datentypen |
+| Application     | `hexagon:application`               | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`)                                                                         |
+| Driving Adapter | `adapters:driving:cli`              | CLI-Einstiegspunkt (Clikt), Wiring aller Module                                                                                      |
+| Driven Adapter  | `adapters:driven:driver-common`     | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, …)                                               |
+| Driven Adapter  | `adapters:driven:driver-postgresql` | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade                                                                              |
+| Driven Adapter  | `adapters:driven:driver-mysql`      | MySQL-Implementierung der `DatabaseDriver`-Fassade                                                                                   |
+| Driven Adapter  | `adapters:driven:driver-sqlite`     | SQLite-Implementierung der `DatabaseDriver`-Fassade                                                                                  |
+| Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
+| Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`)                                                                                             |
+
+```
+              adapters:driving:cli  (Clikt)
+                      │
+                      ▼
+         ┌────────────────────────────────┐
+         │            Hexagon             │
+         │                                │
+         │  ┌──────────────────────────┐  │
+         │  │  hexagon:application     │  │  ← Use Cases (Runner)
+         │  └────────────┬─────────────┘  │
+         │               │                │
+         │  ┌────────────▼─────────────┐  │
+         │  │  hexagon:ports           │  │  ← Port-Interfaces
+         │  └────────────┬─────────────┘  │
+         │               │                │
+         │  ┌────────────▼─────────────┐  │
+         │  │  hexagon:core            │  │  ← Domain-Modell
+         │  └──────────────────────────┘  │
+         └────────────────┬───────────────┘
+                          │
+            ┌─────────────┼──────────────┐
+            ▼             ▼              ▼
+      driver-common   formats      streaming
+      driver-pg/my/sl
+```
+**Erzwungene Regeln** (durch Gradle-Abhängigkeiten garantiert):
+- `hexagon:core` hat keine Abhängigkeiten auf andere Module
+- `hexagon:ports` hängt nur von `hexagon:core` ab
+- `hexagon:application` hängt nur vom Hexagon-Inneren ab, nicht von Adaptern
+- Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`)
 
 ---
 
 ## 2. Modul-Struktur
 
-### 2.1 Zielbild: Projekt-Layout (Gradle Multi-Module)
+### 2.1 Projekt-Layout (Gradle Multi-Module)
 
-Die folgende Struktur beschreibt den geplanten Soll-Zustand der Codebasis:
+Die Module `hexagon:core`, `hexagon:ports`, `hexagon:application` sowie die
+Adapter-Module unter `adapters/` sind seit Milestone 0.4.0 implementiert.
+Weitere Module (integrations, ai, testdata, i18n, docs) beschreiben den
+geplanten Soll-Zustand für spätere Milestones.
 
 ```
 d-migrate/
-├── build.gradle.kts                    # Root Build-Konfiguration
+├── build.gradle.kts
 ├── settings.gradle.kts
 │
-├── d-migrate-core/                     # Domain Core (keine externen Deps)
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/core/
-│           ├── model/                  # Neutrales Schema-Modell
-│           │   ├── SchemaDefinition.kt
-│           │   ├── TableDefinition.kt
-│           │   ├── ColumnDefinition.kt
-│           │   ├── NeutralType.kt
-│           │   └── ...
-│           ├── validation/             # Schema-Validierung
-│           │   ├── SchemaValidator.kt
-│           │   └── ValidationResult.kt
-│           ├── types/                  # Neutrales Typsystem
-│           │   └── TypeCompatibility.kt
-│           ├── diff/                   # Schema-Vergleich
-│           │   ├── SchemaDiff.kt
-│           │   └── DiffResult.kt
-│           └── migration/              # Migrationsplan-Logik
-│               ├── MigrationPlan.kt
-│               └── DependencyGraph.kt
-│
-├── d-migrate-drivers/                  # Datenbank-Adapter
-│   ├── d-migrate-driver-api/           # Driver SPI
-│   │   └── src/main/kotlin/
-│   │       └── dev/dmigrate/driver/
-│   │           ├── DatabaseDriver.kt           # Port-Interface
-│   │           ├── SchemaReader.kt
-│   │           ├── SchemaWriter.kt
-│   │           ├── DataReader.kt
-│   │           ├── DataWriter.kt
-│   │           └── TypeMapper.kt              # Dialekt-Port
+├── hexagon/
+│   ├── core/                              # Domain Core (keine externen Deps)
+│   │   └── dev/dmigrate/core/
+│   │       ├── model/                     # SchemaDefinition, NeutralType, …
+│   │       ├── validation/                # SchemaValidator, ValidationResult
+│   │       └── data/                      # DataChunk, DataFilter, ColumnDescriptor
 │   │
-│   ├── d-migrate-driver-postgresql/
-│   │   └── src/main/kotlin/
-│   │       └── dev/dmigrate/driver/postgresql/
-│   │           ├── PostgresDriver.kt
-│   │           ├── PostgresTypeMapper.kt
-│   │           ├── PostgresDdlGenerator.kt
-│   │           └── PostgresSchemaReader.kt
+│   ├── ports/                             # Port-Interfaces + Datentypen
+│   │   └── dev/dmigrate/
+│   │       ├── driver/
+│   │       │   ├── DatabaseDriver.kt      # Zentrale Port-Fassade
+│   │       │   ├── DatabaseDriverRegistry.kt
+│   │       │   ├── DatabaseDialect.kt
+│   │       │   ├── DdlGenerator.kt        # + DdlResult, TransformationNote, …
+│   │       │   ├── TypeMapper.kt
+│   │       │   ├── connection/            # ConnectionPool, ConnectionConfig, JdbcUrlBuilder, PoolSettings
+│   │       │   └── data/                  # DataReader, TableLister, ChunkSequence
+│   │       ├── format/
+│   │       │   ├── SchemaCodec.kt
+│   │       │   └── data/                  # DataChunkWriter/Reader, Factories, ExportOptions, ImportOptions, DataExportFormat
+│   │       └── streaming/                 # ExportOutput, ExportResult, PipelineConfig
 │   │
-│   ├── d-migrate-driver-mysql/
-│   │   └── src/main/kotlin/
-│   │       └── dev/dmigrate/driver/mysql/
-│   │           ├── MysqlDriver.kt
-│   │           ├── MysqlTypeMapper.kt
-│   │           ├── MysqlDdlGenerator.kt
-│   │           └── MysqlSchemaReader.kt
+│   └── application/                       # Use Cases (Runner-Klassen)
+│       └── dev/dmigrate/cli/commands/
+│           ├── SchemaGenerateRunner.kt
+│           ├── DataExportRunner.kt
+│           └── DataExportHelpers.kt
+│
+├── adapters/
+│   ├── driving/
+│   │   └── cli/                           # CLI-Einstiegspunkt (Clikt)
+│   │       └── dev/dmigrate/cli/
+│   │           ├── Main.kt                # Bootstrap + Wiring
+│   │           ├── commands/              # Clikt-Commands (SchemaCommands, DataCommands, SchemaGenerateHelpers)
+│   │           ├── config/                # NamedConnectionResolver
+│   │           └── output/                # OutputFormatter
 │   │
-│   └── d-migrate-driver-sqlite/
-│       └── src/main/kotlin/
-│           └── dev/dmigrate/driver/sqlite/
-│               ├── SqliteDriver.kt
-│               ├── SqliteTypeMapper.kt
-│               ├── SqliteDdlGenerator.kt
-│               └── SqliteSchemaReader.kt
-│
-├── d-migrate-formats/                  # Serialisierung / Deserialisierung
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/format/
-│           ├── FormatCodec.kt          # Port-Interface
-│           ├── TextEncoding.kt         # UTF-8/UTF-16/ISO-8859-1, BOM
-│           ├── ImportParser.kt         # Datei → neutrales Datenmodell
-│           ├── json/
-│           │   └── JsonCodec.kt
-│           ├── yaml/
-│           │   └── YamlCodec.kt
-│           ├── csv/
-│           │   ├── CsvCodec.kt
-│           │   └── CsvBomHandler.kt
-│           └── sql/
-│               ├── SqlCodec.kt
-│               └── DdlParser.kt        # SQL-DDL-Dateien → neutrales Modell (LF-004)
-│                                        # Details: neutral-model-spec.md §12
-│
-├── d-migrate-integrations/             # Tool-Integrationen
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/integration/
-│           ├── IntegrationAdapter.kt   # Port-Interface
-│           ├── flyway/
-│           │   └── FlywayAdapter.kt
-│           ├── liquibase/
-│           │   └── LiquibaseAdapter.kt
-│           ├── django/
-│           │   └── DjangoAdapter.kt
-│           └── knex/
-│               └── KnexAdapter.kt
-│
-├── d-migrate-ai/                       # KI-Integration
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/ai/
-│           ├── AiProvider.kt           # Port-Interface
-│           ├── TransformService.kt     # Orchestrierung
-│           ├── ollama/
-│           │   └── OllamaProvider.kt
-│           ├── lmstudio/
-│           │   └── LmStudioProvider.kt
-│           ├── openai/
-│           │   └── OpenAiProvider.kt
-│           ├── anthropic/
-│           │   └── AnthropicProvider.kt
-│           ├── xai/
-│           │   └── XaiProvider.kt
-│           ├── google/
-│           │   └── GeminiProvider.kt
-│           ├── vllm/
-│           │   └── VllmProvider.kt
-│           ├── tgi/
-│           │   └── TgiProvider.kt
-│           └── noop/
-│               └── RuleBasedProvider.kt
-│
-├── d-migrate-testdata/                 # Testdaten-Generierung (LF-024)
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/testdata/
-│           ├── TestdataGenerator.kt    # Port-Interface
-│           ├── GeneratorConfig.kt      # Seed, Menge, Locale, Regeln
-│           ├── faker/
-│           │   └── FakerGenerator.kt   # Regelbasiert (Faker-Bibliothek)
-│           └── ai/
-│               └── AiGenerator.kt      # KI-gestützt (optional, nutzt AiProvider)
-│
-├── d-migrate-streaming/                # Streaming-Pipeline
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/streaming/
-│           ├── Pipeline.kt
-│           ├── ChunkProcessor.kt
-│           ├── Checkpoint.kt
-│           ├── ParallelExecutor.kt
-│           ├── PartitionHandler.kt     # Partition-aware Export/Import (LN-008)
-│           └── DeltaDetector.kt        # Inkrementelle Delta-Erkennung (LN-006)
-│
-├── d-migrate-i18n/                     # Internationalisierung
-│   └── src/main/
-│       ├── kotlin/
-│       │   └── dev/dmigrate/i18n/
-│       │       ├── Messages.kt
-│       │       ├── UnicodeUtils.kt
-│       │       ├── LocaleFormats.kt    # Datum/Zeit/Zahl/Waehrung
-│       │       ├── TimezonePolicy.kt   # UTC-Default, Konvertierung
-│       │       └── PhoneNumberValidator.kt # Optionale E.164-Validierung
-│       └── resources/
-│           └── messages/
-│               ├── messages_de.properties
-│               └── messages_en.properties
-│
-├── d-migrate-docs/                     # Dokumentationsgenerierung
-│   └── src/main/kotlin/
-│       └── dev/dmigrate/docs/
-│           ├── DocumentationGenerator.kt
-│           ├── MarkdownRenderer.kt
-│           ├── HtmlRenderer.kt
-│           ├── PdfRenderer.kt
-│           └── ErDiagramGenerator.kt
-│
-└── d-migrate-cli/                      # CLI-Anwendung (Einstiegspunkt)
-    └── src/main/kotlin/
-        └── dev/dmigrate/cli/
-            ├── Main.kt
-            ├── commands/
-            │   ├── SchemaCommands.kt
-            │   ├── DataCommands.kt
-            │   ├── TransformCommands.kt
-            │   ├── ExportCommands.kt
-            │   └── ValidateCommands.kt
-            └── output/
-                ├── ProgressRenderer.kt
-                └── TableRenderer.kt
+│   └── driven/
+│       ├── driver-common/                 # Gemeinsame DB-Infrastruktur
+│       │   └── dev/dmigrate/driver/
+│       │       ├── AbstractDdlGenerator.kt
+│       │       ├── ViewQueryTransformer.kt
+│       │       ├── connection/            # HikariConnectionPoolFactory, ConnectionUrlParser, LogScrubber
+│       │       └── data/                  # AbstractJdbcDataReader
+│       │
+│       ├── driver-postgresql/             # PostgreSQL DatabaseDriver
+│       │   └── dev/dmigrate/driver/postgresql/
+│       │       ├── PostgresDriver.kt      # class : DatabaseDriver
+│       │       ├── PostgresDdlGenerator.kt
+│       │       ├── PostgresTypeMapper.kt
+│       │       ├── PostgresDataReader.kt
+│       │       ├── PostgresTableLister.kt
+│       │       └── PostgresJdbcUrlBuilder.kt
+│       │
+│       ├── driver-mysql/                  # MySQL DatabaseDriver (analog)
+│       ├── driver-sqlite/                 # SQLite DatabaseDriver (analog)
+│       │
+│       ├── formats/                       # Serialisierung / Deserialisierung
+│       │   └── dev/dmigrate/format/
+│       │       ├── yaml/YamlSchemaCodec.kt
+│       │       ├── report/TransformationReportWriter.kt
+│       │       └── data/                  # Json/Yaml/CsvChunkWriter+Reader, DefaultFactories, ValueSerializer/Deserializer, EncodingDetector
+│       │
+│       └── streaming/                     # Streaming-Pipeline
+│           └── dev/dmigrate/streaming/
+│               └── StreamingExporter.kt
 ```
+
+> Geplante, noch nicht implementierte Module: `integrations/` (Flyway, Liquibase,
+> Django, Knex), `ai/` (Ollama, LM Studio, OpenAI, Anthropic, …), `testdata/`
+> (Faker, KI-gestützt), `i18n/`, `docs/` — siehe Roadmap.
 
 ### 2.2 Modul-Abhängigkeiten
 
 ```
-d-migrate-cli
-├── d-migrate-core
-├── d-migrate-drivers
-│   ├── d-migrate-driver-api ──▶ d-migrate-core
-│   ├── d-migrate-driver-postgresql ──▶ d-migrate-driver-api, d-migrate-core
-│   ├── d-migrate-driver-mysql ──▶ d-migrate-driver-api, d-migrate-core
-│   └── d-migrate-driver-sqlite ──▶ d-migrate-driver-api, d-migrate-core
-├── d-migrate-formats ──▶ d-migrate-core
-├── d-migrate-integrations ──▶ d-migrate-core
-├── d-migrate-ai ──▶ d-migrate-core
-├── d-migrate-testdata ──▶ d-migrate-core, d-migrate-ai (optional)
-├── d-migrate-streaming ──▶ d-migrate-core, d-migrate-driver-api
-├── d-migrate-i18n
-└── d-migrate-docs ──▶ d-migrate-core, d-migrate-i18n
+adapters:driving:cli
+├── hexagon:application ──▶ hexagon:core, hexagon:ports
+├── hexagon:ports ──▶ hexagon:core
+├── adapters:driven:driver-common ──▶ hexagon:ports, HikariCP, SLF4J
+├── adapters:driven:driver-postgresql ──▶ hexagon:ports, driver-common
+├── adapters:driven:driver-mysql ──▶ hexagon:ports, driver-common
+├── adapters:driven:driver-sqlite ──▶ hexagon:ports, driver-common
+├── adapters:driven:formats ──▶ hexagon:ports, Jackson, DSL-JSON, SnakeYAML, Univocity
+└── adapters:driven:streaming ──▶ hexagon:ports
 ```
 
-**Regel**: `d-migrate-core` hat KEINE Abhängigkeit auf andere Module. Port-Module wie `d-migrate-driver-api` dürfen `core` referenzieren, wenn ihre Signaturen das neutrale Modell verwenden. Konkrete Adapter hängen an Ports und bei Bedarf direkt an `core`, aber nie umgekehrt.
+**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `hexagon:ports` hängt nur von `core` ab. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`).
 
 ---
 
@@ -722,7 +662,7 @@ Distribution-Formate:
 3. OCI Image (ghcr.io/pt9912/d-migrate) ✅
    → docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
    → Basis: eclipse-temurin:21-jre-noble (Ubuntu 24.04, glibc, ZGC)
-   → Build: ./gradlew :d-migrate-cli:jibDockerBuild (Jib, kein Dockerfile nötig)
+   → Build: ./gradlew :adapters:driving:cli:jibDockerBuild (Jib, kein Dockerfile nötig)
    → Für CI/CD-Pipelines und Nutzer ohne JDK
 
 4. Package Manager
