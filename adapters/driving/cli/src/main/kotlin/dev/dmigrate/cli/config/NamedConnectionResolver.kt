@@ -123,7 +123,7 @@ class NamedConnectionResolver(
                 isExplicit ->
                     ConfigResolveException("D_MIGRATE_CONFIG points to non-existent file: $configPath")
                 else ->
-                    ConfigResolveException(
+                    ConfigMissingDefaultException(
                         "$cliFlag was not provided and no .d-migrate.yaml was found to look up " +
                             "database.$defaultKey. Use $cliFlag <value>, --config <path>, " +
                             "set D_MIGRATE_CONFIG, or pass a full URL."
@@ -132,7 +132,7 @@ class NamedConnectionResolver(
         }
 
         val defaultValue = lookupDefaultValue(configPath, defaultKey)
-            ?: throw ConfigResolveException(
+            ?: throw ConfigMissingDefaultException(
                 "$cliFlag was not provided and database.$defaultKey is not set in $configPath."
             )
 
@@ -281,4 +281,11 @@ class NamedConnectionResolver(
  * Wird vom [NamedConnectionResolver] geworfen, wenn die Config-Auflösung
  * fehlschlägt. Der CLI-Aufrufer mappt das auf Exit-Code 7 (§6.10).
  */
-class ConfigResolveException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+open class ConfigResolveException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/**
+ * Spezialisierung: weder CLI-Flag noch Config-Default waren gesetzt.
+ * Erlaubt dem Aufrufer, diesen Fall per Typ (Exit 2) vom generischen
+ * Auflösungsfehler (Exit 7) zu unterscheiden.
+ */
+class ConfigMissingDefaultException(message: String, cause: Throwable? = null) : ConfigResolveException(message, cause)

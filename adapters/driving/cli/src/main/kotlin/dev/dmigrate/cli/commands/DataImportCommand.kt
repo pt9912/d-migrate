@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.cli.config.ConfigMissingDefaultException
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -144,15 +145,13 @@ class DataImportCommand : CliktCommand(name = "import") {
             targetResolver = { target, configPath ->
                 try {
                     NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
+                } catch (e: ConfigMissingDefaultException) {
+                    throw CliUsageException(
+                        "--target is required when database.default_target is not set.",
+                        e,
+                    )
                 } catch (e: ConfigResolveException) {
-                    val message = e.message ?: "Failed to resolve --target."
-                    if (target == null && message.startsWith("--target was not provided")) {
-                        throw CliUsageException(
-                            "--target is required when database.default_target is not set.",
-                            e,
-                        )
-                    }
-                    throw IllegalArgumentException(message, e)
+                    throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
                 }
             },
             urlParser = ConnectionUrlParser::parse,
