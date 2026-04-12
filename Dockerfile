@@ -69,6 +69,7 @@ RUN --mount=type=cache,target=/gradle-cache \
 COPY . .
 
 RUN --mount=type=cache,target=/gradle-cache \
+    find /gradle-cache -path "*/kover/*" -delete 2>/dev/null || true && \
     ./gradlew --no-daemon ${GRADLE_TASKS}
 
 # ---- Stage 2: runtime ------------------------------------------------------
