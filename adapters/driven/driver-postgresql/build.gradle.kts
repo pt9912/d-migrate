@@ -27,11 +27,11 @@ kover {
                 filters {
                     excludes {
                         classes(
-                            "dev.dmigrate.driver.postgresql.PostgresDataReader*",
-                            "dev.dmigrate.driver.postgresql.PostgresTableLister*",
-                            "dev.dmigrate.driver.postgresql.PostgresDataWriter*",
-                            "dev.dmigrate.driver.postgresql.PostgresTableImportSession*",
-                            "dev.dmigrate.driver.postgresql.PostgresSchemaSync*",
+                            "dev.dmigrate.driver.postgresql.PostgresDataReader",
+                            "dev.dmigrate.driver.postgresql.PostgresTableLister",
+                            "dev.dmigrate.driver.postgresql.PostgresDataWriter",
+                            "dev.dmigrate.driver.postgresql.PostgresTableImportSession",
+                            "dev.dmigrate.driver.postgresql.PostgresSchemaSync",
                         )
                     }
                 }

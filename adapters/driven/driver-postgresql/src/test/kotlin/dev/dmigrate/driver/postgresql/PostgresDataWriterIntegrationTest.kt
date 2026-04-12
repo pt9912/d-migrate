@@ -371,6 +371,40 @@ class PostgresDataWriterIntegrationTest : FunSpec({
         ex.message shouldContain "does not support generic disableFkChecks"
     }
 
+    test("truncate deletes pre-existing rows before import") {
+        pool!!.borrow().use { conn ->
+            conn.prepareStatement("INSERT INTO writer_users (id, name) VALUES (?, ?)").use { ps ->
+                ps.setInt(1, 99)
+                ps.setString(2, "pre-existing")
+                ps.executeUpdate()
+            }
+        }
+
+        writer.openTable(pool!!, "writer_users", ImportOptions(truncate = true)).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_users",
+                    columnNames = listOf("id", "name"),
+                    rows = listOf(arrayOf<Any?>(1, "alice")),
+                )
+            )
+            session.commitChunk()
+            session.finishTable()
+        }
+
+        pool!!.borrow().use { conn ->
+            conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
+                ps.executeQuery().use { rs ->
+                    val rows = mutableListOf<Pair<Int, String>>()
+                    while (rs.next()) {
+                        rows += rs.getInt(1) to rs.getString(2)
+                    }
+                    rows shouldContainExactly listOf(1 to "alice")
+                }
+            }
+        }
+    }
+
     test("strict trigger mode opens clean tables successfully") {
         writer.openTable(
             pool!!,

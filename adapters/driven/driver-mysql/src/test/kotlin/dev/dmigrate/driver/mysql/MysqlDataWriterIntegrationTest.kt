@@ -537,6 +537,41 @@ class MysqlDataWriterIntegrationTest : FunSpec({
         }
     }
 
+    test("truncate deletes pre-existing rows before import") {
+        // Seed pre-existing data
+        pool!!.borrow().use { conn ->
+            conn.prepareStatement("INSERT INTO writer_users (id, name) VALUES (?, ?)").use { ps ->
+                ps.setInt(1, 99)
+                ps.setString(2, "pre-existing")
+                ps.executeUpdate()
+            }
+        }
+
+        writer.openTable(pool!!, "writer_users", ImportOptions(truncate = true)).use { session ->
+            session.write(
+                chunk(
+                    table = "writer_users",
+                    columnNames = listOf("id", "name"),
+                    rows = listOf(arrayOf<Any?>(1, "alice")),
+                )
+            )
+            session.commitChunk()
+            session.finishTable()
+        }
+
+        pool!!.borrow().use { conn ->
+            conn.prepareStatement("SELECT id, name FROM writer_users ORDER BY id").use { ps ->
+                ps.executeQuery().use { rs ->
+                    val rows = mutableListOf<Pair<Int, String>>()
+                    while (rs.next()) {
+                        rows += rs.getInt(1) to rs.getString(2)
+                    }
+                    rows shouldContainExactly listOf(1 to "alice")
+                }
+            }
+        }
+    }
+
     test("primary key lookup respects lower_case_table_names normalization") {
         val tableName = if (lowerCaseTableNames() == 0) "WriterCaseTarget" else "writercasetarget"
 
