@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade  
 > **Phase**: E (CLI-Integration)  
 > **Schritt**: 28  
-> **Status**: In Umsetzung  
+> **Status**: Abgeschlossen  
 > **Referenz**: `implementation-plan-0.4.0.md` §4 Phase E Schritt 28, §6.11, §6.14, §6.12.2
 
 ---
@@ -99,19 +99,19 @@ Kein `-c` Config nötig — `--target` akzeptiert direkte URLs.
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../README.md) verwendet und baut erfolgreich.
-- [ ] JSON, YAML und CSV je mindestens einmal über den vollen CLI-Importpfad auf SQLite verifiziert.
-- [ ] `--truncate` auf SQLite importseitig funktional getestet (bestehende Zieldaten werden in dem Lauf ersetzt).
-- [ ] `--on-conflict update` ist auf SQLite per CLI testabgedeckt.
-- [ ] `--trigger-mode disable` auf SQLite liefert Exit `2` mit klarer Meldung (oder äquivalent).
-- [ ] Tests laufen ohne Testcontainer (lokale SQLite-Dateien).
+- [x] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../README.md) verwendet und baut erfolgreich.
+- [x] JSON, YAML und CSV je mindestens einmal über den vollen CLI-Importpfad auf SQLite verifiziert.
+- [x] `--truncate` auf SQLite importseitig funktional getestet (bestehende Zieldaten werden in dem Lauf ersetzt).
+- [x] `--on-conflict update` ist auf SQLite per CLI testabgedeckt.
+- [x] `--trigger-mode disable` auf SQLite liefert Exit `2` mit klarer Meldung (oder äquivalent).
+- [x] Tests laufen ohne Testcontainer (lokale SQLite-Dateien).
 
 ## 8. Verifikation
 
 1. Gezielter Testlauf:
 ```bash
 docker build --target build \
-  --build-arg GRADLE_TASKS=":adapters:driving:cli:test --tests *CliDataImportTest*" \
+  --build-arg GRADLE_TASKS=":adapters:driving:cli:test --tests dev.dmigrate.cli.CliDataImportTest" \
   -t d-migrate:e28 .
 ```
 
