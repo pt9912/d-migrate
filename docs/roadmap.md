@@ -102,26 +102,37 @@ ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
-**Aktueller Stand (2026-04-12)**: Milestone 0.4.0 ist weiterhin in Arbeit. Phase D ist hingegen abgeschlossen und verifiziert.
-Der JDBC-Import-Unterbau der Phase C ist jedoch abgeschlossen:
+**Aktueller Stand (2026-04-12)**  
+Milestone 0.4.0 ist weiterhin in Arbeit.  
+Phase D ist abgeschlossen und verifiziert.
 
-- `DataWriter` / `TableImportSession` / `SchemaSync` / `SequenceAdjustment`
-  sind produktiv im Port-Vertrag verankert.
+Der JDBC-Import-Unterbau der Phase C ist abgeschlossen:
+
+Der JDBC-Import-Unterbau enthält:
+
+- `DataWriter`, `TableImportSession`, `SchemaSync` und `SequenceAdjustment`
+  produktiv im Port-Vertrag.
 - PostgreSQL, MySQL und SQLite liefern reale `dataWriter()`-Implementierungen
   über das bestehende `DatabaseDriver`-Aggregat; eine separate
   `DataWriterRegistry` wurde bewusst nicht eingeführt.
 - PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade und
   Bootstrap-Lookup sind implementiert und testseitig abgedeckt.
-- Phase D (Schritte 19–23) ist mit den neuen SQLite-Streaming- und Reorder-
-  Perf-Artefakten nachgezogen abgeschlossen:
-  - Umsetzungssplan: [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
-  - Docker-verifizierte Ausführung: `docker build -t d-migrate:dev .`
-  - Reorder-Perf-Gate: [0.4.0-phase-d-reorder](./docs/perf/0.4.0-phase-d-reorder.md)
-- Nachgelagerte Schrittplanung für den Abschluss von Phase E liegt in:
-  [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md).
-- Offen für 0.4.0 bleiben damit vor allem die noch ausstehenden Core-/CLI-/
-  Format-Schritte oberhalb des Driver-Layers sowie die finalen Round-Trip-
-  und End-to-End-Importpfade.
+
+Phase D (Schritte 19–23) ist mit den neuen SQLite-Streaming- und Reorder-Perf-Artefakten
+nachgezogen abgeschlossen:
+
+- Umsetzungssplan: [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
+- Docker-verifizierte Ausführung: `docker build -t d-migrate:dev .`
+- Reorder-Perf-Gate: [0.4.0-phase-d-reorder](./docs/perf/0.4.0-phase-d-reorder.md)
+
+Nachgelagerte Planung für den Abschluss von Phase E:
+
+- [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md)
+
+Offen für 0.4.0 bleiben damit vor allem:
+
+- ausstehende Core-/CLI-/Format-Schritte oberhalb der Driver-Layers
+- die finalen Round-Trip- und End-to-End-Importpfade
 
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
