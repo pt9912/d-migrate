@@ -7,27 +7,22 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 /**
- * Minimaler Loader für `.d-migrate.yaml` (Plan §6.14).
+ * Loader für `.d-migrate.yaml` (Plan §6.14 / §3.7.3).
  *
- * Implementiert nur die Subset-Funktionalität, die `data export` in 0.3.0
- * tatsächlich braucht — vgl. `connection-config-spec.md` für die vollständige
- * Ziel-Spezifikation, die in 0.4.0+ erweitert wird.
+ * **Resolve-Funktionen**:
  *
- * **Was 0.3.0 macht**:
+ * | Methode | Zweck | Default-Key |
+ * |---|---|---|
+ * | [resolve] | 0.3.0-Kompatibilität: löst `--source` als Pflichtangabe auf | — |
+ * | [resolveSource] | `data export`: nullable `--source`, Default aus `database.default_source` | `default_source` |
+ * | [resolveTarget] | `data import`: nullable `--target`, Default aus `database.default_target` | `default_target` |
  *
- * - respektiert `--config`/`-c` (CLI) und `D_MIGRATE_CONFIG` (ENV) — mit
- *   Priorität CLI > ENV > `./.d-migrate.yaml` (Default, optional)
- * - löst `database.connections.<name>` zu einer URL-String auf
- * - substituiert `${ENV_VAR}` in den URL-Werten (mit `$${VAR}`-Escape)
- * - liest `database.default_source`, ignoriert es aber für `data export`
- *   (in 0.4.0+ relevant für `data import`)
- *
- * **Was 0.3.0 NICHT macht** (siehe §6.14.2):
- *
- * - Pool-Settings (`database.pool.*`) — Hikari-Defaults werden verwendet
- * - Profile, mehrere Connections pro Umgebung
- * - Granulare Validierungs-Codes E400–E405 — nur generischer Exit 7
- * - Encrypted credentials — kommt in 1.0.0
+ * **Resolve-Tabelle** (§3.7.3):
+ * 1. Wert ist gesetzt und enthält `://` → direkte URL, Config wird nicht gelesen.
+ * 2. Wert ist gesetzt, kein `://` → Connection-Name aus `database.connections`.
+ * 3. Wert ist `null` → Default aus Config (`database.default_source` / `database.default_target`).
+ *    Default ist URL → zurückgeben. Default ist Name → weiter mit (2).
+ *    Default fehlt → [ConfigResolveException] (Exit 7) bzw. CLI-Fehler (Exit 2).
  *
  * Alle Fehlerpfade werfen [ConfigResolveException] mit der Meldung aus
  * §6.14.3, die der CLI-Aufrufer auf Exit-Code 7 mappt.
@@ -80,6 +75,107 @@ class NamedConnectionResolver(
 
         val rawUrl = lookupConnectionUrl(configPath, source)
         return substituteEnvVars(rawUrl, source)
+    }
+
+    /**
+     * Löst `--source <value>` für `data export` auf (nullable).
+     *
+     * Wenn [source] `null` ist, wird `database.default_source` aus der
+     * Config als Fallback verwendet. Enthält der Default `://`, wird er
+     * als direkte URL interpretiert; sonst als Connection-Name aus
+     * `database.connections`.
+     *
+     * @throws ConfigResolveException wenn kein Default konfiguriert ist
+     *   und [source] `null` war, oder bei jedem §6.14.3-Fehlerpfad.
+     */
+    fun resolveSource(source: String?): String {
+        if (source != null) return resolve(source)
+        return resolveDefault("default_source", "--source")
+    }
+
+    /**
+     * Löst `--target <value>` für `data import` auf (nullable).
+     *
+     * Wenn [target] `null` ist, wird `database.default_target` aus der
+     * Config als Fallback verwendet. Enthält der Default `://`, wird er
+     * als direkte URL interpretiert; sonst als Connection-Name aus
+     * `database.connections`.
+     *
+     * @throws ConfigResolveException wenn kein Default konfiguriert ist
+     *   und [target] `null` war, oder bei jedem §6.14.3-Fehlerpfad.
+     */
+    fun resolveTarget(target: String?): String {
+        if (target != null) return resolve(target)
+        return resolveDefault("default_target", "--target")
+    }
+
+    /**
+     * Liest `database.<defaultKey>` aus der Config und löst den Wert als
+     * URL oder Connection-Name auf.
+     */
+    private fun resolveDefault(defaultKey: String, cliFlag: String): String {
+        val (configPath, isExplicit) = resolveConfigPath()
+
+        if (!Files.isRegularFile(configPath)) {
+            throw when {
+                isExplicit && configPathFromCli != null ->
+                    ConfigResolveException("Config file not found: $configPath")
+                isExplicit ->
+                    ConfigResolveException("D_MIGRATE_CONFIG points to non-existent file: $configPath")
+                else ->
+                    ConfigResolveException(
+                        "$cliFlag was not provided and no .d-migrate.yaml was found to look up " +
+                            "database.$defaultKey. Use $cliFlag <value>, --config <path>, " +
+                            "set D_MIGRATE_CONFIG, or pass a full URL."
+                    )
+            }
+        }
+
+        val defaultValue = lookupDefaultValue(configPath, defaultKey)
+            ?: throw ConfigResolveException(
+                "$cliFlag was not provided and database.$defaultKey is not set in $configPath."
+            )
+
+        // Default ist eine direkte URL?
+        if (defaultValue.contains("://")) {
+            return substituteEnvVars(defaultValue, defaultKey)
+        }
+
+        // Default ist ein Connection-Name → über database.connections auflösen.
+        val rawUrl = lookupConnectionUrl(configPath, defaultValue)
+        return substituteEnvVars(rawUrl, defaultValue)
+    }
+
+    /**
+     * Liest `database.<key>` aus der bereits geparsten Config-Datei.
+     * Gibt `null` zurück wenn der Key nicht gesetzt ist.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun lookupDefaultValue(configPath: Path, key: String): String? {
+        val parsed: Any? = try {
+            val settings = LoadSettings.builder().build()
+            Files.newInputStream(configPath).use { input ->
+                Load(settings).loadFromInputStream(input)
+            }
+        } catch (t: Throwable) {
+            throw ConfigResolveException(
+                "Failed to parse $configPath: ${t.message ?: t::class.simpleName}",
+                cause = t,
+            )
+        }
+
+        val root = parsed as? Map<String, Any?>
+            ?: throw ConfigResolveException("Failed to parse $configPath: top-level YAML must be a mapping")
+
+        val database = root["database"] as? Map<String, Any?> ?: return null
+        val value = database[key] ?: return null
+
+        return when (value) {
+            is String -> value
+            else -> throw ConfigResolveException(
+                "database.$key in $configPath must be a string, got ${value::class.simpleName}"
+            )
+        }
     }
 
     /**
