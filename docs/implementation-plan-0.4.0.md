@@ -3,7 +3,7 @@
 > Dieses Dokument beschreibt den konkreten Implementierungsplan für Milestone 0.4.0.
 > Es dient als laufend gepflegte Spezifikation und Review-Grundlage während der Umsetzung.
 >
-> **Status**: In Arbeit — Phase A bis D (Schritte 19–22) umgesetzt; Schritt 23 sowie Phase E/F noch offen; Plan wird gegen den Implementierungsstand nachgeführt.
+> **Status**: In Arbeit — Phase A bis D (Schritte 19–23) umgesetzt; Phase E/F noch offen; Plan wird gegen den Implementierungsstand nachgeführt.
 
 ---
 

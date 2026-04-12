@@ -102,7 +102,7 @@ ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
-**Aktueller Stand (2026-04-11)**: Milestone 0.4.0 ist weiterhin in Arbeit.
+**Aktueller Stand (2026-04-12)**: Milestone 0.4.0 ist weiterhin in Arbeit.
 Der JDBC-Import-Unterbau der Phase C ist jedoch abgeschlossen:
 
 - `DataWriter` / `TableImportSession` / `SchemaSync` / `SequenceAdjustment`
@@ -112,6 +112,8 @@ Der JDBC-Import-Unterbau der Phase C ist jedoch abgeschlossen:
   `DataWriterRegistry` wurde bewusst nicht eingeführt.
 - PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade und
   Bootstrap-Lookup sind implementiert und testseitig abgedeckt.
+- Phase D (Schritte 19–23) ist mit den neuen SQLite-Streaming- und Reorder-
+  Perf-Artefakten nachgezogen abgeschlossen.
 - Offen für 0.4.0 bleiben damit vor allem die noch ausstehenden Core-/CLI-/
   Format-Schritte oberhalb des Driver-Layers sowie die finalen Round-Trip-
   und End-to-End-Importpfade.

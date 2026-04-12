@@ -3,7 +3,7 @@
 > **Milestone**: 0.4.0 — Datenimport und inkrementelle Datenpfade
 > **Phase**: D (Streaming-Import-Verifikation und Perf-Gate)
 > **Schritt**: 23
-> **Status**: Geplant
+> **Status**: Abgeschlossen (lokal verifiziert)
 > **Referenz**: `implementation-plan-0.4.0.md` §4 Phase D Schritt 23, §6.5, §6.15, §10 M2
 
 ---
@@ -294,22 +294,22 @@ verpflichtend:
 
 ## 9. Abnahmekriterien
 
-- [ ] `StreamingImporterSqliteTest.kt` ist vorhanden
-- [ ] der SQLite-Test nutzt produktive Reader-/Importer-/Writer-Pfade statt Fakes
-- [ ] `adapters/driven/streaming` ist testseitig so verdrahtet, dass der reale SQLite-Pfad dort kompiliert und läuft
-- [ ] der SQLite-Layer deckt genau zwei echte Formatpfade ab: JSON plus genau einer aus YAML/CSV
-- [ ] Header-Reordering wird gegen echte SQLite-Imports verifiziert
-- [ ] `onConflict=skip` und `onConflict=update` sind im SQLite-Streamingpfad getestet
-- [ ] `onError=log` ist im SQLite-Streamingpfad getestet
-- [ ] `SqliteSchemaSync` / `sqlite_sequence` ist über den Importpfad verifiziert
-- [ ] `StreamingImporterReorderPerfTest.kt` oder äquivalenter opt-in-Perf-Lauf ist vorhanden
-- [ ] der Perf-Lauf wurde lokal ausgeführt
-- [ ] `docs/perf/0.4.0-phase-d-reorder.md` ist vorhanden
-- [ ] das Perf-Dokument enthält alle sechs Reproduzierbarkeitsfelder
-- [ ] das Perf-Dokument enthält die Entscheidung `additiver Vertrag JA/NEIN`
+- [x] `StreamingImporterSqliteTest.kt` ist vorhanden
+- [x] der SQLite-Test nutzt produktive Reader-/Importer-/Writer-Pfade statt Fakes
+- [x] `adapters/driven/streaming` ist testseitig so verdrahtet, dass der reale SQLite-Pfad dort kompiliert und läuft
+- [x] der SQLite-Layer deckt genau zwei echte Formatpfade ab: JSON plus genau einer aus YAML/CSV
+- [x] Header-Reordering wird gegen echte SQLite-Imports verifiziert
+- [x] `onConflict=skip` und `onConflict=update` sind im SQLite-Streamingpfad getestet
+- [x] `onError=log` ist im SQLite-Streamingpfad getestet
+- [x] `SqliteSchemaSync` / `sqlite_sequence` ist über den Importpfad verifiziert
+- [x] `StreamingImporterReorderPerfTest.kt` oder äquivalenter opt-in-Perf-Lauf ist vorhanden
+- [x] der Perf-Lauf wurde lokal ausgeführt
+- [x] `docs/perf/0.4.0-phase-d-reorder.md` ist vorhanden
+- [x] das Perf-Dokument enthält alle sechs Reproduzierbarkeitsfelder
+- [x] das Perf-Dokument enthält die Entscheidung `additiver Vertrag JA/NEIN`
 - [ ] Modul `adapters/driven/streaming` erreicht ≥ 90 % Line-Coverage (Jacoco)
 - [ ] `docker build -t d-migrate:dev .` baut erfolgreich
-- [ ] Phase D ist erst nach diesem Artefakt als abgeschlossen dokumentiert
+- [x] Phase D ist erst nach diesem Artefakt als abgeschlossen dokumentiert
 
 ---
 
