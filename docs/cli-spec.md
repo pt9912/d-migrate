@@ -371,23 +371,27 @@ d-migrate schema reverse --source <url|path> [--source-dialect <dialect>] --outp
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema compare` *(geplant: 0.5.0)*
+#### `schema compare` *(geplant: 0.5.0, file-based MVP-Slice von LF-015)*
 
-Vergleicht zwei Schemas und zeigt Unterschiede.
+Vergleicht zwei Schema-Dateien im neutralen Format und zeigt Unterschiede.
 
 ```
-d-migrate schema compare --source <path|url> --target <path|url>
+d-migrate schema compare --source <path> --target <path>
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad/URL | Erstes Schema (Datei oder DB) |
-| `--target` | Ja | Pfad/URL | Zweites Schema (Datei oder DB) |
+| `--source` | Ja | Pfad | Erstes Schema (Datei im neutralen Format) |
+| `--target` | Ja | Pfad | Zweites Schema (Datei im neutralen Format) |
 | `--output` | Nein | Pfad | Diff-Ergebnis in Datei schreiben |
 
-Exit: `0` wenn identisch, `1` wenn Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`), `3` bei Validierungsfehlern.
+Exit: `0` wenn identisch, `1` wenn Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`), `2` bei CLI-Fehlern, `3` bei Validierungsfehlern, `7` bei Datei-/Parse-/I/O-Fehlern.
 
-#### `schema migrate` *(geplant: 0.5.0)*
+Hinweis: Die vollständige LF-015-Abdeckung "Vergleich zwischen Umgebungen" ist
+nicht Teil des 0.5.0-MVP-Slices. DB-/Umgebungsvergleiche folgen erst nach
+Einführung des `SchemaReader` ab 0.6.0.
+
+#### `schema migrate` *(geplant: späterer Milestone)*
 
 Generiert Migrationsskript (Up + optional Down) aus Schema-Diff.
 
@@ -404,7 +408,10 @@ d-migrate schema migrate --source <path> --target <url> [--generate-rollback]
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema rollback` *(geplant: 0.5.0)*
+Hinweis: Nicht Teil des 0.5.0-MVP-Releases; hängt an weiterem Diff- und
+Migrationsmodell jenseits des file-based `schema compare`.
+
+#### `schema rollback` *(geplant: späterer Milestone)*
 
 Führt ein Rollback-Migrationsskript gegen eine Datenbank aus.
 
@@ -419,6 +426,9 @@ d-migrate schema rollback --source <path> --target <url>
 | `--dry-run` | Nein | Boolean | Nur anzeigen, nicht ausführen |
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Migrationsfehlern.
+
+Hinweis: Nicht Teil des 0.5.0-MVP-Releases; wird zusammen mit dem
+Migrations-/Rollback-Pfad in einem späteren Milestone konkretisiert.
 
 ### 6.2 data
 
@@ -718,26 +728,32 @@ Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 ### 7.1 Format
 
-Langläufige Operationen (>2 Sekunden) zeigen automatisch eine Fortschrittsanzeige:
+Langläufige Operationen (>2 Sekunden) können automatisch
+Status-/Fortschrittszeilen auf `stderr` ausgeben.
+
+Im MVP-Umfang von 0.5.0 ist diese Anzeige ereignisbasiert: Start, laufender
+Status, Zwischenstände und Abschluss. Prozentwerte und ETA sind Best-Effort und
+nur verfügbar, wenn der jeweilige Command verlässliche Totals kennt.
 
 ```
-Exporting table 'orders' [████████░░░░░░░░] 52% | 520,000/1,000,000 | ~45s remaining
+Exporting table 'orders' | 520,000 rows processed
 ```
 
 Struktur:
 ```
-<Operation> '<Objekt>' [<Balken>] <Prozent> | <Fortschritt>/<Gesamt> | ~<Rest> remaining
+<Operation> '<Objekt>' | <Status>
+optional: | <Fortschritt>/<Gesamt> | ~<Rest>
 ```
 
 ### 7.2 Multi-Tabellen-Fortschritt
 
-Bei paralleler Verarbeitung mehrerer Tabellen:
+Bei Verarbeitung mehrerer Tabellen:
 
 ```
 Exporting 5 tables (2 active, 1 completed, 2 pending)
-  ✓ customers       1,234 records (0.2s)
-  ● orders          [████████░░░░░░░░] 52% | 520,000/1,000,000
-  ● order_items     [██░░░░░░░░░░░░░░] 12% | 240,000/2,000,000
+  ✓ customers       completed (1,234 records)
+  ● orders          active (520,000 rows processed)
+  ● order_items     active (240,000 rows processed)
   ○ products        pending
   ○ categories      pending
 ```
@@ -749,7 +765,8 @@ Symbole: `✓` abgeschlossen, `●` aktiv, `○` wartend
 - `--no-progress`: Keine Fortschrittsanzeige (für Scripting)
 - `--quiet`: Nur Fehler
 - Fortschrittsanzeige geht nach **stderr** (stdout bleibt sauber für Piping)
-- Bei `--output-format json`: Fortschritt als JSON-Events auf stderr
+- Bei `--output-format json` bleibt Fortschritt im MVP stderr-basierte
+  Textausgabe; JSON-Progress-Events sind nicht Teil des 0.5.0-Vertrags
 
 ---
 

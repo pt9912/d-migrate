@@ -150,17 +150,19 @@ konkretisiert.
 
 | Bereich | Aufgabe                                       | LF-Ref |
 | ------- | --------------------------------------------- | ------ |
-| Core    | Schema-Diff-Engine (Vergleich zweier Schemas) | LF-015 |
-| CLI     | `d-migrate schema compare` Kommando           | LF-015 |
+| Core    | Schema-Diff-Engine (Vergleich zweier Schemas, file-based MVP) | LF-015 |
+| CLI     | `d-migrate schema compare` Kommando (Datei-zu-Datei, MVP-Slice) | LF-015 |
 | CLI     | Fortschrittsanzeige für lange Operationen     | LN-017 |
 | Docs    | Anwenderhandbuch (Basis)                      | —      |
 | Docs    | CLI-Referenz                                  | —      |
-| Docs    | Beispiel-Projekte (E-Commerce-Schema)         | —      |
 | Build   | GitHub Releases (Fat JAR)                     | —      |
 | Build   | Homebrew-Formula (Basis)                      | —      |
 | QA      | Code-Coverage >= 80%                          | LN-045 |
 
-**Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung und Daten-Export/Import nutzen.
+**Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung
+und Daten-Export/Import nutzen. LF-015 ist in 0.5.0 bewusst nur teilweise
+abgedeckt: `schema compare` vergleicht zwei neutrale Schema-Dateien; der volle
+Vergleich zwischen Umgebungen bzw. Datenbanken folgt in 0.6.0.
 
 ### Milestone 0.5.5 — Erweitertes Typsystem
 
@@ -200,9 +202,13 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 | Driver  | MySQL-spezifisch: Engine, AUTO_INCREMENT, SET-Typen             | LF-004 |
 | Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                | LF-004 |
 | CLI     | `d-migrate schema reverse --source <db-url>`                    | LF-004 |
+| CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | LF-015 |
+| Docs    | Beispiel-Projekte (E-Commerce-Schema)                           | —      |
 | Test    | Reverse-Engineering gegen komplexe Test-Schemas                 | 8.4    |
 
-**Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt werden.
+**Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt
+werden. Damit wird auch LF-015 vervollständigt: Vergleiche sind dann nicht nur
+Datei-zu-Datei, sondern zwischen Umgebungen bzw. Datenbanken möglich.
 
 ### Milestone 0.7.0 — Tool-Integrationen
 
