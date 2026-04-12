@@ -163,6 +163,8 @@ und Daten-Export/Import nutzen. LF-015 ist in 0.5.0 bewusst nur teilweise
 abgedeckt: `schema compare` vergleicht zwei neutrale Schema-Dateien; der volle
 Vergleich zwischen Umgebungen bzw. Datenbanken folgt in 0.6.0.
 
+Detaillierter Plan: [implementation-plan-0.5.0.md](./implementation-plan-0.5.0.md)
+
 ### Milestone 0.5.5 — Erweitertes Typsystem
 
 | Bereich | Aufgabe                                                                             | LF-Ref |

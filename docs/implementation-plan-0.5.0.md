@@ -196,7 +196,7 @@ Nicht Ziel von 0.5.0:
 
 ## 5. Geplante Arbeitspakete
 
-### Phase A - Spezifikationsbereinigung und Scope-Fixierung
+### Phase A - Spezifikationsbereinigung und Scope-Fixierung ✅
 
 1. `docs/cli-spec.md` fuer `schema compare` auf den 0.5.0-MVP-Vertrag
    umstellen:

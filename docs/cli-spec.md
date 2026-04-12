@@ -385,7 +385,18 @@ d-migrate schema compare --source <path> --target <path>
 | `--target` | Ja | Pfad | Zweites Schema (Datei im neutralen Format) |
 | `--output` | Nein | Pfad | Diff-Ergebnis in Datei schreiben |
 
-Exit: `0` wenn identisch, `1` wenn Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`), `2` bei CLI-Fehlern, `3` bei Validierungsfehlern, `7` bei Datei-/Parse-/I/O-Fehlern.
+**Ausgabeverhalten**:
+- **stdout**: Diff-Ausgabe im Textformat (wenn kein `--output`)
+- **stderr**: Fehler und ggf. Fortschrittshinweise
+- **`--output`**: Diff-Ergebnis in Datei statt stdout (Format folgt `--output-format`)
+- **`--output-format json|yaml`**: Diff als strukturiertes JSON bzw. YAML
+
+**Exit-Codes**:
+- `0`: Schemas identisch (keine Unterschiede)
+- `1`: Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`)
+- `2`: Ungültige CLI-Argumente
+- `3`: Schema-Validierung fehlgeschlagen
+- `7`: Datei-/Parse-/I/O-Fehler
 
 Hinweis: Die vollständige LF-015-Abdeckung "Vergleich zwischen Umgebungen" ist
 nicht Teil des 0.5.0-MVP-Slices. DB-/Umgebungsvergleiche folgen erst nach
