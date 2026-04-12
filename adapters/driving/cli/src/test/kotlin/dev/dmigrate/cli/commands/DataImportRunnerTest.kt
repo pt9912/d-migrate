@@ -173,6 +173,8 @@ class DataImportRunnerTest : FunSpec({
         schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
             SchemaPreflightResult(input)
         },
+        schemaTargetValidator: (schema: dev.dmigrate.core.model.SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
+            { _, _, _ -> },
         importExecutor: ImportExecutor = successExecutor,
         stdinProvider: () -> java.io.InputStream = { ByteArrayInputStream("""[{"id":1}]""".toByteArray()) },
     ): DataImportRunner = DataImportRunner(
@@ -181,6 +183,7 @@ class DataImportRunnerTest : FunSpec({
         poolFactory = poolFactory,
         writerLookup = writerLookup,
         schemaPreflight = schemaPreflight,
+        schemaTargetValidator = schemaTargetValidator,
         importExecutor = importExecutor,
         stdinProvider = stdinProvider,
         stderr = stderr.sink,
@@ -734,6 +737,7 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
             importExecutor = ImportExecutor { _, input, _, _, _, onTableOpened ->
                 val tableName = when (input) {
                     is ImportInput.Stdin -> input.table

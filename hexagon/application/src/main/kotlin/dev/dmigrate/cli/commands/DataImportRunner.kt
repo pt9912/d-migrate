@@ -98,6 +98,8 @@ class DataImportRunner(
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
         { _, input, _ -> SchemaPreflightResult(input) },
+    private val schemaTargetValidator: (schema: SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
+        { _, _, _ -> },
     private val importExecutor: ImportExecutor,
     private val stdinProvider: () -> InputStream = { System.`in` },
     private val stderr: (String) -> Unit = { System.err.println(it) },
@@ -299,7 +301,7 @@ class DataImportRunner(
         val onTableOpened: (String, List<TargetColumn>) -> Unit =
             preparedImport.schema?.let { schema ->
                 { table, targetColumns ->
-                    DataImportSchemaPreflight.validateTargetTable(schema, table, targetColumns)
+                    schemaTargetValidator(schema, table, targetColumns)
                 }
             } ?: { _, _ -> }
 
