@@ -456,8 +456,7 @@ object DataImportSchemaPreflight {
                     targetColumn.jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.NCHAR, Types.NVARCHAR) ||
                     (targetColumn.jdbcType == Types.OTHER && sqlTypeName.isNotEmpty() &&
                         sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES &&
-                        ref != null &&
-                        sqlTypeName == ref)
+                        (ref == null || sqlTypeName == ref))
             }
             is NeutralType.Array ->
                 targetColumn.jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
