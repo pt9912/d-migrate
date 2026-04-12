@@ -35,7 +35,7 @@ class DataCommand : CliktCommand(name = "data") {
     override fun help(context: Context) = "Data export and import commands"
 
     init {
-        subcommands(DataExportCommand())
+        subcommands(DataExportCommand(), DataImportCommand())
     }
 
     override fun run() = Unit
