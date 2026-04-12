@@ -1,0 +1,477 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pt9912/d-migrate/docs/schema.json",
+  "title": "d-migrate Schema",
+  "description": "Neutrales, datenbankunabhaengiges Schema-Format fuer d-migrate",
+  "type": "object",
+  "required": ["schema_format", "name", "version"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_format": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Format-Version (immer \"1.0\")"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Schema-Name"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Anwendungs-Schema-Version (z.B. \"1.0.0\")"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optionale Beschreibung"
+    },
+    "encoding": {
+      "type": "string",
+      "default": "utf-8",
+      "description": "Standard-Encoding"
+    },
+    "locale": {
+      "type": "string",
+      "description": "Standard-Locale (z.B. \"de_DE\")"
+    },
+    "custom_types": {
+      "type": "object",
+      "description": "Benutzerdefinierte Typen (Enum, Composite, Domain)",
+      "additionalProperties": { "$ref": "#/$defs/customType" }
+    },
+    "tables": {
+      "type": "object",
+      "description": "Tabellen-Definitionen",
+      "additionalProperties": { "$ref": "#/$defs/table" }
+    },
+    "procedures": {
+      "type": "object",
+      "description": "Stored Procedures",
+      "additionalProperties": { "$ref": "#/$defs/procedure" }
+    },
+    "functions": {
+      "type": "object",
+      "description": "User-Defined Functions",
+      "additionalProperties": { "$ref": "#/$defs/function" }
+    },
+    "views": {
+      "type": "object",
+      "description": "Views und Materialized Views",
+      "additionalProperties": { "$ref": "#/$defs/view" }
+    },
+    "triggers": {
+      "type": "object",
+      "description": "Trigger",
+      "additionalProperties": { "$ref": "#/$defs/trigger" }
+    },
+    "sequences": {
+      "type": "object",
+      "description": "Explizit definierte Sequenzen",
+      "additionalProperties": { "$ref": "#/$defs/sequence" }
+    }
+  },
+  "$defs": {
+    "table": {
+      "type": "object",
+      "required": ["columns", "primary_key"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "columns": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/column" }
+        },
+        "primary_key": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Primaerschluessel-Spalten"
+        },
+        "indices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/index" }
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/constraint" }
+        },
+        "partitioning": { "$ref": "#/$defs/partitioning" }
+      }
+    },
+    "column": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "identifier", "text", "char", "integer", "smallint", "biginteger",
+            "float", "decimal", "boolean", "datetime", "date", "time",
+            "uuid", "json", "xml", "binary", "email", "enum", "array"
+          ],
+          "description": "Einer der 18 neutralen Typen"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "NOT NULL"
+        },
+        "unique": {
+          "type": "boolean",
+          "default": false,
+          "description": "UNIQUE-Constraint"
+        },
+        "default": {
+          "description": "Default-Wert (String, Zahl, Boolean oder Funktionsname)",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" }
+          ]
+        },
+        "auto_increment": {
+          "type": "boolean",
+          "description": "Nur bei type: identifier"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nur bei type: text"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nur bei type: char (Pflicht)"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nur bei type: decimal (Pflicht)"
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Nur bei type: decimal (Pflicht)"
+        },
+        "float_precision": {
+          "type": "string",
+          "enum": ["single", "double"],
+          "default": "double",
+          "description": "Nur bei type: float"
+        },
+        "timezone": {
+          "type": "boolean",
+          "default": false,
+          "description": "Nur bei type: datetime — WITH TIME ZONE"
+        },
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Nur bei type: enum — Inline-Werte"
+        },
+        "ref_type": {
+          "type": "string",
+          "description": "Nur bei type: enum — Verweis auf custom_types"
+        },
+        "element_type": {
+          "type": "string",
+          "description": "Nur bei type: array (Pflicht)"
+        },
+        "references": { "$ref": "#/$defs/reference" }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["table", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "table": {
+          "type": "string",
+          "description": "Referenzierte Tabelle"
+        },
+        "column": {
+          "type": "string",
+          "description": "Referenzierte Spalte"
+        },
+        "on_delete": { "$ref": "#/$defs/referentialAction" },
+        "on_update": { "$ref": "#/$defs/referentialAction" }
+      }
+    },
+    "referentialAction": {
+      "type": "string",
+      "enum": ["restrict", "cascade", "set_null", "set_default", "no_action"]
+    },
+    "index": {
+      "type": "object",
+      "required": ["columns"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": ["btree", "hash", "gin", "gist", "brin"],
+          "default": "btree"
+        },
+        "unique": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["check", "unique", "exclude", "foreign_key"]
+        },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "expression": {
+          "type": "string",
+          "description": "Nur bei type: check"
+        },
+        "references": {
+          "type": "object",
+          "required": ["table", "columns"],
+          "additionalProperties": false,
+          "properties": {
+            "table": { "type": "string" },
+            "columns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            },
+            "on_delete": { "$ref": "#/$defs/referentialAction" },
+            "on_update": { "$ref": "#/$defs/referentialAction" }
+          },
+          "description": "Nur bei type: foreign_key"
+        }
+      }
+    },
+    "partitioning": {
+      "type": "object",
+      "required": ["type", "key"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["range", "hash", "list"]
+        },
+        "key": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "partitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "values": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "customType": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["enum", "composite", "domain"]
+        },
+        "description": { "type": "string" },
+        "values": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Nur bei kind: enum"
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/column" },
+          "description": "Nur bei kind: composite"
+        },
+        "base_type": {
+          "type": "string",
+          "description": "Nur bei kind: domain"
+        },
+        "precision": {
+          "type": "integer",
+          "description": "Nur bei kind: domain (decimal)"
+        },
+        "scale": {
+          "type": "integer",
+          "description": "Nur bei kind: domain (decimal)"
+        },
+        "check": {
+          "type": "string",
+          "description": "Nur bei kind: domain — CHECK-Expression"
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "direction": {
+          "type": "string",
+          "enum": ["in", "out", "inout"],
+          "default": "in"
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tables": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "columns": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "procedure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        },
+        "language": { "type": "string" },
+        "body": { "type": "string" },
+        "dependencies": { "$ref": "#/$defs/dependencies" },
+        "source_dialect": { "type": "string" }
+      }
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        },
+        "returns": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string" },
+            "precision": { "type": "integer" },
+            "scale": { "type": "integer" }
+          }
+        },
+        "language": { "type": "string" },
+        "deterministic": { "type": "boolean" },
+        "body": { "type": "string" },
+        "dependencies": { "$ref": "#/$defs/dependencies" },
+        "source_dialect": { "type": "string" }
+      }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "materialized": {
+          "type": "boolean",
+          "default": false
+        },
+        "refresh": {
+          "type": "string",
+          "enum": ["on_demand", "on_commit"]
+        },
+        "query": { "type": "string" },
+        "dependencies": { "$ref": "#/$defs/dependencies" },
+        "source_dialect": { "type": "string" }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["table", "event", "timing"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "table": { "type": "string" },
+        "event": {
+          "type": "string",
+          "enum": ["insert", "update", "delete"]
+        },
+        "timing": {
+          "type": "string",
+          "enum": ["before", "after", "instead_of"]
+        },
+        "for_each": {
+          "type": "string",
+          "enum": ["row", "statement"],
+          "default": "row"
+        },
+        "condition": { "type": "string" },
+        "body": { "type": "string" },
+        "dependencies": { "$ref": "#/$defs/dependencies" },
+        "source_dialect": { "type": "string" }
+      }
+    },
+    "sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "start": {
+          "type": "integer",
+          "default": 1
+        },
+        "increment": {
+          "type": "integer",
+          "default": 1
+        },
+        "min_value": { "type": "integer" },
+        "max_value": { "type": "integer" },
+        "cycle": {
+          "type": "boolean",
+          "default": false
+        },
+        "cache": { "type": "integer" }
+      }
+    }
+  }
+}
