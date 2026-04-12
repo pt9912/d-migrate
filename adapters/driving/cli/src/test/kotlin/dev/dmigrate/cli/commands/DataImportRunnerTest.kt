@@ -11,6 +11,7 @@ import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.TableImportSession
+import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
@@ -62,7 +63,7 @@ class DataImportRunnerTest : FunSpec({
             error("FakeDataWriter.openTable() must not be called — runner delegates to ImportExecutor")
     }
 
-    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _ ->
+    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _, _ ->
         val tables = when (input) {
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
@@ -169,7 +170,9 @@ class DataImportRunnerTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> ImportInput = { _, input, _ -> input },
+        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
+            SchemaPreflightResult(input)
+        },
         importExecutor: ImportExecutor = successExecutor,
         stdinProvider: () -> java.io.InputStream = { ByteArrayInputStream("""[{"id":1}]""".toByteArray()) },
     ): DataImportRunner = DataImportRunner(
@@ -419,7 +422,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 throw ImportSchemaMismatchException("column 'userId' has no exact match")
             },
         )
@@ -497,7 +500,7 @@ class DataImportRunnerTest : FunSpec({
                 "sqlite:///tmp/should-not-be-used.db"
             },
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 executorInvoked = true
                 error("importExecutor must not be called when schema preflight fails")
             },
@@ -557,7 +560,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -570,7 +573,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -596,7 +599,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -628,7 +631,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 throw UnsupportedTriggerModeException(
                     "--trigger-mode disable is not supported for dialect MYSQL"
                 )
@@ -644,7 +647,7 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            importExecutor = ImportExecutor { _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )
@@ -684,9 +687,9 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { pool, input, format, options, config ->
+            importExecutor = ImportExecutor { pool, input, format, options, config, _ ->
                 seenInput = input
-                successExecutor.execute(pool, input, format, options, config)
+                successExecutor.execute(pool, input, format, options, config) { _, _ -> }
             },
         )
         assertExit(
@@ -706,6 +709,53 @@ class DataImportRunnerTest : FunSpec({
         Files.deleteIfExists(importDir.resolve("users.json"))
         Files.deleteIfExists(schemaFile)
         Files.deleteIfExists(importDir)
+    }
+
+    test("Exit 3: --schema target validation runs after openTable and before writes") {
+        val schemaFile = Files.createTempFile("dmigrate-target-schema-", ".yaml")
+        Files.writeString(
+            schemaFile,
+            """
+            schema_format: "1.0"
+            name: "TargetCheck"
+            version: "1.0.0"
+            tables:
+              users:
+                columns:
+                  id:
+                    type: identifier
+                  email:
+                    type: email
+                    required: true
+            """.trimIndent()
+        )
+        var wrotePastOpen = false
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            schemaPreflight = DataImportSchemaPreflight::prepare,
+            importExecutor = ImportExecutor { _, input, _, _, _, onTableOpened ->
+                val tableName = when (input) {
+                    is ImportInput.Stdin -> input.table
+                    is ImportInput.SingleFile -> input.table
+                    is ImportInput.Directory -> "users"
+                }
+                onTableOpened(
+                    tableName,
+                    listOf(
+                        TargetColumn("id", nullable = false, jdbcType = java.sql.Types.INTEGER, sqlTypeName = "INTEGER"),
+                        TargetColumn("email", nullable = true, jdbcType = java.sql.Types.INTEGER, sqlTypeName = "INTEGER"),
+                    ),
+                )
+                wrotePastOpen = true
+                error("importExecutor must not continue after schema target mismatch")
+            },
+        )
+        assertExit(runner.execute(request(schema = schemaFile)), 3, stderr)
+        wrotePastOpen shouldBe false
+        stderr.joined() shouldContain "does not match the provided --schema"
+        stderr.joined() shouldContain "nullability mismatch"
+        Files.deleteIfExists(schemaFile)
     }
 
     // ─── Pre-pool exits ─────────────────────────────────────────

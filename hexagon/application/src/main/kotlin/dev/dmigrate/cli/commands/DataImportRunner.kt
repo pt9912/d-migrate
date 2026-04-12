@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -9,6 +10,7 @@ import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.OnError
 import dev.dmigrate.driver.data.TriggerMode
+import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
@@ -29,6 +31,11 @@ class ImportPreflightException(
     cause: Throwable? = null,
 ) : IllegalArgumentException(message, cause)
 
+data class SchemaPreflightResult(
+    val input: ImportInput,
+    val schema: SchemaDefinition? = null,
+)
+
 /**
  * Thin seam over the streaming import, allowing the Runner to be tested
  * without a real [StreamingImporter][dev.dmigrate.streaming.StreamingImporter].
@@ -41,6 +48,7 @@ fun interface ImportExecutor {
         format: DataExportFormat,
         options: ImportOptions,
         config: PipelineConfig,
+        onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
     ): ImportResult
 }
 
@@ -88,8 +96,8 @@ class DataImportRunner(
     private val urlParser: (String) -> ConnectionConfig,
     private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
-    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> ImportInput =
-        { _, input, _ -> input },
+    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
+        { _, input, _ -> SchemaPreflightResult(input) },
     private val importExecutor: ImportExecutor,
     private val stdinProvider: () -> InputStream = { System.`in` },
     private val stderr: (String) -> Unit = { System.err.println(it) },
@@ -175,7 +183,7 @@ class DataImportRunner(
         }
 
         // ─── 4. Optionales --schema-Preflight ───────────────────
-        val preparedInput = if (request.schema != null) {
+        val preparedImport = if (request.schema != null) {
             try {
                 schemaPreflight(request.schema, importInput, format)
             } catch (e: ImportPreflightException) {
@@ -183,7 +191,7 @@ class DataImportRunner(
                 return 3
             }
         } else {
-            importInput
+            SchemaPreflightResult(importInput)
         }
 
         // ─── 5. Encoding parsen ─────────────────────────────────
@@ -245,7 +253,7 @@ class DataImportRunner(
         }
 
         return try {
-            executeWithPool(request, connectionConfig, charset, format, preparedInput, pool)
+            executeWithPool(request, connectionConfig, charset, format, preparedImport, pool)
         } finally {
             try { pool.close() } catch (_: Throwable) {}
         }
@@ -256,7 +264,7 @@ class DataImportRunner(
         connectionConfig: ConnectionConfig,
         charset: Charset?,
         format: DataExportFormat,
-        importInput: ImportInput,
+        preparedImport: SchemaPreflightResult,
         pool: ConnectionPool,
     ): Int {
         // ─── 8. Writer-Lookup ──────────────────────────────────
@@ -288,15 +296,22 @@ class DataImportRunner(
             onError = onError,
         )
         val pipelineConfig = PipelineConfig(chunkSize = request.chunkSize)
+        val onTableOpened: (String, List<TargetColumn>) -> Unit =
+            preparedImport.schema?.let { schema ->
+                { table, targetColumns ->
+                    DataImportSchemaPreflight.validateTargetTable(schema, table, targetColumns)
+                }
+            } ?: { _, _ -> }
 
         // ─── 10. Streaming ─────────────────────────────────────
         val result: ImportResult = try {
             importExecutor.execute(
                 pool = pool,
-                input = importInput,
+                input = preparedImport.input,
                 format = format,
                 options = importOptions,
                 config = pipelineConfig,
+                onTableOpened = onTableOpened,
             )
         } catch (e: UnsupportedTriggerModeException) {
             stderr("Error: ${e.message}")

@@ -28,6 +28,7 @@ import kotlin.io.path.name
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
+    private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
 ) {
 
     fun import(
@@ -92,6 +93,7 @@ class StreamingImporter(
                 options = options,
             )
             session = writer.openTable(pool, tableInput.table, options)
+            onTableOpened(tableInput.table, session.targetColumns)
             targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
 
             val firstChunk = reader.nextChunk()

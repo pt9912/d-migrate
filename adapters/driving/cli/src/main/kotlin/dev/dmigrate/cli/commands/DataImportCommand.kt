@@ -159,11 +159,13 @@ class DataImportCommand : CliktCommand(name = "import") {
             poolFactory = HikariConnectionPoolFactory::create,
             writerLookup = { DatabaseDriverRegistry.get(it).dataWriter() },
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { pool, input, fmt, opts, cfg ->
+            importExecutor = ImportExecutor { pool, input, fmt, opts, cfg, onTableOpened ->
                 val readerFactory = DefaultDataChunkReaderFactory()
-                val importer = StreamingImporter(readerFactory) { dialect ->
-                    DatabaseDriverRegistry.get(dialect).dataWriter()
-                }
+                val importer = StreamingImporter(
+                    readerFactory = readerFactory,
+                    writerLookup = { dialect -> DatabaseDriverRegistry.get(dialect).dataWriter() },
+                    onTableOpened = onTableOpened,
+                )
                 importer.import(pool, input, fmt, opts, cfg)
             },
         )
