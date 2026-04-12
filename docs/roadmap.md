@@ -204,12 +204,22 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 | Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                | LF-004 |
 | CLI     | `d-migrate schema reverse --source <db-url>`                    | LF-004 |
 | CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | LF-015 |
+| Core    | `StreamingTransfer`-Orchestrator: DB-zu-DB-Streaming ohne Zwischenformat | LF-025 |
+| CLI     | `d-migrate data transfer --source <url> --target <url>` Kommando | LF-025 |
 | Docs    | Beispiel-Projekte (E-Commerce-Schema)                           | —      |
 | Test    | Reverse-Engineering gegen komplexe Test-Schemas                 | 8.4    |
 
 **Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt
 werden. Damit wird auch LF-015 vervollständigt: Vergleiche sind dann nicht nur
 Datei-zu-Datei, sondern zwischen Umgebungen bzw. Datenbanken möglich.
+
+`data transfer` nutzt den `SchemaReader` für automatische FK-Reihenfolge und
+streamt Daten direkt von `DataReader` zu `DataWriter` — ohne Serialisierung
+in ein Zwischenformat. Unterstützt `--tables`, `--filter`, `--truncate`,
+`--on-conflict update`, `--since-column`/`--since` und `--trigger-mode` analog
+zu den bestehenden Export-/Import-Flags. Grundlage für die Teil-Replikation
+(LF-025) in 1.4.0; dort kommen Datenmaskierung und selektive Datensatzfilter
+hinzu.
 
 ### Milestone 0.7.0 — Tool-Integrationen
 
@@ -435,6 +445,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 2.0
+**Version**: 2.1
 **Stand**: 2026-04-12
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 in Umsetzung (Phase A erledigt); 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 in Umsetzung (Phase A erledigt); 0.5.5 neu aufgenommen, `data transfer` in 0.6.0 aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
