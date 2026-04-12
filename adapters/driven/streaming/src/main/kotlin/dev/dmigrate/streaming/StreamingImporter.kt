@@ -492,11 +492,16 @@ class StreamingImporter(
         }.toMutableMap()
 
         if (tableFilter != null) {
-            val missing = tableFilter.filterNot(candidates::containsKey)
+            val resolved = tableFilter.map { name ->
+                if (name in candidates) name
+                else if ('.' in name && name.substringAfterLast('.') in candidates) name.substringAfterLast('.')
+                else name
+            }
+            val missing = resolved.filterNot(candidates::containsKey)
             require(missing.isEmpty()) {
                 "ImportInput.Directory.tableFilter references tables without matching files: ${missing.joinToString()}"
             }
-            candidates.keys.retainAll(tableFilter.toSet())
+            candidates.keys.retainAll(resolved.toSet())
         }
 
         val orderedTables = if (tableOrder != null) {

@@ -43,6 +43,7 @@ object DataImportSchemaPreflight {
         targetColumns: List<TargetColumn>,
     ) {
         val schemaTable = schema.tables[table]
+            ?: schema.tables[table.substringAfterLast('.')]?.takeIf { '.' in table }
             ?: throw ImportSchemaMismatchException(
                 "Table '$table' is not defined in the provided --schema file"
             )
@@ -190,13 +191,17 @@ object DataImportSchemaPreflight {
 
         val tableFilter = input.tableFilter
         if (tableFilter != null) {
-            val missing = tableFilter.filterNot(candidates::containsKey)
+            val missing = tableFilter.filterNot { name ->
+                name in candidates || ('.' in name && name.substringAfterLast('.') in candidates)
+            }
             if (missing.isNotEmpty()) {
                 throw ImportPreflightException(
                     "Directory import filter references tables without matching files: ${missing.joinToString()}"
                 )
             }
-            return tableFilter
+            return tableFilter.map { name ->
+                if (name in candidates) name else name.substringAfterLast('.')
+            }
         }
 
         return candidates.keys.toList()
