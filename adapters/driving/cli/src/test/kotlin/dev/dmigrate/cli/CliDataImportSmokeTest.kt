@@ -69,6 +69,25 @@ class CliDataImportSmokeTest : FunSpec({
         ex.statusCode shouldBe 2
     }
 
+    test("data import without --target and without default_target → Exit 2") {
+        val jsonFile = Files.createTempFile("d-migrate-smoke-no-target-", ".json")
+        Files.writeString(jsonFile, """[{"id":1,"name":"test"}]""")
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "import",
+                        "--source", jsonFile.toString(),
+                        "--table", "users",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(jsonFile)
+        }
+    }
+
     test("data import: real JSON into SQLite (connection error expected since no DB exists)") {
         val jsonFile = Files.createTempFile("d-migrate-smoke-import-", ".json")
         Files.writeString(jsonFile, """[{"id":1,"name":"test"}]""")
@@ -87,6 +106,28 @@ class CliDataImportSmokeTest : FunSpec({
             ex.statusCode shouldBeInRange 4..5
         } finally {
             Files.deleteIfExists(jsonFile)
+        }
+    }
+
+    test("data import: directory source with --table → Exit 2") {
+        val importDir = Files.createTempDirectory("d-migrate-smoke-dir-")
+        Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "import",
+                        "--target", "sqlite:///tmp/d-migrate-cli-smoke.db",
+                        "--source", importDir.toString(),
+                        "--format", "json",
+                        "--table", "users",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(importDir.resolve("users.json"))
+            Files.deleteIfExists(importDir)
         }
     }
 

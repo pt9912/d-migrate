@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.split
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
+import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigResolveException
@@ -48,6 +49,11 @@ class DataImportCommand : CliktCommand(name = "import") {
         "--format",
         help = "Input format: json, yaml, csv (auto-detected from file extension if omitted)",
     ).choice("json", "yaml", "csv")
+
+    val schema by option(
+        "--schema",
+        help = "Optional schema file for local validation and directory import ordering",
+    ).path()
 
     val table by option(
         "--table",
@@ -117,6 +123,7 @@ class DataImportCommand : CliktCommand(name = "import") {
             target = target,
             source = source,
             format = format,
+            schema = schema,
             table = table,
             tables = tables,
             onError = onError,
@@ -138,12 +145,20 @@ class DataImportCommand : CliktCommand(name = "import") {
                 try {
                     NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
                 } catch (e: ConfigResolveException) {
-                    throw IllegalArgumentException(e.message, e)
+                    val message = e.message ?: "Failed to resolve --target."
+                    if (target == null && message.startsWith("--target was not provided")) {
+                        throw CliUsageException(
+                            "--target is required when database.default_target is not set.",
+                            e,
+                        )
+                    }
+                    throw IllegalArgumentException(message, e)
                 }
             },
             urlParser = ConnectionUrlParser::parse,
             poolFactory = HikariConnectionPoolFactory::create,
             writerLookup = { DatabaseDriverRegistry.get(it).dataWriter() },
+            schemaPreflight = DataImportSchemaPreflight::prepare,
             importExecutor = ImportExecutor { pool, input, fmt, opts, cfg ->
                 val readerFactory = DefaultDataChunkReaderFactory()
                 val importer = StreamingImporter(readerFactory) { dialect ->

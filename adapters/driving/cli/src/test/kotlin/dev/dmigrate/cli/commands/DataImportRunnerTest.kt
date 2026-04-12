@@ -12,6 +12,8 @@ import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
+import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.streaming.ImportInput
 import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.TableImportSummary
 import dev.dmigrate.streaming.FailedFinishInfo
@@ -98,6 +100,7 @@ class DataImportRunnerTest : FunSpec({
         target: String? = "sqlite:///tmp/d-migrate-runner-fake.db",
         source: String = tempJsonFile.toString(),
         format: String? = null,
+        schema: Path? = null,
         table: String? = "users",
         tables: List<String>? = null,
         onError: String = "abort",
@@ -117,6 +120,7 @@ class DataImportRunnerTest : FunSpec({
         target = target,
         source = source,
         format = format,
+        schema = schema,
         table = table,
         tables = tables,
         onError = onError,
@@ -165,6 +169,7 @@ class DataImportRunnerTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
+        schemaPreflight: (Path, ImportInput, DataExportFormat) -> ImportInput = { _, input, _ -> input },
         importExecutor: ImportExecutor = successExecutor,
         stdinProvider: () -> java.io.InputStream = { ByteArrayInputStream("""[{"id":1}]""".toByteArray()) },
     ): DataImportRunner = DataImportRunner(
@@ -172,6 +177,7 @@ class DataImportRunnerTest : FunSpec({
         urlParser = urlParser,
         poolFactory = poolFactory,
         writerLookup = writerLookup,
+        schemaPreflight = schemaPreflight,
         importExecutor = importExecutor,
         stdinProvider = stdinProvider,
         stderr = stderr.sink,
@@ -276,6 +282,18 @@ class DataImportRunnerTest : FunSpec({
         stderr.joined() shouldContain "No DataWriter registered"
     }
 
+    test("Exit 2: missing target without default_target maps to CLI error") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            targetResolver = { _, _ ->
+                throw CliUsageException("--target is required when database.default_target is not set.")
+            },
+        )
+        assertExit(runner.execute(request(target = null)), 2, stderr)
+        stderr.joined() shouldContain "--target is required"
+    }
+
     // ─── Exit 2: CLI validation errors ──────────────────────────
 
     test("Exit 2: --table and --tables are mutually exclusive") {
@@ -374,6 +392,13 @@ class DataImportRunnerTest : FunSpec({
         stderr.joined() shouldContain "--table is required"
     }
 
+    test("Exit 2: directory source with --table is rejected") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(source = tempDir.toString(), format = "json", table = "users")) shouldBe 2
+        stderr.joined() shouldContain "--table is only supported for stdin or single-file imports"
+    }
+
     test("Exit 2: source path does not exist") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
@@ -400,6 +425,104 @@ class DataImportRunnerTest : FunSpec({
         )
         assertExit(runner.execute(request()), 3, stderr)
         stderr.joined() shouldContain "userId"
+    }
+
+    test("Exit 3: invalid --schema fails before target resolution") {
+        val schemaFile = Files.createTempFile("dmigrate-invalid-schema-", ".yaml")
+        Files.writeString(
+            schemaFile,
+            """
+            schema_format: "1.0"
+            name: "Broken"
+            version: "1.0.0"
+            tables:
+              users: {}
+            """.trimIndent()
+        )
+        var targetResolverInvoked = false
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            targetResolver = { _, _ ->
+                targetResolverInvoked = true
+                "sqlite:///tmp/should-not-be-used.db"
+            },
+            schemaPreflight = DataImportSchemaPreflight::prepare,
+        )
+        assertExit(runner.execute(request(schema = schemaFile)), 3, stderr)
+        targetResolverInvoked shouldBe false
+        stderr.joined() shouldContain "Schema validation failed"
+        Files.deleteIfExists(schemaFile)
+    }
+
+    test("Exit 3: --schema detects circular directory dependencies before target resolution") {
+        val importDir = Files.createTempDirectory("dmigrate-import-cycle-")
+        Files.writeString(importDir.resolve("a.json"), """[{"id":1}]""")
+        Files.writeString(importDir.resolve("b.json"), """[{"id":1}]""")
+        val schemaFile = Files.createTempFile("dmigrate-cycle-schema-", ".yaml")
+        Files.writeString(
+            schemaFile,
+            """
+            schema_format: "1.0"
+            name: "Cycle"
+            version: "1.0.0"
+            tables:
+              a:
+                columns:
+                  id:
+                    type: identifier
+                  b_id:
+                    type: integer
+                    references:
+                      table: b
+                      column: id
+              b:
+                columns:
+                  id:
+                    type: identifier
+                  a_id:
+                    type: integer
+                    references:
+                      table: a
+                      column: id
+            """.trimIndent()
+        )
+        var targetResolverInvoked = false
+        var executorInvoked = false
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            targetResolver = { _, _ ->
+                targetResolverInvoked = true
+                "sqlite:///tmp/should-not-be-used.db"
+            },
+            schemaPreflight = DataImportSchemaPreflight::prepare,
+            importExecutor = ImportExecutor { _, _, _, _, _ ->
+                executorInvoked = true
+                error("importExecutor must not be called when schema preflight fails")
+            },
+        )
+        assertExit(
+            runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    schema = schemaFile,
+                    table = null,
+                )
+            ),
+            3,
+            stderr,
+        )
+        targetResolverInvoked shouldBe false
+        executorInvoked shouldBe false
+        stderr.joined() shouldContain "dependency cycle"
+        stderr.joined() shouldContain "a.b_id -> b.id"
+        stderr.joined() shouldContain "b.a_id -> a.id"
+        Files.deleteIfExists(importDir.resolve("a.json"))
+        Files.deleteIfExists(importDir.resolve("b.json"))
+        Files.deleteIfExists(schemaFile)
+        Files.deleteIfExists(importDir)
     }
 
     // ─── Exit 4: Connection errors ──────────────────────────────
@@ -527,6 +650,62 @@ class DataImportRunnerTest : FunSpec({
         )
         assertExit(runner.execute(request()), 5, stderr)
         pool.closeCount shouldBe 1
+    }
+
+    test("Exit 0: --schema reorders directory imports topologically") {
+        val importDir = Files.createTempDirectory("dmigrate-import-order-")
+        Files.writeString(importDir.resolve("orders.json"), """[{"id":1,"user_id":1}]""")
+        Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+        val schemaFile = Files.createTempFile("dmigrate-order-schema-", ".yaml")
+        Files.writeString(
+            schemaFile,
+            """
+            schema_format: "1.0"
+            name: "Ordering"
+            version: "1.0.0"
+            tables:
+              users:
+                columns:
+                  id:
+                    type: identifier
+              orders:
+                columns:
+                  id:
+                    type: identifier
+                  user_id:
+                    type: integer
+                    references:
+                      table: users
+                      column: id
+            """.trimIndent()
+        )
+        var seenInput: ImportInput? = null
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            schemaPreflight = DataImportSchemaPreflight::prepare,
+            importExecutor = ImportExecutor { pool, input, format, options, config ->
+                seenInput = input
+                successExecutor.execute(pool, input, format, options, config)
+            },
+        )
+        assertExit(
+            runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    schema = schemaFile,
+                    table = null,
+                )
+            ),
+            0,
+            stderr,
+        )
+        (seenInput as ImportInput.Directory).tableOrder shouldBe listOf("users", "orders")
+        Files.deleteIfExists(importDir.resolve("orders.json"))
+        Files.deleteIfExists(importDir.resolve("users.json"))
+        Files.deleteIfExists(schemaFile)
+        Files.deleteIfExists(importDir)
     }
 
     // ─── Pre-pool exits ─────────────────────────────────────────

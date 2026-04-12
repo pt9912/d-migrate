@@ -19,6 +19,16 @@ import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 
+class CliUsageException(
+    message: String,
+    cause: Throwable? = null,
+) : IllegalArgumentException(message, cause)
+
+class ImportPreflightException(
+    message: String,
+    cause: Throwable? = null,
+) : IllegalArgumentException(message, cause)
+
 /**
  * Thin seam over the streaming import, allowing the Runner to be tested
  * without a real [StreamingImporter][dev.dmigrate.streaming.StreamingImporter].
@@ -41,6 +51,7 @@ data class DataImportRequest(
     val target: String?,
     val source: String,
     val format: String?,
+    val schema: Path?,
     val table: String?,
     val tables: List<String>?,
     val onError: String,
@@ -77,29 +88,15 @@ class DataImportRunner(
     private val urlParser: (String) -> ConnectionConfig,
     private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
+    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> ImportInput =
+        { _, input, _ -> input },
     private val importExecutor: ImportExecutor,
     private val stdinProvider: () -> InputStream = { System.`in` },
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
     fun execute(request: DataImportRequest): Int {
-        // ─── 1. Target auflösen → vollständige Connection-URL ───
-        val resolvedUrl = try {
-            targetResolver(request.target, request.cliConfigPath)
-        } catch (e: Exception) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
-
-        // ─── 2. URL → ConnectionConfig ──────────────────────────
-        val connectionConfig = try {
-            urlParser(resolvedUrl)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
-
-        // ─── 3. CLI-Validierungen ───────────────────────────────
+        // ─── 1. CLI-Validierungen ───────────────────────────────
 
         // --table und --tables sind gegenseitig exklusiv
         if (request.table != null && !request.tables.isNullOrEmpty()) {
@@ -139,26 +136,7 @@ class DataImportRunner(
             return 2
         }
 
-        // --disable-fk-checks auf PG → Exit 2
-        if (request.disableFkChecks && connectionConfig.dialect == DatabaseDialect.POSTGRESQL) {
-            stderr(
-                "Error: --disable-fk-checks is not supported for PostgreSQL. " +
-                    "Use DEFERRABLE constraints or --schema-based ordering instead."
-            )
-            return 2
-        }
-
-        // --trigger-mode disable auf MySQL/SQLite → Exit 2
-        if (request.triggerMode == "disable" &&
-            connectionConfig.dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)
-        ) {
-            stderr(
-                "Error: --trigger-mode disable is not supported for dialect ${connectionConfig.dialect}."
-            )
-            return 2
-        }
-
-        // ─── 4. Source-Pfad + Format auflösen ───────────────────
+        // ─── 2. Source-Pfad + Format auflösen ───────────────────
         val isStdin = request.source == "-"
         val sourcePath = if (!isStdin) Path.of(request.source) else null
 
@@ -188,7 +166,7 @@ class DataImportRunner(
             return 2
         }
 
-        // ─── 5. ImportInput ableiten ────────────────────────────
+        // ─── 3. ImportInput ableiten ────────────────────────────
         val importInput = try {
             resolveImportInput(request, isStdin, sourcePath)
         } catch (e: IllegalArgumentException) {
@@ -196,7 +174,19 @@ class DataImportRunner(
             return 2
         }
 
-        // ─── 6. Encoding parsen ─────────────────────────────────
+        // ─── 4. Optionales --schema-Preflight ───────────────────
+        val preparedInput = if (request.schema != null) {
+            try {
+                schemaPreflight(request.schema, importInput, format)
+            } catch (e: ImportPreflightException) {
+                stderr("Error: ${e.message}")
+                return 3
+            }
+        } else {
+            importInput
+        }
+
+        // ─── 5. Encoding parsen ─────────────────────────────────
         val charset: Charset? = if (request.encoding != null) {
             try {
                 Charset.forName(request.encoding)
@@ -208,7 +198,45 @@ class DataImportRunner(
             null // auto-detect
         }
 
-        // ─── 7. Pool öffnen ────────────────────────────────────
+        // ─── 6. Target auflösen → vollständige Connection-URL ───
+        val resolvedUrl = try {
+            targetResolver(request.target, request.cliConfigPath)
+        } catch (e: CliUsageException) {
+            stderr("Error: ${e.message}")
+            return 2
+        } catch (e: Exception) {
+            stderr("Error: ${e.message}")
+            return 7
+        }
+
+        // ─── 7. URL → ConnectionConfig ──────────────────────────
+        val connectionConfig = try {
+            urlParser(resolvedUrl)
+        } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}")
+            return 7
+        }
+
+        // --disable-fk-checks auf PG → Exit 2
+        if (request.disableFkChecks && connectionConfig.dialect == DatabaseDialect.POSTGRESQL) {
+            stderr(
+                "Error: --disable-fk-checks is not supported for PostgreSQL. " +
+                    "Use DEFERRABLE constraints or --schema-based ordering instead."
+            )
+            return 2
+        }
+
+        // --trigger-mode disable auf MySQL/SQLite → Exit 2
+        if (request.triggerMode == "disable" &&
+            connectionConfig.dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)
+        ) {
+            stderr(
+                "Error: --trigger-mode disable is not supported for dialect ${connectionConfig.dialect}."
+            )
+            return 2
+        }
+
+        // ─── 8. Pool öffnen ────────────────────────────────────
         val pool: ConnectionPool = try {
             poolFactory(connectionConfig)
         } catch (e: Throwable) {
@@ -217,7 +245,7 @@ class DataImportRunner(
         }
 
         return try {
-            executeWithPool(request, connectionConfig, charset, format, importInput, pool)
+            executeWithPool(request, connectionConfig, charset, format, preparedInput, pool)
         } finally {
             try { pool.close() } catch (_: Throwable) {}
         }
@@ -324,9 +352,14 @@ class DataImportRunner(
         requireNotNull(sourcePath)
 
         if (Files.isDirectory(sourcePath)) {
+            if (request.table != null) {
+                throw IllegalArgumentException(
+                    "--table is only supported for stdin or single-file imports. Use --tables for directory sources."
+                )
+            }
             return ImportInput.Directory(
                 path = sourcePath,
-                tableFilter = request.tables ?: request.table?.let { listOf(it) },
+                tableFilter = request.tables,
             )
         }
 
