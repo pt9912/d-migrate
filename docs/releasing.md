@@ -93,6 +93,8 @@ hinzugekommen sind und ggf. den Workflow ergänzen.**
 
 - `README.md` „Current Status"-Block auf den neuen Release umstellen
 - `docs/roadmap.md` Milestone als ✅ markieren, Footer-Stand aktualisieren
+- `docs/guide.md` auf den aktuellen Funktionsumfang prüfen und ggf. aktualisieren
+  (Modulliste, Beispielausgaben, neue CLI-Kommandos/Optionen)
 - Für Spezifikations-Updates ggf. `docs/architecture.md`, `docs/cli-spec.md`,
   `docs/design.md` anpassen
 - Falls `AbstractDdlGenerator.getVersion()` hart kodiert ist: Wert prüfen
@@ -278,6 +280,7 @@ Für jeden Release abhaken:
 - [ ] `docker build -t d-migrate:pre-release .` grün
 - [ ] Smoke-Tests gegen Fixture-Schemas grün
 - [ ] CHANGELOG `[Unreleased]` reviewed
+- [ ] `docs/guide.md` auf aktuellem Funktionsstand
 - [ ] `koverVerify` deckt alle aktuellen Module ab (CI-Workflow ggf. ergänzt)
 - [ ] `AbstractDdlGenerator.getVersion()` zeigt auf neue Version
 - [ ] `Main.kt` `versionOption()` zeigt auf neue Version
