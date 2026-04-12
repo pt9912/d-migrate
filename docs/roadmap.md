@@ -104,35 +104,28 @@ implementation-plan-0.4.0.md §6.12.
 
 **Aktueller Stand (2026-04-12)**  
 Milestone 0.4.0 ist weiterhin in Arbeit.  
-Phase D ist abgeschlossen und verifiziert.
+Phase A bis E sind abgeschlossen und verifiziert.
 
-Der JDBC-Import-Unterbau der Phase C ist abgeschlossen:
+Abgeschlossene Phasen:
 
-Der JDBC-Import-Unterbau enthält:
+- **Phase C** (Schritte 12–18): `DataWriter`/`TableImportSession`/`SchemaSync`
+  Port-Vertrag; PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade.
+  Plan: [ImpPlan-0.4.0-C-16_18](./ImpPlan-0.4.0-C-16_18.md)
+- **Phase D** (Schritte 19–23): Streaming-Importer, SQLite-Streaming-Tests,
+  Reorder-Perf-Gate.
+  Plan: [ImpPlan-0.4.0-D-19_22](./ImpPlan-0.4.0-D-19_22.md),
+  [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
+- **Phase E** (Schritte 24–28): CLI-Integration `data import`, Schema-Preflight,
+  E2E-Tests (JSON/YAML/CSV Round-Trips, `--truncate`, `--on-conflict update`,
+  `--trigger-mode disable`), LF-013 inkrementeller Export (`--since-column`/`--since`).
+  Pläne: [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md),
+  [ImpPlan-0.4.0-E-25](./ImpPlan-0.4.0-E-25.md),
+  [ImpPlan-0.4.0-E-28](./ImpPlan-0.4.0-E-28.md)
 
-- `DataWriter`, `TableImportSession`, `SchemaSync` und `SequenceAdjustment`
-  produktiv im Port-Vertrag.
-- PostgreSQL, MySQL und SQLite liefern reale `dataWriter()`-Implementierungen
-  über das bestehende `DatabaseDriver`-Aggregat; eine separate
-  `DataWriterRegistry` wurde bewusst nicht eingeführt.
-- PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade und
-  Bootstrap-Lookup sind implementiert und testseitig abgedeckt.
+Offen für 0.4.0:
 
-Phase D (Schritte 19–23) ist mit den neuen SQLite-Streaming- und Reorder-Perf-Artefakten
-nachgezogen abgeschlossen:
-
-- Umsetzungssplan: [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
-- Docker-verifizierte Ausführung: `docker build -t d-migrate:dev .`
-- Reorder-Perf-Gate: [0.4.0-phase-d-reorder](./docs/perf/0.4.0-phase-d-reorder.md)
-
-Nachgelagerte Planung für den Abschluss von Phase E:
-
-- [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md)
-
-Offen für 0.4.0 bleiben damit vor allem:
-
-- ausstehende Core-/CLI-/Format-Schritte oberhalb der Driver-Layers
-- die finalen Round-Trip- und End-to-End-Importpfade
+- **Phase F**: Container-E2E-Tests gegen PostgreSQL und MySQL via Testcontainers
+- Inkrement-Round-Trip-Tests (initial export → delta export → UPSERT-Import → Vergleich)
 
 Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
 Trigger-Verhalten beim Import werden im Draft
@@ -435,6 +428,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 1.7
-**Stand**: 2026-04-11
-**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen; 0.4.0 in Arbeit mit abgeschlossenem Driver-/Writer-Unterbau der Phase C (inkl. LF-013-Vorbereitung); 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Version**: 1.8
+**Stand**: 2026-04-12
+**Status**: Milestone 0.1.0, 0.2.0 und 0.3.0 abgeschlossen; 0.4.0 in Arbeit mit Phase A–E abgeschlossen (inkl. LF-013 und CLI-E2E gegen SQLite), Phase F (Container-E2E) noch offen; 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
