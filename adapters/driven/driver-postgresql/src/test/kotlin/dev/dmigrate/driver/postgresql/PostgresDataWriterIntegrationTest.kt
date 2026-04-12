@@ -358,4 +358,28 @@ class PostgresDataWriterIntegrationTest : FunSpec({
 
         ex.message shouldContain "has no primary key"
     }
+
+    test("disableFkChecks is rejected for PostgreSQL") {
+        val ex = shouldThrow<UnsupportedOperationException> {
+            writer.openTable(
+                pool!!,
+                "writer_users",
+                ImportOptions(disableFkChecks = true),
+            )
+        }
+
+        ex.message shouldContain "does not support generic disableFkChecks"
+    }
+
+    test("strict trigger mode opens clean tables successfully") {
+        writer.openTable(
+            pool!!,
+            "writer_zero_chunk",
+            ImportOptions(triggerMode = dev.dmigrate.driver.data.TriggerMode.STRICT),
+        ).use { session ->
+            session.finishTable() shouldBe FinishTableResult.Success(emptyList())
+        }
+
+        pool!!.activeConnections() shouldBe 0
+    }
 })

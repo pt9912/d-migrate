@@ -14,23 +14,26 @@ dependencies {
 
 kover {
     reports {
-        verify {
-            rule {
-                // TypeMapper: 100% via own tests; DdlGenerator: tested via golden masters in d-migrate-formats
-                // MysqlDataReader/TableLister/DataWriter/SchemaSync: tested via Testcontainers in @Tag("integration")
-                // — Coverage wird bei -PintegrationTests gemessen.
-                minBound(if (project.hasProperty("integrationTests")) 90 else 80)
+        total {
+            verify {
+                rule {
+                    // TypeMapper: 100% via own tests; DdlGenerator: tested via golden masters in d-migrate-formats
+                    // MysqlDataReader/TableLister/DataWriter/SchemaSync: tested via Testcontainers in @Tag("integration")
+                    // — Coverage wird bei -PintegrationTests gemessen.
+                    minBound(if (project.hasProperty("integrationTests")) 90 else 80)
+                }
             }
-        }
-        if (!project.hasProperty("integrationTests")) {
-            filters {
-                excludes {
-                    classes(
-                        "dev.dmigrate.driver.mysql.MysqlDataReader",
-                        "dev.dmigrate.driver.mysql.MysqlTableLister",
-                        "dev.dmigrate.driver.mysql.MysqlDataWriter",
-                        "dev.dmigrate.driver.mysql.MysqlSchemaSync",
-                    )
+            if (!project.hasProperty("integrationTests")) {
+                filters {
+                    excludes {
+                        classes(
+                            "dev.dmigrate.driver.mysql.MysqlDataReader",
+                            "dev.dmigrate.driver.mysql.MysqlTableLister",
+                            "dev.dmigrate.driver.mysql.MysqlDataWriter",
+                            "dev.dmigrate.driver.mysql.MysqlTableImportSession",
+                            "dev.dmigrate.driver.mysql.MysqlSchemaSync",
+                        )
+                    }
                 }
             }
         }

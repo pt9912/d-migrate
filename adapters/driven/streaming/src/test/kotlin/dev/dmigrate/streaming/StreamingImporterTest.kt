@@ -250,6 +250,109 @@ class StreamingImporterTest : FunSpec({
         }
     }
 
+    test("directory input rejects missing tables in filter") {
+        val dir = Files.createTempDirectory("streaming-import-dir-")
+        try {
+            Files.writeString(dir.resolve("users.json"), "[]")
+            val readerFactory = FakeReaderFactory(
+                readersByTable = mapOf("users" to FakeReader(header = listOf("id"), chunks = emptyList())),
+            )
+            val importer = StreamingImporter(
+                readerFactory = readerFactory,
+                writerLookup = {
+                    FakeWriter(
+                        mapOf("users" to FakeTableImportSession(targetColumns = listOf(targetColumns.first()))),
+                    )
+                },
+            )
+
+            val ex = shouldThrow<IllegalArgumentException> {
+                importer.import(
+                    pool = pool,
+                    input = ImportInput.Directory(dir, tableFilter = listOf("missing")),
+                    format = DataExportFormat.JSON,
+                )
+            }
+
+            ex.message shouldBe "ImportInput.Directory.tableFilter references tables without matching files: missing"
+        } finally {
+            Files.walk(dir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.delete(it) } }
+        }
+    }
+
+    test("directory input rejects incomplete explicit table order") {
+        val dir = Files.createTempDirectory("streaming-import-dir-")
+        try {
+            Files.writeString(dir.resolve("a.json"), "[]")
+            Files.writeString(dir.resolve("b.json"), "[]")
+            val readerFactory = FakeReaderFactory(
+                readersByTable = mapOf(
+                    "a" to FakeReader(header = listOf("id"), chunks = emptyList()),
+                    "b" to FakeReader(header = listOf("id"), chunks = emptyList()),
+                )
+            )
+            val importer = StreamingImporter(
+                readerFactory = readerFactory,
+                writerLookup = {
+                    FakeWriter(
+                        mapOf(
+                            "a" to FakeTableImportSession(targetColumns = listOf(targetColumns.first())),
+                            "b" to FakeTableImportSession(targetColumns = listOf(targetColumns.first())),
+                        )
+                    )
+                },
+            )
+
+            val ex = shouldThrow<IllegalArgumentException> {
+                importer.import(
+                    pool = pool,
+                    input = ImportInput.Directory(dir, tableOrder = listOf("a")),
+                    format = DataExportFormat.JSON,
+                )
+            }
+
+            ex.message shouldBe "ImportInput.Directory.tableOrder must cover all candidate tables, missing order for: b"
+        } finally {
+            Files.walk(dir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.delete(it) } }
+        }
+    }
+
+    test("imports rows positionally when reader has no header") {
+        val readerFactory = FakeReaderFactory(
+            readersByTable = mapOf(
+                "users" to FakeReader(
+                    header = null,
+                    chunks = listOf(
+                        chunk(
+                            table = "users",
+                            columns = emptyList(),
+                            rows = listOf(arrayOf<Any?>(1L, "alice")),
+                        )
+                    )
+                )
+            )
+        )
+        val session = FakeTableImportSession(targetColumns = targetColumns)
+        val importer = StreamingImporter(
+            readerFactory = readerFactory,
+            writerLookup = { FakeWriter(mapOf("users" to session)) },
+        )
+        val file = Files.createTempFile("streaming-import-", ".json")
+        try {
+            val result = importer.import(
+                pool = pool,
+                input = ImportInput.SingleFile("users", file),
+                format = DataExportFormat.JSON,
+            )
+
+            result.tables.single().rowsInserted shouldBe 1
+            session.writtenChunks.single().columns.map { it.name } shouldContainExactly listOf("id", "name")
+            session.writtenChunks.single().rows.single().toList() shouldContainExactly listOf(1L, "alice")
+        } finally {
+            file.deleteIfExists()
+        }
+    }
+
     test("preflight header mismatch aborts before first write regardless of onError") {
         val readerFactory = FakeReaderFactory(
             readersByTable = mapOf(

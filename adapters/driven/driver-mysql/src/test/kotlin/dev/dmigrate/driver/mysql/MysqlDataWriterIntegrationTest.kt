@@ -158,6 +158,10 @@ class MysqlDataWriterIntegrationTest : FunSpec({
 
     val writer = MysqlDataWriter()
 
+    test("schemaSync exposes MysqlSchemaSync") {
+        writer.schemaSync().javaClass shouldBe MysqlSchemaSync::class.java
+    }
+
     test("writes single chunk into target table") {
         writer.openTable(pool!!, "writer_users", ImportOptions()).use { session ->
             val result = session.write(
@@ -282,6 +286,30 @@ class MysqlDataWriterIntegrationTest : FunSpec({
         }
 
         pool!!.activeConnections() shouldBe 0
+    }
+
+    test("triggerMode disable is rejected for MySQL") {
+        val ex = shouldThrow<dev.dmigrate.driver.data.UnsupportedTriggerModeException> {
+            writer.openTable(
+                pool!!,
+                "writer_users",
+                ImportOptions(triggerMode = dev.dmigrate.driver.data.TriggerMode.DISABLE),
+            ).close()
+        }
+
+        ex.message shouldBe "triggerMode=disable is not supported for MySQL in 0.4.0"
+    }
+
+    test("triggerMode strict is rejected for MySQL") {
+        val ex = shouldThrow<dev.dmigrate.driver.data.UnsupportedTriggerModeException> {
+            writer.openTable(
+                pool!!,
+                "writer_users",
+                ImportOptions(triggerMode = dev.dmigrate.driver.data.TriggerMode.STRICT),
+            ).close()
+        }
+
+        ex.message shouldBe "triggerMode=strict is not supported for MySQL in 0.4.0"
     }
 
     test("onConflict update upserts rows and reports inserted vs updated") {
