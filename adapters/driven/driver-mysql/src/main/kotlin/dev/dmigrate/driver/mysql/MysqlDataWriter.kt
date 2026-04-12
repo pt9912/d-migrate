@@ -66,9 +66,19 @@ class MysqlDataWriter : DataWriter {
                 setForeignKeyChecks(conn, enabled = false)
                 fkChecksDisabled = true
             }
+
+            // §6.14 non-atomic truncate: DELETE FROM before the import
+            // transaction so the table stays empty even on failure.
+            if (options.truncate) {
+                if (!conn.autoCommit) conn.autoCommit = true
+                conn.createStatement().use { stmt ->
+                    stmt.execute("DELETE FROM ${qualified.quotedPath()}")
+                }
+            }
+
             conn.autoCommit = false
 
-            return MysqlTableImportSession(
+            val session = MysqlTableImportSession(
                 conn = conn,
                 savedAutoCommit = savedAutoCommit,
                 table = table,
@@ -79,6 +89,10 @@ class MysqlDataWriter : DataWriter {
                 schemaSync = sync,
                 fkChecksDisabled = fkChecksDisabled,
             )
+            if (options.truncate) {
+                session.markTruncatePerformed()
+            }
+            return session
         } catch (t: Throwable) {
             try {
                 conn.rollback()

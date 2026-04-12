@@ -57,6 +57,15 @@ class PostgresDataWriter : DataWriter {
                 emptyList()
             }
 
+            // §6.14 non-atomic truncate: runs before the import transaction
+            // so the table stays empty even on failure. RESTART IDENTITY
+            // resets attached sequences to their start values.
+            if (options.truncate) {
+                conn.createStatement().use { stmt ->
+                    stmt.execute("TRUNCATE TABLE ${qualified.quotedPath()} RESTART IDENTITY CASCADE")
+                }
+            }
+
             conn.autoCommit = false
             when (options.triggerMode) {
                 TriggerMode.FIRE -> Unit
@@ -70,7 +79,7 @@ class PostgresDataWriter : DataWriter {
                 }
             }
 
-            return PostgresTableImportSession(
+            val session = PostgresTableImportSession(
                 conn = conn,
                 savedAutoCommit = savedAutoCommit,
                 table = table,
@@ -82,6 +91,10 @@ class PostgresDataWriter : DataWriter {
                 schemaSync = sync,
                 triggersDisabled = triggersDisabled,
             )
+            if (options.truncate) {
+                session.markTruncatePerformed()
+            }
+            return session
         } catch (t: Throwable) {
             try {
                 if (triggersDisabled) {
