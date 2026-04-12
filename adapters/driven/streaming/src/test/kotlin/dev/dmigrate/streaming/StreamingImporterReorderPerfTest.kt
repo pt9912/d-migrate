@@ -39,19 +39,19 @@ class StreamingImporterReorderPerfTest : FunSpec({
         val dbFile = Files.createTempFile("d-migrate-perf-reorder-", ".db")
         val jsonFile = Files.createTempFile("d-migrate-perf-fixture-", ".json")
 
-        try {
-            dbFile.deleteIfExists()
-            val pool = HikariConnectionPoolFactory.create(
-                ConnectionConfig(
-                    dialect = DatabaseDialect.SQLITE,
-                    host = null,
-                    port = null,
-                    database = dbFile.absolutePathString(),
-                    user = null,
-                    password = null,
-                )
+        dbFile.deleteIfExists()
+        val pool = HikariConnectionPoolFactory.create(
+            ConnectionConfig(
+                dialect = DatabaseDialect.SQLITE,
+                host = null,
+                port = null,
+                database = dbFile.absolutePathString(),
+                user = null,
+                password = null,
             )
+        )
 
+        try {
             pool.borrow().use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.execute(
@@ -119,9 +119,8 @@ class StreamingImporterReorderPerfTest : FunSpec({
                 |
                 """.trimMargin()
             )
-
-            pool.close()
         } finally {
+            kotlin.runCatching { pool.close() }
             jsonFile.deleteIfExists()
             dbFile.deleteIfExists()
         }
