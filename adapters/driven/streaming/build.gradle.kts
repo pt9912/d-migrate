@@ -13,6 +13,8 @@ dependencies {
     api(project(":hexagon:core"))
     api(project(":adapters:driven:driver-common"))
     api(project(":adapters:driven:formats"))
+
+    testImplementation(project(":adapters:driven:driver-sqlite"))
 }
 
 kover {
