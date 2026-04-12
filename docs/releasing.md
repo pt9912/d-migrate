@@ -117,6 +117,7 @@ Alle folgenden Dateien anpassen:
 | `README.md` | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen |
 | `docs/roadmap.md` | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen |
 | `adapters/driven/driver-common/.../AbstractDdlGenerator.kt` | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen |
+| `adapters/driving/cli/.../Main.kt` | `versionOption("X.Y.Z-SNAPSHOT")` → `"X.Y.Z"` |
 
 ### 4.2 Release-Commit auf `develop`
 
@@ -207,6 +208,7 @@ Danach:
 | Datei | Änderung |
 |---|---|
 | `build.gradle.kts` | `version = "X.Y.Z"` → `"X.Y'.Z'-SNAPSHOT"` (nächste Minor: `X.(Y+1).0-SNAPSHOT`) |
+| `adapters/driving/cli/.../Main.kt` | `versionOption("X.Y.Z")` → `"X.Y'.Z'-SNAPSHOT"` |
 | `CHANGELOG.md` | Neuen leeren `## [Unreleased]`-Block einfügen |
 | `docs/roadmap.md` | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren |
 | `docs/implementation-plan-X.Y.md` | Optional: neuen Plan für nächste Minor-Version anlegen |
@@ -278,9 +280,11 @@ Für jeden Release abhaken:
 - [ ] CHANGELOG `[Unreleased]` reviewed
 - [ ] `koverVerify` deckt alle aktuellen Module ab (CI-Workflow ggf. ergänzt)
 - [ ] `AbstractDdlGenerator.getVersion()` zeigt auf neue Version
+- [ ] `Main.kt` `versionOption()` zeigt auf neue Version
 
 **Version-Bump auf `develop`**
 - [ ] `build.gradle.kts` Version
+- [ ] `Main.kt` `versionOption()`
 - [ ] `CHANGELOG.md` Sektion + Datum
 - [ ] `README.md` Current-Status-Block
 - [ ] `docs/roadmap.md` Milestone-Status + Footer
