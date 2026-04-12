@@ -208,6 +208,7 @@ Detaillierte Dokumentation findest du im [docs/](docs/)-Verzeichnis:
 
 - [Quick Start Guide (Deutsch)](docs/guide.md)
 - [Entwurf](docs/design.md) / [Architektur](docs/architecture.md)
+- [Schema-YAML-Referenz](docs/schema-reference.md)
 - [Spezifikation des neutralen Modells](docs/neutral-model-spec.md)
 - [CLI-Spezifikation](docs/cli-spec.md)
 - [Regeln zur DDL-Generierung](docs/ddl-generation-rules.md)

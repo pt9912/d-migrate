@@ -416,6 +416,7 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 
 ## Nächste Schritte
 
+- [Schema-YAML-Referenz](./schema-reference.md) -- Kurzreferenz fuer das Schema-Format
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) -- Vollständige Typsystem-Referenz
 - [CLI-Spezifikation](./cli-spec.md) -- Alle Kommandos und Exit-Codes
 - [Design-Dokument](./design.md) -- Architektur und Designentscheidungen
