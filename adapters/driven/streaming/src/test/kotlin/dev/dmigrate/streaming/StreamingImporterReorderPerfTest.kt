@@ -9,6 +9,7 @@ import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldBeLessThan
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.lang.management.ManagementFactory
@@ -16,6 +17,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteIfExists
+import kotlin.math.roundToLong
 
 private val PerfTag = NamedTag("perf")
 
@@ -70,8 +72,8 @@ class StreamingImporterReorderPerfTest : FunSpec({
             val gcTimeBefore = gcBeans.sumOf { it.collectionTime }
 
             val threadMxBean = ManagementFactory.getThreadMXBean()
-                as com.sun.management.ThreadMXBean
-            val allocBefore = threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId())
+            val allocationBean = threadMxBean as? com.sun.management.ThreadMXBean
+            val allocBefore = allocationBean?.getThreadAllocatedBytes(Thread.currentThread().threadId())
 
             usedHeapBytes()
             val heapBefore = usedHeapBytes()
@@ -92,8 +94,8 @@ class StreamingImporterReorderPerfTest : FunSpec({
 
             val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
 
-            val allocAfter = threadMxBean.getThreadAllocatedBytes(Thread.currentThread().threadId())
-            val allocatedBytes = allocAfter - allocBefore
+            val allocAfter = allocationBean?.getThreadAllocatedBytes(Thread.currentThread().threadId())
+            val allocatedBytes = if (allocBefore != null && allocAfter != null) allocAfter - allocBefore else null
 
             usedHeapBytes()
             val heapAfter = usedHeapBytes()
@@ -109,8 +111,8 @@ class StreamingImporterReorderPerfTest : FunSpec({
                 |--- Reorder Perf Gate ---
                 |Rows:               ${"%,d".format(rows)}
                 |Total import time:  ${"%,d".format(elapsedMs)} ms
-                |Allocated bytes:    ${"%,d".format(allocatedBytes / (1024 * 1024))} MB
-                |Per-row allocation: ${"%,d".format(allocatedBytes / rows)} bytes/row
+                |Allocated bytes:    ${allocatedBytes?.let { "%,d".format(it / (1024 * 1024)) } ?: "<nicht unterstützt>"} MB
+                |Per-row allocation: ${allocatedBytes?.let { "%,d".format(it / rows) } ?: "<nicht unterstützt>"} bytes/row
                 |GC count:           ${gcCountAfter - gcCountBefore}
                 |GC time:            ${gcTimeAfter - gcTimeBefore} ms
                 |Heap before:        ${"%,d".format(heapBefore / (1024 * 1024))} MB
@@ -118,6 +120,13 @@ class StreamingImporterReorderPerfTest : FunSpec({
                 |-------------------------
                 |
                 """.trimMargin()
+            )
+
+            enforceOptionalPerfGate(
+                elapsedMs = elapsedMs,
+                allocatedBytes = allocatedBytes,
+                rows = rows,
+                gcTimeMs = gcTimeAfter - gcTimeBefore,
             )
         } finally {
             kotlin.runCatching { pool.close() }
@@ -152,4 +161,41 @@ private fun usedHeapBytes(): Long {
     Thread.sleep(50)
     val rt = Runtime.getRuntime()
     return rt.totalMemory() - rt.freeMemory()
+}
+
+private fun enforceOptionalPerfGate(
+    elapsedMs: Long,
+    allocatedBytes: Long?,
+    rows: Long,
+    gcTimeMs: Long,
+) {
+    val doAssert = System.getProperty("d-migrate.perf.perf-gate", "false").toBoolean()
+    if (!doAssert) return
+
+    val maxGcRatioPercent = System.getProperty("d-migrate.perf.max-gc-ratio-percent")
+        ?.toDoubleOrNull()
+    val maxAllocationPerRowBytes = System.getProperty("d-migrate.perf.max-allocation-bytes-per-row")
+        ?.toLongOrNull()
+    if (maxGcRatioPercent == null && maxAllocationPerRowBytes == null) {
+        throw IllegalStateException(
+            "Perf-gate aktiv: set at least one of d-migrate.perf.max-gc-ratio-percent or " +
+                "d-migrate.perf.max-allocation-bytes-per-row"
+        )
+    }
+
+    if (elapsedMs > 0L && maxGcRatioPercent != null) {
+        val gcRatio = (gcTimeMs.toDouble() * 100.0) / elapsedMs.toDouble()
+        gcRatio shouldBeLessThan maxGcRatioPercent
+    }
+
+    if (allocatedBytes != null && maxAllocationPerRowBytes != null) {
+        val bytesPerRow = (allocatedBytes.toDouble() / rows.toDouble()).roundToLong()
+        bytesPerRow shouldBeLessThan maxAllocationPerRowBytes
+    } else if (maxAllocationPerRowBytes != null) {
+        throw IllegalStateException(
+            "Perf-gate aktiv: Thread-Allocation-Metrik nicht verfügbar auf dieser JVM; " +
+                "setze d-migrate.perf.max-allocation-bytes-per-row nicht oder nutze ein JDK, " +
+                "das com.sun.management.ThreadMXBean unterstützt"
+        )
+    }
 }

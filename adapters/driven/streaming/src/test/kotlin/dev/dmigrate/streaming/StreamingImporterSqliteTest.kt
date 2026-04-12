@@ -150,6 +150,8 @@ class StreamingImporterSqliteTest : FunSpec({
             )
 
             val summary = result.tables.single()
+            result.success shouldBe true
+            summary.error.shouldBeNull()
             summary.rowsSkipped shouldBe 1
             summary.rowsInserted shouldBe 1
 
@@ -183,6 +185,8 @@ class StreamingImporterSqliteTest : FunSpec({
             )
 
             val summary = result.tables.single()
+            result.success shouldBe true
+            summary.error.shouldBeNull()
             summary.rowsUpdated shouldBe 1
             summary.rowsInserted shouldBe 1
 
@@ -240,6 +244,8 @@ class StreamingImporterSqliteTest : FunSpec({
             )
 
             val summary = result.tables.single()
+            result.success shouldBe true
+            summary.error.shouldBeNull()
             summary.sequenceAdjustments shouldHaveSize 1
             summary.sequenceAdjustments.single().column shouldBe "id"
             summary.sequenceAdjustments.single().newValue shouldBe 51L
