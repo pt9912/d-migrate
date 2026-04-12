@@ -16,9 +16,11 @@ import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.ConfigMissingDefaultException
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
 import dev.dmigrate.streaming.StreamingImporter
 
@@ -120,6 +122,10 @@ class DataImportCommand : CliktCommand(name = "import") {
         // Hierarchie: d-migrate → data → import → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        val writerLookup: (DatabaseDialect) -> DataWriter = { dialect ->
+            DatabaseDriverRegistry.get(dialect).dataWriter()
+        }
+        val readerFactory = DefaultDataChunkReaderFactory()
         val request = DataImportRequest(
             target = target,
             source = source,
@@ -156,14 +162,13 @@ class DataImportCommand : CliktCommand(name = "import") {
             },
             urlParser = ConnectionUrlParser::parse,
             poolFactory = HikariConnectionPoolFactory::create,
-            writerLookup = { DatabaseDriverRegistry.get(it).dataWriter() },
+            writerLookup = writerLookup,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
             importExecutor = ImportExecutor { pool, input, fmt, opts, cfg, onTableOpened ->
-                val readerFactory = DefaultDataChunkReaderFactory()
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,
-                    writerLookup = { dialect -> DatabaseDriverRegistry.get(dialect).dataWriter() },
+                    writerLookup = writerLookup,
                     onTableOpened = onTableOpened,
                 )
                 importer.import(pool, input, fmt, opts, cfg)

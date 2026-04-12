@@ -379,7 +379,9 @@ class CliDataImportTest : FunSpec({
         } finally {
             Files.deleteIfExists(source)
             Files.deleteIfExists(target)
-            Files.walk(exportDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            Files.walk(exportDir).use { paths ->
+                paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+            }
         }
     }
 })
