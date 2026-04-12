@@ -9,7 +9,8 @@ import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldBeLessThan
+import io.kotest.matchers.doubles.shouldBeLessThan
+import io.kotest.matchers.longs.shouldBeLessThan
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.lang.management.ManagementFactory
