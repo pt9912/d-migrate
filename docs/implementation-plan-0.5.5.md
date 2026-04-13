@@ -525,8 +525,16 @@ Wichtig ist weniger die exakte Kotlin-Syntax als die Semantik:
 
 Der Generator braucht eine zentrale Options-Struktur. Empfohlene Elemente:
 
-- `targetDialect`
 - `spatialProfile`
+
+Hinweis zur Abgrenzung:
+
+- `targetDialect` muss in der aktuellen Architektur **nicht** Teil des
+  Optionsobjekts sein, wenn der Dialekt bereits ueber die Generatorwahl
+  feststeht (`PostgresDdlGenerator`, `MysqlDdlGenerator`, `SqliteDdlGenerator`).
+- Ein zusaetzliches `targetDialect` im Optionsobjekt ist nur dann sinnvoll,
+  wenn spaeter bewusst ein generischer Multi-Dialect-Generator eingefuehrt
+  wird.
 
 Das Optionsobjekt soll:
 
