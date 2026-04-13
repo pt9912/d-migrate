@@ -45,7 +45,7 @@ abstract class AbstractDdlGenerator(
         statements += generateProcedures(schema.procedures, skipped)
         statements += generateTriggers(schema.triggers, schema.tables, skipped)
 
-        return DdlResult(statements.filter { it.sql.isNotBlank() }, skipped)
+        return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped)
     }
 
     override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {

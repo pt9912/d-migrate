@@ -1,7 +1,9 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.TransformationNote
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -1318,5 +1320,44 @@ class MysqlDdlGeneratorTest : FunSpec({
 
         ddl shouldContain "ENUM('free', 'pro', 'enterprise')"
         ddl shouldContain "UNIQUE"
+    }
+
+    // ─── Spatial Phase 1 ────────────────────────────────────
+
+    test("geometry point column produces POINT") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "places" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "location" to ColumnDefinition(type = NeutralType.Geometry(
+                    GeometryType("point"), srid = 4326)),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.NATIVE))
+        val ddl = result.render()
+        ddl shouldContain "POINT"
+        ddl shouldContain "SRID"
+    }
+
+    test("geometry with srid emits W120 warning") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "t" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry(
+                    GeometryType("point"), srid = 4326)),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.NATIVE))
+        result.notes.any { it.code == "W120" } shouldBe true
+    }
+
+    test("geometry without srid produces no W120") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "t" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry()),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.NATIVE))
+        result.notes.none { it.code == "W120" } shouldBe true
     }
 })

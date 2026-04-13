@@ -1218,6 +1218,13 @@ ist kein zulaessiger 0.5.5-Pfad.
 | `SELECT AddGeometryColumn('t', 'c', ...)` | `SELECT DiscardGeometryColumn('t', 'c')` |
 | `geometry(Point, 4326)` als Spalte in `CREATE TABLE` | Teil des normalen `DROP TABLE IF EXISTS "t"` |
 
+**Kanonische Rollback-Semantik fuer PostgreSQL und MySQL (0.5.5)**:
+Da Geometry-Spalten in 0.5.5 ausschliesslich ueber `CREATE TABLE` (nicht ueber
+`ALTER TABLE ADD COLUMN`) erzeugt werden, ist der Rollback-Pfad fuer
+PostgreSQL und MySQL in 0.5.5 immer `DROP TABLE IF EXISTS`. Spaltenbezogene
+Rollback-Pfade (`ALTER TABLE ... DROP COLUMN`) sind erst bei spaeterer
+Migrationsunterstuetzung relevant und nicht Teil von 0.5.5.
+
 Wenn Rollback generiert wird (`--generate-rollback`) und das Profil
 `spatialite` ist, werden die `DiscardGeometryColumn`-Aufrufe in umgekehrter
 Reihenfolge vor dem `DROP TABLE` emittiert.

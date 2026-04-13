@@ -95,6 +95,9 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         return statements
     }
 
+    override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
+        profile == SpatialProfile.SPATIALITE
+
     // -- Tables ------------------------------------------------
 
     override fun generateTable(
@@ -114,15 +117,27 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
 
         // For 0.5.5: block table if geometry columns have unsupported metadata
         if (geometryCols.isNotEmpty() && options.spatialProfile == SpatialProfile.SPATIALITE) {
+            val geoColNames = geometryCols.keys
             for ((colName, col) in geometryCols) {
                 if (col.required || col.unique || col.default != null || col.references != null ||
                     colName in table.primaryKey) {
-                    // Unsupported metadata on geometry column — block entire table
-                    return listOf(DdlStatement("", notes = listOf(TransformationNote(
-                        type = NoteType.ACTION_REQUIRED, code = "E052", objectName = name,
-                        message = "Geometry column '$colName' has unsupported metadata (required/unique/default/references/PK) for SpatiaLite",
-                        hint = "Remove metadata from geometry column or use a different dialect",
-                    ))))
+                    return blockTableForSpatialMetadata(name, colName,
+                        "required/unique/default/references/PK")
+                }
+            }
+            // Check table-level constraints referencing geometry columns
+            for (constraint in table.constraints) {
+                val cols = constraint.columns.orEmpty()
+                if (cols.any { it in geoColNames }) {
+                    return blockTableForSpatialMetadata(name, cols.first { it in geoColNames },
+                        "table-level constraint '${constraint.name}'")
+                }
+            }
+            // Check indices referencing geometry columns
+            for (idx in table.indices) {
+                if (idx.columns.any { it in geoColNames }) {
+                    return blockTableForSpatialMetadata(name, idx.columns.first { it in geoColNames },
+                        "index on geometry column")
                 }
             }
         }
@@ -573,4 +588,11 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         }
         return super.invertStatement(stmt)
     }
+
+    private fun blockTableForSpatialMetadata(table: String, column: String, reason: String): List<DdlStatement> =
+        listOf(DdlStatement("", notes = listOf(TransformationNote(
+            type = NoteType.ACTION_REQUIRED, code = "E052", objectName = table,
+            message = "Geometry column '$column' has unsupported metadata ($reason) for SpatiaLite",
+            hint = "Remove metadata from geometry column or use a different dialect",
+        ))))
 }
