@@ -522,6 +522,13 @@ Ein Schema, das E120 oder E121 erzeugt, wird von `schema validate` zurueckgewies
 `schema generate` ruft `schema validate` implizit auf und bricht bei
 Validierungsfehlern ab (Exit-Code 3), bevor irgendwelche DDL erzeugt wird.
 
+Die Typsystem-Erweiterung in 0.5.5 (`geometry`, `geometry_type`, `srid`,
+`GeneratorOptions`) ist Voraussetzung fuer die Reverse-Engineering- und
+Daten-Transfer-Funktionalitaet in 0.6.0: `schema reverse` muss Spatial-Spalten
+in das neutrale Modell zurueckfuehren koennen, und `schema compare` muss
+Geometry-Spalten korrekt vergleichen. Ohne die in 0.5.5 geschaffene Modell- und
+Validierungsbasis waere das nicht typsicher moeglich.
+
 ---
 
 ## 4. Querschnittsthemen

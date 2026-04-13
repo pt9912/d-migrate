@@ -359,8 +359,13 @@ Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--ta
 - **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
 
 Spatial-spezifische Ausgaben:
-- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die Tabelle wird vollständig übersprungen; keine partielle DDL.
+- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die gesamte Tabelle wird uebersprungen; keine partielle DDL. Bei Funktionen/Prozeduren wird dagegen nur das Einzelobjekt uebersprungen (siehe [DDL-Generierungsregeln §16](./ddl-generation-rules.md)).
 - **W120** (SRID nicht vollständig übertragbar): Erscheint auf stderr und in `notes` des Reports. Die DDL-Generierung wird fortgesetzt.
+
+Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
+- **`--generate-rollback`**: Rollback-DDL enthaelt die inversen Spatial-Statements (z.B. `DiscardGeometryColumn` fuer SpatiaLite). Blockierte Tabellen (E052) erzeugen kein Rollback-DDL. Details: [DDL-Generierungsregeln §16.7](./ddl-generation-rules.md).
+- **`--output-format json`**: Spatial-E052-Eintraege erscheinen in `skipped_objects`, W120 in `notes`.
+- **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
 
 **Exit-Codes**:
 - `0`: DDL erfolgreich generiert (auch bei Warnungen und übersprungenen Objekten)
