@@ -240,7 +240,7 @@ hinzu.
 | Bereich   | Aufgabe                                                                        | LF-Ref |
 | --------- | ------------------------------------------------------------------------------ | ------ |
 | Profiling | Gradle-Modul `hexagon/profiling` mit Domain-Modell und Warning-Rule-Engine     | —      |
-| Profiling | `SchemaIntrospectionPort` als Fassade über `SchemaReader` (0.6.0)              | LF-004 |
+| Profiling | `SchemaIntrospectionPort` auf derselben JDBC-Metadatenbasis wie `SchemaReader` (0.6.0), mit eigener Profiling-Projektion | LF-004 |
 | Profiling | `ProfilingDataPort`: Aggregate-Queries (Counts, TopN, Stats) pro Dialekt       | —      |
 | Profiling | `LogicalTypeResolverPort`: DB-Typ → `LogicalType` für PostgreSQL, MySQL, SQLite | —      |
 | Profiling | Zieltyp-Kompatibilitätsprüfung (`TargetTypeCompatibility`)                     | —      |

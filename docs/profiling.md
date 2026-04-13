@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Design-Spezifikation (Entwurf)
 >
-> Status: Entwurf. Beschreibt die Integration in die bestehende d-migrate-Architektur. Geplante Einordnung: Phase 2 (0.7.5).
+> Status: Entwurf. Beschreibt den geplanten Soll-Zustand für d-migrate ab Phase 2 (0.7.5). Referenzen auf `SchemaReader`, `hexagon/profiling` und neue Profiling-Ports sind Zielarchitektur, nicht bereits heute im Code vorhandene APIs.
 
 ---
 
@@ -68,8 +68,8 @@ d-migrate/
 │           ├── model/                     ← Domain-Modell (Profile, Stats, Warnings)
 │           ├── rules/                     ← Warning-Regeln (Column/Table-Rules)
 │           ├── types/                     ← LogicalType, Severity, WarningCode
-│           ├── port/                      ← Outbound-Ports (SchemaPort, ProfilingDataPort)
-│           └── service/                   ← Orchestrierung (ProfileTable, ProfileDatabase)
+│           ├── port/                      ← Outbound-Ports (SchemaIntrospectionPort, ProfilingDataPort)
+│           └── service/                   ← Orchestrierung (ProfileTableService, ProfileDatabaseService)
 ├── adapters/
 │   └── driven/
 │       ├── driver-postgresql/             ← bestehend, erweitert um Profiling-Adapter
@@ -101,7 +101,6 @@ Die größte Integrationsersparnis liegt in der Wiederverwendung der bestehenden
 | `DatabaseDriver` / `DatabaseDriverRegistry` | Dialekt-Erkennung und Treiber-Lookup |
 | HikariCP Connection-Pool                    | Verbindungsmanagement                |
 | `NamedConnectionResolver`                   | `.d-migrate.yaml` Named Connections  |
-| `DataReader` (JDBC-Streaming)               | Basis für Aggregate-Queries          |
 | `LogScrubber`                               | Passwort-sichere Logs                |
 | Jackson / SnakeYAML                         | JSON/YAML-Ausgabe des Profil-Reports |
 | Clikt CLI-Framework                         | Neues Subcommand `data profile`      |
@@ -110,10 +109,13 @@ Die größte Integrationsersparnis liegt in der Wiederverwendung der bestehenden
 
 | Neue Komponente                                           | Grund                                                                                                      |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Aggregate-Queries (COUNT DISTINCT, MIN/MAX, TopN, Stddev) | Existiert nicht — d-migrate liest/schreibt Daten, aggregiert sie aber nicht                                |
+| Profiling-JDBC-Adapter für Aggregate-Queries              | Existiert nicht — `DataReader` streamt Zeilen, bietet aber keine Aggregat-/Profiling-Abfragen             |
+| Schema-Introspection-Projektion mit rohem `dbType`        | Das neutrale Reverse-Engineering-Modell reicht für Profiling nicht aus, weil deklarierte DB-Typen erhalten bleiben müssen |
 | `LogicalTypeResolver` pro Dialekt                         | Mapping von DB-Typen auf `LogicalType` — existiert nicht, da d-migrate mit `NeutralType` aus YAML arbeitet |
 | Warning-Rule-Engine                                       | Fachliche Regeln für Datenqualität sind ein neues Konzept                                                  |
 | Normalisierungsanalyse (FD-Discovery)                     | Functional-Dependency-Erkennung ist ein neues Konzept — kein bestehendes Pendant in d-migrate              |
+
+Die Profiling-Introspection soll daher auf derselben JDBC-Metadatenbasis aufbauen wie das spätere Reverse-Engineering, aber nicht blind 1:1 das bestehende `SchemaReader`-Interface spiegeln: Profiling braucht zusätzlich den rohen Datenbanktyp (`dbType`) und weitere Profiling-spezifische Metadaten.
 
 ---
 
@@ -192,10 +194,12 @@ data class TemporalStats(
 )
 
 data class PatternStats(
-    val emailLikeCount: Long? = null,
-    val phoneLikeCount: Long? = null,
-    val uuidLikeCount: Long? = null,
-    val dateLikeCount: Long? = null
+    val basedOnTopValues: Boolean = true,
+    val coveredRowsByTopValues: Long? = null,
+    val emailLikeRowsInTopValues: Long? = null,
+    val phoneLikeRowsInTopValues: Long? = null,
+    val uuidLikeRowsInTopValues: Long? = null,
+    val dateLikeRowsInTopValues: Long? = null
 )
 
 data class SpatialStats(
@@ -219,6 +223,8 @@ data class ValueFrequency(
     val ratio: Double
 )
 ```
+
+`PatternStats` ist bewusst **sample-basiert**: Die Kennzahlen beziehen sich auf die in `topValues` enthaltenen häufigsten Werte und deren Row-Abdeckung, nicht auf einen separaten Vollscan aller Werte. Dadurch bleibt die Erkennung dialektportabel und deterministisch, ohne globale Pattern-Counts vorzutäuschen.
 
 ### 4.3 Zieltyp-Kompatibilität
 
@@ -394,16 +400,35 @@ Die Analyse ist optional und wird nur ausgeführt, wenn explizit angefordert (CL
 ```kotlin
 package dev.dmigrate.profiling.port
 
+data class DatabaseProfilingRequest(
+    val schemaName: String? = null,
+    val tables: List<String>? = null,
+    val topN: Int = 10,
+    val analyzeNormalization: Boolean = false
+)
+
+data class TableProfilingOptions(
+    val topN: Int = 10,
+    val analyzeNormalization: Boolean = false
+)
+
+data class QueryProfilingRequest(
+    val query: String,
+    val logicalName: String = "query_result",
+    val topN: Int = 10
+)
+
 /** Schema-Introspection: Tabellenliste, Spaltenmetadaten, Constraints */
 interface SchemaIntrospectionPort {
     fun databaseProduct(): String
     fun databaseVersion(): String?
     fun listTableNames(schemaName: String? = null): List<String>
-    fun loadTableSchema(tableName: String): TableSchema
+    fun loadTableSchema(tableName: String, schemaName: String? = null): TableSchema
 }
 
 data class TableSchema(
     val tableName: String,
+    val schemaName: String? = null,
     val columns: List<ColumnSchema>,
     val primaryKey: PrimaryKeyProfile? = null,
     val foreignKeys: List<ForeignKeyProfile> = emptyList(),
@@ -416,11 +441,35 @@ data class ColumnSchema(
     val nullable: Boolean
 )
 
+data class ColumnMetrics(
+    val rowCount: Long,
+    val nonNullCount: Long,
+    val nullCount: Long,
+    val emptyStringCount: Long? = null,
+    val blankStringCount: Long? = null,
+    val distinctCount: Long? = null,
+    val duplicateValueCount: Long? = null,
+    val minLength: Long? = null,
+    val maxLength: Long? = null,
+    val minValue: String? = null,
+    val maxValue: String? = null,
+    val topValues: List<ValueFrequency> = emptyList(),
+    val numericStats: NumericStats? = null,
+    val temporalStats: TemporalStats? = null,
+    val patternStats: PatternStats? = null,
+    val spatialStats: SpatialStats? = null
+)
+
 /** Statistische Aggregate-Queries pro Spalte/Tabelle */
 interface ProfilingDataPort {
-    fun rowCount(tableName: String): Long
-    fun profileColumn(tableName: String, columnName: String, dbType: String, nullable: Boolean): ColumnProfile
-    fun profileQuery(query: String, logicalName: String): TableProfile
+    fun rowCount(tableName: String, schemaName: String? = null): Long
+    fun profileColumn(
+        tableName: String,
+        column: ColumnSchema,
+        schemaName: String? = null,
+        options: TableProfilingOptions = TableProfilingOptions()
+    ): ColumnMetrics
+    fun profileQuery(request: QueryProfilingRequest): TableProfile
 }
 
 /** DB-Typ → LogicalType Auflösung, pro Dialekt implementiert */
@@ -429,7 +478,7 @@ interface LogicalTypeResolverPort {
 }
 ```
 
-**Hinweis**: `SchemaIntrospectionPort` delegiert an den `SchemaReader` aus Milestone 0.6.0 (LF-004). Es wird kein eigenständiger Introspection-Adapter implementiert — Profiling nutzt die bereits vorhandene Schema-Introspection als Fassade.
+**Hinweis**: `SchemaIntrospectionPort` baut auf denselben JDBC-Metadaten-Bausteinen auf wie das Reverse-Engineering aus Milestone 0.6.0 (LF-004). Eine reine 1:1-Delegation auf `SchemaReader` reicht aber nicht aus, solange Profiling zusätzlich rohe DB-Typen (`dbType`) und Profiling-spezifische Metadaten braucht.
 
 ### 5.2 Services
 
@@ -438,9 +487,9 @@ interface LogicalTypeResolverPort {
 class ProfileDatabaseService(
     private val schemaPort: SchemaIntrospectionPort,
     private val profileTableService: ProfileTableService,
-    private val clockPort: ClockPort              // bestehend aus d-migrate
+    private val clock: java.time.Clock = java.time.Clock.systemUTC()
 ) {
-    fun execute(): DatabaseProfile
+    fun execute(request: DatabaseProfilingRequest): DatabaseProfile
 }
 
 /** Profiliert eine einzelne Tabelle */
@@ -450,7 +499,11 @@ class ProfileTableService(
     private val typeResolver: LogicalTypeResolverPort,
     private val warningEvaluator: WarningEvaluator
 ) {
-    fun execute(tableName: String): TableProfile
+    fun execute(
+        tableName: String,
+        schemaName: String? = null,
+        options: TableProfilingOptions = TableProfilingOptions()
+    ): TableProfile
 }
 
 /** Profiliert ein beliebiges Query-Ergebnis */
@@ -458,7 +511,7 @@ class QueryProfilingService(
     private val profilingPort: ProfilingDataPort,
     private val warningEvaluator: WarningEvaluator
 ) {
-    fun execute(query: String, logicalName: String = "query_result"): TableProfile
+    fun execute(request: QueryProfilingRequest): TableProfile
 }
 ```
 
@@ -490,13 +543,13 @@ class WarningEvaluator(
 
 ### 6.1 DB-Adapter pro Dialekt
 
-Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeResolverPort`. Die Schema-Introspection wird über den `SchemaReader` aus 0.6.0 bereitgestellt (§5.1).
+Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeResolverPort`. Die Schema-Introspection teilt sich die JDBC-Metadatenbasis mit dem Reverse-Engineering aus 0.6.0, liefert aber ein eigenes Profiling-Projektionsmodell (§5.1).
 
 | Dialekt    | Aggregate-Queries                   | Typ-Resolver                    |
 | ---------- | ----------------------------------- | ------------------------------- |
 | PostgreSQL | Standard-SQL-Aggregate + `pg_stats` | PG-Typen → `LogicalType`        |
 | MySQL      | Standard-SQL-Aggregate              | MySQL-Typen → `LogicalType`     |
-| SQLite     | Standard-SQL-Aggregate              | SQLite Affinity → `LogicalType` |
+| SQLite     | Standard-SQL-Aggregate + Kotlin-Fallbacks für fehlende Funktionen (z. B. `stddev`) | SQLite Affinity → `LogicalType` |
 
 ### 6.2 Profilierungsablauf
 
@@ -505,11 +558,11 @@ Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeReso
 2. Spaltenmetadaten laden           → ColumnSchema (Typ, Nullable, Constraints)
 3. Kennzahlen je Spalte berechnen   → ProfilingDataPort.profileColumn()
    - rowCount, nullCount, nonNullCount
-   - distinctCount, duplicateCount, topValues
+   - distinctCount, duplicateValueCount, topValues
    - empty/blank Counts (nur String-Spalten)
-   - numerische Stats (min, max, avg, stddev)
+   - numerische Stats (min, max, avg, sum, stddev wo verfügbar)
    - temporale Stats (minTimestamp, maxTimestamp)
-   - Pattern-Erkennung (Email, UUID, Telefon, Datum)
+   - Pattern-Erkennung auf `topValues` (sample-basiert: Email, UUID, Telefon, Datum)
    - Spatial Stats (Geometry Types, SRID, Bounding Box, Validierung)
 4. LogicalType auflösen             → LogicalTypeResolverPort.resolve()
 5. Regeln anwenden, Warnungen       → WarningEvaluator.evaluate*()
@@ -528,7 +581,7 @@ SELECT
     COUNT("col")                                AS non_null_count,
     COUNT(*) - COUNT("col")                     AS null_count,
     COUNT(DISTINCT "col")                       AS distinct_count,
-    COUNT(*) - COUNT(DISTINCT "col")            AS duplicate_count,
+    COUNT("col") - COUNT(DISTINCT "col")        AS duplicate_count,
     MIN(LENGTH(CAST("col" AS TEXT)))            AS min_length,
     MAX(LENGTH(CAST("col" AS TEXT)))            AS max_length,
     MIN("col")                                  AS min_value,
@@ -550,7 +603,7 @@ FROM "table_name" WHERE "col" IS NOT NULL;
 SELECT CAST("col" AS TEXT) AS value, COUNT(*) AS cnt
 FROM "table_name"
 GROUP BY "col"
-ORDER BY cnt DESC
+ORDER BY cnt DESC, value ASC
 LIMIT 10;
 
 -- Spatial Stats (nur für Geometry-Spalten, PostgreSQL/PostGIS)
@@ -576,6 +629,10 @@ SELECT
 FROM "table_name" WHERE "col" IS NOT NULL;
 ```
 
+`duplicate_count` zählt nur **nicht-null** Duplikat-Zeilen jenseits der ersten Ausprägung. `NULL`-Werte werden nicht als Dubletten gewertet.
+
+Für SQLite gilt: `AVG`, `SUM`, `MIN`, `MAX` sind direkt verfügbar; Kennzahlen wie `stddev` brauchen entweder einen Kotlin-Fallback oder bleiben `null`. Das Feld `NumericStats.stddev` ist daher optional und darf bei Dialekten ohne native Unterstützung leer bleiben.
+
 ---
 
 ## 7. CLI-Integration
@@ -593,15 +650,17 @@ d-migrate data profile [Optionen]
 | `--output` | Dateipfad             | Nein (Default: stdout) | Ausgabedatei                               |
 | `--tables` | Komma-Liste           | Nein (Default: alle)   | Einschränkung auf bestimmte Tabellen       |
 | `--schema` | String                | Nein                   | Datenbankschema (PostgreSQL)               |
-| `--top-n`  | Int                   | Nein (Default: 10)     | Anzahl Top-Values pro Spalte               |
+| `--top-n`  | Int                   | Nein (Default: 10)     | Anzahl Top-Values pro Spalte; steuert auch die sample-basierte `PatternStats`-Abdeckung |
 | `--query`  | SQL-String            | Nein                   | Einzelnes Query profilieren statt Tabellen |
 | `--analyze-normalization` | Flag       | Nein (Default: aus)    | FD-Discovery und Normalisierungsvorschläge aktivieren (§4.5) |
+
+`--query` ist exklusiv zu `--tables` und `--analyze-normalization`. `--schema` wirkt nur beim Tabellen-/Datenbank-Profiling, nicht im Query-Modus.
 
 **Beispielaufrufe:**
 
 ```bash
 # Gesamte Datenbank profilieren
-d-migrate data profile --source "jdbc:postgresql://localhost/mydb" --output profile.json
+d-migrate data profile --source "postgresql://localhost/mydb" --output profile.json
 
 # Einzelne Tabellen, YAML-Ausgabe
 d-migrate data profile --source staging-db --tables users,orders --format yaml
@@ -618,28 +677,29 @@ d-migrate data profile --source legacy-db --tables master_data --analyze-normali
 
 ### 7.2 Exit-Codes
 
-Folgt der bestehenden Matrix:
+Folgt der bestehenden CLI-Matrix für Datenpfade:
 
 | Code | Bedeutung                                                |
 | ---- | -------------------------------------------------------- |
 | 0    | Profiling erfolgreich                                    |
 | 2    | CLI-Fehler (fehlende Flags, ungültige Optionen)          |
 | 4    | Verbindungsfehler (DB nicht erreichbar)                  |
-| 6    | Profiling-Fehler (Query fehlgeschlagen, Schema-Anomalie) |
+| 5    | Profiling-Ausführung fehlgeschlagen (z. B. Query, Aggregate, Normalisierungsanalyse) |
+| 7    | Konfigurations-/URL-/Registry-Fehler                     |
 
 ---
 
 ## 8. Fehlerbehandlung
 
-Folgt dem bestehenden d-migrate-Muster: Adapter fangen technische Exceptions und übersetzen sie in Domain-Exceptions.
+Profiling folgt dem bestehenden Runner-Muster: technische Fehler werden in eine lokale Profiling-Exception-Hierarchie übersetzt und im CLI-Layer auf die vorhandenen Exit-Codes gemappt. Eine globale `DomainException`-Basisklasse existiert im aktuellen Projektstand noch nicht.
 
 ```
 RuntimeException
- └── DomainException                   (bestehend in d-migrate)
-      └── ProfilingException           (NEU)
-           ├── SchemaIntrospectionError  — Schema/Tabelle nicht lesbar
-           ├── ProfilingQueryError       — Aggregate-Query fehlgeschlagen
-           └── TypeResolutionError       — DB-Typ nicht auflösbar
+ └── ProfilingException                 (NEU)
+      ├── SchemaIntrospectionError      — Schema/Tabelle nicht lesbar
+      ├── ProfilingQueryError           — Aggregate-Query fehlgeschlagen
+      ├── TypeResolutionError           — DB-Typ nicht auflösbar
+      └── NormalizationAnalysisError    — FD-/Lookup-Analyse fehlgeschlagen
 ```
 
 ---
@@ -653,7 +713,7 @@ RuntimeException
 | **Integration (DB)** | SQLite-Adapter gegen echte In-Memory-DB                                   | JUnit 5 + SQLite `:memory:`       |
 | **Integration (DB)** | PostgreSQL/MySQL-Adapter                                                  | Testcontainers (PG 16, MySQL 8.0) |
 | **End-to-End**       | Komplette Pipeline: DB → Profil → JSON, CLI Round-Trip                    | JUnit 5 + Testdatenbank           |
-| **Determinismus**    | Identische Eingabe → identische Ausgabe                                   | `ClockPort`-Mock mit fixem Wert   |
+| **Determinismus**    | Identische Eingabe → identische Ausgabe                                   | `java.time.Clock.fixed(...)` und deterministische Sortierung (`ORDER BY cnt DESC, value ASC`) |
 | **Strukturanalyse**  | Regex-Patterns für `REPEATED_COLUMN_GROUP`, `PARALLEL_COLUMN_GROUP`       | JUnit 5 (parametrisiert)          |
 | **Normalisierung**   | FD-Discovery, Lookup-Erkennung, Unpivot-Kandidaten                       | JUnit 5 + SQLite `:memory:`       |
 | **Spatial**          | Bounding Box, Geometry Types, SRID, Validierung                          | Testcontainers (PostGIS), SpatiaLite |
@@ -707,7 +767,7 @@ Adapter-Implementierungen (OpenAI, Ollama, Mock) folgen dem bestehenden Muster u
 
 ## 11. Einordnung in die Roadmap
 
-Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milestone 0.6.0, LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling setzt daher auf dem fertigen `SchemaReader` aus 0.6.0 auf. Die Schema-Introspection wird nicht doppelt implementiert, und `SchemaIntrospectionPort` delegiert direkt an den `SchemaReader`. Geplanter Milestone: **0.7.5**.
+Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milestone 0.6.0, LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling soll daher auf derselben JDBC-Metadatenbasis aufsetzen wie `SchemaReader`, aber ein eigenes Projektionsmodell für rohe DB-Typen und Profiling-spezifische Metadaten bereitstellen. Geplanter Milestone: **0.7.5**.
 
 ---
 
@@ -719,4 +779,4 @@ Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milest
 | 2   | `LogicalType` als eigener Enum oder auf `NeutralType` mappen?    | **Eigener Enum**                        | Andere Granularität als `NeutralType` — klassifiziert beobachteten Dateninhalt, nicht deklarierte Struktur (§4.6)           |
 | 3   | Profiling als eigenes Gradle-Modul oder in `hexagon/core`?       | **Eigenes Modul** (`hexagon/profiling`) | Klare Abgrenzung; Core bleibt schlank; Profiling hat eigenes Domain-Modell und eigene Ports                                 |
 | 4   | LLM-Erweiterung in gleicher Phase oder bewusst getrennt?         | **Getrennt**                            | Kern-Profiling erst stabil und getestet, dann semantische Analyse als Aufbaustufe (§10)                                     |
-| 5   | `PatternStats`-Erkennung: SQL-basiert oder in Kotlin nach Fetch? | **Kotlin Regex**                        | Portabler über alle Dialekte; SQLite hat kein natives REGEXP; Pattern-Erkennung läuft auf den bereits gelesenen `topValues` |
+| 5   | `PatternStats`-Erkennung: SQL-basiert oder in Kotlin nach Fetch? | **Kotlin Regex auf Top-Values-Sample** | Portabler über alle Dialekte; SQLite hat kein natives REGEXP; die Statistik ist explizit sample-basiert und auf die durch `topValues` abgedeckten Zeilen begrenzt |
