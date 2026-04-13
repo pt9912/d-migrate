@@ -136,7 +136,9 @@ class SchemaGenerateRunner(
             }
         }
         for (skip in result.skippedObjects) {
-            stderr("  ⚠ Skipped ${skip.type} '${skip.name}': ${skip.reason}")
+            val codePrefix = if (skip.code != null) " [${skip.code}]" else ""
+            stderr("  ⚠ Skipped$codePrefix ${skip.type} '${skip.name}': ${skip.reason}")
+            if (skip.hint != null) stderr("    → Hint: ${skip.hint}")
         }
     }
 

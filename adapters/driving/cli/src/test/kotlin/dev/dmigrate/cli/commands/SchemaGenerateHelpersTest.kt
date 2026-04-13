@@ -226,6 +226,24 @@ class SchemaGenerateHelpersTest : FunSpec({
             )
             json shouldContain "\"name\": \"quote\\\"test\""
         }
+
+        test("JSON output includes SkippedObject code and hint") {
+            val json = SchemaGenerateHelpers.formatJsonOutput(
+                result(
+                    skippedObjects = listOf(
+                        SkippedObject(
+                            type = "table", name = "places", reason = "Spatial profile is none",
+                            code = "E052", hint = "Use --spatial-profile postgis"
+                        )
+                    )
+                ),
+                schema(),
+                "postgresql",
+            )
+            json shouldContain "\"code\": \"E052\""
+            json shouldContain "\"hint\": \"Use --spatial-profile postgis\""
+            json shouldContain "\"action_required\": 1"
+        }
     }
 
     // ─── escapeJson ───────────────────────────────────────────────

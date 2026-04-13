@@ -72,6 +72,7 @@ class SchemaGenerateRunnerTest : FunSpec({
     fun request(
         source: Path = Path.of("/tmp/schema.yaml"),
         target: String = "postgresql",
+        spatialProfile: String? = null,
         output: Path? = null,
         report: Path? = null,
         generateRollback: Boolean = false,
@@ -81,6 +82,7 @@ class SchemaGenerateRunnerTest : FunSpec({
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
+        spatialProfile = spatialProfile,
         output = output,
         report = report,
         generateRollback = generateRollback,
@@ -515,5 +517,43 @@ class SchemaGenerateRunnerTest : FunSpec({
         rec.schema shouldBe defaultSchema
         rec.dialect shouldBe "mysql"
         rec.source shouldBe sourcePath
+    }
+
+    // ─── Spatial Profile (Phase D) ──────────────────────────────
+
+    test("Exit 0: default spatial profile for postgresql is postgis") {
+        val h = harness()
+        h.runner().execute(request(target = "postgresql")) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.POSTGIS
+    }
+
+    test("Exit 0: default spatial profile for mysql is native") {
+        val h = harness()
+        h.runner().execute(request(target = "mysql")) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NATIVE
+    }
+
+    test("Exit 0: default spatial profile for sqlite is none") {
+        val h = harness()
+        h.runner().execute(request(target = "sqlite")) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+    }
+
+    test("Exit 2: unknown spatial profile") {
+        val h = harness()
+        h.runner().execute(request(spatialProfile = "bogus")) shouldBe 2
+        h.stderr.joined() shouldContain "Unknown spatial profile"
+    }
+
+    test("Exit 2: invalid profile/dialect combination") {
+        val h = harness()
+        h.runner().execute(request(target = "mysql", spatialProfile = "spatialite")) shouldBe 2
+        h.stderr.joined() shouldContain "not allowed"
+    }
+
+    test("Exit 0: same options passed to generate and generateRollback") {
+        val h = harness()
+        h.runner().execute(request(target = "postgresql", spatialProfile = "none", generateRollback = true)) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
     }
 })

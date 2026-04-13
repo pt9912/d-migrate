@@ -104,4 +104,18 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "\\\"quotes\\\""
         report shouldContain "\\n"
     }
+
+    test("report includes SkippedObject code and hint") {
+        val result = DdlResult(
+            statements = emptyList(),
+            skippedObjects = listOf(SkippedObject(
+                type = "table", name = "geo_table", reason = "No spatial profile",
+                code = "E052", hint = "Enable postgis"
+            ))
+        )
+        val report = writer.render(result, schema(), "postgresql", Path.of("test.yaml"))
+        report shouldContain "code: E052"
+        report shouldContain "hint: \"Enable postgis\""
+        report shouldContain "action_required: 1"
+    }
 })

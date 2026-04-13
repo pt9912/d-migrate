@@ -131,4 +131,21 @@ class CliGenerateTest : FunSpec({
             Files.deleteIfExists(sibling(".report.yaml"))
         }
     }
+
+    // ─── Spatial Profile (Phase D) ──────────────────────────────
+
+    test("schema generate --spatial-profile is accepted for valid combo") {
+        shouldNotThrowAny {
+            cli().parse(listOf("schema", "generate", "--source", resourcePath("valid-schema.yaml"),
+                "--target", "postgresql", "--spatial-profile", "postgis"))
+        }
+    }
+
+    test("schema generate with invalid spatial profile exits with code 2") {
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(listOf("schema", "generate", "--source", resourcePath("valid-schema.yaml"),
+                "--target", "mysql", "--spatial-profile", "spatialite"))
+        }
+        ex.statusCode shouldBe 2
+    }
 })
