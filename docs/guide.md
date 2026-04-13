@@ -1,10 +1,32 @@
 # Schnellstart-Anleitung
 
-Diese Anleitung beschreibt die ersten Schritte mit d-migrate: Projekt bauen, ein Schema erstellen und validieren.
+Diese Anleitung beschreibt die ersten Schritte mit d-migrate: Installation,
+Schema validieren, Schemas vergleichen, DDL generieren sowie Daten exportieren
+und importieren.
 
 ---
 
-## Option A: Docker (empfohlen)
+## Option A: GitHub Release Assets
+
+Für veröffentlichte Releases stehen launcher-basierte Distributionen als ZIP/TAR
+sowie ein Fat JAR auf der GitHub-Releases-Seite bereit.
+
+```bash
+# Launcher-basierte Distribution entpacken
+tar -xf d-migrate-<version>.tar
+./d-migrate-<version>/bin/d-migrate --help
+
+# Alternativ das Fat JAR direkt starten
+java -jar d-migrate-<version>-all.jar --help
+```
+
+Hinweis:
+
+- Für 0.5.0 ist das der kanonische Download-Pfad neben dem OCI-Image.
+- Die Homebrew-Formula wird im Repository gepflegt, aber erst mit der finalen
+  Release-URL und SHA256 fertiggestellt.
+
+## Option B: Docker (empfohlen)
 
 Kein JDK nötig — nur Docker.
 
@@ -58,7 +80,7 @@ Wichtig:
   [`scripts/test-integration-docker.sh`](../scripts/test-integration-docker.sh),
   das einen separaten JDK-Container mit gemountetem Host-Docker-Socket startet.
 
-## Option B: Aus Quellcode bauen
+## Option C: Aus Quellcode bauen
 
 ### Voraussetzungen
 
@@ -203,6 +225,30 @@ Results:
 
 Validation failed: 1 error(s), 0 warning(s)
 ```
+
+## Schemas vergleichen
+
+`schema compare` vergleicht zwei neutrale Schema-Dateien. Der 0.5.0-MVP ist
+bewusst file-basiert; DB- oder Umgebungsvergleiche sind noch nicht Teil dieses
+Slices.
+
+```bash
+# Menschenlesbare Diff-Ausgabe
+./gradlew :adapters:driving:cli:run --args="schema compare --source mein-schema.yaml --target mein-schema-v2.yaml"
+
+# Strukturiert nach JSON schreiben
+./gradlew :adapters:driving:cli:run --args="--output-format json schema compare --source mein-schema.yaml --target mein-schema-v2.yaml --output diff.json"
+```
+
+Exit-Codes:
+
+- `0`: keine Unterschiede
+- `1`: Unterschiede gefunden
+- `3`: Schema-Validierung fehlgeschlagen
+- `7`: Datei-/Parse-/I/O-Fehler
+
+Bei `--output-format json|yaml` bleibt die Nutzlast auf `stdout` oder in
+`--output`; Fehler laufen weiter über `stderr`.
 
 ## DDL generieren
 

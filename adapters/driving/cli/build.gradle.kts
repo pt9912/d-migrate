@@ -1,11 +1,40 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.bundling.Tar
+import org.gradle.api.tasks.bundling.Zip
+import java.io.File
+import java.security.MessageDigest
+
 plugins {
     application
+    id("com.github.johnrengelman.shadow") version "8.1.1"
     id("com.google.cloud.tools.jib") version "3.4.5"
 }
 
 application {
     applicationName = "d-migrate"
     mainClass.set("dev.dmigrate.cli.MainKt")
+}
+
+val releaseVersion = project.version.toString()
+val releaseZipName = "d-migrate-$releaseVersion.zip"
+val releaseTarName = "d-migrate-$releaseVersion.tar"
+val releaseJarName = "d-migrate-$releaseVersion-all.jar"
+val releaseShaName = "d-migrate-$releaseVersion.sha256"
+val releaseDir = layout.buildDirectory.dir("release")
+
+fun sha256(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
 dependencies {
@@ -31,6 +60,59 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
+}
+
+tasks.named<Zip>("distZip") {
+    archiveFileName.set(releaseZipName)
+}
+
+tasks.named<Tar>("distTar") {
+    archiveFileName.set(releaseTarName)
+}
+
+tasks.named<ShadowJar>("shadowJar") {
+    archiveFileName.set(releaseJarName)
+    manifest {
+        attributes["Main-Class"] = application.mainClass.get()
+    }
+}
+
+val stageReleaseAssets = tasks.register<Sync>("stageReleaseAssets") {
+    group = "distribution"
+    description = "Collect canonical release assets in build/release."
+    dependsOn("distZip", "distTar", "shadowJar")
+    into(releaseDir)
+    from(tasks.named<Zip>("distZip").flatMap { it.archiveFile })
+    from(tasks.named<Tar>("distTar").flatMap { it.archiveFile })
+    from(tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile })
+}
+
+val writeReleaseChecksums = tasks.register("writeReleaseChecksums") {
+    group = "distribution"
+    description = "Write SHA256 checksums for the staged release assets."
+    dependsOn(stageReleaseAssets)
+    outputs.file(releaseDir.map { it.file(releaseShaName) })
+    doLast {
+        val directory = releaseDir.get().asFile
+        val assets = directory.listFiles()
+            ?.filter { it.isFile && it.name != releaseShaName }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+        if (assets.isEmpty()) {
+            throw GradleException("No staged release assets found in ${directory.absolutePath}")
+        }
+        val checksumFile = directory.resolve(releaseShaName)
+        val content = assets.joinToString(separator = System.lineSeparator(), postfix = System.lineSeparator()) {
+            "${sha256(it)}  ${it.name}"
+        }
+        checksumFile.writeText(content)
+    }
+}
+
+tasks.register("assembleReleaseAssets") {
+    group = "distribution"
+    description = "Build ZIP, TAR, fat JAR, and SHA256 into build/release."
+    dependsOn(writeReleaseChecksums)
 }
 
 jib {

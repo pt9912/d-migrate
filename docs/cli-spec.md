@@ -371,7 +371,7 @@ d-migrate schema reverse --source <url|path> [--source-dialect <dialect>] --outp
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema compare` *(geplant: 0.5.0, file-based MVP-Slice von LF-015)*
+#### `schema compare` *(0.5.0, umgesetzt; file-based MVP-Slice von LF-015)*
 
 Vergleicht zwei Schema-Dateien im neutralen Format und zeigt Unterschiede.
 
@@ -554,23 +554,43 @@ Verhalten:
 - Exit 2
 - stderr: `--filter must not contain literal '?' when combined with --since (parameterized query); use a rewritten predicate or escape the literal differently`
 
-#### `data import` *(geplant: 0.4.0)*
+#### `data import` *(0.4.0, umgesetzt)*
 
-Importiert Daten in eine Datenbank.
+Importiert Daten aus JSON, YAML oder CSV in eine Datenbank. Der Importpfad ist
+streaming-basiert, unterstützt Datei-, Verzeichnis- und stdin-Quellen und löst
+`--target` analog zu `data export` auch über benannte Verbindungen aus
+`.d-migrate.yaml` auf.
 
 ```
-d-migrate data import --source <path> --target <url>
+d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 ```
 
-| Flag | Pflicht | Typ | Beschreibung |
-|---|---|---|---|
-| `--source` | Ja | Pfad | Datendatei(en) (JSON/YAML/CSV) |
-| `--target` | Ja | URL | Ziel-Datenbank |
-| `--schema` | Nein | Pfad | Schema zur Validierung |
-| `--on-error` | Nein | String | `abort` (Default), `skip`, `log` |
-| `--chunk-size` | Nein | Integer | Datensätze pro Transaktion (Default: 10000) |
+| Flag | Pflicht | Typ | Default | Beschreibung |
+|---|---|---|---|---|
+| `--target` | Nein | URL oder Name | `database.default_target` aus Config | Ziel-Datenbank als Connection-URL oder benannte Verbindung |
+| `--source` | Ja | Pfad, Verzeichnis oder `-` | — | Quelldatei, Quellverzeichnis oder stdin |
+| `--format` | Nein | String | Auto-Detection nach Dateiendung | Eingabeformat: `json`, `yaml`, `csv`; bei stdin Pflicht |
+| `--schema` | Nein | Pfad | — | Schema-Datei für lokalen Preflight und Tabellen-Reihenfolge bei Verzeichnisimport |
+| `--table` | Nein | String | — | Zieltabelle; für stdin und Single-File-Import relevant |
+| `--tables` | Nein | Liste | alle | Kommaseparierte Import-Reihenfolge; nur für Verzeichnisquellen |
+| `--on-error` | Nein | String | `abort` | Chunk-Fehlerbehandlung: `abort`, `skip`, `log` |
+| `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
+| `--trigger-mode` | Nein | String | `fire` | Trigger-Verhalten: `fire`, `disable`, `strict` |
+| `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
+| `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
+| `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
+| `--encoding` | Nein | String | BOM-/Reader-Default | Input-Encoding |
+| `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
+| `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
+| `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
 
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Importfehlern.
+**Exit-Codes**:
+
+- `0`: Erfolg
+- `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen
+- `4`: Verbindungsfehler
+- `5`: Import-Fehler während Verarbeitung oder Commit
+- `7`: Konfigurations-, Parse- oder Datei-Fehler
 
 #### `data seed` *(geplant: 1.3.0)*
 
