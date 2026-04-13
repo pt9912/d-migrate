@@ -38,6 +38,7 @@ class StreamingImporter(
         format: DataExportFormat,
         options: ImportOptions = ImportOptions(),
         config: PipelineConfig = PipelineConfig(),
+        progressReporter: ProgressReporter = NoOpProgressReporter,
     ): ImportResult {
         val writer = writerLookup(pool.dialect)
         val tableInputs = resolveInputs(input, format)
@@ -45,10 +46,15 @@ class StreamingImporter(
             "No tables to import from $input"
         }
 
+        progressReporter.report(ProgressEvent.RunStarted(
+            operation = ProgressOperation.IMPORT,
+            totalTables = tableInputs.size,
+        ))
+
         val startedAt = System.nanoTime()
         val summaries = mutableListOf<TableImportSummary>()
 
-        for (tableInput in tableInputs) {
+        for ((index, tableInput) in tableInputs.withIndex()) {
             summaries += importSingleTable(
                 pool = pool,
                 writer = writer,
@@ -56,6 +62,9 @@ class StreamingImporter(
                 format = format,
                 options = options,
                 config = config,
+                reporter = progressReporter,
+                ordinal = index + 1,
+                tableCount = tableInputs.size,
             )
         }
 
@@ -69,6 +78,9 @@ class StreamingImporter(
         format: DataExportFormat,
         options: ImportOptions,
         config: PipelineConfig,
+        reporter: ProgressReporter,
+        ordinal: Int,
+        tableCount: Int,
     ): TableImportSummary {
         val tableStartedAt = System.nanoTime()
         var reader: DataChunkReader? = null
@@ -95,6 +107,7 @@ class StreamingImporter(
             )
             session = writer.openTable(pool, tableInput.table, options)
             onTableOpened(tableInput.table, session.targetColumns)
+            reporter.report(ProgressEvent.ImportTableStarted(tableInput.table, ordinal, tableCount))
             targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
 
             val firstChunk = reader.nextChunk()
@@ -188,6 +201,14 @@ class StreamingImporter(
                     rowsUpdated += writeResult.rowsUpdated
                     rowsSkipped += writeResult.rowsSkipped
                     rowsUnknown += writeResult.rowsUnknown
+                    reporter.report(ProgressEvent.ImportChunkProcessed(
+                        table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
+                        chunkIndex = normalizedChunk.chunkIndex.toInt() + 1,
+                        rowsInChunk = normalizedChunk.rows.size.toLong(),
+                        rowsProcessed = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed,
+                        rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
+                        rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
+                    ))
                 } catch (t: Throwable) {
                     rowsFailed += normalizedChunk.rows.size.toLong()
                     when (handleChunkFailure(normalizedChunk, t, options, chunkFailures)) {
@@ -248,6 +269,16 @@ class StreamingImporter(
             }
         }
 
+        val tableDurationMs = elapsedMs(tableStartedAt)
+        val tableStatus = if (error == null && partialFinish == null)
+            TableProgressStatus.COMPLETED else TableProgressStatus.FAILED
+        reporter.report(ProgressEvent.ImportTableFinished(
+            table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
+            rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
+            rowsSkipped = rowsSkipped, rowsFailed = rowsFailed,
+            durationMs = tableDurationMs, status = tableStatus,
+        ))
+
         return TableImportSummary(
             table = tableInput.table,
             rowsInserted = rowsInserted,
@@ -261,7 +292,7 @@ class StreamingImporter(
             triggerMode = options.triggerMode,
             failedFinish = partialFinish?.toFailedFinishInfo(),
             error = error,
-            durationMs = elapsedMs(tableStartedAt),
+            durationMs = tableDurationMs,
         )
     }
 

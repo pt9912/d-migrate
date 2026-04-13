@@ -85,7 +85,7 @@ class DataExportRunnerTest : FunSpec({
      * Ergebnis liefert. Tests können den Builder überschreiben, um Fehler
      * zu werfen oder ein Result mit `error != null` zu liefern.
      */
-    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _ ->
+    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _ ->
         val summaries = tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
         ExportResult(
             tables = summaries,
@@ -235,7 +235,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -252,7 +252,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 0, 0, 0, 0) },
@@ -269,7 +269,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -295,7 +295,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -521,7 +521,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -534,7 +534,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _ ->
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 0, 0, 0, 1, error = "disk full") },
                     totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 1,
@@ -552,7 +552,7 @@ class DataExportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )

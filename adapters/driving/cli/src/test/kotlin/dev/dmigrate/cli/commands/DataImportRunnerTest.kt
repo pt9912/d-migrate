@@ -63,7 +63,7 @@ class DataImportRunnerTest : FunSpec({
             error("FakeDataWriter.openTable() must not be called — runner delegates to ImportExecutor")
     }
 
-    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _, _ ->
+    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _, _, _ ->
         val tables = when (input) {
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
@@ -425,7 +425,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 throw ImportSchemaMismatchException("column 'userId' has no exact match")
             },
         )
@@ -503,7 +503,7 @@ class DataImportRunnerTest : FunSpec({
                 "sqlite:///tmp/should-not-be-used.db"
             },
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 executorInvoked = true
                 error("importExecutor must not be called when schema preflight fails")
             },
@@ -563,7 +563,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -576,7 +576,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -602,7 +602,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -634,7 +634,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 throw UnsupportedTriggerModeException(
                     "--trigger-mode disable is not supported for dialect MYSQL"
                 )
@@ -650,7 +650,7 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            importExecutor = ImportExecutor { _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )
@@ -690,9 +690,9 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { pool, input, format, options, config, _ ->
+            importExecutor = ImportExecutor { pool, input, format, options, config, _, reporter ->
                 seenInput = input
-                successExecutor.execute(pool, input, format, options, config) { _, _ -> }
+                successExecutor.execute(pool, input, format, options, config, { _, _ -> }, reporter)
             },
         )
         assertExit(
@@ -738,7 +738,7 @@ class DataImportRunnerTest : FunSpec({
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { _, input, _, _, _, onTableOpened ->
+            importExecutor = ImportExecutor { _, input, _, _, _, onTableOpened, _ ->
                 val tableName = when (input) {
                     is ImportInput.Stdin -> input.table
                     is ImportInput.SingleFile -> input.table

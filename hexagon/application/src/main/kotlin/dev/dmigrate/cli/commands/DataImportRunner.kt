@@ -15,7 +15,9 @@ import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
 import dev.dmigrate.streaming.ImportResult
+import dev.dmigrate.streaming.NoOpProgressReporter
 import dev.dmigrate.streaming.PipelineConfig
+import dev.dmigrate.streaming.ProgressReporter
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.file.Files
@@ -49,6 +51,7 @@ fun interface ImportExecutor {
         options: ImportOptions,
         config: PipelineConfig,
         onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
+        progressReporter: ProgressReporter,
     ): ImportResult
 }
 
@@ -101,6 +104,7 @@ class DataImportRunner(
     private val schemaTargetValidator: (schema: SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
         { _, _, _ -> },
     private val importExecutor: ImportExecutor,
+    private val progressReporter: ProgressReporter = NoOpProgressReporter,
     private val stdinProvider: () -> InputStream = { System.`in` },
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
@@ -307,6 +311,8 @@ class DataImportRunner(
 
         // ─── 10. Streaming ─────────────────────────────────────
         val result: ImportResult = try {
+            val effectiveReporter = if (request.quiet || request.noProgress)
+                NoOpProgressReporter else progressReporter
             importExecutor.execute(
                 pool = pool,
                 input = preparedImport.input,
@@ -314,6 +320,7 @@ class DataImportRunner(
                 options = importOptions,
                 config = pipelineConfig,
                 onTableOpened = onTableOpened,
+                progressReporter = effectiveReporter,
             )
         } catch (e: UnsupportedTriggerModeException) {
             stderr("Error: ${e.message}")

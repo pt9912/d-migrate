@@ -20,6 +20,7 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.cli.output.ProgressRenderer
 import dev.dmigrate.streaming.StreamingExporter
 
 /**
@@ -150,9 +151,10 @@ class DataExportCommand : CliktCommand(name = "export") {
                     "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
                 }
             },
-            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt ->
-                StreamingExporter(reader, lister, factory).export(pool, tbls, out, fmt, opts, cfg, flt)
+            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter ->
+                StreamingExporter(reader, lister, factory).export(pool, tbls, out, fmt, opts, cfg, flt, reporter)
             },
+            progressReporter = ProgressRenderer(),
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)

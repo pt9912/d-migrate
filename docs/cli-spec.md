@@ -737,47 +737,47 @@ Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 ## 7. Fortschrittsanzeige
 
-### 7.1 Format
+### 7.1 Format (MVP 0.5.0)
 
-Langläufige Operationen (>2 Sekunden) können automatisch
-Status-/Fortschrittszeilen auf `stderr` ausgeben.
+`data export` und `data import` emittieren waehrend des Laufs
+line-orientierte Fortschrittszeilen auf `stderr`. Die Anzeige ist
+deterministisch — es gibt keine Zeitschwelle und keine Cursor-Rewrites.
 
-Im MVP-Umfang von 0.5.0 ist diese Anzeige ereignisbasiert: Start, laufender
-Status, Zwischenstände und Abschluss. Prozentwerte und ETA sind Best-Effort und
-nur verfügbar, wenn der jeweilige Command verlässliche Totals kennt.
+Pro Event wird genau eine Zeile geschrieben. Es gibt zu jedem Zeitpunkt
+hoechstens eine aktive Tabelle (sequenzielle Verarbeitung in 0.5.0).
 
-```
-Exporting table 'orders' | 520,000 rows processed
-```
-
-Struktur:
-```
-<Operation> '<Objekt>' | <Status>
-optional: | <Fortschritt>/<Gesamt> | ~<Rest>
-```
-
-### 7.2 Multi-Tabellen-Fortschritt
-
-Bei Verarbeitung mehrerer Tabellen:
+Export-Beispiel:
 
 ```
-Exporting 5 tables (2 active, 1 completed, 2 pending)
-  ✓ customers       completed (1,234 records)
-  ● orders          active (520,000 rows processed)
-  ● order_items     active (240,000 rows processed)
-  ○ products        pending
-  ○ categories      pending
+Exporting 3 table(s)
+Exporting table 'users' (1/3)
+Exporting table 'users' | chunk 1 | 10,000 rows | 0.82 MB
+Exported table 'users' | 12,345 rows | 2 chunks | 1.01 MB
 ```
 
-Symbole: `✓` abgeschlossen, `●` aktiv, `○` wartend
+Import-Beispiel:
 
-### 7.3 Steuerung
+```
+Importing 2 table(s)
+Importing table 'orders' (1/2)
+Importing table 'orders' | chunk 1 | 10,000 rows processed | 9,980 inserted, 20 skipped
+Imported table 'orders' | 12,000 inserted, 20 skipped
+```
 
-- `--no-progress`: Keine Fortschrittsanzeige (für Scripting)
-- `--quiet`: Nur Fehler
-- Fortschrittsanzeige geht nach **stderr** (stdout bleibt sauber für Piping)
-- Bei `--output-format json` bleibt Fortschritt im MVP stderr-basierte
-  Textausgabe; JSON-Progress-Events sind nicht Teil des 0.5.0-Vertrags
+Die finale ProgressSummary (z.B. "Exported 3 table(s) (30,000 rows, 2.50 MB)
+in 1.20 s") bleibt zusaetzlich erhalten.
+
+### 7.2 Steuerung
+
+- `--no-progress`: Unterdrueckt sowohl Zwischen-Events als auch die finale
+  ProgressSummary. Nicht-progressbezogene stderr-Ausgaben (z.B. Export-Warnings)
+  bleiben sichtbar.
+- `--quiet`: Unterdrueckt alles ausser Fehlern (Events, Summary, Warnings).
+- Fortschrittsanzeige geht ausschliesslich nach **stderr** (stdout bleibt
+  sauber fuer Piping und Nutzdaten).
+- Bei `--output-format json|yaml` bleibt der Progress-Pfad fuer Export/Import
+  plain-text auf `stderr`. Es werden keine JSON-/YAML-Progress-Events
+  eingefuehrt.
 
 ---
 

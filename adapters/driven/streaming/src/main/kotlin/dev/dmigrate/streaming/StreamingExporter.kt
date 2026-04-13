@@ -65,11 +65,17 @@ class StreamingExporter(
         options: ExportOptions = ExportOptions(),
         config: PipelineConfig = PipelineConfig(),
         filter: DataFilter? = null,
+        progressReporter: ProgressReporter = NoOpProgressReporter,
     ): ExportResult {
         val effectiveTables = tables.ifEmpty { tableLister.listTables(pool) }
         require(effectiveTables.isNotEmpty()) {
             "No tables to export — neither --tables given nor any tables found via TableLister."
         }
+
+        progressReporter.report(ProgressEvent.RunStarted(
+            operation = ProgressOperation.EXPORT,
+            totalTables = effectiveTables.size,
+        ))
 
         val startedAt = System.nanoTime()
         val tableSummaries = mutableListOf<TableExportSummary>()
@@ -81,17 +87,14 @@ class StreamingExporter(
                     "Stdout output supports exactly one table, got ${effectiveTables.size}"
                 }
                 val table = effectiveTables.single()
-                // F23: System.out NIE schließen, sonst zerstören wir stdout für den Rest
-                // des Prozesses. Realer DataChunkWriter.close() schließt aber laut Vertrag
-                // den darunterliegenden Stream — daher wrappen wir System.out in einen
-                // NonClosingOutputStream, der close() ignoriert (flush() weitergereicht).
                 val nonClosing = NonClosingOutputStream(System.out)
                 val counting = CountingOutputStream(nonClosing)
                 val writer = writerFactory.create(format, counting, options)
                 try {
-                    tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                    tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting,
+                        progressReporter, 1, 1)
                 } finally {
-                    runCatching { writer.close() }   // schließt counting → nonClosing → no-op
+                    runCatching { writer.close() }
                     runCatching { System.out.flush() }
                 }
                 totalBytes += counting.count
@@ -112,7 +115,8 @@ class StreamingExporter(
                         val counting = CountingOutputStream(buffered)
                         val writer = writerFactory.create(format, counting, options)
                         try {
-                            tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                            tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting,
+                                progressReporter, 1, 1)
                         } finally {
                             runCatching { writer.close() }
                         }
@@ -123,7 +127,7 @@ class StreamingExporter(
 
             is ExportOutput.FilePerTable -> {
                 Files.createDirectories(output.directory)
-                for (table in effectiveTables) {
+                for ((index, table) in effectiveTables.withIndex()) {
                     val path: Path = output.directory.resolve(ExportOutput.fileNameFor(table, format))
                     Files.newOutputStream(
                         path,
@@ -135,7 +139,8 @@ class StreamingExporter(
                             val counting = CountingOutputStream(buffered)
                             val writer = writerFactory.create(format, counting, options)
                             try {
-                                tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting)
+                                tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting,
+                                    progressReporter, index + 1, effectiveTables.size)
                             } finally {
                                 runCatching { writer.close() }
                             }
@@ -178,7 +183,12 @@ class StreamingExporter(
         config: PipelineConfig,
         writer: DataChunkWriter,
         counting: CountingOutputStream,
+        reporter: ProgressReporter,
+        ordinal: Int,
+        tableCount: Int,
     ): TableExportSummary {
+        reporter.report(ProgressEvent.ExportTableStarted(table, ordinal, tableCount))
+
         val tableStart = System.nanoTime()
         var rows = 0L
         var chunks = 0L
@@ -190,18 +200,19 @@ class StreamingExporter(
             reader.streamTable(pool, table, filter, config.chunkSize).use { sequence ->
                 for (chunk in sequence) {
                     if (!beginCalled) {
-                        // §6.17: der erste Chunk hat columns, auch wenn rows leer ist
                         writer.begin(table, chunk.columns)
                         beginCalled = true
                     }
                     writer.write(chunk)
                     rows += chunk.rows.size.toLong()
                     chunks += 1L
+                    reporter.report(ProgressEvent.ExportChunkProcessed(
+                        table = table, tableOrdinal = ordinal, tableCount = tableCount,
+                        chunkIndex = chunks.toInt(), rowsInChunk = chunk.rows.size.toLong(),
+                        rowsProcessed = rows, bytesWritten = counting.count - bytesBefore,
+                    ))
                 }
                 if (!beginCalled) {
-                    // Defensiv: sollte nach §6.17 nicht passieren. Reader hat den
-                    // Vertrag verletzt — wir lassen den Output absichtlich leer und
-                    // rufen weder begin() noch end() auf.
                     error = "Reader returned no chunks for table '$table' " +
                         "(violates Plan §6.17 — empty tables must still emit one chunk)"
                 } else {
@@ -210,15 +221,20 @@ class StreamingExporter(
             }
         } catch (t: Throwable) {
             error = t.message ?: t::class.simpleName
-            // F24: end() NUR wenn begin() erfolgreich war. Sonst würde ein realer
-            // JSON-Writer ein `]` ohne `[` schreiben, ein YAML-Writer einen
-            // hängenden Doc-End-Marker, ein CSV-Writer eine fehlende Header-Zeile etc.
             if (beginCalled) {
                 runCatching { writer.end() }
             }
         }
 
         val durationMs = (System.nanoTime() - tableStart) / 1_000_000
+        val status = if (error == null) TableProgressStatus.COMPLETED else TableProgressStatus.FAILED
+        reporter.report(ProgressEvent.ExportTableFinished(
+            table = table, tableOrdinal = ordinal, tableCount = tableCount,
+            rowsProcessed = rows, chunksProcessed = chunks.toInt(),
+            bytesWritten = counting.count - bytesBefore, durationMs = durationMs,
+            status = status,
+        ))
+
         return TableExportSummary(
             table = table,
             rows = rows,
