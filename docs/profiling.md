@@ -31,6 +31,8 @@ Daten-Profiling ergänzt d-migrate um die Fähigkeit, relationale Datenbestände
 - Tabellen und beliebige Queries profilieren (Kennzahlen je Spalte)
 - Qualitätswarnungen erzeugen (Null-Anteil, Kardinalität, Platzhalter, Typ-Anomalien)
 - Zieltyp-Kompatibilität prüfen (passt `VARCHAR(50)` in `integer`?)
+- Strukturprobleme erkennen (nummerierte Spaltengruppen, Denormalisierung)
+- Normalisierungsvorschläge ableiten (FD-Discovery, Lookup-Extraktion, Unpivot)
 - Ergebnis als JSON/YAML ausgeben
 
 ---
@@ -42,7 +44,7 @@ Daten-Profiling ergänzt d-migrate um die Fähigkeit, relationale Datenbestände
 | **Eingabe**   | Neutrale Schema-YAML-Datei                 | Live-Datenbank (JDBC)                              |
 | **Fokus**     | Schema-Struktur und Datentransfer          | Daten-Inhalt und -Qualität                         |
 | **Modell**    | `SchemaDefinition`, `TableDefinition`      | `DatabaseProfile`, `TableProfile`, `ColumnProfile` |
-| **Typsystem** | `NeutralType` (18 Typen, schemaorientiert) | `LogicalType` (9 Typen, datenorientiert)           |
+| **Typsystem** | `NeutralType` (18 Typen, schemaorientiert) | `LogicalType` (10 Typen, datenorientiert)          |
 | **Ausgabe**   | DDL, Exportdateien                         | Profil-Report (JSON/YAML)                          |
 
 Die Modelle sind bewusst getrennt: Ein Schema beschreibt die *Struktur*, ein Profil beschreibt den *Zustand der Daten*. Die Verbindung zwischen beiden ist die Zieltyp-Kompatibilitätsprüfung (`TargetTypeCompatibility`), die Profildaten gegen das neutrale Typsystem abgleicht.
@@ -82,10 +84,11 @@ Alle Profiling-Klassen liegen unter `dev.dmigrate.profiling.*`, analog zu den be
 
 | Paket                                      | Inhalt                                                                                                                                                             |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `dev.dmigrate.profiling.model`             | `DatabaseProfile`, `TableProfile`, `ColumnProfile`, `NumericStats`, `TemporalStats`, `PatternStats`, `ValueFrequency`, `TargetTypeCompatibility`, `ProfileWarning` |
+| `dev.dmigrate.profiling.model`             | `DatabaseProfile`, `TableProfile`, `ColumnProfile`, `NumericStats`, `TemporalStats`, `PatternStats`, `SpatialStats`, `BoundingBox`, `ValueFrequency`, `TargetTypeCompatibility`, `ProfileWarning` |
 | `dev.dmigrate.profiling.model.constraints` | `PrimaryKeyProfile`, `ForeignKeyProfile`, `UniqueConstraintProfile`                                                                                                |
 | `dev.dmigrate.profiling.types`             | `LogicalType`, `TargetLogicalType`, `Severity`, `WarningCode`                                                                                                      |
 | `dev.dmigrate.profiling.rules`             | `ColumnWarningRule`, `TableWarningRule`, `WarningEvaluator`                                                                                                        |
+| `dev.dmigrate.profiling.model.structural`  | `StructuralFinding`, `StructuralFindingKind`, `NormalizationProposal`, `ProposedEntity`, `ProposedLookup`, `UnpivotCandidate`                                      |
 | `dev.dmigrate.profiling.port`              | `SchemaIntrospectionPort`, `ProfilingDataPort`, `LogicalTypeResolverPort`                                                                                          |
 | `dev.dmigrate.profiling.service`           | `ProfileDatabaseService`, `ProfileTableService`, `QueryProfilingService`                                                                                           |
 
@@ -108,9 +111,9 @@ Die größte Integrationsersparnis liegt in der Wiederverwendung der bestehenden
 | Neue Komponente                                           | Grund                                                                                                      |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Aggregate-Queries (COUNT DISTINCT, MIN/MAX, TopN, Stddev) | Existiert nicht — d-migrate liest/schreibt Daten, aggregiert sie aber nicht                                |
-| Schema-Introspection (PRAGMA, `information_schema`)       | Teilweise vorhanden via `TableLister`, aber nicht spaltengenau (Typ, Nullable, Constraints)                |
 | `LogicalTypeResolver` pro Dialekt                         | Mapping von DB-Typen auf `LogicalType` — existiert nicht, da d-migrate mit `NeutralType` aus YAML arbeitet |
 | Warning-Rule-Engine                                       | Fachliche Regeln für Datenqualität sind ein neues Konzept                                                  |
+| Normalisierungsanalyse (FD-Discovery)                     | Functional-Dependency-Erkennung ist ein neues Konzept — kein bestehendes Pendant in d-migrate              |
 
 ---
 
@@ -139,6 +142,8 @@ data class TableProfile(
     val primaryKey: PrimaryKeyProfile? = null,
     val foreignKeys: List<ForeignKeyProfile> = emptyList(),
     val uniqueConstraints: List<UniqueConstraintProfile> = emptyList(),
+    val structuralFindings: List<StructuralFinding> = emptyList(),
+    val normalizationProposal: NormalizationProposal? = null,
     val warnings: List<ProfileWarning> = emptyList()
 )
 
@@ -162,6 +167,7 @@ data class ColumnProfile(
     val numericStats: NumericStats? = null,
     val temporalStats: TemporalStats? = null,
     val patternStats: PatternStats? = null,
+    val spatialStats: SpatialStats? = null,
     val targetCompatibility: List<TargetTypeCompatibility> = emptyList(),
     val warnings: List<ProfileWarning> = emptyList()
 )
@@ -190,6 +196,21 @@ data class PatternStats(
     val phoneLikeCount: Long? = null,
     val uuidLikeCount: Long? = null,
     val dateLikeCount: Long? = null
+)
+
+data class SpatialStats(
+    val geometryTypes: List<ValueFrequency> = emptyList(),
+    val sridValues: List<ValueFrequency> = emptyList(),
+    val boundingBox: BoundingBox? = null,
+    val emptyGeometryCount: Long? = null,
+    val invalidGeometryCount: Long? = null
+)
+
+data class BoundingBox(
+    val minX: Double,
+    val minY: Double,
+    val maxX: Double,
+    val maxY: Double
 )
 
 data class ValueFrequency(
@@ -239,7 +260,7 @@ enum class Severity { INFO, WARN, ERROR }
 
 enum class LogicalType {
     STRING, INTEGER, DECIMAL, BOOLEAN,
-    DATE, DATETIME, BINARY, JSON, UNKNOWN
+    DATE, DATETIME, BINARY, JSON, GEOMETRY, UNKNOWN
 }
 
 enum class TargetLogicalType {
@@ -247,7 +268,105 @@ enum class TargetLogicalType {
 }
 ```
 
-### 4.5 Verhältnis LogicalType zu NeutralType
+### 4.5 Strukturanalyse
+
+Die Strukturanalyse erkennt Muster in Spaltennamen, die auf Design-Probleme im Schema hindeuten. Sie wird pro Tabelle ausgewertet und als `structuralFindings` im `TableProfile` ausgegeben.
+
+```kotlin
+data class StructuralFinding(
+    val kind: StructuralFindingKind,
+    val columns: List<String>,
+    val message: String
+)
+
+enum class StructuralFindingKind {
+    /** Nummerierte Spalten: Wert_1, Wert_2, Wert_3 → vermutlich denormalisiert */
+    REPEATED_COLUMN_GROUP,
+    /** Gleichartige Präfix-Gruppen: phone_home, phone_work, phone_mobile */
+    PARALLEL_COLUMN_GROUP
+}
+```
+
+**Erkennungslogik** (Kotlin Regex auf Spaltennamen, kein DB-Zugriff nötig):
+
+| Muster | Beispiel | Finding |
+| ------ | -------- | ------- |
+| `<prefix>_<N>` mit N = 1, 2, 3... | `Wert_1`, `Wert_2`, `Wert_3` | `REPEATED_COLUMN_GROUP` |
+| `<prefix><N>` ohne Trenner | `addr1`, `addr2`, `addr3` | `REPEATED_COLUMN_GROUP` |
+| `<prefix>_<suffix>` mit gleichem Präfix und ≥ 3 Varianten | `phone_home`, `phone_work`, `phone_mobile` | `PARALLEL_COLUMN_GROUP` |
+
+**Beispiel-Ausgabe** (JSON):
+
+```json
+{
+  "structuralFindings": [
+    {
+      "kind": "REPEATED_COLUMN_GROUP",
+      "columns": ["Wert_1", "Wert_2", "Wert_3"],
+      "message": "Nummerierte Spaltengruppe 'Wert_' (3 Spalten) — möglicherweise denormalisiert"
+    }
+  ]
+}
+```
+
+Die namenbasierte Erkennung ist deterministisch und braucht keinen DB-Zugriff — sie läuft auf den bereits geladenen Spaltenmetadaten.
+
+#### Normalisierungsanalyse (datenbasiert)
+
+Über die Namenserkennung hinaus kann das Profiling auf Basis der **tatsächlichen Daten** Normalisierungsvorschläge ableiten. Die Analyse kombiniert mehrere Techniken:
+
+**Deterministisch per Code möglich:**
+
+| Technik | Was sie erkennt | Beispiel |
+| ------- | --------------- | -------- |
+| Repeated-Column-Unpivot | `Wert_1`, `Wert_2`, `Wert_3` → Kindtabelle mit Laufnummer | Mechanisch, keine Semantik nötig |
+| Functional-Dependency-Discovery (FD) | Spalte A bestimmt Spalte B → eigene Entität | Algorithmen wie HyFD, TANE — arbeiten auf echten Daten |
+| Low-Cardinality-Extraktion | Spalte mit wenigen Werten → Lookup-Tabelle | `status` mit 3 Werten → `status`-Referenztabelle |
+| Kookkurrenz-Analyse | Spaltengruppen mit identischem Werteverlauf → gehören zusammen | `kunde_name` + `kunde_email` immer gleich bei gleichem `kunde_id` |
+
+**Braucht LLM oder menschliche Bewertung (§10):**
+
+| Aspekt | Warum Code nicht reicht |
+| ------ | ----------------------- |
+| Entitäten benennen | Code erkennt die Gruppe `kunde_name, kunde_email, kunde_tel` — aber "Kunde" als Tabellenname ist Semantik |
+| Fachliche Bedeutung | Was bedeuten `Wert_1..3`? Messwerte, Preisstufen, Bewertungen? |
+| Beziehungstypen | 1:N oder M:N? Daten können es andeuten, aber nicht sicher entscheiden |
+| Mehrdeutige FDs | Bei unsauberen Daten: echte Abhängigkeit oder Zufall? |
+
+Die Normalisierungsanalyse folgt dem zweistufigen Ansatz aus §10: Code liefert den strukturellen Vorschlag, LLM (optional) ergänzt Benennung und fachliche Einordnung.
+
+```kotlin
+data class NormalizationProposal(
+    val sourceTable: String,
+    val proposedEntities: List<ProposedEntity>,
+    val proposedLookups: List<ProposedLookup>,
+    val unpivotCandidates: List<UnpivotCandidate>
+)
+
+/** Spaltengruppe, die durch FD-Analyse als eigene Entität erkannt wurde */
+data class ProposedEntity(
+    val determinant: List<String>,
+    val dependentColumns: List<String>,
+    val suggestedName: String? = null       // null = Code kann keinen Namen ableiten → LLM
+)
+
+/** Spalte mit wenigen Werten → Lookup-/Referenztabelle */
+data class ProposedLookup(
+    val column: String,
+    val distinctValues: Long,
+    val sampleValues: List<String>
+)
+
+/** Nummerierte/parallele Spaltengruppe → Unpivot in Kindtabelle */
+data class UnpivotCandidate(
+    val finding: StructuralFinding,
+    val suggestedChildTable: String? = null  // null → LLM
+)
+```
+
+Die Analyse ist optional und wird nur ausgeführt, wenn explizit angefordert (CLI-Flag `--analyze-normalization`), da die FD-Discovery auf großen Tabellen rechenintensiv sein kann. Das Feld `normalizationProposal` im `TableProfile` (§4.1) ist dann `null`, wenn die Analyse nicht angefordert wurde.
+
+### 4.6 Verhältnis LogicalType zu NeutralType
 
 `LogicalType` (Profiling) und `NeutralType` (d-migrate Core) sind bewusst getrennte Konzepte:
 
@@ -261,6 +380,7 @@ enum class TargetLogicalType {
 | `DATETIME`              | `datetime`, `time`                                |
 | `BINARY`                | `binary`                                          |
 | `JSON`                  | `json`, `array`                                   |
+| `GEOMETRY`              | `geometry`                                         |
 | `UNKNOWN`               | (kein Mapping)                                    |
 
 `LogicalType` ist gröber, weil es den *beobachteten Dateninhalt* klassifiziert, nicht die *deklarierte Struktur*. Eine Spalte vom Typ `VARCHAR(36)` kann `LogicalType.STRING` sein, obwohl die Daten UUID-Muster zeigen — die `PatternStats` machen das sichtbar.
@@ -309,7 +429,7 @@ interface LogicalTypeResolverPort {
 }
 ```
 
-**Hinweis**: `SchemaIntrospectionPort` hat Überschneidungen mit dem geplanten `SchemaReader` (Roadmap 0.6.0, LF-004). Sobald `SchemaReader` implementiert ist, kann `SchemaIntrospectionPort` darauf delegieren oder als Fassade darüber liegen. Für die Profiling-V1 wird ein eigenständiger, schlanker Introspection-Adapter implementiert.
+**Hinweis**: `SchemaIntrospectionPort` delegiert an den `SchemaReader` aus Milestone 0.6.0 (LF-004). Es wird kein eigenständiger Introspection-Adapter implementiert — Profiling nutzt die bereits vorhandene Schema-Introspection als Fassade.
 
 ### 5.2 Services
 
@@ -370,13 +490,13 @@ class WarningEvaluator(
 
 ### 6.1 DB-Adapter pro Dialekt
 
-Jeder Dialekt implementiert drei Ports: `SchemaIntrospectionPort`, `ProfilingDataPort` und `LogicalTypeResolverPort`.
+Jeder Dialekt implementiert zwei Ports: `ProfilingDataPort` und `LogicalTypeResolverPort`. Die Schema-Introspection wird über den `SchemaReader` aus 0.6.0 bereitgestellt (§5.1).
 
-| Dialekt    | Schema-Introspection                           | Aggregate-Queries                   | Typ-Resolver                    |
-| ---------- | ---------------------------------------------- | ----------------------------------- | ------------------------------- |
-| PostgreSQL | `information_schema` + `pg_catalog`            | Standard-SQL-Aggregate + `pg_stats` | PG-Typen → `LogicalType`        |
-| MySQL      | `information_schema`                           | Standard-SQL-Aggregate              | MySQL-Typen → `LogicalType`     |
-| SQLite     | `PRAGMA table_info`, `PRAGMA foreign_key_list` | Standard-SQL-Aggregate              | SQLite Affinity → `LogicalType` |
+| Dialekt    | Aggregate-Queries                   | Typ-Resolver                    |
+| ---------- | ----------------------------------- | ------------------------------- |
+| PostgreSQL | Standard-SQL-Aggregate + `pg_stats` | PG-Typen → `LogicalType`        |
+| MySQL      | Standard-SQL-Aggregate              | MySQL-Typen → `LogicalType`     |
+| SQLite     | Standard-SQL-Aggregate              | SQLite Affinity → `LogicalType` |
 
 ### 6.2 Profilierungsablauf
 
@@ -390,10 +510,13 @@ Jeder Dialekt implementiert drei Ports: `SchemaIntrospectionPort`, `ProfilingDat
    - numerische Stats (min, max, avg, stddev)
    - temporale Stats (minTimestamp, maxTimestamp)
    - Pattern-Erkennung (Email, UUID, Telefon, Datum)
+   - Spatial Stats (Geometry Types, SRID, Bounding Box, Validierung)
 4. LogicalType auflösen             → LogicalTypeResolverPort.resolve()
 5. Regeln anwenden, Warnungen       → WarningEvaluator.evaluate*()
-6. TableProfile / DatabaseProfile zusammenbauen
-7. Serialisieren (JSON/YAML)        → bestehende Format-Adapter
+6. Strukturanalyse (namenbasiert)   → StructuralFinding (§4.5)
+7. Normalisierungsanalyse (optional)→ FD-Discovery, Lookup-/Unpivot-Erkennung (§4.5)
+8. TableProfile / DatabaseProfile zusammenbauen
+9. Serialisieren (JSON/YAML)        → bestehende Format-Adapter
 ```
 
 ### 6.3 Aggregate-Queries (Beispiel PostgreSQL)
@@ -429,6 +552,28 @@ FROM "table_name"
 GROUP BY "col"
 ORDER BY cnt DESC
 LIMIT 10;
+
+-- Spatial Stats (nur für Geometry-Spalten, PostgreSQL/PostGIS)
+SELECT
+    ST_GeometryType("col")                          AS geom_type,
+    COUNT(*)                                         AS cnt
+FROM "table_name" WHERE "col" IS NOT NULL
+GROUP BY ST_GeometryType("col");
+
+SELECT
+    ST_SRID("col")                                   AS srid,
+    COUNT(*)                                         AS cnt
+FROM "table_name" WHERE "col" IS NOT NULL
+GROUP BY ST_SRID("col");
+
+SELECT
+    ST_XMin(ST_Extent("col"))                        AS min_x,
+    ST_YMin(ST_Extent("col"))                        AS min_y,
+    ST_XMax(ST_Extent("col"))                        AS max_x,
+    ST_YMax(ST_Extent("col"))                        AS max_y,
+    COUNT(*) FILTER (WHERE ST_IsEmpty("col"))        AS empty_count,
+    COUNT(*) FILTER (WHERE NOT ST_IsValid("col"))    AS invalid_count
+FROM "table_name" WHERE "col" IS NOT NULL;
 ```
 
 ---
@@ -450,6 +595,7 @@ d-migrate data profile [Optionen]
 | `--schema` | String                | Nein                   | Datenbankschema (PostgreSQL)               |
 | `--top-n`  | Int                   | Nein (Default: 10)     | Anzahl Top-Values pro Spalte               |
 | `--query`  | SQL-String            | Nein                   | Einzelnes Query profilieren statt Tabellen |
+| `--analyze-normalization` | Flag       | Nein (Default: aus)    | FD-Discovery und Normalisierungsvorschläge aktivieren (§4.5) |
 
 **Beispielaufrufe:**
 
@@ -465,6 +611,9 @@ d-migrate data profile --source production --output report.json
 
 # Query profilieren
 d-migrate data profile --source dev-db --query "SELECT * FROM users WHERE created_at > '2025-01-01'"
+
+# Mit Normalisierungsanalyse
+d-migrate data profile --source legacy-db --tables master_data --analyze-normalization --output proposal.json
 ```
 
 ### 7.2 Exit-Codes
@@ -505,6 +654,9 @@ RuntimeException
 | **Integration (DB)** | PostgreSQL/MySQL-Adapter                                                  | Testcontainers (PG 16, MySQL 8.0) |
 | **End-to-End**       | Komplette Pipeline: DB → Profil → JSON, CLI Round-Trip                    | JUnit 5 + Testdatenbank           |
 | **Determinismus**    | Identische Eingabe → identische Ausgabe                                   | `ClockPort`-Mock mit fixem Wert   |
+| **Strukturanalyse**  | Regex-Patterns für `REPEATED_COLUMN_GROUP`, `PARALLEL_COLUMN_GROUP`       | JUnit 5 (parametrisiert)          |
+| **Normalisierung**   | FD-Discovery, Lookup-Erkennung, Unpivot-Kandidaten                       | JUnit 5 + SQLite `:memory:`       |
+| **Spatial**          | Bounding Box, Geometry Types, SRID, Validierung                          | Testcontainers (PostGIS), SpatiaLite |
 
 **Ziel**: >= 90% Testabdeckung pro Modul. I/O-Glue-Code wird über Port-Abstraktion testbar gemacht, nicht von der Coverage ausgenommen.
 
@@ -522,6 +674,7 @@ LLM ergänzt das deterministische Kern-Profiling um semantische Einordnung:
 - Mapping-Vorschläge zwischen Quell- und Zielschema
 - Platzhalter-Intentionen erkennen (`9999-12-31`, `0000-00-00`)
 - Transformationsvorschläge (Trim, Nullisierung, Bool-Interpretation)
+- Normalisierungsvorschläge benennen und fachlich einordnen (§4.5): Entitätsnamen, Beziehungstypen, mehrdeutige FDs bewerten
 
 ### 10.2 Grenzen (verbindlich)
 
@@ -554,7 +707,7 @@ Adapter-Implementierungen (OpenAI, Ollama, Mock) folgen dem bestehenden Muster u
 
 ## 11. Einordnung in die Roadmap
 
-Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milestone 0.6.0, LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling setzt daher auf dem fertigen `SchemaReader` aus 0.6.0 auf. Die Schema-Introspection wird nicht doppelt implementiert, und `SchemaIntrospectionPort` delegiert direkt an den `SchemaReader`. Geplanter Milestone: **0.7.0+**.
+Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milestone 0.6.0, LF-004): Beide brauchen Schema-Introspection aus einer Live-Datenbank. Profiling setzt daher auf dem fertigen `SchemaReader` aus 0.6.0 auf. Die Schema-Introspection wird nicht doppelt implementiert, und `SchemaIntrospectionPort` delegiert direkt an den `SchemaReader`. Geplanter Milestone: **0.7.5**.
 
 ---
 
@@ -563,7 +716,7 @@ Profiling hat eine natürliche Abhängigkeit zum **Reverse-Engineering** (Milest
 | #   | Frage                                                            | Entscheidung                            | Begründung                                                                                                                  |
 | --- | ---------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Serialisierung: Jackson oder kotlinx.serialization?              | **Jackson**                             | Konsistenz mit bestehendem d-migrate; kein zweites Serialisierungs-Framework einführen                                      |
-| 2   | `LogicalType` als eigener Enum oder auf `NeutralType` mappen?    | **Eigener Enum**                        | Andere Granularität als `NeutralType` — klassifiziert beobachteten Dateninhalt, nicht deklarierte Struktur (§4.5)           |
+| 2   | `LogicalType` als eigener Enum oder auf `NeutralType` mappen?    | **Eigener Enum**                        | Andere Granularität als `NeutralType` — klassifiziert beobachteten Dateninhalt, nicht deklarierte Struktur (§4.6)           |
 | 3   | Profiling als eigenes Gradle-Modul oder in `hexagon/core`?       | **Eigenes Modul** (`hexagon/profiling`) | Klare Abgrenzung; Core bleibt schlank; Profiling hat eigenes Domain-Modell und eigene Ports                                 |
 | 4   | LLM-Erweiterung in gleicher Phase oder bewusst getrennt?         | **Getrennt**                            | Kern-Profiling erst stabil und getestet, dann semantische Analyse als Aufbaustufe (§10)                                     |
 | 5   | `PatternStats`-Erkennung: SQL-basiert oder in Kotlin nach Fetch? | **Kotlin Regex**                        | Portabler über alle Dialekte; SQLite hat kein natives REGEXP; Pattern-Erkennung läuft auf den bereits gelesenen `topValues` |
