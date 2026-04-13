@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.*
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 
 class SchemaComparatorFixtureTest : FunSpec({
@@ -25,6 +26,12 @@ class SchemaComparatorFixtureTest : FunSpec({
 
     test("e-commerce.yaml compared to itself produces empty diff") {
         val schema = loadFixture("schemas/e-commerce.yaml")
+        val diff = comparator.compare(schema, schema)
+        diff.isEmpty() shouldBe true
+    }
+
+    test("full-featured.yaml compared to itself produces empty diff") {
+        val schema = loadFixture("schemas/full-featured.yaml")
         val diff = comparator.compare(schema, schema)
         diff.isEmpty() shouldBe true
     }
@@ -104,6 +111,21 @@ class SchemaComparatorFixtureTest : FunSpec({
         val diff = comparator.compare(original, modified)
         // CHECK is not in MVP scope, so removing it should not produce a diff
         diff.tablesChanged.shouldBeEmpty()
+    }
+
+    test("full-featured vs modified detects view changes") {
+        val original = loadFixture("schemas/full-featured.yaml")
+        val modified = original.copy(
+            views = original.views.mapValues { (name, view) ->
+                if (name == "monthly_stats") view.copy(materialized = false) else view
+            }
+        )
+
+        val diff = comparator.compare(original, modified)
+        diff.viewsChanged shouldHaveSize 1
+        diff.viewsChanged[0].name shouldBe "monthly_stats"
+        diff.viewsChanged[0].materialized!!.before shouldBe true
+        diff.viewsChanged[0].materialized!!.after shouldBe false
     }
 
     test("e-commerce column-level FK equivalent to constraint-level FK produces no diff") {
