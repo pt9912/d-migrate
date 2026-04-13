@@ -23,6 +23,7 @@ weiter nur dateibasierte Schemas zu verarbeiten.
 
 - einen echten `SchemaReader` fuer PostgreSQL, MySQL und SQLite
 - das CLI-Kommando `d-migrate schema reverse --source <url>`
+- einen getrennten Schema-/Report-Vertrag fuer Reverse-Ausgaben
 - die Vervollstaendigung von `schema compare` fuer Datei- und DB-Operanden
 - einen `data transfer`-Pfad fuer DB-zu-DB-Streaming ohne Zwischenformat
 - eine gemeinsame JDBC-Metadatenbasis fuer spaetere Profiling-Arbeit ab 0.7.5
@@ -85,6 +86,7 @@ nicht bei Connection- oder Streaming-Grundlagen, sondern bei:
 - JDBC-basiertes Reverse-Engineering fuer PostgreSQL, MySQL und SQLite
 - `schema reverse` fuer Live-Datenbanken ueber `--source <url>`
 - YAML- und JSON-Ausgabe fuer reverse-generierte Schemas
+- separater strukturierter Reverse-Report neben der Schema-Ausgabe
 - Reverse von:
   - Tabellen und Spalten
   - Primary Keys, Foreign Keys, Constraints und Indizes
@@ -98,6 +100,7 @@ nicht bei Connection- oder Streaming-Grundlagen, sondern bei:
 - `schema compare` fuer `file/file`, `file/db` und `db/db`
 - Erweiterung des Diff-Modells auf die von 0.6.0 gelesenen Objekttypen
 - `data transfer` als DB-zu-DB-Streaming-Orchestrator ohne Zwischenformat
+- target-autoritatives Preflight fuer `data transfer` vor dem ersten Write
 - automatische Tabellenreihenfolge auf Basis der gelesenen FK-Relationen
 - Wiederverwendung bestehender Flags und Semantiken aus Export/Import, soweit
   sie fuer DB-zu-DB-Transfer passen
@@ -171,6 +174,17 @@ sondern ein Ergebnisobjekt mit mindestens:
 - optional `skipped_objects`, falls ganze Objekte bewusst nicht transportiert
   werden
 
+Fuer den CLI-Vertrag von `schema reverse` gilt dabei verbindlich:
+
+- `--output` enthaelt immer ein reines Schema-Dokument, das als
+  `SchemaDefinition` wieder eingelesen werden kann
+- Reverse-Notes werden nicht in die Schema-Datei eingebettet
+- Notes und bewusst uebersprungene Objekte erscheinen menschenlesbar auf
+  `stderr` und strukturiert in einem separaten Report-Artefakt
+- der Reverse-Report folgt bevorzugt dem bestehenden Sidecar-Muster
+  (`--report`, Default `<output>.report.yaml`) statt einem implizit
+  vermischten Payload
+
 Ob dafuer bestehende Note-Typen aus dem Generator wiederverwendet oder ein
 gleichwertiger Reverse-spezifischer Vertrag eingefuehrt wird, ist
 Implementierungsdetail. Nicht akzeptabel ist stiller Metadatenverlust ohne
@@ -198,12 +212,22 @@ durch die Hintertuer gebaut. Der neue Pfad soll:
 - vorhandene Import-/Export-Optionen soweit moeglich uebernehmen
 - Fortschritts- und Exit-Code-Vertraege an den heutigen Datenkommandos
   ausrichten
+- vor dem ersten Write ein target-autoritatives Preflight fuer
+  Tabellen-/Spaltenkompatibilitaet ausfuehren
 
 Neue Logik entsteht nur dort, wo 0.6.0 wirklich Neues braucht:
 
 - automatische Tabellenreihenfolge
 - gleichzeitige Koordination von Source und Target
 - DB-zu-DB-spezifische Validierungsregeln
+
+Verbindliche Konsequenz fuer 0.6.0:
+
+- `data transfer` liest vor dem Streaming sowohl Source- als auch Target-Schema,
+  soweit das fuer Auswahl, Kompatibilitaet und Reihenfolge noetig ist
+- das Zielschema ist fuer Schreibkompatibilitaet autoritativ
+- FK-Zyklen schlagen im Preflight fehl, sofern kein expliziter und
+  dialektsicherer Bypass aktiv ist
 
 ### 4.6 Kein freier Metadaten-Sack im Modell
 
@@ -249,6 +273,7 @@ Dialekttransformation fuer sie ein.
    ziehen:
    - `--source <url>` statt `url|path`
    - keine stdin-DDL im Mindestumfang
+   - `--output` = reines Schema, `--report` = strukturierter Reverse-Report
    - klare Include-Flags fuer optionale Objekte
    - Exit-Code-Vertrag fuer Connection-, Reverse- und I/O-Fehler
 2. `docs/cli-spec.md` um `data transfer` erweitern.
@@ -295,13 +320,15 @@ Wichtig:
 - Modellanpassungen muessen mit `schema generate` und `schema compare`
   zusammengedacht werden, nicht nur mit dem Read-Pfad.
 
-### Phase C - Gemeinsame JDBC-Metadatenbasis
+### Phase C - Schema-I/O, Reverse-Reports und gemeinsame JDBC-Metadatenbasis
 
-Ziel: Reverse und spaeteres Profiling bauen auf denselben dialektspezifischen
+Ziel: Reverse besitzt einen belastbaren Schema-I/O-Vertrag, und Reverse sowie
+spaeteres Profiling bauen auf denselben dialektspezifischen
 Metadatenbausteinen auf, ohne den kompletten Code doppelt zu schreiben.
 
 Betroffene Module:
 
+- `adapters:driven:formats`
 - `adapters:driven:driver-common`
 - `adapters:driven:driver-postgresql`
 - `adapters:driven:driver-mysql`
@@ -309,19 +336,29 @@ Betroffene Module:
 
 Arbeitspunkte:
 
-1. Gemeinsame Basisklassen / Helper fuer JDBC-Metadaten-Abfragen einfuehren,
+1. `YamlSchemaCodec.write(...)` produktiv machen.
+2. JSON-Schema-Ausgabe ueber einen klaren Formats-Pfad einfuehren, entweder via
+   eigenem JSON-Codec oder gleichwertig expliziter Serializer-Komponente.
+3. Den Datei-I/O-Vertrag fuer Schema-Kommandos so schaerfen, dass
+   reverse-erzeugte YAML-/JSON-Schemas von den file-based Pfaden wieder
+   konsumiert werden koennen.
+4. Reverse-Report-Writer bzw. Sidecar-Format fuer Notes und `skipped_objects`
+   einfuehren.
+5. Gemeinsame Basisklassen / Helper fuer JDBC-Metadaten-Abfragen einfuehren,
    wo das fachlich wirklich geteilt werden kann.
-2. Projektionen fuer Tabellen, Spalten, Keys, Indizes und weitere
+6. Projektionen fuer Tabellen, Spalten, Keys, Indizes und weitere
    Schemaobjekte so strukturieren, dass Driver-spezifische Details nicht in
    String-Geraetsel im Runner ausarten.
-3. Connection-Ownership am bestehenden Pool-/Driver-Modell ausrichten.
-4. `TableLister` nach Moeglichkeit auf dieselbe Query-Basis umstellen, ohne den
+7. Connection-Ownership am bestehenden Pool-/Driver-Modell ausrichten.
+8. `TableLister` nach Moeglichkeit auf dieselbe Query-Basis umstellen, ohne den
    0.3.0-/0.4.0-Vertrag zu brechen.
-5. Die gemeinsame Basis so schneiden, dass sie spaeter fuer 0.7.5
+9. Die gemeinsame Basis so schneiden, dass sie spaeter fuer 0.7.5
    `SchemaIntrospectionPort` wiederverwendbar bleibt.
 
 Wichtig:
 
+- `schema reverse` braucht nicht nur Read-Mapping, sondern auch verlaessliche
+  Schema-Serialisierung.
 - JDBC-Metadaten allein reichen je nach Dialekt nicht fuer alles. Dialektmodule
   duerfen gezielte Zusatzqueries verwenden.
 - Die geteilte Infrastruktur darf Driver-Besonderheiten nicht plattbuegeln.
@@ -394,13 +431,17 @@ Arbeitspunkte:
 3. Source-Aufloesung ueber Named Connections und `ConnectionUrlParser`
    wiederverwenden.
 4. Ausgabe als YAML und JSON unterstuetzen.
-5. Include-Flags fuer optionale Objekte verdrahten.
-6. Fehler- und Exit-Code-Vertrag festziehen:
+5. `--report` plus Default-Sidecar-Pfad fuer Reverse-Notes einfuehren.
+6. Include-Flags fuer optionale Objekte verdrahten.
+7. Trennung sauber halten:
+   - `--output` = reines Schema
+   - `--report` = strukturierte Reverse-Notes / `skipped_objects`
+8. Fehler- und Exit-Code-Vertrag festziehen:
    - `0` Erfolg
    - `2` CLI-Validierungsfehler
    - `4` Connection- bzw. DB-Metadatenfehler
    - `7` Config-/URL-/I/O-Fehler
-7. Strukturierte Reverse-Notes auf stderr und in maschinenlesbaren Ausgaben
+9. Strukturierte Reverse-Notes auf stderr und im Report
    konsistent transportieren.
 
 ### Phase F - `schema compare` fuer DB-Operanden vervollstaendigen
@@ -446,19 +487,32 @@ Arbeitspunkte:
 
 1. `DataTransferRunner` als eigenen Application-Pfad einfuehren.
 2. Source- und Target-URL-Aufloesung analog zu Export/Import wiederverwenden.
-3. `DataReader` der Quelle direkt mit `DataWriter` des Ziels verbinden.
-4. Tabellenliste automatisch aus dem gelesenen Source-Schema bzw. den
+3. Source- und Target-Schema vor dem Streaming lesen, soweit das fuer
+   Tabellenwahl, Reihenfolge und Zielvalidierung erforderlich ist.
+4. `DataReader` der Quelle direkt mit `DataWriter` des Ziels verbinden.
+5. Target-autoritatives Preflight einfuehren:
+   - Tabellen-/Spaltenkompatibilitaet vor dem ersten Write pruefen
+   - bestehende Import-Semantik fuer Preflight-Fehler soweit moeglich
+     wiederverwenden
+6. Tabellenliste automatisch aus dem gelesenen Source-Schema bzw. den
    FK-Abhaengigkeiten ableiten, falls `--tables` nicht gesetzt ist.
-5. Bestehende Optionen sauber uebernehmen, mindestens:
+7. Schreibreihenfolge aus dem Zielschema bzw. einer gleichwertig sicheren
+   Abhaengigkeitsprojektion bestimmen.
+8. FK-Zyklen explizit behandeln:
+   - Default = Preflight-Fehler mit dediziertem Exit
+   - nur explizite, dialektsichere Bypaesse duerfen davon abweichen
+9. Bestehende Optionen sauber uebernehmen, mindestens:
    - `--tables`
    - `--filter`
    - `--truncate`
    - `--on-conflict update`
    - `--since-column` / `--since`
    - `--trigger-mode`
-6. Transfer-spezifische Vorpruefungen fuer Source/Target-Dialekte und
+10. Transfer-spezifische Vorpruefungen fuer Source/Target-Dialekte und
    widerspruechliche Flags einfuehren.
-7. Fortschritt und Fehlervertrag an den heutigen Datenkommandos ausrichten.
+11. Fehlervertrag an Export/Import angleichen, insbesondere mit dediziertem
+    Preflight-Pfad fuer Zielinkompatibilitaeten und Zyklen.
+12. Fortschritt an den heutigen Datenkommandos ausrichten.
 
 Wichtig:
 
@@ -543,13 +597,15 @@ Vertrag fuer:
 - bewusst uebersprungene Objekte
 - best-effort-Mappings
 
-Die Darstellung muss ueber:
+Verbindlicher CLI-Vertrag:
 
-- stderr
-- strukturierte CLI-Ausgaben
-- Tests
+- `--output` enthaelt ausschliesslich das reverse-generierte Schema
+- das Schema bleibt als regulaere `SchemaDefinition` wieder einlesbar
+- strukturierte Reverse-Notes und `skipped_objects` liegen in einem separaten
+  Report-Artefakt
+- `stderr` zeigt die menschenlesbare Kurzfassung derselben Informationen
 
-konsistent sein.
+Die Darstellung muss ueber `stderr`, Report-Datei und Tests konsistent sein.
 
 ### 6.4 Gemeinsame Metadatenbasis
 
@@ -572,12 +628,17 @@ Zielstruktur ist:
 - ein neuer Orchestrator koordiniert Source, Target, Reihenfolge und Optionen
 - vorhandene Fortschrittsereignisse werden wiederverwendet oder additiv
   erweitert
+- ein Preflight validiert Zielkompatibilitaet, bevor der erste Chunk
+  geschrieben wird
 
 Wichtig:
 
 - Tabellenreihenfolge darf nicht nur "wie vom Lister geliefert" sein
-- FK-Abhaengigkeiten muessen bewusst geordnet oder klar als Grenzfall
-  reportet werden
+- FK-Abhaengigkeiten muessen gegen ein target-autoritatives Bild geordnet
+  werden
+- Zyklen duerfen nicht erst waehrend des Schreibens auffallen; sie muessen im
+  Preflight explizit scheitern oder ueber einen bewusst sicheren Dialektpfad
+  abgefangen werden
 
 ---
 
@@ -595,6 +656,9 @@ Voraussichtlich anzupassen oder neu einzufuehren:
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCommands.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataCommands.kt`
 - neue CLI-Helfer fuer Reverse/Transfer
+- `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/yaml/YamlSchemaCodec.kt`
+- neuer JSON-Schema-Writer/-Codec unter `adapters/driven/formats/...`
+- neuer Reverse-Report-Writer unter `adapters/driven/formats/...`
 - `adapters/driven/driver-common/...`
 - `adapters/driven/driver-postgresql/...`
 - `adapters/driven/driver-mysql/...`
@@ -619,6 +683,12 @@ Neue oder erweiterte Testartefakte:
 - [ ] `schema reverse --source <url> --output <path>` funktioniert fuer
       PostgreSQL, MySQL und SQLite.
 - [ ] Reverse erzeugt gueltige YAML- und JSON-Schemas im neutralen Format.
+- [ ] `--output` enthaelt ein reines, wieder einlesbares Schema-Dokument; Notes
+      werden nicht in die Schema-Datei eingebettet.
+- [ ] Reverse-erzeugte YAML-/JSON-Schemas koennen von den file-based
+      Schema-Pfaden wieder konsumiert werden.
+- [ ] Reverse-Notes und bewusst uebersprungene Objekte erscheinen auf `stderr`
+      und in einem separaten strukturierten Report.
 - [ ] Tabellen, Spalten, Keys, Constraints und Indizes werden gelesen.
 - [ ] Sequenzen und relevante Custom Types werden gelesen.
 - [ ] Views werden lesbar und compare-faehig.
@@ -635,8 +705,14 @@ Neue oder erweiterte Testartefakte:
 - [ ] `data transfer --source <url> --target <url>` streamt ohne
       Zwischenformat von DB zu DB.
 - [ ] `data transfer` uebernimmt die vereinbarten Datenpfad-Flags konsistent.
+- [ ] `data transfer` fuehrt vor dem ersten Write ein target-autoritatives
+      Preflight fuer Tabellen-/Spaltenkompatibilitaet aus.
 - [ ] Die Tabellenreihenfolge fuer Transfer wird automatisch aus FK-Beziehungen
       oder einer dokumentierten gleichwertigen Strategie abgeleitet.
+- [ ] FK-Zyklen im `data transfer` schlagen im Preflight fehl, sofern kein
+      expliziter und dokumentierter sicherer Bypass aktiv ist.
+- [ ] Preflight-Fehler im `data transfer` sind exit-code-seitig vom eigentlichen
+      Streaming-Fehlerpfad getrennt.
 - [ ] `docs/cli-spec.md`, `docs/neutral-model-spec.md` und
       `docs/architecture.md` beschreiben denselben 0.6.0-Vertrag.
 
@@ -666,10 +742,10 @@ docker build --target build \
 
 ```bash
 docker run --rm -v $(pwd):/work d-migrate:0.6.0 \
-  schema reverse --source postgresql://user:pw@host/db --output /work/out/schema.yaml
+  schema reverse --source postgresql://user:pw@host/db --output /work/out/schema.yaml --report /work/out/schema.report.yaml
 
 docker run --rm -v $(pwd):/work d-migrate:0.6.0 \
-  --output-format json schema reverse --source mysql://user:pw@host/db --output /work/out/schema.json
+  schema reverse --source mysql://user:pw@host/db --format json --output /work/out/schema.json --report /work/out/schema.report.yaml
 ```
 
 4. Manuelle Compare-Smokes:
@@ -694,10 +770,14 @@ docker run --rm d-migrate:0.6.0 \
 
 Dabei explizit pruefen:
 
-- Reverse-Notes sind auf stderr und in maschinenlesbaren Ausgaben konsistent
+- Reverse-Notes sind auf stderr und im Sidecar-Report konsistent
+- die erzeugten Reverse-Schemas lassen sich von den file-based Schema-Pfaden
+  wieder einlesen
 - Compare meldet echte Unterschiede weiterhin mit Exit `1`
 - Transfer erzeugt keine Zwischenartefakte und respektiert die vereinbarten
   Import-/Export-Semantiken
+- Transfer scheitert bei Zielinkompatibilitaeten oder FK-Zyklen bereits im
+  Preflight mit dem dafuer vorgesehenen Fehlerpfad
 
 ---
 
