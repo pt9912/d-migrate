@@ -134,6 +134,27 @@ class CliSchemaCompareTest : FunSpec({
         output shouldContain "status: identical"
     }
 
+    // §8.3/M4: validation warnings on valid schemas remain visible and don't change exit code
+    test("validation warnings on valid schemas do not change exit code") {
+        val src = resourcePath("valid-schema-warning.yaml")
+        // Schema is valid but triggers W001 (float for monetary column)
+        // Exit should be 0 (identical), not 3
+        shouldNotThrowAny {
+            cli().parse(listOf("schema", "compare", "--source", src, "--target", src))
+        }
+    }
+
+    test("validation warnings visible in json output for valid schemas") {
+        val output = captureStdout {
+            cli().parse(listOf("--output-format", "json", "schema", "compare",
+                "--source", resourcePath("valid-schema-warning.yaml"),
+                "--target", resourcePath("valid-schema-warning.yaml")))
+        }
+        output shouldContain """"status": "identical""""
+        output shouldContain """"validation""""
+        output shouldContain """"W001""""
+    }
+
     // §8.3: different schemas with json format
     test("different schemas with json format produces json diff") {
         val output = captureStdout {

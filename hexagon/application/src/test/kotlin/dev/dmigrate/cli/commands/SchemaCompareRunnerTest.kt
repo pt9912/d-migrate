@@ -13,11 +13,6 @@ import java.nio.file.Path
 class SchemaCompareRunnerTest : FunSpec({
 
     val schemaA = SchemaDefinition(name = "A", version = "1.0")
-    val schemaB = SchemaDefinition(name = "B", version = "2.0",
-        tables = mapOf("users" to TableDefinition(
-            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier())),
-        )),
-    )
     val emptyDiff = SchemaDiff()
     val nonEmptyDiff = SchemaDiff(
         schemaMetadata = SchemaMetadataDiff(
@@ -27,6 +22,12 @@ class SchemaCompareRunnerTest : FunSpec({
         tablesAdded = listOf(NamedTable("users", TableDefinition(
             columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier())),
         ))),
+    )
+    val fakeDiffView = DiffView(
+        schemaMetadata = MetadataChangeView(
+            name = StringChange("A", "B"),
+        ),
+        tablesAdded = listOf(TableSummaryView("users", 1)),
     )
 
     class Capture {
@@ -49,6 +50,7 @@ class SchemaCompareRunnerTest : FunSpec({
             schemaReader = schemaReader,
             validator = validator,
             comparator = comparator,
+            projectDiff = { _ -> fakeDiffView },
             ensureParentDirectories = { dirsCreated.add(it) },
             fileWriter = { path, content -> fileWrites += path to content },
             renderPlain = { doc -> "PLAIN:${doc.status}" },
@@ -97,10 +99,8 @@ class SchemaCompareRunnerTest : FunSpec({
     // §8.1 #4
     test("target parse failure returns exit 7") {
         val h = Harness()
-        var calls = 0
-        h.schemaReader = { _ ->
-            calls++
-            if (calls == 2) throw RuntimeException("bad yaml")
+        h.schemaReader = { path ->
+            if (path.toString().contains("b.yaml")) throw RuntimeException("bad yaml")
             schemaA
         }
         h.runner().execute(request()) shouldBe 7
@@ -109,6 +109,12 @@ class SchemaCompareRunnerTest : FunSpec({
     // §8.1 #5
     test("invalid source returns exit 3") {
         val h = Harness()
+        h.validator = { schema ->
+            if (schema.name == "A") ValidationResult(errors = listOf(
+                ValidationError("E001", "no columns", "tables.t")))
+            else ValidationResult()
+        }
+        // Both sides read schemaA (name="A"), first call is source
         var calls = 0
         h.validator = { _ ->
             calls++
@@ -168,13 +174,14 @@ class SchemaCompareRunnerTest : FunSpec({
         h.fileWrites.size shouldBe 1
     }
 
-    // §8.1 #11
-    test("file writer failure returns exit 7 from outputDocument") {
+    // §8.1 #11 — C2/C3 fix: write failure returns exit 7
+    test("file writer failure returns exit 7") {
         val h = Harness()
         val runner = SchemaCompareRunner(
             schemaReader = h.schemaReader,
             validator = h.validator,
             comparator = h.comparator,
+            projectDiff = { _ -> fakeDiffView },
             ensureParentDirectories = { },
             fileWriter = { _, _ -> throw RuntimeException("disk full") },
             renderPlain = { "PLAIN:${it.status}" },
@@ -184,9 +191,7 @@ class SchemaCompareRunnerTest : FunSpec({
             stdout = h.stdout.sink,
             stderr = h.stderr.sink,
         )
-        // Runner still returns 0 because the write error is caught in outputDocument
-        // and reported via printError — the exit code reflects the compare result
-        runner.execute(request(output = Path.of("/tmp/out.txt"))) shouldBe 0
+        runner.execute(request(output = Path.of("/tmp/out.txt"))) shouldBe 7
         h.stderr.joined() shouldContain "Failed to write"
     }
 
@@ -223,13 +228,22 @@ class SchemaCompareRunnerTest : FunSpec({
         h.runner().execute(request(target = path, output = path)) shouldBe 2
     }
 
-    test("validation warnings appear in json output for valid schemas") {
+    test("ensureParentDirectories failure returns exit 7") {
         val h = Harness()
-        h.validator = { _ -> ValidationResult(warnings = listOf(
-            ValidationWarning("W001", "warn", "tables.t"))) }
-        h.comparator = { _, _ -> nonEmptyDiff }
-        // The runner passes validation block to the document; renderer receives it
-        val exitCode = h.runner().execute(request(outputFormat = "json"))
-        exitCode shouldBe 1
+        val runner = SchemaCompareRunner(
+            schemaReader = h.schemaReader,
+            validator = h.validator,
+            comparator = h.comparator,
+            projectDiff = { _ -> fakeDiffView },
+            ensureParentDirectories = { throw RuntimeException("permission denied") },
+            fileWriter = { path, content -> h.fileWrites += path to content },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { msg, _ -> h.stderr.sink("Error: $msg") },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request(output = Path.of("/tmp/out.txt"))) shouldBe 7
     }
 })

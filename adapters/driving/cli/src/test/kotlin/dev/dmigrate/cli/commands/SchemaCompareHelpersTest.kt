@@ -22,17 +22,12 @@ class SchemaCompareHelpersTest : FunSpec({
         status = "different", exitCode = 1,
         source = "a.yaml", target = "b.yaml",
         summary = SchemaCompareSummary(tablesAdded = 1, tablesRemoved = 1, enumTypesChanged = 1),
-        diff = SchemaDiff(
-            schemaMetadata = SchemaMetadataDiff(name = ValueChange("A", "B")),
-            tablesAdded = listOf(NamedTable("new_table", TableDefinition(
-                columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier(true))),
-            ))),
-            tablesRemoved = listOf(NamedTable("old_table", TableDefinition(
-                columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer)),
-            ))),
-            enumTypesChanged = listOf(EnumTypeDiff("status", ValueChange(
-                listOf("a", "b"), listOf("a", "b", "c"),
-            ))),
+        diff = DiffView(
+            schemaMetadata = MetadataChangeView(name = StringChange("A", "B")),
+            tablesAdded = listOf(TableSummaryView("new_table", 2)),
+            tablesRemoved = listOf(TableSummaryView("old_table", 1)),
+            enumTypesChanged = listOf(EnumChangeView("status",
+                listOf("a", "b"), listOf("a", "b", "c"))),
         ),
     )
 
@@ -85,6 +80,56 @@ class SchemaCompareHelpersTest : FunSpec({
         first shouldBe second
     }
 
+    // m2: Golden-snapshot test for plain text
+    test("plain text golden snapshot for realistic diff") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "old.yaml", target = "new.yaml",
+            summary = SchemaCompareSummary(
+                tablesAdded = 1, tablesChanged = 1, enumTypesAdded = 1),
+            diff = DiffView(
+                schemaMetadata = MetadataChangeView(
+                    version = StringChange("1.0", "2.0")),
+                enumTypesAdded = listOf(EnumSummaryView("status", listOf("a", "b"))),
+                tablesAdded = listOf(TableSummaryView("orders", 3)),
+                tablesChanged = listOf(TableChangeView(
+                    name = "users",
+                    columnsAdded = listOf(ColumnSummaryView("email", "email")),
+                    columnsChanged = listOf(ColumnChangeView(
+                        name = "name",
+                        type = StringChange("text(100)", "text(200)"),
+                    )),
+                    indicesAdded = listOf("idx_email [btree]"),
+                )),
+            ),
+        )
+        val expected = """
+Schema Compare: old.yaml <-> new.yaml
+
+Status: DIFFERENT
+
+Summary: 3 change(s)
+  Tables added:    1
+  Tables changed:  1
+  Enums added:     1
+
+Schema Metadata:
+  version: 1.0 -> 2.0
+
+Enum Types:
+  + status: [a, b]
+
+Tables:
+  + orders (3 columns)
+  ~ users:
+      + column email: email
+      ~ column name:
+          type: text(100) -> text(200)
+      + index idx_email [btree]""".trimIndent()
+
+        SchemaCompareHelpers.renderPlain(doc) shouldBe expected
+    }
+
     // --- JSON ---
 
     test("json identical contains stable command/status/summary") {
@@ -112,6 +157,43 @@ class SchemaCompareHelpersTest : FunSpec({
         json shouldContain """"E001""""
     }
 
+    test("json renders indices and constraints for changed tables") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(tablesChanged = 1),
+            diff = DiffView(tablesChanged = listOf(TableChangeView(
+                name = "t",
+                indicesAdded = listOf("idx_a [btree]"),
+                constraintsRemoved = listOf("fk_old (foreign_key on [ref])"),
+            ))),
+        )
+        val json = SchemaCompareHelpers.renderJson(doc)
+        json shouldContain """"indices_added""""
+        json shouldContain "idx_a [btree]"
+        json shouldContain """"constraints_removed""""
+        json shouldContain "fk_old"
+    }
+
+    test("json renders default values with proper null handling") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(tablesChanged = 1),
+            diff = DiffView(tablesChanged = listOf(TableChangeView(
+                name = "t",
+                columnsChanged = listOf(ColumnChangeView(
+                    name = "c",
+                    default = NullableStringChange(null, "\"hello\""),
+                )),
+            ))),
+        )
+        val json = SchemaCompareHelpers.renderJson(doc)
+        json shouldContain """"before": null"""
+        // The display string "hello" (with quotes) is JSON-escaped to \"hello\"
+        json shouldContain """"default": {"before": null, "after": """
+    }
+
     // --- YAML ---
 
     test("yaml identical contains stable fields") {
@@ -126,17 +208,50 @@ class SchemaCompareHelpersTest : FunSpec({
         val yaml = SchemaCompareHelpers.renderYaml(differentDoc)
         yaml shouldContain "status: different"
         yaml shouldContain "tables_added:"
-        yaml shouldContain "- new_table"
+        yaml shouldContain "\"new_table\""
     }
 
     test("yaml has same fields as json") {
         val json = SchemaCompareHelpers.renderJson(differentDoc)
         val yaml = SchemaCompareHelpers.renderYaml(differentDoc)
-        // Both must contain the core fields
         for (field in listOf("schema.compare", "different", "new_table", "old_table")) {
             json shouldContain field
             yaml shouldContain field
         }
+    }
+
+    test("yaml renders indices and constraints for changed tables") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(tablesChanged = 1),
+            diff = DiffView(tablesChanged = listOf(TableChangeView(
+                name = "t",
+                indicesAdded = listOf("idx_a [btree]"),
+                constraintsAdded = listOf("uq_email (unique on [email])"),
+            ))),
+        )
+        val yaml = SchemaCompareHelpers.renderYaml(doc)
+        yaml shouldContain "indices_added:"
+        yaml shouldContain "constraints_added:"
+    }
+
+    test("yaml renders view change fields") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(viewsChanged = 1),
+            diff = DiffView(viewsChanged = listOf(ViewChangeView(
+                name = "v",
+                materialized = StringChange("false", "true"),
+                refresh = NullableStringChange(null, "on_demand"),
+                sourceDialect = NullableStringChange("postgresql", "mysql"),
+            ))),
+        )
+        val yaml = SchemaCompareHelpers.renderYaml(doc)
+        yaml shouldContain "materialized:"
+        yaml shouldContain "refresh:"
+        yaml shouldContain "source_dialect:"
     }
 
     // --- Validation block for warnings without errors ---
@@ -165,7 +280,8 @@ class SchemaCompareHelpersTest : FunSpec({
     }
 
     test("unnamed index signature uses columns") {
-        val idx = IndexDefinition(name = null, columns = listOf("a", "b"), type = IndexType.HASH, unique = true)
+        val idx = IndexDefinition(name = null, columns = listOf("a", "b"),
+            type = IndexType.HASH, unique = true)
         SchemaCompareHelpers.indexSignature(idx) shouldBe "a,b [hash,unique]"
     }
 
@@ -179,20 +295,33 @@ class SchemaCompareHelpersTest : FunSpec({
         sig shouldContain "orders"
     }
 
-    // --- Special characters ---
+    // --- Special characters (m1: stronger assertion) ---
 
     test("json escapes special characters in names") {
         val doc = SchemaCompareDocument(
             status = "different", exitCode = 1,
             source = "file \"a\".yaml", target = "b.yaml",
             summary = SchemaCompareSummary(tablesAdded = 1),
-            diff = SchemaDiff(tablesAdded = listOf(NamedTable("table\nname", TableDefinition(
-                columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer)),
-            )))),
+            diff = DiffView(tablesAdded = listOf(TableSummaryView("table\nname", 1))),
         )
         val json = SchemaCompareHelpers.renderJson(doc)
-        json shouldContain """file \"a\".yaml"""
-        json shouldNotContain "\n\"table"  // newline should be escaped
+        // Verify the raw JSON escapes quotes and newlines
+        json shouldContain "file \\\"a\\\".yaml"
+        // Newline in name must be escaped to literal \n in JSON output
+        json shouldNotContain "table\nname"  // must NOT contain actual newline
+        json shouldContain "table"
+        json shouldContain "name"
+    }
+
+    test("yaml escapes special characters in names") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(tablesAdded = 1),
+            diff = DiffView(tablesAdded = listOf(TableSummaryView("table\"name", 1))),
+        )
+        val yaml = SchemaCompareHelpers.renderYaml(doc)
+        yaml shouldContain """table\"name"""
     }
 
     // --- Column changed rendering ---
@@ -202,15 +331,67 @@ class SchemaCompareHelpersTest : FunSpec({
             status = "different", exitCode = 1,
             source = "a.yaml", target = "b.yaml",
             summary = SchemaCompareSummary(tablesChanged = 1),
-            diff = SchemaDiff(tablesChanged = listOf(TableDiff(
+            diff = DiffView(tablesChanged = listOf(TableChangeView(
                 name = "users",
-                columnsChanged = listOf(ColumnDiff(
+                columnsChanged = listOf(ColumnChangeView(
                     name = "email",
-                    type = ValueChange(NeutralType.Text(100), NeutralType.Text(200)),
+                    type = StringChange("text(100)", "text(200)"),
                 )),
             ))),
         )
         val plain = SchemaCompareHelpers.renderPlain(doc)
         plain shouldContain "text(100) -> text(200)"
+    }
+
+    // --- Projection ---
+
+    test("projectDiff converts SchemaDiff to DiffView with canonical strings") {
+        val diff = SchemaDiff(
+            schemaMetadata = SchemaMetadataDiff(name = ValueChange("A", "B")),
+            tablesAdded = listOf(NamedTable("t", TableDefinition(
+                columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier(true)))))),
+            tablesChanged = listOf(TableDiff(
+                name = "users",
+                columnsChanged = listOf(ColumnDiff(
+                    name = "name",
+                    type = ValueChange(NeutralType.Text(100), NeutralType.Text(200)),
+                )),
+                indicesAdded = listOf(IndexDefinition(name = "idx_a", columns = listOf("a"))),
+                constraintsAdded = listOf(ConstraintDefinition(
+                    name = "uq_email", type = ConstraintType.UNIQUE, columns = listOf("email"))),
+            )),
+            enumTypesChanged = listOf(EnumTypeDiff("status", ValueChange(
+                listOf("a"), listOf("a", "b")))),
+        )
+        val view = SchemaCompareHelpers.projectDiff(diff)
+
+        view.schemaMetadata!!.name!!.before shouldBe "A"
+        view.tablesAdded[0].name shouldBe "t"
+        view.tablesAdded[0].columnCount shouldBe 1
+        view.tablesChanged[0].columnsChanged[0].type!!.before shouldBe "text(100)"
+        view.tablesChanged[0].columnsChanged[0].type!!.after shouldBe "text(200)"
+        view.tablesChanged[0].indicesAdded[0] shouldBe "idx_a [btree]"
+        view.tablesChanged[0].constraintsAdded[0] shouldContain "uq_email"
+        view.enumTypesChanged[0].after shouldBe listOf("a", "b")
+    }
+
+    test("projectDiff handles ColumnDiff.unique and references") {
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(
+            name = "t",
+            columnsChanged = listOf(ColumnDiff(
+                name = "c",
+                unique = ValueChange(false, true),
+                references = ValueChange(
+                    ReferenceDefinition("old", "id"),
+                    null,
+                ),
+            )),
+        )))
+        val view = SchemaCompareHelpers.projectDiff(diff)
+        val col = view.tablesChanged[0].columnsChanged[0]
+        col.unique!!.before shouldBe "false"
+        col.unique!!.after shouldBe "true"
+        col.references!!.before shouldContain "old.id"
+        col.references!!.after shouldBe null
     }
 })

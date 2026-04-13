@@ -6,6 +6,8 @@ import dev.dmigrate.core.validation.ValidationResult
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
+// ── Request ──────────────────────────────────────────────────────
+
 data class SchemaCompareRequest(
     val source: Path,
     val target: Path,
@@ -14,13 +16,15 @@ data class SchemaCompareRequest(
     val quiet: Boolean,
 )
 
+// ── Stable CLI projection (primitive-first, §4.2/§4.3) ──────────
+
 data class SchemaCompareDocument(
     val status: String,
     val exitCode: Int,
     val source: String,
     val target: String,
     val summary: SchemaCompareSummary,
-    val diff: SchemaDiff?,
+    val diff: DiffView?,
     val validation: CompareValidation? = null,
 )
 
@@ -45,10 +49,74 @@ data class CompareValidation(
     val target: ValidationResult? = null,
 )
 
+// ── DiffView: stable, primitive-only projection of SchemaDiff ────
+
+data class DiffView(
+    val schemaMetadata: MetadataChangeView? = null,
+    val enumTypesAdded: List<EnumSummaryView> = emptyList(),
+    val enumTypesRemoved: List<EnumSummaryView> = emptyList(),
+    val enumTypesChanged: List<EnumChangeView> = emptyList(),
+    val tablesAdded: List<TableSummaryView> = emptyList(),
+    val tablesRemoved: List<TableSummaryView> = emptyList(),
+    val tablesChanged: List<TableChangeView> = emptyList(),
+    val viewsAdded: List<ViewSummaryView> = emptyList(),
+    val viewsRemoved: List<ViewSummaryView> = emptyList(),
+    val viewsChanged: List<ViewChangeView> = emptyList(),
+)
+
+data class MetadataChangeView(
+    val name: StringChange? = null,
+    val version: StringChange? = null,
+)
+
+data class StringChange(val before: String, val after: String)
+data class NullableStringChange(val before: String?, val after: String?)
+data class StringListChange(val before: List<String>, val after: List<String>)
+
+data class EnumSummaryView(val name: String, val values: List<String>)
+data class EnumChangeView(val name: String, val before: List<String>, val after: List<String>)
+
+data class TableSummaryView(val name: String, val columnCount: Int)
+data class TableChangeView(
+    val name: String,
+    val columnsAdded: List<ColumnSummaryView> = emptyList(),
+    val columnsRemoved: List<String> = emptyList(),
+    val columnsChanged: List<ColumnChangeView> = emptyList(),
+    val primaryKey: StringListChange? = null,
+    val indicesAdded: List<String> = emptyList(),
+    val indicesRemoved: List<String> = emptyList(),
+    val indicesChanged: List<StringChange> = emptyList(),
+    val constraintsAdded: List<String> = emptyList(),
+    val constraintsRemoved: List<String> = emptyList(),
+    val constraintsChanged: List<StringChange> = emptyList(),
+)
+
+data class ColumnSummaryView(val name: String, val type: String)
+data class ColumnChangeView(
+    val name: String,
+    val type: StringChange? = null,
+    val required: StringChange? = null,
+    val default: NullableStringChange? = null,
+    val unique: StringChange? = null,
+    val references: NullableStringChange? = null,
+)
+
+data class ViewSummaryView(val name: String, val materialized: Boolean)
+data class ViewChangeView(
+    val name: String,
+    val materialized: StringChange? = null,
+    val refresh: NullableStringChange? = null,
+    val queryChanged: Boolean = false,
+    val sourceDialect: NullableStringChange? = null,
+)
+
+// ── Runner ────────────────────────────────────────────────────────
+
 class SchemaCompareRunner(
     private val schemaReader: (Path) -> SchemaDefinition,
     private val validator: (SchemaDefinition) -> ValidationResult,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
+    private val projectDiff: (SchemaDiff) -> DiffView,
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val fileWriter: (Path, String) -> Unit = { path, content -> path.writeText(content) },
     private val renderPlain: (SchemaCompareDocument) -> String,
@@ -104,8 +172,7 @@ class SchemaCompareRunner(
                     target = targetValidation,
                 ),
             )
-            outputDocument(request, doc)
-            return 3
+            return outputDocument(request, doc) ?: 3
         }
 
         // 5. Emit validation warnings on stderr (plain mode)
@@ -119,11 +186,12 @@ class SchemaCompareRunner(
             }
         }
 
-        // 6. Compare
+        // 6. Compare and project
         val diff = comparator(sourceSchema, targetSchema)
+        val identical = diff.isEmpty()
+        val diffView = if (identical) null else projectDiff(diff)
 
         // 7. Build document
-        val identical = diff.isEmpty()
         val summary = SchemaCompareSummary(
             tablesAdded = diff.tablesAdded.size,
             tablesRemoved = diff.tablesRemoved.size,
@@ -146,16 +214,19 @@ class SchemaCompareRunner(
             source = request.source.toString(),
             target = request.target.toString(),
             summary = summary,
-            diff = if (identical) null else diff,
+            diff = diffView,
             validation = validation,
         )
 
         // 8. Render and output
-        outputDocument(request, doc)
-        return doc.exitCode
+        return outputDocument(request, doc) ?: doc.exitCode
     }
 
-    private fun outputDocument(request: SchemaCompareRequest, doc: SchemaCompareDocument) {
+    /**
+     * Renders and outputs the document. Returns null on success, or 7 on
+     * write failure.
+     */
+    private fun outputDocument(request: SchemaCompareRequest, doc: SchemaCompareDocument): Int? {
         val rendered = when (request.outputFormat) {
             "json" -> renderJson(doc)
             "yaml" -> renderYaml(doc)
@@ -168,11 +239,13 @@ class SchemaCompareRunner(
                 fileWriter(request.output, rendered)
             } catch (e: Exception) {
                 printError("Failed to write output: ${e.message}", request.output.toString())
+                return 7
             }
         } else {
             if (!request.quiet || doc.exitCode != 0) {
                 stdout(rendered)
             }
         }
+        return null
     }
 }

@@ -139,6 +139,7 @@ class SchemaCompareCommand : CliktCommand(name = "compare") {
             schemaReader = { path -> YamlSchemaCodec().read(path) },
             validator = { schema -> SchemaValidator().validate(schema) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
+            projectDiff = SchemaCompareHelpers::projectDiff,
             renderPlain = SchemaCompareHelpers::renderPlain,
             renderJson = SchemaCompareHelpers::renderJson,
             renderYaml = SchemaCompareHelpers::renderYaml,
