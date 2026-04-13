@@ -253,6 +253,7 @@ W200 - W299: Performance-Warnungen
 | W102 | HASH index not supported on InnoDB, using BTREE |
 | W103 | Materialized View not supported, using regular View |
 | W104 | XML type not supported, using TEXT fallback |
+| W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
 
@@ -262,7 +263,9 @@ Nicht-automatisch auflösbare Inkompatibilitäten. Der Prozess stoppt mit Hinwei
 |---|---|
 | E050 | Composite type not natively supported, manual conversion required |
 | E051 | Named sequence not natively supported, manual emulation required |
-| E052 | Feature requires KI-assisted transformation |
+| E052 | Object cannot be generated and requires manual work (KI-Transformation, spatial profile, or other unresolvable incompatibility) |
+| E120 | Unknown `geometry_type` value (schema validation) |
+| E121 | `srid` must be greater than 0 (schema validation) |
 
 ---
 
@@ -332,16 +335,37 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>]
 | `--target` | Ja | Dialekt | Zieldatenbank (`postgresql`, `mysql`, `sqlite`) |
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
 | `--generate-rollback` | Nein | Boolean | Zusätzlich Rollback-DDL generieren |
+| `--spatial-profile` | Nein | String | Spatial-Profil für `geometry`-Spalten (siehe unten) |
 
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
 
+**`--spatial-profile`**: Steuert, wie `geometry`-Spalten in DDL ueberfuehrt werden.
+Das Profil ist Generator-Konfiguration und kein Teil des neutralen Schemas.
+
+| `--target` | Zulässige Werte | Default |
+|---|---|---|
+| `postgresql` | `postgis`, `none` | `postgis` |
+| `mysql` | `native` | `native` |
+| `sqlite` | `spatialite`, `none` | `none` |
+
+Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--target mysql --spatial-profile postgis`) erzeugt einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung. Enthält das Schema keine `geometry`-Spalten, hat `--spatial-profile` keine Wirkung.
+
 **Ausgabeverhalten**:
 - **stdout**: DDL-Output (wenn kein `--output`)
-- **stderr**: Warnungen (W1xx) und action_required-Hinweise (E052)
+- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052)
 - **`--output`**: DDL in Datei + automatisch `<name>.report.yaml` als Sidecar
 - **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
+
+Spatial-spezifische Ausgaben:
+- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die gesamte Tabelle wird uebersprungen; keine partielle DDL. Bei Funktionen/Prozeduren wird dagegen nur das Einzelobjekt uebersprungen (siehe [DDL-Generierungsregeln §16](./ddl-generation-rules.md)).
+- **W120** (SRID nicht vollständig übertragbar): Erscheint auf stderr und in `notes` des Reports. Die DDL-Generierung wird fortgesetzt.
+
+Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
+- **`--generate-rollback`**: Rollback-DDL enthaelt die inversen Spatial-Statements (z.B. `DiscardGeometryColumn` fuer SpatiaLite). Blockierte Tabellen (E052) erzeugen kein Rollback-DDL. Details: [DDL-Generierungsregeln §16.7](./ddl-generation-rules.md).
+- **`--output-format json`**: Spatial-E052-Eintraege erscheinen in `skipped_objects`, W120 in `notes`.
+- **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
 
 **Exit-Codes**:
 - `0`: DDL erfolgreich generiert (auch bei Warnungen und übersprungenen Objekten)

@@ -6,7 +6,7 @@ abstract class AbstractDdlGenerator(
     protected val typeMapper: TypeMapper
 ) : DdlGenerator {
 
-    override fun generate(schema: SchemaDefinition): DdlResult {
+    override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
 
@@ -17,9 +17,40 @@ abstract class AbstractDdlGenerator(
         val (sorted, circularEdges) = topologicalSort(schema.tables)
         val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
         for ((name, table) in sorted) {
-            statements += generateTable(name, table, schema, deferredFks)
+            if (shouldBlockTable(name, table, options)) {
+                skipped += SkippedObject(
+                    type = "table", name = name,
+                    reason = "Table contains geometry columns but spatial profile is '${options.spatialProfile.cliName}'",
+                    code = "E052",
+                    hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
+                )
+                statements += DdlStatement("", notes = listOf(TransformationNote(
+                    type = NoteType.ACTION_REQUIRED, code = "E052",
+                    objectName = name,
+                    message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
+                    hint = "Use --spatial-profile to enable spatial DDL generation",
+                )))
+                continue
+            }
+            val tableStatements = generateTable(name, table, schema, deferredFks, options)
+            // Detect if generateTable blocked the table via E052 (e.g. SpatiaLite metadata)
+            val tableBlocked = tableStatements.any { stmt ->
+                stmt.sql.isBlank() && stmt.notes.any { it.code == "E052" }
+            }
+            if (tableBlocked) {
+                val blockNote = tableStatements.flatMap { it.notes }.first { it.code == "E052" }
+                skipped += SkippedObject(
+                    type = "table", name = name, reason = blockNote.message,
+                    code = "E052", hint = blockNote.hint,
+                )
+            }
+            statements += tableStatements
         }
         for ((name, table) in sorted) {
+            if (shouldBlockTable(name, table, options)) continue
+            // Also skip indices for tables blocked by generateTable (e.g. SpatiaLite metadata)
+            val wasBlocked = skipped.any { it.type == "table" && it.name == name && it.code == "E052" }
+            if (wasBlocked) continue
             statements += generateIndices(name, table)
         }
         statements += handleCircularReferences(circularEdges, skipped)
@@ -29,11 +60,11 @@ abstract class AbstractDdlGenerator(
         statements += generateProcedures(schema.procedures, skipped)
         statements += generateTriggers(schema.triggers, schema.tables, skipped)
 
-        return DdlResult(statements.filter { it.sql.isNotBlank() }, skipped)
+        return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped)
     }
 
-    override fun generateRollback(schema: SchemaDefinition): DdlResult {
-        val up = generate(schema)
+    override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        val up = generate(schema, options)
         val downStatements = up.statements.reversed().mapNotNull { invertStatement(it) }
         return DdlResult(downStatements, emptyList())
     }
@@ -41,7 +72,7 @@ abstract class AbstractDdlGenerator(
     // ── Abstract methods ────────────────────────
 
     abstract fun quoteIdentifier(name: String): String
-    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, deferredFks: Set<Pair<String, String>> = emptySet()): List<DdlStatement>
+    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, deferredFks: Set<Pair<String, String>> = emptySet(), options: DdlGenerationOptions = DdlGenerationOptions()): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
     abstract fun generateSequences(sequences: Map<String, SequenceDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement>
@@ -51,9 +82,22 @@ abstract class AbstractDdlGenerator(
     abstract fun generateProcedures(procedures: Map<String, ProcedureDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateTriggers(triggers: Map<String, TriggerDefinition>, tables: Map<String, TableDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
 
+    // ── Spatial helpers ──────────────────────────
+
+    protected fun hasGeometryColumns(table: TableDefinition): Boolean =
+        table.columns.values.any { it.type is NeutralType.Geometry }
+
+    protected open fun shouldBlockTable(name: String, table: TableDefinition, options: DdlGenerationOptions): Boolean =
+        hasGeometryColumns(table) && !canGenerateSpatial(options.spatialProfile)
+
+    protected open fun canGenerateSpatial(profile: SpatialProfile): Boolean = when (profile) {
+        SpatialProfile.POSTGIS, SpatialProfile.NATIVE, SpatialProfile.SPATIALITE -> true
+        SpatialProfile.NONE -> false
+    }
+
     // ── Shared logic ────────────────────────────
 
-    protected open fun getVersion(): String = "0.5.0"
+    protected open fun getVersion(): String = "0.5.5"
 
     protected fun generateHeader(schema: SchemaDefinition): List<DdlStatement> {
         val header = buildString {

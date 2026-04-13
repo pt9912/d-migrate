@@ -63,13 +63,17 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         return statements
     }
 
+    override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
+        profile == SpatialProfile.NATIVE
+
     // ── Tables ───────────────────────────────────
 
     override fun generateTable(
         name: String,
         table: TableDefinition,
         schema: SchemaDefinition,
-        deferredFks: Set<Pair<String, String>>
+        deferredFks: Set<Pair<String, String>>,
+        options: DdlGenerationOptions
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
@@ -188,6 +192,26 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 }
                 return parts.joinToString(" ")
             }
+        }
+
+        // Geometry: append SRID when present, emit W120 if best-effort
+        if (type is NeutralType.Geometry) {
+            val parts = mutableListOf<String>()
+            parts += quoteIdentifier(colName)
+            val baseType = typeMapper.toSql(type)
+            val srid = type.srid
+            if (srid != null) {
+                parts += "$baseType /*!80003 SRID $srid */"
+                notes += TransformationNote(
+                    type = NoteType.WARNING, code = "W120",
+                    objectName = "$colName", message = "SRID $srid emitted as MySQL comment hint; " +
+                        "full SRID constraint support depends on MySQL 8.0+",
+                )
+            } else {
+                parts += baseType
+            }
+            if (col.required) parts += "NOT NULL"
+            return parts.joinToString(" ")
         }
 
         // Default: delegate to base class columnSql

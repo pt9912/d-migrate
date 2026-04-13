@@ -95,17 +95,52 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         return statements
     }
 
+    override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
+        profile == SpatialProfile.SPATIALITE
+
     // -- Tables ------------------------------------------------
 
     override fun generateTable(
         name: String,
         table: TableDefinition,
         schema: SchemaDefinition,
-        deferredFks: Set<Pair<String, String>>
+        deferredFks: Set<Pair<String, String>>,
+        options: DdlGenerationOptions,
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
         val columnLines = mutableListOf<String>()
+
+        // Separate geometry columns for SpatiaLite two-step strategy
+        val geometryCols = table.columns.filter { it.value.type is NeutralType.Geometry }
+        val normalCols = table.columns.filter { it.value.type !is NeutralType.Geometry }
+
+        // For 0.5.5: block table if geometry columns have unsupported metadata
+        if (geometryCols.isNotEmpty() && options.spatialProfile == SpatialProfile.SPATIALITE) {
+            val geoColNames = geometryCols.keys
+            for ((colName, col) in geometryCols) {
+                if (col.required || col.unique || col.default != null || col.references != null ||
+                    colName in table.primaryKey) {
+                    return blockTableForSpatialMetadata(name, colName,
+                        "required/unique/default/references/PK")
+                }
+            }
+            // Check table-level constraints referencing geometry columns
+            for (constraint in table.constraints) {
+                val cols = constraint.columns.orEmpty()
+                if (cols.any { it in geoColNames }) {
+                    return blockTableForSpatialMetadata(name, cols.first { it in geoColNames },
+                        "table-level constraint '${constraint.name}'")
+                }
+            }
+            // Check indices referencing geometry columns
+            for (idx in table.indices) {
+                if (idx.columns.any { it in geoColNames }) {
+                    return blockTableForSpatialMetadata(name, idx.columns.first { it in geoColNames },
+                        "index on geometry column")
+                }
+            }
+        }
 
         // Track whether the only PK column is an Identifier (AUTOINCREMENT already includes PK)
         val identifierPkColumns = table.primaryKey.filter { pkCol ->
@@ -115,8 +150,10 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         val skipPrimaryKeyClause = table.primaryKey.size == 1
             && identifierPkColumns.size == 1
 
-        // Columns
-        for ((colName, col) in table.columns) {
+        // Columns (exclude geometry for SpatiaLite)
+        val effectiveCols = if (geometryCols.isNotEmpty() && options.spatialProfile == SpatialProfile.SPATIALITE)
+            normalCols else table.columns
+        for ((colName, col) in effectiveCols) {
             columnLines += generateColumnSql(colName, col, schema, name, notes, deferredFks)
         }
 
@@ -151,6 +188,17 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             append(";")
         }
         statements += DdlStatement(tableSql, notes)
+
+        // SpatiaLite: AddGeometryColumn() after CREATE TABLE
+        if (geometryCols.isNotEmpty() && options.spatialProfile == SpatialProfile.SPATIALITE) {
+            for ((colName, col) in geometryCols) {
+                val geo = col.type as NeutralType.Geometry
+                val geoType = geo.geometryType.schemaName.uppercase()
+                val srid = geo.srid ?: 0
+                statements += DdlStatement(
+                    "SELECT AddGeometryColumn('$name', '$colName', $srid, '$geoType', 'XY');")
+            }
+        }
 
         return statements
     }
@@ -527,6 +575,24 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             val name = afterKeyword.split(Regex("[\\s(]"), limit = 2).first()
             return DdlStatement("DROP VIEW IF EXISTS $name;")
         }
+        // Handle SpatiaLite AddGeometryColumn → DiscardGeometryColumn
+        if (sql.startsWith("SELECT AddGeometryColumn(", ignoreCase = true)) {
+            val argsStart = sql.indexOf('(') + 1
+            val argsEnd = sql.lastIndexOf(')')
+            if (argsStart > 0 && argsEnd > argsStart) {
+                val args = sql.substring(argsStart, argsEnd).split(',').map { it.trim() }
+                if (args.size >= 2) {
+                    return DdlStatement("SELECT DiscardGeometryColumn(${args[0]}, ${args[1]});")
+                }
+            }
+        }
         return super.invertStatement(stmt)
     }
+
+    private fun blockTableForSpatialMetadata(table: String, column: String, reason: String): List<DdlStatement> =
+        listOf(DdlStatement("", notes = listOf(TransformationNote(
+            type = NoteType.ACTION_REQUIRED, code = "E052", objectName = table,
+            message = "Geometry column '$column' has unsupported metadata ($reason) for SpatiaLite",
+            hint = "Remove metadata from geometry column or use a different dialect",
+        ))))
 }

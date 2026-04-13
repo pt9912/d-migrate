@@ -303,6 +303,7 @@ private class TestDdlGenerator(
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        options: DdlGenerationOptions,
     ): List<DdlStatement> {
         callOrder += "table:$name"
         tableOrder += name

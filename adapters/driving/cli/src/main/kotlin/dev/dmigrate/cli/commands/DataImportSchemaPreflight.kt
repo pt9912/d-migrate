@@ -460,6 +460,7 @@ object DataImportSchemaPreflight {
             }
             is NeutralType.Array ->
                 targetColumn.jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
+            is NeutralType.Geometry -> true // Spatial import compatibility is Phase C/D scope
         }
     }
 
@@ -491,5 +492,6 @@ object DataImportSchemaPreflight {
         NeutralType.Email -> "text-compatible type"
         is NeutralType.Enum -> "enum/text-compatible type"
         is NeutralType.Array -> "array-compatible type"
+        is NeutralType.Geometry -> "geometry-compatible type"
     }
 }

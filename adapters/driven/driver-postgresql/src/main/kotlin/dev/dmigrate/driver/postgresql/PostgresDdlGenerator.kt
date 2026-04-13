@@ -76,17 +76,29 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         return DdlStatement(sql)
     }
 
+    override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
+        profile == SpatialProfile.POSTGIS
+
     // ── Tables ───────────────────────────────────
 
     override fun generateTable(
         name: String,
         table: TableDefinition,
         schema: SchemaDefinition,
-        deferredFks: Set<Pair<String, String>>
+        deferredFks: Set<Pair<String, String>>,
+        options: DdlGenerationOptions
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
         val columnLines = mutableListOf<String>()
+
+        // PostGIS dependency info-note
+        if (options.spatialProfile == SpatialProfile.POSTGIS && hasGeometryColumns(table)) {
+            notes += TransformationNote(
+                type = NoteType.INFO, code = "I001", objectName = name,
+                message = "Table '$name' uses PostGIS geometry types. Ensure PostGIS extension is installed on the target database.",
+            )
+        }
 
         // Columns
         for ((colName, col) in table.columns) {

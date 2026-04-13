@@ -126,8 +126,13 @@ Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nat
 | `email`       | VARCHAR(254)            | VARCHAR(254)       | TEXT                              |
 | `enum`        | CREATE TYPE ... ENUM    | ENUM(...)          | TEXT + CHECK                      |
 | `array`       | type[]                  | JSON               | TEXT (JSON)                       |
+| `geometry`    | geometry(type, srid) *  | POINT / POLYGON / ... | AddGeometryColumn() *          |
 
-Die Tabelle verwendet die kanonischen Typnamen. Parameter wie `length`, `precision`, `scale`, `values`, `ref_type` oder `element_type` werden als separate YAML-Attribute angegeben.
+\* Spatial-Mapping haengt vom gewaehlten `--spatial-profile` ab. Details in
+`docs/ddl-generation-rules.md`. Bei Profil `none` wird die Spalte nicht als
+DDL generiert, sondern als `action_required` gemeldet.
+
+Die Tabelle verwendet die kanonischen Typnamen. Parameter wie `length`, `precision`, `scale`, `values`, `ref_type`, `element_type`, `geometry_type` oder `srid` werden als separate YAML-Attribute angegeben.
 
 ### 3.2 Typ-Attribute
 
@@ -180,7 +185,42 @@ columns:
   id:
     type: identifier
     auto_increment: true
+
+  # Geometry mit Typ und SRID (Spatial Phase 1, ab 0.5.5)
+  location:
+    type: geometry
+    geometry_type: point        # optional, Default: geometry
+    srid: 4326                  # optional, positive Ganzzahl
 ```
+
+#### Spatial-Typ-Attribute (ab 0.5.5)
+
+| Attribut | Pflicht | Typ | Default | Beschreibung |
+|---|---|---|---|---|
+| `geometry_type` | nein | String | `geometry` | Geometrietyp der Spalte |
+| `srid` | nein | Integer > 0 | — | Raeumliches Referenzsystem (z.B. 4326 fuer WGS 84) |
+
+Erlaubte `geometry_type`-Werte:
+
+- `geometry` (beliebiger Typ, Default)
+- `point`
+- `linestring`
+- `polygon`
+- `multipoint`
+- `multilinestring`
+- `multipolygon`
+- `geometrycollection`
+
+Nicht Teil von 0.5.5:
+
+- `geography` (sphaerische Koordinaten)
+- `z` (3D-Koordinaten)
+- `m` (Messwerte)
+- Spatial-Indizes als eigener neutraler Typ
+
+`geometry` ist in 0.5.5 **nicht** als zulaessiger `array.element_type`
+vorgesehen. Basistyp-Allowlist und Array-Element-Allowlist sind getrennte
+Vertraege.
 
 ### 3.3 Semantische Typen
 
@@ -953,6 +993,27 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 - `check`-Expressions dürfen nur auf Spalten der eigenen Tabelle verweisen
 - `float_precision` darf nur bei `type: float` gesetzt sein
 - `timezone` darf nur bei `type: datetime` gesetzt sein
+
+### 13.4 Spatial-Validierungsregeln (ab 0.5.5)
+
+Diese Regeln pruefen das neutrale Schema selbst (`schema validate`):
+
+| Code | Regel | Ebene |
+|---|---|---|
+| E120 | Unbekannter `geometry_type`-Wert (nicht in der Allowlist aus §3.2) | Modell |
+| E121 | `srid` muss groesser als 0 sein | Modell |
+
+Die folgenden Codes entstehen erst bei `schema generate` und sind
+Generator-/Report-Regeln, keine Modellvalidierung:
+
+| Code | Regel | Ebene |
+|---|---|---|
+| E052 | Spatial-Typ kann mit dem gewaehlten Profil nicht generiert werden (z.B. `geometry` bei `--spatial-profile none`) | Generator |
+| W120 | SRID-Metadaten konnten nicht vollstaendig in den Zieldialekt uebertragen werden | Generator |
+
+Wichtig: `E120`/`E121` werden von `schema validate` gemeldet.
+`E052`/`W120` werden nur von `schema generate` gemeldet und sind Teil des
+bestehenden `action_required`- bzw. Warning-Report-Vertrags.
 
 ---
 

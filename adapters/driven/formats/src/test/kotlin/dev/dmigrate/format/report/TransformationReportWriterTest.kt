@@ -104,4 +104,55 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "\\\"quotes\\\""
         report shouldContain "\\n"
     }
+
+    test("report includes SkippedObject code and hint") {
+        val result = DdlResult(
+            statements = emptyList(),
+            skippedObjects = listOf(SkippedObject(
+                type = "table", name = "geo_table", reason = "No spatial profile",
+                code = "E052", hint = "Enable postgis"
+            ))
+        )
+        val report = writer.render(result, schema(), "postgresql", Path.of("test.yaml"))
+        report shouldContain "code: E052"
+        report shouldContain "hint: \"Enable postgis\""
+        report shouldContain "action_required: 1"
+    }
+
+    test("report renders spatial W120 notes alongside E052 skipped objects") {
+        val result = DdlResult(
+            statements = listOf(
+                DdlStatement(
+                    "CREATE TABLE places (location POINT /*!80003 SRID 4326 */);",
+                    notes = listOf(
+                        TransformationNote(
+                            type = NoteType.WARNING,
+                            code = "W120",
+                            objectName = "places.location",
+                            message = "SRID 4326 emitted as MySQL comment hint; full SRID constraint support depends on MySQL 8.0+",
+                            hint = "Verify the effective SRID enforcement on the target server."
+                        )
+                    )
+                )
+            ),
+            skippedObjects = listOf(
+                SkippedObject(
+                    type = "table",
+                    name = "blocked_places",
+                    reason = "Spatial profile 'none': geometry column 'location' requires manual handling",
+                    code = "E052",
+                    hint = "Use --spatial-profile postgis"
+                )
+            )
+        )
+
+        val report = writer.render(result, schema(), "mysql", Path.of("spatial.yaml"))
+
+        report shouldContain "code: W120"
+        report shouldContain "object: \"places.location\""
+        report shouldContain "code: E052"
+        report shouldContain "name: \"blocked_places\""
+        report shouldContain "warnings: 1"
+        report shouldContain "action_required: 1"
+    }
 })

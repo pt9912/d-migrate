@@ -37,7 +37,8 @@ class TransformationReportWriter {
 
         val notes = result.notes
         val warnings = notes.count { it.type == NoteType.WARNING }
-        val actionRequired = notes.count { it.type == NoteType.ACTION_REQUIRED }
+        val actionRequired = notes.count { it.type == NoteType.ACTION_REQUIRED } +
+            result.skippedObjects.count { it.code != null }
 
         appendLine("summary:")
         appendLine("  statements: ${result.statements.size}")
@@ -67,6 +68,12 @@ class TransformationReportWriter {
                 appendLine("  - type: ${skip.type}")
                 appendLine("    name: \"${escapeYaml(skip.name)}\"")
                 appendLine("    reason: \"${escapeYaml(skip.reason)}\"")
+                if (skip.code != null) {
+                    appendLine("    code: ${skip.code}")
+                }
+                if (skip.hint != null) {
+                    appendLine("    hint: \"${escapeYaml(skip.hint!!)}\"")
+                }
             }
         }
     }

@@ -1,0 +1,24 @@
+schema_format: "1.0"
+name: "Spatial Schema"
+version: "1.0.0"
+
+tables:
+  places:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: 100
+        required: true
+      location:
+        type: geometry
+        geometry_type: point
+        srid: 4326
+      area:
+        type: geometry
+        geometry_type: polygon
+      shape:
+        type: geometry
+    primary_key: [id]

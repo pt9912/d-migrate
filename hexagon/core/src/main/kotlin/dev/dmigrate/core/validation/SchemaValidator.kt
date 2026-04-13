@@ -5,11 +5,28 @@ import dev.dmigrate.core.model.*
 class SchemaValidator {
 
     companion object {
-        val VALID_TYPE_NAMES = setOf(
+        /** All neutral base types recognized by the schema model. */
+        val BASE_TYPE_NAMES = setOf(
             "identifier", "text", "char", "integer", "smallint", "biginteger",
             "float", "decimal", "boolean", "datetime", "date", "time",
-            "uuid", "json", "xml", "binary", "email", "enum", "array"
+            "uuid", "json", "xml", "binary", "email", "enum", "array",
+            "geometry",
         )
+
+        /**
+         * Types allowed as `array.element_type`. Deliberately separate from
+         * [BASE_TYPE_NAMES] so that adding a new base type (e.g. geometry)
+         * does not automatically make it a valid array element.
+         */
+        /**
+         * Excludes only `geometry` (not a valid array element in 0.5.5).
+         * `enum` and `array` remain allowed to preserve pre-0.5.5 behavior.
+         */
+        val ARRAY_ELEMENT_TYPE_NAMES = BASE_TYPE_NAMES - setOf("geometry")
+
+        @Deprecated("Use BASE_TYPE_NAMES or ARRAY_ELEMENT_TYPE_NAMES instead",
+            replaceWith = ReplaceWith("BASE_TYPE_NAMES"))
+        val VALID_TYPE_NAMES = BASE_TYPE_NAMES
     }
 
     fun validate(schema: SchemaDefinition): ValidationResult {
@@ -154,8 +171,17 @@ class SchemaValidator {
             is NeutralType.Array -> {
                 if (type.elementType.isBlank()) {
                     errors += ValidationError("E015", "array: element_type is required", path)
-                } else if (type.elementType !in VALID_TYPE_NAMES) {
+                } else if (type.elementType !in ARRAY_ELEMENT_TYPE_NAMES) {
                     errors += ValidationError("E015", "array: unknown element_type '${type.elementType}'", path)
+                }
+            }
+            is NeutralType.Geometry -> {
+                if (!type.geometryType.isKnown()) {
+                    errors += ValidationError("E120", "Unknown geometry_type '${type.geometryType}'", path)
+                }
+                val srid = type.srid
+                if (srid != null && srid <= 0) {
+                    errors += ValidationError("E121", "srid must be greater than 0, got $srid", path)
                 }
             }
             else -> { /* no type-specific validation */ }
@@ -274,6 +300,9 @@ class SchemaValidator {
         return false
     }
 
+    // Note: Geometry columns with defaults are not in 0.5.5 scope. A WKT string
+    // default (e.g. "POINT(0 0)") would currently produce E009 because StringLiteral
+    // is not compatible with Geometry. This is acceptable for now.
     private fun isDefaultCompatible(default: DefaultValue, type: NeutralType): Boolean = when (default) {
         is DefaultValue.StringLiteral -> type is NeutralType.Text || type is NeutralType.Char
                 || type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid

@@ -30,6 +30,19 @@ class MysqlTypeMapper : TypeMapper {
         is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
         is NeutralType.Enum -> "TEXT" // Actual ENUM handled inline during table generation
         is NeutralType.Array -> "JSON"
+        is NeutralType.Geometry -> {
+            when (type.geometryType.schemaName) {
+                "geometry" -> "GEOMETRY"
+                "point" -> "POINT"
+                "linestring" -> "LINESTRING"
+                "polygon" -> "POLYGON"
+                "multipoint" -> "MULTIPOINT"
+                "multilinestring" -> "MULTILINESTRING"
+                "multipolygon" -> "MULTIPOLYGON"
+                "geometrycollection" -> "GEOMETRYCOLLECTION"
+                else -> type.geometryType.schemaName.uppercase()
+            }
+        }
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {

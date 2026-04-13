@@ -115,4 +115,10 @@ class SqliteTypeMapperTest : FunSpec({
     test("dialect is SQLITE") {
         mapper.dialect shouldBe DatabaseDialect.SQLITE
     }
+
+    // -- geometry (Spatial Phase 1) --
+
+    test("geometry maps to GEOMETRY (placeholder, actual DDL via AddGeometryColumn)") {
+        mapper.toSql(NeutralType.Geometry()) shouldBe "GEOMETRY"
+    }
 })

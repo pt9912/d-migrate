@@ -14,11 +14,12 @@
 d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmalig in einem neutralen, datenbankunabhängigen Format (YAML) definierst und anschließend für mehrere Zielsysteme validierst, vergleichst und DDL erzeugst. Damit entfallen getrennte Migrationsskripte pro Datenbankengine.
 
 **Aktuelle Fähigkeiten:**
-- Neutrales Schemamodell mit 18 integrierten Typen
+- Neutrales Schemamodell mit 18 integrierten Typen plus Spatial Geometry
 - YAML-basierte Schemadefinition und -parsing
-- Schemagültigkeitsprüfung mit 18 Fehlercodes (E001-E018)
+- Schemagültigkeitsprüfung mit 18+ Fehlercodes (E001-E018, E120/E121)
 - File-basierter Schema-Vergleich mit `schema compare`
 - DDL-Generierung für PostgreSQL, MySQL und SQLite
+- Spatial-DDL: PostGIS, MySQL native, SpatiaLite (`--spatial-profile`)
 - Transformation von View-Queries (17 SQL-Funktionen)
 - Transformationsberichte (YAML-Seitenschatten)
 - Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
@@ -197,6 +198,14 @@ Und vergleichst zwei Versionen so:
 ```
 
 ## Aktueller Stand
+
+**[v0.5.5](https://github.com/pt9912/d-migrate/releases/tag/v0.5.5)** veröffentlicht:
+
+- Spatial Geometry-Typ (`type: geometry`) mit `geometry_type` und `srid`
+- DDL-Generierung für Spatial-Spalten: PostGIS, MySQL native, SpatiaLite
+- `--spatial-profile`-Flag für `schema generate` (postgis/native/spatialite/none)
+- Generator-Options-Architektur (`DdlGenerationOptions`, `SpatialProfile`)
+- Validierungsregeln E120, E121, E052, W120
 
 **[v0.5.0](https://github.com/pt9912/d-migrate/releases/tag/v0.5.0)** veröffentlicht:
 

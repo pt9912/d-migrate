@@ -105,7 +105,52 @@ class NeutralTypeTest : FunSpec({
             NeutralType.Email -> "email"
             is NeutralType.Enum -> "enum"
             is NeutralType.Array -> "array"
+            is NeutralType.Geometry -> "geometry"
         }
         result shouldBe "integer"
+    }
+
+    // ─── Geometry construction ────────────────────────────────────
+
+    test("Geometry defaults: geometryType is GEOMETRY, srid is null") {
+        val g = NeutralType.Geometry()
+        g.geometryType shouldBe GeometryType.GEOMETRY
+        g.geometryType.schemaName shouldBe "geometry"
+        g.srid shouldBe null
+    }
+
+    test("Geometry with explicit geometryType and srid") {
+        val g = NeutralType.Geometry(
+            geometryType = GeometryType("polygon"),
+            srid = 4326,
+        )
+        g.geometryType.schemaName shouldBe "polygon"
+        g.srid shouldBe 4326
+    }
+
+    test("Geometry data class equality") {
+        NeutralType.Geometry(GeometryType("point"), 4326) shouldBe
+            NeutralType.Geometry(GeometryType("point"), 4326)
+    }
+
+    // ─── GeometryType ────────────────────────────────────────────
+
+    test("GeometryType.of normalizes to lowercase") {
+        GeometryType.of("Point").schemaName shouldBe "point"
+        GeometryType.of("POLYGON").schemaName shouldBe "polygon"
+        GeometryType.of("MultiLineString").schemaName shouldBe "multilinestring"
+    }
+
+    test("GeometryType.of returns GEOMETRY for null or blank") {
+        GeometryType.of(null) shouldBe GeometryType.GEOMETRY
+        GeometryType.of("") shouldBe GeometryType.GEOMETRY
+        GeometryType.of("  ") shouldBe GeometryType.GEOMETRY
+    }
+
+    test("GeometryType.isKnown for all canonical values") {
+        for (name in GeometryType.KNOWN_VALUES) {
+            GeometryType(name).isKnown() shouldBe true
+        }
+        GeometryType("circle").isKnown() shouldBe false
     }
 })

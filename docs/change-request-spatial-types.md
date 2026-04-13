@@ -5,6 +5,19 @@
 >
 > Siehe [roadmap.md, Milestone 0.5.5 — Erweitertes Typsystem](./roadmap.md#milestone-055--erweitertes-typsystem).
 
+> **Hinweis zur Dokumentationsrolle (ab Phase A, 0.5.5)**
+>
+> Dieses Dokument ist ab Abschluss von Phase A die **Entscheidungsbasis** (Entscheidungsgrundlage und Herleitung der freigegebenen Phase-1-Grenzen), nicht mehr die primaere Spezifikation.
+>
+> Die **massgeblichen Quellen fuer den produktiven 0.5.5-Vertrag** sind:
+>
+> - `docs/neutral-model-spec.md` — Typdefinition `geometry`, Attribute `geometry_type` und `srid`, Validierungsregeln E120/E121
+> - `docs/ddl-generation-rules.md` — Spatial-DDL-Regeln pro Dialekt, Spatial-Profile, E052 und W120
+> - `docs/cli-spec.md` — Flag `--spatial-profile`, Dialekt-Defaults, Fehlercodes
+> - `docs/architecture.md` — Generator-Options-Pfad, Verortung von `spatialProfile`
+>
+> Implementierungsdetails gehoeren in die regulaeren Dokumente oben, nicht in diesen Change Request. Bei Widerspruechen zwischen diesem Dokument und den regulaeren Docs gelten die regulaeren Docs.
+
 ---
 
 ## 1. Ausgangslage

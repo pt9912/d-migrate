@@ -122,6 +122,10 @@ class YamlSchemaCodec : SchemaCodec {
             "array" -> NeutralType.Array(
                 elementType = node.requiredText("element_type")
             )
+            "geometry" -> NeutralType.Geometry(
+                geometryType = GeometryType.of(node.optionalText("geometry_type")),
+                srid = node.optionalInt("srid"),
+            )
             else -> throw IllegalArgumentException("Unknown type: $typeName")
         }
     }

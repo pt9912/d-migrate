@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "Negative SRID"
+version: "1.0.0"
+
+tables:
+  places:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      location:
+        type: geometry
+        srid: -1
+    primary_key: [id]

@@ -55,7 +55,7 @@ class YamlSchemaCodecTest : FunSpec({
         customType.values shouldBe listOf("pending", "processing", "shipped", "delivered", "cancelled")
     }
 
-    test("parse all-types schema covers all 18 neutral types") {
+    test("parse all-types schema covers pre-0.5.5 neutral types (geometry tested separately in spatial.yaml)") {
         val schema = loadFixture("schemas/all-types.yaml")
         val cols = schema.tables["type_test"]!!.columns
 
@@ -227,6 +227,46 @@ class YamlSchemaCodecTest : FunSpec({
         }
     }
 
+    // ─── Parser-negative codec tests (§C.4) ──────────────────────
+
+    test("duplicate YAML key throws parse error") {
+        val yaml = """
+        schema_format: "1.0"
+        name: "Dup"
+        version: "1.0"
+        tables:
+          t:
+            columns:
+              id:
+                type: identifier
+              id:
+                type: text
+            primary_key: [id]
+        """.trimIndent()
+        io.kotest.assertions.throwables.shouldThrow<Exception> {
+            codec.read(yaml.byteInputStream())
+        }
+    }
+
+    test("unknown type throws parse error") {
+        val yaml = """
+        schema_format: "1.0"
+        name: "Unknown"
+        version: "1.0"
+        tables:
+          t:
+            columns:
+              id:
+                type: identifier
+              bad:
+                type: foobar
+            primary_key: [id]
+        """.trimIndent()
+        io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            codec.read(yaml.byteInputStream())
+        }
+    }
+
     // Invalid fixture tests — each triggers exactly one error code
     listOf(
         "E001" to "E001_table_no_columns.yaml",
@@ -245,11 +285,100 @@ class YamlSchemaCodecTest : FunSpec({
         "E015" to "E015_array_empty_element_type.yaml",
         "E016" to "E016_partition_key_missing_column.yaml",
         "E017" to "E017_fk_type_mismatch.yaml",
+        "E120" to "E120_invalid_geometry_type.yaml",
+        "E121" to "E121_srid_zero.yaml",
+        "E121" to "E121_srid_negative.yaml",
     ).forEach { (errorCode, file) ->
         test("invalid fixture $file triggers $errorCode") {
             val schema = loadFixture("invalid/$file")
             val result = validator.validate(schema)
             result.errors.any { it.code == errorCode } shouldBe true
         }
+    }
+
+    // ─── Spatial Phase 1 (0.5.5) ────────────────────────────────
+
+    test("parse spatial schema with geometry_type and srid") {
+        val schema = loadFixture("schemas/spatial.yaml")
+        schema.name shouldBe "Spatial Schema"
+        schema.tables shouldHaveSize 1
+        val places = schema.tables["places"]!!
+        places.columns shouldHaveSize 5
+
+        val location = places.columns["location"]!!
+        val locType = location.type as NeutralType.Geometry
+        locType.geometryType.schemaName shouldBe "point"
+        locType.srid shouldBe 4326
+
+        val area = places.columns["area"]!!
+        val areaType = area.type as NeutralType.Geometry
+        areaType.geometryType.schemaName shouldBe "polygon"
+        areaType.srid shouldBe null
+
+        val shape = places.columns["shape"]!!
+        val shapeType = shape.type as NeutralType.Geometry
+        shapeType.geometryType shouldBe GeometryType.GEOMETRY
+        shapeType.srid shouldBe null
+    }
+
+    test("spatial schema passes validation") {
+        val schema = loadFixture("schemas/spatial.yaml")
+        val result = validator.validate(schema)
+        result.isValid shouldBe true
+    }
+
+    test("unknown geometry_type is read losslessly and triggers E120 in validator") {
+        val schema = loadFixture("invalid/E120_invalid_geometry_type.yaml")
+        val loc = schema.tables["places"]!!.columns["location"]!!
+        val geo = loc.type as NeutralType.Geometry
+        geo.geometryType.schemaName shouldBe "circle"
+        geo.geometryType.isKnown() shouldBe false
+
+        val result = validator.validate(schema)
+        result.errors.any { it.code == "E120" } shouldBe true
+    }
+
+    test("srid zero is read and triggers E121 in validator") {
+        val schema = loadFixture("invalid/E121_srid_zero.yaml")
+        val loc = schema.tables["places"]!!.columns["location"]!!
+        val geo = loc.type as NeutralType.Geometry
+        geo.srid shouldBe 0
+
+        val result = validator.validate(schema)
+        result.errors.any { it.code == "E121" } shouldBe true
+    }
+
+    test("negative srid is read and triggers E121 in validator") {
+        val schema = loadFixture("invalid/E121_srid_negative.yaml")
+        val loc = schema.tables["places"]!!.columns["location"]!!
+        val geo = loc.type as NeutralType.Geometry
+        geo.srid shouldBe -1
+
+        val result = validator.validate(schema)
+        result.errors.any { it.code == "E121" } shouldBe true
+    }
+
+    test("JSON smoke: spatial schema via same codec read path") {
+        val json = """
+        {
+          "schema_format": "1.0",
+          "name": "JSON Spatial",
+          "version": "1.0.0",
+          "tables": {
+            "geo": {
+              "columns": {
+                "id": {"type": "identifier", "auto_increment": true},
+                "loc": {"type": "geometry", "geometry_type": "point", "srid": 4326}
+              },
+              "primary_key": ["id"]
+            }
+          }
+        }
+        """.trimIndent()
+        val schema = codec.read(json.byteInputStream())
+        schema.name shouldBe "JSON Spatial"
+        val loc = schema.tables["geo"]!!.columns["loc"]!!.type as NeutralType.Geometry
+        loc.geometryType.schemaName shouldBe "point"
+        loc.srid shouldBe 4326
     }
 })

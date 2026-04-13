@@ -4,8 +4,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 
 interface DdlGenerator {
     val dialect: DatabaseDialect
-    fun generate(schema: SchemaDefinition): DdlResult
-    fun generateRollback(schema: SchemaDefinition): DdlResult
+    fun generate(schema: SchemaDefinition, options: DdlGenerationOptions = DdlGenerationOptions()): DdlResult
+    fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions = DdlGenerationOptions()): DdlResult
 }
 
 data class DdlResult(
@@ -43,5 +43,7 @@ enum class NoteType { INFO, WARNING, ACTION_REQUIRED }
 data class SkippedObject(
     val type: String,
     val name: String,
-    val reason: String
+    val reason: String,
+    val code: String? = null,
+    val hint: String? = null,
 )

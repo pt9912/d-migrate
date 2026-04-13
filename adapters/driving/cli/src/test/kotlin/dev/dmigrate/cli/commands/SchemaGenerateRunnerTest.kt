@@ -52,12 +52,17 @@ class SchemaGenerateRunnerTest : FunSpec({
     ) : DdlGenerator {
         var generateCalls = 0
         var rollbackCalls = 0
-        override fun generate(schema: SchemaDefinition): DdlResult {
+        var generateOptions: dev.dmigrate.driver.DdlGenerationOptions? = null
+        var rollbackOptions: dev.dmigrate.driver.DdlGenerationOptions? = null
+        val lastOptions: dev.dmigrate.driver.DdlGenerationOptions? get() = rollbackOptions ?: generateOptions
+        override fun generate(schema: SchemaDefinition, options: dev.dmigrate.driver.DdlGenerationOptions): DdlResult {
             generateCalls++
+            generateOptions = options
             return generateResult
         }
-        override fun generateRollback(schema: SchemaDefinition): DdlResult {
+        override fun generateRollback(schema: SchemaDefinition, options: dev.dmigrate.driver.DdlGenerationOptions): DdlResult {
             rollbackCalls++
+            rollbackOptions = options
             return rollbackResult
         }
     }
@@ -69,6 +74,7 @@ class SchemaGenerateRunnerTest : FunSpec({
     fun request(
         source: Path = Path.of("/tmp/schema.yaml"),
         target: String = "postgresql",
+        spatialProfile: String? = null,
         output: Path? = null,
         report: Path? = null,
         generateRollback: Boolean = false,
@@ -78,6 +84,7 @@ class SchemaGenerateRunnerTest : FunSpec({
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
+        spatialProfile = spatialProfile,
         output = output,
         report = report,
         generateRollback = generateRollback,
@@ -261,6 +268,47 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.stdout.joined() shouldContain "\"command\": \"schema.generate\""
         h.stdout.joined() shouldContain "\"target\": \"postgresql\""
         // json mode bypasses file writing and report generation
+        h.fileWrites.shouldBeEmpty()
+        h.reportWrites.shouldBeEmpty()
+    }
+
+    test("Exit 0: --output-format=json preserves spatial W120 notes and E052 skipped objects") {
+        val h = harness()
+        h.generator = FakeGenerator(
+            generateResult = DdlResult(
+                statements = listOf(
+                    DdlStatement(
+                        "CREATE TABLE places (location POINT /*!80003 SRID 4326 */)",
+                        notes = listOf(
+                            TransformationNote(
+                                NoteType.WARNING,
+                                "W120",
+                                "places.location",
+                                "SRID 4326 emitted as MySQL comment hint; full SRID constraint support depends on MySQL 8.0+",
+                            ),
+                        ),
+                    )
+                ),
+                skippedObjects = listOf(
+                    SkippedObject(
+                        type = "table",
+                        name = "blocked_places",
+                        reason = "Spatial profile is none",
+                        code = "E052",
+                        hint = "Use --spatial-profile postgis",
+                    ),
+                ),
+            )
+        )
+
+        h.runner().execute(request(target = "mysql", outputFormat = "json")) shouldBe 0
+
+        h.stdout.joined() shouldContain "\"code\": \"W120\""
+        h.stdout.joined() shouldContain "\"object\": \"places.location\""
+        h.stdout.joined() shouldContain "\"code\": \"E052\""
+        h.stdout.joined() shouldContain "\"name\": \"blocked_places\""
+        h.stdout.joined() shouldContain "\"warnings\": 1"
+        h.stdout.joined() shouldContain "\"action_required\": 1"
         h.fileWrites.shouldBeEmpty()
         h.reportWrites.shouldBeEmpty()
     }
@@ -512,5 +560,51 @@ class SchemaGenerateRunnerTest : FunSpec({
         rec.schema shouldBe defaultSchema
         rec.dialect shouldBe "mysql"
         rec.source shouldBe sourcePath
+    }
+
+    // ─── Spatial Profile (Phase D) ──────────────────────────────
+
+    test("Exit 0: default spatial profile for postgresql is postgis") {
+        val h = harness()
+        h.runner().execute(request(target = "postgresql")) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.POSTGIS
+    }
+
+    test("Exit 0: default spatial profile for mysql is native") {
+        val h = harness()
+        h.runner().execute(request(target = "mysql")) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NATIVE
+    }
+
+    test("Exit 0: default spatial profile for sqlite is none") {
+        val h = harness()
+        h.runner().execute(request(target = "sqlite")) shouldBe 0
+        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+    }
+
+    test("Exit 2: unknown spatial profile") {
+        val h = harness()
+        h.runner().execute(request(spatialProfile = "bogus")) shouldBe 2
+        h.stderr.joined() shouldContain "Unknown spatial profile"
+    }
+
+    test("Exit 2: invalid profile/dialect combination") {
+        val h = harness()
+        h.runner().execute(request(target = "mysql", spatialProfile = "spatialite")) shouldBe 2
+        h.stderr.joined() shouldContain "not allowed"
+    }
+
+    test("Exit 0: same options passed to generate and generateRollback") {
+        val h = harness()
+        h.runner().execute(request(target = "postgresql", spatialProfile = "none", generateRollback = true)) shouldBe 0
+        h.generator.generateOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+        h.generator.rollbackOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+        h.generator.generateOptions shouldBe h.generator.rollbackOptions
+    }
+
+    test("Exit 0: mysql + none is allowed and blocks spatial tables via E052") {
+        val h = harness()
+        h.runner().execute(request(target = "mysql", spatialProfile = "none")) shouldBe 0
+        h.generator.generateOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
     }
 })

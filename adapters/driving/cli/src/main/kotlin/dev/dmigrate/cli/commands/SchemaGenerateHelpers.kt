@@ -60,8 +60,16 @@ internal object SchemaGenerateHelpers {
             """    {"type": "${n.type.name.lowercase()}", "code": "${n.code}", "object": "${escapeJson(n.objectName)}", "message": "${escapeJson(n.message)}"}"""
         }
         val skipped = result.skippedObjects.joinToString(",\n") { s ->
-            """    {"type": "${s.type}", "name": "${escapeJson(s.name)}", "reason": "${escapeJson(s.reason)}"}"""
+            val fields = mutableListOf<String>()
+            fields += """"type": "${s.type}""""
+            fields += """"name": "${escapeJson(s.name)}""""
+            fields += """"reason": "${escapeJson(s.reason)}""""
+            if (s.code != null) fields += """"code": "${escapeJson(s.code!!)}""""
+            if (s.hint != null) fields += """"hint": "${escapeJson(s.hint!!)}""""
+            "    {${fields.joinToString(", ")}}"
         }
+        val actionRequiredCount = result.notes.count { it.type == NoteType.ACTION_REQUIRED } +
+            result.skippedObjects.count { it.code != null }
         return buildString {
             appendLine("{")
             appendLine("""  "command": "schema.generate",""")
@@ -71,7 +79,7 @@ internal object SchemaGenerateHelpers {
             appendLine("""  "schema": {"name": "${escapeJson(schema.name)}", "version": "${escapeJson(schema.version)}"},""")
             appendLine("""  "ddl": "${escapeJson(result.render())}",""")
             appendLine("""  "warnings": ${result.notes.count { it.type == NoteType.WARNING }},""")
-            appendLine("""  "action_required": ${result.notes.count { it.type == NoteType.ACTION_REQUIRED }},""")
+            appendLine("""  "action_required": $actionRequiredCount,""")
             if (notes.isEmpty()) appendLine("""  "notes": [],""") else {
                 appendLine("""  "notes": ["""); appendLine(notes); appendLine("  ],")
             }

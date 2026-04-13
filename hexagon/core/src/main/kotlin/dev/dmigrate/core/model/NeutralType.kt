@@ -22,6 +22,10 @@ sealed class NeutralType {
     }
     data class Enum(val values: List<String>? = null, val refType: String? = null) : NeutralType()
     data class Array(val elementType: String) : NeutralType()
+    data class Geometry(
+        val geometryType: GeometryType = GeometryType.GEOMETRY,
+        val srid: Int? = null,
+    ) : NeutralType()
 }
 
 enum class FloatPrecision { SINGLE, DOUBLE }
