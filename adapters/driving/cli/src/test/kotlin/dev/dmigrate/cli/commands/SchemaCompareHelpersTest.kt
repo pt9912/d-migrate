@@ -236,6 +236,25 @@ Tables:
         yaml shouldContain "constraints_added:"
     }
 
+    test("yaml columns_added includes type field matching json") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(tablesChanged = 1),
+            diff = DiffView(tablesChanged = listOf(TableChangeView(
+                name = "t",
+                columnsAdded = listOf(ColumnSummaryView("email", "email")),
+            ))),
+        )
+        val yaml = SchemaCompareHelpers.renderYaml(doc)
+        yaml shouldContain "name: \"email\""
+        yaml shouldContain "type: \"email\""
+
+        val json = SchemaCompareHelpers.renderJson(doc)
+        json shouldContain """"name": "email""""
+        json shouldContain """"type": "email""""
+    }
+
     test("yaml renders view change fields") {
         val doc = SchemaCompareDocument(
             status = "different", exitCode = 1,

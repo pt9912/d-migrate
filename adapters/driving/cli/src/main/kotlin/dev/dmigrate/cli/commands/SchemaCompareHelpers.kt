@@ -504,7 +504,10 @@ internal object SchemaCompareHelpers {
         sb.appendLine("    - name: \"${escY(t.name)}\"")
         if (t.columnsAdded.isNotEmpty()) {
             sb.appendLine("      columns_added:")
-            for (c in t.columnsAdded) sb.appendLine("        - name: \"${escY(c.name)}\"")
+            for (c in t.columnsAdded) {
+                sb.appendLine("        - name: \"${escY(c.name)}\"")
+                sb.appendLine("          type: \"${escY(c.type)}\"")
+            }
         }
         if (t.columnsRemoved.isNotEmpty()) {
             sb.appendLine("      columns_removed:")
@@ -586,6 +589,8 @@ internal object SchemaCompareHelpers {
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
         .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
 
     private fun jsonNullable(s: String?): String =
         if (s == null) "null" else "\"${esc(s)}\""
