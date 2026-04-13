@@ -56,9 +56,11 @@ Treiberadaptern:
   - `srid`
 - Spatial-Schemata koennen damit heute bereits bis in den Generatorpfad
   gelangen.
-- `DdlGenerator` ist im Port aktuell aber noch optionslos:
-  - `generate(schema)`
-  - `generateRollback(schema)`
+- `DdlGenerator` akzeptiert seit Phase D einen typisierten Optionssatz:
+  - `generate(schema, options: DdlGenerationOptions)`
+  - `generateRollback(schema, options: DdlGenerationOptions)`
+- `SpatialProfile` wird ueber `SpatialProfilePolicy` zentral aufgeloest und
+  erreicht die Generatoren als bereits verifizierter Wert.
 - `AbstractDdlGenerator.generateRollback(...)` erzeugt den Down-Pfad weiterhin
   generisch ueber `invertStatement(...)` aus den Up-Statements.
 - Dieser generische Invertierungsmechanismus kennt heute keine Spatial-
