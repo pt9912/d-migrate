@@ -235,6 +235,22 @@ hinzu.
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
+### Milestone 0.7.5 — Daten-Profiling
+
+| Bereich   | Aufgabe                                                                        | LF-Ref |
+| --------- | ------------------------------------------------------------------------------ | ------ |
+| Profiling | Gradle-Modul `hexagon/profiling` mit Domain-Modell und Warning-Rule-Engine     | —      |
+| Profiling | `SchemaIntrospectionPort` als Fassade über `SchemaReader` (0.6.0)              | LF-004 |
+| Profiling | `ProfilingDataPort`: Aggregate-Queries (Counts, TopN, Stats) pro Dialekt       | —      |
+| Profiling | `LogicalTypeResolverPort`: DB-Typ → `LogicalType` für PostgreSQL, MySQL, SQLite | —      |
+| Profiling | Zieltyp-Kompatibilitätsprüfung (`TargetTypeCompatibility`)                     | —      |
+| CLI       | `d-migrate data profile` Kommando                                              | —      |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 |
+
+**Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
+Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
+JSON/YAML-Report. Design: [profiling.md](./profiling.md).
+
 ### Milestone 0.8.0 — Internationalisierung
 
 | Bereich | Aufgabe                                                          | LF-Ref |
