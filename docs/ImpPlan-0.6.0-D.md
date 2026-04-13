@@ -242,10 +242,12 @@ Verbindlich fuer Phase D:
 - dieselbe Regel gilt fuer spaetere `file/file`-Vergleiche, wenn mindestens ein
   Operand dieses Marker-Set traegt
 - ein Dateioperand gilt nur dann als reverse-abgeleitet, wenn das komplette
-  Marker-Set gueltig vorliegt
-- Verwendung des reservierten Prefixes `__dmigrate_reverse__:` ohne vollstaendige
-  Marker-Set-Uebereinstimmung ist spaeter ein expliziter Datei- bzw.
-  Application-Fehler und kein best-effort-Fallback
+  Marker-Set syntaktisch gueltig vorliegt; dazu gehoert neben der
+  Vollstaendigkeit der Felder auch die Korrektheit der Percent-Encoding-
+  Sequenzen im Reverse-Scope
+- Verwendung des reservierten Prefixes `__dmigrate_reverse__:` ohne
+  vollstaendiges und syntaktisch gueltiges Marker-Set ist spaeter ein
+  expliziter Datei- bzw. Application-Fehler und kein best-effort-Fallback
 - die Ownership dieser Normalisierung liegt verbindlich in Phase F im
   Application-Layer vor `SchemaComparator`, z. B. in einem
   `ResolvedSchemaOperand`-Resolver oder einem gleichwertigen
@@ -639,16 +641,18 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   Reverse-Scope und verwenden fuer `version` einheitlich `0.0.0-reverse`.
 - Diese Werte sind im Teilplan explizit als technische Reverse-Provenienz und
   nicht als autoritative Anwendungsmetadaten festgelegt.
-- Das Reverse-Marker-Set ist allein aus dem Schema-Dokument wiedererkennbar und
-  bleibt damit auch nach spaeterem YAML-/JSON-Write/Read transportierbar.
+- Das Reverse-Marker-Set ist im Driver-Output allein aus dem Schema-Dokument
+  wiedererkennbar; die Transportierbarkeit nach spaeterem YAML-/JSON-Write/Read
+  wird in 8.2 als Integrationsgrenzen-Check verifiziert.
 - `required`, `default`, `unique` und `references` werden pro Dialekt bewusst
   transportiert; mehrspaltige `UNIQUE`- und Foreign-Key-Beziehungen bleiben
   konsistent auf Constraint-Ebene.
 - PK-implizite Nullability oder Eindeutigkeit erzeugt kein zusaetzliches
   Reverse-Rauschen auf `ColumnDefinition.required` oder `unique`.
-- Redundante PK-Flags in file-basierten Schemas sind fuer spaeteren Compare
-  explizit als semantisch gleichwertig zur PK-zentrierten Reverse-Darstellung
-  festgelegt.
+- Der Teilplan legt fest, dass redundante PK-Flags in file-basierten Schemas
+  fuer spaeteren Compare als semantisch gleichwertig zur PK-zentrierten
+  Reverse-Darstellung gelten; die tatsaechliche Compare-Verifikation erfolgt
+  in 8.2.
 - Dasselbe gilt fuer PK-aequivalente `UNIQUE`-Constraints; Unique-Indizes
   bleiben ausdruecklich compare-relevant.
 - Automatisch erzeugte PK-/UNIQUE-Backing-Indizes tauchen im neutralen Modell
@@ -685,8 +689,10 @@ schafft, die diese Nachzuege erzwingen.
 - `docs/neutral-model-spec.md` widerspricht der technischen
   Reverse-Provenienzregel nicht mehr und dokumentiert `__dmigrate_reverse__:`
   als reservierten Prefix.
-- Dateioperand mit reserviertem Prefix, aber ohne vollstaendiges Marker-Set, ist
-  in `hexagon:application` als expliziter Fehlerfall implementiert.
+- Dateioperand mit reserviertem Prefix, aber ohne vollstaendiges oder
+  syntaktisch gueltiges Marker-Set (einschliesslich fehlerhafter
+  Percent-Encoding-Sequenzen), ist in `hexagon:application` als expliziter
+  Fehlerfall implementiert.
 - Der Compare-Operand-Normalizer bzw. `CompareOperandNormalizer` in
   `hexagon:application` normalisiert technische Reverse-Provenienz und
   PK-redundante Dateiangaben vor `SchemaComparator`.
@@ -716,8 +722,9 @@ Gezielt zu pruefen ist dabei:
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
   - keine Verdopplung von PK-implizitem `required` / `unique`
-  - keine Leaks von automatisch erzeugten PK-/UNIQUE-Backing-Indizes in
-    `indices`
+  - sicher identifizierbare PK-/UNIQUE-Backing-Indizes tauchen nicht in
+    `indices` auf (PostgreSQL kann dies ueber `pg_index.indisprimary` /
+    `pg_constraint` sicher feststellen)
   - Nullability / Defaults / einspaltige `UNIQUE` / einspaltige Foreign Keys
   - Sequenzen
   - Custom Types
@@ -725,8 +732,9 @@ Gezielt zu pruefen ist dabei:
 - MySQL-Integrationstests fuer:
   - Basistabellen inkl. `required` / `default` / `unique` / `references`
   - keine Verdopplung von PK-implizitem `required` / `unique`
-  - keine Leaks von automatisch erzeugten PK-/UNIQUE-Backing-Indizes in
-    `indices`
+  - Backing-Index-Verhalten: sicher identifizierbare Support-Indizes werden
+    unterdrueckt; bei Unsicherheit Fallback auf regulaeren `indices`-Eintrag
+    plus Reverse-Note
   - Engine
   - `AUTO_INCREMENT`
   - `lower_case_table_names`
@@ -735,8 +743,9 @@ Gezielt zu pruefen ist dabei:
 - SQLite-Tests fuer:
   - Basistabellen inkl. `required` / `default` / `unique` / `references`
   - keine Verdopplung von PK-implizitem `required` / `unique`
-  - keine Leaks von automatisch erzeugten PK-/UNIQUE-Backing-Indizes in
-    `indices`
+  - Backing-Index-Verhalten: sicher identifizierbare Support-Indizes werden
+    unterdrueckt; bei Unsicherheit Fallback auf regulaeren `indices`-Eintrag
+    plus Reverse-Note
   - `WITHOUT ROWID`
   - `AUTOINCREMENT`
   - Virtual Tables
