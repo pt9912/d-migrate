@@ -19,6 +19,7 @@ import dev.dmigrate.streaming.TableExportSummary
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.OutputStream
@@ -174,6 +175,7 @@ class DataExportRunnerTest : FunSpec({
         writerFactoryBuilder: () -> DataChunkWriterFactory = { FakeWriterFactory() },
         collectWarnings: () -> List<String> = { emptyList() },
         exportExecutor: ExportExecutor = successExecutor,
+        progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,
     ): DataExportRunner = DataExportRunner(
         sourceResolver = sourceResolver,
         urlParser = urlParser,
@@ -183,6 +185,7 @@ class DataExportRunnerTest : FunSpec({
         writerFactoryBuilder = writerFactoryBuilder,
         collectWarnings = collectWarnings,
         exportExecutor = exportExecutor,
+        progressReporter = progressReporter,
         stderr = stderr.sink,
     )
 
@@ -689,6 +692,50 @@ class DataExportRunnerTest : FunSpec({
         )
         runner.execute(request(encoding = "bogus-charset-12345")) shouldBe 2
         poolFactoryInvoked shouldBe false
+    }
+
+    // ─── Progress Reporter Wiring (§8.3) ───────────────────────────
+
+    test("default path passes reporter to executor") {
+        val reporterEvents = mutableListOf<String>()
+        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr, progressReporter = reporter,
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, pr ->
+                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.EXPORT, tables.size))
+                ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
+            })
+        runner.execute(request())
+        reporterEvents shouldContainExactly listOf("RunStarted")
+    }
+
+    test("--quiet suppresses reporter") {
+        val reporterEvents = mutableListOf<String>()
+        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr, progressReporter = reporter,
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr ->
+                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
+                ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
+            })
+        runner.execute(request(quiet = true))
+        reporterEvents.size shouldBe 0
+    }
+
+    test("--no-progress suppresses reporter") {
+        val reporterEvents = mutableListOf<String>()
+        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr, progressReporter = reporter,
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr ->
+                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
+                ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
+            })
+        runner.execute(request(noProgress = true))
+        reporterEvents.size shouldBe 0
     }
 
     // Ensure the temp path referenced in other tests never accidentally exists

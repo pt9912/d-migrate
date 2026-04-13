@@ -21,7 +21,7 @@ class ProgressRenderer(
             "Exporting table '${event.table}' (${event.tableOrdinal}/${event.tableCount})"
 
         is ProgressEvent.ExportChunkProcessed ->
-            "Exporting table '${event.table}' | chunk ${event.chunkIndex} | ${formatNumber(event.rowsInChunk)} rows | ${formatMb(event.bytesWritten)}"
+            "Exporting table '${event.table}' | chunk ${event.chunkIndex} | ${formatNumber(event.rowsProcessed)} rows | ${formatMb(event.bytesWritten)}"
 
         is ProgressEvent.ExportTableFinished ->
             "${statusPrefix(event.status)} table '${event.table}' | ${formatNumber(event.rowsProcessed)} rows | ${event.chunksProcessed} chunks | ${formatMb(event.bytesWritten)}"
@@ -44,6 +44,7 @@ class ProgressRenderer(
             parts += "${formatNumber(event.rowsInserted)} inserted"
             if (event.rowsUpdated > 0) parts += "${formatNumber(event.rowsUpdated)} updated"
             if (event.rowsSkipped > 0) parts += "${formatNumber(event.rowsSkipped)} skipped"
+            if (event.rowsUnknown > 0) parts += "${formatNumber(event.rowsUnknown)} unknown"
             if (event.rowsFailed > 0) parts += "${formatNumber(event.rowsFailed)} failed"
             val prefix = if (event.status == TableProgressStatus.COMPLETED) "Imported" else "FAILED"
             "$prefix table '${event.table}' | ${parts.joinToString(", ")}"

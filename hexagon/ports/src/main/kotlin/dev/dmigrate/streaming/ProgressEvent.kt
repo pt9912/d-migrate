@@ -77,6 +77,7 @@ sealed interface ProgressEvent {
         val rowsInserted: Long,
         val rowsUpdated: Long,
         val rowsSkipped: Long,
+        val rowsUnknown: Long,
         val rowsFailed: Long,
         val durationMs: Long,
         val status: TableProgressStatus,

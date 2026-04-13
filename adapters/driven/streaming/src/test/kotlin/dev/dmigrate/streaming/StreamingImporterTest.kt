@@ -22,6 +22,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.nio.file.Files
@@ -745,6 +746,142 @@ class StreamingImporterTest : FunSpec({
             file.deleteIfExists()
         }
     }
+
+    // ─── Progress Event Tests (§8.2) ────────────────────────────────
+
+    // §8.2 #1
+    test("progress: emits run started for resolved inputs") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id"), chunks = listOf(
+                chunk("users", listOf("id"), listOf(arrayOf<Any?>(1L)))
+            ))
+        ))
+        val session = FakeTableImportSession(targetColumns = listOf(
+            TargetColumn("id", nullable = false, jdbcType = Types.INTEGER, sqlTypeName = "INTEGER")))
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON, progressReporter = reporter)
+
+            val runStarted = events.filterIsInstance<ProgressEvent.RunStarted>()
+            runStarted.size shouldBe 1
+            runStarted[0].operation shouldBe ProgressOperation.IMPORT
+            runStarted[0].totalTables shouldBe 1
+        } finally { file.deleteIfExists() }
+    }
+
+    // §8.2 #2
+    test("progress: emits started chunk progress and finished for successful table") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a")))
+            ))
+        ))
+        val session = FakeTableImportSession(targetColumns = targetColumns)
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON, progressReporter = reporter)
+
+            val types = events.map { it::class.simpleName }
+            types shouldContainExactly listOf("RunStarted", "ImportTableStarted", "ImportChunkProcessed", "ImportTableFinished")
+
+            val finished = events.filterIsInstance<ProgressEvent.ImportTableFinished>().single()
+            finished.status shouldBe TableProgressStatus.COMPLETED
+            finished.rowsInserted shouldBe 1
+        } finally { file.deleteIfExists() }
+    }
+
+    // §8.2 #3
+    test("progress: emits chunk progress only after commit") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a")))
+            ))
+        ))
+        val eventLog = mutableListOf<String>()
+        val session = object : FakeTableImportSession(targetColumns = targetColumns) {
+            override fun commitChunk() {
+                eventLog += "commit"
+                super.commitChunk()
+            }
+        }
+        val reporter = ProgressReporter { eventLog += "event:${it::class.simpleName}" }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON, progressReporter = reporter)
+
+            val commitIdx = eventLog.indexOf("commit")
+            val chunkEventIdx = eventLog.indexOf("event:ImportChunkProcessed")
+            commitIdx shouldBe (chunkEventIdx - 1)
+        } finally { file.deleteIfExists() }
+    }
+
+    // §8.2 #6: table error with --on-error skip returns summary with error, emits FAILED
+    test("progress: returned table error emits finished event with failed status") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a")))
+            ))
+        ))
+        val session = object : FakeTableImportSession(targetColumns = targetColumns) {
+            override fun commitChunk() {
+                throw RuntimeException("commit failed")
+            }
+        }
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            // Use --on-error skip so commit failure doesn't abort, allowing TableFinished emission
+            val result = StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON,
+                    options = ImportOptions(onError = OnError.SKIP),
+                    progressReporter = reporter)
+
+            result.tables.single().error shouldNotBe null
+            val finished = events.filterIsInstance<ProgressEvent.ImportTableFinished>()
+            finished shouldHaveSize 1
+            finished[0].status shouldBe TableProgressStatus.FAILED
+        } finally { file.deleteIfExists() }
+    }
+
+    // §8.2 #8: fatal abort (default --on-error abort) propagates without synthetic finished event
+    test("progress: fatal abort propagates without synthetic finished event") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a")))
+            ))
+        ))
+        val session = object : FakeTableImportSession(targetColumns = targetColumns) {
+            override fun commitChunk() {
+                throw RuntimeException("fatal")
+            }
+        }
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            shouldThrow<RuntimeException> {
+                StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                    .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                        format = DataExportFormat.JSON, progressReporter = reporter)
+            }
+
+            // Fatal throws bypass TableFinished (§4.10)
+            val finished = events.filterIsInstance<ProgressEvent.ImportTableFinished>()
+            finished shouldHaveSize 0
+        } finally { file.deleteIfExists() }
+    }
 })
 
 private object ImporterNoopConnectionPool : ConnectionPool {
@@ -807,7 +944,7 @@ private class FakeWriter(
     ): TableImportSession = sessions[table] ?: error("No fake session for table '$table'")
 }
 
-private class FakeTableImportSession(
+private open class FakeTableImportSession(
     override val targetColumns: List<TargetColumn>,
     private val writeResults: Map<Long, WriteResult> = emptyMap(),
     private val writeBehaviors: Map<Long, WriteBehavior> = emptyMap(),
@@ -840,7 +977,7 @@ private class FakeTableImportSession(
         return writeResults[nextChunkIndex] ?: WriteResult(chunk.rows.size.toLong(), 0, 0)
     }
 
-    override fun commitChunk() {
+    open override fun commitChunk() {
         check(state == State.WRITTEN) { "commitChunk requires WRITTEN, current state: $state" }
         state = State.OPEN
         nextChunkIndex += 1

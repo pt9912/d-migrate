@@ -23,6 +23,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
@@ -176,6 +177,7 @@ class DataImportRunnerTest : FunSpec({
         schemaTargetValidator: (schema: dev.dmigrate.core.model.SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
             { _, _, _ -> },
         importExecutor: ImportExecutor = successExecutor,
+        progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,
         stdinProvider: () -> java.io.InputStream = { ByteArrayInputStream("""[{"id":1}]""".toByteArray()) },
     ): DataImportRunner = DataImportRunner(
         targetResolver = targetResolver,
@@ -185,6 +187,7 @@ class DataImportRunnerTest : FunSpec({
         schemaPreflight = schemaPreflight,
         schemaTargetValidator = schemaTargetValidator,
         importExecutor = importExecutor,
+        progressReporter = progressReporter,
         stdinProvider = stdinProvider,
         stderr = stderr.sink,
     )
@@ -803,6 +806,43 @@ class DataImportRunnerTest : FunSpec({
         summary shouldContain "20 updated"
         summary shouldContain "3 failed"
         summary shouldContain "reseeded 1 sequence(s)"
+    }
+
+    // ─── Progress Reporter Wiring (§8.3) ───────────────────────────
+
+    test("default path passes reporter to executor") {
+        val reporterEvents = mutableListOf<String>()
+        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr, progressReporter = reporter,
+            importExecutor = ImportExecutor { _, input, _, _, _, _, pr ->
+                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
+                val tables = when (input) {
+                    is ImportInput.Stdin -> listOf(input.table)
+                    is ImportInput.SingleFile -> listOf(input.table)
+                    is ImportInput.Directory -> emptyList()
+                }
+                ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)
+            })
+        runner.execute(request())
+        reporterEvents shouldContainExactly listOf("RunStarted")
+    }
+
+    test("--quiet suppresses reporter") {
+        val reporterEvents = mutableListOf<String>()
+        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr, progressReporter = reporter,
+            importExecutor = ImportExecutor { _, _, _, _, _, _, pr ->
+                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
+                ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)
+            })
+        runner.execute(request(quiet = true))
+        reporterEvents.size shouldBe 0
     }
 
     // Ensure the temp path referenced in other tests never accidentally exists

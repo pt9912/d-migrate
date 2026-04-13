@@ -27,15 +27,15 @@ class ProgressRendererTest : FunSpec({
         line shouldBe "Exporting table 'users' (1/3)"
     }
 
-    test("ExportChunkProcessed with formatted numbers") {
+    test("ExportChunkProcessed shows cumulative rowsProcessed") {
         val line = renderer.render(ProgressEvent.ExportChunkProcessed(
             table = "users", tableOrdinal = 1, tableCount = 3,
-            chunkIndex = 1, rowsInChunk = 10_000, rowsProcessed = 10_000,
-            bytesWritten = 1_048_576,
+            chunkIndex = 2, rowsInChunk = 10_000, rowsProcessed = 20_000,
+            bytesWritten = 2_097_152,
         ))
-        line shouldContain "chunk 1"
-        line shouldContain "10,000 rows"
-        line shouldContain "1.00 MB"
+        line shouldContain "chunk 2"
+        line shouldContain "20,000 rows"
+        line shouldContain "2.00 MB"
     }
 
     test("ExportTableFinished completed") {
@@ -82,7 +82,7 @@ class ProgressRendererTest : FunSpec({
         val line = renderer.render(ProgressEvent.ImportTableFinished(
             table = "orders", tableOrdinal = 1, tableCount = 2,
             rowsInserted = 12_000, rowsUpdated = 0, rowsSkipped = 20,
-            rowsFailed = 0, durationMs = 2000, status = TableProgressStatus.COMPLETED,
+            rowsUnknown = 0, rowsFailed = 0, durationMs = 2000, status = TableProgressStatus.COMPLETED,
         ))
         line shouldContain "Imported"
         line shouldContain "12,000 inserted"
@@ -93,7 +93,7 @@ class ProgressRendererTest : FunSpec({
         val line = renderer.render(ProgressEvent.ImportTableFinished(
             table = "orders", tableOrdinal = 1, tableCount = 1,
             rowsInserted = 5_000, rowsUpdated = 0, rowsSkipped = 0,
-            rowsFailed = 100, durationMs = 500, status = TableProgressStatus.FAILED,
+            rowsUnknown = 0, rowsFailed = 100, durationMs = 500, status = TableProgressStatus.FAILED,
         ))
         line shouldContain "FAILED"
         line shouldContain "100 failed"

@@ -135,6 +135,14 @@ class StreamingImporter(
                         ChunkDecision.ABORT -> throw t
                         ChunkDecision.CONTINUE -> {
                             rowsFailed += nextChunk.rows.size.toLong()
+                            reporter.report(ProgressEvent.ImportChunkProcessed(
+                                table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
+                                chunkIndex = nextChunk.chunkIndex.toInt() + 1,
+                                rowsInChunk = nextChunk.rows.size.toLong(),
+                                rowsProcessed = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed,
+                                rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
+                                rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
+                            ))
                             when (
                                 val readResult = tryReadNextChunk(
                                     reader = reader,
@@ -167,6 +175,14 @@ class StreamingImporter(
                     when (handleChunkFailure(normalizedChunk, t, options, chunkFailures)) {
                         ChunkDecision.ABORT -> throw t
                         ChunkDecision.CONTINUE -> {
+                            reporter.report(ProgressEvent.ImportChunkProcessed(
+                                table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
+                                chunkIndex = normalizedChunk.chunkIndex.toInt() + 1,
+                                rowsInChunk = normalizedChunk.rows.size.toLong(),
+                                rowsProcessed = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed,
+                                rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
+                                rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
+                            ))
                             if (!recovered) {
                                 error = t.message ?: t::class.simpleName
                                 break
@@ -275,7 +291,7 @@ class StreamingImporter(
         reporter.report(ProgressEvent.ImportTableFinished(
             table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
             rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
-            rowsSkipped = rowsSkipped, rowsFailed = rowsFailed,
+            rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
             durationMs = tableDurationMs, status = tableStatus,
         ))
 
