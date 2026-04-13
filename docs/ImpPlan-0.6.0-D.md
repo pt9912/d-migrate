@@ -210,10 +210,21 @@ Verbindlich fuer Phase D:
   `schema=main`, niemals aber einen absoluten Dateipfad
 - wenn Komponenten Trennzeichen enthalten, werden ihre Werte vor der
   Zusammensetzung percent-encoded
+- `SchemaDefinition.name` und `version` sind fuer live gelesene Schemas
+  technische Reverse-Provenienzmetadaten, keine autoritativen
+  Anwendungsmetadaten
 - `SchemaDefinition.version` verwendet in 0.6.0 mangels belastbarer
-  Live-Metadaten einen festen Reverse-Platzhalter `0.0.0-reverse`
-- alle drei Dialekte nutzen dieselbe Platzhalterregel, damit Compare und
+  Live-Metadaten einen festen technischen Reverse-Platzhalter
+  `0.0.0-reverse`
+- alle drei Dialekte nutzen dieselbe Platzhalterregel, damit Persistenz und
   Round-Trip-Verhalten nicht von Ad-hoc-Werten abhaengen
+- spaeterer `file/db`- und `db/db`-Compare darf diese reverse-synthetischen
+  `name`-/`version`-Werte nicht roh als strukturellen Diff behandeln; die
+  Operand-Provenienz bleibt im Compare-Vertrag ueber `ResolvedSchemaOperand`
+  bzw. gleichwertige Huelle sichtbar
+- `docs/neutral-model-spec.md` muss fuer 0.6.0 explizit nachziehen, dass
+  reverse-generierte Schemas technische `name`-/`version`-Werte tragen duerfen,
+  wenn eine Live-Datenbank keine belastbaren Anwendungsmetadaten liefert
 
 ### 4.4 Spalten werden semantisch und nicht nur typbasiert rueckgefuehrt
 
@@ -225,13 +236,21 @@ Verbindlich fuer Phase D:
 - Datenbank-Defaults werden bewusst auf `ColumnDefinition.default`
   transportiert, soweit die DB einen stabil lesbaren Wert oder Ausdruck
   liefert
+- `TableDefinition.primaryKey` bleibt die kanonische Quelle fuer
+  Primary-Key-Mitgliedschaft
+- PK-implizite `NOT NULL`-/`UNIQUE`-Semantik wird nicht redundant in
+  `ColumnDefinition.required` bzw. `ColumnDefinition.unique` dupliziert
 - einspaltige `UNIQUE`-Semantik wird bei verlustfreier Zuordnung auf
-  `ColumnDefinition.unique` gehoben
+  `ColumnDefinition.unique` gehoben, sofern sie **nicht** nur aus
+  Primary-Key-Mitgliedschaft folgt
 - einspaltige Foreign-Key-Semantik wird bei verlustfreier Zuordnung auf
   `ColumnDefinition.references` gehoben
 - mehrspaltige `UNIQUE`- oder Foreign-Key-Beziehungen bleiben in
   `ConstraintDefinition` und werden nicht inkonsistent halb auf Spalten und
   halb auf Constraints verteilt
+- wenn ein Dialekt explizites `NOT NULL` nicht sauber von PK-implizitem
+  `NOT NULL` trennen kann, gewinnt in 0.6.0 die PK-zentrierte Darstellung ohne
+  spekulatives zusaetzliches `required=true`
 - wenn ein Dialekt nur einen Teil dieser Semantik belastbar liefert, ist eine
   sichtbare Reverse-Note Pflicht statt einer still erfundenen Standardabbildung
 
@@ -346,6 +365,8 @@ Mindestens noetig:
 - `SqliteDriver.schemaReader()`
 - kanonische Befuellung von `SchemaDefinition.name` und
   `SchemaDefinition.version` pro Dialekt
+- klare Markierung dieser Werte als technische Reverse-Provenienz fuer spaetere
+  Compare-Normalisierung
 - Exposure-Tests fuer alle drei Dialekte
 
 Wichtig:
@@ -378,6 +399,8 @@ Besonders zu beachten:
 - `SchemaDefinition.name` nutzt den kanonischen Scope
   `database=<db>;schema=<schema>`, `version` den festen Platzhalter
   `0.0.0-reverse`
+- PK-implizite Nullability oder Eindeutigkeit wird nicht doppelt als
+  `required=true` bzw. `unique=true` materialisiert
 - Ueberladene Routinen muessen auf die in Phase B festgelegten kanonischen Keys
   gemappt werden
 - Partitionierungsmetadaten werden gemaess Phase-B-Modellentscheidung entweder
@@ -404,6 +427,8 @@ Besonders zu beachten:
 
 - `SchemaDefinition.name` nutzt den kanonischen Scope `database=<db>`,
   `version` den festen Platzhalter `0.0.0-reverse`
+- PK-implizite Nullability oder Eindeutigkeit wird nicht doppelt als
+  `required=true` bzw. `unique=true` materialisiert
 - `lower_case_table_names` darf Lookup und Rueckgabe nicht inkonsistent machen
 - `SET` und andere nicht exakt neutrale Faelle muessen sichtbar notiert werden
 - MySQL darf nicht aus Convenience alles auf `TEXT` oder `JSON` flatten und
@@ -430,6 +455,8 @@ Besonders zu beachten:
 
 - `SchemaDefinition.name` nutzt den kanonischen Scope `schema=<schema>`,
   `version` den festen Platzhalter `0.0.0-reverse`
+- PK-implizite Nullability oder Eindeutigkeit wird nicht doppelt als
+  `required=true` bzw. `unique=true` materialisiert
 - Virtual Tables werden nicht still als portable Basistabellen gemappt
 - SpatiaLite- oder geometry-relevante Sonderfaelle erscheinen sichtbar als
   Notes oder `skippedObjects`
@@ -445,6 +472,7 @@ Mindestens abzudecken:
 - Core-Read fuer Basisschema mit Tabellen, Keys und Indizes
 - kanonische Befuellung von `SchemaDefinition.name` und `version`
 - Spaltenabbildung fuer `required`, `default`, `unique` und `references`
+- kein Round-Trip-Rauschen durch PK-implizites `required`/`unique`
 - Notes-/Skip-Pfade fuer nicht exakt neutrale oder bewusst ausgelassene Faelle
 - Include-Flags fuer Views / Procedures / Functions / Triggers
 - Ownership: Connection wird nach dem Read wieder freigegeben
@@ -504,6 +532,11 @@ Bereits aus Phase B/C vorgegeben und hier nur als Integrationsgrenze relevant:
 - `hexagon/ports/.../SchemaReadOptions`
 - `hexagon/ports/.../SchemaReadResult`
 - gemeinsame JDBC-Metadatenprojektionen in `adapters:driven:driver-common`
+- `docs/neutral-model-spec.md` als kanonischer Spezifikationsnachzug fuer
+  reverse-synthetische `name`-/`version`-Metadaten
+- spaeterer DB-Operand-Compare in `hexagon:application`, damit technische
+  Reverse-Provenienz nicht als roher `SchemaMetadataDiff` fehlinterpretiert
+  wird
 
 Bewusst nicht direkt betroffen:
 
@@ -523,9 +556,13 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 - Alle drei Dialekte befuellen `SchemaDefinition.name` kanonisch aus dem
   gelesenen DB-Scope und verwenden fuer `version` einheitlich
   `0.0.0-reverse`.
+- Diese Werte sind im Teilplan explizit als technische Reverse-Provenienz und
+  nicht als autoritative Anwendungsmetadaten festgelegt.
 - `required`, `default`, `unique` und `references` werden pro Dialekt bewusst
   transportiert; mehrspaltige `UNIQUE`- und Foreign-Key-Beziehungen bleiben
   konsistent auf Constraint-Ebene.
+- PK-implizite Nullability oder Eindeutigkeit erzeugt kein zusaetzliches
+  Reverse-Rauschen auf `ColumnDefinition.required` oder `unique`.
 - Fehler beim Lesen von Kernobjekten fuehren zu einem klaren Driver-Fehler und
   nicht zu einem scheinbar erfolgreichen, aber unvollstaendigen Reverse.
 - Optionalobjekte (`views`, `procedures`, `functions`, `triggers`) werden nur
@@ -559,14 +596,18 @@ Gezielt zu pruefen ist dabei:
 - neue Driver-Exposure-Tests fuer `schemaReader()`
 - explizite Reader-Tests fuer den kanonischen `SchemaDefinition.name`- und
   `version`-Vertrag
+- Integrationsgrenzen-Check gegen Phase B/C, dass reverse-synthetische
+  Metadaten spaeter nicht roh als `SchemaMetadataDiff` behandelt werden
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
+  - keine Verdopplung von PK-implizitem `required` / `unique`
   - Nullability / Defaults / einspaltige `UNIQUE` / einspaltige Foreign Keys
   - Sequenzen
   - Custom Types
   - Views / Functions / Procedures / Triggers unter Include-Flags
 - MySQL-Integrationstests fuer:
   - Basistabellen inkl. `required` / `default` / `unique` / `references`
+  - keine Verdopplung von PK-implizitem `required` / `unique`
   - Engine
   - `AUTO_INCREMENT`
   - `lower_case_table_names`
@@ -574,6 +615,7 @@ Gezielt zu pruefen ist dabei:
   - `SET`-/Nicht-Neutralitaets-Notes
 - SQLite-Tests fuer:
   - Basistabellen inkl. `required` / `default` / `unique` / `references`
+  - keine Verdopplung von PK-implizitem `required` / `unique`
   - `WITHOUT ROWID`
   - `AUTOINCREMENT`
   - Virtual Tables
