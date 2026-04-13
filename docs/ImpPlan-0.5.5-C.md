@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.5 - Erweitertes Typsystem
 > **Phase**: C (Schema-Codecs und Fixtures)
-> **Status**: Draft (2026-04-13)
+> **Status**: Done (2026-04-13)
 > **Referenz**: `docs/implementation-plan-0.5.5.md` Abschnitt 2,
 > Abschnitt 4.4, Abschnitt 4.9, Abschnitt 5 Phase C, Abschnitt 6.1,
 > Abschnitt 6.4, Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
