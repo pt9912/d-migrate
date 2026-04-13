@@ -27,7 +27,7 @@ class SqliteTypeMapper : TypeMapper {
         is NeutralType.Email -> "TEXT"
         is NeutralType.Enum -> "TEXT" // CHECK constraint added during table generation
         is NeutralType.Array -> "TEXT"
-        is NeutralType.Geometry -> TODO("Spatial DDL mapping is Phase C/D scope (0.5.5)")
+        is NeutralType.Geometry -> "GEOMETRY" // Not used inline; SpatiaLite uses AddGeometryColumn()
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {

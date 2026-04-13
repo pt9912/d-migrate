@@ -69,7 +69,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         name: String,
         table: TableDefinition,
         schema: SchemaDefinition,
-        deferredFks: Set<Pair<String, String>>
+        deferredFks: Set<Pair<String, String>>,
+        options: DdlGenerationOptions
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()

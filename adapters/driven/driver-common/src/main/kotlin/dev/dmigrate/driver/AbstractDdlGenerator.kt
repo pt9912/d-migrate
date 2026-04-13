@@ -17,9 +17,25 @@ abstract class AbstractDdlGenerator(
         val (sorted, circularEdges) = topologicalSort(schema.tables)
         val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
         for ((name, table) in sorted) {
-            statements += generateTable(name, table, schema, deferredFks)
+            if (shouldBlockTable(name, table, options)) {
+                skipped += SkippedObject(
+                    type = "table", name = name,
+                    reason = "Table contains geometry columns but spatial profile is '${options.spatialProfile.cliName}'",
+                    code = "E052",
+                    hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
+                )
+                statements += DdlStatement("", notes = listOf(TransformationNote(
+                    type = NoteType.ACTION_REQUIRED, code = "E052",
+                    objectName = name,
+                    message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
+                    hint = "Use --spatial-profile to enable spatial DDL generation",
+                )))
+                continue
+            }
+            statements += generateTable(name, table, schema, deferredFks, options)
         }
         for ((name, table) in sorted) {
+            if (shouldBlockTable(name, table, options)) continue
             statements += generateIndices(name, table)
         }
         statements += handleCircularReferences(circularEdges, skipped)
@@ -41,7 +57,7 @@ abstract class AbstractDdlGenerator(
     // ── Abstract methods ────────────────────────
 
     abstract fun quoteIdentifier(name: String): String
-    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, deferredFks: Set<Pair<String, String>> = emptySet()): List<DdlStatement>
+    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, deferredFks: Set<Pair<String, String>> = emptySet(), options: DdlGenerationOptions = DdlGenerationOptions()): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
     abstract fun generateSequences(sequences: Map<String, SequenceDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement>
@@ -50,6 +66,19 @@ abstract class AbstractDdlGenerator(
     abstract fun generateFunctions(functions: Map<String, FunctionDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateProcedures(procedures: Map<String, ProcedureDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateTriggers(triggers: Map<String, TriggerDefinition>, tables: Map<String, TableDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
+
+    // ── Spatial helpers ──────────────────────────
+
+    protected fun hasGeometryColumns(table: TableDefinition): Boolean =
+        table.columns.values.any { it.type is NeutralType.Geometry }
+
+    protected open fun shouldBlockTable(name: String, table: TableDefinition, options: DdlGenerationOptions): Boolean =
+        hasGeometryColumns(table) && !canGenerateSpatial(options.spatialProfile)
+
+    protected open fun canGenerateSpatial(profile: SpatialProfile): Boolean = when (profile) {
+        SpatialProfile.POSTGIS, SpatialProfile.NATIVE, SpatialProfile.SPATIALITE -> true
+        SpatialProfile.NONE -> false
+    }
 
     // ── Shared logic ────────────────────────────
 

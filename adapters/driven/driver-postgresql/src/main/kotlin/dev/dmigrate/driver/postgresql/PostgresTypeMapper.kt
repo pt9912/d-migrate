@@ -30,7 +30,21 @@ class PostgresTypeMapper : TypeMapper {
         is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
         is NeutralType.Enum -> "TEXT" // Actual ENUM handled via CREATE TYPE
         is NeutralType.Array -> "${toSql(resolveElementType(type.elementType))}[]"
-        is NeutralType.Geometry -> TODO("Spatial DDL mapping is Phase C/D scope (0.5.5)")
+        is NeutralType.Geometry -> {
+            val pgType = when (type.geometryType.schemaName) {
+                "geometry" -> "Geometry"
+                "point" -> "Point"
+                "linestring" -> "LineString"
+                "polygon" -> "Polygon"
+                "multipoint" -> "MultiPoint"
+                "multilinestring" -> "MultiLineString"
+                "multipolygon" -> "MultiPolygon"
+                "geometrycollection" -> "GeometryCollection"
+                else -> type.geometryType.schemaName.replaceFirstChar { it.uppercase() }
+            }
+            val srid = type.srid ?: 0
+            "geometry($pgType, $srid)"
+        }
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {
