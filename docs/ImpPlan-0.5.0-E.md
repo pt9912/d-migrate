@@ -682,20 +682,33 @@ Kanonische Publish-Quelle nach gruenem Tag-Build:
 GitHub Actions -> Workflow-Artefakt `release-assets`
 ```
 
-Draft-Upload derselben Dateien als vorbereiteter Release-Schritt:
+Workflow-Artefakt nach gruenem Tag-Build lokal beziehen:
+
+```bash
+gh run download <tag-run-id> \
+  -n release-assets \
+  -D ./release-assets
+ls -1 ./release-assets
+cat ./release-assets/d-migrate-<version>.sha256
+```
+
+Draft-Upload genau dieser Workflow-Dateien als vorbereiteter Release-Schritt:
 
 ```bash
 gh release create v<version> \
   --draft \
   --title "v<version>" \
-  ./release/*
+  ./release-assets/*
 ```
 
 Wichtig:
 
-- der lokale Ordner `./release` dient hier nur als Preflight-Beispiel
-- fuer den echten Release-Publish werden die Dateien aus dem gruenerklaerten
-  Tag-Workflow-Artefakt `release-assets` verwendet
+- der lokale Ordner `./release` dient nur Preflight und Dateipruefung vor dem
+  Tag
+- fuer den echten Release-Publish werden die Dateien aus dem
+  gruenerklaerten Tag-Workflow-Artefakt `release-assets` bezogen
+- bei bereits angelegtem Release arbeitet `gh release upload` mit demselben
+  heruntergeladenen Ordner `./release-assets/*`
 
 Homebrew-Verifikation auf einem Host mit `brew` nach echtem Publish des
 Releases:
