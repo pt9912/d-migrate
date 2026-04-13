@@ -102,35 +102,6 @@ ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
-**Aktueller Stand (2026-04-12)**  
-Milestone 0.4.0 ist feature-complete. Alle Phasen (A–F) sind abgeschlossen
-und verifiziert. Release-Vorbereitung steht aus.
-
-Abgeschlossene Phasen:
-
-- **Phase C** (Schritte 12–18): `DataWriter`/`TableImportSession`/`SchemaSync`
-  Port-Vertrag; PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade.
-  Plan: [ImpPlan-0.4.0-C-16_18](./ImpPlan-0.4.0-C-16_18.md)
-- **Phase D** (Schritte 19–23): Streaming-Importer, SQLite-Streaming-Tests,
-  Reorder-Perf-Gate.
-  Plan: [ImpPlan-0.4.0-D-19_22](./ImpPlan-0.4.0-D-19_22.md),
-  [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
-- **Phase E** (Schritte 24–28): CLI-Integration `data import`, Schema-Preflight,
-  E2E-Tests (JSON/YAML/CSV Round-Trips, `--truncate`, `--on-conflict update`,
-  `--trigger-mode disable`), LF-013 inkrementeller Export (`--since-column`/`--since`).
-  Pläne: [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md),
-  [ImpPlan-0.4.0-E-25](./ImpPlan-0.4.0-E-25.md),
-  [ImpPlan-0.4.0-E-28](./ImpPlan-0.4.0-E-28.md)
-- **Phase F** (Schritte 29–33): Testcontainers-E2E gegen PostgreSQL und MySQL,
-  Truncate-Implementierung in allen drei Writern, Sequence-/AUTO_INCREMENT-Reseeding,
-  Trigger-Handling, inkrementeller Round-Trip (export → delta → UPSERT → Vergleich).
-  Plan: [ImpPlan-0.4.0-F](./ImpPlan-0.4.0-F.md)
-
-Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
-Trigger-Verhalten beim Import werden im Draft
-[design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
-konkretisiert.
-
 > **Begründung der LF-013-Vorverlegung von 0.9.0 nach 0.4.0**: Inkrementeller
 > Export/Import gehört semantisch zum Daten-Pfad, nicht zur Beta-Reife.
 > Sobald `data import` (LF-010) steht, ist die nötige Schreib-Infrastruktur
@@ -461,6 +432,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 2.1
-**Stand**: 2026-04-12
+**Version**: 2.2
+**Stand**: 2026-04-13
 **Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 in Umsetzung (Phase A und B erledigt); 0.5.5 neu aufgenommen, `data transfer` in 0.6.0 aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
