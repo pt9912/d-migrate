@@ -15,9 +15,42 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.Types
 
 class DataImportSchemaPreflightTest : FunSpec({
+
+    fun writeSchemaFile(content: String): Path =
+        Files.createTempFile("dmigrate-preflight-schema-", ".yaml").also {
+            Files.writeString(it, content.trimIndent())
+        }
+
+    fun minimalSchemaYaml(vararg tableNames: String): String = buildString {
+        appendLine("schema_format: \"1.0\"")
+        appendLine("name: \"Preflight\"")
+        appendLine("version: \"1.0.0\"")
+        appendLine("tables:")
+        tableNames.forEach { tableName ->
+            appendLine("  \"$tableName\":")
+            appendLine("    columns:")
+            appendLine("      id:")
+            appendLine("        type: identifier")
+        }
+    }
+
+    fun writeImportFile(dir: Path, fileName: String, content: String = """[{"id":1}]""") {
+        Files.writeString(dir.resolve(fileName), content)
+    }
+
+    fun cleanup(vararg paths: Path) {
+        paths.forEach { path ->
+            if (Files.isDirectory(path)) {
+                path.toFile().deleteRecursively()
+            } else {
+                Files.deleteIfExists(path)
+            }
+        }
+    }
 
     fun compatibilitySchema(): SchemaDefinition =
         SchemaDefinition(
@@ -206,6 +239,231 @@ class DataImportSchemaPreflightTest : FunSpec({
         Files.deleteIfExists(importDir.resolve("users.json"))
         Files.deleteIfExists(importDir)
         Files.deleteIfExists(schemaFile)
+    }
+
+    test("validateTargetTable rejects tables missing from the schema") {
+        val schema = SchemaDefinition(
+            name = "MissingTable",
+            version = "1.0.0",
+            tables = mapOf("users" to TableDefinition(columns = linkedMapOf())),
+        )
+
+        val ex = shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schema,
+                table = "orders",
+                targetColumns = emptyList(),
+            )
+        }
+
+        ex.message!! shouldContain "Table 'orders' is not defined in the provided --schema file"
+    }
+
+    test("validateTargetTable rejects ambiguous unqualified schema table names") {
+        val schema = SchemaDefinition(
+            name = "AmbiguousTable",
+            version = "1.0.0",
+            tables = mapOf(
+                "public.users" to TableDefinition(columns = linkedMapOf()),
+                "archive.users" to TableDefinition(columns = linkedMapOf()),
+            ),
+        )
+
+        val ex = shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schema,
+                table = "users",
+                targetColumns = emptyList(),
+            )
+        }
+
+        ex.message!! shouldContain "Table 'users' matches multiple tables in the provided --schema"
+        ex.message!! shouldContain "public.users"
+        ex.message!! shouldContain "archive.users"
+    }
+
+    test("validateTargetTable rejects missing and unexpected columns") {
+        val schema = SchemaDefinition(
+            name = "ColumnMismatch",
+            version = "1.0.0",
+            tables = mapOf(
+                "users" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(NeutralType.Identifier(), required = true),
+                    ),
+                )
+            ),
+        )
+
+        val ex = shouldThrow<ImportSchemaMismatchException> {
+            DataImportSchemaPreflight.validateTargetTable(
+                schema = schema,
+                table = "users",
+                targetColumns = listOf(
+                    TargetColumn("extra", nullable = true, jdbcType = Types.INTEGER, sqlTypeName = "INTEGER"),
+                ),
+            )
+        }
+
+        ex.message!! shouldContain "missing target columns: id"
+        ex.message!! shouldContain "unexpected target columns: extra"
+    }
+
+    test("prepare rejects a schema path that does not exist") {
+        val tempDir = Files.createTempDirectory("dmigrate-missing-schema-")
+        val missingSchema = tempDir.resolve("missing.yaml")
+        val dataFile = Files.createTempFile("dmigrate-missing-schema-data-", ".json")
+        Files.writeString(dataFile, """[{"id":1}]""")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = missingSchema,
+                input = ImportInput.SingleFile("users", dataFile),
+                format = DataExportFormat.JSON,
+            )
+        }
+
+        ex.message!! shouldContain "Schema path does not exist"
+        cleanup(dataFile, tempDir)
+    }
+
+    test("prepare rejects a schema path that is not a file") {
+        val schemaDir = Files.createTempDirectory("dmigrate-schema-dir-")
+        val dataFile = Files.createTempFile("dmigrate-schema-dir-data-", ".json")
+        Files.writeString(dataFile, """[{"id":1}]""")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaDir,
+                input = ImportInput.SingleFile("users", dataFile),
+                format = DataExportFormat.JSON,
+            )
+        }
+
+        ex.message!! shouldContain "Schema path is not a file"
+        cleanup(dataFile, schemaDir)
+    }
+
+    test("prepare wraps schema parse errors") {
+        val schemaFile = writeSchemaFile(
+            """
+            schema_format: "1.0"
+            name: "Broken"
+            version: "1.0.0"
+            tables: [
+            """
+        )
+        val dataFile = Files.createTempFile("dmigrate-broken-schema-data-", ".json")
+        Files.writeString(dataFile, """[{"id":1}]""")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaFile,
+                input = ImportInput.SingleFile("users", dataFile),
+                format = DataExportFormat.JSON,
+            )
+        }
+
+        ex.message!! shouldContain "Failed to parse schema file"
+        cleanup(dataFile, schemaFile)
+    }
+
+    test("prepare rejects directory tables that are missing from the schema") {
+        val importDir = Files.createTempDirectory("dmigrate-missing-schema-table-")
+        val schemaFile = writeSchemaFile(minimalSchemaYaml("users"))
+        writeImportFile(importDir, "orders.json")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaFile,
+                input = ImportInput.Directory(importDir),
+                format = DataExportFormat.JSON,
+            )
+        }
+
+        ex.message!! shouldContain "does not define tables required for directory import"
+        ex.message!! shouldContain "orders"
+        cleanup(importDir, schemaFile)
+    }
+
+    test("prepare rejects ambiguous schema matches for directory tables") {
+        val importDir = Files.createTempDirectory("dmigrate-ambiguous-schema-table-")
+        val schemaFile = writeSchemaFile(minimalSchemaYaml("public.users", "archive.users"))
+        writeImportFile(importDir, "users.json")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaFile,
+                input = ImportInput.Directory(importDir),
+                format = DataExportFormat.JSON,
+            )
+        }
+
+        ex.message!! shouldContain "matches directory import tables ambiguously"
+        ex.message!! shouldContain "users ->"
+        ex.message!! shouldContain "public.users"
+        ex.message!! shouldContain "archive.users"
+        cleanup(importDir, schemaFile)
+    }
+
+    test("prepare rejects multiple directory tables mapping to the same schema table") {
+        val importDir = Files.createTempDirectory("dmigrate-duplicate-schema-target-")
+        val schemaFile = writeSchemaFile(minimalSchemaYaml("users"))
+        writeImportFile(importDir, "users.json")
+        writeImportFile(importDir, "public.users.json")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaFile,
+                input = ImportInput.Directory(importDir),
+                format = DataExportFormat.JSON,
+            )
+        }
+
+        ex.message!! shouldContain "maps multiple directory tables to the same schema table"
+        ex.message!! shouldContain "users <-"
+        ex.message!! shouldContain "public.users"
+        cleanup(importDir, schemaFile)
+    }
+
+    test("prepare rejects duplicate directory files for the same filtered table") {
+        val importDir = Files.createTempDirectory("dmigrate-filtered-duplicate-table-")
+        val schemaFile = writeSchemaFile(minimalSchemaYaml("users"))
+        writeImportFile(importDir, "users.yaml", "id: 1\n")
+        writeImportFile(importDir, "users.yml", "id: 1\n")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaFile,
+                input = ImportInput.Directory(importDir, tableFilter = listOf("users")),
+                format = DataExportFormat.YAML,
+            )
+        }
+
+        ex.message!! shouldContain "Directory import source contains multiple files for the same table"
+        ex.message!! shouldContain "users <-"
+        ex.message!! shouldContain "users.yaml"
+        ex.message!! shouldContain "users.yml"
+        cleanup(importDir, schemaFile)
+    }
+
+    test("prepare rejects duplicate directory files for the same table without a filter") {
+        val importDir = Files.createTempDirectory("dmigrate-unfiltered-duplicate-table-")
+        val schemaFile = writeSchemaFile(minimalSchemaYaml("users"))
+        writeImportFile(importDir, "users.yaml", "id: 1\n")
+        writeImportFile(importDir, "users.yml", "id: 1\n")
+
+        val ex = shouldThrow<ImportPreflightException> {
+            DataImportSchemaPreflight.prepare(
+                schemaPath = schemaFile,
+                input = ImportInput.Directory(importDir),
+                format = DataExportFormat.YAML,
+            )
+        }
+
+        ex.message!! shouldContain "Directory import source contains multiple files for the same table"
+        ex.message!! shouldContain "users <-"
+        cleanup(importDir, schemaFile)
     }
 
     test("validateTargetTable rejects incompatible target types and nullability") {

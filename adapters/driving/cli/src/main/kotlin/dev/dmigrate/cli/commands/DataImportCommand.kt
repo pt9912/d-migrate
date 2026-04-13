@@ -22,6 +22,7 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.cli.output.ProgressRenderer
 import dev.dmigrate.streaming.StreamingImporter
 
 /**
@@ -165,14 +166,15 @@ class DataImportCommand : CliktCommand(name = "import") {
             writerLookup = writerLookup,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { pool, input, fmt, opts, cfg, onTableOpened ->
+            importExecutor = ImportExecutor { pool, input, fmt, opts, cfg, onTableOpened, reporter ->
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,
                     writerLookup = writerLookup,
                     onTableOpened = onTableOpened,
                 )
-                importer.import(pool, input, fmt, opts, cfg)
+                importer.import(pool, input, fmt, opts, cfg, reporter)
             },
+            progressReporter = ProgressRenderer(),
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)

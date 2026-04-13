@@ -648,27 +648,27 @@ subprojects {
 ```
 Distribution-Formate:
 
-1. JVM/Fat JAR (Standard für Entwicklung und dynamische Erweiterbarkeit)
-   → java -jar d-migrate.jar
-   → Unterstützt ServiceLoader-basierte Erweiterungen zur Laufzeit
-   → Distribution: Maven Central, SDKMAN
+1. GitHub Release Assets (0.5.0-MVP)
+   → ZIP/TAR mit launcherbasiertem `bin/d-migrate`
+   → Fat JAR für `java -jar d-migrate-<version>-all.jar`
+   → Kanonischer Build: `:adapters:driving:cli:assembleReleaseAssets`
+   → Distribution: GitHub Releases
 
-2. GraalVM Native Image (optimiertes Deployment für vordefinierte Bundles)
-   → Single Binary für Linux/macOS/Windows
-   → ~50 MB, Start in <100ms
-   → Enthält nur die beim Build eingebundenen Treiber/Provider
-   → Distribution: GitHub Releases, Homebrew
-
-3. OCI Image (ghcr.io/pt9912/d-migrate) ✅
+2. OCI Image (ghcr.io/pt9912/d-migrate) ✅
    → docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
    → Basis: eclipse-temurin:21-jre-noble (Ubuntu 24.04, glibc, ZGC)
    → Build: ./gradlew :adapters:driving:cli:jibDockerBuild (Jib, kein Dockerfile nötig)
    → Für CI/CD-Pipelines und Nutzer ohne JDK
 
-4. Package Manager
-   → brew install d-migrate        (macOS/Linux)
-   → sdk install dmigrate          (SDKMAN)
-   → scoop install d-migrate       (Windows)
+3. Homebrew-Basis (0.5.0-MVP)
+   → Formula im Repository unter `packaging/homebrew/d-migrate.rb`
+   → Konsumiert das publizierte GitHub-Release-ZIP
+   → Verifikation nach Publish via `brew install --formula`
+
+4. Zukunftspfade (nicht aktueller 0.5.0-Auslieferungsstand)
+   → GraalVM Native Image
+   → SDKMAN
+   → Scoop
 ```
 
 ---
@@ -805,8 +805,8 @@ Entwickler-Maschine                    CI/CD-Pipeline
 │                    │                │  GitHub Actions      │
 │  d-migrate (CLI)   │                │                     │
 │  ┌──────────────┐  │                │  ┌───────────────┐  │
-│  │ Native Binary│  │                │  │ Testcontainers│  │
-│  │ oder JAR     │  │                │  │ ┌───────────┐ │  │
+│  │ Launcher oder│  │                │  │ Testcontainers│  │
+│  │ Fat JAR      │  │                │  │ ┌───────────┐ │  │
 │  └──────┬───────┘  │                │  │ │ PostgreSQL│ │  │
 │         │          │                │  │ │ MySQL     │ │  │
 │         ▼          │                │  │ │ SQLite    │ │  │
@@ -817,9 +817,9 @@ Entwickler-Maschine                    CI/CD-Pipeline
 │         │          │                Distribution
 │         ▼          │                ┌─────────────────────┐
 │  ┌──────────────┐  │                │ GitHub Releases     │
-│  │ Ollama       │  │                │ Maven Central       │
-│  │ (optional)   │  │                │ Docker Hub          │
-│  └──────────────┘  │                │ Homebrew / SDKMAN   │
+│  │ Ollama       │  │                │ GHCR (OCI)          │
+│  │ (optional)   │  │                │ Homebrew-Basis      │
+│  └──────────────┘  │                │ spätere Kanäle      │
 └────────────────────┘                └─────────────────────┘
 ```
 

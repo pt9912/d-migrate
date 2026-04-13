@@ -25,6 +25,12 @@ kover {
                     "dev.dmigrate.core.model.TableDefinition",
                     "dev.dmigrate.core.model.TriggerDefinition",
                     "dev.dmigrate.core.model.ViewDefinition",
+                    // Diff DTOs (pure data, no logic beyond generated equals/hashCode)
+                    "dev.dmigrate.core.diff.ValueChange",
+                    "dev.dmigrate.core.diff.EnumTypeDiff",
+                    "dev.dmigrate.core.diff.NamedTable",
+                    "dev.dmigrate.core.diff.NamedEnumType",
+                    "dev.dmigrate.core.diff.NamedView",
                 )
             }
         }

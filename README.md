@@ -17,17 +17,18 @@ d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmal
 - Neutrales Schemamodell mit 18 integrierten Typen
 - YAML-basierte Schemadefinition und -parsing
 - Schemagültigkeitsprüfung mit 18 Fehlercodes (E001-E018)
+- File-basierter Schema-Vergleich mit `schema compare`
 - DDL-Generierung für PostgreSQL, MySQL und SQLite
 - Transformation von View-Queries (17 SQL-Funktionen)
 - Transformationsberichte (YAML-Seitenschatten)
 - Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
 - Transaktionaler Datenimport mit UPSERT, Truncate, Trigger-Handling und Reseeding
 - Inkrementeller Export über `--since-column` / `--since` (LF-013)
-- CLI mit `schema validate`, `schema generate`, `data export` und `data import`
+- Line-orientierte Fortschrittsanzeige für `data export` und `data import`
+- CLI mit `schema validate`, `schema generate`, `schema compare`, `data export` und `data import`
 - OCI-Image für die Nutzung mit Docker
 
 **Geplant:**
-- Schema-Diff und `schema compare` (0.5.0)
 - Reverse-Engineering bestehender Datenbanken (0.6.0)
 
 ## Schnellstart
@@ -36,10 +37,36 @@ d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmal
 
 - **JDK 21** oder neuer — _oder_ Docker (siehe unten, kein lokales JDK erforderlich)
 
-### Build
+### Installation
+
+#### GitHub Release Assets
+
+Für veröffentlichte Releases stehen ZIP, TAR und Fat JAR auf der
+[Releases-Seite](https://github.com/pt9912/d-migrate/releases) bereit.
+
+```bash
+# Launcher-basierte Distribution entpacken
+tar -xf d-migrate-<version>.tar
+./d-migrate-<version>/bin/d-migrate --help
+
+# Alternativ das Fat JAR direkt ausführen
+java -jar d-migrate-<version>-all.jar --help
+```
+
+Hinweis: Die Homebrew-Formula wird in 0.5.0 im Repository mitgeführt, ist aber
+noch kein vollautomatischer Standard-Installationspfad.
+
+#### Aus Quellcode bauen
 
 ```bash
 ./gradlew build
+```
+
+#### Release-Assets lokal bauen
+
+```bash
+./gradlew :adapters:driving:cli:assembleReleaseAssets
+ls -1 adapters/driving/cli/build/release
 ```
 
 ### CLI ausführen
@@ -47,6 +74,9 @@ d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmal
 ```bash
 # Schema validieren
 ./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
+
+# Zwei Schemas vergleichen
+./gradlew :adapters:driving:cli:run --args="schema compare --source schema.yaml --target schema-new.yaml"
 
 # PostgreSQL-DDL generieren
 ./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target postgresql"
@@ -64,6 +94,9 @@ Kein lokales JDK erforderlich — einfach Image ziehen und ausführen:
 ```bash
 # Validierung
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
+
+# Compare
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema compare --source /work/schema.yaml --target /work/schema-new.yaml
 
 # DDL generieren
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
@@ -83,6 +116,12 @@ docker build -t d-migrate:dev .
 docker build --no-cache \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
+
+# Kover-Coverage-Report als JSON extrahieren
+docker build --target build -t d-migrate:build .
+docker create --name d-migrate-tmp d-migrate:build
+docker cp d-migrate-tmp:/src/hexagon/core/build/reports/kover/report.json ./coverage-core.json
+docker rm d-migrate-tmp
 
 # Tests überspringen — nur CLI-Distribution erstellen
 docker build --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" \
@@ -151,7 +190,22 @@ Dann validierst du es so:
 ./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
 ```
 
+Und vergleichst zwei Versionen so:
+
+```bash
+./gradlew :adapters:driving:cli:run --args="schema compare --source schema.yaml --target schema-v2.yaml"
+```
+
 ## Aktueller Stand
+
+**[v0.5.0](https://github.com/pt9912/d-migrate/releases/tag/v0.5.0)** veröffentlicht:
+
+- `schema compare` CLI-Befehl: file-basierter Vergleich zweier neutraler Schema-Definitionen
+- Core-Diff-Engine mit hierarchischem before/after Diff-Modell
+- Plain/JSON/YAML-Ausgabeformate für `schema compare`
+- Line-orientierte Fortschrittsanzeige auf `stderr` für `data export` und `data import`
+- Release-Packaging mit Fat JAR, ZIP, TAR und SHA256
+- Homebrew-Tap-Automation
 
 **[v0.4.0](https://github.com/pt9912/d-migrate/releases/tag/v0.4.0)** veröffentlicht:
 
@@ -208,6 +262,7 @@ Detaillierte Dokumentation findest du im [docs/](docs/)-Verzeichnis:
 
 - [Quick Start Guide (Deutsch)](docs/guide.md)
 - [Entwurf](docs/design.md) / [Architektur](docs/architecture.md)
+- [Schema-YAML-Referenz](docs/schema-reference.md)
 - [Spezifikation des neutralen Modells](docs/neutral-model-spec.md)
 - [CLI-Spezifikation](docs/cli-spec.md)
 - [Regeln zur DDL-Generierung](docs/ddl-generation-rules.md)

@@ -11,7 +11,9 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.streaming.ExportOutput
 import dev.dmigrate.streaming.ExportResult
+import dev.dmigrate.streaming.NoOpProgressReporter
 import dev.dmigrate.streaming.PipelineConfig
+import dev.dmigrate.streaming.ProgressReporter
 import java.nio.charset.Charset
 import java.nio.file.Path
 
@@ -32,6 +34,7 @@ fun interface ExportExecutor {
         options: ExportOptions,
         config: PipelineConfig,
         filter: DataFilter?,
+        progressReporter: ProgressReporter,
     ): ExportResult
 }
 
@@ -79,6 +82,7 @@ class DataExportRunner(
     private val writerFactoryBuilder: () -> DataChunkWriterFactory,
     private val collectWarnings: () -> List<String>,
     private val exportExecutor: ExportExecutor,
+    private val progressReporter: ProgressReporter = NoOpProgressReporter,
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
@@ -228,6 +232,8 @@ class DataExportRunner(
 
         // ─── 9. Streaming ─────────────────────────────────────
         val result: ExportResult = try {
+            val effectiveReporter = if (request.quiet || request.noProgress)
+                NoOpProgressReporter else progressReporter
             exportExecutor.execute(
                 pool = pool,
                 reader = reader,
@@ -239,6 +245,7 @@ class DataExportRunner(
                 options = exportOptions,
                 config = PipelineConfig(chunkSize = request.chunkSize),
                 filter = effectiveFilter,
+                progressReporter = effectiveReporter,
             )
         } catch (e: Throwable) {
             stderr("Error: Export failed: ${e.message}")

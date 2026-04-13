@@ -24,6 +24,14 @@
 #     docker create --name d-migrate-tmp d-migrate:build
 #     docker cp d-migrate-tmp:/src/adapters/driving/cli/build/distributions ./dist
 #     docker rm d-migrate-tmp
+#
+#   Extract Kover coverage reports (JSON) from the `build` stage:
+#     docker build --target build \
+#       --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist" \
+#       -t d-migrate:build .
+#     docker create --name d-migrate-tmp d-migrate:build
+#     docker cp d-migrate-tmp:/src/hexagon/core/build/reports/kover/report.json ./coverage-core.json
+#     docker rm d-migrate-tmp
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build & test -------------------------------------------------
@@ -69,7 +77,18 @@ RUN --mount=type=cache,target=/gradle-cache \
 COPY . .
 
 RUN --mount=type=cache,target=/gradle-cache \
+    find /gradle-cache -path "*/kover/*" -delete 2>/dev/null || true && \
     ./gradlew --no-daemon ${GRADLE_TASKS}
+
+# Convert Kover XML coverage reports to JSON (if they exist).
+# Uses yq (https://github.com/mikefarah/yq) as a static binary.
+ARG YQ_VERSION=v4.44.6
+ADD https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /usr/local/bin/yq
+RUN chmod +x /usr/local/bin/yq && \
+    for xml in $(find . -path "*/kover/*.xml" -type f 2>/dev/null); do \
+        json="${xml%.xml}.json"; \
+        yq -p xml -o json "$xml" > "$json" 2>/dev/null || true; \
+    done
 
 # ---- Stage 2: runtime ------------------------------------------------------
 # Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild

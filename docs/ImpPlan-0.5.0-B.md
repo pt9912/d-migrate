@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.0 - MVP-Release
 > **Phase**: B (Core-Diff-Engine)
-> **Status**: Draft
+> **Status**: Done (2026-04-13)
 > **Referenz**: `implementation-plan-0.5.0.md` Abschnitt 4.2, Abschnitt 5
 > Phase B, Abschnitt 7, Abschnitt 8, Abschnitt 9.1
 
@@ -562,19 +562,21 @@ Explizit absichern:
 Die vorhandenen Fixtures `minimal.yaml` und `e-commerce.yaml` sind gemaess
 Masterplan **bereits in Phase B** Pflichtbestandteil der Compare-Verifikation.
 
-Pragmatische Regel:
+Entscheidung (verifiziert gegen Codebasis 2026-04-13):
 
-- pure Core-Tests bevorzugen Builder-/Factory-Helfer
-- fixture-basierte Compare-Tests mit `minimal.yaml` und `e-commerce.yaml`
-  muessen ebenfalls in Phase B existieren
-- falls `hexagon:core:test` adapterfrei bleiben soll, duerfen diese
-  fixture-basierten Tests in einem hoeheren Testmodul liegen; fachlich gehoeren
-  sie trotzdem zu Phase B und nicht erst zu Phase C
+`hexagon:core` hat null externe Abhaengigkeiten (nur Kotlin stdlib). Diese
+Eigenschaft wird bewahrt. Daraus ergibt sich die Aufteilung:
+
+- **`hexagon:core:test`**: Builder-basierte Comparator-Unit-Tests (§8.1, §8.2).
+  Kein Zugriff auf `YamlSchemaCodec` oder Fixture-Dateien.
+- **`adapters:driven:formats:test`**: Fixture-basierte Compare-Tests mit
+  `minimal.yaml` und `e-commerce.yaml`. `YamlSchemaCodec` und die Fixtures
+  sind dort bereits verfuegbar; ein separates Testmodul ist nicht noetig.
 
 Verbindliche Konsequenz fuer die Verifikation:
 
-- der Phase-B-Testlauf muss **auch** das Modul bzw. den Testpfad umfassen, in
-  dem diese Fixture-Tests real liegen
+- der Phase-B-Testlauf muss **beide** Module umfassen:
+  `:hexagon:core:test` und `:adapters:driven:formats:test`
 
 ---
 
@@ -609,16 +611,9 @@ Fixture-Compare-Tests abdeckt.
 
 ```bash
 docker build --target build \
-  --build-arg GRADLE_TASKS=":hexagon:core:test <fixture-compare-test-task> --rerun-tasks" \
+  --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:formats:test --rerun-tasks" \
   -t d-migrate:0.5.0-phase-b .
 ```
-
-Dabei gilt:
-
-- `<fixture-compare-test-task>` ist der echte Gradle-Testtask des Moduls, in
-  dem `minimal.yaml`-/`e-commerce.yaml`-Compare-Tests liegen
-- wenn diese Tests doch in `:hexagon:core:test` liegen, entfaellt der
-  zusaetzliche Task entsprechend
 
 Wenn Phase B mit Phase C gemeinsam geprueft wird, gilt zusaetzlich der
 Milestone-Check aus `implementation-plan-0.5.0.md`:

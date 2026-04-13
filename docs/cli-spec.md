@@ -371,7 +371,7 @@ d-migrate schema reverse --source <url|path> [--source-dialect <dialect>] --outp
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-#### `schema compare` *(geplant: 0.5.0, file-based MVP-Slice von LF-015)*
+#### `schema compare` *(0.5.0, umgesetzt; file-based MVP-Slice von LF-015)*
 
 Vergleicht zwei Schema-Dateien im neutralen Format und zeigt Unterschiede.
 
@@ -554,23 +554,43 @@ Verhalten:
 - Exit 2
 - stderr: `--filter must not contain literal '?' when combined with --since (parameterized query); use a rewritten predicate or escape the literal differently`
 
-#### `data import` *(geplant: 0.4.0)*
+#### `data import` *(0.4.0, umgesetzt)*
 
-Importiert Daten in eine Datenbank.
+Importiert Daten aus JSON, YAML oder CSV in eine Datenbank. Der Importpfad ist
+streaming-basiert, unterstützt Datei-, Verzeichnis- und stdin-Quellen und löst
+`--target` analog zu `data export` auch über benannte Verbindungen aus
+`.d-migrate.yaml` auf.
 
 ```
-d-migrate data import --source <path> --target <url>
+d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 ```
 
-| Flag | Pflicht | Typ | Beschreibung |
-|---|---|---|---|
-| `--source` | Ja | Pfad | Datendatei(en) (JSON/YAML/CSV) |
-| `--target` | Ja | URL | Ziel-Datenbank |
-| `--schema` | Nein | Pfad | Schema zur Validierung |
-| `--on-error` | Nein | String | `abort` (Default), `skip`, `log` |
-| `--chunk-size` | Nein | Integer | Datensätze pro Transaktion (Default: 10000) |
+| Flag | Pflicht | Typ | Default | Beschreibung |
+|---|---|---|---|---|
+| `--target` | Nein | URL oder Name | `database.default_target` aus Config | Ziel-Datenbank als Connection-URL oder benannte Verbindung |
+| `--source` | Ja | Pfad, Verzeichnis oder `-` | — | Quelldatei, Quellverzeichnis oder stdin |
+| `--format` | Nein | String | Auto-Detection nach Dateiendung | Eingabeformat: `json`, `yaml`, `csv`; bei stdin Pflicht |
+| `--schema` | Nein | Pfad | — | Schema-Datei für lokalen Preflight und Tabellen-Reihenfolge bei Verzeichnisimport |
+| `--table` | Nein | String | — | Zieltabelle; für stdin und Single-File-Import relevant |
+| `--tables` | Nein | Liste | alle | Kommaseparierte Import-Reihenfolge; nur für Verzeichnisquellen |
+| `--on-error` | Nein | String | `abort` | Chunk-Fehlerbehandlung: `abort`, `skip`, `log` |
+| `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
+| `--trigger-mode` | Nein | String | `fire` | Trigger-Verhalten: `fire`, `disable`, `strict` |
+| `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
+| `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
+| `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
+| `--encoding` | Nein | String | BOM-/Reader-Default | Input-Encoding |
+| `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
+| `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
+| `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
 
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Importfehlern.
+**Exit-Codes**:
+
+- `0`: Erfolg
+- `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen
+- `4`: Verbindungsfehler
+- `5`: Import-Fehler während Verarbeitung oder Commit
+- `7`: Konfigurations-, Parse- oder Datei-Fehler
 
 #### `data seed` *(geplant: 1.3.0)*
 
@@ -737,47 +757,47 @@ Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
 ## 7. Fortschrittsanzeige
 
-### 7.1 Format
+### 7.1 Format (MVP 0.5.0)
 
-Langläufige Operationen (>2 Sekunden) können automatisch
-Status-/Fortschrittszeilen auf `stderr` ausgeben.
+`data export` und `data import` emittieren waehrend des Laufs
+line-orientierte Fortschrittszeilen auf `stderr`. Die Anzeige ist
+deterministisch — es gibt keine Zeitschwelle und keine Cursor-Rewrites.
 
-Im MVP-Umfang von 0.5.0 ist diese Anzeige ereignisbasiert: Start, laufender
-Status, Zwischenstände und Abschluss. Prozentwerte und ETA sind Best-Effort und
-nur verfügbar, wenn der jeweilige Command verlässliche Totals kennt.
+Pro Event wird genau eine Zeile geschrieben. Es gibt zu jedem Zeitpunkt
+hoechstens eine aktive Tabelle (sequenzielle Verarbeitung in 0.5.0).
 
-```
-Exporting table 'orders' | 520,000 rows processed
-```
-
-Struktur:
-```
-<Operation> '<Objekt>' | <Status>
-optional: | <Fortschritt>/<Gesamt> | ~<Rest>
-```
-
-### 7.2 Multi-Tabellen-Fortschritt
-
-Bei Verarbeitung mehrerer Tabellen:
+Export-Beispiel:
 
 ```
-Exporting 5 tables (2 active, 1 completed, 2 pending)
-  ✓ customers       completed (1,234 records)
-  ● orders          active (520,000 rows processed)
-  ● order_items     active (240,000 rows processed)
-  ○ products        pending
-  ○ categories      pending
+Exporting 3 table(s)
+Exporting table 'users' (1/3)
+Exporting table 'users' | chunk 1 | 10,000 rows | 0.82 MB
+Exported table 'users' | 12,345 rows | 2 chunks | 1.01 MB
 ```
 
-Symbole: `✓` abgeschlossen, `●` aktiv, `○` wartend
+Import-Beispiel:
 
-### 7.3 Steuerung
+```
+Importing 2 table(s)
+Importing table 'orders' (1/2)
+Importing table 'orders' | chunk 1 | 10,000 rows processed | 9,980 inserted, 20 skipped
+Imported table 'orders' | 12,000 inserted, 20 skipped
+```
 
-- `--no-progress`: Keine Fortschrittsanzeige (für Scripting)
-- `--quiet`: Nur Fehler
-- Fortschrittsanzeige geht nach **stderr** (stdout bleibt sauber für Piping)
-- Bei `--output-format json` bleibt Fortschritt im MVP stderr-basierte
-  Textausgabe; JSON-Progress-Events sind nicht Teil des 0.5.0-Vertrags
+Die finale ProgressSummary (z.B. "Exported 3 table(s) (30,000 rows, 2.50 MB)
+in 1.20 s") bleibt zusaetzlich erhalten.
+
+### 7.2 Steuerung
+
+- `--no-progress`: Unterdrueckt sowohl Zwischen-Events als auch die finale
+  ProgressSummary. Nicht-progressbezogene stderr-Ausgaben (z.B. Export-Warnings)
+  bleiben sichtbar.
+- `--quiet`: Unterdrueckt alles ausser Fehlern (Events, Summary, Warnings).
+- Fortschrittsanzeige geht ausschliesslich nach **stderr** (stdout bleibt
+  sauber fuer Piping und Nutzdaten).
+- Bei `--output-format json|yaml` bleibt der Progress-Pfad fuer Export/Import
+  plain-text auf `stderr`. Es werden keine JSON-/YAML-Progress-Events
+  eingefuehrt.
 
 ---
 

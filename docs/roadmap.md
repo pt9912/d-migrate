@@ -102,35 +102,6 @@ ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
 Import läuft über idempotenten UPSERT (`--on-conflict update`) — siehe
 implementation-plan-0.4.0.md §6.12.
 
-**Aktueller Stand (2026-04-12)**  
-Milestone 0.4.0 ist feature-complete. Alle Phasen (A–F) sind abgeschlossen
-und verifiziert. Release-Vorbereitung steht aus.
-
-Abgeschlossene Phasen:
-
-- **Phase C** (Schritte 12–18): `DataWriter`/`TableImportSession`/`SchemaSync`
-  Port-Vertrag; PostgreSQL-, MySQL- und SQLite-Writer inkl. Reseed-/Cleanup-Pfade.
-  Plan: [ImpPlan-0.4.0-C-16_18](./ImpPlan-0.4.0-C-16_18.md)
-- **Phase D** (Schritte 19–23): Streaming-Importer, SQLite-Streaming-Tests,
-  Reorder-Perf-Gate.
-  Plan: [ImpPlan-0.4.0-D-19_22](./ImpPlan-0.4.0-D-19_22.md),
-  [ImpPlan-0.4.0-D-23](./ImpPlan-0.4.0-D-23.md)
-- **Phase E** (Schritte 24–28): CLI-Integration `data import`, Schema-Preflight,
-  E2E-Tests (JSON/YAML/CSV Round-Trips, `--truncate`, `--on-conflict update`,
-  `--trigger-mode disable`), LF-013 inkrementeller Export (`--since-column`/`--since`).
-  Pläne: [ImpPlan-0.4.0-E-24_26_27](./ImpPlan-0.4.0-E-24_26_27.md),
-  [ImpPlan-0.4.0-E-25](./ImpPlan-0.4.0-E-25.md),
-  [ImpPlan-0.4.0-E-28](./ImpPlan-0.4.0-E-28.md)
-- **Phase F** (Schritte 29–33): Testcontainers-E2E gegen PostgreSQL und MySQL,
-  Truncate-Implementierung in allen drei Writern, Sequence-/AUTO_INCREMENT-Reseeding,
-  Trigger-Handling, inkrementeller Round-Trip (export → delta → UPSERT → Vergleich).
-  Plan: [ImpPlan-0.4.0-F](./ImpPlan-0.4.0-F.md)
-
-Design-Entscheidungen für Sequence-/Identity-/`AUTO_INCREMENT`-Nachführung und
-Trigger-Verhalten beim Import werden im Draft
-[design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
-konkretisiert.
-
 > **Begründung der LF-013-Vorverlegung von 0.9.0 nach 0.4.0**: Inkrementeller
 > Export/Import gehört semantisch zum Daten-Pfad, nicht zur Beta-Reife.
 > Sobald `data import` (LF-010) steht, ist die nötige Schreib-Infrastruktur
@@ -145,7 +116,7 @@ konkretisiert.
 > (Inkrement kennzeichnet *was* exportiert wird, Checkpoint *wo* der
 > Export aufgesetzt hat).
 
-### Milestone 0.5.0 — MVP-Release
+### Milestone 0.5.0 — MVP-Release ✅ (2026-04-13)
 
 | Bereich | Aufgabe                                       | LF-Ref |
 | ------- | --------------------------------------------- | ------ |
@@ -204,12 +175,22 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 | Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                | LF-004 |
 | CLI     | `d-migrate schema reverse --source <db-url>`                    | LF-004 |
 | CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | LF-015 |
+| Core    | `StreamingTransfer`-Orchestrator: DB-zu-DB-Streaming ohne Zwischenformat | LF-025 |
+| CLI     | `d-migrate data transfer --source <url> --target <url>` Kommando | LF-025 |
 | Docs    | Beispiel-Projekte (E-Commerce-Schema)                           | —      |
 | Test    | Reverse-Engineering gegen komplexe Test-Schemas                 | 8.4    |
 
 **Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt
 werden. Damit wird auch LF-015 vervollständigt: Vergleiche sind dann nicht nur
 Datei-zu-Datei, sondern zwischen Umgebungen bzw. Datenbanken möglich.
+
+`data transfer` nutzt den `SchemaReader` für automatische FK-Reihenfolge und
+streamt Daten direkt von `DataReader` zu `DataWriter` — ohne Serialisierung
+in ein Zwischenformat. Unterstützt `--tables`, `--filter`, `--truncate`,
+`--on-conflict update`, `--since-column`/`--since` und `--trigger-mode` analog
+zu den bestehenden Export-/Import-Flags. Grundlage für die Teil-Replikation
+(LF-025) in 1.4.0; dort kommen Datenmaskierung und selektive Datensatzfilter
+hinzu.
 
 ### Milestone 0.7.0 — Tool-Integrationen
 
@@ -224,6 +205,22 @@ Datei-zu-Datei, sondern zwischen Umgebungen bzw. Datenbanken möglich.
 | Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    |
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
+
+### Milestone 0.7.5 — Daten-Profiling
+
+| Bereich   | Aufgabe                                                                        | LF-Ref |
+| --------- | ------------------------------------------------------------------------------ | ------ |
+| Profiling | Gradle-Modul `hexagon/profiling` mit Domain-Modell und Warning-Rule-Engine     | —      |
+| Profiling | `SchemaIntrospectionPort` auf derselben JDBC-Metadatenbasis wie `SchemaReader` (0.6.0), mit eigener Profiling-Projektion | LF-004 |
+| Profiling | `ProfilingDataPort`: Aggregate-Queries (Counts, TopN, Stats) pro Dialekt       | —      |
+| Profiling | `LogicalTypeResolverPort`: DB-Typ → `LogicalType` für PostgreSQL, MySQL, SQLite | —      |
+| Profiling | Zieltyp-Kompatibilitätsprüfung (`TargetTypeCompatibility`)                     | —      |
+| CLI       | `d-migrate data profile` Kommando                                              | —      |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 |
+
+**Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
+Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
+JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 
 ### Milestone 0.8.0 — Internationalisierung
 
@@ -435,6 +432,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 2.0
-**Stand**: 2026-04-12
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 in Umsetzung (Phase A erledigt); 0.5.5 neu aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Version**: 2.5
+**Stand**: 2026-04-13
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0 und 0.5.0 abgeschlossen und released; 0.5.5 neu aufgenommen, `data transfer` in 0.6.0 aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung

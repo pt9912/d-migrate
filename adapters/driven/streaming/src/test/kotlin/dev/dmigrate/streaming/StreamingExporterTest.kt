@@ -491,6 +491,102 @@ class StreamingExporterTest : FunSpec({
         result.tables.single().error shouldNotBe null
         factory.events shouldContainExactly listOf("begin", "write-throw", "end", "close")
     }
+
+    // ─── Progress Event Tests (§8.1) ────────────────────────────────
+
+    // §8.1 #1
+    test("progress: emits run started for effective tables") {
+        val reader = FakeDataReader(mapOf(
+            "a" to listOf(emptyChunk("a")),
+            "b" to listOf(emptyChunk("b")),
+        ))
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val dir = Files.createTempDirectory("evt")
+
+        StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+            .export(pool = pool, tables = listOf("a", "b"),
+                output = ExportOutput.FilePerTable(dir), format = DataExportFormat.JSON,
+                progressReporter = reporter)
+
+        val runStarted = events.filterIsInstance<ProgressEvent.RunStarted>()
+        runStarted.size shouldBe 1
+        runStarted[0].operation shouldBe ProgressOperation.EXPORT
+        runStarted[0].totalTables shouldBe 2
+    }
+
+    // §8.1 #2
+    test("progress: emits started chunk progress and finished for single table") {
+        val reader = FakeDataReader(mapOf(
+            "users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "a")))
+        ))
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+
+        StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+            .export(pool = pool, tables = listOf("users"),
+                output = ExportOutput.Stdout, format = DataExportFormat.JSON,
+                progressReporter = reporter)
+
+        val types = events.map { it::class.simpleName }
+        types shouldContainExactly listOf("RunStarted", "ExportTableStarted", "ExportChunkProcessed", "ExportTableFinished")
+
+        val finished = events.filterIsInstance<ProgressEvent.ExportTableFinished>().single()
+        finished.status shouldBe TableProgressStatus.COMPLETED
+        finished.rowsProcessed shouldBe 1
+    }
+
+    // §8.1 #3
+    test("progress: empty table still emits chunk progress with zero rows") {
+        val reader = FakeDataReader(mapOf("empty" to listOf(emptyChunk("empty"))))
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+
+        StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+            .export(pool = pool, tables = listOf("empty"),
+                output = ExportOutput.Stdout, format = DataExportFormat.JSON,
+                progressReporter = reporter)
+
+        val chunk = events.filterIsInstance<ProgressEvent.ExportChunkProcessed>().single()
+        chunk.rowsInChunk shouldBe 0
+        chunk.rowsProcessed shouldBe 0
+    }
+
+    // §8.1 #4
+    test("progress: multi table export emits deterministic ordinals") {
+        val reader = FakeDataReader(mapOf(
+            "a" to listOf(emptyChunk("a")),
+            "b" to listOf(emptyChunk("b")),
+            "c" to listOf(emptyChunk("c")),
+        ))
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val dir = Files.createTempDirectory("ord")
+
+        StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+            .export(pool = pool, tables = listOf("a", "b", "c"),
+                output = ExportOutput.FilePerTable(dir), format = DataExportFormat.JSON,
+                progressReporter = reporter)
+
+        val starts = events.filterIsInstance<ProgressEvent.ExportTableStarted>()
+        starts.map { it.tableOrdinal } shouldContainExactly listOf(1, 2, 3)
+        starts.map { it.tableCount } shouldContainExactly listOf(3, 3, 3)
+    }
+
+    // §8.1 #5
+    test("progress: failed table emits finished event with failed status") {
+        val reader = FakeDataReader(mapOf("fail" to emptyList()))
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+
+        StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
+            .export(pool = pool, tables = listOf("fail"),
+                output = ExportOutput.Stdout, format = DataExportFormat.JSON,
+                progressReporter = reporter)
+
+        val finished = events.filterIsInstance<ProgressEvent.ExportTableFinished>().single()
+        finished.status shouldBe TableProgressStatus.FAILED
+    }
 })
 
 // ───────────────────────────────────────────────────────────────
