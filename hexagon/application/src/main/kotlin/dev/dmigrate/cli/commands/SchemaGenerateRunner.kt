@@ -4,9 +4,11 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SpatialProfilePolicy
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
@@ -16,6 +18,7 @@ import kotlin.io.path.writeText
 data class SchemaGenerateRequest(
     val source: Path,
     val target: String,
+    val spatialProfile: String? = null,
     val output: Path?,
     val report: Path?,
     val generateRollback: Boolean,
@@ -61,7 +64,26 @@ class SchemaGenerateRunner(
             return 2
         }
 
-        // ─── 2. Read schema ────────────────────────────────────
+        // ─── 2. Resolve spatial profile (before schema read) ──
+        val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)
+        val spatialProfile = when (profileResult) {
+            is SpatialProfilePolicy.Result.Resolved -> profileResult.profile
+            is SpatialProfilePolicy.Result.UnknownProfile -> {
+                printError("Unknown spatial profile '${profileResult.raw}'. " +
+                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
+                    request.source.toString())
+                return 2
+            }
+            is SpatialProfilePolicy.Result.NotAllowedForDialect -> {
+                printError("Spatial profile '${profileResult.profile.cliName}' is not allowed for ${profileResult.dialect.name.lowercase()}. " +
+                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
+                    request.source.toString())
+                return 2
+            }
+        }
+        val options = DdlGenerationOptions(spatialProfile = spatialProfile)
+
+        // ─── 3. Read schema ────────────────────────────────────
         val schema = try {
             schemaReader(request.source)
         } catch (e: Exception) {
@@ -69,16 +91,16 @@ class SchemaGenerateRunner(
             return 7
         }
 
-        // ─── 3. Validate ───────────────────────────────────────
+        // ─── 4. Validate ───────────────────────────────────────
         val validationResult = validator(schema)
         if (!validationResult.isValid) {
             printValidationResult(validationResult, schema, request.source.toString())
             return 3
         }
 
-        // ─── 4. Generate DDL ──────────────────────────────────
+        // ─── 5. Generate DDL ──────────────────────────────────
         val generator = generatorLookup(dialect)
-        val result = generator.generate(schema)
+        val result = generator.generate(schema, options)
 
         // ─── 5. Print notes & skipped objects on stderr ───────
         printNotes(result, request.verbose)
@@ -90,10 +112,10 @@ class SchemaGenerateRunner(
                 stdout(formatJsonOutput(result, schema, dialect.name.lowercase()))
             }
             request.output != null -> {
-                writeFileOutput(request, generator, schema, result, dialect, ddl)
+                writeFileOutput(request, generator, schema, result, dialect, ddl, options)
             }
             else -> {
-                writeStdoutOutput(request, generator, schema, result, dialect, ddl)
+                writeStdoutOutput(request, generator, schema, result, dialect, ddl, options)
             }
         }
 
@@ -125,13 +147,14 @@ class SchemaGenerateRunner(
         result: DdlResult,
         dialect: DatabaseDialect,
         ddl: String,
+        options: DdlGenerationOptions,
     ) {
         val outputPath = request.output!!
         fileWriter(outputPath, ddl + "\n")
         if (!request.quiet) stderr("DDL written to $outputPath")
 
         if (request.generateRollback) {
-            val rollbackResult = generator.generateRollback(schema)
+            val rollbackResult = generator.generateRollback(schema, options)
             val rbPath = rollbackPath(outputPath)
             fileWriter(rbPath, rollbackResult.render() + "\n")
             if (!request.quiet) stderr("Rollback DDL written to $rbPath")
@@ -147,13 +170,14 @@ class SchemaGenerateRunner(
         result: DdlResult,
         dialect: DatabaseDialect,
         ddl: String,
+        options: DdlGenerationOptions,
     ) {
         stdout(ddl)
         if (request.generateRollback) {
             stdout("\n-- ═══════════════════════════════════════")
             stdout("-- ROLLBACK")
             stdout("-- ═══════════════════════════════════════\n")
-            stdout(generator.generateRollback(schema).render())
+            stdout(generator.generateRollback(schema, options).render())
         }
 
         if (request.report != null) {

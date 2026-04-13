@@ -52,12 +52,15 @@ class SchemaGenerateRunnerTest : FunSpec({
     ) : DdlGenerator {
         var generateCalls = 0
         var rollbackCalls = 0
-        override fun generate(schema: SchemaDefinition): DdlResult {
+        var lastOptions: dev.dmigrate.driver.DdlGenerationOptions? = null
+        override fun generate(schema: SchemaDefinition, options: dev.dmigrate.driver.DdlGenerationOptions): DdlResult {
             generateCalls++
+            lastOptions = options
             return generateResult
         }
-        override fun generateRollback(schema: SchemaDefinition): DdlResult {
+        override fun generateRollback(schema: SchemaDefinition, options: dev.dmigrate.driver.DdlGenerationOptions): DdlResult {
             rollbackCalls++
+            lastOptions = options
             return rollbackResult
         }
     }

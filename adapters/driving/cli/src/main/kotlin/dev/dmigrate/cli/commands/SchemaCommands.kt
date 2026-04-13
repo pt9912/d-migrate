@@ -78,6 +78,8 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         .path()
     val generateRollback by option("--generate-rollback", help = "Generate rollback DDL")
         .flag()
+    val spatialProfile by option("--spatial-profile",
+        help = "Spatial type handling profile (postgis, native, spatialite, none)")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -86,6 +88,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         val request = SchemaGenerateRequest(
             source = source,
             target = target,
+            spatialProfile = spatialProfile,
             output = output,
             report = report,
             generateRollback = generateRollback,

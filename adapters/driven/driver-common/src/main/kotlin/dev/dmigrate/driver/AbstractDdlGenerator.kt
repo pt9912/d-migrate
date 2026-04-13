@@ -6,7 +6,7 @@ abstract class AbstractDdlGenerator(
     protected val typeMapper: TypeMapper
 ) : DdlGenerator {
 
-    override fun generate(schema: SchemaDefinition): DdlResult {
+    override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
 
@@ -32,8 +32,8 @@ abstract class AbstractDdlGenerator(
         return DdlResult(statements.filter { it.sql.isNotBlank() }, skipped)
     }
 
-    override fun generateRollback(schema: SchemaDefinition): DdlResult {
-        val up = generate(schema)
+    override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        val up = generate(schema, options)
         val downStatements = up.statements.reversed().mapNotNull { invertStatement(it) }
         return DdlResult(downStatements, emptyList())
     }
