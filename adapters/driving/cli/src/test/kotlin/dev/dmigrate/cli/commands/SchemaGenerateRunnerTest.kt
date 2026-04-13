@@ -560,4 +560,10 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.generator.rollbackOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
         h.generator.generateOptions shouldBe h.generator.rollbackOptions
     }
+
+    test("Exit 0: mysql + none is allowed and blocks spatial tables via E052") {
+        val h = harness()
+        h.runner().execute(request(target = "mysql", spatialProfile = "none")) shouldBe 0
+        h.generator.generateOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+    }
 })

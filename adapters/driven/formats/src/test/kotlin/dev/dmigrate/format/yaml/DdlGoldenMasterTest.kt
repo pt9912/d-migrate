@@ -1,6 +1,8 @@
 package dev.dmigrate.format.yaml
 
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.mysql.MysqlDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
@@ -30,6 +32,7 @@ class DdlGoldenMasterTest : FunSpec({
             .joinToString("\n")
             .trim()
 
+    // Non-spatial schemas: run without explicit spatial options
     for (schema in schemas) {
         for ((dialectName, generator) in dialects) {
             test("$schema generates correct $dialectName DDL") {
@@ -38,6 +41,22 @@ class DdlGoldenMasterTest : FunSpec({
                 val actual = generator.generate(input).render()
                 stripHeader(actual) shouldBe stripHeader(expected)
             }
+        }
+    }
+
+    // Spatial schema: run with explicit dialect-appropriate profiles (§4.3)
+    val spatialProfiles = listOf(
+        Triple("postgresql", PostgresDdlGenerator(), DdlGenerationOptions(SpatialProfile.POSTGIS)),
+        Triple("mysql", MysqlDdlGenerator(), DdlGenerationOptions(SpatialProfile.NATIVE)),
+        Triple("sqlite", SqliteDdlGenerator(), DdlGenerationOptions(SpatialProfile.SPATIALITE)),
+    )
+
+    for ((dialectName, generator, options) in spatialProfiles) {
+        test("spatial generates correct $dialectName DDL") {
+            val input = loadFixture("schemas/spatial.yaml")
+            val expected = loadGoldenMaster("ddl/spatial.$dialectName.sql")
+            val actual = generator.generate(input, options).render()
+            stripHeader(actual) shouldBe stripHeader(expected)
         }
     }
 })
