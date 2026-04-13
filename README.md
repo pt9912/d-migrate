@@ -198,11 +198,14 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-**Auf `develop` / 0.5.0-SNAPSHOT zusätzlich vorhanden:**
+**[v0.5.0](https://github.com/pt9912/d-migrate/releases/tag/v0.5.0)** veröffentlicht:
 
-- `schema compare` als file-basierter MVP-Slice von LF-015
-- line-orientierte Fortschrittsanzeige auf `stderr` für `data export` und `data import`
-- Release-Packaging mit ZIP, TAR, Fat JAR und SHA256 im Aufbau
+- `schema compare` CLI-Befehl: file-basierter Vergleich zweier neutraler Schema-Definitionen
+- Core-Diff-Engine mit hierarchischem before/after Diff-Modell
+- Plain/JSON/YAML-Ausgabeformate für `schema compare`
+- Line-orientierte Fortschrittsanzeige auf `stderr` für `data export` und `data import`
+- Release-Packaging mit Fat JAR, ZIP, TAR und SHA256
+- Homebrew-Tap-Automation
 
 **[v0.4.0](https://github.com/pt9912/d-migrate/releases/tag/v0.4.0)** veröffentlicht:
 

@@ -116,7 +116,7 @@ implementation-plan-0.4.0.md §6.12.
 > (Inkrement kennzeichnet *was* exportiert wird, Checkpoint *wo* der
 > Export aufgesetzt hat).
 
-### Milestone 0.5.0 — MVP-Release
+### Milestone 0.5.0 — MVP-Release ✅ (2026-04-13)
 
 | Bereich | Aufgabe                                       | LF-Ref |
 | ------- | --------------------------------------------- | ------ |
@@ -432,6 +432,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 2.4
+**Version**: 2.5
 **Stand**: 2026-04-13
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0 und 0.4.0 abgeschlossen und released; 0.5.0 fachlich umgesetzt (Phase A bis E erledigt, Release-/Tap-Automation vorhanden); 0.5.5 neu aufgenommen, `data transfer` in 0.6.0 aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0 und 0.5.0 abgeschlossen und released; 0.5.5 neu aufgenommen, `data transfer` in 0.6.0 aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung

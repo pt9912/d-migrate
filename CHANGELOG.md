@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-13
+
+### Added
+
+- `d-migrate schema compare` CLI command — file-based comparison of two neutral schema definitions with deterministic Plain/JSON/YAML output
+- Core-Diff-Engine (`SchemaComparator`) with hierarchical before/after diff model (`SchemaDiff`, `TableDiff`, `ColumnDiff`, `EnumTypeDiff`, `ViewDiff`)
+- Single-column UNIQUE/FK normalization to avoid false positives between column-level and constraint-level representations
+- Stable DiffView projection for CLI output — primitive-only types, no raw core model leakage
+- Exit code contract for `schema compare`: 0 (identical), 1 (different), 2 (CLI error), 3 (invalid schema), 7 (parse/IO error)
+- Validation of both schemas before comparison; warnings visible on stderr (plain) or in validation block (JSON/YAML) without changing exit code
+- `--output` support for `schema compare` with automatic parent directory creation and input collision detection
+- Line-oriented stderr progress display for `data export` and `data import` with event-based reporting (RunStarted, TableStarted, ChunkProcessed, TableFinished)
+- `ProgressEvent` sealed interface and `ProgressReporter` fun interface in hexagon:ports for cross-module progress contract
+- `ProgressRenderer` in CLI adapter with Locale.US number formatting
+- Kover XML-to-JSON coverage report conversion in Docker build stage (via yq)
+- GitHub Actions workflow for automated Homebrew tap releases (`release-homebrew.yml`)
+- Release packaging with Fat JAR, ZIP, TAR distributions and SHA256 checksums
+
+### Changed
+
+- `cli-spec.md` section 7 updated to reflect actual MVP progress display: line-oriented, sequential single-table, no >2s threshold
+- `ExportExecutor` and `ImportExecutor` interfaces extended with `ProgressReporter` parameter
+- `--quiet` suppresses progress events and final summary; `--no-progress` suppresses progress events and summary but keeps non-progress stderr output (e.g., export warnings)
+
 ## [0.4.0] - 2026-04-12
 
 ### Added
