@@ -2,10 +2,16 @@
 
 > **Milestone**: 0.5.0 - MVP-Release
 > **Phase**: E (Dokumentation und Release Packaging)
-> **Status**: Draft
+> **Status**: Umgesetzt (Stand 2026-04-13)
 > **Referenz**: `implementation-plan-0.5.0.md` Abschnitt 4.5, Abschnitt 4.6,
 > Abschnitt 5 Phase E, Abschnitt 7, Abschnitt 8; `docs/releasing.md`;
-> `docs/architecture.md` Abschnitt 5.3 Distribution
+> `docs/architecture.md` Abschnitt 5.3 Distribution;
+> `.github/workflows/build.yml`; `.github/workflows/release-homebrew.yml`
+
+> **Hinweis**: Dieses Dokument bleibt als Umsetzungs- und Abnahmebasis fuer
+> Phase E erhalten. Der Planinhalt beschreibt daher stellenweise bewusst die
+> Ausgangslage vor der Umsetzung; der Statusblock oben markiert den heute
+> erreichten Stand.
 
 ---
 
