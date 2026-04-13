@@ -155,6 +155,17 @@ class CliSchemaCompareTest : FunSpec({
         output shouldContain """"W001""""
     }
 
+    // MINOR-2: write failure at CLI level returns exit 7
+    test("--output to unwritable path exits with code 7") {
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(listOf("schema", "compare",
+                "--source", resourcePath("valid-schema.yaml"),
+                "--target", resourcePath("valid-schema.yaml"),
+                "--output", "/proc/0/nonexistent/out.txt"))
+        }
+        ex.statusCode shouldBe 7
+    }
+
     // §8.3: different schemas with json format
     test("different schemas with json format produces json diff") {
         val output = captureStdout {

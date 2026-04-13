@@ -106,8 +106,8 @@ internal object SchemaCompareHelpers {
 
     private fun projectTableDiff(t: TableDiff): TableChangeView = TableChangeView(
         name = t.name,
-        columnsAdded = t.columnsAdded.map { (n, c) -> ColumnSummaryView(n, neutralTypeToString(c.type)) },
-        columnsRemoved = t.columnsRemoved.keys.toList(),
+        columnsAdded = t.columnsAdded.entries.sortedBy { it.key }.map { (n, c) -> ColumnSummaryView(n, neutralTypeToString(c.type)) },
+        columnsRemoved = t.columnsRemoved.keys.sorted(),
         columnsChanged = t.columnsChanged.map { c ->
             ColumnChangeView(
                 name = c.name,
