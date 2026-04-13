@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.0 - MVP-Release
 > **Phase**: D (MVP-Fortschrittsanzeige)
-> **Status**: Draft
+> **Status**: Done (2026-04-13)
 > **Referenz**: `implementation-plan-0.5.0.md` Abschnitt 4.4, Abschnitt 5
 > Phase D, Abschnitt 7, Abschnitt 8, Abschnitt 9.2; `docs/cli-spec.md`
 > Abschnitt 7; `docs/implementation-plan-0.4.0.md` Abschnitt 6.11
