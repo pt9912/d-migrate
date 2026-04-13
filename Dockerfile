@@ -77,7 +77,7 @@ RUN --mount=type=cache,target=/gradle-cache \
 COPY . .
 
 RUN --mount=type=cache,target=/gradle-cache \
-    find /gradle-cache -path "*/kover/*" -delete 2>/dev/null || true && \
+    find /gradle-cache \( -path "*/kover/*" -o -name "*.exec" -o -name "*.ic" \) -delete 2>/dev/null || true && \
     ./gradlew --no-daemon ${GRADLE_TASKS}
 
 # Convert Kover XML coverage reports to JSON (if they exist).
