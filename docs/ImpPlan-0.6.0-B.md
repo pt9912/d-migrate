@@ -104,7 +104,7 @@ Konsequenz fuer Phase B:
 - verbindlicher Vertrag fuer strukturierte Reverse-Notes und
   `skipped_objects`
 - Festlegung eines minimalen Operand-Envelope-Vertrags fuer spaeteren
-  DB-Operand-Compare
+  DB-Operand-Compare inklusive Zielverortung in `hexagon:application`
 - bewusste Entscheidung, welche reverse-relevanten Metadaten als explizite
   Modellfelder und welche nur als Notes transportiert werden
 - modellseitige Absicherung compare-relevanter Custom Types, Sequenzen und
@@ -114,6 +114,8 @@ Konsequenz fuer Phase B:
 - Ueberpruefung und Nachschaerfung von `SchemaValidator`, damit
   reverse-generierte Modelle nicht an generator- oder parserfremden
   Scheinwiderspruechen scheitern
+- Nachfuehrung der regulaeren Modellspezifikation fuer bewusst geaenderte
+  Validierungsregeln, insbesondere `E008`
 - Core-/Port-Tests fuer den neuen Vertrag
 
 ### 3.2 Bewusst nicht Teil von Phase B
@@ -125,6 +127,8 @@ Konsequenz fuer Phase B:
 - `schema reverse`-Runner, CLI-Flags oder Dateiausgabe
 - `schema compare`-Runner fuer `file/db` und `db/db`
 - `SchemaCompareSummary`, `DiffView` und CLI-Rendering der neuen Objektarten
+- konkrete Einfuehrung von `ResolvedSchemaOperand` im Application-Code; Phase B
+  fixiert hier nur Vertrag und Zielverortung
 - `data transfer`-Runner oder Transfer-Preflight
 - generischer SQL-Parser oder Datei-/stdin-Reverse
 
@@ -262,6 +266,9 @@ Verbindliche Folge fuer Phase B:
     Signatur-Key `name(direction:type,direction:type,...)` adressiert
   - Trigger werden im Schema ueber einen tabellenqualifizierten Key
     `table::name` adressiert
+- diese kanonischen Keys werden nicht per roher String-Konkatenation gebaut,
+  sondern ueber einen kleinen Key-Codec mit komponentenweiser Percent-Encoding-
+  Regel fuer reservierte Trenner
 - nicht akzeptabel sind adapterseitige Ad-hoc-Umbenennungen, die nur lokal den
   letzten gefundenen Eintrag "retten"
 
@@ -273,6 +280,9 @@ Wichtig ist weniger die exakte Syntax als die Semantik:
   tragen koennen, statt sie implizit zu verbieten
 - der kanonische Key ist Teil des 0.6.0-Schema-Vertrags und nicht nur ein
   interner Helpername
+- reservierte Trenner fuer den Key-Codec sind mindestens `%`, `(`, `)`, `,`
+  und `:`; Tabellen-, Objekt- und Typnamen werden vor der Zusammensetzung
+  komponentenweise encodiert
 
 ### 4.7 Compare darf Reverse-Notes und `skippedObjects` nicht verlieren
 
@@ -285,6 +295,8 @@ Verbindliche Folge fuer Phase B:
 - `SchemaComparator` diffed weiterhin nur `SchemaDefinition`
 - die Aufloesung von Compare-Operanden arbeitet aber logisch mit einem
   expliziten Operand-Envelope, nicht nur mit `schema`
+- dieser Operand-Envelope ist ein Application-Layer-Typ in
+  `hexagon:application`, nicht ein neuer Port-Typ in `hexagon:ports`
 - kanonische Mindestform fuer Phase F:
 
 ```kotlin
@@ -321,6 +333,9 @@ Verbindlich fuer 0.6.0:
 - diese Lockerung gilt nicht nur fuer Live-Reverse, sondern fuer das neutrale
   Modell insgesamt, damit reverse-generierte Schema-Dateien spaeter ueber die
   file-based Pfade wieder konsumierbar bleiben
+- die regulaere Spezifikation in `docs/neutral-model-spec.md` muss diese
+  Aenderung in Phase B widerspruchsfrei nachziehen; eine alte "PK ist immer
+  Pflicht"-Regel darf danach nicht mehr parallel als kanonische Wahrheit stehen
 - fehlende Primary Keys bleiben damit ein sichtbarer Qualitaetshinweis, aber
   kein invalidierender Hard-Fail mehr
 - Routinen-, View- und Trigger-Bodies bleiben als rohe Texte zulaessig und
@@ -428,6 +443,8 @@ Mindestens noetig:
 - Funktionen und Prozeduren werden kanonisch ueber
   `name(direction:type,direction:type,...)` adressiert
 - Trigger werden kanonisch ueber `table::name` adressiert
+- der zugehoerige Key-Codec verwendet komponentenweise Percent-Encoding fuer
+  reservierte Trenner, damit die String-Repraesentation verlustfrei bleibt
 - Diff- und Serialisierungspfad duerfen diese Identitaet nicht spaeter wieder
   implizit auf den nackten Namen reduzieren
 
@@ -466,8 +483,8 @@ Zusaetzlich verbindlich:
   `skippedObjects` neben dem Schema-Diff weitertransportieren koennen
 - Phase B legt dafuer den kanonischen Operand-Envelope
   `ResolvedSchemaOperand` oder einen gleichwertigen Typ mit denselben Feldern
-  fest, auch wenn die konkrete Projektion erst in spaeteren CLI-Phasen gebaut
-  wird
+  fest; dessen konkrete Implementierung gehoert in `hexagon:application`, auch
+  wenn die Projektion erst in spaeteren CLI-Phasen gebaut wird
 
 ### B.7 Validator auf 0.6.0-Reverse-Tauglichkeit pruefen
 
@@ -481,6 +498,7 @@ Mindestens erforderlich:
 - optional gelesene Objektarten muessen als regulaerer Teil von
   `SchemaDefinition` akzeptiert werden
 - `E008` wird fuer 0.6.0 von Error auf Warning umgestellt
+- `docs/neutral-model-spec.md` wird fuer diese Aenderung synchron nachgezogen
 - Reverse-Schemas mit Routinen, Views, Triggern, Sequences und erweiterten
   Custom Types duerfen nicht an generatorfremden Pflichtannahmen scheitern
 
@@ -502,6 +520,7 @@ Mindestens erforderlich:
   - verlustfreie Routinen-Identitaet bei Ueberladungen
   - verlustfreie Trigger-Identitaet bei gleichen Namen auf verschiedenen
     Tabellen
+  - korrekte Percent-Encoding-/Decoding-Regel fuer kanonische Objekt-Keys
   - `DOMAIN`
   - `COMPOSITE`
   - `sequences`
@@ -522,6 +541,7 @@ Mindestens erforderlich:
 
 Direkt betroffen:
 
+- `docs/neutral-model-spec.md`
 - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDriver.kt`
 - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DdlGenerator.kt`
 - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/data/TableLister.kt`
@@ -537,6 +557,8 @@ Direkt betroffen:
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaDiff.kt`
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaValidator.kt`
+- Zielverortung fuer den spaeteren Compare-Operand-Envelope unter
+  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/`
 
 Tests:
 
@@ -577,6 +599,8 @@ Indirekt betroffen in Folgephasen:
       fuehren nicht zu stillen Ueberschreibungen im Modellvertrag.
 - [ ] Der kanonische Routinen-Key ist `name(direction:type,direction:type,...)`.
 - [ ] Der kanonische Trigger-Key ist `table::name`.
+- [ ] Fuer beide kanonischen Objekt-Keys ist eine explizite
+      Percent-Encoding-Regel fuer reservierte Trenner festgelegt.
 - [ ] Es existiert fuer 0.6.0 keine lose `Map<String, Any>`- oder
       `extras`-Escape-Hatch im neutralen Modell.
 - [ ] MySQL-Engine und SQLite-`WITHOUT ROWID` sind als explizite
@@ -594,7 +618,7 @@ Indirekt betroffen in Folgephasen:
       Schema-Diff transportierbar.
 - [ ] Der kanonische Compare-Operand-Envelope fuer spaetere DB-Operanden ist
       als `ResolvedSchemaOperand(schema, validation, notes, skippedObjects)`
-      oder gleichwertig festgelegt.
+      oder gleichwertig festgelegt und `hexagon:application` zugeordnet.
 - [ ] Die neuen Compare-Surfaces bleiben modellbasiert und fuehren kein
       SQL-Text- oder AST-Diff als Pflichtmechanik ein.
 - [ ] `SchemaValidator` akzeptiert reverse-generierte Modelle mit erweiterten
@@ -603,6 +627,8 @@ Indirekt betroffen in Folgephasen:
 - [ ] `E008` ist in 0.6.0 kein ValidationError mehr, sondern ein
       ValidationWarning und blockiert daher weder Reverse noch file-based
       Wiederverwendung reverse-generierter Schemas.
+- [ ] `docs/neutral-model-spec.md` widerspricht der `E008`-Herabstufung nach
+      Phase B nicht mehr.
 - [ ] Die Phase ist durch Core-Tests und mindestens compile-seitige
       Port-Verifikation gegen Regressionen abgesichert.
 
@@ -625,6 +651,7 @@ Mindestumfang:
    - Routinen
    - Trigger
    - verlustfreie Objektidentitaet fuer Routinen und Trigger
+   - explizite Escaping-Regel fuer kanonische Objekt-Keys
    - explizite Tabellenmetadaten
 3. Gegenpruefung, dass Compare-relevante Objektarten im Core-Diff nicht mehr
    stumm aus dem Modell herausfallen.
@@ -636,6 +663,8 @@ Mindestumfang:
    `SchemaDefinition` transportiert.
 6. Explizite Gegenpruefung, dass `E008` in 0.6.0 nur noch als Warning
    auftaucht und nicht mehr als Hard-Fail.
+7. Gegenlesen von `docs/neutral-model-spec.md`, dass die PK-Regel nicht mehr im
+   Widerspruch zum neuen 0.6.0-Vertrag steht.
 
 Empfohlene technische Mindestlaeufe nach Umsetzung:
 
@@ -655,7 +684,7 @@ Praktische Review-Hilfe:
   `SchemaReadOptions`, `SchemaReadNote`, `ResolvedSchemaOperand`,
   `Map<String, Any>`, `extras`, `DOMAIN`, `COMPOSITE`, `sequences`,
   `functions`, `procedures`, `triggers`, `WITHOUT ROWID`, `engine`, `E008`,
-  `table::`, `direction:type`
+  `table::`, `direction:type`, `percent-encoding`
 - Diff-Review, ob neue Modellfelder in `SchemaComparator` und
   `SchemaValidator` konsistent beruecksichtigt oder bewusst ignoriert werden
 - Gegenlesen, ob Reverse-Vertrag und Compare-Vertrag dieselben Objektarten als
@@ -691,14 +720,19 @@ Wenn Phase B Ueberladungen und Trigger-Namenskollisionen nicht explizit loest,
 entsteht spaeter entweder stiller Verlust oder ein schwer rueckbaubares
 Adapter-Namensworkaround.
 
-### R5 - Validator wird entweder zu streng oder zu blind
+### R5 - Regulaere Modellspezifikation faellt hinter den neuen Vertrag zurueck
+
+Wenn `docs/neutral-model-spec.md` die `E008`-Herabstufung nicht mittraegt,
+stehen kanonische Spezifikation und Core-Verhalten sofort wieder im Widerspruch.
+
+### R6 - Validator wird entweder zu streng oder zu blind
 
 Zu strenge Regeln wuerden reverse-generierte Modelle ohne Not blockieren; zu
 weiche Regeln wuerden echte Modellwidersprueche unbemerkt lassen. Die bewusste
 Herabstufung von `E008` auf Warning muss deshalb als gezielte 0.6.0-
 Entscheidung dokumentiert und testseitig abgesichert werden.
 
-### R6 - Phase B rutscht in Driver- oder CLI-Details ab
+### R7 - Phase B rutscht in Driver- oder CLI-Details ab
 
 Sobald JDBC-Query-Logik, Report-Serialisierung oder CLI-Flag-Parsing in diese
 Phase hineingezogen werden, wird der Port- und Modellkern unnoetig vermischt.
@@ -715,6 +749,8 @@ Modellvertrag sauber vorbereitet ist:
 - Routinen und Trigger besitzen eine verlustfreie stabile Objektidentitaet
 - der Reverse-Pfad nutzt einen eigenen `SchemaReadNote`-Vertrag statt
   generatorseitiger `TransformationNote`
+- der Compare-Operand-Envelope ist fachlich festgelegt und
+  `hexagon:application` zugeordnet
 - physische Tabellenattribute mit echtem 0.6.0-Nutzen sind explizit modelliert
 - stille Metadatenverluste sind ueber Notes/`skippedObjects` statt ueber
   implizites Weglassen geregelt
@@ -722,6 +758,8 @@ Modellvertrag sauber vorbereitet ist:
   `ResolvedSchemaOperand` auch fuer spaeteren DB-Operand-Compare transportierbar
 - und `SchemaValidator` bleibt fuer reverse-generierte neutrale Modelle
   benutzbar, weil `E008` nur noch Warning statt blockierendem Error ist
+- die regulaere Modellspezifikation widerspricht diesem Validator-Vertrag nicht
+  mehr
 
 Danach koennen Phase C bis F auf einem stabilen Kernvertrag aufbauen, statt
 Read-, Diff- und Report-Semantik erst in den Adaptern zu improvisieren.
