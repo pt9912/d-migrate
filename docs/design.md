@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Design-Spezifikation
 >
-> Milestones 0.1.0 (Schema-Modell, Validierung, YAML-Parsing), 0.2.0 (DDL-Generierung, Type-Mapping, Rollback) und 0.3.0 (Streaming-Datenexport, Chunk-Pipeline) sind implementiert. Abschnitte zu späteren Features (Datenimport, Reverse-Engineering, KI-Integration) beschreiben den geplanten Soll-Zustand.
+> Milestones 0.1.0 (Schema-Modell, Validierung, YAML-Parsing), 0.2.0 (DDL-Generierung, Type-Mapping, Rollback), 0.3.0 (Streaming-Datenexport, Chunk-Pipeline), 0.4.0 (Datenimport) und 0.5.0 (Schema-Compare file-based, Spatial-Typen) sind implementiert. Abschnitte zu späteren Features (Reverse-Engineering, Data Transfer, KI-Integration) beschreiben den geplanten Soll-Zustand.
 
 ---
 
@@ -105,24 +105,26 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 
 ### 2.3 Datenfluss-Modell
 
-Es gibt zwei Pfade für Reverse-Engineering (LF-004). Unterstützte Statements und die Dialekt-Erkennung sind in der [Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser) beschrieben.
+Reverse-Engineering (LF-004) erfolgt in 0.6.0 ausschließlich über
+Live-DB-Verbindungen. Ein DDL-Datei-Parser ist als späterer additiver
+Funktionsschnitt vorgesehen, gehört aber nicht zum 0.6.0-Mindestvertrag (siehe
+[Neutrales-Modell-Spezifikation §12](./neutral-model-spec.md#12-ddl-parser)).
 
-1. **DB-Connection-basiert**: JDBC-SchemaReader liest Metadaten direkt aus der Datenbank
-2. **DDL-Datei-basiert**: DDL-Parser analysiert SQL-Dateien (CREATE TABLE, CREATE PROCEDURE, etc.)
+1. **DB-Connection-basiert** *(0.6.0)*: `SchemaReader` liest Metadaten direkt
+   aus der Datenbank via JDBC
+2. **DDL-Datei-basiert** *(späterer Milestone)*: DDL-Parser analysiert
+   SQL-Dateien (CREATE TABLE, CREATE PROCEDURE, etc.)
 
 ```
   Quelle                  Neutral                    Ziel
 ┌──────────┐         ┌──────────────┐          ┌──────────┐
 │PostgreSQL│──JDBC────▶│              │──generate─▶│  MySQL   │
-│  MySQL   │ extract  │   Schema-    │          │  SQLite  │
+│  MySQL   │ reverse  │   Schema-    │          │  SQLite  │
 │  SQLite  │         │   Modell     │◀─parse────│  YAML    │
 │          │         │   (Kotlin)   │          │  JSON    │
 └──────────┘         └──────┬───────┘          └──────────┘
-                       ▲    │
-┌──────────┐          │    │
-│ SQL-DDL  │──parse───┘    │
-│ Dateien  │  (DDL-Parser) │
-└──────────┘         ┌─────▼───────┐
+                            │
+                     ┌──────▼──────┐
                      │  Validierung │
                      │  - Syntax    │
                      │  - Referenzen│
@@ -347,12 +349,13 @@ d-migrate <command> <subcommand> [options]
 # Schema-Verwaltung
 d-migrate schema validate     --source schema.yaml
 d-migrate schema generate     --source schema.yaml --target postgres
-d-migrate schema compare      --source db1 --target db2
-d-migrate schema reverse      --source postgres://... --output schema.yaml
+d-migrate schema compare      --source file:schema.yaml --target db:staging    # 0.6.0
+d-migrate schema reverse      --source postgres://... --output schema.yaml     # 0.6.0
 
 # Daten-Management
 d-migrate data export         --source postgres://... --format json
 d-migrate data import         --source data.json --target mysql://...
+d-migrate data transfer       --source staging --target local_pg               # 0.6.0
 d-migrate data seed           --schema schema.yaml --target postgres://...
 
 # Stored Procedure Migration
@@ -668,6 +671,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.6
-**Stand**: 2026-04-10
-**Status**: Milestone 0.1.0–0.3.0 implementiert, 0.4.0 in Arbeit (Datenimport), spätere Milestones im Entwurf
+**Version**: 1.7
+**Stand**: 2026-04-13
+**Status**: Milestone 0.1.0–0.5.0 implementiert; Reverse-Datenfluss auf Live-DB-first für 0.6.0 bereinigt, DDL-Parser als späterer Milestone markiert

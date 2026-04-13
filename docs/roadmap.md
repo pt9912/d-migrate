@@ -432,6 +432,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 2.6
+**Version**: 2.7
 **Stand**: 2026-04-13
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0 und 0.5.5 abgeschlossen und released; `data transfer` in 0.6.0 aufgenommen, 0.9.0 in 0.9.0 (Code) und 0.9.5 (Docs/QA) gesplittet, weitere Milestones in Planung
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0 und 0.5.5 abgeschlossen und released; 0.6.0 Phase A (Spezifikationsbereinigung) abgeschlossen, weitere Phasen in Arbeit
