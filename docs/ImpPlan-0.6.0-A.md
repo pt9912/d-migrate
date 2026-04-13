@@ -164,6 +164,9 @@ Bevorzugtes Muster fuer 0.6.0:
 
 - `--report <path>` optional
 - Default-Sidecar analog zum bestehenden Muster, wenn `--output` gesetzt ist
+- fuer das Schema-Artefakt ist `--format yaml|json` der kanonische
+  Kommando-Flag; das globale `--output-format` bleibt Darstellungsflag und ist
+  kein zweiter konkurrierender Weg, die Reverse-Datei zu serialisieren
 
 ### 4.4 `schema compare` erweitert den Eingabepfad, nicht das Grundprinzip
 
@@ -174,6 +177,13 @@ Verbindliche Einordnung in Phase A:
 - `file/file`, `file/db` und `db/db` sind gleichwertige Operandenkombinationen
 - beide Operanden werden vor dem Diff zu `SchemaDefinition` bzw.
   gleichwertigem Reverse-Ergebnis aufgeloest
+- die Operandenart wird in der CLI-Doku explizit disambiguiert, damit
+  Named-Connection-Aliase nicht mit Dateipfaden kollidieren
+- kanonische 0.6.0-Dokuform fuer Compare-Operanden:
+  - `file:<path>`
+  - `db:<url-or-alias>`
+- benannte Connections werden im Compare-Pfad deshalb als `db:<alias>`
+  dokumentiert, nicht als nackter String
 - `schema compare` diffed keine SQL-Texte und fuehrt keinen impliziten
   Migrationspfad ein
 - Exit `0` und Exit `1` bleiben fuer "identisch" bzw. "Unterschiede gefunden"
@@ -190,6 +200,14 @@ Verbindlich fuer 0.6.0:
 - `--source` und `--target` nutzen dieselbe URL-/Alias-Semantik wie die
   bestehenden DB-Kommandos
 - der Pfad streamt von DB zu DB ohne Zwischenformat
+- vor dem ersten Write laeuft ein target-autoritatives Preflight fuer
+  Tabellen-/Spaltenkompatibilitaet
+- die Tabellenreihenfolge wird aus FK-Beziehungen oder einer gleichwertig
+  dokumentierten Strategie abgeleitet
+- FK-Zyklen scheitern bereits im Preflight, sofern kein expliziter sicherer
+  Bypass dokumentiert ist
+- Preflight-Fehler bleiben exit-code-seitig vom eigentlichen Streaming-Fehlerpfad
+  getrennt
 - Routinen, Views und Trigger werden nicht implizit mitkopiert
 
 ### 4.6 URL- und Alias-Semantik bleibt in `connection-config-spec.md` zentriert
@@ -244,12 +262,22 @@ Bereinigen und erweitern von:
   - kein `url|path`
   - kein stdin-DDL
   - kein `--source-dialect` im Mindestumfang
+  - `--format yaml|json` als kanonischer Format-Flag fuer das
+    Schema-Artefakt
+  - kein zweiter konkurrierender Reverse-Dateiformat-Pfad ueber das globale
+    `--output-format`
   - `--output` = reines Schema
   - `--report` = strukturierter Reverse-Report
   - Include-Flags fuer optionale Objekte
   - Exit-Code-Vertrag fuer Usage-, Connection-, Reverse- und I/O-Fehler
 - `schema compare` fuer `file/file`, `file/db` und `db/db`
+  - mit expliziter Operandnotation `file:` bzw. `db:`
+  - mit `db:<alias>` fuer Named Connections im Compare-Pfad
 - neues Kommando `data transfer`
+  - inklusive target-autoritativem Preflight
+  - automatischer Reihenfolge aus FK-Beziehungen
+  - Zyklusfehlern im Preflight
+  - getrenntem Preflight-/Streaming-Fehlerpfad
 - Verweise auf `connection-config-spec.md` statt eigener konkurrierender
   URL-Grammatik
 
@@ -344,11 +372,22 @@ Code-Referenzen fuer den Ist-Abgleich:
       `--source-dialect` fuer `schema reverse` mehr als normalen Pfad.
 - [ ] Der Reverse-Vertrag in `docs/cli-spec.md` trennt explizit zwischen
       reinem Schema in `--output` und strukturiertem Reverse-Report.
+- [ ] `docs/cli-spec.md` fixiert fuer `schema reverse` genau einen kanonischen
+      Format-Flag fuer das Schema-Artefakt; fuer 0.6.0 ist das `--format
+      yaml|json`, nicht parallel noch ein zweiter konkurrierender Dateiformat-
+      Pfad ueber das globale `--output-format`.
 - [ ] `docs/cli-spec.md` beschreibt `schema compare` mit den Operandenkombinationen
       `file/file`, `file/db` und `db/db`, ohne das modellbasierte Diff-Prinzip
       aufzugeben.
+- [ ] `docs/cli-spec.md` definiert fuer `schema compare` eine explizite
+      Operand-Disambiguierung; fuer den kanonischen 0.6.0-Vertrag werden
+      Compare-Operanden als `file:<path>` bzw. `db:<url-or-alias>` beschrieben.
 - [ ] `docs/cli-spec.md` enthaelt einen 0.6.0-konformen Abschnitt fuer
       `data transfer`.
+- [ ] Der `data transfer`-Abschnitt in `docs/cli-spec.md` fixiert bereits in
+      Phase A target-autoritatives Preflight, FK-basierte Reihenfolge,
+      Zyklusfehler im Preflight und einen vom Streaming getrennten
+      Fehlerpfad.
 - [ ] Die Kopf- und Statusangaben in `docs/cli-spec.md` widersprechen dem
       aktuellen implementierten Kommando-Iststand nicht mehr grob.
 - [ ] `docs/neutral-model-spec.md` beschreibt fuer 0.6.0 keinen parserbasierten
@@ -386,9 +425,12 @@ Mindestumfang:
    - `schema reverse` als `url|path` vs. Live-DB-only
    - SQL-Datei- und stdin-Reverse
    - `--source-dialect`
+   - `--format` vs. globalem `--output-format` fuer Reverse-Dateiformate
    - reinem Schema-Output vs. separatem Reverse-Report
    - file-only-Compare vs. `file/db` und `db/db`
+   - Operand-Disambiguierung ueber `file:` und `db:`
    - direktem `data transfer` vs. Export-/Import-Zwischenformat
+   - target-autoritativem Transfer-Preflight, FK-Reihenfolge und Zykluspfad
    - bereits existierendem vs. erst einzufuehrendem `schemaReader()`
 4. Abschluss-Review, dass parserbezogene Reverse-Texte nur noch als spaeterer
    additiver Problemraum erscheinen, nicht mehr als 0.6.0-Istvertrag.
@@ -397,7 +439,8 @@ Praktische Review-Hilfe:
 
 - gezielte Volltextsuche nach `url|path`, `source-dialect`, `stdin`,
   `schema.sql`, `DDL-Parser`, `schemaReader()`, `schemaWriter()`,
-  `only schema validate`, `data transfer`
+  `only schema validate`, `data transfer`, `file:`, `db:`, `--format`,
+  `--output-format`
 - Vergleich der CLI-Aussagen mit `docs/connection-config-spec.md`
 - Gegenlesen der Architektur-Aussagen mit
   `hexagon/ports/.../DatabaseDriver.kt`
