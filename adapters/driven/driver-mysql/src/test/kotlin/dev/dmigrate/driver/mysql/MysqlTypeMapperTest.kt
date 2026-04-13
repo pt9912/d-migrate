@@ -115,4 +115,38 @@ class MysqlTypeMapperTest : FunSpec({
     test("dialect is MYSQL") {
         mapper.dialect shouldBe DatabaseDialect.MYSQL
     }
+
+    // -- geometry (Spatial Phase 1) --
+
+    test("geometry default maps to GEOMETRY") {
+        mapper.toSql(NeutralType.Geometry()) shouldBe "GEOMETRY"
+    }
+
+    test("geometry point maps to POINT") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("point"))) shouldBe "POINT"
+    }
+
+    test("geometry polygon maps to POLYGON") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("polygon"))) shouldBe "POLYGON"
+    }
+
+    test("geometry linestring maps to LINESTRING") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("linestring"))) shouldBe "LINESTRING"
+    }
+
+    test("geometry multipoint maps to MULTIPOINT") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("multipoint"))) shouldBe "MULTIPOINT"
+    }
+
+    test("geometry multilinestring maps to MULTILINESTRING") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("multilinestring"))) shouldBe "MULTILINESTRING"
+    }
+
+    test("geometry multipolygon maps to MULTIPOLYGON") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("multipolygon"))) shouldBe "MULTIPOLYGON"
+    }
+
+    test("geometry geometrycollection maps to GEOMETRYCOLLECTION") {
+        mapper.toSql(NeutralType.Geometry(dev.dmigrate.core.model.GeometryType("geometrycollection"))) shouldBe "GEOMETRYCOLLECTION"
+    }
 })

@@ -139,4 +139,28 @@ class PostgresTypeMapperTest : FunSpec({
     test("dialect is POSTGRESQL") {
         mapper.dialect shouldBe DatabaseDialect.POSTGRESQL
     }
+
+    // -- geometry (Spatial Phase 1) --
+
+    test("geometry default maps to geometry(Geometry, 0)") {
+        mapper.toSql(NeutralType.Geometry()) shouldBe "geometry(Geometry, 0)"
+    }
+
+    test("geometry point with srid maps to geometry(Point, 4326)") {
+        mapper.toSql(NeutralType.Geometry(
+            dev.dmigrate.core.model.GeometryType("point"), srid = 4326
+        )) shouldBe "geometry(Point, 4326)"
+    }
+
+    test("geometry polygon without srid maps to geometry(Polygon, 0)") {
+        mapper.toSql(NeutralType.Geometry(
+            dev.dmigrate.core.model.GeometryType("polygon")
+        )) shouldBe "geometry(Polygon, 0)"
+    }
+
+    test("geometry multipolygon maps PostGIS CamelCase") {
+        mapper.toSql(NeutralType.Geometry(
+            dev.dmigrate.core.model.GeometryType("multipolygon"), srid = 3857
+        )) shouldBe "geometry(MultiPolygon, 3857)"
+    }
 })
