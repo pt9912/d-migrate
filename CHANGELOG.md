@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- Next release: 0.6.0 (Reverse-Engineering) -->
 
+### Added
+
+### Changed
+
+### Fixed
+
 ## [0.5.5] - 2026-04-13
 
 ### Added
