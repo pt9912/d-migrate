@@ -18,11 +18,11 @@ class SchemaValidator {
          * [BASE_TYPE_NAMES] so that adding a new base type (e.g. geometry)
          * does not automatically make it a valid array element.
          */
-        val ARRAY_ELEMENT_TYPE_NAMES = setOf(
-            "identifier", "text", "char", "integer", "smallint", "biginteger",
-            "float", "decimal", "boolean", "datetime", "date", "time",
-            "uuid", "json", "xml", "binary", "email",
-        )
+        /**
+         * Excludes only `geometry` (not a valid array element in 0.5.5).
+         * `enum` and `array` remain allowed to preserve pre-0.5.5 behavior.
+         */
+        val ARRAY_ELEMENT_TYPE_NAMES = BASE_TYPE_NAMES - setOf("geometry")
 
         @Deprecated("Use BASE_TYPE_NAMES or ARRAY_ELEMENT_TYPE_NAMES instead",
             replaceWith = ReplaceWith("BASE_TYPE_NAMES"))
@@ -300,6 +300,9 @@ class SchemaValidator {
         return false
     }
 
+    // Note: Geometry columns with defaults are not in 0.5.5 scope. A WKT string
+    // default (e.g. "POINT(0 0)") would currently produce E009 because StringLiteral
+    // is not compatible with Geometry. This is acceptable for now.
     private fun isDefaultCompatible(default: DefaultValue, type: NeutralType): Boolean = when (default) {
         is DefaultValue.StringLiteral -> type is NeutralType.Text || type is NeutralType.Char
                 || type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid
