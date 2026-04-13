@@ -3,7 +3,7 @@ class DMigrate < Formula
   homepage "https://github.com/pt9912/d-migrate"
   # Template aligned with the release archive layout; the actual tap formula
   # should be generated for pt9912/homebrew-d-migrate via homebrew-releaser.
-  version "0.5.0"
+  version "0.5.5"
   url "https://github.com/pt9912/d-migrate/releases/download/v#{version}/d-migrate-#{version}.zip"
   sha256 "REPLACE_WITH_RELEASE_ZIP_SHA256"
   license "MIT"

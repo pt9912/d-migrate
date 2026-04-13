@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-<!-- Next release: 0.5.5 (Erweitertes Typsystem) -->
+<!-- Next release: 0.6.0 (Reverse-Engineering) -->
+
+## [0.5.5] - 2026-04-13
+
+### Added
+
+- Spatial geometry type (`type: geometry`) in the neutral schema model with `geometry_type` (8 canonical values: geometry, point, linestring, polygon, multipoint, multilinestring, multipolygon, geometrycollection) and `srid` (spatial reference system identifier)
+- DDL generation for spatial columns across all three dialects: PostgreSQL/PostGIS (`geometry(Point, 4326)`), MySQL (native spatial types with SRID constraint), SQLite/SpatiaLite (`AddGeometryColumn()`/`DiscardGeometryColumn()` strategy)
+- `--spatial-profile` CLI flag for `schema generate` with profiles `postgis`, `native`, `spatialite`, `none` and dialect-appropriate defaults
+- Generator options architecture: `DdlGenerationOptions` data class with typed `SpatialProfile` enum, `SpatialProfilePolicy` for central defaults and validation
+- Schema validation rules E120 (unknown geometry type) and E121 (invalid SRID); generation-time codes E052 (spatial column cannot be generated with chosen profile) and W120 (SRID transfer limitation)
+- YAML codec support for `type: geometry` with lossless parsing of spatial attributes (`geometry_type`, `srid`)
+- Spatial Golden Master tests for all three dialects (`spatial.postgresql.sql`, `spatial.mysql.sql`, `spatial.sqlite.sql`)
+
+### Changed
+
+- `DdlGenerator.generate()` and `generateRollback()` extended with `options: DdlGenerationOptions` parameter (backward-compatible with default arguments)
+- TypeMapper implementations for all three dialects extended with geometry type handling
+- `AbstractDdlGenerator.getVersion()` returns `0.5.5`
 
 ## [0.5.0] - 2026-04-13
 

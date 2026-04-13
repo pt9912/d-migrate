@@ -404,6 +404,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--output`            | Ausgabedatei (Standard: stdout)                           |
 | `--report`            | Report-Datei (Standard: `<output>.report.yaml`)           |
 | `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
+| `--spatial-profile`   | Spatial-Profil: `postgis`, `native`, `spatialite`, `none` |
 
 ### Optionen für `data export`
 
