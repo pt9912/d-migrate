@@ -167,6 +167,10 @@ Verbindlich fuer 0.6.0:
   Serializer-Komponente unter demselben Datei-I/O-Vertrag
 - bestehende file-based Kommandos instanziieren nicht mehr direkt
   `YamlSchemaCodec()`, sondern nutzen einen formatbewussten Resolver
+- fuer file-based Read-Pfade in 0.6.0 bleibt die Formaterkennung
+  dateinamensbasiert; `schema validate`, `schema generate` und
+  `schema compare` bekommen in Phase C keinen zweiten konkurrierenden
+  Input-Format-Flag
 - akzeptierte Dateiendungen fuer Schema-Dateien in 0.6.0:
   - `.yaml`
   - `.yml`
@@ -174,6 +178,12 @@ Verbindlich fuer 0.6.0:
 - unbekannte oder endungslose Schema-Dateien werden nicht heuristisch
   "irgendwie" geparst, sondern fuehren ohne explizite Formatangabe zu einem
   klaren Fehlerpfad
+- fuer den spaeteren Reverse-Write-Pfad bedeutet das verbindlich:
+  `--format yaml|json` bestimmt zwar die Serialisierung, `--output` muss aber
+  eine dazu passende Endung tragen, damit das Artefakt ueber die file-based
+  Pfade wieder konsumierbar bleibt
+- ein Reverse-Output wie `/tmp/reverse` ohne `.yaml`/`.yml`/`.json` ist damit
+  in 0.6.0 kein kanonischer persistenter Schema-Dateipfad
 
 Wichtig:
 
@@ -209,8 +219,23 @@ einen eigenen Reportvertrag.
 
 Verbindlich fuer Phase C:
 
-- Reverse-Reports serialisieren `SchemaReadResult`, nicht `DdlResult`
+- Reverse-Reports serialisieren einen eigenen Report-Input auf Basis von
+  `SchemaReadResult`, nicht `DdlResult`
 - der Writer lebt in `adapters:driven:formats`
+- kanonische Mindestform fuer den Writer-Eingang:
+
+```kotlin
+data class SchemaReadReportInput(
+    val source: ReverseSourceRef,
+    val result: SchemaReadResult,
+)
+
+data class ReverseSourceRef(
+    val kind: ReverseSourceKind, // ALIAS | URL
+    val value: String,
+)
+```
+
 - der Report traegt mindestens:
   - Quelle
   - Schema-Metadaten
@@ -226,6 +251,8 @@ Konkret bedeutet das:
 - URL-basierte Quellen duerfen nie mit Klartext-Passwort im Report landen
 - `LogScrubber.maskUrl(...)` oder ein gleichwertiger zentraler Pfad ist
   verpflichtend
+- `SchemaReadResult` selbst bleibt quellagnostisch; Source-Kontext wird nur
+  ueber den expliziten Report-Input an den Writer gegeben
 
 Phase C legt den Report als Sidecar-Vertrag fest. Ein zweites konkurrierendes
 Inline-Note-Format im Schema-Dokument ist ausgeschlossen.
@@ -279,6 +306,7 @@ Verbindliche Folge:
 - mindestens betroffen sind:
   - Tabellenreferenzen
   - Spaltenmetadaten
+  - allgemeine Constraint-Metadaten
   - Primary-Key-Metadaten
   - Foreign-Key-Metadaten
   - Indexmetadaten
@@ -341,6 +369,8 @@ Mindestens noetig:
   Formatangabe
 - klare Zuordnung `.yaml` / `.yml` -> YAML und `.json` -> JSON
 - eindeutiger Fehlerpfad fuer unbekannte Endungen
+- eindeutiger Fehlerpfad fuer Write-Pfade, deren Endung nicht zum explizit
+  gewaehlten Ausgabeformat passt
 - Loesung, ueber die bestehende file-based Kommandos nicht mehr direkt an
   `YamlSchemaCodec` haengen
 
@@ -349,6 +379,9 @@ Wichtig:
 - Phase C darf JSON-Einlesen nicht als versteckten Nebeneffekt eines
   YAML-Codecs "mitnehmen"
 - derselbe Resolver ist spaeter auch fuer Reverse-Output wiederverwendbar
+- die bestehenden file-based Kommandos bleiben in 0.6.0 bewusst
+  endungsgetrieben; ein expliziter Format-Override ist nur fuer den
+  Write-Pfad vorgesehen
 
 ### C.2 `YamlSchemaCodec.write(...)` produktiv machen
 
@@ -407,6 +440,10 @@ Wichtig:
 Auf Basis von `SchemaReadResult` aus Phase B ist ein eigener Report-Writer fuer
 Reverse einzufuehren.
 
+Der Writer arbeitet kanonisch nicht mit einem nackten `SchemaReadResult`,
+sondern mit einem expliziten `SchemaReadReportInput`, das den getypten
+Source-Bezug neben das Ergebnis stellt.
+
 Der Reportvertrag muss mindestens tragen:
 
 - `source`
@@ -427,6 +464,8 @@ Wichtig:
 - die Quellreferenz ist maskiert oder aliasbasiert
 - der Writer ist Reverse-spezifisch und nicht nur ein umbenannter
   `TransformationReportWriter`
+- der Writer bekommt die Quelle typisiert (`ALIAS` oder `URL`) und maskiert
+  URL-Werte vor der Serialisierung zentral ueber `LogScrubber`
 - der Sidecar-Pfad folgt dem bestehenden Muster `<basename>.report.yaml`,
   solange keine explizite Report-Datei angegeben ist
 
@@ -456,6 +495,7 @@ Mindestens zu schneiden:
 
 - Tabellenreferenz
 - Spalte
+- allgemeine Constraint-Projektion
 - Primary Key
 - Foreign Key
 - Index
@@ -465,6 +505,10 @@ Empfohlene Semantik:
 - die Projektion beschreibt den fachlich benoetigten Kern
 - dialektspezifische Rohwerte koennen als benannte Zusatzfelder mitgetragen
   werden, aber nicht als freie `Map<String, Any>`
+- `CHECK`, `UNIQUE` und weitere compare-relevante Constraint-Arten duerfen
+  nicht implizit aus dem Shared-Layer herausfallen; falls PK/FK als eigene
+  Spezialprojektionen existieren, braucht es trotzdem einen kanonischen
+  Constraint-Schnitt fuer den restlichen Constraint-Bestand
 - Phase D mappt diese Projektionen anschliessend in das neutrale Modell
 
 ### C.8 `TableLister` auf dieselbe Tabellenprojektion ausrichten
@@ -548,17 +592,24 @@ Phase C ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 - Die produktiven file-based Pfade von `schema validate`, `schema generate`
   und `schema compare` konsumieren Schema-Dateien formatbewusst ueber einen
   gemeinsamen Resolver statt direkt ueber `YamlSchemaCodec`.
+- Der Datei-I/O-Vertrag ist fuer Reverse-kompatible Persistenz eindeutig:
+  explizites Ausgabeformat und Dateiendung duerfen sich nicht widersprechen;
+  endungslose Reverse-Outputs gelten nicht als kanonisch wiederverwendbare
+  Schema-Dateien.
 - Reverse-Reports werden in einem separaten Artefakt serialisiert; Schema-Datei
   und Reportdaten bleiben strikt getrennt.
 - Reverse-Reports enthalten strukturierte `notes` und `skipped_objects` sowie
   eine maskierte oder aliasbasierte Quellreferenz.
+- Der Reverse-Report-Writer arbeitet gegen einen expliziten Report-Input mit
+  getypter Quelle statt gegen ein nacktes `SchemaReadResult` plus losem
+  Zusatzstring.
 - Der Default-Sidecar-Pfad fuer Reverse folgt dem bestehenden
   `<basename>.report.yaml`-Muster oder einer gleichwertig dokumentierten,
   einheitlichen Regel.
 - Die gemeinsame JDBC-Basis arbeitet mit bereits geliehener `Connection` und
   fuehrt keine eigenen Pool-Borrows aus.
-- Fuer Tabellen-, Spalten-, Key- und Index-Grunddaten existieren kleine,
-  typisierte Projektionen statt freier Metadatenmaps.
+- Fuer Tabellen-, Spalten-, Constraint-, Key- und Index-Grunddaten existieren
+  kleine, typisierte Projektionen statt freier Metadatenmaps.
 - `TableLister` behaelt sein bisheriges fachliches Verhalten und nutzt, wo
   sinnvoll, dieselbe Tabellenprojektion statt eines zweiten parallelen
   SQL-Textpfads.
@@ -584,9 +635,14 @@ Gezielt zu pruefen ist dabei:
 - YAML-Round-Trip fuer representative Schema-Fixtures
 - JSON-Round-Trip fuer dieselben oder gleichwertige Fixtures
 - Fehlerpfad bei unbekannter Schema-Dateiendung
+- Fehlerpfad bei endungslosem oder formatinkonsistentem Write-Pfad
 - getrennte Reverse-Report-Serialisierung mit maskierter URL
+- Reverse-Report-Serialisierung ueber den expliziten Report-Input mit
+  Alias- und URL-Quelle
 - Wieder-Einlesen von JSON-Schema-Dateien ueber `schema validate`
 - gemischter Datei-Compare-Pfad, z.B. YAML gegen JSON
+- Shared-Projektionen fuer Constraints inklusive `CHECK`/`UNIQUE`, soweit vom
+  Dialekt geliefert
 - unveraenderte Tabellenlisten und Connection-Return in den bestehenden
   `TableLister`-Tests
 
