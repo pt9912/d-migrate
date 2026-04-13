@@ -103,12 +103,20 @@ class SchemaComparator {
         left: TableDefinition,
         right: TableDefinition,
     ): TableDiff? {
-        val columnDiffs = compareColumns(left, right)
-        val pkDiff = if (left.primaryKey == right.primaryKey) null
-            else ValueChange(left.primaryKey, right.primaryKey)
-
+        // Normalize first so column comparison knows which unique/references are absorbed
         val leftNorm = normalizeConstraints(left)
         val rightNorm = normalizeConstraints(right)
+
+        val absorbedColumns = AbsorbedColumns(
+            uniqueLeft = leftNorm.singleColumnUnique,
+            uniqueRight = rightNorm.singleColumnUnique,
+            fkLeft = leftNorm.singleColumnForeignKeys.keys,
+            fkRight = rightNorm.singleColumnForeignKeys.keys,
+        )
+
+        val columnDiffs = compareColumns(left, right, absorbedColumns)
+        val pkDiff = if (left.primaryKey == right.primaryKey) null
+            else ValueChange(left.primaryKey, right.primaryKey)
 
         val indexDiffs = compareIndices(left.indices, right.indices)
         val constraintDiffs = compareConstraints(leftNorm, rightNorm)
@@ -132,22 +140,33 @@ class SchemaComparator {
 
     // --- Columns ---
 
+    private data class AbsorbedColumns(
+        val uniqueLeft: Set<String>,
+        val uniqueRight: Set<String>,
+        val fkLeft: Set<String>,
+        val fkRight: Set<String>,
+    )
+
     private data class ColumnDiffs(
         val added: Map<String, ColumnDefinition>,
         val removed: Map<String, ColumnDefinition>,
         val changed: List<ColumnDiff>,
     )
 
-    private fun compareColumns(left: TableDefinition, right: TableDefinition): ColumnDiffs {
+    private fun compareColumns(
+        left: TableDefinition,
+        right: TableDefinition,
+        absorbed: AbsorbedColumns,
+    ): ColumnDiffs {
         val leftNames = left.columns.keys
         val rightNames = right.columns.keys
 
         val added = (rightNames - leftNames).sorted()
-            .associateWith { right.columns.getValue(it) }
+            .associateWith { projectColumn(right.columns.getValue(it)) }
         val removed = (leftNames - rightNames).sorted()
-            .associateWith { left.columns.getValue(it) }
+            .associateWith { projectColumn(left.columns.getValue(it)) }
         val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareColumn(name, left.columns.getValue(name), right.columns.getValue(name))
+            compareColumn(name, left.columns.getValue(name), right.columns.getValue(name), absorbed)
         }
 
         return ColumnDiffs(added, removed, changed)
@@ -157,15 +176,33 @@ class SchemaComparator {
         name: String,
         left: ColumnDefinition,
         right: ColumnDefinition,
+        absorbed: AbsorbedColumns,
     ): ColumnDiff? {
         val typeDiff = valueChangeOrNull(left.type, right.type)
         val requiredDiff = valueChangeOrNull(left.required, right.required)
         val defaultDiff = if (left.default == right.default) null
             else ValueChange(left.default, right.default)
 
-        if (typeDiff == null && requiredDiff == null && defaultDiff == null) return null
-        return ColumnDiff(name, typeDiff, requiredDiff, defaultDiff)
+        // unique/references: only report at column level when NOT absorbed by
+        // single-column normalization (§6.3, §4.4). In practice, normalization
+        // always absorbs these for single-column cases. The fields exist for
+        // model completeness and forward-compatibility.
+        val uniqueAbsorbed = name in absorbed.uniqueLeft || name in absorbed.uniqueRight
+        val uniqueDiff = if (uniqueAbsorbed) null
+            else valueChangeOrNull(left.unique, right.unique)
+
+        val fkAbsorbed = name in absorbed.fkLeft || name in absorbed.fkRight
+        val refDiff = if (fkAbsorbed) null
+            else if (left.references == right.references) null
+            else ValueChange(left.references, right.references)
+
+        if (typeDiff == null && requiredDiff == null && defaultDiff == null &&
+            uniqueDiff == null && refDiff == null) return null
+        return ColumnDiff(name, typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff)
     }
+
+    private fun projectColumn(col: ColumnDefinition): ColumnDefinition =
+        col.copy(unique = false, references = null)
 
     // --- Single-Column UNIQUE/FK Normalization ---
 
@@ -217,13 +254,21 @@ class SchemaComparator {
                     constraint.references != null &&
                     constraint.references.columns.size == 1 -> {
                     val colName = constraint.columns.first()
-                    singleFk[colName] = ForeignKeySignature(
+                    val sig = ForeignKeySignature(
                         column = colName,
                         refTable = constraint.references.table,
                         refColumn = constraint.references.columns.first(),
                         onDelete = constraint.references.onDelete,
                         onUpdate = constraint.references.onUpdate,
                     )
+                    val existing = singleFk[colName]
+                    if (existing != null && existing != sig) {
+                        // Column-level and constraint-level FK conflict on same column.
+                        // Keep column-level in singleFk; preserve constraint as multi.
+                        multi[constraint.name] = constraint
+                    } else {
+                        singleFk[colName] = sig
+                    }
                 }
 
                 constraint.type == ConstraintType.CHECK ||

@@ -586,6 +586,10 @@ class SchemaComparatorTest : FunSpec({
                 "z" to enumType("a", "b"),
                 "m" to enumType("x"),
             ),
+            views = mapOf(
+                "v2" to view(query = "SELECT 1"),
+                "v1" to view(query = "SELECT old"),
+            ),
         )
         val right = schema(
             tables = mapOf(
@@ -595,6 +599,10 @@ class SchemaComparatorTest : FunSpec({
             customTypes = mapOf(
                 "z" to enumType("a", "b", "c"),
                 "n" to enumType("y"),
+            ),
+            views = mapOf(
+                "v1" to view(query = "SELECT new"),
+                "v3" to view(query = "SELECT 3"),
             ),
         )
 
@@ -625,6 +633,72 @@ class SchemaComparatorTest : FunSpec({
 
         val diff = comparator.compare(left, right)
         diff.tablesAdded.map { it.name } shouldBe listOf("alpha", "mid", "zebra")
+    }
+
+    test("added column has unique and references stripped") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf(
+                "id" to col(NeutralType.Identifier()),
+                "email" to col(NeutralType.Email, unique = true,
+                    references = ReferenceDefinition("other", "id")),
+            ),
+        )))
+
+        val diff = comparator.compare(left, right)
+        val addedCol = diff.tablesChanged[0].columnsAdded["email"]!!
+        addedCol.unique shouldBe false
+        addedCol.references shouldBe null
+    }
+
+    test("removed column has unique and references stripped") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf(
+                "id" to col(NeutralType.Identifier()),
+                "email" to col(NeutralType.Email, unique = true,
+                    references = ReferenceDefinition("other", "id")),
+            ),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+        )))
+
+        val diff = comparator.compare(left, right)
+        val removedCol = diff.tablesChanged[0].columnsRemoved["email"]!!
+        removedCol.unique shouldBe false
+        removedCol.references shouldBe null
+    }
+
+    test("conflicting column-level and constraint-level FK preserves both") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("ref" to col(
+                references = ReferenceDefinition("tableA", "id"),
+            )),
+            constraints = listOf(ConstraintDefinition(
+                name = "fk_ref_b", type = ConstraintType.FOREIGN_KEY,
+                columns = listOf("ref"),
+                references = ConstraintReferenceDefinition(
+                    table = "tableB", columns = listOf("id"),
+                ),
+            )),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("ref" to col(
+                references = ReferenceDefinition("tableA", "id"),
+            )),
+            constraints = listOf(ConstraintDefinition(
+                name = "fk_ref_b", type = ConstraintType.FOREIGN_KEY,
+                columns = listOf("ref"),
+                references = ConstraintReferenceDefinition(
+                    table = "tableB", columns = listOf("id"),
+                ),
+            )),
+        )))
+
+        val diff = comparator.compare(left, right)
+        diff.isEmpty() shouldBe true
     }
 
     test("FK with different onDelete action is detected") {
