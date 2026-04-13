@@ -55,7 +55,7 @@ class YamlSchemaCodecTest : FunSpec({
         customType.values shouldBe listOf("pending", "processing", "shipped", "delivered", "cancelled")
     }
 
-    test("parse all-types schema covers all 18 neutral types") {
+    test("parse all-types schema covers pre-0.5.5 neutral types (geometry tested separately in spatial.yaml)") {
         val schema = loadFixture("schemas/all-types.yaml")
         val cols = schema.tables["type_test"]!!.columns
 
@@ -227,6 +227,46 @@ class YamlSchemaCodecTest : FunSpec({
         }
     }
 
+    // ─── Parser-negative codec tests (§C.4) ──────────────────────
+
+    test("duplicate YAML key throws parse error") {
+        val yaml = """
+        schema_format: "1.0"
+        name: "Dup"
+        version: "1.0"
+        tables:
+          t:
+            columns:
+              id:
+                type: identifier
+              id:
+                type: text
+            primary_key: [id]
+        """.trimIndent()
+        io.kotest.assertions.throwables.shouldThrow<Exception> {
+            codec.read(yaml.byteInputStream())
+        }
+    }
+
+    test("unknown type throws parse error") {
+        val yaml = """
+        schema_format: "1.0"
+        name: "Unknown"
+        version: "1.0"
+        tables:
+          t:
+            columns:
+              id:
+                type: identifier
+              bad:
+                type: foobar
+            primary_key: [id]
+        """.trimIndent()
+        io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            codec.read(yaml.byteInputStream())
+        }
+    }
+
     // Invalid fixture tests — each triggers exactly one error code
     listOf(
         "E001" to "E001_table_no_columns.yaml",
@@ -303,6 +343,16 @@ class YamlSchemaCodecTest : FunSpec({
         val loc = schema.tables["places"]!!.columns["location"]!!
         val geo = loc.type as NeutralType.Geometry
         geo.srid shouldBe 0
+
+        val result = validator.validate(schema)
+        result.errors.any { it.code == "E121" } shouldBe true
+    }
+
+    test("negative srid is read and triggers E121 in validator") {
+        val schema = loadFixture("invalid/E121_srid_negative.yaml")
+        val loc = schema.tables["places"]!!.columns["location"]!!
+        val geo = loc.type as NeutralType.Geometry
+        geo.srid shouldBe -1
 
         val result = validator.validate(schema)
         result.errors.any { it.code == "E121" } shouldBe true
