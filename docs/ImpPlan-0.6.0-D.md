@@ -294,18 +294,17 @@ Verbindlich fuer Phase D:
   Spaltenliste exakt `primary_key` entspricht und die keine Zusatzsemantik
   jenseits der PK-Eindeutigkeit tragen
 - automatisch erzeugte Support-Indizes fuer `PRIMARY KEY` oder `UNIQUE` werden
-  nicht als eigene `TableDefinition.indices` modelliert
+  nicht als eigene `TableDefinition.indices` modelliert, **wenn** der Dialekt
+  die Backing-Herkunft sicher feststellen kann (z. B. PostgreSQL ueber
+  `pg_index.indisprimary` / `pg_constraint`)
 - Unique-Indizes bleiben dagegen compare-relevant, auch wenn sie PK-Spalten
   abdecken, **wenn** sie als eigenstaendige, vom Constraint loesbare
   Index-Objekte adressierbar sind; reine Backing-Indizes nicht
-- die Regel "sichtbare Note plus Auslassung" greift ausschliesslich, wenn ein
-  Index nachweislich dieselbe Spaltenliste wie ein `PRIMARY KEY`- oder
-  `UNIQUE`-Constraint traegt und kein eigenstaendig adressierbares Objekt ist
-- in allen anderen Faellen — insbesondere wenn ein Dialekt Support-Indizes
-  nicht sicher von echten modellierten Indizes unterscheiden kann — wird der
-  Index als regulaerer `TableDefinition.indices`-Eintrag modelliert; ein
-  potentielles False-Positive im Modell ist einem stillen Verlust eines
-  Kernobjekts vorzuziehen
+- kann ein Dialekt einen Index nicht sicher als automatisch erzeugten
+  Support-Index identifizieren, wird der Index als regulaerer
+  `TableDefinition.indices`-Eintrag modelliert; ein potentielles
+  False-Positive im Modell ist einem stillen Verlust eines Kernobjekts
+  vorzuziehen
 - eine Reverse-Note dokumentiert in diesem Fall die Unsicherheit, aber das
   Kernobjekt bleibt im Modell und damit compare-sichtbar
 - wenn ein Dialekt nur einen Teil dieser Semantik belastbar liefert, ist eine
@@ -541,6 +540,10 @@ Mindestens abzudecken:
 
 - Core-Read fuer Basisschema mit Tabellen, Keys und Indizes
 - kanonische Befuellung von `SchemaDefinition.name` und `version`
+- Reverse-Scope-Codec mit reservierten Zeichen in DB-/Schema-Namen: mindestens
+  ein Testfall pro Dialekt, bei dem ein Komponentenwert mindestens eines der
+  reservierten Zeichen (`%`, `;`, `=`, `:`) enthaelt und korrekt
+  percent-encoded bzw. nach dem Parsen wieder dekodiert wird
 - Reverse-Marker-Set ist allein aus den serialisierten Schemadaten ableitbar
 - Spaltenabbildung fuer `required`, `default`, `unique` und `references`
 - kein Round-Trip-Rauschen durch PK-implizites `required`/`unique`
@@ -649,10 +652,10 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 - Dasselbe gilt fuer PK-aequivalente `UNIQUE`-Constraints; Unique-Indizes
   bleiben ausdruecklich compare-relevant.
 - Automatisch erzeugte PK-/UNIQUE-Backing-Indizes tauchen im neutralen Modell
-  nicht als regulaere `indices` auf und erzeugen deshalb keine Scheindiffs.
-- Nicht sicher unterscheidbare Indizes werden als regulaere `indices` modelliert
-  (False-Positive vor stillem Verlust); eine Reverse-Note dokumentiert die
-  Unsicherheit.
+  nicht als regulaere `indices` auf, sofern der Dialekt die Backing-Herkunft
+  sicher feststellen kann; andernfalls werden sie als regulaere `indices`
+  modelliert (False-Positive vor stillem Verlust) und eine Reverse-Note
+  dokumentiert die Unsicherheit.
 - Fehler beim Lesen von Kernobjekten fuehren zu einem klaren Driver-Fehler und
   nicht zu einem scheinbar erfolgreichen, aber unvollstaendigen Reverse.
 - Optionalobjekte (`views`, `procedures`, `functions`, `triggers`) werden nur
@@ -698,6 +701,8 @@ Mindestens auszufuehren:
 - `./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test`
 - `./scripts/test-integration-docker.sh :adapters:driven:driver-mysql:test`
 
+### 8.1 Phase-D-Verifikation (Driver-Slice)
+
 Gezielt zu pruefen ist dabei:
 
 - der Standard-`docker build` deckt den nicht-integrativen Testpfad fuer
@@ -706,17 +711,8 @@ Gezielt zu pruefen ist dabei:
 - neue Driver-Exposure-Tests fuer `schemaReader()`
 - explizite Reader-Tests fuer den kanonischen `SchemaDefinition.name`- und
   `version`-Vertrag
-- Integrationsgrenzen-Check gegen Phase B/C, dass reverse-synthetische
-  Metadaten spaeter nicht roh als `SchemaMetadataDiff` behandelt werden
-- Integrationsgrenzen-Check, dass das Reverse-Marker-Set nach Phase-C-Write/Read
-  aus dem Schema-Dokument allein wiedererkennbar bleibt
-- Spezifikations-Gegenpruefung in `docs/neutral-model-spec.md`, dass technische
-  Reverse-Provenienz fuer `name`/`version` die kanonische Doku nicht mehr
-  widerspricht
-- Spezifikations-Gegenpruefung, dass `__dmigrate_reverse__:` als reservierter
-  Prefix fuer Reverse-Schemas dokumentiert ist
-- Fehlerpfad-Gegenpruefung fuer Dateioperanden mit reserviertem Prefix, aber
-  unvollstaendigem oder ungueltigem Marker-Set
+- mindestens ein Reverse-Scope-Codec-Test pro Dialekt mit reservierten Zeichen
+  (`%`, `;`, `=`, `:`) in DB-/Schema-Namen
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
   - keine Verdopplung von PK-implizitem `required` / `unique`
@@ -746,6 +742,23 @@ Gezielt zu pruefen ist dabei:
   - Virtual Tables
   - Views / Triggers
   - SpatiaLite-/Geometry-Notes oder Skips
+
+### 8.2 Integrationsgrenzen-Verifikation (analog 7.2, vor Phase E/F)
+
+Die folgenden Pruefungen gehoeren nicht zur Phase-D-Abnahme, sondern sichern
+die in 7.2 definierten Post-Conditions ab:
+
+- Integrationsgrenzen-Check gegen Phase B/C, dass reverse-synthetische
+  Metadaten spaeter nicht roh als `SchemaMetadataDiff` behandelt werden
+- Integrationsgrenzen-Check, dass das Reverse-Marker-Set nach Phase-C-Write/Read
+  aus dem Schema-Dokument allein wiedererkennbar bleibt
+- Spezifikations-Gegenpruefung in `docs/neutral-model-spec.md`, dass technische
+  Reverse-Provenienz fuer `name`/`version` die kanonische Doku nicht mehr
+  widerspricht
+- Spezifikations-Gegenpruefung, dass `__dmigrate_reverse__:` als reservierter
+  Prefix fuer Reverse-Schemas dokumentiert ist
+- Fehlerpfad-Gegenpruefung fuer Dateioperanden mit reserviertem Prefix, aber
+  unvollstaendigem oder ungueltigem Marker-Set
 - Compare-Integrationsgrenzen-Check fuer Dateioperand gegen Reverse-Operand mit
   redundanten PK-Flags oder PK-aequivalentem `UNIQUE`-Constraint auf der
   Datei-Seite; PK-deckende Unique-Indizes bleiben dabei diff-relevant
