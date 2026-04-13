@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.0 - MVP-Release
 > **Phase**: C (CLI `schema compare`)
-> **Status**: Draft
+> **Status**: Done (2026-04-13)
 > **Referenz**: `implementation-plan-0.5.0.md` Abschnitt 4.1, Abschnitt 5
 > Phase C, Abschnitt 7, Abschnitt 8, Abschnitt 10; `docs/cli-spec.md`
 > Abschnitt `schema compare`; `docs/ImpPlan-0.5.0-B.md`
