@@ -548,4 +548,102 @@ class SchemaValidatorTest : FunSpec({
         val result = validator.validate(s)
         result.errors.any { it.code == "E015" } shouldBe true
     }
+
+    // ─── Spatial Phase 1 (0.5.5) ────────────────────────────────
+
+    test("valid geometry with default geometry_type produces no errors") {
+        val s = schema(tables = mapOf(
+            "places" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "location" to col(NeutralType.Geometry()),
+                ),
+                primaryKey = listOf("id"),
+            )
+        ))
+        val result = validator.validate(s)
+        result.isValid shouldBe true
+    }
+
+    test("valid geometry with explicit geometry_type and srid produces no errors") {
+        val s = schema(tables = mapOf(
+            "places" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "location" to col(NeutralType.Geometry(
+                        geometryType = GeometryType("point"),
+                        srid = 4326,
+                    )),
+                ),
+                primaryKey = listOf("id"),
+            )
+        ))
+        val result = validator.validate(s)
+        result.isValid shouldBe true
+    }
+
+    test("E120: unknown geometry_type") {
+        val s = schema(tables = mapOf(
+            "places" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "location" to col(NeutralType.Geometry(
+                        geometryType = GeometryType("circle"),
+                    )),
+                ),
+                primaryKey = listOf("id"),
+            )
+        ))
+        val result = validator.validate(s)
+        result.errors.any { it.code == "E120" } shouldBe true
+    }
+
+    test("E121: srid is 0") {
+        val s = schema(tables = mapOf(
+            "places" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "location" to col(NeutralType.Geometry(srid = 0)),
+                ),
+                primaryKey = listOf("id"),
+            )
+        ))
+        val result = validator.validate(s)
+        result.errors.any { it.code == "E121" } shouldBe true
+    }
+
+    test("E121: negative srid") {
+        val s = schema(tables = mapOf(
+            "places" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "location" to col(NeutralType.Geometry(srid = -1)),
+                ),
+                primaryKey = listOf("id"),
+            )
+        ))
+        val result = validator.validate(s)
+        result.errors.any { it.code == "E121" } shouldBe true
+    }
+
+    test("geometry is not accepted as array element_type") {
+        val s = schema(tables = mapOf(
+            "geo" to table(
+                columns = mapOf(
+                    "id" to col(NeutralType.Identifier(true)),
+                    "shapes" to col(NeutralType.Array("geometry")),
+                ),
+                primaryKey = listOf("id"),
+            )
+        ))
+        val result = validator.validate(s)
+        result.errors.any { it.code == "E015" } shouldBe true
+    }
+
+    test("unknown geometry_type is preserved until validator check") {
+        // The GeometryType value type must not reject unknown values at construction
+        val gt = GeometryType("hexagon")
+        gt.isKnown() shouldBe false
+        gt.schemaName shouldBe "hexagon"
+    }
 })

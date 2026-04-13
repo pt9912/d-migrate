@@ -105,6 +105,7 @@ class NeutralTypeTest : FunSpec({
             NeutralType.Email -> "email"
             is NeutralType.Enum -> "enum"
             is NeutralType.Array -> "array"
+            is NeutralType.Geometry -> "geometry"
         }
         result shouldBe "integer"
     }

@@ -32,6 +32,11 @@ internal object SchemaCompareHelpers {
             else -> "enum"
         }
         is NeutralType.Array -> "array(${type.elementType})"
+        is NeutralType.Geometry -> {
+            val gt = type.geometryType.schemaName
+            val srid = type.srid
+            if (srid != null) "geometry($gt,$srid)" else "geometry($gt)"
+        }
     }
 
     fun defaultValueToString(dv: DefaultValue?): String? = when (dv) {

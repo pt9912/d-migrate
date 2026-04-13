@@ -30,6 +30,7 @@ class MysqlTypeMapper : TypeMapper {
         is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
         is NeutralType.Enum -> "TEXT" // Actual ENUM handled inline during table generation
         is NeutralType.Array -> "JSON"
+        is NeutralType.Geometry -> TODO("Spatial DDL mapping is Phase C/D scope (0.5.5)")
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {
