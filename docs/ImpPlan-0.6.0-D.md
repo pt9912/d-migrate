@@ -212,16 +212,16 @@ Verbindlich fuer Phase D:
 - SQLite verwendet den stabilen Wert
   `__dmigrate_reverse__:sqlite:schema=<schema>`, in der Regel also
   `schema=main`, niemals aber einen absoluten Dateipfad
-- reservierte Trenner fuer den Reverse-Scope-Codec sind mindestens `%`, `;`,
-  `=` und `:`; diese Zeichenmenge deckt die in den Reverse-Scope-Templates
-  verwendeten Strukturzeichen ab
-- wenn Komponenten reservierte Trenner enthalten, werden ihre Werte vor der
-  Zusammensetzung komponentenweise mit RFC-3986-percent-encoding fuer die
-  reservierte Zeichenmenge kodiert
-- Dekodierung erfolgt komponentenweise nach dem Parsen anhand der bekannten
-  Reverse-Scope-Grammatik; ein Reverse-Scope-String wird zuerst anhand der
-  reservierten Trenner in Komponenten zerlegt, dann werden die Komponenten
-  einzeln dekodiert
+- Strukturtrenner fuer den Reverse-Scope-Codec sind `;`, `=` und `:`; diese
+  Zeichen werden beim Parsen zum Zerlegen des Scope-Strings verwendet
+- `%` ist kein Strukturtrenner, sondern ausschliesslich Escape-Introducer
+  fuer percent-encoded Sequenzen; der Parser darf `%` niemals als
+  Komponentengrenze behandeln
+- wenn Komponentenwerte Strukturtrenner oder `%` enthalten, werden sie vor
+  der Zusammensetzung komponentenweise mit RFC-3986-percent-encoding kodiert
+- Parsen: der Scope-String wird anhand der Strukturtrenner (`;`, `=`, `:`)
+  in Komponenten zerlegt, wobei `%XX`-Sequenzen opak durchgereicht werden;
+  anschliessend wird jede Komponente einzeln percent-dekodiert
 - `SchemaDefinition.name` und `version` sind fuer live gelesene Schemas
   technische Reverse-Provenienzmetadaten, keine autoritativen
   Anwendungsmetadaten
@@ -540,10 +540,10 @@ Mindestens abzudecken:
 
 - Core-Read fuer Basisschema mit Tabellen, Keys und Indizes
 - kanonische Befuellung von `SchemaDefinition.name` und `version`
-- Reverse-Scope-Codec mit reservierten Zeichen in DB-/Schema-Namen: mindestens
+- Reverse-Scope-Encoding mit Strukturtrennern in DB-/Schema-Namen: mindestens
   ein Testfall pro Dialekt, bei dem ein Komponentenwert mindestens eines der
-  reservierten Zeichen (`%`, `;`, `=`, `:`) enthaelt und korrekt
-  percent-encoded bzw. nach dem Parsen wieder dekodiert wird
+  Zeichen `;`, `=`, `:` oder `%` enthaelt und der erzeugte
+  `SchemaDefinition.name` die Werte korrekt percent-encoded traegt
 - Reverse-Marker-Set ist allein aus den serialisierten Schemadaten ableitbar
 - Spaltenabbildung fuer `required`, `default`, `unique` und `references`
 - kein Round-Trip-Rauschen durch PK-implizites `required`/`unique`
@@ -711,8 +711,8 @@ Gezielt zu pruefen ist dabei:
 - neue Driver-Exposure-Tests fuer `schemaReader()`
 - explizite Reader-Tests fuer den kanonischen `SchemaDefinition.name`- und
   `version`-Vertrag
-- mindestens ein Reverse-Scope-Codec-Test pro Dialekt mit reservierten Zeichen
-  (`%`, `;`, `=`, `:`) in DB-/Schema-Namen
+- mindestens ein Reverse-Scope-Encoding-Test pro Dialekt mit Strukturtrennern
+  (`;`, `=`, `:`) oder `%` in DB-/Schema-Namen
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
   - keine Verdopplung von PK-implizitem `required` / `unique`
@@ -742,6 +742,7 @@ Gezielt zu pruefen ist dabei:
   - Virtual Tables
   - Views / Triggers
   - SpatiaLite-/Geometry-Notes oder Skips
+- Ownership-Tests: nach jedem Read sind weitere Pool-Borrows moeglich
 
 ### 8.2 Integrationsgrenzen-Verifikation (analog 7.2, vor Phase E/F)
 
@@ -762,7 +763,6 @@ die in 7.2 definierten Post-Conditions ab:
 - Compare-Integrationsgrenzen-Check fuer Dateioperand gegen Reverse-Operand mit
   redundanten PK-Flags oder PK-aequivalentem `UNIQUE`-Constraint auf der
   Datei-Seite; PK-deckende Unique-Indizes bleiben dabei diff-relevant
-- Ownership-Tests: nach jedem Read sind weitere Pool-Borrows moeglich
 
 Manuelle Dialekt-Smokes nach Implementierung:
 
