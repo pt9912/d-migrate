@@ -129,4 +129,22 @@ class DdlModelTest : FunSpec({
         SkippedObject("view", "v1", "no query") shouldBe SkippedObject("view", "v1", "no query")
         SkippedObject("view", "v1", "no query") shouldNotBe SkippedObject("view", "v2", "no query")
     }
+
+    test("SkippedObject with code and hint retains values") {
+        val skip = SkippedObject("table", "places", "Spatial profile is none", code = "E052", hint = "Use --spatial-profile postgis")
+        skip.code shouldBe "E052"
+        skip.hint shouldBe "Use --spatial-profile postgis"
+    }
+
+    test("SkippedObject equality differs when code differs") {
+        val a = SkippedObject("table", "t", "reason")
+        val b = SkippedObject("table", "t", "reason", code = "E052")
+        a shouldNotBe b
+    }
+
+    test("SkippedObject without code and hint defaults to null") {
+        val skip = SkippedObject("view", "v1", "no query")
+        skip.code shouldBe null
+        skip.hint shouldBe null
+    }
 })

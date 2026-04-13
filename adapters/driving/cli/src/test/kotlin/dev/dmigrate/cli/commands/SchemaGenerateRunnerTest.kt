@@ -52,15 +52,17 @@ class SchemaGenerateRunnerTest : FunSpec({
     ) : DdlGenerator {
         var generateCalls = 0
         var rollbackCalls = 0
-        var lastOptions: dev.dmigrate.driver.DdlGenerationOptions? = null
+        var generateOptions: dev.dmigrate.driver.DdlGenerationOptions? = null
+        var rollbackOptions: dev.dmigrate.driver.DdlGenerationOptions? = null
+        val lastOptions: dev.dmigrate.driver.DdlGenerationOptions? get() = rollbackOptions ?: generateOptions
         override fun generate(schema: SchemaDefinition, options: dev.dmigrate.driver.DdlGenerationOptions): DdlResult {
             generateCalls++
-            lastOptions = options
+            generateOptions = options
             return generateResult
         }
         override fun generateRollback(schema: SchemaDefinition, options: dev.dmigrate.driver.DdlGenerationOptions): DdlResult {
             rollbackCalls++
-            lastOptions = options
+            rollbackOptions = options
             return rollbackResult
         }
     }
@@ -554,6 +556,8 @@ class SchemaGenerateRunnerTest : FunSpec({
     test("Exit 0: same options passed to generate and generateRollback") {
         val h = harness()
         h.runner().execute(request(target = "postgresql", spatialProfile = "none", generateRollback = true)) shouldBe 0
-        h.generator.lastOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+        h.generator.generateOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+        h.generator.rollbackOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+        h.generator.generateOptions shouldBe h.generator.rollbackOptions
     }
 })
