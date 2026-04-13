@@ -218,10 +218,18 @@ Verbindlich fuer Phase D:
   `0.0.0-reverse`
 - alle drei Dialekte nutzen dieselbe Platzhalterregel, damit Persistenz und
   Round-Trip-Verhalten nicht von Ad-hoc-Werten abhaengen
+- das kanonische Reverse-Marker-Set ist rein aus dem Schema-Dokument
+  ableitbar:
+  - `version == 0.0.0-reverse`
+  - `name` folgt einer der Reverse-Scope-Grammatiken aus Phase D
+- dieses Marker-Set bleibt damit nach YAML-/JSON-Serialisierung gemaess
+  Phase C auch ohne Sidecar wiedererkennbar
 - spaeterer `file/db`- und `db/db`-Compare darf diese reverse-synthetischen
   `name`-/`version`-Werte nicht roh als strukturellen Diff behandeln; die
   Operand-Provenienz bleibt im Compare-Vertrag ueber `ResolvedSchemaOperand`
   bzw. gleichwertige Huelle sichtbar
+- dieselbe Regel gilt fuer spaetere `file/file`-Vergleiche, wenn mindestens ein
+  Operand dieses Marker-Set traegt
 - `docs/neutral-model-spec.md` muss fuer 0.6.0 explizit nachziehen, dass
   reverse-generierte Schemas technische `name`-/`version`-Werte tragen duerfen,
   wenn eine Live-Datenbank keine belastbaren Anwendungsmetadaten liefert
@@ -240,6 +248,8 @@ Verbindlich fuer Phase D:
   Primary-Key-Mitgliedschaft
 - PK-implizite `NOT NULL`-/`UNIQUE`-Semantik wird nicht redundant in
   `ColumnDefinition.required` bzw. `ColumnDefinition.unique` dupliziert
+- reverse-generierte Schemas verwenden fuer PK-abgeleitete Semantik daher die
+  PK-zentrierte Darstellung ohne zusaetzliche Redundanz auf Spaltenebene
 - einspaltige `UNIQUE`-Semantik wird bei verlustfreier Zuordnung auf
   `ColumnDefinition.unique` gehoben, sofern sie **nicht** nur aus
   Primary-Key-Mitgliedschaft folgt
@@ -251,6 +261,10 @@ Verbindlich fuer Phase D:
 - wenn ein Dialekt explizites `NOT NULL` nicht sauber von PK-implizitem
   `NOT NULL` trennen kann, gewinnt in 0.6.0 die PK-zentrierte Darstellung ohne
   spekulatives zusaetzliches `required=true`
+- spaeterer Compare behandelt redundante file-basierte Angaben wie
+  `primary_key: [id]` plus `columns.id.required: true` oder
+  `columns.id.unique: true` als semantisch gleichwertig zur PK-zentrierten
+  Reverse-Darstellung
 - wenn ein Dialekt nur einen Teil dieser Semantik belastbar liefert, ist eine
   sichtbare Reverse-Note Pflicht statt einer still erfundenen Standardabbildung
 
@@ -367,6 +381,8 @@ Mindestens noetig:
   `SchemaDefinition.version` pro Dialekt
 - klare Markierung dieser Werte als technische Reverse-Provenienz fuer spaetere
   Compare-Normalisierung
+- dokumentintern vollstaendiges Marker-Set, das nach Phase-C-Serialisierung ohne
+  Zusatzdatei wiedererkannt werden kann
 - Exposure-Tests fuer alle drei Dialekte
 
 Wichtig:
@@ -471,8 +487,11 @@ Mindestens abzudecken:
 
 - Core-Read fuer Basisschema mit Tabellen, Keys und Indizes
 - kanonische Befuellung von `SchemaDefinition.name` und `version`
+- Reverse-Marker-Set ist allein aus den serialisierten Schemadaten ableitbar
 - Spaltenabbildung fuer `required`, `default`, `unique` und `references`
 - kein Round-Trip-Rauschen durch PK-implizites `required`/`unique`
+- keine Compare-Divergenz zwischen PK-zentrierter Reverse-Darstellung und
+  redundanten file-basierten PK-Flags
 - Notes-/Skip-Pfade fuer nicht exakt neutrale oder bewusst ausgelassene Faelle
 - Include-Flags fuer Views / Procedures / Functions / Triggers
 - Ownership: Connection wird nach dem Read wieder freigegeben
@@ -537,6 +556,9 @@ Bereits aus Phase B/C vorgegeben und hier nur als Integrationsgrenze relevant:
 - spaeterer DB-Operand-Compare in `hexagon:application`, damit technische
   Reverse-Provenienz nicht als roher `SchemaMetadataDiff` fehlinterpretiert
   wird
+- spaeterer file-Operand-Compare in `hexagon:application`, damit das
+  dokumentinterne Reverse-Marker-Set auch nach Phase-C-Write/Read weiter als
+  Provenienz statt als inhaltlicher Diff behandelt wird
 
 Bewusst nicht direkt betroffen:
 
@@ -558,11 +580,18 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   `0.0.0-reverse`.
 - Diese Werte sind im Teilplan explizit als technische Reverse-Provenienz und
   nicht als autoritative Anwendungsmetadaten festgelegt.
+- Das Reverse-Marker-Set ist allein aus dem Schema-Dokument wiedererkennbar und
+  bleibt damit auch nach spaeterem YAML-/JSON-Write/Read transportierbar.
+- `docs/neutral-model-spec.md` widerspricht dieser technischen
+  Reverse-Provenienzregel nach Phase D nicht mehr.
 - `required`, `default`, `unique` und `references` werden pro Dialekt bewusst
   transportiert; mehrspaltige `UNIQUE`- und Foreign-Key-Beziehungen bleiben
   konsistent auf Constraint-Ebene.
 - PK-implizite Nullability oder Eindeutigkeit erzeugt kein zusaetzliches
   Reverse-Rauschen auf `ColumnDefinition.required` oder `unique`.
+- Redundante PK-Flags in file-basierten Schemas sind fuer spaeteren Compare
+  explizit als semantisch gleichwertig zur PK-zentrierten Reverse-Darstellung
+  festgelegt.
 - Fehler beim Lesen von Kernobjekten fuehren zu einem klaren Driver-Fehler und
   nicht zu einem scheinbar erfolgreichen, aber unvollstaendigen Reverse.
 - Optionalobjekte (`views`, `procedures`, `functions`, `triggers`) werden nur
@@ -598,6 +627,11 @@ Gezielt zu pruefen ist dabei:
   `version`-Vertrag
 - Integrationsgrenzen-Check gegen Phase B/C, dass reverse-synthetische
   Metadaten spaeter nicht roh als `SchemaMetadataDiff` behandelt werden
+- Integrationsgrenzen-Check, dass das Reverse-Marker-Set nach Phase-C-Write/Read
+  aus dem Schema-Dokument allein wiedererkennbar bleibt
+- Spezifikations-Gegenpruefung in `docs/neutral-model-spec.md`, dass technische
+  Reverse-Provenienz fuer `name`/`version` die kanonische Doku nicht mehr
+  widerspricht
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
   - keine Verdopplung von PK-implizitem `required` / `unique`
@@ -621,6 +655,8 @@ Gezielt zu pruefen ist dabei:
   - Virtual Tables
   - Views / Triggers
   - SpatiaLite-/Geometry-Notes oder Skips
+- Compare-Integrationsgrenzen-Check fuer Dateioperand gegen Reverse-Operand mit
+  redundanten PK-Flags auf der Datei-Seite
 - Ownership-Tests: nach jedem Read sind weitere Pool-Borrows moeglich
 
 Manuelle Dialekt-Smokes nach Implementierung:
