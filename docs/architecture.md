@@ -455,6 +455,73 @@ class PostgresTypeMapper : TypeMapper {
 }
 ```
 
+### 3.5 Generator-Options-Pfad und Spatial-Profil (0.5.5)
+
+#### Datenfluss
+
+`schema generate` uebergibt Generator-Optionen als separaten Konfigurationspfad
+an den DDL-Generator. Diese Optionen sind **nicht** Teil des neutralen
+Schema-Modells (d.h. sie sind weder in `SchemaDefinition` noch in
+`ColumnDefinition` gespeichert) — sie steuern ausschliesslich das
+Generierungsverhalten.
+
+```
+adapters:driving:cli
+  SchemaGenerateCommand
+       │  parst --target, --spatial-profile, --generate-rollback
+       │
+       ▼
+  GeneratorOptions(
+      dialect         = DatabaseDialect.POSTGRESQL,
+      spatialProfile  = SpatialProfile.POSTGIS,   ← aus CLI-Flag oder Dialect-Default
+      generateRollback = false
+  )
+       │
+       ▼
+hexagon:application
+  SchemaGenerateRunner.run(schema: SchemaDefinition, options: GeneratorOptions)
+       │
+       ▼
+hexagon:ports
+  DdlGenerator.generate(schema: SchemaDefinition, options: GeneratorOptions): DdlResult
+       │
+       ▼
+adapters:driven:driver-postgresql / driver-mysql / driver-sqlite
+  Konkrete DDL-Generierung mit spatialProfile aus options
+```
+
+`GeneratorOptions` wird im `hexagon:ports`-Modul definiert, damit alle
+Driven-Adapter denselben Kontrakt implementieren. `hexagon:core` kennt
+`GeneratorOptions` nicht — es beschreibt nur das Schema-Modell und die
+Schema-Validierungsregeln.
+
+#### Verortung von `spatialProfile`
+
+| Aspekt | Verortung | Begruendung |
+|---|---|---|
+| `type: geometry` | `hexagon:core` — neutrales Modell | Gehoert zur portablen Schema-Definition |
+| `geometry_type`, `srid` | `hexagon:core` — `ColumnDefinition` | Portable Schema-Metadaten |
+| E120, E121 | `hexagon:core` — `SchemaValidator` | Schema-/Modellregeln, unabhaengig vom Zieldialekt |
+| `spatialProfile` | `hexagon:ports` — `GeneratorOptions` | Generator-Konfiguration, dialektabhaengig |
+| E052, W120 | Driven Adapter — DDL-Generator | Generator-/Report-Regeln, entstehen erst bei `schema generate` |
+
+#### Trennung von Validierung und Generierung
+
+Die Architektur unterscheidet explizit zwischen zwei Ebenen:
+
+- **`schema validate`** prueft das neutrale Schema-Modell in `hexagon:core`.
+  Hier entstehen E120 (unbekannter `geometry_type`) und E121 (`srid` <= 0).
+  Diese Pruefungen sind dialektunabhaengig.
+
+- **`schema generate`** bewertet die Generierbarkeit im gewaehlten Zielprofil
+  in den Driven Adaptern. Hier entstehen E052 (Tabelle blockiert wegen Profil
+  `none`) und W120 (SRID-Uebertragung best-effort). Diese Codes existieren
+  nicht auf Schema-Ebene — sie sind Ergebnisse der konkreten Transformation.
+
+Ein Schema, das E120 oder E121 erzeugt, wird von `schema validate` zurueckgewiesen.
+`schema generate` ruft `schema validate` implizit auf und bricht bei
+Validierungsfehlern ab (Exit-Code 3), bevor irgendwelche DDL erzeugt wird.
+
 ---
 
 ## 4. Querschnittsthemen

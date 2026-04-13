@@ -1037,6 +1037,222 @@ git add adapters/driven/formats/src/test/resources/fixtures/ddl/
 
 ---
 
+## 16. Spatial-Spalten-Generierung (0.5.5)
+
+Dieser Abschnitt beschreibt verbindlich, wie `schema generate` Spalten mit
+`type: geometry` in datenbankspezifisches DDL ueberfuehrt. Er gilt fuer
+Milestone 0.5.5 (Spatial Phase 1).
+
+Nicht Teil dieses Abschnitts: `type: geography`, `z`, `m`, Spatial-Indizes
+und automatische Erkennung oder Installation von Datenbankerweiterungen.
+
+### 16.1 Spatial-Profil
+
+Da `schema generate` ohne Live-Datenbankverbindung laeuft, kann die
+Verfuegbarkeit von PostGIS oder SpatiaLite nicht automatisch geprueft werden.
+Stattdessen steuert ein explizites **Spatial-Profil** die DDL-Generierung fuer
+`geometry`-Spalten. Das Profil ist Teil der **Generator-Konfiguration** — es
+gehoert nicht zum neutralen Schema-Modell und wird nicht in YAML-Feldern
+abgelegt.
+
+Zulässige Werte und Defaults je Zieldialekt:
+
+| Zieldialekt | Zulässige Profile | Default |
+|---|---|---|
+| `postgresql` | `postgis`, `none` | `postgis` |
+| `mysql` | `native` | `native` |
+| `sqlite` | `spatialite`, `none` | `none` |
+
+Bedeutung der Profilwerte:
+
+- `postgis`: PostgreSQL-DDL wird mit PostGIS-kompatiblen Geometrietypen erzeugt.
+- `native`: MySQL-DDL wird mit den nativen Spatial Data Types von MySQL erzeugt.
+- `spatialite`: SQLite-DDL verwendet die `AddGeometryColumn()`-Strategie von SpatiaLite.
+- `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert.
+
+Unzulaessige Dialekt/Profil-Kombinationen (z.B. `--target mysql --spatial-profile postgis`)
+erzeugen einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung.
+
+### 16.2 PostgreSQL / PostGIS (Profil: `postgis`)
+
+`geometry`-Spalten werden als PostGIS-`geometry`-Typ mit explizitem
+Subtyp und SRID generiert.
+
+**Typ-Syntax**:
+
+```
+geometry(<GeometryType>, <srid>)
+```
+
+`geometry_type` wird in PostGIS-Schreibweise mit grossem Anfangsbuchstaben
+emittiert (z.B. `Point`, `Polygon`, `MultiPolygon`). Wenn `geometry_type`
+nicht angegeben ist, gilt der Default `geometry` (lowercase im neutralen
+Modell, grossgeschrieben im PostGIS-Ausdruck: `Geometry`).
+
+Wenn `srid` nicht angegeben ist, wird `0` als Platzhalter verwendet.
+
+**Beispiel**:
+
+```sql
+CREATE TABLE "places" (
+    "id"       BIGSERIAL,
+    "location" geometry(Point, 4326),
+    PRIMARY KEY ("id")
+);
+```
+
+**Regeln**:
+
+- Phase 1 emittiert kein automatisches `CREATE EXTENSION IF NOT EXISTS postgis;`.
+  Stattdessen wird ein Info-Hinweis im Report aufgenommen, dass das Zielsystem
+  PostGIS bereitstellen muss.
+- Rollback-Statement: `ALTER TABLE "<table>" DROP COLUMN "<column>";`
+
+### 16.3 PostgreSQL / PostGIS (Profil: `none`)
+
+Wenn das Spatial-Profil fuer PostgreSQL auf `none` gesetzt ist, wird die
+gesamte Tabelle blockiert. Es wird **keine partielle DDL ohne die betroffene
+Spatial-Spalte** erzeugt.
+
+Stattdessen wird die Tabelle als `action_required` mit Code E052 markiert und
+in `skipped_objects` des Reports aufgefuehrt. Der Rest der DDL-Generierung
+wird fortgesetzt (andere Tabellen werden normal erzeugt).
+
+**Report-Eintrag (Beispiel)**:
+
+```yaml
+notes:
+  - type: action_required
+    code: E052
+    object: places
+    message: "Table blocked: spatial column 'location' cannot be generated with
+              PostgreSQL spatial profile 'none'"
+    hint: "Use --spatial-profile postgis or map the column manually"
+
+skipped_objects:
+  - type: table
+    name: places
+    reason: "Spatial profile 'none': geometry column 'location' requires manual handling"
+```
+
+### 16.4 MySQL (Profil: `native`)
+
+MySQL unterstuetzt native Spatial Data Types. `geometry_type` wird direkt auf
+den passenden nativen MySQL-Typ abgebildet.
+
+**Typ-Mapping**:
+
+| `geometry_type` im neutralen Modell | MySQL-DDL-Typ |
+|---|---|
+| `geometry` | `GEOMETRY` |
+| `point` | `POINT` |
+| `linestring` | `LINESTRING` |
+| `polygon` | `POLYGON` |
+| `multipoint` | `MULTIPOINT` |
+| `multilinestring` | `MULTILINESTRING` |
+| `multipolygon` | `MULTIPOLYGON` |
+| `geometrycollection` | `GEOMETRYCOLLECTION` |
+
+MySQL hat kein Profil `none` — `native` ist der einzige zulaessige Wert.
+
+**SRID-Handling**: MySQL unterstuetzt SRID-Constraints ab Version 8.0. Falls
+die SRID-Information nicht im gewuenschten DDL-Stil ausgedrueckt werden kann,
+wird der Typ ohne explizite SRID-Angabe emittiert und der Transformationsreport
+enthaelt eine Warnung W120.
+
+**Beispiel ohne W120** (SRID korrekt uebernommen):
+
+```sql
+CREATE TABLE `places` (
+    `id`       INT NOT NULL AUTO_INCREMENT,
+    `location` POINT SRID 4326,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+**Rollback-Statement**: `` ALTER TABLE `<table>` DROP COLUMN `<column>`; ``
+
+### 16.5 SQLite / SpatiaLite (Profil: `spatialite`)
+
+SpatiaLite registriert Geometriespalten ueber eine Metadaten-Funktion statt
+direkt in `CREATE TABLE`. Deshalb wird eine zweistufige Strategie verwendet:
+
+1. `CREATE TABLE` ohne die `geometry`-Spalte erzeugen.
+2. Fuer jede `geometry`-Spalte ein `SELECT AddGeometryColumn(...)` emittieren.
+
+**Beispiel**:
+
+```sql
+CREATE TABLE "places" (
+    "id" INTEGER PRIMARY KEY AUTOINCREMENT
+);
+
+SELECT AddGeometryColumn('places', 'location', 4326, 'POINT', 'XY');
+```
+
+`AddGeometryColumn`-Signatur: `(table_name, column_name, srid, type, coord_dimension)`
+
+- `srid`: Der Wert aus dem neutralen Modell; fehlt `srid`, wird `0` verwendet.
+- `type`: `geometry_type` in Grossbuchstaben (z.B. `POINT`, `POLYGON`).
+- `coord_dimension`: Immer `'XY'` in Phase 1 (Z/M sind nicht Teil von 0.5.5).
+
+**Rollback**: Das Rollback-Statement fuer `AddGeometryColumn` ist
+`SELECT DiscardGeometryColumn('<table>', '<column>');`. Fuer die zugehoerige
+Tabelle gilt das normale `DROP TABLE IF EXISTS`.
+
+### 16.6 SQLite / SpatiaLite (Profil: `none`)
+
+Wenn das Spatial-Profil fuer SQLite auf `none` gesetzt ist (das ist der
+Default), wird die gesamte Tabelle blockiert. Es wird kein stiller Fallback
+auf `TEXT` oder `BLOB` erzeugt.
+
+Die Tabelle wird als `action_required` mit Code E052 markiert, analog zu
+§16.3 (PostgreSQL mit Profil `none`). Partielle DDL ohne die Spatial-Spalte
+ist kein zulaessiger 0.5.5-Pfad.
+
+### 16.7 Rollback-Regeln fuer Spatial-Statements
+
+| Generiertes Statement | Rollback-Statement |
+|---|---|
+| `CREATE TABLE "t" (...)` ohne geometry | `DROP TABLE IF EXISTS "t"` |
+| `SELECT AddGeometryColumn('t', 'c', ...)` | `SELECT DiscardGeometryColumn('t', 'c')` |
+| `geometry(Point, 4326)` als Spalte in `CREATE TABLE` | Teil des normalen `DROP TABLE IF EXISTS "t"` |
+
+Wenn Rollback generiert wird (`--generate-rollback`) und das Profil
+`spatialite` ist, werden die `DiscardGeometryColumn`-Aufrufe in umgekehrter
+Reihenfolge vor dem `DROP TABLE` emittiert.
+
+### 16.8 Fehler- und Warnungs-Codes fuer Spatial
+
+Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E120 und E121
+entstehen bei `schema validate` (Schema-/Modellregeln); E052 und W120
+entstehen bei `schema generate` (Generator-/Report-Regeln).
+
+| Code | Typ | Ebene | Meldung |
+|---|---|---|---|
+| E120 | Validierungsfehler | `schema validate` | Unknown `geometry_type` value |
+| E121 | Validierungsfehler | `schema validate` | `srid` must be greater than 0 |
+| E052 | action_required | `schema generate` | Spatial column cannot be generated with the chosen spatial profile |
+| W120 | Warnung | `schema generate` | SRID could not be fully transferred to target dialect |
+
+**E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
+der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,
+`multipoint`, `multilinestring`, `multipolygon`, `geometrycollection`.
+
+**E121**: Wird erzeugt, wenn `srid` angegeben ist und den Wert `0` oder einen
+negativen Wert hat. Eine fehlende `srid` ist zulaessig und erzeugt keinen Fehler.
+
+**E052 (Spatial)**: Wird erzeugt, wenn das Spatial-Profil `none` ist und die
+Tabelle deshalb nicht generiert werden kann. Die gesamte Tabelle wird
+blockiert — partielle DDL ohne die Spatial-Spalte wird nicht erzeugt.
+
+**W120**: Wird erzeugt, wenn `srid`-Metadaten nicht vollstaendig in die
+Ziel-DDL uebertragen werden konnten (Best-Effort-Pfad, insbesondere bei MySQL
+fuer aeltere Server-Versionen). Die DDL wird trotzdem erzeugt; der Hinweis
+erscheint im Report und auf stderr.
+
+---
+
 ## Verwandte Dokumentation
 
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11
