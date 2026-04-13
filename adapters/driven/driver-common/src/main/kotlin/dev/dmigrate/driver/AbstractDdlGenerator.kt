@@ -32,10 +32,25 @@ abstract class AbstractDdlGenerator(
                 )))
                 continue
             }
-            statements += generateTable(name, table, schema, deferredFks, options)
+            val tableStatements = generateTable(name, table, schema, deferredFks, options)
+            // Detect if generateTable blocked the table via E052 (e.g. SpatiaLite metadata)
+            val tableBlocked = tableStatements.any { stmt ->
+                stmt.sql.isBlank() && stmt.notes.any { it.code == "E052" }
+            }
+            if (tableBlocked) {
+                val blockNote = tableStatements.flatMap { it.notes }.first { it.code == "E052" }
+                skipped += SkippedObject(
+                    type = "table", name = name, reason = blockNote.message,
+                    code = "E052", hint = blockNote.hint,
+                )
+            }
+            statements += tableStatements
         }
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
+            // Also skip indices for tables blocked by generateTable (e.g. SpatiaLite metadata)
+            val wasBlocked = skipped.any { it.type == "table" && it.name == name && it.code == "E052" }
+            if (wasBlocked) continue
             statements += generateIndices(name, table)
         }
         statements += handleCircularReferences(circularEdges, skipped)

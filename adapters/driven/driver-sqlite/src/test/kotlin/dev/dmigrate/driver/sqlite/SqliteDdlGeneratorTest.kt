@@ -1482,6 +1482,38 @@ class SqliteDdlGeneratorTest : FunSpec({
         result.skippedObjects.any { it.code == "E052" } shouldBe true
     }
 
+    test("spatialite rollback with multiple geometry columns: DiscardGeometryColumn before DROP TABLE") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "geo" to TableDefinition(columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry(GeometryType("point"), srid = 4326)),
+                "area" to ColumnDefinition(type = NeutralType.Geometry(GeometryType("polygon"))),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generateRollback(schema, DdlGenerationOptions(SpatialProfile.SPATIALITE))
+        val ddl = result.render()
+        val discardLoc = ddl.indexOf("DiscardGeometryColumn('geo', 'loc')")
+        val discardArea = ddl.indexOf("DiscardGeometryColumn('geo', 'area')")
+        val dropTable = ddl.indexOf("DROP TABLE")
+        // Both DiscardGeometryColumn must appear before DROP TABLE
+        (discardLoc >= 0) shouldBe true
+        (discardArea >= 0) shouldBe true
+        (dropTable >= 0) shouldBe true
+        (discardLoc < dropTable) shouldBe true
+        (discardArea < dropTable) shouldBe true
+    }
+
+    test("spatialite metadata blocking adds SkippedObject") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "t" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry(), required = true),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.SPATIALITE))
+        result.skippedObjects.any { it.code == "E052" && it.name == "t" } shouldBe true
+    }
+
     test("spatialite blocks table when geometry column has required metadata") {
         val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
             "t" to TableDefinition(columns = mapOf(

@@ -1153,6 +1153,56 @@ class PostgresDdlGeneratorTest : FunSpec({
         result.render() shouldNotContain "CREATE TABLE"
     }
 
+    test("geometry multipolygon with postgis profile") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "t" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "area" to ColumnDefinition(type = NeutralType.Geometry(
+                    GeometryType("multipolygon"), srid = 3857)),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.POSTGIS))
+        result.render() shouldContain "geometry(MultiPolygon, 3857)"
+    }
+
+    test("geometry linestring with postgis profile") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "t" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "path" to ColumnDefinition(type = NeutralType.Geometry(GeometryType("linestring"))),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.POSTGIS))
+        result.render() shouldContain "geometry(LineString, 0)"
+    }
+
+    test("postgis rollback for geometry table is DROP TABLE") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "places" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry(GeometryType("point"), srid = 4326)),
+            ), primaryKey = listOf("id"))
+        ))
+        val result = generator.generateRollback(schema, DdlGenerationOptions(SpatialProfile.POSTGIS))
+        result.render() shouldContain "DROP TABLE"
+    }
+
+    test("profile none does not generate tables without geometry") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "normal" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+            ), primaryKey = listOf("id")),
+            "spatial" to TableDefinition(columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                "loc" to ColumnDefinition(type = NeutralType.Geometry()),
+            ), primaryKey = listOf("id")),
+        ))
+        val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.NONE))
+        result.render() shouldContain "CREATE TABLE \"normal\""
+        result.render() shouldNotContain "CREATE TABLE \"spatial\""
+        result.skippedObjects.size shouldBe 1
+    }
+
     test("postgis profile emits PostGIS info note") {
         val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
             "t" to TableDefinition(columns = mapOf(
