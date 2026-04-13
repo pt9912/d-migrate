@@ -489,12 +489,17 @@ Verbindliche Regeln:
 - JSON/YAML werden aus dem Compare-Dokument gerendert, nicht direkt aus
   `SchemaDiff`
 
-Empfehlung fuer die technische Umsetzung:
+Entscheidung (verifiziert gegen Codebasis 2026-04-13):
 
 - Compare-Dokument als einfache DTO-Struktur
-- JSON/YAML via Jackson im CLI-Modul
-- Abhaengigkeiten dafuer explizit im CLI-Modul deklarieren, statt auf
-  transitive Projekt-Dependencies zu hoffen
+- JSON/YAML werden **ohne externe Library** gerendert, analog zum
+  bestehenden Muster in `SchemaGenerateHelpers` und `OutputFormatter`:
+  handgeschriebenes String-Building mit `escapeJson()`/`escapeYaml()`
+- Keine neue Jackson- oder sonstige Serializer-Abhaengigkeit im CLI-Modul
+- Begruendung: das CLI-Modul nutzt bereits durchgaengig diesen Ansatz
+  (`SchemaGenerateHelpers.formatJsonOutput`, `OutputFormatter.printJson`,
+  `OutputFormatter.printYaml`); eine neue Library-Abhaengigkeit nur fuer
+  Compare waere inkonsistent
 
 ### 7.5 Fehler- und Write-Pfade
 
