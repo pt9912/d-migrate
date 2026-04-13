@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.0 - MVP-Release
 > **Phase**: B (Core-Diff-Engine)
-> **Status**: Draft
+> **Status**: Done (2026-04-13)
 > **Referenz**: `implementation-plan-0.5.0.md` Abschnitt 4.2, Abschnitt 5
 > Phase B, Abschnitt 7, Abschnitt 8, Abschnitt 9.1
 
