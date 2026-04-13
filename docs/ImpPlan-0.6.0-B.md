@@ -103,6 +103,8 @@ Konsequenz fuer Phase B:
 - Definition von `SchemaReader`, `SchemaReadOptions` und `SchemaReadResult`
 - verbindlicher Vertrag fuer strukturierte Reverse-Notes und
   `skipped_objects`
+- Festlegung eines minimalen Operand-Envelope-Vertrags fuer spaeteren
+  DB-Operand-Compare
 - bewusste Entscheidung, welche reverse-relevanten Metadaten als explizite
   Modellfelder und welche nur als Notes transportiert werden
 - modellseitige Absicherung compare-relevanter Custom Types, Sequenzen und
@@ -162,8 +164,11 @@ Wichtig ist die Semantik:
 - `SchemaReadResult` ist nicht einfach `DdlResult` mit anderem Namen
 - der Reverse-Pfad darf `DdlStatement`- oder SQL-spezifische Felder nicht als
   Transportkruecke mitziehen
-- eine Wiederverwendung vorhandener Primitive ist nur dann sinnvoll, wenn die
-  Typen zuvor semantisch vom DDL-Generator geloest werden
+- Phase B fuehrt fuer den Read-Pfad einen eigenen Note-Typ
+  `SchemaReadNote` oder gleichwertig explizit benannten Reverse-Note-Vertrag
+  ein
+- `TransformationNote` bleibt DDL-/Generator-Semantik und wird nicht als
+  impliziter Mehrzwecktyp fuer Reverse recycelt
 
 Fachlich verbindlich bleibt:
 
@@ -252,11 +257,11 @@ Verbindliche Folge fuer Phase B:
   wenn der Dialekt Ueberladungen zulaesst
 - Trigger duerfen nicht still kollidieren, wenn identische Triggernamen auf
   verschiedenen Tabellen vorkommen
-- Phase B legt deshalb eine kanonische verlustfreie Objektidentitaet fest,
-  z. B.:
-  - signaturbasierter Routinen-Key
-  - tabellenqualifizierter Trigger-Key
-  - oder gleichwertige explizite Objekt-IDs im Modell
+- Phase B legt deshalb eine kanonische verlustfreie Objektidentitaet fest:
+  - Funktionen und Prozeduren werden im Schema ueber einen kanonischen
+    Signatur-Key `name(direction:type,direction:type,...)` adressiert
+  - Trigger werden im Schema ueber einen tabellenqualifizierten Key
+    `table::name` adressiert
 - nicht akzeptabel sind adapterseitige Ad-hoc-Umbenennungen, die nur lokal den
   letzten gefundenen Eintrag "retten"
 
@@ -266,6 +271,8 @@ Wichtig ist weniger die exakte Syntax als die Semantik:
   Compare stabil denselben Objektschluessel behalten
 - der Modellvertrag muss Ueberladungen und gleichnamige Trigger ausdruecklich
   tragen koennen, statt sie implizit zu verbieten
+- der kanonische Key ist Teil des 0.6.0-Schema-Vertrags und nicht nur ein
+  interner Helpername
 
 ### 4.7 Compare darf Reverse-Notes und `skippedObjects` nicht verlieren
 
@@ -276,15 +283,27 @@ bewusst ausgelassene Objekte wegwerfen.
 Verbindliche Folge fuer Phase B:
 
 - `SchemaComparator` diffed weiterhin nur `SchemaDefinition`
-- die Aufloesung von DB-Operanden arbeitet aber logisch mit
-  `SchemaReadResult`, nicht nur mit `schema`
+- die Aufloesung von Compare-Operanden arbeitet aber logisch mit einem
+  expliziten Operand-Envelope, nicht nur mit `schema`
+- kanonische Mindestform fuer Phase F:
+
+```kotlin
+data class ResolvedSchemaOperand(
+    val schema: SchemaDefinition,
+    val validation: ValidationResult,
+    val notes: List<SchemaReadNote> = emptyList(),
+    val skippedObjects: List<SkippedObject> = emptyList(),
+)
+```
+
 - Reverse-Notes und `skippedObjects` muessen pro Operand bis zur spaeteren
   Compare-Ausgabe oder einem gleichwertigen Ergebnisvertrag erhalten bleiben
 - ein strukturell `identical`er Compare darf deshalb trotzdem begleitende
   Reverse-Warnungen oder ausgelassene Objekte sichtbar machen
 
 Phase B definiert noch kein CLI-Rendering fuer diese Informationen. Verbindlich
-ist aber, dass sie im Compare-Pfad nicht still verlorengehen.
+ist aber, dass sie im Compare-Pfad nicht still verlorengehen und nicht erst in
+`DiffView` oder `SchemaCompareSummary` wieder neu erfunden werden muessen.
 
 ### 4.8 Validierung bleibt modellzentriert und reverse-tauglich
 
@@ -297,12 +316,13 @@ Verbindlich fuer 0.6.0:
   Dialektverfuegbarkeit
 - neue optionale Modellfelder fuer Reverse bleiben validatorseitig optional,
   solange kein echter neutraler Widerspruch vorliegt
-- Tabellen ohne Primary Key bleiben fuer 0.6.0 als reverse-generierte
-  Modellrealitaet transportierbar und compare-faehig; `E008` darf sie daher
-  nicht mehr als blockierenden Fehler aus dem Reverse-/Compare-Pfad druecken
-- fehlende Primary Keys werden fuer solche Faelle als Warning, Reverse-Note
-  oder gleichwertiger nicht blockierender Hinweis behandelt, nicht als
-  invalidierender Hard-Fail
+- `E008` wird in 0.6.0 bewusst global von einem blockierenden
+  ValidationError zu einem ValidationWarning herabgestuft
+- diese Lockerung gilt nicht nur fuer Live-Reverse, sondern fuer das neutrale
+  Modell insgesamt, damit reverse-generierte Schema-Dateien spaeter ueber die
+  file-based Pfade wieder konsumierbar bleiben
+- fehlende Primary Keys bleiben damit ein sichtbarer Qualitaetshinweis, aber
+  kein invalidierender Hard-Fail mehr
 - Routinen-, View- und Trigger-Bodies bleiben als rohe Texte zulaessig und
   werden nicht parserseitig "nachvalidiert"
 - vorhandene Integritaetspruefungen wie Trigger-Tabellenreferenzen bleiben
@@ -355,12 +375,12 @@ Mindestens noetig:
 Wichtig:
 
 - `SchemaReadResult` darf keine SQL-Statement-Container transportieren
-- falls `NoteType` oder `SkippedObject` aus dem bestehenden Ports-Modul
-  wiederverwendet werden, muss deren Semantik fuer Reverse explizit mitgetragen
-  werden
-- der Name `TransformationNote` ist fuer den Read-Pfad nur akzeptabel, wenn
-  die Semantik bewusst als richtungsneutral dokumentiert wird; sonst ist ein
-  Reverse-spezifischer oder neutraler Obertyp sauberer
+- `SchemaReadResult.notes` verwenden einen expliziten `SchemaReadNote`-
+  Vertrag statt `TransformationNote`
+- `SkippedObject` kann wiederverwendet werden, sofern seine Semantik fuer
+  Reverse ausdruecklich mitgetragen wird
+- Compare darf spaeter dieselben `SchemaReadNote`-/`SkippedObject`-Typen pro
+  Operand weiterreichen, statt einen zweiten parallelen Note-Vertrag zu bauen
 
 ### B.3 Tabellen-Metadaten fuer 0.6.0 explizit modellieren
 
@@ -405,9 +425,9 @@ im Modell stabil festgelegt sein.
 
 Mindestens noetig:
 
-- Entscheidung fuer einen kanonischen Routinen-Key, der Ueberladungen traegt
-- Entscheidung fuer einen kanonischen Trigger-Key, der gleiche Triggernamen auf
-  verschiedenen Tabellen trennt
+- Funktionen und Prozeduren werden kanonisch ueber
+  `name(direction:type,direction:type,...)` adressiert
+- Trigger werden kanonisch ueber `table::name` adressiert
 - Diff- und Serialisierungspfad duerfen diese Identitaet nicht spaeter wieder
   implizit auf den nackten Namen reduzieren
 
@@ -444,8 +464,10 @@ Zusaetzlich verbindlich:
 
 - der spaetere Compare-Pfad muss pro Operand Reverse-Notes und
   `skippedObjects` neben dem Schema-Diff weitertransportieren koennen
-- Phase B legt dafuer den semantischen Vertrag fest, auch wenn die konkrete
-  Projektion erst in spaeteren CLI-Phasen gebaut wird
+- Phase B legt dafuer den kanonischen Operand-Envelope
+  `ResolvedSchemaOperand` oder einen gleichwertigen Typ mit denselben Feldern
+  fest, auch wenn die konkrete Projektion erst in spaeteren CLI-Phasen gebaut
+  wird
 
 ### B.7 Validator auf 0.6.0-Reverse-Tauglichkeit pruefen
 
@@ -458,8 +480,7 @@ Mindestens erforderlich:
   Validator ziehen
 - optional gelesene Objektarten muessen als regulaerer Teil von
   `SchemaDefinition` akzeptiert werden
-- Tabellen ohne Primary Key duerfen fuer 0.6.0 nicht ueber `E008` den
-  Reverse-/Compare-Pfad blockieren
+- `E008` wird fuer 0.6.0 von Error auf Warning umgestellt
 - Reverse-Schemas mit Routinen, Views, Triggern, Sequences und erweiterten
   Custom Types duerfen nicht an generatorfremden Pflichtannahmen scheitern
 
@@ -476,7 +497,7 @@ Die Phase ist nur belastbar, wenn der neue Vertrag durch Tests sichtbar wird.
 Mindestens erforderlich:
 
 - Compile-/Vertragstest fuer `DatabaseDriver.schemaReader()`
-- Unit-Tests fuer `SchemaReadResult`-Semantik
+- Unit-Tests fuer `SchemaReadResult`- und `SchemaReadNote`-Semantik
 - Comparator-Tests fuer:
   - verlustfreie Routinen-Identitaet bei Ueberladungen
   - verlustfreie Trigger-Identitaet bei gleichen Namen auf verschiedenen
@@ -490,8 +511,10 @@ Mindestens erforderlich:
   - erweiterte Tabellenmetadaten
 - Validator-Tests fuer reverse-generierte Modelle mit den neuen Objektarten und
   Tabellenmetadaten
-- Validator-Test, dass Tabellen ohne Primary Key fuer den 0.6.0-Reverse-/Compare-
-  Pfad nicht als invalidierender Hard-Fail enden
+- Validator-Test, dass `E008` in 0.6.0 nur noch Warning und kein Error mehr ist
+- Application-nahe Vorbereitungstest oder gleichwertiger Vertragstest fuer
+  `ResolvedSchemaOperand` mit `schema`, `validation`, `notes` und
+  `skippedObjects`
 
 ---
 
@@ -547,9 +570,13 @@ Indirekt betroffen in Folgephasen:
       und optional `skippedObjects`, nicht nur ein nacktes `SchemaDefinition`.
 - [ ] Der Reverse-Vertrag transportiert Hinweise und ausgelassene Objekte ohne
       SQL-Statement-Container oder andere generatorseitige Kruecken.
+- [ ] `SchemaReadResult.notes` verwenden einen expliziten Reverse-Note-Typ
+      (`SchemaReadNote` oder gleichwertig), nicht `TransformationNote`.
 - [ ] Routinen- und Trigger-Identitaet ist fuer 0.6.0 verlustfrei definiert;
       Ueberladungen oder gleichnamige Trigger auf verschiedenen Tabellen
       fuehren nicht zu stillen Ueberschreibungen im Modellvertrag.
+- [ ] Der kanonische Routinen-Key ist `name(direction:type,direction:type,...)`.
+- [ ] Der kanonische Trigger-Key ist `table::name`.
 - [ ] Es existiert fuer 0.6.0 keine lose `Map<String, Any>`- oder
       `extras`-Escape-Hatch im neutralen Modell.
 - [ ] MySQL-Engine und SQLite-`WITHOUT ROWID` sind als explizite
@@ -565,14 +592,17 @@ Indirekt betroffen in Folgephasen:
 - [ ] Der Compare-Vertrag fuer DB-Operanden verliert Reverse-Notes und
       `skippedObjects` nicht still, sondern haelt sie pro Operand neben dem
       Schema-Diff transportierbar.
+- [ ] Der kanonische Compare-Operand-Envelope fuer spaetere DB-Operanden ist
+      als `ResolvedSchemaOperand(schema, validation, notes, skippedObjects)`
+      oder gleichwertig festgelegt.
 - [ ] Die neuen Compare-Surfaces bleiben modellbasiert und fuehren kein
       SQL-Text- oder AST-Diff als Pflichtmechanik ein.
 - [ ] `SchemaValidator` akzeptiert reverse-generierte Modelle mit erweiterten
       Custom Types, Sequences, Routinen, Views, Triggern und Tabellenmetadaten,
       solange kein echter neutraler Modellwiderspruch vorliegt.
-- [ ] Tabellen ohne Primary Key blockieren den 0.6.0-Reverse-/Compare-Pfad
-      nicht ueber `E008`; der fehlende Schluessel bleibt hoechstens ein nicht
-      blockierender Hinweis.
+- [ ] `E008` ist in 0.6.0 kein ValidationError mehr, sondern ein
+      ValidationWarning und blockiert daher weder Reverse noch file-based
+      Wiederverwendung reverse-generierter Schemas.
 - [ ] Die Phase ist durch Core-Tests und mindestens compile-seitige
       Port-Verifikation gegen Regressionen abgesichert.
 
@@ -601,8 +631,11 @@ Mindestumfang:
 4. Gegenpruefung, dass Reverse-Hinweise und ausgelassene Objekte im
    Rueckgabevertrag strukturiert sichtbar sind und nicht in einer losen
    Hilfsstruktur verschwinden.
-5. Explizite Gegenpruefung, dass Tabellen ohne Primary Key im 0.6.0-Read- und
-   Compare-Pfad nicht mehr an `E008` als Hard-Fail scheitern.
+5. Explizite Gegenpruefung, dass der Compare-Pfad kuenftig einen
+   `ResolvedSchemaOperand` oder gleichwertigen Typ statt eines nackten
+   `SchemaDefinition` transportiert.
+6. Explizite Gegenpruefung, dass `E008` in 0.6.0 nur noch als Warning
+   auftaucht und nicht mehr als Hard-Fail.
 
 Empfohlene technische Mindestlaeufe nach Umsetzung:
 
@@ -619,9 +652,10 @@ Falls Port-Vertragstests eingefuehrt werden:
 Praktische Review-Hilfe:
 
 - gezielte Volltextsuche nach `schemaReader`, `SchemaReadResult`,
-  `SchemaReadOptions`, `Map<String, Any>`, `extras`, `DOMAIN`, `COMPOSITE`,
-  `sequences`, `functions`, `procedures`, `triggers`, `WITHOUT ROWID`,
-  `engine`, `E008`, `signature`, `trigger key`
+  `SchemaReadOptions`, `SchemaReadNote`, `ResolvedSchemaOperand`,
+  `Map<String, Any>`, `extras`, `DOMAIN`, `COMPOSITE`, `sequences`,
+  `functions`, `procedures`, `triggers`, `WITHOUT ROWID`, `engine`, `E008`,
+  `table::`, `direction:type`
 - Diff-Review, ob neue Modellfelder in `SchemaComparator` und
   `SchemaValidator` konsistent beruecksichtigt oder bewusst ignoriert werden
 - Gegenlesen, ob Reverse-Vertrag und Compare-Vertrag dieselben Objektarten als
@@ -660,7 +694,9 @@ Adapter-Namensworkaround.
 ### R5 - Validator wird entweder zu streng oder zu blind
 
 Zu strenge Regeln wuerden reverse-generierte Modelle ohne Not blockieren; zu
-weiche Regeln wuerden echte Modellwidersprueche unbemerkt lassen.
+weiche Regeln wuerden echte Modellwidersprueche unbemerkt lassen. Die bewusste
+Herabstufung von `E008` auf Warning muss deshalb als gezielte 0.6.0-
+Entscheidung dokumentiert und testseitig abgesichert werden.
 
 ### R6 - Phase B rutscht in Driver- oder CLI-Details ab
 
@@ -677,14 +713,15 @@ Modellvertrag sauber vorbereitet ist:
 - `SchemaReader` und sein Ergebnisobjekt sind im Hexagon klar definiert
 - compare-relevante Reverse-Objekte fallen nicht mehr aus dem Core-Diff heraus
 - Routinen und Trigger besitzen eine verlustfreie stabile Objektidentitaet
+- der Reverse-Pfad nutzt einen eigenen `SchemaReadNote`-Vertrag statt
+  generatorseitiger `TransformationNote`
 - physische Tabellenattribute mit echtem 0.6.0-Nutzen sind explizit modelliert
 - stille Metadatenverluste sind ueber Notes/`skippedObjects` statt ueber
   implizites Weglassen geregelt
-- Reverse-Notes und `skippedObjects` bleiben auch fuer spaeteren DB-Operand-
-  Compare transportierbar
+- Reverse-Notes und `skippedObjects` bleiben ueber einen kanonischen
+  `ResolvedSchemaOperand` auch fuer spaeteren DB-Operand-Compare transportierbar
 - und `SchemaValidator` bleibt fuer reverse-generierte neutrale Modelle
-  benutzbar, ohne reale Reverse-Schemas wie PK-lose Tabellen unnoetig zu
-  blockieren
+  benutzbar, weil `E008` nur noch Warning statt blockierendem Error ist
 
 Danach koennen Phase C bis F auf einem stabilen Kernvertrag aufbauen, statt
 Read-, Diff- und Report-Semantik erst in den Adaptern zu improvisieren.
