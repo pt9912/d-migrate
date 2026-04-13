@@ -244,6 +244,44 @@ class SchemaGenerateHelpersTest : FunSpec({
             json shouldContain "\"hint\": \"Use --spatial-profile postgis\""
             json shouldContain "\"action_required\": 1"
         }
+
+        test("JSON output renders spatial W120 notes alongside E052 skipped objects") {
+            val json = SchemaGenerateHelpers.formatJsonOutput(
+                result(
+                    statements = listOf(
+                        DdlStatement(
+                            "CREATE TABLE places (location POINT /*!80003 SRID 4326 */)",
+                            notes = listOf(
+                                TransformationNote(
+                                    NoteType.WARNING,
+                                    "W120",
+                                    "places.location",
+                                    "SRID 4326 emitted as MySQL comment hint; full SRID constraint support depends on MySQL 8.0+",
+                                ),
+                            ),
+                        )
+                    ),
+                    skippedObjects = listOf(
+                        SkippedObject(
+                            type = "table",
+                            name = "blocked_places",
+                            reason = "Spatial profile is none",
+                            code = "E052",
+                            hint = "Use --spatial-profile postgis"
+                        )
+                    )
+                ),
+                schema(),
+                "mysql",
+            )
+
+            json shouldContain "\"code\": \"W120\""
+            json shouldContain "\"object\": \"places.location\""
+            json shouldContain "\"code\": \"E052\""
+            json shouldContain "\"name\": \"blocked_places\""
+            json shouldContain "\"warnings\": 1"
+            json shouldContain "\"action_required\": 1"
+        }
     }
 
     // ─── escapeJson ───────────────────────────────────────────────

@@ -272,6 +272,47 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.reportWrites.shouldBeEmpty()
     }
 
+    test("Exit 0: --output-format=json preserves spatial W120 notes and E052 skipped objects") {
+        val h = harness()
+        h.generator = FakeGenerator(
+            generateResult = DdlResult(
+                statements = listOf(
+                    DdlStatement(
+                        "CREATE TABLE places (location POINT /*!80003 SRID 4326 */)",
+                        notes = listOf(
+                            TransformationNote(
+                                NoteType.WARNING,
+                                "W120",
+                                "places.location",
+                                "SRID 4326 emitted as MySQL comment hint; full SRID constraint support depends on MySQL 8.0+",
+                            ),
+                        ),
+                    )
+                ),
+                skippedObjects = listOf(
+                    SkippedObject(
+                        type = "table",
+                        name = "blocked_places",
+                        reason = "Spatial profile is none",
+                        code = "E052",
+                        hint = "Use --spatial-profile postgis",
+                    ),
+                ),
+            )
+        )
+
+        h.runner().execute(request(target = "mysql", outputFormat = "json")) shouldBe 0
+
+        h.stdout.joined() shouldContain "\"code\": \"W120\""
+        h.stdout.joined() shouldContain "\"object\": \"places.location\""
+        h.stdout.joined() shouldContain "\"code\": \"E052\""
+        h.stdout.joined() shouldContain "\"name\": \"blocked_places\""
+        h.stdout.joined() shouldContain "\"warnings\": 1"
+        h.stdout.joined() shouldContain "\"action_required\": 1"
+        h.fileWrites.shouldBeEmpty()
+        h.reportWrites.shouldBeEmpty()
+    }
+
     // ─── Notes & skipped objects ─────────────────────────────────
 
     test("prints WARNING notes to stderr") {

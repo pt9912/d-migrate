@@ -1115,6 +1115,30 @@ class PostgresDdlGeneratorTest : FunSpec({
         ddl shouldContain "UUID[]"
     }
 
+    test("uuid json binary and array retain their PostgreSQL mappings") {
+        val s = schema(
+            tables = mapOf(
+                "typed" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(true)),
+                        "external_id" to col(NeutralType.Uuid),
+                        "payload" to col(NeutralType.Json),
+                        "raw_data" to col(NeutralType.Binary),
+                        "tags" to col(NeutralType.Array("text")),
+                    ),
+                    primaryKey = listOf("id")
+                )
+            )
+        )
+
+        val ddl = generator.generate(s).render()
+
+        ddl shouldContain "\"external_id\" UUID"
+        ddl shouldContain "\"payload\" JSONB"
+        ddl shouldContain "\"raw_data\" BYTEA"
+        ddl shouldContain "\"tags\" TEXT[]"
+    }
+
     // ─── Spatial Phase 1 ────────────────────────────────────
 
     test("geometry column with postgis profile produces geometry(Point, 4326)") {
@@ -1149,6 +1173,7 @@ class PostgresDdlGeneratorTest : FunSpec({
             ), primaryKey = listOf("id"))
         ))
         val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.NONE))
+        result.notes.any { it.code == "E052" && it.objectName == "places" } shouldBe true
         result.skippedObjects.any { it.code == "E052" } shouldBe true
         result.render() shouldNotContain "CREATE TABLE"
     }
