@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.5 - Erweitertes Typsystem
 > **Phase**: A (Spezifikationsbereinigung und Ist-Abgleich)
-> **Status**: Draft (2026-04-13)
+> **Status**: Done (2026-04-13)
 > **Referenz**: `docs/implementation-plan-0.5.5.md` Abschnitt 1, Abschnitt 2,
 > Abschnitt 3, Abschnitt 4, Abschnitt 5 Phase A, Abschnitt 7, Abschnitt 8,
 > Abschnitt 9, Abschnitt 10; `docs/change-request-spatial-types.md`
