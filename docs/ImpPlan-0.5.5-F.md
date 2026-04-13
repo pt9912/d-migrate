@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.5 - Erweitertes Typsystem
 > **Phase**: F (Testmatrix und Golden Masters)
-> **Status**: Draft (2026-04-13)
+> **Status**: Abgeschlossen (2026-04-13)
 > **Referenz**: `docs/implementation-plan-0.5.5.md` Abschnitt 2,
 > Abschnitt 4.3 bis 4.7, Abschnitt 5 Phase F, Abschnitt 6.2 bis 6.4,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -45,7 +45,11 @@ Nach Phase F soll klar und belastbar gelten:
 
 ## 2. Ausgangslage
 
-Aktueller Stand in Core, Formats, Drivern und CLI:
+Die folgende Ausgangslage beschreibt den Startzustand zu Beginn von Phase F.
+Sie ist bewusst historisch und nicht als aktueller Implementierungsstand zu
+lesen.
+
+Stand zu Beginn von Phase F in Core, Formats, Drivern und CLI:
 
 - `SchemaValidatorTest` deckt Spatial bereits teilweise ab:
   - gueltige `geometry`-Faelle
@@ -114,6 +118,31 @@ Konsequenz fuer Phase F:
   Generatorsemantik und dem separaten Gate-Verhalten fuer `--spatial-profile`.
 - Ohne Phase F koennte 0.5.5 funktional "fertig" wirken, waehrend genau die
   risikoreichen Spatial-Pfade nur punktuell oder indirekt abgesichert sind.
+
+## 2.1 Ist-Stand nach Umsetzung
+
+Der dokumentierte Phase-F-Scope ist im aktuellen Stand umgesetzt:
+
+- `SchemaValidatorTest` deckt `E120`, `E121` und den Ausschluss von
+  `array.element_type: geometry` explizit ab.
+- `YamlSchemaCodecTest` deckt `schemas/spatial.yaml`, die Spatial-Negativfixtures
+  und den JSON-Smoke explizit ab.
+- `DdlGoldenMasterTest` enthaelt `spatial` fuer PostgreSQL, MySQL und SQLite und
+  setzt dafuer explizite `DdlGenerationOptions` pro Dialekt.
+- `PostgresDdlGeneratorTest`, `MysqlDdlGeneratorTest` und
+  `SqliteDdlGeneratorTest` decken die vereinbarten Spatial-Pfade einschliesslich
+  Blockierung, `W120`, `AddGeometryColumn(...)`, `DiscardGeometryColumn(...)`
+  und Rollback explizit ab.
+- `CliGenerateTest`, `SchemaGenerateRunnerTest`, `SchemaGenerateHelpersTest` und
+  `TransformationReportWriterTest` decken Spatial fuer `--spatial-profile`,
+  `--output-format json`, `--output` + Report, `--generate-rollback` sowie die
+  Projektion von `E052` und `W120` ab.
+- Der kanonische Gate-Fall `mysql + none` ist testseitig explizit fixiert:
+  die Kombination ist fuer den finalen 0.5.5-Vertrag erlaubt und blockiert
+  Spatial-Tabellen ueber `E052`, statt mit Exit-Code `2` vor dem Generator zu
+  enden.
+- Die erweiterten nicht-spatialen Typen `uuid`, `json`, `binary` und `array`
+  sind in den betroffenen Driver-Suites regressionsseitig abgesichert.
 
 ---
 
@@ -374,8 +403,9 @@ Arbeitspunkte:
 
 1. Vorhandene Tests fuer Profil-Parsing und Default-Weitergabe beibehalten.
 2. Expliziten Gate-Test fuer `mysql + none` nachziehen. Fuer den finalen
-   0.5.5-Vertrag darf diese Kombination nicht still ungetestet bleiben; falls
-   der Phase-E-Vertrag gilt, endet sie vor dem Generator mit Exit-Code `2`.
+   0.5.5-Vertrag ist diese Kombination erlaubt; sie wird an den Generator
+   weitergereicht und blockiert Spatial-Tabellen ueber `E052` statt mit
+   Exit-Code `2` vorzeitig zu enden.
 3. Spatial-CLI-Tests fuer `--output-format json` nachziehen:
    - `E052` sichtbar
    - `W120` sichtbar
@@ -482,34 +512,34 @@ Voraussichtlich anzupassen oder zu erweitern:
 
 ## 8. Akzeptanzkriterien
 
-- [ ] `SchemaValidatorTest` deckt `E120`, `E121` und den Ausschluss von
+- [x] `SchemaValidatorTest` deckt `E120`, `E121` und den Ausschluss von
       `array.element_type: geometry` explizit ab.
-- [ ] `YamlSchemaCodecTest` deckt `schemas/spatial.yaml`, die drei
+- [x] `YamlSchemaCodecTest` deckt `schemas/spatial.yaml`, die drei
       Spatial-Negativfixtures und den JSON-Smoke explizit ab.
-- [ ] `DdlGoldenMasterTest` enthaelt `spatial` fuer PostgreSQL, MySQL und
+- [x] `DdlGoldenMasterTest` enthaelt `spatial` fuer PostgreSQL, MySQL und
       SQLite.
-- [ ] Der Golden-Master-Harness setzt fuer `spatial` explizite
+- [x] Der Golden-Master-Harness setzt fuer `spatial` explizite
       `DdlGenerationOptions` pro Dialekt.
-- [ ] PostgreSQL-Driver-Tests pruefen den Positivpfad fuer
+- [x] PostgreSQL-Driver-Tests pruefen den Positivpfad fuer
       `geometry(<Type>, <SRID>)`.
-- [ ] PostgreSQL-Driver-Tests pruefen den Blockierungspfad mit Profil `none`
+- [x] PostgreSQL-Driver-Tests pruefen den Blockierungspfad mit Profil `none`
       inklusive `E052`, `SkippedObject` und fehlender partieller Tabellen-DDL.
-- [ ] MySQL-Driver-Tests pruefen native Spatial-Typen und mindestens einen
+- [x] MySQL-Driver-Tests pruefen native Spatial-Typen und mindestens einen
       expliziten `W120`-Fall; ein generatorinterner MySQL-`none`-Pfad wird
       dabei nicht still vorausgesetzt.
-- [ ] SQLite-Driver-Tests pruefen `AddGeometryColumn(...)`,
+- [x] SQLite-Driver-Tests pruefen `AddGeometryColumn(...)`,
       `DiscardGeometryColumn(...)` und den Blockierungspfad mit Profil `none`.
-- [ ] Spatial-Rollback ist in allen drei Driver-Suites explizit getestet.
-- [ ] CLI-/Runner-Tests pruefen Spatial fuer:
+- [x] Spatial-Rollback ist in allen drei Driver-Suites explizit getestet.
+- [x] CLI-/Runner-Tests pruefen Spatial fuer:
       `--spatial-profile`, `--output-format json`, `--output` + Report und
       `--generate-rollback`.
-- [ ] CLI-/Runner-Tests fixieren den kanonischen Gate-Fall `mysql + none`
+- [x] CLI-/Runner-Tests fixieren den kanonischen Gate-Fall `mysql + none`
       explizit; fuer den finalen 0.5.5-Vertrag ist die erwartete Semantik dabei
       nicht mehr zwischen Phase D, Phase E und `SpatialProfilePolicy`
       widerspruechlich.
-- [ ] JSON-Output und Sidecar-Report transportieren `E052` und `W120`
+- [x] JSON-Output und Sidecar-Report transportieren `E052` und `W120`
       konsistent.
-- [ ] Die bestehenden nicht-spatialen erweiterten Typen `uuid`, `json`,
+- [x] Die bestehenden nicht-spatialen erweiterten Typen `uuid`, `json`,
       `binary` und `array` sind in den betroffenen Generator-Suites
       regressionsseitig abgesichert.
 
