@@ -212,8 +212,16 @@ Verbindlich fuer Phase D:
 - SQLite verwendet den stabilen Wert
   `__dmigrate_reverse__:sqlite:schema=<schema>`, in der Regel also
   `schema=main`, niemals aber einen absoluten Dateipfad
-- wenn Komponenten Trennzeichen enthalten, werden ihre Werte vor der
-  Zusammensetzung percent-encoded
+- reservierte Trenner fuer den Reverse-Scope-Codec sind mindestens `%`, `;`,
+  `=` und `:`; diese Zeichenmenge deckt die in den Reverse-Scope-Templates
+  verwendeten Strukturzeichen ab
+- wenn Komponenten reservierte Trenner enthalten, werden ihre Werte vor der
+  Zusammensetzung komponentenweise mit RFC-3986-percent-encoding fuer die
+  reservierte Zeichenmenge kodiert
+- Dekodierung erfolgt komponentenweise nach dem Parsen anhand der bekannten
+  Reverse-Scope-Grammatik; ein Reverse-Scope-String wird zuerst anhand der
+  reservierten Trenner in Komponenten zerlegt, dann werden die Komponenten
+  einzeln dekodiert
 - `SchemaDefinition.name` und `version` sind fuer live gelesene Schemas
   technische Reverse-Provenienzmetadaten, keine autoritativen
   Anwendungsmetadaten
@@ -290,9 +298,16 @@ Verbindlich fuer Phase D:
 - Unique-Indizes bleiben dagegen compare-relevant, auch wenn sie PK-Spalten
   abdecken, **wenn** sie als eigenstaendige, vom Constraint loesbare
   Index-Objekte adressierbar sind; reine Backing-Indizes nicht
-- wenn ein Dialekt Support-Indizes nicht sicher von echten modellierten
-  Indizes unterscheiden kann, gewinnt 0.6.0 die konservative Regel "sichtbare
-  Note plus Auslassung" statt doppelter Modellierung
+- die Regel "sichtbare Note plus Auslassung" greift ausschliesslich, wenn ein
+  Index nachweislich dieselbe Spaltenliste wie ein `PRIMARY KEY`- oder
+  `UNIQUE`-Constraint traegt und kein eigenstaendig adressierbares Objekt ist
+- in allen anderen Faellen — insbesondere wenn ein Dialekt Support-Indizes
+  nicht sicher von echten modellierten Indizes unterscheiden kann — wird der
+  Index als regulaerer `TableDefinition.indices`-Eintrag modelliert; ein
+  potentielles False-Positive im Modell ist einem stillen Verlust eines
+  Kernobjekts vorzuziehen
+- eine Reverse-Note dokumentiert in diesem Fall die Unsicherheit, aber das
+  Kernobjekt bleibt im Modell und damit compare-sichtbar
 - wenn ein Dialekt nur einen Teil dieser Semantik belastbar liefert, ist eine
   sichtbare Reverse-Note Pflicht statt einer still erfundenen Standardabbildung
 
@@ -608,6 +623,8 @@ Bewusst nicht direkt betroffen:
 
 ## 7. Akzeptanzkriterien
 
+### 7.1 Phase-D-Abnahme (Driver-Slice)
+
 Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 
 - Alle drei Built-in-Dialekte exponieren einen produktiven `SchemaReader`.
@@ -621,13 +638,6 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   nicht als autoritative Anwendungsmetadaten festgelegt.
 - Das Reverse-Marker-Set ist allein aus dem Schema-Dokument wiedererkennbar und
   bleibt damit auch nach spaeterem YAML-/JSON-Write/Read transportierbar.
-- Der reservierte Prefix `__dmigrate_reverse__:` ist fuer Reverse-Schemas
-  verbindlich festgelegt und kollidiert nach Spezifikationsnachzug nicht mit
-  handgeschriebenen Produktivnamen.
-- `docs/neutral-model-spec.md` widerspricht dieser technischen
-  Reverse-Provenienzregel nach Phase D nicht mehr.
-- Dateioperand mit reserviertem Prefix, aber ohne vollstaendiges Marker-Set, ist
-  fuer spaetere file-based Pfade als expliziter Fehlerfall festgelegt.
 - `required`, `default`, `unique` und `references` werden pro Dialekt bewusst
   transportiert; mehrspaltige `UNIQUE`- und Foreign-Key-Beziehungen bleiben
   konsistent auf Constraint-Ebene.
@@ -640,6 +650,9 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   bleiben ausdruecklich compare-relevant.
 - Automatisch erzeugte PK-/UNIQUE-Backing-Indizes tauchen im neutralen Modell
   nicht als regulaere `indices` auf und erzeugen deshalb keine Scheindiffs.
+- Nicht sicher unterscheidbare Indizes werden als regulaere `indices` modelliert
+  (False-Positive vor stillem Verlust); eine Reverse-Note dokumentiert die
+  Unsicherheit.
 - Fehler beim Lesen von Kernobjekten fuehren zu einem klaren Driver-Fehler und
   nicht zu einem scheinbar erfolgreichen, aber unvollstaendigen Reverse.
 - Optionalobjekte (`views`, `procedures`, `functions`, `triggers`) werden nur
@@ -655,6 +668,25 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 - Kein Dialekt verwendet eine blinde Generator-Inversion als primaeres
   Reverse-Verfahren.
 - Die Reader geben geliehene Connections nach dem Read wieder frei.
+
+### 7.2 Integrationsbereitschaft (Post-Conditions fuer Phase E/F)
+
+Die folgenden Punkte sind keine Abnahmekriterien fuer Phase D selbst, sondern
+explizite Voraussetzungen, die vor Beginn von Phase E bzw. F erfuellt sein
+muessen. Sie werden hier festgehalten, weil Phase D die technischen Grundlagen
+schafft, die diese Nachzuege erzwingen.
+
+- Der reservierte Prefix `__dmigrate_reverse__:` ist fuer Reverse-Schemas
+  verbindlich festgelegt und kollidiert nach Spezifikationsnachzug nicht mit
+  handgeschriebenen Produktivnamen.
+- `docs/neutral-model-spec.md` widerspricht der technischen
+  Reverse-Provenienzregel nicht mehr und dokumentiert `__dmigrate_reverse__:`
+  als reservierten Prefix.
+- Dateioperand mit reserviertem Prefix, aber ohne vollstaendiges Marker-Set, ist
+  in `hexagon:application` als expliziter Fehlerfall implementiert.
+- Der Compare-Operand-Normalizer bzw. `CompareOperandNormalizer` in
+  `hexagon:application` normalisiert technische Reverse-Provenienz und
+  PK-redundante Dateiangaben vor `SchemaComparator`.
 
 ---
 
