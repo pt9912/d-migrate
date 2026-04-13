@@ -83,6 +83,12 @@ class CliHelpAndBootstrapTest : FunSpec({
         }
     }
 
+    test("schema compare --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("schema", "compare", "--help")) }
+        }
+    }
+
     test("data --help produces a help message") {
         captureStreams {
             shouldThrow<CliktError> { cli().parse(listOf("data", "--help")) }
