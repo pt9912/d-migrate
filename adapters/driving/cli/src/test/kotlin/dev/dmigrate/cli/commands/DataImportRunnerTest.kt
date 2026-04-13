@@ -845,6 +845,21 @@ class DataImportRunnerTest : FunSpec({
         reporterEvents.size shouldBe 0
     }
 
+    test("--no-progress suppresses reporter") {
+        val reporterEvents = mutableListOf<String>()
+        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr, progressReporter = reporter,
+            importExecutor = ImportExecutor { _, _, _, _, _, _, pr ->
+                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
+                ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)
+            })
+        runner.execute(request(noProgress = true))
+        reporterEvents.size shouldBe 0
+    }
+
     // Ensure the temp path referenced in other tests never accidentally exists
     Files.deleteIfExists(Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"))
 

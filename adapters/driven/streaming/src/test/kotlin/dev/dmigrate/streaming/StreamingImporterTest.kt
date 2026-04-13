@@ -855,6 +855,89 @@ class StreamingImporterTest : FunSpec({
         } finally { file.deleteIfExists() }
     }
 
+    // §8.2 #4: continued chunk local failure increments rowsFailed in progress events
+    test("progress: continued chunk local failure increments rowsFailed") {
+        // First chunk succeeds, second chunk has wrong column count → normalization failure
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a"))),
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(2L, "b")), chunkIndex = 1),
+            ), nextChunkFailures = mapOf(1 to RuntimeException("read error on chunk 2")))
+        ))
+        val session = FakeTableImportSession(targetColumns = targetColumns)
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON,
+                    options = ImportOptions(onError = OnError.SKIP),
+                    progressReporter = reporter)
+
+            // First chunk → successful ChunkProcessed; second read fails → no extra ChunkProcessed
+            val chunks = events.filterIsInstance<ProgressEvent.ImportChunkProcessed>()
+            chunks.size shouldBe 1
+            chunks[0].rowsInserted shouldBe 1
+        } finally { file.deleteIfExists() }
+    }
+
+    // §8.2 #5: reader failure may end table without additional chunk progress event
+    test("progress: reader failure does not emit synthetic chunk event") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a"))),
+            ), nextChunkFailures = mapOf(1 to RuntimeException("corrupt data")))
+        ))
+        val session = FakeTableImportSession(targetColumns = targetColumns)
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON,
+                    options = ImportOptions(onError = OnError.SKIP),
+                    progressReporter = reporter)
+
+            // Only 1 ChunkProcessed for the successful first chunk; reader failure on second read
+            // does NOT produce an additional ChunkProcessed event
+            val chunks = events.filterIsInstance<ProgressEvent.ImportChunkProcessed>()
+            chunks.size shouldBe 1
+
+            val finished = events.filterIsInstance<ProgressEvent.ImportTableFinished>().single()
+            finished.status shouldBe TableProgressStatus.FAILED
+        } finally { file.deleteIfExists() }
+    }
+
+    // §8.2 #7: failedFinish emits finished event with FAILED status
+    test("progress: failedFinish emits finished event with failed status") {
+        val readerFactory = FakeReaderFactory(mapOf(
+            "users" to FakeReader(header = listOf("id", "name"), chunks = listOf(
+                chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a")))
+            ))
+        ))
+        val session = FakeTableImportSession(
+            targetColumns = targetColumns,
+            finishResult = FinishTableResult.PartialFailure(
+                adjustments = emptyList(),
+                cause = RuntimeException("reseed failed"),
+            ),
+        )
+        val events = mutableListOf<ProgressEvent>()
+        val reporter = ProgressReporter { events += it }
+        val file = Files.createTempFile("prog-", ".json")
+        try {
+            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
+                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                    format = DataExportFormat.JSON, progressReporter = reporter)
+
+            val finished = events.filterIsInstance<ProgressEvent.ImportTableFinished>().single()
+            finished.status shouldBe TableProgressStatus.FAILED
+            finished.rowsInserted shouldBe 1
+        } finally { file.deleteIfExists() }
+    }
+
     // §8.2 #8: fatal abort (default --on-error abort) propagates without synthetic finished event
     test("progress: fatal abort propagates without synthetic finished event") {
         val readerFactory = FakeReaderFactory(mapOf(
