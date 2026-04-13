@@ -203,10 +203,14 @@ Verbindlich fuer Phase D:
 
 - `SchemaDefinition.name` bildet den logisch gelesenen DB-Scope ab, nicht
   Connection-Alias, Credentials oder Dateipfade
-- PostgreSQL verwendet dafuer den stabilen Scope
-  `database=<db>;schema=<schema>`
-- MySQL verwendet den stabilen Scope `database=<db>`
-- SQLite verwendet den stabilen Scope `schema=<schema>`, in der Regel also
+- reverse-generierte Schemas verwenden fuer `name` den reservierten Prefix
+  `__dmigrate_reverse__:`
+- PostgreSQL verwendet dafuer den stabilen Wert
+  `__dmigrate_reverse__:postgresql:database=<db>;schema=<schema>`
+- MySQL verwendet den stabilen Wert
+  `__dmigrate_reverse__:mysql:database=<db>`
+- SQLite verwendet den stabilen Wert
+  `__dmigrate_reverse__:sqlite:schema=<schema>`, in der Regel also
   `schema=main`, niemals aber einen absoluten Dateipfad
 - wenn Komponenten Trennzeichen enthalten, werden ihre Werte vor der
   Zusammensetzung percent-encoded
@@ -221,18 +225,26 @@ Verbindlich fuer Phase D:
 - das kanonische Reverse-Marker-Set ist rein aus dem Schema-Dokument
   ableitbar:
   - `version == 0.0.0-reverse`
+  - `name` beginnt mit dem reservierten Prefix `__dmigrate_reverse__:`
   - `name` folgt einer der Reverse-Scope-Grammatiken aus Phase D
 - dieses Marker-Set bleibt damit nach YAML-/JSON-Serialisierung gemaess
   Phase C auch ohne Sidecar wiedererkennbar
 - spaeterer `file/db`- und `db/db`-Compare darf diese reverse-synthetischen
-  `name`-/`version`-Werte nicht roh als strukturellen Diff behandeln; die
-  Operand-Provenienz bleibt im Compare-Vertrag ueber `ResolvedSchemaOperand`
-  bzw. gleichwertige Huelle sichtbar
+  `name`-/`version`-Werte nicht roh als strukturellen Diff behandeln
 - dieselbe Regel gilt fuer spaetere `file/file`-Vergleiche, wenn mindestens ein
   Operand dieses Marker-Set traegt
+- die Ownership dieser Normalisierung liegt verbindlich in Phase F im
+  Application-Layer vor `SchemaComparator`, z. B. in einem
+  `ResolvedSchemaOperand`-Resolver oder einem gleichwertigen
+  `CompareOperandNormalizer`
+- `SchemaComparator` bleibt dabei auf normalisierte `SchemaDefinition`
+  fokussiert und bekommt keine Herkunftslogik oder Marker-Erkennung
 - `docs/neutral-model-spec.md` muss fuer 0.6.0 explizit nachziehen, dass
   reverse-generierte Schemas technische `name`-/`version`-Werte tragen duerfen,
   wenn eine Live-Datenbank keine belastbaren Anwendungsmetadaten liefert
+- `docs/neutral-model-spec.md` reserviert den Prefix
+  `__dmigrate_reverse__:` fuer tool-generierte Reverse-Metadaten; handgeschriebene
+  Schema-Dateien duerfen ihn nicht als freien Produktivnamen verwenden
 
 ### 4.4 Spalten werden semantisch und nicht nur typbasiert rueckgefuehrt
 
@@ -265,6 +277,12 @@ Verbindlich fuer Phase D:
   `primary_key: [id]` plus `columns.id.required: true` oder
   `columns.id.unique: true` als semantisch gleichwertig zur PK-zentrierten
   Reverse-Darstellung
+- dieselbe semantische Gleichwertigkeit gilt fuer `UNIQUE`-Constraints, deren
+  Spaltenliste exakt `primary_key` entspricht und die keine Zusatzsemantik
+  jenseits der PK-Eindeutigkeit tragen
+- Unique-Indizes bleiben dagegen compare-relevant, auch wenn sie PK-Spalten
+  abdecken, weil sie ein eigenes Index-Objekt modellieren und nicht still in
+  die PK-Semantik eingezogen werden
 - wenn ein Dialekt nur einen Teil dieser Semantik belastbar liefert, ist eine
   sichtbare Reverse-Note Pflicht statt einer still erfundenen Standardabbildung
 
@@ -383,6 +401,8 @@ Mindestens noetig:
   Compare-Normalisierung
 - dokumentintern vollstaendiges Marker-Set, das nach Phase-C-Serialisierung ohne
   Zusatzdatei wiedererkannt werden kann
+- Nutzung des reservierten Prefix `__dmigrate_reverse__:` gemaess
+  Spezifikationsnachzug
 - Exposure-Tests fuer alle drei Dialekte
 
 Wichtig:
@@ -553,12 +573,9 @@ Bereits aus Phase B/C vorgegeben und hier nur als Integrationsgrenze relevant:
 - gemeinsame JDBC-Metadatenprojektionen in `adapters:driven:driver-common`
 - `docs/neutral-model-spec.md` als kanonischer Spezifikationsnachzug fuer
   reverse-synthetische `name`-/`version`-Metadaten
-- spaeterer DB-Operand-Compare in `hexagon:application`, damit technische
-  Reverse-Provenienz nicht als roher `SchemaMetadataDiff` fehlinterpretiert
-  wird
-- spaeterer file-Operand-Compare in `hexagon:application`, damit das
-  dokumentinterne Reverse-Marker-Set auch nach Phase-C-Write/Read weiter als
-  Provenienz statt als inhaltlicher Diff behandelt wird
+- spaeterer Compare-Operand-Resolver bzw. `CompareOperandNormalizer` in
+  `hexagon:application`, damit technische Reverse-Provenienz und PK-redundante
+  Dateiangaben vor `SchemaComparator` normalisiert werden
 
 Bewusst nicht direkt betroffen:
 
@@ -582,6 +599,9 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   nicht als autoritative Anwendungsmetadaten festgelegt.
 - Das Reverse-Marker-Set ist allein aus dem Schema-Dokument wiedererkennbar und
   bleibt damit auch nach spaeterem YAML-/JSON-Write/Read transportierbar.
+- Der reservierte Prefix `__dmigrate_reverse__:` ist fuer Reverse-Schemas
+  verbindlich festgelegt und kollidiert nach Spezifikationsnachzug nicht mit
+  handgeschriebenen Produktivnamen.
 - `docs/neutral-model-spec.md` widerspricht dieser technischen
   Reverse-Provenienzregel nach Phase D nicht mehr.
 - `required`, `default`, `unique` und `references` werden pro Dialekt bewusst
@@ -592,6 +612,8 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 - Redundante PK-Flags in file-basierten Schemas sind fuer spaeteren Compare
   explizit als semantisch gleichwertig zur PK-zentrierten Reverse-Darstellung
   festgelegt.
+- Dasselbe gilt fuer PK-aequivalente `UNIQUE`-Constraints; Unique-Indizes
+  bleiben ausdruecklich compare-relevant.
 - Fehler beim Lesen von Kernobjekten fuehren zu einem klaren Driver-Fehler und
   nicht zu einem scheinbar erfolgreichen, aber unvollstaendigen Reverse.
 - Optionalobjekte (`views`, `procedures`, `functions`, `triggers`) werden nur
@@ -632,6 +654,8 @@ Gezielt zu pruefen ist dabei:
 - Spezifikations-Gegenpruefung in `docs/neutral-model-spec.md`, dass technische
   Reverse-Provenienz fuer `name`/`version` die kanonische Doku nicht mehr
   widerspricht
+- Spezifikations-Gegenpruefung, dass `__dmigrate_reverse__:` als reservierter
+  Prefix fuer Reverse-Schemas dokumentiert ist
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
   - keine Verdopplung von PK-implizitem `required` / `unique`
@@ -656,7 +680,8 @@ Gezielt zu pruefen ist dabei:
   - Views / Triggers
   - SpatiaLite-/Geometry-Notes oder Skips
 - Compare-Integrationsgrenzen-Check fuer Dateioperand gegen Reverse-Operand mit
-  redundanten PK-Flags auf der Datei-Seite
+  redundanten PK-Flags oder PK-aequivalentem `UNIQUE`-Constraint auf der
+  Datei-Seite; PK-deckende Unique-Indizes bleiben dabei diff-relevant
 - Ownership-Tests: nach jedem Read sind weitere Pool-Borrows moeglich
 
 Manuelle Dialekt-Smokes nach Implementierung:
