@@ -3,9 +3,23 @@ plugins {
     id("org.jetbrains.kotlinx.kover") version "0.9.1"
 }
 
+fun normalizedReleaseVersion(raw: String?): String? {
+    val candidate = raw?.trim().orEmpty()
+    if (candidate.isEmpty()) return null
+    val normalized = candidate.removePrefix("v")
+    val semverLike = Regex("""\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?""")
+    return normalized.takeIf { semverLike.matches(it) }
+}
+
+val defaultProjectVersion = "0.5.0-SNAPSHOT"
+val resolvedProjectVersion =
+    normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
+        ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
+        ?: defaultProjectVersion
+
 allprojects {
     group = "dev.dmigrate"
-    version = "0.5.0-SNAPSHOT"
+    version = resolvedProjectVersion
 
     repositories {
         mavenCentral()

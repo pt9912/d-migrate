@@ -16,6 +16,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  DMIGRATE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest

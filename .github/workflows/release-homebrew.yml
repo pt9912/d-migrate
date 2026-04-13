@@ -1,0 +1,82 @@
+name: Release & Homebrew
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Derive release metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build release assets
+        run: >-
+          ./gradlew --no-daemon
+          -PreleaseVersion=${{ steps.meta.outputs.version }}
+          build
+          :adapters:driving:cli:assembleReleaseAssets
+
+      - name: Build Homebrew tarball
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          RELEASE_DIR="adapters/driving/cli/build/release"
+          cp "${RELEASE_DIR}/d-migrate-${VERSION}.tar" "/tmp/d-migrate-${VERSION}-homebrew.tar"
+          gzip -n "/tmp/d-migrate-${VERSION}-homebrew.tar"
+          mv "/tmp/d-migrate-${VERSION}-homebrew.tar.gz" "${RELEASE_DIR}/d-migrate-${VERSION}-homebrew.tar.gz"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          RELEASE_DIR="adapters/driving/cli/build/release"
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${RELEASE_DIR}"/* --clobber
+          else
+            gh release create "${TAG}" "${RELEASE_DIR}"/* --title "${TAG}" --generate-notes
+          fi
+
+      - name: Publish to Homebrew tap
+        uses: Justintime50/homebrew-releaser@v3
+        with:
+          homebrew_owner: pt9912
+          homebrew_tap: homebrew-d-migrate
+          formula_folder: Formula
+          github_token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          commit_owner: github-actions[bot]
+          commit_email: 41898282+github-actions[bot]@users.noreply.github.com
+          depends_on: '"openjdk@21"'
+          install: |
+            release_dir = Dir["d-migrate-*"].fetch(0)
+            libexec.install Dir["#{release_dir}/*"]
+            (bin/"d-migrate").write_env_script(
+              libexec/"bin/d-migrate",
+              Language::Java.overridable_java_home_env("21"),
+            )
+          test: |
+            assert_match "Database-agnostic migration", shell_output("#{bin}/d-migrate --help")
+          custom_tarball: d-migrate-${{ steps.meta.outputs.version }}-homebrew

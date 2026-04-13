@@ -18,6 +18,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.mysql.MysqlDriver
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.driver.sqlite.SqliteDriver
+import java.util.Properties
 
 data class CliContext(
     val outputFormat: String = "plain",
@@ -26,6 +27,22 @@ data class CliContext(
     val noColor: Boolean = false,
     val noProgress: Boolean = false,
 )
+
+private const val VERSION_RESOURCE = "dmigrate-version.properties"
+private const val VERSION_KEY = "version"
+private const val UNKNOWN_VERSION = "unknown"
+
+internal fun cliVersion(): String {
+    val properties = Properties()
+    val version = DMigrate::class.java.classLoader
+        .getResourceAsStream(VERSION_RESOURCE)
+        ?.use { input ->
+            properties.load(input)
+            properties.getProperty(VERSION_KEY)?.trim()
+        }
+        ?.takeUnless { it.isNullOrBlank() || '$' in it || '{' in it || '}' in it }
+    return version ?: UNKNOWN_VERSION
+}
 
 class DMigrate : CliktCommand(name = "d-migrate") {
     override fun help(context: Context) = "Database-agnostic migration and data management framework"
@@ -41,7 +58,7 @@ class DMigrate : CliktCommand(name = "d-migrate") {
     val yes by option("--yes", "-y", help = "Accept confirmations automatically").flag()
 
     init {
-        versionOption("0.5.0-SNAPSHOT")
+        versionOption(cliVersion())
     }
 
     override fun run() {

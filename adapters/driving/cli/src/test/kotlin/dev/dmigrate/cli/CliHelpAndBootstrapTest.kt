@@ -14,6 +14,7 @@ import dev.dmigrate.driver.sqlite.SqliteDataWriter
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.string.shouldMatch
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -107,6 +108,10 @@ class CliHelpAndBootstrapTest : FunSpec({
         captureStreams {
             shouldThrow<CliktError> { cli().parse(listOf("--version")) }
         }
+    }
+
+    test("cliVersion resolves a semver-like build version from resources") {
+        cliVersion().shouldMatch("""\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?""".toRegex())
     }
 
     // ─── --verbose + --quiet mutual exclusion ────────────────────
