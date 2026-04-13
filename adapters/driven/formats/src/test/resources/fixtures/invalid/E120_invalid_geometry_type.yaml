@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "Invalid Geometry Type"
+version: "1.0.0"
+
+tables:
+  places:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      location:
+        type: geometry
+        geometry_type: circle
+    primary_key: [id]
