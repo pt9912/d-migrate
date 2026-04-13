@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.5.5 - Erweitertes Typsystem
 > **Phase**: E (Dialektimplementierung)
-> **Status**: Draft (2026-04-13)
+> **Status**: Done (2026-04-13)
 > **Referenz**: `docs/implementation-plan-0.5.5.md` Abschnitt 2,
 > Abschnitt 4.5 bis 4.8, Abschnitt 5 Phase E, Abschnitt 6.4,
 > Abschnitt 7, Abschnitt 8, Abschnitt 10; `docs/ImpPlan-0.5.5-D.md`;
