@@ -233,6 +233,11 @@ Verbindlich fuer Phase D:
   `name`-/`version`-Werte nicht roh als strukturellen Diff behandeln
 - dieselbe Regel gilt fuer spaetere `file/file`-Vergleiche, wenn mindestens ein
   Operand dieses Marker-Set traegt
+- ein Dateioperand gilt nur dann als reverse-abgeleitet, wenn das komplette
+  Marker-Set gueltig vorliegt
+- Verwendung des reservierten Prefixes `__dmigrate_reverse__:` ohne vollstaendige
+  Marker-Set-Uebereinstimmung ist spaeter ein expliziter Datei- bzw.
+  Application-Fehler und kein best-effort-Fallback
 - die Ownership dieser Normalisierung liegt verbindlich in Phase F im
   Application-Layer vor `SchemaComparator`, z. B. in einem
   `ResolvedSchemaOperand`-Resolver oder einem gleichwertigen
@@ -280,9 +285,14 @@ Verbindlich fuer Phase D:
 - dieselbe semantische Gleichwertigkeit gilt fuer `UNIQUE`-Constraints, deren
   Spaltenliste exakt `primary_key` entspricht und die keine Zusatzsemantik
   jenseits der PK-Eindeutigkeit tragen
+- automatisch erzeugte Support-Indizes fuer `PRIMARY KEY` oder `UNIQUE` werden
+  nicht als eigene `TableDefinition.indices` modelliert
 - Unique-Indizes bleiben dagegen compare-relevant, auch wenn sie PK-Spalten
-  abdecken, weil sie ein eigenes Index-Objekt modellieren und nicht still in
-  die PK-Semantik eingezogen werden
+  abdecken, **wenn** sie als eigenstaendige, vom Constraint loesbare
+  Index-Objekte adressierbar sind; reine Backing-Indizes nicht
+- wenn ein Dialekt Support-Indizes nicht sicher von echten modellierten
+  Indizes unterscheiden kann, gewinnt 0.6.0 die konservative Regel "sichtbare
+  Note plus Auslassung" statt doppelter Modellierung
 - wenn ein Dialekt nur einen Teil dieser Semantik belastbar liefert, ist eine
   sichtbare Reverse-Note Pflicht statt einer still erfundenen Standardabbildung
 
@@ -432,11 +442,14 @@ Mindestens umzusetzen:
 
 Besonders zu beachten:
 
-- `SchemaDefinition.name` nutzt den kanonischen Scope
-  `database=<db>;schema=<schema>`, `version` den festen Platzhalter
+- `SchemaDefinition.name` nutzt den kanonischen Reverse-Wert
+  `__dmigrate_reverse__:postgresql:database=<db>;schema=<schema>`, `version` den
+  festen Platzhalter
   `0.0.0-reverse`
 - PK-implizite Nullability oder Eindeutigkeit wird nicht doppelt als
   `required=true` bzw. `unique=true` materialisiert
+- automatisch erzeugte PK-/UNIQUE-Backing-Indizes werden nicht als eigene
+  `indices` serialisiert
 - Ueberladene Routinen muessen auf die in Phase B festgelegten kanonischen Keys
   gemappt werden
 - Partitionierungsmetadaten werden gemaess Phase-B-Modellentscheidung entweder
@@ -461,10 +474,13 @@ Mindestens umzusetzen:
 
 Besonders zu beachten:
 
-- `SchemaDefinition.name` nutzt den kanonischen Scope `database=<db>`,
-  `version` den festen Platzhalter `0.0.0-reverse`
+- `SchemaDefinition.name` nutzt den kanonischen Reverse-Wert
+  `__dmigrate_reverse__:mysql:database=<db>`, `version` den festen Platzhalter
+  `0.0.0-reverse`
 - PK-implizite Nullability oder Eindeutigkeit wird nicht doppelt als
   `required=true` bzw. `unique=true` materialisiert
+- automatisch erzeugte PK-/UNIQUE-Backing-Indizes werden nicht als eigene
+  `indices` serialisiert
 - `lower_case_table_names` darf Lookup und Rueckgabe nicht inkonsistent machen
 - `SET` und andere nicht exakt neutrale Faelle muessen sichtbar notiert werden
 - MySQL darf nicht aus Convenience alles auf `TEXT` oder `JSON` flatten und
@@ -489,10 +505,13 @@ Mindestens umzusetzen:
 
 Besonders zu beachten:
 
-- `SchemaDefinition.name` nutzt den kanonischen Scope `schema=<schema>`,
-  `version` den festen Platzhalter `0.0.0-reverse`
+- `SchemaDefinition.name` nutzt den kanonischen Reverse-Wert
+  `__dmigrate_reverse__:sqlite:schema=<schema>`, `version` den festen
+  Platzhalter `0.0.0-reverse`
 - PK-implizite Nullability oder Eindeutigkeit wird nicht doppelt als
   `required=true` bzw. `unique=true` materialisiert
+- automatisch erzeugte PK-/UNIQUE-Backing-Indizes werden nicht als eigene
+  `indices` serialisiert
 - Virtual Tables werden nicht still als portable Basistabellen gemappt
 - SpatiaLite- oder geometry-relevante Sonderfaelle erscheinen sichtbar als
   Notes oder `skippedObjects`
@@ -512,6 +531,7 @@ Mindestens abzudecken:
 - kein Round-Trip-Rauschen durch PK-implizites `required`/`unique`
 - keine Compare-Divergenz zwischen PK-zentrierter Reverse-Darstellung und
   redundanten file-basierten PK-Flags
+- keine Scheindiffs durch automatisch erzeugte PK-/UNIQUE-Backing-Indizes
 - Notes-/Skip-Pfade fuer nicht exakt neutrale oder bewusst ausgelassene Faelle
 - Include-Flags fuer Views / Procedures / Functions / Triggers
 - Ownership: Connection wird nach dem Read wieder freigegeben
@@ -576,6 +596,8 @@ Bereits aus Phase B/C vorgegeben und hier nur als Integrationsgrenze relevant:
 - spaeterer Compare-Operand-Resolver bzw. `CompareOperandNormalizer` in
   `hexagon:application`, damit technische Reverse-Provenienz und PK-redundante
   Dateiangaben vor `SchemaComparator` normalisiert werden
+- spaeterer Datei-/Compare-Fehlerpfad in `hexagon:application` fuer unzulaessige
+  Nutzung des reservierten Prefixes `__dmigrate_reverse__:`
 
 Bewusst nicht direkt betroffen:
 
@@ -592,9 +614,9 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 - PostgreSQL, MySQL und SQLite liefern fuer ein Basisschema jeweils ein
   gueltiges `SchemaReadResult` mit Tabellen, Spalten, Keys, Constraints und
   Indizes.
-- Alle drei Dialekte befuellen `SchemaDefinition.name` kanonisch aus dem
-  gelesenen DB-Scope und verwenden fuer `version` einheitlich
-  `0.0.0-reverse`.
+- Alle drei Dialekte befuellen `SchemaDefinition.name` kanonisch mit dem
+  reservierten Prefix `__dmigrate_reverse__:` plus dialektspezifischem
+  Reverse-Scope und verwenden fuer `version` einheitlich `0.0.0-reverse`.
 - Diese Werte sind im Teilplan explizit als technische Reverse-Provenienz und
   nicht als autoritative Anwendungsmetadaten festgelegt.
 - Das Reverse-Marker-Set ist allein aus dem Schema-Dokument wiedererkennbar und
@@ -604,6 +626,8 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   handgeschriebenen Produktivnamen.
 - `docs/neutral-model-spec.md` widerspricht dieser technischen
   Reverse-Provenienzregel nach Phase D nicht mehr.
+- Dateioperand mit reserviertem Prefix, aber ohne vollstaendiges Marker-Set, ist
+  fuer spaetere file-based Pfade als expliziter Fehlerfall festgelegt.
 - `required`, `default`, `unique` und `references` werden pro Dialekt bewusst
   transportiert; mehrspaltige `UNIQUE`- und Foreign-Key-Beziehungen bleiben
   konsistent auf Constraint-Ebene.
@@ -614,6 +638,8 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
   festgelegt.
 - Dasselbe gilt fuer PK-aequivalente `UNIQUE`-Constraints; Unique-Indizes
   bleiben ausdruecklich compare-relevant.
+- Automatisch erzeugte PK-/UNIQUE-Backing-Indizes tauchen im neutralen Modell
+  nicht als regulaere `indices` auf und erzeugen deshalb keine Scheindiffs.
 - Fehler beim Lesen von Kernobjekten fuehren zu einem klaren Driver-Fehler und
   nicht zu einem scheinbar erfolgreichen, aber unvollstaendigen Reverse.
 - Optionalobjekte (`views`, `procedures`, `functions`, `triggers`) werden nur
@@ -636,14 +662,15 @@ Phase D ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 
 Mindestens auszufuehren:
 
-- `./gradlew :adapters:driven:driver-postgresql:test -PintegrationTests`
-- `./gradlew :adapters:driven:driver-mysql:test -PintegrationTests`
-- `./gradlew :adapters:driven:driver-sqlite:test`
-- `./gradlew :adapters:driven:driver-common:test`
-- `./gradlew :hexagon:core:test`
+- `docker build -t d-migrate:dev .`
+- `./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test`
+- `./scripts/test-integration-docker.sh :adapters:driven:driver-mysql:test`
 
 Gezielt zu pruefen ist dabei:
 
+- der Standard-`docker build` deckt den nicht-integrativen Testpfad fuer
+  `hexagon:core`, `adapters:driven:driver-common` und
+  `adapters:driven:driver-sqlite` ab
 - neue Driver-Exposure-Tests fuer `schemaReader()`
 - explizite Reader-Tests fuer den kanonischen `SchemaDefinition.name`- und
   `version`-Vertrag
@@ -656,9 +683,13 @@ Gezielt zu pruefen ist dabei:
   widerspricht
 - Spezifikations-Gegenpruefung, dass `__dmigrate_reverse__:` als reservierter
   Prefix fuer Reverse-Schemas dokumentiert ist
+- Fehlerpfad-Gegenpruefung fuer Dateioperanden mit reserviertem Prefix, aber
+  unvollstaendigem oder ungueltigem Marker-Set
 - PostgreSQL-Integrationstests fuer:
   - Basistabellen
   - keine Verdopplung von PK-implizitem `required` / `unique`
+  - keine Leaks von automatisch erzeugten PK-/UNIQUE-Backing-Indizes in
+    `indices`
   - Nullability / Defaults / einspaltige `UNIQUE` / einspaltige Foreign Keys
   - Sequenzen
   - Custom Types
@@ -666,6 +697,8 @@ Gezielt zu pruefen ist dabei:
 - MySQL-Integrationstests fuer:
   - Basistabellen inkl. `required` / `default` / `unique` / `references`
   - keine Verdopplung von PK-implizitem `required` / `unique`
+  - keine Leaks von automatisch erzeugten PK-/UNIQUE-Backing-Indizes in
+    `indices`
   - Engine
   - `AUTO_INCREMENT`
   - `lower_case_table_names`
@@ -674,6 +707,8 @@ Gezielt zu pruefen ist dabei:
 - SQLite-Tests fuer:
   - Basistabellen inkl. `required` / `default` / `unique` / `references`
   - keine Verdopplung von PK-implizitem `required` / `unique`
+  - keine Leaks von automatisch erzeugten PK-/UNIQUE-Backing-Indizes in
+    `indices`
   - `WITHOUT ROWID`
   - `AUTOINCREMENT`
   - Virtual Tables
