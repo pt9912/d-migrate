@@ -29,11 +29,19 @@ class SqliteSchemaReader : SchemaReader {
             val tables = LinkedHashMap<String, TableDefinition>()
 
             for ((tableName, createSql) in tableEntries) {
-                if (isVirtualTable(createSql)) {
+                if (SqliteTypeMapping.isVirtualTable(createSql)) {
                     skipped += SkippedObject(
                         type = "TABLE", name = tableName,
                         reason = "Virtual table not supported in neutral model",
                         code = "S100",
+                    )
+                    continue
+                }
+                if (SqliteTypeMapping.isSpatiaLiteMetaTable(tableName)) {
+                    skipped += SkippedObject(
+                        type = "TABLE", name = tableName,
+                        reason = "SpatiaLite metadata table",
+                        code = "S101",
                     )
                     continue
                 }
@@ -73,8 +81,8 @@ class SqliteSchemaReader : SchemaReader {
         val fks = SqliteMetadataQueries.listForeignKeys(session, tableName)
         val indices = SqliteMetadataQueries.listIndices(session, tableName)
 
-        val hasAutoincrement = createSql.contains("AUTOINCREMENT", ignoreCase = true)
-        val isWithoutRowid = createSql.contains("WITHOUT ROWID", ignoreCase = true)
+        val hasAutoincrement = SqliteTypeMapping.hasAutoincrement(createSql)
+        val isWithoutRowid = SqliteTypeMapping.hasWithoutRowid(createSql)
 
         // Build single-column FK lookup for column-level references
         val singleColFks = fks.filter { it.columns.size == 1 && it.referencedColumns.size == 1 }
@@ -90,7 +98,9 @@ class SqliteSchemaReader : SchemaReader {
             val isAutoInc = isPkCol && hasAutoincrement && pkColumns.size == 1
                 && col.dataType.equals("INTEGER", ignoreCase = true)
 
-            val neutralType = mapColumnType(col, isAutoInc, notes, tableName)
+            val mapping = SqliteTypeMapping.mapColumn(col.dataType, isAutoInc, tableName, col.name)
+            if (mapping.note != null) notes += mapping.note
+            val neutralType = mapping.type
 
             // PK-implicit required/unique is NOT duplicated on column level
             val required = if (isPkCol) false else !col.isNullable
@@ -109,7 +119,7 @@ class SqliteSchemaReader : SchemaReader {
                 type = neutralType,
                 required = required,
                 unique = unique,
-                default = parseDefault(col.columnDefault),
+                default = SqliteTypeMapping.parseDefault(col.columnDefault),
                 references = references,
             )
         }
@@ -163,71 +173,12 @@ class SqliteSchemaReader : SchemaReader {
         )
     }
 
-    private fun mapColumnType(
-        col: dev.dmigrate.driver.metadata.ColumnProjection,
-        isAutoIncrement: Boolean,
-        notes: MutableList<SchemaReadNote>,
-        tableName: String,
-    ): NeutralType {
-        if (isAutoIncrement) return NeutralType.Identifier(autoIncrement = true)
-
-        val raw = col.dataType.uppercase().trim()
-        val maxLen = extractMaxLength(raw)
-
-        return when {
-            raw == "INTEGER" || raw == "INT" -> NeutralType.Integer
-            raw == "BIGINT" -> NeutralType.BigInteger
-            raw == "SMALLINT" -> NeutralType.SmallInt
-            raw == "TEXT" -> NeutralType.Text()
-            raw == "BLOB" -> NeutralType.Binary
-            raw == "REAL" || raw == "DOUBLE" || raw == "FLOAT" -> NeutralType.Float()
-            raw == "BOOLEAN" || raw == "TINYINT(1)" -> NeutralType.BooleanType
-            raw.startsWith("VARCHAR") || raw.startsWith("CHARACTER VARYING") ->
-                NeutralType.Text(maxLength = maxLen)
-            raw.startsWith("CHAR(") ->
-                NeutralType.Char(length = maxLen ?: 1)
-            raw.startsWith("DECIMAL") || raw.startsWith("NUMERIC") -> {
-                val (p, s) = extractPrecisionScale(raw)
-                if (p != null && s != null) NeutralType.Decimal(p, s)
-                else NeutralType.Float()
-            }
-            raw == "DATE" -> NeutralType.Date
-            raw == "TIME" -> NeutralType.Time
-            raw == "DATETIME" || raw == "TIMESTAMP" -> NeutralType.DateTime()
-            raw == "UUID" -> NeutralType.Uuid
-            raw == "JSON" || raw == "JSONB" -> NeutralType.Json
-            raw == "" -> {
-                // SQLite allows untyped columns (affinity BLOB)
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.INFO,
-                    code = "R200",
-                    objectName = "$tableName.${col.name}",
-                    message = "Untyped column mapped to text",
-                )
-                NeutralType.Text()
-            }
-            else -> {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R201",
-                    objectName = "$tableName.${col.name}",
-                    message = "Unknown SQLite type '$raw' mapped to text",
-                    hint = "Review the column type manually",
-                )
-                NeutralType.Text()
-            }
-        }
-    }
-
     private fun readViews(session: JdbcMetadataSession): Map<String, ViewDefinition> {
         val viewEntries = SqliteMetadataQueries.listViews(session)
         val result = LinkedHashMap<String, ViewDefinition>()
         for ((name, sql) in viewEntries) {
-            val query = sql?.let { extractViewQuery(it) }
-            result[name] = ViewDefinition(
-                query = query,
-                sourceDialect = "sqlite",
-            )
+            val query = sql?.let { SqliteTypeMapping.extractViewQuery(it) }
+            result[name] = ViewDefinition(query = query, sourceDialect = "sqlite")
         }
         return result
     }
@@ -242,102 +193,15 @@ class SqliteSchemaReader : SchemaReader {
             val name = row["name"] as String
             val table = row["tbl_name"] as String
             val sql = row["sql"] as? String ?: continue
-            val parsed = parseTriggerSql(sql, name, table, notes) ?: continue
+            val parsed = SqliteTypeMapping.parseTriggerSql(sql, name)
+            notes += parsed.notes
             val key = ObjectKeyCodec.triggerKey(table, name)
-            result[key] = parsed
+            result[key] = TriggerDefinition(
+                table = table, event = parsed.event, timing = parsed.timing,
+                body = parsed.body, sourceDialect = "sqlite",
+            )
         }
         return result
-    }
-
-    // ── Helpers ─────────────────────────────────
-
-    private fun isVirtualTable(createSql: String): Boolean =
-        createSql.trimStart().startsWith("CREATE VIRTUAL TABLE", ignoreCase = true)
-
-    private fun extractMaxLength(raw: String): Int? {
-        val match = Regex("\\((\\d+)\\)").find(raw)
-        return match?.groupValues?.get(1)?.toIntOrNull()
-    }
-
-    private fun extractPrecisionScale(raw: String): Pair<Int?, Int?> {
-        val match = Regex("\\((\\d+)\\s*,\\s*(\\d+)\\)").find(raw)
-        return if (match != null) {
-            match.groupValues[1].toIntOrNull() to match.groupValues[2].toIntOrNull()
-        } else {
-            null to null
-        }
-    }
-
-    private fun parseDefault(raw: String?): DefaultValue? {
-        if (raw == null) return null
-        val trimmed = raw.trim()
-        return when {
-            trimmed.equals("NULL", ignoreCase = true) -> null
-            trimmed.equals("TRUE", ignoreCase = true) -> DefaultValue.BooleanLiteral(true)
-            trimmed.equals("FALSE", ignoreCase = true) -> DefaultValue.BooleanLiteral(false)
-            trimmed.startsWith("'") && trimmed.endsWith("'") ->
-                DefaultValue.StringLiteral(trimmed.substring(1, trimmed.length - 1).replace("''", "'"))
-            trimmed.toLongOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toLong())
-            trimmed.toDoubleOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toDouble())
-            trimmed.contains("datetime(", ignoreCase = true) ||
-                trimmed.equals("CURRENT_TIMESTAMP", ignoreCase = true) ->
-                DefaultValue.FunctionCall("current_timestamp")
-            else -> DefaultValue.StringLiteral(trimmed)
-        }
-    }
-
-    private fun extractViewQuery(createSql: String): String? {
-        val idx = createSql.indexOf(" AS ", ignoreCase = true)
-        return if (idx >= 0) createSql.substring(idx + 4).trim() else null
-    }
-
-    private fun parseTriggerSql(
-        sql: String,
-        name: String,
-        table: String,
-        notes: MutableList<SchemaReadNote>,
-    ): TriggerDefinition? {
-        val upper = sql.uppercase()
-        val timing = when {
-            upper.contains("BEFORE") -> TriggerTiming.BEFORE
-            upper.contains("AFTER") -> TriggerTiming.AFTER
-            upper.contains("INSTEAD OF") -> TriggerTiming.INSTEAD_OF
-            else -> {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R210",
-                    objectName = name,
-                    message = "Could not determine trigger timing",
-                )
-                TriggerTiming.BEFORE
-            }
-        }
-        val event = when {
-            upper.contains(" INSERT ") || upper.contains(" INSERT\n") -> TriggerEvent.INSERT
-            upper.contains(" UPDATE ") || upper.contains(" UPDATE\n") -> TriggerEvent.UPDATE
-            upper.contains(" DELETE ") || upper.contains(" DELETE\n") -> TriggerEvent.DELETE
-            else -> {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R211",
-                    objectName = name,
-                    message = "Could not determine trigger event",
-                )
-                TriggerEvent.INSERT
-            }
-        }
-        // Extract body between BEGIN...END
-        val bodyMatch = Regex("BEGIN\\s+(.*?)\\s+END", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-            .find(sql)
-        val body = bodyMatch?.groupValues?.get(1)?.trim()
-
-        return TriggerDefinition(
-            table = table,
-            event = event,
-            timing = timing,
-            body = body,
-            sourceDialect = "sqlite",
-        )
     }
 
     private fun String.toReferentialActionOrNull(): ReferentialAction? = when (this.uppercase()) {

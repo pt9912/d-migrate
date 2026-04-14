@@ -76,6 +76,22 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
                     FROM orders o JOIN customers c ON o.customer_id = c.id
                 """)
 
+                // Function
+                stmt.execute("""
+                    CREATE FUNCTION get_name(p_id INT) RETURNS VARCHAR(100)
+                    DETERMINISTIC
+                    READS SQL DATA
+                    RETURN (SELECT name FROM customers WHERE id = p_id)
+                """)
+
+                // Procedure
+                stmt.execute("""
+                    CREATE PROCEDURE reset_score(IN p_id INT)
+                    BEGIN
+                        UPDATE customers SET score = 0 WHERE id = p_id;
+                    END
+                """)
+
                 stmt.execute("""
                     CREATE TRIGGER trg_before_insert
                     BEFORE INSERT ON customers
@@ -263,6 +279,40 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             val result = reader.read(pool)
             result.schema.tables["customers"]!!.columns["score"]!!.type shouldBe
                 NeutralType.Decimal(precision = 5, scale = 2)
+        }
+    }
+
+    // ── Functions ───────────────────────────────
+
+    test("reads functions with canonical keys") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeFunctions = true))
+            val fnKeys = result.schema.functions.keys
+            fnKeys.any { it.startsWith("get_name(") } shouldBe true
+        }
+    }
+
+    test("skips functions when includeFunctions is false") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeFunctions = false))
+            result.schema.functions.size shouldBe 0
+        }
+    }
+
+    // ── Procedures ──────────────────────────────
+
+    test("reads procedures with canonical keys") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeProcedures = true))
+            val procKeys = result.schema.procedures.keys
+            procKeys.any { it.startsWith("reset_score(") } shouldBe true
+        }
+    }
+
+    test("skips procedures when includeProcedures is false") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeProcedures = false))
+            result.schema.procedures.size shouldBe 0
         }
     }
 })

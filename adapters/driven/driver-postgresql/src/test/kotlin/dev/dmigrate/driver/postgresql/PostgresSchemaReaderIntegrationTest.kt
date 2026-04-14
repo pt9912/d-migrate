@@ -94,6 +94,24 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                     $$ LANGUAGE plpgsql
                 """)
 
+                // Domain type
+                stmt.execute("CREATE DOMAIN positive_int AS INTEGER CHECK (VALUE > 0)")
+
+                // Composite type
+                stmt.execute("CREATE TYPE address AS (street TEXT, city VARCHAR(100))")
+
+                // Overloaded function
+                stmt.execute("""
+                    CREATE FUNCTION calc(x INTEGER) RETURNS INTEGER AS $$
+                    BEGIN RETURN x * 2; END;
+                    $$ LANGUAGE plpgsql
+                """)
+                stmt.execute("""
+                    CREATE FUNCTION calc(x INTEGER, y INTEGER) RETURNS INTEGER AS $$
+                    BEGIN RETURN x + y; END;
+                    $$ LANGUAGE plpgsql
+                """)
+
                 // Trigger
                 stmt.execute("""
                     CREATE FUNCTION trg_fn() RETURNS TRIGGER AS $$
@@ -333,6 +351,47 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             val result = reader.read(pool)
             result.schema.tables["customers"]!!.columns["score"]!!.type shouldBe
                 NeutralType.Decimal(precision = 5, scale = 2)
+        }
+    }
+
+    // ── DOMAIN custom type ──────────────────────
+
+    test("reads DOMAIN custom types") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            result.schema.customTypes shouldContainKey "positive_int"
+            val domain = result.schema.customTypes["positive_int"]!!
+            domain.kind shouldBe CustomTypeKind.DOMAIN
+            domain.baseType shouldBe "integer"
+            domain.check shouldNotBe null
+        }
+    }
+
+    // ── COMPOSITE custom type ───────────────────
+
+    test("reads COMPOSITE custom types") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            result.schema.customTypes shouldContainKey "address"
+            val comp = result.schema.customTypes["address"]!!
+            comp.kind shouldBe CustomTypeKind.COMPOSITE
+            comp.fields shouldNotBe null
+            comp.fields!!.keys shouldBe setOf("street", "city")
+        }
+    }
+
+    // ── Overloaded functions ────────────────────
+
+    test("overloaded functions produce distinct canonical keys") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeFunctions = true))
+            val calcKeys = result.schema.functions.keys.filter {
+                ObjectKeyCodec.parseRoutineKey(it).first == "calc"
+            }
+            calcKeys.size shouldBe 2
+            // One with 1 param, one with 2 params
+            val paramCounts = calcKeys.map { ObjectKeyCodec.parseRoutineKey(it).second.size }.sorted()
+            paramCounts shouldBe listOf(1, 2)
         }
     }
 })

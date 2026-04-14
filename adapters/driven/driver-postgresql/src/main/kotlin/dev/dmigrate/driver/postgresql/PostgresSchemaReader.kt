@@ -27,7 +27,7 @@ class PostgresSchemaReader : SchemaReader {
 
             val tables = readTables(session, schema, notes)
             val sequences = readSequences(session, schema)
-            val enumTypes = readEnumTypes(session, schema)
+            val customTypes = readCustomTypes(session, schema, notes)
             val views = if (options.includeViews) readViews(session, schema) else emptyMap()
             val functions = if (options.includeFunctions) readFunctions(session, schema, notes) else emptyMap()
             val procedures = if (options.includeProcedures) readProcedures(session, schema, notes) else emptyMap()
@@ -38,7 +38,7 @@ class PostgresSchemaReader : SchemaReader {
                 version = ReverseScopeCodec.REVERSE_VERSION,
                 tables = tables,
                 sequences = sequences,
-                customTypes = enumTypes,
+                customTypes = customTypes,
                 views = views,
                 functions = functions,
                 procedures = procedures,
@@ -86,7 +86,20 @@ class PostgresSchemaReader : SchemaReader {
             val colName = row["column_name"] as String
             val isPkCol = colName in pkColumns
             val isIdentity = (row["is_identity"] as? String) == "YES"
-            val neutralType = mapColumnType(row, isPkCol, isIdentity, notes, tableName)
+            val mapping = PostgresTypeMapping.mapColumn(
+                dataType = row["data_type"] as String,
+                udtName = (row["udt_name"] as? String) ?: (row["data_type"] as String),
+                isPkCol = isPkCol,
+                isIdentity = isIdentity,
+                colDefault = row["column_default"] as? String,
+                charMaxLen = (row["character_maximum_length"] as? Number)?.toInt(),
+                numPrecision = (row["numeric_precision"] as? Number)?.toInt(),
+                numScale = (row["numeric_scale"] as? Number)?.toInt(),
+                tableName = tableName,
+                colName = colName,
+            )
+            if (mapping.note != null) notes += mapping.note
+            val neutralType = mapping.type
 
             val required = if (isPkCol) false else (row["is_nullable"] as String) == "NO"
             val unique = if (isPkCol) false else colName in singleColUnique
@@ -100,9 +113,9 @@ class PostgresSchemaReader : SchemaReader {
                 )
             }
 
-            val defaultVal = if (isPkCol && isSerialDefault(row["column_default"] as? String))
-                null // Serial/identity default is implicit — don't pollute model
-            else parseDefault(row["column_default"] as? String)
+            val defaultVal = if (isPkCol && PostgresTypeMapping.isSerialDefault(row["column_default"] as? String))
+                null
+            else PostgresTypeMapping.parseDefault(row["column_default"] as? String)
 
             columns[colName] = ColumnDefinition(
                 type = neutralType,
@@ -161,113 +174,6 @@ class PostgresSchemaReader : SchemaReader {
         )
     }
 
-    // ── Type Mapping ────────────────────────────
-
-    private fun mapColumnType(
-        row: Map<String, Any?>,
-        isPkCol: Boolean,
-        isIdentity: Boolean,
-        notes: MutableList<SchemaReadNote>,
-        tableName: String,
-    ): NeutralType {
-        val dataType = (row["data_type"] as String).lowercase()
-        val udtName = (row["udt_name"] as? String)?.lowercase() ?: dataType
-        val colName = row["column_name"] as String
-        val colDefault = row["column_default"] as? String
-
-        // Serial/identity → Identifier for integer, BigInteger for bigint
-        if (isPkCol && (isIdentity || isSerialDefault(colDefault))) {
-            return when {
-                udtName == "int4" || udtName == "int2" || dataType == "integer" || dataType == "smallint" ->
-                    NeutralType.Identifier(autoIncrement = true)
-                udtName == "int8" || dataType == "bigint" -> {
-                    notes += SchemaReadNote(
-                        severity = SchemaReadSeverity.INFO,
-                        code = "R300",
-                        objectName = "$tableName.$colName",
-                        message = "bigint auto-increment mapped to BigInteger (not Identifier) to preserve type width",
-                    )
-                    NeutralType.BigInteger
-                }
-                else -> NeutralType.Identifier(autoIncrement = true)
-            }
-        }
-
-        return when (dataType) {
-            "integer" -> NeutralType.Integer
-            "bigint" -> NeutralType.BigInteger
-            "smallint" -> NeutralType.SmallInt
-            "boolean" -> NeutralType.BooleanType
-            "text" -> NeutralType.Text()
-            "character varying" -> NeutralType.Text(maxLength = (row["character_maximum_length"] as? Number)?.toInt())
-            "character" -> NeutralType.Char(length = (row["character_maximum_length"] as? Number)?.toInt() ?: 1)
-            "numeric", "decimal" -> {
-                val p = (row["numeric_precision"] as? Number)?.toInt()
-                val s = (row["numeric_scale"] as? Number)?.toInt()
-                if (p != null && s != null) NeutralType.Decimal(p, s) else NeutralType.Float()
-            }
-            "real" -> NeutralType.Float(FloatPrecision.SINGLE)
-            "double precision" -> NeutralType.Float(FloatPrecision.DOUBLE)
-            "timestamp without time zone" -> NeutralType.DateTime(timezone = false)
-            "timestamp with time zone" -> NeutralType.DateTime(timezone = true)
-            "date" -> NeutralType.Date
-            "time without time zone", "time with time zone" -> NeutralType.Time
-            "uuid" -> NeutralType.Uuid
-            "json", "jsonb" -> NeutralType.Json
-            "xml" -> NeutralType.Xml
-            "bytea" -> NeutralType.Binary
-            "user-defined" -> mapUserDefinedType(udtName, row, notes, tableName, colName)
-            "array" -> {
-                val elementUdt = udtName.removePrefix("_")
-                val elementType = mapArrayElementType(elementUdt)
-                NeutralType.Array(elementType)
-            }
-            else -> {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R301",
-                    objectName = "$tableName.$colName",
-                    message = "Unknown PostgreSQL type '$dataType' (udt: $udtName) mapped to text",
-                )
-                NeutralType.Text()
-            }
-        }
-    }
-
-    private fun mapUserDefinedType(
-        udtName: String,
-        row: Map<String, Any?>,
-        notes: MutableList<SchemaReadNote>,
-        tableName: String,
-        colName: String,
-    ): NeutralType {
-        // Geometry (PostGIS)
-        if (udtName == "geometry") {
-            return NeutralType.Geometry()
-        }
-        // Otherwise assume it's an enum ref type
-        return NeutralType.Enum(refType = udtName)
-    }
-
-    private fun mapArrayElementType(elementUdt: String): String = when (elementUdt) {
-        "int4", "int2" -> "integer"
-        "int8" -> "biginteger"
-        "text", "varchar", "bpchar" -> "text"
-        "bool" -> "boolean"
-        "uuid" -> "uuid"
-        "float4" -> "float"
-        "float8" -> "float"
-        "numeric" -> "decimal"
-        "json", "jsonb" -> "json"
-        else -> "text"
-    }
-
-    private fun isSerialDefault(default: String?): Boolean {
-        if (default == null) return false
-        val d = default.lowercase()
-        return d.startsWith("nextval(") || d.contains("nextval(")
-    }
-
     // ── Sequences ───────────────────────────────
 
     private fun readSequences(session: JdbcMetadataSession, schema: String): Map<String, SequenceDefinition> {
@@ -287,15 +193,79 @@ class PostgresSchemaReader : SchemaReader {
         return result
     }
 
-    // ── Enum Types ──────────────────────────────
+    // ── Custom Types (ENUM, DOMAIN, COMPOSITE) ──
 
-    private fun readEnumTypes(session: JdbcMetadataSession, schema: String): Map<String, CustomTypeDefinition> {
-        val enums = PostgresMetadataQueries.listEnumTypes(session, schema)
+    private fun readCustomTypes(
+        session: JdbcMetadataSession,
+        schema: String,
+        notes: MutableList<SchemaReadNote>,
+    ): Map<String, CustomTypeDefinition> {
         val result = LinkedHashMap<String, CustomTypeDefinition>()
-        for ((name, values) in enums) {
+
+        // ENUMs
+        for ((name, values) in PostgresMetadataQueries.listEnumTypes(session, schema)) {
             result[name] = CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = values)
         }
+
+        // DOMAINs
+        for (row in PostgresMetadataQueries.listDomainTypes(session, schema)) {
+            val name = row["typname"] as String
+            val baseType = row["base_type"] as? String ?: "text"
+            val checkClause = row["check_clause"] as? String
+            result[name] = CustomTypeDefinition(
+                kind = CustomTypeKind.DOMAIN,
+                baseType = PostgresTypeMapping.mapParamType(baseType),
+                precision = (row["numeric_precision"] as? Number)?.toInt(),
+                scale = (row["numeric_scale"] as? Number)?.toInt(),
+                check = checkClause,
+            )
+        }
+
+        // COMPOSITEs
+        val compositeRows = PostgresMetadataQueries.listCompositeTypes(session, schema)
+        for ((typeName, fieldRows) in compositeRows.groupBy { it["typname"] as String }) {
+            val fields = LinkedHashMap<String, ColumnDefinition>()
+            for (fRow in fieldRows.sortedBy { (it["attnum"] as Number).toInt() }) {
+                val fieldName = fRow["attname"] as String
+                val colType = fRow["column_type"] as? String ?: "text"
+                fields[fieldName] = ColumnDefinition(
+                    type = mapCompositeFieldType(colType),
+                )
+            }
+            result[typeName] = CustomTypeDefinition(
+                kind = CustomTypeKind.COMPOSITE,
+                fields = fields,
+            )
+        }
+
         return result
+    }
+
+    private fun mapCompositeFieldType(pgType: String): NeutralType {
+        val lower = pgType.lowercase().trim()
+        return when {
+            lower == "integer" || lower == "int4" -> NeutralType.Integer
+            lower == "bigint" || lower == "int8" -> NeutralType.BigInteger
+            lower == "smallint" || lower == "int2" -> NeutralType.SmallInt
+            lower == "text" -> NeutralType.Text()
+            lower == "boolean" || lower == "bool" -> NeutralType.BooleanType
+            lower.startsWith("character varying") || lower.startsWith("varchar") -> {
+                val len = Regex("\\((\\d+)\\)").find(lower)?.groupValues?.get(1)?.toIntOrNull()
+                NeutralType.Text(maxLength = len)
+            }
+            lower.startsWith("numeric") || lower.startsWith("decimal") -> {
+                val match = Regex("\\((\\d+),(\\d+)\\)").find(lower)
+                if (match != null) NeutralType.Decimal(match.groupValues[1].toInt(), match.groupValues[2].toInt())
+                else NeutralType.Float()
+            }
+            lower == "uuid" -> NeutralType.Uuid
+            lower == "json" || lower == "jsonb" -> NeutralType.Json
+            lower == "bytea" -> NeutralType.Binary
+            lower == "date" -> NeutralType.Date
+            lower == "time" || lower.startsWith("time ") -> NeutralType.Time
+            lower.startsWith("timestamp") -> NeutralType.DateTime(timezone = lower.contains("with time zone"))
+            else -> NeutralType.Text()
+        }
     }
 
     // ── Views ───────────────────────────────────
@@ -323,11 +293,12 @@ class PostgresSchemaReader : SchemaReader {
         val result = LinkedHashMap<String, FunctionDefinition>()
         for (row in rows) {
             val name = row["routine_name"] as String
-            val params = readRoutineParams(session, schema, name)
+            val specificName = row["specific_name"] as String
+            val params = readRoutineParams(session, schema, specificName)
             val paramDefs = params.map { p ->
                 ParameterDefinition(
                     name = (p["parameter_name"] as? String) ?: "p${p["ordinal_position"]}",
-                    type = mapParamType(p["udt_name"] as? String ?: p["data_type"] as? String ?: "text"),
+                    type = PostgresTypeMapping.mapParamType(p["udt_name"] as? String ?: p["data_type"] as? String ?: "text"),
                     direction = when ((p["parameter_mode"] as? String)?.uppercase()) {
                         "OUT" -> ParameterDirection.OUT
                         "INOUT" -> ParameterDirection.INOUT
@@ -337,7 +308,7 @@ class PostgresSchemaReader : SchemaReader {
             }
             val key = ObjectKeyCodec.routineKey(name, paramDefs)
             val returnType = (row["data_type"] as? String)?.takeIf { it != "void" }?.let {
-                ReturnType(type = mapParamType(row["type_udt_name"] as? String ?: it))
+                ReturnType(type = PostgresTypeMapping.mapParamType(row["type_udt_name"] as? String ?: it))
             }
             result[key] = FunctionDefinition(
                 parameters = paramDefs,
@@ -362,11 +333,12 @@ class PostgresSchemaReader : SchemaReader {
         val result = LinkedHashMap<String, ProcedureDefinition>()
         for (row in rows) {
             val name = row["routine_name"] as String
-            val params = readRoutineParams(session, schema, name)
+            val specificName = row["specific_name"] as String
+            val params = readRoutineParams(session, schema, specificName)
             val paramDefs = params.map { p ->
                 ParameterDefinition(
                     name = (p["parameter_name"] as? String) ?: "p${p["ordinal_position"]}",
-                    type = mapParamType(p["udt_name"] as? String ?: p["data_type"] as? String ?: "text"),
+                    type = PostgresTypeMapping.mapParamType(p["udt_name"] as? String ?: p["data_type"] as? String ?: "text"),
                     direction = when ((p["parameter_mode"] as? String)?.uppercase()) {
                         "OUT" -> ParameterDirection.OUT
                         "INOUT" -> ParameterDirection.INOUT
@@ -385,8 +357,8 @@ class PostgresSchemaReader : SchemaReader {
         return result
     }
 
-    private fun readRoutineParams(session: JdbcMetadataSession, schema: String, routineName: String): List<Map<String, Any?>> {
-        return PostgresMetadataQueries.listRoutineParameters(session, schema, routineName)
+    private fun readRoutineParams(session: JdbcMetadataSession, schema: String, specificName: String): List<Map<String, Any?>> {
+        return PostgresMetadataQueries.listRoutineParameters(session, schema, specificName)
     }
 
     // ── Triggers ────────────────────────────────
@@ -425,56 +397,6 @@ class PostgresSchemaReader : SchemaReader {
     }
 
     // ── Helpers ──────────────────────────────────
-
-    private fun parseDefault(raw: String?): DefaultValue? {
-        if (raw == null) return null
-        val trimmed = raw.trim()
-        return when {
-            trimmed.equals("NULL", ignoreCase = true) -> null
-            trimmed.startsWith("nextval(") -> null // serial default — handled separately
-            trimmed.equals("true", ignoreCase = true) -> DefaultValue.BooleanLiteral(true)
-            trimmed.equals("false", ignoreCase = true) -> DefaultValue.BooleanLiteral(false)
-            trimmed.equals("CURRENT_TIMESTAMP", ignoreCase = true) ||
-                trimmed.equals("now()", ignoreCase = true) -> DefaultValue.FunctionCall("current_timestamp")
-            trimmed.equals("gen_random_uuid()", ignoreCase = true) -> DefaultValue.FunctionCall("gen_uuid")
-            trimmed.startsWith("'") && trimmed.contains("'::") -> {
-                val value = trimmed.substringAfter("'").substringBefore("'::")
-                DefaultValue.StringLiteral(value.replace("''", "'"))
-            }
-            trimmed.startsWith("'") && trimmed.endsWith("'") ->
-                DefaultValue.StringLiteral(trimmed.substring(1, trimmed.length - 1).replace("''", "'"))
-            trimmed.toLongOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toLong())
-            trimmed.toDoubleOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toDouble())
-            trimmed.contains("::") -> {
-                // Cast expression like '0'::numeric — extract the literal
-                val literal = trimmed.substringBefore("::")
-                if (literal.startsWith("'") && literal.endsWith("'")) {
-                    DefaultValue.StringLiteral(literal.substring(1, literal.length - 1))
-                } else {
-                    literal.toLongOrNull()?.let { DefaultValue.NumberLiteral(it) }
-                        ?: literal.toDoubleOrNull()?.let { DefaultValue.NumberLiteral(it) }
-                        ?: DefaultValue.FunctionCall(trimmed)
-                }
-            }
-            else -> DefaultValue.FunctionCall(trimmed)
-        }
-    }
-
-    private fun mapParamType(pgType: String): String = when (pgType.lowercase()) {
-        "int4", "integer" -> "integer"
-        "int8", "bigint" -> "biginteger"
-        "int2", "smallint" -> "smallint"
-        "text", "varchar", "bpchar", "character varying" -> "text"
-        "bool", "boolean" -> "boolean"
-        "float4", "real" -> "float"
-        "float8", "double precision" -> "float"
-        "numeric", "decimal" -> "decimal"
-        "uuid" -> "uuid"
-        "json", "jsonb" -> "json"
-        "bytea" -> "binary"
-        "void" -> "void"
-        else -> pgType
-    }
 
     private fun String.toReferentialActionOrNull(): ReferentialAction? = when (this.uppercase()) {
         "CASCADE" -> ReferentialAction.CASCADE

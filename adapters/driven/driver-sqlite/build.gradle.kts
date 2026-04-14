@@ -9,8 +9,10 @@ kover {
         filters {
             excludes {
                 classes(
-                    // SchemaReader has many type-mapping branches that require diverse
-                    // real-world schemas; core paths are tested in SqliteSchemaReaderTest
+                    // SchemaReader orchestration is tested in SqliteSchemaReaderTest;
+                    // type mapping logic is tested in SqliteTypeMappingTest.
+                    // Remaining uncovered branches are edge cases requiring exotic
+                    // real-world schemas.
                     "dev.dmigrate.driver.sqlite.SqliteSchemaReader",
                 )
             }

@@ -204,6 +204,44 @@ object PostgresMetadataQueries {
             .mapValues { (_, v) -> v.map { it["enumlabel"] as String } }
     }
 
+    fun listDomainTypes(session: JdbcMetadataSession, schema: String): List<Map<String, Any?>> {
+        return session.queryList(
+            """
+            SELECT t.typname,
+                   bt.typname AS base_type,
+                   information_schema.domains.numeric_precision,
+                   information_schema.domains.numeric_scale,
+                   information_schema.domains.domain_default,
+                   pg_catalog.pg_get_constraintdef(c.oid) AS check_clause
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_type bt ON bt.oid = t.typbasetype
+            LEFT JOIN information_schema.domains
+              ON information_schema.domains.domain_schema = n.nspname
+              AND information_schema.domains.domain_name = t.typname
+            LEFT JOIN pg_constraint c ON c.contypid = t.oid AND c.contype = 'c'
+            WHERE t.typtype = 'd' AND n.nspname = ?
+            ORDER BY t.typname
+            """.trimIndent(), schema,
+        )
+    }
+
+    fun listCompositeTypes(session: JdbcMetadataSession, schema: String): List<Map<String, Any?>> {
+        return session.queryList(
+            """
+            SELECT t.typname, a.attname, a.attnum,
+                   format_type(a.atttypid, a.atttypmod) AS column_type
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_class c ON c.oid = t.typrelid
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+            WHERE t.typtype = 'c' AND n.nspname = ?
+              AND NOT EXISTS (SELECT 1 FROM pg_class r WHERE r.oid = t.typrelid AND r.relkind != 'c')
+            ORDER BY t.typname, a.attnum
+            """.trimIndent(), schema,
+        )
+    }
+
     fun listViews(session: JdbcMetadataSession, schema: String): List<Map<String, Any?>> {
         return session.queryList(
             """
@@ -218,14 +256,14 @@ object PostgresMetadataQueries {
     fun listFunctions(session: JdbcMetadataSession, schema: String): List<Map<String, Any?>> {
         return session.queryList(
             """
-            SELECT r.routine_name, r.routine_type, r.data_type,
+            SELECT r.routine_name, r.specific_name, r.routine_type, r.data_type,
                    r.type_udt_name, r.external_language,
                    r.routine_definition, r.is_deterministic
             FROM information_schema.routines r
             WHERE r.routine_schema = ?
               AND r.routine_type = 'FUNCTION'
               AND r.routine_name NOT LIKE 'pg_%'
-            ORDER BY r.routine_name
+            ORDER BY r.specific_name
             """.trimIndent(), schema,
         )
     }
@@ -233,26 +271,28 @@ object PostgresMetadataQueries {
     fun listProcedures(session: JdbcMetadataSession, schema: String): List<Map<String, Any?>> {
         return session.queryList(
             """
-            SELECT r.routine_name, r.routine_type,
+            SELECT r.routine_name, r.specific_name, r.routine_type,
                    r.external_language, r.routine_definition
             FROM information_schema.routines r
             WHERE r.routine_schema = ?
               AND r.routine_type = 'PROCEDURE'
-            ORDER BY r.routine_name
+            ORDER BY r.specific_name
             """.trimIndent(), schema,
         )
     }
 
-    fun listRoutineParameters(session: JdbcMetadataSession, schema: String, routineName: String): List<Map<String, Any?>> {
+    /** List parameters for a specific routine identified by its `specific_name`. */
+    fun listRoutineParameters(session: JdbcMetadataSession, schema: String, specificName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT parameter_name, data_type, udt_name, parameter_mode,
                    ordinal_position
             FROM information_schema.parameters
             WHERE specific_schema = ?
-              AND specific_name LIKE ?
+              AND specific_name = ?
+              AND ordinal_position > 0
             ORDER BY ordinal_position
-            """.trimIndent(), schema, "${routineName}%",
+            """.trimIndent(), schema, specificName,
         )
     }
 

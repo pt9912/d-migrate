@@ -245,4 +245,32 @@ class SqliteSchemaReaderTest : FunSpec({
             result.notes.any { it.code == "R201" && it.objectName == "t.data" } shouldBe true
         }
     }
+
+    // ── SpatiaLite metadata tables skipped ──────
+
+    test("SpatiaLite metadata tables are skipped with code S101") {
+        withDb(
+            "CREATE TABLE normal (id INTEGER PRIMARY KEY)",
+            "CREATE TABLE geometry_columns (f_table_name TEXT, f_geometry_column TEXT)",
+            "CREATE TABLE spatial_ref_sys (srid INTEGER PRIMARY KEY, auth_name TEXT)",
+        ) { pool ->
+            val result = reader.read(pool)
+            result.schema.tables shouldContainKey "normal"
+            result.schema.tables.keys.contains("geometry_columns") shouldBe false
+            result.schema.tables.keys.contains("spatial_ref_sys") shouldBe false
+            result.skippedObjects.any { it.name == "geometry_columns" && it.code == "S101" } shouldBe true
+            result.skippedObjects.any { it.name == "spatial_ref_sys" && it.code == "S101" } shouldBe true
+        }
+    }
+
+    // ── Geometry column type produces note ──────
+
+    test("geometry column type maps to Geometry with note") {
+        withDb("CREATE TABLE geo (id INTEGER PRIMARY KEY, location POINT)") { pool ->
+            val result = reader.read(pool)
+            val locType = result.schema.tables["geo"]!!.columns["location"]!!.type
+            (locType is NeutralType.Geometry) shouldBe true
+            result.notes.any { it.code == "R220" && it.objectName == "geo.location" } shouldBe true
+        }
+    }
 })

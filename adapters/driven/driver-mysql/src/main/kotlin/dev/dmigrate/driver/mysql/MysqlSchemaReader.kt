@@ -76,9 +76,13 @@ class MysqlSchemaReader : SchemaReader {
         val allIndices = MysqlMetadataQueries.listIndices(session, database, metaTable)
         val engine = MysqlMetadataQueries.listTableEngine(session, database, metaTable)
 
-        // Separate FK-backing indices from user indices
-        val fkNames = fks.map { it.name }.toSet()
-        val indices = allIndices.filter { it.name !in fkNames }
+        // Suppress FK-backing indices: MySQL auto-creates an index for each FK.
+        // We suppress indices whose column list exactly matches a FK's columns.
+        val fkColumnSets = fks.map { it.columns.toSet() }.toSet()
+        val indices = allIndices.filter { idx ->
+            // Keep if not a single-column index matching an FK column set
+            idx.columns.toSet() !in fkColumnSets
+        }
 
         val singleColFks = fks.filter { it.columns.size == 1 && it.referencedColumns.size == 1 }
             .associateBy { it.columns[0] }
@@ -91,7 +95,18 @@ class MysqlSchemaReader : SchemaReader {
             val isPkCol = colName in pkColumns
             val extra = (row["extra"] as? String) ?: ""
             val isAutoIncrement = extra.contains("auto_increment", ignoreCase = true)
-            val neutralType = mapColumnType(row, isPkCol, isAutoIncrement, notes, displayName)
+            val mapping = MysqlTypeMapping.mapColumn(
+                dataType = row["data_type"] as String,
+                columnType = (row["column_type"] as? String) ?: (row["data_type"] as String),
+                isAutoIncrement = isAutoIncrement,
+                charMaxLen = (row["character_maximum_length"] as? Number)?.toInt(),
+                numPrecision = (row["numeric_precision"] as? Number)?.toInt(),
+                numScale = (row["numeric_scale"] as? Number)?.toInt(),
+                tableName = displayName,
+                colName = colName,
+            )
+            if (mapping.note != null) notes += mapping.note
+            val neutralType = mapping.type
 
             val required = if (isPkCol) false else (row["is_nullable"] as String) == "NO"
             val unique = if (isPkCol) false else colName in singleColUnique
@@ -106,7 +121,7 @@ class MysqlSchemaReader : SchemaReader {
             }
 
             val defaultVal = if (isAutoIncrement) null
-            else parseDefault(row["column_default"] as? String, neutralType)
+            else MysqlTypeMapping.parseDefault(row["column_default"] as? String, neutralType)
 
             columns[colName] = ColumnDefinition(
                 type = neutralType,
@@ -162,114 +177,6 @@ class MysqlSchemaReader : SchemaReader {
         )
     }
 
-    // ── Type Mapping ────────────────────────────
-
-    private fun mapColumnType(
-        row: Map<String, Any?>,
-        isPkCol: Boolean,
-        isAutoIncrement: Boolean,
-        notes: MutableList<SchemaReadNote>,
-        tableName: String,
-    ): NeutralType {
-        val dataType = (row["data_type"] as String).lowercase()
-        val columnType = (row["column_type"] as? String)?.lowercase() ?: dataType
-        val colName = row["column_name"] as String
-
-        if (isAutoIncrement) {
-            return when (dataType) {
-                "int" -> NeutralType.Identifier(autoIncrement = true)
-                "bigint" -> {
-                    notes += SchemaReadNote(
-                        severity = SchemaReadSeverity.INFO,
-                        code = "R300",
-                        objectName = "$tableName.$colName",
-                        message = "bigint auto_increment mapped to BigInteger (not Identifier) to preserve type width",
-                    )
-                    NeutralType.BigInteger
-                }
-                "smallint" -> NeutralType.Identifier(autoIncrement = true)
-                "mediumint" -> NeutralType.Identifier(autoIncrement = true)
-                "tinyint" -> NeutralType.Identifier(autoIncrement = true)
-                else -> NeutralType.Identifier(autoIncrement = true)
-            }
-        }
-
-        return when (dataType) {
-            "int" -> NeutralType.Integer
-            "bigint" -> NeutralType.BigInteger
-            "smallint" -> NeutralType.SmallInt
-            "mediumint" -> NeutralType.Integer
-            "tinyint" -> {
-                if (columnType == "tinyint(1)") NeutralType.BooleanType
-                else NeutralType.SmallInt
-            }
-            "varchar" -> NeutralType.Text(maxLength = (row["character_maximum_length"] as? Number)?.toInt())
-            "char" -> {
-                val len = (row["character_maximum_length"] as? Number)?.toInt() ?: 1
-                if (len == 36) {
-                    notes += SchemaReadNote(
-                        severity = SchemaReadSeverity.INFO,
-                        code = "R310",
-                        objectName = "$tableName.$colName",
-                        message = "char(36) mapped to Uuid — if not a UUID, review manually",
-                    )
-                    NeutralType.Uuid
-                } else NeutralType.Char(length = len)
-            }
-            "text", "mediumtext", "longtext", "tinytext" -> NeutralType.Text()
-            "decimal", "numeric" -> {
-                val p = (row["numeric_precision"] as? Number)?.toInt()
-                val s = (row["numeric_scale"] as? Number)?.toInt()
-                if (p != null && s != null) NeutralType.Decimal(p, s) else NeutralType.Float()
-            }
-            "float" -> NeutralType.Float(FloatPrecision.SINGLE)
-            "double" -> NeutralType.Float(FloatPrecision.DOUBLE)
-            "boolean" -> NeutralType.BooleanType
-            "date" -> NeutralType.Date
-            "time" -> NeutralType.Time
-            "datetime", "timestamp" -> NeutralType.DateTime()
-            "json" -> NeutralType.Json
-            "blob", "mediumblob", "longblob", "tinyblob", "binary", "varbinary" -> NeutralType.Binary
-            "enum" -> {
-                val values = extractEnumValues(columnType)
-                NeutralType.Enum(values = values)
-            }
-            "set" -> {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.ACTION_REQUIRED,
-                    code = "R320",
-                    objectName = "$tableName.$colName",
-                    message = "MySQL SET type '$columnType' has no neutral equivalent — mapped to text",
-                    hint = "Review and convert to enum or text with application-level validation",
-                )
-                NeutralType.Text()
-            }
-            "geometry", "point", "linestring", "polygon",
-            "multipoint", "multilinestring", "multipolygon", "geometrycollection" -> {
-                val geoType = GeometryType.of(dataType)
-                NeutralType.Geometry(geometryType = geoType)
-            }
-            else -> {
-                notes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R301",
-                    objectName = "$tableName.$colName",
-                    message = "Unknown MySQL type '$dataType' mapped to text",
-                )
-                NeutralType.Text()
-            }
-        }
-    }
-
-    private fun extractEnumValues(columnType: String): List<String> {
-        // enum('a','b','c') → [a, b, c]
-        val match = Regex("enum\\((.+)\\)", RegexOption.IGNORE_CASE).find(columnType)
-        return match?.groupValues?.get(1)
-            ?.split(",")
-            ?.map { it.trim().removeSurrounding("'") }
-            ?: emptyList()
-    }
-
     // ── Views ───────────────────────────────────
 
     private fun readViews(session: JdbcMetadataSession, database: String): Map<String, ViewDefinition> {
@@ -299,7 +206,7 @@ class MysqlSchemaReader : SchemaReader {
             val paramDefs = params.map { p ->
                 ParameterDefinition(
                     name = (p["parameter_name"] as? String) ?: "p${p["ordinal_position"]}",
-                    type = mapParamType(p["data_type"] as? String ?: "text"),
+                    type = MysqlTypeMapping.mapParamType(p["data_type"] as? String ?: "text"),
                     direction = when ((p["parameter_mode"] as? String)?.uppercase()) {
                         "OUT" -> ParameterDirection.OUT
                         "INOUT" -> ParameterDirection.INOUT
@@ -310,7 +217,7 @@ class MysqlSchemaReader : SchemaReader {
             val key = ObjectKeyCodec.routineKey(name, paramDefs)
             result[key] = FunctionDefinition(
                 parameters = paramDefs,
-                returns = (row["dtd_identifier"] as? String)?.let { ReturnType(type = mapParamType(it)) },
+                returns = (row["dtd_identifier"] as? String)?.let { ReturnType(type = MysqlTypeMapping.mapParamType(it)) },
                 language = row["routine_body"] as? String,
                 body = row["routine_definition"] as? String,
                 deterministic = (row["is_deterministic"] as? String) == "YES",
@@ -335,7 +242,7 @@ class MysqlSchemaReader : SchemaReader {
             val paramDefs = params.map { p ->
                 ParameterDefinition(
                     name = (p["parameter_name"] as? String) ?: "p${p["ordinal_position"]}",
-                    type = mapParamType(p["data_type"] as? String ?: "text"),
+                    type = MysqlTypeMapping.mapParamType(p["data_type"] as? String ?: "text"),
                     direction = when ((p["parameter_mode"] as? String)?.uppercase()) {
                         "OUT" -> ParameterDirection.OUT
                         "INOUT" -> ParameterDirection.INOUT
@@ -388,39 +295,6 @@ class MysqlSchemaReader : SchemaReader {
     }
 
     // ── Helpers ──────────────────────────────────
-
-    private fun parseDefault(raw: String?, type: NeutralType): DefaultValue? {
-        if (raw == null) return null
-        val trimmed = raw.trim()
-        return when {
-            trimmed.equals("NULL", ignoreCase = true) -> null
-            trimmed == "CURRENT_TIMESTAMP" || trimmed == "current_timestamp()" ->
-                DefaultValue.FunctionCall("current_timestamp")
-            trimmed == "1" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(true)
-            trimmed == "0" && type is NeutralType.BooleanType -> DefaultValue.BooleanLiteral(false)
-            trimmed.startsWith("'") && trimmed.endsWith("'") ->
-                DefaultValue.StringLiteral(trimmed.substring(1, trimmed.length - 1).replace("''", "'"))
-            trimmed.toLongOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toLong())
-            trimmed.toDoubleOrNull() != null -> DefaultValue.NumberLiteral(trimmed.toDouble())
-            else -> DefaultValue.FunctionCall(trimmed)
-        }
-    }
-
-    private fun mapParamType(mysqlType: String): String = when (mysqlType.lowercase().trim()) {
-        "int", "integer" -> "integer"
-        "bigint" -> "biginteger"
-        "smallint", "tinyint", "mediumint" -> "smallint"
-        "varchar", "text", "char", "mediumtext", "longtext" -> "text"
-        "boolean", "tinyint(1)" -> "boolean"
-        "float", "double", "real" -> "float"
-        "decimal", "numeric" -> "decimal"
-        "json" -> "json"
-        "blob", "binary", "varbinary" -> "binary"
-        "date" -> "date"
-        "time" -> "time"
-        "datetime", "timestamp" -> "datetime"
-        else -> mysqlType.lowercase()
-    }
 
     private fun String.toReferentialActionOrNull(): ReferentialAction? = when (this.uppercase()) {
         "CASCADE" -> ReferentialAction.CASCADE
