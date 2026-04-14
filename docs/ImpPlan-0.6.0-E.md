@@ -261,10 +261,13 @@ Zusaetzlich verbindlich:
 
 - alle Fehlerpfade verwenden fuer user-facing Ausgaben nur eine maskierte bzw.
   alias-basierte Source-Referenz
+- alle user-facing Fehlertexte laufen vor `printError(...)` bzw. vor der
+  JSON-/YAML-Fehlerausgabe durch denselben zentralen Scrubbing-Pfad
 - `OutputFormatter.printError(...)` oder ein gleichwertiger zentraler
-  Fehlerpfad bekommt nie die unmaskierte, aufgeloeste Connection-URL
+  Fehlerpfad bekommt weder die unmaskierte, aufgeloeste Connection-URL noch
+  einen unsanitized Exception-Text mit sensitiven Verbindungsdetails
 
-### 4.7 Reverse-Notes erscheinen auf `stderr`; Erfolgsausgabe folgt `--output-format`
+### 4.7 Reverse-Notes erscheinen nur in `plain` auf `stderr`; Erfolgsausgabe folgt `--output-format`
 
 Der Reverse-Pfad ist ein dateiorientiertes Kommando. Erfolgsartefakte liegen in
 Dateien; `stdout` transportiert nur CLI-Erfolgsausgabe, nie das eigentliche
@@ -274,7 +277,8 @@ Verbindliche Folge:
 
 - das Schema wird ausschliesslich ueber `--output` geschrieben
 - der Report wird ausschliesslich ueber `--report` bzw. Sidecar geschrieben
-- menschenlesbare Notes und `skipped_objects` gehen auf `stderr`
+- menschenlesbare Notes und `skipped_objects` gehen nur bei
+  `--output-format plain` auf `stderr`
 - bei `--output-format plain` gehen Erfolgsmeldungen wie
   `Schema written to ...` / `Report written to ...` auf `stdout`
 - bei `--output-format json|yaml` geht stattdessen ein strukturiertes
@@ -285,6 +289,10 @@ Verbindliche Folge:
   - maskierter bzw. alias-basierter `source`-Referenz
   - `output`-/`report`-Pfad
   - Summary-Zaehlern fuer Notes / `skipped_objects`
+- bei `--output-format json|yaml` gibt es fuer erfolgreiche Runs keine
+  zusaetzliche menschenlesbare Note-/`skipped_objects`-Ausgabe auf `stderr`;
+  Details bleiben im Report, `stdout` traegt nur das strukturierte
+  Success-Dokument
 - `quiet` folgt dem bestehenden globalen CLI-Vertrag `Only show errors`:
   - Reverse-Warnungen, Info-Notes und `skipped_objects` werden unterdrueckt
   - menschenlesbare Plain-Erfolgsmeldungen werden unterdrueckt
@@ -292,7 +300,7 @@ Verbindliche Folge:
     ebenfalls unterdrueckt
   - Fehlerausgaben bleiben sichtbar
 
-### 4.8 Quellreferenzen bleiben in Report-, Fehler- und Success-Ausgaben gescrubbt
+### 4.8 Quellreferenzen und Fehlertexte bleiben in Report-, Fehler- und Success-Ausgaben gescrubbt
 
 Der CLI-Pfad darf keine Klartext-Credentials ueber Reverse-Reports oder
 CLI-Fehler- bzw. Success-Ausgaben leaken.
@@ -301,6 +309,8 @@ Verbindliche Folge:
 
 - der Runner bildet nach der Source-Aufloesung genau eine user-facing
   Source-Referenz fuer Report-, Fehler- und Success-Ausgaben
+- der Runner bildet fuer Fehlerfaelle einen user-facing Fehlertext, der vor
+  jeder Ausgabe zentral gescrubbt wird
 - der Runner uebergibt dem Reverse-Report-Writer den Phase-C-Vertrag
   `SchemaReadReportInput` inklusive `ReverseSourceRef`
 - Aliasquellen duerfen im Report unveraendert erscheinen
@@ -309,6 +319,9 @@ Verbindliche Folge:
 - die aufgeloeste Klartext-URL darf nur innerhalb von URL-Parser, Pooling und
   DB-Zugriffspfad weitergereicht werden, nicht in `printError(...)`,
   JSON-/YAML-Fehlerdokumente oder Success-Ausgaben
+- Exception-Messages aus URL-Parser, Pool, Treiber-Registry oder
+  `SchemaReader.read(...)` duerfen nicht roh in die CLI-Ausgabe durchgereicht
+  werden, wenn sie sensitive Verbindungsdetails enthalten koennen
 
 ---
 
@@ -334,6 +347,7 @@ Mindestens noetig:
 - constructor-injected Kollaboratoren fuer:
   - Source-Aufloesung
   - maskierte Source-Referenzbildung fuer Report/Fehler/Success-Ausgaben
+  - Scrubbing von user-facing Fehlertexten
   - URL-Parsing
   - Pool-Erzeugung
   - Driver-/`SchemaReader`-Lookup
@@ -440,7 +454,7 @@ Nicht akzeptabel ist:
 - Reverse-Report ueber `TransformationReportWriter` zu schreiben
 - zwei konkurrierende Sidecar-Pfadregeln fuer Generate und Reverse zu pflegen
 
-### E.6 Reverse-Notes und `skipped_objects` konsistent auf `stderr` rendern
+### E.6 Reverse-Notes und `skipped_objects` konsistent im `plain`-Stderr rendern
 
 Phase E muss die CLI-konsumierbare Kurzsicht auf Reverse-Ergebnisse definieren.
 
@@ -452,15 +466,18 @@ Mindestens noetig:
   - Info-Notes (mindestens `verbose`-gesteuert)
   - `skipped_objects`
 - ein klarer Success-Output-Vertrag:
-  - `plain` -> menschenlesbare Erfolgsmeldungen auf `stdout`
-  - `json|yaml` -> strukturiertes Success-Dokument auf `stdout`
+  - `plain` -> menschenlesbare Erfolgsmeldungen auf `stdout` und
+    menschenlesbare Notes / `skipped_objects` auf `stderr`
+  - `json|yaml` -> strukturiertes Success-Dokument auf `stdout`, keine
+    zusaetzliche menschenlesbare Note-Ausgabe auf `stderr`
   - `quiet` -> keine Success-Ausgabe und keine Reverse-Notes; nur Fehler
 - dieselbe inhaltliche Semantik wie im Report:
   - kein stiller Verlust
   - keine freierfundene Zusatzinterpretation
 - Fehlerausgaben weiter ueber den bestehenden `OutputFormatter` oder einen
   gleichwertig zentralen Pfad
-- keine user-facing Ausgabe arbeitet mit unmaskierter URL-Quelle
+- keine user-facing Ausgabe arbeitet mit unmaskierter URL-Quelle oder
+  ungescrubbtem Fehlertext
 
 ### E.7 Tests fuer Runner, Command und Fehlerpfade aufbauen
 
@@ -482,11 +499,15 @@ Abzusichern sind mindestens:
 - `--output-format json|yaml` liefert ein strukturiertes Success-Dokument,
   waehrend Schema und Report Datei-Artefakte bleiben, inklusive maskierter bzw.
   alias-basierter `source`-Referenz
+- `--output-format json|yaml` unterdrueckt die menschenlesbare Reverse-Note-
+  Ausgabe auf `stderr` fuer erfolgreiche Runs
 - Format-/Endungs-Mismatch
 - Output-/Report-Kollision
 - Config-Fehler
 - Connection-/Metadatenfehler
 - URL-Quelle bleibt in CLI-Fehlerausgaben maskiert
+- user-facing Fehlertexte bleiben auch dann gescrubbt, wenn Exception-Messages
+  URLs oder andere sensitive Verbindungsdetails enthalten
 - `quiet` unterdrueckt Reverse-Notes und Success-Ausgaben, laesst aber Fehler
   sichtbar
 - Include-Flags einzeln und ueber `--include-all`
@@ -610,14 +631,20 @@ Indirekt vorausgesetzt:
       `--include-triggers` werden korrekt in `SchemaReadOptions` abgebildet.
 - [ ] `--include-all` aktiviert alle optionalen Objektarten.
 - [ ] Reverse-Notes und `skipped_objects` erscheinen konsistent auf `stderr`
-      und im Report, jeweils ausserhalb von `quiet`.
+      und im Report; auf `stderr` jedoch nur im `plain`-Modus und ausserhalb
+      von `quiet`.
 - [ ] Reverse mit Alias-Quelle leakt keine Credentials.
 - [ ] Reverse mit URL-Quelle maskiert Credentials im Report und in
       CLI-Fehler- und Success-Ausgaben.
+- [ ] User-facing Fehlertexte bleiben auch dann gescrubbt, wenn
+      Exception-Messages URLs oder andere sensitive Verbindungsdetails
+      enthalten.
 - [ ] `--output-format json|yaml` liefert im Erfolgspfad ein strukturiertes
       Success-Dokument auf `stdout`, ohne das Schema-Artefakt aus `--output`
       zu duplizieren, und verwendet dabei nur eine maskierte bzw.
       alias-basierte `source`-Referenz.
+- [ ] `--output-format json|yaml` emittiert fuer erfolgreiche Runs keine
+      zusaetzliche menschenlesbare Reverse-Note-Ausgabe auf `stderr`.
 - [ ] `--quiet` unterdrueckt fuer `schema reverse` alle Nicht-Fehler-Ausgaben
       einschliesslich Reverse-Notes und strukturierter Success-Dokumente.
 - [ ] CLI-/Pfadvalidierungsfehler enden mit Exit `2`.
@@ -666,14 +693,19 @@ Dabei explizit pruefen:
 
 - Schema-Datei ist gueltige YAML-/JSON-`SchemaDefinition`
 - Report und `stderr` zeigen dieselben Notes / `skipped_objects`
-  ausserhalb von `quiet`
+  im `plain`-Modus und ausserhalb von `quiet`
 - `--output-format json|yaml` liefert ein strukturiertes Success-Dokument auf
   `stdout`, waehrend Schema und Report nur in Dateien liegen
 - die `source`-Referenz im strukturierten Success-Dokument ist bei Aliasquellen
   alias-basiert und bei URL-Quellen maskiert
+- `--output-format json|yaml` erzeugt fuer erfolgreiche Runs keine
+  zusaetzliche menschenlesbare Note-/`skipped_objects`-Ausgabe auf `stderr`
 - `quiet` unterdrueckt Reverse-Warnungen, `skipped_objects` und
   Success-Ausgaben, aber nicht Fehler
 - Format-/Endungsfehler werden ohne DB-Verbindungsversuch abgefangen
+- Fehlertexte in CLI-Fehlerausgaben bleiben auch dann gescrubbt, wenn die
+  zugrundeliegende Exception eine URL oder sensitive Verbindungsdetails
+  enthaelt
 - Alias- und URL-Quelle werden in Report, Fehler- und Success-Ausgaben korrekt
   und ohne Credential-Leak referenziert
 
