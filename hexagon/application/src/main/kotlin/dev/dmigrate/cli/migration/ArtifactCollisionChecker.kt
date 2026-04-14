@@ -2,12 +2,10 @@ package dev.dmigrate.cli.migration
 
 import dev.dmigrate.migration.ArtifactRelativePath
 import dev.dmigrate.migration.MigrationArtifact
-import java.nio.file.Files
-import java.nio.file.Path
 
 /**
  * Collision between a planned artifact and either another planned
- * artifact or an existing file on disk.
+ * artifact or an existing file in the output directory.
  */
 data class ArtifactCollision(
     val relativePath: ArtifactRelativePath,
@@ -17,9 +15,9 @@ data class ArtifactCollision(
 /**
  * Checks for collisions before any file writes happen.
  *
- * Detects:
- * - Two artifacts in the same run targeting the same relative path
- * - A planned artifact colliding with an existing file in the output directory
+ * All methods are I/O-free and operate on normalized relative paths.
+ * The caller (CLI/Application layer) is responsible for resolving
+ * existing paths from the filesystem and passing them in.
  */
 object ArtifactCollisionChecker {
 
@@ -45,18 +43,20 @@ object ArtifactCollisionChecker {
     }
 
     /**
-     * Checks for collisions against existing files in the output directory.
+     * Checks for collisions against already-existing relative paths
+     * in the output directory. The [existingPaths] set contains
+     * normalized relative path strings as reported by the caller.
      */
-    fun findFileSystemCollisions(
-        outputDir: Path,
+    fun findExistingFileCollisions(
         artifacts: List<MigrationArtifact>,
+        existingPaths: Set<String>,
     ): List<ArtifactCollision> {
         return artifacts.mapNotNull { artifact ->
-            val target = outputDir.resolve(artifact.relativePath.path)
-            if (Files.exists(target)) {
+            val canonical = artifact.relativePath.normalized
+            if (canonical in existingPaths) {
                 ArtifactCollision(
                     artifact.relativePath,
-                    "File already exists: $target",
+                    "File already exists: $canonical",
                 )
             } else null
         }

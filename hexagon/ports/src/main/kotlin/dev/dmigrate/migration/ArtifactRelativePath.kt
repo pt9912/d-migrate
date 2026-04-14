@@ -5,10 +5,15 @@ import java.nio.file.Path
 /**
  * A validated, normalized relative path for a migration artifact.
  *
+ * The factory [of] first normalizes the input (resolving `.` segments,
+ * collapsing separators) and then validates the result. This means
+ * `a/./b.sql` is accepted and normalized to `a/b.sql`, while `../b.sql`
+ * is rejected after normalization reveals the parent escape.
+ *
  * Guarantees:
  * - Path is relative (not absolute)
- * - No parent escapes (`..`)
- * - Platform-independent normalization (forward slashes)
+ * - No parent escapes (`..`) after normalization
+ * - Platform-independent canonical form (forward slashes)
  * - Only constructible via the validating [of] factory
  */
 @JvmInline

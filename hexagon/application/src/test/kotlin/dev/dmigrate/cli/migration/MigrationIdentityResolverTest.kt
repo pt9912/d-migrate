@@ -89,7 +89,7 @@ class MigrationIdentityResolverTest : FunSpec({
         shouldThrow<MigrationIdentityResolver.ResolutionException> {
             MigrationIdentityResolver.resolve(
                 MigrationTool.DJANGO, DatabaseDialect.MYSQL, "init", null, "App")
-        }.message shouldContain "zero-padded"
+        }.message shouldContain "4+ digits"
     }
 
     // ── Slug generation ────────────────────────

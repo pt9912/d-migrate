@@ -6,7 +6,6 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.string.shouldContain
-import java.nio.file.Files
 
 class ArtifactCollisionCheckerTest : FunSpec({
 
@@ -38,39 +37,31 @@ class ArtifactCollisionCheckerTest : FunSpec({
         ArtifactCollisionChecker.findInRunCollisions(artifacts).shouldBeEmpty()
     }
 
-    // ── Filesystem collisions ──────────────────
+    // ── Existing file collisions ───────────────
 
     test("no existing files → no collisions") {
-        val dir = Files.createTempDirectory("collision-test-")
-        try {
-            val artifacts = listOf(artifact("V1__init.sql"))
-            ArtifactCollisionChecker.findFileSystemCollisions(dir, artifacts).shouldBeEmpty()
-        } finally {
-            dir.toFile().deleteRecursively()
-        }
+        val artifacts = listOf(artifact("V1__init.sql"))
+        ArtifactCollisionChecker.findExistingFileCollisions(artifacts, emptySet()).shouldBeEmpty()
     }
 
     test("existing file detected as collision") {
-        val dir = Files.createTempDirectory("collision-test-")
-        try {
-            Files.writeString(dir.resolve("V1__init.sql"), "old content")
-            val artifacts = listOf(artifact("V1__init.sql"))
-            val collisions = ArtifactCollisionChecker.findFileSystemCollisions(dir, artifacts)
-            collisions shouldHaveSize 1
-            collisions[0].reason shouldContain "already exists"
-        } finally {
-            dir.toFile().deleteRecursively()
-        }
+        val artifacts = listOf(artifact("V1__init.sql"))
+        val existing = setOf("V1__init.sql")
+        val collisions = ArtifactCollisionChecker.findExistingFileCollisions(artifacts, existing)
+        collisions shouldHaveSize 1
+        collisions[0].reason shouldContain "already exists"
     }
 
-    test("non-existing file no collision") {
-        val dir = Files.createTempDirectory("collision-test-")
-        try {
-            Files.writeString(dir.resolve("V1__init.sql"), "old content")
-            val artifacts = listOf(artifact("V2__next.sql"))
-            ArtifactCollisionChecker.findFileSystemCollisions(dir, artifacts).shouldBeEmpty()
-        } finally {
-            dir.toFile().deleteRecursively()
-        }
+    test("non-matching existing file no collision") {
+        val artifacts = listOf(artifact("V2__next.sql"))
+        val existing = setOf("V1__init.sql")
+        ArtifactCollisionChecker.findExistingFileCollisions(artifacts, existing).shouldBeEmpty()
+    }
+
+    test("nested path collision") {
+        val artifacts = listOf(artifact("db/V1__init.sql"))
+        val existing = setOf("db/V1__init.sql")
+        val collisions = ArtifactCollisionChecker.findExistingFileCollisions(artifacts, existing)
+        collisions shouldHaveSize 1
     }
 })

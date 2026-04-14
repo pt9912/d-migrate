@@ -6,16 +6,16 @@ import dev.dmigrate.migration.MigrationTool
  * Validates migration versions for tool-specific constraints.
  *
  * Each tool has its own version format requirements:
- * - **Flyway**: numeric (e.g., `1`, `1.0`, `1.0.0`)
+ * - **Flyway**: numeric dotted (e.g., `1`, `1.0`, `1.0.0`)
  * - **Liquibase**: any non-blank string
- * - **Django**: numeric zero-padded (e.g., `0001`, `0042`)
- * - **Knex**: numeric timestamp-like (e.g., `20260414120000`)
+ * - **Django**: 4+ digit prefix with optional `_slug` (e.g., `0001`, `0001_initial`)
+ * - **Knex**: numeric prefix with optional `_slug` (e.g., `20260414120000`, `20260414120000_create_users`)
  */
 object MigrationVersionValidator {
 
     private val FLYWAY_VERSION = Regex("^\\d+(\\.\\d+)*$")
-    private val DJANGO_VERSION = Regex("^\\d{4,}$")
-    private val KNEX_VERSION = Regex("^\\d+$")
+    private val DJANGO_VERSION = Regex("^\\d{4,}(_[a-z][a-z0-9_]*)?$")
+    private val KNEX_VERSION = Regex("^\\d+(_[a-z][a-z0-9_]*)?$")
 
     data class ValidationResult(
         val valid: Boolean,
@@ -36,12 +36,12 @@ object MigrationVersionValidator {
             MigrationTool.DJANGO -> {
                 if (DJANGO_VERSION.matches(version)) ValidationResult(true)
                 else ValidationResult(false,
-                    "Django version must be a zero-padded number with at least 4 digits (e.g., '0001'), got: '$version'")
+                    "Django version must be 4+ digits with optional _slug (e.g., '0001', '0001_initial'), got: '$version'")
             }
             MigrationTool.KNEX -> {
                 if (KNEX_VERSION.matches(version)) ValidationResult(true)
                 else ValidationResult(false,
-                    "Knex version must be numeric (e.g., '20260414120000'), got: '$version'")
+                    "Knex version must be numeric with optional _slug (e.g., '20260414120000', '20260414120000_create_users'), got: '$version'")
             }
         }
     }

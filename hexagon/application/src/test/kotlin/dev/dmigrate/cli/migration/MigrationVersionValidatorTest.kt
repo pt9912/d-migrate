@@ -40,22 +40,34 @@ class MigrationVersionValidatorTest : FunSpec({
         MigrationVersionValidator.validate(MigrationTool.DJANGO, "0001").valid shouldBe true
     }
 
-    test("Django accepts longer numbers") {
-        MigrationVersionValidator.validate(MigrationTool.DJANGO, "00042").valid shouldBe true
+    test("Django accepts digits with slug") {
+        MigrationVersionValidator.validate(MigrationTool.DJANGO, "0001_initial").valid shouldBe true
+    }
+
+    test("Django accepts longer number with slug") {
+        MigrationVersionValidator.validate(MigrationTool.DJANGO, "00042_add_orders").valid shouldBe true
     }
 
     test("Django rejects 3-digit number") {
         MigrationVersionValidator.validate(MigrationTool.DJANGO, "001").valid shouldBe false
     }
 
-    test("Django rejects non-numeric") {
+    test("Django rejects non-numeric prefix") {
         MigrationVersionValidator.validate(MigrationTool.DJANGO, "init").valid shouldBe false
+    }
+
+    test("Django rejects slug starting with uppercase") {
+        MigrationVersionValidator.validate(MigrationTool.DJANGO, "0001_Initial").valid shouldBe false
     }
 
     // ── Knex ────────────────────────────────────
 
     test("Knex accepts numeric timestamp") {
         MigrationVersionValidator.validate(MigrationTool.KNEX, "20260414120000").valid shouldBe true
+    }
+
+    test("Knex accepts timestamp with slug") {
+        MigrationVersionValidator.validate(MigrationTool.KNEX, "20260414120000_create_users").valid shouldBe true
     }
 
     test("Knex rejects non-numeric") {
