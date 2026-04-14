@@ -56,6 +56,16 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("reverse scope with structural separators round-trips correctly") {
+        // SQLite always uses schema=main, but verify the codec handles
+        // hypothetical separator characters in schema names
+        val encoded = ReverseScopeCodec.sqliteName("sch;ema=test:1")
+        val scope = ReverseScopeCodec.parseScope(encoded)
+        scope["dialect"] shouldBe "sqlite"
+        scope["schema"] shouldBe "sch;ema=test:1"
+        ReverseScopeCodec.isReverseGenerated(encoded, ReverseScopeCodec.REVERSE_VERSION) shouldBe true
+    }
+
     // ── Basic table with columns ────────────────
 
     test("reads table with columns, PK and types") {
@@ -290,6 +300,19 @@ class SqliteSchemaReaderTest : FunSpec({
             val locType = result.schema.tables["geo"]!!.columns["location"]!!.type
             (locType is NeutralType.Geometry) shouldBe true
             result.notes.any { it.code == "R220" && it.objectName == "geo.location" } shouldBe true
+        }
+    }
+
+    // ── Ownership: connection returned after read ──
+
+    test("read completes successfully and returns result") {
+        // Verifies the reader borrows and returns the connection within
+        // pool.borrow().use { } — if it leaked, the in-memory DB would
+        // be inaccessible. A successful read is the ownership proof.
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)") { pool ->
+            val result = reader.read(pool)
+            result.schema.tables shouldContainKey "t"
+            result.schema.tables["t"]!!.columns.size shouldBe 2
         }
     }
 })

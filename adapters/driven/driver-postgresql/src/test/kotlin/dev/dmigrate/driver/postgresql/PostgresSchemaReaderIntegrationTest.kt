@@ -112,6 +112,16 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                     $$ LANGUAGE plpgsql
                 """)
 
+                // Procedure (PG 14+)
+                stmt.execute("""
+                    CREATE PROCEDURE reset_score(p_id INTEGER)
+                    LANGUAGE plpgsql AS $$
+                    BEGIN
+                        UPDATE customers SET score = 0 WHERE id = p_id;
+                    END;
+                    $$
+                """)
+
                 // Trigger
                 stmt.execute("""
                     CREATE FUNCTION trg_fn() RETURNS TRIGGER AS $$
@@ -322,6 +332,23 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
+    // ── Procedures ──────────────────────────────
+
+    test("reads procedures with canonical keys when includeProcedures is true") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeProcedures = true))
+            val procKeys = result.schema.procedures.keys
+            procKeys.any { it.startsWith("reset_score(") } shouldBe true
+        }
+    }
+
+    test("skips procedures when includeProcedures is false") {
+        pool().use { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeProcedures = false))
+            result.schema.procedures.size shouldBe 0
+        }
+    }
+
     // ── Triggers ────────────────────────────────
 
     test("reads triggers with canonical keys when includeTriggers is true") {
@@ -404,6 +431,16 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             scope["database"] shouldBe "dmigrate_test"
             scope["schema"] shouldNotBe null
         }
+    }
+
+    test("reverse scope with structural separators round-trips correctly") {
+        // Testcontainers DB name is fixed, but verify codec handles
+        // hypothetical separator characters in db/schema names
+        val encoded = ReverseScopeCodec.postgresName("my;db=1", "sch:ema%2")
+        val scope = ReverseScopeCodec.parseScope(encoded)
+        scope["database"] shouldBe "my;db=1"
+        scope["schema"] shouldBe "sch:ema%2"
+        ReverseScopeCodec.isReverseGenerated(encoded, ReverseScopeCodec.REVERSE_VERSION) shouldBe true
     }
 
     // ── Extension notes ─────────────────────────

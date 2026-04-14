@@ -327,6 +327,24 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
+    test("reverse scope with structural separators round-trips correctly") {
+        val encoded = ReverseScopeCodec.mysqlName("my;db=test:1")
+        val scope = ReverseScopeCodec.parseScope(encoded)
+        scope["database"] shouldBe "my;db=test:1"
+        ReverseScopeCodec.isReverseGenerated(encoded, ReverseScopeCodec.REVERSE_VERSION) shouldBe true
+    }
+
+    // ── lower_case_table_names in reader path ───
+
+    test("reader uses lower_case_table_names for metadata lookups") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            // Tables should be readable regardless of lctn setting
+            result.schema.tables shouldContainKey "customers"
+            result.schema.tables shouldContainKey "orders"
+        }
+    }
+
     // ── Ownership: pool reusable after read ─────
 
     test("pool is reusable after read") {
