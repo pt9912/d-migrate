@@ -19,6 +19,7 @@ import dev.dmigrate.driver.SkippedObject
  * core-level types ([SchemaDefinition], [ValidationResult]).
  */
 data class ResolvedSchemaOperand(
+    val reference: String,
     val schema: SchemaDefinition,
     val validation: ValidationResult,
     val notes: List<SchemaReadNote> = emptyList(),

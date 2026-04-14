@@ -122,12 +122,14 @@ class ReverseContractTest : FunSpec({
         )
 
         val operand = ResolvedSchemaOperand(
+            reference = "db:staging",
             schema = schema,
             validation = validation,
             notes = notes,
             skippedObjects = skipped,
         )
 
+        operand.reference shouldBe "db:staging"
         operand.schema.name shouldBe "Live DB"
         operand.validation.isValid shouldBe true
         operand.validation.warnings shouldHaveSize 1
@@ -139,6 +141,7 @@ class ReverseContractTest : FunSpec({
 
     test("ResolvedSchemaOperand defaults notes and skippedObjects to empty") {
         val operand = ResolvedSchemaOperand(
+            reference = "/tmp/schema.yaml",
             schema = SchemaDefinition(name = "T", version = "1.0"),
             validation = ValidationResult(),
         )
