@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: F (`schema compare` fuer DB-Operanden)
-> **Status**: Review (2026-04-14)
+> **Status**: Done (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 4.4,
 > Abschnitt 5 Phase F, Abschnitt 6.2, Abschnitt 6.3, Abschnitt 7,
 > Abschnitt 8, Abschnitt 9, Abschnitt 10; `docs/ImpPlan-0.6.0-A.md`;

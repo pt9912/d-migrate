@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0) und `schema compare` (0.5.0, file-based). Kommandos mit *(geplant: …)* beschreiben den spezifizierten Soll-Zustand für spätere Milestones.
+> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden) und `schema reverse` (0.6.0). Kommandos mit *(geplant: …)* beschreiben den spezifizierten Soll-Zustand für spätere Milestones.
 
 ---
 
@@ -431,7 +431,7 @@ Messages werden vor der Ausgabe zentral gescrubbt.
 | `4` | Verbindungs- oder DB-Metadatenfehler |
 | `7` | Config-Aufloesung, URL-Parse oder Dateischreibfehler |
 
-#### `schema compare` *(0.5.0, umgesetzt; ab 0.6.0 auch mit DB-Operanden)*
+#### `schema compare` *(0.5.0 file-based, 0.6.0 mit DB-Operanden, umgesetzt)*
 
 Vergleicht zwei Schemata im neutralen Format und zeigt Unterschiede. Der
 Vergleich bleibt modellbasiert: beide Operanden werden vor dem Diff zu einer
@@ -1063,6 +1063,6 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ---
 
-**Version**: 1.4
-**Stand**: 2026-04-13
-**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0) und `schema compare` (0.5.0, file-based) implementiert; `schema reverse`, `schema compare` mit DB-Operanden und `data transfer` für 0.6.0 spezifiziert
+**Version**: 1.5
+**Stand**: 2026-04-14
+**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden), `schema reverse` (0.6.0) implementiert; `data transfer` fuer 0.6.0 spezifiziert

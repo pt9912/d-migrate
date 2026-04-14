@@ -422,17 +422,22 @@ d-migrate --output-format json schema compare --source a.yaml --target b.yaml
 d-migrate --no-progress data import --source ./dump/ --target sqlite:///tmp/app.db
 ```
 
-Aktuell existieren produktiv nur die Command-Gruppen `schema` und `data`.
-`schema compare` arbeitet dabei bewusst noch **file-based** gegen zwei
-Schema-Dateien; DB-Operanden bleiben Teil von 0.6.0.
+Aktuell existieren produktiv die Command-Gruppen `schema` und `data`.
+Seit 0.6.0 unterstuetzt `schema compare` neben file-based auch
+`file/db` und `db/db` ueber `file:`/`db:`-Operanden, und
+`schema reverse` liest Live-Datenbanken in das neutrale Format.
 
-**Soll-Zustand (spätere Milestones)**:
+**Umgesetzt (0.6.0)**:
 
 ```bash
-# Schema-Verwaltung
-d-migrate schema reverse      --source postgres://... --output schema.yaml     # 0.6.0
-d-migrate schema compare      --source file:schema.yaml --target db:staging    # 0.6.0
+# Schema-Verwaltung (0.6.0)
+d-migrate schema reverse      --source postgres://... --output schema.yaml
+d-migrate schema compare      --source file:schema.yaml --target db:staging
+```
 
+**Soll-Zustand (spaetere Milestones)**:
+
+```bash
 # Daten-Management
 d-migrate data transfer       --source staging --target local_pg               # 0.6.0
 d-migrate data profile        --source production --output profile.json        # 0.7.5
@@ -755,6 +760,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.8
+**Version**: 1.9
 **Stand**: 2026-04-14
-**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.5.5, geplant und beschrieben sind u.a. Reverse/Direkttransfer (0.6.0) sowie Daten-Profiling (0.7.5)
+**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.5.5 sowie 0.6.0 Phase A–F (Reverse-Engineering, schema reverse CLI, schema compare mit DB-Operanden); geplant sind u.a. Direkttransfer (0.6.0 Phase G/H) sowie Daten-Profiling (0.7.5)
