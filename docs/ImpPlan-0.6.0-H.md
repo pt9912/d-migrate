@@ -25,7 +25,9 @@ Ziel der Phase ist:
 - die 0.6.0-Vertraege sind in Code, CLI-Tests, Dialekt-Tests und
   Dokumentation deckungsgleich
 - fuer Reverse, Compare und Transfer existiert mindestens je ein
-  reproduzierbarer Smoke-Pfad
+  reproduzierbarer Smoke-Pfad; DB-gestuetzte Smokes sind dabei an ein
+  dokumentiertes lokales Docker-/Alias-Setup auf Basis eingecheckter
+  Fixtures gebunden
 - Beispielpfade bauen auf vorhandenem Repo-Material auf und verweisen nicht
   auf eine nicht existente `examples/`-Struktur
 
@@ -66,6 +68,9 @@ Aktueller Stand im Repo:
   - `adapters/driven/formats/src/test/resources/fixtures/invalid/`
 - `docs/releasing.md` nutzt diese Fixture-Schemas bereits fuer
   `schema generate`-Smokes
+- `scripts/test-integration-docker.sh` deckt reale Dialekt-Integration ueber
+  Gradle/Testcontainers ab, ist aber kein fertiger manueller Smoke-Harness
+  fuer rohe `postgresql://...`-/`mysql://...`-Beispiele
 - `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/ReverseContractTest.kt`
   deckt heute nur den grundlegenden Reverse-Vertrag ab:
   - `SchemaReadOptions`
@@ -102,8 +107,8 @@ Konsequenz fuer Phase H:
   - fehlender 0.6.0-Testmatrix fuer Reverse und Transfer
   - Ausweitung des Compare-Testsatzes von file-based auf gemischte Operanden
   - Doku-Abgleich ueber Specs, Architektur, Living Design und Release-Smokes
-  - Fixierung eines real existierenden Beispielpfads statt diffuser
-    Platzhalter
+  - Fixierung eines real existierenden Beispielpfads inklusive lokal
+    reproduzierbarem DB-Smoke-Setup statt diffuser Platzhalter
 
 ---
 
@@ -168,7 +173,10 @@ abstrakte Wunschstruktur.
 Verbindliche Folge:
 
 - Core-Logik bleibt in `hexagon/core/src/test`
-- Runner- und Vertragslogik bleibt in `hexagon/application/src/test`
+- pure, CLI-unabhaengige Application-Helfer bleiben in
+  `hexagon/application/src/test`
+- Resolver-, Runner- und CLI-Vertragslogik folgt dem bestehenden Zuschnitt in
+  `adapters/driving/cli/src/test`
 - driver-nahe Dialektpfade bleiben in den jeweiligen Driver-Modulen
 - format- und fixture-nahe Tests bleiben in `adapters/driven/formats/src/test`
 - Streaming-Verhalten bleibt in `adapters/driven/streaming/src/test`
@@ -359,6 +367,9 @@ Mindestens noetig:
   sinnvoll
 - Einordnung in das bestehende Skript- und Docker-Setup statt eines
   separaten Teststapels
+- CLI-Smokes laufen gegen ein finales Runtime-Image mit
+  `ENTRYPOINT ["d-migrate"]`; `--target build` bleibt Test-/Asset-Pipeline
+  vorbehalten
 
 ### H.6 Kanonische 0.6.0-Dokumente synchronisieren
 
@@ -383,9 +394,17 @@ Phase H soll einen kleinen, realen und wartbaren Beispielpfad etablieren.
 Mindestens noetig:
 
 - fixture-basierte file/file-Smokes fuer Compare
-- release-nahe Reverse-/Transfer-Smokes mit klarer URL-/Volume-Struktur
+- DB-gestuetzte Reverse-/Compare-/Transfer-Smokes mit dokumentiertem lokalem
+  Docker-Netz, temporaerer `--config`-Datei und Provisionierung aus
+  `adapters/driven/formats/src/test/resources/fixtures/ddl/`
+- explizite Compare-Smokes fuer:
+  - `file/file`
+  - `file/db`
+  - `db/db`
 - explizite Benennung des kanonischen Fixture-Pfads in der Doku
 - keine Verweise auf ein nicht existentes `examples/`-Verzeichnis
+- keine Platzhalter wie `postgresql://user:pw@host/...`, wenn derselbe Pfad
+  als reproduzierbar bezeichnet wird
 
 ---
 
@@ -398,25 +417,24 @@ Bevorzugte Matrix:
 
 - Reverse:
   - `hexagon/application/src/test`
-    - Runner-, Exit-, Scrubbing- und Report-Vertrag
+    - reine Contract-Tests ohne Resolver- oder CLI-Adapter-Reichweite
   - `adapters/driven/driver-*/src/test`
     - echte Dialektreads, Notes, `skippedObjects`, Include-Flags
   - `adapters/driving/cli/src/test`
-    - CLI-Help, CLI-Wiring, Output-/Report-Pfade
+    - Runner-, Resolver-, Exit-, Scrubbing-, Report-, CLI-Help- und
+      Output-Pfade
 - Compare:
   - `hexagon/core/src/test`
     - Diff- und Marker-nahe Kernlogik
-  - `hexagon/application/src/test`
-    - Operandauflosung, Exit-Codes, Envelope-Vertrag
   - `adapters/driving/cli/src/test`
-    - `file/file`, `file/db`, `db/db`, Scrubbing, Ausgabe
+    - Operandauflosung, `file/file`, `file/db`, `db/db`, Exit-Codes,
+      Scrubbing, Ausgabe
 - Transfer:
-  - `hexagon/application/src/test`
-    - Resolver, Preflight, Ordering, Exit-Codes
   - `adapters/driven/streaming/src/test`
     - Transfer-Orchestrierung, Rows-/Chunk-Vertrag
   - `adapters/driving/cli/src/test`
-    - `data transfer`-CLI, Flag-Semantik, Summary/Progress
+    - Resolver, Preflight, Ordering, Exit-Codes, `data transfer`-CLI,
+      Flag-Semantik, Summary/Progress
 - Docs und Beispielpfade:
   - `docs/cli-spec.md`
   - `docs/neutral-model-spec.md`
@@ -429,7 +447,12 @@ Kanonischer Beispielpfad fuer 0.6.0:
 
 - Schema-Fixtures bleiben unter
   `adapters/driven/formats/src/test/resources/fixtures/schemas/`
+- DDL-Fixtures fuer lokale DB-Smokes bleiben unter
+  `adapters/driven/formats/src/test/resources/fixtures/ddl/`
 - manuelle Release-/Smoke-Kommandos mounten genau diesen Pfad in Container
+- DB-gestuetzte Release-/Smoke-Kommandos nutzen ein dokumentiertes lokales
+  Docker-Netz und eine temporaere Config-Datei mit Aliasen statt freier
+  `host`-Platzhalter
 - temporaere Smoke-Artefakte werden ausserhalb des Repos oder unter einem
   expliziten Work-Verzeichnis erzeugt, aber nicht versioniert
 
@@ -440,13 +463,14 @@ Kanonischer Beispielpfad fuer 0.6.0:
 Direkt betroffen oder neu einzufuehren:
 
 - neue oder erweiterte Tests unter:
-  - `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/`
   - `hexagon/core/src/test/kotlin/dev/dmigrate/core/`
   - `adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/`
   - `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/`
   - `adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`
   - `adapters/driven/streaming/src/test/kotlin/dev/dmigrate/streaming/`
   - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/`
+- ggf. reine, adapterfreie Contract-Tests unter:
+  - `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/`
 - bestehende Fixture-Basis unter:
   - `adapters/driven/formats/src/test/resources/fixtures/schemas/`
   - `adapters/driven/formats/src/test/resources/fixtures/ddl/`
@@ -494,6 +518,16 @@ Indirekt vorausgesetzt:
       Reverse-/Compare-/Transfer-Smoke-Pfade.
 - [ ] Mindestens ein reproduzierbarer Smoke-Pfad fuer Reverse, Compare und
       Transfer ist dokumentiert.
+- [ ] DB-gestuetzte Smoke-Pfade sind an ein dokumentiertes lokales
+      Docker-/Alias-Setup auf Basis der eingecheckten DDL-Fixtures gebunden
+      und nicht an rohe `user:pw@host`-Platzhalter.
+- [ ] `docs/releasing.md` nutzt fuer CLI-Smokes ein finales Runtime-Image;
+      `--target build` bleibt auf Build-/Test-/Asset-Schritte beschraenkt.
+- [ ] Die Release-/Smoke-Matrix fuer Compare enthaelt explizit `file/file`,
+      `file/db` und `db/db`.
+- [ ] Resolver- und runner-nahe Vertrage rund um `NamedConnectionResolver`
+      werden primaer im CLI-Adapter getestet oder als klar adapterfreie
+      Helfer extrahiert, aber nicht doppelt ueber Module verteilt.
 - [ ] 0.6.0 ist erst dann dokumentarisch abgeschlossen, wenn Tests und Doku
       gemeinsam denselben Stand zeigen.
 
@@ -508,7 +542,7 @@ Mindestumfang fuer die Umsetzung:
 ```bash
 docker build --target build \
   --build-arg GRADLE_TASKS=":hexagon:core:test :hexagon:application:test :adapters:driven:driver-common:test :adapters:driven:driver-postgresql:test :adapters:driven:driver-mysql:test :adapters:driven:driver-sqlite:test :adapters:driven:streaming:test :adapters:driven:formats:test :adapters:driving:cli:test" \
-  -t d-migrate:phase-h .
+  -t d-migrate:phase-h-build .
 ```
 
 2. Reale Dialekt-Integration ueber das bestehende Skript:
@@ -517,35 +551,109 @@ docker build --target build \
 ./scripts/test-integration-docker.sh
 ```
 
-3. Manuelle fixture-basierte file/file-Smokes:
+3. Finale Runtime-Stage fuer CLI-Smokes bauen:
+
+```bash
+DOCKER_BUILDKIT=1 docker build \
+  --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist" \
+  -t d-migrate:phase-h-runtime .
+```
+
+4. Manuelle fixture-basierte file/file-Smokes:
 
 ```bash
 docker run --rm \
   -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/schemas:/work" \
-  d-migrate:phase-h \
+  d-migrate:phase-h-runtime \
   schema compare --source file:/work/minimal.yaml --target file:/work/e-commerce.yaml
 ```
 
-4. Manuelle Reverse-/Compare-/Transfer-Smokes fuer 0.6.0:
+5. Reproduzierbares lokales DB-Smoke-Setup fuer Reverse, Compare und Transfer:
 
 ```bash
-docker run --rm -v "$(pwd):/repo" d-migrate:phase-h \
-  schema reverse --source postgresql://user:pw@host/db --output /repo/out/schema.yaml --report /repo/out/schema.report.yaml
+SMOKE_DIR="$(mktemp -d)"
+mkdir -p "${SMOKE_DIR}/out"
 
-docker run --rm -v "$(pwd):/repo" d-migrate:phase-h \
-  schema compare --source file:/repo/adapters/driven/formats/src/test/resources/fixtures/schemas/minimal.yaml --target db:postgresql://user:pw@host/db
+cat > "${SMOKE_DIR}/d-migrate.yaml" <<'YAML'
+database:
+  connections:
+    smoke_pg: "postgresql://dmigrate:dmigrate@d-migrate-smoke-pg:5432/dmigrate"
+    smoke_mysql: "mysql://dmigrate:dmigrate@d-migrate-smoke-mysql:3306/dmigrate"
+YAML
 
-docker run --rm d-migrate:phase-h \
-  data transfer --source postgresql://user:pw@host/src --target mysql://user:pw@host/dst
+docker network inspect d-migrate-smoke >/dev/null 2>&1 || \
+  docker network create d-migrate-smoke
+
+docker run -d --rm --name d-migrate-smoke-pg --network d-migrate-smoke \
+  -e POSTGRES_USER=dmigrate \
+  -e POSTGRES_PASSWORD=dmigrate \
+  -e POSTGRES_DB=dmigrate \
+  postgres:16
+
+docker run -d --rm --name d-migrate-smoke-mysql --network d-migrate-smoke \
+  -e MYSQL_DATABASE=dmigrate \
+  -e MYSQL_USER=dmigrate \
+  -e MYSQL_PASSWORD=dmigrate \
+  -e MYSQL_ROOT_PASSWORD=dmigrate \
+  mysql:8
+
+docker run --rm --network d-migrate-smoke \
+  -e PGPASSWORD=dmigrate \
+  -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/ddl:/fixtures:ro" \
+  postgres:16 sh -lc '
+    until pg_isready -h d-migrate-smoke-pg -U dmigrate >/dev/null 2>&1; do sleep 1; done
+    psql -h d-migrate-smoke-pg -U dmigrate -d dmigrate -f /fixtures/minimal.postgresql.sql
+    psql -h d-migrate-smoke-pg -U dmigrate -d dmigrate -c "INSERT INTO users(name) VALUES (\$\$smoke user\$\$);"
+  '
+
+docker run --rm --network d-migrate-smoke \
+  -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/ddl:/fixtures:ro" \
+  mysql:8 sh -lc '
+    until mysqladmin ping -h d-migrate-smoke-mysql -u dmigrate -pdmigrate --silent; do sleep 1; done
+    mysql -h d-migrate-smoke-mysql -u dmigrate -pdmigrate dmigrate < /fixtures/minimal.mysql.sql
+  '
+```
+
+6. Manuelle Reverse-/Compare-/Transfer-Smokes fuer 0.6.0:
+
+```bash
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  d-migrate:phase-h-runtime \
+  --config /smoke/d-migrate.yaml \
+  schema reverse --source smoke_pg --output /smoke/out/reverse.yaml --report /smoke/out/reverse.report.yaml
+
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  -v "$(pwd):/repo:ro" \
+  d-migrate:phase-h-runtime \
+  --config /smoke/d-migrate.yaml \
+  schema compare --source file:/repo/adapters/driven/formats/src/test/resources/fixtures/schemas/minimal.yaml --target db:smoke_pg
+
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  d-migrate:phase-h-runtime \
+  --config /smoke/d-migrate.yaml \
+  schema compare --source db:smoke_pg --target db:smoke_mysql
+
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  d-migrate:phase-h-runtime \
+  --config /smoke/d-migrate.yaml \
+  data transfer --source smoke_pg --target smoke_mysql --tables users
 ```
 
 Dabei explizit pruefen:
 
 - Reverse ist auf `stderr`, Report-Datei und Schema-Artefakt konsistent
-- Compare deckt file/file, file/db und db/db ohne Widerspruch ab
+- Compare deckt `file/file`, `file/db` und `db/db` ohne Widerspruch ab
 - Transfer scheitert bei Zielinkompatibilitaeten oder FK-Zyklen bereits im
   Preflight
 - Doku-Beispielpfade verweisen auf reale Fixture- oder Work-Pfade
+- DB-Smokes benutzen das dokumentierte lokale Docker-/Alias-Setup aus
+  `fixtures/ddl/` statt freier `host`-Platzhalter
+- CLI-Smokes laufen gegen das finale Runtime-Image statt gegen ein reines
+  Build-Stage-Image
 - `docs/releasing.md` ist mit den tatsaechlich lauffaehigen Smoke-Kommandos
   nachgefuehrt
 
