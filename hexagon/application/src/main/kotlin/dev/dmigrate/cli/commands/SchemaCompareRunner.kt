@@ -9,6 +9,12 @@ import dev.dmigrate.driver.SkippedObject
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
+/**
+ * Thrown by dbLoader when the error is a config/URL/alias resolution
+ * failure (exit 7) rather than a connection/metadata failure (exit 4).
+ */
+class CompareConfigException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
 // ── Request ──────────────────────────────────────────────────────
 
 data class SchemaCompareRequest(
@@ -163,6 +169,7 @@ class SchemaCompareRunner(
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand = CompareOperandNormalizer::normalize,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
     private val projectDiff: (SchemaDiff) -> DiffView,
+    private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val fileWriter: (Path, String) -> Unit = { path, content -> path.writeText(content) },
     private val renderPlain: (SchemaCompareDocument) -> String,
@@ -298,8 +305,12 @@ class SchemaCompareRunner(
                 }
                 try {
                     loader(operand, configPath)
+                } catch (e: CompareConfigException) {
+                    printError("Config/URL error: ${scrubMessage(e.message)}", scrubRef(rawRef))
+                    lastExitCode = 7
+                    null
                 } catch (e: Exception) {
-                    printError("Failed to read DB operand: ${e.message}", rawRef)
+                    printError("Connection/metadata error: ${scrubMessage(e.message)}", scrubRef(rawRef))
                     lastExitCode = 4
                     null
                 }
@@ -373,5 +384,20 @@ class SchemaCompareRunner(
             }
         }
         return null
+    }
+
+    private fun scrubMessage(message: String?): String {
+        if (message == null) return "unknown error"
+        return Regex("[a-zA-Z][a-zA-Z0-9+\\-.]*://[^\\s]+").replace(message) {
+            urlScrubber(it.value)
+        }
+    }
+
+    private fun scrubRef(raw: String): String {
+        val operandValue = when {
+            raw.startsWith("db:") -> raw.removePrefix("db:")
+            else -> return raw
+        }
+        return if (operandValue.contains("://")) "db:${urlScrubber(operandValue)}" else raw
     }
 }

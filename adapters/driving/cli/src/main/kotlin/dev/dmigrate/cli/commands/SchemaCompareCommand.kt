@@ -53,9 +53,17 @@ class SchemaCompareCommand : CliktCommand(name = "compare") {
                 )
             },
             dbLoader = { op, cfgPath ->
-                val url = NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
-                val config = ConnectionUrlParser.parse(url)
+                // Phase 1: Config/URL resolution (exit 7 on failure)
+                val url: String
+                val config: dev.dmigrate.driver.connection.ConnectionConfig
+                try {
+                    url = NamedConnectionResolver(configPathFromCli = cfgPath).resolve(op.source)
+                    config = ConnectionUrlParser.parse(url)
+                } catch (e: Exception) {
+                    throw CompareConfigException(e.message ?: "Config resolution failed", e)
+                }
                 val userRef = if (op.source.contains("://")) LogScrubber.maskUrl(url) else op.source
+                // Phase 2: Connection/read (exit 4 on failure)
                 val pool = HikariConnectionPoolFactory.create(config)
                 pool.use { p ->
                     val result = DatabaseDriverRegistry.get(config.dialect).schemaReader()
@@ -69,6 +77,7 @@ class SchemaCompareCommand : CliktCommand(name = "compare") {
                     )
                 }
             },
+            urlScrubber = LogScrubber::maskUrl,
             comparator = { left, right -> SchemaComparator().compare(left, right) },
             projectDiff = SchemaCompareHelpers::projectDiff,
             renderPlain = SchemaCompareHelpers::renderPlain,

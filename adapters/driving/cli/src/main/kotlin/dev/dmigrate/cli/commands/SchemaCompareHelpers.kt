@@ -239,6 +239,15 @@ internal object SchemaCompareHelpers {
                 v.sourceDialect?.let { appendLine("      source_dialect: ${it.before} -> ${it.after}") }
             }
         }
+
+        renderObjectList(this, "Sequences", diff.sequencesAdded, diff.sequencesRemoved, diff.sequencesChanged)
+        renderObjectList(this, "Functions", diff.functionsAdded, diff.functionsRemoved, diff.functionsChanged)
+        renderObjectList(this, "Procedures", diff.proceduresAdded, diff.proceduresRemoved, diff.proceduresChanged)
+        renderObjectList(this, "Triggers", diff.triggersAdded, diff.triggersRemoved, diff.triggersChanged)
+
+        // Operand-side info (only if present)
+        renderOperandInfo(this, doc.sourceOperand, "source")
+        renderOperandInfo(this, doc.targetOperand, "target")
     }.trimEnd()
 
     private fun renderSummaryPlain(sb: StringBuilder, s: SchemaCompareSummary) {
@@ -683,5 +692,37 @@ internal object SchemaCompareHelpers {
         diff.description?.let { changes += "description: changed" }
         diff.fields?.let { changes += "fields: changed" }
         return changes
+    }
+
+    // ── Object list rendering (sequences, functions, etc.) ──────────
+
+    private fun renderObjectList(
+        sb: StringBuilder,
+        label: String,
+        added: List<String>,
+        removed: List<String>,
+        changed: List<String>,
+    ) {
+        if (added.isEmpty() && removed.isEmpty() && changed.isEmpty()) return
+        sb.appendLine()
+        sb.appendLine("$label:")
+        for (name in added) sb.appendLine("  + $name")
+        for (name in removed) sb.appendLine("  - $name")
+        for (name in changed) sb.appendLine("  ~ $name")
+    }
+
+    // ── Operand info rendering ──────────────────────────────────────
+
+    private fun renderOperandInfo(sb: StringBuilder, info: OperandInfo?, side: String) {
+        if (info == null) return
+        if (info.notes.isEmpty() && info.skippedObjects.isEmpty()) return
+        sb.appendLine()
+        sb.appendLine("Operand ($side): ${info.reference}")
+        for (note in info.notes) {
+            sb.appendLine("  ${note.severity.name.lowercase()} [${note.code}] ${note.objectName}: ${note.message}")
+        }
+        for (skip in info.skippedObjects) {
+            sb.appendLine("  skipped [${skip.code ?: "-"}] ${skip.type} ${skip.name}: ${skip.reason}")
+        }
     }
 }
