@@ -16,7 +16,7 @@
 d-migrate <command> <subcommand> [flags] [arguments]
 ```
 
-- **Commands**: Oberste Ebene (`schema`, `data`, `transform`, `generate`, `export`, `validate`, `config`)
+- **Commands**: Oberste Ebene — implementiert: `schema`, `data`; geplant: `export` (0.7.0), `transform` (1.1.0)
 - **Subcommands**: Aktion innerhalb eines Commands (`schema validate`, `data export`)
 - **Flags**: Optionen mit `--` Präfix, Kurzform mit `-` (`--format json`, `-f json`)
 - **Arguments**: Positionelle Argumente (selten, nur wo eindeutig)
@@ -72,7 +72,7 @@ d-migrate data export --source staging --format json
 | `4` | `CONNECTION_ERROR` | Datenbankverbindung fehlgeschlagen | DB nicht erreichbar, Credentials falsch |
 | `5` | `MIGRATION_ERROR` | Fehler während Daten-Migration | Constraint-Verletzung beim Import |
 | `6` | `AI_ERROR` | KI-Provider nicht erreichbar oder Transformation fehlgeschlagen | Ollama nicht gestartet |
-| `7` | `CONFIG_ERROR` | Konfigurationsdatei ungültig oder nicht lesbar | Ungültiges YAML in `.d-migrate.yaml` |
+| `7` | `LOCAL_ERROR` | Lokaler Konfigurations-, Parse-, Datei-, I/O-, Render- oder Kollisionsfehler | Ungültiges YAML in `.d-migrate.yaml`, Schema-Datei nicht lesbar, Ausgabepfad nicht beschreibbar |
 | `130` | `INTERRUPTED` | Durch Benutzer abgebrochen (Ctrl+C) | SIGINT empfangen |
 
 ### 2.1 Exit-Code-Regeln
@@ -508,8 +508,9 @@ d-migrate schema migrate --source <path> --target <url> [--generate-rollback]
 
 Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
 
-Hinweis: Nicht Teil des 0.5.0-MVP-Releases; hängt an weiterem Diff- und
-Migrationsmodell jenseits des file-based `schema compare`.
+Hinweis: Nicht Teil von 0.7.0. `schema migrate` wird diff-basiert auf
+`DiffResult` arbeiten und ist bewusst von `export flyway|liquibase|django|knex`
+(baseline-/full-state-Export aus einem einzelnen Schema) abgegrenzt.
 
 #### `schema rollback` *(geplant: späterer Milestone)*
 
@@ -817,20 +818,41 @@ Exit: `0` bei Erfolg.
 
 #### `export flyway` / `export liquibase` / `export django` / `export knex` *(geplant: 0.7.0)*
 
-Generiert Migrationsdateien für externe Tools.
+Exportiert baseline-/full-state-Migrationsdateien für externe Tools aus
+einem einzelnen neutralen Schema. Dies ist kein diff-basierter
+Migrationspfad — siehe §7 für die Abgrenzung zu `schema migrate`.
 
 ```
-d-migrate export flyway --source <path> --output <dir>
+d-migrate export flyway --source schema.yaml --target postgresql --output migrations/
+d-migrate export django --source schema.yaml --target mysql --version 0001 --output myapp/migrations/
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad | Schema-Datei |
+| `--source` | Ja | Pfad | Schema-Datei (YAML/JSON) |
 | `--output` | Ja | Pfad | Ausgabeverzeichnis |
-| `--target` | Nein | Dialekt | Ziel-Datenbank (Default: `postgresql`) |
-| `--version` | Nein | String | Versionsnummer für Migration |
+| `--target` | Ja | Dialekt | Ziel-Datenbank (`postgresql`, `mysql`, `sqlite`) |
+| `--version` | Flyway/Liquibase: Nein; Django/Knex: Ja | String | Versionsnummer für Migration |
+| `--spatial-profile` | Nein | String | Spatial-Profil (wie bei `schema generate`) |
+| `--generate-rollback` | Nein | Boolean | Tool-spezifisches Down-Artefakt erzeugen |
+| `--report` | Nein | Pfad | Transformationsbericht (YAML-Sidecar) |
 
-Exit: `0` bei Erfolg.
+**Versionsstrategie**:
+- Flyway/Liquibase: `--version` optional; Fallback auf `schema.version`, wenn
+  tool-tauglich normalisierbar; kein impliziter Timestamp-Fallback
+- Django/Knex: `--version` Pflicht; `schema.version` bleibt Metadatum im Report
+
+**Determinismus**: Gleiches Schema + gleiche Flags = identische Artefaktinhalte.
+Der DDL-Header-Timestamp (`Generated: <ISO-8601>`) wird in Tool-Artefakten
+nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
+
+**Rollback**: `--generate-rollback` erzeugt tool-spezifische Down-Artefakte
+(Flyway-Undo, Liquibase-Rollback-Block, Django `reverse_sql`, Knex
+`exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
+Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
+
+Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
+`--version` bei Django/Knex), `3` Schema-Validierungsfehler, `7` Parse-/I/O-Fehler.
 
 ### 6.6 validate
 

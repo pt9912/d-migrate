@@ -594,17 +594,24 @@ exported_at: 2025-10-22T14:30:00Z
 
 ## 7. Migrations-Rollback (LF-014)
 
-Jede Schema-Migration wird als Up/Down-Paar generiert:
+### 7.1 Tool-Export-Rollback (0.7.0)
 
-```
-migrations/
-├── V001__create_customers_up.sql
-├── V001__create_customers_down.sql
-├── V002__add_orders_up.sql
-└── V002__add_orders_down.sql
-```
+`d-migrate export flyway|liquibase|django|knex --generate-rollback` erzeugt
+tool-spezifische Down-Artefakte auf Basis des bestehenden full-state-
+`generateRollback()`-Pfads. Jedes Tool hat sein eigenes Format:
 
-Die Rollback-Generierung leitet aus dem `DiffResult` die inverse Operation ab:
+- **Flyway**: `U<version>__<name>.sql` (Undo-Datei)
+- **Liquibase**: `<rollback>`-Block im Changeset
+- **Django**: `reverse_sql` im `RunSQL`-Wrapper
+- **Knex**: `exports.down` in der Migrations-Datei
+
+Dies ist ein baseline-/full-state-Rollback — es kehrt die gesamte Schema-
+Erstellung um, nicht einen inkrementellen Diff.
+
+### 7.2 Diff-basierter Rollback (späterer Milestone)
+
+Der spätere `schema migrate`-Pfad wird aus einem `DiffResult` die inverse
+Operation ableiten:
 
 | Up-Operation | Down-Operation |
 |---|---|
@@ -615,7 +622,9 @@ Die Rollback-Generierung leitet aus dem `DiffResult` die inverse Operation ab:
 | ALTER COLUMN (Typ) | ALTER COLUMN (alter Typ) — erfordert Speicherung des Vor-Zustands |
 | DROP COLUMN | Warnung: Datenverlust, kein automatischer Rollback |
 
-Nicht-reversible Operationen (z.B. DROP COLUMN, DROP TABLE) erzeugen eine Warnung und erfordern explizite Bestätigung. Der Vor-Zustand wird als Snapshot im Audit-Trail gespeichert.
+Nicht-reversible Operationen (z.B. DROP COLUMN, DROP TABLE) erzeugen eine
+Warnung und erfordern explizite Bestätigung. Dieser Pfad wird in einem
+späteren Milestone implementiert und ist bewusst nicht Teil von 0.7.0.
 
 ---
 

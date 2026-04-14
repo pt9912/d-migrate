@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: A (Spezifikationsbereinigung und Export-Vertrag)
-> **Status**: Draft (2026-04-14)
+> **Status**: Done (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 1, Abschnitt 2,
 > Abschnitt 3, Abschnitt 4, Abschnitt 5 Phase A, Abschnitt 6, Abschnitt 7,
 > Abschnitt 8, Abschnitt 9, Abschnitt 10; `docs/roadmap.md` Milestone 0.7.0;
