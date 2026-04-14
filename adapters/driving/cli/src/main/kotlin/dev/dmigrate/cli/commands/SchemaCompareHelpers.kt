@@ -119,6 +119,18 @@ internal object SchemaCompareHelpers {
                 ViewSummaryView(it.name, it.definition.materialized)
             },
             viewsChanged = diff.viewsChanged.map { projectViewDiff(it) },
+            sequencesAdded = diff.sequencesAdded.map { it.name },
+            sequencesRemoved = diff.sequencesRemoved.map { it.name },
+            sequencesChanged = diff.sequencesChanged.map { it.name },
+            functionsAdded = diff.functionsAdded.map { it.name },
+            functionsRemoved = diff.functionsRemoved.map { it.name },
+            functionsChanged = diff.functionsChanged.map { it.name },
+            proceduresAdded = diff.proceduresAdded.map { it.name },
+            proceduresRemoved = diff.proceduresRemoved.map { it.name },
+            proceduresChanged = diff.proceduresChanged.map { it.name },
+            triggersAdded = diff.triggersAdded.map { it.name },
+            triggersRemoved = diff.triggersRemoved.map { it.name },
+            triggersChanged = diff.triggersChanged.map { it.name },
         )
     }
 
@@ -240,6 +252,18 @@ internal object SchemaCompareHelpers {
         if (s.viewsAdded > 0) sb.appendLine("  Views added:     ${s.viewsAdded}")
         if (s.viewsRemoved > 0) sb.appendLine("  Views removed:   ${s.viewsRemoved}")
         if (s.viewsChanged > 0) sb.appendLine("  Views changed:   ${s.viewsChanged}")
+        if (s.sequencesAdded > 0) sb.appendLine("  Sequences added: ${s.sequencesAdded}")
+        if (s.sequencesRemoved > 0) sb.appendLine("  Sequences removed: ${s.sequencesRemoved}")
+        if (s.sequencesChanged > 0) sb.appendLine("  Sequences changed: ${s.sequencesChanged}")
+        if (s.functionsAdded > 0) sb.appendLine("  Functions added: ${s.functionsAdded}")
+        if (s.functionsRemoved > 0) sb.appendLine("  Functions removed: ${s.functionsRemoved}")
+        if (s.functionsChanged > 0) sb.appendLine("  Functions changed: ${s.functionsChanged}")
+        if (s.proceduresAdded > 0) sb.appendLine("  Procedures added: ${s.proceduresAdded}")
+        if (s.proceduresRemoved > 0) sb.appendLine("  Procedures removed: ${s.proceduresRemoved}")
+        if (s.proceduresChanged > 0) sb.appendLine("  Procedures changed: ${s.proceduresChanged}")
+        if (s.triggersAdded > 0) sb.appendLine("  Triggers added:  ${s.triggersAdded}")
+        if (s.triggersRemoved > 0) sb.appendLine("  Triggers removed: ${s.triggersRemoved}")
+        if (s.triggersChanged > 0) sb.appendLine("  Triggers changed: ${s.triggersChanged}")
     }
 
     private fun renderTableChangePlain(sb: StringBuilder, t: TableChangeView) {
@@ -308,7 +332,19 @@ internal object SchemaCompareHelpers {
         sb.appendLine("""    "custom_types_changed": ${s.customTypesChanged},""")
         sb.appendLine("""    "views_added": ${s.viewsAdded},""")
         sb.appendLine("""    "views_removed": ${s.viewsRemoved},""")
-        sb.appendLine("""    "views_changed": ${s.viewsChanged}""")
+        sb.appendLine("""    "views_changed": ${s.viewsChanged},""")
+        sb.appendLine("""    "sequences_added": ${s.sequencesAdded},""")
+        sb.appendLine("""    "sequences_removed": ${s.sequencesRemoved},""")
+        sb.appendLine("""    "sequences_changed": ${s.sequencesChanged},""")
+        sb.appendLine("""    "functions_added": ${s.functionsAdded},""")
+        sb.appendLine("""    "functions_removed": ${s.functionsRemoved},""")
+        sb.appendLine("""    "functions_changed": ${s.functionsChanged},""")
+        sb.appendLine("""    "procedures_added": ${s.proceduresAdded},""")
+        sb.appendLine("""    "procedures_removed": ${s.proceduresRemoved},""")
+        sb.appendLine("""    "procedures_changed": ${s.proceduresChanged},""")
+        sb.appendLine("""    "triggers_added": ${s.triggersAdded},""")
+        sb.appendLine("""    "triggers_removed": ${s.triggersRemoved},""")
+        sb.appendLine("""    "triggers_changed": ${s.triggersChanged}""")
         sb.appendLine("  },")
     }
 
@@ -457,6 +493,18 @@ internal object SchemaCompareHelpers {
         sb.appendLine("  views_added: ${s.viewsAdded}")
         sb.appendLine("  views_removed: ${s.viewsRemoved}")
         sb.appendLine("  views_changed: ${s.viewsChanged}")
+        sb.appendLine("  sequences_added: ${s.sequencesAdded}")
+        sb.appendLine("  sequences_removed: ${s.sequencesRemoved}")
+        sb.appendLine("  sequences_changed: ${s.sequencesChanged}")
+        sb.appendLine("  functions_added: ${s.functionsAdded}")
+        sb.appendLine("  functions_removed: ${s.functionsRemoved}")
+        sb.appendLine("  functions_changed: ${s.functionsChanged}")
+        sb.appendLine("  procedures_added: ${s.proceduresAdded}")
+        sb.appendLine("  procedures_removed: ${s.proceduresRemoved}")
+        sb.appendLine("  procedures_changed: ${s.proceduresChanged}")
+        sb.appendLine("  triggers_added: ${s.triggersAdded}")
+        sb.appendLine("  triggers_removed: ${s.triggersRemoved}")
+        sb.appendLine("  triggers_changed: ${s.triggersChanged}")
     }
 
     private fun renderDiffYaml(sb: StringBuilder, diff: DiffView) {

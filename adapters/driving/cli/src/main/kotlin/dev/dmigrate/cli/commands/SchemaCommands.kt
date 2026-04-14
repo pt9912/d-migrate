@@ -11,7 +11,6 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.output.OutputFormatter
-import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.format.SchemaFileResolver
@@ -115,40 +114,4 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     }
 }
 
-class SchemaCompareCommand : CliktCommand(name = "compare") {
-    override fun help(context: Context) = "Compare two schema definitions"
-
-    val source by option("--source", help = "Path to source schema file (YAML/JSON)")
-        .path(mustExist = true, canBeDir = false)
-        .required()
-    val target by option("--target", help = "Path to target schema file (YAML/JSON)")
-        .path(mustExist = true, canBeDir = false)
-        .required()
-    val output by option("--output", help = "Output file path (default: stdout)")
-        .path()
-
-    override fun run() {
-        val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx)
-        val request = SchemaCompareRequest(
-            source = source,
-            target = target,
-            output = output,
-            outputFormat = ctx.outputFormat,
-            quiet = ctx.quiet,
-        )
-        val runner = SchemaCompareRunner(
-            schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
-            validator = { schema -> SchemaValidator().validate(schema) },
-            comparator = { left, right -> SchemaComparator().compare(left, right) },
-            projectDiff = SchemaCompareHelpers::projectDiff,
-            renderPlain = SchemaCompareHelpers::renderPlain,
-            renderJson = SchemaCompareHelpers::renderJson,
-            renderYaml = SchemaCompareHelpers::renderYaml,
-            printError = { msg, src -> formatter.printError(msg, src) },
-        )
-        val exitCode = runner.execute(request)
-        if (exitCode != 0) throw ProgramResult(exitCode)
-    }
-}
+// SchemaCompareCommand is in its own file: SchemaCompareCommand.kt

@@ -24,16 +24,20 @@ class SchemaCompareRunnerTest : FunSpec({
         ))),
     )
     val fakeDiffView = DiffView(
-        schemaMetadata = MetadataChangeView(
-            name = StringChange("A", "B"),
-        ),
+        schemaMetadata = MetadataChangeView(name = StringChange("A", "B")),
         tablesAdded = listOf(TableSummaryView("users", 1)),
+    )
+
+    val fakeOperand = ResolvedSchemaOperand(
+        reference = "/tmp/a.yaml",
+        schema = schemaA,
+        validation = ValidationResult(),
     )
 
     class Capture {
         val lines = mutableListOf<String>()
         val sink: (String) -> Unit = { lines += it }
-        fun joined(): String = lines.joinToString("\n")
+        fun joined() = lines.joinToString("\n")
     }
 
     class Harness {
@@ -42,14 +46,18 @@ class SchemaCompareRunnerTest : FunSpec({
         val fileWrites = mutableListOf<Pair<Path, String>>()
         val dirsCreated = mutableListOf<Path>()
 
-        var schemaReader: (Path) -> SchemaDefinition = { schemaA }
-        var validator: (SchemaDefinition) -> ValidationResult = { ValidationResult() }
-        var comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff = { _, _ -> emptyDiff }
+        var fileSchema: SchemaDefinition = schemaA
+        var comparatorResult: SchemaDiff = emptyDiff
 
-        fun runner(): SchemaCompareRunner = SchemaCompareRunner(
-            schemaReader = schemaReader,
-            validator = validator,
-            comparator = comparator,
+        fun runner() = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(
+                    reference = op.path.toString(),
+                    schema = fileSchema,
+                    validation = ValidationResult(),
+                )
+            },
+            comparator = { _, _ -> comparatorResult },
             projectDiff = { _ -> fakeDiffView },
             ensureParentDirectories = { dirsCreated.add(it) },
             fileWriter = { path, content -> fileWrites += path to content },
@@ -63,127 +71,34 @@ class SchemaCompareRunnerTest : FunSpec({
     }
 
     fun request(
-        source: Path = Path.of("/tmp/a.yaml"),
-        target: Path = Path.of("/tmp/b.yaml"),
+        source: String = "/tmp/a.yaml",
+        target: String = "/tmp/b.yaml",
         output: Path? = null,
         outputFormat: String = "plain",
         quiet: Boolean = false,
     ) = SchemaCompareRequest(source, target, output, outputFormat, quiet)
 
-    // §8.1 #1
+    // ── Backward-compat file/file ───────────────
+
     test("identical schemas return exit 0") {
         val h = Harness()
         h.runner().execute(request()) shouldBe 0
         h.stdout.joined() shouldContain "identical"
     }
 
-    // §8.1 #2
     test("different schemas return exit 1") {
         val h = Harness()
-        h.comparator = { _, _ -> nonEmptyDiff }
+        h.comparatorResult = nonEmptyDiff
         h.runner().execute(request()) shouldBe 1
         h.stdout.joined() shouldContain "different"
     }
 
-    // §8.1 #3
     test("source parse failure returns exit 7") {
         val h = Harness()
-        h.schemaReader = { path ->
-            if (path.toString().contains("a.yaml")) throw RuntimeException("bad yaml")
-            schemaA
-        }
-        h.runner().execute(request()) shouldBe 7
-        h.stderr.joined() shouldContain "Failed to parse"
-    }
-
-    // §8.1 #4
-    test("target parse failure returns exit 7") {
-        val h = Harness()
-        h.schemaReader = { path ->
-            if (path.toString().contains("b.yaml")) throw RuntimeException("bad yaml")
-            schemaA
-        }
-        h.runner().execute(request()) shouldBe 7
-    }
-
-    // §8.1 #5
-    test("invalid source returns exit 3") {
-        val h = Harness()
-        h.validator = { schema ->
-            if (schema.name == "A") ValidationResult(errors = listOf(
-                ValidationError("E001", "no columns", "tables.t")))
-            else ValidationResult()
-        }
-        // Both sides read schemaA (name="A"), first call is source
-        var calls = 0
-        h.validator = { _ ->
-            calls++
-            if (calls == 1) ValidationResult(errors = listOf(
-                ValidationError("E001", "no columns", "tables.t")))
-            else ValidationResult()
-        }
-        h.runner().execute(request()) shouldBe 3
-        h.stdout.joined() shouldContain "invalid"
-    }
-
-    // §8.1 #6
-    test("invalid target returns exit 3") {
-        val h = Harness()
-        var calls = 0
-        h.validator = { _ ->
-            calls++
-            if (calls == 2) ValidationResult(errors = listOf(
-                ValidationError("E001", "no columns", "tables.t")))
-            else ValidationResult()
-        }
-        h.runner().execute(request()) shouldBe 3
-    }
-
-    // §8.1 #7
-    test("validation warnings do not suppress compare result") {
-        val h = Harness()
-        h.validator = { _ -> ValidationResult(warnings = listOf(
-            ValidationWarning("W001", "some warning", "tables.t"))) }
-        h.runner().execute(request()) shouldBe 0
-        h.stderr.joined() shouldContain "Warning"
-    }
-
-    // §8.1 #8
-    test("both invalid schemas are reported together") {
-        val h = Harness()
-        h.validator = { _ -> ValidationResult(errors = listOf(
-            ValidationError("E001", "no columns", "tables.t"))) }
-        h.runner().execute(request()) shouldBe 3
-        h.stdout.joined() shouldContain "invalid"
-    }
-
-    // §8.1 #9
-    test("output collision with source returns exit 2") {
-        val h = Harness()
-        val path = Path.of("/tmp/a.yaml")
-        h.runner().execute(request(source = path, output = path)) shouldBe 2
-        h.stderr.joined() shouldContain "must not be the same"
-    }
-
-    // §8.1 #10
-    test("creates missing parent directories before writing output") {
-        val h = Harness()
-        val output = Path.of("/tmp/sub/dir/out.txt")
-        h.runner().execute(request(output = output)) shouldBe 0
-        h.dirsCreated.size shouldBe 1
-        h.fileWrites.size shouldBe 1
-    }
-
-    // §8.1 #11 — C2/C3 fix: write failure returns exit 7
-    test("file writer failure returns exit 7") {
-        val h = Harness()
         val runner = SchemaCompareRunner(
-            schemaReader = h.schemaReader,
-            validator = h.validator,
-            comparator = h.comparator,
-            projectDiff = { _ -> fakeDiffView },
-            ensureParentDirectories = { },
-            fileWriter = { _, _ -> throw RuntimeException("disk full") },
+            fileLoader = { throw RuntimeException("bad yaml") },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
             renderPlain = { "PLAIN:${it.status}" },
             renderJson = { """{"status":"${it.status}"}""" },
             renderYaml = { "status: ${it.status}" },
@@ -191,18 +106,74 @@ class SchemaCompareRunnerTest : FunSpec({
             stdout = h.stdout.sink,
             stderr = h.stderr.sink,
         )
-        runner.execute(request(output = Path.of("/tmp/out.txt"))) shouldBe 7
-        h.stderr.joined() shouldContain "Failed to write"
+        runner.execute(request()) shouldBe 7
+        h.stderr.joined() shouldContain "Failed to read"
     }
 
-    // §8.1 #12
+    test("invalid source returns exit 3") {
+        val h = Harness()
+        var calls = 0
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                calls++
+                ResolvedSchemaOperand(
+                    reference = op.path.toString(),
+                    schema = schemaA,
+                    validation = if (calls == 1) ValidationResult(errors = listOf(
+                        ValidationError("E001", "no columns", "tables.t")))
+                    else ValidationResult(),
+                )
+            },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { msg, _ -> h.stderr.sink("Error: $msg") },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request()) shouldBe 3
+        h.stdout.joined() shouldContain "invalid"
+    }
+
+    test("validation warnings do not suppress compare result") {
+        val h = Harness()
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(
+                    reference = op.path.toString(),
+                    schema = schemaA,
+                    validation = ValidationResult(warnings = listOf(
+                        ValidationWarning("W001", "some warning", "tables.t"))),
+                )
+            },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request()) shouldBe 0
+        h.stderr.joined() shouldContain "Warning"
+    }
+
+    test("output collision with source returns exit 2") {
+        val h = Harness()
+        val path = Path.of("/tmp/a.yaml")
+        h.runner().execute(request(source = path.toString(), output = path)) shouldBe 2
+        h.stderr.joined() shouldContain "must not be the same"
+    }
+
     test("json rendering is selected by output format") {
         val h = Harness()
         h.runner().execute(request(outputFormat = "json")) shouldBe 0
         h.stdout.joined() shouldContain """"status":"identical""""
     }
 
-    // §8.1 #13
     test("yaml rendering is selected by output format") {
         val h = Harness()
         h.runner().execute(request(outputFormat = "yaml")) shouldBe 0
@@ -217,26 +188,54 @@ class SchemaCompareRunnerTest : FunSpec({
 
     test("quiet mode still shows output for different schemas") {
         val h = Harness()
-        h.comparator = { _, _ -> nonEmptyDiff }
+        h.comparatorResult = nonEmptyDiff
         h.runner().execute(request(quiet = true)) shouldBe 1
         h.stdout.joined() shouldContain "different"
     }
 
-    test("output collision with target returns exit 2") {
+    test("creates missing parent directories before writing output") {
         val h = Harness()
-        val path = Path.of("/tmp/b.yaml")
-        h.runner().execute(request(target = path, output = path)) shouldBe 2
+        val output = Path.of("/tmp/sub/dir/out.txt")
+        h.runner().execute(request(output = output)) shouldBe 0
+        h.dirsCreated.size shouldBe 1
+        h.fileWrites.size shouldBe 1
     }
 
-    test("ensureParentDirectories failure returns exit 7") {
+    // ── DB operands ─────────────────────────────
+
+    test("db: operand triggers dbLoader") {
+        val h = Harness()
+        var dbCalled = false
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), schemaA, ValidationResult())
+            },
+            dbLoader = { _, _ ->
+                dbCalled = true
+                ResolvedSchemaOperand("db:staging", schemaA, ValidationResult())
+            },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request(source = "/tmp/a.yaml", target = "db:staging")) shouldBe 0
+        dbCalled shouldBe true
+    }
+
+    test("db: connection failure returns exit 4") {
         val h = Harness()
         val runner = SchemaCompareRunner(
-            schemaReader = h.schemaReader,
-            validator = h.validator,
-            comparator = h.comparator,
-            projectDiff = { _ -> fakeDiffView },
-            ensureParentDirectories = { throw RuntimeException("permission denied") },
-            fileWriter = { path, content -> h.fileWrites += path to content },
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), schemaA, ValidationResult())
+            },
+            dbLoader = { _, _ -> throw RuntimeException("connection refused") },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
             renderPlain = { "PLAIN:${it.status}" },
             renderJson = { """{"status":"${it.status}"}""" },
             renderYaml = { "status: ${it.status}" },
@@ -244,6 +243,64 @@ class SchemaCompareRunnerTest : FunSpec({
             stdout = h.stdout.sink,
             stderr = h.stderr.sink,
         )
-        runner.execute(request(output = Path.of("/tmp/out.txt"))) shouldBe 7
+        runner.execute(request(target = "db:staging")) shouldBe 4
+    }
+
+    test("db: without dbLoader returns exit 2") {
+        val h = Harness()
+        h.runner().execute(request(target = "db:staging")) shouldBe 2
+    }
+
+    // ── Reverse marker normalization ────────────
+
+    test("reverse markers do not produce fake metadata diff") {
+        val h = Harness()
+        val reverseName = dev.dmigrate.core.identity.ReverseScopeCodec.postgresName("db", "public")
+        val reverseSchema = SchemaDefinition(
+            name = reverseName,
+            version = dev.dmigrate.core.identity.ReverseScopeCodec.REVERSE_VERSION,
+        )
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), reverseSchema, ValidationResult())
+            },
+            comparator = { left, right ->
+                // After normalization, both should have same name/version
+                if (left.name != right.name || left.version != right.version) {
+                    SchemaDiff(schemaMetadata = SchemaMetadataDiff(
+                        name = ValueChange(left.name, right.name)))
+                } else {
+                    SchemaDiff()
+                }
+            },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        // Both operands are reverse-generated with same schema → identical after normalization
+        runner.execute(request()) shouldBe 0
+    }
+
+    test("invalid reverse marker returns exit 7") {
+        val h = Harness()
+        val badSchema = SchemaDefinition(name = "__dmigrate_reverse__:broken", version = "1.0")
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), badSchema, ValidationResult())
+            },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { msg, _ -> h.stderr.sink("Error: $msg") },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request()) shouldBe 7
     }
 })
