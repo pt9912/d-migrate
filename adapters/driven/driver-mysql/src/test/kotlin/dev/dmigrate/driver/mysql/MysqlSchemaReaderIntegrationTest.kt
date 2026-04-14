@@ -27,6 +27,7 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
+        .withCommand("--log-bin-trust-function-creators=1")
 
     val reader = MysqlSchemaReader()
 

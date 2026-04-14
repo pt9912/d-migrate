@@ -166,6 +166,44 @@ class CliSchemaCompareTest : FunSpec({
         ex.statusCode shouldBe 7
     }
 
+    // ── db: operand tests ─────────────────────────────────────────
+
+    test("file: prefix is accepted for source operand") {
+        val src = resourcePath("valid-schema.yaml")
+        shouldNotThrowAny {
+            cli().parse(listOf("schema", "compare",
+                "--source", "file:$src",
+                "--target", "file:$src"))
+        }
+    }
+
+    test("db: operand with unresolvable alias exits with code 7") {
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(listOf("schema", "compare",
+                "--source", resourcePath("valid-schema.yaml"),
+                "--target", "db:nonexistent_alias"))
+        }
+        ex.statusCode shouldBe 7
+    }
+
+    test("db: operand as source with unresolvable alias exits with code 7") {
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(listOf("schema", "compare",
+                "--source", "db:nonexistent_alias",
+                "--target", resourcePath("valid-schema.yaml")))
+        }
+        ex.statusCode shouldBe 7
+    }
+
+    test("mixed file/db operands: file source, db target with unresolvable alias") {
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(listOf("schema", "compare",
+                "--source", "file:${resourcePath("valid-schema.yaml")}",
+                "--target", "db:no_such_connection"))
+        }
+        ex.statusCode shouldBe 7
+    }
+
     // §8.3: different schemas with json format
     test("different schemas with json format produces json diff") {
         val output = captureStdout {

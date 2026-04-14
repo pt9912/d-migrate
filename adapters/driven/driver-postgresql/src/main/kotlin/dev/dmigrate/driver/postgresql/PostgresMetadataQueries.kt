@@ -194,13 +194,18 @@ object PostgresMetadataQueries {
     }
 
     fun listSequences(session: JdbcMetadataSession, schema: String): List<Map<String, Any?>> {
+        // information_schema.sequences does NOT have a cache_size column;
+        // pg_sequences (system view) does — LEFT JOIN to get it.
         return session.queryList(
             """
-            SELECT sequence_name, start_value, increment, minimum_value,
-                   maximum_value, cycle_option, cache_size
-            FROM information_schema.sequences
-            WHERE sequence_schema = ?
-            ORDER BY sequence_name
+            SELECT s.sequence_name, s.start_value, s.increment, s.minimum_value,
+                   s.maximum_value, s.cycle_option,
+                   ps.cache_size
+            FROM information_schema.sequences s
+            LEFT JOIN pg_sequences ps
+              ON ps.schemaname = s.sequence_schema AND ps.sequencename = s.sequence_name
+            WHERE s.sequence_schema = ?
+            ORDER BY s.sequence_name
             """.trimIndent(), schema,
         )
     }

@@ -1,12 +1,15 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.*
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -251,5 +254,225 @@ class DataTransferRunnerTest : FunSpec({
         runner.execute(request(source = "postgresql://a:secret@h/d")) shouldBe 4
         errors.joined() shouldNotContain "secret"
         errors.joined() shouldContain "***"
+    }
+
+    // ── Reader→Writer coupling ─────────────────
+
+    test("chunks flow from reader to writer and commitChunk is called per chunk") {
+        val writtenChunks = mutableListOf<DataChunk>()
+        var commitCount = 0
+        var finishCalled = false
+        val srcCols = listOf(
+            ColumnDescriptor("id", false, "INTEGER"),
+            ColumnDescriptor("name", true, "VARCHAR"),
+        )
+        val chunk1 = DataChunk("users", srcCols,
+            listOf(arrayOf<Any?>(1, "Alice"), arrayOf<Any?>(2, "Bob")), 0)
+        val chunk2 = DataChunk("users", srcCols,
+            listOf(arrayOf<Any?>(3, "Carol")), 1)
+
+        val trackingSession = object : TableImportSession {
+            override val targetColumns = listOf(
+                TargetColumn("id", false, java.sql.Types.INTEGER),
+                TargetColumn("name", true, java.sql.Types.VARCHAR),
+            )
+            override fun write(chunk: DataChunk): WriteResult {
+                writtenChunks += chunk; return WriteResult(chunk.rows.size.toLong(), 0, 0)
+            }
+            override fun commitChunk() { commitCount++ }
+            override fun rollbackChunk() {}
+            override fun markTruncatePerformed() {}
+            override fun finishTable(): FinishTableResult { finishCalled = true; return FinishTableResult.Success(emptyList()) }
+            override fun close() {}
+        }
+        val chunkReader = object : DataReader {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun streamTable(pool: ConnectionPool, table: String, filter: DataFilter?, chunkSize: Int): ChunkSequence {
+                return object : ChunkSequence {
+                    override fun iterator() = listOf(chunk1, chunk2).iterator()
+                    override fun close() {}
+                }
+            }
+        }
+        val trackingWriter = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions) = trackingSession
+        }
+        val drv = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = chunkReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = trackingWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = fakeSchemaReader
+        }
+        val (runner, stderr, _) = buildRunner(driverLookup = { drv })
+        runner.execute(request()) shouldBe 0
+        writtenChunks.size shouldBe 2
+        commitCount shouldBe 2
+        finishCalled shouldBe true
+    }
+
+    test("column reordering maps source columns to target order") {
+        val writtenChunks = mutableListOf<DataChunk>()
+        // Source has columns: name, id (reversed)
+        val srcCols = listOf(
+            ColumnDescriptor("name", true, "VARCHAR"),
+            ColumnDescriptor("id", false, "INTEGER"),
+        )
+        val chunk = DataChunk("users", srcCols,
+            listOf(arrayOf<Any?>("Alice", 42)), 0)
+
+        val reorderSession = object : TableImportSession {
+            // Target expects: id, name (normal order)
+            override val targetColumns = listOf(
+                TargetColumn("id", false, java.sql.Types.INTEGER),
+                TargetColumn("name", true, java.sql.Types.VARCHAR),
+            )
+            override fun write(chunk: DataChunk): WriteResult {
+                writtenChunks += chunk; return WriteResult(chunk.rows.size.toLong(), 0, 0)
+            }
+            override fun commitChunk() {}
+            override fun rollbackChunk() {}
+            override fun markTruncatePerformed() {}
+            override fun finishTable() = FinishTableResult.Success(emptyList())
+            override fun close() {}
+        }
+        val chunkReader = object : DataReader {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun streamTable(pool: ConnectionPool, table: String, filter: DataFilter?, chunkSize: Int) = object : ChunkSequence {
+                override fun iterator() = listOf(chunk).iterator()
+                override fun close() {}
+            }
+        }
+        val reorderWriter = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions) = reorderSession
+        }
+        val drv = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = chunkReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = reorderWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = fakeSchemaReader
+        }
+        val (runner, _, _) = buildRunner(driverLookup = { drv })
+        runner.execute(request()) shouldBe 0
+        writtenChunks.size shouldBe 1
+        val row = writtenChunks[0].rows[0]
+        // After reordering: id=42 at [0], name="Alice" at [1]
+        row[0] shouldBe 42
+        row[1] shouldBe "Alice"
+    }
+
+    test("multi-table transfer follows FK topological order") {
+        val tablesTransferred = mutableListOf<String>()
+        val multiSchema = SchemaDefinition(
+            name = "test", version = "1.0",
+            tables = mapOf(
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                        "user_id" to ColumnDefinition(type = NeutralType.Integer,
+                            references = ReferenceDefinition(table = "users", column = "id")),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+                "users" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                        "name" to ColumnDefinition(type = NeutralType.Text(100)),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val multiReader = object : SchemaReader {
+            override fun read(pool: ConnectionPool, options: SchemaReadOptions) = SchemaReadResult(schema = multiSchema)
+        }
+        val trackSession = object : TableImportSession {
+            override val targetColumns = listOf(
+                TargetColumn("id", false, java.sql.Types.INTEGER),
+                TargetColumn("name", true, java.sql.Types.VARCHAR),
+            )
+            override fun write(chunk: DataChunk) = WriteResult(0, 0, 0)
+            override fun commitChunk() {}
+            override fun rollbackChunk() {}
+            override fun markTruncatePerformed() {}
+            override fun finishTable() = FinishTableResult.Success(emptyList())
+            override fun close() {}
+        }
+        val trackWriter = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions): TableImportSession {
+                tablesTransferred += table; return trackSession
+            }
+        }
+        val drv = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = fakeReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = trackWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = multiReader
+        }
+        val (runner, _, _) = buildRunner(driverLookup = { drv })
+        runner.execute(request()) shouldBe 0
+        // users must come before orders (FK dependency)
+        tablesTransferred shouldContainExactly listOf("users", "orders")
+    }
+
+    test("progress reports per-table and summary") {
+        val (runner, stderr, _) = buildRunner()
+        runner.execute(request()) shouldBe 0
+        stderr.joined() shouldContain "Transferred: users"
+        stderr.joined() shouldContain "Transfer complete: 1 table(s)"
+    }
+
+    test("FK cycle in preflight → exit 3") {
+        val cycleSchema = SchemaDefinition(
+            name = "test", version = "1.0",
+            tables = mapOf(
+                "a" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                        "b_id" to ColumnDefinition(type = NeutralType.Integer,
+                            references = ReferenceDefinition(table = "b", column = "id")),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+                "b" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(true)),
+                        "a_id" to ColumnDefinition(type = NeutralType.Integer,
+                            references = ReferenceDefinition(table = "a", column = "id")),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val cycleReader = object : SchemaReader {
+            override fun read(pool: ConnectionPool, options: SchemaReadOptions) = SchemaReadResult(schema = cycleSchema)
+        }
+        val drv = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = fakeReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = fakeWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = cycleReader
+        }
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors, driverLookup = { drv })
+        runner.execute(request()) shouldBe 3
+        errors.joined() shouldContain "FK cycle"
     }
 })

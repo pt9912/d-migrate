@@ -219,16 +219,25 @@ class PostgresSchemaReader : SchemaReader {
         val result = LinkedHashMap<String, SequenceDefinition>()
         for (row in rows) {
             val name = row["sequence_name"] as String
+            // information_schema.sequences returns varchar columns;
+            // pg_sequences (joined for cache_size) returns bigint.
             result[name] = SequenceDefinition(
-                start = (row["start_value"] as? Number)?.toLong() ?: 1,
-                increment = (row["increment"] as? Number)?.toLong() ?: 1,
-                minValue = (row["minimum_value"] as? Number)?.toLong(),
-                maxValue = (row["maximum_value"] as? Number)?.toLong(),
+                start = toLongOrNull(row["start_value"]) ?: 1,
+                increment = toLongOrNull(row["increment"]) ?: 1,
+                minValue = toLongOrNull(row["minimum_value"]),
+                maxValue = toLongOrNull(row["maximum_value"]),
                 cycle = (row["cycle_option"] as? String) == "YES",
-                cache = (row["cache_size"] as? Number)?.toInt(),
+                cache = toLongOrNull(row["cache_size"])?.toInt(),
             )
         }
         return result
+    }
+
+    /** Parse a value that may be a Number (from pg_sequences) or a String (from information_schema). */
+    private fun toLongOrNull(value: Any?): Long? = when (value) {
+        is Number -> value.toLong()
+        is String -> value.toLongOrNull()
+        else -> null
     }
 
     // ── Custom Types (ENUM, DOMAIN, COMPOSITE) ──

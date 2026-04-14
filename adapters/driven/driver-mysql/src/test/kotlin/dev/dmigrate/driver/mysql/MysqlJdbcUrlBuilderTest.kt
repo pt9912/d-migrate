@@ -26,12 +26,11 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         builder.dialect shouldBe DatabaseDialect.MYSQL
     }
 
-    test("defaultParams contains cursor fetch, batched statements and UTF-8 (Java charset name)") {
+    test("defaultParams contains cursor fetch, batched statements and allowPublicKeyRetrieval") {
         builder.defaultParams() shouldBe mapOf(
             "useCursorFetch" to "true",
             "rewriteBatchedStatements" to "true",
-            "useUnicode" to "true",
-            "characterEncoding" to "UTF-8",
+            "allowPublicKeyRetrieval" to "true",
         )
     }
 
@@ -50,10 +49,9 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         url shouldContain "rewriteBatchedStatements=true"
     }
 
-    test("buildJdbcUrl injects UTF-8 character encoding (server-mapped to utf8mb4)") {
+    test("buildJdbcUrl injects allowPublicKeyRetrieval") {
         val url = builder.buildJdbcUrl(cfg())
-        url shouldContain "useUnicode=true"
-        url shouldContain "characterEncoding=UTF-8"
+        url shouldContain "allowPublicKeyRetrieval=true"
     }
 
     test("buildJdbcUrl: user-provided useCursorFetch overrides the default") {

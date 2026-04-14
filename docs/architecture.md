@@ -251,16 +251,15 @@ interface DatabaseDriver {
 Datenexport genutzt. `TypeMapper` ist kein exponierter Port — er ist internes
 Implementierungsdetail von `DdlGenerator` (via `AbstractDdlGenerator`).
 
-#### Additive 0.6.0-Erweiterung: `schemaReader()`
+#### `schemaReader()` (0.6.0)
 
-Für `schema reverse` und DB-basiertes `schema compare` wird `DatabaseDriver`
-in 0.6.0 additiv um einen `schemaReader()`-Port erweitert:
+`DatabaseDriver` wurde in 0.6.0 um `schemaReader()` erweitert — implementiert
+für PostgreSQL, MySQL und SQLite:
 
 ```kotlin
-// 0.6.0-Zielstruktur (noch nicht implementiert)
 interface DatabaseDriver {
-    // … bestehende Ports wie oben …
-    fun schemaReader(): SchemaReader        // NEU in 0.6.0
+    // … bestehende Ports …
+    fun schemaReader(): SchemaReader        // 0.6.0
 }
 ```
 
@@ -268,16 +267,17 @@ interface DatabaseDriver {
 Reverse-Notes und übersprungene Objekte transportiert:
 
 ```kotlin
-// 0.6.0-Zielstruktur (noch nicht implementiert)
 interface SchemaReader {
-    /** Reverse-Engineering: DB → Schema-Ergebnis mit Notes */
-    fun readSchema(connection: ConnectionPool, options: SchemaReadOptions): SchemaReadResult
+    fun read(
+        pool: ConnectionPool,
+        options: SchemaReadOptions = SchemaReadOptions(),
+    ): SchemaReadResult
 }
 
 data class SchemaReadResult(
     val schema: SchemaDefinition,
-    val notes: List<ReverseNote>,
-    val skippedObjects: List<SkippedObject> = emptyList()
+    val notes: List<SchemaReadNote> = emptyList(),
+    val skippedObjects: List<SkippedObject> = emptyList(),
 )
 ```
 
@@ -816,7 +816,7 @@ Tools:
 ### 6.2 Test-Fixture-Layout
 
 ```
-src/test/resources/fixtures/
+adapters/driven/formats/src/test/resources/fixtures/
 ├── schemas/                          # Neutrale Schema-Definitionen
 │   ├── minimal.yaml                  # 1 Tabelle, 2 Spalten (Smoke-Test)
 │   ├── e-commerce.yaml               # Referenz-Schema (Lastenheft Anhang B)
@@ -948,6 +948,6 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.6
-**Stand**: 2026-04-13
-**Status**: Milestone 0.1.0–0.5.0 implementiert (core, ports, application, formats, cli, driver-postgresql/-mysql/-sqlite, streaming); `DatabaseDriver`-Ist-Stand dokumentiert, `schemaReader()` als additive 0.6.0-Erweiterung spezifiziert
+**Version**: 1.7
+**Stand**: 2026-04-14
+**Status**: Milestone 0.1.0–0.6.0 implementiert (core, ports, application, formats, cli, driver-postgresql/-mysql/-sqlite, streaming); 0.6.0: `SchemaReader` für PostgreSQL/MySQL/SQLite, `schema reverse` CLI, `schema compare` mit DB-Operanden (file/db, db/db), `data transfer` (DB-zu-DB-Streaming)

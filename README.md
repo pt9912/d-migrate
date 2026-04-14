@@ -17,20 +17,19 @@ d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmal
 - Neutrales Schemamodell mit 18 integrierten Typen plus Spatial Geometry
 - YAML-basierte Schemadefinition und -parsing
 - Schemagültigkeitsprüfung mit 18+ Fehlercodes (E001-E018, E120/E121)
-- File-basierter Schema-Vergleich mit `schema compare`
+- Schema-Vergleich mit `schema compare` (file/file, file/db, db/db)
+- Reverse-Engineering bestehender Datenbanken mit `schema reverse` (PostgreSQL, MySQL, SQLite)
 - DDL-Generierung für PostgreSQL, MySQL und SQLite
 - Spatial-DDL: PostGIS, MySQL native, SpatiaLite (`--spatial-profile`)
 - Transformation von View-Queries (17 SQL-Funktionen)
 - Transformationsberichte (YAML-Seitenschatten)
 - Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
 - Transaktionaler Datenimport mit UPSERT, Truncate, Trigger-Handling und Reseeding
+- Direkter DB-zu-DB-Datentransfer mit `data transfer`
 - Inkrementeller Export über `--since-column` / `--since` (LF-013)
-- Line-orientierte Fortschrittsanzeige für `data export` und `data import`
-- CLI mit `schema validate`, `schema generate`, `schema compare`, `data export` und `data import`
+- Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
+- CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `data export`, `data import` und `data transfer`
 - OCI-Image für die Nutzung mit Docker
-
-**Geplant:**
-- Reverse-Engineering bestehender Datenbanken (0.6.0)
 
 ## Schnellstart
 
@@ -84,6 +83,15 @@ ls -1 adapters/driving/cli/build/release
 
 # MySQL-DDL mit Rollback generieren
 ./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
+
+# Schema aus bestehender Datenbank extrahieren
+./gradlew :adapters:driving:cli:run --args="schema reverse --source mydb --output reverse.yaml --report reverse.report.yaml"
+
+# DB-basierter Schema-Vergleich
+./gradlew :adapters:driving:cli:run --args="schema compare --source file:schema.yaml --target db:mydb"
+
+# DB-zu-DB Datentransfer
+./gradlew :adapters:driving:cli:run --args="data transfer --source sourcedb --target targetdb --tables users,orders"
 ```
 
 ### Docker
@@ -96,11 +104,15 @@ Kein lokales JDK erforderlich — einfach Image ziehen und ausführen:
 # Validierung
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
 
-# Compare
-docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema compare --source /work/schema.yaml --target /work/schema-new.yaml
+# Compare (file/file)
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema compare --source file:/work/schema.yaml --target file:/work/schema-new.yaml
 
 # DDL generieren
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
+
+# Reverse-Engineering
+docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
+  --config /work/.d-migrate.yaml schema reverse --source mydb --output /work/reverse.yaml
 ```
 
 #### Mit Dockerfile lokal bauen und testen
@@ -254,9 +266,9 @@ Und vergleichst zwei Versionen so:
 
 | Datenbank | Status                           |
 |-----------|----------------------------------|
-| PostgreSQL | DDL-Generierung, Datenexport, Datenimport |
-| MySQL      | DDL-Generierung, Datenexport, Datenimport |
-| SQLite     | DDL-Generierung, Datenexport, Datenimport |
+| PostgreSQL | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
+| MySQL      | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
+| SQLite     | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | Oracle     | Geplant                         |
 | MSSQL      | Geplant                         |
 

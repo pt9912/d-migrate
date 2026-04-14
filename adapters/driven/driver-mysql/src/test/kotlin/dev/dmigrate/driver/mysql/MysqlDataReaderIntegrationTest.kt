@@ -29,7 +29,7 @@ private val IntegrationTag = NamedTag("integration")
  * - Multi-chunk streaming with chunkSize splitting
  * - DataFilter (WhereClause + ColumnSubset)
  * - MysqlTableLister returns user tables only
- * - MysqlJdbcUrlBuilder defaults are wired (useCursorFetch=true, utf8mb4)
+ * - MysqlJdbcUrlBuilder defaults are wired (useCursorFetch=true, allowPublicKeyRetrieval=true)
  */
 class MysqlDataReaderIntegrationTest : FunSpec({
 

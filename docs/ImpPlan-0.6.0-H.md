@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: H (Testmatrix, Docs und Beispielpfade)
-> **Status**: Draft (2026-04-14)
+> **Status**: Done (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 5 Phase H,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10, Abschnitt 11;
 > `docs/ImpPlan-0.6.0-A.md`; `docs/ImpPlan-0.6.0-D.md`;

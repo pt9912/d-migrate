@@ -251,6 +251,82 @@ class SchemaCompareRunnerTest : FunSpec({
         h.runner().execute(request(target = "db:staging")) shouldBe 2
     }
 
+    test("file/db compare succeeds with identical schemas") {
+        val h = Harness()
+        var fileLoaderCalled = false
+        var dbLoaderCalled = false
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                fileLoaderCalled = true
+                ResolvedSchemaOperand(op.path.toString(), schemaA, ValidationResult())
+            },
+            dbLoader = { _, _ ->
+                dbLoaderCalled = true
+                ResolvedSchemaOperand("db:staging", schemaA, ValidationResult())
+            },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request(source = "/tmp/a.yaml", target = "db:staging")) shouldBe 0
+        fileLoaderCalled shouldBe true
+        dbLoaderCalled shouldBe true
+        h.stdout.joined() shouldContain "identical"
+    }
+
+    test("db/db compare succeeds with identical schemas") {
+        val h = Harness()
+        var dbCallCount = 0
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), schemaA, ValidationResult())
+            },
+            dbLoader = { _, _ ->
+                dbCallCount++
+                ResolvedSchemaOperand("db:env", schemaA, ValidationResult())
+            },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request(source = "db:prod", target = "db:staging")) shouldBe 0
+        dbCallCount shouldBe 2
+        h.stdout.joined() shouldContain "identical"
+    }
+
+    test("db/db compare with differences returns exit 1") {
+        val h = Harness()
+        val schemaB = SchemaDefinition(name = "B", version = "2.0")
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), schemaA, ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                val schema = if (op.source == "prod") schemaA else schemaB
+                ResolvedSchemaOperand("db:${op.source}", schema, ValidationResult())
+            },
+            comparator = { _, _ -> nonEmptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request(source = "db:prod", target = "db:staging")) shouldBe 1
+    }
+
     // ── Reverse marker normalization ────────────
 
     test("reverse markers do not produce fake metadata diff") {

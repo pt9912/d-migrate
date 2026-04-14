@@ -719,7 +719,7 @@ src/main/resources/messages/
 - **Unit-Tests**: Kotest + Jqwik (Property-Based Testing)
 - **Integration-Tests**: Testcontainers (PostgreSQL, MySQL)
 - **E2E-Tests**: CLI-Prozess gegen Docker-Datenbanken
-- **Fixtures**: Versioniert in `src/test/resources/fixtures/`
+- **Fixtures**: Versioniert in `adapters/driven/formats/src/test/resources/fixtures/`
 
 ---
 
@@ -756,6 +756,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 2.0
+**Version**: 2.1
 **Stand**: 2026-04-14
-**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.5.5 sowie 0.6.0 Phase A–G (Reverse-Engineering, schema reverse CLI, schema compare DB-Operanden, data transfer); Phase H (README/Docs/Release) verbleibend; geplant sind u.a. Daten-Profiling (0.7.5)
+**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.6.0 (Reverse-Engineering, schema reverse CLI, schema compare DB-Operanden, data transfer, Docs/Release-Smokes); geplant sind u.a. Daten-Profiling (0.7.5)
