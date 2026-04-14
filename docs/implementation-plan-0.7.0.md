@@ -379,9 +379,22 @@ CI unnoetig aufzublaehen.
 
 ---
 
-## 5. Arbeitspakete
+## 5. Geplante Arbeitspakete
 
-### 5.1 CLI-Vertrag fuer `export` schaerfen
+0.7.0 wird in sechs Phasen geschnitten. Die Reihenfolge ist absichtlich
+streng, damit nicht zuerst Tool-Renderer gebaut werden und erst danach der
+gemeinsame Export-Vertrag oder die CLI-Semantik korrigiert werden muessen.
+
+Phasenfolge:
+
+- Phase A - Spezifikationsbereinigung und Export-Vertrag
+- Phase B - Migrations-Bundle und Identitaet
+- Phase C - Tool-Adapter und Integrationsmodul
+- Phase D - CLI- und Runner-Pfad
+- Phase E - Tool-Runtime-Testmatrix
+- Phase F - Doku, Smokes und Release-Pfade
+
+### Phase A - Spezifikationsbereinigung und Export-Vertrag
 
 Die heutige CLI-Skizze in `docs/cli-spec.md` reicht fuer die reale
 Umsetzung nicht aus.
@@ -416,7 +429,11 @@ Dabei explizit festziehen:
 - `--version` ist fuer Flyway/Liquibase optional mit `schema.version`-
   Fallback, fuer Django/Knex aber Pflicht.
 
-### 5.2 Gemeinsames Migrations-Bundle im Application-/Port-Layer einfuehren
+Ziel von Phase A: Vor der Code-Umsetzung ist klar, dass 0.7.0 einen
+baseline-/full-state-Export fuer externe Tools liefert und keinen
+inkrementellen `schema migrate`-Ersatz.
+
+### Phase B - Gemeinsames Migrations-Bundle und Identitaet
 
 Vor den Tool-Adaptern braucht 0.7.0 einen stabilen Zwischenvertrag.
 
@@ -434,11 +451,14 @@ Mindestens noetig:
   - `schema.name`
 - tool-spezifische Validierung von:
   - Flyway-/Liquibase-kompatiblen Versionen
-  - Django-/Knex-pflichtigen expliziten Versionsbezeichnern
+- Django-/Knex-pflichtigen expliziten Versionsbezeichnern
 - Kollisionspruefung gegen bereits vorhandene Zieldateien
 - ein expliziter Port fuer tool-spezifische Renderer / Writer
 
-### 5.3 Tool-Adapter fuer Flyway, Liquibase, Django und Knex bauen
+Ziel von Phase B: Die Application arbeitet gegen einen einheitlichen
+Migrations-Bundle-Vertrag, bevor ein einziger Tool-Adapter Dateien rendert.
+
+### Phase C - Tool-Adapter und Integrationsmodul
 
 Die eigentlichen Integrationen sitzen in einem neuen driven Adaptermodul.
 
@@ -464,7 +484,10 @@ Alle Renderer muessen:
 - Notes / `skippedObjects` nicht verlieren
 - ihre Artefakte nur unterhalb des angegebenen Output-Verzeichnisses anlegen
 
-### 5.4 Runner- und Report-Pfad fuer Tool-Export aufbauen
+Ziel von Phase C: Alle vier Tool-Formate sind renderer-seitig vorhanden,
+ohne dass CLI und Runtime-Tests schon vorausgesetzt werden.
+
+### Phase D - CLI- und Runner-Pfad fuer Tool-Export
 
 Analog zu `SchemaGenerateRunner` braucht 0.7.0 einen dedizierten
 Application-Runner.
@@ -480,12 +503,6 @@ Mindestens noetig:
 - Delegation an den passenden Tool-Adapter
 - Report-Sidecar fuer Notes / `skippedObjects`
 - sauberes Exit-Code-Mapping
-
-### 5.5 CLI-Wiring und Help-/Smoke-Pfade erweitern
-
-Die Root-CLI kennt heute nur `schema` und `data`.
-
-Mindestens noetig:
 
 - neue `ExportCommand`-Gruppe in `buildRootCommand()`
 - Help-Texte fuer:
@@ -504,7 +521,11 @@ Mindestens noetig:
   - fehlendes `--target`
   - fehlendes `--version` bei Django/Knex trotz vorhandener `schema.version`
 
-### 5.6 Echte Tool-Runtime-Validierung aufbauen
+Ziel von Phase D: `d-migrate export ...` ist voll verdrahtet, reportet
+konsistent und traegt denselben Exit-Code- und Flag-Vertrag wie die
+Spezifikation aus Phase A.
+
+### Phase E - Echte Tool-Runtime-Validierung aufbauen
 
 Roadmap 0.7.0 fordert nicht nur Renderer-Tests, sondern Ausfuehrung der
 generierten Artefakte.
@@ -525,7 +546,11 @@ Mindestens noetig:
   - `migrate:latest`
   - `migrate:rollback`
 
-### 5.7 Doku, Smokes und Release-Pfade nachziehen
+Ziel von Phase E: Die generierten Artefakte sind nicht nur formal korrekt,
+sondern werden in einer fokussierten Matrix von echten Tool-Runtimes
+akzeptiert und ausgefuehrt.
+
+### Phase F - Doku, Smokes und Release-Pfade nachziehen
 
 0.7.0 ist erst abgeschlossen, wenn CLI-Spec, Design und Release-Smokes
 denselben Vertrag beschreiben.
@@ -538,6 +563,9 @@ Mindestens noetig:
 - `docs/architecture.md` um neuen Integrations-Adapter und CLI-Pfad
   ergaenzen
 - `docs/releasing.md` um mindestens einen Tool-Export-Smoke erweitern
+
+Ziel von Phase F: Specs, Architektur, Living Design und Release-Smokes
+sprechen nach der Umsetzung denselben 0.7.0-Vertrag.
 
 ---
 
