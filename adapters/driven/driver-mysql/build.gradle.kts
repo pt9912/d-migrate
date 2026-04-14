@@ -33,6 +33,7 @@ kover {
                             "dev.dmigrate.driver.mysql.MysqlDataReader",
                             "dev.dmigrate.driver.mysql.MysqlTableLister",
                             "dev.dmigrate.driver.mysql.MysqlMetadataQueries",
+                            "dev.dmigrate.driver.mysql.MysqlSchemaReader",
                             "dev.dmigrate.driver.mysql.MysqlDataWriter",
                             "dev.dmigrate.driver.mysql.MysqlTableImportSession",
                             "dev.dmigrate.driver.mysql.MysqlSchemaSync",

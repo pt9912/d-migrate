@@ -19,6 +19,5 @@ class MysqlDriver : DatabaseDriver {
     override fun tableLister(): TableLister = MysqlTableLister()
     override fun dataWriter(): DataWriter = MysqlDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = MysqlJdbcUrlBuilder()
-    override fun schemaReader(): SchemaReader =
-        throw UnsupportedOperationException("Schema reading not yet implemented for $dialect")
+    override fun schemaReader(): SchemaReader = MysqlSchemaReader()
 }
