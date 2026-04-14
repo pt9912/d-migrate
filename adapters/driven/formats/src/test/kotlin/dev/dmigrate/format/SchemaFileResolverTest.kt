@@ -100,6 +100,18 @@ class SchemaFileResolverTest : FunSpec({
         SchemaFileResolver.validateOutputPath(Path.of("out.yaml"), null)
     }
 
+    test("validateOutputPath rejects extensionless file with explicit format") {
+        shouldThrow<IllegalArgumentException> {
+            SchemaFileResolver.validateOutputPath(Path.of("output"), "yaml")
+        }.message shouldContain "no recognized schema extension"
+    }
+
+    test("validateOutputPath rejects unknown extension with explicit format") {
+        shouldThrow<IllegalArgumentException> {
+            SchemaFileResolver.validateOutputPath(Path.of("output.txt"), "json")
+        }.message shouldContain "no recognized schema extension"
+    }
+
     test("path with directory resolves correctly") {
         SchemaFileResolver.codecForPath(Path.of("/tmp/schemas/db.json"))
             .shouldBeInstanceOf<JsonSchemaCodec>()

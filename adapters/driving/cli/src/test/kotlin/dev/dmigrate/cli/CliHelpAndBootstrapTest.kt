@@ -90,6 +90,12 @@ class CliHelpAndBootstrapTest : FunSpec({
         }
     }
 
+    test("schema reverse --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("schema", "reverse", "--help")) }
+        }
+    }
+
     test("data --help produces a help message") {
         captureStreams {
             shouldThrow<CliktError> { cli().parse(listOf("data", "--help")) }

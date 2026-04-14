@@ -138,7 +138,7 @@ class SchemaReverseRunner(
             request.output.parent?.toFile()?.mkdirs()
             schemaWriter(request.output, result.schema, request.format)
         } catch (e: Exception) {
-            printError("Failed to write schema: ${e.message}", userFacingSource)
+            printError("Failed to write schema: ${scrubMessage(e.message)}", userFacingSource)
             return 7
         }
 
@@ -148,7 +148,7 @@ class SchemaReverseRunner(
             val reportInput = SchemaReadReportInput(source = sourceRef, result = result)
             reportWriter(reportPath, reportInput)
         } catch (e: Exception) {
-            printError("Failed to write report: ${e.message}", userFacingSource)
+            printError("Failed to write report: ${scrubMessage(e.message)}", userFacingSource)
             return 7
         }
 

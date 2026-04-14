@@ -92,7 +92,16 @@ object SchemaFileResolver {
      */
     fun validateOutputPath(path: Path, format: String?) {
         if (format == null) return
-        val detected = try { detectFormat(path) } catch (_: IllegalArgumentException) { return }
+        val detected = try {
+            detectFormat(path)
+        } catch (_: IllegalArgumentException) {
+            // Unknown or missing extension with explicit format → error
+            throw IllegalArgumentException(
+                "Output file '${path.fileName}' has no recognized schema extension. " +
+                    "Use .yaml, .yml, or .json so the file is consumable by " +
+                    "schema validate/generate/compare."
+            )
+        }
         if (detected != format) {
             throw IllegalArgumentException(
                 "Output file extension (.${path.fileName}) does not match " +

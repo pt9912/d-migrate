@@ -374,56 +374,62 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 
 **action_required-Objekte** (z.B. Functions mit anderem source_dialect) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
 
-#### `schema reverse` *(geplant: 0.6.0)*
+#### `schema reverse` *(0.6.0, umgesetzt)*
 
-Reverse-Engineering einer bestehenden Datenbank über eine Live-Verbindung.
-
-In 0.6.0 arbeitet `schema reverse` ausschließlich gegen echte
-Datenbankverbindungen. SQL-Dateien, stdin-DDL und `--source-dialect` gehören
-nicht zum 0.6.0-Mindestvertrag und werden ggf. als separater additiver
-Funktionsschnitt in einem späteren Milestone spezifiziert.
+Reverse-Engineering einer bestehenden Datenbank ueber eine Live-Verbindung.
 
 ```
 d-migrate schema reverse --source <url-or-alias> --output <path>
 ```
 
-**Auflösung von `--source`**: `--source` akzeptiert eine DB-Connection-URL oder
-einen Named-Connection-Alias aus `.d-migrate.yaml`. Die Auflösung folgt
-denselben Regeln wie bei `data export` (§1.4) und ist in der
-[Connection- und Konfigurationsspezifikation](./connection-config-spec.md)
-kanonisch beschrieben.
+**Aufloesung von `--source`**: `--source` akzeptiert eine DB-Connection-URL oder
+einen Named-Connection-Alias aus `.d-migrate.yaml`. Die Aufloesung folgt
+denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
+`default_source`-Fallback. Das globale `--config` wird beruecksichtigt.
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `--source` | Ja | URL oder Alias | DB-Connection-URL oder benannte Verbindung |
-| `--output` | Ja | Pfad | Ausgabe-Schema-Datei (reines Schema-Dokument, ohne Reverse-Notes) |
-| `--format` | Nein | String | Format des Schema-Artefakts: `yaml` (Default), `json`. Kanonischer Flag für das Reverse-Dateiformat; das globale `--output-format` steuert nur die Darstellung von CLI-Meldungen, nicht das Schema-Artefakt. |
-| `--report` | Nein | Pfad | Pfad für den strukturierten Reverse-Report (Notes, übersprungene Objekte). Default: `<output>.report.yaml` als Sidecar, wenn `--output` gesetzt ist. |
-| `--include-procedures` | Nein | Boolean | Stored Procedures/Functions einschließen |
-| `--include-views` | Nein | Boolean | Views einschließen |
-| `--include-triggers` | Nein | Boolean | Triggers einschließen |
-| `--include-all` | Nein | Boolean | Alle optionalen Objekte einschließen |
+| `--output` | Ja | Pfad | Ausgabe-Schema-Datei (.yaml/.yml/.json) |
+| `--format` | Nein | String | Format des Schema-Artefakts: `yaml` (Default), `json` |
+| `--report` | Nein | Pfad | Pfad fuer Reverse-Report. Default: `<output>.report.yaml` |
+| `--include-views` | Nein | Boolean | Views einschliessen |
+| `--include-procedures` | Nein | Boolean | Stored Procedures einschliessen |
+| `--include-functions` | Nein | Boolean | User-Defined Functions einschliessen |
+| `--include-triggers` | Nein | Boolean | Triggers einschliessen |
+| `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
 
 **Reverse-Ausgabe und Reverse-Report**:
 
 `schema reverse` erzeugt zwei getrennte Artefakte:
 
-1. **Schema-Dokument** (`--output`): Enthält ausschließlich das wieder
-   einlesbare neutrale Schema (`SchemaDefinition`). Reverse-Notes und bewusst
-   übersprungene Objekte werden hier *nicht* eingebettet.
-2. **Reverse-Report** (`--report` oder Default-Sidecar): Enthält strukturierte
-   Notes (`notes`) und eine Liste übersprungener Objekte (`skipped_objects`).
-   Hinweise erscheinen zusätzlich menschenlesbar auf `stderr`.
+1. **Schema-Dokument** (`--output`): Reines neutrales Schema
+   (`SchemaDefinition`), ohne eingebettete Notes oder `skipped_objects`.
+   Die Dateiendung muss zum Format passen (.yaml/.yml/.json).
+2. **Reverse-Report** (`--report` oder Default-Sidecar): Strukturierte
+   Notes und uebersprungene Objekte. Im `plain`-Modus erscheinen
+   Warnungen und Skips zusaetzlich auf `stderr`.
+
+**Ausgabeverhalten**:
+
+- `--output-format plain` (Default): Erfolgsmeldungen auf `stdout`,
+  Notes/Skips auf `stderr`
+- `--output-format json|yaml`: Strukturiertes Success-Dokument auf
+  `stdout`, keine stderr-Notes
+- `--quiet`: Unterdrueckt alle Nicht-Fehler-Ausgaben
+
+**Credential-Schutz**: URL-basierte Quellen werden in Report, Fehler-
+und Success-Ausgaben ueber `LogScrubber.maskUrl()` maskiert. Exception-
+Messages werden vor der Ausgabe zentral gescrubbt.
 
 **Exit-Codes**:
 
 | Code | Trigger |
 |---|---|
-| `0` | Reverse erfolgreich (auch bei Warnungen und übersprungenen Objekten) |
-| `2` | Ungültige CLI-Argumente |
-| `4` | Verbindungsfehler (DB nicht erreichbar, Credentials falsch) |
-| `5` | Reverse-Fehler während Schema-Lesen |
-| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml`, unbekannter Connection-Name) |
+| `0` | Reverse erfolgreich (auch bei Warnungen und uebersprungenen Objekten) |
+| `2` | Ungueltige CLI-Argumente (Format/Endung-Mismatch, Output/Report-Kollision) |
+| `4` | Verbindungs- oder DB-Metadatenfehler |
+| `7` | Config-Aufloesung, URL-Parse oder Dateischreibfehler |
 
 #### `schema compare` *(0.5.0, umgesetzt; ab 0.6.0 auch mit DB-Operanden)*
 
