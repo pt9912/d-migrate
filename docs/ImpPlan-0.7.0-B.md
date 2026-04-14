@@ -79,34 +79,22 @@ den bestehenden DDL-Pfaden:
   - fachliches Ergebnis
   - strukturierte Diagnostik
   - I/O- bzw. Herkunftskontext
-- Ein entsprechender Exportvertrag existiert fuer 0.7.0 heute noch nicht:
-  - kein `MigrationTool`
-  - keine `MigrationIdentity`
-  - kein `MigrationBundle`
-  - kein `MigrationArtifact`
-  - kein `ToolExportResult`
-  - kein `ToolMigrationExporter`
-- Es existiert auch noch keine eigene Export-/Integrations-Namespace-Struktur in
-  `hexagon:ports`; der bestehende Port-Bestand ist auf `driver`, `format` und
-  `streaming` zugeschnitten.
-- `DatabaseDriverRegistry` ist heute ausschliesslich Lookup fuer
-  DB-dialektbezogene Ports und darf nicht still zum Tool-Exporter-Registry
-  umgedeutet werden.
-- Der DDL-Header enthaelt laut `docs/ddl-generation-rules.md` weiterhin einen
-  Laufzeit-Timestamp; Phase A hat bereits festgezogen, dass 0.7.0 fuer
-  Tool-Artefakte byte-deterministisch bleiben muss.
-
-Konsequenz fuer Phase B:
-
-- Der groesste 0.7.0-Gap ist aktuell nicht die SQL-Erzeugung, sondern der
-  fehlende Zwischenvertrag zwischen `DdlResult`, einer kanonisch
-  normalisierten Exportdarstellung und spaeteren Tool-Artefakten.
-- Ohne Phase B droht 0.7.0 entweder:
-  - pro Tool eigene Ad-hoc-Identitaetslogik zu bauen,
-  - die Timestamp-Bereinigung fuer byte-deterministische Inhalte pro Tool
-    erneut und leicht unterschiedlich zu implementieren,
-  - Kollisionen erst beim Schreiben zu entdecken,
-  - oder `DdlResult` roh in CLI-/Adapter-Code zu verteilen.
+- Der tool-neutrale Exportvertrag ist implementiert unter
+  `hexagon/ports/src/main/kotlin/dev/dmigrate/migration/`:
+  - `MigrationTool`, `MigrationVersionSource`
+  - `MigrationIdentity`
+  - `MigrationDdlPayload`, `MigrationRollback`, `MigrationBundle`
+  - `ArtifactRelativePath`, `MigrationArtifact`
+  - `ToolExportSeverity`, `ToolExportNote`, `ToolExportResult`
+  - `ToolMigrationExporter`
+- Adapterfreie Application-Helper sind implementiert unter
+  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/migration/`:
+  - `MigrationIdentityResolver`, `MigrationVersionValidator`
+  - `MigrationSlugNormalizer`, `DdlNormalizer`
+  - `ArtifactCollisionChecker`
+- `DatabaseDriverRegistry` bleibt ausschliesslich Lookup fuer
+  DB-dialektbezogene Driver-Ports und wird nicht fuer Tool-Export
+  wiederverwendet.
 
 ---
 
@@ -384,7 +372,8 @@ Mindestens noetig:
 - expliziter Fehlervertrag fuer:
   - fehlende Pflichtversion
   - ungueltige Fallback-Version
-  - leeren oder unbrauchbaren Slug
+- leerer oder rein aus Sonderzeichen bestehender `schema.name` erzeugt
+  den stabilen Fallback-Slug `"migration"` statt eines Fehlers
 
 ### B.3 Artefaktlayout und Kollisionsvertrag definieren
 
@@ -603,11 +592,15 @@ Noch nicht Teil von Phase B, aber als Folgeartefakte vorzubereiten:
 - [ ] `MigrationArtifact` beschreibt kanonische relative Pfade unterhalb des
       spaeteren Output-Verzeichnisses nicht als rohen `String`, sondern als
       typed Relativpfadvertrag.
-- [ ] `ArtifactRelativePath` ist nur ueber validierende Konstruktion
-      erzeugbar; absolute oder nicht normalisierte Pfade koennen nicht als
-      gueltiger Typwert eingeschleust werden.
-- [ ] Kollisionen zwischen geplanten Artefakten bzw. gegen bestehende
-      Zieldateien sind vor dem ersten Write pruefbar.
+- [ ] `ArtifactRelativePath` ist nur ueber die validierende Factory
+      erzeugbar. Die Factory normalisiert den Eingabepfad (z. B. `a/./b.sql`
+      → `a/b.sql`) und validiert dann das Ergebnis. Absolute Pfade und
+      Parent-Escapes (`..`) nach Normalisierung werden abgelehnt.
+- [ ] Kollisionen zwischen geplanten Artefakten (in-run) sowie gegen
+      bestehende Zieldateien sind vor dem ersten Write pruefbar. Die
+      Filesystem-Pruefung arbeitet I/O-frei auf einer vom Caller
+      gelieferten Menge bereits vorhandener relativer Pfade
+      (`existingPaths: Set<String>`).
 - [ ] `DatabaseDriverRegistry` bleibt unberuehrt und wird nicht fuer
       Tool-Exporter wiederverwendet.
 - [ ] Die Identitaets-, Slug- und Kollisionslogik ist adapterfrei in
@@ -656,8 +649,8 @@ Dabei explizit pruefen:
 - angeforderter Rollback ohne Down-`DdlResult` ist nicht als valider
   Bundlezustand darstellbar
 - Artefakte koennen keine absoluten oder ausbrechenden Pfade tragen
-- `ArtifactRelativePath` kann nicht an der validierenden Factory vorbei mit
-  absoluten oder unnormalisierten Pfaden konstruiert werden
+- `ArtifactRelativePath` normalisiert Eingabepfade und validiert dann;
+  absolute Pfade und Parent-Escapes nach Normalisierung werden abgelehnt
 - semantisch gleiche Pfade kollidieren ueber dieselbe kanonische
   Relativpfadform statt ueber rohe Stringvergleiche
 - Kollisionen werden ohne echten Tool-Adapter bzw. ohne Dateischreiben erkannt
