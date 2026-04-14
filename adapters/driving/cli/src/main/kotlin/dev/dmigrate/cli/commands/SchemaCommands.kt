@@ -21,7 +21,7 @@ class SchemaCommand : CliktCommand(name = "schema") {
     override fun help(context: Context) = "Schema management commands"
 
     init {
-        subcommands(SchemaValidateCommand(), SchemaGenerateCommand(), SchemaCompareCommand())
+        subcommands(SchemaValidateCommand(), SchemaGenerateCommand(), SchemaCompareCommand(), SchemaReverseCommand())
     }
 
     override fun run() = Unit

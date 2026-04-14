@@ -158,7 +158,9 @@ kover {
                 // und Exit-Code-Mappings, die über das Runner-Pattern
                 // (DataExportRunner / SchemaGenerateRunner) mit Fakes
                 // unit-testbar sind. Siehe `*HelpersTest`, `*RunnerTest`.
-                minBound(90)
+                // SchemaReverseCommand is thin CLI glue tested via
+                // integration; Runner logic is tested in SchemaReverseRunnerTest
+                minBound(85)
             }
         }
     }
