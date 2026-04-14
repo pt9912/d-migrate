@@ -67,7 +67,34 @@ triggers: {}                      # Trigger
 sequences: {}                     # Sequenzen (explizit definierte)
 ```
 
-### 2.2 Objekt-Hierarchie
+### 2.2 Reverse-generierte Metadaten (ab 0.6.0)
+
+Reverse-generierte Schemas verwenden technische Provenienzwerte fuer
+`name` und `version`, damit sie nach YAML-/JSON-Serialisierung ohne
+Sidecar-Datei wiedererkennbar bleiben:
+
+- `version`: `0.0.0-reverse` (fester Platzhalter)
+- `name`: beginnt mit dem reservierten Prefix `__dmigrate_reverse__:`
+
+Format des Reverse-Names:
+
+```
+__dmigrate_reverse__:<dialect>:<key>=<value>[;<key>=<value>...]
+```
+
+Beispiele:
+- `__dmigrate_reverse__:postgresql:database=mydb;schema=public`
+- `__dmigrate_reverse__:mysql:database=shopdb`
+- `__dmigrate_reverse__:sqlite:schema=main`
+
+Komponentenwerte werden fuer Strukturtrenner (`;`, `=`, `:`, `%`)
+per RFC-3986-Percent-Encoding kodiert.
+
+**Reservierter Prefix**: Der Prefix `__dmigrate_reverse__:` ist fuer
+tool-generierte Reverse-Metadaten reserviert. Handgeschriebene
+Schema-Dateien duerfen ihn nicht als `name`-Wert verwenden.
+
+### 2.3 Objekt-Hierarchie
 
 ```
 SchemaDefinition
