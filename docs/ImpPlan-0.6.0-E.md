@@ -190,8 +190,12 @@ Verbindliche Folge:
 - `--format yaml|json` steuert die Serialisierung des Schema-Artefakts
 - `yaml` bleibt Default
 - `--output` muss eine dazu passende Dateiendung tragen
-- das globale `--output-format` bleibt ein Darstellungsflag fuer CLI-Meldungen
-  und Fehler, nicht fuer das Schema-Artefakt
+- das globale `--output-format` bleibt ein Darstellungsflag fuer CLI-Meldungen,
+  Fehler und ein optionales Success-Dokument, nicht fuer das
+  Schema-Artefakt selbst
+- `--output-format json|yaml` serialisiert im Erfolgspfad ein strukturiertes
+  CLI-Ergebnis nach `stdout`, das Artefaktpfade und Summary transportiert,
+  aber nicht das Reverse-Schema in `--output` ersetzt
 
 Phase E fuehrt keinen zweiten konkurrierenden Reverse-Dateiformatpfad ein.
 
@@ -253,31 +257,58 @@ Verbindliche Zuordnung:
 Phase E fuehrt fuer `schema reverse` keinen zusaetzlichen Exit-`5`-Pfad ein.
 Die bestehende CLI-Dokumentation ist an dieser Stelle nachzufuehren.
 
-### 4.7 Reverse-Notes erscheinen auf `stderr`, nicht im Schema und nicht vermischt mit Erfolgsausgabe
+Zusaetzlich verbindlich:
+
+- alle Fehlerpfade verwenden fuer user-facing Ausgaben nur eine maskierte bzw.
+  alias-basierte Source-Referenz
+- `OutputFormatter.printError(...)` oder ein gleichwertiger zentraler
+  Fehlerpfad bekommt nie die unmaskierte, aufgeloeste Connection-URL
+
+### 4.7 Reverse-Notes erscheinen auf `stderr`; Erfolgsausgabe folgt `--output-format`
 
 Der Reverse-Pfad ist ein dateiorientiertes Kommando. Erfolgsartefakte liegen in
-Dateien, nicht auf `stdout`.
+Dateien; `stdout` transportiert nur CLI-Erfolgsausgabe, nie das eigentliche
+Schema-Artefakt.
 
 Verbindliche Folge:
 
 - das Schema wird ausschliesslich ueber `--output` geschrieben
 - der Report wird ausschliesslich ueber `--report` bzw. Sidecar geschrieben
 - menschenlesbare Notes und `skipped_objects` gehen auf `stderr`
-- `quiet` unterdrueckt Erfolgsmeldungen wie
-  `Schema written to ...` / `Report written to ...`, aber nicht
-  Reverse-Warnungen und Action-Required-Hinweise
+- bei `--output-format plain` gehen Erfolgsmeldungen wie
+  `Schema written to ...` / `Report written to ...` auf `stdout`
+- bei `--output-format json|yaml` geht stattdessen ein strukturiertes
+  Success-Dokument auf `stdout`, mindestens mit:
+  - `command`
+  - `status`
+  - `exit_code`
+  - maskierter bzw. alias-basierter `source`-Referenz
+  - `output`-/`report`-Pfad
+  - Summary-Zaehlern fuer Notes / `skipped_objects`
+- `quiet` folgt dem bestehenden globalen CLI-Vertrag `Only show errors`:
+  - Reverse-Warnungen, Info-Notes und `skipped_objects` werden unterdrueckt
+  - menschenlesbare Plain-Erfolgsmeldungen werden unterdrueckt
+  - strukturierte Success-Dokumente bei `--output-format json|yaml` werden
+    ebenfalls unterdrueckt
+  - Fehlerausgaben bleiben sichtbar
 
-### 4.8 Quellreferenzen bleiben im Report gescrubbt
+### 4.8 Quellreferenzen bleiben in Report-, Fehler- und Success-Ausgaben gescrubbt
 
-Der CLI-Pfad darf keine Klartext-Credentials ueber Reverse-Reports leaken.
+Der CLI-Pfad darf keine Klartext-Credentials ueber Reverse-Reports oder
+CLI-Fehler- bzw. Success-Ausgaben leaken.
 
 Verbindliche Folge:
 
+- der Runner bildet nach der Source-Aufloesung genau eine user-facing
+  Source-Referenz fuer Report-, Fehler- und Success-Ausgaben
 - der Runner uebergibt dem Reverse-Report-Writer den Phase-C-Vertrag
   `SchemaReadReportInput` inklusive `ReverseSourceRef`
 - Aliasquellen duerfen im Report unveraendert erscheinen
-- URL-Quellen muessen vor dem Schreiben ueber den zentralen Scrubbing-Pfad
-  maskiert werden
+- URL-Quellen muessen fuer alle user-facing Ausgaben ueber den zentralen
+  Scrubbing-Pfad maskiert werden
+- die aufgeloeste Klartext-URL darf nur innerhalb von URL-Parser, Pooling und
+  DB-Zugriffspfad weitergereicht werden, nicht in `printError(...)`,
+  JSON-/YAML-Fehlerdokumente oder Success-Ausgaben
 
 ---
 
@@ -302,6 +333,7 @@ Mindestens noetig:
   - `outputFormat`
 - constructor-injected Kollaboratoren fuer:
   - Source-Aufloesung
+  - maskierte Source-Referenzbildung fuer Report/Fehler/Success-Ausgaben
   - URL-Parsing
   - Pool-Erzeugung
   - Driver-/`SchemaReader`-Lookup
@@ -314,12 +346,12 @@ Mindestens noetig:
 Der Runner koordiniert:
 
 1. CLI-nahe Vorvalidierung
-2. Source-Aufloesung
+2. Source-Aufloesung und user-facing Source-Referenzbildung
 3. URL-Parsing und Dialektbestimmung
 4. Pool-Erzeugung
 5. `SchemaReader.read(pool, options)`
 6. Schreiben von Schema und Report
-7. stderr-Ausgabe fuer Notes / `skipped_objects`
+7. stdout-/stderr-Ausgabe gemaess `--output-format`, `quiet` und Reverse-Notes
 8. finale Exit-Code-Mapping-Entscheidung
 
 ### E.2 `SchemaCommands.kt` um `reverse` erweitern
@@ -394,6 +426,9 @@ Mindestens erforderlich:
 - Default-Pfad `<basename>.report.yaml`
 - Kollisionserkennung zwischen `--output` und `--report`
 - Erfolgsmeldung fuer Schema und Report nur ausserhalb von `quiet`
+- strukturierte Success-Ausgabe fuer `--output-format json|yaml`, die auf
+  Datei-Artefakte verweist statt sie zu duplizieren, aber wie alle anderen
+  Nicht-Fehler-Ausgaben durch `quiet` unterdrueckt wird
 
 Zulaessig ist:
 
@@ -416,11 +451,16 @@ Mindestens noetig:
   - Action-Required-Notes
   - Info-Notes (mindestens `verbose`-gesteuert)
   - `skipped_objects`
+- ein klarer Success-Output-Vertrag:
+  - `plain` -> menschenlesbare Erfolgsmeldungen auf `stdout`
+  - `json|yaml` -> strukturiertes Success-Dokument auf `stdout`
+  - `quiet` -> keine Success-Ausgabe und keine Reverse-Notes; nur Fehler
 - dieselbe inhaltliche Semantik wie im Report:
   - kein stiller Verlust
   - keine freierfundene Zusatzinterpretation
 - Fehlerausgaben weiter ueber den bestehenden `OutputFormatter` oder einen
   gleichwertig zentralen Pfad
+- keine user-facing Ausgabe arbeitet mit unmaskierter URL-Quelle
 
 ### E.7 Tests fuer Runner, Command und Fehlerpfade aufbauen
 
@@ -439,10 +479,16 @@ Abzusichern sind mindestens:
 - erfolgreicher Reverse mit Named-Connection-Alias
 - Default-Sidecar ohne explizites `--report`
 - `--format json` mit passender `.json`-Datei
+- `--output-format json|yaml` liefert ein strukturiertes Success-Dokument,
+  waehrend Schema und Report Datei-Artefakte bleiben, inklusive maskierter bzw.
+  alias-basierter `source`-Referenz
 - Format-/Endungs-Mismatch
 - Output-/Report-Kollision
 - Config-Fehler
 - Connection-/Metadatenfehler
+- URL-Quelle bleibt in CLI-Fehlerausgaben maskiert
+- `quiet` unterdrueckt Reverse-Notes und Success-Ausgaben, laesst aber Fehler
+  sichtbar
 - Include-Flags einzeln und ueber `--include-all`
 - `quiet` versus `verbose`
 
@@ -511,6 +557,13 @@ Wichtiger als die exakte Kotlin-Form sind die Zielsemantiken:
 - `schemaFileWriterResolver` steht fuer den formatbewussten Phase-C-Datei-I/O-
   Vertrag; der Runner loest darueber einen Writer auf und uebergibt diesem nur
   noch die `SchemaDefinition`
+- user-facing Source-Referenzen werden einmal zentral gebildet und fuer
+  Report-, Fehler- und Success-Ausgaben nur maskiert bzw. alias-basiert
+  weitergereicht
+- `--output-format json|yaml` liefert ein strukturiertes Success-Dokument auf
+  `stdout`, ohne dass Reverse-Schema oder Reverse-Report aus ihren Dateien auf
+  die Konsole gespiegelt werden; unter `quiet` entfaellt auch dieses
+  Success-Dokument
 - Source-Aufloesung, Pooling und Driver-Lookup werden wiederverwendet statt
   neu erfunden
 
@@ -557,9 +610,16 @@ Indirekt vorausgesetzt:
       `--include-triggers` werden korrekt in `SchemaReadOptions` abgebildet.
 - [ ] `--include-all` aktiviert alle optionalen Objektarten.
 - [ ] Reverse-Notes und `skipped_objects` erscheinen konsistent auf `stderr`
-      und im Report.
+      und im Report, jeweils ausserhalb von `quiet`.
 - [ ] Reverse mit Alias-Quelle leakt keine Credentials.
-- [ ] Reverse mit URL-Quelle maskiert Credentials im Report.
+- [ ] Reverse mit URL-Quelle maskiert Credentials im Report und in
+      CLI-Fehler- und Success-Ausgaben.
+- [ ] `--output-format json|yaml` liefert im Erfolgspfad ein strukturiertes
+      Success-Dokument auf `stdout`, ohne das Schema-Artefakt aus `--output`
+      zu duplizieren, und verwendet dabei nur eine maskierte bzw.
+      alias-basierte `source`-Referenz.
+- [ ] `--quiet` unterdrueckt fuer `schema reverse` alle Nicht-Fehler-Ausgaben
+      einschliesslich Reverse-Notes und strukturierter Success-Dokumente.
 - [ ] CLI-/Pfadvalidierungsfehler enden mit Exit `2`.
 - [ ] Connection- und DB-Metadatenfehler enden mit Exit `4`.
 - [ ] Config-, URL- und Schreibfehler enden mit Exit `7`.
@@ -596,6 +656,7 @@ d-migrate schema reverse \
   --format json \
   --output /tmp/reverse.json \
   --report /tmp/reverse.report.yaml \
+  --output-format json \
   --include-views \
   --include-functions \
   --include-triggers
@@ -605,10 +666,16 @@ Dabei explizit pruefen:
 
 - Schema-Datei ist gueltige YAML-/JSON-`SchemaDefinition`
 - Report und `stderr` zeigen dieselben Notes / `skipped_objects`
-- `quiet` unterdrueckt Erfolgsmeldungen, aber nicht Reverse-Warnungen
+  ausserhalb von `quiet`
+- `--output-format json|yaml` liefert ein strukturiertes Success-Dokument auf
+  `stdout`, waehrend Schema und Report nur in Dateien liegen
+- die `source`-Referenz im strukturierten Success-Dokument ist bei Aliasquellen
+  alias-basiert und bei URL-Quellen maskiert
+- `quiet` unterdrueckt Reverse-Warnungen, `skipped_objects` und
+  Success-Ausgaben, aber nicht Fehler
 - Format-/Endungsfehler werden ohne DB-Verbindungsversuch abgefangen
-- Alias- und URL-Quelle werden im Report korrekt und ohne Credential-Leak
-  referenziert
+- Alias- und URL-Quelle werden in Report, Fehler- und Success-Ausgaben korrekt
+  und ohne Credential-Leak referenziert
 
 ---
 
