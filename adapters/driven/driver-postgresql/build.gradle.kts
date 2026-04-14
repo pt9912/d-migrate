@@ -30,6 +30,7 @@ kover {
                             "dev.dmigrate.driver.postgresql.PostgresDataReader",
                             "dev.dmigrate.driver.postgresql.PostgresTableLister",
                             "dev.dmigrate.driver.postgresql.PostgresMetadataQueries",
+                            "dev.dmigrate.driver.postgresql.PostgresSchemaReader",
                             "dev.dmigrate.driver.postgresql.PostgresDataWriter",
                             "dev.dmigrate.driver.postgresql.PostgresTableImportSession",
                             "dev.dmigrate.driver.postgresql.PostgresSchemaSync",

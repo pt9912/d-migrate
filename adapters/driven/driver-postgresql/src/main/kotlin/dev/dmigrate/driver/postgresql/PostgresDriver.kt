@@ -22,6 +22,5 @@ class PostgresDriver : DatabaseDriver {
     override fun tableLister(): TableLister = PostgresTableLister()
     override fun dataWriter(): DataWriter = PostgresDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = PostgresJdbcUrlBuilder()
-    override fun schemaReader(): SchemaReader =
-        throw UnsupportedOperationException("Schema reading not yet implemented for $dialect")
+    override fun schemaReader(): SchemaReader = PostgresSchemaReader()
 }
