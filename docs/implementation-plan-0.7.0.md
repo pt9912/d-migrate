@@ -468,7 +468,7 @@ Mindestens noetig:
   - `V...__....sql`
   - optional `U...__....sql`
 - Liquibase-Renderer:
-  - versionierter Changelog mit SQL-Block
+  - versionierter XML-Changelog mit SQL-Block
   - optional Rollback-Block
 - Django-Renderer:
   - Python-Datei mit `migrations.RunSQL`

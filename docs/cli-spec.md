@@ -851,6 +851,10 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 `exports.down`) auf Basis des bestehenden full-state-`generateRollback()`-Pfads.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
 
+**Liquibase-Format (0.7.0)**: `export liquibase` erzeugt für 0.7.0 genau einen
+versionierten XML-Changelog mit genau einem deterministischen `changeSet`
+inklusive optionalem `<rollback>`-Block.
+
 Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 `--version` bei Django/Knex), `3` Schema-Validierungsfehler, `7` Parse-/I/O-Fehler.
 
