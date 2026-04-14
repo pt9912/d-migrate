@@ -332,7 +332,13 @@ Mindestens explizit abzusichern:
 - Identifier-Validierung fuer `--tables`
 - kein literales `?` in `--filter`, wenn `--since` aktiv ist
 - Widersprueche wie `--truncate` plus explizites `--on-conflict abort`
+- `--on-conflict update` ist nur zulaessig, wenn die Zieltabelle einen
+  Primary Key hat; fehlender PK ist ein target-seitiger Preflight-Fehler
+  mit Exit `3`
 - nicht unterstuetzte `--trigger-mode disable`-Dialektkombinationen
+- nicht unterstuetzte `--trigger-mode strict`-Dialektkombinationen bleiben wie
+  im heutigen Importpfad Validierungsfehler mit Exit `2`; nur der fachliche
+  Strict-Preflight auf unterstuetzten Dialekten endet mit Exit `3`
 
 Wichtig:
 
@@ -393,7 +399,8 @@ Exit-Code-Vertrag fuer Phase G:
   - Source- oder Target-Schema ist als neutrales Modell invalid
   - Zielinkompatibilitaet
   - Tabellen-/Spaltenmismatch
-  - strikter Triggerpfad
+  - strikter Triggerpfad auf unterstuetzten Dialekten
+  - fehlender Primary Key bei `--on-conflict update`
   - FK-Zyklen
 - Exit `4`:
   - Connection-Fehler
@@ -523,6 +530,8 @@ Mindestens noetig:
 - Target-seitige Existenzpruefung derselben Tabellen
 - Validation-Gate fuer Source und Target:
   - invalides neutrales Schema -> Exit `3` vor jedem Streaming
+- PK-Gate fuer `--on-conflict update`:
+  - fehlender Ziel-Primary-Key -> Exit `3` vor jedem Streaming
 - Spaltenpruefung mindestens fuer:
   - fehlende Zielspalten
   - unerwartete Zielspalten, falls sie die Schreibsemantik brechen
@@ -543,6 +552,9 @@ Wichtig:
 - Source- und Target-Schema duerfen nicht auf einen kleinsten gemeinsamen
   Nenner weichgespuelt werden, wenn dadurch echte Zielinkompatibilitaeten
   unsichtbar werden
+- nicht unterstuetzte `triggerMode`-/Dialektkombinationen bleiben
+  Validierungsfehler im Stil des bestehenden Importpfads statt spaeterer
+  Write- oder Metadatenfehler
 - das Preflight darf nicht durch Aufruf mutierender Writer-APIs bereits
   Seiteneffekte auf dem Target ausloesen
 
@@ -623,6 +635,9 @@ Wichtig:
 
 - Erfolgsfaelle bleiben wie bei Export/Import ohne neuen stdout-Envelope
 - Transfer erzeugt keine "hidden report file"
+- Transfer darf nicht still die bestehende Import-Nomenklatur in Summary oder
+  Progress uebernehmen; Progress-/Summary-Texte muessen den Pfad als
+  `transfer` bzw. gleichwertig transferneutral benennen
 
 ### G.8 Tests und Doku nachziehen
 
@@ -685,6 +700,25 @@ data class TransferPreflightResult(
     val importOptions: ImportOptions,
 )
 
+data class TableTransferSummary(
+    val table: String,
+    val rowsInserted: Long,
+    val rowsUpdated: Long,
+    val rowsSkipped: Long,
+    val rowsFailed: Long,
+    val durationMs: Long,
+    val error: String? = null,
+)
+
+data class TransferResult(
+    val tables: List<TableTransferSummary>,
+    val totalRowsInserted: Long,
+    val totalRowsUpdated: Long,
+    val totalRowsSkipped: Long,
+    val totalRowsFailed: Long,
+    val durationMs: Long,
+)
+
 fun interface TransferExecutor {
     fun execute(
         sourcePool: ConnectionPool,
@@ -694,7 +728,7 @@ fun interface TransferExecutor {
         preflight: TransferPreflightResult,
         config: PipelineConfig,
         progressReporter: ProgressReporter,
-    ): ImportResult
+    ): TransferResult
 }
 
 class DataTransferRunner(
@@ -730,6 +764,8 @@ Wichtiger als die exakte Kotlin-Form sind die Zielsemantiken:
 - user-facing Referenzen und Fehlertexte bleiben gescrubbt
 - `--output-format` bleibt fuer `data transfer` unverdrahtet wie bei
   Export/Import
+- Resultat- und Progress-Vertrag sind transferneutral statt implizit
+  import-zentriert
 
 ---
 
@@ -785,6 +821,8 @@ Indirekt vorausgesetzt:
       Tabellen-/Spaltenkompatibilitaet.
 - [ ] Dieses Preflight bleibt read-only und ruft keine mutierende
       `DataWriter.openTable(...)`-Logik vor dem eigentlichen Streaming auf.
+- [ ] `--on-conflict update` ohne Ziel-Primary-Key fuehrt vor dem Streaming zu
+      Exit `3`.
 - [ ] Die Schreibreihenfolge wird target-autoritiv aus FK-Beziehungen oder
       einer gleichwertig sicheren Projektion bestimmt.
 - [ ] FK-Zyklen im gewaehlten Transfer-Teilgraphen fuehren standardmaessig zu
@@ -804,6 +842,9 @@ Indirekt vorausgesetzt:
 - [ ] `SchemaReadSeverity.ACTION_REQUIRED` oder relevante `skippedObjects` auf
       selektierten Tabellen bzw. benoetigten Spalten werden als
       Preflight-Problem sichtbar.
+- [ ] Nicht unterstuetzte `--trigger-mode strict`-/Dialektkombinationen
+      bleiben Validierungsfehler mit Exit `2`; nur der fachliche Strict-
+      Preflight auf unterstuetzten Dialekten endet mit Exit `3`.
 - [ ] User-facing Source-/Target-Referenzen bleiben alias-basiert oder
       maskiert.
 - [ ] User-facing Fehlertexte bleiben auch dann gescrubbt, wenn Exceptions
@@ -814,6 +855,8 @@ Indirekt vorausgesetzt:
       und fuehrt weder zu strukturierten Erfolgs- noch Fehler-Envelope.
 - [ ] Fortschritt, `quiet` und `no-progress` verhalten sich fuer Transfer
       konsistent zu Export/Import.
+- [ ] Progress- und Summary-Texte bleiben transferneutral und uebernehmen
+      nicht still die Import-Nomenklatur.
 - [ ] Exit-Codes `0`, `2`, `3`, `4`, `5` und `7` sind fuer `data transfer`
       sauber getrennt und testbar.
 - [ ] Routinen, Views und Triggerdefinitionen werden nicht implizit
@@ -870,16 +913,21 @@ Dabei explizit pruefen:
 - `--tables` leer oder implizit aus dem Source-Schema sauber aufgeloest wird
 - invalides Source- oder Target-Schema fuehrt vor jedem Streaming zu Exit `3`
 - Zielinkompatibilitaeten vor dem ersten Write auf Exit `3` fallen
+- `--on-conflict update` ohne Ziel-Primary-Key faellt vor dem Streaming auf
+  Exit `3`
 - das Preflight bleibt seiteneffektfrei; vor dem ersten echten Write gibt es
   kein `TRUNCATE`, `DELETE`, keine FK-Check-Umschaltung und keine
   Trigger-Deaktivierung
 - FK-Zyklen vor dem Streaming sichtbar werden
 - `SchemaReadSeverity.INFO`/`WARNING` blockieren nicht pauschal; relevante
   ACTION_REQUIRED-/`skippedObjects`-Funde tun es
+- nicht unterstuetzte `--trigger-mode strict`-/Dialektkombinationen enden wie
+  im bestehenden Importpfad mit Exit `2`
 - Konflikt- und Triggerpfade dieselbe Semantik wie im Import verwenden
 - Fortschritt und Summary unter `quiet` / `no-progress` konsistent sind
 - `--output-format` aendert fuer `data transfer` weder Erfolgs- noch
   Fehlerausgaben
+- Progress- und Summary-Texte sprechen von Transfer statt still von Import
 - Fehlertexte keine unmaskierten Connection-Details enthalten
 
 ---
