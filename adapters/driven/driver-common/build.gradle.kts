@@ -29,6 +29,13 @@ kover {
                     // wenn SequenceAdjustment eigene Tests bekommt
                     "dev.dmigrate.driver.data.SequenceAdjustment",
                     "dev.dmigrate.driver.data.UnsupportedTriggerModeException",
+                    // Phase C: pure data projections (no logic)
+                    "dev.dmigrate.driver.metadata.TableRef",
+                    "dev.dmigrate.driver.metadata.ColumnProjection",
+                    "dev.dmigrate.driver.metadata.PrimaryKeyProjection",
+                    "dev.dmigrate.driver.metadata.ForeignKeyProjection",
+                    "dev.dmigrate.driver.metadata.IndexProjection",
+                    "dev.dmigrate.driver.metadata.ConstraintProjection",
                 )
             }
         }

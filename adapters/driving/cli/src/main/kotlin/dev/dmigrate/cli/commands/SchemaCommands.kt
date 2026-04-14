@@ -14,8 +14,8 @@ import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.report.TransformationReportWriter
-import dev.dmigrate.format.yaml.YamlSchemaCodec
 
 class SchemaCommand : CliktCommand(name = "schema") {
     override fun help(context: Context) = "Schema management commands"
@@ -30,7 +30,7 @@ class SchemaCommand : CliktCommand(name = "schema") {
 class SchemaValidateCommand : CliktCommand(name = "validate") {
     override fun help(context: Context) = "Validate a schema definition"
 
-    val source by option("--source", help = "Path to schema file (YAML)")
+    val source by option("--source", help = "Path to schema file (YAML/JSON)")
         .path(mustExist = true, canBeDir = false)
         .required()
 
@@ -40,7 +40,7 @@ class SchemaValidateCommand : CliktCommand(name = "validate") {
         val formatter = OutputFormatter(ctx)
 
         val schema = try {
-            YamlSchemaCodec().read(source)
+            SchemaFileResolver.codecForPath(source).read(source)
         } catch (e: Exception) {
             formatter.printError("Failed to parse schema file: ${e.message}", source.toString())
             throw ProgramResult(7)
@@ -67,7 +67,7 @@ class SchemaValidateCommand : CliktCommand(name = "validate") {
 class SchemaGenerateCommand : CliktCommand(name = "generate") {
     override fun help(context: Context) = "Generate database-specific DDL from a schema definition"
 
-    val source by option("--source", help = "Path to schema file (YAML)")
+    val source by option("--source", help = "Path to schema file (YAML/JSON)")
         .path(mustExist = true, canBeDir = false)
         .required()
     val target by option("--target", help = "Target database dialect (postgresql, mysql, sqlite)")
@@ -97,7 +97,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             quiet = ctx.quiet,
         )
         val runner = SchemaGenerateRunner(
-            schemaReader = { path -> YamlSchemaCodec().read(path) },
+            schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
             generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
             reportWriter = { path, result, schema, dialect, src ->
                 TransformationReportWriter().write(path, result, schema, dialect, src)
@@ -118,10 +118,10 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
 class SchemaCompareCommand : CliktCommand(name = "compare") {
     override fun help(context: Context) = "Compare two schema definitions"
 
-    val source by option("--source", help = "Path to source schema file (YAML)")
+    val source by option("--source", help = "Path to source schema file (YAML/JSON)")
         .path(mustExist = true, canBeDir = false)
         .required()
-    val target by option("--target", help = "Path to target schema file (YAML)")
+    val target by option("--target", help = "Path to target schema file (YAML/JSON)")
         .path(mustExist = true, canBeDir = false)
         .required()
     val output by option("--output", help = "Output file path (default: stdout)")
@@ -139,7 +139,7 @@ class SchemaCompareCommand : CliktCommand(name = "compare") {
             quiet = ctx.quiet,
         )
         val runner = SchemaCompareRunner(
-            schemaReader = { path -> YamlSchemaCodec().read(path) },
+            schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
             validator = { schema -> SchemaValidator().validate(schema) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
             projectDiff = SchemaCompareHelpers::projectDiff,

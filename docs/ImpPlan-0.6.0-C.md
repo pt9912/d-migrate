@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: C (Schema-I/O, Reverse-Reports und gemeinsame JDBC-Metadatenbasis)
-> **Status**: Draft (2026-04-13)
+> **Status**: Review (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 4.2,
 > Abschnitt 4.8 bis 4.10, Abschnitt 5 Phase C, Abschnitt 6.1 bis 6.4,
 > Abschnitt 6.8, Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;

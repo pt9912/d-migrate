@@ -1,0 +1,21 @@
+{
+  "schema_format": "1.0",
+  "name": "Minimal Schema",
+  "version": "1.0.0",
+  "tables": {
+    "users": {
+      "columns": {
+        "id": {
+          "type": "identifier",
+          "auto_increment": true
+        },
+        "name": {
+          "type": "text",
+          "max_length": 100,
+          "required": true
+        }
+      },
+      "primary_key": ["id"]
+    }
+  }
+}
