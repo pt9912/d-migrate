@@ -197,7 +197,7 @@ Verbindliche Konsequenz:
 Der aktuelle CLI-Sollpfad fuer 0.7.0 ist dateibasiert:
 
 ```bash
-d-migrate export flyway --source <path> --output <dir>
+d-migrate export flyway --source <path> --target <dialect> --output <dir>
 ```
 
 Das passt zu den vorhandenen Codepfaden und verhindert, dass 0.7.0 heimlich
