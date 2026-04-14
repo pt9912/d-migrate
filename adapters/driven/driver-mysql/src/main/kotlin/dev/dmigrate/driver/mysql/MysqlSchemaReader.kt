@@ -74,6 +74,7 @@ class MysqlSchemaReader : SchemaReader {
         val pkColumns = MysqlMetadataQueries.listPrimaryKeyColumns(session, database, metaTable)
         val fks = MysqlMetadataQueries.listForeignKeys(session, database, metaTable)
         val allIndices = MysqlMetadataQueries.listIndices(session, database, metaTable)
+        val checks = MysqlMetadataQueries.listCheckConstraints(session, database, metaTable)
         val engine = MysqlMetadataQueries.listTableEngine(session, database, metaTable)
 
         // MySQL auto-creates a support index for each FK. We suppress indices
@@ -166,6 +167,11 @@ class MysqlSchemaReader : SchemaReader {
         }
         for (idx in indices.filter { it.isUnique && it.columns.size > 1 }) {
             constraints += ConstraintDefinition(name = idx.name, type = ConstraintType.UNIQUE, columns = idx.columns)
+        }
+        for (check in checks) {
+            constraints += ConstraintDefinition(
+                name = check.name, type = ConstraintType.CHECK, expression = check.expression,
+            )
         }
 
         // Non-unique indices + single-col unique (not in constraints)

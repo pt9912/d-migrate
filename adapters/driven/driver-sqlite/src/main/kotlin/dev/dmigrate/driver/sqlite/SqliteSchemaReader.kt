@@ -150,6 +150,14 @@ class SqliteSchemaReader : SchemaReader {
                 columns = idx.columns,
             )
         }
+        // CHECK constraints from CREATE TABLE SQL
+        for ((checkName, checkExpr) in SqliteTypeMapping.extractCheckConstraints(createSql)) {
+            constraints += ConstraintDefinition(
+                name = checkName,
+                type = ConstraintType.CHECK,
+                expression = checkExpr,
+            )
+        }
 
         // Non-unique, non-autoindex indices
         val regularIndices = indices.filter { !it.isUnique || it.columns.size > 1 }

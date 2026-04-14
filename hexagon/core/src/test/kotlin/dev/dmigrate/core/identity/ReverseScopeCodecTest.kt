@@ -88,6 +88,34 @@ class ReverseScopeCodecTest : FunSpec({
         ReverseScopeCodec.isReverseGenerated("__dmigrate_reverse__:", ReverseScopeCodec.REVERSE_VERSION) shouldBe false
     }
 
+    test("isReverseGenerated returns false for invalid percent encoding") {
+        // Trailing naked % (not followed by any characters)
+        ReverseScopeCodec.isReverseGenerated(
+            "__dmigrate_reverse__:postgresql:database=broken%;schema=public",
+            ReverseScopeCodec.REVERSE_VERSION
+        ) shouldBe false
+    }
+
+    test("isReverseGenerated returns false for invalid hex in percent encoding") {
+        // %ZZ is not valid hex
+        ReverseScopeCodec.isReverseGenerated(
+            "__dmigrate_reverse__:postgresql:database=my%ZZdb;schema=public",
+            ReverseScopeCodec.REVERSE_VERSION
+        ) shouldBe false
+    }
+
+    test("decodeComponent rejects naked percent") {
+        shouldThrow<IllegalArgumentException> {
+            ReverseScopeCodec.decodeComponent("hello%world")
+        }
+    }
+
+    test("decodeComponent rejects invalid hex after percent") {
+        shouldThrow<IllegalArgumentException> {
+            ReverseScopeCodec.decodeComponent("hello%ZZworld")
+        }
+    }
+
     test("isReverseGenerated returns false for prefix with empty dialect") {
         ReverseScopeCodec.isReverseGenerated("__dmigrate_reverse__::key=val", ReverseScopeCodec.REVERSE_VERSION) shouldBe false
     }

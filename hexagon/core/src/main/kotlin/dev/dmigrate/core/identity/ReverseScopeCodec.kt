@@ -25,11 +25,24 @@ object ReverseScopeCodec {
     fun encodeComponent(value: String): String =
         ENCODE_REGEX.replace(value) { "%" + it.value[0].code.toString(16).uppercase().padStart(2, '0') }
 
-    /** Decode a percent-encoded component value. */
-    fun decodeComponent(encoded: String): String =
-        Regex("%([0-9A-Fa-f]{2})").replace(encoded) {
+    /** Decode a percent-encoded component value.
+     * @throws IllegalArgumentException if the string contains invalid percent sequences */
+    fun decodeComponent(encoded: String): String {
+        // Validate: every % must be followed by exactly two hex digits
+        val invalidPercent = Regex("%(?![0-9A-Fa-f]{2})").find(encoded)
+        if (invalidPercent != null) {
+            throw IllegalArgumentException(
+                "Invalid percent-encoding at position ${invalidPercent.range.first} in '$encoded'"
+            )
+        }
+        return Regex("%([0-9A-Fa-f]{2})").replace(encoded) {
             it.groupValues[1].toInt(16).toChar().toString()
         }
+    }
+
+    /** Check if a string contains only valid percent-encoding sequences. */
+    fun hasValidEncoding(value: String): Boolean =
+        !Regex("%(?![0-9A-Fa-f]{2})").containsMatchIn(value)
 
     /**
      * Build canonical reverse name for PostgreSQL.
@@ -90,8 +103,11 @@ object ReverseScopeCodec {
             val eqIdx = pair.indexOf('=')
             if (eqIdx < 0) return null
             val key = pair.substring(0, eqIdx)
-            val value = decodeComponent(pair.substring(eqIdx + 1))
+            val rawValue = pair.substring(eqIdx + 1)
             if (key.isEmpty()) return null
+            // Reject invalid percent-encoding sequences
+            if (!hasValidEncoding(rawValue)) return null
+            val value = try { decodeComponent(rawValue) } catch (_: IllegalArgumentException) { return null }
             result[key] = value
         }
         return result

@@ -188,6 +188,16 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    // ── CHECK constraints from CREATE TABLE SQL ──
+
+    test("named CHECK constraints are read from CREATE TABLE SQL") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY, age INTEGER, CONSTRAINT chk_age CHECK (age > 0))") { pool ->
+            val result = reader.read(pool)
+            val t = result.schema.tables["t"]!!
+            t.constraints.any { it.type == ConstraintType.CHECK && it.name == "chk_age" } shouldBe true
+        }
+    }
+
     // ── sqlite_autoindex suppressed ─────────────
 
     test("sqlite_autoindex backing indices are suppressed") {

@@ -115,6 +115,25 @@ internal object SqliteTypeMapping {
         }
     }
 
+    /**
+     * Extracts named CHECK constraints from a CREATE TABLE statement.
+     * SQLite stores the full DDL in sqlite_master.sql — CHECK constraints
+     * can only be recovered from there.
+     */
+    fun extractCheckConstraints(createSql: String): List<Pair<String, String>> {
+        val results = mutableListOf<Pair<String, String>>()
+        val regex = Regex(
+            """CONSTRAINT\s+(\S+)\s+CHECK\s*\((.+?)\)""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
+        for (match in regex.findAll(createSql)) {
+            val name = match.groupValues[1].trim().removeSurrounding("\"").removeSurrounding("`")
+            val expr = match.groupValues[2].trim()
+            results += name to expr
+        }
+        return results
+    }
+
     fun isVirtualTable(createSql: String): Boolean =
         createSql.trimStart().startsWith("CREATE VIRTUAL TABLE", ignoreCase = true)
 

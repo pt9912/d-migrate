@@ -89,6 +89,28 @@ object MysqlMetadataQueries {
         }
     }
 
+    fun listCheckConstraints(session: JdbcMetadataSession, database: String, table: String): List<ConstraintProjection> {
+        return session.queryList(
+            """
+            SELECT tc.constraint_name, cc.check_clause
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.check_constraints cc
+              ON tc.constraint_name = cc.constraint_name
+              AND tc.constraint_schema = cc.constraint_schema
+            WHERE tc.constraint_type = 'CHECK'
+              AND tc.table_schema = ? AND tc.table_name = ?
+              AND tc.constraint_name NOT LIKE '%_chk_%' OR tc.constraint_name LIKE '%_chk_%'
+            ORDER BY tc.constraint_name
+            """.trimIndent(), database, table,
+        ).map { row ->
+            ConstraintProjection(
+                name = row["constraint_name"] as String,
+                type = "CHECK",
+                expression = row["check_clause"] as? String,
+            )
+        }
+    }
+
     fun listIndices(session: JdbcMetadataSession, database: String, table: String): List<IndexProjection> {
         val rows = session.queryList(
             """

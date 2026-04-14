@@ -59,39 +59,55 @@ object PostgresMetadataQueries {
     }
 
     fun listForeignKeys(session: JdbcMetadataSession, schema: String, table: String): List<ForeignKeyProjection> {
+        // Uses pg_constraint directly to avoid the cartesian product from
+        // information_schema.constraint_column_usage on composite FKs.
         val rows = session.queryList(
             """
-            SELECT tc.constraint_name,
-                   kcu.column_name,
-                   ccu.table_name AS referenced_table,
-                   ccu.column_name AS referenced_column,
-                   rc.delete_rule, rc.update_rule
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-              AND tc.table_schema = kcu.table_schema
-            JOIN information_schema.constraint_column_usage ccu
-              ON tc.constraint_name = ccu.constraint_name
-              AND tc.table_schema = ccu.table_schema
-            JOIN information_schema.referential_constraints rc
-              ON tc.constraint_name = rc.constraint_name
-              AND tc.table_schema = rc.constraint_schema
-            WHERE tc.constraint_type = 'FOREIGN KEY'
-              AND tc.table_schema = ? AND tc.table_name = ?
-            ORDER BY tc.constraint_name, kcu.ordinal_position
+            SELECT c.conname AS constraint_name,
+                   array_agg(sa.attname ORDER BY pos.n) AS columns,
+                   tf.relname AS referenced_table,
+                   array_agg(ta.attname ORDER BY pos.n) AS referenced_columns,
+                   c.confdeltype, c.confupdtype
+            FROM pg_constraint c
+            JOIN pg_class sf ON sf.oid = c.conrelid
+            JOIN pg_class tf ON tf.oid = c.confrelid
+            JOIN pg_namespace n ON n.oid = sf.relnamespace
+            CROSS JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS pos(src_attnum, tgt_attnum, n)
+            JOIN pg_attribute sa ON sa.attrelid = sf.oid AND sa.attnum = pos.src_attnum
+            JOIN pg_attribute ta ON ta.attrelid = tf.oid AND ta.attnum = pos.tgt_attnum
+            WHERE c.contype = 'f'
+              AND n.nspname = ? AND sf.relname = ?
+            GROUP BY c.conname, tf.relname, c.confdeltype, c.confupdtype
+            ORDER BY c.conname
             """.trimIndent(), schema, table,
         )
-        return rows.groupBy { it["constraint_name"] as String }.map { (name, fkRows) ->
-            val first = fkRows.first()
+        return rows.map { row ->
+            val cols = parseArrayColumn(row["columns"])
+            val refCols = parseArrayColumn(row["referenced_columns"])
             ForeignKeyProjection(
-                name = name,
-                columns = fkRows.map { it["column_name"] as String },
-                referencedTable = first["referenced_table"] as String,
-                referencedColumns = fkRows.map { it["referenced_column"] as String },
-                onDelete = (first["delete_rule"] as? String)?.takeIf { it != "NO ACTION" },
-                onUpdate = (first["update_rule"] as? String)?.takeIf { it != "NO ACTION" },
+                name = row["constraint_name"] as String,
+                columns = cols,
+                referencedTable = row["referenced_table"] as String,
+                referencedColumns = refCols,
+                onDelete = mapPgAction(row["confdeltype"] as? String),
+                onUpdate = mapPgAction(row["confupdtype"] as? String),
             )
         }
+    }
+
+    private fun parseArrayColumn(value: Any?): List<String> = when (value) {
+        is java.sql.Array -> (value.array as Array<*>).map { it.toString() }
+        is String -> value.removeSurrounding("{", "}").split(",").map { it.trim() }
+        else -> emptyList()
+    }
+
+    private fun mapPgAction(code: String?): String? = when (code) {
+        "c" -> "CASCADE"
+        "n" -> "SET NULL"
+        "d" -> "SET DEFAULT"
+        "r" -> "RESTRICT"
+        "a", null -> null // NO ACTION
+        else -> null
     }
 
     fun listUniqueConstraintColumns(session: JdbcMetadataSession, schema: String, table: String): Map<String, List<String>> {
