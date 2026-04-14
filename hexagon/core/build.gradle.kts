@@ -23,14 +23,18 @@ kover {
                     "dev.dmigrate.core.model.SchemaDefinition",
                     "dev.dmigrate.core.model.SequenceDefinition",
                     "dev.dmigrate.core.model.TableDefinition",
+                    "dev.dmigrate.core.model.TableMetadata",
                     "dev.dmigrate.core.model.TriggerDefinition",
                     "dev.dmigrate.core.model.ViewDefinition",
                     // Diff DTOs (pure data, no logic beyond generated equals/hashCode)
                     "dev.dmigrate.core.diff.ValueChange",
-                    "dev.dmigrate.core.diff.EnumTypeDiff",
                     "dev.dmigrate.core.diff.NamedTable",
-                    "dev.dmigrate.core.diff.NamedEnumType",
                     "dev.dmigrate.core.diff.NamedView",
+                    "dev.dmigrate.core.diff.NamedCustomType",
+                    "dev.dmigrate.core.diff.NamedSequence",
+                    "dev.dmigrate.core.diff.NamedFunction",
+                    "dev.dmigrate.core.diff.NamedProcedure",
+                    "dev.dmigrate.core.diff.NamedTrigger",
                 )
             }
         }

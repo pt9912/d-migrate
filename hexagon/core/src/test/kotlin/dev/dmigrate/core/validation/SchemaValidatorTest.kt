@@ -122,24 +122,26 @@ class SchemaValidatorTest : FunSpec({
         result.errors.any { it.code == "E007" } shouldBe true
     }
 
-    test("E008: table has no primary key") {
+    test("E008: table without primary key produces warning, not error") {
         val s = schema(tables = mapOf(
             "items" to table(
                 columns = mapOf("name" to col(NeutralType.Text(100)))
             )
         ))
         val result = validator.validate(s)
-        result.errors.any { it.code == "E008" } shouldBe true
+        result.isValid shouldBe true
+        result.warnings.any { it.code == "E008" } shouldBe true
+        result.errors.none { it.code == "E008" } shouldBe true
     }
 
-    test("E008: identifier column satisfies primary key requirement") {
+    test("E008: identifier column satisfies primary key requirement — no warning") {
         val s = schema(tables = mapOf(
             "items" to table(
                 columns = mapOf("id" to col(NeutralType.Identifier(true)), "name" to col(NeutralType.Text(100)))
             )
         ))
         val result = validator.validate(s)
-        result.errors.none { it.code == "E008" } shouldBe true
+        result.warnings.none { it.code == "E008" } shouldBe true
     }
 
     test("E009: default value incompatible with column type") {
@@ -645,5 +647,101 @@ class SchemaValidatorTest : FunSpec({
         val gt = GeometryType("hexagon")
         gt.isKnown() shouldBe false
         gt.schemaName shouldBe "hexagon"
+    }
+
+    // ─── Phase B: Reverse-taugliche Schemas ─────────────────────
+
+    test("reverse-generated schema with all object types validates without errors") {
+        val s = SchemaDefinition(
+            name = "Reverse DB", version = "1.0",
+            tables = mapOf(
+                "users" to TableDefinition(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(true)),
+                        "name" to col(NeutralType.Text(100)),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+            customTypes = mapOf(
+                "status" to CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("a", "b")),
+                "posint" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0"),
+                "address" to CustomTypeDefinition(
+                    kind = CustomTypeKind.COMPOSITE,
+                    fields = mapOf("street" to col(NeutralType.Text(200))),
+                ),
+            ),
+            sequences = mapOf(
+                "id_seq" to SequenceDefinition(start = 1, increment = 1),
+            ),
+            views = mapOf(
+                "active_users" to ViewDefinition(query = "SELECT * FROM users", sourceDialect = "postgresql"),
+            ),
+            functions = mapOf(
+                "calc(in:integer)" to FunctionDefinition(
+                    parameters = listOf(ParameterDefinition("x", "integer")),
+                    returns = ReturnType("integer"),
+                    body = "RETURN x * 2;",
+                    language = "sql",
+                    sourceDialect = "postgresql",
+                ),
+            ),
+            procedures = mapOf(
+                "cleanup(in:integer)" to ProcedureDefinition(
+                    parameters = listOf(ParameterDefinition("days", "integer")),
+                    body = "DELETE FROM log WHERE age > days;",
+                    language = "sql",
+                    sourceDialect = "postgresql",
+                ),
+            ),
+            triggers = mapOf(
+                "users::audit" to TriggerDefinition(
+                    table = "users",
+                    event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER,
+                    body = "INSERT INTO log VALUES (NEW.id);",
+                    sourceDialect = "postgresql",
+                ),
+            ),
+        )
+        val result = validator.validate(s)
+        result.isValid shouldBe true
+    }
+
+    test("reverse-generated schema without primary key is valid with E008 warning") {
+        val s = SchemaDefinition(
+            name = "Reverse DB", version = "1.0",
+            tables = mapOf(
+                "log" to TableDefinition(
+                    columns = mapOf(
+                        "ts" to col(NeutralType.DateTime()),
+                        "msg" to col(NeutralType.Text()),
+                    ),
+                ),
+            ),
+            sequences = mapOf(
+                "log_seq" to SequenceDefinition(start = 100),
+            ),
+        )
+        val result = validator.validate(s)
+        result.isValid shouldBe true
+        result.warnings.any { it.code == "E008" } shouldBe true
+    }
+
+    test("schema with table metadata validates without errors") {
+        val s = schema(tables = mapOf(
+            "items" to TableDefinition(
+                columns = mapOf("id" to col(NeutralType.Identifier(true))),
+                primaryKey = listOf("id"),
+                metadata = TableMetadata(engine = "InnoDB"),
+            ),
+            "config" to TableDefinition(
+                columns = mapOf("key" to col(NeutralType.Text(50))),
+                primaryKey = listOf("key"),
+                metadata = TableMetadata(withoutRowid = true),
+            ),
+        ))
+        val result = validator.validate(s)
+        result.isValid shouldBe true
     }
 })

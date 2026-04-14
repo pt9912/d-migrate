@@ -59,8 +59,17 @@ class YamlSchemaCodec : SchemaCodec {
         primaryKey = node["primary_key"]?.toStringList() ?: emptyList(),
         indices = parseIndices(node["indices"]),
         constraints = parseConstraints(node["constraints"]),
-        partitioning = parsePartitioning(node["partitioning"])
+        partitioning = parsePartitioning(node["partitioning"]),
+        metadata = parseTableMetadata(node["metadata"])
     )
+
+    private fun parseTableMetadata(node: JsonNode?): TableMetadata? {
+        if (node == null || !node.isObject) return null
+        return TableMetadata(
+            engine = node.optionalText("engine"),
+            withoutRowid = node.boolOrDefault("without_rowid", false),
+        )
+    }
 
     // ── Columns ─────────────────────────────────
 

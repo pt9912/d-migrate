@@ -8,3 +8,5 @@ tables:
       name:
         type: text
         max_length: 100
+      status:
+        type: enum

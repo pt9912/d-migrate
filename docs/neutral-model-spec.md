@@ -306,7 +306,26 @@ tables:
         - name: orders_2025
           from: "2025-01-01"
           to: "2026-01-01"
+
+    # ── Tabellen-Metadaten (optional, ab 0.6.0) ───
+    metadata:
+      engine: InnoDB                     # MySQL-Tabellen-Engine (InnoDB, MyISAM, etc.)
+      without_rowid: false               # SQLite WITHOUT ROWID-Tabelle
 ```
+
+### 4.2 Tabellen-Metadaten
+
+Ab 0.6.0 koennen Tabellen optionale physische Metadaten tragen, die
+compare-relevant sind:
+
+| Feld           | Typ      | Default | Beschreibung                      |
+|----------------|----------|---------|-----------------------------------|
+| `engine`       | `string` | `null`  | MySQL-Tabellen-Engine             |
+| `without_rowid`| `boolean`| `false` | SQLite WITHOUT ROWID-Eigenschaft  |
+
+Diese Felder werden primaer durch Reverse-Engineering befuellt. In
+handgeschriebenen Schema-Dateien sind sie optional. Fehlende `metadata`
+oder `null`-Werte sind aequivalent zu den Defaults.
 
 ### 4.2 Referenzen (Foreign Keys)
 
@@ -494,7 +513,96 @@ functions:
     source_dialect: postgresql
 ```
 
-### 6.3 Hinweis zu Body und Transformation
+### 6.3 Kanonische Objekt-Keys (ab 0.6.0)
+
+Fuer die verlustfreie Identitaet von Routinen und Triggern definiert das
+neutrale Modell kanonische Schluesselformate. Diese werden als Map-Keys
+in `procedures`, `functions` und `triggers` verwendet.
+
+**Routinen** (Procedures und Functions) verwenden einen
+Signatur-basierten Key:
+
+```
+name(direction:type,direction:type,...)
+```
+
+Beispiel: Eine Funktion `calc` mit zwei `IN`-Parametern vom Typ
+`integer` erhaelt den Key `calc(in:integer,in:integer)`. Ueberladene
+Routinen (gleicher Name, unterschiedliche Signatur) erhalten
+unterschiedliche Keys und koennen damit verlustfrei nebeneinander im
+Schema existieren.
+
+**Trigger** verwenden einen tabellenqualifizierten Key:
+
+```
+table::name
+```
+
+Beispiel: Ein Trigger `audit` auf Tabelle `users` erhaelt den Key
+`users::audit`. Gleichnamige Trigger auf verschiedenen Tabellen
+kollidieren damit nicht.
+
+**Percent-Encoding**: Reservierte Trennzeichen (`%`, `(`, `)`, `,`,
+`:`) in Objekt- oder Tabellennamen werden komponentenweise
+Percent-encodiert (z.B. `my%3Afunc` fuer `my:func`), bevor der Key
+zusammengesetzt wird. Damit bleibt die String-Repraesentation
+verlustfrei und round-trippbar.
+
+In handgeschriebenen YAML-Dateien ohne Ueberladungen koennen weiterhin
+einfache Namen als Keys verwendet werden (z.B. `calc` statt
+`calc(in:integer)`). Der kanonische Key wird primaer beim
+Reverse-Engineering und beim Compare von Live-Datenbanken relevant.
+
+**Beispiel: Ueberladene Funktionen im YAML**
+
+```yaml
+functions:
+  "calc(in:integer)":
+    parameters:
+      - name: x
+        type: integer
+        direction: in
+    returns:
+      type: integer
+    body: "RETURN x * 2;"
+    source_dialect: postgresql
+  "calc(in:integer,in:integer)":
+    parameters:
+      - name: x
+        type: integer
+        direction: in
+      - name: y
+        type: integer
+        direction: in
+    returns:
+      type: integer
+    body: "RETURN x + y;"
+    source_dialect: postgresql
+```
+
+**Beispiel: Gleichnamige Trigger auf verschiedenen Tabellen**
+
+```yaml
+triggers:
+  "users::audit_insert":
+    table: users
+    event: insert
+    timing: after
+    body: "INSERT INTO audit_log (table_name) VALUES ('users');"
+    source_dialect: postgresql
+  "orders::audit_insert":
+    table: orders
+    event: insert
+    timing: after
+    body: "INSERT INTO audit_log (table_name) VALUES ('orders');"
+    source_dialect: postgresql
+```
+
+Der YAML-Codec uebernimmt die Map-Keys verlustfrei: kanonische Keys
+bleiben als solche erhalten, einfache Namen werden nicht implizit auf
+kanonische Keys normalisiert.
+
+### 6.4 Hinweis zu Body und Transformation
 
 Das `body`-Feld enthält den Quell-Code im **Quell-Dialekt** (angegeben in `source_dialect`). Für die Generierung im Ziel-Dialekt gibt es zwei Wege:
 
@@ -544,6 +652,10 @@ views:
 ---
 
 ## 8. Triggers
+
+Trigger-Keys folgen ab 0.6.0 dem kanonischen Format `table::name`
+(siehe Abschnitt 6.3). In handgeschriebenen YAML-Dateien ohne
+Namenskollisionen koennen weiterhin einfache Namen verwendet werden.
 
 ```yaml
 triggers:
@@ -975,7 +1087,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 ### 13.1 Syntaktische Regeln
 
 - Jede Tabelle muss mindestens eine Spalte haben
-- Jede Tabelle muss einen `primary_key` haben (explizit oder über `identifier`-Typ)
+- Jede Tabelle sollte einen `primary_key` haben (explizit oder über `identifier`-Typ); ein fehlender Primary Key erzeugt eine Warnung (E008), blockiert aber die Validierung nicht
 - Spaltennamen müssen innerhalb einer Tabelle eindeutig sein
 - Index-Spalten müssen in der Tabelle existieren
 - Enum-Werte dürfen nicht leer sein

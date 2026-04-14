@@ -55,9 +55,9 @@ class SchemaComparatorFixtureTest : FunSpec({
         diff.tablesAdded.map { it.name } shouldBe listOf("customers", "orders")
 
         // Enum types: order_status added
-        diff.enumTypesAdded shouldHaveSize 1
-        diff.enumTypesAdded[0].name shouldBe "order_status"
-        diff.enumTypesAdded[0].definition.values shouldBe
+        diff.customTypesAdded shouldHaveSize 1
+        diff.customTypesAdded[0].name shouldBe "order_status"
+        diff.customTypesAdded[0].definition.values shouldBe
             listOf("pending", "processing", "shipped", "delivered", "cancelled")
     }
 
@@ -91,9 +91,9 @@ class SchemaComparatorFixtureTest : FunSpec({
         )
 
         val diff = comparator.compare(original, modified)
-        diff.enumTypesChanged shouldHaveSize 1
-        diff.enumTypesChanged[0].name shouldBe "order_status"
-        diff.enumTypesChanged[0].values.after shouldBe
+        diff.customTypesChanged shouldHaveSize 1
+        diff.customTypesChanged[0].name shouldBe "order_status"
+        diff.customTypesChanged[0].values!!.after shouldBe
             listOf("pending", "processing", "shipped", "delivered", "cancelled", "refunded")
     }
 

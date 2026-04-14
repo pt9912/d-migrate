@@ -1,0 +1,72 @@
+schema_format: "1.0"
+name: "Canonical Key Schema"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: 100
+    primary_key: [id]
+
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+    primary_key: [id]
+
+functions:
+  "calc(in:integer)":
+    parameters:
+      - name: x
+        type: integer
+        direction: in
+    returns:
+      type: integer
+    body: "RETURN x * 2;"
+    language: sql
+    source_dialect: postgresql
+
+  "calc(in:integer,in:integer)":
+    parameters:
+      - name: x
+        type: integer
+        direction: in
+      - name: y
+        type: integer
+        direction: in
+    returns:
+      type: integer
+    body: "RETURN x + y;"
+    language: sql
+    source_dialect: postgresql
+
+procedures:
+  "reset_stats(in:integer)":
+    parameters:
+      - name: user_id
+        type: integer
+        direction: in
+    body: "DELETE FROM stats WHERE uid = user_id;"
+    language: sql
+    source_dialect: postgresql
+
+triggers:
+  "users::audit_insert":
+    table: users
+    event: insert
+    timing: after
+    body: "INSERT INTO audit_log (tbl) VALUES ('users');"
+    source_dialect: postgresql
+
+  "orders::audit_insert":
+    table: orders
+    event: insert
+    timing: after
+    body: "INSERT INTO audit_log (tbl) VALUES ('orders');"
+    source_dialect: postgresql

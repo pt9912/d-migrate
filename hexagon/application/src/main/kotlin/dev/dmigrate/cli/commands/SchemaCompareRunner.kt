@@ -32,15 +32,15 @@ data class SchemaCompareSummary(
     val tablesAdded: Int = 0,
     val tablesRemoved: Int = 0,
     val tablesChanged: Int = 0,
-    val enumTypesAdded: Int = 0,
-    val enumTypesRemoved: Int = 0,
-    val enumTypesChanged: Int = 0,
+    val customTypesAdded: Int = 0,
+    val customTypesRemoved: Int = 0,
+    val customTypesChanged: Int = 0,
     val viewsAdded: Int = 0,
     val viewsRemoved: Int = 0,
     val viewsChanged: Int = 0,
 ) {
     val totalChanges: Int get() = tablesAdded + tablesRemoved + tablesChanged +
-        enumTypesAdded + enumTypesRemoved + enumTypesChanged +
+        customTypesAdded + customTypesRemoved + customTypesChanged +
         viewsAdded + viewsRemoved + viewsChanged
 }
 
@@ -53,9 +53,9 @@ data class CompareValidation(
 
 data class DiffView(
     val schemaMetadata: MetadataChangeView? = null,
-    val enumTypesAdded: List<EnumSummaryView> = emptyList(),
-    val enumTypesRemoved: List<EnumSummaryView> = emptyList(),
-    val enumTypesChanged: List<EnumChangeView> = emptyList(),
+    val customTypesAdded: List<CustomTypeSummaryView> = emptyList(),
+    val customTypesRemoved: List<CustomTypeSummaryView> = emptyList(),
+    val customTypesChanged: List<CustomTypeChangeView> = emptyList(),
     val tablesAdded: List<TableSummaryView> = emptyList(),
     val tablesRemoved: List<TableSummaryView> = emptyList(),
     val tablesChanged: List<TableChangeView> = emptyList(),
@@ -73,8 +73,8 @@ data class StringChange(val before: String, val after: String)
 data class NullableStringChange(val before: String?, val after: String?)
 data class StringListChange(val before: List<String>, val after: List<String>)
 
-data class EnumSummaryView(val name: String, val values: List<String>)
-data class EnumChangeView(val name: String, val before: List<String>, val after: List<String>)
+data class CustomTypeSummaryView(val name: String, val kind: String, val detail: String)
+data class CustomTypeChangeView(val name: String, val kind: String, val changes: List<String>)
 
 data class TableSummaryView(val name: String, val columnCount: Int)
 data class TableChangeView(
@@ -196,9 +196,9 @@ class SchemaCompareRunner(
             tablesAdded = diff.tablesAdded.size,
             tablesRemoved = diff.tablesRemoved.size,
             tablesChanged = diff.tablesChanged.size,
-            enumTypesAdded = diff.enumTypesAdded.size,
-            enumTypesRemoved = diff.enumTypesRemoved.size,
-            enumTypesChanged = diff.enumTypesChanged.size,
+            customTypesAdded = diff.customTypesAdded.size,
+            customTypesRemoved = diff.customTypesRemoved.size,
+            customTypesChanged = diff.customTypesChanged.size,
             viewsAdded = diff.viewsAdded.size,
             viewsRemoved = diff.viewsRemoved.size,
             viewsChanged = diff.viewsChanged.size,

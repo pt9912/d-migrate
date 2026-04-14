@@ -32,6 +32,8 @@ class PostgresDriverExposureTest : FunSpec({
 
         val urlBuilder = driver.urlBuilder().shouldBeInstanceOf<PostgresJdbcUrlBuilder>()
         urlBuilder.dialect shouldBe DatabaseDialect.POSTGRESQL
+
+        shouldThrow<UnsupportedOperationException> { driver.schemaReader() }
     }
 
     test("identifier helpers parse and quote PostgreSQL table names") {

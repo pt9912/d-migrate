@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: B (Reverse-Vertrag und Modellanpassungen)
-> **Status**: Draft (2026-04-13)
+> **Status**: Done (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 2,
 > Abschnitt 4.2 bis 4.7, Abschnitt 5 Phase B, Abschnitt 6.1 bis 6.3,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -580,56 +580,56 @@ Indirekt betroffen in Folgephasen:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `DatabaseDriver` exponiert additiv einen `schemaReader()`, ohne
+- [x] `DatabaseDriver` exponiert additiv einen `schemaReader()`, ohne
       `tableLister()` fuer bestehende Export-Pfade zu entfernen.
-- [ ] Ein `SchemaReader`-Port existiert in `hexagon:ports` mit
+- [x] Ein `SchemaReader`-Port existiert in `hexagon:ports` mit
       `ConnectionPool`-basiertem Read-Vertrag und einem klaren Optionsobjekt.
-- [ ] `SchemaReadOptions` enthaelt nur portnahe Reader-Optionen und keine
+- [x] `SchemaReadOptions` enthaelt nur portnahe Reader-Optionen und keine
       CLI-/Datei-/Formatparameter.
-- [ ] `SchemaReadOptions` unterscheidet Funktionen und Prozeduren als getrennte
+- [x] `SchemaReadOptions` unterscheidet Funktionen und Prozeduren als getrennte
       Objektarten statt sie nur implizit in einem Sammelflag zu vermischen.
-- [ ] Der Reverse-Rueckgabewert ist ein Ergebnisobjekt mit `schema`, `notes`
+- [x] Der Reverse-Rueckgabewert ist ein Ergebnisobjekt mit `schema`, `notes`
       und optional `skippedObjects`, nicht nur ein nacktes `SchemaDefinition`.
-- [ ] Der Reverse-Vertrag transportiert Hinweise und ausgelassene Objekte ohne
+- [x] Der Reverse-Vertrag transportiert Hinweise und ausgelassene Objekte ohne
       SQL-Statement-Container oder andere generatorseitige Kruecken.
-- [ ] `SchemaReadResult.notes` verwenden einen expliziten Reverse-Note-Typ
+- [x] `SchemaReadResult.notes` verwenden einen expliziten Reverse-Note-Typ
       (`SchemaReadNote` oder gleichwertig), nicht `TransformationNote`.
-- [ ] Routinen- und Trigger-Identitaet ist fuer 0.6.0 verlustfrei definiert;
+- [x] Routinen- und Trigger-Identitaet ist fuer 0.6.0 verlustfrei definiert;
       Ueberladungen oder gleichnamige Trigger auf verschiedenen Tabellen
       fuehren nicht zu stillen Ueberschreibungen im Modellvertrag.
-- [ ] Der kanonische Routinen-Key ist `name(direction:type,direction:type,...)`.
-- [ ] Der kanonische Trigger-Key ist `table::name`.
-- [ ] Fuer beide kanonischen Objekt-Keys ist eine explizite
+- [x] Der kanonische Routinen-Key ist `name(direction:type,direction:type,...)`.
+- [x] Der kanonische Trigger-Key ist `table::name`.
+- [x] Fuer beide kanonischen Objekt-Keys ist eine explizite
       Percent-Encoding-Regel fuer reservierte Trenner festgelegt.
-- [ ] Es existiert fuer 0.6.0 keine lose `Map<String, Any>`- oder
+- [x] Es existiert fuer 0.6.0 keine lose `Map<String, Any>`- oder
       `extras`-Escape-Hatch im neutralen Modell.
-- [ ] MySQL-Engine und SQLite-`WITHOUT ROWID` sind als explizite
+- [x] MySQL-Engine und SQLite-`WITHOUT ROWID` sind als explizite
       compare-relevante Modellattribute entschieden und modelliert.
-- [ ] SQLite-Virtual-Tables werden nicht still als normale Tabellen in das
+- [x] SQLite-Virtual-Tables werden nicht still als normale Tabellen in das
       Modell gedrueckt, wenn deren Semantik fuer 0.6.0 nicht sauber getragen
       werden kann.
-- [ ] PostgreSQL-Extensions sind fuer 0.6.0 bewusst als Reverse-Notes und nicht
+- [x] PostgreSQL-Extensions sind fuer 0.6.0 bewusst als Reverse-Notes und nicht
       als halbmodellierte Objektklasse eingeordnet.
-- [ ] `SchemaDiff` und `SchemaComparator` sind nicht mehr auf Tabellen,
+- [x] `SchemaDiff` und `SchemaComparator` sind nicht mehr auf Tabellen,
       Enum-Typen und Views beschraenkt, sondern decken auch `DOMAIN`,
       `COMPOSITE`, `sequences`, `functions`, `procedures` und `triggers` ab.
-- [ ] Der Compare-Vertrag fuer DB-Operanden verliert Reverse-Notes und
+- [x] Der Compare-Vertrag fuer DB-Operanden verliert Reverse-Notes und
       `skippedObjects` nicht still, sondern haelt sie pro Operand neben dem
       Schema-Diff transportierbar.
-- [ ] Der kanonische Compare-Operand-Envelope fuer spaetere DB-Operanden ist
+- [x] Der kanonische Compare-Operand-Envelope fuer spaetere DB-Operanden ist
       als `ResolvedSchemaOperand(schema, validation, notes, skippedObjects)`
       oder gleichwertig festgelegt und `hexagon:application` zugeordnet.
-- [ ] Die neuen Compare-Surfaces bleiben modellbasiert und fuehren kein
+- [x] Die neuen Compare-Surfaces bleiben modellbasiert und fuehren kein
       SQL-Text- oder AST-Diff als Pflichtmechanik ein.
-- [ ] `SchemaValidator` akzeptiert reverse-generierte Modelle mit erweiterten
+- [x] `SchemaValidator` akzeptiert reverse-generierte Modelle mit erweiterten
       Custom Types, Sequences, Routinen, Views, Triggern und Tabellenmetadaten,
       solange kein echter neutraler Modellwiderspruch vorliegt.
-- [ ] `E008` ist in 0.6.0 kein ValidationError mehr, sondern ein
+- [x] `E008` ist in 0.6.0 kein ValidationError mehr, sondern ein
       ValidationWarning und blockiert daher weder Reverse noch file-based
       Wiederverwendung reverse-generierter Schemas.
-- [ ] `docs/neutral-model-spec.md` widerspricht der `E008`-Herabstufung nach
+- [x] `docs/neutral-model-spec.md` widerspricht der `E008`-Herabstufung nach
       Phase B nicht mehr.
-- [ ] Die Phase ist durch Core-Tests und mindestens compile-seitige
+- [x] Die Phase ist durch Core-Tests und mindestens compile-seitige
       Port-Verifikation gegen Regressionen abgesichert.
 
 ---

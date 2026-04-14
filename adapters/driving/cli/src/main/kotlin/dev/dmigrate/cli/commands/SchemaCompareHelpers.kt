@@ -83,14 +83,27 @@ internal object SchemaCompareHelpers {
                 name = metadata.name?.let { StringChange(it.before, it.after) },
                 version = metadata.version?.let { StringChange(it.before, it.after) },
             ) else null,
-            enumTypesAdded = diff.enumTypesAdded.map {
-                EnumSummaryView(it.name, it.definition.values.orEmpty())
+            customTypesAdded = diff.customTypesAdded.map {
+                CustomTypeSummaryView(
+                    it.name,
+                    it.definition.kind.name.lowercase(),
+                    customTypeDetail(it.definition),
+                )
             },
-            enumTypesRemoved = diff.enumTypesRemoved.map {
-                EnumSummaryView(it.name, it.definition.values.orEmpty())
+            customTypesRemoved = diff.customTypesRemoved.map {
+                CustomTypeSummaryView(
+                    it.name,
+                    it.definition.kind.name.lowercase(),
+                    customTypeDetail(it.definition),
+                )
             },
-            enumTypesChanged = diff.enumTypesChanged.map {
-                EnumChangeView(it.name, it.values.before, it.values.after)
+            customTypesChanged = diff.customTypesChanged.map {
+                CustomTypeChangeView(
+                    it.name,
+                    (it.kind?.after ?: it.kind?.before)?.name?.lowercase()
+                        ?: "unknown",
+                    customTypeChanges(it),
+                )
             },
             tablesAdded = diff.tablesAdded.map {
                 TableSummaryView(it.name, it.definition.columns.size)
@@ -176,16 +189,15 @@ internal object SchemaCompareHelpers {
             metadata.version?.let { appendLine("  version: ${it.before} -> ${it.after}") }
         }
 
-        if (diff.enumTypesAdded.isNotEmpty() || diff.enumTypesRemoved.isNotEmpty() ||
-            diff.enumTypesChanged.isNotEmpty()) {
+        if (diff.customTypesAdded.isNotEmpty() || diff.customTypesRemoved.isNotEmpty() ||
+            diff.customTypesChanged.isNotEmpty()) {
             appendLine()
-            appendLine("Enum Types:")
-            for (e in diff.enumTypesAdded) appendLine("  + ${e.name}: [${e.values.joinToString(", ")}]")
-            for (e in diff.enumTypesRemoved) appendLine("  - ${e.name}: [${e.values.joinToString(", ")}]")
-            for (e in diff.enumTypesChanged) {
-                appendLine("  ~ ${e.name}:")
-                appendLine("      before: [${e.before.joinToString(", ")}]")
-                appendLine("      after:  [${e.after.joinToString(", ")}]")
+            appendLine("Custom Types:")
+            for (e in diff.customTypesAdded) appendLine("  + ${e.name} (${e.kind}): ${e.detail}")
+            for (e in diff.customTypesRemoved) appendLine("  - ${e.name} (${e.kind}): ${e.detail}")
+            for (e in diff.customTypesChanged) {
+                appendLine("  ~ ${e.name} (${e.kind}):")
+                for (ch in e.changes) appendLine("      $ch")
             }
         }
 
@@ -222,9 +234,9 @@ internal object SchemaCompareHelpers {
         if (s.tablesAdded > 0) sb.appendLine("  Tables added:    ${s.tablesAdded}")
         if (s.tablesRemoved > 0) sb.appendLine("  Tables removed:  ${s.tablesRemoved}")
         if (s.tablesChanged > 0) sb.appendLine("  Tables changed:  ${s.tablesChanged}")
-        if (s.enumTypesAdded > 0) sb.appendLine("  Enums added:     ${s.enumTypesAdded}")
-        if (s.enumTypesRemoved > 0) sb.appendLine("  Enums removed:   ${s.enumTypesRemoved}")
-        if (s.enumTypesChanged > 0) sb.appendLine("  Enums changed:   ${s.enumTypesChanged}")
+        if (s.customTypesAdded > 0) sb.appendLine("  Types added:     ${s.customTypesAdded}")
+        if (s.customTypesRemoved > 0) sb.appendLine("  Types removed:   ${s.customTypesRemoved}")
+        if (s.customTypesChanged > 0) sb.appendLine("  Types changed:   ${s.customTypesChanged}")
         if (s.viewsAdded > 0) sb.appendLine("  Views added:     ${s.viewsAdded}")
         if (s.viewsRemoved > 0) sb.appendLine("  Views removed:   ${s.viewsRemoved}")
         if (s.viewsChanged > 0) sb.appendLine("  Views changed:   ${s.viewsChanged}")
@@ -291,9 +303,9 @@ internal object SchemaCompareHelpers {
         sb.appendLine("""    "tables_added": ${s.tablesAdded},""")
         sb.appendLine("""    "tables_removed": ${s.tablesRemoved},""")
         sb.appendLine("""    "tables_changed": ${s.tablesChanged},""")
-        sb.appendLine("""    "enum_types_added": ${s.enumTypesAdded},""")
-        sb.appendLine("""    "enum_types_removed": ${s.enumTypesRemoved},""")
-        sb.appendLine("""    "enum_types_changed": ${s.enumTypesChanged},""")
+        sb.appendLine("""    "custom_types_added": ${s.customTypesAdded},""")
+        sb.appendLine("""    "custom_types_removed": ${s.customTypesRemoved},""")
+        sb.appendLine("""    "custom_types_changed": ${s.customTypesChanged},""")
         sb.appendLine("""    "views_added": ${s.viewsAdded},""")
         sb.appendLine("""    "views_removed": ${s.viewsRemoved},""")
         sb.appendLine("""    "views_changed": ${s.viewsChanged}""")
@@ -311,15 +323,15 @@ internal object SchemaCompareHelpers {
             parts += """    "schema_metadata": {${fields.joinToString(", ")}}"""
         }
 
-        if (diff.enumTypesAdded.isNotEmpty())
-            parts += """    "enum_types_added": [${diff.enumTypesAdded.joinToString(", ") { "\"${esc(it.name)}\"" }}]"""
-        if (diff.enumTypesRemoved.isNotEmpty())
-            parts += """    "enum_types_removed": [${diff.enumTypesRemoved.joinToString(", ") { "\"${esc(it.name)}\"" }}]"""
-        if (diff.enumTypesChanged.isNotEmpty()) {
-            val items = diff.enumTypesChanged.joinToString(", ") { e ->
-                """{"name": "${esc(e.name)}", "before": [${e.before.joinToString(", ") { "\"${esc(it)}\"" }}], "after": [${e.after.joinToString(", ") { "\"${esc(it)}\"" }}]}"""
+        if (diff.customTypesAdded.isNotEmpty())
+            parts += """    "custom_types_added": [${diff.customTypesAdded.joinToString(", ") { """{"name": "${esc(it.name)}", "kind": "${esc(it.kind)}"}""" }}]"""
+        if (diff.customTypesRemoved.isNotEmpty())
+            parts += """    "custom_types_removed": [${diff.customTypesRemoved.joinToString(", ") { """{"name": "${esc(it.name)}", "kind": "${esc(it.kind)}"}""" }}]"""
+        if (diff.customTypesChanged.isNotEmpty()) {
+            val items = diff.customTypesChanged.joinToString(", ") { e ->
+                """{"name": "${esc(e.name)}", "kind": "${esc(e.kind)}", "changes": [${e.changes.joinToString(", ") { "\"${esc(it)}\"" }}]}"""
             }
-            parts += """    "enum_types_changed": [$items]"""
+            parts += """    "custom_types_changed": [$items]"""
         }
 
         if (diff.tablesAdded.isNotEmpty())
@@ -439,9 +451,9 @@ internal object SchemaCompareHelpers {
         sb.appendLine("  tables_added: ${s.tablesAdded}")
         sb.appendLine("  tables_removed: ${s.tablesRemoved}")
         sb.appendLine("  tables_changed: ${s.tablesChanged}")
-        sb.appendLine("  enum_types_added: ${s.enumTypesAdded}")
-        sb.appendLine("  enum_types_removed: ${s.enumTypesRemoved}")
-        sb.appendLine("  enum_types_changed: ${s.enumTypesChanged}")
+        sb.appendLine("  custom_types_added: ${s.customTypesAdded}")
+        sb.appendLine("  custom_types_removed: ${s.customTypesRemoved}")
+        sb.appendLine("  custom_types_changed: ${s.customTypesChanged}")
         sb.appendLine("  views_added: ${s.viewsAdded}")
         sb.appendLine("  views_removed: ${s.viewsRemoved}")
         sb.appendLine("  views_changed: ${s.viewsChanged}")
@@ -455,20 +467,21 @@ internal object SchemaCompareHelpers {
             m.version?.let { sb.appendLine("    version: {before: \"${escY(it.before)}\", after: \"${escY(it.after)}\"}") }
         }
 
-        if (diff.enumTypesAdded.isNotEmpty()) {
-            sb.appendLine("  enum_types_added:")
-            for (e in diff.enumTypesAdded) sb.appendLine("    - \"${escY(e.name)}\"")
+        if (diff.customTypesAdded.isNotEmpty()) {
+            sb.appendLine("  custom_types_added:")
+            for (e in diff.customTypesAdded) sb.appendLine("    - {name: \"${escY(e.name)}\", kind: \"${escY(e.kind)}\"}")
         }
-        if (diff.enumTypesRemoved.isNotEmpty()) {
-            sb.appendLine("  enum_types_removed:")
-            for (e in diff.enumTypesRemoved) sb.appendLine("    - \"${escY(e.name)}\"")
+        if (diff.customTypesRemoved.isNotEmpty()) {
+            sb.appendLine("  custom_types_removed:")
+            for (e in diff.customTypesRemoved) sb.appendLine("    - {name: \"${escY(e.name)}\", kind: \"${escY(e.kind)}\"}")
         }
-        if (diff.enumTypesChanged.isNotEmpty()) {
-            sb.appendLine("  enum_types_changed:")
-            for (e in diff.enumTypesChanged) {
+        if (diff.customTypesChanged.isNotEmpty()) {
+            sb.appendLine("  custom_types_changed:")
+            for (e in diff.customTypesChanged) {
                 sb.appendLine("    - name: \"${escY(e.name)}\"")
-                sb.appendLine("      before: [${e.before.joinToString(", ") { "\"${escY(it)}\"" }}]")
-                sb.appendLine("      after: [${e.after.joinToString(", ") { "\"${escY(it)}\"" }}]")
+                sb.appendLine("      kind: \"${escY(e.kind)}\"")
+                sb.appendLine("      changes:")
+                for (ch in e.changes) sb.appendLine("        - \"${escY(ch)}\"")
             }
         }
 
@@ -602,4 +615,25 @@ internal object SchemaCompareHelpers {
 
     private fun yamlNullable(s: String?): String =
         if (s == null) "null" else "\"${escY(s)}\""
+
+    // ── Custom Type Helpers ──────────────────────────────────────────
+
+    private fun customTypeDetail(def: CustomTypeDefinition): String = when (def.kind) {
+        CustomTypeKind.ENUM -> def.values?.joinToString(", ") ?: ""
+        CustomTypeKind.DOMAIN -> "base: ${def.baseType ?: "?"}"
+        CustomTypeKind.COMPOSITE -> "${def.fields?.size ?: 0} fields"
+    }
+
+    private fun customTypeChanges(diff: CustomTypeDiff): List<String> {
+        val changes = mutableListOf<String>()
+        diff.kind?.let { changes += "kind: ${it.before} -> ${it.after}" }
+        diff.values?.let { changes += "values: [${it.before.joinToString(", ")}] -> [${it.after.joinToString(", ")}]" }
+        diff.baseType?.let { changes += "baseType: ${it.before} -> ${it.after}" }
+        diff.precision?.let { changes += "precision: ${it.before} -> ${it.after}" }
+        diff.scale?.let { changes += "scale: ${it.before} -> ${it.after}" }
+        diff.check?.let { changes += "check: changed" }
+        diff.description?.let { changes += "description: changed" }
+        diff.fields?.let { changes += "fields: changed" }
+        return changes
+    }
 }

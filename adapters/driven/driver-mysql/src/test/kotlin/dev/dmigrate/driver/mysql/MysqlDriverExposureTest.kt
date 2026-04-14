@@ -22,6 +22,8 @@ class MysqlDriverExposureTest : FunSpec({
         driver.tableLister().shouldBeInstanceOf<MysqlTableLister>()
         driver.dataWriter().shouldBeInstanceOf<MysqlDataWriter>()
         driver.urlBuilder().shouldBeInstanceOf<MysqlJdbcUrlBuilder>()
+
+        shouldThrow<UnsupportedOperationException> { driver.schemaReader() }
     }
 
     test("identifier helpers parse quote and normalize metadata names") {

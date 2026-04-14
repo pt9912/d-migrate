@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff
 
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.*
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -22,12 +23,20 @@ class SchemaComparatorTest : FunSpec({
         tables: Map<String, TableDefinition> = emptyMap(),
         customTypes: Map<String, CustomTypeDefinition> = emptyMap(),
         views: Map<String, ViewDefinition> = emptyMap(),
+        sequences: Map<String, SequenceDefinition> = emptyMap(),
+        functions: Map<String, FunctionDefinition> = emptyMap(),
+        procedures: Map<String, ProcedureDefinition> = emptyMap(),
+        triggers: Map<String, TriggerDefinition> = emptyMap(),
     ) = SchemaDefinition(
         name = name,
         version = version,
         tables = tables,
         customTypes = customTypes,
         views = views,
+        sequences = sequences,
+        functions = functions,
+        procedures = procedures,
+        triggers = triggers,
     )
 
     fun table(
@@ -240,10 +249,11 @@ class SchemaComparatorTest : FunSpec({
         ))
 
         val diff = comparator.compare(left, right)
-        diff.enumTypesChanged shouldHaveSize 1
-        diff.enumTypesChanged[0].name shouldBe "status"
-        diff.enumTypesChanged[0].values.before shouldBe listOf("active", "inactive")
-        diff.enumTypesChanged[0].values.after shouldBe listOf("active", "inactive", "archived")
+        diff.customTypesChanged shouldHaveSize 1
+        diff.customTypesChanged[0].name shouldBe "status"
+        diff.customTypesChanged[0].values.shouldNotBeNull()
+        diff.customTypesChanged[0].values!!.before shouldBe listOf("active", "inactive")
+        diff.customTypesChanged[0].values!!.after shouldBe listOf("active", "inactive", "archived")
     }
 
     test("enum custom type added and removed") {
@@ -251,10 +261,10 @@ class SchemaComparatorTest : FunSpec({
         val right = schema(customTypes = mapOf("new" to enumType("x", "y")))
 
         val diff = comparator.compare(left, right)
-        diff.enumTypesAdded shouldHaveSize 1
-        diff.enumTypesAdded[0].name shouldBe "new"
-        diff.enumTypesRemoved shouldHaveSize 1
-        diff.enumTypesRemoved[0].name shouldBe "old"
+        diff.customTypesAdded shouldHaveSize 1
+        diff.customTypesAdded[0].name shouldBe "new"
+        diff.customTypesRemoved shouldHaveSize 1
+        diff.customTypesRemoved[0].name shouldBe "old"
     }
 
     test("enum value order matters") {
@@ -262,7 +272,7 @@ class SchemaComparatorTest : FunSpec({
         val right = schema(customTypes = mapOf("s" to enumType("b", "a")))
 
         val diff = comparator.compare(left, right)
-        diff.enumTypesChanged shouldHaveSize 1
+        diff.customTypesChanged shouldHaveSize 1
     }
 
     test("column-based FK change via references") {
@@ -495,7 +505,7 @@ class SchemaComparatorTest : FunSpec({
         diff.isEmpty() shouldBe true
     }
 
-    test("composite and domain custom types are ignored") {
+    test("composite and domain custom types are compare-relevant") {
         val left = schema(customTypes = mapOf(
             "addr" to CustomTypeDefinition(kind = CustomTypeKind.COMPOSITE),
             "posint" to CustomTypeDefinition(kind = CustomTypeKind.DOMAIN, baseType = "integer"),
@@ -503,7 +513,8 @@ class SchemaComparatorTest : FunSpec({
         val right = schema()
 
         val diff = comparator.compare(left, right)
-        diff.isEmpty() shouldBe true
+        diff.customTypesRemoved shouldHaveSize 2
+        diff.customTypesRemoved.map { it.name }.sorted() shouldBe listOf("addr", "posint")
     }
 
     // ===========================================
@@ -718,5 +729,401 @@ class SchemaComparatorTest : FunSpec({
         val diff = comparator.compare(left, right)
         diff.tablesChanged shouldHaveSize 1
         diff.tablesChanged[0].constraintsChanged shouldHaveSize 1
+    }
+
+    // ===========================================
+    // Phase B: Extended object types
+    // ===========================================
+
+    test("domain custom type changed") {
+        val left = schema(customTypes = mapOf(
+            "posint" to CustomTypeDefinition(
+                kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0",
+            ),
+        ))
+        val right = schema(customTypes = mapOf(
+            "posint" to CustomTypeDefinition(
+                kind = CustomTypeKind.DOMAIN, baseType = "biginteger", check = "VALUE > 0",
+            ),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.customTypesChanged shouldHaveSize 1
+        diff.customTypesChanged[0].name shouldBe "posint"
+        diff.customTypesChanged[0].baseType.shouldNotBeNull()
+        diff.customTypesChanged[0].baseType!!.before shouldBe "integer"
+        diff.customTypesChanged[0].baseType!!.after shouldBe "biginteger"
+        diff.customTypesChanged[0].check.shouldBeNull()
+    }
+
+    test("domain custom type check changed") {
+        val left = schema(customTypes = mapOf(
+            "posint" to CustomTypeDefinition(
+                kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0",
+            ),
+        ))
+        val right = schema(customTypes = mapOf(
+            "posint" to CustomTypeDefinition(
+                kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE >= 0",
+            ),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.customTypesChanged shouldHaveSize 1
+        diff.customTypesChanged[0].check.shouldNotBeNull()
+    }
+
+    test("composite custom type added") {
+        val left = schema()
+        val right = schema(customTypes = mapOf(
+            "address" to CustomTypeDefinition(
+                kind = CustomTypeKind.COMPOSITE,
+                fields = mapOf(
+                    "street" to col(NeutralType.Text(200)),
+                    "city" to col(NeutralType.Text(100)),
+                ),
+            ),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.customTypesAdded shouldHaveSize 1
+        diff.customTypesAdded[0].name shouldBe "address"
+    }
+
+    test("composite custom type fields changed") {
+        val left = schema(customTypes = mapOf(
+            "address" to CustomTypeDefinition(
+                kind = CustomTypeKind.COMPOSITE,
+                fields = mapOf("street" to col(NeutralType.Text(200))),
+            ),
+        ))
+        val right = schema(customTypes = mapOf(
+            "address" to CustomTypeDefinition(
+                kind = CustomTypeKind.COMPOSITE,
+                fields = mapOf(
+                    "street" to col(NeutralType.Text(200)),
+                    "city" to col(NeutralType.Text(100)),
+                ),
+            ),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.customTypesChanged shouldHaveSize 1
+        diff.customTypesChanged[0].fields.shouldNotBeNull()
+    }
+
+    test("sequence added and removed") {
+        val left = schema(sequences = mapOf(
+            "old_seq" to SequenceDefinition(start = 1, increment = 1),
+        ))
+        val right = schema(sequences = mapOf(
+            "new_seq" to SequenceDefinition(start = 100, increment = 10),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.sequencesAdded shouldHaveSize 1
+        diff.sequencesAdded[0].name shouldBe "new_seq"
+        diff.sequencesRemoved shouldHaveSize 1
+        diff.sequencesRemoved[0].name shouldBe "old_seq"
+    }
+
+    test("sequence changed") {
+        val left = schema(sequences = mapOf(
+            "id_seq" to SequenceDefinition(start = 1, increment = 1, cycle = false),
+        ))
+        val right = schema(sequences = mapOf(
+            "id_seq" to SequenceDefinition(start = 1, increment = 1, cycle = true),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.sequencesChanged shouldHaveSize 1
+        diff.sequencesChanged[0].name shouldBe "id_seq"
+        diff.sequencesChanged[0].cycle.shouldNotBeNull()
+        diff.sequencesChanged[0].cycle!!.before shouldBe false
+        diff.sequencesChanged[0].cycle!!.after shouldBe true
+    }
+
+    test("identical sequences produce no diff") {
+        val seq = SequenceDefinition(start = 1, increment = 1)
+        val left = schema(sequences = mapOf("s" to seq))
+        val right = schema(sequences = mapOf("s" to seq))
+
+        val diff = comparator.compare(left, right)
+        diff.sequencesChanged.shouldBeEmpty()
+    }
+
+    test("function added and removed") {
+        val left = schema(functions = mapOf(
+            "old_fn" to FunctionDefinition(body = "RETURN 1", language = "sql"),
+        ))
+        val right = schema(functions = mapOf(
+            "new_fn" to FunctionDefinition(body = "RETURN 2", language = "sql"),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.functionsAdded shouldHaveSize 1
+        diff.functionsAdded[0].name shouldBe "new_fn"
+        diff.functionsRemoved shouldHaveSize 1
+        diff.functionsRemoved[0].name shouldBe "old_fn"
+    }
+
+    test("function changed - body") {
+        val left = schema(functions = mapOf(
+            "calc" to FunctionDefinition(body = "RETURN a + b", language = "sql"),
+        ))
+        val right = schema(functions = mapOf(
+            "calc" to FunctionDefinition(body = "RETURN a * b", language = "sql"),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.functionsChanged shouldHaveSize 1
+        diff.functionsChanged[0].body.shouldNotBeNull()
+    }
+
+    test("function changed - parameters") {
+        val left = schema(functions = mapOf(
+            "calc" to FunctionDefinition(
+                parameters = listOf(ParameterDefinition("x", "integer")),
+                language = "sql",
+            ),
+        ))
+        val right = schema(functions = mapOf(
+            "calc" to FunctionDefinition(
+                parameters = listOf(
+                    ParameterDefinition("x", "integer"),
+                    ParameterDefinition("y", "integer"),
+                ),
+                language = "sql",
+            ),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.functionsChanged shouldHaveSize 1
+        diff.functionsChanged[0].parameters.shouldNotBeNull()
+    }
+
+    test("procedure added and removed") {
+        val left = schema(procedures = mapOf(
+            "old_proc" to ProcedureDefinition(body = "DELETE FROM t", language = "sql"),
+        ))
+        val right = schema(procedures = mapOf(
+            "new_proc" to ProcedureDefinition(body = "INSERT INTO t", language = "sql"),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.proceduresAdded shouldHaveSize 1
+        diff.proceduresAdded[0].name shouldBe "new_proc"
+        diff.proceduresRemoved shouldHaveSize 1
+        diff.proceduresRemoved[0].name shouldBe "old_proc"
+    }
+
+    test("procedure changed - language") {
+        val left = schema(procedures = mapOf(
+            "proc" to ProcedureDefinition(body = "body", language = "sql"),
+        ))
+        val right = schema(procedures = mapOf(
+            "proc" to ProcedureDefinition(body = "body", language = "plpgsql"),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.proceduresChanged shouldHaveSize 1
+        diff.proceduresChanged[0].language.shouldNotBeNull()
+    }
+
+    test("trigger added and removed") {
+        val left = schema(
+            tables = mapOf("users" to table(columns = mapOf("id" to col()))),
+            triggers = mapOf(
+                "old_trg" to TriggerDefinition(
+                    table = "users", event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.BEFORE, body = "old body",
+                ),
+            ),
+        )
+        val right = schema(
+            tables = mapOf("users" to table(columns = mapOf("id" to col()))),
+            triggers = mapOf(
+                "new_trg" to TriggerDefinition(
+                    table = "users", event = TriggerEvent.DELETE,
+                    timing = TriggerTiming.AFTER, body = "new body",
+                ),
+            ),
+        )
+
+        val diff = comparator.compare(left, right)
+        diff.triggersAdded shouldHaveSize 1
+        diff.triggersAdded[0].name shouldBe "new_trg"
+        diff.triggersRemoved shouldHaveSize 1
+        diff.triggersRemoved[0].name shouldBe "old_trg"
+    }
+
+    test("trigger changed - event and timing") {
+        val left = schema(
+            tables = mapOf("t" to table(columns = mapOf("id" to col()))),
+            triggers = mapOf(
+                "trg" to TriggerDefinition(
+                    table = "t", event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.BEFORE,
+                ),
+            ),
+        )
+        val right = schema(
+            tables = mapOf("t" to table(columns = mapOf("id" to col()))),
+            triggers = mapOf(
+                "trg" to TriggerDefinition(
+                    table = "t", event = TriggerEvent.UPDATE,
+                    timing = TriggerTiming.AFTER,
+                ),
+            ),
+        )
+
+        val diff = comparator.compare(left, right)
+        diff.triggersChanged shouldHaveSize 1
+        diff.triggersChanged[0].event.shouldNotBeNull()
+        diff.triggersChanged[0].timing.shouldNotBeNull()
+    }
+
+    // ===========================================
+    // Phase B: Canonical key identity
+    // ===========================================
+
+    test("overloaded functions with canonical keys are tracked separately") {
+        val paramsInt = listOf(ParameterDefinition("x", "integer"))
+        val paramsText = listOf(ParameterDefinition("x", "text"))
+        val keyInt = ObjectKeyCodec.routineKey("calc", paramsInt)
+        val keyText = ObjectKeyCodec.routineKey("calc", paramsText)
+
+        val left = schema(functions = mapOf(
+            keyInt to FunctionDefinition(parameters = paramsInt, body = "RETURN x + 1", language = "sql"),
+            keyText to FunctionDefinition(parameters = paramsText, body = "RETURN x || '!'", language = "sql"),
+        ))
+        val right = schema(functions = mapOf(
+            keyInt to FunctionDefinition(parameters = paramsInt, body = "RETURN x + 2", language = "sql"),
+            keyText to FunctionDefinition(parameters = paramsText, body = "RETURN x || '!'", language = "sql"),
+        ))
+
+        val diff = comparator.compare(left, right)
+        // Only the integer overload changed; text overload is identical
+        diff.functionsChanged shouldHaveSize 1
+        diff.functionsChanged[0].name shouldBe keyInt
+        diff.functionsChanged[0].body.shouldNotBeNull()
+        diff.functionsAdded.shouldBeEmpty()
+        diff.functionsRemoved.shouldBeEmpty()
+    }
+
+    test("overloaded function added as new overload") {
+        val paramsInt = listOf(ParameterDefinition("x", "integer"))
+        val paramsIntInt = listOf(ParameterDefinition("x", "integer"), ParameterDefinition("y", "integer"))
+        val keyOne = ObjectKeyCodec.routineKey("calc", paramsInt)
+        val keyTwo = ObjectKeyCodec.routineKey("calc", paramsIntInt)
+
+        val left = schema(functions = mapOf(
+            keyOne to FunctionDefinition(parameters = paramsInt, body = "RETURN x", language = "sql"),
+        ))
+        val right = schema(functions = mapOf(
+            keyOne to FunctionDefinition(parameters = paramsInt, body = "RETURN x", language = "sql"),
+            keyTwo to FunctionDefinition(parameters = paramsIntInt, body = "RETURN x + y", language = "sql"),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.functionsAdded shouldHaveSize 1
+        diff.functionsAdded[0].name shouldBe keyTwo
+        diff.functionsChanged.shouldBeEmpty()
+    }
+
+    test("same-named triggers on different tables use canonical keys without collision") {
+        val keyUsersAudit = ObjectKeyCodec.triggerKey("users", "audit")
+        val keyOrdersAudit = ObjectKeyCodec.triggerKey("orders", "audit")
+
+        val left = schema(
+            tables = mapOf(
+                "users" to table(columns = mapOf("id" to col())),
+                "orders" to table(columns = mapOf("id" to col())),
+            ),
+            triggers = mapOf(
+                keyUsersAudit to TriggerDefinition(
+                    table = "users", event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER, body = "user audit v1",
+                ),
+                keyOrdersAudit to TriggerDefinition(
+                    table = "orders", event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER, body = "order audit",
+                ),
+            ),
+        )
+        val right = schema(
+            tables = mapOf(
+                "users" to table(columns = mapOf("id" to col())),
+                "orders" to table(columns = mapOf("id" to col())),
+            ),
+            triggers = mapOf(
+                keyUsersAudit to TriggerDefinition(
+                    table = "users", event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER, body = "user audit v2",
+                ),
+                keyOrdersAudit to TriggerDefinition(
+                    table = "orders", event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER, body = "order audit",
+                ),
+            ),
+        )
+
+        val diff = comparator.compare(left, right)
+        // Only the users trigger changed; orders trigger is identical
+        diff.triggersChanged shouldHaveSize 1
+        diff.triggersChanged[0].name shouldBe keyUsersAudit
+        diff.triggersChanged[0].body.shouldNotBeNull()
+        diff.triggersAdded.shouldBeEmpty()
+        diff.triggersRemoved.shouldBeEmpty()
+    }
+
+    // ===========================================
+    // Phase B: Table metadata
+    // ===========================================
+
+    test("table metadata engine change detected") {
+        val left = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(engine = "InnoDB"),
+        )))
+        val right = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(engine = "MyISAM"),
+        )))
+
+        val diff = comparator.compare(left, right)
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].metadata.shouldNotBeNull()
+        diff.tablesChanged[0].metadata!!.before shouldBe TableMetadata(engine = "InnoDB")
+        diff.tablesChanged[0].metadata!!.after shouldBe TableMetadata(engine = "MyISAM")
+    }
+
+    test("table metadata withoutRowid change detected") {
+        val left = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(withoutRowid = false),
+        )))
+        val right = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(withoutRowid = true),
+        )))
+
+        val diff = comparator.compare(left, right)
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].metadata.shouldNotBeNull()
+    }
+
+    test("identical table metadata produces no diff") {
+        val left = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(engine = "InnoDB"),
+        )))
+        val right = schema(tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to col(NeutralType.Identifier())),
+            metadata = TableMetadata(engine = "InnoDB"),
+        )))
+
+        val diff = comparator.compare(left, right)
+        diff.tablesChanged.shouldBeEmpty()
     }
 })

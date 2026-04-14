@@ -1,0 +1,45 @@
+schema_format: "1.0"
+name: "Table Metadata Schema"
+version: "1.0.0"
+
+tables:
+  innodb_table:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      name:
+        type: text
+        max_length: 100
+    primary_key: [id]
+    metadata:
+      engine: InnoDB
+
+  myisam_table:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      data:
+        type: text
+    primary_key: [id]
+    metadata:
+      engine: MyISAM
+
+  rowid_table:
+    columns:
+      key:
+        type: text
+        max_length: 50
+      value:
+        type: text
+    primary_key: [key]
+    metadata:
+      without_rowid: true
+
+  plain_table:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+    primary_key: [id]
