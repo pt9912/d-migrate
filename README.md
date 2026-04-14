@@ -211,6 +211,14 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
+**[v0.6.0](https://github.com/pt9912/d-migrate/releases/tag/v0.6.0)** veröffentlicht:
+
+- Reverse-Engineering bestehender Datenbanken mit `schema reverse` (PostgreSQL, MySQL, SQLite)
+- Schema-Vergleich mit DB-Operanden: `file/file`, `file/db`, `db/db` über `schema compare`
+- Direkter DB-zu-DB-Datentransfer mit `data transfer` (FK-Reihenfolge, Preflight, Chunk-Streaming)
+- Erweiterte Diff-Engine für Custom Types, Sequences, Functions, Procedures, Triggers
+- Canonical Object Keys (Routinen, Trigger) und Reverse-Scope-Encoding
+
 **[v0.5.5](https://github.com/pt9912/d-migrate/releases/tag/v0.5.5)** veröffentlicht:
 
 - Spatial Geometry-Typ (`type: geometry`) mit `geometry_type` und `srid`

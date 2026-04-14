@@ -7,13 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-<!-- Next release: 0.6.0 (Reverse-Engineering) -->
-
 ### Added
 
 ### Changed
 
 ### Fixed
+
+## [0.6.0] - 2026-04-14
+
+### Added
+
+- `d-migrate schema reverse` CLI command — extracts the schema of a live database (PostgreSQL, MySQL, SQLite) into the neutral YAML format with structured notes and optional YAML sidecar report
+- `SchemaReader` port interface with `SchemaReadResult` envelope (schema + notes + skipped objects) and `SchemaReadOptions` for object-type filtering (views, functions, procedures, triggers)
+- PostgreSQL `SchemaReader`: tables, columns, PKs, FKs, indices, CHECK constraints, sequences, ENUM/DOMAIN/COMPOSITE custom types, views, functions, procedures, triggers, partitioning, extension notes
+- MySQL `SchemaReader`: tables with engine metadata, columns, PKs, FKs, indices, CHECK constraints, ENUM columns, views, functions, procedures, triggers, `lower_case_table_names`-aware lookups
+- SQLite `SchemaReader`: PRAGMA-based metadata extraction, `WITHOUT ROWID` detection, CHECK constraint regex parser, views, triggers
+- `ObjectKeyCodec` for canonical routine keys `name(direction:type,...)` and trigger keys `table::name` with percent-encoding
+- `ReverseScopeCodec` for `__dmigrate_reverse__:` prefixed schema names with dialect/database/schema components
+- DB-based `schema compare` operands: `file:<path>` and `db:<url-or-alias>` prefix disambiguation with `CompareOperandParser` and `CompareOperandNormalizer` for reverse-marker normalization
+- `d-migrate data transfer` CLI command — direct DB-to-DB streaming without intermediate format, with target-authoritative preflight, FK topological sort, and per-chunk commit
+- `CustomTypeDiff`, `SequenceDiff`, `FunctionDiff`, `ProcedureDiff`, `TriggerDiff` in core diff engine
+- `SchemaComparator` extended for DOMAIN, COMPOSITE, sequences, functions, procedures, triggers
+- `TableMetadata` data class with `engine` (MySQL) and `withoutRowid` (SQLite) properties
+- `SchemaReadNote` and `SchemaReadSeverity` for reverse-specific diagnostic notes (R300, R310, R320, R330, R400)
+- `ReverseReportWriter` for structured YAML sidecar reports
+- `SchemaNodeParser` and `SchemaNodeBuilder` for format-agnostic JSON/YAML codec extraction
+- `JdbcMetadataSession` and typed metadata projections (TableRef, Column, PK, FK, Index, Constraint) in driver-common
+- PostgresTypeMapping, MysqlTypeMapping, SqliteTypeMapping as pure testable type mapping objects
+- Release smoke paths for Reverse, Compare (file/db, db/db), and Transfer in `docs/releasing.md`
+- `CliDataTransferTest` with flag parsing, validation, and error path coverage
+
+### Changed
+
+- `SchemaDiff`: `enumTypes*` fields renamed to `customTypes*` to support ENUM, DOMAIN, and COMPOSITE types uniformly
+- `SchemaValidator`: E008 (missing primary key) downgraded from error to warning
+- `DatabaseDriver` interface: `schemaReader()` method added (implemented for all three dialects)
+- `MysqlJdbcUrlBuilder`: removed deprecated `useUnicode`/`characterEncoding` properties (Connector/J 9.x), added `allowPublicKeyRetrieval=true`
+- `AbstractDdlGenerator.getVersion()` returns `0.6.0`
+- Dependency upgrades: PostgreSQL JDBC 42.7.10, MySQL Connector/J 9.6.0, SQLite JDBC 3.51.3.0, Jackson 2.21.2
+
+### Fixed
+
+- PostgreSQL `listSequences`: `cache_size` column referenced from `information_schema.sequences` (does not exist); fixed via LEFT JOIN to `pg_sequences`
+- PostgreSQL `readSequences`: `information_schema.sequences` returns varchar values, not numbers; fixed with `toLongOrNull()` helper for mixed Number/String parsing
+- PostgreSQL `listForeignKeys`: cartesian product on composite FKs from `constraint_column_usage`; fixed with `pg_constraint` + `unnest(conkey, confkey) WITH ORDINALITY`
 
 ## [0.5.5] - 2026-04-13
 

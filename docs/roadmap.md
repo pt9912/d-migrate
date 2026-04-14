@@ -163,7 +163,7 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 **Ziel**: Production-ready für erste Projekte
 
-### Milestone 0.6.0 — Reverse-Engineering
+### Milestone 0.6.0 — Reverse-Engineering ✅ (2026-04-14)
 
 | Bereich | Aufgabe                                                         | LF-Ref |
 | ------- | --------------------------------------------------------------- | ------ |
@@ -432,6 +432,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 3.5
+**Version**: 3.6
 **Stand**: 2026-04-14
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0 und 0.5.5 abgeschlossen und released; 0.6.0 Phase A-H abgeschlossen (Reverse-Engineering, schema reverse CLI, schema compare DB-Operanden, data transfer, Docs/Release-Smokes synchronisiert)
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5 und 0.6.0 abgeschlossen und released

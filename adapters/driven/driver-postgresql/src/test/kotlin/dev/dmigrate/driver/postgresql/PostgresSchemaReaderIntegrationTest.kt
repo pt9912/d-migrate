@@ -46,6 +46,9 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         val pool = HikariConnectionPoolFactory.create(config)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
+                // Extension (covers SchemaReader extension note loop)
+                stmt.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
+
                 // Enum type
                 stmt.execute("CREATE TYPE order_status AS ENUM ('pending', 'shipped', 'delivered')")
 
@@ -448,9 +451,10 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
     test("installed extensions produce INFO notes") {
         pool().use { pool ->
             val result = reader.read(pool)
-            // plpgsql is excluded from the list, but if other extensions
-            // are installed they should appear as R400 notes
-            result.notes.filter { it.code == "R400" }.forEach {
+            // uuid-ossp is installed in beforeSpec; plpgsql is excluded
+            val extNotes = result.notes.filter { it.code == "R400" }
+            extNotes.any { it.objectName == "uuid-ossp" } shouldBe true
+            extNotes.forEach {
                 it.severity shouldBe dev.dmigrate.driver.SchemaReadSeverity.INFO
             }
         }

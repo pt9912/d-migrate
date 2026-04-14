@@ -276,7 +276,7 @@ class PostgresSchemaReader : SchemaReader {
                 val fieldName = fRow["attname"] as String
                 val colType = fRow["column_type"] as? String ?: "text"
                 fields[fieldName] = ColumnDefinition(
-                    type = mapCompositeFieldType(colType),
+                    type = PostgresTypeMapping.mapCompositeFieldType(colType),
                 )
             }
             result[typeName] = CustomTypeDefinition(
@@ -286,33 +286,6 @@ class PostgresSchemaReader : SchemaReader {
         }
 
         return result
-    }
-
-    private fun mapCompositeFieldType(pgType: String): NeutralType {
-        val lower = pgType.lowercase().trim()
-        return when {
-            lower == "integer" || lower == "int4" -> NeutralType.Integer
-            lower == "bigint" || lower == "int8" -> NeutralType.BigInteger
-            lower == "smallint" || lower == "int2" -> NeutralType.SmallInt
-            lower == "text" -> NeutralType.Text()
-            lower == "boolean" || lower == "bool" -> NeutralType.BooleanType
-            lower.startsWith("character varying") || lower.startsWith("varchar") -> {
-                val len = Regex("\\((\\d+)\\)").find(lower)?.groupValues?.get(1)?.toIntOrNull()
-                NeutralType.Text(maxLength = len)
-            }
-            lower.startsWith("numeric") || lower.startsWith("decimal") -> {
-                val match = Regex("\\((\\d+),(\\d+)\\)").find(lower)
-                if (match != null) NeutralType.Decimal(match.groupValues[1].toInt(), match.groupValues[2].toInt())
-                else NeutralType.Float()
-            }
-            lower == "uuid" -> NeutralType.Uuid
-            lower == "json" || lower == "jsonb" -> NeutralType.Json
-            lower == "bytea" -> NeutralType.Binary
-            lower == "date" -> NeutralType.Date
-            lower == "time" || lower.startsWith("time ") -> NeutralType.Time
-            lower.startsWith("timestamp") -> NeutralType.DateTime(timezone = lower.contains("with time zone"))
-            else -> NeutralType.Text()
-        }
     }
 
     // ── Views ───────────────────────────────────

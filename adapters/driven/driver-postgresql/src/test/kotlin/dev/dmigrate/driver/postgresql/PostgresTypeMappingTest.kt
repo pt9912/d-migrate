@@ -128,21 +128,89 @@ class PostgresTypeMappingTest : FunSpec({
     test("parseDefault integer") { PostgresTypeMapping.parseDefault("42") shouldBe DefaultValue.NumberLiteral(42L) }
     test("parseDefault cast") { PostgresTypeMapping.parseDefault("'pending'::order_status") shouldBe DefaultValue.StringLiteral("pending") }
 
+    // ── More column type edge cases ──────────────
+
+    test("decimal maps same as numeric") { map("decimal", numP = 8, numS = 4).type shouldBe NeutralType.Decimal(8, 4) }
+    test("time with time zone") { map("time with time zone").type shouldBe NeutralType.Time }
+    test("char default length 1") { map("character").type shouldBe NeutralType.Char(length = 1) }
+    test("user-defined enum column") { map("user-defined", udtName = "status_type").type shouldBe NeutralType.Enum(refType = "status_type") }
+    test("smallint serial PK → Identifier") {
+        map("smallint", udtName = "int2", isPk = true, colDefault = "nextval('t_id_seq')").type shouldBe
+            NeutralType.Identifier(autoIncrement = true)
+    }
+
+    test("unknown udt serial PK → Identifier (else branch)") {
+        map("numeric", udtName = "numeric", isPk = true, isIdentity = true).type shouldBe
+            NeutralType.Identifier(autoIncrement = true)
+    }
+
+    // ── More default parsing ───────────────────
+
+    test("parseDefault double") { PostgresTypeMapping.parseDefault("3.14") shouldBe DefaultValue.NumberLiteral(3.14) }
+    test("parseDefault cast number") { PostgresTypeMapping.parseDefault("0::integer") shouldBe DefaultValue.NumberLiteral(0L) }
+    test("parseDefault cast double") { PostgresTypeMapping.parseDefault("1.5::numeric") shouldBe DefaultValue.NumberLiteral(1.5) }
+    test("parseDefault cast string literal") { PostgresTypeMapping.parseDefault("'active'::varchar") shouldBe DefaultValue.StringLiteral("active") }
+    test("parseDefault cast function") { PostgresTypeMapping.parseDefault("clock_timestamp()::timestamptz") shouldBe DefaultValue.FunctionCall("clock_timestamp()::timestamptz") }
+    test("parseDefault plain string") { PostgresTypeMapping.parseDefault("'hello'") shouldBe DefaultValue.StringLiteral("hello") }
+    test("parseDefault unknown expression") { PostgresTypeMapping.parseDefault("random()") shouldBe DefaultValue.FunctionCall("random()") }
+
+    // ── Array element types ────────────────────
+
+    test("array element int8") { PostgresTypeMapping.mapArrayElementType("int8") shouldBe "biginteger" }
+    test("array element int2") { PostgresTypeMapping.mapArrayElementType("int2") shouldBe "integer" }
+    test("array element json") { PostgresTypeMapping.mapArrayElementType("json") shouldBe "json" }
+    test("array element uuid") { PostgresTypeMapping.mapArrayElementType("uuid") shouldBe "uuid" }
+    test("array element bool") { PostgresTypeMapping.mapArrayElementType("bool") shouldBe "boolean" }
+    test("array element float4") { PostgresTypeMapping.mapArrayElementType("float4") shouldBe "float" }
+    test("array element float8") { PostgresTypeMapping.mapArrayElementType("float8") shouldBe "float" }
+    test("array element numeric") { PostgresTypeMapping.mapArrayElementType("numeric") shouldBe "decimal" }
+    test("array element jsonb") { PostgresTypeMapping.mapArrayElementType("jsonb") shouldBe "json" }
+    test("array element varchar") { PostgresTypeMapping.mapArrayElementType("varchar") shouldBe "text" }
+    test("array element bpchar") { PostgresTypeMapping.mapArrayElementType("bpchar") shouldBe "text" }
+    test("array element unknown") { PostgresTypeMapping.mapArrayElementType("hstore") shouldBe "text" }
+
     // ── Composite field mapping ─────────────────
 
     test("composite integer") { PostgresTypeMapping.mapCompositeFieldType("integer") shouldBe NeutralType.Integer }
+    test("composite int4") { PostgresTypeMapping.mapCompositeFieldType("int4") shouldBe NeutralType.Integer }
+    test("composite bigint") { PostgresTypeMapping.mapCompositeFieldType("bigint") shouldBe NeutralType.BigInteger }
+    test("composite int8") { PostgresTypeMapping.mapCompositeFieldType("int8") shouldBe NeutralType.BigInteger }
+    test("composite smallint") { PostgresTypeMapping.mapCompositeFieldType("smallint") shouldBe NeutralType.SmallInt }
     test("composite text") { PostgresTypeMapping.mapCompositeFieldType("text") shouldBe NeutralType.Text() }
+    test("composite boolean") { PostgresTypeMapping.mapCompositeFieldType("boolean") shouldBe NeutralType.BooleanType }
+    test("composite bool") { PostgresTypeMapping.mapCompositeFieldType("bool") shouldBe NeutralType.BooleanType }
     test("composite varchar(100)") { PostgresTypeMapping.mapCompositeFieldType("character varying(100)") shouldBe NeutralType.Text(maxLength = 100) }
+    test("composite varchar no length") { PostgresTypeMapping.mapCompositeFieldType("varchar") shouldBe NeutralType.Text(maxLength = null) }
     test("composite numeric(10,2)") { PostgresTypeMapping.mapCompositeFieldType("numeric(10,2)") shouldBe NeutralType.Decimal(10, 2) }
+    test("composite numeric no precision") { PostgresTypeMapping.mapCompositeFieldType("numeric") shouldBe NeutralType.Float() }
     test("composite uuid") { PostgresTypeMapping.mapCompositeFieldType("uuid") shouldBe NeutralType.Uuid }
+    test("composite json") { PostgresTypeMapping.mapCompositeFieldType("json") shouldBe NeutralType.Json }
+    test("composite jsonb") { PostgresTypeMapping.mapCompositeFieldType("jsonb") shouldBe NeutralType.Json }
+    test("composite bytea") { PostgresTypeMapping.mapCompositeFieldType("bytea") shouldBe NeutralType.Binary }
+    test("composite date") { PostgresTypeMapping.mapCompositeFieldType("date") shouldBe NeutralType.Date }
+    test("composite time") { PostgresTypeMapping.mapCompositeFieldType("time") shouldBe NeutralType.Time }
+    test("composite time with tz") { PostgresTypeMapping.mapCompositeFieldType("time with time zone") shouldBe NeutralType.Time }
+    test("composite timestamp") { PostgresTypeMapping.mapCompositeFieldType("timestamp without time zone") shouldBe NeutralType.DateTime(timezone = false) }
     test("composite timestamptz") { PostgresTypeMapping.mapCompositeFieldType("timestamp with time zone") shouldBe NeutralType.DateTime(timezone = true) }
+    test("composite unknown") { PostgresTypeMapping.mapCompositeFieldType("hstore") shouldBe NeutralType.Text() }
 
     // ── Param type mapping ──────────────────────
 
     test("param int4") { PostgresTypeMapping.mapParamType("int4") shouldBe "integer" }
+    test("param int2") { PostgresTypeMapping.mapParamType("int2") shouldBe "smallint" }
     test("param int8") { PostgresTypeMapping.mapParamType("int8") shouldBe "biginteger" }
     test("param text") { PostgresTypeMapping.mapParamType("text") shouldBe "text" }
+    test("param varchar") { PostgresTypeMapping.mapParamType("varchar") shouldBe "text" }
+    test("param bpchar") { PostgresTypeMapping.mapParamType("bpchar") shouldBe "text" }
     test("param bool") { PostgresTypeMapping.mapParamType("bool") shouldBe "boolean" }
+    test("param float4") { PostgresTypeMapping.mapParamType("float4") shouldBe "float" }
+    test("param float8") { PostgresTypeMapping.mapParamType("float8") shouldBe "float" }
+    test("param numeric") { PostgresTypeMapping.mapParamType("numeric") shouldBe "decimal" }
+    test("param uuid") { PostgresTypeMapping.mapParamType("uuid") shouldBe "uuid" }
+    test("param json") { PostgresTypeMapping.mapParamType("json") shouldBe "json" }
+    test("param jsonb") { PostgresTypeMapping.mapParamType("jsonb") shouldBe "json" }
+    test("param bytea") { PostgresTypeMapping.mapParamType("bytea") shouldBe "binary" }
+    test("param void") { PostgresTypeMapping.mapParamType("void") shouldBe "void" }
     test("param unknown passes through") { PostgresTypeMapping.mapParamType("hstore") shouldBe "hstore" }
 
     // ── isSerialDefault ─────────────────────────

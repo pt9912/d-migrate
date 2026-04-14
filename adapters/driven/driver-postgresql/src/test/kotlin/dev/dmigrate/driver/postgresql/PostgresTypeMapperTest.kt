@@ -163,4 +163,26 @@ class PostgresTypeMapperTest : FunSpec({
             dev.dmigrate.core.model.GeometryType("multipolygon"), srid = 3857
         )) shouldBe "geometry(MultiPolygon, 3857)"
     }
+
+    test("geometry multipoint maps PostGIS CamelCase") {
+        mapper.toSql(NeutralType.Geometry(
+            dev.dmigrate.core.model.GeometryType("multipoint"), srid = 4326
+        )) shouldBe "geometry(MultiPoint, 4326)"
+    }
+
+    test("geometry multilinestring maps PostGIS CamelCase") {
+        mapper.toSql(NeutralType.Geometry(
+            dev.dmigrate.core.model.GeometryType("multilinestring"), srid = 4326
+        )) shouldBe "geometry(MultiLineString, 4326)"
+    }
+
+    test("geometry geometrycollection maps PostGIS CamelCase") {
+        mapper.toSql(NeutralType.Geometry(
+            dev.dmigrate.core.model.GeometryType("geometrycollection"), srid = 4326
+        )) shouldBe "geometry(GeometryCollection, 4326)"
+    }
+
+    test("FunctionCall unknown renders with parentheses") {
+        mapper.toDefaultSql(DefaultValue.FunctionCall("custom_fn"), NeutralType.Text()) shouldBe "custom_fn()"
+    }
 })
