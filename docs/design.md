@@ -4,7 +4,20 @@
 
 > Dokumenttyp: Design-Spezifikation
 >
-> Milestones 0.1.0 (Schema-Modell, Validierung, YAML-Parsing), 0.2.0 (DDL-Generierung, Type-Mapping, Rollback), 0.3.0 (Streaming-Datenexport, Chunk-Pipeline), 0.4.0 (Datenimport) und 0.5.0 (Schema-Compare file-based, Spatial-Typen) sind implementiert. Abschnitte zu späteren Features (Reverse-Engineering, Data Transfer, KI-Integration) beschreiben den geplanten Soll-Zustand.
+> Dieses Dokument ist bewusst ein **Living Design**: Es beschreibt das
+> architektonische Zielbild von d-migrate und markiert dort, wo relevant, den
+> bereits erreichten Implementierungsstand. Abschnitte mit produktivem Verhalten
+> benennen den **Ist-Zustand** explizit; übrige Abschnitte definieren den
+> geplanten **Soll-Zustand** für kommende Milestones.
+>
+> Die aktuelle Codebasis steht auf `0.6.0-SNAPSHOT`. Implementiert sind die
+> Milestones 0.1.0 (Schema-Modell, Validierung, YAML-Parsing), 0.2.0
+> (DDL-Generierung, Type-Mapping, Rollback), 0.3.0 (Streaming-Datenexport,
+> Chunk-Pipeline), 0.4.0 (Datenimport und inkrementelle Datenpfade), 0.5.0
+> (file-based `schema compare`) und 0.5.5 (erweitertes Typsystem inkl.
+> Spatial-Typen). Abschnitte zu Reverse-Engineering, Direkttransfer,
+> Daten-Profiling, KI-Integration und weiteren späteren Features beschreiben
+> den geplanten Soll-Zustand.
 
 ---
 
@@ -20,7 +33,7 @@
 
 ### 1.2 Technologie-Entscheidung: Kotlin/JVM
 
-**Gewählt**: Kotlin 2.x auf JVM 21 (LTS)
+**Gewählt**: Kotlin 2.1.x auf JVM 21 (LTS)
 
 **Begründung**:
 - JDBC bietet die breiteste Datenbankabdeckung aller Plattformen
@@ -102,6 +115,12 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 | `xml`          | XML                  | TEXT (Fallback)    | TEXT                              |
 | `enum(values)` | CREATE TYPE ... ENUM | ENUM(...)          | TEXT + CHECK                      |
 | `array(type)`  | type[]               | JSON               | TEXT (JSON)                       |
+| `geometry(type,srid)` | `geometry(type, srid)` *(PostGIS-Profil)* | native Spatial Types *(Profil `native`)* | `AddGeometryColumn(...)` *(Profil `spatialite`)* |
+
+Das heutige Typsystem deckt die erweiterten Typen `uuid`, `json`, `binary`,
+`array` und `geometry` ab. Das
+DDL-Ergebnis für `geometry` ist bewusst profilgesteuert (`postgis`, `native`,
+`spatialite`, `none`) statt implizit vom Zieldialekt abzuleiten.
 
 ### 2.3 Datenfluss-Modell
 
@@ -140,12 +159,18 @@ Funktionsschnitt vorgesehen, gehört aber nicht zum 0.6.0-Mindestvertrag (siehe
 
 Für Datenexport/-import wird eine Streaming-Pipeline verwendet, die Daten chunkweise verarbeitet.
 
-**Ist-Zustand (0.3.0)**: Pull-basierter Export via `StreamingExporter`:
+**Heutiger Ist-Zustand**: Pull-basierte Streaming-Pipeline für Export und
+Import via `StreamingExporter` und `StreamingImporter`:
 ```
 Source DB ──DataReader──▶ DataChunk ──DataChunkWriter──▶ Output (JSON/YAML/CSV)
                 │                          │
             ConnectionPool             ExportOptions
             ChunkSize (10.000)         (Encoding, BOM, Delimiter)
+
+Input (JSON/YAML/CSV/stdin) ──DataChunkReader──▶ DataChunk ──DataWriter──▶ Target DB
+                                 │                               │
+                             ImportOptions                   Target-Schema
+                             ChunkSize (10.000)              Conflict-/Trigger-Modus
 ```
 
 **Soll-Zustand (spätere Milestones)**: Bidirektionale Pipeline mit Transformation:
@@ -209,8 +234,10 @@ Partitionierte Tabellen werden partition-aware verarbeitet:
 
 Für inkrementelle Exports/Imports wird eine Delta-Erkennung unterstützt.
 
-**Ist-Zustand (0.3.0)**: `--since-column` + `--since` CLI-Flags für Timestamp-/ID-basierte
-inkrementelle Exports (parametrisierte WHERE-Klausel über `DataFilter`).
+**Heutiger Ist-Zustand**: `data export` unterstützt `--since-column` +
+`--since` für markerbasierte inkrementelle Exports (parametrisierte
+WHERE-Klausel über `DataFilter`). `data import` ergänzt den Schreibpfad um
+idempotente Konfliktbehandlung via `--on-conflict update`.
 
 **Soll-Zustand**: Vollständige Strategien mit persistiertem Synchronisationszeitpunkt:
 
@@ -232,6 +259,41 @@ Konfiguration:
 ```
 
 Das System speichert den letzten Synchronisationszeitpunkt pro Tabelle, sodass nachfolgende Läufe nur geänderte Datensätze verarbeiten.
+
+### 3.6 Daten-Profiling (0.7.5)
+
+Ab Milestone 0.7.5 ergänzt d-migrate den Migrationspfad um ein
+deterministisches Profiling bestehender Datenbestände. Anders als
+`schema reverse` projiziert Profiling nicht primär in das neutrale
+`SchemaDefinition`-Modell, sondern in ein eigenes datenorientiertes
+Profil-Modell mit Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität.
+
+Profiling ist damit kein Appendix zum Export/Import, sondern ein eigener
+Vorbereitungsbaustein im Zielbild von d-migrate: vor Reverse, Generate,
+Transfer und produktiven Migrationsläufen.
+
+**Geplanter Soll-Zustand**:
+
+```
+Live DB ──▶ Schema-Introspection ──▶ Profiling-Queries ──▶ Warning Rules ──▶ JSON/YAML-Report
+              │                         │                     │
+              │                         │                     └─ Datenqualität, Muster, Anomalien
+              │                         └─ Counts, Top-N, Stats
+              └─ dieselbe JDBC-Metadatenbasis wie 0.6.0-SchemaReader
+```
+
+- Profiling baut auf derselben JDBC-Metadatenbasis auf wie Reverse-Engineering
+  aus 0.6.0, verwendet aber eine eigene Projektion mit rohen DB-Typen
+  (`dbType`) und Profiling-spezifischen Metadaten.
+- Geplant ist ein separates Hexagon-Modul `hexagon/profiling` mit eigenen
+  Ports wie `SchemaIntrospectionPort`, `ProfilingDataPort` und
+  `LogicalTypeResolverPort`.
+- Das Ergebnis ist ein strukturierter Report pro Datenbank, Tabelle und Spalte
+  mit Kennzahlen, Warnungen, optionalen Struktur-Findings und
+  Zieltyp-Kompatibilitätsprüfungen.
+
+Die Details des Domänenmodells, der Port-Schnitte und der CLI-Verträge sind
+im separaten Design-Dokument [profiling.md](./profiling.md) beschrieben.
 
 ---
 
@@ -343,19 +405,37 @@ Das Ergebnis ist ein Vergleichsbericht mit Diff, Syntax-Validierung und optional
 
 ### 5.1 Kommando-Struktur
 
+**Heutiger Ist-Zustand**:
+
 ```bash
 d-migrate <command> <subcommand> [options]
 
-# Schema-Verwaltung
+# Aktuell implementierte Commands
 d-migrate schema validate     --source schema.yaml
-d-migrate schema generate     --source schema.yaml --target postgres
-d-migrate schema compare      --source file:schema.yaml --target db:staging    # 0.6.0
+d-migrate schema generate     --source schema.yaml --target postgresql
+d-migrate schema compare      --source schema-a.yaml --target schema-b.yaml
+d-migrate data export         --source staging --format json
+d-migrate data import         --source data.json --target local_pg
+
+# Globale Flags greifen vor dem Command
+d-migrate --output-format json schema compare --source a.yaml --target b.yaml
+d-migrate --no-progress data import --source ./dump/ --target sqlite:///tmp/app.db
+```
+
+Aktuell existieren produktiv nur die Command-Gruppen `schema` und `data`.
+`schema compare` arbeitet dabei bewusst noch **file-based** gegen zwei
+Schema-Dateien; DB-Operanden bleiben Teil von 0.6.0.
+
+**Soll-Zustand (spätere Milestones)**:
+
+```bash
+# Schema-Verwaltung
 d-migrate schema reverse      --source postgres://... --output schema.yaml     # 0.6.0
+d-migrate schema compare      --source file:schema.yaml --target db:staging    # 0.6.0
 
 # Daten-Management
-d-migrate data export         --source postgres://... --format json
-d-migrate data import         --source data.json --target mysql://...
 d-migrate data transfer       --source staging --target local_pg               # 0.6.0
+d-migrate data profile        --source production --output profile.json        # 0.7.5
 d-migrate data seed           --schema schema.yaml --target postgres://...
 
 # Stored Procedure Migration
@@ -371,9 +451,6 @@ d-migrate export knex         --source schema.yaml --output migrations/
 # Migrations-Rollback (LF-014)
 d-migrate schema migrate      --source schema.yaml --target postgres://... --generate-rollback
 d-migrate schema rollback     --source rollback-001.sql --target postgres://...
-
-# Inkrementeller Export (LF-013)
-d-migrate data export         --source postgres://... --format json --incremental
 
 # Validierung
 d-migrate validate data       --source data.json --schema schema.yaml
@@ -394,15 +471,23 @@ Exporting table 'orders' [████████░░░░░░░░] 52% 
 
 ### 5.3 Konfiguration
 
-Hierarchische Konfiguration mit Overrides (vollständiges Schema in der [Connection- und Konfigurationsspezifikation](./connection-config-spec.md)):
+**Heutiger Ist-Zustand**: Die produktive Verbindungsauflösung für
+`data export`/`data import` unterstützt direkte URLs, Named Connections aus
+`.d-migrate.yaml` sowie explizite Konfigurationspfade via `--config` oder
+`D_MIGRATE_CONFIG`.
 
 ```
-1. Built-in Defaults
-2. Globale Config: ~/.d-migrate/config.yaml
-3. Projekt-Config: .d-migrate.yaml (im Projektverzeichnis)
-4. Umgebungsvariablen: D_MIGRATE_*
-5. CLI-Argumente (höchste Priorität)
+1. Direkte URL in --source / --target            # gewinnt sofort
+2. CLI-Config: --config <path>
+3. Umgebung: D_MIGRATE_CONFIG
+4. Projektdatei: ./.d-migrate.yaml
 ```
+
+`data import` kann zusätzlich `database.default_target` aus der
+Konfigurationsdatei verwenden, wenn `--target` fehlt. Weitere Merge- und
+Global-Config-Mechanismen bleiben Design-Zielbild und sind im Detail in der
+[Connection- und Konfigurationsspezifikation](./connection-config-spec.md)
+beschrieben.
 
 ---
 
@@ -656,8 +741,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
----
-
 ## Verwandte Dokumentation
 
 - [Lastenheft](./lastenheft-d-migrate.md) — Vollständige Anforderungsspezifikation
@@ -667,10 +750,11 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
 - [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
+- [Profiling](./profiling.md) — Design für deterministisches Datenbank-Profiling ab 0.7.5
 - [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
 
-**Version**: 1.7
-**Stand**: 2026-04-13
-**Status**: Milestone 0.1.0–0.5.0 implementiert; Reverse-Datenfluss auf Live-DB-first für 0.6.0 bereinigt, DDL-Parser als späterer Milestone markiert
+**Version**: 1.8
+**Stand**: 2026-04-14
+**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.5.5, geplant und beschrieben sind u.a. Reverse/Direkttransfer (0.6.0) sowie Daten-Profiling (0.7.5)
