@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
  * PostgreSQL [SchemaReader] implementation.
@@ -89,9 +90,8 @@ class PostgresSchemaReader : SchemaReader {
         val checks = PostgresMetadataQueries.listCheckConstraints(session, schema, tableName)
         val indices = PostgresMetadataQueries.listIndices(session, schema, tableName)
 
-        val singleColFks = fks.filter { it.columns.size == 1 && it.referencedColumns.size == 1 }
-            .associateBy { it.columns[0] }
-        val singleColUnique = uniqueConstraints.values.filter { it.size == 1 }.map { it[0] }.toSet()
+        val singleColFks = SchemaReaderUtils.liftSingleColumnFks(fks)
+        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromConstraints(uniqueConstraints)
 
         val columns = LinkedHashMap<String, ColumnDefinition>()
         for (row in colRows) {
@@ -116,14 +116,7 @@ class PostgresSchemaReader : SchemaReader {
             val required = if (isPkCol) false else (row["is_nullable"] as String) == "NO"
             val unique = if (isPkCol) false else colName in singleColUnique
 
-            val references = singleColFks[colName]?.let { fk ->
-                ReferenceDefinition(
-                    table = fk.referencedTable,
-                    column = fk.referencedColumns[0],
-                    onDelete = fk.onDelete?.toReferentialActionOrNull(),
-                    onUpdate = fk.onUpdate?.toReferentialActionOrNull(),
-                )
-            }
+            val references = singleColFks[colName]
 
             val defaultVal = if (isPkCol && PostgresTypeMapping.isSerialDefault(row["column_default"] as? String))
                 null
@@ -140,27 +133,9 @@ class PostgresSchemaReader : SchemaReader {
 
         // Multi-column constraints
         val constraints = mutableListOf<ConstraintDefinition>()
-        for (fk in fks.filter { it.columns.size > 1 }) {
-            constraints += ConstraintDefinition(
-                name = fk.name,
-                type = ConstraintType.FOREIGN_KEY,
-                columns = fk.columns,
-                references = ConstraintReferenceDefinition(
-                    table = fk.referencedTable,
-                    columns = fk.referencedColumns,
-                    onDelete = fk.onDelete?.toReferentialActionOrNull(),
-                    onUpdate = fk.onUpdate?.toReferentialActionOrNull(),
-                ),
-            )
-        }
-        for ((name, cols) in uniqueConstraints.filter { it.value.size > 1 }) {
-            constraints += ConstraintDefinition(name = name, type = ConstraintType.UNIQUE, columns = cols)
-        }
-        for (check in checks) {
-            constraints += ConstraintDefinition(
-                name = check.name, type = ConstraintType.CHECK, expression = check.expression,
-            )
-        }
+        constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(fks)
+        constraints += SchemaReaderUtils.buildMultiColumnUniqueFromConstraints(uniqueConstraints)
+        constraints += SchemaReaderUtils.buildCheckConstraints(checks)
 
         val indexDefs = indices.map { idx ->
             IndexDefinition(
@@ -416,14 +391,4 @@ class PostgresSchemaReader : SchemaReader {
         return result
     }
 
-    // ── Helpers ──────────────────────────────────
-
-    private fun String.toReferentialActionOrNull(): ReferentialAction? = when (this.uppercase()) {
-        "CASCADE" -> ReferentialAction.CASCADE
-        "SET NULL" -> ReferentialAction.SET_NULL
-        "SET DEFAULT" -> ReferentialAction.SET_DEFAULT
-        "RESTRICT" -> ReferentialAction.RESTRICT
-        "NO ACTION" -> ReferentialAction.NO_ACTION
-        else -> null
-    }
 }
