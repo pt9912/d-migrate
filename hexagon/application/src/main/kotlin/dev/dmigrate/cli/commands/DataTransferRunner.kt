@@ -15,6 +15,7 @@ import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
+import dev.dmigrate.core.data.ImportSchemaMismatchException
 import java.nio.file.Path
 
 class TransferConfigException(msg: String, cause: Throwable? = null) : RuntimeException(msg, cause)
@@ -110,6 +111,8 @@ class DataTransferRunner(
                     }
                     if (!request.quiet && !request.noProgress) stderr("  Transferred: $table")
                 }
+            } catch (e: ImportSchemaMismatchException) {
+                printError("Schema mismatch: ${e.message}", tgtRef); return 3
             } catch (e: UnsupportedTriggerModeException) {
                 printError("Trigger mode: ${e.message}", tgtRef); return 2
             } catch (e: Exception) {
