@@ -405,7 +405,6 @@ Exit-Code-Vertrag fuer Phase G:
 - Exit `4`:
   - Connection-Fehler
   - DB-Metadatenfehler beim Schema-Read
-  - Reader-/Writer-Vorbereitungsfehler nach erfolgreicher URL-Aufloesung
 - Exit `5`:
   - Streaming- oder Write-Fehler waehrend des Transfers
   - Post-Chunk- oder Post-Table-Finalisierung

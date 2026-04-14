@@ -174,6 +174,29 @@ class DataTransferRunnerTest : FunSpec({
         runner.execute(request(onConflict = "update")) shouldBe 3
     }
 
+    test("writer schema mismatch from openTable → exit 3") {
+        val mismatchWriter = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = throw UnsupportedOperationException()
+            override fun openTable(pool: ConnectionPool, table: String, options: ImportOptions): TableImportSession {
+                throw dev.dmigrate.core.data.ImportSchemaMismatchException("Column 'x' not found in target")
+            }
+        }
+        val drv = object : DatabaseDriver {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun ddlGenerator() = throw UnsupportedOperationException()
+            override fun dataReader() = fakeReader
+            override fun tableLister() = throw UnsupportedOperationException()
+            override fun dataWriter() = mismatchWriter
+            override fun urlBuilder() = throw UnsupportedOperationException()
+            override fun schemaReader() = fakeSchemaReader
+        }
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors, driverLookup = { drv })
+        runner.execute(request()) shouldBe 3
+        errors.joined() shouldContain "Schema mismatch"
+    }
+
     // ── Exit 4 ──────────────────────────────────
 
     test("pool failure → exit 4") {
