@@ -623,12 +623,9 @@ Phase C ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 
 Mindestens auszufuehren:
 
-- `./gradlew :adapters:driven:formats:test`
-- `./gradlew :adapters:driven:driver-common:test`
-- `./gradlew :adapters:driving:cli:test`
-- `./gradlew :adapters:driven:driver-sqlite:test`
-- `./gradlew :adapters:driven:driver-postgresql:test`
-- `./gradlew :adapters:driven:driver-mysql:test`
+- `docker build --target build --build-arg GRADLE_TASKS=":adapters:driven:formats:test :adapters:driven:driver-common:test :adapters:driving:cli:test :adapters:driven:driver-sqlite:test" -t d-migrate:phase-c-core .`
+- `./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test`
+- `./scripts/test-integration-docker.sh :adapters:driven:driver-mysql:test`
 
 Gezielt zu pruefen ist dabei:
 

@@ -661,7 +661,9 @@ Mindestumfang fuer die Umsetzung:
 1. Gezielter Testlauf fuer Application-, CLI- und Formatpfad:
 
 ```bash
-./gradlew :hexagon:application:test :adapters:driving:cli:test :adapters:driven:formats:test
+docker build --target build \
+  --build-arg GRADLE_TASKS=":hexagon:application:test :adapters:driving:cli:test :adapters:driven:formats:test" \
+  -t d-migrate:phase-e .
 ```
 
 2. Falls Phase D bereits produktiv verdrahtet ist, zusaetzlicher Driver-/CLI-
