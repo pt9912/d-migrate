@@ -99,9 +99,12 @@ den bestehenden DDL-Pfaden:
 Konsequenz fuer Phase B:
 
 - Der groesste 0.7.0-Gap ist aktuell nicht die SQL-Erzeugung, sondern der
-  fehlende Zwischenvertrag zwischen `DdlResult` und spaeteren Tool-Artefakten.
+  fehlende Zwischenvertrag zwischen `DdlResult`, einer kanonisch
+  normalisierten Exportdarstellung und spaeteren Tool-Artefakten.
 - Ohne Phase B droht 0.7.0 entweder:
   - pro Tool eigene Ad-hoc-Identitaetslogik zu bauen,
+  - die Timestamp-Bereinigung fuer byte-deterministische Inhalte pro Tool
+    erneut und leicht unterschiedlich zu implementieren,
   - Kollisionen erst beim Schreiben zu entdecken,
   - oder `DdlResult` roh in CLI-/Adapter-Code zu verteilen.
 
@@ -153,23 +156,33 @@ Verbindliche Folge:
   - `identity`
   - `schema`
   - `options`
-  - `upResult: DdlResult`
+  - einem generatornahen `MigrationDdlPayload` fuer Up
   - einem expliziten Rollback-Vertrag statt blossem nullable
     `downResult: DdlResult?`
+- `MigrationDdlPayload` enthaelt:
+  - das rohe `DdlResult`
+  - eine einmalig und zentral abgeleitete deterministische SQL-Darstellung
+    fuer Tool-Exporte
 - Der Bundlevertrag unterscheidet typed zwischen:
   - Rollback nicht angefordert
-  - Rollback angefordert und mit `DdlResult` vorhanden
+  - Rollback angefordert und mit `MigrationDdlPayload` vorhanden
 - Ein angeforderter Rollback ohne erzeugtes Down-Result ist kein valides
   `MigrationBundle`, sondern eine fruehe Vertragsverletzung vor oder beim
   Bundle-Aufbau.
+- Die in Phase A geforderte Entfernung des Laufzeit-Timestamps aus dem
+  DDL-Header passiert genau einmal in diesem gemeinsamen Normalisierungsschritt
+  innerhalb des Hexagons und nicht separat in jedem spaeteren Tool-Adapter.
 - `MigrationBundle` arbeitet damit bewusst auf strukturiertem
-  Generator-Output und nicht auf bereits final gerenderten Tool-Dateien.
+  Generator-Output plus kanonischer Exportdarstellung und nicht auf bereits
+  final gerenderten Tool-Dateien.
 - Tool-Adapter rendern spaeter aus dem Bundle heraus ihre Artefakte.
 - Die SQL-Basis bleibt dadurch weiterhin eindeutig an `DdlGenerator` gebunden.
 
 Nicht akzeptabel ist:
 
 - `MigrationBundle` nur als Sammlung freier `String`-Felder zu definieren
+- die timestamp-bereinigte SQL-Darstellung pro Tool-Adapter erneut aus
+  `DdlResult` abzuleiten
 - `DdlResult` in Tool-Adapter zu kopieren und dort erneut fachlich umzudeuten
 - einen zweiten Generatorvertrag neben `DdlResult` einzufuehren
 
@@ -250,6 +263,9 @@ Verbindliche Folge:
   Relativpfad-Typ auf Basis von `Path`, z. B. `ArtifactRelativePath`.
 - Der Pfadvertrag arbeitet auf normalisierten relativen Pfadsegmenten und
   nicht auf plattformabhaengigen Stringvergleichen.
+- `ArtifactRelativePath` ist nicht frei ueber einen oeffentlichen Konstruktor
+  erzeugbar, sondern nur ueber eine validierende Factory bzw. einen privaten
+  Konstruktor.
 - Absolute Pfade sind im Artefaktvertrag nicht zulaessig.
 - Parent-Escapes wie `../` sind nicht zulaessig.
 - Separatorvarianten wie `a/b.sql` und `a\\b.sql` werden vor Vergleich und
@@ -293,6 +309,12 @@ Verbindliche Folge:
 - `ToolExportResult` traegt diese export-spezifischen Hinweise explizit in
   einem eigenen Feld, statt sie still zu verlieren oder in Generator-Notes
   umzudeuten.
+- `ToolExportNote` ist nicht nur `{code, message}`, sondern bildet mindestens:
+  - `severity`
+  - `code`
+  - `message`
+  - optional `objectName`
+  - optional `hint`
 - Spaetere Report- oder CLI-Schichten duerfen diese Pfade zusammen sichtbar
   machen, der Bundlevertrag selbst haelt sie aber semantisch sauber getrennt.
 
@@ -338,10 +360,12 @@ Mindestens noetig:
 - `MigrationTool`
 - `MigrationVersionSource`
 - `MigrationIdentity`
+- `MigrationDdlPayload`
 - `MigrationRollback`
 - `ArtifactRelativePath`
 - `MigrationBundle`
 - `MigrationArtifact`
+- `ToolExportSeverity`
 - `ToolExportNote`
 - `ToolExportResult`
 - `ToolMigrationExporter`
@@ -378,6 +402,7 @@ Mindestens noetig:
 - generatorseitige `notes` / `skippedObjects` bleiben erhalten
 - expliziter Export-Note-Pfad ueber eigenen Kern-Typ fuer
   nicht-generatorische Hinweise
+- Severity-/Hint-/Objektbezug fuer Export-Notes
 - keine Vermischung von Bundle und Laufkontext
 
 ### B.5 Adapterfreie Tests fuer Ports und Application-Helper aufbauen
@@ -412,10 +437,12 @@ Bevorzugte Struktur:
     - `MigrationTool`
     - `MigrationVersionSource`
     - `MigrationIdentity`
+    - `MigrationDdlPayload`
     - `MigrationRollback`
     - `ArtifactRelativePath`
     - `MigrationBundle`
     - `MigrationArtifact`
+    - `ToolExportSeverity`
     - `ToolExportNote`
     - `ToolExportResult`
     - `ToolMigrationExporter`
@@ -424,6 +451,7 @@ Bevorzugte Struktur:
     - Versionsauflosung
     - tool-spezifische Versionsvalidierung
     - Slug-Normalisierung
+    - gemeinsame DDL-Normalisierung fuer byte-deterministische Export-Inhalte
     - Kollisionspruefung
     - eventuelle Ableitung eines Write-Plans
 
@@ -444,25 +472,46 @@ data class MigrationIdentity(
     val slug: String,
 )
 
+data class MigrationDdlPayload(
+    val result: DdlResult,
+    val deterministicSql: String,
+)
+
 sealed interface MigrationRollback {
     data object NotRequested : MigrationRollback
-    data class Requested(val downResult: DdlResult) : MigrationRollback
+    data class Requested(val down: MigrationDdlPayload) : MigrationRollback
 }
 
 @JvmInline
-value class ArtifactRelativePath(val path: Path)
+value class ArtifactRelativePath private constructor(val path: Path) {
+    companion object {
+        fun of(raw: Path): ArtifactRelativePath {
+            val normalized = raw.normalize()
+            require(!normalized.isAbsolute) { "ArtifactRelativePath must be relative" }
+            require(normalized.none { it.toString() == ".." }) {
+                "ArtifactRelativePath must not escape the output root"
+            }
+            return ArtifactRelativePath(normalized)
+        }
+    }
+}
 
 data class MigrationBundle(
     val identity: MigrationIdentity,
     val schema: SchemaDefinition,
     val options: DdlGenerationOptions,
-    val upResult: DdlResult,
+    val up: MigrationDdlPayload,
     val rollback: MigrationRollback,
 )
 
+enum class ToolExportSeverity { INFO, WARNING, ACTION_REQUIRED }
+
 data class ToolExportNote(
+    val severity: ToolExportSeverity,
     val code: String,
     val message: String,
+    val objectName: String? = null,
+    val hint: String? = null,
 )
 
 data class MigrationArtifact(
@@ -536,17 +585,27 @@ Noch nicht Teil von Phase B, aber als Folgeartefakte vorzubereiten:
       CLI-Version.
 - [ ] Es gibt keinen impliziten Timestamp- oder sonstigen Default fuer
       fehlende Versionen.
-- [ ] `MigrationBundle` kapselt `DdlResult` fuer Up und einen expliziten
-      Rollback-State, statt den Rollback-Vertrag auf `null` zu reduzieren.
+- [ ] `MigrationBundle` kapselt generatornahes `DdlResult` plus eine
+      gemeinsame timestamp-bereinigte Determinismusdarstellung fuer Up und
+      einen expliziten Rollback-State, statt den Rollback-Vertrag auf `null`
+      zu reduzieren.
 - [ ] Angeforderter Rollback ohne Down-`DdlResult` ist kein valider
       Bundlezustand.
+- [ ] Die DDL-Normalisierung fuer byte-deterministische Tool-Inhalte passiert
+      einmalig im gemeinsamen Hexagon-Vertrag und nicht pro spaeterem
+      Tool-Adapter erneut.
 - [ ] Generator-Notes und `skippedObjects` bleiben im Bundlevertrag erhalten.
 - [ ] Export-spezifische Hinweise werden semantisch getrennt von
       `TransformationNote` gehalten und explizit in `ToolExportResult`
       modelliert.
+- [ ] `ToolExportNote` traegt mindestens Severity, Code, Message sowie
+      optionalen Objektbezug und Hint.
 - [ ] `MigrationArtifact` beschreibt kanonische relative Pfade unterhalb des
       spaeteren Output-Verzeichnisses nicht als rohen `String`, sondern als
       typed Relativpfadvertrag.
+- [ ] `ArtifactRelativePath` ist nur ueber validierende Konstruktion
+      erzeugbar; absolute oder nicht normalisierte Pfade koennen nicht als
+      gueltiger Typwert eingeschleust werden.
 - [ ] Kollisionen zwischen geplanten Artefakten bzw. gegen bestehende
       Zieldateien sind vor dem ersten Write pruefbar.
 - [ ] `DatabaseDriverRegistry` bleibt unberuehrt und wird nicht fuer
@@ -563,7 +622,7 @@ Mindestumfang fuer die Phase-B-Umsetzung:
 1. Port- und Application-Typen pruefen:
 
 ```bash
-rg -n "MigrationTool|MigrationVersionSource|MigrationIdentity|MigrationRollback|ArtifactRelativePath|MigrationBundle|MigrationArtifact|ToolExportNote|ToolExportResult|ToolMigrationExporter" \
+rg -n "MigrationTool|MigrationVersionSource|MigrationIdentity|MigrationDdlPayload|MigrationRollback|ArtifactRelativePath|MigrationBundle|MigrationArtifact|ToolExportSeverity|ToolExportNote|ToolExportResult|ToolMigrationExporter" \
   hexagon/ports/src/main/kotlin hexagon/application/src/main/kotlin
 ```
 
@@ -592,14 +651,19 @@ Dabei explizit pruefen:
 - dieselbe Eingabe erzeugt dieselbe `MigrationIdentity`
 - Django/Knex scheitern ohne explizites `--version`
 - Flyway/Liquibase akzeptieren nur tool-taugliche `schema.version`-Fallbacks
+- dieselbe Eingabe erzeugt dieselbe gemeinsame, timestamp-bereinigte
+  DDL-Darstellung vor jedem Tool-Adapter
 - angeforderter Rollback ohne Down-`DdlResult` ist nicht als valider
   Bundlezustand darstellbar
 - Artefakte koennen keine absoluten oder ausbrechenden Pfade tragen
+- `ArtifactRelativePath` kann nicht an der validierenden Factory vorbei mit
+  absoluten oder unnormalisierten Pfaden konstruiert werden
 - semantisch gleiche Pfade kollidieren ueber dieselbe kanonische
   Relativpfadform statt ueber rohe Stringvergleiche
 - Kollisionen werden ohne echten Tool-Adapter bzw. ohne Dateischreiben erkannt
 - `MigrationBundle` behaelt `DdlResult` inklusive Notes und `skippedObjects`
-- export-spezifische Hinweise bleiben getrennt von Generator-Diagnostik
+- export-spezifische Hinweise bleiben getrennt von Generator-Diagnostik und
+  tragen Severity/Hint/Object-Bezug
 
 ---
 
