@@ -36,6 +36,15 @@ Schema heraus reproduzierbare Artefakte fuer diese Tools zu erzeugen.
 - echte Ausfuehrungstests fuer die generierten Artefakte in fokussierten
   Tool-/Dialekt-Kombinationen
 
+Wichtig:
+
+- 0.7.0 ist kein Ersatz fuer den spaeteren diff-basierten
+  `schema migrate`-/`schema rollback`-Pfad aus `docs/design.md` und
+  `docs/cli-spec.md`.
+- Der Milestone exportiert baseline-/full-state-Artefakte aus genau einem
+  neutralen Schema und nicht inkrementelle `DiffResult`-Migrationsschritte
+  zwischen zwei Versionen.
+
 Das Ergebnis von 0.7.0 ist damit:
 
 - d-migrate bleibt im Kern tool-agnostisch,
@@ -55,6 +64,8 @@ Stand im aktuellen Repo:
   - dialektspezifische DDL erzeugen,
   - optional `generateRollback(...)` nutzen,
   - Notes und `skippedObjects` reporten.
+- Diese DDL-Pfade arbeiten heute auf einem einzelnen Zielschema und nicht auf
+  einem `DiffResult` zwischen Alt- und Neu-Zustand.
 - Die DDL-Erzeugung ist pro Dialekt bereits testseitig breit abgesichert.
 - `DdlGenerator.generate(...)` und `generateRollback(...)` existieren als
   driverseitige Primitive, aber noch nicht als expliziter
@@ -85,6 +96,8 @@ Wichtig fuer 0.7.0:
 - LF-014 fordert Rollback-Unterstuetzung.
 - Das heutige `generateRollback(...)` ist dafuer eine wichtige Grundlage,
   aber noch nicht dasselbe wie ein belastbarer Tool-Export-Vertrag.
+- Gleichzeitig ist es auch nicht dasselbe wie das in `docs/design.md`
+  beschriebene diff-basierte Migrations-/Rollback-Zielbild.
 
 0.7.0 startet also nicht bei null. Die groesste Luecke ist nicht die
 SQL-Erzeugung selbst, sondern:
@@ -106,7 +119,7 @@ SQL-Erzeugung selbst, sondern:
   - `d-migrate export django`
   - `d-migrate export knex`
 - Export aus einer neutralen Schema-Datei (`yaml` / `json`) in
-  tool-spezifische Migrationsartefakte
+  tool-spezifische baseline-/full-state-Migrationsartefakte
 - Wiederverwendung von `DdlGenerator.generate(...)` als Up-Pfad
 - Wiederverwendung von `DdlGenerator.generateRollback(...)` als
   Down-/Rollback-Grundlage
@@ -153,6 +166,14 @@ Praezisierung:
 Schema. Es fuehrt keinen zweiten, impliziten `schema migrate`-Milestone durch
 die Hintertuer ein.
 
+Praeziser:
+
+- 0.7.0 erzeugt initiale bzw. full-state-basierte Tool-Artefakte aus einem
+  neutralen Soll-Schema.
+- Ein spaeterer echter inkrementeller Migrationspfad bleibt an
+  `DiffResult`-basierte Semantik gebunden und ist nicht Teil dieses
+  Milestones.
+
 ---
 
 ## 4. Leitentscheidungen
@@ -171,7 +192,7 @@ Verbindliche Konsequenz:
 - Externe Tools werden nur fuer Tests, Smokes oder die Nutzung der
   generierten Artefakte benoetigt, nicht fuer deren Erzeugung.
 
-### 4.2 0.7.0 exportiert aus Schema-Dateien, nicht aus Live-DB-Diffs
+### 4.2 0.7.0 exportiert baseline-/full-state-Artefakte aus Schema-Dateien, nicht inkrementelle DiffResult-Migrationen
 
 Der aktuelle CLI-Sollpfad fuer 0.7.0 ist dateibasiert:
 
@@ -188,8 +209,14 @@ Verbindliche Konsequenz:
 - `--target` ist ein Dialekt, keine Live-Verbindung.
 - DB-zu-DB-, file/db- oder db/db-Migrations-Exporte sind nicht Teil dieses
   Milestones.
+- Die erzeugten Tool-Artefakte repraesentieren den aus einem einzelnen Schema
+  abgeleiteten Zielzustand; sie sind nicht als spaetere allgemeine
+  Schritt-fuer-Schritt-Migrationen zwischen zwei neutralen Versionen zu
+  lesen.
+- Der in `docs/design.md` beschriebene diff-basierte Migrations-/Rollback-Pfad
+  auf Basis von `DiffResult` bleibt ein spaeterer, getrennter Milestone.
 
-### 4.3 Die SQL-Basis kommt aus dem bestehenden `DdlGenerator`
+### 4.3 Die SQL-Basis kommt aus dem bestehenden full-state-`DdlGenerator`
 
 0.7.0 fuehrt keinen zweiten SQL-Generator fuer Tool-Integrationen ein.
 
@@ -199,12 +226,17 @@ Verbindliche Konsequenz:
 - Down-/Rollback-Inhalt wird ueber `generator.generateRollback(schema, options)`
   erzeugt, wenn der Exportpfad dies anfordert.
 - Tool-Adapter wrappen diese SQL-Bausteine nur in tool-spezifische Artefakte.
+- 0.7.0 behauptet damit nicht, bereits den spaeteren diff-basierten
+  Migrationsalgorithmus zu liefern; die Artefakte sind baseline-/full-state-
+  Exporte auf Basis des aktuellen Generate-Vertrags.
 
 Nicht akzeptabel ist:
 
 - pro Tool erneut SQL-Regeln zu implementieren,
 - oder tool-spezifische SQL-Erzeugung von der bestehenden
   DDL-Regelbasis abzukoppeln.
+- oder den Exportpfad dokumentarisch als vollwertigen Ersatz fuer
+  `DiffResult`-basierte inkrementelle Migrationen auszugeben.
 
 ### 4.4 0.7.0 fuehrt einen kanonischen Migrations-Bundle-Vertrag ein
 
@@ -257,6 +289,12 @@ Verbindliche Konsequenz:
   - `exports.up`
   - `exports.down`
 
+Einordnung:
+
+- Die Down-Artefakte von 0.7.0 invertieren den exportierten full-state-Pfad.
+- Sie sind damit nicht identisch mit dem spaeteren, aus `DiffResult`
+  abgeleiteten Down-Pfad eines echten inkrementellen `schema migrate`.
+
 Nicht akzeptabel ist:
 
 - fuer jedes Tool einen anderen fachlichen Rollback-Inhalt zu berechnen,
@@ -270,7 +308,10 @@ relevante Optionen aus `schema generate` erhalten bleiben.
 
 Fuer 0.7.0 verbindlich:
 
-- `--target` bleibt Pflicht oder fachlich gleichwertig aufloesbar
+- `--target` ist fuer alle Export-Subcommands Pflicht
+- Es gibt keinen impliziten Default wie `postgresql`
+- `--target` wird nicht aus Config, Profilen oder anderen Defaults
+  nachgeladen; der Nutzer benennt den Dialekt explizit
 - `--spatial-profile` wird genauso validiert wie im bestehenden
   Generate-Pfad
 - `--generate-rollback` steuert, ob Down-Artefakte materialisiert werden
@@ -285,8 +326,17 @@ deterministische Namen wichtiger als bequeme Timestamp-Autogenerierung.
 
 Verbindliche Konsequenz:
 
-- Primare Quelle fuer die Migrations-ID ist `--version`, falls gesetzt.
-- Fallback ist `schema.version`.
+- Es gibt eine tool-spezifische Versionsstrategie statt eines globalen
+  Einheits-Fallbacks.
+- Flyway und Liquibase:
+  - primaere Quelle fuer die Migrations-ID ist `--version`, falls gesetzt
+  - Fallback ist `schema.version`, sofern diese in eine stabile tool-taugliche
+    ID normalisierbar ist
+- Django und Knex:
+  - `--version` ist Pflicht
+  - der Wert muss bereits tool-tauglich sein, z. B. `0001_initial`
+  - `schema.version` bleibt dort Metadatum bzw. Report-Kontext und wird nicht
+    still als Dateiname oder Modulkennung recycelt
 - Der Dateisuffix-/Slug-Anteil wird aus `schema.name` abgeleitet.
 - Wenn keine stabile Version aufloesbar ist, scheitert der Export mit
   einem CLI-Fehler statt einen impliziten Timestamp zu erfinden.
@@ -354,9 +404,17 @@ Mindestens noetig:
   - `--report`
 - klare Exit-Code-Matrix:
   - `0` Erfolg
-  - `2` ungueltige CLI-Argumente / unzulaessige Kombinationen
+  - `2` ungueltige CLI-Argumente / unzulaessige Kombinationen /
+    fehlendes Pflicht-`--target` / fehlendes tool-pflichtiges `--version`
   - `3` Schema-Validierungsfehler
   - `7` Parse-, I/O-, Render- oder Dateikollisionsfehler
+
+Dabei explizit festziehen:
+
+- `--target` ist fuer alle vier Export-Subcommands Pflicht; die bisherige
+  Stub-Default-Annahme in `docs/cli-spec.md` wird fuer 0.7.0 verworfen.
+- `--version` ist fuer Flyway/Liquibase optional mit `schema.version`-
+  Fallback, fuer Django/Knex aber Pflicht.
 
 ### 5.2 Gemeinsames Migrations-Bundle im Application-/Port-Layer einfuehren
 
@@ -374,6 +432,9 @@ Mindestens noetig:
   - `--version`
   - `schema.version`
   - `schema.name`
+- tool-spezifische Validierung von:
+  - Flyway-/Liquibase-kompatiblen Versionen
+  - Django-/Knex-pflichtigen expliziten Versionsbezeichnern
 - Kollisionspruefung gegen bereits vorhandene Zieldateien
 - ein expliziter Port fuer tool-spezifische Renderer / Writer
 
@@ -440,6 +501,8 @@ Mindestens noetig:
   - `--generate-rollback`
   - `--spatial-profile`
   - `--report`
+  - fehlendes `--target`
+  - fehlendes `--version` bei Django/Knex trotz vorhandener `schema.version`
 
 ### 5.6 Echte Tool-Runtime-Validierung aufbauen
 
@@ -497,6 +560,7 @@ Bevorzugte Struktur:
   - `ToolExportRunner`
   - helper fuer:
     - Versionsauflosung
+    - tool-spezifische Versionsvalidierung
     - Slug-Normalisierung
     - Kollisionspruefung
     - Exit-Code-Mapping
@@ -525,6 +589,8 @@ Nicht Zielstruktur von 0.7.0:
 - eigener zweiter SQL-Generator
 - automatisches Projekt-Patching fuer bestehende Tool-Repositories
 - diff-basierter `schema migrate`-Pfad
+- implizite Fortschreibung des spaeteren `DiffResult`-Migrationsmodells unter
+  dem Label "Tool-Export"
 
 ---
 
@@ -568,19 +634,28 @@ Wahrscheinlich wiederverwendete bestehende Artefakte:
       `export knex` sind ueber die CLI erreichbar.
 - [ ] Tool-Exporte arbeiten aus einer neutralen Schema-Datei und nicht aus
       Live-DB-Verbindungen oder impliziten Diffs.
+- [ ] 0.7.0 beschreibt diese Artefakte explizit als baseline-/full-state-
+      Exporte und nicht als Ersatz fuer spaetere `DiffResult`-basierte
+      inkrementelle Migrationen.
 - [ ] 0.7.0 fuehrt einen gemeinsamen Migrations-Bundle-Vertrag fuer
       Tool-Exporte ein.
 - [ ] Alle Tool-Exporte nutzen denselben bestehenden `DdlGenerator`-Pfad
       fuer Up- und optional Down-Inhalt.
 - [ ] `--spatial-profile` wird fuer Tool-Exporte genauso validiert wie fuer
       `schema generate`.
+- [ ] `--target` ist fuer alle Export-Subcommands Pflicht; es gibt keinen
+      impliziten Default-Dialekt.
 - [ ] `--generate-rollback` materialisiert tool-spezifische Down-Artefakte:
       Flyway Undo, Liquibase Rollback, Django `reverse_sql`, Knex
       `exports.down`.
 - [ ] Tool-Exporte verlieren Notes / `skippedObjects` nicht; diese sind
       mindestens ueber `stderr` und Report-Sidecar sichtbar.
 - [ ] Dateinamen und Migrations-IDs sind deterministisch aus `--version`
-      bzw. `schema.version` plus `schema.name` ableitbar.
+      bzw. tool-spezifisch zulaessigen Quellen plus `schema.name`
+      ableitbar.
+- [ ] Flyway/Liquibase koennen `schema.version` als Fallback nutzen; Django
+      und Knex verlangen dagegen ein explizites, tool-taugliches
+      `--version`.
 - [ ] Bestehende Dateien mit derselben Migrations-ID werden nicht still
       ueberschrieben.
 - [ ] Tool-Export mutiert keine bestehenden Nutzerdateien ausser den
@@ -634,7 +709,6 @@ docker run --rm \
   export flyway \
   --source /schemas/minimal.yaml \
   --target postgresql \
-  --version 1.0.0 \
   --output /out/flyway \
   --generate-rollback
 
@@ -645,7 +719,6 @@ docker run --rm \
   export liquibase \
   --source /schemas/minimal.yaml \
   --target postgresql \
-  --version 1.0.0 \
   --output /out/liquibase \
   --generate-rollback
 
@@ -675,10 +748,15 @@ docker run --rm \
 Dabei explizit pruefen:
 
 - Output-Verzeichnisse enthalten deterministisch benannte Artefakte
+- Flyway/Liquibase nutzen ohne explizites `--version` den dokumentierten
+  `schema.version`-Fallback
 - Flyway erzeugt `V...` und optional `U...`
 - Liquibase enthaelt SQL- und Rollback-Block
+- Django/Knex scheitern ohne explizites tool-taugliches `--version` mit Exit
+  `2`, auch wenn das Schema bereits `schema.version` traegt
 - Django enthaelt `RunSQL(..., reverse_sql=...)`
 - Knex enthaelt `exports.up` und `exports.down`
+- fehlendes `--target` scheitert fuer alle Export-Subcommands mit Exit `2`
 - Report-Dateien dokumentieren Notes / `skippedObjects`
 
 5. Tool-Runtime-Validierung gegen die fokussierte Matrix:
@@ -745,4 +823,3 @@ Gegenmassnahme:
 - 0.7.0 beginnt mit einer expliziten Nachschaerfung des Export-Vertrags
   in CLI-Spec und Design, statt diese Luecke erst waehrend der
   Implementierung zu entdecken.
-
