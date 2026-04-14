@@ -19,6 +19,5 @@ class SqliteDriver : DatabaseDriver {
     override fun tableLister(): TableLister = SqliteTableLister()
     override fun dataWriter(): DataWriter = SqliteDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = SqliteJdbcUrlBuilder()
-    override fun schemaReader(): SchemaReader =
-        throw UnsupportedOperationException("Schema reading not yet implemented for $dialect")
+    override fun schemaReader(): SchemaReader = SqliteSchemaReader()
 }
