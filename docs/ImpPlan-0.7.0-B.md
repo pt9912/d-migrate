@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: B (Gemeinsames Migrations-Bundle und Identitaet)
-> **Status**: Draft (2026-04-14)
+> **Status**: Review (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.3 bis 4.8, Abschnitt 5 Phase B, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
