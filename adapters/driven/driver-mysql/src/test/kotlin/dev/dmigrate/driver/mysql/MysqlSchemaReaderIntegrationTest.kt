@@ -315,4 +315,25 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             result.schema.procedures.size shouldBe 0
         }
     }
+
+    // ── Reverse scope encoding ──────────────────
+
+    test("reverse scope is parseable with correct components") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val scope = ReverseScopeCodec.parseScope(result.schema.name)
+            scope["dialect"] shouldBe "mysql"
+            scope["database"] shouldBe "dmigrate_test"
+        }
+    }
+
+    // ── Ownership: pool reusable after read ─────
+
+    test("pool is reusable after read") {
+        pool().use { pool ->
+            reader.read(pool)
+            val result2 = reader.read(pool)
+            result2.schema.tables shouldContainKey "customers"
+        }
+    }
 })

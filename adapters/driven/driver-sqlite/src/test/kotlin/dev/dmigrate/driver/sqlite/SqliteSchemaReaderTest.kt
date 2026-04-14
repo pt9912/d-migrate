@@ -47,6 +47,15 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("reverse marker set is parseable from schema document alone") {
+        withDb("CREATE TABLE t (id INTEGER PRIMARY KEY)") { pool ->
+            val result = reader.read(pool)
+            val scope = ReverseScopeCodec.parseScope(result.schema.name)
+            scope["dialect"] shouldBe "sqlite"
+            scope["schema"] shouldBe "main"
+        }
+    }
+
     // ── Basic table with columns ────────────────
 
     test("reads table with columns, PK and types") {

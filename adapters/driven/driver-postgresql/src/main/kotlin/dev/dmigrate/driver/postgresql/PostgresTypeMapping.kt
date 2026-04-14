@@ -89,7 +89,15 @@ internal object PostgresTypeMapping {
     }
 
     fun mapUserDefined(udtName: String, tableName: String, colName: String): MappingResult {
-        if (udtName == "geometry") return MappingResult(NeutralType.Geometry())
+        if (udtName == "geometry") return MappingResult(
+            NeutralType.Geometry(),
+            SchemaReadNote(
+                severity = SchemaReadSeverity.INFO,
+                code = "R401",
+                objectName = "$tableName.$colName",
+                message = "PostGIS geometry column — requires PostGIS extension in target database",
+            ),
+        )
         return MappingResult(NeutralType.Enum(refType = udtName))
     }
 

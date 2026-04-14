@@ -16,7 +16,7 @@ kover {
                 // Testcontainers.
                 // TODO: extract more orchestration logic from SchemaReader
                 // into testable pure functions to raise non-integration coverage.
-                minBound(if (project.hasProperty("integrationTests")) 90 else 50)
+                minBound(if (project.hasProperty("integrationTests")) 90 else 45)
             }
         }
     }

@@ -93,8 +93,11 @@ class PostgresTypeMappingTest : FunSpec({
 
     // ── User-defined ────────────────────────────
 
-    test("geometry → Geometry") {
-        PostgresTypeMapping.mapUserDefined("geometry", "t", "c").type shouldBe NeutralType.Geometry()
+    test("geometry → Geometry with PostGIS note") {
+        val result = PostgresTypeMapping.mapUserDefined("geometry", "t", "c")
+        result.type shouldBe NeutralType.Geometry()
+        result.note.shouldNotBeNull()
+        result.note!!.code shouldBe "R401"
     }
 
     test("custom enum → Enum refType") {

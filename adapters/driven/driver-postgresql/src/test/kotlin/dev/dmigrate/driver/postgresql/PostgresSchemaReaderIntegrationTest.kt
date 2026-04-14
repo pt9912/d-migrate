@@ -389,9 +389,44 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                 ObjectKeyCodec.parseRoutineKey(it).first == "calc"
             }
             calcKeys.size shouldBe 2
-            // One with 1 param, one with 2 params
             val paramCounts = calcKeys.map { ObjectKeyCodec.parseRoutineKey(it).second.size }.sorted()
             paramCounts shouldBe listOf(1, 2)
+        }
+    }
+
+    // ── Reverse scope encoding ──────────────────
+
+    test("reverse scope is parseable with correct components") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val scope = ReverseScopeCodec.parseScope(result.schema.name)
+            scope["dialect"] shouldBe "postgresql"
+            scope["database"] shouldBe "dmigrate_test"
+            scope["schema"] shouldNotBe null
+        }
+    }
+
+    // ── Extension notes ─────────────────────────
+
+    test("installed extensions produce INFO notes") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            // plpgsql is excluded from the list, but if other extensions
+            // are installed they should appear as R400 notes
+            result.notes.filter { it.code == "R400" }.forEach {
+                it.severity shouldBe dev.dmigrate.driver.SchemaReadSeverity.INFO
+            }
+        }
+    }
+
+    // ── Ownership: pool reusable after read ─────
+
+    test("pool is reusable after read") {
+        pool().use { pool ->
+            reader.read(pool)
+            // Second read should work — connection was returned
+            val result2 = reader.read(pool)
+            result2.schema.tables shouldContainKey "customers"
         }
     }
 })

@@ -76,12 +76,29 @@ class MysqlSchemaReader : SchemaReader {
         val allIndices = MysqlMetadataQueries.listIndices(session, database, metaTable)
         val engine = MysqlMetadataQueries.listTableEngine(session, database, metaTable)
 
-        // Suppress FK-backing indices: MySQL auto-creates an index for each FK.
-        // We suppress indices whose column list exactly matches a FK's columns.
-        val fkColumnSets = fks.map { it.columns.toSet() }.toSet()
-        val indices = allIndices.filter { idx ->
-            // Keep if not a single-column index matching an FK column set
-            idx.columns.toSet() !in fkColumnSets
+        // MySQL auto-creates a support index for each FK. We suppress indices
+        // whose name matches a FK constraint name (MySQL's default naming).
+        // When the name does NOT match but columns overlap, we keep the index
+        // as a regular entry and add a note (false-positive before silent loss).
+        val fkConstraintNames = fks.map { it.name }.toSet()
+        val fkColumnLists = fks.map { it.columns }
+        val indices = mutableListOf<dev.dmigrate.driver.metadata.IndexProjection>()
+        for (idx in allIndices) {
+            if (idx.name in fkConstraintNames) {
+                // Safely identified as FK backing index — suppress
+                continue
+            }
+            if (fkColumnLists.any { it == idx.columns }) {
+                // Columns match an FK but name differs — keep with note
+                notes += SchemaReadNote(
+                    severity = SchemaReadSeverity.INFO,
+                    code = "R330",
+                    objectName = "$displayName.${idx.name}",
+                    message = "Index columns match FK — may be an auto-generated support index",
+                    hint = "Review if this index was explicitly created or is FK-backing",
+                )
+            }
+            indices += idx
         }
 
         val singleColFks = fks.filter { it.columns.size == 1 && it.referencedColumns.size == 1 }

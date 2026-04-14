@@ -189,6 +189,27 @@ object PostgresMetadataQueries {
         )
     }
 
+    fun getPartitionInfo(session: JdbcMetadataSession, schema: String, table: String): Map<String, Any?>? {
+        return session.querySingle(
+            """
+            SELECT pt.partstrat, array_agg(a.attname ORDER BY pos.n) AS key_columns
+            FROM pg_partitioned_table pt
+            JOIN pg_class c ON c.oid = pt.partrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL unnest(pt.partattrs) WITH ORDINALITY AS pos(attnum, n)
+            JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = pos.attnum
+            WHERE n.nspname = ? AND c.relname = ?
+            GROUP BY pt.partstrat
+            """.trimIndent(), schema, table,
+        )
+    }
+
+    fun listInstalledExtensions(session: JdbcMetadataSession): List<String> {
+        return session.queryList(
+            "SELECT extname FROM pg_extension WHERE extname != 'plpgsql' ORDER BY extname"
+        ).map { it["extname"] as String }
+    }
+
     fun listEnumTypes(session: JdbcMetadataSession, schema: String): Map<String, List<String>> {
         val rows = session.queryList(
             """

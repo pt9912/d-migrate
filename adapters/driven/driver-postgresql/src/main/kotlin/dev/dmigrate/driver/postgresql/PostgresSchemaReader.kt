@@ -28,6 +28,18 @@ class PostgresSchemaReader : SchemaReader {
             val tables = readTables(session, schema, notes)
             val sequences = readSequences(session, schema)
             val customTypes = readCustomTypes(session, schema, notes)
+
+            // Extension notes (Phase B contract: extensions as notes, not model objects)
+            val extensions = PostgresMetadataQueries.listInstalledExtensions(session)
+            for (ext in extensions) {
+                notes += SchemaReadNote(
+                    severity = SchemaReadSeverity.INFO,
+                    code = "R400",
+                    objectName = ext,
+                    message = "PostgreSQL extension '$ext' is installed",
+                    hint = "Extension-dependent objects may require this extension in the target database",
+                )
+            }
             val views = if (options.includeViews) readViews(session, schema) else emptyMap()
             val functions = if (options.includeFunctions) readFunctions(session, schema, notes) else emptyMap()
             val procedures = if (options.includeProcedures) readProcedures(session, schema, notes) else emptyMap()
@@ -166,12 +178,38 @@ class PostgresSchemaReader : SchemaReader {
             )
         }
 
+        // Partitioning
+        val partitioning = readPartitioning(session, schema, tableName)
+
         return TableDefinition(
             columns = columns,
             primaryKey = pkColumns,
             indices = indexDefs,
             constraints = constraints,
+            partitioning = partitioning,
         )
+    }
+
+    private fun readPartitioning(
+        session: JdbcMetadataSession,
+        schema: String,
+        tableName: String,
+    ): PartitionConfig? {
+        val info = PostgresMetadataQueries.getPartitionInfo(session, schema, tableName)
+            ?: return null
+        val strategy = when (info["partstrat"] as? String) {
+            "r" -> PartitionType.RANGE
+            "l" -> PartitionType.LIST
+            "h" -> PartitionType.HASH
+            else -> return null
+        }
+        val keyCols = info["key_columns"]
+        val key = when (keyCols) {
+            is java.sql.Array -> (keyCols.array as Array<*>).map { it.toString() }
+            is String -> keyCols.removeSurrounding("{", "}").split(",")
+            else -> emptyList()
+        }
+        return PartitionConfig(type = strategy, key = key)
     }
 
     // ── Sequences ───────────────────────────────
