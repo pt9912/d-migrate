@@ -304,13 +304,19 @@ Phase F fuehrt keinen neuen Compare-spezifischen Exit-Code ein.
 Zusaetzlich verbindlich:
 
 - `quiet` folgt fuer Compare bewusst dem bestehenden file-based
-  Rueckwaertskompatibilitaetsvertrag:
+  Rueckwaertskompatibilitaetsvertrag und dokumentiert damit explizit eine
+  Compare-spezifische Legacy-Ausnahme gegenueber der globalen
+  Root-Beschreibung `Only show errors`:
   - das primaere Compare-Dokument bleibt bei nicht-`0`-Ergebnissen auch unter
     `quiet` sichtbar, solange kein `--output` verwendet wird
   - `--output` schreibt das Compare-Ergebnis unabhaengig von `quiet`
-  - `quiet` darf Hilfsausgaben auf `stderr` und erfolgreiche Exit-`0`-
-    stdout-Ausgaben unterdruecken, aber keinen `different`- oder
-    `invalid`-Compare still machen
+  - erfolgreiche Exit-`0`-stdout-Ausgaben duerfen unter `quiet`
+    unterdrueckt werden
+  - bestehende Plain-Validation-Warnings auf `stderr` bleiben auch unter
+    `quiet` sichtbar
+  - operandseitige Reverse-Notes / `skippedObjects` folgen in `plain`
+    demselben Sichtbarkeitsvertrag wie die bestehenden Validation-Warnings
+  - `quiet` darf keinen `different`- oder `invalid`-Compare still machen
   - diese Compare-Semantik ist eine explizite Rueckwaertskompatibilitaetsregel
     und kein stillschweigender neuer Globalvertrag fuer andere Kommandos
 
@@ -333,7 +339,7 @@ Nicht akzeptabel ist:
 - dass `SchemaComparator` Unterschiede findet, die `schema compare` im
   Plain-/JSON-/YAML-Output nicht mehr sichtbar macht
 
-### 4.8 User-facing Operand-Referenzen und Fehlertexte bleiben fuer DB-Operanden gescrubbt
+### 4.8 User-facing Operand-Referenzen, Fehlertexte und Fehler-Envelope bleiben fuer DB-Operanden operandneutral
 
 Der Compare-Pfad darf fuer `db:`-Operanden keine Klartext-Credentials in
 Fehlertexten, Validation- oder Diff-Dokumenten ausgeben.
@@ -346,6 +352,11 @@ Verbindliche Folge:
 - Alias-Operanden duerfen alias-basiert erscheinen
 - alle user-facing Fehlertexte laufen vor `printError(...)` bzw. vor einer
   strukturierten Fehlerausgabe durch denselben zentralen Scrubbing-Pfad
+- Compare darf den bestehenden file-zentrierten Fehler-Envelope nicht fuer
+  `db:`-Operanden unveraendert weiterverwenden
+- Fehlerausgaben muessen operandneutral gerendert werden:
+  - Plain: `Operand: ...` oder gleichwertig neutral statt `File: ...`
+  - JSON/YAML: `operand` oder gleichwertig neutrales Feld statt `file`
 - Fehlertexte und operandbezogene Dokumentfelder duerfen keine unmaskierte
   Connection-URL oder ungescrubbte sensitive Verbindungsdetails enthalten
 - Exception-Messages aus Operand-Resolver, URL-Parser, Pool, Treiber-Registry,
@@ -445,6 +456,8 @@ Mindestens noetig:
   - Reverse-Notes / `skippedObjects`
 - zentrales Scrubbing fuer user-facing Fehlertexte, bevor sie an
   `printError(...)` oder strukturierte Fehlerdokumente gehen
+- operandneutraler Fehler-Renderer oder entsprechend verallgemeinerter
+  `OutputFormatter`, damit `db:`-Fehler nicht unter `file`/`File:` erscheinen
 - Weitergabe der normalisierten `SchemaDefinition` an `SchemaComparator`
 - stdout-/stderr-Ausgabe gemaess `outputFormat`, `quiet` und mindestens
   `verbose`-gesteuerten Info-Notes
@@ -523,6 +536,8 @@ Wichtig:
 - warnings auf `stderr` bleiben wie heute auf `plain` beschraenkt
 - operandseitige Reverse-Notes / `skippedObjects` folgen demselben Plain-only-
   `stderr`-Vertrag wie die bestehenden Validation-Warnings
+- bestehende Plain-Validation-Warnings bleiben auch unter `quiet` sichtbar;
+  dieselbe Regel gilt fuer operandseitige Reverse-Notes / `skippedObjects`
 - operandseitige Info-Notes bleiben mindestens `verbose`-gesteuert
 - strukturierte JSON-/YAML-Ausgabe darf keine parallele menschenlesbare
   Diff-Zusammenfassung auf `stderr` erzeugen
@@ -559,10 +574,13 @@ Abzusichern sind mindestens:
   Triggers mit ab
 - DB-Operand-Referenzen bleiben in Fehler- und Output-Dokumenten maskiert bzw.
   alias-basiert
+- DB-Operand-Fehler erscheinen in Plain-/JSON-/YAML-Ausgaben unter einem
+  operandneutralen Label statt unter `File:`/`file`
 - user-facing Fehlertexte bleiben auch bei sensitiven Exception-Messages
   gescrubbt
 - `quiet` und `verbose` steuern operandseitige Note-Ausgabe konsistent, ohne
-  `different`- oder `invalid`-Resultate auf `stdout` zu unterdruecken
+  `different`- oder `invalid`-Resultate auf `stdout` zu unterdruecken; Plain-
+  Warnings bleiben dabei wie im bestehenden Compare sichtbar
 
 ---
 
@@ -620,8 +638,11 @@ Wichtiger als die exakte Kotlin-Form sind die Zielsemantiken:
 - der erweiterte Core-Diff wird ohne Informationsverlust in CLI-Dokumente
   projiziert
 - user-facing Operand-Referenzen und Fehlertexte bleiben fuer DB-Operanden
-  gescrubbt
+  gescrubbt; Fehlerausgaben bleiben operandneutral statt file-zentriert
 - `quiet` unterdrueckt keine primaeren Compare-Dokumente mit Exit `1` oder `3`
+  und laesst bestehende Plain-Warnings bewusst sichtbar
+- Compare nutzt fuer Fehlerfaelle keinen DB-Operand-Pfad, der JSON/YAML weiter
+  unter `file` oder Plain unter `File:` etikettiert
 
 ---
 
@@ -678,12 +699,14 @@ Indirekt vorausgesetzt:
       `skippedObjects` getrennt vom Diff transportieren.
 - [ ] DB-Operand-Referenzen bleiben in Fehler- und Ergebnisdokumenten
       maskiert bzw. alias-basiert.
+- [ ] DB-Operand-Fehler werden in Plain-/JSON-/YAML-Ausgaben operandneutral
+      und nicht unter `File:`/`file` gerendert.
 - [ ] User-facing Fehlertexte bleiben auch dann gescrubbt, wenn
       Exception-Messages URLs oder andere sensitive Verbindungsdetails
       enthalten.
 - [ ] `quiet` und `verbose` steuern operandseitige Note-Ausgabe konsistent,
       ohne das primaere Compare-Dokument bei Exit `1` oder `3` zu
-      unterdruecken.
+      unterdruecken; bestehende Plain-Warnings bleiben dabei sichtbar.
 - [ ] Der bisherige file-based Compare-Pfad regressiert nicht.
 - [ ] `docs/cli-spec.md` beschreibt denselben Compare-Vertrag wie der Code.
 
@@ -739,10 +762,12 @@ Dabei explizit pruefen:
 - JSON-/YAML-/Plain-Output zeigen Sequences, Functions, Procedures und
   Triggers mit an
 - DB-Operand-Referenzen bleiben in Fehler- und Ergebnisdokumenten maskiert
+- DB-Operand-Fehler erscheinen operandneutral statt unter `File:`/`file`
 - Fehlertexte in CLI-Fehlerausgaben bleiben auch dann gescrubbt, wenn die
   zugrundeliegende Exception Verbindungsdetails enthaelt
 - `quiet` unterdrueckt Hilfsausgaben, macht aber `different`- oder
-  `invalid`-Compare ohne `--output` nicht still
+  `invalid`-Compare ohne `--output` nicht still; bestehende Plain-Warnings
+  bleiben sichtbar
 
 ---
 
