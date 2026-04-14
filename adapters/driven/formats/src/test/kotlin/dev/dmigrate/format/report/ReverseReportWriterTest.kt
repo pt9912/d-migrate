@@ -6,6 +6,8 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import java.nio.file.Files
+import kotlin.io.path.readText
 
 class ReverseReportWriterTest : FunSpec({
 
@@ -144,5 +146,53 @@ class ReverseReportWriterTest : FunSpec({
         val lines = report.lines()
         val topKeys = lines.filter { it.matches(Regex("^[a-z].*:.*")) }.map { it.substringBefore(":") }
         topKeys shouldBe listOf("source", "schema", "summary", "notes", "skipped_objects")
+    }
+
+    // ── E2E: write to file and verify ───────────
+
+    test("E2E: write report to file and verify content") {
+        val dir = Files.createTempDirectory("reverse-report-test")
+        val reportFile = dir.resolve("schema.report.yaml")
+        try {
+            val reportInput = input(
+                sourceKind = ReverseSourceKind.URL,
+                sourceValue = "postgresql://admin:***@db.example.com/production",
+                notes = listOf(
+                    SchemaReadNote(SchemaReadSeverity.WARNING, "R010", "pg_catalog", "System schema skipped"),
+                    SchemaReadNote(SchemaReadSeverity.ACTION_REQUIRED, "R020", "custom_func", "Unknown return type"),
+                ),
+                skipped = listOf(
+                    SkippedObject("TABLE", "spatial_ref_sys", "PostGIS system table", code = "S010"),
+                ),
+            )
+
+            writer.write(reportFile, reportInput)
+
+            val content = reportFile.readText()
+
+            // Source is pre-scrubbed
+            content shouldContain "postgresql://admin:***@db.example.com/production"
+            content shouldNotContain "secret"
+
+            // Schema metadata
+            content shouldContain "name: \"TestDB\""
+
+            // Summary counts
+            content shouldContain "notes: 2"
+            content shouldContain "warnings: 1"
+            content shouldContain "action_required: 1"
+            content shouldContain "skipped_objects: 1"
+
+            // Notes
+            content shouldContain "code: R010"
+            content shouldContain "code: R020"
+
+            // Skipped objects
+            content shouldContain "name: \"spatial_ref_sys\""
+            content shouldContain "code: S010"
+        } finally {
+            Files.deleteIfExists(reportFile)
+            Files.deleteIfExists(dir)
+        }
     }
 })

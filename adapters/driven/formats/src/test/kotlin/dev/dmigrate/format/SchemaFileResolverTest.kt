@@ -1,5 +1,9 @@
 package dev.dmigrate.format
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.format.json.JsonSchemaCodec
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 import io.kotest.assertions.throwables.shouldThrow
@@ -7,6 +11,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.nio.file.Files
 import java.nio.file.Path
 
 class SchemaFileResolverTest : FunSpec({
@@ -98,5 +103,66 @@ class SchemaFileResolverTest : FunSpec({
     test("path with directory resolves correctly") {
         SchemaFileResolver.codecForPath(Path.of("/tmp/schemas/db.json"))
             .shouldBeInstanceOf<JsonSchemaCodec>()
+    }
+
+    // ── writeSchema ─────────────────────────────
+
+    val testSchema = SchemaDefinition(
+        name = "WriteTest", version = "1.0",
+        tables = mapOf("t" to TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier(true))),
+            primaryKey = listOf("id"),
+        )),
+    )
+
+    test("writeSchema writes YAML and round-trips") {
+        val dir = Files.createTempDirectory("resolver-test")
+        val path = dir.resolve("output.yaml")
+        try {
+            SchemaFileResolver.writeSchema(path, testSchema)
+            val read = SchemaFileResolver.codecForPath(path).read(path)
+            read shouldBe testSchema
+        } finally {
+            Files.deleteIfExists(path)
+            Files.deleteIfExists(dir)
+        }
+    }
+
+    test("writeSchema writes JSON and round-trips") {
+        val dir = Files.createTempDirectory("resolver-test")
+        val path = dir.resolve("output.json")
+        try {
+            SchemaFileResolver.writeSchema(path, testSchema)
+            val read = SchemaFileResolver.codecForPath(path).read(path)
+            read shouldBe testSchema
+        } finally {
+            Files.deleteIfExists(path)
+            Files.deleteIfExists(dir)
+        }
+    }
+
+    test("writeSchema with explicit format validates extension") {
+        val dir = Files.createTempDirectory("resolver-test")
+        val path = dir.resolve("output.yaml")
+        try {
+            shouldThrow<IllegalArgumentException> {
+                SchemaFileResolver.writeSchema(path, testSchema, format = "json")
+            }.message shouldContain "does not match"
+        } finally {
+            Files.deleteIfExists(dir)
+        }
+    }
+
+    test("writeSchema with matching explicit format succeeds") {
+        val dir = Files.createTempDirectory("resolver-test")
+        val path = dir.resolve("output.json")
+        try {
+            SchemaFileResolver.writeSchema(path, testSchema, format = "json")
+            val read = SchemaFileResolver.codecForPath(path).read(path)
+            read shouldBe testSchema
+        } finally {
+            Files.deleteIfExists(path)
+            Files.deleteIfExists(dir)
+        }
     }
 })

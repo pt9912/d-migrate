@@ -1,8 +1,10 @@
 package dev.dmigrate.format
 
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.format.json.JsonSchemaCodec
 import dev.dmigrate.format.yaml.YamlSchemaCodec
 import java.nio.file.Path
+import kotlin.io.path.outputStream
 
 /**
  * Resolves the appropriate [SchemaCodec] for a given file path or
@@ -61,6 +63,26 @@ object SchemaFileResolver {
                     "Supported extensions: .yaml, .yml, .json"
             )
         }
+    }
+
+    /**
+     * Writes a schema to the given path, validating that the file
+     * extension matches the explicit format (if given).
+     *
+     * This is the canonical schema write entry point for reverse
+     * output. It enforces the 0.6.0 file I/O contract: format and
+     * extension must not contradict each other.
+     *
+     * @param path output file path (must have .yaml/.yml/.json extension)
+     * @param schema the schema to write
+     * @param format explicit format override, or null to detect from extension
+     * @throws IllegalArgumentException on extension/format mismatch
+     */
+    fun writeSchema(path: Path, schema: SchemaDefinition, format: String? = null) {
+        val resolvedFormat = format ?: detectFormat(path)
+        validateOutputPath(path, format)
+        val codec = codecForFormat(resolvedFormat)
+        path.outputStream().use { codec.write(it, schema) }
     }
 
     /**
