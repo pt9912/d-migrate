@@ -432,6 +432,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 2.9
+**Version**: 3.0
 **Stand**: 2026-04-14
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0 und 0.5.5 abgeschlossen und released; 0.6.0 Phase A (Spezifikationsbereinigung) und Phase B (Reverse-Vertrag und Modellanpassungen) abgeschlossen, Phase C (Schema-I/O, Reverse-Reports, JDBC-Metadatenbasis) im Review, weitere Phasen in Arbeit
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0 und 0.5.5 abgeschlossen und released; 0.6.0 Phase A (Spezifikationsbereinigung), Phase B (Reverse-Vertrag und Modellanpassungen) und Phase C (Schema-I/O, Reverse-Reports, JDBC-Metadatenbasis) abgeschlossen, weitere Phasen in Arbeit
