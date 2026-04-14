@@ -760,6 +760,6 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 ---
 
-**Version**: 1.9
+**Version**: 2.0
 **Stand**: 2026-04-14
-**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.5.5 sowie 0.6.0 Phase A–F (Reverse-Engineering, schema reverse CLI, schema compare mit DB-Operanden); geplant sind u.a. Direkttransfer (0.6.0 Phase G/H) sowie Daten-Profiling (0.7.5)
+**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.5.5 sowie 0.6.0 Phase A–G (Reverse-Engineering, schema reverse CLI, schema compare DB-Operanden, data transfer); Phase H (README/Docs/Release) verbleibend; geplant sind u.a. Daten-Profiling (0.7.5)

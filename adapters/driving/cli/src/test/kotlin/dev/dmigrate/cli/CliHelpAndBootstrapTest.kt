@@ -108,6 +108,12 @@ class CliHelpAndBootstrapTest : FunSpec({
         }
     }
 
+    test("data transfer --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("data", "transfer", "--help")) }
+        }
+    }
+
     // ─── --version ───────────────────────────────────────────────
 
     test("--version throws PrintMessage (CliktError) with the version string") {
