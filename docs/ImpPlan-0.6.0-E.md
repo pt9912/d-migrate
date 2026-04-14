@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: E (CLI-Pfad `schema reverse`)
-> **Status**: Draft (2026-04-14)
+> **Status**: Review (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 4.1 bis 4.4,
 > Abschnitt 5 Phase E, Abschnitt 6.1, Abschnitt 6.3, Abschnitt 7,
 > Abschnitt 8, Abschnitt 9, Abschnitt 10; `docs/ImpPlan-0.6.0-B.md`;
