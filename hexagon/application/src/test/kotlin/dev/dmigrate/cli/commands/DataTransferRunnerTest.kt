@@ -218,7 +218,33 @@ class DataTransferRunnerTest : FunSpec({
 
     // ── Scrubbing ───────────────────────────────
 
-    test("credentials scrubbed in errors") {
+    test("credentials scrubbed in flag validation errors (exit 2)") {
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors)
+        runner.execute(request(
+            source = "postgresql://admin:secret@host/db",
+            triggerMode = "invalid",
+        )) shouldBe 2
+        errors.joined() shouldNotContain "secret"
+    }
+
+    test("credentials scrubbed in source resolve errors (exit 7)") {
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors,
+            sourceResolver = { _, _ -> throw RuntimeException("fail") })
+        runner.execute(request(source = "postgresql://admin:secret@host/db")) shouldBe 7
+        errors.joined() shouldNotContain "secret"
+    }
+
+    test("credentials scrubbed in target resolve errors (exit 7)") {
+        val errors = Capture()
+        val (runner, _, _) = buildRunner(errors = errors,
+            targetResolver = { _, _ -> throw RuntimeException("fail") })
+        runner.execute(request(target = "postgresql://admin:secret@host/db")) shouldBe 7
+        errors.joined() shouldNotContain "secret"
+    }
+
+    test("credentials scrubbed in pool errors (exit 4)") {
         val errors = Capture()
         val (runner, _, _) = buildRunner(errors = errors,
             poolFactory = { throw RuntimeException("postgresql://a:secret@h/d") })

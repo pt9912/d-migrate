@@ -42,18 +42,22 @@ class DataTransferRunner(
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
     fun execute(request: DataTransferRequest): Int {
+        // Scrub raw operand strings for all user-facing output
+        val safeSrc = scrubRef(request.source)
+        val safeTgt = scrubRef(request.target)
+
         val err = validateFlags(request)
-        if (err != null) { printError(err, request.source); return 2 }
+        if (err != null) { printError(err, safeSrc); return 2 }
 
         val srcUrl: String; val tgtUrl: String; val srcRef: String; val tgtRef: String
         try {
             srcUrl = sourceResolver(request.source, request.cliConfigPath)
             srcRef = if (request.source.contains("://")) urlScrubber(srcUrl) else request.source
-        } catch (e: Exception) { printError("Source config: ${scrub(e.message)}", request.source); return 7 }
+        } catch (e: Exception) { printError("Source config: ${scrub(e.message)}", safeSrc); return 7 }
         try {
             tgtUrl = targetResolver(request.target, request.cliConfigPath)
             tgtRef = if (request.target.contains("://")) urlScrubber(tgtUrl) else request.target
-        } catch (e: Exception) { printError("Target config: ${scrub(e.message)}", request.target); return 7 }
+        } catch (e: Exception) { printError("Target config: ${scrub(e.message)}", safeTgt); return 7 }
 
         val srcCfg: ConnectionConfig; val tgtCfg: ConnectionConfig
         try { srcCfg = urlParser(srcUrl); tgtCfg = urlParser(tgtUrl) }
@@ -189,4 +193,7 @@ class DataTransferRunner(
 
     private fun scrub(m: String?) = if (m == null) "unknown" else
         Regex("[a-zA-Z][a-zA-Z0-9+\\-.]*://[^\\s]+").replace(m) { urlScrubber(it.value) }
+
+    private fun scrubRef(raw: String) =
+        if (raw.contains("://")) urlScrubber(raw) else raw
 }

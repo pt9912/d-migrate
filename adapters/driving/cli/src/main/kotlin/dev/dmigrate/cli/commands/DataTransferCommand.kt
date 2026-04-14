@@ -12,7 +12,6 @@ import com.github.ajalt.clikt.parameters.types.int
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.NamedConnectionResolver
-import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -43,7 +42,6 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx)
         val request = DataTransferRequest(
             source = source,
             target = target,
@@ -66,7 +64,9 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
             poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
             driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
             urlScrubber = LogScrubber::maskUrl,
-            printError = { msg, src -> formatter.printError(msg, src) },
+            // data transfer uses plain stderr for errors — no structured
+            // json/yaml error envelope via OutputFormatter (see Plan §4.8)
+            printError = { msg, src -> System.err.println("Error [$src]: $msg") },
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
