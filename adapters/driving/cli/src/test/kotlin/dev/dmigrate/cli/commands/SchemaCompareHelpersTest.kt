@@ -21,13 +21,13 @@ class SchemaCompareHelpersTest : FunSpec({
     val differentDoc = SchemaCompareDocument(
         status = "different", exitCode = 1,
         source = "a.yaml", target = "b.yaml",
-        summary = SchemaCompareSummary(tablesAdded = 1, tablesRemoved = 1, enumTypesChanged = 1),
+        summary = SchemaCompareSummary(tablesAdded = 1, tablesRemoved = 1, customTypesChanged = 1),
         diff = DiffView(
             schemaMetadata = MetadataChangeView(name = StringChange("A", "B")),
             tablesAdded = listOf(TableSummaryView("new_table", 2)),
             tablesRemoved = listOf(TableSummaryView("old_table", 1)),
-            enumTypesChanged = listOf(EnumChangeView("status",
-                listOf("a", "b"), listOf("a", "b", "c"))),
+            customTypesChanged = listOf(CustomTypeChangeView("status", "enum",
+                listOf("values: [a, b] -> [a, b, c]"))),
         ),
     )
 
@@ -63,7 +63,7 @@ class SchemaCompareHelpersTest : FunSpec({
         plain shouldContain "3 change(s)"
         plain shouldContain "+ new_table"
         plain shouldContain "- old_table"
-        plain shouldContain "~ status"
+        plain shouldContain "~ status (enum)"
         plain shouldContain "name: A -> B"
     }
 
@@ -86,11 +86,11 @@ class SchemaCompareHelpersTest : FunSpec({
             status = "different", exitCode = 1,
             source = "old.yaml", target = "new.yaml",
             summary = SchemaCompareSummary(
-                tablesAdded = 1, tablesChanged = 1, enumTypesAdded = 1),
+                tablesAdded = 1, tablesChanged = 1, customTypesAdded = 1),
             diff = DiffView(
                 schemaMetadata = MetadataChangeView(
                     version = StringChange("1.0", "2.0")),
-                enumTypesAdded = listOf(EnumSummaryView("status", listOf("a", "b"))),
+                customTypesAdded = listOf(CustomTypeSummaryView("status", "enum", "a, b")),
                 tablesAdded = listOf(TableSummaryView("orders", 3)),
                 tablesChanged = listOf(TableChangeView(
                     name = "users",
@@ -111,13 +111,13 @@ Status: DIFFERENT
 Summary: 3 change(s)
   Tables added:    1
   Tables changed:  1
-  Enums added:     1
+  Types added:     1
 
 Schema Metadata:
   version: 1.0 -> 2.0
 
-Enum Types:
-  + status: [a, b]
+Custom Types:
+  + status (enum): a, b
 
 Tables:
   + orders (3 columns)
@@ -379,8 +379,8 @@ Tables:
                 constraintsAdded = listOf(ConstraintDefinition(
                     name = "uq_email", type = ConstraintType.UNIQUE, columns = listOf("email"))),
             )),
-            enumTypesChanged = listOf(EnumTypeDiff("status", ValueChange(
-                listOf("a"), listOf("a", "b")))),
+            customTypesChanged = listOf(CustomTypeDiff("status",
+                values = ValueChange(listOf("a"), listOf("a", "b")))),
         )
         val view = SchemaCompareHelpers.projectDiff(diff)
 
@@ -391,7 +391,89 @@ Tables:
         view.tablesChanged[0].columnsChanged[0].type!!.after shouldBe "text(200)"
         view.tablesChanged[0].indicesAdded[0] shouldBe "idx_a [btree]"
         view.tablesChanged[0].constraintsAdded[0] shouldContain "uq_email"
-        view.enumTypesChanged[0].after shouldBe listOf("a", "b")
+        view.customTypesChanged[0].changes[0] shouldContain "values"
+    }
+
+    test("projectDiff handles domain custom type") {
+        val diff = SchemaDiff(
+            customTypesAdded = listOf(NamedCustomType("posint", CustomTypeDefinition(
+                kind = CustomTypeKind.DOMAIN, baseType = "integer", check = "VALUE > 0",
+            ))),
+        )
+        val view = SchemaCompareHelpers.projectDiff(diff)
+        view.customTypesAdded[0].name shouldBe "posint"
+        view.customTypesAdded[0].kind shouldBe "domain"
+        view.customTypesAdded[0].detail shouldContain "base: integer"
+    }
+
+    test("projectDiff handles composite custom type") {
+        val diff = SchemaDiff(
+            customTypesAdded = listOf(NamedCustomType("address", CustomTypeDefinition(
+                kind = CustomTypeKind.COMPOSITE,
+                fields = mapOf("street" to ColumnDefinition(type = NeutralType.Text(200))),
+            ))),
+        )
+        val view = SchemaCompareHelpers.projectDiff(diff)
+        view.customTypesAdded[0].kind shouldBe "composite"
+        view.customTypesAdded[0].detail shouldBe "1 fields"
+    }
+
+    test("projectDiff handles custom type changes with multiple change kinds") {
+        val diff = SchemaDiff(
+            customTypesChanged = listOf(CustomTypeDiff("posint",
+                baseType = ValueChange("integer", "biginteger"),
+                check = ValueChange("VALUE > 0", "VALUE >= 0"),
+            )),
+        )
+        val view = SchemaCompareHelpers.projectDiff(diff)
+        view.customTypesChanged[0].changes.size shouldBe 2
+        view.customTypesChanged[0].changes[0] shouldContain "baseType"
+        view.customTypesChanged[0].changes[1] shouldContain "check"
+    }
+
+    test("plain renders custom type changes") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(customTypesAdded = 1, customTypesChanged = 1),
+            diff = DiffView(
+                customTypesAdded = listOf(CustomTypeSummaryView("posint", "domain", "base: integer")),
+                customTypesChanged = listOf(CustomTypeChangeView("status", "enum",
+                    listOf("values: [a, b] -> [a, b, c]"))),
+            ),
+        )
+        val plain = SchemaCompareHelpers.renderPlain(doc)
+        plain shouldContain "Custom Types:"
+        plain shouldContain "+ posint (domain): base: integer"
+        plain shouldContain "~ status (enum):"
+    }
+
+    test("json renders custom types with kind") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(customTypesAdded = 1),
+            diff = DiffView(
+                customTypesAdded = listOf(CustomTypeSummaryView("posint", "domain", "base: integer")),
+            ),
+        )
+        val json = SchemaCompareHelpers.renderJson(doc)
+        json shouldContain """"custom_types_added"""
+        json shouldContain """"kind": "domain""""
+    }
+
+    test("yaml renders custom types with kind") {
+        val doc = SchemaCompareDocument(
+            status = "different", exitCode = 1,
+            source = "a.yaml", target = "b.yaml",
+            summary = SchemaCompareSummary(customTypesRemoved = 1),
+            diff = DiffView(
+                customTypesRemoved = listOf(CustomTypeSummaryView("old_type", "enum", "a, b")),
+            ),
+        )
+        val yaml = SchemaCompareHelpers.renderYaml(doc)
+        yaml shouldContain "custom_types_removed:"
+        yaml shouldContain "kind: \"enum\""
     }
 
     test("projectDiff handles ColumnDiff.unique and references") {

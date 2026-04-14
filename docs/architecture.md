@@ -227,6 +227,10 @@ adapters:driving:cli
 
 ### 3.1 Database Driver (Port & Adapter)
 
+#### Ist-Stand (bis 0.5.x)
+
+Das produktive `DatabaseDriver`-Interface exponiert heute folgende Ports:
+
 ```kotlin
 /**
  * Port: Abstraktion für Datenbankzugriff.
@@ -235,34 +239,64 @@ adapters:driving:cli
 interface DatabaseDriver {
     val dialect: DatabaseDialect
 
-    fun connect(config: ConnectionConfig): DatabaseConnection
-    fun schemaReader(): SchemaReader
-    fun schemaWriter(): SchemaWriter
+    fun ddlGenerator(): DdlGenerator
     fun dataReader(): DataReader
+    fun tableLister(): TableLister
     fun dataWriter(): DataWriter
+    fun urlBuilder(): JdbcUrlBuilder
 }
+```
 
+`TableLister` existiert produktiv und wird bereits für Auto-Discovery im
+Datenexport genutzt. `TypeMapper` ist kein exponierter Port — er ist internes
+Implementierungsdetail von `DdlGenerator` (via `AbstractDdlGenerator`).
+
+#### `schemaReader()` (0.6.0)
+
+`DatabaseDriver` wurde in 0.6.0 um `schemaReader()` erweitert — implementiert
+für PostgreSQL, MySQL und SQLite:
+
+```kotlin
+interface DatabaseDriver {
+    // … bestehende Ports …
+    fun schemaReader(): SchemaReader        // 0.6.0
+}
+```
+
+`SchemaReader` liefert ein Ergebnisobjekt, das neben dem Schema auch
+Reverse-Notes und übersprungene Objekte transportiert:
+
+```kotlin
 interface SchemaReader {
-    /** Reverse-Engineering: DB → Neutrales Modell */
-    fun readSchema(connection: DatabaseConnection): SchemaDefinition
-    fun readProcedures(connection: DatabaseConnection): List<ProcedureDefinition>
-    fun readFunctions(connection: DatabaseConnection): List<FunctionDefinition>
-    fun readViews(connection: DatabaseConnection): List<ViewDefinition>
-    fun readTriggers(connection: DatabaseConnection): List<TriggerDefinition>
+    fun read(
+        pool: ConnectionPool,
+        options: SchemaReadOptions = SchemaReadOptions(),
+    ): SchemaReadResult
 }
 
-interface SchemaWriter {
-    /** DDL-Generierung: Neutrales Modell → DB-spezifisches SQL */
-    fun generateDdl(schema: SchemaDefinition): List<DdlStatement>
-    fun generateMigration(diff: DiffResult): List<DdlStatement>
-    /** Rollback-Generierung: Inverse Operationen für eine Migration (LF-014) */
-    fun generateRollback(diff: DiffResult): List<DdlStatement>
-}
+data class SchemaReadResult(
+    val schema: SchemaDefinition,
+    val notes: List<SchemaReadNote> = emptyList(),
+    val skippedObjects: List<SkippedObject> = emptyList(),
+)
+```
 
+Wichtig:
+- `SchemaReader` liefert **nicht** ein nacktes `SchemaDefinition`, sondern
+  ein `SchemaReadResult` mit `schema`, `notes` und optional `skippedObjects`.
+- `TableLister` bleibt als bestehender Zwischenport für Export-Pfade
+  sichtbar und wird nicht still aus der Architektur gestrichen.
+- `SchemaWriter` (DDL-Generierung via neutrales Modell) wird in der
+  bestehenden Codebasis durch `DdlGenerator` abgedeckt. Ein separates
+  `SchemaWriter`-Interface ist für spätere Milestones vorgesehen.
+
+#### Weitere Port-Interfaces
+
+```kotlin
 interface DataReader {
     /** Streaming-basierter Datenexport */
     fun streamTable(
-        connection: DatabaseConnection,
+        connection: ConnectionPool,
         table: String,
         filter: DataFilter? = null,
         chunkSize: Int = 10_000
@@ -272,7 +306,7 @@ interface DataReader {
 interface DataWriter {
     /** Transaktionaler Datenimport */
     suspend fun importChunk(
-        connection: DatabaseConnection,
+        connection: ConnectionPool,
         table: String,
         chunk: DataChunk
     ): ImportResult
@@ -782,7 +816,7 @@ Tools:
 ### 6.2 Test-Fixture-Layout
 
 ```
-src/test/resources/fixtures/
+adapters/driven/formats/src/test/resources/fixtures/
 ├── schemas/                          # Neutrale Schema-Definitionen
 │   ├── minimal.yaml                  # 1 Tabelle, 2 Spalten (Smoke-Test)
 │   ├── e-commerce.yaml               # Referenz-Schema (Lastenheft Anhang B)
@@ -914,6 +948,6 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
-**Version**: 1.5
-**Stand**: 2026-04-05
-**Status**: Milestone 0.1.0 + 0.2.0 implementiert (core, formats, cli, driver-api, driver-postgresql, driver-mysql, driver-sqlite), weitere Module im Entwurf
+**Version**: 1.7
+**Stand**: 2026-04-14
+**Status**: Milestone 0.1.0–0.6.0 implementiert (core, ports, application, formats, cli, driver-postgresql/-mysql/-sqlite, streaming); 0.6.0: `SchemaReader` für PostgreSQL/MySQL/SQLite, `schema reverse` CLI, `schema compare` mit DB-Operanden (file/db, db/db), `data transfer` (DB-zu-DB-Streaming)

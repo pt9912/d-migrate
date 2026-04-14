@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
@@ -18,4 +19,5 @@ class SqliteDriver : DatabaseDriver {
     override fun tableLister(): TableLister = SqliteTableLister()
     override fun dataWriter(): DataWriter = SqliteDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = SqliteJdbcUrlBuilder()
+    override fun schemaReader(): SchemaReader = SqliteSchemaReader()
 }

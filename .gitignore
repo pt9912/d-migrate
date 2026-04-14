@@ -32,6 +32,10 @@ coverage/
 tmp/
 temp/
 
+# Release preflight / download artifacts
+release/
+release-assets/
+
 # d-migrate runtime data (credentials, checkpoints, cache, audit)
 .d-migrate/
 # Codex

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.SchemaReader
 import dev.dmigrate.driver.connection.JdbcUrlBuilder
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
@@ -18,4 +19,5 @@ class MysqlDriver : DatabaseDriver {
     override fun tableLister(): TableLister = MysqlTableLister()
     override fun dataWriter(): DataWriter = MysqlDataWriter()
     override fun urlBuilder(): JdbcUrlBuilder = MysqlJdbcUrlBuilder()
+    override fun schemaReader(): SchemaReader = MysqlSchemaReader()
 }

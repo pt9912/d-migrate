@@ -11,20 +11,19 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
  * - `useCursorFetch=true` — serverseitiger Cursor für sauberes Streaming.
  *   **Bewusst gegen `Statement.setFetchSize(Integer.MIN_VALUE)`** wegen
  *   row-by-row Protokoll-Overhead und HikariCP-Inkompatibilität.
- * - `useUnicode=true`, `characterEncoding=utf8mb4` — Unicode-Defaults.
+ * - `allowPublicKeyRetrieval=true` — nötig für `caching_sha2_password`
+ *   ohne TLS (Connector/J 9.x Default: `false`).
  */
 class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
 
     override val dialect: DatabaseDialect = DatabaseDialect.MYSQL
 
+    // Connector/J 9.x hat `useUnicode` und `characterEncoding` entfernt —
+    // der Connector nutzt jetzt automatisch das server-seitige Character-Set.
     override fun defaultParams(): Map<String, String> = mapOf(
         "useCursorFetch" to "true",
         "rewriteBatchedStatements" to "true",
-        "useUnicode" to "true",
-        // Java-Charset-Name (NICHT "utf8mb4" — das ist ein MySQL-server-side
-        // Encoding, kein Java-Charset). Connector/J wirft UnsupportedEncoding-
-        // Exception bei "utf8mb4". MySQL mapped "UTF-8" serverseitig auf utf8mb4.
-        "characterEncoding" to "UTF-8",
+        "allowPublicKeyRetrieval" to "true",
     )
 
     override fun baseJdbcUrl(config: ConnectionConfig): String {

@@ -95,6 +95,106 @@ docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/s
   d-migrate:pre-release schema generate --source /work/e-commerce.yaml --target sqlite --generate-rollback
 ```
 
+#### Schema Compare (file/file)
+
+```bash
+docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/schemas:/work" \
+  d-migrate:pre-release schema compare --source file:/work/minimal.yaml --target file:/work/e-commerce.yaml
+```
+
+#### DB-basierte Smokes (Reverse, Compare, Transfer)
+
+Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
+
+```bash
+SMOKE_DIR="$(mktemp -d)"
+mkdir -p "${SMOKE_DIR}/out"
+
+cat > "${SMOKE_DIR}/d-migrate.yaml" <<'YAML'
+database:
+  connections:
+    smoke_pg: "postgresql://dmigrate:dmigrate@d-migrate-smoke-pg:5432/dmigrate"
+    smoke_mysql: "mysql://dmigrate:dmigrate@d-migrate-smoke-mysql:3306/dmigrate"
+YAML
+
+docker network inspect d-migrate-smoke >/dev/null 2>&1 || \
+  docker network create d-migrate-smoke
+
+docker run -d --rm --name d-migrate-smoke-pg --network d-migrate-smoke \
+  -e POSTGRES_USER=dmigrate \
+  -e POSTGRES_PASSWORD=dmigrate \
+  -e POSTGRES_DB=dmigrate \
+  postgres:16
+
+docker run -d --rm --name d-migrate-smoke-mysql --network d-migrate-smoke \
+  -e MYSQL_DATABASE=dmigrate \
+  -e MYSQL_USER=dmigrate \
+  -e MYSQL_PASSWORD=dmigrate \
+  -e MYSQL_ROOT_PASSWORD=dmigrate \
+  mysql:8
+
+docker run --rm --network d-migrate-smoke \
+  -e PGPASSWORD=dmigrate \
+  -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/ddl:/fixtures:ro" \
+  postgres:16 sh -lc '
+    until pg_isready -h d-migrate-smoke-pg -U dmigrate >/dev/null 2>&1; do sleep 1; done
+    psql -h d-migrate-smoke-pg -U dmigrate -d dmigrate -f /fixtures/minimal.postgresql.sql
+    psql -h d-migrate-smoke-pg -U dmigrate -d dmigrate -c "INSERT INTO users(name) VALUES (\$\$smoke user\$\$);"
+  '
+
+docker run --rm --network d-migrate-smoke \
+  -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/ddl:/fixtures:ro" \
+  mysql:8 sh -lc '
+    until mysqladmin ping -h d-migrate-smoke-mysql -u dmigrate -pdmigrate --silent; do sleep 1; done
+    mysql -h d-migrate-smoke-mysql -u dmigrate -pdmigrate dmigrate < /fixtures/minimal.mysql.sql
+  '
+```
+
+Schema Reverse:
+
+```bash
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  d-migrate:pre-release \
+  --config /smoke/d-migrate.yaml \
+  schema reverse --source smoke_pg --output /smoke/out/reverse.yaml --report /smoke/out/reverse.report.yaml
+```
+
+Schema Compare (file/db und db/db):
+
+```bash
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  -v "$(pwd):/repo:ro" \
+  d-migrate:pre-release \
+  --config /smoke/d-migrate.yaml \
+  schema compare --source file:/repo/adapters/driven/formats/src/test/resources/fixtures/schemas/minimal.yaml --target db:smoke_pg
+
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  d-migrate:pre-release \
+  --config /smoke/d-migrate.yaml \
+  schema compare --source db:smoke_pg --target db:smoke_mysql
+```
+
+Data Transfer:
+
+```bash
+docker run --rm --network d-migrate-smoke \
+  -v "${SMOKE_DIR}:/smoke" \
+  d-migrate:pre-release \
+  --config /smoke/d-migrate.yaml \
+  data transfer --source smoke_pg --target smoke_mysql --tables users
+```
+
+Aufräumen:
+
+```bash
+docker stop d-migrate-smoke-pg d-migrate-smoke-mysql 2>/dev/null
+docker network rm d-migrate-smoke 2>/dev/null
+rm -rf "${SMOKE_DIR}"
+```
+
 ### 3.4 CHANGELOG-Review
 
 - `[Unreleased]`-Block durchgehen — alles für diesen Release Wichtige enthalten?
@@ -124,7 +224,7 @@ rg -n "koverVerify|release-assets|assembleReleaseAssets" .github/workflows/build
 - `docs/guide.md` auf den aktuellen Funktionsumfang prüfen und ggf. aktualisieren
   (Modulliste, Beispielausgaben, neue CLI-Kommandos/Optionen)
 - `docs/cli-spec.md`, `docs/architecture.md` und `docs/releasing.md` auf den
-  tatsächlichen 0.5.0-Vertrag prüfen
+  tatsächlichen Vertrag prüfen
 - `packaging/homebrew/d-migrate.rb` muss ZIP-basierte Installation, Java 21 und
   `bin/d-migrate`-Link konsistent beschreiben
 - Falls `AbstractDdlGenerator.getVersion()` hart kodiert ist: Wert prüfen
@@ -377,7 +477,8 @@ Für jeden Release abhaken:
 - [ ] lokaler Asset-Preflight für `assembleReleaseAssets` grün
 - [ ] `./release` enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Fat JAR aus dem lokalen Preflight startet mit `--help`
-- [ ] Smoke-Tests gegen Fixture-Schemas grün
+- [ ] Smoke-Tests gegen Fixture-Schemas grün (generate, compare file/file)
+- [ ] DB-basierte Smoke-Tests grün (reverse, compare file/db + db/db, transfer)
 - [ ] CHANGELOG `[Unreleased]` reviewed
 - [ ] `docs/guide.md`, `docs/cli-spec.md`, `docs/architecture.md` und `docs/releasing.md` auf aktuellem Funktionsstand
 - [ ] `koverVerify`, `assembleReleaseAssets` und `release-assets` sind im Workflow korrekt verdrahtet

@@ -80,4 +80,4 @@ jobs:
           test: |
             assert_match "Database-agnostic migration", shell_output("#{bin}/d-migrate --help")
           custom_tarball: d-migrate-${{ steps.meta.outputs.version }}-homebrew
-          update_release_with_checksum: false
+          skip_checksum: true

@@ -16,24 +16,23 @@ Das neutrale Modell beschreibt Datenbankstrukturen **deklarativ** (was, nicht wi
 
 ```
   Quelle                   Neutral                     Ziel
-┌───────────┐          ┌──────────────┐           ┌───────────┐
-│PostgreSQL │──JDBC────▶│              │──generate──▶│  MySQL    │
-│MySQL      │ extract  │  Neutrales   │           │  SQLite   │
+┌───────────┐          ┌──────────────┐            ┌───────────┐
+│PostgreSQL │──JDBC───▶│              │──generate─▶│  MySQL    │
+│MySQL      │ reverse  │  Neutrales   │            │  SQLite   │
 │SQLite     │          │  Schema-     │◀──parse────│  YAML     │
-│           │          │  Modell      │           │  JSON     │
-└───────────┘          └──────────────┘           └───────────┘
-      ▲                    ▲
-┌─────┴─────┐             │
-│ SQL-DDL   │──DDL-Parse──┘
-│ Dateien   │
-└───────────┘
+│           │          │  Modell      │            │  JSON     │
+└───────────┘          └──────────────┘            └───────────┘
 ```
 
-Drei Eingabepfade erzeugen das neutrale Modell:
+Eingabepfade für das neutrale Modell:
 
 1. **YAML/JSON-Definition**: Manuell geschriebene Schema-Datei
-2. **JDBC-Reverse-Engineering**: Extraktion aus einer bestehenden Datenbank
-3. **DDL-Datei-Parsing**: Analyse von SQL-DDL-Dateien (CREATE TABLE, etc.)
+2. **JDBC-Reverse-Engineering** *(0.6.0)*: Extraktion aus einer bestehenden
+   Datenbank über eine Live-Verbindung (`schema reverse`)
+
+Ein dritter Pfad — **DDL-Datei-Parsing** (Analyse von SQL-DDL-Dateien) — ist
+als späterer additiver Funktionsschnitt vorgesehen, gehört aber nicht zum
+0.6.0-Mindestvertrag.
 
 ### 1.2 Design-Prinzipien
 
@@ -68,7 +67,34 @@ triggers: {}                      # Trigger
 sequences: {}                     # Sequenzen (explizit definierte)
 ```
 
-### 2.2 Objekt-Hierarchie
+### 2.2 Reverse-generierte Metadaten (ab 0.6.0)
+
+Reverse-generierte Schemas verwenden technische Provenienzwerte fuer
+`name` und `version`, damit sie nach YAML-/JSON-Serialisierung ohne
+Sidecar-Datei wiedererkennbar bleiben:
+
+- `version`: `0.0.0-reverse` (fester Platzhalter)
+- `name`: beginnt mit dem reservierten Prefix `__dmigrate_reverse__:`
+
+Format des Reverse-Names:
+
+```
+__dmigrate_reverse__:<dialect>:<key>=<value>[;<key>=<value>...]
+```
+
+Beispiele:
+- `__dmigrate_reverse__:postgresql:database=mydb;schema=public`
+- `__dmigrate_reverse__:mysql:database=shopdb`
+- `__dmigrate_reverse__:sqlite:schema=main`
+
+Komponentenwerte werden fuer Strukturtrenner (`;`, `=`, `:`, `%`)
+per RFC-3986-Percent-Encoding kodiert.
+
+**Reservierter Prefix**: Der Prefix `__dmigrate_reverse__:` ist fuer
+tool-generierte Reverse-Metadaten reserviert. Handgeschriebene
+Schema-Dateien duerfen ihn nicht als `name`-Wert verwenden.
+
+### 2.3 Objekt-Hierarchie
 
 ```
 SchemaDefinition
@@ -105,28 +131,28 @@ SchemaDefinition
 
 Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nativen Typ übersetzt:
 
-| Neutraler Typ | PostgreSQL              | MySQL              | SQLite                            |
-| ------------- | ----------------------- | ------------------ | --------------------------------- |
-| `identifier`  | SERIAL / BIGSERIAL      | INT AUTO_INCREMENT | INTEGER PRIMARY KEY AUTOINCREMENT |
-| `text`        | VARCHAR(n) / TEXT       | VARCHAR(n) / TEXT  | TEXT                              |
-| `char`        | CHAR(n)                 | CHAR(n)            | TEXT                              |
-| `integer`     | INTEGER                 | INT                | INTEGER                           |
-| `smallint`    | SMALLINT                | SMALLINT           | INTEGER                           |
-| `biginteger`  | BIGINT                  | BIGINT             | INTEGER                           |
-| `float`       | REAL / DOUBLE PRECISION | FLOAT / DOUBLE     | REAL                              |
-| `decimal`     | DECIMAL(p,s)            | DECIMAL(p,s)       | REAL                              |
-| `boolean`     | BOOLEAN                 | TINYINT(1)         | INTEGER                           |
-| `datetime`    | TIMESTAMP               | DATETIME           | TEXT (ISO 8601)                   |
-| `date`        | DATE                    | DATE               | TEXT (ISO 8601)                   |
-| `time`        | TIME                    | TIME               | TEXT (ISO 8601)                   |
-| `uuid`        | UUID                    | CHAR(36)           | TEXT                              |
-| `json`        | JSONB                   | JSON               | TEXT                              |
-| `xml`         | XML                     | TEXT (Fallback)    | TEXT                              |
-| `binary`      | BYTEA                   | BLOB               | BLOB                              |
-| `email`       | VARCHAR(254)            | VARCHAR(254)       | TEXT                              |
-| `enum`        | CREATE TYPE ... ENUM    | ENUM(...)          | TEXT + CHECK                      |
-| `array`       | type[]                  | JSON               | TEXT (JSON)                       |
-| `geometry`    | geometry(type, srid) *  | POINT / POLYGON / ... | AddGeometryColumn() *          |
+| Neutraler Typ | PostgreSQL              | MySQL                 | SQLite                            |
+| ------------- | ----------------------- | --------------------- | --------------------------------- |
+| `identifier`  | SERIAL / BIGSERIAL      | INT AUTO_INCREMENT    | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `text`        | VARCHAR(n) / TEXT       | VARCHAR(n) / TEXT     | TEXT                              |
+| `char`        | CHAR(n)                 | CHAR(n)               | TEXT                              |
+| `integer`     | INTEGER                 | INT                   | INTEGER                           |
+| `smallint`    | SMALLINT                | SMALLINT              | INTEGER                           |
+| `biginteger`  | BIGINT                  | BIGINT                | INTEGER                           |
+| `float`       | REAL / DOUBLE PRECISION | FLOAT / DOUBLE        | REAL                              |
+| `decimal`     | DECIMAL(p,s)            | DECIMAL(p,s)          | REAL                              |
+| `boolean`     | BOOLEAN                 | TINYINT(1)            | INTEGER                           |
+| `datetime`    | TIMESTAMP               | DATETIME              | TEXT (ISO 8601)                   |
+| `date`        | DATE                    | DATE                  | TEXT (ISO 8601)                   |
+| `time`        | TIME                    | TIME                  | TEXT (ISO 8601)                   |
+| `uuid`        | UUID                    | CHAR(36)              | TEXT                              |
+| `json`        | JSONB                   | JSON                  | TEXT                              |
+| `xml`         | XML                     | TEXT (Fallback)       | TEXT                              |
+| `binary`      | BYTEA                   | BLOB                  | BLOB                              |
+| `email`       | VARCHAR(254)            | VARCHAR(254)          | TEXT                              |
+| `enum`        | CREATE TYPE ... ENUM    | ENUM(...)             | TEXT + CHECK                      |
+| `array`       | type[]                  | JSON                  | TEXT (JSON)                       |
+| `geometry`    | geometry(type, srid) *  | POINT / POLYGON / ... | AddGeometryColumn() *             |
 
 \* Spatial-Mapping haengt vom gewaehlten `--spatial-profile` ab. Details in
 `docs/ddl-generation-rules.md`. Bei Profil `none` wird die Spalte nicht als
@@ -195,10 +221,10 @@ columns:
 
 #### Spatial-Typ-Attribute (ab 0.5.5)
 
-| Attribut | Pflicht | Typ | Default | Beschreibung |
-|---|---|---|---|---|
-| `geometry_type` | nein | String | `geometry` | Geometrietyp der Spalte |
-| `srid` | nein | Integer > 0 | — | Raeumliches Referenzsystem (z.B. 4326 fuer WGS 84) |
+| Attribut        | Pflicht | Typ         | Default    | Beschreibung                                       |
+| --------------- | ------- | ----------- | ---------- | -------------------------------------------------- |
+| `geometry_type` | nein    | String      | `geometry` | Geometrietyp der Spalte                            |
+| `srid`          | nein    | Integer > 0 | —          | Raeumliches Referenzsystem (z.B. 4326 fuer WGS 84) |
 
 Erlaubte `geometry_type`-Werte:
 
@@ -226,10 +252,10 @@ Vertraege.
 
 Neben den technischen Typen bietet das Modell semantische Typen, die als Alias mit eingebauter Validierung fungieren:
 
-| Semantischer Typ | Technischer Typ    | Eingebaute Einschränkung       |
-| ---------------- | ------------------ | ------------------------------ |
+| Semantischer Typ | Technischer Typ    | Eingebaute Einschränkung                            |
+| ---------------- | ------------------ | --------------------------------------------------- |
 | `email`          | `text(254)`        | Feste Maximallänge 254 (Singleton, keine Parameter) |
-| `identifier`     | `integer`/`bigint` | Auto-Increment, Primary Key    |
+| `identifier`     | `integer`/`bigint` | Auto-Increment, Primary Key                         |
 
 Semantische Typen werden beim DDL-Export in ihren technischen Typ aufgelöst. `email` ist als Singleton implementiert (`data object Email` mit `MAX_LENGTH = 254`) — die Länge ist nicht konfigurierbar.
 
@@ -307,7 +333,26 @@ tables:
         - name: orders_2025
           from: "2025-01-01"
           to: "2026-01-01"
+
+    # ── Tabellen-Metadaten (optional, ab 0.6.0) ───
+    metadata:
+      engine: InnoDB                     # MySQL-Tabellen-Engine (InnoDB, MyISAM, etc.)
+      without_rowid: false               # SQLite WITHOUT ROWID-Tabelle
 ```
+
+### 4.2 Tabellen-Metadaten
+
+Ab 0.6.0 koennen Tabellen optionale physische Metadaten tragen, die
+compare-relevant sind:
+
+| Feld           | Typ      | Default | Beschreibung                      |
+|----------------|----------|---------|-----------------------------------|
+| `engine`       | `string` | `null`  | MySQL-Tabellen-Engine             |
+| `without_rowid`| `boolean`| `false` | SQLite WITHOUT ROWID-Eigenschaft  |
+
+Diese Felder werden primaer durch Reverse-Engineering befuellt. In
+handgeschriebenen Schema-Dateien sind sie optional. Fehlende `metadata`
+oder `null`-Werte sind aequivalent zu den Defaults.
 
 ### 4.2 Referenzen (Foreign Keys)
 
@@ -495,7 +540,96 @@ functions:
     source_dialect: postgresql
 ```
 
-### 6.3 Hinweis zu Body und Transformation
+### 6.3 Kanonische Objekt-Keys (ab 0.6.0)
+
+Fuer die verlustfreie Identitaet von Routinen und Triggern definiert das
+neutrale Modell kanonische Schluesselformate. Diese werden als Map-Keys
+in `procedures`, `functions` und `triggers` verwendet.
+
+**Routinen** (Procedures und Functions) verwenden einen
+Signatur-basierten Key:
+
+```
+name(direction:type,direction:type,...)
+```
+
+Beispiel: Eine Funktion `calc` mit zwei `IN`-Parametern vom Typ
+`integer` erhaelt den Key `calc(in:integer,in:integer)`. Ueberladene
+Routinen (gleicher Name, unterschiedliche Signatur) erhalten
+unterschiedliche Keys und koennen damit verlustfrei nebeneinander im
+Schema existieren.
+
+**Trigger** verwenden einen tabellenqualifizierten Key:
+
+```
+table::name
+```
+
+Beispiel: Ein Trigger `audit` auf Tabelle `users` erhaelt den Key
+`users::audit`. Gleichnamige Trigger auf verschiedenen Tabellen
+kollidieren damit nicht.
+
+**Percent-Encoding**: Reservierte Trennzeichen (`%`, `(`, `)`, `,`,
+`:`) in Objekt- oder Tabellennamen werden komponentenweise
+Percent-encodiert (z.B. `my%3Afunc` fuer `my:func`), bevor der Key
+zusammengesetzt wird. Damit bleibt die String-Repraesentation
+verlustfrei und round-trippbar.
+
+In handgeschriebenen YAML-Dateien ohne Ueberladungen koennen weiterhin
+einfache Namen als Keys verwendet werden (z.B. `calc` statt
+`calc(in:integer)`). Der kanonische Key wird primaer beim
+Reverse-Engineering und beim Compare von Live-Datenbanken relevant.
+
+**Beispiel: Ueberladene Funktionen im YAML**
+
+```yaml
+functions:
+  "calc(in:integer)":
+    parameters:
+      - name: x
+        type: integer
+        direction: in
+    returns:
+      type: integer
+    body: "RETURN x * 2;"
+    source_dialect: postgresql
+  "calc(in:integer,in:integer)":
+    parameters:
+      - name: x
+        type: integer
+        direction: in
+      - name: y
+        type: integer
+        direction: in
+    returns:
+      type: integer
+    body: "RETURN x + y;"
+    source_dialect: postgresql
+```
+
+**Beispiel: Gleichnamige Trigger auf verschiedenen Tabellen**
+
+```yaml
+triggers:
+  "users::audit_insert":
+    table: users
+    event: insert
+    timing: after
+    body: "INSERT INTO audit_log (table_name) VALUES ('users');"
+    source_dialect: postgresql
+  "orders::audit_insert":
+    table: orders
+    event: insert
+    timing: after
+    body: "INSERT INTO audit_log (table_name) VALUES ('orders');"
+    source_dialect: postgresql
+```
+
+Der YAML-Codec uebernimmt die Map-Keys verlustfrei: kanonische Keys
+bleiben als solche erhalten, einfache Namen werden nicht implizit auf
+kanonische Keys normalisiert.
+
+### 6.4 Hinweis zu Body und Transformation
 
 Das `body`-Feld enthält den Quell-Code im **Quell-Dialekt** (angegeben in `source_dialect`). Für die Generierung im Ziel-Dialekt gibt es zwei Wege:
 
@@ -546,6 +680,10 @@ views:
 
 ## 8. Triggers
 
+Trigger-Keys folgen ab 0.6.0 dem kanonischen Format `table::name`
+(siehe Abschnitt 6.3). In handgeschriebenen YAML-Dateien ohne
+Namenskollisionen koennen weiterhin einfache Namen verwendet werden.
+
 ```yaml
 triggers:
   trg_orders_updated_at:
@@ -591,7 +729,12 @@ sequences:
 
 ## 10. Vollständiges Beispiel
 
-### 10.1 PostgreSQL-Eingabe (DDL)
+### 10.1 PostgreSQL-Eingabe (DDL-Referenz)
+
+> Das folgende DDL dient als Referenz dafür, welches neutrale Modell bei einem
+> Reverse-Engineering dieser Datenbankstruktur entstehen würde. In 0.6.0
+> erfolgt die Extraktion via Live-DB-Verbindung (`schema reverse`), nicht
+> über DDL-Datei-Parsing.
 
 ```sql
 CREATE TYPE order_status AS ENUM ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
@@ -835,10 +978,10 @@ Bei der Konvertierung zwischen Datenbanken erzeugt d-migrate automatisch Hinweis
 
 ### 11.1 Hinweis-Typen
 
-| Typ | Bedeutung | Beispiel |
-|---|---|---|
-| `info` | Automatisch gelöst, zur Kenntnisnahme | TIMESTAMP WITH TIME ZONE → DATETIME |
-| `warning` | Funktionalitätseinschränkung möglich | JSONB → JSON (kein GIN-Index möglich) |
+| Typ               | Bedeutung                                     | Beispiel                                |
+| ----------------- | --------------------------------------------- | --------------------------------------- |
+| `info`            | Automatisch gelöst, zur Kenntnisnahme         | TIMESTAMP WITH TIME ZONE → DATETIME     |
+| `warning`         | Funktionalitätseinschränkung möglich          | JSONB → JSON (kein GIN-Index möglich)   |
 | `action_required` | Manuelle Prüfung oder KI-Transformation nötig | Function Body muss transformiert werden |
 
 ### 11.2 Format
@@ -878,44 +1021,48 @@ transformation_notes:
 
 ---
 
-## 12. DDL-Parser
+## 12. DDL-Parser *(späterer Milestone — nicht Teil von 0.6.0)*
 
-### 12.1 Unterstützte Statements
+> **Hinweis**: Der DDL-Parser (SQL-Datei-Parsing, Dialekt-Erkennung aus
+> Dateien, stdin-DDL) gehört **nicht** zum 0.6.0-Mindestvertrag. In 0.6.0
+> arbeitet `schema reverse` ausschließlich gegen Live-DB-Verbindungen via
+> JDBC. Dieser Abschnitt beschreibt den geplanten Entwurf für einen späteren
+> additiven Funktionsschnitt.
 
-Der DDL-Parser erkennt und verarbeitet folgende SQL-Statements:
+### 12.1 Unterstützte Statements (geplant)
 
-| Statement | Ergebnis im neutralen Modell |
-|---|---|
-| `CREATE TABLE` | `tables.<name>` |
-| `ALTER TABLE ... ADD COLUMN` | Spalte in bestehender Tabelle |
-| `ALTER TABLE ... ADD CONSTRAINT` | Constraint in bestehender Tabelle |
-| `CREATE INDEX` | `tables.<name>.indices` |
-| `CREATE TYPE ... AS ENUM` | `custom_types.<name>` |
-| `CREATE TYPE ... AS (...)` | `custom_types.<name>` (composite) |
-| `CREATE FUNCTION` | `functions.<name>` |
-| `CREATE PROCEDURE` | `procedures.<name>` |
-| `CREATE VIEW` | `views.<name>` |
-| `CREATE MATERIALIZED VIEW` | `views.<name>` (materialized: true) |
-| `CREATE TRIGGER` | `triggers.<name>` |
-| `CREATE SEQUENCE` | `sequences.<name>` |
+Der DDL-Parser soll folgende SQL-Statements erkennen und verarbeiten:
 
-### 12.2 Dialekt-Erkennung
+| Statement                        | Ergebnis im neutralen Modell        |
+| -------------------------------- | ----------------------------------- |
+| `CREATE TABLE`                   | `tables.<name>`                     |
+| `ALTER TABLE ... ADD COLUMN`     | Spalte in bestehender Tabelle       |
+| `ALTER TABLE ... ADD CONSTRAINT` | Constraint in bestehender Tabelle   |
+| `CREATE INDEX`                   | `tables.<name>.indices`             |
+| `CREATE TYPE ... AS ENUM`        | `custom_types.<name>`               |
+| `CREATE TYPE ... AS (...)`       | `custom_types.<name>` (composite)   |
+| `CREATE FUNCTION`                | `functions.<name>`                  |
+| `CREATE PROCEDURE`               | `procedures.<name>`                 |
+| `CREATE VIEW`                    | `views.<name>`                      |
+| `CREATE MATERIALIZED VIEW`       | `views.<name>` (materialized: true) |
+| `CREATE TRIGGER`                 | `triggers.<name>`                   |
+| `CREATE SEQUENCE`                | `sequences.<name>`                  |
 
-Der Parser erkennt den Quell-Dialekt automatisch:
+### 12.2 Dialekt-Erkennung (geplant)
 
-| Indikator | Erkannter Dialekt |
-|---|---|
-| `SERIAL`, `BIGSERIAL`, `$$`, `LANGUAGE plpgsql` | PostgreSQL |
-| `AUTO_INCREMENT`, `ENGINE=`, `DELIMITER //` | MySQL |
-| `AUTOINCREMENT`, `WITHOUT ROWID` | SQLite |
-| `IDENTITY`, `NVARCHAR`, `GO` | MS SQL Server (geplant) |
-| `NUMBER`, `VARCHAR2`, `PL/SQL` | Oracle (geplant) |
+Der Parser soll den Quell-Dialekt automatisch erkennen:
 
-Explizite Angabe ist immer möglich: `d-migrate schema reverse --source schema.sql --source-dialect postgresql`
+| Indikator                                       | Erkannter Dialekt       |
+| ----------------------------------------------- | ----------------------- |
+| `SERIAL`, `BIGSERIAL`, `$$`, `LANGUAGE plpgsql` | PostgreSQL              |
+| `AUTO_INCREMENT`, `ENGINE=`, `DELIMITER //`     | MySQL                   |
+| `AUTOINCREMENT`, `WITHOUT ROWID`                | SQLite                  |
+| `IDENTITY`, `NVARCHAR`, `GO`                    | MS SQL Server (geplant) |
+| `NUMBER`, `VARCHAR2`, `PL/SQL`                  | Oracle (geplant)        |
 
 Akzeptierte CLI-Aliase wie `postgres` werden intern auf kanonische Modellwerte normalisiert (`postgresql`, `mysql`, `sqlite`, `mssql`, `oracle`).
 
-### 12.3 Verarbeitungspipeline
+### 12.3 Verarbeitungspipeline (geplant)
 
 ```
 SQL-Datei(en)
@@ -967,7 +1114,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 ### 13.1 Syntaktische Regeln
 
 - Jede Tabelle muss mindestens eine Spalte haben
-- Jede Tabelle muss einen `primary_key` haben (explizit oder über `identifier`-Typ)
+- Jede Tabelle sollte einen `primary_key` haben (explizit oder über `identifier`-Typ); ein fehlender Primary Key erzeugt eine Warnung (E008), blockiert aber die Validierung nicht
 - Spaltennamen müssen innerhalb einer Tabelle eindeutig sein
 - Index-Spalten müssen in der Tabelle existieren
 - Enum-Werte dürfen nicht leer sein
@@ -998,18 +1145,18 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 
 Diese Regeln pruefen das neutrale Schema selbst (`schema validate`):
 
-| Code | Regel | Ebene |
-|---|---|---|
+| Code | Regel                                                              | Ebene  |
+| ---- | ------------------------------------------------------------------ | ------ |
 | E120 | Unbekannter `geometry_type`-Wert (nicht in der Allowlist aus §3.2) | Modell |
-| E121 | `srid` muss groesser als 0 sein | Modell |
+| E121 | `srid` muss groesser als 0 sein                                    | Modell |
 
 Die folgenden Codes entstehen erst bei `schema generate` und sind
 Generator-/Report-Regeln, keine Modellvalidierung:
 
-| Code | Regel | Ebene |
-|---|---|---|
+| Code | Regel                                                                                                            | Ebene     |
+| ---- | ---------------------------------------------------------------------------------------------------------------- | --------- |
 | E052 | Spatial-Typ kann mit dem gewaehlten Profil nicht generiert werden (z.B. `geometry` bei `--spatial-profile none`) | Generator |
-| W120 | SRID-Metadaten konnten nicht vollstaendig in den Zieldialekt uebertragen werden | Generator |
+| W120 | SRID-Metadaten konnten nicht vollstaendig in den Zieldialekt uebertragen werden                                  | Generator |
 
 Wichtig: `E120`/`E121` werden von `schema validate` gemeldet.
 `E052`/`W120` werden nur von `schema generate` gemeldet und sind Teil des
@@ -1031,9 +1178,9 @@ bestehenden `action_required`- bzw. Warning-Report-Vertrags.
 
 1. Definition-Klasse erstellen (z.B. `MaterializedViewDefinition`)
 2. In `SchemaDefinition` als optionales Feld aufnehmen
-3. `SchemaReader` und `SchemaWriter` in der Driver-API erweitern
+3. `SchemaReader` (ab 0.6.0) und `DdlGenerator` in der Driver-API erweitern
 4. YAML-Serialisierung ergänzen
-5. DDL-Parser um neues Statement erweitern
+5. Ggf. DDL-Parser um neues Statement erweitern (späterer Milestone)
 
 ---
 
@@ -1049,6 +1196,6 @@ bestehenden `action_required`- bzw. Warning-Report-Vertrags.
 
 ---
 
-**Version**: 1.1
-**Stand**: 2026-04-05
-**Status**: Entwurf
+**Version**: 1.2
+**Stand**: 2026-04-13
+**Status**: Entwurf — DDL-Parser-Abschnitt (§12) als späterer Milestone markiert; Reverse-Eingabepfad auf Live-DB-first für 0.6.0 bereinigt

@@ -3,13 +3,14 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.TableLister
+import dev.dmigrate.driver.metadata.JdbcMetadataSession
 
 /**
- * SQLite [TableLister]. Liest die Tabellen aus `sqlite_master`, schließt
- * interne `sqlite_*`-Tabellen aus.
+ * SQLite [TableLister]. Delegates to [SqliteMetadataQueries] for the
+ * actual table listing, excluding internal `sqlite_*` tables.
  *
- * Borgt sich die Connection aus dem Pool und gibt sie sofort nach dem
- * Listing zurück (siehe Plan §6.18).
+ * Borrows a connection from the pool and returns it immediately after
+ * the listing (see Plan §6.18).
  */
 class SqliteTableLister : TableLister {
 
@@ -17,19 +18,8 @@ class SqliteTableLister : TableLister {
 
     override fun listTables(pool: ConnectionPool): List<String> {
         pool.borrow().use { conn ->
-            conn.prepareStatement(
-                "SELECT name FROM sqlite_master " +
-                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' " +
-                    "ORDER BY name"
-            ).use { stmt ->
-                stmt.executeQuery().use { rs ->
-                    val tables = mutableListOf<String>()
-                    while (rs.next()) {
-                        tables += rs.getString(1)
-                    }
-                    return tables
-                }
-            }
+            val session = JdbcMetadataSession(conn)
+            return SqliteMetadataQueries.listTableRefs(session).map { it.name }
         }
     }
 }

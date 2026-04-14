@@ -3,13 +3,14 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.TableLister
+import dev.dmigrate.driver.metadata.JdbcMetadataSession
 
 /**
- * MySQL [TableLister]. Liest Tabellen aus `information_schema.tables`,
- * gefiltert auf das current database (`DATABASE()`).
+ * MySQL [TableLister]. Delegates to [MysqlMetadataQueries] for the
+ * actual table listing, filtered on the current database.
  *
- * Borgt sich die Connection aus dem Pool und gibt sie sofort nach dem
- * Listing zurück (Plan §6.18).
+ * Borrows a connection from the pool and returns it immediately after
+ * the listing (Plan §6.18).
  */
 class MysqlTableLister : TableLister {
 
@@ -17,23 +18,9 @@ class MysqlTableLister : TableLister {
 
     override fun listTables(pool: ConnectionPool): List<String> {
         pool.borrow().use { conn ->
-            conn.prepareStatement(
-                """
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = DATABASE()
-                  AND table_type = 'BASE TABLE'
-                ORDER BY table_name
-                """.trimIndent()
-            ).use { stmt ->
-                stmt.executeQuery().use { rs ->
-                    val tables = mutableListOf<String>()
-                    while (rs.next()) {
-                        tables += rs.getString(1)
-                    }
-                    return tables
-                }
-            }
+            val database = currentDatabase(conn)
+            val session = JdbcMetadataSession(conn)
+            return MysqlMetadataQueries.listTableRefs(session, database).map { it.name }
         }
     }
 }

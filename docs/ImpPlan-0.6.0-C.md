@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: C (Schema-I/O, Reverse-Reports und gemeinsame JDBC-Metadatenbasis)
-> **Status**: Draft (2026-04-13)
+> **Status**: Done (2026-04-14)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 4.2,
 > Abschnitt 4.8 bis 4.10, Abschnitt 5 Phase C, Abschnitt 6.1 bis 6.4,
 > Abschnitt 6.8, Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -623,12 +623,9 @@ Phase C ist nur abgeschlossen, wenn alle folgenden Punkte erfuellt sind:
 
 Mindestens auszufuehren:
 
-- `./gradlew :adapters:driven:formats:test`
-- `./gradlew :adapters:driven:driver-common:test`
-- `./gradlew :adapters:driving:cli:test`
-- `./gradlew :adapters:driven:driver-sqlite:test`
-- `./gradlew :adapters:driven:driver-postgresql:test`
-- `./gradlew :adapters:driven:driver-mysql:test`
+- `docker build --target build --build-arg GRADLE_TASKS=":adapters:driven:formats:test :adapters:driven:driver-common:test :adapters:driving:cli:test :adapters:driven:driver-sqlite:test" -t d-migrate:phase-c-core .`
+- `./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test`
+- `./scripts/test-integration-docker.sh :adapters:driven:driver-mysql:test`
 
 Gezielt zu pruefen ist dabei:
 

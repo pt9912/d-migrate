@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.TableMetadata
 
 data class TableDiff(
     val name: String,
@@ -16,6 +17,7 @@ data class TableDiff(
     val constraintsAdded: List<ConstraintDefinition> = emptyList(),
     val constraintsRemoved: List<ConstraintDefinition> = emptyList(),
     val constraintsChanged: List<ValueChange<ConstraintDefinition>> = emptyList(),
+    val metadata: ValueChange<TableMetadata?>? = null,
 ) {
     fun hasChanges(): Boolean =
         columnsAdded.isNotEmpty() ||
@@ -27,5 +29,6 @@ data class TableDiff(
             indicesChanged.isNotEmpty() ||
             constraintsAdded.isNotEmpty() ||
             constraintsRemoved.isNotEmpty() ||
-            constraintsChanged.isNotEmpty()
+            constraintsChanged.isNotEmpty() ||
+            metadata != null
 }

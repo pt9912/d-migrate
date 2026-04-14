@@ -11,7 +11,7 @@ fun normalizedReleaseVersion(raw: String?): String? {
     return normalized.takeIf { semverLike.matches(it) }
 }
 
-val defaultProjectVersion = "0.5.5"
+val defaultProjectVersion = "0.6.0"
 val resolvedProjectVersion =
     normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))

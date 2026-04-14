@@ -23,4 +23,5 @@ interface DatabaseDriver {
     fun tableLister(): TableLister
     fun dataWriter(): DataWriter
     fun urlBuilder(): JdbcUrlBuilder
+    fun schemaReader(): SchemaReader
 }

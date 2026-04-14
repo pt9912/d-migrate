@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Implementierungsstatus**: Aktuell ist nur `schema validate` implementiert (Milestone 0.1.0). Alle weiteren Kommandos sind für spätere Milestones geplant und hier als Spezifikation dokumentiert.
+> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden), `schema reverse` (0.6.0) und `data transfer` (0.6.0).
 
 ---
 
@@ -374,39 +374,94 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 
 **action_required-Objekte** (z.B. Functions mit anderem source_dialect) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
 
-#### `schema reverse` *(geplant: 0.6.0)*
+#### `schema reverse` *(0.6.0, umgesetzt)*
 
-Reverse-Engineering einer bestehenden Datenbank.
+Reverse-Engineering einer bestehenden Datenbank ueber eine Live-Verbindung.
 
 ```
-d-migrate schema reverse --source <url|path> [--source-dialect <dialect>] --output <path>
+d-migrate schema reverse --source <url-or-alias> --output <path>
 ```
+
+**Aufloesung von `--source`**: `--source` akzeptiert eine DB-Connection-URL oder
+einen Named-Connection-Alias aus `.d-migrate.yaml`. Die Aufloesung folgt
+denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
+`default_source`-Fallback. Das globale `--config` wird beruecksichtigt.
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | URL oder Pfad | DB-Connection-URL oder SQL-DDL-Datei |
-| `--source-dialect` | Nein | Dialekt | Quell-Dialekt (Auto-Erkennung wenn nicht angegeben) |
-| `--output` | Ja | Pfad | Ausgabe-Schema-Datei |
-| `--format` | Nein | String | Ausgabeformat: `yaml` (Default), `json` |
-| `--include-procedures` | Nein | Boolean | Stored Procedures/Functions einschließen |
-| `--include-views` | Nein | Boolean | Views einschließen |
-| `--include-triggers` | Nein | Boolean | Triggers einschließen |
-| `--include-all` | Nein | Boolean | Alle Objekte einschließen |
+| `--source` | Ja | URL oder Alias | DB-Connection-URL oder benannte Verbindung |
+| `--output` | Ja | Pfad | Ausgabe-Schema-Datei (.yaml/.yml/.json) |
+| `--format` | Nein | String | Format des Schema-Artefakts: `yaml` (Default), `json` |
+| `--report` | Nein | Pfad | Pfad fuer Reverse-Report. Default: `<output>.report.yaml` |
+| `--include-views` | Nein | Boolean | Views einschliessen |
+| `--include-procedures` | Nein | Boolean | Stored Procedures einschliessen |
+| `--include-functions` | Nein | Boolean | User-Defined Functions einschliessen |
+| `--include-triggers` | Nein | Boolean | Triggers einschliessen |
+| `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
 
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
+**Reverse-Ausgabe und Reverse-Report**:
 
-#### `schema compare` *(0.5.0, umgesetzt; file-based MVP-Slice von LF-015)*
+`schema reverse` erzeugt zwei getrennte Artefakte:
 
-Vergleicht zwei Schema-Dateien im neutralen Format und zeigt Unterschiede.
+1. **Schema-Dokument** (`--output`): Reines neutrales Schema
+   (`SchemaDefinition`), ohne eingebettete Notes oder `skipped_objects`.
+   Die Dateiendung muss zum Format passen (.yaml/.yml/.json).
+2. **Reverse-Report** (`--report` oder Default-Sidecar): Strukturierte
+   Notes und uebersprungene Objekte. Im `plain`-Modus erscheinen
+   Warnungen und Skips zusaetzlich auf `stderr`.
+
+**Ausgabeverhalten**:
+
+- `--output-format plain` (Default): Erfolgsmeldungen auf `stdout`,
+  Notes/Skips auf `stderr`
+- `--output-format json|yaml`: Strukturiertes Success-Dokument auf
+  `stdout`, keine stderr-Notes
+- `--quiet`: Unterdrueckt alle Nicht-Fehler-Ausgaben
+
+**Credential-Schutz**: URL-basierte Quellen werden in Report, Fehler-
+und Success-Ausgaben ueber `LogScrubber.maskUrl()` maskiert. Exception-
+Messages werden vor der Ausgabe zentral gescrubbt.
+
+**Exit-Codes**:
+
+| Code | Trigger |
+|---|---|
+| `0` | Reverse erfolgreich (auch bei Warnungen und uebersprungenen Objekten) |
+| `2` | Ungueltige CLI-Argumente (Format/Endung-Mismatch, Output/Report-Kollision) |
+| `4` | Verbindungs- oder DB-Metadatenfehler |
+| `7` | Config-Aufloesung, URL-Parse oder Dateischreibfehler |
+
+#### `schema compare` *(0.5.0 file-based, 0.6.0 mit DB-Operanden, umgesetzt)*
+
+Vergleicht zwei Schemata im neutralen Format und zeigt Unterschiede. Der
+Vergleich bleibt modellbasiert: beide Operanden werden vor dem Diff zu einer
+`SchemaDefinition` aufgelöst — Compare diffed keine SQL-Texte und führt keinen
+impliziten Migrationspfad ein.
+
+**Ist-Stand (0.5.0)**: Nur `file/file`-Vergleich implementiert.
+
+**0.6.0-Erweiterung**: Zusätzlich `file/db` und `db/db` über die neuen
+Operandpräfixe `file:` und `db:`.
 
 ```
-d-migrate schema compare --source <path> --target <path>
+d-migrate schema compare --source <operand> --target <operand>
 ```
+
+**Operand-Notation** (kanonisch ab 0.6.0):
+
+| Präfix | Bedeutung | Beispiel |
+|---|---|---|
+| `file:<path>` | Schema-Datei im neutralen Format | `file:schema.yaml` |
+| `db:<url-or-alias>` | Live-DB-Verbindung oder Named Connection | `db:postgresql://localhost/mydb` oder `db:staging` |
+
+Ohne Präfix wird der Operand als Dateipfad behandelt (Rückwärtskompatibilität
+mit 0.5.0). Named Connections werden im Compare-Pfad als `db:<alias>` notiert,
+damit sie nicht mit Dateipfaden kollidieren.
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad | Erstes Schema (Datei im neutralen Format) |
-| `--target` | Ja | Pfad | Zweites Schema (Datei im neutralen Format) |
+| `--source` | Ja | Operand | Erstes Schema (`file:<path>` oder `db:<url-or-alias>`) |
+| `--target` | Ja | Operand | Zweites Schema (`file:<path>` oder `db:<url-or-alias>`) |
 | `--output` | Nein | Pfad | Diff-Ergebnis in Datei schreiben |
 
 **Ausgabeverhalten**:
@@ -420,11 +475,21 @@ d-migrate schema compare --source <path> --target <path>
 - `1`: Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`)
 - `2`: Ungültige CLI-Argumente
 - `3`: Schema-Validierung fehlgeschlagen
+- `4`: Verbindungsfehler (nur bei `db:`-Operanden)
 - `7`: Datei-/Parse-/I/O-Fehler
 
-Hinweis: Die vollständige LF-015-Abdeckung "Vergleich zwischen Umgebungen" ist
-nicht Teil des 0.5.0-MVP-Slices. DB-/Umgebungsvergleiche folgen erst nach
-Einführung des `SchemaReader` ab 0.6.0.
+**Beispiele**:
+
+```bash
+# file/file (0.5.0-Verhalten, weiterhin gültig)
+d-migrate schema compare --source schema-v1.yaml --target schema-v2.yaml
+
+# file/db (0.6.0)
+d-migrate schema compare --source file:schema.yaml --target db:staging
+
+# db/db (0.6.0)
+d-migrate schema compare --source db:staging --target db:postgresql://localhost/prod
+```
 
 #### `schema migrate` *(geplant: späterer Milestone)*
 
@@ -615,6 +680,78 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 - `4`: Verbindungsfehler
 - `5`: Import-Fehler während Verarbeitung oder Commit
 - `7`: Konfigurations-, Parse- oder Datei-Fehler
+
+#### `data transfer` *(0.6.0, umgesetzt)*
+
+Direkter DB-zu-DB-Datentransfer ohne Zwischenformat. `data transfer` ist ein
+eigenständiger Datenpfad, kein umbenannter Export-/Import-Umweg — Daten werden
+von der Quelldatenbank direkt in die Zieldatenbank gestreamt.
+
+```
+d-migrate data transfer --source <url-or-alias> --target <url-or-alias>
+```
+
+**Auflösung von `--source` / `--target`**: Beide akzeptieren DB-Connection-URLs
+oder Named-Connection-Aliase aus `.d-migrate.yaml`. Die Auflösung folgt
+denselben Regeln wie bei `data export` (§1.4) und ist in der
+[Connection- und Konfigurationsspezifikation](./connection-config-spec.md)
+kanonisch beschrieben.
+
+| Flag | Pflicht | Typ | Default | Beschreibung |
+|---|---|---|---|---|
+| `--source` | Ja | URL oder Alias | — | Quell-Datenbank |
+| `--target` | Ja | URL oder Alias | — | Ziel-Datenbank |
+| `--tables` | Nein | Liste | alle | Kommaseparierte Tabellenliste |
+| `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
+
+**Target-autoritatives Preflight**:
+
+Vor dem ersten Daten-Write führt `data transfer` ein Preflight gegen die
+Zieldatenbank durch:
+
+- **Tabellen-/Spaltenkompatibilität**: Existieren die Zieltabellen? Stimmen
+  Spaltenanzahl und -typen ausreichend überein?
+- **FK-basierte Tabellenreihenfolge**: Die Transferreihenfolge wird aus den
+  Foreign-Key-Beziehungen der Zieldatenbank abgeleitet (topologische
+  Sortierung).
+- **FK-Zyklen**: Werden zyklische FK-Beziehungen erkannt, scheitert das
+  Preflight, sofern kein expliziter sicherer Bypass konfiguriert ist.
+
+Preflight-Fehler erzeugen einen eigenen Exit-Code, damit sie vom eigentlichen
+Streaming-Fehlerpfad getrennt bleiben.
+
+**Nicht Teil von `data transfer`**:
+
+- Routinen, Views und Trigger werden nicht implizit mitkopiert.
+- Kein Zwischenformat — Daten fließen direkt von Source-`DataReader` zu
+  Target-`DataWriter`.
+
+**Exit-Codes**:
+
+| Code | Trigger |
+|---|---|
+| `0` | Transfer erfolgreich |
+| `2` | Ungültige CLI-Argumente |
+| `3` | Preflight fehlgeschlagen (Inkompatibilität, FK-Zyklen) |
+| `4` | Verbindungsfehler (Source oder Target) |
+| `5` | Streaming-/Schreibfehler während Transfer |
+| `7` | Konfigurationsfehler |
+
+**Beispiele**:
+
+```bash
+# Transfer zwischen Named Connections
+d-migrate data transfer --source staging --target local_pg
+
+# Transfer mit expliziten URLs
+d-migrate data transfer \
+    --source postgresql://app@staging.example.com/myapp \
+    --target postgresql://dev@localhost/myapp
+
+# Nur bestimmte Tabellen
+d-migrate data transfer --source staging --target local_pg \
+    --tables customers,orders,order_items
+```
 
 #### `data seed` *(geplant: 1.3.0)*
 
@@ -909,12 +1046,11 @@ Wenn stdout kein Terminal ist (Pipe/Redirect):
 ```bash
 # Schema von stdin lesen
 cat schema.yaml | d-migrate schema validate --source -
-
-# DDL von stdin parsen
-cat create_tables.sql | d-migrate schema reverse --source - --source-dialect postgres --output schema.yaml
 ```
 
-`-` als Pfad bedeutet stdin/stdout.
+`-` als Pfad bedeutet stdin/stdout. Aktuell unterstützt von
+`schema validate`. Für `schema reverse` gibt es in 0.6.0 keinen
+stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ---
 
@@ -927,6 +1063,6 @@ cat create_tables.sql | d-migrate schema reverse --source - --source-dialect pos
 
 ---
 
-**Version**: 1.3
-**Stand**: 2026-04-05
-**Status**: `schema validate` (0.1.0) und `schema generate` (0.2.0) implementiert, weitere Kommandos in Planung
+**Version**: 1.5
+**Stand**: 2026-04-14
+**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden), `schema reverse` (0.6.0) und `data transfer` (0.6.0) implementiert

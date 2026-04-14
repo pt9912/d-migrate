@@ -275,7 +275,7 @@ class YamlSchemaCodecTest : FunSpec({
         "E005" to "E005_index_missing_column.yaml",
         "E006" to "E006_enum_empty_values.yaml",
         "E007" to "E007_ref_type_missing.yaml",
-        "E008" to "E008_no_primary_key.yaml",
+        // E008 is now a warning (0.6.0), tested separately below
         "E009" to "E009_default_type_mismatch.yaml",
         "E010" to "E010_decimal_invalid_precision.yaml",
         "E011" to "E011_max_length_not_positive.yaml",
@@ -294,6 +294,13 @@ class YamlSchemaCodecTest : FunSpec({
             val result = validator.validate(schema)
             result.errors.any { it.code == errorCode } shouldBe true
         }
+    }
+
+    test("invalid fixture E008_no_primary_key.yaml triggers E008 as warning") {
+        val schema = loadFixture("invalid/E008_no_primary_key.yaml")
+        val result = validator.validate(schema)
+        result.isValid shouldBe true
+        result.warnings.any { it.code == "E008" } shouldBe true
     }
 
     // ─── Spatial Phase 1 (0.5.5) ────────────────────────────────
@@ -380,5 +387,108 @@ class YamlSchemaCodecTest : FunSpec({
         val loc = schema.tables["geo"]!!.columns["loc"]!!.type as NeutralType.Geometry
         loc.geometryType.schemaName shouldBe "point"
         loc.srid shouldBe 4326
+    }
+
+    // ─── Table Metadata (0.6.0 Phase B) ─────────────────────────
+
+    test("parse table metadata with engine and without_rowid") {
+        val schema = loadFixture("schemas/table-metadata.yaml")
+        schema.name shouldBe "Table Metadata Schema"
+        schema.tables shouldHaveSize 4
+
+        val innodb = schema.tables["innodb_table"]!!
+        innodb.metadata shouldNotBe null
+        innodb.metadata!!.engine shouldBe "InnoDB"
+        innodb.metadata!!.withoutRowid shouldBe false
+
+        val myisam = schema.tables["myisam_table"]!!
+        myisam.metadata!!.engine shouldBe "MyISAM"
+
+        val rowid = schema.tables["rowid_table"]!!
+        rowid.metadata!!.withoutRowid shouldBe true
+        rowid.metadata!!.engine shouldBe null
+
+        val plain = schema.tables["plain_table"]!!
+        plain.metadata shouldBe null
+    }
+
+    test("table metadata round-trips through comparator") {
+        val schema = loadFixture("schemas/table-metadata.yaml")
+        val comparator = dev.dmigrate.core.diff.SchemaComparator()
+
+        // Self-compare: identical
+        val selfDiff = comparator.compare(schema, schema)
+        selfDiff.isEmpty() shouldBe true
+
+        // Modify engine: should detect change
+        val modified = schema.copy(
+            tables = schema.tables.mapValues { (name, table) ->
+                if (name == "innodb_table") {
+                    table.copy(metadata = dev.dmigrate.core.model.TableMetadata(engine = "MyISAM"))
+                } else table
+            }
+        )
+        val diff = comparator.compare(schema, modified)
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].name shouldBe "innodb_table"
+        diff.tablesChanged[0].metadata shouldNotBe null
+    }
+
+    // ─── Canonical Object Keys (0.6.0 Phase B) ─────────────────
+
+    test("canonical routine keys are preserved as map keys through codec") {
+        val schema = loadFixture("schemas/canonical-keys.yaml")
+        schema.name shouldBe "Canonical Key Schema"
+
+        // Overloaded functions: both keys preserved
+        schema.functions shouldHaveSize 2
+        schema.functions.keys shouldBe setOf("calc(in:integer)", "calc(in:integer,in:integer)")
+
+        val calcOne = schema.functions["calc(in:integer)"]!!
+        calcOne.parameters shouldHaveSize 1
+        calcOne.body shouldBe "RETURN x * 2;"
+
+        val calcTwo = schema.functions["calc(in:integer,in:integer)"]!!
+        calcTwo.parameters shouldHaveSize 2
+        calcTwo.body shouldBe "RETURN x + y;"
+
+        // Procedure with canonical key
+        schema.procedures shouldHaveSize 1
+        schema.procedures.keys.first() shouldBe "reset_stats(in:integer)"
+    }
+
+    test("canonical trigger keys are preserved as map keys through codec") {
+        val schema = loadFixture("schemas/canonical-keys.yaml")
+
+        // Same-named triggers on different tables: both keys preserved
+        schema.triggers shouldHaveSize 2
+        schema.triggers.keys shouldBe setOf("users::audit_insert", "orders::audit_insert")
+
+        val usersTrigger = schema.triggers["users::audit_insert"]!!
+        usersTrigger.table shouldBe "users"
+
+        val ordersTrigger = schema.triggers["orders::audit_insert"]!!
+        ordersTrigger.table shouldBe "orders"
+    }
+
+    test("canonical keys survive comparator round-trip") {
+        val schema = loadFixture("schemas/canonical-keys.yaml")
+        val comparator = dev.dmigrate.core.diff.SchemaComparator()
+
+        // Self-compare: identical
+        val selfDiff = comparator.compare(schema, schema)
+        selfDiff.isEmpty() shouldBe true
+
+        // Modify one overload: only that one shows as changed
+        val modified = schema.copy(
+            functions = schema.functions.mapValues { (key, fn) ->
+                if (key == "calc(in:integer)") fn.copy(body = "RETURN x * 3;") else fn
+            }
+        )
+        val diff = comparator.compare(schema, modified)
+        diff.functionsChanged shouldHaveSize 1
+        diff.functionsChanged[0].name shouldBe "calc(in:integer)"
+        diff.functionsAdded shouldHaveSize 0
+        diff.functionsRemoved shouldHaveSize 0
     }
 })

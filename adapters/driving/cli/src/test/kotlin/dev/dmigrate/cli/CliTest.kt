@@ -74,4 +74,12 @@ class CliTest : FunSpec({
         }
         ex.statusCode shouldBe 3
     }
+
+    // ── JSON schema file support ────────────────
+
+    test("schema validate with valid JSON schema exits successfully") {
+        shouldNotThrowAny {
+            cli().parse(listOf("schema", "validate", "--source", resourcePath("valid-schema.json")))
+        }
+    }
 })

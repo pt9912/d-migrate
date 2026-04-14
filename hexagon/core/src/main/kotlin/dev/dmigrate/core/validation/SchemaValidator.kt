@@ -35,7 +35,7 @@ class SchemaValidator {
 
         for ((tableName, table) in schema.tables) {
             validateTableHasColumns(tableName, table, errors)
-            validatePrimaryKey(tableName, table, errors)
+            validatePrimaryKey(tableName, table, warnings)
             validateIndexColumns(tableName, table, errors)
             validatePartitionKey(tableName, table, errors)
             validateCheckExpressionColumns(tableName, table, errors)
@@ -67,14 +67,15 @@ class SchemaValidator {
         }
     }
 
-    // E008: Table must have a primary key
+    // E008: Table should have a primary key (downgraded to warning for 0.6.0
+    // reverse-engineering support — reverse-generated schemas may lack PKs)
     private fun validatePrimaryKey(
-        tableName: String, table: TableDefinition, errors: MutableList<ValidationError>
+        tableName: String, table: TableDefinition, warnings: MutableList<ValidationWarning>
     ) {
         val hasExplicitPk = table.primaryKey.isNotEmpty()
         val hasIdentifierColumn = table.columns.values.any { it.type is NeutralType.Identifier }
         if (!hasExplicitPk && !hasIdentifierColumn) {
-            errors += ValidationError("E008", "Table has no primary key", "tables.$tableName")
+            warnings += ValidationWarning("E008", "Table has no primary key", "tables.$tableName")
         }
     }
 

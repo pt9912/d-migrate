@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.6.0 - Reverse-Engineering und Direkttransfer
 > **Phase**: A (Spezifikationsbereinigung und Scope-Fixierung)
-> **Status**: Draft (2026-04-13)
+> **Status**: Done (2026-04-13)
 > **Referenz**: `docs/implementation-plan-0.6.0.md` Abschnitt 1, Abschnitt 2,
 > Abschnitt 3, Abschnitt 4, Abschnitt 5 Phase A, Abschnitt 6.1 bis 6.5,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -365,43 +365,43 @@ Code-Referenzen fuer den Ist-Abgleich:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `docs/cli-spec.md` beschreibt `schema reverse` fuer 0.6.0 als
+- [x] `docs/cli-spec.md` beschreibt `schema reverse` fuer 0.6.0 als
       Live-DB-Pfad mit DB-URL oder Named-Connection-Alias, nicht mehr als
       `url|path`- oder stdin-DDL-Kommando.
-- [ ] `docs/cli-spec.md` fuehrt fuer den 0.6.0-Mindestvertrag kein
+- [x] `docs/cli-spec.md` fuehrt fuer den 0.6.0-Mindestvertrag kein
       `--source-dialect` fuer `schema reverse` mehr als normalen Pfad.
-- [ ] Der Reverse-Vertrag in `docs/cli-spec.md` trennt explizit zwischen
+- [x] Der Reverse-Vertrag in `docs/cli-spec.md` trennt explizit zwischen
       reinem Schema in `--output` und strukturiertem Reverse-Report.
-- [ ] `docs/cli-spec.md` fixiert fuer `schema reverse` genau einen kanonischen
+- [x] `docs/cli-spec.md` fixiert fuer `schema reverse` genau einen kanonischen
       Format-Flag fuer das Schema-Artefakt; fuer 0.6.0 ist das `--format
       yaml|json`, nicht parallel noch ein zweiter konkurrierender Dateiformat-
       Pfad ueber das globale `--output-format`.
-- [ ] `docs/cli-spec.md` beschreibt `schema compare` mit den Operandenkombinationen
+- [x] `docs/cli-spec.md` beschreibt `schema compare` mit den Operandenkombinationen
       `file/file`, `file/db` und `db/db`, ohne das modellbasierte Diff-Prinzip
       aufzugeben.
-- [ ] `docs/cli-spec.md` definiert fuer `schema compare` eine explizite
+- [x] `docs/cli-spec.md` definiert fuer `schema compare` eine explizite
       Operand-Disambiguierung; fuer den kanonischen 0.6.0-Vertrag werden
       Compare-Operanden als `file:<path>` bzw. `db:<url-or-alias>` beschrieben.
-- [ ] `docs/cli-spec.md` enthaelt einen 0.6.0-konformen Abschnitt fuer
+- [x] `docs/cli-spec.md` enthaelt einen 0.6.0-konformen Abschnitt fuer
       `data transfer`.
-- [ ] Der `data transfer`-Abschnitt in `docs/cli-spec.md` fixiert bereits in
+- [x] Der `data transfer`-Abschnitt in `docs/cli-spec.md` fixiert bereits in
       Phase A target-autoritatives Preflight, FK-basierte Reihenfolge,
       Zyklusfehler im Preflight und einen vom Streaming getrennten
       Fehlerpfad.
-- [ ] Die Kopf- und Statusangaben in `docs/cli-spec.md` widersprechen dem
+- [x] Die Kopf- und Statusangaben in `docs/cli-spec.md` widersprechen dem
       aktuellen implementierten Kommando-Iststand nicht mehr grob.
-- [ ] `docs/neutral-model-spec.md` beschreibt fuer 0.6.0 keinen parserbasierten
+- [x] `docs/neutral-model-spec.md` beschreibt fuer 0.6.0 keinen parserbasierten
       SQL-Datei-/stdin-Reverse-Pfad mehr als aktiven Milestone-Scope.
-- [ ] `docs/architecture.md` behauptet nicht mehr, dass `DatabaseDriver` den
+- [x] `docs/architecture.md` behauptet nicht mehr, dass `DatabaseDriver` den
       0.6.0-Read-Port bereits produktiv exponiert; die Port-Einfuehrung ist als
       additive Arbeit dokumentiert.
-- [ ] `docs/architecture.md` dokumentiert den Reverse-Vertrag nicht mehr als
+- [x] `docs/architecture.md` dokumentiert den Reverse-Vertrag nicht mehr als
       nacktes `SchemaDefinition`-Ergebnis ohne Notes-/Skip-Pfad.
-- [ ] `docs/design.md` stuetzt den Live-DB-first-Scope und fuehrt keinen
+- [x] `docs/design.md` stuetzt den Live-DB-first-Scope und fuehrt keinen
       gleichwertigen DDL-Parser-Pfad mehr als 0.6.0-Istzustand.
-- [ ] `docs/connection-config-spec.md` bleibt die kanonische Quelle fuer
+- [x] `docs/connection-config-spec.md` bleibt die kanonische Quelle fuer
       URL-Syntax, Dialekt-Aliase und Named-Connection-Aufloesung.
-- [ ] `docs/cli-spec.md`, `docs/neutral-model-spec.md`, `docs/architecture.md`
+- [x] `docs/cli-spec.md`, `docs/neutral-model-spec.md`, `docs/architecture.md`
       und `docs/design.md` beschreiben denselben 0.6.0-Scope ohne
       Widersprueche bei Reverse, Compare und Transfer.
 
