@@ -410,36 +410,32 @@ Das Ergebnis ist ein Vergleichsbericht mit Diff, Syntax-Validierung und optional
 ```bash
 d-migrate <command> <subcommand> [options]
 
-# Aktuell implementierte Commands
+# Schema-Verwaltung
 d-migrate schema validate     --source schema.yaml
 d-migrate schema generate     --source schema.yaml --target postgresql
-d-migrate schema compare      --source schema-a.yaml --target schema-b.yaml
+d-migrate schema compare      --source file:schema.yaml --target db:staging
+d-migrate schema reverse      --source postgres://... --output schema.yaml
+
+# Daten-Management
 d-migrate data export         --source staging --format json
 d-migrate data import         --source data.json --target local_pg
+d-migrate data transfer       --source staging --target local_pg
 
 # Globale Flags greifen vor dem Command
 d-migrate --output-format json schema compare --source a.yaml --target b.yaml
 d-migrate --no-progress data import --source ./dump/ --target sqlite:///tmp/app.db
 ```
 
-Aktuell existieren produktiv die Command-Gruppen `schema` und `data`.
-Seit 0.6.0 unterstuetzt `schema compare` neben file-based auch
-`file/db` und `db/db` ueber `file:`/`db:`-Operanden, und
-`schema reverse` liest Live-Datenbanken in das neutrale Format.
-
-**Umgesetzt (0.6.0)**:
-
-```bash
-# Schema-Verwaltung (0.6.0)
-d-migrate schema reverse      --source postgres://... --output schema.yaml
-d-migrate schema compare      --source file:schema.yaml --target db:staging
-```
+Produktiv existieren die Command-Gruppen `schema` und `data`.
+`schema compare` unterstuetzt file-based sowie `file/db` und `db/db`
+ueber `file:`/`db:`-Operanden. `schema reverse` liest Live-Datenbanken
+in das neutrale Format. `data transfer` streamt Daten direkt zwischen
+Datenbanken.
 
 **Soll-Zustand (spaetere Milestones)**:
 
 ```bash
 # Daten-Management
-d-migrate data transfer       --source staging --target local_pg               # 0.6.0
 d-migrate data profile        --source production --output profile.json        # 0.7.5
 d-migrate data seed           --schema schema.yaml --target postgres://...
 
