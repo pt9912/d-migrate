@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: C (ResourceBundles und lokalisierte CLI-Ausgaben)
-> **Status**: Draft (2026-04-15)
+> **Status**: Review (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.1 bis 4.6, Abschnitt 5.1 bis 5.4,
 > Abschnitt 6 Phase C, Abschnitt 8, Abschnitt 9; `docs/ImpPlan-0.8.0-A.md`;

@@ -4,7 +4,10 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 
-class OutputFormatter(private val context: CliContext) {
+class OutputFormatter(
+    private val context: CliContext,
+    private val messages: MessageResolver = MessageResolver(context.locale),
+) {
 
     fun printValidationResult(result: ValidationResult, schema: SchemaDefinition, source: String) {
         when (context.outputFormat) {
@@ -16,51 +19,56 @@ class OutputFormatter(private val context: CliContext) {
 
     fun printError(message: String, source: String) {
         when (context.outputFormat) {
+            // Structured outputs stay English — no locale-dependent payloads
             "json" -> System.err.println("""{"error": "${escapeJson(message)}", "file": "${escapeJson(source)}"}""")
             "yaml" -> System.err.println("error: \"${escapeYaml(message)}\"\nfile: \"${escapeYaml(source)}\"")
-            else -> System.err.println("[ERROR] $message\n  → File: $source")
+            else -> System.err.println(
+                messages.text("cli.error.plain_format", message) + "\n" +
+                    messages.text("cli.error.plain_file", source)
+            )
         }
     }
 
     private fun printPlain(result: ValidationResult, schema: SchemaDefinition, source: String) {
         if (!context.quiet) {
-            println("Validating schema '${schema.name}' v${schema.version}...")
+            println(messages.text("cli.validation.header", schema.name, schema.version))
             println()
-            println("  Tables:      ${schema.tables.size} found")
+            println("  ${messages.text("cli.validation.tables", schema.tables.size)}")
             val columnCount = schema.tables.values.sumOf { it.columns.size }
-            println("  Columns:     $columnCount found")
+            println("  ${messages.text("cli.validation.columns", columnCount)}")
             val indexCount = schema.tables.values.sumOf { it.indices.size }
-            println("  Indices:     $indexCount found")
+            println("  ${messages.text("cli.validation.indices", indexCount)}")
             val constraintCount = schema.tables.values.sumOf { it.constraints.size }
-            println("  Constraints: $constraintCount found")
+            println("  ${messages.text("cli.validation.constraints", constraintCount)}")
             println()
-            println("Results:")
+            println(messages.text("cli.validation.results_header"))
         }
 
         if (result.isValid && result.warnings.isEmpty()) {
-            if (!context.quiet) println("  ${green("✓")} Validation passed")
+            if (!context.quiet) println("  ${green("✓")} ${messages.text("cli.validation.passed_marker")}")
         }
 
         for (warning in result.warnings) {
-            System.err.println("  ${yellow("⚠")} Warning [${warning.code}]: ${warning.message}")
-            if (!context.quiet) System.err.println("    → ${warning.objectPath}")
+            System.err.println("  ${yellow("⚠")} ${messages.text("cli.validation.warning_line", warning.code, warning.message)}")
+            if (!context.quiet) System.err.println("    ${messages.text("cli.validation.path_arrow", warning.objectPath)}")
         }
 
         for (error in result.errors) {
-            System.err.println("  ${red("✗")} Error [${error.code}]: ${error.message}")
-            if (!context.quiet) System.err.println("    → ${error.objectPath}")
+            System.err.println("  ${red("✗")} ${messages.text("cli.validation.error_line", error.code, error.message)}")
+            if (!context.quiet) System.err.println("    ${messages.text("cli.validation.path_arrow", error.objectPath)}")
         }
 
         if (!context.quiet) {
             println()
             if (result.isValid) {
-                println("Validation passed: ${result.warnings.size} warning(s)")
+                println(messages.text("cli.validation.passed_summary", result.warnings.size))
             } else {
-                println("Validation failed: ${result.errors.size} error(s), ${result.warnings.size} warning(s)")
+                println(messages.text("cli.validation.failed_summary", result.errors.size, result.warnings.size))
             }
         }
     }
 
+    // JSON and YAML outputs remain English — structural contract
     private fun printJson(result: ValidationResult, schema: SchemaDefinition) {
         val results = mutableListOf<String>()
         for (w in result.warnings) {
