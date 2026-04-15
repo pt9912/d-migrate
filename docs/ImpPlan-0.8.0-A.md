@@ -59,19 +59,23 @@ Aktueller Stand in Dokumentation und Code:
   - BOM-Erkennung und -Behandlung bei CSV
 - dieselbe Roadmap trennt in 0.9.0 explizit den finalen CLI-Vertrag fuer
   `--lang` als Nutzeroberflaeche ab.
-- `docs/cli-spec.md` listet `--lang` heute bereits als globales Flag, ohne die
-  Roadmap-Trennung zwischen technischer Vorbereitung und stabilem
-  Nutzervertrag sichtbar zu machen.
-- `docs/design.md` nennt in Abschnitt 9.1 Deutsch als Default-Bundle, waehrend
-  `docs/architecture.md` und `docs/connection-config-spec.md` `en` als
-  Default-Locale vorsehen.
+- `docs/cli-spec.md` listet `--lang` weiterhin als globales Flag, macht die
+  0.8.0/0.9.0-Trennung inzwischen aber explizit sichtbar:
+  - technische I18n-Basis in 0.8.0
+  - finaler Nutzervertrag fuer `--lang` in 0.9.0
+- `docs/design.md`, `docs/architecture.md` und
+  `docs/connection-config-spec.md` sind inzwischen auf englisches
+  Root-/Fallback-Bundle und `en` als Default-Locale abgeglichen.
 - `docs/connection-config-spec.md` enthaelt bereits den kanonischen I18n-Block
   mit:
   - `i18n.default_locale`
   - `i18n.default_timezone`
   - `i18n.normalize_unicode`
-- die produktive CLI-Konfiguration liest heute aber im Wesentlichen nur den
-  `database`-Block ueber `NamedConnectionResolver`.
+- die produktive CLI-Konfiguration liest heute fuer reale Aufloesungspfade
+  weiterhin im Wesentlichen nur den `database`-Block ueber
+  `NamedConnectionResolver`; der dokumentierte Config-Pfadvertrag fuer
+  spaetere `i18n.*`-Resolution ist jedoch bereinigt und an diese Logik
+  angekoppelt.
 - `Main.kt` besitzt bereits:
   - `--lang`
   - `--config`
@@ -87,17 +91,15 @@ Aktueller Stand in Dokumentation und Code:
 
 Konsequenz:
 
-- die 0.8.0-Dokumentation ist nicht nur unvollstaendig, sondern an mehreren
-  Stellen gegeneinander versetzt:
-  - Roadmap trennt 0.8.0 und 0.9.0
-  - CLI-Spec zeigt `--lang` schon als normales globales Flag
-  - Design/Architecture/Config-Spec widersprechen sich beim Default-Bundle
-  - der CSV-/BOM-Punkt ist als Roadmap-Liefergegenstand genannt, ohne dass
-    klar ist, ob 0.8.0 hier neue Implementierung oder Vertragskonsolidierung
-    liefern soll
-- ohne Phase A wuerden die spaeteren Code-Phasen gegen einen Mix aus
-  vorhandener Vorarbeit, Zielbild und missverstaendlichem Nutzervertrag
-  arbeiten.
+- die zuvor gegeneinander versetzten Doku-Aussagen sind fuer Phase A
+  zusammengezogen worden:
+  - Roadmap und CLI-Spec trennen 0.8.0 und 0.9.0 bei `--lang`
+  - Design, Architecture und Config-Spec widersprechen sich nicht mehr beim
+    Default-Bundle
+  - der CSV-/BOM-Punkt ist als Konsolidierung auf vorhandenem 0.4.0-Unterbau
+    eingeordnet
+- damit liegt fuer die spaeteren Code-Phasen keine konfliktbehaftete
+  Ausgangsbasis mehr vor, sondern ein konsolidierter Dokumentationsvertrag.
 
 ---
 
@@ -351,26 +353,26 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `docs/cli-spec.md` unterscheidet sauber zwischen technischer
+- [x] `docs/cli-spec.md` unterscheidet sauber zwischen technischer
       0.8.0-I18n-Basis und finalem 0.9.0-`--lang`-Vertrag.
-- [ ] `docs/cli-spec.md` beschreibt `--lang` nicht mehr als stillen No-op,
+- [x] `docs/cli-spec.md` beschreibt `--lang` nicht mehr als stillen No-op,
       aber auch nicht als vollstaendig abgeschlossenen 0.8.0-Endvertrag.
-- [ ] `docs/cli-spec.md` fixiert, dass JSON-/YAML-Feldnamen und andere
+- [x] `docs/cli-spec.md` fixiert, dass JSON-/YAML-Feldnamen und andere
       strukturierte Vertragsflaechen nicht lokalisiert werden.
-- [ ] Fuer strukturierte Fehlerausgaben ist dokumentiert, dass freie
+- [x] Fuer strukturierte Fehlerausgaben ist dokumentiert, dass freie
       Meldungstexte bis zu einem expliziten Gegenvertrag englisch und stabil
       bleiben.
-- [ ] `docs/design.md`, `docs/architecture.md` und
+- [x] `docs/design.md`, `docs/architecture.md` und
       `docs/connection-config-spec.md` widersprechen sich nicht mehr beim
       Root-/Fallback-Bundle und bei der Default-Locale.
-- [ ] Die Doku beschreibt fuer spaetere I18n-Settings denselben effektiven
+- [x] Die Doku beschreibt fuer spaetere I18n-Settings denselben effektiven
       Config-Pfadvertrag wie die bestehende CLI-Konfiguration:
       `--config` > `D_MIGRATE_CONFIG` > Defaultdatei.
-- [ ] Die Doku macht explizit, dass Unicode-Normalisierung in 0.8.0 nicht als
+- [x] Die Doku macht explizit, dass Unicode-Normalisierung in 0.8.0 nicht als
       stille Nutzdatenmutation zu verstehen ist.
-- [ ] Die Doku macht explizit, dass der CSV-/BOM-Punkt in 0.8.0 auf dem
+- [x] Die Doku macht explizit, dass der CSV-/BOM-Punkt in 0.8.0 auf dem
       vorhandenen 0.4.0-Unterbau aufsetzt und diesen konsolidiert.
-- [ ] `docs/implementation-plan-0.8.0.md` und dieser Teilplan beschreiben
+- [x] `docs/implementation-plan-0.8.0.md` und dieser Teilplan beschreiben
       denselben Scope ohne neue Widersprueche.
 
 ---
@@ -423,15 +425,15 @@ Das fuehrt zu aufgeblasenem Scope und zu unklarer Abgrenzung gegenueber 0.4.0.
 
 ## 10. Abschluss-Checkliste
 
-- [ ] Die 0.8.0-Doku beschreibt denselben Scope in Roadmap, Masterplan und
+- [x] Die 0.8.0-Doku beschreibt denselben Scope in Roadmap, Masterplan und
       Teilplan.
-- [ ] Der Unterschied zwischen 0.8.0-I18n-Basis und 0.9.0-`--lang`-Vertrag
+- [x] Der Unterschied zwischen 0.8.0-I18n-Basis und 0.9.0-`--lang`-Vertrag
       ist explizit sichtbar.
-- [ ] Strukturierte Ausgaben sind als sprachstabile Vertragsflaechen
+- [x] Strukturierte Ausgaben sind als sprachstabile Vertragsflaechen
       dokumentiert.
-- [ ] Der effektive Config-Pfad fuer spaetere I18n-Settings ist explizit an
+- [x] Der effektive Config-Pfad fuer spaetere I18n-Settings ist explizit an
       die bestehende CLI-Konfiguration angekoppelt.
-- [ ] Unicode-Normalisierung ist als Utility, nicht als Datenmutation,
+- [x] Unicode-Normalisierung ist als Utility, nicht als Datenmutation,
       dokumentiert.
-- [ ] CSV-/BOM-Themen sind als 0.8.0-Konsolidierung auf vorhandener
+- [x] CSV-/BOM-Themen sind als 0.8.0-Konsolidierung auf vorhandener
       Funktionalitaet eingeordnet.
