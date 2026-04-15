@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: C (Port-Vertraege und dialektspezifische Adapter)
-> **Status**: Draft (2026-04-15)
+> **Status**: Review (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.3 bis 4.6, Abschnitt 5, Abschnitt 6 Phase C,
 > Abschnitt 8, Abschnitt 11, Abschnitt 12; `docs/ImpPlan-0.7.5-A.md`;

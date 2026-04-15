@@ -1,6 +1,6 @@
 plugins {
     kotlin("jvm") version "2.1.20" apply false
-    id("org.jetbrains.kotlinx.kover") version "0.9.1"
+    id("org.jetbrains.kotlinx.kover") version "0.9.8"
 }
 
 fun normalizedReleaseVersion(raw: String?): String? {

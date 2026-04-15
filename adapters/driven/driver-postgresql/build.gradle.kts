@@ -9,6 +9,14 @@ dependencies {
 
 kover {
     reports {
+        filters {
+            excludes {
+                classes(
+                    // Profiling adapters require Testcontainers (PostgreSQL)
+                    "dev.dmigrate.driver.postgresql.profiling.*",
+                )
+            }
+        }
         verify {
             rule {
                 // Non-integration: covers TypeMapper, TypeMapping, DdlGenerator,
