@@ -192,7 +192,7 @@ zu den bestehenden Export-/Import-Flags. Grundlage für die Teil-Replikation
 (LF-025) in 1.4.0; dort kommen Datenmaskierung und selektive Datensatzfilter
 hinzu.
 
-### Milestone 0.7.0 — Tool-Integrationen (in Arbeit)
+### Milestone 0.7.0 — Tool-Integrationen ✅ (2026-04-15)
 
 | Bereich     | Aufgabe                                                   | LF-Ref | Status |
 | ----------- | --------------------------------------------------------- | ------ | ------ |
@@ -202,8 +202,8 @@ hinzu.
 | CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export            | LF-011 | ✅ |
 | Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte    | LF-011 | ✅ |
 | Docs        | Phase F: Release-Dokumentation und Smoke-Tests            | LF-011 | ✅ |
-| Core        | Migrations-Rollback-Generierung                           | LF-014 | |
-| Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    | |
+| Core        | Migrations-Rollback-Generierung                           | LF-014 | ✅ |
+| Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    | ✅ |
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
@@ -435,4 +435,4 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 **Version**: 3.10
 **Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5 und 0.6.0 abgeschlossen und released; 0.7.0 Phase A–F implementiert
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0 und 0.7.0 abgeschlossen
