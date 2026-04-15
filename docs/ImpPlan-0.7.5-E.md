@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: E (CLI und Report-Writing)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 4.5, Abschnitt 5.3 bis 5.4, Abschnitt 6 Phase E, Abschnitt 7.1,
 > Abschnitt 7.3, Abschnitt 8.4 bis 8.5, Abschnitt 9; `docs/ImpPlan-0.7.5-A.md`;
@@ -401,22 +401,22 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `data profile --help` ist ueber die Root-CLI erreichbar.
-- [ ] Der neue Command bleibt eine duenne Clikt-Schale ueber
+- [x] `data profile --help` ist ueber die Root-CLI erreichbar.
+- [x] Der neue Command bleibt eine duenne Clikt-Schale ueber
       `DataProfileRunner`.
-- [ ] Fehlende oder ungueltige Flags liefern Exit `2`.
-- [ ] JSON ist das Default-Format bei fehlendem `--format`.
-- [ ] stdout ist der Default-Ausgabepfad bei fehlendem `--output`.
-- [ ] JSON- und YAML-Ausgabe transportieren fuer dieselben Daten denselben
+- [x] Fehlende oder ungueltige Flags liefern Exit `2`.
+- [x] JSON ist das Default-Format bei fehlendem `--format`.
+- [x] stdout ist der Default-Ausgabepfad bei fehlendem `--output`.
+- [x] JSON- und YAML-Ausgabe transportieren fuer dieselben Daten denselben
       Informationsgehalt.
-- [ ] Das kommandoeigene `--format` steuert das Profil-Report-Payloadformat
+- [x] Das kommandoeigene `--format` steuert das Profil-Report-Payloadformat
       unabhaengig vom Root-`--output-format`.
-- [ ] `DataProfileCommand` uebernimmt den bestehenden Root-`CliContext`
+- [x] `DataProfileCommand` uebernimmt den bestehenden Root-`CliContext`
       konsistent, insbesondere `quiet`.
-- [ ] `--source` funktioniert sowohl fuer direkte URLs als auch fuer Named
+- [x] `--source` funktioniert sowohl fuer direkte URLs als auch fuer Named
       Connections aus `.d-migrate.yaml`.
-- [ ] Der Default-Report enthaelt kein laufzeitvariables `generatedAt`.
-- [ ] `--query` und `--analyze-normalization` sind nicht Teil des 0.7.5-
+- [x] Der Default-Report enthaelt kein laufzeitvariables `generatedAt`.
+- [x] `--query` und `--analyze-normalization` sind nicht Teil des 0.7.5-
       Commands.
 
 ---
@@ -455,17 +455,17 @@ fragil.
 
 ## 9. Abschluss-Checkliste
 
-- [ ] `DataCommand` kennt `DataProfileCommand()` als neues Subcommand.
-- [ ] `DataProfileCommand` sammelt nur CLI-Flags, baut den Request und
+- [x] `DataCommand` kennt `DataProfileCommand()` als neues Subcommand.
+- [x] `DataProfileCommand` sammelt nur CLI-Flags, baut den Request und
       delegiert an `DataProfileRunner`.
-- [ ] Der 0.7.5-Flagsatz ist exakt umgesetzt.
-- [ ] JSON ist Default, stdout ist Default-Ausgabe.
-- [ ] Datei-Ausgabe laeuft ueber `ProfileReportWriter`.
-- [ ] JSON und YAML sind inhaltlich gleichwertig.
-- [ ] Root-`--output-format` und kommandoeigenes `--format` sind eindeutig
+- [x] Der 0.7.5-Flagsatz ist exakt umgesetzt.
+- [x] JSON ist Default, stdout ist Default-Ausgabe.
+- [x] Datei-Ausgabe laeuft ueber `ProfileReportWriter`.
+- [x] JSON und YAML sind inhaltlich gleichwertig.
+- [x] Root-`--output-format` und kommandoeigenes `--format` sind eindeutig
       getrennt.
-- [ ] Root-`CliContext` wird konsistent uebernommen.
-- [ ] Named Connections ueber `.d-migrate.yaml` sind abgesichert.
-- [ ] Der Default-Report bleibt ohne `generatedAt` diff-freundlich.
-- [ ] Phase E bleibt frei von `--query`, Normalisierungsanalyse und sonstigem
+- [x] Root-`CliContext` wird konsistent uebernommen.
+- [x] Named Connections ueber `.d-migrate.yaml` sind abgesichert.
+- [x] Der Default-Report bleibt ohne `generatedAt` diff-freundlich.
+- [x] Phase E bleibt frei von `--query`, Normalisierungsanalyse und sonstigem
       spaeteren Scope.
