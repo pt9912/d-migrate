@@ -443,11 +443,11 @@ d-migrate data seed           --schema schema.yaml --target postgres://...
 d-migrate transform procedure --source schema.yaml --procedure name --ai-backend ollama
 d-migrate generate procedure  --source spec.md --target mysql
 
-# Integrations-Export
-d-migrate export flyway       --source schema.yaml --output migrations/
-d-migrate export liquibase    --source schema.yaml --output changelog/
-d-migrate export django       --source schema.yaml --output migrations/
-d-migrate export knex         --source schema.yaml --output migrations/
+# Integrations-Export (0.7.0)
+d-migrate export flyway       --source schema.yaml --target postgresql --output migrations/
+d-migrate export liquibase    --source schema.yaml --target postgresql --output changelog/ --generate-rollback
+d-migrate export django       --source schema.yaml --target sqlite --version 0001 --output migrations/
+d-migrate export knex         --source schema.yaml --target sqlite --version 20260414120000 --output migrations/
 
 # Migrations-Rollback (LF-014)
 d-migrate schema migrate      --source schema.yaml --target postgres://... --generate-rollback

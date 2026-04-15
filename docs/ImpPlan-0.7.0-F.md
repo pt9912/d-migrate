@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: F (Doku, Smokes und Release-Pfade nachziehen)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.2 bis 4.9, Abschnitt 5 Phase F, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -316,30 +316,30 @@ Indirekt als Ist-Referenz relevant:
 
 ## 8. Akzeptanzkriterien
 
-- [ ] `docs/cli-spec.md`, `docs/design.md`, `docs/architecture.md` und
+- [x] `docs/cli-spec.md`, `docs/design.md`, `docs/architecture.md` und
       `docs/releasing.md` beschreiben fuer ihre jeweiligen Schwerpunkte
       widerspruchsfrei denselben 0.7.0-Vertrag:
       Flag-Vertrag, Versionsstrategie, Rollback-Einordnung,
       Output-/Mutationsregeln, Runtime-Einordnung und Release-Smoke.
-- [ ] Die Doku beschreibt `export flyway|liquibase|django|knex` explizit als
+- [x] Die Doku beschreibt `export flyway|liquibase|django|knex` explizit als
       baseline-/full-state-Export aus einem einzelnen neutralen Schema und
       nicht als Ersatz fuer spaetere diff-basierte Migrationen.
-- [ ] `docs/cli-spec.md` beschreibt den finalen Flag-Vertrag fuer
+- [x] `docs/cli-spec.md` beschreibt den finalen Flag-Vertrag fuer
       `--source`, `--output`, `--target`, `--version`,
       `--spatial-profile`, `--generate-rollback` und `--report`
       konsistent zum implementierten CLI-Pfad.
-- [ ] `docs/design.md` beschreibt die tool-spezifischen Rollback-Formate
+- [x] `docs/design.md` beschreibt die tool-spezifischen Rollback-Formate
       konsistent zum 0.7.0-Vertrag.
-- [ ] `docs/architecture.md` beschreibt den finalen Exportpfad ueber
+- [x] `docs/architecture.md` beschreibt den finalen Exportpfad ueber
       Bundle-/Portvertrag, `ToolExportRunner`, Integrationsadapter und
       `export`-CLI-Gruppe.
-- [ ] `docs/releasing.md` enthaelt mindestens einen reproduzierbaren
+- [x] `docs/releasing.md` enthaelt mindestens einen reproduzierbaren
       Tool-Export-Smoke.
-- [ ] Der dokumentierte Smoke nutzt den echten 0.7.0-Exportpfad und nennt die
+- [x] Der dokumentierte Smoke nutzt den echten 0.7.0-Exportpfad und nennt die
       erwarteten Artefakte oder Artefaktpfade explizit.
-- [ ] Die Release-Doku ordnet die fokussierte Runtime-Matrix aus Phase E
+- [x] Die Release-Doku ordnet die fokussierte Runtime-Matrix aus Phase E
       korrekt ein und suggeriert keine breitere Tool-/Dialektabdeckung.
-- [ ] Flyway-Undo bleibt in den Abschlussdokumenten explizit als
+- [x] Flyway-Undo bleibt in den Abschlussdokumenten explizit als
       editions-/praxisabhaengig eingeordnet.
 
 ---

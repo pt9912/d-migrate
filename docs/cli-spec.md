@@ -816,7 +816,7 @@ Exit: `0` bei Erfolg.
 
 ### 6.5 export (Integrationen)
 
-#### `export flyway` / `export liquibase` / `export django` / `export knex` *(geplant: 0.7.0)*
+#### `export flyway` / `export liquibase` / `export django` / `export knex`
 
 Exportiert baseline-/full-state-Migrationsdateien für externe Tools aus
 einem einzelnen neutralen Schema. Dies ist kein diff-basierter

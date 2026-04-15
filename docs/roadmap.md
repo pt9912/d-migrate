@@ -201,7 +201,7 @@ hinzu.
 | Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex)   | LF-011 | ✅ |
 | CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export            | LF-011 | ✅ |
 | Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte    | LF-011 | ✅ |
-| Docs        | Phase F: Release-Dokumentation und Smoke-Tests            | LF-011 | |
+| Docs        | Phase F: Release-Dokumentation und Smoke-Tests            | LF-011 | ✅ |
 | Core        | Migrations-Rollback-Generierung                           | LF-014 | |
 | Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    | |
 
@@ -433,6 +433,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 3.9
+**Version**: 3.10
 **Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5 und 0.6.0 abgeschlossen und released; 0.7.0 Phase A–E implementiert
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5 und 0.6.0 abgeschlossen und released; 0.7.0 Phase A–F implementiert

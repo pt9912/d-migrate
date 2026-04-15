@@ -563,6 +563,65 @@ in das neutrale Modell zurueckfuehren koennen, und `schema compare` muss
 Geometry-Spalten korrekt vergleichen. Ohne die in 0.5.5 geschaffene Modell- und
 Validierungsbasis waere das nicht typsicher moeglich.
 
+### 3.6 Tool-Export-Pfad (0.7.0)
+
+0.7.0 fuehrt einen dedizierten Exportpfad fuer externe Migrationstools ein.
+Der Pfad folgt der hexagonalen Architektur und fuehrt weder neue Pflicht-
+Laufzeitabhaengigkeiten ein noch mutiert er bestehende Tool-Projektdateien.
+
+#### Port-Vertrag (`hexagon:ports`)
+
+Die tool-neutrale Exportfamilie liegt im Package `dev.dmigrate.migration`:
+
+- `MigrationBundle` — kapselt Identity, Schema, DDL-Payloads und Rollback-State
+- `MigrationIdentity` — Tool, Dialekt, Version, Versionsquelle, Slug
+- `MigrationDdlPayload` — generatornahes `DdlResult` plus timestamp-bereinigte
+  deterministische SQL-Darstellung
+- `MigrationRollback` — sealed: `NotRequested` oder `Requested(down)`
+- `ArtifactRelativePath` — validierter relativer Pfad (kein Escape, kein absolut)
+- `ToolMigrationExporter` — Port fuer Tool-Adapter: `render(bundle) -> ToolExportResult`
+- `ToolExportResult` — Artefaktliste plus export-spezifische `ToolExportNote`s
+
+Generator-Diagnostik (`DdlResult.notes`, `skippedObjects`) bleibt im Bundle
+erhalten und wird nicht in Export-Notes umgedeutet.
+
+#### Application-Layer (`hexagon:application`)
+
+- `MigrationIdentityResolver` — Version-/Slug-Aufloesung (I/O-frei)
+- `MigrationVersionValidator` — tool-spezifische Versionsformate
+- `MigrationSlugNormalizer` — `schema.name` → dateinamenfaehiger Slug
+- `DdlNormalizer` — einmalige Timestamp-Bereinigung fuer deterministische Inhalte
+- `ArtifactCollisionChecker` — in-run- und Dateisystem-Kollisionen (I/O-frei)
+- `ToolExportRunner` — Orchestrator: Schema lesen → validieren → DDL erzeugen
+  → Bundle bauen → Exporter aufrufen → Kollisionen pruefen → Artefakte schreiben
+  → Report und Diagnostik ausgeben
+
+#### Driven Adapter (`adapters:driven:integrations`)
+
+Vier Implementierungen von `ToolMigrationExporter`, alle side-effect-frei:
+
+- `FlywayMigrationExporter` — `V<version>__<slug>.sql` + opt. `U...sql`
+- `LiquibaseMigrationExporter` — versionierter XML-Changelog mit `changeSet`
+- `DjangoMigrationExporter` — `RunSQL`-Migration aus `result.statements`
+- `KnexMigrationExporter` — CommonJS mit `knex.raw()` aus `result.statements`
+
+Das Modul haengt nur von `hexagon:ports` ab und fuehrt keine Tool-Runtime-
+Abhaengigkeiten ein.
+
+#### Driving Adapter (`adapters:driving:cli`)
+
+- `ExportCommand` — Clikt-Gruppe unter `d-migrate export`
+- `ExportFlywayCommand`, `ExportLiquibaseCommand`, `ExportDjangoCommand`,
+  `ExportKnexCommand` — duenne Schalen, die `ToolExportRequest` bauen und
+  an `ToolExportRunner` delegieren
+
+#### Runtime-Validierung (Test)
+
+Die fokussierte 0.7.0-Matrix (Flyway→PostgreSQL, Liquibase→PostgreSQL,
+Django→SQLite, Knex→SQLite) wird als Integrations-Tests in
+`adapters:driven:integrations` ausgefuehrt, markiert mit
+`NamedTag("integration")` und steuerbar ueber `-PintegrationTests`.
+
 ---
 
 ## 4. Querschnittsthemen
@@ -901,6 +960,17 @@ adapters/driven/formats/src/test/resources/fixtures/
 2. Serializer/Deserializer für das Format
 3. CLI-Command ergänzen (1 Zeile: neuer --format Wert)
 → Core bleibt unverändert
+```
+
+### 8.4 Neuen Tool-Exporter hinzufügen (0.7.0)
+
+```
+1. ToolMigrationExporter in adapters:driven:integrations implementieren
+2. render(bundle) gibt ToolExportResult mit relativen Artefakten zurück
+3. Exporter in ExportCommands.kt unter exporterLookup registrieren
+4. Neues ExportXyzCommand als Clikt-Subcommand unter ExportCommand
+5. Tests: Renderer-Unit-Tests + Runtime-Integrationstest
+→ Hexagon-Code bleibt unverändert
 ```
 
 ---
