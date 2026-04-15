@@ -297,8 +297,17 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | LN-025 |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | LN-026 |
 | Security  | Audit-Logging aller Operationen                      | LN-027 |
+| Core      | Regelbasierte Testdaten-Generierung (deterministischer Basis-Slice) | LF-024 |
+| Core      | Seed-basierte Reproduzierbarkeit fuer `data seed`    | LF-024 |
+| CLI       | `d-migrate data seed` Kommando                       | LF-024 |
 | QA        | Property-Based Testing (Jqwik)                       | LN-046 |
 | QA        | Performance-Regression-Tests                         | LN-044 |
+
+**Ergebnis**: Release Candidate mit stabiler Kernfunktionalität für produktive
+Migrationen und reproduzierbare Testumgebungen. Neben Sicherheit und
+Robustheit steht damit auch ein deterministischer Basis-Pfad für Testdaten
+bereit, der auf neutralem Schema, Import-/Write-Pfad und explizitem Seed
+aufsetzt.
 
 ### Milestone 1.0.0 — Stable Release
 
@@ -367,17 +376,25 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
 
-### Milestone 1.3.0 — Testdaten-Generierung
+### Milestone 1.3.0 — Erweiterte Testdaten-Generierung
 
 | Bereich | Aufgabe                                                 | LF-Ref |
 | ------- | ------------------------------------------------------- | ------ |
-| Core    | Regelbasierte Testdaten-Generierung (Faker-Integration) | LF-024 |
 | AI      | KI-gestützte Testdaten-Generierung (optional)           | LF-024 |
-| Core    | Seed-basierte Reproduzierbarkeit                        | LF-024 |
 | Core    | Mehrsprachige Testdaten (Namen, Adressen, etc.)         | LF-024 |
-| CLI     | `d-migrate data seed` Kommando                          | LF-024 |
+| Core    | Ausbau der regelbasierten Generierung fuer realistischere Domaenendaten und Beziehungen | LF-024 |
+| Core    | Erweiterte Locale-/Sprachprofile fuer Testdaten         | LF-024 |
 
-**Ergebnis**: Automatische Generierung realistischer Testdaten.
+**Ergebnis**: Automatische Generierung fachlich realistischer Testdaten über
+den deterministischen Basis-Slice aus `1.0.0-RC` hinaus, optional ergänzt um
+KI-gestützte Vorschläge.
+
+> **Begründung der Vorverlegung**: Der deterministische Teil von `LF-024`
+> hängt nicht an der späteren KI-Infrastruktur. Sobald neutrales Schema,
+> Datenimport und CLI-Stabilität vorhanden sind, liefert `data seed` bereits
+> frühen Nutzen für Demos, QA und reproduzierbare Testumgebungen. Die
+> ausgebauten, stärker semantischen Testdaten bleiben deshalb bewusst in
+> Phase 4.
 
 ### Milestone 1.4.0 — Erweiterte Features
 
@@ -450,6 +467,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.12
+**Version**: 3.13
 **Stand**: 2026-04-15
 **Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen
