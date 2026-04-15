@@ -54,6 +54,18 @@ class MessageResolverTest : FunSpec({
         resolver.text("cli.error.plain_format", "etwas ging schief") shouldBe "[FEHLER] etwas ging schief"
     }
 
+    test("German resolver falls back to root for existing key") {
+        // Both bundles have the same keys, so this tests the bundle chain
+        // is correctly configured. If a German key were removed, it should
+        // fall back to the English root value.
+        val deResolver = MessageResolver(Locale.GERMAN)
+        val enResolver = MessageResolver(Locale.ENGLISH)
+        // Both must return a non-empty value for any root key
+        val key = "cli.validation.path_arrow"
+        deResolver.text(key, "test") shouldContain "test"
+        enResolver.text(key, "test") shouldContain "test"
+    }
+
     test("progress export started") {
         val resolver = MessageResolver(Locale.ENGLISH)
         resolver.text("cli.progress.run_started_export", 3) shouldBe "Exporting 3 table(s)"

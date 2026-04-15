@@ -51,21 +51,19 @@ Aktueller Stand der Codebasis:
   - `ResolvedI18nSettings`
   - Config-basierte Locale-/Timezone-/Normalization-Resolution
   - erweiterten `CliContext`
-- `OutputFormatter` gibt heute frei formulierte englische Texte aus:
-  - Plain-Validation-Header und Summary
-  - Warnings/Errors auf stderr
-  - freie `printError(...)`-Texte
-- `ProgressRenderer` gibt heute frei formulierte englische
-  Export-/Import-Fortschrittsmeldungen aus.
-- `DataProfileCommand` besitzt einen eigenen `stderr`-Pfad fuer Status- und
-  Fehlermeldungen, der bisher nicht ueber eine gemeinsame Message-Schicht
-  laeuft.
-- JSON-/YAML-Outputs sind heute bewusst primitive-first und englisch
-  schluesselbasiert.
-- `printError(...)` serialisiert in JSON/YAML aktuell ein freies
-  `error`-Textfeld; laut Phase A darf dieser strukturierte Pfad in 0.8.0 nicht
-  locale-abhaengig werden.
-- ResourceBundles oder Message-Keys existieren im Produktionscode noch nicht.
+- `OutputFormatter` nutzt `MessageResolver` fuer alle Plain-Text-Ausgaben
+  (Validation-Header, Summary, Warnings/Errors, `printError`).
+  JSON-/YAML-Pfade bleiben sprachstabil englisch.
+- `ProgressRenderer` nutzt `MessageResolver` fuer alle Fortschrittsmeldungen.
+  Technische Zahlenformatierung bleibt `Locale.US`.
+- ResourceBundles existieren unter `messages/messages.properties` (EN Root)
+  und `messages/messages_de.properties` (DE) mit ~35 Keys.
+- `MessageResolver` ist injizierbar, kein Singleton, Fallback auf Root-Bundle.
+- Runner-seitige Fehlermeldungen (z. B. `DataProfileRunner`,
+  `SchemaGenerateRunner`) verwenden weiterhin direkte englische Strings.
+  Die vollstaendige Anbindung aller command-nahen Nutzertexte waere ein
+  eigener Folge-Scope, der auch die Runner im `hexagon:application`-Modul
+  betrifft.
 
 Konsequenz:
 
@@ -142,9 +140,12 @@ Verbindliche Folge:
 
 - `OutputFormatter` und `ProgressRenderer` lesen alle menschenlesbaren Texte
   ueber Message-Keys
-- auch command-nahe stderr-Statusmeldungen werden, wo praktikabel, an denselben
-  Resolver angebunden
-- neue Literal-Strings fuer Nutzertexte sind in Phase C nicht akzeptabel
+- Runner-seitige Fehlermeldungen in `hexagon:application` (z. B.
+  `SchemaGenerateRunner`, `DataProfileRunner`) bleiben vorerst englisch,
+  weil `MessageResolver` im CLI-Modul lebt und Runner keinen Zugriff auf
+  ResourceBundles haben. Eine durchgaengige Lokalisierung aller
+  Runner-Meldungen waere ein eigener Folge-Scope mit Architekturentscheidung
+  (Message-Key-Injection vs. Bundle im Application-Layer).
 
 ### 4.3 Strukturierte Ausgaben bleiben sprachstabil
 
