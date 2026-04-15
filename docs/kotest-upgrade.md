@@ -1,6 +1,6 @@
 # Kotest-Upgrade auf 6.x
 
-> **Status**: Offen
+> **Status**: Erledigt (2026-04-15)
 > **Prioritaet**: Niedrig
 > **Erstellt**: 2026-04-15
 
