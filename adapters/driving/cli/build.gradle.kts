@@ -46,6 +46,7 @@ dependencies {
     implementation(project(":adapters:driven:driver-mysql"))
     implementation(project(":adapters:driven:driver-sqlite"))
     implementation(project(":adapters:driven:formats"))
+    implementation(project(":adapters:driven:integrations"))
     implementation(project(":adapters:driven:streaming"))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")

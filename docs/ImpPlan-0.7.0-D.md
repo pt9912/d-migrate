@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: D (CLI- und Runner-Pfad fuer Tool-Export)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.2 bis 4.8, Abschnitt 5 Phase D, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -62,26 +62,24 @@ Aktueller Stand der Codebasis und der Dokumentation:
   - Delegation an einen testbaren Runner
   - command-lokales Bootstrap der Runner-Kollaboratoren
   - Exit via `ProgramResult`
-- `buildRootCommand()` haengt derzeit nur:
-  - `schema`
-  - `data`
-- ein Root-Command `export` existiert noch nicht.
-- Phase B ist im Repo bereits technisch vorbereitet:
+- `buildRootCommand()` haengt `schema`, `data` und `export` ein.
+- `ExportCommand` ist als CLI-Gruppe mit vier Subcommands
+  (`flyway`, `liquibase`, `django`, `knex`) verdrahtet.
+- Phase B ist implementiert:
   - tool-neutraler Exportvertrag unter `hexagon/ports`
   - adapterfreie Helper in `hexagon/application/src/main/kotlin/dev/dmigrate/cli/migration/`
-- Phase C ist im Repo bereits technisch vorbereitet:
+- Phase C ist implementiert:
   - Modul `adapters:driven:integrations`
-  - `FlywayMigrationExporter`
-  - `LiquibaseMigrationExporter`
-  - `DjangoMigrationExporter`
-  - `KnexMigrationExporter`
-- Es gibt aktuell aber noch keinen produktiven Ende-zu-Ende-Pfad, der:
-  - ein Schema fuer Tool-Export liest
-  - daraus ein `MigrationBundle` baut
-  - den passenden Exporter waehlt
-  - Kollisionen prueft
-  - Artefakte schreibt
-  - Report und CLI-Exit konsistent materialisiert
+  - `FlywayMigrationExporter`, `LiquibaseMigrationExporter`,
+    `DjangoMigrationExporter`, `KnexMigrationExporter`
+- `ToolExportRunner` und `ToolExportRequest` bilden den produktiven
+  Ende-zu-Ende-Pfad:
+  - Schema lesen und validieren
+  - `MigrationBundle` bauen
+  - passenden Exporter waehlen
+  - Kollisionen pruefen (rekursiv unterhalb des Output-Verzeichnisses)
+  - Artefakte schreiben
+  - Report und CLI-Exit konsistent materialisieren
 - `docs/cli-spec.md` fixiert fuer 0.7.0 bereits den finalen CLI-Vertrag:
   - `--source` ist eine Schema-Datei
   - `--output` ist Pflicht und bezeichnet ein Ausgabeverzeichnis
@@ -194,7 +192,6 @@ Verbindliche Folge:
   - optionale `spatialProfile`
   - `generateRollback`
   - optionale `report`
-  - `outputFormat`
   - `verbose`
   - `quiet`
 - Der Request transportiert nur Eingaben und Laufkontext, nicht bereits
@@ -257,18 +254,20 @@ Verbindliche Folge:
   - Fehler ueber den ueblichen Fehlerkanal
   - Warnungen / Action-Required-Hinweise ueber `stderr`
 
-### 4.7 `--output-format` betrifft den CLI-Kanal, nicht die Tool-Artefakte
+### 4.7 `--output-format` ist in Phase D nicht Teil des Export-Runners
 
-Tool-Artefakte haben ihr eigenes festes Format pro Exporter. Das globale
-CLI-Ausgabeformat darf diese Dateien nicht beeinflussen.
+Tool-Artefakte haben ihr eigenes festes Format pro Exporter. Der globale
+`--output-format`-Switch betrifft andere CLI-Kommandos, nicht den
+Tool-Export.
 
 Verbindliche Folge:
 
 - Flyway-, Liquibase-, Django- und Knex-Dateien bleiben immer in ihrem
   tool-spezifischen Textformat.
-- `--output-format plain|json|yaml` steuert nur CLI-Meldungen und
-  Fehlerdarstellung.
-- Der Runner fuehrt keinen JSON-/YAML-Modus fuer die Artefaktdateien ein.
+- Der Runner kennt in Phase D kein `outputFormat`-Feld und gibt
+  CLI-Meldungen ausschliesslich als Plain-Text auf `stderr` aus.
+- Ein spaeterer JSON-/YAML-Modus fuer Export-CLI-Meldungen waere ein
+  eigener Folge-Scope.
 
 ### 4.8 Versions- und Exit-Code-Regeln werden nicht pro Command neu erfunden
 
@@ -418,7 +417,6 @@ data class ToolExportRequest(
     val spatialProfile: String? = null,
     val generateRollback: Boolean,
     val report: Path? = null,
-    val outputFormat: String,
     val verbose: Boolean,
     val quiet: Boolean,
 )
@@ -485,39 +483,39 @@ Noch nicht Teil von Phase D, aber Folgeartefakte vorzubereiten:
 
 ## 8. Akzeptanzkriterien
 
-- [ ] `ToolExportRequest` und `ToolExportRunner` existieren im
+- [x] `ToolExportRequest` und `ToolExportRunner` existieren im
       Application-Layer.
-- [ ] `d-migrate export flyway`, `export liquibase`, `export django` und
+- [x] `d-migrate export flyway`, `export liquibase`, `export django` und
       `export knex` sind ueber `buildRootCommand()` erreichbar.
-- [ ] `export --help`, `export flyway --help`, `export liquibase --help`,
+- [x] `export --help`, `export flyway --help`, `export liquibase --help`,
       `export django --help` und `export knex --help` sind erreichbar und
       beschreiben Pflichtflags, Versionsregeln und Rollback-Verhalten
       konsistent zu `docs/cli-spec.md`.
-- [ ] Alle vier Export-Subcommands lesen ein neutrales Schema aus `--source`
+- [x] Alle vier Export-Subcommands lesen ein neutrales Schema aus `--source`
       und keinen Live-DB-Operand.
-- [ ] `--output` ist fuer alle vier Export-Subcommands Pflicht und wird als
+- [x] `--output` ist fuer alle vier Export-Subcommands Pflicht und wird als
       Ausgabeverzeichnis behandelt.
-- [ ] `--target` ist fuer alle vier Export-Subcommands Pflicht.
-- [ ] Flyway/Liquibase nutzen ohne explizites `--version` nur den
+- [x] `--target` ist fuer alle vier Export-Subcommands Pflicht.
+- [x] Flyway/Liquibase nutzen ohne explizites `--version` nur den
       dokumentierten `schema.version`-Fallback.
-- [ ] Django/Knex scheitern ohne explizites `--version` mit Exit `2`.
-- [ ] `--spatial-profile` wird fuer Tool-Export analog zu
+- [x] Django/Knex scheitern ohne explizites `--version` mit Exit `2`.
+- [x] `--spatial-profile` wird fuer Tool-Export analog zu
       `schema generate` validiert.
-- [ ] `--generate-rollback` fuehrt zu tool-spezifischen Down-Artefakten,
+- [x] `--generate-rollback` fuehrt zu tool-spezifischen Down-Artefakten,
       sofern der Exporter sie fuer das Tool materialisiert.
-- [ ] Der Runner baut `MigrationBundle` und delegiert an genau einen
+- [x] Der Runner baut `MigrationBundle` und delegiert an genau einen
       passenden `ToolMigrationExporter`.
-- [ ] Artefakte werden nur unterhalb des Output-Verzeichnisses geschrieben.
-- [ ] Dateikollisionen werden vor dem ersten Write erkannt und fuehren zu
+- [x] Artefakte werden nur unterhalb des Output-Verzeichnisses geschrieben.
+- [x] Dateikollisionen werden vor dem ersten Write erkannt und fuehren zu
       Exit `7`.
-- [ ] Exporter-Notes, Generator-Notes und `skippedObjects` bleiben sichtbar und
+- [x] Exporter-Notes, Generator-Notes und `skippedObjects` bleiben sichtbar und
       gehen weder im CLI-Pfad noch im Report verloren.
-- [ ] `--report` schreibt mindestens den dokumentierten Report fuer Notes /
+- [x] `--report` schreibt mindestens den dokumentierten Report fuer Notes /
       `skippedObjects`; weitergehende Reportfelder sind optional, solange sie
       dem Mindestvertrag nicht widersprechen.
-- [ ] Parse-/I/O-/Render-/Kollisionsfehler enden mit Exit `7`.
-- [ ] Schema-Validierungsfehler enden mit Exit `3`.
-- [ ] Erfolgreiche Runs enden mit Exit `0`.
+- [x] Parse-/I/O-/Render-/Kollisionsfehler enden mit Exit `7`.
+- [x] Schema-Validierungsfehler enden mit Exit `3`.
+- [x] Erfolgreiche Runs enden mit Exit `0`.
 
 ---
 
@@ -525,19 +523,23 @@ Noch nicht Teil von Phase D, aber Folgeartefakte vorzubereiten:
 
 Mindestumfang fuer die Phase-D-Umsetzung:
 
-1. Root- und Command-Wiring pruefen:
+1. Modul-Testlauf (via Docker, kein lokales JDK noetig):
 
 ```bash
-sed -n '1,160p' adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt
-
-rg -n "ExportCommand|ExportFlywayCommand|ExportLiquibaseCommand|ExportDjangoCommand|ExportKnexCommand" \
-  adapters/driving/cli/src/main/kotlin
+docker build --target build \
+  --build-arg GRADLE_TASKS=":hexagon:application:test :adapters:driving:cli:test" \
+  -t d-migrate:phase-d .
 ```
 
-2. Help-Texte und Flag-Vertrag pruefen:
+2. Help-Texte und Command-Wiring pruefen (im Build-Container):
 
 ```bash
-./gradlew :adapters:driving:cli:test --tests "*Export*Help*"
+docker build -t d-migrate:dev .
+docker run --rm d-migrate:dev export --help
+docker run --rm d-migrate:dev export flyway --help
+docker run --rm d-migrate:dev export liquibase --help
+docker run --rm d-migrate:dev export django --help
+docker run --rm d-migrate:dev export knex --help
 ```
 
 Dabei explizit pruefen:
@@ -550,26 +552,20 @@ Dabei explizit pruefen:
 - alle Export-Help-Texte nennen `--target`, `--output`, `--report` und
   `--generate-rollback` konsistent zum CLI-Vertrag
 
-3. Runner- und Request-Einfuehrung pruefen:
+3. Runner- und Request-Einfuehrung pruefen (im Build-Container):
 
 ```bash
-rg -n "ToolExportRequest|ToolExportRunner" \
-  hexagon/application/src/main/kotlin \
-  hexagon/application/src/test/kotlin
+docker run --rm d-migrate:phase-d \
+  grep -rn "ToolExportRequest\|ToolExportRunner" \
+  hexagon/application/src/main/kotlin hexagon/application/src/test/kotlin
 ```
 
 4. Runner-/CLI-Tests fuer Pflichtfaelle pruefen:
 
 ```bash
-rg -n "export|help|generateRollback|spatial-profile|version|collision|report|ProgramResult" \
-  adapters/driving/cli/src/test/kotlin \
-  hexagon/application/src/test/kotlin
-```
-
-5. Relevante Testlaeufe:
-
-```bash
-./gradlew :hexagon:application:test :adapters:driving:cli:test
+docker run --rm d-migrate:phase-d \
+  grep -rn "report\|collision\|rollback\|exit" \
+  hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/ToolExportRunnerTest.kt
 ```
 
 Dabei explizit pruefen:

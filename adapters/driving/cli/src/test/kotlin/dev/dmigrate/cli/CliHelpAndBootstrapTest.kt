@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
+import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -33,7 +34,7 @@ import java.io.PrintStream
  */
 class CliHelpAndBootstrapTest : FunSpec({
 
-    fun cli() = DMigrate().subcommands(SchemaCommand(), DataCommand())
+    fun cli() = DMigrate().subcommands(SchemaCommand(), DataCommand(), ExportCommand())
 
     /**
      * Captures System.out + System.err during [block], restoring the
@@ -111,6 +112,36 @@ class CliHelpAndBootstrapTest : FunSpec({
     test("data transfer --help produces a help message") {
         captureStreams {
             shouldThrow<CliktError> { cli().parse(listOf("data", "transfer", "--help")) }
+        }
+    }
+
+    test("export --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("export", "--help")) }
+        }
+    }
+
+    test("export flyway --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("export", "flyway", "--help")) }
+        }
+    }
+
+    test("export liquibase --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("export", "liquibase", "--help")) }
+        }
+    }
+
+    test("export django --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("export", "django", "--help")) }
+        }
+    }
+
+    test("export knex --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("export", "knex", "--help")) }
         }
     }
 
