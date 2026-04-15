@@ -236,7 +236,7 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 | Docs    | Phase A: Spezifikationsbereinigung und Scope-Fixierung           | —      | ✅ |
 | i18n    | Phase B: I18n-Runtime und Config-Resolution                      | LF-006 | ✅ |
 | i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben            | LN-023 | ✅ |
-| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | |
+| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | ✅ |
 | i18n    | Phase E: Grapheme-aware String-Längenberechnung                  | LN-021 | |
 | Core    | Phase F: Zeitzonen-Handling (UTC als Standard, konfigurierbar)   | LF-007 | |
 | Formats | Phase G: BOM-Konsolidierung und CSV-Vertrag                      | LF-010 | |
@@ -245,8 +245,9 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
 > Stand 2026-04-15: Phase A (Spezifikationsbereinigung), Phase B
-> (I18n-Runtime und Config-Resolution) und Phase C (ResourceBundles und
-> lokalisierte CLI-Ausgaben) sind umgesetzt; weitere 0.8.0-Phasen
+> (I18n-Runtime und Config-Resolution), Phase C (ResourceBundles und
+> lokalisierte CLI-Ausgaben) und Phase D (ICU4J-Integration fuer
+> Unicode-Verarbeitung) sind umgesetzt; weitere 0.8.0-Phasen
 > bleiben offen.
 
 ### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
@@ -458,4 +459,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.13
 **Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen; Milestone 0.8.0 in Arbeit (Phase A, B und C umgesetzt)
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen; Milestone 0.8.0 in Arbeit (Phase A, B, C und D umgesetzt)

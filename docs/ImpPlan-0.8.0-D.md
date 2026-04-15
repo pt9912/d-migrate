@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: D (Unicode-/ICU4J-Integration)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 2, Abschnitt 3,
 > Abschnitt 4.4, Abschnitt 4.6, Abschnitt 5.1, Abschnitt 5.4, Abschnitt 6
 > Phase D, Abschnitt 7, Abschnitt 8, Abschnitt 9; `docs/ImpPlan-0.8.0-A.md`;
