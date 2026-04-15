@@ -27,8 +27,8 @@ Diese Flags sind bei allen Kommandos verfügbar:
 
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
-| `--config` | `-c` | Pfad | `.d-migrate.yaml` | Pfad zur Konfigurationsdatei |
-| `--lang` | | String | System-Locale | Sprache für Ausgaben (`de`, `en`) |
+| `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
+| `--lang` | | String | technisch vorhanden, finaler Nutzervertrag in 0.9.0 | Sprachwahl fuer menschenlesbare Ausgaben; `--lang` existiert bereits in der CLI, der stabile dokumentierte Override-Vertrag folgt aber erst in Milestone 0.9.0 |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
 | `--quiet` | `-q` | Boolean | false | Nur Fehler ausgeben |
@@ -39,6 +39,12 @@ Diese Flags sind bei allen Kommandos verfügbar:
 | `--help` | `-h` | Boolean | | Hilfe anzeigen und beenden |
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
+
+**Hinweis zu 0.8.0 / 0.9.0 bei `--lang`**:
+
+- Milestone 0.8.0 liefert die technische I18n-Basis (ResourceBundles, Locale-/Timezone-/Unicode-Aufloesung).
+- Der finale, breit dokumentierte CLI-Vertrag fuer `--lang` als produktive Override-Quelle bleibt in 0.9.0 verankert.
+- Bis dieser Vertrag freigegeben ist, duerfen strukturierte JSON-/YAML-Vertraege nicht von lokalisierter Sprachwahl abhaengen.
 
 ### 1.4 Verbindungsnamen
 
@@ -118,6 +124,12 @@ Validation failed: 1 error, 1 warning
 ### 3.2 JSON
 
 Maschinenlesbare Ausgabe für CI/CD-Integration und Scripting:
+
+Vertragsregeln fuer strukturierte Ausgabe:
+
+- Feldnamen, Command-IDs, Statuswerte, Exit-Codes, Warning-/Error-Codes und vergleichbare API-artige Vertragsflaechen bleiben englisch und stabil.
+- Freie Fehlermeldungstexte in JSON/YAML bleiben fuer 0.8.0 ebenfalls englisch und stabil, bis ein explizit versionierter Gegenvertrag definiert ist.
+- Lokalisiert werden duerfen nur menschenlesbare Plain-Text-Ausgaben auf stdout/stderr.
 
 ```json
 {
@@ -1071,14 +1083,17 @@ Alternative: Umgebungsvariable `D_MIGRATE_DB_PASSWORD` oder Konfigurationsdatei.
 | Variable | Entspricht | Beschreibung |
 |---|---|---|
 | `D_MIGRATE_CONFIG` | `--config` | Pfad zur Konfigurationsdatei |
-| `D_MIGRATE_LANG` | `--lang` | Sprache |
+| `D_MIGRATE_LANG` | `--lang` | Sprache; fuer 0.8.0 Teil der technischen I18n-Basis, nicht des finalen 0.9.0-Override-Vertrags |
 | `D_MIGRATE_OUTPUT_FORMAT` | `--output-format` | Ausgabeformat |
 | `D_MIGRATE_NO_COLOR` | `--no-color` | Farbausgabe deaktivieren |
 | `D_MIGRATE_ASSUME_YES` | `--yes` | Bestätigungen überspringen |
 | `D_MIGRATE_DB_PASSWORD` | | Datenbank-Passwort |
 | `D_MIGRATE_AI_API_KEY` | | KI-Provider API-Key (Fallback) |
 
-Priorität: CLI-Argument > Umgebungsvariable > Konfigurationsdatei > Default
+Prioritaet:
+
+- fuer den effektiven Config-Pfad: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`
+- fuer allgemeine CLI-Optionen weiterhin: CLI-Argument > Umgebungsvariable > Konfigurationsdatei > Default
 
 ---
 

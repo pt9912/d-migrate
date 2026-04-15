@@ -166,18 +166,22 @@ Für SQLite: Pool-Size auf `1` (SQLite unterstützt keine parallelen Schreibzugr
 
 ## 3. Konfigurationsdatei `.d-migrate.yaml`
 
-### 3.1 Suchpfad
+### 3.1 Effektiver Konfigurationspfad
 
-Konfigurationsdateien werden in folgender Reihenfolge gesucht und gemerged:
+Die produktive CLI arbeitet heute mit genau einer effektiv aufgeloesten
+Konfigurationsdatei, nicht mit einem Merge mehrerer Dateien.
+
+Aufloesungsreihenfolge:
 
 ```
-1. Built-in Defaults (im Code)
-2. ~/.d-migrate/config.yaml          (Global, benutzerweit)
-3. .d-migrate.yaml                   (Projekt, im Arbeitsverzeichnis)
-4. Datei aus --config Flag            (Explizit angegeben)
+1. Datei aus --config
+2. Pfad aus D_MIGRATE_CONFIG
+3. Default ./.d-migrate.yaml
 ```
 
-Spätere Quellen überschreiben frühere. Arrays werden ersetzt, nicht gemerged.
+Diese Prioritaet gilt auch fuer spaetere `i18n.*`-Settings-Resolution.
+Internationalisierung verwendet bewusst keinen eigenen Suchpfad neben der
+bestehenden CLI-Konfiguration.
 
 ### 3.2 Vollständiges Schema
 
@@ -314,6 +318,12 @@ i18n:
   default_locale: en                 # Sprache für CLI-Ausgaben
   default_timezone: UTC              # Standard-Zeitzone für Exporte
   normalize_unicode: NFC             # Unicode-Normalisierung: NFC | NFD | NFKC | NFKD
+
+# Vertragsregeln:
+# - Root-/Fallback-Bundle bleibt Englisch (`messages.properties`)
+# - dieselbe effektiv aufgeloeste Konfigurationsdatei gilt fuer `database.*` und `i18n.*`
+# - `normalize_unicode` steuert Vergleichs-/Metadatenverhalten, nicht stille Nutzdatenmutation
+# - JSON/YAML-Vertraege bleiben sprachstabil; lokalisiert werden nur Plain-Text-Ausgaben
 
 # ── DDL-Generierung ───────────────────────────
 ddl:

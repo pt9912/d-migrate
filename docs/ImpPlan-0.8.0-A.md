@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: A (Spezifikationsbereinigung und Scope-Fixierung)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 1, Abschnitt 2,
 > Abschnitt 3, Abschnitt 4, Abschnitt 5.2 bis 5.4, Abschnitt 6 Phase A,
 > Abschnitt 8, Abschnitt 9; `docs/roadmap.md` Milestone 0.8.0 und 0.9.0;

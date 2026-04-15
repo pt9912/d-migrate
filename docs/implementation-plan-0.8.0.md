@@ -178,9 +178,9 @@ Verbindliche Entscheidung:
 - 0.8.0 fuehrt die eigentliche Locale-Resolution und Message-Infra ein
 - 0.8.0 zieht dabei NICHT den offiziellen CLI-Prioritaetsvertrag fuer
   `--lang` nach vorne
-- fuer 0.8.0 kommen als produktive Locale-Quellen nur Config, ENV und
-  System-Fallbacks in Betracht; `--lang` bleibt bis 0.9.0 ausserhalb des
-  freigegebenen Resolution-Vertrags
+- fuer 0.8.0 kommen als dokumentierter Resolution-Vertrag Config, ENV und
+  System-Fallbacks in Betracht; `--lang` bleibt bis 0.9.0 technisch sichtbar,
+  aber ausserhalb des final freigegebenen Override-Vertrags
 - 0.9.0 liefert dann explizit die Freischaltung von `--lang` als
   dokumentierte Override-Quelle ueber den 0.8.0-ResourceBundles
 
@@ -293,6 +293,12 @@ Vorgesehene Aufloesungsreihenfolge fuer 0.8.0:
 5. JVM-/System-Locale
 6. Fallback `en`
 
+Wichtig fuer Phase A:
+
+- diese Reihenfolge beschreibt die technische I18n-Basis von 0.8.0
+- sie ist nicht identisch mit dem spaeteren 0.9.0-Nutzervertrag fuer
+  `--lang` als dokumentierte CLI-Override-Quelle
+
 Config-Datei fuer `i18n.*` wird dabei nicht direkt aus `./.d-migrate.yaml`
 geraetselt, sondern ueber denselben Pfadvertrag wie bestehende Config-Nutzung
 aufgeloest:
@@ -334,6 +340,8 @@ Singleton- oder JVM-Locale-State.
 1. `docs/cli-spec.md` fuer 0.8.0/0.9.0 sauber trennen:
    - `--lang`-Eintrag annotieren
    - klarstellen, dass JSON/YAML-Schluessel nicht lokalisiert werden
+   - festhalten, dass freie strukturierte Fehlermeldungstexte bis auf
+     Weiteres englisch und stabil bleiben
 2. `docs/design.md` Abschnitt 9.1 auf englisches Root-Bundle korrigieren
 3. `docs/connection-config-spec.md` und `docs/architecture.md` mit der
    tatsaechlichen 0.8.0-Resolution abgleichen

@@ -679,26 +679,35 @@ sealed class MigrateError {
 
 ```
 src/main/resources/messages/
-├── messages_de.properties    # Deutsch (Default)
-├── messages_en.properties    # Englisch
-└── messages.properties       # Fallback (Englisch)
+├── messages.properties       # Root-/Fallback-Bundle (Englisch)
+├── messages_de.properties    # Deutsch
+└── messages_en.properties    # optional explizites Englisch-Bundle
 ```
 
 ### 9.2 Sprachauswahl
 
 ```
-1. CLI-Argument: --lang de
-2. Umgebungsvariable: LANG=de_DE.UTF-8
-3. System-Locale
-4. Fallback: Englisch
+1. D_MIGRATE_LANG
+2. LC_ALL
+3. LANG
+4. i18n.default_locale aus der effektiv aufgeloesten Konfigurationsdatei
+5. System-Locale
+6. Fallback: Englisch (`en`)
 ```
+
+Hinweise fuer Milestone 0.8.0:
+
+- 0.8.0 liefert die technische Aufloesungs- und Bundle-Basis.
+- Der finale CLI-Nutzervertrag fuer `--lang` als dokumentierte Override-Quelle folgt erst in 0.9.0.
+- Die effektive Konfigurationsdatei wird nicht separat fuer i18n "geraten", sondern ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
 
 ### 9.3 Unicode-Verarbeitung
 
 - Interne Strings als Unicode; UTF-8 ist das Standard-Encoding an Datei-, CLI- und API-Grenzen
 - Grapheme-aware String-Längenberechnung via ICU4J
 - Unicode-Normalisierung fuer NFC, NFD, NFKC und NFKD; Standardvergleich erfolgt auf NFC-normalisierten Werten
-- BOM-Erkennung und -Behandlung bei CSV-Import
+- Unicode-Normalisierung ist Vergleichs-/Metadaten-Utility und keine stille Mutation von Export-/Import-/Transfer-Payloads
+- BOM-Erkennung und -Behandlung bei CSV basiert auf dem seit 0.4.0 vorhandenen Unterbau und wird in 0.8.0 als Teil des I18n-Vertrags konsolidiert
 
 ### 9.4 Internationale Datenformate
 
@@ -706,6 +715,10 @@ src/main/resources/messages/
 - Datum, Uhrzeit und Timestamp werden formatuebergreifend auf ISO 8601 normalisiert.
 - Geldbetraege werden ueber `decimal(p,s)` und locale-unabhaengige Serialisierung verarbeitet, um Punkt/Komma-Konflikte zu vermeiden.
 - Telefonnummern koennen optional gegen E.164 validiert und in kanonischer Form exportiert werden.
+
+Strukturierte JSON-/YAML-Ausgaben bleiben dabei sprachstabil: Schluessel,
+Codes und freie Fehlermeldungstexte bleiben fuer 0.8.0 englisch, waehrend nur
+menschenlesbare Plain-Text-Ausgaben lokalisiert werden duerfen.
 
 ---
 
