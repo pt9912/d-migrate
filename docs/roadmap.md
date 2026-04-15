@@ -243,8 +243,9 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
-> Stand 2026-04-15: Phase A (Spezifikationsbereinigung) und Phase B
-> (I18n-Runtime und Config-Resolution) sind umgesetzt; weitere 0.8.0-Phasen
+> Stand 2026-04-15: Phase A (Spezifikationsbereinigung), Phase B
+> (I18n-Runtime und Config-Resolution) und Phase C (ResourceBundles und
+> lokalisierte CLI-Ausgaben) sind umgesetzt; weitere 0.8.0-Phasen
 > bleiben offen.
 
 ### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI

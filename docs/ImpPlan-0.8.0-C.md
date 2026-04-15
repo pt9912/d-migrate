@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: C (ResourceBundles und lokalisierte CLI-Ausgaben)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.1 bis 4.6, Abschnitt 5.1 bis 5.4,
 > Abschnitt 6 Phase C, Abschnitt 8, Abschnitt 9; `docs/ImpPlan-0.8.0-A.md`;
@@ -346,22 +346,22 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] Es existiert ein englisches Root-Bundle und ein deutsches Bundle fuer
+- [x] Es existiert ein englisches Root-Bundle und ein deutsches Bundle fuer
       CLI-Nutzertexte.
-- [ ] `OutputFormatter` nutzt fuer menschenlesbare Plain-Ausgaben Message-Keys
+- [x] `OutputFormatter` nutzt fuer menschenlesbare Plain-Ausgaben Message-Keys
       statt harter Literal-Strings.
-- [ ] `ProgressRenderer` nutzt fuer menschenlesbare Fortschrittsmeldungen
+- [x] `ProgressRenderer` nutzt fuer menschenlesbare Fortschrittsmeldungen
       Message-Keys statt harter Literal-Strings.
-- [ ] Command-nahe freie Nutzertexte auf stderr/stdout sind an dieselbe
+- [x] Command-nahe freie Nutzertexte auf stderr/stdout sind an dieselbe
       Message-Schicht angebunden oder explizit als technische Rohtexte
       abgegrenzt.
-- [ ] JSON-/YAML-Feldnamen bleiben unveraendert englisch.
-- [ ] Strukturierte Fehlerpfade bleiben sprachstabil und leaken keine
+- [x] JSON-/YAML-Feldnamen bleiben unveraendert englisch.
+- [x] Strukturierte Fehlerpfade bleiben sprachstabil und leaken keine
       locale-abhaengigen Meldungstexte in JSON/YAML.
-- [ ] Strukturierte `results[*].message`-Felder in JSON/YAML bleiben
+- [x] Strukturierte `results[*].message`-Felder in JSON/YAML bleiben
       sprachstabil englisch und werden nicht ueber Nutzer-Locale aufgeloest.
-- [ ] Fehlende deutsche Keys fallen sauber auf das Root-Bundle zurueck.
-- [ ] `--quiet`- und `--no-progress`-Semantik bleiben unveraendert.
+- [x] Fehlende deutsche Keys fallen sauber auf das Root-Bundle zurueck.
+- [x] `--quiet`- und `--no-progress`-Semantik bleiben unveraendert.
 
 ---
 
@@ -418,10 +418,10 @@ Parser-, JDBC- oder IO-Details unkontrolliert umformuliert.
 
 ## 10. Abschluss-Checkliste
 
-- [ ] ResourceBundles fuer Englisch und Deutsch existieren.
-- [ ] `OutputFormatter` und `ProgressRenderer` sind message-key-basiert.
-- [ ] Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil.
-- [ ] Freie Nutzertexte ausserhalb der beiden Haupt-Renderer sind entweder
+- [x] ResourceBundles fuer Englisch und Deutsch existieren.
+- [x] `OutputFormatter` und `ProgressRenderer` sind message-key-basiert.
+- [x] Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil.
+- [x] Freie Nutzertexte ausserhalb der beiden Haupt-Renderer sind entweder
       angebunden oder explizit als technische Rohtexte abgegrenzt.
-- [ ] Die Phase bleibt kompatibel mit `docs/ImpPlan-0.8.0-A.md`,
+- [x] Die Phase bleibt kompatibel mit `docs/ImpPlan-0.8.0-A.md`,
       `docs/ImpPlan-0.8.0-B.md` und dem 0.8.0-Masterplan.
