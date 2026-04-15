@@ -41,15 +41,17 @@ jobs:
 
       - name: Verify code coverage
         run: >-
-          ./gradlew
+          ./gradlew --no-build-cache
           :hexagon:core:koverVerify
           :hexagon:ports:koverVerify
           :hexagon:application:koverVerify
+          :hexagon:profiling:koverVerify
           :adapters:driven:driver-common:koverVerify
           :adapters:driven:driver-postgresql:koverVerify
           :adapters:driven:driver-mysql:koverVerify
           :adapters:driven:driver-sqlite:koverVerify
           :adapters:driven:formats:koverVerify
+          :adapters:driven:integrations:koverVerify
           :adapters:driven:streaming:koverVerify
           :adapters:driving:cli:koverVerify
 
@@ -60,11 +62,13 @@ jobs:
           :hexagon:core:koverHtmlReport
           :hexagon:ports:koverHtmlReport
           :hexagon:application:koverHtmlReport
+          :hexagon:profiling:koverHtmlReport
           :adapters:driven:driver-common:koverHtmlReport
           :adapters:driven:driver-postgresql:koverHtmlReport
           :adapters:driven:driver-mysql:koverHtmlReport
           :adapters:driven:driver-sqlite:koverHtmlReport
           :adapters:driven:formats:koverHtmlReport
+          :adapters:driven:integrations:koverHtmlReport
           :adapters:driven:streaming:koverHtmlReport
           :adapters:driving:cli:koverHtmlReport
 
