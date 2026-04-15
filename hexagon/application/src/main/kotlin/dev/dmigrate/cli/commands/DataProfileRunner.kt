@@ -42,8 +42,8 @@ class DataProfileRunner(
 
     fun execute(request: DataProfileRequest): Int {
         // ─── 1. Validate request ────────────────────────────────
-        if (request.topN < 1) {
-            stderr("[ERROR] topN must be positive, got: ${request.topN}")
+        if (request.topN < 1 || request.topN > 1000) {
+            stderr("[ERROR] topN must be between 1 and 1000, got: ${request.topN}")
             return 2
         }
 
@@ -97,6 +97,7 @@ class DataProfileRunner(
                 pool = connPool,
                 databaseProduct = databaseProduct(pool),
                 databaseVersion = databaseVersion(pool),
+                schema = request.schema,
                 tables = request.tables,
             )
 

@@ -24,8 +24,8 @@ class DataProfileRunnerTest : FunSpec({
     var lastProfile: DatabaseProfile? = null
 
     val fakeIntrospection = object : SchemaIntrospectionPort {
-        override fun listTables(pool: ConnectionPool) = listOf(TableSchema("users"))
-        override fun listColumns(pool: ConnectionPool, table: String) = listOf(
+        override fun listTables(pool: ConnectionPool, schema: String?) = listOf(TableSchema("users"))
+        override fun listColumns(pool: ConnectionPool, table: String, schema: String?) = listOf(
             ColumnSchema("id", "INTEGER", false, isPrimaryKey = true),
             ColumnSchema("name", "TEXT", true),
         )
@@ -97,6 +97,10 @@ class DataProfileRunnerTest : FunSpec({
         stderrLines.any { it.contains("topN") } shouldBe true
     }
 
+    test("topN > 1000 returns exit 2") {
+        runner().execute(request(topN = 1001)) shouldBe 2
+    }
+
     test("schema on MySQL returns exit 2") {
         runner(
             dialectResolver = { DatabaseDialect.MYSQL }
@@ -127,9 +131,9 @@ class DataProfileRunnerTest : FunSpec({
 
     test("profiling exception returns exit 5") {
         val badIntrospection = object : SchemaIntrospectionPort {
-            override fun listTables(pool: ConnectionPool) =
+            override fun listTables(pool: ConnectionPool, schema: String?) =
                 throw dev.dmigrate.profiling.SchemaIntrospectionError("metadata unavailable")
-            override fun listColumns(pool: ConnectionPool, table: String) = emptyList<ColumnSchema>()
+            override fun listColumns(pool: ConnectionPool, table: String, schema: String?) = emptyList<ColumnSchema>()
         }
         runner(
             adapterLookup = { ProfilingAdapterSet(badIntrospection, fakeData, fakeResolver) }

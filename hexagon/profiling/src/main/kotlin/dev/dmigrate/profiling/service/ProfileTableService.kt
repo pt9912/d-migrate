@@ -25,9 +25,9 @@ class ProfileTableService(
     private val topN: Int = 10,
 ) {
 
-    fun profile(pool: ConnectionPool, tableName: String): TableProfile {
+    fun profile(pool: ConnectionPool, tableName: String, schema: String? = null): TableProfile {
         val columns = try {
-            adapters.introspection.listColumns(pool, tableName)
+            adapters.introspection.listColumns(pool, tableName, schema)
         } catch (e: Exception) {
             throw SchemaIntrospectionError("Failed to list columns for table '$tableName': ${e.message}", e)
         }
@@ -62,7 +62,12 @@ class ProfileTableService(
         nullable: Boolean,
         rowCount: Long,
     ): ColumnProfile {
-        val logicalType = adapters.typeResolver.resolve(dbType)
+        val logicalType = try {
+            adapters.typeResolver.resolve(dbType)
+        } catch (e: Exception) {
+            throw dev.dmigrate.profiling.TypeResolutionError(
+                "Failed to resolve type for '$table.$column' (dbType: $dbType): ${e.message}", e)
+        }
 
         val metrics = try {
             adapters.data.columnMetrics(pool, table, column, dbType)

@@ -11,7 +11,7 @@ import dev.dmigrate.profiling.port.TableSchema
  */
 class SqliteSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
-    override fun listTables(pool: ConnectionPool): List<TableSchema> {
+    override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery(
@@ -24,7 +24,7 @@ class SqliteSchemaIntrospectionAdapter : SchemaIntrospectionPort {
         }
     }
 
-    override fun listColumns(pool: ConnectionPool, table: String): List<ColumnSchema> {
+    override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> {
         pool.borrow().use { conn ->
             val pkColumns = mutableSetOf<String>()
             val fkColumns = mutableSetOf<String>()

@@ -10,10 +10,10 @@ package dev.dmigrate.profiling.port
 interface SchemaIntrospectionPort {
 
     /** Lists all user tables in the connected database/schema. */
-    fun listTables(pool: dev.dmigrate.driver.connection.ConnectionPool): List<TableSchema>
+    fun listTables(pool: dev.dmigrate.driver.connection.ConnectionPool, schema: String? = null): List<TableSchema>
 
     /** Lists columns for a specific table with raw DB types. */
-    fun listColumns(pool: dev.dmigrate.driver.connection.ConnectionPool, table: String): List<ColumnSchema>
+    fun listColumns(pool: dev.dmigrate.driver.connection.ConnectionPool, table: String, schema: String? = null): List<ColumnSchema>
 }
 
 /**

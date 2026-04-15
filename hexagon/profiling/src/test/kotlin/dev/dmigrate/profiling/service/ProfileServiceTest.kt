@@ -33,10 +33,10 @@ class ProfileServiceTest : FunSpec({
     )
 
     val introspection = object : SchemaIntrospectionPort {
-        override fun listTables(pool: ConnectionPool) = listOf(
+        override fun listTables(pool: ConnectionPool, schema: String?) = listOf(
             TableSchema("users"), TableSchema("orders"),
         )
-        override fun listColumns(pool: ConnectionPool, table: String) = columns
+        override fun listColumns(pool: ConnectionPool, table: String, schema: String?) = columns
     }
 
     val data = object : ProfilingDataPort {
@@ -77,12 +77,23 @@ class ProfileServiceTest : FunSpec({
 
     test("introspection error throws SchemaIntrospectionError") {
         val badIntrospection = object : SchemaIntrospectionPort {
-            override fun listTables(pool: ConnectionPool) = emptyList<TableSchema>()
-            override fun listColumns(pool: ConnectionPool, table: String): List<ColumnSchema> =
+            override fun listTables(pool: ConnectionPool, schema: String?) = emptyList<TableSchema>()
+            override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> =
                 throw RuntimeException("metadata error")
         }
         val service = ProfileTableService(ProfilingAdapterSet(badIntrospection, data, resolver))
         shouldThrow<SchemaIntrospectionError> {
+            service.profile(fakePool, "users")
+        }
+    }
+
+    test("type resolver error throws TypeResolutionError") {
+        val badResolver = object : LogicalTypeResolverPort {
+            override fun resolve(dbType: String): LogicalType =
+                throw RuntimeException("unknown type: $dbType")
+        }
+        val service = ProfileTableService(ProfilingAdapterSet(introspection, data, badResolver))
+        shouldThrow<dev.dmigrate.profiling.TypeResolutionError> {
             service.profile(fakePool, "users")
         }
     }

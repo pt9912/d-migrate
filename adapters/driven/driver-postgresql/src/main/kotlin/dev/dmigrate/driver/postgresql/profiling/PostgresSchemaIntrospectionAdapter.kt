@@ -7,13 +7,13 @@ import dev.dmigrate.profiling.port.TableSchema
 
 class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
-    override fun listTables(pool: ConnectionPool): List<TableSchema> {
+    override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT table_schema, table_name
                     FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                    WHERE table_schema = '${schema ?: "public"}' AND table_type = 'BASE TABLE'
                     ORDER BY table_name
                 """.trimIndent())
                 val tables = mutableListOf<TableSchema>()
@@ -26,7 +26,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
         }
     }
 
-    override fun listColumns(pool: ConnectionPool, table: String): List<ColumnSchema> {
+    override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> {
         pool.borrow().use { conn ->
             val pkColumns = mutableSetOf<String>()
             val fkColumns = mutableSetOf<String>()
@@ -50,7 +50,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                     FROM information_schema.table_constraints tc
                     JOIN information_schema.key_column_usage kcu
                       ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-                    WHERE tc.table_schema = 'public' AND tc.table_name = '$table'
+                    WHERE tc.table_schema = '${schema ?: "public"}' AND tc.table_name = '$table'
                       AND tc.constraint_type = 'FOREIGN KEY'
                 """.trimIndent())
                 while (rs.next()) fkColumns += rs.getString("column_name")
@@ -74,7 +74,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                 val rs = stmt.executeQuery("""
                     SELECT column_name, data_type, udt_name, is_nullable
                     FROM information_schema.columns
-                    WHERE table_schema = 'public' AND table_name = '$table'
+                    WHERE table_schema = '${schema ?: "public"}' AND table_name = '$table'
                     ORDER BY ordinal_position
                 """.trimIndent())
                 val columns = mutableListOf<ColumnSchema>()
