@@ -207,17 +207,17 @@ hinzu.
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
-### Milestone 0.7.5 — Daten-Profiling
+### Milestone 0.7.5 — Daten-Profiling (in Arbeit)
 
-| Bereich   | Aufgabe                                                                        | LF-Ref |
-| --------- | ------------------------------------------------------------------------------ | ------ |
-| Profiling | Gradle-Modul `hexagon/profiling` mit Domain-Modell und Warning-Rule-Engine     | —      |
-| Profiling | `SchemaIntrospectionPort` auf derselben JDBC-Metadatenbasis wie `SchemaReader` (0.6.0), mit eigener Profiling-Projektion | LF-004 |
-| Profiling | `ProfilingDataPort`: Aggregate-Queries (Counts, TopN, Stats) pro Dialekt       | —      |
-| Profiling | `LogicalTypeResolverPort`: DB-Typ → `LogicalType` für PostgreSQL, MySQL, SQLite | —      |
-| Profiling | Zieltyp-Kompatibilitätsprüfung (`TargetTypeCompatibility`)                     | —      |
-| CLI       | `d-migrate data profile` Kommando                                              | —      |
-| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 |
+| Bereich   | Aufgabe                                                                        | LF-Ref | Status |
+| --------- | ------------------------------------------------------------------------------ | ------ | ------ |
+| Profiling | Phase A: Modulgeruest und Scope                                                | —      | ✅ |
+| Profiling | Phase B: Domaenenmodell, Typen und Rule-Engine                                 | —      | ✅ |
+| Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                         | LF-004 | ✅ |
+| Profiling | Phase D: Services und Runner                                                   | —      | |
+| CLI       | Phase E: `d-migrate data profile` Kommando                                     | —      | |
+| Docs      | Phase F: Doku, Smokes und Release-Pfade                                        | —      | |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 | |
 
 **Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
 Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
