@@ -64,8 +64,10 @@ COPY adapters/driven/driver-postgresql/build.gradle.kts adapters/driven/driver-p
 COPY adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/build.gradle.kts
 COPY adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
 COPY adapters/driven/formats/build.gradle.kts     adapters/driven/formats/build.gradle.kts
+COPY adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
 COPY adapters/driven/streaming/build.gradle.kts   adapters/driven/streaming/build.gradle.kts
 COPY adapters/driving/cli/build.gradle.kts        adapters/driving/cli/build.gradle.kts
+COPY hexagon/profiling/build.gradle.kts           hexagon/profiling/build.gradle.kts
 
 RUN chmod +x ./gradlew
 
