@@ -35,7 +35,7 @@
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build & test -------------------------------------------------
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM gradle:8.12-jdk21 AS build
 
 # Gradle tasks executed during the image build. Override with --build-arg to
 # skip tests or run a different subset (e.g. "assemble :adapters:driving:cli:installDist"
@@ -46,39 +46,11 @@ FROM eclipse-temurin:21-jdk-noble AS build
 # `docker build --target build ...` instead.
 ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
-ENV GRADLE_USER_HOME=/gradle-cache \
-    GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.welcome=never"
-
 WORKDIR /src
 
-# Copy the Gradle wrapper and build definitions first so that the dependency
-# resolution layer can be cached when only source files change.
-COPY gradlew gradlew.bat ./
-COPY gradle ./gradle
-COPY settings.gradle.kts build.gradle.kts gradle.properties ./
-COPY hexagon/core/build.gradle.kts                hexagon/core/build.gradle.kts
-COPY hexagon/ports/build.gradle.kts               hexagon/ports/build.gradle.kts
-COPY hexagon/application/build.gradle.kts         hexagon/application/build.gradle.kts
-COPY adapters/driven/driver-common/build.gradle.kts adapters/driven/driver-common/build.gradle.kts
-COPY adapters/driven/driver-postgresql/build.gradle.kts adapters/driven/driver-postgresql/build.gradle.kts
-COPY adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/build.gradle.kts
-COPY adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
-COPY adapters/driven/formats/build.gradle.kts     adapters/driven/formats/build.gradle.kts
-COPY adapters/driven/streaming/build.gradle.kts   adapters/driven/streaming/build.gradle.kts
-COPY adapters/driving/cli/build.gradle.kts        adapters/driving/cli/build.gradle.kts
+COPY --chown=gradle:gradle . .
 
-RUN chmod +x ./gradlew
-
-RUN --mount=type=cache,target=/gradle-cache \
-    ./gradlew --no-daemon help
-
-# Copy the remaining sources and run the requested Gradle tasks. The Gradle
-# caches are mounted so that repeated builds reuse downloaded dependencies.
-COPY . .
-
-RUN --mount=type=cache,target=/gradle-cache \
-    find /gradle-cache \( -path "*/kover/*" -o -name "*.exec" -o -name "*.ic" \) -delete 2>/dev/null || true && \
-    ./gradlew --no-daemon ${GRADLE_TASKS}
+RUN gradle --no-daemon ${GRADLE_TASKS}
 
 # Convert Kover XML coverage reports to JSON (if they exist).
 # Uses yq (https://github.com/mikefarah/yq) as a static binary.
@@ -86,8 +58,8 @@ ARG YQ_VERSION=v4.44.6
 ADD https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /usr/local/bin/yq
 RUN chmod +x /usr/local/bin/yq && \
     for xml in $(find . -path "*/kover/*.xml" -type f 2>/dev/null); do \
-        json="${xml%.xml}.json"; \
-        yq -p xml -o json "$xml" > "$json" 2>/dev/null || true; \
+    json="${xml%.xml}.json"; \
+    yq -p xml -o json "$xml" > "$json" 2>/dev/null || true; \
     done
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
@@ -96,9 +68,9 @@ FROM eclipse-temurin:21-jdk-noble AS integration-test
 
 RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
-        python3 python3-pip python3-venv \
-        curl ca-certificates \
-        build-essential && \
+    python3 python3-pip python3-venv \
+    curl ca-certificates \
+    build-essential && \
     python3 -m pip install --break-system-packages --quiet django && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y -qq --no-install-recommends nodejs && \
@@ -112,9 +84,9 @@ WORKDIR /src
 FROM eclipse-temurin:21-jre-noble AS runtime
 
 LABEL org.opencontainers.image.title="d-migrate" \
-      org.opencontainers.image.description="Database-agnostic CLI tool for schema migration and data management" \
-      org.opencontainers.image.source="https://github.com/pt9912/d-migrate" \
-      org.opencontainers.image.licenses="MIT"
+    org.opencontainers.image.description="Database-agnostic CLI tool for schema migration and data management" \
+    org.opencontainers.image.source="https://github.com/pt9912/d-migrate" \
+    org.opencontainers.image.licenses="MIT"
 
 WORKDIR /opt/d-migrate
 

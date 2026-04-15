@@ -1,5 +1,6 @@
 dependencies {
     implementation(project(":adapters:driven:driver-common"))
+    implementation(project(":hexagon:profiling"))
     implementation("com.mysql:mysql-connector-j:${rootProject.properties["mysqlJdbcVersion"]}")
 
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
@@ -8,6 +9,14 @@ dependencies {
 
 kover {
     reports {
+        filters {
+            excludes {
+                classes(
+                    // Profiling adapters require Testcontainers (MySQL)
+                    "dev.dmigrate.driver.mysql.profiling.*",
+                )
+            }
+        }
         verify {
             rule {
                 // Non-integration: covers TypeMapper, TypeMapping, DdlGenerator,

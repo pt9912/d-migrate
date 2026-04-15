@@ -13,10 +13,10 @@ import com.github.ajalt.clikt.core.subcommands
  * deshalb ZWEI parent-hops über den `currentContext` gemacht werden.
  */
 class DataCommand : CliktCommand(name = "data") {
-    override fun help(context: Context) = "Data export, import and transfer commands"
+    override fun help(context: Context) = "Data export, import, transfer and profiling commands"
 
     init {
-        subcommands(DataExportCommand(), DataImportCommand(), DataTransferCommand())
+        subcommands(DataExportCommand(), DataImportCommand(), DataTransferCommand(), DataProfileCommand())
     }
 
     override fun run() = Unit

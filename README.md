@@ -127,6 +127,7 @@ docker build -t d-migrate:dev .
 
 # Erzwungener vollständiger Test/Coverage-Lauf (Docker-Layer-Cache UND Gradle-Cache werden umgangen)
 docker build --no-cache \
+  --progress=plain \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
@@ -211,19 +212,19 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.7.0](https://github.com/pt9912/d-migrate/releases/tag/v0.7.0)** — Tool-Integrationen (Flyway, Liquibase, Django, Knex Export).
+Aktuelles Release: **[v0.7.5](https://github.com/pt9912/d-migrate/releases/tag/v0.7.5)** — Daten-Profiling (Spaltenstatistiken, Qualitätswarnungen, Zieltyp-Kompatibilität).
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
 ## Unterstützte Datenbanken
 
-| Datenbank | Status                           |
-|-----------|----------------------------------|
+| Datenbank  | Status                                                              |
+| ---------- | ------------------------------------------------------------------- |
 | PostgreSQL | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | MySQL      | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | SQLite     | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| Oracle     | Geplant                         |
-| MSSQL      | Geplant                         |
+| Oracle     | Geplant                                                             |
+| MSSQL      | Geplant                                                             |
 
 ## Roadmap
 

@@ -207,21 +207,27 @@ hinzu.
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
-### Milestone 0.7.5 — Daten-Profiling
+### Milestone 0.7.5 — Daten-Profiling ✅ (2026-04-15)
 
-| Bereich   | Aufgabe                                                                        | LF-Ref |
-| --------- | ------------------------------------------------------------------------------ | ------ |
-| Profiling | Gradle-Modul `hexagon/profiling` mit Domain-Modell und Warning-Rule-Engine     | —      |
-| Profiling | `SchemaIntrospectionPort` auf derselben JDBC-Metadatenbasis wie `SchemaReader` (0.6.0), mit eigener Profiling-Projektion | LF-004 |
-| Profiling | `ProfilingDataPort`: Aggregate-Queries (Counts, TopN, Stats) pro Dialekt       | —      |
-| Profiling | `LogicalTypeResolverPort`: DB-Typ → `LogicalType` für PostgreSQL, MySQL, SQLite | —      |
-| Profiling | Zieltyp-Kompatibilitätsprüfung (`TargetTypeCompatibility`)                     | —      |
-| CLI       | `d-migrate data profile` Kommando                                              | —      |
-| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 |
+| Bereich   | Aufgabe                                                                        | LF-Ref | Status |
+| --------- | ------------------------------------------------------------------------------ | ------ | ------ |
+| Profiling | Phase A: Modulgeruest und Scope                                                | —      | ✅ |
+| Profiling | Phase B: Domaenenmodell, Typen und Rule-Engine                                 | —      | ✅ |
+| Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                         | LF-004 | ✅ |
+| Profiling | Phase D: Services und Runner                                                   | —      | ✅ |
+| CLI       | Phase E: `d-migrate data profile` Kommando                                     | —      | ✅ |
+| Docs      | Phase F: Doku, Smokes und Release-Pfade                                        | —      | ✅ |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 | ✅ |
 
 **Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
 Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
 JSON/YAML-Report. Design: [profiling.md](./profiling.md).
+
+> Hinweis: Die in [profiling.md §10](./profiling.md#10-semantische-analyse-llm-erweiterung-spätere-phase)
+> beschriebene semantische Analyse ist bewusst **nicht** Teil von 0.7.5.
+> Zuerst wird das deterministische Kern-Profiling stabilisiert; die opt-in
+> LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
+> Infrastruktur in [1.1.0](#milestone-110--ki-integration).
 
 ### Milestone 0.8.0 — Internationalisierung
 
@@ -331,6 +337,8 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | AI      | RuleBasedProvider (Fallback ohne KI)            | LN-035         |
 | AI      | Stored Procedure → Markdown-Zwischenformat      | LF-017         |
 | AI      | Markdown-Zwischenformat → Ziel-DB-Code          | LF-017         |
+| AI      | SemanticAnalysisPort und strukturierte Profiling-Contracts fuer semantische Analyse | —              |
+| AI      | Semantische Profiling-Vorschlaege fuer Mapping, Transformation und Normalisierung auf Basis verdichteter Profil-Summaries | —              |
 | AI      | Datenschutz: prefer_local, allow_external Flags | LN-032, LN-033 |
 | AI      | Caching häufiger Transformationen               | LN-035         |
 | CLI     | `d-migrate transform procedure` Kommando        | LF-017         |
@@ -338,6 +346,15 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | QA      | Semantische Äquivalenzprüfung (Testausführung)  | LN-034         |
 
 **Ergebnis**: KI-gestützte Migration von Stored Procedures zwischen Datenbanken.
+Zusätzlich wird die gemeinsame KI-Provider-Infrastruktur für opt-in
+Profiling-Erweiterungen genutzt: semantische Vorschläge für Mapping,
+Transformation und Normalisierung, während Kennzahlen, Warnungen und harte
+Validierung deterministisch im Profiling-Kern bleiben.
+
+> **Abgrenzung**: Die semantische Analyse ergänzt das Profiling nur um
+> Vorschläge. Rohe Daten müssen dafür nicht an das Modell gegeben werden; der
+> Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
+> Privacy-by-Design und der Trennung aus `docs/profiling.md` §10.
 
 ### Milestone 1.2.0 — Weitere Datenbanken
 
@@ -433,6 +450,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 3.10
+**Version**: 3.12
 **Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0 und 0.7.0 abgeschlossen
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen

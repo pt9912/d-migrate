@@ -385,9 +385,15 @@ Wichtig:
 CHANGELOG-Inhalt für die Release-Notes extrahieren und veröffentlichen:
 
 ```bash
-# CHANGELOG-Sektion für X.Y.Z extrahieren (alles bis zur nächsten ##-Sektion)
-awk '/^## \[X\.Y\.Z\]/,/^## \[/{if(/^## \[/ && !/^## \[X\.Y\.Z\]/)exit; print}' \
+# CHANGELOG-Sektion für X.Y.Z extrahieren (alles bis zur nächsten ##-Sektion).
+# Hinweis: Das awk-Pattern mit geschachteltem exit ist fragil und hat in der
+# Vergangenheit wiederholt leere oder unvollständige Release-Notes erzeugt.
+# Das folgende sed-Kommando ist robuster:
+sed -n '/^## \[X\.Y\.Z\]/,/^## \[/{/^## \[X\.Y\.Z\]/!{/^## \[/!p}}' \
   CHANGELOG.md > /tmp/release-notes.md
+
+# Immer prüfen, dass die Datei nicht leer ist:
+test -s /tmp/release-notes.md || { echo "ERROR: release notes empty"; exit 1; }
 
 gh release create vX.Y.Z \
   --target main \

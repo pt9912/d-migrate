@@ -272,28 +272,30 @@ Profiling ist damit kein Appendix zum Export/Import, sondern ein eigener
 Vorbereitungsbaustein im Zielbild von d-migrate: vor Reverse, Generate,
 Transfer und produktiven Migrationsläufen.
 
-**Geplanter Soll-Zustand**:
+**Implementierter Stand (0.7.5)**:
 
 ```
 Live DB ──▶ Schema-Introspection ──▶ Profiling-Queries ──▶ Warning Rules ──▶ JSON/YAML-Report
               │                         │                     │
-              │                         │                     └─ Datenqualität, Muster, Anomalien
-              │                         └─ Counts, Top-N, Stats
-              └─ dieselbe JDBC-Metadatenbasis wie 0.6.0-SchemaReader
+              │                         │                     └─ 8 migrationsrelevante Regeln
+              │                         └─ Counts, Top-N, Stats, Kompatibilität
+              └─ eigene Profiling-Projektion (nicht SchemaReader)
 ```
 
-- Profiling baut auf derselben JDBC-Metadatenbasis auf wie Reverse-Engineering
-  aus 0.6.0, verwendet aber eine eigene Projektion mit rohen DB-Typen
-  (`dbType`) und Profiling-spezifischen Metadaten.
-- Geplant ist ein separates Hexagon-Modul `hexagon/profiling` mit eigenen
-  Ports wie `SchemaIntrospectionPort`, `ProfilingDataPort` und
-  `LogicalTypeResolverPort`.
-- Das Ergebnis ist ein strukturierter Report pro Datenbank, Tabelle und Spalte
-  mit Kennzahlen, Warnungen, optionalen Struktur-Findings und
-  Zieltyp-Kompatibilitätsprüfungen.
+- `hexagon:profiling` als eigenes Modul mit Domaenenmodell, Typsystem,
+  Rule-Engine und Outbound-Ports
+- Drei Dialekt-Adapter (PostgreSQL, MySQL, SQLite) in den bestehenden
+  Driver-Modulen
+- `DataProfileRunner` in `hexagon:application`, `DataProfileCommand`
+  unter `d-migrate data profile`
+- JSON (Default) oder YAML-Report via `ProfileReportWriter`
+- Determinismus: stabile Reihenfolge, kein `generatedAt`
+- `DatabaseDriver` bleibt unveraendert — Profiling-Adapter ueber separaten
+  `ProfilingAdapterSet`-Lookup
 
-Die Details des Domänenmodells, der Port-Schnitte und der CLI-Verträge sind
-im separaten Design-Dokument [profiling.md](./profiling.md) beschrieben.
+Nicht Teil von 0.7.5: Query-Profiling, Normalisierungsanalyse,
+Struktur-Findings, LLM-Integration. Das groessere Zielbild ist in
+[profiling.md](./profiling.md) beschrieben.
 
 ---
 
@@ -427,6 +429,10 @@ d-migrate export liquibase    --source schema.yaml --target postgresql --output 
 d-migrate export django       --source schema.yaml --target sqlite --version 0001 --output migrations/
 d-migrate export knex         --source schema.yaml --target sqlite --version 20260414120000 --output migrations/
 
+# Daten-Profiling (0.7.5)
+d-migrate data profile        --source production --format json
+d-migrate data profile        --source postgresql://localhost/mydb --tables users,orders --output profile.yaml --format yaml
+
 # Globale Flags greifen vor dem Command
 d-migrate --output-format json schema compare --source a.yaml --target b.yaml
 d-migrate --no-progress data import --source ./dump/ --target sqlite:///tmp/app.db
@@ -442,7 +448,6 @@ Datenbanken.
 
 ```bash
 # Daten-Management
-d-migrate data profile        --source production --output profile.json        # 0.7.5
 d-migrate data seed           --schema schema.yaml --target postgres://...
 
 # Stored Procedure Migration
@@ -772,4 +777,4 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 
 **Version**: 2.1
 **Stand**: 2026-04-14
-**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.6.0 (Reverse-Engineering, schema reverse CLI, schema compare DB-Operanden, data transfer, Docs/Release-Smokes); geplant sind u.a. Daten-Profiling (0.7.5)
+**Status**: Living Design mit expliziten Ist-/Soll-Markierungen; implementiert sind 0.1.0–0.7.0 (Tool-Integrationen) und 0.7.5 (Daten-Profiling)

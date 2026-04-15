@@ -115,6 +115,12 @@ class CliHelpAndBootstrapTest : FunSpec({
         }
     }
 
+    test("data profile --help produces a help message") {
+        captureStreams {
+            shouldThrow<CliktError> { cli().parse(listOf("data", "profile", "--help")) }
+        }
+    }
+
     test("export --help produces a help message") {
         captureStreams {
             shouldThrow<CliktError> { cli().parse(listOf("export", "--help")) }

@@ -1,6 +1,6 @@
 plugins {
     kotlin("jvm") version "2.1.20" apply false
-    id("org.jetbrains.kotlinx.kover") version "0.9.1"
+    id("org.jetbrains.kotlinx.kover") version "0.9.8"
 }
 
 fun normalizedReleaseVersion(raw: String?): String? {
@@ -11,7 +11,7 @@ fun normalizedReleaseVersion(raw: String?): String? {
     return normalized.takeIf { semverLike.matches(it) }
 }
 
-val defaultProjectVersion = "0.7.0"
+val defaultProjectVersion = "0.7.5"
 val resolvedProjectVersion =
     normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
@@ -72,6 +72,7 @@ dependencies {
     kover(project(":hexagon:ports"))
     kover(project(":hexagon:application"))
     kover(project(":hexagon:core"))
+    kover(project(":hexagon:profiling"))
     kover(project(":adapters:driven:driver-common"))
     kover(project(":adapters:driven:driver-postgresql"))
     kover(project(":adapters:driven:driver-mysql"))
