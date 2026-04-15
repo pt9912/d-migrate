@@ -6,5 +6,8 @@ dependencies {
     implementation(project(":hexagon:ports"))
     implementation(project(":hexagon:profiling"))
 
+    // Phase D (0.8.0): ICU4J for grapheme counting and Unicode normalization
+    implementation("com.ibm.icu:icu4j:76.1")
+
     testImplementation(project(":adapters:driven:integrations"))
 }
