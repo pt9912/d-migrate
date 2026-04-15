@@ -805,6 +805,7 @@ class DataImportRunnerTest : FunSpec({
         summary shouldContain "100 inserted"
         summary shouldContain "20 updated"
         summary shouldContain "3 failed"
+        summary shouldContain "in 0.5 s"
         summary shouldContain "reseeded 1 sequence(s)"
     }
 

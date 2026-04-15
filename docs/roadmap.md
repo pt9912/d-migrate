@@ -243,6 +243,10 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
+> Stand 2026-04-15: Phase A (Spezifikationsbereinigung) und Phase B
+> (I18n-Runtime und Config-Resolution) sind umgesetzt; weitere 0.8.0-Phasen
+> bleiben offen.
+
 ### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
 
 | Bereich | Aufgabe                                                                | LF-Ref |
@@ -452,4 +456,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.12
 **Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen; Milestone 0.8.0 in Arbeit (Phase A und B umgesetzt)

@@ -7,6 +7,7 @@ import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
+import java.util.Locale
 
 /**
  * Reine Helfer-Funktionen für [DataExportCommand]. Ausgelagert, damit die
@@ -127,14 +128,14 @@ internal object DataExportHelpers {
 
     /**
      * Plan §3.6 / §6.10: Formatiert das [ExportResult] als ProgressSummary
-     * für stderr. Reiner String-Aufbau; Zahlenformatierung über `"%.2f".format`
-     * (locale-abhängig, aber der bestehende E2E-Test prüft nur die Präfixe).
+     * für stderr. Zahlenformatierung läuft explizit über [Locale.US], damit
+     * der Summary-String nicht vom Host-Locale abhängt.
      */
     fun formatProgressSummary(result: ExportResult): String {
         val mb = result.totalBytes.toDouble() / (1024 * 1024)
         val seconds = result.durationMs.toDouble() / 1000
         return "Exported ${result.tables.size} table(s) " +
-            "(${result.totalRows} rows, ${"%.2f".format(mb)} MB) " +
-            "in ${"%.2f".format(seconds)} s"
+            "(${result.totalRows} rows, ${"%.2f".format(Locale.US, mb)} MB) " +
+            "in ${"%.2f".format(Locale.US, seconds)} s"
     }
 }

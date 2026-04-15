@@ -242,15 +242,12 @@ class DataExportHelpersTest : FunSpec({
             summary shouldContain "42 rows"
         }
 
-        test("converts bytes to MB") {
+        test("converts bytes to MB with stable Locale.US formatting") {
             // 5 * 1024 * 1024 bytes = 5.00 MB
             val summary = DataExportHelpers.formatProgressSummary(
                 result(totalBytes = 5L * 1024 * 1024)
             )
-            // Format is locale-dependent ("5.00" or "5,00") — we only check
-            // that the integral part plus " MB" is present.
-            summary shouldContain "5"
-            summary shouldContain "MB"
+            summary shouldContain "5.00 MB"
         }
 
         test("zero-byte result still formats without crash") {

@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: B (I18n-Runtime und Config-Resolution)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.1 bis 4.6, Abschnitt 5.1 bis 5.4,
 > Abschnitt 6 Phase B, Abschnitt 8, Abschnitt 9; `docs/ImpPlan-0.8.0-A.md`;
@@ -54,45 +54,48 @@ Aktueller Stand der Codebasis:
   - `--lang`
   - `--output-format`
   - `--quiet`, `--verbose`, `--no-color`, `--no-progress`
-- `CliContext` transportiert heute aber nur:
+- `CliContext` transportiert inzwischen:
   - `outputFormat`
   - `verbose`
   - `quiet`
   - `noColor`
   - `noProgress`
-- `--lang` wird aktuell weder validiert noch an eine Locale-Runtime
-  weitergereicht.
+  - `locale`
+  - `timezone`
+  - `normalization`
+- `--lang` wird in 0.8.0 inzwischen explizit validiert und als noch nicht
+  aktiver 0.9.0-Override-Pfad mit lokalem Fehlerpfad (Exit `7`)
+  zurueckgewiesen.
 - `NamedConnectionResolver` besitzt bereits einen belastbaren Config-Pfad-
   Vertrag:
   - CLI-Override `--config`
   - ENV `D_MIGRATE_CONFIG`
   - Default `./.d-migrate.yaml`
-- dieselbe Konfiguration wird heute aber im Produktivpfad im Wesentlichen nur
-  fuer `database.*` gelesen.
+- fuer `i18n.*` existiert inzwischen ein produktiver Resolver mit demselben
+  effektiven Config-Pfadvertrag.
 - `connection-config-spec.md` beschreibt bereits:
   - `i18n.default_locale`
   - `i18n.default_timezone`
   - `i18n.normalize_unicode`
-  ohne dass dafuer bereits eine produktive Runtime-Resolution existiert.
+  und diese Werte werden inzwischen produktiv in `ResolvedI18nSettings`
+  aufgeloest.
 - `OutputFormatter` und `ProgressRenderer` sind heute noch rein englisch und
   haben keinen Zugriff auf eine Locale-/Timezone-Runtime.
 - einzelne Formatter und Helfer nutzen bereits explizite, stabile Locales:
   - `ProgressRenderer` formatiert Zahlen via `Locale.US`
-  - `DataExportHelpers.formatProgressSummary(...)` nutzt aktuell noch
-    locale-abhaengiges `"%.2f".format(...)`
+  - `DataExportHelpers.formatProgressSummary(...)` nutzt inzwischen ebenfalls
+    explizit `Locale.US`
 
 Konsequenz:
 
-- ohne Phase B wuerde Phase C zwar Message-Keys und ResourceBundles bauen,
-  haette aber keinen belastbaren Laufzeitkontext, in dem diese Bundles sauber
-  aufgeloest werden koennen.
+- Phase B hat damit den benoetigten Laufzeitkontext fuer spaetere
+  ResourceBundles und lokalisierte Ausgaben bereits geschaffen.
 - besonders kritisch ist die Config-Seite:
-  wenn `i18n.*` nicht denselben effektiven Config-Pfad respektiert wie
-  `database.*`, entstehen schwer erklaerbare Unterschiede zwischen
-  Verbindungsauflösung und Lokalisierung.
+  der gemeinsame Pfadvertrag fuer `database.*` und `i18n.*` ist jetzt
+  technisch umgesetzt und muss in Review/Test sauber nachgewiesen bleiben.
 - ebenso kritisch ist die Milestone-Grenze:
-  `--lang` steht bereits im Root-Command, darf aber laut Phase A den finalen
-  0.9.0-CLI-Vertrag nicht vorwegnehmen.
+  `--lang` steht weiter im Root-Command, darf aber laut Phase A den finalen
+  0.9.0-CLI-Vertrag im Helptext und Verhalten nicht vorwegnehmen.
 
 ---
 
