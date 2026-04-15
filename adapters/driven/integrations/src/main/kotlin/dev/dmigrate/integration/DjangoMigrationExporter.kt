@@ -66,9 +66,12 @@ class DjangoMigrationExporter : ToolMigrationExporter {
     }
 
     internal companion object {
+        private val COMMENT_ONLY = Regex("^(\\s*--[^\n]*\n?)*$")
+
         fun renderStatements(payload: MigrationDdlPayload): String = buildString {
             for (statement in payload.result.statements) {
                 if (statement.sql.isBlank()) continue
+                if (COMMENT_ONLY.matches(statement.sql)) continue
                 appendLine(RenderHelpers.escapePython(statement.sql))
             }
         }

@@ -60,9 +60,12 @@ class KnexMigrationExporter : ToolMigrationExporter {
     }
 
     internal companion object {
+        private val COMMENT_ONLY = Regex("^(\\s*--[^\n]*\n?)*$")
+
         fun StringBuilder.appendRawCalls(payload: MigrationDdlPayload) {
             for (statement in payload.result.statements) {
                 if (statement.sql.isBlank()) continue
+                if (COMMENT_ONLY.matches(statement.sql)) continue
                 val escaped = RenderHelpers.escapeJavaScript(statement.sql)
                 appendLine("    await knex.raw(`$escaped`);")
             }

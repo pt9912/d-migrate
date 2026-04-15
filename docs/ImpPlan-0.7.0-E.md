@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: E (Echte Tool-Runtime-Validierung aufbauen)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.2 bis 4.9, Abschnitt 5 Phase E, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -64,26 +64,18 @@ Aktueller Stand der Codebasis und der Dokumentation:
   - Renderer-Inhalte
   - bestehende Daten- und Schema-Pfade
 - Unter `adapters/driven/integrations/src/test/kotlin/dev/dmigrate/integration/`
-  existieren derzeit nur renderer-nahe Tests; echte Tool-Runtimes werden dort
-  noch nicht ausgefuehrt.
-- Das Repo nutzt bereits fuer andere Bereiche Integrations-Testmuster mit
-  fokussierten, getaggten Runtime-Tests und Testcontainers.
-- Es gibt mit `./scripts/test-integration-docker.sh` bereits ein vorhandenes
-  Skript fuer containerisierte Integrations-Testlaeufe.
-- Der Masterplan fixiert fuer 0.7.0 explizit die Runtime-Matrix:
-  - Flyway -> PostgreSQL
-  - Liquibase -> PostgreSQL
-  - Django -> SQLite
-  - Knex -> SQLite
-
-Konsequenz fuer Phase E:
-
-- Die groessten offenen Risiken liegen nicht mehr in Port-, Renderer- oder
-  CLI-Vertragsfragen, sondern in der Frage, ob die erzeugten Artefakte von
-  echten Tool-Runtimes akzeptiert werden.
-- Ohne Phase E bliebe 0.7.0 auf der Ebene von String-/Datei-Korrektheit
-  stehen, obwohl Roadmap und Masterplan explizit echte Tool-Ausfuehrung
-  verlangen.
+  existieren neben den renderer-nahen Unit-Tests auch echte Runtime-Tests:
+  - `FlywayRuntimeTest` — Flyway Java API gegen PostgreSQL (Testcontainers)
+  - `LiquibaseRuntimeTest` — Liquibase Java API gegen PostgreSQL (Testcontainers)
+  - `DjangoRuntimeTest` — minimales Django-Projekt gegen SQLite (ProcessBuilder)
+  - `KnexRuntimeTest` — minimales Knex-Projekt gegen SQLite (ProcessBuilder)
+- Die Runtime-Tests sind mit `NamedTag("integration")` markiert und laufen
+  nur mit `-PintegrationTests`.
+- `./scripts/test-integration-docker.sh` baut ein Image mit JDK + Python +
+  Django + Node.js (Dockerfile-Stage `integration-test`) und fuehrt die
+  vollstaendige Vierer-Matrix aus.
+- `.github/workflows/integration.yml` provisioniert Python, Django, Node.js
+  und pnpm fuer die CI-Ausfuehrung.
 
 ---
 
@@ -359,33 +351,33 @@ Noch nicht Teil von Phase E, aber Folgeartefakte vorzubereiten:
 
 ## 8. Akzeptanzkriterien
 
-- [ ] Echte Tool-Runtime-Tests laufen mindestens fuer:
+- [x] Echte Tool-Runtime-Tests laufen mindestens fuer:
       Flyway -> PostgreSQL, Liquibase -> PostgreSQL, Django -> SQLite,
       Knex -> SQLite.
-- [ ] Die Runtime-Tests erzeugen ihre Migrationsartefakte aus dem
+- [x] Die Runtime-Tests erzeugen ihre Migrationsartefakte aus dem
       produktiven 0.7.0-Exportvertrag und nicht aus handgepflegten
       Tool-Migrationsdateien.
-- [ ] Flyway wendet die generierte versionierte SQL-Datei gegen PostgreSQL an
+- [x] Flyway wendet die generierte versionierte SQL-Datei gegen PostgreSQL an
       und die erwarteten Tabellen / Objekte existieren danach.
-- [ ] Liquibase wendet den generierten versionierten XML-Changelog gegen
+- [x] Liquibase wendet den generierten versionierten XML-Changelog gegen
       PostgreSQL an und die erwarteten Tabellen / Objekte existieren danach.
-- [ ] Django laedt die generierte Migration in einem minimalen Django-Projekt
+- [x] Django laedt die generierte Migration in einem minimalen Django-Projekt
       und `migrate` funktioniert gegen SQLite; die erwarteten Tabellen /
       Objekte existieren danach.
-- [ ] Knex laedt die generierte Migration in einem minimalen Knex-Projekt und
+- [x] Knex laedt die generierte Migration in einem minimalen Knex-Projekt und
       `migrate:latest` funktioniert gegen SQLite; die erwarteten Tabellen /
       Objekte existieren danach.
-- [ ] Liquibase validiert den dokumentierten `<rollback>`-Pfad.
-- [ ] Django validiert den dokumentierten `reverse_sql`-Pfad und dessen
+- [x] Liquibase validiert den dokumentierten `<rollback>`-Pfad.
+- [x] Django validiert den dokumentierten `reverse_sql`-Pfad und dessen
       beobachtbare Schemawirkung.
-- [ ] Knex validiert den dokumentierten `exports.down`-Pfad und dessen
+- [x] Knex validiert den dokumentierten `exports.down`-Pfad und dessen
       beobachtbare Schemawirkung.
-- [ ] Flyway-Undo ist in der Testumgebung entweder reproduzierbar validiert oder
+- [x] Flyway-Undo ist in der Testumgebung entweder reproduzierbar validiert oder
       im Testaufbau explizit als editions-/praxisabhaengig eingeordnet; der
       Test suggeriert keine staerkere Garantie als der Produktvertrag.
-- [ ] Die Runtime-Tests sind als Integrations-/Container-Tests getrennt vom
+- [x] Die Runtime-Tests sind als Integrations-/Container-Tests getrennt vom
       Default-Testlauf steuerbar.
-- [ ] Die Runtime-Matrix ist ueber vorhandene Docker-/CI-Pfade
+- [x] Die Runtime-Matrix ist ueber vorhandene Docker-/CI-Pfade
       reproduzierbar ausfuehrbar.
 
 ---
@@ -394,26 +386,25 @@ Noch nicht Teil von Phase E, aber Folgeartefakte vorzubereiten:
 
 Mindestumfang fuer die Phase-E-Umsetzung:
 
-1. Runtime-Testfaelle und Fixtures pruefen:
+1. Vollstaendige Vierer-Matrix ausfuehren. Das Skript baut ein Image mit
+   JDK + Python + Django + Node.js und fuehrt alle vier Tool-Runtimes aus:
 
 ```bash
-rg -n "Flyway|Liquibase|Django|Knex|integration|rollback|reverse_sql|migrate:latest|migrate:rollback" \
-  adapters/driven/integrations/src/test/kotlin \
-  adapters/driven/integrations/src/test/resources
+./scripts/test-integration-docker.sh
 ```
 
-2. Fokussierte Runtime-Tests ueber den vorhandenen Docker-Pfad ausfuehren:
+2. Nur die Export-Runtime-Tests ausfuehren:
 
 ```bash
-./scripts/test-integration-docker.sh -PintegrationTests :adapters:driven:integrations:test
+./scripts/test-integration-docker.sh \
+  -PintegrationTests :adapters:driven:integrations:test
 ```
 
-3. Bei Bedarf CI-nahe Runtime-Umgebung lokal nachvollziehen:
+3. Runtime-Testfaelle und Fixtures pruefen:
 
 ```bash
-docker build --target build \
-  --build-arg GRADLE_TASKS=":adapters:driven:integrations:test" \
-  -t d-migrate:phase-070-runtime-tests .
+grep -rn "RuntimeTest\|integration" \
+  adapters/driven/integrations/src/test/kotlin
 ```
 
 Dabei explizit pruefen:
