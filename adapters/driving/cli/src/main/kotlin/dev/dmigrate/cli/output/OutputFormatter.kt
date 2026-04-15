@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.output
 
 import dev.dmigrate.cli.CliContext
+import dev.dmigrate.cli.i18n.UnicodeNormalizer
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 
@@ -8,6 +9,10 @@ class OutputFormatter(
     private val context: CliContext,
     private val messages: MessageResolver = MessageResolver(context.locale),
 ) {
+
+    /** Normalizes display text using the configured Unicode normalization mode. */
+    private fun norm(text: String): String =
+        UnicodeNormalizer.normalize(text, context.normalization)
 
     fun printValidationResult(result: ValidationResult, schema: SchemaDefinition, source: String) {
         when (context.outputFormat) {
@@ -31,7 +36,7 @@ class OutputFormatter(
 
     private fun printPlain(result: ValidationResult, schema: SchemaDefinition, source: String) {
         if (!context.quiet) {
-            println(messages.text("cli.validation.header", schema.name, schema.version))
+            println(messages.text("cli.validation.header", norm(schema.name), schema.version))
             println()
             println("  ${messages.text("cli.validation.tables", schema.tables.size)}")
             val columnCount = schema.tables.values.sumOf { it.columns.size }

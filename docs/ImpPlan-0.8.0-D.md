@@ -53,11 +53,13 @@ Aktueller Stand der Codebasis:
   - `UnicodeNormalizationMode`
   - `I18nSettingsResolver` mit produktiver Aufloesung von
     `i18n.normalize_unicode`
-- der Repo-Zustand kennt heute also schon den Konfigurationsvertrag fuer
-  Unicode-Normalisierung, aber noch keine produktiven Utilities, die diesen
-  Modus in der Fachlogik verwenden
-- ICU4J ist derzeit noch nicht als produktive Abhaengigkeit in den relevanten
-  Modulen eingebunden
+- ICU4J 76.1 ist als produktive Abhaengigkeit in `hexagon:application`
+  eingebunden.
+- `UnicodeNormalizer`, `GraphemeCounter` und `UnicodeCompare` existieren als
+  pure Utilities unter `hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/`.
+- `OutputFormatter.printPlain()` nutzt `UnicodeNormalizer.normalize()` mit dem
+  aus `CliContext.normalization` aufgeloesten Modus fuer die Schema-Name-Anzeige
+  — das ist die erste produktive Consumer-Callsite.
 - im Code existieren viele rohe `.length`-, `substring(...)`- und
   Zeichenkettenpfade; nur ein kleiner Teil davon ist fuer Unicode-Semantik
   fachlich relevant

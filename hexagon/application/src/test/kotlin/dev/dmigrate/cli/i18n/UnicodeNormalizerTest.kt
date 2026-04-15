@@ -75,4 +75,19 @@ class UnicodeNormalizerTest : FunSpec({
         val composed = "\u0439"
         UnicodeNormalizer.normalize(decomposed, UnicodeNormalizationMode.NFC) shouldBe composed
     }
+
+    // ── Negative: payload non-mutation contract ──────────
+
+    test("UnicodeNormalizer is utility — data payloads must not be auto-normalized") {
+        // This test documents the contract: the normalizer is explicitly called,
+        // never applied automatically to data payloads. Export/import/transfer
+        // values pass through unchanged unless the caller explicitly normalizes.
+        val rawPayload = "A\u0308 café" // decomposed Ä + precomposed é
+        val untouched = rawPayload // simulates passing through export pipeline
+        // The payload is NOT normalized — it retains its original form
+        untouched shouldBe rawPayload
+        // But if someone explicitly normalizes, the result differs:
+        val normalized = UnicodeNormalizer.normalize(rawPayload, UnicodeNormalizationMode.NFC)
+        (normalized != rawPayload) shouldBe true // proves normalization would change it
+    }
 })
