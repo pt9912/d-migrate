@@ -4,6 +4,7 @@
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:ports"))
+    implementation(project(":hexagon:profiling"))
 
     testImplementation(project(":adapters:driven:integrations"))
 }

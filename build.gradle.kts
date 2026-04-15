@@ -72,6 +72,7 @@ dependencies {
     kover(project(":hexagon:ports"))
     kover(project(":hexagon:application"))
     kover(project(":hexagon:core"))
+    kover(project(":hexagon:profiling"))
     kover(project(":adapters:driven:driver-common"))
     kover(project(":adapters:driven:driver-postgresql"))
     kover(project(":adapters:driven:driver-mysql"))

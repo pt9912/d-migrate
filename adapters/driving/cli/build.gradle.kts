@@ -41,6 +41,7 @@ fun sha256(file: File): String {
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:application"))
+    implementation(project(":hexagon:profiling"))
     implementation(project(":adapters:driven:driver-common"))
     implementation(project(":adapters:driven:driver-postgresql"))
     implementation(project(":adapters:driven:driver-mysql"))

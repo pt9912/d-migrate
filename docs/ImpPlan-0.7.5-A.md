@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: A (Scope hartziehen und Modulgeruest anlegen)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 1, Abschnitt 2,
 > Abschnitt 3, Abschnitt 4, Abschnitt 5, Abschnitt 6 Phase A, Abschnitt 7,
 > Abschnitt 9, Abschnitt 11, Abschnitt 12; `docs/roadmap.md` Milestone 0.7.5;
@@ -60,31 +60,26 @@ Aktueller Stand in Repo und Dokumentation:
   - spaeterer semantischer Analyse
 - `docs/implementation-plan-0.7.5.md` reduziert diesen Zielraum bereits
   bewusst auf den roadmap-konformen Kern.
-- `settings.gradle.kts` enthaelt heute:
-  - `hexagon:core`
-  - `hexagon:ports`
-  - `hexagon:application`
-  aber noch kein `hexagon:profiling`
-- Root-Kover in `build.gradle.kts` kennt das kuenftige Profiling-Modul noch
-  nicht
-- `hexagon/application/build.gradle.kts` haengt heute nur von:
-  - `hexagon:core`
-  - `hexagon:ports`
-  ab
+- `settings.gradle.kts` bindet `hexagon:profiling` bereits ein.
+- Root-Kover in `build.gradle.kts` nimmt `hexagon:profiling` bereits auf.
+- `hexagon/profiling/build.gradle.kts` existiert mit Abhaengigkeiten auf
+  `hexagon:core` und `hexagon:ports`, 90% Coverage-Gate.
+- `hexagon/application/build.gradle.kts` haengt bereits von
+  `hexagon:profiling` ab.
+- `adapters:driving:cli`, `adapters:driven:driver-postgresql`,
+  `adapters:driven:driver-mysql`, `adapters:driven:driver-sqlite` und
+  `adapters:driven:formats` haben bereits
+  `implementation(project(":hexagon:profiling"))`.
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt` enthaelt
-  heute den zentralen Bootstrap ueber:
+  den zentralen Bootstrap ueber:
   - `registerDrivers()`
   - `buildRootCommand()`
-- `DatabaseDriver` in `hexagon:ports` kapselt heute:
-  - `ddlGenerator()`
-  - `dataReader()`
-  - `tableLister()`
-  - `dataWriter()`
-  - `urlBuilder()`
-  - `schemaReader()`
-  aber keine Profiling-spezifischen Ports
+- `DatabaseDriver` in `hexagon:ports` kapselt:
+  - `ddlGenerator()`, `dataReader()`, `tableLister()`, `dataWriter()`,
+    `urlBuilder()`, `schemaReader()`
+  - aber keine Profiling-spezifischen Ports (bewusst unveraendert)
 - `docs/cli-spec.md` enthaelt derzeit noch keinen Abschnitt fuer
-  `data profile`
+  `data profile` (Folgearbeit fuer spaetere Phase)
 
 Konsequenz:
 
@@ -338,19 +333,19 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `settings.gradle.kts` bindet `hexagon:profiling` in den Multi-Module-
+- [x] `settings.gradle.kts` bindet `hexagon:profiling` in den Multi-Module-
       Build ein.
-- [ ] `build.gradle.kts` nimmt `hexagon:profiling` in Root-Kover auf.
-- [ ] `hexagon/profiling/build.gradle.kts` existiert und ist buildbar.
-- [ ] `hexagon:application` ist fuer spaetere Profiling-Runner vorbereitet.
-- [ ] CLI-, Driver- und Format-Module haben die noetigen
+- [x] `build.gradle.kts` nimmt `hexagon:profiling` in Root-Kover auf.
+- [x] `hexagon/profiling/build.gradle.kts` existiert und ist buildbar.
+- [x] `hexagon:application` ist fuer spaetere Profiling-Runner vorbereitet.
+- [x] CLI-, Driver- und Format-Module haben die noetigen
       `implementation(project(":hexagon:profiling"))`-Abhaengigkeiten.
-- [ ] Die neuen Abhaengigkeiten laufen ohne Modulzyklus.
-- [ ] Es ist dokumentiert, dass `DatabaseDriver` fuer 0.7.5 unveraendert
+- [x] Die neuen Abhaengigkeiten laufen ohne Modulzyklus.
+- [x] Es ist dokumentiert, dass `DatabaseDriver` fuer 0.7.5 unveraendert
       bleibt.
-- [ ] Es ist dokumentiert, dass Dialektverdrahtung fuer Profiling zentral im
+- [x] Es ist dokumentiert, dass Dialektverdrahtung fuer Profiling zentral im
       Bootstrap bleiben muss.
-- [ ] Es ist dokumentiert, dass `docs/cli-spec.md` spaeter um
+- [x] Es ist dokumentiert, dass `docs/cli-spec.md` spaeter um
       `data profile` ergaenzt werden muss.
 
 ---
@@ -379,12 +374,12 @@ Strukturreparaturen. Phase A zieht diese Basisarbeit absichtlich vor.
 
 ## 9. Abschluss-Checkliste
 
-- [ ] `hexagon:profiling` ist als Modul geplant und in allen betroffenen
+- [x] `hexagon:profiling` ist als Modul geplant und in allen betroffenen
       Build-Dateien sauber verankert.
-- [ ] Root-Kover betrachtet das neue Modul.
-- [ ] Die spaetere Profiling-Verdrahtung ist als zentrale Bootstrap-Aufgabe
+- [x] Root-Kover betrachtet das neue Modul.
+- [x] Die spaetere Profiling-Verdrahtung ist als zentrale Bootstrap-Aufgabe
       und nicht als verteilte Command-Logik festgelegt.
-- [ ] `DatabaseDriver` ist ausdruecklich aus dem Scope der Phase-A-
+- [x] `DatabaseDriver` ist ausdruecklich aus dem Scope der Phase-A-
       Erweiterungen herausgenommen.
-- [ ] Die Doku-Luecke fuer `data profile` in `docs/cli-spec.md` ist als
+- [x] Die Doku-Luecke fuer `data profile` in `docs/cli-spec.md` ist als
       verbindliche Folgearbeit sichtbar.
