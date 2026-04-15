@@ -211,7 +211,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.6.0](https://github.com/pt9912/d-migrate/releases/tag/v0.6.0)** — Reverse-Engineering, DB-basiertes Compare, Direkttransfer.
+Aktuelles Release: **[v0.7.0](https://github.com/pt9912/d-migrate/releases/tag/v0.7.0)** — Tool-Integrationen (Flyway, Liquibase, Django, Knex Export).
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
