@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: E (CLI und Report-Writing)
-> **Status**: Draft (2026-04-15)
+> **Status**: Review (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 4.5, Abschnitt 5.3 bis 5.4, Abschnitt 6 Phase E, Abschnitt 7.1,
 > Abschnitt 7.3, Abschnitt 8.4 bis 8.5, Abschnitt 9; `docs/ImpPlan-0.7.5-A.md`;

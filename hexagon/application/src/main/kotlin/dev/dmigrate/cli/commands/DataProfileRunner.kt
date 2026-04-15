@@ -9,13 +9,15 @@ import java.nio.file.Path
 
 /**
  * Immutable DTO for `d-migrate data profile`.
- * Phase E will add output/format/quiet fields.
  */
 data class DataProfileRequest(
     val source: String,
     val tables: List<String>? = null,
     val schema: String? = null,
     val topN: Int = 10,
+    val format: String = "json",
+    val output: Path? = null,
+    val quiet: Boolean = false,
 )
 
 /**
@@ -36,7 +38,7 @@ class DataProfileRunner(
     private val adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet,
     private val databaseProduct: (AutoCloseable) -> String = { "unknown" },
     private val databaseVersion: (AutoCloseable) -> String? = { null },
-    private val onSuccess: (DatabaseProfile) -> Unit = {},
+    private val reportWriter: (DatabaseProfile, String, Path?) -> Unit,
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
@@ -101,7 +103,8 @@ class DataProfileRunner(
                 tables = request.tables,
             )
 
-            onSuccess(profile)
+            reportWriter(profile, request.format, request.output)
+            if (!request.quiet) stderr("Profiling complete: ${profile.tables.size} table(s)")
             0
         } catch (e: ProfilingException) {
             stderr("[ERROR] Profiling failed: ${e.message}")

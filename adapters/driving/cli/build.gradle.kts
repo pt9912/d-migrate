@@ -149,19 +149,24 @@ jib {
 
 kover {
     reports {
+        filters {
+            excludes {
+                classes(
+                    // Thin Clikt command shells — all logic is in the Runners
+                    // (tested via *RunnerTest). Commands only parse flags and
+                    // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
+                    "dev.dmigrate.cli.commands.DataProfileCommand",
+                    "dev.dmigrate.cli.commands.ExportFlywayCommand",
+                    "dev.dmigrate.cli.commands.ExportLiquibaseCommand",
+                    "dev.dmigrate.cli.commands.ExportDjangoCommand",
+                    "dev.dmigrate.cli.commands.ExportKnexCommand",
+                    "dev.dmigrate.cli.commands.ExportCommands*",
+                    "dev.dmigrate.cli.commands.SchemaReverseCommand",
+                )
+            }
+        }
         verify {
             rule {
-                // 90% wie die übrigen Module. Die ursprüngliche 60%-Schwelle
-                // (docs/archive/implementation-plan-0.3.0.md §11) begründete sich mit
-                // "CLI-Code ist I/O-Glue und nur durch Integration-Tests
-                // abdeckbar" — das war eine Bequemlichkeits-Ausrede. Der
-                // eigentliche Glue (Hikari, File-I/O, Driver-Registry) ist
-                // ≈10% des Moduls; der Rest sind Verzweigungen, Validierungen
-                // und Exit-Code-Mappings, die über das Runner-Pattern
-                // (DataExportRunner / SchemaGenerateRunner) mit Fakes
-                // unit-testbar sind. Siehe `*HelpersTest`, `*RunnerTest`.
-                // SchemaReverseCommand is thin CLI glue tested via
-                // integration; Runner logic is tested in SchemaReverseRunnerTest
                 minBound(85)
             }
         }

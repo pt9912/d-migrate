@@ -66,7 +66,7 @@ class DataProfileRunnerTest : FunSpec({
         adapterLookup = adapterLookup,
         databaseProduct = { "PostgreSQL" },
         databaseVersion = { "16.1" },
-        onSuccess = { lastProfile = it },
+        reportWriter = { profile, _, _ -> lastProfile = profile },
         stderr = { stderrLines += it },
     )
 
