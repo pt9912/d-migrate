@@ -27,6 +27,10 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
     }
 
     override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> {
+        val s = schema ?: "public"
+        // Schema-qualified regclass: '"schema"."table"'::regclass
+        val regclass = "'\"$s\".\"$table\"'::regclass"
+
         pool.borrow().use { conn ->
             val pkColumns = mutableSetOf<String>()
             val fkColumns = mutableSetOf<String>()
@@ -38,7 +42,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                     SELECT a.attname
                     FROM pg_index i
                     JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                    WHERE i.indrelid = '"$table"'::regclass AND i.indisprimary
+                    WHERE i.indrelid = $regclass AND i.indisprimary
                 """.trimIndent())
                 while (rs.next()) pkColumns += rs.getString("attname")
             }
@@ -50,7 +54,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                     FROM information_schema.table_constraints tc
                     JOIN information_schema.key_column_usage kcu
                       ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-                    WHERE tc.table_schema = '${schema ?: "public"}' AND tc.table_name = '$table'
+                    WHERE tc.table_schema = '$s' AND tc.table_name = '$table'
                       AND tc.constraint_type = 'FOREIGN KEY'
                 """.trimIndent())
                 while (rs.next()) fkColumns += rs.getString("column_name")
@@ -62,7 +66,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                     SELECT a.attname
                     FROM pg_index i
                     JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                    WHERE i.indrelid = '"$table"'::regclass
+                    WHERE i.indrelid = $regclass
                       AND i.indisunique AND NOT i.indisprimary
                       AND array_length(i.indkey, 1) = 1
                 """.trimIndent())
