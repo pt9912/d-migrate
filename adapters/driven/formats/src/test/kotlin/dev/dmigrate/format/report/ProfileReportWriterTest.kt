@@ -95,4 +95,76 @@ class ProfileReportWriterTest : FunSpec({
         val b = writer.renderJson(profile)
         a shouldBe b
     }
+
+    test("JSON and YAML carry identical field set for rich profile") {
+        val rich = DatabaseProfile(
+            databaseProduct = "PostgreSQL",
+            databaseVersion = "16.1",
+            schemaName = "myschema",
+            tables = listOf(
+                TableProfile(
+                    name = "orders",
+                    rowCount = 50,
+                    columns = listOf(
+                        ColumnProfile(
+                            name = "total", dbType = "numeric(10,2)", logicalType = LogicalType.DECIMAL,
+                            nullable = false, rowCount = 50, nonNullCount = 50, nullCount = 0,
+                            distinctCount = 45, duplicateValueCount = 5,
+                            minLength = 3, maxLength = 8,
+                            minValue = "1.50", maxValue = "999.99",
+                            topValues = listOf(ValueFrequency("42.00", 3, 0.06)),
+                            numericStats = dev.dmigrate.profiling.model.NumericStats(
+                                min = 1.5, max = 999.99, avg = 123.45, sum = 6172.5,
+                                stddev = 87.3, zeroCount = 0, negativeCount = 0,
+                            ),
+                            targetCompatibility = listOf(
+                                dev.dmigrate.profiling.model.TargetTypeCompatibility(
+                                    targetType = dev.dmigrate.profiling.types.TargetLogicalType.INTEGER,
+                                    checkedValueCount = 50, compatibleCount = 0, incompatibleCount = 50,
+                                    exampleInvalidValues = listOf("1.50", "42.00", "999.99"),
+                                    determinationStatus = dev.dmigrate.profiling.model.DeterminationStatus.FULL_SCAN,
+                                ),
+                            ),
+                            warnings = listOf(
+                                ProfileWarning(WarningCode.DUPLICATE_VALUES, "5 duplicates", Severity.INFO),
+                            ),
+                        ),
+                        ColumnProfile(
+                            name = "created", dbType = "timestamp", logicalType = LogicalType.DATETIME,
+                            nullable = true, rowCount = 50, nonNullCount = 48, nullCount = 2,
+                            distinctCount = 48, duplicateValueCount = 0,
+                            temporalStats = dev.dmigrate.profiling.model.TemporalStats(
+                                minTimestamp = "2024-01-01T00:00:00",
+                                maxTimestamp = "2026-04-15T12:00:00",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val json = writer.renderJson(rich)
+        val yaml = writer.renderYaml(rich)
+
+        // Every field present in JSON must also be present in YAML
+        val fields = listOf(
+            "databaseProduct", "databaseVersion", "schemaName",
+            "name", "rowCount", "dbType", "logicalType", "nullable",
+            "nonNullCount", "nullCount", "distinctCount", "duplicateValueCount",
+            "minLength", "maxLength", "minValue", "maxValue",
+            "topValues", "42.00",
+            "numericStats", "stddev", "zeroCount", "negativeCount",
+            "temporalStats", "minTimestamp", "maxTimestamp",
+            "2024-01-01", "2026-04-15",
+            "targetCompatibility", "checkedValueCount", "compatibleCount",
+            "incompatibleCount", "determinationStatus", "FULL_SCAN",
+            "exampleInvalidValues", "1.50", "999.99",
+            "warnings", "DUPLICATE_VALUES", "5 duplicates",
+        )
+
+        for (field in fields) {
+            io.kotest.assertions.withClue("JSON missing: $field") { json shouldContain field }
+            io.kotest.assertions.withClue("YAML missing: $field") { yaml shouldContain field }
+        }
+    }
 })

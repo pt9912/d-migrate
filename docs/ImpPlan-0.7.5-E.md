@@ -363,13 +363,15 @@ Mindestens erforderlich:
 - Round-Trip-Tests fuer JSON auf stdout
 - Round-Trip-Tests fuer YAML in Datei
 - Tests fuer Tabellenfilter
-- Tests fuer `--schema` auf PostgreSQL
-- Tests fuer Named-Connection-Aufloesung ueber `.d-migrate.yaml`
-- Tests fuer Root-`CliContext`-Uebernahme, insbesondere `quiet`
-- Tests fuer die Trennung von Root-`--output-format` und kommandoeigenem
-  `--format`
-- Tests fuer ungueltige Flags und Exit `2`
-- Writer-Tests fuer JSON/YAML-Informationsgleichheit
+- Tests fuer `--schema` auf PostgreSQL (Runner-Tests)
+- Tests fuer ungueltige Flags und Exit `2` (Runner-Tests)
+- Writer-Tests fuer JSON/YAML-Informationsgleichheit ueber die volle
+  Feldmenge
+
+Hinweis: Echte CLI-Tests ueber `DMigrate.parse(...)` fuer `data profile`
+erfordern eine aufloesbare `--source` und sind in 0.7.5 ueber Runner-Tests
+und Help-Tests abgedeckt. Die vollstaendige Clikt-Pfad-Testbarkeit ist als
+separates Refactoring dokumentiert (`docs/refactoring-cli-testability.md`).
 
 Ziel:
 
