@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: B (Domaenenmodell, Typen und Rule-Engine)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.5 bis 4.6, Abschnitt 5, Abschnitt 6 Phase B,
 > Abschnitt 8, Abschnitt 11, Abschnitt 12; `docs/ImpPlan-0.7.5-A.md`;
@@ -333,18 +333,18 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `LogicalType`, `TargetLogicalType`, `Severity` und `WarningCode` sind
+- [x] `LogicalType`, `TargetLogicalType`, `Severity` und `WarningCode` sind
       als explizite Profiling-Kerntypen modelliert.
-- [ ] `DatabaseProfile`, `TableProfile` und `ColumnProfile` bilden den
+- [x] `DatabaseProfile`, `TableProfile` und `ColumnProfile` bilden den
       roadmap-konformen 0.7.5-Kern ab.
-- [ ] `ProfileWarning` ist ein strukturierter Warnungsvertrag und keine lose
+- [x] `ProfileWarning` ist ein strukturierter Warnungsvertrag und keine lose
       Stringliste.
-- [ ] `TargetTypeCompatibility` enthaelt den dokumentierten Mindestvertrag mit
+- [x] `TargetTypeCompatibility` enthaelt den dokumentierten Mindestvertrag mit
       `checkedValueCount`, `compatibleCount`, `incompatibleCount`,
       Beispielwerten und Bestimmungsstatus.
-- [ ] `WarningEvaluator` ist ohne JDBC und ohne I/O voll unit-testbar.
-- [ ] Der erste Regelkatalog ist im Kern implementiert und getestet.
-- [ ] Phase B fuehrt keine Query-, FD- oder LLM-Scope-Erweiterung ein.
+- [x] `WarningEvaluator` ist ohne JDBC und ohne I/O voll unit-testbar.
+- [x] Der erste Regelkatalog ist im Kern implementiert und getestet.
+- [x] Phase B fuehrt keine Query-, FD- oder LLM-Scope-Erweiterung ein.
 
 ---
 
@@ -375,11 +375,11 @@ Profiling-Kern schwer testbar und Phase B verfehlt ihr Ziel.
 
 ## 9. Abschluss-Checkliste
 
-- [ ] Das Profiling-Modell ist im neuen Modul als expliziter Kernvertrag
+- [x] Das Profiling-Modell ist im neuen Modul als expliziter Kernvertrag
       verankert.
-- [ ] `LogicalType` und `TargetLogicalType` sind sauber von `NeutralType`
+- [x] `LogicalType` und `TargetLogicalType` sind sauber von `NeutralType`
       getrennt.
-- [ ] `TargetTypeCompatibility` ist fachlich belastbar modelliert.
-- [ ] Die Rule-Engine ist rein funktional und unit-testbar.
-- [ ] Der erste Regelkatalog ist klein, migrationsrelevant und dokumentiert.
-- [ ] Phase B bleibt frei von JDBC-, CLI- und Report-I/O-Implementierung.
+- [x] `TargetTypeCompatibility` ist fachlich belastbar modelliert.
+- [x] Die Rule-Engine ist rein funktional und unit-testbar.
+- [x] Der erste Regelkatalog ist klein, migrationsrelevant und dokumentiert.
+- [x] Phase B bleibt frei von JDBC-, CLI- und Report-I/O-Implementierung.
