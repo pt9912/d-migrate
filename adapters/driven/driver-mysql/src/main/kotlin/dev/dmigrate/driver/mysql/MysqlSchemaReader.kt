@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
  * MySQL [SchemaReader] implementation.
@@ -102,10 +103,8 @@ class MysqlSchemaReader : SchemaReader {
             indices += idx
         }
 
-        val singleColFks = fks.filter { it.columns.size == 1 && it.referencedColumns.size == 1 }
-            .associateBy { it.columns[0] }
-        val singleColUnique = indices.filter { it.isUnique && it.columns.size == 1 }
-            .map { it.columns[0] }.toSet()
+        val singleColFks = SchemaReaderUtils.liftSingleColumnFks(fks)
+        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
 
         val columns = LinkedHashMap<String, ColumnDefinition>()
         for (row in colRows) {
@@ -129,14 +128,7 @@ class MysqlSchemaReader : SchemaReader {
             val required = if (isPkCol) false else (row["is_nullable"] as String) == "NO"
             val unique = if (isPkCol) false else colName in singleColUnique
 
-            val references = singleColFks[colName]?.let { fk ->
-                ReferenceDefinition(
-                    table = fk.referencedTable,
-                    column = fk.referencedColumns[0],
-                    onDelete = fk.onDelete?.toReferentialActionOrNull(),
-                    onUpdate = fk.onUpdate?.toReferentialActionOrNull(),
-                )
-            }
+            val references = singleColFks[colName]
 
             val defaultVal = if (isAutoIncrement) null
             else MysqlTypeMapping.parseDefault(row["column_default"] as? String, neutralType)
@@ -152,27 +144,9 @@ class MysqlSchemaReader : SchemaReader {
 
         // Multi-column constraints
         val constraints = mutableListOf<ConstraintDefinition>()
-        for (fk in fks.filter { it.columns.size > 1 }) {
-            constraints += ConstraintDefinition(
-                name = fk.name,
-                type = ConstraintType.FOREIGN_KEY,
-                columns = fk.columns,
-                references = ConstraintReferenceDefinition(
-                    table = fk.referencedTable,
-                    columns = fk.referencedColumns,
-                    onDelete = fk.onDelete?.toReferentialActionOrNull(),
-                    onUpdate = fk.onUpdate?.toReferentialActionOrNull(),
-                ),
-            )
-        }
-        for (idx in indices.filter { it.isUnique && it.columns.size > 1 }) {
-            constraints += ConstraintDefinition(name = idx.name, type = ConstraintType.UNIQUE, columns = idx.columns)
-        }
-        for (check in checks) {
-            constraints += ConstraintDefinition(
-                name = check.name, type = ConstraintType.CHECK, expression = check.expression,
-            )
-        }
+        constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(fks)
+        constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
+        constraints += SchemaReaderUtils.buildCheckConstraints(checks)
 
         // Non-unique indices + single-col unique (not in constraints)
         val indexDefs = indices.filter { !it.isUnique || it.columns.size == 1 }
@@ -317,14 +291,4 @@ class MysqlSchemaReader : SchemaReader {
         return result
     }
 
-    // ── Helpers ──────────────────────────────────
-
-    private fun String.toReferentialActionOrNull(): ReferentialAction? = when (this.uppercase()) {
-        "CASCADE" -> ReferentialAction.CASCADE
-        "SET NULL" -> ReferentialAction.SET_NULL
-        "SET DEFAULT" -> ReferentialAction.SET_DEFAULT
-        "RESTRICT" -> ReferentialAction.RESTRICT
-        "NO ACTION" -> ReferentialAction.NO_ACTION
-        else -> null
-    }
 }

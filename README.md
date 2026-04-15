@@ -211,64 +211,9 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-**[v0.6.0](https://github.com/pt9912/d-migrate/releases/tag/v0.6.0)** veröffentlicht:
+Aktuelles Release: **[v0.7.0](https://github.com/pt9912/d-migrate/releases/tag/v0.7.0)** — Tool-Integrationen (Flyway, Liquibase, Django, Knex Export).
 
-- Reverse-Engineering bestehender Datenbanken mit `schema reverse` (PostgreSQL, MySQL, SQLite)
-- Schema-Vergleich mit DB-Operanden: `file/file`, `file/db`, `db/db` über `schema compare`
-- Direkter DB-zu-DB-Datentransfer mit `data transfer` (FK-Reihenfolge, Preflight, Chunk-Streaming)
-- Erweiterte Diff-Engine für Custom Types, Sequences, Functions, Procedures, Triggers
-- Canonical Object Keys (Routinen, Trigger) und Reverse-Scope-Encoding
-
-**[v0.5.5](https://github.com/pt9912/d-migrate/releases/tag/v0.5.5)** veröffentlicht:
-
-- Spatial Geometry-Typ (`type: geometry`) mit `geometry_type` und `srid`
-- DDL-Generierung für Spatial-Spalten: PostGIS, MySQL native, SpatiaLite
-- `--spatial-profile`-Flag für `schema generate` (postgis/native/spatialite/none)
-- Generator-Options-Architektur (`DdlGenerationOptions`, `SpatialProfile`)
-- Validierungsregeln E120, E121, E052, W120
-
-**[v0.5.0](https://github.com/pt9912/d-migrate/releases/tag/v0.5.0)** veröffentlicht:
-
-- `schema compare` CLI-Befehl: file-basierter Vergleich zweier neutraler Schema-Definitionen
-- Core-Diff-Engine mit hierarchischem before/after Diff-Modell
-- Plain/JSON/YAML-Ausgabeformate für `schema compare`
-- Line-orientierte Fortschrittsanzeige auf `stderr` für `data export` und `data import`
-- Release-Packaging mit Fat JAR, ZIP, TAR und SHA256
-- Homebrew-Tap-Automation
-
-**[v0.4.0](https://github.com/pt9912/d-migrate/releases/tag/v0.4.0)** veröffentlicht:
-
-- `data import` CLI-Befehl: transaktionaler Import aus JSON/YAML/CSV in PostgreSQL, MySQL, SQLite
-- UPSERT (`--on-conflict update`), Truncate (`--truncate`), Trigger-Handling (`--trigger-mode`)
-- Sequence/Identity/AUTO_INCREMENT-Reseeding nach Import
-- Inkrementeller Export mit `--since-column` / `--since` (LF-013)
-- Hexagonale Architektur-Umstrukturierung (Ports & Adapters)
-- CLI Kover-Coverage-Gate auf 90% angehoben
-
-**[v0.3.0](https://github.com/pt9912/d-migrate/releases/tag/v0.3.0)** veröffentlicht:
-
-- Streaming-CLI-Befehl `data export` (JSON / YAML / CSV) für PostgreSQL, MySQL, SQLite
-- HikariCP-basiertes Verbindungs-Subsystem mit `ConnectionUrlParser` pro Dialekt
-- Pull-basiertes `StreamingExporter` (Chunk-Streaming, kein Full-Table-Buffering)
-- Performance-orientierte Formatwriter: DSL-JSON, SnakeYAML Engine, uniVocity-parsers
-- Benannte Verbindungen über `.d-migrate.yaml` mit `${ENV_VAR}`-Substitution (`NamedConnectionResolver`)
-- Optionen `--source`, `--format`, `--output`, `--tables`, `--filter`, `--split-files`, `--csv-*`, `--encoding`, `--chunk-size`
-- §6.17 Empty-Table-Vertrag: `[]` (JSON/YAML), CSV-Kopfzeile oder leere Datei
-- End-to-End-Testabdeckung via Testcontainers für PostgreSQL 16 und MySQL 8.0
-- 600+ Tests, Coverage ≥ 90% (CLI ≥ 60%)
-
-**[v0.2.0](https://github.com/pt9912/d-migrate/releases/tag/v0.2.0)** veröffentlicht:
-
-- DDL-Generierung für PostgreSQL, MySQL, SQLite
-- TypeMapper mit 18 neutralen Typen pro Dialekt
-- Transformation von View-Queries (17 SQL-Funktionen)
-- Transformationsberichte (YAML-Seitenschatten, JSON-Ausgabe)
-- CLI-Befehl `schema generate` mit `--output`, `--generate-rollback`, `--report`
-- 374 Tests, Coverage ≥ 90%
-
-**[v0.1.0](https://github.com/pt9912/d-migrate/releases/tag/v0.1.0)** veröffentlicht:
-
-- Neutrales Schemamodell, YAML-Parsing, Schemagültigkeitsprüfung, CLI `schema validate`
+Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
 ## Unterstützte Datenbanken
 

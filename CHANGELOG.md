@@ -13,6 +13,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.7.0] - 2026-04-15
+
+### Added
+
+- `d-migrate export flyway` CLI command — generates Flyway SQL migration files (`V<version>__<slug>.sql`, optional `U<version>__<slug>.sql` undo)
+- `d-migrate export liquibase` CLI command — generates a versioned XML changelog with deterministic `changeSet` (id from version+slug+dialect, author `d-migrate`, optional `<rollback>` block)
+- `d-migrate export django` CLI command — generates a minimal Django `RunSQL` migration with optional `reverse_sql`
+- `d-migrate export knex` CLI command — generates a Knex.js CommonJS migration with sequential `knex.raw()` calls and optional `exports.down`
+- Tool-neutral migration export contract in `hexagon:ports` (`MigrationBundle`, `MigrationIdentity`, `MigrationDdlPayload`, `MigrationRollback`, `ArtifactRelativePath`, `ToolMigrationExporter`, `ToolExportResult`)
+- Adapter-free application helpers: `MigrationIdentityResolver`, `MigrationVersionValidator`, `MigrationSlugNormalizer`, `DdlNormalizer`, `ArtifactCollisionChecker`
+- `ToolExportRunner` orchestrator in application layer with 12-step pipeline (schema read, validate, identity resolve, DDL generate, bundle build, exporter delegation, collision check, file write, report sidecar)
+- New Gradle module `adapters:driven:integrations` with four `ToolMigrationExporter` implementations (side-effect-free, no tool-runtime dependencies)
+- Collision detection: in-run artifact duplicates, existing file collisions (recursive), and report/artifact path overlap — all checked before first write
+- YAML report sidecar via `--report` with notes, skippedObjects, rollbackNotes, rollbackSkippedObjects, exportNotes, and artifact paths
+- Dockerfile `integration-test` stage with JDK + Python + Django + Node.js for runtime validation
+- Runtime validation tests: Flyway→PostgreSQL, Liquibase→PostgreSQL (with rollback), Django→SQLite (with reverse), Knex→SQLite (with rollback)
+- Tool export smoke tests in `docs/releasing.md`
+- Architecture section 3.6 documenting the full hexagonal export pipeline
+- Extensibility section 8.4 for adding new tool exporters
+
+### Changed
+
+- `AbstractDdlGenerator.getVersion()` returns `0.7.0`
+- `test-integration-docker.sh` builds from Dockerfile `integration-test` stage (JDK + Python + Django + Node.js) instead of plain JDK image
+- `.github/workflows/integration.yml` provisions Python, Django, Node.js, and pnpm for CI
+- Django/Knex exporters filter comment-only statements to prevent tool runtime errors
+
 ## [0.6.0] - 2026-04-14
 
 ### Added

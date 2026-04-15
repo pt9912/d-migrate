@@ -94,27 +94,27 @@ Statt datenbankspezifische Typen direkt zu verwenden, definiert d-migrate ein ne
 
 Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Referenz-Metadaten an einer skalaren Spalte (siehe [Neutrales-Modell-Spezifikation §4.2](./neutral-model-spec.md#42-referenzen-foreign-keys)).
 
-| Neutraler Typ  | PostgreSQL           | MySQL              | SQLite                            |
-| -------------- | -------------------- | ------------------ | --------------------------------- |
-| `identifier`   | SERIAL / BIGSERIAL   | INT AUTO_INCREMENT | INTEGER PRIMARY KEY AUTOINCREMENT |
-| `text`         | VARCHAR(n) / TEXT    | VARCHAR(n) / TEXT  | TEXT                              |
-| `integer`      | INTEGER              | INT                | INTEGER                           |
-| `biginteger`   | BIGINT               | BIGINT             | INTEGER                           |
-| `decimal(p,s)` | DECIMAL(p,s)         | DECIMAL(p,s)       | REAL                              |
-| `boolean`      | BOOLEAN              | TINYINT(1)         | INTEGER                           |
-| `datetime`     | TIMESTAMP            | DATETIME           | TEXT (ISO 8601)                   |
-| `date`         | DATE                 | DATE               | TEXT (ISO 8601)                   |
-| `time`         | TIME                 | TIME               | TEXT (ISO 8601)                   |
-| `uuid`         | UUID                 | CHAR(36)           | TEXT                              |
-| `json`         | JSONB                | JSON               | TEXT                              |
-| `binary`       | BYTEA                | BLOB               | BLOB                              |
-| `email`        | VARCHAR(254)         | VARCHAR(254)       | TEXT (Singleton, MAX_LENGTH=254)  |
-| `float`        | REAL / DOUBLE PREC.  | FLOAT / DOUBLE     | REAL                              |
-| `smallint`     | SMALLINT             | SMALLINT           | INTEGER                           |
-| `char(n)`      | CHAR(n)              | CHAR(n)            | TEXT                              |
-| `xml`          | XML                  | TEXT (Fallback)    | TEXT                              |
-| `enum(values)` | CREATE TYPE ... ENUM | ENUM(...)          | TEXT + CHECK                      |
-| `array(type)`  | type[]               | JSON               | TEXT (JSON)                       |
+| Neutraler Typ         | PostgreSQL                                | MySQL                                    | SQLite                                           |
+| --------------------- | ----------------------------------------- | ---------------------------------------- | ------------------------------------------------ |
+| `identifier`          | SERIAL / BIGSERIAL                        | INT AUTO_INCREMENT                       | INTEGER PRIMARY KEY AUTOINCREMENT                |
+| `text`                | VARCHAR(n) / TEXT                         | VARCHAR(n) / TEXT                        | TEXT                                             |
+| `integer`             | INTEGER                                   | INT                                      | INTEGER                                          |
+| `biginteger`          | BIGINT                                    | BIGINT                                   | INTEGER                                          |
+| `decimal(p,s)`        | DECIMAL(p,s)                              | DECIMAL(p,s)                             | REAL                                             |
+| `boolean`             | BOOLEAN                                   | TINYINT(1)                               | INTEGER                                          |
+| `datetime`            | TIMESTAMP                                 | DATETIME                                 | TEXT (ISO 8601)                                  |
+| `date`                | DATE                                      | DATE                                     | TEXT (ISO 8601)                                  |
+| `time`                | TIME                                      | TIME                                     | TEXT (ISO 8601)                                  |
+| `uuid`                | UUID                                      | CHAR(36)                                 | TEXT                                             |
+| `json`                | JSONB                                     | JSON                                     | TEXT                                             |
+| `binary`              | BYTEA                                     | BLOB                                     | BLOB                                             |
+| `email`               | VARCHAR(254)                              | VARCHAR(254)                             | TEXT (Singleton, MAX_LENGTH=254)                 |
+| `float`               | REAL / DOUBLE PREC.                       | FLOAT / DOUBLE                           | REAL                                             |
+| `smallint`            | SMALLINT                                  | SMALLINT                                 | INTEGER                                          |
+| `char(n)`             | CHAR(n)                                   | CHAR(n)                                  | TEXT                                             |
+| `xml`                 | XML                                       | TEXT (Fallback)                          | TEXT                                             |
+| `enum(values)`        | CREATE TYPE ... ENUM                      | ENUM(...)                                | TEXT + CHECK                                     |
+| `array(type)`         | type[]                                    | JSON                                     | TEXT (JSON)                                      |
 | `geometry(type,srid)` | `geometry(type, srid)` *(PostGIS-Profil)* | native Spatial Types *(Profil `native`)* | `AddGeometryColumn(...)` *(Profil `spatialite`)* |
 
 Das heutige Typsystem deckt die erweiterten Typen `uuid`, `json`, `binary`,
@@ -243,12 +243,12 @@ idempotente Konfliktbehandlung via `--on-conflict update`.
 
 **Strategien zur Identifikation geänderter Datensätze**:
 
-| Strategie | Voraussetzung | Eignung |
-|---|---|---|
-| Timestamp-basiert | Spalte `updated_at` vorhanden | Schnell, gängigster Fall |
-| ID-basiert | Monoton steigende IDs | Nur für neue Datensätze (kein Update/Delete) |
-| Hash-basiert | Keine (berechnet SHA-256 pro Zeile) | Universell, aber langsamer |
-| Change-Tracking | DB-natives CDC (z.B. PostgreSQL Logical Replication) | Performant, aber DB-spezifisch |
+| Strategie         | Voraussetzung                                        | Eignung                                      |
+| ----------------- | ---------------------------------------------------- | -------------------------------------------- |
+| Timestamp-basiert | Spalte `updated_at` vorhanden                        | Schnell, gängigster Fall                     |
+| ID-basiert        | Monoton steigende IDs                                | Nur für neue Datensätze (kein Update/Delete) |
+| Hash-basiert      | Keine (berechnet SHA-256 pro Zeile)                  | Universell, aber langsamer                   |
+| Change-Tracking   | DB-natives CDC (z.B. PostgreSQL Logical Replication) | Performant, aber DB-spezifisch               |
 
 ```
 Konfiguration:
@@ -421,6 +421,12 @@ d-migrate data export         --source staging --format json
 d-migrate data import         --source data.json --target local_pg
 d-migrate data transfer       --source staging --target local_pg
 
+# Integrations-Export (0.7.0)
+d-migrate export flyway       --source schema.yaml --target postgresql --output migrations/
+d-migrate export liquibase    --source schema.yaml --target postgresql --output changelog/ --generate-rollback
+d-migrate export django       --source schema.yaml --target sqlite --version 0001 --output migrations/
+d-migrate export knex         --source schema.yaml --target sqlite --version 20260414120000 --output migrations/
+
 # Globale Flags greifen vor dem Command
 d-migrate --output-format json schema compare --source a.yaml --target b.yaml
 d-migrate --no-progress data import --source ./dump/ --target sqlite:///tmp/app.db
@@ -442,12 +448,6 @@ d-migrate data seed           --schema schema.yaml --target postgres://...
 # Stored Procedure Migration
 d-migrate transform procedure --source schema.yaml --procedure name --ai-backend ollama
 d-migrate generate procedure  --source spec.md --target mysql
-
-# Integrations-Export
-d-migrate export flyway       --source schema.yaml --output migrations/
-d-migrate export liquibase    --source schema.yaml --output changelog/
-d-migrate export django       --source schema.yaml --output migrations/
-d-migrate export knex         --source schema.yaml --output migrations/
 
 # Migrations-Rollback (LF-014)
 d-migrate schema migrate      --source schema.yaml --target postgres://... --generate-rollback
@@ -594,28 +594,42 @@ exported_at: 2025-10-22T14:30:00Z
 
 ## 7. Migrations-Rollback (LF-014)
 
-Jede Schema-Migration wird als Up/Down-Paar generiert:
+### 7.1 Tool-Export-Rollback (0.7.0)
 
-```
-migrations/
-├── V001__create_customers_up.sql
-├── V001__create_customers_down.sql
-├── V002__add_orders_up.sql
-└── V002__add_orders_down.sql
-```
+`d-migrate export flyway|liquibase|django|knex --generate-rollback` erzeugt
+tool-spezifische Down-Artefakte auf Basis des bestehenden full-state-
+`generateRollback()`-Pfads. Jedes Tool hat sein eigenes Format:
 
-Die Rollback-Generierung leitet aus dem `DiffResult` die inverse Operation ab:
+- **Flyway**: `U<version>__<name>.sql` (Undo-Datei)
+- **Liquibase**: genau ein versionierter XML-Changelog mit genau einem
+  deterministischen `changeSet`; `changeSet.id` wird aus Version, Slug und
+  Dialekt abgeleitet, `changeSet.author` ist fuer 0.7.0 der feste
+  Exporter-Wert `d-migrate`, Rollback liegt optional im selben
+  `<rollback>`-Block; ein bestehender Master-Changelog wird dabei nicht
+  mutiert
+- **Django**: `reverse_sql` im `RunSQL`-Wrapper
+- **Knex**: `exports.down` in der Migrations-Datei
 
-| Up-Operation | Down-Operation |
-|---|---|
-| CREATE TABLE | DROP TABLE |
-| ADD COLUMN | DROP COLUMN |
-| ADD INDEX | DROP INDEX |
-| ADD CONSTRAINT | DROP CONSTRAINT |
+Dies ist ein baseline-/full-state-Rollback — es kehrt die gesamte Schema-
+Erstellung um, nicht einen inkrementellen Diff.
+
+### 7.2 Diff-basierter Rollback (späterer Milestone)
+
+Der spätere `schema migrate`-Pfad wird aus einem `DiffResult` die inverse
+Operation ableiten:
+
+| Up-Operation       | Down-Operation                                                    |
+| ------------------ | ----------------------------------------------------------------- |
+| CREATE TABLE       | DROP TABLE                                                        |
+| ADD COLUMN         | DROP COLUMN                                                       |
+| ADD INDEX          | DROP INDEX                                                        |
+| ADD CONSTRAINT     | DROP CONSTRAINT                                                   |
 | ALTER COLUMN (Typ) | ALTER COLUMN (alter Typ) — erfordert Speicherung des Vor-Zustands |
-| DROP COLUMN | Warnung: Datenverlust, kein automatischer Rollback |
+| DROP COLUMN        | Warnung: Datenverlust, kein automatischer Rollback                |
 
-Nicht-reversible Operationen (z.B. DROP COLUMN, DROP TABLE) erzeugen eine Warnung und erfordern explizite Bestätigung. Der Vor-Zustand wird als Snapshot im Audit-Trail gespeichert.
+Nicht-reversible Operationen (z.B. DROP COLUMN, DROP TABLE) erzeugen eine
+Warnung und erfordern explizite Bestätigung. Dieser Pfad wird in einem
+späteren Milestone implementiert und ist bewusst nicht Teil von 0.7.0.
 
 ---
 
@@ -644,13 +658,13 @@ sealed class MigrateError {
 
 ### 8.2 Fehlerbehandlungsstrategie
 
-| Szenario                         | Verhalten                                                 |
-| -------------------------------- | --------------------------------------------------------- |
+| Szenario                         | Verhalten                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
 | Einzelner Datensatz fehlerhaft   | Standard: aktuellen Chunk/Tabelle abbrechen; optional Best-Effort: loggen und überspringen |
-| Constraint-Verletzung bei Import | Transaktion auf Chunk-Ebene zurückrollen                  |
-| DB-Verbindung unterbrochen       | Retry mit Backoff (3 Versuche), dann Checkpoint schreiben |
-| KI-Provider nicht erreichbar     | Fallback auf nächsten Provider, dann regelbasiert         |
-| Unbekannter Datentyp             | Warnung + Fallback auf `text`, kein Abbruch               |
+| Constraint-Verletzung bei Import | Transaktion auf Chunk-Ebene zurückrollen                                                   |
+| DB-Verbindung unterbrochen       | Retry mit Backoff (3 Versuche), dann Checkpoint schreiben                                  |
+| KI-Provider nicht erreichbar     | Fallback auf nächsten Provider, dann regelbasiert                                          |
+| Unbekannter Datentyp             | Warnung + Fallback auf `text`, kein Abbruch                                                |
 
 ---
 

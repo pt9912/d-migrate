@@ -195,6 +195,66 @@ docker network rm d-migrate-smoke 2>/dev/null
 rm -rf "${SMOKE_DIR}"
 ```
 
+#### Tool-Export-Smoke (0.7.0)
+
+Fixture-Schema: `adapters/driven/integrations/src/test/resources/fixtures/export-test-schema.yaml`
+
+```bash
+SMOKE_OUT="$(mktemp -d)"
+
+# Flyway
+docker run --rm \
+  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "${SMOKE_OUT}:/out" \
+  d-migrate:pre-release \
+  export flyway --source /work/export-test-schema.yaml --target postgresql --version 1 --output /out/flyway
+# Erwartete Artefakte: /out/flyway/V1__export_test.sql
+
+# Flyway mit Rollback
+docker run --rm \
+  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "${SMOKE_OUT}:/out" \
+  d-migrate:pre-release \
+  export flyway --source /work/export-test-schema.yaml --target postgresql --version 2 --output /out/flyway-rb --generate-rollback
+# Erwartete Artefakte: /out/flyway-rb/V2__export_test.sql, /out/flyway-rb/U2__export_test.sql
+
+# Liquibase
+docker run --rm \
+  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "${SMOKE_OUT}:/out" \
+  d-migrate:pre-release \
+  export liquibase --source /work/export-test-schema.yaml --target mysql --version 1.0 --output /out/liquibase --generate-rollback
+# Erwartete Artefakte: /out/liquibase/changelog-1.0-export_test.xml
+
+# Django
+docker run --rm \
+  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "${SMOKE_OUT}:/out" \
+  d-migrate:pre-release \
+  export django --source /work/export-test-schema.yaml --target sqlite --version 0001 --output /out/django
+# Erwartete Artefakte: /out/django/0001.py
+
+# Knex
+docker run --rm \
+  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "${SMOKE_OUT}:/out" \
+  d-migrate:pre-release \
+  export knex --source /work/export-test-schema.yaml --target sqlite --version 20260414120000 --output /out/knex
+# Erwartete Artefakte: /out/knex/20260414120000.js
+
+# Prüfen, dass alle Artefakte existieren
+ls -la "${SMOKE_OUT}"/flyway/ "${SMOKE_OUT}"/flyway-rb/ "${SMOKE_OUT}"/liquibase/ "${SMOKE_OUT}"/django/ "${SMOKE_OUT}"/knex/
+
+rm -rf "${SMOKE_OUT}"
+```
+
+Hinweis: Diese Smokes pruefen nur, dass die CLI die erwarteten Artefakte
+erzeugt. Die echte Tool-Runtime-Validierung (Flyway→PostgreSQL,
+Liquibase→PostgreSQL, Django→SQLite, Knex→SQLite) wird ueber
+`./scripts/test-integration-docker.sh` als Integrations-Test-Matrix
+ausgefuehrt. Flyway-Undo erfordert Flyway Teams/Enterprise und ist in den
+Smokes nur als Dateierzeugung, nicht als Runtime-Ausfuehrung validiert.
+
 ### 3.4 CHANGELOG-Review
 
 - `[Unreleased]`-Block durchgehen — alles für diesen Release Wichtige enthalten?

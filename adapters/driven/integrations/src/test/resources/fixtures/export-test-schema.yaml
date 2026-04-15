@@ -1,0 +1,43 @@
+schema_format: "1.0"
+name: "Export Test"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      email:
+        type: text
+        max_length: 254
+        required: true
+        unique: true
+      created_at:
+        type: datetime
+        default: current_timestamp
+    primary_key: [id]
+
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      user_id:
+        type: integer
+        required: true
+      total:
+        type: decimal
+        precision: 10
+        scale: 2
+      status:
+        type: text
+        max_length: 50
+        default: "'pending'"
+    primary_key: [id]
+    foreign_keys:
+      fk_orders_user:
+        column: user_id
+        references:
+          table: users
+          column: id

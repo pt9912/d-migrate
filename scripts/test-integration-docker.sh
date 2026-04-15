@@ -4,22 +4,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-IMAGE="${DMIGRATE_INTEGRATION_IMAGE:-eclipse-temurin:21-jdk-noble}"
 CACHE_VOLUME="${DMIGRATE_GRADLE_CACHE_VOLUME:-d-migrate-gradle-cache}"
 DEFAULT_TASKS="-PintegrationTests test koverVerify"
+IMAGE_TAG="d-migrate-integration-test:latest"
 
 usage() {
     cat <<'EOF'
-Run the Testcontainers-based integration tests in a disposable Docker container.
+Run integration tests in a disposable Docker container built from the
+`integration-test` stage of the project Dockerfile (JDK 21 + Python 3
++ Django + Node.js).
 
 Usage:
   ./scripts/test-integration-docker.sh
   ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
-  ./scripts/test-integration-docker.sh -PintegrationTests :adapters:driven:driver-postgresql:test :adapters:driven:driver-mysql:test
+  ./scripts/test-integration-docker.sh -PintegrationTests :adapters:driven:integrations:test
 
 Environment:
-  DMIGRATE_INTEGRATION_IMAGE        Base image to use
-                                    Default: eclipse-temurin:21-jdk-noble
   DMIGRATE_GRADLE_CACHE_VOLUME      Docker volume for Gradle caches
                                     Default: d-migrate-gradle-cache
 EOF
@@ -47,8 +47,11 @@ if [[ -t 0 && -t 1 ]]; then
     TTY_FLAG="-t"
 fi
 
+echo "Building integration test image from Dockerfile (stage: integration-test)..."
+docker build -q --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
+
 echo "Running integration tests in container:"
-echo "  image:        ${IMAGE}"
+echo "  image:        ${IMAGE_TAG}"
 echo "  repo:         ${REPO_ROOT}"
 echo "  gradle tasks: ${GRADLE_TASKS}"
 
@@ -58,9 +61,8 @@ exec docker run --rm ${TTY_FLAG} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${CACHE_VOLUME}:/gradle-cache" \
     -e GRADLE_USER_HOME=/gradle-cache \
-    -e GRADLE_TASKS="${GRADLE_TASKS}" \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     -w /src \
-    "${IMAGE}" \
-    bash -lc './gradlew --no-daemon ${GRADLE_TASKS}'
+    "${IMAGE_TAG}" \
+    bash -lc "./gradlew --no-daemon ${GRADLE_TASKS}"

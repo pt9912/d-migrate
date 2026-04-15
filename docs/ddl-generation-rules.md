@@ -37,6 +37,12 @@ Jedes generierte DDL beginnt mit einem Header-Kommentar:
 -- Target: <dialect> | Generated: <ISO-8601-timestamp>
 ```
 
+**Tool-Export-Determinismus (0.7.0)**: Bei `d-migrate export flyway|liquibase|
+django|knex` wird der `Generated: <ISO-8601-timestamp>` Laufzeit-Timestamp
+nicht in die Tool-Artefakte übernommen. Gleiches Schema + gleiche Flags muss
+identische Artefaktinhalte erzeugen. Provenienz bleibt im Report oder in
+stabilen, nicht zeitabhängigen Metadaten sichtbar.
+
 ### 1.3 Encoding
 
 - Generierte Dateien sind immer **UTF-8** ohne BOM

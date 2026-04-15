@@ -192,17 +192,18 @@ zu den bestehenden Export-/Import-Flags. Grundlage für die Teil-Replikation
 (LF-025) in 1.4.0; dort kommen Datenmaskierung und selektive Datensatzfilter
 hinzu.
 
-### Milestone 0.7.0 — Tool-Integrationen
+### Milestone 0.7.0 — Tool-Integrationen ✅ (2026-04-15)
 
-| Bereich     | Aufgabe                                                   | LF-Ref |
-| ----------- | --------------------------------------------------------- | ------ |
-| Integration | Flyway-Adapter: SQL-Migrations-Skripte generieren         | LF-011 |
-| Integration | Liquibase-Adapter: Changesets generieren                  | LF-011 |
-| Integration | Django-Adapter: Python-Migrations generieren              | LF-011 |
-| Integration | Knex.js-Adapter: JavaScript-Migrations generieren         | LF-011 |
-| CLI         | `d-migrate export flyway/liquibase/django/knex` Kommandos | LF-011 |
-| Core        | Migrations-Rollback-Generierung                           | LF-014 |
-| Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    |
+| Bereich     | Aufgabe                                                   | LF-Ref | Status |
+| ----------- | --------------------------------------------------------- | ------ | ------ |
+| Core        | Phase A: DDL-Header-Determinismus, Adapter-Grundlagen     | LF-011 | ✅ |
+| Core        | Phase B: Migrations-Bundle, Identitaet, Exportvertrag     | LF-011 | ✅ |
+| Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex)   | LF-011 | ✅ |
+| CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export            | LF-011 | ✅ |
+| Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte    | LF-011 | ✅ |
+| Docs        | Phase F: Release-Dokumentation und Smoke-Tests            | LF-011 | ✅ |
+| Core        | Migrations-Rollback-Generierung                           | LF-014 | ✅ |
+| Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    | ✅ |
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
@@ -432,6 +433,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 3.6
-**Stand**: 2026-04-14
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5 und 0.6.0 abgeschlossen und released
+**Version**: 3.10
+**Stand**: 2026-04-15
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0 und 0.7.0 abgeschlossen

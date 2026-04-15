@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.commands.DataCommand
+import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.mysql.MysqlDriver
@@ -90,7 +91,7 @@ internal fun registerDrivers() {
  * `exitProcess` instanziieren können.
  */
 internal fun buildRootCommand(): DMigrate =
-    DMigrate().subcommands(SchemaCommand(), DataCommand())
+    DMigrate().subcommands(SchemaCommand(), DataCommand(), ExportCommand())
 
 /**
  * Test-freundlicher Einstieg: führt die Bootstrap-Sequenz aus und

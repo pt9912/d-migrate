@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.SchemaReaderUtils
 
 /**
  * SQLite [SchemaReader] implementation.
@@ -84,13 +85,8 @@ class SqliteSchemaReader : SchemaReader {
         val hasAutoincrement = SqliteTypeMapping.hasAutoincrement(createSql)
         val isWithoutRowid = SqliteTypeMapping.hasWithoutRowid(createSql)
 
-        // Build single-column FK lookup for column-level references
-        val singleColFks = fks.filter { it.columns.size == 1 && it.referencedColumns.size == 1 }
-            .associateBy { it.columns[0] }
-
-        // Build single-column UNIQUE lookup (from explicit indices)
-        val singleColUnique = indices.filter { it.isUnique && it.columns.size == 1 }
-            .map { it.columns[0] }.toSet()
+        val singleColFks = SchemaReaderUtils.liftSingleColumnFks(fks)
+        val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
 
         val columnDefs = LinkedHashMap<String, ColumnDefinition>()
         for (col in columns) {
@@ -106,14 +102,7 @@ class SqliteSchemaReader : SchemaReader {
             val required = if (isPkCol) false else !col.isNullable
             val unique = if (isPkCol) false else col.name in singleColUnique
 
-            val references = singleColFks[col.name]?.let { fk ->
-                ReferenceDefinition(
-                    table = fk.referencedTable,
-                    column = fk.referencedColumns[0],
-                    onDelete = fk.onDelete?.toReferentialActionOrNull(),
-                    onUpdate = fk.onUpdate?.toReferentialActionOrNull(),
-                )
-            }
+            val references = singleColFks[col.name]
 
             columnDefs[col.name] = ColumnDefinition(
                 type = neutralType,
@@ -124,32 +113,9 @@ class SqliteSchemaReader : SchemaReader {
             )
         }
 
-        // Multi-column FK constraints
-        val multiColFks = fks.filter { it.columns.size > 1 }
-        // Multi-column UNIQUE constraints (from indices)
-        val multiColUnique = indices.filter { it.isUnique && it.columns.size > 1 }
-
         val constraints = mutableListOf<ConstraintDefinition>()
-        for (fk in multiColFks) {
-            constraints += ConstraintDefinition(
-                name = fk.name,
-                type = ConstraintType.FOREIGN_KEY,
-                columns = fk.columns,
-                references = ConstraintReferenceDefinition(
-                    table = fk.referencedTable,
-                    columns = fk.referencedColumns,
-                    onDelete = fk.onDelete?.toReferentialActionOrNull(),
-                    onUpdate = fk.onUpdate?.toReferentialActionOrNull(),
-                ),
-            )
-        }
-        for (idx in multiColUnique) {
-            constraints += ConstraintDefinition(
-                name = idx.name,
-                type = ConstraintType.UNIQUE,
-                columns = idx.columns,
-            )
-        }
+        constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(fks)
+        constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         // CHECK constraints from CREATE TABLE SQL
         for ((checkName, checkExpr) in SqliteTypeMapping.extractCheckConstraints(createSql)) {
             constraints += ConstraintDefinition(
@@ -212,12 +178,4 @@ class SqliteSchemaReader : SchemaReader {
         return result
     }
 
-    private fun String.toReferentialActionOrNull(): ReferentialAction? = when (this.uppercase()) {
-        "CASCADE" -> ReferentialAction.CASCADE
-        "SET NULL" -> ReferentialAction.SET_NULL
-        "SET DEFAULT" -> ReferentialAction.SET_DEFAULT
-        "RESTRICT" -> ReferentialAction.RESTRICT
-        "NO ACTION" -> ReferentialAction.NO_ACTION
-        else -> null
-    }
 }
