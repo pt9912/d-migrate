@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: D (Application-Services und Runner)
-> **Status**: Draft (2026-04-15)
+> **Status**: Review (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 5.3, Abschnitt 6 Phase D, Abschnitt 7.1,
 > Abschnitt 7.3, Abschnitt 8.2, Abschnitt 9; `docs/ImpPlan-0.7.5-A.md`;
