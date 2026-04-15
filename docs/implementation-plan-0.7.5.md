@@ -665,6 +665,9 @@ SQLite:
 - `build.gradle.kts`
 - `hexagon/application/build.gradle.kts`
 - `adapters/driving/cli/build.gradle.kts`
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt`
+  - falls die zentrale Profiling-Verdrahtung analog zu `registerDrivers()`
+    dort gebootstrapt wird
 - `adapters/driven/driver-postgresql/build.gradle.kts`
 - `adapters/driven/driver-mysql/build.gradle.kts`
 - `adapters/driven/driver-sqlite/build.gradle.kts`
