@@ -200,6 +200,9 @@ Verbindliche Folge:
 
 - Phase B implementiert die Runtime so, dass `--lang` spaeter in 0.9.0 additiv
   als oberste Override-Quelle eingeschoben werden kann
+- solange 0.8.0 aktiv ist, wird ein gesetztes `--lang` nicht still ignoriert,
+  sondern mit einem klaren lokalen Usage-/Konfigurationsfehler abgewiesen, der
+  den Flag als noch nicht aktiven 0.9.0-Vertrag einordnet
 - Phase B selbst darf aber nicht schon Dokumentation und Runtime so bauen, als
   sei dieser 0.9.0-Schritt bereits abgeschlossen
 
@@ -315,6 +318,9 @@ Phase B modelliert und testet die Mapping-Regeln:
   - `de_DE`
   - `de_DE.UTF-8`
   - `en_US`
+  - `C`
+  - `C.UTF-8`
+  - `POSIX`
 - Zeitzone:
   - `UTC`
   - `Europe/Berlin`
@@ -442,6 +448,9 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
       spaetere Formatter mit.
 - [ ] `--lang` ist in Phase B noch nicht Teil des aktiven 0.8.0-
       Resolution-Vertrags, bleibt aber fuer 0.9.0 additiv vorbereitbar.
+- [ ] Ein in 0.8.0 gesetztes `--lang` wird nicht still ignoriert, sondern mit
+      einem klaren lokalen Fehler als noch nicht aktiver 0.9.0-Pfad
+      zurueckgewiesen.
 - [ ] `C`, `C.UTF-8` und `POSIX` sind als gueltige Locale-Aliaswerte explizit
       geregelt.
 - [ ] `D_MIGRATE_TIMEZONE` ist fuer 0.8.0 nicht Teil des aktiven
@@ -483,7 +492,9 @@ Mindestumfang:
    - falsche YAML-Typen
 5. Root-/Context-Tests dafuer, dass `CliContext` den aufgeloesten
    Laufzeitkontext traegt.
-6. Vertragstest dafuer, dass `D_MIGRATE_TIMEZONE` in 0.8.0 nicht als aktive
+6. Vertragstest dafuer, dass ein gesetztes `--lang` in 0.8.0 mit einem klaren
+   lokalen Fehlerpfad zurueckgewiesen und nicht still ignoriert wird.
+7. Vertragstest dafuer, dass `D_MIGRATE_TIMEZONE` in 0.8.0 nicht als aktive
    Override-Quelle ausgewertet wird.
 
 ---
