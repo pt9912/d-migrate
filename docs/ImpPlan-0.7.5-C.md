@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: C (Port-Vertraege und dialektspezifische Adapter)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.3 bis 4.6, Abschnitt 5, Abschnitt 6 Phase C,
 > Abschnitt 8, Abschnitt 11, Abschnitt 12; `docs/ImpPlan-0.7.5-A.md`;
@@ -424,23 +424,23 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `SchemaIntrospectionPort`, `ProfilingDataPort` und
+- [x] `SchemaIntrospectionPort`, `ProfilingDataPort` und
       `LogicalTypeResolverPort` sind in `hexagon:profiling` definiert.
-- [ ] PostgreSQL, MySQL und SQLite haben je einen funktionierenden
+- [x] PostgreSQL, MySQL und SQLite haben je einen funktionierenden
       Adapter-Satz.
-- [ ] Introspection liefert eine eigene Profiling-Projektion mit rohem
+- [x] Introspection liefert eine eigene Profiling-Projektion mit rohem
       `dbType` statt Rueckprojektion aus `SchemaReader`.
-- [ ] Der erste Aggregat-Scope ist fuer alle drei Dialekte implementiert.
-- [ ] Der Kernvertrag fuer `TargetTypeCompatibility` wird pro Dialekt ueber
+- [x] Der erste Aggregat-Scope ist fuer alle drei Dialekte implementiert.
+- [x] Der Kernvertrag fuer `TargetTypeCompatibility` wird pro Dialekt ueber
       dokumentierte Vollscan-Pruefungen belastbar gefuellt und enthaelt
       mindestens `checkedValueCount`, `compatibleCount`,
       `incompatibleCount`, deterministische `exampleInvalidValues` und einen
       Bestimmungsstatus wie `FULL_SCAN` oder `UNKNOWN`.
-- [ ] `duplicateValueCount` und `topValues` folgen der im Masterplan
+- [x] `duplicateValueCount` und `topValues` folgen der im Masterplan
       festgezogenen deterministischen Semantik.
-- [ ] SQLite-Sonderfaelle sind ueber dokumentierte Fallbacks oder `null`
+- [x] SQLite-Sonderfaelle sind ueber dokumentierte Fallbacks oder `null`
       sauber behandelt.
-- [ ] Phase C fuehrt keine CLI-, Writer- oder Query-Profiling-Logik ein.
+- [x] Phase C fuehrt keine CLI-, Writer- oder Query-Profiling-Logik ein.
 
 ---
 
@@ -475,13 +475,13 @@ instabilen Zahlen aufsetzen.
 
 ## 9. Abschluss-Checkliste
 
-- [ ] Die Profiling-Ports sind im neuen Modul definiert.
-- [ ] Die Driver-Module enthalten je Dialekt einen belastbaren ersten
+- [x] Die Profiling-Ports sind im neuen Modul definiert.
+- [x] Die Driver-Module enthalten je Dialekt einen belastbaren ersten
       Profiling-Adapter-Satz.
-- [ ] `SchemaIntrospection` bleibt eine eigene Projektion und kein
+- [x] `SchemaIntrospection` bleibt eine eigene Projektion und kein
       `SchemaReader`-Wrapper.
-- [ ] Der erste Aggregat-Scope ist roadmap-konform und klar begrenzt.
-- [ ] `TargetTypeCompatibility` wird ueber echte Vollscan-Pruefungen und nicht
+- [x] Der erste Aggregat-Scope ist roadmap-konform und klar begrenzt.
+- [x] `TargetTypeCompatibility` wird ueber echte Vollscan-Pruefungen und nicht
       ueber Heuristiken gespeist.
-- [ ] SQLite-Sonderfaelle sind dokumentiert und getestet.
-- [ ] Phase C bleibt frei von CLI-, Report- und Query-Profiling-Implementierung.
+- [x] SQLite-Sonderfaelle sind dokumentiert und getestet.
+- [x] Phase C bleibt frei von CLI-, Report- und Query-Profiling-Implementierung.
