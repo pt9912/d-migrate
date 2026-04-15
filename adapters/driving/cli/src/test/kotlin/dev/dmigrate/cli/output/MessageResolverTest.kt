@@ -55,15 +55,21 @@ class MessageResolverTest : FunSpec({
     }
 
     test("German resolver falls back to root for existing key") {
-        // Both bundles have the same keys, so this tests the bundle chain
-        // is correctly configured. If a German key were removed, it should
-        // fall back to the English root value.
         val deResolver = MessageResolver(Locale.GERMAN)
         val enResolver = MessageResolver(Locale.ENGLISH)
-        // Both must return a non-empty value for any root key
         val key = "cli.validation.path_arrow"
         deResolver.text(key, "test") shouldContain "test"
         enResolver.text(key, "test") shouldContain "test"
+    }
+
+    test("missing key returns key string itself as fallback") {
+        val resolver = MessageResolver(Locale.GERMAN)
+        resolver.text("cli.totally.nonexistent.key") shouldBe "cli.totally.nonexistent.key"
+    }
+
+    test("missing key with args still returns key") {
+        val resolver = MessageResolver(Locale.ENGLISH)
+        resolver.text("cli.no.such.key", "arg1", 42) shouldBe "cli.no.such.key"
     }
 
     test("progress export started") {
