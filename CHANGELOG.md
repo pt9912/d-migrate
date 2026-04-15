@@ -13,6 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.7.5] - 2026-04-15
+
+### Added
+
+- `d-migrate data profile` CLI command — profiles a database with column statistics, quality warnings, and target type compatibility as JSON/YAML report
+- New Gradle module `hexagon:profiling` with domain model, type system, rule engine, and outbound ports
+- `DatabaseProfile`, `TableProfile`, `ColumnProfile` domain model with `LogicalType` (data-oriented, separate from `NeutralType`), `TargetLogicalType`, `ProfileWarning`, `TargetTypeCompatibility`
+- `WarningEvaluator` with 8 migration-relevant rules: high null ratio, empty/blank strings, high/low cardinality, duplicate values, invalid target type values, placeholder values
+- `SchemaIntrospectionPort`, `ProfilingDataPort`, `LogicalTypeResolverPort` — profiling-specific outbound ports (not extending `DatabaseDriver`)
+- Dialect-specific profiling adapters for PostgreSQL, MySQL, and SQLite with schema-qualified queries, full-scan type compatibility, and deterministic example values
+- `ProfileTableService` and `ProfileDatabaseService` for profiling orchestration
+- `DataProfileRunner` with exit codes 0/2/4/5/7 and injected `ProfilingAdapterSet` lookup
+- `ProfileReportWriter` with JSON (default) and YAML output, identical information content
+- `--source`, `--tables`, `--schema` (PostgreSQL only), `--top-n`, `--format`, `--output` flags
+- PostgreSQL `--schema` support end-to-end (introspection + data queries)
+- Determinism contract: stable table/column order, stable topValues, no runtime-variable `generatedAt`
+- Architecture section 3.7, CLI-spec `data profile` section, design section 3.6 updated
+
+### Changed
+
+- `AbstractDdlGenerator.getVersion()` returns `0.7.5`
+- Kotest upgraded from 5.9.1 to 6.1.11
+- Kover upgraded from 0.9.1 to 0.9.8
+- Gradle JVM heap raised from 512 MB to 4 GB
+- Dockerfile: `gradle:8.12-jdk21` base image (no more wrapper download)
+
 ## [0.7.0] - 2026-04-15
 
 ### Added

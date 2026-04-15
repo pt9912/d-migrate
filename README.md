@@ -212,7 +212,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.7.0](https://github.com/pt9912/d-migrate/releases/tag/v0.7.0)** — Tool-Integrationen (Flyway, Liquibase, Django, Knex Export).
+Aktuelles Release: **[v0.7.5](https://github.com/pt9912/d-migrate/releases/tag/v0.7.5)** — Daten-Profiling (Spaltenstatistiken, Qualitätswarnungen, Zieltyp-Kompatibilität).
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
