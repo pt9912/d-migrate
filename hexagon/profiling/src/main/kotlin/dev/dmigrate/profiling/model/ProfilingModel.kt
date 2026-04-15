@@ -7,12 +7,16 @@ import dev.dmigrate.profiling.types.WarningCode
 
 /**
  * Root profile for an entire database.
+ *
+ * Deliberately omits a `generatedAt` timestamp — the 0.7.5 standard report
+ * must remain byte-reproducible for identical input data (see master plan
+ * §4.5). Provenance timestamps, if needed later, must be opt-in or outside
+ * the determinism contract.
  */
 data class DatabaseProfile(
     val databaseProduct: String,
     val databaseVersion: String? = null,
     val schemaName: String? = null,
-    val generatedAt: String,
     val tables: List<TableProfile>,
 )
 

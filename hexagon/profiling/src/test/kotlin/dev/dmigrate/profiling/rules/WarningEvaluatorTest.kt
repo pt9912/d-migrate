@@ -182,4 +182,33 @@ class WarningEvaluatorTest : FunSpec({
     test("evaluator uses all 8 default column rules") {
         defaultColumnRules() shouldHaveSize 8
     }
+
+    // ── Table-level evaluation ───────────────────────────
+
+    test("evaluateTable with no table rules returns empty") {
+        val table = dev.dmigrate.profiling.model.TableProfile(
+            name = "users", rowCount = 100,
+            columns = listOf(intColumn()),
+        )
+        evaluator.evaluateTable(table).shouldBeEmpty()
+    }
+
+    test("evaluateTable with custom table rule fires") {
+        val customRule = TableWarningRule { table ->
+            if (table.rowCount == 0L) listOf(
+                dev.dmigrate.profiling.model.ProfileWarning(
+                    WarningCode.LOW_CARDINALITY,
+                    "Table '${table.name}' is empty",
+                    dev.dmigrate.profiling.types.Severity.WARN,
+                )
+            ) else emptyList()
+        }
+        val eval = WarningEvaluator(tableRules = listOf(customRule))
+        val table = dev.dmigrate.profiling.model.TableProfile(
+            name = "empty_table", rowCount = 0, columns = emptyList(),
+        )
+        val warnings = eval.evaluateTable(table)
+        warnings shouldHaveSize 1
+        warnings[0].message shouldBe "Table 'empty_table' is empty"
+    }
 })

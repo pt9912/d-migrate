@@ -43,15 +43,20 @@ class ProfilingModelTest : FunSpec({
         table.warnings.size shouldBe 1
     }
 
-    test("DatabaseProfile aggregates tables") {
+    test("DatabaseProfile aggregates tables without generatedAt") {
         val db = DatabaseProfile(
             databaseProduct = "PostgreSQL",
             databaseVersion = "16.1",
-            generatedAt = "2026-04-15T12:00:00Z",
             tables = emptyList(),
         )
         db.databaseProduct shouldBe "PostgreSQL"
         db.tables shouldBe emptyList()
+    }
+
+    test("DatabaseProfile is deterministic — no runtime-variable fields") {
+        val a = DatabaseProfile("PostgreSQL", "16.1", null, emptyList())
+        val b = DatabaseProfile("PostgreSQL", "16.1", null, emptyList())
+        a shouldBe b
     }
 
     test("TargetTypeCompatibility with FULL_SCAN") {

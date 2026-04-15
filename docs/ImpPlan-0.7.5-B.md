@@ -48,16 +48,15 @@ Aktueller Stand der Codebasis:
   - unveraenderten `DatabaseDriver`
   - zentrale spaetere Profiling-Verdrahtung
   - klar reduzierten Milestone-Scope gegenueber `docs/profiling.md`
-- Im aktuellen Repo existiert noch kein produktives `hexagon:profiling`-
-  Domaenenmodell.
-- Es gibt heute keine Profiling-Typen fuer:
-  - `LogicalType`
-  - `TargetLogicalType`
-  - `DatabaseProfile`
-  - `TableProfile`
-  - `ColumnProfile`
-  - `ProfileWarning`
-  - `TargetTypeCompatibility`
+- `hexagon:profiling` enthaelt bereits das produktive Domaenenmodell:
+  - `LogicalType`, `TargetLogicalType`, `Severity`, `WarningCode`
+  - `DatabaseProfile`, `TableProfile`, `ColumnProfile`
+  - `ProfileWarning`, `TargetTypeCompatibility` mit `DeterminationStatus`
+  - `NumericStats`, `TemporalStats`, `ValueFrequency`
+- Die Rule-Engine ist implementiert:
+  - `ColumnWarningRule`, `TableWarningRule`, `WarningEvaluator`
+  - 8 Default-Regeln (migrationsrelevanter Katalog)
+- 32+ Unit-Tests decken Typen, Modell und Regeln ab
 - `docs/profiling.md` beschreibt bereits ein ausgebautes Zielbild mit:
   - Kernmodell
   - Statistiktypen
