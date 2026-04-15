@@ -4,6 +4,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.options.split
@@ -41,7 +42,7 @@ class DataProfileCommand : CliktCommand(name = "profile") {
     val topN by option("--top-n", help = "Number of top values per column (default: 10)")
         .int().default(10)
     val format by option("--format", help = "Output format: json, yaml (default: json)")
-        .default("json")
+        .choice("json", "yaml").default("json")
     val output by option("--output", help = "Output file path (default: stdout)")
         .path()
 
@@ -61,8 +62,18 @@ class DataProfileCommand : CliktCommand(name = "profile") {
             quiet = ctx.quiet,
         )
 
+        val configPath = root?.config
+
         val runner = DataProfileRunner(
-            connectionResolver = { src -> src },
+            connectionResolver = { src ->
+                try {
+                    dev.dmigrate.cli.config.NamedConnectionResolver(
+                        configPathFromCli = configPath
+                    ).resolve(src)
+                } catch (e: dev.dmigrate.cli.config.ConfigResolveException) {
+                    throw IllegalArgumentException(e.message, e)
+                }
+            },
             dialectResolver = { url ->
                 ConnectionUrlParser.parse(url).dialect
             },
@@ -90,7 +101,10 @@ class DataProfileCommand : CliktCommand(name = "profile") {
                 }
             },
             reportWriter = { profile, fmt, out -> writer.write(profile, fmt, out) },
-            stderr = { if (!ctx.quiet) System.err.println(it) },
+            // Errors ([ERROR]) always show; status messages respect --quiet
+            stderr = { msg ->
+                if (msg.startsWith("[ERROR]") || !ctx.quiet) System.err.println(msg)
+            },
         )
 
         val exitCode = runner.execute(request)

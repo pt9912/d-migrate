@@ -99,7 +99,9 @@ class ProfileReportWriter {
         if (col.targetCompatibility.isNotEmpty()) {
             appendLine("""$indent  "targetCompatibility": [""")
             col.targetCompatibility.forEachIndexed { i, c ->
-                append("""$indent    {"targetType": "${c.targetType}", "checkedValueCount": ${c.checkedValueCount}, "compatibleCount": ${c.compatibleCount}, "incompatibleCount": ${c.incompatibleCount}, "determinationStatus": "${c.determinationStatus}"}""")
+                val examples = if (c.exampleInvalidValues.isNotEmpty())
+                    """, "exampleInvalidValues": [${c.exampleInvalidValues.joinToString(", ") { jsonStr(it) }}]""" else ""
+                append("""$indent    {"targetType": "${c.targetType}", "checkedValueCount": ${c.checkedValueCount}, "compatibleCount": ${c.compatibleCount}, "incompatibleCount": ${c.incompatibleCount}, "determinationStatus": "${c.determinationStatus}"$examples}""")
                 if (i < col.targetCompatibility.size - 1) appendLine(",") else appendLine()
             }
             appendLine("$indent  ],")
@@ -137,6 +139,8 @@ class ProfileReportWriter {
         appendLine("$indent  duplicateValueCount: ${col.duplicateValueCount}")
         if (col.emptyStringCount > 0) appendLine("$indent  emptyStringCount: ${col.emptyStringCount}")
         if (col.blankStringCount > 0) appendLine("$indent  blankStringCount: ${col.blankStringCount}")
+        if (col.minLength != null) appendLine("$indent  minLength: ${col.minLength}")
+        if (col.maxLength != null) appendLine("$indent  maxLength: ${col.maxLength}")
         if (col.minValue != null) appendLine("$indent  minValue: ${yamlStr(col.minValue)}")
         if (col.maxValue != null) appendLine("$indent  maxValue: ${yamlStr(col.maxValue)}")
         if (col.topValues.isNotEmpty()) {
@@ -145,6 +149,34 @@ class ProfileReportWriter {
                 appendLine("$indent    - value: ${if (v.value != null) yamlStr(v.value) else "null"}")
                 appendLine("$indent      count: ${v.count}")
                 appendLine("$indent      ratio: ${v.ratio}")
+            }
+        }
+        col.numericStats?.let { s ->
+            appendLine("$indent  numericStats:")
+            appendLine("$indent    min: ${s.min}")
+            appendLine("$indent    max: ${s.max}")
+            appendLine("$indent    avg: ${s.avg}")
+            appendLine("$indent    sum: ${s.sum}")
+            appendLine("$indent    stddev: ${s.stddev}")
+            appendLine("$indent    zeroCount: ${s.zeroCount}")
+            appendLine("$indent    negativeCount: ${s.negativeCount}")
+        }
+        col.temporalStats?.let { s ->
+            appendLine("$indent  temporalStats:")
+            appendLine("$indent    minTimestamp: ${yamlStr(s.minTimestamp)}")
+            appendLine("$indent    maxTimestamp: ${yamlStr(s.maxTimestamp)}")
+        }
+        if (col.targetCompatibility.isNotEmpty()) {
+            appendLine("$indent  targetCompatibility:")
+            for (c in col.targetCompatibility) {
+                appendLine("$indent    - targetType: ${c.targetType}")
+                appendLine("$indent      checkedValueCount: ${c.checkedValueCount}")
+                appendLine("$indent      compatibleCount: ${c.compatibleCount}")
+                appendLine("$indent      incompatibleCount: ${c.incompatibleCount}")
+                appendLine("$indent      determinationStatus: ${c.determinationStatus}")
+                if (c.exampleInvalidValues.isNotEmpty()) {
+                    appendLine("$indent      exampleInvalidValues: [${c.exampleInvalidValues.joinToString(", ") { yamlStr(it) }}]")
+                }
             }
         }
         if (col.warnings.isNotEmpty()) {
