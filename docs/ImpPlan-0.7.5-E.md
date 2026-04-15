@@ -207,9 +207,12 @@ Verbindliche Folge:
 - Formatunterschiede betreffen nur Syntax, nicht Informationsgehalt
 - das kommandoeigene `--format` steuert ausschliesslich das Profil-Report-
   Payloadformat
-- das Root-Flag `--output-format` bleibt fuer globale CLI-Meldungen bzw.
-  Fehlerdarstellung zustaendig und ueberschreibt das Profil-Report-Format
+- das Root-Flag `--output-format` ueberschreibt das Profil-Report-Format
   nicht
+- Hinweis: `--output-format` wird in 0.7.5 fuer den Profiling-Fehlerpfad
+  nicht separat ausgewertet; Fehlermeldungen erscheinen als Plain-Text
+  auf stderr (konsistent mit den bestehenden Runnern). Eine formatierte
+  Fehlerausgabe waere ein eigener spaeterer Scope.
 - bei `data profile --format json|yaml` gewinnt fuer die Nutzlastausgabe immer
   das Kommando-`--format`, unabhaengig vom globalen `--output-format`
 
