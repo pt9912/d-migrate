@@ -572,45 +572,45 @@ Noch nicht Teil von Phase B, aber als Folgeartefakte vorzubereiten:
 
 ## 8. Akzeptanzkriterien
 
-- [ ] `hexagon:ports` enthaelt einen expliziten tool-neutralen Exportvertrag
+- [x] `hexagon:ports` enthaelt einen expliziten tool-neutralen Exportvertrag
       fuer 0.7.0 statt loser Tool-spezifischer Hilfstypen.
-- [ ] `MigrationIdentity` macht Tool, Dialekt, Version, Versionsquelle und Slug
+- [x] `MigrationIdentity` macht Tool, Dialekt, Version, Versionsquelle und Slug
       explizit sichtbar.
-- [ ] Flyway/Liquibase koennen `schema.version` nur ueber den dokumentierten
+- [x] Flyway/Liquibase koennen `schema.version` nur ueber den dokumentierten
       Fallback nutzen; Django/Knex verlangen weiterhin eine explizite
       CLI-Version.
-- [ ] Es gibt keinen impliziten Timestamp- oder sonstigen Default fuer
+- [x] Es gibt keinen impliziten Timestamp- oder sonstigen Default fuer
       fehlende Versionen.
-- [ ] `MigrationBundle` kapselt generatornahes `DdlResult` plus eine
+- [x] `MigrationBundle` kapselt generatornahes `DdlResult` plus eine
       gemeinsame timestamp-bereinigte Determinismusdarstellung fuer Up und
       einen expliziten Rollback-State, statt den Rollback-Vertrag auf `null`
       zu reduzieren.
-- [ ] Angeforderter Rollback ohne Down-`DdlResult` ist kein valider
+- [x] Angeforderter Rollback ohne Down-`DdlResult` ist kein valider
       Bundlezustand.
-- [ ] Die DDL-Normalisierung fuer byte-deterministische Tool-Inhalte passiert
+- [x] Die DDL-Normalisierung fuer byte-deterministische Tool-Inhalte passiert
       einmalig im gemeinsamen Hexagon-Vertrag und nicht pro spaeterem
       Tool-Adapter erneut.
-- [ ] Generator-Notes und `skippedObjects` bleiben im Bundlevertrag erhalten.
-- [ ] Export-spezifische Hinweise werden semantisch getrennt von
+- [x] Generator-Notes und `skippedObjects` bleiben im Bundlevertrag erhalten.
+- [x] Export-spezifische Hinweise werden semantisch getrennt von
       `TransformationNote` gehalten und explizit in `ToolExportResult`
       modelliert.
-- [ ] `ToolExportNote` traegt mindestens Severity, Code, Message sowie
+- [x] `ToolExportNote` traegt mindestens Severity, Code, Message sowie
       optionalen Objektbezug und Hint.
-- [ ] `MigrationArtifact` beschreibt kanonische relative Pfade unterhalb des
+- [x] `MigrationArtifact` beschreibt kanonische relative Pfade unterhalb des
       spaeteren Output-Verzeichnisses nicht als rohen `String`, sondern als
       typed Relativpfadvertrag.
-- [ ] `ArtifactRelativePath` ist nur ueber die validierende Factory
+- [x] `ArtifactRelativePath` ist nur ueber die validierende Factory
       erzeugbar. Die Factory normalisiert den Eingabepfad (z. B. `a/./b.sql`
       → `a/b.sql`) und validiert dann das Ergebnis. Absolute Pfade und
       Parent-Escapes (`..`) nach Normalisierung werden abgelehnt.
-- [ ] Kollisionen zwischen geplanten Artefakten (in-run) sowie gegen
+- [x] Kollisionen zwischen geplanten Artefakten (in-run) sowie gegen
       bestehende Zieldateien sind vor dem ersten Write pruefbar. Die
       Filesystem-Pruefung arbeitet I/O-frei auf einer vom Caller
       gelieferten Menge bereits vorhandener relativer Pfade
       (`existingPaths: Set<String>`).
-- [ ] `DatabaseDriverRegistry` bleibt unberuehrt und wird nicht fuer
+- [x] `DatabaseDriverRegistry` bleibt unberuehrt und wird nicht fuer
       Tool-Exporter wiederverwendet.
-- [ ] Die Identitaets-, Slug- und Kollisionslogik ist adapterfrei in
+- [x] Die Identitaets-, Slug- und Kollisionslogik ist adapterfrei in
       `hexagon:application` testbar.
 
 ---
