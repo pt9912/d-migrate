@@ -182,16 +182,17 @@ Verbindliche Folge:
 - Sie pruefen keine CLI-Pflichtregeln erneut.
 - Sie rechnen keine Output-Root-Pfade aus.
 - Sie pruefen keine Host-Dateikollisionen.
-- Sie konsumieren die kanonische, timestamp-bereinigte SQL-Darstellung aus dem
-  Bundle, statt erneut rohe `DdlResult` selbst zu normalisieren.
-- Phase C fixiert zusaetzlich die Statement-Schnitt:
-  - Flyway und Liquibase konsumieren den kanonischen Up-/Down-SQL-Block fuer
-    single-block-Formate.
-  - Django und Knex konsumieren eine geordnete kanonische Statement-Sequenz
-    aus demselben Bundlevertrag.
+- Sie konsumieren den bereits in Phase B definierten Payload aus dem Bundle,
+  statt erneut rohe `DdlResult` selbst zu normalisieren oder einen
+  Parallelvertrag zu erfinden:
+  - Flyway und Liquibase konsumieren fuer single-block-Formate den
+    kanonischen Up-/Down-SQL-Block `MigrationDdlPayload.deterministicSql`.
+  - Django und Knex konsumieren fuer statement-orientierte Formate die
+    generatornahe, geordnete Liste
+    `MigrationDdlPayload.result.statements`.
 - Django und Knex duerfen `deterministicSql` nicht heuristisch wieder in
-  Statements aufspalten; Statement-Grenzen und Reihenfolge kommen aus dem
-  gemeinsamen Upstream-Vertrag.
+  Statements aufspalten; Statement-Grenzen und Reihenfolge kommen aus
+  `result.statements` des gemeinsamen Bundlevertrags.
 
 ### 4.4 Flyway bekommt genau ein SQL-Artefakt fuer Up und optional eines fuer Undo
 
@@ -364,8 +365,8 @@ Mindestens noetig:
 - `LiquibaseMigrationExporter`
 - kanonische XML-Datei
 - deterministischer `databaseChangeLog`-Root
-- deterministische Ableitung von `changeSet id` und `author` aus
-  `MigrationIdentity`
+- deterministische Ableitung von `changeSet id` aus `MigrationIdentity`
+- fixer Exporter-`author`, z. B. `d-migrate`
 - SQL-Changeset
 - optional `<rollback>`-Block
 - reproduzierbare XML-Struktur und Header
@@ -376,7 +377,8 @@ Mindestens noetig:
 
 - `DjangoMigrationExporter`
 - minimale `RunSQL`-Migration
-- geordnete Statement-Sequenz aus dem Bundle statt heuristischer
+- geordnete Statement-Sequenz aus
+  `MigrationDdlPayload.result.statements` statt heuristischer
   SQL-Wiederaufspaltung
 - optional `reverse_sql`
 - reproduzierbarer Python-Dateiinhalt
@@ -488,6 +490,8 @@ Direkt betroffen:
 
 - `docs/implementation-plan-0.7.0.md`
 - `docs/ImpPlan-0.7.0-B.md`
+- `docs/cli-spec.md`
+- `docs/design.md`
 - `settings.gradle.kts`
 - neues Modul:
   - `adapters/driven/integrations`
@@ -496,8 +500,6 @@ Direkt betroffen:
 
 Indirekt als Ist-Referenz relevant:
 
-- `docs/cli-spec.md`
-- `docs/design.md`
 - `docs/architecture.md`
 - `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaFileResolver.kt`
 - `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SidecarPath.kt`
@@ -519,15 +521,23 @@ Noch nicht Teil von Phase C, aber Folgeartefakte vorzubereiten:
       Django und Knex.
 - [ ] Die Exporter rendern Artefakte ausschliesslich aus `MigrationBundle` und
       duplizieren keine Version-/Slug-/Kollisionslogik aus Phase B.
+- [ ] `docs/implementation-plan-0.7.0.md`, `docs/cli-spec.md` und
+      `docs/design.md` beschreiben die fuer 0.7.0 festgelegte
+      Liquibase-XML-Formatwahl deckungsgleich:
+      genau ein versionierter XML-Changelog mit genau einem deterministischen
+      `changeSet`, fixer Exporter-`author`, optionalem `<rollback>`-Block und
+      ohne Mutation eines Master-Changelogs.
 - [ ] Flyway erzeugt `V<version>__<slug>.sql` und optional
       `U<version>__<slug>.sql`.
 - [ ] Liquibase erzeugt einen versionierten XML-Changelog mit SQL-Block,
-      deterministischem `databaseChangeLog` / `changeSet id` / `author` und
-      optionalem `<rollback>`-Block.
+      deterministischem `databaseChangeLog` / `changeSet id`, fixem
+      Exporter-`author` und optionalem `<rollback>`-Block.
 - [ ] Django erzeugt eine minimale `RunSQL`-Migration mit optionalem
-      `reverse_sql` und explizit erhaltener Statement-Sequenz.
+      `reverse_sql` und explizit erhaltener Statement-Sequenz aus
+      `MigrationDdlPayload.result.statements`.
 - [ ] Knex erzeugt eine CommonJS-Datei mit `exports.up` und optional
-      `exports.down`, jeweils aus der kanonischen Statement-Sequenz.
+      `exports.down`, jeweils aus
+      `MigrationDdlPayload.result.statements`.
 - [ ] Alle Artefakte sind byte-deterministisch fuer identische Eingaben.
 - [ ] Alle Artefakte nutzen UTF-8 und LF.
 - [ ] Exporter fuegen nur eigene `ToolExportNote`s hinzu und verlieren keine
@@ -573,11 +583,12 @@ Dabei explizit pruefen:
 
 - Flyway erzeugt exakt die erwarteten `V...`-/`U...`-Artefakte
 - Liquibase enthaelt SQL- und optionalen Rollback-Block sowie
-  deterministisches `changeSet id` / `author`
+  deterministisches `changeSet id` und fixen Exporter-`author`
 - Django enthaelt `RunSQL(..., reverse_sql=...)` mit erhaltener
-  Statement-Reihenfolge
+  Statement-Reihenfolge aus `MigrationDdlPayload.result.statements`
 - Knex enthaelt `exports.up` und `exports.down` als sequenzielle
-  `knex.raw(...)`-Aufrufe in Bundle-Reihenfolge
+  `knex.raw(...)`-Aufrufe in der Reihenfolge von
+  `MigrationDdlPayload.result.statements`
 - Renderpfade bleiben relativ und verlassen das Output-Wurzelverzeichnis nicht
 - identische Eingaben erzeugen identische Artefaktinhalte
 - das Modul hat keine unbeabsichtigten Abhaengigkeiten auf CLI oder

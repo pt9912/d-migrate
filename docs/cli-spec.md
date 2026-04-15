@@ -852,8 +852,11 @@ nicht übernommen; Provenienz bleibt im Report oder in stabilen Metadaten.
 Dies ist nicht der spätere diff-basierte `DiffResult`-Rollback.
 
 **Liquibase-Format (0.7.0)**: `export liquibase` erzeugt für 0.7.0 genau einen
-versionierten XML-Changelog mit genau einem deterministischen `changeSet`
-inklusive optionalem `<rollback>`-Block.
+versionierten XML-Changelog mit genau einem deterministischen `changeSet`.
+`changeSet.id` wird stabil aus Version, Slug und Dialekt abgeleitet,
+`changeSet.author` ist der feste Exporter-Wert `d-migrate`, und ein
+optional erzeugter Rollback wird als `<rollback>`-Block im selben Changeset
+eingebettet. Ein bestehender Master-Changelog wird dabei nicht mutiert.
 
 Exit: `0` Erfolg, `2` ungültige Flags (fehlendes `--target`, fehlendes
 `--version` bei Django/Knex), `3` Schema-Validierungsfehler, `7` Parse-/I/O-Fehler.

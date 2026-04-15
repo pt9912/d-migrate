@@ -601,7 +601,11 @@ tool-spezifische Down-Artefakte auf Basis des bestehenden full-state-
 `generateRollback()`-Pfads. Jedes Tool hat sein eigenes Format:
 
 - **Flyway**: `U<version>__<name>.sql` (Undo-Datei)
-- **Liquibase**: ein versionierter XML-Changeset mit `<rollback>`-Block
+- **Liquibase**: genau ein versionierter XML-Changelog mit genau einem
+  deterministischen `changeSet`; `changeSet.id` wird aus Version, Slug und
+  Dialekt abgeleitet, `changeSet.author` ist fuer 0.7.0 der feste
+  Exporter-Wert `d-migrate`, Rollback liegt optional im selben
+  `<rollback>`-Block
 - **Django**: `reverse_sql` im `RunSQL`-Wrapper
 - **Knex**: `exports.down` in der Migrations-Datei
 

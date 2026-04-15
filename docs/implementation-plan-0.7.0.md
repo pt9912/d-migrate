@@ -281,8 +281,11 @@ Verbindliche Konsequenz:
   - klare Dokumentation, dass die Ausfuehrung von Undo-Dateien von der
     verwendeten Flyway-Edition bzw. Projektpraxis abhaengen kann
 - Liquibase:
-  - Changeset mit SQL-Body
-  - Rollback-Block mit inverser SQL
+  - genau ein versionierter XML-Changelog pro Export
+  - genau ein deterministisches `changeSet` mit SQL-Body
+  - `changeSet.id` stabil aus Version, Slug und Dialekt abgeleitet
+  - `changeSet.author` fuer 0.7.0 als fixer Exporter-Wert `d-migrate`
+  - optionaler Rollback-Block mit inverser SQL
 - Django:
   - reversible `migrations.RunSQL(sql=..., reverse_sql=...)`
 - Knex:

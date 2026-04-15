@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: B (Gemeinsames Migrations-Bundle und Identitaet)
-> **Status**: Review (2026-04-14)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.3 bis 4.8, Abschnitt 5 Phase B, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -151,6 +151,13 @@ Verbindliche Folge:
   - das rohe `DdlResult`
   - eine einmalig und zentral abgeleitete deterministische SQL-Darstellung
     fuer Tool-Exporte
+- Die strukturierte Statement-Liste bleibt ueber
+  `MigrationDdlPayload.result.statements` Teil des Bundlevertrags:
+  - Flyway und Liquibase konsumieren primaer den kanonischen SQL-Block
+    `deterministicSql`
+  - Django und Knex konsumieren die generatornahe Statement-Reihenfolge aus
+    `result.statements`, statt `deterministicSql` spaeter heuristisch wieder
+    aufzutrennen
 - Der Bundlevertrag unterscheidet typed zwischen:
   - Rollback nicht angefordert
   - Rollback angefordert und mit `MigrationDdlPayload` vorhanden
@@ -341,7 +348,7 @@ Verbindliche Folge:
 
 ## 5. Arbeitspakete fuer Phase B
 
-### B.1 Port-Typen fuer Bundle und Identitaet einfuehren
+### B.1 Port-Typen fuer Bundle und Identitaet einfuehren ✔
 
 Mindestens noetig:
 
@@ -358,7 +365,7 @@ Mindestens noetig:
 - `ToolExportResult`
 - `ToolMigrationExporter`
 
-### B.2 Identitaetsauflosung und Validierung festziehen
+### B.2 Identitaetsauflosung und Validierung festziehen ✔
 
 Mindestens noetig:
 
@@ -375,7 +382,7 @@ Mindestens noetig:
 - leerer oder rein aus Sonderzeichen bestehender `schema.name` erzeugt
   den stabilen Fallback-Slug `"migration"` statt eines Fehlers
 
-### B.3 Artefaktlayout und Kollisionsvertrag definieren
+### B.3 Artefaktlayout und Kollisionsvertrag definieren ✔
 
 Mindestens noetig:
 
@@ -384,7 +391,7 @@ Mindestens noetig:
 - in-run-Kollisionen zwischen Artefakten
 - Kollisionen gegen bereits vorhandene Dateien im Output-Verzeichnis
 
-### B.4 Diagnose- und Ergebnisvertrag schaerfen
+### B.4 Diagnose- und Ergebnisvertrag schaerfen ✔
 
 Mindestens noetig:
 
@@ -394,7 +401,7 @@ Mindestens noetig:
 - Severity-/Hint-/Objektbezug fuer Export-Notes
 - keine Vermischung von Bundle und Laufkontext
 
-### B.5 Adapterfreie Tests fuer Ports und Application-Helper aufbauen
+### B.5 Adapterfreie Tests fuer Ports und Application-Helper aufbauen ✔
 
 Mindestens noetig:
 
@@ -612,31 +619,37 @@ Noch nicht Teil von Phase B, aber als Folgeartefakte vorzubereiten:
 
 Mindestumfang fuer die Phase-B-Umsetzung:
 
-1. Port- und Application-Typen pruefen:
+1. Modul-Testlauf fuer Ports und Application (via Docker, kein lokales JDK
+   noetig):
 
 ```bash
-rg -n "MigrationTool|MigrationVersionSource|MigrationIdentity|MigrationDdlPayload|MigrationRollback|ArtifactRelativePath|MigrationBundle|MigrationArtifact|ToolExportSeverity|ToolExportNote|ToolExportResult|ToolMigrationExporter" \
+docker build --target build \
+  --build-arg GRADLE_TASKS=":hexagon:ports:test :hexagon:application:test" \
+  -t d-migrate:phase-b .
+```
+
+2. Port- und Application-Typen pruefen (im Build-Container):
+
+```bash
+docker run --rm d-migrate:phase-b \
+  grep -rn "MigrationTool\|MigrationIdentity\|MigrationBundle\|ToolMigrationExporter" \
   hexagon/ports/src/main/kotlin hexagon/application/src/main/kotlin
 ```
 
-2. Sicherstellen, dass die neue Typfamilie nicht in `dev.dmigrate.driver`
-landet:
+3. Sicherstellen, dass die neue Typfamilie nicht in `dev.dmigrate.driver`
+   landet:
 
 ```bash
-find hexagon/ports/src/main/kotlin/dev/dmigrate -maxdepth 3 -type f | sort
+docker run --rm d-migrate:phase-b \
+  find hexagon/ports/src/main/kotlin/dev/dmigrate -maxdepth 3 -type f | sort
 ```
 
-3. Identitaets- und Kollisions-Helper pruefen:
+4. Identitaets- und Kollisions-Helper pruefen:
 
 ```bash
-rg -n "IdentityResolver|VersionValidator|SlugNormalizer|Collision" \
+docker run --rm d-migrate:phase-b \
+  grep -rn "IdentityResolver\|VersionValidator\|SlugNormalizer\|Collision" \
   hexagon/application/src/main/kotlin hexagon/application/src/test/kotlin
-```
-
-4. Modul-Testlauf fuer Ports und Application:
-
-```bash
-./gradlew :hexagon:ports:test :hexagon:application:test
 ```
 
 Dabei explizit pruefen:
@@ -662,24 +675,41 @@ Dabei explizit pruefen:
 
 ## 10. Risiken und offene Punkte
 
-### R1 - Ein zu grober Bundlevertrag macht Tool-Adapter spaeter zwangslaufig untestbar
+### R1 - Ein zu grober Bundlevertrag macht Tool-Adapter spaeter zwangslaufig untestbar ✔ mitigiert
 
 Wenn Phase B nur freie Strings oder unstrukturierte Maps definiert, muessen
 spaetere Tool-Adapter Identitaet, Kollisionen und Diagnostik erneut selbst
 interpretieren.
 
-### R2 - Ein zweites Note-Modell kann generatorische und tool-spezifische Hinweise vermischen
+**Mitigierung:** `MigrationBundle` ist ein vollstaendig typed data class mit
+`MigrationIdentity`, `MigrationDdlPayload`, sealed `MigrationRollback` und
+`ArtifactRelativePath`. Kein freier String-Vertrag.
+
+### R2 - Ein zweites Note-Modell kann generatorische und tool-spezifische Hinweise vermischen ✔ mitigiert
 
 Wenn `TransformationNote` und spaetere Tool-Hinweise unscharf zusammengelegt
 werden, verlieren Reports und Tests die klare Herkunft ihrer Diagnostik.
 
-### R3 - Zu spaete Kollisionserkennung fuehrt zu halbfertigen Output-Verzeichnissen
+**Mitigierung:** `ToolExportNote` ist ein eigenstaendiger Typ mit eigenem
+`ToolExportSeverity`-Enum. Generator-Notes bleiben in `DdlResult`, Export-Notes
+in `ToolExportResult.exportNotes`. Kein gemeinsamer Typ.
+
+### R3 - Zu spaete Kollisionserkennung fuehrt zu halbfertigen Output-Verzeichnissen ✔ mitigiert
 
 Wenn Kollisionen erst beim eigentlichen Dateischreiben erkannt werden, sind
 partielle Artefaktausgaben und schwer reproduzierbare Fehlerpfade vorprogrammiert.
 
-### R4 - Ein falscher Namespace oder Registry-Zuschnitt koppelt Tool-Export an Driver-Semantik
+**Mitigierung:** `ArtifactCollisionChecker` prueft in-run- und
+Dateisystem-Kollisionen I/O-frei auf normalisierten relativen Pfaden, bevor
+ein Write stattfindet.
+
+### R4 - Ein falscher Namespace oder Registry-Zuschnitt koppelt Tool-Export an Driver-Semantik ✔ mitigiert
 
 Wenn der neue Vertrag unter `driver` oder sogar in `DatabaseDriverRegistry`
 landet, vermischt 0.7.0 zwei fachlich verschiedene Achsen:
 DB-Dialektzugriff und Tool-Artefakt-Export.
+
+**Mitigierung:** Alle Migrationstypen liegen in `dev.dmigrate.migration`.
+`DatabaseDriverRegistry` ist unberuehrt. Kein Migrationstyp referenziert
+den `driver`-Namespace ausser ueber explizite Imports von `DdlResult` und
+`DatabaseDialect`.
