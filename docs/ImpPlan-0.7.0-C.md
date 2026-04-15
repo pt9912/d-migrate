@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: C (Tool-Adapter und Integrationsmodul)
-> **Status**: Draft (2026-04-14)
+> **Status**: Review (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.5 bis 4.9, Abschnitt 5 Phase C, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
