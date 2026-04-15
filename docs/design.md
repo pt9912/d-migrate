@@ -605,7 +605,8 @@ tool-spezifische Down-Artefakte auf Basis des bestehenden full-state-
   deterministischen `changeSet`; `changeSet.id` wird aus Version, Slug und
   Dialekt abgeleitet, `changeSet.author` ist fuer 0.7.0 der feste
   Exporter-Wert `d-migrate`, Rollback liegt optional im selben
-  `<rollback>`-Block
+  `<rollback>`-Block; ein bestehender Master-Changelog wird dabei nicht
+  mutiert
 - **Django**: `reverse_sql` im `RunSQL`-Wrapper
 - **Knex**: `exports.down` in der Migrations-Datei
 
