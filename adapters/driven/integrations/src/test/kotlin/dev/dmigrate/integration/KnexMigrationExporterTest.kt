@@ -61,8 +61,15 @@ class KnexMigrationExporterTest : FunSpec({
         result.artifacts shouldHaveSize 1
     }
 
-    test("file name follows Knex convention") {
+    test("file name follows Knex convention — no separate slug") {
         val result = exporter.render(bundle())
+        result.artifacts[0].relativePath.normalized shouldBe "20260414120000.js"
+    }
+
+    test("version with slug suffix does not produce double-slug") {
+        val result = exporter.render(bundle(
+            identity = identity(version = "20260414120000_create_users"),
+        ))
         result.artifacts[0].relativePath.normalized shouldBe "20260414120000_create_users.js"
     }
 

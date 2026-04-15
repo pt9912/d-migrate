@@ -13,7 +13,7 @@ import dev.dmigrate.migration.ToolMigrationExporter
  * Renders a minimal Django `RunSQL` migration from a [MigrationBundle].
  *
  * Produces exactly one Python file:
- * - `<version>_<slug>.py`
+ * - `<version>.py`
  *
  * The file uses `migrations.RunSQL` with the ordered statement sequence
  * from `MigrationDdlPayload.result.statements`. No app scaffolding or
@@ -25,7 +25,7 @@ class DjangoMigrationExporter : ToolMigrationExporter {
 
     override fun render(bundle: MigrationBundle): ToolExportResult {
         val identity = bundle.identity
-        val fileName = "${identity.version}_${identity.slug}.py"
+        val fileName = "${identity.version}.py"
 
         val python = buildString {
             appendLine("from django.db import migrations")

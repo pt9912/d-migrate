@@ -13,7 +13,7 @@ import dev.dmigrate.migration.ToolMigrationExporter
  * Renders a Knex.js CommonJS migration from a [MigrationBundle].
  *
  * Produces exactly one JavaScript file:
- * - `<version>_<slug>.js`
+ * - `<version>.js`
  *
  * Uses `exports.up` / `exports.down` with sequential `knex.raw()`
  * calls from `MigrationDdlPayload.result.statements`.
@@ -24,7 +24,7 @@ class KnexMigrationExporter : ToolMigrationExporter {
 
     override fun render(bundle: MigrationBundle): ToolExportResult {
         val identity = bundle.identity
-        val fileName = "${identity.version}_${identity.slug}.js"
+        val fileName = "${identity.version}.js"
 
         val js = buildString {
             appendLine("/**")

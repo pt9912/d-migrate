@@ -198,7 +198,7 @@ hinzu.
 | ----------- | --------------------------------------------------------- | ------ | ------ |
 | Core        | Phase A: DDL-Header-Determinismus, Adapter-Grundlagen     | LF-011 | ✅ |
 | Core        | Phase B: Migrations-Bundle, Identitaet, Exportvertrag     | LF-011 | ✅ |
-| Integration | Phase C: Flyway-Renderer                                  | LF-011 | |
+| Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex)   | LF-011 | ✅ |
 | Integration | Phase D: Liquibase-Renderer                               | LF-011 | |
 | Integration | Phase E: Django-/Knex-Renderer                            | LF-011 | |
 | CLI         | Phase F: CLI-Wiring, `d-migrate export` Kommandos         | LF-011 | |

@@ -60,8 +60,13 @@ class DjangoMigrationExporterTest : FunSpec({
         result.artifacts shouldHaveSize 1
     }
 
-    test("file name follows Django convention") {
+    test("file name follows Django convention — no separate slug") {
         val result = exporter.render(bundle())
+        result.artifacts[0].relativePath.normalized shouldBe "0001.py"
+    }
+
+    test("version with slug suffix does not produce double-slug") {
+        val result = exporter.render(bundle(identity = identity(version = "0001_initial")))
         result.artifacts[0].relativePath.normalized shouldBe "0001_initial.py"
     }
 

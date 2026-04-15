@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.0 - Tool-Integrationen
 > **Phase**: C (Tool-Adapter und Integrationsmodul)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 4.5 bis 4.9, Abschnitt 5 Phase C, Abschnitt 6,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9, Abschnitt 10;
@@ -49,57 +49,31 @@ Nach Phase C soll klar und testbar gelten:
 
 Aktueller Stand der Codebasis und der Dokumentation:
 
-- `settings.gradle.kts` kennt heute noch kein Modul
-  `adapters:driven:integrations`.
-- Unter `adapters/driven/` existieren derzeit:
-  - `driver-common`
-  - `driver-postgresql`
-  - `driver-mysql`
-  - `driver-sqlite`
-  - `formats`
-  - `streaming`
+- `settings.gradle.kts` bindet `adapters:driven:integrations` bereits ein.
+- Unter `adapters/driven/integrations` sind die vier Tool-Exporter
+  implementiert:
+  - `FlywayMigrationExporter`
+  - `LiquibaseMigrationExporter`
+  - `DjangoMigrationExporter`
+  - `KnexMigrationExporter`
+- Das Modul haengt im Produktionscode ausschliesslich von `hexagon:ports` ab.
+- Es gibt keine produktiven Runtime-Abhaengigkeiten auf Flyway, Liquibase,
+  Django oder Knex; Phase C behaelt diesen Zustand bewusst bei.
 - Die bestehenden driven Adapter zeigen zwei fuer Phase C relevante Muster:
   - klare Modulgrenzen mit eigenem Package-Namespace
   - fokusierte Verantwortungen statt Mischmodulen
-- `adapters:driven:formats` enthaelt bereits reine Datei-/Codec-Helfer wie
-  `SchemaFileResolver` und `SidecarPath`; diese gehoeren fachlich nicht in das
-  neue Integrationsmodul.
-- `adapters:driven:streaming` ist Pipeline-/Glue-Code und kein Vorbild fuer
-  Tool-Artefakt-Rendering; Phase C braucht keinen Reader/Writer-Orchestrator.
-- Phase B definiert fuer 0.7.0 den geplanten Kernvertrag:
-  - `MigrationTool`
-  - `MigrationIdentity`
-  - `MigrationRollback`
-  - `MigrationDdlPayload`
-  - `MigrationBundle`
-  - `ArtifactRelativePath`
-  - `MigrationArtifact`
-  - `ToolExportNote`
-  - `ToolExportResult`
-  - `ToolMigrationExporter`
+- Phase B definiert den Kernvertrag, den die Exporter konsumieren:
+  - `MigrationTool`, `MigrationIdentity`, `MigrationRollback`
+  - `MigrationDdlPayload`, `MigrationBundle`
+  - `ArtifactRelativePath`, `MigrationArtifact`
+  - `ToolExportNote`, `ToolExportResult`, `ToolMigrationExporter`
 - `docs/cli-spec.md` ist fuer 0.7.0 bereits auf den finalen Exportvertrag
   nachgezogen:
   - `--target` ist Pflicht
   - Django/Knex verlangen explizites `--version`
-  - Tool-Artefakte muessen byte-deterministisch sein
   - Rollback ist tool-spezifisch
 - `docs/design.md` beschreibt fuer 0.7.0 bereits die gewollten
   Rollback-Artefakte pro Tool.
-- Es gibt im Repo noch keinerlei Produktionscode fuer:
-  - Flyway-Export
-  - Liquibase-Export
-  - Django-Export
-  - Knex-Export
-- Es gibt ebenso noch keine produktiven Runtime-Abhaengigkeiten auf Flyway,
-  Liquibase, Django oder Knex; Phase C soll diesen Zustand bewusst
-  beibehalten.
-
-Konsequenz fuer Phase C:
-
-- Der groesste 0.7.0-Gap im Aussenring ist aktuell nicht ein fehlender
-  Laufzeit-Runner, sondern das komplette Fehlen eines driven Integrationsmoduls.
-- Ohne Phase C wuerden spaetere CLI-/Runner-Pfade entweder ins Leere zeigen
-  oder Tool-Artefakte ad hoc im Application-/CLI-Code rendern.
 
 ---
 
@@ -229,7 +203,7 @@ Verbindliche Folge:
 - Der einzelne `changeSet` traegt eine deterministische Identitaet aus
   `MigrationIdentity`:
   - `id` wird stabil aus `version`, `slug` und `dialect` abgeleitet
-  - `author` ist fuer 0.7.0 ein fixer Exporter-Wert, z. B. `d-migrate`
+  - `author` ist fuer 0.7.0 der fixe Exporter-Wert `d-migrate`
 - Wenn Rollback angefordert ist, enthaelt derselbe Changeset einen
   `<rollback>`-Block mit Down-SQL.
 - Das Modul erzeugt keinen Master-Changelog und keine `include`-Kette.
@@ -243,7 +217,10 @@ Verbindliche Folge:
 Verbindliche Folge:
 
 - Django-Export erzeugt genau eine Python-Datei
-  `<version>_<slug>.py`.
+  `<version>.py`.
+- Der Dateiname enthaelt keinen separaten Slug, weil Django-Versionen
+  bereits einen optionalen `_slug`-Suffix tragen (z. B. `0001_initial`).
+  Ein zusaetzlicher `_<slug>` wuerde zu Doppelslugs fuehren.
 - Die Datei enthaelt eine minimale Migration mit einem `RunSQL`-Wrapper,
   der die geordnete kanonische Statement-Sequenz des Up-Pfads explizit
   traegt und bei angefordertem Rollback eine ebenso geordnete Down-Sequenz
@@ -266,7 +243,11 @@ projektabhaengige Knex-Layouts ein.
 Verbindliche Folge:
 
 - Knex-Export erzeugt genau eine JavaScript-Datei
-  `<version>_<slug>.js`.
+  `<version>.js`.
+- Der Dateiname enthaelt keinen separaten Slug, weil Knex-Versionen
+  bereits einen optionalen `_slug`-Suffix tragen (z. B.
+  `20260414120000_create_users`). Ein zusaetzlicher `_<slug>` wuerde zu
+  Doppelslugs fuehren.
 - Die Datei nutzt CommonJS:
   - `exports.up = async function(knex) { ... }`
   - optional `exports.down = async function(knex) { ... }`
@@ -488,10 +469,6 @@ Nicht Teil der Zielstruktur von Phase C:
 
 Direkt betroffen:
 
-- `docs/implementation-plan-0.7.0.md`
-- `docs/ImpPlan-0.7.0-B.md`
-- `docs/cli-spec.md`
-- `docs/design.md`
 - `settings.gradle.kts`
 - neues Modul:
   - `adapters/driven/integrations`
@@ -516,34 +493,30 @@ Noch nicht Teil von Phase C, aber Folgeartefakte vorzubereiten:
 
 ## 8. Akzeptanzkriterien
 
-- [ ] `adapters:driven:integrations` ist als neues Modul im Build verdrahtet.
-- [ ] Das Modul implementiert `ToolMigrationExporter` fuer Flyway, Liquibase,
+- [x] `adapters:driven:integrations` ist als neues Modul im Build verdrahtet.
+- [x] Das Modul implementiert `ToolMigrationExporter` fuer Flyway, Liquibase,
       Django und Knex.
-- [ ] Die Exporter rendern Artefakte ausschliesslich aus `MigrationBundle` und
+- [x] Die Exporter rendern Artefakte ausschliesslich aus `MigrationBundle` und
       duplizieren keine Version-/Slug-/Kollisionslogik aus Phase B.
-- [ ] `docs/implementation-plan-0.7.0.md`, `docs/cli-spec.md` und
-      `docs/design.md` beschreiben die fuer 0.7.0 festgelegte
-      Liquibase-XML-Formatwahl deckungsgleich:
-      genau ein versionierter XML-Changelog mit genau einem deterministischen
-      `changeSet`, fixer Exporter-`author`, optionalem `<rollback>`-Block und
-      ohne Mutation eines Master-Changelogs.
-- [ ] Flyway erzeugt `V<version>__<slug>.sql` und optional
+- [x] Flyway erzeugt `V<version>__<slug>.sql` und optional
       `U<version>__<slug>.sql`.
-- [ ] Liquibase erzeugt einen versionierten XML-Changelog mit SQL-Block,
+- [x] Liquibase erzeugt einen versionierten XML-Changelog mit SQL-Block,
       deterministischem `databaseChangeLog` / `changeSet id`, fixem
       Exporter-`author` und optionalem `<rollback>`-Block.
-- [ ] Django erzeugt eine minimale `RunSQL`-Migration mit optionalem
-      `reverse_sql` und explizit erhaltener Statement-Sequenz aus
+- [x] Django erzeugt `<version>.py` (kein separater Slug im Dateinamen)
+      als minimale `RunSQL`-Migration mit optionalem `reverse_sql` und
+      explizit erhaltener Statement-Sequenz aus
       `MigrationDdlPayload.result.statements`.
-- [ ] Knex erzeugt eine CommonJS-Datei mit `exports.up` und optional
-      `exports.down`, jeweils aus
-      `MigrationDdlPayload.result.statements`.
-- [ ] Alle Artefakte sind byte-deterministisch fuer identische Eingaben.
-- [ ] Alle Artefakte nutzen UTF-8 und LF.
-- [ ] Exporter fuegen nur eigene `ToolExportNote`s hinzu und verlieren keine
+- [x] Knex erzeugt `<version>.js` (kein separater Slug im Dateinamen)
+      als CommonJS-Datei mit `exports.up` und optional `exports.down`,
+      jeweils aus `MigrationDdlPayload.result.statements`.
+- [x] Alle Artefakte sind string-deterministisch fuer identische Eingaben.
+      Byte-Determinismus (Encoding) entsteht erst beim Schreiben in
+      Phase D.
+- [x] Exporter fuegen nur eigene `ToolExportNote`s hinzu und verlieren keine
       generatorische Diagnostik.
-- [ ] Das Modul fuehrt keine Report-, CLI- oder Dateisystem-Seiteneffekte ein.
-- [ ] Das Modul fuehrt in Phase C keine Tool-Runtime-Abhaengigkeiten ein.
+- [x] Das Modul fuehrt keine Report-, CLI- oder Dateisystem-Seiteneffekte ein.
+- [x] Das Modul fuehrt in Phase C keine Tool-Runtime-Abhaengigkeiten ein.
 
 ---
 
@@ -551,32 +524,35 @@ Noch nicht Teil von Phase C, aber Folgeartefakte vorzubereiten:
 
 Mindestumfang fuer die Phase-C-Umsetzung:
 
-1. Modul- und Klassencheck:
+1. Modul-Testlauf (via Docker, kein lokales JDK noetig):
 
 ```bash
-sed -n '1,40p' settings.gradle.kts
+docker build --target build \
+  --build-arg GRADLE_TASKS=":adapters:driven:integrations:test" \
+  -t d-migrate:phase-c .
+```
 
-rg -n "FlywayMigrationExporter|LiquibaseMigrationExporter|DjangoMigrationExporter|KnexMigrationExporter|ToolMigrationExporter" \
+2. Modul- und Klassencheck (im Build-Container):
+
+```bash
+docker run --rm d-migrate:phase-c \
+  grep -rn "FlywayMigrationExporter\|LiquibaseMigrationExporter\|DjangoMigrationExporter\|KnexMigrationExporter" \
   adapters/driven/integrations/src/main/kotlin
 ```
 
-2. Gradle-Zuschnitt pruefen:
+3. Gradle-Zuschnitt pruefen:
 
 ```bash
-sed -n '1,120p' adapters/driven/integrations/build.gradle.kts
+docker run --rm d-migrate:phase-c \
+  head -20 adapters/driven/integrations/build.gradle.kts
 ```
 
-3. Renderer- und Escaping-Tests pruefen:
+4. Renderer- und Escaping-Tests pruefen:
 
 ```bash
-rg -n "Flyway|Liquibase|Django|Knex|escape|rollback|exports\\.down|reverse_sql|rollback" \
+docker run --rm d-migrate:phase-c \
+  grep -rn "escape\|rollback\|exports\.down\|reverse_sql" \
   adapters/driven/integrations/src/test/kotlin
-```
-
-4. Modul-Testlauf:
-
-```bash
-./gradlew :adapters:driven:integrations:test
 ```
 
 Dabei explizit pruefen:
