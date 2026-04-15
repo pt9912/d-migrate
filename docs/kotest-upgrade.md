@@ -6,39 +6,26 @@
 
 ---
 
-## Ausgangslage
+## Ergebnis
 
-Das Projekt nutzt aktuell Kotest **5.9.1** (`gradle.properties: kotestVersion`).
-Kotest **6.1** ist die aktuelle stabile Version und bringt API-Aenderungen mit,
-die bei einem Upgrade beruecksichtigt werden muessen.
+Upgrade von Kotest **5.9.1** auf **6.1.11** in Commit `c492d1e`.
+Keine API-Anpassungen noetig — alle bestehenden Tests kompilieren und
+laufen unveraendert. Verifiziert ueber vollstaendigen Docker-Build
+(alle Module, alle Tests).
 
-## Bekannte Aenderungen in Kotest 6.x
+## Geprueft gegen bekannte Breaking Changes in Kotest 6.x
 
-- `EnabledCondition` entfernt — Ersatz: `enabledIf` auf Spec- oder Test-Ebene
-- `NamedTag`-API ggf. veraendert
-- Neue Spec-Lifecycle-Hooks
-- Kotlin 2.x Kompatibilitaet verbessert
+| Aenderung | Betroffen? | Bemerkung |
+|---|---|---|
+| `EnabledCondition` entfernt | Nein | War nie im Projekt genutzt |
+| `NamedTag` ist jetzt `data class` | Nein | Kompatibel, keine Referenzgleichheit genutzt |
+| `listeners()` deprecated → `extensions()` | Nein | Nicht genutzt |
+| `InstancePerTest`/`InstancePerLeaf` deprecated | Nein | Nicht genutzt |
+| `kotest-assertions-api` entfernt | Nein | Projekt nutzt `kotest-assertions-core` |
+| `kotest-datatest` in Core gemergt | Nein | `withData` nicht genutzt |
+| `io.kotest.matchers.maps.contain` umbenannt | Nein | Nicht genutzt |
+| `System.exit`/`System.env` Extensions entfernt | Nein | Nicht genutzt |
 
 ## Betroffene Module
 
-Alle Module mit Kotest-Tests:
-
-- `hexagon:core`
-- `hexagon:ports`
-- `hexagon:application`
-- `adapters:driven:driver-common`
-- `adapters:driven:driver-postgresql`
-- `adapters:driven:driver-mysql`
-- `adapters:driven:driver-sqlite`
-- `adapters:driven:formats`
-- `adapters:driven:integrations`
-- `adapters:driven:streaming`
-- `adapters:driving:cli`
-
-## Vorgehen
-
-1. `kotestVersion` in `gradle.properties` auf `6.1.x` anheben
-2. Kompilierungsfehler beheben (entfernte/umbenannte APIs)
-3. Alle Tests lokal und via Docker gruenen lassen
-4. Integrations-Tests via `test-integration-docker.sh` pruefen
-
+Alle 11 Module mit Kotest-Tests — alle unveraendert kompatibel.
