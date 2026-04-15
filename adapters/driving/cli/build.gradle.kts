@@ -151,17 +151,26 @@ kover {
     reports {
         filters {
             excludes {
+                // Thin Clikt command shells — all logic is in the Runners
+                // (tested via *RunnerTest). Commands only parse flags and
+                // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
                 classes(
-                    // Thin Clikt command shells — all logic is in the Runners
-                    // (tested via *RunnerTest). Commands only parse flags and
-                    // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
-                    "dev.dmigrate.cli.commands.DataProfileCommand",
-                    "dev.dmigrate.cli.commands.ExportFlywayCommand",
-                    "dev.dmigrate.cli.commands.ExportLiquibaseCommand",
-                    "dev.dmigrate.cli.commands.ExportDjangoCommand",
-                    "dev.dmigrate.cli.commands.ExportKnexCommand",
-                    "dev.dmigrate.cli.commands.ExportCommands*",
-                    "dev.dmigrate.cli.commands.SchemaReverseCommand",
+                    "dev.dmigrate.cli.commands.DataProfileCommand*",
+                    "dev.dmigrate.cli.commands.ExportCommand*",
+                    "dev.dmigrate.cli.commands.ExportFlywayCommand*",
+                    "dev.dmigrate.cli.commands.ExportLiquibaseCommand*",
+                    "dev.dmigrate.cli.commands.ExportDjangoCommand*",
+                    "dev.dmigrate.cli.commands.ExportKnexCommand*",
+                    "dev.dmigrate.cli.commands.ExportCommandsKt*",
+                    "dev.dmigrate.cli.commands.SchemaReverseCommand*",
+                    "dev.dmigrate.cli.commands.SchemaCompareCommand*",
+                    "dev.dmigrate.cli.commands.SchemaValidateCommand*",
+                    "dev.dmigrate.cli.commands.SchemaGenerateCommand*",
+                    "dev.dmigrate.cli.commands.DataExportCommand*",
+                    "dev.dmigrate.cli.commands.DataImportCommand*",
+                    "dev.dmigrate.cli.commands.DataTransferCommand*",
+                    "dev.dmigrate.cli.commands.SchemaCommand*",
+                    "dev.dmigrate.cli.commands.DataCommand*",
                 )
             }
         }
