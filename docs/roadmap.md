@@ -214,7 +214,7 @@ hinzu.
 | Profiling | Phase A: Modulgeruest und Scope                                                | —      | ✅ |
 | Profiling | Phase B: Domaenenmodell, Typen und Rule-Engine                                 | —      | ✅ |
 | Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                         | LF-004 | ✅ |
-| Profiling | Phase D: Services und Runner                                                   | —      | |
+| Profiling | Phase D: Services und Runner                                                   | —      | ✅ |
 | CLI       | Phase E: `d-migrate data profile` Kommando                                     | —      | |
 | Docs      | Phase F: Doku, Smokes und Release-Pfade                                        | —      | |
 | Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 | |

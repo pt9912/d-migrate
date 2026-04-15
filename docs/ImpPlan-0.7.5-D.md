@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: D (Application-Services und Runner)
-> **Status**: Review (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 5.3, Abschnitt 6 Phase D, Abschnitt 7.1,
 > Abschnitt 7.3, Abschnitt 8.2, Abschnitt 9; `docs/ImpPlan-0.7.5-A.md`;
@@ -404,23 +404,23 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `ProfileTableService` und `ProfileDatabaseService` bilden einen stabilen
+- [x] `ProfileTableService` und `ProfileDatabaseService` bilden einen stabilen
       produktiven Profiling-Use-Case ueber den Phase-B- und Phase-C-Vertrag.
-- [ ] `DataProfileRunner` ist ohne echte Datenbank voll unit-testbar.
-- [ ] `NamedConnectionResolver`, `ConnectionUrlParser` und
+- [x] `DataProfileRunner` ist ohne echte Datenbank voll unit-testbar.
+- [x] `NamedConnectionResolver`, `ConnectionUrlParser` und
       `HikariConnectionPoolFactory` werden wiederverwendet statt dupliziert.
-- [ ] Die Lookup-Strategie fuer Profiling-Adapter bleibt getrennt von
+- [x] Die Lookup-Strategie fuer Profiling-Adapter bleibt getrennt von
       `DatabaseDriver` und auf einen injizierten separaten Vertrag begrenzt.
-- [ ] `ProfileDatabaseService` bleibt auch mit `DatabaseProfile.generatedAt`
-      deterministisch und unit-testbar, z. B. ueber eine injizierbare `Clock`.
-- [ ] Saemtliche Exit-Code-Zweige `0`, `2`, `4`, `5`, `7` sind ueber Tests
+- [x] `ProfileDatabaseService` bleibt deterministisch und unit-testbar
+      (`DatabaseProfile.generatedAt` wurde in Phase B entfernt).
+- [x] Saemtliche Exit-Code-Zweige `0`, `2`, `4`, `5`, `7` sind ueber Tests
       abgedeckt.
-- [ ] Ein explizites `schema` auf MySQL oder SQLite fuehrt zu Exit `2`.
-- [ ] Der Request-Vertrag ist gegen Phase E klar abgegrenzt:
+- [x] Ein explizites `schema` auf MySQL oder SQLite fuehrt zu Exit `2`.
+- [x] Der Request-Vertrag ist gegen Phase E klar abgegrenzt:
       Ausgabe-/CLI-Felder wie `format`, `output` oder `quiet` werden in
       Phase D entweder noch nicht eingefuehrt oder noch nicht semantisch
       ausgewertet.
-- [ ] Phase D fuehrt keine CLI-Parsing-, Help-, Writer- oder Report-
+- [x] Phase D fuehrt keine CLI-Parsing-, Help-, Writer- oder Report-
       Serialisierungslogik ein.
 
 ---
@@ -458,14 +458,14 @@ verwischen Use-Case und Ausgabeschicht vorzeitig.
 
 ## 9. Abschluss-Checkliste
 
-- [ ] Die Profiling-Services sind implementiert und klar vom Runner getrennt.
-- [ ] `DataProfileRunner` folgt dem bestehenden `hexagon:application`-Muster.
-- [ ] Source-Aufloesung, URL-Parsing und Pool-Erzeugung werden ueber die
+- [x] Die Profiling-Services sind implementiert und klar vom Runner getrennt.
+- [x] `DataProfileRunner` folgt dem bestehenden `hexagon:application`-Muster.
+- [x] Source-Aufloesung, URL-Parsing und Pool-Erzeugung werden ueber die
       bestehenden Infrastrukturbausteine wiederverwendet.
-- [ ] Der Profiling-Adapter-Zugriff erfolgt ueber einen separaten Lookup und
+- [x] Der Profiling-Adapter-Zugriff erfolgt ueber einen separaten Lookup und
       nicht ueber `DatabaseDriver`.
-- [ ] `schema` ist fachlich nur fuer PostgreSQL erlaubt und fuer MySQL/SQLite
+- [x] `schema` ist fachlich nur fuer PostgreSQL erlaubt und fuer MySQL/SQLite
       ein sauberer Exit-2-Fall.
-- [ ] Alle Exit-Code-Zweige sind unit-testbar und getestet.
-- [ ] Phase D bleibt frei von Help-, CLI-Parsing-, Writer- und
+- [x] Alle Exit-Code-Zweige sind unit-testbar und getestet.
+- [x] Phase D bleibt frei von Help-, CLI-Parsing-, Writer- und
       Report-Serialisierungsimplementierung.
