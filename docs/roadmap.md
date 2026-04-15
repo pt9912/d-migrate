@@ -229,17 +229,18 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
 > Infrastruktur in [1.1.0](#milestone-110--ki-integration).
 
-### Milestone 0.8.0 — Internationalisierung
+### Milestone 0.8.0 — Internationalisierung (in Arbeit)
 
-| Bereich | Aufgabe                                                          | LF-Ref |
-| ------- | ---------------------------------------------------------------- | ------ |
-| i18n    | ResourceBundle-Architektur (Deutsch, Englisch)                   | LF-006 |
-| i18n    | Lokalisierte CLI-Meldungen und Fehlertexte                       | LN-023 |
-| i18n    | ICU4J-Integration für Unicode-Verarbeitung                       | LF-005 |
-| i18n    | Grapheme-aware String-Längenberechnung                           | LN-021 |
-| Core    | Zeitzonen-Handling (UTC als Standard, konfigurierbar)            | LF-007 |
-| Formats | BOM-Erkennung und -Behandlung bei CSV                            | LF-010 |
-| Test    | Unicode-Integritätstests (Emoji, Kyrillisch, CJK)                | 8.5    |
+| Bereich | Aufgabe                                                          | LF-Ref | Status |
+| ------- | ---------------------------------------------------------------- | ------ | ------ |
+| Docs    | Phase A: Spezifikationsbereinigung und Scope-Fixierung           | —      | ✅ |
+| i18n    | Phase B: I18n-Runtime und Config-Resolution                      | LF-006 | ✅ |
+| i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben            | LN-023 | ✅ |
+| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | |
+| i18n    | Phase E: Grapheme-aware String-Längenberechnung                  | LN-021 | |
+| Core    | Phase F: Zeitzonen-Handling (UTC als Standard, konfigurierbar)   | LF-007 | |
+| Formats | Phase G: BOM-Konsolidierung und CSV-Vertrag                      | LF-010 | |
+| Test    | Unicode-Integritätstests (Emoji, Kyrillisch, CJK)                | 8.5    | |
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
