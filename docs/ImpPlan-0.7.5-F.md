@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.7.5 - Daten-Profiling
 > **Phase**: F (Tests, Smokes und Doku-Abgleich)
-> **Status**: Draft (2026-04-15)
+> **Status**: Implemented (2026-04-15)
 > **Referenz**: `docs/implementation-plan-0.7.5.md` Abschnitt 6 Phase F,
 > Abschnitt 7.1 bis 7.3, Abschnitt 8, Abschnitt 9; `docs/ImpPlan-0.7.5-A.md`;
 > `docs/ImpPlan-0.7.5-B.md`; `docs/ImpPlan-0.7.5-C.md`;
@@ -376,21 +376,21 @@ Indirekt betroffen als Referenz- und Abnahmebasis:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `hexagon:profiling` erfuellt den konfigurierten Non-Integration-Kover-
+- [x] `hexagon:profiling` erfuellt den konfigurierten Non-Integration-Kover-
       Gate von mindestens `90`.
-- [ ] Mindestens ein echter PostgreSQL- und ein echter MySQL-Lauf bestaetigen
+- [x] Mindestens ein echter PostgreSQL- und ein echter MySQL-Lauf bestaetigen
       die Adapterpfade.
-- [ ] Der SQLite-`:memory:`-Pfad ist als schneller Integrations- und
+- [x] Der SQLite-`:memory:`-Pfad ist als schneller Integrations- und
       Smoke-Referenzpfad abgesichert.
-- [ ] CLI-Round-Trips decken JSON auf stdout, YAML in Datei, Tabellenfilter,
+- [x] CLI-Round-Trips decken JSON auf stdout, YAML in Datei, Tabellenfilter,
       Named Connections, relevante Fehlerpfade, Root-`CliContext`-
       Uebernahme und die Trennung von Root-`--output-format` gegen
       kommandoeigenes `--format` ab.
-- [ ] Der Determinismusvertrag ist explizit getestet:
+- [x] Der Determinismusvertrag ist explizit getestet:
       Tabellenreihenfolge, Spaltenreihenfolge, `topValues`, kein `generatedAt`.
-- [ ] Die Abschlussdoku beschreibt nur den tatsaechlich gelieferten 0.7.5-
+- [x] Die Abschlussdoku beschreibt nur den tatsaechlich gelieferten 0.7.5-
       Scope.
-- [ ] `docs/cli-spec.md`, `docs/design.md` und `docs/architecture.md` sind auf
+- [x] `docs/cli-spec.md`, `docs/design.md` und `docs/architecture.md` sind auf
       den finalen Profiling-Vertrag aktualisiert.
 
 ---
@@ -427,15 +427,15 @@ verdecken oder umgekehrt.
 
 ## 9. Abschluss-Checkliste
 
-- [ ] Domain-, Service-, Adapter-, CLI- und Writer-Tests sind fuer 0.7.5
+- [x] Domain-, Service-, Adapter-, CLI- und Writer-Tests sind fuer 0.7.5
       konsistent abgeschlossen.
-- [ ] SQLite, PostgreSQL und MySQL bestaetigen den Profiling-Pfad auf
+- [x] SQLite, PostgreSQL und MySQL bestaetigen den Profiling-Pfad auf
       angemessener Testtiefe.
-- [ ] Der Determinismusvertrag ist explizit verifiziert.
-- [ ] Restluecken oder nicht gelieferte spaetere Features sind nicht als
+- [x] Der Determinismusvertrag ist explizit verifiziert.
+- [x] Restluecken oder nicht gelieferte spaetere Features sind nicht als
       impliziter Lieferumfang dokumentiert.
-- [ ] `docs/cli-spec.md`, `docs/design.md` und `docs/architecture.md` sind auf
+- [x] `docs/cli-spec.md`, `docs/design.md` und `docs/architecture.md` sind auf
       finalem 0.7.5-Stand.
-- [ ] `docs/guide.md` ist nur dann angepasst, wenn sie fuer Nutzer echten
+- [x] `docs/guide.md` ist nur dann angepasst, wenn sie fuer Nutzer echten
       Zusatznutzen bringt.
-- [ ] Milestone 0.7.5 ist technisch und dokumentarisch konsistent abgeschlossen.
+- [x] Milestone 0.7.5 ist technisch und dokumentarisch konsistent abgeschlossen.

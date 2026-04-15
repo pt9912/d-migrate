@@ -774,6 +774,40 @@ d-migrate data seed --schema <path> --target <url>
 
 Exit: `0` bei Erfolg.
 
+#### `data profile`
+
+Profiliert eine bestehende Datenbank: Spaltenstatistiken, Qualitaetswarnungen
+und Zieltyp-Kompatibilitaet. Ergebnis ist ein JSON- oder YAML-Report.
+
+```
+d-migrate data profile --source <url-or-name> [--tables <t1,t2,...>]
+  [--schema <schema>] [--top-n <n>] [--format json|yaml] [--output <path>]
+```
+
+| Flag | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--source` | Ja | String | Datenbank-URL oder Named Connection |
+| `--tables` | Nein | String | Komma-getrennte Tabellenliste (Default: alle) |
+| `--schema` | Nein | String | Datenbankschema (nur PostgreSQL, Default: `public`) |
+| `--top-n` | Nein | Int | Anzahl Top-Werte pro Spalte (Default: 10, Max: 1000) |
+| `--format` | Nein | String | Ausgabeformat: `json` (Default), `yaml` |
+| `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
+
+**Determinismus**: Gleiches Schema + gleiche Daten = identischer Report.
+Stabile Tabellen- und Spaltenreihenfolge, stabile `topValues`-Sortierung,
+kein laufzeitvariables `generatedAt`.
+
+**Aufloesung von `--source`**: Wie bei `data export` — direkte URL oder
+Named Connection aus `.d-migrate.yaml`.
+
+**`--schema`**: Nur fuer PostgreSQL unterstuetzt. Bei MySQL oder SQLite
+fuehrt ein explizites `--schema` zu Exit `2`.
+
+Exit: `0` Erfolg, `2` ungueltige Flags (fehlendes `--source`, `--schema`
+auf MySQL/SQLite, ungueltiges `--format`, `--top-n` ausserhalb 1..1000),
+`4` Verbindungsfehler, `5` Profiling-Ausfuehrungsfehler,
+`7` Konfigurations-/URL-/Registry-Fehler.
+
 ### 6.3 transform
 
 #### `transform procedure` *(geplant: 1.1.0)*

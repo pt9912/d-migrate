@@ -207,7 +207,7 @@ hinzu.
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
-### Milestone 0.7.5 — Daten-Profiling (in Arbeit)
+### Milestone 0.7.5 — Daten-Profiling ✅ (2026-04-15)
 
 | Bereich   | Aufgabe                                                                        | LF-Ref | Status |
 | --------- | ------------------------------------------------------------------------------ | ------ | ------ |
@@ -216,8 +216,8 @@ hinzu.
 | Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                         | LF-004 | ✅ |
 | Profiling | Phase D: Services und Runner                                                   | —      | ✅ |
 | CLI       | Phase E: `d-migrate data profile` Kommando                                     | —      | ✅ |
-| Docs      | Phase F: Doku, Smokes und Release-Pfade                                        | —      | |
-| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 | |
+| Docs      | Phase F: Doku, Smokes und Release-Pfade                                        | —      | ✅ |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 | ✅ |
 
 **Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
 Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
@@ -433,6 +433,6 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ---
 
-**Version**: 3.10
+**Version**: 3.11
 **Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0 und 0.7.0 abgeschlossen
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen

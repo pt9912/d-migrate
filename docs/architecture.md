@@ -622,6 +622,53 @@ Django→SQLite, Knex→SQLite) wird als Integrations-Tests in
 `adapters:driven:integrations` ausgefuehrt, markiert mit
 `NamedTag("integration")` und steuerbar ueber `-PintegrationTests`.
 
+### 3.7 Daten-Profiling (0.7.5)
+
+0.7.5 fuehrt ein dediziertes Profiling-Modul ein, das Spaltenstatistiken,
+Qualitaetswarnungen und Zieltyp-Kompatibilitaet fuer bestehende Datenbanken
+liefert.
+
+#### Modul `hexagon:profiling`
+
+Eigenes Hexagon-Modul mit:
+
+- **Domaenenmodell**: `DatabaseProfile`, `TableProfile`, `ColumnProfile`,
+  `ProfileWarning`, `TargetTypeCompatibility`
+- **Typsystem**: `LogicalType` (datenorientiert, getrennt von `NeutralType`),
+  `TargetLogicalType`, `Severity`, `WarningCode`
+- **Rule-Engine**: `WarningEvaluator` mit 8 migrationsrelevanten Regeln
+  (rein funktional, kein JDBC)
+- **Outbound-Ports**: `SchemaIntrospectionPort`, `ProfilingDataPort`,
+  `LogicalTypeResolverPort`
+- **Services**: `ProfileTableService`, `ProfileDatabaseService`
+
+`DatabaseDriver` bleibt unveraendert — Profiling-Ports werden ueber einen
+separaten `ProfilingAdapterSet`-Lookup verdrahtet.
+
+#### Adapter (in bestehenden Driver-Modulen)
+
+PostgreSQL, MySQL und SQLite implementieren je:
+
+- `SchemaIntrospectionAdapter` — eigene Profiling-Projektion mit rohem `dbType`
+- `ProfilingDataAdapter` — Aggregat-Queries, Top-N, Kompatibilitaetspruefungen
+- `LogicalTypeResolver` — DB-Typ → `LogicalType` Mapping
+
+#### Application-Layer
+
+- `DataProfileRunner` — Orchestrator analog zu `SchemaReverseRunner`
+- `DataProfileRequest` — DTO mit `source`, `tables`, `schema`, `topN`,
+  `format`, `output`
+
+#### CLI
+
+- `DataProfileCommand` unter `d-migrate data profile`
+- JSON (Default) oder YAML-Report via `ProfileReportWriter`
+
+#### Determinismus
+
+Der Default-Report ist byte-reproduzierbar: stabile Tabellen-/Spaltenreihenfolge,
+stabile `topValues`-Sortierung, kein laufzeitvariables `generatedAt`.
+
 ---
 
 ## 4. Querschnittsthemen
