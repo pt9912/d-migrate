@@ -69,10 +69,9 @@ COPY adapters/driven/streaming/build.gradle.kts   adapters/driven/streaming/buil
 COPY adapters/driving/cli/build.gradle.kts        adapters/driving/cli/build.gradle.kts
 COPY hexagon/profiling/build.gradle.kts           hexagon/profiling/build.gradle.kts
 
-RUN chmod +x ./gradlew
-
 # Download Gradle distribution and resolve build script classpath.
 # This layer is cached as long as build files don't change.
+# gradlew already has +x from Git, no chmod needed.
 RUN ./gradlew --no-daemon help
 
 # Copy the remaining sources and run the requested Gradle tasks. The Gradle
