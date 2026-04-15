@@ -12,7 +12,7 @@ import dev.dmigrate.profiling.types.TargetLogicalType
 
 class MysqlProfilingDataAdapter : ProfilingDataPort {
 
-    override fun rowCount(pool: ConnectionPool, table: String): Long {
+    override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("SELECT count(*) FROM `$table`")
@@ -22,7 +22,7 @@ class MysqlProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String): ColumnMetrics {
+    override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?): ColumnMetrics {
         pool.borrow().use { conn ->
             val isText = dbType.lowercase().let {
                 it.contains("char") || it.contains("text") || it.contains("enum") || it.contains("set")
@@ -63,7 +63,7 @@ class MysqlProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int): List<ValueFrequency> {
+    override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?): List<ValueFrequency> {
         pool.borrow().use { conn ->
             val total = rowCount(pool, table).toDouble()
             if (total == 0.0) return emptyList()
@@ -82,7 +82,7 @@ class MysqlProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun numericStats(pool: ConnectionPool, table: String, column: String): NumericStats? {
+    override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?): NumericStats? {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
@@ -107,7 +107,7 @@ class MysqlProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun temporalStats(pool: ConnectionPool, table: String, column: String): TemporalStats? {
+    override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?): TemporalStats? {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
@@ -121,7 +121,7 @@ class MysqlProfilingDataAdapter : ProfilingDataPort {
     }
 
     override fun targetTypeCompatibility(
-        pool: ConnectionPool, table: String, column: String, targetTypes: List<TargetLogicalType>,
+        pool: ConnectionPool, table: String, column: String, targetTypes: List<TargetLogicalType>, schema: String?,
     ): List<TargetTypeCompatibility> {
         pool.borrow().use { conn ->
             return targetTypes.map { targetType ->

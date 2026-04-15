@@ -127,6 +127,7 @@ docker build -t d-migrate:dev .
 
 # Erzwungener vollständiger Test/Coverage-Lauf (Docker-Layer-Cache UND Gradle-Cache werden umgangen)
 docker build --no-cache \
+  --progress=plain \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
@@ -217,13 +218,13 @@ Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](http
 
 ## Unterstützte Datenbanken
 
-| Datenbank | Status                           |
-|-----------|----------------------------------|
+| Datenbank  | Status                                                              |
+| ---------- | ------------------------------------------------------------------- |
 | PostgreSQL | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | MySQL      | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
 | SQLite     | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| Oracle     | Geplant                         |
-| MSSQL      | Geplant                         |
+| Oracle     | Geplant                                                             |
+| MSSQL      | Geplant                                                             |
 
 ## Roadmap
 

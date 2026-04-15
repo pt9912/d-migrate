@@ -32,13 +32,13 @@ class DataProfileRunnerTest : FunSpec({
     }
 
     val fakeData = object : ProfilingDataPort {
-        override fun rowCount(pool: ConnectionPool, table: String) = 10L
-        override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String) =
+        override fun rowCount(pool: ConnectionPool, table: String, schema: String?) = 10L
+        override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?) =
             ColumnMetrics(nonNullCount = 10, nullCount = 0, distinctCount = 10, duplicateValueCount = 0)
-        override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int) = emptyList<dev.dmigrate.profiling.model.ValueFrequency>()
-        override fun numericStats(pool: ConnectionPool, table: String, column: String) = null
-        override fun temporalStats(pool: ConnectionPool, table: String, column: String) = null
-        override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List<dev.dmigrate.profiling.types.TargetLogicalType>) = emptyList<dev.dmigrate.profiling.model.TargetTypeCompatibility>()
+        override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?) = emptyList<dev.dmigrate.profiling.model.ValueFrequency>()
+        override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?) = null
+        override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?) = null
+        override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List<dev.dmigrate.profiling.types.TargetLogicalType>, schema: String?) = emptyList<dev.dmigrate.profiling.model.TargetTypeCompatibility>()
     }
 
     val fakeResolver = object : LogicalTypeResolverPort {

@@ -16,7 +16,7 @@ import dev.dmigrate.profiling.types.TargetLogicalType
 interface ProfilingDataPort {
 
     /** Row count for a table. */
-    fun rowCount(pool: dev.dmigrate.driver.connection.ConnectionPool, table: String): Long
+    fun rowCount(pool: dev.dmigrate.driver.connection.ConnectionPool, table: String, schema: String? = null): Long
 
     /** Per-column aggregate metrics. */
     fun columnMetrics(
@@ -24,6 +24,7 @@ interface ProfilingDataPort {
         table: String,
         column: String,
         dbType: String,
+        schema: String? = null,
     ): ColumnMetrics
 
     /** Top-N most frequent values, deterministically sorted by count desc, value asc. */
@@ -32,6 +33,7 @@ interface ProfilingDataPort {
         table: String,
         column: String,
         limit: Int = 10,
+        schema: String? = null,
     ): List<ValueFrequency>
 
     /** Numeric statistics for numeric columns. Returns null for non-numeric. */
@@ -39,6 +41,7 @@ interface ProfilingDataPort {
         pool: dev.dmigrate.driver.connection.ConnectionPool,
         table: String,
         column: String,
+        schema: String? = null,
     ): NumericStats?
 
     /** Temporal min/max for date/time columns. Returns null for non-temporal. */
@@ -46,6 +49,7 @@ interface ProfilingDataPort {
         pool: dev.dmigrate.driver.connection.ConnectionPool,
         table: String,
         column: String,
+        schema: String? = null,
     ): TemporalStats?
 
     /**
@@ -57,6 +61,7 @@ interface ProfilingDataPort {
         table: String,
         column: String,
         targetTypes: List<TargetLogicalType>,
+        schema: String? = null,
     ): List<TargetTypeCompatibility>
 }
 

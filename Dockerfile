@@ -69,8 +69,9 @@ COPY adapters/driving/cli/build.gradle.kts        adapters/driving/cli/build.gra
 
 RUN chmod +x ./gradlew
 
-#RUN --mount=type=cache,target=/gradle-cache \
-#    ./gradlew --no-daemon help
+# Download Gradle distribution and resolve build script classpath.
+# This layer is cached as long as build files don't change.
+RUN ./gradlew --no-daemon help
 
 # Copy the remaining sources and run the requested Gradle tasks. The Gradle
 # caches are mounted so that repeated builds reuse downloaded dependencies.

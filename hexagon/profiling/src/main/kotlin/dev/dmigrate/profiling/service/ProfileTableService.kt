@@ -33,13 +33,13 @@ class ProfileTableService(
         }
 
         val rowCount = try {
-            adapters.data.rowCount(pool, tableName)
+            adapters.data.rowCount(pool, tableName, schema)
         } catch (e: Exception) {
             throw ProfilingQueryError("Failed to get row count for '$tableName': ${e.message}", e)
         }
 
         val columnProfiles = columns.map { col ->
-            profileColumn(pool, tableName, col.name, col.dbType, col.nullable, rowCount)
+            profileColumn(pool, tableName, col.name, col.dbType, col.nullable, rowCount, schema)
         }
 
         val tableWarnings = warningEvaluator.evaluateTable(
@@ -61,6 +61,7 @@ class ProfileTableService(
         dbType: String,
         nullable: Boolean,
         rowCount: Long,
+        schema: String? = null,
     ): ColumnProfile {
         val logicalType = try {
             adapters.typeResolver.resolve(dbType)
@@ -70,27 +71,27 @@ class ProfileTableService(
         }
 
         val metrics = try {
-            adapters.data.columnMetrics(pool, table, column, dbType)
+            adapters.data.columnMetrics(pool, table, column, dbType, schema)
         } catch (e: Exception) {
             throw ProfilingQueryError("Failed to profile column '$table.$column': ${e.message}", e)
         }
 
         val topValues = try {
-            adapters.data.topValues(pool, table, column, topN)
+            adapters.data.topValues(pool, table, column, topN, schema)
         } catch (e: Exception) {
             throw ProfilingQueryError("Failed to get top values for '$table.$column': ${e.message}", e)
         }
 
         val numericStats = if (logicalType in setOf(LogicalType.INTEGER, LogicalType.DECIMAL)) {
-            try { adapters.data.numericStats(pool, table, column) } catch (_: Exception) { null }
+            try { adapters.data.numericStats(pool, table, column, schema) } catch (_: Exception) { null }
         } else null
 
         val temporalStats = if (logicalType in setOf(LogicalType.DATE, LogicalType.DATETIME)) {
-            try { adapters.data.temporalStats(pool, table, column) } catch (_: Exception) { null }
+            try { adapters.data.temporalStats(pool, table, column, schema) } catch (_: Exception) { null }
         } else null
 
         val compatibility = try {
-            adapters.data.targetTypeCompatibility(pool, table, column, targetTypes)
+            adapters.data.targetTypeCompatibility(pool, table, column, targetTypes, schema)
         } catch (_: Exception) { emptyList() }
 
         val profile = ColumnProfile(

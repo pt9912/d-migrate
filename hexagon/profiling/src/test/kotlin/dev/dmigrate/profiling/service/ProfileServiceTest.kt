@@ -40,14 +40,14 @@ class ProfileServiceTest : FunSpec({
     }
 
     val data = object : ProfilingDataPort {
-        override fun rowCount(pool: ConnectionPool, table: String) = 5L
-        override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String) =
+        override fun rowCount(pool: ConnectionPool, table: String, schema: String?) = 5L
+        override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?) =
             ColumnMetrics(5, 0, 5, 0)
-        override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int) =
+        override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?) =
             listOf(ValueFrequency("a", 3, 0.6), ValueFrequency("b", 2, 0.4))
-        override fun numericStats(pool: ConnectionPool, table: String, column: String) = null
-        override fun temporalStats(pool: ConnectionPool, table: String, column: String) = null
-        override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List<dev.dmigrate.profiling.types.TargetLogicalType>) = emptyList<dev.dmigrate.profiling.model.TargetTypeCompatibility>()
+        override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?) = null
+        override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?) = null
+        override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List<dev.dmigrate.profiling.types.TargetLogicalType>, schema: String?) = emptyList<dev.dmigrate.profiling.model.TargetTypeCompatibility>()
     }
 
     val resolver = object : LogicalTypeResolverPort {

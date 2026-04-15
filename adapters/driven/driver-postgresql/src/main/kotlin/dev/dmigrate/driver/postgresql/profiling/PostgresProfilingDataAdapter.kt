@@ -12,17 +12,21 @@ import dev.dmigrate.profiling.types.TargetLogicalType
 
 class PostgresProfilingDataAdapter : ProfilingDataPort {
 
-    override fun rowCount(pool: ConnectionPool, table: String): Long {
+    private fun qt(table: String, schema: String?): String =
+        if (schema != null) "\"$schema\".\"$table\"" else "\"$table\""
+
+    override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("SELECT count(*) FROM \"$table\"")
+                val rs = stmt.executeQuery("SELECT count(*) FROM ${qt(table, schema)}")
                 rs.next()
                 return rs.getLong(1)
             }
         }
     }
 
-    override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String): ColumnMetrics {
+    override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?): ColumnMetrics {
+        val t = qt(table, schema)
         pool.borrow().use { conn ->
             val isText = dbType.lowercase().let {
                 it.contains("char") || it.contains("text") || it == "name" || it == "citext"
@@ -44,7 +48,7 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
                         min("$column"::text) as min_val,
                         max("$column"::text) as max_val
                         $textFields
-                    FROM "$table"
+                    FROM $t
                 """.trimIndent())
                 rs.next()
                 return ColumnMetrics(
@@ -63,14 +67,15 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int): List<ValueFrequency> {
+    override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?): List<ValueFrequency> {
+        val t = qt(table, schema)
         pool.borrow().use { conn ->
-            val total = rowCount(pool, table).toDouble()
+            val total = rowCount(pool, table, schema).toDouble()
             if (total == 0.0) return emptyList()
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT "$column"::text as val, count(*) as cnt
-                    FROM "$table"
+                    FROM $t
                     WHERE "$column" IS NOT NULL
                     GROUP BY "$column"
                     ORDER BY cnt DESC, val ASC
@@ -85,7 +90,8 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun numericStats(pool: ConnectionPool, table: String, column: String): NumericStats? {
+    override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?): NumericStats? {
+        val t = qt(table, schema)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
@@ -97,7 +103,7 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
                         stddev_pop("$column"::numeric)::double precision as stddev_val,
                         count(case when "$column"::numeric = 0 then 1 end) as zero_count,
                         count(case when "$column"::numeric < 0 then 1 end) as neg_count
-                    FROM "$table"
+                    FROM $t
                     WHERE "$column" IS NOT NULL
                 """.trimIndent())
                 if (!rs.next()) return null
@@ -114,13 +120,13 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
         }
     }
 
-    override fun temporalStats(pool: ConnectionPool, table: String, column: String): TemporalStats? {
+    override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?): TemporalStats? {
+        val t = qt(table, schema)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT min("$column")::text as min_ts, max("$column")::text as max_ts
-                    FROM "$table"
-                    WHERE "$column" IS NOT NULL
+                    FROM $t WHERE "$column" IS NOT NULL
                 """.trimIndent())
                 if (!rs.next()) return null
                 return TemporalStats(rs.getString("min_ts"), rs.getString("max_ts"))
@@ -129,8 +135,9 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
     }
 
     override fun targetTypeCompatibility(
-        pool: ConnectionPool, table: String, column: String, targetTypes: List<TargetLogicalType>,
+        pool: ConnectionPool, table: String, column: String, targetTypes: List<TargetLogicalType>, schema: String?,
     ): List<TargetTypeCompatibility> {
+        val t = qt(table, schema)
         pool.borrow().use { conn ->
             return targetTypes.map { targetType ->
                 val castExpr = when (targetType) {
@@ -147,16 +154,15 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
                         SELECT count(*) as checked,
                                sum(case when $castExpr then 1 else 0 end) as compat,
                                sum(case when NOT $castExpr then 1 else 0 end) as incompat
-                        FROM "$table" WHERE "$column" IS NOT NULL
+                        FROM $t WHERE "$column" IS NOT NULL
                     """.trimIndent())
                     rs.next()
-                    val checked = rs.getLong("checked")
                     val incompatible = rs.getLong("incompat")
 
                     val examples = if (incompatible > 0) {
                         conn.createStatement().use { s2 ->
                             val ers = s2.executeQuery("""
-                                SELECT DISTINCT "$column"::text as val FROM "$table"
+                                SELECT DISTINCT "$column"::text as val FROM $t
                                 WHERE "$column" IS NOT NULL AND NOT $castExpr
                                 ORDER BY val ASC LIMIT 3
                             """.trimIndent())
@@ -166,7 +172,7 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
                         }
                     } else emptyList()
 
-                    TargetTypeCompatibility(targetType, checked, rs.getLong("compat"), incompatible, examples, DeterminationStatus.FULL_SCAN)
+                    TargetTypeCompatibility(targetType, rs.getLong("checked"), rs.getLong("compat"), incompatible, examples, DeterminationStatus.FULL_SCAN)
                 }
             }
         }
