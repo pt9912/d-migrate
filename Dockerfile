@@ -35,7 +35,7 @@
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build & test -------------------------------------------------
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM gradle:8.12-jdk21 AS build
 
 # Gradle tasks executed during the image build. Override with --build-arg to
 # skip tests or run a different subset (e.g. "assemble :adapters:driving:cli:installDist"
@@ -46,39 +46,11 @@ FROM eclipse-temurin:21-jdk-noble AS build
 # `docker build --target build ...` instead.
 ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
-ENV GRADLE_USER_HOME=/gradle-cache \
-    GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.welcome=never"
-
 WORKDIR /src
 
-# Copy the Gradle wrapper and build definitions first so that the dependency
-# resolution layer can be cached when only source files change.
-COPY gradlew gradlew.bat ./
-COPY gradle ./gradle
-COPY settings.gradle.kts build.gradle.kts gradle.properties ./
-COPY hexagon/core/build.gradle.kts                hexagon/core/build.gradle.kts
-COPY hexagon/ports/build.gradle.kts               hexagon/ports/build.gradle.kts
-COPY hexagon/application/build.gradle.kts         hexagon/application/build.gradle.kts
-COPY adapters/driven/driver-common/build.gradle.kts adapters/driven/driver-common/build.gradle.kts
-COPY adapters/driven/driver-postgresql/build.gradle.kts adapters/driven/driver-postgresql/build.gradle.kts
-COPY adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/build.gradle.kts
-COPY adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
-COPY adapters/driven/formats/build.gradle.kts     adapters/driven/formats/build.gradle.kts
-COPY adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
-COPY adapters/driven/streaming/build.gradle.kts   adapters/driven/streaming/build.gradle.kts
-COPY adapters/driving/cli/build.gradle.kts        adapters/driving/cli/build.gradle.kts
-COPY hexagon/profiling/build.gradle.kts           hexagon/profiling/build.gradle.kts
+COPY --chown=gradle:gradle . .
 
-# Download Gradle distribution and resolve build script classpath.
-# This layer is cached as long as build files don't change.
-# gradlew already has +x from Git, no chmod needed.
-RUN ./gradlew --no-daemon help
-
-# Copy the remaining sources and run the requested Gradle tasks. The Gradle
-# caches are mounted so that repeated builds reuse downloaded dependencies.
-COPY . .
-
-RUN ./gradlew --no-daemon ${GRADLE_TASKS}
+RUN gradle --no-daemon ${GRADLE_TASKS}
 
 # Convert Kover XML coverage reports to JSON (if they exist).
 # Uses yq (https://github.com/mikefarah/yq) as a static binary.
