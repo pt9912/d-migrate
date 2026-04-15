@@ -71,12 +71,19 @@ Aktueller Stand der Codebasis und Dokumentation:
   - ersten Introspection-Scope
   - ersten Aggregat-Scope
   - ersten Kompatibilitaets-Scope
-- Im aktuellen Arbeitsstand existiert fuer `hexagon:profiling` bereits ein
-  Modul-Build, aber noch kein produktiver Port- oder Adaptercode.
-- In den Driver-Modulen gibt es heute noch keine Profiling-Klassen fuer:
-  - `SchemaIntrospection`
-  - `ProfilingData`
-  - `LogicalTypeResolver`
+- `hexagon:profiling` enthaelt die Outbound-Ports:
+  - `SchemaIntrospectionPort` mit `TableSchema`/`ColumnSchema` Projektion
+  - `ProfilingDataPort` mit `ColumnMetrics` und Aggregat-Methoden
+  - `LogicalTypeResolverPort`
+- Alle drei Dialekte haben produktive Adapter-Saetze:
+  - `PostgresSchemaIntrospectionAdapter`, `PostgresProfilingDataAdapter`,
+    `PostgresLogicalTypeResolver`
+  - `MysqlSchemaIntrospectionAdapter`, `MysqlProfilingDataAdapter`,
+    `MysqlLogicalTypeResolver`
+  - `SqliteSchemaIntrospectionAdapter`, `SqliteProfilingDataAdapter`,
+    `SqliteLogicalTypeResolver`
+- SQLite-Adapter sind via `:memory:` Unit-getestet, PostgreSQL/MySQL via
+  Testcontainers-Integrationstests
 
 Konsequenz fuer Phase C:
 

@@ -148,7 +148,8 @@ class MysqlProfilingDataAdapter : ProfilingDataPort {
                         conn.createStatement().use { s2 ->
                             val ers = s2.executeQuery("""
                                 SELECT DISTINCT cast(`$column` as char) as val FROM `$table`
-                                WHERE `$column` IS NOT NULL AND NOT $castExpr LIMIT 3
+                                WHERE `$column` IS NOT NULL AND NOT $castExpr
+                                ORDER BY val ASC LIMIT 3
                             """.trimIndent())
                             val ex = mutableListOf<String>()
                             while (ers.next()) ex += ers.getString("val")

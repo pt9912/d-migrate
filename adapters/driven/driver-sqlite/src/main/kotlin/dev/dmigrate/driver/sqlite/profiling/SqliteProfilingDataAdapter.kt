@@ -181,7 +181,7 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
                             val ers = s2.executeQuery("""
                                 SELECT DISTINCT "$column" as val FROM "$table"
                                 WHERE "$column" IS NOT NULL AND NOT ($castExpr)
-                                LIMIT 3
+                                ORDER BY "$column" ASC LIMIT 3
                             """.trimIndent())
                             val ex = mutableListOf<String>()
                             while (ers.next()) ex += ers.getString("val")

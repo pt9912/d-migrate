@@ -24,6 +24,18 @@ class MysqlSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
     override fun listColumns(pool: ConnectionPool, table: String): List<ColumnSchema> {
         pool.borrow().use { conn ->
+            // Foreign key columns
+            val fkColumns = mutableSetOf<String>()
+            conn.createStatement().use { stmt ->
+                val rs = stmt.executeQuery("""
+                    SELECT column_name
+                    FROM information_schema.key_column_usage
+                    WHERE table_schema = DATABASE() AND table_name = '$table'
+                      AND referenced_table_name IS NOT NULL
+                """.trimIndent())
+                while (rs.next()) fkColumns += rs.getString("column_name")
+            }
+
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT column_name, column_type, is_nullable, column_key
@@ -33,11 +45,13 @@ class MysqlSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                 """.trimIndent())
                 val columns = mutableListOf<ColumnSchema>()
                 while (rs.next()) {
+                    val name = rs.getString("column_name")
                     columns += ColumnSchema(
-                        name = rs.getString("column_name"),
+                        name = name,
                         dbType = rs.getString("column_type"),
                         nullable = rs.getString("is_nullable") == "YES",
                         isPrimaryKey = rs.getString("column_key") == "PRI",
+                        isForeignKey = name in fkColumns,
                         isUnique = rs.getString("column_key") == "UNI",
                     )
                 }

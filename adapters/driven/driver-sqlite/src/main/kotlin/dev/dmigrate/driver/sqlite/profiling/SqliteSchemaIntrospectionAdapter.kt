@@ -7,7 +7,7 @@ import dev.dmigrate.profiling.port.TableSchema
 
 /**
  * SQLite implementation of [SchemaIntrospectionPort].
- * Uses PRAGMA-based metadata queries.
+ * Uses PRAGMA-based metadata queries for PK, FK, and unique index detection.
  */
 class SqliteSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
@@ -26,8 +26,11 @@ class SqliteSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
     override fun listColumns(pool: ConnectionPool, table: String): List<ColumnSchema> {
         pool.borrow().use { conn ->
-            // Get primary key columns
             val pkColumns = mutableSetOf<String>()
+            val fkColumns = mutableSetOf<String>()
+            val uniqueColumns = mutableSetOf<String>()
+
+            // Primary keys
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("PRAGMA table_info('$table')")
                 while (rs.next()) {
@@ -35,16 +38,43 @@ class SqliteSchemaIntrospectionAdapter : SchemaIntrospectionPort {
                 }
             }
 
-            // Get columns with metadata
+            // Foreign keys
+            conn.createStatement().use { stmt ->
+                val rs = stmt.executeQuery("PRAGMA foreign_key_list('$table')")
+                while (rs.next()) {
+                    fkColumns += rs.getString("from")
+                }
+            }
+
+            // Unique indexes (single-column only for simplicity)
+            conn.createStatement().use { stmt ->
+                val rs = stmt.executeQuery("PRAGMA index_list('$table')")
+                while (rs.next()) {
+                    if (rs.getInt("unique") == 1) {
+                        val indexName = rs.getString("name")
+                        conn.createStatement().use { s2 ->
+                            val irs = s2.executeQuery("PRAGMA index_info('$indexName')")
+                            val cols = mutableListOf<String>()
+                            while (irs.next()) cols += irs.getString("name")
+                            if (cols.size == 1) uniqueColumns += cols[0]
+                        }
+                    }
+                }
+            }
+
+            // Build column list
             val columns = mutableListOf<ColumnSchema>()
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("PRAGMA table_info('$table')")
                 while (rs.next()) {
+                    val name = rs.getString("name")
                     columns += ColumnSchema(
-                        name = rs.getString("name"),
+                        name = name,
                         dbType = rs.getString("type"),
                         nullable = rs.getInt("notnull") == 0,
-                        isPrimaryKey = rs.getString("name") in pkColumns,
+                        isPrimaryKey = name in pkColumns,
+                        isForeignKey = name in fkColumns,
+                        isUnique = name in uniqueColumns,
                     )
                 }
             }
