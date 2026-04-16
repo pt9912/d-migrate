@@ -87,7 +87,7 @@ class DataExportRunnerTest : FunSpec({
      * Ergebnis liefert. Tests können den Builder überschreiben, um Fehler
      * zu werfen oder ein Result mit `error != null` zu liefern.
      */
-    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _ ->
+    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _ ->
         val summaries = tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
         ExportResult(
             tables = summaries,
@@ -181,6 +181,9 @@ class DataExportRunnerTest : FunSpec({
         collectWarnings: () -> List<String> = { emptyList() },
         exportExecutor: ExportExecutor = successExecutor,
         progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,
+        checkpointStoreFactory: ((Path) -> dev.dmigrate.streaming.checkpoint.CheckpointStore)? = null,
+        checkpointConfigResolver: (Path?) -> dev.dmigrate.streaming.CheckpointConfig? = { null },
+        clock: () -> java.time.Instant = java.time.Instant::now,
     ): DataExportRunner = DataExportRunner(
         sourceResolver = sourceResolver,
         urlParser = urlParser,
@@ -192,6 +195,9 @@ class DataExportRunnerTest : FunSpec({
         exportExecutor = exportExecutor,
         progressReporter = progressReporter,
         stderr = stderr.sink,
+        checkpointStoreFactory = checkpointStoreFactory,
+        checkpointConfigResolver = checkpointConfigResolver,
+        clock = clock,
     )
 
     // ─── Happy path (Exit 0) ──────────────────────────────────────
@@ -243,7 +249,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -260,7 +266,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 0, 0, 0, 0) },
@@ -277,7 +283,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -303,7 +309,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -529,7 +535,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -542,7 +548,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _ ->
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 0, 0, 0, 1, error = "disk full") },
                     totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 1,
@@ -560,7 +566,7 @@ class DataExportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )
@@ -706,7 +712,7 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, pr ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, pr, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, tables.size))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
@@ -720,7 +726,7 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
@@ -734,7 +740,7 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
@@ -761,18 +767,23 @@ class DataExportRunnerTest : FunSpec({
         stderr.joined() shouldContain "stdout"
     }
 
-    test("Phase A §4.4: --resume mit --output passiert den Preflight und warnt sichtbar") {
+    test("Phase C.1: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
+        // Phase A §4.4-Warning ist in C.1 §4.7 entfernt: `--resume` darf
+        // nicht mehr stumm akzeptiert und ignoriert werden. Ohne
+        // Checkpoint-Dir (kein --checkpoint-dir gesetzt, keine
+        // checkpointStoreFactory injiziert) hat der Runner keinen Store
+        // und muss hart ablehnen.
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(
             request(
-                output = Path.of("/tmp/d-migrate-phase-a-export-smoke.json"),
+                output = Path.of("/tmp/d-migrate-phase-c1-no-dir.json"),
                 resume = "./run.checkpoint.yaml",
             ),
         )
-        exit shouldBe 0
-        stderr.joined() shouldContain "Warning"
+        exit shouldBe 7
         stderr.joined() shouldContain "--resume"
+        stderr.joined() shouldContain "checkpoint"
     }
 
     test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning)") {
@@ -781,6 +792,423 @@ class DataExportRunnerTest : FunSpec({
         val exit = runner.execute(request(resume = ""))
         exit shouldBe 0
         stderr.joined() shouldNotContain "Warning: --resume"
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // 0.9.0 Phase C.1 (docs/ImpPlan-0.9.0-C1.md):
+    // Manifest-Lifecycle + Resume-Preflight + Skipped-COMPLETED.
+    // ────────────────────────────────────────────────────────────────
+
+    context("Phase C.1 — Resume-Preflight und Manifest-Lifecycle") {
+
+        // In-Memory-CheckpointStore fuer Tests ohne Dateisystem-Zugriff.
+        class InMemoryCheckpointStore : dev.dmigrate.streaming.checkpoint.CheckpointStore {
+            val state = mutableMapOf<String, dev.dmigrate.streaming.checkpoint.CheckpointManifest>()
+            val saveCount = mutableMapOf<String, Int>()
+            var completeCount: Int = 0
+            override fun load(operationId: String) = state[operationId]
+            override fun save(manifest: dev.dmigrate.streaming.checkpoint.CheckpointManifest) {
+                state[manifest.operationId] = manifest
+                saveCount[manifest.operationId] =
+                    (saveCount[manifest.operationId] ?: 0) + 1
+            }
+            override fun list() = state.values.map {
+                dev.dmigrate.streaming.checkpoint.CheckpointReference(
+                    operationId = it.operationId,
+                    operationType = it.operationType,
+                    schemaVersion = it.schemaVersion,
+                )
+            }
+            override fun complete(operationId: String) {
+                state.remove(operationId)
+                completeCount++
+            }
+        }
+
+        test("neuer Lauf ohne --resume legt Manifest an und completed es") {
+            val store = InMemoryCheckpointStore()
+            val dir = Path.of("/tmp/d-migrate-c1-new")
+            val stderr = StderrCapture()
+            // Executor simuliert, dass StreamingExporter pro Tabelle
+            // onTableCompleted aufruft.
+            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                val summaries = tables.map {
+                    dev.dmigrate.streaming.TableExportSummary(
+                        table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
+                    )
+                }
+                summaries.forEach(onDone)
+                dev.dmigrate.streaming.ExportResult(
+                    tables = summaries,
+                    totalRows = summaries.sumOf { it.rows },
+                    totalChunks = summaries.sumOf { it.chunks },
+                    totalBytes = summaries.sumOf { it.bytes },
+                    durationMs = 1,
+                )
+            }
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(
+                    output = dir,
+                    splitFiles = true,
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-ckpt"),
+                ),
+            )
+            exit shouldBe 0
+            store.completeCount shouldBe 1
+            store.state shouldBe emptyMap() // complete() hat Manifest entfernt
+            // Initial + 1 Tabelle = 2 saves
+            store.saveCount.values.sum() shouldBe 2
+        }
+
+        test("--resume ohne Checkpoint-Dir endet mit Exit 7") {
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, checkpointStoreFactory = { InMemoryCheckpointStore() })
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-noresumedir.json"),
+                    resume = "some-id",
+                    checkpointDir = null,
+                ),
+            )
+            exit shouldBe 7
+            stderr.joined() shouldContain "checkpoint"
+        }
+
+        test("--resume mit unbekanntem id endet mit Exit 7") {
+            val store = InMemoryCheckpointStore()
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, checkpointStoreFactory = { store })
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-unk.json"),
+                    resume = "nonexistent-op-id",
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-ckpt"),
+                ),
+            )
+            exit shouldBe 7
+            stderr.joined() shouldContain "Checkpoint not found"
+        }
+
+        test("--resume mit fingerprint-Mismatch endet mit Exit 3") {
+            val store = InMemoryCheckpointStore()
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = "op-mismatch",
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json",
+                    chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                        ),
+                    ),
+                    optionsFingerprint = "0".repeat(64), // anderer Hash als aktueller Request
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, checkpointStoreFactory = { store })
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-fp.json"),
+                    resume = "op-mismatch",
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-ckpt"),
+                ),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "fingerprint mismatch"
+        }
+
+        test("--resume mit operationType-Mismatch (IMPORT) endet mit Exit 3") {
+            val store = InMemoryCheckpointStore()
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = "op-wrongtype",
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json",
+                    chunkSize = 10_000,
+                    tableSlices = emptyList(),
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, checkpointStoreFactory = { store })
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-wt.json"),
+                    resume = "op-wrongtype",
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-ckpt"),
+                ),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "type mismatch"
+        }
+
+        test("--resume mit COMPLETED-Tabelle skippt diese und completed trotzdem") {
+            // Vorhandenes Manifest: users ist bereits COMPLETED.
+            // Wir geben dem Executor ein Fake, das scheitert wenn es
+            // aufgerufen wird — damit beweisen wir, dass der Skip wirkt.
+            val store = InMemoryCheckpointStore()
+            val stderr = StderrCapture()
+            val checkpointDir = Path.of("/tmp/d-migrate-c1-done")
+
+            // Fingerprint muss passen → zuerst den Runner mit identischen
+            // Options ausfuehren und die Initial-Saves kapern.
+            var savedFingerprint: String? = null
+            val capturingStore = InMemoryCheckpointStore()
+            val warm = newRunner(
+                StderrCapture(),
+                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                    tables.forEach {
+                        onDone(
+                            dev.dmigrate.streaming.TableExportSummary(
+                                table = it, rows = 0, chunks = 1, bytes = 0, durationMs = 1
+                            )
+                        )
+                    }
+                    dev.dmigrate.streaming.ExportResult(
+                        tables = tables.map {
+                            dev.dmigrate.streaming.TableExportSummary(
+                                table = it, rows = 0, chunks = 1, bytes = 0, durationMs = 1
+                            )
+                        },
+                        totalRows = 0, totalChunks = tables.size.toLong(),
+                        totalBytes = 0, durationMs = 1,
+                    )
+                },
+                checkpointStoreFactory = { dir ->
+                    // Vorwaermen schreibt ins capturingStore
+                    object : dev.dmigrate.streaming.checkpoint.CheckpointStore by capturingStore {
+                        override fun save(manifest: dev.dmigrate.streaming.checkpoint.CheckpointManifest) {
+                            savedFingerprint = manifest.optionsFingerprint
+                            capturingStore.save(manifest)
+                        }
+                        override fun complete(operationId: String) {
+                            // wir wollen das Manifest fuer den Resume-Test
+                            // behalten — kein echtes complete hier.
+                        }
+                    }
+                },
+            )
+            warm.execute(
+                request(
+                    output = checkpointDir,
+                    splitFiles = true,
+                    checkpointDir = checkpointDir,
+                ),
+            )
+            // Jetzt haben wir ein Manifest mit gueltigem Fingerprint im
+            // `capturingStore`. Finde die operationId.
+            val firstOpId = capturingStore.state.keys.single()
+
+            // Neuen Store fuer den Resume-Lauf mit genau diesem Manifest,
+            // aber alle Tabellen als COMPLETED markiert.
+            val resumeStore = InMemoryCheckpointStore()
+            val warmed = capturingStore.state.getValue(firstOpId)
+            resumeStore.save(
+                warmed.copy(
+                    tableSlices = warmed.tableSlices.map {
+                        it.copy(status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.COMPLETED)
+                    },
+                ),
+            )
+
+            // Dieser Executor schlaegt fehl, wenn er aufgerufen wird —
+            // aber der Runner ruft ihn trotzdem, skippedTables sorgt
+            // dafuer, dass keine Tabelle tatsaechlich exportiert wird.
+            val runner = newRunner(
+                stderr,
+                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, _ ->
+                    // Der StreamingExporter-Produktivpfad filtert tables
+                    // gegen skipped; hier im Test simulieren wir das
+                    // Ergebnis: leere Summary, aber Aufruf passiert.
+                    tables.size shouldBe skipped.size
+                    dev.dmigrate.streaming.ExportResult(
+                        tables = emptyList(),
+                        totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 1,
+                    )
+                },
+                checkpointStoreFactory = { resumeStore },
+            )
+            val exit = runner.execute(
+                request(
+                    output = checkpointDir,
+                    splitFiles = true,
+                    checkpointDir = checkpointDir,
+                    resume = firstOpId,
+                ),
+            )
+            exit shouldBe 0
+            // Manifest ist am Ende removed.
+            resumeStore.completeCount shouldBe 1
+        }
+
+        // 0.9.0 Phase C.1 Review-Fix (§4.4 / §5.2):
+        // pipeline.checkpoint.directory aus der Config wird jetzt ueber
+        // CheckpointConfig.merge(...) verdrahtet.
+
+        test("checkpointConfigResolver-Directory gewinnt, wenn kein CLI-Override gesetzt ist") {
+            val store = InMemoryCheckpointStore()
+            var storeDir: Path? = null
+            val stderr = StderrCapture()
+            val configDir = Path.of("/tmp/d-migrate-c1-from-cfg")
+            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                val summaries = tables.map {
+                    dev.dmigrate.streaming.TableExportSummary(
+                        table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
+                    )
+                }
+                summaries.forEach(onDone)
+                dev.dmigrate.streaming.ExportResult(
+                    tables = summaries, totalRows = 1L, totalChunks = 1L,
+                    totalBytes = 1L, durationMs = 1L,
+                )
+            }
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                checkpointStoreFactory = { dir ->
+                    storeDir = dir
+                    store
+                },
+                checkpointConfigResolver = { _ ->
+                    dev.dmigrate.streaming.CheckpointConfig(
+                        enabled = true,
+                        directory = configDir,
+                    )
+                },
+            )
+            // Wichtig: request.checkpointDir bleibt null → Config muss
+            // greifen.
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-out"),
+                    splitFiles = true,
+                    checkpointDir = null,
+                ),
+            )
+            exit shouldBe 0
+            storeDir shouldBe configDir
+        }
+
+        test("CLI-Override --checkpoint-dir sticht die Config") {
+            val store = InMemoryCheckpointStore()
+            var storeDir: Path? = null
+            val stderr = StderrCapture()
+            val configDir = Path.of("/tmp/d-migrate-c1-cfg")
+            val cliDir = Path.of("/tmp/d-migrate-c1-cli")
+            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                tables.forEach {
+                    onDone(
+                        dev.dmigrate.streaming.TableExportSummary(
+                            table = it, rows = 0, chunks = 1, bytes = 0, durationMs = 1,
+                        ),
+                    )
+                }
+                dev.dmigrate.streaming.ExportResult(
+                    tables = emptyList(), totalRows = 0, totalChunks = 0,
+                    totalBytes = 0, durationMs = 1,
+                )
+            }
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                checkpointStoreFactory = { dir ->
+                    storeDir = dir
+                    store
+                },
+                checkpointConfigResolver = { _ ->
+                    dev.dmigrate.streaming.CheckpointConfig(directory = configDir)
+                },
+            )
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-override-out"),
+                    splitFiles = true,
+                    checkpointDir = cliDir,
+                ),
+            )
+            exit shouldBe 0
+            storeDir shouldBe cliDir
+        }
+
+        // 0.9.0 Phase C.1 Review-Fix (§5.5): Single-File-Resume mit der
+        // einzigen Tabelle bereits COMPLETED → Exit 3 statt silent success.
+
+        test("--resume bei single-file + einziger Tabelle COMPLETED endet mit Exit 3") {
+            val store = InMemoryCheckpointStore()
+
+            // Vorwärmen: denselben Lauf einmal "abschliessen" lassen,
+            // damit wir das gleiche Fingerprint haben wie beim Resume.
+            var firstOpId: String? = null
+            val captureStore = InMemoryCheckpointStore()
+            val warmRunner = newRunner(
+                StderrCapture(),
+                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                    tables.forEach {
+                        onDone(
+                            dev.dmigrate.streaming.TableExportSummary(
+                                table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
+                            ),
+                        )
+                    }
+                    dev.dmigrate.streaming.ExportResult(
+                        tables = tables.map {
+                            dev.dmigrate.streaming.TableExportSummary(
+                                table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
+                            )
+                        },
+                        totalRows = 1, totalChunks = 1, totalBytes = 1, durationMs = 1,
+                    )
+                },
+                checkpointStoreFactory = { _ ->
+                    object : dev.dmigrate.streaming.checkpoint.CheckpointStore by captureStore {
+                        override fun complete(operationId: String) {
+                            // Behalten, damit wir es beim Resume lesen koennen.
+                            firstOpId = operationId
+                        }
+                    }
+                },
+            )
+            warmRunner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-sf-out.json"),
+                    splitFiles = false,
+                    tables = listOf("users"),
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-sf-ckpt"),
+                ),
+            )
+            val warmedOpId = firstOpId!!
+            val warmedManifest = captureStore.state.getValue(warmedOpId)
+
+            // Resume-Lauf startet mit genau dem COMPLETED-Manifest.
+            store.save(warmedManifest)
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(
+                    output = Path.of("/tmp/d-migrate-c1-sf-out.json"),
+                    splitFiles = false,
+                    tables = listOf("users"),
+                    resume = warmedOpId,
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-sf-ckpt"),
+                ),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "single-file resume"
+            stderr.joined() shouldContain "already completed"
+        }
     }
 
     // Ensure the temp path referenced in other tests never accidentally exists

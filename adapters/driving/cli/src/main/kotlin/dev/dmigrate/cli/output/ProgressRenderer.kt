@@ -16,9 +16,21 @@ class ProgressRenderer(
 
     internal fun render(event: ProgressEvent): String = when (event) {
         is ProgressEvent.RunStarted -> {
-            val key = if (event.operation.name == "EXPORT")
+            val baseKey = if (event.operation.name == "EXPORT")
                 "cli.progress.run_started_export" else "cli.progress.run_started_import"
-            messages.text(key, event.totalTables)
+            val base = messages.text(baseKey, event.totalTables)
+            // 0.9.0 Phase C.1 (docs/ImpPlan-0.9.0-C1.md §5.3): bei
+            // vorhandener operationId zeigt der Renderer sichtbar,
+            // ob der Lauf ein neuer oder eine Wiederaufnahme ist.
+            // Bestehende Snapshot-Tests (ohne operationId) bleiben
+            // unveraendert — nur wenn die Runner-Seite die ID liefert,
+            // wird das Phase-C.1-Label sichtbar.
+            if (event.operationId != null) {
+                val prefix = if (event.resuming) "Resuming run" else "Starting run"
+                "$prefix ${event.operationId}: $base"
+            } else {
+                base
+            }
         }
 
         is ProgressEvent.ExportTableStarted ->

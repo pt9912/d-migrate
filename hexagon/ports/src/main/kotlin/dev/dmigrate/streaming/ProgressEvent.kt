@@ -27,6 +27,14 @@ sealed interface ProgressEvent {
          * operationId haben, duerfen temporaer `null` uebergeben.
          */
         val operationId: String? = null,
+        /**
+         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §3.1 / §5.3):
+         * `true`, wenn der Lauf eine Wiederaufnahme aus einem vorhandenen
+         * Checkpoint-Manifest ist. Der `ProgressRenderer` zeigt in diesem
+         * Fall ein „Resuming run …"-Label; bei `false` ein
+         * „Starting run …"-Label.
+         */
+        val resuming: Boolean = false,
     ) : ProgressEvent
 
     // ── Export ─────────────────────────────────────────────

@@ -2,7 +2,12 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: C (Export-Checkpoint und Resume) — Unterphase C.1
-> **Status**: Planned (2026-04-16)
+> **Status**: In Review (2026-04-16) — tabellengranulares Export-Resume
+> umgesetzt: Fingerprint-Utility, Executor-Seam mit operationId +
+> resuming, Manifest-Lifecycle im DataExportRunner (load/compat/save-
+> per-table/complete), StreamingExporter skippt COMPLETED-Tabellen,
+> ProgressRenderer zeigt Starting/Resuming-Label. Tests grün.
+> Mid-Table-Resume bleibt Phase C.2.
 > **Überplan**: [`ImpPlan-0.9.0-C.md`](./ImpPlan-0.9.0-C.md)
 > **Parallel-Unterplan**: [`ImpPlan-0.9.0-C2.md`](./ImpPlan-0.9.0-C2.md) —
 > Mid-Table-Resume

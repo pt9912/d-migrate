@@ -76,16 +76,46 @@ class StreamingExporter(
          * fuer Pre-Phase-B-Callsites (Tests).
          */
         operationId: String? = null,
+        /**
+         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §3.1 / §5.3):
+         * `true`, wenn der Runner einen vorhandenen Checkpoint-Manifest
+         * wiederaufnimmt; `false` fuer einen neuen Lauf. Der
+         * `ProgressRenderer` nutzt die Flagge fuer die
+         * „Starting run …/Resuming run …"-Anzeige.
+         */
+        resuming: Boolean = false,
+        /**
+         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.4): Menge der
+         * Tabellen, die in diesem Lauf uebersprungen werden sollen —
+         * bei Resume die im Manifest als `COMPLETED` markierten
+         * Tabellen. Leer bei neuen Laeufen.
+         */
+        skippedTables: Set<String> = emptySet(),
+        /**
+         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.3 / §5.4):
+         * Callback, der nach jedem abgeschlossenen Tabellen-Export
+         * aufgerufen wird — auch bei leeren Tabellen und im Fehlerfall
+         * (dann mit `error != null`). Der Runner fuellt damit das
+         * Checkpoint-Manifest fort.
+         */
+        onTableCompleted: (TableExportSummary) -> Unit = {},
     ): ExportResult {
-        val effectiveTables = tables.ifEmpty { tableLister.listTables(pool) }
-        require(effectiveTables.isNotEmpty()) {
+        val discoveredTables = tables.ifEmpty { tableLister.listTables(pool) }
+        // 0.9.0 Phase C.1 §5.4: uebersprungene Tabellen werden zwar
+        // nicht exportiert, zaehlen aber fuer die Gesamtzahl der
+        // Tabellen und tauchen als pre-bestaetigte Summaries in
+        // [ExportResult] auf, damit Kennzahlen und Manifest-State
+        // nachvollziehbar bleiben.
+        val effectiveTables = discoveredTables.filter { it !in skippedTables }
+        require(discoveredTables.isNotEmpty()) {
             "No tables to export — neither --tables given nor any tables found via TableLister."
         }
 
         progressReporter.report(ProgressEvent.RunStarted(
             operation = ProgressOperation.EXPORT,
-            totalTables = effectiveTables.size,
+            totalTables = discoveredTables.size,
             operationId = operationId,
+            resuming = resuming,
         ))
 
         val startedAt = System.nanoTime()
@@ -94,51 +124,66 @@ class StreamingExporter(
 
         when (output) {
             is ExportOutput.Stdout -> {
-                require(effectiveTables.size == 1) {
-                    "Stdout output supports exactly one table, got ${effectiveTables.size}"
+                require(discoveredTables.size == 1) {
+                    "Stdout output supports exactly one table, got ${discoveredTables.size}"
                 }
-                val table = effectiveTables.single()
-                val nonClosing = NonClosingOutputStream(System.out)
-                val counting = CountingOutputStream(nonClosing)
-                val writer = writerFactory.create(format, counting, options)
-                try {
-                    tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting,
-                        progressReporter, 1, 1)
-                } finally {
-                    runCatching { writer.close() }
-                    runCatching { System.out.flush() }
+                if (effectiveTables.isNotEmpty()) {
+                    val table = effectiveTables.single()
+                    val nonClosing = NonClosingOutputStream(System.out)
+                    val counting = CountingOutputStream(nonClosing)
+                    val writer = writerFactory.create(format, counting, options)
+                    try {
+                        val summary = exportSingleTable(pool, reader, table, filter, config, writer, counting,
+                            progressReporter, 1, 1)
+                        tableSummaries += summary
+                        onTableCompleted(summary)
+                    } finally {
+                        runCatching { writer.close() }
+                        runCatching { System.out.flush() }
+                    }
+                    totalBytes += counting.count
                 }
-                totalBytes += counting.count
             }
 
             is ExportOutput.SingleFile -> {
-                require(effectiveTables.size == 1) {
-                    "SingleFile output supports exactly one table, got ${effectiveTables.size}"
+                require(discoveredTables.size == 1) {
+                    "SingleFile output supports exactly one table, got ${discoveredTables.size}"
                 }
-                val table = effectiveTables.single()
-                Files.newOutputStream(
-                    output.path,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE,
-                ).use { fileOut ->
-                    BufferedOutputStream(fileOut).use { buffered ->
-                        val counting = CountingOutputStream(buffered)
-                        val writer = writerFactory.create(format, counting, options)
-                        try {
-                            tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting,
-                                progressReporter, 1, 1)
-                        } finally {
-                            runCatching { writer.close() }
+                if (effectiveTables.isNotEmpty()) {
+                    val table = effectiveTables.single()
+                    Files.newOutputStream(
+                        output.path,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE,
+                    ).use { fileOut ->
+                        BufferedOutputStream(fileOut).use { buffered ->
+                            val counting = CountingOutputStream(buffered)
+                            val writer = writerFactory.create(format, counting, options)
+                            try {
+                                val summary = exportSingleTable(pool, reader, table, filter, config, writer, counting,
+                                    progressReporter, 1, 1)
+                                tableSummaries += summary
+                                onTableCompleted(summary)
+                            } finally {
+                                runCatching { writer.close() }
+                            }
+                            totalBytes += counting.count
                         }
-                        totalBytes += counting.count
                     }
                 }
             }
 
             is ExportOutput.FilePerTable -> {
                 Files.createDirectories(output.directory)
-                for ((index, table) in effectiveTables.withIndex()) {
+                // 0.9.0 Phase C.1 §5.4: die Reihenfolge der zu
+                // bearbeitenden Tabellen folgt `discoveredTables` — die
+                // `tableOrdinal`/`tableCount` in Progress-Events bleibt
+                // stabil auch wenn Resume Tabellen ueberspringt (der
+                // Runner kennt die Gesamt-Tabellenliste).
+                val activeCount = discoveredTables.size
+                for ((index, table) in discoveredTables.withIndex()) {
+                    if (table in skippedTables) continue
                     val path: Path = output.directory.resolve(ExportOutput.fileNameFor(table, format))
                     Files.newOutputStream(
                         path,
@@ -150,8 +195,10 @@ class StreamingExporter(
                             val counting = CountingOutputStream(buffered)
                             val writer = writerFactory.create(format, counting, options)
                             try {
-                                tableSummaries += exportSingleTable(pool, reader, table, filter, config, writer, counting,
-                                    progressReporter, index + 1, effectiveTables.size)
+                                val summary = exportSingleTable(pool, reader, table, filter, config, writer, counting,
+                                    progressReporter, index + 1, activeCount)
+                                tableSummaries += summary
+                                onTableCompleted(summary)
                             } finally {
                                 runCatching { writer.close() }
                             }

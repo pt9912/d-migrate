@@ -423,7 +423,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--csv-delimiter`     | CSV-Trennzeichen (Standard: `,`)                          |
 | `--csv-bom`           | BOM passend zu `--encoding` voranstellen (UTF-8, UTF-16 BE/LE); No-op bei Non-UTF-Encodings |
 | `--csv-no-header`     | CSV-Kopfzeile unterdrücken                                |
-| `--resume`            | Resume eines frueheren Exports aus einer Checkpoint-Referenz (0.9.0 Phase A). Nur fuer file-basierte Exports; mit stdout-Output endet der Aufruf mit Exit 2. Runtime folgt in 0.9.0 Phase B/C. |
+| `--resume`            | Resume eines frueheren Exports aus einer Checkpoint-Referenz (seit 0.9.0 Phase C.1 produktiv). Wert ist eine `checkpoint-id` oder ein Pfad innerhalb des effektiven Checkpoint-Verzeichnisses. Der Lauf skippt Tabellen mit Status `COMPLETED` und exportiert unvollstaendige Tabellen neu. Nicht unterstuetzt mit stdout-Output (Exit 2) oder ohne konfiguriertes Checkpoint-Verzeichnis (Exit 7). Kompatibilitaetsmismatch → Exit 3. Mid-Table-Fortsetzung innerhalb grosser Tabellen folgt in Phase C.2. |
 | `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
 
 ### Optionen für `data import`
@@ -439,7 +439,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--trigger-mode`      | `enable` (Standard) oder `disable`                        |
 | `--chunk-size`        | Datensätze pro Transaktion (Standard: 10000)              |
 | `--encoding`          | Input-Encoding. Default `auto` sniffed BOM für UTF-8/UTF-16 BE/LE und fällt ohne BOM auf UTF-8 zurück. Für Non-UTF-Encodings (z.B. `iso-8859-1`) explizit setzen — keine Heuristik. |
-| `--resume`            | Resume eines frueheren Imports aus einer Checkpoint-Referenz (0.9.0 Phase A). Nur fuer file-/directory-Quellen; mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Semantische Preflight-Pruefung gegen das Target folgt in 0.9.0 Phase B/C. |
+| `--resume`            | Resume eines frueheren Imports aus einer Checkpoint-Referenz (CLI-Vertrag 0.9.0 Phase A). Nur fuer file-/directory-Quellen; mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Die produktive Import-Wiederaufnahme (Manifest-Lifecycle, semantische Preflight-Pruefung gegen das Target) folgt in 0.9.0 Phase D. |
 | `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
 
 ### Beispiel: JSON-Ausgabe

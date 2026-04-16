@@ -173,10 +173,27 @@ class DataExportCommand : CliktCommand(name = "export") {
                     "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
                 }
             },
-            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter ->
-                StreamingExporter(reader, lister, factory).export(pool, tbls, out, fmt, opts, cfg, flt, reporter)
+            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter, opId, resuming, skipped, onDone ->
+                StreamingExporter(reader, lister, factory)
+                    .export(pool, tbls, out, fmt, opts, cfg, flt, reporter, opId, resuming, skipped, onDone)
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
+            // 0.9.0 Phase C.1: dateibasierter CheckpointStore. Die CLI-
+            // Seite wired den produktiven Adapter hier ein; der
+            // Runner selbst kennt `FileCheckpointStore` nicht (Hex-
+            // Richtung: application -> ports, nicht application -> adapters).
+            checkpointStoreFactory = { dir ->
+                dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+            },
+            // 0.9.0 Phase C.1 §4.4 / §5.2: Config-Resolver fuer
+            // `pipeline.checkpoint.*` — der Runner ruft
+            // `CheckpointConfig.merge(cliDirectory, config)` und sticht
+            // die Config damit in `--checkpoint-dir` um.
+            checkpointConfigResolver = { cliCfg ->
+                dev.dmigrate.cli.config.PipelineCheckpointResolver(
+                    configPathFromCli = cliCfg,
+                ).resolve()
+            },
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)

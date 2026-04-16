@@ -192,4 +192,205 @@ class FileCheckpointStoreTest : FunSpec({
             dir.toFile().deleteRecursively()
         }
     }
+
+    test("load rejects blank operationId") {
+        val dir = Files.createTempDirectory("dmigrate-cp-blank-")
+        try {
+            val store = FileCheckpointStore(dir)
+            shouldThrow<IllegalArgumentException> { store.load("") }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load rejects manifest with missing operationId field") {
+        val dir = Files.createTempDirectory("dmigrate-cp-missing-opid-")
+        try {
+            Files.writeString(
+                dir.resolve("op-x${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                schemaVersion: 1
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices: []
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            val ex = shouldThrow<CheckpointStoreException> { store.load("op-x") }
+            ex.message!!.contains("operationId") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load rejects manifest with missing schemaVersion") {
+        val dir = Files.createTempDirectory("dmigrate-cp-missing-ver-")
+        try {
+            Files.writeString(
+                dir.resolve("op-y${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                operationId: op-y
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices: []
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            val ex = shouldThrow<CheckpointStoreException> { store.load("op-y") }
+            ex.message!!.contains("schemaVersion") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load rejects manifest with invalid operationType") {
+        val dir = Files.createTempDirectory("dmigrate-cp-bad-optype-")
+        try {
+            Files.writeString(
+                dir.resolve("op-z${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                schemaVersion: 1
+                operationId: op-z
+                operationType: BOGUS
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices: []
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            val ex = shouldThrow<CheckpointStoreException> { store.load("op-z") }
+            ex.message!!.contains("operationType") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load rejects manifest with non-ISO createdAt") {
+        val dir = Files.createTempDirectory("dmigrate-cp-bad-inst-")
+        try {
+            Files.writeString(
+                dir.resolve("op-ts${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                schemaVersion: 1
+                operationId: op-ts
+                operationType: EXPORT
+                createdAt: yesterday
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices: []
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            val ex = shouldThrow<CheckpointStoreException> { store.load("op-ts") }
+            ex.message!!.contains("createdAt") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load rejects manifest with missing chunkSize") {
+        val dir = Files.createTempDirectory("dmigrate-cp-nocs-")
+        try {
+            Files.writeString(
+                dir.resolve("op-cs${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                schemaVersion: 1
+                operationId: op-cs
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                tableSlices: []
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            shouldThrow<CheckpointStoreException> { store.load("op-cs") }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load rejects manifest with invalid slice status") {
+        val dir = Files.createTempDirectory("dmigrate-cp-badslice-")
+        try {
+            Files.writeString(
+                dir.resolve("op-sl${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                schemaVersion: 1
+                operationId: op-sl
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: BOGUS_STATE
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            val ex = shouldThrow<CheckpointStoreException> { store.load("op-sl") }
+            ex.message!!.contains("status") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("load returns empty tableSlices when key absent") {
+        val dir = Files.createTempDirectory("dmigrate-cp-nosl-")
+        try {
+            Files.writeString(
+                dir.resolve("op-ns${FileCheckpointStore.MANIFEST_SUFFIX}"),
+                """
+                schemaVersion: 1
+                operationId: op-ns
+                operationType: IMPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: yaml
+                chunkSize: 5000
+                """.trimIndent(),
+            )
+            val store = FileCheckpointStore(dir)
+            val loaded = store.load("op-ns")
+            loaded.shouldNotBeNull()
+            loaded.tableSlices shouldBe emptyList()
+            loaded.operationType shouldBe CheckpointOperationType.IMPORT
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("list() on non-existent directory returns empty list") {
+        val base = Files.createTempDirectory("dmigrate-cp-empty-")
+        try {
+            val notYet = base.resolve("not-created-yet")
+            val store = FileCheckpointStore(notYet)
+            store.list() shouldBe emptyList()
+        } finally {
+            base.toFile().deleteRecursively()
+        }
+    }
+
+    test("save creates the directory when it does not exist") {
+        val base = Files.createTempDirectory("dmigrate-cp-mkdir-")
+        try {
+            val nested = base.resolve("nested/level2")
+            val store = FileCheckpointStore(nested)
+            store.save(sampleManifest("op-mk"))
+            Files.isDirectory(nested) shouldBe true
+            store.load("op-mk").shouldNotBeNull()
+        } finally {
+            base.toFile().deleteRecursively()
+        }
+    }
 })

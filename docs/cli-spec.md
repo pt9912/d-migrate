@@ -581,7 +581,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4). |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
-| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`; Auflösung in Phase C.1, `docs/ImpPlan-0.9.0-C1.md`). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2. Runtime (Manifest-Lesen, Streaming-Wiederaufnahme) folgt in 0.9.0 Phase B/C; bis dahin akzeptiert der Runner den Flag und warnt sichtbar, dass der Lauf aktuell von vorn startet. |
+| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (seit 0.9.0 Phase C.1 produktiv, `docs/ImpPlan-0.9.0-C1.md`). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und startet unvollstaendige Tabellen neu (tabellengranular). Kompatibilitaetsmismatch (Fingerprint, Tabellenliste, Output-Modus, operationType) → Exit 3. **Mid-Table-Wiederaufnahme** (Fortsetzung innerhalb einer grossen Tabelle am `--since-column`-Marker) folgt in Phase C.2. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Output-Auflösung** (Plan §6.9):
@@ -602,10 +602,10 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
 | `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`), unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** (0.9.0 Phase A §4.4) |
-| `3` | Preflight-Fehler — ab 0.9.0 semantisch inkompatible Resume-Referenz (Tabellenmengen/Schema divergieren). Mapping ist symmetrisch zum Import-Preflight (§4.5); tatsaechliche Manifest-Pruefung folgt in 0.9.0 Phase B/C |
+| `3` | Preflight-Fehler — seit 0.9.0 Phase C.1 semantisch inkompatible Resume-Referenz (operationType-Mismatch, Fingerprint-Mismatch aus Format/Encoding/CSV-Optionen/Filter/`--since-*`/Tabellen-Reihenfolge/Output-Modus/Output-Pfad, oder Tabellenliste divergiert). Mapping ist symmetrisch zum Import-Preflight (§4.5); `docs/ImpPlan-0.9.0-C1.md` §4.2 |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
-| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect); ab 0.9.0 zusaetzlich unlesbare Checkpoint-Datei oder ungueltiges Manifest (Phase B/C) |
+| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect); seit 0.9.0 Phase C.1 zusaetzlich: `--resume` ohne konfiguriertes Checkpoint-Verzeichnis, Pfad ausserhalb des Checkpoint-Verzeichnisses, Checkpoint-Datei nicht gefunden, unlesbare Datei oder inkompatible `schemaVersion` |
 
 **Beispiele**:
 
@@ -690,17 +690,17 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
-| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`; Auflösung analog zu Export in Phase C.1, `docs/ImpPlan-0.9.0-C1.md`). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Semantische Preflight-Pruefung gegen das Target (Tabellenmengen, Schema, Fortschrittsposition) folgt in 0.9.0 Phase B/C/D und mappt inkompatible Referenzen analog zum Schema-/Header-Preflight auf Exit 3. |
+| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (CLI-Vertrag 0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`; Resolution-Semantik analog zu Export in Phase C.1, `docs/ImpPlan-0.9.0-C1.md`). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Die produktive Import-Wiederaufnahme (Manifest-Lifecycle, semantische Preflight-Pruefung, ab-Commit-Fortsetzung) folgt in 0.9.0 Phase D (`docs/ImpPlan-0.9.0-D.md`) und mappt inkompatible Referenzen analog zum Schema-/Header-Preflight auf Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Exit-Codes**:
 
 - `0`: Erfolg
 - `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen (inkl. `--resume` auf stdin-Quelle; unsupported `--lang` an der Root-CLI)
-- `3`: Preflight-Fehler — Header-/Schema-Mismatch, strikter Trigger, und ab 0.9.0 semantisch inkompatible Resume-Referenz (Phase B/C)
+- `3`: Preflight-Fehler — Header-/Schema-Mismatch, strikter Trigger, und ab 0.9.0 Phase D semantisch inkompatible Resume-Referenz
 - `4`: Verbindungsfehler
 - `5`: Import-Fehler während Verarbeitung oder Commit
-- `7`: Konfigurations-, Parse- oder Datei-Fehler (inkl. unlesbare Checkpoint-Datei oder ungueltiges Manifest, ab 0.9.0 Phase B/C)
+- `7`: Konfigurations-, Parse- oder Datei-Fehler (inkl. unlesbare Checkpoint-Datei oder ungueltiges Manifest, ab 0.9.0 Phase D)
 
 #### `data transfer` *(0.6.0, umgesetzt)*
 
