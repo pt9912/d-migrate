@@ -28,7 +28,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
-| `--lang` | | String | technisch vorhanden, finaler Nutzervertrag in 0.9.0 | Sprachwahl fuer menschenlesbare Ausgaben; `--lang` existiert bereits in der CLI, der stabile dokumentierte Override-Vertrag folgt aber erst in Milestone 0.9.0 |
+| `--lang` | | String | in 0.8.0 bewusst abgelehnt; finaler Nutzervertrag in 0.9.0 | Sprachwahl fuer menschenlesbare Ausgaben. Die Root-CLI lehnt jede Angabe in 0.8.0 mit Exit 7 ab und verweist auf `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`; der stabile dokumentierte Override-Vertrag folgt erst in Milestone 0.9.0 |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
 | `--quiet` | `-q` | Boolean | false | Nur Fehler ausgeben |
@@ -43,6 +43,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 **Hinweis zu 0.8.0 / 0.9.0 bei `--lang`**:
 
 - Milestone 0.8.0 liefert die technische I18n-Basis (ResourceBundles, Locale-/Timezone-/Unicode-Aufloesung).
+- `--lang` ist in 0.8.0 **nicht** als aktiver Override freigegeben: jede Angabe wird von der Root-CLI mit Exit 7 abgelehnt; die Sprachauflösung läuft stattdessen über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`.
 - Der finale, breit dokumentierte CLI-Vertrag fuer `--lang` als produktive Override-Quelle bleibt in 0.9.0 verankert.
 - Bis dieser Vertrag freigegeben ist, duerfen strukturierte JSON-/YAML-Vertraege nicht von lokalisierter Sprachwahl abhaengen.
 

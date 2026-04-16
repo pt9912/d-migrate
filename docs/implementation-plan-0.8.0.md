@@ -184,9 +184,13 @@ Verbindliche Entscheidung:
 - 0.8.0 fuehrt die eigentliche Locale-Resolution und Message-Infra ein
 - 0.8.0 zieht dabei NICHT den offiziellen CLI-Prioritaetsvertrag fuer
   `--lang` nach vorne
-- fuer 0.8.0 kommen als dokumentierter Resolution-Vertrag Config, ENV und
-  System-Fallbacks in Betracht; `--lang` bleibt bis 0.9.0 technisch sichtbar,
-  aber ausserhalb des final freigegebenen Override-Vertrags
+- fuer 0.8.0 kommen als dokumentierter Resolution-Vertrag
+  `D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale` und
+  System-Locale in Betracht
+- `--lang` bleibt in 0.8.0 als Flag-Deklaration in der CLI sichtbar, wird
+  aber bei jeder Nutzung von der Root-CLI mit Exit 7 und Hinweis auf die
+  aktiven Resolutions-Quellen abgelehnt — der Flag ist nicht still no-op
+  und nicht als Override freigeschaltet
 - 0.9.0 liefert dann explizit die Freischaltung von `--lang` als
   dokumentierte Override-Quelle ueber den 0.8.0-ResourceBundles
 
@@ -480,14 +484,25 @@ Konsolidierung:
 
 ### Phase G - Tests und Dokumentation
 
-Mindestens noetige Tests:
+Mindestens noetige Tests (Details in `docs/ImpPlan-0.8.0-G.md`):
 
-- Locale-Resolution:
-  - CLI > ENV > Config > System > Fallback
+- Locale-Resolution (Phase G §4.3):
+  - 0.8.0-Resolve-Kette `D_MIGRATE_LANG` > `LC_ALL` > `LANG` > Config
+    > System-Locale > englischer Fallback
+  - `--lang` ist in 0.8.0 **kein** aktiver CLI-Override und wird von der
+    Root-CLI mit Exit 7 abgelehnt; der freigegebene CLI-Override-Vertrag
+    bleibt 0.9.0 vorbehalten
+  - Config-Pfad-Prioritaet `--config` > `D_MIGRATE_CONFIG` >
+    `./.d-migrate.yaml`
 - ResourceBundle-Fallback:
-  - fehlender Key in `de` -> `messages.properties`
+  - fehlender Key in `de` -> `messages.properties` (expliziter Nachweis
+    ueber dediziertes Test-Bundle-Paar unter
+    `src/test/resources/test-messages-phase-g/`)
+  - unsupported Locale -> Root-Bundle
+  - fehlender Key insgesamt -> Key-String als Fallback
 - OutputFormatter/ProgressRenderer:
-  - englische und deutsche Snapshots
+  - englische und deutsche Plain-Text-Ausgaben
+  - strukturierte JSON-/YAML-Ausgaben bleiben englisch
 - Unicode-Integritaet:
   - Emoji
   - kombinierte Zeichen
@@ -579,6 +594,10 @@ Mitigation:
 
 - 0.8.0-Doku explizit annotieren
 - 0.9.0 als finalen CLI-Vertrag beibehalten
+- Umgesetzt in Phase G: Root-CLI lehnt `--lang` in 0.8.0 mit Exit 7 ab,
+  CLI-Help und `cli-spec`/`guide` nennen die aktiven Resolutions-Quellen
+  (`D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale`), und
+  `CliI18nContextTest` prueft den Fehlerpfad
 
 ### Offene Frage O1
 

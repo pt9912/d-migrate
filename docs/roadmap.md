@@ -229,7 +229,7 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
 > Infrastruktur in [1.1.0](#milestone-110--ki-integration).
 
-### Milestone 0.8.0 — Internationalisierung (in Arbeit)
+### Milestone 0.8.0 — Internationalisierung (abgeschlossen)
 
 | Bereich | Aufgabe                                                          | LF-Ref | Status |
 | ------- | ---------------------------------------------------------------- | ------ | ------ |
@@ -239,16 +239,15 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 | i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | ✅ |
 | Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy)     | LF-007 | ✅ |
 | Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                        | LF-010 | ✅ |
-| Test    | Unicode-Integritätstests (Emoji, Kyrillisch, CJK)                | 8.5    | |
+| Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)      | 8.5    | ✅ |
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
-> Stand 2026-04-16: Phase A (Spezifikationsbereinigung), Phase B
-> (I18n-Runtime und Config-Resolution), Phase C (ResourceBundles und
-> lokalisierte CLI-Ausgaben), Phase D (ICU4J-Integration fuer
-> Unicode-Verarbeitung), Phase E (Zeitzonen- und Format-Policy) und
-> Phase F (CSV-Encoding-/BOM-Konsolidierung) sind umgesetzt; Milestone
-> 0.8.0 damit inhaltlich komplett.
+> Stand 2026-04-16: Phasen A–G umgesetzt — Spezifikationsbereinigung,
+> I18n-Runtime, ResourceBundles, ICU4J-Integration, Zeitzonen-/Format-
+> Policy, CSV-Encoding-/BOM-Konsolidierung sowie Tests und
+> Dokumentation inklusive Mindest-Testmatrix, `--lang`-Grenze 0.8.0/0.9.0
+> und DE-Bundle-Fallback-Nachweis. Milestone 0.8.0 damit abgeschlossen.
 
 ### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
 
@@ -457,6 +456,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.16
+**Version**: 3.18
 **Stand**: 2026-04-16
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen; Milestone 0.8.0 in Arbeit (Phase A–F umgesetzt; Unicode-Integritätstests offen)
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen

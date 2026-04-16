@@ -83,7 +83,7 @@ Offen war vor allem der letzte Milestone-Schritt:
 
 ### 2.2 Stand der Codebasis nach Phase G
 
-Mit Abschluss der Phase (Status `Implemented`, 2026-04-16) gilt:
+Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
 
 - Locale-/Timezone-/Normalization-Resolution ist durch
   `I18nSettingsResolverTest` und `CliI18nContextTest` abgedeckt
@@ -94,8 +94,12 @@ Mit Abschluss der Phase (Status `Implemented`, 2026-04-16) gilt:
   - die Root-CLI lehnt `--lang` in 0.8.0 bewusst mit lokalem Fehlerpfad ab
 - `MessageResolverTest` und `BundleCompletenessTest` decken Bundle-Loading,
   Unsupported-Locale-Fallback, Missing-Key-zu-Key-String und Nicht-Leerheit ab
-- ein expliziter Nachweis fuer Root-Fallback bei einem nur im DE-Bundle
-  fehlenden Key ist in der aktuellen Testbasis noch nicht separat enthalten
+- der expliziter Nachweis fuer Root-Fallback bei einem nur im DE-Bundle
+  fehlenden Key ist jetzt ebenfalls abgedeckt: `MessageResolverTest` enthaelt
+  ein dediziertes Test-Bundle-Paar
+  (`test-messages-phase-g/phasegmsg[_de].properties`), in dem `root.only.key`
+  bewusst nur im Root-Bundle steht und unter `Locale.GERMAN` per
+  `ResourceBundle`-Parent-Chain aufloesbar bleibt
 - `OutputFormatterTest` und `ProgressRendererTest` decken englische und
   deutsche Ausgabe sowie die Sprachstabilitaet strukturierter JSON-/YAML-
   Ausgaben ab
@@ -110,8 +114,10 @@ Mit Abschluss der Phase (Status `Implemented`, 2026-04-16) gilt:
   `CsvChunkWriterTest` inklusive Unicode-Payloads abgedeckt
 - `docs/cli-spec.md`, `docs/design.md` und `docs/connection-config-spec.md`
   spiegeln den 0.8.0-Wortlaut
-- `docs/guide.md` dokumentiert `--lang` aktuell noch breiter als den in 0.8.0
-  getesteten Vertrag
+- `docs/guide.md` ist fuer `--lang` auf den getesteten 0.8.0-Vertrag
+  zurueckgezogen: der Eintrag verweist ausdruecklich darauf, dass `--lang`
+  in 0.8.0 mit Exit 7 abgelehnt wird und die Sprachauflösung ueber
+  `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale` laeuft
 
 ---
 
@@ -210,8 +216,10 @@ Ergebnis:
 - `I18nSettingsResolverTest` deckt ENV-, Config-, System- und Fallback-Pfade ab
 - `CliI18nContextTest` prueft den transportierten Runtime-Kontext und den
   0.8.0-Fehlerpfad fuer `--lang`
-- `docs/guide.md` ist fuer den finalen 0.8.0/0.9.0-Grenzverlauf bei `--lang`
-  noch kein voll angeglichener Nachweis
+- `docs/guide.md` ist fuer den 0.8.0/0.9.0-Grenzverlauf bei `--lang`
+  nachgezogen: der Option-Eintrag dokumentiert Exit 7 und die
+  produktiven Resolutions-Quellen (`D_MIGRATE_LANG`, `LC_ALL`/`LANG`,
+  `i18n.default_locale`)
 
 ### G.2 ResourceBundle-, Formatter- und Renderer-Vertrag schliessen
 
@@ -228,8 +236,11 @@ Ergebnis:
   Schluesselgleichheit der DE-Datei ohne Parent-Fallback
 - `MessageResolverTest` prueft Bundle-Loading, Unsupported-Locale-Fallback auf
   das Root-Bundle und Missing-Key-zu-Key-String-Verhalten
-- ein gezielter Test fuer "Key fehlt nur in `messages_de.properties` ->
-  Root-Bundle" ist damit noch nicht separat nachgewiesen
+- ein gezielter Test fuer "Key fehlt nur im DE-Bundle -> Root-Bundle" ist
+  in `MessageResolverTest` ergaenzt und nutzt ein dediziertes
+  Test-Bundle-Paar unter `src/test/resources/test-messages-phase-g/`, damit
+  das Lueckenszenario auch gegenueber den (absichtlich schluesselgleichen)
+  produktiven Bundles nachweisbar bleibt
 - `OutputFormatterTest` und `ProgressRendererTest` decken englische und
   deutsche Ausgaben sowie englisch stabile JSON-/YAML-Payloads ab
 
@@ -272,10 +283,9 @@ Ergebnis:
 
 - `EncodingDetectorTest`, `CsvChunkReaderTest`, `JsonChunkReaderTest`,
   `YamlChunkReaderTest` und `CsvChunkWriterTest` decken den finalen Vertrag ab
-- `cli-spec`, `design` und `connection-config-spec` wurden auf denselben
-  Wortlaut gebracht
-- `guide` braucht fuer `--lang` noch eine explizite 0.8.0-/0.9.0-
-  Grenzklaerung
+- `cli-spec`, `design`, `connection-config-spec` und `guide` sprechen
+  denselben Wortlaut; die 0.8.0-/0.9.0-Grenzklaerung fuer `--lang` ist im
+  `guide` jetzt ebenfalls explizit
 
 ---
 
@@ -388,14 +398,17 @@ Mitigation:
 
 ### R4 - Bundle-Fallback-Tests koennen mehr suggerieren als sie direkt beweisen
 
-Durch `ResourceBundle`-Vererbung und einen nicht spezialiserten Fallback-Key
-kann die aktuelle Testbasis staerker wirken als ihr direkter Nachweis.
+Durch `ResourceBundle`-Vererbung und einen nicht spezialisierten Fallback-Key
+kann eine Testbasis staerker wirken als ihr direkter Nachweis.
 
 Mitigation:
 
 - Aussagen auf den wirklich getesteten Umfang begrenzen
-- einen spaeteren gezielten Test fuer "Key fehlt nur in DE" getrennt ergaenzen,
-  falls dieser Fall produktrelevant wird
+- gezielter Test fuer "Key fehlt nur in DE" ist in Phase G ergaenzt:
+  `MessageResolverTest` nutzt ein dediziertes Test-Bundle-Paar unter
+  `src/test/resources/test-messages-phase-g/`, in dem `root.only.key`
+  bewusst nur im Root-Bundle liegt, und beweist den Parent-Chain-Fallback
+  unter `Locale.GERMAN`
 
 ### Offene Frage O1
 
@@ -418,8 +431,9 @@ schliesst diesen Vertrag produktiv ab:
 - die sichtbare EN/DE-CLI-Ausgabe ist regressionsfest abgesichert
 - Unicode-, Zeit- und BOM-Vertraege sind nicht nur dokumentiert, sondern
   konkret pruefbar
-- `cli-spec`, `design` und `connection-config-spec` sprechen denselben
-  Wortlaut; `guide` braucht fuer `--lang` noch Nachschaerfung
+- `cli-spec`, `design`, `connection-config-spec` und `guide` sprechen
+  denselben Wortlaut; die 0.8.0-/0.9.0-Grenzklaerung fuer `--lang` ist im
+  `guide` ebenfalls explizit
 - der finale `--lang`-Nutzervertrag bleibt bewusst 0.9.0
 
 Damit endet 0.8.0 nicht mit verstreuten Einzelimplementierungen, sondern mit

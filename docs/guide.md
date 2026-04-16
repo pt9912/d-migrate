@@ -383,7 +383,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
-| `--lang`              | Sprache der Ausgabe (`de`, `en`)                          |
+| `--lang`              | Für 0.9.0 reserviert. In 0.8.0 wird jede Angabe bewusst mit Exit 7 abgelehnt — die Sprachauflösung läuft über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale` (Phase G §4.3, `docs/ImpPlan-0.8.0-G.md`). |
 | `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
 | `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
 | `-q`, `--quiet`       | Nur Fehler ausgeben                                       |

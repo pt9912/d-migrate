@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.util.Locale
+import java.util.ResourceBundle
 
 class MessageResolverTest : FunSpec({
 
@@ -80,5 +81,42 @@ class MessageResolverTest : FunSpec({
     test("German progress export started") {
         val resolver = MessageResolver(Locale.GERMAN)
         resolver.text("cli.progress.run_started_export", 3) shouldBe "3 Tabelle(n) werden exportiert"
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // 0.8.0 Phase G R4 (docs/ImpPlan-0.8.0-G.md §2.2 / §6):
+    // Direkter Nachweis, dass ein Key, der NUR im Root-Bundle liegt und
+    // im DE-Bundle absichtlich fehlt, unter Locale.GERMAN ueber den
+    // ResourceBundle-Parent-Chain-Fallback den englischen Wert liefert.
+    //
+    // Wir pruefen das gegen ein eigenes Test-Bundle-Paar
+    // (test-messages-phase-g/phasegmsg[ _de ].properties), damit der Test
+    // ein echtes Lueckenszenario modelliert — die produktiven Bundles
+    // sind absichtlich schluesselgleich und koennen den Fall so nicht
+    // zeigen.
+    // ────────────────────────────────────────────────────────────────
+
+    context("Phase G R4: DE-only missing key → Root-Fallback") {
+        val baseName = "test-messages-phase-g.phasegmsg"
+
+        test("shared key: German bundle liefert DE-Uebersetzung") {
+            val de = ResourceBundle.getBundle(baseName, Locale.GERMAN)
+            de.getString("shared.key") shouldBe "Geteilt Deutsch"
+        }
+
+        test("root-only key: German bundle faellt auf Root-Bundle zurueck") {
+            val de = ResourceBundle.getBundle(baseName, Locale.GERMAN)
+            // Der Key existiert nur in phasegmsg.properties, nicht in
+            // phasegmsg_de.properties. Java's ResourceBundle-Parent-Chain
+            // laedt ihn trotzdem ohne MissingResourceException aus dem
+            // Root-Bundle.
+            de.getString("root.only.key") shouldBe "Only in root"
+        }
+
+        test("root bundle: beide Keys liefern englische Werte") {
+            val en = ResourceBundle.getBundle(baseName, Locale.ENGLISH)
+            en.getString("shared.key") shouldBe "Shared English"
+            en.getString("root.only.key") shouldBe "Only in root"
+        }
     }
 })
