@@ -256,10 +256,24 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 | Core    | Checkpoint/Resume für langläufige Operationen                          | LN-012 |
 | CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu)  | LF-006 |
 
-**Ergebnis**: Langläufige Export-/Import-Operationen sind unterbrechbar und
-können wieder aufgesetzt werden; die in 0.8.0 eingeführte i18n-Infrastruktur
-ist über `--lang` vom Nutzer steuerbar. Damit ist die Kern-Funktionalität
-für Beta-Tester abgeschlossen.
+**Zielbild nach Abschluss von 0.9.0**: Langläufige Export-/Import-
+Operationen sind unterbrechbar und können wieder aufgesetzt werden; die in
+0.8.0 eingeführte i18n-Infrastruktur ist über `--lang` vom Nutzer steuerbar.
+Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
+
+> **Ist-Stand (2026-04-16)**: Phase A ist abgeschlossen — der sichtbare
+> CLI-Vertrag ist fixiert (`--lang` aktiv, `--resume` und `--checkpoint-dir`
+> deklariert, stdout/stdin-Preflight mit Exit 2,
+> `docs/ImpPlan-0.9.0-A.md` §4.5). Die eigentliche Resume-Runtime
+> (Checkpoint-Port, Manifest-Persistenz, Streaming-Wiederaufnahme) folgt in
+> den Phasen B bis D. Solange die Runtime nicht steht, gibt der Runner bei
+> `--resume` eine sichtbare Warnung aus und startet den Lauf von vorn.
+
+> Hinweis: `--resume` ist in 0.9.0 bewusst **dateibasiert** zugeschnitten —
+> stdout-Export und stdin-Import sind nicht Teil des Resume-Vertrags und
+> enden mit Exit 2, wenn `--resume` kombiniert wird
+> (`docs/ImpPlan-0.9.0-A.md` §4.4). `data transfer` erhaelt in 0.9.0
+> kein Resume; ein entsprechender Scope wird spaeter bewertet.
 
 > Hinweis: LF-013 (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
 > — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.5** ausgelagert,

@@ -240,7 +240,11 @@ pipeline:
   checkpoint:
     enabled: true                    # Checkpoints erstellen
     interval: 10000                  # Alle N Datensätze
-    directory: ".d-migrate/checkpoints"  # Checkpoint-Verzeichnis
+    # Checkpoint-Verzeichnis. Wird vom CLI-Flag `--checkpoint-dir`
+    # ueberschrieben, sobald es gesetzt ist (0.9.0 Phase A,
+    # `docs/ImpPlan-0.9.0-A.md` §3.1/§4.3/§8.4). Die CLI-Spec
+    # dokumentiert diese Prioritaet explizit.
+    directory: ".d-migrate/checkpoints"
   retry:
     max_attempts: 3                  # Wiederholungsversuche
     initial_delay_ms: 1000           # Initialer Delay

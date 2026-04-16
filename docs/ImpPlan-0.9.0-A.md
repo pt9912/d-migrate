@@ -2,7 +2,13 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: A (CLI-Vertrag fuer Sprache und Resume)
-> **Status**: Planned (2026-04-16)
+> **Status**: Implemented (2026-04-16) — aktives `--lang` mit strenger
+> Produktsprachen-Validierung (Exit 2), sichtbare Resume-Flags plus
+> stdin/stdout-Preflight (Exit 2), Runner-Warnung bei nicht-aktiver
+> Resume-Runtime, Exit-Code-Zielvertrag in Runner-KDocs und CLI-Spec,
+> Tests und normative Doku. **Bewusst in Phase A nicht enthalten**
+> (Phasen B bis D): tatsaechliches Manifest-Lesen, semantische
+> Preflight-Pruefung (Exit 3) und Checkpoint-Integritaet (Exit 7).
 > **Referenz**: `docs/implementation-plan-0.9.0.md` Abschnitt 1 bis 4,
 > Abschnitt 5.1, Abschnitt 6.1, Abschnitt 8.4 und 8.5; `docs/roadmap.md`
 > Milestone 0.9.0 und 0.9.5; `docs/cli-spec.md` globale Flags sowie
@@ -53,34 +59,67 @@ Nach Phase A soll klar und widerspruchsfrei dokumentiert sein:
 
 ## 2. Ausgangslage
 
-Aktueller Stand im Repo:
+### 2.1 Stand **vor** Phase A
 
-- `Main.kt` deklariert `--lang`, lehnt jede Nutzung in 0.8.0 aber bewusst
-  mit Exit `7` ab und verweist auf den 0.9.0-Vertrag.
-- `I18nSettingsResolver` loest Locale-Werte bereits ueber
+- `Main.kt` deklarierte `--lang`, lehnte jede Nutzung in 0.8.0 aber bewusst
+  mit Exit `7` ab und verwies auf den 0.9.0-Vertrag.
+- `I18nSettingsResolver` loeste Locale-Werte ueber
   `D_MIGRATE_LANG`, `LC_ALL`, `LANG`, `i18n.default_locale` und
-  System-Locale auf.
+  System-Locale auf; keine strenge Validierung fuer einen CLI-Override.
 - `MessageResolver` faellt fuer unsupported locales auf das englische
-  Root-Bundle zurueck.
-- `docs/cli-spec.md` und `docs/guide.md` dokumentieren `--lang` derzeit
+  Root-Bundle zurueck (unveraendert, dieser Vertrag bleibt erhalten).
+- `docs/cli-spec.md` und `docs/guide.md` dokumentierten `--lang`
   konsistent als fuer 0.9.0 reserviert.
-- `DataExportCommand` und `DataImportCommand` besitzen aktuell keinerlei
+- `DataExportCommand` und `DataImportCommand` besassen keinerlei
   Resume-Flags.
-- `DataExportRequest` und `DataImportRequest` transportieren entsprechend
-  noch keine Resume- oder Checkpoint-Referenzen.
-- `docs/roadmap.md` beschreibt 0.9.0 allgemein als unterbrechbare und
-  wiederaufsetzbare Export-/Import-Operationen, ohne den Scope bereits auf
-  konkrete Ein-/Ausgabepfade oder Flag-Namen einzuengen.
+- `DataExportRequest` und `DataImportRequest` transportierten entsprechend
+  keine Resume- oder Checkpoint-Referenzen.
+- `docs/roadmap.md` beschrieb 0.9.0 allgemein als unterbrechbare und
+  wiederaufsetzbare Export-/Import-Operationen, ohne den Scope auf
+  dateibasierte Pfade oder Flag-Namen einzuengen.
 
-Konsequenz:
+Konsequenz vor Phase A:
 
-- fuer `--lang` existiert bereits die technische Basis, aber der sichtbare
-  0.9.0-Nutzervertrag fehlt noch
-- fuer Resume fehlt sowohl die sichtbare CLI-Oberflaeche als auch der
+- fuer `--lang` existierte die technische Basis, aber der sichtbare
+  0.9.0-Nutzervertrag fehlte
+- fuer Resume fehlte sowohl die sichtbare CLI-Oberflaeche als auch der
   technische Unterbau
-- wenn 0.9.0 den Resume-Scope enger als die allgemeine Roadmap formulieren
-  will, muss diese Einschraenkung in Phase A explizit und nicht nur implizit
-  ueber spaetere Codepfade festgezogen werden
+- die Resume-Scope-Einschraenkung (dateibasiert, kein stdin/stdout) musste
+  in Phase A explizit gemacht werden
+
+### 2.2 Stand **nach** Phase A
+
+Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
+
+- `--lang` ist ein aktiver Root-CLI-Override
+  (`adapters/driving/cli/.../Main.kt`). Unsupported Werte werden ueber
+  [`UnsupportedLanguageException`](../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/I18nSettingsResolver.kt)
+  mit Exit 2 abgewiesen.
+- `I18nSettingsResolver` akzeptiert `langFromCli` als hoechste Prioritaet
+  und validiert streng gegen `SUPPORTED_PRODUCT_LANGUAGES = {"de","en"}`;
+  generische Env-/Config-/System-Pfade behalten den toleranteren
+  0.8.0-Vertrag inkl. Root-Bundle-Fallback.
+- `DataExportCommand`/`DataImportCommand` exponieren `--resume` und
+  `--checkpoint-dir`; die Request-DTOs tragen `resume` und `checkpointDir`.
+- `DataExportRunner`/`DataImportRunner` haben einen minimalen CLI-Preflight
+  fuer Resume: stdout-Export bzw. stdin-Import in Kombination mit
+  `--resume` enden mit Exit 2. Ansonsten wird der Flag sichtbar als noch
+  nicht aktive Runtime markiert (Warning „resume runtime is not yet
+  active"). **Echtes Manifest-Lesen, semantische Preflight-Pruefung und
+  Streaming-Wiederaufnahme sind bewusst noch nicht Teil von Phase A**
+  (§3.2 / §4.6) und folgen in Phase B bis D.
+- Normative Doku: `docs/cli-spec.md`, `docs/guide.md` und
+  `docs/connection-config-spec.md` sind auf den Phase-A-Vertrag
+  angeglichen (inkl. Env-Var-Tabelle §9).
+- `docs/roadmap.md` ist nur **teilweise** angeglichen: die
+  Milestone-Beschreibung bleibt das Zielbild nach vollstaendigem 0.9.0
+  ("unterbrechbar und wieder aufsetzbar"); ergaenzt ist ein expliziter
+  Ist-Stand-Kasten, der Phase A als aktuellen Schritt markiert und die
+  Resume-Runtime explizit als noch ausstehend (Phase B bis D) ausweist.
+  Das verhindert, dass die Roadmap-Formulierung als bereits
+  implementierte Wiederaufnahme gelesen wird.
+- Roadmap-Hinweis zur dateibasierten Resume-Einschraenkung in 0.9.0 ist
+  jetzt explizit in `docs/roadmap.md` vermerkt.
 
 ---
 
@@ -222,15 +261,27 @@ Arbeitsvertrag fuer 0.9.0:
 - Exit `7` fuer lokale Checkpoint-/Konfigurationsfehler:
   - Checkpoint-Referenz nicht lesbar
   - Checkpoint-Datei/Manifest ungueltig
+- Exit `3` fuer semantisch inkompatible Resume-Referenzen:
+  - Import: als Preflight-Fehler analog zum bestehenden Schema-/Header-
+    Preflight
+  - Export: symmetrisch auf Exit `3` als Resume-Preflight-Kategorie
+    (neues Mapping fuer 0.9.0)
 
-Praezisierung fuer semantische Resume-Mismatches:
+**In Phase A umgesetzt (Status „In Review"):**
 
-- eine syntaktisch lesbare, aber fachlich inkompatible Resume-Referenz darf
-  nicht pauschal auf Exit `7` gezogen werden
-- fuer `data import` muss dieser Fall mit dem bestehenden Preflight-Modell
-  abgestimmt werden und bleibt daher kandidat fuer Exit `3`
-- fuer `data export` ist das Mapping in Phase A explizit festzuziehen und
-  in `cli-spec`/Runner-Vertrag konsistent zu dokumentieren
+- Exit `2` fuer `--resume` + stdout-Export bzw. stdin-Import
+  (CLI-Preflight in den Runnern).
+- Exit `2` fuer unsupported `--lang` an der Root-CLI
+  ([`UnsupportedLanguageException`](../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/I18nSettingsResolver.kt)
+  → [`Main.kt`](../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)).
+- Exit-Code-Mapping fuer Exit `3` und Exit `7` ist in den Runner-KDocs und
+  in `docs/cli-spec.md` **als Zielvertrag** dokumentiert; die tatsaechliche
+  Pruefung (Manifest-Lesen, Format-Validierung, Target-Vergleich) liegt
+  bei der Resume-Runtime und wird in Phase B/C implementiert.
+- Sichtbares Signal aus dem Runner solange die Runtime fehlt: eine
+  stderr-Warnung „resume runtime is not yet active in this build;
+  <...> will run from scratch. Phase B/C will activate it" — nicht stille
+  Annahme, nicht harter Fehler.
 
 Damit bleibt der neue Vertrag anschlussfaehig an die bestehende CLI-Matrix
 statt neben ihr eine weitere Sonderklasse aufzubauen.

@@ -25,6 +25,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -118,6 +119,8 @@ class DataImportRunnerTest : FunSpec({
         cliConfigPath: Path? = null,
         quiet: Boolean = false,
         noProgress: Boolean = false,
+        resume: String? = null,
+        checkpointDir: Path? = null,
     ) = DataImportRequest(
         target = target,
         source = source,
@@ -138,6 +141,8 @@ class DataImportRunnerTest : FunSpec({
         cliConfigPath = cliConfigPath,
         quiet = quiet,
         noProgress = noProgress,
+        resume = resume,
+        checkpointDir = checkpointDir,
     )
 
     fun isolatedTargetResolver(target: String?, configPath: Path?): String {
@@ -859,6 +864,39 @@ class DataImportRunnerTest : FunSpec({
             })
         runner.execute(request(noProgress = true))
         reporterEvents.size shouldBe 0
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.4 / §4.5):
+    // Resume-CLI-Preflight fuer Import. Stdin-Quelle (`source == "-"`)
+    // kann nicht wiederaufgenommen werden → Exit 2; sonst Warning
+    // (Runtime folgt in Phase B/C/D).
+    // ────────────────────────────────────────────────────────────
+
+    test("Phase A §4.4: --resume mit stdin-Quelle endet mit Exit 2") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        val exit = runner.execute(
+            request(source = "-", resume = "./run.checkpoint.yaml"),
+        )
+        exit shouldBe 2
+        stderr.joined() shouldContain "--resume"
+        stderr.joined() shouldContain "stdin"
+    }
+
+    test("Phase A §4.4: --resume mit file-Quelle passiert den Preflight und warnt sichtbar") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(resume = "./run.checkpoint.yaml"))
+        stderr.joined() shouldContain "Warning"
+        stderr.joined() shouldContain "--resume"
+    }
+
+    test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning)") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(resume = ""))
+        stderr.joined() shouldNotContain "Warning: --resume"
     }
 
     // Ensure the temp path referenced in other tests never accidentally exists

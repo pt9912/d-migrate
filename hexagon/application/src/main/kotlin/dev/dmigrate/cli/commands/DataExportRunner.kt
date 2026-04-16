@@ -59,6 +59,23 @@ data class DataExportRequest(
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
+    /**
+     * 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.3/§4.4): expliziter
+     * Resume-Einstieg. Wert ist eine Checkpoint-ID oder ein Pfad zu
+     * einem Manifest; der konkrete Referenzformat-Vertrag wird in
+     * Phase B/C des Milestones festgezogen. In Phase A ist der Flag
+     * Teil des CLI-Vertrags; der Runner akzeptiert ihn, lehnt
+     * inkompatible Kombinationen (stdout-Export, etc.) ab und
+     * signalisiert andernfalls sichtbar, dass die Resume-Runtime noch
+     * folgt.
+     */
+    val resume: String? = null,
+    /**
+     * 0.9.0 Phase A §4.3: optionales Verzeichnis fuer Checkpoints. Ist
+     * Config-Default in `pipeline.checkpoint.directory` vorhanden,
+     * gewinnt dieser CLI-Wert (Phase A §3.1 letzter Punkt).
+     */
+    val checkpointDir: Path? = null,
 )
 
 /**
@@ -68,10 +85,17 @@ data class DataExportRequest(
  *
  * Exit codes (Plan §6.10):
  * - 0 success
- * - 2 CLI validation error
+ * - 2 CLI validation error (incl. `--resume` on stdout-Export, unsupported
+ *   `--lang` handled in the root CLI)
+ * - 3 resume preflight failure — semantically incompatible checkpoint
+ *   reference (e.g. table list changed, schema divergent). 0.9.0 Phase A
+ *   (`docs/ImpPlan-0.9.0-A.md` §4.5): mapping wird hier explizit
+ *   festgezogen und ist symmetrisch zum `DataImportRunner`-Preflight. Die
+ *   tatsaechliche Manifest-Pruefung liefert Phase B bis D.
  * - 4 connection / table-lister error
  * - 5 export streaming error
- * - 7 config / URL / registry error
+ * - 7 config / URL / registry error (incl. unreadable checkpoint file or
+ *   unparseable manifest — 0.9.0 Phase A §4.5)
  */
 class DataExportRunner(
     private val sourceResolver: (source: String, configPath: Path?) -> String,
@@ -127,6 +151,30 @@ class DataExportRunner(
                 )
                 return 2
             }
+        }
+
+        // ─── 2c. 0.9.0 Phase A §4.4 / §4.5: Resume-CLI-Preflight ──
+        // Der sichtbare Resume-Vertrag ist file-basiert; stdout-Export
+        // (kein `--output`) kann nicht sauber wieder aufgenommen werden,
+        // weil der vorherige Lauf seinen Stream nicht wiedereroeffnen kann.
+        if (!request.resume.isNullOrBlank()) {
+            if (request.output == null) {
+                stderr(
+                    "Error: --resume is not supported for stdout export; " +
+                        "set --output <file-or-dir> or drop --resume."
+                )
+                return 2
+            }
+            // Phase A definiert nur den CLI-Vertrag; die Resume-Runtime
+            // (Checkpoint-Store, Manifest, Streaming-Wiederaufnahme) kommt
+            // in den Phasen B bis D. Bis dahin signalisieren wir sichtbar,
+            // dass der Flag aktuell akzeptiert, aber noch nicht ausgewertet
+            // wird — der Export laeuft vom Anfang.
+            stderr(
+                "Warning: --resume was accepted but resume runtime is not yet " +
+                    "active in this build (docs/ImpPlan-0.9.0-A.md §4.6); export " +
+                    "will run from scratch. Phase B/C will activate it."
+            )
         }
 
         // ─── 3. Encoding parsen ─────────────────────────────────

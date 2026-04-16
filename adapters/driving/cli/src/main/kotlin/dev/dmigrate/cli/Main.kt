@@ -15,6 +15,7 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.I18nSettingsResolver
+import dev.dmigrate.cli.config.UnsupportedLanguageException
 import dev.dmigrate.cli.i18n.ResolvedI18nSettings
 import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
 import dev.dmigrate.cli.commands.DataCommand
@@ -68,7 +69,9 @@ class DMigrate(
     val config by option("--config", "-c", help = "Path to configuration file").path()
     val lang by option(
         "--lang",
-        help = "Reserved for the 0.9.0 language override; in 0.8.0 use D_MIGRATE_LANG or i18n.default_locale",
+        help = "Language for human-readable CLI output (de, en). " +
+            "Supersedes D_MIGRATE_LANG, LC_ALL/LANG and i18n.default_locale. " +
+            "Invalid or unsupported values exit with 2.",
     )
     val outputFormat by option("--output-format", help = "Output format: plain, json, yaml")
         .choice("plain", "json", "yaml").default("plain")
@@ -88,15 +91,6 @@ class DMigrate(
         if (verbose && quiet) {
             throw UsageError("--verbose and --quiet are mutually exclusive")
         }
-        if (lang != null) {
-            printLocalError(
-                "--lang is not an active CLI override in 0.8.0. " +
-                    "Use D_MIGRATE_LANG or i18n.default_locale for the technical i18n basis; " +
-                    "the final --lang product contract lands in 0.9.0.",
-                "--lang",
-            )
-            throw ProgramResult(7)
-        }
         cachedCliContext = resolveCliContext()
     }
 
@@ -111,7 +105,14 @@ class DMigrate(
                 defaultConfigPath = defaultConfigPath,
                 systemLocaleProvider = systemLocaleProvider,
                 systemTimezoneProvider = systemTimezoneProvider,
+                langFromCli = lang,
             ).resolve()
+        } catch (e: UnsupportedLanguageException) {
+            // 0.9.0 Phase A §4.5: unsupported explicit --lang ist ein
+            // lokaler CLI-Validierungsfehler (Exit 2), kein Config-/
+            // Checkpoint-Problem.
+            printLocalError(e.message ?: "Unsupported --lang value", "--lang")
+            throw ProgramResult(2)
         } catch (e: ConfigResolveException) {
             printLocalError(e.message ?: "Failed to resolve i18n settings", config?.toString() ?: "i18n")
             throw ProgramResult(7)

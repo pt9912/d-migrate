@@ -28,7 +28,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
-| `--lang` | | String | in 0.8.0 bewusst abgelehnt; finaler Nutzervertrag in 0.9.0 | Sprachwahl fuer menschenlesbare Ausgaben. Die Root-CLI lehnt jede Angabe in 0.8.0 mit Exit 7 ab und verweist auf `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`; der stabile dokumentierte Override-Vertrag folgt erst in Milestone 0.9.0 |
+| `--lang` | | String | (kein Default; Fallback-Kette siehe unten) | Sprachwahl fuer menschenlesbare Ausgaben (seit 0.9.0 aktiv, siehe `docs/ImpPlan-0.9.0-A.md` §4.1/§4.2). Akzeptiert fuer 0.9.0 nur die gebundelten Produktsprachen `de` und `en` inkl. kanonisierbarer Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US`. Andere Werte fuehren zu Exit 2. Gewinnt gegen `D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale` und System-Locale. Der generische Env-/Config-/System-Pfad bleibt toleranter und faellt fuer unbekannte Bundles weiterhin auf das englische Root-Bundle zurueck. |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
 | `--quiet` | `-q` | Boolean | false | Nur Fehler ausgeben |
@@ -40,12 +40,13 @@ Diese Flags sind bei allen Kommandos verfügbar:
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
 
-**Hinweis zu 0.8.0 / 0.9.0 bei `--lang`**:
+**`--lang`-Vertrag ab 0.9.0 (`docs/ImpPlan-0.9.0-A.md` §4.1–§4.2)**:
 
-- Milestone 0.8.0 liefert die technische I18n-Basis (ResourceBundles, Locale-/Timezone-/Unicode-Aufloesung).
-- `--lang` ist in 0.8.0 **nicht** als aktiver Override freigegeben: jede Angabe wird von der Root-CLI mit Exit 7 abgelehnt; die Sprachauflösung läuft stattdessen über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`.
-- Der finale, breit dokumentierte CLI-Vertrag fuer `--lang` als produktive Override-Quelle bleibt in 0.9.0 verankert.
-- Bis dieser Vertrag freigegeben ist, duerfen strukturierte JSON-/YAML-Vertraege nicht von lokalisierter Sprachwahl abhaengen.
+- Prioritaetskette: `--lang` > `D_MIGRATE_LANG` > `LC_ALL` > `LANG` > `i18n.default_locale` > System-Locale > Fallback `en`.
+- Unterstuetzte Produktsprachen sind aktuell `de` und `en`. Kanonisierbare Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US` werden akzeptiert und normalisiert.
+- Ein explizit gesetztes, aber nicht unterstuetztes `--lang` (z.B. `fr`, `zh`) ist ein lokaler CLI-Fehler und endet mit **Exit 2**. Es wird **nicht** still auf Englisch zurueckgefallen.
+- Der generische Env-/Config-/System-Pfad bleibt toleranter: dort fuehrt eine syntaktisch gueltige, aber nicht gebundelte Sprache zum Root-Bundle-Fallback in `MessageResolver`, nicht zu einem Hard-Error.
+- Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil englisch, unabhaengig von der aufgeloesten Locale.
 
 ### 1.4 Verbindungsnamen
 
@@ -580,6 +581,8 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4). |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
+| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2. Runtime (Manifest-Lesen, Streaming-Wiederaufnahme) folgt in 0.9.0 Phase B/C; bis dahin akzeptiert der Runner den Flag und warnt sichtbar, dass der Lauf aktuell von vorn startet. |
+| `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Output-Auflösung** (Plan §6.9):
 
@@ -598,10 +601,11 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Code | Trigger |
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
-| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`) oder unverträgliche `--output`/`--split-files`-Kombi |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`), unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** (0.9.0 Phase A §4.4) |
+| `3` | Preflight-Fehler — ab 0.9.0 semantisch inkompatible Resume-Referenz (Tabellenmengen/Schema divergieren). Mapping ist symmetrisch zum Import-Preflight (§4.5); tatsaechliche Manifest-Pruefung folgt in 0.9.0 Phase B/C |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
-| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect) |
+| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect); ab 0.9.0 zusaetzlich unlesbare Checkpoint-Datei oder ungueltiges Manifest (Phase B/C) |
 
 **Beispiele**:
 
@@ -686,14 +690,17 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
+| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Semantische Preflight-Pruefung gegen das Target (Tabellenmengen, Schema, Fortschrittsposition) folgt in 0.9.0 Phase B/C und mappt inkompatible Referenzen analog zum Schema-/Header-Preflight auf Exit 3. |
+| `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Exit-Codes**:
 
 - `0`: Erfolg
-- `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen
+- `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen (inkl. `--resume` auf stdin-Quelle; unsupported `--lang` an der Root-CLI)
+- `3`: Preflight-Fehler — Header-/Schema-Mismatch, strikter Trigger, und ab 0.9.0 semantisch inkompatible Resume-Referenz (Phase B/C)
 - `4`: Verbindungsfehler
 - `5`: Import-Fehler während Verarbeitung oder Commit
-- `7`: Konfigurations-, Parse- oder Datei-Fehler
+- `7`: Konfigurations-, Parse- oder Datei-Fehler (inkl. unlesbare Checkpoint-Datei oder ungueltiges Manifest, ab 0.9.0 Phase B/C)
 
 #### `data transfer` *(0.6.0, umgesetzt)*
 
@@ -1084,7 +1091,7 @@ Alternative: Umgebungsvariable `D_MIGRATE_DB_PASSWORD` oder Konfigurationsdatei.
 | Variable | Entspricht | Beschreibung |
 |---|---|---|
 | `D_MIGRATE_CONFIG` | `--config` | Pfad zur Konfigurationsdatei |
-| `D_MIGRATE_LANG` | `--lang` | Sprache; fuer 0.8.0 Teil der technischen I18n-Basis, nicht des finalen 0.9.0-Override-Vertrags |
+| `D_MIGRATE_LANG` | `--lang` | Sprache. Seit 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.1) liegt `--lang` in der Prioritaet vor `D_MIGRATE_LANG`. Der generische Env-Pfad behaelt den toleranteren Vertrag (syntaktisch gueltige Locales → Root-Bundle-Fallback), waehrend `--lang` strikt auf gebundelte Produktsprachen beschraenkt ist. |
 | `D_MIGRATE_OUTPUT_FORMAT` | `--output-format` | Ausgabeformat |
 | `D_MIGRATE_NO_COLOR` | `--no-color` | Farbausgabe deaktivieren |
 | `D_MIGRATE_ASSUME_YES` | `--yes` | Bestätigungen überspringen |

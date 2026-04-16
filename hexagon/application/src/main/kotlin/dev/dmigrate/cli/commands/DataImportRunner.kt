@@ -79,6 +79,21 @@ data class DataImportRequest(
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
+    /**
+     * 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.3/§4.4): expliziter
+     * Resume-Einstieg fuer `data import`. Nur gueltig fuer file- oder
+     * directory-basierte Sources (`source != "-"`). Stdin-Import kann
+     * nicht wiederaufgenommen werden und loest Exit 2 aus. Das konkrete
+     * Referenzformat und semantische Preflight-Pruefung gegen das Target
+     * werden in den Phasen B bis D festgezogen.
+     */
+    val resume: String? = null,
+    /**
+     * 0.9.0 Phase A §4.3: optionales Verzeichnis fuer Checkpoints,
+     * analog zum Export-Pfad. Gewinnt gegenueber
+     * `pipeline.checkpoint.directory` aus der Config.
+     */
+    val checkpointDir: Path? = null,
 )
 
 /**
@@ -89,11 +104,15 @@ data class DataImportRequest(
  * Exit codes (Plan §6.11):
  * - 0 success
  * - 1 unexpected internal error
- * - 2 CLI validation error
- * - 3 pre-flight failure (header/schema mismatch, strict trigger)
+ * - 2 CLI validation error (incl. `--resume` on stdin-Import, unsupported
+ *   `--lang` handled in the root CLI)
+ * - 3 pre-flight failure (header/schema mismatch, strict trigger, **und**
+ *   — 0.9.0 Phase A §4.5 — semantisch inkompatible Resume-Referenz; die
+ *   tatsaechliche Manifest-Pruefung landet in Phase B/C)
  * - 4 connection error
  * - 5 import streaming error (with --on-error abort) or post-chunk finalization
- * - 7 config / URL / registry error
+ * - 7 config / URL / registry error (incl. unreadable checkpoint file or
+ *   unparseable manifest — 0.9.0 Phase A §4.5)
  */
 class DataImportRunner(
     private val targetResolver: (target: String?, configPath: Path?) -> String,
@@ -149,6 +168,27 @@ class DataImportRunner(
         if (request.truncate && request.onConflict == "abort") {
             stderr("Error: --truncate with explicit --on-conflict abort is contradictory.")
             return 2
+        }
+
+        // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.4): Resume-CLI-Preflight.
+        // stdin-Import ist per Definition nicht wieder aufsetzbar — der
+        // aufrufende Prozess kann den Stream nicht erneut liefern.
+        if (!request.resume.isNullOrBlank()) {
+            if (request.source == "-") {
+                stderr(
+                    "Error: --resume is not supported for stdin import; " +
+                        "provide a file or directory source or drop --resume."
+                )
+                return 2
+            }
+            // Phase A fixiert nur den CLI-Vertrag. Die semantische Preflight-
+            // Pruefung gegen das Target sowie die eigentliche Wiederaufnahme
+            // im Streaming-Pfad landen in den Phasen B bis D.
+            stderr(
+                "Warning: --resume was accepted but resume runtime is not yet " +
+                    "active in this build (docs/ImpPlan-0.9.0-A.md §4.6); import " +
+                    "will run from scratch. Phase B/C will activate it."
+            )
         }
 
         // ─── 2. Source-Pfad + Format auflösen ───────────────────

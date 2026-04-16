@@ -21,6 +21,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.OutputStream
 import java.nio.file.Files
@@ -118,6 +119,8 @@ class DataExportRunnerTest : FunSpec({
         cliConfigPath: Path? = null,
         quiet: Boolean = false,
         noProgress: Boolean = false,
+        resume: String? = null,
+        checkpointDir: Path? = null,
     ) = DataExportRequest(
         source = source,
         format = format,
@@ -136,6 +139,8 @@ class DataExportRunnerTest : FunSpec({
         cliConfigPath = cliConfigPath,
         quiet = quiet,
         noProgress = noProgress,
+        resume = resume,
+        checkpointDir = checkpointDir,
     )
 
     /**
@@ -736,6 +741,46 @@ class DataExportRunnerTest : FunSpec({
             })
         runner.execute(request(noProgress = true))
         reporterEvents.size shouldBe 0
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.4 / §4.5):
+    // Resume-CLI-Preflight. Der Runner akzeptiert `--resume` fuer
+    // file-basierte Exports und lehnt stdout-Pfade mit Exit 2 ab.
+    // Die Resume-Runtime selbst folgt in Phase B/C/D.
+    // ────────────────────────────────────────────────────────────
+
+    test("Phase A §4.4: --resume ohne --output (stdout) endet mit Exit 2") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        val exit = runner.execute(
+            request(output = null, resume = "./run.checkpoint.yaml"),
+        )
+        exit shouldBe 2
+        stderr.joined() shouldContain "--resume"
+        stderr.joined() shouldContain "stdout"
+    }
+
+    test("Phase A §4.4: --resume mit --output passiert den Preflight und warnt sichtbar") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        val exit = runner.execute(
+            request(
+                output = Path.of("/tmp/d-migrate-phase-a-export-smoke.json"),
+                resume = "./run.checkpoint.yaml",
+            ),
+        )
+        exit shouldBe 0
+        stderr.joined() shouldContain "Warning"
+        stderr.joined() shouldContain "--resume"
+    }
+
+    test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning)") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        val exit = runner.execute(request(resume = ""))
+        exit shouldBe 0
+        stderr.joined() shouldNotContain "Warning: --resume"
     }
 
     // Ensure the temp path referenced in other tests never accidentally exists

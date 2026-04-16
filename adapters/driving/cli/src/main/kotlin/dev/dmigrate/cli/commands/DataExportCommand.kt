@@ -111,6 +111,23 @@ class DataExportCommand : CliktCommand(name = "export") {
         help = "CSV NULL representation; default: empty string",
     ).default("")
 
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
+    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
+    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
+    // Phase B bis D des Milestones.
+    val resume by option(
+        "--resume",
+        help = "Resume an earlier export from a checkpoint reference " +
+            "(file-based only; not supported with stdout). " +
+            "Requires a matching --checkpoint-dir or inline path.",
+    )
+
+    val checkpointDir by option(
+        "--checkpoint-dir",
+        help = "Directory for checkpoint storage. Overrides pipeline.checkpoint.directory " +
+            "from the config file when set.",
+    ).path()
+
     override fun run() {
         // Hierarchie: d-migrate → data → export → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -133,6 +150,8 @@ class DataExportCommand : CliktCommand(name = "export") {
             cliConfigPath = root?.config,
             quiet = ctx.quiet,
             noProgress = ctx.noProgress,
+            resume = resume,
+            checkpointDir = checkpointDir,
         )
         val warnings = mutableListOf<ValueSerializer.Warning>()
         val runner = DataExportRunner(

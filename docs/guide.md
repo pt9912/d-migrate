@@ -383,7 +383,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
-| `--lang`              | Für 0.9.0 reserviert. In 0.8.0 wird jede Angabe bewusst mit Exit 7 abgelehnt — die Sprachauflösung läuft über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale` (Phase G §4.3, `docs/ImpPlan-0.8.0-G.md`). |
+| `--lang`              | Sprache der Ausgabe (`de`, `en`, plus Varianten `de-DE`, `de_DE`, `en-US`, `en_US`). Hat Vorrang vor `D_MIGRATE_LANG`, `LC_ALL`/`LANG` und `i18n.default_locale`. Unsupported Werte (z.B. `fr`) enden mit Exit 2 (seit 0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md` §4.1/§4.2). |
 | `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
 | `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
 | `-q`, `--quiet`       | Nur Fehler ausgeben                                       |
@@ -423,6 +423,8 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--csv-delimiter`     | CSV-Trennzeichen (Standard: `,`)                          |
 | `--csv-bom`           | BOM passend zu `--encoding` voranstellen (UTF-8, UTF-16 BE/LE); No-op bei Non-UTF-Encodings |
 | `--csv-no-header`     | CSV-Kopfzeile unterdrücken                                |
+| `--resume`            | Resume eines frueheren Exports aus einer Checkpoint-Referenz (0.9.0 Phase A). Nur fuer file-basierte Exports; mit stdout-Output endet der Aufruf mit Exit 2. Runtime folgt in 0.9.0 Phase B/C. |
+| `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
 
 ### Optionen für `data import`
 
@@ -437,6 +439,8 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--trigger-mode`      | `enable` (Standard) oder `disable`                        |
 | `--chunk-size`        | Datensätze pro Transaktion (Standard: 10000)              |
 | `--encoding`          | Input-Encoding. Default `auto` sniffed BOM für UTF-8/UTF-16 BE/LE und fällt ohne BOM auf UTF-8 zurück. Für Non-UTF-Encodings (z.B. `iso-8859-1`) explizit setzen — keine Heuristik. |
+| `--resume`            | Resume eines frueheren Imports aus einer Checkpoint-Referenz (0.9.0 Phase A). Nur fuer file-/directory-Quellen; mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Semantische Preflight-Pruefung gegen das Target folgt in 0.9.0 Phase B/C. |
+| `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
 
 ### Beispiel: JSON-Ausgabe
 

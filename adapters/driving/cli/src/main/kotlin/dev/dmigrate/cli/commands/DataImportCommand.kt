@@ -120,6 +120,23 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
 
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
+    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
+    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
+    // Phase B bis D des Milestones.
+    val resume by option(
+        "--resume",
+        help = "Resume an earlier import from a checkpoint reference " +
+            "(file/directory source only; not supported with stdin `-`). " +
+            "Requires a matching --checkpoint-dir or inline path.",
+    )
+
+    val checkpointDir by option(
+        "--checkpoint-dir",
+        help = "Directory for checkpoint storage. Overrides pipeline.checkpoint.directory " +
+            "from the config file when set.",
+    ).path()
+
     override fun run() {
         // Hierarchie: d-migrate → data → import → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -148,6 +165,8 @@ class DataImportCommand : CliktCommand(name = "import") {
             cliConfigPath = root?.config,
             quiet = ctx.quiet,
             noProgress = ctx.noProgress,
+            resume = resume,
+            checkpointDir = checkpointDir,
         )
         val runner = DataImportRunner(
             targetResolver = { target, configPath ->

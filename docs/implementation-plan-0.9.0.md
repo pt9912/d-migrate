@@ -159,14 +159,22 @@ Verbindliche Entscheidung:
 - der CLI-Vertrag bekommt dafuer einen klaren Wiederaufnahme-Einstieg
   fuer `data export` und `data import`
 
-Arbeitsannahme fuer 0.9.0:
+Finaler CLI-Vertrag fuer 0.9.0 (festgezogen in Phase A,
+`docs/ImpPlan-0.9.0-A.md` §4.3 / §3.1):
 
 - `--resume <checkpoint-id|path>` startet eine Wiederaufnahme
-- `--checkpoint-dir <path>` kann das Standardverzeichnis lokal uebersteuern
+- `--checkpoint-dir <path>` uebersteuert `pipeline.checkpoint.directory`
+  aus der Config
 
-Die exakte Flag-Benennung ist waehrend der Umsetzung noch final
-abzustimmen, der Vertrag "explizite Referenz + optionales Verzeichnis"
-steht jedoch fest.
+Die Flag-Benennung wurde von der fruehen Arbeitsannahme in Phase A
+verbindlich uebernommen und ist ab 0.9.0 stabil. Phase A hat zusaetzlich
+eingebaut:
+
+- stdout-Export bzw. stdin-Import in Kombination mit `--resume` ist
+  unzulaessig (Exit 2)
+- `--lang` wird zum aktiven Root-CLI-Override mit strenger
+  Produktsprachen-Validierung (`de`/`en` plus kanonische Varianten;
+  unsupported → Exit 2)
 
 ### 4.4 Checkpoint-Trigger folgen LN-012: rows oder Zeit
 
