@@ -414,7 +414,8 @@ letzten bestaetigten Fortschritt fortgesetzt werden.
 Nicht Teil dieser Phase:
 
 - vollstaendige Anwenderhandbuecher
-- Pilot-Testmatrix
+- Pilot-Testmatrix; fuer spaetere reale Datenbasis siehe
+  `docs/test-database-candidates.md`
 - 0.9.5-Dokumentationspaket
 
 ---

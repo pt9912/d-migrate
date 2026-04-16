@@ -111,6 +111,10 @@ docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/s
 
 Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
 
+Hinweis: Fuer realistischere DB-Smokes ueber die eingebauten Fixture-Schemas
+hinaus siehe auch die priorisierte Kandidatenliste in
+[`test-database-candidates.md`](./test-database-candidates.md).
+
 ```bash
 SMOKE_DIR="$(mktemp -d)"
 mkdir -p "${SMOKE_DIR}/out"

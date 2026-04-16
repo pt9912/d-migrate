@@ -721,6 +721,10 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Test-Fixtures mit repräsentativen Daten
 - Separate Testsuites für jede Datenbankversion (PostgreSQL 12-16, MySQL 8.0-8.3)
 
+Weiterfuehrung: Eine konkrete, priorisierte Kandidatenliste fuer reale
+Beispiel- und Testdatenbanken ist in
+[`test-database-candidates.md`](./test-database-candidates.md) dokumentiert.
+
 ### 8.7 Spezifische Testfälle für proprietäre Objekte
 
 **PostgreSQL-spezifisch:**

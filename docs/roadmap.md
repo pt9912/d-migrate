@@ -318,6 +318,11 @@ Publish-Vertrag zu versprechen.
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
+> Hinweis: Eine kuratierte Liste geeigneter Beispiel- und Testdatenbanken fuer
+> Pilot-Validierung, Resume-/Streaming-Proben und Performance-nahe Laeufe
+> steht in
+> [`test-database-candidates.md`](./test-database-candidates.md).
+
 > **Warum ein eigener Milestone für Docs und QA?** Dokumentations- und
 > Pilot-Tasks haben eine deutlich andere Cadence als Code-Features (sie
 > brauchen Reviews durch Domain-Experten und externe Tester). Wenn sie im
