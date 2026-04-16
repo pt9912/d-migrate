@@ -589,7 +589,7 @@ exported_at: 2025-10-22T14:30:00Z
 - Dateiimporte validieren Daten vor dem Schreiben gegen das neutrale Schema.
 - Textformate verwenden standardmaessig UTF-8; UTF-16 und BOM-markierte Dateien werden automatisch erkannt.
 - Weitere Encodings wie ISO-8859-1 sind explizit konfigurierbar, damit Importe reproduzierbar bleiben.
-- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden.
+- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden. Der 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md` §4.2/§4.3) verbietet dabei die stille Umdeutung zwischen lokalen und offsethaltigen Werten: `TIMESTAMP`-Spalten lehnen offsethaltige Strings ab, `TIMESTAMP WITH TIME ZONE` verlangt einen Offset-Anteil.
 - Der geplante Umgang mit Sequence-/Identity-/`AUTO_INCREMENT`-Folgezustand
   und Trigger-Verhalten beim Datenimport ist im Draft
   [design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
@@ -711,7 +711,16 @@ Hinweise fuer Milestone 0.8.0:
 
 ### 9.4 Internationale Datenformate
 
-- Temporale Werte werden intern zeitzonenbewusst verarbeitet; Export erfolgt standardmaessig in UTC, Import kann Quell- und Zielzeitzonen explizit konfigurieren.
+- Temporale Werte folgen dem 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md`):
+  ISO 8601 bleibt das einzige Standardformat, `OffsetDateTime` bleibt
+  offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC
+  oder JVM-Zone; `ZonedDateTime` wird im strukturierten Datenpfad
+  offsetbasiert serialisiert (die `ZoneId`-Region ist in 0.8.0 nicht Teil
+  des Vertrags).
+- Die in `i18n.default_timezone` aufgeloeste Default-Zeitzone ist ein
+  expliziter Konvertierungsbaustein: sie greift nur an Stellen, die einen
+  lokalen Wert bewusst in einen zonierten Kontext ueberfuehren, und
+  interpretiert vorhandene lokale Werte nicht neu.
 - Datum, Uhrzeit und Timestamp werden formatuebergreifend auf ISO 8601 normalisiert.
 - Geldbetraege werden ueber `decimal(p,s)` und locale-unabhaengige Serialisierung verarbeitet, um Punkt/Komma-Konflikte zu vermeiden.
 - Telefonnummern koennen optional gegen E.164 validiert und in kanonischer Form exportiert werden.

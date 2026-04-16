@@ -84,6 +84,17 @@ class ValueSerializer(
             is BigDecimal -> SerializedValue.PreciseDecimal(value.toPlainString())
 
             // ─── Datum/Zeit als ISO 8601 ────────────────────────
+            // 0.8.0 Phase E (`docs/ImpPlan-0.8.0-E.md` §4.1-§4.3):
+            //   - §4.1 ISO 8601 bleibt der einzige Standardpfad; kein Locale.
+            //   - §4.2 OffsetDateTime bleibt offsethaltig.
+            //   - §4.2 ZonedDateTime wird offsetbasiert serialisiert; die ZoneId
+            //          ist in 0.8.0 bewusst nicht Teil des Vertrags (§8 R3).
+            //   - §4.3 LocalDate/LocalTime/LocalDateTime bleiben ohne Offset
+            //          und werden nicht still zoniert.
+            // Die Formatter hier sind die "Render-Seite" desselben Vertrags,
+            // den `cli.i18n.TemporalFormatPolicy` in `hexagon:application`
+            // benennt (modulgrenz-konform: keine Ruckwaertsabhaengigkeit von
+            // `formats` auf `application`).
             is SqlDate -> SerializedValue.Text(value.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE))
             is SqlTime -> SerializedValue.Text(value.toLocalTime().format(DateTimeFormatter.ISO_LOCAL_TIME))
             is Timestamp -> SerializedValue.Text(value.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))

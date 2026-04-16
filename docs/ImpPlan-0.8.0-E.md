@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: E (Zeitzonen- und Format-Policy)
-> **Status**: Planned (2026-04-16)
+> **Status**: Implemented (2026-04-16)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 2,
 > Abschnitt 4.5, Abschnitt 5.3, Abschnitt 6 Phase E, Abschnitt 7,
 > Abschnitt 8, Abschnitt 9; `docs/ImpPlan-0.8.0-A.md`;
@@ -46,7 +46,7 @@ Nach Phase E soll klar und testbar gelten:
 
 ## 2. Ausgangslage
 
-Aktueller Stand der Codebasis:
+### 2.1 Stand der Codebasis **vor** Phase E
 
 - Phase B liefert bereits einen expliziten Runtime-Kontext:
   - `ResolvedI18nSettings.locale`
@@ -71,19 +71,49 @@ Aktueller Stand der Codebasis:
   - numerische Literale
   - sonst String-Fallback
 
-Der aktuelle Stand ist fachlich bereits in die richtige Richtung unterwegs,
-aber die Policy ist noch nicht als gemeinsame Komponente dokumentiert und nicht
-explizit zwischen CLI-Helpern und Format-Layer vereinheitlicht.
+Der Stand vor Phase E war fachlich bereits in die richtige Richtung
+unterwegs, aber die Policy war noch nicht als gemeinsame Komponente
+dokumentiert und nicht explizit zwischen CLI-Helpern und Format-Layer
+vereinheitlicht.
 
 Konkrete Luecken vor Phase E:
 
-- es gibt noch keinen zentral benannten Vertrag wie
+- es gab noch keinen zentral benannten Vertrag wie
   `TemporalFormatPolicy`
-- `ValueSerializer` und `DataExportHelpers.parseSinceLiteral(...)` tragen
+- `ValueSerializer` und `DataExportHelpers.parseSinceLiteral(...)` trugen
   dieselbe Semantik, aber nicht ueber denselben Policy-Einstiegspunkt
 - die Rolle von `ResolvedI18nSettings.timezone` fuer lokale vs. zonierte
-  Inputs ist noch nicht explizit genug dokumentiert
-- Tests decken Einzelfaelle ab, aber noch nicht den Gesamtvertrag der Phase
+  Inputs war noch nicht explizit genug dokumentiert
+- Tests deckten Einzelfaelle ab, aber noch nicht den Gesamtvertrag der Phase
+
+### 2.2 Stand der Codebasis **nach** Phase E
+
+Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
+
+- zentral benannter Vertrag existiert als
+  [`TemporalFormatPolicy`](../hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicy.kt)
+  (stateless `object` in `hexagon:application`) mit
+  - ISO-Formatter-Konstanten (`ISO_LOCAL_DATE`, `ISO_LOCAL_TIME`,
+    `ISO_LOCAL_DATE_TIME`, `ISO_OFFSET_DATE_TIME`),
+  - Render-Helfern fuer `LocalDate`/`LocalTime`/`LocalDateTime`/
+    `OffsetDateTime`/`ZonedDateTime`,
+  - `parseSinceLiteral`/`parseOffsetDateTime`/`parseLocalDateTime`/
+    `parseLocalDate` als gemeinsame Parser-API,
+  - `hasOffsetOrZone`-Heuristik und der einzigen explizit-zonierten API
+    `toZoned(local, zone)`.
+- `DataExportHelpers.parseSinceLiteral(...)` delegiert an
+  `TemporalFormatPolicy.parseSinceLiteral(...)` — derselbe Einstiegspunkt
+  fuer CLI und Policy.
+- `ValueSerializer` und `ValueDeserializer` sind unveraendert im Verhalten,
+  aber mit Phase-E-Kontrakt-Kommentaren annotiert, die den Vertrag mit
+  `TemporalFormatPolicy` benennen (modulgrenz-konform: keine
+  Ruckwaertsabhaengigkeit von `formats` auf `application`).
+- Vertragsabdeckung liegt in
+  [`TemporalFormatPolicyTest`](../hexagon/application/src/test/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicyTest.kt)
+  sowie in ergaenzten Faellen in `ValueSerializerTest`/
+  `ValueDeserializerTest`/`DataExportHelpersTest`.
+- Doku ist in `docs/cli-spec.md`, `docs/design.md`,
+  `docs/connection-config-spec.md` und `docs/roadmap.md` angeglichen.
 
 ---
 
@@ -110,17 +140,49 @@ Bewusst nicht in Scope:
 
 ## 4. Verbindliche Leitlinien
 
-### 4.1 ISO 8601 bleibt der einzige Standardpfad
+### 4.1 Kanonische erweiterte ISO-8601-Profile bleiben der einzige Standardpfad
 
-Phase E fuehrt keine mehrdeutigen Datums-/Zeitformate ein.
+Phase E fuehrt keine mehrdeutigen Datums-/Zeitformate ein. Der Vertrag bindet
+sich bewusst eng an die JDK-Profile `DateTimeFormatter.ISO_LOCAL_DATE`,
+`ISO_LOCAL_TIME`, `ISO_LOCAL_DATE_TIME` und `ISO_OFFSET_DATE_TIME` — also die
+erweiterte Kalender-/Zeit-Form mit Bindestrichen bzw. Doppelpunkten.
+
+**Lese- vs. Schreibpfad sind bewusst asymmetrisch:**
+
+- Schreibpfad ist kanonisch: `ValueSerializer` und die Render-Helfer aus
+  `TemporalFormatPolicy` emittieren immer die volle erweiterte Form
+  (Datum mit Tag, Zeit mit Sekunden, ggf. Fraktionssekunden nach JDK-Default,
+  ggf. Offset).
+- Lesepfad folgt exakt dem oben genannten JDK-ISO-Profil. Dadurch werden auch
+  die im Profil legal definierten reduzierten Zeitformen akzeptiert,
+  insbesondere Minuten-Praezision ohne Sekunden:
+  - `2026-01-01T10:15` parst als `LocalDateTime`
+  - `10:15` parst als `LocalTime` (nur im `TIME`-Pfad des `ValueDeserializer`)
+  - `2026-01-01T10:15+02:00` parst als `OffsetDateTime`
 
 Verbindliche Folge:
 
-- Textreprasentationen fuer Datum/Zeit bleiben ISO 8601
+- Textreprasentationen fuer Datum/Zeit nutzen ausschliesslich die oben
+  genannten kanonischen erweiterten ISO-Profile; `TemporalFormatPolicy`
+  exportiert genau diese vier Formatter unter stabilen Namen
 - JSON, YAML und CSV nutzen fuer dieselben temporalen Werte dieselbe
   semantische Darstellung
 - Locale darf menschenlesbare CLI-Meldungen beeinflussen, nicht aber die
   strukturierten Zeitpayloads
+
+Explizit **nicht** Teil des Phase-E-Vertrags:
+
+- ISO-8601-Basic-Form ohne Trenner (`20260116T101530`) — weder Lese- noch
+  Schreibpfad
+- Wochen-Datum (`2026-W16-4`) und Ordinal-Datum (`2026-106`)
+- Datumsformen ohne Tag (`2026-01`, `2026-01T10:15:30`) — das Datum muss
+  immer `YYYY-MM-DD` tragen
+- dialekt-lokale Varianten (`16.04.2026`, `04/16/2026`, `16 Apr 2026`)
+
+Solche Eingaben werden von `TemporalFormatPolicy.parseSinceLiteral` bzw. vom
+`ValueDeserializer` als Rohstring behandelt oder abgelehnt — ob sie spaeter
+unterstuetzt werden, entscheidet ein Folge-Milestone explizit, nicht
+Phase E.
 
 ### 4.2 Offsethaltige Werte bleiben offsethaltig
 
@@ -177,16 +239,30 @@ Verbindliche Folge:
 - `--since` bleibt konservativ typisiert und fuehrt keine implizite
   Zeitzoneninjektion ein
 
-### 4.6 Technischer Default bleibt UTC, aber nur fuer explizite Zonierung
+### 4.6 Default-Zeitzone folgt der Phase-B-Resolve-Kette, UTC ist nur Error-Fallback
 
 Der technische Fallback aus Phase B bleibt gueltig, darf aber nicht mit einer
-generellen Umdeutung lokaler Werte verwechselt werden.
+generellen Umdeutung lokaler Werte verwechselt werden. Wichtig ist dabei die
+tatsaechliche Reihenfolge aus
+`adapters/driving/cli/.../I18nSettingsResolver.resolveTimezone`:
+
+1. `i18n.default_timezone` aus der effektiven Konfigurationsdatei
+2. `ZoneId.systemDefault()` des Hosts
+3. `UTC` **nur** als Fallback, wenn das System keine Zone liefert bzw. der
+   Provider wirft
+
+Das bedeutet: auf einem ungekonfigurierten Host ist die aufgeloeste
+`ResolvedI18nSettings.timezone` typischerweise die Host-Zone, nicht UTC.
+UTC ist der Safety-Net am Ende der Kette, nicht der allgemeine Default.
 
 Verbindliche Folge:
 
 - Config/System/Fallback-Aufloesung fuer `timezone` bleibt unveraendert
-- der Fallback `UTC` greift nur bei explizitem Bedarf an einer zonierten
-  Ableitung
+  gegenueber Phase B
+- der Fallback `UTC` greift nur als Error-/Leer-Safety-Net in Schritt 3
+- Phase E darf UTC nicht zum impliziten Serialisierungs-Offset fuer
+  `LocalDateTime` machen; die aufgeloeste Zone fliesst nur in die **explizite**
+  Konvertierung ueber [`TemporalFormatPolicy.toZoned`] ein
 - das Vorhandensein einer Default-Zeitzone aendert die Semantik vorhandener
   `LocalDateTime`-Werte nicht
 
@@ -358,15 +434,20 @@ Festlegung fuer diesen Plan:
 - volle ZoneId-Serialisierung ist ein moeglicher spaeterer Ausbau, nicht Kern
   dieses Milestones
 
-### Offene Frage O1
+### Entscheidung D1 (ehem. Offene Frage O1)
 
-Brauchen wir fuer 0.8.0 ueberhaupt einen oeffentlichen Typnamen
-`TemporalFormatPolicy`, oder reicht ein kleiner Satz klar dokumentierter Helper?
+Die Umsetzung waehlt den oeffentlichen Namen
+[`TemporalFormatPolicy`](../hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicy.kt)
+als benannten Einstieg in den Phase-E-Vertrag. Realisiert als stateless
+`object` mit ISO-Formatter-Konstanten, reinen Format-/Parse-Helfern und
+der einzigen explizit-zonierten API `toZoned(local, zone)`.
 
-Empfehlung:
+Begruendung:
 
-- Namensgebung pragmatisch waehlen
-- entscheidend ist der gemeinsame Vertrag, nicht der exakte Klassenname
+- benannte API macht den Vertrag an Callsites (`ValueSerializer`,
+  `ValueDeserializer`, `DataExportHelpers.parseSinceLiteral`) referenzierbar
+- stateless Object vermeidet globalen Zustand und Singleton-Magie
+- kein Policy-Objekt pro Tabelle noetig, weil die Regeln statisch sind
 
 ### Offene Frage O2
 

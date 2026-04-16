@@ -326,7 +326,11 @@ interface FormatCodec<T> {
 data class FormatOptions(
     val encoding: TextEncoding = TextEncoding.UTF8,
     val bomMode: BomMode = BomMode.AUTO,
-    val timezone: ZoneId = ZoneOffset.UTC
+    // Optional; wenn gesetzt, wird die Zone in expliziten Konvertierungen
+    // via TemporalFormatPolicy.toZoned(...) eingesetzt. Der Caller leitet
+    // sie typischerweise aus ResolvedI18nSettings.timezone ab, nicht aus
+    // einem blanket-UTC-Default (siehe docs/ImpPlan-0.8.0-E.md).
+    val timezone: ZoneId? = null
 )
 ```
 
@@ -714,7 +718,10 @@ data class PipelineConfig(
 
 data class I18nConfig(
     val defaultLocale: String = "en",
-    val defaultTimezone: String = "UTC",
+    // Optional im YAML. Wird vom I18nSettingsResolver aufgeloest:
+    //   i18n.default_timezone -> ZoneId.systemDefault() -> UTC (Error-Fallback)
+    // UTC ist der Safety-Net-Fallback, nicht der allgemeine Default.
+    val defaultTimezone: String? = null,
     val normalizeUnicode: UnicodeNormalization = UnicodeNormalization.NFC
 )
 
@@ -729,6 +736,7 @@ Architekturvertrag fuer 0.8.0:
 
 - `defaultLocale` beschreibt den Produktdefault; Root-/Fallback-Bundle ist Englisch (`messages.properties`).
 - Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
+- `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift per Phase-E-Vertrag nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte (siehe `docs/ImpPlan-0.8.0-E.md`).
 - Der finale Nutzervertrag fuer `--lang` als CLI-Override wird erst in 0.9.0 abgeschlossen.
 
 ### 4.2 Logging und Observability
@@ -808,7 +816,7 @@ suspend fun <T> withRetry(
 - Textbasierte Formate verwenden standardmaessig UTF-8.
 - Dateiimporte erkennen UTF-8/UTF-16 sowie BOM-Markierungen automatisch; weitere Encodings sind explizit konfigurierbar.
 - Exportformate erhalten Encoding-Metadaten, sofern das Zielformat diese transportieren kann; fuer CSV erfolgt dies optional ueber Sidecar-Dateien.
-- Temporale Werte werden intern zeitzonenbewusst verarbeitet; Standard fuer Serialisierung und Export ist UTC.
+- Temporale Werte folgen dem Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md`): ISO-8601-Profile fuer Serialisierung, `OffsetDateTime` bleibt offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC oder JVM-Zone. Die Default-Zeitzone wird in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) aufgeloest und greift nur in **expliziten** Konvertierungen ueber `TemporalFormatPolicy.toZoned(...)`.
 - Locale-sensible Werte wie Zahlen- und Waehrungsdarstellungen werden an Ein-/Ausgabegrenzen normalisiert, damit interne Verarbeitung formatunabhaengig bleibt.
 - Unicode-Normalisierung dient fuer 0.8.0 als Utility fuer Vergleiche, Metadaten und Darstellungsstabilitaet; Nutzdatenpayloads werden dadurch nicht still umgeschrieben.
 - BOM-Erkennung und CSV-BOM-Verhalten bauen fuer 0.8.0 auf dem seit 0.4.0 vorhandenen Unterbau auf und werden als Vertragskonsolidierung dokumentiert, nicht als neu erfundenes Feature.

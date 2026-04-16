@@ -642,7 +642,7 @@ d-migrate data export --source local_pg --format json \
 
 - `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
 - `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
-- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. ISO-Datum/Datetime-Werte werden als Date-/Zeit-Typen behandelt, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String.
+- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. Die Typisierung folgt dem 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md` §4.5) und bleibt konservativ: ein Offset-haltiger ISO-String bleibt `OffsetDateTime` (§4.2), ein lokaler ISO-DateTime bleibt `LocalDateTime` (§4.3), ein ISO-Datum bleibt `LocalDate`, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String. Eine in der Konfiguration gesetzte `i18n.default_timezone` löst **keine** stille Zonierung eines lokalen Literals aus (§4.4).
 - Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([WhereClause(filter), ParameterizedClause(...)])` kombiniert; der Reader bindet die Parameter in stabiler Reihenfolge.
 - **M-R5**: `--filter` darf in diesem kombinierten Pfad kein literales `?` enthalten. Beispiel eines verbotenen Aufrufs:
 

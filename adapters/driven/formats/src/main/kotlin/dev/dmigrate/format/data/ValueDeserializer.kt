@@ -395,13 +395,22 @@ class ValueDeserializer(
         )
     }
 
+    // 0.8.0 Phase E (`docs/ImpPlan-0.8.0-E.md` §4.2/§4.3/§4.5):
+    //   - TIMESTAMP ohne Zone bleibt `LocalDateTime`; ein Input mit Offset/
+    //     Zone wird **nicht** still abgeschnitten, sondern als Typfehler
+    //     abgewiesen (§4.3).
+    //   - TIMESTAMP WITH TIME ZONE bleibt `OffsetDateTime` (§4.2).
+    //   - Die strikte Trennung ist die Import-Seite desselben Vertrags,
+    //     den `cli.i18n.TemporalFormatPolicy` in `hexagon:application` benennt
+    //     (modulgrenz-konform: keine Ruckwaertsabhaengigkeit auf
+    //     `application`).
     private fun toLocalDateTime(columnName: String, value: Any): LocalDateTime = when (value) {
         is LocalDateTime -> value
         is String -> {
             val trimmed = value.trim()
-            // Explizit verbieten, dass ein String mit Offset/Zone still
-            // zu LocalDateTime abgeschnitten wird. `2026-04-07T10:00:00+02:00`
-            // muss in eine TIMESTAMP_WITH_TIMEZONE-Spalte, nicht hier.
+            // §4.3: `2026-04-07T10:00:00+02:00` muss in eine
+            // TIMESTAMP_WITH_TIMEZONE-Spalte, nicht hier — keine stille
+            // Umdeutung in lokale Zeit.
             if (hasOffsetOrZone(trimmed)) {
                 throw ImportSchemaMismatchException(
                     "column '$columnName' expects TIMESTAMP without time zone, " +
@@ -417,6 +426,7 @@ class ValueDeserializer(
 
     private fun toOffsetDateTime(columnName: String, value: Any): OffsetDateTime = when (value) {
         is OffsetDateTime -> value
+        // §4.2: Offsethaltiger ISO-String bleibt offsethaltig.
         is String -> OffsetDateTime.parse(value.trim())
         else -> throw ImportSchemaMismatchException(
             "column '$columnName' expects TIMESTAMP WITH TIME ZONE, got ${value::class.simpleName}"

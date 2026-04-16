@@ -205,6 +205,21 @@ class DataExportHelpersTest : FunSpec({
         test("falls back to raw string for non-typed values") {
             DataExportHelpers.parseSinceLiteral("release-42") shouldBe "release-42"
         }
+
+        // 0.8.0 Phase E (docs/ImpPlan-0.8.0-E.md §4.4):
+        // Keine Auto-Zonierung — ein lokaler ISO-DateTime bleibt
+        // LocalDateTime, auch wenn die JVM-Default-Zone abweicht oder
+        // `ResolvedI18nSettings.timezone` gesetzt waere.
+        test("Phase E §4.4: lokaler DateTime bleibt LocalDateTime (keine Default-TZ-Injektion)") {
+            val result = DataExportHelpers.parseSinceLiteral("2026-06-15T12:00:00")
+            result.shouldBeInstanceOf<LocalDateTime>()
+            result shouldBe LocalDateTime.of(2026, 6, 15, 12, 0, 0)
+        }
+
+        test("Phase E §4.2: Offset-Input bleibt OffsetDateTime") {
+            val result = DataExportHelpers.parseSinceLiteral("2026-06-15T12:00:00+02:00")
+            result.shouldBeInstanceOf<OffsetDateTime>()
+        }
     }
 
     // ─── formatProgressSummary ────────────────────────────────────

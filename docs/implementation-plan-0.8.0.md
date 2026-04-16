@@ -98,9 +98,12 @@ weiterzuschieben.
   - locale-sensitive Vergleiche/Sortierhilfen, wo fachlich noetig
 - definierter Unicode-Normalisierungsvertrag fuer Metadaten und Vergleiche
   ohne stilles Umschreiben von Datenpayloads
-- konsolidierte Zeitzonen-Policy:
-  - UTC als technischer Default
-  - konfigurierbare Default-Zeitzone
+- konsolidierte Zeitzonen-Policy (Phase E, `docs/ImpPlan-0.8.0-E.md`):
+  - explizite Resolve-Kette fuer die Default-Zeitzone:
+    `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC`
+    (UTC nur als Error-/Leer-Fallback, nicht als allgemeiner Default)
+  - Default-Zeitzone ist ein expliziter Konvertierungsbaustein, kein
+    blanket Umdeuten lokaler Werte
   - klare Regeln fuer `TIMESTAMP` vs. `TIMESTAMP WITH TIME ZONE`
 - Konsolidierung des bestehenden CSV-Encoding-/BOM-Vertrags im Kontext
   Internationalisierung
@@ -215,7 +218,9 @@ Verbindliche Entscheidung:
   Zone
 - fuer CLI-Eingaben ohne Offset wird eine konfigurierbare Default-Zeitzone
   nur dort verwendet, wo der Vertrag dies explizit erlaubt
-- technischer Default bleibt UTC
+- die Default-Zeitzone wird ueber die Phase-B/Phase-E-Kette
+  `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` aufgeloest;
+  UTC ist dabei nur Error-/Leer-Fallback, nicht der allgemeine Default
 
 Begruendung:
 
@@ -591,7 +596,9 @@ Milestone mit folgendem Vertrag:
 - lokalisierte menschenlesbare CLI-Meldungen statt lokalisierter JSON-/YAML-
   Schluessel
 - ICU4J fuer Grapheme-Counting und Unicode-Normalisierung als Utility
-- explizite, UTC-basierte Zeitzonen-Policy ohne heuristische Uminterpretation
+- explizite Zeitzonen-Policy (Phase E) ohne heuristische Uminterpretation,
+  mit Resolve-Kette `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC`
+  (UTC nur als Error-/Leer-Fallback)
 - Wiederverwendung des bestehenden BOM-/Encoding-Unterbaus aus 0.4.0
 - saubere Vorbereitung fuer den stabilen `--lang`-Vertrag in 0.9.0
 

@@ -316,7 +316,7 @@ ai:
 # ── Internationalisierung ──────────────────────
 i18n:
   default_locale: en                 # Sprache für CLI-Ausgaben
-  default_timezone: UTC              # Standard-Zeitzone für Exporte
+  default_timezone: UTC              # Nur expliziter Zonierungs-Baustein (Phase E §4.4), kein Export-Default
   normalize_unicode: NFC             # Unicode-Normalisierung: NFC | NFD | NFKC | NFKD
 
 # Vertragsregeln:
@@ -324,6 +324,11 @@ i18n:
 # - dieselbe effektiv aufgeloeste Konfigurationsdatei gilt fuer `database.*` und `i18n.*`
 # - `normalize_unicode` steuert Vergleichs-/Metadatenverhalten, nicht stille Nutzdatenmutation
 # - JSON/YAML-Vertraege bleiben sprachstabil; lokalisiert werden nur Plain-Text-Ausgaben
+# - `default_timezone` ist ein expliziter Konvertierungsbaustein (Phase E, §4.4):
+#   sie greift nur dort, wo ein lokaler Wert bewusst in einen zonierten
+#   Kontext ueberfuehrt werden soll, und loest keine blanket Umdeutung
+#   vorhandener `LocalDateTime`-Werte aus. ISO-8601-Vertraege aus §4.1-§4.3
+#   bleiben davon unberuehrt.
 
 # ── DDL-Generierung ───────────────────────────
 ddl:
