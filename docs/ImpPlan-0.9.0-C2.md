@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: C (Export-Checkpoint und Resume) — Unterphase C.2
-> **Status**: Planned (2026-04-16)
+> **Status**: In Review (2026-04-16)
 > **Überplan**: [`ImpPlan-0.9.0-C.md`](./ImpPlan-0.9.0-C.md)
 > **Vorgaenger-Unterplan**: [`ImpPlan-0.9.0-C1.md`](./ImpPlan-0.9.0-C1.md) —
 > tabellengranulares Export-Resume
@@ -281,18 +281,41 @@ und sortiert `ORDER BY <markerColumn>, <tieBreakers>`.
 - Kompatibilitaets-Edge: Manifest hat `lastMarker`, aber Request hat
   kein `--since-column` → Exit 3 mit klarer Meldung
 
-### 5.4 C2.4 — Single-Table-Single-File-Fortsetzungspfad pro Format
+### 5.4 C2.4 — Single-Table-Single-File-Fortsetzungspfad
 
 - Scope: der Basispfad erlaubt Single-File bereits heute nur fuer genau
   eine Tabelle. Multi-Table-Single-File wird vom Exporter (und vom
   CLI-Runner) mit Exit 2 abgelehnt und braucht deshalb keinen
   Resume-Pfad.
-- JSON: Resume-Container-Strategie fixieren via
-  `CheckpointStore`-verwalteter Zwischendatei; Zieldatei wird erst beim
-  Lauf-Abschluss per atomic rename aus der Zwischenform erzeugt
-- YAML: analog zu JSON
-- CSV: Zwischendatei mit einmaligem Header + bestaetigten Rows +
-  ab-Marker-Fortsetzung; atomic rename beim Lauf-Ende
+
+**Pragmatische 0.9.0-Auspraegung** (Implementierung im Commit
+`<TBD>` — siehe `docs/roadmap.md`): der Lauf schreibt Single-File-
+Ziele **immer** in eine vom Checkpoint-Verzeichnis gemanagte
+Staging-Datei (`<checkpoint-dir>/<operationId>.single-file.staging`);
+die Zieldatei wird erst beim Lauf-Abschluss per `Files.move`
+(`ATOMIC_MOVE`, `REPLACE_EXISTING`) ersetzt. Dadurch kann ein
+Abbruch niemals eine halb-valide Container-Datei am Zielpfad
+hinterlassen.
+
+**Bewusst verschoben**: echte Mid-Table-Fortsetzung in bereits
+gestreamten JSON/YAML/CSV-Containern ("Zwischenform merged mit
+ab-Marker-Fortsetzung") erfordert einen format-spezifischen
+Append-/Rebuild-Writer, den C.2 nicht liefert. Statt dessen gilt
+fuer Single-File-Resume in 0.9.0:
+
+- Der Runner ignoriert einen eventuell im Manifest gespeicherten
+  `resumePosition` fuer Single-File-Laeufe und setzt den
+  `ResumeMarker.position` auf `null` (Fresh-Track) — der Lauf
+  exportiert die Tabelle erneut **von vorn** in eine frische
+  Staging-Datei.
+- Der `optionsFingerprint` bleibt gueltig (Tabelle, PK, Filter etc.
+  muessen weiterhin passen), der Manifest-Slice wechselt nach
+  Abschluss auf `COMPLETED`.
+
+Die volle "Zwischenform + Rebuild"-Variante aus dem urspruenglichen
+Plan (JSON-Container-Rebuild, CSV-Header-einmalig, YAML-Sequence-
+Append) wird erst in einem spaeteren Release geliefert, wenn ein
+dediziertes Staging-Writer-Interface existiert.
 
 ### 5.5 C2.5 — Tests
 

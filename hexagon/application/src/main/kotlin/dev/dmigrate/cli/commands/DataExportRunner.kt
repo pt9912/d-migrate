@@ -644,6 +644,46 @@ class DataExportRunner(
             }
         }
 
+        // ─── 8d. 0.9.0 Phase C.2 §5.4: Single-File-Staging-Pfad ──
+        // Single-Table-Single-File wird niemals direkt ins Ziel
+        // geschrieben, wenn ein Checkpoint-Store konfiguriert ist —
+        // sonst kann ein Abbruch eine halb-valide Container-Datei
+        // (JSON ohne `]`, YAML/CSV ohne Terminator) am Zielpfad
+        // hinterlassen. Statt dessen schreibt der Lauf in eine
+        // Staging-Datei im Checkpoint-Verzeichnis; das Ziel wird am
+        // Lauf-Ende per atomic rename ersetzt.
+        //
+        // Mid-Table-Resume ist fuer Single-File-Laeufe in 0.9.0
+        // bewusst **nicht** aktiv: die strukturierten Format-Writer
+        // (JSON-Array, YAML-Sequence) lassen sich ohne eine eigene
+        // Append-/Rebuild-Infrastruktur nicht sauber in der Mitte
+        // fortsetzen. Fuer die Laufzeit heisst das: ein abgebrochener
+        // Single-File-Resume exportiert die Tabelle erneut von vorn
+        // in eine frische Staging-Datei. Der `optionsFingerprint`
+        // bleibt gueltig, der Manifest-Slice wechselt nach Abschluss
+        // auf `COMPLETED`. Der gespeicherte `resumePosition` eines
+        // frueheren Laufs wird ignoriert; wir entfernen ihn aus dem
+        // Marker, damit der Exporter Fresh-Track faehrt.
+        val stagingRedirect: StagingRedirect? =
+            if (exportOutput is ExportOutput.SingleFile && store != null && checkpointDir != null) {
+                val stagingPath = checkpointDir.resolve("$operationId.single-file.staging")
+                StagingRedirect(
+                    target = exportOutput.path,
+                    staging = stagingPath,
+                )
+            } else {
+                null
+            }
+        val executorOutput: ExportOutput = stagingRedirect?.let {
+            ExportOutput.SingleFile(it.staging)
+        } ?: exportOutput
+        val executorMarkers: Map<String, ResumeMarker> =
+            if (exportOutput is ExportOutput.SingleFile) {
+                resumeMarkers.mapValues { (_, marker) -> marker.copy(position = null) }
+            } else {
+                resumeMarkers
+            }
+
         // ─── 9. Streaming ─────────────────────────────────────
         val rawResult: ExportResult = try {
             val effectiveReporter = if (request.quiet || request.noProgress)
@@ -654,7 +694,7 @@ class DataExportRunner(
                 lister = tableLister,
                 factory = factory,
                 tables = effectiveTables,
-                output = exportOutput,
+                output = executorOutput,
                 format = DataExportFormat.fromCli(request.format),
                 options = exportOptions,
                 config = PipelineConfig(chunkSize = request.chunkSize),
@@ -664,7 +704,7 @@ class DataExportRunner(
                 resuming = resume.resuming,
                 skippedTables = resume.skippedTables,
                 onTableCompleted = onTableCompleted,
-                resumeMarkers = resumeMarkers,
+                resumeMarkers = executorMarkers,
                 onChunkProcessed = onChunkProcessed,
             )
         } catch (e: Throwable) {
@@ -678,6 +718,36 @@ class DataExportRunner(
         if (failed != null) {
             stderr("Error: Failed to export table '${failed.table}': ${failed.error}")
             return 5
+        }
+
+        // 0.9.0 Phase C.2 §5.4: Staging → Ziel per atomic rename.
+        // Ein fehlgeschlagener Rename lässt die Staging-Datei im
+        // Checkpoint-Verzeichnis stehen; Exit 5, weil der Export dann
+        // fachlich nicht abgeschlossen ist (Zieldatei fehlt oder ist
+        // alt).
+        if (stagingRedirect != null) {
+            try {
+                try {
+                    java.nio.file.Files.move(
+                        stagingRedirect.staging,
+                        stagingRedirect.target,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                    java.nio.file.Files.move(
+                        stagingRedirect.staging,
+                        stagingRedirect.target,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                }
+            } catch (e: Throwable) {
+                stderr(
+                    "Error: Failed to move staging file to target " +
+                        "'${stagingRedirect.target}': ${e.message ?: e::class.simpleName}"
+                )
+                return 5
+            }
         }
 
         // 0.9.0 Phase C.1 §5.2: erfolgreicher Lauf → Manifest entfernen.
@@ -821,6 +891,17 @@ class DataExportRunner(
         is ExportOutput.SingleFile -> output.path.toAbsolutePath().normalize().toString()
         is ExportOutput.FilePerTable -> output.directory.toAbsolutePath().normalize().toString()
     }
+
+    /**
+     * 0.9.0 Phase C.2 §5.4: internes DTO fuer den
+     * Staging-Umleitungspfad bei Single-File-Laeufen. `staging` liegt
+     * im Checkpoint-Verzeichnis; `target` ist der vom Benutzer
+     * angefragte Zielpfad.
+     */
+    private data class StagingRedirect(
+        val target: Path,
+        val staging: Path,
+    )
 
     companion object {
         private const val MANIFEST_SUFFIX = ".checkpoint.yaml"

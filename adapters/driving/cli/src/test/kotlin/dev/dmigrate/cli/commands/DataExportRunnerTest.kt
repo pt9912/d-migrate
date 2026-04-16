@@ -19,6 +19,7 @@ import dev.dmigrate.streaming.TableExportSummary
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -1155,7 +1156,17 @@ class DataExportRunnerTest : FunSpec({
             val captureStore = InMemoryCheckpointStore()
             val warmRunner = newRunner(
                 StderrCapture(),
-                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
+                exportExecutor = ExportExecutor { _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, _, _ ->
+                    // Phase C.2 §5.4: der Runner leitet Single-File-Laeufe
+                    // in eine Staging-Datei im Checkpoint-Verzeichnis um.
+                    // Der Fake simuliert den echten Writer, indem er die
+                    // uebergebene Output-Datei anlegt, damit die
+                    // spaetere atomic-rename-Operation einen Gegenstand
+                    // hat.
+                    if (out is dev.dmigrate.streaming.ExportOutput.SingleFile) {
+                        Files.createDirectories(out.path.parent)
+                        Files.writeString(out.path, "")
+                    }
                     tables.forEach {
                         onDone(
                             dev.dmigrate.streaming.TableExportSummary(
@@ -1374,8 +1385,15 @@ class DataExportRunnerTest : FunSpec({
         test("per-chunk callback persists marker position into manifest") {
             val storeDir = Files.createTempDirectory("d-migrate-c2-chunk-")
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, markers, onChunk,
+                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, markers, onChunk,
                 ->
+                // Siehe warmRunner (Phase C.2 §5.4): Single-File leitet
+                // auf Staging um; der Fake legt die Staging-Datei an,
+                // damit der Runner atomic-rename tun kann.
+                if (out is dev.dmigrate.streaming.ExportOutput.SingleFile) {
+                    Files.createDirectories(out.path.parent)
+                    Files.writeString(out.path, "")
+                }
                 // Simuliere zwei Chunks + Abschluss fuer 'users'
                 val table = tables.single()
                 if (table in markers) {
@@ -1487,6 +1505,193 @@ class DataExportRunnerTest : FunSpec({
             )
             exit shouldBe 3
             stderr.joined() shouldContain "fingerprint mismatch"
+        }
+    }
+
+    context("C.2.6 Single-File staging → atomic rename to target") {
+        test("fresh single-file run goes through staging, target only appears on success") {
+            val storeDir = Files.createTempDirectory("d-migrate-c26-fresh-")
+            val targetPath = storeDir.resolve("users.json")
+            val seenOutputPaths = mutableListOf<Path>()
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, _, _,
+                ->
+                require(out is dev.dmigrate.streaming.ExportOutput.SingleFile)
+                seenOutputPaths.add(out.path)
+                // Simuliere echten Writer: Staging-Datei anlegen
+                Files.writeString(out.path, """[{"id":1}]""")
+                val summary = TableExportSummary(
+                    tables.single(), rows = 1, chunks = 1, bytes = 10, durationMs = 1,
+                )
+                onDone(summary)
+                ExportResult(listOf(summary), 1, 1, 10, 1)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            val exit = runner.execute(
+                request(
+                    output = targetPath,
+                    tables = listOf("users"),
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 0
+            // Executor was handed the staging path, NOT the target
+            seenOutputPaths.single().toString() shouldContain ".single-file.staging"
+            seenOutputPaths.single() shouldNotBe targetPath
+            // After rename, the target exists and staging is gone
+            Files.exists(targetPath) shouldBe true
+            Files.exists(seenOutputPaths.single()) shouldBe false
+            Files.readString(targetPath) shouldBe """[{"id":1}]"""
+        }
+
+        test("without checkpoint-dir configured, single-file writes directly to target (no staging)") {
+            val tmpDir = Files.createTempDirectory("d-migrate-c26-nocp-")
+            val targetPath = tmpDir.resolve("users.json")
+            val seenOutputPaths = mutableListOf<Path>()
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, _, _,
+                ->
+                require(out is dev.dmigrate.streaming.ExportOutput.SingleFile)
+                seenOutputPaths.add(out.path)
+                Files.writeString(out.path, """[{"id":1}]""")
+                val summary = TableExportSummary(
+                    tables.single(), rows = 1, chunks = 1, bytes = 10, durationMs = 1,
+                )
+                onDone(summary)
+                ExportResult(listOf(summary), 1, 1, 10, 1)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                // No checkpointStoreFactory → no staging redirect
+            )
+            runner.execute(
+                request(
+                    output = targetPath,
+                    tables = listOf("users"),
+                ),
+            ) shouldBe 0
+            seenOutputPaths.single() shouldBe targetPath
+            Files.exists(targetPath) shouldBe true
+        }
+
+        test("failed executor leaves staging + keeps target untouched") {
+            val storeDir = Files.createTempDirectory("d-migrate-c26-fail-")
+            val targetPath = storeDir.resolve("users.json")
+            // Pre-existing target that MUST not be clobbered on failure
+            Files.writeString(targetPath, "PRE_EXISTING")
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+                ->
+                throw RuntimeException("simulated stream failure")
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            val exit = runner.execute(
+                request(
+                    output = targetPath,
+                    tables = listOf("users"),
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 5
+            // Target is unchanged
+            Files.readString(targetPath) shouldBe "PRE_EXISTING"
+        }
+
+        test("single-file resume discards stored position; executor receives marker with position=null") {
+            val storeDir = Files.createTempDirectory("d-migrate-c26-resume-")
+            val targetPath = storeDir.resolve("users.json")
+            val opId = "c26-resume-op"
+            val outputPath = targetPath
+            val fingerprint = ExportOptionsFingerprint.compute(
+                ExportOptionsFingerprint.Input(
+                    format = "json", encoding = "utf-8", csvDelimiter = ",",
+                    csvBom = false, csvNoHeader = false, csvNullString = "",
+                    filter = null, sinceColumn = "updated_at", since = "2026-01-01",
+                    tables = listOf("users"),
+                    outputMode = "single-file",
+                    outputPath = outputPath.toAbsolutePath().normalize().toString(),
+                    primaryKeysByTable = mapOf("users" to listOf("id")),
+                )
+            )
+            // Warm manifest has IN_PROGRESS slice with a resumePosition
+            val warmed = dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                operationId = opId,
+                operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                format = "json", chunkSize = 10_000,
+                tableSlices = listOf(
+                    dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                        table = "users",
+                        status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.IN_PROGRESS,
+                        rowsProcessed = 50, chunksProcessed = 5,
+                        resumePosition = dev.dmigrate.streaming.checkpoint.CheckpointResumePosition(
+                            markerColumn = "updated_at",
+                            markerValue = "2026-03-01",
+                            tieBreakerColumns = listOf("id"),
+                            tieBreakerValues = listOf("99"),
+                        ),
+                    ),
+                ),
+                optionsFingerprint = fingerprint,
+            )
+            dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir).save(warmed)
+
+            val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, markers, _,
+                ->
+                require(out is dev.dmigrate.streaming.ExportOutput.SingleFile)
+                capturedMarkers += markers
+                Files.writeString(out.path, "resumed")
+                val summary = TableExportSummary(tables.single(), 1, 1, 10, 1)
+                onDone(summary)
+                ExportResult(listOf(summary), 1, 1, 10, 1)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                primaryKeyLookup = { _, _, _ -> listOf("id") },
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            val exit = runner.execute(
+                request(
+                    output = targetPath,
+                    tables = listOf("users"),
+                    sinceColumn = "updated_at",
+                    since = "2026-01-01",
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 0
+            // Runner stripped the stored position for Single-File resume:
+            // executor receives a marker with position == null (fresh
+            // track). The stored `resumePosition` (id=99, ...) is ignored.
+            val marker = capturedMarkers.single().getValue("users")
+            marker.markerColumn shouldBe "updated_at"
+            marker.tieBreakerColumns shouldContainExactly listOf("id")
+            marker.position shouldBe null
+            Files.readString(targetPath) shouldBe "resumed"
         }
     }
 

@@ -118,7 +118,7 @@ DataReader-Port gedrückt wird.
 | Innerhalb einer Tabelle am Marker weiterlesen | — | ✅ |
 | `DataReader`-Port-Erweiterung für Marker-Paging | — | ✅ |
 | File-per-table stable mapping | ✅ | unverändert |
-| Single-File-Fortsetzung (ein Tabellenziel) | ✅ (nur komplett neu, wenn unvollständig) | ✅ (kontrollierte Fortsetzung) |
+| Single-File-Fortsetzung (ein Tabellenziel) | ✅ (nur komplett neu, wenn unvollständig) | ✅ Staging+Atomic-Rename (Fresh-Track; Mid-Table-Rebuild bewusst auf spaeteren Release verschoben — siehe C2 §5.4) |
 | Executor-Seam für `operationId` | ✅ (Phase-B-Nachzug) | unverändert |
 | `ProgressRenderer` zeigt `operationId` + Starting/Resuming-Label | ✅ | unverändert |
 | Runner-Warning „run from scratch" entfernen | ✅ | unverändert |

@@ -393,4 +393,194 @@ class FileCheckpointStoreTest : FunSpec({
             base.toFile().deleteRecursively()
         }
     }
+
+    // ─── 0.9.0 Phase C.2: CheckpointResumePosition roundtrip ──────
+    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ──────────────────────────────────────────────────────────────
+
+    test("C.2: save + load roundtrips a slice with resumePosition + tie-breakers") {
+        val dir = Files.createTempDirectory("dmigrate-cp-c2-")
+        try {
+            val original = CheckpointManifest(
+                operationId = "op-c2",
+                operationType = CheckpointOperationType.EXPORT,
+                createdAt = Instant.parse("2026-04-16T10:00:00Z"),
+                updatedAt = Instant.parse("2026-04-16T10:05:00Z"),
+                format = "json",
+                chunkSize = 10_000,
+                tableSlices = listOf(
+                    CheckpointTableSlice(
+                        table = "users",
+                        status = CheckpointSliceStatus.IN_PROGRESS,
+                        rowsProcessed = 100, chunksProcessed = 1,
+                        resumePosition = CheckpointResumePosition(
+                            markerColumn = "updated_at",
+                            markerValue = "2026-04-01",
+                            tieBreakerColumns = listOf("tenant", "id"),
+                            tieBreakerValues = listOf("acme", "42"),
+                        ),
+                    ),
+                ),
+            )
+            val store = FileCheckpointStore(dir)
+            store.save(original)
+            val loaded = store.load("op-c2")
+            loaded.shouldNotBeNull()
+            loaded shouldBe original
+            val slice = loaded.tableSlices.single()
+            slice.resumePosition.shouldNotBeNull()
+            slice.resumePosition!!.markerColumn shouldBe "updated_at"
+            slice.resumePosition!!.markerValue shouldBe "2026-04-01"
+            slice.resumePosition!!.tieBreakerColumns shouldContainExactly listOf("tenant", "id")
+            slice.resumePosition!!.tieBreakerValues shouldContainExactly listOf<String?>("acme", "42")
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("C.2: resumePosition is omitted when null (backward compatibility with Phase-B manifests)") {
+        val dir = Files.createTempDirectory("dmigrate-cp-c2-null-")
+        try {
+            val original = sampleManifest("op-no-c2")
+            val store = FileCheckpointStore(dir)
+            store.save(original)
+            val loaded = store.load("op-no-c2")
+            loaded.shouldNotBeNull()
+            // No resumePosition written for any slice
+            loaded.tableSlices.forEach { it.resumePosition shouldBe null }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("C.2: load tolerates missing resumePosition field in pre-C.2 manifest files") {
+        val dir = Files.createTempDirectory("dmigrate-cp-c2-legacy-")
+        try {
+            val legacy = """
+                schemaVersion: 1
+                operationId: op-legacy
+                operationType: EXPORT
+                createdAt: "2026-04-16T10:00:00Z"
+                updatedAt: "2026-04-16T10:00:00Z"
+                format: json
+                chunkSize: 10000
+                optionsFingerprint: "abc"
+                tableSlices:
+                  - table: users
+                    status: IN_PROGRESS
+                    rowsProcessed: 5
+                    chunksProcessed: 1
+                    lastMarker: "id:42"
+            """.trimIndent()
+            Files.writeString(dir.resolve("op-legacy.checkpoint.yaml"), legacy)
+            val store = FileCheckpointStore(dir)
+            val loaded = store.load("op-legacy")
+            loaded.shouldNotBeNull()
+            loaded.tableSlices.single().resumePosition shouldBe null
+            loaded.tableSlices.single().lastMarker shouldBe "id:42"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("C.2: load rejects resumePosition missing markerColumn") {
+        val dir = Files.createTempDirectory("dmigrate-cp-c2-invalid-mc-")
+        try {
+            val yaml = """
+                schemaVersion: 1
+                operationId: op-invalid
+                operationType: EXPORT
+                createdAt: "2026-04-16T10:00:00Z"
+                updatedAt: "2026-04-16T10:00:00Z"
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: IN_PROGRESS
+                    resumePosition:
+                      markerValue: "2026-04-01"
+                      tieBreakerColumns: []
+                      tieBreakerValues: []
+            """.trimIndent()
+            Files.writeString(dir.resolve("op-invalid.checkpoint.yaml"), yaml)
+            val ex = shouldThrow<CheckpointStoreException> {
+                FileCheckpointStore(dir).load("op-invalid")
+            }
+            ex.message!!.contains("markerColumn") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("C.2: load rejects resumePosition with mismatched tie-breaker sizes") {
+        val dir = Files.createTempDirectory("dmigrate-cp-c2-mismatch-")
+        try {
+            val yaml = """
+                schemaVersion: 1
+                operationId: op-mismatch
+                operationType: EXPORT
+                createdAt: "2026-04-16T10:00:00Z"
+                updatedAt: "2026-04-16T10:00:00Z"
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: IN_PROGRESS
+                    resumePosition:
+                      markerColumn: updated_at
+                      markerValue: "2026-04-01"
+                      tieBreakerColumns: ["tenant", "id"]
+                      tieBreakerValues: ["acme"]
+            """.trimIndent()
+            Files.writeString(dir.resolve("op-mismatch.checkpoint.yaml"), yaml)
+            val ex = shouldThrow<CheckpointStoreException> {
+                FileCheckpointStore(dir).load("op-mismatch")
+            }
+            ex.message!!.contains("resumePosition") shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("C.2: save + load roundtrips a resumePosition with null markerValue") {
+        // Rather than testing raw YAML null-literal parsing semantics
+        // (which SnakeYAML-engine handles internally), we use the
+        // save-path to produce a manifest whose `markerValue` is null,
+        // then reload it — both ends are owned by the store.
+        val dir = Files.createTempDirectory("dmigrate-cp-c2-nullmarker-")
+        try {
+            val store = FileCheckpointStore(dir)
+            val original = CheckpointManifest(
+                operationId = "op-nullmarker",
+                operationType = CheckpointOperationType.EXPORT,
+                createdAt = Instant.parse("2026-04-16T10:00:00Z"),
+                updatedAt = Instant.parse("2026-04-16T10:00:00Z"),
+                format = "json",
+                chunkSize = 10_000,
+                tableSlices = listOf(
+                    CheckpointTableSlice(
+                        table = "users",
+                        status = CheckpointSliceStatus.IN_PROGRESS,
+                        resumePosition = CheckpointResumePosition(
+                            markerColumn = "seq",
+                            markerValue = null,
+                            tieBreakerColumns = emptyList(),
+                            tieBreakerValues = emptyList(),
+                        ),
+                    ),
+                ),
+            )
+            store.save(original)
+            val loaded = store.load("op-nullmarker")
+            loaded.shouldNotBeNull()
+            val pos = loaded.tableSlices.single().resumePosition
+            pos.shouldNotBeNull()
+            pos.markerColumn shouldBe "seq"
+            pos.markerValue shouldBe null
+            pos.tieBreakerColumns shouldContainExactly emptyList<String>()
+            pos.tieBreakerValues shouldContainExactly emptyList<String?>()
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
 })

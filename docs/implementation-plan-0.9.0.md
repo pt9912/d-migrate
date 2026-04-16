@@ -416,12 +416,17 @@ Phase C ist in zwei Unterphasen gegliedert (siehe Ueberplan
   mit sichtbarem stderr-Hinweis; **kein** harter Preflight-Abbruch).
   Nur der Fall „Manifest hat `lastMarker`, aber aktueller Request hat
   kein `--since-column`" ist ein echter Preflight-Fehler (Exit 3).
-- Single-File-Fortsetzung ausschliesslich fuer **Single-Table-Single-File**
-  via format-spezifischem, kontrolliertem Fortsetzungspfad
-  (JSON/YAML-Rebuild ueber eine vom `CheckpointStore` verwaltete
-  Zwischendatei; CSV-Single-Table-Single-File ebenfalls via Zwischendatei
-  mit einmaligem Header). Multi-Table-Single-File wird bereits im
-  Basispfad mit Exit 2 abgelehnt (`StreamingExporter.require`, siehe
+- Single-File-Fortsetzung (Single-Table-Single-File) wird in 0.9.0
+  pragmatisch umgesetzt: Der Runner leitet Single-File-Laeufe mit
+  konfiguriertem `pipeline.checkpoint.directory` immer auf eine
+  Staging-Datei `<checkpoint-dir>/<operationId>.single-file.staging`
+  um; die Zieldatei wird erst beim Lauf-Abschluss per atomic rename
+  ersetzt. Mid-Table-Rebuild aus einer Zwischenform ist bewusst auf
+  einen spaeteren Release verschoben — Single-File-Resume exportiert
+  die Tabelle erneut **von vorn** in eine frische Staging-Datei
+  (Fresh-Track), wahrt aber die „Ziel ist nie halb-geschrieben"-
+  Invariante. Multi-Table-Single-File wird bereits im Basispfad mit
+  Exit 2 abgelehnt (`StreamingExporter.require`, siehe
   `docs/cli-spec.md`) und hat daher keinen gueltigen Ausgangslauf, der
   wiederaufgenommen werden muesste.
 
