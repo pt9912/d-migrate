@@ -22,6 +22,7 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.cli.output.ProgressRenderer
 import dev.dmigrate.streaming.StreamingImporter
 
@@ -174,7 +175,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 )
                 importer.import(pool, input, fmt, opts, cfg, reporter)
             },
-            progressReporter = ProgressRenderer(),
+            progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)

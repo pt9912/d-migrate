@@ -27,8 +27,8 @@ Diese Flags sind bei allen Kommandos verfügbar:
 
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
-| `--config` | `-c` | Pfad | `.d-migrate.yaml` | Pfad zur Konfigurationsdatei |
-| `--lang` | | String | System-Locale | Sprache für Ausgaben (`de`, `en`) |
+| `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
+| `--lang` | | String | in 0.8.0 bewusst abgelehnt; finaler Nutzervertrag in 0.9.0 | Sprachwahl fuer menschenlesbare Ausgaben. Die Root-CLI lehnt jede Angabe in 0.8.0 mit Exit 7 ab und verweist auf `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`; der stabile dokumentierte Override-Vertrag folgt erst in Milestone 0.9.0 |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
 | `--quiet` | `-q` | Boolean | false | Nur Fehler ausgeben |
@@ -39,6 +39,13 @@ Diese Flags sind bei allen Kommandos verfügbar:
 | `--help` | `-h` | Boolean | | Hilfe anzeigen und beenden |
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
+
+**Hinweis zu 0.8.0 / 0.9.0 bei `--lang`**:
+
+- Milestone 0.8.0 liefert die technische I18n-Basis (ResourceBundles, Locale-/Timezone-/Unicode-Aufloesung).
+- `--lang` ist in 0.8.0 **nicht** als aktiver Override freigegeben: jede Angabe wird von der Root-CLI mit Exit 7 abgelehnt; die Sprachauflösung läuft stattdessen über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`.
+- Der finale, breit dokumentierte CLI-Vertrag fuer `--lang` als produktive Override-Quelle bleibt in 0.9.0 verankert.
+- Bis dieser Vertrag freigegeben ist, duerfen strukturierte JSON-/YAML-Vertraege nicht von lokalisierter Sprachwahl abhaengen.
 
 ### 1.4 Verbindungsnamen
 
@@ -118,6 +125,12 @@ Validation failed: 1 error, 1 warning
 ### 3.2 JSON
 
 Maschinenlesbare Ausgabe für CI/CD-Integration und Scripting:
+
+Vertragsregeln fuer strukturierte Ausgabe:
+
+- Feldnamen, Command-IDs, Statuswerte, Exit-Codes, Warning-/Error-Codes und vergleichbare API-artige Vertragsflaechen bleiben englisch und stabil.
+- Freie Fehlermeldungstexte in JSON/YAML bleiben fuer 0.8.0 ebenfalls englisch und stabil, bis ein explizit versionierter Gegenvertrag definiert ist.
+- Lokalisiert werden duerfen nur menschenlesbare Plain-Text-Ausgaben auf stdout/stderr.
 
 ```json
 {
@@ -564,7 +577,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
 | `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
-| `--csv-bom` | Nein | Boolean | aus | UTF-8 BOM-Bytes vor dem CSV-Output schreiben |
+| `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4). |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 
@@ -630,7 +643,7 @@ d-migrate data export --source local_pg --format json \
 
 - `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
 - `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
-- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. ISO-Datum/Datetime-Werte werden als Date-/Zeit-Typen behandelt, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String.
+- Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. Die Typisierung folgt dem 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md` §4.5) und bleibt konservativ: ein Offset-haltiger ISO-String bleibt `OffsetDateTime` (§4.2), ein lokaler ISO-DateTime bleibt `LocalDateTime` (§4.3), ein ISO-Datum bleibt `LocalDate`, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String. Eine in der Konfiguration gesetzte `i18n.default_timezone` löst **keine** stille Zonierung eines lokalen Literals aus (§4.4).
 - Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([WhereClause(filter), ParameterizedClause(...)])` kombiniert; der Reader bindet die Parameter in stabiler Reihenfolge.
 - **M-R5**: `--filter` darf in diesem kombinierten Pfad kein literales `?` enthalten. Beispiel eines verbotenen Aufrufs:
 
@@ -669,7 +682,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
 | `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
 | `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
-| `--encoding` | Nein | String | BOM-/Reader-Default | Input-Encoding |
+| `--encoding` | Nein | String | `auto` | Input-Encoding. Der Default-Pfad `auto` erkennt BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE) und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird mit Exit 2 abgelehnt. Für Non-UTF-Encodings (`iso-8859-1`, `windows-1252`, …) muss der Wert explizit gesetzt werden — es gibt keine Heuristik-Erkennung. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.2/§4.3). |
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
@@ -1071,14 +1084,17 @@ Alternative: Umgebungsvariable `D_MIGRATE_DB_PASSWORD` oder Konfigurationsdatei.
 | Variable | Entspricht | Beschreibung |
 |---|---|---|
 | `D_MIGRATE_CONFIG` | `--config` | Pfad zur Konfigurationsdatei |
-| `D_MIGRATE_LANG` | `--lang` | Sprache |
+| `D_MIGRATE_LANG` | `--lang` | Sprache; fuer 0.8.0 Teil der technischen I18n-Basis, nicht des finalen 0.9.0-Override-Vertrags |
 | `D_MIGRATE_OUTPUT_FORMAT` | `--output-format` | Ausgabeformat |
 | `D_MIGRATE_NO_COLOR` | `--no-color` | Farbausgabe deaktivieren |
 | `D_MIGRATE_ASSUME_YES` | `--yes` | Bestätigungen überspringen |
 | `D_MIGRATE_DB_PASSWORD` | | Datenbank-Passwort |
 | `D_MIGRATE_AI_API_KEY` | | KI-Provider API-Key (Fallback) |
 
-Priorität: CLI-Argument > Umgebungsvariable > Konfigurationsdatei > Default
+Prioritaet:
+
+- fuer den effektiven Config-Pfad: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`
+- fuer allgemeine CLI-Optionen weiterhin: CLI-Argument > Umgebungsvariable > Konfigurationsdatei > Default
 
 ---
 

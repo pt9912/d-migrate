@@ -2,6 +2,7 @@ package dev.dmigrate.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.parse
@@ -12,13 +13,21 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.versionOption
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
+import dev.dmigrate.cli.config.ConfigResolveException
+import dev.dmigrate.cli.config.I18nSettingsResolver
+import dev.dmigrate.cli.i18n.ResolvedI18nSettings
+import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.SchemaCommand
+import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.mysql.MysqlDriver
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.driver.sqlite.SqliteDriver
+import java.nio.file.Path
+import java.time.ZoneId
+import java.util.Locale
 import java.util.Properties
 
 data class CliContext(
@@ -27,6 +36,9 @@ data class CliContext(
     val quiet: Boolean = false,
     val noColor: Boolean = false,
     val noProgress: Boolean = false,
+    val locale: Locale = ResolvedI18nSettings.DEFAULT.locale,
+    val timezone: ZoneId = ResolvedI18nSettings.DEFAULT.timezone,
+    val normalization: UnicodeNormalizationMode = ResolvedI18nSettings.DEFAULT.normalization,
 )
 
 private const val VERSION_RESOURCE = "dmigrate-version.properties"
@@ -45,11 +57,19 @@ internal fun cliVersion(): String {
     return version ?: UNKNOWN_VERSION
 }
 
-class DMigrate : CliktCommand(name = "d-migrate") {
+class DMigrate(
+    private val envLookup: (String) -> String? = System::getenv,
+    private val defaultConfigPath: Path = Path.of(".d-migrate.yaml"),
+    private val systemLocaleProvider: () -> Locale = Locale::getDefault,
+    private val systemTimezoneProvider: () -> ZoneId = ZoneId::systemDefault,
+) : CliktCommand(name = "d-migrate") {
     override fun help(context: Context) = "Database-agnostic migration and data management framework"
 
     val config by option("--config", "-c", help = "Path to configuration file").path()
-    val lang by option("--lang", help = "Language for output (de, en)")
+    val lang by option(
+        "--lang",
+        help = "Reserved for the 0.9.0 language override; in 0.8.0 use D_MIGRATE_LANG or i18n.default_locale",
+    )
     val outputFormat by option("--output-format", help = "Output format: plain, json, yaml")
         .choice("plain", "json", "yaml").default("plain")
     val verbose by option("--verbose", "-v", help = "Verbose output (DEBUG level)").flag()
@@ -62,13 +82,64 @@ class DMigrate : CliktCommand(name = "d-migrate") {
         versionOption(cliVersion())
     }
 
+    private var cachedCliContext: CliContext? = null
+
     override fun run() {
         if (verbose && quiet) {
             throw UsageError("--verbose and --quiet are mutually exclusive")
         }
+        if (lang != null) {
+            printLocalError(
+                "--lang is not an active CLI override in 0.8.0. " +
+                    "Use D_MIGRATE_LANG or i18n.default_locale for the technical i18n basis; " +
+                    "the final --lang product contract lands in 0.9.0.",
+                "--lang",
+            )
+            throw ProgramResult(7)
+        }
+        cachedCliContext = resolveCliContext()
     }
 
-    fun cliContext() = CliContext(outputFormat, verbose, quiet, noColor, noProgress)
+    fun cliContext(): CliContext =
+        cachedCliContext ?: resolveCliContext().also { cachedCliContext = it }
+
+    private fun resolveCliContext(): CliContext {
+        val i18n = try {
+            I18nSettingsResolver(
+                configPathFromCli = config,
+                envLookup = envLookup,
+                defaultConfigPath = defaultConfigPath,
+                systemLocaleProvider = systemLocaleProvider,
+                systemTimezoneProvider = systemTimezoneProvider,
+            ).resolve()
+        } catch (e: ConfigResolveException) {
+            printLocalError(e.message ?: "Failed to resolve i18n settings", config?.toString() ?: "i18n")
+            throw ProgramResult(7)
+        }
+
+        return CliContext(
+            outputFormat = outputFormat,
+            verbose = verbose,
+            quiet = quiet,
+            noColor = noColor,
+            noProgress = noProgress,
+            locale = i18n.locale,
+            timezone = i18n.timezone,
+            normalization = i18n.normalization,
+        )
+    }
+
+    private fun printLocalError(message: String, source: String) {
+        OutputFormatter(
+            CliContext(
+                outputFormat = outputFormat,
+                verbose = verbose,
+                quiet = quiet,
+                noColor = noColor,
+                noProgress = noProgress,
+            )
+        ).printError(message, source)
+    }
 }
 
 /**

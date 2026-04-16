@@ -565,7 +565,7 @@ id,email,name
 1,kunde@example.de,Müller
 ```
 
-CSV-Export und -Import unterstuetzen konfigurierbares Encoding sowie optionale BOM-Erzeugung bzw. BOM-Erkennung.
+CSV-Export und -Import folgen dem 0.8.0-Phase-F-Vertrag (`docs/ImpPlan-0.8.0-F.md`): Export nutzt `--encoding` (Default `utf-8`) und ein optionales `--csv-bom`, das genau ein BOM passend zum gewählten UTF-Encoding (UTF-8, UTF-16 BE/LE) schreibt; für Non-UTF-Encodings ist das Flag ein No-op. Import-Encoding wird per BOM-Sniffing (Default `--encoding auto`) für UTF-8 und UTF-16 BE/LE erkannt und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird als expliziter Fehler abgelehnt. Non-UTF-Encodings muss der Nutzer explizit setzen — es gibt keine heuristische Erkennung.
 
 **YAML** (für kleinere Datensätze / Konfiguration):
 ```yaml
@@ -587,9 +587,9 @@ exported_at: 2025-10-22T14:30:00Z
 ### 6.3 Dateiimport und Parsing
 
 - Dateiimporte validieren Daten vor dem Schreiben gegen das neutrale Schema.
-- Textformate verwenden standardmaessig UTF-8; UTF-16 und BOM-markierte Dateien werden automatisch erkannt.
-- Weitere Encodings wie ISO-8859-1 sind explizit konfigurierbar, damit Importe reproduzierbar bleiben.
-- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden.
+- Textformate verwenden standardmaessig UTF-8. Die BOM-Auto-Detection (Phase F §4.2, `docs/ImpPlan-0.8.0-F.md`) ist strikt auf UTF-8 und UTF-16 BE/LE begrenzt; UTF-32-BOM wird explizit als Fehler abgelehnt, damit UTF-32-Daten nicht still als UTF-8 durchlaufen. Derselbe `EncodingDetector` wird importseitig konsistent fuer CSV, JSON und YAML genutzt.
+- Weitere Encodings wie ISO-8859-1 oder Windows-1252 sind explizit ueber `--encoding <charset>` konfigurierbar, damit Importe reproduzierbar bleiben; eine heuristische Encoding-Erkennung gibt es bewusst nicht (Phase F §4.3).
+- Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden. Der 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md` §4.2/§4.3) verbietet dabei die stille Umdeutung zwischen lokalen und offsethaltigen Werten: `TIMESTAMP`-Spalten lehnen offsethaltige Strings ab, `TIMESTAMP WITH TIME ZONE` verlangt einen Offset-Anteil.
 - Der geplante Umgang mit Sequence-/Identity-/`AUTO_INCREMENT`-Folgezustand
   und Trigger-Verhalten beim Datenimport ist im Draft
   [design-import-sequences-triggers.md](./design-import-sequences-triggers.md)
@@ -679,33 +679,55 @@ sealed class MigrateError {
 
 ```
 src/main/resources/messages/
-├── messages_de.properties    # Deutsch (Default)
-├── messages_en.properties    # Englisch
-└── messages.properties       # Fallback (Englisch)
+├── messages.properties       # Root-/Fallback-Bundle (Englisch)
+├── messages_de.properties    # Deutsch
+└── messages_en.properties    # optional explizites Englisch-Bundle
 ```
 
 ### 9.2 Sprachauswahl
 
 ```
-1. CLI-Argument: --lang de
-2. Umgebungsvariable: LANG=de_DE.UTF-8
-3. System-Locale
-4. Fallback: Englisch
+1. D_MIGRATE_LANG
+2. LC_ALL
+3. LANG
+4. i18n.default_locale aus der effektiv aufgeloesten Konfigurationsdatei
+5. System-Locale
+6. Fallback: Englisch (`en`)
 ```
+
+Hinweise fuer Milestone 0.8.0:
+
+- 0.8.0 liefert die technische Aufloesungs- und Bundle-Basis.
+- Der finale CLI-Nutzervertrag fuer `--lang` als dokumentierte Override-Quelle folgt erst in 0.9.0.
+- Die effektive Konfigurationsdatei wird nicht separat fuer i18n "geraten", sondern ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
 
 ### 9.3 Unicode-Verarbeitung
 
 - Interne Strings als Unicode; UTF-8 ist das Standard-Encoding an Datei-, CLI- und API-Grenzen
 - Grapheme-aware String-Längenberechnung via ICU4J
 - Unicode-Normalisierung fuer NFC, NFD, NFKC und NFKD; Standardvergleich erfolgt auf NFC-normalisierten Werten
-- BOM-Erkennung und -Behandlung bei CSV-Import
+- Unicode-Normalisierung ist Vergleichs-/Metadaten-Utility und keine stille Mutation von Export-/Import-/Transfer-Payloads
+- BOM-Erkennung und -Behandlung basiert auf dem seit 0.4.0 vorhandenen `EncodingDetector`-Unterbau und wird in 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md`) als Teil des I18n-Vertrags konsolidiert. Importseitig teilen CSV-, JSON- und YAML-Reader denselben Detector; BOM-Auto-Detection gilt fuer UTF-8 und UTF-16 BE/LE, UTF-32-BOM wird abgelehnt, und bei explizitem `--encoding` werden passende BOMs konsumiert, nicht passende im Stream belassen. Export-seitig schreibt `--csv-bom` genau ein zum `--encoding` passendes BOM (UTF-8/UTF-16 BE/LE) und ist fuer Non-UTF-Encodings ein No-op.
 
 ### 9.4 Internationale Datenformate
 
-- Temporale Werte werden intern zeitzonenbewusst verarbeitet; Export erfolgt standardmaessig in UTC, Import kann Quell- und Zielzeitzonen explizit konfigurieren.
+- Temporale Werte folgen dem 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md`):
+  ISO 8601 bleibt das einzige Standardformat, `OffsetDateTime` bleibt
+  offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC
+  oder JVM-Zone; `ZonedDateTime` wird im strukturierten Datenpfad
+  offsetbasiert serialisiert (die `ZoneId`-Region ist in 0.8.0 nicht Teil
+  des Vertrags).
+- Die in `i18n.default_timezone` aufgeloeste Default-Zeitzone ist ein
+  expliziter Konvertierungsbaustein: sie greift nur an Stellen, die einen
+  lokalen Wert bewusst in einen zonierten Kontext ueberfuehren, und
+  interpretiert vorhandene lokale Werte nicht neu.
 - Datum, Uhrzeit und Timestamp werden formatuebergreifend auf ISO 8601 normalisiert.
 - Geldbetraege werden ueber `decimal(p,s)` und locale-unabhaengige Serialisierung verarbeitet, um Punkt/Komma-Konflikte zu vermeiden.
 - Telefonnummern koennen optional gegen E.164 validiert und in kanonischer Form exportiert werden.
+
+Strukturierte JSON-/YAML-Ausgaben bleiben dabei sprachstabil: Schluessel,
+Codes und freie Fehlermeldungstexte bleiben fuer 0.8.0 englisch, waehrend nur
+menschenlesbare Plain-Text-Ausgaben lokalisiert werden duerfen.
 
 ---
 

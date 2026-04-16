@@ -383,7 +383,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
-| `--lang`              | Sprache der Ausgabe (`de`, `en`)                          |
+| `--lang`              | Für 0.9.0 reserviert. In 0.8.0 wird jede Angabe bewusst mit Exit 7 abgelehnt — die Sprachauflösung läuft über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale` (Phase G §4.3, `docs/ImpPlan-0.8.0-G.md`). |
 | `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
 | `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
 | `-q`, `--quiet`       | Nur Fehler ausgeben                                       |
@@ -421,7 +421,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--chunk-size`        | Rows pro Streaming-Chunk (Standard: 10000)                |
 | `--encoding`          | Output-Encoding (Standard: `utf-8`)                       |
 | `--csv-delimiter`     | CSV-Trennzeichen (Standard: `,`)                          |
-| `--csv-bom`           | UTF-8 BOM-Bytes voranstellen                              |
+| `--csv-bom`           | BOM passend zu `--encoding` voranstellen (UTF-8, UTF-16 BE/LE); No-op bei Non-UTF-Encodings |
 | `--csv-no-header`     | CSV-Kopfzeile unterdrücken                                |
 
 ### Optionen für `data import`
@@ -436,7 +436,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--truncate`          | Zieltabellen vor dem Import leeren                        |
 | `--trigger-mode`      | `enable` (Standard) oder `disable`                        |
 | `--chunk-size`        | Datensätze pro Transaktion (Standard: 10000)              |
-| `--encoding`          | Input-Encoding (Standard: auto-detect)                    |
+| `--encoding`          | Input-Encoding. Default `auto` sniffed BOM für UTF-8/UTF-16 BE/LE und fällt ohne BOM auf UTF-8 zurück. Für Non-UTF-Encodings (z.B. `iso-8859-1`) explizit setzen — keine Heuristik. |
 
 ### Beispiel: JSON-Ausgabe
 

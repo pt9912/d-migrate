@@ -114,4 +114,28 @@ class ProgressRendererTest : FunSpec({
         r.report(ProgressEvent.RunStarted(ProgressOperation.EXPORT, 1))
         captured shouldBe listOf("Exporting 1 table(s)")
     }
+
+    // ─── German locale ──────────────────────────────────────
+
+    test("German RunStarted for export") {
+        val de = ProgressRenderer(messages = MessageResolver(java.util.Locale.GERMAN), stderr = {})
+        de.render(ProgressEvent.RunStarted(ProgressOperation.EXPORT, 3)) shouldContain "Tabelle(n) werden exportiert"
+    }
+
+    test("German ImportTableFinished completed") {
+        val de = ProgressRenderer(messages = MessageResolver(java.util.Locale.GERMAN), stderr = {})
+        val line = de.render(ProgressEvent.ImportTableFinished(
+            table = "orders", tableOrdinal = 1, tableCount = 1,
+            rowsInserted = 100, rowsUpdated = 0, rowsSkipped = 0,
+            rowsUnknown = 0, rowsFailed = 0, durationMs = 500, status = TableProgressStatus.COMPLETED,
+        ))
+        line shouldContain "Importiert"
+        line shouldContain "eingefügt"
+    }
+
+    test("German ExportTableStarted") {
+        val de = ProgressRenderer(messages = MessageResolver(java.util.Locale.GERMAN), stderr = {})
+        val line = de.render(ProgressEvent.ExportTableStarted("users", 1, 3))
+        line shouldContain "Exportiere Tabelle"
+    }
 })

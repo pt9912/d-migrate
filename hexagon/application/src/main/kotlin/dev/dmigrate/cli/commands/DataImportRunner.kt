@@ -22,6 +22,7 @@ import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Locale
 
 class CliUsageException(
     message: String,
@@ -424,7 +425,7 @@ class DataImportRunner(
             val rowsSummary = parts.joinToString(", ")
 
             val seqInfo = if (seqCount > 0) "; reseeded $seqCount sequence(s)" else ""
-            return "Imported $tableCount table(s) ($rowsSummary) in ${"%.1f".format(durationSec)} s$seqInfo"
+            return "Imported $tableCount table(s) ($rowsSummary) in ${"%.1f".format(Locale.US, durationSec)} s$seqInfo"
         }
     }
 }

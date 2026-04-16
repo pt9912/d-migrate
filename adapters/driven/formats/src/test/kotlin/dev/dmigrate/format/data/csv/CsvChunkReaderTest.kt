@@ -264,6 +264,42 @@ class CsvChunkReaderTest : FunSpec({
         }
     }
 
+    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.5):
+    // BOM-/Encoding-Pfade werden mit nicht-lateinischen Payloads gefahren.
+
+    test("Phase F §4.5: UTF-8 BOM + kyrillisch/CJK/Emoji bleibt byte- und zeichenstabil") {
+        val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+        val csv = "name,note\nМосква,東京 🇯🇵".toByteArray(Charsets.UTF_8)
+        val input = ByteArrayInputStream(bom + csv)
+        CsvChunkReader(input, "t", 100).use { r ->
+            r.headerColumns() shouldBe listOf("name", "note")
+            val chunk = r.nextChunk()!!
+            chunk.rows[0][0] shouldBe "Москва"
+            chunk.rows[0][1] shouldBe "東京 🇯🇵"
+        }
+    }
+
+    test("Phase F §4.5: UTF-16 LE BOM + Unicode-Payload wird erkannt und transcodiert") {
+        val bom = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
+        val csv = "name\nΑθήνα".toByteArray(Charsets.UTF_16LE)
+        val input = ByteArrayInputStream(bom + csv)
+        CsvChunkReader(input, "t", 100).use { r ->
+            r.headerColumns() shouldBe listOf("name")
+            val chunk = r.nextChunk()!!
+            chunk.rows[0][0] shouldBe "Αθήνα"
+        }
+    }
+
+    test("Phase F §4.5: UTF-16 BE BOM + Unicode-Payload wird erkannt") {
+        val bom = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
+        val csv = "name\nMünchen 🇩🇪".toByteArray(Charsets.UTF_16BE)
+        val input = ByteArrayInputStream(bom + csv)
+        CsvChunkReader(input, "t", 100).use { r ->
+            val chunk = r.nextChunk()!!
+            chunk.rows[0][0] shouldBe "München 🇩🇪"
+        }
+    }
+
     // ─── All Values Are Strings ─────────────────────────────────────
 
     test("numeric-looking values remain strings") {

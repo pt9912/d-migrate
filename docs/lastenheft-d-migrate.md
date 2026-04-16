@@ -136,9 +136,17 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Mehrsprachige CLI-Hilfe und Dokumentation
 
 **LF-007** Das System muss internationale Datenformate korrekt verarbeiten
-- Zeitzonen-Awareness für TIMESTAMP-Felder (UTC als Standard, konfigurierbare Zeitzonen)
-- Korrekte Konvertierung zwischen Zeitzonen bei Export/Import
-- Unterstützung für verschiedene Datums- und Zeitformate (ISO 8601 als Standard)
+- Zeitzonen-Awareness für TIMESTAMP-Felder: die effektive Default-Zeitzone wird
+  in der Reihenfolge `i18n.default_timezone` → `ZoneId.systemDefault()` → `UTC`
+  aufgelöst; UTC ist dabei der Safety-Net-Fallback, nicht der allgemeine
+  Default. `TIMESTAMP` bleibt lokal ohne erfundene Zone, `TIMESTAMP WITH TIME
+  ZONE` bleibt offsethaltig (siehe `docs/ImpPlan-0.8.0-E.md`)
+- Korrekte Konvertierung zwischen Zeitzonen bei Export/Import, aber nur über
+  explizit aufgerufene Konvertierungs-APIs — keine stille Umdeutung lokaler
+  Werte
+- Unterstützung der kanonischen erweiterten ISO-8601-Profile (ISO 8601 als
+  Standard, JDK-Profile `ISO_LOCAL_DATE`/`ISO_LOCAL_TIME`/
+  `ISO_LOCAL_DATE_TIME`/`ISO_OFFSET_DATE_TIME`)
 - Währungsformate mit korrekter Dezimaltrennung (Komma vs. Punkt)
 - Telefonnummern-Formate gemäß E.164 Standard
 
@@ -597,7 +605,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Export/Import von 100.000 Datensätzen mit gemischten Zeichensätzen (Emoji, Sonderzeichen)
 - Korrekte Sortierung von mehrsprachigen Daten gemäß Locale
 - CLI-Ausgabe in mindestens 2 Sprachen (Deutsch, Englisch) mit korrekter Formatierung
-- Zeitzonen-Konvertierung: Export in UTC, Import mit korrekter Zeitzone
+- Zeitzonen-Vertrag gemäß Phase E (`docs/ImpPlan-0.8.0-E.md`): `TIMESTAMP` bleibt lokal, `TIMESTAMP WITH TIME ZONE` bleibt offsethaltig, Default-Zeitzone greift nur in expliziten Konvertierungen und folgt der Kette `i18n.default_timezone` → `ZoneId.systemDefault()` → `UTC` (Error-Fallback)
 
 ### 8.2 Performance-Tests
 

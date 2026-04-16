@@ -13,6 +13,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.8.0] - 2026-04-16
+
+### Added
+
+- **I18n-Runtime and config resolution** (Phase B): `ResolvedI18nSettings` with `locale`, `timezone`, `normalization` plus `I18nSettingsResolver` that resolves via `D_MIGRATE_LANG` > `LC_ALL` > `LANG` > `i18n.default_locale` > system locale > English fallback; timezone chain `i18n.default_timezone` > `ZoneId.systemDefault()` > UTC (error fallback only)
+- **ResourceBundles and localized CLI output** (Phase C): English root bundle (`messages.properties`) and German bundle (`messages_de.properties`); `MessageResolver` with parent-chain fallback; `OutputFormatter` and `ProgressRenderer` emit localized plain-text while JSON/YAML payloads stay language-stable English
+- **ICU4J-based Unicode utilities** (Phase D): `UnicodeNormalizer` (NFC/NFD/NFKC/NFKD) as explicit utility, not silent payload mutation; `GraphemeCounter` with ICU `BreakIterator` for grapheme-aware length on combining marks, emoji, ZWJ sequences and CJK
+- **TemporalFormatPolicy** (Phase E): stateless policy object in `hexagon:application` centralizing ISO-8601 formatters, parse helpers (`parseSinceLiteral`, `parseOffsetDateTime`, `parseLocalDateTime`, `parseLocalDate`), `hasOffsetOrZone` heuristic and `toZoned(local, zone)` as the single explicit-zoning API
+- **`--csv-bom` contract consolidated** (Phase F / D1): writes a BOM matching `--encoding` — `EF BB BF` for UTF-8, `FE FF` for UTF-16 BE, `FF FE` for UTF-16 LE; no-op for non-UTF encodings (ISO-8859-1, Windows-1252, …)
+- **Unicode-aware BOM/encoding tests** across `EncodingDetectorTest`, `CsvChunkReaderTest`, `JsonChunkReaderTest`, `YamlChunkReaderTest`, `CsvChunkWriterTest` with Cyrillic, CJK and emoji payloads
+- **TemporalFormatPolicyTest** covering §4.1–§4.6 of the Phase-E contract including minute-precision read tolerance lock-in
+- **DE-bundle fallback test** in `MessageResolverTest` using a dedicated test-resource pair (`test-messages-phase-g/phasegmsg[_de].properties`) to prove ResourceBundle parent-chain fallback
+- **Phase plans** `docs/ImpPlan-0.8.0-A.md` through `docs/ImpPlan-0.8.0-G.md` documenting the milestone in full
+
+### Changed
+
+- `AbstractDdlGenerator.getVersion()` returns `0.8.0`
+- `ValueSerializer` and `ValueDeserializer` temporal branches annotated with Phase-E contract references; behavior unchanged but ISO-8601 handling documented inline (`TIMESTAMP` stays local, `TIMESTAMP WITH TIME ZONE` stays offset-bearing, `ZonedDateTime` serialized offset-based — `ZoneId` region intentionally not part of the 0.8.0 contract)
+- `DataExportHelpers.parseSinceLiteral` delegates to `TemporalFormatPolicy.parseSinceLiteral`, removing the duplicate parser logic and ensuring CLI and format layer share the same contract
+- `--lang` CLI flag is declared but actively rejected in 0.8.0 with exit 7 — the resolution chain runs through `D_MIGRATE_LANG`, `LC_ALL`/`LANG` and `i18n.default_locale`; the final CLI override contract lands in 0.9.0
+- Documentation aligned across `docs/cli-spec.md`, `docs/guide.md`, `docs/design.md`, `docs/architecture.md`, `docs/connection-config-spec.md` and `docs/lastenheft-d-migrate.md` on the Phase-E and Phase-F contracts
+- `CsvChunkWriter.writeBomBytes()` now carries the D1 rationale inline; behavior (UTF-8/UTF-16 BE/LE BOM + non-UTF no-op) unchanged
+
+### Fixed
+
+- Master plan `docs/implementation-plan-0.8.0.md` cleaned of stale "UTF-8-only" and "CLI > ENV > Config > System > Fallback" claims that contradicted the Phase-E/F/G contracts
+
 ## [0.7.5] - 2026-04-15
 
 ### Added

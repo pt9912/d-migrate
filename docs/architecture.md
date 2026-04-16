@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Architektur-Spezifikation
 >
-> Die Module unter `hexagon/` und `adapters/` sind seit Milestone 0.4.0 in der hexagonalen Verzeichnisstruktur implementiert (siehe §1.2 / §2.1). Weitere Module (integrations, ai, testdata, i18n, docs) beschreiben den geplanten Soll-Zustand für spätere Milestones.
+> Die Module unter `hexagon/` und `adapters/` sind seit Milestone 0.4.0 in der hexagonalen Verzeichnisstruktur implementiert (siehe §1.2 / §2.1). Weitere Module (integrations, ai, testdata, docs) beschreiben den geplanten Soll-Zustand fuer spaetere Milestones; die 0.8.0-I18n-Basis wird bewusst ohne separates Top-Level-`i18n`-Modul eingefuehrt.
 
 ---
 
@@ -125,8 +125,10 @@ d-migrate/
 
 Die Module `hexagon:core`, `hexagon:ports`, `hexagon:application` sowie die
 Adapter-Module unter `adapters/` sind seit Milestone 0.4.0 implementiert.
-Weitere Module (integrations, ai, testdata, i18n, docs) beschreiben den
-geplanten Soll-Zustand für spätere Milestones.
+Weitere Module (integrations, ai, testdata, docs) beschreiben den geplanten
+Soll-Zustand fuer spaetere Milestones. Fuer 0.8.0 wird die
+Internationalisierungsbasis bewusst ohne eigenes Top-Level-`i18n`-Modul
+eingefuehrt.
 
 ```
 d-migrate/
@@ -203,7 +205,9 @@ d-migrate/
 
 > Geplante, noch nicht implementierte Module: `integrations/` (Flyway, Liquibase,
 > Django, Knex), `ai/` (Ollama, LM Studio, OpenAI, Anthropic, …), `testdata/`
-> (Faker, KI-gestützt), `i18n/`, `docs/` — siehe Roadmap.
+> (Faker, KI-gestuetzt), `docs/` — siehe Roadmap. Die 0.8.0-I18n-Bausteine
+> werden zunaechst in bestehenden Modulen verortet (`hexagon:application`,
+> `adapters:driving:cli`, `adapters:driven:formats`).
 
 ### 2.2 Modul-Abhängigkeiten
 
@@ -322,7 +326,11 @@ interface FormatCodec<T> {
 data class FormatOptions(
     val encoding: TextEncoding = TextEncoding.UTF8,
     val bomMode: BomMode = BomMode.AUTO,
-    val timezone: ZoneId = ZoneOffset.UTC
+    // Optional; wenn gesetzt, wird die Zone in expliziten Konvertierungen
+    // via TemporalFormatPolicy.toZoned(...) eingesetzt. Der Caller leitet
+    // sie typischerweise aus ResolvedI18nSettings.timezone ab, nicht aus
+    // einem blanket-UTC-Default (siehe docs/ImpPlan-0.8.0-E.md).
+    val timezone: ZoneId? = null
 )
 ```
 
@@ -710,7 +718,10 @@ data class PipelineConfig(
 
 data class I18nConfig(
     val defaultLocale: String = "en",
-    val defaultTimezone: String = "UTC",
+    // Optional im YAML. Wird vom I18nSettingsResolver aufgeloest:
+    //   i18n.default_timezone -> ZoneId.systemDefault() -> UTC (Error-Fallback)
+    // UTC ist der Safety-Net-Fallback, nicht der allgemeine Default.
+    val defaultTimezone: String? = null,
     val normalizeUnicode: UnicodeNormalization = UnicodeNormalization.NFC
 )
 
@@ -720,6 +731,13 @@ data class DocumentationConfig(
     val includeLocalizedLabels: Boolean = true
 )
 ```
+
+Architekturvertrag fuer 0.8.0:
+
+- `defaultLocale` beschreibt den Produktdefault; Root-/Fallback-Bundle ist Englisch (`messages.properties`).
+- Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
+- `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift per Phase-E-Vertrag nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte (siehe `docs/ImpPlan-0.8.0-E.md`).
+- Der finale Nutzervertrag fuer `--lang` als CLI-Override wird erst in 0.9.0 abgeschlossen.
 
 ### 4.2 Logging und Observability
 
@@ -798,9 +816,12 @@ suspend fun <T> withRetry(
 - Textbasierte Formate verwenden standardmaessig UTF-8.
 - Dateiimporte erkennen UTF-8/UTF-16 sowie BOM-Markierungen automatisch; weitere Encodings sind explizit konfigurierbar.
 - Exportformate erhalten Encoding-Metadaten, sofern das Zielformat diese transportieren kann; fuer CSV erfolgt dies optional ueber Sidecar-Dateien.
-- Temporale Werte werden intern zeitzonenbewusst verarbeitet; Standard fuer Serialisierung und Export ist UTC.
+- Temporale Werte folgen dem Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md`): ISO-8601-Profile fuer Serialisierung, `OffsetDateTime` bleibt offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC oder JVM-Zone. Die Default-Zeitzone wird in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) aufgeloest und greift nur in **expliziten** Konvertierungen ueber `TemporalFormatPolicy.toZoned(...)`.
 - Locale-sensible Werte wie Zahlen- und Waehrungsdarstellungen werden an Ein-/Ausgabegrenzen normalisiert, damit interne Verarbeitung formatunabhaengig bleibt.
-- Optionale Validierungsbausteine fuer E.164-Telefonnummern werden als Querschnittskomponente im `d-migrate-i18n`-Modul bereitgestellt.
+- Unicode-Normalisierung dient fuer 0.8.0 als Utility fuer Vergleiche, Metadaten und Darstellungsstabilitaet; Nutzdatenpayloads werden dadurch nicht still umgeschrieben.
+- BOM-Erkennung und CSV-BOM-Verhalten bauen fuer 0.8.0 auf dem seit 0.4.0 vorhandenen Unterbau auf und werden als Vertragskonsolidierung dokumentiert, nicht als neu erfundenes Feature.
+- Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil: Feldnamen, Codes und freie Fehlermeldungstexte bleiben englisch, lokalisiert werden nur menschenlesbare Plain-Text-Ausgaben.
+- Optionale Validierungsbausteine fuer E.164-Telefonnummern bleiben ein spaeterer Erweiterungspfad und gehoeren nicht zum 0.8.0-Mindestvertrag.
 
 ---
 
@@ -850,7 +871,7 @@ subprojects {
 | MySQL Connector/J   | 9.x     | driver-mysql    | DB-Zugriff               |
 | SQLite JDBC         | 3.47.x  | driver-sqlite   | DB-Zugriff               |
 | HikariCP            | 6.x     | drivers         | Connection Pooling       |
-| ICU4J               | 76.x    | i18n            | Unicode-Verarbeitung     |
+| ICU4J               | 76.x    | application/cli | Unicode-Verarbeitung     |
 | Ktor Client         | 3.x     | ai              | HTTP für KI-APIs         |
 | SLF4J + Logback     | 2.x/1.5 | Alle            | Logging                  |
 | Kotest              | 5.9.x   | Test            | Test-Framework           |

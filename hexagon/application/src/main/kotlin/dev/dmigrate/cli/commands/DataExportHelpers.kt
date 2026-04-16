@@ -1,12 +1,10 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.cli.i18n.TemporalFormatPolicy
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.streaming.ExportResult
-import java.math.BigDecimal
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.OffsetDateTime
+import java.util.Locale
 
 /**
  * Reine Helfer-Funktionen für [DataExportCommand]. Ausgelagert, damit die
@@ -97,44 +95,33 @@ internal object DataExportHelpers {
             }
         }
 
-    internal fun parseSinceLiteral(raw: String): Any {
-        parseOffsetDateTime(raw)?.let { return it }
-        parseLocalDateTime(raw)?.let { return it }
-        parseLocalDate(raw)?.let { return it }
-        if (INTEGER_PATTERN.matches(raw)) {
-            return raw.toLongOrNull() ?: BigDecimal(raw)
-        }
-        if (DECIMAL_PATTERN.matches(raw)) {
-            return BigDecimal(raw)
-        }
-        return raw
-    }
-
-    private fun parseOffsetDateTime(raw: String): OffsetDateTime? =
-        runCatching { OffsetDateTime.parse(raw) }.getOrNull()
-
-    private fun parseLocalDateTime(raw: String): LocalDateTime? =
-        raw.takeIf { 'T' in it }
-            ?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
-
-    private fun parseLocalDate(raw: String): LocalDate? =
-        raw.takeUnless { 'T' in it }
-            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-
-    private val INTEGER_PATTERN = Regex("^[+-]?\\d+$")
-    private val DECIMAL_PATTERN =
-        Regex("^[+-]?(?:\\d+\\.\\d+|\\d+\\.\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?$|^[+-]?\\d+[eE][+-]?\\d+$")
+    /**
+     * 0.8.0 Phase E (§4.5): Delegiert an den gemeinsamen Vertrag aus
+     * [TemporalFormatPolicy.parseSinceLiteral]. Das CLI-`--since`-Literal
+     * bleibt konservativ typisiert:
+     *
+     * - Offset-haltiger ISO-String -> `OffsetDateTime`   (§4.2)
+     * - lokaler ISO-DateTime       -> `LocalDateTime`    (§4.3)
+     * - ISO-Datum                  -> `LocalDate`        (§4.3)
+     * - Integer/Decimal/String     -> wie vor Phase E
+     *
+     * Es wird **keine** Default-Zeitzone gelesen: ein lokales Literal wird
+     * nicht automatisch zoniert, auch nicht wenn
+     * `ResolvedI18nSettings.timezone` gesetzt ist (§4.4).
+     */
+    internal fun parseSinceLiteral(raw: String): Any =
+        TemporalFormatPolicy.parseSinceLiteral(raw)
 
     /**
      * Plan §3.6 / §6.10: Formatiert das [ExportResult] als ProgressSummary
-     * für stderr. Reiner String-Aufbau; Zahlenformatierung über `"%.2f".format`
-     * (locale-abhängig, aber der bestehende E2E-Test prüft nur die Präfixe).
+     * für stderr. Zahlenformatierung läuft explizit über [Locale.US], damit
+     * der Summary-String nicht vom Host-Locale abhängt.
      */
     fun formatProgressSummary(result: ExportResult): String {
         val mb = result.totalBytes.toDouble() / (1024 * 1024)
         val seconds = result.durationMs.toDouble() / 1000
         return "Exported ${result.tables.size} table(s) " +
-            "(${result.totalRows} rows, ${"%.2f".format(mb)} MB) " +
-            "in ${"%.2f".format(seconds)} s"
+            "(${result.totalRows} rows, ${"%.2f".format(Locale.US, mb)} MB) " +
+            "in ${"%.2f".format(Locale.US, seconds)} s"
     }
 }

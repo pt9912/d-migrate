@@ -6,6 +6,7 @@ import dev.dmigrate.streaming.TableProgressStatus
 import java.util.Locale
 
 class ProgressRenderer(
+    private val messages: MessageResolver = MessageResolver(Locale.ENGLISH),
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) : ProgressReporter {
 
@@ -14,55 +15,56 @@ class ProgressRenderer(
     }
 
     internal fun render(event: ProgressEvent): String = when (event) {
-        is ProgressEvent.RunStarted ->
-            "${opLabel(event.operation.name)} ${event.totalTables} table(s)"
+        is ProgressEvent.RunStarted -> {
+            val key = if (event.operation.name == "EXPORT")
+                "cli.progress.run_started_export" else "cli.progress.run_started_import"
+            messages.text(key, event.totalTables)
+        }
 
         is ProgressEvent.ExportTableStarted ->
-            "Exporting table '${event.table}' (${event.tableOrdinal}/${event.tableCount})"
+            messages.text("cli.progress.export_table_started",
+                event.table, event.tableOrdinal, event.tableCount)
 
         is ProgressEvent.ExportChunkProcessed ->
-            "Exporting table '${event.table}' | chunk ${event.chunkIndex} | ${formatNumber(event.rowsProcessed)} rows | ${formatMb(event.bytesWritten)}"
+            messages.text("cli.progress.export_chunk",
+                event.table, event.chunkIndex, formatNumber(event.rowsProcessed), formatMb(event.bytesWritten))
 
-        is ProgressEvent.ExportTableFinished ->
-            "${statusPrefix(event.status)} table '${event.table}' | ${formatNumber(event.rowsProcessed)} rows | ${event.chunksProcessed} chunks | ${formatMb(event.bytesWritten)}"
+        is ProgressEvent.ExportTableFinished -> {
+            val key = if (event.status == TableProgressStatus.COMPLETED)
+                "cli.progress.export_table_completed" else "cli.progress.export_table_failed"
+            messages.text(key, event.table, formatNumber(event.rowsProcessed),
+                event.chunksProcessed, formatMb(event.bytesWritten))
+        }
 
         is ProgressEvent.ImportTableStarted ->
-            "Importing table '${event.table}' (${event.tableOrdinal}/${event.tableCount})"
+            messages.text("cli.progress.import_table_started",
+                event.table, event.tableOrdinal, event.tableCount)
 
         is ProgressEvent.ImportChunkProcessed -> {
             val parts = mutableListOf<String>()
-            parts += "${formatNumber(event.rowsInChunk)} rows processed"
-            if (event.rowsInserted > 0) parts += "${formatNumber(event.rowsInserted)} inserted"
-            if (event.rowsUpdated > 0) parts += "${formatNumber(event.rowsUpdated)} updated"
-            if (event.rowsSkipped > 0) parts += "${formatNumber(event.rowsSkipped)} skipped"
-            if (event.rowsFailed > 0) parts += "${formatNumber(event.rowsFailed)} failed"
-            "Importing table '${event.table}' | chunk ${event.chunkIndex} | ${parts.joinToString(", ")}"
+            parts += messages.text("cli.progress.rows_processed", formatNumber(event.rowsInChunk))
+            if (event.rowsInserted > 0) parts += messages.text("cli.progress.rows_inserted", formatNumber(event.rowsInserted))
+            if (event.rowsUpdated > 0) parts += messages.text("cli.progress.rows_updated", formatNumber(event.rowsUpdated))
+            if (event.rowsSkipped > 0) parts += messages.text("cli.progress.rows_skipped", formatNumber(event.rowsSkipped))
+            if (event.rowsFailed > 0) parts += messages.text("cli.progress.rows_failed", formatNumber(event.rowsFailed))
+            messages.text("cli.progress.import_chunk", event.table, event.chunkIndex, parts.joinToString(", "))
         }
 
         is ProgressEvent.ImportTableFinished -> {
             val parts = mutableListOf<String>()
-            parts += "${formatNumber(event.rowsInserted)} inserted"
-            if (event.rowsUpdated > 0) parts += "${formatNumber(event.rowsUpdated)} updated"
-            if (event.rowsSkipped > 0) parts += "${formatNumber(event.rowsSkipped)} skipped"
-            if (event.rowsUnknown > 0) parts += "${formatNumber(event.rowsUnknown)} unknown"
-            if (event.rowsFailed > 0) parts += "${formatNumber(event.rowsFailed)} failed"
-            val prefix = if (event.status == TableProgressStatus.COMPLETED) "Imported" else "FAILED"
-            "$prefix table '${event.table}' | ${parts.joinToString(", ")}"
+            parts += messages.text("cli.progress.rows_inserted", formatNumber(event.rowsInserted))
+            if (event.rowsUpdated > 0) parts += messages.text("cli.progress.rows_updated", formatNumber(event.rowsUpdated))
+            if (event.rowsSkipped > 0) parts += messages.text("cli.progress.rows_skipped", formatNumber(event.rowsSkipped))
+            if (event.rowsUnknown > 0) parts += messages.text("cli.progress.rows_unknown", formatNumber(event.rowsUnknown))
+            if (event.rowsFailed > 0) parts += messages.text("cli.progress.rows_failed", formatNumber(event.rowsFailed))
+            val key = if (event.status == TableProgressStatus.COMPLETED)
+                "cli.progress.import_table_completed" else "cli.progress.import_table_failed"
+            messages.text(key, event.table, parts.joinToString(", "))
         }
     }
 
-    private fun opLabel(op: String): String = when (op) {
-        "EXPORT" -> "Exporting"
-        "IMPORT" -> "Importing"
-        else -> op
-    }
-
-    private fun statusPrefix(status: TableProgressStatus): String = when (status) {
-        TableProgressStatus.COMPLETED -> "Exported"
-        TableProgressStatus.FAILED -> "FAILED"
-    }
-
     companion object {
+        // Technical number formatting stays Locale.US for stability
         internal fun formatNumber(n: Long): String =
             String.format(Locale.US, "%,d", n)
 

@@ -56,16 +56,16 @@ class NamedConnectionResolver(
         if (source.contains("://")) return source
 
         // Sonst: Config-Pfad nach Priorität CLI > ENV > Default ermitteln.
-        val (configPath, isExplicit) = resolveConfigPath()
+        val configPath = resolveConfigPath()
 
-        if (!Files.isRegularFile(configPath)) {
+        if (!Files.isRegularFile(configPath.path)) {
             // Datei fehlt → Meldung hängt davon ab, ob CLI/ENV explizit war.
-            throw when {
-                isExplicit && configPathFromCli != null ->
-                    ConfigResolveException("Config file not found: $configPath")
-                isExplicit ->
-                    ConfigResolveException("D_MIGRATE_CONFIG points to non-existent file: $configPath")
-                else ->
+            throw when (configPath.source) {
+                EffectiveConfigSource.CLI ->
+                    ConfigResolveException("Config file not found: ${configPath.path}")
+                EffectiveConfigSource.ENV ->
+                    ConfigResolveException("D_MIGRATE_CONFIG points to non-existent file: ${configPath.path}")
+                EffectiveConfigSource.DEFAULT ->
                     ConfigResolveException(
                         "'--source $source' looks like a connection name, but no .d-migrate.yaml " +
                             "was found. Use --config <path>, set D_MIGRATE_CONFIG, or pass a full URL."
@@ -73,7 +73,7 @@ class NamedConnectionResolver(
             }
         }
 
-        val rawUrl = lookupConnectionUrl(configPath, source)
+        val rawUrl = lookupConnectionUrl(configPath.path, source)
         return substituteEnvVars(rawUrl, source)
     }
 
@@ -114,15 +114,15 @@ class NamedConnectionResolver(
      * URL oder Connection-Name auf.
      */
     private fun resolveDefault(defaultKey: String, cliFlag: String): String {
-        val (configPath, isExplicit) = resolveConfigPath()
+        val configPath = resolveConfigPath()
 
-        if (!Files.isRegularFile(configPath)) {
-            throw when {
-                isExplicit && configPathFromCli != null ->
-                    ConfigResolveException("Config file not found: $configPath")
-                isExplicit ->
-                    ConfigResolveException("D_MIGRATE_CONFIG points to non-existent file: $configPath")
-                else ->
+        if (!Files.isRegularFile(configPath.path)) {
+            throw when (configPath.source) {
+                EffectiveConfigSource.CLI ->
+                    ConfigResolveException("Config file not found: ${configPath.path}")
+                EffectiveConfigSource.ENV ->
+                    ConfigResolveException("D_MIGRATE_CONFIG points to non-existent file: ${configPath.path}")
+                EffectiveConfigSource.DEFAULT ->
                     ConfigMissingDefaultException(
                         "$cliFlag was not provided and no .d-migrate.yaml was found to look up " +
                             "database.$defaultKey. Use $cliFlag <value>, --config <path>, " +
@@ -131,9 +131,9 @@ class NamedConnectionResolver(
             }
         }
 
-        val defaultValue = lookupDefaultValue(configPath, defaultKey)
+        val defaultValue = lookupDefaultValue(configPath.path, defaultKey)
             ?: throw ConfigMissingDefaultException(
-                "$cliFlag was not provided and database.$defaultKey is not set in $configPath."
+                "$cliFlag was not provided and database.$defaultKey is not set in ${configPath.path}."
             )
 
         // Default ist eine direkte URL?
@@ -142,7 +142,7 @@ class NamedConnectionResolver(
         }
 
         // Default ist ein Connection-Name → über database.connections auflösen.
-        val rawUrl = lookupConnectionUrl(configPath, defaultValue)
+        val rawUrl = lookupConnectionUrl(configPath.path, defaultValue)
         return substituteEnvVars(rawUrl, defaultValue)
     }
 
@@ -182,11 +182,12 @@ class NamedConnectionResolver(
      * Ermittelt den effektiven Config-Pfad nach Priorität CLI > ENV > Default
      * sowie ein Flag, ob die Quelle explizit gesetzt war (für Fehlermeldungen).
      */
-    private fun resolveConfigPath(): Pair<Path, Boolean> {
-        configPathFromCli?.let { return it to true }
-        envLookup("D_MIGRATE_CONFIG")?.takeIf { it.isNotBlank() }?.let { return Paths.get(it) to true }
-        return defaultConfigPath to false
-    }
+    private fun resolveConfigPath(): EffectiveConfigPath =
+        EffectiveConfigPathResolver(
+            configPathFromCli = configPathFromCli,
+            envLookup = envLookup,
+            defaultConfigPath = defaultConfigPath,
+        ).resolve()
 
     /**
      * Liest die Config-Datei mit SnakeYAML Engine und löst

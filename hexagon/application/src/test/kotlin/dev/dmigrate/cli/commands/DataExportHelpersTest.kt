@@ -205,6 +205,21 @@ class DataExportHelpersTest : FunSpec({
         test("falls back to raw string for non-typed values") {
             DataExportHelpers.parseSinceLiteral("release-42") shouldBe "release-42"
         }
+
+        // 0.8.0 Phase E (docs/ImpPlan-0.8.0-E.md §4.4):
+        // Keine Auto-Zonierung — ein lokaler ISO-DateTime bleibt
+        // LocalDateTime, auch wenn die JVM-Default-Zone abweicht oder
+        // `ResolvedI18nSettings.timezone` gesetzt waere.
+        test("Phase E §4.4: lokaler DateTime bleibt LocalDateTime (keine Default-TZ-Injektion)") {
+            val result = DataExportHelpers.parseSinceLiteral("2026-06-15T12:00:00")
+            result.shouldBeInstanceOf<LocalDateTime>()
+            result shouldBe LocalDateTime.of(2026, 6, 15, 12, 0, 0)
+        }
+
+        test("Phase E §4.2: Offset-Input bleibt OffsetDateTime") {
+            val result = DataExportHelpers.parseSinceLiteral("2026-06-15T12:00:00+02:00")
+            result.shouldBeInstanceOf<OffsetDateTime>()
+        }
     }
 
     // ─── formatProgressSummary ────────────────────────────────────
@@ -242,15 +257,12 @@ class DataExportHelpersTest : FunSpec({
             summary shouldContain "42 rows"
         }
 
-        test("converts bytes to MB") {
+        test("converts bytes to MB with stable Locale.US formatting") {
             // 5 * 1024 * 1024 bytes = 5.00 MB
             val summary = DataExportHelpers.formatProgressSummary(
                 result(totalBytes = 5L * 1024 * 1024)
             )
-            // Format is locale-dependent ("5.00" or "5,00") — we only check
-            // that the integral part plus " MB" is present.
-            summary shouldContain "5"
-            summary shouldContain "MB"
+            summary shouldContain "5.00 MB"
         }
 
         test("zero-byte result still formats without crash") {

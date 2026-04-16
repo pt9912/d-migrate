@@ -310,4 +310,46 @@ class OutputFormatterTest : FunSpec({
             stderr shouldContain "\\t"
         }
     }
+
+    // ─── German locale ──────────────────────────────────────────
+
+    context("German locale plain output") {
+
+        val deContext = CliContext(locale = java.util.Locale.GERMAN)
+
+        test("plain output uses German header") {
+            val (stdout, _) = captureStreams {
+                OutputFormatter(deContext).printValidationResult(
+                    validResult, sampleSchema, "/tmp/schema.yaml")
+            }
+            stdout shouldContain "wird validiert"
+            stdout shouldContain "Validierung bestanden"
+        }
+
+        test("plain error uses German prefix") {
+            val (_, stderr) = captureStreams {
+                OutputFormatter(deContext).printError("etwas schief", "/tmp/bad.yaml")
+            }
+            stderr shouldContain "[FEHLER]"
+            stderr shouldContain "Datei:"
+        }
+
+        test("JSON output stays English even with German locale") {
+            val (stdout, _) = captureStreams {
+                OutputFormatter(CliContext(outputFormat = "json", locale = java.util.Locale.GERMAN))
+                    .printValidationResult(validResult, sampleSchema, "/tmp/schema.yaml")
+            }
+            stdout shouldContain "\"command\": \"schema.validate\""
+            stdout shouldContain "\"status\": \"passed\""
+        }
+
+        test("YAML output stays English even with German locale") {
+            val (stdout, _) = captureStreams {
+                OutputFormatter(CliContext(outputFormat = "yaml", locale = java.util.Locale.GERMAN))
+                    .printValidationResult(validResult, sampleSchema, "/tmp/schema.yaml")
+            }
+            stdout shouldContain "command: schema.validate"
+            stdout shouldContain "status: passed"
+        }
+    }
 })

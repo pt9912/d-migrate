@@ -12,7 +12,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import java.util.Base64
 import java.util.UUID
 import java.sql.Date as SqlDate
@@ -98,6 +100,25 @@ class ValueSerializerTest : FunSpec({
     test("OffsetDateTime → ISO 8601 with offset") {
         val odt = OffsetDateTime.of(2024, 1, 15, 14, 30, 0, 0, ZoneOffset.ofHours(2))
         serializer.serialize("t", "c", odt) shouldBe SerializedValue.Text("2024-01-15T14:30:00+02:00")
+    }
+
+    // 0.8.0 Phase E (docs/ImpPlan-0.8.0-E.md §4.2 / §8 R3):
+    // ZonedDateTime wird offsetbasiert serialisiert; die ZoneId ist in 0.8.0
+    // nicht Teil des garantierten Vertrags — der Offset bleibt aber erhalten.
+    test("ZonedDateTime → ISO 8601 mit Offset, ZoneId-Region entfaellt (Phase E §4.2)") {
+        val zdt = ZonedDateTime.of(
+            LocalDateTime.of(2024, 1, 15, 14, 30, 0),
+            ZoneId.of("Europe/Berlin"),
+        )
+        serializer.serialize("t", "c", zdt) shouldBe
+            SerializedValue.Text("2024-01-15T14:30:00+01:00")
+    }
+
+    test("LocalDateTime bleibt ohne Offset (Phase E §4.3)") {
+        val ldt = LocalDateTime.of(2024, 1, 15, 14, 30, 0)
+        val result = serializer.serialize("t", "c", ldt) as SerializedValue.Text
+        // Keine stille Zonierung zu UTC oder JVM-Lokalzeit.
+        result.value shouldBe "2024-01-15T14:30:00"
     }
 
     test("Instant → ISO 8601 UTC") {

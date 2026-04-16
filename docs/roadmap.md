@@ -229,19 +229,25 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
 > Infrastruktur in [1.1.0](#milestone-110--ki-integration).
 
-### Milestone 0.8.0 — Internationalisierung
+### Milestone 0.8.0 — Internationalisierung ✅ (2026-04-16)
 
-| Bereich | Aufgabe                                                          | LF-Ref |
-| ------- | ---------------------------------------------------------------- | ------ |
-| i18n    | ResourceBundle-Architektur (Deutsch, Englisch)                   | LF-006 |
-| i18n    | Lokalisierte CLI-Meldungen und Fehlertexte                       | LN-023 |
-| i18n    | ICU4J-Integration für Unicode-Verarbeitung                       | LF-005 |
-| i18n    | Grapheme-aware String-Längenberechnung                           | LN-021 |
-| Core    | Zeitzonen-Handling (UTC als Standard, konfigurierbar)            | LF-007 |
-| Formats | BOM-Erkennung und -Behandlung bei CSV                            | LF-010 |
-| Test    | Unicode-Integritätstests (Emoji, Kyrillisch, CJK)                | 8.5    |
+| Bereich | Aufgabe                                                          | LF-Ref | Status |
+| ------- | ---------------------------------------------------------------- | ------ | ------ |
+| Docs    | Phase A: Spezifikationsbereinigung und Scope-Fixierung           | —      | ✅ |
+| i18n    | Phase B: I18n-Runtime und Config-Resolution                      | LF-006 | ✅ |
+| i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben            | LN-023 | ✅ |
+| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | ✅ |
+| Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy)     | LF-007 | ✅ |
+| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                        | LF-010 | ✅ |
+| Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)      | 8.5    | ✅ |
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
+
+> Stand 2026-04-16: Phasen A–G umgesetzt — Spezifikationsbereinigung,
+> I18n-Runtime, ResourceBundles, ICU4J-Integration, Zeitzonen-/Format-
+> Policy, CSV-Encoding-/BOM-Konsolidierung sowie Tests und
+> Dokumentation inklusive Mindest-Testmatrix, `--lang`-Grenze 0.8.0/0.9.0
+> und DE-Bundle-Fallback-Nachweis. Milestone 0.8.0 damit abgeschlossen.
 
 ### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
 
@@ -297,17 +303,8 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Security  | Verschlüsselte Credential-Speicherung (AES-256)      | LN-025 |
 | Security  | TLS/SSL für alle DB-Verbindungen                     | LN-026 |
 | Security  | Audit-Logging aller Operationen                      | LN-027 |
-| Core      | Regelbasierte Testdaten-Generierung (deterministischer Basis-Slice) | LF-024 |
-| Core      | Seed-basierte Reproduzierbarkeit fuer `data seed`    | LF-024 |
-| CLI       | `d-migrate data seed` Kommando                       | LF-024 |
 | QA        | Property-Based Testing (Jqwik)                       | LN-046 |
 | QA        | Performance-Regression-Tests                         | LN-044 |
-
-**Ergebnis**: Release Candidate mit stabiler Kernfunktionalität für produktive
-Migrationen und reproduzierbare Testumgebungen. Neben Sicherheit und
-Robustheit steht damit auch ein deterministischer Basis-Pfad für Testdaten
-bereit, der auf neutralem Schema, Import-/Write-Pfad und explizitem Seed
-aufsetzt.
 
 ### Milestone 1.0.0 — Stable Release
 
@@ -376,25 +373,17 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
 
-### Milestone 1.3.0 — Erweiterte Testdaten-Generierung
+### Milestone 1.3.0 — Testdaten-Generierung
 
 | Bereich | Aufgabe                                                 | LF-Ref |
 | ------- | ------------------------------------------------------- | ------ |
+| Core    | Regelbasierte Testdaten-Generierung (Faker-Integration) | LF-024 |
 | AI      | KI-gestützte Testdaten-Generierung (optional)           | LF-024 |
+| Core    | Seed-basierte Reproduzierbarkeit                        | LF-024 |
 | Core    | Mehrsprachige Testdaten (Namen, Adressen, etc.)         | LF-024 |
-| Core    | Ausbau der regelbasierten Generierung fuer realistischere Domaenendaten und Beziehungen | LF-024 |
-| Core    | Erweiterte Locale-/Sprachprofile fuer Testdaten         | LF-024 |
+| CLI     | `d-migrate data seed` Kommando                          | LF-024 |
 
-**Ergebnis**: Automatische Generierung fachlich realistischer Testdaten über
-den deterministischen Basis-Slice aus `1.0.0-RC` hinaus, optional ergänzt um
-KI-gestützte Vorschläge.
-
-> **Begründung der Vorverlegung**: Der deterministische Teil von `LF-024`
-> hängt nicht an der späteren KI-Infrastruktur. Sobald neutrales Schema,
-> Datenimport und CLI-Stabilität vorhanden sind, liefert `data seed` bereits
-> frühen Nutzen für Demos, QA und reproduzierbare Testumgebungen. Die
-> ausgebauten, stärker semantischen Testdaten bleiben deshalb bewusst in
-> Phase 4.
+**Ergebnis**: Automatische Generierung realistischer Testdaten.
 
 ### Milestone 1.4.0 — Erweiterte Features
 
@@ -467,6 +456,6 @@ KI-gestützte Vorschläge.
 
 ---
 
-**Version**: 3.13
-**Stand**: 2026-04-15
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen
+**Version**: 3.18
+**Stand**: 2026-04-16
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen
