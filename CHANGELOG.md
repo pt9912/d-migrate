@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI: `verify-homebrew` Job in `.github/workflows/release-homebrew.yml` — macOS-Runner installiert nach jedem Tag-Push den veröffentlichten Tap (`pt9912/homebrew-d-migrate`) und verifiziert `d-migrate --version` + `--help` end-to-end
+- CI: neuer Workflow `.github/workflows/verify-homebrew-formula.yml` — macOS-Verifikation der repo-lokalen Formula (`packaging/homebrew/d-migrate.rb`) via Ephemeral-Tap bei jeder Änderung der Formula-Datei, PRs gegen `develop`/`main` sowie manuellem `workflow_dispatch`
+
 ### Changed
+
+- Homebrew install block (`packaging/homebrew/d-migrate.rb` und `release-homebrew.yml` `install:`-Key) verwendet `Dir["*"]` statt `Dir["d-migrate-*"].fetch(0)`: Homebrew strippt das einzelne Top-Level-Verzeichnis beim Entpacken, das alte Pattern lieferte daher immer einen leeren Treffer und einen `IndexError` bei der Installation
+- `docs/releasing.md` §4.7: `brew install --formula <path.rb>` durch den modern-homebrew-konformen Ephemeral-Tap-Weg ersetzt; Alternativpfad über den veröffentlichten Tap dokumentiert
+- `docs/releasing.md` §4.7 / §7: ZIP-SHA wird aus dem publizierten Release-Asset (curl/`gh release download`) gelesen, nicht aus `release-assets/*.sha256` — die beiden Workflows bauen den ZIP unabhängig und produzieren unterschiedliche Hashes
+- `docs/releasing.md` §3.5 / §7 / §8: neue Workflows in der Vorbereitungs-, Veröffentlichungs- und Referenzsektion eingetragen
 
 ### Fixed
 
