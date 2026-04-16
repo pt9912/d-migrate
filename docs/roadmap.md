@@ -265,6 +265,25 @@ für Beta-Tester abgeschlossen.
 > — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.5** ausgelagert,
 > damit dieser Milestone klein und fokussiert bleibt.
 
+### Milestone 0.9.1 — Beta: Library-Refactor und Integrationsschnitt
+
+| Bereich | Aufgabe                                                                 | LF-Ref |
+| ------- | ----------------------------------------------------------------------- | ------ |
+| Core    | Read-/Write-Schnitt in `hexagon:ports` für externe Consumer schärfen    | —      |
+| Driver  | Profiling-Adapter aus JDBC-Treiber-Kernmodulen extrahieren              | —      |
+| Core    | FK-/Topo-Sort-Utility als wiederverwendbaren Helfer nach `hexagon:core` | —      |
+| Arch    | Integrationsgrenzen für externe Library-Consumer schärfen               | —      |
+
+**Ergebnis**: `d-migrate` ist intern so refaktoriert, dass die Kernmodule
+sauberer als Libraries konsumierbar sind, ohne schon einen öffentlichen
+Publish-Vertrag zu versprechen.
+
+> Hinweis: Dieser Milestone bereitet wiederverwendbare Libraries für externe
+> Consumer wie `d-browser` vor. Ein öffentlicher Publish-Vertrag inklusive
+> Maven-Central-Portal-Workflow bleibt bewusst **1.0.0** vorbehalten, damit
+> Modulgrenzen, Koordinaten und API-Flächen erst nach dem Refactor
+> stabilisiert werden.
+
 ### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                          | LF-Ref |
@@ -313,6 +332,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 | Build     | GraalVM Native Image (Linux, macOS, Windows)      | —      |
 | Build     | Docker Image auf Docker Hub                       | —      |
 | Build     | SDKMAN-Distribution                               | —      |
+| Build     | Maven-Central-Portal Publish-Workflow für stabile Library-Artefakte | — |
 | Security  | Externer Security-Audit                           | —      |
 | QA        | 1 Mio. Datensätze Export/Import ohne Datenverlust | 8.1    |
 | QA        | DDL-Generierung 1.000 Tabellen < 30 Sekunden      | 8.2    |
@@ -458,4 +478,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.19
 **Stand**: 2026-04-16
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen; Milestone 0.9.0 in Arbeit
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen; Milestone 0.9.0 in Arbeit, 0.9.1 geplant

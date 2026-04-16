@@ -86,6 +86,11 @@ d-migrate/
 | Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
 | Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`)                                                                                             |
 
+> Hinweis: Der geplante Refactor fuer eine schmalere Library- und
+> Integrationsschnittstelle ist in
+> [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
+> beschrieben.
+
 ```
               adapters:driving:cli  (Clikt)
                       │

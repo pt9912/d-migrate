@@ -4,6 +4,11 @@
 > Dieses Dokument beschreibt Voraussetzungen, Pre-Release-Checks, den
 > Schritt-für-Schritt-Ablauf für GitHub-Release-Assets, OCI und Homebrew
 > sowie Rollback-Szenarien.
+>
+> Hinweis: Ein oeffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
+> nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
+> [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
+> beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
 
 ---
 
