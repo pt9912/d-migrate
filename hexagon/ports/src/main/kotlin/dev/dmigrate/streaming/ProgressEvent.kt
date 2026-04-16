@@ -17,6 +17,16 @@ sealed interface ProgressEvent {
     data class RunStarted(
         val operation: ProgressOperation,
         val totalTables: Int,
+        /**
+         * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
+         * `operationId` fuer den gesamten Lauf. Wird in
+         * [ExportResult.operationId]/[ImportResult.operationId]
+         * gespiegelt und darf in den stderr-nahen Progress-/Summary-
+         * Pfaden nicht verloren gehen. Phase B-konforme Erzeuger
+         * setzen den Wert; Legacy-Callsites, die noch keine
+         * operationId haben, duerfen temporaer `null` uebergeben.
+         */
+        val operationId: String? = null,
     ) : ProgressEvent
 
     // ── Export ─────────────────────────────────────────────

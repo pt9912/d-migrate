@@ -18,6 +18,14 @@ data class ExportResult(
     val totalChunks: Long,
     val totalBytes: Long,
     val durationMs: Long,
+    /**
+     * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
+     * `operationId` des Laufs. Wird von Runnern gesetzt, damit
+     * stderr-Summary, Logs und Resume-Manifest auf denselben Lauf
+     * referenzieren. `null` bedeutet: Pre-Phase-B-Callsite hat keine
+     * ID geliefert.
+     */
+    val operationId: String? = null,
 ) {
     /** True wenn keine Tabelle geskippt wurde und alle Tabellen mindestens 0 Rows hatten. */
     val success: Boolean get() = tables.all { it.error == null }

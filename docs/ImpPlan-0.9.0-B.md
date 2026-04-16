@@ -2,7 +2,19 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: B (Checkpoint-Port, Manifest und Konfiguration)
-> **Status**: Planned (2026-04-16)
+> **Status**: Implemented (2026-04-16) — Checkpoint-Port, versioniertes
+> Manifest, dateibasierter Adapter mit atomarem Schreibpfad,
+> `PipelineConfig`-Erweiterung um `CheckpointConfig`, zentraler
+> Merge-Helper (als Helper + Tests), `operationId` als optionales Feld
+> in `ProgressEvent.RunStarted`, `ExportResult` und `ImportResult`;
+> `StreamingExporter`/`StreamingImporter` setzen die ID in das
+> `RunStarted`-Event, wenn sie der Aufrufer mitgibt; Runner erzeugen pro
+> Lauf eine UUID und zeigen sie in der stderr-Summary. Vertragstests fuer
+> Manifest, Adapter und Merge-Helper. **Bewusst nicht Teil von Phase B**
+> (Phase C/D): Runner-Aufruf von `CheckpointConfig.merge(...)`, Nutzung
+> von `checkpointDir` aus dem Request, Durchreichen der `operationId`
+> durch `ExportExecutor`/`ImportExecutor`, Anzeige im `ProgressRenderer`,
+> Manifest-Fortschreibung waehrend des Streams, Wiederaufnahme.
 > **Referenz**: `docs/implementation-plan-0.9.0.md` Abschnitt 2 bis 6.2,
 > Abschnitt 8.1 bis 8.3; `docs/ImpPlan-0.9.0-A.md`; `docs/design.md`
 > Abschnitt 3.2; `docs/architecture.md` Abschnitt 3.3;
@@ -29,11 +41,13 @@ und Streaming-Implementierung:
 - wie `PipelineConfig` von reinem `chunkSize` auf einen kleinen
   Resilienz-Vertrag erweitert wird
 - wie `operationId` und Resume-Metadaten in Progress- und Result-Pfaden
-  sichtbar werden
-- wie dieselbe `operationId` bis in `stderr`-nahe Progress-/Summary-Ausgaben
-  durchgereicht wird
+  sichtbar werden (Typvertrag in Phase B; das Durchreichen bis in
+  `ProgressEvent.RunStarted` bleibt Phase C/D, siehe §2.2)
+- wie dieselbe `operationId` in der nachgelagerten stderr-Summary
+  referenzierbar wird
 - wie sichtbare CLI-Overrides aus Phase A mit
-  `pipeline.checkpoint.*` zusammengefuehrt werden
+  `pipeline.checkpoint.*` ueber einen zentralen Merge-Helper
+  zusammengefuehrt werden (Aufruf im Runner folgt in Phase C/D)
 
 Phase B liefert damit noch keine vollstaendige Wiederaufnahme im Datenpfad.
 Sie schafft aber den gemeinsamen Vertrag, ohne den Phasen C und D entweder
@@ -44,19 +58,26 @@ Nach Phase B soll klar und testbar gelten:
 
 - es gibt einen expliziten Checkpoint-Port statt impliziter Dateizugriffe
 - es gibt ein versioniertes, serialisierbares Manifest fuer Export und Import
-- `PipelineConfig` kann Checkpoint-Einstellungen produktiv tragen
-- CLI-/Config-Werte fuer Checkpoint-Verhalten laufen ueber einen klaren,
-  zentralen Merge-Vertrag
+- `PipelineConfig` traegt Checkpoint-Einstellungen als expliziten Typ
+  (`CheckpointConfig`); die Verdrahtung im Export-/Import-Runner folgt in
+  Phase C/D zusammen mit der Resume-Runtime
+- fuer CLI-/Config-Werte existiert ein zentraler Merge-Helper
+  (`CheckpointConfig.merge`), der in Phase C/D von beiden Runnern identisch
+  aufgerufen wird — Phase B liefert den Helper und seine Tests, noch nicht
+  den Runner-Aufruf
 - Progress- und Result-Typen koennen einen Lauf stabil ueber
   `operationId` referenzieren
-- dieselbe `operationId` ist in den stderr-nahen Progress-/Summary-Pfaden
-  verfuegbar
+- dieselbe `operationId` ist in der nachgelagerten stderr-Summary
+  verfuegbar; die Durchreichung bis in `ProgressEvent.RunStarted` erfolgt
+  in Phase C/D (Executor-Signatur-Aenderung)
 
 ---
 
 ## 2. Ausgangslage
 
-Aktueller Stand im Repo:
+### 2.1 Stand **vor** Phase B
+
+Aktueller Stand im Repo (vor Phase B):
 
 - `docs/design.md` enthaelt mit `MigrationCheckpoint` bereits eine
   Konzeptklasse fuer Resume, die im Produktionscode aber noch nicht
@@ -88,6 +109,85 @@ Konsequenz:
   werden, inklusive einer expliziten Entscheidung zur Abbildung zwischen dem
   bestehenden Key `pipeline.checkpoint.interval` und dem neuen
   row-/time-basierten Laufzeitmodell
+
+### 2.2 Stand **nach** Phase B
+
+Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
+
+- neuer expliziter Checkpoint-Port in `hexagon:ports`:
+  [`CheckpointStore`](../hexagon/ports/src/main/kotlin/dev/dmigrate/streaming/checkpoint/CheckpointStore.kt)
+  mit `load`/`save`/`list`/`complete` sowie `CheckpointStoreException`
+  und `UnsupportedCheckpointVersionException`.
+- versioniertes, persistierbares Manifest-Grundmodell
+  [`CheckpointManifest`](../hexagon/ports/src/main/kotlin/dev/dmigrate/streaming/checkpoint/CheckpointManifest.kt)
+  mit `schemaVersion` (`CURRENT_SCHEMA_VERSION = 1`), `operationId`,
+  `operationType`, `createdAt`/`updatedAt`, `format`, `chunkSize`,
+  `tableSlices` (`CheckpointTableSlice`) und `optionsFingerprint`.
+  `operationSpecific` ist der Erweiterungspunkt fuer Phase C/D (`sealed
+  interface CheckpointOperationSpecifics`).
+- dateibasierter Erstadapter
+  [`FileCheckpointStore`](../adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/checkpoint/FileCheckpointStore.kt)
+  mit atomarem `temp -> ATOMIC_MOVE`-Schreibpfad (§4.6), YAML-
+  Serialisierung, toleranter `list()` und klaren Fehlern fuer korrupte
+  oder inkompatibel versionierte Manifeste.
+- `PipelineConfig` um [`CheckpointConfig`](../hexagon/ports/src/main/kotlin/dev/dmigrate/streaming/PipelineConfig.kt)
+  erweitert (enabled, rowInterval, maxInterval, directory).
+  Name-Mapping zwischen Config-Oberflaeche und Runtime ist explizit:
+  `pipeline.checkpoint.interval` -> `rowInterval`;
+  neuer Key `pipeline.checkpoint.max_interval` -> `maxInterval`
+  (ISO-8601-Duration, Default `PT5M`).
+- zentraler Merge-Helper `CheckpointConfig.merge(cliDirectory, config)`
+  liefert CLI-Override > Config > Default einheitlich und ist durch
+  `PipelineConfigTest` abgesichert. **Noch nicht umgesetzt**: beide Runner
+  bauen `PipelineConfig` weiterhin mit `PipelineConfig(chunkSize = ...)`;
+  der CLI-Wert `DataExportRequest.checkpointDir` bzw.
+  `DataImportRequest.checkpointDir` wird im Request bereits getragen
+  (Phase A), im Runner aber noch nicht in den Merge-Aufruf gezogen. Das
+  Wiring passiert zusammen mit dem Resume-Runtime-Flow in Phase C/D.
+- `ProgressEvent.RunStarted`, `ExportResult` und `ImportResult` tragen
+  ein optionales `operationId`-Feld (§4.5). Der Parameter ist fuer
+  Pre-Phase-B-Callsites als `null` zulaessig, damit Bestandstests ohne
+  Churn bleiben.
+- `StreamingExporter.export` und `StreamingImporter.import` nehmen ein
+  optionales `operationId` entgegen und setzen es sowohl in das von ihnen
+  emittierte `RunStarted`-Event als auch in den zurueckgegebenen Result.
+  Bestandstests uebergeben `null` und bleiben unveraendert.
+- Beide Runner (`DataExportRunner`, `DataImportRunner`) erzeugen eine
+  stabile `UUID`-basierte `operationId` pro Lauf, reichern das Result
+  per `.copy(operationId = ...)` an und emittieren die ID in der
+  nachgelagerten stderr-Summary (`Run operation id: ...`).
+- **Noch offen (Phase C/D)**: `ExportExecutor` und `ImportExecutor`
+  haben aktuell keinen `operationId`-Parameter, deshalb gibt der Runner
+  die ID heute **nicht** an den Streaming-Pfad weiter. Das
+  `RunStarted`-Event traegt die ID damit nur dann, wenn der Aufrufer
+  von `StreamingExporter.export`/`StreamingImporter.import` sie
+  explizit setzt — im CLI-Pfad ist das erst nach Executor-Signatur-
+  Aenderung in Phase C/D der Fall. Zusaetzlich fehlt die Renderer-
+  Darstellung im `ProgressRenderer`.
+- Vertragstests: `CheckpointManifestTest`, `FileCheckpointStoreTest`
+  (Roundtrip, atomaren Schreibpfad, Versionsablehnung, korrupte Dateien,
+  tolerantes `list()`, `complete()`), erweiterter `PipelineConfigTest`
+  (Default-LN-012-Werte, Validierung, Merge-Vertrag).
+- Doku: `docs/connection-config-spec.md` dokumentiert
+  `pipeline.checkpoint.interval` + neuen `max_interval`-Key; Phase-A-
+  Plan und Masterplan verweisen weiterhin auf denselben
+  CLI-/Config-Merge-Vertrag.
+
+**Bewusst noch nicht umgesetzt** (Phasen C/D):
+
+- Runner-seitiger Aufruf von `CheckpointConfig.merge(...)` — beide Runner
+  instanziieren `PipelineConfig` derzeit nur mit `chunkSize`, und der
+  Request-Wert `checkpointDir` bleibt ungenutzt, bis Phase C/D die
+  Resume-Runtime anschliesst
+- Schreiben des Manifests waehrend des Streams
+- tatsaechliche Wiederaufnahme aus einem vorhandenen Manifest
+- CLI-seitiges Durchreichen der `operationId` vom Runner in den
+  Streaming-Pfad: `ExportExecutor`/`ImportExecutor` haben den Parameter
+  noch nicht, deshalb landet die ID heute nicht im live emittierten
+  `RunStarted`-Event (obwohl der Typ und die Streaming-Seite sie
+  akzeptieren)
+- Darstellung der `operationId` im `ProgressRenderer`
+- Signal-Handling (SIGINT/SIGTERM) und Retry-Integration
 
 ---
 
@@ -278,16 +378,20 @@ Nicht festgezogen wird in Phase B:
 - per-Slice/Tabellen-Status als serialisierbare Teilstruktur festlegen
 - Versionierungsfeld und Kompatibilitaetsanker festziehen
 
-### 5.2 B2 - `PipelineConfig` und Merge-Vertrag erweitern
+### 5.2 B2 - `PipelineConfig` und Merge-Helper erweitern
 
 - `PipelineConfig` um Checkpoint-Konfiguration erweitern
-- zentralen Merge zwischen CLI, Config und Defaults definieren
+- zentralen Merge-Helper zwischen CLI, Config und Defaults **als
+  Helper + Tests** definieren — der Runner-seitige Aufruf folgt zusammen
+  mit dem Resume-Runtime-Wiring in Phase C/D (siehe §2.2 und
+  "Noch offen")
 - Beziehung zu `pipeline.checkpoint.directory` klar modellieren
 - kanonische Abbildung zwischen Config-Key `pipeline.checkpoint.interval`
   und internem row-basiertem Trigger festziehen
 - finalen Config-Key fuer den Zeit-Trigger festlegen und dokumentieren
-- direkte `PipelineConfig(chunkSize = ...)`-Instanziierungen in Runnern auf
-  den erweiterten Vertrag umstellen
+- `PipelineConfig(chunkSize = ...)`-Instanziierungen in den Runnern
+  werden in Phase B bewusst **nicht** umgestellt; das erfolgt erst bei
+  der Runner-Verdrahtung in Phase C/D
 
 ### 5.3 B3 - Dateibasierten Checkpoint-Store-Adapter bauen
 
@@ -297,10 +401,20 @@ Nicht festgezogen wird in Phase B:
 
 ### 5.4 B4 - Progress- und Result-Vertraege erweitern
 
-- `operationId` in Progress-Pfaden verankern
-- Result-Typen um minimale Resume-Metadaten erweitern
-- stderr-nahe Progress-/Summary-Pfade auf dieselbe Referenz angleichen
-- Adapter-/Runner-Nutzer auf den neuen Rueckgabetyp angleichen
+- `operationId` als optionales Feld in `ProgressEvent.RunStarted`,
+  `ExportResult` und `ImportResult` verankern
+- `StreamingExporter.export`/`StreamingImporter.import` akzeptieren die
+  ID und setzen sie in `RunStarted` und Result, wenn der Aufrufer sie
+  mitgibt
+- Runner erzeugen pro Lauf eine stabile UUID, haengen sie per `.copy()`
+  an das Result an und emittieren sie in der nachgelagerten
+  stderr-Summary
+- Executor-Seam (`ExportExecutor`/`ImportExecutor`) und
+  `ProgressRenderer`-Anzeige bleiben in Phase B bewusst unveraendert —
+  das CLI-seitige Durchreichen bis in das live emittierte
+  `RunStarted`-Event erfolgt in Phase C/D
+- Adapter-/Runner-Nutzer auf den neuen Rueckgabetyp angleichen (defaults
+  auf `null`, keine Test-Churn)
 
 ### 5.5 B5 - Tests und Spezifikationsabgleich
 
@@ -335,19 +449,26 @@ Mindestens noetige Tests:
   - neues Manifest wird geschrieben und wieder geladen
   - atomarer Replace-Pfad funktioniert
   - defekte oder partielle Dateien fuehren zu klaren Fehlern
-- Merge-Vertrag:
+- Merge-Helper:
   - CLI-Override fuer Checkpoint-Verzeichnis sticht Config
   - Config sticht Runtime-Default
   - der kanonische Config-Key fuer den Row-Trigger ist eindeutig
-  - Export und Import nutzen denselben Merge-Pfad
+  - der Helper ist unabhaengig von einem konkreten Runner-Aufruf
+    testbar (Runner-Verdrahtung folgt in Phase C/D)
 - Progress-/Result-Typen:
-  - `operationId` ist in RunStart und Endergebnis sichtbar
+  - `operationId` ist als optionales Feld in `RunStarted`, `ExportResult`
+    und `ImportResult` vorhanden und wird von
+    `StreamingExporter`/`StreamingImporter` in die Events gesetzt, wenn
+    der Aufrufer sie mitgibt
   - bestehende stderr-Summary-Pfade verlieren dabei weder Kernstatistiken
-    noch die Referenzierbarkeit des Laufs
+    noch die Referenzierbarkeit des Laufs (UUID steht in der Summary)
 
 Explizit nicht Ziel von Phase B:
 
 - Nachweis echter Export-/Import-Wiederaufnahme ueber Datenchunks
+- Nachweis, dass der Runner die `operationId` durch den Executor-Seam
+  in das live emittierte `RunStarted` reicht (Phase C/D)
+- Renderer-Anzeige der `operationId` im `ProgressRenderer` (Phase C/D)
 - Signaltests
 - Retry-Integration
 

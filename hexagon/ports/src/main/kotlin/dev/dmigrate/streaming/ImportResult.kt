@@ -57,6 +57,11 @@ data class ImportResult(
     val totalRowsUnknown: Long,
     val totalRowsFailed: Long,
     val durationMs: Long,
+    /**
+     * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
+     * `operationId` des Laufs. Symmetrisch zu [ExportResult.operationId].
+     */
+    val operationId: String? = null,
 ) {
     val success: Boolean get() = tables.all { it.error == null && it.failedFinish == null }
 }

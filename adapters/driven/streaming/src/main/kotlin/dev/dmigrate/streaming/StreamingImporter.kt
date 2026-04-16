@@ -39,6 +39,13 @@ class StreamingImporter(
         options: ImportOptions = ImportOptions(),
         config: PipelineConfig = PipelineConfig(),
         progressReporter: ProgressReporter = NoOpProgressReporter,
+        /**
+         * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
+         * `operationId` des Laufs — wird in [ProgressEvent.RunStarted]
+         * und [ImportResult] gespiegelt. Default `null` fuer Pre-Phase-B-
+         * Callsites (Tests).
+         */
+        operationId: String? = null,
     ): ImportResult {
         val writer = writerLookup(pool.dialect)
         val tableInputs = resolveInputs(input, format)
@@ -49,6 +56,7 @@ class StreamingImporter(
         progressReporter.report(ProgressEvent.RunStarted(
             operation = ProgressOperation.IMPORT,
             totalTables = tableInputs.size,
+            operationId = operationId,
         ))
 
         val startedAt = System.nanoTime()
@@ -68,7 +76,7 @@ class StreamingImporter(
             )
         }
 
-        return buildResult(summaries, startedAt)
+        return buildResult(summaries, startedAt, operationId)
     }
 
     private fun importSingleTable(
@@ -602,6 +610,7 @@ class StreamingImporter(
     private fun buildResult(
         summaries: List<TableImportSummary>,
         startedAt: Long,
+        operationId: String?,
     ): ImportResult =
         ImportResult(
             tables = summaries,
@@ -611,6 +620,7 @@ class StreamingImporter(
             totalRowsUnknown = summaries.sumOf { it.rowsUnknown },
             totalRowsFailed = summaries.sumOf { it.rowsFailed },
             durationMs = elapsedMs(startedAt),
+            operationId = operationId,
         )
 
     private fun TargetColumn.asColumnDescriptor(): ColumnDescriptor =

@@ -261,13 +261,19 @@ Operationen sind unterbrechbar und können wieder aufgesetzt werden; die in
 0.8.0 eingeführte i18n-Infrastruktur ist über `--lang` vom Nutzer steuerbar.
 Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 
-> **Ist-Stand (2026-04-16)**: Phase A ist abgeschlossen — der sichtbare
-> CLI-Vertrag ist fixiert (`--lang` aktiv, `--resume` und `--checkpoint-dir`
-> deklariert, stdout/stdin-Preflight mit Exit 2,
-> `docs/ImpPlan-0.9.0-A.md` §4.5). Die eigentliche Resume-Runtime
-> (Checkpoint-Port, Manifest-Persistenz, Streaming-Wiederaufnahme) folgt in
-> den Phasen B bis D. Solange die Runtime nicht steht, gibt der Runner bei
-> `--resume` eine sichtbare Warnung aus und startet den Lauf von vorn.
+> **Ist-Stand (2026-04-16)**: Phasen A und B sind abgeschlossen —
+> sichtbarer CLI-Vertrag (`--lang` aktiv, `--resume`,
+> `--checkpoint-dir`, stdout/stdin-Preflight mit Exit 2,
+> `docs/ImpPlan-0.9.0-A.md` §4.5) plus technischer Unterbau:
+> `CheckpointStore`-Port, versioniertes Manifest, dateibasierter Adapter
+> mit atomarem Schreibpfad, `PipelineConfig` um `CheckpointConfig`
+> erweitert, Merge-Helper, `operationId`-Feld in Progress-/Result-Typen
+> und in der stderr-Summary (`docs/ImpPlan-0.9.0-B.md` §2.2). Die
+> eigentliche Streaming-Wiederaufnahme (Runner-Verdrahtung,
+> Manifest-Fortschreibung, Wiederaufnahme aus vorhandenem Manifest,
+> Executor-Seam fuer `operationId`, Renderer-Anzeige) folgt in Phase C/D.
+> Solange die Runtime nicht steht, gibt der Runner bei `--resume` eine
+> sichtbare Warnung aus und startet den Lauf von vorn.
 
 > Hinweis: `--resume` ist in 0.9.0 bewusst **dateibasiert** zugeschnitten —
 > stdout-Export und stdin-Import sind nicht Teil des Resume-Vertrags und

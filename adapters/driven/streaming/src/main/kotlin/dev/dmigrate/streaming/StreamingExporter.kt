@@ -66,6 +66,16 @@ class StreamingExporter(
         config: PipelineConfig = PipelineConfig(),
         filter: DataFilter? = null,
         progressReporter: ProgressReporter = NoOpProgressReporter,
+        /**
+         * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
+         * `operationId` des Laufs. Runner generieren die ID (UUID) und
+         * reichen sie hierher; sie landet sowohl in
+         * [ProgressEvent.RunStarted.operationId] als auch in
+         * [ExportResult.operationId], damit Resume-Manifest, stderr-
+         * Summary und Logs denselben Lauf referenzieren. Default `null`
+         * fuer Pre-Phase-B-Callsites (Tests).
+         */
+        operationId: String? = null,
     ): ExportResult {
         val effectiveTables = tables.ifEmpty { tableLister.listTables(pool) }
         require(effectiveTables.isNotEmpty()) {
@@ -75,6 +85,7 @@ class StreamingExporter(
         progressReporter.report(ProgressEvent.RunStarted(
             operation = ProgressOperation.EXPORT,
             totalTables = effectiveTables.size,
+            operationId = operationId,
         ))
 
         val startedAt = System.nanoTime()
@@ -158,6 +169,7 @@ class StreamingExporter(
             totalChunks = tableSummaries.sumOf { it.chunks },
             totalBytes = totalBytes,
             durationMs = durationMs,
+            operationId = operationId,
         )
     }
 

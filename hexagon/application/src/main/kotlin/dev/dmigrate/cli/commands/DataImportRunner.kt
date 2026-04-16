@@ -350,8 +350,12 @@ class DataImportRunner(
                 }
             } ?: { _, _ -> }
 
+        // 0.9.0 Phase B (docs/ImpPlan-0.9.0-B.md §4.5): stabile
+        // operationId fuer den Lauf; symmetrisch zum DataExportRunner.
+        val operationId = java.util.UUID.randomUUID().toString()
+
         // ─── 10. Streaming ─────────────────────────────────────
-        val result: ImportResult = try {
+        val rawResult: ImportResult = try {
             val effectiveReporter = if (request.quiet || request.noProgress)
                 NoOpProgressReporter else progressReporter
             importExecutor.execute(
@@ -373,6 +377,7 @@ class DataImportRunner(
             stderr("Error: Import failed: ${e.message}")
             return 5
         }
+        val result: ImportResult = rawResult.copy(operationId = operationId)
 
         // ─── 11. Result auswerten ──────────────────────────────
 
@@ -398,6 +403,9 @@ class DataImportRunner(
         val suppressProgress = request.quiet || request.noProgress
         if (!suppressProgress) {
             stderr(formatProgressSummary(result))
+            // 0.9.0 Phase B §4.5: operationId in der stderr-Summary
+            // referenzierbar — symmetrisch zum Export-Pfad.
+            result.operationId?.let { stderr("Run operation id: $it") }
         }
 
         return 0

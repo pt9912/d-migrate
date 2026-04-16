@@ -278,8 +278,16 @@ class DataExportRunner(
             since = request.since,
         )
 
+        // 0.9.0 Phase B (docs/ImpPlan-0.9.0-B.md §4.5): stabile
+        // operationId fuer den Lauf. Die ID landet in ExportResult und
+        // wird in stderr-Summary referenzierbar — damit Logs,
+        // Checkpoint-Manifest (Phase C/D) und stderr-Output auf denselben
+        // Lauf verweisen. Das Durchreichen bis in ProgressEvent.RunStarted
+        // erfolgt beim End-to-End-Resume-Wiring in Phase C/D.
+        val operationId = java.util.UUID.randomUUID().toString()
+
         // ─── 9. Streaming ─────────────────────────────────────
-        val result: ExportResult = try {
+        val rawResult: ExportResult = try {
             val effectiveReporter = if (request.quiet || request.noProgress)
                 NoOpProgressReporter else progressReporter
             exportExecutor.execute(
@@ -299,6 +307,7 @@ class DataExportRunner(
             stderr("Error: Export failed: ${e.message}")
             return 5
         }
+        val result: ExportResult = rawResult.copy(operationId = operationId)
 
         // ─── 10. Pro-Tabelle-Fehler → Exit 5 ──────────────────
         val failed = result.tables.firstOrNull { it.error != null }
@@ -318,6 +327,11 @@ class DataExportRunner(
         val suppressProgress = request.quiet || request.noProgress
         if (!suppressProgress) {
             stderr(DataExportHelpers.formatProgressSummary(result))
+            // 0.9.0 Phase B §4.5: operationId ist in der stderr-Summary
+            // referenzierbar (nicht nur als Logging-Dekoration) — so
+            // koennen Operator, Logs und spaeteres Resume-Manifest auf
+            // denselben Lauf verweisen.
+            result.operationId?.let { stderr("Run operation id: $it") }
         }
 
         return 0

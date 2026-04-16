@@ -239,7 +239,14 @@ pipeline:
   parallelism: auto                  # auto (= CPU-Kerne) oder Zahl
   checkpoint:
     enabled: true                    # Checkpoints erstellen
-    interval: 10000                  # Alle N Datensätze
+    # Row-basierter Trigger (`pipeline.checkpoint.interval`). 0.9.0 Phase B
+    # (`docs/ImpPlan-0.9.0-B.md` §4.3) haelt den Key stabil und bildet ihn
+    # intern auf `CheckpointConfig.rowInterval` ab. LN-012-Default: 10 000.
+    interval: 10000
+    # Zeit-basierter Trigger (`pipeline.checkpoint.max_interval`). Neuer
+    # Key in 0.9.0 Phase B; intern `CheckpointConfig.maxInterval`. Wert ist
+    # eine ISO-8601-Duration (z.B. `PT5M` = 5 Minuten). LN-012-Default: PT5M.
+    max_interval: PT5M
     # Checkpoint-Verzeichnis. Wird vom CLI-Flag `--checkpoint-dir`
     # ueberschrieben, sobald es gesetzt ist (0.9.0 Phase A,
     # `docs/ImpPlan-0.9.0-A.md` §3.1/§4.3/§8.4). Die CLI-Spec
