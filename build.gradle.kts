@@ -65,6 +65,16 @@ subprojects {
         if (explicitKotestTags == null && !project.hasProperty("integrationTests")) {
             systemProperty("kotest.tags", "!integration & !perf")
         }
+
+        // Forked Test-JVM Heap: Default ~512 MB reicht fuer die schnellen
+        // Unit-Specs, nicht aber fuer den Integrations-Pfad (Testcontainers +
+        // JDBC-Treiber + parallele Kotest-Specs). Wer eigene Grenzen setzen
+        // will, uebergibt `-PtestMaxHeapSize=Xg`.
+        val integrationHeap = (project.findProperty("testMaxHeapSize") as String?)
+            ?: if (project.hasProperty("integrationTests")) "4g" else null
+        if (integrationHeap != null) {
+            maxHeapSize = integrationHeap
+        }
     }
 }
 
