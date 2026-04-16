@@ -48,6 +48,39 @@ abstract class AbstractJdbcDataReader : DataReader {
         table: String,
         filter: DataFilter?,
         chunkSize: Int,
+    ): ChunkSequence = streamTableInternal(
+        pool = pool,
+        table = table,
+        filter = filter,
+        chunkSize = chunkSize,
+        resumeMarker = null,
+    )
+
+    /**
+     * 0.9.0 Phase C.2: Mid-Table-Resume-Pfad. Delegiert an den
+     * gemeinsamen JDBC-Lifecycle. Marker-Paging-spezifische SQL-
+     * Erzeugung geschieht in [buildSelectQuery].
+     */
+    final override fun streamTable(
+        pool: ConnectionPool,
+        table: String,
+        filter: DataFilter?,
+        chunkSize: Int,
+        resumeMarker: ResumeMarker?,
+    ): ChunkSequence = streamTableInternal(
+        pool = pool,
+        table = table,
+        filter = filter,
+        chunkSize = chunkSize,
+        resumeMarker = resumeMarker,
+    )
+
+    private fun streamTableInternal(
+        pool: ConnectionPool,
+        table: String,
+        filter: DataFilter?,
+        chunkSize: Int,
+        resumeMarker: ResumeMarker?,
     ): ChunkSequence {
         require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
 
@@ -65,7 +98,10 @@ abstract class AbstractJdbcDataReader : DataReader {
             // WhereFragment-Tripel, damit DataFilter.ParameterizedClause (LF-013,
             // siehe implementation-plan-0.4.0.md §3.8 / §6.12.1) sauber
             // parametrisiert werden kann, ohne String-Konkatenation.
-            val query = buildSelectQuery(table, filter)
+            // 0.9.0 Phase C.2: zusaetzlich wird ein optionaler `resumeMarker`
+            // in die SQL-Erzeugung verschoben (lexikografischer Composite-
+            // Marker-Filter + deterministische Sortierung).
+            val query = buildSelectQuery(table, filter, resumeMarker)
             stmt = conn.prepareStatement(
                 query.sql,
                 ResultSet.TYPE_FORWARD_ONLY,
@@ -108,10 +144,35 @@ abstract class AbstractJdbcDataReader : DataReader {
      * Pfade liefern `params = emptyList()` und verhalten sich identisch
      * zum 0.3.0-Vertrag.
      */
-    protected open fun buildSelectQuery(table: String, filter: DataFilter?): SelectQuery {
+    protected open fun buildSelectQuery(table: String, filter: DataFilter?): SelectQuery =
+        buildSelectQuery(table, filter, resumeMarker = null)
+
+    /**
+     * 0.9.0 Phase C.2: Overload mit optionalem [resumeMarker]. Wenn
+     * gesetzt, wird dem bestehenden WHERE-Baum eine Marker-Cascade
+     * angehaengt und die Projektion zusaetzlich deterministisch
+     * sortiert (`ORDER BY markerColumn, tieBreakers...` in ASC).
+     *
+     * Treiber, die [buildSelectQuery] ueberschreiben, koennen diese
+     * Overload ebenfalls ueberschreiben oder sich auf die
+     * Default-Delegation verlassen (ohne Marker-Pfad bleibt das SQL
+     * identisch zum 0.3.0/0.4.0-Vertrag).
+     */
+    protected open fun buildSelectQuery(
+        table: String,
+        filter: DataFilter?,
+        resumeMarker: ResumeMarker?,
+    ): SelectQuery {
         validateM5LiteralQuestionMark(filter)
         val columnList = projection(filter)
-        val fragments = collectWhereFragments(filter)
+        val fragments = collectWhereFragments(filter).toMutableList()
+        // Marker-Position liefert ggf. eine zusaetzliche WHERE-Cascade;
+        // die Ordering (ORDER BY) gilt in jedem Fall, sobald ein
+        // ResumeMarker gesetzt ist — auch im Fresh-Track-Modus ohne
+        // Position, damit ein spaeteres Resume dieselbe Ordnung
+        // reproduzieren kann.
+        val markerFragment = resumeMarker?.position?.let { buildMarkerFragment(resumeMarker, it) }
+        if (markerFragment != null) fragments += markerFragment
         val sql = buildString {
             append("SELECT ").append(columnList)
             append(" FROM ").append(quoteTablePath(table))
@@ -122,9 +183,69 @@ abstract class AbstractJdbcDataReader : DataReader {
                     else -> fragments.joinTo(this, " AND ") { "(${it.sql})" }
                 }
             }
+            if (resumeMarker != null) {
+                append(" ORDER BY ")
+                append(quoteIdentifier(resumeMarker.markerColumn)).append(" ASC")
+                for (tieBreaker in resumeMarker.tieBreakerColumns) {
+                    append(", ").append(quoteIdentifier(tieBreaker)).append(" ASC")
+                }
+            }
         }
         val flatParams = fragments.flatMap { it.params }
         return SelectQuery(sql, flatParams)
+    }
+
+    /**
+     * 0.9.0 Phase C.2 §4.1: erzeugt den Composite-Marker-Filter fuer
+     * `(markerColumn, tieBreakers...) > (lastMarkerValue, lastTieBreakerValues...)`
+     * in lexikografischer Reihenfolge. Ohne Tie-Breaker entartet der
+     * Ausdruck zu einem strikten `markerColumn > ?`.
+     *
+     * Das Ergebnis ist ein einzelnes [WhereFragment], das im
+     * gemeinsamen WHERE-Pfad mit den uebrigen Filter-Fragmenten per
+     * `AND` verknuepft wird.
+     *
+     * Nullable Marker- oder Tie-Breaker-Spalten sind eine
+     * Nutzereinschraenkung (siehe `docs/ImpPlan-0.9.0-C2.md` §8.2):
+     * `>`-Vergleiche gegen NULL sind immer UNKNOWN, der Resume-Pfad
+     * filtert betroffene Zeilen deshalb aus.
+     */
+    private fun buildMarkerFragment(
+        marker: ResumeMarker,
+        position: ResumeMarker.Position,
+    ): WhereFragment {
+        val markerCol = quoteIdentifier(marker.markerColumn)
+        if (marker.tieBreakerColumns.isEmpty()) {
+            return WhereFragment("$markerCol > ?", listOf(position.lastMarkerValue))
+        }
+        val tieCascade = buildTieCascade(
+            marker.tieBreakerColumns.map(::quoteIdentifier),
+            position.lastTieBreakerValues,
+        )
+        val sql = "$markerCol > ? OR ($markerCol = ? AND (${tieCascade.sql}))"
+        val params = listOf<Any?>(position.lastMarkerValue, position.lastMarkerValue) +
+            tieCascade.params
+        return WhereFragment(sql, params)
+    }
+
+    private fun buildTieCascade(cols: List<String>, values: List<Any?>): WhereFragment {
+        // [c1] [v1] -> "c1 > ?"                  params = [v1]
+        // [c1,c2] [v1,v2] -> "c1 > ? OR (c1 = ? AND c2 > ?)"
+        //                                        params = [v1, v1, v2]
+        // [c1,c2,c3] [v1,v2,v3] ->
+        //   "c1 > ? OR (c1 = ? AND (c2 > ? OR (c2 = ? AND c3 > ?)))"
+        //                                        params = [v1, v1, v2, v2, v3]
+        require(cols.size == values.size) {
+            "tie-cascade cols/values size mismatch: ${cols.size} vs ${values.size}"
+        }
+        require(cols.isNotEmpty()) { "tie-cascade requires at least one column" }
+        if (cols.size == 1) {
+            return WhereFragment("${cols[0]} > ?", listOf(values[0]))
+        }
+        val rest = buildTieCascade(cols.drop(1), values.drop(1))
+        val sql = "${cols[0]} > ? OR (${cols[0]} = ? AND (${rest.sql}))"
+        val params = listOf<Any?>(values[0], values[0]) + rest.params
+        return WhereFragment(sql, params)
     }
 
     /**

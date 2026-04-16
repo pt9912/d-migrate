@@ -266,6 +266,169 @@ class AbstractJdbcDataReaderTest : FunSpec({
         ex.message!!.contains("WhereClause") shouldBe true
         ex.message!!.contains("ParameterizedClause") shouldBe true
     }
+
+    // ───────────────────────────────────────────────────────────────────
+    // 0.9.0 Phase C.2: ResumeMarker — Fresh-Track + Resume-Position
+    // (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.1)
+    // ───────────────────────────────────────────────────────────────────
+
+    test("C.2 ResumeMarker fresh-track: ORDER BY is enforced, no WHERE cascade") {
+        val marker = ResumeMarker(
+            markerColumn = "qty",
+            tieBreakerColumns = listOf("id"),
+            position = null,
+        )
+        val chunks = reader.streamTable(
+            pool = pool,
+            table = "items",
+            filter = null,
+            chunkSize = 100,
+            resumeMarker = marker,
+        ).toList()
+        val rows = chunks.flatMap { it.rows.toList() }
+        rows.size shouldBe 5
+        rows.map { it[0] as Int } shouldContainExactly listOf(1, 2, 3, 4, 5)
+    }
+
+    test("C.2 ResumeMarker resume-position: strict lexicographic > cascade skips exact and lower") {
+        val marker = ResumeMarker(
+            markerColumn = "qty",
+            tieBreakerColumns = listOf("id"),
+            position = ResumeMarker.Position(
+                lastMarkerValue = 20,
+                lastTieBreakerValues = listOf(2),
+            ),
+        )
+        val rows = reader.streamTable(
+            pool = pool,
+            table = "items",
+            filter = null,
+            chunkSize = 100,
+            resumeMarker = marker,
+        ).toList().flatMap { it.rows.toList() }
+        // qty=20,id=2 is excluded (strict >); remaining qty 30,40,50
+        rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
+    }
+
+    test("C.2 ResumeMarker with duplicate marker values: tie-breaker resumes precisely") {
+        // Insert two rows sharing the same qty to stress the lexicographic
+        // tie-breaker path.
+        pool.borrow().use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("INSERT INTO items (id, name, qty) VALUES (6, 'item-6', 30)")
+                stmt.execute("INSERT INTO items (id, name, qty) VALUES (7, 'item-7', 30)")
+            }
+        }
+        // We stopped at (qty=30, id=6); expect id=7 (same qty=30, higher id)
+        // plus everything with qty > 30 to come through on resume.
+        val marker = ResumeMarker(
+            markerColumn = "qty",
+            tieBreakerColumns = listOf("id"),
+            position = ResumeMarker.Position(
+                lastMarkerValue = 30,
+                lastTieBreakerValues = listOf(6),
+            ),
+        )
+        val rows = reader.streamTable(
+            pool = pool,
+            table = "items",
+            filter = null,
+            chunkSize = 100,
+            resumeMarker = marker,
+        ).toList().flatMap { it.rows.toList() }
+        // 7 (qty=30, id=7), 4 (qty=40), 5 (qty=50) — order: by qty then id
+        rows.map { it[0] as Int } shouldContainExactly listOf(7, 4, 5)
+    }
+
+    test("C.2 ResumeMarker without tie-breakers: marker column alone drives WHERE/ORDER BY") {
+        val marker = ResumeMarker(
+            markerColumn = "qty",
+            tieBreakerColumns = emptyList(),
+            position = ResumeMarker.Position(
+                lastMarkerValue = 20,
+                lastTieBreakerValues = emptyList(),
+            ),
+        )
+        val rows = reader.streamTable(
+            pool = pool,
+            table = "items",
+            filter = null,
+            chunkSize = 100,
+            resumeMarker = marker,
+        ).toList().flatMap { it.rows.toList() }
+        rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
+    }
+
+    test("C.2 ResumeMarker composes with DataFilter.WhereClause via AND") {
+        val marker = ResumeMarker(
+            markerColumn = "qty",
+            tieBreakerColumns = listOf("id"),
+            position = ResumeMarker.Position(
+                lastMarkerValue = 10,
+                lastTieBreakerValues = listOf(1),
+            ),
+        )
+        val rows = reader.streamTable(
+            pool = pool,
+            table = "items",
+            filter = DataFilter.WhereClause("qty < 50"),
+            chunkSize = 100,
+            resumeMarker = marker,
+        ).toList().flatMap { it.rows.toList() }
+        // qty > 10 AND qty < 50 → 20, 30, 40
+        rows.map { it[0] as Int } shouldContainExactly listOf(2, 3, 4)
+    }
+
+    test("C.2 ResumeMarker composes with DataFilter.ParameterizedClause; marker params appended last") {
+        val marker = ResumeMarker(
+            markerColumn = "qty",
+            tieBreakerColumns = listOf("id"),
+            position = ResumeMarker.Position(
+                lastMarkerValue = 20,
+                lastTieBreakerValues = listOf(2),
+            ),
+        )
+        val rows = reader.streamTable(
+            pool = pool,
+            table = "items",
+            filter = DataFilter.ParameterizedClause("name LIKE ?", listOf("item-%")),
+            chunkSize = 100,
+            resumeMarker = marker,
+        ).toList().flatMap { it.rows.toList() }
+        rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
+    }
+
+    test("C.2 ResumeMarker init rejects mismatched tie-breaker size") {
+        shouldThrow<IllegalArgumentException> {
+            ResumeMarker(
+                markerColumn = "qty",
+                tieBreakerColumns = listOf("id", "name"),
+                position = ResumeMarker.Position(
+                    lastMarkerValue = 20,
+                    lastTieBreakerValues = listOf(2), // size mismatch vs 2 cols
+                ),
+            )
+        }
+    }
+
+    test("C.2 ResumeMarker init rejects blank marker column") {
+        shouldThrow<IllegalArgumentException> {
+            ResumeMarker(
+                markerColumn = "",
+                tieBreakerColumns = emptyList(),
+            )
+        }
+    }
+
+    test("C.2 ResumeMarker init rejects blank tie-breaker column") {
+        shouldThrow<IllegalArgumentException> {
+            ResumeMarker(
+                markerColumn = "qty",
+                tieBreakerColumns = listOf("id", ""),
+                position = null,
+            )
+        }
+    }
 })
 
 /** Concrete subclass that mirrors SqliteDataReader's quoting/settings without depending on the SQLite driver module. */
