@@ -119,7 +119,8 @@ class DataExportCommand : CliktCommand(name = "export") {
         "--resume",
         help = "Resume an earlier export from a checkpoint reference " +
             "(file-based only; not supported with stdout). " +
-            "Requires a matching --checkpoint-dir or inline path.",
+            "Accepts a checkpoint-id or a path; paths MUST be inside " +
+            "the effective --checkpoint-dir / pipeline.checkpoint.directory.",
     )
 
     val checkpointDir by option(

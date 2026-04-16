@@ -128,7 +128,8 @@ class DataImportCommand : CliktCommand(name = "import") {
         "--resume",
         help = "Resume an earlier import from a checkpoint reference " +
             "(file/directory source only; not supported with stdin `-`). " +
-            "Requires a matching --checkpoint-dir or inline path.",
+            "Accepts a checkpoint-id or a path; paths MUST be inside " +
+            "the effective --checkpoint-dir / pipeline.checkpoint.directory.",
     )
 
     val checkpointDir by option(

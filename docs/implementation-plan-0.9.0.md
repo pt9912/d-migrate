@@ -160,9 +160,22 @@ Verbindliche Entscheidung:
   fuer `data export` und `data import`
 
 Finaler CLI-Vertrag fuer 0.9.0 (festgezogen in Phase A,
-`docs/ImpPlan-0.9.0-A.md` §4.3 / §3.1):
+`docs/ImpPlan-0.9.0-A.md` §4.3 / §3.1; Auflösungs-Semantik prazisiert
+in Phase C.1, `docs/ImpPlan-0.9.0-C1.md` §5.2):
 
-- `--resume <checkpoint-id|path>` startet eine Wiederaufnahme
+- `--resume <checkpoint-id|path>` startet eine Wiederaufnahme. Der Wert
+  wird in dieser Reihenfolge aufgelöst:
+  1. Pfad-Kandidat: enthaelt `/` oder endet auf `.checkpoint.yaml`. Der
+     Pfad MUSS innerhalb des effektiven Checkpoint-Verzeichnisses
+     (`--checkpoint-dir` oder `pipeline.checkpoint.directory`) liegen;
+     der Dateiname (ohne `.checkpoint.yaml`-Suffix) wird zur
+     `operationId` und ueber den `CheckpointStore` geladen.
+  2. Sonst wird der Wert direkt als `operationId` interpretiert und
+     gegen das effektive Checkpoint-Verzeichnis geladen.
+- Pfade ausserhalb des effektiven Checkpoint-Verzeichnisses werden mit
+  Exit 7 abgelehnt. Damit bleibt der `CheckpointStore`-Port (der per
+  `operationId` arbeitet) die einzige Persistenzkante; externe Manifeste
+  muessen vorher in das Verzeichnis kopiert werden.
 - `--checkpoint-dir <path>` uebersteuert `pipeline.checkpoint.directory`
   aus der Config
 
@@ -356,24 +369,67 @@ aufsetzen koennen.
 
 ### 6.3 Phase C - Export-Checkpoint und Resume
 
+Phase C ist in zwei Unterphasen gegliedert (siehe Ueberplan
+`docs/ImpPlan-0.9.0-C.md`):
+
+**Phase C.1 — Export-Resume tabellengranular**
+(`docs/ImpPlan-0.9.0-C1.md`):
+
 - `DataExportRunner` um Resume-Preflight und Checkpoint-Initialisierung
-  erweitern
-- `StreamingExporter` um Checkpoint-Schreibpunkte und Resume-Startpunkte
-  erweitern
+  erweitern (Manifest laden, Options-Fingerprint pruefen, Manifest-
+  Lifecycle)
+- `StreamingExporter` ueberspringt Tabellen mit Status `COMPLETED`;
+  unvollstaendige Tabellen werden von vorn exportiert
+- `ExportExecutor`-Seam fuer `operationId` schliessen (aus Phase B
+  offene Kante: die UUID landet live im `RunStarted`-Event)
+- Runner-Warning „run from scratch" wird durch echten Runtime- oder
+  Fehlerpfad ersetzt
 - Kompatibilitaetspruefungen fuer:
+  - Quell-Fingerprint / effektiv aufgeloeste Source-Identitaet
   - Tabellenliste
-  - Output-Ziel
+  - Output-Modus (single-file vs file-per-table) und Zielpfade
   - Format / Encoding / CSV-Optionen
-  - Filter / `--since-column` / `--since`
+  - `--filter` / `--since-column` / `--since`
 - klare Ablehnung nicht resume-faehiger Faelle:
   - `stdout`
   - inkompatible Zielpfade
-  - nicht validierbare Checkpoints
+  - nicht validierbare Checkpoints (`schemaVersion`-Mismatch, unlesbare
+    Datei)
+  - `optionsFingerprint`-Mismatch
+
+**Phase C.2 — Mid-Table-Resume via Composite-Marker**
+(`docs/ImpPlan-0.9.0-C2.md`):
+
+- `DataReader`-Port (`streamTable(...)`) um eine Composite-Marker-
+  Ueberladung erweitern: `ResumeMarker(markerColumn, lastMarkerValue,
+  tieBreakerColumns, lastTieBreakerValues)`. Ohne Tie-Breaker (typisch
+  Primaerschluessel) wuerde reines `>=` auf der Marker-Spalte an
+  Chunk-Grenzen Duplikate erzeugen (`updated_at` mit identischen
+  Timestamps); `>` wuerde dagegen Rows verlieren. Der Composite-
+  Vergleich `(markerColumn, tieBreakers) > (lastMarkerValue,
+  lastTieBreakerValues)` loest das strikt.
+- `StreamingExporter` schreibt nach jedem fachlich bestaetigten Chunk
+  den Composite-`lastMarker` ins Manifest fort
+- Runner setzt eine unvollstaendige Tabelle mit Composite-`lastMarker`
+  ab dem Marker fort; ohne `--since-column` **oder** ohne erkennbaren
+  Primaerschluessel bleibt der C.1-Vertrag (Tabelle neu exportieren,
+  mit sichtbarem stderr-Hinweis; **kein** harter Preflight-Abbruch).
+  Nur der Fall „Manifest hat `lastMarker`, aber aktueller Request hat
+  kein `--since-column`" ist ein echter Preflight-Fehler (Exit 3).
+- Single-File-Fortsetzung ausschliesslich fuer **Single-Table-Single-File**
+  via format-spezifischem, kontrolliertem Fortsetzungspfad
+  (JSON/YAML-Rebuild ueber eine vom `CheckpointStore` verwaltete
+  Zwischendatei; CSV-Single-Table-Single-File ebenfalls via Zwischendatei
+  mit einmaligem Header). Multi-Table-Single-File wird bereits im
+  Basispfad mit Exit 2 abgelehnt (`StreamingExporter.require`, siehe
+  `docs/cli-spec.md`) und hat daher keinen gueltigen Ausgangslauf, der
+  wiederaufgenommen werden muesste.
 
 Ergebnis:
 
-Dateibasierte Export-Laeufe koennen nach Abbruch kontrolliert ab dem letzten
-gueltigen Checkpoint fortgesetzt werden.
+Dateibasierte Export-Laeufe koennen nach Abbruch kontrolliert ab dem
+letzten gueltigen Checkpoint fortgesetzt werden — in C.1 tabellengranular,
+in C.2 zusaetzlich innerhalb grosser Einzeltabellen.
 
 ### 6.4 Phase D - Import-Checkpoint und Resume
 

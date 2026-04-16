@@ -11,10 +11,13 @@
 > `RunStarted`-Event, wenn sie der Aufrufer mitgibt; Runner erzeugen pro
 > Lauf eine UUID und zeigen sie in der stderr-Summary. Vertragstests fuer
 > Manifest, Adapter und Merge-Helper. **Bewusst nicht Teil von Phase B**
-> (Phase C/D): Runner-Aufruf von `CheckpointConfig.merge(...)`, Nutzung
-> von `checkpointDir` aus dem Request, Durchreichen der `operationId`
-> durch `ExportExecutor`/`ImportExecutor`, Anzeige im `ProgressRenderer`,
-> Manifest-Fortschreibung waehrend des Streams, Wiederaufnahme.
+> (Phase C/D): Runner-Aufruf von `CheckpointConfig.merge(...)` und
+> Nutzung von `checkpointDir` aus dem Request (Export: Phase C.1;
+> Import: Phase D), Durchreichen der `operationId` durch
+> `ExportExecutor`/`ImportExecutor` und Anzeige im `ProgressRenderer`
+> (Export: Phase C.1; Import: Phase D), Manifest-Fortschreibung waehrend
+> des Streams (Export tabellengranular: Phase C.1; Export mid-table:
+> Phase C.2; Import: Phase D), Wiederaufnahme.
 > **Referenz**: `docs/implementation-plan-0.9.0.md` Abschnitt 2 bis 6.2,
 > Abschnitt 8.1 bis 8.3; `docs/ImpPlan-0.9.0-A.md`; `docs/design.md`
 > Abschnitt 3.2; `docs/architecture.md` Abschnitt 3.3;
@@ -42,12 +45,15 @@ und Streaming-Implementierung:
   Resilienz-Vertrag erweitert wird
 - wie `operationId` und Resume-Metadaten in Progress- und Result-Pfaden
   sichtbar werden (Typvertrag in Phase B; das Durchreichen bis in
-  `ProgressEvent.RunStarted` bleibt Phase C/D, siehe §2.2)
+  `ProgressEvent.RunStarted` und die `ProgressRenderer`-Anzeige werden
+  fuer den Exportpfad in Phase C.1 und fuer den Importpfad in Phase D
+  geschlossen, siehe §2.2)
 - wie dieselbe `operationId` in der nachgelagerten stderr-Summary
   referenzierbar wird
 - wie sichtbare CLI-Overrides aus Phase A mit
   `pipeline.checkpoint.*` ueber einen zentralen Merge-Helper
-  zusammengefuehrt werden (Aufruf im Runner folgt in Phase C/D)
+  zusammengefuehrt werden (Runner-Aufruf: Export in Phase C.1, Import in
+  Phase D)
 
 Phase B liefert damit noch keine vollstaendige Wiederaufnahme im Datenpfad.
 Sie schafft aber den gemeinsamen Vertrag, ohne den Phasen C und D entweder
@@ -59,17 +65,19 @@ Nach Phase B soll klar und testbar gelten:
 - es gibt einen expliziten Checkpoint-Port statt impliziter Dateizugriffe
 - es gibt ein versioniertes, serialisierbares Manifest fuer Export und Import
 - `PipelineConfig` traegt Checkpoint-Einstellungen als expliziten Typ
-  (`CheckpointConfig`); die Verdrahtung im Export-/Import-Runner folgt in
-  Phase C/D zusammen mit der Resume-Runtime
+  (`CheckpointConfig`); die Verdrahtung im Export-Runner folgt in Phase
+  C.1, im Import-Runner in Phase D
 - fuer CLI-/Config-Werte existiert ein zentraler Merge-Helper
-  (`CheckpointConfig.merge`), der in Phase C/D von beiden Runnern identisch
-  aufgerufen wird — Phase B liefert den Helper und seine Tests, noch nicht
-  den Runner-Aufruf
+  (`CheckpointConfig.merge`), der im Export-Runner in Phase C.1 und im
+  Import-Runner in Phase D identisch aufgerufen wird — Phase B liefert
+  den Helper und seine Tests, noch nicht den Runner-Aufruf
 - Progress- und Result-Typen koennen einen Lauf stabil ueber
   `operationId` referenzieren
 - dieselbe `operationId` ist in der nachgelagerten stderr-Summary
-  verfuegbar; die Durchreichung bis in `ProgressEvent.RunStarted` erfolgt
-  in Phase C/D (Executor-Signatur-Aenderung)
+  verfuegbar; die Durchreichung bis in `ProgressEvent.RunStarted` und
+  die `ProgressRenderer`-Anzeige erfolgen im Export-Pfad in Phase C.1
+  und im Import-Pfad in Phase D (Executor-Signatur-Aenderung jeweils
+  dort)
 
 ---
 
@@ -156,14 +164,15 @@ Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
   stabile `UUID`-basierte `operationId` pro Lauf, reichern das Result
   per `.copy(operationId = ...)` an und emittieren die ID in der
   nachgelagerten stderr-Summary (`Run operation id: ...`).
-- **Noch offen (Phase C/D)**: `ExportExecutor` und `ImportExecutor`
-  haben aktuell keinen `operationId`-Parameter, deshalb gibt der Runner
-  die ID heute **nicht** an den Streaming-Pfad weiter. Das
-  `RunStarted`-Event traegt die ID damit nur dann, wenn der Aufrufer
-  von `StreamingExporter.export`/`StreamingImporter.import` sie
-  explizit setzt — im CLI-Pfad ist das erst nach Executor-Signatur-
-  Aenderung in Phase C/D der Fall. Zusaetzlich fehlt die Renderer-
-  Darstellung im `ProgressRenderer`.
+- **Noch offen**: `ExportExecutor` und `ImportExecutor` haben aktuell
+  keinen `operationId`-Parameter, deshalb gibt der Runner die ID heute
+  **nicht** an den Streaming-Pfad weiter. Das `RunStarted`-Event
+  traegt die ID damit nur dann, wenn der Aufrufer von
+  `StreamingExporter.export`/`StreamingImporter.import` sie explizit
+  setzt. Das CLI-seitige Durchreichen plus die Renderer-Darstellung im
+  `ProgressRenderer` sind fuer den Exportpfad in **Phase C.1** (inkl.
+  sichtbarer „Starting run …/Resuming run …"-Zeile am RunStart), fuer
+  den Importpfad in **Phase D** festgezogen.
 - Vertragstests: `CheckpointManifestTest`, `FileCheckpointStoreTest`
   (Roundtrip, atomaren Schreibpfad, Versionsablehnung, korrupte Dateien,
   tolerantes `list()`, `complete()`), erweiterter `PipelineConfigTest`
@@ -173,20 +182,19 @@ Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
   Plan und Masterplan verweisen weiterhin auf denselben
   CLI-/Config-Merge-Vertrag.
 
-**Bewusst noch nicht umgesetzt** (Phasen C/D):
+**Bewusst noch nicht umgesetzt**:
 
 - Runner-seitiger Aufruf von `CheckpointConfig.merge(...)` — beide Runner
   instanziieren `PipelineConfig` derzeit nur mit `chunkSize`, und der
-  Request-Wert `checkpointDir` bleibt ungenutzt, bis Phase C/D die
-  Resume-Runtime anschliesst
-- Schreiben des Manifests waehrend des Streams
+  Request-Wert `checkpointDir` bleibt ungenutzt, bis der jeweilige
+  Runtime-Pfad anschliesst (Export: Phase C.1, Import: Phase D)
+- Schreiben des Manifests waehrend des Streams (Export tabellengranular:
+  Phase C.1; Export mid-table: Phase C.2; Import: Phase D)
 - tatsaechliche Wiederaufnahme aus einem vorhandenen Manifest
+  (Export: Phase C.1/C.2; Import: Phase D)
 - CLI-seitiges Durchreichen der `operationId` vom Runner in den
-  Streaming-Pfad: `ExportExecutor`/`ImportExecutor` haben den Parameter
-  noch nicht, deshalb landet die ID heute nicht im live emittierten
-  `RunStarted`-Event (obwohl der Typ und die Streaming-Seite sie
-  akzeptieren)
-- Darstellung der `operationId` im `ProgressRenderer`
+  Streaming-Pfad und Darstellung im `ProgressRenderer`
+  (Export: **Phase C.1**; Import: **Phase D**)
 - Signal-Handling (SIGINT/SIGTERM) und Retry-Integration
 
 ---

@@ -581,7 +581,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4). |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
-| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2. Runtime (Manifest-Lesen, Streaming-Wiederaufnahme) folgt in 0.9.0 Phase B/C; bis dahin akzeptiert der Runner den Flag und warnt sichtbar, dass der Lauf aktuell von vorn startet. |
+| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`; Auflösung in Phase C.1, `docs/ImpPlan-0.9.0-C1.md`). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2. Runtime (Manifest-Lesen, Streaming-Wiederaufnahme) folgt in 0.9.0 Phase B/C; bis dahin akzeptiert der Runner den Flag und warnt sichtbar, dass der Lauf aktuell von vorn startet. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Output-Auflösung** (Plan §6.9):
@@ -690,7 +690,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
-| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Semantische Preflight-Pruefung gegen das Target (Tabellenmengen, Schema, Fortschrittsposition) folgt in 0.9.0 Phase B/C und mappt inkompatible Referenzen analog zum Schema-/Header-Preflight auf Exit 3. |
+| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md`; Auflösung analog zu Export in Phase C.1, `docs/ImpPlan-0.9.0-C1.md`). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2. Semantische Preflight-Pruefung gegen das Target (Tabellenmengen, Schema, Fortschrittsposition) folgt in 0.9.0 Phase B/C/D und mappt inkompatible Referenzen analog zum Schema-/Header-Preflight auf Exit 3. |
 | `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Exit-Codes**:
