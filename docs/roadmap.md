@@ -229,7 +229,7 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
 > Infrastruktur in [1.1.0](#milestone-110--ki-integration).
 
-### Milestone 0.8.0 — Internationalisierung (abgeschlossen)
+### Milestone 0.8.0 — Internationalisierung ✅ (2026-04-16)
 
 | Bereich | Aufgabe                                                          | LF-Ref | Status |
 | ------- | ---------------------------------------------------------------- | ------ | ------ |
