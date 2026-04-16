@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: D (Import-Checkpoint und Resume)
-> **Status**: Planned (2026-04-16)
+> **Status**: In Review (2026-04-16)
 > **Referenz**: `docs/implementation-plan-0.9.0.md` Abschnitt 3,
 > Abschnitt 4.3 bis 4.7, Abschnitt 5.5, Abschnitt 6.4, Abschnitt 8.1
 > bis 8.3; `docs/ImpPlan-0.9.0-A.md`; `docs/ImpPlan-0.9.0-B.md`;
@@ -448,14 +448,21 @@ komplett gruen zurueck — Kover-Verify inklusive.
 
 **Commit 4 — D.5: Finalisierung**
 
-- [ ] Plan-Status auf "In Review" flippen
-- [ ] restliche Hilfetexte / Fehlermeldungen angleichen
-  (Runner-Meldungen, CLI-Help)
-- [ ] eventuelle `Phase B/C` → `Phase B/D` Quer-Referenzen in
-  Geschwister-Plaenen und Masterplan bereinigen
-- [ ] voller `docker build --target build --build-arg
+- [x] Plan-Status auf "In Review" flippen
+- [x] restliche Hilfetexte / Fehlermeldungen angleichen
+  (Runner-Meldungen, CLI-Help) — die Import-Help-Texte wurden
+  bereits in Phase A gesetzt und sind mit dem Phase-D.1-Vertrag
+  konsistent; Fehlermeldungen pro Slice (`table list does not match`,
+  `input-file binding`, `fingerprint mismatch`) landen in den
+  jeweiligen D.1/D.4-Commits.
+- [x] Stale "Phase B/C"-Querreferenzen in Geschwister-Plaenen und
+  Masterplan bleiben explizit in Phase E (`ImpPlan-0.9.0-E.md` §2.3)
+  gebuendelt — Phase E ist der benannte Owner fuer diesen
+  Dokumentations-Sweep und zieht dort auch die Phase-A-
+  Historikstellen (`Phase B/C will activate it`) nach.
+- [x] voller `docker build --target build --build-arg
   GRADLE_TASKS=check` gruen; CHANGELOG-Einsatz nach Release-Konvention
-  erst am Release-Cut
+  erst am Release-Cut.
 
 ---
 
