@@ -196,6 +196,17 @@ class DataImportCommand : CliktCommand(name = "import") {
                 importer.import(pool, input, fmt, opts, cfg, reporter)
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
+            // 0.9.0 Phase D.1 (docs/ImpPlan-0.9.0-D.md §5.1):
+            // dateibasierter CheckpointStore + Config-Resolver —
+            // symmetrisch zum Export-Pfad.
+            checkpointStoreFactory = { dir ->
+                dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+            },
+            checkpointConfigResolver = { cliCfg ->
+                dev.dmigrate.cli.config.PipelineCheckpointResolver(
+                    configPathFromCli = cliCfg,
+                ).resolve()
+            },
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)

@@ -384,21 +384,21 @@ komplett gruen zurueck — Kover-Verify inklusive.
 
 **Commit 1 — D.1: Preflight + Warning-Removal**
 
-- [ ] `DataImportRunner` an `CheckpointStore` + `CheckpointConfig.merge`
+- [x] `DataImportRunner` an `CheckpointStore` + `CheckpointConfig.merge`
   anbinden (symmetrisch zu `DataExportRunner`)
-- [ ] neuer `ImportOptionsFingerprint` mit allen §4.3-Feldern
+- [x] neuer `ImportOptionsFingerprint` mit allen §4.3-Feldern
   (Source, Target, Format, Encoding, CSV-Header/NULL, `--on-error`,
   `--on-conflict`, `--trigger-mode`, `--truncate`,
   `--disable-fk-checks`, `--reseed-sequences`, Tabellenliste,
   `chunkSize`, Input-Topologie)
-- [ ] Preflight-Logik: Manifest laden, `operationType == IMPORT`,
+- [x] Preflight-Logik: Manifest laden, `operationType == IMPORT`,
   Fingerprint, Tabellenliste → Exit 3; unlesbarer Manifest /
   fehlende Checkpoint-Datei → Exit 7
-- [ ] Initial-Manifest-Save bei fresh runs; `complete()` bei Erfolg
-- [ ] "accepted but not yet active"-Warning entfernen (§4.8)
-- [ ] `docs/cli-spec.md` + `docs/guide.md` Import-Abschnitte auf
+- [x] Initial-Manifest-Save bei fresh runs; `complete()` bei Erfolg
+- [x] "accepted but not yet active"-Warning entfernen (§4.8)
+- [x] `docs/cli-spec.md` + `docs/guide.md` Import-Abschnitte auf
   Phase-D-Vertrag umschreiben
-- [ ] Runner-Tests fuer alle Preflight-Pfade (Exit 2/3/7, fresh-run,
+- [x] Runner-Tests fuer alle Preflight-Pfade (Exit 2/3/7, fresh-run,
   fingerprint-match/mismatch)
 
 **Commit 2 — D.2 + D.3: Marker-Modell + Streaming-Checkpoint-Writes**

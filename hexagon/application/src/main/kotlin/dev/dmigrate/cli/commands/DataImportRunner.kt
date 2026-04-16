@@ -13,15 +13,24 @@ import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.ImportInput
 import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.NoOpProgressReporter
 import dev.dmigrate.streaming.PipelineConfig
 import dev.dmigrate.streaming.ProgressReporter
+import dev.dmigrate.streaming.checkpoint.CheckpointManifest
+import dev.dmigrate.streaming.checkpoint.CheckpointOperationType
+import dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus
+import dev.dmigrate.streaming.checkpoint.CheckpointStore
+import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
+import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
+import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.Locale
 
 class CliUsageException(
@@ -127,6 +136,29 @@ class DataImportRunner(
     private val progressReporter: ProgressReporter = NoOpProgressReporter,
     private val stdinProvider: () -> InputStream = { System.`in` },
     private val stderr: (String) -> Unit = { System.err.println(it) },
+    /**
+     * 0.9.0 Phase D.1 (`docs/ImpPlan-0.9.0-D.md` §5.1): Factory fuer
+     * den Checkpoint-Store. Bekommt das effektive Checkpoint-
+     * Verzeichnis. Die CLI-Seite wired den dateibasierten Adapter;
+     * Tests injizieren einen In-Memory-Store. `null` hier = Resume-
+     * Support deaktiviert (Legacy-Tests, die keine Manifest-
+     * Interaktion wollen).
+     */
+    private val checkpointStoreFactory: ((Path) -> CheckpointStore)? = null,
+    /**
+     * 0.9.0 Phase D.1 (`docs/ImpPlan-0.9.0-D.md` §5.1): liest den
+     * `pipeline.checkpoint.*`-Block aus der effektiven
+     * `.d-migrate.yaml`. Der Runner mergt ueber
+     * [CheckpointConfig.merge] CLI-Override (`--checkpoint-dir`) und
+     * Config-Default zusammen — symmetrisch zum Export-Pfad.
+     */
+    private val checkpointConfigResolver: (Path?) -> CheckpointConfig? = { null },
+    /**
+     * 0.9.0 Phase D.1: Zeitquelle fuer Manifest-
+     * `createdAt`/`updatedAt`. Separat injizierbar fuer
+     * deterministische Tests.
+     */
+    private val clock: () -> Instant = Instant::now,
 ) {
 
     fun execute(request: DataImportRequest): Int {
@@ -170,25 +202,18 @@ class DataImportRunner(
             return 2
         }
 
-        // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.4): Resume-CLI-Preflight.
+        // 0.9.0 Phase A / Phase D.1: Resume-CLI-Preflight.
         // stdin-Import ist per Definition nicht wieder aufsetzbar — der
-        // aufrufende Prozess kann den Stream nicht erneut liefern.
-        if (!request.resume.isNullOrBlank()) {
-            if (request.source == "-") {
-                stderr(
-                    "Error: --resume is not supported for stdin import; " +
-                        "provide a file or directory source or drop --resume."
-                )
-                return 2
-            }
-            // Phase A fixiert nur den CLI-Vertrag. Die semantische Preflight-
-            // Pruefung gegen das Target sowie die eigentliche Wiederaufnahme
-            // im Streaming-Pfad landen in den Phasen B bis D.
+        // aufrufende Prozess kann den Stream nicht erneut liefern. Die
+        // semantische Preflight-Pruefung gegen das Manifest passiert
+        // spaeter in `executeWithPool` (Phase D.1 §5.1), sobald Target
+        // und Source aufgeloest sind.
+        if (!request.resume.isNullOrBlank() && request.source == "-") {
             stderr(
-                "Warning: --resume was accepted but resume runtime is not yet " +
-                    "active in this build (docs/ImpPlan-0.9.0-A.md §4.6); import " +
-                    "will run from scratch. Phase B/C will activate it."
+                "Error: --resume is not supported for stdin import; " +
+                    "provide a file or directory source or drop --resume."
             )
+            return 2
         }
 
         // ─── 2. Source-Pfad + Format auflösen ───────────────────
@@ -300,7 +325,7 @@ class DataImportRunner(
         }
 
         return try {
-            executeWithPool(request, connectionConfig, charset, format, preparedImport, pool)
+            executeWithPool(request, connectionConfig, resolvedUrl, charset, format, preparedImport, pool)
         } finally {
             try { pool.close() } catch (_: Throwable) {}
         }
@@ -309,6 +334,7 @@ class DataImportRunner(
     private fun executeWithPool(
         request: DataImportRequest,
         connectionConfig: ConnectionConfig,
+        resolvedUrl: String,
         charset: Charset?,
         format: DataExportFormat,
         preparedImport: SchemaPreflightResult,
@@ -350,9 +376,174 @@ class DataImportRunner(
                 }
             } ?: { _, _ -> }
 
-        // 0.9.0 Phase B (docs/ImpPlan-0.9.0-B.md §4.5): stabile
-        // operationId fuer den Lauf; symmetrisch zum DataExportRunner.
-        val operationId = java.util.UUID.randomUUID().toString()
+        // ─── 9b. 0.9.0 Phase D.1: Resume-Preflight + Manifest-Lifecycle ──
+        // (`docs/ImpPlan-0.9.0-D.md` §5.1)
+        //
+        // Effektive Tabellenliste fuer Fingerprint und Manifest-
+        // Slices. Stdin/SingleFile tragen genau eine Tabelle; fuer
+        // Directory-Importe ohne `--tables` bleibt die Liste in D.1
+        // leer (D.4 §5.4 fuellt sie spaeter aus dem Directory-Scan).
+        val effectiveTables: List<String> = when (val input = preparedImport.input) {
+            is ImportInput.Stdin -> listOf(input.table)
+            is ImportInput.SingleFile -> listOf(input.table)
+            is ImportInput.Directory -> input.tableFilter ?: emptyList()
+        }
+        val inputTopology: String = when (preparedImport.input) {
+            is ImportInput.Stdin -> "stdin"
+            is ImportInput.SingleFile -> "single-file"
+            is ImportInput.Directory -> "directory"
+        }
+        val inputPath: String = when (val input = preparedImport.input) {
+            is ImportInput.Stdin -> "<stdin>"
+            is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
+            is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
+        }
+        val fingerprint = ImportOptionsFingerprint.compute(
+            ImportOptionsFingerprint.Input(
+                format = request.format
+                    ?: format.name.lowercase(Locale.US),
+                encoding = request.encoding,
+                csvNoHeader = request.csvNoHeader,
+                csvNullString = request.csvNullString,
+                onError = request.onError,
+                onConflict = request.onConflict ?: "abort",
+                triggerMode = request.triggerMode,
+                truncate = request.truncate,
+                disableFkChecks = request.disableFkChecks,
+                reseedSequences = request.reseedSequences,
+                chunkSize = request.chunkSize,
+                tables = effectiveTables,
+                inputTopology = inputTopology,
+                inputPath = inputPath,
+                targetDialect = connectionConfig.dialect.name,
+                targetUrl = resolvedUrl,
+            )
+        )
+
+        // 0.9.0 Phase D.1 §5.1: zentraler Merge aus CLI-Override
+        // (`--checkpoint-dir`) und Config-Default
+        // (`pipeline.checkpoint.*`). `CheckpointConfig.merge` liefert
+        // die effektive Auspraegung; CLI sticht Config, Config sticht
+        // Runtime-Default.
+        val fromConfig: CheckpointConfig? = try {
+            checkpointConfigResolver(request.cliConfigPath)
+        } catch (e: Throwable) {
+            stderr("Error: Failed to resolve pipeline.checkpoint config: ${e.message}")
+            return 7
+        }
+        val mergedCheckpointConfig = CheckpointConfig.merge(
+            cliDirectory = request.checkpointDir,
+            config = fromConfig,
+        )
+        val checkpointDir: Path? = mergedCheckpointConfig.directory
+        val store: CheckpointStore? = checkpointStoreFactory?.let { factory ->
+            checkpointDir?.let { factory(it) }
+        }
+
+        // Resume-Kontext: bei `--resume` wird das Manifest geladen,
+        // validiert und auf Kompatibilitaet gegen den aktuellen
+        // Request geprueft. `skippedTables` bleibt in D.1 leer (das
+        // Streaming schreibt noch keine `COMPLETED`-Slices); D.2/D.3
+        // fuellen das sinnvoll.
+        val resumeCtx: ResumeContext = if (!request.resume.isNullOrBlank()) {
+            if (store == null) {
+                stderr(
+                    "Error: --resume requires a checkpoint directory; set " +
+                        "--checkpoint-dir or pipeline.checkpoint.directory."
+                )
+                return 7
+            }
+            val resolvedOpId = resolveResumeReference(request.resume, checkpointDir!!)
+                ?: run {
+                    stderr(
+                        "Error: --resume path must be inside the effective " +
+                            "checkpoint directory '$checkpointDir'."
+                    )
+                    return 7
+                }
+            val manifest: CheckpointManifest? = try {
+                store.load(resolvedOpId)
+            } catch (e: UnsupportedCheckpointVersionException) {
+                stderr("Error: ${e.message}")
+                return 7
+            } catch (e: CheckpointStoreException) {
+                stderr("Error: Failed to load checkpoint: ${e.message}")
+                return 7
+            }
+            if (manifest == null) {
+                stderr("Error: Checkpoint not found: '${request.resume}'")
+                return 7
+            }
+            if (manifest.operationType != CheckpointOperationType.IMPORT) {
+                stderr(
+                    "Error: Checkpoint type mismatch: expected IMPORT, got " +
+                        "${manifest.operationType}."
+                )
+                return 3
+            }
+            if (manifest.optionsFingerprint != fingerprint) {
+                stderr(
+                    "Error: Checkpoint options do not match the current request " +
+                        "(fingerprint mismatch); refuse to resume."
+                )
+                return 3
+            }
+            val manifestTables = manifest.tableSlices.map { it.table }
+            if (manifestTables != effectiveTables) {
+                stderr(
+                    "Error: Checkpoint table list does not match the current " +
+                        "request: manifest=$manifestTables, current=$effectiveTables."
+                )
+                return 3
+            }
+            val skipped = manifest.tableSlices
+                .filter { it.status == CheckpointSliceStatus.COMPLETED }
+                .map { it.table }
+                .toSet()
+            ResumeContext(
+                operationId = manifest.operationId,
+                resuming = true,
+                skippedTables = skipped,
+            )
+        } else {
+            ResumeContext(
+                operationId = java.util.UUID.randomUUID().toString(),
+                resuming = false,
+                skippedTables = emptySet(),
+            )
+        }
+
+        val operationId = resumeCtx.operationId
+
+        // Initial-Manifest-Schreibpfad: bei neuem Lauf anlegen, damit
+        // ein spaeterer Abbruch einen gueltigen Resume-Anker hat.
+        // `createdAt`/`updatedAt` werden beim Resume-Lauf vom bereits
+        // geladenen Manifest uebernommen (`complete()` raeumt am
+        // Lauf-Ende auf).
+        if (store != null && !resumeCtx.resuming) {
+            val created = clock()
+            val initial = CheckpointManifest(
+                operationId = operationId,
+                operationType = CheckpointOperationType.IMPORT,
+                createdAt = created,
+                updatedAt = created,
+                format = request.format ?: format.name.lowercase(Locale.US),
+                chunkSize = request.chunkSize,
+                tableSlices = effectiveTables.map { table ->
+                    CheckpointTableSlice(
+                        table = table,
+                        status = CheckpointSliceStatus.PENDING,
+                    )
+                },
+                optionsFingerprint = fingerprint,
+            )
+            try {
+                store.save(initial)
+            } catch (e: CheckpointStoreException) {
+                stderr("Error: Failed to initialize checkpoint: ${e.message}")
+                return 7
+            }
+        }
 
         // ─── 10. Streaming ─────────────────────────────────────
         val rawResult: ImportResult = try {
@@ -397,6 +588,18 @@ class DataImportRunner(
                     "Data was committed — manual post-import fix may be needed."
             )
             return 5
+        }
+
+        // 0.9.0 Phase D.1 §5.1: erfolgreicher Lauf → Manifest
+        // entfernen. Fehler beim `complete()` werden als Warning
+        // gemeldet, nicht als Exit — der Import war fachlich
+        // erfolgreich.
+        if (store != null) {
+            try {
+                store.complete(operationId)
+            } catch (e: CheckpointStoreException) {
+                stderr("Warning: Failed to remove completed checkpoint: ${e.message}")
+            }
         }
 
         // ─── 12. ProgressSummary ───────────────────────────────
@@ -444,7 +647,50 @@ class DataImportRunner(
         return ImportInput.SingleFile(table, sourcePath)
     }
 
+    /**
+     * 0.9.0 Phase D.1 (`docs/ImpPlan-0.9.0-D.md` §5.1): interner
+     * Resume-Kontext eines Laufes. `skippedTables` bleibt in D.1
+     * leer, weil das Streaming noch keine `COMPLETED`-Slices
+     * fortschreibt; D.2/D.3 fuellen die Menge sinnvoll.
+     */
+    private data class ResumeContext(
+        val operationId: String,
+        val resuming: Boolean,
+        val skippedTables: Set<String>,
+    )
+
+    /**
+     * 0.9.0 Phase D.1 §5.1: Aufloesung des
+     * `--resume <checkpoint-id|path>`-Werts gegen das effektive
+     * Checkpoint-Verzeichnis. Symmetrisch zum Export-Pfad:
+     *
+     * - Pfad-Kandidat (enthaelt `/` oder endet auf
+     *   `.checkpoint.yaml`): Der Pfad muss normalized innerhalb des
+     *   Checkpoint-Verzeichnisses liegen; sonst `null`. Der
+     *   `operationId` wird aus dem Dateinamen abgeleitet (Suffix
+     *   `.checkpoint.yaml` entfernt).
+     * - Sonst: der Wert ist direkt eine `operationId`.
+     */
+    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? {
+        val looksLikePath = '/' in resumeValue || resumeValue.endsWith(MANIFEST_SUFFIX)
+        if (!looksLikePath) {
+            return resumeValue
+        }
+        val candidate = try {
+            Path.of(resumeValue).toAbsolutePath().normalize()
+        } catch (_: Throwable) {
+            return null
+        }
+        val baseDir = checkpointDir.toAbsolutePath().normalize()
+        if (!candidate.startsWith(baseDir)) return null
+        val fileName = candidate.fileName.toString()
+        if (!fileName.endsWith(MANIFEST_SUFFIX)) return null
+        return fileName.removeSuffix(MANIFEST_SUFFIX)
+    }
+
     companion object {
+        private const val MANIFEST_SUFFIX = ".checkpoint.yaml"
+
         private val EXTENSION_FORMAT_MAP = mapOf(
             "json" to "json",
             "yaml" to "yaml",
