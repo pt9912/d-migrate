@@ -57,10 +57,19 @@ jobs:
           echo "This is expected when the post-release bump has not yet pinned a real SHA."
           exit 0
 
-      - name: Install formula from repo
+      - name: Install formula from repo via ephemeral tap
         if: steps.formula.outputs.sha256 != 'REPLACE_WITH_RELEASE_ZIP_SHA256'
         run: |
-          brew install --formula ./packaging/homebrew/d-migrate.rb
+          # Modern Homebrew rejects `brew install --formula <path.rb>` and
+          # requires the formula to live in a tap. We create an ephemeral
+          # local tap, drop the repo-local formula into its Formula/ dir
+          # and install from there — still exercises the exact .rb file
+          # that docs/releasing.md §4.7 points at.
+          brew tap-new local/d-migrate-verify --no-git
+          TAP_DIR="$(brew --repository local/d-migrate-verify)"
+          mkdir -p "${TAP_DIR}/Formula"
+          cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
+          brew install local/d-migrate-verify/d-migrate
 
       - name: Smoke-test installed CLI
         if: steps.formula.outputs.sha256 != 'REPLACE_WITH_RELEASE_ZIP_SHA256'

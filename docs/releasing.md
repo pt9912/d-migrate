@@ -427,10 +427,26 @@ grep ' d-migrate-X.Y.Z.zip$' ./release-assets/d-migrate-X.Y.Z.sha256
 ```
 
 Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert
-werden:
+werden. Modernes Homebrew lehnt `brew install --formula <path.rb>` ab und
+verlangt, dass die Formula in einem Tap liegt — deshalb ueber einen lokalen
+Ephemeral-Tap installieren (derselbe Mechanismus, den der Workflow
+`verify-homebrew-formula.yml` benutzt):
 
 ```bash
-brew install --formula ./packaging/homebrew/d-migrate.rb
+brew tap-new local/d-migrate-verify --no-git
+TAP_DIR="$(brew --repository local/d-migrate-verify)"
+mkdir -p "${TAP_DIR}/Formula"
+cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
+brew install local/d-migrate-verify/d-migrate
+d-migrate --help
+```
+
+Alternativ ueber den veroeffentlichten Tap (bestaetigt zusaetzlich die
+`homebrew-releaser`-Pipeline):
+
+```bash
+brew tap pt9912/d-migrate https://github.com/pt9912/homebrew-d-migrate
+brew install d-migrate
 d-migrate --help
 ```
 
