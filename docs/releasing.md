@@ -420,10 +420,17 @@ zeigen:
 - `bin/d-migrate` bleibt der Nutzer-Einstieg
 - Java 21 bleibt explizit deklariert
 
-ZIP-SHA aus der Checksum-Datei lesen:
+ZIP-SHA **aus dem tatsächlich publizierten Release-Asset** ziehen — nicht
+aus `./release-assets/*.sha256`: der `build.yml`-Workflow lädt sein eigenes
+Artefakt mit eigener SHA hoch, während der publizierte ZIP aus dem
+separaten `release-homebrew.yml`-Lauf stammt und daher eine andere SHA hat:
 
 ```bash
-grep ' d-migrate-X.Y.Z.zip$' ./release-assets/d-migrate-X.Y.Z.sha256
+curl -sL "https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip" \
+  | sha256sum
+# oder:
+gh release download vX.Y.Z --pattern 'd-migrate-*.zip'
+sha256sum d-migrate-*.zip
 ```
 
 Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert

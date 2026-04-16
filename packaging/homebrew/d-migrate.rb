@@ -5,7 +5,7 @@ class DMigrate < Formula
   # should be generated for pt9912/homebrew-d-migrate via homebrew-releaser.
   version "0.8.0"
   url "https://github.com/pt9912/d-migrate/releases/download/v#{version}/d-migrate-#{version}.zip"
-  sha256 "5d844bd1863a23fa368f7f60c5866eb5789a23ebce29478662efa7f5c90e6a41"
+  sha256 "311bb65213efd40c259edb584f98380c0c6a75cd09f5f3d691f874da59d958cb"
   license "MIT"
 
   depends_on "openjdk@21"
