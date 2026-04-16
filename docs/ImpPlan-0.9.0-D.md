@@ -2,7 +2,12 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: D (Import-Checkpoint und Resume)
-> **Status**: In Review (2026-04-16)
+> **Status**: Implemented (2026-04-16) — Import-Resume produktiv:
+> Manifest-Lifecycle, Fingerprint-Preflight, committed-chunk-basierte
+> Fortschreibung, Skip-Ahead bei teilweise bestaetigten Tabellen,
+> Truncate-Guard (§4.4) und stabile `table -> inputFile`-Bindung fuer
+> Directory-Importe (§4.5). Normative Doku (`cli-spec.md`,
+> `guide.md`) spiegelt den vollen D-Vertrag.
 > **Referenz**: `docs/implementation-plan-0.9.0.md` Abschnitt 3,
 > Abschnitt 4.3 bis 4.7, Abschnitt 5.5, Abschnitt 6.4, Abschnitt 8.1
 > bis 8.3; `docs/ImpPlan-0.9.0-A.md`; `docs/ImpPlan-0.9.0-B.md`;
