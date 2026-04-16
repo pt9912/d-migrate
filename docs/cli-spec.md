@@ -576,7 +576,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
 | `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
-| `--csv-bom` | Nein | Boolean | aus | UTF-8 BOM-Bytes vor dem CSV-Output schreiben |
+| `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4). |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 
@@ -681,7 +681,7 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--truncate` | Nein | Boolean | aus | Zieltabelle vor Import leeren |
 | `--disable-fk-checks` | Nein | Boolean | aus | FK-Checks während des Imports deaktivieren (dialektabhängig) |
 | `--reseed-sequences` / `--no-reseed-sequences` | Nein | Boolean | an | Identity-/Sequence-Reseed nach Import steuern |
-| `--encoding` | Nein | String | BOM-/Reader-Default | Input-Encoding |
+| `--encoding` | Nein | String | `auto` | Input-Encoding. Der Default-Pfad `auto` erkennt BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE) und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird mit Exit 2 abgelehnt. Für Non-UTF-Encodings (`iso-8859-1`, `windows-1252`, …) muss der Wert explizit gesetzt werden — es gibt keine Heuristik-Erkennung. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.2/§4.3). |
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |

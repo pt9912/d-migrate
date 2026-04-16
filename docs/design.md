@@ -565,7 +565,7 @@ id,email,name
 1,kunde@example.de,Müller
 ```
 
-CSV-Export und -Import unterstuetzen konfigurierbares Encoding sowie optionale BOM-Erzeugung bzw. BOM-Erkennung.
+CSV-Export und -Import folgen dem 0.8.0-Phase-F-Vertrag (`docs/ImpPlan-0.8.0-F.md`): Export nutzt `--encoding` (Default `utf-8`) und ein optionales `--csv-bom`, das genau ein BOM passend zum gewählten UTF-Encoding (UTF-8, UTF-16 BE/LE) schreibt; für Non-UTF-Encodings ist das Flag ein No-op. Import-Encoding wird per BOM-Sniffing (Default `--encoding auto`) für UTF-8 und UTF-16 BE/LE erkannt und fällt ohne BOM auf UTF-8 zurück; UTF-32-BOM wird als expliziter Fehler abgelehnt. Non-UTF-Encodings muss der Nutzer explizit setzen — es gibt keine heuristische Erkennung.
 
 **YAML** (für kleinere Datensätze / Konfiguration):
 ```yaml
@@ -587,8 +587,8 @@ exported_at: 2025-10-22T14:30:00Z
 ### 6.3 Dateiimport und Parsing
 
 - Dateiimporte validieren Daten vor dem Schreiben gegen das neutrale Schema.
-- Textformate verwenden standardmaessig UTF-8; UTF-16 und BOM-markierte Dateien werden automatisch erkannt.
-- Weitere Encodings wie ISO-8859-1 sind explizit konfigurierbar, damit Importe reproduzierbar bleiben.
+- Textformate verwenden standardmaessig UTF-8. Die BOM-Auto-Detection (Phase F §4.2, `docs/ImpPlan-0.8.0-F.md`) ist strikt auf UTF-8 und UTF-16 BE/LE begrenzt; UTF-32-BOM wird explizit als Fehler abgelehnt, damit UTF-32-Daten nicht still als UTF-8 durchlaufen. Derselbe `EncodingDetector` wird importseitig konsistent fuer CSV, JSON und YAML genutzt.
+- Weitere Encodings wie ISO-8859-1 oder Windows-1252 sind explizit ueber `--encoding <charset>` konfigurierbar, damit Importe reproduzierbar bleiben; eine heuristische Encoding-Erkennung gibt es bewusst nicht (Phase F §4.3).
 - Zeitwerte werden formatunabhaengig als ISO 8601 normalisiert, bevor sie in den Zieldialekt geschrieben werden. Der 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md` §4.2/§4.3) verbietet dabei die stille Umdeutung zwischen lokalen und offsethaltigen Werten: `TIMESTAMP`-Spalten lehnen offsethaltige Strings ab, `TIMESTAMP WITH TIME ZONE` verlangt einen Offset-Anteil.
 - Der geplante Umgang mit Sequence-/Identity-/`AUTO_INCREMENT`-Folgezustand
   und Trigger-Verhalten beim Datenimport ist im Draft
@@ -707,7 +707,7 @@ Hinweise fuer Milestone 0.8.0:
 - Grapheme-aware String-Längenberechnung via ICU4J
 - Unicode-Normalisierung fuer NFC, NFD, NFKC und NFKD; Standardvergleich erfolgt auf NFC-normalisierten Werten
 - Unicode-Normalisierung ist Vergleichs-/Metadaten-Utility und keine stille Mutation von Export-/Import-/Transfer-Payloads
-- BOM-Erkennung und -Behandlung bei CSV basiert auf dem seit 0.4.0 vorhandenen Unterbau und wird in 0.8.0 als Teil des I18n-Vertrags konsolidiert
+- BOM-Erkennung und -Behandlung basiert auf dem seit 0.4.0 vorhandenen `EncodingDetector`-Unterbau und wird in 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md`) als Teil des I18n-Vertrags konsolidiert. Importseitig teilen CSV-, JSON- und YAML-Reader denselben Detector; BOM-Auto-Detection gilt fuer UTF-8 und UTF-16 BE/LE, UTF-32-BOM wird abgelehnt, und bei explizitem `--encoding` werden passende BOMs konsumiert, nicht passende im Stream belassen. Export-seitig schreibt `--csv-bom` genau ein zum `--encoding` passendes BOM (UTF-8/UTF-16 BE/LE) und ist fuer Non-UTF-Encodings ein No-op.
 
 ### 9.4 Internationale Datenformate
 

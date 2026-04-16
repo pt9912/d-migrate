@@ -9,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 
 /**
  * Golden-Master-Tests für CsvChunkWriter (uniVocity-parsers).
@@ -106,6 +107,87 @@ class CsvChunkWriterTest : FunSpec({
         bytes[0] shouldBe 0xEF.toByte()
         bytes[1] shouldBe 0xBB.toByte()
         bytes[2] shouldBe 0xBF.toByte()
+    }
+
+    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.4 / Entscheidung D1):
+    // --csv-bom schreibt das BOM passend zum --encoding. Die drei UTF-BOMs
+    // sind produktiv; Nicht-UTF-Encodings sind explizit No-op.
+
+    test("Phase F §4.4: --csv-bom + UTF-16 BE prefixes 0xFE 0xFF BOM bytes") {
+        val out = ByteArrayOutputStream()
+        CsvChunkWriter(
+            out,
+            ExportOptions(csvBom = true, encoding = StandardCharsets.UTF_16BE),
+        ).use { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, "Ярослав")), 0))
+            w.end()
+        }
+        val bytes = out.toByteArray()
+        bytes[0] shouldBe 0xFE.toByte()
+        bytes[1] shouldBe 0xFF.toByte()
+        // Payload danach muss als UTF-16 BE lesbar sein, Unicode stabil.
+        val content = String(bytes, 2, bytes.size - 2, StandardCharsets.UTF_16BE)
+        content shouldContain "Ярослав"
+    }
+
+    test("Phase F §4.4: --csv-bom + UTF-16 LE prefixes 0xFF 0xFE BOM bytes") {
+        val out = ByteArrayOutputStream()
+        CsvChunkWriter(
+            out,
+            ExportOptions(csvBom = true, encoding = StandardCharsets.UTF_16LE),
+        ).use { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, "中文测试")), 0))
+            w.end()
+        }
+        val bytes = out.toByteArray()
+        bytes[0] shouldBe 0xFF.toByte()
+        bytes[1] shouldBe 0xFE.toByte()
+        val content = String(bytes, 2, bytes.size - 2, StandardCharsets.UTF_16LE)
+        content shouldContain "中文测试"
+    }
+
+    test("Phase F §4.4: --csv-bom + ISO-8859-1 ist No-op (kein BOM definiert)") {
+        val out = ByteArrayOutputStream()
+        CsvChunkWriter(
+            out,
+            ExportOptions(csvBom = true, encoding = StandardCharsets.ISO_8859_1),
+        ).use { w ->
+            w.begin("users", cols)
+            w.write(DataChunk("users", cols, listOf(arrayOf<Any?>(1, "café")), 0))
+            w.end()
+        }
+        val bytes = out.toByteArray()
+        // Kein UTF-BOM-Prefix; direkt die Header-Zeile.
+        // ASCII 'i' = 0x69, erstes Byte von "id,name"
+        bytes[0] shouldBe 0x69.toByte()
+        val content = String(bytes, StandardCharsets.ISO_8859_1)
+        content shouldContain "café"
+    }
+
+    test("Phase F §4.5: Unicode-Inhalte bleiben im UTF-8-Default byte- und zeichenstabil") {
+        val out = ByteArrayOutputStream()
+        CsvChunkWriter(out).use { w ->
+            w.begin("users", cols)
+            w.write(
+                DataChunk(
+                    "users",
+                    cols,
+                    listOf(
+                        arrayOf<Any?>(1, "Москва"),
+                        arrayOf<Any?>(2, "東京"),
+                        arrayOf<Any?>(3, "München 🇩🇪"),
+                    ),
+                    0,
+                ),
+            )
+            w.end()
+        }
+        val content = out.toString(StandardCharsets.UTF_8)
+        content shouldContain "Москва"
+        content shouldContain "東京"
+        content shouldContain "München 🇩🇪"
     }
 
     test("close() without begin() does not throw and writes nothing") {

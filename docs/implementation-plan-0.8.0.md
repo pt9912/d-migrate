@@ -51,7 +51,10 @@ Stand im aktuellen Repo:
 - Strukturierte JSON-/YAML-Ausgaben sind bereits stabil und englisch
   schluesselbasiert.
 - BOM-Erkennung fuer Importformate existiert seit 0.4.0 bereits ueber
-  `EncodingDetector`; CSV-Output kann optional ein UTF-8-BOM schreiben.
+  `EncodingDetector`; CSV-Output kann via `--csv-bom` optional ein BOM
+  schreiben, das zum gewaehlten `--encoding` passt — UTF-8, UTF-16 BE
+  oder UTF-16 LE; Non-UTF-Encodings sind No-op (Phase F / D1,
+  `docs/ImpPlan-0.8.0-F.md`).
 - Datums-/Zeitwerte werden im Format-Layer bereits grob ISO-8601-nah
   serialisiert, aber es gibt noch keine zentrale Policy fuer
   Default-Zeitzonen, locale-bezogene Eingaberegeln und durchgaengige
@@ -453,19 +456,27 @@ Verbindliche Regeln fuer 0.8.0:
 ### Phase F - CSV-Encoding-/BOM-Konsolidierung
 
 Ziel: Vorhandene 0.4.0-Funktionalitaet wird als Teil des i18n-Vertrags sauber
-eingebettet.
+eingebettet. Details in `docs/ImpPlan-0.8.0-F.md`.
 
-Konkret:
+Verbindliche Entscheidung (D1 der Phase F):
 
-- explizit festhalten, dass BOM-/CSV-Unterstuetzung fachlich bereits vor
-  0.8.0 existiert und in diesem Milestone nicht neu erfunden, sondern als
-  Teil des i18n-Vertrags konsolidiert, getestet und dokumentiert wird
-- bestehende Import-BOM-Detection unangetastet weiterverwenden
-- CSV-Writer-Verhalten (`--csv-bom`) gegen 0.8.0-Dokumentation spiegeln
-- Tests fuer UTF-8/UTF-16 und BOM-Pfade mit nicht-lateinischen Inhalten
-- klar dokumentieren:
-  - BOM-Detection nur fuer UTF-8/UTF-16
-  - keine Heuristik fuer andere Encodings
+- `--csv-bom` schreibt das BOM passend zum ausgewaehlten `--encoding`
+  (UTF-8, UTF-16 BE/LE). Fuer Non-UTF-Encodings ist das Flag ein No-op.
+- Doku, CLI-Help und Tests sprechen denselben Wortlaut; die 0.4.0-
+  Abweichung ist damit aufgeloest.
+
+Konsolidierung:
+
+- BOM-/CSV-Unterstuetzung ist fachlich bereits vor 0.8.0 vorhanden und
+  wird in diesem Milestone nicht neu erfunden, sondern konsolidiert,
+  getestet und dokumentiert
+- bestehende Import-BOM-Detection im `EncodingDetector` bleibt
+  unangetastet und wird von CSV-, JSON- und YAML-Readern geteilt
+- BOM-Detection nur fuer UTF-8/UTF-16 BE/LE; UTF-32 bleibt expliziter
+  Fehlerpfad; keine Heuristik fuer andere Encodings
+- UTF-8-/UTF-16-Pfade werden im Detector, in den drei Readern und im
+  CSV-Writer mit nicht-lateinischen Payloads (kyrillisch, CJK, Emoji)
+  abgesichert
 
 ### Phase G - Tests und Dokumentation
 
@@ -491,10 +502,13 @@ Mindestens noetige Tests:
   - `TIMESTAMP`
   - `TIMESTAMP WITH TIME ZONE`
   - `--since` mit und ohne Offset
-- CSV/BOM:
-  - UTF-8 BOM
-  - UTF-16 LE/BE Input
-  - nicht-lateinische Daten
+- CSV/BOM (Phase F / D1, `docs/ImpPlan-0.8.0-F.md`):
+  - Export `--csv-bom` mit UTF-8, UTF-16 BE und UTF-16 LE
+  - Export `--csv-bom` mit Non-UTF-Encoding ist No-op
+  - Import-Auto-Detection fuer UTF-8- und UTF-16-BOM
+  - UTF-16 LE/BE Input auf CSV-, JSON- und YAML-Pfad
+  - nicht-lateinische Daten (kyrillisch, CJK, Emoji) in Detector,
+    Readern und CSV-Writer
 
 Nachzuziehende Doku:
 

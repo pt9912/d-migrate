@@ -97,7 +97,8 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val csvBom by option(
         "--csv-bom",
-        help = "Prefix CSV output with a UTF-8 BOM",
+        help = "Prefix CSV output with a BOM matching --encoding " +
+            "(UTF-8, UTF-16 BE/LE); no-op for other encodings",
     ).flag()
 
     val csvNoHeader by option(

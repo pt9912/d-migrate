@@ -238,7 +238,7 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 | i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben            | LN-023 | ✅ |
 | i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | ✅ |
 | Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy)     | LF-007 | ✅ |
-| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                        | LF-010 | |
+| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                        | LF-010 | ✅ |
 | Test    | Unicode-Integritätstests (Emoji, Kyrillisch, CJK)                | 8.5    | |
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
@@ -246,8 +246,9 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > Stand 2026-04-16: Phase A (Spezifikationsbereinigung), Phase B
 > (I18n-Runtime und Config-Resolution), Phase C (ResourceBundles und
 > lokalisierte CLI-Ausgaben), Phase D (ICU4J-Integration fuer
-> Unicode-Verarbeitung) und Phase E (Zeitzonen- und Format-Policy) sind
-> umgesetzt; Phase F (CSV-Encoding-/BOM-Konsolidierung) bleibt offen.
+> Unicode-Verarbeitung), Phase E (Zeitzonen- und Format-Policy) und
+> Phase F (CSV-Encoding-/BOM-Konsolidierung) sind umgesetzt; Milestone
+> 0.8.0 damit inhaltlich komplett.
 
 ### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
 
@@ -456,6 +457,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.14
+**Version**: 3.16
 **Stand**: 2026-04-16
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen; Milestone 0.8.0 in Arbeit (Phase A, B, C, D und E umgesetzt)
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0 und 0.7.5 abgeschlossen; Milestone 0.8.0 in Arbeit (Phase A–F umgesetzt; Unicode-Integritätstests offen)

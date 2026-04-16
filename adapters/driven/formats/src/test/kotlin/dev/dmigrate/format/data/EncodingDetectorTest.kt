@@ -157,4 +157,44 @@ class EncodingDetectorTest : FunSpec({
         val wrapped = EncodingDetector.wrapWithExplicit(raw, StandardCharsets.UTF_8)
         wrapped.readBytes().size shouldBe 0
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.5):
+    // BOM-/Encoding-Pfade werden mit nicht-lateinischen Payloads abgesichert.
+    // ──────────────────────────────────────────────────────────────────
+
+    test("Phase F §4.5: UTF-8 BOM + kyrillischer Payload bleibt zeichenstabil") {
+        val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+        val payload = "Ярослав Москва".toByteArray(StandardCharsets.UTF_8)
+        val raw = ByteArrayInputStream(bom + payload)
+        val d = EncodingDetector.detectOrFallback(raw)
+        d.charset shouldBe StandardCharsets.UTF_8
+        d.stream.readBytes().toString(StandardCharsets.UTF_8) shouldBe "Ярослав Москва"
+    }
+
+    test("Phase F §4.5: UTF-16 BE BOM + CJK-Payload bleibt zeichenstabil") {
+        val bom = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
+        val payload = "東京 中文 テスト".toByteArray(StandardCharsets.UTF_16BE)
+        val raw = ByteArrayInputStream(bom + payload)
+        val d = EncodingDetector.detectOrFallback(raw)
+        d.charset shouldBe StandardCharsets.UTF_16BE
+        d.stream.readBytes().toString(StandardCharsets.UTF_16BE) shouldBe "東京 中文 テスト"
+    }
+
+    test("Phase F §4.5: UTF-16 LE BOM + Emoji-Payload bleibt zeichenstabil") {
+        val bom = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
+        val payload = "Grüße 🇩🇪 Café".toByteArray(StandardCharsets.UTF_16LE)
+        val raw = ByteArrayInputStream(bom + payload)
+        val d = EncodingDetector.detectOrFallback(raw)
+        d.charset shouldBe StandardCharsets.UTF_16LE
+        d.stream.readBytes().toString(StandardCharsets.UTF_16LE) shouldBe "Grüße 🇩🇪 Café"
+    }
+
+    test("Phase F §4.5: explizites UTF-16 BE konsumiert passendes BOM, Unicode-Payload bleibt") {
+        val bom = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
+        val payload = "Αθήνα".toByteArray(StandardCharsets.UTF_16BE)
+        val raw = ByteArrayInputStream(bom + payload)
+        val wrapped = EncodingDetector.wrapWithExplicit(raw, StandardCharsets.UTF_16BE)
+        wrapped.readBytes().toString(StandardCharsets.UTF_16BE) shouldBe "Αθήνα"
+    }
 })

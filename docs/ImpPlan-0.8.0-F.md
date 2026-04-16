@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.8.0 - Internationalisierung
 > **Phase**: F (CSV-Encoding-/BOM-Konsolidierung)
-> **Status**: Planned (2026-04-16)
+> **Status**: Implemented (2026-04-16)
 > **Referenz**: `docs/implementation-plan-0.8.0.md` Abschnitt 2,
 > Abschnitt 3, Abschnitt 6 Phase F, Abschnitt 7, Abschnitt 8, Abschnitt 9;
 > `docs/ImpPlan-0.8.0-A.md`; `docs/ImpPlan-0.8.0-B.md`;
@@ -48,7 +48,7 @@ Nach Phase F soll klar und testbar gelten:
 
 ## 2. Ausgangslage
 
-Aktueller Stand der Codebasis:
+### 2.1 Stand der Codebasis **vor** Phase F
 
 - der zentrale BOM-/Encoding-Unterbau existiert bereits seit 0.4.0 in
   `EncodingDetector`
@@ -75,22 +75,22 @@ Aktueller Stand der Codebasis:
   - `CsvChunkWriter` schreibt vor dem ersten Byte BOM-Bytes fuer UTF-8,
     UTF-16 BE und UTF-16 LE
 
-Bestehende Testabdeckung:
+Bestehende Testabdeckung vor der Phase:
 
 - `EncodingDetectorTest` deckt UTF-8-, UTF-16- und UTF-32-Faelle ab
 - `CsvChunkReaderTest` deckt UTF-8 BOM und explizites ISO-8859-1 ab
 - `JsonChunkReaderTest` deckt UTF-8 BOM und UTF-16 LE bereits ab
 - `YamlChunkReaderTest` deckt UTF-8 BOM ab
-- `CsvChunkWriterTest` deckt `--csv-bom` derzeit fuer UTF-8 ab
+- `CsvChunkWriterTest` deckt `--csv-bom` vor Phase F nur fuer UTF-8 ab
 
-Relevante Doku-Ist-Lage:
+Relevante Doku-Ist-Lage vor der Phase:
 
 - `docs/implementation-plan-0.8.0.md` beschreibt Phase F explizit als
   Konsolidierung vorhandener 0.4.0-Funktionalitaet
 - `docs/design.md` beschreibt Textformate mit UTF-8 als Standard und
   automatischer Erkennung fuer UTF-16-/BOM-markierte Dateien
-- `docs/cli-spec.md` und `docs/guide.md` beschreiben `--csv-bom` aktuell als
-  UTF-8-BOM-Flag
+- `docs/cli-spec.md` und `docs/guide.md` beschreiben `--csv-bom` vor Phase F
+  als reines UTF-8-BOM-Flag
 
 Konkrete Luecken vor Phase F:
 
@@ -98,11 +98,38 @@ Konkrete Luecken vor Phase F:
   gleich praezise
 - die importseitige BOM-Detection ist vorhanden, aber als Teil des
   I18n-Vertrags noch nicht konsolidiert beschrieben
-- beim Export gibt es derzeit eine Spannung zwischen Doku und Code:
+- beim Export gibt es eine Spannung zwischen Doku und Code:
   - Doku beschreibt `--csv-bom` als UTF-8-BOM
   - `CsvChunkWriter` schreibt BOMs passend zu UTF-8 und UTF-16
 - die vorhandene Testbasis deckt BOM-/Encoding-Pfade bereits gut ab, aber
   nicht durchgaengig mit nicht-lateinischen Payloads
+
+### 2.2 Stand der Codebasis **nach** Phase F
+
+Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
+
+- Code-Vertrag fuer `--csv-bom` ist explizit festgezogen (D1): BOM passend
+  zum `--encoding` — UTF-8 (`EF BB BF`), UTF-16 BE (`FE FF`), UTF-16 LE
+  (`FF FE`); Non-UTF-Encodings sind No-op. `CsvChunkWriter.writeBomBytes()`
+  dokumentiert dies inline; `ExportOptions.csvBom`-KDoc verweist auf D1.
+- CLI-Help fuer `--csv-bom` im `DataExportCommand` spiegelt denselben Vertrag.
+- `EncodingDetector` bleibt unangetastet und ist weiterhin die geteilte
+  Import-BOM-Quelle fuer CSV, JSON und YAML.
+- Tests decken den Vertrag und Unicode-Stabilitaet ab:
+  - `CsvChunkWriterTest`: UTF-8/UTF-16 BE/UTF-16 LE BOM + ISO-8859-1 No-op
+    mit kyrillischen, CJK- und Emoji-Inhalten
+  - `EncodingDetectorTest`: UTF-8/UTF-16 BE/UTF-16 LE BOM mit
+    nicht-lateinischen Payloads plus expliziter UTF-16-BE-Pfad
+  - `CsvChunkReaderTest`: UTF-8 BOM mit kyrillisch/CJK/Emoji, UTF-16 BE
+    und UTF-16 LE BOM mit Unicode
+  - `JsonChunkReaderTest`: UTF-8 BOM + Unicode, UTF-16 BE BOM + Unicode
+  - `YamlChunkReaderTest`: UTF-8 BOM + Unicode, UTF-16 LE BOM + Unicode
+- Doku gleicht den Vertrag konsistent ab:
+  - `docs/cli-spec.md`: Export-`--csv-bom` und Import-`--encoding`
+  - `docs/guide.md`: Option-Tabellen fuer Export und Import
+  - `docs/design.md` §6.2, §6.3 und §9.3
+  - `docs/implementation-plan-0.8.0.md` Phase-F-Abschnitt dokumentiert D1
+  - `docs/roadmap.md` Phase F ✅
 
 ---
 
@@ -375,17 +402,33 @@ Mitigation:
 - Unicode-Payloads in Reader-/Writer-Tests ergaenzen
 - UTF-8- und UTF-16-Pfade explizit mit nicht-lateinischen Zeichen fahren
 
-### Offene Frage O1
+### Entscheidung D1 (ehem. Offene Frage O1)
 
-Soll `--csv-bom` in 0.8.0 bewusst auf UTF-8 begrenzt werden, oder soll der
-Vertrag das aktuelle "BOM passend zum ausgewaehlten UTF-Encoding"-Verhalten
-offiziell machen?
+`--csv-bom` schreibt in 0.8.0 offiziell das BOM passend zum
+`--encoding` — also `EF BB BF` fuer UTF-8, `FE FF` fuer UTF-16 BE und
+`FF FE` fuer UTF-16 LE. Fuer Non-UTF-Encodings (ISO-8859-1,
+Windows-1252, ...) ist das Flag ein No-op, weil ISO-8859 kein
+definiertes BOM hat.
 
-Empfehlung:
+Begruendung:
 
-- die Entscheidung explizit treffen, nicht implizit durch Zufallscode
-- bevorzugt den Vertrag waehlen, der fuer Nutzer am klarsten und in Doku wie
-  Tests am wenigsten mehrdeutig ist
+- spiegelt den produktiven `CsvChunkWriter.writeBomBytes()`-Code
+  zurueck in Doku, CLI-Help und Tests — keine stille Abweichung mehr
+- symmetrisch zum Importpfad (`EncodingDetector` erkennt UTF-8 und
+  UTF-16 BE/LE)
+- Nutzer, die Windows-1252 exportieren, bekommen eine ehrliche
+  BOM-freie Datei — kein UTF-8-BOM vor Non-UTF-Inhalt
+
+Umsetzung in Code und Doku:
+
+- `DataExportCommand.csvBom`-Help: "Prefix CSV output with a BOM
+  matching --encoding (UTF-8, UTF-16 BE/LE); no-op for other
+  encodings"
+- `docs/cli-spec.md`, `docs/guide.md`, `docs/design.md` §6.2/§9.3
+  angeglichen
+- `ExportOptions.csvBom`-KDoc zieht D1 explizit nach
+- `CsvChunkWriterTest` deckt alle drei UTF-BOMs und den Non-UTF-No-op
+  mit Unicode-Inhalten ab
 
 ### Offene Frage O2
 

@@ -130,7 +130,11 @@ class CsvChunkWriter(
     }
 
     private fun writeBomBytes() {
-        // Standard-BOMs für die häufigsten Encodings.
+        // 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4 / Entscheidung D1):
+        // `--csv-bom` schreibt das BOM, das zum ausgewaehlten `--encoding`
+        // passt. Fuer Encodings ohne definiertes BOM (ISO-8859-1,
+        // Windows-1252, ...) ist das Flag ein No-op — das BOM-Konzept
+        // existiert dort nicht.
         val bom: ByteArray = when (options.encoding) {
             StandardCharsets.UTF_8 -> byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
             StandardCharsets.UTF_16BE -> byteArrayOf(0xFE.toByte(), 0xFF.toByte())
