@@ -287,16 +287,24 @@ Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 
 ### Milestone 0.9.1 — Beta: Library-Refactor und Integrationsschnitt
 
-| Bereich | Aufgabe                                                                 | LF-Ref |
-| ------- | ----------------------------------------------------------------------- | ------ |
-| Core    | Read-/Write-Schnitt in `hexagon:ports` für externe Consumer schärfen    | —      |
-| Driver  | Profiling-Adapter aus JDBC-Treiber-Kernmodulen extrahieren              | —      |
-| Core    | FK-/Topo-Sort-Utility als wiederverwendbaren Helfer nach `hexagon:core` | —      |
-| Arch    | Integrationsgrenzen für externe Library-Consumer schärfen               | —      |
+| Bereich  | Aufgabe                                                                                                                     | LF-Ref |
+| -------- | --------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Security | **Sicherheits-Härtung der Profiling-/Introspection-Adapter + Raw-SQL-Grenzen (`docs/quality.md`)** — zentrale Identifier-Quoting-Utility pro Dialekt, PreparedStatement für Metadaten-Literals, `--filter` / `constraint.expression` als dokumentierter Trusted-Input, Security-Tests mit böswilligen Bezeichnern | —      |
+| Refactor | **Zerlegung der großen Orchestrierungs- und Dialekt-Klassen** — `DataImport`/`DataExportRunner`, `StreamingImporter`, `SchemaComparator` in kleinere Dienste; DDL-Generatoren pro Objektart schneiden; `-- TODO: …`-Platzhalter durch strukturierte `ManualActionRequired`-Einträge ersetzen (`generatedStatements` vs. `manualActionsRequired`) | —      |
+| Core     | Read-/Write-Schnitt in `hexagon:ports` für externe Consumer schärfen                                                        | —      |
+| Driver   | Profiling-Adapter aus JDBC-Treiber-Kernmodulen extrahieren                                                                  | —      |
+| Core     | FK-/Topo-Sort-Utility als wiederverwendbaren Helfer nach `hexagon:core`                                                     | —      |
+| Arch     | Integrationsgrenzen für externe Library-Consumer schärfen                                                                   | —      |
 
 **Ergebnis**: `d-migrate` ist intern so refaktoriert, dass die Kernmodule
 sauberer als Libraries konsumierbar sind, ohne schon einen öffentlichen
-Publish-Vertrag zu versprechen.
+Publish-Vertrag zu versprechen. Die Sicherheits-Findings aus
+`docs/quality.md` (Injection-Fläche in Profiling/Introspection,
+offengehaltene Raw-SQL-Pfade) sind abgearbeitet, und die wartungs-
+kritischen Orchestrierungs-/Dialekt-Hotspots (`Data*Runner`,
+`StreamingImporter`, `SchemaComparator`, DDL-Generatoren mit
+`-- TODO:`-Platzhaltern) sind zerlegt, bevor 1.0.0 einen Publish-
+Vertrag festschreibt.
 
 > Hinweis: Dieser Milestone bereitet wiederverwendbare Libraries für externe
 > Consumer wie `d-browser` vor. Ein öffentlicher Publish-Vertrag inklusive

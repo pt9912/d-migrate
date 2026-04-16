@@ -18,10 +18,20 @@
 
 Milestone 0.9.1 schiebt keinen neuen Endnutzer-Feature-Vertrag nach, sondern
 macht die innere Modul- und Portstruktur von `d-migrate` sauberer fuer externe
-Consumer wie `d-browser`.
+Consumer wie `d-browser`. Ein zweites, gleichrangiges Ziel ist die
+Sicherheits-Haertung, die aus dem Code-Quality-Review
+(`docs/quality.md`) hervorgegangen ist — sie wird bewusst **vor** dem
+1.0.0-Publish-Vertrag abgearbeitet.
 
 Der Milestone liefert:
 
+- eine Sicherheits-Haertung der Profiling-/Introspection-Adapter und der
+  bewusst offenen Raw-SQL-Grenzen (`docs/quality.md` Findings „Hoch" und
+  „Mittel")
+- eine Zerlegung der grossen Orchestrierungs- und Dialekt-Klassen
+  (`DataImportRunner`, `DataExportRunner`, `StreamingImporter`,
+  `SchemaComparator`, die drei DDL-Generatoren) in kleinere,
+  verantwortungsstaerker geschnittene Dienste
 - eine klarere Read-/Write-Schnitt im Portbereich
 - schlankere JDBC-Treiberkerne ohne transitive Profiling-Pflicht
 - eine wiederverwendbare FK-/Topo-Sort-Basis statt mehrfacher Duplikation
@@ -43,6 +53,34 @@ die oeffentliche Distribution bewusst in 1.0.0 verbleibt.
 
 Stand im aktuellen Repo:
 
+- ein Code-Quality-Review (`docs/quality.md`) hat konkrete Sicherheits-
+  Findings dokumentiert:
+  - **Hoch**: Profiling-/Introspection-Adapter der drei Treiber
+    interpolieren `table`/`column`/teils `schema` direkt in
+    SQL-Strings (PG `PostgresSchemaIntrospectionAdapter:16`, MySQL
+    `MysqlSchemaIntrospectionAdapter:33` und
+    `MysqlProfilingDataAdapter:18`, SQLite
+    `SqliteSchemaIntrospectionAdapter:35`). Das ist eine echte
+    Injection-Flaeche, sobald diese Werte nicht ausschliesslich aus
+    vertrauenswuerdigen Metadaten kommen.
+  - **Mittel**: bewusst offene Raw-SQL-Schnittstellen —
+    `DataExportHelpers.resolveFilter` nimmt `--filter` ungeprueft als
+    `WhereClause`, und die DDL-Generatoren setzen
+    `constraint.expression` direkt in CHECK/EXCLUDE. Vertragslage ist
+    „Trusted Input", aber weder im CLI-Flag noch im Vertragsmodell
+    sichtbar kommuniziert.
+  - **Mittel**: Orchestrator- und Dialekt-Klassen sind zu gross und
+    tragen zu viele Verantwortlichkeiten:
+    `DataImportRunner` ~887 LOC, `DataExportRunner` ~923 LOC,
+    `StreamingImporter` ~792 LOC, `SchemaComparator` ~656 LOC; die
+    drei DDL-Generatoren (`PostgresDdlGenerator`, `MysqlDdlGenerator`,
+    `SqliteDdlGenerator`) bundeln Views, Functions, Procedures,
+    Trigger und Rewrite-Fallbacks in jeweils einer monolithischen
+    Datei mit `-- TODO: …`-Platzhaltern statt strukturierter
+    `ManualActionRequired`-Eintraege.
+  - **Mittel**: Profiling-Adapter zwischen PG/MySQL/SQLite enthalten
+    aehnliche Logik mit leicht unterschiedlichen Escape-Strategien —
+    Sicherheitsfixes landen leicht in nur einem Dialekt.
 - `hexagon:ports` enthaelt heute sowohl lese- als auch write-orientierte
   Vertraege
 - `ImportOptions` haengt nicht nur am Writer-/Importpfad, sondern auch am
@@ -67,6 +105,34 @@ Reduktion technischer Kopplung vor einem spaeteren Stable-Publish.
 
 ### 3.1 In Scope fuer 0.9.1
 
+- **Sicherheits-Haertung** (`docs/quality.md`):
+  - zentrale Identifier-Quoting-Utility pro Dialekt; alle Profiling-
+    und Introspection-Adapter bauen nur noch darueber
+  - Metadaten-Literals ueber `PreparedStatement` binden statt
+    interpolieren; Namen weiter ueber konsequentes Identifier-Quoting
+  - `--filter` und `constraint.expression` als „Trusted Input"
+    kennzeichnen (CLI-Flag + Vertrags-/KDoc-Ebene); optional Filter-
+    DSL als kleinerer, sicherer Ersatzweg
+  - Security-Tests mit boesartigen Tabellen-/Spaltennamen, die
+    Escape-/Quoting-Fehler direkt sichtbar machen
+- **Zerlegung grosser Orchestrierungs- und Dialekt-Klassen**:
+  - `DataImportRunner` / `DataExportRunner` in verantwortungs-
+    schaerfer geschnittene Dienste (z.B. `ImportRequestValidator`,
+    `ImportSourceResolver`, `ResumeCoordinator`,
+    `ManifestCoordinator`, `ImportExecutionService` bzw. analog
+    fuer Export)
+  - `StreamingImporter` / `StreamingExporter` in separate
+    Orchestrator- und Tabellen-Pipeline-Units
+  - `SchemaComparator` in kleinere Vergleichseinheiten (pro
+    Objekttyp) trennen
+  - DDL-Generatoren pro Objektart schneiden
+    (`ViewDdlGenerator`, `FunctionDdlGenerator`,
+    `ProcedureDdlGenerator`, `TriggerDdlGenerator`); `-- TODO: …`-
+    Platzhalter durch strukturierte `ManualActionRequired`-Eintraege
+    plus `generatedStatements`/`manualActionsRequired`-Trennung im
+    DDL-Ergebnis ersetzen
+  - Plan-/Milestone-Kommentare aus Produktionscode zurueck in
+    `docs/`; im Code bleiben nur „why" + Invarianten stehen
 - Refactor der Portoberflaeche fuer externe Lese-Consumer
 - Trennung von read-orientierten und write-orientierten Options-/Porttypen,
   soweit dies fuer echte Entkopplung noetig ist
@@ -188,7 +254,90 @@ Der Helper sollte mindestens liefern:
 
 ## 6. Geplante Arbeitspakete
 
-### 6.1 Phase A - Port- und Optionsschnitt trennen
+Die Arbeitspakete sind bewusst gereiht: **Phase A (Sicherheits-Haertung)**
+steht vor den strukturellen Refaktorierungen, weil die Findings aus
+`docs/quality.md` inhaltlich **vor** dem 1.0.0-Publish-Vertrag behoben
+sein muessen. **Phase B (Zerlegung der grossen Klassen)** nutzt die nun
+verfuegbaren Dialekt-Utilities aus Phase A als Basis und reduziert die
+Regressionsflaeche der spaeteren Port-/Profiling-/Integrations-Refactors.
+
+### 6.1 Phase A - Sicherheits-Haertung
+
+Eingang: `docs/quality.md` Findings „Hoch" und „Mittel".
+
+- zentrale Identifier-Quoting-Utility pro Dialekt (PG/MySQL/SQLite) in
+  einem einheitlichen Paket; die drei Introspection-Adapter und die
+  Profiling-Data-Adapter bauen alle Identifier nur noch ueber diese
+  Utility (`PostgresSchemaIntrospectionAdapter`,
+  `MysqlSchemaIntrospectionAdapter`, `MysqlProfilingDataAdapter`,
+  `SqliteSchemaIntrospectionAdapter`)
+- direkte `$name`-Interpolation von `table`/`column`/`schema` in
+  Metadaten-SQL durch `PreparedStatement`-Binding fuer Literals und
+  konsequentes Identifier-Quoting fuer Namen ersetzen
+- `--filter` (`DataExportHelpers.resolveFilter`) und
+  `constraint.expression` (DDL-Generatoren) als **Trusted Input**
+  kennzeichnen: CLI-Hilfetext + KDoc + ggf. eigener Flag-Name
+  (`--unsafe-filter`); optional kleine Filter-DSL als sicherer
+  Alternativweg
+- Security-Tests mit absichtlich boesartigen Tabellen-/Spaltennamen
+  (`"; DROP TABLE …`, Unicode-Homoglyphs, reservierte Woerter) im
+  Profiling- und DDL-Pfad — Escape-/Quoting-Fehler fallen dadurch
+  sofort auf
+- Kover-Coverage bleibt pro Modul ≥ 90 %
+
+Ergebnis:
+
+Die Injection-Flaeche aus `docs/quality.md` Findings ist geschlossen.
+Raw-SQL-Oberflaechen sind entweder vertragstechnisch klar als
+Trusted-Input ausgewiesen oder durch strukturierten Ersatz reduziert.
+
+### 6.2 Phase B - Zerlegung der grossen Orchestrierungs- und Dialekt-Klassen
+
+Eingang: `docs/quality.md` Findings zu Dateigroesse, dialekt-duplizierter
+Logik und `-- TODO: …`-Platzhaltern in den DDL-Generatoren.
+
+- **Runner-Zerlegung**: `DataImportRunner` (~887 LOC) und
+  `DataExportRunner` (~923 LOC) in kleinere Dienste trennen, z.B.
+  `ImportRequestValidator`, `ImportSourceResolver`,
+  `ResumeCoordinator`, `ManifestCoordinator`, `ImportExecutionService`
+  bzw. analog fuer Export. Der Runner wird zum Orchestrator ueber
+  diese Dienste.
+- **Streaming-Zerlegung**: `StreamingImporter` (~792 LOC) in einen
+  Orchestrator + Tabellen-Pipeline + Chunk-Handler-Unit trennen; der
+  Export-Seite folgt derselben Linie.
+- **Comparator-Zerlegung**: `SchemaComparator` (~656 LOC) pro
+  Objekttyp (Tables, Views, Functions, Procedures, Triggers,
+  Sequences) in kleinere Diff-Einheiten.
+- **DDL-Generatoren pro Objektart**: neuen Schnitt in
+  `ViewDdlGenerator`, `FunctionDdlGenerator`,
+  `ProcedureDdlGenerator`, `TriggerDdlGenerator`; die dialekt-
+  spezifischen Generatoren werden zu Komposition aus diesen
+  Objekt-Generatoren und ziehen Rewrite-/Capability-Regeln pro
+  Objekt nach. Die bisherigen `-- TODO: …`-SQL-Kommentar-
+  Platzhalter (PG ~7 Stellen, MySQL ~11 Stellen, SQLite ~3 Stellen)
+  werden durch strukturierte `ManualActionRequired`-Eintraege
+  ersetzt; das DDL-Ergebnis trennt `generatedStatements` und
+  `manualActionsRequired`.
+- **Dialekt-Capabilities**: explizite Capability-Typen (z.B. als
+  Enum oder Data-Class pro `DatabaseDialect`), damit Generatoren
+  konsistent entscheiden, ob ein Objekt generiert, konvertiert,
+  uebersprungen oder als manuelle Nacharbeit gemeldet wird.
+- **Plan-Kommentare raus**: Historie (`0.9.0 Phase A/B/C/D.n §…`)
+  wandert aus dem Produktionscode zurueck nach `docs/`; im Code
+  bleiben „why"-Kommentare und Invarianten. Pragmatischer Schnitt
+  pro Datei, nicht als Zwangs-Sweep.
+- Tests fuer die neue DDL-Ergebnistrennung: Unsupported-/Rewrite-
+  Faelle erscheinen **nicht** mehr als pseudo-ausfuehrbare DDL im
+  `generatedStatements`-Block, sondern ausschliesslich in der
+  strukturierten `manualActionsRequired`-Liste.
+
+Ergebnis:
+
+Die wartungskritischen Hotspots sind zerlegt, der DDL-Pfad trennt
+ausfuehrbare Statements von manueller Nacharbeit, und Dialekt-Fixes
+landen konsistent ueber alle drei Treiber.
+
+### 6.3 Phase C - Port- und Optionsschnitt trennen
 
 - aktuelle read-/write-gemischte Porttypen inventarisieren
 - Reader-Pfade von writer-zentrierten Optionsmodellen entkoppeln
@@ -200,7 +349,7 @@ Ergebnis:
 
 Ein fachlich klarerer Portschnitt fuer Schema/Data-Lesen versus Import/Write.
 
-### 6.2 Phase B - Profiling aus Treiber-Kernmodulen extrahieren
+### 6.4 Phase D - Profiling aus Treiber-Kernmodulen extrahieren
 
 - Profiling-Pakete und Build-Abhaengigkeiten pro JDBC-Treiber separieren
 - neue optionale Profiling-Module schneiden
@@ -211,7 +360,7 @@ Ergebnis:
 
 Schema/Data/DDL-Treiberkerne sind ohne Profiling transitiv konsumierbar.
 
-### 6.3 Phase C - FK-/Topo-Sort-Utility extrahieren
+### 6.5 Phase E - FK-/Topo-Sort-Utility extrahieren
 
 - gemeinsame Semantik aus DDL-, Import- und Transfer-Pfad herausarbeiten
 - einen kleinen Core-Helfer mit Zyklusdiagnostik definieren
@@ -221,7 +370,7 @@ Ergebnis:
 
 Ein wiederverwendbarer FK-/Topo-Sort-Vertrag statt dreifacher Speziallogik.
 
-### 6.4 Phase D - Integrationsschnitt fuer `source-d-migrate` absichern
+### 6.6 Phase F - Integrationsschnitt fuer `source-d-migrate` absichern
 
 - Doku fuer externe Consumer angleichen
 - festhalten, welche Toolmodelle intern bleiben und welche als stabile
@@ -233,7 +382,7 @@ Ergebnis:
 Ein nachvollziehbarer Integrationsschnitt fuer `d-browser` ohne vorschnellen
 Oeffentlichkeitsvertrag.
 
-### 6.5 Phase E - Vorbereitung fuer 1.0.0-Publish dokumentieren
+### 6.7 Phase G - Vorbereitung fuer 1.0.0-Publish dokumentieren
 
 - publizierbare Modulgruppen identifizieren
 - festhalten, welche 1.0.0-Artefakte spaeter nach Maven Central sollen
@@ -334,18 +483,55 @@ Mitigation:
 - erst lokal im Adapter projizieren
 - Core-Split nur bei nachgewiesenem Mehrfachbedarf
 
+### 9.5 Zerlegung der grossen Klassen kann Resume-Invarianten gefaehrden
+
+`DataImportRunner` und `DataExportRunner` tragen nach 0.9.0 den
+vollstaendigen Resume-Vertrag (Manifest-Lifecycle, Fingerprint-
+Preflight, committed-chunk-basierte Fortschreibung, Directory-Bindung,
+Composite-Marker). Ein zu grobschlaechtiger Split wuerde diese
+Invarianten quer ueber die neuen Dienste verteilen und Regressions-
+Fehler in Resume-Pfaden wahrscheinlicher machen.
+
+Mitigation:
+
+- Resume-Invarianten bleiben Eigentum genau eines Koordinators
+  (`ResumeCoordinator` bzw. `ManifestCoordinator`); andere Dienste
+  rufen nur auf
+- Bestand der 0.9.0-Resume-Tests (C.1/C.2/D.1/D.2-4) als
+  Regressions-Sicherheitsnetz waehrend der Zerlegung behalten
+- keine Semantik-Aenderungen am Vertrag im Refactor — nur strukturelle
+  Umverteilung
+
+### 9.6 DDL-Ergebnis-Split darf die bestehende CLI-Ausgabe nicht brechen
+
+Der Uebergang von `-- TODO: …`-Kommentar-Platzhaltern zu
+strukturierten `ManualActionRequired`-Eintraegen aendert den
+DDL-Output-Vertrag. Nutzer, die heute auf dem SQL-Dokument arbeiten,
+koennten darauf angewiesen sein.
+
+Mitigation:
+
+- `generatedStatements` bleibt der ausfuehrbare SQL-Block; die neue
+  `manualActionsRequired`-Liste wird zusaetzlich emittiert
+- Uebergangsphase mit Doku-Hinweis (CHANGELOG + `docs/cli-spec.md`)
+- Tests stellen sicher, dass Unsupported-/Rewrite-Faelle nicht mehr
+  als pseudo-ausfuehrbare DDL erscheinen
+
 ---
 
 ## 10. Entscheidungsempfehlung
 
-Milestone 0.9.1 sollte bewusst als Refactor-Milestone zwischen dem
-0.9.0-Beta-Code-Cut und dem 1.0.0-Stable-Release eingefuegt werden:
+Milestone 0.9.1 sollte bewusst als Haerte- und Refactor-Milestone zwischen
+dem 0.9.0-Beta-Code-Cut und dem 1.0.0-Stable-Release eingefuegt werden:
 
 - `0.9.0` bleibt fokussiert auf Resume und finalen `--lang`-Vertrag
-- `0.9.1` stabilisiert die interne Library-Grenze fuer externe Consumer
+- `0.9.1` haertet zuerst die Sicherheits-Findings aus `docs/quality.md`
+  (Phase A), zerlegt die wartungskritischen Orchestrierungs-/Dialekt-
+  Hotspots (Phase B) und stabilisiert dann die interne Library-Grenze
+  fuer externe Consumer (Phasen C–G)
 - `0.9.5` bleibt bei Docs und Pilot-QA
 - `1.0.0` uebernimmt erst danach den oeffentlichen Publish-Vertrag inklusive
   Maven-Central-Portal-Workflow
 
-So wird `d-migrate` erst strukturell publish-faehig gemacht und erst danach
-oeffentlich als stabile Library distribuiert.
+So wird `d-migrate` erst sicherheits-gehaertet und strukturell publish-
+faehig gemacht und erst danach oeffentlich als stabile Library distribuiert.
