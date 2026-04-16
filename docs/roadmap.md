@@ -249,7 +249,7 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > Dokumentation inklusive Mindest-Testmatrix, `--lang`-Grenze 0.8.0/0.9.0
 > und DE-Bundle-Fallback-Nachweis. Milestone 0.8.0 damit abgeschlossen.
 
-### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
+### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI (in Arbeit)
 
 | Bereich | Aufgabe                                                                | LF-Ref |
 | ------- | ---------------------------------------------------------------------- | ------ |
@@ -456,6 +456,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.18
+**Version**: 3.19
 **Stand**: 2026-04-16
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen; Milestone 0.9.0 in Arbeit
