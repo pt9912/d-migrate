@@ -81,3 +81,45 @@ jobs:
             assert_match "Database-agnostic migration", shell_output("#{bin}/d-migrate --help")
           custom_tarball: d-migrate-${{ steps.meta.outputs.version }}-homebrew
           skip_checksum: true
+
+  verify-homebrew:
+    needs: publish
+    runs-on: macos-latest
+
+    steps:
+      - name: Derive release metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Wait for homebrew-releaser commit on tap
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL \
+              "https://raw.githubusercontent.com/pt9912/homebrew-d-migrate/main/Formula/d-migrate.rb" \
+              | grep -F "version \"${VERSION}\"" > /dev/null; then
+              echo "Tap formula reports version ${VERSION}"
+              exit 0
+            fi
+            echo "Attempt ${attempt}: tap not yet at ${VERSION}; sleeping 20s"
+            sleep 20
+          done
+          echo "ERROR: tap did not reach ${VERSION} within the polling window"
+          exit 1
+
+      - name: Tap and install d-migrate from published tap
+        run: |
+          brew tap pt9912/d-migrate https://github.com/pt9912/homebrew-d-migrate
+          brew install d-migrate
+
+      - name: Smoke-test installed CLI
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          d-migrate --version | grep -F "d-migrate version ${VERSION}"
+          d-migrate --help | head -5
