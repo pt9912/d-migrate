@@ -47,8 +47,15 @@ if [[ -t 0 && -t 1 ]]; then
     TTY_FLAG="-t"
 fi
 
+#docker volume rm -f ${CACHE_VOLUME}
+
+#remove build folders
+#find . -type d -name "build" -prune -exec rm -rf {} +
+
+
+
 echo "Building integration test image from Dockerfile (stage: integration-test)..."
-docker build -q --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
+docker build --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
 echo "Running integration tests in container:"
 echo "  image:        ${IMAGE_TAG}"
@@ -57,7 +64,6 @@ echo "  gradle tasks: ${GRADLE_TASKS}"
 
 exec docker run --rm ${TTY_FLAG} \
     --network=host \
-    -v "${REPO_ROOT}:/src" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${CACHE_VOLUME}:/gradle-cache" \
     -e GRADLE_USER_HOME=/gradle-cache \
@@ -65,4 +71,4 @@ exec docker run --rm ${TTY_FLAG} \
     -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     -w /src \
     "${IMAGE_TAG}" \
-    bash -lc "./gradlew --no-daemon ${GRADLE_TASKS}"
+    bash -lc "gradle --no-daemon ${GRADLE_TASKS}"
