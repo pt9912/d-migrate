@@ -96,6 +96,18 @@ object ImportOptionsFingerprint {
          * URL-Parser hat sie in `ConnectionConfig.password` verschoben).
          */
         val targetUrl: String,
+        /**
+         * 0.9.0 Phase D.4 (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4):
+         * stabile `table -> relativer Dateiname`-Zuordnung fuer
+         * Directory-Importe. Eine geaenderte Dateimenge, ein
+         * umbenanntes File oder eine geaenderte Reihenfolge (durch
+         * `--schema`-Topo-Sort) veraendert damit den Hash und loest
+         * Exit 3 aus.
+         *
+         * Fuer Stdin- und SingleFile-Importe bleibt die Map leer und
+         * der Fingerprint ist bytegleich zum Phase-D.1-Vertrag.
+         */
+        val inputFilesByTable: Map<String, String> = emptyMap(),
     )
 
     private fun canonicalForm(input: Input): String = buildString {
@@ -115,6 +127,18 @@ object ImportOptionsFingerprint {
         appendField("inputPath", input.inputPath)
         appendField("targetDialect", input.targetDialect)
         appendField("targetUrl", input.targetUrl)
+        // 0.9.0 Phase D.4: `table -> file`-Signatur fuer Directory-
+        // Importe. Reihenfolge folgt `tables`, um bei Umsortierungen
+        // stabil zu bleiben. Wenn die Map leer ist (Stdin/SingleFile
+        // oder Phase-D.1-Callsite), wird **nichts** angehaengt — der
+        // Hash bleibt bytegleich zum Phase-D.1-Vertrag.
+        if (input.inputFilesByTable.isNotEmpty()) {
+            val fileSignature = input.tables.joinToString(separator = LIST_SEPARATOR) { table ->
+                val file = input.inputFilesByTable[table] ?: ""
+                "$table:$file"
+            }
+            appendField("inputFilesByTable", fileSignature)
+        }
     }
 
     private fun StringBuilder.appendField(name: String, value: String) {

@@ -413,18 +413,38 @@ class DataImportRunner(
                 }
             } ?: { _, _ -> }
 
-        // ─── 9b. 0.9.0 Phase D.1: Resume-Preflight + Manifest-Lifecycle ──
-        // (`docs/ImpPlan-0.9.0-D.md` §5.1)
+        // ─── 9b. 0.9.0 Phase D.1 + D.4: Resume-Preflight + Manifest-Lifecycle ──
+        // (`docs/ImpPlan-0.9.0-D.md` §5.1 / §5.4)
         //
-        // Effektive Tabellenliste fuer Fingerprint und Manifest-
-        // Slices. Stdin/SingleFile tragen genau eine Tabelle; fuer
-        // Directory-Importe ohne `--tables` bleibt die Liste in D.1
-        // leer (D.4 §5.4 fuellt sie spaeter aus dem Directory-Scan).
+        // 0.9.0 Phase D.4 §5.4: Directory-Importe werden hier bereits
+        // vor dem Streaming gescannt — der Scan liefert eine stabile
+        // `table -> inputFile`-Zuordnung, die sowohl in den Fingerprint
+        // einfliesst als auch im Manifest persistiert wird. Damit
+        // erkennt der Preflight eine veraenderte Dateimenge sofort
+        // (fingerprint mismatch oder slice.inputFile != scan.fileName).
+        val directoryScan: List<DirectoryImportScanner.ScannedTable>? =
+            when (val input = preparedImport.input) {
+                is ImportInput.Directory -> try {
+                    DirectoryImportScanner.scan(
+                        directory = input.path,
+                        format = format,
+                        tableFilter = input.tableFilter,
+                        tableOrder = input.tableOrder,
+                    )
+                } catch (e: IllegalArgumentException) {
+                    stderr("Error: ${e.message}")
+                    return 2
+                }
+                else -> null
+            }
         val effectiveTables: List<String> = when (val input = preparedImport.input) {
             is ImportInput.Stdin -> listOf(input.table)
             is ImportInput.SingleFile -> listOf(input.table)
-            is ImportInput.Directory -> input.tableFilter ?: emptyList()
+            is ImportInput.Directory -> directoryScan!!.map { it.table }
         }
+        val inputFilesByTable: Map<String, String> = directoryScan
+            ?.associate { it.table to it.fileName }
+            ?: emptyMap()
         val inputTopology: String = when (preparedImport.input) {
             is ImportInput.Stdin -> "stdin"
             is ImportInput.SingleFile -> "single-file"
@@ -454,6 +474,7 @@ class DataImportRunner(
                 inputPath = inputPath,
                 targetDialect = connectionConfig.dialect.name,
                 targetUrl = resolvedUrl,
+                inputFilesByTable = inputFilesByTable,
             )
         )
 
@@ -533,6 +554,28 @@ class DataImportRunner(
                 )
                 return 3
             }
+            // 0.9.0 Phase D.4 §5.4: `table -> inputFile`-Bindung pro
+            // Slice muss mit dem aktuellen Directory-Scan uebereinstimmen.
+            // Der Fingerprint faengt das in der Regel schon ab, aber ein
+            // Manifest-Slice ohne `inputFile` (z.B. migrierter Phase-B-
+            // Manifest) darf nicht stillschweigend auf einen neuen
+            // Directory-Scan umgedeutet werden. Deshalb expliziter
+            // Per-Slice-Vergleich:
+            if (inputFilesByTable.isNotEmpty()) {
+                val mismatch = manifest.tableSlices.firstOrNull { slice ->
+                    val expected = inputFilesByTable[slice.table]
+                    slice.inputFile != expected
+                }
+                if (mismatch != null) {
+                    stderr(
+                        "Error: Checkpoint input-file binding for table " +
+                            "'${mismatch.table}' does not match the current directory " +
+                            "scan (manifest=${mismatch.inputFile ?: "<none>"}, " +
+                            "current=${inputFilesByTable[mismatch.table] ?: "<none>"})."
+                    )
+                    return 3
+                }
+            }
             val skipped = manifest.tableSlices
                 .filter { it.status == CheckpointSliceStatus.COMPLETED }
                 .map { it.table }
@@ -566,6 +609,10 @@ class DataImportRunner(
                     CheckpointTableSlice(
                         table = table,
                         status = CheckpointSliceStatus.PENDING,
+                        // 0.9.0 Phase D.4 §5.4: Directory-Importe fuellen
+                        // `inputFile` beim ersten Schreiben; Stdin/Single
+                        // File lassen das Feld `null`.
+                        inputFile = inputFilesByTable[table],
                     )
                 },
             )
@@ -587,8 +634,13 @@ class DataImportRunner(
                 updatedAt = created,
                 format = request.format ?: format.name.lowercase(Locale.US),
                 chunkSize = request.chunkSize,
+                // 0.9.0 Phase D.4 §5.4: `initialSlices` traegt bereits
+                // die `inputFile`-Bindung aus dem Directory-Scan; das
+                // initiale Manifest muss genau diese Bindung spiegeln,
+                // damit ein spaeterer Resume sie gegen den neuen Scan
+                // validieren kann.
                 tableSlices = effectiveTables.map { table ->
-                    CheckpointTableSlice(
+                    resumeCtx.initialSlices[table] ?: CheckpointTableSlice(
                         table = table,
                         status = CheckpointSliceStatus.PENDING,
                     )
@@ -616,12 +668,17 @@ class DataImportRunner(
             clock()
         }
         val onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit = { commit ->
-            // Manifest-Slice aktualisieren und persistieren.
+            // Manifest-Slice aktualisieren und persistieren. 0.9.0
+            // Phase D.4 §5.4: `inputFile` bleibt stabil (aus Initial-
+            // oder geladenem Manifest); wir ueberschreiben es hier
+            // nicht, der Scan ist die Quelle der Wahrheit.
             val slice = CheckpointTableSlice(
                 table = commit.table,
                 status = CheckpointSliceStatus.IN_PROGRESS,
                 rowsProcessed = commit.rowsProcessedTotal,
                 chunksProcessed = commit.chunksCommitted,
+                inputFile = tableStates[commit.table]?.inputFile
+                    ?: inputFilesByTable[commit.table],
             )
             tableStates[commit.table] = slice
             if (store != null) {
@@ -671,6 +728,11 @@ class DataImportRunner(
                 rowsProcessed = summary.rowsInserted + summary.rowsUpdated +
                     summary.rowsSkipped + summary.rowsUnknown + summary.rowsFailed,
                 chunksProcessed = tableStates[summary.table]?.chunksProcessed ?: 0L,
+                // 0.9.0 Phase D.4 §5.4: `inputFile` bleibt auch bei
+                // COMPLETED / FAILED im Slice, damit ein spaeterer
+                // Preflight die Bindung weiter validieren kann.
+                inputFile = tableStates[summary.table]?.inputFile
+                    ?: inputFilesByTable[summary.table],
             )
             tableStates[summary.table] = slice
             if (store != null) {

@@ -429,14 +429,22 @@ komplett gruen zurueck — Kover-Verify inklusive.
 
 **Commit 3 — D.4: Directory-Topologie**
 
-- [ ] Manifest persistiert `table -> inputFile` stabil fuer
-  Directory-Importe (§4.5)
-- [ ] Preflight: geaenderte Directory-Dateimenge oder andere
-  Reihenfolge → Exit 3
-- [ ] Schema-Reihenfolge-Zusammenspiel mit `--schema` fixiert
-  (Manifest-Reihenfolge gewinnt, wenn gespeichert)
-- [ ] Tests fuer stabile Slice-Zuordnung (file-added, file-removed,
-  renamed, changed order)
+- [x] Manifest persistiert `table -> inputFile` stabil fuer
+  Directory-Importe (§4.5) — neues Feld `CheckpointTableSlice.inputFile`
+  im Port + YAML-Mapping im `FileCheckpointStore`.
+- [x] Preflight: geaenderte Directory-Dateimenge oder andere
+  Reihenfolge → Exit 3 — `ImportOptionsFingerprint.Input` um
+  `inputFilesByTable` erweitert; zusaetzlich expliziter
+  Per-Slice-Vergleich der `inputFile`-Bindung.
+- [x] Schema-Reihenfolge-Zusammenspiel mit `--schema` fixiert —
+  `DirectoryImportScanner` respektiert `ImportInput.Directory.tableOrder`
+  (vom `DataImportSchemaPreflight` befuellt) und liefert die
+  topologisch sortierte Reihenfolge in den Fingerprint.
+- [x] Tests fuer stabile Slice-Zuordnung: `DirectoryImportScannerTest`
+  (10 Cases: sorted, filter, order, duplicates, missing, non-dir,
+  extensions) + `DataImportRunnerTest` `D.4 Directory topology`-Kontext
+  (4 Cases: fresh + populate inputFile, renamed file → Exit 3,
+  added file → Exit 3, same directory resume succeeds).
 
 **Commit 4 — D.5: Finalisierung**
 

@@ -1388,6 +1388,219 @@ class DataImportRunnerTest : FunSpec({
         }
     }
 
+    // ─── 0.9.0 Phase D.4: Directory-Topologie ───────────────────
+    // (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4)
+    // ──────────────────────────────────────────────────────────────
+
+    context("D.4 Directory topology") {
+        test("fresh directory run populates inputFile + scanned tables in manifest") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-fresh-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+            Files.writeString(importDir.resolve("orders.json"), """[{"id":10}]""")
+            val captured = mutableListOf<dev.dmigrate.streaming.checkpoint.CheckpointManifest>()
+            val sniffingStore = object : dev.dmigrate.streaming.checkpoint.CheckpointStore {
+                val real = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+                override fun load(operationId: String) = real.load(operationId)
+                override fun save(manifest: dev.dmigrate.streaming.checkpoint.CheckpointManifest) {
+                    captured += manifest
+                    real.save(manifest)
+                }
+                override fun list() = real.list()
+                override fun complete(operationId: String) = real.complete(operationId)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { sniffingStore },
+            )
+            runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null, // directory source
+                    checkpointDir = storeDir,
+                ),
+            ) shouldBe 0
+            // initial manifest has both tables (sorted) with correct inputFile
+            val initial = captured.first()
+            initial.tableSlices.map { it.table } shouldContainExactly listOf("orders", "users")
+            initial.tableSlices.first { it.table == "users" }.inputFile shouldBe "users.json"
+            initial.tableSlices.first { it.table == "orders" }.inputFile shouldBe "orders.json"
+        }
+
+        test("resume with renamed file → Exit 3 (fingerprint mismatch via inputFilesByTable)") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-renamed-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-rename-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+
+            // Warm manifest pretending the prior run had a file called `users_old.json`
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d4-renamed"
+            val oldFingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "directory",
+                    inputPath = importDir.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                    inputFilesByTable = mapOf("users" to "users_old.json"),
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                            inputFile = "users_old.json",
+                        ),
+                    ),
+                    optionsFingerprint = oldFingerprint,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null,
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            )
+            // Fingerprint mismatch is the primary check; file-set
+            // divergence shows up there (mapping changed from
+            // users_old.json to users.json).
+            exit shouldBe 3
+            stderr.joined() shouldContain "fingerprint mismatch"
+        }
+
+        test("resume with added file → Exit 3 (tables list diverged)") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-added-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-add-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+            Files.writeString(importDir.resolve("orders.json"), """[{"id":10}]""") // NEW
+            // Manifest only knows `users`; current directory has both.
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d4-added"
+            val oldFingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "directory",
+                    inputPath = importDir.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                    inputFilesByTable = mapOf("users" to "users.json"),
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                            inputFile = "users.json",
+                        ),
+                    ),
+                    optionsFingerprint = oldFingerprint,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null,
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 3
+            // Tables list divergence caught either by fingerprint or by the explicit tables check.
+        }
+
+        test("resume with same directory succeeds and runs import") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-same-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-same-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d4-same"
+            val fp = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "directory",
+                    inputPath = importDir.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                    inputFilesByTable = mapOf("users" to "users.json"),
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                            inputFile = "users.json",
+                        ),
+                    ),
+                    optionsFingerprint = fp,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null,
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            ) shouldBe 0
+        }
+    }
+
     // Ensure the temp path referenced in other tests never accidentally exists
     Files.deleteIfExists(Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"))
 

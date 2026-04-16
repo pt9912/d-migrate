@@ -177,6 +177,11 @@ class FileCheckpointStore(
                             "tieBreakerValues" to pos.tieBreakerValues,
                         )
                     }
+                    // 0.9.0 Phase D.4 §5.4: `inputFile` wird nur fuer
+                    // Directory-Importe gesetzt — Stdin/SingleFile
+                    // bleiben ohne das Feld, Phase-B/C-Manifeste bleiben
+                    // bytegleich ladbar.
+                    slice.inputFile?.let { map["inputFile"] = it }
                 }
             },
         )
@@ -206,6 +211,7 @@ class FileCheckpointStore(
                 chunksProcessed = (slice["chunksProcessed"] as? Number)?.toLong() ?: 0L,
                 lastMarker = slice["lastMarker"] as? String,
                 resumePosition = parseResumePosition(slice["resumePosition"], path),
+                inputFile = (slice["inputFile"] as? String)?.takeIf { it.isNotBlank() },
             )
         }
         return CheckpointManifest(

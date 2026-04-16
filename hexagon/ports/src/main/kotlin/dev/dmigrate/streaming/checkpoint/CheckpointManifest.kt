@@ -85,6 +85,16 @@ data class CheckpointTableSlice(
     val chunksProcessed: Long = 0L,
     val lastMarker: String? = null,
     val resumePosition: CheckpointResumePosition? = null,
+    /**
+     * 0.9.0 Phase D.4 (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4):
+     * stabile `table -> inputFile`-Bindung fuer Directory-Importe.
+     * Wert ist der **relative** Dateiname innerhalb des Directory-
+     * Roots (z.B. `users.json`), nicht der absolute Pfad — so bleibt
+     * das Manifest unabhaengig davon, wo das Directory beim Erst-
+     * bzw. Resume-Lauf liegt. `null` fuer Stdin-/SingleFile-Imports
+     * und fuer Phase-B/C-Manifeste vor D.4.
+     */
+    val inputFile: String? = null,
 ) {
     init {
         require(table.isNotBlank()) { "table must not be blank" }
