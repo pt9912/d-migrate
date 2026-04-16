@@ -14,6 +14,7 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.ExportOptions
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -52,6 +53,118 @@ class StreamingExporterTest : FunSpec({
         DataChunk(table = table, columns = cols, rows = emptyList(), chunkIndex = 0)
 
     val pool = NoopConnectionPool
+
+    // ─── 0.9.0 Phase C.2: Mid-Table-Resume-Pfad ─────────────────
+    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ────────────────────────────────────────────────────────────
+
+    test("C.2: resumeMarkers triggers the 5-param streamTable overload") {
+        val reader = FakeDataReader(
+            mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
+        )
+        val marker = dev.dmigrate.driver.data.ResumeMarker(
+            markerColumn = "id",
+            tieBreakerColumns = listOf("name"),
+            position = null,
+        )
+        val tmpDir = Files.createTempDirectory("d-migrate-c2-exp-")
+        val out = ExportOutput.FilePerTable(tmpDir)
+        StreamingExporter(reader, FakeTableLister(listOf("users")), RecordingChunkWriterFactory())
+            .export(
+                pool = pool,
+                tables = listOf("users"),
+                output = out,
+                format = DataExportFormat.JSON,
+                resumeMarkers = mapOf("users" to marker),
+            )
+        reader.lastResumeMarkers["users"] shouldBe marker
+    }
+
+    test("C.2: onChunkProcessed emits position with last-row marker/tie-breaker values") {
+        val reader = FakeDataReader(
+            mapOf("users" to listOf(
+                chunk(
+                    "users", 0,
+                    arrayOf<Any?>(1, "alice"),
+                    arrayOf<Any?>(2, "bob"),
+                ),
+                chunk(
+                    "users", 1,
+                    arrayOf<Any?>(3, "carol"),
+                ),
+            ))
+        )
+        val marker = dev.dmigrate.driver.data.ResumeMarker(
+            markerColumn = "id",
+            tieBreakerColumns = listOf("name"),
+            position = null,
+        )
+        val progressCalls = mutableListOf<TableChunkProgress>()
+        val tmpDir = Files.createTempDirectory("d-migrate-c2-chunkcb-")
+        StreamingExporter(reader, FakeTableLister(listOf("users")), RecordingChunkWriterFactory())
+            .export(
+                pool = pool,
+                tables = listOf("users"),
+                output = ExportOutput.FilePerTable(tmpDir),
+                format = DataExportFormat.JSON,
+                resumeMarkers = mapOf("users" to marker),
+                onChunkProcessed = { progressCalls += it },
+            )
+        progressCalls.size shouldBe 2
+        progressCalls[0].position.lastMarkerValue shouldBe 2
+        progressCalls[0].position.lastTieBreakerValues shouldContainExactly listOf<Any?>("bob")
+        progressCalls[1].position.lastMarkerValue shouldBe 3
+        progressCalls[1].position.lastTieBreakerValues shouldContainExactly listOf<Any?>("carol")
+    }
+
+    test("C.2: onChunkProcessed is NOT invoked for empty chunks") {
+        val reader = FakeDataReader(
+            mapOf("users" to listOf(emptyChunk("users")))
+        )
+        val marker = dev.dmigrate.driver.data.ResumeMarker(
+            markerColumn = "id",
+            tieBreakerColumns = emptyList(),
+            position = null,
+        )
+        val progressCalls = mutableListOf<TableChunkProgress>()
+        val tmpDir = Files.createTempDirectory("d-migrate-c2-empty-")
+        StreamingExporter(reader, FakeTableLister(listOf("users")), RecordingChunkWriterFactory())
+            .export(
+                pool = pool,
+                tables = listOf("users"),
+                output = ExportOutput.FilePerTable(tmpDir),
+                format = DataExportFormat.JSON,
+                resumeMarkers = mapOf("users" to marker),
+                onChunkProcessed = { progressCalls += it },
+            )
+        progressCalls.shouldBeEmpty()
+    }
+
+    test("C.2: tables without resumeMarker take the legacy 4-param path") {
+        val reader = FakeDataReader(
+            mapOf(
+                "users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))),
+                "orders" to listOf(chunk("orders", 0, arrayOf<Any?>(1, "o"))),
+            )
+        )
+        val marker = dev.dmigrate.driver.data.ResumeMarker(
+            markerColumn = "id",
+            tieBreakerColumns = emptyList(),
+            position = null,
+        )
+        val tmpDir = Files.createTempDirectory("d-migrate-c2-mixed-")
+        StreamingExporter(reader, FakeTableLister(listOf("users", "orders")), RecordingChunkWriterFactory())
+            .export(
+                pool = pool,
+                tables = listOf("users", "orders"),
+                output = ExportOutput.FilePerTable(tmpDir),
+                format = DataExportFormat.JSON,
+                // only 'users' has a marker
+                resumeMarkers = mapOf("users" to marker),
+            )
+        reader.lastResumeMarkers["users"] shouldBe marker
+        reader.lastResumeMarkers["orders"] shouldBe null
+    }
 
     // ─── Stdout single-table ─────────────────────────────────────
 
@@ -611,6 +724,11 @@ private class FakeDataReader(
     override val dialect = DatabaseDialect.SQLITE
     var lastFilter: DataFilter? = null
     var lastChunkSize: Int = -1
+    /**
+     * 0.9.0 Phase C.2 Test-Support: wurden per-table Resume-Marker
+     * reingereicht? `null` = 4-Param-Pfad; non-null = 5-Param-Pfad.
+     */
+    val lastResumeMarkers: MutableMap<String, dev.dmigrate.driver.data.ResumeMarker?> = mutableMapOf()
 
     override fun streamTable(
         pool: ConnectionPool,
@@ -620,6 +738,21 @@ private class FakeDataReader(
     ): ChunkSequence {
         lastFilter = filter
         lastChunkSize = chunkSize
+        lastResumeMarkers[table] = null
+        val chunks = tableChunks[table] ?: error("FakeDataReader: simulated failure for table '$table'")
+        return FakeChunkSequence(chunks)
+    }
+
+    override fun streamTable(
+        pool: ConnectionPool,
+        table: String,
+        filter: DataFilter?,
+        chunkSize: Int,
+        resumeMarker: dev.dmigrate.driver.data.ResumeMarker?,
+    ): ChunkSequence {
+        lastFilter = filter
+        lastChunkSize = chunkSize
+        lastResumeMarkers[table] = resumeMarker
         val chunks = tableChunks[table] ?: error("FakeDataReader: simulated failure for table '$table'")
         return FakeChunkSequence(chunks)
     }

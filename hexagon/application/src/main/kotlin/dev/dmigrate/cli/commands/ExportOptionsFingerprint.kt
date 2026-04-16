@@ -81,6 +81,19 @@ object ExportOptionsFingerprint {
          * geaendert hat.
          */
         val outputPath: String,
+        /**
+         * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1): PK-
+         * Spaltensignatur pro Tabelle in der Reihenfolge von `tables`.
+         * Ein Wechsel des Primaerschluessels invalidiert den Resume-
+         * Marker (C.2 stuetzt sich auf den PK als Tie-Breaker). Leere
+         * PK-Listen sind erlaubt: die Tabelle hat dann keinen
+         * Tie-Breaker und kann ohnehin nur C.1-granular resumen.
+         *
+         * Fuer Phase-C.1-Callsites, die noch keine PK-Kenntnis haben,
+         * bleibt der Default `emptyMap()` — der Fingerprint bleibt dann
+         * bytegleich zum Phase-C.1-Vertrag (Presence-Byte).
+         */
+        val primaryKeysByTable: Map<String, List<String>> = emptyMap(),
     )
 
     private fun canonicalForm(input: Input): String = buildString {
@@ -96,6 +109,17 @@ object ExportOptionsFingerprint {
         appendField("tables", input.tables.joinToString(separator = LIST_SEPARATOR))
         appendField("outputMode", input.outputMode)
         appendField("outputPath", input.outputPath)
+        // 0.9.0 Phase C.2: PK-Signatur; Reihenfolge folgt `tables`, um
+        // gegen Umsortierungen stabil zu sein. Wenn `primaryKeysByTable`
+        // leer ist (Phase-C.1-Callsite), wird **nichts** angehaengt —
+        // der Hash bleibt bytegleich zum Phase-C.1-Vertrag.
+        if (input.primaryKeysByTable.isNotEmpty()) {
+            val pkSignature = input.tables.joinToString(separator = LIST_SEPARATOR) { table ->
+                val pk = input.primaryKeysByTable[table].orEmpty()
+                "$table:" + pk.joinToString(separator = ",")
+            }
+            appendField("primaryKeysByTable", pkSignature)
+        }
     }
 
     private fun StringBuilder.appendField(name: String, value: String) {

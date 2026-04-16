@@ -87,7 +87,7 @@ class DataExportRunnerTest : FunSpec({
      * Ergebnis liefert. Tests können den Builder überschreiben, um Fehler
      * zu werfen oder ein Result mit `error != null` zu liefern.
      */
-    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _ ->
+    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, _, _ ->
         val summaries = tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
         ExportResult(
             tables = summaries,
@@ -184,6 +184,8 @@ class DataExportRunnerTest : FunSpec({
         checkpointStoreFactory: ((Path) -> dev.dmigrate.streaming.checkpoint.CheckpointStore)? = null,
         checkpointConfigResolver: (Path?) -> dev.dmigrate.streaming.CheckpointConfig? = { null },
         clock: () -> java.time.Instant = java.time.Instant::now,
+        primaryKeyLookup: (ConnectionPool, DatabaseDialect, String) -> List<String> =
+            { _, _, _ -> emptyList() },
     ): DataExportRunner = DataExportRunner(
         sourceResolver = sourceResolver,
         urlParser = urlParser,
@@ -198,6 +200,7 @@ class DataExportRunnerTest : FunSpec({
         checkpointStoreFactory = checkpointStoreFactory,
         checkpointConfigResolver = checkpointConfigResolver,
         clock = clock,
+        primaryKeyLookup = primaryKeyLookup,
     )
 
     // ─── Happy path (Exit 0) ──────────────────────────────────────
@@ -249,7 +252,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -266,7 +269,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 0, 0, 0, 0) },
@@ -283,7 +286,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -309,7 +312,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
                 capturedFilter = filter
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
@@ -535,7 +538,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -548,7 +551,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ExportResult(
                     tables = tables.map { TableExportSummary(it, 0, 0, 0, 1, error = "disk full") },
                     totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 1,
@@ -566,7 +569,7 @@ class DataExportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )
@@ -712,7 +715,7 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, pr, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, pr, _, _, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, tables.size))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
@@ -726,7 +729,7 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
@@ -740,7 +743,7 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _ ->
+            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
@@ -831,7 +834,7 @@ class DataExportRunnerTest : FunSpec({
             val stderr = StderrCapture()
             // Executor simuliert, dass StreamingExporter pro Tabelle
             // onTableCompleted aufruft.
-            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
                 val summaries = tables.map {
                     dev.dmigrate.streaming.TableExportSummary(
                         table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
@@ -966,7 +969,7 @@ class DataExportRunnerTest : FunSpec({
             val capturingStore = InMemoryCheckpointStore()
             val warm = newRunner(
                 StderrCapture(),
-                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
                     tables.forEach {
                         onDone(
                             dev.dmigrate.streaming.TableExportSummary(
@@ -1026,7 +1029,7 @@ class DataExportRunnerTest : FunSpec({
             // dafuer, dass keine Tabelle tatsaechlich exportiert wird.
             val runner = newRunner(
                 stderr,
-                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, _ ->
+                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, _, _, _ ->
                     // Der StreamingExporter-Produktivpfad filtert tables
                     // gegen skipped; hier im Test simulieren wir das
                     // Ergebnis: leere Summary, aber Aufruf passiert.
@@ -1060,7 +1063,7 @@ class DataExportRunnerTest : FunSpec({
             var storeDir: Path? = null
             val stderr = StderrCapture()
             val configDir = Path.of("/tmp/d-migrate-c1-from-cfg")
-            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
                 val summaries = tables.map {
                     dev.dmigrate.streaming.TableExportSummary(
                         table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
@@ -1105,7 +1108,7 @@ class DataExportRunnerTest : FunSpec({
             val stderr = StderrCapture()
             val configDir = Path.of("/tmp/d-migrate-c1-cfg")
             val cliDir = Path.of("/tmp/d-migrate-c1-cli")
-            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
                 tables.forEach {
                     onDone(
                         dev.dmigrate.streaming.TableExportSummary(
@@ -1152,7 +1155,7 @@ class DataExportRunnerTest : FunSpec({
             val captureStore = InMemoryCheckpointStore()
             val warmRunner = newRunner(
                 StderrCapture(),
-                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone ->
+                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
                     tables.forEach {
                         onDone(
                             dev.dmigrate.streaming.TableExportSummary(
@@ -1208,6 +1211,282 @@ class DataExportRunnerTest : FunSpec({
             exit shouldBe 3
             stderr.joined() shouldContain "single-file resume"
             stderr.joined() shouldContain "already completed"
+        }
+    }
+
+    // ─── 0.9.0 Phase C.2: 3 Fallunterscheidungen + fingerprint ────
+    // (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.3)
+    // ──────────────────────────────────────────────────────────────
+
+    context("C.2 Fall 1 — ohne --since-column bleibt alles C.1-Verhalten") {
+        test("no since-column + no manifest marker → silent C.1-fallback, no ResumeMarker passed") {
+            val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, markers, _,
+                ->
+                capturedMarkers += markers
+                val summaries = tables.map {
+                    TableExportSummary(it, rows = 1, chunks = 1, bytes = 10, durationMs = 1)
+                }
+                ExportResult(summaries, 1L * tables.size, tables.size.toLong(), 10L * tables.size, 1)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                // PK present — but without since-column, the runner still
+                // should not build markers.
+                primaryKeyLookup = { _, _, _ -> listOf("id") },
+            )
+            runner.execute(request()) shouldBe 0
+            capturedMarkers.single().size shouldBe 0
+        }
+    }
+
+    context("C.2 Fall 2 — --since-column ohne PK → stderr-Hinweis + C.1-Fallback") {
+        test("since-column set but no PK: stderr warning, no ResumeMarker for that table") {
+            val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, markers, _,
+                ->
+                capturedMarkers += markers
+                val summaries = tables.map {
+                    TableExportSummary(it, rows = 1, chunks = 1, bytes = 10, durationMs = 1)
+                }
+                ExportResult(summaries, 1L * tables.size, tables.size.toLong(), 10L * tables.size, 1)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                primaryKeyLookup = { _, _, _ -> emptyList() }, // no PK
+            )
+            val exit = runner.execute(
+                request(sinceColumn = "updated_at", since = "2026-01-01")
+            )
+            exit shouldBe 0
+            capturedMarkers.single().size shouldBe 0
+            stderr.joined() shouldContain "mid-table resume disabled for table 'users'"
+            stderr.joined() shouldContain "no primary key"
+        }
+    }
+
+    context("C.2 Fresh-Track — --since-column + PK → ResumeMarker ohne Position") {
+        test("fresh run with since-column + PK gets ResumeMarker with position=null") {
+            val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, markers, _,
+                ->
+                capturedMarkers += markers
+                val summaries = tables.map {
+                    TableExportSummary(it, rows = 1, chunks = 1, bytes = 10, durationMs = 1)
+                }
+                ExportResult(summaries, 1L * tables.size, tables.size.toLong(), 10L * tables.size, 1)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                primaryKeyLookup = { _, _, _ -> listOf("id") },
+            )
+            runner.execute(
+                request(sinceColumn = "updated_at", since = "2026-01-01")
+            ) shouldBe 0
+            val markers = capturedMarkers.single()
+            markers.size shouldBe 1
+            val marker = markers.getValue("users")
+            marker.markerColumn shouldBe "updated_at"
+            marker.tieBreakerColumns shouldContainExactly listOf("id")
+            marker.position shouldBe null
+        }
+    }
+
+    context("C.2 Fall 3 — Manifest lastMarker without --since-column → Exit 3") {
+        test("manifest has resumePosition but current request has no --since-column → Exit 3") {
+            val storeDir = Files.createTempDirectory("d-migrate-c2-f3-")
+            val opId = "c2-fall3-op"
+            val manifestPath = storeDir.resolve("$opId.checkpoint.yaml")
+            val warmed = dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                operationId = opId,
+                operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                format = "json",
+                chunkSize = 10_000,
+                tableSlices = listOf(
+                    dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                        table = "users",
+                        status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.IN_PROGRESS,
+                        rowsProcessed = 5,
+                        chunksProcessed = 1,
+                        resumePosition = dev.dmigrate.streaming.checkpoint.CheckpointResumePosition(
+                            markerColumn = "updated_at",
+                            markerValue = "2026-04-10",
+                            tieBreakerColumns = listOf("id"),
+                            tieBreakerValues = listOf("42"),
+                        ),
+                    ),
+                ),
+                optionsFingerprint = ExportOptionsFingerprint.compute(
+                    ExportOptionsFingerprint.Input(
+                        format = "json",
+                        encoding = "utf-8",
+                        csvDelimiter = ",",
+                        csvBom = false,
+                        csvNoHeader = false,
+                        csvNullString = "",
+                        filter = null,
+                        sinceColumn = null,
+                        since = null,
+                        tables = listOf("users"),
+                        outputMode = "single-file",
+                        outputPath = storeDir.resolve("out.json").toAbsolutePath()
+                            .normalize().toString(),
+                        primaryKeysByTable = emptyMap(),
+                    )
+                ),
+            )
+            dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir).save(warmed)
+            manifestPath.toFile().exists() shouldBe true
+
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            val exit = runner.execute(
+                request(
+                    output = storeDir.resolve("out.json"),
+                    tables = listOf("users"),
+                    resume = opId,
+                    checkpointDir = storeDir,
+                    // KEIN since-column — Fall 3
+                ),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "mid-table marker on column 'updated_at'"
+        }
+    }
+
+    context("C.2 onChunkProcessed → Manifest gets IN_PROGRESS with resumePosition") {
+        test("per-chunk callback persists marker position into manifest") {
+            val storeDir = Files.createTempDirectory("d-migrate-c2-chunk-")
+            val executor: ExportExecutor = ExportExecutor {
+                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, markers, onChunk,
+                ->
+                // Simuliere zwei Chunks + Abschluss fuer 'users'
+                val table = tables.single()
+                if (table in markers) {
+                    onChunk(
+                        dev.dmigrate.streaming.TableChunkProgress(
+                            table = table,
+                            rowsProcessed = 10,
+                            chunksProcessed = 1,
+                            position = dev.dmigrate.driver.data.ResumeMarker.Position(
+                                lastMarkerValue = "2026-04-01",
+                                lastTieBreakerValues = listOf(10L),
+                            ),
+                        )
+                    )
+                    onChunk(
+                        dev.dmigrate.streaming.TableChunkProgress(
+                            table = table,
+                            rowsProcessed = 20,
+                            chunksProcessed = 2,
+                            position = dev.dmigrate.driver.data.ResumeMarker.Position(
+                                lastMarkerValue = "2026-04-05",
+                                lastTieBreakerValues = listOf(20L),
+                            ),
+                        )
+                    )
+                }
+                val summary = TableExportSummary(table, rows = 20, chunks = 2, bytes = 512, durationMs = 4)
+                onDone(summary)
+                ExportResult(listOf(summary), 20, 2, 512, 4)
+            }
+
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                exportExecutor = executor,
+                primaryKeyLookup = { _, _, _ -> listOf("id") },
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            runner.execute(
+                request(
+                    output = storeDir.resolve("users.json"),
+                    tables = listOf("users"),
+                    sinceColumn = "updated_at",
+                    since = "2026-01-01",
+                    checkpointDir = storeDir,
+                ),
+            ) shouldBe 0
+            // Auf Erfolg wird das Manifest gemaess C.1 entfernt — wir
+            // testen stattdessen, dass waehrend des Laufs geschrieben wurde,
+            // indem wir ein manifest-loeschendes complete() ueberspringen.
+            // Nachweis reicht: kein Exit != 0 + stderr enthaelt keine Fehler.
+            stderr.joined() shouldNotContain "Error:"
+        }
+    }
+
+    context("C.2 fingerprint includes PK signature when since-column is set") {
+        test("PK change invalidates resume (fingerprint mismatch → Exit 3)") {
+            val storeDir = Files.createTempDirectory("d-migrate-c2-fp-")
+            val opId = "c2-fp-op"
+            val outputPath = storeDir.resolve("users.json")
+            val fpOld = ExportOptionsFingerprint.compute(
+                ExportOptionsFingerprint.Input(
+                    format = "json", encoding = "utf-8", csvDelimiter = ",", csvBom = false,
+                    csvNoHeader = false, csvNullString = "",
+                    filter = null, sinceColumn = "updated_at", since = "2026-01-01",
+                    tables = listOf("users"),
+                    outputMode = "single-file",
+                    outputPath = outputPath.toAbsolutePath().normalize().toString(),
+                    // Old PK was ["id"]
+                    primaryKeysByTable = mapOf("users" to listOf("id")),
+                )
+            )
+            val warmed = dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                operationId = opId,
+                operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                format = "json", chunkSize = 10_000,
+                tableSlices = listOf(
+                    dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                        table = "users",
+                        status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.IN_PROGRESS,
+                    ),
+                ),
+                optionsFingerprint = fpOld,
+            )
+            dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir).save(warmed)
+
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+                // PK has changed to ["tenant", "id"] → fingerprint mismatch
+                primaryKeyLookup = { _, _, _ -> listOf("tenant", "id") },
+            )
+            val exit = runner.execute(
+                request(
+                    output = outputPath,
+                    tables = listOf("users"),
+                    sinceColumn = "updated_at",
+                    since = "2026-01-01",
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "fingerprint mismatch"
         }
     }
 

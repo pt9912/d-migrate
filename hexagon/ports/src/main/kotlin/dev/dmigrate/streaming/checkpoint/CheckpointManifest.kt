@@ -70,6 +70,13 @@ enum class CheckpointOperationType { EXPORT, IMPORT }
  * Referenz fuer Export (`--since`-Marker, letzte PK-Seite) bzw. Import
  * (zuletzt comittete Chunk-Grenze). Das konkrete Marker-Schema legen
  * Phasen C/D fest.
+ *
+ * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.2):
+ * [resumePosition] traegt die strukturierte Composite-Marker-Position
+ * fuer Mid-Table-Resume. `lastMarker` bleibt als bewusst ungenutztes
+ * Legacy-Feld erhalten, damit Phase-B-Manifeste weiterhin geladen
+ * werden koennen — neue Laeufe schreiben ausschliesslich
+ * [resumePosition].
  */
 data class CheckpointTableSlice(
     val table: String,
@@ -77,11 +84,49 @@ data class CheckpointTableSlice(
     val rowsProcessed: Long = 0L,
     val chunksProcessed: Long = 0L,
     val lastMarker: String? = null,
+    val resumePosition: CheckpointResumePosition? = null,
 ) {
     init {
         require(table.isNotBlank()) { "table must not be blank" }
         require(rowsProcessed >= 0L) { "rowsProcessed must be >= 0" }
         require(chunksProcessed >= 0L) { "chunksProcessed must be >= 0" }
+    }
+}
+
+/**
+ * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.2):
+ * serialisierbare Composite-Marker-Position fuer Mid-Table-Resume.
+ *
+ * Alle Werte werden als Strings persistiert — der Runner kodiert beim
+ * Schreiben ueber `Any?.toString()` und dekodiert beim Laden ueber den
+ * vorhandenen `TemporalFormatPolicy.parseSinceLiteral`-Pfad, der die
+ * gleiche Typ-Inferenz wie `--since`-CLI-Literale liefert. Damit
+ * braucht das Manifest keinen zusaetzlichen Typ-Tag und bleibt
+ * format-stabil gegenueber Phase-B-Laeufen.
+ *
+ * [markerColumn] und [tieBreakerColumns] sind **nicht** parallel zu
+ * [tieBreakerValues] in der Marker-Spalte selbst — [markerValue]
+ * gehoert allein zu [markerColumn]. [tieBreakerColumns] und
+ * [tieBreakerValues] sind zueinander parallel und bilden den
+ * PK-Tie-Breaker ab.
+ */
+data class CheckpointResumePosition(
+    val markerColumn: String,
+    val markerValue: String?,
+    val tieBreakerColumns: List<String>,
+    val tieBreakerValues: List<String?>,
+) {
+    init {
+        require(markerColumn.isNotBlank()) {
+            "CheckpointResumePosition.markerColumn must not be blank"
+        }
+        require(tieBreakerColumns.size == tieBreakerValues.size) {
+            "CheckpointResumePosition tieBreakerColumns (${tieBreakerColumns.size}) and " +
+                "tieBreakerValues (${tieBreakerValues.size}) must have the same size"
+        }
+        require(tieBreakerColumns.all { it.isNotBlank() }) {
+            "CheckpointResumePosition.tieBreakerColumns must not contain blank entries"
+        }
     }
 }
 

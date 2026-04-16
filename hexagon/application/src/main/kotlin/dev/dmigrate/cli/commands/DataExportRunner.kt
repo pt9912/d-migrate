@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataReader
+import dev.dmigrate.driver.data.ResumeMarker
 import dev.dmigrate.driver.data.TableLister
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
@@ -17,6 +18,7 @@ import dev.dmigrate.streaming.ProgressReporter
 import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.checkpoint.CheckpointManifest
 import dev.dmigrate.streaming.checkpoint.CheckpointOperationType
+import dev.dmigrate.streaming.checkpoint.CheckpointResumePosition
 import dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
@@ -73,6 +75,22 @@ fun interface ExportExecutor {
          * um das Checkpoint-Manifest fortzuschreiben.
          */
         onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit,
+        /**
+         * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §5.2 / §5.3):
+         * Pro Tabelle optionaler [ResumeMarker] — fehlt der Eintrag,
+         * laeuft die Tabelle im Legacy-Pfad ohne Marker-Sortierung. Mit
+         * Eintrag aktiviert der Exporter Mid-Table-Resume
+         * (Fresh-Track oder Resume-From-Position abhaengig von
+         * `ResumeMarker.position`).
+         */
+        resumeMarkers: Map<String, ResumeMarker>,
+        /**
+         * 0.9.0 Phase C.2 §5.2: Chunk-granularer Fortschritts-Callback.
+         * Der Runner aktualisiert das Manifest mit jedem Aufruf — nur
+         * Tabellen mit aktivem [ResumeMarker] loesen diesen Callback
+         * aus.
+         */
+        onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit,
     ): ExportResult
 }
 
@@ -173,6 +191,20 @@ class DataExportRunner(
      * deterministische Tests.
      */
     private val clock: () -> Instant = Instant::now,
+    /**
+     * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.3):
+     * Lookup fuer die Primaerschluessel-Spalten einer Tabelle. Wird
+     * nur fuer den Mid-Table-Resume-Pfad benoetigt — Laeufe ohne
+     * `--since-column` rufen den Lookup nicht auf.
+     *
+     * Produktive Wiring injiziert einen memoisierten SchemaReader-
+     * Aufruf (siehe `DataExportCommand`); Tests injizieren die
+     * benoetigte Mapping-Tabelle direkt. Default `{ emptyList() }`
+     * simuliert "kein PK gefunden" — Fall 2 (konservativer
+     * C.1-Fallback).
+     */
+    private val primaryKeyLookup: (ConnectionPool, DatabaseDialect, String) -> List<String> =
+        { _, _, _ -> emptyList() },
 ) {
 
     fun execute(request: DataExportRequest): Int {
@@ -330,7 +362,19 @@ class DataExportRunner(
             since = request.since,
         )
 
-        // ─── 8b. 0.9.0 Phase C.1: Resume-Preflight + Manifest-Lifecycle ──
+        // ─── 8b. 0.9.0 Phase C.1/C.2: Resume-Preflight + Manifest-Lifecycle ──
+        // 0.9.0 Phase C.2 §4.1: PK-Signatur wird nur dann eingelesen,
+        // wenn `--since-column` gesetzt ist — ohne Marker-Kontrakt
+        // gibt es kein Mid-Table-Resume und damit auch keinen Grund,
+        // den Schema-Reader anzufassen. Das haelt den Phase-C.1-Fingerprint
+        // bytegleich und den PG/MySQL/SQLite-Schemaload fuer den
+        // klassischen Exportpfad leer.
+        val primaryKeysByTable: Map<String, List<String>> =
+            if (!request.sinceColumn.isNullOrBlank()) {
+                resolvePrimaryKeys(pool, connectionConfig.dialect, effectiveTables)
+            } else {
+                emptyMap()
+            }
         val fingerprint = ExportOptionsFingerprint.compute(
             ExportOptionsFingerprint.Input(
                 format = request.format,
@@ -345,6 +389,7 @@ class DataExportRunner(
                 tables = effectiveTables,
                 outputMode = canonicalOutputMode(exportOutput),
                 outputPath = canonicalOutputPath(exportOutput),
+                primaryKeysByTable = primaryKeysByTable,
             )
         )
 
@@ -511,6 +556,11 @@ class DataExportRunner(
                     CheckpointSliceStatus.COMPLETED else CheckpointSliceStatus.FAILED,
                 rowsProcessed = summary.rows,
                 chunksProcessed = summary.chunks,
+                // 0.9.0 Phase C.2 §5.2: bei COMPLETED wird die
+                // Resume-Position bewusst nicht mehr mitgeschrieben —
+                // die Tabelle ist fertig, und ein erneuter Resume
+                // ueberspringt sie im C.1-Pfad komplett.
+                resumePosition = null,
             )
             tableStates[summary.table] = slice
             if (store != null) {
@@ -538,6 +588,62 @@ class DataExportRunner(
             }
         }
 
+        // 0.9.0 Phase C.2 §4.1 / §5.2: per-Tabelle-ResumeMarker auf
+        // Basis der 3 Fallunterscheidungen. Der Durchlauf kann mit
+        // Exit 3 abbrechen (Fall 3). Ein leeres Ergebnis (alle
+        // Tabellen ohne Marker) haelt den bisherigen C.1-Pfad vor.
+        val resumeMarkers: Map<String, ResumeMarker> = try {
+            effectiveTables.associateWith { table ->
+                resolveTableResumeMarker(
+                    request = request,
+                    table = table,
+                    existingPosition = resume.initialSlices[table]?.resumePosition,
+                    primaryKey = primaryKeysByTable[table].orEmpty(),
+                )
+            }.filterValues { it != null }.mapValues { it.value!! }
+        } catch (e: TableResumeMismatchException) {
+            stderr("Error: ${e.message}")
+            return 3
+        }
+
+        // 0.9.0 Phase C.2 §5.2: onChunkProcessed persistiert den
+        // per-Chunk-Fortschritt. Die Tabelle wechselt in
+        // `IN_PROGRESS`, sodass ein Wieder-Lauf die Position findet.
+        val onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit = { progress ->
+            val marker = resumeMarkers[progress.table]
+            if (marker != null) {
+                val slice = CheckpointTableSlice(
+                    table = progress.table,
+                    status = CheckpointSliceStatus.IN_PROGRESS,
+                    rowsProcessed = progress.rowsProcessed,
+                    chunksProcessed = progress.chunksProcessed,
+                    resumePosition = MarkerCodec.toPersisted(marker, progress.position),
+                )
+                tableStates[progress.table] = slice
+                if (store != null) {
+                    try {
+                        store.save(
+                            CheckpointManifest(
+                                operationId = operationId,
+                                operationType = CheckpointOperationType.EXPORT,
+                                createdAt = createdAt,
+                                updatedAt = now(),
+                                format = request.format,
+                                chunkSize = request.chunkSize,
+                                tableSlices = effectiveTables.map { tableStates.getValue(it) },
+                                optionsFingerprint = fingerprint,
+                            )
+                        )
+                    } catch (_: CheckpointStoreException) {
+                        // Gleiches Prinzip wie in `onTableCompleted`: ein
+                        // verlorener Zwischen-Save darf den Lauf nicht
+                        // abbrechen; beim naechsten Chunk versucht der
+                        // Runner es erneut.
+                    }
+                }
+            }
+        }
+
         // ─── 9. Streaming ─────────────────────────────────────
         val rawResult: ExportResult = try {
             val effectiveReporter = if (request.quiet || request.noProgress)
@@ -558,6 +664,8 @@ class DataExportRunner(
                 resuming = resume.resuming,
                 skippedTables = resume.skippedTables,
                 onTableCompleted = onTableCompleted,
+                resumeMarkers = resumeMarkers,
+                onChunkProcessed = onChunkProcessed,
             )
         } catch (e: Throwable) {
             stderr("Error: Export failed: ${e.message}")
@@ -636,6 +744,72 @@ class DataExportRunner(
         return fileName.removeSuffix(MANIFEST_SUFFIX)
     }
 
+    /**
+     * 0.9.0 Phase C.2 §4.1 / §5.3: memoisiert den PK-Lookup ueber die
+     * gegebenen Tabellen. Fehlschlaege pro Tabelle landen in einer
+     * leeren Liste (Fall 2 → C.1-Fallback), damit ein kaputter
+     * Schema-Reader den gesamten Lauf nicht lahmlegt.
+     */
+    private fun resolvePrimaryKeys(
+        pool: ConnectionPool,
+        dialect: DatabaseDialect,
+        tables: List<String>,
+    ): Map<String, List<String>> = tables.associateWith { table ->
+        try {
+            primaryKeyLookup(pool, dialect, table)
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    /**
+     * 0.9.0 Phase C.2 §4.1: Drei Fallunterscheidungen beim Bestimmen
+     * der Per-Tabelle-Resume-Strategie.
+     *
+     * - Fall 1 (kein `--since-column`, kein Manifest-`resumePosition`)
+     *   → `null` (C.1-Fallback, kein stderr-Hinweis).
+     * - Fall 2 (`--since-column` gesetzt, Tabelle ohne PK) → `null`
+     *   mit sichtbarem stderr-Hinweis.
+     * - Fall 3 (Manifest hat `resumePosition`, aber aktueller Request
+     *   hat kein `--since-column`) → `Throw TableResumeMismatchException`
+     *   — der Aufrufer uebersetzt das in Exit 3.
+     *
+     * Fresh-Track (mit PK, ohne bereits vorhandene Position) liefert
+     * einen [ResumeMarker] ohne Position; Resume-From-Position liefert
+     * einen [ResumeMarker] inkl. Position.
+     */
+    private fun resolveTableResumeMarker(
+        request: DataExportRequest,
+        table: String,
+        existingPosition: CheckpointResumePosition?,
+        primaryKey: List<String>,
+    ): ResumeMarker? {
+        val sinceColumn = request.sinceColumn?.takeIf { it.isNotBlank() }
+        // Fall 3: Manifest traegt Position, aber Request hat kein since-column
+        if (existingPosition != null && sinceColumn == null) {
+            throw TableResumeMismatchException(table, existingPosition.markerColumn)
+        }
+        // Fall 1: ohne since-column kein Mid-Table-Resume — C.1-Fallback
+        if (sinceColumn == null) return null
+        // Fall 2: PK fehlt -> C.1-Fallback mit stderr-Hinweis
+        if (primaryKey.isEmpty()) {
+            stderr(
+                "Warning: mid-table resume disabled for table '$table': " +
+                    "no primary key found for tie-breaker; re-exporting from scratch."
+            )
+            return null
+        }
+        // Fresh-Track oder Resume-From-Position
+        val position = existingPosition?.let { persisted ->
+            MarkerCodec.toRuntimePosition(persisted)
+        }
+        return ResumeMarker(
+            markerColumn = sinceColumn,
+            tieBreakerColumns = primaryKey,
+            position = position,
+        )
+    }
+
     private fun canonicalOutputMode(output: ExportOutput): String = when (output) {
         is ExportOutput.Stdout -> "stdout"
         is ExportOutput.SingleFile -> "single-file"
@@ -652,3 +826,17 @@ class DataExportRunner(
         private const val MANIFEST_SUFFIX = ".checkpoint.yaml"
     }
 }
+
+/**
+ * 0.9.0 Phase C.2 §4.1 Fall 3: Manifest traegt eine mid-table
+ * `resumePosition`, aber der aktuelle Request hat kein `--since-column`.
+ * Die Laufvertrage sind inkompatibel; der Runner uebersetzt diese
+ * Exception in Exit 3.
+ */
+internal class TableResumeMismatchException(
+    val table: String,
+    val markerColumn: String,
+) : RuntimeException(
+    "Checkpoint for table '$table' carries a mid-table marker on column " +
+        "'$markerColumn', but the current request has no --since-column; refuse to resume."
+)

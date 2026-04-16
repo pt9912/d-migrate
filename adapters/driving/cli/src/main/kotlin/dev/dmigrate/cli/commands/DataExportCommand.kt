@@ -173,9 +173,27 @@ class DataExportCommand : CliktCommand(name = "export") {
                     "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
                 }
             },
-            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter, opId, resuming, skipped, onDone ->
+            exportExecutor = ExportExecutor {
+                pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter,
+                opId, resuming, skipped, onDone, markers, onChunk,
+                ->
                 StreamingExporter(reader, lister, factory)
-                    .export(pool, tbls, out, fmt, opts, cfg, flt, reporter, opId, resuming, skipped, onDone)
+                    .export(
+                        pool = pool,
+                        tables = tbls,
+                        output = out,
+                        format = fmt,
+                        options = opts,
+                        config = cfg,
+                        filter = flt,
+                        progressReporter = reporter,
+                        operationId = opId,
+                        resuming = resuming,
+                        skippedTables = skipped,
+                        onTableCompleted = onDone,
+                        resumeMarkers = markers,
+                        onChunkProcessed = onChunk,
+                    )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
             // 0.9.0 Phase C.1: dateibasierter CheckpointStore. Die CLI-
@@ -194,8 +212,54 @@ class DataExportCommand : CliktCommand(name = "export") {
                     configPathFromCli = cliCfg,
                 ).resolve()
             },
+            // 0.9.0 Phase C.2 §5.3: PK-Lookup fuer den Runner. Die
+            // produktive Wiring laedt das Schema genau einmal pro
+            // Pool+Dialekt, damit mehrfache `primaryKeyLookup`-
+            // Aufrufe (pro Tabelle) nicht wiederholt den
+            // SchemaReader triggern. Ein Fehlschlag beim Schema-Load
+            // mappt auf "keine PK bekannt" — der Runner faellt dann
+            // per Phase-C.2-§4.1-Fall-2 auf C.1-Verhalten zurueck.
+            primaryKeyLookup = pkLookupFromSchemaReader(),
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
+    }
+
+    /**
+     * 0.9.0 Phase C.2 §5.3: produktive PK-Quelle. Liest das Schema
+     * beim **ersten** Aufruf genau einmal per
+     * `DatabaseDriverRegistry.get(dialect).schemaReader()` ein und
+     * merkt sich das Ergebnis in einem local-scoped Cache. Jeder
+     * spaetere Aufruf liefert die PK aus dem Cache.
+     *
+     * Ein Fehlschlag beim Schema-Laden degradiert auf "keine PK
+     * bekannt" — der Runner greift dann Phase-C.2-§4.1-Fall-2
+     * (C.1-Fallback mit stderr-Hinweis). Kein Exit, der Lauf geht
+     * weiter.
+     */
+    private fun pkLookupFromSchemaReader(): (
+        dev.dmigrate.driver.connection.ConnectionPool,
+        dev.dmigrate.driver.DatabaseDialect,
+        String,
+    ) -> List<String> {
+        var cache: Map<String, List<String>>? = null
+        return { pool, dialect, table ->
+            val resolved = cache ?: run {
+                val loaded = try {
+                    val reader = DatabaseDriverRegistry.get(dialect).schemaReader()
+                    val result = reader.read(pool)
+                    result.schema.tables.mapValues { (_, def) -> def.primaryKey }
+                } catch (_: Throwable) {
+                    emptyMap<String, List<String>>()
+                }
+                cache = loaded
+                loaded
+            }
+            // Wir probieren schema-qualifizierte und unqualifizierte
+            // Keys, weil --tables beide Formen akzeptiert (§3.6).
+            resolved[table]
+                ?: resolved[table.substringAfterLast('.')]
+                ?: emptyList()
+        }
     }
 }

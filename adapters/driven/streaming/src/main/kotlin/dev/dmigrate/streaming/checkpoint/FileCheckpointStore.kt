@@ -6,6 +6,7 @@ import dev.dmigrate.streaming.checkpoint.CheckpointReference
 import dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
+import dev.dmigrate.streaming.checkpoint.CheckpointResumePosition
 import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
 import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import org.snakeyaml.engine.v2.api.Dump
@@ -164,7 +165,19 @@ class FileCheckpointStore(
                     "rowsProcessed" to slice.rowsProcessed,
                     "chunksProcessed" to slice.chunksProcessed,
                     "lastMarker" to slice.lastMarker,
-                )
+                ).also { map ->
+                    // 0.9.0 Phase C.2 §5.2: Composite-Marker-Position wird
+                    // nur geschrieben, wenn gesetzt — alte Phase-B-Laeufe
+                    // bleiben ohne das Feld.
+                    slice.resumePosition?.let { pos ->
+                        map["resumePosition"] = linkedMapOf<String, Any?>(
+                            "markerColumn" to pos.markerColumn,
+                            "markerValue" to pos.markerValue,
+                            "tieBreakerColumns" to pos.tieBreakerColumns,
+                            "tieBreakerValues" to pos.tieBreakerValues,
+                        )
+                    }
+                }
             },
         )
     }
@@ -192,6 +205,7 @@ class FileCheckpointStore(
                 rowsProcessed = (slice["rowsProcessed"] as? Number)?.toLong() ?: 0L,
                 chunksProcessed = (slice["chunksProcessed"] as? Number)?.toLong() ?: 0L,
                 lastMarker = slice["lastMarker"] as? String,
+                resumePosition = parseResumePosition(slice["resumePosition"], path),
             )
         }
         return CheckpointManifest(
@@ -223,6 +237,33 @@ class FileCheckpointStore(
         return runCatching { CheckpointSliceStatus.valueOf(raw) }.getOrElse {
             throw CheckpointStoreException(
                 "Checkpoint manifest at $path has unknown slice status '$raw'"
+            )
+        }
+    }
+
+    private fun parseResumePosition(value: Any?, path: Path): CheckpointResumePosition? {
+        val map = value as? Map<*, *> ?: return null
+        val markerColumn = (map["markerColumn"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has resumePosition without 'markerColumn'"
+            )
+        val markerValue = map["markerValue"] as? String
+        val tieBreakerColumns = (map["tieBreakerColumns"] as? List<*>)
+            ?.mapNotNull { it as? String }
+            ?: emptyList()
+        val tieBreakerValuesRaw = (map["tieBreakerValues"] as? List<*>) ?: emptyList<Any?>()
+        val tieBreakerValues = tieBreakerValuesRaw.map { it as? String }
+        return try {
+            CheckpointResumePosition(
+                markerColumn = markerColumn,
+                markerValue = markerValue,
+                tieBreakerColumns = tieBreakerColumns,
+                tieBreakerValues = tieBreakerValues,
+            )
+        } catch (t: IllegalArgumentException) {
+            throw CheckpointStoreException(
+                "Checkpoint manifest at $path has invalid resumePosition: ${t.message}",
+                cause = t,
             )
         }
     }

@@ -1,5 +1,7 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.driver.data.ResumeMarker
+
 /**
  * Statistik-Aggregat einer [StreamingExporter]-Operation. Wird vom CLI
  * zur stderr-Ausgabe als ProgressSummary verwendet (Plan §3.6).
@@ -42,4 +44,28 @@ data class TableExportSummary(
     val bytes: Long,
     val durationMs: Long,
     val error: String? = null,
+)
+
+/**
+ * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §5.2): chunk-granularer
+ * Fortschritts-Datensatz fuer das Mid-Table-Resume. Wird vom
+ * Streaming-Exporter nur fuer Tabellen emittiert, die der Runner mit
+ * einem [ResumeMarker] versorgt hat, und nur fuer nicht-leere Chunks.
+ *
+ * [position] traegt den Composite-Marker-Wert der **letzten** Zeile des
+ * gerade geschriebenen Chunks — der Runner persistiert ihn im
+ * Manifest, sodass ein Wieder-Lauf die Tabelle ab dieser Position
+ * fortsetzen kann.
+ *
+ * Der Typ lebt bewusst im `hexagon:ports`-Modul (obwohl er nur vom
+ * Streaming-Adapter emittiert wird), damit der `DataExportRunner` in
+ * `hexagon:application` ihn referenzieren kann, ohne eine Abhaengigkeit
+ * auf `adapters/driven/streaming` aufbauen zu muessen. Das passt zum
+ * Muster von [TableExportSummary].
+ */
+data class TableChunkProgress(
+    val table: String,
+    val rowsProcessed: Long,
+    val chunksProcessed: Long,
+    val position: ResumeMarker.Position,
 )
