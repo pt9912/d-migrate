@@ -374,6 +374,77 @@ Verbindliche Folge:
 - falls noetig Referenzen in weiteren 0.9.0-Teilplaenen auf "Phase B/C"
   auf "Phase B/D" oder "Phase B bis D" umstellen
 
+### 5.6 Commit-Staffelung (2026-04-16)
+
+Phase D ist vom Umfang mit C.1 + C.2 zusammen vergleichbar. Damit
+jede Zwischenstufe ein sauberer Review- und Release-Anker ist,
+staffeln wir die Umsetzung in vier Commits. Jeder Commit laesst den
+Build (`docker build --target build --build-arg GRADLE_TASKS=check`)
+komplett gruen zurueck — Kover-Verify inklusive.
+
+**Commit 1 — D.1: Preflight + Warning-Removal**
+
+- [ ] `DataImportRunner` an `CheckpointStore` + `CheckpointConfig.merge`
+  anbinden (symmetrisch zu `DataExportRunner`)
+- [ ] neuer `ImportOptionsFingerprint` mit allen §4.3-Feldern
+  (Source, Target, Format, Encoding, CSV-Header/NULL, `--on-error`,
+  `--on-conflict`, `--trigger-mode`, `--truncate`,
+  `--disable-fk-checks`, `--reseed-sequences`, Tabellenliste,
+  `chunkSize`, Input-Topologie)
+- [ ] Preflight-Logik: Manifest laden, `operationType == IMPORT`,
+  Fingerprint, Tabellenliste → Exit 3; unlesbarer Manifest /
+  fehlende Checkpoint-Datei → Exit 7
+- [ ] Initial-Manifest-Save bei fresh runs; `complete()` bei Erfolg
+- [ ] "accepted but not yet active"-Warning entfernen (§4.8)
+- [ ] `docs/cli-spec.md` + `docs/guide.md` Import-Abschnitte auf
+  Phase-D-Vertrag umschreiben
+- [ ] Runner-Tests fuer alle Preflight-Pfade (Exit 2/3/7, fresh-run,
+  fingerprint-match/mismatch)
+
+**Commit 2 — D.2 + D.3: Marker-Modell + Streaming-Checkpoint-Writes**
+
+- [ ] Tabellenstatus im Manifest praezisieren
+  (IN_PROGRESS mit `lastCommittedChunkIndex` vs. COMPLETED vs.
+  FAILED_FINISH-Abgrenzung)
+- [ ] `StreamingImporter` schreibt Checkpoint nach
+  `session.commitChunk()`; skipt `COMPLETED`-Tabellen; fortgesetzte
+  Tabellen starten am naechsten offenen Chunk
+- [ ] `--truncate`-Guard (§4.4): nur fuer frisch begonnene Tabellen;
+  Resume mit teilweise bestaetigten Chunks loest **kein** erneutes
+  Truncate aus; bei bereits `COMPLETED`-Tabellen wird `truncate`
+  ebenfalls nicht mehr ausgefuehrt
+- [ ] `--on-error abort/skip/log` behalten ihre Semantik beim Resume
+  (§4.6); `failedFinish` markiert eine Tabelle nicht als
+  `COMPLETED`
+- [ ] Runner-Tests fuer commit-boundary-Resume,
+  `--truncate`-Guard, `--on-error`-Interaktionen
+- [ ] Streaming-Tests: Abbruch nach bestaetigtem Chunk → Resume am
+  naechsten Chunk; Fehler vor `commitChunk()` zieht Checkpoint nicht
+  zu weit
+- [ ] Kover-Coverage bleibt pro Modul ≥ 90 %
+
+**Commit 3 — D.4: Directory-Topologie**
+
+- [ ] Manifest persistiert `table -> inputFile` stabil fuer
+  Directory-Importe (§4.5)
+- [ ] Preflight: geaenderte Directory-Dateimenge oder andere
+  Reihenfolge → Exit 3
+- [ ] Schema-Reihenfolge-Zusammenspiel mit `--schema` fixiert
+  (Manifest-Reihenfolge gewinnt, wenn gespeichert)
+- [ ] Tests fuer stabile Slice-Zuordnung (file-added, file-removed,
+  renamed, changed order)
+
+**Commit 4 — D.5: Finalisierung**
+
+- [ ] Plan-Status auf "In Review" flippen
+- [ ] restliche Hilfetexte / Fehlermeldungen angleichen
+  (Runner-Meldungen, CLI-Help)
+- [ ] eventuelle `Phase B/C` → `Phase B/D` Quer-Referenzen in
+  Geschwister-Plaenen und Masterplan bereinigen
+- [ ] voller `docker build --target build --build-arg
+  GRADLE_TASKS=check` gruen; CHANGELOG-Einsatz nach Release-Konvention
+  erst am Release-Cut
+
 ---
 
 ## 6. Teststrategie fuer Phase D
