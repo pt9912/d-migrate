@@ -46,24 +46,73 @@ class StreamingImporter(
          * Callsites (Tests).
          */
         operationId: String? = null,
+        /**
+         * 0.9.0 Phase D.3 (`docs/ImpPlan-0.9.0-D.md` §5.3): `true`,
+         * wenn der Lauf eine Wiederaufnahme aus einem vorhandenen
+         * Manifest ist; `false` fuer einen neuen Lauf. Wird in
+         * [ProgressEvent.RunStarted] gespiegelt, symmetrisch zum
+         * Export-Pfad.
+         */
+        resuming: Boolean = false,
+        /**
+         * 0.9.0 Phase D.3 §4.7: Tabellen, die laut Manifest bereits
+         * `COMPLETED` sind. Der Importer ueberspringt sie komplett —
+         * weder `openTable`, noch Reader-Erzeugung, noch
+         * `finishTable`.
+         */
+        skippedTables: Set<String> = emptySet(),
+        /**
+         * 0.9.0 Phase D.3 §5.3: pro Tabelle optionaler Resume-
+         * Zustand. Ist ein Eintrag vorhanden, liest der Importer
+         * [ImportTableResumeState.committedChunks] Chunks aus dem
+         * Reader und verwirft sie **ohne** Schreib-/Commit-Aktion;
+         * erst danach wird regulaer geschrieben. Zusaetzlich
+         * erzwingt der Importer Truncate-Guard §4.4: bei
+         * `committedChunks > 0` wird `truncate` fuer diese Tabelle
+         * ignoriert.
+         */
+        resumeStateByTable: Map<String, ImportTableResumeState> = emptyMap(),
+        /**
+         * 0.9.0 Phase D.3 §5.3: Callback nach jedem erfolgreich
+         * committeten Chunk. Der Runner fuellt damit das Manifest
+         * fort; Mid-Write- oder Mid-Commit-Fehler loesen **keinen**
+         * Callback aus, sodass der gespeicherte Fortschritt nie
+         * zu weit gezogen wird.
+         */
+        onChunkCommitted: (ImportChunkCommit) -> Unit = {},
+        /**
+         * 0.9.0 Phase D.3 §5.3: Callback pro abgeschlossenem
+         * Tabellen-Import (inkl. `finishTable`). Wird auch bei
+         * Fehler/`failedFinish` gerufen (Summary traegt dann
+         * `error`/`failedFinish`). Der Runner setzt damit den
+         * Tabellen-Status im Manifest auf `COMPLETED` oder
+         * `FAILED`.
+         */
+        onTableCompleted: (TableImportSummary) -> Unit = {},
     ): ImportResult {
         val writer = writerLookup(pool.dialect)
-        val tableInputs = resolveInputs(input, format)
-        require(tableInputs.isNotEmpty()) {
+        val discoveredInputs = resolveInputs(input, format)
+        require(discoveredInputs.isNotEmpty()) {
             "No tables to import from $input"
         }
+        // 0.9.0 Phase D.3 §4.7: bereits abgeschlossene Tabellen
+        // ueberspringen. Die `tableCount`-Berichterstattung zeigt
+        // weiterhin die Gesamtzahl (stabiles Bild fuer Progress-UI).
+        val activeInputs = discoveredInputs.filter { it.table !in skippedTables }
 
         progressReporter.report(ProgressEvent.RunStarted(
             operation = ProgressOperation.IMPORT,
-            totalTables = tableInputs.size,
+            totalTables = discoveredInputs.size,
             operationId = operationId,
+            resuming = resuming,
         ))
 
         val startedAt = System.nanoTime()
         val summaries = mutableListOf<TableImportSummary>()
 
-        for ((index, tableInput) in tableInputs.withIndex()) {
-            summaries += importSingleTable(
+        for ((index, tableInput) in discoveredInputs.withIndex()) {
+            if (tableInput.table in skippedTables) continue
+            val summary = importSingleTable(
                 pool = pool,
                 writer = writer,
                 tableInput = tableInput,
@@ -72,8 +121,12 @@ class StreamingImporter(
                 config = config,
                 reporter = progressReporter,
                 ordinal = index + 1,
-                tableCount = tableInputs.size,
+                tableCount = discoveredInputs.size,
+                resumeState = resumeStateByTable[tableInput.table],
+                onChunkCommitted = onChunkCommitted,
             )
+            summaries += summary
+            onTableCompleted(summary)
         }
 
         return buildResult(summaries, startedAt, operationId)
@@ -89,6 +142,8 @@ class StreamingImporter(
         reporter: ProgressReporter,
         ordinal: Int,
         tableCount: Int,
+        resumeState: ImportTableResumeState?,
+        onChunkCommitted: (ImportChunkCommit) -> Unit,
     ): TableImportSummary {
         val tableStartedAt = System.nanoTime()
         var reader: DataChunkReader? = null
@@ -105,18 +160,51 @@ class StreamingImporter(
         var error: String? = null
         var targetColumns = emptyList<ColumnDescriptor>()
 
+        // 0.9.0 Phase D.3 §4.4 / §5.3: Resume-Offset + Truncate-Guard.
+        // `committedChunksOffset` ist die Anzahl in einem frueheren
+        // Lauf bereits bestaetigter Chunks — fuer Fresh-Runs `0L`.
+        val committedChunksOffset: Long = resumeState?.committedChunks ?: 0L
+        // §4.4: Bei bereits bestaetigten Chunks darf `truncate` nicht
+        // laufen, sonst werden die gesicherten Zeilen entwertet. Fuer
+        // `COMPLETED`-Tabellen erreicht der Importer diesen Pfad ohnehin
+        // nicht (§4.7, durch `skippedTables`-Guard vor dem Aufruf).
+        val effectiveOptions = if (committedChunksOffset > 0L) {
+            options.copy(truncate = false)
+        } else {
+            options
+        }
+        // Zaehler fuer den per-Chunk-Callback. Startet am Offset,
+        // inkrementiert nach jedem erfolgreichen `commitChunk()`.
+        var chunksCommittedTotal: Long = committedChunksOffset
+
         try {
             reader = readerFactory.create(
                 format = format,
                 input = tableInput.openInput(),
                 table = tableInput.table,
                 chunkSize = config.chunkSize,
-                options = options,
+                options = effectiveOptions,
             )
-            session = writer.openTable(pool, tableInput.table, options)
+            session = writer.openTable(pool, tableInput.table, effectiveOptions)
             onTableOpened(tableInput.table, session.targetColumns)
             reporter.report(ProgressEvent.ImportTableStarted(tableInput.table, ordinal, tableCount))
             targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
+
+            // 0.9.0 Phase D.3 §5.3: Skip-Ahead auf Resume. Der Reader
+            // liefert Chunks ab Index 0; bereits bestaetigte Chunks
+            // muessen **ohne** Schreib-/Commit-Aktion verworfen werden,
+            // sonst entstaenden Doppel-Inserts.
+            if (committedChunksOffset > 0L) {
+                var skipped = 0L
+                while (skipped < committedChunksOffset) {
+                    val discarded = reader.nextChunk() ?: break
+                    // `discarded` wird bewusst nicht geschrieben und
+                    // nicht gezaehlt — wir simulieren bloss die Reader-
+                    // Position, die der vorherige Lauf erreicht hatte.
+                    @Suppress("UNUSED_VARIABLE") val _discarded = discarded
+                    skipped += 1
+                }
+            }
 
             val firstChunk = reader.nextChunk()
             val bindingPlan = buildBindingPlan(
@@ -233,6 +321,26 @@ class StreamingImporter(
                         rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
                         rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
                     ))
+                    // 0.9.0 Phase D.3 §5.3: Checkpoint-Punkt. Nur nach
+                    // erfolgreichem `commitChunk()` — Mid-Write-,
+                    // Mid-Commit- oder Read-Fehler loesen diesen Callback
+                    // nicht aus, sodass der gespeicherte Fortschritt
+                    // nicht zu weit gezogen wird (§4.2).
+                    chunksCommittedTotal += 1
+                    runCatching {
+                        onChunkCommitted(
+                            ImportChunkCommit(
+                                table = tableInput.table,
+                                chunkIndex = normalizedChunk.chunkIndex,
+                                chunksCommitted = chunksCommittedTotal,
+                                rowsInsertedTotal = rowsInserted,
+                                rowsUpdatedTotal = rowsUpdated,
+                                rowsSkippedTotal = rowsSkipped,
+                                rowsUnknownTotal = rowsUnknown,
+                                rowsFailedTotal = rowsFailed,
+                            )
+                        )
+                    }
                 } catch (t: Throwable) {
                     rowsFailed += normalizedChunk.rows.size.toLong()
                     when (handleChunkFailure(normalizedChunk, t, options, chunkFailures)) {

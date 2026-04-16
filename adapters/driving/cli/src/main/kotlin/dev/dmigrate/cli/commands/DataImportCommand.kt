@@ -187,13 +187,29 @@ class DataImportCommand : CliktCommand(name = "import") {
             writerLookup = writerLookup,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { pool, input, fmt, opts, cfg, onTableOpened, reporter ->
+            importExecutor = ImportExecutor {
+                pool, input, fmt, opts, cfg, onTableOpened, reporter,
+                opId, resuming, skipped, resumeStates, onChunk, onDone,
+                ->
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,
                     writerLookup = writerLookup,
                     onTableOpened = onTableOpened,
                 )
-                importer.import(pool, input, fmt, opts, cfg, reporter)
+                importer.import(
+                    pool = pool,
+                    input = input,
+                    format = fmt,
+                    options = opts,
+                    config = cfg,
+                    progressReporter = reporter,
+                    operationId = opId,
+                    resuming = resuming,
+                    skippedTables = skipped,
+                    resumeStateByTable = resumeStates,
+                    onChunkCommitted = onChunk,
+                    onTableCompleted = onDone,
+                )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
             // 0.9.0 Phase D.1 (docs/ImpPlan-0.9.0-D.md §5.1):

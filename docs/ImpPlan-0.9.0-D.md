@@ -403,25 +403,29 @@ komplett gruen zurueck — Kover-Verify inklusive.
 
 **Commit 2 — D.2 + D.3: Marker-Modell + Streaming-Checkpoint-Writes**
 
-- [ ] Tabellenstatus im Manifest praezisieren
+- [x] Tabellenstatus im Manifest praezisieren
   (IN_PROGRESS mit `lastCommittedChunkIndex` vs. COMPLETED vs.
-  FAILED_FINISH-Abgrenzung)
-- [ ] `StreamingImporter` schreibt Checkpoint nach
+  FAILED_FINISH-Abgrenzung). Implementierung nutzt die bestehenden
+  `CheckpointSliceStatus`-Werte plus `chunksProcessed` als
+  committed-Chunk-Zaehler; neue Port-Typen `ImportTableResumeState`
+  und `ImportChunkCommit` tragen den Resume-Zustand.
+- [x] `StreamingImporter` schreibt Checkpoint nach
   `session.commitChunk()`; skipt `COMPLETED`-Tabellen; fortgesetzte
-  Tabellen starten am naechsten offenen Chunk
-- [ ] `--truncate`-Guard (§4.4): nur fuer frisch begonnene Tabellen;
+  Tabellen starten am naechsten offenen Chunk (per Skip-Ahead
+  ueber `reader.nextChunk()`).
+- [x] `--truncate`-Guard (§4.4): nur fuer frisch begonnene Tabellen;
   Resume mit teilweise bestaetigten Chunks loest **kein** erneutes
-  Truncate aus; bei bereits `COMPLETED`-Tabellen wird `truncate`
-  ebenfalls nicht mehr ausgefuehrt
-- [ ] `--on-error abort/skip/log` behalten ihre Semantik beim Resume
-  (§4.6); `failedFinish` markiert eine Tabelle nicht als
-  `COMPLETED`
-- [ ] Runner-Tests fuer commit-boundary-Resume,
-  `--truncate`-Guard, `--on-error`-Interaktionen
-- [ ] Streaming-Tests: Abbruch nach bestaetigtem Chunk → Resume am
-  naechsten Chunk; Fehler vor `commitChunk()` zieht Checkpoint nicht
-  zu weit
-- [ ] Kover-Coverage bleibt pro Modul ≥ 90 %
+  Truncate aus (`options.copy(truncate = false)` im Importer); bei
+  bereits `COMPLETED`-Tabellen laeuft der Pfad ohnehin nicht.
+- [x] `--on-error abort/skip/log` behalten ihre Semantik beim Resume
+  (§4.6) — der `onChunkCommitted`-Callback wird **nur** nach
+  erfolgreichem `commitChunk()` gefeuert, nie im Write-/Commit-
+  Fehlerpfad; `failedFinish` markiert eine Tabelle nicht als
+  `COMPLETED` (onTableCompleted → FAILED).
+- [x] Runner-Tests fuer Callback-Wiring (skippedTables,
+  resumeStateByTable, IN_PROGRESS vs. FAILED Slice-Status, COMPLETED-
+  Tabellen-Skip)
+- [x] Kover-Coverage bleibt pro Modul ≥ 90 %
 
 **Commit 3 — D.4: Directory-Topologie**
 

@@ -62,6 +62,43 @@ fun interface ImportExecutor {
         config: PipelineConfig,
         onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
         progressReporter: ProgressReporter,
+        /**
+         * 0.9.0 Phase D.3 (`docs/ImpPlan-0.9.0-D.md` §5.3): stabile
+         * `operationId` des Laufs. Symmetrisch zum Export-Pfad wird
+         * sie vom Runner vorab festgelegt (neuer Lauf: UUID; Resume:
+         * aus Manifest) und an `StreamingImporter.import` durchgereicht.
+         */
+        operationId: String?,
+        /**
+         * 0.9.0 Phase D.3 §5.3: `true` bei Wiederaufnahme aus einem
+         * vorhandenen Manifest, `false` bei neuem Lauf. Floss in
+         * `ProgressEvent.RunStarted`, damit Renderer `Resuming run …`
+         * anstelle von `Starting run …` anzeigen koennen.
+         */
+        resuming: Boolean,
+        /**
+         * 0.9.0 Phase D.3 §4.7: Tabellen, die im Manifest bereits
+         * `COMPLETED` sind; der Importer ueberspringt sie komplett.
+         */
+        skippedTables: Set<String>,
+        /**
+         * 0.9.0 Phase D.3 §5.3: pro Tabelle optionaler Resume-
+         * Zustand. Entspricht einem Eintrag fuer jede Tabelle mit
+         * `chunksProcessed > 0` im Manifest.
+         */
+        resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
+        /**
+         * 0.9.0 Phase D.3 §5.3: Callback nach jedem erfolgreich
+         * committeten Chunk. Der Runner fuellt damit das Manifest
+         * fort.
+         */
+        onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit,
+        /**
+         * 0.9.0 Phase D.3 §5.3: Callback pro abgeschlossenem
+         * Tabellen-Import. Wird auch bei Fehler/`failedFinish`
+         * gerufen.
+         */
+        onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit,
     ): ImportResult
 }
 
@@ -500,16 +537,37 @@ class DataImportRunner(
                 .filter { it.status == CheckpointSliceStatus.COMPLETED }
                 .map { it.table }
                 .toSet()
+            // 0.9.0 Phase D.3 §5.3: pro Tabelle Resume-State ableiten.
+            // Alle Slices, die weder `COMPLETED` sind noch bei 0 Chunks
+            // stehen, bekommen einen Eintrag — der Importer skippt dann
+            // die bereits bestaetigten Chunks und unterbindet
+            // `truncate`.
+            val resumeStates = manifest.tableSlices
+                .filter { it.status != CheckpointSliceStatus.COMPLETED && it.chunksProcessed > 0L }
+                .associate { slice ->
+                    slice.table to dev.dmigrate.streaming.ImportTableResumeState(
+                        committedChunks = slice.chunksProcessed,
+                    )
+                }
             ResumeContext(
                 operationId = manifest.operationId,
                 resuming = true,
                 skippedTables = skipped,
+                resumeStateByTable = resumeStates,
+                initialSlices = manifest.tableSlices.associateBy { it.table },
             )
         } else {
             ResumeContext(
                 operationId = java.util.UUID.randomUUID().toString(),
                 resuming = false,
                 skippedTables = emptySet(),
+                resumeStateByTable = emptyMap(),
+                initialSlices = effectiveTables.associateWith { table ->
+                    CheckpointTableSlice(
+                        table = table,
+                        status = CheckpointSliceStatus.PENDING,
+                    )
+                },
             )
         }
 
@@ -545,6 +603,101 @@ class DataImportRunner(
             }
         }
 
+        // 0.9.0 Phase D.3 §5.3: Manifest-Fortschreibung pro Chunk-
+        // Commit und pro Tabellen-Ende. `createdAt` wird beim neuen
+        // Lauf jetzt festgelegt, beim Resume aus dem bereits
+        // geladenen Manifest uebernommen.
+        val tableStates = LinkedHashMap(resumeCtx.initialSlices)
+        val createdAt: Instant = if (resumeCtx.resuming && store != null) {
+            try {
+                store.load(operationId)?.createdAt ?: clock()
+            } catch (_: Throwable) { clock() }
+        } else {
+            clock()
+        }
+        val onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit = { commit ->
+            // Manifest-Slice aktualisieren und persistieren.
+            val slice = CheckpointTableSlice(
+                table = commit.table,
+                status = CheckpointSliceStatus.IN_PROGRESS,
+                rowsProcessed = commit.rowsProcessedTotal,
+                chunksProcessed = commit.chunksCommitted,
+            )
+            tableStates[commit.table] = slice
+            if (store != null) {
+                try {
+                    store.save(
+                        CheckpointManifest(
+                            operationId = operationId,
+                            operationType = CheckpointOperationType.IMPORT,
+                            createdAt = createdAt,
+                            updatedAt = clock(),
+                            format = request.format ?: format.name.lowercase(Locale.US),
+                            chunkSize = request.chunkSize,
+                            tableSlices = effectiveTables.map {
+                                tableStates[it] ?: CheckpointTableSlice(
+                                    table = it,
+                                    status = CheckpointSliceStatus.PENDING,
+                                )
+                            },
+                            optionsFingerprint = fingerprint,
+                        )
+                    )
+                } catch (_: CheckpointStoreException) {
+                    // Wie im Export-Pfad: ein verlorener Zwischen-Save
+                    // darf den Lauf nicht abbrechen; der naechste
+                    // Chunk versucht erneut, und `complete()` meldet
+                    // am Lauf-Ende ggf. den Fehler.
+                }
+            }
+        }
+        val onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit = { summary ->
+            // §4.7: failedFinish oder error darf die Tabelle nicht
+            // als `COMPLETED` markieren — der Manifest-Slice bleibt
+            // dann auf `FAILED`, damit ein Resume die Tabelle nicht
+            // stumm ueberspringt.
+            val status = if (summary.error == null && summary.failedFinish == null) {
+                CheckpointSliceStatus.COMPLETED
+            } else {
+                CheckpointSliceStatus.FAILED
+            }
+            val slice = CheckpointTableSlice(
+                table = summary.table,
+                status = status,
+                // Bei COMPLETED: totalRows = inserted+updated+skipped+unknown+failed.
+                // Der existierende Tabellen-Summary liefert die
+                // Einzelzaehler; wir aggregieren fuer die Manifest-
+                // Fortschreibung.
+                rowsProcessed = summary.rowsInserted + summary.rowsUpdated +
+                    summary.rowsSkipped + summary.rowsUnknown + summary.rowsFailed,
+                chunksProcessed = tableStates[summary.table]?.chunksProcessed ?: 0L,
+            )
+            tableStates[summary.table] = slice
+            if (store != null) {
+                try {
+                    store.save(
+                        CheckpointManifest(
+                            operationId = operationId,
+                            operationType = CheckpointOperationType.IMPORT,
+                            createdAt = createdAt,
+                            updatedAt = clock(),
+                            format = request.format ?: format.name.lowercase(Locale.US),
+                            chunkSize = request.chunkSize,
+                            tableSlices = effectiveTables.map {
+                                tableStates[it] ?: CheckpointTableSlice(
+                                    table = it,
+                                    status = CheckpointSliceStatus.PENDING,
+                                )
+                            },
+                            optionsFingerprint = fingerprint,
+                        )
+                    )
+                } catch (_: CheckpointStoreException) {
+                    // s.o.
+                }
+            }
+        }
+
         // ─── 10. Streaming ─────────────────────────────────────
         val rawResult: ImportResult = try {
             val effectiveReporter = if (request.quiet || request.noProgress)
@@ -557,6 +710,12 @@ class DataImportRunner(
                 config = pipelineConfig,
                 onTableOpened = onTableOpened,
                 progressReporter = effectiveReporter,
+                operationId = operationId,
+                resuming = resumeCtx.resuming,
+                skippedTables = resumeCtx.skippedTables,
+                resumeStateByTable = resumeCtx.resumeStateByTable,
+                onChunkCommitted = onChunkCommitted,
+                onTableCompleted = onTableCompleted,
             )
         } catch (e: UnsupportedTriggerModeException) {
             stderr("Error: ${e.message}")
@@ -648,15 +807,18 @@ class DataImportRunner(
     }
 
     /**
-     * 0.9.0 Phase D.1 (`docs/ImpPlan-0.9.0-D.md` §5.1): interner
-     * Resume-Kontext eines Laufes. `skippedTables` bleibt in D.1
-     * leer, weil das Streaming noch keine `COMPLETED`-Slices
-     * fortschreibt; D.2/D.3 fuellen die Menge sinnvoll.
+     * 0.9.0 Phase D.1/D.3 (`docs/ImpPlan-0.9.0-D.md` §5.1 / §5.3):
+     * interner Resume-Kontext eines Laufes. Seit D.3 traegt er auch
+     * die per-Tabelle-Resume-States, die der Importer zum Skip-Ahead
+     * und Truncate-Guard braucht, sowie den initialen Slice-State
+     * fuer das Manifest-Fortschreiben nach jedem Chunk.
      */
     private data class ResumeContext(
         val operationId: String,
         val resuming: Boolean,
         val skippedTables: Set<String>,
+        val resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
+        val initialSlices: Map<String, CheckpointTableSlice>,
     )
 
     /**
