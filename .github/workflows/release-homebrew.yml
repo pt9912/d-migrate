@@ -71,8 +71,7 @@ jobs:
           commit_email: 41898282+github-actions[bot]@users.noreply.github.com
           depends_on: '"openjdk@21"'
           install: |
-            release_dir = Dir["d-migrate-*"].fetch(0)
-            libexec.install Dir["#{release_dir}/*"]
+            libexec.install Dir["*"]
             (bin/"d-migrate").write_env_script(
               libexec/"bin/d-migrate",
               Language::Java.overridable_java_home_env("21"),
