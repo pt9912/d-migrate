@@ -7,9 +7,11 @@
 > Abschnitt 6.1, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/quality.md`; `docs/cli-spec.md`;
 > `adapters/driven/driver-postgresql/.../PostgresSchemaIntrospectionAdapter.kt`;
+> `adapters/driven/driver-postgresql/.../PostgresProfilingDataAdapter.kt`;
 > `adapters/driven/driver-mysql/.../MysqlSchemaIntrospectionAdapter.kt`;
 > `adapters/driven/driver-mysql/.../MysqlProfilingDataAdapter.kt`;
 > `adapters/driven/driver-sqlite/.../SqliteSchemaIntrospectionAdapter.kt`;
+> `adapters/driven/driver-sqlite/.../SqliteProfilingDataAdapter.kt`;
 > `hexagon/application/.../DataExportHelpers.kt`;
 > die drei DDL-Generatoren unter `adapters/driven/driver-*`.
 
@@ -81,12 +83,17 @@ Konsequenz:
   (PostgreSQL/MySQL/SQLite) in gemeinsamem, wiederverwendbarem Zuschnitt
 - Umstellung der Introspection- und Profiling-Adapter auf:
   - konsequentes Identifier-Quoting fuer Namen
-  - `PreparedStatement`-Binding fuer Literals in Metadaten-SQL
+  - `PreparedStatement`-Binding fuer Literals in Metadaten-SQL, wo der
+    Dialekt dies fuer Metadatenabfragen zulaesst
+  - fuer SQLite-`PRAGMA`-Pfade einen explizit sicheren
+    String-Literal-/Identifier-Helper statt freier Interpolation
 - Sicherheits-Haertung der betroffenen Adapter:
   - `PostgresSchemaIntrospectionAdapter`
+  - `PostgresProfilingDataAdapter`
   - `MysqlSchemaIntrospectionAdapter`
   - `MysqlProfilingDataAdapter`
   - `SqliteSchemaIntrospectionAdapter`
+  - `SqliteProfilingDataAdapter`
 - Kennzeichnung von `--filter` und `constraint.expression` als
   **Trusted Input**
 - optionaler kleinerer sicherer Ersatzweg fuer Filter-Ausdruecke, wenn
@@ -121,12 +128,18 @@ Verbindliche Entscheidung:
 - Identifier laufen immer ueber dialektkonformes Quoting
 - Literalwerte in Metadatenabfragen werden immer gebunden, nicht
   interpoliert
+- wenn ein Dialekt fuer Metadatenabfragen kein `PreparedStatement`-
+  faehiges Muster bietet, muss dafuer ein expliziter, getesteter
+  Dialekt-Helper fuer sichere Literal- und Identifier-Einbettung
+  verwendet werden
 
 Folge:
 
 - die Ziel-API der Utility muss beide Pfade sichtbar trennen
 - Code, der weiter String-Interpolation fuer Literalwerte nutzt, gilt
   in Phase A als Bug
+- SQLite-`PRAGMA`-Pfade brauchen im Plan einen gleichwertigen
+  Sicherheitsvertrag statt einer stillen Ausnahme
 
 ### 4.2 Dialektkonsistenz ist wichtiger als lokale Hotfixes
 
@@ -144,7 +157,8 @@ Verbindliche Entscheidung:
 
 - `--filter` und `constraint.expression` bleiben in 0.9.1 moeglich
 - diese Pfade werden aber explizit als Trusted Input dokumentiert
-- die CLI-Hilfe und KDoc duerfen an diesen Stellen keine falsche
+- die CLI-Hilfe, Modell-/Generator-KDocs und die normativen
+  Schema-/DDL-Dokumente duerfen an diesen Stellen keine falsche
   Sicherheitsillusion erzeugen
 
 Nicht zulaessig ist:
@@ -182,6 +196,9 @@ Verbindliche Entscheidung:
 - direkte `$name`-Interpolation von `table`/`column`/`schema`
   identifizieren und ersetzen
 - Literals in Metadaten-SQL auf gebundene Parameter umstellen
+- fuer SQLite-`PRAGMA`-Abfragen einen zentralen, getesteten
+  Escape-/Literal-Helper verwenden, wo Binding technisch nicht als
+  gleichwertiger Pfad verfuegbar ist
 - Namen ausschliesslich ueber die neue Identifier-Utility erzeugen
 - bestehende Adaptertests auf boesartige Namen erweitern
 
@@ -191,6 +208,11 @@ Verbindliche Entscheidung:
 - KDoc/Vertragsdoku fuer `DataExportHelpers.resolveFilter` nachziehen
 - `constraint.expression` im Modell-/Generatorvertrag als Trusted Input
   markieren
+- `constraint.expression` in `docs/neutral-model-spec.md` als bewusst
+  offene Trusted-Input-Grenze sichtbar machen
+- DDL-seitige Verwendung von `constraint.expression` in
+  `docs/ddl-generation-rules.md` mit demselben Trusted-Input-Vertrag
+  spiegeln
 - optional pruefen, ob ein kleiner sicherer Filter-Ersatzpfad fuer
   haeufige Faelle in Phase A schon vertretbar ist
 
@@ -230,8 +252,12 @@ Mit hoher Wahrscheinlichkeit betroffen:
 - `adapters/driven/driver-mysql/...`
 - `adapters/driven/driver-sqlite/...`
 - `hexagon/application/.../DataExportHelpers.kt`
+- `hexagon/core/.../ConstraintDefinition.kt`
 - DDL-Generatoren in `adapters/driven/driver-*`
 - `docs/cli-spec.md`
+- `docs/neutral-model-spec.md`
+- `docs/ddl-generation-rules.md`
+- ggf. gemeinsame Dialekt-Utility unter `adapters/driven/driver-common/...`
 - ggf. weitere KDoc-nahe Vertragsstellen im Port-/Application-Bereich
 
 Die genaue Paketlage darf waehrend der Umsetzung pragmatisch angepasst
