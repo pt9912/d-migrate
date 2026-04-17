@@ -78,27 +78,49 @@ Betroffene Klassen pro Dialekt:
 - `SchemaReader` (394/294/181 LOC)
 - `TableLister` (26/26/25 LOC)
 
-Diese nutzen bereits `JdbcMetadataSession(conn)` intern. Fuer MockK-Tests
-muessen sie einen `jdbcFactory`-Constructor-Parameter bekommen (gleicher
-Ansatz wie bei den Profiling-Adaptern).
+**MetadataQueries**: Ist ein `object` dessen Funktionen eine
+`JdbcMetadataSession` bereits als Parameter annehmen
+(`fun listTables(session: JdbcMetadataSession, ...)`). Das Testseam
+ist schon vorhanden — kein Constructor-Umbau noetig. MockK-Tests
+koennen direkt ein gemocktes `JdbcOperations` als Session-Parameter
+uebergeben (sofern der Parametertyp auf `JdbcOperations` geweitet
+wird) oder den bestehenden `JdbcMetadataSession`-Vertrag per
+In-Memory-SQLite testen.
 
-**Dateien**: 3 Quelldateien (Constructor-Anpassung) + 3 neue Testdateien
-pro Dialekt. PG und MySQL: je 6 Aenderungen. SQLite: nur Constructor-
-Anpassungen (bestehende In-Memory-Tests decken die Klassen bereits ab).
-Gesamt: 12 PG/MySQL-Dateien + 3 SQLite-Quelldateien = 15 Dateien.
+**SchemaReader und TableLister**: Erzeugen intern
+`JdbcMetadataSession(conn)`. Fuer MockK-Tests brauchen diese einen
+`jdbcFactory`-Constructor-Parameter (gleicher Ansatz wie bei den
+Profiling-Adaptern).
 
-### Paket 2: Kategorie-B-Klassen auf JdbcOperations umstellen
+**Dateien**: PG und MySQL: je 2 Quelldateien (SchemaReader,
+TableLister Constructor) + 3 neue Testdateien. MetadataQueries:
+ggf. Parametertyp weiten oder In-Memory-Test nutzen. SQLite:
+bestehende In-Memory-Tests decken die Klassen bereits ab.
+Gesamt: ~12 PG/MySQL-Dateien + ggf. 3 SQLite-Quelldateien.
+
+### Paket 2: Kategorie-B-Klassen — bestehende Tests erweitern oder JdbcOperations einfuehren
 
 Betroffene Klassen pro Dialekt:
 - `DataWriter` (547/525/544 LOC) — `execute` + `executeBatch`
 - `SchemaSync` (142/127/149 LOC) — `execute` + `queryList`
-- `TableImportSession` (~200 LOC) — `execute` + `executeBatch`
+- `TableImportSession` (195 LOC) — `execute` + `executeBatch`
 
-Diese verwenden noch raw `conn.prepareStatement(...)`. Die Umstellung
-nutzt die neuen `execute()` und `executeBatch()` Methoden von
-`JdbcOperations`.
+**Bereits vorhandene Unit-Tests**: Fuer Teile dieser Klassen existieren
+bereits direkte Unit-Tests ohne JDBC-Abstraktion:
+- `PostgresTableImportSessionTest` (PG)
+- `MysqlTableImportSessionTest` (MySQL)
+- `SqliteDataWriterTest`, `SqliteSchemaSyncTest`,
+  `SqliteTableImportSessionTest` (SQLite, in-memory)
 
-**Dateien**: 3 Quelldateien × 3 Dialekte = 9 Quelldateien + 9 Testdateien
+Vor einer breiten JdbcOperations-Umstellung muss geprueft werden, welche
+Coverage-Luecken durch gezielte Erweiterung dieser bestehenden Tests
+geschlossen werden koennen — ohne Produktions-Code-Umbau. Nur wenn
+einzelne Pfade nicht ohne JDBC-Abstraktion testbar sind, wird die
+Umstellung auf `JdbcOperations` fuer die betroffene Klasse durchgefuehrt.
+
+**Vorgehen**: Coverage-Report pro Klasse auswerten → fehlende Branches
+identifizieren → bestehende Tests erweitern → nur bei Bedarf auf
+JdbcOperations umstellen.
 
 ### Paket 3: AbstractJdbcDataReader
 
@@ -164,6 +186,12 @@ Nur noch 2 Klassen mit zusammen ~60 LOC ausgeschlossen (~5% des Moduls).
 ## 5. Verifikation
 
 - `docker build -t d-migrate:dev .` — alle Unit-Tests gruen, Kover 90%
-- `./scripts/test-integration-docker.sh` — Integrationstests gruen
-- Kein `hasProperty("integrationTests")` in build.gradle.kts
+  in PG- und MySQL-Driver-Modulen
+- `./scripts/test-integration-docker.sh` — Integrationstests gruen,
+  Root-`:koverVerify` 90% (alle Klassen inkl. JDBC)
+- Kein bedingter `minBound` (`if integrationTests 90 else 40/45`) mehr
+  in den Driver-Modulen — `minBound(90)` ist fest
+- `hasProperty("integrationTests")` in Root-`build.gradle.kts` bleibt
+  unveraendert (steuert Tag-Filtering und Heap-Konfiguration, nicht
+  Coverage-Grenzen)
 - Maximal 2 Ausschluesse pro Driver-Modul (DataReader + Driver)
