@@ -62,14 +62,19 @@ stabilen, nicht zeitabhängigen Metadaten sichtbar.
 
 ### 2.2 Quoting-Strategie
 
-**Default: Immer quoten** (`ddl.quote_identifiers: always` — Defensive Quoting)
+**Aktueller Vertrag: Immer quoten** (fest verdrahtetes Defensive Quoting)
 
 Begründung:
 - Konsistentes Verhalten über alle Dialekte
 - Keine Überraschungen bei reservierten Wörtern
 - Zukunftssicher (neue reservierte Wörter in DB-Updates)
 
-**Alternative: Nur reservierte Wörter quoten** (`ddl.quote_identifiers: reserved_only`)
+**Späterer Milestone: Nur reservierte Wörter quoten** (geplante Option `ddl.quote_identifiers: reserved_only`)
+
+Hinweis: Der aktuelle Implementierungsstand bietet **keine öffentliche
+Quoting-Konfigurationsoption**. Der Generator quotet derzeit immer.
+`reserved_only` ist nur als zukünftige Option dokumentiert und noch nicht im
+Generator, im Optionsmodell oder im CLI-/Config-Pfad verdrahtet.
 
 In diesem Modus werden Identifier nur gequotet, wenn:
 - Der Name ein reserviertes Wort des Zieldialekts ist (je Dialekt gepflegte Liste)

@@ -343,7 +343,6 @@ i18n:
 
 # ── DDL-Generierung ───────────────────────────
 ddl:
-  quote_identifiers: always          # always | reserved_only
   inline_foreign_keys: auto          # auto | always | never
   include_comments: true             # Header-Kommentar in DDL
   mysql:
