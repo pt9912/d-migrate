@@ -2,15 +2,15 @@
 -- Source: neutral schema v1.0.0 "Full Featured Schema"
 -- Target: mysql | Generated: 2026-04-05T17:28:51.369672745Z
 
--- [E052] Composite type 'address' is not supported in MySQL and was skipped.
+-- [E054] Composite type 'address' is not supported in MySQL and was skipped.
 -- Hint: Consider restructuring the data model to avoid composite types.
 -- TODO: Composite type `address` is not supported in MySQL
 
--- [E052] Sequence 'invoice_seq' is not supported in MySQL and was skipped.
+-- [E056] Sequence 'invoice_seq' is not supported in MySQL and was skipped.
 -- Hint: Use AUTO_INCREMENT columns instead of sequences.
 -- TODO: Sequence `invoice_seq` is not supported in MySQL
 
--- [E052] Sequence 'simple_seq' is not supported in MySQL and was skipped.
+-- [E056] Sequence 'simple_seq' is not supported in MySQL and was skipped.
 -- Hint: Use AUTO_INCREMENT columns instead of sequences.
 -- TODO: Sequence `simple_seq` is not supported in MySQL
 
@@ -49,26 +49,28 @@ ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Hint: InnoDB only supports BTREE indexes. The HASH index has been automatically converted.
 CREATE INDEX `idx_customer` ON `orders` USING BTREE (`customer_id`);
 
--- [E052] View 'active_orders' was written for 'postgresql' and must be manually rewritten for MySQL.
--- Hint: Rewrite the query using MySQL-compatible SQL syntax.
--- TODO: Rewrite view `active_orders` for MySQL (source dialect: postgresql)
+CREATE OR REPLACE VIEW `active_orders` AS
+SELECT * FROM orders WHERE status != 'delivered'
+;
 
--- [E052] View 'monthly_stats' was written for 'postgresql' and must be manually rewritten for MySQL.
--- Hint: Rewrite the query using MySQL-compatible SQL syntax.
--- TODO: Rewrite view `monthly_stats` for MySQL (source dialect: postgresql)
+-- [W103] Materialized views are not supported in MySQL. Created as a regular view instead.
+-- Hint: Consider using a table with a scheduled refresh procedure to emulate materialized views.
+CREATE OR REPLACE VIEW `monthly_stats` AS
+SELECT COUNT(*) FROM orders
+;
 
--- [E052] Function 'calc_total' was written for 'postgresql' and must be manually rewritten for MySQL.
+-- [E053] Function 'calc_total' was written for 'postgresql' and must be manually rewritten for MySQL.
 -- Hint: Rewrite the function body using MySQL-compatible syntax.
 -- TODO: Rewrite function `calc_total` for MySQL (source dialect: postgresql)
 
--- [E052] Procedure 'update_status' was written for 'postgresql' and must be manually rewritten for MySQL.
+-- [E053] Procedure 'update_status' was written for 'postgresql' and must be manually rewritten for MySQL.
 -- Hint: Rewrite the procedure body using MySQL-compatible syntax.
 -- TODO: Rewrite procedure `update_status` for MySQL (source dialect: postgresql)
 
--- [E052] Trigger 'trg_updated' was written for 'postgresql' and must be manually rewritten for MySQL.
+-- [E053] Trigger 'trg_updated' was written for 'postgresql' and must be manually rewritten for MySQL.
 -- Hint: Rewrite the trigger body using MySQL-compatible syntax.
 -- TODO: Rewrite trigger `trg_updated` for MySQL (source dialect: postgresql)
 
--- [E052] Trigger 'trg_insert' has no body and must be manually implemented.
+-- [E053] Trigger 'trg_insert' has no body and must be manually implemented.
 -- Hint: Provide a trigger body in the schema definition.
 -- TODO: Implement trigger `trg_insert`

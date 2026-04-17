@@ -10,9 +10,17 @@ class SchemaValidatorTest : FunSpec({
 
     val validator = SchemaValidator()
 
-    fun schema(tables: Map<String, TableDefinition> = emptyMap(),
-               customTypes: Map<String, CustomTypeDefinition> = emptyMap()) =
-        SchemaDefinition(name = "Test", version = "1.0", tables = tables, customTypes = customTypes)
+    fun schema(
+        tables: Map<String, TableDefinition> = emptyMap(),
+        customTypes: Map<String, CustomTypeDefinition> = emptyMap(),
+        views: Map<String, ViewDefinition> = emptyMap(),
+    ) = SchemaDefinition(
+        name = "Test",
+        version = "1.0",
+        tables = tables,
+        customTypes = customTypes,
+        views = views,
+    )
 
     fun table(columns: Map<String, ColumnDefinition>,
               primaryKey: List<String> = emptyList(),
@@ -496,6 +504,48 @@ class SchemaValidatorTest : FunSpec({
         )
         val result = validator.validate(s)
         result.errors.any { it.code == "E018" } shouldBe true
+    }
+
+    test("E020: declared view dependency references non-existent view") {
+        val s = schema(
+            views = mapOf(
+                "summary" to ViewDefinition(
+                    query = "SELECT * FROM base_view",
+                    dependencies = DependencyInfo(
+                        tables = listOf("orders"),
+                        views = listOf("base_view"),
+                    ),
+                    sourceDialect = "postgresql",
+                )
+            )
+        )
+
+        val result = validator.validate(s)
+
+        result.errors.any {
+            it.code == "E020" &&
+                it.objectPath == "views.summary.dependencies.views"
+        } shouldBe true
+    }
+
+    test("declared view dependency to existing view validates successfully") {
+        val s = schema(
+            views = mapOf(
+                "base_view" to ViewDefinition(
+                    query = "SELECT 1",
+                    sourceDialect = "postgresql",
+                ),
+                "summary" to ViewDefinition(
+                    query = "SELECT * FROM base_view",
+                    dependencies = DependencyInfo(views = listOf("base_view")),
+                    sourceDialect = "postgresql",
+                ),
+            )
+        )
+
+        val result = validator.validate(s)
+
+        result.errors.none { it.code == "E020" } shouldBe true
     }
 
     test("trigger referencing existing table validates successfully") {

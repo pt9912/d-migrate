@@ -239,8 +239,15 @@ pipeline:
   parallelism: auto                  # auto (= CPU-Kerne) oder Zahl
   checkpoint:
     enabled: true                    # Checkpoints erstellen
-    interval: 10000                  # Alle N Datensätze
-    directory: ".d-migrate/checkpoints"  # Checkpoint-Verzeichnis
+    # Row-basierter Trigger. Intern `CheckpointConfig.rowInterval`.
+    # LN-012-Default: 10 000.
+    interval: 10000
+    # Zeit-basierter Trigger. Intern `CheckpointConfig.maxInterval`.
+    # ISO-8601-Duration (z.B. `PT5M` = 5 Minuten). LN-012-Default: PT5M.
+    max_interval: PT5M
+    # Checkpoint-Verzeichnis. Prioritaet: CLI-Flag `--checkpoint-dir` >
+    # Config-Wert > Runtime-Default.
+    directory: ".d-migrate/checkpoints"
   retry:
     max_attempts: 3                  # Wiederholungsversuche
     initial_delay_ms: 1000           # Initialer Delay
@@ -332,7 +339,6 @@ i18n:
 
 # ── DDL-Generierung ───────────────────────────
 ddl:
-  quote_identifiers: always          # always | reserved_only
   inline_foreign_keys: auto          # auto | always | never
   include_comments: true             # Header-Kommentar in DDL
   mysql:

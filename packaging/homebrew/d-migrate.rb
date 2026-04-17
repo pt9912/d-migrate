@@ -3,16 +3,18 @@ class DMigrate < Formula
   homepage "https://github.com/pt9912/d-migrate"
   # Template aligned with the release archive layout; the actual tap formula
   # should be generated for pt9912/homebrew-d-migrate via homebrew-releaser.
-  version "0.5.5"
+  version "0.8.0"
   url "https://github.com/pt9912/d-migrate/releases/download/v#{version}/d-migrate-#{version}.zip"
-  sha256 "REPLACE_WITH_RELEASE_ZIP_SHA256"
+  sha256 "311bb65213efd40c259edb584f98380c0c6a75cd09f5f3d691f874da59d958cb"
   license "MIT"
 
   depends_on "openjdk@21"
 
   def install
-    release_dir = Dir["d-migrate-*"].fetch(0)
-    libexec.install Dir["#{release_dir}/*"]
+    # Homebrew strips the single top-level directory on unpack, so the
+    # archive's `d-migrate-X.Y.Z/bin` and `lib/` land directly in cwd.
+    # We install everything into libexec and put a launcher in bin/.
+    libexec.install Dir["*"]
     (bin/"d-migrate").write_env_script(
       libexec/"bin/d-migrate",
       Language::Java.overridable_java_home_env("21"),

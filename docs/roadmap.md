@@ -26,52 +26,52 @@ Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 
 ### Milestone 0.1.0 — Projekt-Grundgerüst ✅ (2026-04-05)
 
-| Bereich | Aufgabe                                                 | LF-Ref | Status |
-| ------- | ------------------------------------------------------- | ------ | ------ |
-| Build   | Gradle Multi-Module Setup (core, cli, formats)          | —      | ✅ |
-| Build   | CI/CD-Pipeline mit GitHub Actions (Build, Test, Kover)  | —      | ✅ |
-| Core    | Neutrales Schema-Modell (Kotlin Data Classes)           | LF-001 | ✅ |
-| Core    | YAML-Parser für Schema-Definitionen                     | LF-001 | ✅ |
-| Core    | Basis-Validierung (E001-E018, W001)                     | LF-002 | ✅ |
-| CLI     | Clikt-basiertes CLI-Grundgerüst                         | LF-012 | ✅ |
-| CLI     | `d-migrate schema validate` Kommando                    | LF-002 | ✅ |
-| Test    | Kotest Setup, 83 Tests, Kover Coverage >= 90%           | LN-043 | ✅ |
+| Bereich | Aufgabe                                                | LF-Ref | Status |
+| ------- | ------------------------------------------------------ | ------ | ------ |
+| Build   | Gradle Multi-Module Setup (core, cli, formats)         | —      | ✅      |
+| Build   | CI/CD-Pipeline mit GitHub Actions (Build, Test, Kover) | —      | ✅      |
+| Core    | Neutrales Schema-Modell (Kotlin Data Classes)          | LF-001 | ✅      |
+| Core    | YAML-Parser für Schema-Definitionen                    | LF-001 | ✅      |
+| Core    | Basis-Validierung (E001-E018, W001)                    | LF-002 | ✅      |
+| CLI     | Clikt-basiertes CLI-Grundgerüst                        | LF-012 | ✅      |
+| CLI     | `d-migrate schema validate` Kommando                   | LF-002 | ✅      |
+| Test    | Kotest Setup, 83 Tests, Kover Coverage >= 90%          | LN-043 | ✅      |
 
 **Ergebnis**: Schema-Dateien können geladen und validiert werden.
 
 ### Milestone 0.2.0 — DDL-Generierung ✅ (2026-04-06)
 
-| Bereich | Aufgabe                                                              | LF-Ref | Status |
-| ------- | -------------------------------------------------------------------- | ------ | ------ |
-| Core    | TypeMapper-Interface und Basislogik                                  | LF-003 | ✅ |
-| Core    | AbstractDdlGenerator mit topologischer Sortierung                    | LF-003 | ✅ |
-| Core    | ViewQueryTransformer (17 SQL-Funktionen)                             | LF-003 | ✅ |
-| Driver  | PostgreSQL-Treiber: DDL-Generierung                                  | LF-003 | ✅ |
-| Driver  | MySQL-Treiber: DDL-Generierung                                       | LF-003 | ✅ |
-| Driver  | SQLite-Treiber: DDL-Generierung                                      | LF-003 | ✅ |
-| CLI     | `d-migrate schema generate --target <db>`                            | LF-003 | ✅ |
-| CLI     | `--output`, `--generate-rollback`, `--report` Flags                  | LF-003 | ✅ |
-| CLI     | TransformationReportWriter (YAML-Sidecar)                            | LF-003 | ✅ |
-| Test    | TypeMapper-Tests (100% Coverage, 3 Dialekte)                         | LN-045 | ✅ |
-| Test    | DdlGenerator Unit-Tests (44+53+57 Tests)                             | LN-043 | ✅ |
-| Test    | Golden-Master-Tests (4 Schemas × 3 Dialekte = 12)                    | LN-043 | ✅ |
-| Test    | 374 Tests gesamt, Coverage >= 90%                                    | LN-045 | ✅ |
+| Bereich | Aufgabe                                             | LF-Ref | Status |
+| ------- | --------------------------------------------------- | ------ | ------ |
+| Core    | TypeMapper-Interface und Basislogik                 | LF-003 | ✅      |
+| Core    | AbstractDdlGenerator mit topologischer Sortierung   | LF-003 | ✅      |
+| Core    | ViewQueryTransformer (17 SQL-Funktionen)            | LF-003 | ✅      |
+| Driver  | PostgreSQL-Treiber: DDL-Generierung                 | LF-003 | ✅      |
+| Driver  | MySQL-Treiber: DDL-Generierung                      | LF-003 | ✅      |
+| Driver  | SQLite-Treiber: DDL-Generierung                     | LF-003 | ✅      |
+| CLI     | `d-migrate schema generate --target <db>`           | LF-003 | ✅      |
+| CLI     | `--output`, `--generate-rollback`, `--report` Flags | LF-003 | ✅      |
+| CLI     | TransformationReportWriter (YAML-Sidecar)           | LF-003 | ✅      |
+| Test    | TypeMapper-Tests (100% Coverage, 3 Dialekte)        | LN-045 | ✅      |
+| Test    | DdlGenerator Unit-Tests (44+53+57 Tests)            | LN-043 | ✅      |
+| Test    | Golden-Master-Tests (4 Schemas × 3 Dialekte = 12)   | LN-043 | ✅      |
+| Test    | 374 Tests gesamt, Coverage >= 90%                   | LN-045 | ✅      |
 
 **Ergebnis**: Aus YAML-Schemas wird datenbankspezifisches DDL generiert.
 
 ### Milestone 0.3.0 — Datenexport ✅ (2026-04-06)
 
-| Bereich | Aufgabe                                                              | LF-Ref | Status |
-| ------- | -------------------------------------------------------------------- | ------ | ------ |
-| Core    | Streaming-Pipeline (pull-basiert, chunk-weise)                       | LN-005 | ✅ |
-| Driver  | JDBC-basierter DataReader (ResultSet-Streaming, PG/MySQL/SQLite)     | LF-008 | ✅ |
-| Driver  | Connection-Management mit HikariCP + ConnectionUrlParser             | —      | ✅ |
-| Formats | JSON-Codec (DSL-JSON statt Jackson — Performance)                    | LF-009 | ✅ |
-| Formats | YAML-Codec (SnakeYAML Engine)                                        | LF-009 | ✅ |
-| Formats | CSV-Codec (uniVocity-parsers, mit Encoding/BOM/Delimiter)            | LF-009 | ✅ |
-| CLI     | `d-migrate data export` Kommando                                     | LF-008 | ✅ |
-| CLI     | `NamedConnectionResolver` (`.d-migrate.yaml`, `${ENV_VAR}`)          | —      | ✅ |
-| Test    | Export-Tests gegen Testcontainers (PostgreSQL 16, MySQL 8.0)         | LN-048 | ✅ |
+| Bereich | Aufgabe                                                          | LF-Ref | Status |
+| ------- | ---------------------------------------------------------------- | ------ | ------ |
+| Core    | Streaming-Pipeline (pull-basiert, chunk-weise)                   | LN-005 | ✅      |
+| Driver  | JDBC-basierter DataReader (ResultSet-Streaming, PG/MySQL/SQLite) | LF-008 | ✅      |
+| Driver  | Connection-Management mit HikariCP + ConnectionUrlParser         | —      | ✅      |
+| Formats | JSON-Codec (DSL-JSON statt Jackson — Performance)                | LF-009 | ✅      |
+| Formats | YAML-Codec (SnakeYAML Engine)                                    | LF-009 | ✅      |
+| Formats | CSV-Codec (uniVocity-parsers, mit Encoding/BOM/Delimiter)        | LF-009 | ✅      |
+| CLI     | `d-migrate data export` Kommando                                 | LF-008 | ✅      |
+| CLI     | `NamedConnectionResolver` (`.d-migrate.yaml`, `${ENV_VAR}`)      | —      | ✅      |
+| Test    | Export-Tests gegen Testcontainers (PostgreSQL 16, MySQL 8.0)     | LN-048 | ✅      |
 
 **Ergebnis**: Daten können aus PostgreSQL, MySQL und SQLite streamingbasiert
 in JSON, YAML oder CSV exportiert werden — chunk-weise, ohne die Tabelle in
@@ -81,21 +81,21 @@ den Speicher zu laden. CLI mit Named Connections, Roh-WHERE-Filter,
 
 ### Milestone 0.4.0 — Datenimport und inkrementelle Datenpfade ✅ (2026-04-12)
 
-| Bereich | Aufgabe                                                                                           | LF-Ref |
-| ------- | ------------------------------------------------------------------------------------------------- | ------ |
-| Core    | Transaktionale Import-Logik (Chunk-basiert)                                                       | LN-010 |
-| Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                          | LF-010 |
-| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                     | LF-010 |
-| Driver  | Dialektspezifisches Trigger-Handling beim Import                                                  | LF-010 |
-| Formats | Deserialisierung aus JSON/YAML/CSV (Streaming-Reader)                                             | LF-010 |
-| Core    | Validierung gegen Schema-Definition beim Import (Target-Schema autoritativ)                       | LF-010 |
-| Core    | Encoding-Unterstützung: BOM-Detection für UTF-8/UTF-16, alle anderen via `--encoding`-Flag        | LF-010 |
-| CLI     | `d-migrate data import` Kommando                                                                  | LF-010 |
-| Core    | Inkrementeller **Export** über explizite Marker-Spalte (`--since-column`, `--since`)              | LF-013 |
-| CLI     | `--incremental` Flag für `data export`; idempotenter Import via `--on-conflict update`            | LF-013 |
-| Test    | Round-Trip-Tests (Export → Import → Vergleich)                                                    | LN-043 |
-| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                         | LN-043 |
-| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → idempotenter Import → Vergleich)      | LN-043 |
+| Bereich | Aufgabe                                                                                      | LF-Ref |
+| ------- | -------------------------------------------------------------------------------------------- | ------ |
+| Core    | Transaktionale Import-Logik (Chunk-basiert)                                                  | LN-010 |
+| Driver  | JDBC-basierter DataWriter (Batch-Insert)                                                     | LF-010 |
+| Core    | Sequence-/Identity- und AUTO_INCREMENT-Konsistenz nach Import                                | LF-010 |
+| Driver  | Dialektspezifisches Trigger-Handling beim Import                                             | LF-010 |
+| Formats | Deserialisierung aus JSON/YAML/CSV (Streaming-Reader)                                        | LF-010 |
+| Core    | Validierung gegen Schema-Definition beim Import (Target-Schema autoritativ)                  | LF-010 |
+| Core    | Encoding-Unterstützung: BOM-Detection für UTF-8/UTF-16, alle anderen via `--encoding`-Flag   | LF-010 |
+| CLI     | `d-migrate data import` Kommando                                                             | LF-010 |
+| Core    | Inkrementeller **Export** über explizite Marker-Spalte (`--since-column`, `--since`)         | LF-013 |
+| CLI     | `--incremental` Flag für `data export`; idempotenter Import via `--on-conflict update`       | LF-013 |
+| Test    | Round-Trip-Tests (Export → Import → Vergleich)                                               | LN-043 |
+| Test    | Import-Tests für Sequence-Reseeding und Trigger-Verhalten                                    | LN-043 |
+| Test    | Inkrement-Round-Trip-Tests (initial export → delta export → idempotenter Import → Vergleich) | LN-043 |
 
 **Ergebnis**: Vollständiger Export/Import-Zyklus funktioniert. Inkrementell
 ist explizit zweigeteilt: Export bekommt funktionale `--since-column`-Filter,
@@ -118,16 +118,16 @@ implementation-plan-0.4.0.md §6.12.
 
 ### Milestone 0.5.0 — MVP-Release ✅ (2026-04-13)
 
-| Bereich | Aufgabe                                       | LF-Ref |
-| ------- | --------------------------------------------- | ------ |
-| Core    | Schema-Diff-Engine (Vergleich zweier Schemas, file-based MVP) | LF-015 |
+| Bereich | Aufgabe                                                         | LF-Ref |
+| ------- | --------------------------------------------------------------- | ------ |
+| Core    | Schema-Diff-Engine (Vergleich zweier Schemas, file-based MVP)   | LF-015 |
 | CLI     | `d-migrate schema compare` Kommando (Datei-zu-Datei, MVP-Slice) | LF-015 |
-| CLI     | Fortschrittsanzeige für lange Operationen     | LN-017 |
-| Docs    | Anwenderhandbuch (Basis)                      | —      |
-| Docs    | CLI-Referenz                                  | —      |
-| Build   | GitHub Releases (Fat JAR)                     | —      |
-| Build   | Homebrew-Formula (Basis)                      | —      |
-| QA      | Code-Coverage >= 80%                          | LN-045 |
+| CLI     | Fortschrittsanzeige für lange Operationen                       | LN-017 |
+| Docs    | Anwenderhandbuch (Basis)                                        | —      |
+| Docs    | CLI-Referenz                                                    | —      |
+| Build   | GitHub Releases (Fat JAR)                                       | —      |
+| Build   | Homebrew-Formula (Basis)                                        | —      |
+| QA      | Code-Coverage >= 80%                                            | LN-045 |
 
 **Ergebnis**: Öffentliches MVP-Release. Early Adopters können Schema-Verwaltung
 und Daten-Export/Import nutzen. LF-015 ist in 0.5.0 bewusst nur teilweise
@@ -138,19 +138,19 @@ Detaillierter Plan: [implementation-plan-0.5.0.md](./implementation-plan-0.5.0.m
 
 ### Milestone 0.5.5 — Erweitertes Typsystem ✅ (2026-04-13)
 
-| Bereich | Aufgabe                                                                             | LF-Ref |
-| ------- | ----------------------------------------------------------------------------------- | ------ |
-| Core    | Neutraler Typ `geometry` mit `geometry_type` und `srid`                             | LF-003 |
-| Core    | Spatial-Profil als Generator-Option (`postgis`, `native`, `spatialite`, `none`)     | LF-003 |
-| Core    | Validierungsregeln und Hinweis-Codes `E120`, `E121`, `W120`, `E052`                 | LF-002 |
-| Driver  | PostgreSQL/PostGIS: `geometry(<type>, <srid>)`-Mapping                              | LF-003 |
-| Driver  | MySQL: native Spatial Types (`POINT`, `POLYGON`, `MULTIPOLYGON`, ...)               | LF-003 |
-| Driver  | SQLite/SpatiaLite: `AddGeometryColumn(...)`-Strategie                               | LF-003 |
-| Core    | Erweiterte Typen im neutralen Modell: JSON, Arrays, Binary, UUID                    | LF-001 |
-| CLI     | `--spatial-profile` Option für `schema generate`                                    | LF-003 |
-| Test    | Golden-Master-Tests: `spatial.{postgresql,mysql,sqlite}.sql`                        | LN-043 |
-| Test    | Negativtests für ungültige `geometry_type`/`srid` und Profil-Mismatches             | LN-043 |
-| Docs    | CR `docs/change-request-spatial-types.md` in den Status _Approved_ überführen       | —      |
+| Bereich | Aufgabe                                                                              | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------ | ------ |
+| Core    | Neutraler Typ `geometry` mit `geometry_type` und `srid`                              | LF-003 |
+| Core    | Spatial-Profil als Generator-Option (`postgis`, `native`, `spatialite`, `none`)      | LF-003 |
+| Core    | Validierungsregeln und Hinweis-Codes `E120`, `E121`, `W120`, `E052`                  | LF-002 |
+| Driver  | PostgreSQL/PostGIS: `geometry(<type>, <srid>)`-Mapping                               | LF-003 |
+| Driver  | MySQL: native Spatial Types (`POINT`, `POLYGON`, `MULTIPOLYGON`, ...)                | LF-003 |
+| Driver  | SQLite/SpatiaLite: `AddGeometryColumn(...)`-Strategie                                | LF-003 |
+| Core    | Erweiterte Typen im neutralen Modell: JSON, Arrays, Binary, UUID                     | LF-001 |
+| CLI     | `--spatial-profile` Option für `schema generate`                                     | LF-003 |
+| Test    | Golden-Master-Tests: `spatial.{postgresql,mysql,sqlite}.sql`                         | LN-043 |
+| Test    | Negativtests für ungültige `geometry_type`/`srid` und Profil-Mismatches              | LN-043 |
+| Docs    | CR `docs/change-request-spatial-types.md` in den Status _Approved_ überführen        | —      |
 | Docs    | `docs/neutral-model-spec.md` und `docs/ddl-generation-rules.md` um Spatial erweitern | —      |
 
 **Ergebnis**: Das neutrale Typsystem ist vor Reverse-Engineering (0.6.0) vollständig. Spatial-Daten können ohne Datenverlust zwischen PostgreSQL/PostGIS, MySQL und SQLite/SpatiaLite transportiert werden; JSON/Arrays/Binary/UUID sind modelliert und getestet.
@@ -165,20 +165,20 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 ### Milestone 0.6.0 — Reverse-Engineering ✅ (2026-04-14)
 
-| Bereich | Aufgabe                                                         | LF-Ref |
-| ------- | --------------------------------------------------------------- | ------ |
-| Driver  | SchemaReader: Tabellen, Spalten, Constraints aus DB extrahieren | LF-004 |
-| Driver  | SchemaReader: Indizes, Sequences, Custom Types                  | LF-004 |
-| Driver  | SchemaReader: Stored Procedures, Functions, Triggers, Views     | LF-004 |
-| Driver  | PostgreSQL-spezifisch: Extensions, JSONB, Array-Typen           | LF-004 |
-| Driver  | MySQL-spezifisch: Engine, AUTO_INCREMENT, SET-Typen             | LF-004 |
-| Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                | LF-004 |
-| CLI     | `d-migrate schema reverse --source <db-url>`                    | LF-004 |
+| Bereich | Aufgabe                                                                             | LF-Ref |
+| ------- | ----------------------------------------------------------------------------------- | ------ |
+| Driver  | SchemaReader: Tabellen, Spalten, Constraints aus DB extrahieren                     | LF-004 |
+| Driver  | SchemaReader: Indizes, Sequences, Custom Types                                      | LF-004 |
+| Driver  | SchemaReader: Stored Procedures, Functions, Triggers, Views                         | LF-004 |
+| Driver  | PostgreSQL-spezifisch: Extensions, JSONB, Array-Typen                               | LF-004 |
+| Driver  | MySQL-spezifisch: Engine, AUTO_INCREMENT, SET-Typen                                 | LF-004 |
+| Driver  | SQLite-spezifisch: WITHOUT ROWID, Virtual Tables                                    | LF-004 |
+| CLI     | `d-migrate schema reverse --source <db-url>`                                        | LF-004 |
 | CLI     | `schema compare` gegen Umgebungen/DBs auf Basis von `SchemaReader` vervollständigen | LF-015 |
-| Core    | `StreamingTransfer`-Orchestrator: DB-zu-DB-Streaming ohne Zwischenformat | LF-025 |
-| CLI     | `d-migrate data transfer --source <url> --target <url>` Kommando | LF-025 |
-| Docs    | Beispiel-Projekte (E-Commerce-Schema)                           | —      |
-| Test    | Reverse-Engineering gegen komplexe Test-Schemas                 | 8.4    |
+| Core    | `StreamingTransfer`-Orchestrator: DB-zu-DB-Streaming ohne Zwischenformat            | LF-025 |
+| CLI     | `d-migrate data transfer --source <url> --target <url>` Kommando                    | LF-025 |
+| Docs    | Beispiel-Projekte (E-Commerce-Schema)                                               | —      |
+| Test    | Reverse-Engineering gegen komplexe Test-Schemas                                     | 8.4    |
 
 **Ergebnis**: Bestehende Datenbanken können in das neutrale Format überführt
 werden. Damit wird auch LF-015 vervollständigt: Vergleiche sind dann nicht nur
@@ -194,30 +194,30 @@ hinzu.
 
 ### Milestone 0.7.0 — Tool-Integrationen ✅ (2026-04-15)
 
-| Bereich     | Aufgabe                                                   | LF-Ref | Status |
-| ----------- | --------------------------------------------------------- | ------ | ------ |
-| Core        | Phase A: DDL-Header-Determinismus, Adapter-Grundlagen     | LF-011 | ✅ |
-| Core        | Phase B: Migrations-Bundle, Identitaet, Exportvertrag     | LF-011 | ✅ |
-| Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex)   | LF-011 | ✅ |
-| CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export            | LF-011 | ✅ |
-| Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte    | LF-011 | ✅ |
-| Docs        | Phase F: Release-Dokumentation und Smoke-Tests            | LF-011 | ✅ |
-| Core        | Migrations-Rollback-Generierung                           | LF-014 | ✅ |
-| Test        | Generierte Migrations-Skripte ausführen und validieren    | 8.6    | ✅ |
+| Bereich     | Aufgabe                                                 | LF-Ref | Status |
+| ----------- | ------------------------------------------------------- | ------ | ------ |
+| Core        | Phase A: DDL-Header-Determinismus, Adapter-Grundlagen   | LF-011 | ✅      |
+| Core        | Phase B: Migrations-Bundle, Identitaet, Exportvertrag   | LF-011 | ✅      |
+| Integration | Phase C: Tool-Adapter (Flyway, Liquibase, Django, Knex) | LF-011 | ✅      |
+| CLI         | Phase D: CLI- und Runner-Pfad fuer Tool-Export          | LF-011 | ✅      |
+| Test        | Phase E: Runtime-Validierung gegen echte Tool-Projekte  | LF-011 | ✅      |
+| Docs        | Phase F: Release-Dokumentation und Smoke-Tests          | LF-011 | ✅      |
+| Core        | Migrations-Rollback-Generierung                         | LF-014 | ✅      |
+| Test        | Generierte Migrations-Skripte ausführen und validieren  | 8.6    | ✅      |
 
 **Ergebnis**: d-migrate integriert sich in bestehende Migrations-Toolchains.
 
 ### Milestone 0.7.5 — Daten-Profiling ✅ (2026-04-15)
 
-| Bereich   | Aufgabe                                                                        | LF-Ref | Status |
-| --------- | ------------------------------------------------------------------------------ | ------ | ------ |
-| Profiling | Phase A: Modulgeruest und Scope                                                | —      | ✅ |
-| Profiling | Phase B: Domaenenmodell, Typen und Rule-Engine                                 | —      | ✅ |
-| Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                         | LF-004 | ✅ |
-| Profiling | Phase D: Services und Runner                                                   | —      | ✅ |
-| CLI       | Phase E: `d-migrate data profile` Kommando                                     | —      | ✅ |
-| Docs      | Phase F: Doku, Smokes und Release-Pfade                                        | —      | ✅ |
-| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E        | LN-043 | ✅ |
+| Bereich   | Aufgabe                                                                 | LF-Ref | Status |
+| --------- | ----------------------------------------------------------------------- | ------ | ------ |
+| Profiling | Phase A: Modulgeruest und Scope                                         | —      | ✅      |
+| Profiling | Phase B: Domaenenmodell, Typen und Rule-Engine                          | —      | ✅      |
+| Profiling | Phase C: Port-Vertraege und dialektspezifische Adapter                  | LF-004 | ✅      |
+| Profiling | Phase D: Services und Runner                                            | —      | ✅      |
+| CLI       | Phase E: `d-migrate data profile` Kommando                              | —      | ✅      |
+| Docs      | Phase F: Doku, Smokes und Release-Pfade                                 | —      | ✅      |
+| Test      | Unit-Tests (Rules, Services), Integration (SQLite, Testcontainers), E2E | LN-043 | ✅      |
 
 **Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
 Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
@@ -231,15 +231,15 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 
 ### Milestone 0.8.0 — Internationalisierung ✅ (2026-04-16)
 
-| Bereich | Aufgabe                                                          | LF-Ref | Status |
-| ------- | ---------------------------------------------------------------- | ------ | ------ |
-| Docs    | Phase A: Spezifikationsbereinigung und Scope-Fixierung           | —      | ✅ |
-| i18n    | Phase B: I18n-Runtime und Config-Resolution                      | LF-006 | ✅ |
-| i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben            | LN-023 | ✅ |
-| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung              | LF-005 | ✅ |
-| Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy)     | LF-007 | ✅ |
-| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                        | LF-010 | ✅ |
-| Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)      | 8.5    | ✅ |
+| Bereich | Aufgabe                                                      | LF-Ref | Status |
+| ------- | ------------------------------------------------------------ | ------ | ------ |
+| Docs    | Phase A: Spezifikationsbereinigung und Scope-Fixierung       | —      | ✅      |
+| i18n    | Phase B: I18n-Runtime und Config-Resolution                  | LF-006 | ✅      |
+| i18n    | Phase C: ResourceBundles und lokalisierte CLI-Ausgaben       | LN-023 | ✅      |
+| i18n    | Phase D: ICU4J-Integration für Unicode-Verarbeitung          | LF-005 | ✅      |
+| Core    | Phase E: Zeitzonen- und Format-Policy (TemporalFormatPolicy) | LF-007 | ✅      |
+| Formats | Phase F: CSV-Encoding-/BOM-Konsolidierung                    | LF-010 | ✅      |
+| Test    | Phase G: Tests und Dokumentation (inkl. Unicode-Integrität)  | 8.5    | ✅      |
 
 **Ergebnis**: Vollständige Unicode-/i18n-Unterstützung und konsistentes Zeitzonen-Handling. (Die erweiterten neutralen Typen JSON/Arrays/Binary/UUID sowie Spatial wurden in [0.5.5](#milestone-055--erweitertes-typsystem) vorgezogen.)
 
@@ -249,35 +249,111 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 > Dokumentation inklusive Mindest-Testmatrix, `--lang`-Grenze 0.8.0/0.9.0
 > und DE-Bundle-Fallback-Nachweis. Milestone 0.8.0 damit abgeschlossen.
 
-### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI
+### Milestone 0.9.0 — Beta: Resilienz und vollständige i18n-CLI (abgeschlossen)
 
-| Bereich | Aufgabe                                                                | LF-Ref |
-| ------- | ---------------------------------------------------------------------- | ------ |
-| Core    | Checkpoint/Resume für langläufige Operationen                          | LN-012 |
-| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu)  | LF-006 |
+| Bereich | Aufgabe                                                               | LF-Ref | Status |
+| ------- | --------------------------------------------------------------------- | ------ | ------ |
+| Core    | Checkpoint/Resume für langläufige Operationen                         | LN-012 | ✅     |
+| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu) | LF-006 | ✅     |
 
-**Ergebnis**: Langläufige Export-/Import-Operationen sind unterbrechbar und
-können wieder aufgesetzt werden; die in 0.8.0 eingeführte i18n-Infrastruktur
-ist über `--lang` vom Nutzer steuerbar. Damit ist die Kern-Funktionalität
-für Beta-Tester abgeschlossen.
+**Zielbild nach Abschluss von 0.9.0**: Langläufige Export-/Import-
+Operationen sind unterbrechbar und können wieder aufgesetzt werden; die in
+0.8.0 eingeführte i18n-Infrastruktur ist über `--lang` vom Nutzer steuerbar.
+Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
+
+> **Ist-Stand (2026-04-16)**: Phasen A und B sind abgeschlossen —
+> sichtbarer CLI-Vertrag (`--lang` aktiv, `--resume`,
+> `--checkpoint-dir`, stdout/stdin-Preflight mit Exit 2,
+> `docs/ImpPlan-0.9.0-A.md` §4.5) plus technischer Unterbau:
+> `CheckpointStore`-Port, versioniertes Manifest, dateibasierter Adapter
+> mit atomarem Schreibpfad, `PipelineConfig` um `CheckpointConfig`
+> erweitert, Merge-Helper, `operationId`-Feld in Progress-/Result-Typen
+> und in der stderr-Summary (`docs/ImpPlan-0.9.0-B.md` §2.2). Die
+> eigentliche Streaming-Wiederaufnahme (Runner-Verdrahtung,
+> Manifest-Fortschreibung, Wiederaufnahme aus vorhandenem Manifest,
+> Executor-Seam fuer `operationId`, Renderer-Anzeige) wurde in Phase C/D
+> implementiert. `--resume` ist seit 0.9.0 fuer dateibasierte Export-
+> und Import-Laeufe produktiv.
+
+> Hinweis: `--resume` ist in 0.9.0 bewusst **dateibasiert** zugeschnitten —
+> stdout-Export und stdin-Import sind nicht Teil des Resume-Vertrags und
+> enden mit Exit 2, wenn `--resume` kombiniert wird
+> (`docs/ImpPlan-0.9.0-A.md` §4.4). `data transfer` erhaelt in 0.9.0
+> kein Resume; ein entsprechender Scope wird spaeter bewertet.
 
 > Hinweis: LF-013 (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
 > — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.5** ausgelagert,
 > damit dieser Milestone klein und fokussiert bleibt.
 
+### Milestone 0.9.1 — Beta: Library-Refactor und Integrationsschnitt
+
+| Bereich  | Aufgabe                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | LF-Ref |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Security | **Sicherheits-Härtung der Profiling-/Introspection-Adapter + Raw-SQL-Grenzen (`docs/quality.md`)** — zentrale Identifier-Quoting-Utility pro Dialekt, PreparedStatement für Metadaten-Literals, `--filter` / `constraint.expression` als dokumentierter Trusted-Input, Security-Tests mit böswilligen Bezeichnern                                                                                                                                                                                                                                                                                       | —      |
+| Refactor | **Zerlegung der großen Orchestrierungs- und Dialekt-Klassen** — `DataImport`/`DataExportRunner`, `StreamingImporter`, `SchemaComparator` in kleinere Dienste; DDL-Generatoren pro Objektart schneiden; `-- TODO: …`-Platzhalter durch strukturierte `ManualActionRequired`-Einträge ersetzen (`generatedStatements` vs. `manualActionsRequired`); dabei einen internen Phasen-/Objektschnitt vorbereiten, der einen späteren optionalen DDL-Output-Split (`pre-data`/`post-data`) sauber tragen kann, ohne den bestehenden `schema generate`-Default zu brechen (siehe `docs/ddl-output-split-plan.md`) | —      |
+| Core     | Read-/Write-Schnitt in `hexagon:ports` für externe Consumer schärfen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | —      |
+| Driver   | Profiling-Adapter aus JDBC-Treiber-Kernmodulen extrahieren                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | —      |
+| Core     | FK-/Topo-Sort-Utility als wiederverwendbaren Helfer nach `hexagon:core`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | —      |
+| Arch     | Integrationsgrenzen für externe Library-Consumer schärfen                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | —      |
+
+**Ergebnis**: `d-migrate` ist intern so refaktoriert, dass die Kernmodule
+sauberer als Libraries konsumierbar sind, ohne schon einen öffentlichen
+Publish-Vertrag zu versprechen. Die Sicherheits-Findings aus
+`docs/quality.md` (Injection-Fläche in Profiling/Introspection,
+offengehaltene Raw-SQL-Pfade) sind abgearbeitet, und die wartungs-
+kritischen Orchestrierungs-/Dialekt-Hotspots (`Data*Runner`,
+`StreamingImporter`, `SchemaComparator`, DDL-Generatoren mit
+`-- TODO:`-Platzhaltern) sind zerlegt, bevor 1.0.0 einen Publish-
+Vertrag festschreibt.
+
+> Hinweis: Dieser Milestone bereitet wiederverwendbare Libraries für externe
+> Consumer wie `d-browser` vor. Ein öffentlicher Publish-Vertrag inklusive
+> Maven-Central-Portal-Workflow bleibt bewusst **1.0.0** vorbehalten, damit
+> Modulgrenzen, Koordinaten und API-Flächen erst nach dem Refactor
+> stabilisiert werden.
+
+### Milestone 0.9.2 — Beta: DDL-Phasen und importfreundliche Schema-Artefakte
+
+| Bereich | Aufgabe                                                                                                                     | LF-Ref     |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single                                                                | pre-post`) | LF-003 |
+| Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data`                                                                  | —          |
+| Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten)                    | —          |
+| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld                                   | —          |
+| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —          |
+| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |
+| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |
+
+**Ergebnis**: `schema generate` kann optional importfreundliche
+Schema-Artefakte als `pre-data` und `post-data` erzeugen, ohne den bisherigen
+Default-Output zu brechen. Damit erhalten vor allem MySQL- und SQLite-
+Workflows einen sauberen Weg, Trigger erst nach einem Datenimport zu
+aktivieren. Details und offener Implementierungsvertrag: siehe
+`docs/ddl-output-split-plan.md`.
+
+> Hinweis: Dieser Milestone baut fachlich auf dem in **0.9.1** vorbereiteten
+> internen Phasen-/Objektschnitt auf, ist aber bewusst als separater
+> Nutzer-Feature-Milestone geschnitten. So bleiben Library-Refactor und
+> sichtbarer CLI-/Output-Vertrag getrennt planbar.
+
 ### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
 
-| Bereich | Aufgabe                                          | LF-Ref |
-| ------- | ------------------------------------------------ | ------ |
-| Docs    | Vollständiges Anwenderhandbuch                   | —      |
-| Docs    | Administrationshandbuch                          | —      |
-| Docs    | Migrations-Leitfaden                             | —      |
-| Docs    | API-Dokumentation                                | —      |
-| QA      | Performance-Benchmarks dokumentiert              | —      |
-| QA      | Pilotanwender-Tests (mindestens 5 Tester)        | 9.2    |
+| Bereich | Aufgabe                                   | LF-Ref |
+| ------- | ----------------------------------------- | ------ |
+| Docs    | Vollständiges Anwenderhandbuch            | —      |
+| Docs    | Administrationshandbuch                   | —      |
+| Docs    | Migrations-Leitfaden                      | —      |
+| Docs    | API-Dokumentation                         | —      |
+| QA      | Performance-Benchmarks dokumentiert       | —      |
+| QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
+
+> Hinweis: Eine kuratierte Liste geeigneter Beispiel- und Testdatenbanken fuer
+> Pilot-Validierung, Resume-/Streaming-Proben und Performance-nahe Laeufe
+> steht in
+> [`test-database-candidates.md`](./test-database-candidates.md).
 
 > **Warum ein eigener Milestone für Docs und QA?** Dokumentations- und
 > Pilot-Tasks haben eine deutlich andere Cadence als Code-Features (sie
@@ -308,20 +384,21 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ### Milestone 1.0.0 — Stable Release
 
-| Bereich   | Aufgabe                                           | LF-Ref |
-| --------- | ------------------------------------------------- | ------ |
-| Build     | GraalVM Native Image (Linux, macOS, Windows)      | —      |
-| Build     | Docker Image auf Docker Hub                       | —      |
-| Build     | SDKMAN-Distribution                               | —      |
-| Security  | Externer Security-Audit                           | —      |
-| QA        | 1 Mio. Datensätze Export/Import ohne Datenverlust | 8.1    |
-| QA        | DDL-Generierung 1.000 Tabellen < 30 Sekunden      | 8.2    |
-| QA        | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite  | 8.6    |
-| Docs      | Best Practices Guide                              | —      |
-| Docs      | Troubleshooting-Guide                             | —      |
-| Community | Contributor Guide                                 | —      |
-| Community | Code of Conduct                                   | —      |
-| Community | Issue- und PR-Templates                           | —      |
+| Bereich   | Aufgabe                                                             | LF-Ref |
+| --------- | ------------------------------------------------------------------- | ------ |
+| Build     | GraalVM Native Image (Linux, macOS, Windows)                        | —      |
+| Build     | Docker Image auf Docker Hub                                         | —      |
+| Build     | SDKMAN-Distribution                                                 | —      |
+| Build     | Maven-Central-Portal Publish-Workflow für stabile Library-Artefakte | —      |
+| Security  | Externer Security-Audit                                             | —      |
+| QA        | 1 Mio. Datensätze Export/Import ohne Datenverlust                   | 8.1    |
+| QA        | DDL-Generierung 1.000 Tabellen < 30 Sekunden                        | 8.2    |
+| QA        | Cross-DB Round-Trip: PostgreSQL → MySQL → SQLite                    | 8.6    |
+| Docs      | Best Practices Guide                                                | —      |
+| Docs      | Troubleshooting-Guide                                               | —      |
+| Community | Contributor Guide                                                   | —      |
+| Community | Code of Conduct                                                     | —      |
+| Community | Issue- und PR-Templates                                             | —      |
 
 **Ergebnis**: Stabile Version 1.0.0 — produktionsreif, performant, sicher.
 
@@ -333,23 +410,23 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 ### Milestone 1.1.0 — KI-Integration
 
-| Bereich | Aufgabe                                         | LF-Ref         |
-| ------- | ----------------------------------------------- | -------------- |
-| AI      | AiProvider-Interface und Plugin-System          | LF-017, LN-041 |
-| AI      | OllamaProvider (lokale Modelle)                 | LF-017         |
-| AI      | OpenAiProvider (GPT-4)                          | LF-017         |
-| AI      | AnthropicProvider (Claude)                      | LF-017         |
-| AI      | XaiProvider (Grok), GoogleProvider (Gemini)     | LF-017         |
-| AI      | RuleBasedProvider (Fallback ohne KI)            | LN-035         |
-| AI      | Stored Procedure → Markdown-Zwischenformat      | LF-017         |
-| AI      | Markdown-Zwischenformat → Ziel-DB-Code          | LF-017         |
-| AI      | SemanticAnalysisPort und strukturierte Profiling-Contracts fuer semantische Analyse | —              |
+| Bereich | Aufgabe                                                                                                                   | LF-Ref         |
+| ------- | ------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| AI      | AiProvider-Interface und Plugin-System                                                                                    | LF-017, LN-041 |
+| AI      | OllamaProvider (lokale Modelle)                                                                                           | LF-017         |
+| AI      | OpenAiProvider (GPT-4)                                                                                                    | LF-017         |
+| AI      | AnthropicProvider (Claude)                                                                                                | LF-017         |
+| AI      | XaiProvider (Grok), GoogleProvider (Gemini)                                                                               | LF-017         |
+| AI      | RuleBasedProvider (Fallback ohne KI)                                                                                      | LN-035         |
+| AI      | Stored Procedure → Markdown-Zwischenformat                                                                                | LF-017         |
+| AI      | Markdown-Zwischenformat → Ziel-DB-Code                                                                                    | LF-017         |
+| AI      | SemanticAnalysisPort und strukturierte Profiling-Contracts fuer semantische Analyse                                       | —              |
 | AI      | Semantische Profiling-Vorschlaege fuer Mapping, Transformation und Normalisierung auf Basis verdichteter Profil-Summaries | —              |
-| AI      | Datenschutz: prefer_local, allow_external Flags | LN-032, LN-033 |
-| AI      | Caching häufiger Transformationen               | LN-035         |
-| CLI     | `d-migrate transform procedure` Kommando        | LF-017         |
-| CLI     | `d-migrate generate procedure` Kommando         | LF-017         |
-| QA      | Semantische Äquivalenzprüfung (Testausführung)  | LN-034         |
+| AI      | Datenschutz: prefer_local, allow_external Flags                                                                           | LN-032, LN-033 |
+| AI      | Caching häufiger Transformationen                                                                                         | LN-035         |
+| CLI     | `d-migrate transform procedure` Kommando                                                                                  | LF-017         |
+| CLI     | `d-migrate generate procedure` Kommando                                                                                   | LF-017         |
+| QA      | Semantische Äquivalenzprüfung (Testausführung)                                                                            | LN-034         |
 
 **Ergebnis**: KI-gestützte Migration von Stored Procedures zwischen Datenbanken.
 Zusätzlich wird die gemeinsame KI-Provider-Infrastruktur für opt-in
@@ -456,6 +533,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.18
-**Stand**: 2026-04-16
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen
+**Version**: 3.20
+**Stand**: 2026-04-17
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0 und 0.9.0 abgeschlossen; Milestone 0.9.1 geplant

@@ -9,6 +9,7 @@ abstract class AbstractDdlGenerator(
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
+        val blockedTables = mutableSetOf<String>()
 
         statements += generateHeader(schema)
         statements += generateCustomTypes(schema.customTypes)
@@ -17,45 +18,33 @@ abstract class AbstractDdlGenerator(
         val (sorted, circularEdges) = topologicalSort(schema.tables)
         val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
         for ((name, table) in sorted) {
-            if (shouldBlockTable(name, table, options)) {
-                skipped += SkippedObject(
-                    type = "table", name = name,
-                    reason = "Table contains geometry columns but spatial profile is '${options.spatialProfile.cliName}'",
-                    code = "E052",
-                    hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
-                )
-                statements += DdlStatement("", notes = listOf(TransformationNote(
-                    type = NoteType.ACTION_REQUIRED, code = "E052",
-                    objectName = name,
-                    message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
-                    hint = "Use --spatial-profile to enable spatial DDL generation",
-                )))
+            val spatialBlockNote = spatialTableBlockNote(name, table, options)
+            if (spatialBlockNote != null) {
+                registerBlockedTable(name, spatialBlockNote, blockedTables, skipped)
+                statements += DdlStatement("", notes = listOf(spatialBlockNote))
                 continue
             }
             val tableStatements = generateTable(name, table, schema, deferredFks, options)
-            // Detect if generateTable blocked the table via E052 (e.g. SpatiaLite metadata)
-            val tableBlocked = tableStatements.any { stmt ->
-                stmt.sql.isBlank() && stmt.notes.any { it.code == "E052" }
-            }
-            if (tableBlocked) {
-                val blockNote = tableStatements.flatMap { it.notes }.first { it.code == "E052" }
-                skipped += SkippedObject(
-                    type = "table", name = name, reason = blockNote.message,
-                    code = "E052", hint = blockNote.hint,
-                )
+            // Detect if generateTable blocked the table (e.g. SpatiaLite metadata).
+            val blockNote = tableStatements.asSequence()
+                .flatMap { it.notes.asSequence() }
+                .firstOrNull { it.blocksTable }
+            if (blockNote != null) {
+                registerBlockedTable(name, blockNote, blockedTables, skipped)
             }
             statements += tableStatements
         }
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
-            // Also skip indices for tables blocked by generateTable (e.g. SpatiaLite metadata)
-            val wasBlocked = skipped.any { it.type == "table" && it.name == name && it.code == "E052" }
-            if (wasBlocked) continue
+            // Also skip indices for tables blocked by generateTable.
+            if (name in blockedTables) continue
             statements += generateIndices(name, table)
         }
         statements += handleCircularReferences(circularEdges, skipped)
 
-        statements += generateViews(schema.views, skipped)
+        val sortedViews = sortViewsByDependencies(schema.views)
+        statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
+        statements += generateViews(sortedViews.sorted, skipped)
         statements += generateFunctions(schema.functions, skipped)
         statements += generateProcedures(schema.procedures, skipped)
         statements += generateTriggers(schema.triggers, schema.tables, skipped)
@@ -90,14 +79,46 @@ abstract class AbstractDdlGenerator(
     protected open fun shouldBlockTable(name: String, table: TableDefinition, options: DdlGenerationOptions): Boolean =
         hasGeometryColumns(table) && !canGenerateSpatial(options.spatialProfile)
 
+    protected open fun spatialTableBlockNote(
+        name: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): TransformationNote? {
+        if (!shouldBlockTable(name, table, options)) return null
+        return TransformationNote(
+            type = NoteType.ACTION_REQUIRED,
+            code = "E052",
+            objectName = name,
+            message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
+            hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
+            blocksTable = true,
+        )
+    }
+
     protected open fun canGenerateSpatial(profile: SpatialProfile): Boolean = when (profile) {
         SpatialProfile.POSTGIS, SpatialProfile.NATIVE, SpatialProfile.SPATIALITE -> true
         SpatialProfile.NONE -> false
     }
 
+    private fun registerBlockedTable(
+        name: String,
+        blockNote: TransformationNote,
+        blockedTables: MutableSet<String>,
+        skipped: MutableList<SkippedObject>,
+    ) {
+        blockedTables += name
+        skipped += SkippedObject(
+            type = "table",
+            name = name,
+            reason = blockNote.message,
+            code = blockNote.code,
+            hint = blockNote.hint,
+        )
+    }
+
     // ── Shared logic ────────────────────────────
 
-    protected open fun getVersion(): String = "0.8.0"
+    protected open fun getVersion(): String = "0.9.0"
 
     protected fun generateHeader(schema: SchemaDefinition): List<DdlStatement> {
         val header = buildString {
@@ -196,6 +217,11 @@ abstract class AbstractDdlGenerator(
         val circularEdges: List<CircularFkEdge>
     )
 
+    data class ViewSortResult(
+        val sorted: Map<String, ViewDefinition>,
+        val notes: List<TransformationNote> = emptyList(),
+    )
+
     data class CircularFkEdge(
         val fromTable: String,
         val fromColumn: String,
@@ -263,5 +289,76 @@ abstract class AbstractDdlGenerator(
             sorted = sorted.map { it to tables[it]!! },
             circularEdges = circularEdges
         )
+    }
+
+    protected fun sortViewsByDependencies(views: Map<String, ViewDefinition>): ViewSortResult {
+        if (views.isEmpty()) return ViewSortResult(views)
+
+        val viewNames = views.keys
+        val originalOrder = views.keys.toList()
+        val deps = views.mapValuesTo(linkedMapOf()) { (name, view) ->
+            (
+                declaredViewDependencies(name, view, viewNames) +
+                    inferViewDependenciesFromQuery(name, view.query, viewNames)
+                ).toMutableSet()
+        }
+        val inDegree = deps.mapValuesTo(mutableMapOf()) { (_, depSet) -> depSet.size }
+        val queue = ArrayDeque(originalOrder.filter { inDegree[it] == 0 })
+        val sorted = mutableListOf<String>()
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            sorted += current
+            for ((name, depSet) in deps) {
+                if (depSet.remove(current)) {
+                    inDegree[name] = (inDegree[name] ?: 1) - 1
+                    if (inDegree[name] == 0) queue.add(name)
+                }
+            }
+        }
+
+        val remaining = originalOrder.filter { it !in sorted }
+        val ordered = linkedMapOf<String, ViewDefinition>()
+        for (name in sorted + remaining) {
+            ordered[name] = views.getValue(name)
+        }
+        val notes = if (remaining.isEmpty()) emptyList() else listOf(
+            TransformationNote(
+                type = NoteType.WARNING,
+                code = "W113",
+                objectName = "views",
+                message = "Views contain unresolved or circular dependencies: ${remaining.joinToString(", ")}. Original order is preserved for the remaining views.",
+                hint = "Declare consistent view dependencies or adjust view definitions to break the cycle."
+            )
+        )
+        return ViewSortResult(ordered, notes)
+    }
+
+    private fun declaredViewDependencies(
+        name: String,
+        view: ViewDefinition,
+        viewNames: Set<String>,
+    ): Set<String> = view.dependencies?.views
+        ?.asSequence()
+        ?.filter { it != name && it in viewNames }
+        ?.toSet()
+        ?: emptySet()
+
+    private fun inferViewDependenciesFromQuery(
+        name: String,
+        query: String?,
+        viewNames: Set<String>,
+    ): Set<String> {
+        if (query.isNullOrBlank()) return emptySet()
+
+        val regex = Regex(
+            """(?i)\b(?:from|join)\s+([`"]?[A-Za-z_][A-Za-z0-9_]*[`"]?(?:\.[`"]?[A-Za-z_][A-Za-z0-9_]*[`"]?)?)"""
+        )
+        return regex.findAll(query)
+            .map { it.groupValues[1] }
+            .map { ref -> ref.substringAfterLast('.') }
+            .map { ref -> ref.trim('`', '"') }
+            .filter { it != name && it in viewNames }
+            .toSet()
     }
 }

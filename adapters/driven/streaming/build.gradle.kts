@@ -14,6 +14,12 @@ dependencies {
     api(project(":adapters:driven:driver-common"))
     api(project(":adapters:driven:formats"))
 
+    // 0.9.0 Phase B (docs/ImpPlan-0.9.0-B.md §4.6): dateibasierter
+    // CheckpointStore-Adapter schreibt das Manifest als YAML. Dieselbe
+    // Library wird bereits in :adapters:driven:formats verwendet; wir
+    // binden sie hier direkt ein, weil formats sie nur intern exponiert.
+    implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
+
     testImplementation(project(":adapters:driven:driver-sqlite"))
 }
 

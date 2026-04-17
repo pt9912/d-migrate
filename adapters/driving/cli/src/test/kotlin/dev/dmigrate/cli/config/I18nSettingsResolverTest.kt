@@ -277,4 +277,105 @@ class I18nSettingsResolverTest : FunSpec({
         val ex = shouldThrow<ConfigResolveException> { resolver.resolve() }
         ex.message!! shouldContain "D_MIGRATE_CONFIG points to non-existent file"
     }
+
+    // ────────────────────────────────────────────────────────────────
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.1 / §4.2):
+    // explizites `--lang` hat hoechste Prioritaet und strenge Validierung.
+    // ────────────────────────────────────────────────────────────────
+
+    context("Phase A §4.1 — --lang hat hoechste Prioritaet") {
+
+        test("--lang de gewinnt gegen alle Env-/Config-/System-Quellen") {
+            val cfg = tempConfig("i18n:\n  default_locale: en_US\n")
+            val resolver = I18nSettingsResolver(
+                configPathFromCli = cfg,
+                envLookup = {
+                    when (it) {
+                        "D_MIGRATE_LANG" -> "en"
+                        "LC_ALL" -> "en_US.UTF-8"
+                        "LANG" -> "en"
+                        else -> null
+                    }
+                },
+                systemLocaleProvider = { Locale.of("fr", "FR") },
+                langFromCli = "de",
+            )
+            resolver.resolve().locale shouldBe Locale.of("de")
+        }
+
+        test("--lang en-US wird kanonisch als en_US aufgeloest") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { null },
+                systemLocaleProvider = { Locale.of("de") },
+                langFromCli = "en-US",
+            )
+            resolver.resolve().locale shouldBe Locale.of("en", "US")
+        }
+
+        test("--lang de_DE wird kanonisch als de_DE aufgeloest") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { null },
+                systemLocaleProvider = { Locale.of("en") },
+                langFromCli = "de_DE",
+            )
+            resolver.resolve().locale shouldBe Locale.of("de", "DE")
+        }
+
+        test("leeres --lang faellt still auf Env/Config/System zurueck") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { if (it == "D_MIGRATE_LANG") "en" else null },
+                systemLocaleProvider = { Locale.of("fr") },
+                langFromCli = "",
+            )
+            resolver.resolve().locale shouldBe Locale.of("en")
+        }
+    }
+
+    context("Phase A §4.2 — --lang strikter als allgemeiner Locale-Pfad") {
+
+        test("unsupported --lang (fr) wirft UnsupportedLanguageException") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { null },
+                systemLocaleProvider = { Locale.ENGLISH },
+                langFromCli = "fr",
+            )
+            val ex = shouldThrow<UnsupportedLanguageException> { resolver.resolve() }
+            ex.message!! shouldContain "--lang"
+            ex.message!! shouldContain "fr"
+            ex.message!! shouldContain "de"
+            ex.message!! shouldContain "en"
+        }
+
+        test("unsupported --lang zh-CN wird abgewiesen, auch mit Region") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { null },
+                systemLocaleProvider = { Locale.ENGLISH },
+                langFromCli = "zh-CN",
+            )
+            shouldThrow<UnsupportedLanguageException> { resolver.resolve() }
+        }
+
+        test("generisches Env-Locale (fr) bleibt weiterhin zulaessig — nur --lang ist strikter") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { if (it == "LANG") "fr_FR.UTF-8" else null },
+                systemLocaleProvider = { Locale.ENGLISH },
+                langFromCli = null,
+            )
+            // Der allgemeine Pfad behaelt den 0.8.0-Vertrag: fr wird als
+            // Locale aufgeloest und landet spaeter ueber MessageResolver
+            // auf dem englischen Root-Bundle.
+            resolver.resolve().locale shouldBe Locale.of("fr", "FR")
+        }
+
+        test("syntaktisch ungueltiges --lang schlaegt durch ConfigResolveException") {
+            val resolver = I18nSettingsResolver(
+                envLookup = { null },
+                systemLocaleProvider = { Locale.ENGLISH },
+                langFromCli = "de_DE_EXTRA_JUNK",
+            )
+            // parseLocale lehnt dreistelligen Underscore-Split bereits
+            // syntaktisch ab; das passiert vor der Support-Pruefung.
+            shouldThrow<ConfigResolveException> { resolver.resolve() }
+        }
+    }
 })

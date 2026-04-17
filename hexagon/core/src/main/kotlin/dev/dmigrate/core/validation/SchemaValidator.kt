@@ -54,6 +54,7 @@ class SchemaValidator {
         }
 
         validateTriggerTableReferences(schema, errors)
+        validateViewDependencies(schema, errors)
 
         return ValidationResult(errors, warnings)
     }
@@ -330,6 +331,23 @@ class SchemaValidator {
                     "Trigger references non-existent table '${trigger.table}'",
                     "triggers.$triggerName.table"
                 )
+            }
+        }
+    }
+
+    // E020: Declared view dependency must reference an existing view
+    private fun validateViewDependencies(
+        schema: SchemaDefinition, errors: MutableList<ValidationError>
+    ) {
+        for ((viewName, view) in schema.views) {
+            for (dependency in view.dependencies?.views.orEmpty()) {
+                if (dependency !in schema.views) {
+                    errors += ValidationError(
+                        "E020",
+                        "View dependency references non-existent view '$dependency'",
+                        "views.$viewName.dependencies.views"
+                    )
+                }
             }
         }
     }

@@ -965,6 +965,59 @@ class StreamingImporterTest : FunSpec({
             finished shouldHaveSize 0
         } finally { file.deleteIfExists() }
     }
+
+    test("E3: truncate guard — resumed table with committed chunks does not re-truncate") {
+        val readerFactory = FakeReaderFactory(
+            readersByTable = mapOf(
+                "users" to FakeReader(
+                    header = listOf("id", "name"),
+                    chunks = listOf(
+                        // Chunk 0+1 already committed in previous run → skipped
+                        chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(1L, "a")), chunkIndex = 0),
+                        chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(2L, "b")), chunkIndex = 1),
+                        // Chunk 2 is the new one that should be written
+                        chunk("users", listOf("id", "name"), listOf(arrayOf<Any?>(3L, "c")), chunkIndex = 2),
+                    )
+                )
+            )
+        )
+        val session = FakeTableImportSession(targetColumns = targetColumns)
+        var capturedOptions: ImportOptions? = null
+        val writer = object : DataWriter {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun schemaSync() = error("not used")
+            override fun openTable(
+                pool: ConnectionPool,
+                table: String,
+                options: ImportOptions,
+            ): TableImportSession {
+                capturedOptions = options
+                return session
+            }
+        }
+        val importer = StreamingImporter(
+            readerFactory = readerFactory,
+            writerLookup = { writer },
+        )
+        val file = Files.createTempFile("streaming-import-truncate-guard-", ".json")
+        try {
+            val result = importer.import(
+                pool = pool,
+                input = ImportInput.SingleFile("users", file),
+                format = DataExportFormat.JSON,
+                options = ImportOptions(truncate = true),
+                resumeStateByTable = mapOf("users" to ImportTableResumeState(committedChunks = 2)),
+            )
+            result.success shouldBe true
+            // Truncate guard: openTable must have received truncate=false
+            capturedOptions shouldNotBe null
+            capturedOptions!!.truncate shouldBe false
+            // Only chunk 2 should have been written (chunks 0+1 skipped)
+            session.writtenChunks shouldHaveSize 1
+        } finally {
+            file.deleteIfExists()
+        }
+    }
 })
 
 private object ImporterNoopConnectionPool : ConnectionPool {

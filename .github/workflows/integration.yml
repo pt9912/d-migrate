@@ -28,6 +28,17 @@ jobs:
   integration:
     runs-on: ubuntu-latest
 
+    env:
+      # Speicher-Budget auf dem ubuntu-latest-Runner (16 GB):
+      #  - Gradle-Daemon: 4 GB aus gradle.properties (unveraendert)
+      #  - Forked Test-JVM: 4 GB via maxHeapSize in build.gradle.kts,
+      #    aktiv unter `-PintegrationTests` (oder explizit ueber
+      #    `-PtestMaxHeapSize=Xg`)
+      #  - Testcontainers (PG/MySQL/...): uebrige ~8 GB
+      # GRADLE_OPTS gilt fuer den Launcher-/Daemon-JVM; damit liegt der
+      # Gradle-Scheduler selbst bequem ueber dem Default.
+      GRADLE_OPTS: "-Xmx4g"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

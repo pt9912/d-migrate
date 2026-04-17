@@ -48,13 +48,13 @@ class DdlModelTest : FunSpec({
     test("DdlStatement.render() includes hint when present") {
         val note = TransformationNote(
             type = NoteType.ACTION_REQUIRED,
-            code = "E052",
+            code = "E053",
             objectName = "fn1",
             message = "manual fix needed",
             hint = "rewrite manually",
         )
         val rendered = DdlStatement("-- TODO", listOf(note)).render()
-        rendered shouldContain "-- [E052] manual fix needed"
+        rendered shouldContain "-- [E053] manual fix needed"
         rendered shouldContain "-- Hint: rewrite manually"
     }
 

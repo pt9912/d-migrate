@@ -228,9 +228,9 @@ Validation failed: 1 error(s), 0 warning(s)
 
 ## Schemas vergleichen
 
-`schema compare` vergleicht zwei neutrale Schema-Dateien. Der 0.5.0-MVP ist
-bewusst file-basiert; DB- oder Umgebungsvergleiche sind noch nicht Teil dieses
-Slices.
+`schema compare` vergleicht zwei Schemas. Der 0.5.0-MVP war bewusst
+file-basiert; seit 0.6.0 werden auch DB-Vergleiche ueber `file:` und `db:`-
+Operanden unterstuetzt (file/file, file/db, db/db).
 
 ```bash
 # Menschenlesbare Diff-Ausgabe
@@ -383,7 +383,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | Option                | Beschreibung                                              |
 | --------------------- | --------------------------------------------------------- |
 | `-c`, `--config`      | Pfad zu einer Konfigurationsdatei                         |
-| `--lang`              | Für 0.9.0 reserviert. In 0.8.0 wird jede Angabe bewusst mit Exit 7 abgelehnt — die Sprachauflösung läuft über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale` (Phase G §4.3, `docs/ImpPlan-0.8.0-G.md`). |
+| `--lang`              | Sprache der Ausgabe (`de`, `en`, plus Varianten `de-DE`, `de_DE`, `en-US`, `en_US`). Hat Vorrang vor `D_MIGRATE_LANG`, `LC_ALL`/`LANG` und `i18n.default_locale`. Unsupported Werte (z.B. `fr`) enden mit Exit 2 (seit 0.9.0 Phase A, `docs/ImpPlan-0.9.0-A.md` §4.1/§4.2). |
 | `--output-format`     | Ausgabeformat: `plain` (Standard), `json`, `yaml`         |
 | `-v`, `--verbose`     | Erweiterte Ausgabe (DEBUG-Level)                          |
 | `-q`, `--quiet`       | Nur Fehler ausgeben                                       |
@@ -423,6 +423,8 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--csv-delimiter`     | CSV-Trennzeichen (Standard: `,`)                          |
 | `--csv-bom`           | BOM passend zu `--encoding` voranstellen (UTF-8, UTF-16 BE/LE); No-op bei Non-UTF-Encodings |
 | `--csv-no-header`     | CSV-Kopfzeile unterdrücken                                |
+| `--resume`            | Resume eines frueheren Exports aus einer Checkpoint-Referenz (seit 0.9.0 Phase C.1 produktiv; seit 0.9.0 Phase C.2 mit Mid-Table-Wiederaufnahme). Wert ist eine `checkpoint-id` oder ein Pfad innerhalb des effektiven Checkpoint-Verzeichnisses. Tabellen mit Status `COMPLETED` werden uebersprungen. Ist `--since-column` gesetzt und hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; ohne PK fallt die Tabelle mit stderr-Hinweis auf „neu exportieren" zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume re-exportiert die Tabelle von vorn (Mid-Table-Rebuild des Containers ist verschoben). Nicht unterstuetzt mit stdout-Output (Exit 2) oder ohne konfiguriertes Checkpoint-Verzeichnis (Exit 7). Kompatibilitaetsmismatch (inkl. PK-Signatur oder fehlendem `--since-column` bei gespeicherter Position) → Exit 3. |
+| `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
 
 ### Optionen für `data import`
 
@@ -437,6 +439,8 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--trigger-mode`      | `enable` (Standard) oder `disable`                        |
 | `--chunk-size`        | Datensätze pro Transaktion (Standard: 10000)              |
 | `--encoding`          | Input-Encoding. Default `auto` sniffed BOM für UTF-8/UTF-16 BE/LE und fällt ohne BOM auf UTF-8 zurück. Für Non-UTF-Encodings (z.B. `iso-8859-1`) explizit setzen — keine Heuristik. |
+| `--resume`            | Resume eines frueheren Imports aus einer Checkpoint-Referenz (seit 0.9.0 Phase D produktiv: Manifest-Lifecycle, semantischer Preflight, ab-Commit-Fortsetzung, Directory-Bindung). Wert ist eine `checkpoint-id` oder ein Pfad innerhalb des effektiven Checkpoint-Verzeichnisses. **Preflight**: prueft `operationType == IMPORT`, Fingerprint ueber alle resume-relevanten Optionen (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste, Input-Topologie, Input-Pfad, Ziel; bei Directory-Importen zusaetzlich `table -> inputFile`) sowie die Tabellenlisten-Gleichheit. **Wiederaufnahme**: `COMPLETED` Tabellen werden uebersprungen; teilweise bestaetigte Tabellen starten am naechsten nicht committeten Chunk (der Importer liest die bereits committeten Chunks verwirft sie, schreibt sie nicht erneut). `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch ignoriert, damit bestaetigte Zeilen nicht entwertet werden. `--on-error abort/skip/log` bleibt semantisch stabil — nur Chunks, die `session.commitChunk()` erfolgreich durchlaufen haben, treiben den Checkpoint vorwaerts. Nicht unterstuetzt mit stdin (`--source -`) → Exit 2. Ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. Kompatibilitaetsmismatch (inkl. geaenderter Directory-Dateimenge oder Reihenfolge) → Exit 3. |
+| `--checkpoint-dir`    | Verzeichnis fuer Checkpoints; Vorrang vor `pipeline.checkpoint.directory` aus der Config. |
 
 ### Beispiel: JSON-Ausgabe
 

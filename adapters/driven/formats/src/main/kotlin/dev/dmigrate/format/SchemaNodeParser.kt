@@ -357,6 +357,7 @@ internal object SchemaNodeParser {
         }
         return DependencyInfo(
             tables = node["tables"]?.toStringList() ?: emptyList(),
+            views = node["views"]?.toStringList() ?: emptyList(),
             columns = columns,
         )
     }

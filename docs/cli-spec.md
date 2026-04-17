@@ -16,7 +16,7 @@
 d-migrate <command> <subcommand> [flags] [arguments]
 ```
 
-- **Commands**: Oberste Ebene — implementiert: `schema`, `data`; geplant: `export` (0.7.0), `transform` (1.1.0)
+- **Commands**: Oberste Ebene — implementiert: `schema`, `data`, `export` (seit 0.7.0); geplant: `transform` (1.1.0)
 - **Subcommands**: Aktion innerhalb eines Commands (`schema validate`, `data export`)
 - **Flags**: Optionen mit `--` Präfix, Kurzform mit `-` (`--format json`, `-f json`)
 - **Arguments**: Positionelle Argumente (selten, nur wo eindeutig)
@@ -28,7 +28,7 @@ Diese Flags sind bei allen Kommandos verfügbar:
 | Flag | Kurzform | Typ | Default | Beschreibung |
 |---|---|---|---|---|
 | `--config` | `-c` | Pfad | `./.d-migrate.yaml` | Pfad zur effektiven Konfigurationsdatei; Prioritaet: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml` |
-| `--lang` | | String | in 0.8.0 bewusst abgelehnt; finaler Nutzervertrag in 0.9.0 | Sprachwahl fuer menschenlesbare Ausgaben. Die Root-CLI lehnt jede Angabe in 0.8.0 mit Exit 7 ab und verweist auf `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`; der stabile dokumentierte Override-Vertrag folgt erst in Milestone 0.9.0 |
+| `--lang` | | String | (kein Default; Fallback-Kette siehe unten) | Sprachwahl fuer menschenlesbare Ausgaben (seit 0.9.0 aktiv, siehe `docs/ImpPlan-0.9.0-A.md` §4.1/§4.2). Akzeptiert fuer 0.9.0 nur die gebundelten Produktsprachen `de` und `en` inkl. kanonisierbarer Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US`. Andere Werte fuehren zu Exit 2. Gewinnt gegen `D_MIGRATE_LANG`, `LC_ALL`/`LANG`, `i18n.default_locale` und System-Locale. Der generische Env-/Config-/System-Pfad bleibt toleranter und faellt fuer unbekannte Bundles weiterhin auf das englische Root-Bundle zurueck. |
 | `--output-format` | | String | `plain` | Ausgabeformat: `plain`, `json`, `yaml` |
 | `--verbose` | `-v` | Boolean | false | Erweiterte Ausgabe (DEBUG-Level) |
 | `--quiet` | `-q` | Boolean | false | Nur Fehler ausgeben |
@@ -40,12 +40,13 @@ Diese Flags sind bei allen Kommandos verfügbar:
 
 `--verbose` und `--quiet` schließen sich gegenseitig aus.
 
-**Hinweis zu 0.8.0 / 0.9.0 bei `--lang`**:
+**`--lang`-Vertrag ab 0.9.0 (`docs/ImpPlan-0.9.0-A.md` §4.1–§4.2)**:
 
-- Milestone 0.8.0 liefert die technische I18n-Basis (ResourceBundles, Locale-/Timezone-/Unicode-Aufloesung).
-- `--lang` ist in 0.8.0 **nicht** als aktiver Override freigegeben: jede Angabe wird von der Root-CLI mit Exit 7 abgelehnt; die Sprachauflösung läuft stattdessen über `D_MIGRATE_LANG`, `LC_ALL`/`LANG` oder `i18n.default_locale`.
-- Der finale, breit dokumentierte CLI-Vertrag fuer `--lang` als produktive Override-Quelle bleibt in 0.9.0 verankert.
-- Bis dieser Vertrag freigegeben ist, duerfen strukturierte JSON-/YAML-Vertraege nicht von lokalisierter Sprachwahl abhaengen.
+- Prioritaetskette: `--lang` > `D_MIGRATE_LANG` > `LC_ALL` > `LANG` > `i18n.default_locale` > System-Locale > Fallback `en`.
+- Unterstuetzte Produktsprachen sind aktuell `de` und `en`. Kanonisierbare Varianten wie `de-DE`, `de_DE`, `en-US`, `en_US` werden akzeptiert und normalisiert.
+- Ein explizit gesetztes, aber nicht unterstuetztes `--lang` (z.B. `fr`, `zh`) ist ein lokaler CLI-Fehler und endet mit **Exit 2**. Es wird **nicht** still auf Englisch zurueckgefallen.
+- Der generische Env-/Config-/System-Pfad bleibt toleranter: dort fuehrt eine syntaktisch gueltige, aber nicht gebundelte Sprache zum Root-Bundle-Fallback in `MessageResolver`, nicht zu einem Hard-Error.
+- Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil englisch, unabhaengig von der aufgeloesten Locale.
 
 ### 1.4 Verbindungsnamen
 
@@ -234,6 +235,7 @@ W200 - W299: Performance-Warnungen
 | E016 | Partition key references non-existent column | Spaltenname prüfen |
 | E017 | Foreign key type incompatible with referenced column | Typen angleichen |
 | E018 | Trigger references non-existent table | Tabellennamen prüfen |
+| E020 | Declared view dependency references non-existent view | View-Namen prüfen |
 
 ### 4.3 Validierungswarnungen (W001-W099)
 
@@ -266,6 +268,7 @@ W200 - W299: Performance-Warnungen
 | W102 | HASH index not supported on InnoDB, using BTREE |
 | W103 | Materialized View not supported, using regular View |
 | W104 | XML type not supported, using TEXT fallback |
+| W113 | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
 | W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
@@ -274,9 +277,11 @@ Nicht-automatisch auflösbare Inkompatibilitäten. Der Prozess stoppt mit Hinwei
 
 | Code | Meldung |
 |---|---|
-| E050 | Composite type not natively supported, manual conversion required |
-| E051 | Named sequence not natively supported, manual emulation required |
-| E052 | Object cannot be generated and requires manual work (KI-Transformation, spatial profile, or other unresolvable incompatibility) |
+| E052 | Spatial object cannot be generated with the chosen spatial profile |
+| E053 | Dialect-specific SQL content requires manual transformation or implementation |
+| E054 | Object type is not supported in the target dialect |
+| E055 | Partitioning is not supported in the target dialect |
+| E056 | Named sequence cannot be generated natively and needs emulation/manual handling |
 | E120 | Unknown `geometry_type` value (schema validation) |
 | E121 | `srid` must be greater than 0 (schema validation) |
 
@@ -360,24 +365,28 @@ Das Profil ist Generator-Konfiguration und kein Teil des neutralen Schemas.
 | `--target` | Zulässige Werte | Default |
 |---|---|---|
 | `postgresql` | `postgis`, `none` | `postgis` |
-| `mysql` | `native` | `native` |
+| `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
 
 Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--target mysql --spatial-profile postgis`) erzeugt einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung. Enthält das Schema keine `geometry`-Spalten, hat `--spatial-profile` keine Wirkung.
 
 **Ausgabeverhalten**:
 - **stdout**: DDL-Output (wenn kein `--output`)
-- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052)
+- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052-E056)
 - **`--output`**: DDL in Datei + automatisch `<name>.report.yaml` als Sidecar
 - **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
 
 Spatial-spezifische Ausgaben:
-- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die gesamte Tabelle wird uebersprungen; keine partielle DDL. Bei Funktionen/Prozeduren wird dagegen nur das Einzelobjekt uebersprungen (siehe [DDL-Generierungsregeln §16](./ddl-generation-rules.md)).
+- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die gesamte Tabelle wird uebersprungen; keine partielle DDL.
+- **E053** (manuelle SQL-Transformation/Implementierung): Erscheint bei Views, Functions, Procedures oder Triggers mit nicht automatisch uebertragbarem SQL-Inhalt.
+- **E054** (Objekttyp nicht unterstuetzt): Erscheint bei im Zieldialekt nicht verfuegbaren Objekten oder Constraint-Typen.
+- **E055** (Partitionierung nicht unterstuetzt): Erscheint bei nicht nativ unterstuetzter Partitionierung.
+- **E056** (Sequence-/Emulationsfall): Erscheint bei benannten Sequences ohne nativen Zieldialekt-Support.
 - **W120** (SRID nicht vollständig übertragbar): Erscheint auf stderr und in `notes` des Reports. Die DDL-Generierung wird fortgesetzt.
 
 Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - **`--generate-rollback`**: Rollback-DDL enthaelt die inversen Spatial-Statements (z.B. `DiscardGeometryColumn` fuer SpatiaLite). Blockierte Tabellen (E052) erzeugen kein Rollback-DDL. Details: [DDL-Generierungsregeln §16.7](./ddl-generation-rules.md).
-- **`--output-format json`**: Spatial-E052-Eintraege erscheinen in `skipped_objects`, W120 in `notes`.
+- **`--output-format json`**: Action-required-Eintraege (`E052`-`E056`) erscheinen in `notes` und/oder `skipped_objects`, W120 in `notes`.
 - **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
 
 **Exit-Codes**:
@@ -385,7 +394,7 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - `3`: Schema-Validierung fehlgeschlagen (DDL wird nicht erzeugt)
 - `7`: Schema-Datei nicht lesbar oder ungültiges YAML
 
-**action_required-Objekte** (z.B. Functions mit anderem source_dialect) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
+**action_required-Objekte** (z.B. Functions mit anderem `source_dialect`, nicht unterstützte Sequences oder blockierte Spatial-Tabellen) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
 
 #### `schema reverse` *(0.6.0, umgesetzt)*
 
@@ -577,9 +586,11 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 | `--split-files` | Nein | Boolean | aus | Eine Datei pro Tabelle in `--output <dir>`. Bei mehreren Tabellen Pflicht. |
 | `--csv-delimiter` | Nein | Char | `,` | CSV-Spalten-Trennzeichen (genau ein Zeichen) |
-| `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op. Siehe 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4). |
+| `--csv-bom` | Nein | Boolean | aus | BOM passend zu `--encoding` vor dem CSV-Output schreiben (UTF-8, UTF-16 BE/LE). Für Encodings ohne definiertes BOM (z.B. `iso-8859-1`, `windows-1252`) ist das Flag ein No-op (seit 0.8.0). |
 | `--csv-no-header` | Nein | Boolean | aus | Header-Zeile bei CSV unterdrücken (Default: Header an, §6.17) |
 | `--null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
+| `--resume` | Nein | String | — | Resume eines frueheren Exports aus einer Checkpoint-Referenz (seit 0.9.0 produktiv, inkl. Mid-Table-Wiederaufnahme). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-basiert**: kombiniert mit stdout-Export (kein `--output`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis endet der Aufruf mit Exit 7. Der Lauf uebernimmt `operationId` aus dem Manifest, skippt Tabellen mit Status `COMPLETED` und setzt unvollstaendige Tabellen fort. **Mid-Table (Phase C.2)**: ist `--since-column` gesetzt **und** hat die Tabelle einen Primaerschluessel, setzt der Lauf die Tabelle ab dem zuletzt chunk-bestaetigten Composite-Marker `(sinceColumn, PK)` lexikografisch strikt fort; fehlt der PK, fallt der Lauf mit sichtbarem stderr-Hinweis auf C.1-Verhalten (Tabelle neu exportieren) zurueck. Single-File-Ziele werden immer ueber eine Staging-Datei im Checkpoint-Verzeichnis geschrieben und erst bei Erfolg per atomic rename ersetzt; Single-File-Resume ignoriert den gespeicherten Marker und exportiert die Tabelle erneut von vorn (Mid-Table-Rebuild des Containers ist bewusst verschoben, siehe `docs/ImpPlan-0.9.0-C2.md` §5.4). Kompatibilitaetsmismatch (Fingerprint inkl. PK-Signatur, Tabellenliste, Output-Modus, operationType; oder Manifest hat `resumePosition`, Request hat aber kein `--since-column`) → Exit 3. |
+| `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Output-Auflösung** (Plan §6.9):
 
@@ -598,10 +609,11 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Code | Trigger |
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
-| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`) oder unverträgliche `--output`/`--split-files`-Kombi |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`), unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** (seit 0.9.0) |
+| `3` | Preflight-Fehler — seit 0.9.0: semantisch inkompatible Resume-Referenz (operationType-Mismatch, Fingerprint-Mismatch aus Format/Encoding/CSV-Optionen/Filter/`--since-*`/Tabellen-Reihenfolge/Output-Modus/Output-Pfad/PK-Signatur, Tabellenliste divergiert, oder Manifest hat `resumePosition` aber aktueller Request hat kein `--since-column`). Mapping ist symmetrisch zum Import-Preflight (§4.5) |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
-| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect) |
+| `7` | Konfigurationsfehler (URL-Parser, `.d-migrate.yaml` nicht ladbar/parsebar, unbekannter Connection-Name, fehlende ENV-Variable, kein Treiber für Dialect); seit 0.9.0 zusaetzlich: `--resume` ohne konfiguriertes Checkpoint-Verzeichnis, Pfad ausserhalb des Checkpoint-Verzeichnisses, Checkpoint-Datei nicht gefunden, unlesbare Datei oder inkompatible `schemaVersion` |
 
 **Beispiele**:
 
@@ -686,14 +698,17 @@ d-migrate data import --source <path-or-dir-or-> [--target <url-or-name>]
 | `--csv-no-header` | Nein | Boolean | aus | CSV enthält keine Header-Zeile |
 | `--csv-null-string` | Nein | String | `""` | CSV-NULL-Repräsentation |
 | `--chunk-size` | Nein | Integer | `10000` | Datensätze pro Chunk/Transaktion |
+| `--resume` | Nein | String | — | Resume eines frueheren Imports aus einer Checkpoint-Referenz (seit 0.9.0 produktiv). Wert ist eine `checkpoint-id` **oder** ein Pfad; Pfade MUESSEN innerhalb des effektiven `--checkpoint-dir` / `pipeline.checkpoint.directory` liegen (Pfade ausserhalb → Exit 7). **Nur file-/directory-basiert**: kombiniert mit stdin-Quelle (`--source -`) endet der Aufruf mit Exit 2; ohne konfiguriertes Checkpoint-Verzeichnis → Exit 7. **Preflight** prueft `operationType == IMPORT`, den Options-Fingerprint (Format, Encoding, CSV-Header/NULL, `--on-error`/`--on-conflict`/`--trigger-mode`/`--truncate`/`--disable-fk-checks`/`--reseed-sequences`/`chunk-size`, Tabellenliste in Reihenfolge, Input-Topologie, Input-Pfad, Ziel-Dialekt und Ziel-URL; fuer Directory-Importe zusaetzlich die `table -> inputFile`-Bindung) sowie die Tabellenlisten-Gleichheit. Inkompatible Referenzen → Exit 3. **Wiederaufnahme** setzt an committed Chunk-Grenzen an: bereits als `COMPLETED` markierte Tabellen werden uebersprungen; teilweise bestaetigte Tabellen lesen die bereits bestaetigten Chunks aus dem Reader (ohne Schreib-/Commit-Aktion) und starten am naechsten offenen Chunk. `--truncate` wird fuer teilweise bestaetigte Tabellen automatisch unterbunden (sonst gingen bestaetigte Zeilen verloren). `--on-error abort/skip/log` behaelt seine Semantik auch beim Resume; nur erfolgreich committete Chunks treiben den Checkpoint vorwaerts. `failedFinish` laesst die Tabelle als `FAILED` markiert (nicht still als `COMPLETED`). Directory-Importe verlangen zusaetzlich, dass die `table -> inputFile`-Bindung des Manifests mit dem aktuellen Directory-Scan uebereinstimmt — umbenannte, hinzugefuegte oder entfernte Dateien → Exit 3. |
+| `--checkpoint-dir` | Nein | Pfad | (Config `pipeline.checkpoint.directory`) | Verzeichnis fuer Checkpoints. Der CLI-Wert hat Vorrang vor `pipeline.checkpoint.directory` in `.d-migrate.yaml`. |
 
 **Exit-Codes**:
 
 - `0`: Erfolg
-- `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen
+- `2`: Ungültige CLI-Argumente oder unzulässige Flag-Kombinationen (inkl. `--resume` auf stdin-Quelle; unsupported `--lang` an der Root-CLI)
+- `3`: Preflight-Fehler — Header-/Schema-Mismatch, strikter Trigger, und seit 0.9.0 semantisch inkompatible Resume-Referenz (`operationType`-Mismatch, Fingerprint-Mismatch, Tabellenlisten-Divergenz)
 - `4`: Verbindungsfehler
 - `5`: Import-Fehler während Verarbeitung oder Commit
-- `7`: Konfigurations-, Parse- oder Datei-Fehler
+- `7`: Konfigurations-, Parse- oder Datei-Fehler (inkl. unlesbare Checkpoint-Datei, ungueltiges Manifest, fehlende Datei, Pfad ausserhalb des Checkpoint-Verzeichnisses oder inkompatible `schemaVersion`, seit 0.9.0)
 
 #### `data transfer` *(0.6.0, umgesetzt)*
 
@@ -1084,7 +1099,7 @@ Alternative: Umgebungsvariable `D_MIGRATE_DB_PASSWORD` oder Konfigurationsdatei.
 | Variable | Entspricht | Beschreibung |
 |---|---|---|
 | `D_MIGRATE_CONFIG` | `--config` | Pfad zur Konfigurationsdatei |
-| `D_MIGRATE_LANG` | `--lang` | Sprache; fuer 0.8.0 Teil der technischen I18n-Basis, nicht des finalen 0.9.0-Override-Vertrags |
+| `D_MIGRATE_LANG` | `--lang` | Sprache. Seit 0.9.0 liegt `--lang` in der Prioritaet vor `D_MIGRATE_LANG`. Der generische Env-Pfad behaelt den toleranteren Vertrag (syntaktisch gueltige Locales → Root-Bundle-Fallback), waehrend `--lang` strikt auf gebundelte Produktsprachen beschraenkt ist. |
 | `D_MIGRATE_OUTPUT_FORMAT` | `--output-format` | Ausgabeformat |
 | `D_MIGRATE_NO_COLOR` | `--no-color` | Farbausgabe deaktivieren |
 | `D_MIGRATE_ASSUME_YES` | `--yes` | Bestätigungen überspringen |

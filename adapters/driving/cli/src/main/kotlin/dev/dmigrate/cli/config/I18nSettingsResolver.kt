@@ -17,6 +17,16 @@ class I18nSettingsResolver(
     private val defaultConfigPath: Path = Paths.get(".d-migrate.yaml"),
     private val systemLocaleProvider: () -> Locale = Locale::getDefault,
     private val systemTimezoneProvider: () -> ZoneId = ZoneId::systemDefault,
+    /**
+     * 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.1): expliziter Wert
+     * fuer das Root-CLI-Flag `--lang`. Wird in `resolveLocale` als
+     * hoechste Prioritaet vor `D_MIGRATE_LANG`/`LC_ALL`/`LANG`/Config/
+     * System-Locale behandelt und durchlaeuft die strenge
+     * [ensureSupportedProductLanguage]-Validierung (§4.2). Unsupported
+     * Werte werfen [UnsupportedLanguageException] und mappen in der
+     * CLI-Schicht auf Exit 2.
+     */
+    private val langFromCli: String? = null,
 ) {
     fun resolve(): ResolvedI18nSettings {
         val configPath = EffectiveConfigPathResolver(
@@ -33,6 +43,15 @@ class I18nSettingsResolver(
     }
 
     private fun resolveLocale(config: ParsedI18nConfig): Locale {
+        // 0.9.0 Phase A §4.1: explizites `--lang` hat Vorrang vor allen
+        // anderen Quellen und wird strenger validiert (§4.2) als der
+        // allgemeine Locale-Parse-Pfad.
+        if (!langFromCli.isNullOrBlank()) {
+            val locale = parseLocale(langFromCli, "--lang")
+            ensureSupportedProductLanguage(locale, "--lang")
+            return locale
+        }
+
         val envCandidates = listOf(
             EnvLocaleCandidate("D_MIGRATE_LANG", envLookup("D_MIGRATE_LANG")),
             EnvLocaleCandidate("LC_ALL", envLookup("LC_ALL")),
@@ -48,6 +67,28 @@ class I18nSettingsResolver(
         val systemLocale = runCatching(systemLocaleProvider).getOrElse { Locale.ENGLISH }
         if (systemLocale.language.isNotBlank()) return systemLocale
         return Locale.ENGLISH
+    }
+
+    /**
+     * 0.9.0 Phase A §4.2: strikte Validierung fuer explizites `--lang`.
+     * Produktsprachen fuer 0.9.0 sind die gebundelten Messages-Sprachen
+     * — derzeit Deutsch und Englisch. Andere Werte (z.B. `fr`, `zh`)
+     * werden hier hart abgewiesen, nicht still auf das Englisch-Root-
+     * Bundle zurueckgefallen.
+     *
+     * Der allgemeine Env-/Config-/System-Locale-Pfad behaelt den 0.8.0-
+     * Vertrag: generische Locales (z.B. `fr`, `C`) bleiben dort zulaessig
+     * und landen ueber `MessageResolver` auf dem Root-Bundle.
+     */
+    private fun ensureSupportedProductLanguage(locale: Locale, source: String) {
+        val language = locale.language.lowercase(Locale.ROOT)
+        if (language !in SUPPORTED_PRODUCT_LANGUAGES) {
+            throw UnsupportedLanguageException(
+                "$source is not a supported product language for 0.9.0: " +
+                    "'${locale.toLanguageTag()}'. " +
+                    "Supported: ${SUPPORTED_PRODUCT_LANGUAGES.sorted().joinToString(", ")}."
+            )
+        }
     }
 
     private fun resolveTimezone(config: ParsedI18nConfig): ZoneId {
@@ -176,5 +217,22 @@ class I18nSettingsResolver(
     companion object {
         private val LANGUAGE_PATTERN = Regex("[A-Za-z]{2,3}")
         private val COUNTRY_PATTERN = Regex("[A-Za-z]{2}|\\d{3}")
+
+        /**
+         * 0.9.0 Phase A §4.2: Produktsprachen fuer den expliziten
+         * `--lang`-Pfad. Deckungsgleich mit den gebundelten Messages-
+         * Ressourcen (`messages.properties` als Root/Englisch und
+         * `messages_de.properties` fuer Deutsch). Ein Sprachausbau fuehrt
+         * neue Messages-Bundles ein und ergaenzt diesen Satz.
+         */
+        val SUPPORTED_PRODUCT_LANGUAGES: Set<String> = setOf("de", "en")
     }
 }
+
+/**
+ * 0.9.0 Phase A §4.2: geworfen, wenn der explizite `--lang`-Wert nicht zu
+ * einer fuer 0.9.0 gebundelten Produktsprache kanonisierbar ist. Die
+ * Root-CLI faengt das in [DMigrate.run] ab und mappt es auf Exit 2 —
+ * deckungsgleich mit anderen lokalen CLI-Validierungsfehlern.
+ */
+class UnsupportedLanguageException(message: String) : RuntimeException(message)

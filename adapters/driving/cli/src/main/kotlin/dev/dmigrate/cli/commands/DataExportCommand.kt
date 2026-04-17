@@ -111,6 +111,24 @@ class DataExportCommand : CliktCommand(name = "export") {
         help = "CSV NULL representation; default: empty string",
     ).default("")
 
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
+    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
+    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
+    // Phase B bis D des Milestones.
+    val resume by option(
+        "--resume",
+        help = "Resume an earlier export from a checkpoint reference " +
+            "(file-based only; not supported with stdout). " +
+            "Accepts a checkpoint-id or a path; paths MUST be inside " +
+            "the effective --checkpoint-dir / pipeline.checkpoint.directory.",
+    )
+
+    val checkpointDir by option(
+        "--checkpoint-dir",
+        help = "Directory for checkpoint storage. Overrides pipeline.checkpoint.directory " +
+            "from the config file when set.",
+    ).path()
+
     override fun run() {
         // Hierarchie: d-migrate → data → export → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -133,6 +151,8 @@ class DataExportCommand : CliktCommand(name = "export") {
             cliConfigPath = root?.config,
             quiet = ctx.quiet,
             noProgress = ctx.noProgress,
+            resume = resume,
+            checkpointDir = checkpointDir,
         )
         val warnings = mutableListOf<ValueSerializer.Warning>()
         val runner = DataExportRunner(
@@ -153,12 +173,93 @@ class DataExportCommand : CliktCommand(name = "export") {
                     "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
                 }
             },
-            exportExecutor = ExportExecutor { pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter ->
-                StreamingExporter(reader, lister, factory).export(pool, tbls, out, fmt, opts, cfg, flt, reporter)
+            exportExecutor = ExportExecutor {
+                pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter,
+                opId, resuming, skipped, onDone, markers, onChunk,
+                ->
+                StreamingExporter(reader, lister, factory)
+                    .export(
+                        pool = pool,
+                        tables = tbls,
+                        output = out,
+                        format = fmt,
+                        options = opts,
+                        config = cfg,
+                        filter = flt,
+                        progressReporter = reporter,
+                        operationId = opId,
+                        resuming = resuming,
+                        skippedTables = skipped,
+                        onTableCompleted = onDone,
+                        resumeMarkers = markers,
+                        onChunkProcessed = onChunk,
+                    )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
+            // 0.9.0 Phase C.1: dateibasierter CheckpointStore. Die CLI-
+            // Seite wired den produktiven Adapter hier ein; der
+            // Runner selbst kennt `FileCheckpointStore` nicht (Hex-
+            // Richtung: application -> ports, nicht application -> adapters).
+            checkpointStoreFactory = { dir ->
+                dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+            },
+            // 0.9.0 Phase C.1 §4.4 / §5.2: Config-Resolver fuer
+            // `pipeline.checkpoint.*` — der Runner ruft
+            // `CheckpointConfig.merge(cliDirectory, config)` und sticht
+            // die Config damit in `--checkpoint-dir` um.
+            checkpointConfigResolver = { cliCfg ->
+                dev.dmigrate.cli.config.PipelineCheckpointResolver(
+                    configPathFromCli = cliCfg,
+                ).resolve()
+            },
+            // 0.9.0 Phase C.2 §5.3: PK-Lookup fuer den Runner. Die
+            // produktive Wiring laedt das Schema genau einmal pro
+            // Pool+Dialekt, damit mehrfache `primaryKeyLookup`-
+            // Aufrufe (pro Tabelle) nicht wiederholt den
+            // SchemaReader triggern. Ein Fehlschlag beim Schema-Load
+            // mappt auf "keine PK bekannt" — der Runner faellt dann
+            // per Phase-C.2-§4.1-Fall-2 auf C.1-Verhalten zurueck.
+            primaryKeyLookup = pkLookupFromSchemaReader(),
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
+    }
+
+    /**
+     * 0.9.0 Phase C.2 §5.3: produktive PK-Quelle. Liest das Schema
+     * beim **ersten** Aufruf genau einmal per
+     * `DatabaseDriverRegistry.get(dialect).schemaReader()` ein und
+     * merkt sich das Ergebnis in einem local-scoped Cache. Jeder
+     * spaetere Aufruf liefert die PK aus dem Cache.
+     *
+     * Ein Fehlschlag beim Schema-Laden degradiert auf "keine PK
+     * bekannt" — der Runner greift dann Phase-C.2-§4.1-Fall-2
+     * (C.1-Fallback mit stderr-Hinweis). Kein Exit, der Lauf geht
+     * weiter.
+     */
+    private fun pkLookupFromSchemaReader(): (
+        dev.dmigrate.driver.connection.ConnectionPool,
+        dev.dmigrate.driver.DatabaseDialect,
+        String,
+    ) -> List<String> {
+        var cache: Map<String, List<String>>? = null
+        return { pool, dialect, table ->
+            val resolved = cache ?: run {
+                val loaded = try {
+                    val reader = DatabaseDriverRegistry.get(dialect).schemaReader()
+                    val result = reader.read(pool)
+                    result.schema.tables.mapValues { (_, def) -> def.primaryKey }
+                } catch (_: Throwable) {
+                    emptyMap<String, List<String>>()
+                }
+                cache = loaded
+                loaded
+            }
+            // Wir probieren schema-qualifizierte und unqualifizierte
+            // Keys, weil --tables beide Formen akzeptiert (§3.6).
+            resolved[table]
+                ?: resolved[table.substringAfterLast('.')]
+                ?: emptyList()
+        }
     }
 }

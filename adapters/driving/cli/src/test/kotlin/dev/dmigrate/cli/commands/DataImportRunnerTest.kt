@@ -23,8 +23,10 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.collections.shouldContain as shouldContainInCollection
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -64,7 +66,7 @@ class DataImportRunnerTest : FunSpec({
             error("FakeDataWriter.openTable() must not be called — runner delegates to ImportExecutor")
     }
 
-    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _, _, _ ->
+    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _, _, _, _, _, _, _, _, _ ->
         val tables = when (input) {
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
@@ -118,6 +120,8 @@ class DataImportRunnerTest : FunSpec({
         cliConfigPath: Path? = null,
         quiet: Boolean = false,
         noProgress: Boolean = false,
+        resume: String? = null,
+        checkpointDir: Path? = null,
     ) = DataImportRequest(
         target = target,
         source = source,
@@ -138,6 +142,8 @@ class DataImportRunnerTest : FunSpec({
         cliConfigPath = cliConfigPath,
         quiet = quiet,
         noProgress = noProgress,
+        resume = resume,
+        checkpointDir = checkpointDir,
     )
 
     fun isolatedTargetResolver(target: String?, configPath: Path?): String {
@@ -179,6 +185,9 @@ class DataImportRunnerTest : FunSpec({
         importExecutor: ImportExecutor = successExecutor,
         progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,
         stdinProvider: () -> java.io.InputStream = { ByteArrayInputStream("""[{"id":1}]""".toByteArray()) },
+        checkpointStoreFactory: ((Path) -> dev.dmigrate.streaming.checkpoint.CheckpointStore)? = null,
+        checkpointConfigResolver: (Path?) -> dev.dmigrate.streaming.CheckpointConfig? = { null },
+        clock: () -> java.time.Instant = java.time.Instant::now,
     ): DataImportRunner = DataImportRunner(
         targetResolver = targetResolver,
         urlParser = urlParser,
@@ -190,6 +199,9 @@ class DataImportRunnerTest : FunSpec({
         progressReporter = progressReporter,
         stdinProvider = stdinProvider,
         stderr = stderr.sink,
+        checkpointStoreFactory = checkpointStoreFactory,
+        checkpointConfigResolver = checkpointConfigResolver,
+        clock = clock,
     )
 
     // ─── Happy path (Exit 0) ──────────────────────────────────────
@@ -428,7 +440,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw ImportSchemaMismatchException("column 'userId' has no exact match")
             },
         )
@@ -506,7 +518,7 @@ class DataImportRunnerTest : FunSpec({
                 "sqlite:///tmp/should-not-be-used.db"
             },
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 executorInvoked = true
                 error("importExecutor must not be called when schema preflight fails")
             },
@@ -566,7 +578,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -579,7 +591,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -605,7 +617,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -637,7 +649,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw UnsupportedTriggerModeException(
                     "--trigger-mode disable is not supported for dialect MYSQL"
                 )
@@ -653,7 +665,7 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )
@@ -693,9 +705,15 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { pool, input, format, options, config, _, reporter ->
+            importExecutor = ImportExecutor {
+                pool, input, format, options, config, _, reporter,
+                opId, resuming, skipped, resumeStates, onChunk, onDone,
+                ->
                 seenInput = input
-                successExecutor.execute(pool, input, format, options, config, { _, _ -> }, reporter)
+                successExecutor.execute(
+                    pool, input, format, options, config, { _, _ -> }, reporter,
+                    opId, resuming, skipped, resumeStates, onChunk, onDone,
+                )
             },
         )
         assertExit(
@@ -741,7 +759,7 @@ class DataImportRunnerTest : FunSpec({
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { _, input, _, _, _, onTableOpened, _ ->
+            importExecutor = ImportExecutor { _, input, _, _, _, onTableOpened, _, _, _, _, _, _, _ ->
                 val tableName = when (input) {
                     is ImportInput.Stdin -> input.table
                     is ImportInput.SingleFile -> input.table
@@ -816,7 +834,7 @@ class DataImportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            importExecutor = ImportExecutor { _, input, _, _, _, _, pr ->
+            importExecutor = ImportExecutor { _, input, _, _, _, _, pr, _, _, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
                 val tables = when (input) {
@@ -836,7 +854,7 @@ class DataImportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, pr ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
                 ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
@@ -851,7 +869,7 @@ class DataImportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, pr ->
+            importExecutor = ImportExecutor { _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
                 pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
                 ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
@@ -859,6 +877,820 @@ class DataImportRunnerTest : FunSpec({
             })
         runner.execute(request(noProgress = true))
         reporterEvents.size shouldBe 0
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // 0.9.0 Phase A / Phase D.1 (docs/ImpPlan-0.9.0-D.md §4.8):
+    // Resume-CLI-Preflight fuer Import. Stdin-Quelle (`source == "-"`)
+    // kann nicht wiederaufgenommen werden → Exit 2. Die Phase-A-
+    // Warning („accepted but ignored") ist in Phase D.1 entfernt; der
+    // Runner setzt den Resume-Vertrag jetzt aktiv um.
+    // ────────────────────────────────────────────────────────────
+
+    test("Phase A §4.4: --resume mit stdin-Quelle endet mit Exit 2") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        val exit = runner.execute(
+            request(source = "-", resume = "./run.checkpoint.yaml"),
+        )
+        exit shouldBe 2
+        stderr.joined() shouldContain "--resume"
+        stderr.joined() shouldContain "stdin"
+    }
+
+    test("Phase D.1 §4.8: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        val exit = runner.execute(request(resume = "some-op-id"))
+        exit shouldBe 7
+        stderr.joined() shouldContain "checkpoint directory"
+    }
+
+    test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning, Happy-Path)") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(resume = ""))
+        stderr.joined() shouldNotContain "Warning: --resume"
+    }
+
+    // ─── 0.9.0 Phase D.1: Resume-Preflight + Manifest-Lifecycle ──
+    // (`docs/ImpPlan-0.9.0-D.md` §5.1)
+    // ──────────────────────────────────────────────────────────────
+
+    context("D.1 Resume-Preflight") {
+        test("fresh run without --resume saves initial manifest") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-init-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(request(checkpointDir = storeDir))
+            exit shouldBe 0
+            // After successful run, complete() removes the manifest
+            Files.list(storeDir).use { it.toList() }
+                .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
+                .size shouldBe 0
+        }
+
+        test("fresh run without checkpoint-store does not crash (legacy behavior)") {
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr) // no checkpoint store
+            runner.execute(request()) shouldBe 0
+        }
+
+        test("--resume with operationType EXPORT in manifest → Exit 3") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-wrongtype-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d1-wrongtype"
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "type mismatch"
+        }
+
+        test("--resume with matching fingerprint succeeds and runs import") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-match-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d1-match"
+            val req = request(resume = opId, checkpointDir = storeDir)
+            // Pre-compute the fingerprint using the same inputs the
+            // runner will compute (stdin-case excluded via request
+            // defaults).
+            val fingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json",
+                    encoding = null,
+                    csvNoHeader = false,
+                    csvNullString = "",
+                    onError = "abort",
+                    onConflict = "abort",
+                    triggerMode = "fire",
+                    truncate = false,
+                    disableFkChecks = false,
+                    reseedSequences = true,
+                    chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "single-file",
+                    inputPath = tempJsonFile.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                        ),
+                    ),
+                    optionsFingerprint = fingerprint,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            runner.execute(req) shouldBe 0
+        }
+
+        test("--resume with fingerprint mismatch (different --on-error) → Exit 3") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-fpmismatch-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d1-fpmismatch"
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                        ),
+                    ),
+                    optionsFingerprint = "deadbeef",
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            )
+            exit shouldBe 3
+            stderr.joined() shouldContain "fingerprint mismatch"
+        }
+
+        test("--resume with missing manifest file → Exit 7") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-missing-")
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            val exit = runner.execute(
+                request(resume = "nonexistent-op-id", checkpointDir = storeDir),
+            )
+            exit shouldBe 7
+            stderr.joined() shouldContain "not found"
+        }
+
+        test("--resume path outside checkpoint-dir → Exit 7") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-outside-")
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { dir ->
+                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+                },
+            )
+            val exit = runner.execute(
+                request(
+                    resume = "/etc/passwd.checkpoint.yaml",
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 7
+            stderr.joined() shouldContain "inside the effective"
+        }
+
+        test("--resume with diverged table list → Exit 3") {
+            val storeDir = Files.createTempDirectory("d-migrate-d1-tables-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d1-diverged-tables"
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "orders",  // request uses "users"
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                        ),
+                    ),
+                    // Fingerprint must match to expose the table check
+                    // — compute with tables=["orders"].
+                    optionsFingerprint = ImportOptionsFingerprint.compute(
+                        ImportOptionsFingerprint.Input(
+                            format = "json", encoding = null, csvNoHeader = false,
+                            csvNullString = "", onError = "abort", onConflict = "abort",
+                            triggerMode = "fire", truncate = false, disableFkChecks = false,
+                            reseedSequences = true, chunkSize = 10_000,
+                            tables = listOf("users"),
+                            inputTopology = "single-file",
+                            inputPath = tempJsonFile.toAbsolutePath().normalize().toString(),
+                            targetDialect = "SQLITE",
+                            targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                        )
+                    ),
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            )
+            // Table list divergence → Exit 3
+            exit shouldBe 3
+            stderr.joined() shouldContain "table list does not match"
+        }
+    }
+
+    // ─── 0.9.0 Phase D.3: Callback-Wiring + Truncate-Guard ──────
+    // (`docs/ImpPlan-0.9.0-D.md` §5.3)
+    // ──────────────────────────────────────────────────────────────
+
+    context("D.3 chunk-commit / table-completed callback wiring") {
+        test("fresh run routes skippedTables = empty + resumeStateByTable = empty") {
+            val capturedSkipped = mutableListOf<Set<String>>()
+            val capturedResumeStates =
+                mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
+            val captureExecutor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, skipped, resumeStates, _, onDone,
+                ->
+                capturedSkipped += skipped
+                capturedResumeStates += resumeStates
+                val table = when (input) {
+                    is dev.dmigrate.streaming.ImportInput.Stdin -> input.table
+                    is dev.dmigrate.streaming.ImportInput.SingleFile -> input.table
+                    is dev.dmigrate.streaming.ImportInput.Directory -> "t1"
+                }
+                val summary = TableImportSummary(
+                    table = table, rowsInserted = 5, rowsUpdated = 0, rowsSkipped = 0,
+                    rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
+                    sequenceAdjustments = emptyList(), targetColumns = emptyList(),
+                    triggerMode = TriggerMode.FIRE, durationMs = 1,
+                )
+                onDone(summary)
+                ImportResult(
+                    tables = listOf(summary), totalRowsInserted = 5, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
+                    durationMs = 1,
+                )
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, importExecutor = captureExecutor)
+            runner.execute(request()) shouldBe 0
+            capturedSkipped.single() shouldBe emptySet<String>()
+            capturedResumeStates.single() shouldBe emptyMap()
+        }
+
+        test("resume with IN_PROGRESS slice builds resumeStateByTable with chunksProcessed") {
+            val storeDir = Files.createTempDirectory("d-migrate-d3-state-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d3-state"
+            val fingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "single-file",
+                    inputPath = tempJsonFile.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.IN_PROGRESS,
+                            rowsProcessed = 500,
+                            chunksProcessed = 5,
+                        ),
+                    ),
+                    optionsFingerprint = fingerprint,
+                ),
+            )
+            val capturedResumeStates =
+                mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
+            val executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, resumeStates, _, onDone,
+                ->
+                capturedResumeStates += resumeStates
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                val summary = TableImportSummary(
+                    table = table, rowsInserted = 1, rowsUpdated = 0, rowsSkipped = 0,
+                    rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
+                    sequenceAdjustments = emptyList(), targetColumns = emptyList(),
+                    triggerMode = TriggerMode.FIRE, durationMs = 1,
+                )
+                onDone(summary)
+                ImportResult(
+                    tables = listOf(summary), totalRowsInserted = 1, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
+                    durationMs = 1,
+                )
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                importExecutor = executor,
+                checkpointStoreFactory = { store },
+            )
+            runner.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            ) shouldBe 0
+            val states = capturedResumeStates.single()
+            states.size shouldBe 1
+            states.getValue("users").committedChunks shouldBe 5L
+        }
+
+        test("onChunkCommitted updates manifest with IN_PROGRESS status") {
+            val storeDir = Files.createTempDirectory("d-migrate-d3-chunk-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, _, onChunk, onDone,
+                ->
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                // Emit two chunk commits before completing
+                onChunk(
+                    dev.dmigrate.streaming.ImportChunkCommit(
+                        table = table, chunkIndex = 0, chunksCommitted = 1,
+                        rowsInsertedTotal = 10, rowsUpdatedTotal = 0,
+                        rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
+                    )
+                )
+                onChunk(
+                    dev.dmigrate.streaming.ImportChunkCommit(
+                        table = table, chunkIndex = 1, chunksCommitted = 2,
+                        rowsInsertedTotal = 20, rowsUpdatedTotal = 0,
+                        rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
+                    )
+                )
+                val summary = TableImportSummary(
+                    table = table, rowsInserted = 20, rowsUpdated = 0, rowsSkipped = 0,
+                    rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
+                    sequenceAdjustments = emptyList(), targetColumns = emptyList(),
+                    triggerMode = TriggerMode.FIRE, durationMs = 1,
+                )
+                onDone(summary)
+                ImportResult(
+                    tables = listOf(summary), totalRowsInserted = 20, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
+                    durationMs = 1,
+                )
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                importExecutor = executor,
+                checkpointStoreFactory = { store },
+            )
+            runner.execute(request(checkpointDir = storeDir)) shouldBe 0
+            // After successful run, complete() removes the manifest.
+            Files.list(storeDir).use { it.toList() }
+                .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
+                .size shouldBe 0
+            stderr.joined() shouldNotContain "Error:"
+        }
+
+        test("onTableCompleted with error maps slice to FAILED (not COMPLETED)") {
+            val storeDir = Files.createTempDirectory("d-migrate-d3-failed-")
+            val capturedOps = mutableListOf<dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus>()
+            val sniffingStore = object : dev.dmigrate.streaming.checkpoint.CheckpointStore {
+                val real = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+                override fun load(operationId: String) = real.load(operationId)
+                override fun save(manifest: dev.dmigrate.streaming.checkpoint.CheckpointManifest) {
+                    manifest.tableSlices.forEach { capturedOps += it.status }
+                    real.save(manifest)
+                }
+                override fun list() = real.list()
+                override fun complete(operationId: String) = real.complete(operationId)
+            }
+            val executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, _, _, onDone,
+                ->
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                val summary = TableImportSummary(
+                    table = table, rowsInserted = 0, rowsUpdated = 0, rowsSkipped = 0,
+                    rowsUnknown = 0, rowsFailed = 5, chunkFailures = emptyList(),
+                    sequenceAdjustments = emptyList(), targetColumns = emptyList(),
+                    triggerMode = TriggerMode.FIRE, durationMs = 1,
+                    error = "duplicate key",
+                )
+                onDone(summary)
+                ImportResult(
+                    tables = listOf(summary), totalRowsInserted = 0, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 5,
+                    durationMs = 1,
+                )
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                importExecutor = executor,
+                checkpointStoreFactory = { sniffingStore },
+            )
+            runner.execute(request(checkpointDir = storeDir)) shouldBe 5
+            // We should have seen FAILED recorded via onTableCompleted
+            capturedOps shouldContainInCollection dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.FAILED
+        }
+
+        test("resume with COMPLETED slice routes skippedTables to executor") {
+            val storeDir = Files.createTempDirectory("d-migrate-d3-skipped-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d3-skipped"
+            val fingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "single-file",
+                    inputPath = tempJsonFile.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.COMPLETED,
+                        ),
+                    ),
+                    optionsFingerprint = fingerprint,
+                ),
+            )
+            val capturedSkipped = mutableListOf<Set<String>>()
+            val executor: ImportExecutor = ImportExecutor {
+                _, _, _, _, _, _, _, _, _, skipped, _, _, _,
+                ->
+                capturedSkipped += skipped
+                ImportResult(
+                    tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
+                    durationMs = 1,
+                )
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                importExecutor = executor,
+                checkpointStoreFactory = { store },
+            )
+            runner.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            ) shouldBe 0
+            capturedSkipped.single() shouldBe setOf("users")
+        }
+
+        test("E2: simulated import abort — resume continues from last committed chunk") {
+            // Scenario: import of a single-file table where the executor
+            // commits 2 chunks and then throws (simulated abort).
+            // A second run with --resume must receive the resume state
+            // indicating 2 committed chunks and complete successfully.
+            val storeDir = Files.createTempDirectory("d-migrate-e2-import-abort-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+
+            // Run 1: commits 2 chunks then aborts.
+            val run1Executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, _, onChunk, _,
+                ->
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                onChunk(
+                    dev.dmigrate.streaming.ImportChunkCommit(
+                        table = table, chunkIndex = 0, chunksCommitted = 1,
+                        rowsInsertedTotal = 100, rowsUpdatedTotal = 0,
+                        rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
+                    )
+                )
+                onChunk(
+                    dev.dmigrate.streaming.ImportChunkCommit(
+                        table = table, chunkIndex = 1, chunksCommitted = 2,
+                        rowsInsertedTotal = 200, rowsUpdatedTotal = 0,
+                        rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
+                    )
+                )
+                throw RuntimeException("simulated connection loss after chunk 2")
+            }
+            val stderr1 = StderrCapture()
+            val runner1 = newRunner(
+                stderr1,
+                importExecutor = run1Executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit1 = runner1.execute(request(checkpointDir = storeDir))
+            exit1 shouldBe 5
+
+            // Verify manifest: "users" should be IN_PROGRESS with 2 chunks committed.
+            val manifests = Files.list(storeDir).use { it.toList() }
+                .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
+            manifests.size shouldBe 1
+            val opId = manifests.single().fileName.toString()
+                .removeSuffix(".checkpoint.yaml")
+            val savedManifest = store.load(opId)!!
+            val slice = savedManifest.tableSlices.single()
+            slice.table shouldBe "users"
+            slice.status shouldBe dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.IN_PROGRESS
+            slice.chunksProcessed shouldBe 2L
+
+            // Run 2: resume with the stored manifest. Executor should
+            // receive resumeStateByTable with committedChunks = 2.
+            val capturedResumeStates =
+                mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
+            val run2Executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, resumeStates, _, onDone,
+                ->
+                capturedResumeStates += resumeStates
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                val summary = TableImportSummary(
+                    table = table, rowsInserted = 50, rowsUpdated = 0, rowsSkipped = 0,
+                    rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
+                    sequenceAdjustments = emptyList(), targetColumns = emptyList(),
+                    triggerMode = TriggerMode.FIRE, durationMs = 1,
+                )
+                onDone(summary)
+                ImportResult(
+                    tables = listOf(summary), totalRowsInserted = 50, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
+                    durationMs = 1,
+                )
+            }
+            val stderr2 = StderrCapture()
+            val runner2 = newRunner(
+                stderr2,
+                importExecutor = run2Executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit2 = runner2.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            )
+            exit2 shouldBe 0
+            // Resume state should carry the 2 committed chunks
+            val states = capturedResumeStates.single()
+            states.size shouldBe 1
+            states.getValue("users").committedChunks shouldBe 2L
+            // After success, manifest should be removed via complete()
+            Files.list(storeDir).use { it.toList() }
+                .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
+                .size shouldBe 0
+        }
+    }
+
+    // ─── 0.9.0 Phase D.4: Directory-Topologie ───────────────────
+    // (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4)
+    // ──────────────────────────────────────────────────────────────
+
+    context("D.4 Directory topology") {
+        test("fresh directory run populates inputFile + scanned tables in manifest") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-fresh-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+            Files.writeString(importDir.resolve("orders.json"), """[{"id":10}]""")
+            val captured = mutableListOf<dev.dmigrate.streaming.checkpoint.CheckpointManifest>()
+            val sniffingStore = object : dev.dmigrate.streaming.checkpoint.CheckpointStore {
+                val real = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+                override fun load(operationId: String) = real.load(operationId)
+                override fun save(manifest: dev.dmigrate.streaming.checkpoint.CheckpointManifest) {
+                    captured += manifest
+                    real.save(manifest)
+                }
+                override fun list() = real.list()
+                override fun complete(operationId: String) = real.complete(operationId)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { sniffingStore },
+            )
+            runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null, // directory source
+                    checkpointDir = storeDir,
+                ),
+            ) shouldBe 0
+            // initial manifest has both tables (sorted) with correct inputFile
+            val initial = captured.first()
+            initial.tableSlices.map { it.table } shouldContainExactly listOf("orders", "users")
+            initial.tableSlices.first { it.table == "users" }.inputFile shouldBe "users.json"
+            initial.tableSlices.first { it.table == "orders" }.inputFile shouldBe "orders.json"
+        }
+
+        test("resume with renamed file → Exit 3 (fingerprint mismatch via inputFilesByTable)") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-renamed-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-rename-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+
+            // Warm manifest pretending the prior run had a file called `users_old.json`
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d4-renamed"
+            val oldFingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "directory",
+                    inputPath = importDir.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                    inputFilesByTable = mapOf("users" to "users_old.json"),
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                            inputFile = "users_old.json",
+                        ),
+                    ),
+                    optionsFingerprint = oldFingerprint,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null,
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            )
+            // Fingerprint mismatch is the primary check; file-set
+            // divergence shows up there (mapping changed from
+            // users_old.json to users.json).
+            exit shouldBe 3
+            stderr.joined() shouldContain "fingerprint mismatch"
+        }
+
+        test("resume with added file → Exit 3 (tables list diverged)") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-added-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-add-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+            Files.writeString(importDir.resolve("orders.json"), """[{"id":10}]""") // NEW
+            // Manifest only knows `users`; current directory has both.
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d4-added"
+            val oldFingerprint = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "directory",
+                    inputPath = importDir.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                    inputFilesByTable = mapOf("users" to "users.json"),
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                            inputFile = "users.json",
+                        ),
+                    ),
+                    optionsFingerprint = oldFingerprint,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            val exit = runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null,
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            )
+            exit shouldBe 3
+            // Tables list divergence caught either by fingerprint or by the explicit tables check.
+        }
+
+        test("resume with same directory succeeds and runs import") {
+            val storeDir = Files.createTempDirectory("d-migrate-d4-same-")
+            val importDir = Files.createTempDirectory("d-migrate-d4-same-in-")
+            Files.writeString(importDir.resolve("users.json"), """[{"id":1}]""")
+
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+            val opId = "d4-same"
+            val fp = ImportOptionsFingerprint.compute(
+                ImportOptionsFingerprint.Input(
+                    format = "json", encoding = null, csvNoHeader = false,
+                    csvNullString = "", onError = "abort", onConflict = "abort",
+                    triggerMode = "fire", truncate = false, disableFkChecks = false,
+                    reseedSequences = true, chunkSize = 10_000,
+                    tables = listOf("users"),
+                    inputTopology = "directory",
+                    inputPath = importDir.toAbsolutePath().normalize().toString(),
+                    targetDialect = "SQLITE",
+                    targetUrl = "sqlite:///tmp/d-migrate-runner-fake.db",
+                    inputFilesByTable = mapOf("users" to "users.json"),
+                )
+            )
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    operationId = opId,
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.IMPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json", chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                            inputFile = "users.json",
+                        ),
+                    ),
+                    optionsFingerprint = fp,
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr,
+                checkpointStoreFactory = { store },
+            )
+            runner.execute(
+                request(
+                    source = importDir.toString(),
+                    format = "json",
+                    table = null,
+                    resume = opId,
+                    checkpointDir = storeDir,
+                ),
+            ) shouldBe 0
+        }
     }
 
     // Ensure the temp path referenced in other tests never accidentally exists

@@ -721,6 +721,10 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 - Test-Fixtures mit repräsentativen Daten
 - Separate Testsuites für jede Datenbankversion (PostgreSQL 12-16, MySQL 8.0-8.3)
 
+Weiterfuehrung: Eine konkrete, priorisierte Kandidatenliste fuer reale
+Beispiel- und Testdatenbanken ist in
+[`test-database-candidates.md`](./test-database-candidates.md) dokumentiert.
+
 ### 8.7 Spezifische Testfälle für proprietäre Objekte
 
 **PostgreSQL-spezifisch:**
@@ -982,11 +986,12 @@ tables:
 - ✅ CLI mit grundlegenden Kommandos
 - 🎯 Ziel: Funktionaler Prototyp für Early Adopters
 
-**Phase 2: Beta (0.6.0 - 0.9.0) - Monate 7-12**
+**Phase 2: Beta (0.6.0 - 0.9.5) - Monate 7-12**
 - 🚧 Reverse-Engineering (LF-004)
 - 🚧 Flyway/Liquibase-Integration
 - 🚧 Erweiterte Datentypen (JSON, Arrays, Binary)
 - 🚧 Internationalisierung (Deutsch, Englisch)
+- 🚧 Library-Refactor für sauberere externe Integrationsschnittstellen
 - 🚧 Umfassende Dokumentation
 - 🎯 Ziel: Production-ready für erste Projekte
 

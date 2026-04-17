@@ -213,7 +213,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.8.0](https://github.com/pt9912/d-migrate/releases/tag/v0.8.0)** — Internationalisierung: I18n-Runtime, ResourceBundles (EN/DE), ICU4J-Unicode-Utilities, TemporalFormatPolicy und konsolidierter CSV-/BOM-Encoding-Vertrag.
+Aktuelles Release: **[v0.9.0](https://github.com/pt9912/d-migrate/releases/tag/v0.9.0)** — Beta: Resilienz und vollständige i18n-CLI — Checkpoint/Resume für dateibasierte Export- und Import-Läufe (`--resume`, `--checkpoint-dir`), produktives `--lang`-Flag für Sprachauswahl (de/en).
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 

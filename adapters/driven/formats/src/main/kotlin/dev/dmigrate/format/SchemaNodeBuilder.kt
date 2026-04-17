@@ -374,6 +374,7 @@ internal object SchemaNodeBuilder {
     private fun buildDependencies(mapper: ObjectMapper, deps: DependencyInfo): ObjectNode {
         val node = mapper.createObjectNode()
         if (deps.tables.isNotEmpty()) node.set<ArrayNode>("tables", stringArray(mapper, deps.tables))
+        if (deps.views.isNotEmpty()) node.set<ArrayNode>("views", stringArray(mapper, deps.views))
         if (deps.columns.isNotEmpty()) {
             val colsNode = mapper.createObjectNode()
             for ((table, cols) in deps.columns.entries.sortedBy { it.key }) {

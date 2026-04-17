@@ -238,6 +238,11 @@ views:
     source_dialect: postgresql
 ```
 
+`dependencies.tables` listet bei Views die Basistabellen. Optionale
+Abhaengigkeiten auf andere Views werden in `dependencies.views`
+aufgefuehrt. Generatoren duerfen zusaetzliche View-Abhaengigkeiten best
+effort aus `query` ableiten.
+
 ---
 
 ## Triggers

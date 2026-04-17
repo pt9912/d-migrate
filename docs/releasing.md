@@ -4,6 +4,11 @@
 > Dieses Dokument beschreibt Voraussetzungen, Pre-Release-Checks, den
 > Schritt-für-Schritt-Ablauf für GitHub-Release-Assets, OCI und Homebrew
 > sowie Rollback-Szenarien.
+>
+> Hinweis: Ein oeffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
+> nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
+> [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
+> beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
 
 ---
 
@@ -105,6 +110,10 @@ docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/s
 #### DB-basierte Smokes (Reverse, Compare, Transfer)
 
 Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
+
+Hinweis: Fuer realistischere DB-Smokes ueber die eingebauten Fixture-Schemas
+hinaus siehe auch die priorisierte Kandidatenliste in
+[`test-database-candidates.md`](./test-database-candidates.md).
 
 ```bash
 SMOKE_DIR="$(mktemp -d)"
@@ -264,17 +273,31 @@ Smokes nur als Dateierzeugung, nicht als Runtime-Ausfuehrung validiert.
 
 ### 3.5 Coverage- und Workflow-Abgleich
 
-Der CI-Workflow `.github/workflows/build.yml` muss für den Release sowohl den
-aktuellen `koverVerify`-Satz als auch den Release-Asset-Pfad abdecken.
+Drei CI-Workflows tragen den Release:
+
+- `.github/workflows/build.yml` — Build, Tests, Coverage-Verify,
+  Release-Asset-Upload als Workflow-Artefakt
+- `.github/workflows/release-homebrew.yml` — GitHub-Release-Publikation,
+  `homebrew-releaser`-Push in den Tap `pt9912/homebrew-d-migrate`,
+  macOS-Smoke über `verify-homebrew`
+- `.github/workflows/verify-homebrew-formula.yml` — macOS-Verifikation der
+  repo-lokalen Formula nach einer Änderung an
+  `packaging/homebrew/d-migrate.rb`
 
 Vor jedem Release prüfen:
 
 - deckt `koverVerify` weiterhin alle aktuellen JVM-Module ab?
 - baut der Tag-Workflow `:adapters:driving:cli:assembleReleaseAssets`?
 - lädt der Tag-Workflow das Artefakt `release-assets` hoch?
+- bleibt der `homebrew-releaser`-`install:`-Block in
+  `release-homebrew.yml` deckungsgleich mit
+  `packaging/homebrew/d-migrate.rb`?
+- ist der `verify-homebrew`-Job in `release-homebrew.yml` und der
+  `verify-homebrew-formula`-Workflow unverändert einsatzbereit?
 
 ```bash
 rg -n "koverVerify|release-assets|assembleReleaseAssets" .github/workflows/build.yml
+rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 ```
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
@@ -420,17 +443,40 @@ zeigen:
 - `bin/d-migrate` bleibt der Nutzer-Einstieg
 - Java 21 bleibt explizit deklariert
 
-ZIP-SHA aus der Checksum-Datei lesen:
+ZIP-SHA **aus dem tatsächlich publizierten Release-Asset** ziehen — nicht
+aus `./release-assets/*.sha256`: der `build.yml`-Workflow lädt sein eigenes
+Artefakt mit eigener SHA hoch, während der publizierte ZIP aus dem
+separaten `release-homebrew.yml`-Lauf stammt und daher eine andere SHA hat:
 
 ```bash
-grep ' d-migrate-X.Y.Z.zip$' ./release-assets/d-migrate-X.Y.Z.sha256
+curl -sL "https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip" \
+  | sha256sum
+# oder:
+gh release download vX.Y.Z --pattern 'd-migrate-*.zip'
+sha256sum d-migrate-*.zip
 ```
 
 Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert
-werden:
+werden. Modernes Homebrew lehnt `brew install --formula <path.rb>` ab und
+verlangt, dass die Formula in einem Tap liegt — deshalb ueber einen lokalen
+Ephemeral-Tap installieren (derselbe Mechanismus, den der Workflow
+`verify-homebrew-formula.yml` benutzt):
 
 ```bash
-brew install --formula ./packaging/homebrew/d-migrate.rb
+brew tap-new local/d-migrate-verify --no-git
+TAP_DIR="$(brew --repository local/d-migrate-verify)"
+mkdir -p "${TAP_DIR}/Formula"
+cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
+brew install local/d-migrate-verify/d-migrate
+d-migrate --help
+```
+
+Alternativ ueber den veroeffentlichten Tap (bestaetigt zusaetzlich die
+`homebrew-releaser`-Pipeline):
+
+```bash
+brew tap pt9912/d-migrate https://github.com/pt9912/homebrew-d-migrate
+brew install d-migrate
 d-migrate --help
 ```
 
@@ -548,6 +594,8 @@ Für jeden Release abhaken:
 - [ ] CHANGELOG `[Unreleased]` reviewed
 - [ ] `docs/guide.md`, `docs/cli-spec.md`, `docs/architecture.md` und `docs/releasing.md` auf aktuellem Funktionsstand
 - [ ] `koverVerify`, `assembleReleaseAssets` und `release-assets` sind im Workflow korrekt verdrahtet
+- [ ] `verify-homebrew` (in `release-homebrew.yml`) und `verify-homebrew-formula.yml` sind unverändert verdrahtet
+- [ ] `homebrew-releaser`-`install:`-Block in `release-homebrew.yml` entspricht `packaging/homebrew/d-migrate.rb`
 - [ ] `AbstractDdlGenerator.getVersion()` zeigt auf neue Version
 - [ ] `Main.kt` `versionOption()` zeigt auf neue Version
 
@@ -573,8 +621,9 @@ Für jeden Release abhaken:
 - [ ] `gh release create vX.Y.Z` oder `gh release upload vX.Y.Z` mit `./release-assets/*` ausgeführt
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
-- [ ] `packaging/homebrew/d-migrate.rb` auf finale ZIP-URL und ZIP-SHA gebracht
-- [ ] `brew install --formula ./packaging/homebrew/d-migrate.rb` ok
+- [ ] `packaging/homebrew/d-migrate.rb` auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
+- [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
+- [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)
 
 **Post-Release**
 - [ ] `build.gradle.kts` zurück auf `X.Y'.Z'-SNAPSHOT`
@@ -588,7 +637,9 @@ Für jeden Release abhaken:
 
 - [`CHANGELOG.md`](../CHANGELOG.md) — Keep-a-Changelog Format
 - [`docs/roadmap.md`](./roadmap.md) — Milestone-Übersicht
-- [`.github/workflows/build.yml`](../.github/workflows/build.yml) — CI-Pipeline
-- [`packaging/homebrew/d-migrate.rb`](../packaging/homebrew/d-migrate.rb) — Homebrew-Formula
+- [`.github/workflows/build.yml`](../.github/workflows/build.yml) — Build/Test/Coverage/Release-Assets-CI
+- [`.github/workflows/release-homebrew.yml`](../.github/workflows/release-homebrew.yml) — GitHub-Release + Homebrew-Tap-Publikation + macOS-Verify
+- [`.github/workflows/verify-homebrew-formula.yml`](../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der repo-lokalen Homebrew-Formula
+- [`packaging/homebrew/d-migrate.rb`](../packaging/homebrew/d-migrate.rb) — Homebrew-Formula-Template
 - [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html)

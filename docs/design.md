@@ -695,10 +695,10 @@ src/main/resources/messages/
 6. Fallback: Englisch (`en`)
 ```
 
-Hinweise fuer Milestone 0.8.0:
+Hinweise:
 
-- 0.8.0 liefert die technische Aufloesungs- und Bundle-Basis.
-- Der finale CLI-Nutzervertrag fuer `--lang` als dokumentierte Override-Quelle folgt erst in 0.9.0.
+- 0.8.0 lieferte die technische Aufloesungs- und Bundle-Basis.
+- Seit 0.9.0 ist `--lang` als dokumentierte Override-Quelle produktiv: `--lang` sticht `D_MIGRATE_LANG`, der generische Env-Pfad bleibt tolerant (Root-Bundle-Fallback), waehrend `--lang` strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt ist.
 - Die effektive Konfigurationsdatei wird nicht separat fuer i18n "geraten", sondern ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
 
 ### 9.3 Unicode-Verarbeitung

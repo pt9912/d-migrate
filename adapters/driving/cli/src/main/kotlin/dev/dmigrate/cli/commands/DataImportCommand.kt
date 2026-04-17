@@ -120,6 +120,24 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
 
+    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
+    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
+    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
+    // Phase B bis D des Milestones.
+    val resume by option(
+        "--resume",
+        help = "Resume an earlier import from a checkpoint reference " +
+            "(file/directory source only; not supported with stdin `-`). " +
+            "Accepts a checkpoint-id or a path; paths MUST be inside " +
+            "the effective --checkpoint-dir / pipeline.checkpoint.directory.",
+    )
+
+    val checkpointDir by option(
+        "--checkpoint-dir",
+        help = "Directory for checkpoint storage. Overrides pipeline.checkpoint.directory " +
+            "from the config file when set.",
+    ).path()
+
     override fun run() {
         // Hierarchie: d-migrate → data → import → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -148,6 +166,8 @@ class DataImportCommand : CliktCommand(name = "import") {
             cliConfigPath = root?.config,
             quiet = ctx.quiet,
             noProgress = ctx.noProgress,
+            resume = resume,
+            checkpointDir = checkpointDir,
         )
         val runner = DataImportRunner(
             targetResolver = { target, configPath ->
@@ -167,15 +187,42 @@ class DataImportCommand : CliktCommand(name = "import") {
             writerLookup = writerLookup,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { pool, input, fmt, opts, cfg, onTableOpened, reporter ->
+            importExecutor = ImportExecutor {
+                pool, input, fmt, opts, cfg, onTableOpened, reporter,
+                opId, resuming, skipped, resumeStates, onChunk, onDone,
+                ->
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,
                     writerLookup = writerLookup,
                     onTableOpened = onTableOpened,
                 )
-                importer.import(pool, input, fmt, opts, cfg, reporter)
+                importer.import(
+                    pool = pool,
+                    input = input,
+                    format = fmt,
+                    options = opts,
+                    config = cfg,
+                    progressReporter = reporter,
+                    operationId = opId,
+                    resuming = resuming,
+                    skippedTables = skipped,
+                    resumeStateByTable = resumeStates,
+                    onChunkCommitted = onChunk,
+                    onTableCompleted = onDone,
+                )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
+            // 0.9.0 Phase D.1 (docs/ImpPlan-0.9.0-D.md §5.1):
+            // dateibasierter CheckpointStore + Config-Resolver —
+            // symmetrisch zum Export-Pfad.
+            checkpointStoreFactory = { dir ->
+                dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
+            },
+            checkpointConfigResolver = { cliCfg ->
+                dev.dmigrate.cli.config.PipelineCheckpointResolver(
+                    configPathFromCli = cliCfg,
+                ).resolve()
+            },
         )
         val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)

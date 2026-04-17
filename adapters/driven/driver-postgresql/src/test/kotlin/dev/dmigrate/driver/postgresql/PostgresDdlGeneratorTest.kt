@@ -351,9 +351,9 @@ class PostgresDdlGeneratorTest : FunSpec({
         ddl shouldContain "LANGUAGE plpgsql;"
     }
 
-    // 15. Function with different source_dialect is skipped with E052
+    // 15. Function with different source_dialect is skipped with E053
 
-    test("function with non-postgresql source_dialect is skipped with E052") {
+    test("function with non-postgresql source_dialect is skipped with E053") {
         val s = schema(
             functions = mapOf(
                 "mysql_func" to FunctionDefinition(
@@ -364,14 +364,14 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "E052"
+        rendered shouldContain "E053"
         rendered shouldContain "TODO"
         result.skippedObjects.any { it.name == "mysql_func" } shouldBe true
     }
 
-    // 16. Function with no body is skipped with E052
+    // 16. Function with no body is skipped with E053
 
-    test("function with no body is skipped with E052") {
+    test("function with no body is skipped with E053") {
         val s = schema(
             functions = mapOf(
                 "empty_func" to FunctionDefinition(body = null)
@@ -379,7 +379,7 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "E052"
+        rendered shouldContain "E053"
         rendered shouldContain "TODO"
         result.skippedObjects.any { it.name == "empty_func" } shouldBe true
     }
@@ -836,7 +836,7 @@ class PostgresDdlGeneratorTest : FunSpec({
         colorLine shouldContain "UNIQUE"
     }
 
-    test("procedure with non-postgresql source_dialect is skipped with E052") {
+    test("procedure with non-postgresql source_dialect is skipped with E053") {
         val s = schema(
             procedures = mapOf(
                 "mysql_proc" to ProcedureDefinition(
@@ -847,7 +847,7 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "E052"
+        rendered shouldContain "E053"
         result.skippedObjects.any { it.name == "mysql_proc" } shouldBe true
     }
 
@@ -911,7 +911,7 @@ class PostgresDdlGeneratorTest : FunSpec({
         ddl shouldContain "CREATE INDEX \"idx_orders_cust_date\" ON \"orders\" (\"customer_id\", \"order_date\");"
     }
 
-    test("view with incompatible source_dialect is skipped") {
+    test("view with incompatible source_dialect is transformed best-effort and warns with W111") {
         val s = schema(
             views = mapOf(
                 "mysql_view" to ViewDefinition(
@@ -922,9 +922,11 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "E052"
-        rendered shouldContain "TODO"
-        result.skippedObjects.any { it.name == "mysql_view" } shouldBe true
+        rendered shouldContain "CREATE OR REPLACE VIEW \"mysql_view\" AS"
+        rendered shouldContain "SELECT IFNULL(x, 0) FROM t;"
+        rendered shouldContain "W111"
+        result.notes.any { it.code == "W111" && it.objectName == "view_query" } shouldBe true
+        result.skippedObjects.any { it.name == "mysql_view" } shouldBe false
     }
 
     test("LIST partitioning generates FOR VALUES IN") {
@@ -1013,7 +1015,7 @@ class PostgresDdlGeneratorTest : FunSpec({
 
     // ── Coverage gap: generateTrigger edge cases ──
 
-    test("trigger without body is skipped with E052") {
+    test("trigger without body is skipped with E053") {
         val s = schema(
             tables = mapOf("t" to table(columns = mapOf("id" to col(NeutralType.Integer)))),
             triggers = mapOf("trg_no_body" to TriggerDefinition(
@@ -1022,7 +1024,7 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
         result.skippedObjects.any { it.name == "trg_no_body" } shouldBe true
-        result.render() shouldContain "E052"
+        result.render() shouldContain "E053"
     }
 
     test("trigger with non-postgresql source_dialect is skipped") {
@@ -1061,11 +1063,11 @@ class PostgresDdlGeneratorTest : FunSpec({
 
     // ── Coverage gap: generateProcedure edge cases ──
 
-    test("procedure without body is skipped with E052") {
+    test("procedure without body is skipped with E053") {
         val s = schema(procedures = mapOf("no_body_proc" to ProcedureDefinition()))
         val result = generator.generate(s)
         result.skippedObjects.any { it.name == "no_body_proc" } shouldBe true
-        result.render() shouldContain "E052"
+        result.render() shouldContain "E053"
     }
 
     test("procedure with non-postgresql source_dialect is skipped") {

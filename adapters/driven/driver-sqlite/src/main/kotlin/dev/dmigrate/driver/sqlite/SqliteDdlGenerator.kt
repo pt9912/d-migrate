@@ -41,7 +41,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                         listOf(
                             TransformationNote(
                                 type = NoteType.ACTION_REQUIRED,
-                                code = "E052",
+                                code = "E054",
                                 objectName = name,
                                 message = "Composite type '$name' is not supported in SQLite.",
                                 hint = "Flatten composite fields into individual table columns or use JSON."
@@ -75,7 +75,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         sequences: Map<String, SequenceDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        // SQLite does not support sequences. Skip each one with E052.
+        // SQLite does not support sequences. Skip each one with E056.
         val statements = mutableListOf<DdlStatement>()
         for ((name, _) in sequences) {
             skipped += SkippedObject("sequence", name, "Sequences are not supported in SQLite")
@@ -84,7 +84,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E056",
                         objectName = name,
                         message = "Sequence '$name' is not supported in SQLite.",
                         hint = "Use INTEGER PRIMARY KEY AUTOINCREMENT or application-level sequencing."
@@ -177,11 +177,11 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             // Partitioning: NOT SUPPORTED
             if (table.partitioning != null) {
                 notes += TransformationNote(
-                    type = NoteType.ACTION_REQUIRED,
-                    code = "E052",
-                    objectName = name,
-                    message = "Table partitioning is not supported in SQLite for table '$name'.",
-                    hint = "Partition data at the application level or use separate tables."
+                        type = NoteType.ACTION_REQUIRED,
+                        code = "E055",
+                        objectName = name,
+                        message = "Table partitioning is not supported in SQLite for table '$name'.",
+                        hint = "Partition data at the application level or use separate tables."
                 )
             }
 
@@ -307,7 +307,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 // EXCLUDE constraints are not supported in SQLite
                 notes += TransformationNote(
                     type = NoteType.ACTION_REQUIRED,
-                    code = "E052",
+                    code = "E054",
                     objectName = constraint.name,
                     message = "EXCLUDE constraint '${constraint.name}' is not supported in SQLite.",
                     hint = "Enforce exclusion logic at the application level or use triggers."
@@ -413,19 +413,6 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             return null
         }
 
-        if (view.sourceDialect != null && view.sourceDialect != "sqlite") {
-            skipped += SkippedObject("view", name, "Source dialect '${view.sourceDialect}' is not compatible with SQLite")
-            val note = TransformationNote(
-                type = NoteType.ACTION_REQUIRED,
-                code = "E052",
-                objectName = name,
-                message = "View '$name' was written for '${view.sourceDialect}' and must be manually rewritten for SQLite.",
-                hint = "Rewrite the query using SQLite-compatible SQL syntax."
-            )
-            val sql = "-- TODO: Rewrite view ${quoteIdentifier(name)} for SQLite (source dialect: ${view.sourceDialect})"
-            return DdlStatement(sql, listOf(note))
-        }
-
         // Materialized views are not supported in SQLite; emit as regular VIEW with warning
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
@@ -452,7 +439,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        // SQLite does not support user-defined SQL functions via DDL. Skip all with E052.
+        // SQLite does not support user-defined SQL functions via DDL. Skip all with E054.
         val statements = mutableListOf<DdlStatement>()
         for ((name, _) in functions) {
             skipped += SkippedObject("function", name, "Functions are not supported in SQLite DDL")
@@ -461,7 +448,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E054",
                         objectName = name,
                         message = "Function '$name' cannot be created via DDL in SQLite.",
                         hint = "Register custom functions programmatically via the SQLite C API or your application's SQLite driver."
@@ -478,7 +465,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        // SQLite does not support stored procedures. Skip all with E052.
+        // SQLite does not support stored procedures. Skip all with E054.
         val statements = mutableListOf<DdlStatement>()
         for ((name, _) in procedures) {
             skipped += SkippedObject("procedure", name, "Procedures are not supported in SQLite")
@@ -487,7 +474,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E054",
                         objectName = name,
                         message = "Procedure '$name' cannot be created in SQLite.",
                         hint = "Implement procedure logic at the application level."
@@ -521,7 +508,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Trigger '$name' has no body and must be manually implemented.",
                         hint = "Provide a trigger body in the schema definition."
@@ -530,7 +517,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             )
         }
 
-        // For 0.2.0: use the body as-is if source dialect is sqlite or null; otherwise skip with E052
+        // For 0.2.0: use the body as-is if source dialect is sqlite or null; otherwise skip with E053.
         if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") {
             skipped += SkippedObject("trigger", name, "Source dialect '${trigger.sourceDialect}' is not compatible with SQLite")
             return DdlStatement(
@@ -538,7 +525,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for SQLite.",
                         hint = "Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;."
@@ -594,5 +581,6 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             type = NoteType.ACTION_REQUIRED, code = "E052", objectName = table,
             message = "Geometry column '$column' has unsupported metadata ($reason) for SpatiaLite",
             hint = "Remove metadata from geometry column or use a different dialect",
+            blocksTable = true,
         ))))
 }

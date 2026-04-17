@@ -41,3 +41,8 @@ Dockerfile
 tmp/
 temp/
 dist/
+
+
+docs/
+release/
+release-assets/

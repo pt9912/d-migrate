@@ -86,6 +86,11 @@ d-migrate/
 | Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
 | Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`)                                                                                             |
 
+> Hinweis: Der geplante Refactor fuer eine schmalere Library- und
+> Integrationsschnittstelle ist in
+> [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
+> beschrieben.
+
 ```
               adapters:driving:cli  (Clikt)
                       │
@@ -203,11 +208,9 @@ d-migrate/
 │               └── StreamingExporter.kt
 ```
 
-> Geplante, noch nicht implementierte Module: `integrations/` (Flyway, Liquibase,
-> Django, Knex), `ai/` (Ollama, LM Studio, OpenAI, Anthropic, …), `testdata/`
-> (Faker, KI-gestuetzt), `docs/` — siehe Roadmap. Die 0.8.0-I18n-Bausteine
-> werden zunaechst in bestehenden Modulen verortet (`hexagon:application`,
-> `adapters:driving:cli`, `adapters:driven:formats`).
+> Seit 0.7.0 implementiert: `integrations/` (Flyway, Liquibase, Django, Knex).
+> Geplante, noch nicht implementierte Module: `ai/` (Ollama, LM Studio, OpenAI,
+> Anthropic, …), `testdata/` (Faker, KI-gestuetzt) — siehe Roadmap.
 
 ### 2.2 Modul-Abhängigkeiten
 
@@ -737,7 +740,7 @@ Architekturvertrag fuer 0.8.0:
 - `defaultLocale` beschreibt den Produktdefault; Root-/Fallback-Bundle ist Englisch (`messages.properties`).
 - Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
 - `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift per Phase-E-Vertrag nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte (siehe `docs/ImpPlan-0.8.0-E.md`).
-- Der finale Nutzervertrag fuer `--lang` als CLI-Override wird erst in 0.9.0 abgeschlossen.
+- Seit 0.9.0 ist `--lang` als CLI-Override produktiv: `--lang` hat Vorrang vor `D_MIGRATE_LANG` und ist strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt.
 
 ### 4.2 Logging und Observability
 
@@ -831,7 +834,7 @@ suspend fun <T> withRetry(
 
 **Gradle (Kotlin DSL)** mit Multi-Module-Setup:
 
-Das folgende Build-Skript ist als Zielbild fuer die geplante Multi-Module-Codebasis zu verstehen:
+Das folgende Build-Skript beschreibt die implementierte Multi-Module-Codebasis:
 
 ```kotlin
 // build.gradle.kts (Root)

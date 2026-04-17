@@ -36,7 +36,7 @@ class TransformationReportWriterTest : FunSpec({
                     TransformationNote(NoteType.WARNING, "W100", "t2.col", "tz lost")
                 )),
                 DdlStatement("-- skipped", listOf(
-                    TransformationNote(NoteType.ACTION_REQUIRED, "E052", "fn", "needs KI")
+                    TransformationNote(NoteType.ACTION_REQUIRED, "E053", "fn", "needs KI")
                 ))
             ),
             skippedObjects = listOf(SkippedObject("function", "calc", "wrong dialect"))

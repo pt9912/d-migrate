@@ -64,24 +64,27 @@ RUN chmod +x /usr/local/bin/yq && \
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
 # Used by scripts/test-integration-docker.sh for the full runtime matrix.
-FROM eclipse-temurin:21-jdk-noble AS integration-test
+FROM gradle:8.12-jdk21 AS integration-test
 
-RUN apt-get update -qq && \
-    apt-get install -y -qq --no-install-recommends \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv \
     curl ca-certificates \
     build-essential && \
     python3 -m pip install --break-system-packages --quiet django && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y -qq --no-install-recommends nodejs && \
+    apt-get install -y --no-install-recommends nodejs && \
     npm install -g pnpm node-gyp && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
+COPY --chown=gradle:gradle . .
+
 # ---- Stage 3: runtime ------------------------------------------------------
 # Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
 FROM eclipse-temurin:21-jre-noble AS runtime
+
 
 LABEL org.opencontainers.image.title="d-migrate" \
     org.opencontainers.image.description="Database-agnostic CLI tool for schema migration and data management" \

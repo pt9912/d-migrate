@@ -230,9 +230,9 @@ class SqliteDdlGeneratorTest : FunSpec({
         sql shouldContain "\"priority\" TEXT NOT NULL CHECK (\"priority\" IN ('low', 'medium', 'high', 'critical'))"
     }
 
-    // ── 7. Composite custom type is skipped with E052 ───────────────
+    // ── 7. Composite custom type is skipped with E054 ───────────────
 
-    test("composite custom type emits E052 action required note") {
+    test("composite custom type emits E054 action required note") {
         val s = schema(
             customTypes = mapOf(
                 "address" to CustomTypeDefinition(
@@ -247,13 +247,13 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
         val notes = result.notes
 
-        notes.any { it.code == "E052" && it.objectName == "address" } shouldBe true
+        notes.any { it.code == "E054" && it.objectName == "address" } shouldBe true
         notes.any { it.message.contains("Composite type") } shouldBe true
     }
 
-    // ── 8. Sequence is skipped with E052 ────────────────────────────
+    // ── 8. Sequence is skipped with E056 ────────────────────────────
 
-    test("sequence is skipped with E052 and added to skippedObjects") {
+    test("sequence is skipped with E056 and added to skippedObjects") {
         val s = schema(
             sequences = mapOf(
                 "order_seq" to SequenceDefinition(start = 1000, increment = 1)
@@ -262,12 +262,12 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
 
         result.skippedObjects.any { it.type == "sequence" && it.name == "order_seq" } shouldBe true
-        result.notes.any { it.code == "E052" && it.objectName == "order_seq" } shouldBe true
+        result.notes.any { it.code == "E056" && it.objectName == "order_seq" } shouldBe true
     }
 
-    // ── 9. Partitioning is skipped with E052 ────────────────────────
+    // ── 9. Partitioning is skipped with E055 ────────────────────────
 
-    test("table with partitioning emits E052 warning") {
+    test("table with partitioning emits E055 warning") {
         val s = schema(
             tables = mapOf(
                 "events" to table(
@@ -286,7 +286,7 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
         val notes = result.notes
 
-        notes.any { it.code == "E052" && it.message.contains("partitioning") } shouldBe true
+        notes.any { it.code == "E055" && it.message.contains("partitioning") } shouldBe true
     }
 
     // ── 10. HASH index emits W102 warning and is skipped ────────────
@@ -529,9 +529,9 @@ class SqliteDdlGeneratorTest : FunSpec({
         result.notes.any { it.code == "W103" && it.objectName == "stats_summary" } shouldBe true
     }
 
-    // ── 16. Function is skipped with E052 ───────────────────────────
+    // ── 16. Function is skipped with E054 ───────────────────────────
 
-    test("function is skipped with E052 and added to skippedObjects") {
+    test("function is skipped with E054 and added to skippedObjects") {
         val s = schema(
             functions = mapOf(
                 "calculate_total" to FunctionDefinition(
@@ -543,12 +543,12 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
 
         result.skippedObjects.any { it.type == "function" && it.name == "calculate_total" } shouldBe true
-        result.notes.any { it.code == "E052" && it.objectName == "calculate_total" } shouldBe true
+        result.notes.any { it.code == "E054" && it.objectName == "calculate_total" } shouldBe true
     }
 
-    // ── 17. Procedure is skipped with E052 ──────────────────────────
+    // ── 17. Procedure is skipped with E054 ──────────────────────────
 
-    test("procedure is skipped with E052 and added to skippedObjects") {
+    test("procedure is skipped with E054 and added to skippedObjects") {
         val s = schema(
             procedures = mapOf(
                 "cleanup_old_data" to ProcedureDefinition(
@@ -560,7 +560,7 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
 
         result.skippedObjects.any { it.type == "procedure" && it.name == "cleanup_old_data" } shouldBe true
-        result.notes.any { it.code == "E052" && it.objectName == "cleanup_old_data" } shouldBe true
+        result.notes.any { it.code == "E054" && it.objectName == "cleanup_old_data" } shouldBe true
     }
 
     // ── 18. Trigger with sqlite source_dialect produces CREATE TRIGGER
@@ -632,9 +632,9 @@ class SqliteDdlGeneratorTest : FunSpec({
         triggerSql shouldContain "END;"
     }
 
-    // ── 19. Trigger with different source_dialect is skipped with E052
+    // ── 19. Trigger with different source_dialect is skipped with E053
 
-    test("trigger with non-sqlite source dialect is skipped with E052") {
+    test("trigger with non-sqlite source dialect is skipped with E053") {
         val s = schema(
             tables = mapOf(
                 "users" to table(
@@ -657,7 +657,7 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
 
         result.skippedObjects.any { it.type == "trigger" && it.name == "trg_pg_notify" } shouldBe true
-        result.notes.any { it.code == "E052" && it.objectName == "trg_pg_notify" } shouldBe true
+        result.notes.any { it.code == "E053" && it.objectName == "trg_pg_notify" } shouldBe true
     }
 
     // ── 20. Decimal type maps to REAL with W200 precision warning ───
@@ -932,19 +932,21 @@ class SqliteDdlGeneratorTest : FunSpec({
         childrenSql shouldContain "REFERENCES \"parents\"(\"id\") ON DELETE SET NULL ON UPDATE CASCADE"
     }
 
-    test("view with incompatible source dialect is skipped with E052") {
+    test("view with incompatible source dialect is transformed and generated") {
         val s = schema(
             views = mapOf(
                 "pg_view" to ViewDefinition(
-                    query = "SELECT * FROM pg_catalog.pg_tables",
+                    query = "SELECT NOW() FROM orders",
                     sourceDialect = "postgresql"
                 )
             )
         )
         val result = generator.generate(s)
 
-        result.skippedObjects.any { it.type == "view" && it.name == "pg_view" } shouldBe true
-        result.notes.any { it.code == "E052" && it.objectName == "pg_view" } shouldBe true
+        result.render() shouldContain "CREATE VIEW IF NOT EXISTS \"pg_view\" AS"
+        result.render() shouldContain "SELECT datetime('now') FROM orders;"
+        result.skippedObjects.any { it.type == "view" && it.name == "pg_view" } shouldBe false
+        result.notes.any { it.code == "E053" && it.objectName == "pg_view" } shouldBe false
     }
 
     test("index without explicit name gets auto-generated name") {
@@ -995,7 +997,7 @@ class SqliteDdlGeneratorTest : FunSpec({
         val result = generator.generate(s)
 
         result.skippedObjects.any { it.type == "trigger" && it.name == "trg_empty" } shouldBe true
-        result.notes.any { it.code == "E052" && it.objectName == "trg_empty" } shouldBe true
+        result.notes.any { it.code == "E053" && it.objectName == "trg_empty" } shouldBe true
     }
 
     test("view with no query is skipped") {
@@ -1129,7 +1131,7 @@ class SqliteDdlGeneratorTest : FunSpec({
         sql shouldContain "CONSTRAINT \"uq_email_username\" UNIQUE (\"email\", \"username\")"
     }
 
-    test("constraint EXCLUDE is not supported and emits E052") {
+    test("constraint EXCLUDE is not supported and emits E054") {
         val s = schema(
             tables = mapOf(
                 "reservations" to table(
@@ -1150,7 +1152,7 @@ class SqliteDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
 
-        result.notes.any { it.code == "E052" && it.objectName == "excl_room_time" } shouldBe true
+        result.notes.any { it.code == "E054" && it.objectName == "excl_room_time" } shouldBe true
     }
 
     test("multiple tables with foreign key dependencies are topologically sorted") {

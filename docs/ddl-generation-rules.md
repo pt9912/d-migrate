@@ -62,14 +62,19 @@ stabilen, nicht zeitabhängigen Metadaten sichtbar.
 
 ### 2.2 Quoting-Strategie
 
-**Default: Immer quoten** (`ddl.quote_identifiers: always` — Defensive Quoting)
+**Aktueller Vertrag: Immer quoten** (fest verdrahtetes Defensive Quoting)
 
 Begründung:
 - Konsistentes Verhalten über alle Dialekte
 - Keine Überraschungen bei reservierten Wörtern
 - Zukunftssicher (neue reservierte Wörter in DB-Updates)
 
-**Alternative: Nur reservierte Wörter quoten** (`ddl.quote_identifiers: reserved_only`)
+**Späterer Milestone: Nur reservierte Wörter quoten** (geplante Option `ddl.quote_identifiers: reserved_only`)
+
+Hinweis: Der aktuelle Implementierungsstand bietet **keine öffentliche
+Quoting-Konfigurationsoption**. Der Generator quotet derzeit immer.
+`reserved_only` ist nur als zukünftige Option dokumentiert und noch nicht im
+Generator, im Optionsmodell oder im CLI-/Config-Pfad verdrahtet.
 
 In diesem Modus werden Identifier nur gequotet, wenn:
 - Der Name ein reserviertes Wort des Zieldialekts ist (je Dialekt gepflegte Liste)
@@ -213,6 +218,10 @@ Besonderheiten:
 
 ### 3.6 ALTER TABLE (Schema-Migration)
 
+Hinweis: Dieser Abschnitt beschreibt den geplanten diff-basierten
+`schema migrate`-Pfad eines spaeteren Milestones. Der Befehl ist im aktuellen
+CLI-Umfang noch nicht verfuegbar.
+
 Für `schema migrate` erzeugt der Generator `ALTER TABLE`-Statements. Die Syntax variiert pro Dialekt:
 
 #### ADD COLUMN
@@ -317,6 +326,10 @@ DROP TABLE "_orders_old";
 |---|---|
 | `schema generate` | **Kein Rebuild** — erzeugt nur `CREATE TABLE` DDL (Neuerstellung). Der Rebuild ist nur bei Schema-Änderungen an bestehenden Tabellen relevant. |
 | `schema migrate` *(0.5.0)* | **Rebuild wird generiert** wenn eine ALTER-Operation für SQLite nicht unterstützt wird (z.B. ALTER COLUMN TYPE, ADD CONSTRAINT). |
+
+Hinweis: Der hier beschriebene Rebuild-Workaround gehoert zum geplanten
+`schema migrate`-Pfad eines spaeteren Milestones und ist nicht Teil des
+aktuellen CLI-Funktionsumfangs.
 
 Für `schema generate` (0.2.0) ist der Rebuild-Workaround also **nicht relevant** — er wird erst mit `schema migrate` (0.5.0) implementiert.
 
@@ -494,9 +507,9 @@ CREATE SEQUENCE "invoice_number_seq"
     CACHE 20;
 ```
 
-MySQL: Emulation über dedizierte Hilfstabelle (konfigurierbar) oder `action_required`.
+MySQL: Emulation über dedizierte Hilfstabelle (konfigurierbar) oder `action_required` (E056).
 
-SQLite: Keine nativen benannten Sequenzen. `action_required` wird erzeugt.
+SQLite: Keine nativen benannten Sequenzen. `action_required` (E056) wird erzeugt.
 
 ---
 
@@ -623,7 +636,7 @@ Hinweis: MySQL erfordert, dass der Partitionsschlüssel Teil des Primary Key ist
 
 ### 9.3 SQLite
 
-SQLite unterstützt keine native Partitionierung. Bei `partitioning`-Konfiguration wird `action_required` (E052) erzeugt.
+SQLite unterstützt keine native Partitionierung. Bei `partitioning`-Konfiguration wird `action_required` (E055) erzeugt.
 
 ### 9.4 Partitionstypen
 
@@ -721,8 +734,8 @@ Trigger-Bodies können dialektspezifische prozedurale Logik enthalten. Es gelten
 | Situation | Verhalten |
 |---|---|
 | `source_dialect` = Ziel-Dialekt | Body wird 1:1 übernommen |
-| `source_dialect` ≠ Ziel-Dialekt, Body vorhanden | Body wird übersprungen, `action_required` (E052) erzeugt |
-| `source_dialect` ≠ Ziel-Dialekt, Body leer/null | Nur CREATE TRIGGER-Hülle erzeugt (Warnung W110) |
+| `source_dialect` ≠ Ziel-Dialekt, Body vorhanden | Body wird übersprungen, `action_required` (E053) erzeugt |
+| `source_dialect` ≠ Ziel-Dialekt, Body leer/null | `action_required` (E053): Trigger muss manuell implementiert werden |
 | Kein `source_dialect` angegeben | Body wird 1:1 übernommen (Annahme: dialektneutral) |
 
 **PostgreSQL-Sonderfall**: Trigger-Logik liegt in einer separaten Function. Wenn ein Trigger nach PostgreSQL generiert wird, erzeugt der Generator automatisch eine Trigger-Function aus dem Body:
@@ -742,7 +755,7 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 **Strategie**:
 - **Wenn `source_dialect` = `target_dialect`**: Body wird 1:1 übernommen
 - **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design) und [Beispiel Stored Procedure Migration](./beispiel-stored-procedure-migration.md))
-- **Fallback ohne KI**: `action_required` (E052) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
+- **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:
 
@@ -859,7 +872,7 @@ Hinweise werden als SQL-Kommentare direkt vor dem betroffenen Statement eingefü
 -- [W102] HASH index not supported on InnoDB, using BTREE
 CREATE INDEX `idx_orders_status` ON `orders` (`status`);
 
--- [E052] action_required: Function body requires KI-assisted transformation
+-- [E053] action_required: Function body requires KI-assisted transformation
 -- Use: d-migrate transform procedure --procedure calculate_total --ai-backend ollama
 -- Skipped: CREATE FUNCTION `calculate_total` (source_dialect: postgresql, target: mysql)
 ```
@@ -911,7 +924,7 @@ notes:
     message: "HASH index not supported on InnoDB, using BTREE"
 
   - type: action_required
-    code: E052
+    code: E053
     object: calculate_total
     message: "Function body requires KI-assisted transformation"
     hint: "d-migrate transform procedure --procedure calculate_total --ai-backend ollama"
@@ -935,7 +948,7 @@ skipped_objects:
 **stderr-Ausgabe bei action_required**:
 
 ```
-⚠ Warning [E052]: Function 'calculate_total' skipped — requires KI-assisted transformation
+⚠ Warning [E053]: Function 'calculate_total' skipped — requires KI-assisted transformation
   → Hint: d-migrate transform procedure --procedure calculate_total --ai-backend ollama
 ```
 
@@ -1066,7 +1079,7 @@ Zulässige Werte und Defaults je Zieldialekt:
 | Zieldialekt | Zulässige Profile | Default |
 |---|---|---|
 | `postgresql` | `postgis`, `none` | `postgis` |
-| `mysql` | `native` | `native` |
+| `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
 
 Bedeutung der Profilwerte:
@@ -1074,7 +1087,7 @@ Bedeutung der Profilwerte:
 - `postgis`: PostgreSQL-DDL wird mit PostGIS-kompatiblen Geometrietypen erzeugt.
 - `native`: MySQL-DDL wird mit den nativen Spatial Data Types von MySQL erzeugt.
 - `spatialite`: SQLite-DDL verwendet die `AddGeometryColumn()`-Strategie von SpatiaLite.
-- `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert.
+- `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert. Das ist fuer PostgreSQL, MySQL und SQLite ein zulaessiger Generatorpfad, wenn Spatial-DDL bewusst unterdrueckt werden soll.
 
 Unzulaessige Dialekt/Profil-Kombinationen (z.B. `--target mysql --spatial-profile postgis`)
 erzeugen einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung.
@@ -1237,15 +1250,21 @@ Reihenfolge vor dem `DROP TABLE` emittiert.
 
 ### 16.8 Fehler- und Warnungs-Codes fuer Spatial
 
-Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E120 und E121
-entstehen bei `schema validate` (Schema-/Modellregeln); E052 und W120
+Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E020, E120 und E121
+entstehen bei `schema validate` (Schema-/Modellregeln); E052 bis E056 sowie W113 und W120
 entstehen bei `schema generate` (Generator-/Report-Regeln).
 
 | Code | Typ | Ebene | Meldung |
 |---|---|---|---|
 | E120 | Validierungsfehler | `schema validate` | Unknown `geometry_type` value |
 | E121 | Validierungsfehler | `schema validate` | `srid` must be greater than 0 |
-| E052 | action_required | `schema generate` | Spatial column cannot be generated with the chosen spatial profile |
+| E020 | Validierungsfehler | `schema validate` | Declared view dependency references non-existent view |
+| E052 | action_required | `schema generate` | Spatial object cannot be generated with the chosen spatial profile |
+| E053 | action_required | `schema generate` | Dialect-specific SQL content requires manual transformation or implementation |
+| E054 | action_required | `schema generate` | Object type is not supported in the target dialect |
+| E055 | action_required | `schema generate` | Partitioning is not supported in the target dialect |
+| E056 | action_required | `schema generate` | Named sequence cannot be generated natively and needs emulation/manual handling |
+| W113 | Warnung | `schema generate` | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
 | W120 | Warnung | `schema generate` | SRID could not be fully transferred to target dialect |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
@@ -1255,9 +1274,31 @@ der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,
 **E121**: Wird erzeugt, wenn `srid` angegeben ist und den Wert `0` oder einen
 negativen Wert hat. Eine fehlende `srid` ist zulaessig und erzeugt keinen Fehler.
 
-**E052 (Spatial)**: Wird erzeugt, wenn das Spatial-Profil `none` ist und die
-Tabelle deshalb nicht generiert werden kann. Die gesamte Tabelle wird
-blockiert — partielle DDL ohne die Spatial-Spalte wird nicht erzeugt.
+**E020**: Wird erzeugt, wenn `dependencies.views` auf eine View verweist, die
+im neutralen Schema nicht existiert.
+
+**E052 (Spatial)**: Wird erzeugt, wenn ein Spatial-Objekt mit dem gewählten
+Spatial-Profil nicht generiert werden kann. Die gesamte betroffene Tabelle
+wird blockiert — partielle DDL ohne die Spatial-Spalte wird nicht erzeugt.
+
+**E053 (Dialekt-Transformation)**: Wird erzeugt, wenn View-Query,
+Function-/Procedure-Body oder Trigger-Body nicht automatisch zwischen
+Dialekten transformiert werden kann oder ein Body manuell ergänzt werden muss.
+
+**E054 (Nicht unterstützter Objekttyp)**: Wird erzeugt, wenn der Zieldialekt
+den Objekttyp nicht unterstützt, z. B. Composite Types, EXCLUDE-Constraints,
+SQLite-Functions oder SQLite-Procedures.
+
+**E055 (Partitionierung)**: Wird erzeugt, wenn die konfigurierte
+Partitionierung im Zieldialekt nicht unterstützt wird.
+
+**E056 (Sequence-/Emulationsfall)**: Wird erzeugt, wenn eine benannte Sequence
+im Zieldialekt nicht nativ erzeugt werden kann und manuelle Emulation oder
+Nacharbeit erforderlich ist.
+
+**W113**: Wird erzeugt, wenn deklarierte oder best-effort abgeleitete
+View-Abhaengigkeiten keine vollstaendige topologische Sortierung erlauben. Die
+verbleibenden Views werden dann in ihrer Originalreihenfolge emittiert.
 
 **W120**: Wird erzeugt, wenn `srid`-Metadaten nicht vollstaendig in die
 Ziel-DDL uebertragen werden konnten (Best-Effort-Pfad, insbesondere bei MySQL

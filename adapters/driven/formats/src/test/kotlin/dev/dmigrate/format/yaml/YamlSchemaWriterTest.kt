@@ -64,6 +64,32 @@ class YamlSchemaWriterTest : FunSpec({
         result shouldBe original
     }
 
+    test("round-trip view dependencies with explicit views list") {
+        val original = SchemaDefinition(
+            name = "Views",
+            version = "1.0.0",
+            views = mapOf(
+                "summary" to ViewDefinition(
+                    query = "SELECT * FROM base_view",
+                    dependencies = DependencyInfo(
+                        tables = listOf("orders"),
+                        views = listOf("base_view"),
+                    ),
+                    sourceDialect = "postgresql",
+                ),
+                "base_view" to ViewDefinition(
+                    query = "SELECT * FROM orders",
+                    dependencies = DependencyInfo(tables = listOf("orders")),
+                    sourceDialect = "postgresql",
+                ),
+            ),
+        )
+
+        val result = roundTrip(original)
+
+        result shouldBe original
+    }
+
     // ── Determinism ─────────────────────────────
 
     test("write is deterministic — identical bytes on repeated calls") {

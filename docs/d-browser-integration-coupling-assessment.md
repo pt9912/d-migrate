@@ -3,6 +3,10 @@
 > Status: Draft
 > Kontext: Bewertung der aktuell sichtbaren Kopplungen zwischen `d-browser`
 > und `d-migrate` vor einem dedizierten `source-d-migrate`-Adapter
+>
+> Weiterfuehrung: Die hieraus abgeleiteten Refactor-Arbeitspakete sind in
+> [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
+> konkretisiert.
 
 ## Ziel
 

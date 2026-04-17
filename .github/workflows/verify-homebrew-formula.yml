@@ -1,0 +1,80 @@
+name: Verify Homebrew Formula
+
+# Verifies the repo-local Homebrew formula template at
+# packaging/homebrew/d-migrate.rb by running `brew install --formula` on a
+# macOS runner. The formula URL must already point at a published GitHub
+# release; this workflow therefore runs primarily after the post-release
+# version bump (§5 of docs/releasing.md) has updated the formula's
+# version + sha256 to match the just-published ZIP.
+#
+# Triggers:
+#   - push on develop affecting the formula file (covers post-release bump)
+#   - pull_request targeting develop or main affecting the formula
+#   - workflow_dispatch for manual verification after a release
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'packaging/homebrew/d-migrate.rb'
+      - '.github/workflows/verify-homebrew-formula.yml'
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'packaging/homebrew/d-migrate.rb'
+      - '.github/workflows/verify-homebrew-formula.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Read formula metadata
+        id: formula
+        run: |
+          VERSION="$(grep -E '^\s+version "[^"]+"' packaging/homebrew/d-migrate.rb \
+            | head -1 | sed -E 's/.*version "([^"]+)".*/\1/')"
+          SHA="$(grep -E '^\s+sha256 "[^"]+"' packaging/homebrew/d-migrate.rb \
+            | head -1 | sed -E 's/.*sha256 "([^"]+)".*/\1/')"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${SHA}" >> "${GITHUB_OUTPUT}"
+          echo "Formula version=${VERSION} sha256=${SHA}"
+
+      - name: Skip verification if SHA is still a placeholder
+        if: steps.formula.outputs.sha256 == 'REPLACE_WITH_RELEASE_ZIP_SHA256'
+        run: |
+          echo "Formula SHA is still the placeholder; skipping brew install."
+          echo "This is expected when the post-release bump has not yet pinned a real SHA."
+          exit 0
+
+      - name: Install formula from repo via ephemeral tap
+        if: steps.formula.outputs.sha256 != 'REPLACE_WITH_RELEASE_ZIP_SHA256'
+        run: |
+          # Modern Homebrew rejects `brew install --formula <path.rb>` and
+          # requires the formula to live in a tap. We create an ephemeral
+          # local tap, drop the repo-local formula into its Formula/ dir
+          # and install from there — still exercises the exact .rb file
+          # that docs/releasing.md §4.7 points at.
+          brew tap-new local/d-migrate-verify --no-git
+          TAP_DIR="$(brew --repository local/d-migrate-verify)"
+          mkdir -p "${TAP_DIR}/Formula"
+          cp packaging/homebrew/d-migrate.rb "${TAP_DIR}/Formula/d-migrate.rb"
+          brew install local/d-migrate-verify/d-migrate
+
+      - name: Smoke-test installed CLI
+        if: steps.formula.outputs.sha256 != 'REPLACE_WITH_RELEASE_ZIP_SHA256'
+        env:
+          VERSION: ${{ steps.formula.outputs.version }}
+        run: |
+          d-migrate --version | grep -F "d-migrate version ${VERSION}"
+          d-migrate --help | head -5
