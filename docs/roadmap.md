@@ -533,6 +533,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.19
-**Stand**: 2026-04-16
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5 und 0.8.0 abgeschlossen; Milestone 0.9.0 in Arbeit, 0.9.1 geplant
+**Version**: 3.20
+**Stand**: 2026-04-17
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0 und 0.9.0 abgeschlossen; Milestone 0.9.1 geplant
