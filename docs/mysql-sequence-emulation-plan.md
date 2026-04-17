@@ -154,12 +154,21 @@ Trigger-Namensvertrag:
 - MySQL-Identifier sind auf 64 Zeichen begrenzt
 - der Triggername wird deshalb **nicht** frei aus vollem Tabellen- und
   Spaltennamen zusammengesetzt
+- fuer `table16`, `column16` und `hash10` wird **nicht** die rohe
+  MySQL-Metadaten-Schreibweise verwendet, sondern die neutrale
+  Kanonform des Identifiers
+- diese Kanonform ist genau die Identifier-Schreibweise, die im
+  neutralen Schema verwendet und beim Reverse nach der
+  `lower_case_table_names`-bewussten Reader-Normalisierung ausgegeben
+  wird
 - stattdessen gilt verbindlich:
   - Prefix `dmg_seq_`
-  - `table16`: erste 16 Zeichen des normalisierten Tabellennamens
-  - `column16`: erste 16 Zeichen des normalisierten Spaltennamens
+  - `table16`: erste 16 Zeichen des kanonischen neutralen
+    Tabellennamens
+  - `column16`: erste 16 Zeichen des kanonischen neutralen
+    Spaltennamens
   - `hash10`: erste 10 Hex-Zeichen eines stabilen Hashes ueber
-    `<table>\u0000<column>\u0000<sequence>`
+    `<canonical-table>\u0000<canonical-column>\u0000<sequence>`
   - Suffix `_bi`
 - dieses Schema bleibt immer <= 64 Zeichen
 - Reverse identifiziert Sequence-Support-Trigger **nicht** nur ueber den
@@ -200,6 +209,13 @@ Deshalb wird verbindlich dokumentiert:
 - sequence-basierte Spaltenwerte werden in MySQL **nicht** ueber einen
   SQL-`DEFAULT`-Ausdruck realisiert, sondern ueber kanonische
   `BEFORE INSERT`-Trigger, die intern `dmg_nextval(...)` verwenden
+- `helper_table` bildet die neutrale `SequenceNextVal`-Semantik nur
+  **lossy** ab: ein Wert wird immer dann erzeugt, wenn `NEW.<column> IS NULL`
+- MySQL kann in diesem Trigger-Pfad nicht unterscheiden, ob der Wert
+  im `INSERT` ausgelassen oder explizit als `NULL` gesetzt wurde
+- explizites `NULL` verbraucht daher im `helper_table`-Pfad ebenfalls
+  einen Sequence-Wert; wer exakte PostgreSQL-`DEFAULT`-Semantik braucht,
+  muss bei MySQL im Modus `action_required` bleiben
 - `cache` wird gespeichert, aber fuer die erste Ausbaustufe nicht als
   echte Preallocation implementiert
 
@@ -292,7 +308,10 @@ Folgen fuer die Dialekte:
 
 - PostgreSQL: Mapping auf natives `DEFAULT nextval(...)`
 - MySQL `helper_table`: Mapping auf kanonischen `BEFORE INSERT`-Trigger,
-  der bei `NEW.<column> IS NULL` intern `dmg_nextval(...)` aufruft
+  der bei `NEW.<column> IS NULL` intern `dmg_nextval(...)` aufruft;
+  diese Abbildung ist gegenueber echtem `DEFAULT nextval(...)` lossy,
+  weil explizites `NULL` nicht von ausgelassenen Werten getrennt werden
+  kann
 - MySQL `action_required`: sequence-basierte Default-Semantik bleibt
   manuell
 - SQLite: weiterhin kein produktiver Sequence-Default-Pfad in diesem Plan
@@ -347,8 +366,16 @@ Sequence einen Skip, sondern:
 Zusätzlich muessen Spalten mit
 `DefaultValue.SequenceNextVal(...)` im MySQL-DDL auf einen kanonischen
 `BEFORE INSERT`-Trigger-Pfad abgebildet werden. Der Trigger setzt
-`NEW.<column>` nur dann, wenn kein expliziter Wert geliefert wurde, und
-ruft intern `dmg_nextval(...)` auf.
+`NEW.<column>` immer dann, wenn `NEW.<column> IS NULL`, und ruft intern
+`dmg_nextval(...)` auf.
+
+Praezisierung dieser Abbildung:
+
+- technisch ist die Bedingung `NEW.<column> IS NULL`
+- damit werden im MySQL-Pfad ausgelassene Werte und explizit gesetzte
+  `NULL`-Werte gleich behandelt
+- diese Abweichung ist bewusst dokumentiert und wird als lossy Mapping
+  ueber `W115` ausgewiesen
 
 Fuer Trigger-Reihenfolge gilt in Phase 1:
 
@@ -394,7 +421,7 @@ Vorgeschlagene Rollback-Reihenfolge:
   Konfliktcode; keine stille Umbenennung
 - lossy Mapping bekommt eigene Warnings, z. B.:
   - `W114`: Sequence cache is not fully emulated in MySQL helper-table mode
-  - `W115`: Sequence semantics differ from native PostgreSQL sequence behavior
+  - `W115`: SequenceNextVal uses lossy MySQL trigger semantics; explicit NULL is treated like omitted value
   - `W116`: Sequence metadata reconstructed, but required support objects are missing
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
