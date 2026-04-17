@@ -66,10 +66,23 @@ Laut `docs/quality.md` sind fuer 0.9.1 vor allem diese Punkte relevant:
 - **Mittel**: aehnliche Profiling-Logik lebt in mehreren Dialekten mit
   leicht unterschiedlichen Escape-Strategien
 
+Partielles Quoting existiert bereits an einzelnen Stellen:
+
+- `SqliteDdlGenerator` hat eine eigene `quoteIdentifier()`-Methode
+- `DataExportHelpers.quoteQualifiedIdentifier()` behandelt alle drei
+  Dialekte, aber nur fuer den Export-Pfad
+- `DataExportHelpers.resolveFilter` traegt bereits den Kommentar
+  "Trust-Boundary ist die lokale Shell" — die Trusted-Input-Entscheidung
+  ist also implizit getroffen, aber nicht formalisiert
+
+Dieses bestehende Quoting ist inkonsistent und nicht zentralisiert.
+
 Konsequenz:
 
 - Sicherheitsfixes duerfen nicht nur punktuell je Adapter erfolgen
-- der Identifier-/Literal-Vertrag muss zentralisiert werden
+- der Identifier-/Literal-Vertrag muss zentralisiert werden;
+  bestehende verstreute Quoting-Implementierungen muessen dabei
+  konsolidiert werden
 - Trusted-Input-Grenzen muessen in CLI, KDoc und Spezifikation
   explizit werden
 
@@ -99,11 +112,15 @@ Konsequenz:
 - optionaler kleinerer sicherer Ersatzweg fuer Filter-Ausdruecke, wenn
   der Aufwand in Phase A vertretbar bleibt
 - Security-Tests mit boesartigen Namen und problematischen Identifiern
+- Umstellung der DDL-Generatoren auf die neue zentrale
+  Identifier-Utility, soweit sie heute eigenes Quoting verwenden
+  (z. B. `SqliteDdlGenerator.quoteIdentifier()`), damit nach Phase A
+  nicht zwei parallele Quoting-Welten existieren
 - Sicherstellung, dass Kover pro betroffenem Modul >= 90 % bleibt
 
 ### 3.2 Bewusst nicht Teil von Phase A
 
-- komplette DSL fuer beliebige SQL-Pradikate
+- komplette DSL fuer beliebige SQL-Praedikate
 - generelle Sanitization aller absichtlich offenen SQL-Fragmente
 - groessere Port- oder Modul-Refactors aus Phase B bis F
 - Aenderung des fachlichen DDL-Vertrags jenseits der Trusted-Input-
@@ -139,7 +156,12 @@ Folge:
 - Code, der weiter String-Interpolation fuer Literalwerte nutzt, gilt
   in Phase A als Bug
 - SQLite-`PRAGMA`-Pfade brauchen im Plan einen gleichwertigen
-  Sicherheitsvertrag statt einer stillen Ausnahme
+  Sicherheitsvertrag statt einer stillen Ausnahme; betroffen sind
+  insbesondere `PRAGMA table_info(<table>)` und
+  `PRAGMA foreign_key_list(<table>)` in `SqliteSchemaIntrospectionAdapter`,
+  die keinen `PreparedStatement`-Binding-Pfad bieten; der Helper muss
+  dort Identifier per Whitelist (nur erlaubte Zeichen) oder per
+  dialektkonformem Quoting absichern
 
 ### 4.2 Dialektkonsistenz ist wichtiger als lokale Hotfixes
 
@@ -184,12 +206,32 @@ Verbindliche Entscheidung:
 
 ## 5. Konkrete Arbeitspakete
 
+Abhaengigkeiten und Reihenfolge:
+
+1. **5.1** (Utility) muss zuerst umgesetzt werden — alle anderen
+   Pakete haengen davon ab
+2. **5.2** (Adapter-Haertung) und **5.3** (Raw-SQL-Vertrag) koennen
+   parallel bearbeitet werden
+3. **5.4** (Security-Tests) laeuft parallel zu 5.2 — Tests werden
+   zusammen mit der jeweiligen Adapter-Umstellung geschrieben
+
 ### 5.1 Identifier-Utility einfuehren
 
 - API fuer dialektkonformes Quoting von Identifiern definieren
+- grobe Ziel-Signatur:
+  - `fun quoteIdentifier(name: String): String` — einzelner Name
+  - `fun quoteQualifiedIdentifier(schema: String?, table: String): String`
+    — qualifizierter Name mit optionalem Schema-Prefix
+  - pro Dialekt eine Implementierung; gemeinsames Interface oder
+    sealed class fuer Typensicherheit
 - Utility so schneiden, dass Adapter sie direkt verwenden koennen
 - PostgreSQL-, MySQL- und SQLite-Regeln abbilden
-- Doppelimplementierungen in bestehenden Adaptern entfernen
+- bestehende Quoting-Implementierungen konsolidieren:
+  - `SqliteDdlGenerator.quoteIdentifier()` auf Utility umstellen
+  - `DataExportHelpers.quoteQualifiedIdentifier()` auf Utility
+    umstellen oder ersetzen
+  - weitere verstreute Escape-Logik in Adaptern identifizieren und
+    entfernen
 
 ### 5.2 Introspection-/Profiling-Adapter haerten
 
@@ -205,7 +247,10 @@ Verbindliche Entscheidung:
 ### 5.3 Raw-SQL-Vertrag sichtbar machen
 
 - `--filter` in CLI-Hilfe als Trusted Input markieren
-- KDoc/Vertragsdoku fuer `DataExportHelpers.resolveFilter` nachziehen
+- KDoc/Vertragsdoku fuer `DataExportHelpers.resolveFilter` nachziehen;
+  der Code traegt bereits den Kommentar "Trust-Boundary ist die lokale
+  Shell" — Phase A formalisiert diese implizite Entscheidung in KDoc
+  und CLI-Hilfe, nicht als Neuentdeckung
 - `constraint.expression` im Modell-/Generatorvertrag als Trusted Input
   markieren
 - `constraint.expression` in `docs/neutral-model-spec.md` als bewusst
@@ -223,6 +268,18 @@ Verbindliche Entscheidung:
 - Tests fuer DDL-/Constraint-Pfade dort, wo Quoting und Trusted-Input-
   Kennzeichnung betroffen sind
 - Kover-Verification der betroffenen Module mit Mindestgrenze 90 %
+
+Testinfrastruktur:
+
+- die Identifier-Utility selbst wird als reine Unit-Tests abgedeckt
+  (kein DB-Zugang noetig)
+- Profiling-/Introspection-Adapter-Tests brauchen echte
+  DB-Connections; die bestehende Testcontainers-Infrastruktur fuer
+  PostgreSQL und MySQL sowie die In-Memory-SQLite-Anbindung sind dafuer
+  zu nutzen
+- boesartige Identifier muessen als wiederverwendbare Test-Fixtures
+  bereitgestellt werden, damit alle drei Dialekte denselben Satz
+  problematischer Namen durchlaufen
 
 ---
 
@@ -251,7 +308,9 @@ Mit hoher Wahrscheinlichkeit betroffen:
 - `adapters/driven/driver-postgresql/...`
 - `adapters/driven/driver-mysql/...`
 - `adapters/driven/driver-sqlite/...`
-- `hexagon/application/.../DataExportHelpers.kt`
+- `hexagon/application/.../cli/commands/DataExportHelpers.kt`
+  (liegt im `cli.commands`-Paket, nicht im Application-Layer —
+  ggf. fuer Phase B relevant)
 - `hexagon/core/.../ConstraintDefinition.kt`
 - DDL-Generatoren in `adapters/driven/driver-*`
 - `docs/cli-spec.md`
@@ -289,11 +348,23 @@ Gegenmassnahme:
 - neue Utility sofort mit eigenen Tests absichern
 - Kover nicht erst am Ende, sondern waehrend Phase A laufen lassen
 
+### 8.4 Aufwandseinschaetzung
+
+Grobe Einschaetzung pro Arbeitspaket (T-Shirt-Sizing):
+
+- 5.1 (Identifier-Utility): S — definiertes API, drei Dialektregeln
+- 5.2 (Adapter-Haertung): L — sechs Adapter, SQLite-PRAGMA-Sonderfall,
+  DDL-Generator-Konsolidierung
+- 5.3 (Raw-SQL-Vertrag): S — primaer Doku und KDoc-Anpassungen
+- 5.4 (Security-Tests): M — Fixture-Erstellung, drei Dialekte,
+  Integrationstests mit echten Datenbanken
+
 ---
 
 ## 9. Entscheidungsempfehlung
 
-Phase A sollte unveraendert als erste 0.9.1-Phase umgesetzt werden.
+Phase A sollte wie in `docs/implementation-plan-0.9.1.md` vorgesehen
+als erste 0.9.1-Phase umgesetzt werden.
 
 Begruendung:
 
