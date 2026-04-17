@@ -415,9 +415,32 @@ CHANGELOG-Inhalt für die Release-Notes extrahieren und veröffentlichen:
 sed -n '/^## \[X\.Y\.Z\]/,/^## \[/{/^## \[X\.Y\.Z\]/!{/^## \[/!p}}' \
   CHANGELOG.md > /tmp/release-notes.md
 
-# Immer prüfen, dass die Datei nicht leer ist:
-test -s /tmp/release-notes.md || { echo "ERROR: release notes empty"; exit 1; }
+# Prüfen, dass die Datei nicht leer ist UND eine sinnvolle Mindestlänge hat.
+# Ein reines `test -s` fängt nur leere Dateien ab, nicht versehentlich
+# abgeschnittene Fragmente. Die Schwelle von 5 Zeilen ist konservativ —
+# selbst ein Release mit nur einem Eintrag hat mindestens "### Added" +
+# Leerzeilen + Eintrag + Leerzeile.
+LINES=$(wc -l < /tmp/release-notes.md)
+echo "Release notes: ${LINES} lines"
+cat /tmp/release-notes.md
+if [ "$LINES" -lt 5 ]; then
+  echo "ERROR: release notes too short (${LINES} lines) — check CHANGELOG.md extraction"
+  exit 1
+fi
+```
 
+Der `release-homebrew.yml`-Workflow erstellt den GitHub-Release automatisch beim
+Tag-Push. Falls der Release dadurch bereits existiert, schlägt `gh release create`
+fehl. In diesem Fall die Release-Notes nachträglich setzen:
+
+```bash
+# Release existiert bereits (vom Workflow erstellt) → Body aktualisieren:
+gh release edit vX.Y.Z --notes-file /tmp/release-notes.md
+```
+
+Falls der Release noch nicht existiert (Workflow deaktiviert oder fehlgeschlagen):
+
+```bash
 gh release create vX.Y.Z \
   --target main \
   --title "vX.Y.Z" \
@@ -425,8 +448,7 @@ gh release create vX.Y.Z \
   ./release-assets/*
 ```
 
-Falls der Release bereits als Draft existiert oder Assets erneut hochgeladen
-werden müssen:
+Falls Assets erneut hochgeladen werden müssen:
 
 ```bash
 gh release upload vX.Y.Z ./release-assets/* --clobber
