@@ -312,6 +312,30 @@ Vertrag festschreibt.
 > Modulgrenzen, Koordinaten und API-Flächen erst nach dem Refactor
 > stabilisiert werden.
 
+### Milestone 0.9.2 — Beta: DDL-Phasen und importfreundliche Schema-Artefakte
+
+| Bereich | Aufgabe                                                                                                                      | LF-Ref |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------- | ------ |
+| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single|pre-post`)                                                     | LF-003 |
+| Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data`                                                                  | —      |
+| Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten)                   | —      |
+| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld                                  | —      |
+| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —      |
+| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —      |
+| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —      |
+
+**Ergebnis**: `schema generate` kann optional importfreundliche
+Schema-Artefakte als `pre-data` und `post-data` erzeugen, ohne den bisherigen
+Default-Output zu brechen. Damit erhalten vor allem MySQL- und SQLite-
+Workflows einen sauberen Weg, Trigger erst nach einem Datenimport zu
+aktivieren. Details und offener Implementierungsvertrag: siehe
+`docs/ddl-output-split-plan.md`.
+
+> Hinweis: Dieser Milestone baut fachlich auf dem in **0.9.1** vorbereiteten
+> internen Phasen-/Objektschnitt auf, ist aber bewusst als separater
+> Nutzer-Feature-Milestone geschnitten. So bleiben Library-Refactor und
+> sichtbarer CLI-/Output-Vertrag getrennt planbar.
+
 ### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                          | LF-Ref |
