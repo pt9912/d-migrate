@@ -29,7 +29,7 @@ internal fun parseQualifiedTableName(table: String): QualifiedTableName {
 }
 
 internal fun quotePostgresIdentifier(name: String): String =
-    "\"${name.replace("\"", "\"\"")}\""
+    dev.dmigrate.driver.SqlIdentifiers.quoteIdentifier(name, dev.dmigrate.driver.DatabaseDialect.POSTGRESQL)
 
 internal fun currentSchema(conn: Connection): String =
     conn.createStatement().use { stmt ->

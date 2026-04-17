@@ -373,6 +373,10 @@ CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`)
 
 ### 4.3 CHECK Constraint
 
+> **Trusted Input**: `constraint.expression` wird als Raw-SQL-Fragment direkt
+> in die DDL-Ausgabe interpoliert. Der Wert stammt aus der Schema-YAML-Datei,
+> die vom Schema-Autor kontrolliert wird. Keine Sanitization findet statt.
+
 ```sql
 -- PostgreSQL
 CONSTRAINT "chk_total_positive" CHECK ("total_amount" >= 0)

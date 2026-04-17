@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
 
 /**
@@ -23,7 +24,7 @@ class PostgresDataReader : AbstractJdbcDataReader() {
     override val dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL
 
     override fun quoteIdentifier(name: String): String =
-        "\"${name.replace("\"", "\"\"")}\""
+        SqlIdentifiers.quoteIdentifier(name, dialect)
 
     /** Standard-Cursor-fetchSize. Empirisch guter Wert für PostgreSQL JDBC. */
     override val fetchSize: Int = 1_000

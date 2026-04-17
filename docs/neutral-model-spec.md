@@ -108,7 +108,7 @@ SchemaDefinition
 │       ├── indices
 │       │   └── IndexDefinition (name, columns, type, unique)
 │       ├── constraints
-│       │   └── ConstraintDefinition (name, type, columns, expression)
+│       │   └── ConstraintDefinition (name, type, columns, expression¹)
 │       └── partitioning
 │           └── PartitionConfig (type, key, partitions)
 ├── procedures
@@ -317,7 +317,7 @@ tables:
     constraints:
       - name: chk_total_positive
         type: check                      # check | unique | exclude
-        expression: "total_amount >= 0"
+        expression: "total_amount >= 0"   # ¹ Trusted Input — Raw-SQL, keine Sanitization
       - name: uq_customer_date
         type: unique
         columns: [customer_id, order_date]

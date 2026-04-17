@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql.profiling
 
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.port.ColumnSchema
 import dev.dmigrate.profiling.port.SchemaIntrospectionPort
@@ -7,15 +9,20 @@ import dev.dmigrate.profiling.port.TableSchema
 
 class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
+    private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
+    private fun ql(value: String): String = SqlIdentifiers.quoteStringLiteral(value)
+
     override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> {
         pool.borrow().use { conn ->
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT table_schema, table_name
-                    FROM information_schema.tables
-                    WHERE table_schema = '${schema ?: "public"}' AND table_type = 'BASE TABLE'
-                    ORDER BY table_name
-                """.trimIndent())
+            val ps = conn.prepareStatement("""
+                SELECT table_schema, table_name
+                FROM information_schema.tables
+                WHERE table_schema = ? AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+            """.trimIndent())
+            ps.setString(1, schema ?: "public")
+            ps.use {
+                val rs = it.executeQuery()
                 val tables = mutableListOf<TableSchema>()
                 while (rs.next()) tables += TableSchema(
                     rs.getString("table_name"),
@@ -28,8 +35,7 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
     override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> {
         val s = schema ?: "public"
-        // Schema-qualified regclass: '"schema"."table"'::regclass
-        val regclass = "'\"$s\".\"$table\"'::regclass"
+        val regclass = "${ql("${qi(s)}.${qi(table)}")}::regclass"
 
         pool.borrow().use { conn ->
             val pkColumns = mutableSetOf<String>()
@@ -48,15 +54,17 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
             }
 
             // Foreign keys
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT kcu.column_name
-                    FROM information_schema.table_constraints tc
-                    JOIN information_schema.key_column_usage kcu
-                      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-                    WHERE tc.table_schema = '$s' AND tc.table_name = '$table'
-                      AND tc.constraint_type = 'FOREIGN KEY'
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+                WHERE tc.table_schema = ? AND tc.table_name = ?
+                  AND tc.constraint_type = 'FOREIGN KEY'
+            """.trimIndent()).use { ps ->
+                ps.setString(1, s)
+                ps.setString(2, table)
+                val rs = ps.executeQuery()
                 while (rs.next()) fkColumns += rs.getString("column_name")
             }
 
@@ -74,13 +82,15 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
             }
 
             // Columns
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT column_name, data_type, udt_name, is_nullable
-                    FROM information_schema.columns
-                    WHERE table_schema = '${schema ?: "public"}' AND table_name = '$table'
-                    ORDER BY ordinal_position
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT column_name, data_type, udt_name, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = ? AND table_name = ?
+                ORDER BY ordinal_position
+            """.trimIndent()).use { ps ->
+                ps.setString(1, s)
+                ps.setString(2, table)
+                val rs = ps.executeQuery()
                 val columns = mutableListOf<ColumnSchema>()
                 while (rs.next()) {
                     val colName = rs.getString("column_name")

@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql.profiling
 
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.model.NumericStats
@@ -12,8 +14,10 @@ import dev.dmigrate.profiling.types.TargetLogicalType
 
 class PostgresProfilingDataAdapter : ProfilingDataPort {
 
+    private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
+
     private fun qt(table: String, schema: String?): String =
-        if (schema != null) "\"$schema\".\"$table\"" else "\"$table\""
+        if (schema != null) "${qi(schema)}.${qi(table)}" else qi(table)
 
     override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long {
         pool.borrow().use { conn ->
@@ -27,26 +31,27 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
 
     override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?): ColumnMetrics {
         val t = qt(table, schema)
+        val c = qi(column)
         pool.borrow().use { conn ->
             val isText = dbType.lowercase().let {
                 it.contains("char") || it.contains("text") || it == "name" || it == "citext"
             }
             val textFields = if (isText) """
-                , sum(case when "$column" = '' then 1 else 0 end)::bigint as empty_count
-                , sum(case when "$column" <> '' and trim("$column") = '' then 1 else 0 end)::bigint as blank_count
-                , min(char_length("$column")) as min_len
-                , max(char_length("$column")) as max_len
+                , sum(case when $c = '' then 1 else 0 end)::bigint as empty_count
+                , sum(case when $c <> '' and trim($c) = '' then 1 else 0 end)::bigint as blank_count
+                , min(char_length($c)) as min_len
+                , max(char_length($c)) as max_len
             """.trimIndent() else ""
 
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT
-                        count("$column") as non_null_count,
-                        count(*) - count("$column") as null_count,
-                        count(distinct "$column") as distinct_count,
-                        greatest(count("$column") - count(distinct "$column"), 0) as dup_count,
-                        min("$column"::text) as min_val,
-                        max("$column"::text) as max_val
+                        count($c) as non_null_count,
+                        count(*) - count($c) as null_count,
+                        count(distinct $c) as distinct_count,
+                        greatest(count($c) - count(distinct $c), 0) as dup_count,
+                        min($c::text) as min_val,
+                        max($c::text) as max_val
                         $textFields
                     FROM $t
                 """.trimIndent())
@@ -69,18 +74,20 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
 
     override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?): List<ValueFrequency> {
         val t = qt(table, schema)
+        val c = qi(column)
         pool.borrow().use { conn ->
             val total = rowCount(pool, table, schema).toDouble()
             if (total == 0.0) return emptyList()
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT "$column"::text as val, count(*) as cnt
-                    FROM $t
-                    WHERE "$column" IS NOT NULL
-                    GROUP BY "$column"
-                    ORDER BY cnt DESC, val ASC
-                    LIMIT $limit
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT $c::text as val, count(*) as cnt
+                FROM $t
+                WHERE $c IS NOT NULL
+                GROUP BY $c
+                ORDER BY cnt DESC, val ASC
+                LIMIT ?
+            """.trimIndent()).use { ps ->
+                ps.setInt(1, limit)
+                val rs = ps.executeQuery()
                 val result = mutableListOf<ValueFrequency>()
                 while (rs.next()) {
                     result += ValueFrequency(rs.getString("val"), rs.getLong("cnt"), rs.getLong("cnt") / total)
@@ -92,19 +99,20 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
 
     override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?): NumericStats? {
         val t = qt(table, schema)
+        val c = qi(column)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT
-                        min("$column"::numeric)::double precision as min_val,
-                        max("$column"::numeric)::double precision as max_val,
-                        avg("$column"::numeric)::double precision as avg_val,
-                        sum("$column"::numeric)::double precision as sum_val,
-                        stddev_pop("$column"::numeric)::double precision as stddev_val,
-                        count(case when "$column"::numeric = 0 then 1 end) as zero_count,
-                        count(case when "$column"::numeric < 0 then 1 end) as neg_count
+                        min($c::numeric)::double precision as min_val,
+                        max($c::numeric)::double precision as max_val,
+                        avg($c::numeric)::double precision as avg_val,
+                        sum($c::numeric)::double precision as sum_val,
+                        stddev_pop($c::numeric)::double precision as stddev_val,
+                        count(case when $c::numeric = 0 then 1 end) as zero_count,
+                        count(case when $c::numeric < 0 then 1 end) as neg_count
                     FROM $t
-                    WHERE "$column" IS NOT NULL
+                    WHERE $c IS NOT NULL
                 """.trimIndent())
                 if (!rs.next()) return null
                 return NumericStats(
@@ -122,11 +130,12 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
 
     override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?): TemporalStats? {
         val t = qt(table, schema)
+        val c = qi(column)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
-                    SELECT min("$column")::text as min_ts, max("$column")::text as max_ts
-                    FROM $t WHERE "$column" IS NOT NULL
+                    SELECT min($c)::text as min_ts, max($c)::text as max_ts
+                    FROM $t WHERE $c IS NOT NULL
                 """.trimIndent())
                 if (!rs.next()) return null
                 return TemporalStats(rs.getString("min_ts"), rs.getString("max_ts"))
@@ -138,14 +147,15 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
         pool: ConnectionPool, table: String, column: String, targetTypes: List<TargetLogicalType>, schema: String?,
     ): List<TargetTypeCompatibility> {
         val t = qt(table, schema)
+        val c = qi(column)
         pool.borrow().use { conn ->
             return targetTypes.map { targetType ->
                 val castExpr = when (targetType) {
-                    TargetLogicalType.INTEGER -> """("$column"::text ~ '^-?[0-9]+$')"""
-                    TargetLogicalType.DECIMAL -> """("$column"::text ~ '^-?[0-9]+(\\.[0-9]+)?$')"""
-                    TargetLogicalType.BOOLEAN -> """(lower("$column"::text) IN ('0','1','true','false','yes','no','t','f'))"""
-                    TargetLogicalType.DATE -> """("$column"::text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')"""
-                    TargetLogicalType.DATETIME -> """("$column"::text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')"""
+                    TargetLogicalType.INTEGER -> """($c::text ~ '^-?[0-9]+$')"""
+                    TargetLogicalType.DECIMAL -> """($c::text ~ '^-?[0-9]+(\\.[0-9]+)?$')"""
+                    TargetLogicalType.BOOLEAN -> """(lower($c::text) IN ('0','1','true','false','yes','no','t','f'))"""
+                    TargetLogicalType.DATE -> """($c::text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')"""
+                    TargetLogicalType.DATETIME -> """($c::text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')"""
                     TargetLogicalType.STRING -> "(true)"
                 }
 
@@ -154,7 +164,7 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
                         SELECT count(*) as checked,
                                sum(case when $castExpr then 1 else 0 end) as compat,
                                sum(case when NOT $castExpr then 1 else 0 end) as incompat
-                        FROM $t WHERE "$column" IS NOT NULL
+                        FROM $t WHERE $c IS NOT NULL
                     """.trimIndent())
                     rs.next()
                     val incompatible = rs.getLong("incompat")
@@ -162,8 +172,8 @@ class PostgresProfilingDataAdapter : ProfilingDataPort {
                     val examples = if (incompatible > 0) {
                         conn.createStatement().use { s2 ->
                             val ers = s2.executeQuery("""
-                                SELECT DISTINCT "$column"::text as val FROM $t
-                                WHERE "$column" IS NOT NULL AND NOT $castExpr
+                                SELECT DISTINCT $c::text as val FROM $t
+                                WHERE $c IS NOT NULL AND NOT $castExpr
                                 ORDER BY val ASC LIMIT 3
                             """.trimIndent())
                             val ex = mutableListOf<String>()

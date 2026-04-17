@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
 
 /**
@@ -18,7 +19,7 @@ class SqliteDataReader : AbstractJdbcDataReader() {
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
 
     override fun quoteIdentifier(name: String): String =
-        "\"${name.replace("\"", "\"\"")}\""
+        SqlIdentifiers.quoteIdentifier(name, dialect)
 
     /**
      * SQLite hat keinen serverseitigen Cursor — ResultSet wird ohnehin lazy

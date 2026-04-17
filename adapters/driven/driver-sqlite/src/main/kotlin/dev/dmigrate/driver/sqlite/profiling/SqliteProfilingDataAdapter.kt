@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.sqlite.profiling
 
+import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.model.NumericStats
@@ -20,10 +22,12 @@ import dev.dmigrate.profiling.types.TargetLogicalType
  */
 class SqliteProfilingDataAdapter : ProfilingDataPort {
 
+    private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.SQLITE)
+
     override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long {
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("SELECT count(*) FROM \"$table\"")
+                val rs = stmt.executeQuery("SELECT count(*) FROM ${qi(table)}")
                 rs.next()
                 return rs.getLong(1)
             }
@@ -31,27 +35,29 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
     }
 
     override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?): ColumnMetrics {
+        val t = qi(table)
+        val c = qi(column)
         pool.borrow().use { conn ->
             val isText = dbType.lowercase().let {
                 it.contains("text") || it.contains("char") || it.contains("clob") || it.contains("varchar")
             }
             val textFields = if (isText) """
-                , sum(case when "$column" = '' then 1 else 0 end) as empty_count
-                , sum(case when "$column" != '' and trim("$column") = '' then 1 else 0 end) as blank_count
-                , min(length("$column")) as min_len
-                , max(length("$column")) as max_len
+                , sum(case when $c = '' then 1 else 0 end) as empty_count
+                , sum(case when $c != '' and trim($c) = '' then 1 else 0 end) as blank_count
+                , min(length($c)) as min_len
+                , max(length($c)) as max_len
             """.trimIndent() else ""
 
             val sql = """
                 SELECT
-                    count("$column") as non_null_count,
-                    count(*) - count("$column") as null_count,
-                    count(distinct "$column") as distinct_count,
-                    count("$column") - count(distinct "$column") as dup_count,
-                    min("$column") as min_val,
-                    max("$column") as max_val
+                    count($c) as non_null_count,
+                    count(*) - count($c) as null_count,
+                    count(distinct $c) as distinct_count,
+                    count($c) - count(distinct $c) as dup_count,
+                    min($c) as min_val,
+                    max($c) as max_val
                     $textFields
-                FROM "$table"
+                FROM $t
             """.trimIndent()
 
             conn.createStatement().use { stmt ->
@@ -74,18 +80,21 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
     }
 
     override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?): List<ValueFrequency> {
+        val t = qi(table)
+        val c = qi(column)
         pool.borrow().use { conn ->
             val total = rowCount(pool, table).toDouble()
             if (total == 0.0) return emptyList()
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT "$column" as val, count(*) as cnt
-                    FROM "$table"
-                    WHERE "$column" IS NOT NULL
-                    GROUP BY "$column"
-                    ORDER BY cnt DESC, val ASC
-                    LIMIT $limit
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT $c as val, count(*) as cnt
+                FROM $t
+                WHERE $c IS NOT NULL
+                GROUP BY $c
+                ORDER BY cnt DESC, val ASC
+                LIMIT ?
+            """.trimIndent()).use { ps ->
+                ps.setInt(1, limit)
+                val rs = ps.executeQuery()
                 val result = mutableListOf<ValueFrequency>()
                 while (rs.next()) {
                     result += ValueFrequency(
@@ -100,18 +109,20 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
     }
 
     override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?): NumericStats? {
+        val t = qi(table)
+        val c = qi(column)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
                     SELECT
-                        min(cast("$column" as real)) as min_val,
-                        max(cast("$column" as real)) as max_val,
-                        avg(cast("$column" as real)) as avg_val,
-                        sum(cast("$column" as real)) as sum_val,
-                        sum(case when "$column" = 0 then 1 else 0 end) as zero_count,
-                        sum(case when cast("$column" as real) < 0 then 1 else 0 end) as neg_count
-                    FROM "$table"
-                    WHERE "$column" IS NOT NULL
+                        min(cast($c as real)) as min_val,
+                        max(cast($c as real)) as max_val,
+                        avg(cast($c as real)) as avg_val,
+                        sum(cast($c as real)) as sum_val,
+                        sum(case when $c = 0 then 1 else 0 end) as zero_count,
+                        sum(case when cast($c as real) < 0 then 1 else 0 end) as neg_count
+                    FROM $t
+                    WHERE $c IS NOT NULL
                 """.trimIndent())
                 if (!rs.next()) return null
                 return NumericStats(
@@ -128,12 +139,14 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
     }
 
     override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?): TemporalStats? {
+        val t = qi(table)
+        val c = qi(column)
         pool.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 val rs = stmt.executeQuery("""
-                    SELECT min("$column") as min_ts, max("$column") as max_ts
-                    FROM "$table"
-                    WHERE "$column" IS NOT NULL
+                    SELECT min($c) as min_ts, max($c) as max_ts
+                    FROM $t
+                    WHERE $c IS NOT NULL
                 """.trimIndent())
                 if (!rs.next()) return null
                 return TemporalStats(
@@ -151,14 +164,16 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
         targetTypes: List<TargetLogicalType>,
         schema: String?,
     ): List<TargetTypeCompatibility> {
+        val t = qi(table)
+        val c = qi(column)
         pool.borrow().use { conn ->
             return targetTypes.map { targetType ->
                 val castExpr = when (targetType) {
-                    TargetLogicalType.INTEGER -> "\"$column\" GLOB '-[0-9]*' OR \"$column\" GLOB '[0-9]*' AND cast(\"$column\" as integer) = cast(\"$column\" as real)"
-                    TargetLogicalType.DECIMAL -> "(\"$column\" GLOB '-[0-9]*' OR \"$column\" GLOB '[0-9]*')"
-                    TargetLogicalType.BOOLEAN -> "lower(\"$column\") IN ('0', '1', 'true', 'false', 'yes', 'no')"
-                    TargetLogicalType.DATE -> "\"$column\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
-                    TargetLogicalType.DATETIME -> "\"$column\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'"
+                    TargetLogicalType.INTEGER -> "$c GLOB '-[0-9]*' OR $c GLOB '[0-9]*' AND cast($c as integer) = cast($c as real)"
+                    TargetLogicalType.DECIMAL -> "($c GLOB '-[0-9]*' OR $c GLOB '[0-9]*')"
+                    TargetLogicalType.BOOLEAN -> "lower($c) IN ('0', '1', 'true', 'false', 'yes', 'no')"
+                    TargetLogicalType.DATE -> "$c GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+                    TargetLogicalType.DATETIME -> "$c GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'"
                     TargetLogicalType.STRING -> "1=1"
                 }
 
@@ -168,8 +183,8 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
                             count(*) as checked,
                             sum(case when $castExpr then 1 else 0 end) as compat,
                             sum(case when NOT ($castExpr) then 1 else 0 end) as incompat
-                        FROM "$table"
-                        WHERE "$column" IS NOT NULL
+                        FROM $t
+                        WHERE $c IS NOT NULL
                     """.trimIndent())
                     rs.next()
                     val checked = rs.getLong("checked")
@@ -180,9 +195,9 @@ class SqliteProfilingDataAdapter : ProfilingDataPort {
                     val examples = if (incompatible > 0) {
                         conn.createStatement().use { s2 ->
                             val ers = s2.executeQuery("""
-                                SELECT DISTINCT "$column" as val FROM "$table"
-                                WHERE "$column" IS NOT NULL AND NOT ($castExpr)
-                                ORDER BY "$column" ASC LIMIT 3
+                                SELECT DISTINCT $c as val FROM $t
+                                WHERE $c IS NOT NULL AND NOT ($castExpr)
+                                ORDER BY $c ASC LIMIT 3
                             """.trimIndent())
                             val ex = mutableListOf<String>()
                             while (ers.next()) ex += ers.getString("val")

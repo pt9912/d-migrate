@@ -9,7 +9,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
     // ── Quoting ──────────────────────────────────
 
-    override fun quoteIdentifier(name: String): String = "\"${name.replace("\"", "\"\"")}\""
+    override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 

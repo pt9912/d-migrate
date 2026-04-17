@@ -26,23 +26,25 @@ class MysqlSchemaIntrospectionAdapter : SchemaIntrospectionPort {
         pool.borrow().use { conn ->
             // Foreign key columns
             val fkColumns = mutableSetOf<String>()
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT column_name
-                    FROM information_schema.key_column_usage
-                    WHERE table_schema = DATABASE() AND table_name = '$table'
-                      AND referenced_table_name IS NOT NULL
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT column_name
+                FROM information_schema.key_column_usage
+                WHERE table_schema = DATABASE() AND table_name = ?
+                  AND referenced_table_name IS NOT NULL
+            """.trimIndent()).use { ps ->
+                ps.setString(1, table)
+                val rs = ps.executeQuery()
                 while (rs.next()) fkColumns += rs.getString("column_name")
             }
 
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT column_name, column_type, is_nullable, column_key
-                    FROM information_schema.columns
-                    WHERE table_schema = DATABASE() AND table_name = '$table'
-                    ORDER BY ordinal_position
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT column_name, column_type, is_nullable, column_key
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE() AND table_name = ?
+                ORDER BY ordinal_position
+            """.trimIndent()).use { ps ->
+                ps.setString(1, table)
+                val rs = ps.executeQuery()
                 val columns = mutableListOf<ColumnSchema>()
                 while (rs.next()) {
                     val name = rs.getString("column_name")

@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.i18n.TemporalFormatPolicy
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.streaming.ExportResult
 import java.util.Locale
 
@@ -53,8 +54,14 @@ internal object DataExportHelpers {
      * F32 / Plan §6.7: Baut den effektiven [DataFilter] aus dem CLI-Wert.
      *
      * - `null` oder blank → `null` (kein Filter, identisch zum weggelassenen Flag)
-     * - sonst → [DataFilter.WhereClause] mit dem Roh-String (Trust-Boundary
-     *   ist die lokale Shell, siehe Plan §6.7)
+     * - sonst → [DataFilter.WhereClause] mit dem Roh-String
+     *
+     * **Trusted Input**: [rawFilter] wird als Raw-SQL-Fragment direkt in die
+     * WHERE-Klausel interpoliert. Die Trust-Boundary ist die lokale Shell —
+     * der Aufrufer ist verantwortlich, dass der Wert nicht von
+     * nicht-vertrauenswürdigen Quellen stammt. Keine Sanitization oder
+     * Escaping findet statt; dies ist eine bewusste Designentscheidung
+     * (siehe `docs/ImpPlan-0.9.1-A.md` §4.3).
      */
     fun resolveFilter(
         rawFilter: String?,
@@ -84,16 +91,7 @@ internal object DataExportHelpers {
         rawFilter?.contains('?') == true
 
     internal fun quoteQualifiedIdentifier(value: String, dialect: DatabaseDialect): String =
-        value.split('.').joinToString(".") { segment ->
-            when (dialect) {
-                DatabaseDialect.POSTGRESQL,
-                DatabaseDialect.SQLITE,
-                    -> "\"${segment.replace("\"", "\"\"")}\""
-
-                DatabaseDialect.MYSQL ->
-                    "`${segment.replace("`", "``")}`"
-            }
-        }
+        SqlIdentifiers.quoteQualifiedIdentifier(value, dialect)
 
     /**
      * 0.8.0 Phase E (§4.5): Delegiert an den gemeinsamen Vertrag aus
