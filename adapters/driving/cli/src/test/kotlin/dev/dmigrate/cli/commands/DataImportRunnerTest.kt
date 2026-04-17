@@ -1386,6 +1386,98 @@ class DataImportRunnerTest : FunSpec({
             ) shouldBe 0
             capturedSkipped.single() shouldBe setOf("users")
         }
+
+        test("E2: simulated import abort — resume continues from last committed chunk") {
+            // Scenario: import of a single-file table where the executor
+            // commits 2 chunks and then throws (simulated abort).
+            // A second run with --resume must receive the resume state
+            // indicating 2 committed chunks and complete successfully.
+            val storeDir = Files.createTempDirectory("d-migrate-e2-import-abort-")
+            val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
+
+            // Run 1: commits 2 chunks then aborts.
+            val run1Executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, _, onChunk, _,
+                ->
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                onChunk(
+                    dev.dmigrate.streaming.ImportChunkCommit(
+                        table = table, chunkIndex = 0, chunksCommitted = 1,
+                        rowsInsertedTotal = 100, rowsUpdatedTotal = 0,
+                        rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
+                    )
+                )
+                onChunk(
+                    dev.dmigrate.streaming.ImportChunkCommit(
+                        table = table, chunkIndex = 1, chunksCommitted = 2,
+                        rowsInsertedTotal = 200, rowsUpdatedTotal = 0,
+                        rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
+                    )
+                )
+                throw RuntimeException("simulated connection loss after chunk 2")
+            }
+            val stderr1 = StderrCapture()
+            val runner1 = newRunner(
+                stderr1,
+                importExecutor = run1Executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit1 = runner1.execute(request(checkpointDir = storeDir))
+            exit1 shouldBe 5
+
+            // Verify manifest: "users" should be IN_PROGRESS with 2 chunks committed.
+            val manifests = Files.list(storeDir).use { it.toList() }
+                .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
+            manifests.size shouldBe 1
+            val opId = manifests.single().fileName.toString()
+                .removeSuffix(".checkpoint.yaml")
+            val savedManifest = store.load(opId)!!
+            val slice = savedManifest.tableSlices.single()
+            slice.table shouldBe "users"
+            slice.status shouldBe dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.IN_PROGRESS
+            slice.chunksProcessed shouldBe 2L
+
+            // Run 2: resume with the stored manifest. Executor should
+            // receive resumeStateByTable with committedChunks = 2.
+            val capturedResumeStates =
+                mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
+            val run2Executor: ImportExecutor = ImportExecutor {
+                _, input, _, _, _, _, _, _, _, _, resumeStates, _, onDone,
+                ->
+                capturedResumeStates += resumeStates
+                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                val summary = TableImportSummary(
+                    table = table, rowsInserted = 50, rowsUpdated = 0, rowsSkipped = 0,
+                    rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
+                    sequenceAdjustments = emptyList(), targetColumns = emptyList(),
+                    triggerMode = TriggerMode.FIRE, durationMs = 1,
+                )
+                onDone(summary)
+                ImportResult(
+                    tables = listOf(summary), totalRowsInserted = 50, totalRowsUpdated = 0,
+                    totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
+                    durationMs = 1,
+                )
+            }
+            val stderr2 = StderrCapture()
+            val runner2 = newRunner(
+                stderr2,
+                importExecutor = run2Executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit2 = runner2.execute(
+                request(resume = opId, checkpointDir = storeDir),
+            )
+            exit2 shouldBe 0
+            // Resume state should carry the 2 committed chunks
+            val states = capturedResumeStates.single()
+            states.size shouldBe 1
+            states.getValue("users").committedChunks shouldBe 2L
+            // After success, manifest should be removed via complete()
+            Files.list(storeDir).use { it.toList() }
+                .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
+                .size shouldBe 0
+        }
     }
 
     // ─── 0.9.0 Phase D.4: Directory-Topologie ───────────────────

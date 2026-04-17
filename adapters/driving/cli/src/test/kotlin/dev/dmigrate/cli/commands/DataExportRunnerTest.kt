@@ -1223,6 +1223,92 @@ class DataExportRunnerTest : FunSpec({
             stderr.joined() shouldContain "single-file resume"
             stderr.joined() shouldContain "already completed"
         }
+
+        test("E2: simulated export abort — resume skips completed table and finishes") {
+            // Scenario: two-table export where table 1 completes but
+            // table 2 triggers an executor failure (simulated abort).
+            // A second run with --resume must skip the already-completed
+            // table and only process the remaining one.
+            val store = InMemoryCheckpointStore()
+            val checkpointDir = Path.of("/tmp/d-migrate-e2-export-ckpt")
+            val outputDir = Path.of("/tmp/d-migrate-e2-export-out")
+
+            // Run 1: "users" completes via onTableCompleted, executor
+            // throws when processing "orders" → Exit 5.
+            val run1Executor = ExportExecutor {
+                _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, onDone, _, _,
+                ->
+                for (t in tables) {
+                    if (t in skipped) continue
+                    if (t == "orders") throw RuntimeException("simulated I/O failure on orders")
+                    onDone(TableExportSummary(table = t, rows = 10, chunks = 1, bytes = 256, durationMs = 1))
+                }
+                error("unreachable — executor throws above")
+            }
+            val stderr1 = StderrCapture()
+            val runner1 = newRunner(
+                stderr1,
+                exportExecutor = run1Executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit1 = runner1.execute(
+                request(
+                    output = outputDir,
+                    tables = listOf("users", "orders"),
+                    splitFiles = true,
+                    checkpointDir = checkpointDir,
+                ),
+            )
+            exit1 shouldBe 5
+
+            // Verify manifest state: "users" COMPLETED, "orders" still PENDING.
+            store.state.size shouldBe 1
+            val manifest = store.state.values.single()
+            manifest.tableSlices.first { it.table == "users" }.status shouldBe
+                dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.COMPLETED
+            manifest.tableSlices.first { it.table == "orders" }.status shouldBe
+                dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING
+
+            // Run 2: resume from the stored manifest. Executor should
+            // receive skippedTables = {"users"} and only process "orders".
+            val capturedSkipped = mutableSetOf<String>()
+            val run2Executor = ExportExecutor {
+                _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, onDone, _, _,
+                ->
+                capturedSkipped += skipped
+                val processed = tables.filter { it !in skipped }
+                val summaries = processed.map {
+                    TableExportSummary(table = it, rows = 5, chunks = 1, bytes = 128, durationMs = 1)
+                        .also(onDone)
+                }
+                ExportResult(
+                    tables = summaries,
+                    totalRows = summaries.sumOf { it.rows },
+                    totalChunks = summaries.sumOf { it.chunks },
+                    totalBytes = summaries.sumOf { it.bytes },
+                    durationMs = 1,
+                )
+            }
+            val stderr2 = StderrCapture()
+            val runner2 = newRunner(
+                stderr2,
+                exportExecutor = run2Executor,
+                checkpointStoreFactory = { store },
+            )
+            val exit2 = runner2.execute(
+                request(
+                    output = outputDir,
+                    tables = listOf("users", "orders"),
+                    splitFiles = true,
+                    resume = manifest.operationId,
+                    checkpointDir = checkpointDir,
+                ),
+            )
+            exit2 shouldBe 0
+            capturedSkipped shouldBe setOf("users")
+            store.completeCount shouldBe 1
+            store.state shouldBe emptyMap() // complete() removed manifest
+        }
     }
 
     // ─── 0.9.0 Phase C.2: 3 Fallunterscheidungen + fingerprint ────

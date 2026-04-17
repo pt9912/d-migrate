@@ -228,9 +228,9 @@ Validation failed: 1 error(s), 0 warning(s)
 
 ## Schemas vergleichen
 
-`schema compare` vergleicht zwei neutrale Schema-Dateien. Der 0.5.0-MVP ist
-bewusst file-basiert; DB- oder Umgebungsvergleiche sind noch nicht Teil dieses
-Slices.
+`schema compare` vergleicht zwei Schemas. Der 0.5.0-MVP war bewusst
+file-basiert; seit 0.6.0 werden auch DB-Vergleiche ueber `file:` und `db:`-
+Operanden unterstuetzt (file/file, file/db, db/db).
 
 ```bash
 # Menschenlesbare Diff-Ausgabe

@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: E (Tests und normative Doku-Synchronisierung)
-> **Status**: Planned (2026-04-16)
+> **Status**: Implemented (2026-04-17)
 > **Referenz**: `docs/implementation-plan-0.9.0.md` Abschnitt 3,
 > Abschnitt 4.1 bis 4.7, Abschnitt 6.5, Abschnitt 7 und Abschnitt 8;
 > `docs/ImpPlan-0.9.0-A.md`; `docs/ImpPlan-0.9.0-B.md`;

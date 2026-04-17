@@ -1,6 +1,7 @@
 package dev.dmigrate.cli
 
 import com.github.ajalt.clikt.core.CliktError
+import com.github.ajalt.clikt.core.PrintHelpMessage
 import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
@@ -15,6 +16,7 @@ import dev.dmigrate.driver.sqlite.SqliteDataWriter
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldMatch
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayOutputStream
@@ -107,6 +109,24 @@ class CliHelpAndBootstrapTest : FunSpec({
         captureStreams {
             shouldThrow<CliktError> { cli().parse(listOf("data", "export", "--help")) }
         }
+    }
+
+    test("E3: data export --help mentions --resume and --checkpoint-dir") {
+        val ex = shouldThrow<PrintHelpMessage> {
+            cli().parse(listOf("data", "export", "--help"))
+        }
+        val helpText = ex.context!!.command.getFormattedHelp(ex)
+        helpText shouldContain "--resume"
+        helpText shouldContain "--checkpoint-dir"
+    }
+
+    test("E3: data import --help mentions --resume and --checkpoint-dir") {
+        val ex = shouldThrow<PrintHelpMessage> {
+            cli().parse(listOf("data", "import", "--help"))
+        }
+        val helpText = ex.context!!.command.getFormattedHelp(ex)
+        helpText shouldContain "--resume"
+        helpText shouldContain "--checkpoint-dir"
     }
 
     test("data transfer --help produces a help message") {

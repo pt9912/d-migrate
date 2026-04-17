@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.0 - Beta: Resilienz und vollstaendige i18n-CLI
 > **Phase**: C (Export-Checkpoint und Resume) — Unterphase C.2
-> **Status**: In Review (2026-04-16)
+> **Status**: Implemented (2026-04-16)
 > **Überplan**: [`ImpPlan-0.9.0-C.md`](./ImpPlan-0.9.0-C.md)
 > **Vorgaenger-Unterplan**: [`ImpPlan-0.9.0-C1.md`](./ImpPlan-0.9.0-C1.md) —
 > tabellengranulares Export-Resume

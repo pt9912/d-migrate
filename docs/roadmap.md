@@ -271,9 +271,9 @@ Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 > und in der stderr-Summary (`docs/ImpPlan-0.9.0-B.md` §2.2). Die
 > eigentliche Streaming-Wiederaufnahme (Runner-Verdrahtung,
 > Manifest-Fortschreibung, Wiederaufnahme aus vorhandenem Manifest,
-> Executor-Seam fuer `operationId`, Renderer-Anzeige) folgt in Phase C/D.
-> Solange die Runtime nicht steht, gibt der Runner bei `--resume` eine
-> sichtbare Warnung aus und startet den Lauf von vorn.
+> Executor-Seam fuer `operationId`, Renderer-Anzeige) wurde in Phase C/D
+> implementiert. `--resume` ist seit 0.9.0 fuer dateibasierte Export-
+> und Import-Laeufe produktiv.
 
 > Hinweis: `--resume` ist in 0.9.0 bewusst **dateibasiert** zugeschnitten —
 > stdout-Export und stdin-Import sind nicht Teil des Resume-Vertrags und

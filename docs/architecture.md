@@ -208,11 +208,9 @@ d-migrate/
 │               └── StreamingExporter.kt
 ```
 
-> Geplante, noch nicht implementierte Module: `integrations/` (Flyway, Liquibase,
-> Django, Knex), `ai/` (Ollama, LM Studio, OpenAI, Anthropic, …), `testdata/`
-> (Faker, KI-gestuetzt), `docs/` — siehe Roadmap. Die 0.8.0-I18n-Bausteine
-> werden zunaechst in bestehenden Modulen verortet (`hexagon:application`,
-> `adapters:driving:cli`, `adapters:driven:formats`).
+> Seit 0.7.0 implementiert: `integrations/` (Flyway, Liquibase, Django, Knex).
+> Geplante, noch nicht implementierte Module: `ai/` (Ollama, LM Studio, OpenAI,
+> Anthropic, …), `testdata/` (Faker, KI-gestuetzt) — siehe Roadmap.
 
 ### 2.2 Modul-Abhängigkeiten
 
@@ -836,7 +834,7 @@ suspend fun <T> withRetry(
 
 **Gradle (Kotlin DSL)** mit Multi-Module-Setup:
 
-Das folgende Build-Skript ist als Zielbild fuer die geplante Multi-Module-Codebasis zu verstehen:
+Das folgende Build-Skript beschreibt die implementierte Multi-Module-Codebasis:
 
 ```kotlin
 // build.gradle.kts (Root)
