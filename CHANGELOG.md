@@ -7,19 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-17
+
 ### Added
 
+- **Checkpoint/Resume for `data export`**: file-based exports can be interrupted and resumed via `--resume <checkpoint-id>` and `--checkpoint-dir <path>`. Table-granular resume (Phase C.1) skips already-completed tables; mid-table resume (Phase C.2) continues from the last confirmed composite marker when `--since-column` is set and the table has a primary key. Single-file targets use staging with atomic rename
+- **Checkpoint/Resume for `data import`**: file- and directory-based imports can be interrupted and resumed at committed-chunk boundaries. Already-completed tables are skipped; partially committed tables restart at the next open chunk. `--truncate` is automatically suppressed for resumed tables to protect committed rows. Directory imports validate stable `table → inputFile` bindings
+- **`--lang` as productive CLI override** (de/en): strict validation against bundled product languages with Exit 2 for unsupported values; priority: `--lang` > `D_MIGRATE_LANG` > `LC_ALL`/`LANG` > config `i18n.default_locale` > system locale > English fallback
+- **CheckpointStore port and file-based adapter**: versioned `CheckpointManifest` with schema version, operation type, table slices, options fingerprint and resume positions; atomic temp-to-rename write strategy
+- **`PipelineConfig` extended with `CheckpointConfig`**: `pipeline.checkpoint.enabled`, `interval` (row-based), `max_interval` (time-based, ISO-8601 duration), `directory`; merge priority CLI > Config > Runtime-Default
+- **`operationId` in progress and result types**: stable UUID per run, emitted in `ProgressEvent.RunStarted` (with Starting/Resuming label) and in `ExportResult`/`ImportResult`
+- **Exit code 3 for resume incompatibility**: fingerprint mismatch (format, encoding, CSV options, filter, `--since-*`, tables, output mode/path, PK signature, directory topology), operation type mismatch, or table list divergence
 - CI: `verify-homebrew` Job in `.github/workflows/release-homebrew.yml` — macOS-Runner installiert nach jedem Tag-Push den veröffentlichten Tap (`pt9912/homebrew-d-migrate`) und verifiziert `d-migrate --version` + `--help` end-to-end
 - CI: neuer Workflow `.github/workflows/verify-homebrew-formula.yml` — macOS-Verifikation der repo-lokalen Formula (`packaging/homebrew/d-migrate.rb`) via Ephemeral-Tap bei jeder Änderung der Formula-Datei, PRs gegen `develop`/`main` sowie manuellem `workflow_dispatch`
 
 ### Changed
 
+- `AbstractDdlGenerator.getVersion()` returns `0.9.0`
+- `--lang` CLI flag is now productive (was rejected with exit 7 in 0.8.0)
+- Normative documentation (`cli-spec.md`, `connection-config-spec.md`, `roadmap.md`, `guide.md`, `design.md`, `architecture.md`) synchronized to the implemented 0.9.0 contract; stale phase placeholders removed
 - Homebrew install block (`packaging/homebrew/d-migrate.rb` und `release-homebrew.yml` `install:`-Key) verwendet `Dir["*"]` statt `Dir["d-migrate-*"].fetch(0)`: Homebrew strippt das einzelne Top-Level-Verzeichnis beim Entpacken, das alte Pattern lieferte daher immer einen leeren Treffer und einen `IndexError` bei der Installation
 - `docs/releasing.md` §4.7: `brew install --formula <path.rb>` durch den modern-homebrew-konformen Ephemeral-Tap-Weg ersetzt; Alternativpfad über den veröffentlichten Tap dokumentiert
 - `docs/releasing.md` §4.7 / §7: ZIP-SHA wird aus dem publizierten Release-Asset (curl/`gh release download`) gelesen, nicht aus `release-assets/*.sha256` — die beiden Workflows bauen den ZIP unabhängig und produzieren unterschiedliche Hashes
 - `docs/releasing.md` §3.5 / §7 / §8: neue Workflows in der Vorbereitungs-, Veröffentlichungs- und Referenzsektion eingetragen
-
-### Fixed
 
 ## [0.8.0] - 2026-04-16
 
