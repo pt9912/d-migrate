@@ -186,6 +186,8 @@ Trigger-Namensvertrag:
     `<canonical-table>\u0000<canonical-column>\u0000<sequence>`
   - Suffix `_bi`
 - dieses Schema bleibt immer <= 64 Zeichen
+  (`dmg_seq_` 8 + table16 16 + `_` 1 + column16 16 + `_` 1 +
+  hash10 10 + `_bi` 3 = 55)
 - Reverse identifiziert Sequence-Support-Trigger **nicht** nur ueber den
   Namen, sondern ueber Name + Marker-Kommentar + kanonische Body-Form
 - Kollisionen auf `hash10` gelten als praktisch unwahrscheinlich; tritt
@@ -260,9 +262,11 @@ Concurrency-Vertrag fuer `dmg_nextval(...)`:
   Sequence-Inkrement zurueckgerollt — das bedeutet, dass Sequence-Werte
   **nicht** transaktionsunabhaengig vergeben werden wie bei nativen
   PostgreSQL-Sequences
-- Gaps durch Rollback treten deshalb nicht auf, dafuer koennen unter
-  hoher Concurrency kurzzeitig identische Werte vergeben werden, wenn
-  zwei Transaktionen gleichzeitig committen und rollbacken
+- Gaps durch Rollback treten deshalb nicht auf, dafuer kann unter
+  hoher Concurrency folgendes Szenario eintreten: TX1 ruft
+  `dmg_nextval` auf und erhaelt Wert N, TX2 blockiert am Row-Lock,
+  TX1 rollbackt, TX2 erhaelt nun ebenfalls Wert N, weil das
+  `UPDATE` von TX1 zurueckgerollt wurde
 - dieser Unterschied zu PostgreSQL wird als bewusste Einschraenkung
   dokumentiert und ueber `W117` ausgewiesen
 - Phase A muss entscheiden, ob fuer Phase 1 dieses Verhalten akzeptabel
@@ -409,7 +413,7 @@ Sequence einen Skip, sondern:
 
 1. Support-Tabelle `dmg_sequences`
 2. Seed-Statements fuer alle neutralen Sequences
-3. Support-Routine(n) fuer `nextval`/`setval`
+3. Support-Routinen `dmg_nextval` und `dmg_setval`
 
 Zusätzlich muessen Spalten mit
 `DefaultValue.SequenceNextVal(...)` im MySQL-DDL auf einen kanonischen
@@ -572,7 +576,7 @@ Trotzdem zu pruefen:
 - kanonische Sequence-Support-Trigger fuer MySQL generieren
 - Rollback-Inversion fuer Supportobjekte pruefen
 
-### Phase B/C - Tests und Golden Masters
+### Phase C - Tests und Golden Masters
 
 Phase C laeuft bewusst parallel zu Phase B: Unit-Tests und Golden
 Masters werden zusammen mit dem jeweiligen Generator-Code entwickelt,
@@ -733,7 +737,7 @@ Grobe Einschaetzung pro Phase (T-Shirt-Sizing):
 - Phase A (Vertrag): S — primaer Doku und Entscheidungen
 - Phase B (Generator + Optionen): L — breiter Eingriff durch
   `DefaultValue`-Erweiterung, neuer Generator-Pfad, Routinen-DDL
-- Phase B/C (Tests + Golden Masters): M — parallel zu Phase B
+- Phase C (Tests + Golden Masters): M — parallel zu Phase B
 - Phase D (Reverse): L — neuer Reader-Pfad mit Marker-Erkennung
 - Phase E (Compare + Stabilisierung): M — Round-Trip-Absicherung
 
