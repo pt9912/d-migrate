@@ -75,6 +75,6 @@ CREATE TRIGGER "trg_updated"
     WHEN (OLD.status != NEW.status)
     EXECUTE FUNCTION "trg_fn_trg_updated"();
 
--- [E052] Trigger 'trg_insert' has no body and must be manually implemented.
+-- [E053] Trigger 'trg_insert' has no body and must be manually implemented.
 -- Hint: Provide a trigger body in the schema definition.
 -- TODO: Implement trigger "trg_insert"

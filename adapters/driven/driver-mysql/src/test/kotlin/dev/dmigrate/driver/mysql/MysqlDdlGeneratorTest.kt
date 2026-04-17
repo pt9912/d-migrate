@@ -221,9 +221,9 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldContain "`priority` ENUM('low', 'medium', 'high') NOT NULL"
     }
 
-    // ── 7. Composite custom type skipped with E052 ──────────────
+    // ── 7. Composite custom type skipped with E054 ──────────────
 
-    test("composite custom type is skipped with E052 action required note") {
+    test("composite custom type is skipped with E054 action required note") {
         val schema = emptySchema(
             customTypes = mapOf(
                 "address" to CustomTypeDefinition(
@@ -239,23 +239,23 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E052"
+        ddl shouldContain "E054"
         ddl shouldContain "Composite type 'address' is not supported in MySQL"
 
         val notes = result.notes
-        val e052 = notes.find { it.code == "E052" && it.objectName == "address" }
+        val e052 = notes.find { it.code == "E054" && it.objectName == "address" }
         e052 shouldBe TransformationNote(
             type = NoteType.ACTION_REQUIRED,
-            code = "E052",
+            code = "E054",
             objectName = "address",
             message = "Composite type 'address' is not supported in MySQL and was skipped.",
             hint = "Consider restructuring the data model to avoid composite types."
         )
     }
 
-    // ── 8. Sequence skipped with E052 ───────────────────────────
+    // ── 8. Sequence skipped with E056 ───────────────────────────
 
-    test("sequence is skipped with E052 action required note") {
+    test("sequence is skipped with E056 action required note") {
         val schema = emptySchema(
             sequences = mapOf(
                 "order_seq" to SequenceDefinition(start = 1, increment = 1)
@@ -265,14 +265,14 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E052"
+        ddl shouldContain "E056"
         ddl shouldContain "Sequence 'order_seq' is not supported in MySQL"
 
         val notes = result.notes
-        val seqNote = notes.find { it.code == "E052" && it.objectName == "order_seq" }
+        val seqNote = notes.find { it.code == "E056" && it.objectName == "order_seq" }
         seqNote shouldBe TransformationNote(
             type = NoteType.ACTION_REQUIRED,
-            code = "E052",
+            code = "E056",
             objectName = "order_seq",
             message = "Sequence 'order_seq' is not supported in MySQL and was skipped.",
             hint = "Use AUTO_INCREMENT columns instead of sequences."
@@ -546,9 +546,9 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldContain "DELIMITER ;"
     }
 
-    // ── 14. Function with different source_dialect → E052 ───────
+    // ── 14. Function with different source_dialect → E053 ───────
 
-    test("function with non-mysql source_dialect is skipped with E052") {
+    test("function with non-mysql source_dialect is skipped with E053") {
         val schema = emptySchema(
             functions = mapOf(
                 "pg_func" to FunctionDefinition(
@@ -561,10 +561,10 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E052"
+        ddl shouldContain "E053"
         ddl shouldContain "-- TODO: Rewrite function `pg_func` for MySQL (source dialect: postgresql)"
 
-        val note = result.notes.find { it.code == "E052" && it.objectName == "pg_func" }
+        val note = result.notes.find { it.code == "E053" && it.objectName == "pg_func" }
         note!!.message shouldContain "must be manually rewritten for MySQL"
         result.skippedObjects.any { it.name == "pg_func" } shouldBe true
     }
@@ -605,7 +605,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldContain "DELIMITER ;"
     }
 
-    test("trigger with non-mysql source_dialect is skipped with E052") {
+    test("trigger with non-mysql source_dialect is skipped with E053") {
         val schema = emptySchema(
             triggers = mapOf(
                 "trg_pg" to TriggerDefinition(
@@ -621,7 +621,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E052"
+        ddl shouldContain "E053"
         ddl shouldContain "-- TODO: Rewrite trigger `trg_pg` for MySQL (source dialect: postgresql)"
         result.skippedObjects.any { it.name == "trg_pg" } shouldBe true
     }
@@ -905,7 +905,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldContain "CONSTRAINT `uq_users_email` UNIQUE (`email`)"
     }
 
-    test("EXCLUDE constraint is not supported and emits E052") {
+    test("EXCLUDE constraint is not supported and emits E054") {
         val schema = emptySchema(
             tables = mapOf(
                 "bookings" to table(
@@ -928,7 +928,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         val ddl = result.render()
 
         ddl shouldContain "-- TODO: EXCLUDE constraint `excl_booking_overlap` is not supported in MySQL"
-        val note = result.notes.find { it.code == "E052" && it.objectName == "excl_booking_overlap" }
+        val note = result.notes.find { it.code == "E054" && it.objectName == "excl_booking_overlap" }
         note!!.type shouldBe NoteType.ACTION_REQUIRED
     }
 
@@ -1014,7 +1014,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldContain "DELIMITER ;"
     }
 
-    test("procedure with non-mysql source_dialect is skipped with E052") {
+    test("procedure with non-mysql source_dialect is skipped with E053") {
         val schema = emptySchema(
             procedures = mapOf(
                 "pg_proc" to ProcedureDefinition(
@@ -1027,12 +1027,12 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E052"
+        ddl shouldContain "E053"
         ddl shouldContain "-- TODO: Rewrite procedure `pg_proc` for MySQL (source dialect: postgresql)"
         result.skippedObjects.any { it.name == "pg_proc" } shouldBe true
     }
 
-    test("view with non-mysql source_dialect is skipped with E052") {
+    test("view with non-mysql source_dialect is skipped with E053") {
         val schema = emptySchema(
             views = mapOf(
                 "pg_view" to ViewDefinition(
@@ -1045,7 +1045,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E052"
+        ddl shouldContain "E053"
         ddl shouldContain "-- TODO: Rewrite view `pg_view` for MySQL (source dialect: postgresql)"
         result.skippedObjects.any { it.name == "pg_view" } shouldBe true
     }
@@ -1230,7 +1230,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldContain "CREATE UNIQUE INDEX `idx_cache_hash` ON `cache` USING BTREE (`hash_key`);"
     }
 
-    test("function with no body emits E052 and is skipped") {
+    test("function with no body emits E053 and is skipped") {
         val schema = emptySchema(
             functions = mapOf(
                 "stub_func" to FunctionDefinition(
@@ -1244,12 +1244,12 @@ class MysqlDdlGeneratorTest : FunSpec({
         val ddl = result.render()
 
         ddl shouldContain "-- TODO: Implement function `stub_func`"
-        val note = result.notes.find { it.code == "E052" && it.objectName == "stub_func" }
+        val note = result.notes.find { it.code == "E053" && it.objectName == "stub_func" }
         note!!.message shouldContain "has no body and must be manually implemented"
         result.skippedObjects.any { it.name == "stub_func" } shouldBe true
     }
 
-    test("trigger with no body emits E052 and is skipped") {
+    test("trigger with no body emits E053 and is skipped") {
         val schema = emptySchema(
             triggers = mapOf(
                 "stub_trg" to TriggerDefinition(
@@ -1265,6 +1265,8 @@ class MysqlDdlGeneratorTest : FunSpec({
         val ddl = result.render()
 
         ddl shouldContain "-- TODO: Implement trigger `stub_trg`"
+        val note = result.notes.find { it.code == "E053" && it.objectName == "stub_trg" }
+        note!!.message shouldContain "has no body and must be manually implemented"
         result.skippedObjects.any { it.name == "stub_trg" } shouldBe true
     }
 

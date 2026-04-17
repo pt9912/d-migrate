@@ -9,6 +9,7 @@ abstract class AbstractDdlGenerator(
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         val statements = mutableListOf<DdlStatement>()
         val skipped = mutableListOf<SkippedObject>()
+        val blockedTables = mutableSetOf<String>()
 
         statements += generateHeader(schema)
         statements += generateCustomTypes(schema.customTypes)
@@ -17,40 +18,26 @@ abstract class AbstractDdlGenerator(
         val (sorted, circularEdges) = topologicalSort(schema.tables)
         val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
         for ((name, table) in sorted) {
-            if (shouldBlockTable(name, table, options)) {
-                skipped += SkippedObject(
-                    type = "table", name = name,
-                    reason = "Table contains geometry columns but spatial profile is '${options.spatialProfile.cliName}'",
-                    code = "E052",
-                    hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
-                )
-                statements += DdlStatement("", notes = listOf(TransformationNote(
-                    type = NoteType.ACTION_REQUIRED, code = "E052",
-                    objectName = name,
-                    message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
-                    hint = "Use --spatial-profile to enable spatial DDL generation",
-                )))
+            val spatialBlockNote = spatialTableBlockNote(name, table, options)
+            if (spatialBlockNote != null) {
+                registerBlockedTable(name, spatialBlockNote, blockedTables, skipped)
+                statements += DdlStatement("", notes = listOf(spatialBlockNote))
                 continue
             }
             val tableStatements = generateTable(name, table, schema, deferredFks, options)
-            // Detect if generateTable blocked the table via E052 (e.g. SpatiaLite metadata)
-            val tableBlocked = tableStatements.any { stmt ->
-                stmt.sql.isBlank() && stmt.notes.any { it.code == "E052" }
-            }
-            if (tableBlocked) {
-                val blockNote = tableStatements.flatMap { it.notes }.first { it.code == "E052" }
-                skipped += SkippedObject(
-                    type = "table", name = name, reason = blockNote.message,
-                    code = "E052", hint = blockNote.hint,
-                )
+            // Detect if generateTable blocked the table (e.g. SpatiaLite metadata).
+            val blockNote = tableStatements.asSequence()
+                .flatMap { it.notes.asSequence() }
+                .firstOrNull { it.blocksTable }
+            if (blockNote != null) {
+                registerBlockedTable(name, blockNote, blockedTables, skipped)
             }
             statements += tableStatements
         }
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
-            // Also skip indices for tables blocked by generateTable (e.g. SpatiaLite metadata)
-            val wasBlocked = skipped.any { it.type == "table" && it.name == name && it.code == "E052" }
-            if (wasBlocked) continue
+            // Also skip indices for tables blocked by generateTable.
+            if (name in blockedTables) continue
             statements += generateIndices(name, table)
         }
         statements += handleCircularReferences(circularEdges, skipped)
@@ -90,9 +77,41 @@ abstract class AbstractDdlGenerator(
     protected open fun shouldBlockTable(name: String, table: TableDefinition, options: DdlGenerationOptions): Boolean =
         hasGeometryColumns(table) && !canGenerateSpatial(options.spatialProfile)
 
+    protected open fun spatialTableBlockNote(
+        name: String,
+        table: TableDefinition,
+        options: DdlGenerationOptions,
+    ): TransformationNote? {
+        if (!shouldBlockTable(name, table, options)) return null
+        return TransformationNote(
+            type = NoteType.ACTION_REQUIRED,
+            code = "E052",
+            objectName = name,
+            message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
+            hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
+            blocksTable = true,
+        )
+    }
+
     protected open fun canGenerateSpatial(profile: SpatialProfile): Boolean = when (profile) {
         SpatialProfile.POSTGIS, SpatialProfile.NATIVE, SpatialProfile.SPATIALITE -> true
         SpatialProfile.NONE -> false
+    }
+
+    private fun registerBlockedTable(
+        name: String,
+        blockNote: TransformationNote,
+        blockedTables: MutableSet<String>,
+        skipped: MutableList<SkippedObject>,
+    ) {
+        blockedTables += name
+        skipped += SkippedObject(
+            type = "table",
+            name = name,
+            reason = blockNote.message,
+            code = blockNote.code,
+            hint = blockNote.hint,
+        )
     }
 
     // ── Shared logic ────────────────────────────

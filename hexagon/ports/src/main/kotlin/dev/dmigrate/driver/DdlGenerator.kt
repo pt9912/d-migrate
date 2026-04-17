@@ -35,7 +35,8 @@ data class TransformationNote(
     val code: String,
     val objectName: String,
     val message: String,
-    val hint: String? = null
+    val hint: String? = null,
+    val blocksTable: Boolean = false,
 )
 
 enum class NoteType { INFO, WARNING, ACTION_REQUIRED }

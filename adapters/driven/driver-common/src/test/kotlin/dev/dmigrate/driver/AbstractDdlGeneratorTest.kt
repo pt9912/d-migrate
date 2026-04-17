@@ -125,6 +125,29 @@ class AbstractDdlGeneratorTest : FunSpec({
         header shouldContain "Target: postgresql"
     }
 
+    test("generate() treats blocking notes as table blockers independent of error code") {
+        val gen = TestDdlGenerator(blockedTable = "t", blockCode = "E055")
+        val schema = schema("t" to table())
+
+        val result = gen.generate(schema)
+
+        gen.callOrder shouldContainExactly listOf(
+            "customTypes", "sequences",
+            "table:t",
+            "circular", "views", "functions", "procedures", "triggers",
+        )
+        result.notes.any { it.code == "E055" && it.blocksTable && it.objectName == "t" } shouldBe true
+        result.skippedObjects shouldContainExactly listOf(
+            SkippedObject(
+                type = "table",
+                name = "t",
+                reason = "Table 't' blocked in test double",
+                code = "E055",
+                hint = "test hint",
+            )
+        )
+    }
+
     // ─── generateRollback() / invertStatement ────────────────────
 
     test("generateRollback inverts CREATE TABLE → DROP TABLE in reverse order") {
@@ -288,6 +311,8 @@ private fun refs(table: String, column: String) = ReferenceDefinition(
  */
 private class TestDdlGenerator(
     private val emitBlankSequence: Boolean = false,
+    private val blockedTable: String? = null,
+    private val blockCode: String = "E052",
 ) : AbstractDdlGenerator(StubTypeMapper()) {
 
     override val dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL
@@ -307,6 +332,19 @@ private class TestDdlGenerator(
     ): List<DdlStatement> {
         callOrder += "table:$name"
         tableOrder += name
+        if (name == blockedTable) {
+            return listOf(DdlStatement(
+                "",
+                notes = listOf(TransformationNote(
+                    type = NoteType.ACTION_REQUIRED,
+                    code = blockCode,
+                    objectName = name,
+                    message = "Table '$name' blocked in test double",
+                    hint = "test hint",
+                    blocksTable = true,
+                ))
+            ))
+        }
         return listOf(DdlStatement("CREATE TABLE \"$name\" ();"))
     }
 

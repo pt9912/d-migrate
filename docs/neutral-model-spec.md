@@ -1155,12 +1155,30 @@ Generator-/Report-Regeln, keine Modellvalidierung:
 
 | Code | Regel                                                                                                            | Ebene     |
 | ---- | ---------------------------------------------------------------------------------------------------------------- | --------- |
-| E052 | Spatial-Typ kann mit dem gewaehlten Profil nicht generiert werden (z.B. `geometry` bei `--spatial-profile none`) | Generator |
+| E052 | Spatial-Objekt kann mit dem gewaehlten Profil nicht generiert werden (z.B. `geometry` bei `--spatial-profile none`) | Generator |
+| E053 | Dialektspezifischer SQL-Inhalt (View-Query, Routine- oder Trigger-Body) erfordert manuelle Transformation oder Implementierung | Generator |
+| E054 | Objekttyp wird im Zieldialekt nicht unterstuetzt | Generator |
+| E055 | Partitionierung wird im Zieldialekt nicht unterstuetzt | Generator |
+| E056 | Benannte Sequence kann im Zieldialekt nicht nativ generiert werden und benoetigt Emulation oder manuelle Nacharbeit | Generator |
 | W120 | SRID-Metadaten konnten nicht vollstaendig in den Zieldialekt uebertragen werden                                  | Generator |
 
 Wichtig: `E120`/`E121` werden von `schema validate` gemeldet.
-`E052`/`W120` werden nur von `schema generate` gemeldet und sind Teil des
-bestehenden `action_required`- bzw. Warning-Report-Vertrags.
+`E052`-`E056`/`W120` werden nur von `schema generate` gemeldet und sind Teil
+des bestehenden `action_required`- bzw. Warning-Report-Vertrags.
+
+Die Codes `E052`-`E056` beschreiben dabei **die Ursache** eines
+`action_required`-Falls, nicht automatisch dessen Reichweite. Ob der
+Generator nur das betroffene Objekt ueberspringt oder die weitere Generierung
+einer ganzen Tabelle blockiert, ist eine separate Generatorwirkung.
+
+| Code | Typische Wirkung bei `schema generate` |
+| ---- | -------------------------------------- |
+| E052 | Blockiert die gesamte betroffene Tabelle (Spatial-Profil verhindert Tabellen-DDL). |
+| E053 | Ueberspringt das betroffene View-/Function-/Procedure-/Trigger-Objekt; keine Tabellenblockierung. |
+| E054 | Ueberspringt das betroffene Objekt oder die betroffene Constraint-/Typ-Definition; keine Tabellenblockierung. |
+| E055 | Blockiert die betroffene Tabelle, wenn deren Partitionierung im Zieldialekt nicht erzeugt werden kann. |
+| E056 | Ueberspringt die betroffene benannte Sequence; keine Tabellenblockierung. |
+| W120 | Best-Effort-Warnung; blockiert keine DDL-Erzeugung. |
 
 ---
 

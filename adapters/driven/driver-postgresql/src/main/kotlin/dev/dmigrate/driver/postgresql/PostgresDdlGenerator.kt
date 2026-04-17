@@ -334,7 +334,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             skipped += SkippedObject("view", name, "Source dialect '${view.sourceDialect}' is not compatible with PostgreSQL")
             val note = TransformationNote(
                 type = NoteType.ACTION_REQUIRED,
-                code = "E052",
+                code = "E053",
                 objectName = name,
                 message = "View '$name' was written for '${view.sourceDialect}' and must be manually rewritten for PostgreSQL.",
                 hint = "Rewrite the query using PostgreSQL-compatible SQL syntax."
@@ -375,7 +375,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Function '$name' has no body and must be manually implemented.",
                         hint = "Provide a function body in the schema definition."
@@ -391,7 +391,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for PostgreSQL.",
                         hint = "Rewrite the function body using PostgreSQL-compatible syntax."
@@ -441,7 +441,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Procedure '$name' has no body and must be manually implemented.",
                         hint = "Provide a procedure body in the schema definition."
@@ -457,7 +457,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for PostgreSQL.",
                         hint = "Rewrite the procedure body using PostgreSQL-compatible syntax."
@@ -504,7 +504,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                     listOf(
                         TransformationNote(
                             type = NoteType.ACTION_REQUIRED,
-                            code = "E052",
+                            code = "E053",
                             objectName = name,
                             message = "Trigger '$name' has no body and must be manually implemented.",
                             hint = "Provide a trigger body in the schema definition."
@@ -522,7 +522,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
                     listOf(
                         TransformationNote(
                             type = NoteType.ACTION_REQUIRED,
-                            code = "E052",
+                            code = "E053",
                             objectName = name,
                             message = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for PostgreSQL.",
                             hint = "Rewrite the trigger body using PostgreSQL-compatible syntax."

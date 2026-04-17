@@ -5,18 +5,18 @@
 -- [I001] Enum type 'order_status' mapped to inline TEXT + CHECK constraint in SQLite.
 -- Enum type "order_status" is handled inline via CHECK constraints
 
--- [E052] Composite type 'address' is not supported in SQLite.
+-- [E054] Composite type 'address' is not supported in SQLite.
 -- Hint: Flatten composite fields into individual table columns or use JSON.
 -- Composite type "address" is not supported in SQLite
 
 -- [I001] Domain type 'positive_amount' mapped to base type with inline CHECK constraint in SQLite.
 -- Domain type "positive_amount" is mapped to its base type with inline CHECK in SQLite
 
--- [E052] Sequence 'invoice_seq' is not supported in SQLite.
+-- [E056] Sequence 'invoice_seq' is not supported in SQLite.
 -- Hint: Use INTEGER PRIMARY KEY AUTOINCREMENT or application-level sequencing.
 -- Sequence "invoice_seq" is not supported in SQLite
 
--- [E052] Sequence 'simple_seq' is not supported in SQLite.
+-- [E056] Sequence 'simple_seq' is not supported in SQLite.
 -- Hint: Use INTEGER PRIMARY KEY AUTOINCREMENT or application-level sequencing.
 -- Sequence "simple_seq" is not supported in SQLite
 
@@ -27,7 +27,7 @@ CREATE TABLE "customers" (
 
 -- [W200] Decimal(10,2) mapped to REAL in SQLite. Precision may be lost.
 -- Hint: Store as TEXT if exact decimal precision is required.
--- [E052] Table partitioning is not supported in SQLite for table 'orders'.
+-- [E055] Table partitioning is not supported in SQLite for table 'orders'.
 -- Hint: Partition data at the application level or use separate tables.
 CREATE TABLE "orders" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,26 +46,26 @@ CREATE TABLE "orders" (
 -- Hint: The index has been skipped. If needed, create a standard BTREE index instead.
 -- Index "idx_customer" skipped: HASH index type is not supported in SQLite
 
--- [E052] View 'active_orders' was written for 'postgresql' and must be manually rewritten for SQLite.
+-- [E053] View 'active_orders' was written for 'postgresql' and must be manually rewritten for SQLite.
 -- Hint: Rewrite the query using SQLite-compatible SQL syntax.
 -- TODO: Rewrite view "active_orders" for SQLite (source dialect: postgresql)
 
--- [E052] View 'monthly_stats' was written for 'postgresql' and must be manually rewritten for SQLite.
+-- [E053] View 'monthly_stats' was written for 'postgresql' and must be manually rewritten for SQLite.
 -- Hint: Rewrite the query using SQLite-compatible SQL syntax.
 -- TODO: Rewrite view "monthly_stats" for SQLite (source dialect: postgresql)
 
--- [E052] Function 'calc_total' cannot be created via DDL in SQLite.
+-- [E054] Function 'calc_total' cannot be created via DDL in SQLite.
 -- Hint: Register custom functions programmatically via the SQLite C API or your application's SQLite driver.
 -- Function "calc_total" is not supported in SQLite
 
--- [E052] Procedure 'update_status' cannot be created in SQLite.
+-- [E054] Procedure 'update_status' cannot be created in SQLite.
 -- Hint: Implement procedure logic at the application level.
 -- Procedure "update_status" is not supported in SQLite
 
--- [E052] Trigger 'trg_updated' was written for 'postgresql' and must be manually rewritten for SQLite.
+-- [E053] Trigger 'trg_updated' was written for 'postgresql' and must be manually rewritten for SQLite.
 -- Hint: Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;.
 -- TODO: Rewrite trigger "trg_updated" for SQLite (source dialect: postgresql)
 
--- [E052] Trigger 'trg_insert' has no body and must be manually implemented.
+-- [E053] Trigger 'trg_insert' has no body and must be manually implemented.
 -- Hint: Provide a trigger body in the schema definition.
 -- TODO: Implement trigger "trg_insert"

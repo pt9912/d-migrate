@@ -275,9 +275,11 @@ Nicht-automatisch auflösbare Inkompatibilitäten. Der Prozess stoppt mit Hinwei
 
 | Code | Meldung |
 |---|---|
-| E050 | Composite type not natively supported, manual conversion required |
-| E051 | Named sequence not natively supported, manual emulation required |
-| E052 | Object cannot be generated and requires manual work (KI-Transformation, spatial profile, or other unresolvable incompatibility) |
+| E052 | Spatial object cannot be generated with the chosen spatial profile |
+| E053 | Dialect-specific SQL content requires manual transformation or implementation |
+| E054 | Object type is not supported in the target dialect |
+| E055 | Partitioning is not supported in the target dialect |
+| E056 | Named sequence cannot be generated natively and needs emulation/manual handling |
 | E120 | Unknown `geometry_type` value (schema validation) |
 | E121 | `srid` must be greater than 0 (schema validation) |
 
@@ -368,17 +370,21 @@ Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--ta
 
 **Ausgabeverhalten**:
 - **stdout**: DDL-Output (wenn kein `--output`)
-- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052)
+- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052-E056)
 - **`--output`**: DDL in Datei + automatisch `<name>.report.yaml` als Sidecar
 - **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
 
 Spatial-spezifische Ausgaben:
-- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die gesamte Tabelle wird uebersprungen; keine partielle DDL. Bei Funktionen/Prozeduren wird dagegen nur das Einzelobjekt uebersprungen (siehe [DDL-Generierungsregeln §16](./ddl-generation-rules.md)).
+- **E052** (Spatial-Profil blockiert Tabelle): Erscheint auf stderr und in `skipped_objects` des Reports. Die gesamte Tabelle wird uebersprungen; keine partielle DDL.
+- **E053** (manuelle SQL-Transformation/Implementierung): Erscheint bei Views, Functions, Procedures oder Triggers mit nicht automatisch uebertragbarem SQL-Inhalt.
+- **E054** (Objekttyp nicht unterstuetzt): Erscheint bei im Zieldialekt nicht verfuegbaren Objekten oder Constraint-Typen.
+- **E055** (Partitionierung nicht unterstuetzt): Erscheint bei nicht nativ unterstuetzter Partitionierung.
+- **E056** (Sequence-/Emulationsfall): Erscheint bei benannten Sequences ohne nativen Zieldialekt-Support.
 - **W120** (SRID nicht vollständig übertragbar): Erscheint auf stderr und in `notes` des Reports. Die DDL-Generierung wird fortgesetzt.
 
 Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - **`--generate-rollback`**: Rollback-DDL enthaelt die inversen Spatial-Statements (z.B. `DiscardGeometryColumn` fuer SpatiaLite). Blockierte Tabellen (E052) erzeugen kein Rollback-DDL. Details: [DDL-Generierungsregeln §16.7](./ddl-generation-rules.md).
-- **`--output-format json`**: Spatial-E052-Eintraege erscheinen in `skipped_objects`, W120 in `notes`.
+- **`--output-format json`**: Action-required-Eintraege (`E052`-`E056`) erscheinen in `notes` und/oder `skipped_objects`, W120 in `notes`.
 - **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
 
 **Exit-Codes**:
@@ -386,7 +392,7 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - `3`: Schema-Validierung fehlgeschlagen (DDL wird nicht erzeugt)
 - `7`: Schema-Datei nicht lesbar oder ungültiges YAML
 
-**action_required-Objekte** (z.B. Functions mit anderem source_dialect) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
+**action_required-Objekte** (z.B. Functions mit anderem `source_dialect`, nicht unterstützte Sequences oder blockierte Spatial-Tabellen) werden übersprungen und im Report dokumentiert. Die DDL-Generierung bricht **nicht** ab — der Exit-Code bleibt `0`. Details in [DDL-Generierungsregeln §14.3](./ddl-generation-rules.md#143-verhalten-bei-action_required).
 
 #### `schema reverse` *(0.6.0, umgesetzt)*
 

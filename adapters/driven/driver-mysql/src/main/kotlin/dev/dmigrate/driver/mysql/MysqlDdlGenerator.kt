@@ -26,7 +26,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                     listOf(
                         TransformationNote(
                             type = NoteType.ACTION_REQUIRED,
-                            code = "E052",
+                            code = "E054",
                             objectName = name,
                             message = "Composite type '$name' is not supported in MySQL and was skipped.",
                             hint = "Consider restructuring the data model to avoid composite types."
@@ -52,7 +52,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E056",
                         objectName = name,
                         message = "Sequence '$name' is not supported in MySQL and was skipped.",
                         hint = "Use AUTO_INCREMENT columns instead of sequences."
@@ -251,7 +251,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 // EXCLUDE constraints are not supported in MySQL
                 notes += TransformationNote(
                     type = NoteType.ACTION_REQUIRED,
-                    code = "E052",
+                    code = "E054",
                     objectName = constraint.name,
                     message = "EXCLUDE constraint '${constraint.name}' is not supported in MySQL.",
                     hint = "Consider using CHECK constraints or application-level validation instead."
@@ -411,7 +411,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             skipped += SkippedObject("view", name, "Source dialect '${view.sourceDialect}' is not compatible with MySQL")
             val note = TransformationNote(
                 type = NoteType.ACTION_REQUIRED,
-                code = "E052",
+                code = "E053",
                 objectName = name,
                 message = "View '$name' was written for '${view.sourceDialect}' and must be manually rewritten for MySQL.",
                 hint = "Rewrite the query using MySQL-compatible SQL syntax."
@@ -460,7 +460,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Function '$name' has no body and must be manually implemented.",
                         hint = "Provide a function body in the schema definition."
@@ -476,7 +476,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for MySQL.",
                         hint = "Rewrite the function body using MySQL-compatible syntax."
@@ -533,7 +533,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Procedure '$name' has no body and must be manually implemented.",
                         hint = "Provide a procedure body in the schema definition."
@@ -549,7 +549,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for MySQL.",
                         hint = "Rewrite the procedure body using MySQL-compatible syntax."
@@ -597,7 +597,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Trigger '$name' has no body and must be manually implemented.",
                         hint = "Provide a trigger body in the schema definition."
@@ -613,7 +613,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 listOf(
                     TransformationNote(
                         type = NoteType.ACTION_REQUIRED,
-                        code = "E052",
+                        code = "E053",
                         objectName = name,
                         message = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for MySQL.",
                         hint = "Rewrite the trigger body using MySQL-compatible syntax."
