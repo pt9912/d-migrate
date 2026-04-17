@@ -460,13 +460,13 @@ Vorgeschlagene Reihenfolge:
 Rollback muss die kanonischen Hilfsobjekte wieder entfernen:
 
 - generierte Sequence-Support-Trigger droppen
-- Support-Routine(n) droppen
+- Support-Routinen (`dmg_nextval`, `dmg_setval`) droppen
 - `dmg_sequences` droppen
 
 Vorgeschlagene Rollback-Reihenfolge:
 
 1. generierte Sequence-Support-Trigger
-2. Support-Routine(n)
+2. Support-Routinen (`dmg_nextval`, `dmg_setval`)
 3. `dmg_sequences`
 
 ### 5.3 Warning-/Error-Semantik
@@ -497,7 +497,7 @@ Dazu braucht er:
 - Erkennung der Tabelle `dmg_sequences`
 - Erkennung der kanonischen Spaltenform
 - Pruefung der Marker `managed_by` und `format_version`
-- Validierung der kanonischen Support-Routine(n) ueber
+- Validierung der kanonischen Support-Routinen (`dmg_nextval`, `dmg_setval`) ueber
   Name + Marker-Kommentar + kanonische Signatur
 - Rekonstruktion der `SequenceDefinition`-Felder aus den Zeilen
 - Rekonstruktion von sequence-basierten Spaltenwerten ueber kanonische
