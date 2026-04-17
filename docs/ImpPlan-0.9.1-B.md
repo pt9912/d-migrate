@@ -6,10 +6,11 @@
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.2, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/quality.md`; `docs/ddl-output-split-plan.md`;
-> `hexagon/application/.../DataImportRunner.kt`;
-> `hexagon/application/.../DataExportRunner.kt`;
-> `adapters/driven/streaming/.../StreamingImporter.kt`;
-> `hexagon/core/.../SchemaComparator.kt`;
+> `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt`;
+> `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`;
+> `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingImporter.kt`;
+> `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingExporter.kt`;
+> `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`;
 > die drei DDL-Generatoren unter `adapters/driven/driver-*`.
 
 ---
@@ -25,7 +26,7 @@ Vertragsfragen:
 - wie `DataImportRunner` und `DataExportRunner` von grossen
   Allzweck-Orchestratoren zu Kompositionsschichten ueber kleinere
   Dienste werden
-- wie `StreamingImporter` und die Export-Seite entlang von
+- wie `StreamingImporter` und `StreamingExporter` entlang von
   Orchestrierung, Tabellen-Pipeline und Chunk-Handling getrennt werden
 - wie `SchemaComparator` pro Objekttyp in kleinere Diff-Einheiten
   geschnitten wird
@@ -61,19 +62,26 @@ Nach Phase B soll klar gelten:
 Laut `docs/quality.md` und dem 0.9.1-Masterplan sind fuer Phase B vor
 allem diese Punkte relevant:
 
-- **Mittel**: `DataImportRunner` ist mit rund 887 LOC zu gross und
-  vereint Validierung, Aufloesung, Resume, Manifest- und
-  Ausfuehrungslogik
+- **Mittel**: `DataImportRunner` liegt aktuell bei 949 LOC
+  (Stand 2026-04-17; das in `docs/quality.md` zitierte 887-LOC-Finding
+  ist der Stand der damaligen Analyse) und vereint Validierung,
+  Aufloesung, Resume, Manifest- und Ausfuehrungslogik
 - **Mittel**: `DataExportRunner` ist mit rund 923 LOC aehnlich
   ueberladen
 - **Mittel**: `StreamingImporter` liegt bei rund 792 LOC und mischt
   Orchestrierung, Tabellensteuerung und Chunk-Verarbeitung
-- **Mittel**: `SchemaComparator` liegt bei rund 656 LOC und behandelt
-  mehrere Objekttypen in einer Klasse
+- `StreamingExporter` ist mit rund 450 LOC zwar kein gleich grosser
+  Hotspot, aber das direkte Export-Gegenstueck zu `StreamingImporter`
+  und deshalb bewusst Teil desselben Strukturschnitts
+- **Mittel**: `SchemaComparator` liegt bei rund 656 LOC; die Klasse
+  besitzt bereits getrennte Methoden wie `compareTables`,
+  `compareViews`, `compareSequences`, `compareFunctions`,
+  `compareProcedures`, `compareTriggers` und `compareCustomTypes`,
+  fuehrt diese Bausteine heute aber noch in einer Datei zusammen
 - **Mittel**: die drei DDL-Generatoren bundeln Views, Functions,
   Procedures, Triggers, Rewrite-Fallbacks und Capability-Entscheidungen
   jeweils in monolithischen Dateien
-- in den DDL-Generatoren existieren weiterhin mehrere `-- TODO: ...`-
+- in den DDL-Generatoren existieren aktuell 18 `-- TODO: ...`-
   SQL-Kommentar-Platzhalter statt strukturierter Modellierung von
   manueller Nacharbeit
 
@@ -82,6 +90,9 @@ Konsequenz:
 - fachliche Verantwortung ist heute zu breit verteilt
 - Dialekt-Fixes sind regressionsanfaellig, weil Capability- und
   Rewrite-Logik mehrfach und dateiweise gekoppelt ist
+- Import- und Export-Pfad drohen unterschiedlich zu altern, wenn
+  `StreamingImporter` zerlegt, `StreamingExporter` aber implizit als
+  Nebensache behandelt wird
 - der spaetere optionale DDL-Output-Split (`pre-data`/`post-data`)
   laesst sich ohne internen Objekt-/Phasenschnitt nur schwer sauber
   vorbereiten
@@ -103,7 +114,7 @@ Konsequenz:
   - Orchestrator
   - Tabellen-Pipeline
   - Chunk-Handler
-- gleichartige strukturelle Zerlegung der Export-Seite
+- gleichartige strukturelle Zerlegung von `StreamingExporter`
 - Aufspaltung von `SchemaComparator` in kleinere Vergleichseinheiten pro
   Objekttyp:
   - Tables
@@ -117,18 +128,17 @@ Konsequenz:
   - Generator-/Helper-Schnitt fuer Custom Types, Sequences,
     Constraints und Index-Fallbacks, soweit dort heute `TODO`-Pfade
     existieren
-  - `ViewDdlGenerator`
-  - `FunctionDdlGenerator`
-  - `ProcedureDdlGenerator`
-  - `TriggerDdlGenerator`
   - weitere Hilfseinheiten, wenn fuer Tabellen/Indizes/Capabilities
     noetig
-- Einfuehrung expliziter Dialekt-Capabilities pro `DatabaseDialect`
+- Einfuehrung expliziter Dialekt-Capabilities ueber ein zentrales
+  `DialectCapabilities`-Modell, das pro `DatabaseDialect` aufgeloest
+  wird
 - Ersatz der bisherigen `TODO`-Platzhalter durch strukturierte
   `ManualActionRequired`-Eintraege
 - Rueckbau historischer Plan-/Milestone-Kommentare aus Produktionscode
 - Tests, die die interne Refaktorierung absichern, ohne den sichtbaren
   Default-Output zu veraendern
+- Kover-Coverage bleibt pro betroffenem Modul bei mindestens 90 %
 
 ### 3.2 Bewusst nicht Teil von Phase B
 
@@ -153,7 +163,7 @@ sofort aus?".
 Verbindliche Entscheidung:
 
 - `DataImportRunner` und `DataExportRunner` bleiben Einstiegspunkte
-- sie tragen nach Phase B aber primär Orchestrierung und Delegation
+- sie tragen nach Phase B aber primaer Orchestrierung und Delegation
 - Validierung, Aufloesung, Resume-/Manifest-Koordination und
   Ausfuehrung wandern in kleinere Einheiten
 
@@ -168,7 +178,7 @@ Nicht zulaessig ist:
 
 Verbindliche Entscheidung:
 
-- `StreamingImporter` und die Export-Seite werden nicht beliebig nach
+- `StreamingImporter` und `StreamingExporter` werden nicht beliebig nach
   Hilfsmethoden, sondern entlang von:
   - Orchestrierung
   - Tabellensteuerung
@@ -183,6 +193,12 @@ Verbindliche Entscheidung:
 
 - `SchemaComparator` wird in kleinere Diff-Einheiten pro Objekttyp
   zerlegt
+- die bereits vorhandenen per-Objekttyp-Methoden
+  (`compareTables`, `compareViews`, `compareSequences`,
+  `compareFunctions`, `compareProcedures`, `compareTriggers`,
+  `compareCustomTypes`) sind dabei der Ausgangspunkt; Phase B extrahiert
+  sie in eigenstaendige Kollaborateure statt die Vergleichslogik neu zu
+  entwerfen
 - `customTypes` gehoeren ausdruecklich dazu und bleiben nicht als
   monolithischer Restblock im Comparator stehen
 - gemeinsame Vergleichslogik darf in Hilfseinheiten liegen
@@ -194,6 +210,11 @@ Verbindliche Entscheidung:
 
 - die DDL-Generatoren werden intern aus Objektart-Generatoren
   zusammengesetzt
+- Objektart-Generatoren sind dabei primaer dialektspezifische Bausteine;
+  gemeinsamer, dialektuebergreifender Code bleibt auf Result-Assembly,
+  Capability-Auswertung und kleine Hilfen beschraenkt
+- Phase B verfolgt keinen starren 3x7-Klassensatz; neue Klassen werden
+  nur dort eingefuehrt, wo sie einen echten Hotspot schneiden
 - 0.9.1 veraendert dadurch noch nicht den sichtbaren
   `schema generate`-Default
 - der interne Schnitt darf aber spaetere Phasenobjekte und den
@@ -205,7 +226,13 @@ Verbindliche Entscheidung:
 
 - Generatoren sollen nicht implizit oder dateiweise entscheiden, ob ein
   Objekt generierbar, rewritable, unsupported oder manual-action ist
-- dafuer kommt ein expliziter Capability-Typ je Dialekt hinzu
+- `DatabaseDialect` bleibt das bestehende Enum; Phase B fuehrt keinen
+  zweiten Dialekttyp und keine sealed-class-Hierarchie ein
+- dafuer kommt ein kleines, unveraenderliches
+  `DialectCapabilities`-Modell hinzu, das zentral je
+  `DatabaseDialect` hinterlegt wird
+- Generatoren konsumieren nur dieses Capability-Modell, nicht lose
+  `when (dialect)`-Verzweigungen ueber mehrere Dateien
 - diese Capability-Modellierung ist Teil der internen
   Konsolidierungsbasis fuer alle drei Treiber
 
@@ -223,6 +250,23 @@ Verbindliche Entscheidung:
   - Index-Typ-Fallbacks
 - Kommentare duerfen weiterhin "why" und Invarianten erklaeren
 - Planhistorie und Milestone-Verweise gehoeren aber zurueck in `docs/`
+
+Grobe Zielstruktur:
+
+```kotlin
+data class ManualActionRequired(
+    val code: String,
+    val objectType: String,
+    val objectName: String,
+    val reason: String,
+    val hint: String? = null,
+    val sourceDialect: DatabaseDialect? = null,
+)
+```
+
+Damit tragen alle heutigen `TODO`-Pfade mindestens einen stabilen Code,
+einen Objekttyp, einen Objektnamen und einen Freitext-Hinweis; der
+Ziel-Dialekt ergibt sich weiterhin aus `DdlGenerator.dialect`.
 
 Kompatibilitaetsvertrag fuer 0.9.1:
 
@@ -256,12 +300,15 @@ Abhaengigkeiten und Reihenfolge:
 - `DataExportRunner` analog aufteilen
 - `StreamingImporter` in Orchestrator, Tabellen-Pipeline und
   Chunk-Handler schneiden
-- Export-Seite entlang derselben Logik aufteilen
+- `StreamingExporter` entlang derselben Logik aufteilen
 - Resume-, Manifest- und Fortschrittsinvarianten ueber Tests absichern
 
 ### 5.2 Comparator-Zerlegung
 
 - `SchemaComparator` pro Objekttyp in kleinere Diff-Einheiten trennen
+- vorhandene Methoden wie `compareTables`/`compareViews`/...
+  gezielt in eigene Bausteine extrahieren; kein fachliches Redesign der
+  Vergleichsregeln
 - `customTypes` ausdruecklich als eigener Diff-Baustein schneiden
 - gemeinsame Vergleichshilfen extrahieren, wo sinnvoll
 - bestehende Ergebnis- und Diff-Semantik stabil halten
@@ -274,14 +321,18 @@ Abhaengigkeiten und Reihenfolge:
   - Custom Types
   - Sequences
   - Constraint-/Index-Fallbacks
-  - Views
-  - Functions
-  - Procedures
-  - Triggers
+  - Views (`ViewDdlGenerator`)
+  - Functions (`FunctionDdlGenerator`)
+  - Procedures (`ProcedureDdlGenerator`)
+  - Triggers (`TriggerDdlGenerator`)
 - dialektspezifische Generatoren auf Komposition aus diesen
   Objekt-Generatoren umstellen
+- SQL-rendernde Objekt-Generatoren bleiben primaer dialektspezifisch;
+  dialektuebergreifend werden nur kleine Hilfen fuer Capability-Checks,
+  Note-/Result-Assembly und ggf. gemeinsame Fallback-Entscheidungen
+  geteilt
 - Rewrite-/Skip-/Manual-Action-Entscheidungen auf explizite
-  Capability-Typen stützen
+  Capability-Typen stuetzen
 - bestehende `TODO`-Kommentar-Platzhalter durch strukturierte
   `ManualActionRequired`-Eintraege ersetzen
 - Default-Rendering fuer 0.9.1 so belassen, dass bestehende
@@ -299,6 +350,24 @@ Abhaengigkeiten und Reihenfolge:
   - Comparator-Ergebnisse
   - DDL-Default-Output
   - strukturierte Unsupported-/Rewrite-/Manual-Action-Faelle
+- Kover-Coverage pro betroffenem Modul bei mindestens 90 % halten
+
+### 5.5 Grobe Aufwandseinschaetzung
+
+- **5.1 Runner- und Streaming-Zerlegung**: L - mehrere
+  Orchestrierungs-Hotspots in Application- und Streaming-Modulen, dazu
+  Resume-/Manifest-/Progress-Invarianten
+- **5.2 Comparator-Zerlegung**: M - Logik ist bereits pro Objekttyp
+  strukturiert, der Hauptaufwand liegt in Extraktion, Wiring und
+  Teststabilitaet
+- **5.3 DDL-Generatoren und Dialekt-Capabilities schneiden**: L -
+  drei Treiber, 18 bestehende `TODO`-Pfade und neues
+  Capability-/Manual-Action-Modell
+- **5.4 Plan-Kommentare rueckbauen und Stabilitaet absichern**: M -
+  Querschnitt ueber mehrere Dateien plus Golden-Master- und
+  Kompatibilitaetstests
+
+Gesamtschnitt fuer Phase B: L
 
 ---
 
@@ -309,6 +378,7 @@ Phase B ist erst abgeschlossen, wenn folgende Punkte gruen sind:
 - bestehende Runner- und Streaming-Tests bleiben stabil
 - neue Tests sichern die delegierte Struktur ohne Verhaltensverlust
 - Comparator-Tests bleiben fuer alle betroffenen Objekttypen gruen
+- Kover-Coverage bleibt pro betroffenem Modul bei mindestens 90 %
 - DDL-Tests bestaetigen:
   - gleicher Default-Output fuer `schema generate`
   - strukturierte Modellierung von Unsupported-/Rewrite-Faellen
@@ -330,16 +400,18 @@ Mindestergebnis:
 
 Mit hoher Wahrscheinlichkeit betroffen:
 
-- `hexagon/application/.../DataImportRunner.kt`
-- `hexagon/application/.../DataExportRunner.kt`
-- `adapters/driven/streaming/.../StreamingImporter.kt`
-- Export-Gegenstuecke im Streaming-/Application-Bereich
-- `hexagon/core/.../SchemaComparator.kt`
-- `adapters/driven/driver-postgresql/.../PostgresDdlGenerator.kt`
-- `adapters/driven/driver-mysql/.../MysqlDdlGenerator.kt`
-- `adapters/driven/driver-sqlite/.../SqliteDdlGenerator.kt`
-- ggf. neue gemeinsame Capability-/Manual-Action-Typen in Core- oder
-  Driver-Common-Modulen
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`
+- `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingImporter.kt`
+- `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingExporter.kt`
+- `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
+- `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt`
+- `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt`
+- `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DatabaseDialect.kt`
+- `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DdlGenerator.kt`
+- ggf. neue gemeinsame Capability-/Manual-Action-Typen in
+  `hexagon:ports` oder `adapters:driven:driver-common`
 - `docs/ddl-output-split-plan.md`
 
 Die genaue Paketlage darf waehrend der Umsetzung pragmatisch angepasst
@@ -360,7 +432,7 @@ Gegenmassnahme:
 
 Gegenmassnahme:
 
-- Runner-/Streaming-Tests waehrend der Zerlegung grün halten
+- Runner-/Streaming-Tests waehrend der Zerlegung gruen halten
 - Schnitt entlang echter Pipeline-Phasen statt entlang von Methodenlisten
 
 ### 8.3 DDL-Refactor kann versehentlich sichtbaren Output veraendern
