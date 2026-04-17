@@ -348,7 +348,9 @@ Gegenmassnahme:
 - neue Utility sofort mit eigenen Tests absichern
 - Kover nicht erst am Ende, sondern waehrend Phase A laufen lassen
 
-### 8.4 Aufwandseinschaetzung
+---
+
+## 9. Aufwandseinschaetzung
 
 Grobe Einschaetzung pro Arbeitspaket (T-Shirt-Sizing):
 
@@ -361,7 +363,7 @@ Grobe Einschaetzung pro Arbeitspaket (T-Shirt-Sizing):
 
 ---
 
-## 9. Entscheidungsempfehlung
+## 10. Entscheidungsempfehlung
 
 Phase A sollte wie in `docs/implementation-plan-0.9.1.md` vorgesehen
 als erste 0.9.1-Phase umgesetzt werden.
