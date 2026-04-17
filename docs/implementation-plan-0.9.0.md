@@ -4,7 +4,7 @@
 > Milestone 0.9.0. Es dient als laufend gepflegte Spezifikation und
 > Review-Grundlage waehrend der Umsetzung.
 >
-> Status: Draft (2026-04-16)
+> Status: Implemented (2026-04-17) — Phasen A–E abgeschlossen
 > Referenzen: `docs/roadmap.md` Milestone 0.9.0, `docs/lastenheft-d-migrate.md`
 > LN-012 und LF-006, `docs/design.md` Abschnitte 3.2, 8.2 und 9.2,
 > `docs/architecture.md` (`CheckpointStore`, `I18nConfig`),
