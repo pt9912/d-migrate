@@ -932,19 +932,21 @@ class SqliteDdlGeneratorTest : FunSpec({
         childrenSql shouldContain "REFERENCES \"parents\"(\"id\") ON DELETE SET NULL ON UPDATE CASCADE"
     }
 
-    test("view with incompatible source dialect is skipped with E053") {
+    test("view with incompatible source dialect is transformed and generated") {
         val s = schema(
             views = mapOf(
                 "pg_view" to ViewDefinition(
-                    query = "SELECT * FROM pg_catalog.pg_tables",
+                    query = "SELECT NOW() FROM orders",
                     sourceDialect = "postgresql"
                 )
             )
         )
         val result = generator.generate(s)
 
-        result.skippedObjects.any { it.type == "view" && it.name == "pg_view" } shouldBe true
-        result.notes.any { it.code == "E053" && it.objectName == "pg_view" } shouldBe true
+        result.render() shouldContain "CREATE VIEW IF NOT EXISTS \"pg_view\" AS"
+        result.render() shouldContain "SELECT datetime('now') FROM orders;"
+        result.skippedObjects.any { it.type == "view" && it.name == "pg_view" } shouldBe false
+        result.notes.any { it.code == "E053" && it.objectName == "pg_view" } shouldBe false
     }
 
     test("index without explicit name gets auto-generated name") {

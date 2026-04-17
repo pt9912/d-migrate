@@ -413,19 +413,6 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             return null
         }
 
-        if (view.sourceDialect != null && view.sourceDialect != "sqlite") {
-            skipped += SkippedObject("view", name, "Source dialect '${view.sourceDialect}' is not compatible with SQLite")
-            val note = TransformationNote(
-                type = NoteType.ACTION_REQUIRED,
-                code = "E053",
-                objectName = name,
-                message = "View '$name' was written for '${view.sourceDialect}' and must be manually rewritten for SQLite.",
-                hint = "Rewrite the query using SQLite-compatible SQL syntax."
-            )
-            val sql = "-- TODO: Rewrite view ${quoteIdentifier(name)} for SQLite (source dialect: ${view.sourceDialect})"
-            return DdlStatement(sql, listOf(note))
-        }
-
         // Materialized views are not supported in SQLite; emit as regular VIEW with warning
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {

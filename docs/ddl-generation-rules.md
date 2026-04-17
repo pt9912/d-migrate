@@ -213,6 +213,10 @@ Besonderheiten:
 
 ### 3.6 ALTER TABLE (Schema-Migration)
 
+Hinweis: Dieser Abschnitt beschreibt den geplanten diff-basierten
+`schema migrate`-Pfad eines spaeteren Milestones. Der Befehl ist im aktuellen
+CLI-Umfang noch nicht verfuegbar.
+
 Für `schema migrate` erzeugt der Generator `ALTER TABLE`-Statements. Die Syntax variiert pro Dialekt:
 
 #### ADD COLUMN
@@ -317,6 +321,10 @@ DROP TABLE "_orders_old";
 |---|---|
 | `schema generate` | **Kein Rebuild** — erzeugt nur `CREATE TABLE` DDL (Neuerstellung). Der Rebuild ist nur bei Schema-Änderungen an bestehenden Tabellen relevant. |
 | `schema migrate` *(0.5.0)* | **Rebuild wird generiert** wenn eine ALTER-Operation für SQLite nicht unterstützt wird (z.B. ALTER COLUMN TYPE, ADD CONSTRAINT). |
+
+Hinweis: Der hier beschriebene Rebuild-Workaround gehoert zum geplanten
+`schema migrate`-Pfad eines spaeteren Milestones und ist nicht Teil des
+aktuellen CLI-Funktionsumfangs.
 
 Für `schema generate` (0.2.0) ist der Rebuild-Workaround also **nicht relevant** — er wird erst mit `schema migrate` (0.5.0) implementiert.
 

@@ -49,13 +49,15 @@ ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Hint: InnoDB only supports BTREE indexes. The HASH index has been automatically converted.
 CREATE INDEX `idx_customer` ON `orders` USING BTREE (`customer_id`);
 
--- [E053] View 'active_orders' was written for 'postgresql' and must be manually rewritten for MySQL.
--- Hint: Rewrite the query using MySQL-compatible SQL syntax.
--- TODO: Rewrite view `active_orders` for MySQL (source dialect: postgresql)
+CREATE OR REPLACE VIEW `active_orders` AS
+SELECT * FROM orders WHERE status != 'delivered'
+;
 
--- [E053] View 'monthly_stats' was written for 'postgresql' and must be manually rewritten for MySQL.
--- Hint: Rewrite the query using MySQL-compatible SQL syntax.
--- TODO: Rewrite view `monthly_stats` for MySQL (source dialect: postgresql)
+-- [W103] Materialized views are not supported in MySQL. Created as a regular view instead.
+-- Hint: Consider using a table with a scheduled refresh procedure to emulate materialized views.
+CREATE OR REPLACE VIEW `monthly_stats` AS
+SELECT COUNT(*) FROM orders
+;
 
 -- [E053] Function 'calc_total' was written for 'postgresql' and must be manually rewritten for MySQL.
 -- Hint: Rewrite the function body using MySQL-compatible syntax.

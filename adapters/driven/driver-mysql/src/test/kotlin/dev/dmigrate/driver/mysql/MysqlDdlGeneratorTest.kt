@@ -1032,11 +1032,11 @@ class MysqlDdlGeneratorTest : FunSpec({
         result.skippedObjects.any { it.name == "pg_proc" } shouldBe true
     }
 
-    test("view with non-mysql source_dialect is skipped with E053") {
+    test("view with non-mysql source_dialect is transformed and generated") {
         val schema = emptySchema(
             views = mapOf(
                 "pg_view" to ViewDefinition(
-                    query = "SELECT * FROM pg_catalog.pg_tables",
+                    query = "SELECT CURRENT_DATE FROM orders",
                     sourceDialect = "postgresql"
                 )
             )
@@ -1045,9 +1045,10 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "E053"
-        ddl shouldContain "-- TODO: Rewrite view `pg_view` for MySQL (source dialect: postgresql)"
-        result.skippedObjects.any { it.name == "pg_view" } shouldBe true
+        ddl shouldContain "CREATE OR REPLACE VIEW `pg_view` AS"
+        ddl shouldContain "SELECT CURDATE() FROM orders;"
+        result.notes.none { it.code == "E053" && it.objectName == "pg_view" } shouldBe true
+        result.skippedObjects.any { it.name == "pg_view" } shouldBe false
     }
 
     test("header contains schema name, version, and target dialect") {

@@ -46,13 +46,15 @@ CREATE TABLE "orders" (
 -- Hint: The index has been skipped. If needed, create a standard BTREE index instead.
 -- Index "idx_customer" skipped: HASH index type is not supported in SQLite
 
--- [E053] View 'active_orders' was written for 'postgresql' and must be manually rewritten for SQLite.
--- Hint: Rewrite the query using SQLite-compatible SQL syntax.
--- TODO: Rewrite view "active_orders" for SQLite (source dialect: postgresql)
+CREATE VIEW IF NOT EXISTS "active_orders" AS
+SELECT * FROM orders WHERE status != 'delivered'
+;
 
--- [E053] View 'monthly_stats' was written for 'postgresql' and must be manually rewritten for SQLite.
--- Hint: Rewrite the query using SQLite-compatible SQL syntax.
--- TODO: Rewrite view "monthly_stats" for SQLite (source dialect: postgresql)
+-- [W103] Materialized view 'monthly_stats' is not supported in SQLite. Created as a regular VIEW instead.
+-- Hint: If materialization is needed, consider caching query results in a regular table via triggers or application logic.
+CREATE VIEW IF NOT EXISTS "monthly_stats" AS
+SELECT COUNT(*) FROM orders
+;
 
 -- [E054] Function 'calc_total' cannot be created via DDL in SQLite.
 -- Hint: Register custom functions programmatically via the SQLite C API or your application's SQLite driver.

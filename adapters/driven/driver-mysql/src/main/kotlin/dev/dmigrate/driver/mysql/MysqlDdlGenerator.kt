@@ -407,19 +407,6 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             return null
         }
 
-        if (view.sourceDialect != null && view.sourceDialect != "mysql") {
-            skipped += SkippedObject("view", name, "Source dialect '${view.sourceDialect}' is not compatible with MySQL")
-            val note = TransformationNote(
-                type = NoteType.ACTION_REQUIRED,
-                code = "E053",
-                objectName = name,
-                message = "View '$name' was written for '${view.sourceDialect}' and must be manually rewritten for MySQL.",
-                hint = "Rewrite the query using MySQL-compatible SQL syntax."
-            )
-            val sql = "-- TODO: Rewrite view ${quoteIdentifier(name)} for MySQL (source dialect: ${view.sourceDialect})"
-            return DdlStatement(sql, listOf(note))
-        }
-
         val notes = mutableListOf<TransformationNote>()
         if (view.materialized) {
             notes += TransformationNote(

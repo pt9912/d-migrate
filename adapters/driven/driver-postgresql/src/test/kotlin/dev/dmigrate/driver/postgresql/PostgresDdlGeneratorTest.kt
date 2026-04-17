@@ -911,7 +911,7 @@ class PostgresDdlGeneratorTest : FunSpec({
         ddl shouldContain "CREATE INDEX \"idx_orders_cust_date\" ON \"orders\" (\"customer_id\", \"order_date\");"
     }
 
-    test("view with incompatible source_dialect is skipped") {
+    test("view with incompatible source_dialect is transformed best-effort and warns with W111") {
         val s = schema(
             views = mapOf(
                 "mysql_view" to ViewDefinition(
@@ -922,9 +922,11 @@ class PostgresDdlGeneratorTest : FunSpec({
         )
         val result = generator.generate(s)
         val rendered = result.render()
-        rendered shouldContain "E053"
-        rendered shouldContain "TODO"
-        result.skippedObjects.any { it.name == "mysql_view" } shouldBe true
+        rendered shouldContain "CREATE OR REPLACE VIEW \"mysql_view\" AS"
+        rendered shouldContain "SELECT IFNULL(x, 0) FROM t;"
+        rendered shouldContain "W111"
+        result.notes.any { it.code == "W111" && it.objectName == "view_query" } shouldBe true
+        result.skippedObjects.any { it.name == "mysql_view" } shouldBe false
     }
 
     test("LIST partitioning generates FOR VALUES IN") {

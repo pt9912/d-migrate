@@ -330,19 +330,6 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             return null
         }
 
-        if (view.sourceDialect != null && view.sourceDialect != "postgresql") {
-            skipped += SkippedObject("view", name, "Source dialect '${view.sourceDialect}' is not compatible with PostgreSQL")
-            val note = TransformationNote(
-                type = NoteType.ACTION_REQUIRED,
-                code = "E053",
-                objectName = name,
-                message = "View '$name' was written for '${view.sourceDialect}' and must be manually rewritten for PostgreSQL.",
-                hint = "Rewrite the query using PostgreSQL-compatible SQL syntax."
-            )
-            val sql = "-- TODO: Rewrite view ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${view.sourceDialect})"
-            return DdlStatement(sql, listOf(note))
-        }
-
         val transformer = ViewQueryTransformer(DatabaseDialect.POSTGRESQL)
         val (transformedQuery, queryNotes) = transformer.transform(query, view.sourceDialect)
 
