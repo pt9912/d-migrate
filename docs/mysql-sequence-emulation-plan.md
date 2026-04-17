@@ -136,12 +136,37 @@ Vorgeschlagener Prefix:
 
 - Tabelle: `dmg_sequences`
 - Routinen: `dmg_nextval`, `dmg_setval`
-- Trigger: `dmg_seq_<table>_<column>_bi`
+- Trigger: deterministisch begrenztes Schema
+  `dmg_seq_<table16>_<column16>_<hash10>_bi`
 
 Vorgeschlagene Marker:
 
 - `managed_by = 'd-migrate'`
 - `format_version = 'mysql-sequence-v1'`
+- Routinen starten mit einem kanonischen Marker-Kommentar, z. B.
+  `/* d-migrate:mysql-sequence-v1 object=nextval */`
+- Sequence-Support-Trigger starten mit einem kanonischen Marker-Kommentar,
+  z. B.
+  `/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=<name> table=<table> column=<column> */`
+
+Trigger-Namensvertrag:
+
+- MySQL-Identifier sind auf 64 Zeichen begrenzt
+- der Triggername wird deshalb **nicht** frei aus vollem Tabellen- und
+  Spaltennamen zusammengesetzt
+- stattdessen gilt verbindlich:
+  - Prefix `dmg_seq_`
+  - `table16`: erste 16 Zeichen des normalisierten Tabellennamens
+  - `column16`: erste 16 Zeichen des normalisierten Spaltennamens
+  - `hash10`: erste 10 Hex-Zeichen eines stabilen Hashes ueber
+    `<table>\u0000<column>\u0000<sequence>`
+  - Suffix `_bi`
+- dieses Schema bleibt immer <= 64 Zeichen
+- Reverse identifiziert Sequence-Support-Trigger **nicht** nur ueber den
+  Namen, sondern ueber Name + Marker-Kommentar + kanonische Body-Form
+- Kollisionen auf `hash10` gelten als praktisch unwahrscheinlich; tritt
+  dennoch eine Kollision auf, ist das ein expliziter Generate-Fehler und
+  kein stilles Umbenennen
 
 Optional spaeter erweiterbar:
 
@@ -155,7 +180,7 @@ Konfliktpfad bei Vorwaertsgenerierung:
 
 - wenn das neutrale Schema bereits ein Objekt mit reserviertem
   Hilfsnamen enthaelt (`dmg_sequences`, `dmg_nextval`, `dmg_setval`,
-  `dmg_seq_*`),
+  `dmg_seq_*` nach dem kanonischen Namensschema),
   darf `helper_table` **nicht** still generieren
 - stattdessen erzeugt der Generator einen expliziten Fehler- oder
   `action_required`-Pfad mit eigenem Code
@@ -351,8 +376,15 @@ Vorgeschlagene Reihenfolge:
 
 Rollback muss die kanonischen Hilfsobjekte wieder entfernen:
 
+- generierte Sequence-Support-Trigger droppen
 - Support-Routine(n) droppen
 - `dmg_sequences` droppen
+
+Vorgeschlagene Rollback-Reihenfolge:
+
+1. generierte Sequence-Support-Trigger
+2. Support-Routine(n)
+3. `dmg_sequences`
 
 ### 5.3 Warning-/Error-Semantik
 
@@ -381,10 +413,12 @@ Dazu braucht er:
 - Erkennung der Tabelle `dmg_sequences`
 - Erkennung der kanonischen Spaltenform
 - Pruefung der Marker `managed_by` und `format_version`
-- optionale Validierung der kanonischen Support-Routine(n)
+- Validierung der kanonischen Support-Routine(n) ueber
+  Name + Marker-Kommentar + kanonische Signatur
 - Rekonstruktion der `SequenceDefinition`-Felder aus den Zeilen
 - Rekonstruktion von sequence-basierten Spaltenwerten ueber kanonische
-  Sequence-Support-Trigger
+  Sequence-Support-Trigger mit Name + Marker-Kommentar + kanonischer
+  Body-Form
 
 Die Hilfsobjekte duerfen danach nicht zugleich als normale Tabelle oder
 Routine im neutralen Schema auftauchen.
@@ -401,6 +435,9 @@ Wichtig:
 - Support-Routinen werden fuer Reverse nur zusaetzlich geprueft, wenn
   sie verfuegbar sind; ihr Fehlen erzeugt eine Note, darf aber die
   Rekonstruktion der Sequence-Zeilen nicht komplett verhindern
+- Routinen oder Trigger ohne gueltigen Marker-Kommentar werden **nicht**
+  als d-migrate-Supportobjekte interpretiert, auch wenn ihr Name aehnlich
+  aussieht
 - fehlen Sequence-Support-Trigger, koennen `SequenceDefinition`-Zeilen
   zwar weiterhin rekonstruiert werden, aber die Zuordnung zu
   sequence-basierten Spaltenwerten gilt dann als unvollstaendig
