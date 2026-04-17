@@ -903,41 +903,36 @@ target:
   generator: "d-migrate 0.2.0"
 
 summary:
-  tables: 5
-  indices: 8
-  constraints: 3
-  custom_types: 2
-  views: 1
-  functions: 1
-  triggers: 1
+  statements: 12
   notes: 4
   warnings: 2
   action_required: 1
+  skipped_objects: 1
 
 notes:
-  - type: info
-    code: W100
-    object: customers.created_at
-    source_type: "TIMESTAMP WITH TIME ZONE"
-    target_type: "DATETIME"
-    message: "Timezone information lost in MySQL DATETIME"
-
   - type: warning
     code: W102
-    object: idx_orders_status
+    object: "idx_orders_status"
     message: "HASH index not supported on InnoDB, using BTREE"
 
   - type: action_required
     code: E053
-    object: calculate_total
+    object: "calculate_total"
     message: "Function body requires KI-assisted transformation"
     hint: "d-migrate transform procedure --procedure calculate_total --ai-backend ollama"
 
 skipped_objects:
   - type: function
-    name: calculate_total
+    name: "calculate_total"
     reason: "source_dialect (postgresql) differs from target (mysql), KI transformation required"
+    code: E053
+    hint: "d-migrate transform procedure --procedure calculate_total --ai-backend ollama"
 ```
+
+Der Report ist bewusst statement- und diagnoseorientiert. Er zaehlt die
+erzeugten DDL-Statements sowie Notes / Warnings / `action_required` /
+`skipped_objects`, aber keine objektartbezogenen Summen wie Tabellen, Indizes,
+Views oder Funktionen.
 
 ### 14.3 Verhalten bei action_required
 
