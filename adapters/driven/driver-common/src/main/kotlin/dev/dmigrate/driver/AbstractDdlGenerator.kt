@@ -42,7 +42,9 @@ abstract class AbstractDdlGenerator(
         }
         statements += handleCircularReferences(circularEdges, skipped)
 
-        statements += generateViews(schema.views, skipped)
+        val sortedViews = sortViewsByDependencies(schema.views)
+        statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
+        statements += generateViews(sortedViews.sorted, skipped)
         statements += generateFunctions(schema.functions, skipped)
         statements += generateProcedures(schema.procedures, skipped)
         statements += generateTriggers(schema.triggers, schema.tables, skipped)
@@ -215,6 +217,11 @@ abstract class AbstractDdlGenerator(
         val circularEdges: List<CircularFkEdge>
     )
 
+    data class ViewSortResult(
+        val sorted: Map<String, ViewDefinition>,
+        val notes: List<TransformationNote> = emptyList(),
+    )
+
     data class CircularFkEdge(
         val fromTable: String,
         val fromColumn: String,
@@ -282,5 +289,76 @@ abstract class AbstractDdlGenerator(
             sorted = sorted.map { it to tables[it]!! },
             circularEdges = circularEdges
         )
+    }
+
+    protected fun sortViewsByDependencies(views: Map<String, ViewDefinition>): ViewSortResult {
+        if (views.isEmpty()) return ViewSortResult(views)
+
+        val viewNames = views.keys
+        val originalOrder = views.keys.toList()
+        val deps = views.mapValuesTo(linkedMapOf()) { (name, view) ->
+            (
+                declaredViewDependencies(name, view, viewNames) +
+                    inferViewDependenciesFromQuery(name, view.query, viewNames)
+                ).toMutableSet()
+        }
+        val inDegree = deps.mapValuesTo(mutableMapOf()) { (_, depSet) -> depSet.size }
+        val queue = ArrayDeque(originalOrder.filter { inDegree[it] == 0 })
+        val sorted = mutableListOf<String>()
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            sorted += current
+            for ((name, depSet) in deps) {
+                if (depSet.remove(current)) {
+                    inDegree[name] = (inDegree[name] ?: 1) - 1
+                    if (inDegree[name] == 0) queue.add(name)
+                }
+            }
+        }
+
+        val remaining = originalOrder.filter { it !in sorted }
+        val ordered = linkedMapOf<String, ViewDefinition>()
+        for (name in sorted + remaining) {
+            ordered[name] = views.getValue(name)
+        }
+        val notes = if (remaining.isEmpty()) emptyList() else listOf(
+            TransformationNote(
+                type = NoteType.WARNING,
+                code = "W113",
+                objectName = "views",
+                message = "Views contain unresolved or circular dependencies: ${remaining.joinToString(", ")}. Original order is preserved for the remaining views.",
+                hint = "Declare consistent view dependencies or adjust view definitions to break the cycle."
+            )
+        )
+        return ViewSortResult(ordered, notes)
+    }
+
+    private fun declaredViewDependencies(
+        name: String,
+        view: ViewDefinition,
+        viewNames: Set<String>,
+    ): Set<String> = view.dependencies?.views
+        ?.asSequence()
+        ?.filter { it != name && it in viewNames }
+        ?.toSet()
+        ?: emptySet()
+
+    private fun inferViewDependenciesFromQuery(
+        name: String,
+        query: String?,
+        viewNames: Set<String>,
+    ): Set<String> {
+        if (query.isNullOrBlank()) return emptySet()
+
+        val regex = Regex(
+            """(?i)\b(?:from|join)\s+([`"]?[A-Za-z_][A-Za-z0-9_]*[`"]?(?:\.[`"]?[A-Za-z_][A-Za-z0-9_]*[`"]?)?)"""
+        )
+        return regex.findAll(query)
+            .map { it.groupValues[1] }
+            .map { ref -> ref.substringAfterLast('.') }
+            .map { ref -> ref.trim('`', '"') }
+            .filter { it != name && it in viewNames }
+            .toSet()
     }
 }

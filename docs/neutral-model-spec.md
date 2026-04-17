@@ -668,6 +668,7 @@ views:
       GROUP BY DATE_TRUNC('month', order_date)
     dependencies:
       tables: [orders]
+      views: [active_orders]
     source_dialect: postgresql
 ```
 
@@ -675,6 +676,9 @@ views:
 - Materialized Views werden in MySQL als reguläre Tabelle mit Trigger/Event-basiertem Refresh emuliert (Warnung wird erzeugt)
 - SQLite unterstützt keine Materialized Views; Fallback auf reguläre View mit Hinweis
 - `DATE_TRUNC` wird pro Dialekt übersetzt (PostgreSQL: nativ, MySQL: `DATE_FORMAT`, SQLite: `strftime`)
+- `dependencies.tables` enthält bei Views die Basistabellen, die von der Query gelesen werden
+- `dependencies.views` enthält optionale Abhängigkeiten auf andere Views, die vor dieser View erzeugt werden müssen
+- Generatoren dürfen zusätzliche View-Abhängigkeiten best effort aus der Query ableiten; deklarierte `dependencies.views` haben dabei Vorrang für die Emissionsreihenfolge
 
 ---
 
@@ -1129,6 +1133,7 @@ Das neutrale Modell wird vor der DDL-Generierung validiert:
 - `references.column` muss in der referenzierten Tabelle existieren
 - `ref_type` muss in `custom_types` existieren
 - Trigger-`table` muss existieren
+- `dependencies.views` muss auf existierende Eintraege in `views` verweisen
 - Keine unauflösbaren zirkulären Abhängigkeiten (Warnung bei erkannten Zyklen)
 
 ### 13.3 Typkompatibilitäts-Regeln
@@ -1149,6 +1154,7 @@ Diese Regeln pruefen das neutrale Schema selbst (`schema validate`):
 | ---- | ------------------------------------------------------------------ | ------ |
 | E120 | Unbekannter `geometry_type`-Wert (nicht in der Allowlist aus §3.2) | Modell |
 | E121 | `srid` muss groesser als 0 sein                                    | Modell |
+| E020 | `dependencies.views` verweist auf eine nicht vorhandene View       | Modell |
 
 Die folgenden Codes entstehen erst bei `schema generate` und sind
 Generator-/Report-Regeln, keine Modellvalidierung:
@@ -1160,10 +1166,11 @@ Generator-/Report-Regeln, keine Modellvalidierung:
 | E054 | Objekttyp wird im Zieldialekt nicht unterstuetzt | Generator |
 | E055 | Partitionierung wird im Zieldialekt nicht unterstuetzt | Generator |
 | E056 | Benannte Sequence kann im Zieldialekt nicht nativ generiert werden und benoetigt Emulation oder manuelle Nacharbeit | Generator |
+| W113 | View-Abhaengigkeiten konnten nicht vollstaendig topologisch sortiert werden; die Restmenge bleibt in Originalreihenfolge | Generator |
 | W120 | SRID-Metadaten konnten nicht vollstaendig in den Zieldialekt uebertragen werden                                  | Generator |
 
-Wichtig: `E120`/`E121` werden von `schema validate` gemeldet.
-`E052`-`E056`/`W120` werden nur von `schema generate` gemeldet und sind Teil
+Wichtig: `E020`/`E120`/`E121` werden von `schema validate` gemeldet.
+`E052`-`E056`/`W113`/`W120` werden nur von `schema generate` gemeldet und sind Teil
 des bestehenden `action_required`- bzw. Warning-Report-Vertrags.
 
 Die Codes `E052`-`E056` beschreiben dabei **die Ursache** eines
@@ -1178,6 +1185,7 @@ einer ganzen Tabelle blockiert, ist eine separate Generatorwirkung.
 | E054 | Ueberspringt das betroffene Objekt oder die betroffene Constraint-/Typ-Definition; keine Tabellenblockierung. |
 | E055 | Blockiert die betroffene Tabelle, wenn deren Partitionierung im Zieldialekt nicht erzeugt werden kann. |
 | E056 | Ueberspringt die betroffene benannte Sequence; keine Tabellenblockierung. |
+| W113 | Warnung; Restmenge von Views bleibt in Originalreihenfolge, DDL-Erzeugung laeuft weiter. |
 | W120 | Best-Effort-Warnung; blockiert keine DDL-Erzeugung. |
 
 ---

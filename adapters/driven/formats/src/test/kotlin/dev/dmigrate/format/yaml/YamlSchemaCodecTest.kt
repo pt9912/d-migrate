@@ -205,6 +205,33 @@ class YamlSchemaCodecTest : FunSpec({
         simpleSeq.increment shouldBe 1
     }
 
+    test("parse view dependencies with explicit views list") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "Views"
+            version: "1.0.0"
+            views:
+              summary:
+                query: "SELECT * FROM base_view"
+                dependencies:
+                  tables: [orders]
+                  views: [base_view]
+                source_dialect: postgresql
+              base_view:
+                query: "SELECT * FROM orders"
+                dependencies:
+                  tables: [orders]
+                source_dialect: postgresql
+        """.trimIndent()
+
+        val schema = codec.read(yaml.byteInputStream())
+
+        schema.views["summary"]!!.dependencies shouldBe DependencyInfo(
+            tables = listOf("orders"),
+            views = listOf("base_view"),
+        )
+    }
+
     test("parse schema via Path") {
         val path = java.nio.file.Paths.get(
             YamlSchemaCodecTest::class.java.getResource("/fixtures/schemas/minimal.yaml")!!.toURI()

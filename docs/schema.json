@@ -357,6 +357,10 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "views": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "columns": {
           "type": "object",
           "additionalProperties": {

@@ -235,6 +235,7 @@ W200 - W299: Performance-Warnungen
 | E016 | Partition key references non-existent column | Spaltenname prüfen |
 | E017 | Foreign key type incompatible with referenced column | Typen angleichen |
 | E018 | Trigger references non-existent table | Tabellennamen prüfen |
+| E020 | Declared view dependency references non-existent view | View-Namen prüfen |
 
 ### 4.3 Validierungswarnungen (W001-W099)
 
@@ -267,6 +268,7 @@ W200 - W299: Performance-Warnungen
 | W102 | HASH index not supported on InnoDB, using BTREE |
 | W103 | Materialized View not supported, using regular View |
 | W104 | XML type not supported, using TEXT fallback |
+| W113 | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
 | W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)

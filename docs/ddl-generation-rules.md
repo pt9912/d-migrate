@@ -1245,19 +1245,21 @@ Reihenfolge vor dem `DROP TABLE` emittiert.
 
 ### 16.8 Fehler- und Warnungs-Codes fuer Spatial
 
-Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E120 und E121
-entstehen bei `schema validate` (Schema-/Modellregeln); E052 bis E056 und W120
+Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E020, E120 und E121
+entstehen bei `schema validate` (Schema-/Modellregeln); E052 bis E056 sowie W113 und W120
 entstehen bei `schema generate` (Generator-/Report-Regeln).
 
 | Code | Typ | Ebene | Meldung |
 |---|---|---|---|
 | E120 | Validierungsfehler | `schema validate` | Unknown `geometry_type` value |
 | E121 | Validierungsfehler | `schema validate` | `srid` must be greater than 0 |
+| E020 | Validierungsfehler | `schema validate` | Declared view dependency references non-existent view |
 | E052 | action_required | `schema generate` | Spatial object cannot be generated with the chosen spatial profile |
 | E053 | action_required | `schema generate` | Dialect-specific SQL content requires manual transformation or implementation |
 | E054 | action_required | `schema generate` | Object type is not supported in the target dialect |
 | E055 | action_required | `schema generate` | Partitioning is not supported in the target dialect |
 | E056 | action_required | `schema generate` | Named sequence cannot be generated natively and needs emulation/manual handling |
+| W113 | Warnung | `schema generate` | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
 | W120 | Warnung | `schema generate` | SRID could not be fully transferred to target dialect |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
@@ -1266,6 +1268,9 @@ der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,
 
 **E121**: Wird erzeugt, wenn `srid` angegeben ist und den Wert `0` oder einen
 negativen Wert hat. Eine fehlende `srid` ist zulaessig und erzeugt keinen Fehler.
+
+**E020**: Wird erzeugt, wenn `dependencies.views` auf eine View verweist, die
+im neutralen Schema nicht existiert.
 
 **E052 (Spatial)**: Wird erzeugt, wenn ein Spatial-Objekt mit dem gewählten
 Spatial-Profil nicht generiert werden kann. Die gesamte betroffene Tabelle
@@ -1285,6 +1290,10 @@ Partitionierung im Zieldialekt nicht unterstützt wird.
 **E056 (Sequence-/Emulationsfall)**: Wird erzeugt, wenn eine benannte Sequence
 im Zieldialekt nicht nativ erzeugt werden kann und manuelle Emulation oder
 Nacharbeit erforderlich ist.
+
+**W113**: Wird erzeugt, wenn deklarierte oder best-effort abgeleitete
+View-Abhaengigkeiten keine vollstaendige topologische Sortierung erlauben. Die
+verbleibenden Views werden dann in ihrer Originalreihenfolge emittiert.
 
 **W120**: Wird erzeugt, wenn `srid`-Metadaten nicht vollstaendig in die
 Ziel-DDL uebertragen werden konnten (Best-Effort-Pfad, insbesondere bei MySQL
