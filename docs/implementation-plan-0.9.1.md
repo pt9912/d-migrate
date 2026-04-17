@@ -6,10 +6,11 @@
 > Library-Basis.
 >
 > Status: Draft (2026-04-16)
-> Referenzen: `docs/roadmap.md` Milestone 0.9.1 und 1.0.0,
+> Referenzen: `docs/roadmap.md` Milestone 0.9.1, 0.9.2 und 1.0.0,
 > `docs/architecture.md` Moduluebersicht und Abhaengigkeiten,
 > `docs/hexagonal-port.md` Abschnitt `3.2 hexagon:ports`,
 > `docs/d-browser-integration-coupling-assessment.md`,
+> `docs/ddl-output-split-plan.md`,
 > `docs/releasing.md` als aktueller Ist-Stand fuer Release-Automation.
 
 ---
@@ -32,6 +33,9 @@ Der Milestone liefert:
   (`DataImportRunner`, `DataExportRunner`, `StreamingImporter`,
   `SchemaComparator`, die drei DDL-Generatoren) in kleinere,
   verantwortungsstaerker geschnittene Dienste
+- eine vorbereitende interne DDL-Modelltrennung, die einen spaeteren
+  optionalen DDL-Output-Split (`pre-data`/`post-data`) tragen kann, ohne
+  den bestehenden `schema generate`-Default in 0.9.1 zu veraendern
 - eine klarere Read-/Write-Schnitt im Portbereich
 - schlankere JDBC-Treiberkerne ohne transitive Profiling-Pflicht
 - eine wiederverwendbare FK-/Topo-Sort-Basis statt mehrfacher Duplikation
@@ -43,6 +47,8 @@ Der Milestone liefert bewusst nicht:
 - einen öffentlichen Maven-Central-Publish-Vertrag
 - einen GitHub-Workflow fuer Maven Central Portal
 - bereits stabile Library-Koordinaten fuer externe Verbraucher
+- den sichtbaren Endnutzer-Vertrag fuer den optionalen DDL-Output-Split;
+  dieser bleibt Milestone 0.9.2 vorbehalten
 
 0.9.1 ist damit ein Refactor-Milestone fuer konsumierbare Libraries, waehrend
 die oeffentliche Distribution bewusst in 1.0.0 verbleibt.
@@ -128,9 +134,11 @@ Reduktion technischer Kopplung vor einem spaeteren Stable-Publish.
   - DDL-Generatoren pro Objektart schneiden
     (`ViewDdlGenerator`, `FunctionDdlGenerator`,
     `ProcedureDdlGenerator`, `TriggerDdlGenerator`); `-- TODO: …`-
-    Platzhalter durch strukturierte `ManualActionRequired`-Eintraege
-    plus `generatedStatements`/`manualActionsRequired`-Trennung im
-    DDL-Ergebnis ersetzen
+    Platzhalter intern durch strukturierte `ManualActionRequired`-
+    Eintraege ersetzen; dabei einen internen Phasen-/Objektschnitt
+    vorbereiten, der spaeteren `pre-data`/`post-data`-Output tragen
+    kann, ohne in 0.9.1 bereits den bestehenden `schema generate`-
+    Output-Vertrag zu aendern
   - Plan-/Milestone-Kommentare aus Produktionscode zurueck in
     `docs/`; im Code bleiben nur „why" + Invarianten stehen
 - Refactor der Portoberflaeche fuer externe Lese-Consumer
@@ -150,6 +158,8 @@ Reduktion technischer Kopplung vor einem spaeteren Stable-Publish.
 - verbindliche langfristige Maven-Koordinaten fuer alle Module
 - Umbau von `SchemaReader` auf einen zweiten, schlanken Produktvertrag ohne
   konkreten Mehrfachbedarf
+- sichtbare Aenderung des `schema generate`-Output-Vertrags
+  (`pre-data`/`post-data`, `ddl_parts`, phasenbezogene Artefakte)
 
 Begruendung:
 
@@ -208,6 +218,19 @@ Verbindliche Entscheidung:
 - Integrationsadapter duerfen `schema`, `notes` und `skippedObjects` lokal
   projizieren oder filtern
 - ein zweiter schlanker Core-Vertrag kommt nur bei nachgewiesenem Mehrfachbedarf
+
+### 4.6 DDL-Refactor in 0.9.1 ist intern vorbereitend, nicht output-wirksam
+
+Verbindliche Entscheidung:
+
+- 0.9.1 darf interne DDL-Modell- und Kompositionsschnitte einfuehren
+- 0.9.1 darf den bestehenden `schema generate`-Default-Output nicht
+  sichtbar aendern
+- der sichtbare Endnutzer-Vertrag fuer einen optionalen DDL-Output-Split
+  (`pre-data`/`post-data`, `ddl_parts`, phasenbezogene Artefakte) bleibt
+  Milestone 0.9.2 gemaess `docs/ddl-output-split-plan.md` vorbehalten
+- strukturierte `ManualActionRequired`-Modelle in 0.9.1 sind zulaessig,
+  sofern die bestehende CLI-/Datei-Ausgabe dadurch nicht bricht
 
 ---
 
@@ -315,9 +338,11 @@ Logik und `-- TODO: …`-Platzhaltern in den DDL-Generatoren.
   Objekt-Generatoren und ziehen Rewrite-/Capability-Regeln pro
   Objekt nach. Die bisherigen `-- TODO: …`-SQL-Kommentar-
   Platzhalter (PG ~7 Stellen, MySQL ~11 Stellen, SQLite ~3 Stellen)
-  werden durch strukturierte `ManualActionRequired`-Eintraege
-  ersetzt; das DDL-Ergebnis trennt `generatedStatements` und
-  `manualActionsRequired`.
+  werden intern durch strukturierte `ManualActionRequired`-Eintraege
+  ersetzt. Parallel entsteht ein interner Phasen-/Objektschnitt, der
+  spaeteren `pre-data`/`post-data`-Output tragen kann
+  (`docs/ddl-output-split-plan.md`), ohne in 0.9.1 bereits neue
+  sichtbare Artefakte oder JSON-Felder einzufuehren.
 - **Dialekt-Capabilities**: explizite Capability-Typen (z.B. als
   Enum oder Data-Class pro `DatabaseDialect`), damit Generatoren
   konsistent entscheiden, ob ein Objekt generiert, konvertiert,
@@ -326,16 +351,16 @@ Logik und `-- TODO: …`-Platzhaltern in den DDL-Generatoren.
   wandert aus dem Produktionscode zurueck nach `docs/`; im Code
   bleiben „why"-Kommentare und Invarianten. Pragmatischer Schnitt
   pro Datei, nicht als Zwangs-Sweep.
-- Tests fuer die neue DDL-Ergebnistrennung: Unsupported-/Rewrite-
-  Faelle erscheinen **nicht** mehr als pseudo-ausfuehrbare DDL im
-  `generatedStatements`-Block, sondern ausschliesslich in der
-  strukturierten `manualActionsRequired`-Liste.
+- Tests fuer den internen DDL-Refactor: Unsupported-/Rewrite-Faelle
+  werden strukturiert modelliert; zugleich muss die bestehende
+  `schema generate`-Ausgabe fuer den Default-Pfad stabil bleiben.
 
 Ergebnis:
 
-Die wartungskritischen Hotspots sind zerlegt, der DDL-Pfad trennt
-ausfuehrbare Statements von manueller Nacharbeit, und Dialekt-Fixes
-landen konsistent ueber alle drei Treiber.
+Die wartungskritischen Hotspots sind zerlegt, der DDL-Pfad ist intern so
+geschnitten, dass manuelle Nacharbeit und spaetere Phasenobjekte sauber
+modellierbar sind, und Dialekt-Fixes landen konsistent ueber alle drei
+Treiber, ohne dass 0.9.1 bereits einen neuen DDL-Output-Vertrag ausrollt.
 
 ### 6.3 Phase C - Port- und Optionsschnitt trennen
 
@@ -504,18 +529,24 @@ Mitigation:
 
 ### 9.6 DDL-Ergebnis-Split darf die bestehende CLI-Ausgabe nicht brechen
 
-Der Uebergang von `-- TODO: …`-Kommentar-Platzhaltern zu
-strukturierten `ManualActionRequired`-Eintraegen aendert den
-DDL-Output-Vertrag. Nutzer, die heute auf dem SQL-Dokument arbeiten,
-koennten darauf angewiesen sein.
+Der DDL-Refactor in 0.9.1 fuehrt intern neue Modell- und
+Kompositionsschnitte ein. Wenn daraus versehentlich bereits ein sichtbarer
+CLI-/Datei-/JSON-Vertragswechsel wird, kollidiert das mit dem Roadmap-
+Zuschnitt zwischen 0.9.1 und 0.9.2. Nutzer, die heute auf dem
+`schema generate`-Output arbeiten, koennten dadurch unnoetig vorzeitig
+gebrochen werden.
 
 Mitigation:
 
-- `generatedStatements` bleibt der ausfuehrbare SQL-Block; die neue
-  `manualActionsRequired`-Liste wird zusaetzlich emittiert
-- Uebergangsphase mit Doku-Hinweis (CHANGELOG + `docs/cli-spec.md`)
-- Tests stellen sicher, dass Unsupported-/Rewrite-Faelle nicht mehr
-  als pseudo-ausfuehrbare DDL erscheinen
+- interne DDL-Modelle duerfen eingefuehrt werden, aber der bestehende
+  `schema generate`-Default-Output bleibt in 0.9.1 stabil
+- keine neuen sichtbaren Split-Artefakte (`pre-data`/`post-data`),
+  keine neuen JSON-Felder wie `ddl_parts` und kein neuer CLI-Vertrag in
+  0.9.1
+- Golden-Master- und CLI-Tests stellen sicher, dass der Default-Pfad
+  semantisch und textuell stabil bleibt
+- sichtbare DDL-Output-Aenderungen werden bewusst erst in 0.9.2
+  implementiert
 
 ---
 
@@ -527,8 +558,11 @@ dem 0.9.0-Beta-Code-Cut und dem 1.0.0-Stable-Release eingefuegt werden:
 - `0.9.0` bleibt fokussiert auf Resume und finalen `--lang`-Vertrag
 - `0.9.1` haertet zuerst die Sicherheits-Findings aus `docs/quality.md`
   (Phase A), zerlegt die wartungskritischen Orchestrierungs-/Dialekt-
-  Hotspots (Phase B) und stabilisiert dann die interne Library-Grenze
-  fuer externe Consumer (Phasen C–G)
+  Hotspots (Phase B), bereitet dabei den internen DDL-Modellschnitt fuer
+  spaetere `pre-data`/`post-data`-Artefakte vor und stabilisiert dann die
+  interne Library-Grenze fuer externe Consumer (Phasen C–G)
+- `0.9.2` uebernimmt erst danach den sichtbaren optionalen
+  DDL-Output-Split gemaess `docs/ddl-output-split-plan.md`
 - `0.9.5` bleibt bei Docs und Pilot-QA
 - `1.0.0` uebernimmt erst danach den oeffentlichen Publish-Vertrag inklusive
   Maven-Central-Portal-Workflow
