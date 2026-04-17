@@ -11,20 +11,18 @@ kover {
     reports {
         filters {
             excludes {
-                classes(
-                    // Profiling adapters require Testcontainers (MySQL)
-                    "dev.dmigrate.driver.mysql.profiling.*",
-                )
+                if (!project.hasProperty("integrationTests")) {
+                    // Profiling adapters require Testcontainers (MySQL).
+                    // Excluded from non-integration coverage to keep the
+                    // unit-only minBound realistic. With -PintegrationTests
+                    // the exclusion is lifted and profiling code counts toward
+                    // the 90% target (0.9.1 Phase A §5.4 / §6).
+                    classes("dev.dmigrate.driver.mysql.profiling.*")
+                }
             }
         }
         verify {
             rule {
-                // Non-integration: covers TypeMapper, TypeMapping, DdlGenerator,
-                // UrlBuilder, Identifiers (unit-testable). SchemaReader,
-                // DataReader, MetadataQueries, DataWriter, SchemaSync require
-                // Testcontainers.
-                // TODO: extract more orchestration logic from SchemaReader
-                // into testable pure functions to raise non-integration coverage.
                 minBound(if (project.hasProperty("integrationTests")) 90 else 45)
             }
         }

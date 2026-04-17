@@ -133,4 +133,51 @@ class SqliteProfilingTest : FunSpec({
         strCompat.compatibleCount shouldBe 5
         strCompat.incompatibleCount shouldBe 0
     }
+
+    // ── Security: malicious identifiers ─────────────────────
+
+    // 0.9.1 Phase A §5.4: adapter-level tests with deliberately
+    // problematic names to prove the quoting hardening works end-to-end.
+
+    test("security: table with embedded double-quote is profiled safely") {
+        pool.borrow().createStatement().use { stmt ->
+            stmt.execute("""CREATE TABLE "my""table" ("col""1" TEXT, "val" INTEGER)""")
+            stmt.execute("""INSERT INTO "my""table" VALUES ('a', 1)""")
+        }
+        introspection.listTables(pool).any { it.name == "my\"table" } shouldBe true
+        introspection.listColumns(pool, "my\"table").size shouldBe 2
+        data.rowCount(pool, "my\"table") shouldBe 1
+        data.columnMetrics(pool, "my\"table", "col\"1", "TEXT").nonNullCount shouldBe 1
+    }
+
+    test("security: table named with reserved word is profiled safely") {
+        pool.borrow().createStatement().use { stmt ->
+            stmt.execute("""CREATE TABLE "select" ("where" TEXT, "from" INTEGER)""")
+            stmt.execute("""INSERT INTO "select" VALUES ('x', 42)""")
+        }
+        introspection.listTables(pool).any { it.name == "select" } shouldBe true
+        introspection.listColumns(pool, "select").size shouldBe 2
+        data.rowCount(pool, "select") shouldBe 1
+        data.columnMetrics(pool, "select", "where", "TEXT").nonNullCount shouldBe 1
+    }
+
+    test("security: table with semicolon-injection attempt is profiled safely") {
+        pool.borrow().createStatement().use { stmt ->
+            stmt.execute("""CREATE TABLE "users; DROP TABLE users --" ("id" INTEGER)""")
+            stmt.execute("""INSERT INTO "users; DROP TABLE users --" VALUES (1)""")
+        }
+        data.rowCount(pool, "users; DROP TABLE users --") shouldBe 1
+        // Original users table must still exist
+        data.rowCount(pool, "users") shouldBe 5
+    }
+
+    test("security: column with Unicode homoglyph is profiled safely") {
+        // Cyrillic 'а' (U+0430) looks like Latin 'a' but is a different character
+        pool.borrow().createStatement().use { stmt ->
+            stmt.execute("""CREATE TABLE "unicode_test" ("nаme" TEXT, "vаlue" INTEGER)""")
+            stmt.execute("""INSERT INTO "unicode_test" VALUES ('test', 1)""")
+        }
+        data.rowCount(pool, "unicode_test") shouldBe 1
+        data.columnMetrics(pool, "unicode_test", "nаme", "TEXT").nonNullCount shouldBe 1
+    }
 })

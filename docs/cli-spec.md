@@ -731,6 +731,12 @@ kanonisch beschrieben.
 | `--source` | Ja | URL oder Alias | — | Quell-Datenbank |
 | `--target` | Ja | URL oder Alias | — | Ziel-Datenbank |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Tabellenliste |
+| `--filter` | Nein | String | — | Roh-WHERE-Klausel fuer die Quellabfrage. **Trusted Input** — Raw-SQL, keine Sanitization. Trust-Boundary ist die lokale Shell. |
+| `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer (LF-013) |
+| `--since` | Nein | String | — | Untere Marker-Grenze (nur zusammen mit `--since-column`) |
+| `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |
+| `--trigger-mode` | Nein | String | `fire` | Trigger-Handling: `fire`, `disable`, `strict` |
+| `--truncate` | Nein | Boolean | aus | Zieltabellen vor dem Transfer leeren |
 | `--chunk-size` | Nein | Integer | `10000` | Rows pro Streaming-Chunk |
 
 **Target-autoritatives Preflight**:

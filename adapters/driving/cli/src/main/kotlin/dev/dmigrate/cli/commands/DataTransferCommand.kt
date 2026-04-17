@@ -27,7 +27,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         .required()
     val tables by option("--tables", help = "Comma-separated list of tables to transfer")
         .split(",")
-    val filter by option("--filter", help = "WHERE clause for source filtering")
+    val filter by option("--filter", help = "WHERE clause for source filtering. Trusted Input — raw SQL, no sanitization")
     val sinceColumn by option("--since-column", help = "Column for incremental transfer")
     val since by option("--since", help = "Value for incremental transfer (requires --since-column)")
     val onConflict by option("--on-conflict", help = "Conflict handling: abort|skip|update")

@@ -10,7 +10,6 @@ import dev.dmigrate.profiling.port.TableSchema
 class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
     private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
-    private fun ql(value: String): String = SqlIdentifiers.quoteStringLiteral(value)
 
     override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> {
         pool.borrow().use { conn ->
@@ -35,7 +34,9 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
 
     override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> {
         val s = schema ?: "public"
-        val regclass = "${ql("${qi(s)}.${qi(table)}")}::regclass"
+        // Regclass value: the qualified identifier string (e.g. "public"."users")
+        // is bound via PreparedStatement to avoid any string interpolation.
+        val regclassValue = "${qi(s)}.${qi(table)}"
 
         pool.borrow().use { conn ->
             val pkColumns = mutableSetOf<String>()
@@ -43,13 +44,14 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
             val uniqueColumns = mutableSetOf<String>()
 
             // Primary keys
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT a.attname
-                    FROM pg_index i
-                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                    WHERE i.indrelid = $regclass AND i.indisprimary
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                WHERE i.indrelid = ?::regclass AND i.indisprimary
+            """.trimIndent()).use { ps ->
+                ps.setString(1, regclassValue)
+                val rs = ps.executeQuery()
                 while (rs.next()) pkColumns += rs.getString("attname")
             }
 
@@ -69,15 +71,16 @@ class PostgresSchemaIntrospectionAdapter : SchemaIntrospectionPort {
             }
 
             // Unique constraints (single-column)
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("""
-                    SELECT a.attname
-                    FROM pg_index i
-                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                    WHERE i.indrelid = $regclass
-                      AND i.indisunique AND NOT i.indisprimary
-                      AND array_length(i.indkey, 1) = 1
-                """.trimIndent())
+            conn.prepareStatement("""
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                WHERE i.indrelid = ?::regclass
+                  AND i.indisunique AND NOT i.indisprimary
+                  AND array_length(i.indkey, 1) = 1
+            """.trimIndent()).use { ps ->
+                ps.setString(1, regclassValue)
+                val rs = ps.executeQuery()
                 while (rs.next()) uniqueColumns += rs.getString("attname")
             }
 

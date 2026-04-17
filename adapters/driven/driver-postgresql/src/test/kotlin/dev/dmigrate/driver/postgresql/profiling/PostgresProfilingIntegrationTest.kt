@@ -126,4 +126,41 @@ class PostgresProfilingIntegrationTest : FunSpec({
             compat.first { it.targetType == TargetLogicalType.STRING }.compatibleCount shouldBe 5
         }
     }
+
+    // ── Security: malicious identifiers (0.9.1 Phase A §5.4) ───
+
+    test("security: table with embedded double-quote is profiled safely") {
+        pool().use { p ->
+            p.borrow().createStatement().use { stmt ->
+                stmt.execute("""CREATE TABLE "my""table" ("col""1" TEXT, "val" INTEGER)""")
+                stmt.execute("""INSERT INTO "my""table" VALUES ('a', 1)""")
+            }
+            introspection.listColumns(p, "my\"table").size shouldBe 2
+            data.rowCount(p, "my\"table") shouldBe 1
+            data.columnMetrics(p, "my\"table", "col\"1", "text").nonNullCount shouldBe 1
+        }
+    }
+
+    test("security: table named with reserved word is profiled safely") {
+        pool().use { p ->
+            p.borrow().createStatement().use { stmt ->
+                stmt.execute("""CREATE TABLE "select" ("where" TEXT, "from" INTEGER)""")
+                stmt.execute("""INSERT INTO "select" VALUES ('x', 42)""")
+            }
+            introspection.listColumns(p, "select").size shouldBe 2
+            data.rowCount(p, "select") shouldBe 1
+            data.columnMetrics(p, "select", "where", "text").nonNullCount shouldBe 1
+        }
+    }
+
+    test("security: semicolon-injection attempt does not corrupt database") {
+        pool().use { p ->
+            p.borrow().createStatement().use { stmt ->
+                stmt.execute("""CREATE TABLE "users; DROP TABLE users --" ("id" INTEGER)""")
+                stmt.execute("""INSERT INTO "users; DROP TABLE users --" VALUES (1)""")
+            }
+            data.rowCount(p, "users; DROP TABLE users --") shouldBe 1
+            data.rowCount(p, "users") shouldBe 5
+        }
+    }
 })
