@@ -19,7 +19,7 @@ class MysqlSchemaSync : SchemaSync {
         truncatePerformed = false,
     )
 
-    internal fun reseedGenerators(
+    fun reseedGenerators(
         conn: Connection,
         table: String,
         importedColumns: List<ColumnDescriptor>,

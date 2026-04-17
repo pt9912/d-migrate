@@ -15,3 +15,7 @@ include("adapters:driven:formats")
 include("adapters:driven:integrations")
 include("adapters:driven:streaming")
 include("adapters:driving:cli")
+
+// Integration test modules (Testcontainers, separated from driver unit tests)
+include("test:integration-postgresql")
+include("test:integration-mysql")

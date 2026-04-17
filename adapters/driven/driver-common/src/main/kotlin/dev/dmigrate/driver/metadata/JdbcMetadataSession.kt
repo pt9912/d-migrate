@@ -12,13 +12,13 @@ import java.sql.ResultSet
  * or [dev.dmigrate.driver.data.TableLister]) is responsible for the
  * borrow/close lifecycle via `pool.borrow().use { ... }`.
  */
-class JdbcMetadataSession(private val conn: Connection) {
+class JdbcMetadataSession(private val conn: Connection) : JdbcOperations {
 
     /**
      * Executes a query and maps each result row to a [Map].
      * Column names are lowercased for consistent access.
      */
-    fun queryList(sql: String, vararg params: Any?): List<Map<String, Any?>> {
+    override fun queryList(sql: String, vararg params: Any?): List<Map<String, Any?>> {
         conn.prepareStatement(sql).use { stmt ->
             params.forEachIndexed { i, value -> stmt.setObject(i + 1, value) }
             stmt.executeQuery().use { rs ->
@@ -30,7 +30,7 @@ class JdbcMetadataSession(private val conn: Connection) {
     /**
      * Executes a query and returns the first row, or null if empty.
      */
-    fun querySingle(sql: String, vararg params: Any?): Map<String, Any?>? {
+    override fun querySingle(sql: String, vararg params: Any?): Map<String, Any?>? {
         conn.prepareStatement(sql).use { stmt ->
             params.forEachIndexed { i, value -> stmt.setObject(i + 1, value) }
             stmt.executeQuery().use { rs ->

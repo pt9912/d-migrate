@@ -37,6 +37,7 @@ subprojects {
     dependencies {
         "testImplementation"("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
         "testImplementation"("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+        "testImplementation"("io.mockk:mockk:${rootProject.properties["mockkVersion"]}")
         // SLF4J-Provider für Tests, damit Testcontainers-Diagnostics nicht im
         // NOP-Logger verschwinden. Ohne dieses Fragment ist die
         // Strategy-Detection-Fehlermeldung "Could not find a valid Docker
@@ -90,4 +91,21 @@ dependencies {
     kover(project(":adapters:driven:formats"))
     kover(project(":adapters:driven:streaming"))
     kover(project(":adapters:driving:cli"))
+    kover(project(":test:integration-postgresql"))
+    kover(project(":test:integration-mysql"))
+}
+
+// Root-level aggregated koverVerify: when run with -PintegrationTests
+// this verifies the FULL codebase (including JDBC-only profiling
+// adapters that are excluded from per-module unit-test koverVerify)
+// at 90%. The integration CI (.github/workflows/integration.yml and
+// scripts/test-integration-docker.sh) runs :koverVerify explicitly.
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(90)
+            }
+        }
+    }
 }

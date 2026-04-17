@@ -2,9 +2,12 @@ package dev.dmigrate.driver.sqlite.profiling
 
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.profiling.port.ColumnSchema
 import dev.dmigrate.profiling.port.SchemaIntrospectionPort
 import dev.dmigrate.profiling.port.TableSchema
+import java.sql.Connection
 
 /**
  * SQLite implementation of [SchemaIntrospectionPort].
@@ -14,78 +17,55 @@ import dev.dmigrate.profiling.port.TableSchema
  * arguments are secured via [SqlIdentifiers.quoteStringLiteral] to
  * prevent injection through crafted table/index names.
  */
-class SqliteSchemaIntrospectionAdapter : SchemaIntrospectionPort {
+class SqliteSchemaIntrospectionAdapter(
+    private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
+) : SchemaIntrospectionPort {
 
     private fun ql(value: String): String = SqlIdentifiers.quoteStringLiteral(value)
 
-    override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> {
-        pool.borrow().use { conn ->
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-                )
-                val tables = mutableListOf<TableSchema>()
-                while (rs.next()) tables += TableSchema(rs.getString("name"))
-                return tables
-            }
+    private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
+        pool.borrow().use { conn -> block(jdbcFactory(conn)) }
+
+    override fun listTables(pool: ConnectionPool, schema: String?): List<TableSchema> =
+        withJdbc(pool) { jdbc ->
+            jdbc.queryList(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).map { row -> TableSchema(row["name"] as String) }
         }
-    }
 
-    override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> {
-        pool.borrow().use { conn ->
-            val pkColumns = mutableSetOf<String>()
-            val fkColumns = mutableSetOf<String>()
-            val uniqueColumns = mutableSetOf<String>()
-
+    override fun listColumns(pool: ConnectionPool, table: String, schema: String?): List<ColumnSchema> =
+        withJdbc(pool) { jdbc ->
             // Primary keys
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("PRAGMA table_info(${ql(table)})")
-                while (rs.next()) {
-                    if (rs.getInt("pk") > 0) pkColumns += rs.getString("name")
-                }
-            }
+            val pkColumns = jdbc.queryList("PRAGMA table_info(${ql(table)})")
+                .filter { (it["pk"] as Number).toInt() > 0 }
+                .mapTo(mutableSetOf()) { it["name"] as String }
 
             // Foreign keys
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("PRAGMA foreign_key_list(${ql(table)})")
-                while (rs.next()) {
-                    fkColumns += rs.getString("from")
-                }
-            }
+            val fkColumns = jdbc.queryList("PRAGMA foreign_key_list(${ql(table)})")
+                .mapTo(mutableSetOf()) { it["from"] as String }
 
             // Unique indexes (single-column only for simplicity)
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("PRAGMA index_list(${ql(table)})")
-                while (rs.next()) {
-                    if (rs.getInt("unique") == 1) {
-                        val indexName = rs.getString("name")
-                        conn.createStatement().use { s2 ->
-                            val irs = s2.executeQuery("PRAGMA index_info(${ql(indexName)})")
-                            val cols = mutableListOf<String>()
-                            while (irs.next()) cols += irs.getString("name")
-                            if (cols.size == 1) uniqueColumns += cols[0]
-                        }
-                    }
+            val uniqueColumns = jdbc.queryList("PRAGMA index_list(${ql(table)})")
+                .filter { (it["unique"] as Number).toInt() == 1 }
+                .flatMap { indexRow ->
+                    val indexName = indexRow["name"] as String
+                    val cols = jdbc.queryList("PRAGMA index_info(${ql(indexName)})")
+                        .map { it["name"] as String }
+                    if (cols.size == 1) cols else emptyList()
                 }
-            }
+                .toMutableSet()
 
             // Build column list
-            val columns = mutableListOf<ColumnSchema>()
-            conn.createStatement().use { stmt ->
-                val rs = stmt.executeQuery("PRAGMA table_info(${ql(table)})")
-                while (rs.next()) {
-                    val name = rs.getString("name")
-                    columns += ColumnSchema(
-                        name = name,
-                        dbType = rs.getString("type"),
-                        nullable = rs.getInt("notnull") == 0,
-                        isPrimaryKey = name in pkColumns,
-                        isForeignKey = name in fkColumns,
-                        isUnique = name in uniqueColumns,
-                    )
-                }
+            jdbc.queryList("PRAGMA table_info(${ql(table)})").map { row ->
+                val name = row["name"] as String
+                ColumnSchema(
+                    name = name,
+                    dbType = row["type"] as? String ?: "",
+                    nullable = (row["notnull"] as Number).toInt() == 0,
+                    isPrimaryKey = name in pkColumns,
+                    isForeignKey = name in fkColumns,
+                    isUnique = name in uniqueColumns,
+                )
             }
-            return columns
         }
-    }
 }

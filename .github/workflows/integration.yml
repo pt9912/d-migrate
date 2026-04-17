@@ -73,7 +73,7 @@ jobs:
         # beliebigen Modulen automatisch mitlaufen, ohne dass dieser Workflow
         # angepasst werden muss. Mit -PintegrationTests aktiviert das
         # Root-build.gradle.kts den `integration`-Tag für alle Test-Tasks.
-        run: ./gradlew test koverVerify -PintegrationTests
+        run: ./gradlew test koverVerify :koverVerify -PintegrationTests
 
       - name: Upload integration test results
         if: always()

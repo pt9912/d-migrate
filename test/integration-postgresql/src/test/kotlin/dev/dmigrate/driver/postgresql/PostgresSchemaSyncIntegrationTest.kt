@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
@@ -15,6 +16,8 @@ import io.kotest.matchers.string.shouldContain
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 private val SchemaSyncIntegrationTag = NamedTag("integration")
+
+private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
 
 class PostgresSchemaSyncIntegrationTest : FunSpec({
 
@@ -77,17 +80,17 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
                     EXECUTE FUNCTION sync_trigger_audit_fn()
                     """.trimIndent()
                 )
-                stmt.execute("CREATE SCHEMA ${quotePostgresIdentifier("Odd Schema")}")
+                stmt.execute("CREATE SCHEMA ${qi("Odd Schema")}")
                 stmt.execute(
-                    "CREATE TABLE ${quotePostgresIdentifier("Odd Schema")}.plain_seq " +
+                    "CREATE TABLE ${qi("Odd Schema")}.plain_seq " +
                         "(id SERIAL PRIMARY KEY, name TEXT)"
                 )
                 stmt.execute(
-                    "CREATE TABLE ${quotePostgresIdentifier("Mixed Case Table")} " +
+                    "CREATE TABLE ${qi("Mixed Case Table")} " +
                         "(id SERIAL PRIMARY KEY, name TEXT)"
                 )
                 stmt.execute(
-                    "CREATE TABLE ${quotePostgresIdentifier("Quote \"Table\"")} " +
+                    "CREATE TABLE ${qi("Quote \"Table\"")} " +
                         "(id SERIAL PRIMARY KEY, name TEXT)"
                 )
             }
@@ -105,9 +108,9 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
             conn.createStatement().use { stmt ->
                 stmt.execute("TRUNCATE TABLE sync_serial, sync_identity_default, sync_identity_always, sync_empty RESTART IDENTITY CASCADE")
                 stmt.execute("TRUNCATE TABLE sync_trigger_target, sync_trigger_audit RESTART IDENTITY CASCADE")
-                stmt.execute("TRUNCATE TABLE ${quotePostgresIdentifier("Odd Schema")}.plain_seq RESTART IDENTITY CASCADE")
-                stmt.execute("TRUNCATE TABLE ${quotePostgresIdentifier("Mixed Case Table")} RESTART IDENTITY CASCADE")
-                stmt.execute("TRUNCATE TABLE ${quotePostgresIdentifier("Quote \"Table\"")} RESTART IDENTITY CASCADE")
+                stmt.execute("TRUNCATE TABLE ${qi("Odd Schema")}.plain_seq RESTART IDENTITY CASCADE")
+                stmt.execute("TRUNCATE TABLE ${qi("Mixed Case Table")} RESTART IDENTITY CASCADE")
+                stmt.execute("TRUNCATE TABLE ${qi("Quote \"Table\"")} RESTART IDENTITY CASCADE")
             }
         }
     }
@@ -232,7 +235,7 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
         pool!!.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
-                    "INSERT INTO ${quotePostgresIdentifier("Odd Schema")}.plain_seq (id, name) " +
+                    "INSERT INTO ${qi("Odd Schema")}.plain_seq (id, name) " +
                         "VALUES (31, 'manual')"
                 )
             }
@@ -241,7 +244,7 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
 
             adjustments.single().newValue shouldBe 32
             conn.prepareStatement(
-                "INSERT INTO ${quotePostgresIdentifier("Odd Schema")}.plain_seq (name) VALUES ('next') RETURNING id"
+                "INSERT INTO ${qi("Odd Schema")}.plain_seq (name) VALUES ('next') RETURNING id"
             ).use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true
@@ -255,7 +258,7 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
         pool!!.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
-                    "INSERT INTO ${quotePostgresIdentifier("Mixed Case Table")} (id, name) VALUES (41, 'manual')"
+                    "INSERT INTO ${qi("Mixed Case Table")} (id, name) VALUES (41, 'manual')"
                 )
             }
 
@@ -263,7 +266,7 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
 
             adjustments.single().newValue shouldBe 42
             conn.prepareStatement(
-                "INSERT INTO ${quotePostgresIdentifier("Mixed Case Table")} (name) VALUES ('next') RETURNING id"
+                "INSERT INTO ${qi("Mixed Case Table")} (name) VALUES ('next') RETURNING id"
             ).use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true
@@ -277,7 +280,7 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
         pool!!.borrow().use { conn ->
             conn.createStatement().use { stmt ->
                 stmt.execute(
-                    "INSERT INTO ${quotePostgresIdentifier("Quote \"Table\"")} (id, name) VALUES (51, 'manual')"
+                    "INSERT INTO ${qi("Quote \"Table\"")} (id, name) VALUES (51, 'manual')"
                 )
             }
 
@@ -285,7 +288,7 @@ class PostgresSchemaSyncIntegrationTest : FunSpec({
 
             adjustments.single().newValue shouldBe 52
             conn.prepareStatement(
-                "INSERT INTO ${quotePostgresIdentifier("Quote \"Table\"")} (name) VALUES ('next') RETURNING id"
+                "INSERT INTO ${qi("Quote \"Table\"")} (name) VALUES ('next') RETURNING id"
             ).use { ps ->
                 ps.executeQuery().use { rs ->
                     rs.next() shouldBe true

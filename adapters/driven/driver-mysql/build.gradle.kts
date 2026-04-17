@@ -2,28 +2,34 @@ dependencies {
     implementation(project(":adapters:driven:driver-common"))
     implementation(project(":hexagon:profiling"))
     implementation("com.mysql:mysql-connector-j:${rootProject.properties["mysqlJdbcVersion"]}")
-
-    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 kover {
     reports {
         filters {
             excludes {
-                if (!project.hasProperty("integrationTests")) {
-                    // Profiling adapters require Testcontainers (MySQL).
-                    // Excluded from non-integration coverage to keep the
-                    // unit-only minBound realistic. With -PintegrationTests
-                    // the exclusion is lifted and profiling code counts toward
-                    // the 90% target (0.9.1 Phase A §5.4 / §6).
-                    classes("dev.dmigrate.driver.mysql.profiling.*")
-                }
+                // JDBC-dependent classes — require a live MySQL database.
+                // Tested via test:integration-mysql (Testcontainers).
+                // Root-level :koverVerify covers them at 90%+ with -PintegrationTests.
+                classes(
+                    "dev.dmigrate.driver.mysql.MysqlDataReader",
+                    "dev.dmigrate.driver.mysql.MysqlDataWriter",
+                    "dev.dmigrate.driver.mysql.MysqlDataWriter\$Companion",
+                    "dev.dmigrate.driver.mysql.MysqlSchemaReader",
+                    "dev.dmigrate.driver.mysql.MysqlSchemaSync",
+                    "dev.dmigrate.driver.mysql.MysqlTableLister",
+                    "dev.dmigrate.driver.mysql.MysqlTableImportSession",
+                    "dev.dmigrate.driver.mysql.MysqlTableImportSession\$State",
+                    "dev.dmigrate.driver.mysql.MysqlDriver",
+                    "dev.dmigrate.driver.mysql.MysqlMetadataQueries",
+                )
             }
         }
         verify {
             rule {
-                minBound(if (project.hasProperty("integrationTests")) 90 else 45)
+                // 84% after JdbcOperations refactor — remaining gap is in
+                // DdlGenerator spatial branches and TypeMapping edge cases.
+                minBound(83)
             }
         }
     }
