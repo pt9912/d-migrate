@@ -1074,7 +1074,7 @@ Zulässige Werte und Defaults je Zieldialekt:
 | Zieldialekt | Zulässige Profile | Default |
 |---|---|---|
 | `postgresql` | `postgis`, `none` | `postgis` |
-| `mysql` | `native` | `native` |
+| `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
 
 Bedeutung der Profilwerte:
@@ -1082,7 +1082,7 @@ Bedeutung der Profilwerte:
 - `postgis`: PostgreSQL-DDL wird mit PostGIS-kompatiblen Geometrietypen erzeugt.
 - `native`: MySQL-DDL wird mit den nativen Spatial Data Types von MySQL erzeugt.
 - `spatialite`: SQLite-DDL verwendet die `AddGeometryColumn()`-Strategie von SpatiaLite.
-- `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert.
+- `none`: `geometry`-Spalten werden nicht generiert; die gesamte Tabelle wird als `action_required` (E052) markiert. Das ist fuer PostgreSQL, MySQL und SQLite ein zulaessiger Generatorpfad, wenn Spatial-DDL bewusst unterdrueckt werden soll.
 
 Unzulaessige Dialekt/Profil-Kombinationen (z.B. `--target mysql --spatial-profile postgis`)
 erzeugen einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung.

@@ -363,7 +363,7 @@ Das Profil ist Generator-Konfiguration und kein Teil des neutralen Schemas.
 | `--target` | Zulässige Werte | Default |
 |---|---|---|
 | `postgresql` | `postgis`, `none` | `postgis` |
-| `mysql` | `native` | `native` |
+| `mysql` | `native`, `none` | `native` |
 | `sqlite` | `spatialite`, `none` | `none` |
 
 Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--target mysql --spatial-profile postgis`) erzeugt einen Nutzungsfehler (Exit-Code 2) noch vor der DDL-Generierung. Enthält das Schema keine `geometry`-Spalten, hat `--spatial-profile` keine Wirkung.
