@@ -85,6 +85,12 @@ Default fuer die Einfuehrungsphase:
 - `helper_table` ist opt-in
 - ein spaeterer Milestone kann den Default kippen, wenn Reverse und
   Compare stabil sind
+- beim Wechsel von `action_required` auf `helper_table` werden
+  bestehende, manuell implementierte Sequence-Loesungen in der
+  Zieldatenbank **nicht** automatisch uebernommen oder migriert;
+  der Nutzer ist verantwortlich, manuelle Hilfsobjekte vorher zu
+  entfernen oder den Startwert in `dmg_sequences` nach Generierung
+  manuell abzugleichen
 
 ### 3.2 Kanonische Emulationsobjekte
 
@@ -95,8 +101,9 @@ Vorgeschlagene Objekte:
 
 - zentrale Support-Tabelle `dmg_sequences`
 - eine MySQL-Routine fuer Wertvergabe, z. B. `dmg_nextval(seq_name)`
-- optional eine zweite Routine `dmg_setval(seq_name, value)` fuer
-  Synchronisation und Admin-Aufgaben
+- eine zweite Routine `dmg_setval(seq_name, value)` fuer
+  Synchronisation, Admin-Aufgaben und Re-Generierung mit
+  veraenderten `start`-Werten
 - pro sequence-basierter Spalte ein kanonischer `BEFORE INSERT`-Trigger,
   der bei `NEW.<column> IS NULL` einen Wert ueber `dmg_nextval(...)`
   einsetzt
@@ -119,6 +126,13 @@ CREATE TABLE `dmg_sequences` (
 ```
 
 Jede neutrale Sequence belegt genau eine Zeile in `dmg_sequences`.
+
+`cache_size = NULL` bedeutet "kein Caching konfiguriert" (nicht
+"Default-Caching des Dialekts").
+
+Alle Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) leben in
+derselben MySQL-Database wie die Nutzertabellen. Cross-Database-Trigger
+sind in MySQL nicht zuverlaessig moeglich und werden nicht unterstuetzt.
 
 ### 3.3 Namespace- und Kollisionsvertrag
 
@@ -167,7 +181,8 @@ Trigger-Namensvertrag:
     Tabellennamens
   - `column16`: erste 16 Zeichen des kanonischen neutralen
     Spaltennamens
-  - `hash10`: erste 10 Hex-Zeichen eines stabilen Hashes ueber
+  - `hash10`: erste 10 Hex-Zeichen (lowercase) eines SHA-256-Hashes
+    ueber den UTF-8-kodierten String
     `<canonical-table>\u0000<canonical-column>\u0000<sequence>`
   - Suffix `_bi`
 - dieses Schema bleibt immer <= 64 Zeichen
@@ -231,6 +246,29 @@ Der Trigger-Pfad ist notwendig, weil MySQL Default-Expressions keine
 Stored Functions enthalten duerfen. `dmg_nextval(...)` ist deshalb fuer
 MySQL ein Laufzeitbaustein, aber kein direktes Column-Default.
 
+Concurrency-Vertrag fuer `dmg_nextval(...)`:
+
+- die Routine muss den naechsten Wert **atomar** vergeben
+- vorgeschlagenes Muster: `UPDATE dmg_sequences SET next_value =
+  next_value + increment_by WHERE name = ?` gefolgt von `SELECT
+  next_value - increment_by` innerhalb derselben Routine
+- InnoDB's Row-Level-Lock auf dem `PRIMARY KEY` serialisiert
+  konkurrierende Aufrufe auf dieselbe Sequence
+- die Routine laeuft im Transaktionskontext des aufrufenden Statements;
+  sie oeffnet **keine** eigene Transaktion
+- Konsequenz: bei Rollback der aeusseren Transaktion wird auch der
+  Sequence-Inkrement zurueckgerollt — das bedeutet, dass Sequence-Werte
+  **nicht** transaktionsunabhaengig vergeben werden wie bei nativen
+  PostgreSQL-Sequences
+- Gaps durch Rollback treten deshalb nicht auf, dafuer koennen unter
+  hoher Concurrency kurzzeitig identische Werte vergeben werden, wenn
+  zwei Transaktionen gleichzeitig committen und rollbacken
+- dieser Unterschied zu PostgreSQL wird als bewusste Einschraenkung
+  dokumentiert und ueber `W117` ausgewiesen
+- Phase A muss entscheiden, ob fuer Phase 1 dieses Verhalten akzeptabel
+  ist oder ob die Routine ueber eine separate Connection / `LAST_INSERT_ID`-
+  Trick echte Gap-Semantik braucht
+
 ### 3.5 Sequenzsemantik
 
 Die Vollvariante braucht eine exakt dokumentierte Semantik fuer
@@ -240,8 +278,10 @@ Verbindlicher Zustand:
 
 - `next_value` speichert immer den **naechsten auszugebenden Wert**
 - `increment_by` darf positiv oder negativ sein
-- `increment_by = 0` ist ungueltig und muss vor der Generierung als
-  Modell-/Validierungsfehler abgefangen werden
+- `increment_by = 0` ist ungueltig und wird als Validierungsfehler im
+  neutralen Modell abgefangen (in `SequenceDefinition` bzw. der
+  Schema-Validierungsschicht, die vor der Generierung laeuft), nicht
+  erst im dialektspezifischen Generator
 
 Effektive Grenzen:
 
@@ -290,6 +330,14 @@ Zusatz fuer die Vollvariante:
 Vorgeschlagene Erweiterung:
 
 - `DefaultValue.SequenceNextVal(sequenceName: String)`
+
+`DefaultValue` ist heute eine sealed class mit vier Subtypen
+(`StringLiteral`, `NumberLiteral`, `BooleanLiteral`, `FunctionCall`).
+Das Hinzufuegen von `SequenceNextVal` ist ein Breaking Change fuer
+jeden `when(defaultValue)`-Ausdruck in der Codebase, weil Kotlin dort
+Exhaustiveness erzwingt. Phase B muss deshalb als erstes einen Audit
+aller `when`-Stellen ueber `DefaultValue` durchfuehren und diese
+anpassen, bevor der neue Subtyp eingefuehrt wird.
 
 Damit kann das neutrale Schema nicht nur Sequence-Objekte definieren,
 sondern auch ausdruecken, dass eine konkrete Spalte den naechsten Wert
@@ -385,6 +433,10 @@ Fuer Trigger-Reihenfolge gilt in Phase 1:
   Triggern erzeugt
 - damit laufen sie bei gleichem Event/Timing aufgrund der
   Erzeugungsreihenfolge zuerst
+- Hinweis: MySQL 8 dokumentiert die Ausfuehrungsreihenfolge bei
+  gleichem Event/Timing als Erzeugungsreihenfolge, garantiert das
+  aber nicht vertraglich fuer alle Zukunft; Phase A muss bewerten,
+  ob Phase 1 bereits explizites `PRECEDES` verwenden soll
 - eine spaetere Ausbaustufe kann bei Bedarf explizites
   `PRECEDES`/`FOLLOWS`-Management ergaenzen
 
@@ -423,6 +475,7 @@ Vorgeschlagene Rollback-Reihenfolge:
   - `W114`: Sequence cache is not fully emulated in MySQL helper-table mode
   - `W115`: SequenceNextVal uses lossy MySQL trigger semantics; explicit NULL is treated like omitted value
   - `W116`: Sequence metadata reconstructed, but required support objects are missing
+  - `W117`: Sequence values are transaction-bound in MySQL helper-table mode; rollback retracts sequence increments unlike native PostgreSQL sequences
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 
@@ -495,14 +548,22 @@ Trotzdem zu pruefen:
 - kanonisches Hilfsobjekt-Layout festlegen
 - Marker- und Namespace-Vertrag finalisieren
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
-- Warning-Codes fuer lossy Mapping festziehen
+- Warning-Codes fuer lossy Mapping festziehen (W114-W117)
 - Fehlerverhalten fuer erschöpfte Sequences festziehen
 - neutralen Default-Typ fuer sequence-basierte Spalten festlegen
 - Trigger-Vertrag fuer MySQL-Sequence-Nutzung festlegen
 - CLI-/Config-Vertrag dokumentieren
+- Concurrency-Vertrag fuer `dmg_nextval(...)` festlegen
+  (Transaktionsverhalten, Gap-Semantik bei Rollback)
+- entscheiden, ob Phase 1 explizites `PRECEDES` fuer
+  Sequence-Support-Trigger braucht
+- Hash-Algorithmus fuer Trigger-Namen validieren (SHA-256)
+- Validierungsort fuer `increment_by = 0` im Neutralmodell festlegen
 
 ### Phase B - Generator und Optionen
 
+- Audit aller `when(defaultValue)`-Stellen in der Codebase durchfuehren
+  und fuer neuen Subtyp `SequenceNextVal` anpassen
 - `DdlGenerationOptions` erweitern
 - CLI-/Runner-Pfad erweitern
 - Mapping fuer `DefaultValue.SequenceNextVal(...)` in PostgreSQL und
@@ -511,7 +572,11 @@ Trotzdem zu pruefen:
 - kanonische Sequence-Support-Trigger fuer MySQL generieren
 - Rollback-Inversion fuer Supportobjekte pruefen
 
-### Phase C - Tests und Golden Masters
+### Phase B/C - Tests und Golden Masters
+
+Phase C laeuft bewusst parallel zu Phase B: Unit-Tests und Golden
+Masters werden zusammen mit dem jeweiligen Generator-Code entwickelt,
+nicht erst nach Abschluss aller Generator-Arbeiten.
 
 - MySQL-Unit-Tests fuer beide Modi
 - Golden Master fuer `full-featured.mysql.sql` im `helper_table`-Pfad
@@ -536,6 +601,10 @@ Trotzdem zu pruefen:
 ---
 
 ## 8. Teststrategie
+
+Coverage-Ziel: 90% Zeilenabdeckung pro betroffenem Modul, insbesondere
+fuer die neuen Pfade in `MysqlDdlGenerator`, `MysqlSchemaReader` und
+die `DefaultValue.SequenceNextVal`-Behandlung in allen Dialekt-Generatoren.
 
 ### 8.1 Unit
 
@@ -567,6 +636,9 @@ Trotzdem zu pruefen:
   `includeFunctions`/`includeProcedures` angefordert wurden
 - Reverse funktioniert fuer sequence-basierte Spaltenwerte auch dann,
   wenn Trigger nicht ueber `includeTriggers` angefordert wurden
+- parallele `dmg_nextval()`-Aufrufe erzeugen keine doppelten Werte
+- Rollback einer Transaktion mit `dmg_nextval()`-Aufruf retrahiert
+  den Sequence-Inkrement wie dokumentiert
 
 ### 8.3 Round-Trip
 
@@ -623,6 +695,20 @@ Gegenmassnahme:
 - Unterschiede offen dokumentieren
 - Warncodes fuer lossy Aspekte statt stiller Abweichung
 
+### R7 - Concurrency-Probleme bei `dmg_nextval()`
+
+MySQL-Routine laeuft im Transaktionskontext des Aufrufers. Unter hoher
+Last koennen Row-Locks auf `dmg_sequences` zu Contention fuehren. Bei
+Rollback werden Sequence-Werte zurueckgegeben, anders als bei nativen
+PostgreSQL-Sequences.
+
+Gegenmassnahme:
+
+- Concurrency-Integrationstests mit parallelen Connections
+- Transaktionsverhalten explizit dokumentieren (`W117`)
+- Phase A bewertet, ob `LAST_INSERT_ID`-Trick oder separate Connection
+  fuer echte Gap-Semantik noetig ist
+
 ---
 
 ## 10. Aufwandseinschaetzung
@@ -642,6 +728,15 @@ Gegenmassnahme:
 Die **vollstaendige Produktvariante** dieses Dokuments ist deshalb klar
 als **grosses** Arbeitspaket einzustufen.
 
+Grobe Einschaetzung pro Phase (T-Shirt-Sizing):
+
+- Phase A (Vertrag): S — primaer Doku und Entscheidungen
+- Phase B (Generator + Optionen): L — breiter Eingriff durch
+  `DefaultValue`-Erweiterung, neuer Generator-Pfad, Routinen-DDL
+- Phase B/C (Tests + Golden Masters): M — parallel zu Phase B
+- Phase D (Reverse): L — neuer Reader-Pfad mit Marker-Erkennung
+- Phase E (Compare + Stabilisierung): M — Round-Trip-Absicherung
+
 ---
 
 ## 11. Empfehlung
@@ -652,6 +747,11 @@ Vor dem ersten Code:
 2. kanonisches MySQL-Objektlayout festlegen
 3. entscheiden, ob `cache` nur gespeichert oder echt emuliert wird
 4. entscheiden, ob `helper_table` in 1. Phase opt-in bleibt
+5. Concurrency-Vertrag fuer `dmg_nextval(...)` festlegen
+   (Transaktionsbindung vs. Gap-Semantik)
+6. Transaktionsverhalten bei Rollback dokumentieren
+7. Hash-Algorithmus (SHA-256) und Trigger-Namensschema validieren
+8. `DefaultValue` sealed-class Impact-Audit planen
 
 Erst danach sollte die eigentliche Implementierung beginnen. Ohne diese
 Produktentscheidungen droht eine halbe Emulation, die zwar DDL erzeugt,
