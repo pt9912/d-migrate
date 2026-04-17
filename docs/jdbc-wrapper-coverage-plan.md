@@ -81,11 +81,11 @@ Betroffene Klassen pro Dialekt:
 **MetadataQueries**: Ist ein `object` dessen Funktionen eine
 `JdbcMetadataSession` bereits als Parameter annehmen
 (`fun listTables(session: JdbcMetadataSession, ...)`). Das Testseam
-ist schon vorhanden — kein Constructor-Umbau noetig. MockK-Tests
-koennen direkt ein gemocktes `JdbcOperations` als Session-Parameter
-uebergeben (sofern der Parametertyp auf `JdbcOperations` geweitet
-wird) oder den bestehenden `JdbcMetadataSession`-Vertrag per
-In-Memory-SQLite testen.
+ist schon vorhanden — kein Constructor-Umbau noetig. Fuer Unit-Tests
+wird der Parametertyp von `JdbcMetadataSession` auf `JdbcOperations`
+geweitet; MockK-Tests mocken dann das Interface direkt. In-Memory-
+SQLite ist kein valider Ersatz, da die Queries dialektspezifisch
+gegen `information_schema` (PG/MySQL) bzw. `pg_catalog` arbeiten.
 
 **SchemaReader und TableLister**: Erzeugen intern
 `JdbcMetadataSession(conn)`. Fuer MockK-Tests brauchen diese einen
