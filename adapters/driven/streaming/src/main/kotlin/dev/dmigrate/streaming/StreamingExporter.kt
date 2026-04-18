@@ -36,18 +36,16 @@ class StreamingExporter(
 ) {
 
     /**
-     * Exportiert die angegebenen Tabellen in den Output-Sink.
+     * Exports the given tables to the output sink.
      *
-     * @param pool Connection pool — Reader and TableLister borrow connections
-     *   from it per call.
-     * @param tables Tabellennamen, oder `emptyList()` um automatisch alle
-     *   Tabellen via [TableLister.listTables] zu ermitteln.
-     * @param output Wohin geschrieben wird (Stdout, SingleFile, FilePerTable).
-     * @param format Output-Format (json/yaml/csv).
-     * @param options Format-spezifische Optionen (Encoding, BOM, CSV-Delimiter, …).
-     * @param config Pipeline-Konfiguration (chunkSize).
-     * @param filter Optionaler Filter — wird auf alle Tabellen angewendet.
-     * @return Statistik-Aggregat über alle Tabellen.
+     * @param pool Connection pool — Reader and TableLister borrow connections per call.
+     * @param tables Table names, or `emptyList()` to auto-discover via [TableLister.listTables].
+     * @param output Where to write (Stdout, SingleFile, FilePerTable).
+     * @param format Output format (json/yaml/csv).
+     * @param options Format-specific options (encoding, BOM, CSV delimiter, ...).
+     * @param config Pipeline configuration (chunkSize).
+     * @param filter Optional filter applied to all tables.
+     * @return Aggregate statistics across all tables.
      */
     fun export(
         pool: ConnectionPool,
@@ -219,11 +217,10 @@ class StreamingExporter(
 
 
 /**
- * Wrapper-OutputStream, der die Anzahl der durchgeschriebenen Bytes mitzählt.
- * Für die [ExportResult.totalBytes]-Statistik. `close()` wird an den
- * darunterliegenden Stream weitergereicht — bei Stdout wird das via
- * [NonClosingOutputStream] abgefangen, sodass `System.out` nie geschlossen
- * wird.
+ * OutputStream wrapper that counts bytes written through it.
+ * Used for [ExportResult.totalBytes] statistics. `close()` is forwarded
+ * to the delegate — for Stdout the [NonClosingOutputStream] wrapper
+ * prevents `System.out` from being closed.
  */
 internal class CountingOutputStream(private val delegate: OutputStream) : OutputStream() {
     var count: Long = 0L
@@ -249,17 +246,16 @@ internal class CountingOutputStream(private val delegate: OutputStream) : Output
 }
 
 /**
- * Wrapper-OutputStream, der `close()` zu einem No-Op macht. `flush()` und
- * `write()` werden weitergereicht. Wird im [StreamingExporter] für den
- * Stdout-Branch verwendet, damit ein realer [DataChunkWriter.close]
- * (der laut Vertrag den darunterliegenden Stream schließt) `System.out`
- * NICHT zerstört.
+ * OutputStream wrapper that turns `close()` into a no-op. `flush()` and
+ * `write()` are forwarded. Used in [StreamingExporter] for the Stdout
+ * branch so that [DataChunkWriter.close] (which closes its underlying
+ * stream per contract) does not destroy `System.out`.
  */
 internal class NonClosingOutputStream(private val delegate: OutputStream) : OutputStream() {
     override fun write(b: Int) = delegate.write(b)
     override fun write(b: ByteArray, off: Int, len: Int) = delegate.write(b, off, len)
     override fun flush() = delegate.flush()
     override fun close() {
-        // bewusst no-op — flush() wird im StreamingExporter explizit aufgerufen
+        // intentional no-op — flush() is called explicitly in StreamingExporter
     }
 }
