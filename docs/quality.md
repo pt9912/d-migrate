@@ -157,20 +157,20 @@ Dateien mit >400 LOC (potenzielle Hotspots):
   `ImportExecutor.execute()` (14 Params) über Kontext-DTOs entschärfen,
   z.B. `ExportContext(pool, reader, lister, factory)` und `ExportCallbacks(onTable, onChunk)`.
 
-- **RoutineDdlHelper testen**: Direkte Unit-Tests für alle 3 RoutineDdlHelper-Implementierungen.
-  Dort liegt die sicherheitskritische View-/Trigger-/Prozedur-Generierung,
-  die aktuell nur indirekt über DDL-Generator-Tests abgedeckt wird.
-
-- **MySQL-TODO-Platzhalter eliminieren**: Die verbleibenden 4 `-- TODO`-Kommentare in `MysqlDdlGenerator`
+- **MySQL-TODO-Platzhalter eliminieren** (Milestone: 0.9.2):
+  Die verbleibenden 4 `-- TODO`-Kommentare in `MysqlDdlGenerator`
   durch rein strukturierte `ManualActionRequired`-Einträge ersetzen.
 
-- **Kover-Schwellen für `ports-*`-Module explizit setzen**: `ports-common`, `ports-read`, `ports-write`
-  erben nur den Root-Threshold. Explizite Schwellen dokumentieren die Erwartung.
-
-- **E2E-Round-Trip-Test**: Einen Integrationstest ergänzen, der den vollen Kreislauf
+- **E2E-Round-Trip-Test** (Milestone: 0.9.2, verankert in `docs/roadmap.md`):
+  Einen Integrationstest ergänzen, der den vollen Kreislauf
   DB→Export→Format→Import→DB→Schema-Vergleich durchspielt.
 
-- **`--filter` härten** (optional): Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
+- **Fehlercodes E006-E121 gegen Validierungsmatrix testen** (Milestone: 0.9.2):
+  Systematisch prüfen, dass jeder dokumentierte Fehlercode mindestens
+  einen Test hat, der ihn auslöst.
+
+- **`--filter` härten** (Milestone: 1.0.0, optional):
+  Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
 
 ### Erledigt
 
@@ -195,6 +195,14 @@ Dateien mit >400 LOC (potenzielle Hotspots):
 - ~~Ports-Modul nach Lese-/Schreib-Verantwortung aufteilen.~~
   Umgesetzt (Phase G-2): `hexagon:ports` → `ports-common` + `ports-read` + `ports-write`.
   Alte Aggregator-Modul (`hexagon:ports`) bleibt als Bridge mit `api()`-Re-Exports.
+
+- ~~RoutineDdlHelper testen.~~
+  Umgesetzt: 27 direkte Unit-Tests für alle 3 RoutineDdlHelper (PG/MySQL/SQLite).
+
+- ~~Kover-Schwellen für `ports-*`-Module explizit setzen.~~
+  Umgesetzt: minBound(90) für ports-common, ports-read, ports-write.
+  Interface-Excludes konfiguriert. Umfangreiche Tests für alle data classes,
+  enums, sealed classes und companion-Logik.
 
 
 ## In Summe
