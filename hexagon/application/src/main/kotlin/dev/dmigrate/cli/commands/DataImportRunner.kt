@@ -883,37 +883,12 @@ class DataImportRunner(
         val initialSlices: Map<String, CheckpointTableSlice>,
     )
 
-    /**
-     * 0.9.0 Phase D.1 §5.1: Aufloesung des
-     * `--resume <checkpoint-id|path>`-Werts gegen das effektive
-     * Checkpoint-Verzeichnis. Symmetrisch zum Export-Pfad:
-     *
-     * - Pfad-Kandidat (enthaelt `/` oder endet auf
-     *   `.checkpoint.yaml`): Der Pfad muss normalized innerhalb des
-     *   Checkpoint-Verzeichnisses liegen; sonst `null`. Der
-     *   `operationId` wird aus dem Dateinamen abgeleitet (Suffix
-     *   `.checkpoint.yaml` entfernt).
-     * - Sonst: der Wert ist direkt eine `operationId`.
-     */
-    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? {
-        val looksLikePath = '/' in resumeValue || resumeValue.endsWith(MANIFEST_SUFFIX)
-        if (!looksLikePath) {
-            return resumeValue
-        }
-        val candidate = try {
-            Path.of(resumeValue).toAbsolutePath().normalize()
-        } catch (_: Throwable) {
-            return null
-        }
-        val baseDir = checkpointDir.toAbsolutePath().normalize()
-        if (!candidate.startsWith(baseDir)) return null
-        val fileName = candidate.fileName.toString()
-        if (!fileName.endsWith(MANIFEST_SUFFIX)) return null
-        return fileName.removeSuffix(MANIFEST_SUFFIX)
-    }
+    private val resumeCoordinator = ImportResumeCoordinator()
+
+    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? =
+        resumeCoordinator.resolveResumeReference(resumeValue, checkpointDir)
 
     companion object {
-        private const val MANIFEST_SUFFIX = ".checkpoint.yaml"
 
         private val EXTENSION_FORMAT_MAP = mapOf(
             "json" to "json",
