@@ -228,7 +228,24 @@ Folge:
 - spaetere reine Reader-Features landen nicht mehr automatisch in
   einem Writer-Datentyp
 
-### 4.3 Importausfuehrung arbeitet mit zwei expliziten Optionskanaelen
+### 4.3 `FormatReadOptions` lebt im Read-Portmodul
+
+Verbindliche Entscheidung:
+
+- das neue read-orientierte Optionsmodell (`FormatReadOptions`) wird in
+  `hexagon:ports-read` definiert, nicht in `adapters:driven:formats`
+- damit bleibt der Vertrag portflaechig und kann von beliebigen
+  read-orientierten Consumern konsumiert werden, ohne eine
+  Adapter-Abhaengigkeit einzugehen
+- Package: `dev.dmigrate.format.data.FormatReadOptions`
+
+Nicht zulaessig ist:
+
+- `FormatReadOptions` als adapter-internes Detail zu verstecken, weil
+  dann externe Consumer (z.B. `d-browser`) den Typ nicht ohne
+  Format-Adapter-Dependency nutzen koennten
+
+### 4.4 Importausfuehrung arbeitet mit zwei expliziten Optionskanaelen
 
 Verbindliche Entscheidung:
 
@@ -245,7 +262,31 @@ Wichtig:
   `disableFkChecks` und `reseedSequences` bleiben writer-seitig
 - Resume-/Truncate-Guard bleibt an writer-seitigem Verhalten haengen
 
-### 4.4 `DatabaseDriver` ist in Phase C nicht der primaere Schnitt
+### 4.5 `hexagon:ports` bleibt als Aggregator-Modul erhalten
+
+Verbindliche Entscheidung:
+
+- `hexagon:ports` wird nicht geloescht, sondern bleibt als
+  Aggregator-Modul bestehen, das `api`-Abhaengigkeiten auf
+  `hexagon:ports-common`, `hexagon:ports-read` und
+  `hexagon:ports-write` re-exportiert
+- bestehende Consumer, die heute `project(":hexagon:ports")` nutzen,
+  muessen dadurch nicht sofort umgestellt werden
+- neue oder gezielt entkoppelte Consumer (z.B. `adapters:driven:formats`)
+  binden sich direkt an das schmalere Modul
+
+Begruendung:
+
+- ein hartes Aufteilen ohne Aggregator wuerde alle 7 abhaengigen Module
+  plus 2 Testmodule plus Root-Kover gleichzeitig anfassen und erzeugt
+  dabei unvermeidlichen Churn, der nichts mit dem eigentlichen
+  Optionsschnitt zu tun hat
+- der Aggregator-Ansatz liefert denselben Entkopplungsnutzen fuer
+  read-only Consumer, ohne den gesamten Build auf einmal umzupfluegen
+- spaetere Phasen koennen den Aggregator sukzessive aufloesen, wenn
+  alle Consumer explizit migriert sind
+
+### 4.6 `DatabaseDriver` ist in Phase C nicht der primaere Schnitt
 
 Verbindliche Entscheidung:
 
@@ -266,7 +307,7 @@ Folge:
   Abhaengigkeiten schneiden, ohne den gesamten Driver-Einstieg neu
   modellieren zu muessen
 
-### 4.5 `SchemaReadResult` bleibt vorerst unveraendert
+### 4.7 `SchemaReadResult` bleibt vorerst unveraendert
 
 Verbindliche Entscheidung:
 
@@ -277,7 +318,7 @@ Verbindliche Entscheidung:
 
 Damit bleibt Phase C auf den tatsaechlichen Kopplungspunkt fokussiert.
 
-### 4.6 Resume- und Fingerprint-Vertrag bleibt request-basiert stabil
+### 4.8 Resume- und Fingerprint-Vertrag bleibt request-basiert stabil
 
 Verbindliche Entscheidung:
 
@@ -303,24 +344,39 @@ Abhaengigkeiten und Reihenfolge:
 
 ### 5.1 Portinventur und Zielzuschnitt festziehen
 
-- alle betroffenen Porttypen in drei Gruppen klassifizieren:
+- alle Porttypen in fuenf Gruppen klassifizieren:
   - read-orientiert
   - write-orientiert
   - gemeinsame Basistypen
-- den Zielzuschnitt mindestens fuer die direkt betroffenen Typen
-  festhalten:
+  - streaming-orientiert
+  - migration-orientiert
+- den Zielzuschnitt fuer alle Porttypen festhalten:
   - `hexagon:ports-read`:
     `SchemaReader`, `SchemaReadOptions`, `SchemaReadResult`,
-    `SchemaReadNote`, `DataReader`, `ChunkSequence`, `ResumeMarker`,
-    `TableLister`, `DataChunkReader`, `DataChunkReaderFactory`
+    `SchemaReadNote`, `SchemaReadReportInput`,
+    `DataReader`, `ChunkSequence`, `ResumeMarker`,
+    `TableLister`, `DataChunkReader`, `DataChunkReaderFactory`,
+    `DdlGenerator`, `DdlGenerationOptions`
   - `hexagon:ports-write`:
     `DataWriter`, `TableImportSession`, `ImportOptions`,
     `SchemaSync`, `FinishTableResult`, `WriteResult`,
     `TargetColumn`, `SequenceAdjustment`,
-    `UnsupportedTriggerModeException`
-  - gemeinsam:
-    `DatabaseDialect`, `ConnectionPool`, `ConnectionConfig`,
-    `DataExportFormat`, ggf. weitere kleine Basistypen
+    `UnsupportedTriggerModeException`,
+    `DataChunkWriter`, `DataChunkWriterFactory`, `ExportOptions`
+  - gemeinsam (`hexagon:ports-common`):
+    `DatabaseDialect`, `DatabaseDriverRegistry`,
+    `ConnectionPool`, `ConnectionConfig`, `JdbcUrlBuilder`,
+    `PoolSettings`, `DataExportFormat`, `TypeMapper`,
+    `SqlIdentifiers`, `SchemaCodec`
+  - streaming-orientiert (verbleiben in `hexagon:ports` oder eigenem
+    Streaming-Portbereich):
+    `ImportInput`, `ImportResult`, `ExportOutput`, `ExportResult`,
+    `PipelineConfig`, `CheckpointConfig`, `CheckpointStore`,
+    `CheckpointManifest`, `ProgressEvent`
+  - migration-orientiert (verbleiben in `hexagon:ports`):
+    `MigrationBundle`, `MigrationIdentity`, `MigrationTypes`,
+    `ArtifactRelativePath`, `ToolMigrationExporter`,
+    `ToolExportResult`
 - `DatabaseDriver` entweder in einem kleinen Aggregator-/Kompatibilitaets-
   Schnitt belassen oder in einen gemischten Oberflaechenbereich ziehen;
   entscheidend ist: read-only Consumer brauchen ihn fuer den
@@ -418,19 +474,6 @@ Ergebnis:
 Der Refactor bleibt nicht nur im Code, sondern wird auch in Build,
 Tests und Architekturtext konsistent.
 
-### 5.5 Grobe Aufwandseinschaetzung
-
-- **Niedrig bis mittel** fuer reinen DTO-/Signaturschnitt
-  (`ImportOptions`, Reader, Factory, KDoc, Basistests)
-- **Mittel** fuer die Umstellung von `StreamingImporter` und
-  `DataImportRunner`, weil dort mehrere Call-Sites sowie Resume- und
-  Testpfade beruehrt werden
-- **Mittel bis hoeher**, falls fuer die transitive Entkopplung ein
-  zusaetzlicher Gradle-/API-Schnitt im Portbereich noetig wird
-
-Die technische Unsicherheit liegt nicht in der Fachlogik, sondern im
-sauberen Nachziehen aller Signaturen, Tests und API-Grenzen.
-
 ---
 
 ## 6. Verifikation
@@ -487,6 +530,7 @@ Wahrscheinlich mit betroffen:
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ImportOptionsFingerprint.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt`
 - neue Moduldefinitionen und Source-Sets fuer:
+  - `hexagon:ports-common`
   - `hexagon:ports-read`
   - `hexagon:ports-write`
 - Testdateien in:
@@ -539,16 +583,33 @@ Mitigation:
 - `ImportOptionsFingerprint` explizit request-basiert belassen
 - bestehende Resume-Tests als Pflichtsicherheitsnetz behalten
 
-### 8.4 Build- und API-Zuschnitt kann mehr Churn erzeugen als der DTO-Schnitt selbst
+### 8.4 Build- und API-Zuschnitt erzeugt breiten Churn
 
-Der geplante Read-/Write-Modulschnitt plus geaendertes `api`-Exposure
-betrifft mehrere Module zugleich und kann zu unerwartetem Build-,
-Wiring- und Test-Churn fuehren.
+Der geplante Read-/Write-Modulschnitt betrifft konkret diese Module,
+die heute alle gegen `project(":hexagon:ports")` bauen:
+
+- `hexagon:application` — `implementation`
+- `hexagon:profiling` — `implementation`
+- `adapters:driven:driver-common` — `api`
+- `adapters:driven:formats` — `api`
+- `adapters:driven:integrations` — `api`
+- `adapters:driven:streaming` — (transitiv ueber `driver-common`)
+- `test:integration-postgresql` — `testImplementation`
+- `test:integration-mysql` — `testImplementation`
+- Root `build.gradle.kts` — Kover-Aggregation
+
+Ohne Aggregator-Ansatz (Leitentscheidung 4.5) wuerde jedes dieser
+Module gleichzeitig angepasst werden muessen. Der Aggregator begrenzt
+den Pflicht-Churn auf die Module, die gezielt entkoppelt werden sollen
+(`adapters:driven:formats` → `ports-read`).
 
 Mitigation:
 
-- Portzuschnitt inkrementell einfuehren
+- `hexagon:ports` bleibt als Aggregator (Leitentscheidung 4.5)
+- nur `adapters:driven:formats` wird in Phase C explizit auf
+  `ports-read` umgestellt
 - compile-nahe Tests und betroffene Build-Dateien frueh mitziehen
+- weitere Module werden erst in Folgephasen sukzessive migriert
 
 ### 8.5 Ohne Consumer-Fixture bleibt der Integrationsnutzen unbelegt
 
@@ -562,6 +623,23 @@ Mitigation:
 - fuer diesen Fixture Compile-Graph und Importoberflaeche explizit
   pruefen
 
+### 8.6 Fallback-Kriterium: Phase C ist auch ohne Modulschnitt wertvoll
+
+Falls der Build-/Modulschnitt (5.1 Modulaufteilung, 5.4 API-Zuschnitt)
+waehrend der Umsetzung unvermeidlich breiteren Churn erzeugt als durch
+den Aggregator-Ansatz gedeckt, gilt:
+
+- Phase C ist bereits mit alleinigem Optionsschnitt (5.2 + 5.3)
+  wertvoll: Format-Reader konsumieren dann kein `ImportOptions` mehr,
+  und der Streaming-Pfad hat getrennte Optionskanaele
+- der Modulschnitt (`hexagon:ports-read`, `hexagon:ports-write`) kann
+  dann als eigene Phase C2 oder als Vorarbeit zu Phase D nachgezogen
+  werden
+- Abbruch-Signal: wenn die Modulaufteilung mehr als drei nicht direkt
+  betroffene Module gleichzeitig anfassen muss, ist der
+  Aggregator-Ansatz nicht ausreichend und der Modulschnitt sollte
+  zurueckgestellt werden
+
 ---
 
 ## 9. Entscheidungsempfehlung
@@ -572,15 +650,21 @@ unnuetigen Ballast erzeugt.
 
 Empfohlener Zuschnitt:
 
-1. read-orientiertes Reader-Optionsmodell einfuehren
+1. `FormatReadOptions` in `hexagon:ports-read` einfuehren
+   (Leitentscheidung 4.3)
 2. `ImportOptions` auf Writer-/Import-Vertrag rueckschneiden
 3. `StreamingImporter` und `DataImportRunner` auf zwei explizite
    Optionskanaele umstellen
-4. `hexagon:ports` in einen expliziten Read-/Write-Modulschnitt
-   ueberfuehren und `adapters:driven:formats` auf das Read-Portmodul
-   umstellen
-5. den neuen Schnitt ueber einen read-only Consumer-Fixture
+4. `hexagon:ports` als Aggregator erhalten (Leitentscheidung 4.5);
+   `hexagon:ports-read` und `hexagon:ports-write` als neue Module
+   einfuehren
+5. `adapters:driven:formats` auf `hexagon:ports-read` umstellen
+6. den neuen Schnitt ueber einen read-only Consumer-Fixture
    buildseitig verifizieren
+
+Falls der Modulschnitt (Schritte 4-5) zu breit wird, liefert Phase C
+mit den Schritten 1-3 allein bereits einen fachlich wirksamen
+Optionsschnitt (Fallback-Kriterium 8.6).
 
 Damit liefert Phase C einen fachlich sauberen Portschnitt, ohne bereits
 `SchemaReadResult` oder die gesamte `DatabaseDriver`-Fassade neu zu
