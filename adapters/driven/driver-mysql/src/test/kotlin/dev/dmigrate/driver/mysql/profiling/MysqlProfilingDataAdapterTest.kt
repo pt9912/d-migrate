@@ -10,6 +10,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.sql.Connection
 
 class MysqlProfilingDataAdapterTest : FunSpec({
@@ -80,5 +81,31 @@ class MysqlProfilingDataAdapterTest : FunSpec({
         val compat = adapter.targetTypeCompatibility(pool, "users", "name", listOf(TargetLogicalType.STRING))
         compat shouldHaveSize 1
         compat[0].compatibleCount shouldBe 5
+    }
+
+    // ── security: malicious identifiers ────────────
+
+    test("rowCount quotes malicious table name to prevent injection") {
+        every { jdbc.querySingle(any()) } returns mapOf("cnt" to 1L)
+        adapter.rowCount(pool, "Robert'; DROP TABLE users; --")
+        verify {
+            jdbc.querySingle(match {
+                it.contains("`Robert'; DROP TABLE users; --`")
+            })
+        }
+    }
+
+    test("columnMetrics quotes malicious column name with backtick escape") {
+        every { jdbc.querySingle(any()) } returns mapOf(
+            "non_null_count" to 1L, "null_count" to 0L,
+            "distinct_count" to 1L, "dup_count" to 0L,
+            "min_val" to "x", "max_val" to "x",
+        )
+        adapter.columnMetrics(pool, "t", "col`inject", "int")
+        verify {
+            jdbc.querySingle(match {
+                it.contains("`col``inject`")
+            })
+        }
     }
 })

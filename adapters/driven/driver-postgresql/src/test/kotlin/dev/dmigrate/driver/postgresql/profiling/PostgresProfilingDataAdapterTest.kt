@@ -10,6 +10,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.sql.Connection
 
 class PostgresProfilingDataAdapterTest : FunSpec({
@@ -122,5 +123,33 @@ class PostgresProfilingDataAdapterTest : FunSpec({
         val compat = adapter.targetTypeCompatibility(pool, "users", "age", listOf(TargetLogicalType.INTEGER))
         compat[0].incompatibleCount shouldBe 3
         compat[0].exampleInvalidValues shouldHaveSize 2
+    }
+
+    // ── security: malicious identifiers ────────────
+
+    test("rowCount quotes malicious table name to prevent injection") {
+        every { jdbc.querySingle(any()) } returns mapOf("cnt" to 1L)
+        adapter.rowCount(pool, "Robert'; DROP TABLE users; --")
+        verify {
+            jdbc.querySingle(match {
+                it.contains("\"Robert'; DROP TABLE users; --\"")
+            })
+        }
+    }
+
+    test("columnMetrics quotes malicious column name") {
+        every { jdbc.querySingle(any()) } returns mapOf(
+            "non_null_count" to 1L, "null_count" to 0L,
+            "distinct_count" to 1L, "dup_count" to 0L,
+            "min_val" to "x", "max_val" to "x",
+            "empty_count" to 0L, "blank_count" to 0L,
+            "min_len" to 1, "max_len" to 1,
+        )
+        adapter.columnMetrics(pool, "t", "col\"with\"quotes", "text")
+        verify {
+            jdbc.querySingle(match {
+                it.contains("\"col\"\"with\"\"quotes\"")
+            })
+        }
     }
 })

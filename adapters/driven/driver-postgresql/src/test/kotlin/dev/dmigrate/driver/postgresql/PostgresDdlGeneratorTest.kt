@@ -1240,4 +1240,19 @@ class PostgresDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema, DdlGenerationOptions(SpatialProfile.POSTGIS))
         result.notes.any { it.code == "I001" } shouldBe true
     }
+
+    // ── security: malicious identifiers are quoted ─
+
+    test("malicious table and column names are properly quoted in DDL") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "Robert'; DROP TABLE users; --" to TableDefinition(columns = mapOf(
+                "col\"inject" to ColumnDefinition(type = NeutralType.Text()),
+            ))
+        ))
+        val rendered = generator.generate(schema).render()
+        // Table name is safely quoted — injection payload neutralized
+        rendered shouldContain "\"Robert'; DROP TABLE users; --\""
+        // Embedded double-quote is escaped as ""
+        rendered shouldContain "\"col\"\"inject\""
+    }
 })
