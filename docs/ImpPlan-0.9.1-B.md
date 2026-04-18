@@ -335,12 +335,89 @@ Abhaengigkeiten und Reihenfolge:
 
 ### 5.1 Runner- und Streaming-Zerlegung
 
-- `DataImportRunner` in kleinere Dienste trennen
-- `DataExportRunner` analog aufteilen
-- `StreamingImporter` in Orchestrator, Tabellen-Pipeline und
-  Chunk-Handler schneiden
-- `StreamingExporter` entlang derselben Logik aufteilen
-- Resume-, Manifest- und Fortschrittsinvarianten ueber Tests absichern
+Reihenfolge: 5.1.1 → 5.1.2 → 5.1.3 → 5.1.4. Jedes Sub-Paket ist
+einzeln commitbar und reviewbar. Bottom-up: Streaming zuerst, dann
+die Runner, die darauf aufbauen.
+
+#### 5.1.1 StreamingExporter zerlegen (450 LOC → 3 Einheiten)
+
+Kleinstes Streaming-Modul, etabliert das Zerlegungsmuster fuer 5.1.2.
+
+- **OutputDispatcher**: Stdout/SingleFile/FilePerTable-Routing,
+  Stream-Wrapping (CountingOutputStream, NonClosingOutputStream)
+- **TableExporter**: Per-Tabelle-Streaming, Marker-Resolution
+  (Phase C.2 §5.2), Chunk-Schleife, Progress-Reporting
+- **ExportResultBuilder**: TableExportSummary-Aggregation,
+  Byte-Counting, Duration-Berechnung
+- CountingOutputStream / NonClosingOutputStream bleiben als interne
+  Wrapper in der jeweiligen Einheit
+- bestehende `StreamingExporterTest` muss gruen bleiben
+
+#### 5.1.2 StreamingImporter zerlegen (792 LOC → 4 Einheiten)
+
+Folgt dem in 5.1.1 etablierten Muster.
+
+- **InputResolver**: stdin/file/directory-Aufloesung, Dateisuche
+  mit Filter/Order, Duplikaterkennung,
+  `ResolvedTableInput`-Konstruktion
+- **ChunkProcessor**: BindingPlan-Aufbau (Spalten-Matching),
+  Chunk-Normalisierung, Deserialisierung (CSV-Null-Handling),
+  Fehlerbehandlung (ABORT/SKIP/LOG), `ChunkDecision`
+- **TableImporter**: Per-Tabelle-Orchestrierung, Resume-Offset
+  (committed chunks ueberspringen), Reader/Session-Lifecycle,
+  Chunk-Streaming-Schleife, finishTable mit Reseed
+- **ImportResultBuilder**: TableImportSummary-Aggregation,
+  Row-Counts, Chunk-Failures, Gesamtstatistik
+- Resume- und Fortschrittsinvarianten ueber Tests absichern
+- bestehende `StreamingImporterTest` + `SqliteTest` muessen gruen
+  bleiben
+
+#### 5.1.3 DataExportRunner zerlegen (923 LOC → 5 Einheiten)
+
+Baut auf dem in 5.1.1 zerlegten StreamingExporter auf.
+
+- **ExportRequestValidator**: CLI-Validierung (incremental
+  --since-column/--since Paarung, Filter-Literal-Check,
+  Resume-Stdout-Ablehnung, Identifier-Validierung)
+- **ExportSourceResolver**: Connection-Aufloesung, Encoding-Parsing,
+  Pool-Erzeugung mit Fehler-Mapping, Reader/Lister-Lookup,
+  Tabellenentdeckung
+- **ExportResumeCoordinator**: Resume-Referenz-Aufloesung,
+  Manifest-Laden, Fingerprint-Validierung,
+  SingleFile-Completion-Check, per-Tabelle ResumeMarker-Aufloesung
+  (3 Faelle Phase C.2 §4.1), PrimaryKey-Lookup und Memoization
+- **ExportManifestCoordinator**: Fingerprint-Berechnung mit
+  PK-Signatur, Initial-Manifest-Erstellung,
+  `onTableCompleted`/`onChunkProcessed`-Callbacks,
+  Staging-Redirect-Anwendung (SingleFile Phase C.2 §5.4)
+- **ExportExecutionService**: ExportExecutor-Aufruf,
+  Staging→Target Atomic-Move, Manifest-Abschluss,
+  Exit-Code-Bestimmung
+- bestehende `DataExportRunnerTest` muss gruen bleiben
+
+#### 5.1.4 DataImportRunner zerlegen (949 LOC → 5 Einheiten)
+
+Baut auf dem in 5.1.2 zerlegten StreamingImporter auf.
+
+- **ImportRequestValidator**: CLI-Validierung (--table/--tables
+  Mutual Exclusion, Identifier-Pattern, --truncate + --on-conflict
+  Konflikt, Resume-Stdin-Validierung)
+- **ImportSourceResolver**: Path-Existenzpruefung, Format-Erkennung
+  aus Extension, Format-Parsing, Input-Typ-Bestimmung
+  (stdin/file/dir), Directory-Scan mit Filter/Order
+- **ImportResumeCoordinator**: Resume-Referenz-Aufloesung,
+  Manifest-Laden, Fingerprint-Validierung,
+  Tabellenlisten-Pruefung, Input-File-Binding-Validierung
+  (Phase D.4), Resume-Context-Konstruktion (operationId, skipped
+  tables, resume states)
+- **ImportManifestCoordinator**: Fingerprint-Berechnung,
+  Initial-Manifest-Erstellung,
+  `onChunkCommitted`/`onTableCompleted`-Callbacks mit
+  Manifest-Fortschreibung, Persistence-Error-Handling
+  (continue vs abort)
+- **ImportExecutionService**: Schema-Preflight,
+  ImportExecutor-Aufruf, Result-Interpretation, Exit-Code
+- bestehende `DataImportRunnerTest` muss gruen bleiben
 
 ### 5.2 Comparator-Zerlegung
 
@@ -407,9 +484,11 @@ Abhaengigkeiten und Reihenfolge:
 
 ### 5.5 Grobe Aufwandseinschaetzung
 
-- **5.1 Runner- und Streaming-Zerlegung**: L - mehrere
-  Orchestrierungs-Hotspots in Application- und Streaming-Modulen, dazu
-  Resume-/Manifest-/Progress-Invarianten
+- **5.1 Runner- und Streaming-Zerlegung**: L gesamt, aufgeteilt in:
+  - 5.1.1 StreamingExporter: S (450 LOC, 3 Einheiten)
+  - 5.1.2 StreamingImporter: M (792 LOC, 4 Einheiten)
+  - 5.1.3 DataExportRunner: M-L (923 LOC, 5 Einheiten + Resume)
+  - 5.1.4 DataImportRunner: M-L (949 LOC, 5 Einheiten + Resume)
 - **5.2 Comparator-Zerlegung**: M - Logik ist bereits pro Objekttyp
   strukturiert, der Hauptaufwand liegt in Extraktion, Wiring und
   Teststabilitaet
