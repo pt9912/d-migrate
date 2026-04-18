@@ -14,17 +14,21 @@ import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.driver.data.WriteResult
+import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSetMetaData
 import java.sql.Statement
 import java.util.concurrent.Executor
 
-class MysqlDataWriter : DataWriter {
+class MysqlDataWriter(
+    private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
+) : DataWriter {
 
     override val dialect: DatabaseDialect = DatabaseDialect.MYSQL
 
-    override fun schemaSync() = MysqlSchemaSync()
+    override fun schemaSync() = MysqlSchemaSync(jdbcFactory)
 
     override fun openTable(
         pool: ConnectionPool,
@@ -44,7 +48,8 @@ class MysqlDataWriter : DataWriter {
         }
 
         val conn = pool.borrow()
-        val sync = MysqlSchemaSync()
+        val jdbc = jdbcFactory(conn)
+        val sync = schemaSync()
         val qualified = parseMysqlQualifiedTableName(table)
         var savedAutoCommit: Boolean? = null
         var fkChecksDisabled = false
@@ -63,7 +68,7 @@ class MysqlDataWriter : DataWriter {
             }
 
             if (options.disableFkChecks) {
-                setForeignKeyChecks(conn, enabled = false)
+                jdbc.execute("SET FOREIGN_KEY_CHECKS = 0")
                 fkChecksDisabled = true
             }
 
@@ -71,9 +76,7 @@ class MysqlDataWriter : DataWriter {
             // transaction so the table stays empty even on failure.
             if (options.truncate) {
                 if (!conn.autoCommit) conn.autoCommit = true
-                conn.createStatement().use { stmt ->
-                    stmt.execute("DELETE FROM ${qualified.quotedPath()}")
-                }
+                jdbc.execute("DELETE FROM ${qualified.quotedPath()}")
             }
 
             conn.autoCommit = false
@@ -108,7 +111,7 @@ class MysqlDataWriter : DataWriter {
             }
             try {
                 if (fkChecksDisabled) {
-                    setForeignKeyChecks(conn, enabled = true)
+                    jdbc.execute("SET FOREIGN_KEY_CHECKS = 1")
                 }
             } catch (cleanup: Throwable) {
                 t.addSuppressed(cleanup)

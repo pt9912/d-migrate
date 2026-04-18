@@ -8,18 +8,10 @@ kover {
     reports {
         filters {
             excludes {
-                // Paket 1 done: MetadataQueries, SchemaReader, TableLister
-                // now have MockK unit tests → exclusions removed.
-                // Remaining: thin wrappers and Paket 2 helpers.
+                // Thin wrappers with no testable logic (< 60 LOC combined):
                 classes(
                     "dev.dmigrate.driver.mysql.MysqlDataReader",
-                    "dev.dmigrate.driver.mysql.MysqlDataWriter*",
-                    "dev.dmigrate.driver.mysql.MysqlSchemaSync",
-                    "dev.dmigrate.driver.mysql.MysqlTableImportSession*",
                     "dev.dmigrate.driver.mysql.MysqlDriver",
-                    // Only used by Paket 2 classes (DataWriter, SchemaSync);
-                    // will be un-excluded in Paket 2.
-                    "dev.dmigrate.driver.mysql.MysqlQualifiedTableName",
                 )
             }
         }
