@@ -325,6 +325,11 @@ Vertrag festschreibt.
 | Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —          |
 | Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |
 | Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (Finding aus `docs/quality.md`)                            | —          |
+| Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (Finding)          | —          |
+| Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477/446 LOC → je ~50-80 LOC) (Finding)                         | —          |
+| Quality | Executor-Parameter gruppieren: ExportExecutor (17 Params) / ImportExecutor (14 Params) → Kontext-DTOs (Finding)             | —          |
+| Quality | MySQL-TODO-Platzhalter: verbleibende 4 `-- TODO` in MysqlDdlGenerator durch ManualActionRequired ersetzen (Finding)         | —          |
+| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (Finding)                                                             | —          |
 | Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |
 
 **Ergebnis**: `schema generate` kann optional importfreundliche
@@ -349,6 +354,7 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 | Docs    | API-Dokumentation                         | —      |
 | QA      | Performance-Benchmarks dokumentiert       | —      |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
+| Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`) | — |
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.

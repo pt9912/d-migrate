@@ -169,9 +169,10 @@ Dateien mit >400 LOC (potenzielle Hotspots):
   Systematisch prüfen, dass jeder dokumentierte Fehlercode mindestens
   einen Test hat, der ihn auslöst.
 
-- **`--filter` härten** (Milestone: vor 1.0.0):
+- **`--filter` härten** (Milestone: 0.9.5):
   Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
   Muss vor dem oeffentlichen Publish-Vertrag entschieden sein.
+  Verankert in `docs/roadmap.md` unter Milestone 0.9.5.
 
 ### Erledigt
 
