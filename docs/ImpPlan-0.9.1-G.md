@@ -96,6 +96,13 @@ oeffentlichen Library-Publish zugeschnitten:
   - Testmodule:
     - `test:integration-postgresql`
     - `test:integration-mysql`
+- nach Phase C bis F kommen voraussichtlich hinzu:
+  - `hexagon:ports-common`, `hexagon:ports-read`,
+    `hexagon:ports-write` (Phase-C-Stretch-Goal)
+  - `adapters:driven:driver-postgresql-profiling`,
+    `adapters:driven:driver-mysql-profiling`,
+    `adapters:driven:driver-sqlite-profiling` (Phase D)
+  - `test:consumer-read-probe` (Phase F)
 
 Wichtige Ist-Feststellungen:
 
@@ -212,12 +219,20 @@ Verbindliche Entscheidung:
     Artefaktstruktur widerspiegeln
   - Profiling aus Phase D darf nicht mehr unbemerkt an jedem
     Treiberkern haengen
+- die Einordnung von `hexagon:profiling` als optionales Zusatzartefakt
+  setzt voraus, dass Phase D die direkte `implementation`-Abhaengigkeit
+  der drei Treiberkerne auf `hexagon:profiling` aufgeloest hat;
+  **ohne abgeschlossene Phase D** waere `hexagon:profiling` faktisch
+  ein transitives Pflichtartefakt jedes Treiberkerns und damit kein
+  optionales Zusatzartefakt
 
 Folge:
 
 - Phase G dokumentiert die Artefaktgruppen entlang des **beabsichtigten**
   0.9.1-Endzustands, nicht nur entlang der heute noch gemischten
   Zwischenlage
+- die Artefaktklassifikation ist nur dann belastbar, wenn Phase D
+  tatsaechlich abgeschlossen ist
 
 ### 4.5 `hexagon:application`, CLI und Testmodule bleiben ausserhalb des ersten Publish-Vertrags
 
@@ -283,9 +298,14 @@ Artefaktliste:
 
 - **Optionale Zusatzartefakte, wenn ihr Vertrag bis `1.0.0`
   stabil beschrieben ist**
-  - `hexagon:profiling`
-  - die aus Phase D resultierenden optionalen
-    treiberspezifischen Profiling-Zusatzmodule
+  - `hexagon:profiling` (Vorbedingung: Phase D muss die harte
+    Kopplung der Treiberkerne an `hexagon:profiling` geloest haben;
+    solange die Treiberkerne noch direkt an `hexagon:profiling`
+    haengen, ist die Einordnung als "optional" technisch nicht
+    haltbar)
+  - `adapters:driven:driver-postgresql-profiling`,
+    `adapters:driven:driver-mysql-profiling`,
+    `adapters:driven:driver-sqlite-profiling` (Phase D)
   - `adapters:driven:formats`
   - `adapters:driven:streaming`
 
@@ -293,7 +313,8 @@ Artefaktliste:
   - `hexagon:application`
   - `adapters:driven:integrations`
   - `adapters:driving:cli`
-  - Testmodule
+  - `test:integration-postgresql`, `test:integration-mysql`
+  - `test:consumer-read-probe` (Phase F)
 
 Wichtige Praezisierung:
 
