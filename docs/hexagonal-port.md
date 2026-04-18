@@ -588,7 +588,6 @@ die nächste beginnt.
 | `d-migrate-formats/**/DataExportFormat.kt` (Enum) | `hexagon/ports/**/` | B |
 | `d-migrate-formats/**/ExportOptions.kt` | `hexagon/ports/**/` | B |
 | `d-migrate-formats/**/ImportOptions.kt` | `hexagon/ports/driver/data/` | B |
-| *(neu)* `FormatReadOptions.kt` | `hexagon/ports/format/data/` | C |
 | `d-migrate-cli/**/SchemaGenerateRunner.kt` | `hexagon/application/**/` | F |
 | `d-migrate-cli/**/DataExportRunner.kt` | `hexagon/application/**/` | F |
 | `d-migrate-driver-postgresql/**` | `adapters/driven/driver-postgresql/**` | E |
