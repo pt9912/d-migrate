@@ -324,6 +324,7 @@ Vertrag festschreibt.
 | CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld                                   | —          |
 | Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —          |
 | Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |
+| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (Finding aus `docs/quality.md`)                            | —          |
 | Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |
 
 **Ergebnis**: `schema generate` kann optional importfreundliche
