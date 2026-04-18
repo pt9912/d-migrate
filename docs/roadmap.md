@@ -298,7 +298,9 @@ Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 
 **Ergebnis**: `d-migrate` ist intern so refaktoriert, dass die Kernmodule
 sauberer als Libraries konsumierbar sind, ohne schon einen öffentlichen
-Publish-Vertrag zu versprechen. Die Sicherheits-Findings aus
+Publish-Vertrag zu versprechen. Die 1.0.0-Artefaktklassifikation
+(Foundation, Ports, Driver Runtime, Optional Extensions, Internal
+Tooling) ist dokumentiert und die Publish-Landkarte vorbereitet. Die Sicherheits-Findings aus
 `docs/quality.md` (Injection-Fläche in Profiling/Introspection,
 offengehaltene Raw-SQL-Pfade) sind abgearbeitet, und die wartungs-
 kritischen Orchestrierungs-/Dialekt-Hotspots (`Data*Runner`,

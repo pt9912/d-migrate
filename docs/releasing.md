@@ -9,6 +9,16 @@
 > nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
 > [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
 > beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
+>
+> **1.0.0-Artefaktklassifikation** (vorbereitet in 0.9.1 Phase G):
+>
+> | Gruppe | Module | Publish-Ziel |
+> |--------|--------|-------------|
+> | Foundation | `hexagon:core` | Kernartefakt |
+> | Ports | `hexagon:ports` (spaeter ports-common/-read/-write) | Kernartefakt |
+> | Driver Runtime | `driver-common`, `driver-postgresql/-mysql/-sqlite` | Kernartefakt |
+> | Optional Extensions | `hexagon:profiling`, `driver-*-profiling`, `formats`, `streaming` | Zusatzartefakt |
+> | Internal Tooling | `hexagon:application`, `adapters:driving:cli`, `integrations`, Tests | nicht publiziert |
 
 ---
 
