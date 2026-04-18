@@ -174,9 +174,11 @@ als Phase C2 nachgezogen (Fallback-Kriterium 8.6):
   - gemeinsam/noetige Basistypen
 - expliziter Read-/Write-Modulschnitt im Portbereich:
   - read-orientierte Vertraege in einem eigenen Read-Port-Modul
-    (Arbeitsname: `hexagon:ports-read`)
+    (Arbeitsname: `hexagon:ports-read`); haengt per `api` an
+    `hexagon:ports-common`
   - write-/import-orientierte Vertraege in einem eigenen Write-Port-
-    Modul (Arbeitsname: `hexagon:ports-write`)
+    Modul (Arbeitsname: `hexagon:ports-write`); haengt per `api` an
+    `hexagon:ports-common`
   - `adapters:driven:formats` ist selbst ein gemischtes Modul
     (Reader + Writer + SchemaCodec); es haengt deshalb per `api` an
     `hexagon:ports-read` und per `implementation` an
@@ -502,6 +504,16 @@ Modulschnitt geprueft werden kann.
 - neue Gradle-Module `hexagon:ports-common`, `hexagon:ports-read` und
   `hexagon:ports-write` anlegen; `hexagon:ports` bleibt als Aggregator
   (Leitentscheidung 4.5)
+- interne Modulabhaengigkeiten der neuen Portmodule:
+  - `hexagon:ports-read` → `api(project(":hexagon:ports-common"))`,
+    weil Read-Ports in ihrer API Common-Typen verwenden
+    (`DataChunkReaderFactory` → `DataExportFormat`,
+    `DataReader` → `ConnectionPool`/`DatabaseDialect`,
+    `SchemaReader` → `DatabaseDialect`)
+  - `hexagon:ports-write` → `api(project(":hexagon:ports-common"))`,
+    weil Write-Ports dieselben Common-Typen verwenden
+    (`DataWriter` → `ConnectionPool`/`DatabaseDialect`)
+  - `hexagon:ports` (Aggregator) → `api` auf alle drei Teilmodule
 - `adapters:driven:formats` von `api(project(":hexagon:ports"))` auf
   `api(project(":hexagon:ports-read"))` plus
   `implementation(project(":hexagon:ports-write"))` umstellen, damit
