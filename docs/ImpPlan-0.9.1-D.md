@@ -140,7 +140,12 @@ Konsequenz:
   Profiling-Module
 - Build-/Verifikationsnachweis, dass die Treiberkerne danach kein
   `hexagon:profiling` mehr transitiv exportieren
-- Kover-Coverage bleibt pro betroffenem Modul bei mindestens 90 %
+- Anpassung der Integrationstests in `test:integration-postgresql` und
+  `test:integration-mysql`, die heute Profiling-Adapter direkt aus den
+  Treiberkernen importieren
+- Kover-Coverage bleibt pro betroffenem Modul bei dessen bestehendem
+  Schwellenwert (90 % fuer Treiberkerne, 85 % fuer `hexagon:profiling`;
+  fuer die neuen Profiling-Module 90 % als Startwert)
 
 ### 3.2 Bewusst nicht Teil von Phase D
 
@@ -243,6 +248,24 @@ Verbindliche Entscheidung:
 - Phase D muss nicht versuchen, Profiling aus `hexagon:application`
   herauszudruecken
 
+### 4.7 Phase D ist inkrementell pro Treiber lieferbar
+
+Verbindliche Entscheidung:
+
+- die Extraktion kann dialektweise erfolgen: ein Treiber kann bereits
+  entkoppelt sein, waehrend ein anderer noch im alten Zustand steht
+- der Zielzustand erfordert alle drei Treiber, aber Zwischenstaende
+  sind buildfaehig und testbar
+- das CLI-Wiring in `DataProfileCommand` muss erst angepasst werden,
+  wenn alle drei Profiling-Module existieren, kann aber auch
+  inkrementell pro Dialekt auf das neue Modul zeigen
+
+Folge:
+
+- kein Big-Bang-Move noetig; bei unerwarteten Problemen mit einem
+  Treiber kann die Arbeit nach dem naechsten sauberen Commit
+  unterbrochen werden
+
 ---
 
 ## 5. Konkrete Arbeitspakete
@@ -261,19 +284,19 @@ Abhaengigkeiten und Reihenfolge:
   - `adapters:driven:driver-mysql-profiling`
   - `adapters:driven:driver-sqlite-profiling`
 - `settings.gradle.kts` entsprechend erweitern
-- fuer jedes neue Modul den minimalen Abhaengigkeitsschnitt festlegen:
-  - `hexagon:profiling`
-  - `adapters:driven:driver-common`
-  - das jeweilige Treiberkernmodul oder kleine gemeinsame Hilfen, falls
-    benoetigt
-  - die jeweilige JDBC-Library nur dort, wo der Compile-Schnitt es
-    erfordert
+- fuer jedes neue Modul den Abhaengigkeitsschnitt festlegen:
+  - `implementation(project(":hexagon:profiling"))` — fuer
+    Profiling-Ports (`SchemaIntrospectionPort`,
+    `ProfilingDataPort`, `LogicalTypeResolverPort`)
+  - `implementation(project(":adapters:driven:driver-common"))` —
+    fuer `JdbcOperations`, `JdbcMetadataSession`; bringt
+    `hexagon:ports` transitiv mit (daraus `SqlIdentifiers`,
+    `ConnectionPool`, `DatabaseDialect`)
+  - die jeweilige JDBC-Library als `implementation`
+  - **kein** Treiberkernmodul: die Profiling-Adapter importieren
+    nichts aus dem nicht-profiling Treibercode (verifiziert per
+    Grep ueber alle drei Treiber)
 - die Kernmodule von `hexagon:profiling` entkoppeln
-- festhalten, welche Hilfsklassen fuer den Move sichtbar oder gemeinsam
-  nutzbar bleiben muessen, z. B.:
-  - `SqlIdentifiers`
-  - `JdbcMetadataSession`
-  - `JdbcOperations`
 
 Ergebnis:
 
@@ -286,8 +309,27 @@ Ein klarer, buildbarer Zielgraph statt eines blossen Datei-Moves.
   - `*SchemaIntrospectionAdapter`
   - `*ProfilingDataAdapter`
   - `*LogicalTypeResolver`
-- die zugehoerigen Tests aus den bisherigen Treiberkernmodulen
-  mitverschieben
+- die zugehoerigen Unit-Tests aus den bisherigen Treiberkernmodulen
+  mitverschieben:
+  - PostgreSQL: `PostgresSchemaIntrospectionAdapterTest`,
+    `PostgresProfilingDataAdapterTest`,
+    `PostgresLogicalTypeResolverTest`
+  - MySQL: `MysqlSchemaIntrospectionAdapterTest`,
+    `MysqlProfilingDataAdapterTest`,
+    `MysqlLogicalTypeResolverTest`
+  - SQLite: `SqliteProfilingTest` (kombinierte Testdatei fuer alle
+    drei Adapter)
+- Integrationstests anpassen:
+  - `test:integration-postgresql` enthaelt
+    `PostgresProfilingIntegrationTest`, der konkrete Adapter aus dem
+    Treiberkern importiert; nach dem Move auf das neue
+    Profiling-Modul umstellen
+  - `test:integration-mysql` enthaelt
+    `MysqlProfilingIntegrationTest`; gleiches Vorgehen
+  - beide Integrationstest-Module behalten ihre bestehende
+    `hexagon:profiling`-Abhaengigkeit und erhalten eine neue
+    `testImplementation`-Abhaengigkeit auf das jeweilige
+    Profiling-Zusatzmodul
 - Paketnamen nach Moeglichkeit unveraendert lassen
 - Treiberkernmodule danach von Profiling-spezifischem Quellcode
   saeubern
@@ -346,18 +388,6 @@ Ergebnis:
 Der neue Zuschnitt ist nicht nur im Code, sondern auch im Build- und
 Integrationsnachweis sichtbar.
 
-### 5.5 Grobe Aufwandseinschaetzung
-
-- **Mittel** fuer den reinen Modul- und Build-Schnitt
-- **Mittel** fuer das Umziehen der Profiling-Tests samt Kover-
-  Nacharbeit
-- **Niedrig bis mittel** fuer `DataProfileRunner`, weil dessen Vertrag
-  bereits gut entkoppelt ist
-- **Mittel** fuer CLI-Wiring und Konsumentenprobe
-
-Die Unsicherheit liegt weniger in der Fachlogik als in Build-Graph,
-Sichtbarkeiten und testbarer Transitivitaet.
-
 ---
 
 ## 6. Verifikation
@@ -371,6 +401,9 @@ Pflichtfaelle:
 - Unit- und Adaptertests der verschobenen Profiling-Klassen laufen in
   den neuen Zusatzmodulen gruen
 - bestehende Profiling-CLI-Tests bleiben funktional gruen
+- Profiling-Integrationstests (`PostgresProfilingIntegrationTest`,
+  `MysqlProfilingIntegrationTest`) laufen nach der Umstellung auf die
+  neuen Module weiter gruen
 - eine kleine Konsumentenprobe zeigt, dass ein Treiberkern ohne
   Profiling-Anbau konsumierbar bleibt
 - Sicherheitsrelevante Profiling-Tests aus Phase A bleiben semantisch
@@ -412,6 +445,11 @@ Wahrscheinlich mit betroffen:
   - `adapters/driven/driver-sqlite/src/test/.../profiling`
   - `adapters/driving/cli/src/test/...`
   - `hexagon/application/src/test/...`
+- Integrationstests:
+  - `test/integration-postgresql/build.gradle.kts` und
+    `PostgresProfilingIntegrationTest`
+  - `test/integration-mysql/build.gradle.kts` und
+    `MysqlProfilingIntegrationTest`
 
 Dokumentation:
 
