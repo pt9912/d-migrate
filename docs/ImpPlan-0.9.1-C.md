@@ -180,11 +180,16 @@ als Phase C2 nachgezogen (Fallback-Kriterium 8.6):
     Modul (Arbeitsname: `hexagon:ports-write`); haengt per `api` an
     `hexagon:ports-common`
   - `adapters:driven:formats` ist selbst ein gemischtes Modul
-    (Reader + Writer + SchemaCodec); es haengt deshalb per `api` an
-    `hexagon:ports-read` und per `implementation` an
-    `hexagon:ports-write`, damit read-only Consumer von
-    `adapters:driven:formats` die write-orientierten Porttypen nicht
-    transitiv sehen
+    (Reader + Writer + SchemaCodec); es exponiert oeffentliche
+    Writer-Klassen (`DefaultDataChunkWriterFactory`, `JsonChunkWriter`,
+    `CsvChunkWriter`, `YamlChunkWriter`) deren Signaturen
+    `DataChunkWriterFactory` und `ExportOptions` aus dem Write-Port
+    benoetigen — `implementation(ports-write)` allein wuerde diese
+    oeffentliche API brechen. Loesung: entweder `api(ports-write)`
+    (verzichtet auf transitive Entkopplung fuer Writer-Consumer) oder
+    ein echter Split des formats-Moduls in read-/write-Teilmodule.
+    Der konkrete Zuschnitt wird erst bei Umsetzung des Stretch Goals
+    festgelegt
   - `adapters:driven:streaming` benoetigt `api` auf
     `hexagon:ports-write`, weil `StreamingExporter` die Typen
     `DataChunkWriterFactory` und `ExportOptions` in seiner
@@ -439,8 +444,8 @@ Writer-Ausfuehrung sind konzeptionell und typseitig getrennt.
   - `StreamingImporterTest`
   - `StreamingImporterSqliteTest`
   - `DataImportRunnerTest` unter `adapters/driving/cli/src/test/...`
-  - neue `ImportOptionsFingerprint`-Tests unter
-    `hexagon/application/src/test/...`
+  - bestehende `ImportOptionsFingerprint`-Tests unter
+    `adapters/driving/cli/src/test/.../DataImportRunnerTest.kt`
   - ggf. compile-/wiring-nahe Tests rund um `DataTransferRunner`
 
 Ergebnis:
@@ -605,7 +610,7 @@ Wahrscheinlich mit betroffen:
   - `adapters/driven/formats/src/test/...`
   - `adapters/driven/streaming/src/test/...`
   - `adapters/driving/cli/src/test/...` fuer `DataImportRunnerTest`
-  - `hexagon/application/src/test/...`
+    (inkl. `ImportOptionsFingerprint`-Abdeckung)
 - `settings.gradle.kts` und betroffene `build.gradle.kts` fuer den
   geplanten Read-/Write-Modulschnitt
 

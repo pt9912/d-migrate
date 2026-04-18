@@ -159,7 +159,7 @@ d-migrate/
 │   │       │   └── data/                  # DataReader, TableLister, ChunkSequence
 │   │       ├── format/
 │   │       │   ├── SchemaCodec.kt
-│   │       │   └── data/                  # DataChunkWriter/Reader, Factories, ExportOptions, ImportOptions, DataExportFormat
+│   │       │   └── data/                  # DataChunkWriter/Reader, Factories, ExportOptions, FormatReadOptions, DataExportFormat
 │   │       └── streaming/                 # ExportOutput, ExportResult, PipelineConfig
 │   │
 │   └── application/                       # Use Cases (Runner-Klassen)
