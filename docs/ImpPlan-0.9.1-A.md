@@ -237,9 +237,10 @@ Verbindliche Entscheidung:
 
 Abhaengigkeiten und Reihenfolge:
 
-1. **5.1** (Utility) muss zuerst abgearbeitet werden — alle anderen
-   Pakete haengen davon ab; hier geht es vor allem um Verifikation und
-   Restkonsolidierung
+1. **5.1** (Utility) ist kein harter Blocker mehr, sondern vor allem
+   ein Verifikations- und Restkonsolidierungspaket; `5.2` und `5.3`
+   duerfen parallel anlaufen, solange identifizierte Restluecken gegen
+   die bestehende Utility geschlossen werden
 2. **5.2** (Adapter-Haertung) und **5.3** (Raw-SQL-Vertrag) koennen
    parallel bearbeitet werden
 3. **5.4** (Security-Tests) laeuft parallel zu 5.2 — Tests werden
@@ -292,6 +293,7 @@ Abhaengigkeiten und Reihenfolge:
   Widersprueche an allen relevanten Stellen vorhanden sind:
   - CLI-Hilfe / CLI-Spec
   - KDoc fuer `DataExportHelpers.resolveFilter`
+  - Modell-KDoc fuer `ConstraintDefinition.expression`
   - `docs/neutral-model-spec.md`
   - `docs/ddl-generation-rules.md`
 - fehlende Reststellen nachziehen, falls noch KDoc- oder
@@ -301,19 +303,28 @@ Abhaengigkeiten und Reihenfolge:
 
 ### 5.4 Security-Testbasis schliessen
 
-- Tests mit boesartigen Tabellen-/Spaltennamen fuer Profiling-Pfade
-- Tests mit reservierten Woertern und Unicode-Kanten
-- Tests fuer DDL-/Constraint-Pfade dort, wo Quoting und Trusted-Input-
-  Kennzeichnung betroffen sind
+- bestehende Security-Tests fuer `SqlIdentifiers` als **bereits
+  umgesetzt / zu verifizieren** behandeln; sie decken bereits
+  Semikolon-/Kommentar-Muster, reservierte Woerter und Unicode-Kanten
+  ab
+- bestehende `DataExportHelpers.resolveFilter`-/`--since`-Tests als
+  **bereits umgesetzt / zu verifizieren** behandeln
+- verbleibende Tests mit boesartigen Tabellen-/Spaltennamen fuer
+  Profiling-Pfade nachziehen
+- verbleibende Tests fuer DDL-/Constraint-Pfade dort nachziehen, wo
+  Quoting und Trusted-Input-Kennzeichnung betroffen sind
 - Kover-Verification der betroffenen Module mit Mindestgrenze 90 %
 
 Testinfrastruktur:
 
-- die Identifier-Utility selbst wird als reine Unit-Tests abgedeckt
-  (kein DB-Zugang noetig)
+- die Identifier-Utility selbst wird bereits ueber reine Unit-Tests
+  abgedeckt (kein DB-Zugang noetig) (**bereits umgesetzt / zu
+  verifizieren**)
 - Profiling-/Introspection-Adapter-Tests laufen primaer als schnelle
   Unit-Tests ueber `JdbcOperations`-/`JdbcMetadataSession`-nahe Mocks
   (**bereits umgesetzt / zu verifizieren**)
+- CLI-/Helper-Vertraege fuer `--filter` und `--since` sind bereits ueber
+  Unit-Tests abgedeckt (**bereits umgesetzt / zu verifizieren**)
 - echte DB-Connections bzw. Testcontainers sind nur dort zusaetzlich
   noetig, wo dialektspezifische Ausfuehrungssemantik oder SQLite-
   `PRAGMA`-Verhalten ueber Mock-basierte SQL-Erzeugung hinaus
@@ -352,12 +363,19 @@ Mit hoher Wahrscheinlichkeit betroffen:
 - `hexagon/application/.../cli/commands/DataExportHelpers.kt`
   (liegt im `cli.commands`-Paket, nicht im Application-Layer —
   ggf. fuer Phase B relevant)
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferCommand.kt`
+  (**bereits umgesetzt / zu verifizieren**)
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/ConstraintDefinition.kt`
+  (**bereits umgesetzt / zu verifizieren**)
 - DDL-Generatoren in `adapters/driven/driver-*`
 - `docs/cli-spec.md`
 - `docs/neutral-model-spec.md`
 - `docs/ddl-generation-rules.md`
 - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/SqlIdentifiers.kt`
+  (**bereits umgesetzt / zu verifizieren**)
+- `hexagon/ports/src/test/kotlin/dev/dmigrate/driver/SqlIdentifiersTest.kt`
+  (**bereits umgesetzt / zu verifizieren**)
+- `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/DataExportHelpersTest.kt`
   (**bereits umgesetzt / zu verifizieren**)
 - ggf. weitere KDoc-nahe Vertragsstellen im Port-/Application-Bereich
 
