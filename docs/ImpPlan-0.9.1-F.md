@@ -2,7 +2,9 @@
 
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: F (Integrationsschnitt fuer `source-d-migrate` absichern)
-> **Status**: Draft (2026-04-18)
+> **Status**: Done (2026-04-18) — ohne Phase-C-Modulschnitt (formats
+> exponiert Writer-API; Modulschnitt erfordert formats-Split, auf
+> spaeteres Milestone verschoben)
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.6, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/d-browser-integration-coupling-assessment.md`;
