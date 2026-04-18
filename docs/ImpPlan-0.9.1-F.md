@@ -190,6 +190,16 @@ Verbindliche Entscheidung:
   - DDL-Generator-spezifische Ergebniswelten
   - Profiling-Adapter und Profiling-Services im Default-Readpfad
 
+Praezisierung:
+
+- `SchemaReverseRunner` nutzt intern
+  `driverLookup(dialect).schemaReader()` und baut damit auf der
+  gemischten `DatabaseDriver`-Fassade auf; dieses Wiring ist ein
+  internes CLI-Tool-Muster und dient **nicht** als Referenz fuer den
+  kuenftigen `source-d-migrate`-Integrationspfad
+- ein externer Read-Consumer soll `SchemaReader` direkt ueber den
+  Read-Port-Schnitt beziehen, nicht ueber `DatabaseDriver`
+
 Folge:
 
 - Phase F dokumentiert **nicht** jede sichtbare Klasse als
@@ -266,10 +276,13 @@ Verbindliche Entscheidung:
 - sie lebt bewusst nicht in `adapters:driven:integrations`, weil
   dieses Modul fuer Migrations-Exporter reserviert ist
 - `settings.gradle.kts` wird entsprechend erweitert
-- das Modul hat keine eigene `koverVerify`-Schwelle, weil es reiner
-  Compile-/Integrationsnachweis ist, kein Coverage-Ziel
-- das Modul wird in der Root-`build.gradle.kts`-Kover-Aggregation
-  aufgenommen, damit seine Tests im globalen Bericht sichtbar sind
+- das Modul hat keine eigene modul-lokale `koverVerify`-Schwelle
+- das Modul wird in die Root-`build.gradle.kts`-Kover-Aggregation
+  aufgenommen; da die Root-Aggregation einen globalen 90%-Gate hat
+  (`kover { reports { verify { rule { minBound(90) } } } }`),
+  beeinflusst das Modul diesen Gate mit — dieser Seiteneffekt wird
+  bewusst akzeptiert, weil die Probe nur wenig Code und wenig
+  Coverage-Denominator beisteuert
 
 ---
 
@@ -378,9 +391,16 @@ Pflichtfaelle:
   - stabile Integrationsflaechen
   - bewusst interne Toolmodelle
   - Projektion von `SchemaReadResult` im Adapterraum
-- mindestens eine lokale oder interne Konsumentenprobe baut gegen den
-  schmaleren Read-Schnitt
-- diese Probe zeigt, dass:
+- mindestens eine Konsumentenprobe (`test:consumer-read-probe`), die
+  gegen den dokumentierten Read-Only-Integrationsschnitt baut:
+  - **mit Phase-C-Modulschnitt**: Probe baut gegen
+    `hexagon:ports-read`; der Build prueft, dass
+    `hexagon:ports-write` nicht transitiv sichtbar ist
+  - **ohne Phase-C-Modulschnitt**: Probe baut gegen `hexagon:ports`
+    und sichert den Integrationsschnitt ueber Import-Konventionen
+    ab; die Build-Erzwingung der Read-/Write-Trennung entfaellt
+    dann bewusst (Leitentscheidung 4.8)
+- in beiden Varianten zeigt die Probe, dass:
   - `SchemaReadResult` lokal projiziert wird
   - kein Defaultbedarf fuer Write-Typen besteht
   - Profiling nicht transitiv zum Basispfad gehoert
@@ -389,8 +409,6 @@ Erwuenschte Zusatzfaelle:
 
 - eine kleine Smoke-Verifikation gegen eine realistische Beispieldatenbank
   wie Pagila oder Sakila
-- eine compile-nahe Probe, die den schmaleren Schnitt auch ohne
-  `DatabaseDriver`-Vollflaeche konsumiert
 
 ---
 
