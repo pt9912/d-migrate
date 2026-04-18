@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: G-2 (Port-Modulschnitt)
-> **Status**: Draft (2026-04-18)
+> **Status**: Done (2026-04-18)
 > **Vorbedingung**: Phase C Kern (FormatReadOptions), Phase D
 > (Profiling-Extraktion), Phase F (Consumer-Read-Probe)
 > **Referenz**: `docs/ImpPlan-0.9.1-C.md` Stretch Goals 5.4-5.5;

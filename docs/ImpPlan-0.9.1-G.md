@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: G (Vorbereitung fuer 1.0.0-Publish dokumentieren)
-> **Status**: Draft (2026-04-18)
+> **Status**: Done (2026-04-18)
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.7, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/releasing.md`;
