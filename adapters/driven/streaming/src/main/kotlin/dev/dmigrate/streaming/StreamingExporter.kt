@@ -16,26 +16,18 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
 /**
- * Pull-basierter Streaming-Exporter. Liest Tabellen aus einer DB-Connection
- * und schreibt sie in einen oder mehrere Output-Streams (siehe [ExportOutput]).
+ * Pull-based streaming exporter. Reads tables from a DB connection and writes
+ * them to one or more output streams (see [ExportOutput]).
  *
- * Plan §2.1 / §6.18 — der Exporter:
- *
- * - **bekommt einen [ConnectionPool]** durchgereicht (kein Connection-Besitz im
- *   Caller — Reader und TableLister borgen sich pro Tabelle eine eigene
- *   Connection)
- * - iteriert über die Tabellen und ruft für jede einen frischen [DataChunkWriter]
- *   aus der [DataChunkWriterFactory] ab
- * - garantiert §6.17 (leere Tabellen): jeder Reader liefert mindestens einen
- *   Chunk; der Writer schreibt für `chunk.rows.isEmpty()` keine Daten, aber
- *   `begin`/`end` werden trotzdem aufgerufen — damit bekommen CSV den Header,
- *   JSON `[]` und YAML `[]`
- * - schließt jeden Writer und seine ChunkSequence ordentlich, auch bei
- *   Exceptions, sodass keine Connections im Pool leaken
- *
- * **Phase C**: kein Checkpoint, keine Parallelisierung, keine Retry-Logik.
- * Diese Features kommen in 0.5.0 / 1.0.0 — hier fokussieren wir uns auf den
- * sauberen Single-threaded-Pfad.
+ * - Receives a [ConnectionPool] (no connection ownership in the caller — Reader
+ *   and TableLister borrow a connection per table)
+ * - Iterates over tables and obtains a fresh [DataChunkWriter] from the
+ *   [DataChunkWriterFactory] for each
+ * - Empty-table guarantee: every Reader yields at least one chunk; the Writer
+ *   writes no data rows for `chunk.rows.isEmpty()`, but `begin`/`end` are still
+ *   called — so CSV gets its header, JSON `[]`, and YAML `[]`
+ * - Closes every Writer and ChunkSequence cleanly, even on exceptions, so no
+ *   connections leak back into the pool
  */
 class StreamingExporter(
     private val reader: DataReader,
@@ -46,8 +38,8 @@ class StreamingExporter(
     /**
      * Exportiert die angegebenen Tabellen in den Output-Sink.
      *
-     * @param pool Connection-Pool — Reader und TableLister borgen sich daraus
-     *   pro Aufruf selbst Connections (siehe §6.18).
+     * @param pool Connection pool — Reader and TableLister borrow connections
+     *   from it per call.
      * @param tables Tabellennamen, oder `emptyList()` um automatisch alle
      *   Tabellen via [TableLister.listTables] zu ermitteln.
      * @param output Wohin geschrieben wird (Stdout, SingleFile, FilePerTable).
@@ -66,75 +58,47 @@ class StreamingExporter(
         config: PipelineConfig = PipelineConfig(),
         filter: DataFilter? = null,
         progressReporter: ProgressReporter = NoOpProgressReporter,
-        /**
-         * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
-         * `operationId` des Laufs. Runner generieren die ID (UUID) und
-         * reichen sie hierher; sie landet sowohl in
-         * [ProgressEvent.RunStarted.operationId] als auch in
-         * [ExportResult.operationId], damit Resume-Manifest, stderr-
-         * Summary und Logs denselben Lauf referenzieren. Default `null`
-         * fuer Pre-Phase-B-Callsites (Tests).
-         */
+        /** Stable operation ID for the run. Runners generate a UUID and pass it here;
+         *  it appears in [ProgressEvent.RunStarted.operationId] and [ExportResult.operationId]
+         *  so that manifest, stderr summary, and logs reference the same run. Default `null`
+         *  for call-sites that do not need an ID (tests). */
         operationId: String? = null,
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §3.1 / §5.3):
-         * `true`, wenn der Runner einen vorhandenen Checkpoint-Manifest
-         * wiederaufnimmt; `false` fuer einen neuen Lauf. Der
-         * `ProgressRenderer` nutzt die Flagge fuer die
-         * „Starting run …/Resuming run …"-Anzeige.
-         */
+        /** `true` when resuming from an existing checkpoint manifest; `false` for a fresh run.
+         *  The `ProgressRenderer` uses this flag for the "Starting run ..." vs "Resuming run ..." label. */
         resuming: Boolean = false,
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.4): Menge der
-         * Tabellen, die in diesem Lauf uebersprungen werden sollen —
-         * bei Resume die im Manifest als `COMPLETED` markierten
-         * Tabellen. Leer bei neuen Laeufen.
-         */
+        /** Tables to skip in this run — on resume, the tables already marked `COMPLETED`
+         *  in the manifest. Empty for fresh runs. */
         skippedTables: Set<String> = emptySet(),
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.3 / §5.4):
-         * Callback, der nach jedem abgeschlossenen Tabellen-Export
-         * aufgerufen wird — auch bei leeren Tabellen und im Fehlerfall
-         * (dann mit `error != null`). Der Runner fuellt damit das
-         * Checkpoint-Manifest fort.
-         */
+        /** Callback invoked after each completed table export — including empty tables
+         *  and error cases (`error != null`). The Runner uses it to update the checkpoint manifest. */
         onTableCompleted: (TableExportSummary) -> Unit = {},
         /**
-         * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §5.2 / §5.3):
-         * pro Tabelle optionaler [ResumeMarker] fuer Mid-Table-Resume.
+         * Per-table optional [ResumeMarker] for mid-table resume.
          *
-         * - **Fehlt** der Eintrag → legacy-Pfad: `streamTable(pool, table,
-         *   filter, chunkSize)` ohne Marker-Sortierung.
-         * - **Position == null** (Fresh-Track) → Exporter ruft die
-         *   5-Parameter-Variante; der Reader erzwingt `ORDER BY
-         *   (markerColumn, tieBreakers...)` ohne WHERE-Cascade. Damit
-         *   kann ein spaeterer Resume dieselbe Ordnung reproduzieren.
-         * - **Position != null** (Resume-From-Position) → strikter
-         *   `>`-Cascade-Filter; der Exporter startet dann ab dem
-         *   dokumentierten Composite-Marker.
+         * - **Missing entry** -> legacy path: `streamTable(pool, table, filter, chunkSize)`
+         *   without marker-based ordering.
+         * - **Position == null** (fresh track) -> the Reader enforces `ORDER BY
+         *   (markerColumn, tieBreakers...)` without a WHERE cascade, so a later resume
+         *   can reproduce the same ordering.
+         * - **Position != null** (resume from position) -> strict `>`-cascade filter;
+         *   the exporter starts from the documented composite marker.
          */
         resumeMarkers: Map<String, ResumeMarker> = emptyMap(),
         /**
-         * 0.9.0 Phase C.2 §5.2: Chunk-granularer Fortschritts-Callback
-         * fuer Tabellen, die mit einem [ResumeMarker] gestreamt werden.
-         * Wird pro erfolgreich geschriebenem, nicht-leeren Chunk
-         * aufgerufen — leere Chunks (Empty-Table-Vertrag §6.17) loesen
-         * **keinen** Callback aus, damit der Runner keine gueltige
-         * `Position` mit `null`-Werten persistiert.
+         * Chunk-granular progress callback for tables streamed with a [ResumeMarker].
+         * Invoked per successfully written, non-empty chunk — empty chunks (empty-table
+         * contract) do **not** trigger this callback, so the Runner never persists a
+         * position with `null` values.
          *
-         * Der Runner nutzt dieses Signal, um das Manifest nach jedem
-         * Chunk mit dem neuen `lastMarker`-Position-Tupel zu
-         * aktualisieren. Schreibfehler des Callbacks sollten den
-         * Export-Lauf **nicht** abbrechen.
+         * The Runner uses this signal to update the manifest with the new position tuple
+         * after each chunk. Write errors in the callback should **not** abort the export.
          */
         onChunkProcessed: (TableChunkProgress) -> Unit = {},
     ): ExportResult {
         val discoveredTables = tables.ifEmpty { tableLister.listTables(pool) }
-        // 0.9.0 Phase C.1 §5.4: uebersprungene Tabellen werden zwar
-        // nicht exportiert, zaehlen aber fuer die Gesamtzahl der
-        // Tabellen und tauchen als pre-bestaetigte Summaries in
-        // [ExportResult] auf, damit Kennzahlen und Manifest-State
-        // nachvollziehbar bleiben.
+        // Skipped tables are not exported but count toward the total table count
+        // and appear as pre-confirmed summaries in [ExportResult] for stable
+        // progress reporting and manifest state consistency.
         val effectiveTables = discoveredTables.filter { it !in skippedTables }
         require(discoveredTables.isNotEmpty()) {
             "No tables to export — neither --tables given nor any tables found via TableLister."
@@ -290,11 +254,6 @@ internal class CountingOutputStream(private val delegate: OutputStream) : Output
  * Stdout-Branch verwendet, damit ein realer [DataChunkWriter.close]
  * (der laut Vertrag den darunterliegenden Stream schließt) `System.out`
  * NICHT zerstört.
- *
- * Siehe F23 (Plan-Review-Runde 6) — vorher rief der StreamingExporter
- * `writer.close()` direkt auf einem `CountingOutputStream(System.out)`,
- * was bei produktiven Writer-Implementierungen `System.out` schließen
- * würde.
  */
 internal class NonClosingOutputStream(private val delegate: OutputStream) : OutputStream() {
     override fun write(b: Int) = delegate.write(b)

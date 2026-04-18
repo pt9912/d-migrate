@@ -46,50 +46,23 @@ fun interface ExportExecutor {
         config: PipelineConfig,
         filter: DataFilter?,
         progressReporter: ProgressReporter,
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §4.3 / §5.3):
-         * stabile `operationId` des Laufs. Wird vom Runner gesetzt
-         * (UUID oder aus Manifest), vom Executor an
-         * `StreamingExporter.export` durchgereicht und landet so im
-         * `ProgressEvent.RunStarted`.
-         */
+        /** Stable operation ID for the run. Set by the Runner (UUID or from manifest),
+         *  passed through to `StreamingExporter.export` and `ProgressEvent.RunStarted`. */
         operationId: String?,
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §3.1 / §5.3):
-         * `true`, wenn der Lauf eine Wiederaufnahme aus einem
-         * vorhandenen Manifest ist; `false` fuer einen neuen Lauf. Der
-         * `ProgressRenderer` differenziert anhand dieser Flagge das
-         * „Starting run …"- vs. „Resuming run …"-Label.
-         */
+        /** `true` when resuming from an existing manifest; `false` for a fresh run.
+         *  The `ProgressRenderer` uses this flag for the "Starting run ..." vs "Resuming run ..." label. */
         resuming: Boolean,
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.4): Menge der
-         * bereits im Manifest als `COMPLETED` markierten Tabellen. Wird
-         * vom Runner aus dem geladenen Manifest gefuellt; bei einem
-         * neuen Lauf leer.
-         */
+        /** Tables already marked `COMPLETED` in the manifest. Populated by the Runner
+         *  from the loaded manifest; empty for a fresh run. */
         skippedTables: Set<String>,
-        /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.3 / §5.4):
-         * Callback pro abgeschlossener Tabelle. Der Runner nutzt ihn,
-         * um das Checkpoint-Manifest fortzuschreiben.
-         */
+        /** Callback per completed table. The Runner uses it to update the checkpoint manifest. */
         onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit,
-        /**
-         * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §5.2 / §5.3):
-         * Pro Tabelle optionaler [ResumeMarker] — fehlt der Eintrag,
-         * laeuft die Tabelle im Legacy-Pfad ohne Marker-Sortierung. Mit
-         * Eintrag aktiviert der Exporter Mid-Table-Resume
-         * (Fresh-Track oder Resume-From-Position abhaengig von
-         * `ResumeMarker.position`).
-         */
+        /** Per-table optional [ResumeMarker]. Missing entry -> legacy path without marker-based
+         *  ordering. Present entry activates mid-table resume (fresh track or resume-from-position
+         *  depending on `ResumeMarker.position`). */
         resumeMarkers: Map<String, ResumeMarker>,
-        /**
-         * 0.9.0 Phase C.2 §5.2: Chunk-granularer Fortschritts-Callback.
-         * Der Runner aktualisiert das Manifest mit jedem Aufruf — nur
-         * Tabellen mit aktivem [ResumeMarker] loesen diesen Callback
-         * aus.
-         */
+        /** Chunk-granular progress callback. The Runner updates the manifest with each
+         *  invocation — only tables with an active [ResumeMarker] trigger this callback. */
         onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit,
     ): ExportResult
 }
@@ -115,22 +88,9 @@ data class DataExportRequest(
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
-    /**
-     * 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.3/§4.4): expliziter
-     * Resume-Einstieg. Wert ist eine Checkpoint-ID oder ein Pfad zu
-     * einem Manifest; der konkrete Referenzformat-Vertrag wird in
-     * Phase B/C des Milestones festgezogen. In Phase A ist der Flag
-     * Teil des CLI-Vertrags; der Runner akzeptiert ihn, lehnt
-     * inkompatible Kombinationen (stdout-Export, etc.) ab und
-     * signalisiert andernfalls sichtbar, dass die Resume-Runtime noch
-     * folgt.
-     */
+    /** Explicit resume entry point. Value is a checkpoint ID or path to a manifest. */
     val resume: String? = null,
-    /**
-     * 0.9.0 Phase A §4.3: optionales Verzeichnis fuer Checkpoints. Ist
-     * Config-Default in `pipeline.checkpoint.directory` vorhanden,
-     * gewinnt dieser CLI-Wert (Phase A §3.1 letzter Punkt).
-     */
+    /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
     val checkpointDir: Path? = null,
 )
 
@@ -139,19 +99,15 @@ data class DataExportRequest(
  * constructor-injected so every branch (including error paths and exit
  * codes) is unit-testable without a real database or CLI framework.
  *
- * Exit codes (Plan §6.10):
+ * Exit codes:
  * - 0 success
- * - 2 CLI validation error (incl. `--resume` on stdout-Export, unsupported
- *   `--lang` handled in the root CLI)
+ * - 2 CLI validation error (incl. `--resume` on stdout export)
  * - 3 resume preflight failure — semantically incompatible checkpoint
- *   reference (e.g. table list changed, schema divergent). 0.9.0 Phase A
- *   (`docs/ImpPlan-0.9.0-A.md` §4.5): mapping wird hier explizit
- *   festgezogen und ist symmetrisch zum `DataImportRunner`-Preflight. Die
- *   tatsaechliche Manifest-Pruefung liefert Phase B bis D.
+ *   (e.g. table list changed, schema divergent)
  * - 4 connection / table-lister error
  * - 5 export streaming error
  * - 7 config / URL / registry error (incl. unreadable checkpoint file or
- *   unparseable manifest — 0.9.0 Phase A §4.5)
+ *   unparseable manifest)
  */
 class DataExportRunner(
     private val sourceResolver: (source: String, configPath: Path?) -> String,
@@ -164,45 +120,20 @@ class DataExportRunner(
     private val exportExecutor: ExportExecutor,
     private val progressReporter: ProgressReporter = NoOpProgressReporter,
     private val stderr: (String) -> Unit = { System.err.println(it) },
-    /**
-     * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.2): Factory fuer
-     * den Checkpoint-Store. Bekommt das effektive Checkpoint-
-     * Verzeichnis. Die CLI-Seite wired den dateibasierten Adapter;
-     * Tests injizieren einen In-Memory-Store. `null` hier = Resume-
-     * Support deaktiviert (fuer Tests, die keine Manifest-Interaktion
-     * wollen).
-     */
+    /** Factory for the checkpoint store. Receives the effective checkpoint directory.
+     *  CLI wires the file-based adapter; tests inject an in-memory store.
+     *  `null` disables resume support (for tests that need no manifest interaction). */
     private val checkpointStoreFactory: ((Path) -> CheckpointStore)? = null,
-    /**
-     * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.2 / §4.4 Ueberplan):
-     * liest den `pipeline.checkpoint.*`-Block aus der effektiven
-     * `.d-migrate.yaml` (CLI-Config-Pfad-Resolution ist dieselbe wie
-     * fuer andere Abschnitte: `--config` > `D_MIGRATE_CONFIG` > Default).
-     * Der Runner mergt ueber [CheckpointConfig.merge] CLI-Override
-     * (`--checkpoint-dir`) und Config-Default zusammen.
-     *
-     * Default `{ null }` haelt Tests quellkompatibel — Runner ohne
-     * Config-Resolver verwenden nur den CLI-Wert.
-     */
+    /** Reads the `pipeline.checkpoint.*` block from the effective `.d-migrate.yaml`.
+     *  The Runner merges CLI override (`--checkpoint-dir`) and config default via
+     *  [CheckpointConfig.merge]. Default `{ null }` keeps tests source-compatible. */
     private val checkpointConfigResolver: (Path?) -> CheckpointConfig? = { null },
-    /**
-     * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.2): Zeitquelle
-     * fuer Manifest-`createdAt`/`updatedAt`. Separat injizierbar fuer
-     * deterministische Tests.
-     */
+    /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
-    /**
-     * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.3):
-     * Lookup fuer die Primaerschluessel-Spalten einer Tabelle. Wird
-     * nur fuer den Mid-Table-Resume-Pfad benoetigt — Laeufe ohne
-     * `--since-column` rufen den Lookup nicht auf.
-     *
-     * Produktive Wiring injiziert einen memoisierten SchemaReader-
-     * Aufruf (siehe `DataExportCommand`); Tests injizieren die
-     * benoetigte Mapping-Tabelle direkt. Default `{ emptyList() }`
-     * simuliert "kein PK gefunden" — Fall 2 (konservativer
-     * C.1-Fallback).
-     */
+    /** Lookup for primary-key columns of a table. Only needed for mid-table resume —
+     *  runs without `--since-column` never call this. Production wiring injects a
+     *  memoized SchemaReader call; tests inject the mapping directly.
+     *  Default `{ emptyList() }` simulates "no PK found" (conservative fallback). */
     private val primaryKeyLookup: (ConnectionPool, DatabaseDialect, String) -> List<String> =
         { _, _, _ -> emptyList() },
 ) {
@@ -252,9 +183,8 @@ class DataExportRunner(
             }
         }
 
-        // ─── 2c. 0.9.0 Phase A §4.4 / Phase C.1: Resume-CLI-Preflight ──
-        // stdout-Export bleibt als Resume-Ziel ausgeschlossen (Phase A
-        // §4.4); der Lauf kann seinen Stream nicht wiedereroeffnen.
+        // Resume CLI preflight: stdout export cannot be resumed (stream
+        // is not re-openable).
         if (!request.resume.isNullOrBlank() && request.output == null) {
             stderr(
                 "Error: --resume is not supported for stdout export; " +
@@ -364,13 +294,10 @@ class DataExportRunner(
             since = request.since,
         )
 
-        // ─── 8b. 0.9.0 Phase C.1/C.2: Resume-Preflight + Manifest-Lifecycle ──
-        // 0.9.0 Phase C.2 §4.1: PK-Signatur wird nur dann eingelesen,
-        // wenn `--since-column` gesetzt ist — ohne Marker-Kontrakt
-        // gibt es kein Mid-Table-Resume und damit auch keinen Grund,
-        // den Schema-Reader anzufassen. Das haelt den Phase-C.1-Fingerprint
-        // bytegleich und den PG/MySQL/SQLite-Schemaload fuer den
-        // klassischen Exportpfad leer.
+        // ─── 8b. Resume-Preflight + Manifest-Lifecycle ─────────────
+        // PK signature is only read when `--since-column` is set — without
+        // a marker contract there is no mid-table resume and no reason to
+        // touch the schema reader.
         val primaryKeysByTable: Map<String, List<String>> =
             if (!request.sinceColumn.isNullOrBlank()) {
                 resolvePrimaryKeys(pool, connectionConfig.dialect, effectiveTables)
@@ -395,11 +322,9 @@ class DataExportRunner(
             )
         )
 
-        // 0.9.0 Phase C.1 §4.4 / §5.2: zentraler Merge aus
-        // CLI-Override (`--checkpoint-dir`) und Config-Default
-        // (`pipeline.checkpoint.*`). `CheckpointConfig.merge` liefert
-        // die effektive Auspraegung; CLI sticht Config, Config sticht
-        // Runtime-Default.
+        // Merge CLI override (`--checkpoint-dir`) and config default
+        // (`pipeline.checkpoint.*`). CLI wins over config, config wins
+        // over runtime default.
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {
@@ -478,11 +403,9 @@ class DataExportRunner(
                 .filter { it.status == CheckpointSliceStatus.COMPLETED }
                 .map { it.table }
                 .toSet()
-            // 0.9.0 Phase C.1 §5.5: Single-File-Resume verlangt genau
-            // eine pending Tabelle. Wenn die eine Tabelle bereits
-            // COMPLETED ist, ist der Lauf fertig — Exit 3 statt
-            // silent success, damit Automatisierung das eindeutig
-            // erkennt.
+            // Single-file resume requires exactly one pending table.
+            // If the table is already COMPLETED, the run is finished —
+            // exit 3 instead of silent success so automation can detect it.
             if (exportOutput is ExportOutput.SingleFile &&
                 effectiveTables.isNotEmpty() &&
                 effectiveTables.all { it in skipped }
@@ -540,9 +463,8 @@ class DataExportRunner(
             }
         }
 
-        // Per-Tabelle-Update-Callback (§5.3 / §5.4): `createdAt` wird
-        // beim neuen Lauf jetzt festgelegt, beim Resume aus dem bereits
-        // geladenen Manifest uebernommen.
+        // Per-table update callback: `createdAt` is set now for a fresh
+        // run, or taken from the already-loaded manifest on resume.
         val createdAt: Instant = if (resume.resuming && store != null) {
             try {
                 store.load(operationId)?.createdAt ?: now()
@@ -558,10 +480,8 @@ class DataExportRunner(
                     CheckpointSliceStatus.COMPLETED else CheckpointSliceStatus.FAILED,
                 rowsProcessed = summary.rows,
                 chunksProcessed = summary.chunks,
-                // 0.9.0 Phase C.2 §5.2: bei COMPLETED wird die
-                // Resume-Position bewusst nicht mehr mitgeschrieben —
-                // die Tabelle ist fertig, und ein erneuter Resume
-                // ueberspringt sie im C.1-Pfad komplett.
+                // On COMPLETED the resume position is intentionally omitted —
+                // the table is done and a subsequent resume skips it entirely.
                 resumePosition = null,
             )
             tableStates[summary.table] = slice
@@ -590,10 +510,9 @@ class DataExportRunner(
             }
         }
 
-        // 0.9.0 Phase C.2 §4.1 / §5.2: per-Tabelle-ResumeMarker auf
-        // Basis der 3 Fallunterscheidungen. Der Durchlauf kann mit
-        // Exit 3 abbrechen (Fall 3). Ein leeres Ergebnis (alle
-        // Tabellen ohne Marker) haelt den bisherigen C.1-Pfad vor.
+        // Per-table ResumeMarker based on three case distinctions.
+        // The loop may abort with exit 3 (case 3). An empty result
+        // (no markers) preserves the legacy path.
         val resumeMarkers: Map<String, ResumeMarker> = try {
             effectiveTables.associateWith { table ->
                 resolveTableResumeMarker(
@@ -608,9 +527,8 @@ class DataExportRunner(
             return 3
         }
 
-        // 0.9.0 Phase C.2 §5.2: onChunkProcessed persistiert den
-        // per-Chunk-Fortschritt. Die Tabelle wechselt in
-        // `IN_PROGRESS`, sodass ein Wieder-Lauf die Position findet.
+        // onChunkProcessed persists per-chunk progress. The table
+        // transitions to `IN_PROGRESS` so a re-run can find the position.
         val onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit = { progress ->
             val marker = resumeMarkers[progress.table]
             if (marker != null) {
@@ -646,26 +564,22 @@ class DataExportRunner(
             }
         }
 
-        // ─── 8d. 0.9.0 Phase C.2 §5.4: Single-File-Staging-Pfad ──
-        // Single-Table-Single-File wird niemals direkt ins Ziel
-        // geschrieben, wenn ein Checkpoint-Store konfiguriert ist —
-        // sonst kann ein Abbruch eine halb-valide Container-Datei
-        // (JSON ohne `]`, YAML/CSV ohne Terminator) am Zielpfad
-        // hinterlassen. Statt dessen schreibt der Lauf in eine
-        // Staging-Datei im Checkpoint-Verzeichnis; das Ziel wird am
-        // Lauf-Ende per atomic rename ersetzt.
+        // ─── 8d. Single-File-Staging-Pfad ────────────────────────────
+        // Single-table-single-file is never written directly to the target
+        // when a checkpoint store is configured — otherwise an abort could
+        // leave a half-valid container file (JSON without `]`, YAML/CSV
+        // without terminator) at the target path. Instead the run writes
+        // to a staging file in the checkpoint directory; the target is
+        // replaced via atomic rename at run end.
         //
-        // Mid-Table-Resume ist fuer Single-File-Laeufe in 0.9.0
-        // bewusst **nicht** aktiv: die strukturierten Format-Writer
-        // (JSON-Array, YAML-Sequence) lassen sich ohne eine eigene
-        // Append-/Rebuild-Infrastruktur nicht sauber in der Mitte
-        // fortsetzen. Fuer die Laufzeit heisst das: ein abgebrochener
-        // Single-File-Resume exportiert die Tabelle erneut von vorn
-        // in eine frische Staging-Datei. Der `optionsFingerprint`
-        // bleibt gueltig, der Manifest-Slice wechselt nach Abschluss
-        // auf `COMPLETED`. Der gespeicherte `resumePosition` eines
-        // frueheren Laufs wird ignoriert; wir entfernen ihn aus dem
-        // Marker, damit der Exporter Fresh-Track faehrt.
+        // Mid-table resume is intentionally **not** active for single-file
+        // runs: structured format writers (JSON array, YAML sequence) cannot
+        // be cleanly continued mid-stream without append/rebuild infra.
+        // An aborted single-file resume re-exports the table from scratch
+        // into a fresh staging file. The `optionsFingerprint` stays valid,
+        // the manifest slice transitions to `COMPLETED` afterwards. Any
+        // stored `resumePosition` from a previous run is ignored; we clear
+        // it from the marker so the exporter does a fresh track.
         val stagingRedirect: StagingRedirect? =
             if (exportOutput is ExportOutput.SingleFile && store != null && checkpointDir != null) {
                 val stagingPath = checkpointDir.resolve("$operationId.single-file.staging")
@@ -722,11 +636,9 @@ class DataExportRunner(
             return 5
         }
 
-        // 0.9.0 Phase C.2 §5.4: Staging → Ziel per atomic rename.
-        // Ein fehlgeschlagener Rename lässt die Staging-Datei im
-        // Checkpoint-Verzeichnis stehen; Exit 5, weil der Export dann
-        // fachlich nicht abgeschlossen ist (Zieldatei fehlt oder ist
-        // alt).
+        // Staging -> target via atomic rename. A failed rename leaves the
+        // staging file in the checkpoint directory; exit 5 because the
+        // export is not logically complete (target file missing or stale).
         if (stagingRedirect != null) {
             try {
                 try {
@@ -752,9 +664,8 @@ class DataExportRunner(
             }
         }
 
-        // 0.9.0 Phase C.1 §5.2: erfolgreicher Lauf → Manifest entfernen.
-        // Fehler beim complete() werden als Warning gemeldet, nicht als
-        // Exit — der Export war fachlich erfolgreich.
+        // Successful run -> remove manifest. Errors during complete() are
+        // reported as warnings, not as exit — the export was logically successful.
         if (store != null) {
             try {
                 store.complete(operationId)
@@ -774,10 +685,9 @@ class DataExportRunner(
         val suppressProgress = request.quiet || request.noProgress
         if (!suppressProgress) {
             stderr(DataExportHelpers.formatProgressSummary(result))
-            // 0.9.0 Phase B §4.5: operationId ist in der stderr-Summary
-            // referenzierbar (nicht nur als Logging-Dekoration) — so
-            // koennen Operator, Logs und spaeteres Resume-Manifest auf
-            // denselben Lauf verweisen.
+            // operationId is printed in the stderr summary so that
+            // operators, logs, and a later resume manifest all reference
+            // the same run.
             result.operationId?.let { stderr("Run operation id: $it") }
         }
 
@@ -785,19 +695,18 @@ class DataExportRunner(
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 0.9.0 Phase C.1 §5.2: Hilfsfunktionen fuer Resume-Referenz und
-    // Output-Mode-Kanonisierung.
+    // Helper functions for resume-reference resolution and
+    // output-mode canonicalization.
     // ──────────────────────────────────────────────────────────────
 
     /**
-     * Aufloesung des `--resume <checkpoint-id|path>`-Werts gegen das
-     * effektive Checkpoint-Verzeichnis (Plan §4.3 / §5.2):
+     * Resolves the `--resume <checkpoint-id|path>` value against the
+     * effective checkpoint directory:
      *
-     * - Pfad-Kandidat (enthaelt `/` oder endet auf `.checkpoint.yaml`):
-     *   Der Pfad muss normalized innerhalb des Checkpoint-Verzeichnisses
-     *   liegen; sonst `null`. Der `operationId` wird aus dem Dateinamen
-     *   abgeleitet (Suffix `.checkpoint.yaml` entfernt).
-     * - Sonst: der Wert ist direkt eine `operationId`.
+     * - Path candidate (contains `/` or ends with `.checkpoint.yaml`):
+     *   must normalize inside the checkpoint directory; otherwise `null`.
+     *   The `operationId` is derived from the filename (suffix `.checkpoint.yaml` stripped).
+     * - Otherwise: the value is a direct `operationId`.
      */
     private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? =
         resumeCoordinator.resolveResumeReference(resumeValue, checkpointDir)
@@ -829,12 +738,8 @@ class DataExportRunner(
         is ExportOutput.FilePerTable -> output.directory.toAbsolutePath().normalize().toString()
     }
 
-    /**
-     * 0.9.0 Phase C.2 §5.4: internes DTO fuer den
-     * Staging-Umleitungspfad bei Single-File-Laeufen. `staging` liegt
-     * im Checkpoint-Verzeichnis; `target` ist der vom Benutzer
-     * angefragte Zielpfad.
-     */
+    /** Internal DTO for the staging redirect in single-file runs. `staging` resides in the
+     *  checkpoint directory; `target` is the user-requested destination path. */
     private data class StagingRedirect(
         val target: Path,
         val staging: Path,
@@ -842,12 +747,8 @@ class DataExportRunner(
 
 }
 
-/**
- * 0.9.0 Phase C.2 §4.1 Fall 3: Manifest traegt eine mid-table
- * `resumePosition`, aber der aktuelle Request hat kein `--since-column`.
- * Die Laufvertrage sind inkompatibel; der Runner uebersetzt diese
- * Exception in Exit 3.
- */
+/** Manifest carries a mid-table `resumePosition` but the current request has no `--since-column`.
+ *  The run contracts are incompatible; the Runner translates this exception into exit 3. */
 internal class TableResumeMismatchException(
     val table: String,
     val markerColumn: String,
