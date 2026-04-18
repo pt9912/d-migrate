@@ -46,6 +46,9 @@ class JdbcMetadataSession(private val conn: Connection) : JdbcOperations {
     }
 
     override fun execute(sql: String, vararg params: Any?): Int {
+        if (params.isEmpty()) {
+            return conn.createStatement().use { it.executeUpdate(sql) }
+        }
         conn.prepareStatement(sql).use { stmt ->
             params.forEachIndexed { i, value -> stmt.setObject(i + 1, value) }
             return stmt.executeUpdate()
