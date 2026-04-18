@@ -98,7 +98,11 @@ oeffentlichen Library-Publish zugeschnitten:
     - `test:integration-mysql`
 - nach Phase C bis F kommen voraussichtlich hinzu:
   - `hexagon:ports-common`, `hexagon:ports-read`,
-    `hexagon:ports-write` (Phase-C-Stretch-Goal)
+    `hexagon:ports-write` (Phase-C-Stretch-Goal; aus Phase F
+    zurueckgestellt — `adapters:driven:formats` exponiert oeffentliche
+    Writer-API, daher erfordert der Modulschnitt einen echten
+    formats-Split; Umsetzung als Vorarbeit zu 1.0.0-Publish im
+    Rahmen von Phase G)
   - `adapters:driven:driver-postgresql-profiling`,
     `adapters:driven:driver-mysql-profiling`,
     `adapters:driven:driver-sqlite-profiling` (Phase D)

@@ -515,13 +515,13 @@ Mitigation:
 - auch ohne Modulschnitt liefert Phase F einen dokumentierten und
   getesteten Integrationsschnitt, der fuer einen spaeteren
   `source-d-migrate`-Adapter als Vorlage dient
-- der Modulschnitt (Phase-C Stretch Goals 5.4-5.5) wird als Teil von
-  Phase F umgesetzt, nicht als separates Phase C2: er betrifft den
-  Integrationsschnitt direkt und gehoert fachlich hierher
-- Voraussetzung: `adapters:driven:formats` muss entweder in read-/
-  write-Teilmodule gesplittet oder mit `api(ports-write)` gebaut
-  werden, weil es oeffentliche Writer-Klassen exponiert
-  (Finding aus Phase-C-Review)
+- der Modulschnitt (Phase-C Stretch Goals 5.4-5.5) war als Teil von
+  Phase F vorgesehen, ist aber zurueckgestellt: `adapters:driven:formats`
+  exponiert oeffentliche Writer-Klassen, daher erfordert der
+  Modulschnitt einen echten formats-Split (Finding aus Phase-C-Review)
+- der formats-Split und der ports-read/ports-write-Modulschnitt werden
+  als Vorarbeit zu 1.0.0-Publish im Rahmen von Phase G umgesetzt
+  (siehe `docs/ImpPlan-0.9.1-G.md` §2 Ausgangslage)
 
 ---
 
