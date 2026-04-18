@@ -140,7 +140,13 @@ Konsequenz:
   - `ImportDirectoryResolver`
   - `DataTransferRunner`
 - Tests fuer die neue Utility und die drei umgestellten Verbraucher
-- Kover-Coverage bleibt pro betroffenem Modul bei mindestens 90 %
+- Kover-Coverage bleibt pro betroffenem Modul bei dessen bestehendem
+  Schwellenwert:
+  - `hexagon:core` und `adapters:driven:driver-common` weiter 90 %
+  - `adapters:driving:cli` weiter 80 %
+  - `hexagon:application` hat derzeit keine eigene modul-lokale
+    `koverVerify`-Schwelle; Phase E fuehrt dort keinen neuen
+    Coverage-Gate ein
 
 ### 3.2 Bewusst nicht Teil von Phase E
 
@@ -165,7 +171,7 @@ Dependency-Graph fuer alle Objekttypen?".
 Verbindliche Entscheidung:
 
 - die neue FK-/Topo-Sort-Utility lebt im Core, voraussichtlich unter
-  einem kleinen Paket fuer Tabellenabhaengigkeiten
+  `dev.dmigrate.core.dependency`
 - sie darf von Treibern, CLI-nahen Preflight-Pfaden und
   Application-Use-Cases ohne gegenseitige Schichtverletzung genutzt
   werden
@@ -217,7 +223,28 @@ Verbindliche Entscheidung:
 Damit bleibt die Import-Semantik ohne Zusatzlogik ausserhalb der Utility
 abbildbar.
 
-### 4.5 Stabile Reihenfolge bleibt callsite-nah steuerbar
+### 4.5 Das Kantenmodell darf spaltennahe und tabellennahe Pfade zugleich tragen
+
+Verbindliche Entscheidung:
+
+- das zentrale Kantenmodell darf `fromColumn` und `toColumn` optional
+  modellieren
+- Directory-Import und DDL duerfen weiter spaltennahe Kanten mit
+  konkreten Column-Namen liefern
+- der Transfer-Pfad darf zunaechst bei tabellennaher Kantenauflosung
+  bleiben, solange sein kompakter Nutzervertrag (`FK cycle: ...`)
+  unveraendert bleibt
+- falls spaeter auch der Transfer-Pfad detailliertere Kanten liefern
+  soll, ist das eine additive Verbesserung, kein Phase-E-Muss
+
+Folge:
+
+- die Utility zwingt `DataTransferRunner` nicht in eine kuenstliche
+  Scheingenauigkeit
+- das gemeinsame Modell bleibt trotzdem reich genug fuer die heute
+  detailreichste Call-Site (`ImportDirectoryResolver`)
+
+### 4.6 Stabile Reihenfolge bleibt callsite-nah steuerbar
 
 Verbindliche Entscheidung:
 
@@ -230,7 +257,7 @@ Verbindliche Entscheidung:
   - Transfer: heute alphabetischer Null-In-Degree-Start, sofern bewusst
     beibehalten
 
-### 4.6 Die Utility ist kein `d-browser`-Baumhelfer
+### 4.7 Die Utility ist kein `d-browser`-Baumhelfer
 
 Verbindliche Entscheidung:
 
@@ -240,6 +267,27 @@ Verbindliche Entscheidung:
   Datensatzbeziehungen oder UI-seitige Baumprojektionen
 
 Damit bleibt der Scope mit dem `d-browser`-Assessment konsistent.
+
+### 4.8 Phase E ist inkrementell pro Call-Site lieferbar
+
+Verbindliche Entscheidung:
+
+- die drei Umstellungen auf die neue Utility sind technisch
+  voneinander entkoppelbar:
+  - DDL-Pfad
+  - Directory-Import-Pfad
+  - Transfer-Pfad
+- der Zielzustand verlangt am Ende alle drei umgestellten Call-Sites,
+  aber Zwischenstaende duerfen buildfaehig und testbar sein
+- kein Big-Bang-Umschluss ist erforderlich; bei unerwarteten
+  Semantikdifferenzen kann nach einer sauber migrierten Call-Site
+  pausiert werden
+
+Folge:
+
+- das Refactor-Risiko sinkt
+- Unterschiede zwischen DDL-, Import- und Transfer-Pfad koennen
+  schrittweise sichtbar und testbar gehalten werden
 
 ---
 
@@ -278,19 +326,23 @@ Ein belastbarer Fachkern statt eines impliziten "sieht aehnlich aus".
   - `TableDependencyGraph`
   - `ForeignKeyTopoSort`
   - `TableDependencyOrderer`
+  - Zielpackage: `dev.dmigrate.core.dependency`
 - ein Result-Modell definieren, das mindestens traegt:
   - sortierte Tabellenreihenfolge
   - zyklische Kanten
 - ein kleines Kantenmodell definieren, das aus Call-Sites formatierbar
   bleibt, z. B.:
   - `fromTable`
-  - `fromColumn`
+  - `fromColumn?`
   - `toTable`
-  - `toColumn`
+  - `toColumn?`
 - Referenzsammlung so schneiden, dass beide Quellarten moeglich sind:
   - Spaltenreferenzen
   - FK-Constraints mit Mehrspaltenbezug
 - optionale Referenzprojektion fuer Import-Use-Cases vorsehen
+- der Transfer-Pfad darf dieses Modell zunaechst mit tabellennahen
+  Kanten ohne Spaltennamen befuellen; DDL/Import duerfen detaillierter
+  sein
 
 Pragmatische Zusatzregel:
 
@@ -317,6 +369,9 @@ Zykluskanten.
     detaillierter Kantenliste
   - Transfer: bei Zyklus `TransferPreflightException` mit kompakter
     Fehlermeldung
+- der Transfer-Pfad muss fuer Phase E nicht kuenstlich auf
+  spaltennahe Fehlerdetails erweitert werden; sein kompakter
+  Nutzervertrag darf bewusst bestehen bleiben
 - dabei pruefen, ob DDL durch die neue Utility bewusst auch table-level
   FK-Constraints fuer die Sortierung nutzen soll; falls nicht, muss
   diese Einschraenkung explizit dokumentiert bleiben
@@ -347,18 +402,6 @@ Ergebnis:
 Die Extraktion ist nicht nur intern, sondern auch test- und doku-
 seitig konsistent.
 
-### 5.5 Grobe Aufwandseinschaetzung
-
-- **Mittel** fuer die Core-Extraktion selbst
-- **Mittel** fuer die praezise Semantikangleichung der drei Call-Sites
-- **Niedrig bis mittel** fuer die Doku-Angleich
-- **Mittel** fuer Tests, weil drei bisher getrennte Verhaltenswelten
-  abgesichert werden muessen
-
-Die Hauptunsicherheit liegt nicht im Algorithmus, sondern in der
-sauberen Modellierung der Unterschiede zwischen "analysieren",
-"diagnostizieren" und "abbrechen".
-
 ---
 
 ## 6. Verifikation
@@ -370,6 +413,14 @@ Pflichtfaelle:
   - weiterhin stabile Tabellenreihenfolge liefert
   - Selbstreferenzen ignoriert
   - bei Zyklen `circularEdges` weitergibt statt hart abzubrechen
+  - DDL-Constraint-FK-Entscheidung (siehe 5.3) explizit absichern:
+    - falls DDL table-level `ConstraintType.FOREIGN_KEY` kuenftig
+      mitnutzt: neuer Test, der zeigt, dass Constraint-FKs die
+      Sortierung beeinflussen
+    - falls DDL bewusst weiter nur `column.references` nutzt: neuer
+      Nicht-Regressions-Test, der zeigt, dass table-level Constraints
+      die DDL-Sortierung nicht veraendern, plus dokumentierter
+      Kommentar im Code warum
 - Regressionstests, dass `ImportDirectoryResolver`:
   - Spalten- und Constraint-FKs beruecksichtigt
   - Namensprojektion fuer Directory-Dateien korrekt anwendet
@@ -377,7 +428,12 @@ Pflichtfaelle:
 - Regressionstests, dass `DataTransferRunner`:
   - FK-Zyklen weiter als Preflight-Fehler meldet
   - seinen bestehenden Nutzervertrag nicht still aendert
-- Kover-Coverage bleibt pro betroffenem Modul bei mindestens 90 %
+- Kover-Coverage bleibt pro betroffenem Modul bei dessen bestehendem
+  Schwellenwert:
+  - `hexagon:core` und `adapters:driven:driver-common` weiter 90 %
+  - `adapters:driving:cli` weiter 80 %
+  - `hexagon:application` weiterhin ohne neue modul-lokale
+    `koverVerify`-Schwelle in Phase E
 
 Erwuenschte Zusatzfaelle:
 
@@ -392,8 +448,10 @@ Erwuenschte Zusatzfaelle:
 
 Direkt betroffen:
 
-- neue Utility unter `hexagon/core/src/main/kotlin/...`
-- neue Tests unter `hexagon/core/src/test/kotlin/...`
+- neue Utility unter
+  `hexagon/core/src/main/kotlin/dev/dmigrate/core/dependency/...`
+- neue Tests unter
+  `hexagon/core/src/test/kotlin/dev/dmigrate/core/dependency/...`
 - `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
 - `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/AbstractDdlGeneratorTest.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/ImportDirectoryResolver.kt`
@@ -403,6 +461,7 @@ Direkt betroffen:
 
 Wahrscheinlich mit betroffen:
 
+- `build.gradle.kts` (Root-Kover-Aggregation mit expliziter Projektliste)
 - `docs/implementation-plan-0.9.1.md`
 - `docs/architecture.md`
 - evtl. weitere Tests oder Helfer rund um Import-Preflight
@@ -452,8 +511,8 @@ eine grobe "FK cycle"-Meldung schrumpfen.
 
 Mitigation:
 
-- Kantenmodell mit `fromTable`/`fromColumn`/`toTable`/`toColumn`
-  beibehalten
+- Kantenmodell mit `fromTable`/`toTable` und optionalen
+  `fromColumn`/`toColumn` beibehalten
 - Fehlermeldungsdetails in den bestehenden Tests halten
 
 ### 8.5 Scope-Druck Richtung `d-browser`-Baumprojektion vermeiden
