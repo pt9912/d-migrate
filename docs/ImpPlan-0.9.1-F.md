@@ -513,8 +513,13 @@ Mitigation:
 - auch ohne Modulschnitt liefert Phase F einen dokumentierten und
   getesteten Integrationsschnitt, der fuer einen spaeteren
   `source-d-migrate`-Adapter als Vorlage dient
-- der Modulschnitt kann als Phase C2 nachgezogen werden und
-  verschaerft die Build-Absicherung dann automatisch
+- der Modulschnitt (Phase-C Stretch Goals 5.4-5.5) wird als Teil von
+  Phase F umgesetzt, nicht als separates Phase C2: er betrifft den
+  Integrationsschnitt direkt und gehoert fachlich hierher
+- Voraussetzung: `adapters:driven:formats` muss entweder in read-/
+  write-Teilmodule gesplittet oder mit `api(ports-write)` gebaut
+  werden, weil es oeffentliche Writer-Klassen exponiert
+  (Finding aus Phase-C-Review)
 
 ---
 

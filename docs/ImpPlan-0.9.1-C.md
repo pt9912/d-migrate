@@ -3,10 +3,8 @@
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: C (Port- und Optionsschnitt trennen)
 > **Status**: Done (2026-04-18) — Kern 5.1-5.3 umgesetzt; Stretch Goals
-> 5.4-5.5 zurueckgestellt (Finding: formats exponiert Writer-API
-> oeffentlich, `implementation(ports-write)` allein bricht Consumer;
-> Modulschnitt erfordert echten formats-Split oder api(ports-write)
-> ohne Entkopplungsgewinn — erst bei konkretem Read-Consumer-Bedarf)
+> 5.4-5.5 (Modulschnitt ports-read/ports-write) nach Phase F verschoben
+> (dort als Teil des Integrationsschnitts fuer externe Consumer)
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.3, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/d-browser-integration-coupling-assessment.md`;
