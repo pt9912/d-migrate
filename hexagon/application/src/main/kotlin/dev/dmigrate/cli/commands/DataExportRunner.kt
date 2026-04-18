@@ -207,6 +207,8 @@ class DataExportRunner(
         { _, _, _ -> emptyList() },
 ) {
 
+    private val resumeCoordinator = ExportResumeCoordinator(primaryKeyLookup, stderr)
+
     fun execute(request: DataExportRequest): Int {
         // ─── 1. Source auflösen → vollständige Connection-URL ───
         val resolvedUrl = try {
@@ -797,88 +799,23 @@ class DataExportRunner(
      *   abgeleitet (Suffix `.checkpoint.yaml` entfernt).
      * - Sonst: der Wert ist direkt eine `operationId`.
      */
-    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? {
-        val looksLikePath = '/' in resumeValue || resumeValue.endsWith(MANIFEST_SUFFIX)
-        if (!looksLikePath) {
-            return resumeValue
-        }
-        val candidate = try {
-            Path.of(resumeValue).toAbsolutePath().normalize()
-        } catch (_: Throwable) {
-            return null
-        }
-        val baseDir = checkpointDir.toAbsolutePath().normalize()
-        if (!candidate.startsWith(baseDir)) return null
-        val fileName = candidate.fileName.toString()
-        if (!fileName.endsWith(MANIFEST_SUFFIX)) return null
-        return fileName.removeSuffix(MANIFEST_SUFFIX)
-    }
+    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? =
+        resumeCoordinator.resolveResumeReference(resumeValue, checkpointDir)
 
-    /**
-     * 0.9.0 Phase C.2 §4.1 / §5.3: memoisiert den PK-Lookup ueber die
-     * gegebenen Tabellen. Fehlschlaege pro Tabelle landen in einer
-     * leeren Liste (Fall 2 → C.1-Fallback), damit ein kaputter
-     * Schema-Reader den gesamten Lauf nicht lahmlegt.
-     */
     private fun resolvePrimaryKeys(
         pool: ConnectionPool,
         dialect: DatabaseDialect,
         tables: List<String>,
-    ): Map<String, List<String>> = tables.associateWith { table ->
-        try {
-            primaryKeyLookup(pool, dialect, table)
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
+    ): Map<String, List<String>> = resumeCoordinator.resolvePrimaryKeys(pool, dialect, tables)
 
-    /**
-     * 0.9.0 Phase C.2 §4.1: Drei Fallunterscheidungen beim Bestimmen
-     * der Per-Tabelle-Resume-Strategie.
-     *
-     * - Fall 1 (kein `--since-column`, kein Manifest-`resumePosition`)
-     *   → `null` (C.1-Fallback, kein stderr-Hinweis).
-     * - Fall 2 (`--since-column` gesetzt, Tabelle ohne PK) → `null`
-     *   mit sichtbarem stderr-Hinweis.
-     * - Fall 3 (Manifest hat `resumePosition`, aber aktueller Request
-     *   hat kein `--since-column`) → `Throw TableResumeMismatchException`
-     *   — der Aufrufer uebersetzt das in Exit 3.
-     *
-     * Fresh-Track (mit PK, ohne bereits vorhandene Position) liefert
-     * einen [ResumeMarker] ohne Position; Resume-From-Position liefert
-     * einen [ResumeMarker] inkl. Position.
-     */
     private fun resolveTableResumeMarker(
         request: DataExportRequest,
         table: String,
         existingPosition: CheckpointResumePosition?,
         primaryKey: List<String>,
-    ): ResumeMarker? {
-        val sinceColumn = request.sinceColumn?.takeIf { it.isNotBlank() }
-        // Fall 3: Manifest traegt Position, aber Request hat kein since-column
-        if (existingPosition != null && sinceColumn == null) {
-            throw TableResumeMismatchException(table, existingPosition.markerColumn)
-        }
-        // Fall 1: ohne since-column kein Mid-Table-Resume — C.1-Fallback
-        if (sinceColumn == null) return null
-        // Fall 2: PK fehlt -> C.1-Fallback mit stderr-Hinweis
-        if (primaryKey.isEmpty()) {
-            stderr(
-                "Warning: mid-table resume disabled for table '$table': " +
-                    "no primary key found for tie-breaker; re-exporting from scratch."
-            )
-            return null
-        }
-        // Fresh-Track oder Resume-From-Position
-        val position = existingPosition?.let { persisted ->
-            MarkerCodec.toRuntimePosition(persisted)
-        }
-        return ResumeMarker(
-            markerColumn = sinceColumn,
-            tieBreakerColumns = primaryKey,
-            position = position,
-        )
-    }
+    ): ResumeMarker? = resumeCoordinator.resolveTableResumeMarker(
+        request.sinceColumn, table, existingPosition, primaryKey,
+    )
 
     private fun canonicalOutputMode(output: ExportOutput): String = when (output) {
         is ExportOutput.Stdout -> "stdout"
@@ -903,9 +840,6 @@ class DataExportRunner(
         val staging: Path,
     )
 
-    companion object {
-        private const val MANIFEST_SUFFIX = ".checkpoint.yaml"
-    }
 }
 
 /**
