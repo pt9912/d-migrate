@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: E (FK-/Topo-Sort-Utility extrahieren)
-> **Status**: Draft (2026-04-18)
+> **Status**: Done (2026-04-18)
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.5, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/d-browser-integration-coupling-assessment.md`;
