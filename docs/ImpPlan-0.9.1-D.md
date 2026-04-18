@@ -135,7 +135,9 @@ Konsequenz:
 - Verschiebung der zugehoerigen Profiling-Tests in die neuen Module
 - Entfernung der direkten `hexagon:profiling`-Abhaengigkeit aus den
   Treiberkernmodulen
-- Anpassung von `settings.gradle.kts` und betroffenen `build.gradle.kts`
+- Anpassung von `settings.gradle.kts`, betroffenen `build.gradle.kts`
+  und der Root-`build.gradle.kts` (Kover-Aggregation ueber explizite
+  Projektliste)
 - Anpassung des CLI-Wirings fuer `DataProfileCommand` auf die neuen
   Profiling-Module
 - Build-/Verifikationsnachweis, dass die Treiberkerne danach kein
@@ -373,6 +375,9 @@ mehr sein Tragepfad.
   - die drei Treiberkerne nicht mehr an `hexagon:profiling` haengen
   - die neuen Profiling-Module korrekt bauen
   - die CLI mit `data profile` weiter baut
+- Root-`build.gradle.kts` anpassen: die drei neuen Profiling-Module in
+  die Kover-Aggregationsliste aufnehmen, damit sie in `koverVerify`
+  und im globalen Coverage-Nachweis enthalten sind
 - mindestens eine kleine Konsumentenprobe anlegen, die nur einen
   Treiberkern fuer Schema/Data/DDL nutzt und dabei kein
   `hexagon:profiling` transitiv braucht
@@ -422,6 +427,7 @@ Erwuenschte Zusatzfaelle:
 
 Direkt betroffen:
 
+- `build.gradle.kts` (Root — Kover-Aggregationsliste)
 - `settings.gradle.kts`
 - `adapters/driven/driver-postgresql/build.gradle.kts`
 - `adapters/driven/driver-mysql/build.gradle.kts`
