@@ -183,9 +183,10 @@ als Phase C2 nachgezogen (Fallback-Kriterium 8.6):
     `hexagon:ports-write`, damit read-only Consumer von
     `adapters:driven:formats` die write-orientierten Porttypen nicht
     transitiv sehen
-  - `adapters:driven:streaming` und andere gemischte Consumer haengen
-    explizit an beiden Modulen, falls sie beide Vertragsseiten
-    benoetigen
+  - `adapters:driven:streaming` benoetigt `api` auf
+    `hexagon:ports-write`, weil `StreamingExporter` die Typen
+    `DataChunkWriterFactory` und `ExportOptions` in seiner
+    oeffentlichen API exponiert
 - einen read-only Consumer-Fixture, der nur `hexagon:ports-read`
   plus `adapters:driven:formats` einbindet und prueft, dass keine
   write-orientierten Porttypen im transitiven Compile-Graph landen
@@ -460,7 +461,9 @@ abschliessbar.
     `SchemaReadNote`, `SchemaReadReportInput`,
     `DataReader`, `ChunkSequence`, `ResumeMarker`,
     `TableLister`, `DataChunkReader`, `DataChunkReaderFactory`,
-    `DdlGenerator`, `DdlGenerationOptions`
+    `DdlGenerator`, `DdlGenerationOptions`, `DdlResult`,
+    `DdlStatement`, `TransformationNote`, `NoteType`,
+    `SkippedObject`
   - `hexagon:ports-write`:
     `DataWriter`, `TableImportSession`, `ImportOptions`,
     `SchemaSync`, `FinishTableResult`, `WriteResult`,
@@ -481,7 +484,9 @@ abschliessbar.
     Streaming-Portbereich):
     `ImportInput`, `ImportResult`, `ExportOutput`, `ExportResult`,
     `PipelineConfig`, `CheckpointConfig`, `CheckpointStore`,
-    `CheckpointManifest`, `ProgressEvent`
+    `CheckpointManifest`, `ProgressEvent`, `ProgressOperation`,
+    `TableProgressStatus`, `ProgressReporter`,
+    `NoOpProgressReporter`
   - migration-orientiert (verbleiben in `hexagon:ports`):
     `MigrationBundle`, `MigrationIdentity`, `MigrationTypes`,
     `ArtifactRelativePath`, `ToolMigrationExporter`,
@@ -502,8 +507,12 @@ Modulschnitt geprueft werden kann.
   `implementation(project(":hexagon:ports-write"))` umstellen, damit
   read-only Consumer die write-orientierten Porttypen nicht transitiv
   sehen
-- `adapters:driven:streaming` explizit an Read- und Write-Portmodul
-  anbinden
+- `adapters:driven:streaming` benoetigt `api` auf
+  `hexagon:ports-write`, weil `StreamingExporter` die Typen
+  `DataChunkWriterFactory` und `ExportOptions` in seiner
+  oeffentlichen API exponiert; read-orientierte Porttypen kommen
+  transitiv ueber `adapters:driven:driver-common` und
+  `adapters:driven:formats`
 - einen kleinen read-only Consumer-Fixture anlegen, der nur gegen
   `hexagon:ports-read` plus `adapters:driven:formats` baut und
   prueft, dass `hexagon:ports-write` nicht transitiv im Compile-Graph
