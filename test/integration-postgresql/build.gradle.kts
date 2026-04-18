@@ -4,6 +4,7 @@
 
 dependencies {
     testImplementation(project(":adapters:driven:driver-postgresql"))
+    testImplementation(project(":adapters:driven:driver-postgresql-profiling"))
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":hexagon:profiling"))
     testImplementation(project(":hexagon:core"))
