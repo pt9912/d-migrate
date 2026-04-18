@@ -14,8 +14,7 @@
 > `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/SchemaReader.kt`;
 > `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`;
 > `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/SchemaReadReportInput.kt`;
-> `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaReverseRunner.kt`;
-> `adapters/driven/integrations/src/main/...`.
+> `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaReverseRunner.kt`.
 
 ---
 
@@ -81,8 +80,11 @@ Die aktuelle Integrationslage ist gemischt:
   `SchemaReadReportInput` und `ReverseSourceRef` tragen source- bzw.
   report-spezifischen Kontext **neben** `SchemaReadResult`, statt den
   Core-Typ selbst zu erweitern
-- nach Phase C ist der beabsichtigte Read-Pfad fachlich schlanker
-  gedacht als der gemischte `DatabaseDriver`-Pfad
+- nach Phase C ist der Read-Pfad fachlich schlanker:
+  - der Optionsschnitt (Phase-C-Kern) trennt Read- von Write-Optionen
+  - der Modulschnitt (Phase-C-Stretch-Goal) wuerde zusaetzlich ein
+    eigenes `hexagon:ports-read`-Modul liefern; ob dieses Modul bei
+    Phase-F-Start existiert, ist offen
 - nach Phase D sind Profiling-Module fuer Read-Consumer optional
   gedacht und gehoeren nicht zum Default-Schnitt eines
   `source-d-migrate`-Adapters
@@ -235,6 +237,40 @@ Verbindliche Entscheidung:
 - die Probe darf als interner Fixture, Sample oder compile-nahe
   Teststruktur ausgefuehrt werden
 
+### 4.8 Konsumentenprobe passt sich an das Phase-C-Ergebnis an
+
+Verbindliche Entscheidung:
+
+- Phase F setzt den Phase-C-Kern (Optionsschnitt) voraus, nicht
+  zwingend den Phase-C-Stretch-Goal (Modulschnitt)
+- der konkrete Build-Zuschnitt der Konsumentenprobe haengt davon ab,
+  ob `hexagon:ports-read` bei Phase-F-Start existiert:
+  - **mit Modulschnitt**: die Probe baut gegen `hexagon:ports-read`
+    plus `adapters:driven:formats` und prueft, dass
+    `hexagon:ports-write` nicht transitiv im Compile-Graph landet;
+    sie erweitert oder ersetzt den Phase-C-Consumer-Fixture um
+    fachliche Aspekte (Schema-Lesen, Projektion)
+  - **ohne Modulschnitt**: die Probe baut gegen `hexagon:ports`
+    (Aggregator) und dokumentiert den Integrationsschnitt rein
+    ueber Import-Konventionen und Negativliste; der Build erzwingt
+    die Trennung dann nicht, aber die Doku macht sie explizit
+- in beiden Varianten muss die Probe zeigen, dass ein read-only
+  Consumer ohne Write-, CLI- oder Profiling-Defaultpfade auskommt
+
+### 4.9 Die Konsumentenprobe lebt in einem eigenen Testmodul
+
+Verbindliche Entscheidung:
+
+- die Probe wird als eigenes Gradle-Modul angelegt (Arbeitsname:
+  `test:consumer-read-probe`)
+- sie lebt bewusst nicht in `adapters:driven:integrations`, weil
+  dieses Modul fuer Migrations-Exporter reserviert ist
+- `settings.gradle.kts` wird entsprechend erweitert
+- das Modul hat keine eigene `koverVerify`-Schwelle, weil es reiner
+  Compile-/Integrationsnachweis ist, kein Coverage-Ziel
+- das Modul wird in der Root-`build.gradle.kts`-Kover-Aggregation
+  aufgenommen, damit seine Tests im globalen Bericht sichtbar sind
+
 ---
 
 ## 5. Konkrete Arbeitspakete
@@ -285,19 +321,31 @@ Ergebnis:
 Der Integrationsschnitt ist nicht nur benannt, sondern fachlich
 benutzbar beschrieben.
 
-### 5.3 Lokale oder interne Konsumentenprobe fuer `source-d-migrate` aufsetzen
+### 5.3 Konsumentenprobe als eigenes Testmodul aufsetzen
 
-- eine kleine Konsumentenprobe anlegen oder nachziehen, die gegen den
-  schmaleren Read-Schnitt baut
-- diese Probe soll mindestens zeigen:
+- ein neues Gradle-Modul `test:consumer-read-probe` anlegen
+  (Leitentscheidung 4.9)
+- `settings.gradle.kts` und Root-`build.gradle.kts`
+  (Kover-Aggregation) entsprechend erweitern
+- Abhaengigkeitsschnitt je nach Phase-C-Ergebnis
+  (Leitentscheidung 4.8):
+  - **mit Modulschnitt**: `testImplementation(":hexagon:ports-read")`
+    plus `testImplementation(":adapters:driven:formats")`; Build
+    prueft, dass `hexagon:ports-write` nicht transitiv sichtbar ist
+  - **ohne Modulschnitt**: `testImplementation(":hexagon:ports")`
+    plus `testImplementation(":adapters:driven:formats")`;
+    Integrationsschnitt wird ueber Import-Konventionen und einen
+    expliziten Compile-Check-Kommentar im Test abgesichert
+- in beiden Varianten muss die Probe mindestens zeigen:
   - Schema-Lesen ueber den vorgesehenen Integrationsschnitt
   - lokale Projektion von `SchemaReadResult`
   - keine Abhaengigkeit auf Write-, CLI- oder Profiling-Defaultpfade
+- falls der Phase-C-Stretch-Goal-Fixture bereits existiert, erweitert
+  die Phase-F-Probe diesen um fachliche Aspekte (Schema-Lesen,
+  Projektion), statt ein separates Artefakt zu duplizieren
 - als Datenbasis kann ein kleiner realistischer Smoke-Fall verwendet
   werden, z. B. ein lokales Pagila-/Sakila-nahes Schema oder ein
   gleichwertiger interner Testfall
-- wenn kein eigener Fixture im Repo sinnvoll ist, muss mindestens ein
-  dokumentierter interner Verifikationsweg festgehalten werden
 
 Ergebnis:
 
@@ -319,19 +367,6 @@ Ergebnis:
 
 Die Integrationsgrenze ist fuer spaetere Consumer nicht nur in
 Teilplaenen, sondern in den zentralen Architekturdokumenten sichtbar.
-
-### 5.5 Grobe Aufwandseinschaetzung
-
-- **Niedrig bis mittel** fuer die reine Dokumentations- und
-  Vertragsarbeit
-- **Mittel** fuer eine saubere Konsumentenprobe, weil dafuer ein
-  realistischer read-only Pfad aufgebaut werden muss
-- **Niedrig** fuer `SchemaReadResult` selbst, weil der Typ bewusst
-  unveraendert bleibt
-
-Die Unsicherheit liegt nicht in der Kernlogik, sondern darin, die
-Integrationsgrenze hart genug zu formulieren, ohne eine neue
-Produktionsflaeche vorwegzunehmen.
 
 ---
 
@@ -367,14 +402,18 @@ Direkt betroffen:
 - `docs/d-browser-integration-coupling-assessment.md`
 - `docs/architecture.md`
 - `docs/roadmap.md`
+- `settings.gradle.kts` (neues Modul `test:consumer-read-probe`)
+- `build.gradle.kts` (Root — Kover-Aggregationsliste)
+- neues Modul `test/consumer-read-probe/` mit `build.gradle.kts`
+  und Testquellen
 
 Wahrscheinlich mit betroffen:
 
 - `docs/guide.md` oder ein gleichwertiger Nutzer-/Architekturtext
-- ein interner Consumer-Fixture oder Testpfad fuer die
-  Konsumentenprobe
 - ggf. kleinere Referenzstellen rund um `SchemaReadResult`- und
   Reverse-Dokumentation
+- falls Phase-C-Stretch-Goal-Fixture bereits existiert: dessen
+  Erweiterung statt neuem Modul
 
 Nicht primaer betroffen:
 
@@ -443,6 +482,22 @@ Mitigation:
 - Testdatenkandidaten aus `docs/test-database-candidates.md`
   beruecksichtigen
 
+### 8.6 Ohne Phase-C-Modulschnitt ist die Build-Absicherung schwaecher
+
+Falls Phase C nur den Kern (Optionsschnitt) liefert, gibt es kein
+`hexagon:ports-read`-Modul. Die Konsumentenprobe kann dann die
+Read-/Write-Trennung nicht im Build erzwingen, sondern nur per
+Dokumentation und Import-Konvention absichern.
+
+Mitigation:
+
+- Leitentscheidung 4.8 definiert beide Varianten explizit
+- auch ohne Modulschnitt liefert Phase F einen dokumentierten und
+  getesteten Integrationsschnitt, der fuer einen spaeteren
+  `source-d-migrate`-Adapter als Vorlage dient
+- der Modulschnitt kann als Phase C2 nachgezogen werden und
+  verschaerft die Build-Absicherung dann automatisch
+
 ---
 
 ## 9. Entscheidungsempfehlung
@@ -456,8 +511,9 @@ Empfohlener Zuschnitt:
 1. stabile vs. interne Flachen fuer `source-d-migrate` explizit
    festziehen
 2. `SchemaReadResult`-Projektion verbindlich im Adapterraum verorten
-3. mindestens eine lokale oder interne Konsumentenprobe fuer den
-   schmaleren Read-Schnitt aufsetzen
+3. Konsumentenprobe als eigenes Testmodul
+   (`test:consumer-read-probe`) aufsetzen, mit Build-Zuschnitt je
+   nach Phase-C-Ergebnis (Leitentscheidung 4.8)
 4. Architektur-, Roadmap- und Integrationsdoku konsistent nachziehen
 
 Damit liefert Phase F einen nachvollziehbaren Integrationsschnitt fuer
