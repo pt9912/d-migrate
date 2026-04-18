@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: B (Zerlegung der grossen Orchestrierungs- und Dialekt-Klassen)
-> **Status**: In Progress (2026-04-18) — 5.1 done
+> **Status**: In Progress (2026-04-18) — 5.1 + 5.2 done
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.2, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/quality.md`; `docs/ddl-output-split-plan.md`;
