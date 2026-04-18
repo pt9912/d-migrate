@@ -656,14 +656,17 @@ die heute alle gegen `project(":hexagon:ports")` bauen:
 
 Ohne Aggregator-Ansatz (Leitentscheidung 4.5) wuerde jedes dieser
 Module gleichzeitig angepasst werden muessen. Der Aggregator begrenzt
-den Pflicht-Churn auf die Module, die gezielt entkoppelt werden sollen
-(`adapters:driven:formats` → `ports-read`).
+den Pflicht-Churn auf die zwei Module, die gezielt entkoppelt werden
+sollen.
 
 Mitigation:
 
 - `hexagon:ports` bleibt als Aggregator (Leitentscheidung 4.5)
-- nur `adapters:driven:formats` wird in Phase C explizit auf
-  `ports-read` umgestellt
+- im Stretch Goal werden genau zwei Adaptermodule direkt angefasst:
+  - `adapters:driven:formats` → `api(ports-read)` +
+    `implementation(ports-write)`
+  - `adapters:driven:streaming` → `api(ports-write)` (weil
+    `StreamingExporter` write-orientierte Porttypen exponiert)
 - compile-nahe Tests und betroffene Build-Dateien frueh mitziehen
 - weitere Module werden erst in Folgephasen sukzessive migriert
 
@@ -720,10 +723,12 @@ Stretch Goal:
    einfuehren
 6. `adapters:driven:formats` auf `api(ports-read)` +
    `implementation(ports-write)` umstellen
-7. den neuen Schnitt ueber einen read-only Consumer-Fixture
+7. `adapters:driven:streaming` auf `api(ports-write)` umstellen,
+   weil `StreamingExporter` write-orientierte Porttypen exponiert
+8. den neuen Schnitt ueber einen read-only Consumer-Fixture
    buildseitig verifizieren
 
-Phase C ist mit den Schritten 1–4 abschliessbar. Die Schritte 5–7
+Phase C ist mit den Schritten 1–4 abschliessbar. Die Schritte 5–8
 vertiefen den Schnitt auf Build-Ebene und koennen bei zu breitem
 Churn als Phase C2 nachgezogen werden (Fallback-Kriterium 8.6).
 
