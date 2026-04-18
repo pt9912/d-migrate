@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.1 - Library-Refactor und Integrationsschnitt
 > **Phase**: C (Port- und Optionsschnitt trennen)
-> **Status**: Draft (2026-04-18)
+> **Status**: Done (2026-04-18) — Kern (5.1-5.3) umgesetzt, Stretch Goals offen
 > **Referenz**: `docs/implementation-plan-0.9.1.md` Abschnitt 1 bis 5,
 > Abschnitt 6.3, Abschnitt 7, Abschnitt 8 und Abschnitt 9;
 > `docs/d-browser-integration-coupling-assessment.md`;
