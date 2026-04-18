@@ -2,9 +2,12 @@ plugins {
     `java-library`
 }
 
-// hexagon:ports — Pure port interfaces and associated data types.
-// No implementation classes, no external libraries (only JDK java.sql).
+// hexagon:ports — Aggregator module that re-exports all port sub-modules.
+// Existing consumers can keep depending on this module without changes.
+// New read-only consumers should depend on hexagon:ports-read directly.
 
 dependencies {
-    api(project(":hexagon:core"))
+    api(project(":hexagon:ports-common"))
+    api(project(":hexagon:ports-read"))
+    api(project(":hexagon:ports-write"))
 }

@@ -2,6 +2,9 @@ rootProject.name = "d-migrate"
 
 // Hexagon (innen)
 include("hexagon:core")
+include("hexagon:ports-common")
+include("hexagon:ports-read")
+include("hexagon:ports-write")
 include("hexagon:ports")
 include("hexagon:application")
 include("hexagon:profiling")

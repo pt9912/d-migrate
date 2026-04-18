@@ -14,128 +14,136 @@ Zusatzaufgaben:
 - Schlage konkrete Verbesserungen vor, um die Qualität zu erhöhen.
 
 
-## Findings
+## Findings (Stand: 2026-04-18)
 
-- **Hoch**: 
-  In mehreren Profiling-/Introspection-Adaptern werden **table, column und teils schema direkt in SQL interpoliert**. 
-  Das ist eine echte Injection-Fläche, falls diese Werte nicht ausschließlich aus vertrauenswürdigen Metadaten kommen. 
-  Beispiele: 
-  adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/profiling/PostgresSchemaIntrospectionAdapter.kt:16, 
-  adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/profiling/MysqlSchemaIntrospectionAdapter.kt:33,
-  adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/profiling/MysqlProfilingDataAdapter.kt:18,
-  adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/profiling/SqliteSchemaIntrospectionAdapter.kt:35.
+- **Hoch**:
+  PostgreSQL-DOMAIN-CHECK-Constraints werden in `PostgresDdlGenerator` direkt per `append(" CHECK (${typeDef.check})")` interpoliert.
+  Ein bösartiges Schema könnte darüber beliebiges SQL in die generierte DDL einschleusen.
+  Beispiel:
+  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:49`.
 
-- **Mittel**:
-  Die Export-/DDL-Pfade akzeptieren bewusst rohe SQL-Fragmente. 
-  DataExportHelpers.resolveFilter übernimmt --filter ungeprüft als WhereClause, 
-  und die DDL-Generatoren setzen constraint.expression direkt in CHECK/EXCLUDE ein.
-  Das ist funktional nachvollziehbar, aber sicherheitstechnisch nur bei vollständig vertrauenswürdigen Eingaben sauber. 
-  Beispiele: 
-  hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt:59,
-  adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:224, adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:238,
-  adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt:294.
+- **Mittel** (dokumentierte Design-Entscheidung):
+  `--filter` akzeptiert rohes SQL als WhereClause ohne Parametrisierung.
+  Trust-Boundary ist die lokale Shell (nur CLI-Operator hat Zugriff).
+  Dokumentiert in `DataExportCommand.kt:62-66` und `ImpPlan-0.9.1-A.md §4.3`.
+  Seit letzter Analyse ergänzt: `containsLiteralQuestionMark()`-Validierung und expliziter Trusted-Input-Kommentar.
+  Beispiel:
+  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt:57-72`.
 
-- **Mittel**:
-  Einige zentrale Klassen sind zu groß und tragen zu viele Verantwortlichkeiten.
-  DataImportRunner liegt bei 887 LOC, DataExportRunner bei 923, StreamingImporter bei 792, SchemaComparator bei 656.
-  Das schwächt die lokale Verständlichkeit und erhöht das Regressionsrisiko bei Änderungen.
-  Beispiel: 
-  hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt:163,
-  hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt:18.
+- **Mittel** (teilweise behoben):
+  MySQL-DDL-Generator enthält noch 4 `-- TODO`-Platzhalter als pseudo-ausführbare SQL-Kommentare
+  (Composite Types, Sequences, EXCLUDE-Constraints, nicht unterstützte Index-Typen).
+  Jetzt mit `ManualActionRequired`-Metadaten gekoppelt.
+  PostgreSQL- und SQLite-DDL-Generatoren sind vollständig bereinigt.
+  Beispiele:
+  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:31`,
+  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:51`,
+  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:247`,
+  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:315`.
 
-- **Mittel**:
-  Zwischen MySQL-, PostgreSQL- und SQLite-Profiling steckt viel ähnliche Logik mit leicht unterschiedlichen Escape-Strategien. Das erhöht Wartungsaufwand und macht Sicherheitsfehler wahrscheinlicher, weil
-  Fixes leicht in nur einem Dialekt landen.
+- **Mittel** (verbessert):
+  DataImportRunner (851 LOC) und DataExportRunner (758 LOC) bündeln weiterhin
+  CLI-Parsing, Validierung, Connection-Management, Resume-Logik und Orchestrierung.
+  Gegenüber letzter Analyse um 36 bzw. 165 LOC reduziert.
+  Durch Constructor-Injection mit 12-17 Lambda-Parametern gut testbar,
+  aber die Funktionslänge (z.B. `executeWithPool` ~476 LOC) erschwert lokale Verständlichkeit.
+  Beispiele:
+  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt`,
+  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`.
 
-##  Bewertung
+- **Niedrig**:
+  Regex-basierte View-Query-Transformation in `ViewQueryTransformer.kt:9-34`
+  könnte bei verschachtelten Funktionen oder SQL in String-Literalen Edge Cases verfehlen.
+  Beispiel:
+  `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/ViewQueryTransformer.kt:9-34`.
+
+- **Erledigt** (gegenüber vorheriger Analyse):
+  - SQL-Interpolation in Profiling-Adaptern: behoben.
+    Adapter in eigene Module (`driver-*-profiling`) verschoben, nutzen jetzt parametrisierte Queries + `qi()`/`ql()`-Quoting via `SqlIdentifiers`.
+  - SchemaComparator: von 656 auf 316 LOC reduziert (52% Reduktion).
+  - Dialekt-Duplizierung in Profiling: durch separate Module und zentrale `SqlIdentifiers`-Utility entschärft.
+  - TODO-Platzhalter in PostgreSQL- und SQLite-DDL: vollständig bereinigt.
+  - Constraint-Expressions: `constraint.expression` jetzt als Trusted Input dokumentiert.
+
+
+## Bewertung
+
 Die Bewertung basiert auf den Kernmodulen in hexagon/core, hexagon/application und den DB-/CLI-Adaptern, nicht auf jedem einzelnen File.
 
-| Metrik                    | Bewertung | Begründung                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lesbarkeit & Namensgebung | 7/10      | Die Domänensprache ist gut. Namen wie `SchemaComparator`, `SchemaValidator`, `DataImportRequest` oder `CheckpointStore` sind klar und konsistent. Abzüge gibt es für sehr große Klassen, lange Parameterlisten und starke Kommentar-/Plan-ID-Dichte, die das eigentliche Verhalten schwerer scanbar macht.                                                    |
-| Modularität & Struktur    | 7/10      | Die grobe Architektur ist stark. Die hexagonale Trennung ist sauber dokumentiert und im Build sichtbar (`docs/architecture.md:49`, `build.gradle.kts:29`). Innerhalb einzelner Use Cases bricht diese Qualität aber teilweise auf, weil Runner und Import-/Export-Pfade zu viel Orchestrierung, Validierung, Fehlerabbildung und Checkpoint-Handling bündeln. |
-| Wartbarkeit               | 6/10      | Positiv sind die strengen Kover-Grenzen von meist `80-90%+` (`hexagon/core/build.gradle.kts:4`, `adapters/driving/cli/build.gradle.kts:150`). **Negativ wirken die Hotspots mit hoher Dateigröße, Dialekt-Duplizierung und mehrere bewusst provisorische Fallback-Pfade in den DDL-Generatoren, die statt ausführbarer DDL nur SQL-Kommentar-Platzhalter wie `-- TODO: ...` erzeugen.** |
-| Sicherheit                | 5/10      | Es gibt viele gute Ansätze: Identifier werden oft korrekt gequotet, und viele DB-Zugriffe nutzen `PreparedStatement`. **Der Score sinkt wegen der direkten SQL-Interpolation in Profiling/Introspection sowie der absichtlich offenen Raw-SQL-Schnittstellen**.                                                                                               |
+| Metrik                    | Bewertung | Begründung |
+| ------------------------- | --------- | ---------- |
+| Lesbarkeit & Namensgebung | 8/10      | Exzellente Domänensprache (`SchemaDefinition`, `TableComparator`, `NeutralType` als sealed class mit data objects). Konsistente Benennung über alle Schichten. Idiomatisches Kotlin: sealed classes, Extension Functions, `?.let()`, Set-Algebra (`leftNames - rightNames`), data classes durchgängig. Abzug für zu lange Funktionen (`DataExportRunner.executeWithPool` ~476 LOC) und Konstruktoren mit 12-17 Parametern in den Runner-Klassen. |
+| Modularität & Struktur    | 8/10      | Vorbildliche hexagonale Architektur, auf Gradle-Ebene erzwungen. Core-Modul hat **null externe Abhängigkeiten**. 18 sauber getrennte Module. Port-Interfaces sind fokussiert (kein God-Interface). `AbstractJdbcDataReader` als Template-Methode mit nur 31-38 LOC pro Dialekt-Override ist exzellent. Dependency Inversion sauber: Application hängt nur von Core und Ports ab, nie von Adaptern. Abzug: DataImportRunner (851 LOC) und DataExportRunner (758 LOC) bündeln noch zu viel Orchestrierung. |
+| Wartbarkeit               | 8/10      | 90% Kover-Minimum auf 15 von 16 Modulen (CLI: 80%, Profiling: 85%). Testqualität hoch: verhaltensgetriebene Benennung, Kotest FunSpec, Edge Cases, Test Doubles statt übermäßiger Mocks. Fehlerbehandlung konsistent über sealed classes (`FinishTableResult.Success | PartialFailure`) und Result-Typen mit strukturierten Fehlercodes (E001-E121). Neuen Dialekt hinzufügen = 7 Port-Interfaces + 4 Zeilen Registration. Null FIXME/HACK/XXX-Marker im gesamten Produktionscode. |
+| Sicherheit                | 7/10      | Gegenüber vorheriger Analyse deutlich gehärtet. Profiling-Adapter nutzen jetzt parametrisierte Queries + `qi()`/`ql()`-Quoting. PreparedStatements durchgängig. Zentrales Identifier-Quoting über `SqlIdentifiers`. Credential-Scrubbing via `LogScrubber`. Pfad-Validierung vorhanden. **Verbleibende Risiken:** (1) DOMAIN-CHECK-Constraints werden unvalidiert interpoliert (`PostgresDdlGenerator.kt:49`), (2) `--filter` akzeptiert rohes SQL (dokumentierte Trust-Boundary), (3) MySQL-DDL enthält noch 4 `-- TODO`-Platzhalter als pseudo-ausführbare Statements. |
 
-Belege für die Aussage zu provisorischen Fallback-Pfaden in DDL-Generatoren:
+Dateien mit >400 LOC (potenzielle Hotspots):
 
-- `PostgresDdlGenerator` erzeugt bei nicht kompatiblen Views/Functions/Procedures/Triggers explizit SQL-Kommentar-Platzhalter wie `-- TODO: Rewrite ...` bzw. `-- TODO: Implement ...` statt lauffähiger DDL:
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:342`,
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:374`,
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:390`,
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:440`,
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:456`,
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:503`,
-  `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt:521`.
-- `MysqlDdlGenerator` enthält dieselbe provisorische Strategie für nicht unterstützte oder manuell nachzuarbeitende Fälle:
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:25`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:51`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:259`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:327`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:419`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:459`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:475`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:532`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:548`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:596`,
-  `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt:612`.
-- `SqliteDdlGenerator` nutzt ebenfalls solche SQL-Kommentar-Platzhalter bei manuell zu implementierenden bzw. umzuschreibenden Trigger-/View-Fällen:
-  `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt:425`,
-  `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt:520`,
-  `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt:537`.
+| Datei | LOC | Einschätzung |
+| ----- | --- | ------------ |
+| DataImportRunner.kt | 851 | Runner-Zerlegung empfohlen |
+| DataExportRunner.kt | 758 | Runner-Zerlegung empfohlen |
+| ValueDeserializer.kt | 647 | Single Responsibility (Type-Dispatch); akzeptabel |
+| SqliteDataWriter.kt | 525 | Dialekt-spezifisch; erwartbar |
+| PostgresDataWriter.kt | 523 | Dialekt-spezifisch; erwartbar |
+| MysqlDataWriter.kt | 509 | Dialekt-spezifisch; erwartbar |
+| AbstractJdbcDataReader.kt | 489 | Shared Template; gut |
+| SchemaNodeParser.kt | 462 | Single Responsibility (Parsing); akzeptabel |
+| SqliteDdlGenerator.kt | 458 | Dialekt-spezifisch; erwartbar |
+| MysqlDdlGenerator.kt | 446 | Dialekt-spezifisch; erwartbar |
+| SchemaCompareRunner.kt | 403 | Fokussierter Use Case |
 
-##  Konkrete Verbesserungen
 
-- Vereinheitliche Identifier- und SQL-Erzeugung in einer zentralen Utility pro Dialekt.
-  Alle Profiling-/Introspection-Adapter sollten nur noch darüber bauen.
+## Konkrete Verbesserungen
 
-- Ersetze direkte String-Interpolation in Metadatenabfragen durch PreparedStatement, wo Werte als Literale eingebracht werden, 
-  und durch konsequentes Identifier-Quoting, wo Namen eingebracht werden müssen.
+### Offen
 
-- Zerlege DataImportRunner in kleinere Dienste, 
-  z. B. ImportRequestValidator, ImportSourceResolver, ResumeCoordinator, ManifestCoordinator, ImportExecutionService.
+- **DOMAIN-CHECK-Validierung**: `typeDef.check` in `PostgresDdlGenerator` gegen Whitelist sicherer Operatoren prüfen
+  oder durch SQL-AST-Parsing absichern, damit bösartige Schemata kein SQL einschleusen können.
 
-- Ziehe gemeinsame Profiling-Logik in abstrakte Basisklassen oder kleine Query-Builder-Helfer hoch, 
-  damit PostgreSQL/MySQL/SQLite nicht dieselben Fehler unabhängig reproduzieren.
+- **Runner-Zerlegung**: `DataExportRunner.executeWithPool()` (~476 LOC) in Schrittfunktionen aufteilen,
+  z.B. `validateInputs()`, `resolveResume()`, `executeStreaming()`, `finalizeOutput()`.
+  Analog für `DataImportRunner`.
 
-- Reduziere Plan-/Milestone-Kommentare im Produktionscode. Solche Historie gehört eher in docs/; 
-  im Code sollten vor allem why und Invarianten stehen.
+- **Konstruktor-Parameter gruppieren**: Die 12-17 DI-Parameter der Runner in Service-DTOs bündeln
+  (z.B. `ResolverServices`, `CheckpointServices`), um Lesbarkeit zu verbessern ohne Testbarkeit zu opfern.
 
-- Härte die unsicheren Schnittstellen explizit ab: --filter z. B. als --unsafe-filter kennzeichnen 
-  oder eine kleine Filter-DSL anbieten. 
-  Für constraint.expression sollte mindestens klar dokumentiert sein, dass dies Trusted Input ist.
-  
-- Ergänze Sicherheitstests mit absichtlich bösartigen Tabellen-/Spaltennamen, damit Escape-/Quoting-Fehler sofort auffallen.
+- **MySQL-TODO-Platzhalter eliminieren**: Die verbleibenden 4 `-- TODO`-Kommentare in `MysqlDdlGenerator`
+  durch rein strukturierte `ManualActionRequired`-Einträge ersetzen,
+  sodass generierte DDL ausschließlich ausführbare Statements enthält.
 
-- Ersetze die provisorischen SQL-Kommentar-Platzhalter `-- TODO: ...` in den DDL-Generatoren durch einen fachlich sauberen Ergebnisweg:
-  nicht als `DdlStatement.sql`, sondern als strukturierte `SkippedObject`-/`TransformationNote`- oder besser `ManualActionRequired`-Einträge.
-  So bleibt generierte DDL ausführbar, und manuelle Nacharbeit wird separat ausgewiesen.
+- **`--filter` härten** (optional): Entweder als `--unsafe-filter` umbenennen oder eine minimale Filter-DSL anbieten.
+  Alternativ: Operator-Whitelist-Validierung als optionalen Strict-Mode.
 
-- Trenne im DDL-Ergebnis explizit zwischen ausführbaren Statements und manuellen Nacharbeiten,
-  z. B. über getrennte Listen wie `generatedStatements` und `manualActionsRequired`.
-  Zusätzlich sollten die Ursachen fachlich getrennt behandelt werden:
-  `sourceDialect != targetDialect` als Rewrite-Fall,
-  „Feature vom Dialekt nicht unterstützt“ als Capability-Fall
-  und `body == null` zumindest daraufhin geprüft werden, ob der Fall bereits im Modell- oder Validierungspfad früher abgefangen werden sollte.
+- **KDoc auf Implementierungen ergänzen**: Port-Interfaces sind exzellent dokumentiert;
+  Implementierungsklassen (SchemaReader, DdlGenerator pro Dialekt) fehlt inline-Dokumentation.
 
-- Führe explizite Dialekt-Capabilities ein, damit Generatoren konsistent entscheiden können,
-  ob ein Objekt generiert, konvertiert, übersprungen oder als manuelle Nacharbeit gemeldet wird.
+### Erledigt
 
-- Schneide die DDL-Generatoren feiner nach Objektarten,
-  z. B. in `ViewDdlGenerator`, `FunctionDdlGenerator`, `ProcedureDdlGenerator` und `TriggerDdlGenerator`,
-  statt die Fallback- und Rewrite-Logik in großen monolithischen Generator-Dateien zu bündeln.
-  Das reduziert Kopplung, vereinfacht Tests und macht Capability-/Rewrite-Regeln lokaler verständlich.
+- ~~Vereinheitliche Identifier- und SQL-Erzeugung in einer zentralen Utility pro Dialekt.~~
+  Umgesetzt: `SqlIdentifiers` als zentrale Utility; Profiling-Adapter nutzen `qi()`/`ql()` durchgängig.
 
-- Verbessere die Ausgabe für Nutzer:
-  Die eigentliche SQL-Datei sollte nur ausführbare Statements enthalten.
-  Manuelle Nacharbeiten sollten stattdessen in einem separaten Report-Block oder einer separaten Ergebnisliste erscheinen,
-  z. B. als `manualActionsRequired` mit Objekt, Grund und Hinweis zur Nacharbeit.
+- ~~Ersetze direkte String-Interpolation in Metadatenabfragen durch PreparedStatement.~~
+  Umgesetzt: Alle Profiling-Adapter nutzen parametrisierte Queries + Identifier-Quoting.
 
-- Ergänze Tests dafür, dass Unsupported-/Rewrite-Fälle nicht mehr als pseudo-ausführbare DDL erscheinen,
-  sondern ausschließlich in den strukturierten Nacharbeits-/Skipped-Ergebnissen und der separaten Nutzer-Ausgabe auftauchen.
+- ~~Ziehe gemeinsame Profiling-Logik in abstrakte Basisklassen oder Query-Builder-Helfer hoch.~~
+  Umgesetzt: Profiling-Adapter in eigene Module extrahiert; `SqlIdentifiers` als gemeinsame Basis.
+
+- ~~Ersetze TODO-Platzhalter in PostgreSQL- und SQLite-DDL-Generatoren.~~
+  Umgesetzt: Beide Generatoren bereinigt; nur MySQL hat noch 4 verbleibende Stellen.
+
+- ~~SchemaComparator zerlegen.~~
+  Umgesetzt: Von 656 auf 316 LOC reduziert; `TableComparator` extrahiert.
+
+- ~~Constraint-Expressions dokumentieren.~~
+  Umgesetzt: `constraint.expression` und `--filter` als Trusted Input dokumentiert mit Design-Referenz.
 
 
 ## In Summe
-Gute Architektur auf Makroebene, starke Testkultur und klare Domänensprache. 
-Die größten Qualitätshebel liegen nicht im Gesamtdesign, sondern in Sicherheits-Härtung 
-und im Zerlegen der großen Orchestrierungs- und Dialektklassen.
+
+Starke Architektur auf Makroebene, branchenführende Testdisziplin (90% pro Modul) und klare Domänensprache.
+Die Codequalität hat sich seit der vorherigen Analyse signifikant verbessert:
+die kritischsten Sicherheitslücken (SQL-Interpolation in Profiling) sind behoben,
+die größten Klassen substantiell verkleinert, und die Testabdeckung konsequent angehoben.
+Die verbleibenden Hebel sind die DOMAIN-CHECK-Interpolation,
+die Runner-Zerlegung und die letzten MySQL-DDL-Platzhalter.

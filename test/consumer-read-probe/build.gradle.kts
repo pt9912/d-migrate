@@ -6,7 +6,8 @@
 // If this module compiles, external read consumers can integrate.
 
 dependencies {
-    testImplementation(project(":hexagon:ports"))
+    testImplementation(project(":hexagon:ports-read"))
+    testImplementation(project(":hexagon:ports-common"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":adapters:driven:formats"))
