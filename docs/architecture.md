@@ -1089,6 +1089,32 @@ Entwickler-Maschine                    CI/CD-Pipeline
 
 ---
 
+## External Read-Only Integration Surface
+
+External consumers that only need schema reading and data reading
+(e.g. a future `source-d-migrate` adapter for `d-browser`) should
+depend on:
+
+**Stable integration types:**
+- `hexagon:core` — `SchemaDefinition`, neutral model types, `TableDependencySort`
+- `hexagon:ports` — `SchemaReader`, `SchemaReadOptions`, `SchemaReadResult`,
+  `DataReader`, `TableLister`, `DatabaseDialect`, `ConnectionPool`,
+  `FormatReadOptions`, `DataChunkReaderFactory`
+- `adapters:driven:driver-common` — `JdbcMetadataSession`, connection pooling
+- `adapters:driven:formats` — format readers (JSON/YAML/CSV)
+
+**Explicitly NOT part of the read surface:**
+- `ImportOptions`, `DataWriter`, `TableImportSession` (write-oriented)
+- `StreamingImporter`, `StreamingExporter` (orchestration)
+- `DataImportRunner`, `DataExportRunner` (CLI)
+- `hexagon:profiling` and `driver-*-profiling` modules (optional)
+- `DatabaseDriver` / `DatabaseDriverRegistry` (mixed facade)
+
+**Verification:** `test:consumer-read-probe` builds against the read
+surface and compiles without write/CLI/profiling imports.
+
+---
+
 **Version**: 1.7
 **Stand**: 2026-04-14
 **Status**: Milestone 0.1.0–0.6.0 implementiert (core, ports, application, formats, cli, driver-postgresql/-mysql/-sqlite, streaming); 0.6.0: `SchemaReader` für PostgreSQL/MySQL/SQLite, `schema reverse` CLI, `schema compare` mit DB-Operanden (file/db, db/db), `data transfer` (DB-zu-DB-Streaming)

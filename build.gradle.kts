@@ -96,6 +96,7 @@ dependencies {
     kover(project(":adapters:driving:cli"))
     kover(project(":test:integration-postgresql"))
     kover(project(":test:integration-mysql"))
+    kover(project(":test:consumer-read-probe"))
 }
 
 // Root-level aggregated koverVerify: when run with -PintegrationTests

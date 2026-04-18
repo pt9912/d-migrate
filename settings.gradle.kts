@@ -22,3 +22,6 @@ include("adapters:driving:cli")
 // Integration test modules (Testcontainers, separated from driver unit tests)
 include("test:integration-postgresql")
 include("test:integration-mysql")
+
+// Consumer integration probe (read-only surface verification)
+include("test:consumer-read-probe")
