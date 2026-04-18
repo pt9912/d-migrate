@@ -59,35 +59,24 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
     ): DdlStatement? {
         val body = fn.body
         if (body == null) {
-            skipped += SkippedObject("function", name, "No body defined")
-            return DdlStatement(
-                "-- TODO: Implement function ${quoteIdentifier(name)}",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Function '$name' has no body and must be manually implemented.",
-                        hint = "Provide a function body in the schema definition."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "function", objectName = name,
+                reason = "Function '$name' has no body and must be manually implemented.",
+                hint = "Provide a function body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Implement function ${quoteIdentifier(name)}", listOf(action.toNote()))
         }
 
         if (fn.sourceDialect != null && fn.sourceDialect != "mysql") {
-            skipped += SkippedObject("function", name, "Source dialect '${fn.sourceDialect}' is not compatible with MySQL")
-            return DdlStatement(
-                "-- TODO: Rewrite function ${quoteIdentifier(name)} for MySQL (source dialect: ${fn.sourceDialect})",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for MySQL.",
-                        hint = "Rewrite the function body using MySQL-compatible syntax."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "function", objectName = name,
+                reason = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for MySQL.",
+                hint = "Rewrite the function body using MySQL-compatible syntax.",
+                sourceDialect = fn.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Rewrite function ${quoteIdentifier(name)} for MySQL (source dialect: ${fn.sourceDialect})", listOf(action.toNote()))
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -132,35 +121,24 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
     ): DdlStatement? {
         val body = proc.body
         if (body == null) {
-            skipped += SkippedObject("procedure", name, "No body defined")
-            return DdlStatement(
-                "-- TODO: Implement procedure ${quoteIdentifier(name)}",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Procedure '$name' has no body and must be manually implemented.",
-                        hint = "Provide a procedure body in the schema definition."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "procedure", objectName = name,
+                reason = "Procedure '$name' has no body and must be manually implemented.",
+                hint = "Provide a procedure body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Implement procedure ${quoteIdentifier(name)}", listOf(action.toNote()))
         }
 
         if (proc.sourceDialect != null && proc.sourceDialect != "mysql") {
-            skipped += SkippedObject("procedure", name, "Source dialect '${proc.sourceDialect}' is not compatible with MySQL")
-            return DdlStatement(
-                "-- TODO: Rewrite procedure ${quoteIdentifier(name)} for MySQL (source dialect: ${proc.sourceDialect})",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for MySQL.",
-                        hint = "Rewrite the procedure body using MySQL-compatible syntax."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "procedure", objectName = name,
+                reason = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for MySQL.",
+                hint = "Rewrite the procedure body using MySQL-compatible syntax.",
+                sourceDialect = proc.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Rewrite procedure ${quoteIdentifier(name)} for MySQL (source dialect: ${proc.sourceDialect})", listOf(action.toNote()))
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -196,35 +174,24 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
     ): DdlStatement? {
         val body = trigger.body
         if (body == null) {
-            skipped += SkippedObject("trigger", name, "No body defined")
-            return DdlStatement(
-                "-- TODO: Implement trigger ${quoteIdentifier(name)}",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Trigger '$name' has no body and must be manually implemented.",
-                        hint = "Provide a trigger body in the schema definition."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "trigger", objectName = name,
+                reason = "Trigger '$name' has no body and must be manually implemented.",
+                hint = "Provide a trigger body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Implement trigger ${quoteIdentifier(name)}", listOf(action.toNote()))
         }
 
         if (trigger.sourceDialect != null && trigger.sourceDialect != "mysql") {
-            skipped += SkippedObject("trigger", name, "Source dialect '${trigger.sourceDialect}' is not compatible with MySQL")
-            return DdlStatement(
-                "-- TODO: Rewrite trigger ${quoteIdentifier(name)} for MySQL (source dialect: ${trigger.sourceDialect})",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for MySQL.",
-                        hint = "Rewrite the trigger body using MySQL-compatible syntax."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "trigger", objectName = name,
+                reason = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for MySQL.",
+                hint = "Rewrite the trigger body using MySQL-compatible syntax.",
+                sourceDialect = trigger.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for MySQL (source dialect: ${trigger.sourceDialect})", listOf(action.toNote()))
         }
 
         val timing = trigger.timing.name

@@ -51,35 +51,24 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
     ): DdlStatement? {
         val body = fn.body
         if (body == null) {
-            skipped += SkippedObject("function", name, "No body defined")
-            return DdlStatement(
-                "-- TODO: Implement function ${quoteIdentifier(name)}",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Function '$name' has no body and must be manually implemented.",
-                        hint = "Provide a function body in the schema definition."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "function", objectName = name,
+                reason = "Function '$name' has no body and must be manually implemented.",
+                hint = "Provide a function body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Implement function ${quoteIdentifier(name)}", listOf(action.toNote()))
         }
 
         if (fn.sourceDialect != null && fn.sourceDialect != "postgresql") {
-            skipped += SkippedObject("function", name, "Source dialect '${fn.sourceDialect}' is not compatible with PostgreSQL")
-            return DdlStatement(
-                "-- TODO: Rewrite function ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${fn.sourceDialect})",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for PostgreSQL.",
-                        hint = "Rewrite the function body using PostgreSQL-compatible syntax."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "function", objectName = name,
+                reason = "Function '$name' was written for '${fn.sourceDialect}' and must be manually rewritten for PostgreSQL.",
+                hint = "Rewrite the function body using PostgreSQL-compatible syntax.",
+                sourceDialect = fn.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Rewrite function ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${fn.sourceDialect})", listOf(action.toNote()))
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -117,35 +106,24 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
     ): DdlStatement? {
         val body = proc.body
         if (body == null) {
-            skipped += SkippedObject("procedure", name, "No body defined")
-            return DdlStatement(
-                "-- TODO: Implement procedure ${quoteIdentifier(name)}",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Procedure '$name' has no body and must be manually implemented.",
-                        hint = "Provide a procedure body in the schema definition."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "procedure", objectName = name,
+                reason = "Procedure '$name' has no body and must be manually implemented.",
+                hint = "Provide a procedure body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Implement procedure ${quoteIdentifier(name)}", listOf(action.toNote()))
         }
 
         if (proc.sourceDialect != null && proc.sourceDialect != "postgresql") {
-            skipped += SkippedObject("procedure", name, "Source dialect '${proc.sourceDialect}' is not compatible with PostgreSQL")
-            return DdlStatement(
-                "-- TODO: Rewrite procedure ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${proc.sourceDialect})",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for PostgreSQL.",
-                        hint = "Rewrite the procedure body using PostgreSQL-compatible syntax."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "procedure", objectName = name,
+                reason = "Procedure '$name' was written for '${proc.sourceDialect}' and must be manually rewritten for PostgreSQL.",
+                hint = "Rewrite the procedure body using PostgreSQL-compatible syntax.",
+                sourceDialect = proc.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Rewrite procedure ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${proc.sourceDialect})", listOf(action.toNote()))
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -179,39 +157,24 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
     ): List<DdlStatement> {
         val body = trigger.body
         if (body == null) {
-            skipped += SkippedObject("trigger", name, "No body defined")
-            return listOf(
-                DdlStatement(
-                    "-- TODO: Implement trigger ${quoteIdentifier(name)}",
-                    listOf(
-                        TransformationNote(
-                            type = NoteType.ACTION_REQUIRED,
-                            code = "E053",
-                            objectName = name,
-                            message = "Trigger '$name' has no body and must be manually implemented.",
-                            hint = "Provide a trigger body in the schema definition."
-                        )
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "trigger", objectName = name,
+                reason = "Trigger '$name' has no body and must be manually implemented.",
+                hint = "Provide a trigger body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return listOf(DdlStatement("-- TODO: Implement trigger ${quoteIdentifier(name)}", listOf(action.toNote())))
         }
 
         if (trigger.sourceDialect != null && trigger.sourceDialect != "postgresql") {
-            skipped += SkippedObject("trigger", name, "Source dialect '${trigger.sourceDialect}' is not compatible with PostgreSQL")
-            return listOf(
-                DdlStatement(
-                    "-- TODO: Rewrite trigger ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${trigger.sourceDialect})",
-                    listOf(
-                        TransformationNote(
-                            type = NoteType.ACTION_REQUIRED,
-                            code = "E053",
-                            objectName = name,
-                            message = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for PostgreSQL.",
-                            hint = "Rewrite the trigger body using PostgreSQL-compatible syntax."
-                        )
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "trigger", objectName = name,
+                reason = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for PostgreSQL.",
+                hint = "Rewrite the trigger body using PostgreSQL-compatible syntax.",
+                sourceDialect = trigger.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return listOf(DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${trigger.sourceDialect})", listOf(action.toNote())))
         }
 
         // PostgreSQL triggers require a separate trigger function

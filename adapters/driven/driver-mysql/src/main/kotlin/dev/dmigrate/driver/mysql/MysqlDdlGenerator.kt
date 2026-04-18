@@ -23,18 +23,12 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         val statements = mutableListOf<DdlStatement>()
         for ((name, typeDef) in types) {
             if (typeDef.kind == CustomTypeKind.COMPOSITE) {
-                statements += DdlStatement(
-                    "-- TODO: Composite type `$name` is not supported in MySQL",
-                    listOf(
-                        TransformationNote(
-                            type = NoteType.ACTION_REQUIRED,
-                            code = "E054",
-                            objectName = name,
-                            message = "Composite type '$name' is not supported in MySQL and was skipped.",
-                            hint = "Consider restructuring the data model to avoid composite types."
-                        )
-                    )
+                val action = ManualActionRequired(
+                    code = "E054", objectType = "composite_type", objectName = name,
+                    reason = "Composite type '$name' is not supported in MySQL and was skipped.",
+                    hint = "Consider restructuring the data model to avoid composite types.",
                 )
+                statements += DdlStatement("-- TODO: Composite type `$name` is not supported in MySQL", listOf(action.toNote()))
             }
         }
         return statements
@@ -48,19 +42,13 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         for ((name, _) in sequences) {
-            skipped += SkippedObject("sequence", name, "Sequences are not supported in MySQL")
-            statements += DdlStatement(
-                "-- TODO: Sequence `$name` is not supported in MySQL",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E056",
-                        objectName = name,
-                        message = "Sequence '$name' is not supported in MySQL and was skipped.",
-                        hint = "Use AUTO_INCREMENT columns instead of sequences."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E056", objectType = "sequence", objectName = name,
+                reason = "Sequence '$name' is not supported in MySQL and was skipped.",
+                hint = "Use AUTO_INCREMENT columns instead of sequences.",
             )
+            skipped += action.toSkipped()
+            statements += DdlStatement("-- TODO: Sequence `$name` is not supported in MySQL", listOf(action.toNote()))
         }
         return statements
     }
@@ -250,14 +238,12 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} UNIQUE ($cols)"
             }
             ConstraintType.EXCLUDE -> {
-                // EXCLUDE constraints are not supported in MySQL
-                notes += TransformationNote(
-                    type = NoteType.ACTION_REQUIRED,
-                    code = "E054",
-                    objectName = constraint.name,
-                    message = "EXCLUDE constraint '${constraint.name}' is not supported in MySQL.",
-                    hint = "Consider using CHECK constraints or application-level validation instead."
+                val action = ManualActionRequired(
+                    code = "E054", objectType = "constraint", objectName = constraint.name,
+                    reason = "EXCLUDE constraint '${constraint.name}' is not supported in MySQL.",
+                    hint = "Consider using CHECK constraints or application-level validation instead.",
                 )
+                notes += action.toNote()
                 "-- TODO: EXCLUDE constraint ${quoteIdentifier(constraint.name)} is not supported in MySQL"
             }
             ConstraintType.FOREIGN_KEY -> {
@@ -327,15 +313,11 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             IndexType.GIN, IndexType.GIST, IndexType.BRIN -> {
                 DdlStatement(
                     "-- TODO: ${index.type.name} index `$indexName` is not supported in MySQL",
-                    listOf(
-                        TransformationNote(
-                            type = NoteType.WARNING,
-                            code = "W102",
-                            objectName = indexName,
-                            message = "${index.type.name} index '$indexName' is not supported in MySQL and was skipped.",
-                            hint = "Consider using a BTREE index or FULLTEXT index instead."
-                        )
-                    )
+                    listOf(TransformationNote(
+                        type = NoteType.WARNING, code = "W102", objectName = indexName,
+                        message = "${index.type.name} index '$indexName' is not supported in MySQL and was skipped.",
+                        hint = "Consider using a BTREE index or FULLTEXT index instead.",
+                    ))
                 )
             }
             IndexType.HASH -> {

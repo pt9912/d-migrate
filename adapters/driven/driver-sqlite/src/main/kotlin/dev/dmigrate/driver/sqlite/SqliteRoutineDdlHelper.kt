@@ -114,36 +114,24 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
     ): DdlStatement? {
         val body = trigger.body
         if (body == null) {
-            skipped += SkippedObject("trigger", name, "No body defined")
-            return DdlStatement(
-                "-- TODO: Implement trigger ${quoteIdentifier(name)}",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Trigger '$name' has no body and must be manually implemented.",
-                        hint = "Provide a trigger body in the schema definition."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "trigger", objectName = name,
+                reason = "Trigger '$name' has no body and must be manually implemented.",
+                hint = "Provide a trigger body in the schema definition.",
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Implement trigger ${quoteIdentifier(name)}", listOf(action.toNote()))
         }
 
-        // For 0.2.0: use the body as-is if source dialect is sqlite or null; otherwise skip with E053.
         if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") {
-            skipped += SkippedObject("trigger", name, "Source dialect '${trigger.sourceDialect}' is not compatible with SQLite")
-            return DdlStatement(
-                "-- TODO: Rewrite trigger ${quoteIdentifier(name)} for SQLite (source dialect: ${trigger.sourceDialect})",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E053",
-                        objectName = name,
-                        message = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for SQLite.",
-                        hint = "Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;."
-                    )
-                )
+            val action = ManualActionRequired(
+                code = "E053", objectType = "trigger", objectName = name,
+                reason = "Trigger '$name' was written for '${trigger.sourceDialect}' and must be manually rewritten for SQLite.",
+                hint = "Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;.",
+                sourceDialect = trigger.sourceDialect,
             )
+            skipped += action.toSkipped()
+            return DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for SQLite (source dialect: ${trigger.sourceDialect})", listOf(action.toNote()))
         }
 
         val timing = trigger.timing.name
