@@ -189,21 +189,15 @@ internal object ImportDirectoryResolver {
         tables: Map<String, TableDefinition>,
         referenceToSelectedTable: (String) -> String? = { it },
     ): SortResult {
-        val deps = linkedMapOf<String, MutableSet<String>>()
-        val allEdges = mutableListOf<CircularEdge>()
+        val edges = mutableListOf<dev.dmigrate.core.dependency.FkEdge>()
 
         for ((tableName, table) in tables) {
-            deps.getOrPut(tableName) { linkedSetOf() }
             for ((columnName, column) in table.columns) {
                 val reference = column.references ?: continue
-                addDependency(
-                    deps = deps,
-                    edges = allEdges,
-                    fromTable = tableName,
-                    fromColumn = columnName,
-                    toTable = referenceToSelectedTable(reference.table) ?: reference.table,
-                    toColumn = reference.column,
-                    tables = tables,
+                edges += dev.dmigrate.core.dependency.FkEdge(
+                    tableName, columnName,
+                    referenceToSelectedTable(reference.table) ?: reference.table,
+                    reference.column,
                 )
             }
             for (constraint in table.constraints) {
@@ -213,66 +207,22 @@ internal object ImportDirectoryResolver {
                 val targetColumns = reference.columns
                 val pairCount = maxOf(sourceColumns.size, targetColumns.size, 1)
                 for (index in 0 until pairCount) {
-                    addDependency(
-                        deps = deps,
-                        edges = allEdges,
-                        fromTable = tableName,
-                        fromColumn = sourceColumns.getOrElse(index) { constraint.name },
-                        toTable = referenceToSelectedTable(reference.table) ?: reference.table,
-                        toColumn = targetColumns.getOrElse(index) { constraint.name },
-                        tables = tables,
+                    edges += dev.dmigrate.core.dependency.FkEdge(
+                        tableName,
+                        sourceColumns.getOrElse(index) { constraint.name },
+                        referenceToSelectedTable(reference.table) ?: reference.table,
+                        targetColumns.getOrElse(index) { constraint.name },
                     )
                 }
             }
         }
 
-        val inDegree = linkedMapOf<String, Int>()
-        for (name in tables.keys) {
-            inDegree[name] = deps[name]?.size ?: 0
-        }
-
-        val queue = ArrayDeque(inDegree.filterValues { it == 0 }.keys)
-        val sorted = mutableListOf<String>()
-
-        while (queue.isNotEmpty()) {
-            val current = queue.removeFirst()
-            sorted += current
-            for ((table, depSet) in deps) {
-                if (depSet.remove(current)) {
-                    val remaining = (inDegree.getValue(table) - 1).also { inDegree[table] = it }
-                    if (remaining == 0) {
-                        queue.addLast(table)
-                    }
-                }
-            }
-        }
-
-        val remaining = tables.keys - sorted.toSet()
-        val circularEdges = if (remaining.isEmpty()) {
-            emptyList()
-        } else {
-            allEdges.filter { it.fromTable in remaining && it.toTable in remaining }
-        }
-
-        return SortResult(sorted = sorted, circularEdges = circularEdges)
-    }
-
-    private fun addDependency(
-        deps: MutableMap<String, MutableSet<String>>,
-        edges: MutableList<CircularEdge>,
-        fromTable: String,
-        fromColumn: String,
-        toTable: String,
-        toColumn: String,
-        tables: Map<String, TableDefinition>,
-    ) {
-        if (toTable == fromTable || toTable !in tables) return
-        deps.getOrPut(fromTable) { linkedSetOf() }.add(toTable)
-        edges += CircularEdge(
-            fromTable = fromTable,
-            fromColumn = fromColumn,
-            toTable = toTable,
-            toColumn = toColumn,
+        val result = dev.dmigrate.core.dependency.sortTablesByDependency(tables.keys, edges)
+        return SortResult(
+            sorted = result.sorted,
+            circularEdges = result.circularEdges.map {
+                CircularEdge(it.fromTable, it.fromColumn ?: "", it.toTable, it.toColumn ?: "")
+            },
         )
     }
 }

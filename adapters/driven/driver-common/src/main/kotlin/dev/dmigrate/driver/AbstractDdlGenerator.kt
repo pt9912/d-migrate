@@ -230,64 +230,19 @@ abstract class AbstractDdlGenerator(
     )
 
     protected fun topologicalSort(tables: Map<String, TableDefinition>): TopologicalSortResult {
-        // Build adjacency: table -> set of tables it depends on
-        val deps = mutableMapOf<String, MutableSet<String>>()
-        val allEdges = mutableListOf<CircularFkEdge>()
-
-        for ((tableName, table) in tables) {
-            deps.getOrPut(tableName) { mutableSetOf() }
-            for ((colName, col) in table.columns) {
-                val ref = col.references ?: continue
-                if (ref.table != tableName && ref.table in tables) {
-                    deps.getOrPut(tableName) { mutableSetOf() }.add(ref.table)
-                    allEdges += CircularFkEdge(tableName, colName, ref.table, ref.column)
+        val edges = tables.flatMap { (tableName, table) ->
+            table.columns.mapNotNull { (colName, col) ->
+                col.references?.let { ref ->
+                    dev.dmigrate.core.dependency.FkEdge(tableName, colName, ref.table, ref.column)
                 }
             }
         }
-
-        // Kahn's algorithm
-        val inDegree = mutableMapOf<String, Int>()
-        for (name in tables.keys) inDegree[name] = 0
-        for ((_, depSet) in deps) {
-            for (dep in depSet) {
-                // dep must come before -> tables depending on dep have in-degree
-            }
-        }
-        // Recalculate: for each table, in-degree = how many tables must come before it
-        for ((table, depSet) in deps) {
-            inDegree[table] = depSet.size
-        }
-
-        val queue = ArrayDeque<String>()
-        for ((name, degree) in inDegree) {
-            if (degree == 0) queue.add(name)
-        }
-
-        val sorted = mutableListOf<String>()
-        while (queue.isNotEmpty()) {
-            val current = queue.removeFirst()
-            sorted.add(current)
-            for ((table, depSet) in deps) {
-                if (depSet.remove(current)) {
-                    inDegree[table] = (inDegree[table] ?: 1) - 1
-                    if (inDegree[table] == 0) queue.add(table)
-                }
-            }
-        }
-
-        // Remaining tables have circular dependencies
-        val remaining = tables.keys - sorted.toSet()
-        val circularEdges = if (remaining.isEmpty()) emptyList()
-        else {
-            // Add remaining tables to sorted (they'll be created without the circular FK)
-            sorted.addAll(remaining)
-            // Collect the circular FK edges
-            allEdges.filter { it.fromTable in remaining }
-        }
-
+        val result = dev.dmigrate.core.dependency.sortTablesByDependency(tables.keys, edges)
         return TopologicalSortResult(
-            sorted = sorted.map { it to tables[it]!! },
-            circularEdges = circularEdges
+            sorted = result.sorted.map { it to tables[it]!! },
+            circularEdges = result.circularEdges.map {
+                CircularFkEdge(it.fromTable, it.fromColumn ?: "", it.toTable, it.toColumn ?: "")
+            },
         )
     }
 

@@ -160,19 +160,23 @@ class DataTransferRunner(
     }
 
     private fun topoSort(tables: List<String>, schema: SchemaDefinition): List<String> {
-        val s = tables.toSet()
-        val g = tables.associateWith { mutableListOf<String>() }.toMutableMap()
-        val d = tables.associateWith { 0 }.toMutableMap()
-        for (t in tables) {
-            val refs = mutableSetOf<String>()
-            schema.tables[t]?.columns?.values?.forEach { c -> c.references?.let { if (it.table in s && it.table != t) refs += it.table } }
-            schema.tables[t]?.constraints?.forEach { c -> c.references?.let { if (it.table in s && it.table != t) refs += it.table } }
-            for (dep in refs) { g[dep]!!.add(t); d[t] = d[t]!! + 1 }
+        val tableSet = tables.toSet()
+        val edges = tables.flatMap { t ->
+            val refs = mutableListOf<dev.dmigrate.core.dependency.FkEdge>()
+            schema.tables[t]?.columns?.values?.forEach { c ->
+                c.references?.let { refs += dev.dmigrate.core.dependency.FkEdge(t, toTable = it.table) }
+            }
+            schema.tables[t]?.constraints?.forEach { c ->
+                c.references?.let { refs += dev.dmigrate.core.dependency.FkEdge(t, toTable = it.table) }
+            }
+            refs
         }
-        val q = ArrayDeque(tables.filter { d[it] == 0 }.sorted()); val r = mutableListOf<String>()
-        while (q.isNotEmpty()) { val n = q.removeFirst(); r += n; for (nb in g[n]!!) { d[nb] = d[nb]!! - 1; if (d[nb] == 0) q.add(nb) } }
-        if (r.size != tables.size) throw TransferPreflightException("FK cycle: ${(tables - r.toSet()).joinToString()}")
-        return r
+        val result = dev.dmigrate.core.dependency.sortTablesByDependency(tableSet, edges)
+        if (result.circularEdges.isNotEmpty()) {
+            val cyclic = result.circularEdges.map { it.fromTable }.toSet()
+            throw TransferPreflightException("FK cycle: ${cyclic.joinToString()}")
+        }
+        return result.sorted
     }
 
     private fun validateFlags(r: DataTransferRequest): String? {
