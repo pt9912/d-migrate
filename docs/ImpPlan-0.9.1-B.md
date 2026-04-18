@@ -431,40 +431,44 @@ Baut auf dem in 5.1.2 zerlegten StreamingImporter auf.
 
 ### 5.3 DDL-Generatoren und Dialekt-Capabilities schneiden
 
-- Objektart-Generatoren bzw. klar getrennte Hilfseinheiten fuer alle
-  heutigen DDL-Hotspots einfuehren
-- mindestens abdecken:
-  - Custom Types
-  - Sequences
-  - Constraint-/Index-Fallbacks
-  - Views (`ViewDdlGenerator`)
-  - Functions (`FunctionDdlGenerator`)
-  - Procedures (`ProcedureDdlGenerator`)
-  - Triggers (`TriggerDdlGenerator`)
-- dialektspezifische Generatoren auf Komposition aus diesen
-  Objekt-Generatoren umstellen
-- SQL-rendernde Objekt-Generatoren bleiben primaer dialektspezifisch;
-  dialektuebergreifend werden nur kleine Hilfen fuer Capability-Checks,
-  Note-/Result-Assembly und ggf. gemeinsame Fallback-Entscheidungen
-  geteilt
-- Rewrite-/Skip-/Manual-Action-Entscheidungen auf zwei explizite
-  Ebenen stuetzen:
-  - `DialectCapabilities` fuer echte Zieldialekt-Regeln
-  - per-Objekt-Entscheidung fuer fehlenden Body,
-    `sourceDialect`-Mismatch und vergleichbare Einzelfaelle
-- bestehende `TODO`-Kommentar-Platzhalter durch strukturierte
-  `ManualActionRequired`-Eintraege ersetzen
-- `ManualActionRequired` konsequent in bestehende `TransformationNote`-
-  und `SkippedObject`-Ergebnisse abbilden; kein neuer separater
-  Ausgabeweg fuer CLI, JSON oder Reports
-- Default-Rendering fuer 0.9.1 so belassen, dass bestehende
-  `-- TODO: ...`-basierte DDL-Tests, Golden-Master-Files und
-  Nutzererwartungen nicht brechen
-- internen Objektart- und Reihenfolgeschnitt so vorbereiten, dass
-  spaeter `pre-data`/`post-data` moeglich wird, ohne jetzt neue
-  Artefakte zu emittieren; explizite Phasenattribute,
-  Routine-Abhaengigkeitsanalyse fuer Views und `ddl_parts` bleiben
-  weiter Thema des spaeteren Split-Plans
+Reihenfolge: 5.3.1 → 5.3.2 → 5.3.3. Jedes Sub-Paket ist einzeln
+commitbar. Bottom-up: zuerst Modell und Helfer, dann Generatoren
+umstellen, zuletzt TODO-Platzhalter ersetzen.
+
+#### 5.3.1 DialectCapabilities-Modell + ManualActionRequired-Typ
+
+- `DialectCapabilities` als unveraenderliches Modell pro
+  `DatabaseDialect` einfuehren: welche Objekttypen sind nativ
+  generierbar, welche brauchen Rewrite oder Skip/Action-Required
+- `ManualActionRequired`-Datentyp als interner Modellbaustein
+  definieren (code, objectType, objectName, reason, hint,
+  sourceDialect)
+- Abbildungsregel: jedes ManualActionRequired muss in bestehende
+  `TransformationNote` (ACTION_REQUIRED) und ggf. `SkippedObject`
+  abgebildet werden — kein neuer Ausgabeweg
+- bestehende Tests muessen gruen bleiben (kein sichtbarer
+  Output-Wechsel)
+
+#### 5.3.2 Routine-Generatoren extrahieren (Views, Functions, Procedures, Triggers)
+
+- pro Dialekt die Routine-Generierung (Views, Functions, Procedures,
+  Triggers) in separate Helfer-Klassen oder -Dateien extrahieren
+- die DDL-Generatoren delegieren an diese Helfer
+- SQL-rendernde Logik bleibt dialektspezifisch; gemeinsam sind nur
+  Capability-Checks und Note-Assembly
+- bestehende DDL-Tests und Golden-Master-Files muessen gruen bleiben
+- Hotspot-Reduktion: jeder DDL-Generator schrumpft um ca. 200 LOC
+
+#### 5.3.3 TODO-Platzhalter durch ManualActionRequired ersetzen
+
+- alle 18 bestehenden `-- TODO: ...`-SQL-Kommentare durch
+  strukturierte `ManualActionRequired`-Eintraege ersetzen
+- ManualActionRequired wird im Default-Pfad weiterhin als
+  `-- TODO: ...`-Kommentar gerendert (Kompatibilitaet)
+- intern sind die Entscheidungen aber typisiert und tragen Code,
+  Objekttyp, Grund und Hinweis
+- DDL-Test-Assertions (`shouldContain "-- TODO"`) bleiben gruen
+- Kover-Coverage bleibt bei mindestens 90 %
 
 ### 5.4 Plan-Kommentare rueckbauen und Stabilitaet absichern
 
@@ -492,9 +496,11 @@ Baut auf dem in 5.1.2 zerlegten StreamingImporter auf.
 - **5.2 Comparator-Zerlegung**: M - Logik ist bereits pro Objekttyp
   strukturiert, der Hauptaufwand liegt in Extraktion, Wiring und
   Teststabilitaet
-- **5.3 DDL-Generatoren und Dialekt-Capabilities schneiden**: L -
-  drei Treiber, 18 bestehende `TODO`-Pfade und neues
-  Capability-/Manual-Action-Modell
+- **5.3 DDL-Generatoren und Dialekt-Capabilities schneiden**: L gesamt,
+  aufgeteilt in:
+  - 5.3.1 DialectCapabilities + ManualActionRequired: S (Modell)
+  - 5.3.2 Routine-Generatoren extrahieren: M (3 Dialekte × 4 Routinen)
+  - 5.3.3 TODO-Platzhalter ersetzen: M (18 Stellen, Kompatibilitaet)
 - **5.4 Plan-Kommentare rueckbauen und Stabilitaet absichern**: M -
   Querschnitt ueber mehrere Dateien plus Golden-Master- und
   Kompatibilitaetstests
