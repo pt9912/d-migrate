@@ -17,6 +17,7 @@ import dev.dmigrate.driver.data.WriteResult
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.FormatReadOptions
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -1038,7 +1039,7 @@ private class FakeReaderFactory(
         input: InputStream,
         table: String,
         chunkSize: Int,
-        options: ImportOptions,
+        options: FormatReadOptions,
     ): DataChunkReader {
         createdTables += table
         seenInputs += input

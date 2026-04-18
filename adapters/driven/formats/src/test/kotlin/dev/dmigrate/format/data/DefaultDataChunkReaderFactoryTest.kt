@@ -1,6 +1,6 @@
 package dev.dmigrate.format.data
 
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.csv.CsvChunkReader
 import dev.dmigrate.format.data.json.JsonChunkReader
 import dev.dmigrate.format.data.yaml.YamlChunkReader
@@ -80,7 +80,7 @@ class DefaultDataChunkReaderFactoryTest : FunSpec({
     }
 
     test("options are propagated to CSV reader") {
-        val opts = ImportOptions(csvNoHeader = true)
+        val opts = FormatReadOptions(csvNoHeader = true)
         factory.create(DataExportFormat.CSV, input("1\n"), table, chunkSize, opts).use { reader ->
             reader.headerColumns() shouldBe null
         }

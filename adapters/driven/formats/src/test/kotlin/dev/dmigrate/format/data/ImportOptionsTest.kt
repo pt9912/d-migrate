@@ -10,12 +10,9 @@ import java.nio.charset.StandardCharsets
 
 class ImportOptionsTest : FunSpec({
 
-    test("defaults are spelled out per §3.5.2 / §3.7.1") {
+    test("ImportOptions defaults are spelled out per §3.5.2 / §3.7.1") {
         val opts = ImportOptions()
         opts.triggerMode shouldBe TriggerMode.FIRE
-        opts.csvNoHeader shouldBe false
-        opts.csvNullString shouldBe ""
-        opts.encoding shouldBe null
         opts.reseedSequences shouldBe true
         opts.disableFkChecks shouldBe false
         opts.truncate shouldBe false
@@ -23,22 +20,36 @@ class ImportOptionsTest : FunSpec({
         opts.onError shouldBe OnError.ABORT
     }
 
+    test("FormatReadOptions defaults are spelled out per §3.5.2 / §3.7.1") {
+        val opts = FormatReadOptions()
+        opts.csvNoHeader shouldBe false
+        opts.csvNullString shouldBe ""
+        opts.encoding shouldBe null
+    }
+
     test("encoding can be null for --encoding auto path") {
-        val opts = ImportOptions(encoding = null)
+        val opts = FormatReadOptions(encoding = null)
         opts.encoding shouldBe null
     }
 
     test("encoding can be set explicitly for programmatic callers") {
-        val opts = ImportOptions(encoding = StandardCharsets.UTF_8)
+        val opts = FormatReadOptions(encoding = StandardCharsets.UTF_8)
         opts.encoding shouldBe StandardCharsets.UTF_8
     }
 
-    test("copy is available via data class") {
+    test("ImportOptions copy is available via data class") {
         val base = ImportOptions()
         val upsert = base.copy(onConflict = OnConflict.UPDATE)
         upsert.onConflict shouldBe OnConflict.UPDATE
         // base stays untouched
         base.onConflict shouldBe OnConflict.ABORT
+    }
+
+    test("FormatReadOptions copy is available via data class") {
+        val base = FormatReadOptions()
+        val withHeader = base.copy(csvNoHeader = true)
+        withHeader.csvNoHeader shouldBe true
+        base.csvNoHeader shouldBe false
     }
 
     test("all trigger modes are constructable") {
@@ -63,7 +74,7 @@ class ImportOptionsTest : FunSpec({
         // Symmetry with ExportOptions.csvNullString — the empty-string
         // default intentionally loses the "" vs NULL distinction unless
         // the user sets a sentinel explicitly.
-        ImportOptions().csvNullString shouldBe ""
-        ImportOptions().csvNullString shouldBe ExportOptions().csvNullString
+        FormatReadOptions().csvNullString shouldBe ""
+        FormatReadOptions().csvNullString shouldBe ExportOptions().csvNullString
     }
 })

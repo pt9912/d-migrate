@@ -1,6 +1,5 @@
 package dev.dmigrate.format.data
 
-import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.format.data.csv.CsvChunkReader
 import dev.dmigrate.format.data.json.JsonChunkReader
 import dev.dmigrate.format.data.yaml.YamlChunkReader
@@ -18,7 +17,7 @@ class DefaultDataChunkReaderFactory : DataChunkReaderFactory {
         input: InputStream,
         table: String,
         chunkSize: Int,
-        options: ImportOptions,
+        options: FormatReadOptions,
     ): DataChunkReader {
         require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
         return when (format) {

@@ -13,6 +13,7 @@ import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.JdbcTypeHint
 import dev.dmigrate.format.data.ValueDeserializer
 
@@ -34,6 +35,7 @@ internal class TableImporter(
         tableInput: ResolvedTableInput,
         format: DataExportFormat,
         options: ImportOptions,
+        readOptions: FormatReadOptions = FormatReadOptions(),
         config: PipelineConfig,
         reporter: ProgressReporter,
         ordinal: Int,
@@ -70,7 +72,7 @@ internal class TableImporter(
                 input = tableInput.openInput(),
                 table = tableInput.table,
                 chunkSize = config.chunkSize,
-                options = effectiveOptions,
+                options = readOptions,
             )
             session = writer.openTable(pool, tableInput.table, effectiveOptions)
             onTableOpened(tableInput.table, session.targetColumns)
@@ -92,7 +94,7 @@ internal class TableImporter(
                 firstChunk = firstChunk,
                 targetColumns = session.targetColumns,
             )
-            val deserializer = buildDeserializer(session.targetColumns, options)
+            val deserializer = buildDeserializer(session.targetColumns, readOptions)
 
             var nextChunk: DataChunk? = firstChunk
             var nextChunkIndex = firstChunk?.chunkIndex ?: 0L
@@ -286,9 +288,9 @@ internal class TableImporter(
         return DataChunk(chunk.table, bindingPlan.boundTargetColumns.map { it.asColumnDescriptor() }, normalizedRows, chunk.chunkIndex)
     }
 
-    private fun buildDeserializer(targetColumns: List<TargetColumn>, options: ImportOptions): ValueDeserializer {
+    private fun buildDeserializer(targetColumns: List<TargetColumn>, readOptions: FormatReadOptions): ValueDeserializer {
         val hints = targetColumns.associate { it.name to JdbcTypeHint(it.jdbcType, it.sqlTypeName) }
-        return ValueDeserializer(typeHintOf = { hints[it] }, csvNullString = options.csvNullString)
+        return ValueDeserializer(typeHintOf = { hints[it] }, csvNullString = readOptions.csvNullString)
     }
 
     // ── error handling helpers ─────────────────────

@@ -13,6 +13,7 @@ import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.ImportInput
 import dev.dmigrate.streaming.ImportResult
@@ -59,6 +60,7 @@ fun interface ImportExecutor {
         input: ImportInput,
         format: DataExportFormat,
         options: ImportOptions,
+        readOptions: FormatReadOptions,
         config: PipelineConfig,
         onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
         progressReporter: ProgressReporter,
@@ -344,11 +346,13 @@ class DataImportRunner(
             OnConflict.ABORT
         }
 
-        val importOptions = ImportOptions(
-            triggerMode = triggerMode,
+        val formatReadOptions = FormatReadOptions(
+            encoding = charset,
             csvNoHeader = request.csvNoHeader,
             csvNullString = request.csvNullString,
-            encoding = charset,
+        )
+        val importOptions = ImportOptions(
+            triggerMode = triggerMode,
             reseedSequences = request.reseedSequences,
             disableFkChecks = request.disableFkChecks,
             truncate = request.truncate,
@@ -697,6 +701,7 @@ class DataImportRunner(
                 input = preparedImport.input,
                 format = format,
                 options = importOptions,
+                readOptions = formatReadOptions,
                 config = pipelineConfig,
                 onTableOpened = onTableOpened,
                 progressReporter = effectiveReporter,

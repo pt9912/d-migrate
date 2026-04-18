@@ -6,6 +6,7 @@ import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.FormatReadOptions
 
 /**
  * Pull-basierter Streaming-Importer. Liest Chunks aus einem Reader und
@@ -25,6 +26,7 @@ class StreamingImporter(
         input: ImportInput,
         format: DataExportFormat,
         options: dev.dmigrate.driver.data.ImportOptions = dev.dmigrate.driver.data.ImportOptions(),
+        readOptions: FormatReadOptions = FormatReadOptions(),
         config: PipelineConfig = PipelineConfig(),
         progressReporter: ProgressReporter = NoOpProgressReporter,
         operationId: String? = null,
@@ -61,6 +63,7 @@ class StreamingImporter(
                 tableInput = tableInput,
                 format = format,
                 options = options,
+                readOptions = readOptions,
                 config = config,
                 reporter = progressReporter,
                 ordinal = index + 1,

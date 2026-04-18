@@ -1,7 +1,7 @@
 package dev.dmigrate.format.data.csv
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -19,7 +19,7 @@ import java.io.ByteArrayInputStream
  */
 class CsvChunkReaderTest : FunSpec({
 
-    fun reader(csv: String, chunkSize: Int = 100, options: ImportOptions = ImportOptions()) =
+    fun reader(csv: String, chunkSize: Int = 100, options: FormatReadOptions = FormatReadOptions()) =
         CsvChunkReader(ByteArrayInputStream(csv.toByteArray(Charsets.UTF_8)), "t", chunkSize, options)
 
     // ─── Happy Path ─────────────────────────────────────────────────
@@ -107,7 +107,7 @@ class CsvChunkReaderTest : FunSpec({
     // ─── csvNoHeader ────────────────────────────────────────────────
 
     test("csvNoHeader: headerColumns is null, data read positionally") {
-        val opts = ImportOptions(csvNoHeader = true)
+        val opts = FormatReadOptions(csvNoHeader = true)
         reader("1,alice\n2,bob", options = opts).use { r ->
             r.headerColumns().shouldBeNull()
             val chunk = r.nextChunk()!!
@@ -119,7 +119,7 @@ class CsvChunkReaderTest : FunSpec({
     }
 
     test("csvNoHeader: empty file") {
-        val opts = ImportOptions(csvNoHeader = true)
+        val opts = FormatReadOptions(csvNoHeader = true)
         reader("", options = opts).use { r ->
             r.headerColumns().shouldBeNull()
             r.nextChunk().shouldBeNull()
@@ -139,7 +139,7 @@ class CsvChunkReaderTest : FunSpec({
     }
 
     test("custom csvNullString: matching value becomes null") {
-        val opts = ImportOptions(csvNullString = "NULL")
+        val opts = FormatReadOptions(csvNullString = "NULL")
         reader("a,b\n1,NULL\nNULL,2", options = opts).use { r ->
             val chunk = r.nextChunk()!!
             chunk.rows[0][0] shouldBe "1"
@@ -150,7 +150,7 @@ class CsvChunkReaderTest : FunSpec({
     }
 
     test("custom csvNullString: non-matching value stays as string") {
-        val opts = ImportOptions(csvNullString = "NULL")
+        val opts = FormatReadOptions(csvNullString = "NULL")
         reader("a\nhello\nNULL", options = opts).use { r ->
             val chunk = r.nextChunk()!!
             chunk.rows shouldHaveSize 2
@@ -200,7 +200,7 @@ class CsvChunkReaderTest : FunSpec({
     }
 
     test("csvNoHeader: later short row throws ImportSchemaMismatchException instead of padding") {
-        val opts = ImportOptions(csvNoHeader = true)
+        val opts = FormatReadOptions(csvNoHeader = true)
         reader("1,alice,admin\n2,bob", chunkSize = 1, options = opts).use { r ->
             val first = r.nextChunk()!!
             first.rows[0].size shouldBe 3
@@ -213,7 +213,7 @@ class CsvChunkReaderTest : FunSpec({
     }
 
     test("csvNoHeader: later long row throws ImportSchemaMismatchException instead of truncation") {
-        val opts = ImportOptions(csvNoHeader = true)
+        val opts = FormatReadOptions(csvNoHeader = true)
         reader("1,alice\n2,bob,admin", chunkSize = 1, options = opts).use { r ->
             val first = r.nextChunk()!!
             first.rows[0].size shouldBe 2
@@ -257,7 +257,7 @@ class CsvChunkReaderTest : FunSpec({
     test("ISO-8859-1 with explicit encoding") {
         val csv = "name\ncafé".toByteArray(Charsets.ISO_8859_1)
         val input = ByteArrayInputStream(csv)
-        val opts = ImportOptions(encoding = Charsets.ISO_8859_1)
+        val opts = FormatReadOptions(encoding = Charsets.ISO_8859_1)
         CsvChunkReader(input, "t", 100, opts).use { r ->
             val chunk = r.nextChunk()!!
             chunk.rows[0][0] shouldBe "café"

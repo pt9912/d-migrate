@@ -8,7 +8,7 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.EncodingDetector
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.charset.Charset
@@ -18,8 +18,8 @@ import java.nio.charset.Charset
  *
  * Plan §3.5.1 / §6.2:
  * - uniVocity `CsvParser` mit `beginParsing`/`parseNext` — nativ chunk-fähig
- * - Header-Zeile steuerbar via [ImportOptions.csvNoHeader]
- * - NULL-Sentinel via [ImportOptions.csvNullString] (Default: leerer String)
+ * - Header-Zeile steuerbar via [FormatReadOptions.csvNoHeader]
+ * - NULL-Sentinel via [FormatReadOptions.csvNullString] (Default: leerer String)
  * - Alle Werte bleiben String — Typ-Konvertierung erfolgt erst im
  *   `ValueDeserializer` anhand des JDBC-Typ-Hints (§3.5.2)
  * - Keine stille Row-Normalisierung: Feldanzahlfehler bleiben Formatfehler
@@ -33,7 +33,7 @@ class CsvChunkReader(
     rawInput: InputStream,
     private val table: String,
     private val chunkSize: Int,
-    private val options: ImportOptions = ImportOptions(),
+    private val options: FormatReadOptions = FormatReadOptions(),
 ) : DataChunkReader {
 
     private data class ParsedCsvRow(

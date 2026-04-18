@@ -188,7 +188,7 @@ class DataImportCommand : CliktCommand(name = "import") {
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
             importExecutor = ImportExecutor {
-                pool, input, fmt, opts, cfg, onTableOpened, reporter,
+                pool, input, fmt, opts, readOpts, cfg, onTableOpened, reporter,
                 opId, resuming, skipped, resumeStates, onChunk, onDone,
                 ->
                 val importer = StreamingImporter(
@@ -201,6 +201,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                     input = input,
                     format = fmt,
                     options = opts,
+                    readOptions = readOpts,
                     config = cfg,
                     progressReporter = reporter,
                     operationId = opId,
