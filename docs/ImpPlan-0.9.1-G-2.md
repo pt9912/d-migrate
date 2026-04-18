@@ -48,8 +48,9 @@ Gemeinsame Basistypen, die sowohl Read- als auch Write-Consumer brauchen:
 
 | Paket | Dateien |
 |-------|---------|
-| `dev.dmigrate.driver` | `DatabaseDialect`, `SqlIdentifiers`, `TypeMapper`, `DialectCapabilities`, `ManualActionRequired` |
+| `dev.dmigrate.driver` | `DatabaseDialect`, `SqlIdentifiers`, `TypeMapper`, `DialectCapabilities` |
 | `dev.dmigrate.driver.connection` | `ConnectionPool`, `ConnectionConfig`, `JdbcUrlBuilder`, `PoolSettings` |
+| `dev.dmigrate.driver.data` | `ResumeMarker` (benoetigt von DataReader in ports-read UND ExportResult in ports-write) |
 | `dev.dmigrate.format.data` | `DataExportFormat` |
 | `dev.dmigrate.format` | `SchemaCodec` |
 
@@ -60,8 +61,8 @@ braucht:
 
 | Paket | Dateien |
 |-------|---------|
-| `dev.dmigrate.driver` | `SchemaReader`, `SchemaReadOptions`, `SchemaReadResult`, `SchemaReadNote`, `SchemaReadReportInput`, `DdlGenerator`, `DdlGenerationOptions` + DdlResult/DdlStatement/TransformationNote/NoteType/SkippedObject (aus DdlGenerator.kt) |
-| `dev.dmigrate.driver.data` | `DataReader`, `ChunkSequence`, `ResumeMarker`, `TableLister` |
+| `dev.dmigrate.driver` | `SchemaReader`, `SchemaReadOptions`, `SchemaReadResult`, `SchemaReadNote`, `SchemaReadReportInput`, `DdlGenerator`, `DdlGenerationOptions` + DdlResult/DdlStatement/TransformationNote/NoteType/SkippedObject (aus DdlGenerator.kt), `ManualActionRequired` (referenziert TransformationNote/SkippedObject) |
+| `dev.dmigrate.driver.data` | `DataReader`, `ChunkSequence`, `TableLister` |
 | `dev.dmigrate.format.data` | `DataChunkReader`, `DataChunkReaderFactory`, `FormatReadOptions` |
 
 Abhaengigkeit: `api(project(":hexagon:ports-common"))`
@@ -182,9 +183,11 @@ fachlich zum DDL-Generierungspfad gehoeren.
 gemischt. Sie wandern nach ports-write, weil sie primaer vom
 Streaming-Adapter (write-path) konsumiert werden.
 
-### 7.3 formats-Split bleibt offen
+### 7.3 formats-Split ist separates Thema
 
 `adapters:driven:formats` exponiert weiterhin Writer-Klassen oeffentlich.
-Ein echter formats-Split in read-/write-Teilmodule ist Folgearbeit fuer
-1.0.0, nicht Teil von G-2. Die Probe verifiziert den Portsschnitt, nicht
-den Format-Adapter-Schnitt.
+G-2 loest den Port-Modulschnitt (hexagon:ports → 3 Teilmodule). Der
+Format-Adapter-Split (formats → formats-read + formats-write) ist ein
+eigenstaendiges Thema, das in der 1.0.0-Publish-Vorbereitung adressiert
+werden muss — G-2 ist dafuer keine Voraussetzung, aber auch kein Ersatz.
+Die Probe verifiziert den Port-Schnitt, nicht den Format-Adapter-Schnitt.
