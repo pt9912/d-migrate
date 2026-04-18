@@ -34,7 +34,9 @@ Vertragsfragen:
   in 0.9.1 bereits einen neuen sichtbaren DDL-Output-Vertrag
   einzufuehren
 - wie heutige `-- TODO: ...`-SQL-Kommentar-Platzhalter intern durch
-  strukturierte `ManualActionRequired`-Eintraege ersetzt werden
+  strukturierte `ManualActionRequired`-Eintraege ersetzt werden, ohne
+  den bestehenden Diagnosevertrag ueber `DdlResult.notes` und
+  `skippedObjects` zu umgehen
 - wie Dialekt-Capabilities explizit modelliert werden, damit
   Generatoren konsistent ueber Generierung, Rewrite, Skip und manuelle
   Nacharbeit entscheiden
@@ -94,8 +96,9 @@ Konsequenz:
   `StreamingImporter` zerlegt, `StreamingExporter` aber implizit als
   Nebensache behandelt wird
 - der spaetere optionale DDL-Output-Split (`pre-data`/`post-data`)
-  laesst sich ohne internen Objekt-/Phasenschnitt nur schwer sauber
-  vorbereiten
+  laesst sich ohne internen Objekt-/Reihenfolgeschnitt nur schwer
+  sauber vorbereiten; explizite Phasenattribute im DDL-Vertrag bleiben
+  aber weiterhin Thema der spaeteren Split-Phase
 
 ---
 
@@ -133,9 +136,16 @@ Konsequenz:
 - Einfuehrung expliziter Dialekt-Capabilities ueber ein zentrales
   `DialectCapabilities`-Modell, das pro `DatabaseDialect` aufgeloest
   wird
+- klare Trennung zwischen:
+  - Dialektfaehigkeiten (`DialectCapabilities`)
+  - per-Objekt-Entscheidungen wie fehlender Body,
+    `sourceDialect`-Inkompatibilitaet oder manuelle Nacharbeit
 - Ersatz der bisherigen `TODO`-Platzhalter durch strukturierte
-  `ManualActionRequired`-Eintraege
-- Rueckbau historischer Plan-/Milestone-Kommentare aus Produktionscode
+  `ManualActionRequired`-Eintraege, die weiter in den bestehenden
+  DDL-Diagnosevertrag (`notes`, `skippedObjects`) integriert werden
+- Rueckbau historischer Plan-/Milestone-Kommentare aus
+  Produktionscode-Dateien, die in Phase B angefasst werden; weitere
+  Repo-weite Altlasten duerfen als Folgearbeit gebuendelt werden
 - Tests, die die interne Refaktorierung absichern, ohne den sichtbaren
   Default-Output zu veraendern
 - Kover-Coverage bleibt pro betroffenem Modul bei mindestens 90 %
@@ -217,8 +227,11 @@ Verbindliche Entscheidung:
   nur dort eingefuehrt, wo sie einen echten Hotspot schneiden
 - 0.9.1 veraendert dadurch noch nicht den sichtbaren
   `schema generate`-Default
-- der interne Schnitt darf aber spaetere Phasenobjekte und den
-  `pre-data`/`post-data`-Pfad vorbereiten
+- der interne Schnitt darf einen spaeteren `pre-data`/`post-data`-
+  Split nur insoweit vorbereiten, wie Objektarten, stabile Reihenfolge
+  und Generatorgrenzen sauberer werden; explizite DDL-Phasen
+  (`DdlPhase`, `ddl_parts`, phasenattribuierte Notes) sind nicht Teil
+  von Phase B
 
 ### 4.5 Capability-Entscheidungen werden explizit modelliert
 
@@ -231,7 +244,15 @@ Verbindliche Entscheidung:
 - dafuer kommt ein kleines, unveraenderliches
   `DialectCapabilities`-Modell hinzu, das zentral je
   `DatabaseDialect` hinterlegt wird
-- Generatoren konsumieren nur dieses Capability-Modell, nicht lose
+- `DialectCapabilities` beschreibt nur echte Ziel-Dialektfaehigkeiten
+  und Default-Strategien, z. B. ob ein Objekttyp nativ generierbar ist,
+  ob Rewrite grundsaetzlich in Frage kommt oder ob nur Skip /
+  Action-Required moeglich ist
+- per-Objekt-Entscheidungen wie fehlender Body, konkrete
+  `sourceDialect`-Inkompatibilitaet oder Objektmetadaten bleiben in
+  einer getrennten Entscheidungsschicht oberhalb der reinen
+  Dialekt-Capabilities
+- Generatoren konsumieren diese klar getrennten Bausteine statt loser
   `when (dialect)`-Verzweigungen ueber mehrere Dateien
 - diese Capability-Modellierung ist Teil der internen
   Konsolidierungsbasis fuer alle drei Treiber
@@ -242,6 +263,10 @@ Verbindliche Entscheidung:
 
 - heutige `-- TODO: ...`-Platzhalter in Generatoren werden intern durch
   strukturierte `ManualActionRequired`-Eintraege ersetzt
+- `ManualActionRequired` ist dabei kein dritter sichtbarer
+  Ausgabe-/JSON-Kanal neben `DdlResult.notes` und `skippedObjects`,
+  sondern ein interner Modellbaustein, der weiterhin auf diese
+  bestehenden Diagnosepfade abgebildet wird
 - das gilt nicht nur fuer Views/Functions/Procedures/Triggers, sondern
   fuer alle heutigen `TODO`-Pfade, insbesondere auch:
   - Custom Types
@@ -260,7 +285,7 @@ data class ManualActionRequired(
     val objectName: String,
     val reason: String,
     val hint: String? = null,
-    val sourceDialect: DatabaseDialect? = null,
+    val sourceDialect: String? = null,
 )
 ```
 
@@ -268,12 +293,26 @@ Damit tragen alle heutigen `TODO`-Pfade mindestens einen stabilen Code,
 einen Objekttyp, einen Objektnamen und einen Freitext-Hinweis; der
 Ziel-Dialekt ergibt sich weiterhin aus `DdlGenerator.dialect`.
 
+Abbildungsregel fuer 0.9.1:
+
+- jedes `ManualActionRequired` muss weiterhin mindestens als bestehende
+  Diagnose im DDL-Ergebnis sichtbar werden:
+  - als `TransformationNote` mit `ACTION_REQUIRED`, wenn die Nacharbeit
+    den Nutzerhinweis betrifft
+  - zusaetzlich als `SkippedObject`, wenn fuer das Objekt bewusst keine
+    ausfuehrbare DDL erzeugt wurde
+- Phase B fuehrt damit keinen Parallelvertrag fuer Report, JSON oder
+  stderr ein; diese bleiben an `DdlResult.notes` und
+  `DdlResult.skippedObjects` gekoppelt
+
 Kompatibilitaetsvertrag fuer 0.9.1:
 
 - intern darf die Modellierung auf `ManualActionRequired` umgestellt
   werden
 - extern muss der bestehende Default-Output fuer `schema generate`
   zunaechst stabil bleiben
+- JSON-, Report- und stderr-Ausgabe bleiben ebenfalls auf Basis der
+  bestehenden `notes`-/`skippedObjects`-Semantik stabil
 - solange Tests und Nutzervertrag noch auf `-- TODO: ...` im DDL-Text
   beruhen, wird `ManualActionRequired` im Default-Pfad wieder in die
   bisherige Kommentarform gerendert
@@ -331,25 +370,39 @@ Abhaengigkeiten und Reihenfolge:
   dialektuebergreifend werden nur kleine Hilfen fuer Capability-Checks,
   Note-/Result-Assembly und ggf. gemeinsame Fallback-Entscheidungen
   geteilt
-- Rewrite-/Skip-/Manual-Action-Entscheidungen auf explizite
-  Capability-Typen stuetzen
+- Rewrite-/Skip-/Manual-Action-Entscheidungen auf zwei explizite
+  Ebenen stuetzen:
+  - `DialectCapabilities` fuer echte Zieldialekt-Regeln
+  - per-Objekt-Entscheidung fuer fehlenden Body,
+    `sourceDialect`-Mismatch und vergleichbare Einzelfaelle
 - bestehende `TODO`-Kommentar-Platzhalter durch strukturierte
   `ManualActionRequired`-Eintraege ersetzen
+- `ManualActionRequired` konsequent in bestehende `TransformationNote`-
+  und `SkippedObject`-Ergebnisse abbilden; kein neuer separater
+  Ausgabeweg fuer CLI, JSON oder Reports
 - Default-Rendering fuer 0.9.1 so belassen, dass bestehende
-  `-- TODO: ...`-basierte DDL-Tests und Nutzererwartungen nicht brechen
-- internen Phasen-/Objektschnitt so vorbereiten, dass spaeter
-  `pre-data`/`post-data` moeglich wird, ohne jetzt neue Artefakte zu
-  emittieren
+  `-- TODO: ...`-basierte DDL-Tests, Golden-Master-Files und
+  Nutzererwartungen nicht brechen
+- internen Objektart- und Reihenfolgeschnitt so vorbereiten, dass
+  spaeter `pre-data`/`post-data` moeglich wird, ohne jetzt neue
+  Artefakte zu emittieren; explizite Phasenattribute,
+  Routine-Abhaengigkeitsanalyse fuer Views und `ddl_parts` bleiben
+  weiter Thema des spaeteren Split-Plans
 
 ### 5.4 Plan-Kommentare rueckbauen und Stabilitaet absichern
 
-- historische Plan-/Milestone-Verweise aus Produktionscode entfernen
+- historische Plan-/Milestone-Verweise aus den in Phase B beruehrten
+  Produktionscode-Dateien entfernen
+- wenn waehrend Phase B weitere gleichartige Verweise in direkt
+  angrenzenden Produktionsdateien auffallen, diese im selben Sweep
+  mitbereinigen; kein unbegrenzter Repo-Cleanup ohne Zusammenhang
 - im Code nur noch "why"-Kommentare und Invarianten belassen
 - Refaktorierung mit gezielten Tests absichern:
   - Runner-/Streaming-Pfade
   - Comparator-Ergebnisse
   - DDL-Default-Output
   - strukturierte Unsupported-/Rewrite-/Manual-Action-Faelle
+  - bestehende `-- TODO: ...`-Assertions und Golden-Master-Files
 - Kover-Coverage pro betroffenem Modul bei mindestens 90 % halten
 
 ### 5.5 Grobe Aufwandseinschaetzung
@@ -382,16 +435,22 @@ Phase B ist erst abgeschlossen, wenn folgende Punkte gruen sind:
 - DDL-Tests bestaetigen:
   - gleicher Default-Output fuer `schema generate`
   - strukturierte Modellierung von Unsupported-/Rewrite-Faellen
+  - unveraenderte Sichtbarkeit dieser Faelle ueber bestehende
+    `notes`-/`skippedObjects`-Pfade in CLI, JSON und Report
   - keine Rueckkehr zu losen, unstrukturierten `TODO`-Entscheidungen im
     Generatorinneren
   - weiterhin kompatibles `-- TODO: ...`-Rendering im sichtbaren
     Default-Pfad, solange 0.9.1 daran festhaelt
+  - bestehende String-Assertions in DDL-Generator-Tests und
+    referenzierte SQL-Fixtures bleiben gruen bzw. werden bewusst und
+    gemeinsam migriert, falls Phase B ihren Vertrag spaeter doch lockert
 
 Mindestergebnis:
 
 - die wartungskritischen Hotspots sind in kleinere Einheiten zerlegt
 - der DDL-Pfad ist intern auf Objektart- und Capability-Schnitt
-  vorbereitet
+  vorbereitet, ohne den bestehenden Diagnose- oder Split-Vertrag
+  vorwegzunehmen
 - Nutzer sehen in 0.9.1 noch keinen neuen DDL-Output-Vertrag
 
 ---
@@ -402,9 +461,13 @@ Mit hoher Wahrscheinlichkeit betroffen:
 
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataImportCommand.kt`
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataExportCommand.kt`
 - `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingImporter.kt`
 - `adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/StreamingExporter.kt`
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
+- ggf. direkt angrenzende Produktionsdateien mit Plan-/Milestone-
+  Verweisen, z. B. in `adapters/driven/formats/...`
 - `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt`
 - `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt`
@@ -412,6 +475,9 @@ Mit hoher Wahrscheinlichkeit betroffen:
 - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/DdlGenerator.kt`
 - ggf. neue gemeinsame Capability-/Manual-Action-Typen in
   `hexagon:ports` oder `adapters:driven:driver-common`
+- DDL-Generator-Tests unter `adapters/driven/driver-*/src/test/...`
+- Golden-Master-/Fixture-Dateien unter
+  `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
 - `docs/ddl-output-split-plan.md`
 
 Die genaue Paketlage darf waehrend der Umsetzung pragmatisch angepasst
