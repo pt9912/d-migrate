@@ -45,6 +45,23 @@ class JdbcMetadataSession(private val conn: Connection) : JdbcOperations {
         }
     }
 
+    override fun execute(sql: String, vararg params: Any?): Int {
+        conn.prepareStatement(sql).use { stmt ->
+            params.forEachIndexed { i, value -> stmt.setObject(i + 1, value) }
+            return stmt.executeUpdate()
+        }
+    }
+
+    override fun executeBatch(sql: String, batchParams: List<Array<Any?>>): IntArray {
+        conn.prepareStatement(sql).use { stmt ->
+            for (row in batchParams) {
+                row.forEachIndexed { i, value -> stmt.setObject(i + 1, value) }
+                stmt.addBatch()
+            }
+            return stmt.executeBatch()
+        }
+    }
+
     private fun resultSetToList(rs: ResultSet): List<Map<String, Any?>> {
         val meta = rs.metaData
         val colCount = meta.columnCount

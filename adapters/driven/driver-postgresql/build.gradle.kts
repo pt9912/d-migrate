@@ -8,17 +8,18 @@ kover {
     reports {
         filters {
             excludes {
-                // JDBC-dependent classes — require a live PostgreSQL database.
-                // Tested via test:integration-postgresql (Testcontainers).
-                // Root-level :koverVerify covers them at 90%+ with -PintegrationTests.
+                // Paket 1 done: MetadataQueries, SchemaReader, TableLister
+                // now have MockK unit tests → exclusions removed.
+                // Remaining: thin wrappers and Paket 2 helpers.
                 classes(
-                    "dev.dmigrate.driver.postgresql.Postgres*Reader",
-                    "dev.dmigrate.driver.postgresql.Postgres*Writer",
+                    "dev.dmigrate.driver.postgresql.PostgresDataReader",
+                    "dev.dmigrate.driver.postgresql.PostgresDataWriter*",
                     "dev.dmigrate.driver.postgresql.PostgresSchemaSync",
-                    "dev.dmigrate.driver.postgresql.PostgresTableLister",
                     "dev.dmigrate.driver.postgresql.PostgresTableImportSession*",
                     "dev.dmigrate.driver.postgresql.PostgresDriver",
-                    "dev.dmigrate.driver.postgresql.PostgresMetadataQueries",
+                    // Only used by Paket 2 classes (DataWriter, SchemaSync);
+                    // will be un-excluded in Paket 2.
+                    "dev.dmigrate.driver.postgresql.QualifiedTableName",
                 )
             }
         }

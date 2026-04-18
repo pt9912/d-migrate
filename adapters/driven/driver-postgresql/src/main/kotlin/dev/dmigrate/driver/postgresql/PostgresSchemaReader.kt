@@ -6,7 +6,9 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
+import java.sql.Connection
 
 /**
  * PostgreSQL [SchemaReader] implementation.
@@ -15,14 +17,16 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * for PostgreSQL-specific metadata (sequences, enum types, backing
  * index detection).
  */
-class PostgresSchemaReader : SchemaReader {
+class PostgresSchemaReader(
+    private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
+) : SchemaReader {
 
     override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
         pool.borrow().use { conn ->
-            val session = JdbcMetadataSession(conn)
+            val session = jdbcFactory(conn)
             val schema = currentSchema(conn)
             val database = conn.catalog ?: "unknown"
 
@@ -65,7 +69,7 @@ class PostgresSchemaReader : SchemaReader {
     // ── Tables ──────────────────────────────────
 
     private fun readTables(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         schema: String,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, TableDefinition> {
@@ -78,7 +82,7 @@ class PostgresSchemaReader : SchemaReader {
     }
 
     private fun readTable(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         schema: String,
         tableName: String,
         notes: MutableList<SchemaReadNote>,
@@ -166,7 +170,7 @@ class PostgresSchemaReader : SchemaReader {
     }
 
     private fun readPartitioning(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         schema: String,
         tableName: String,
     ): PartitionConfig? {
@@ -189,7 +193,7 @@ class PostgresSchemaReader : SchemaReader {
 
     // ── Sequences ───────────────────────────────
 
-    private fun readSequences(session: JdbcMetadataSession, schema: String): Map<String, SequenceDefinition> {
+    private fun readSequences(session: JdbcOperations, schema: String): Map<String, SequenceDefinition> {
         val rows = PostgresMetadataQueries.listSequences(session, schema)
         val result = LinkedHashMap<String, SequenceDefinition>()
         for (row in rows) {
@@ -218,7 +222,7 @@ class PostgresSchemaReader : SchemaReader {
     // ── Custom Types (ENUM, DOMAIN, COMPOSITE) ──
 
     private fun readCustomTypes(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         schema: String,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, CustomTypeDefinition> {
@@ -265,7 +269,7 @@ class PostgresSchemaReader : SchemaReader {
 
     // ── Views ───────────────────────────────────
 
-    private fun readViews(session: JdbcMetadataSession, schema: String): Map<String, ViewDefinition> {
+    private fun readViews(session: JdbcOperations, schema: String): Map<String, ViewDefinition> {
         val rows = PostgresMetadataQueries.listViews(session, schema)
         val result = LinkedHashMap<String, ViewDefinition>()
         for (row in rows) {
@@ -280,7 +284,7 @@ class PostgresSchemaReader : SchemaReader {
     // ── Functions ───────────────────────────────
 
     private fun readFunctions(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         schema: String,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, FunctionDefinition> {
@@ -320,7 +324,7 @@ class PostgresSchemaReader : SchemaReader {
     // ── Procedures ──────────────────────────────
 
     private fun readProcedures(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         schema: String,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, ProcedureDefinition> {
@@ -352,13 +356,13 @@ class PostgresSchemaReader : SchemaReader {
         return result
     }
 
-    private fun readRoutineParams(session: JdbcMetadataSession, schema: String, specificName: String): List<Map<String, Any?>> {
+    private fun readRoutineParams(session: JdbcOperations, schema: String, specificName: String): List<Map<String, Any?>> {
         return PostgresMetadataQueries.listRoutineParameters(session, schema, specificName)
     }
 
     // ── Triggers ────────────────────────────────
 
-    private fun readTriggers(session: JdbcMetadataSession, schema: String): Map<String, TriggerDefinition> {
+    private fun readTriggers(session: JdbcOperations, schema: String): Map<String, TriggerDefinition> {
         val rows = PostgresMetadataQueries.listTriggers(session, schema)
         val result = LinkedHashMap<String, TriggerDefinition>()
         for (row in rows) {

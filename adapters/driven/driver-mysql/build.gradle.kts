@@ -8,28 +8,24 @@ kover {
     reports {
         filters {
             excludes {
-                // JDBC-dependent classes — require a live MySQL database.
-                // Tested via test:integration-mysql (Testcontainers).
-                // Root-level :koverVerify covers them at 90%+ with -PintegrationTests.
+                // Paket 1 done: MetadataQueries, SchemaReader, TableLister
+                // now have MockK unit tests → exclusions removed.
+                // Remaining: thin wrappers and Paket 2 helpers.
                 classes(
                     "dev.dmigrate.driver.mysql.MysqlDataReader",
-                    "dev.dmigrate.driver.mysql.MysqlDataWriter",
-                    "dev.dmigrate.driver.mysql.MysqlDataWriter\$Companion",
-                    "dev.dmigrate.driver.mysql.MysqlSchemaReader",
+                    "dev.dmigrate.driver.mysql.MysqlDataWriter*",
                     "dev.dmigrate.driver.mysql.MysqlSchemaSync",
-                    "dev.dmigrate.driver.mysql.MysqlTableLister",
-                    "dev.dmigrate.driver.mysql.MysqlTableImportSession",
-                    "dev.dmigrate.driver.mysql.MysqlTableImportSession\$State",
+                    "dev.dmigrate.driver.mysql.MysqlTableImportSession*",
                     "dev.dmigrate.driver.mysql.MysqlDriver",
-                    "dev.dmigrate.driver.mysql.MysqlMetadataQueries",
+                    // Only used by Paket 2 classes (DataWriter, SchemaSync);
+                    // will be un-excluded in Paket 2.
+                    "dev.dmigrate.driver.mysql.MysqlQualifiedTableName",
                 )
             }
         }
         verify {
             rule {
-                // 84% after JdbcOperations refactor — remaining gap is in
-                // DdlGenerator spatial branches and TypeMapping edge cases.
-                minBound(83)
+                minBound(90)
             }
         }
     }

@@ -1,6 +1,6 @@
 # Plan: JDBC-Wrapper und MockK-Tests fuer Kover 90%
 
-> **Status**: In Progress (2026-04-17)
+> **Status**: Review (2026-04-18) — Paket 1 + 4-Zwischenstand umgesetzt
 > **Kontext**: 0.9.1 Phase A Review-Finding — Kover-Ausschluesse muessen
 > reduziert und die verbleibenden durch MockK-Unit-Tests ersetzt werden.
 
