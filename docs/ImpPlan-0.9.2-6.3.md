@@ -208,9 +208,15 @@ Architekturentscheidung fuer den Signalfluss:
 - der Generator kennt nicht selbst den sichtbaren CLI-Splitvertrag
 - stattdessen markiert die Generatoranalyse nicht belastbar
   aufloesbare Split-Faelle ueber dedizierte phasenlose Diagnoseeintraege
-  im `DdlResult`
+  in `DdlResult.globalNotes`
+- diese Diagnoseeintraege bleiben `TransformationNote`-Eintraege mit:
+  - `type = NoteType.ACTION_REQUIRED`
+  - einem dedizierten Split-Code fuer nicht belastbare View-Zuordnung
+  - `phase = null`
 - der Runner wertet diese Diagnosen nur dann als Exit 2 aus, wenn Split
   aktiv ist
+- die Identifikation im Runner erfolgt ueber diesen dedizierten
+  Diagnose-Code, nicht ueber freie Textsuche
 - ohne Split bleiben dieselben Diagnosen sichtbar, aber nicht
   exit-bestimmend
 
@@ -348,6 +354,10 @@ Verbindliche Folge:
   - `generateViews(...)` danach getrennt pro Phase aufrufen
   - die jeweils zurueckgegebenen `DdlStatement`s gesammelt mit der Phase
     des aufrufenden Buckets markieren
+  - `SkippedObject`s aus beiden Aufrufen ebenfalls bucketweise
+    nachmarkieren:
+    - entweder ueber separate Skip-Listen pro Aufruf
+    - oder ueber Vergleich der Listenlaenge vor/nach jedem Aufruf
 
 Wichtig:
 
@@ -412,8 +422,8 @@ Dateibasierte Schemas:
   - jeder View, der direkt oder indirekt von einem bereits als
     `POST_DATA` markierten View abhaengt, wird ebenfalls `POST_DATA`
 - nicht belastbar aufloesbare Views werden im Generator ueber dedizierte
-  globale Diagnosen markiert; der Runner macht daraus nur bei aktivem
-  Split einen Exit-2-Fehler
+  globale Diagnosen in `globalNotes` markiert; der Runner macht daraus
+  nur bei aktivem Split einen Exit-2-Fehler
 - die Fehlermeldung muss den betroffenen View benennen und die Ursache
   als nicht sicher aufloesbare Routine-Abhaengigkeit kenntlich machen
 
@@ -438,6 +448,8 @@ Mindestens abzudecken:
   fuehren im Split-Fall zu Exit 2 statt zu stiller Fehlsortierung
 - `SkippedObject` und `ACTION_REQUIRED` erben die Phase des ersetzten
   Objekttyps
+- Skips aus getrennten `generateViews(...)`-Aufrufen werden konsistent
+  mit der Phase des jeweiligen Buckets nachmarkiert
 - Split-unsichere Views liefern bei aktivem Split Exit 2 mit View-Name
 - derselbe View mit plausibler, aber nur heuristisch belegter
   Routine-Kante landet konservativ in `POST_DATA`, nicht in Exit 2
