@@ -4,7 +4,7 @@
 > Schema-Artefakte
 > **Arbeitspaket**: 6.5 (DDL-Haertung und MySQL-`-- TODO`-
 > Bereinigung nachziehen)
-> **Status**: Draft (2026-04-19)
+> **Status**: Done (2026-04-19)
 > **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 6.5,
 > Abschnitt 7, Abschnitt 8, Abschnitt 9.3 und Abschnitt 9.5;
 > `docs/quality.md`;
