@@ -180,6 +180,10 @@ Wichtig:
 Verbindliche Folge:
 
 - E006-E121 werden nicht lose "irgendwo mitgetestet"
+- fuer den Error-Ledger gilt dabei eine harte Trennlinie:
+  - jeder Code aus E006-E121 erscheint genau einmal
+  - entweder als aktiv nachgewiesener Codepfad
+  - oder als bewusst dokumentierter `not_applicable`-Eintrag
 - fuer 0.9.2 relevante Warncodes werden in einem separaten Warncode-
   Ledger gefuehrt; 0.9.2-relevant bedeutet:
   - der Code wird durch 0.9.2 neu eingefuehrt
@@ -222,6 +226,10 @@ Praezisierung:
     - `source`
     - `path_type`
     - `entry_type`
+- `entry_type = standard` und `entry_type = rest_path` sind fuer 0.9.2
+  strikt disjunkte Modi:
+  - ein Eintrag ist genau einem Modus zugeordnet
+  - die Pflichtfeldmengen gelten exklusiv fuer den gewaehlten Modus
 - fuer `entry_type = standard` sind genau diese Felder Pflicht:
   - `code`
   - `level`
@@ -229,6 +237,11 @@ Praezisierung:
   - `test_path`
   - `path_type`
   - `entry_type`
+- fuer `level = error` im Error-Ledger ist zusaetzlich Pflicht:
+  - `status`
+  - erlaubte Werte:
+    - `active`
+    - `not_applicable`
 - fuer `entry_type = rest_path` sind zusaetzlich Pflicht:
   - `why_not_automated`
   - `evidence_owner`
@@ -250,6 +263,7 @@ Damit gilt fuer 6.7 explizit:
 
 - Error-Ledger:
   - E006-E121
+  - jeder Eintrag mit `status = active` oder `status = not_applicable`
 - Warncode-Ledger:
   - in 0.9.2 genau fuer `W113` und `W120`
 - beide Ledgers werden getrennt gefuehrt und separat reviewed
@@ -314,6 +328,8 @@ Damit gilt fuer 6.7:
 - bestehende `single`-Fixtures unter
   `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
   als Rueckwaertskompatibilitaetsanker behandeln
+- ein expliziter Non-Regression-Test blockiert unbeabsichtigte Deltas im
+  `single`-Bestand
 - nur dort anfassen, wo 6.5 oder ein bewusst dokumentierter
   Vertragswechsel sichtbare SQL-Aenderungen erzwingt
 - fuer jede geaenderte `single`-Fixture muss die Begruendung im
@@ -321,6 +337,8 @@ Damit gilt fuer 6.7:
   - Haertung
   - neue Diagnose-Regel
   - bewusstes Output-Contract-Update
+- jede zulaessige Abweichung wird in einer bekannten 6.5-Ausnahmeliste
+  oder gleichwertig klar benannten Review-Liste gefuehrt
 
 ### 5.2 Split-Golden-Masters pro Dialekt und Fixture-Typ nachziehen
 
@@ -405,6 +423,8 @@ Damit gilt fuer 6.7:
 ### 5.5 Fehler- und Warncode-Ledger aufbauen
 
 - ein explizites Error-Ledger fuer E006-E121 erstellen oder nachziehen
+- fuer Codes ohne aktiven 0.9.2-Nachweispfad ist ein expliziter
+  `not_applicable`-Eintrag Pflicht; stilles Weglassen ist unzulaessig
 - ein separates Warncode-Ledger fuer die in 0.9.2 zentral festgelegten
   Warncodes `W113` und `W120` erstellen oder nachziehen
 - die Ledgers werden als maschinenlesbare Dateien unter `docs/`
@@ -433,6 +453,9 @@ Damit gilt fuer 6.7:
     `evidence_owner`, `priority` und `planned_remediation` befuellt
   - eine Schema-Validierung prueft alle Pflichtfelder sowie die
     erlaubten Werte von `level`, `path_type` und `entry_type`
+  - fuer das Error-Ledger ist pro Code aus E006-E121 genau ein Eintrag
+    vorhanden, entweder mit `status = active` oder mit
+    `status = not_applicable`
 - die Schema-Validierung laeuft gegen den normativen Schema-Quellort
   `docs/code-ledger-0.9.2.schema.json`
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
@@ -503,6 +526,8 @@ Wichtig:
 
 - `schema generate` ohne `--split` bleibt fuer bestehende `single`-
   Fixtures unveraendert, ausser bei bewusst dokumentierten 6.5-Diffs
+- ein expliziter `single`-Golden-Master-Test scheitert bei jedem
+  unbeabsichtigten Delta ausserhalb der bekannten 6.5-Ausnahmeliste
 - fuer 6.7 wird `--output` in den Split-Pflichtfaellen explizit als
   Dateipfad mit Basisdateiname interpretiert, nicht als Verzeichnis-
   Pfad
@@ -538,6 +563,8 @@ Wichtig:
 ### 6.4 Pflichtfaelle fuer Error- und Warncode-Ledger
 
 - fuer E006-E121 existiert ein expliziter Error-Ledger-Nachweis
+- fuer jeden Code aus E006-E121 existiert genau ein Ledger-Eintrag mit
+  `status = active` oder `status = not_applicable`
 - fuer die in 0.9.2 zentral festgelegten Warncodes `W113` und `W120`
   existiert ein expliziter Warncode-Ledger-Nachweis
 - die Nachweise liegen fuer 0.9.2 genau unter:
