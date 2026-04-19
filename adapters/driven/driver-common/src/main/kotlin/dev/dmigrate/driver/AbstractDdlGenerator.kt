@@ -186,68 +186,10 @@ abstract class AbstractDdlGenerator(
         ReferentialAction.NO_ACTION -> "NO ACTION"
     }
 
-    protected open fun invertStatement(stmt: DdlStatement): DdlStatement? {
-        val sql = stmt.sql.trim()
-        return when {
-            sql.startsWith("CREATE TABLE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE TABLE")
-                DdlStatement("DROP TABLE IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE INDEX", ignoreCase = true) || sql.startsWith("CREATE UNIQUE INDEX", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, if ("UNIQUE" in sql.uppercase()) "CREATE UNIQUE INDEX" else "CREATE INDEX")
-                DdlStatement("DROP INDEX IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE TYPE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE TYPE")
-                DdlStatement("DROP TYPE IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE VIEW", ignoreCase = true) || sql.startsWith("CREATE OR REPLACE VIEW", ignoreCase = true) -> {
-                val keyword = if ("OR REPLACE" in sql.uppercase()) "CREATE OR REPLACE VIEW" else "CREATE VIEW"
-                val name = extractNameAfter(sql, keyword)
-                DdlStatement("DROP VIEW IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE MATERIALIZED VIEW", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE MATERIALIZED VIEW")
-                DdlStatement("DROP MATERIALIZED VIEW IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE FUNCTION", ignoreCase = true) || sql.startsWith("CREATE OR REPLACE FUNCTION", ignoreCase = true) -> {
-                val keyword = if ("OR REPLACE" in sql.uppercase()) "CREATE OR REPLACE FUNCTION" else "CREATE FUNCTION"
-                val name = extractNameAfter(sql, keyword)
-                DdlStatement("DROP FUNCTION IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE PROCEDURE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE PROCEDURE")
-                DdlStatement("DROP PROCEDURE IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE TRIGGER", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE TRIGGER")
-                DdlStatement("DROP TRIGGER IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE SEQUENCE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE SEQUENCE")
-                DdlStatement("DROP SEQUENCE IF EXISTS $name;")
-            }
-            sql.startsWith("ALTER TABLE", ignoreCase = true) && sql.contains("ADD CONSTRAINT", ignoreCase = true) -> {
-                val tableName = extractNameAfter(sql, "ALTER TABLE")
-                val addConstraintIdx = sql.uppercase().indexOf("ADD CONSTRAINT")
-                val constraintPart = sql.substring(addConstraintIdx + "ADD CONSTRAINT".length).trimStart()
-                val constraintName = constraintPart.split(Regex("[\\s(]"), limit = 2).first()
-                DdlStatement("ALTER TABLE $tableName DROP CONSTRAINT IF EXISTS $constraintName;")
-            }
-            sql.startsWith("--") -> null // Skip comments
-            else -> null
-        }
-    }
+    private val inverter = StatementInverter()
 
-    private fun extractNameAfter(sql: String, keyword: String): String {
-        val afterKeyword = sql.substring(keyword.length).trimStart()
-        // Handle IF NOT EXISTS
-        val cleaned = if (afterKeyword.uppercase().startsWith("IF NOT EXISTS"))
-            afterKeyword.substring("IF NOT EXISTS".length).trimStart()
-        else afterKeyword
-        // Take the first token (quoted or unquoted identifier)
-        return cleaned.split(Regex("[\\s(]"), limit = 2).first()
-    }
+    protected open fun invertStatement(stmt: DdlStatement): DdlStatement? =
+        inverter.invert(stmt)
 
     // ── Topological sort ────────────────────────
 
@@ -356,133 +298,14 @@ abstract class AbstractDdlGenerator(
             .toSet()
     }
 
-    // ── View phase classification (0.9.2 AP 6.3 Step C) ─────────
+    // ── View phase classification (delegates to ViewPhaseClassifier) ──
 
-    /**
-     * Classifies views into PRE_DATA and POST_DATA based on function
-     * dependencies. Returns (preDataViews, postDataViews, diagnosticNotes).
-     */
     protected fun classifyViewsByPhase(
         views: Map<String, ViewDefinition>,
         functionNames: Set<String>,
-    ): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> {
-        if (views.isEmpty()) return Triple(views, emptyMap(), emptyList())
-
-        val diagnostics = mutableListOf<TransformationNote>()
-        val postDataDirect = mutableSetOf<String>()
-        val normalizedFuncNames = functionNames.map { it.lowercase() }.toSet()
-
-        // Level A: explicit dependencies.functions
-        for ((name, view) in views) {
-            val declaredFuncs = view.dependencies?.functions
-            if (!declaredFuncs.isNullOrEmpty()) {
-                postDataDirect += name
-                continue
-            }
-            // Level B: heuristic against known function names in query
-            if (view.query != null && normalizedFuncNames.isNotEmpty()) {
-                val inferred = inferViewFunctionDependencies(view.query!!, normalizedFuncNames)
-                if (inferred.isNotEmpty()) {
-                    postDataDirect += name
-                    continue
-                }
-            }
-            // Level C: view has no query, no declared deps at all, but schema has functions
-            if (view.query == null && view.dependencies == null && normalizedFuncNames.isNotEmpty()) {
-                postDataDirect += name
-                diagnostics += TransformationNote(
-                    type = NoteType.ACTION_REQUIRED,
-                    code = "E060",
-                    objectName = name,
-                    message = "View '$name' has no query text and no declared function dependencies. " +
-                        "Phase assignment cannot be reliably determined for split mode.",
-                    hint = "Add explicit dependencies.functions to the view definition.",
-                )
-            }
-        }
-
-        // Transitive propagation over view→view edges
-        val postDataAll = postDataDirect.toMutableSet()
-        val viewDeps = views.mapValues { (name, view) ->
-            declaredViewDependencies(name, view, views.keys) +
-                inferViewDependenciesFromQuery(name, view.query, views.keys)
-        }
-        var changed = true
-        while (changed) {
-            changed = false
-            for ((name, deps) in viewDeps) {
-                if (name !in postDataAll && deps.any { it in postDataAll }) {
-                    postDataAll += name
-                    changed = true
-                }
-            }
-        }
-
-        // Partition preserving original order
-        val preData = linkedMapOf<String, ViewDefinition>()
-        val postData = linkedMapOf<String, ViewDefinition>()
-        for ((name, view) in views) {
-            if (name in postDataAll) postData[name] = view else preData[name] = view
-        }
-        return Triple(preData, postData, diagnostics)
-    }
-
-    /**
-     * Finds function-call-like patterns (`name(`) in a view query for any
-     * known function name. Ignores content inside string literals and SQL
-     * comments.
-     */
-    private fun inferViewFunctionDependencies(
-        query: String,
-        normalizedFuncNames: Set<String>,
-    ): Set<String> {
-        val cleaned = stripSqlCommentsAndLiterals(query)
-        val callPattern = Regex("""(?i)\b([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
-        return callPattern.findAll(cleaned)
-            .map { it.groupValues[1].lowercase() }
-            .filter { it in normalizedFuncNames }
-            .toSet()
-    }
-
-    /**
-     * Removes SQL comments (`--` to EOL, `/* ... */`) and string literals
-     * (`'...'` with `''` escaping) from SQL text, replacing them with spaces.
-     */
-    private fun stripSqlCommentsAndLiterals(sql: String): String {
-        val sb = StringBuilder(sql.length)
-        var i = 0
-        while (i < sql.length) {
-            when {
-                i + 1 < sql.length && sql[i] == '-' && sql[i + 1] == '-' -> {
-                    val end = sql.indexOf('\n', i)
-                    i = if (end < 0) sql.length else end + 1
-                    sb.append(' ')
-                }
-                i + 1 < sql.length && sql[i] == '/' && sql[i + 1] == '*' -> {
-                    val end = sql.indexOf("*/", i + 2)
-                    i = if (end < 0) sql.length else end + 2
-                    sb.append(' ')
-                }
-                sql[i] == '\'' -> {
-                    i++
-                    while (i < sql.length) {
-                        if (sql[i] == '\'' && i + 1 < sql.length && sql[i + 1] == '\'') {
-                            i += 2
-                        } else if (sql[i] == '\'') {
-                            i++
-                            break
-                        } else {
-                            i++
-                        }
-                    }
-                    sb.append(' ')
-                }
-                else -> {
-                    sb.append(sql[i])
-                    i++
-                }
-            }
-        }
-        return sb.toString()
-    }
+    ): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> =
+        ViewPhaseClassifier.classify(
+            views, functionNames,
+            ::declaredViewDependencies, ::inferViewDependenciesFromQuery,
+        )
 }
