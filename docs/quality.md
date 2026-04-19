@@ -152,8 +152,10 @@ Dateien mit >400 LOC (potenzielle Hotspots):
   gegen zwei PostgreSQL-Testcontainer.
 
 - ~~Fehlercodes E006-E121 gegen Validierungsmatrix testen.~~
-  Umgesetzt in 0.9.2 AP 6.7: `error-code-ledger-0.9.2.yaml` (28 Einträge, alle active oder
-  not_applicable) + `warn-code-ledger-0.9.2.yaml` (W113, W120).
+  Umgesetzt in 0.9.2 AP 6.7: [`error-code-ledger-0.9.2.yaml`](./error-code-ledger-0.9.2.yaml) (28 Einträge, alle active oder
+  not_applicable) + [`warn-code-ledger-0.9.2.yaml`](./warn-code-ledger-0.9.2.yaml) (W113, W120).
+  Schema: [`code-ledger-0.9.2.schema.json`](./code-ledger-0.9.2.schema.json).
+  Golden-Master-Ausnahmen: [`ddl-single-exceptions-0.9.2.yaml`](./ddl-single-exceptions-0.9.2.yaml).
 
 - ~~DDL-Interpolation systematisch absichern.~~
   Umgesetzt in 0.9.2 AP 6.5: SpatiaLite-Identifier korrekt escaped,
