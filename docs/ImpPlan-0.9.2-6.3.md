@@ -4,7 +4,7 @@
 > Schema-Artefakte
 > **Arbeitspaket**: 6.3 (Generator-Zuordnung pro Dialekt und Objekttyp
 > festziehen)
-> **Status**: Draft (2026-04-19)
+> **Status**: Done (2026-04-19)
 > **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 4.7,
 > Abschnitt 5.3, Abschnitt 6.3, Abschnitt 6.3.1, Abschnitt 7,
 > Abschnitt 8 und Abschnitt 9.1;

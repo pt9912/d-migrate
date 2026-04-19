@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.2 - Beta: DDL-Phasen und importfreundliche
 > Schema-Artefakte
 > **Arbeitspaket**: 6.1 (`DDL-Modell phasenfaehig machen`)
-> **Status**: Draft (2026-04-19)
+> **Status**: Done (2026-04-19)
 > **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 4.3,
 > Abschnitt 4.3a, Abschnitt 5.1, Abschnitt 6.1, Abschnitt 7, Abschnitt
 > 8 und Abschnitt 9.2;

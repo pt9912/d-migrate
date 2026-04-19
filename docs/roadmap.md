@@ -316,21 +316,21 @@ Vertrag festschreibt.
 
 ### Milestone 0.9.2 — Beta: DDL-Phasen und importfreundliche Schema-Artefakte
 
-| Bereich | Aufgabe                                                                                                                     | LF-Ref     |
-| ------- | --------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single                                                                | pre-post`) | LF-003 |
-| Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data`                                                                  | —          |
-| Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten)                    | —          |
-| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld                                   | —          |
-| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —          |
-| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |
-| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (Finding aus `docs/quality.md`)                            | —          |
-| Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (Finding)          | —          |
-| Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477/446 LOC → je ~50-80 LOC) (Finding)                         | —          |
-| Quality | Executor-Parameter gruppieren: ExportExecutor (17 Params) / ImportExecutor (14 Params) → Kontext-DTOs (Finding)             | —          |
-| Quality | MySQL-TODO-Platzhalter: verbleibende 4 `-- TODO` in MysqlDdlGenerator durch ManualActionRequired ersetzen (Finding)         | —          |
-| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (Finding)                                                             | —          |
-| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |
+| Bereich | Aufgabe                                                                                                                     | LF-Ref     | Status |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ |
+| Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data` (AP 6.1)                                                        | —          | ✅      |
+| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single\|pre-post`) (AP 6.2)                                           | LF-003     | ✅      |
+| Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten) (AP 6.3)           | —          | ✅      |
+| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld                                   | —          |        |
+| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —          |        |
+| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |        |
+| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (Finding aus `docs/quality.md`)                            | —          |        |
+| Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (Finding)          | —          |        |
+| Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477/446 LOC → je ~50-80 LOC) (Finding)                         | —          |        |
+| Quality | Executor-Parameter gruppieren: ExportExecutor (17 Params) / ImportExecutor (14 Params) → Kontext-DTOs (Finding)             | —          |        |
+| Quality | MySQL-TODO-Platzhalter: verbleibende 4 `-- TODO` in MysqlDdlGenerator durch ManualActionRequired ersetzen (Finding)         | —          |        |
+| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (Finding)                                                             | —          |        |
+| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |        |
 
 **Ergebnis**: `schema generate` kann optional importfreundliche
 Schema-Artefakte als `pre-data` und `post-data` erzeugen, ohne den bisherigen
