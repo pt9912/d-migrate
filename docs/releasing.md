@@ -5,7 +5,7 @@
 > Schritt-für-Schritt-Ablauf für GitHub-Release-Assets, OCI und Homebrew
 > sowie Rollback-Szenarien.
 >
-> Hinweis: Ein oeffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
+> Hinweis: Ein öffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
 > nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
 > [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
 > beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
@@ -15,7 +15,7 @@
 > | Gruppe | Module | Publish-Ziel |
 > |--------|--------|-------------|
 > | Foundation | `hexagon:core` | Kernartefakt |
-> | Ports | `hexagon:ports` (spaeter ports-common/-read/-write) | Kernartefakt |
+> | Ports | `hexagon:ports` (später ports-common/-read/-write) | Kernartefakt |
 > | Driver Runtime | `driver-common`, `driver-postgresql/-mysql/-sqlite` | Kernartefakt |
 > | Optional Extensions | `hexagon:profiling`, `driver-*-profiling`, `formats`, `streaming` | Zusatzartefakt |
 > | Internal Tooling | `hexagon:application`, `adapters:driving:cli`, `integrations`, Tests | nicht publiziert |
@@ -48,7 +48,7 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 |---|---|
 | Sauberer Working-Tree auf `develop` | `git status` zeigt keine Änderungen |
 | `develop` ist auf dem aktuellen Stand | `git pull --ff-only origin develop` |
-| `main` ist auf dem aktuellen Stand | `git fetch origin main` |
+| `main` ist auf dem aktuellen Stand | `git checkout main && git pull --ff-only origin main && git checkout develop` |
 | Docker verfügbar (lokaler Pre-Release-Build) | `docker version` |
 | `gh` CLI authentifiziert | `gh auth status` |
 | `brew` verfügbar auf einem Verifikations-Host | `brew --version` |
@@ -85,6 +85,8 @@ docker build --target build \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:assembleReleaseAssets --rerun-tasks" \
   -t d-migrate:release-assets .
 
+rm -rf ./release && mkdir -p ./release
+
 docker create --name d-migrate-release-assets d-migrate:release-assets
 docker cp d-migrate-release-assets:/src/adapters/driving/cli/build/release ./release
 docker rm d-migrate-release-assets
@@ -101,6 +103,10 @@ Wichtig:
   aus dem grünen Workflow-Artefakt `release-assets` verwendet
 
 ### 3.3 Smoke-Test der CLI gegen die Fixture-Schemas
+
+Voraussetzung: Die folgenden Fixture-Dateien müssen unter
+`adapters/driven/formats/src/test/resources/fixtures/schemas/` existieren:
+`minimal.yaml`, `e-commerce.yaml`.
 
 ```bash
 docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/schemas:/work" \
@@ -121,7 +127,7 @@ docker run --rm -v "$(pwd)/adapters/driven/formats/src/test/resources/fixtures/s
 
 Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
 
-Hinweis: Fuer realistischere DB-Smokes ueber die eingebauten Fixture-Schemas
+Hinweis: Für realistischere DB-Smokes über die eingebauten Fixture-Schemas
 hinaus siehe auch die priorisierte Kandidatenliste in
 [`test-database-candidates.md`](./test-database-candidates.md).
 
@@ -214,7 +220,7 @@ docker network rm d-migrate-smoke 2>/dev/null
 rm -rf "${SMOKE_DIR}"
 ```
 
-#### Tool-Export-Smoke (0.7.0)
+#### Tool-Export-Smoke
 
 Fixture-Schema: `adapters/driven/integrations/src/test/resources/fixtures/export-test-schema.yaml`
 
@@ -267,12 +273,12 @@ ls -la "${SMOKE_OUT}"/flyway/ "${SMOKE_OUT}"/flyway-rb/ "${SMOKE_OUT}"/liquibase
 rm -rf "${SMOKE_OUT}"
 ```
 
-Hinweis: Diese Smokes pruefen nur, dass die CLI die erwarteten Artefakte
+Hinweis: Diese Smokes prüfen nur, dass die CLI die erwarteten Artefakte
 erzeugt. Die echte Tool-Runtime-Validierung (Flyway→PostgreSQL,
-Liquibase→PostgreSQL, Django→SQLite, Knex→SQLite) wird ueber
+Liquibase→PostgreSQL, Django→SQLite, Knex→SQLite) wird über
 `./scripts/test-integration-docker.sh` als Integrations-Test-Matrix
-ausgefuehrt. Flyway-Undo erfordert Flyway Teams/Enterprise und ist in den
-Smokes nur als Dateierzeugung, nicht als Runtime-Ausfuehrung validiert.
+ausgeführt. Flyway-Undo erfordert Flyway Teams/Enterprise und ist in den
+Smokes nur als Dateierzeugung, nicht als Runtime-Ausführung validiert.
 
 ### 3.4 CHANGELOG-Review
 
@@ -343,14 +349,18 @@ Alle folgenden Dateien anpassen:
 | `docs/guide.md`, `docs/cli-spec.md`, `docs/architecture.md`, `docs/releasing.md` | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert |
 | `docs/roadmap.md` | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen |
 | `adapters/driven/driver-common/.../AbstractDdlGenerator.kt` | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen |
-| `adapters/driving/cli/.../Main.kt` | `versionOption("X.Y.Z-SNAPSHOT")` → `"X.Y.Z"` |
+
+Hinweis: `Main.kt` braucht **nicht** manuell angepasst zu werden — die
+CLI-Version wird zur Build-Zeit aus `build.gradle.kts` via
+`dmigrate-version.properties` injiziert.
 
 ### 4.2 Release-Commit auf `develop`
 
 ```bash
-git add build.gradle.kts CHANGELOG.md README.md docs/roadmap.md \
-  adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt
+git add build.gradle.kts CHANGELOG.md README.md docs/roadmap.md
 git add docs/guide.md docs/cli-spec.md docs/architecture.md docs/releasing.md
+# Falls AbstractDdlGenerator.kt angepasst wurde:
+git add adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt
 git commit -m "Release X.Y.Z"
 git push origin develop
 ```
@@ -378,7 +388,7 @@ git tag -a vX.Y.Z -m "Release X.Y.Z"
 git push origin vX.Y.Z
 ```
 
-**Was die CI im 0.5.0-Release-Flow automatisch tut**
+**Was die CI beim Tag-Push automatisch tut**
 (`.github/workflows/build.yml`):
 
 1. Build + Tests gegen den Tag-Commit
@@ -399,8 +409,14 @@ gh run watch
 ### 4.5 Release-Assets aus dem grünen Tag-Build beziehen
 
 ```bash
-gh run list --workflow build.yml --limit 10
-gh run download <tag-run-id> -n release-assets -D ./release-assets
+# Tag-Run anhand des Refs identifizieren (filtert Branch-/PR-Runs heraus):
+TAG="vX.Y.Z"
+RUN_ID=$(gh run list --workflow build.yml --branch "${TAG}" --event push \
+  --json databaseId,conclusion --jq '.[] | select(.conclusion=="success") | .databaseId' \
+  | head -1)
+echo "Tag-Run: ${RUN_ID}"
+
+gh run download "${RUN_ID}" -n release-assets -D ./release-assets
 ls -1 ./release-assets
 cat ./release-assets/d-migrate-X.Y.Z.sha256
 java -jar ./release-assets/d-migrate-X.Y.Z-all.jar --help
@@ -421,8 +437,11 @@ CHANGELOG-Inhalt für die Release-Notes extrahieren und veröffentlichen:
 # CHANGELOG-Sektion für X.Y.Z extrahieren (alles bis zur nächsten ##-Sektion).
 # Hinweis: Das awk-Pattern mit geschachteltem exit ist fragil und hat in der
 # Vergangenheit wiederholt leere oder unvollständige Release-Notes erzeugt.
-# Das folgende sed-Kommando ist robuster:
-sed -n '/^## \[X\.Y\.Z\]/,/^## \[/{/^## \[X\.Y\.Z\]/!{/^## \[/!p}}' \
+# Das folgende sed-Kommando ist robuster. Die Version wird per Variable
+# eingesetzt, damit kein manuelles Backslash-Escaping nötig ist:
+VER="X.Y.Z"
+VER_ESC=$(printf '%s' "$VER" | sed 's/\./\\./g')
+sed -n "/^## \\[$VER_ESC\\]/,/^## \\[/{/^## \\[$VER_ESC\\]/!{/^## \\[/!p}}" \
   CHANGELOG.md > /tmp/release-notes.md
 
 # Prüfen, dass die Datei nicht leer ist UND eine sinnvolle Mindestlänge hat.
@@ -470,7 +489,7 @@ Die Formula unter `packaging/homebrew/d-migrate.rb` muss auf das publizierte ZIP
 zeigen:
 
 - URL: `https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip`
-- SHA256: die ZIP-Zeile aus `./release-assets/d-migrate-X.Y.Z.sha256`
+- SHA256: aus dem tatsächlich publizierten Release-Asset (siehe unten)
 - Installation bleibt launcherbasiert unter `libexec`
 - `bin/d-migrate` bleibt der Nutzer-Einstieg
 - Java 21 bleibt explizit deklariert
@@ -490,7 +509,7 @@ sha256sum d-migrate-*.zip
 
 Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert
 werden. Modernes Homebrew lehnt `brew install --formula <path.rb>` ab und
-verlangt, dass die Formula in einem Tap liegt — deshalb ueber einen lokalen
+verlangt, dass die Formula in einem Tap liegt — deshalb über einen lokalen
 Ephemeral-Tap installieren (derselbe Mechanismus, den der Workflow
 `verify-homebrew-formula.yml` benutzt):
 
@@ -503,7 +522,7 @@ brew install local/d-migrate-verify/d-migrate
 d-migrate --help
 ```
 
-Alternativ ueber den veroeffentlichten Tap (bestaetigt zusaetzlich die
+Alternativ über den veröffentlichten Tap (bestätigt zusätzlich die
 `homebrew-releaser`-Pipeline):
 
 ```bash
@@ -546,18 +565,16 @@ Danach:
 
 | Datei | Änderung |
 |---|---|
-| `build.gradle.kts` | `version = "X.Y.Z"` → `"X.Y'.Z'-SNAPSHOT"` (nächste Minor: `X.(Y+1).0-SNAPSHOT`) |
-| `adapters/driving/cli/.../Main.kt` | `versionOption("X.Y.Z")` → `"X.Y'.Z'-SNAPSHOT"` |
+| `build.gradle.kts` | `version = "X.Y.Z"` → nächste Entwicklungsversion, z.B. `"X.(Y+1).0-SNAPSHOT"` |
 | `CHANGELOG.md` | Neuen leeren `## [Unreleased]`-Block einfügen |
 | `docs/roadmap.md` | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren |
 | `packaging/homebrew/d-migrate.rb` | verifizierten URL-/SHA-Stand des zuletzt publizierten Releases nachziehen, falls die Formula erst nach dem Publish finalisiert wurde |
 | `docs/implementation-plan-X.Y.md` | Optional: neuen Plan für nächste Minor-Version anlegen |
 
 ```bash
-git add build.gradle.kts CHANGELOG.md docs/roadmap.md \
-  adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt
+git add build.gradle.kts CHANGELOG.md docs/roadmap.md
 git add packaging/homebrew/d-migrate.rb
-git commit -m "Bump version to X.Y'.Z'-SNAPSHOT for next development cycle"
+git commit -m "Bump version to X.(Y+1).0-SNAPSHOT for next development cycle"
 git push origin develop
 ```
 
@@ -606,6 +623,10 @@ korrupte Tag der jüngste war, sollte schnell ein Hotfix-Tag folgen.
 2. Hotfix-Branch von `main` aus erstellen, Fix mergen
 3. Neuen Patch-Release `X.Y.(Z+1)` erstellen (Schritte 4.1 – 4.6 wiederholen)
 4. Im GitHub-Release-Body von `vX.Y.Z` einen Hinweis auf den Hotfix ergänzen
+5. Prüfen, ob `homebrew-releaser` bereits die fehlerhafte Version in den
+   Tap `pt9912/homebrew-d-migrate` gepusht hat — falls ja, wird der
+   Hotfix-Release die Formula automatisch überschreiben; bis dahin ggf.
+   manuell im Tap revertieren
 
 ---
 
@@ -629,11 +650,9 @@ Für jeden Release abhaken:
 - [ ] `verify-homebrew` (in `release-homebrew.yml`) und `verify-homebrew-formula.yml` sind unverändert verdrahtet
 - [ ] `homebrew-releaser`-`install:`-Block in `release-homebrew.yml` entspricht `packaging/homebrew/d-migrate.rb`
 - [ ] `AbstractDdlGenerator.getVersion()` zeigt auf neue Version
-- [ ] `Main.kt` `versionOption()` zeigt auf neue Version
 
 **Version-Bump auf `develop`**
 - [ ] `build.gradle.kts` Version
-- [ ] `Main.kt` `versionOption()`
 - [ ] `CHANGELOG.md` Sektion + Datum
 - [ ] `README.md` Current-Status-Block
 - [ ] `docs/guide.md`, `docs/cli-spec.md`, `docs/architecture.md`, `docs/releasing.md` falls nötig angepasst
@@ -658,10 +677,10 @@ Für jeden Release abhaken:
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)
 
 **Post-Release**
-- [ ] `build.gradle.kts` zurück auf `X.Y'.Z'-SNAPSHOT`
+- [ ] `build.gradle.kts` zurück auf nächste SNAPSHOT-Version (z.B. `X.(Y+1).0-SNAPSHOT`)
 - [ ] Neuer leerer `[Unreleased]`-Block in CHANGELOG
 - [ ] Formula-Änderung als Repo-Stand nachgezogen, falls sie erst nach Publish finalisiert wurde
-- [ ] Commit `Bump version to X.Y'.Z'-SNAPSHOT for next development cycle` gepusht
+- [ ] Commit `Bump version to X.(Y+1).0-SNAPSHOT for next development cycle` gepusht
 
 ---
 
