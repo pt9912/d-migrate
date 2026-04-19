@@ -736,3 +736,232 @@ Mitigation:
 - vorhandene Tests referenzieren statt duplizieren
 - Luecken sichtbar machen, statt sie hinter einem "100%"-Wert zu
   verstecken
+
+---
+
+## 9. Ist-Stand der betroffenen Codebasis (ermittelt 2026-04-19)
+
+### 9.1 Golden-Master-Bestand
+
+15 DDL-Fixtures unter `adapters/driven/formats/src/test/resources/fixtures/ddl/`:
+
+| Schema | postgresql | mysql | sqlite |
+|--------|-----------|-------|--------|
+| minimal | ✓ | ✓ | ✓ |
+| e-commerce | ✓ | ✓ | ✓ |
+| all-types | ✓ | ✓ | ✓ |
+| full-featured | ✓ | ✓ | ✓ |
+| spatial | ✓ | ✓ | ✓ |
+
+`DdlGoldenMasterTest` (15 Tests): 12 non-spatial + 3 spatial, vergleicht
+`stripHeader(actual) shouldBe stripHeader(expected)`.
+
+Neue Split-Fixtures (`.pre-data.sql`, `.post-data.sql`) existieren noch
+nicht.
+
+### 9.2 E2E-Testbestand
+
+4 E2E-Testdateien mit Testcontainers:
+- `DataExportE2EPostgresTest.kt` / `DataImportE2EPostgresTest.kt`
+- `DataExportE2EMysqlTest.kt` / `DataImportE2EMysqlTest.kt`
+
+Alle mit `IntegrationTag` getaggt. Kein kombinierter Export→Import
+Round-Trip-Test vorhanden.
+
+### 9.3 Fehler- und Warncodes im Produktionscode
+
+**27 Error-Codes** (E001–E020, E052–E056, E060, E120–E121):
+- SchemaValidator: E001–E020, E120, E121
+- DDL-Generatoren: E052–E056
+- Split-Analyse: E060
+
+**7 Warn-Codes**: W100, W102, W103, W111, W112, W113, W120
+
+### 9.4 Testcontainers-Module
+
+- `adapters/driving/cli` (PostgreSQL + MySQL)
+- `test/integration-postgresql`
+- `test/integration-mysql`
+- `adapters/driven/integrations`
+
+### 9.5 Schema-Fixtures mit Split-relevanten Objekten
+
+| Fixture | Funktionen | Views | Trigger | Procedures |
+|---------|-----------|-------|---------|------------|
+| minimal | - | - | - | - |
+| e-commerce | - | - | - | - |
+| all-types | - | - | - | - |
+| full-featured | calc_total | active_orders, monthly_stats | trg_updated, trg_insert | update_status |
+| spatial | - | - | - | - |
+| view-function-deps | calc_total | simple/computed/dependent/heuristic | trg_audit | - |
+
+Nur `full-featured` und `view-function-deps` haben Split-relevante
+Objekte (Functions, Triggers, Views mit Dependencies).
+
+---
+
+## 10. Konkrete Implementierungsschritte (verfeinert)
+
+Die folgenden Schritte verfeinern Abschnitt 5 mit konkreten Datei-,
+Methoden- und Codeaenderungen. Jeder Schritt ist eigenstaendig
+commitbar.
+
+### 10.1 Schritt A — Split-Golden-Masters erzeugen
+
+Neue Fixture-Dateien unter `fixtures/ddl/`:
+
+Fuer `full-featured` (hat Functions, Views, Triggers, Procedures):
+- `full-featured.postgresql.pre-data.sql`
+- `full-featured.postgresql.post-data.sql`
+- `full-featured.mysql.pre-data.sql`
+- `full-featured.mysql.post-data.sql`
+- `full-featured.sqlite.pre-data.sql`
+- `full-featured.sqlite.post-data.sql`
+
+Fuer `view-function-deps` (hat Function-abhaengige Views):
+- `view-function-deps.postgresql.pre-data.sql`
+- `view-function-deps.postgresql.post-data.sql`
+- (MySQL und SQLite optional — Functions nicht nativ unterstuetzt)
+
+Erzeugung: programmatisch ueber `generate()` + `renderPhase()` mit
+dem bestehenden `DdlGoldenMasterTest`-Pattern.
+
+Neuer Test in `DdlGoldenMasterTest`:
+
+```kotlin
+for (schema in splitSchemas) {
+    for ((dialectName, generator) in dialects) {
+        test("$schema generates correct $dialectName pre-data DDL") {
+            val input = loadFixture("schemas/$schema.yaml")
+            val expected = loadGoldenMaster("ddl/$schema.$dialectName.pre-data.sql")
+            val result = generator.generate(input)
+            stripHeader(result.renderPhase(DdlPhase.PRE_DATA)) shouldBe stripHeader(expected)
+        }
+        test("$schema generates correct $dialectName post-data DDL") {
+            val input = loadFixture("schemas/$schema.yaml")
+            val expected = loadGoldenMaster("ddl/$schema.$dialectName.post-data.sql")
+            stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
+        }
+    }
+}
+```
+
+Abhaengigkeiten: AP 6.3 (Phasenzuordnung).
+
+### 10.2 Schritt B — JSON-/Report-Contract-Tests
+
+Neue Tests in `SchemaGenerateHelpersTest` oder separater Datei:
+
+- `formatJsonOutput` mit `SplitMode.PRE_POST`: pruefen auf
+  `split_mode`, `ddl_parts.pre_data`, `ddl_parts.post_data`,
+  `phase` in Notes/Skips, kein `ddl`-Feld
+- `formatJsonOutput` mit `SplitMode.SINGLE`: pruefen auf
+  `ddl`-Feld, kein `split_mode`/`ddl_parts`
+- `TransformationReportWriter.render()` mit `splitMode = "pre-post"`:
+  pruefen auf `split_mode:`, `phase:` in Notes/Skips
+- `TransformationReportWriter.render()` ohne splitMode:
+  kein `split_mode:`, kein `phase:`
+
+Gemeinsamer `DdlResult`-Builder fuer beide Kanaele:
+
+```kotlin
+val testResult = DdlResult(
+    statements = listOf(
+        DdlStatement("CREATE TABLE t;", phase = DdlPhase.PRE_DATA),
+        DdlStatement("CREATE TRIGGER trg;", phase = DdlPhase.POST_DATA),
+    ),
+    skippedObjects = listOf(
+        SkippedObject("sequence", "seq1", "not supported", phase = DdlPhase.PRE_DATA),
+    ),
+    globalNotes = listOf(
+        TransformationNote(NoteType.WARNING, "W113", "views", "circular deps"),
+    ),
+)
+```
+
+Abhaengigkeiten: AP 6.4 (JSON/Report Output).
+
+### 10.3 Schritt C — Fehlercode-Ledger (E006-E121)
+
+Neue Datei `docs/error-code-ledger-0.9.2.yaml`:
+
+```yaml
+version: "0.9.2"
+entries:
+  - code: E001
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "hexagon/core/src/test/.../SchemaValidatorTest.kt"
+    evidence_paths:
+      - source: "hexagon/core/.../SchemaValidator.kt"
+        path_type: production
+  # ... E002-E020, E052-E056, E060, E120-E121
+```
+
+Fuer Codes ohne direkten Test: `entry_type: rest_path` mit
+`why_not_automated`, `evidence_owner`, `priority`,
+`planned_remediation`.
+
+Begleitender Test `CodeLedgerValidationTest.kt`:
+- Laedt YAML
+- Prueft: jeder Code E006-E121 hat genau einen Eintrag
+- Prueft: jeder `test_path` existiert als Datei
+- Prueft: jeder `entry_type = rest_path` hat Pflichtfelder
+
+Schema: `docs/code-ledger-0.9.2.schema.json` (JSON Schema Draft 7).
+
+### 10.4 Schritt D — Warncode-Ledger (W113, W120)
+
+Neue Datei `docs/warn-code-ledger-0.9.2.yaml` analog zu Schritt C,
+aber nur fuer W113 und W120.
+
+### 10.5 Schritt E — E2E-Round-Trip-Test
+
+Neue Testdatei (bevorzugt PostgreSQL wegen bestem Feature-Support):
+`test/integration-postgresql/src/test/kotlin/.../E2ERoundTripTest.kt`
+
+Ablauf:
+1. Testcontainer PostgreSQL starten
+2. Schema + Seed-Daten ueber DDL einspielen (2-3 Tabellen, ~10 Rows)
+3. `data export` in JSON-Format
+4. Zweiten Testcontainer oder frische DB
+5. `schema generate` + DDL ausfuehren
+6. `data import` aus JSON
+7. Schema-Read auf Ziel-DB → struktureller Vergleich
+8. Datenvergleich: Zeilenanzahl + Schluesselwerte + mindestens ein
+   Inhaltswert pro Tabelle
+
+Seed-Schema: `users` (id, name) + `orders` (id, user_id FK, amount).
+Minimal, aber FK-Abhaengigkeit vorhanden.
+
+Vergleichs-Comparator: normalisierter Schema-Vergleich ueber
+`SchemaComparator` oder manuell ueber `SchemaReader`-Output.
+
+Abhaengigkeiten: Testcontainers (bereits konfiguriert in
+`test/integration-postgresql`).
+
+### 10.6 Schritt F — `docs/quality.md` und Review-Artefakte
+
+- E2E-Round-Trip als erledigt markieren
+- Fehlercodes als erledigt markieren
+- `docs/ddl-single-exceptions-0.9.2.yaml` anlegen (nur die
+  `full-featured.mysql.sql` Aenderung aus AP 6.5)
+
+---
+
+## 11. Empfohlene Commit-Reihenfolge
+
+```
+A (Split-Golden-Masters)
+ ↓
+B (JSON-/Report-Contract-Tests)
+ ↓
+C + D (Error- und Warncode-Ledger)
+ ↓
+E (E2E-Round-Trip)
+ ↓
+F (Doku-Update)
+```
+
+Alle Edits eines Schritts abschliessen, dann einmal `docker build`.
