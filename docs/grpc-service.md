@@ -72,7 +72,8 @@ Empfohlene Modulstruktur:
 gRPC, REST und MCP muessen denselben fachlichen Kernvertrag nutzen:
 
 - `job_id` und `artifact_id` sind opake, stabile String-IDs
-- Jobs und Artefakte tragen immer `created_at` und `expires_at`
+- Jobs tragen immer `created_at`, `updated_at` und `expires_at`
+- Artefakte tragen immer `created_at` und `expires_at`
 - Artefakte sind immutable
 - nur derselbe Mandant / Principal oder ein Administrator darf Job und
   Artefakt lesen, abbrechen oder herunterladen
@@ -207,12 +208,24 @@ rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
 rpc WatchJob(JobWatchRequest) returns (stream JobEvent);
 ```
 
+`CancelJob` liefert in `CancelJobResponse` den aktualisierten `JobStatus`.
+Ist der Job bereits in einem Terminalstatus, antwortet der Server idempotent
+mit `OK` und dem unveraenderten Status.
+
 `ListJobs` liefert paginierte Ergebnisse fuer den eigenen Tenant
 (`ListJobsRequest` enthaelt `page_token`, `page_size` und optionale Filter).
 
 `WatchJob` ist einer der Hauptgruende fuer gRPC: Fortschritt und Status lassen
 sich sauber streamen, ohne Polling. `JobEvent` umfasst sowohl Zwischenfortschritt
 als auch Terminalstatus.
+
+### 4.4a Tool-Exports (Flyway, Liquibase, Django, Knex)
+
+Tool-Exports sind fuer `v1` bewusst nicht als eigene gRPC-RPCs vorgesehen.
+Diese Operationen richten sich primaer an externe Plattformen und Web-UIs,
+die ueber REST (§4.4 in `docs/rest-service.md`) oder MCP bedient werden.
+Sollte interner Bedarf entstehen, koennen sie in einer spaeteren Version als
+`SchemaService`-RPCs ergaenzt werden.
 
 ### 4.5 ArtifactService
 
@@ -228,6 +241,10 @@ Filter nach `job_id` oder Status).
 
 `GetArtifactMetadata` ist bewusst im `ArtifactService` verortet, damit die
 Artefakt-Lebensdauer- und Berechtigungsregeln dort zentral bleiben.
+
+`ArtifactMetadata` enthaelt die Pflichtfelder aus `docs/job-contract.md` §3.1
+in snake_case: `artifact_id`, `filename`, `content_type`, `size_bytes`,
+`sha256`, `created_at`, `expires_at` sowie das optionale `artifact_version`.
 
 `DownloadArtifact` MUSS eine maximale Chunk-Groesse und die Ueberpruefung von
 `artifact_version` (Versionstoken/ETag) erzwingen.
@@ -371,11 +388,24 @@ in allen synchronen RPCs konsistent als gRPC-Fehlerantworten mit strukturierten
 `google.rpc`-Details gemeldet; ein separates `error`-Feld im
 Erfolgs-Response-Payload ist nicht vorgesehen.
 `google.rpc.ErrorInfo`/`google.rpc.BadRequest` transportieren die fachliche Semantik.
-`google.rpc.ErrorInfo.reason` traegt die semantische fachliche Kategorie
-(`request_invalid`, `validation_failed`, `migration_failed`, `provider_failed`,
-`io_failure`, `cancelled` etc.).
+`google.rpc.ErrorInfo.reason` traegt die semantische fachliche Kategorie.
+Verbindliche Reason-Werte:
+
+| `reason` | CLI-Code | Beschreibung |
+| --- | --- | --- |
+| `general_error` | `1` | Allgemeiner Fehler |
+| `request_invalid` | `2` | Ungueltige Request-Parameter |
+| `validation_failed` | `3` | Schema- oder Datenvalidierung fehlgeschlagen |
+| `connection_failed` | `4` | Datenbankverbindung fehlgeschlagen |
+| `migration_failed` | `5` | Fehler waehrend Migration / Ausfuehrung |
+| `provider_failed` | `6` | KI-Provider nicht erreichbar |
+| `io_failure` | `7` | Lokaler Konfigurations-, Datei- oder Renderfehler |
+| `cancelled` | `130` | Durch Client oder Server abgebrochen |
+
 Der stabile fachliche Code wird in `google.rpc.ErrorInfo.metadata["d_migrate_error_code"]`
-transportiert.
+transportiert. Die konkreten `d_migrate_error_code`-Werte sind
+operationsspezifisch (z. B. `artifact_version_mismatch`, siehe §4.5) und
+werden in den jeweiligen RPC-Abschnitten definiert.
 - Fuer neue Clients ist der fachliche Fehlercode in `google.rpc.ErrorInfo.metadata["d_migrate_error_code"]`
   die einzig vertraglich stabile Fehlerkennung.
 - `d_migrate_error_code`/`error_code` im Payload ist optional und darf nur
@@ -402,7 +432,8 @@ Fuer Job-RPCs gilt zusaetzlich:
 - alle RPCs, die `JobAccepted` zurueckgeben (`ReverseSchema`, `CompareSchema`,
   `ExportData`, `StartImport`, `TransferData`, `ProfileData`), muessen ein
   `idempotency_key`-Feld im Request fuehren; fehlt der Key, antwortet der
-  Server mit `INVALID_ARGUMENT` (siehe `docs/job-contract.md` §5)
+  Server mit `INVALID_ARGUMENT`; ein abweichender Request mit demselben Key
+  wird mit `ALREADY_EXISTS` abgewiesen (siehe `docs/job-contract.md` §5)
 - ein erfolgreich angenommener Job liefert immer `OK` plus `JobAccepted`
 - spaetere Laufzeitfehler erscheinen im `JobStatus` als fachlicher Status
   `FAILED`, nicht als nachtraeglicher Transportfehler
@@ -478,6 +509,9 @@ Der gRPC-Adapter sollte liefern:
 ### Phase 3
 
 - `DataService.ExportData`
+- `DataService.OpenArtifactUpload`, `DataService.UploadArtifact`,
+  `DataService.GetUploadSession`, `DataService.FinalizeArtifactUpload`,
+  `DataService.AbortArtifactUpload` (Voraussetzung fuer `StartImport`)
 - `DataService.StartImport`
 - `DataService.TransferData`
 
