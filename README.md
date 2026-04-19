@@ -223,7 +223,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.0](https://github.com/pt9912/d-migrate/releases/tag/v0.9.0)** — Beta: Resilienz und vollständige i18n-CLI — Checkpoint/Resume für dateibasierte Export- und Import-Läufe (`--resume`, `--checkpoint-dir`), produktives `--lang`-Flag für Sprachauswahl (de/en).
+Aktuelles Release: **[v0.9.1](https://github.com/pt9912/d-migrate/releases/tag/v0.9.1)** — Beta: Library-Refactor und Integrationsschnitt — Sicherheits-Härtung (SQL-Identifier-Quoting), Zerlegung großer Orchestrierungs-/Dialekt-Klassen, Port-Split (`ports-common`/`ports-read`/`ports-write`), Profiling-Extraktion in optionale Module, deduplizierter FK-Topo-Sort.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
