@@ -739,34 +739,42 @@ Mitigation:
 
 ---
 
-## 9. Ist-Stand der betroffenen Codebasis (ermittelt 2026-04-19)
+## 9. Ist-Stand der betroffenen Codebasis (aktualisiert 2026-04-19)
 
 ### 9.1 Golden-Master-Bestand
 
-15 DDL-Fixtures unter `adapters/driven/formats/src/test/resources/fixtures/ddl/`:
+27 DDL-Fixtures unter `adapters/driven/formats/src/test/resources/fixtures/ddl/`:
 
-| Schema | postgresql | mysql | sqlite |
-|--------|-----------|-------|--------|
-| minimal | ✓ | ✓ | ✓ |
-| e-commerce | ✓ | ✓ | ✓ |
-| all-types | ✓ | ✓ | ✓ |
-| full-featured | ✓ | ✓ | ✓ |
-| spatial | ✓ | ✓ | ✓ |
+| Schema | single | pre-data | post-data |
+|--------|--------|----------|-----------|
+| minimal | pg/my/sl | — | — |
+| e-commerce | pg/my/sl | — | — |
+| all-types | pg/my/sl | — | — |
+| full-featured | pg/my/sl | pg/my/sl | pg/my/sl |
+| spatial | pg/my/sl | — | — |
+| view-function-deps | — | pg/my/sl | pg/my/sl |
 
-`DdlGoldenMasterTest` (15 Tests): 12 non-spatial + 3 spatial, vergleicht
-`stripHeader(actual) shouldBe stripHeader(expected)`.
-
-Neue Split-Fixtures (`.pre-data.sql`, `.post-data.sql`) existieren noch
-nicht.
+`DdlGoldenMasterTest`: 15 single-Tests + 12 Split-Golden-Master-Tests
++ 30+ strukturelle Split-Assertions.
 
 ### 9.2 E2E-Testbestand
 
-4 E2E-Testdateien mit Testcontainers:
+5 E2E-Testdateien mit Testcontainers:
 - `DataExportE2EPostgresTest.kt` / `DataImportE2EPostgresTest.kt`
 - `DataExportE2EMysqlTest.kt` / `DataImportE2EMysqlTest.kt`
+- **`E2ERoundTripPostgresTest.kt`** — voller Export→Import→Schema-Compare→Daten-Verify Kreislauf
 
-Alle mit `IntegrationTag` getaggt. Kein kombinierter Export→Import
-Round-Trip-Test vorhanden.
+### 9.3 Ledger-Bestand
+
+Ledger-Dateien unter `ledger/`:
+- `error-code-ledger-0.9.2.yaml` (28 Eintraege, 27 active + 1 not_applicable)
+- `warn-code-ledger-0.9.2.yaml` (2 Eintraege: W113, W120)
+- `code-ledger-0.9.2.schema.json` (JSON Schema Draft 7)
+- `ddl-single-exceptions-0.9.2.yaml` (1 Eintrag: MySQL TODO-Bereinigung)
+
+Validierungstest: `CodeLedgerValidationTest` prueft Code-Einmaligkeit,
+Vollstaendigkeit (E001-E121), test_path-Existenz, evidence_paths mit
+path_type-Validierung, level/status/entry_type-Werte.
 
 ### 9.3 Fehler- und Warncodes im Produktionscode
 
