@@ -209,6 +209,12 @@ Verbindliche Folge:
 - den bisherigen Zwischenzustand aus 6.2 beenden:
   - gueltige `pre-post`-Aufrufe duerfen nicht mehr durch den
     Single-Outputpfad laufen
+- die heutige mutual-exclusive Ausgabeverzweigung (`json | file | stdout`)
+  fuer den Split-Fall in eine nicht-exklusive Routing-Logik umbauen:
+  - Dateiausgabe und JSON-Ausgabe koennen im selben Lauf parallel aktiv
+    sein
+  - Report-Schreiben darf nicht mehr implizit nur am Datei-Branch
+    haengen
 - Dateiausgabe:
   - `renderPhase(PRE_DATA)` nach `*.pre-data.sql`
   - `renderPhase(POST_DATA)` nach `*.post-data.sql`
@@ -230,6 +236,10 @@ Wichtig:
 
 ### 5.3 `formatJsonOutput(...)` auf Split-Vertrag erweitern
 
+- Signatur fuer den Split-Kontext erweitern, z. B.:
+  - `formatJsonOutput(result, schema, dialect, splitMode)`
+  - alternativ aequivalente Signatur mit expliziten Phase-Strings
+    fuer `ddl_parts`
 - Single-Fall beibehalten:
   - `ddl`
   - keine `split_mode`-/`ddl_parts`-Felder
@@ -242,15 +252,21 @@ Wichtig:
   - `skipped_objects` mit optional `phase` in Kebab-Case
 - `warnings` und `action_required` aus derselben Diagnosebasis wie heute
   weiterzaehlen
+- Runner-Injektion und Test-Fakes muessen die neue Signatur mitziehen
+  und explizit fuer Split- und Single-Pfade absicherbar bleiben
 
 ### 5.4 `TransformationReportWriter` fuer Split-Metadaten erweitern
 
+- Signatur der Writer-/Render-Pfade fuer den Split-Kontext erweitern,
+  z. B. um `splitMode`
 - `split_mode` in den Report aufnehmen, aber nur im Split-Fall
 - phasenattribuierte Notes und Skips mit optionalem `phase` serialisieren
   und dabei dieselbe Kebab-Case-Repräsentation wie im JSON verwenden
 - globale Diagnosen ohne Phase sichtbar lassen
 - zusammenfassende Kennzahlen fuer beide Phasen ergaenzen, soweit sie
   aus `DdlResult` direkt bestimmbar sind
+- auch die Runner-seitige Writer-Lambda-Injektion und ihre Tests muessen
+  die neue Signatur mitziehen
 
 ### 5.5 `docs/cli-spec.md` auf den fertigen Output-Vertrag ziehen
 
@@ -274,6 +290,9 @@ Mindestens abzudecken:
 - Single-JSON bleibt unveraendert
 - Single-Report bleibt semantisch stabil
 - Split-SQL schreibt zwei Dateien mit korrekten Suffixen
+- `--split pre-post --output out/schema.sql` erzeugt **nicht**
+  `out/schema.sql` selbst, sondern ausschliesslich die beiden
+  Split-Artefakte
 - Split-JSON enthaelt `split_mode` und `ddl_parts`, aber kein `ddl`
 - Split-Report enthaelt `split_mode`
 - `--split pre-post --output-format json --output ...` liefert sowohl
