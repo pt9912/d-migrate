@@ -121,6 +121,12 @@ Verbindliche Folge:
 - das urspruengliche `out/schema.sql` wird im Split-Fall nicht
   geschrieben
 - der Report bleibt ein einzelnes Sidecar-Artefakt
+- in der Kombination
+  `--split pre-post --output out/schema.sql --output-format json`
+  werden beide Kanaele aktiv:
+  - die beiden Split-SQL-Dateien werden geschrieben
+  - JSON wird weiterhin ueber den normalen JSON-Ausgabekanal geliefert
+  - der Report bleibt ein einzelnes Sidecar-Artefakt
 
 ### 4.2 JSON bleibt im Single-Fall rueckwaertskompatibel
 
@@ -152,6 +158,15 @@ Verbindliche Folge:
 - phasenbezogene Notes/Skips erscheinen mit derselben Phase in beiden
   Kanaelen
 - globale Diagnosen erscheinen in beiden Kanaelen ohne Phase
+- die String-Repräsentation von `phase` ist in beiden Kanaelen identisch
+  und verwendet Kebab-Case:
+  - `pre-data`
+  - `post-data`
+- die Reihenfolge von `notes` und `skipped_objects` bleibt in beiden
+  Kanaelen stabil:
+  - Originalreihenfolge aus `DdlResult.notes`
+  - Originalreihenfolge aus `DdlResult.skippedObjects`
+  - keine kanal-spezifische Neusortierung
 
 ### 4.5 Dateinamen sind aus dem bestehenden Outputpfad ableitbar
 
@@ -200,6 +215,10 @@ Verbindliche Folge:
 - JSON-Ausgabe:
   - Split-Branch ueber `formatJsonOutput(...)` mit Split-Vertrag
     ausgeben
+- kombinierter Fall `output + output-format json`:
+  - SQL-Dateien und JSON-Ausgabe parallel bedienen
+  - keine implizite Priorisierung, bei der ein Kanal den anderen
+    unterdrueckt
 - stdout-Textausgabe bleibt fuer `pre-post` weiterhin unzulaessig; der
   Preflight aus 6.2 deckt dies bereits ab
 
@@ -228,11 +247,26 @@ Wichtig:
 
 - `split_mode` in den Report aufnehmen, aber nur im Split-Fall
 - phasenattribuierte Notes und Skips mit optionalem `phase` serialisieren
+  und dabei dieselbe Kebab-Case-Repräsentation wie im JSON verwenden
 - globale Diagnosen ohne Phase sichtbar lassen
 - zusammenfassende Kennzahlen fuer beide Phasen ergaenzen, soweit sie
   aus `DdlResult` direkt bestimmbar sind
 
-### 5.5 Rueckwaertskompatibilitaet und Contract-Tests absichern
+### 5.5 `docs/cli-spec.md` auf den fertigen Output-Vertrag ziehen
+
+- den in 6.2 vorbereiteten CLI-Vertrag um die fertige sichtbare Ausgabe
+  ergaenzen:
+  - `*.pre-data.sql`
+  - `*.post-data.sql`
+  - Split-JSON mit `split_mode` und `ddl_parts`
+  - Report mit `split_mode` und optionalem `phase`
+- die Kombination `--split pre-post --output-format json --output ...`
+  explizit dokumentieren:
+  - SQL-Dateien werden geschrieben
+  - JSON wird geliefert
+  - Report bleibt ein einzelnes Sidecar-Artefakt
+
+### 5.6 Rueckwaertskompatibilitaet und Contract-Tests absichern
 
 Mindestens abzudecken:
 
@@ -242,8 +276,13 @@ Mindestens abzudecken:
 - Split-SQL schreibt zwei Dateien mit korrekten Suffixen
 - Split-JSON enthaelt `split_mode` und `ddl_parts`, aber kein `ddl`
 - Split-Report enthaelt `split_mode`
+- `--split pre-post --output-format json --output ...` liefert sowohl
+  JSON als auch die beiden SQL-Dateien
 - `phase` erscheint nur dort, wo eine Diagnose einer Phase zuordenbar
   ist
+- `phase` wird in JSON und Report identisch als Kebab-Case serialisiert
+- `notes` und `skipped_objects` bleiben in JSON und Report in stabiler
+  Reihenfolge und werden nicht kanal-spezifisch neu sortiert
 - globale Diagnosen ohne Phase bleiben in JSON und Report sichtbar
 
 ---
@@ -263,12 +302,20 @@ Pflichtfaelle fuer 6.4:
   - `ddl_parts`
   - phasenattribuierte `notes`
   - phasenattribuierte `skipped_objects`
+- `schema generate --split pre-post --output-format json --output out/schema.sql`
+  liefert:
+  - `out/schema.pre-data.sql`
+  - `out/schema.post-data.sql`
+  - JSON mit `split_mode` und `ddl_parts`
+  - einen einzelnen Report
 - Split-JSON enthaelt kein Legacy-Feld `ddl`
 - globale Diagnosen ohne Phasenbezug bleiben in JSON und Report
   sichtbar, aber ohne `phase`
-- der `phase`-Wert in JSON verwendet Kebab-Case:
+- der `phase`-Wert in JSON und Report verwendet identisches Kebab-Case:
   - `pre-data`
   - `post-data`
+- `notes` und `skipped_objects` bleiben in beiden Kanaelen
+  reihenfolgestabil
 - der Single-Fall bleibt fuer Text, JSON und Report byte- bzw.
   semantikstabil
 
@@ -357,4 +404,3 @@ Mitigation:
 - beide Kanaele strikt aus demselben `DdlResult` ableiten
 - phasenlose Diagnosen in beiden Kanaelen gleich ohne `phase`
   behandeln
-
