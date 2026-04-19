@@ -104,7 +104,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 4) DDL-Generator strukturieren
 
-- **Status:** Offen  
+- **Status:** Teilweise erledigt (ViewPhaseClassifier + StatementInverter extrahiert, 488→311 LOC; ColumnSqlBuilder/ConstraintClauseBuilder als Folgeschritt offen)  
 - **Dateien:**  
   [AbstractDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt) (488 LOC)  
   [PostgresDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt) (351 LOC)  
