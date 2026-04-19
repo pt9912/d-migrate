@@ -128,7 +128,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 5) Type-Mapping tabellarisch stabilisieren
 
-- **Status:** Offen  
+- **Status:** Erledigt  
 - **Dateien:**  
   [MysqlTypeMapping.kt](/Development/d-migrate/adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlTypeMapping.kt)  
   [PostgresTypeMapping.kt](/Development/d-migrate/adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMapping.kt)  
