@@ -215,7 +215,6 @@ Praezisierung:
     - `code`
     - `level`
     - `source`
-    - `test_path`
     - `path_type`
     - `entry_type`
 - fuer `entry_type = standard` sind genau diese Felder Pflicht:
@@ -226,6 +225,8 @@ Praezisierung:
   - `path_type`
   - `entry_type`
 - fuer `entry_type = rest_path` sind zusaetzlich Pflicht:
+  - `path_type`
+  - `entry_type`
   - `why_not_automated`
   - `evidence_owner`
   - `priority`
@@ -233,7 +234,10 @@ Praezisierung:
 - ein begleitender Test prueft mindestens:
   - jeder im Ledger gefuehrte Code existiert in der referenzierten
     Doku- oder Codequelle
-  - jeder referenzierte Testpfad existiert
+  - fuer `entry_type = standard` existiert jeder referenzierte
+    `test_path`
+  - fuer `entry_type = rest_path` sind `evidence_owner` und
+    `planned_remediation` befuellt
 - Restpfad-Eintraege sind nur mit `entry_type = rest_path` zulaessig
 
 Damit gilt fuer 6.7 explizit:
@@ -271,6 +275,13 @@ Praezisierung:
   - stabile Schluesselwerte oder aequivalente Referenzprojektion
   - mindestens ein fachlich aussagekraeftiger Inhaltswert pro
     exportierter Tabelle
+- fuer den strukturellen Schema-Vergleich gelten mindestens diese
+  Normalisierungsregeln:
+  - Reihenfolge irrelevanter Sammlungen wird ueber stabile Sortierung
+    nach fachlichem Identifikator normalisiert, nicht ueber
+    Einfuege-Reihenfolge
+  - fachlich aequivalente Default-Darstellungen werden vor dem Vergleich
+    auf eine kanonische Form abgebildet
 - nicht erforderlich ist ein vollstaendiger Dialekt-Cross-Product-Test
 
 ### 4.5 Testbreite wird entlang der Ebenen verteilt, nicht in einen Test gepresst
@@ -324,6 +335,13 @@ Damit gilt fuer 6.7:
   - wenn ein Trigger- oder Diagnosefall im Dialekt nicht natuerlich
     vorkommt, muss die Ausnahme im Reviewkontext und in der Fixture-
     Auswahl begruendet sein
+- jede Ausnahme oder jeder Surrogatfall braucht eine pruefbare
+  Checkliste:
+  - betroffener Dialekt
+  - fehlendes Original-Feature oder fehlender Naturfall
+  - gewaehlter Surrogatfall oder begruendeter Entfall
+  - welche 6.3-/6.4-/6.5-Aussage damit trotzdem belegt wird
+  - Referenz auf die konkrete Fixture oder den Review-Nachweis
 - "pro Dialekt mindestens" ist damit kein Zwang zu kuenstlicher
   Fixture-Explosion, sondern ein Untergrenze mit dokumentierter
   Ausnahmefuehrung fuer featurearme Dialekte
@@ -378,7 +396,7 @@ Damit gilt fuer 6.7:
   - `docs/warn-code-ledger-0.9.2.yaml`
 - jeder Ledger-Eintrag haelt mindestens fest:
   - Quelle / Ebene
-  - existierender Test oder neuer Zieltest
+  - existierender Test oder neuer Zieltest bei `entry_type = standard`
   - Pfadtyp:
     - Validator
     - Runner
@@ -391,7 +409,10 @@ Damit gilt fuer 6.7:
   - `planned_remediation`
 - ein begleitender Test validiert mindestens:
   - jeder Ledger-Code ist in der referenzierten Quelle auffindbar
-  - jeder referenzierte Testpfad existiert
+  - fuer `entry_type = standard` existiert jeder referenzierte
+    `test_path`
+  - fuer `entry_type = rest_path` sind `evidence_owner` und
+    `planned_remediation` befuellt
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
 - Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
   einem Modul
@@ -412,6 +433,8 @@ Praezisierung:
 - vorhandene Export- und Import-E2E-Bausteine als Grundlage nutzen
 - bevorzugt ein PostgreSQL- oder MySQL-Pfad mit bereits existierenden
   Containertests
+- 6.7 verlangt genau einen verpflichtenden Basispfad; ein zweiter
+  Dialektpfad ist fuer dieses AP optionaler Zusatznutzen, kein Muss
 - der neue Test geht explizit ueber beide Richtungen:
   - Export
   - Import
@@ -429,6 +452,10 @@ Wichtig:
   - keine Textvergleiche von SQL-Artefakten
   - Reihenfolge irrelevanter Sammlungen wird normalisiert
   - explizit erlaubte Unterschiede muessen vorab dokumentiert sein
+  - stabile Sortierung erfolgt nach fachlichem Identifikator statt nach
+    Einfuege-Reihenfolge
+  - fachlich aequivalente Default-Darstellungen werden vor dem
+    Vergleich kanonisiert
   - Datenvergleich mindestens ueber:
     - Zeilenanzahl pro betroffener Tabelle
     - stabile Schluesselwerte oder aequivalente Referenzprojektion
@@ -489,6 +516,9 @@ Wichtig:
   - `docs/warn-code-ledger-0.9.2.yaml`
 - jeder Ledger-Eintrag ist einem Test oder einem bewusst dokumentierten
   Restpfad mit Pflichtfeldern zugeordnet
+- fuer `entry_type = standard` ist `test_path` verpflichtend;
+  fuer `entry_type = rest_path` ist stattdessen der Nachweis ueber
+  `evidence_owner` und `planned_remediation` verpflichtend
 - Generator-/Report-Codes und Validator-Codes werden nicht vermischt,
   sondern mit ihrer Quelle und Ebene referenziert
 
@@ -502,6 +532,8 @@ Wichtig:
   - Datenvergleich ueber Zeilenanzahl, stabile Schluesselwerte oder
     aequivalente Referenzprojektion sowie mindestens einen
     Inhaltswert pro Tabelle
+- genau ein Basispfad ist fuer 6.7 verpflichtend; ein zweiter
+  Dialektpfad bleibt erwuenschter Zusatzfall, aber kein Abnahmekriterium
 
 Erwuenschte Zusatzfaelle:
 
