@@ -29,8 +29,8 @@ belastbar:
 - bestehende Golden Masters fuer den `single`-Pfad werden eingefroren
 - neue Golden Masters und Contract-Tests fuer `pre-data` /
   `post-data` werden nachgezogen
-- die dokumentierte Fehlercode-Matrix wird systematisch gegen Tests
-  gespiegelt
+- die dokumentierten Fehler- und Warncode-Ledger werden systematisch
+  gegen Tests gespiegelt
 - ein echter, aber schmaler End-to-End-Round-Trip belegt den
   Gesamtpfad ueber Export und Import
 
@@ -43,9 +43,9 @@ Nach 6.7 soll klar gelten:
 
 - `schema generate` ist fuer `single` und `pre-post` ueber Golden
   Masters, JSON, Report und CLI-Preflight belegt
-- Fehlercodes E006-E121 sind nicht nur dokumentiert, sondern einem
-  nachweisbaren Test oder einem bewusst dokumentierten Ausnahmepfad
-  zugeordnet
+- Fehlercodes E006-E121 und die fuer 0.9.2 relevanten Warncodes sind
+  nicht nur dokumentiert, sondern einem nachweisbaren Test oder einem
+  strikt dokumentierten Ausnahmepfad zugeordnet
 - mindestens ein echter Round-Trip zeigt:
   - Export aus Quell-DB
   - Import in Ziel-DB
@@ -67,7 +67,7 @@ Das Repo hat bereits eine starke Testbasis, aber fuer 0.9.2 bleiben
 drei Luecken offen:
 
 - Split-spezifische Golden Masters und Contract-Tests fehlen noch
-- die Fehlercodes E006-E121 sind nicht systematisch gegen eine Matrix
+- Fehler- und Warncodes sind nicht systematisch gegen ein Ledger
   gespiegelt
 - es existieren zwar Export- und Import-E2E-Tests, aber kein echter
   kombinierter Round-Trip ueber den Gesamtpfad
@@ -88,8 +88,8 @@ Die offene Qualitaetsluecke laut `docs/quality.md` bleibt trotzdem
 klar:
 
 - kein echter E2E-Round-Trip-Test
-- Fehlercodes E006-E121 nicht systematisch gegen Validierungsmatrix
-  getestet
+- Fehler- und Warncodes nicht systematisch gegen Validierungs- bzw.
+  Generator-Matrix getestet
 
 Fuer 0.9.2 reicht "es gibt schon viele Tests" nicht mehr aus:
 
@@ -109,7 +109,8 @@ Fuer 0.9.2 reicht "es gibt schon viele Tests" nicht mehr aus:
   festziehen
 - CLI- und Runner-Tests fuer Split-Validierung, Dateinamenlogik,
   JSON- und Report-Vertrag nachziehen
-- Fehlercode-Matrix E006-E121 als explizites Test-Ledger aufbauen
+- Fehlercode-Ledger E006-E121 und separates Warncode-Ledger fuer
+  0.9.2-relevante `W-*`-Codes aufbauen
 - mindestens einen schmalen echten E2E-Round-Trip ueber Export und
   Import ergaenzen
 - vorhandene Teil-E2E-Tests und Contract-Tests konsolidieren, statt
@@ -168,13 +169,22 @@ Wichtig:
 - Single-JSON bleibt eigener Rueckwaertskompatibilitaetsvertrag
 - Split-JSON ist kein "abgeleiteter Sonderfall", sondern ein eigener
   Outputvertrag
+- JSON- und Report-Tests arbeiten fuer 0.9.2 auf demselben
+  `DdlResult`-Testanker:
+  - derselbe Builder / dieselbe Fixture-Quelle
+  - zwei Kanaele
+  - ein gemeinsamer Vergleichskontext vor der Kanalserialisierung
 
 ### 4.3 Die Fehlercode-Matrix wird als Test-Ledger gefuehrt
 
 Verbindliche Folge:
 
 - E006-E121 werden nicht lose "irgendwo mitgetestet"
-- fuer jeden dokumentierten Code gibt es einen expliziten Nachweis:
+- fuer 0.9.2 relevante Warncodes werden in einem separaten Warncode-
+  Ledger gefuehrt; mindestens:
+  - `W113`
+  - `W120`
+- fuer jeden Ledger-Eintrag gibt es einen expliziten Nachweis:
   - vorhandener Test
   - neu anzulegender Test
   - oder bewusst dokumentierter, in 0.9.2 nicht direkt automatisierter
@@ -188,6 +198,19 @@ Praezisierung:
   `docs/ddl-generation-rules.md`
 - Runner-Exit-Codes und Validierungsfehler muessen auf die tatsaechlich
   getesteten Stellen im Repo verweisen
+- Restpfad-Eintraege sind nur zulaessig mit Pflichtfeldern:
+  - `why_not_automated`
+  - `evidence_owner`
+  - `priority`
+  - `planned_remediation`
+
+Damit gilt fuer 6.7 explizit:
+
+- Error-Ledger:
+  - E006-E121
+- Warncode-Ledger:
+  - nur fuer 0.9.2 relevante `W-*`-Codes
+- beide Ledgers werden getrennt gefuehrt und separat reviewed
 
 ### 4.4 Der E2E-Round-Trip bleibt schmal und echt
 
@@ -205,6 +228,11 @@ Praezisierung:
   - Export in ein reales Austauschformat
   - Import in eine frische Ziel-DB
   - Schema-Read oder Vergleich gegen Erwartung
+- der Vergleich ist strukturell, nicht textuell:
+  - normalisierter Schema-Vergleich
+  - stabile Reihenfolgeregel
+  - explizit erlaubte Nicht-Diffs nur dort, wo sie fachlich begruendet
+    sind
 - nicht erforderlich ist ein vollstaendiger Dialekt-Cross-Product-Test
 
 ### 4.5 Testbreite wird entlang der Ebenen verteilt, nicht in einen Test gepresst
@@ -244,10 +272,12 @@ Damit gilt fuer 6.7:
 - fuer den Split-Fall neue Referenzartefakte einfuehren:
   - `*.pre-data.sql`
   - `*.post-data.sql`
-- die Auswahl der Fixtures bleibt zielgerichtet:
-  - mindestens einfache Basisfaelle
-  - mindestens ein Fall mit Triggern / Routinen / Views
-  - mindestens ein Fall mit Diagnoseeintraegen
+- die Auswahl der Fixtures bleibt zielgerichtet, aber deterministisch:
+  - pro Dialekt mindestens:
+    - 3 Basisfaelle
+    - 1 Trigger-Fall
+    - 1 Fall mit Routine-abhaengiger View
+    - 1 Diagnosefall
 - Golden Masters muessen die 6.3-Zuordnungsregeln sichtbar machen:
   - Trigger nicht in `pre-data`
   - Functions/Procedures nicht in `pre-data`
@@ -270,6 +300,10 @@ Damit gilt fuer 6.7:
 
 - Split-JSON und Split-Report gegen denselben `DdlResult`-Bestand
   pruefen
+- dafuer einen gemeinsamen Testanker verwenden:
+  - Shared Builder oder Fixture-Quelle fuer `DdlResult`
+  - JSON-Serializer und Report-Writer greifen auf denselben
+    Ausgangszustand zu
 - Pflichtfelder:
   - `split_mode`
   - `ddl_parts.pre_data`
@@ -280,10 +314,12 @@ Damit gilt fuer 6.7:
   - `ddl` vorhanden
   - keine `split_mode`-/`ddl_parts`-Felder
 
-### 5.5 Fehlercode-Matrix E006-E121 als Ledger aufbauen
+### 5.5 Fehler- und Warncode-Ledger aufbauen
 
-- eine explizite Matrix erstellen oder nachziehen, die pro Code
-  mindestens festhaelt:
+- ein explizites Error-Ledger fuer E006-E121 erstellen oder nachziehen
+- ein separates Warncode-Ledger fuer 0.9.2-relevante `W-*`-Codes
+  erstellen oder nachziehen
+- jeder Ledger-Eintrag haelt mindestens fest:
   - Quelle / Ebene
   - existierender Test oder neuer Zieltest
   - Pfadtyp:
@@ -291,14 +327,21 @@ Damit gilt fuer 6.7:
     - Runner
     - Generator
     - JSON/Report
+- bei nicht automatisierten Restpfaden zusaetzlich:
+  - `why_not_automated`
+  - `evidence_owner`
+  - `priority`
+  - `planned_remediation`
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
 - Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
   einem Modul
 
 Praezisierung:
 
-- Codes wie `E020`, `E052` bis `E056`, `E120`, `E121`, `W113`, `W120`
-  muessen fuer 0.9.2 sichtbar im Ledger vorkommen
+- Codes wie `E020`, `E052` bis `E056`, `E120`, `E121` muessen fuer
+  0.9.2 sichtbar im Error-Ledger vorkommen
+- `W113` und `W120` muessen fuer 0.9.2 sichtbar im Warncode-Ledger
+  vorkommen
 - bereits vorhandene Tests werden nicht dupliziert, sondern sauber
   referenziert
 - Luecken werden als neue Tests oder bewusst dokumentierte Restpunkte
@@ -320,11 +363,16 @@ Wichtig:
 - der Test soll schmal bleiben
 - keine Mehrdialekt-Matrix in einem einzigen Test
 - stabile, kleine Datenbasis und klarer Vergleichsmassstab
+- Vergleichsvertrag fuer den Round-Trip:
+  - struktureller Schema-Vergleich nach erneutem Read
+  - keine Textvergleiche von SQL-Artefakten
+  - Reihenfolge irrelevanter Sammlungen wird normalisiert
+  - explizit erlaubte Unterschiede muessen vorab dokumentiert sein
 
 ### 5.7 Testdokumentation und Review-Artefakte nachziehen
 
 - `docs/quality.md` darf nach Umsetzung den fehlenden E2E-Round-Trip und
-  die fehlende Fehlercode-Matrix nicht mehr als offene 0.9.2-Punkte
+  die fehlenden Error-/Warncode-Ledger nicht mehr als offene 0.9.2-Punkte
   fuehren
 - falls die Fehlercode-Quelle in Doku oder Guide verankert ist, muss die
   Matrix darauf konsistent verweisen
@@ -354,6 +402,8 @@ Wichtig:
   - phasenattribuierte `skipped_objects`
 - Sidecar-Report spiegelt denselben Phasenbezug
 - Single-JSON bleibt rueckwaertskompatibel
+- JSON und Report werden aus demselben `DdlResult`-Testanker
+  verglichen, nicht aus zwei getrennt aufgebauten Erwartungswelten
 
 ### 6.3 Pflichtfaelle fuer CLI- und Runner-Vertrag
 
@@ -362,11 +412,13 @@ Wichtig:
 - Dateinamenlogik fuer Split-Artefakte ist testseitig belegt
 - 6.6-Refactor bleibt in Exit-Code- und Resume-Semantik stabil
 
-### 6.4 Pflichtfaelle fuer Fehlercode-Matrix
+### 6.4 Pflichtfaelle fuer Error- und Warncode-Ledger
 
-- fuer E006-E121 existiert ein expliziter Matrix-Nachweis
-- jeder Code ist einem Test oder einem bewusst dokumentierten
-  Restpfad zugeordnet
+- fuer E006-E121 existiert ein expliziter Error-Ledger-Nachweis
+- fuer die 0.9.2-relevanten Warncodes existiert ein expliziter
+  Warncode-Ledger-Nachweis
+- jeder Ledger-Eintrag ist einem Test oder einem bewusst dokumentierten
+  Restpfad mit Pflichtfeldern zugeordnet
 - Generator-/Report-Codes und Validator-Codes werden nicht vermischt,
   sondern mit ihrer Quelle und Ebene referenziert
 
@@ -376,7 +428,7 @@ Wichtig:
   - Schema / Daten in Quell-DB
   - Export
   - Import in Ziel-DB
-  - erneuten Schema-Read oder Vergleich gegen Erwartung
+  - erneuten strukturellen Schema-Read / Vergleich gegen Erwartung
 
 Erwuenschte Zusatzfaelle:
 
@@ -422,7 +474,7 @@ Praezisierung:
 
 ## 8. Risiken und Abgrenzung
 
-### 8.1 Die Fehlercode-Matrix kann ohne harte Quelle unscharf werden
+### 8.1 Die Error-/Warncode-Ledger koennen ohne harte Quelle unscharf werden
 
 Wenn die Matrix nur aus Erinnerung gepflegt wird, entsteht ein zweiter
 inoffizieller Contract.
