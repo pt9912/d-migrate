@@ -603,3 +603,298 @@ Mitigation:
 
 - Triggerfamilien als Einheit markieren
 - dedizierte Tests fuer Triggerfunction plus Triggerstatement fuehren
+
+---
+
+## 9. Geklärte Entscheidungen
+
+### 9.1 `E060` wird in `docs/cli-spec.md` dokumentiert
+
+`E060` ist ein neuer Split-spezifischer Fehlercode fuer nicht belastbar
+aufloesbare View-Phasenzuordnung. Er wird unter Exit-Code 2 fuer
+`schema generate` in `docs/cli-spec.md` eingetragen:
+
+- `E060`: View-Phasenzuordnung fuer Split-Modus nicht sicher bestimmbar
+- Empfohlene Nutzeraktion: explizite `dependencies.functions` im
+  View-Eintrag der Schema-Datei deklarieren
+
+### 9.2 `stripSqlCommentsAndLiterals` bleibt private in `AbstractDdlGenerator`
+
+Die SQL-Tokenisierung fuer die Heuristik wird als private Methode in
+`AbstractDdlGenerator` implementiert, nicht als Core-Utility. Begruendung:
+nur der Generator benoetigt diese Funktion; ein Export nach `hexagon:core`
+wuerde einen Vertrag oeffentlich machen, der fuer den Milestone-Scope
+ueberdimensioniert ist.
+
+---
+
+## 10. Konkrete Implementierungsschritte (verfeinert)
+
+Die folgenden Schritte verfeinern Abschnitt 5 mit konkreten Datei-,
+Methoden- und Codeaenderungen. Jeder Schritt ist eigenstaendig
+commitbar und testbar.
+
+### 10.1 Schritt A — `DependencyInfo.functions` und Codecs
+
+Ziel: `functions: List<String>` im Modell und YAML/JSON-Round-Trip.
+Kein Verhaltenseffekt.
+
+Dateien:
+
+- `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/DependencyInfo.kt`
+  - neues Feld `functions: List<String> = emptyList()`
+- `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeParser.kt`
+  - in `parseDependencies()`: `functions = node["functions"]?.toStringList() ?: emptyList()`
+- `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/SchemaNodeBuilder.kt`
+  - in `buildDependencies()`: `if (deps.functions.isNotEmpty()) node.set<ArrayNode>("functions", stringArray(mapper, deps.functions))`
+
+Tests:
+
+- YAML-Round-Trip: View mit `dependencies.functions: [calc_total]`
+- Rueckwaertskompatibilitaet: fehlender `functions`-Block → `emptyList()`
+
+Abhaengigkeiten: keine.
+
+### 10.2 Schritt B — Phase-Tagging fuer Nicht-View-Objekte
+
+Ziel: `generate()` in `AbstractDdlGenerator` markiert Functions,
+Procedures, Triggers explizit als `POST_DATA`. Alle anderen Objekte
+bleiben `PRE_DATA` (Default). Views bleiben vorerst `PRE_DATA`.
+
+Datei:
+
+- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
+
+Neue Hilfsfunktion:
+
+```kotlin
+private fun List<DdlStatement>.withPhase(phase: DdlPhase) =
+    map { it.copy(phase = phase) }
+```
+
+Aenderungen in `generate()`:
+
+- `generateFunctions(...)` → `.withPhase(DdlPhase.POST_DATA)`
+- `generateProcedures(...)` → `.withPhase(DdlPhase.POST_DATA)`
+- `generateTriggers(...)` → `.withPhase(DdlPhase.POST_DATA)`
+
+Golden-Master-Impact: keiner (`render()` nutzt `phase` nicht).
+
+Tests in `AbstractDdlGeneratorTest`:
+
+- Functions → `POST_DATA`
+- Procedures → `POST_DATA`
+- Triggers → `POST_DATA`
+- Tables/Indices/Sequences/Header → `PRE_DATA`
+
+Abhaengigkeiten: keine (nutzt DdlPhase aus AP 6.1).
+
+### 10.3 Schritt D — SkippedObject-Phasen-Propagation
+
+Ziel: Jeder SkippedObject-Eintrag erhaelt die Phase des Objekttyps,
+den er ersetzt. Keine Signatur-Aenderungen an den RoutineDdlHelpern.
+
+Datei:
+
+- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
+
+Pattern: Nach jedem `generate*`-Aufruf die neu hinzugekommenen Skips
+mit der Phase des Buckets nachmarkieren:
+
+```kotlin
+val preSkipCount = skipped.size
+statements += generateFunctions(schema.functions, skipped).withPhase(DdlPhase.POST_DATA)
+for (i in preSkipCount until skipped.size) {
+    skipped[i] = skipped[i].copy(phase = DdlPhase.POST_DATA)
+}
+```
+
+Anwenden auf:
+
+- Sequences → `PRE_DATA`
+- `registerBlockedTable()` → `PRE_DATA` (direkt im Konstruktor)
+- `handleCircularReferences()` → `PRE_DATA`
+- Views → per Bucket (Schritt C)
+- Functions → `POST_DATA`
+- Procedures → `POST_DATA`
+- Triggers → `POST_DATA`
+
+Tests: Phase jedes SkippedObject-Typs pruefen.
+
+Abhaengigkeiten: Schritt B. Parallel zu Schritt C moeglich.
+
+### 10.4 Schritt C — View-Phasenklassifikation
+
+Ziel: Views mit Routine-Abhaengigkeit nach `POST_DATA` verschieben;
+Views ohne solche Abhaengigkeit in `PRE_DATA` belassen. Transitive
+Propagation ueber View→View-Kanten.
+
+Datei:
+
+- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
+
+Neue Methode:
+
+```kotlin
+protected fun classifyViewsByPhase(
+    views: Map<String, ViewDefinition>,
+    functionNames: Set<String>,
+): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>>
+```
+
+Algorithmus:
+
+1. Direkte Bestimmung: `view.dependencies?.functions?.isNotEmpty()` → `POST_DATA`
+2. Heuristik: `inferViewFunctionDependencies(query, functionNames)` findet
+   `name(`-Pattern nach `stripSqlCommentsAndLiterals()` → `POST_DATA`
+3. Transitive Propagation: View haengt von POST_DATA-View ab → `POST_DATA`
+4. Level C: View ohne Query, ohne declared deps, Schema hat Functions →
+   `POST_DATA` + E060-Diagnose in `globalNotes`
+
+Neue private Methoden:
+
+- `inferViewFunctionDependencies(viewName, query, functionNames): Set<String>`
+  - Regex `(?i)\b([A-Za-z_][A-Za-z0-9_]*)\s*\(` auf bereinigtem SQL
+  - Treffer gegen `functionNames` (case-insensitive)
+- `stripSqlCommentsAndLiterals(sql): String`
+  - Entfernt `--` bis Zeilenende
+  - Entfernt `/* ... */` Bloecke
+  - Entfernt `'...'` String-Literale (mit `''`-Escaping)
+  - Ersetzt entfernte Bereiche durch Leerzeichen
+
+Aenderung in `generate()`:
+
+```kotlin
+val (preDataViews, postDataViews, viewGlobalNotes) = classifyViewsByPhase(
+    sortedViews.sorted, schema.functions.keys)
+globalNotes += viewGlobalNotes
+
+val preViewSkipped = mutableListOf<SkippedObject>()
+statements += generateViews(preDataViews, preViewSkipped)
+skipped += preViewSkipped.map { it.copy(phase = DdlPhase.PRE_DATA) }
+
+val postViewSkipped = mutableListOf<SkippedObject>()
+statements += generateViews(postDataViews, postViewSkipped).withPhase(DdlPhase.POST_DATA)
+skipped += postViewSkipped.map { it.copy(phase = DdlPhase.POST_DATA) }
+```
+
+Tests:
+
+- View mit expliziten `dependencies.functions` → `POST_DATA`
+- View ohne Function-Deps → `PRE_DATA`
+- Transitiver View → `POST_DATA`
+- Heuristik erkennt `calc_total(` im Query
+- Heuristik ignoriert Funktionsnamen in Kommentaren und String-Literalen
+- `stripSqlCommentsAndLiterals` Einheitstests (private, via Integration)
+- View ohne Query + Functions im Schema → E060 in `globalNotes`
+- Leeres `schema.functions` → alle Views `PRE_DATA`, keine Heuristik
+
+Abhaengigkeiten: Schritt A + B.
+
+### 10.5 Schritt E — Runner Exit-2 fuer globalNotes-Diagnosen
+
+Ziel: Bei aktivem Split und E060-Diagnosen bricht der Runner mit Exit 2 ab.
+Ohne Split bleibt E060 nur als sichtbare Diagnose, nicht als Fehler.
+
+Dateien:
+
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
+- `docs/cli-spec.md`
+
+Aenderung im Runner (nach DDL-Generierung, vor Output-Routing):
+
+```kotlin
+if (request.splitMode == SplitMode.PRE_POST) {
+    val splitDiags = result.globalNotes.filter { it.code == "E060" }
+    if (splitDiags.isNotEmpty()) {
+        for (d in splitDiags) {
+            stderr("  ✗ Split error [${d.code}]: ${d.message}")
+            if (d.hint != null) stderr("    → Hint: ${d.hint}")
+        }
+        return 2
+    }
+}
+```
+
+Aenderung in `docs/cli-spec.md`:
+
+- Unter `schema generate` Exit-Codes: E060 als Unterfall von Exit 2
+  dokumentieren
+
+Tests:
+
+- `DdlResult` mit E060 + `PRE_POST` → Exit 2
+- Selbe E060 + `SINGLE` → Exit 0
+
+Abhaengigkeiten: Schritt C.
+
+### 10.6 Schritt F — SchemaReader-Katalogabfragen
+
+Ziel: SchemaReader populieren `DependencyInfo.functions` fuer Views aus
+Datenbank-Katalogen, wo moeglich.
+
+Dateien:
+
+- `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresMetadataQueries.kt`
+  - neue Query `listViewFunctionDependencies(session, schema)` ueber
+    `pg_depend` / `pg_rewrite` / `pg_proc`
+- `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresSchemaReader.kt`
+  - `readViews()` populiert `DependencyInfo(functions = ...)`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`
+  - neue Query `listViewRoutineUsage(session, database)` ueber
+    `INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`
+  - `readViews()` populiert `DependencyInfo(functions = ...)`
+  - Fallback: `try/catch` fuer aeltere MySQL-Versionen ohne
+    `VIEW_ROUTINE_USAGE` → leere Map
+- SQLite: keine Aenderung (kein Katalog; Heuristik aus Schritt C deckt ab)
+
+Tests: MockK-basierte Unit-Tests fuer die neuen Queries in
+`PostgresMetadataQueriesTest` und `MysqlMetadataQueriesTest`.
+
+Abhaengigkeiten: Schritt A. Unabhaengig von B–E.
+
+### 10.7 Schritt G — Test-Fixture und Gesamtverifikation
+
+Neue Fixture-Datei:
+`adapters/driven/formats/src/test/resources/fixtures/schemas/view-function-deps.yaml`
+
+Inhalt:
+
+- Tabelle `orders`
+- Function `calc_total` (language: plpgsql, source_dialect: postgresql)
+- `simple_view` → PRE_DATA (keine Function-Dep)
+- `computed_view` → POST_DATA (explizite `dependencies.functions: [calc_total]`)
+- `dependent_view` → POST_DATA (transitiv ueber `computed_view`)
+- `heuristic_view` → POST_DATA (Heuristik erkennt `calc_total(` im Query)
+- Trigger `trg_audit` → POST_DATA
+
+Gesamttest in `AbstractDdlGeneratorTest`:
+
+```
+generate(viewFunctionDepsSchema).statementsForPhase(PRE_DATA) → nur orders, simple_view
+generate(viewFunctionDepsSchema).statementsForPhase(POST_DATA) → calc_total, computed_view, dependent_view, heuristic_view, trg_audit
+```
+
+Abhaengigkeiten: alle Schritte.
+
+---
+
+## 11. Empfohlene Commit-Reihenfolge
+
+```
+A (DependencyInfo + Codecs)
+ ↓
+B + D (Phase-Tagging + SkippedObject-Phasen)
+ ↓
+C (View-Klassifikation)
+ ↓
+E (Runner Exit-2)
+ ↓
+F (SchemaReader-Katalogabfragen)
+ ↓
+G (Gesamttest + Fixture)
+```
+
+Jeder Schritt wird mit zugehoerigen Tests committet und muss den
+vollstaendigen Docker-Build gruen halten.
