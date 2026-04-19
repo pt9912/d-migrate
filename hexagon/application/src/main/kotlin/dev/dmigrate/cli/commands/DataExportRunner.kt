@@ -229,489 +229,363 @@ class DataExportRunner(
         }
     }
 
+    // ─── Internal DTOs for step results ─────────────────────────
+
+    private data class ResumeContext(
+        val operationId: String,
+        val resuming: Boolean,
+        val skippedTables: Set<String>,
+        val initialSlices: Map<String, CheckpointTableSlice>,
+    )
+
+    private data class ExportInfra(
+        val reader: DataReader,
+        val lister: TableLister,
+    )
+
+    private data class ExportPreparedContext(
+        val reader: DataReader,
+        val lister: TableLister,
+        val tables: List<String>,
+        val output: ExportOutput,
+        val options: ExportOptions,
+        val filter: DataFilter?,
+        val factory: DataChunkWriterFactory,
+        val fingerprint: String,
+        val primaryKeysByTable: Map<String, List<String>>,
+    )
+
+    private data class CheckpointContext(
+        val store: CheckpointStore?,
+        val dir: Path?,
+    )
+
     private fun executeWithPool(
         request: DataExportRequest,
         connectionConfig: ConnectionConfig,
         charset: Charset,
         pool: ConnectionPool,
     ): Int {
-        // ─── 5. Reader + Lister aus Registry ───────────────────
-        val reader = try {
-            readerLookup(connectionConfig.dialect)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
-        val tableLister = try {
-            listerLookup(connectionConfig.dialect)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
+        val infra = resolveInfrastructure(connectionConfig) ?: return 7
+        val tables = resolveTables(request, infra.lister, pool) ?: return -1 // sentinel
+        if (tables is TablesResult.Exit) return tables.code
+        val effectiveTables = (tables as TablesResult.Ok).tables
+        val output = resolveOutput(request, effectiveTables) ?: return 2
+        val prepared = buildExportContext(request, connectionConfig, charset, pool, effectiveTables, output, infra)
+            ?: return -1 // sentinel handled inline
+        if (prepared is PreparedResult.Exit) return prepared.code
+        val ctx = (prepared as PreparedResult.Ok).value
+        val checkpoint = resolveCheckpointContext(request) ?: return 7
+        val resume = resolveResumeContext(request, ctx, output, checkpoint, effectiveTables)
+            ?: return -1
+        if (resume is ResumeResult.Exit) return resume.code
+        val resumeCtx = (resume as ResumeResult.Ok).value
+        val markers = resolveMarkers(request, resumeCtx, ctx.primaryKeysByTable, effectiveTables) ?: return 3
+        val callbacks = buildCallbacks(request, resumeCtx, checkpoint.store, ctx.fingerprint, effectiveTables, markers)
+        val staging = setupStaging(output, checkpoint, resumeCtx.operationId)
+        val result = executeStreaming(request, pool, ctx, output, staging, resumeCtx, markers, callbacks)
+            ?: return 5
+        return finalizeAndReport(request, result, staging, checkpoint.store, resumeCtx.operationId)
+    }
 
-        // ─── 6. Tabellen ermitteln (--tables oder Auto-Discovery) ───
-        val explicitTables = request.tables?.takeIf { it.isNotEmpty() }
-        if (explicitTables != null) {
-            val invalid = DataExportHelpers.firstInvalidTableIdentifier(explicitTables)
+    // ─── Step functions ──────────────────────────────────────────
+
+    private fun resolveInfrastructure(config: ConnectionConfig): ExportInfra? {
+        val reader = try { readerLookup(config.dialect) } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}"); return null
+        }
+        val lister = try { listerLookup(config.dialect) } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}"); return null
+        }
+        return ExportInfra(reader, lister)
+    }
+
+    private sealed class TablesResult {
+        data class Ok(val tables: List<String>) : TablesResult()
+        data class Exit(val code: Int) : TablesResult()
+    }
+
+    private fun resolveTables(request: DataExportRequest, lister: TableLister, pool: ConnectionPool): TablesResult {
+        val explicit = request.tables?.takeIf { it.isNotEmpty() }
+        if (explicit != null) {
+            val invalid = DataExportHelpers.firstInvalidTableIdentifier(explicit)
             if (invalid != null) {
-                stderr(
-                    "Error: --tables value '$invalid' is not a valid identifier. " +
-                        "Expected '<name>' or '<schema>.<name>' matching " +
-                        DataExportHelpers.TABLE_IDENTIFIER_PATTERN + "."
-                )
-                return 2
+                stderr("Error: --tables value '$invalid' is not a valid identifier. " +
+                    "Expected '<name>' or '<schema>.<name>' matching " +
+                    DataExportHelpers.TABLE_IDENTIFIER_PATTERN + ".")
+                return TablesResult.Exit(2)
             }
         }
-        val effectiveTables = explicitTables ?: try {
-            tableLister.listTables(pool)
+        val tables = explicit ?: try {
+            lister.listTables(pool)
         } catch (e: Throwable) {
             stderr("Error: Failed to list tables: ${e.message}")
-            return 4
+            return TablesResult.Exit(4)
         }
-        if (effectiveTables.isEmpty()) {
+        if (tables.isEmpty()) {
             stderr("Error: No tables to export.")
-            return 2
+            return TablesResult.Exit(2)
         }
+        return TablesResult.Ok(tables)
+    }
 
-        // ─── 7. ExportOutput auflösen ─────────────────────────
-        val exportOutput = try {
-            ExportOutput.resolve(
-                outputPath = request.output,
-                splitFiles = request.splitFiles,
-                tableCount = effectiveTables.size,
-            )
+    private fun resolveOutput(request: DataExportRequest, tables: List<String>): ExportOutput? {
+        return try {
+            ExportOutput.resolve(outputPath = request.output, splitFiles = request.splitFiles, tableCount = tables.size)
         } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 2
+            stderr("Error: ${e.message}"); null
         }
+    }
 
-        // ─── 8. ExportOptions aus den CLI-Flags bauen ─────────
+    private sealed class PreparedResult {
+        data class Ok(val value: ExportPreparedContext) : PreparedResult()
+        data class Exit(val code: Int) : PreparedResult()
+    }
+
+    private fun buildExportContext(
+        request: DataExportRequest, config: ConnectionConfig, charset: Charset,
+        pool: ConnectionPool, tables: List<String>, output: ExportOutput, infra: ExportInfra,
+    ): PreparedResult {
         val delimiterChar = DataExportHelpers.parseCsvDelimiter(request.csvDelimiter)
             ?: run {
                 stderr("Error: --csv-delimiter must be a single character, got '${request.csvDelimiter}'")
-                return 2
+                return PreparedResult.Exit(2)
             }
-        val exportOptions = ExportOptions(
-            encoding = charset,
-            csvHeader = !request.csvNoHeader,
-            csvDelimiter = delimiterChar,
-            csvBom = request.csvBom,
-            csvNullString = request.nullString,
+        val options = ExportOptions(
+            encoding = charset, csvHeader = !request.csvNoHeader,
+            csvDelimiter = delimiterChar, csvBom = request.csvBom, csvNullString = request.nullString,
         )
-
-        val factory = writerFactoryBuilder()
-        val effectiveFilter = DataExportHelpers.resolveFilter(
-            rawFilter = request.filter,
-            dialect = connectionConfig.dialect,
-            sinceColumn = request.sinceColumn,
-            since = request.since,
+        val filter = DataExportHelpers.resolveFilter(
+            rawFilter = request.filter, dialect = config.dialect,
+            sinceColumn = request.sinceColumn, since = request.since,
         )
+        val pks: Map<String, List<String>> = if (!request.sinceColumn.isNullOrBlank()) {
+            resolvePrimaryKeys(pool, config.dialect, tables)
+        } else emptyMap()
+        val fingerprint = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
+            format = request.format, encoding = request.encoding, csvDelimiter = request.csvDelimiter,
+            csvBom = request.csvBom, csvNoHeader = request.csvNoHeader, csvNullString = request.nullString,
+            filter = request.filter, sinceColumn = request.sinceColumn, since = request.since,
+            tables = tables, outputMode = canonicalOutputMode(output), outputPath = canonicalOutputPath(output),
+            primaryKeysByTable = pks,
+        ))
+        return PreparedResult.Ok(ExportPreparedContext(
+            reader = infra.reader, lister = infra.lister,
+            tables = tables, output = output, options = options, filter = filter,
+            factory = writerFactoryBuilder(), fingerprint = fingerprint, primaryKeysByTable = pks,
+        ))
+    }
 
-        // ─── 8b. Resume-Preflight + Manifest-Lifecycle ─────────────
-        // PK signature is only read when `--since-column` is set — without
-        // a marker contract there is no mid-table resume and no reason to
-        // touch the schema reader.
-        val primaryKeysByTable: Map<String, List<String>> =
-            if (!request.sinceColumn.isNullOrBlank()) {
-                resolvePrimaryKeys(pool, connectionConfig.dialect, effectiveTables)
-            } else {
-                emptyMap()
-            }
-        val fingerprint = ExportOptionsFingerprint.compute(
-            ExportOptionsFingerprint.Input(
-                format = request.format,
-                encoding = request.encoding,
-                csvDelimiter = request.csvDelimiter,
-                csvBom = request.csvBom,
-                csvNoHeader = request.csvNoHeader,
-                csvNullString = request.nullString,
-                filter = request.filter,
-                sinceColumn = request.sinceColumn,
-                since = request.since,
-                tables = effectiveTables,
-                outputMode = canonicalOutputMode(exportOutput),
-                outputPath = canonicalOutputPath(exportOutput),
-                primaryKeysByTable = primaryKeysByTable,
-            )
-        )
-
-        // Merge CLI override (`--checkpoint-dir`) and config default
-        // (`pipeline.checkpoint.*`). CLI wins over config, config wins
-        // over runtime default.
+    private fun resolveCheckpointContext(request: DataExportRequest): CheckpointContext? {
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {
             stderr("Error: Failed to resolve pipeline.checkpoint config: ${e.message}")
-            return 7
+            return null
         }
-        val mergedCheckpointConfig = CheckpointConfig.merge(
-            cliDirectory = request.checkpointDir,
-            config = fromConfig,
-        )
-        val checkpointDir: Path? = mergedCheckpointConfig.directory
-        val store: CheckpointStore? = checkpointStoreFactory?.let { factory ->
-            checkpointDir?.let { factory(it) }
-        }
+        val merged = CheckpointConfig.merge(cliDirectory = request.checkpointDir, config = fromConfig)
+        val dir = merged.directory
+        val store = checkpointStoreFactory?.let { factory -> dir?.let { factory(it) } }
+        return CheckpointContext(store, dir)
+    }
 
-        // Resume-Pfad vorbereiten
-        data class ResumeContext(
-            val operationId: String,
-            val resuming: Boolean,
-            val skippedTables: Set<String>,
-            val initialSlices: Map<String, CheckpointTableSlice>,
-        )
+    private sealed class ResumeResult {
+        data class Ok(val value: ResumeContext) : ResumeResult()
+        data class Exit(val code: Int) : ResumeResult()
+    }
 
-        val resume: ResumeContext = if (!request.resume.isNullOrBlank()) {
-            if (store == null) {
-                stderr(
-                    "Error: --resume requires a checkpoint directory; set " +
-                        "--checkpoint-dir or pipeline.checkpoint.directory."
-                )
-                return 7
+    private fun resolveResumeContext(
+        request: DataExportRequest, ctx: ExportPreparedContext, output: ExportOutput,
+        checkpoint: CheckpointContext, tables: List<String>,
+    ): ResumeResult {
+        if (!request.resume.isNullOrBlank()) {
+            val store = checkpoint.store ?: run {
+                stderr("Error: --resume requires a checkpoint directory; set --checkpoint-dir or pipeline.checkpoint.directory.")
+                return ResumeResult.Exit(7)
             }
-            val resolvedOpId = resolveResumeReference(request.resume, checkpointDir!!)
-                ?: run {
-                    stderr(
-                        "Error: --resume path must be inside the effective " +
-                            "checkpoint directory '$checkpointDir'."
-                    )
-                    return 7
-                }
+            val resolvedOpId = resolveResumeReference(request.resume, checkpoint.dir!!) ?: run {
+                stderr("Error: --resume path must be inside the effective checkpoint directory '${checkpoint.dir}'.")
+                return ResumeResult.Exit(7)
+            }
             val manifest: CheckpointManifest? = try {
                 store.load(resolvedOpId)
             } catch (e: UnsupportedCheckpointVersionException) {
-                stderr("Error: ${e.message}")
-                return 7
+                stderr("Error: ${e.message}"); return ResumeResult.Exit(7)
             } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to load checkpoint: ${e.message}")
-                return 7
+                stderr("Error: Failed to load checkpoint: ${e.message}"); return ResumeResult.Exit(7)
             }
-            if (manifest == null) {
-                stderr("Error: Checkpoint not found: '${request.resume}'")
-                return 7
-            }
+            if (manifest == null) { stderr("Error: Checkpoint not found: '${request.resume}'"); return ResumeResult.Exit(7) }
             if (manifest.operationType != CheckpointOperationType.EXPORT) {
-                stderr(
-                    "Error: Checkpoint type mismatch: expected EXPORT, got " +
-                        "${manifest.operationType}."
-                )
-                return 3
+                stderr("Error: Checkpoint type mismatch: expected EXPORT, got ${manifest.operationType}.")
+                return ResumeResult.Exit(3)
             }
-            if (manifest.optionsFingerprint != fingerprint) {
-                stderr(
-                    "Error: Checkpoint options do not match the current request " +
-                        "(fingerprint mismatch); refuse to resume."
-                )
-                return 3
+            if (manifest.optionsFingerprint != ctx.fingerprint) {
+                stderr("Error: Checkpoint options do not match the current request (fingerprint mismatch); refuse to resume.")
+                return ResumeResult.Exit(3)
             }
             val manifestTables = manifest.tableSlices.map { it.table }
-            if (manifestTables != effectiveTables) {
-                stderr(
-                    "Error: Checkpoint table list does not match the current " +
-                        "request: manifest=$manifestTables, current=$effectiveTables."
-                )
-                return 3
+            if (manifestTables != tables) {
+                stderr("Error: Checkpoint table list does not match the current request: manifest=$manifestTables, current=$tables.")
+                return ResumeResult.Exit(3)
             }
-            val skipped = manifest.tableSlices
-                .filter { it.status == CheckpointSliceStatus.COMPLETED }
-                .map { it.table }
-                .toSet()
-            // Single-file resume requires exactly one pending table.
-            // If the table is already COMPLETED, the run is finished —
-            // exit 3 instead of silent success so automation can detect it.
-            if (exportOutput is ExportOutput.SingleFile &&
-                effectiveTables.isNotEmpty() &&
-                effectiveTables.all { it in skipped }
-            ) {
-                stderr(
-                    "Error: single-file resume has no pending table; the " +
-                        "previous run is already completed. Remove --resume " +
-                        "or choose a different output."
-                )
-                return 3
+            val skipped = manifest.tableSlices.filter { it.status == CheckpointSliceStatus.COMPLETED }.map { it.table }.toSet()
+            if (output is ExportOutput.SingleFile && tables.isNotEmpty() && tables.all { it in skipped }) {
+                stderr("Error: single-file resume has no pending table; the previous run is already completed. Remove --resume or choose a different output.")
+                return ResumeResult.Exit(3)
             }
-            ResumeContext(
-                operationId = manifest.operationId,
-                resuming = true,
-                skippedTables = skipped,
-                initialSlices = manifest.tableSlices.associateBy { it.table },
-            )
-        } else {
-            ResumeContext(
-                operationId = java.util.UUID.randomUUID().toString(),
-                resuming = false,
-                skippedTables = emptySet(),
-                initialSlices = effectiveTables.associateWith { table ->
-                    CheckpointTableSlice(
-                        table = table,
-                        status = CheckpointSliceStatus.PENDING,
-                    )
-                },
-            )
+            return ResumeResult.Ok(ResumeContext(
+                operationId = manifest.operationId, resuming = true,
+                skippedTables = skipped, initialSlices = manifest.tableSlices.associateBy { it.table },
+            ))
         }
+        return ResumeResult.Ok(ResumeContext(
+            operationId = java.util.UUID.randomUUID().toString(), resuming = false,
+            skippedTables = emptySet(),
+            initialSlices = tables.associateWith { CheckpointTableSlice(table = it, status = CheckpointSliceStatus.PENDING) },
+        ))
+    }
 
+    private fun resolveMarkers(
+        request: DataExportRequest, resume: ResumeContext,
+        primaryKeysByTable: Map<String, List<String>>, tables: List<String>,
+    ): Map<String, ResumeMarker>? {
+        return try {
+            tables.associateWith { table ->
+                resolveTableResumeMarker(request, table, resume.initialSlices[table]?.resumePosition, primaryKeysByTable[table].orEmpty())
+            }.filterValues { it != null }.mapValues { it.value!! }
+        } catch (e: TableResumeMismatchException) {
+            stderr("Error: ${e.message}"); null
+        }
+    }
+
+    private fun buildCallbacks(
+        request: DataExportRequest, resume: ResumeContext, store: CheckpointStore?,
+        fingerprint: String, tables: List<String>, markers: Map<String, ResumeMarker>,
+    ): ExportCallbacks {
         val operationId = resume.operationId
         val tableStates = LinkedHashMap(resume.initialSlices)
         val now = { clock() }
+        val createdAt: Instant = if (resume.resuming && store != null) {
+            try { store.load(operationId)?.createdAt ?: now() } catch (_: Throwable) { now() }
+        } else now()
 
-        // Initialer Manifest-Schreibpfad: bei neuem Lauf anlegen,
-        // damit ein spaeterer Abbruch einen gueltigen Resume-Anker hat.
-        if (store != null && !resume.resuming) {
-            val created = now()
-            val initial = CheckpointManifest(
-                operationId = operationId,
-                operationType = CheckpointOperationType.EXPORT,
-                createdAt = created,
-                updatedAt = created,
-                format = request.format,
-                chunkSize = request.chunkSize,
-                tableSlices = effectiveTables.map { tableStates.getValue(it) },
-                optionsFingerprint = fingerprint,
-            )
+        fun saveManifest() {
+            if (store == null) return
             try {
-                store.save(initial)
-            } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to initialize checkpoint: ${e.message}")
-                return 7
-            }
+                store.save(CheckpointManifest(
+                    operationId = operationId, operationType = CheckpointOperationType.EXPORT,
+                    createdAt = createdAt, updatedAt = now(), format = request.format,
+                    chunkSize = request.chunkSize, tableSlices = tables.map { tableStates.getValue(it) },
+                    optionsFingerprint = fingerprint,
+                ))
+            } catch (_: CheckpointStoreException) { /* silent mid-run save failure */ }
         }
 
-        // Per-table update callback: `createdAt` is set now for a fresh
-        // run, or taken from the already-loaded manifest on resume.
-        val createdAt: Instant = if (resume.resuming && store != null) {
+        // Write initial manifest for fresh runs
+        if (store != null && !resume.resuming) {
+            val created = now()
             try {
-                store.load(operationId)?.createdAt ?: now()
-            } catch (_: Throwable) { now() }
-        } else {
-            now()
+                store.save(CheckpointManifest(
+                    operationId = operationId, operationType = CheckpointOperationType.EXPORT,
+                    createdAt = created, updatedAt = created, format = request.format,
+                    chunkSize = request.chunkSize, tableSlices = tables.map { tableStates.getValue(it) },
+                    optionsFingerprint = fingerprint,
+                ))
+            } catch (e: CheckpointStoreException) {
+                stderr("Error: Failed to initialize checkpoint: ${e.message}")
+            }
         }
 
         val onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit = { summary ->
-            val slice = CheckpointTableSlice(
+            tableStates[summary.table] = CheckpointTableSlice(
                 table = summary.table,
-                status = if (summary.error == null)
-                    CheckpointSliceStatus.COMPLETED else CheckpointSliceStatus.FAILED,
-                rowsProcessed = summary.rows,
-                chunksProcessed = summary.chunks,
-                // On COMPLETED the resume position is intentionally omitted —
-                // the table is done and a subsequent resume skips it entirely.
-                resumePosition = null,
+                status = if (summary.error == null) CheckpointSliceStatus.COMPLETED else CheckpointSliceStatus.FAILED,
+                rowsProcessed = summary.rows, chunksProcessed = summary.chunks, resumePosition = null,
             )
-            tableStates[summary.table] = slice
-            if (store != null) {
-                try {
-                    store.save(
-                        CheckpointManifest(
-                            operationId = operationId,
-                            operationType = CheckpointOperationType.EXPORT,
-                            createdAt = createdAt,
-                            updatedAt = now(),
-                            format = request.format,
-                            chunkSize = request.chunkSize,
-                            tableSlices = effectiveTables.map { tableStates.getValue(it) },
-                            optionsFingerprint = fingerprint,
-                        )
-                    )
-                } catch (_: CheckpointStoreException) {
-                    // Fortsetzung darf an einem fehlgeschlagenen
-                    // Zwischen-Save nicht abbrechen; der finale Lauf
-                    // meldet dann ggf. den Fehler. Stderr-Hinweis
-                    // wuerde den Progress-Output zerreissen — wir
-                    // lassen den Write stillschweigend fallen und
-                    // fangen ihn am Lauf-Ende nochmal (complete()).
-                }
-            }
+            saveManifest()
         }
 
-        // Per-table ResumeMarker based on three case distinctions.
-        // The loop may abort with exit 3 (case 3). An empty result
-        // (no markers) preserves the legacy path.
-        val resumeMarkers: Map<String, ResumeMarker> = try {
-            effectiveTables.associateWith { table ->
-                resolveTableResumeMarker(
-                    request = request,
-                    table = table,
-                    existingPosition = resume.initialSlices[table]?.resumePosition,
-                    primaryKey = primaryKeysByTable[table].orEmpty(),
-                )
-            }.filterValues { it != null }.mapValues { it.value!! }
-        } catch (e: TableResumeMismatchException) {
-            stderr("Error: ${e.message}")
-            return 3
-        }
-
-        // onChunkProcessed persists per-chunk progress. The table
-        // transitions to `IN_PROGRESS` so a re-run can find the position.
         val onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit = { progress ->
-            val marker = resumeMarkers[progress.table]
+            val marker = markers[progress.table]
             if (marker != null) {
-                val slice = CheckpointTableSlice(
-                    table = progress.table,
-                    status = CheckpointSliceStatus.IN_PROGRESS,
-                    rowsProcessed = progress.rowsProcessed,
-                    chunksProcessed = progress.chunksProcessed,
+                tableStates[progress.table] = CheckpointTableSlice(
+                    table = progress.table, status = CheckpointSliceStatus.IN_PROGRESS,
+                    rowsProcessed = progress.rowsProcessed, chunksProcessed = progress.chunksProcessed,
                     resumePosition = MarkerCodec.toPersisted(marker, progress.position),
                 )
-                tableStates[progress.table] = slice
-                if (store != null) {
-                    try {
-                        store.save(
-                            CheckpointManifest(
-                                operationId = operationId,
-                                operationType = CheckpointOperationType.EXPORT,
-                                createdAt = createdAt,
-                                updatedAt = now(),
-                                format = request.format,
-                                chunkSize = request.chunkSize,
-                                tableSlices = effectiveTables.map { tableStates.getValue(it) },
-                                optionsFingerprint = fingerprint,
-                            )
-                        )
-                    } catch (_: CheckpointStoreException) {
-                        // Gleiches Prinzip wie in `onTableCompleted`: ein
-                        // verlorener Zwischen-Save darf den Lauf nicht
-                        // abbrechen; beim naechsten Chunk versucht der
-                        // Runner es erneut.
-                    }
-                }
+                saveManifest()
             }
         }
 
-        // ─── 8d. Single-File-Staging-Pfad ────────────────────────────
-        // Single-table-single-file is never written directly to the target
-        // when a checkpoint store is configured — otherwise an abort could
-        // leave a half-valid container file (JSON without `]`, YAML/CSV
-        // without terminator) at the target path. Instead the run writes
-        // to a staging file in the checkpoint directory; the target is
-        // replaced via atomic rename at run end.
-        //
-        // Mid-table resume is intentionally **not** active for single-file
-        // runs: structured format writers (JSON array, YAML sequence) cannot
-        // be cleanly continued mid-stream without append/rebuild infra.
-        // An aborted single-file resume re-exports the table from scratch
-        // into a fresh staging file. The `optionsFingerprint` stays valid,
-        // the manifest slice transitions to `COMPLETED` afterwards. Any
-        // stored `resumePosition` from a previous run is ignored; we clear
-        // it from the marker so the exporter does a fresh track.
-        val stagingRedirect: StagingRedirect? =
-            if (exportOutput is ExportOutput.SingleFile && store != null && checkpointDir != null) {
-                val stagingPath = checkpointDir.resolve("$operationId.single-file.staging")
-                StagingRedirect(
-                    target = exportOutput.path,
-                    staging = stagingPath,
-                )
-            } else {
-                null
-            }
-        val executorOutput: ExportOutput = stagingRedirect?.let {
-            ExportOutput.SingleFile(it.staging)
-        } ?: exportOutput
-        val executorMarkers: Map<String, ResumeMarker> =
-            if (exportOutput is ExportOutput.SingleFile) {
-                resumeMarkers.mapValues { (_, marker) -> marker.copy(position = null) }
-            } else {
-                resumeMarkers
-            }
+        val effectiveReporter = if (request.quiet || request.noProgress) NoOpProgressReporter else progressReporter
+        return ExportCallbacks(effectiveReporter, onTableCompleted, onChunkProcessed)
+    }
 
-        // ─── 9. Streaming ─────────────────────────────────────
-        val rawResult: ExportResult = try {
-            val effectiveReporter = if (request.quiet || request.noProgress)
-                NoOpProgressReporter else progressReporter
-            exportExecutor.execute(
-                context = ExportExecutionContext(
-                    pool = pool,
-                    reader = reader,
-                    lister = tableLister,
-                    factory = factory,
-                ),
+    private fun setupStaging(output: ExportOutput, checkpoint: CheckpointContext, operationId: String): StagingRedirect? {
+        if (output is ExportOutput.SingleFile && checkpoint.store != null && checkpoint.dir != null) {
+            return StagingRedirect(target = output.path, staging = checkpoint.dir.resolve("$operationId.single-file.staging"))
+        }
+        return null
+    }
+
+    private fun executeStreaming(
+        request: DataExportRequest, pool: ConnectionPool, ctx: ExportPreparedContext,
+        output: ExportOutput, staging: StagingRedirect?, resume: ResumeContext,
+        markers: Map<String, ResumeMarker>, callbacks: ExportCallbacks,
+    ): ExportResult? {
+        val executorOutput = staging?.let { ExportOutput.SingleFile(it.staging) } ?: output
+        val executorMarkers = if (output is ExportOutput.SingleFile) {
+            markers.mapValues { (_, m) -> m.copy(position = null) }
+        } else markers
+
+        return try {
+            val raw = exportExecutor.execute(
+                context = ExportExecutionContext(pool, ctx.reader, ctx.lister, ctx.factory),
                 options = ExportExecutionOptions(
-                    tables = effectiveTables,
-                    output = executorOutput,
-                    format = DataExportFormat.fromCli(request.format),
-                    options = exportOptions,
-                    config = PipelineConfig(chunkSize = request.chunkSize),
-                    filter = effectiveFilter,
+                    ctx.tables, executorOutput, DataExportFormat.fromCli(request.format),
+                    ctx.options, PipelineConfig(chunkSize = request.chunkSize), ctx.filter,
                 ),
-                resume = ExportResumeState(
-                    operationId = operationId,
-                    resuming = resume.resuming,
-                    skippedTables = resume.skippedTables,
-                    resumeMarkers = executorMarkers,
-                ),
-                callbacks = ExportCallbacks(
-                    progressReporter = effectiveReporter,
-                    onTableCompleted = onTableCompleted,
-                    onChunkProcessed = onChunkProcessed,
-                ),
+                resume = ExportResumeState(resume.operationId, resume.resuming, resume.skippedTables, executorMarkers),
+                callbacks = callbacks,
             )
+            raw.copy(operationId = resume.operationId)
         } catch (e: Throwable) {
-            stderr("Error: Export failed: ${e.message}")
-            return 5
+            stderr("Error: Export failed: ${e.message}"); null
         }
-        val result: ExportResult = rawResult.copy(operationId = operationId)
+    }
 
-        // ─── 10. Pro-Tabelle-Fehler → Exit 5 ──────────────────
+    private fun finalizeAndReport(
+        request: DataExportRequest, result: ExportResult, staging: StagingRedirect?,
+        store: CheckpointStore?, operationId: String,
+    ): Int {
         val failed = result.tables.firstOrNull { it.error != null }
         if (failed != null) {
             stderr("Error: Failed to export table '${failed.table}': ${failed.error}")
             return 5
         }
-
-        // Staging -> target via atomic rename. A failed rename leaves the
-        // staging file in the checkpoint directory; exit 5 because the
-        // export is not logically complete (target file missing or stale).
-        if (stagingRedirect != null) {
+        if (staging != null) {
             try {
                 try {
-                    java.nio.file.Files.move(
-                        stagingRedirect.staging,
-                        stagingRedirect.target,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                    )
+                    java.nio.file.Files.move(staging.staging, staging.target,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-                    java.nio.file.Files.move(
-                        stagingRedirect.staging,
-                        stagingRedirect.target,
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                    )
+                    java.nio.file.Files.move(staging.staging, staging.target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 }
             } catch (e: Throwable) {
-                stderr(
-                    "Error: Failed to move staging file to target " +
-                        "'${stagingRedirect.target}': ${e.message ?: e::class.simpleName}"
-                )
+                stderr("Error: Failed to move staging file to target '${staging.target}': ${e.message ?: e::class.simpleName}")
                 return 5
             }
         }
-
-        // Successful run -> remove manifest. Errors during complete() are
-        // reported as warnings, not as exit — the export was logically successful.
         if (store != null) {
-            try {
-                store.complete(operationId)
-            } catch (e: CheckpointStoreException) {
+            try { store.complete(operationId) } catch (e: CheckpointStoreException) {
                 stderr("Warning: Failed to remove completed checkpoint: ${e.message}")
             }
         }
-
-        // ─── 11. Warnings auf stderr (unterdrückt mit --quiet) ──
-        if (!request.quiet) {
-            for (line in collectWarnings()) {
-                stderr(line)
-            }
-        }
-
-        // ─── 12. ProgressSummary (unterdrückt mit --quiet/--no-progress) ──
-        val suppressProgress = request.quiet || request.noProgress
-        if (!suppressProgress) {
+        if (!request.quiet) { for (line in collectWarnings()) { stderr(line) } }
+        if (!request.quiet && !request.noProgress) {
             stderr(DataExportHelpers.formatProgressSummary(result))
-            // operationId is printed in the stderr summary so that
-            // operators, logs, and a later resume manifest all reference
-            // the same run.
             result.operationId?.let { stderr("Run operation id: $it") }
         }
-
         return 0
     }
 
