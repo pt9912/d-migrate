@@ -5,7 +5,8 @@
 > Status: Entwurf fuer die kuenftige Service-Schnittstelle
 >
 > Referenzen: `docs/architecture.md`, `docs/cli-spec.md`,
-> `docs/implementation-plan-0.9.1.md`, `docs/lastenheft-d-migrate.md` LF-022
+> `docs/grpc-service.md`, `docs/implementation-plan-0.9.1.md`,
+> `docs/lastenheft-d-migrate.md` LF-022
 
 ---
 
@@ -102,11 +103,11 @@ Fuer `v1` gilt folgende feste Zuordnung:
 - `GET /api/v1/capabilities` -> synchron
 - `POST /api/v1/schema/validate` -> synchron
 - `POST /api/v1/schema/generate` -> synchron (kleine DDL-Generierung)
-- `POST /api/v1/schema/compare` -> synchron
 
 Die folgenden Endpunkte sind asynchron als Job abzubilden:
 
 - `schema reverse`
+- `schema compare`
 - `data export`
 - `data import`
 - `data transfer`
@@ -116,6 +117,7 @@ Die folgenden Endpunkte sind asynchron als Job abzubilden:
 Einzelne Endpunkte:
 
 - `POST /api/v1/schema/reverse` -> asynchron
+- `POST /api/v1/schema/compare` -> asynchron
 - `POST /api/v1/data/export` -> asynchron
 - `POST /api/v1/data/import` -> asynchron
 - `POST /api/v1/data/transfer` -> asynchron
@@ -125,14 +127,21 @@ Einzelne Endpunkte:
 - `POST /api/v1/export/django` -> asynchron
 - `POST /api/v1/export/knex` -> asynchron
 
+Fuer Job-Fortschritt kann optional ein SSE-Endpunkt
+(`GET /api/v1/jobs/{jobId}/events`, `Accept: text/event-stream`) angeboten
+werden, um Polling-Last bei langlebigen Jobs zu reduzieren. In `v1` ist
+Polling ueber `GET /api/v1/jobs/{jobId}` der Standardweg.
+
 ### 3.4 Idempotenz
 
 - lesende Endpunkte: `GET`
 - rein berechnende Operationen: `POST`
 - lange Laeufe erzeugen Job-Ressourcen
-- asynchrone Job-Start-Endpunkte (z. B. `schema reverse`, `data export`, `data import`, `data transfer`, `data profile`, Tool-Exports) **müssen** über `Idempotency-Key` abgesichert werden
+- asynchrone Job-Start-Endpunkte (z. B. `schema reverse`, `schema compare`, `data export`, `data import`, `data transfer`, `data profile`, Tool-Exports) **müssen** über `Idempotency-Key` abgesichert werden
 - identische Requests mit demselben Idempotency-Key sollen denselben `jobId` zurueckgeben
 - abweichende Requests mit demselben Idempotency-Key sollen als Konflikt (`409`) zurueckgewiesen werden
+- "abweichend" ist definiert als semantische Ungleichheit der normalisierten Request-Felder (Feldnamen, Werte, Typen); Reihenfolge von JSON-Keys und Whitespace sind irrelevant
+- der Server muss Idempotency-Keys mindestens fuer die Lebensdauer des zugehoerigen Jobs vorhalten; nach `expiresAt` des Jobs darf der Key verworfen werden
 - fehlender `Idempotency-Key` bei asynchronen Start-Endpunkten gilt als Client-Fehler
 
 ### 3.5 Gemeinsamer Kernvertrag fuer Jobs und Artefakte
@@ -166,11 +175,50 @@ Empfohlene ID-Praefixe:
 | --- | --- | --- |
 | `/api/v1/health` | `GET` | kombinierter Liveness-/Readiness-Status |
 | `/api/v1/capabilities` | `GET` | unterstuetzte Dialekte, Formate, Features |
+| `/api/v1/jobs` | `GET` | paginierte Job-Liste fuer den eigenen Tenant |
 | `/api/v1/jobs/{jobId}` | `GET` | Status, Progress, Ergebnis-Metadaten |
 | `/api/v1/jobs/{jobId}/cancel` | `POST` | laufenden Job abbrechen |
+| `/api/v1/artifacts` | `GET` | paginierte Artefakt-Liste fuer den eigenen Tenant |
 | `/api/v1/artifacts` | `POST` | Eingabe-Artefakt hochladen oder registrieren |
-| `/api/v1/artifacts/{artifactId}` | `GET` | Ergebnisdatei oder Report herunterladen |
-| `/api/v1/artifacts/{artifactId}/metadata` | `GET` | Metadaten zu Groesse, Typ, Hash, Ablaufzeit |
+| `/api/v1/artifacts/{artifactId}` | `GET` | Ergebnisdatei oder Report herunterladen; unterstuetzt `ETag` / `If-None-Match` |
+| `/api/v1/artifacts/{artifactId}/metadata` | `GET` | Metadaten inkl. Groesse, Typ, Hash, Ablaufzeit und `ETag` |
+
+Paginierte List-Endpunkte (`GET /api/v1/jobs`, `GET /api/v1/artifacts`)
+unterstuetzen die Query-Parameter `pageToken`, `pageSize` und optionale
+Filter (z. B. nach `status` oder `operation`).
+
+`POST /api/v1/jobs/{jobId}/cancel` liefert den aktualisierten Job-Status als
+Response-Body. Ist der Job bereits in einem Terminalstatus, antwortet der
+Server idempotent mit `200` und dem unveraenderten Status.
+
+#### Health-Response
+
+Der kombinierte Health-Endpunkt liefert getrennte Felder fuer Liveness und Readiness:
+
+```json
+{
+  "status": "DEGRADED",
+  "liveness": "UP",
+  "readiness": "UP|DEGRADED|DOWN",
+  "checks": {
+    "storage": "UP",
+    "db": "DOWN",
+    "queue": "UP"
+  }
+}
+```
+
+HTTP-Status:
+
+- `200`: `liveness=UP` und `readiness=UP`
+- `503`: `liveness=UP` und `readiness!=UP`
+- `503`: `liveness!=UP`
+
+Der kombinierte Gesamtstatus wird wie folgt abgeleitet:
+
+- `UP` bei `liveness=UP` und `readiness=UP`
+- `DEGRADED` bei `liveness=UP` und `readiness=DEGRADED`
+- `DOWN` bei `liveness=DOWN`
 
 ### 4.2 Schema-Endpunkte
 
@@ -179,7 +227,7 @@ Empfohlene ID-Praefixe:
 | `/api/v1/schema/validate` | `POST` | neutrales Schema validieren | synchron |
 | `/api/v1/schema/generate` | `POST` | DDL fuer Ziel-Dialekt erzeugen | synchron |
 | `/api/v1/schema/reverse` | `POST` | DB nach neutralem Modell reverse-engineeren | asynchron |
-| `/api/v1/schema/compare` | `POST` | zwei Schemata oder Umgebungen vergleichen | synchron |
+| `/api/v1/schema/compare` | `POST` | zwei Schemata oder Umgebungen vergleichen | asynchron |
 
 ### 4.3 Daten-Endpunkte
 
@@ -386,6 +434,7 @@ Pflichtfelder eines Jobs:
 - `operation`
 - `status`
 - `createdAt`
+- `updatedAt`
 - `expiresAt`
 - `createdBy`
 - `artifacts`
@@ -422,7 +471,13 @@ Operationen ist die HTTP-Abbildung fest:
 | `5` | Migration / execution error | `500` |
 | `6` | AI provider error | `503` |
 | `7` | Local config / file / render error | `500` |
-| `130` | cancelled | `410` |
+| `130` | cancelled | `503` |
+
+`130` (cancelled) ist fuer synchrone REST-Operationen ein Sonderfall: bei
+Client-Abbruch wird die Verbindung geschlossen und der Server liefert
+typischerweise keine Antwort. `503` greift nur bei serverseitigem Abbruch
+(z. B. Shutdown, Timeout). Fuer asynchrone Jobs wird Abbruch ueber
+`status=cancelled` im Job-Body signalisiert.
 
 `409` ist exklusiv fuer Idempotency-Konflikte mit demselben `Idempotency-Key` und abweichendem Request reserviert.
 
@@ -439,6 +494,8 @@ Zusatzliche HTTP-Fehler (nicht abgeleitet aus CLI-Codes):
 | `409` | Conflict | Konflikt durch Idempotency-Key bei abweichendem Request |
 | `413` | Payload Too Large | Artefakt oder Request-Body zu gross |
 | `429` | Too Many Requests | Rate-/Concurrency-Limits erreicht |
+
+Bei `429` und `503` MUSS der Server einen `Retry-After`-Header setzen.
 
 Fuer asynchrone Operationen gilt:
 
@@ -495,41 +552,13 @@ Pflicht fuer einen produktiven REST-Service:
 - Audit-Log fuer destruktive oder teure Operationen
 - Rate-Limits und Concurrency-Limits pro Mandant / Client
 - Payload-Groessenlimits
+- CORS-Policy fuer Browser-Clients (nur zugelassene Origins, Methoden und Header)
 
 Besonders kritisch:
 
 - kein offener Raw-SQL-Filter-Pfad
 - kein frei beschreibbarer Dateisystempfad vom Client
 - keine direkten JDBC-Credentials in Logs oder Job-Events
-
-## 8.1 Health-Response (Details)
-
-Der kombinierte Health-Endpunkt liefert getrennte Felder fuer Liveness und Readiness:
-
-```json
-{
-  "status": "DEGRADED",
-  "liveness": "UP",
-  "readiness": "UP|DEGRADED|DOWN",
-  "checks": {
-    "storage": "UP",
-    "db": "DOWN",
-    "queue": "UP"
-  }
-}
-```
-
-HTTP-Status:
-
-- `200`: `liveness=UP` und `readiness=UP`
-- `503`: `liveness=UP` und `readiness!=UP`
-- `503`: `liveness!=UP`
-
-Der kombinierte Gesamtstatus wird wie folgt abgeleitet:
-
-- `UP` bei `liveness=UP` und `readiness=UP`
-- `DEGRADED` bei `liveness=UP` und `readiness=DEGRADED`
-- `DOWN` bei `liveness=DOWN`
 
 ---
 
@@ -552,12 +581,12 @@ Der Service sollte von Anfang an folgende Signale liefern:
 - `capabilities`
 - `schema validate`
 - `schema generate`
-- `schema compare`
 
 ### Phase 2
 
 - Job-System
 - `schema reverse`
+- `schema compare`
 - `data profile`
 
 ### Phase 3
