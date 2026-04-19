@@ -78,6 +78,8 @@ MCP nutzt denselben Kernvertrag wie REST und gRPC:
 - Artefakte sind immutable
 - nur derselbe Mandant / Principal oder ein Administrator darf Job und
   Artefakt lesen, abbrechen oder herunterladen
+- Resource-URIs sind tenant-scope-gesteuert, der Zugriff wird per
+  Principal/Token aufgelöst
 - grosse Ergebnisse werden nicht inline in Tool-Responses gehalten, sondern
   ueber `resourceUri` oder `artifactId` referenziert
 - Jobs und Artefakte werden nach `expiresAt` serverseitig aufgeraeumt
@@ -131,20 +133,48 @@ Ressourcen sollen:
 | --- | --- |
 | `schema_validate` | neutrales Schema validieren |
 | `schema_generate` | DDL fuer ein Zielsystem erzeugen |
-| `schema_reverse_start` | Reverse-Engineering-Job starten |
 | `schema_compare` | Unterschiede zwischen zwei Schemata oder Umgebungen ermitteln |
-| `data_profile_start` | Profiling-Job fuer Analyse und Migrationsplanung starten |
 | `capabilities_list` | Dialekte, Formate, Features, KI-Backends anzeigen |
 | `job_status_get` | Status eines langen Laufs abfragen |
+| `job_list` | Zugelassene Jobs eines Tenants auflisten |
+| `artifact_list` | Artefakt- und Berichtübersicht mit Filterung |
+| `schema_list` | Verfügbare bzw. angelegte Schema-Artefakte listen |
 
 ### 5.2 Kontrollierte Write-Tools
 
 | Tool | Zweck | Default-Schutz |
 | --- | --- | --- |
+| `schema_reverse_start` | Reverse-Engineering-Job starten | policy-gesteuert |
+| `data_profile_start` | Profiling-Job fuer Analyse und Migrationsplanung starten | policy-gesteuert |
 | `data_import_start` | Importjob anlegen | bestaetigungspflichtig / policy-gesteuert |
 | `data_transfer_start` | DB-zu-DB-Transfer starten | bestaetigungspflichtig / policy-gesteuert |
 | `artifact_upload` | Eingabe-Artefakt fuer spaetere Jobs hochladen | policy-gesteuert |
+| `artifact_upload_abort` | laufenden Artefakt-Upload gezielt abbrechen | policy-gesteuert |
 | `job_cancel` | langen Lauf abbrechen | nur fuer eigene oder erlaubte Jobs |
+
+Hinweis:
+
+- Alle `*_start`-Tools muessen Idempotenz unterstuetzen.
+- Fuer alle `*_start`-Tools ist in `v1` ein `idempotencyKey` verbindlich.
+- `payloadFingerprint` ist ein Hash des normalisierten Payloads ohne
+  `idempotencyKey`, empfohlen als `SHA-256` ueber deterministisch
+  serialisiertem JSON (64-stellig, hex-codiert).
+- Deduplizierung basiert auf dem Tripel
+  (`idempotencyKey`,`callerId`,`payloadFingerprint`).
+- Wiederholte Requests mit gleichem Tripel (`idempotencyKey`,`callerId`,`payloadFingerprint`)
+  mussen auf denselben bestehenden Job gemappt werden.
+- Bei `idempotencyKey`-Wiederverwendung mit anderem `callerId` oder anderem
+  `payloadFingerprint` ist `IDEMPOTENCY_CONFLICT` zurueckzugeben.
+- Fuer alle `*_start`-Tools ist in `v1` ein `idempotencyKey` verbindlich.
+  Bei fehlendem `idempotencyKey` gilt `IDEMPOTENCY_KEY_REQUIRED`.
+- `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
+  und wird nicht durch den Client gesetzt.
+- Bei Konflikt zwischen existierendem laufendem/fertigen Job und neuer Anfrage muss
+  ein strukturierter Konflikt-Fehler zurueckgeliefert werden.
+- Optionaler 2-Phasen-Flow fuer policy-gesteuerte write-Tools:
+  - erster Aufruf kann `POLICY_REQUIRED` mit
+    `error.details.approvalToken` liefern;
+  - zweiter Aufruf muss denselben `idempotencyKey` und dieses Token enthalten.
 
 ### 5.3 KI-nahe Spezialtools
 
@@ -166,17 +196,34 @@ Provider- und Audit-Strategie gekoppelt sein.
 | Resource URI | Inhalt |
 | --- | --- |
 | `dmigrate://capabilities` | unterstuetzte Dialekte, Formate, Features |
-| `dmigrate://jobs/{jobId}` | Job-Metadaten und Status |
-| `dmigrate://artifacts/{artifactId}` | generierte DDL, Reports, Exporte |
-| `dmigrate://schemas/{name}` | bekannte oder erzeugte Schema-Artefakte |
-| `dmigrate://profiles/{name}` | Profiling-Reports |
-| `dmigrate://diffs/{id}` | Schema-Vergleichsergebnisse |
+| `dmigrate://tenants/{tenantId}/jobs/{jobId}` | Job-Metadaten und Status |
+| `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` | generierte DDL, Reports, Exporte |
+| `dmigrate://tenants/{tenantId}/schemas/{schemaId}` | bekannte oder erzeugte Schema-Artefakte |
+| `dmigrate://tenants/{tenantId}/profiles/{profileId}` | Profiling-Reports |
+| `dmigrate://tenants/{tenantId}/diffs/{diffId}` | Schema-Vergleichsergebnisse |
+| `dmigrate://tenants/{tenantId}/connections/{connectionId}` | server-registrierte, non-secret Verbindungsreferenzen |
 
 Wichtig:
 
 - Connection-Secrets sind **keine** MCP-Ressourcen.
 - Rohdaten-Exporte sollten nur referenziert, nicht blind inline geliefert
   werden.
+- `tenantId` in der Resource-URI ist adressierend; der eigentliche Zugriff wird
+  anhand des principalbasierten Scopes im Token geprueft.
+- Tenant-/Principal-Pruefungen gelten bei jeder Ressourcenauflosung;
+  bei Fremdzugriff ist `TENANT_SCOPE_DENIED` zu liefern.
+- Verbindungsreferenzen für Tool-Inputs nutzen nur tenant-scoped Resource-URIs
+  (`dmigrate://tenants/{tenantId}/connections/{connectionId}`), nicht
+  unscoped Prefixe wie `conn:<id>`.
+
+### 6.1 Tool-Discovery für Ressourcen-IDs
+
+Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-Listen:
+
+- `job_list`: `tenantId` + optionale Filter (`status`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `artifact_list`: `tenantId` + optionale Filter (`artifactKind`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `schema_list`: `tenantId` + optionale Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- Alle drei Tools liefern mindestens `items`, `nextCursor` und `totalCount`.
 
 ---
 
@@ -189,10 +236,10 @@ Beispiel `schema_compare`:
 ```json
 {
   "left": {
-    "schemaRef": "dmigrate://schemas/source"
+    "schemaRef": "dmigrate://tenants/{tenantId}/schemas/source"
   },
   "right": {
-    "connectionRef": "target-staging"
+    "connectionRef": "dmigrate://tenants/{tenantId}/connections/target-staging"
   },
   "options": {
     "includeCompatibleChanges": true
@@ -204,7 +251,7 @@ Beispiel `schema_generate`:
 
 ```json
 {
-  "schemaRef": "dmigrate://schemas/source",
+  "schemaRef": "dmigrate://tenants/{tenantId}/schemas/source",
   "targetDialect": "postgresql",
   "options": {
     "spatialProfile": "postgis",
@@ -215,20 +262,65 @@ Beispiel `schema_generate`:
 
 Antworten sollten standardmaessig liefern:
 
-- kompaktes Summary
-- strukturierte Findings oder Artefakt-Referenzen
-- nicht die komplette Rohdatei, wenn sie gross ist
+- ein kurzes, maschinenlesbares `summary`
+- optionale `resourceUri` und/oder `artifactId`, falls grosse Daten referenziert werden
+- `executionMeta` mit stabilen Referenzen (z.B. `jobId`, `artifactId`, `createdAt`)
+- strukturierte `findings` maximal 200 Eintraege
+- bei Fehlern ein einheitlicher Fehlerblock mit: `error.code`, `error.message`, optional `error.details`
+
+Beispiel Erfolg:
+
+```json
+{
+  "summary": "Schema-Vergleich abgeschlossen, 3 kompatible und 1 inkompatible Aenderung gefunden.",
+  "findings": [
+    {
+      "type": "compatible",
+      "severity": "low",
+      "description": "Spalte auf bestehender Tabelle hinzugefuegt"
+    }
+  ],
+  "resourceUri": "dmigrate://tenants/tenant-123/diffs/diff-456",
+  "executionMeta": {
+    "requestId": "req-9f2f",
+    "artifactId": "art-456",
+    "jobId": "job-123",
+    "createdAt": "2026-04-19T08:15:00Z"
+  }
+}
+```
+
+Beispiel Fehler:
+
+```json
+{
+  "error": {
+    "code": "IDEMPOTENCY_KEY_REQUIRED",
+    "message": "idempotencyKey ist fuer dieses Tool in v1 verpflichtend.",
+    "details": {
+      "tool": "data_import_start"
+    }
+  }
+}
+```
 
 Fuer `v1` gilt verbindlich:
 
 - langlaufende oder grosse Operationen werden als Start-Tool plus
   `jobId` modelliert
+- Start-Tools muessen idempotent angreifbar sein:
+  bei identischem Tripel (`idempotencyKey`,`callerId`,`payloadFingerprint`)
+  muss derselbe laufende/fertige Job zurueckgegeben werden oder
+  ein Konfliktstatus.
 - grosse Ergebnisse werden nur ueber `resourceUri` oder `artifactId`
   bereitgestellt
 - Importdaten werden ueber `artifact_upload` vorbereitet und anschliessend per
   `data_import_start` referenziert
 - ein Tool darf keine komplette Exportdatei oder ganze Tabelleninhalte inline
   zurueckgeben
+- Verbindungen werden nur als vorregistrierte, tenantgebundene Referenzen im
+  Resource-Format (`dmigrate://tenants/{tenantId}/connections/{connectionId}`)
+  akzeptiert; freie JDBC- oder URL-Strings sind nicht zulässig.
 
 ---
 
@@ -247,8 +339,9 @@ MCP ist besonders sensibel, weil ein Agent autonom handeln kann. Deshalb:
 
 Folgende Aktionen duerfen nie stillschweigend passieren:
 
-- `data import`
-- `data transfer`
+- `schema_reverse_start` und `data_profile_start`
+- `data_import_start`
+- `data_transfer_start`
 - KI-Aufrufe gegen externe Provider
 - grossvolumige Datenexports
 
@@ -268,6 +361,81 @@ Der MCP-Adapter muss verhindern, dass:
 
 Lokale Modelle (`Ollama`, `LM Studio`) bleiben fuer sensible KI-Pfade die
 bevorzugte Option, analog zu `docs/design.md`.
+
+### 8.3 Artefakt-Upload-Vertrag
+
+Fuer `artifact_upload` ist der sichere Eintrittspfad im `v1`-Kontext verbindlich:
+
+- `artifactKind` und `mimeType` werden serverseitig validiert
+- `sizeBytes` ist Pflicht, um harte Payload-Limits durchzusetzen.
+- Bei HTTP-MCP darf optional `Transfer-Encoding: chunked` genutzt werden.
+- Bei stdio-MCP werden grosse Artefakte in fortlaufenden Segmenten als
+  wiederholbare `artifact_upload`-Aufrufe geliefert.
+  - Segmentierte Uploads sind verbindlich mit:
+    - `uploadSessionId` (verbindlich, 36 Zeichen)
+    - `segmentIndex` (beginnend bei 1, fortlaufend)
+    - `segmentOffset` (Byte-Offset)
+    - `segmentTotal` (erwartete Gesamt-Segmentanzahl)
+    - `isFinalSegment`
+    - `segmentSha256`
+    - optionaler `clientRequestId`
+  - Segment-Kandidaten sind bis Abschluss idempotent; Wiederholungen derselben
+    `segmentIndex`/`segmentOffset`-Kombination werden toleriert.
+  - Der Server verifiziert Reihenfolge, Offsets, Segmentgrösse und die Segment-Checksumme.
+  - Ist `isFinalSegment=true`, muss die Gesamt-`checksumSha256` gesetzt sein; diese
+    wird nach Abschluss serverseitig validiert.
+  - Bei Abbruch/Unterbrechung bleiben Segmente fuer die `uploadSessionId` bis zu einem
+    Statuswechsel (`EXPIRED` oder `ABORTED`) erhalten, sofern die Session-Lease
+    aktiv ist.
+  - `segmentSha256` ist fuer jedes Segment verpflichtend und serverseitig zu pruefen.
+  - Die finale Gesamt-`checksumSha256` ist bei `isFinalSegment=true` verpflichtend
+    und wird serverseitig gegen das vollständige Artefakt geprueft.
+- Session-Management:
+  - `uploadSessionTtlSeconds` muss im Response gesetzt werden:
+    Initial `900`, Minimum `300`, Maximum `3600`.
+  - Bei `300` Sekunden ohne Aktivität wird der Status `EXPIRED` gesetzt und Segmente verworfen.
+  - Der Client kann `artifact_upload_abort` aufrufen, um Status `ABORTED` zu setzen
+    und alle Zwischensegmente sofort zu verwerfen.
+  - Bei `isFinalSegment=true` wird der Uploadstatus auf `COMPLETED` gesetzt.
+  - Bei Statuswechsel auf `EXPIRED` ist der Fehlercode `UPLOAD_SESSION_EXPIRED` möglich.
+  - Bei explizitem Abbruch ist der Fehlercode `UPLOAD_SESSION_ABORTED` möglich.
+- Standard-Limits:
+  - max. Uploadgroesse: `200 MiB`
+  - erlaubte `mimeType`: `application/json`, `application/sql`,
+    `application/yaml`, `text/plain`, `text/yaml`
+  - erlaubte `artifactKind`: `ddl`, `transform-script`, `seed-data`,
+    `rules`, `generic`
+  - `sizeBytes` ist verpflichtende Referenzgroesse fuer die erwartete
+    Endgroesse.
+  - Der Server prueft die kumulierte `segment`-Groesse laufend; bei
+    Ueberschreitung von `sizeBytes` oder des Max-Limits wird die Session
+    sofort mit `PAYLOAD_TOO_LARGE` beendet (siehe 8.4).
+
+### 8.4 Standardisierte Fehlercodes
+
+Alle MCP-Fehler sollen mit strukturiertem Fehler-Envelope geliefert werden:
+
+- `error.code` (enum)
+- `error.message`
+- `error.details` (strukturierte Daten)
+- `error.requestId` (optional)
+- `error.retryable` (bool)
+
+Verbindliche Fehlercodes:
+
+- `AUTH_REQUIRED`
+- `FORBIDDEN_PRINCIPAL`
+- `POLICY_REQUIRED`
+- `IDEMPOTENCY_CONFLICT`
+- `PAYLOAD_TOO_LARGE`
+- `UPLOAD_SESSION_EXPIRED`
+- `UPLOAD_SESSION_ABORTED`
+- `UNSUPPORTED_MEDIA_TYPE`
+- `UNSUPPORTED_TOOL_OPERATION`
+- `PROMPT_HYGIENE_BLOCKED`
+- `TENANT_SCOPE_DENIED`
+- `IDEMPOTENCY_KEY_REQUIRED`
+- `INTERNAL_AGENT_ERROR`
 
 ---
 
@@ -297,6 +465,20 @@ Sinnvolle Betriebsmodi:
 - `stdio` fuer lokale IDE-/CLI-Agenten
 - streambares HTTP fuer entfernte Agent-Plattformen
 
+Empfohlene Sicherheitsgrundlagen:
+
+- jeder MCP-Aufruf muss ein verifizierbares `principalId` haben
+- HTTP:
+  - `Authorization` Header mit Bearer-Token (oder aequivalentes
+    signiertes Principalsignal)
+  - optional mTLS fuer Maschinen-zu-Maschinen-Verkehre
+- stdio:
+  - nur von vertrauenswuerdigem localem Prozess/Benutzer aufrufbar
+  - mindestens eine der beiden Bedingungen ist verbindlich:
+    - starke Prozess-/Benutzerauthentisierung durch den Host
+    - Verbindungs-Token via Umgebung (`DMIGRATE_MCP_STDIO_TOKEN`)
+  - der daraus abgeleitete `principalId` ist in Logs und Audit-Trail konsistent zu verwenden
+
 Empfehlung:
 
 - lokal zuerst mit `stdio`
@@ -314,6 +496,9 @@ Empfehlung:
 - `schema_generate`
 - `schema_compare`
 - `job_status_get`
+- `job_list`
+- `artifact_list`
+- `schema_list`
 
 ### Phase 2
 
@@ -325,6 +510,7 @@ Empfehlung:
 
 - kontrollierte Write-Tools fuer `artifact_upload`, `data_import_start` und
   `data_transfer_start`
+- `artifact_upload_abort`
 
 ### Phase 4
 
