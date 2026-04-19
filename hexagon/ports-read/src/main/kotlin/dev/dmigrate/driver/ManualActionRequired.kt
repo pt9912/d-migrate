@@ -21,21 +21,23 @@ data class ManualActionRequired(
     val sourceDialect: String? = null,
 ) {
     /** Maps to an ACTION_REQUIRED [TransformationNote]. */
-    fun toNote(): TransformationNote = TransformationNote(
+    fun toNote(phase: DdlPhase? = null): TransformationNote = TransformationNote(
         type = NoteType.ACTION_REQUIRED,
         code = code,
         objectName = objectName,
         message = reason,
         hint = hint,
+        phase = phase,
     )
 
     /** Maps to a [SkippedObject] when no DDL was generated. */
-    fun toSkipped(): SkippedObject = SkippedObject(
+    fun toSkipped(phase: DdlPhase? = null): SkippedObject = SkippedObject(
         type = objectType,
         name = objectName,
         reason = reason,
         code = code,
         hint = hint,
+        phase = phase,
     )
 
     /** Renders as a `-- TODO: ...` SQL comment for backwards compatibility. */
