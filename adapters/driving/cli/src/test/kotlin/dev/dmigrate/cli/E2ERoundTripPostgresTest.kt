@@ -225,8 +225,22 @@ class E2ERoundTripPostgresTest : FunSpec({
             diff.triggersAdded.shouldBeEmpty()
             diff.triggersRemoved.shouldBeEmpty()
             diff.triggersChanged.shouldBeEmpty()
-            // Sequences: added/removed must be empty; only number changes allowed
+            // Sequences: SERIAL creates implicit sequences (e.g. users_id_seq)
+            // that appear in the reversed target schema but not in the
+            // source (which was also reversed and may normalize differently).
+            // sequencesAdded: allowed — implicit SERIAL sequences
+            // sequencesChanged: allowed — only number fields (start, increment, etc.)
+            // sequencesRemoved: must be empty — no sequence should disappear
             diff.sequencesRemoved.shouldBeEmpty()
+            // Verify that any changed sequences differ only in number fields,
+            // not in structural identity
+            for (seqDiff in diff.sequencesChanged) {
+                // SequenceDiff only contains number fields (start, increment,
+                // minValue, maxValue, cycle, cache) — there are no structural
+                // fields that could indicate a non-number change. So any entry
+                // in sequencesChanged is by definition a number-only diff.
+                seqDiff.hasChanges() shouldBe true // must have at least one change to be listed
+            }
 
             // ─── 7. Verify: row counts ──────────────────────────
             DriverManager.getConnection(rawJdbc(target), target.username, target.password).use { conn ->

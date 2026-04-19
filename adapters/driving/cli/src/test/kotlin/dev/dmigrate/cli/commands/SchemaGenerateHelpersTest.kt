@@ -7,6 +7,7 @@ import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.format.report.TransformationReportWriter
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -392,5 +393,37 @@ class SchemaGenerateHelpersTest : FunSpec({
         val base = java.nio.file.Path.of("/tmp/schema")
         SchemaGenerateHelpers.splitPath(base, DdlPhase.PRE_DATA).toString() shouldBe "/tmp/schema.pre-data"
         SchemaGenerateHelpers.splitPath(base, DdlPhase.POST_DATA).toString() shouldBe "/tmp/schema.post-data"
+    }
+
+    // ─── Shared DdlResult anchor: JSON + Report consistency ─────
+
+    test("split JSON and split Report use same DdlResult and agree on phase/split_mode") {
+        // Same DdlResult payload fed to both channels
+        val sharedResult = splitTestResult
+        val schema = testSchema
+
+        val json = SchemaGenerateHelpers.formatJsonOutput(sharedResult, schema, "postgresql", SplitMode.PRE_POST)
+        val report = TransformationReportWriter().render(sharedResult, schema, "postgresql",
+            java.nio.file.Path.of("schema.yaml"), splitMode = "pre-post")
+
+        // Both channels carry split_mode
+        json shouldContain "\"split_mode\": \"pre-post\""
+        report shouldContain "split_mode: pre-post"
+
+        // Both channels carry phase on skipped_objects with explicit phase
+        json shouldContain "\"phase\": \"pre-data\""
+        report shouldContain "phase: pre-data"
+
+        // Both channels carry the same skipped object
+        json shouldContain "\"seq1\""
+        report shouldContain "\"seq1\""
+
+        // Both channels carry the same warning note code
+        json shouldContain "\"W100\""
+        report shouldContain "W100"
+
+        // Both channels carry the global note
+        json shouldContain "\"W113\""
+        report shouldContain "W113"
     }
 })
