@@ -49,6 +49,8 @@ ist noch flach:
 - `notes` werden implizit aus allen Statements aggregiert
 - `DdlStatement` kennt nur `sql` und `notes`
 - `TransformationNote` und `SkippedObject` kennen keinen Phasenbezug
+- globale, nicht an ein Statement gebundene DDL-Notes haben im Modell
+  noch keinen eigenen Platz
 - `render()` liefert nur einen Gesamtstring
 
 Das ist fuer den bisherigen Single-Output ausreichend, reicht aber fuer
@@ -120,6 +122,9 @@ Verbindliche Folge:
 - `DdlStatement` ist die primaere Quelle fuer den Phasenbezug
 - `TransformationNote` und `SkippedObject` koennen dieselbe Information
   transportieren
+- `DdlResult` bekommt zusaetzlich `globalNotes`, damit nicht an
+  Statements gebundene Diagnoseeintraege im Modell explizit darstellbar
+  sind
 - alle spaeteren Ausgabepfade greifen auf dieselbe Modellwahrheit zu
 
 ### 4.2 `DdlStatement.phase` bekommt einen konservativen Default
@@ -157,6 +162,8 @@ Das Modell soll fuer den Normalfall nicht doppelt gepflegt werden.
 
 Verbindliche Folge:
 
+- `DdlResult` fuehrt fuer 6.1 ein eigenes Feld
+  `globalNotes: List<TransformationNote> = emptyList()` ein
 - Notes, die an einem `DdlStatement` haengen, werden bei Aggregation und
   Phasenfilterung der Statement-Phase zugeordnet
 - ein separates `note.phase` ist nur fuer freistehende oder explizit
@@ -206,6 +213,8 @@ Verbindliche Folge:
 ### 5.1 Portmodell erweitern
 
 - `enum class DdlPhase` in den DDL-Port einfuehren
+- `DdlResult` um `globalNotes: List<TransformationNote> = emptyList()`
+  erweitern
 - `DdlStatement` um `phase: DdlPhase = DdlPhase.PRE_DATA` erweitern
 - `TransformationNote` um `phase: DdlPhase? = null` erweitern
 - `SkippedObject` um `phase: DdlPhase? = null` erweitern
@@ -213,7 +222,8 @@ Verbindliche Folge:
 ### 5.2 `DdlResult` um Phasenhilfen ergaenzen
 
 - Gesamtansicht beibehalten:
-  - `notes`
+  - `notes` als deterministische Aggregation aus Statement-Notes plus
+    `globalNotes`
   - `render()`
 - neue Hilfen einfuehren:
   - `renderPhase(phase: DdlPhase): String`
@@ -229,13 +239,16 @@ Wichtig:
     `statements`
   - Formatierung und Trenner sind exakt mit `render()` kompatibel
   - bei leerem Ergebnis wird `""` geliefert
+- `notes` in der Gesamtsicht bestehen aus:
+  - allen Statement-Notes in Statement-Reihenfolge
+  - danach allen `globalNotes` in ihrer Ursprungsreihenfolge
 - `notesForPhase(...)` muss Statement-Notes ueber deren Statement-Phase
   einsammeln
 - `notesForPhase(...)` darf zusaetzlich explizit phasengebundene globale
-  Notes enthalten
+  Notes aus `globalNotes` enthalten
 - die Reihenfolge in `notesForPhase(...)` ist deterministisch:
   - zuerst Notes aus Statements der Phase in Statement-Reihenfolge
-  - danach explizit phasengebundene globale Notes in ihrer
+  - danach explizit phasengebundene globale Notes aus `globalNotes` in ihrer
     Ursprungsreihenfolge
 - dieselbe Note darf in einer Sicht nicht doppelt auftauchen; falls
   Statement-Notes bereits ueber das Statement eingesammelt wurden, werden
@@ -261,17 +274,31 @@ Ziel:
   oder Tests beruehren
 - keine vorgezogene fachliche Umverteilung auf `POST_DATA`, solange 6.3
   diese Zuordnung noch nicht festgezogen hat
+- bestaetigen, dass auch angrenzende Consumer des DDL-Modells
+  unveraendert funktionieren:
+  - Report Writer
+  - CLI-/Runner-Helfer
+  - Migration-/Normalizer-Pfade
+  - Integrations-Exporter-Tests
 
 ### 5.5 Tests ergaenzen
 
 Mindestens abzudecken:
 
 - Default von `DdlStatement.phase` ist `PRE_DATA`
+- `DdlResult.notes` aggregiert Statement-Notes und `globalNotes`
+  deterministisch
 - `render()` bleibt im Single-Fall unveraendert
 - `renderPhase(PRE_DATA)` und `renderPhase(POST_DATA)` filtern korrekt
 - Statement-Notes werden der Statement-Phase zugeschlagen
+- explizit phasengebundene `globalNotes` erscheinen in
+  `notesForPhase(...)` genau einmal und in definierter Reihenfolge
 - freistehende Notes oder Skips mit `null` erscheinen nicht in einer
   Phasensicht
+- `skippedObjectsForPhase(...)` gibt Objekte mit `phase = null` nicht
+  zurueck
+- die betroffene Repo-Testsuite bleibt gruen, nicht nur die
+  Port-Tests
 
 ---
 
@@ -282,7 +309,8 @@ Pflichtfaelle fuer 6.1:
 - Porttests beweisen die Default- und Filtersemantik von `DdlPhase`
 - ein bestehender Single-Render-Test bleibt unveraendert oder wird
   explizit als Rueckwaertskompatibilitaet fortgefuehrt
-- `DdlResult.notes` bleibt als Gesamtaggregation nutzbar
+- `DdlResult.notes` bleibt als Gesamtaggregation nutzbar und umfasst
+  Statement-Notes plus `globalNotes`
 - `renderPhase(PRE_DATA)` liefert nur Statements mit `PRE_DATA`
 - `renderPhase(POST_DATA)` liefert nur Statements mit `POST_DATA`
 - `renderPhase(...)` behaelt die relative Reihenfolge aus
@@ -296,6 +324,10 @@ Pflichtfaelle fuer 6.1:
 - `notesForPhase(...)` dupliziert keine bereits ueber Statements
   aggregierten Notes
 - `SkippedObject.phase = null` erzeugt keine implizite Zuordnung
+- `skippedObjectsForPhase(PRE_DATA|POST_DATA)` liefert niemals Skips mit
+  `phase = null`
+- die betroffenen Modul- und Regressionstests ausserhalb von
+  `ports-read` bleiben gruen
 
 Erwuenschte Zusatzfaelle:
 
@@ -313,12 +345,27 @@ Direkt betroffen:
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/DdlGenerator.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/ManualActionRequired.kt`
 - zugehoerige Tests unter `hexagon/ports-read/src/test/...`
+- Generatoren und DDL-Helfer unter
+  `adapters/driven/driver-*/src/main/kotlin/...`
+- Report-/Format-Pfade unter
+  `adapters/driven/formats/src/main/kotlin/...`
+- CLI-/Runner-Pfade unter
+  `adapters/driving/cli/src/main/kotlin/...` und
+  `hexagon/application/src/main/kotlin/...`
 
 Wahrscheinlich indirekt mit betroffen:
 
-- Generatoren unter `adapters/driven/driver-*/src/main/kotlin/...`,
-  falls sie fuer neue Konstruktorargumente oder Helper angepasst werden
-  muessen
+- Integrations-Exporter und ihre Tests unter
+  `adapters/driven/integrations/src/test/kotlin/...`
+- Migration-/Normalizer-Pfade unter
+  `hexagon/application/src/test/kotlin/...`
+- Report-, CLI- und Generator-Tests unter
+  `adapters/driven/formats/src/test/...`,
+  `adapters/driving/cli/src/test/...` und
+  `adapters/driven/driver-*/src/test/...`
+- weitere DDL-Modell-Consumer in angrenzenden Modulen, die dank
+  Default-Parametern voraussichtlich unveraendert kompilieren, aber in
+  der Regression sichtbar bleiben sollen
 
 ---
 
