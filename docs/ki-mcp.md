@@ -79,7 +79,7 @@ MCP nutzt denselben Kernvertrag wie REST und gRPC:
 - nur derselbe Mandant / Principal oder ein Administrator darf Job und
   Artefakt lesen, abbrechen oder herunterladen
 - Resource-URIs sind tenant-scope-gesteuert, der Zugriff wird per
-  Principal/Token aufgelöst
+  Principal/Token aufgeloest
 - grosse Ergebnisse werden nicht inline in Tool-Responses gehalten, sondern
   ueber `resourceUri` oder `artifactId` referenziert
 - Jobs und Artefakte werden nach `expiresAt` serverseitig aufgeraeumt
@@ -137,8 +137,8 @@ Ressourcen sollen:
 | `capabilities_list` | Dialekte, Formate, Features, KI-Backends anzeigen |
 | `job_status_get` | Status eines langen Laufs abfragen |
 | `job_list` | Zugelassene Jobs eines Tenants auflisten |
-| `artifact_list` | Artefakt- und Berichtübersicht mit Filterung |
-| `schema_list` | Verfügbare bzw. angelegte Schema-Artefakte listen |
+| `artifact_list` | Artefakt- und Berichtuebersicht mit Filterung |
+| `schema_list` | Verfuegbare bzw. angelegte Schema-Artefakte listen |
 
 ### 5.2 Kontrollierte Write-Tools
 
@@ -156,17 +156,16 @@ Hinweis:
 
 - Alle `*_start`-Tools muessen Idempotenz unterstuetzen.
 - Fuer alle `*_start`-Tools ist in `v1` ein `idempotencyKey` verbindlich.
+  Bei fehlendem `idempotencyKey` gilt `IDEMPOTENCY_KEY_REQUIRED`.
 - `payloadFingerprint` ist ein Hash des normalisierten Payloads ohne
   `idempotencyKey`, empfohlen als `SHA-256` ueber deterministisch
   serialisiertem JSON (64-stellig, hex-codiert).
 - Deduplizierung basiert auf dem Tripel
   (`idempotencyKey`,`callerId`,`payloadFingerprint`).
-- Wiederholte Requests mit gleichem Tripel (`idempotencyKey`,`callerId`,`payloadFingerprint`)
-  mussen auf denselben bestehenden Job gemappt werden.
+  Wiederholte Requests mit gleichem Tripel muessen auf denselben
+  bestehenden Job gemappt werden.
 - Bei `idempotencyKey`-Wiederverwendung mit anderem `callerId` oder anderem
   `payloadFingerprint` ist `IDEMPOTENCY_CONFLICT` zurueckzugeben.
-- Fuer alle `*_start`-Tools ist in `v1` ein `idempotencyKey` verbindlich.
-  Bei fehlendem `idempotencyKey` gilt `IDEMPOTENCY_KEY_REQUIRED`.
 - `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
   und wird nicht durch den Client gesetzt.
 - Bei Konflikt zwischen existierendem laufendem/fertigen Job und neuer Anfrage muss
@@ -180,11 +179,11 @@ Hinweis:
 
 Spaeter sinnvoll, wenn der KI-Pfad im Produkt wirklich ausgebaut wird:
 
-| Tool | Zweck |
-| --- | --- |
-| `procedure_transform_plan` | Stored-Procedure-Transformation analysieren |
-| `procedure_transform_execute` | KI-gestuetzte Transformation mit Audit-Trail |
-| `testdata_plan` | Testdatengenerierung aus Schema und Regeln planen |
+| Tool | Zweck | Default-Schutz |
+| --- | --- | --- |
+| `procedure_transform_plan` | Stored-Procedure-Transformation analysieren | policy-gesteuert |
+| `procedure_transform_execute` | KI-gestuetzte Transformation mit Audit-Trail | bestaetigungspflichtig / policy-gesteuert |
+| `testdata_plan` | Testdatengenerierung aus Schema und Regeln planen | policy-gesteuert |
 
 Diese Tools muessen strikt an die in `docs/design.md` beschriebene
 Provider- und Audit-Strategie gekoppelt sein.
@@ -212,11 +211,14 @@ Wichtig:
   anhand des principalbasierten Scopes im Token geprueft.
 - Tenant-/Principal-Pruefungen gelten bei jeder Ressourcenauflosung;
   bei Fremdzugriff ist `TENANT_SCOPE_DENIED` zu liefern.
-- Verbindungsreferenzen für Tool-Inputs nutzen nur tenant-scoped Resource-URIs
+- Verbindungsreferenzen fuer Tool-Inputs nutzen nur tenant-scoped Resource-URIs
   (`dmigrate://tenants/{tenantId}/connections/{connectionId}`), nicht
   unscoped Prefixe wie `conn:<id>`.
+- Connections werden ausserhalb von MCP registriert und verwaltet (z.B. ueber
+  CLI oder Admin-UI). MCP bietet nur lesenden Zugriff auf non-secret
+  Verbindungsreferenzen.
 
-### 6.1 Tool-Discovery für Ressourcen-IDs
+### 6.1 Tool-Discovery fuer Ressourcen-IDs
 
 Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-Listen:
 
@@ -267,6 +269,8 @@ Antworten sollten standardmaessig liefern:
 - `executionMeta` mit stabilen Referenzen (z.B. `jobId`, `artifactId`, `createdAt`)
 - strukturierte `findings` maximal 200 Eintraege
 - bei Fehlern ein einheitlicher Fehlerblock mit: `error.code`, `error.message`, optional `error.details`
+- Die `requestId` ist in Erfolgs- und Fehlerantworten identisch und dient der
+  Korrelation zwischen `executionMeta.requestId` und `error.requestId`.
 
 Beispiel Erfolg:
 
@@ -304,6 +308,29 @@ Beispiel Fehler:
 }
 ```
 
+Beispiel paginierte Antwort (`job_list`):
+
+```json
+{
+  "items": [
+    {
+      "jobId": "job-123",
+      "tool": "schema_reverse_start",
+      "status": "COMPLETED",
+      "createdAt": "2026-04-18T14:00:00Z"
+    },
+    {
+      "jobId": "job-124",
+      "tool": "data_profile_start",
+      "status": "RUNNING",
+      "createdAt": "2026-04-19T09:30:00Z"
+    }
+  ],
+  "nextCursor": "eyJqb2JJZCI6ImpvYi0xMjQifQ==",
+  "totalCount": 47
+}
+```
+
 Fuer `v1` gilt verbindlich:
 
 - langlaufende oder grosse Operationen werden als Start-Tool plus
@@ -320,7 +347,7 @@ Fuer `v1` gilt verbindlich:
   zurueckgeben
 - Verbindungen werden nur als vorregistrierte, tenantgebundene Referenzen im
   Resource-Format (`dmigrate://tenants/{tenantId}/connections/{connectionId}`)
-  akzeptiert; freie JDBC- oder URL-Strings sind nicht zulässig.
+  akzeptiert; freie JDBC- oder URL-Strings sind nicht zulaessig.
 
 ---
 
@@ -333,9 +360,10 @@ MCP ist besonders sensibel, weil ein Agent autonom handeln kann. Deshalb:
 - keine direkte Uebergabe von JDBC-Passwoertern an das Modell
 - kein freier SQL-Toolzugang
 - harte Limits fuer Datenmengen, Tabellenanzahl, Laufzeit und Parallelitaet
+  (konkrete Defaults werden bei Implementierung je Tool festgelegt)
 - explizite Policy fuer produktive Verbindungen
 
-### 8.1 Destruktive oder teure Operationen
+### 8.1 Kontrollpflichtige Operationen
 
 Folgende Aktionen duerfen nie stillschweigend passieren:
 
@@ -381,7 +409,7 @@ Fuer `artifact_upload` ist der sichere Eintrittspfad im `v1`-Kontext verbindlich
     - optionaler `clientRequestId`
   - Segment-Kandidaten sind bis Abschluss idempotent; Wiederholungen derselben
     `segmentIndex`/`segmentOffset`-Kombination werden toleriert.
-  - Der Server verifiziert Reihenfolge, Offsets, Segmentgrösse und die Segment-Checksumme.
+  - Der Server verifiziert Reihenfolge, Offsets, Segmentgroesse und die Segment-Checksumme.
   - Ist `isFinalSegment=true`, muss die Gesamt-`checksumSha256` gesetzt sein; diese
     wird nach Abschluss serverseitig validiert.
   - Bei Abbruch/Unterbrechung bleiben Segmente fuer die `uploadSessionId` bis zu einem
@@ -389,16 +417,16 @@ Fuer `artifact_upload` ist der sichere Eintrittspfad im `v1`-Kontext verbindlich
     aktiv ist.
   - `segmentSha256` ist fuer jedes Segment verpflichtend und serverseitig zu pruefen.
   - Die finale Gesamt-`checksumSha256` ist bei `isFinalSegment=true` verpflichtend
-    und wird serverseitig gegen das vollständige Artefakt geprueft.
+    und wird serverseitig gegen das vollstaendige Artefakt geprueft.
 - Session-Management:
   - `uploadSessionTtlSeconds` muss im Response gesetzt werden:
     Initial `900`, Minimum `300`, Maximum `3600`.
-  - Bei `300` Sekunden ohne Aktivität wird der Status `EXPIRED` gesetzt und Segmente verworfen.
+  - Bei `300` Sekunden ohne Aktivitaet wird der Status `EXPIRED` gesetzt und Segmente verworfen.
   - Der Client kann `artifact_upload_abort` aufrufen, um Status `ABORTED` zu setzen
     und alle Zwischensegmente sofort zu verwerfen.
   - Bei `isFinalSegment=true` wird der Uploadstatus auf `COMPLETED` gesetzt.
-  - Bei Statuswechsel auf `EXPIRED` ist der Fehlercode `UPLOAD_SESSION_EXPIRED` möglich.
-  - Bei explizitem Abbruch ist der Fehlercode `UPLOAD_SESSION_ABORTED` möglich.
+  - Bei Statuswechsel auf `EXPIRED` ist der Fehlercode `UPLOAD_SESSION_EXPIRED` moeglich.
+  - Bei explizitem Abbruch ist der Fehlercode `UPLOAD_SESSION_ABORTED` moeglich.
 - Standard-Limits:
   - max. Uploadgroesse: `200 MiB`
   - erlaubte `mimeType`: `application/json`, `application/sql`,
@@ -427,6 +455,11 @@ Verbindliche Fehlercodes:
 - `FORBIDDEN_PRINCIPAL`
 - `POLICY_REQUIRED`
 - `IDEMPOTENCY_CONFLICT`
+- `IDEMPOTENCY_KEY_REQUIRED`
+- `RESOURCE_NOT_FOUND`
+- `VALIDATION_ERROR`
+- `RATE_LIMITED`
+- `OPERATION_TIMEOUT`
 - `PAYLOAD_TOO_LARGE`
 - `UPLOAD_SESSION_EXPIRED`
 - `UPLOAD_SESSION_ABORTED`
@@ -434,7 +467,6 @@ Verbindliche Fehlercodes:
 - `UNSUPPORTED_TOOL_OPERATION`
 - `PROMPT_HYGIENE_BLOCKED`
 - `TENANT_SCOPE_DENIED`
-- `IDEMPOTENCY_KEY_REQUIRED`
 - `INTERNAL_AGENT_ERROR`
 
 ---
@@ -478,6 +510,18 @@ Empfohlene Sicherheitsgrundlagen:
     - starke Prozess-/Benutzerauthentisierung durch den Host
     - Verbindungs-Token via Umgebung (`DMIGRATE_MCP_STDIO_TOKEN`)
   - der daraus abgeleitete `principalId` ist in Logs und Audit-Trail konsistent zu verwenden
+
+Fortschrittsmeldungen fuer langlaufende Jobs werden in `v1` ueber Polling
+(`job_status_get`) abgebildet. SSE-basierte Notifications oder
+MCP-Resource-Subscriptions sind als Optimierung fuer spaetere Versionen
+vorgesehen.
+
+### 10.1 Versionierung
+
+Die unterstuetzte Protokollversion wird in der MCP-`initialize`-Phase ueber
+Capability-Negotiation ausgehandelt. Der Server muss mindestens die
+aktuell spezifizierte Version (`v1`) anbieten. Bei inkompatiblen Versionen
+ist die Verbindung mit einer klaren Fehlermeldung abzulehnen.
 
 Empfehlung:
 
