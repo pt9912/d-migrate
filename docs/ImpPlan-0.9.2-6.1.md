@@ -155,6 +155,9 @@ Begruendung:
   bleiben
 - spaetere JSON-/Report-Codecs koennen `phase` nur dann serialisieren,
   wenn sie fachlich bekannt ist
+- bei Notes, die an einem Statement haengen, ist ein gesetztes
+  `note.phase` kein konkurrierender Filterschluessel; die wirksame Phase
+  kommt aus dem Statement
 
 ### 4.4 Statement-Notes erben die Phase des Statements
 
@@ -166,8 +169,12 @@ Verbindliche Folge:
   `globalNotes: List<TransformationNote> = emptyList()` ein
 - Notes, die an einem `DdlStatement` haengen, werden bei Aggregation und
   Phasenfilterung der Statement-Phase zugeordnet
-- ein separates `note.phase` ist nur fuer freistehende oder explizit
-  abweichende Diagnoseeintraege relevant
+- fuer gebundene Notes ist die Statement-Phase immer dominant; ein
+  davon abweichendes `note.phase` wird von Aggregation und
+  Phasenfilterung ignoriert und darf nicht zu einer zweiten Zuordnung
+  fuehren
+- ein separates `note.phase` ist nur fuer freistehende Diagnoseeintraege
+  in `globalNotes` relevant
 - `notesForPhase(phase)` besteht genau aus:
   - allen Notes von Statements dieser Phase in Statement-Reihenfolge
   - plus explizit phasengebundenen globalen Notes derselben Phase in
@@ -190,8 +197,10 @@ Verbindliche Folge:
     `DdlResult.statements`
   - die Formatierung pro Statement ist identisch zu `DdlStatement.render()`
   - zwischen Statements gelten dieselben Trenner wie bei `render()`
+  - die Rueckgabe ist exakt derselbe String wie `render()` auf der
+    gefilterten Statement-Teilmenge
   - eine leere Phasensicht rendert als leerer String ohne Zusatz-
-    Leerzeilen
+    Leerzeilen oder abschliessenden Newline
 
 ### 4.6 `null` ist global, nie implizit phasengebunden
 
@@ -242,10 +251,16 @@ Wichtig:
 - `notes` in der Gesamtsicht bestehen aus:
   - allen Statement-Notes in Statement-Reihenfolge
   - danach allen `globalNotes` in ihrer Ursprungsreihenfolge
+- `notesForPhase(...)` ist keine unabhaengige zweite Sammlung, sondern
+  eine deterministische, gefilterte Projektion der Gesamtsicht `notes`
+  plus Phasenfilter nach den 6.1-Regeln
 - `notesForPhase(...)` muss Statement-Notes ueber deren Statement-Phase
   einsammeln
 - `notesForPhase(...)` darf zusaetzlich explizit phasengebundene globale
   Notes aus `globalNotes` enthalten
+- fuer Statement-Notes ist ausschliesslich die Statement-Phase relevant;
+  ein davon abweichendes `note.phase` wird fuer die Phasenzuordnung
+  ignoriert
 - die Reihenfolge in `notesForPhase(...)` ist deterministisch:
   - zuerst Notes aus Statements der Phase in Statement-Reihenfolge
   - danach explizit phasengebundene globale Notes aus `globalNotes` in ihrer
@@ -291,12 +306,19 @@ Mindestens abzudecken:
 - `render()` bleibt im Single-Fall unveraendert
 - `renderPhase(PRE_DATA)` und `renderPhase(POST_DATA)` filtern korrekt
 - Statement-Notes werden der Statement-Phase zugeschlagen
+- ein abweichendes `note.phase` an einer Statement-Note beeinflusst die
+  Phasenzuordnung nicht
 - explizit phasengebundene `globalNotes` erscheinen in
   `notesForPhase(...)` genau einmal und in definierter Reihenfolge
 - freistehende Notes oder Skips mit `null` erscheinen nicht in einer
   Phasensicht
+- `notesForPhase(...)` ist als gefilterte Projektion von `notes`
+  nachvollziehbar und erzeugt keine zusaetzlichen Dopplungen
 - `skippedObjectsForPhase(...)` gibt Objekte mit `phase = null` nicht
   zurueck
+- `renderPhase(...)` liefert exakt denselben Stringaufbau wie `render()`
+  auf der gefilterten Statementmenge, inklusive Leerstring fuer leere
+  Phasen
 - die betroffene Repo-Testsuite bleibt gruen, nicht nur die
   Port-Tests
 
@@ -316,13 +338,17 @@ Pflichtfaelle fuer 6.1:
 - `renderPhase(...)` behaelt die relative Reihenfolge aus
   `DdlResult.statements` exakt bei
 - `renderPhase(...)` nutzt dieselben Trenner wie `render()` und liefert
-  bei leerer Sicht exakt `""`
+  bei leerer Sicht exakt `""`; es ist damit exakt `render()` auf der
+  gefilterten Statement-Teilmenge
 - Notes aus einem `POST_DATA`-Statement tauchen nicht in der
   `PRE_DATA`-Sicht auf
+- ein gesetztes, aber abweichendes `note.phase` an einer Statement-Note
+  aendert die Zuordnung dieser Note nicht
 - `notesForPhase(...)` hat eine definierte Reihenfolge zwischen
   Statement-Notes und globalen phasengebundenen Notes
 - `notesForPhase(...)` dupliziert keine bereits ueber Statements
-  aggregierten Notes
+  aggregierten Notes und bleibt als gefilterte Projektion von `notes`
+  nachvollziehbar
 - `SkippedObject.phase = null` erzeugt keine implizite Zuordnung
 - `skippedObjectsForPhase(PRE_DATA|POST_DATA)` liefert niemals Skips mit
   `phase = null`
