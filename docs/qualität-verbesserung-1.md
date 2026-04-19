@@ -136,7 +136,10 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - **Priorität / Aufwand / Risiko:** P2 / M / niedrig  
 - **Ziel:** Reine Zuordnungen (1:1 Mapping) in Tabellen/Listen auslagern, Sonderfälle im Code behalten.
 - **Akzeptanzkriterien:**  
-  - Alle `when`-Ausdrücke über Mapping-Typen sind exhaustiv (kein `else`-Fallthrough); jeder Zweig besitzt mindestens einen Unit-Test-Case.
+  - Forward-Mapper (`toSql` auf `NeutralType`): exhaustiv durch sealed class — kein `else`-Fallthrough möglich.
+  - Reverse-Mapper (`mapColumn` auf DB-String-Typen): `else`-Fallback ist fachlich nötig (Datenbanken liefern beliebige Typ-Strings). Jeder Fallback erzeugt eine diagnostische `SchemaReadNote` (WARNING oder INFO).
+  - Geometry-Mappings sind tabellarisch (PG: `GEOMETRY_PG_NAMES` Map, MySQL: `.uppercase()`).
+  - Jeder `when`-Zweig besitzt mindestens einen Unit-Test-Case.
   - Neue Typfälle benötigen nur einen Tabelleneintrag, sofern kein Sonderfall.
   - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
