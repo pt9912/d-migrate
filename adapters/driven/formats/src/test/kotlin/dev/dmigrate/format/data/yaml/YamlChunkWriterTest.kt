@@ -84,6 +84,56 @@ class YamlChunkWriterTest : FunSpec({
         out.toString(Charsets.UTF_8) shouldBe ""
     }
 
+    test("close() called twice does not crash") {
+        val out = ByteArrayOutputStream()
+        val w = YamlChunkWriter(out)
+        w.begin("t", cols)
+        w.end()
+        w.close()
+        w.close() // idempotent
+    }
+
+    test("begin() called twice throws IllegalStateException") {
+        val out = ByteArrayOutputStream()
+        YamlChunkWriter(out).use { w ->
+            w.begin("t", cols)
+            io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+                w.begin("t", cols)
+            }
+        }
+    }
+
+    test("NaN is encoded as YAML string, not as .nan") {
+        val singleCol = listOf(ColumnDescriptor("v", nullable = false))
+        val actual = runWriter { w ->
+            w.begin("t", singleCol)
+            w.write(DataChunk("t", singleCol, listOf(arrayOf<Any?>(Double.NaN)), 0))
+            w.end()
+        }
+        // toYamlValue converts NaN to the string "NaN"; SnakeYAML quotes it
+        actual shouldContain "NaN"
+    }
+
+    test("Infinity is encoded as YAML string, not as .inf") {
+        val singleCol = listOf(ColumnDescriptor("v", nullable = false))
+        val actual = runWriter { w ->
+            w.begin("t", singleCol)
+            w.write(DataChunk("t", singleCol, listOf(arrayOf<Any?>(Double.POSITIVE_INFINITY)), 0))
+            w.end()
+        }
+        actual shouldContain "Infinity"
+    }
+
+    test("-Infinity is encoded as YAML string") {
+        val singleCol = listOf(ColumnDescriptor("v", nullable = false))
+        val actual = runWriter { w ->
+            w.begin("t", singleCol)
+            w.write(DataChunk("t", singleCol, listOf(arrayOf<Any?>(Double.NEGATIVE_INFINITY)), 0))
+            w.end()
+        }
+        actual shouldContain "-Infinity"
+    }
+
     test("golden: multi-row chunk produces correct sequence ordering") {
         val actual = runWriter { w ->
             w.begin("users", cols)

@@ -316,6 +316,10 @@ rg -n "koverVerify|release-assets|assembleReleaseAssets" .github/workflows/build
 rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 ```
 
+Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
+identifizieren. Befehle und jq-Filter: siehe
+[`docs/test-coverage.md`](./test-coverage.md).
+
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
 - `README.md` „Current Status"-Block auf den neuen Release umstellen
