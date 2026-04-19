@@ -162,6 +162,11 @@ Verbindliche Folge:
   Exit-Codes liefern
 - Manifest-Update, Resume-Validierung und Progress-Labels bleiben
   funktional unveraendert
+- Callback-Semantik bleibt ebenfalls stabil:
+  - Aufrufreihenfolge
+  - Aufrufanzahl
+  - Summary-Texte
+  - Resume-bezogene Labels und Marker
 
 Praezisierung:
 
@@ -169,6 +174,11 @@ Praezisierung:
   mappen
 - Rueckgabewerte bleiben weiterhin im Runner koordiniert; die
   Schrittfunktionen duerfen die Exit-Matrix nicht implizit verteilen
+- der sichtbare Contract fuer Progress-/Summary-Verhalten bleibt:
+  - `onTable...`-, Chunk- und Progress-Callbacks werden in derselben
+    fachlichen Reihenfolge ausgeliefert
+  - Summary-Texte bleiben in Wortlaut und Triggerzeitpunkt stabil
+  - Resume-Laufe behalten dieselbe "resuming vs starting"-Semantik
 
 ### 4.3 Executor-Parameter werden in Kontexte und Callback-Gruppen zerlegt
 
@@ -201,6 +211,19 @@ Praezisierung fuer Import:
 Die exakten Namen koennen bei der Implementierung abweichen. Hart ist
 die Gruppierungsregel, nicht der Klassenname.
 
+Kompatibilitaetsanker fuer 6.6:
+
+- der Umbau erfolgt ueber einen expliziten Mapping-Pfad von alter
+  Einzelparameter-Semantik zu neuen Kontextobjekten
+- CLI-Wiring und Tests duerfen waehrend des Refactors ueber kleine
+  Builder oder Adapter-Helfer auf die neue Struktur umgestellt werden,
+  statt jede Call-Site ad hoc neu zusammenzusetzen
+- fuer `StreamingExporter` und `StreamingImporter` gilt ein
+  1:1-Mapping-Vertrag:
+  - dieselben fachlichen Werte
+  - dieselben Callback-Instanzen
+  - keine implizite Neuinterpretation in den DTOs
+
 ### 4.4 Bestehende lokale Kontextobjekte werden weitergenutzt, nicht neu ueberschrieben
 
 Verbindliche Folge:
@@ -210,6 +233,16 @@ Verbindliche Folge:
 - `ExportResumeCoordinator` und `ImportResumeCoordinator` bleiben die
   fachlichen Inhaber fuer Resume-spezifische Hilfslogik
 - 6.6 fuehrt keine konkurrierende zweite Resume-Abstraktion ein
+
+Harte Akzeptanzkante:
+
+- jeder neue Schritt mit Resume-Bezug muss entweder:
+  - direkt den bestehenden `resumeCoordinator` aufrufen
+  - oder explizit dokumentieren, welche rein lokale
+    Datenweitergabe er uebernimmt und warum dort keine neue
+    Resume-Entscheidung entsteht
+- neue DTOs duerfen Resume-Daten transportieren, aber keine zweite
+  fachliche Resume-Regel definieren
 
 ### 4.5 CLI-Wiring und Tests muessen den neuen Schnitt direkt spiegeln
 
@@ -266,12 +299,21 @@ Verbindliche Folge:
   - fachliche Exportoptionen
   - Resume-Zustand
   - Callbacks fuer Tabellen- und Chunk-Fortschritt
+- fuer die Umstellung einen expliziten Adapter- oder Builder-Pfad
+  vorsehen, damit CLI-Wiring und Tests die neuen Kontexte deterministisch
+  befuellen koennen
+- der Mapping-Pfad muss nachweisbar 1:1 sein:
+  - jeder alte Parameter hat genau eine neue Heimat
+  - kein Wert wird still verworfen oder neu interpretiert
 
 Wichtig:
 
 - der Runner bleibt Orchestrator
 - der Executor bekommt keinen versteckten Zugriff auf Runner-Interna
 - nur die Parameterform aendert sich, nicht die Verantwortungsgrenze
+- mindestens ein Test muss den produktiven Aufrufpfad
+  `DataExportCommand` -> `ExportExecutor` -> `StreamingExporter`
+  nach dem Umbau explizit absichern
 
 ### 5.4 Import-Executor analog auf Kontextobjekte umstellen
 
@@ -281,6 +323,11 @@ Wichtig:
   explizite Callback-Gruppe behandelt
 - Import-spezifische Resume-Daten bleiben in einem eigenen
   Resume-Kontext statt lose zwischen weiteren Parametern
+- auch hier einen expliziten Builder- oder Adapter-Pfad fuer CLI-Wiring
+  und Tests vorsehen
+- mindestens ein Test muss den produktiven Aufrufpfad
+  `DataImportCommand` -> `ImportExecutor` -> `StreamingImporter`
+  nach dem Umbau explizit absichern
 
 ### 5.5 CLI-Wiring in `DataExportCommand` und `DataImportCommand` nachziehen
 
@@ -289,6 +336,9 @@ Wichtig:
 - `StreamingExporter` und `StreamingImporter` bleiben fachlich
   unveraendert; die CLI mappt nur die neuen Kontextobjekte auf die
   bestehenden Streaming-Aufrufe
+- die CLI-Wiring-Stellen sind die normative 1:1-Mapping-Referenz fuer
+  den Refactor; dort muss sichtbar bleiben, wie alte Semantik auf die
+  neuen Kontexte abgebildet wird
 - die Wiring-Stelle soll nach 6.6 kuerzer und lesbarer sein als heute,
   nicht nur anders verschachtelt
 
@@ -304,9 +354,24 @@ Wichtig:
   - Resume-Fingerprint
   - Manifest-Lifecycle
   - Progress-/Summary-Verhalten
+- Contract-Tests ergaenzen fuer:
+  - Aufrufreihenfolge und Aufrufanzahl von `onTable...`- und
+    Chunk-Callbacks
+  - Progress-Labels fuer Start- vs Resume-Lauf
+  - Summary-Text und Triggerzeitpunkt
+  - Resume-Marker-Weitergabe vor und nach dem Executor-Aufruf
 - wenn fuer zentrale Schrittfunktionen kleine eigene Tests sinnvoll
   sind, ist das zulaessig; der Bestandspfad bleibt aber ueber die
   Runner-Tests abgesichert
+
+Einfacher Qualitaetsanker fuer den Schnitt:
+
+- `executeWithPool()` in beiden Runnern soll nach 6.6 nur noch die
+  Phasenfolge koordiniert und selbst keine neue tiefe
+  Kontrollstruktur ueber mehrere fachliche Abschnitte mehr tragen
+- jede neue Schrittfunktion hat genau eine Hauptverantwortung
+- pro Hauptphase ist mindestens ein Testfall direkt oder indirekt
+  nachvollziehbar zuordenbar
 
 ### 5.7 Dokumentations- und Quality-Spuren aktualisieren
 
@@ -330,6 +395,11 @@ Wichtig:
   - 7
 - Resume, Checkpoint und Summary verhalten sich unveraendert
 - Pool-Close und Fehlerpfade bleiben unveraendert abgesichert
+- Progress-/Callback-Contract bleibt stabil:
+  - gleiche Aufrufreihenfolge
+  - gleiche Aufrufanzahl
+  - gleiche Summary-Ausgabe
+  - gleiche Resume-Labels
 
 ### 6.2 Pflichtfaelle fuer Import-Runner-Stabilitaet
 
@@ -343,6 +413,11 @@ Wichtig:
   - 7
 - Directory-Scan, Schema-Preflight, Resume und Summary bleiben
   funktional unveraendert
+- Progress-/Callback-Contract bleibt auch hier stabil:
+  - gleiche Aufrufreihenfolge
+  - gleiche Aufrufanzahl
+  - gleiche Summary-Ausgabe
+  - gleiche Resume-bezogene Marker und Labels
 
 ### 6.3 Pflichtfaelle fuer den Executor-Kontextschnitt
 
@@ -350,6 +425,10 @@ Wichtig:
 - `ImportExecutor` hat nach 6.6 keine breite 14-Parameter-Signatur mehr
 - CLI-Wiring und Runner-Tests kompilieren mit den neuen
   Kontextobjekten
+- ein expliziter Mapping-/Adapterpfad von alter Semantik zu neuen
+  Kontexten ist im Code sichtbar und testseitig abgesichert
+- produktive Aufrufpfade zu `StreamingExporter` und `StreamingImporter`
+  bleiben mit 1:1-Semantik verifiziert
 - die neuen DTOs bilden die heutige Semantik vollstaendig ab:
   - keine impliziten globalen Abhaengigkeiten
   - keine "misc"/"rest"-Container ohne fachliche Bedeutung
@@ -362,6 +441,11 @@ Wichtig:
   den bestehenden Resume-Kontexten verankert
 - es entstehen keine zweiten konkurrierenden Helper-Ketten fuer dieselbe
   Phase
+- jeder neue Schritt mit Resume-Bezug verweist entweder auf den
+  bestehenden Coordinator oder bleibt explizit als reine
+  Datenweitergabe ausgewiesen
+- pro Hauptphase ist mindestens ein Testfall zuordenbar; der Refactor
+  ist nicht nur optisch, sondern verifikationsseitig nachvollziehbar
 
 Erwuenschte Zusatzfaelle:
 
