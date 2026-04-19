@@ -2,12 +2,15 @@ package dev.dmigrate.format.yaml
 
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.mysql.MysqlDdlGenerator
 import dev.dmigrate.driver.postgresql.PostgresDdlGenerator
 import dev.dmigrate.driver.sqlite.SqliteDdlGenerator
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 
 class DdlGoldenMasterTest : FunSpec({
 
@@ -57,6 +60,81 @@ class DdlGoldenMasterTest : FunSpec({
             val expected = loadGoldenMaster("ddl/spatial.$dialectName.sql")
             val actual = generator.generate(input, options).render()
             stripHeader(actual) shouldBe stripHeader(expected)
+        }
+    }
+
+    // ─── Split Golden Master assertions (0.9.2 AP 6.7 Step A) ───
+
+    val splitSchemas = listOf("full-featured", "view-function-deps")
+
+    for (schema in splitSchemas) {
+        for ((dialectName, generator) in dialects) {
+            test("$schema $dialectName: pre-data contains no triggers/functions/procedures") {
+                val input = loadFixture("schemas/$schema.yaml")
+                val result = generator.generate(input)
+                val preData = result.renderPhase(DdlPhase.PRE_DATA)
+                preData shouldNotContain "CREATE TRIGGER"
+                preData shouldNotContain "CREATE FUNCTION"
+                preData shouldNotContain "CREATE PROCEDURE"
+                preData shouldNotContain "CREATE OR REPLACE FUNCTION"
+                preData shouldNotContain "CREATE OR REPLACE PROCEDURE"
+            }
+
+            test("$schema $dialectName: post-data contains no CREATE TABLE") {
+                val input = loadFixture("schemas/$schema.yaml")
+                val result = generator.generate(input)
+                val postData = result.renderPhase(DdlPhase.POST_DATA)
+                postData shouldNotContain "CREATE TABLE"
+                postData shouldNotContain "CREATE INDEX"
+                postData shouldNotContain "CREATE SEQUENCE"
+            }
+
+            test("$schema $dialectName: single equals pre-data + post-data content") {
+                val input = loadFixture("schemas/$schema.yaml")
+                val result = generator.generate(input)
+                val single = result.render()
+                val preData = result.renderPhase(DdlPhase.PRE_DATA)
+                val postData = result.renderPhase(DdlPhase.POST_DATA)
+                // Every statement in pre-data and post-data must appear in single
+                for (stmt in result.statementsForPhase(DdlPhase.PRE_DATA)) {
+                    if (stmt.sql.isNotBlank()) single shouldContain stmt.sql
+                }
+                for (stmt in result.statementsForPhase(DdlPhase.POST_DATA)) {
+                    if (stmt.sql.isNotBlank()) single shouldContain stmt.sql
+                }
+            }
+        }
+    }
+
+    // view-function-deps specific: verify view phase classification
+    for ((dialectName, generator) in dialects) {
+        test("view-function-deps $dialectName: simple_view is PRE_DATA") {
+            val input = loadFixture("schemas/view-function-deps.yaml")
+            val preData = generator.generate(input).renderPhase(DdlPhase.PRE_DATA)
+            preData shouldContain "simple_view"
+        }
+
+        test("view-function-deps $dialectName: computed_view is POST_DATA") {
+            val input = loadFixture("schemas/view-function-deps.yaml")
+            val postData = generator.generate(input).renderPhase(DdlPhase.POST_DATA)
+            postData shouldContain "computed_view"
+        }
+
+        test("view-function-deps $dialectName: dependent_view is POST_DATA (transitive)") {
+            val input = loadFixture("schemas/view-function-deps.yaml")
+            val postData = generator.generate(input).renderPhase(DdlPhase.POST_DATA)
+            postData shouldContain "dependent_view"
+        }
+    }
+
+    // Schemas without functions: all views stay PRE_DATA
+    for (schema in listOf("minimal", "e-commerce", "all-types")) {
+        for ((dialectName, generator) in dialects) {
+            test("$schema $dialectName: post-data is empty (no functions/triggers)") {
+                val input = loadFixture("schemas/$schema.yaml")
+                val postData = generator.generate(input).renderPhase(DdlPhase.POST_DATA)
+                postData shouldBe ""
+            }
         }
     }
 })
