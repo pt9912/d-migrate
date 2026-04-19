@@ -181,9 +181,14 @@ Verbindliche Folge:
 
 - E006-E121 werden nicht lose "irgendwo mitgetestet"
 - fuer 0.9.2 relevante Warncodes werden in einem separaten Warncode-
-  Ledger gefuehrt; mindestens:
-  - `W113`
-  - `W120`
+  Ledger gefuehrt; 0.9.2-relevant bedeutet:
+  - der Code wird durch 0.9.2 neu eingefuehrt
+  - oder seine Sichtbarkeit in CLI, JSON oder Report wird durch 0.9.2
+    neu vertraglich relevant
+  - oder seine Split-Semantik wird in 0.9.2 neu abgesichert
+  - fuer 0.9.2 ist der Pflichtkatalog zentral und abschliessend:
+    - `W113`
+    - `W120`
 - fuer jeden Ledger-Eintrag gibt es einen expliziten Nachweis:
   - vorhandener Test
   - neu anzulegender Test
@@ -198,24 +203,45 @@ Praezisierung:
   `docs/ddl-generation-rules.md`
 - Runner-Exit-Codes und Validierungsfehler muessen auf die tatsaechlich
   getesteten Stellen im Repo verweisen
-- die Ledgers werden fuer 0.9.2 als maschinenlesbare Dateien unter
-  `docs/` gefuehrt, bevorzugt YAML oder CSV
-- ein begleitender Test prueft mindestens:
-  - jeder im Ledger gefuehrte Code existiert in der referenzierten
-    Doku- oder Codequelle
-  - jeder referenzierte Testpfad existiert
-- Restpfad-Eintraege sind nur zulaessig mit Pflichtfeldern:
+- die Ledgers werden fuer 0.9.2 als maschinenlesbare YAML-Dateien unter
+  festen Pfaden in `docs/` gefuehrt:
+  - `docs/error-code-ledger-0.9.2.yaml`
+  - `docs/warn-code-ledger-0.9.2.yaml`
+- beide Ledger-Dateien verwenden fuer 0.9.2 dieselbe feste Struktur:
+  - Top-Level:
+    - `version`
+    - `entries`
+  - pro `entries[]`-Eintrag:
+    - `code`
+    - `level`
+    - `source`
+    - `test_path`
+    - `path_type`
+    - `entry_type`
+- fuer `entry_type = standard` sind genau diese Felder Pflicht:
+  - `code`
+  - `level`
+  - `source`
+  - `test_path`
+  - `path_type`
+  - `entry_type`
+- fuer `entry_type = rest_path` sind zusaetzlich Pflicht:
   - `why_not_automated`
   - `evidence_owner`
   - `priority`
   - `planned_remediation`
+- ein begleitender Test prueft mindestens:
+  - jeder im Ledger gefuehrte Code existiert in der referenzierten
+    Doku- oder Codequelle
+  - jeder referenzierte Testpfad existiert
+- Restpfad-Eintraege sind nur mit `entry_type = rest_path` zulaessig
 
 Damit gilt fuer 6.7 explizit:
 
 - Error-Ledger:
   - E006-E121
 - Warncode-Ledger:
-  - nur fuer 0.9.2 relevante `W-*`-Codes
+  - in 0.9.2 genau fuer `W113` und `W120`
 - beide Ledgers werden getrennt gefuehrt und separat reviewed
 
 ### 4.4 Der E2E-Round-Trip bleibt schmal und echt
@@ -234,11 +260,17 @@ Praezisierung:
   - Export in ein reales Austauschformat
   - Import in eine frische Ziel-DB
   - Schema-Read oder Vergleich gegen Erwartung
+  - Datenvergleich gegen Erwartung
 - der Vergleich ist strukturell, nicht textuell:
   - normalisierter Schema-Vergleich
   - stabile Reihenfolgeregel
   - explizit erlaubte Nicht-Diffs nur dort, wo sie fachlich begruendet
     sind
+- fuer die Datenvalidierung gilt mindestens:
+  - Zeilenanzahl pro betroffener Tabelle
+  - stabile Schluesselwerte oder aequivalente Referenzprojektion
+  - mindestens ein fachlich aussagekraeftiger Inhaltswert pro
+    exportierter Tabelle
 - nicht erforderlich ist ein vollstaendiger Dialekt-Cross-Product-Test
 
 ### 4.5 Testbreite wird entlang der Ebenen verteilt, nicht in einen Test gepresst
@@ -284,6 +316,17 @@ Damit gilt fuer 6.7:
     - 1 Trigger-Fall
     - 1 Fall mit Routine-abhaengiger View
     - 1 Diagnosefall
+- fuer Dialekte mit bewusst kleinerem Feature-Umfang sind explizite
+  Surrogat- oder Ausnahmefaelle zulaessig:
+  - wenn ein Dialekt keine echte Routine-abhaengige View sinnvoll
+    abbildet, wird ein fachlich aequivalenter Split-Zuordnungsfall als
+    Surrogat dokumentiert
+  - wenn ein Trigger- oder Diagnosefall im Dialekt nicht natuerlich
+    vorkommt, muss die Ausnahme im Reviewkontext und in der Fixture-
+    Auswahl begruendet sein
+- "pro Dialekt mindestens" ist damit kein Zwang zu kuenstlicher
+  Fixture-Explosion, sondern ein Untergrenze mit dokumentierter
+  Ausnahmefuehrung fuer featurearme Dialekte
 - Golden Masters muessen die 6.3-Zuordnungsregeln sichtbar machen:
   - Trigger nicht in `pre-data`
   - Functions/Procedures nicht in `pre-data`
@@ -327,10 +370,12 @@ Damit gilt fuer 6.7:
 ### 5.5 Fehler- und Warncode-Ledger aufbauen
 
 - ein explizites Error-Ledger fuer E006-E121 erstellen oder nachziehen
-- ein separates Warncode-Ledger fuer 0.9.2-relevante `W-*`-Codes
-  erstellen oder nachziehen
+- ein separates Warncode-Ledger fuer die in 0.9.2 zentral festgelegten
+  Warncodes `W113` und `W120` erstellen oder nachziehen
 - die Ledgers werden als maschinenlesbare Dateien unter `docs/`
-  materialisiert
+  materialisiert:
+  - `docs/error-code-ledger-0.9.2.yaml`
+  - `docs/warn-code-ledger-0.9.2.yaml`
 - jeder Ledger-Eintrag haelt mindestens fest:
   - Quelle / Ebene
   - existierender Test oder neuer Zieltest
@@ -339,7 +384,7 @@ Damit gilt fuer 6.7:
     - Runner
     - Generator
     - JSON/Report
-- bei nicht automatisierten Restpfaden zusaetzlich:
+- bei `entry_type = rest_path` zusaetzlich:
   - `why_not_automated`
   - `evidence_owner`
   - `priority`
@@ -371,6 +416,7 @@ Praezisierung:
   - Export
   - Import
   - Schema-Read / Vergleich
+  - Datenvalidierung
 - Ziel ist ein echter End-to-End-Nachweis, kein weiterer Teilpfadtest
 
 Wichtig:
@@ -383,6 +429,10 @@ Wichtig:
   - keine Textvergleiche von SQL-Artefakten
   - Reihenfolge irrelevanter Sammlungen wird normalisiert
   - explizit erlaubte Unterschiede muessen vorab dokumentiert sein
+  - Datenvergleich mindestens ueber:
+    - Zeilenanzahl pro betroffener Tabelle
+    - stabile Schluesselwerte oder aequivalente Referenzprojektion
+    - mindestens einen fachlich relevanten Inhaltswert pro Tabelle
 
 ### 5.7 Testdokumentation und Review-Artefakte nachziehen
 
@@ -405,7 +455,9 @@ Wichtig:
 - `schema generate` ohne `--split` bleibt fuer bestehende `single`-
   Fixtures unveraendert, ausser bei bewusst dokumentierten 6.5-Diffs
 - `schema generate --split pre-post --output out/schema.sql` erzeugt
-  referenzierbare `pre-data`- und `post-data`-Artefakte
+  genau:
+  - `out/schema.pre-data.sql`
+  - `out/schema.post-data.sql`
 - Split-Fixtures belegen die 6.3-Phasenregeln sichtbar
 
 ### 6.2 Pflichtfaelle fuer JSON und Report
@@ -430,8 +482,11 @@ Wichtig:
 ### 6.4 Pflichtfaelle fuer Error- und Warncode-Ledger
 
 - fuer E006-E121 existiert ein expliziter Error-Ledger-Nachweis
-- fuer die 0.9.2-relevanten Warncodes existiert ein expliziter
-  Warncode-Ledger-Nachweis
+- fuer die in 0.9.2 zentral festgelegten Warncodes `W113` und `W120`
+  existiert ein expliziter Warncode-Ledger-Nachweis
+- die Nachweise liegen fuer 0.9.2 genau unter:
+  - `docs/error-code-ledger-0.9.2.yaml`
+  - `docs/warn-code-ledger-0.9.2.yaml`
 - jeder Ledger-Eintrag ist einem Test oder einem bewusst dokumentierten
   Restpfad mit Pflichtfeldern zugeordnet
 - Generator-/Report-Codes und Validator-Codes werden nicht vermischt,
@@ -444,6 +499,9 @@ Wichtig:
   - Export
   - Import in Ziel-DB
   - erneuten strukturellen Schema-Read / Vergleich gegen Erwartung
+  - Datenvergleich ueber Zeilenanzahl, stabile Schluesselwerte oder
+    aequivalente Referenzprojektion sowie mindestens einen
+    Inhaltswert pro Tabelle
 
 Erwuenschte Zusatzfaelle:
 
