@@ -28,11 +28,6 @@ import java.nio.charset.Charset
 import java.nio.file.Path
 import java.time.Instant
 
-/**
- * Thin seam over the streaming export, allowing the Runner to be tested
- * without a real [StreamingExporter][dev.dmigrate.streaming.StreamingExporter].
- * The production implementation is wired in the CLI module.
- */
 /** Grouped infrastructure for export execution. */
 data class ExportExecutionContext(
     val pool: ConnectionPool,

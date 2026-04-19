@@ -90,7 +90,7 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 - **Status:** Offen  
 - **Datei:**  
   [SchemaCompareRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt)
-- **Priorität / Aufwand / Risiko:** P2 / M / niedrig  
+- **Priorität / Aufwand / Risiko:** P2 / S / niedrig  
 - **Ziel:** Projektions-DTOs (Dokument-, Summary- und Change-DTOs) in eine eigene Datei verlagern.
 - **Akzeptanzkriterien:**  
   - Runner-Datei enthält klar erkennbare Orchestrierungslogik.
@@ -100,11 +100,14 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 ### 4) DDL-Generator strukturieren
 
 - **Status:** Offen  
-- **Datei:**  
-  [AbstractDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt)
+- **Dateien:**  
+  [AbstractDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt) (488 LOC)  
+  [PostgresDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt) (351 LOC)  
+  [MysqlDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt) (446 LOC)  
+  [SqliteDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt) (460 LOC)
 - **Priorität / Aufwand / Risiko:** P1 / L / hoch  
 - **Ziel:** DDL-Erzeugung in Phasen aufteilen: Basisschritt, Constraints/Indexes, Dialekt-Hooks.
-- **Risikobegründung:** Die Aufspaltung ändert die Vererbungshierarchie des Template-Method-Patterns und betrifft gleichzeitig drei Dialekt-Implementierungen (PostgresDdlGenerator, MysqlDdlGenerator, SqliteDdlGenerator).
+- **Risikobegründung:** Die Aufspaltung ändert die Vererbungshierarchie des Template-Method-Patterns und betrifft gleichzeitig drei Dialekt-Implementierungen (1257 LOC gesamt).
 - **Akzeptanzkriterien:**  
   - Gemeinsame Erzeugungspfade sind in klar benannte Unterkomponenten zerlegt.
   - Unit-Tests für zentrale Pfade in neuer Unterstruktur ergänzt.
