@@ -185,12 +185,12 @@ class DataTransferRunner(
     }
 
     private fun validateFlags(r: DataTransferRequest): String? {
-        if (r.sinceColumn != null && r.since == null) return "--since-column requires --since"
-        if (r.since != null && r.sinceColumn == null) return "--since requires --since-column"
-        if (r.sinceColumn != null && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
+        if (!r.sinceColumn.isNullOrBlank() && r.since.isNullOrBlank()) return "--since-column requires --since"
+        if (!r.since.isNullOrBlank() && r.sinceColumn.isNullOrBlank()) return "--since requires --since-column"
+        if (!r.sinceColumn.isNullOrBlank() && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
             return "--since-column '${r.sinceColumn}' is not a valid identifier"
         }
-        if (r.filter != null && r.since != null && DataExportHelpers.containsLiteralQuestionMark(r.filter)) {
+        if (r.filter != null && !r.since.isNullOrBlank() && DataExportHelpers.containsLiteralQuestionMark(r.filter)) {
             return "--filter '?' forbidden with --since (M-R5)"
         }
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }
