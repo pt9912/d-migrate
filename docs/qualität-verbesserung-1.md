@@ -38,7 +38,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt`
 
-Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
+~114 LOC (~28 %) der Datei sind Projektions-DTOs (Document, Summary, Change-Views), die keine Geschäftslogik enthalten.
 
 - `adapters/driven/driver-*` (MySQL, Postgres, SQLite) besitzen Type-Mapping- und Sonderfall-Logik, die in mehreren Klassen jeweils branches enthält.
 
@@ -65,6 +65,7 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
   - `--since` verhält sich identisch wie im Export-Pfad (für gleiches Eingabeverhalten, inkl. konservativer Typinferenz und String-Fallback für nicht typisierbare Literale).  
   - Alle drei Divergenzen sind aufgelöst (oder bewusst als Abweichung dokumentiert, inkl. Migrationshinweis).  
   - Fehlermeldungen bei ungültigen Eingaben (insb. Flag-Kombinationen und Identifiern) sind deterministisch und testenbar.
+  - Neue/geänderte Klassen erreichen ≥ 90 % Line-Coverage.
 - **DoD:** Bestehende Verhaltenstests ergänzt/angepasst; neue Regressionstestfälle für mindestens 3 bestehende Filter-Varianten.
 
 ### 2) Runner-Entkopplung fokussieren
@@ -75,15 +76,17 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
   [DataExportRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt)
 - **Priorität / Aufwand / Risiko:** P1 / L / mittel  
 - **Ziel:** Große lokale Blöcke in `Validation`, `Checkpoint`, `Fehlerabbildung`, `Context-Build` und lokale Hilfsklassen auslagern.
-- **Geplante Extraktionsziele:**  
-  - `ImportPreflightValidator` — Preflight-Checks und Optionsvalidierung aus `DataImportRunner`  
-  - `ImportCheckpointManager` — Checkpoint-Lese-/Schreiblogik und Resume-Koordination  
-  - `ExportPreflightValidator` — analog für `DataExportRunner`  
-  - Runner-interne DTOs (`*ExecutionContext`, `*ExecutionOptions`) in eigene Dateien  
+- **Geplante Extraktionsziele (mit LOC-Schätzung):**  
+  - `ImportPreflightValidator` (~70 LOC) — Preflight-Checks und Optionsvalidierung aus `DataImportRunner`  
+  - `ImportCheckpointManager` (~200 LOC) — Checkpoint-Lese-/Schreiblogik und Resume-Koordination  
+  - `ExportPreflightValidator` (~100 LOC) — analog für `DataExportRunner`  
+  - Runner-interne DTOs (~165 LOC) (`*ExecutionContext`, `*ExecutionOptions`, interne Step-Result-DTOs) in eigene Dateien  
+  - **Gesamt:** ~435 LOC aus `DataImportRunner` (→ ~536 LOC), ~160 LOC aus `DataExportRunner` (→ ~498 LOC)  
 - **Akzeptanzkriterien:**  
   - Jede betroffene Klasse sinkt unter 500 LOC (Ziel; nicht als hartes Sicherheitslimit, sondern als Refactoring-Heuristik).
   - `execute*`-Methoden kapseln nur Orchestrierung.
   - Neue Helferklassen haben fokussierte, testbare Schnittstellen.
+  - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
 ### 3) `SchemaCompareRunner`-Projection trennen
 
@@ -91,11 +94,12 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 - **Datei:**  
   [SchemaCompareRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt)
 - **Priorität / Aufwand / Risiko:** P2 / S / niedrig  
-- **Ziel:** Projektions-DTOs (Dokument-, Summary- und Change-DTOs) in eine eigene Datei verlagern.
+- **Ziel:** Projektions-DTOs (~114 LOC; Dokument-, Summary- und Change-DTOs) in eine eigene Datei verlagern. Runner sinkt dadurch von 403 auf ~289 LOC.
 - **Akzeptanzkriterien:**  
   - Runner-Datei enthält klar erkennbare Orchestrierungslogik.
   - Neue DTO-Datei ist ausschließlich statisch/strukturell (keine Geschäftslogik).
   - Keine Änderung am CLI-Output ohne zusätzliche Testanpassung.
+  - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
 ### 4) DDL-Generator strukturieren
 
@@ -111,7 +115,9 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 - **Akzeptanzkriterien:**  
   - Gemeinsame Erzeugungspfade sind in klar benannte Unterkomponenten zerlegt.
   - Unit-Tests für zentrale Pfade in neuer Unterstruktur ergänzt.
+  - Alle bestehenden E2E-/Integrationstests und DDL-Snapshot-Tests bleiben ohne Anpassung grün.
   - Keine Verhaltensänderung im bestehenden Test-Snapshot.
+  - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
 ### 5) Type-Mapping tabellarisch stabilisieren
 
@@ -125,6 +131,7 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 - **Akzeptanzkriterien:**  
   - Kein Mapping-Case fällt durch `else`-Strukturen/`when` ungetestet.
   - Neue Typfälle benötigen nur einen Tabelleneintrag, sofern kein Sonderfall.
+  - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
 ### 6) MySQL-Column-Derivate vereinheitlichen
 
@@ -136,16 +143,17 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 - **Akzeptanzkriterien:**  
   - Jede Sonderfallgruppe ist in klar benannte Hilfsfunktion.
   - Kolonnenattribute bauen über gemeinsame Basiskette auf.
+  - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
 ## Umsetzung in Wellen
 
 ### Welle 1 (schnell, stabil, geringer Risikoanteil)
 
-- Maßnahmen 3, 6  
+- Maßnahme 3  
 
 ### Welle 2 (Struktur, moderate Komplexität)
 
-- Maßnahmen 5, 2, 1  
+- Maßnahmen 6, 5, 2, 1  
 
 ### Welle 3 (hohes Risiko, breite Auswirkung)
 
@@ -157,7 +165,7 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 - Großflächige Produktionsrefaktorierung allein zur Testabdeckung.
 - Nicht priorisierte Performance- oder Architektur-Visionen ohne konkreten Ticket-Bezug.
 - Nur weil ein Test angepasst werden muss: keine Architekturänderung als Nebenwirkung.
-- Session-Duplikation (`PostgresTableImportSession` / `MysqlTableImportSession`): bekannter DRY-Verstoß (~200 LOC), aber Extraktion einer `AbstractTableImportSession` betrifft den I/O-kritischen Write-Pfad und erfordert eigenes Arbeitspaket mit Integrationstests.
+- Session-Duplikation (`PostgresTableImportSession` / `MysqlTableImportSession`): bekannter DRY-Verstoß (~200 LOC). Die Extraktion einer `AbstractTableImportSession` erfordert ein eigenes Arbeitspaket, weil: (a) die Klassen direkt die JDBC-Batch-Schreibpfade steuern, in denen dialektspezifische Unterschiede im Transaktions- und Error-Handling bestehen; (b) eine Regression im Write-Pfad Datenverlust verursachen kann; (c) aussagekräftige Integrationstests gegen echte Datenbanken (Postgres + MySQL) nötig sind, die im aktuellen Testharness noch aufgebaut werden müssen.
 
 ## Hinweis zu Sicherheitsrelevanz
 
