@@ -263,15 +263,45 @@ Praezisierung pro Fall:
 Verbindliche Diagnose-Matrix fuer 6.5:
 
 - Composite Type nicht unterstuetzt:
-  - `ACTION_REQUIRED` + `SkippedObject`
+  - Phase: `PRE_DATA`
+  - Diagnoseobjekte:
+    - genau eine `TransformationNote` mit `type = ACTION_REQUIRED`
+    - genau ein `SkippedObject`
+  - Pflichtfelder:
+    - `code`
+    - `objectName`
+    - `reason`/`message`
+    - `phase`
 - Sequence nicht unterstuetzt:
-  - `ACTION_REQUIRED` + `SkippedObject`
+  - Phase: `PRE_DATA`
+  - Diagnoseobjekte:
+    - genau eine `TransformationNote` mit `type = ACTION_REQUIRED`
+    - genau ein `SkippedObject`
+  - Pflichtfelder:
+    - `code`
+    - `objectName`
+    - `reason`/`message`
+    - `phase`
 - EXCLUDE-Constraint nicht unterstuetzt:
-  - `ACTION_REQUIRED`
-  - kein `SkippedObject`
+  - Phase: `PRE_DATA`
+  - Diagnoseobjekte:
+    - genau eine `TransformationNote` mit `type = ACTION_REQUIRED`
+    - kein `SkippedObject`
+  - Pflichtfelder:
+    - `code`
+    - `objectName`
+    - `reason`/`message`
+    - `phase`
 - nicht unterstuetzter Index-Typ:
-  - `WARNING`
-  - kein `SkippedObject`
+  - Phase: `PRE_DATA`
+  - Diagnoseobjekte:
+    - genau eine `TransformationNote` mit `type = WARNING`
+    - kein `SkippedObject`
+  - Pflichtfelder:
+    - `code`
+    - `objectName`
+    - `reason`/`message`
+    - `phase`
 
 Diese Matrix gilt fuer SQL-, JSON- und Report-Sicht identisch. 6.4 darf
 dieselben fachlichen Faelle nicht kanalabhaengig anders serialisieren.
@@ -394,6 +424,11 @@ Praezisierung:
 - 6.5 gilt erst als abgeschlossen, wenn diese Suche fuer den
   `MysqlDdlGenerator`-Renderpfad keine aktiven TODO-Call-Sites mehr
   ergibt
+- zusaetzlich ist mindestens ein negativer Output-Test Pflicht:
+  - ein MySQL-Fall mit den vier bekannten Luecken darf im gesamten
+    generierten SQL kein `-- TODO` mehr enthalten
+  - derselbe Test deckt implizit Rueckfaelle auf
+    `toTodoComment()`-basierte Renderpfade ab
 
 ### 5.6 SQL-, JSON- und Report-Sicht auf strukturierte Diagnosen abgleichen
 
@@ -419,6 +454,10 @@ Praezisierung fuer Split:
   aus den vier MySQL-Faellen sichtbare TODO-Kommentarzeilen enthalten
 - Split-JSON und Split-Report muessen dieselben strukturierten
   Diagnoseeintraege wie der Single-Fall tragen
+- der Split-Pfad ist kein nachgelagerter Sonderfall:
+  - dieselben Codes
+  - dieselben `phase`-Werte
+  - dieselbe `action_required`-/`warning`-/`skipped_objects`-Zaehllogik
 
 ### 5.7 Doku und Quality-Basis nachziehen
 
@@ -456,13 +495,15 @@ Praezisierung fuer Split:
 - keine verbleibenden sichtbaren MySQL-`-- TODO`-Kommentare im
   `MysqlDdlGenerator`-Output
 - Composite-Type-Fall erzeugt genau `ACTION_REQUIRED` +
-  `SkippedObject`, aber keine SQL-Kommentarzeile
+  `SkippedObject` mit `phase = PRE_DATA`, aber keine SQL-
+  Kommentarzeile
 - Sequence-Fall erzeugt genau `ACTION_REQUIRED` + `SkippedObject`,
-  aber keine SQL-Kommentarzeile
+  jeweils mit `phase = PRE_DATA`, aber keine SQL-Kommentarzeile
 - EXCLUDE-Constraint-Fall behaelt Tabellen-DDL und liefert genau
-  `ACTION_REQUIRED` ohne `SkippedObject`
+  eine `ACTION_REQUIRED`-Note mit `phase = PRE_DATA` ohne
+  `SkippedObject`
 - nicht unterstuetzter Index-Typ erzeugt keine Pseudo-SQL-Zeile und
-  genau `WARNING` ohne `SkippedObject`
+  genau eine `WARNING`-Note mit `phase = PRE_DATA` ohne `SkippedObject`
 - Suchtest oder Guard-Test fuer den Generatorpfad:
   - keine aktiven `DdlStatement("-- TODO ...")`-Emitter im
     `MysqlDdlGenerator`
@@ -470,6 +511,9 @@ Praezisierung fuer Split:
     `MysqlDdlGenerator`-Renderpfad
   - Treffer in Routine-Helfern sind fuer 6.5 kein Fail, sondern
     dokumentierter Folgebedarf
+- negativer Output-Test:
+  - gesamter MySQL-Generatoroutput fuer einen kombinierten TODO-Fall
+    enthaelt nirgendwo `-- TODO`
 
 ### 6.3 Pflichtfaelle fuer Diagnosekonsistenz
 
@@ -483,6 +527,8 @@ Praezisierung fuer Split:
     sichtbare TODO-Zeilen
   - dieselbe strukturierte Diagnose erscheint weiterhin in Text, JSON
     und Report
+  - `phase = pre-data` bleibt in Split-JSON und Split-Report identisch
+    serialisiert
 
 ### 6.4 Rueckwaertskompatibilitaet und Regression
 
@@ -524,6 +570,17 @@ Wahrscheinlich mit betroffen:
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpers.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
 - begleitende JSON-/Report-Contract-Tests
+
+Praezisierung:
+
+- fuer `TransformationReportWriter`, `SchemaGenerateHelpers` und
+  `SchemaGenerateRunner` erzwingt 6.5 nicht automatisch eigene
+  Codeaenderungen
+- diese Module sind in 6.5 primaer fuer Konsistenzpruefung gegen den in
+  6.4 definierten Outputvertrag relevant
+- Codeaenderungen dort sind nur noetig, wenn die Verifikation zeigt,
+  dass die 6.4-Kanaele die 6.5-Diagnose-Matrix nicht konsistent
+  transportieren
 
 Dokumentation:
 
