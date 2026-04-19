@@ -93,6 +93,8 @@ internal object MysqlTypeMapping {
             "geometry", "point", "linestring", "polygon",
             "multipoint", "multilinestring", "multipolygon", "geometrycollection" ->
                 MappingResult(NeutralType.Geometry(geometryType = GeometryType.of(dt)))
+            // Fallback for unknown MySQL types — intentional, not exhaustible
+            // because MySQL allows user-defined types and engine-specific types
             else -> MappingResult(
                 NeutralType.Text(),
                 SchemaReadNote(
