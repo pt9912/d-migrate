@@ -223,9 +223,14 @@ Praezisierung:
   - pro `entries[]`-Eintrag:
     - `code`
     - `level`
+    - `entry_type`
+- fuer die Nachweisgranularitaet gilt:
+  - ein Error-Code erscheint genau einmal als Ledger-Eintrag
+  - mehrere aktive Nachweispfade werden innerhalb dieses einen Eintrags
+    ueber `evidence_paths[]` modelliert
+  - jedes `evidence_paths[]`-Element haelt mindestens:
     - `source`
     - `path_type`
-    - `entry_type`
 - `entry_type = standard` und `entry_type = rest_path` sind fuer 0.9.2
   strikt disjunkte Modi:
   - ein Eintrag ist genau einem Modus zugeordnet
@@ -233,10 +238,9 @@ Praezisierung:
 - fuer `entry_type = standard` sind genau diese Felder Pflicht:
   - `code`
   - `level`
-  - `source`
   - `test_path`
-  - `path_type`
   - `entry_type`
+  - `evidence_paths`
 - fuer `level = error` im Error-Ledger ist zusaetzlich Pflicht:
   - `status`
   - erlaubte Werte:
@@ -254,9 +258,11 @@ Praezisierung:
     `test_path`
   - fuer `entry_type = rest_path` sind `why_not_automated`,
     `evidence_owner`, `priority` und `planned_remediation` befuellt
+  - `evidence_paths[]` ist befuellt und jedes Element traegt gueltige
+    Werte fuer `source` und `path_type`
   - die Ledger-Dateien bestehen eine Schema-Validierung fuer alle
-    Pflichtfelder und erlaubten Werte von `level`, `path_type` und
-    `entry_type`
+    Pflichtfelder und erlaubten Werte von `level`, `path_type`,
+    `entry_type` und `status`
 - Restpfad-Eintraege sind nur mit `entry_type = rest_path` zulaessig
 
 Damit gilt fuer 6.7 explizit:
@@ -353,11 +359,16 @@ Damit gilt fuer 6.7:
   - `*.pre-data.sql`
   - `*.post-data.sql`
 - die Auswahl der Fixtures bleibt zielgerichtet, aber deterministisch:
-  - pro Dialekt mindestens:
+  - fuer jeden 0.9.2-Pflichtdialekt mindestens:
     - 3 Basisfaelle
     - 1 Trigger-Fall
     - 1 Fall mit Routine-abhaengiger View
     - 1 Diagnosefall
+- als 0.9.2-Pflichtdialekte gelten nur Dialekte, die im bestehenden
+  0.9.2-Test- und CI-Umfang bereits als Split-relevante Zielsysteme
+  gefuehrt werden
+- wenn ein Dialekt nicht zu diesem Pflichtumfang gehoert, ist er fuer
+  6.7 ein Kann-Dialekt und kein Abnahmekriterium
 - dieses Set ist zugleich das maximale Pflichtset pro Dialekt fuer 6.7:
   - weitere Split-Fixtures sind Kann-Faelle
   - neue Muss-Fixtures nur bei nachgewiesenem Vertragsloch
@@ -387,6 +398,8 @@ Damit gilt fuer 6.7:
     - Diagnosefall oder dokumentierter Entfall
   - Kann:
     - zusaetzliche Dialekt-Sonderfaelle ueber dieses Set hinaus
+- die Liste der Pflichtdialekte wird fuer 6.7 nicht ad hoc im Review
+  erweitert, sondern nur ueber bewusstes Plan-Update
 - Golden Masters muessen die 6.3-Zuordnungsregeln sichtbar machen:
   - Trigger nicht in `pre-data`
   - Functions/Procedures nicht in `pre-data`
@@ -442,13 +455,10 @@ Damit gilt fuer 6.7:
 - das erstmalige Anlegen dieser drei Referenzartefakte ist Teil von 6.7
   selbst und keine vorgelagerte Basisarbeit
 - jeder Ledger-Eintrag haelt mindestens fest:
-  - Quelle / Ebene
   - existierender Test oder neuer Zieltest bei `entry_type = standard`
-  - Pfadtyp:
-    - Validator
-    - Runner
-    - Generator
-    - JSON/Report
+  - mindestens einen Nachweispfad in `evidence_paths[]` mit:
+    - `source`
+    - `path_type`
 - bei `entry_type = rest_path` zusaetzlich:
   - `why_not_automated`
   - `evidence_owner`
@@ -460,8 +470,11 @@ Damit gilt fuer 6.7:
     `test_path`
   - fuer `entry_type = rest_path` sind `why_not_automated`,
     `evidence_owner`, `priority` und `planned_remediation` befuellt
+  - `evidence_paths[]` ist befuellt und traegt pro Element gueltige
+    Werte fuer `source` und `path_type`
   - eine Schema-Validierung prueft alle Pflichtfelder sowie die
-    erlaubten Werte von `level`, `path_type` und `entry_type`
+    erlaubten Werte von `level`, `path_type`, `entry_type` und
+    `status`
   - fuer das Error-Ledger ist pro Code aus E006-E121 genau ein Eintrag
     vorhanden, entweder mit `status = active` oder mit
     `status = not_applicable`
@@ -634,6 +647,10 @@ Direkt betroffen:
 
 - `docs/quality.md`
 - `docs/ddl-generation-rules.md`
+- `docs/error-code-ledger-0.9.2.yaml`
+- `docs/warn-code-ledger-0.9.2.yaml`
+- `docs/code-ledger-0.9.2.schema.json`
+- `docs/ddl-single-exceptions-0.9.2.yaml`
 - `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliGenerateTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
