@@ -96,21 +96,44 @@ Kurze Operationen duerfen synchron sein:
 - kleine DDL-Generierung
 - Health- und Capability-Abfragen
 
-Potentiell lange Operationen muessen asynchron als Job laufen:
+Fuer `v1` gilt folgende feste Zuordnung:
+
+- `GET /api/v1/health` -> synchron
+- `GET /api/v1/capabilities` -> synchron
+- `POST /api/v1/schema/validate` -> synchron
+- `POST /api/v1/schema/generate` -> synchron (kleine DDL-Generierung)
+- `POST /api/v1/schema/compare` -> synchron
+
+Die folgenden Endpunkte sind asynchron als Job abzubilden:
 
 - `schema reverse`
 - `data export`
 - `data import`
 - `data transfer`
 - `data profile`
-- groessere Tool-Exports
+- Tool-Exports (`flyway`, `liquibase`, `django`, `knex`)
+
+Einzelne Endpunkte:
+
+- `POST /api/v1/schema/reverse` -> asynchron
+- `POST /api/v1/data/export` -> asynchron
+- `POST /api/v1/data/import` -> asynchron
+- `POST /api/v1/data/transfer` -> asynchron
+- `POST /api/v1/data/profile` -> asynchron
+- `POST /api/v1/export/flyway` -> asynchron
+- `POST /api/v1/export/liquibase` -> asynchron
+- `POST /api/v1/export/django` -> asynchron
+- `POST /api/v1/export/knex` -> asynchron
 
 ### 3.4 Idempotenz
 
 - lesende Endpunkte: `GET`
 - rein berechnende Operationen: `POST`
 - lange Laeufe erzeugen Job-Ressourcen
-- wiederholte Job-Anlage kann ueber `Idempotency-Key` abgesichert werden
+- asynchrone Job-Start-Endpunkte (z. B. `schema reverse`, `data export`, `data import`, `data transfer`, `data profile`, Tool-Exports) **müssen** über `Idempotency-Key` abgesichert werden
+- identische Requests mit demselben Idempotency-Key sollen denselben `jobId` zurueckgeben
+- abweichende Requests mit demselben Idempotency-Key sollen als Konflikt (`409`) zurueckgewiesen werden
+- fehlender `Idempotency-Key` bei asynchronen Start-Endpunkten gilt als Client-Fehler
 
 ### 3.5 Gemeinsamer Kernvertrag fuer Jobs und Artefakte
 
@@ -141,7 +164,7 @@ Empfohlene ID-Praefixe:
 
 | Pfad | Methode | Zweck |
 | --- | --- | --- |
-| `/api/v1/health` | `GET` | Liveness / Readiness |
+| `/api/v1/health` | `GET` | kombinierter Liveness-/Readiness-Status |
 | `/api/v1/capabilities` | `GET` | unterstuetzte Dialekte, Formate, Features |
 | `/api/v1/jobs/{jobId}` | `GET` | Status, Progress, Ergebnis-Metadaten |
 | `/api/v1/jobs/{jobId}/cancel` | `POST` | laufenden Job abbrechen |
@@ -151,30 +174,30 @@ Empfohlene ID-Praefixe:
 
 ### 4.2 Schema-Endpunkte
 
-| Pfad | Methode | Zweck |
-| --- | --- | --- |
-| `/api/v1/schema/validate` | `POST` | neutrales Schema validieren |
-| `/api/v1/schema/generate` | `POST` | DDL fuer Ziel-Dialekt erzeugen |
-| `/api/v1/schema/reverse` | `POST` | DB nach neutralem Modell reverse-engineeren |
-| `/api/v1/schema/compare` | `POST` | zwei Schemata oder Umgebungen vergleichen |
+| Pfad | Methode | Zweck | Modus |
+| --- | --- | --- | --- |
+| `/api/v1/schema/validate` | `POST` | neutrales Schema validieren | synchron |
+| `/api/v1/schema/generate` | `POST` | DDL fuer Ziel-Dialekt erzeugen | synchron |
+| `/api/v1/schema/reverse` | `POST` | DB nach neutralem Modell reverse-engineeren | asynchron |
+| `/api/v1/schema/compare` | `POST` | zwei Schemata oder Umgebungen vergleichen | synchron |
 
 ### 4.3 Daten-Endpunkte
 
-| Pfad | Methode | Zweck |
-| --- | --- | --- |
-| `/api/v1/data/export` | `POST` | Datenexport als Job starten |
-| `/api/v1/data/import` | `POST` | Datenimport als Job starten |
-| `/api/v1/data/transfer` | `POST` | DB-zu-DB-Transfer als Job starten |
-| `/api/v1/data/profile` | `POST` | Profiling als Job starten |
+| Pfad | Methode | Zweck | Modus |
+| --- | --- | --- | --- |
+| `/api/v1/data/export` | `POST` | Datenexport als Job starten | asynchron |
+| `/api/v1/data/import` | `POST` | Datenimport als Job starten | asynchron |
+| `/api/v1/data/transfer` | `POST` | DB-zu-DB-Transfer als Job starten | asynchron |
+| `/api/v1/data/profile` | `POST` | Profiling als Job starten | asynchron |
 
 ### 4.4 Integrations-Endpunkte
 
-| Pfad | Methode | Zweck |
-| --- | --- | --- |
-| `/api/v1/export/flyway` | `POST` | Flyway-Bundle erzeugen |
-| `/api/v1/export/liquibase` | `POST` | Liquibase-Bundle erzeugen |
-| `/api/v1/export/django` | `POST` | Django-Migrationsartefakte erzeugen |
-| `/api/v1/export/knex` | `POST` | Knex-Migrationsartefakte erzeugen |
+| Pfad | Methode | Zweck | Modus |
+| --- | --- | --- | --- |
+| `/api/v1/export/flyway` | `POST` | Flyway-Bundle erzeugen | asynchron |
+| `/api/v1/export/liquibase` | `POST` | Liquibase-Bundle erzeugen | asynchron |
+| `/api/v1/export/django` | `POST` | Django-Migrationsartefakte erzeugen | asynchron |
+| `/api/v1/export/knex` | `POST` | Knex-Migrationsartefakte erzeugen | asynchron |
 
 ---
 
@@ -251,6 +274,43 @@ Fuer grosse Ein- und Ausgabedaten gilt ein einheitliches Modell:
 - Eingabe-Artefakte werden zuerst ueber `POST /api/v1/artifacts` angelegt
 - `data export` liefert standardmaessig ein oder mehrere Ergebnis-Artefakte
 - kleine Ergebnisse duerfen inline zurueckkommen, grosse nur per Artefakt
+
+#### 5.3.1 `POST /api/v1/artifacts` - Upload- und Registrierungsmodus
+
+Der Endpoint ist mit zwei exklusiven Modi definiert:
+
+- `mode: "upload"` (Standard, Multipart-Upload):
+  - `Content-Type: multipart/form-data`
+  - Pflichtfeld: `file` (binaeres Artefakt)
+  - optionales Feld: `metadata` (JSON), z. B. `{"contentType":"application/json","sha256":"...","sizeBytes":123456}`
+- `mode: "register"`:
+  - `Content-Type: application/json`
+  - Pflichtfelder: `mode`, `contentType`, `connectionRef`, `path`
+  - optional: `sha256`, `sizeBytes`
+  - `connectionRef` darf nur auf serverseitig freigegebene Artefakt-Speicher verweisen
+  - `connectionRef` wird auf Tenant und auf Rechte des aktiven Principals geprüft
+  - `path` muss relativ, normalisiert und unter einem erlaubten Prefix des Speichers liegen (keine absoluten Pfade, kein Traversal)
+  - serverseitige Verifikation von Dateiexistenz, Lesbarkeit und optionaler Prüfsumme vor der Registration
+  - für `register` kann serverseitig konfiguriert werden, ob `sha256`/`sizeBytes` verpflichtend sind
+
+Beispiel-Request fuer `mode: "register"`:
+
+```json
+{
+  "mode": "register",
+  "contentType": "application/sql",
+  "connectionRef": "artifact-store",
+  "path": "tenantA/uploads/schema.sql",
+  "sha256": "5f3c...",
+  "sizeBytes": 12345
+}
+```
+
+Fehlerhafte Requests:
+
+- unbekannter Modus: `400`
+- ungueltiger oder unautorisierter Registrierungs-Pfad: `403`
+- zu grosse Payload: `413`
 
 Beispiel `data import`:
 
@@ -362,11 +422,39 @@ Operationen ist die HTTP-Abbildung fest:
 | `5` | Migration / execution error | `500` |
 | `6` | AI provider error | `503` |
 | `7` | Local config / file / render error | `500` |
-| `130` | cancelled | `409` |
+| `130` | cancelled | `410` |
+
+`409` ist exklusiv fuer Idempotency-Konflikte mit demselben `Idempotency-Key` und abweichendem Request reserviert.
+
+In asynchronen Workflows signalisiert ein laufender oder abgeschlossener Job den Statuswechsel (inkl. `cancelled`) über `GET /jobs/{jobId}`.
+
+Zusatzliche HTTP-Fehler (nicht abgeleitet aus CLI-Codes):
+
+| HTTP | Bedeutung | Wann |
+| --- | --- | --- |
+| `428` | Precondition Required | fehlender Idempotency-Key bei asynchroner Job-Anlage |
+| `401` | Unauthorized | fehlende oder ungueltige Authentifizierung |
+| `403` | Forbidden | fehlende Berechtigung auf Betrieb, Verbindung oder Objekt |
+| `404` | Not Found | unbekannter `jobId` oder `artifactId` |
+| `409` | Conflict | Konflikt durch Idempotency-Key bei abweichendem Request |
+| `413` | Payload Too Large | Artefakt oder Request-Body zu gross |
+| `429` | Too Many Requests | Rate-/Concurrency-Limits erreicht |
 
 Fuer asynchrone Operationen gilt:
 
 - `POST` zum Start eines Jobs liefert bei erfolgreicher Annahme `202 Accepted`
+- `Idempotency-Key` ist für alle Job-Start-Endpunkte **erforderlich**; fehlt er, ist der Start mit `428` abzulehnen.
+- Die Antwort MUSS einen `Location`-Header auf die Job-Ressource enthalten (`/api/v1/jobs/{jobId}`)
+- Die Antwort muss mindestens folgendes JSON liefern:
+  ```json
+  {
+    "jobId": "job_01JS8J9B0K6R4W2A3Y7N8P1Q2R",
+    "statusUrl": "/api/v1/jobs/job_01JS8J9B0K6R4W2A3Y7N8P1Q2R",
+    "status": "queued",
+    "createdAt": "2026-04-19T10:15:00Z",
+    "expiresAt": "2026-04-26T10:15:00Z"
+  }
+  ```
 - Fehler beim Starten des Jobs nutzen die obige Tabelle
 - spaetere Laufzeitfehler werden nicht als HTTP-Fehler des Start-Requests
   signalisiert, sondern ueber den Jobstatus `failed`
@@ -413,6 +501,35 @@ Besonders kritisch:
 - kein offener Raw-SQL-Filter-Pfad
 - kein frei beschreibbarer Dateisystempfad vom Client
 - keine direkten JDBC-Credentials in Logs oder Job-Events
+
+## 8.1 Health-Response (Details)
+
+Der kombinierte Health-Endpunkt liefert getrennte Felder fuer Liveness und Readiness:
+
+```json
+{
+  "status": "DEGRADED",
+  "liveness": "UP",
+  "readiness": "UP|DEGRADED|DOWN",
+  "checks": {
+    "storage": "UP",
+    "db": "DOWN",
+    "queue": "UP"
+  }
+}
+```
+
+HTTP-Status:
+
+- `200`: `liveness=UP` und `readiness=UP`
+- `503`: `liveness=UP` und `readiness!=UP`
+- `503`: `liveness!=UP`
+
+Der kombinierte Gesamtstatus wird wie folgt abgeleitet:
+
+- `UP` bei `liveness=UP` und `readiness=UP`
+- `DEGRADED` bei `liveness=UP` und `readiness=DEGRADED`
+- `DOWN` bei `liveness=DOWN`
 
 ---
 
