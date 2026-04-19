@@ -57,6 +57,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - **Priorität / Aufwand / Risiko:** P1 / M / mittel  
 - **Ziel:** `DataTransferRunner` nutzt dieselbe Filter-Aufbereitung wie Export (dialektgerechtes Identifier-Quoting, `--since`-Literal-Normalisierung/Typinferenz, Vergleichssemantik im `--since`-Pfad).
 - **Achtung:** Das ist eine **behaviorale Ausrichtung**, kein reines Refactoring.
+- **Erwartete Code-Änderung:** `buildFilter()` (aktuell 5 LOC manuelles Quoting + untypisierter Parameterdurchgriff) delegiert an gemeinsame Helper-Funktion in `DataExportHelpers`; `validateFlags()` wird um Identifier-Preflight analog Export ergänzt (~10 LOC). Der Runner selbst bleibt bei ~200 LOC, die Konsolidierung erweitert `DataExportHelpers` um ~15–20 LOC gemeinsame Filter-API.
 - **Konkrete Divergenzen:**  
   1. **Identifier-Quoting + Identifier-Preflight:** Transfer quotet manuell (`"\"${r.sinceColumn}\" > ?"`), Export nutzt `SqlIdentifiers.quoteQualifiedIdentifier()` plus CLI-Validierung für qualifizierte Identifier. Dadurch weichen bereits reguläre qualifizierte Namen wie `audit.updated_at` vom Export-Pfad ab; zusätzlich fehlen deterministische Fehlermeldungen für ungültige/leere Identifier.  
   2. **Vergleichsoperator:** Transfer verwendet `>`, Export verwendet `>=`. Das ist ein semantischer Unterschied im Filterergebnis.  
@@ -97,7 +98,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - **Ziel:** Projektions-DTOs (~114 LOC; Dokument-, Summary- und Change-DTOs) in eine eigene Datei verlagern. Runner sinkt dadurch von 403 auf ~289 LOC.
 - **Akzeptanzkriterien:**  
   - Runner-Datei enthält klar erkennbare Orchestrierungslogik.
-  - Neue DTO-Datei ist ausschließlich statisch/strukturell (keine Geschäftslogik).
+  - Neue DTO-Datei ist rein strukturell (keine Geschäftslogik; derived accessors wie `totalChanges`-Summe sind zulässig).
   - Keine Änderung am CLI-Output ohne zusätzliche Testanpassung.
   - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
@@ -112,6 +113,12 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - **Priorität / Aufwand / Risiko:** P1 / L / hoch  
 - **Ziel:** DDL-Erzeugung in Phasen aufteilen: Basisschritt, Constraints/Indexes, Dialekt-Hooks.
 - **Risikobegründung:** Die Aufspaltung ändert die Vererbungshierarchie des Template-Method-Patterns und betrifft gleichzeitig die gemeinsame Basisklasse plus drei Dialekt-Implementierungen (`AbstractDdlGenerator` + Postgres/MySQL/SQLite, zusammen 1745 LOC).
+- **Geplante Extraktionsziele (mit LOC-Schätzung):**  
+  - `ColumnSqlBuilder` pro Dialekt (~52–86 LOC je Override) — extrahiert gemischte Typvarianten aus `generateColumnSql()` (SERIAL/AUTO_INCREMENT, ENUM×2, DOMAIN, Geometry/SRID)  
+  - `ConstraintClauseBuilder` pro Dialekt (~25–35 LOC je Override) — extrahiert die 4-Branch-`when`-Logik (CHECK, UNIQUE, EXCLUDE, FK) aus `generateConstraintClause()`  
+  - `ViewPhaseClassifier` (~75 LOC) — extrahiert `classifyViewsByPhase()` + `inferViewFunctionDependencies()` aus `AbstractDdlGenerator`  
+  - `StatementInverter` (~107 LOC gesamt: ~61 Abstract + ~25 MySQL-Override + ~21 SQLite-Override) — extrahiert `invertStatement()` in eigenständige Komponente  
+  - **Gesamt:** ~400–450 LOC extrahiert; `AbstractDdlGenerator` sinkt auf ~350 LOC, Dialekt-Generatoren um jeweils ~80–120 LOC  
 - **Akzeptanzkriterien:**  
   - Gemeinsame Erzeugungspfade sind in klar benannte Unterkomponenten zerlegt.
   - Unit-Tests für zentrale Pfade in neuer Unterstruktur ergänzt.
@@ -129,7 +136,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - **Priorität / Aufwand / Risiko:** P2 / M / niedrig  
 - **Ziel:** Reine Zuordnungen (1:1 Mapping) in Tabellen/Listen auslagern, Sonderfälle im Code behalten.
 - **Akzeptanzkriterien:**  
-  - Kein Mapping-Case fällt durch `else`-Strukturen/`when` ungetestet.
+  - Alle `when`-Ausdrücke über Mapping-Typen sind exhaustiv (kein `else`-Fallthrough); jeder Zweig besitzt mindestens einen Unit-Test-Case.
   - Neue Typfälle benötigen nur einen Tabelleneintrag, sofern kein Sonderfall.
   - Neue Klassen erreichen ≥ 90 % Line-Coverage.
 
@@ -154,6 +161,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 ### Welle 2 (Struktur, moderate Komplexität)
 
 - Maßnahmen 6, 5, 2, 1  
+- **Reihenfolge-Begründung:** Maßnahme 1 steht trotz P1 am Ende, weil sie als behaviorale Änderung von der in Maßnahme 2 extrahierten Validierungsinfrastruktur profitiert und ein stabileres Test-Fundament voraussetzt. Die reinen Refactorings (6, 5, 2) schaffen zuerst die strukturelle Basis.
 
 ### Welle 3 (hohes Risiko, breite Auswirkung)
 
