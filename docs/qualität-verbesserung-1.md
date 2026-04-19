@@ -71,7 +71,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 2) Runner-Entkopplung fokussieren
 
-- **Status:** Erledigt  
+- **Status:** Erledigt (ExportPreflightValidator, ExportCheckpointManager, ImportPreflightValidator, ImportCheckpointManager extrahiert; Export 547→273, Import 859→473 LOC)  
 - **Dateien:**  
   [DataImportRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt)  
   [DataExportRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt)
