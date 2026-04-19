@@ -58,12 +58,12 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - **Ziel:** `DataTransferRunner` nutzt dieselbe Filter-Aufbereitung wie Export (dialektgerechtes Identifier-Quoting, `--since`-Literal-Normalisierung/Typinferenz, Vergleichssemantik im `--since`-Pfad).
 - **Achtung:** Das ist eine **behaviorale Ausrichtung**, kein reines Refactoring.
 - **Konkrete Divergenzen:**  
-  1. **Identifier-Quoting:** Transfer quotet manuell (`”\”${r.sinceColumn}\” > ?”`), Export nutzt `SqlIdentifiers.quoteQualifiedIdentifier()`. Bei `sinceColumn`-Werten mit eingebettetem `”` bricht das Quoting.  
+  1. **Identifier-Quoting + Identifier-Preflight:** Transfer quotet manuell (`"\"${r.sinceColumn}\" > ?"`), Export nutzt `SqlIdentifiers.quoteQualifiedIdentifier()` plus CLI-Validierung für qualifizierte Identifier. Dadurch weichen bereits reguläre qualifizierte Namen wie `audit.updated_at` vom Export-Pfad ab; zusätzlich fehlen deterministische Fehlermeldungen für ungültige/leere Identifier.  
   2. **Vergleichsoperator:** Transfer verwendet `>`, Export verwendet `>=`. Das ist ein semantischer Unterschied im Filterergebnis.  
   3. **Fehlende Literal-Normalisierung:** Export ruft `parseSinceLiteral()` auf (konservative Typinferenz mit Fallback auf Rohstring), Transfer übergibt den `--since`-Wert immer als untypisierten String direkt als Parameter.
 - **Akzeptanzkriterien:**  
   - `--since` verhält sich identisch wie im Export-Pfad (für gleiches Eingabeverhalten, inkl. konservativer Typinferenz und String-Fallback für nicht typisierbare Literale).  
-  - Alle drei Divergenzen sind aufgelöst (oder bewusst als Abweichung dokumentiert, inkl. Migrationshinweis).  
+  - Alle benannten Divergenzen sind aufgelöst (oder bewusst als Abweichung dokumentiert, inkl. Migrationshinweis).  
   - Fehlermeldungen bei ungültigen Eingaben (insb. Flag-Kombinationen und Identifiern) sind deterministisch und testenbar.
   - Neue/geänderte Klassen erreichen ≥ 90 % Line-Coverage.
 - **DoD:** Bestehende Verhaltenstests ergänzt/angepasst; neue Regressionstestfälle für mindestens 3 bestehende Filter-Varianten.
@@ -83,7 +83,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
   - Runner-interne DTOs (~165 LOC) (`*ExecutionContext`, `*ExecutionOptions`, interne Step-Result-DTOs) in eigene Dateien  
   - **Gesamt:** ~435 LOC aus `DataImportRunner` (→ ~536 LOC), ~160 LOC aus `DataExportRunner` (→ ~498 LOC)  
 - **Akzeptanzkriterien:**  
-  - Jede betroffene Klasse sinkt unter 500 LOC (Ziel; nicht als hartes Sicherheitslimit, sondern als Refactoring-Heuristik).
+  - `DataExportRunner` sinkt unter 500 LOC; `DataImportRunner` sinkt deutlich und erreicht im ersten Schnitt ca. ~536 LOC. Weitere Absenkung unter 500 LOC bleibt ein optionaler Folge-Schritt, nicht Gate dieses Pakets.
   - `execute*`-Methoden kapseln nur Orchestrierung.
   - Neue Helferklassen haben fokussierte, testbare Schnittstellen.
   - Neue Klassen erreichen ≥ 90 % Line-Coverage.
@@ -165,7 +165,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 - Großflächige Produktionsrefaktorierung allein zur Testabdeckung.
 - Nicht priorisierte Performance- oder Architektur-Visionen ohne konkreten Ticket-Bezug.
 - Nur weil ein Test angepasst werden muss: keine Architekturänderung als Nebenwirkung.
-- Session-Duplikation (`PostgresTableImportSession` / `MysqlTableImportSession`): bekannter DRY-Verstoß (~200 LOC). Die Extraktion einer `AbstractTableImportSession` erfordert ein eigenes Arbeitspaket, weil: (a) die Klassen direkt die JDBC-Batch-Schreibpfade steuern, in denen dialektspezifische Unterschiede im Transaktions- und Error-Handling bestehen; (b) eine Regression im Write-Pfad Datenverlust verursachen kann; (c) aussagekräftige Integrationstests gegen echte Datenbanken (Postgres + MySQL) nötig sind, die im aktuellen Testharness noch aufgebaut werden müssen.
+- Session-Duplikation (`PostgresTableImportSession` / `MysqlTableImportSession`): bekannter DRY-Verstoß (~200 LOC). Die Extraktion einer `AbstractTableImportSession` erfordert ein eigenes Arbeitspaket, weil: (a) die Klassen direkt die JDBC-Batch-Schreibpfade steuern, in denen dialektspezifische Unterschiede im Transaktions- und Error-Handling bestehen; (b) eine Regression im Write-Pfad Datenverlust verursachen kann; (c) trotz bereits vorhandener Testcontainers-Integrationsmodule und Writer-Integrationstests gegen echte Postgres-/MySQL-Datenbanken zusätzliche Refactoring-spezifische Absicherung für gemeinsame Session-Abstraktion nötig wäre.
 
 ## Hinweis zu Sicherheitsrelevanz
 
