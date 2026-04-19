@@ -190,14 +190,50 @@ Verbindliche Folge:
 - ohne `--split` wird diese zusaetzliche Analyse nicht als
   sichtbarer Fehlerpfad erzwungen
 
+Praezisierung der Entscheidungsreihenfolge:
+
+- **Level A - belastbar**:
+  - explizite `dependencies.functions` aus dem Schema-Modell
+  - Reader-Katalogdaten mit direkter View→Function-/Routine-Kante
+  -> Ergebnis: `POST_DATA`
+- **Level B - konservativ ausreichend**:
+  - keine direkte Katalogkante, aber Heuristik findet einen plausiblen
+    Funktionsaufruf gegen bekannte Schema-Funktionen
+  -> Ergebnis: `POST_DATA`
+- **Level C - nicht belastbar aufloesbar**:
+  - weder Modell noch Reader noch Heuristik liefern eine ausreichend
+    eindeutige Entscheidung
+  -> Ergebnis bei aktivem Split: Exit 2
+
+Damit gilt fuer 0.9.2 explizit:
+
+- `POST_DATA` ist der konservative Default bei plausibler
+  Routine-Abhaengigkeit
+- Exit 2 ist nur fuer echte Rest-Unsicherheit vorgesehen, nicht fuer
+  jeden fehlenden Katalognachweis
+
 ### 4.4 `DependencyInfo.functions` ist die modellierte Routine-Kante
 
 Verbindliche Folge:
 
 - `DependencyInfo` wird additiv um `functions: List<String>` erweitert
+- Eintraege werden in 0.9.2 in normalisierter, unqualifizierter
+  Form gespeichert:
+  - Funktionsname ohne Schema-Praefix
+  - ohne Signatur
+  - case-insensitive Vergleich nach derselben Normalisierung
 - YAML-/JSON-Codecs muessen dieses Feld lesen und schreiben koennen
 - Schema-Reader sollen bevorzugt dieses Feld belastbar populieren, statt
   die Split-Zuordnung spaeter aus reinem SQL-Text neu zu erraten
+
+Praezisierung:
+
+- 0.9.2 nimmt bewusst an, dass `SchemaDefinition` selbst kein
+  Multi-Schema-Modell transportiert; deshalb reicht fuer diesen
+  Milestone der normalisierte Funktionsname als Matching-Schluessel
+- sollte eine Quelle mehrere kollidierende Routinen liefern, die nach
+  dieser Normalisierung nicht eindeutig sind, gilt der Fall fuer Split
+  als nicht belastbar aufloesbar
 
 ### 4.5 Reader-Kataloge sind primaere Quelle, Regex nur Fallback
 
@@ -209,6 +245,22 @@ Verbindliche Folge:
   Funktionsnamen im Schema zurueck
 - Regex-/Token-Heuristiken sind nur Fallback fuer fehlende
   Metadatenquellen oder dateibasierte Schemas
+
+Praezisierung fuer den SQLite-/Fallback-Pfad:
+
+- die Heuristik arbeitet nicht ueber rohe Substring-Suche, sondern ueber
+  einfache SQL-Tokenisierung mit mindestens:
+  - Entfernung oder Ignorieren von String-Literalen
+  - Entfernung oder Ignorieren von SQL-Kommentaren
+  - Erkennung von Identifier- oder `schema.identifier`-Token gefolgt von
+    `(`
+- als Funktionskandidat zaehlt nur ein bekannter Funktionsname im
+  aufrufartigen Kontext `name(`
+- Treffer in Kommentaren, String-Literalen oder blossen Alias-/Spalten-
+  Namen ohne Aufrufkontext duerfen nicht als Routine-Kante gewertet
+  werden
+- wenn die einfache Tokenisierung keinen eindeutigen Befund erlaubt,
+  faellt der Fall unter Abschnitt 4.3 Level C
 
 ### 4.6 Trigger-Familien muessen als Einheit in `POST_DATA` landen
 
@@ -245,6 +297,16 @@ Verbindliche Folge:
   beibehalten:
   - fehlendes Feld bleibt `emptyList()`
   - bestehende Dateien ohne Funktionsblock bleiben lesbar
+- vorhandene Werte in `dependencies.functions` vor Verwendung
+  normalisieren:
+  - leere Eintraege verwerfen
+  - Duplikate nach Normalisierung entfernen
+  - nicht-stringfoermige oder strukturell ungueltige Eintraege als
+    inkonsistente Eingabedaten behandeln
+- inkonsistente Legacy-Daten loesen fuer aktive Split-Laeufe keinen
+  stillen Guess aus:
+  - bei eindeutig sanitisierbaren Daten -> sanitisiert weiterverwenden
+  - bei nicht eindeutig interpretierbaren Daten -> Exit 2
 
 ### 5.2 Gemeinsame Generator-Zuordnung in `AbstractDdlGenerator` ziehen
 
@@ -288,6 +350,10 @@ SQLite:
 
 - mangels Systemkatalog Query-Analyse gegen bekannte Funktionsnamen im
   Schema verwenden
+- nur aufrufartige Token `name(` oder `schema.name(` nach Entfernung von
+  Kommentaren und String-Literalen auswerten
+- wenn mehrere normalisierte Kandidaten kollidieren oder der Query-Text
+  keinen eindeutigen Aufrufkontext hergibt -> nicht belastbar
 
 Dateibasierte Schemas:
 
@@ -296,12 +362,16 @@ Dateibasierte Schemas:
 
 ### 5.5 Konservative Zuordnung und Exit-2-Pfade umsetzen
 
-- wenn `view.dependencies.functions` nicht leer ist -> `POST_DATA`
-- wenn Reader/Schema keine belastbare Kante liefern, aber der View-Query
-  unbekannte Bezeichner enthaelt, die mit bekannten Funktionsnamen im
-  Schema kollidieren koennen -> `POST_DATA`
-- wenn selbst damit keine belastbare Zuordnung moeglich ist und Split
-  aktiv ist -> Exit 2
+- Entscheidungsreihenfolge festziehen:
+  1. explizites `view.dependencies.functions` nach Normalisierung
+     -> wenn nicht leer, `POST_DATA`
+  2. direkte Reader-Katalogkante
+     -> `POST_DATA`
+  3. konservative Heuristik mit aufrufartigem Treffer gegen bekannte
+     Funktionsnamen
+     -> `POST_DATA`
+  4. Restfall ohne belastbare Entscheidung bei aktivem Split
+     -> Exit 2
 - die Fehlermeldung muss den betroffenen View benennen und die Ursache
   als nicht sicher aufloesbare Routine-Abhaengigkeit kenntlich machen
 
@@ -318,9 +388,15 @@ Mindestens abzudecken:
   `POST_DATA`-Zuordnung
 - `DependencyInfo.functions` wird durch Parser und Builder
   rueckwaertskompatibel gelesen und geschrieben
+- `DependencyInfo.functions` wird normalisiert und bei Duplikaten oder
+  leeren Eintraegen stabil sanitisiert
+- nicht eindeutig interpretierbare `dependencies.functions`-Legacy-Daten
+  fuehren im Split-Fall zu Exit 2 statt zu stiller Fehlsortierung
 - `SkippedObject` und `ACTION_REQUIRED` erben die Phase des ersetzten
   Objekttyps
 - Split-unsichere Views liefern bei aktivem Split Exit 2 mit View-Name
+- derselbe View mit plausibler, aber nur heuristisch belegter
+  Routine-Kante landet konservativ in `POST_DATA`, nicht in Exit 2
 - derselbe unsichere View bleibt ohne Split kein neuer sichtbarer
   Fehlerpfad
 
@@ -343,10 +419,17 @@ Pflichtfaelle fuer 6.3:
   `PRE_DATA`
 - `DependencyInfo.functions` bleibt fuer bestehende Dateien additiv und
   rueckwaertskompatibel
+- `DependencyInfo.functions` verwendet normalisierte unqualifizierte
+  Funktionsnamen; Kollisionsfaelle ohne eindeutige Normalisierung werden
+  im Split-Fall nicht still hingenommen
 - unsichere View-Split-Faelle enden mit Exit 2 und benennen den View
   explizit
+- ein heuristisch plausibler Funktionsaufruf fuehrt konservativ zu
+  `post-data`, nicht zu `pre-data`
 - ohne `--split` wird dieselbe Unsicherheit nicht als neuer harter
   Nutzerfehler sichtbar
+- derselbe unsichere View bleibt im Single-Pfad erfolgreich verarbeitbar
+  und erzeugt keinen neuen Exit-2-Fehler
 
 Erwuenschte Zusatzfaelle:
 
@@ -355,6 +438,7 @@ Erwuenschte Zusatzfaelle:
 - Reader-nahe Tests fuer PostgreSQL- und MySQL-Katalogabhaengigkeiten
 - SQLite-Heuristiktests fuer View-Queries mit bekannten
   Funktionsnamen
+- Single-/Split-Matrix fuer denselben unsicheren View-Fall
 
 ---
 
@@ -416,6 +500,8 @@ Mitigation:
 
 - Parser und Builder im selben Arbeitspaket mitziehen
 - additive Rueckwaertskompatibilitaet explizit absichern
+- Sanitizing- und Split-Validierungsregeln fuer inkonsistente
+  `dependencies.functions` festziehen
 
 ### 8.3 Dialekt-Fallbacks koennen zu aggressiv oder zu lax sein
 
@@ -428,6 +514,8 @@ Mitigation:
 
 - fuer 0.9.2 konservative Bias zugunsten von `POST_DATA`
 - unsichere Restfaelle mit Exit 2 statt stiller Fehlsortierung
+- fuer SQLite/Fallbacks Mindest-Tokenisierung statt roher
+  Substring-Suche festlegen
 
 ### 8.4 6.3 darf den Single-Fall nicht mit Split-Unsicherheiten belasten
 
@@ -452,4 +540,3 @@ Mitigation:
 
 - Triggerfamilien als Einheit markieren
 - dedizierte Tests fuer Triggerfunction plus Triggerstatement fuehren
-
