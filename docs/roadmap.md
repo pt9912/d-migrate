@@ -321,8 +321,8 @@ Vertrag festschreibt.
 | Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data` (AP 6.1)                                                        | —          | ✅      |
 | CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single\|pre-post`) (AP 6.2)                                           | LF-003     | ✅      |
 | Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten) (AP 6.3)           | —          | ✅      |
-| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld                                   | —          |        |
-| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe                                              | —          |        |
+| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld (AP 6.4)                           | —          | ✅      |
+| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe (AP 6.4)                                     | —          | ✅      |
 | Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |        |
 | Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (Finding aus `docs/quality.md`)                            | —          |        |
 | Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (Finding)          | —          |        |
@@ -544,4 +544,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.22
 **Stand**: 2026-04-19
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0 und 0.9.1 abgeschlossen; Milestone 0.9.2 in Arbeit (AP 6.1–6.3 umgesetzt)
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0 und 0.9.1 abgeschlossen; Milestone 0.9.2 in Arbeit (AP 6.1–6.4 umgesetzt)

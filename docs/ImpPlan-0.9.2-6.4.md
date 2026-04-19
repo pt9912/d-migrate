@@ -4,7 +4,7 @@
 > Schema-Artefakte
 > **Arbeitspaket**: 6.4 (SQL-, JSON- und Report-Ausgabe fuer den Split
 > nachziehen)
-> **Status**: Draft (2026-04-19)
+> **Status**: Done (2026-04-19)
 > **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 4.4,
 > Abschnitt 5.2, Abschnitt 6.4, Abschnitt 7, Abschnitt 8 und Abschnitt
 > 9.2;
