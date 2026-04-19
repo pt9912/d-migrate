@@ -96,7 +96,22 @@ Ein grober Dienstschnitt fuer `v1`:
 | `JobService` | Job-Status, Progress, Cancel |
 | `ArtifactService` | Ergebnis-Artefakte laden |
 
-### 4.1 SchemaService
+### 4.1 HealthService
+
+Vorgeschlagene RPCs:
+
+```proto
+rpc GetHealth(GetHealthRequest) returns (HealthStatus);
+rpc GetReadiness(GetReadinessRequest) returns (HealthStatus);
+rpc GetVersion(GetVersionRequest) returns (VersionInfo);
+rpc GetCapabilities(GetCapabilitiesRequest) returns (ServiceCapabilities);
+```
+
+`GetHealth` und `GetReadiness` liefern gezielt Liveness-/Readiness-Daten ohne schwere
+Business-Logik; `GetCapabilities` dokumentiert aktivierte Funktionen und
+Feature-Switches.
+
+### 4.2 SchemaService
 
 Vorgeschlagene RPCs:
 
@@ -104,46 +119,132 @@ Vorgeschlagene RPCs:
 rpc ValidateSchema(ValidateSchemaRequest) returns (ValidateSchemaResponse);
 rpc GenerateSchemaDdl(GenerateSchemaDdlRequest) returns (GenerateSchemaDdlResponse);
 rpc ReverseSchema(ReverseSchemaRequest) returns (JobAccepted);
-rpc CompareSchema(CompareSchemaRequest) returns (CompareSchemaResponse);
+rpc CompareSchema(CompareSchemaRequest) returns (JobAccepted);
 ```
 
 `ReverseSchema` wird als Job behandelt, weil die Laufzeit und Ergebnisgroesse
 stark schwanken koennen.
 
-### 4.2 DataService
+`CompareSchema` wird ebenfalls als Job behandelt, wenn Ergebnisumfang oder
+Laufzeit das vorgibt. Ergebnisdaten werden als Summary + optional `artifact_id`
+im `JobStatus`/Artefakt zugaenglich gemacht.
+
+### 4.3 DataService
 
 Vorgeschlagene RPCs:
 
 ```proto
 rpc ExportData(ExportDataRequest) returns (JobAccepted);
-rpc StartImport(ImportDataRequest) returns (JobAccepted);
+rpc OpenArtifactUpload(OpenArtifactUploadRequest) returns (UploadSession);
+rpc StartImport(StartImportRequest) returns (JobAccepted);
 rpc TransferData(TransferDataRequest) returns (JobAccepted);
 rpc ProfileData(ProfileDataRequest) returns (JobAccepted);
-rpc UploadArtifact(stream ArtifactChunk) returns (ArtifactRef);
-rpc DownloadArtifact(GetArtifactRequest) returns (stream ArtifactChunk);
+rpc UploadArtifact(stream ArtifactChunk) returns (stream ArtifactChunkAck); // bi-direktional
+rpc GetUploadSession(GetUploadSessionRequest) returns (UploadSession);
+rpc FinalizeArtifactUpload(FinalizeArtifactUploadRequest) returns (UploadSession);
+rpc AbortArtifactUpload(AbortArtifactUploadRequest) returns (UploadSession);
 ```
 
 Anmerkung:
 
 - `UploadArtifact` uebernimmt den grossen Input-Strom in einen serverseitigen
-  Artefakt-Speicher
+  Artefakt-Speicher.
+- `OpenArtifactUpload` ist Pflichtvoraussetzung und erzeugt die `upload_session_id`
+  (kurzlebig, serverseitig verwaltet).
+- Uploads muessen explizit mit `FinalizeArtifactUpload` abgeschlossen werden.
+- `AbortArtifactUpload` beendet Uploads bewusst mit definiertem Cleanup.
+- `OpenArtifactUpload` setzt `expected_total_bytes` einmalig fuer die Session.
+- Jede `ArtifactChunk`-Nachricht MUSS `upload_session_id`, `chunk_index` und
+  `chunk_checksum` tragen.
+- `UploadArtifact` ist in v1 verbindlich ein bidirektionales Streaming: Der Client sendet
+  `ArtifactChunk`-Nachrichten; der Server antwortet nach jedem verwerteten Chunk mit
+  `ArtifactChunkAck`.
+- Jeder Upload-Chunk wird serverseitig idempotent verarbeitet; bei Duplikaten wird derselbe
+  `chunk_index` nur einmal persistiert.
+- Der Server lehnt Uploads ab, wenn Größen- oder Pruefsummenvalidierung fehlschlaegt
+  oder Session-Metadaten unvollstaendig sind.
+- Resume-Verhalten:
+  - Upload-Sessions haben definierte Zustaende und ein konfigurierbares Time-to-live (TTL):
+    `OPEN` -> `RECEIVING` -> `INTERRUPTED` -> (`RESUMING`) -> `COMPLETED` oder
+    `ABORTED`/`EXPIRED`.
+  - `OPEN`: erstellt durch `OpenArtifactUpload`.
+  - `RECEIVING`: aktiver Stream laeuft und es wird validiert.
+  - `INTERRUPTED`: Transportbruch/Timeout waehrend des Streams; bereits persistierte Chunks bleiben erhalten.
+  - `RESUMING`: Uebergangszustand, waehrend der Client mit derselben `upload_session_id`
+    auf der aktuellen `next_expected_chunk_index` fortsetzt; geht bei erfolgreichem
+    Stream-Aufbau automatisch in `RECEIVING` ueber.
+  - `COMPLETED`: nur nach erfolgreichem `FinalizeArtifactUpload`.
+  - `ABORTED`: nur nach `AbortArtifactUpload`; weitere Upload-RPCs auf der Session werden abgelehnt.
+  - `EXPIRED`: nach Inaktivitaets- oder Absolut-Zeitenlimit automatisch aufgeraeumt.
+  - Nach `INTERRUPTED` kann ein neuer Upload mit derselben `upload_session_id` beim
+    naechsten offenen Chunk fortsetzen.
+  - `UploadArtifact` liefert nach jedem empfangenen Chunk einen `ArtifactChunkAck`
+    mit `received_until_chunk_index` und `next_expected_chunk_index`.
+  - Client und Server behandeln doppelte Chunks mit gleichem
+    `upload_session_id` und `chunk_index` als idempotent.
+  - `GetUploadSession` gibt bei Unterbrechung den Zustand einer laufenden Session
+    (letzter bestaetigter Chunk, verbleibende Bytes, Ablaufzeit, aktueller State, letzte `chunk_checksum`) zur
+    Wiederaufnahme zurueck.
+- Bei abruptem Abbruch ohne `AbortArtifactUpload`/`FinalizeArtifactUpload` beendet der Server die Session in `INTERRUPTED`.
+  Ein Hintergrundjob bereinigt `OPEN`, `RECEIVING` und `INTERRUPTED` Sessions nach konfigurierter Idle- oder
+  Gesamtlaufzeit; transiente Artefakt-Fragmente werden danach verworfen.
 - `StartImport` startet danach den eigentlichen Importjob ueber `artifact_id`
-- `ExportData` laeuft in `v1` immer als Job und schreibt Ergebnis-Artefakte
-- `DownloadArtifact` streamt grosse Ergebnisdateien kontrolliert aus
-- ein direktes Import-Streaming ohne Jobmodell ist in `v1` bewusst nicht Teil
+  - `StartImportRequest` enthaelt nur Artefakt-Referenzen und Import-Optionen (keine Rohdaten).
+- `ExportData` laeuft in `v1` immer als Job und schreibt Ergebnis-Artefakte.
+- Artefakt-Downloads sind bewusst im `ArtifactService` verortet (siehe Abschnitt 4.5).
+- `TransferData` uebergibt Daten von einem Quell- zu einem Zielartefaktpfad oder
+  -speicher und ist ebenfalls asynchron (`JobAccepted`). Es liefert selbst nur einen
+  `JobAccepted`; Fortschritt und Ergebnisstatus erfolgen ueber `WatchJob`/`GetJob`.
+- Ein direktes Import-Streaming ohne Jobmodell ist in `v1` bewusst nicht Teil
   des Vertrags
 
-### 4.3 JobService
+### 4.4 JobService
 
 ```proto
 rpc GetJob(GetJobRequest) returns (JobStatus);
+rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
 rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
 rpc WatchJob(JobWatchRequest) returns (stream JobEvent);
-rpc GetArtifactMetadata(GetArtifactRequest) returns (ArtifactMetadata);
 ```
 
+`ListJobs` liefert paginierte Ergebnisse fuer den eigenen Tenant
+(`ListJobsRequest` enthaelt `page_token`, `page_size` und optionale Filter).
+
 `WatchJob` ist einer der Hauptgruende fuer gRPC: Fortschritt und Status lassen
-sich sauber streamen, ohne Polling.
+sich sauber streamen, ohne Polling. `JobEvent` umfasst sowohl Zwischenfortschritt
+als auch Terminalstatus.
+
+### 4.5 ArtifactService
+
+```proto
+rpc GetArtifactMetadata(GetArtifactRequest) returns (ArtifactMetadata);
+rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+rpc DownloadArtifact(GetArtifactRequest) returns (stream ArtifactChunk);
+```
+
+`ListArtifacts` liefert paginierte Ergebnisse fuer den eigenen Tenant
+(`ListArtifactsRequest` enthaelt `page_token`, `page_size`, optionale
+Filter nach `job_id` oder Status).
+
+`GetArtifactMetadata` ist bewusst im `ArtifactService` verortet, damit die
+Artefakt-Lebensdauer- und Berechtigungsregeln dort zentral bleiben.
+
+`DownloadArtifact` MUSS eine maximale Chunk-Groesse und die Ueberpruefung von
+`artifact_version` (Versionstoken/ETag) erzwingen.
+
+`GetArtifactRequest` ist mit dem Feld `artifact_id` auszulegen.
+`artifact_version` ist optional und als stabiles Versionstoken (`version_token`) zu interpretieren.
+- Ist es gesetzt, wird die angefragte Version mittels semantischer Token-Gleichheit validiert (entsprechend `If-Match`-Semantik).
+  - Das Token darf nicht als HTTP-Header-Name verwendet werden; im Proto ist es ein normales Feld.
+  - Das Vergleichsverhalten ist streng gleichheitbasiert; es gibt keine schwache Uebereinstimmung.
+- Ist es nicht gesetzt, liefert der Server die aktuellste verfuegbare Version.
+- Bei expliziten Clients, die eine exakte Version benoetigen, ist `GetArtifactMetadata`
+  der empfohlene Einstiegspunkt.
+- Aendert sich die Version zwischen `GetArtifactMetadata` und `DownloadArtifact`,
+  antwortet der Server mit fachlichem Fehler `FAILED_PRECONDITION` und
+  `d_migrate_error_code=artifact_version_mismatch`.
+- `GetArtifactMetadata` gibt in jedem Fall das aktuell gueltige `artifact_version` zurueck, damit Clients
+  anschließend konsistent herunterladen oder Versionen vergleichen koennen.
 
 ---
 
@@ -165,7 +266,8 @@ Ergebnisse ist ein serverseitiger Job plus Artefakt-Download robuster.
 Geeignet fuer:
 
 - Import grosser Datenmengen
-- Upload grosser Schema- oder Report-Elemente in Chunks
+- Upload grosser Artefakte erfolgt in v1 **nicht** als reines Client-Streaming,
+  sondern als bidirektionales Streaming mit Chunk-Acknowledgements.
 
 ### 5.3 Bidirektionales Streaming
 
@@ -174,7 +276,10 @@ Nur dort einsetzen, wo ein echter Dialog noetig ist, z. B.:
 - interaktiver Import mit Rueckmeldungen pro Chunk
 - sehr spaeter, falls ein Agenten- oder Assistenzmodus per gRPC gebraucht wird
 
-Fuer die erste Version ist bidi-Streaming nicht noetig.
+Fuer die erste Version ist bidi-Streaming primaer fuer echten Dialog vorgesehen.
+`UploadArtifact` ist die wichtigste Ausnahme: bidirektional, ohne menschliche
+Interaktion, mit Chunk- und Acknowledgement-Steuerung (`ArtifactChunk`/`ArtifactChunkAck`),
+und wird bei Unterbrechung mit `GetUploadSession` kombiniert.
 
 ---
 
@@ -213,18 +318,31 @@ Fuer grosse Ergebnisse sind zwei Wege sinnvoll:
 
 Fuer `v1` gilt verbindlich:
 
-- `ExportData`, `ReverseSchema`, `ProfileData` und grosse Compare-/Generate-
-  Ergebnisse liefern nur Summary plus `artifact_id`
+- `ExportData`, `ReverseSchema`, `ProfileData` und `CompareSchema` liefern nur Summary plus `artifact_id`.
+- `GenerateSchemaDdl` liefert bei kleinen Ergebnissen inline, bei groesseren Ergebnissen
+  nur Summary plus `artifact_id` (konfigurierter Schwellwert).
 - Importdaten werden nicht als eingebettete Message-Bloecke in
   `StartImport` uebertragen, sondern ueber `UploadArtifact`
 
-### 6.3 Zeit, IDs, Enums
+### 6.3 Proto-Package-Konvention
+
+Alle `.proto`-Dateien nutzen das Package `dmigrate.v1`:
+
+```proto
+package dmigrate.v1;
+```
+
+Service-Namen folgen dem Muster `dmigrate.v1.SchemaService`,
+`dmigrate.v1.JobService` usw. Bei Breaking Changes wird `v2` eingefuehrt;
+abwaertskompatible Erweiterungen bleiben in `v1`.
+
+### 6.4 Zeit, IDs, Enums
 
 - Timestamps als `google.protobuf.Timestamp`
 - Job-IDs als stabile Strings, nicht als fortlaufende Zahlen
 - Dialekte, Formate, Statuswerte als Enums
 
-### 6.4 Lokalisierung
+### 6.5 Lokalisierung
 
 Strukturierte Felder bleiben sprachstabil englisch. Lokalisierte Texte werden
 ueber Metadaten oder ein explizites `locale`-Feld angefordert.
@@ -237,8 +355,34 @@ gRPC-Status und fachliche Fehler muessen getrennt behandelt werden.
 
 - Transport-/Infrastrukturfehler: gRPC Status (`UNAVAILABLE`,
   `DEADLINE_EXCEEDED`, `UNAUTHENTICATED`, `PERMISSION_DENIED`)
-- fachliche Fehler: strukturierter `ErrorDetail`-Payload mit
-  `exit_code`, `error_code`, `message`, `details`
+- fachliche Fehler: strukturierte gRPC-Fehlerantworten mit `google.rpc.Status` als
+  Huelle und fachlichen Details in `google.rpc.ErrorInfo` bzw. `google.rpc.BadRequest`.
+  - `google.rpc.Status.code` bildet den technischen gRPC-Status ab.
+  - fachlicher Fehlercode steht in `google.rpc.ErrorInfo.metadata["d_migrate_error_code"]`.
+  - fachliche Kategorie wird in `google.rpc.ErrorInfo.reason` transportiert.
+- `exit_code` ist optional und dient nur der Kompatibilitaet mit existierenden
+  CLI-Exitcodes; fachlich wird bevorzugt mit `error_code` (stringbasiert, stabil)
+  gearbeitet.
+
+Praktische Regel:
+
+Transportfehler bleiben reine `grpc-status`-Antworten. Fachliche Fehler werden
+in allen synchronen RPCs konsistent als gRPC-Fehlerantworten mit strukturierten
+`google.rpc`-Details gemeldet; ein separates `error`-Feld im
+Erfolgs-Response-Payload ist nicht vorgesehen.
+`google.rpc.ErrorInfo`/`google.rpc.BadRequest` transportieren die fachliche Semantik.
+`google.rpc.ErrorInfo.reason` traegt die semantische fachliche Kategorie
+(`request_invalid`, `validation_failed`, `migration_failed`, `provider_failed`,
+`io_failure`, `cancelled` etc.).
+Der stabile fachliche Code wird in `google.rpc.ErrorInfo.metadata["d_migrate_error_code"]`
+transportiert.
+- Fuer neue Clients ist der fachliche Fehlercode in `google.rpc.ErrorInfo.metadata["d_migrate_error_code"]`
+  die einzig vertraglich stabile Fehlerkennung.
+- `d_migrate_error_code`/`error_code` im Payload ist optional und darf nur
+  als Legacy-Kompatibilitaetsfeld gepflegt werden; Steuerlogik darf sich nicht
+  darauf verlassen.
+- Bei asynchronen Jobs gilt: Die erste Antwort ist fuer eingereichte Jobs immer fachlich
+  erfolgreich (`OK` + `JobAccepted`), selbst wenn der fachliche Zustand spaeter zu `FAILED` wird.
 
 Beispielhafte Zuordnung:
 
@@ -248,7 +392,7 @@ Beispielhafte Zuordnung:
 | `3` | Validation failed | `INVALID_ARGUMENT` |
 | `4` | Connection failed | `UNAVAILABLE` |
 | `5` | Migration failed | `INTERNAL` |
-| `6` | AI provider failed | `UNAVAILABLE` |
+| `6` | AI provider failed | `INTERNAL` |
 | `7` | Local / render / file failure | `INTERNAL` |
 | `130` | cancelled | `CANCELLED` |
 
@@ -257,8 +401,10 @@ Fuer Job-RPCs gilt zusaetzlich:
 - ein erfolgreich angenommener Job liefert immer `OK` plus `JobAccepted`
 - spaetere Laufzeitfehler erscheinen im `JobStatus` als fachlicher Status
   `FAILED`, nicht als nachtraeglicher Transportfehler
-- `WatchJob` streamt Terminalereignisse fuer `SUCCEEDED`, `FAILED` und
-  `CANCELLED`
+- `WatchJob` streamt Fortschritt und Statusuebergaenge fuer den Job
+  (inklusive `progress`, `phase`, `message`) sowie final mindestens eine dieser
+  Terminalereignisse: `SUCCEEDED`, `FAILED` oder `CANCELLED`.
+  Nach dem ersten Terminalereignis MUSS der Stream beendet werden.
 
 ---
 
@@ -270,14 +416,28 @@ Pflicht fuer produktive interne Nutzung:
 - Service Identity ueber Zertifikate oder Mesh
 - Autorisierung auf RPC, ConnectionRef und Zielsystem
 - Request- und Message-Size-Limits
-- Deadline- und Cancellation-Unterstuetzung
+- Deadline- und Cancellation-Unterstuetzung (synchrone RPCs: 30 s Default;
+  Job-Annahme: 10 s; Streaming-RPCs: kein festes Deadline, aber
+  Inactivity-Timeout)
 - serverseitige Secret-Aufloesung
+
+Konkrete Umsetzung:
+
+- TLS-Clientzertifikat (Subjekt/AltNames) oder OIDC/JWT (`iss`, `sub`,
+  `aud`, `d-migrate:tenant`, `d-migrate:roles`) ist Pflicht fuer die
+  Authentifizierung.
+- Jede RPC-Pruefung validiert Tenant + Rolle gegen Policy (`read_job`, `write_job`,
+  `download_artifact` etc.).
+- Artefakt- und Job-Aktionen validieren zusaetzlich die Eigentums-/Adminrechte
+  gegen Tenant- und Principal-Kontext.
 
 Besonders wichtig:
 
 - kein unkontrollierter Raw-SQL-Filter im Proto-Vertrag
 - keine Passwoerter in Response-Nachrichten
 - keine unbegrenzten Streams ohne Backpressure-Regeln
+- Rate Limiting pro Client/Tenant auf RPC-Ebene (konfigurierbar, z. B. ueber
+  Token-Bucket oder Sliding-Window)
 
 ---
 
@@ -289,6 +449,8 @@ Der gRPC-Adapter sollte liefern:
 - Metriken pro RPC und Statuscode
 - Tracing ueber Runner, Driver und Format-Adapter
 - Job-Event-Streams mit korrelierbaren IDs
+- gRPC Server Reflection (aktivierbar pro Umgebung; erleichtert Debugging mit
+  `grpcurl` und `grpcui`)
 
 ---
 
@@ -300,6 +462,7 @@ Der gRPC-Adapter sollte liefern:
 - `SchemaService.ValidateSchema`
 - `SchemaService.GenerateSchemaDdl`
 - `JobService`
+- `ArtifactService` (fuer Referenzierung und Download von Artefakten großer Ergebnisvolumen)
 
 ### Phase 2
 
@@ -312,7 +475,6 @@ Der gRPC-Adapter sollte liefern:
 - `DataService.ExportData`
 - `DataService.StartImport`
 - `DataService.TransferData`
-- `ArtifactService`
 
 ---
 
