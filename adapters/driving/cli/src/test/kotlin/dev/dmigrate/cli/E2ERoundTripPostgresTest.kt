@@ -204,22 +204,29 @@ class E2ERoundTripPostgresTest : FunSpec({
             // Hard assertions: table structure must round-trip intact
             diff.tablesAdded.shouldBeEmpty()
             diff.tablesRemoved.shouldBeEmpty()
+            diff.tablesChanged.shouldBeEmpty()
 
-            // Allowlist: only these diff categories are acceptable
-            // Sequences differ because SERIAL creates implicit sequences
-            // that appear in reverse but not in the source schema.
-            // Schema metadata (name, version) differs between reversed schemas.
-            // All other diff categories must be empty.
+            // Allowlist: only sequence number changes are acceptable.
+            // SERIAL columns create implicit sequences whose start/increment
+            // values may differ after reverse-engineering. All other
+            // structural categories must be empty.
             diff.customTypesAdded.shouldBeEmpty()
             diff.customTypesRemoved.shouldBeEmpty()
+            diff.customTypesChanged.shouldBeEmpty()
             diff.viewsAdded.shouldBeEmpty()
             diff.viewsRemoved.shouldBeEmpty()
+            diff.viewsChanged.shouldBeEmpty()
             diff.functionsAdded.shouldBeEmpty()
             diff.functionsRemoved.shouldBeEmpty()
+            diff.functionsChanged.shouldBeEmpty()
             diff.proceduresAdded.shouldBeEmpty()
             diff.proceduresRemoved.shouldBeEmpty()
+            diff.proceduresChanged.shouldBeEmpty()
             diff.triggersAdded.shouldBeEmpty()
             diff.triggersRemoved.shouldBeEmpty()
+            diff.triggersChanged.shouldBeEmpty()
+            // Sequences: added/removed must be empty; only number changes allowed
+            diff.sequencesRemoved.shouldBeEmpty()
 
             // ─── 7. Verify: row counts ──────────────────────────
             DriverManager.getConnection(rawJdbc(target), target.username, target.password).use { conn ->
