@@ -255,6 +255,20 @@ Verbindliche Folge:
 - der Umbau muss die heute zahlreichen SAM-Lambdas in den Tests
   deutlich lesbarer machen
 
+Praezisierung zum Umfang:
+
+- die Testmigration ist ein eigener Arbeitsposten, nicht nur
+  Nacharbeiten am Rand
+- betroffen sind grob 130 Runner-Testfaelle in zwei grossen Dateien
+  (`DataExportRunnerTest.kt` mit rund 1.8k LOC,
+  `DataImportRunnerTest.kt` mit rund 1.7k LOC)
+- vor der Einzelmigration soll je Executor ein gemeinsamer Test-Builder
+  oder Capture-Helper eingefuehrt werden, z. B.:
+  - `testExportExecutor { ... }`
+  - `testImportExecutor { ... }`
+- Ziel ist eine systematische und reviewbare Migration statt vieler
+  lokaler Ad-hoc-Umbauten
+
 ---
 
 ## 5. Konkrete Arbeitsschritte
@@ -346,6 +360,9 @@ Wichtig:
 
 - `DataExportRunnerTest` und `DataImportRunnerTest` auf die neuen
   Executor-Signaturen umstellen
+- die Migration betrifft grob 130 Testfaelle; sie wird nicht Fall fuer
+  Fall freihaendig umgeschrieben, sondern ueber gemeinsame
+  Test-Builder/Capture-Helfer vorbereitet
 - SAM-Lambdas mit vielen Platzhaltern `_` duerfen nach 6.6 nicht in
   gleicher Breite weiterleben
 - neue oder explizit nachgezogene Tests sollen die Schrittfunktionen
@@ -369,6 +386,11 @@ Einfacher Qualitaetsanker fuer den Schnitt:
 - `executeWithPool()` in beiden Runnern soll nach 6.6 nur noch die
   Phasenfolge koordiniert und selbst keine neue tiefe
   Kontrollstruktur ueber mehrere fachliche Abschnitte mehr tragen
+- Zielkorridor:
+  - `executeWithPool()` liegt nach 6.6 unter 80 LOC
+  - die Methode ist als lineare Sequenz benannter Schrittaufrufe lesbar
+  - mehrstufige Kontrollstruktur lebt in den Schrittfunktionen, nicht
+    mehr im Top-Level-Ablauf
 - jede neue Schrittfunktion hat genau eine Hauptverantwortung
 - pro Hauptphase ist mindestens ein Testfall direkt oder indirekt
   nachvollziehbar zuordenbar
@@ -435,8 +457,8 @@ Einfacher Qualitaetsanker fuer den Schnitt:
 
 ### 6.4 Pflichtfaelle fuer Lesbarkeit und lokalen Zuschnitt
 
-- `executeWithPool()` in beiden Runnern ist deutlich kuerzer und als
-  Phasenfolge lesbar
+- `executeWithPool()` in beiden Runnern liegt nach 6.6 unter 80 LOC und
+  ist als lineare Phasenfolge lesbar
 - Resume-spezifische Logik bleibt bei den vorhandenen Coordinators oder
   den bestehenden Resume-Kontexten verankert
 - es entstehen keine zweiten konkurrierenden Helper-Ketten fuer dieselbe
