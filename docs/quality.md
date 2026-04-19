@@ -140,20 +140,20 @@ Dateien mit >400 LOC (potenzielle Hotspots):
 
 ### Offen
 
-- **E2E-Round-Trip-Test** (Milestone: 0.9.2, verankert in `docs/roadmap.md`):
-  Einen Integrationstest ergänzen, der den vollen Kreislauf
-  DB→Export→Format→Import→DB→Schema-Vergleich durchspielt.
-
-- **Fehlercodes E006-E121 gegen Validierungsmatrix testen** (Milestone: 0.9.2):
-  Systematisch prüfen, dass jeder dokumentierte Fehlercode mindestens
-  einen Test hat, der ihn auslöst.
-
 - **`--filter` härten** (Milestone: 0.9.5):
   Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
   Muss vor dem oeffentlichen Publish-Vertrag entschieden sein.
   Verankert in `docs/roadmap.md` unter Milestone 0.9.5.
 
 ### Erledigt
+
+- ~~E2E-Round-Trip-Test.~~
+  Umgesetzt in 0.9.2 AP 6.7: `E2ERoundTripPostgresTest` — Export→Import→Schema/Daten-Vergleich
+  gegen zwei PostgreSQL-Testcontainer.
+
+- ~~Fehlercodes E006-E121 gegen Validierungsmatrix testen.~~
+  Umgesetzt in 0.9.2 AP 6.7: `error-code-ledger-0.9.2.yaml` (28 Einträge, alle active oder
+  not_applicable) + `warn-code-ledger-0.9.2.yaml` (W113, W120).
 
 - ~~DDL-Interpolation systematisch absichern.~~
   Umgesetzt in 0.9.2 AP 6.5: SpatiaLite-Identifier korrekt escaped,

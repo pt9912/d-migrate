@@ -4,7 +4,7 @@
 > Schema-Artefakte
 > **Arbeitspaket**: 6.7 (Tests, Fehlercode-Matrix und E2E-Round-Trip
 > nachziehen)
-> **Status**: Draft (2026-04-19)
+> **Status**: Done (2026-04-19)
 > **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 3.2,
 > Abschnitt 6.7, Abschnitt 7, Abschnitt 8 und Abschnitt 9.6;
 > `docs/quality.md`;

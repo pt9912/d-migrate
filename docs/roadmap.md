@@ -323,13 +323,13 @@ Vertrag festschreibt.
 | Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten) (AP 6.3)           | —          | ✅      |
 | CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld (AP 6.4)                           | —          | ✅      |
 | Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe (AP 6.4)                                     | —          | ✅      |
-| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet | —          |        |
-| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (Finding aus `docs/quality.md`)                            | —          |        |
+| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet (AP 6.7) | —   | ✅      |
+| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (AP 6.7)                                                   | —          | ✅      |
 | Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (AP 6.5)          | —          | ✅      |
 | Quality | MySQL-TODO-Platzhalter: verbleibende 4 `-- TODO` in MysqlDdlGenerator durch ManualActionRequired ersetzen (AP 6.5)         | —          | ✅      |
 | Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477→26 / 446→24 LOC) (AP 6.6)                                  | —          | ✅      |
 | Quality | Executor-Parameter gruppieren: ExportExecutor (16→4) / ImportExecutor (14→4) → Kontext-DTOs (AP 6.6)                        | —          | ✅      |
-| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (Finding)                                                             | —          |        |
+| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (AP 6.7)                                                              | —          | ✅      |
 | Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |        |
 
 **Ergebnis**: `schema generate` kann optional importfreundliche
@@ -542,6 +542,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.23
+**Version**: 3.24
 **Stand**: 2026-04-19
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0 und 0.9.1 abgeschlossen; Milestone 0.9.2 in Arbeit (AP 6.1–6.6 umgesetzt)
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0 und 0.9.1 abgeschlossen; Milestone 0.9.2 in Arbeit (AP 6.1–6.7 umgesetzt)
