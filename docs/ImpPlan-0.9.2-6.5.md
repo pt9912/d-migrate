@@ -37,6 +37,13 @@ DDL-Pfad:
 6.5 ist kein neues Nutzerfeature. Das Arbeitspaket haertet den
 bestehenden Generatorvertrag, auf dem 6.1 bis 6.4 aufbauen.
 
+Abhaengigkeit zu 6.4:
+
+- 6.5 kann in der Generatorhaertung und in der MySQL-TODO-Bereinigung
+  parallel zu 6.4 begonnen werden
+- die kanaluebergreifende Diagnosekonsistenz in Text, JSON und Report
+  setzt aber voraus, dass der 6.4-Outputvertrag abgeschlossen ist
+
 Nach 6.5 soll klar gelten:
 
 - DDL-Generatoren interpolieren keine rohen Identifier mehr in
@@ -114,7 +121,7 @@ Fuer 0.9.2 reicht diese Zwischenstufe nicht mehr:
 - Trusted-Input-Grenze fuer vollstaendige SQL-Fragmente explizit
   dokumentieren und testseitig absichern
 - sichtbare MySQL-`-- TODO`-Kommentare aus dem Generator-Output
-  entfernen
+  im `MysqlDdlGenerator` entfernen
 - strukturierte `ACTION_REQUIRED`-/`SkippedObject`-Ausgabe ueber SQL,
   JSON und Report absichern
 - Golden Masters und gezielte Boundary-Tests nur dort anpassen, wo die
@@ -128,12 +135,25 @@ Fuer 0.9.2 reicht diese Zwischenstufe nicht mehr:
 - Veraenderung der fachlichen Split-Zuordnung aus 6.3
 - neue Fehlercodes ausser dort, wo fuer strukturierte Diagnosen bereits
   ein stabiler Codepfad fehlt
+- Bereinigung der bestehenden `-- TODO`-Emitter in
+  `MysqlRoutineDdlHelper`, `PostgresRoutineDdlHelper` und
+  `SqliteRoutineDdlHelper`
 
 Praezisierung:
 
 6.5 loest "wie wird vorhandene DDL-Erzeugung sicherer und sauberer
 dokumentiert?", nicht "welche neuen DDL-Konstrukte unterstuetzen wir
 zusaetzlich?".
+
+Fuer die TODO-Bereinigung gilt damit explizit:
+
+- in Scope sind die vier bekannten MySQL-Faelle im
+  `MysqlDdlGenerator`
+- Routine-Helfer-TODOs sind fachlich ein eigener Komplex
+  fuer dialektuebergreifend nicht generierbare Functions, Procedures und
+  Triggers
+- deren Vereinheitlichung ist ein separates Folgearbeitspaket und keine
+  Abschlussbedingung fuer 6.5
 
 ---
 
@@ -218,7 +238,7 @@ Verbindliche Folge:
 - die Diagnoseart fuer diese vier Faelle wird in 6.5 explizit
   normiert; sie bleibt nicht pro Call-Site offen
 - `render()` und `renderPhase(...)` enthalten nach 6.5 keine aus
-  `ManualActionRequired` abgeleiteten `-- TODO`-Zeilen mehr
+  diesen vier MySQL-Faellen abgeleiteten `-- TODO`-Zeilen mehr
 
 Praezisierung pro Fall:
 
@@ -272,7 +292,8 @@ Wichtig:
 - `ManualActionRequired.toTodoComment()` kann als Legacy-Helfer
   bestehenbleiben, ist fuer den 0.9.2-Generatorpfad aber nicht mehr
   normative Renderquelle
-- im von 6.5 betroffenen Generatorpfad sind direkte Aufrufe von
+- im von 6.5 betroffenen `MysqlDdlGenerator`-Pfad sind direkte Aufrufe
+  von
   `toTodoComment()` und `DdlStatement("-- TODO ...")` nicht mehr
   zulaessig
 - operative Sichtbarkeit von Luecken wird ueber 6.4-Ausgabekanaele
@@ -361,18 +382,17 @@ Praezisierung:
 ### 5.5 No-TODO-Pruefschritt fuer den Generatorpfad verankern
 
 - ein expliziter Such- und Review-Schritt stellt sicher, dass im
-  betroffenen DDL-Generatorpfad keine sichtbaren TODO-Emitter
+  betroffenen `MysqlDdlGenerator`-Pfad keine sichtbaren TODO-Emitter
   verbleiben
 - Pflichtsuche mindestens nach:
   - `DdlStatement("-- TODO`
   - `toTodoComment()`
-- betroffen sind mindestens:
+- betroffen ist fuer 6.5 verbindlich:
   - `MysqlDdlGenerator`
-  - angrenzende MySQL-Routine-Helfer
-  - weitere Generatorpfade, falls sie noch denselben Legacy-Mechanismus
-    tragen
+- Suchtreffer in den Routine-Helfern werden in 6.5 bewusst nur
+  dokumentiert, nicht als Abschlussblocker behandelt
 - 6.5 gilt erst als abgeschlossen, wenn diese Suche fuer den
-  generatorseitigen Renderpfad keine aktiven TODO-Call-Sites mehr
+  `MysqlDdlGenerator`-Renderpfad keine aktiven TODO-Call-Sites mehr
   ergibt
 
 ### 5.6 SQL-, JSON- und Report-Sicht auf strukturierte Diagnosen abgleichen
@@ -389,12 +409,14 @@ Praezisierung:
 - 6.4 bleibt der eigentliche Output-Arbeitsstrang; 6.5 definiert hier
   aber die fachliche Erwartung, dass SQL selbst kein TODO-Kanal mehr
   ist
+- diese Verifikation ist erst voll abschliessbar, wenn 6.4 den
+  Split-Outputvertrag fuer JSON und Report fertiggezogen hat
 
 Praezisierung fuer Split:
 
 - dieselbe Diagnose-Matrix gilt auch bei aktivem `split pre-post`
 - weder `renderPhase(PRE_DATA)` noch `renderPhase(POST_DATA)` duerfen
-  sichtbare TODO-Kommentarzeilen enthalten
+  aus den vier MySQL-Faellen sichtbare TODO-Kommentarzeilen enthalten
 - Split-JSON und Split-Report muessen dieselben strukturierten
   Diagnoseeintraege wie der Single-Fall tragen
 
@@ -432,7 +454,7 @@ Praezisierung fuer Split:
 ### 6.2 Pflichtfaelle fuer MySQL-`-- TODO`-Bereinigung
 
 - keine verbleibenden sichtbaren MySQL-`-- TODO`-Kommentare im
-  Generator-Output
+  `MysqlDdlGenerator`-Output
 - Composite-Type-Fall erzeugt genau `ACTION_REQUIRED` +
   `SkippedObject`, aber keine SQL-Kommentarzeile
 - Sequence-Fall erzeugt genau `ACTION_REQUIRED` + `SkippedObject`,
@@ -442,9 +464,12 @@ Praezisierung fuer Split:
 - nicht unterstuetzter Index-Typ erzeugt keine Pseudo-SQL-Zeile und
   genau `WARNING` ohne `SkippedObject`
 - Suchtest oder Guard-Test fuer den Generatorpfad:
-  - keine aktiven `DdlStatement("-- TODO ...")`-Emitter
+  - keine aktiven `DdlStatement("-- TODO ...")`-Emitter im
+    `MysqlDdlGenerator`
   - keine aktiven `toTodoComment()`-Aufrufe im betroffenen
-    Generator-Renderpfad
+    `MysqlDdlGenerator`-Renderpfad
+  - Treffer in Routine-Helfern sind fuer 6.5 kein Fail, sondern
+    dokumentierter Folgebedarf
 
 ### 6.3 Pflichtfaelle fuer Diagnosekonsistenz
 
