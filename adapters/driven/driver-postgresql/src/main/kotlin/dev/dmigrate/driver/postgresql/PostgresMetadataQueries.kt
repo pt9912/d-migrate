@@ -295,6 +295,28 @@ object PostgresMetadataQueries {
         )
     }
 
+    fun listViewFunctionDependencies(session: JdbcOperations, schema: String): Map<String, List<String>> {
+        val rows = session.queryList(
+            """
+            SELECT DISTINCT v.relname AS view_name, p.proname AS function_name
+            FROM pg_depend d
+            JOIN pg_rewrite rw ON rw.oid = d.objid
+            JOIN pg_class v ON v.oid = rw.ev_class AND v.relkind IN ('v', 'm')
+            JOIN pg_namespace n ON n.oid = v.relnamespace AND n.nspname = ?
+            JOIN pg_proc p ON p.oid = d.refobjid
+            JOIN pg_namespace fn ON fn.oid = p.pronamespace AND fn.nspname = ?
+            WHERE d.classid = 'pg_rewrite'::regclass
+              AND d.refclassid = 'pg_proc'::regclass
+              AND d.deptype IN ('n', 'a')
+            ORDER BY view_name, function_name
+            """.trimIndent(), schema, schema,
+        )
+        return rows.groupBy(
+            { it["view_name"] as String },
+            { it["function_name"] as String },
+        )
+    }
+
     fun listFunctions(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
         return session.queryList(
             """

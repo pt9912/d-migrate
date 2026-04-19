@@ -52,8 +52,9 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("typtype = 'c'") }, any()) } returns emptyList()
         // Extensions
         every { jdbc.queryList(match { it.contains("pg_extension") }) } returns emptyList()
-        // Views, functions, procedures, triggers
+        // Views, view→function deps, functions, procedures, triggers
         every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("pg_depend") && it.contains("pg_proc") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()

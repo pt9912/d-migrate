@@ -271,10 +271,14 @@ class PostgresSchemaReader(
 
     private fun readViews(session: JdbcOperations, schema: String): Map<String, ViewDefinition> {
         val rows = PostgresMetadataQueries.listViews(session, schema)
+        val viewFuncDeps = PostgresMetadataQueries.listViewFunctionDependencies(session, schema)
         val result = LinkedHashMap<String, ViewDefinition>()
         for (row in rows) {
-            result[row["table_name"] as String] = ViewDefinition(
+            val viewName = row["table_name"] as String
+            val funcDeps = viewFuncDeps[viewName] ?: emptyList()
+            result[viewName] = ViewDefinition(
                 query = row["view_definition"] as? String,
+                dependencies = if (funcDeps.isNotEmpty()) DependencyInfo(functions = funcDeps) else null,
                 sourceDialect = "postgresql",
             )
         }

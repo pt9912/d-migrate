@@ -45,6 +45,7 @@ class MysqlSchemaReaderTest : FunSpec({
     fun stubEmptyDefaults() {
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
@@ -507,6 +508,7 @@ class MysqlSchemaReaderTest : FunSpec({
         every { jdbc2.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc2.querySingle(match { it.contains("engine") }, any(), any()) } returns null
         every { jdbc2.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()
+        every { jdbc2.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc2.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()

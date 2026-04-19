@@ -143,6 +143,26 @@ object MysqlMetadataQueries {
         )
     }
 
+    fun listViewRoutineUsage(session: JdbcOperations, database: String): Map<String, List<String>> {
+        return try {
+            val rows = session.queryList(
+                """
+                SELECT TABLE_NAME AS view_name, SPECIFIC_NAME AS routine_name
+                FROM INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE
+                WHERE TABLE_SCHEMA = ?
+                ORDER BY view_name, routine_name
+                """.trimIndent(), database,
+            )
+            rows.groupBy(
+                { it["view_name"] as String },
+                { it["routine_name"] as String },
+            )
+        } catch (_: Exception) {
+            // VIEW_ROUTINE_USAGE may not exist on older MySQL versions
+            emptyMap()
+        }
+    }
+
     fun listFunctions(session: JdbcOperations, database: String): List<Map<String, Any?>> {
         return session.queryList(
             """

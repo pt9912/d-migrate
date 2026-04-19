@@ -491,6 +491,48 @@ class AbstractDdlGeneratorTest : FunSpec({
         result.skippedObjects.any { it.name == "t" && it.phase == DdlPhase.PRE_DATA } shouldBe true
     }
 
+    test("full scenario: mixed objects land in correct phases") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            "orders" to table(),
+            functions = mapOf("calc_total" to FunctionDefinition()),
+            views = mapOf(
+                "simple_view" to ViewDefinition(query = "SELECT * FROM orders"),
+                "computed_view" to ViewDefinition(
+                    query = "SELECT calc_total(id) FROM orders",
+                    dependencies = DependencyInfo(functions = listOf("calc_total")),
+                ),
+                "dependent_view" to ViewDefinition(
+                    query = "SELECT * FROM computed_view",
+                    dependencies = DependencyInfo(views = listOf("computed_view")),
+                ),
+                "heuristic_view" to ViewDefinition(
+                    query = "SELECT id, calc_total(id) FROM orders",
+                ),
+            ),
+            triggers = mapOf("trg_audit" to TriggerDefinition(
+                table = "orders", event = TriggerEvent.INSERT, timing = TriggerTiming.AFTER,
+            )),
+        ))
+
+        val preStmts = result.statementsForPhase(DdlPhase.PRE_DATA)
+        val postStmts = result.statementsForPhase(DdlPhase.POST_DATA)
+
+        // PRE_DATA: table + simple_view only
+        preStmts.any { it.sql.contains("orders") && it.sql.contains("CREATE TABLE") } shouldBe true
+        preStmts.any { it.sql.contains("simple_view") } shouldBe true
+        preStmts.none { it.sql.contains("computed_view") } shouldBe true
+        preStmts.none { it.sql.contains("dependent_view") } shouldBe true
+        preStmts.none { it.sql.contains("heuristic_view") } shouldBe true
+
+        // POST_DATA: computed_view, dependent_view, heuristic_view, calc_total, trg_audit
+        postStmts.any { it.sql.contains("computed_view") } shouldBe true
+        postStmts.any { it.sql.contains("dependent_view") } shouldBe true
+        postStmts.any { it.sql.contains("heuristic_view") } shouldBe true
+        postStmts.any { it.sql.contains("calc_total") } shouldBe true
+        postStmts.any { it.sql.contains("trg_audit") } shouldBe true
+    }
+
     test("render() is unchanged despite phase tagging") {
         val gen = TestDdlGenerator()
         val result = gen.generate(schema(

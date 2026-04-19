@@ -1,0 +1,69 @@
+schema_format: "1.0"
+name: "View Function Dependencies"
+version: "1.0.0"
+
+tables:
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      amount:
+        type: decimal
+        precision: 10
+        scale: 2
+    primary_key: [id]
+
+functions:
+  calc_total:
+    parameters:
+      - name: p_order_id
+        type: integer
+    returns:
+      type: decimal
+      precision: 10
+      scale: 2
+    language: plpgsql
+    body: |
+      BEGIN
+          RETURN 0;
+      END;
+    source_dialect: postgresql
+
+views:
+  simple_view:
+    query: "SELECT * FROM orders WHERE amount > 0"
+    dependencies:
+      tables: [orders]
+    source_dialect: postgresql
+
+  computed_view:
+    query: "SELECT id, calc_total(id) AS total FROM orders"
+    dependencies:
+      tables: [orders]
+      functions: [calc_total]
+    source_dialect: postgresql
+
+  dependent_view:
+    query: "SELECT * FROM computed_view"
+    dependencies:
+      views: [computed_view]
+    source_dialect: postgresql
+
+  heuristic_view:
+    query: "SELECT id, calc_total(id) FROM orders"
+    dependencies:
+      tables: [orders]
+    source_dialect: postgresql
+
+triggers:
+  trg_audit:
+    table: orders
+    event: insert
+    timing: after
+    for_each: row
+    body: |
+      BEGIN
+          -- audit logic
+      END;
+    source_dialect: postgresql
