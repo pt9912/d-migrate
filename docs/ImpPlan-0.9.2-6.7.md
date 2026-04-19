@@ -225,8 +225,6 @@ Praezisierung:
   - `path_type`
   - `entry_type`
 - fuer `entry_type = rest_path` sind zusaetzlich Pflicht:
-  - `path_type`
-  - `entry_type`
   - `why_not_automated`
   - `evidence_owner`
   - `priority`
@@ -236,8 +234,11 @@ Praezisierung:
     Doku- oder Codequelle
   - fuer `entry_type = standard` existiert jeder referenzierte
     `test_path`
-  - fuer `entry_type = rest_path` sind `evidence_owner` und
-    `planned_remediation` befuellt
+  - fuer `entry_type = rest_path` sind `why_not_automated`,
+    `evidence_owner`, `priority` und `planned_remediation` befuellt
+  - die Ledger-Dateien bestehen eine Schema-Validierung fuer alle
+    Pflichtfelder und erlaubten Werte von `level`, `path_type` und
+    `entry_type`
 - Restpfad-Eintraege sind nur mit `entry_type = rest_path` zulaessig
 
 Damit gilt fuer 6.7 explizit:
@@ -411,8 +412,10 @@ Damit gilt fuer 6.7:
   - jeder Ledger-Code ist in der referenzierten Quelle auffindbar
   - fuer `entry_type = standard` existiert jeder referenzierte
     `test_path`
-  - fuer `entry_type = rest_path` sind `evidence_owner` und
-    `planned_remediation` befuellt
+  - fuer `entry_type = rest_path` sind `why_not_automated`,
+    `evidence_owner`, `priority` und `planned_remediation` befuellt
+  - eine Schema-Validierung prueft alle Pflichtfelder sowie die
+    erlaubten Werte von `level`, `path_type` und `entry_type`
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
 - Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
   einem Modul
@@ -518,7 +521,8 @@ Wichtig:
   Restpfad mit Pflichtfeldern zugeordnet
 - fuer `entry_type = standard` ist `test_path` verpflichtend;
   fuer `entry_type = rest_path` ist stattdessen der Nachweis ueber
-  `evidence_owner` und `planned_remediation` verpflichtend
+  `why_not_automated`, `evidence_owner`, `priority` und
+  `planned_remediation` verpflichtend
 - Generator-/Report-Codes und Validator-Codes werden nicht vermischt,
   sondern mit ihrer Quelle und Ebene referenziert
 
