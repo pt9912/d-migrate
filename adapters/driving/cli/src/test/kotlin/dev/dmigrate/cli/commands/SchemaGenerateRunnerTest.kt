@@ -676,4 +676,46 @@ class SchemaGenerateRunnerTest : FunSpec({
         exit shouldBe 2
         h.stderr.joined() shouldContain "--generate-rollback"
     }
+
+    // ─── Split E060 diagnostic (0.9.2 AP 6.3 Step E) ────────────
+
+    test("E060 globalNote with PRE_POST exits 2") {
+        val h = harness()
+        h.generator = FakeGenerator(
+            generateResult = DdlResult(
+                statements = listOf(DdlStatement("CREATE TABLE t (id INT);")),
+                globalNotes = listOf(TransformationNote(
+                    type = NoteType.ACTION_REQUIRED,
+                    code = "E060",
+                    objectName = "v_unclear",
+                    message = "View 'v_unclear' phase not determinable.",
+                    hint = "Add dependencies.functions.",
+                )),
+            )
+        )
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            output = Path.of("/tmp/out.sql"),
+        ))
+        exit shouldBe 2
+        h.stderr.joined() shouldContain "E060"
+        h.stderr.joined() shouldContain "v_unclear"
+    }
+
+    test("E060 globalNote with SINGLE does not exit 2") {
+        val h = harness()
+        h.generator = FakeGenerator(
+            generateResult = DdlResult(
+                statements = listOf(DdlStatement("CREATE TABLE t (id INT);")),
+                globalNotes = listOf(TransformationNote(
+                    type = NoteType.ACTION_REQUIRED,
+                    code = "E060",
+                    objectName = "v_unclear",
+                    message = "View 'v_unclear' phase not determinable.",
+                )),
+            )
+        )
+        val exit = h.runner().execute(request(splitMode = SplitMode.SINGLE))
+        exit shouldBe 0
+    }
 })

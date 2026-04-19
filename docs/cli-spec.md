@@ -399,6 +399,7 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 Einschränkungen für `--split pre-post`:
 - Erfordert `--output` (Textausgabe) oder `--output-format json` (strukturierte Ausgabe). Ohne adressierbaren Ausgabeweg: Exit 2.
 - Kann nicht mit `--generate-rollback` kombiniert werden. Kombination: Exit 2.
+- Views, deren Phasenzuordnung nicht sicher bestimmbar ist (kein Query-Text, keine deklarierten `dependencies.functions`, aber Functions im Schema), erzeugen Exit 2 mit Fehlercode `E060`. Empfohlene Nutzeraktion: explizite `dependencies.functions` im View-Eintrag der Schema-Datei deklarieren.
 
 **Exit-Codes**:
 - `0`: DDL erfolgreich generiert (auch bei Warnungen und übersprungenen Objekten)

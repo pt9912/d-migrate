@@ -123,7 +123,19 @@ class SchemaGenerateRunner(
         val generator = generatorLookup(dialect)
         val result = generator.generate(schema, options)
 
-        // ─── 5. Print notes & skipped objects on stderr ───────
+        // ─── 5b. Check for unresolvable split diagnostics ────
+        if (request.splitMode == SplitMode.PRE_POST) {
+            val splitDiags = result.globalNotes.filter { it.code == "E060" }
+            if (splitDiags.isNotEmpty()) {
+                for (d in splitDiags) {
+                    stderr("  \u2717 Split error [${d.code}]: ${d.message}")
+                    if (d.hint != null) stderr("    \u2192 Hint: ${d.hint}")
+                }
+                return 2
+            }
+        }
+
+        // ─── 5c. Print notes & skipped objects on stderr ─────
         printNotes(result, request.verbose)
 
         // ─── 6. Route output (json | file | stdout) ──────────
