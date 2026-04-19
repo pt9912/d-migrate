@@ -317,14 +317,14 @@ Beispiel paginierte Antwort (`job_list`):
   "items": [
     {
       "jobId": "job-123",
-      "tool": "schema_reverse_start",
-      "status": "COMPLETED",
+      "operation": "schema.reverse",
+      "status": "succeeded",
       "createdAt": "2026-04-18T14:00:00Z"
     },
     {
       "jobId": "job-124",
-      "tool": "data_profile_start",
-      "status": "RUNNING",
+      "operation": "data.profile",
+      "status": "running",
       "createdAt": "2026-04-19T09:30:00Z"
     }
   ],

@@ -419,6 +419,7 @@ Beispiel Antwort auf `POST /api/v1/artifacts`:
 ```json
 {
   "artifactId": "artifact_01JS8M0Z9B6F2A1C4D5E6F7G8H",
+  "filename": "upload.json",
   "contentType": "application/json",
   "sizeBytes": 182734,
   "sha256": "5f3c...",
@@ -486,6 +487,7 @@ zusätzliche operationsspezifische Felder liefern.
 Pflichtfelder eines Artefakts:
 
 - `artifactId`
+- `filename`
 - `contentType`
 - `sizeBytes`
 - `sha256`

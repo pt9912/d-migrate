@@ -44,7 +44,8 @@ ausgeführt wird.
 | Feld | Typ | Beschreibung |
 | --- | --- | --- |
 | `error` | Objekt | Fehlerdetails; nur gesetzt wenn `status=failed` |
-| `error.code` | Integer | Fachlicher Fehlercode (siehe §8.1) |
+| `error.code` | String | Semantischer Fehlercode (z. B. `VALIDATION_ERROR`, `CONNECTION_ERROR`); stabil und protokollübergreifend |
+| `error.exitCode` | Integer | CLI-Exit-Code (siehe §8.1); optional, dient der Kompatibilität mit CLI-Tooling |
 | `error.message` | String | Menschenlesbare Fehlerbeschreibung |
 | `progress` | Objekt | Fortschrittsinfo (siehe §2.4) |
 
@@ -201,7 +202,8 @@ Regeln:
 ### 8.1 Fachliche Fehlercodes
 
 Die CLI-Exit-Codes bleiben als stabile, protokollübergreifende Fehler-IDs
-erhalten:
+erhalten. Nur Fehlercodes sind aufgeführt; `0` (Erfolg) ist kein
+Fehlercode und wird hier nicht gelistet:
 
 | Code | Bedeutung |
 | --- | --- |
@@ -253,7 +255,7 @@ Spezifikationen definiert.
 | Feldnamen | camelCase (JSON) | snake_case (Protobuf) | camelCase (JSON) |
 | Timestamps | ISO 8601 String | `google.protobuf.Timestamp` | ISO 8601 String |
 | Job-Start-Antwort | `202 Accepted` + `Location`-Header | `OK` + `JobAccepted` | Tool-Result mit `jobId` |
-| Job-Fortschritt | Polling `GET /jobs/{id}` + opt. SSE | `WatchJob`-Stream | Polling via `job_status`-Tool |
-| Artefakt-Download | `GET /artifacts/{id}` + `ETag` | `DownloadArtifact` + `artifact_version` | `artifact_download`-Tool |
+| Job-Fortschritt | Polling `GET /jobs/{id}` + opt. SSE | `WatchJob`-Stream | Polling via `job_status_get`-Tool |
+| Artefakt-Download | `GET /artifacts/{id}` + `ETag` | `DownloadArtifact` + `artifact_version` | Resource-URI `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` |
 | Idempotency-Key | HTTP-Header | Request-Feld / Metadaten | Tool-Input-Feld |
 | Fehlerstruktur | JSON `error`-Objekt mit `exitCode` | `google.rpc.Status` + `ErrorInfo` | MCP Error mit `code` |
