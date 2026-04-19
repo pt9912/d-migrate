@@ -1,6 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -27,53 +26,6 @@ import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import java.nio.charset.Charset
 import java.nio.file.Path
 import java.time.Instant
-
-/** Grouped infrastructure for export execution. */
-data class ExportExecutionContext(
-    val pool: ConnectionPool,
-    val reader: DataReader,
-    val lister: TableLister,
-    val factory: DataChunkWriterFactory,
-)
-
-/** Grouped export options and I/O configuration. */
-data class ExportExecutionOptions(
-    val tables: List<String>,
-    val output: ExportOutput,
-    val format: DataExportFormat,
-    val options: ExportOptions,
-    val config: PipelineConfig,
-    val filter: DataFilter?,
-)
-
-/** Grouped resume state for export. */
-data class ExportResumeState(
-    val operationId: String?,
-    val resuming: Boolean,
-    val skippedTables: Set<String>,
-    val resumeMarkers: Map<String, ResumeMarker>,
-)
-
-/** Grouped callbacks for export progress and lifecycle. */
-data class ExportCallbacks(
-    val progressReporter: ProgressReporter,
-    val onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit,
-    val onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit,
-)
-
-/**
- * Thin seam over the streaming export, allowing the Runner to be tested
- * without a real [StreamingExporter][dev.dmigrate.streaming.StreamingExporter].
- * The production implementation is wired in the CLI module.
- */
-fun interface ExportExecutor {
-    fun execute(
-        context: ExportExecutionContext,
-        options: ExportExecutionOptions,
-        resume: ExportResumeState,
-        callbacks: ExportCallbacks,
-    ): ExportResult
-}
 
 /**
  * Immutable DTO with all CLI inputs for `d-migrate data export`.
@@ -224,37 +176,6 @@ class DataExportRunner(
         }
     }
 
-    // ─── Internal DTOs for step results ─────────────────────────
-
-    private data class ResumeContext(
-        val operationId: String,
-        val resuming: Boolean,
-        val skippedTables: Set<String>,
-        val initialSlices: Map<String, CheckpointTableSlice>,
-    )
-
-    private data class ExportInfra(
-        val reader: DataReader,
-        val lister: TableLister,
-    )
-
-    private data class ExportPreparedContext(
-        val reader: DataReader,
-        val lister: TableLister,
-        val tables: List<String>,
-        val output: ExportOutput,
-        val options: ExportOptions,
-        val filter: DataFilter?,
-        val factory: DataChunkWriterFactory,
-        val fingerprint: String,
-        val primaryKeysByTable: Map<String, List<String>>,
-    )
-
-    private data class CheckpointContext(
-        val store: CheckpointStore?,
-        val dir: Path?,
-    )
-
     private fun executeWithPool(
         request: DataExportRequest,
         connectionConfig: ConnectionConfig,
@@ -273,8 +194,8 @@ class DataExportRunner(
         }
         val checkpoint = resolveCheckpointContext(request) ?: return 7
         val resumeCtx = when (val r = resolveResumeContext(request, ctx, output, checkpoint, effectiveTables)) {
-            is ResumeResult.Ok -> r.value
-            is ResumeResult.Exit -> return r.code
+            is ExportResumeResult.Ok -> r.value
+            is ExportResumeResult.Exit -> return r.code
         }
         val markers = resolveMarkers(request, resumeCtx, ctx.primaryKeysByTable, effectiveTables) ?: return 3
         val initExit = writeInitialManifest(request, resumeCtx, checkpoint.store, ctx.fingerprint, effectiveTables)
@@ -296,11 +217,6 @@ class DataExportRunner(
             stderr("Error: ${e.message}"); return null
         }
         return ExportInfra(reader, lister)
-    }
-
-    private sealed class TablesResult {
-        data class Ok(val tables: List<String>) : TablesResult()
-        data class Exit(val code: Int) : TablesResult()
     }
 
     private fun resolveTables(request: DataExportRequest, lister: TableLister, pool: ConnectionPool): TablesResult {
@@ -333,11 +249,6 @@ class DataExportRunner(
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}"); null
         }
-    }
-
-    private sealed class PreparedResult {
-        data class Ok(val value: ExportPreparedContext) : PreparedResult()
-        data class Exit(val code: Int) : PreparedResult()
     }
 
     private fun buildExportContext(
@@ -374,7 +285,7 @@ class DataExportRunner(
         ))
     }
 
-    private fun resolveCheckpointContext(request: DataExportRequest): CheckpointContext? {
+    private fun resolveCheckpointContext(request: DataExportRequest): ExportCheckpointContext? {
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {
@@ -384,59 +295,54 @@ class DataExportRunner(
         val merged = CheckpointConfig.merge(cliDirectory = request.checkpointDir, config = fromConfig)
         val dir = merged.directory
         val store = checkpointStoreFactory?.let { factory -> dir?.let { factory(it) } }
-        return CheckpointContext(store, dir)
-    }
-
-    private sealed class ResumeResult {
-        data class Ok(val value: ResumeContext) : ResumeResult()
-        data class Exit(val code: Int) : ResumeResult()
+        return ExportCheckpointContext(store, dir)
     }
 
     private fun resolveResumeContext(
         request: DataExportRequest, ctx: ExportPreparedContext, output: ExportOutput,
-        checkpoint: CheckpointContext, tables: List<String>,
-    ): ResumeResult {
+        checkpoint: ExportCheckpointContext, tables: List<String>,
+    ): ExportResumeResult {
         if (!request.resume.isNullOrBlank()) {
             val store = checkpoint.store ?: run {
                 stderr("Error: --resume requires a checkpoint directory; set --checkpoint-dir or pipeline.checkpoint.directory.")
-                return ResumeResult.Exit(7)
+                return ExportResumeResult.Exit(7)
             }
             val resolvedOpId = resolveResumeReference(request.resume, checkpoint.dir!!) ?: run {
                 stderr("Error: --resume path must be inside the effective checkpoint directory '${checkpoint.dir}'.")
-                return ResumeResult.Exit(7)
+                return ExportResumeResult.Exit(7)
             }
             val manifest: CheckpointManifest? = try {
                 store.load(resolvedOpId)
             } catch (e: UnsupportedCheckpointVersionException) {
-                stderr("Error: ${e.message}"); return ResumeResult.Exit(7)
+                stderr("Error: ${e.message}"); return ExportResumeResult.Exit(7)
             } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to load checkpoint: ${e.message}"); return ResumeResult.Exit(7)
+                stderr("Error: Failed to load checkpoint: ${e.message}"); return ExportResumeResult.Exit(7)
             }
-            if (manifest == null) { stderr("Error: Checkpoint not found: '${request.resume}'"); return ResumeResult.Exit(7) }
+            if (manifest == null) { stderr("Error: Checkpoint not found: '${request.resume}'"); return ExportResumeResult.Exit(7) }
             if (manifest.operationType != CheckpointOperationType.EXPORT) {
                 stderr("Error: Checkpoint type mismatch: expected EXPORT, got ${manifest.operationType}.")
-                return ResumeResult.Exit(3)
+                return ExportResumeResult.Exit(3)
             }
             if (manifest.optionsFingerprint != ctx.fingerprint) {
                 stderr("Error: Checkpoint options do not match the current request (fingerprint mismatch); refuse to resume.")
-                return ResumeResult.Exit(3)
+                return ExportResumeResult.Exit(3)
             }
             val manifestTables = manifest.tableSlices.map { it.table }
             if (manifestTables != tables) {
                 stderr("Error: Checkpoint table list does not match the current request: manifest=$manifestTables, current=$tables.")
-                return ResumeResult.Exit(3)
+                return ExportResumeResult.Exit(3)
             }
             val skipped = manifest.tableSlices.filter { it.status == CheckpointSliceStatus.COMPLETED }.map { it.table }.toSet()
             if (output is ExportOutput.SingleFile && tables.isNotEmpty() && tables.all { it in skipped }) {
                 stderr("Error: single-file resume has no pending table; the previous run is already completed. Remove --resume or choose a different output.")
-                return ResumeResult.Exit(3)
+                return ExportResumeResult.Exit(3)
             }
-            return ResumeResult.Ok(ResumeContext(
+            return ExportResumeResult.Ok(ExportResumeContext(
                 operationId = manifest.operationId, resuming = true,
                 skippedTables = skipped, initialSlices = manifest.tableSlices.associateBy { it.table },
             ))
         }
-        return ResumeResult.Ok(ResumeContext(
+        return ExportResumeResult.Ok(ExportResumeContext(
             operationId = java.util.UUID.randomUUID().toString(), resuming = false,
             skippedTables = emptySet(),
             initialSlices = tables.associateWith { CheckpointTableSlice(table = it, status = CheckpointSliceStatus.PENDING) },
@@ -444,7 +350,7 @@ class DataExportRunner(
     }
 
     private fun resolveMarkers(
-        request: DataExportRequest, resume: ResumeContext,
+        request: DataExportRequest, resume: ExportResumeContext,
         primaryKeysByTable: Map<String, List<String>>, tables: List<String>,
     ): Map<String, ResumeMarker>? {
         return try {
@@ -458,7 +364,7 @@ class DataExportRunner(
 
     /** Write initial manifest for fresh runs. Returns exit code on failure, null on success. */
     private fun writeInitialManifest(
-        request: DataExportRequest, resume: ResumeContext, store: CheckpointStore?,
+        request: DataExportRequest, resume: ExportResumeContext, store: CheckpointStore?,
         fingerprint: String, tables: List<String>,
     ): Int? {
         if (store == null || resume.resuming) return null
@@ -479,7 +385,7 @@ class DataExportRunner(
     }
 
     private fun buildCallbacks(
-        request: DataExportRequest, resume: ResumeContext, store: CheckpointStore?,
+        request: DataExportRequest, resume: ExportResumeContext, store: CheckpointStore?,
         fingerprint: String, tables: List<String>, markers: Map<String, ResumeMarker>,
     ): ExportCallbacks {
         val operationId = resume.operationId
@@ -526,7 +432,7 @@ class DataExportRunner(
         return ExportCallbacks(effectiveReporter, onTableCompleted, onChunkProcessed)
     }
 
-    private fun setupStaging(output: ExportOutput, checkpoint: CheckpointContext, operationId: String): StagingRedirect? {
+    private fun setupStaging(output: ExportOutput, checkpoint: ExportCheckpointContext, operationId: String): StagingRedirect? {
         if (output is ExportOutput.SingleFile && checkpoint.store != null && checkpoint.dir != null) {
             return StagingRedirect(target = output.path, staging = checkpoint.dir.resolve("$operationId.single-file.staging"))
         }
@@ -535,7 +441,7 @@ class DataExportRunner(
 
     private fun executeStreaming(
         request: DataExportRequest, pool: ConnectionPool, ctx: ExportPreparedContext,
-        output: ExportOutput, staging: StagingRedirect?, resume: ResumeContext,
+        output: ExportOutput, staging: StagingRedirect?, resume: ExportResumeContext,
         markers: Map<String, ResumeMarker>, callbacks: ExportCallbacks,
     ): ExportResult? {
         val executorOutput = staging?.let { ExportOutput.SingleFile(it.staging) } ?: output
@@ -638,21 +544,4 @@ class DataExportRunner(
         is ExportOutput.FilePerTable -> output.directory.toAbsolutePath().normalize().toString()
     }
 
-    /** Internal DTO for the staging redirect in single-file runs. `staging` resides in the
-     *  checkpoint directory; `target` is the user-requested destination path. */
-    private data class StagingRedirect(
-        val target: Path,
-        val staging: Path,
-    )
-
 }
-
-/** Manifest carries a mid-table `resumePosition` but the current request has no `--since-column`.
- *  The run contracts are incompatible; the Runner translates this exception into exit 3. */
-internal class TableResumeMismatchException(
-    val table: String,
-    val markerColumn: String,
-) : RuntimeException(
-    "Checkpoint for table '$table' carries a mid-table marker on column " +
-        "'$markerColumn', but the current request has no --since-column; refuse to resume."
-)

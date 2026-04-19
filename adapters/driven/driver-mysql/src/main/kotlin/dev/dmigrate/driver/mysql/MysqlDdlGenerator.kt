@@ -125,87 +125,78 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         colName: String,
         col: ColumnDefinition,
         schema: SchemaDefinition,
-        notes: MutableList<TransformationNote>
-    ): String {
-        val type = col.type
+        notes: MutableList<TransformationNote>,
+    ): String = when {
+        col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement ->
+            columnAutoIncrement(colName, col)
+        col.type is NeutralType.Enum -> columnEnum(colName, col, schema)
+        col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
+        else -> columnSql(colName, col, schema)
+    }
 
-        // For Identifier type (AUTO_INCREMENT), TypeMapper already returns "INT NOT NULL AUTO_INCREMENT"
-        if (type is NeutralType.Identifier && type.autoIncrement) {
-            val parts = mutableListOf<String>()
-            parts += quoteIdentifier(colName)
-            parts += typeMapper.toSql(type)
-            if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-            if (col.unique) parts += "UNIQUE"
-            return parts.joinToString(" ")
-        }
+    private fun columnAutoIncrement(colName: String, col: ColumnDefinition): String {
+        val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(col.type))
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+        if (col.unique) parts += "UNIQUE"
+        return parts.joinToString(" ")
+    }
 
-        // For enum columns with ref_type, resolve from schema.customTypes and inline ENUM(...)
-        if (type is NeutralType.Enum && type.refType != null) {
+    private fun columnEnum(colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+        val type = col.type as NeutralType.Enum
+        // Ref-type enum: resolve values from customTypes
+        if (type.refType != null) {
             val customType = schema.customTypes[type.refType]
+            // Domain ref-type: use base type + inline CHECK
+            if (customType != null && customType.kind == CustomTypeKind.DOMAIN) {
+                return columnDomain(colName, col, customType)
+            }
             val enumValues = customType?.values
             if (enumValues != null) {
-                val enumDef = enumValues.joinToString(", ") { "'${it.replace("'", "''")}'" }
-                val parts = mutableListOf<String>()
-                parts += quoteIdentifier(colName)
-                parts += "ENUM($enumDef)"
-                if (col.required) parts += "NOT NULL"
-                if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-                if (col.unique) parts += "UNIQUE"
-                return parts.joinToString(" ")
+                return columnEnumInline(colName, col, enumValues)
             }
         }
-
-        // For enum columns with inline values, inline ENUM(...)
-        if (type is NeutralType.Enum && type.values != null) {
-            val enumDef = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
-            val parts = mutableListOf<String>()
-            parts += quoteIdentifier(colName)
-            parts += "ENUM($enumDef)"
-            if (col.required) parts += "NOT NULL"
-            if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-            if (col.unique) parts += "UNIQUE"
-            return parts.joinToString(" ")
+        // Inline enum values
+        if (type.values != null) {
+            return columnEnumInline(colName, col, type.values!!)
         }
-
-        // For domain ref_type, use base type + inline CHECK
-        if (type is NeutralType.Enum && type.refType != null) {
-            val customType = schema.customTypes[type.refType]
-            if (customType != null && customType.kind == CustomTypeKind.DOMAIN) {
-                val parts = mutableListOf<String>()
-                parts += quoteIdentifier(colName)
-                parts += customType.baseType ?: "TEXT"
-                if (col.required) parts += "NOT NULL"
-                if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-                if (col.unique) parts += "UNIQUE"
-                if (customType.check != null) {
-                    parts += "CHECK (${customType.check})"
-                }
-                return parts.joinToString(" ")
-            }
-        }
-
-        // Geometry: append SRID when present, emit W120 if best-effort
-        if (type is NeutralType.Geometry) {
-            val parts = mutableListOf<String>()
-            parts += quoteIdentifier(colName)
-            val baseType = typeMapper.toSql(type)
-            val srid = type.srid
-            if (srid != null) {
-                parts += "$baseType /*!80003 SRID $srid */"
-                notes += TransformationNote(
-                    type = NoteType.WARNING, code = "W120",
-                    objectName = "$colName", message = "SRID $srid emitted as MySQL comment hint; " +
-                        "full SRID constraint support depends on MySQL 8.0+",
-                )
-            } else {
-                parts += baseType
-            }
-            if (col.required) parts += "NOT NULL"
-            return parts.joinToString(" ")
-        }
-
-        // Default: delegate to base class columnSql
         return columnSql(colName, col, schema)
+    }
+
+    private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String {
+        val enumDef = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
+        val parts = mutableListOf(quoteIdentifier(colName), "ENUM($enumDef)")
+        if (col.required) parts += "NOT NULL"
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+        if (col.unique) parts += "UNIQUE"
+        return parts.joinToString(" ")
+    }
+
+    private fun columnDomain(colName: String, col: ColumnDefinition, customType: CustomTypeDefinition): String {
+        val parts = mutableListOf(quoteIdentifier(colName), customType.baseType ?: "TEXT")
+        if (col.required) parts += "NOT NULL"
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+        if (col.unique) parts += "UNIQUE"
+        if (customType.check != null) parts += "CHECK (${customType.check})"
+        return parts.joinToString(" ")
+    }
+
+    private fun columnGeometry(colName: String, col: ColumnDefinition, notes: MutableList<TransformationNote>): String {
+        val type = col.type as NeutralType.Geometry
+        val parts = mutableListOf(quoteIdentifier(colName))
+        val baseType = typeMapper.toSql(type)
+        val srid = type.srid
+        if (srid != null) {
+            parts += "$baseType /*!80003 SRID $srid */"
+            notes += TransformationNote(
+                type = NoteType.WARNING, code = "W120",
+                objectName = colName, message = "SRID $srid emitted as MySQL comment hint; " +
+                    "full SRID constraint support depends on MySQL 8.0+",
+            )
+        } else {
+            parts += baseType
+        }
+        if (col.required) parts += "NOT NULL"
+        return parts.joinToString(" ")
     }
 
     private fun buildForeignKeyClause(
