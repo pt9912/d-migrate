@@ -7,6 +7,9 @@ import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.format.yaml.YamlSchemaCodec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -156,13 +159,14 @@ class E2ERoundTripPostgresTest : FunSpec({
             // ─── 4. Apply DDL to target DB ──────────────────────
             DriverManager.getConnection(rawJdbc(target), target.username, target.password).use { conn ->
                 conn.createStatement().use { stmt ->
-                    // Split by semicolons and execute each statement
-                    ddlOutput.split(";")
+                    // Strip comment-only lines, then split by semicolons
+                    val cleanedDdl = ddlOutput.lines()
+                        .filter { !it.trimStart().startsWith("--") }
+                        .joinToString("\n")
+                    cleanedDdl.split(";")
                         .map { it.trim() }
-                        .filter { it.isNotBlank() && !it.startsWith("--") }
-                        .forEach { sql ->
-                            try { stmt.execute("$sql;") } catch (_: Exception) { /* skip comments/header */ }
-                        }
+                        .filter { it.isNotBlank() }
+                        .forEach { sql -> stmt.execute("$sql;") }
                 }
             }
 
@@ -184,32 +188,47 @@ class E2ERoundTripPostgresTest : FunSpec({
                 "--format", "json",
             ))
 
-            // ─── 6. Verify: row counts ──────────────────────────
+            // ─── 6. Structural schema compare via SchemaComparator ──
+            val targetSchemaYaml = tmpDir.resolve("target-schema.yaml")
+            cli().parse(listOf(
+                "--quiet",
+                "schema", "reverse",
+                "--source", tgtUrl,
+                "--output", targetSchemaYaml.toString(),
+            ))
+            val codec = YamlSchemaCodec()
+            val sourceSchema = codec.read(schemaYaml)
+            val targetSchema = codec.read(targetSchemaYaml)
+            val diff = SchemaComparator().compare(sourceSchema, targetSchema)
+            diff.tablesAdded.shouldBeEmpty()
+            diff.tablesRemoved.shouldBeEmpty()
+
+            // ─── 7. Verify: row counts ──────────────────────────
             DriverManager.getConnection(rawJdbc(target), target.username, target.password).use { conn ->
                 conn.createStatement().use { stmt ->
-                    // Users: 3 rows
                     stmt.executeQuery("SELECT COUNT(*) FROM users").use { rs ->
                         rs.next(); rs.getInt(1) shouldBe 3
                     }
-                    // Orders: 3 rows
                     stmt.executeQuery("SELECT COUNT(*) FROM orders").use { rs ->
                         rs.next(); rs.getInt(1) shouldBe 3
                     }
 
-                    // ─── 7. Verify: key values ──────────────────
-                    stmt.executeQuery("SELECT name FROM users ORDER BY id").use { rs ->
+                    // ─── 8. Verify: key values + NULL round-trip ──
+                    stmt.executeQuery("SELECT name, email FROM users ORDER BY id").use { rs ->
                         rs.next(); rs.getString("name") shouldBe "alice"
+                        rs.getString("email") shouldBe "alice@test.com"
                         rs.next(); rs.getString("name") shouldBe "bob"
                         rs.next(); rs.getString("name") shouldBe "charlie"
+                        rs.getString("email") shouldBe null // NULL round-trip
                     }
 
-                    // ─── 8. Verify: content value ───────────────
+                    // ─── 9. Verify: content value ───────────────
                     stmt.executeQuery("SELECT amount FROM orders WHERE user_id = 1 ORDER BY id").use { rs ->
                         rs.next(); rs.getBigDecimal("amount").toPlainString() shouldBe "99.95"
                         rs.next(); rs.getBigDecimal("amount").toPlainString() shouldBe "42.00"
                     }
 
-                    // ─── 9. Verify: FK constraint intact ────────
+                    // ─── 10. Verify: FK constraint intact ───────
                     stmt.executeQuery("""
                         SELECT COUNT(*) FROM information_schema.table_constraints
                         WHERE constraint_type = 'FOREIGN KEY' AND table_name = 'orders'
