@@ -54,31 +54,47 @@ data class SchemaPreflightResult(
  * without a real [StreamingImporter][dev.dmigrate.streaming.StreamingImporter].
  * The production implementation is wired in the CLI module.
  */
+/** Grouped infrastructure for import execution. */
+data class ImportExecutionContext(
+    val pool: ConnectionPool,
+    val input: ImportInput,
+)
+
+/** Grouped import options and format configuration. */
+data class ImportExecutionOptions(
+    val format: DataExportFormat,
+    val options: ImportOptions,
+    val readOptions: FormatReadOptions,
+    val config: PipelineConfig,
+)
+
+/** Grouped resume state for import. */
+data class ImportResumeState(
+    val operationId: String?,
+    val resuming: Boolean,
+    val skippedTables: Set<String>,
+    val resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
+)
+
+/** Grouped callbacks for import progress and lifecycle. */
+data class ImportCallbacks(
+    val progressReporter: ProgressReporter,
+    val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
+    val onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit,
+    val onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit,
+)
+
+/**
+ * Thin seam over the streaming import, allowing the Runner to be tested
+ * without a real [StreamingImporter][dev.dmigrate.streaming.StreamingImporter].
+ * The production implementation is wired in the CLI module.
+ */
 fun interface ImportExecutor {
     fun execute(
-        pool: ConnectionPool,
-        input: ImportInput,
-        format: DataExportFormat,
-        options: ImportOptions,
-        readOptions: FormatReadOptions,
-        config: PipelineConfig,
-        onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
-        progressReporter: ProgressReporter,
-        /** Stable operation ID for the run. Set by the Runner (UUID for fresh runs,
-         *  from manifest on resume) and passed through to `StreamingImporter.import`. */
-        operationId: String?,
-        /** `true` when resuming from an existing manifest; `false` for a fresh run.
-         *  Flows into `ProgressEvent.RunStarted` so renderers show "Resuming run ..." vs "Starting run ...". */
-        resuming: Boolean,
-        /** Tables already `COMPLETED` in the manifest; the importer skips them entirely. */
-        skippedTables: Set<String>,
-        /** Per-table optional resume state. Contains an entry for every table with
-         *  `chunksProcessed > 0` in the manifest. */
-        resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
-        /** Callback after each successfully committed chunk. The Runner uses it to update the manifest. */
-        onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit,
-        /** Callback per completed table import. Also invoked on error / `failedFinish`. */
-        onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit,
+        context: ImportExecutionContext,
+        options: ImportExecutionOptions,
+        resume: ImportResumeState,
+        callbacks: ImportCallbacks,
     ): ImportResult
 }
 
@@ -697,20 +713,28 @@ class DataImportRunner(
             val effectiveReporter = if (request.quiet || request.noProgress)
                 NoOpProgressReporter else progressReporter
             importExecutor.execute(
-                pool = pool,
-                input = preparedImport.input,
-                format = format,
-                options = importOptions,
-                readOptions = formatReadOptions,
-                config = pipelineConfig,
-                onTableOpened = onTableOpened,
-                progressReporter = effectiveReporter,
-                operationId = operationId,
-                resuming = resumeCtx.resuming,
-                skippedTables = resumeCtx.skippedTables,
-                resumeStateByTable = resumeCtx.resumeStateByTable,
-                onChunkCommitted = onChunkCommitted,
-                onTableCompleted = onTableCompleted,
+                context = ImportExecutionContext(
+                    pool = pool,
+                    input = preparedImport.input,
+                ),
+                options = ImportExecutionOptions(
+                    format = format,
+                    options = importOptions,
+                    readOptions = formatReadOptions,
+                    config = pipelineConfig,
+                ),
+                resume = ImportResumeState(
+                    operationId = operationId,
+                    resuming = resumeCtx.resuming,
+                    skippedTables = resumeCtx.skippedTables,
+                    resumeStateByTable = resumeCtx.resumeStateByTable,
+                ),
+                callbacks = ImportCallbacks(
+                    progressReporter = effectiveReporter,
+                    onTableOpened = onTableOpened,
+                    onChunkCommitted = onChunkCommitted,
+                    onTableCompleted = onTableCompleted,
+                ),
             )
         } catch (e: UnsupportedTriggerModeException) {
             stderr("Error: ${e.message}")

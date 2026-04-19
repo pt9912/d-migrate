@@ -33,37 +33,50 @@ import java.time.Instant
  * without a real [StreamingExporter][dev.dmigrate.streaming.StreamingExporter].
  * The production implementation is wired in the CLI module.
  */
+/** Grouped infrastructure for export execution. */
+data class ExportExecutionContext(
+    val pool: ConnectionPool,
+    val reader: DataReader,
+    val lister: TableLister,
+    val factory: DataChunkWriterFactory,
+)
+
+/** Grouped export options and I/O configuration. */
+data class ExportExecutionOptions(
+    val tables: List<String>,
+    val output: ExportOutput,
+    val format: DataExportFormat,
+    val options: ExportOptions,
+    val config: PipelineConfig,
+    val filter: DataFilter?,
+)
+
+/** Grouped resume state for export. */
+data class ExportResumeState(
+    val operationId: String?,
+    val resuming: Boolean,
+    val skippedTables: Set<String>,
+    val resumeMarkers: Map<String, ResumeMarker>,
+)
+
+/** Grouped callbacks for export progress and lifecycle. */
+data class ExportCallbacks(
+    val progressReporter: ProgressReporter,
+    val onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit,
+    val onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit,
+)
+
+/**
+ * Thin seam over the streaming export, allowing the Runner to be tested
+ * without a real [StreamingExporter][dev.dmigrate.streaming.StreamingExporter].
+ * The production implementation is wired in the CLI module.
+ */
 fun interface ExportExecutor {
     fun execute(
-        pool: ConnectionPool,
-        reader: DataReader,
-        lister: TableLister,
-        factory: DataChunkWriterFactory,
-        tables: List<String>,
-        output: ExportOutput,
-        format: DataExportFormat,
-        options: ExportOptions,
-        config: PipelineConfig,
-        filter: DataFilter?,
-        progressReporter: ProgressReporter,
-        /** Stable operation ID for the run. Set by the Runner (UUID or from manifest),
-         *  passed through to `StreamingExporter.export` and `ProgressEvent.RunStarted`. */
-        operationId: String?,
-        /** `true` when resuming from an existing manifest; `false` for a fresh run.
-         *  The `ProgressRenderer` uses this flag for the "Starting run ..." vs "Resuming run ..." label. */
-        resuming: Boolean,
-        /** Tables already marked `COMPLETED` in the manifest. Populated by the Runner
-         *  from the loaded manifest; empty for a fresh run. */
-        skippedTables: Set<String>,
-        /** Callback per completed table. The Runner uses it to update the checkpoint manifest. */
-        onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit,
-        /** Per-table optional [ResumeMarker]. Missing entry -> legacy path without marker-based
-         *  ordering. Present entry activates mid-table resume (fresh track or resume-from-position
-         *  depending on `ResumeMarker.position`). */
-        resumeMarkers: Map<String, ResumeMarker>,
-        /** Chunk-granular progress callback. The Runner updates the manifest with each
-         *  invocation — only tables with an active [ResumeMarker] trigger this callback. */
-        onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit,
+        context: ExportExecutionContext,
+        options: ExportExecutionOptions,
+        resume: ExportResumeState,
+        callbacks: ExportCallbacks,
     ): ExportResult
 }
 
@@ -605,23 +618,31 @@ class DataExportRunner(
             val effectiveReporter = if (request.quiet || request.noProgress)
                 NoOpProgressReporter else progressReporter
             exportExecutor.execute(
-                pool = pool,
-                reader = reader,
-                lister = tableLister,
-                factory = factory,
-                tables = effectiveTables,
-                output = executorOutput,
-                format = DataExportFormat.fromCli(request.format),
-                options = exportOptions,
-                config = PipelineConfig(chunkSize = request.chunkSize),
-                filter = effectiveFilter,
-                progressReporter = effectiveReporter,
-                operationId = operationId,
-                resuming = resume.resuming,
-                skippedTables = resume.skippedTables,
-                onTableCompleted = onTableCompleted,
-                resumeMarkers = executorMarkers,
-                onChunkProcessed = onChunkProcessed,
+                context = ExportExecutionContext(
+                    pool = pool,
+                    reader = reader,
+                    lister = tableLister,
+                    factory = factory,
+                ),
+                options = ExportExecutionOptions(
+                    tables = effectiveTables,
+                    output = executorOutput,
+                    format = DataExportFormat.fromCli(request.format),
+                    options = exportOptions,
+                    config = PipelineConfig(chunkSize = request.chunkSize),
+                    filter = effectiveFilter,
+                ),
+                resume = ExportResumeState(
+                    operationId = operationId,
+                    resuming = resume.resuming,
+                    skippedTables = resume.skippedTables,
+                    resumeMarkers = executorMarkers,
+                ),
+                callbacks = ExportCallbacks(
+                    progressReporter = effectiveReporter,
+                    onTableCompleted = onTableCompleted,
+                    onChunkProcessed = onChunkProcessed,
+                ),
             )
         } catch (e: Throwable) {
             stderr("Error: Export failed: ${e.message}")

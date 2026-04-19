@@ -88,13 +88,13 @@ class DataExportRunnerTest : FunSpec({
      * Ergebnis liefert. Tests können den Builder überschreiben, um Fehler
      * zu werfen oder ein Result mit `error != null` zu liefern.
      */
-    val successExecutor: ExportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, _, _ ->
-        val summaries = tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
+    val successExecutor: ExportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+        val summaries = opts.tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
         ExportResult(
             tables = summaries,
-            totalRows = 10L * tables.size,
-            totalChunks = tables.size.toLong(),
-            totalBytes = 256L * tables.size,
+            totalRows = 10L * opts.tables.size,
+            totalChunks = opts.tables.size.toLong(),
+            totalBytes = 256L * opts.tables.size,
             durationMs = 3,
         )
     }
@@ -253,10 +253,10 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
-                capturedFilter = filter
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                capturedFilter = opts.filter
                 ExportResult(
-                    tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
+                    tables = opts.tables.map { TableExportSummary(it, 1, 1, 1, 1) },
                     totalRows = 1, totalChunks = 1, totalBytes = 1, durationMs = 1,
                 )
             }
@@ -270,10 +270,10 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
-                capturedFilter = filter
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                capturedFilter = opts.filter
                 ExportResult(
-                    tables = tables.map { TableExportSummary(it, 0, 0, 0, 0) },
+                    tables = opts.tables.map { TableExportSummary(it, 0, 0, 0, 0) },
                     totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0,
                 )
             }
@@ -287,10 +287,10 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
-                capturedFilter = filter
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                capturedFilter = opts.filter
                 ExportResult(
-                    tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
+                    tables = opts.tables.map { TableExportSummary(it, 1, 1, 1, 1) },
                     totalRows = 1, totalChunks = 1, totalBytes = 1, durationMs = 1,
                 )
             }
@@ -313,10 +313,10 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, filter, _, _, _, _, _, _, _ ->
-                capturedFilter = filter
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                capturedFilter = opts.filter
                 ExportResult(
-                    tables = tables.map { TableExportSummary(it, 1, 1, 1, 1) },
+                    tables = opts.tables.map { TableExportSummary(it, 1, 1, 1, 1) },
                     totalRows = 1, totalChunks = 1, totalBytes = 1, durationMs = 1,
                 )
             }
@@ -539,7 +539,7 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -552,9 +552,9 @@ class DataExportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
                 ExportResult(
-                    tables = tables.map { TableExportSummary(it, 0, 0, 0, 1, error = "disk full") },
+                    tables = opts.tables.map { TableExportSummary(it, 0, 0, 0, 1, error = "disk full") },
                     totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 1,
                 )
             },
@@ -570,7 +570,7 @@ class DataExportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
                 throw RuntimeException("boom")
             },
         )
@@ -716,9 +716,9 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, pr, _, _, _, _, _, _ ->
-                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
-                    dev.dmigrate.streaming.ProgressOperation.EXPORT, tables.size))
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+                    dev.dmigrate.streaming.ProgressOperation.EXPORT, opts.tables.size))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
             })
         runner.execute(request())
@@ -730,8 +730,8 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
-                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
             })
@@ -744,8 +744,8 @@ class DataExportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { _, _, _, _, _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
-                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
                 ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
             })
@@ -835,13 +835,13 @@ class DataExportRunnerTest : FunSpec({
             val stderr = StderrCapture()
             // Executor simuliert, dass StreamingExporter pro Tabelle
             // onTableCompleted aufruft.
-            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
-                val summaries = tables.map {
+            val executor = ExportExecutor { ctx, opts, resume, callbacks ->
+                val summaries = opts.tables.map {
                     dev.dmigrate.streaming.TableExportSummary(
                         table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
                     )
                 }
-                summaries.forEach(onDone)
+                summaries.forEach(callbacks.onTableCompleted)
                 dev.dmigrate.streaming.ExportResult(
                     tables = summaries,
                     totalRows = summaries.sumOf { it.rows },
@@ -970,21 +970,21 @@ class DataExportRunnerTest : FunSpec({
             val capturingStore = InMemoryCheckpointStore()
             val warm = newRunner(
                 StderrCapture(),
-                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
-                    tables.forEach {
-                        onDone(
+                exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                    opts.tables.forEach {
+                        callbacks.onTableCompleted(
                             dev.dmigrate.streaming.TableExportSummary(
                                 table = it, rows = 0, chunks = 1, bytes = 0, durationMs = 1
                             )
                         )
                     }
                     dev.dmigrate.streaming.ExportResult(
-                        tables = tables.map {
+                        tables = opts.tables.map {
                             dev.dmigrate.streaming.TableExportSummary(
                                 table = it, rows = 0, chunks = 1, bytes = 0, durationMs = 1
                             )
                         },
-                        totalRows = 0, totalChunks = tables.size.toLong(),
+                        totalRows = 0, totalChunks = opts.tables.size.toLong(),
                         totalBytes = 0, durationMs = 1,
                     )
                 },
@@ -1030,11 +1030,11 @@ class DataExportRunnerTest : FunSpec({
             // dafuer, dass keine Tabelle tatsaechlich exportiert wird.
             val runner = newRunner(
                 stderr,
-                exportExecutor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, _, _, _ ->
+                exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
                     // Der StreamingExporter-Produktivpfad filtert tables
                     // gegen skipped; hier im Test simulieren wir das
                     // Ergebnis: leere Summary, aber Aufruf passiert.
-                    tables.size shouldBe skipped.size
+                    opts.tables.size shouldBe resume.skippedTables.size
                     dev.dmigrate.streaming.ExportResult(
                         tables = emptyList(),
                         totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 1,
@@ -1064,13 +1064,13 @@ class DataExportRunnerTest : FunSpec({
             var storeDir: Path? = null
             val stderr = StderrCapture()
             val configDir = Path.of("/tmp/d-migrate-c1-from-cfg")
-            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
-                val summaries = tables.map {
+            val executor = ExportExecutor { ctx, opts, resume, callbacks ->
+                val summaries = opts.tables.map {
                     dev.dmigrate.streaming.TableExportSummary(
                         table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
                     )
                 }
-                summaries.forEach(onDone)
+                summaries.forEach(callbacks.onTableCompleted)
                 dev.dmigrate.streaming.ExportResult(
                     tables = summaries, totalRows = 1L, totalChunks = 1L,
                     totalBytes = 1L, durationMs = 1L,
@@ -1109,9 +1109,9 @@ class DataExportRunnerTest : FunSpec({
             val stderr = StderrCapture()
             val configDir = Path.of("/tmp/d-migrate-c1-cfg")
             val cliDir = Path.of("/tmp/d-migrate-c1-cli")
-            val executor = ExportExecutor { _, _, _, _, tables, _, _, _, _, _, _, _, _, _, onDone, _, _ ->
-                tables.forEach {
-                    onDone(
+            val executor = ExportExecutor { ctx, opts, resume, callbacks ->
+                opts.tables.forEach {
+                    callbacks.onTableCompleted(
                         dev.dmigrate.streaming.TableExportSummary(
                             table = it, rows = 0, chunks = 1, bytes = 0, durationMs = 1,
                         ),
@@ -1156,26 +1156,27 @@ class DataExportRunnerTest : FunSpec({
             val captureStore = InMemoryCheckpointStore()
             val warmRunner = newRunner(
                 StderrCapture(),
-                exportExecutor = ExportExecutor { _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, _, _ ->
+                exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
                     // Phase C.2 §5.4: der Runner leitet Single-File-Laeufe
                     // in eine Staging-Datei im Checkpoint-Verzeichnis um.
                     // Der Fake simuliert den echten Writer, indem er die
                     // uebergebene Output-Datei anlegt, damit die
                     // spaetere atomic-rename-Operation einen Gegenstand
                     // hat.
+                    val out = opts.output
                     if (out is dev.dmigrate.streaming.ExportOutput.SingleFile) {
                         Files.createDirectories(out.path.parent)
                         Files.writeString(out.path, "")
                     }
-                    tables.forEach {
-                        onDone(
+                    opts.tables.forEach {
+                        callbacks.onTableCompleted(
                             dev.dmigrate.streaming.TableExportSummary(
                                 table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
                             ),
                         )
                     }
                     dev.dmigrate.streaming.ExportResult(
-                        tables = tables.map {
+                        tables = opts.tables.map {
                             dev.dmigrate.streaming.TableExportSummary(
                                 table = it, rows = 1, chunks = 1, bytes = 1, durationMs = 1,
                             )
@@ -1236,12 +1237,12 @@ class DataExportRunnerTest : FunSpec({
             // Run 1: "users" completes via onTableCompleted, executor
             // throws when processing "orders" → Exit 5.
             val run1Executor = ExportExecutor {
-                _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, onDone, _, _,
+                ctx, opts, resume, callbacks,
                 ->
-                for (t in tables) {
-                    if (t in skipped) continue
+                for (t in opts.tables) {
+                    if (t in resume.skippedTables) continue
                     if (t == "orders") throw RuntimeException("simulated I/O failure on orders")
-                    onDone(TableExportSummary(table = t, rows = 10, chunks = 1, bytes = 256, durationMs = 1))
+                    callbacks.onTableCompleted(TableExportSummary(table = t, rows = 10, chunks = 1, bytes = 256, durationMs = 1))
                 }
                 error("unreachable — executor throws above")
             }
@@ -1273,13 +1274,13 @@ class DataExportRunnerTest : FunSpec({
             // receive skippedTables = {"users"} and only process "orders".
             val capturedSkipped = mutableSetOf<String>()
             val run2Executor = ExportExecutor {
-                _, _, _, _, tables, _, _, _, _, _, _, _, _, skipped, onDone, _, _,
+                ctx, opts, resume, callbacks,
                 ->
-                capturedSkipped += skipped
-                val processed = tables.filter { it !in skipped }
+                capturedSkipped += resume.skippedTables
+                val processed = opts.tables.filter { it !in resume.skippedTables }
                 val summaries = processed.map {
                     TableExportSummary(table = it, rows = 5, chunks = 1, bytes = 128, durationMs = 1)
-                        .also(onDone)
+                        .also(callbacks.onTableCompleted)
                 }
                 ExportResult(
                     tables = summaries,
@@ -1319,13 +1320,13 @@ class DataExportRunnerTest : FunSpec({
         test("no since-column + no manifest marker → silent C.1-fallback, no ResumeMarker passed") {
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, markers, _,
+                ctx, opts, resume, callbacks,
                 ->
-                capturedMarkers += markers
-                val summaries = tables.map {
+                capturedMarkers += resume.resumeMarkers
+                val summaries = opts.tables.map {
                     TableExportSummary(it, rows = 1, chunks = 1, bytes = 10, durationMs = 1)
                 }
-                ExportResult(summaries, 1L * tables.size, tables.size.toLong(), 10L * tables.size, 1)
+                ExportResult(summaries, 1L * opts.tables.size, opts.tables.size.toLong(), 10L * opts.tables.size, 1)
             }
             val stderr = StderrCapture()
             val runner = newRunner(
@@ -1344,13 +1345,13 @@ class DataExportRunnerTest : FunSpec({
         test("since-column set but no PK: stderr warning, no ResumeMarker for that table") {
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, markers, _,
+                ctx, opts, resume, callbacks,
                 ->
-                capturedMarkers += markers
-                val summaries = tables.map {
+                capturedMarkers += resume.resumeMarkers
+                val summaries = opts.tables.map {
                     TableExportSummary(it, rows = 1, chunks = 1, bytes = 10, durationMs = 1)
                 }
-                ExportResult(summaries, 1L * tables.size, tables.size.toLong(), 10L * tables.size, 1)
+                ExportResult(summaries, 1L * opts.tables.size, opts.tables.size.toLong(), 10L * opts.tables.size, 1)
             }
             val stderr = StderrCapture()
             val runner = newRunner(
@@ -1372,13 +1373,13 @@ class DataExportRunnerTest : FunSpec({
         test("fresh run with since-column + PK gets ResumeMarker with position=null") {
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, _, _, _, _, _, _, _, _, _, _, markers, _,
+                ctx, opts, resume, callbacks,
                 ->
-                capturedMarkers += markers
-                val summaries = tables.map {
+                capturedMarkers += resume.resumeMarkers
+                val summaries = opts.tables.map {
                     TableExportSummary(it, rows = 1, chunks = 1, bytes = 10, durationMs = 1)
                 }
-                ExportResult(summaries, 1L * tables.size, tables.size.toLong(), 10L * tables.size, 1)
+                ExportResult(summaries, 1L * opts.tables.size, opts.tables.size.toLong(), 10L * opts.tables.size, 1)
             }
             val stderr = StderrCapture()
             val runner = newRunner(
@@ -1471,19 +1472,20 @@ class DataExportRunnerTest : FunSpec({
         test("per-chunk callback persists marker position into manifest") {
             val storeDir = Files.createTempDirectory("d-migrate-c2-chunk-")
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, markers, onChunk,
+                ctx, opts, resume, callbacks,
                 ->
                 // Siehe warmRunner (Phase C.2 §5.4): Single-File leitet
                 // auf Staging um; der Fake legt die Staging-Datei an,
                 // damit der Runner atomic-rename tun kann.
+                val out = opts.output
                 if (out is dev.dmigrate.streaming.ExportOutput.SingleFile) {
                     Files.createDirectories(out.path.parent)
                     Files.writeString(out.path, "")
                 }
                 // Simuliere zwei Chunks + Abschluss fuer 'users'
-                val table = tables.single()
-                if (table in markers) {
-                    onChunk(
+                val table = opts.tables.single()
+                if (table in resume.resumeMarkers) {
+                    callbacks.onChunkProcessed(
                         dev.dmigrate.streaming.TableChunkProgress(
                             table = table,
                             rowsProcessed = 10,
@@ -1494,7 +1496,7 @@ class DataExportRunnerTest : FunSpec({
                             ),
                         )
                     )
-                    onChunk(
+                    callbacks.onChunkProcessed(
                         dev.dmigrate.streaming.TableChunkProgress(
                             table = table,
                             rowsProcessed = 20,
@@ -1507,7 +1509,7 @@ class DataExportRunnerTest : FunSpec({
                     )
                 }
                 val summary = TableExportSummary(table, rows = 20, chunks = 2, bytes = 512, durationMs = 4)
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ExportResult(listOf(summary), 20, 2, 512, 4)
             }
 
@@ -1600,16 +1602,17 @@ class DataExportRunnerTest : FunSpec({
             val targetPath = storeDir.resolve("users.json")
             val seenOutputPaths = mutableListOf<Path>()
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, _, _,
+                ctx, opts, resume, callbacks,
                 ->
+                val out = opts.output
                 require(out is dev.dmigrate.streaming.ExportOutput.SingleFile)
                 seenOutputPaths.add(out.path)
                 // Simuliere echten Writer: Staging-Datei anlegen
                 Files.writeString(out.path, """[{"id":1}]""")
                 val summary = TableExportSummary(
-                    tables.single(), rows = 1, chunks = 1, bytes = 10, durationMs = 1,
+                    opts.tables.single(), rows = 1, chunks = 1, bytes = 10, durationMs = 1,
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ExportResult(listOf(summary), 1, 1, 10, 1)
             }
             val stderr = StderrCapture()
@@ -1642,15 +1645,16 @@ class DataExportRunnerTest : FunSpec({
             val targetPath = tmpDir.resolve("users.json")
             val seenOutputPaths = mutableListOf<Path>()
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, _, _,
+                ctx, opts, resume, callbacks,
                 ->
+                val out = opts.output
                 require(out is dev.dmigrate.streaming.ExportOutput.SingleFile)
                 seenOutputPaths.add(out.path)
                 Files.writeString(out.path, """[{"id":1}]""")
                 val summary = TableExportSummary(
-                    tables.single(), rows = 1, chunks = 1, bytes = 10, durationMs = 1,
+                    opts.tables.single(), rows = 1, chunks = 1, bytes = 10, durationMs = 1,
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ExportResult(listOf(summary), 1, 1, 10, 1)
             }
             val stderr = StderrCapture()
@@ -1675,7 +1679,7 @@ class DataExportRunnerTest : FunSpec({
             // Pre-existing target that MUST not be clobbered on failure
             Files.writeString(targetPath, "PRE_EXISTING")
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+                ctx, opts, resume, callbacks,
                 ->
                 throw RuntimeException("simulated stream failure")
             }
@@ -1741,13 +1745,14 @@ class DataExportRunnerTest : FunSpec({
 
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
-                _, _, _, _, tables, out, _, _, _, _, _, _, _, _, onDone, markers, _,
+                ctx, opts, resume, callbacks,
                 ->
+                val out = opts.output
                 require(out is dev.dmigrate.streaming.ExportOutput.SingleFile)
-                capturedMarkers += markers
+                capturedMarkers += resume.resumeMarkers
                 Files.writeString(out.path, "resumed")
-                val summary = TableExportSummary(tables.single(), 1, 1, 10, 1)
-                onDone(summary)
+                val summary = TableExportSummary(opts.tables.single(), 1, 1, 10, 1)
+                callbacks.onTableCompleted(summary)
                 ExportResult(listOf(summary), 1, 1, 10, 1)
             }
             val stderr = StderrCapture()

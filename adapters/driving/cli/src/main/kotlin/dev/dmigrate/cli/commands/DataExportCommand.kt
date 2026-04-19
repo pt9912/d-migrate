@@ -173,26 +173,23 @@ class DataExportCommand : CliktCommand(name = "export") {
                     "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
                 }
             },
-            exportExecutor = ExportExecutor {
-                pool, reader, lister, factory, tbls, out, fmt, opts, cfg, flt, reporter,
-                opId, resuming, skipped, onDone, markers, onChunk,
-                ->
-                StreamingExporter(reader, lister, factory)
+            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
+                StreamingExporter(ctx.reader, ctx.lister, ctx.factory)
                     .export(
-                        pool = pool,
-                        tables = tbls,
-                        output = out,
-                        format = fmt,
-                        options = opts,
-                        config = cfg,
-                        filter = flt,
-                        progressReporter = reporter,
-                        operationId = opId,
-                        resuming = resuming,
-                        skippedTables = skipped,
-                        onTableCompleted = onDone,
-                        resumeMarkers = markers,
-                        onChunkProcessed = onChunk,
+                        pool = ctx.pool,
+                        tables = opts.tables,
+                        output = opts.output,
+                        format = opts.format,
+                        options = opts.options,
+                        config = opts.config,
+                        filter = opts.filter,
+                        progressReporter = callbacks.progressReporter,
+                        operationId = resume.operationId,
+                        resuming = resume.resuming,
+                        skippedTables = resume.skippedTables,
+                        onTableCompleted = callbacks.onTableCompleted,
+                        resumeMarkers = resume.resumeMarkers,
+                        onChunkProcessed = callbacks.onChunkProcessed,
                     )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
