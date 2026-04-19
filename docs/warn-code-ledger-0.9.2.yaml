@@ -13,7 +13,7 @@ entries:
     level: warning
     status: active
     entry_type: standard
-    test_path: "hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt"
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt"
     evidence_paths:
-      - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaValidator.kt"
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
         path_type: production
