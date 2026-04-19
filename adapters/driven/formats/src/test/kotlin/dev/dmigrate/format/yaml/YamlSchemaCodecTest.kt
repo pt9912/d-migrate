@@ -518,4 +518,65 @@ class YamlSchemaCodecTest : FunSpec({
         diff.functionsAdded shouldHaveSize 0
         diff.functionsRemoved shouldHaveSize 0
     }
+
+    // ─── dependencies.functions (0.9.2 AP 6.3 Step A) ────────────
+
+    test("parse view with dependencies.functions") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "FuncDeps"
+            version: "1.0.0"
+            views:
+              computed:
+                query: "SELECT calc_total(id) FROM orders"
+                dependencies:
+                  tables: [orders]
+                  functions: [calc_total]
+                source_dialect: postgresql
+        """.trimIndent()
+
+        val schema = codec.read(yaml.byteInputStream())
+        schema.views["computed"]!!.dependencies shouldBe DependencyInfo(
+            tables = listOf("orders"),
+            functions = listOf("calc_total"),
+        )
+    }
+
+    test("parse view without dependencies.functions defaults to emptyList") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "NoDeps"
+            version: "1.0.0"
+            views:
+              simple:
+                query: "SELECT * FROM orders"
+                dependencies:
+                  tables: [orders]
+                source_dialect: postgresql
+        """.trimIndent()
+
+        val schema = codec.read(yaml.byteInputStream())
+        schema.views["simple"]!!.dependencies!!.functions shouldBe emptyList()
+    }
+
+    test("dependencies.functions round-trips through write and read") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "RoundTrip"
+            version: "1.0.0"
+            views:
+              v1:
+                query: "SELECT f1(id) FROM t"
+                dependencies:
+                  tables: [t]
+                  functions: [f1, f2]
+                source_dialect: postgresql
+        """.trimIndent()
+
+        val schema = codec.read(yaml.byteInputStream())
+        val out = java.io.ByteArrayOutputStream()
+        codec.write(out, schema)
+        val reparsed = codec.read(out.toByteArray().inputStream())
+        reparsed.views["v1"]!!.dependencies!!.functions shouldBe listOf("f1", "f2")
+    }
 })
