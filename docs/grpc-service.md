@@ -393,7 +393,7 @@ Beispielhafte Zuordnung:
 | `3` | Validation failed | `INVALID_ARGUMENT` |
 | `4` | Connection failed | `UNAVAILABLE` |
 | `5` | Migration failed | `INTERNAL` |
-| `6` | AI provider failed | `INTERNAL` |
+| `6` | AI provider failed | `UNAVAILABLE` |
 | `7` | Local / render / file failure | `INTERNAL` |
 | `130` | cancelled | `CANCELLED` |
 

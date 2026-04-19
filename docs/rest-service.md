@@ -516,12 +516,11 @@ Operationen ist die HTTP-Abbildung fest:
 | `5` | Migration / execution error | `500` |
 | `6` | AI provider error | `503` |
 | `7` | Local config / file / render error | `500` |
-| `130` | cancelled | `503` |
+| `130` | cancelled | — |
 
-`130` (cancelled) ist für synchrone REST-Operationen ein Sonderfall: bei
-Client-Abbruch wird die Verbindung geschlossen und der Server liefert
-typischerweise keine Antwort. `503` greift nur bei serverseitigem Abbruch
-(z. B. Shutdown, Timeout). Für asynchrone Jobs wird Abbruch über
+`130` (cancelled) hat kein direktes HTTP-Mapping: bei Client-Abbruch
+wird die Verbindung geschlossen, bei serverseitigem Abbruch (Shutdown,
+Timeout) greift `503`. Für asynchrone Jobs wird Abbruch über
 `status=cancelled` im Job-Body signalisiert.
 
 `409` ist exklusiv für Idempotency-Konflikte mit demselben `Idempotency-Key` und abweichendem Request reserviert.
@@ -532,7 +531,7 @@ Zusätzliche HTTP-Fehler (nicht abgeleitet aus CLI-Codes):
 
 | HTTP | Bedeutung | Wann |
 | --- | --- | --- |
-| `428` | Precondition Required | fehlender Idempotency-Key bei asynchroner Job-Anlage |
+| `400` | Bad Request | fehlender Idempotency-Key bei asynchroner Job-Anlage |
 | `401` | Unauthorized | fehlende oder ungültige Authentifizierung |
 | `403` | Forbidden | fehlende Berechtigung auf Betrieb, Verbindung oder Objekt |
 | `404` | Not Found | unbekannter `jobId` oder `artifactId` |
@@ -545,7 +544,7 @@ Bei `429` und `503` MUSS der Server einen `Retry-After`-Header setzen.
 Für asynchrone Operationen gilt:
 
 - `POST` zum Start eines Jobs liefert bei erfolgreicher Annahme `202 Accepted`
-- `Idempotency-Key` ist für alle Job-Start-Endpunkte **erforderlich**; fehlt er, ist der Start mit `428` abzulehnen.
+- `Idempotency-Key` ist für alle Job-Start-Endpunkte **erforderlich**; fehlt er, ist der Start mit `400` abzulehnen.
 - Die Antwort MUSS einen `Location`-Header auf die Job-Ressource enthalten (`/api/v1/jobs/{jobId}`)
 - Die Antwort muss mindestens folgendes JSON liefern:
   ```json

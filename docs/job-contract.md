@@ -32,19 +32,32 @@ ausgeführt wird.
 | --- | --- | --- |
 | `jobId` | String (opak) | Eindeutige, stabile ID des Jobs |
 | `operation` | String | Fachliche Operation (z. B. `data.export`, `schema.reverse`) |
-| `status` | Enum | Aktueller Status (siehe §2.2) |
+| `status` | Enum | Aktueller Status (siehe §2.3) |
 | `createdAt` | Timestamp | Zeitpunkt der Job-Erstellung |
 | `updatedAt` | Timestamp | Zeitpunkt der letzten Statusänderung |
 | `expiresAt` | Timestamp | Ablaufzeitpunkt; danach darf der Server den Job aufräumen |
 | `createdBy` | String | Principal oder Service-Account, der den Job ausgelöst hat |
 | `artifacts` | Liste | Referenzen auf erzeugte Artefakte (kann leer sein) |
 
-### 2.2 Statuswerte und Lebenszyklus
+### 2.2 Optionale Felder
+
+| Feld | Typ | Beschreibung |
+| --- | --- | --- |
+| `error` | Objekt | Fehlerdetails; nur gesetzt wenn `status=failed` |
+| `error.code` | Integer | Fachlicher Fehlercode (siehe §8.1) |
+| `error.message` | String | Menschenlesbare Fehlerbeschreibung |
+| `progress` | Objekt | Fortschrittsinfo (siehe §2.4) |
+
+### 2.3 Statuswerte und Lebenszyklus
+
+> Hinweis: `queued → failed` deckt Fälle ab, in denen ein Job vor dem
+> Start scheitert (z. B. Ressourcenmangel, ungültige Referenz bei Dequeue).
 
 ```text
 queued ──> running ──> succeeded
                   ──> failed
-           ──> cancelled
+                  ──> cancelled
+queued ──> failed
 queued ──> cancelled
 ```
 
@@ -65,7 +78,7 @@ Invarianten:
 - Laufzeitfehler werden über `status=failed` signalisiert, nicht als
   Transportfehler des Start-Requests
 
-### 2.3 Progress
+### 2.4 Progress
 
 Das `progress`-Objekt ist optional und operationsspezifisch.
 
@@ -91,6 +104,7 @@ verknüpft ist oder unabhängig hochgeladen wurde.
 | Feld | Typ | Beschreibung |
 | --- | --- | --- |
 | `artifactId` | String (opak) | Eindeutige, stabile ID des Artefakts |
+| `filename` | String | Vorgeschlagener Dateiname für Downloads (z. B. `schema.sql`, `export.json`) |
 | `contentType` | String | MIME-Typ (z. B. `application/json`, `application/sql`) |
 | `sizeBytes` | Integer | Größe in Bytes |
 | `sha256` | String | SHA-256-Prüfsumme des Inhalts |
@@ -104,7 +118,8 @@ verknüpft ist oder unabhängig hochgeladen wurde.
   Job geschrieben
 - Protokolle, die optimistisches Locking unterstützen (z. B. `ETag` in
   REST, `artifact_version` in gRPC), nutzen die Artefakt-ID und einen
-  Versionstoken zur Konsistenzprüfung
+  Versionstoken zur Cache-Validierung (nicht zur Inhaltsversionierung,
+  da Artefakte immutabel sind)
 
 ---
 
@@ -143,7 +158,7 @@ abgesichert werden.
 
 | Protokoll | Mechanismus | Fehlend | Konflikt (abweichend) |
 | --- | --- | --- | --- |
-| REST | `Idempotency-Key`-Header | `428 Precondition Required` | `409 Conflict` |
+| REST | `Idempotency-Key`-Header | `400 Bad Request` | `409 Conflict` |
 | gRPC | `idempotency_key`-Feld im Request | `INVALID_ARGUMENT` | `ALREADY_EXISTS` |
 | MCP | `idempotencyKey`-Feld im Tool-Input | `IDEMPOTENCY_KEY_REQUIRED` | `IDEMPOTENCY_CONFLICT` |
 
@@ -163,10 +178,21 @@ abgesichert werden.
 
 ## 7. Zugriffskontrolle
 
-- Nur derselbe Mandant / Principal oder ein Administrator darf Jobs und
-  Artefakte lesen, abbrechen oder herunterladen
-- Die Zugriffsprüfung erfolgt serverseitig; der Principal wird aus dem
-  Authentifizierungskontext abgeleitet
+Die Zugriffskontrolle erfolgt auf zwei Ebenen:
+
+1. **Mandant (Tenant)** — isoliert Daten zwischen Organisationen; ein
+   Mandant sieht niemals Jobs oder Artefakte eines anderen Mandanten
+2. **Principal** — identifiziert den Benutzer oder Service-Account
+   innerhalb eines Mandanten
+
+Regeln:
+
+- Ein Principal darf nur eigene Jobs und Artefakte lesen, abbrechen oder
+  herunterladen
+- Ein Administrator darf alle Jobs und Artefakte innerhalb desselben
+  Mandanten verwalten
+- Die Zugriffsprüfung erfolgt serverseitig; Mandant und Principal werden
+  aus dem Authentifizierungskontext abgeleitet
 
 ---
 
@@ -197,9 +223,15 @@ erhalten:
 | `3` | `422` | `INVALID_ARGUMENT` |
 | `4` | `503` | `UNAVAILABLE` |
 | `5` | `500` | `INTERNAL` |
-| `6` | `503` | `INTERNAL` |
+| `6` | `503` | `UNAVAILABLE` |
 | `7` | `500` | `INTERNAL` |
-| `130` | `503` | `CANCELLED` |
+| `130` | — | `CANCELLED` |
+
+`130` (cancelled) hat im REST-Kontext kein direktes HTTP-Mapping: bei
+Client-Abbruch wird die Verbindung geschlossen, bei serverseitigem
+Abbruch (Shutdown, Timeout) greift `503`. Für asynchrone Jobs wird
+Abbruch über `status=cancelled` im Job-Body signalisiert, nicht als
+HTTP-Fehler.
 
 Fehler, die nicht aus CLI-Exit-Codes abgeleitet sind (z. B. Auth-Fehler,
 Payload-Limits), werden protokollspezifisch in den jeweiligen
