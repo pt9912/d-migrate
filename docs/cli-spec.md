@@ -396,6 +396,21 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 | `single` (Default) | Gesamte DDL als ein Artefakt — identisch zum bisherigen Verhalten |
 | `pre-post` | Trennung in `pre-data` (Tabellen, Constraints, Sequences) und `post-data` (Trigger, Functions, Procedures) |
 
+Ausgabeartefakte für `--split pre-post`:
+
+- **Textausgabe** (`--output out/schema.sql`):
+  - `out/schema.pre-data.sql` — Tabellen, Constraints, Sequences, Views ohne Routine-Abhängigkeit
+  - `out/schema.post-data.sql` — Functions, Procedures, Triggers, Views mit Routine-Abhängigkeit
+  - Die Originaldatei `out/schema.sql` wird **nicht** geschrieben
+  - Der Report bleibt ein einzelnes Sidecar-Artefakt (`out/schema.report.yaml`) mit `split_mode: pre-post`
+- **JSON-Ausgabe** (`--output-format json`):
+  - `split_mode: "pre-post"` statt `ddl`-Feld
+  - `ddl_parts.pre_data` und `ddl_parts.post_data` mit dem jeweiligen DDL-String
+  - `notes` und `skipped_objects` tragen optional `phase: "pre-data"` oder `phase: "post-data"` (Kebab-Case)
+- **Kombination** (`--output ... --output-format json`):
+  - SQL-Dateien werden geschrieben **und** JSON wird ausgegeben
+  - Report bleibt ein einzelnes Sidecar-Artefakt
+
 Einschränkungen für `--split pre-post`:
 - Erfordert `--output` (Textausgabe) oder `--output-format json` (strukturierte Ausgabe). Ohne adressierbaren Ausgabeweg: Exit 2.
 - Kann nicht mit `--generate-rollback` kombiniert werden. Kombination: Exit 2.

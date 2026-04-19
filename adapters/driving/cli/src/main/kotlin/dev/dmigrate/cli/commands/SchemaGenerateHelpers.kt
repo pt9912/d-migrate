@@ -107,7 +107,7 @@ internal object SchemaGenerateHelpers {
                 appendLine("""  "split_mode": "pre-post",""")
                 appendLine("""  "ddl_parts": {""")
                 appendLine("""    "pre_data": "${escapeJson(result.renderPhase(DdlPhase.PRE_DATA))}",""")
-                appendLine("""    "post_data": "${escapeJson(result.renderPhase(DdlPhase.POST_DATA))}" """)
+                appendLine("""    "post_data": "${escapeJson(result.renderPhase(DdlPhase.POST_DATA))}"""")
                 appendLine("""  },""")
             } else {
                 appendLine("""  "ddl": "${escapeJson(result.render())}",""")
