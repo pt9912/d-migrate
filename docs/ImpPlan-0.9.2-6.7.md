@@ -337,8 +337,15 @@ Damit gilt fuer 6.7:
   - Haertung
   - neue Diagnose-Regel
   - bewusstes Output-Contract-Update
-- jede zulaessige Abweichung wird in einer bekannten 6.5-Ausnahmeliste
-  oder gleichwertig klar benannten Review-Liste gefuehrt
+- jede zulaessige Abweichung wird in einer festen 6.5-Ausnahmeliste
+  gefuehrt:
+  - `docs/ddl-single-exceptions-0.9.2.yaml`
+- die Ausnahmeliste ist fuer 6.7 ein pflichtiges Review-Artefakt und
+  haelt pro Eintrag mindestens fest:
+  - `fixture_path`
+  - `reason`
+  - `source_ap`
+  - `approved_by`
 
 ### 5.2 Split-Golden-Masters pro Dialekt und Fixture-Typ nachziehen
 
@@ -432,6 +439,8 @@ Damit gilt fuer 6.7:
   - `docs/error-code-ledger-0.9.2.yaml`
   - `docs/warn-code-ledger-0.9.2.yaml`
   - `docs/code-ledger-0.9.2.schema.json`
+- das erstmalige Anlegen dieser drei Referenzartefakte ist Teil von 6.7
+  selbst und keine vorgelagerte Basisarbeit
 - jeder Ledger-Eintrag haelt mindestens fest:
   - Quelle / Ebene
   - existierender Test oder neuer Zieltest bei `entry_type = standard`
@@ -486,6 +495,8 @@ Praezisierung:
   - Schema-Read / Vergleich
   - Datenvalidierung
 - Ziel ist ein echter End-to-End-Nachweis, kein weiterer Teilpfadtest
+- der Vergleich wird ueber einen gemeinsamen Test-Comparator umgesetzt,
+  nicht ueber ad-hoc-Assertions pro Testfall
 
 Wichtig:
 
@@ -501,10 +512,22 @@ Wichtig:
     Einfuege-Reihenfolge
   - fachlich aequivalente Default-Darstellungen werden vor dem
     Vergleich kanonisiert
+  - verglichen wird eine normalisierte Read-Modell-Projektion, nicht
+    die rohe Einlesereihenfolge
+  - Tabellen, Views, Routinen und Sequenzen werden nach voll
+    qualifiziertem Namen sortiert
+  - untergeordnete Sammlungen wie Spalten, Indizes und Constraints
+    werden nach stabilem fachlichem Schluessel sortiert
   - Datenvergleich mindestens ueber:
     - Zeilenanzahl pro betroffener Tabelle
     - stabile Schluesselwerte oder aequivalente Referenzprojektion
     - mindestens einen fachlich relevanten Inhaltswert pro Tabelle
+- explizit erlaubte Unterschiede laufen nicht implizit mit, sondern
+  ueber eine kleine, benannte Allowlist direkt am Testfall oder an der
+  Fixture:
+  - Feldpfad / Vergleichsaspekt
+  - fachliche Begruendung
+  - erwarteter Unterschied
 
 ### 5.7 Testdokumentation und Review-Artefakte nachziehen
 
@@ -528,6 +551,8 @@ Wichtig:
   Fixtures unveraendert, ausser bei bewusst dokumentierten 6.5-Diffs
 - ein expliziter `single`-Golden-Master-Test scheitert bei jedem
   unbeabsichtigten Delta ausserhalb der bekannten 6.5-Ausnahmeliste
+- die bekannte 6.5-Ausnahmeliste liegt fuer 6.7 unter:
+  - `docs/ddl-single-exceptions-0.9.2.yaml`
 - fuer 6.7 wird `--output` in den Split-Pflichtfaellen explizit als
   Dateipfad mit Basisdateiname interpretiert, nicht als Verzeichnis-
   Pfad
@@ -592,6 +617,8 @@ Wichtig:
     Inhaltswert pro Tabelle
 - genau ein Basispfad ist fuer 6.7 verpflichtend; ein zweiter
   Dialektpfad bleibt erwuenschter Zusatzfall, aber kein Abnahmekriterium
+- der Vergleich nutzt einen gemeinsamen normalisierenden Comparator mit
+  expliziter Allowlist fuer fachlich begruendete Nicht-Diffs
 
 Erwuenschte Zusatzfaelle:
 
