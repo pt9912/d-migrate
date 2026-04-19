@@ -28,7 +28,7 @@ internal fun parseMysqlQualifiedTableName(table: String): MysqlQualifiedTableNam
 }
 
 internal fun quoteMysqlIdentifier(name: String): String =
-    "`${name.replace("`", "``")}`"
+    dev.dmigrate.driver.SqlIdentifiers.quoteIdentifier(name, dev.dmigrate.driver.DatabaseDialect.MYSQL)
 
 internal fun currentDatabase(conn: Connection): String =
     conn.catalog ?: conn.createStatement().use { stmt ->

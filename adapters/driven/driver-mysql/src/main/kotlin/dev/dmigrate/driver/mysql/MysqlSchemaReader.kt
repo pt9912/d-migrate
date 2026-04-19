@@ -6,7 +6,9 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
+import java.sql.Connection
 
 /**
  * MySQL [SchemaReader] implementation.
@@ -14,14 +16,16 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * Uses `information_schema` with `lower_case_table_names`-aware
  * identifier normalization.
  */
-class MysqlSchemaReader : SchemaReader {
+class MysqlSchemaReader(
+    private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
+) : SchemaReader {
 
     override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
 
         pool.borrow().use { conn ->
-            val session = JdbcMetadataSession(conn)
+            val session = jdbcFactory(conn)
             val database = currentDatabase(conn)
             val lctn = lowerCaseTableNames(conn)
 
@@ -50,7 +54,7 @@ class MysqlSchemaReader : SchemaReader {
     // ── Tables ──────────────────────────────────
 
     private fun readTables(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         database: String,
         lctn: Int,
         notes: MutableList<SchemaReadNote>,
@@ -65,7 +69,7 @@ class MysqlSchemaReader : SchemaReader {
     }
 
     private fun readTable(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         database: String,
         metaTable: String,
         displayName: String,
@@ -176,7 +180,7 @@ class MysqlSchemaReader : SchemaReader {
 
     // ── Views ───────────────────────────────────
 
-    private fun readViews(session: JdbcMetadataSession, database: String): Map<String, ViewDefinition> {
+    private fun readViews(session: JdbcOperations, database: String): Map<String, ViewDefinition> {
         val rows = MysqlMetadataQueries.listViews(session, database)
         val result = LinkedHashMap<String, ViewDefinition>()
         for (row in rows) {
@@ -191,7 +195,7 @@ class MysqlSchemaReader : SchemaReader {
     // ── Functions ───────────────────────────────
 
     private fun readFunctions(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         database: String,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, FunctionDefinition> {
@@ -227,7 +231,7 @@ class MysqlSchemaReader : SchemaReader {
     // ── Procedures ──────────────────────────────
 
     private fun readProcedures(
-        session: JdbcMetadataSession,
+        session: JdbcOperations,
         database: String,
         notes: MutableList<SchemaReadNote>,
     ): Map<String, ProcedureDefinition> {
@@ -260,7 +264,7 @@ class MysqlSchemaReader : SchemaReader {
 
     // ── Triggers ────────────────────────────────
 
-    private fun readTriggers(session: JdbcMetadataSession, database: String): Map<String, TriggerDefinition> {
+    private fun readTriggers(session: JdbcOperations, database: String): Map<String, TriggerDefinition> {
         val rows = MysqlMetadataQueries.listTriggers(session, database)
         val result = LinkedHashMap<String, TriggerDefinition>()
         for (row in rows) {

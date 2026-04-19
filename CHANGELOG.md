@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.1] - 2026-04-19
+
+### Added
+
+- **Central SQL identifier quoting** (`SqlIdentifiers`): dialect-aware `quoteIdentifier()`, `quoteQualifiedIdentifier()` and `quoteStringLiteral()` utility; all profiling and introspection adapters route through this single quoting layer, closing the injection surface documented in `docs/quality.md`
+- **Security tests**: 17 injection tests with malicious table/column names (`"; DROP TABLE …`, Unicode homoglyphs, reserved words) across profiling and DDL paths
+- **`ManualActionRequired` model**: structured replacement for `-- TODO: …` SQL comment placeholders in DDL output; renders as `-- TODO: …` for backward compatibility in 0.9.1
+- **`DialectCapabilities` model**: declares which schema objects each dialect supports natively (views, functions, procedures, triggers, sequences, custom types, partitioning); used by DDL generators for consistent generate/skip/rewrite decisions
+- **`TableDependencySort`** (`hexagon:core`): single Kahn's-algorithm-based FK topo-sort utility replacing three prior duplicates (`AbstractDdlGenerator`, `ImportDirectoryResolver`, `DataTransferRunner`); returns sorted tables plus circular edges
+- **`consumer-read-probe` test module** (`test/consumer-read-probe`): compile-time verification that read-only consumers can use d-migrate's ports without importing write, CLI, or profiling modules
+- CI: Docker coverage report stages in `build.yml`
+
+### Changed
+
+- **`hexagon:ports` split into three modules**: `ports-common` (shared driver abstractions: `DatabaseDialect`, `SqlIdentifiers`, `DialectCapabilities`, `ConnectionPool`), `ports-read` (read-only contracts: `SchemaReader`, `DdlGenerator`, `DataReader`, `DataChunkReader`), `ports-write` (write-oriented contracts: `DataWriter`, `TableImportSession`, `ImportOptions`, `ExportOptions`, `DataChunkWriter`, checkpoint storage)
+- **Profiling adapters extracted** into optional modules: `driver-postgresql-profiling`, `driver-mysql-profiling`, `driver-sqlite-profiling` — JDBC driver cores no longer depend on `hexagon:profiling`
+- **`FormatReadOptions` extracted from `ImportOptions`**: carries read-oriented fields only (encoding, CSV no-header, CSV null-string); lives in `ports-read`
+- **Runner decomposition**: `DataImportRunner` → `ImportResumeCoordinator` + `DirectoryImportScanner`; `DataExportRunner` → `ExportResumeCoordinator`; `StreamingImporter` → `TableImporter` + `InputResolver`; `StreamingExporter` → `TableExporter`
+- **`SchemaComparator` decomposition**: `TableComparator` extracted (~320 LOC) for isolated table-level diff logic (columns, constraints, indexes, primary keys)
+- **DDL generator decomposition**: routine DDL helpers extracted per object type; dialect-specific generators compose through these helpers with per-object rewrite/capability rules
+- **Plan/milestone comments removed** from production code; only `why` comments and invariants remain
+- `AbstractDdlGenerator.getVersion()` returns `0.9.1`
+- Documentation updated: `docs/releasing.md` hardened (accuracy, consistency, Umlaut normalization, SHA source fix, Homebrew rollback step)
+
 ## [0.9.0] - 2026-04-17
 
 ### Added

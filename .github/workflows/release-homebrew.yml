@@ -101,7 +101,7 @@ jobs:
           for attempt in 1 2 3 4 5 6; do
             if curl -fsSL \
               "https://raw.githubusercontent.com/pt9912/homebrew-d-migrate/main/Formula/d-migrate.rb" \
-              | grep -F "version \"${VERSION}\"" > /dev/null; then
+              | grep -F "d-migrate-${VERSION}" > /dev/null; then
               echo "Tap formula reports version ${VERSION}"
               exit 0
             fi

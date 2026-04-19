@@ -1,7 +1,5 @@
 dependencies {
     implementation(project(":adapters:driven:driver-common"))
-    implementation(project(":hexagon:profiling"))
-    // 0.3.0 Phase B: SQLite JDBC für DataReader / TableLister
     implementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
 }
 

@@ -2,7 +2,7 @@ package dev.dmigrate.format.data
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -174,7 +174,7 @@ private class FakeChunkReaderFactory(
         input: InputStream,
         table: String,
         chunkSize: Int,
-        options: ImportOptions,
+        options: FormatReadOptions,
     ): DataChunkReader {
         require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
         // Input stream is intentionally ignored by the fake; concrete Phase-B

@@ -14,18 +14,21 @@ import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.WriteResult
+import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.metadata.JdbcOperations
 import org.postgresql.util.PGobject
 import java.sql.Connection
 import java.sql.PreparedStatement
-import java.sql.ResultSetMetaData
 import java.sql.Statement
 import java.sql.Types
 
-class PostgresDataWriter : DataWriter {
+class PostgresDataWriter(
+    private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
+) : DataWriter {
 
     override val dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL
 
-    override fun schemaSync(): SchemaSync = PostgresSchemaSync()
+    override fun schemaSync(): SchemaSync = PostgresSchemaSync(jdbcFactory)
 
     override fun openTable(
         pool: ConnectionPool,
@@ -39,6 +42,7 @@ class PostgresDataWriter : DataWriter {
             )
         }
         val conn = pool.borrow()
+        val jdbc = jdbcFactory(conn)
         val sync = schemaSync()
         val qualified = parseQualifiedTableName(table)
         var triggersDisabled = false
@@ -46,7 +50,7 @@ class PostgresDataWriter : DataWriter {
         try {
             savedAutoCommit = conn.autoCommit
             val targetColumns = loadTargetColumns(conn, qualified)
-            val generatedAlwaysColumns = loadGeneratedAlwaysColumns(conn, qualified)
+            val generatedAlwaysColumns = loadGeneratedAlwaysColumns(jdbc, conn, qualified)
             val primaryKeyColumns = if (options.onConflict == OnConflict.UPDATE) {
                 loadPrimaryKeyColumns(conn, qualified).also {
                     require(it.isNotEmpty()) {
@@ -62,9 +66,7 @@ class PostgresDataWriter : DataWriter {
             // resets attached sequences to their start values.
             if (options.truncate) {
                 if (!conn.autoCommit) conn.autoCommit = true
-                conn.createStatement().use { stmt ->
-                    stmt.execute("TRUNCATE TABLE ${qualified.quotedPath()} RESTART IDENTITY CASCADE")
-                }
+                jdbc.execute("TRUNCATE TABLE ${qualified.quotedPath()} RESTART IDENTITY CASCADE")
             }
 
             conn.autoCommit = false
@@ -128,32 +130,15 @@ class PostgresDataWriter : DataWriter {
     private fun loadTargetColumns(
         conn: Connection,
         table: QualifiedTableName,
-    ): List<TargetColumn> {
-        conn.prepareStatement("SELECT * FROM ${table.quotedPath()} LIMIT 0").use { ps ->
-            ps.executeQuery().use { rs ->
-                val md = rs.metaData
-                return buildList(md.columnCount) {
-                    for (i in 1..md.columnCount) {
-                        add(
-                            TargetColumn(
-                                name = md.getColumnLabel(i),
-                                nullable = md.isNullable(i) != ResultSetMetaData.columnNoNulls,
-                                jdbcType = md.getColumnType(i),
-                                sqlTypeName = md.getColumnTypeName(i),
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
+    ): List<TargetColumn> = dev.dmigrate.driver.data.loadTargetColumns(conn, table.quotedPath())
 
     private fun loadGeneratedAlwaysColumns(
+        jdbc: JdbcOperations,
         conn: Connection,
         table: QualifiedTableName,
     ): Set<String> {
         val schema = table.schemaOrCurrent(conn)
-        conn.prepareStatement(
+        return jdbc.queryList(
             """
             SELECT column_name
             FROM information_schema.columns
@@ -161,18 +146,9 @@ class PostgresDataWriter : DataWriter {
               AND table_name = ?
               AND is_identity = 'YES'
               AND identity_generation = 'ALWAYS'
-            """.trimIndent()
-        ).use { ps ->
-            ps.setString(1, schema)
-            ps.setString(2, table.table)
-            ps.executeQuery().use { rs ->
-                return buildSet {
-                    while (rs.next()) {
-                        add(rs.getString(1))
-                    }
-                }
-            }
-        }
+            """.trimIndent(),
+            schema, table.table,
+        ).mapTo(mutableSetOf()) { it["column_name"] as String }
     }
 
     private fun loadPrimaryKeyColumns(

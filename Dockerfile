@@ -25,13 +25,18 @@
 #     docker cp d-migrate-tmp:/src/adapters/driving/cli/build/distributions ./dist
 #     docker rm d-migrate-tmp
 #
-#   Extract Kover coverage reports (JSON) from the `build` stage:
-#     docker build --target build \
-#       --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist" \
-#       -t d-migrate:build .
-#     docker create --name d-migrate-tmp d-migrate:build
-#     docker cp d-migrate-tmp:/src/hexagon/core/build/reports/kover/report.json ./coverage-core.json
-#     docker rm d-migrate-tmp
+#   Build and serve the aggregated Kover HTML coverage report:
+#     docker build --target coverage -t d-migrate:coverage .
+#     docker run --rm -p 8080:8080 d-migrate:coverage
+#     # open http://localhost:8080
+#
+#   Build and print the aggregated Kover JSON report:
+#     docker build --target coverage-json -t d-migrate:coverage-json .
+#     docker run --rm d-migrate:coverage-json > coverage.json
+#
+#   Verify the configured Kover threshold (fails the Docker build if the
+#   minimum is not met):
+#     docker build --target coverage-verify -t d-migrate:coverage-verify .
 # ---------------------------------------------------------------------------
 
 # ---- Stage 1: build & test -------------------------------------------------
@@ -52,16 +57,6 @@ COPY --chown=gradle:gradle . .
 
 RUN gradle --no-daemon ${GRADLE_TASKS}
 
-# Convert Kover XML coverage reports to JSON (if they exist).
-# Uses yq (https://github.com/mikefarah/yq) as a static binary.
-ARG YQ_VERSION=v4.44.6
-ADD https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /usr/local/bin/yq
-RUN chmod +x /usr/local/bin/yq && \
-    for xml in $(find . -path "*/kover/*.xml" -type f 2>/dev/null); do \
-    json="${xml%.xml}.json"; \
-    yq -p xml -o json "$xml" > "$json" 2>/dev/null || true; \
-    done
-
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
 # Used by scripts/test-integration-docker.sh for the full runtime matrix.
 FROM gradle:8.12-jdk21 AS integration-test
@@ -81,7 +76,58 @@ WORKDIR /src
 
 COPY --chown=gradle:gradle . .
 
-# ---- Stage 3: runtime ------------------------------------------------------
+# ---- Stage 3: coverage-build -----------------------------------------------
+# Runs only the non-integration test suite plus the aggregated Kover HTML
+# and XML reports so they can be published independently of the configured
+# coverage threshold.
+FROM gradle:8.12-jdk21 AS coverage-build
+
+ARG COVERAGE_TASKS="test koverHtmlReport koverXmlReport"
+
+WORKDIR /src
+
+COPY --chown=gradle:gradle . .
+
+RUN gradle --no-daemon ${COVERAGE_TASKS}
+
+ARG YQ_VERSION=v4.44.6
+ADD https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /usr/local/bin/yq
+RUN chmod +x /usr/local/bin/yq && \
+    test -f /src/build/reports/kover/report.xml && \
+    yq -p xml -o json /src/build/reports/kover/report.xml > /src/build/reports/kover/report.json
+
+# ---- Stage 4: coverage-verify ----------------------------------------------
+# Optional hard gate for CI-style coverage enforcement.
+FROM coverage-build AS coverage-verify
+
+ARG COVERAGE_VERIFY_TASKS="koverVerify"
+
+RUN gradle --no-daemon ${COVERAGE_VERIFY_TASKS}
+
+# ---- Stage 5: coverage -----------------------------------------------------
+# Serves the aggregated Kover HTML report via a simple static web server.
+FROM python:3.13-slim AS coverage
+
+WORKDIR /srv/coverage
+
+COPY --from=coverage-build /src/build/reports/kover/html/ /srv/coverage/
+
+EXPOSE 8080
+
+ENTRYPOINT ["python3", "-m", "http.server", "8080", "--directory", "/srv/coverage"]
+
+# ---- Stage 6: coverage-json ------------------------------------------------
+# Prints the aggregated Kover JSON report to stdout so callers can redirect it
+# into a local file.
+FROM busybox:1.36 AS coverage-json
+
+WORKDIR /srv/coverage-json
+
+COPY --from=coverage-build /src/build/reports/kover/report.json /srv/coverage-json/report.json
+
+ENTRYPOINT ["cat", "/srv/coverage-json/report.json"]
+
+# ---- Stage 7: runtime ------------------------------------------------------
 # Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
 FROM eclipse-temurin:21-jre-noble AS runtime
 

@@ -20,7 +20,7 @@ internal fun parseSqliteQualifiedTableName(table: String): SqliteQualifiedTableN
 }
 
 internal fun quoteSqliteIdentifier(name: String): String =
-    "\"${name.replace("\"", "\"\"")}\""
+    dev.dmigrate.driver.SqlIdentifiers.quoteIdentifier(name, dev.dmigrate.driver.DatabaseDialect.SQLITE)
 
 internal fun quoteSqliteStringLiteral(value: String): String =
-    "'${value.replace("'", "''")}'"
+    dev.dmigrate.driver.SqlIdentifiers.quoteStringLiteral(value)

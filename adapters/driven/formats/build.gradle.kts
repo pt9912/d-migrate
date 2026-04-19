@@ -3,7 +3,8 @@ plugins {
 }
 
 dependencies {
-    api(project(":hexagon:ports"))
+    api(project(":hexagon:ports-read"))
+    api(project(":hexagon:ports-write"))
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:profiling"))
 

@@ -1,7 +1,7 @@
 package dev.dmigrate.format.data.yaml
 
 import dev.dmigrate.core.data.ImportSchemaMismatchException
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -18,7 +18,7 @@ import java.io.ByteArrayInputStream
  */
 class YamlChunkReaderTest : FunSpec({
 
-    fun reader(yaml: String, chunkSize: Int = 100, options: ImportOptions = ImportOptions()) =
+    fun reader(yaml: String, chunkSize: Int = 100, options: FormatReadOptions = FormatReadOptions()) =
         YamlChunkReader(ByteArrayInputStream(yaml.toByteArray(Charsets.UTF_8)), "t", chunkSize, options)
 
     // ─── Happy Path ─────────────────────────────────────────────────

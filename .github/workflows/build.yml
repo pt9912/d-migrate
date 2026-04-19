@@ -43,13 +43,18 @@ jobs:
         run: >-
           ./gradlew --no-build-cache
           :hexagon:core:koverVerify
-          :hexagon:ports:koverVerify
+          :hexagon:ports-common:koverVerify
+          :hexagon:ports-read:koverVerify
+          :hexagon:ports-write:koverVerify
           :hexagon:application:koverVerify
           :hexagon:profiling:koverVerify
           :adapters:driven:driver-common:koverVerify
           :adapters:driven:driver-postgresql:koverVerify
+          :adapters:driven:driver-postgresql-profiling:koverVerify
           :adapters:driven:driver-mysql:koverVerify
+          :adapters:driven:driver-mysql-profiling:koverVerify
           :adapters:driven:driver-sqlite:koverVerify
+          :adapters:driven:driver-sqlite-profiling:koverVerify
           :adapters:driven:formats:koverVerify
           :adapters:driven:integrations:koverVerify
           :adapters:driven:streaming:koverVerify
@@ -60,13 +65,18 @@ jobs:
         run: >-
           ./gradlew
           :hexagon:core:koverHtmlReport
-          :hexagon:ports:koverHtmlReport
+          :hexagon:ports-common:koverHtmlReport
+          :hexagon:ports-read:koverHtmlReport
+          :hexagon:ports-write:koverHtmlReport
           :hexagon:application:koverHtmlReport
           :hexagon:profiling:koverHtmlReport
           :adapters:driven:driver-common:koverHtmlReport
           :adapters:driven:driver-postgresql:koverHtmlReport
+          :adapters:driven:driver-postgresql-profiling:koverHtmlReport
           :adapters:driven:driver-mysql:koverHtmlReport
+          :adapters:driven:driver-mysql-profiling:koverHtmlReport
           :adapters:driven:driver-sqlite:koverHtmlReport
+          :adapters:driven:driver-sqlite-profiling:koverHtmlReport
           :adapters:driven:formats:koverHtmlReport
           :adapters:driven:integrations:koverHtmlReport
           :adapters:driven:streaming:koverHtmlReport

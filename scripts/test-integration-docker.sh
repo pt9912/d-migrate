@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 CACHE_VOLUME="${DMIGRATE_GRADLE_CACHE_VOLUME:-d-migrate-gradle-cache}"
-DEFAULT_TASKS="-PintegrationTests test koverVerify"
+DEFAULT_TASKS="-PintegrationTests test koverVerify :koverVerify"
 IMAGE_TAG="d-migrate-integration-test:latest"
 
 usage() {

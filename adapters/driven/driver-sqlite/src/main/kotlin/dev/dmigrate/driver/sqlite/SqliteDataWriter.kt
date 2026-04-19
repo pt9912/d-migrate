@@ -16,7 +16,6 @@ import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.driver.data.WriteResult
 import java.sql.Connection
 import java.sql.PreparedStatement
-import java.sql.ResultSetMetaData
 import java.sql.Statement
 import java.util.concurrent.Executor
 
@@ -128,25 +127,7 @@ class SqliteDataWriter : DataWriter {
     private fun loadTargetColumns(
         conn: Connection,
         table: SqliteQualifiedTableName,
-    ): List<TargetColumn> {
-        conn.prepareStatement("SELECT * FROM ${table.quotedPath()} LIMIT 0").use { ps ->
-            ps.executeQuery().use { rs ->
-                val md = rs.metaData
-                return buildList(md.columnCount) {
-                    for (i in 1..md.columnCount) {
-                        add(
-                            TargetColumn(
-                                name = md.getColumnLabel(i),
-                                nullable = md.isNullable(i) != ResultSetMetaData.columnNoNulls,
-                                jdbcType = md.getColumnType(i),
-                                sqlTypeName = md.getColumnTypeName(i),
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
+    ): List<TargetColumn> = dev.dmigrate.driver.data.loadTargetColumns(conn, table.quotedPath())
 
     private fun loadPrimaryKeyColumns(
         conn: Connection,

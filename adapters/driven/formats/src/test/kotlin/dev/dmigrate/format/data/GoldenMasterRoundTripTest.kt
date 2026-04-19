@@ -2,7 +2,7 @@ package dev.dmigrate.format.data
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.format.data.csv.CsvChunkReader
 import dev.dmigrate.format.data.csv.CsvChunkWriter
 import dev.dmigrate.format.data.json.JsonChunkReader
@@ -365,7 +365,7 @@ class GoldenMasterRoundTripTest : FunSpec({
         )
         CsvChunkReader(
             ByteArrayInputStream(bytes), table, chunkSize,
-            ImportOptions(csvNullString = nullString),
+            FormatReadOptions(csvNullString = nullString),
         ).use { reader ->
             assertCsvRowsEquivalent(
                 listOf(arrayOf("1", null, null, null)),
@@ -382,7 +382,7 @@ class GoldenMasterRoundTripTest : FunSpec({
         )
         CsvChunkReader(
             ByteArrayInputStream(bytes), table, chunkSize,
-            ImportOptions(csvNullString = nullString),
+            FormatReadOptions(csvNullString = nullString),
         ).use { reader ->
             val chunks = readAllChunks(reader)
             chunks.flatMap { it.rows }.size shouldBe 1
@@ -400,7 +400,7 @@ class GoldenMasterRoundTripTest : FunSpec({
         )
         CsvChunkReader(
             ByteArrayInputStream(bytes), table, chunkSize,
-            ImportOptions(csvNullString = nullString),
+            FormatReadOptions(csvNullString = nullString),
         ).use { reader ->
             val chunks = readAllChunks(reader)
             val rows = chunks.flatMap { it.rows }

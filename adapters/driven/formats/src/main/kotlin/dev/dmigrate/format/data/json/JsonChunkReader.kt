@@ -8,7 +8,7 @@ import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.EncodingDetector
-import dev.dmigrate.driver.data.ImportOptions
+import dev.dmigrate.format.data.FormatReadOptions
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
@@ -31,7 +31,7 @@ class JsonChunkReader(
     rawInput: InputStream,
     private val table: String,
     private val chunkSize: Int,
-    options: ImportOptions = ImportOptions(),
+    options: FormatReadOptions = FormatReadOptions(),
 ) : DataChunkReader {
 
     // ── Encoding ────────────────────────────────────────────────────

@@ -5,12 +5,12 @@ import dev.dmigrate.driver.metadata.*
 /**
  * Shared JDBC metadata queries for MySQL.
  *
- * Operates on an already-borrowed connection via [JdbcMetadataSession].
+ * Operates on an already-borrowed connection via [JdbcOperations].
  * Uses `information_schema` with `lower_case_table_names`-aware lookups.
  */
 object MysqlMetadataQueries {
 
-    fun listTableRefs(session: JdbcMetadataSession, database: String): List<TableRef> {
+    fun listTableRefs(session: JdbcOperations, database: String): List<TableRef> {
         return session.queryList(
             """
             SELECT table_name, table_schema, table_type
@@ -28,7 +28,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listTableEngine(session: JdbcMetadataSession, database: String, table: String): String? {
+    fun listTableEngine(session: JdbcOperations, database: String, table: String): String? {
         val row = session.querySingle(
             "SELECT engine FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
             database, table,
@@ -36,7 +36,7 @@ object MysqlMetadataQueries {
         return row?.get("engine") as? String
     }
 
-    fun listColumns(session: JdbcMetadataSession, database: String, table: String): List<Map<String, Any?>> {
+    fun listColumns(session: JdbcOperations, database: String, table: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT column_name, data_type, column_type, is_nullable,
@@ -49,7 +49,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    fun listPrimaryKeyColumns(session: JdbcMetadataSession, database: String, table: String): List<String> {
+    fun listPrimaryKeyColumns(session: JdbcOperations, database: String, table: String): List<String> {
         return session.queryList(
             """
             SELECT column_name
@@ -61,7 +61,7 @@ object MysqlMetadataQueries {
         ).map { it["column_name"] as String }
     }
 
-    fun listForeignKeys(session: JdbcMetadataSession, database: String, table: String): List<ForeignKeyProjection> {
+    fun listForeignKeys(session: JdbcOperations, database: String, table: String): List<ForeignKeyProjection> {
         val rows = session.queryList(
             """
             SELECT kcu.constraint_name, kcu.column_name,
@@ -89,7 +89,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listCheckConstraints(session: JdbcMetadataSession, database: String, table: String): List<ConstraintProjection> {
+    fun listCheckConstraints(session: JdbcOperations, database: String, table: String): List<ConstraintProjection> {
         return session.queryList(
             """
             SELECT tc.constraint_name, cc.check_clause
@@ -111,7 +111,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listIndices(session: JdbcMetadataSession, database: String, table: String): List<IndexProjection> {
+    fun listIndices(session: JdbcOperations, database: String, table: String): List<IndexProjection> {
         val rows = session.queryList(
             """
             SELECT index_name, column_name, non_unique, seq_in_index, index_type
@@ -132,7 +132,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listViews(session: JdbcMetadataSession, database: String): List<Map<String, Any?>> {
+    fun listViews(session: JdbcOperations, database: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT table_name, view_definition
@@ -143,7 +143,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    fun listFunctions(session: JdbcMetadataSession, database: String): List<Map<String, Any?>> {
+    fun listFunctions(session: JdbcOperations, database: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT routine_name, routine_type, data_type,
@@ -156,7 +156,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    fun listProcedures(session: JdbcMetadataSession, database: String): List<Map<String, Any?>> {
+    fun listProcedures(session: JdbcOperations, database: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT routine_name, routine_type,
@@ -168,7 +168,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    fun listRoutineParameters(session: JdbcMetadataSession, database: String, routineName: String, routineType: String): List<Map<String, Any?>> {
+    fun listRoutineParameters(session: JdbcOperations, database: String, routineName: String, routineType: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT parameter_name, data_type, dtd_identifier,
@@ -182,7 +182,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    fun listTriggers(session: JdbcMetadataSession, database: String): List<Map<String, Any?>> {
+    fun listTriggers(session: JdbcOperations, database: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT trigger_name, event_object_table,

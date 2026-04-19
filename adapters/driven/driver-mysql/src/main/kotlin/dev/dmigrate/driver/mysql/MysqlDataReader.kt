@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.data.AbstractJdbcDataReader
 
 /**
@@ -27,7 +28,7 @@ class MysqlDataReader : AbstractJdbcDataReader() {
     override val dialect: DatabaseDialect = DatabaseDialect.MYSQL
 
     override fun quoteIdentifier(name: String): String =
-        "`${name.replace("`", "``")}`"
+        SqlIdentifiers.quoteIdentifier(name, dialect)
 
     /** Tuning für serverseitigen Cursor — siehe Plan §6.13. */
     override val fetchSize: Int = 1_000

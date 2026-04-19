@@ -159,7 +159,7 @@ d-migrate/
 │   │       │   └── data/                  # DataReader, TableLister, ChunkSequence
 │   │       ├── format/
 │   │       │   ├── SchemaCodec.kt
-│   │       │   └── data/                  # DataChunkWriter/Reader, Factories, ExportOptions, ImportOptions, DataExportFormat
+│   │       │   └── data/                  # DataChunkWriter/Reader, Factories, ExportOptions, FormatReadOptions, DataExportFormat
 │   │       └── streaming/                 # ExportOutput, ExportResult, PipelineConfig
 │   │
 │   └── application/                       # Use Cases (Runner-Klassen)
@@ -1086,6 +1086,32 @@ Entwickler-Maschine                    CI/CD-Pipeline
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
 - [Roadmap](./roadmap.md) — Phasen, Milestones und Release-Planung
 - [Beispiel: Stored Procedure Migration](./beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
+
+---
+
+## External Read-Only Integration Surface
+
+External consumers that only need schema reading and data reading
+(e.g. a future `source-d-migrate` adapter for `d-browser`) should
+depend on:
+
+**Stable integration types:**
+- `hexagon:core` — `SchemaDefinition`, neutral model types, `TableDependencySort`
+- `hexagon:ports` — `SchemaReader`, `SchemaReadOptions`, `SchemaReadResult`,
+  `DataReader`, `TableLister`, `DatabaseDialect`, `ConnectionPool`,
+  `FormatReadOptions`, `DataChunkReaderFactory`
+- `adapters:driven:driver-common` — `JdbcMetadataSession`, connection pooling
+- `adapters:driven:formats` — format readers (JSON/YAML/CSV)
+
+**Explicitly NOT part of the read surface:**
+- `ImportOptions`, `DataWriter`, `TableImportSession` (write-oriented)
+- `StreamingImporter`, `StreamingExporter` (orchestration)
+- `DataImportRunner`, `DataExportRunner` (CLI)
+- `hexagon:profiling` and `driver-*-profiling` modules (optional)
+- `DatabaseDriver` / `DatabaseDriverRegistry` (mixed facade)
+
+**Verification:** `test:consumer-read-probe` builds against the read
+surface and compiles without write/CLI/profiling imports.
 
 ---
 

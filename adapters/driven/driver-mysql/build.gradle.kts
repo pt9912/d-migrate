@@ -1,31 +1,22 @@
 dependencies {
     implementation(project(":adapters:driven:driver-common"))
-    implementation(project(":hexagon:profiling"))
     implementation("com.mysql:mysql-connector-j:${rootProject.properties["mysqlJdbcVersion"]}")
-
-    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 kover {
     reports {
         filters {
             excludes {
+                // Thin wrappers with no testable logic (< 60 LOC combined):
                 classes(
-                    // Profiling adapters require Testcontainers (MySQL)
-                    "dev.dmigrate.driver.mysql.profiling.*",
+                    "dev.dmigrate.driver.mysql.MysqlDataReader",
+                    "dev.dmigrate.driver.mysql.MysqlDriver",
                 )
             }
         }
         verify {
             rule {
-                // Non-integration: covers TypeMapper, TypeMapping, DdlGenerator,
-                // UrlBuilder, Identifiers (unit-testable). SchemaReader,
-                // DataReader, MetadataQueries, DataWriter, SchemaSync require
-                // Testcontainers.
-                // TODO: extract more orchestration logic from SchemaReader
-                // into testable pure functions to raise non-integration coverage.
-                minBound(if (project.hasProperty("integrationTests")) 90 else 45)
+                minBound(90)
             }
         }
     }

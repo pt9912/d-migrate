@@ -1424,4 +1424,19 @@ class MysqlDdlGeneratorTest : FunSpec({
         ddl shouldNotContain "AddGeometryColumn"
         ddl shouldNotContain "DiscardGeometryColumn"
     }
+
+    // ── security: malicious identifiers are quoted ─
+
+    test("malicious table and column names are properly quoted in DDL") {
+        val schema = SchemaDefinition(name = "T", version = "1", tables = mapOf(
+            "Robert'; DROP TABLE users; --" to TableDefinition(columns = mapOf(
+                "col`inject" to ColumnDefinition(type = NeutralType.Text()),
+            ))
+        ))
+        val rendered = generator.generate(schema).render()
+        // Table name is safely quoted — injection payload neutralized
+        rendered shouldContain "`Robert'; DROP TABLE users; --`"
+        // Embedded backtick is escaped as ``
+        rendered shouldContain "`col``inject`"
+    }
 })

@@ -13,6 +13,7 @@ import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.ImportInput
 import dev.dmigrate.streaming.ImportResult
@@ -59,45 +60,24 @@ fun interface ImportExecutor {
         input: ImportInput,
         format: DataExportFormat,
         options: ImportOptions,
+        readOptions: FormatReadOptions,
         config: PipelineConfig,
         onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
         progressReporter: ProgressReporter,
-        /**
-         * 0.9.0 Phase D.3 (`docs/ImpPlan-0.9.0-D.md` §5.3): stabile
-         * `operationId` des Laufs. Symmetrisch zum Export-Pfad wird
-         * sie vom Runner vorab festgelegt (neuer Lauf: UUID; Resume:
-         * aus Manifest) und an `StreamingImporter.import` durchgereicht.
-         */
+        /** Stable operation ID for the run. Set by the Runner (UUID for fresh runs,
+         *  from manifest on resume) and passed through to `StreamingImporter.import`. */
         operationId: String?,
-        /**
-         * 0.9.0 Phase D.3 §5.3: `true` bei Wiederaufnahme aus einem
-         * vorhandenen Manifest, `false` bei neuem Lauf. Floss in
-         * `ProgressEvent.RunStarted`, damit Renderer `Resuming run …`
-         * anstelle von `Starting run …` anzeigen koennen.
-         */
+        /** `true` when resuming from an existing manifest; `false` for a fresh run.
+         *  Flows into `ProgressEvent.RunStarted` so renderers show "Resuming run ..." vs "Starting run ...". */
         resuming: Boolean,
-        /**
-         * 0.9.0 Phase D.3 §4.7: Tabellen, die im Manifest bereits
-         * `COMPLETED` sind; der Importer ueberspringt sie komplett.
-         */
+        /** Tables already `COMPLETED` in the manifest; the importer skips them entirely. */
         skippedTables: Set<String>,
-        /**
-         * 0.9.0 Phase D.3 §5.3: pro Tabelle optionaler Resume-
-         * Zustand. Entspricht einem Eintrag fuer jede Tabelle mit
-         * `chunksProcessed > 0` im Manifest.
-         */
+        /** Per-table optional resume state. Contains an entry for every table with
+         *  `chunksProcessed > 0` in the manifest. */
         resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
-        /**
-         * 0.9.0 Phase D.3 §5.3: Callback nach jedem erfolgreich
-         * committeten Chunk. Der Runner fuellt damit das Manifest
-         * fort.
-         */
+        /** Callback after each successfully committed chunk. The Runner uses it to update the manifest. */
         onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit,
-        /**
-         * 0.9.0 Phase D.3 §5.3: Callback pro abgeschlossenem
-         * Tabellen-Import. Wird auch bei Fehler/`failedFinish`
-         * gerufen.
-         */
+        /** Callback per completed table import. Also invoked on error / `failedFinish`. */
         onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit,
     ): ImportResult
 }
@@ -125,20 +105,10 @@ data class DataImportRequest(
     val cliConfigPath: Path?,
     val quiet: Boolean,
     val noProgress: Boolean,
-    /**
-     * 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.3/§4.4): expliziter
-     * Resume-Einstieg fuer `data import`. Nur gueltig fuer file- oder
-     * directory-basierte Sources (`source != "-"`). Stdin-Import kann
-     * nicht wiederaufgenommen werden und loest Exit 2 aus. Das konkrete
-     * Referenzformat und semantische Preflight-Pruefung gegen das Target
-     * werden in den Phasen B bis D festgezogen.
-     */
+    /** Explicit resume entry point for `data import`. Only valid for file- or
+     *  directory-based sources (`source != "-"`). Stdin import cannot be resumed (exit 2). */
     val resume: String? = null,
-    /**
-     * 0.9.0 Phase A §4.3: optionales Verzeichnis fuer Checkpoints,
-     * analog zum Export-Pfad. Gewinnt gegenueber
-     * `pipeline.checkpoint.directory` aus der Config.
-     */
+    /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
     val checkpointDir: Path? = null,
 )
 
@@ -147,18 +117,16 @@ data class DataImportRequest(
  * constructor-injected so every branch (including error paths and exit
  * codes) is unit-testable without a real database or CLI framework.
  *
- * Exit codes (Plan §6.11):
+ * Exit codes:
  * - 0 success
  * - 1 unexpected internal error
- * - 2 CLI validation error (incl. `--resume` on stdin-Import, unsupported
- *   `--lang` handled in the root CLI)
- * - 3 pre-flight failure (header/schema mismatch, strict trigger, **und**
- *   — 0.9.0 Phase A §4.5 — semantisch inkompatible Resume-Referenz; die
- *   tatsaechliche Manifest-Pruefung landet in Phase B/C)
+ * - 2 CLI validation error (incl. `--resume` on stdin import)
+ * - 3 pre-flight failure (header/schema mismatch, strict trigger,
+ *   semantically incompatible resume reference)
  * - 4 connection error
  * - 5 import streaming error (with --on-error abort) or post-chunk finalization
  * - 7 config / URL / registry error (incl. unreadable checkpoint file or
- *   unparseable manifest — 0.9.0 Phase A §4.5)
+ *   unparseable manifest)
  */
 class DataImportRunner(
     private val targetResolver: (target: String?, configPath: Path?) -> String,
@@ -173,28 +141,15 @@ class DataImportRunner(
     private val progressReporter: ProgressReporter = NoOpProgressReporter,
     private val stdinProvider: () -> InputStream = { System.`in` },
     private val stderr: (String) -> Unit = { System.err.println(it) },
-    /**
-     * 0.9.0 Phase D.1 (`docs/ImpPlan-0.9.0-D.md` §5.1): Factory fuer
-     * den Checkpoint-Store. Bekommt das effektive Checkpoint-
-     * Verzeichnis. Die CLI-Seite wired den dateibasierten Adapter;
-     * Tests injizieren einen In-Memory-Store. `null` hier = Resume-
-     * Support deaktiviert (Legacy-Tests, die keine Manifest-
-     * Interaktion wollen).
-     */
+    /** Factory for the checkpoint store. Receives the effective checkpoint directory.
+     *  CLI wires the file-based adapter; tests inject an in-memory store.
+     *  `null` disables resume support (for legacy tests that need no manifest interaction). */
     private val checkpointStoreFactory: ((Path) -> CheckpointStore)? = null,
-    /**
-     * 0.9.0 Phase D.1 (`docs/ImpPlan-0.9.0-D.md` §5.1): liest den
-     * `pipeline.checkpoint.*`-Block aus der effektiven
-     * `.d-migrate.yaml`. Der Runner mergt ueber
-     * [CheckpointConfig.merge] CLI-Override (`--checkpoint-dir`) und
-     * Config-Default zusammen — symmetrisch zum Export-Pfad.
-     */
+    /** Reads the `pipeline.checkpoint.*` block from the effective `.d-migrate.yaml`.
+     *  The Runner merges CLI override (`--checkpoint-dir`) and config default via
+     *  [CheckpointConfig.merge] — symmetric to the export path. */
     private val checkpointConfigResolver: (Path?) -> CheckpointConfig? = { null },
-    /**
-     * 0.9.0 Phase D.1: Zeitquelle fuer Manifest-
-     * `createdAt`/`updatedAt`. Separat injizierbar fuer
-     * deterministische Tests.
-     */
+    /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
 ) {
 
@@ -239,12 +194,9 @@ class DataImportRunner(
             return 2
         }
 
-        // 0.9.0 Phase A / Phase D.1: Resume-CLI-Preflight.
-        // stdin-Import ist per Definition nicht wieder aufsetzbar — der
-        // aufrufende Prozess kann den Stream nicht erneut liefern. Die
-        // semantische Preflight-Pruefung gegen das Manifest passiert
-        // spaeter in `executeWithPool` (Phase D.1 §5.1), sobald Target
-        // und Source aufgeloest sind.
+        // Resume CLI preflight: stdin import is inherently non-resumable —
+        // the calling process cannot re-provide the stream. Semantic
+        // preflight against the manifest happens later in `executeWithPool`.
         if (!request.resume.isNullOrBlank() && request.source == "-") {
             stderr(
                 "Error: --resume is not supported for stdin import; " +
@@ -394,11 +346,13 @@ class DataImportRunner(
             OnConflict.ABORT
         }
 
-        val importOptions = ImportOptions(
-            triggerMode = triggerMode,
+        val formatReadOptions = FormatReadOptions(
+            encoding = charset,
             csvNoHeader = request.csvNoHeader,
             csvNullString = request.csvNullString,
-            encoding = charset,
+        )
+        val importOptions = ImportOptions(
+            triggerMode = triggerMode,
             reseedSequences = request.reseedSequences,
             disableFkChecks = request.disableFkChecks,
             truncate = request.truncate,
@@ -413,15 +367,12 @@ class DataImportRunner(
                 }
             } ?: { _, _ -> }
 
-        // ─── 9b. 0.9.0 Phase D.1 + D.4: Resume-Preflight + Manifest-Lifecycle ──
-        // (`docs/ImpPlan-0.9.0-D.md` §5.1 / §5.4)
-        //
-        // 0.9.0 Phase D.4 §5.4: Directory-Importe werden hier bereits
-        // vor dem Streaming gescannt — der Scan liefert eine stabile
-        // `table -> inputFile`-Zuordnung, die sowohl in den Fingerprint
-        // einfliesst als auch im Manifest persistiert wird. Damit
-        // erkennt der Preflight eine veraenderte Dateimenge sofort
-        // (fingerprint mismatch oder slice.inputFile != scan.fileName).
+        // ─── 9b. Resume-Preflight + Manifest-Lifecycle ──────────────
+        // Directory imports are scanned here before streaming — the scan
+        // yields a stable `table -> inputFile` mapping that flows into both
+        // the fingerprint and the manifest. This lets the preflight detect
+        // a changed file set immediately (fingerprint mismatch or
+        // slice.inputFile != scan.fileName).
         val directoryScan: List<DirectoryImportScanner.ScannedTable>? =
             when (val input = preparedImport.input) {
                 is ImportInput.Directory -> try {
@@ -478,11 +429,9 @@ class DataImportRunner(
             )
         )
 
-        // 0.9.0 Phase D.1 §5.1: zentraler Merge aus CLI-Override
-        // (`--checkpoint-dir`) und Config-Default
-        // (`pipeline.checkpoint.*`). `CheckpointConfig.merge` liefert
-        // die effektive Auspraegung; CLI sticht Config, Config sticht
-        // Runtime-Default.
+        // Merge CLI override (`--checkpoint-dir`) and config default
+        // (`pipeline.checkpoint.*`). CLI wins over config, config wins
+        // over runtime default.
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {
@@ -498,11 +447,8 @@ class DataImportRunner(
             checkpointDir?.let { factory(it) }
         }
 
-        // Resume-Kontext: bei `--resume` wird das Manifest geladen,
-        // validiert und auf Kompatibilitaet gegen den aktuellen
-        // Request geprueft. `skippedTables` bleibt in D.1 leer (das
-        // Streaming schreibt noch keine `COMPLETED`-Slices); D.2/D.3
-        // fuellen das sinnvoll.
+        // Resume context: on `--resume` the manifest is loaded, validated,
+        // and checked for compatibility against the current request.
         val resumeCtx: ResumeContext = if (!request.resume.isNullOrBlank()) {
             if (store == null) {
                 stderr(
@@ -554,13 +500,10 @@ class DataImportRunner(
                 )
                 return 3
             }
-            // 0.9.0 Phase D.4 §5.4: `table -> inputFile`-Bindung pro
-            // Slice muss mit dem aktuellen Directory-Scan uebereinstimmen.
-            // Der Fingerprint faengt das in der Regel schon ab, aber ein
-            // Manifest-Slice ohne `inputFile` (z.B. migrierter Phase-B-
-            // Manifest) darf nicht stillschweigend auf einen neuen
-            // Directory-Scan umgedeutet werden. Deshalb expliziter
-            // Per-Slice-Vergleich:
+            // Per-slice `table -> inputFile` binding must match the current
+            // directory scan. The fingerprint usually catches this, but a
+            // manifest slice without `inputFile` must not be silently
+            // reinterpreted against a new scan.
             if (inputFilesByTable.isNotEmpty()) {
                 val mismatch = manifest.tableSlices.firstOrNull { slice ->
                     val expected = inputFilesByTable[slice.table]
@@ -580,11 +523,9 @@ class DataImportRunner(
                 .filter { it.status == CheckpointSliceStatus.COMPLETED }
                 .map { it.table }
                 .toSet()
-            // 0.9.0 Phase D.3 §5.3: pro Tabelle Resume-State ableiten.
-            // Alle Slices, die weder `COMPLETED` sind noch bei 0 Chunks
-            // stehen, bekommen einen Eintrag — der Importer skippt dann
-            // die bereits bestaetigten Chunks und unterbindet
-            // `truncate`.
+            // Derive per-table resume state. Slices that are neither
+            // `COMPLETED` nor at 0 chunks get an entry — the importer
+            // then skips already-committed chunks and suppresses `truncate`.
             val resumeStates = manifest.tableSlices
                 .filter { it.status != CheckpointSliceStatus.COMPLETED && it.chunksProcessed > 0L }
                 .associate { slice ->
@@ -609,9 +550,8 @@ class DataImportRunner(
                     CheckpointTableSlice(
                         table = table,
                         status = CheckpointSliceStatus.PENDING,
-                        // 0.9.0 Phase D.4 §5.4: Directory-Importe fuellen
-                        // `inputFile` beim ersten Schreiben; Stdin/Single
-                        // File lassen das Feld `null`.
+                        // Directory imports populate `inputFile`; stdin / single-file
+                        // leaves the field `null`.
                         inputFile = inputFilesByTable[table],
                     )
                 },
@@ -634,11 +574,9 @@ class DataImportRunner(
                 updatedAt = created,
                 format = request.format ?: format.name.lowercase(Locale.US),
                 chunkSize = request.chunkSize,
-                // 0.9.0 Phase D.4 §5.4: `initialSlices` traegt bereits
-                // die `inputFile`-Bindung aus dem Directory-Scan; das
-                // initiale Manifest muss genau diese Bindung spiegeln,
-                // damit ein spaeterer Resume sie gegen den neuen Scan
-                // validieren kann.
+                // `initialSlices` already carries the `inputFile` binding from
+                // the directory scan; the initial manifest must mirror it so a
+                // later resume can validate against a fresh scan.
                 tableSlices = effectiveTables.map { table ->
                     resumeCtx.initialSlices[table] ?: CheckpointTableSlice(
                         table = table,
@@ -655,10 +593,9 @@ class DataImportRunner(
             }
         }
 
-        // 0.9.0 Phase D.3 §5.3: Manifest-Fortschreibung pro Chunk-
-        // Commit und pro Tabellen-Ende. `createdAt` wird beim neuen
-        // Lauf jetzt festgelegt, beim Resume aus dem bereits
-        // geladenen Manifest uebernommen.
+        // Manifest update per chunk-commit and per table-end.
+        // `createdAt` is set now for fresh runs, taken from the loaded
+        // manifest on resume.
         val tableStates = LinkedHashMap(resumeCtx.initialSlices)
         val createdAt: Instant = if (resumeCtx.resuming && store != null) {
             try {
@@ -668,10 +605,8 @@ class DataImportRunner(
             clock()
         }
         val onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit = { commit ->
-            // Manifest-Slice aktualisieren und persistieren. 0.9.0
-            // Phase D.4 §5.4: `inputFile` bleibt stabil (aus Initial-
-            // oder geladenem Manifest); wir ueberschreiben es hier
-            // nicht, der Scan ist die Quelle der Wahrheit.
+            // Update and persist manifest slice. `inputFile` stays stable
+            // (from initial or loaded manifest); the scan is the source of truth.
             val slice = CheckpointTableSlice(
                 table = commit.table,
                 status = CheckpointSliceStatus.IN_PROGRESS,
@@ -709,10 +644,8 @@ class DataImportRunner(
             }
         }
         val onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit = { summary ->
-            // §4.7: failedFinish oder error darf die Tabelle nicht
-            // als `COMPLETED` markieren — der Manifest-Slice bleibt
-            // dann auf `FAILED`, damit ein Resume die Tabelle nicht
-            // stumm ueberspringt.
+            // failedFinish or error must not mark the table as COMPLETED —
+            // the slice stays FAILED so a resume does not silently skip it.
             val status = if (summary.error == null && summary.failedFinish == null) {
                 CheckpointSliceStatus.COMPLETED
             } else {
@@ -728,9 +661,8 @@ class DataImportRunner(
                 rowsProcessed = summary.rowsInserted + summary.rowsUpdated +
                     summary.rowsSkipped + summary.rowsUnknown + summary.rowsFailed,
                 chunksProcessed = tableStates[summary.table]?.chunksProcessed ?: 0L,
-                // 0.9.0 Phase D.4 §5.4: `inputFile` bleibt auch bei
-                // COMPLETED / FAILED im Slice, damit ein spaeterer
-                // Preflight die Bindung weiter validieren kann.
+                // `inputFile` is retained in the slice even on COMPLETED / FAILED
+                // so a later preflight can continue to validate the binding.
                 inputFile = tableStates[summary.table]?.inputFile
                     ?: inputFilesByTable[summary.table],
             )
@@ -769,6 +701,7 @@ class DataImportRunner(
                 input = preparedImport.input,
                 format = format,
                 options = importOptions,
+                readOptions = formatReadOptions,
                 config = pipelineConfig,
                 onTableOpened = onTableOpened,
                 progressReporter = effectiveReporter,
@@ -811,10 +744,8 @@ class DataImportRunner(
             return 5
         }
 
-        // 0.9.0 Phase D.1 §5.1: erfolgreicher Lauf → Manifest
-        // entfernen. Fehler beim `complete()` werden als Warning
-        // gemeldet, nicht als Exit — der Import war fachlich
-        // erfolgreich.
+        // Successful run -> remove manifest. Errors during complete() are
+        // reported as warnings, not as exit — the import was logically successful.
         if (store != null) {
             try {
                 store.complete(operationId)
@@ -827,8 +758,9 @@ class DataImportRunner(
         val suppressProgress = request.quiet || request.noProgress
         if (!suppressProgress) {
             stderr(formatProgressSummary(result))
-            // 0.9.0 Phase B §4.5: operationId in der stderr-Summary
-            // referenzierbar — symmetrisch zum Export-Pfad.
+            // operationId is printed in the stderr summary so that
+            // operators, logs, and a later resume manifest all reference
+            // the same run.
             result.operationId?.let { stderr("Run operation id: $it") }
         }
 
@@ -868,13 +800,8 @@ class DataImportRunner(
         return ImportInput.SingleFile(table, sourcePath)
     }
 
-    /**
-     * 0.9.0 Phase D.1/D.3 (`docs/ImpPlan-0.9.0-D.md` §5.1 / §5.3):
-     * interner Resume-Kontext eines Laufes. Seit D.3 traegt er auch
-     * die per-Tabelle-Resume-States, die der Importer zum Skip-Ahead
-     * und Truncate-Guard braucht, sowie den initialen Slice-State
-     * fuer das Manifest-Fortschreiben nach jedem Chunk.
-     */
+    /** Internal resume context of a run. Carries per-table resume states for skip-ahead
+     *  and truncate-guard, as well as the initial slice state for manifest updates after each chunk. */
     private data class ResumeContext(
         val operationId: String,
         val resuming: Boolean,
@@ -883,37 +810,12 @@ class DataImportRunner(
         val initialSlices: Map<String, CheckpointTableSlice>,
     )
 
-    /**
-     * 0.9.0 Phase D.1 §5.1: Aufloesung des
-     * `--resume <checkpoint-id|path>`-Werts gegen das effektive
-     * Checkpoint-Verzeichnis. Symmetrisch zum Export-Pfad:
-     *
-     * - Pfad-Kandidat (enthaelt `/` oder endet auf
-     *   `.checkpoint.yaml`): Der Pfad muss normalized innerhalb des
-     *   Checkpoint-Verzeichnisses liegen; sonst `null`. Der
-     *   `operationId` wird aus dem Dateinamen abgeleitet (Suffix
-     *   `.checkpoint.yaml` entfernt).
-     * - Sonst: der Wert ist direkt eine `operationId`.
-     */
-    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? {
-        val looksLikePath = '/' in resumeValue || resumeValue.endsWith(MANIFEST_SUFFIX)
-        if (!looksLikePath) {
-            return resumeValue
-        }
-        val candidate = try {
-            Path.of(resumeValue).toAbsolutePath().normalize()
-        } catch (_: Throwable) {
-            return null
-        }
-        val baseDir = checkpointDir.toAbsolutePath().normalize()
-        if (!candidate.startsWith(baseDir)) return null
-        val fileName = candidate.fileName.toString()
-        if (!fileName.endsWith(MANIFEST_SUFFIX)) return null
-        return fileName.removeSuffix(MANIFEST_SUFFIX)
-    }
+    private val resumeCoordinator = ImportResumeCoordinator()
+
+    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? =
+        resumeCoordinator.resolveResumeReference(resumeValue, checkpointDir)
 
     companion object {
-        private const val MANIFEST_SUFFIX = ".checkpoint.yaml"
 
         private val EXTENSION_FORMAT_MAP = mapOf(
             "json" to "json",

@@ -132,11 +132,17 @@ docker build --no-cache \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
-# Kover-Coverage-Report als JSON extrahieren
-docker build --target build -t d-migrate:build .
-docker create --name d-migrate-tmp d-migrate:build
-docker cp d-migrate-tmp:/src/hexagon/core/build/reports/kover/report.json ./coverage-core.json
-docker rm d-migrate-tmp
+# Aggregierten Kover-HTML-Report bauen und lokal im Browser ansehen
+docker build --target coverage -t d-migrate:coverage .
+docker run --rm -p 8080:8080 d-migrate:coverage
+# dann http://localhost:8080 im Browser öffnen
+
+# Aggregierten Kover-JSON-Report direkt auf stdout ausgeben
+docker build --target coverage-json -t d-migrate:coverage-json .
+docker run --rm d-migrate:coverage-json > coverage.json
+
+# Optional den 90%-Kover-Gate wie in CI hart prüfen
+docker build --target coverage-verify -t d-migrate:coverage-verify .
 
 # Tests überspringen — nur CLI-Distribution erstellen
 docker build --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" \
@@ -161,6 +167,10 @@ Hinweise:
 
 - Die Build-Stage nutzt `eclipse-temurin:21-jdk-noble` und cached Gradle-Abhängigkeiten über BuildKit-Cache-Mounts, sodass wiederholte Builds schnell sind.
 - Die Runtime-Stage nutzt `eclipse-temurin:21-jre-noble` (dasselbe Basisimage wie das veröffentlichte OCI-Image aus `:adapters:driving:cli:jibDockerBuild`).
+- Die `coverage`-Stage führt `test koverHtmlReport koverXmlReport` aus und liefert den aggregierten Root-Kover-HTML-Report über einen eingebauten HTTP-Server auf Port `8080` aus.
+- Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
+- Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
+- Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
 - Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
 - Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
@@ -213,7 +223,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.0](https://github.com/pt9912/d-migrate/releases/tag/v0.9.0)** — Beta: Resilienz und vollständige i18n-CLI — Checkpoint/Resume für dateibasierte Export- und Import-Läufe (`--resume`, `--checkpoint-dir`), produktives `--lang`-Flag für Sprachauswahl (de/en).
+Aktuelles Release: **[v0.9.1](https://github.com/pt9912/d-migrate/releases/tag/v0.9.1)** — Beta: Library-Refactor und Integrationsschnitt — Sicherheits-Härtung (SQL-Identifier-Quoting), Zerlegung großer Orchestrierungs-/Dialekt-Klassen, Port-Split (`ports-common`/`ports-read`/`ports-write`), Profiling-Extraktion in optionale Module, deduplizierter FK-Topo-Sort.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
