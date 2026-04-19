@@ -140,15 +140,6 @@ Dateien mit >400 LOC (potenzielle Hotspots):
 
 ### Offen
 
-- ~~**DDL-Interpolation systematisch absichern**~~: ✅ Behoben in 0.9.2 AP 6.5.
-  SpatiaLite-Identifier werden korrekt escaped, Trusted-Input-Grenze dokumentiert.
-
-- ~~**Runner-Zerlegung**~~: ✅ Behoben in 0.9.2 AP 6.6.
-
-- ~~**Executor-Parameter gruppieren**~~: ✅ Behoben in 0.9.2 AP 6.6.
-
-- ~~**MySQL-TODO-Platzhalter eliminieren**~~: ✅ Behoben in 0.9.2 AP 6.5.
-
 - **E2E-Round-Trip-Test** (Milestone: 0.9.2, verankert in `docs/roadmap.md`):
   Einen Integrationstest ergänzen, der den vollen Kreislauf
   DB→Export→Format→Import→DB→Schema-Vergleich durchspielt.
@@ -163,6 +154,22 @@ Dateien mit >400 LOC (potenzielle Hotspots):
   Verankert in `docs/roadmap.md` unter Milestone 0.9.5.
 
 ### Erledigt
+
+- ~~DDL-Interpolation systematisch absichern.~~
+  Umgesetzt in 0.9.2 AP 6.5: SpatiaLite-Identifier korrekt escaped,
+  Trusted-Input-Grenze für CHECK/Partition/Trigger/Bodies dokumentiert.
+
+- ~~Runner-Zerlegung.~~
+  Umgesetzt in 0.9.2 AP 6.6: `DataExportRunner.executeWithPool()` von 477 auf 26 LOC,
+  `DataImportRunner.executeWithPool()` von 446 auf 24 LOC — jeweils in benannte Schrittfunktionen zerlegt.
+
+- ~~Executor-Parameter gruppieren.~~
+  Umgesetzt in 0.9.2 AP 6.6: `ExportExecutor` von 16 auf 4 Parameter,
+  `ImportExecutor` von 14 auf 4 Parameter — über Kontext-DTOs.
+
+- ~~MySQL-TODO-Platzhalter eliminieren.~~
+  Umgesetzt in 0.9.2 AP 6.5: Alle 4 `-- TODO`-Kommentare im `MysqlDdlGenerator`
+  durch strukturierte `ACTION_REQUIRED`/`WARNING`-Diagnosen ersetzt.
 
 - ~~Vereinheitliche Identifier- und SQL-Erzeugung in einer zentralen Utility pro Dialekt.~~
   Umgesetzt: `SqlIdentifiers` als zentrale Utility; Profiling-Adapter nutzen `qi()`/`ql()` durchgängig.
