@@ -215,10 +215,8 @@ Verbindliche Folge:
 
 - der MySQL-Generator emittiert fuer die vier bekannten Luecken keine
   Kommentarzeilen mehr
-- nicht generierbare Faelle werden nur noch ueber strukturierte
-  Diagnosen signalisiert:
-  - `TransformationNote` mit `ACTION_REQUIRED` oder `WARNING`
-  - `SkippedObject`, wenn ein Objekt vollstaendig entfiel
+- die Diagnoseart fuer diese vier Faelle wird in 6.5 explizit
+  normiert; sie bleibt nicht pro Call-Site offen
 - `render()` und `renderPhase(...)` enthalten nach 6.5 keine aus
   `ManualActionRequired` abgeleiteten `-- TODO`-Zeilen mehr
 
@@ -227,8 +225,7 @@ Praezisierung pro Fall:
 - Composite Types:
   - kein SQL-Statement
   - `ACTION_REQUIRED`
-  - optional `SkippedObject`, wenn das Modell als vollstaendig
-    uebersprungenes Objekt behandelt wird
+  - `SkippedObject`
 - Sequences:
   - kein SQL-Statement
   - `ACTION_REQUIRED`
@@ -239,8 +236,25 @@ Praezisierung pro Fall:
   - `ACTION_REQUIRED` an der betroffenen Table-/Constraint-Diagnose
 - nicht unterstuetzte Index-Typen:
   - kein Pseudo-SQL-Kommentar
-  - nur strukturierte Warnung oder `ACTION_REQUIRED`, je nach
-    bestehender Fachentscheidung
+  - `WARNING`
+  - kein `SkippedObject`, da nicht ein eigenstaendiges Top-Level-Objekt
+    entfiel, sondern nur ein nicht erzeugbarer Indexversuch
+
+Verbindliche Diagnose-Matrix fuer 6.5:
+
+- Composite Type nicht unterstuetzt:
+  - `ACTION_REQUIRED` + `SkippedObject`
+- Sequence nicht unterstuetzt:
+  - `ACTION_REQUIRED` + `SkippedObject`
+- EXCLUDE-Constraint nicht unterstuetzt:
+  - `ACTION_REQUIRED`
+  - kein `SkippedObject`
+- nicht unterstuetzter Index-Typ:
+  - `WARNING`
+  - kein `SkippedObject`
+
+Diese Matrix gilt fuer SQL-, JSON- und Report-Sicht identisch. 6.4 darf
+dieselben fachlichen Faelle nicht kanalabhaengig anders serialisieren.
 
 ### 4.5 Strukturierte Diagnose ist der einzige sichtbare TODO-Ersatz
 
@@ -258,6 +272,9 @@ Wichtig:
 - `ManualActionRequired.toTodoComment()` kann als Legacy-Helfer
   bestehenbleiben, ist fuer den 0.9.2-Generatorpfad aber nicht mehr
   normative Renderquelle
+- im von 6.5 betroffenen Generatorpfad sind direkte Aufrufe von
+  `toTodoComment()` und `DdlStatement("-- TODO ...")` nicht mehr
+  zulaessig
 - operative Sichtbarkeit von Luecken wird ueber 6.4-Ausgabekanaele
   abgesichert, nicht ueber Kommentar-SQL
 
@@ -327,8 +344,10 @@ Verbindliche Folge:
 - an keiner dieser Stellen duerfen neue `DdlStatement("-- TODO ...")`
   mehr entstehen
 - stattdessen:
-  - strukturierte `ACTION_REQUIRED`-/`WARNING`-Notes
-  - `SkippedObject`, wo das Objekt vollstaendig entfiel
+  - Composite Types -> `ACTION_REQUIRED` + `SkippedObject`
+  - Sequences -> `ACTION_REQUIRED` + `SkippedObject`
+  - EXCLUDE-Constraints -> `ACTION_REQUIRED` ohne `SkippedObject`
+  - nicht unterstuetzte Index-Typen -> `WARNING` ohne `SkippedObject`
 - bestehende Codes und Hinweise moeglichst beibehalten, damit JSON- und
   Report-Consumer keinen unnoetigen Diagnosebruch sehen
 
@@ -339,7 +358,24 @@ Praezisierung:
 - bei vollstaendig unstuetzten Objekten darf die DDL-Liste leer bleiben,
   solange Diagnose und Skip sauber mitlaufen
 
-### 5.5 SQL-, JSON- und Report-Sicht auf strukturierte Diagnosen abgleichen
+### 5.5 No-TODO-Pruefschritt fuer den Generatorpfad verankern
+
+- ein expliziter Such- und Review-Schritt stellt sicher, dass im
+  betroffenen DDL-Generatorpfad keine sichtbaren TODO-Emitter
+  verbleiben
+- Pflichtsuche mindestens nach:
+  - `DdlStatement("-- TODO`
+  - `toTodoComment()`
+- betroffen sind mindestens:
+  - `MysqlDdlGenerator`
+  - angrenzende MySQL-Routine-Helfer
+  - weitere Generatorpfade, falls sie noch denselben Legacy-Mechanismus
+    tragen
+- 6.5 gilt erst als abgeschlossen, wenn diese Suche fuer den
+  generatorseitigen Renderpfad keine aktiven TODO-Call-Sites mehr
+  ergibt
+
+### 5.6 SQL-, JSON- und Report-Sicht auf strukturierte Diagnosen abgleichen
 
 - sicherstellen, dass der Wegfall sichtbarer TODO-Kommentare nicht zu
   Diagnoseverlust fuehrt
@@ -354,7 +390,15 @@ Praezisierung:
   aber die fachliche Erwartung, dass SQL selbst kein TODO-Kanal mehr
   ist
 
-### 5.6 Doku und Quality-Basis nachziehen
+Praezisierung fuer Split:
+
+- dieselbe Diagnose-Matrix gilt auch bei aktivem `split pre-post`
+- weder `renderPhase(PRE_DATA)` noch `renderPhase(POST_DATA)` duerfen
+  sichtbare TODO-Kommentarzeilen enthalten
+- Split-JSON und Split-Report muessen dieselben strukturierten
+  Diagnoseeintraege wie der Single-Fall tragen
+
+### 5.7 Doku und Quality-Basis nachziehen
 
 - `docs/quality.md` muss die vier offenen MySQL-`-- TODO`-Plaetze nach
   Umsetzung nicht mehr als offenen Punkt fuehren
@@ -389,13 +433,18 @@ Praezisierung:
 
 - keine verbleibenden sichtbaren MySQL-`-- TODO`-Kommentare im
   Generator-Output
-- Composite-Type-Fall erzeugt strukturierte Diagnose ohne SQL-
-  Kommentarzeile
-- Sequence-Fall erzeugt `SkippedObject` plus strukturierte Diagnose,
+- Composite-Type-Fall erzeugt genau `ACTION_REQUIRED` +
+  `SkippedObject`, aber keine SQL-Kommentarzeile
+- Sequence-Fall erzeugt genau `ACTION_REQUIRED` + `SkippedObject`,
   aber keine SQL-Kommentarzeile
-- EXCLUDE-Constraint-Fall behaelt Tabellen-DDL und liefert nur
-  strukturierte Diagnose
-- nicht unterstuetzter Index-Typ erzeugt keine Pseudo-SQL-Zeile
+- EXCLUDE-Constraint-Fall behaelt Tabellen-DDL und liefert genau
+  `ACTION_REQUIRED` ohne `SkippedObject`
+- nicht unterstuetzter Index-Typ erzeugt keine Pseudo-SQL-Zeile und
+  genau `WARNING` ohne `SkippedObject`
+- Suchtest oder Guard-Test fuer den Generatorpfad:
+  - keine aktiven `DdlStatement("-- TODO ...")`-Emitter
+  - keine aktiven `toTodoComment()`-Aufrufe im betroffenen
+    Generator-Renderpfad
 
 ### 6.3 Pflichtfaelle fuer Diagnosekonsistenz
 
@@ -404,6 +453,11 @@ Praezisierung:
   strukturierte Diagnosebasis
 - `warnings`, `action_required` und `skipped_objects` bleiben fuer die
   betroffenen Faelle konsistent zaehlbar
+- Split-Pflichtfall:
+  - `--split pre-post` plus MySQL-TODO-Fall erzeugt in keiner Phase
+    sichtbare TODO-Zeilen
+  - dieselbe strukturierte Diagnose erscheint weiterhin in Text, JSON
+    und Report
 
 ### 6.4 Rueckwaertskompatibilitaet und Regression
 
