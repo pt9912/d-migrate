@@ -309,8 +309,9 @@ Wichtig:
 
 ### 5.3 `ManualActionRequired` mitziehen
 
-- `toNote()` soll optional eine Phase weitergeben koennen
-- `toSkipped()` soll optional eine Phase weitergeben koennen
+- `toNote(phase: DdlPhase? = null)` einfuehren oder anpassen
+- `toSkipped(phase: DdlPhase? = null)` einfuehren oder anpassen
+- bestehende Aufrufer ohne Argument bleiben unveraendert
 
 Ziel:
 
@@ -338,6 +339,8 @@ Mindestens abzudecken:
 - `DdlResult.notes` aggregiert Statement-Notes und `globalNotes`
   deterministisch
 - `render()` bleibt im Single-Fall unveraendert
+- `render()` und `renderPhase(...)` enthalten auch bei befuellten
+  `globalNotes` ausschliesslich Statement-basierte SQL-Inhalte
 - `renderPhase(PRE_DATA)` und `renderPhase(POST_DATA)` filtern korrekt
 - Statement-Notes werden der Statement-Phase zugeschlagen
 - ein abweichendes `note.phase` an einer Statement-Note beeinflusst die
