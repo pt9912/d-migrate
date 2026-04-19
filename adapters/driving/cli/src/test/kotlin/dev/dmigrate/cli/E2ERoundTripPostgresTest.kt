@@ -203,6 +203,13 @@ class E2ERoundTripPostgresTest : FunSpec({
             diff.tablesAdded.shouldBeEmpty()
             diff.tablesRemoved.shouldBeEmpty()
 
+            // Allowlist: known acceptable differences after round-trip
+            // - Sequences may differ (SERIAL creates implicit sequences)
+            // - Column defaults may be normalized differently by PG
+            // - Schema metadata (name, version) differs between
+            //   reversed schemas
+            // All table-level structure (columns, constraints) must match.
+
             // ─── 7. Verify: row counts ──────────────────────────
             DriverManager.getConnection(rawJdbc(target), target.username, target.password).use { conn ->
                 conn.createStatement().use { stmt ->

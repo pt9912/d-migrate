@@ -63,9 +63,28 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
-    // ─── Split Golden Master assertions (0.9.2 AP 6.7 Step A) ───
+    // ─── Split Golden Master file assertions (0.9.2 AP 6.7) ──────
 
     val splitSchemas = listOf("full-featured", "view-function-deps")
+
+    for (schema in splitSchemas) {
+        for ((dialectName, generator) in dialects) {
+            test("$schema generates correct $dialectName pre-data DDL (golden master)") {
+                val input = loadFixture("schemas/$schema.yaml")
+                val expected = loadGoldenMaster("ddl/$schema.$dialectName.pre-data.sql")
+                val result = generator.generate(input)
+                stripHeader(result.renderPhase(DdlPhase.PRE_DATA)) shouldBe stripHeader(expected)
+            }
+            test("$schema generates correct $dialectName post-data DDL (golden master)") {
+                val input = loadFixture("schemas/$schema.yaml")
+                val expected = loadGoldenMaster("ddl/$schema.$dialectName.post-data.sql")
+                val result = generator.generate(input)
+                stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
+            }
+        }
+    }
+
+    // ─── Split structural assertions ────────────────────────────
 
     for (schema in splitSchemas) {
         for ((dialectName, generator) in dialects) {
