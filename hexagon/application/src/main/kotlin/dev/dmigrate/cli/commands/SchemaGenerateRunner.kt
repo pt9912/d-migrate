@@ -12,6 +12,14 @@ import dev.dmigrate.driver.SpatialProfilePolicy
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
+/** DDL output split mode for `schema generate` (0.9.2). */
+enum class SplitMode {
+    /** Single combined DDL output (default, backward compatible). */
+    SINGLE,
+    /** Split into pre-data and post-data artifacts. */
+    PRE_POST,
+}
+
 /**
  * Immutable DTO with all inputs for `d-migrate schema generate`.
  */
@@ -25,6 +33,7 @@ data class SchemaGenerateRequest(
     val outputFormat: String,
     val verbose: Boolean,
     val quiet: Boolean,
+    val splitMode: SplitMode = SplitMode.SINGLE,
 )
 
 /**
@@ -56,6 +65,18 @@ class SchemaGenerateRunner(
 ) {
 
     fun execute(request: SchemaGenerateRequest): Int {
+        // ─── 0. Split-mode preflight ────────────────────────────
+        if (request.splitMode == SplitMode.PRE_POST) {
+            if (request.generateRollback) {
+                stderr("`--split pre-post` cannot be combined with `--generate-rollback`.")
+                return 2
+            }
+            if (request.output == null && request.outputFormat != "json") {
+                stderr("`--split pre-post` requires `--output` unless `--output-format json` is used.")
+                return 2
+            }
+        }
+
         // ─── 1. Parse dialect ───────────────────────────────────
         val dialect = try {
             DatabaseDialect.fromString(request.target)

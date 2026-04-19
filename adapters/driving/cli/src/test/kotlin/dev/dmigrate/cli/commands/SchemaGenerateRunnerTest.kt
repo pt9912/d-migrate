@@ -81,6 +81,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         outputFormat: String = "plain",
         verbose: Boolean = false,
         quiet: Boolean = false,
+        splitMode: SplitMode = SplitMode.SINGLE,
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
@@ -91,6 +92,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         outputFormat = outputFormat,
         verbose = verbose,
         quiet = quiet,
+        splitMode = splitMode,
     )
 
     class StdoutCapture {
@@ -606,5 +608,72 @@ class SchemaGenerateRunnerTest : FunSpec({
         val h = harness()
         h.runner().execute(request(target = "mysql", spatialProfile = "none")) shouldBe 0
         h.generator.generateOptions!!.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NONE
+    }
+
+    // ─── Split-mode preflight (0.9.2 AP 6.2) ─────────────────────
+
+    test("default splitMode is SINGLE") {
+        SchemaGenerateRequest(
+            source = Path.of("/tmp/schema.yaml"),
+            target = "postgresql",
+            output = null,
+            report = null,
+            generateRollback = false,
+            outputFormat = "plain",
+            verbose = false,
+            quiet = false,
+        ).splitMode shouldBe SplitMode.SINGLE
+    }
+
+    test("--split single behaves identically to no --split") {
+        val h = harness()
+        h.runner().execute(request(splitMode = SplitMode.SINGLE)) shouldBe 0
+        h.stdout.joined() shouldContain "CREATE TABLE"
+    }
+
+    test("--split pre-post without --output and without json exits 2") {
+        val h = harness()
+        val exit = h.runner().execute(request(splitMode = SplitMode.PRE_POST))
+        exit shouldBe 2
+        h.stderr.joined() shouldContain "`--split pre-post` requires `--output` unless `--output-format json` is used."
+    }
+
+    test("--split pre-post with --output passes preflight") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            output = Path.of("/tmp/out.sql"),
+        ))
+        exit shouldBe 0
+    }
+
+    test("--split pre-post with --output-format json passes preflight without --output") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            outputFormat = "json",
+        ))
+        exit shouldBe 0
+    }
+
+    test("--split pre-post with --generate-rollback exits 2") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            output = Path.of("/tmp/out.sql"),
+            generateRollback = true,
+        ))
+        exit shouldBe 2
+        h.stderr.joined() shouldContain "`--split pre-post` cannot be combined with `--generate-rollback`."
+    }
+
+    test("--split pre-post rollback check runs before output check") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            generateRollback = true,
+        ))
+        exit shouldBe 2
+        h.stderr.joined() shouldContain "--generate-rollback"
     }
 })
