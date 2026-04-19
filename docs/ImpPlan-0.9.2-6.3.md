@@ -160,7 +160,8 @@ Verbindliche Folge:
   - Tabellen
   - Indizes
   - FK-Nachzuegler
-  - Views ohne Routine-Abhaengigkeit
+  - Views ohne direkte oder transitive Abhaengigkeit auf
+    `POST_DATA`-Views
 - folgende Objekttypen gehoeren immer zu `POST_DATA`:
   - Functions
   - Procedures
@@ -169,6 +170,18 @@ Verbindliche Folge:
 
 6.3 laesst diese Zuordnung nicht pro Dialekt offen; Unterschiede liegen
 nur in der Generierung der Statements, nicht in ihrer Zielphase.
+
+Praezisierung:
+
+- die View-Zuordnung erfolgt zweistufig:
+  1. direkte Bestimmung von Views mit Routine-Abhaengigkeit
+  2. transitive Propagation ueber View→View-Kanten
+- wenn View A von View B abhaengt und View B in `POST_DATA` liegt,
+  wechselt auch View A nach `POST_DATA`, selbst wenn A keine direkte
+  Routine-Kante hat
+- damit bleibt `pre-data` fuer sich ausfuehrbar; die bestehende
+  View-Toposortierung ordnet Views danach nur noch **innerhalb** ihrer
+  Phase
 
 ### 4.2 `pre-data` muss fuer sich ausfuehrbar bleiben
 
@@ -189,6 +202,17 @@ Verbindliche Folge:
 - die Fehlermeldung benennt den betroffenen View konkret
 - ohne `--split` wird diese zusaetzliche Analyse nicht als
   sichtbarer Fehlerpfad erzwungen
+
+Architekturentscheidung fuer den Signalfluss:
+
+- der Generator kennt nicht selbst den sichtbaren CLI-Splitvertrag
+- stattdessen markiert die Generatoranalyse nicht belastbar
+  aufloesbare Split-Faelle ueber dedizierte phasenlose Diagnoseeintraege
+  im `DdlResult`
+- der Runner wertet diese Diagnosen nur dann als Exit 2 aus, wenn Split
+  aktiv ist
+- ohne Split bleiben dieselben Diagnosen sichtbar, aber nicht
+  exit-bestimmend
 
 Praezisierung der Entscheidungsreihenfolge:
 
@@ -317,6 +341,13 @@ Verbindliche Folge:
   ziehen
 - `handleCircularReferences(...)` bzw. FK-Nachzuegler explizit als
   `PRE_DATA` markieren
+- View-Phasenmarkierung mechanisch so umsetzen, dass die abstrakte
+  Signatur `generateViews(...)` unveraendert bleiben kann:
+  - Views zunaechst auf Generator-Ebene in `PRE_DATA`- und
+    `POST_DATA`-Maps aufteilen
+  - `generateViews(...)` danach getrennt pro Phase aufrufen
+  - die jeweils zurueckgegebenen `DdlStatement`s gesammelt mit der Phase
+    des aufrufenden Buckets markieren
 
 Wichtig:
 
@@ -324,6 +355,9 @@ Wichtig:
   Rendererlogik
 - `pre-data + post-data` darf semantisch vom Single-Gesamtbild
   abweichen, aber nicht fachlich defekt sein
+- die bestehende View-Toposortierung bleibt nuetzlich fuer die Ordnung
+  innerhalb einer Phase, ersetzt aber nicht die transitive
+  Phasen-Propagation
 
 ### 5.3 `SkippedObject` und `ManualActionRequired` angleichen
 
@@ -359,6 +393,8 @@ Dateibasierte Schemas:
 
 - `dependencies.functions` aus YAML/JSON als primaere Quelle verwenden
 - fehlt der Block, greift die konservative Heuristik
+- nach Bestimmung direkter Routine-Kanten die `POST_DATA`-Phase
+  anschliessend ueber View→View-Abhaengigkeiten transitiv propagieren
 
 ### 5.5 Konservative Zuordnung und Exit-2-Pfade umsetzen
 
@@ -372,6 +408,12 @@ Dateibasierte Schemas:
      -> `POST_DATA`
   4. Restfall ohne belastbare Entscheidung bei aktivem Split
      -> Exit 2
+- nach diesen direkten Entscheidungen folgt die transitive Propagation:
+  - jeder View, der direkt oder indirekt von einem bereits als
+    `POST_DATA` markierten View abhaengt, wird ebenfalls `POST_DATA`
+- nicht belastbar aufloesbare Views werden im Generator ueber dedizierte
+  globale Diagnosen markiert; der Runner macht daraus nur bei aktivem
+  Split einen Exit-2-Fehler
 - die Fehlermeldung muss den betroffenen View benennen und die Ursache
   als nicht sicher aufloesbare Routine-Abhaengigkeit kenntlich machen
 
@@ -384,6 +426,8 @@ Mindestens abzudecken:
 - Tabellen, Indizes und FK-Nachzuegler erscheinen nie in `POST_DATA`
 - Views ohne Routine-Abhaengigkeit bleiben in `PRE_DATA`
 - Views mit Routine-Abhaengigkeit landen in `POST_DATA`
+- Views, die von `POST_DATA`-Views abhaengen, propagieren transitiv nach
+  `POST_DATA`
 - PostgreSQL-Trigger-Hilfsfunction und `CREATE TRIGGER` teilen dieselbe
   `POST_DATA`-Zuordnung
 - `DependencyInfo.functions` wird durch Parser und Builder
@@ -399,6 +443,8 @@ Mindestens abzudecken:
   Routine-Kante landet konservativ in `POST_DATA`, nicht in Exit 2
 - derselbe unsichere View bleibt ohne Split kein neuer sichtbarer
   Fehlerpfad
+- derselbe unsichere View bleibt im Single-Pfad erfolgreich verarbeitbar
+  und wird hoechstens als Diagnose markiert
 
 ---
 
@@ -411,6 +457,8 @@ Pflichtfaelle fuer 6.3:
 - Tabellen und Indizes erscheinen nie in `post-data`
 - Views ohne Routine-Abhaengigkeit bleiben in `pre-data`
 - Views mit Routine-Abhaengigkeit landen in `post-data`
+- Views, die von `post-data`-Views abhaengen, landen ebenfalls in
+  `post-data`
 - `pre-data + post-data` ist semantisch aequivalent zum Single-
   Gesamtbild; Byte-Gleichheit ist nicht der Massstab
 - PostgreSQL-Triggerfunktion plus Trigger landen als Einheit in
@@ -430,6 +478,9 @@ Pflichtfaelle fuer 6.3:
   Nutzerfehler sichtbar
 - derselbe unsichere View bleibt im Single-Pfad erfolgreich verarbeitbar
   und erzeugt keinen neuen Exit-2-Fehler
+- der Exit-2-Signalfluss bleibt zweistufig:
+  - Generator markiert den unsicheren View fachlich
+  - Runner macht dies nur im aktiven Split-Lauf zu Exit 2
 
 Erwuenschte Zusatzfaelle:
 
