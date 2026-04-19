@@ -50,7 +50,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 1) Transfer-Filter vereinheitlichen (Verhalten + Sicherheit)
 
-- **Status:** Offen  
+- **Status:** Erledigt  
 - **Dateien:**  
   [DataTransferRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt)  
   [DataExportHelpers.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt)
@@ -71,7 +71,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 2) Runner-Entkopplung fokussieren
 
-- **Status:** Offen  
+- **Status:** Erledigt  
 - **Dateien:**  
   [DataImportRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt)  
   [DataExportRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt)
@@ -91,7 +91,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 3) `SchemaCompareRunner`-Projection trennen
 
-- **Status:** Offen  
+- **Status:** Erledigt  
 - **Datei:**  
   [SchemaCompareRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt)
 - **Priorität / Aufwand / Risiko:** P2 / S / niedrig  
@@ -142,7 +142,7 @@ Das ist noch ein gemeinsamer Hotspot mit hoher Änderungsfrequenz.
 
 ### 6) MySQL-Column-Derivate vereinheitlichen
 
-- **Status:** Offen  
+- **Status:** Erledigt  
 - **Datei:**  
   [MysqlDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt)
 - **Priorität / Aufwand / Risiko:** P2 / M / niedrig  
