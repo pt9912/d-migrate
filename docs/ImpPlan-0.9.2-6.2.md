@@ -156,8 +156,17 @@ Verbindliche Folge:
     `single` weiter
   - die semantische Split-JSON-Nutzlast selbst wird erst in 6.4
     fertiggestellt
+- fuer gueltige `pre-post`-Aufrufe produziert der Runner in 6.2 nach
+  bestandenem Preflight weiterhin die bestehende Single-Ausgabeform
+  des aktuellen Ausgabepfads
+  - Textpfad mit `--output`: eine einzelne Datei am bisherigen
+    `--output`-Pfad
+  - JSON-Pfad: die bestehende Single-JSON-Form
+- dieses Zwischenverhalten ist in 6.2 bewusst nur ein inkrementeller
+  Durchlaufpfad; die eigentliche Split-Ausgabe ist erst Teil von 6.4
 - 6.2 definiert daher bewusst keinen stillen Fallback auf das alte
-  Single-JSON als abgeschlossenen `pre-post`-Vertrag
+  Single-JSON als abgeschlossenen `pre-post`-Zielvertrag, wohl aber den
+  bestehenden Single-Output als explizites 6.2-Zwischenverhalten
 
 Begruendung:
 
@@ -219,7 +228,7 @@ Verbindliche Folge:
 
 ### 5.2 Runner-Preflight fuer den Split einfuehren
 
-- Split-Validierung vor Ausgabezweigen und vor Dateischreiblogik
+- Split-Validierung als allerersten Schritt in `SchemaGenerateRunner.execute()`
   ausfuehren
 - folgende Faelle mit Exit 2 abweisen:
   - `splitMode = pre-post` und kein `output`, solange
@@ -230,11 +239,15 @@ Wichtig:
 
 - diese Validierung ist rein vertragsbezogen und unabhaengig von 6.3
   oder 6.4
-- der Runner soll ungueltige Split-Kombinationen vor jedem Versuch des
-  Dateischreibens oder der Rollback-Erzeugung stoppen
+- der Runner soll ungueltige Split-Kombinationen vor Dialect-Parsing,
+  Spatial-Profile-Aufloesung, Schema-Read, Validierung, DDL-Generierung,
+  Dateischreiben oder Rollback-Erzeugung stoppen
 - fuer `splitMode = pre-post` plus `outputFormat = json` validiert 6.2
   nur die Zulaessigkeit der Kombination und die Weitergabe des Modus;
   die JSON-Nutzlastform wird nicht in 6.2 abgeschlossen
+- fuer gueltige `pre-post`-Aufrufe bleibt der weitere Runner-Durchlauf
+  in 6.2 bewusst auf dem bestehenden Single-Outputpfad; 6.2 blockiert
+  diese Durchlaeufe nach dem Preflight nicht erneut
 
 ### 5.3 Fehlermeldungen und Help-Text angleichen
 
@@ -264,6 +277,11 @@ Ziel:
   - 6.2 validiert diese Kombination bereits, aber die semantische
     Split-JSON-Struktur (`split_mode`, `ddl_parts`, `phase`) wird erst
     in 6.4 abgeschlossen
+- die Exit-Code-Sektion fuer `schema generate` dabei konsolidiert
+  pflegen:
+  - bestehende Exit-2-Faelle wie ungueltiger `--target` und
+    ungueltiges/inkompatibles Spatial-Profil bleiben dokumentiert
+  - die neuen Split-bezogenen Exit-2-Faelle kommen additiv dazu
 
 ### 5.5 Tests ergaenzen
 
@@ -281,6 +299,9 @@ Mindestens abzudecken:
 - `--split pre-post --output-format json` wird in 6.2 nur auf
   Zulaessigkeit und Modus-Weitergabe geprueft, nicht auf die finale
   6.4-JSON-Nutzlast
+- gueltige `pre-post`-Aufrufe laufen in 6.2 nach dem Preflight noch
+  durch die bestehende Single-Ausgabelogik, bis 6.4 die echte
+  Split-Ausgabe liefert
 - `--split pre-post --generate-rollback` endet mit Exit 2
 - Fehlermeldungen verwenden die in 5.3 festgezogenen Contracttexte
 - Help-/CLI-Parsing akzeptiert genau `single|pre-post`
@@ -296,12 +317,14 @@ Pflichtfaelle fuer 6.2:
 - `schema generate --split single` ist verhaltensgleich zu
   `schema generate` ohne `--split`
 - `schema generate --split pre-post --output out/schema.sql` passiert
-  den 6.2-Preflight und bleibt fuer 6.4 als gueltiger Vertrag offen
+  den 6.2-Preflight und laeuft danach noch durch den bestehenden
+  Single-Datei-Outputpfad; die echte Split-Dateiausgabe folgt erst in 6.4
 - `schema generate --split pre-post --output-format json` passiert den
   6.2-Preflight auch ohne `--output`
 - fuer diesen JSON-Fall prueft 6.2 die gueltige Kombination und die
-  unveraenderte Weitergabe von `splitMode = pre-post`, nicht schon die
-  finale 6.4-Ausgabeform
+  unveraenderte Weitergabe von `splitMode = pre-post`; danach bleibt
+  ebenfalls noch die bestehende Single-JSON-Ausgabe aktiv, bis 6.4 die
+  finale Ausgabeform liefert
 - `schema generate --split pre-post` ohne `--output` und ohne JSON endet
   mit Exit 2
 - `schema generate --split pre-post --generate-rollback` endet mit
@@ -410,6 +433,11 @@ Mitigation:
 - 6.2 fixiert fuer diesen Fall nur:
   - Zulaessigkeit der Kombination
   - Weitergabe von `splitMode = pre-post`
+- nach bestandenem Preflight bleibt in 6.2 noch die bestehende
+  Single-Ausgabe aktiv; das ist ein bewusst dokumentiertes
+  Zwischenverhalten
 - die eigentliche Split-JSON-Nutzlast bleibt ausdruecklich 6.4
 - ein stiller Rueckfall auf "legacy `ddl` als vollwertige `pre-post`-
-  Antwort" ist nicht der abgeschlossene Zielvertrag
+  Zielantwort" ist nicht der abgeschlossene Vertrag; als 6.2-
+  Zwischenverhalten ist der bestehende Single-Output jedoch explizit
+  erlaubt und dokumentiert
