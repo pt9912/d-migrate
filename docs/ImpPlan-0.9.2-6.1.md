@@ -155,6 +155,10 @@ Begruendung:
   bleiben
 - spaetere JSON-/Report-Codecs koennen `phase` nur dann serialisieren,
   wenn sie fachlich bekannt ist
+- `TransformationNote` wird in 6.1 bewusst als gemeinsamer Typ fuer
+  statement-gebundene Notes und `globalNotes` verwendet; deshalb ist
+  `phase` strukturell immer vorhanden, fuer statement-gebundene Notes
+  aber semantisch nur ein ignoriertes Zusatzfeld
 - bei Notes, die an einem Statement haengen, ist ein gesetztes
   `note.phase` kein konkurrierender Filterschluessel; die wirksame Phase
   kommt aus dem Statement
@@ -191,6 +195,9 @@ Verbindliche Folge:
 - bestehende Aufrufer muessen nicht sofort auf `renderPhase(...)`
   umgestellt werden
 - neue Hilfen duerfen den bisherigen Output nicht still veraendern
+- `globalNotes` haben keinen Statement-Anker und erscheinen daher
+  bewusst weder in `render()` noch in `renderPhase(...)`; ihre
+  Darstellung ist Aufgabe spaeterer Output-Layer
 - `renderPhase(phase)` ist ein stabiler Teilmengen-Render von
   `render()`:
   - Statements bleiben in derselben relativen Reihenfolge wie in
@@ -233,7 +240,7 @@ Verbindliche Folge:
 - Gesamtansicht beibehalten:
   - `notes` als deterministische Aggregation aus Statement-Notes plus
     `globalNotes`
-  - `render()`
+  - `render()` nur fuer Statement-basierte SQL-Sicht
 - neue Hilfen einfuehren:
   - `renderPhase(phase: DdlPhase): String`
   - `statementsForPhase(phase: DdlPhase)`
@@ -251,6 +258,8 @@ Wichtig:
 - `notes` in der Gesamtsicht bestehen aus:
   - allen Statement-Notes in Statement-Reihenfolge
   - danach allen `globalNotes` in ihrer Ursprungsreihenfolge
+- `render()` und `renderPhase(...)` bleiben davon bewusst unberuehrt und
+  enthalten keine `globalNotes`
 - `notesForPhase(...)` ist keine unabhaengige zweite Sammlung, sondern
   eine deterministische, gefilterte Projektion der Gesamtsicht `notes`
   plus Phasenfilter nach den 6.1-Regeln
@@ -436,3 +445,20 @@ Mitigation:
 
 - `render()` semantisch unveraendert lassen
 - bestaetigende Tests fuer den Bestandspfad beibehalten
+
+### 8.4 Erweiterte `notes`-Sicht kann spaetere Consumer ueberraschen
+
+Risiko:
+
+- `DdlResult.notes` enthaelt nach 6.1 nicht mehr nur Statement-Notes,
+  sondern zusaetzlich `globalNotes`
+- spaetere Consumer von `notes` koennten dadurch mehr Eintraege sehen,
+  obwohl `render()` weiterhin nur statement-basierte SQL-Inhalte zeigt
+
+Mitigation:
+
+- die Asymmetrie wird in 6.1 bewusst festgelegt:
+  - `notes` ist die Diagnose-Gesamtsicht
+  - `render()` und `renderPhase(...)` sind reine Statement-/SQL-Sichten
+- spaetere Output-Layer muessen `globalNotes` bewusst darstellen, statt
+  eine implizite Sichtbarkeit ueber `render()` zu erwarten
