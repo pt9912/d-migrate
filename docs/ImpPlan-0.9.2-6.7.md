@@ -1,0 +1,468 @@
+# Implementierungsplan: 0.9.2 - Arbeitspaket 6.7 Tests, Fehlercode-Matrix und E2E-Round-Trip nachziehen
+
+> **Milestone**: 0.9.2 - Beta: DDL-Phasen und importfreundliche
+> Schema-Artefakte
+> **Arbeitspaket**: 6.7 (Tests, Fehlercode-Matrix und E2E-Round-Trip
+> nachziehen)
+> **Status**: Draft (2026-04-19)
+> **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 3.2,
+> Abschnitt 6.7, Abschnitt 7, Abschnitt 8 und Abschnitt 9.6;
+> `docs/quality.md`;
+> `docs/ddl-generation-rules.md`;
+> `adapters/driven/formats/src/test/resources/fixtures/ddl/...`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliGenerateTest.kt`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataImportRunnerTest.kt`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataExportE2EPostgresTest.kt`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataImportE2EPostgresTest.kt`;
+> `docs/ImpPlan-0.9.2-6.1.md`;
+> `docs/ImpPlan-0.9.2-6.6.md`.
+
+---
+
+## 1. Ziel
+
+Arbeitspaket 6.7 macht den 0.9.2-Milestone verifikationsseitig
+belastbar:
+
+- bestehende Golden Masters fuer den `single`-Pfad werden eingefroren
+- neue Golden Masters und Contract-Tests fuer `pre-data` /
+  `post-data` werden nachgezogen
+- die dokumentierte Fehlercode-Matrix wird systematisch gegen Tests
+  gespiegelt
+- ein echter, aber schmaler End-to-End-Round-Trip belegt den
+  Gesamtpfad ueber Export und Import
+
+6.7 ist damit das Abschlussarbeitspaket fuer den Milestone. Es fuehrt
+keine neue Fachlogik ein, sondern zieht die Beleglage fuer 6.1 bis 6.6
+auf ein Niveau, das Merge, Review und spaetere Regressionen sauber
+absichert.
+
+Nach 6.7 soll klar gelten:
+
+- `schema generate` ist fuer `single` und `pre-post` ueber Golden
+  Masters, JSON, Report und CLI-Preflight belegt
+- Fehlercodes E006-E121 sind nicht nur dokumentiert, sondern einem
+  nachweisbaren Test oder einem bewusst dokumentierten Ausnahmepfad
+  zugeordnet
+- mindestens ein echter Round-Trip zeigt:
+  - Export aus Quell-DB
+  - Import in Ziel-DB
+  - erneuter Schema-Read / Vergleich
+
+Abhaengigkeiten zu 6.1 bis 6.6:
+
+- 6.7 setzt die fachlichen und technischen Vertraege aus 6.1 bis 6.6
+  voraus
+- das Paket kann vorbereitend frueher begonnen werden
+- final abschliessbar ist es aber erst, wenn Split-Output, DDL-Zuordnung,
+  DDL-Haertung und Runner-Zuschnitt in ihrem Zielzustand stehen
+
+---
+
+## 2. Ausgangslage
+
+Das Repo hat bereits eine starke Testbasis, aber fuer 0.9.2 bleiben
+drei Luecken offen:
+
+- Split-spezifische Golden Masters und Contract-Tests fehlen noch
+- die Fehlercodes E006-E121 sind nicht systematisch gegen eine Matrix
+  gespiegelt
+- es existieren zwar Export- und Import-E2E-Tests, aber kein echter
+  kombinierter Round-Trip ueber den Gesamtpfad
+
+Der aktuelle Bestand ist brauchbar, aber noch nicht der 0.9.2-
+Zielzustand:
+
+- es gibt bestehende DDL-Fixtures unter
+  `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
+- `CliGenerateTest` und `SchemaGenerateRunnerTest` decken bereits viele
+  Schema-Generate-Pfade ab
+- `DataExportRunnerTest` und `DataImportRunnerTest` sichern Exit-Pfade,
+  Resume und Summary fuer Export/Import umfangreich ab
+- `DataExportE2EPostgresTest` / `DataImportE2EPostgresTest` sowie die
+  MySQL-Pendants belegen reale Teilpfade
+
+Die offene Qualitaetsluecke laut `docs/quality.md` bleibt trotzdem
+klar:
+
+- kein echter E2E-Round-Trip-Test
+- Fehlercodes E006-E121 nicht systematisch gegen Validierungsmatrix
+  getestet
+
+Fuer 0.9.2 reicht "es gibt schon viele Tests" nicht mehr aus:
+
+- der neue Split-Vertrag erzeugt neue Artefaktformen
+- 6.5 und 6.6 veraendern technische Hotspots, die regressionsanfaellig
+  sind
+- ohne Matrix und Round-Trip bleibt Review zu stark auf Stichproben
+  angewiesen
+
+---
+
+## 3. Scope fuer 6.7
+
+### 3.1 In Scope
+
+- Golden-Master-Strategie fuer `single`, `pre-data` und `post-data`
+  festziehen
+- CLI- und Runner-Tests fuer Split-Validierung, Dateinamenlogik,
+  JSON- und Report-Vertrag nachziehen
+- Fehlercode-Matrix E006-E121 als explizites Test-Ledger aufbauen
+- mindestens einen schmalen echten E2E-Round-Trip ueber Export und
+  Import ergaenzen
+- vorhandene Teil-E2E-Tests und Contract-Tests konsolidieren, statt
+  redundant zu duplizieren
+
+### 3.2 Bewusst nicht Teil von 6.7
+
+- neue Fachlogik im Generator-, Runner- oder Import-/Export-Pfad
+- breit angelegte Vollabdeckung fuer jede Dialektkombination im E2E-Test
+- bytegenaue Gleichheit von `single` vs. `pre-data + post-data`
+- unendliche Testausweitung fuer jede Randkombination im selben Paket
+
+Praezisierung:
+
+6.7 loest "wie belegen wir 0.9.2 belastbar?", nicht "wie testen wir
+jedes Detail auf jeder Ebene mehrfach?".
+
+---
+
+## 4. Leitentscheidungen
+
+### 4.1 Golden Masters bleiben die Referenz fuer sichtbare SQL-Artefakte
+
+Verbindliche Folge:
+
+- bestehende `single`-Golden-Master-Fixtures bleiben eingefroren, ausser
+  dort, wo 6.5 bewusst sichtbare Aenderungen erzwingt
+- fuer den Split-Fall kommen neue Referenzen hinzu:
+  - `pre-data`
+  - `post-data`
+- die Referenz fuer den Split ist semantisch, nicht byte-identisch zu
+  `single`
+
+Praezisierung:
+
+- `single` bleibt Rueckwaertskompatibilitaetsanker
+- `pre-data` / `post-data` pruefen die neue sichtbare Artefaktform
+- ein Test darf nicht erwarten, dass `cat pre-data.sql post-data.sql`
+  exakt der alten `single.sql` entspricht
+
+### 4.2 JSON- und Report-Vertraege werden als Contract-Tests behandelt
+
+Verbindliche Folge:
+
+- Split-JSON und Split-Report werden nicht nur implizit ueber
+  Implementierungsdetails abgesichert
+- es gibt explizite Contract-Tests fuer:
+  - `split_mode`
+  - `ddl_parts`
+  - `phase`
+  - `notes`
+  - `skipped_objects`
+
+Wichtig:
+
+- Single-JSON bleibt eigener Rueckwaertskompatibilitaetsvertrag
+- Split-JSON ist kein "abgeleiteter Sonderfall", sondern ein eigener
+  Outputvertrag
+
+### 4.3 Die Fehlercode-Matrix wird als Test-Ledger gefuehrt
+
+Verbindliche Folge:
+
+- E006-E121 werden nicht lose "irgendwo mitgetestet"
+- fuer jeden dokumentierten Code gibt es einen expliziten Nachweis:
+  - vorhandener Test
+  - neu anzulegender Test
+  - oder bewusst dokumentierter, in 0.9.2 nicht direkt automatisierter
+    Pfad mit Begruendung
+
+Praezisierung:
+
+- die Matrix ist ein Arbeits- und Review-Artefakt, kein nur verbaler
+  Wunsch
+- Primaerquelle fuer Generator-/Spatial-Codes bleibt
+  `docs/ddl-generation-rules.md`
+- Runner-Exit-Codes und Validierungsfehler muessen auf die tatsaechlich
+  getesteten Stellen im Repo verweisen
+
+### 4.4 Der E2E-Round-Trip bleibt schmal und echt
+
+Verbindliche Folge:
+
+- 6.7 fuehrt keinen ueberfrachteten Mega-Test ein
+- es reicht ein echter, schmaler Pfad mit hoher Aussagekraft
+- bevorzugt wird ein Pfad, der vorhandene Export-/Import-E2E-Bausteine
+  wiederverwendet
+
+Praezisierung:
+
+- der Test muss den Gesamtpfad belegen:
+  - Quellschema + Quelldaten
+  - Export in ein reales Austauschformat
+  - Import in eine frische Ziel-DB
+  - Schema-Read oder Vergleich gegen Erwartung
+- nicht erforderlich ist ein vollstaendiger Dialekt-Cross-Product-Test
+
+### 4.5 Testbreite wird entlang der Ebenen verteilt, nicht in einen Test gepresst
+
+Verbindliche Folge:
+
+- Golden Masters pruefen sichtbare SQL-Artefakte
+- CLI-/Runner-Tests pruefen Exit-Codes, Flags und Output-Kanaele
+- Matrix-Tests pruefen Fehlercode-Abdeckung
+- E2E prueft den echten Gesamtpfad
+
+Damit gilt fuer 6.7:
+
+- keine Ebene muss alles alleine beweisen
+- dieselbe fachliche Aussage darf auf zwei Ebenen erscheinen, aber nicht
+  vierfach redundante Testlast erzeugen
+
+---
+
+## 5. Konkrete Arbeitsschritte
+
+### 5.1 Golden-Master-Bestand fuer `single` einfrieren
+
+- bestehende `single`-Fixtures unter
+  `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
+  als Rueckwaertskompatibilitaetsanker behandeln
+- nur dort anfassen, wo 6.5 oder ein bewusst dokumentierter
+  Vertragswechsel sichtbare SQL-Aenderungen erzwingt
+- fuer jede geaenderte `single`-Fixture muss die Begruendung im
+  Review-Kontext klar sein:
+  - Haertung
+  - neue Diagnose-Regel
+  - bewusstes Output-Contract-Update
+
+### 5.2 Split-Golden-Masters pro Dialekt und Fixture-Typ nachziehen
+
+- fuer den Split-Fall neue Referenzartefakte einfuehren:
+  - `*.pre-data.sql`
+  - `*.post-data.sql`
+- die Auswahl der Fixtures bleibt zielgerichtet:
+  - mindestens einfache Basisfaelle
+  - mindestens ein Fall mit Triggern / Routinen / Views
+  - mindestens ein Fall mit Diagnoseeintraegen
+- Golden Masters muessen die 6.3-Zuordnungsregeln sichtbar machen:
+  - Trigger nicht in `pre-data`
+  - Functions/Procedures nicht in `pre-data`
+  - Views mit Routine-Abhaengigkeit in `post-data`
+
+### 5.3 CLI- und Runner-Tests fuer Split-Vertrag vervollstaendigen
+
+- `CliGenerateTest`, `SchemaGenerateRunnerTest` und
+  `SchemaGenerateHelpersTest` fuer 0.9.2-Vertrag nachziehen
+- Pflichtbereiche:
+  - `--split pre-post`
+  - Dateinamenlogik
+  - JSON-Output
+  - Sidecar-Report
+  - Exit-2-Fehlerpfade fuer unzulaessige Kombinationen
+- Single- und Split-Fall muessen explizit nebeneinander abgesichert
+  werden, nicht nur implizit ueber Defaults
+
+### 5.4 JSON-/Report-Contract-Tests schaerfen
+
+- Split-JSON und Split-Report gegen denselben `DdlResult`-Bestand
+  pruefen
+- Pflichtfelder:
+  - `split_mode`
+  - `ddl_parts.pre_data`
+  - `ddl_parts.post_data`
+  - `phase` in Kebab-Case
+  - stabile Reihenfolge von `notes` und `skipped_objects`
+- Single-Vertrag weiterhin explizit pruefen:
+  - `ddl` vorhanden
+  - keine `split_mode`-/`ddl_parts`-Felder
+
+### 5.5 Fehlercode-Matrix E006-E121 als Ledger aufbauen
+
+- eine explizite Matrix erstellen oder nachziehen, die pro Code
+  mindestens festhaelt:
+  - Quelle / Ebene
+  - existierender Test oder neuer Zieltest
+  - Pfadtyp:
+    - Validator
+    - Runner
+    - Generator
+    - JSON/Report
+- die Matrix darf aus mehreren Testebenen zusammengesetzt sein
+- Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
+  einem Modul
+
+Praezisierung:
+
+- Codes wie `E020`, `E052` bis `E056`, `E120`, `E121`, `W113`, `W120`
+  muessen fuer 0.9.2 sichtbar im Ledger vorkommen
+- bereits vorhandene Tests werden nicht dupliziert, sondern sauber
+  referenziert
+- Luecken werden als neue Tests oder bewusst dokumentierte Restpunkte
+  ausgewiesen
+
+### 5.6 Schmalen echten E2E-Round-Trip ergaenzen
+
+- vorhandene Export- und Import-E2E-Bausteine als Grundlage nutzen
+- bevorzugt ein PostgreSQL- oder MySQL-Pfad mit bereits existierenden
+  Containertests
+- der neue Test geht explizit ueber beide Richtungen:
+  - Export
+  - Import
+  - Schema-Read / Vergleich
+- Ziel ist ein echter End-to-End-Nachweis, kein weiterer Teilpfadtest
+
+Wichtig:
+
+- der Test soll schmal bleiben
+- keine Mehrdialekt-Matrix in einem einzigen Test
+- stabile, kleine Datenbasis und klarer Vergleichsmassstab
+
+### 5.7 Testdokumentation und Review-Artefakte nachziehen
+
+- `docs/quality.md` darf nach Umsetzung den fehlenden E2E-Round-Trip und
+  die fehlende Fehlercode-Matrix nicht mehr als offene 0.9.2-Punkte
+  fuehren
+- falls die Fehlercode-Quelle in Doku oder Guide verankert ist, muss die
+  Matrix darauf konsistent verweisen
+- Review sollte fuer 6.7 einen einfachen Nachweis lesen koennen:
+  - welche Fixtures neu sind
+  - welche Contract-Tests neu sind
+  - welche Codes neu abgedeckt wurden
+
+---
+
+## 6. Verifikation
+
+### 6.1 Pflichtfaelle fuer Golden Masters
+
+- `schema generate` ohne `--split` bleibt fuer bestehende `single`-
+  Fixtures unveraendert, ausser bei bewusst dokumentierten 6.5-Diffs
+- `schema generate --split pre-post --output out/schema.sql` erzeugt
+  referenzierbare `pre-data`- und `post-data`-Artefakte
+- Split-Fixtures belegen die 6.3-Phasenregeln sichtbar
+
+### 6.2 Pflichtfaelle fuer JSON und Report
+
+- `--split pre-post --output-format json` liefert:
+  - `split_mode`
+  - `ddl_parts`
+  - phasenattribuierte `notes`
+  - phasenattribuierte `skipped_objects`
+- Sidecar-Report spiegelt denselben Phasenbezug
+- Single-JSON bleibt rueckwaertskompatibel
+
+### 6.3 Pflichtfaelle fuer CLI- und Runner-Vertrag
+
+- `--split pre-post` ohne `--output` und ohne JSON endet mit Exit 2
+- `--split pre-post --generate-rollback` endet mit Exit 2
+- Dateinamenlogik fuer Split-Artefakte ist testseitig belegt
+- 6.6-Refactor bleibt in Exit-Code- und Resume-Semantik stabil
+
+### 6.4 Pflichtfaelle fuer Fehlercode-Matrix
+
+- fuer E006-E121 existiert ein expliziter Matrix-Nachweis
+- jeder Code ist einem Test oder einem bewusst dokumentierten
+  Restpfad zugeordnet
+- Generator-/Report-Codes und Validator-Codes werden nicht vermischt,
+  sondern mit ihrer Quelle und Ebene referenziert
+
+### 6.5 Pflichtfall fuer Integrationsverifikation
+
+- mindestens ein echter Round-Trip-Test ueber:
+  - Schema / Daten in Quell-DB
+  - Export
+  - Import in Ziel-DB
+  - erneuten Schema-Read oder Vergleich gegen Erwartung
+
+Erwuenschte Zusatzfaelle:
+
+- dedizierte Split-Fixtures fuer MySQL- und SQLite-Trigger-Szenarien
+- Split-Fixtures mit routine-abhaengigen Views
+- JSON-Contract-Smokes fuer externe Consumer
+
+---
+
+## 7. Betroffene Codebasis
+
+Direkt betroffen:
+
+- `docs/quality.md`
+- `docs/ddl-generation-rules.md`
+- `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliGenerateTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpersTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataImportRunnerTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataExportE2EPostgresTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataImportE2EPostgresTest.kt`
+- ggf. die MySQL-E2E-Pendants unter
+  `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/...`
+
+Wahrscheinlich mit betroffen:
+
+- Validator- und Schema-Tests, die Fehlercodes im Bereich E006-E121
+  bereits heute pruefen
+- weitere CLI-Smoke-Tests fuer `schema generate`
+- Testcontainers-basierte Integrationskonfiguration fuer PostgreSQL oder
+  MySQL
+
+Praezisierung:
+
+- 6.7 erzwingt nicht automatisch Produktionscode-Aenderungen
+- falls bei Matrix- oder Round-Trip-Arbeit Produktionsluecken sichtbar
+  werden, muessen diese als bewusst getrennte Nachbesserung behandelt
+  werden
+
+---
+
+## 8. Risiken und Abgrenzung
+
+### 8.1 Die Fehlercode-Matrix kann ohne harte Quelle unscharf werden
+
+Wenn die Matrix nur aus Erinnerung gepflegt wird, entsteht ein zweiter
+inoffizieller Contract.
+
+Mitigation:
+
+- Dokuquelle klar benennen
+- Test-Ledger mit konkreten Dateireferenzen pflegen
+- Generator-, Validator- und Runner-Codes getrennt markieren
+
+### 8.2 Ein ueberfrachteter E2E-Test wird instabil und teuer
+
+Zu viele Dialekte, Sonderfaelle oder Artefaktformen in einem Test
+verlangsamen den Milestone und erschweren Fehlersuche.
+
+Mitigation:
+
+- ein schmaler echter Pfad statt mehrerer halb-integrierter Monster-
+  Specs
+- vorhandene E2E-Bausteine wiederverwenden
+- Datenbasis klein und deterministisch halten
+
+### 8.3 Golden-Master-Churn kann Reviews unnoetig aufblaehen
+
+Wenn zu viele Fixtures gleichzeitig kippen, sinkt der Reviewwert.
+
+Mitigation:
+
+- `single` nur mit expliziter Begruendung aendern
+- Split-Fixtures gezielt und sparsam aufbauen
+- Diffs nach Vertragsaenderung gruppieren, nicht wahllos neu aufzeichnen
+
+### 8.4 Matrix-Vollstaendigkeit kann in Scheingenauigkeit kippen
+
+Nicht jeder Code braucht denselben Testtyp. Reine Mengenabdeckung hilft
+wenig, wenn die Aussagekraft fehlt.
+
+Mitigation:
+
+- pro Code den passenden Testtyp waehlen
+- vorhandene Tests referenzieren statt duplizieren
+- Luecken sichtbar machen, statt sie hinter einem "100%"-Wert zu
+  verstecken
