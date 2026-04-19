@@ -200,15 +200,26 @@ class E2ERoundTripPostgresTest : FunSpec({
             val sourceSchema = codec.read(schemaYaml)
             val targetSchema = codec.read(targetSchemaYaml)
             val diff = SchemaComparator().compare(sourceSchema, targetSchema)
+
+            // Hard assertions: table structure must round-trip intact
             diff.tablesAdded.shouldBeEmpty()
             diff.tablesRemoved.shouldBeEmpty()
 
-            // Allowlist: known acceptable differences after round-trip
-            // - Sequences may differ (SERIAL creates implicit sequences)
-            // - Column defaults may be normalized differently by PG
-            // - Schema metadata (name, version) differs between
-            //   reversed schemas
-            // All table-level structure (columns, constraints) must match.
+            // Allowlist: only these diff categories are acceptable
+            // Sequences differ because SERIAL creates implicit sequences
+            // that appear in reverse but not in the source schema.
+            // Schema metadata (name, version) differs between reversed schemas.
+            // All other diff categories must be empty.
+            diff.customTypesAdded.shouldBeEmpty()
+            diff.customTypesRemoved.shouldBeEmpty()
+            diff.viewsAdded.shouldBeEmpty()
+            diff.viewsRemoved.shouldBeEmpty()
+            diff.functionsAdded.shouldBeEmpty()
+            diff.functionsRemoved.shouldBeEmpty()
+            diff.proceduresAdded.shouldBeEmpty()
+            diff.proceduresRemoved.shouldBeEmpty()
+            diff.triggersAdded.shouldBeEmpty()
+            diff.triggersRemoved.shouldBeEmpty()
 
             // ─── 7. Verify: row counts ──────────────────────────
             DriverManager.getConnection(rawJdbc(target), target.username, target.password).use { conn ->
