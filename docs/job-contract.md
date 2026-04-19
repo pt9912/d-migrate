@@ -141,11 +141,11 @@ abgesichert werden.
 
 ### 5.3 Protokollspezifische Übertragung
 
-| Protokoll | Mechanismus | Konflikt-Signal |
-| --- | --- | --- |
-| REST | `Idempotency-Key`-Header | `409 Conflict` (abweichend) / `428` (fehlend) |
-| gRPC | `idempotency_key`-Feld im Request oder Metadaten | `ALREADY_EXISTS` (abweichend) |
-| MCP | `idempotencyKey`-Feld im Tool-Input | `IDEMPOTENCY_CONFLICT` Error-Code |
+| Protokoll | Mechanismus | Fehlend | Konflikt (abweichend) |
+| --- | --- | --- | --- |
+| REST | `Idempotency-Key`-Header | `428 Precondition Required` | `409 Conflict` |
+| gRPC | `idempotency_key`-Feld im Request | `INVALID_ARGUMENT` | `ALREADY_EXISTS` |
+| MCP | `idempotencyKey`-Feld im Tool-Input | `IDEMPOTENCY_KEY_REQUIRED` | `IDEMPOTENCY_CONFLICT` |
 
 ---
 

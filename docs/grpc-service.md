@@ -388,6 +388,7 @@ Beispielhafte Zuordnung:
 
 | CLI-Code | Fachlicher Typ | gRPC |
 | --- | --- | --- |
+| `1` | Allgemeiner Fehler | `INTERNAL` |
 | `2` | Request invalid | `INVALID_ARGUMENT` |
 | `3` | Validation failed | `INVALID_ARGUMENT` |
 | `4` | Connection failed | `UNAVAILABLE` |
@@ -398,6 +399,10 @@ Beispielhafte Zuordnung:
 
 Fuer Job-RPCs gilt zusaetzlich:
 
+- alle RPCs, die `JobAccepted` zurueckgeben (`ReverseSchema`, `CompareSchema`,
+  `ExportData`, `StartImport`, `TransferData`, `ProfileData`), muessen ein
+  `idempotency_key`-Feld im Request fuehren; fehlt der Key, antwortet der
+  Server mit `INVALID_ARGUMENT` (siehe `docs/job-contract.md` §5)
 - ein erfolgreich angenommener Job liefert immer `OK` plus `JobAccepted`
 - spaetere Laufzeitfehler erscheinen im `JobStatus` als fachlicher Status
   `FAILED`, nicht als nachtraeglicher Transportfehler
