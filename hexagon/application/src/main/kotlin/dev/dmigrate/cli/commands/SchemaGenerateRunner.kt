@@ -52,12 +52,13 @@ class SchemaGenerateRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
-    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path) -> Unit,
+    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
         { path, content -> path.writeText(content) },
-    private val formatJsonOutput: (DdlResult, SchemaDefinition, String) -> String,
+    private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode) -> String,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
+    private val splitPath: (Path, dev.dmigrate.driver.DdlPhase) -> Path,
     private val printError: (message: String, source: String) -> Unit,
     private val printValidationResult: (ValidationResult, SchemaDefinition, String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
@@ -139,16 +140,34 @@ class SchemaGenerateRunner(
         printNotes(result, request.verbose)
 
         // ─── 6. Route output (json | file | stdout) ──────────
-        val ddl = result.render()
-        when {
-            request.outputFormat == "json" -> {
-                stdout(formatJsonOutput(result, schema, dialect.name.lowercase()))
+        val dialectName = dialect.name.lowercase()
+        val splitModeStr = if (request.splitMode == SplitMode.PRE_POST) "pre-post" else null
+
+        if (request.splitMode == SplitMode.PRE_POST) {
+            // Split output: file and/or json
+            if (request.output != null) {
+                writeSplitFileOutput(request, result, schema, dialectName, splitModeStr)
             }
-            request.output != null -> {
-                writeFileOutput(request, generator, schema, result, dialect, ddl, options)
+            if (request.outputFormat == "json") {
+                stdout(formatJsonOutput(result, schema, dialectName, request.splitMode))
             }
-            else -> {
-                writeStdoutOutput(request, generator, schema, result, dialect, ddl, options)
+            if (request.output == null && request.outputFormat != "json") {
+                // Should not reach here — preflight catches this
+                return 2
+            }
+        } else {
+            // Single output: json | file | stdout (unchanged)
+            val ddl = result.render()
+            when {
+                request.outputFormat == "json" -> {
+                    stdout(formatJsonOutput(result, schema, dialectName, request.splitMode))
+                }
+                request.output != null -> {
+                    writeFileOutput(request, generator, schema, result, dialect, ddl, options, splitModeStr)
+                }
+                else -> {
+                    writeStdoutOutput(request, generator, schema, result, dialect, ddl, options)
+                }
             }
         }
 
@@ -175,6 +194,26 @@ class SchemaGenerateRunner(
         }
     }
 
+    private fun writeSplitFileOutput(
+        request: SchemaGenerateRequest,
+        result: DdlResult,
+        schema: SchemaDefinition,
+        dialect: String,
+        splitModeStr: String?,
+    ) {
+        val outputPath = request.output!!
+        val prePath = splitPath(outputPath, dev.dmigrate.driver.DdlPhase.PRE_DATA)
+        val postPath = splitPath(outputPath, dev.dmigrate.driver.DdlPhase.POST_DATA)
+        val preDdl = result.renderPhase(dev.dmigrate.driver.DdlPhase.PRE_DATA)
+        val postDdl = result.renderPhase(dev.dmigrate.driver.DdlPhase.POST_DATA)
+        fileWriter(prePath, preDdl + "\n")
+        if (!request.quiet) stderr("Pre-data DDL written to $prePath")
+        fileWriter(postPath, postDdl + "\n")
+        if (!request.quiet) stderr("Post-data DDL written to $postPath")
+
+        writeReport(request, result, schema, dialect, outputPath, splitModeStr)
+    }
+
     private fun writeFileOutput(
         request: SchemaGenerateRequest,
         generator: DdlGenerator,
@@ -183,6 +222,7 @@ class SchemaGenerateRunner(
         dialect: DatabaseDialect,
         ddl: String,
         options: DdlGenerationOptions,
+        splitModeStr: String?,
     ) {
         val outputPath = request.output!!
         fileWriter(outputPath, ddl + "\n")
@@ -195,7 +235,7 @@ class SchemaGenerateRunner(
             if (!request.quiet) stderr("Rollback DDL written to $rbPath")
         }
 
-        writeReport(request, result, schema, dialect.name.lowercase(), outputPath)
+        writeReport(request, result, schema, dialect.name.lowercase(), outputPath, splitModeStr)
     }
 
     private fun writeStdoutOutput(
@@ -216,7 +256,7 @@ class SchemaGenerateRunner(
         }
 
         if (request.report != null) {
-            writeReport(request, result, schema, dialect.name.lowercase(), request.report)
+            writeReport(request, result, schema, dialect.name.lowercase(), request.report, null)
         }
     }
 
@@ -226,9 +266,10 @@ class SchemaGenerateRunner(
         schema: SchemaDefinition,
         dialect: String,
         outputPath: Path,
+        splitModeStr: String?,
     ) {
         val reportPath = request.report ?: sidecarPath(outputPath, ".report.yaml")
-        reportWriter(reportPath, result, schema, dialect, request.source)
+        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr)
         if (!request.quiet) stderr("Report written to $reportPath")
     }
 }

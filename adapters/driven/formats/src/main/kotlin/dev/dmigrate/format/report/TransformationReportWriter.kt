@@ -1,6 +1,7 @@
 package dev.dmigrate.format.report
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
 import java.nio.file.Path
@@ -14,16 +15,18 @@ class TransformationReportWriter {
         result: DdlResult,
         schema: SchemaDefinition,
         dialect: String,
-        sourceFile: Path
+        sourceFile: Path,
+        splitMode: String? = null,
     ) {
-        output.writeText(render(result, schema, dialect, sourceFile))
+        output.writeText(render(result, schema, dialect, sourceFile, splitMode))
     }
 
     fun render(
         result: DdlResult,
         schema: SchemaDefinition,
         dialect: String,
-        sourceFile: Path
+        sourceFile: Path,
+        splitMode: String? = null,
     ): String = buildString {
         appendLine("source:")
         appendLine("  schema: \"${escapeYaml(schema.name)}\"")
@@ -32,7 +35,8 @@ class TransformationReportWriter {
         appendLine("target:")
         appendLine("  dialect: $dialect")
         appendLine("  generated_at: \"${Instant.now()}\"")
-        appendLine("  generator: \"d-migrate 0.2.0\"")
+        appendLine("  generator: \"d-migrate 0.9.2\"")
+        if (splitMode != null) appendLine("  split_mode: $splitMode")
         appendLine()
 
         val notes = result.notes
@@ -58,6 +62,9 @@ class TransformationReportWriter {
                 if (note.hint != null) {
                     appendLine("    hint: \"${escapeYaml(note.hint!!)}\"")
                 }
+                if (splitMode != null && note.phase != null) {
+                    appendLine("    phase: ${phaseToKebab(note.phase!!)}")
+                }
             }
             appendLine()
         }
@@ -74,6 +81,9 @@ class TransformationReportWriter {
                 if (skip.hint != null) {
                     appendLine("    hint: \"${escapeYaml(skip.hint!!)}\"")
                 }
+                if (splitMode != null && skip.phase != null) {
+                    appendLine("    phase: ${phaseToKebab(skip.phase!!)}")
+                }
             }
         }
     }
@@ -82,4 +92,9 @@ class TransformationReportWriter {
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
         .replace("\n", "\\n")
+
+    private fun phaseToKebab(phase: DdlPhase): String = when (phase) {
+        DdlPhase.PRE_DATA -> "pre-data"
+        DdlPhase.POST_DATA -> "post-data"
+    }
 }

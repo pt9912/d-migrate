@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
 import java.nio.file.Path
@@ -47,6 +48,22 @@ internal object SchemaGenerateHelpers {
         return outputPath.parent?.resolve(rollbackName) ?: Path.of(rollbackName)
     }
 
+    /** Split-Dateipfad: `schema.sql` → `schema.pre-data.sql`. */
+    fun splitPath(outputPath: Path, phase: DdlPhase): Path {
+        val phaseSuffix = when (phase) {
+            DdlPhase.PRE_DATA -> "pre-data"
+            DdlPhase.POST_DATA -> "post-data"
+        }
+        val fileName = outputPath.fileName.toString()
+        val dotIndex = fileName.lastIndexOf('.')
+        val splitName = if (dotIndex > 0) {
+            "${fileName.substring(0, dotIndex)}.$phaseSuffix${fileName.substring(dotIndex)}"
+        } else {
+            "$fileName.$phaseSuffix"
+        }
+        return outputPath.parent?.resolve(splitName) ?: Path.of(splitName)
+    }
+
     /**
      * Serialisiert das [DdlResult] mit Schema- und Dialekt-Metadaten als
      * JSON-String. Wird von `--output-format json` verwendet.
@@ -55,9 +72,17 @@ internal object SchemaGenerateHelpers {
      * (kein Jackson/DSL-JSON im CLI-Modul) — alle String-Werte werden via
      * [escapeJson] korrekt escaped.
      */
-    fun formatJsonOutput(result: DdlResult, schema: SchemaDefinition, dialect: String): String {
+    fun formatJsonOutput(
+        result: DdlResult,
+        schema: SchemaDefinition,
+        dialect: String,
+        splitMode: SplitMode = SplitMode.SINGLE,
+    ): String {
+        val isSplit = splitMode == SplitMode.PRE_POST
         val notes = result.notes.joinToString(",\n") { n ->
-            """    {"type": "${n.type.name.lowercase()}", "code": "${n.code}", "object": "${escapeJson(n.objectName)}", "message": "${escapeJson(n.message)}"}"""
+            val phaseField = if (isSplit && n.phase != null)
+                """, "phase": "${phaseToKebab(n.phase!!)}" """ else ""
+            """    {"type": "${n.type.name.lowercase()}", "code": "${n.code}", "object": "${escapeJson(n.objectName)}", "message": "${escapeJson(n.message)}"$phaseField}"""
         }
         val skipped = result.skippedObjects.joinToString(",\n") { s ->
             val fields = mutableListOf<String>()
@@ -66,6 +91,7 @@ internal object SchemaGenerateHelpers {
             fields += """"reason": "${escapeJson(s.reason)}""""
             if (s.code != null) fields += """"code": "${escapeJson(s.code!!)}""""
             if (s.hint != null) fields += """"hint": "${escapeJson(s.hint!!)}""""
+            if (isSplit && s.phase != null) fields += """"phase": "${phaseToKebab(s.phase!!)}""""
             "    {${fields.joinToString(", ")}}"
         }
         val actionRequiredCount = result.notes.count { it.type == NoteType.ACTION_REQUIRED } +
@@ -77,7 +103,15 @@ internal object SchemaGenerateHelpers {
             appendLine("""  "exit_code": 0,""")
             appendLine("""  "target": "$dialect",""")
             appendLine("""  "schema": {"name": "${escapeJson(schema.name)}", "version": "${escapeJson(schema.version)}"},""")
-            appendLine("""  "ddl": "${escapeJson(result.render())}",""")
+            if (isSplit) {
+                appendLine("""  "split_mode": "pre-post",""")
+                appendLine("""  "ddl_parts": {""")
+                appendLine("""    "pre_data": "${escapeJson(result.renderPhase(DdlPhase.PRE_DATA))}",""")
+                appendLine("""    "post_data": "${escapeJson(result.renderPhase(DdlPhase.POST_DATA))}" """)
+                appendLine("""  },""")
+            } else {
+                appendLine("""  "ddl": "${escapeJson(result.render())}",""")
+            }
             appendLine("""  "warnings": ${result.notes.count { it.type == NoteType.WARNING }},""")
             appendLine("""  "action_required": $actionRequiredCount,""")
             if (notes.isEmpty()) appendLine("""  "notes": [],""") else {
@@ -88,6 +122,11 @@ internal object SchemaGenerateHelpers {
             }
             append("}")
         }
+    }
+
+    private fun phaseToKebab(phase: DdlPhase): String = when (phase) {
+        DdlPhase.PRE_DATA -> "pre-data"
+        DdlPhase.POST_DATA -> "post-data"
     }
 
     /**

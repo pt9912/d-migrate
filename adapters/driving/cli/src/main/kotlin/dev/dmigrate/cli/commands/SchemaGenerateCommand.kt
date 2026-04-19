@@ -66,12 +66,13 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         val runner = SchemaGenerateRunner(
             schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
             generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-            reportWriter = { path, result, schema, dialect, src ->
-                TransformationReportWriter().write(path, result, schema, dialect, src)
+            reportWriter = { path, result, schema, dialect, src, splitModeStr ->
+                TransformationReportWriter().write(path, result, schema, dialect, src, splitModeStr)
             },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
             rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            splitPath = SchemaGenerateHelpers::splitPath,
             printError = { msg, src -> formatter.printError(msg, src) },
             printValidationResult = { result, schema, src ->
                 formatter.printValidationResult(result, schema, src)

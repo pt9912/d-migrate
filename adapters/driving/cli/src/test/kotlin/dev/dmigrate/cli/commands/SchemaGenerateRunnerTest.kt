@@ -135,13 +135,14 @@ class SchemaGenerateRunnerTest : FunSpec({
             schemaReader = schemaReader,
             validator = validator,
             generatorLookup = { generator },
-            reportWriter = { path, result, schema, dialect, source ->
+            reportWriter = { path, result, schema, dialect, source, _ ->
                 reportWrites += ReportRecord(path, result, schema, dialect, source)
             },
             fileWriter = { path, content -> fileWrites += WriteRecord(path, content) },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
             rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            splitPath = SchemaGenerateHelpers::splitPath,
             printError = { msg, _ -> stderr.sink("Error: $msg") },
             printValidationResult = { _, _, _ -> },
             stdout = stdout.sink,
@@ -513,11 +514,12 @@ class SchemaGenerateRunnerTest : FunSpec({
                 observedDialect = dialect
                 FakeGenerator(dialect = dialect)
             },
-            reportWriter = { _, _, _, _, _ -> },
+            reportWriter = { _, _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
             rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            splitPath = SchemaGenerateHelpers::splitPath,
             printError = { _, _ -> },
             printValidationResult = { _, _, _ -> },
             stdout = { },
@@ -536,11 +538,12 @@ class SchemaGenerateRunnerTest : FunSpec({
                 observedDialect = dialect
                 FakeGenerator(dialect = dialect)
             },
-            reportWriter = { _, _, _, _, _ -> },
+            reportWriter = { _, _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
             rollbackPath = SchemaGenerateHelpers::rollbackPath,
+            splitPath = SchemaGenerateHelpers::splitPath,
             printError = { _, _ -> },
             printValidationResult = { _, _, _ -> },
             stdout = { },
@@ -717,5 +720,73 @@ class SchemaGenerateRunnerTest : FunSpec({
         )
         val exit = h.runner().execute(request(splitMode = SplitMode.SINGLE))
         exit shouldBe 0
+    }
+
+    // ─── Split output (0.9.2 AP 6.4) ────────────────────────────
+
+    test("--split pre-post --output writes two SQL files") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            output = Path.of("/tmp/schema.sql"),
+        ))
+        exit shouldBe 0
+        h.fileWrites.any { it.path.toString().contains("pre-data") } shouldBe true
+        h.fileWrites.any { it.path.toString().contains("post-data") } shouldBe true
+        h.fileWrites.none { it.path == Path.of("/tmp/schema.sql") } shouldBe true
+    }
+
+    test("--split pre-post --output-format json contains ddl_parts") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            outputFormat = "json",
+        ))
+        exit shouldBe 0
+        val json = h.stdout.joined()
+        json shouldContain "\"split_mode\": \"pre-post\""
+        json shouldContain "\"ddl_parts\""
+        json shouldContain "\"pre_data\""
+        json shouldContain "\"post_data\""
+    }
+
+    test("--split pre-post json does not contain legacy ddl field") {
+        val h = harness()
+        h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            outputFormat = "json",
+        ))
+        val json = h.stdout.joined()
+        // "ddl" should not appear as a top-level key
+        json shouldContain "ddl_parts"
+        // But the legacy "ddl": should NOT appear
+        val lines = json.lines()
+        lines.none { it.trimStart().startsWith("\"ddl\":") } shouldBe true
+    }
+
+    test("single json still contains legacy ddl field") {
+        val h = harness()
+        h.runner().execute(request(outputFormat = "json"))
+        val json = h.stdout.joined()
+        json shouldContain "\"ddl\":"
+        lines@ for (line in json.lines()) {
+            if (line.trimStart().startsWith("\"split_mode\"")) {
+                error("split_mode should not appear in single JSON")
+            }
+        }
+    }
+
+    test("--split pre-post --output + --output-format json writes files AND outputs json") {
+        val h = harness()
+        val exit = h.runner().execute(request(
+            splitMode = SplitMode.PRE_POST,
+            output = Path.of("/tmp/schema.sql"),
+            outputFormat = "json",
+        ))
+        exit shouldBe 0
+        // Files written
+        h.fileWrites.any { it.path.toString().contains("pre-data") } shouldBe true
+        // JSON output
+        h.stdout.joined() shouldContain "ddl_parts"
     }
 })
