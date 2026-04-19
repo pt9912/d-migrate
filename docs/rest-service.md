@@ -2,27 +2,28 @@
 
 > Dokumenttyp: Zielbild / Spezifikation
 >
-> Status: Entwurf fuer die kuenftige Service-Schnittstelle
+> Status: Entwurf für die künftige Service-Schnittstelle
 >
 > Referenzen: `docs/architecture.md`, `docs/cli-spec.md`,
-> `docs/grpc-service.md`, `docs/implementation-plan-0.9.1.md`,
+> `docs/grpc-service.md`, `docs/job-contract.md`,
+> `docs/implementation-plan-0.9.1.md`,
 > `docs/lastenheft-d-migrate.md` LF-022
 
 ---
 
 ## 1. Ziel
 
-`d-migrate` besitzt heute eine CLI als driving adapter. Fuer eine
-Microservice-Umgebung braucht das System zusaetzlich eine HTTP-basierte,
+`d-migrate` besitzt heute eine CLI als driving adapter. Für eine
+Microservice-Umgebung braucht das System zusätzlich eine HTTP-basierte,
 remote nutzbare Schnittstelle.
 
 Das REST-Service-Zielbild ist:
 
 - derselbe fachliche Kern wie in der CLI
-- ein zusaetzlicher driving adapter unter `adapters/driving/rest`
+- ein zusätzlicher driving adapter unter `adapters/driving/rest`
 - klare Trennung zwischen kurzen Request/Response-Aufrufen und langen Jobs
-- stabile JSON-Vertraege fuer andere Dienste, UIs und Automatisierung
-- dieselben fachlichen Exit-/Fehlercodes wie in der CLI, aber in HTTP uebersetzt
+- stabile JSON-Verträge für andere Dienste, UIs und Automatisierung
+- dieselben fachlichen Exit-/Fehlercodes wie in der CLI, aber in HTTP übersetzt
 
 Die REST-API ist kein zweites Produkt neben der CLI, sondern ein weiterer
 Einstiegspunkt auf dieselben Use Cases.
@@ -55,112 +56,108 @@ mappt HTTP-Requests auf bestehende Runner-/Service-Aufrufe wie
 `SchemaGenerateRunner`, `SchemaReverseRunner`, `DataExportRunner`,
 `DataImportRunner`, `DataTransferRunner` und `DataProfileRunner`.
 
-### 2.1 Vorbedingung fuer saubere Service-Adapter
+### 2.1 Vorbedingung für saubere Service-Adapter
 
 Die Klassen in `hexagon/application` tragen heute noch CLI-nahe Namen
-(`dev.dmigrate.cli.commands.*Runner`). Fuer REST, gRPC und MCP sollte die
+(`dev.dmigrate.cli.commands.*Runner`). Für REST, gRPC und MCP sollte die
 Verdrahtung in eine API-neutrale Schicht gezogen werden:
 
 - Request-/Response-Modelle ohne Clikt-Bezug
-- gemeinsame Job-Orchestrierung fuer lange Laeufe
+- gemeinsame Job-Orchestrierung für lange Läufe
 - gemeinsame Fehlerabbildung
 - wiederverwendbare Auth-/Audit-Hooks
 
-Das ist kein Blocker fuer einen ersten Adapter, aber die technische Schuld
-wuerde sonst in alle Service-Schnittstellen kopiert.
+Das ist kein Blocker für einen ersten Adapter, aber die technische Schuld
+würde sonst in alle Service-Schnittstellen kopiert.
 
 ---
 
-## 3. API-Grundsaetze
+## 3. API-Grundsätze
 
 ### 3.1 Versionsschema
 
 - Basis-Pfad: `/api/v1`
 - nur additive Erweiterungen innerhalb von `v1`
-- breaking changes nur ueber `/api/v2`
+- breaking changes nur über `/api/v2`
 
 ### 3.2 Formate
 
-- Request und Response standardmaessig `application/json`
-- grosse Artefakte optional als Download (`application/sql`, `application/yaml`,
+- Request und Response standardmäßig `application/json`
+- große Artefakte optional als Download (`application/sql`, `application/yaml`,
   `application/octet-stream`)
 - strukturierte Antworten bleiben sprachstabil englisch, analog zur CLI
-- menschenlesbare Texte koennen per `Accept-Language` lokalisiert werden
+- menschenlesbare Texte können per `Accept-Language` lokalisiert werden
   (LF-022)
 
 ### 3.3 Synchron vs. asynchron
 
-Kurze Operationen duerfen synchron sein:
+Kurze Operationen dürfen synchron sein:
 
 - Schema validieren
 - kleinere Schema-Diffs
 - kleine DDL-Generierung
 - Health- und Capability-Abfragen
 
-Fuer `v1` gilt folgende feste Zuordnung:
+Die autoritative Zuordnung synchron/asynchron je Endpunkt steht in §4.2–4.4.
+Hier die Zusammenfassung:
 
-- `GET /api/v1/health` -> synchron
-- `GET /api/v1/capabilities` -> synchron
-- `POST /api/v1/schema/validate` -> synchron
-- `POST /api/v1/schema/generate` -> synchron (kleine DDL-Generierung)
+Synchrone Endpunkte:
 
-Die folgenden Endpunkte sind asynchron als Job abzubilden:
+- `GET /api/v1/health`
+- `GET /api/v1/capabilities`
+- `POST /api/v1/schema/validate`
+- `POST /api/v1/schema/generate` — synchron; der Server MUSS ein
+  konfigurierbares Limit für die Schema-Größe durchsetzen und bei
+  Überschreitung mit `413` antworten
 
-- `schema reverse`
-- `schema compare`
-- `data export`
-- `data import`
-- `data transfer`
-- `data profile`
-- Tool-Exports (`flyway`, `liquibase`, `django`, `knex`)
+Asynchrone Endpunkte (Job-basiert):
 
-Einzelne Endpunkte:
+- `POST /api/v1/schema/reverse`
+- `POST /api/v1/schema/compare`
+- `POST /api/v1/data/export`
+- `POST /api/v1/data/import`
+- `POST /api/v1/data/transfer`
+- `POST /api/v1/data/profile`
+- `POST /api/v1/export/flyway`
+- `POST /api/v1/export/liquibase`
+- `POST /api/v1/export/django`
+- `POST /api/v1/export/knex`
 
-- `POST /api/v1/schema/reverse` -> asynchron
-- `POST /api/v1/schema/compare` -> asynchron
-- `POST /api/v1/data/export` -> asynchron
-- `POST /api/v1/data/import` -> asynchron
-- `POST /api/v1/data/transfer` -> asynchron
-- `POST /api/v1/data/profile` -> asynchron
-- `POST /api/v1/export/flyway` -> asynchron
-- `POST /api/v1/export/liquibase` -> asynchron
-- `POST /api/v1/export/django` -> asynchron
-- `POST /api/v1/export/knex` -> asynchron
-
-Fuer Job-Fortschritt kann optional ein SSE-Endpunkt
+Für Job-Fortschritt kann ein SSE-Endpunkt
 (`GET /api/v1/jobs/{jobId}/events`, `Accept: text/event-stream`) angeboten
-werden, um Polling-Last bei langlebigen Jobs zu reduzieren. In `v1` ist
-Polling ueber `GET /api/v1/jobs/{jobId}` der Standardweg.
+werden, um Polling-Last bei langlebigen Jobs zu reduzieren. Spezifikation
+des SSE-Endpunkts (Event-Typen, Reconnect via `Last-Event-ID`) erfolgt in
+Phase 2 zusammen mit dem Job-System. In `v1` ist Polling über
+`GET /api/v1/jobs/{jobId}` der Standardweg.
 
 ### 3.4 Idempotenz
 
 - lesende Endpunkte: `GET`
 - rein berechnende Operationen: `POST`
-- lange Laeufe erzeugen Job-Ressourcen
+- lange Läufe erzeugen Job-Ressourcen
 - asynchrone Job-Start-Endpunkte (z. B. `schema reverse`, `schema compare`, `data export`, `data import`, `data transfer`, `data profile`, Tool-Exports) **müssen** über `Idempotency-Key` abgesichert werden
-- identische Requests mit demselben Idempotency-Key sollen denselben `jobId` zurueckgeben
-- abweichende Requests mit demselben Idempotency-Key sollen als Konflikt (`409`) zurueckgewiesen werden
+- identische Requests mit demselben Idempotency-Key sollen denselben `jobId` zurückgeben
+- abweichende Requests mit demselben Idempotency-Key sollen als Konflikt (`409`) zurückgewiesen werden
 - "abweichend" ist definiert als semantische Ungleichheit der normalisierten Request-Felder (Feldnamen, Werte, Typen); Reihenfolge von JSON-Keys und Whitespace sind irrelevant
-- der Server muss Idempotency-Keys mindestens fuer die Lebensdauer des zugehoerigen Jobs vorhalten; nach `expiresAt` des Jobs darf der Key verworfen werden
+- der Server muss Idempotency-Keys mindestens für die Lebensdauer des zugehörigen Jobs vorhalten; nach `expiresAt` des Jobs darf der Key verworfen werden
 - fehlender `Idempotency-Key` bei asynchronen Start-Endpunkten gilt als Client-Fehler
 
-### 3.5 Gemeinsamer Kernvertrag fuer Jobs und Artefakte
+### 3.5 Gemeinsamer Kernvertrag für Jobs und Artefakte
 
-REST, gRPC und MCP muessen denselben fachlichen Kernvertrag nutzen:
+Der fachliche Kernvertrag für Jobs und Artefakte ist in
+`docs/job-contract.md` definiert. REST, gRPC und MCP bilden diesen Vertrag
+protokollspezifisch ab (z. B. Header vs. Metadaten, JSON vs. Protobuf);
+die fachliche Semantik bleibt identisch.
 
-- `jobId` und `artifactId` sind opake, stabile String-IDs
-- Jobs und Artefakte tragen immer `createdAt` und `expiresAt`
-- `expiresAt` wird serverseitig festgelegt und ist fuer die Lebensdauer der
-  Ressource unveraenderlich
-- Artefakte sind nach Erzeugung immutable
-- nur derselbe Mandant / Principal oder ein Administrator darf Job und
-  Artefakt lesen, abbrechen oder herunterladen
-- Terminalstatus eines Jobs aendert sich nach Erreichen von `succeeded`,
-  `failed` oder `cancelled` nicht mehr
-- grosse Ergebnisse werden nicht inline in den Job geschrieben, sondern als
+REST-spezifische Ergänzungen:
+
+- `expiresAt` wird serverseitig festgelegt und ist für die Lebensdauer der
+  Ressource unveränderlich; eine Verlängerung ist bewusst nicht vorgesehen,
+  um die Aufräumlogik einfach und vorhersagbar zu halten
+- große Ergebnisse werden nicht inline in den Job geschrieben, sondern als
   Artefakt referenziert
 
-Empfohlene ID-Praefixe:
+Empfohlene ID-Präfixe:
 
 - `job_<opaque>`
 - `artifact_<opaque>`
@@ -174,26 +171,29 @@ Empfohlene ID-Praefixe:
 | Pfad | Methode | Zweck |
 | --- | --- | --- |
 | `/api/v1/health` | `GET` | kombinierter Liveness-/Readiness-Status |
-| `/api/v1/capabilities` | `GET` | unterstuetzte Dialekte, Formate, Features |
-| `/api/v1/jobs` | `GET` | paginierte Job-Liste fuer den eigenen Tenant |
+| `/api/v1/capabilities` | `GET` | unterstützte Dialekte, Formate, Features |
+| `/api/v1/jobs` | `GET` | paginierte Job-Liste für den eigenen Tenant |
 | `/api/v1/jobs/{jobId}` | `GET` | Status, Progress, Ergebnis-Metadaten |
 | `/api/v1/jobs/{jobId}/cancel` | `POST` | laufenden Job abbrechen |
-| `/api/v1/artifacts` | `GET` | paginierte Artefakt-Liste fuer den eigenen Tenant |
+| `/api/v1/artifacts` | `GET` | paginierte Artefakt-Liste für den eigenen Tenant |
 | `/api/v1/artifacts` | `POST` | Eingabe-Artefakt hochladen oder registrieren |
-| `/api/v1/artifacts/{artifactId}` | `GET` | Ergebnisdatei oder Report herunterladen; unterstuetzt `ETag` / `If-None-Match` |
-| `/api/v1/artifacts/{artifactId}/metadata` | `GET` | Metadaten inkl. Groesse, Typ, Hash, Ablaufzeit und `ETag` |
+| `/api/v1/artifacts/{artifactId}` | `GET` | Artefakt-Inhalt im Originalformat herunterladen; unterstützt `ETag` / `If-None-Match` |
+| `/api/v1/artifacts/{artifactId}/metadata` | `GET` | Metadaten inkl. Größe, Typ, Hash, Ablaufzeit und `ETag` |
 
 Paginierte List-Endpunkte (`GET /api/v1/jobs`, `GET /api/v1/artifacts`)
-unterstuetzen die Query-Parameter `pageToken`, `pageSize` und optionale
-Filter (z. B. nach `status` oder `operation`).
+unterstützen die Query-Parameter `pageToken`, `pageSize` und optionale
+Filter (z. B. nach `status` oder `operation`). Die Default-Sortierung ist
+`createdAt` absteigend.
 
 `POST /api/v1/jobs/{jobId}/cancel` liefert den aktualisierten Job-Status als
 Response-Body. Ist der Job bereits in einem Terminalstatus, antwortet der
-Server idempotent mit `200` und dem unveraenderten Status.
+Server idempotent mit `200` und dem unveränderten Status. Der Abbruch ist
+best-effort: zwischen Request und Verarbeitung kann der Job in einen
+Terminalstatus wechseln; auch dann antwortet der Server mit `200`.
 
 #### Health-Response
 
-Der kombinierte Health-Endpunkt liefert getrennte Felder fuer Liveness und Readiness:
+Der kombinierte Health-Endpunkt liefert getrennte Felder für Liveness und Readiness:
 
 ```json
 {
@@ -220,12 +220,28 @@ Der kombinierte Gesamtstatus wird wie folgt abgeleitet:
 - `DEGRADED` bei `liveness=UP` und `readiness=DEGRADED`
 - `DOWN` bei `liveness=DOWN`
 
+#### Capabilities-Response
+
+```json
+{
+  "dialects": ["postgresql", "mysql", "sqlite", "oracle", "sqlserver"],
+  "formats": ["json", "csv", "sql", "yaml"],
+  "features": {
+    "spatialProfiles": ["postgis", "spatialite"],
+    "rollbackGeneration": true,
+    "incrementalExport": true,
+    "dataProfile": true
+  },
+  "toolExports": ["flyway", "liquibase", "django", "knex"]
+}
+```
+
 ### 4.2 Schema-Endpunkte
 
 | Pfad | Methode | Zweck | Modus |
 | --- | --- | --- | --- |
 | `/api/v1/schema/validate` | `POST` | neutrales Schema validieren | synchron |
-| `/api/v1/schema/generate` | `POST` | DDL fuer Ziel-Dialekt erzeugen | synchron |
+| `/api/v1/schema/generate` | `POST` | DDL für Ziel-Dialekt erzeugen | synchron |
 | `/api/v1/schema/reverse` | `POST` | DB nach neutralem Modell reverse-engineeren | asynchron |
 | `/api/v1/schema/compare` | `POST` | zwei Schemata oder Umgebungen vergleichen | asynchron |
 
@@ -270,6 +286,29 @@ Beispiel `schema generate`:
 }
 ```
 
+Beispiel `schema compare`:
+
+```json
+{
+  "left": {
+    "type": "schema",
+    "artifactId": "artifact_01JS8LXYZ..."
+  },
+  "right": {
+    "type": "connection",
+    "connectionRef": "staging"
+  },
+  "options": {
+    "ignoreComments": true,
+    "ignoreOrder": true
+  }
+}
+```
+
+`left` und `right` unterstützen jeweils die Typen `schema` (mit
+`artifactId`), `connection` (mit `connectionRef`) und `inline` (mit
+eingebettetem Schema-Objekt).
+
 Beispiel `data export`:
 
 ```json
@@ -291,37 +330,37 @@ Beispiel `data export`:
 
 ### 5.1 Verbindungsmodell
 
-Fuer Service-Betrieb sind drei Modi sinnvoll:
+Für Service-Betrieb sind drei Modi sinnvoll:
 
 - `connectionRef`: referenziert serverseitig bekannte Verbindung
 - `connectionSecretRef`: referenziert Secret-Store-Eintrag
-- `jdbcUrl` nur fuer trusted admin deployments
+- `jdbcUrl` nur für trusted admin deployments
 
 Direkte Credentials im Request sollten nicht Standard sein.
 
 ### 5.2 Filter-Modell
 
-Der heutige CLI-Pfad `--filter` ist eine Trust-Boundary. Fuer REST gilt das
-nicht. Deshalb soll die REST-API standardmaessig **keine rohe WHERE-Klausel**
+Der heutige CLI-Pfad `--filter` ist eine Trust-Boundary. Für REST gilt das
+nicht. Deshalb soll die REST-API standardmäßig **keine rohe WHERE-Klausel**
 akzeptieren.
 
-Ziel fuer `v1`:
+Ziel für `v1`:
 
 - strukturierter Filter-DSL oder
-- serverseitig validierte, eingeschraenkte Ausdruckssprache
+- serverseitig validierte, eingeschränkte Ausdruckssprache
 
-Ein "trusted raw sql" Modus darf hoechstens explizit konfigurierbar sein und
-muss standardmaessig deaktiviert bleiben.
+Ein "trusted raw sql" Modus darf höchstens explizit konfigurierbar sein und
+muss standardmäßig deaktiviert bleiben.
 
 ### 5.3 Import- und Export-Artefakte
 
-Fuer grosse Ein- und Ausgabedaten gilt ein einheitliches Modell:
+Für große Ein- und Ausgabedaten gilt ein einheitliches Modell:
 
-- `data import` akzeptiert fuer `v1` nur serverseitig bekannte Eingaben ueber
+- `data import` akzeptiert für `v1` nur serverseitig bekannte Eingaben über
   `sourceArtifactId`
-- Eingabe-Artefakte werden zuerst ueber `POST /api/v1/artifacts` angelegt
-- `data export` liefert standardmaessig ein oder mehrere Ergebnis-Artefakte
-- kleine Ergebnisse duerfen inline zurueckkommen, grosse nur per Artefakt
+- Eingabe-Artefakte werden zuerst über `POST /api/v1/artifacts` angelegt
+- `data export` liefert standardmäßig ein oder mehrere Ergebnis-Artefakte
+- kleine Ergebnisse dürfen inline zurückkommen, große nur per Artefakt
 
 #### 5.3.1 `POST /api/v1/artifacts` - Upload- und Registrierungsmodus
 
@@ -329,7 +368,7 @@ Der Endpoint ist mit zwei exklusiven Modi definiert:
 
 - `mode: "upload"` (Standard, Multipart-Upload):
   - `Content-Type: multipart/form-data`
-  - Pflichtfeld: `file` (binaeres Artefakt)
+  - Pflichtfeld: `file` (binäres Artefakt)
   - optionales Feld: `metadata` (JSON), z. B. `{"contentType":"application/json","sha256":"...","sizeBytes":123456}`
 - `mode: "register"`:
   - `Content-Type: application/json`
@@ -341,7 +380,7 @@ Der Endpoint ist mit zwei exklusiven Modi definiert:
   - serverseitige Verifikation von Dateiexistenz, Lesbarkeit und optionaler Prüfsumme vor der Registration
   - für `register` kann serverseitig konfiguriert werden, ob `sha256`/`sizeBytes` verpflichtend sind
 
-Beispiel-Request fuer `mode: "register"`:
+Beispiel-Request für `mode: "register"`:
 
 ```json
 {
@@ -357,8 +396,8 @@ Beispiel-Request fuer `mode: "register"`:
 Fehlerhafte Requests:
 
 - unbekannter Modus: `400`
-- ungueltiger oder unautorisierter Registrierungs-Pfad: `403`
-- zu grosse Payload: `413`
+- ungültiger oder unautorisierter Registrierungs-Pfad: `403`
+- zu große Payload: `413`
 
 Beispiel `data import`:
 
@@ -392,7 +431,7 @@ Beispiel Antwort auf `POST /api/v1/artifacts`:
 
 ## 6. Job-Modell
 
-Lange Laeufe werden als Job-Ressourcen abgebildet.
+Lange Läufe werden als Job-Ressourcen abgebildet.
 
 Beispiel:
 
@@ -422,10 +461,10 @@ Statuswerte:
 - `failed`
 - `cancelled`
 
-Fuer `succeeded` und `failed` gilt:
+Für `succeeded` und `failed` gilt:
 
 - maschinenlesbare Ergebnisdaten im Body
-- Artefakte ueber Download-Links
+- Artefakte über Download-Links
 - keine ungebremsten Resultsets direkt im Status-Objekt
 
 Pflichtfelder eines Jobs:
@@ -439,6 +478,11 @@ Pflichtfelder eines Jobs:
 - `createdBy`
 - `artifacts`
 
+Das `progress`-Objekt ist optional und operationsspezifisch. Gemeinsame
+Felder sind `phase` (String) und optional numerische Fortschrittswerte
+(z. B. `tablesCompleted`/`tablesTotal`, `rowsProcessed`). Der Server darf
+zusätzliche operationsspezifische Felder liefern.
+
 Pflichtfelder eines Artefakts:
 
 - `artifactId`
@@ -450,21 +494,22 @@ Pflichtfelder eines Artefakts:
 
 Retention-Regeln:
 
-- Jobs und Artefakte werden nach `expiresAt` serverseitig aufgeraeumt
-- der konkrete Retention-Wert ist Deployment-Policy, muss aber immer ueber
+- Jobs und Artefakte werden nach `expiresAt` serverseitig aufgeräumt
+- der konkrete Retention-Wert ist Deployment-Policy, muss aber immer über
   `expiresAt` sichtbar sein
-- `GET /jobs/{jobId}` liefert auch fuer `failed` und `cancelled` weiterhin
+- `GET /jobs/{jobId}` liefert auch für `failed` und `cancelled` weiterhin
   `200`, der Terminalstatus steht im Body
 
 ---
 
 ## 7. Fehlerabbildung
 
-Die CLI-Exit-Codes sollen fachlich erhalten bleiben. Fuer synchrone REST-
+Die CLI-Exit-Codes sollen fachlich erhalten bleiben. Für synchrone REST-
 Operationen ist die HTTP-Abbildung fest:
 
 | CLI-Code | Bedeutung | HTTP |
 | --- | --- | --- |
+| `1` | Allgemeiner Fehler | `500` |
 | `2` | Usage / Request invalid | `400` |
 | `3` | Validation failed | `422` |
 | `4` | Connection error | `503` |
@@ -473,31 +518,31 @@ Operationen ist die HTTP-Abbildung fest:
 | `7` | Local config / file / render error | `500` |
 | `130` | cancelled | `503` |
 
-`130` (cancelled) ist fuer synchrone REST-Operationen ein Sonderfall: bei
+`130` (cancelled) ist für synchrone REST-Operationen ein Sonderfall: bei
 Client-Abbruch wird die Verbindung geschlossen und der Server liefert
 typischerweise keine Antwort. `503` greift nur bei serverseitigem Abbruch
-(z. B. Shutdown, Timeout). Fuer asynchrone Jobs wird Abbruch ueber
+(z. B. Shutdown, Timeout). Für asynchrone Jobs wird Abbruch über
 `status=cancelled` im Job-Body signalisiert.
 
-`409` ist exklusiv fuer Idempotency-Konflikte mit demselben `Idempotency-Key` und abweichendem Request reserviert.
+`409` ist exklusiv für Idempotency-Konflikte mit demselben `Idempotency-Key` und abweichendem Request reserviert.
 
 In asynchronen Workflows signalisiert ein laufender oder abgeschlossener Job den Statuswechsel (inkl. `cancelled`) über `GET /jobs/{jobId}`.
 
-Zusatzliche HTTP-Fehler (nicht abgeleitet aus CLI-Codes):
+Zusätzliche HTTP-Fehler (nicht abgeleitet aus CLI-Codes):
 
 | HTTP | Bedeutung | Wann |
 | --- | --- | --- |
 | `428` | Precondition Required | fehlender Idempotency-Key bei asynchroner Job-Anlage |
-| `401` | Unauthorized | fehlende oder ungueltige Authentifizierung |
+| `401` | Unauthorized | fehlende oder ungültige Authentifizierung |
 | `403` | Forbidden | fehlende Berechtigung auf Betrieb, Verbindung oder Objekt |
 | `404` | Not Found | unbekannter `jobId` oder `artifactId` |
 | `409` | Conflict | Konflikt durch Idempotency-Key bei abweichendem Request |
-| `413` | Payload Too Large | Artefakt oder Request-Body zu gross |
+| `413` | Payload Too Large | Artefakt oder Request-Body zu groß |
 | `429` | Too Many Requests | Rate-/Concurrency-Limits erreicht |
 
 Bei `429` und `503` MUSS der Server einen `Retry-After`-Header setzen.
 
-Fuer asynchrone Operationen gilt:
+Für asynchrone Operationen gilt:
 
 - `POST` zum Start eines Jobs liefert bei erfolgreicher Annahme `202 Accepted`
 - `Idempotency-Key` ist für alle Job-Start-Endpunkte **erforderlich**; fehlt er, ist der Start mit `428` abzulehnen.
@@ -508,15 +553,19 @@ Fuer asynchrone Operationen gilt:
     "jobId": "job_01JS8J9B0K6R4W2A3Y7N8P1Q2R",
     "statusUrl": "/api/v1/jobs/job_01JS8J9B0K6R4W2A3Y7N8P1Q2R",
     "status": "queued",
+    "createdBy": "svc-platform-api",
     "createdAt": "2026-04-19T10:15:00Z",
     "expiresAt": "2026-04-26T10:15:00Z"
   }
   ```
 - Fehler beim Starten des Jobs nutzen die obige Tabelle
-- spaetere Laufzeitfehler werden nicht als HTTP-Fehler des Start-Requests
-  signalisiert, sondern ueber den Jobstatus `failed`
-- ein abgebrochener Job wird ueber `GET /jobs/{jobId}` mit `200` und
+- spätere Laufzeitfehler werden nicht als HTTP-Fehler des Start-Requests
+  signalisiert, sondern über den Jobstatus `failed`
+- ein abgebrochener Job wird über `GET /jobs/{jobId}` mit `200` und
   `status=cancelled` geliefert
+
+Fehler, die nicht aus CLI-Exit-Codes abgeleitet sind (z. B. `401`, `403`,
+`404`, `413`, `429`), enthalten kein `exitCode`-Feld im Error-Body.
 
 Beispiel:
 
@@ -542,17 +591,24 @@ Beispiel:
 
 ## 8. Security
 
-Pflicht fuer einen produktiven REST-Service:
+Pflicht für einen produktiven REST-Service:
 
 - TLS immer aktiv; intern vorzugsweise mTLS
 - Authentifizierung via OIDC/JWT oder Service-mTLS
 - Autorisierung auf Operation, Verbindung und Zielsystem
-- Secret-Aufloesung nur serverseitig
-- Redaction fuer JDBC-URLs, Passwoerter, Tokens und Prompt-Inhalte
-- Audit-Log fuer destruktive oder teure Operationen
+- Secret-Auflösung nur serverseitig
+- Redaction für JDBC-URLs, Passwörter, Tokens und Prompt-Inhalte
+- Audit-Log für destruktive oder teure Operationen
 - Rate-Limits und Concurrency-Limits pro Mandant / Client
-- Payload-Groessenlimits
-- CORS-Policy fuer Browser-Clients (nur zugelassene Origins, Methoden und Header)
+- Payload-Größenlimits
+- CORS-Policy für Browser-Clients:
+  - Preflight-Requests (`OPTIONS`) werden unterstützt
+  - `Access-Control-Allow-Origin` nur für explizit zugelassene Origins
+  - erlaubte Methoden: `GET`, `POST`, `OPTIONS`
+  - erlaubte Header: `Authorization`, `Content-Type`, `Idempotency-Key`,
+    `Accept-Language`, `If-None-Match`
+  - `Access-Control-Allow-Credentials: true` nur bei Cookie-basierter Auth
+  - `Access-Control-Max-Age` auf mindestens 1 Stunde
 
 Besonders kritisch:
 
@@ -567,53 +623,56 @@ Besonders kritisch:
 Der Service sollte von Anfang an folgende Signale liefern:
 
 - strukturierte Logs mit `requestId`, `jobId`, `tenant`, `operation`
-- Metriken fuer Dauer, Fehlerquote, Throughput, Queue-Laenge
-- Tracing ueber HTTP-Eingang, Runner, Driver und Format-Adapter
-- explizite Progress-Events fuer lange Jobs
+- Metriken für Dauer, Fehlerquote, Throughput, Queue-Länge
+- Tracing über HTTP-Eingang, Runner, Driver und Format-Adapter
+- explizite Progress-Events für lange Jobs
 
 ---
 
-## 10. Einfuehrungsreihenfolge
+## 10. Einführungsreihenfolge
 
-### Phase 1
+### Phase 1 — Synchrone Basis
 
 - `health`
 - `capabilities`
 - `schema validate`
 - `schema generate`
 
-### Phase 2
+### Phase 2 — Job-System und Analyse
 
-- Job-System
+- Job-System (inkl. SSE-Endpunkt `jobs/{jobId}/events`)
 - `schema reverse`
 - `schema compare`
 - `data profile`
 
-### Phase 3
+Profiling wird vor Export/Import eingeführt, weil es ohne Schreibzugriff auf
+die Ziel-DB auskommt und als erstes den asynchronen Job-Pfad validiert.
+
+### Phase 3 — Datenbewegung
 
 - `data export`
 - `data import`
 - `data transfer`
 - Artefakt-Download
 
-### Phase 4
+### Phase 4 — Integrationen
 
 - Tool-Exports
-- KI-nahe Endpunkte nur falls REST fuer diesen Use Case wirklich noetig ist
+- KI-nahe Endpunkte nur falls REST für diesen Use Case wirklich nötig ist
 
 ---
 
 ## 11. Entscheidung
 
-REST ist die richtige Schnittstelle fuer:
+REST ist die richtige Schnittstelle für:
 
 - externe Plattformen
 - Web-UIs
 - API-Gateways
-- Mandantenfaehigkeit
+- Mandantenfähigkeit
 - standardisierte Enterprise-Integration
 
-REST sollte aber nicht die einzige neue Service-Schnittstelle sein. Fuer
-interne, stark typisierte und streaming-lastige Kommunikation ist zusaetzlich
-ein gRPC-Adapter sinnvoll. Fuer KI-Agenten ist MCP der passendere Adapter als
+REST sollte aber nicht die einzige neue Service-Schnittstelle sein. Für
+interne, stark typisierte und streaming-lastige Kommunikation ist zusätzlich
+ein gRPC-Adapter sinnvoll. Für KI-Agenten ist MCP der passendere Adapter als
 eine rohe REST-API.

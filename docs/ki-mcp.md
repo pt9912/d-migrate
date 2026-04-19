@@ -5,7 +5,8 @@
 > Status: Entwurf fuer die kuenftige KI-Schnittstelle
 >
 > Referenzen: `docs/architecture.md`, `docs/design.md`,
-> `docs/lastenheft-d-migrate.md`, `docs/beispiel-stored-procedure-migration.md`
+> `docs/job-contract.md`, `docs/lastenheft-d-migrate.md`,
+> `docs/beispiel-stored-procedure-migration.md`
 
 ---
 
