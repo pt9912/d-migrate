@@ -207,6 +207,11 @@ Praezisierung:
   festen Pfaden in `docs/` gefuehrt:
   - `docs/error-code-ledger-0.9.2.yaml`
   - `docs/warn-code-ledger-0.9.2.yaml`
+- der normative Schema-Quellort fuer beide Ledger ist fuer 0.9.2
+  eindeutig:
+  - `docs/code-ledger-0.9.2.schema.json`
+- Dokument, Implementierungstest und Parser-Validierung muessen auf
+  denselben Schema-Quellort verweisen
 - beide Ledger-Dateien verwenden fuer 0.9.2 dieselbe feste Struktur:
   - Top-Level:
     - `version`
@@ -328,6 +333,9 @@ Damit gilt fuer 6.7:
     - 1 Trigger-Fall
     - 1 Fall mit Routine-abhaengiger View
     - 1 Diagnosefall
+- dieses Set ist zugleich das maximale Pflichtset pro Dialekt fuer 6.7:
+  - weitere Split-Fixtures sind Kann-Faelle
+  - neue Muss-Fixtures nur bei nachgewiesenem Vertragsloch
 - fuer Dialekte mit bewusst kleinerem Feature-Umfang sind explizite
   Surrogat- oder Ausnahmefaelle zulaessig:
   - wenn ein Dialekt keine echte Routine-abhaengige View sinnvoll
@@ -346,6 +354,14 @@ Damit gilt fuer 6.7:
 - "pro Dialekt mindestens" ist damit kein Zwang zu kuenstlicher
   Fixture-Explosion, sondern ein Untergrenze mit dokumentierter
   Ausnahmefuehrung fuer featurearme Dialekte
+- Priorisierung fuer 6.7:
+  - Muss:
+    - Basisfall
+    - Trigger-Fall oder dokumentierter Entfall
+    - Routine-View-Fall oder dokumentierter Surrogatfall
+    - Diagnosefall oder dokumentierter Entfall
+  - Kann:
+    - zusaetzliche Dialekt-Sonderfaelle ueber dieses Set hinaus
 - Golden Masters muessen die 6.3-Zuordnungsregeln sichtbar machen:
   - Trigger nicht in `pre-data`
   - Functions/Procedures nicht in `pre-data`
@@ -395,6 +411,7 @@ Damit gilt fuer 6.7:
   materialisiert:
   - `docs/error-code-ledger-0.9.2.yaml`
   - `docs/warn-code-ledger-0.9.2.yaml`
+  - `docs/code-ledger-0.9.2.schema.json`
 - jeder Ledger-Eintrag haelt mindestens fest:
   - Quelle / Ebene
   - existierender Test oder neuer Zieltest bei `entry_type = standard`
@@ -416,6 +433,8 @@ Damit gilt fuer 6.7:
     `evidence_owner`, `priority` und `planned_remediation` befuellt
   - eine Schema-Validierung prueft alle Pflichtfelder sowie die
     erlaubten Werte von `level`, `path_type` und `entry_type`
+- die Schema-Validierung laeuft gegen den normativen Schema-Quellort
+  `docs/code-ledger-0.9.2.schema.json`
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
 - Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
   einem Modul
@@ -484,10 +503,17 @@ Wichtig:
 
 - `schema generate` ohne `--split` bleibt fuer bestehende `single`-
   Fixtures unveraendert, ausser bei bewusst dokumentierten 6.5-Diffs
+- fuer 6.7 wird `--output` in den Split-Pflichtfaellen explizit als
+  Dateipfad mit Basisdateiname interpretiert, nicht als Verzeichnis-
+  Pfad
 - `schema generate --split pre-post --output out/schema.sql` erzeugt
   genau:
   - `out/schema.pre-data.sql`
   - `out/schema.post-data.sql`
+- die Dateinamen-Ableitung fuer Verzeichnis-Pfade oder andere
+  plattformspezifische Sonderfaelle ist nicht Teil dieses 6.7-
+  Pflichtfalls und wird nicht ueber diese Golden-Master-Assertion
+  abgenommen
 - Split-Fixtures belegen die 6.3-Phasenregeln sichtbar
 
 ### 6.2 Pflichtfaelle fuer JSON und Report
@@ -517,6 +543,7 @@ Wichtig:
 - die Nachweise liegen fuer 0.9.2 genau unter:
   - `docs/error-code-ledger-0.9.2.yaml`
   - `docs/warn-code-ledger-0.9.2.yaml`
+  - `docs/code-ledger-0.9.2.schema.json`
 - jeder Ledger-Eintrag ist einem Test oder einem bewusst dokumentierten
   Restpfad mit Pflichtfeldern zugeordnet
 - fuer `entry_type = standard` ist `test_path` verpflichtend;
