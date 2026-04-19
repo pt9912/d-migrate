@@ -209,11 +209,11 @@ Praezisierung:
   getesteten Stellen im Repo verweisen
 - die Ledgers werden fuer 0.9.2 als maschinenlesbare YAML-Dateien unter
   festen Pfaden in `docs/` gefuehrt:
-  - `docs/error-code-ledger-0.9.2.yaml`
-  - `docs/warn-code-ledger-0.9.2.yaml`
+  - `ledger/error-code-ledger-0.9.2.yaml`
+  - `ledger/warn-code-ledger-0.9.2.yaml`
 - der normative Schema-Quellort fuer beide Ledger ist fuer 0.9.2
   eindeutig:
-  - `docs/code-ledger-0.9.2.schema.json`
+  - `ledger/code-ledger-0.9.2.schema.json`
 - Dokument, Implementierungstest und Parser-Validierung muessen auf
   denselben Schema-Quellort verweisen
 - beide Ledger-Dateien verwenden fuer 0.9.2 dieselbe feste Struktur:
@@ -345,7 +345,7 @@ Damit gilt fuer 6.7:
   - bewusstes Output-Contract-Update
 - jede zulaessige Abweichung wird in einer festen 6.5-Ausnahmeliste
   gefuehrt:
-  - `docs/ddl-single-exceptions-0.9.2.yaml`
+  - `ledger/ddl-single-exceptions-0.9.2.yaml`
 - die Ausnahmeliste ist fuer 6.7 ein pflichtiges Review-Artefakt und
   haelt pro Eintrag mindestens fest:
   - `fixture_path`
@@ -456,9 +456,9 @@ Damit gilt fuer 6.7:
   Warncodes `W113` und `W120` erstellen oder nachziehen
 - die Ledgers werden als maschinenlesbare Dateien unter `docs/`
   materialisiert:
-  - `docs/error-code-ledger-0.9.2.yaml`
-  - `docs/warn-code-ledger-0.9.2.yaml`
-  - `docs/code-ledger-0.9.2.schema.json`
+  - `ledger/error-code-ledger-0.9.2.yaml`
+  - `ledger/warn-code-ledger-0.9.2.yaml`
+  - `ledger/code-ledger-0.9.2.schema.json`
 - das erstmalige Anlegen dieser drei Referenzartefakte ist Teil von 6.7
   selbst und keine vorgelagerte Basisarbeit
 - jeder Ledger-Eintrag haelt mindestens fest:
@@ -486,7 +486,7 @@ Damit gilt fuer 6.7:
     vorhanden, entweder mit `status = active` oder mit
     `status = not_applicable`
 - die Schema-Validierung laeuft gegen den normativen Schema-Quellort
-  `docs/code-ledger-0.9.2.schema.json`
+  `ledger/code-ledger-0.9.2.schema.json`
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
 - Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
   einem Modul
@@ -572,7 +572,7 @@ Wichtig:
 - ein expliziter `single`-Golden-Master-Test scheitert bei jedem
   unbeabsichtigten Delta ausserhalb der bekannten 6.5-Ausnahmeliste
 - die bekannte 6.5-Ausnahmeliste liegt fuer 6.7 unter:
-  - `docs/ddl-single-exceptions-0.9.2.yaml`
+  - `ledger/ddl-single-exceptions-0.9.2.yaml`
 - fuer 6.7 wird `--output` in den Split-Pflichtfaellen explizit als
   Dateipfad mit Basisdateiname interpretiert, nicht als Verzeichnis-
   Pfad
@@ -617,9 +617,9 @@ Wichtig:
 - fuer die in 0.9.2 zentral festgelegten Warncodes `W113` und `W120`
   existiert ein expliziter Warncode-Ledger-Nachweis
 - die Nachweise liegen fuer 0.9.2 genau unter:
-  - `docs/error-code-ledger-0.9.2.yaml`
-  - `docs/warn-code-ledger-0.9.2.yaml`
-  - `docs/code-ledger-0.9.2.schema.json`
+  - `ledger/error-code-ledger-0.9.2.yaml`
+  - `ledger/warn-code-ledger-0.9.2.yaml`
+  - `ledger/code-ledger-0.9.2.schema.json`
 - jeder Ledger-Eintrag ist einem Test oder einem bewusst dokumentierten
   Restpfad mit Pflichtfeldern zugeordnet
 - fuer `entry_type = standard` ist `test_path` verpflichtend;
@@ -658,10 +658,10 @@ Direkt betroffen:
 
 - `docs/quality.md`
 - `docs/ddl-generation-rules.md`
-- `docs/error-code-ledger-0.9.2.yaml`
-- `docs/warn-code-ledger-0.9.2.yaml`
-- `docs/code-ledger-0.9.2.schema.json`
-- `docs/ddl-single-exceptions-0.9.2.yaml`
+- `ledger/error-code-ledger-0.9.2.yaml`
+- `ledger/warn-code-ledger-0.9.2.yaml`
+- `ledger/code-ledger-0.9.2.schema.json`
+- `ledger/ddl-single-exceptions-0.9.2.yaml`
 - `adapters/driven/formats/src/test/resources/fixtures/ddl/...`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliGenerateTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
@@ -891,7 +891,7 @@ Abhaengigkeiten: AP 6.4 (JSON/Report Output).
 
 ### 10.3 Schritt C — Fehlercode-Ledger (E006-E121)
 
-Neue Datei `docs/error-code-ledger-0.9.2.yaml`:
+Neue Datei `ledger/error-code-ledger-0.9.2.yaml`:
 
 ```yaml
 version: "0.9.2"
@@ -917,11 +917,11 @@ Begleitender Test `CodeLedgerValidationTest.kt`:
 - Prueft: jeder `test_path` existiert als Datei
 - Prueft: jeder `entry_type = rest_path` hat Pflichtfelder
 
-Schema: `docs/code-ledger-0.9.2.schema.json` (JSON Schema Draft 7).
+Schema: `ledger/code-ledger-0.9.2.schema.json` (JSON Schema Draft 7).
 
 ### 10.4 Schritt D — Warncode-Ledger (W113, W120)
 
-Neue Datei `docs/warn-code-ledger-0.9.2.yaml` analog zu Schritt C,
+Neue Datei `ledger/warn-code-ledger-0.9.2.yaml` analog zu Schritt C,
 aber nur fuer W113 und W120.
 
 ### 10.5 Schritt E — E2E-Round-Trip-Test
@@ -953,7 +953,7 @@ Abhaengigkeiten: Testcontainers (bereits konfiguriert in
 
 - E2E-Round-Trip als erledigt markieren
 - Fehlercodes als erledigt markieren
-- `docs/ddl-single-exceptions-0.9.2.yaml` anlegen (nur die
+- `ledger/ddl-single-exceptions-0.9.2.yaml` anlegen (nur die
   `full-featured.mysql.sql` Aenderung aus AP 6.5)
 
 ---
