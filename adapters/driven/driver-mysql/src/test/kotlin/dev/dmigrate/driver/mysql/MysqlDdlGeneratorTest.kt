@@ -331,8 +331,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "-- TODO: GIN index `idx_docs_body` is not supported in MySQL"
-        ddl shouldContain "W102"
+        ddl.shouldNotContain("-- TODO")
 
         val note = result.notes.find { it.code == "W102" && it.objectName == "idx_docs_body" }
         note!!.type shouldBe NoteType.WARNING
@@ -927,7 +926,7 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "-- TODO: EXCLUDE constraint `excl_booking_overlap` is not supported in MySQL"
+        ddl.shouldNotContain("-- TODO")
         val note = result.notes.find { it.code == "E054" && it.objectName == "excl_booking_overlap" }
         note!!.type shouldBe NoteType.ACTION_REQUIRED
     }

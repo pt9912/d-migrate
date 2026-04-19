@@ -28,7 +28,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                     reason = "Composite type '$name' is not supported in MySQL and was skipped.",
                     hint = "Consider restructuring the data model to avoid composite types.",
                 )
-                statements += DdlStatement("-- TODO: Composite type `$name` is not supported in MySQL", listOf(action.toNote()))
+                statements += DdlStatement("", listOf(action.toNote()))
             }
         }
         return statements
@@ -48,7 +48,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 hint = "Use AUTO_INCREMENT columns instead of sequences.",
             )
             skipped += action.toSkipped()
-            statements += DdlStatement("-- TODO: Sequence `$name` is not supported in MySQL", listOf(action.toNote()))
+            statements += DdlStatement("", listOf(action.toNote()))
         }
         return statements
     }
@@ -94,7 +94,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // Explicit constraints
         for (constraint in table.constraints) {
-            columnLines += generateConstraintClause(constraint, notes)
+            generateConstraintClause(constraint, notes)?.let { columnLines += it }
         }
 
         // Primary key
@@ -228,7 +228,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     private fun generateConstraintClause(
         constraint: ConstraintDefinition,
         notes: MutableList<TransformationNote>
-    ): String {
+    ): String? {
         return when (constraint.type) {
             ConstraintType.CHECK -> {
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
@@ -244,7 +244,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                     hint = "Consider using CHECK constraints or application-level validation instead.",
                 )
                 notes += action.toNote()
-                "-- TODO: EXCLUDE constraint ${quoteIdentifier(constraint.name)} is not supported in MySQL"
+                null // EXCLUDE constraint omitted from DDL; diagnosed via ACTION_REQUIRED note
             }
             ConstraintType.FOREIGN_KEY -> {
                 val ref = constraint.references!!
@@ -312,7 +312,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         return when (index.type) {
             IndexType.GIN, IndexType.GIST, IndexType.BRIN -> {
                 DdlStatement(
-                    "-- TODO: ${index.type.name} index `$indexName` is not supported in MySQL",
+                    "",
                     listOf(TransformationNote(
                         type = NoteType.WARNING, code = "W102", objectName = indexName,
                         message = "${index.type.name} index '$indexName' is not supported in MySQL and was skipped.",

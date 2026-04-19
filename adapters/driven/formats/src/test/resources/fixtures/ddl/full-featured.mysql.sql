@@ -4,15 +4,15 @@
 
 -- [E054] Composite type 'address' is not supported in MySQL and was skipped.
 -- Hint: Consider restructuring the data model to avoid composite types.
--- TODO: Composite type `address` is not supported in MySQL
+
 
 -- [E056] Sequence 'invoice_seq' is not supported in MySQL and was skipped.
 -- Hint: Use AUTO_INCREMENT columns instead of sequences.
--- TODO: Sequence `invoice_seq` is not supported in MySQL
+
 
 -- [E056] Sequence 'simple_seq' is not supported in MySQL and was skipped.
 -- Hint: Use AUTO_INCREMENT columns instead of sequences.
--- TODO: Sequence `simple_seq` is not supported in MySQL
+
 
 CREATE TABLE `customers` (
     `id` INT NOT NULL AUTO_INCREMENT,

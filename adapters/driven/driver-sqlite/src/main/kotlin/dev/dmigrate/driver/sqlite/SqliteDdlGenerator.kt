@@ -197,8 +197,10 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                 val geo = col.type as NeutralType.Geometry
                 val geoType = geo.geometryType.schemaName.uppercase()
                 val srid = geo.srid ?: 0
+                val quotedTable = name.replace("'", "''")
+                val quotedCol = colName.replace("'", "''")
                 statements += DdlStatement(
-                    "SELECT AddGeometryColumn('$name', '$colName', $srid, '$geoType', 'XY');")
+                    "SELECT AddGeometryColumn('$quotedTable', '$quotedCol', $srid, '$geoType', 'XY');")
             }
         }
 
