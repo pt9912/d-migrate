@@ -68,16 +68,15 @@ Zusatzaufgaben:
 
 ### Struktur & Komplexität
 
-- **Mittel — Runner-Methoden zu lang**:
-  `DataExportRunner.executeWithPool()` umfasst 477 LOC mit 16 distinkten Phasen
-  (Reader-Init, Table-Enumeration, Filter-Resolution, Resume-Kontext, Checkpoint-Lifecycle,
-  Staging-Redirect, Streaming-Ausführung, Fehlerbehandlung, Progress-Summary).
-  `DataImportRunner.executeWithPool()` umfasst 446 LOC mit 15 distinkten Phasen.
-  Beide enthalten 3-fach verschachtelte Kontrollstrukturen (if → if → try/catch).
+- ~~**Mittel — Runner-Methoden zu lang**~~:
+  ✅ Behoben in 0.9.2 AP 6.6: `DataExportRunner.executeWithPool()` von 477 auf 26 LOC,
+  `DataImportRunner.executeWithPool()` von 446 auf 24 LOC — jeweils in benannte
+  Schrittfunktionen zerlegt.
 
-- **Mittel — Große Parameterverträge**:
-  `ExportExecutor.execute()` hat 17 Parameter, `ImportExecutor.execute()` hat 14 Parameter.
-  Die Runner-Konstruktoren haben 12-17 Lambda-Parameter für DI.
+- ~~**Mittel — Große Parameterverträge**~~:
+  ✅ Behoben in 0.9.2 AP 6.6: `ExportExecutor.execute()` von 16 auf 4 Parameter
+  (DTOs: `ExportExecutionContext`, `ExportExecutionOptions`, `ExportResumeState`,
+  `ExportCallbacks`), `ImportExecutor.execute()` von 14 auf 4 analog.
 
 - **Niedrig — ValueDeserializer.dispatch() hat 16 when-Branches**:
   Fachlich begründet (JDBC-Type-Dispatch), aber die Funktion ist mit 59 LOC und
@@ -124,8 +123,8 @@ Dateien mit >400 LOC (potenzielle Hotspots):
 
 | Datei | LOC | Längste Funktion | Einschätzung |
 | ----- | --- | ---------------- | ------------ |
-| DataImportRunner.kt | 851 | executeWithPool: 446 LOC, 15 Phasen | Zerlegung empfohlen |
-| DataExportRunner.kt | 758 | executeWithPool: 477 LOC, 16 Phasen | Zerlegung empfohlen |
+| DataImportRunner.kt | ~900 | executeWithPool: 24 LOC (zerlegt in 8 Schritte) | ✅ Behoben (AP 6.6) |
+| DataExportRunner.kt | ~800 | executeWithPool: 26 LOC (zerlegt in 10 Schritte) | ✅ Behoben (AP 6.6) |
 | ValueDeserializer.kt | 647 | dispatch: 59 LOC, 16 Branches | Akzeptabel (Type-Dispatch) |
 | SqliteDataWriter.kt | 525 | — | Dialekt-spezifisch; erwartbar |
 | PostgresDataWriter.kt | 523 | — | Dialekt-spezifisch; erwartbar |
@@ -141,25 +140,14 @@ Dateien mit >400 LOC (potenzielle Hotspots):
 
 ### Offen
 
-- **DDL-Interpolation systematisch absichern**: Die verschiedenen Interpolations-Stellen
-  (CHECK-Constraints, Partitions-Ausdrücke, Trigger-Bedingungen, SpatiaLite-Aufrufe,
-  View-/Funktions-Bodies) sollten einheitlich behandelt werden.
-  Vorschlag: Schema-Metadaten, die in DDL-Output fließen, über eine zentrale
-  `DdlSanitizer`- oder `TrustedExpression`-Abstraktion leiten.
-  Mindestens: SpatiaLite-Identifier quoten (`SqliteDdlGenerator.kt:201`),
-  Partition-Werte validieren, Trigger-Bedingungen auf bekannte Muster prüfen.
+- ~~**DDL-Interpolation systematisch absichern**~~: ✅ Behoben in 0.9.2 AP 6.5.
+  SpatiaLite-Identifier werden korrekt escaped, Trusted-Input-Grenze dokumentiert.
 
-- **Runner-Zerlegung**: `executeWithPool()` in beiden Runnern in Schrittfunktionen aufteilen,
-  z.B. `resolveResumeContext()`, `buildCallbacks()`, `executeStreaming()`, `finalizeAndReport()`.
-  Reduziert die 477/446-LOC-Methoden auf je ~50-80 LOC und eliminiert 3-fach-Verschachtelung.
+- ~~**Runner-Zerlegung**~~: ✅ Behoben in 0.9.2 AP 6.6.
 
-- **Executor-Parameter gruppieren**: `ExportExecutor.execute()` (17 Params) und
-  `ImportExecutor.execute()` (14 Params) über Kontext-DTOs entschärfen,
-  z.B. `ExportContext(pool, reader, lister, factory)` und `ExportCallbacks(onTable, onChunk)`.
+- ~~**Executor-Parameter gruppieren**~~: ✅ Behoben in 0.9.2 AP 6.6.
 
-- **MySQL-TODO-Platzhalter eliminieren** (Milestone: 0.9.2):
-  Die verbleibenden 4 `-- TODO`-Kommentare in `MysqlDdlGenerator`
-  durch rein strukturierte `ManualActionRequired`-Einträge ersetzen.
+- ~~**MySQL-TODO-Platzhalter eliminieren**~~: ✅ Behoben in 0.9.2 AP 6.5.
 
 - **E2E-Round-Trip-Test** (Milestone: 0.9.2, verankert in `docs/roadmap.md`):
   Einen Integrationstest ergänzen, der den vollen Kreislauf
