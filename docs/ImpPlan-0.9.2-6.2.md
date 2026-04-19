@@ -130,6 +130,11 @@ Verbindliche Folge:
 
 - `SchemaGenerateRequest` transportiert den Split-Modus explizit statt
   ihn spaeter aus einzelnen CLI-Flags abzuleiten
+- `SchemaGenerateRequest.splitMode` bekommt einen Modell-Default fuer
+  `single`; Direkt-Instanziierungen ohne expliziten Wert sind damit
+  semantisch identisch zu `--split single`
+- 6.2 fuehrt bewusst keinen `null`-, `unknown`- oder sonstigen
+  Zwischenzustand fuer den Split-Modus ein
 - Command und Runner arbeiten damit gegen denselben bereits
   normalisierten Vertrag
 - die konkrete interne Darstellung kann Enum oder aequivalente
@@ -145,6 +150,14 @@ Verbindliche Folge:
   `--output-format json` aktiv ist
 - JSON bleibt die einzige Split-Variante ohne `--output`, weil sie ein
   einzelnes strukturiertes Antwortartefakt liefert
+- fuer 6.2 bedeutet das zunaechst nur:
+  - `pre-post + json` ist als Aufrufkombination gueltig
+  - der Runner traegt `splitMode = pre-post` ohne Rueckfall auf
+    `single` weiter
+  - die semantische Split-JSON-Nutzlast selbst wird erst in 6.4
+    fertiggestellt
+- 6.2 definiert daher bewusst keinen stillen Fallback auf das alte
+  Single-JSON als abgeschlossenen `pre-post`-Vertrag
 
 Begruendung:
 
@@ -176,6 +189,11 @@ Verbindliche Folge:
 
 - Exit 2 allein reicht nicht; die Fehlermeldung muss die ungueltige
   Kombination konkret benennen
+- fuer 6.2 werden die Runner-Fehlertexte als Contractsprache festgezogen:
+  - ``--split pre-post` requires `--output` unless `--output-format json` is used.`
+  - ``--split pre-post` cannot be combined with `--generate-rollback`.`
+- Tests pruefen diese Runner-Meldungen direkt oder gegen exakt dieselben
+  String-Pattern; nicht gegen zufaellige Framework-Paraphrasen
 - Help-Text, Command-Doku und `docs/cli-spec.md` muessen denselben
   Wortlaut fuer:
   - `single`
@@ -191,9 +209,13 @@ Verbindliche Folge:
 ### 5.1 Request- und CLI-Schnitt erweitern
 
 - `SchemaGenerateRequest` um `splitMode` erweitern
+- `splitMode` im Datenmodell selbst auf `single` defaulten
 - `SchemaGenerateCommand` um `--split single|pre-post` erweitern
 - Default fuer den fehlenden Parameter auf `single` setzen
 - `--split single` explizit als normalen Request-Wert weiterreichen
+- Direkt-Instanziierungen ausserhalb der CLI duerfen sich auf denselben
+  Modell-Default verlassen; 6.2 braucht keinen separaten
+  Nachnormalisierungspfad fuer "nicht gesetzt"
 
 ### 5.2 Runner-Preflight fuer den Split einfuehren
 
@@ -210,11 +232,17 @@ Wichtig:
   oder 6.4
 - der Runner soll ungueltige Split-Kombinationen vor jedem Versuch des
   Dateischreibens oder der Rollback-Erzeugung stoppen
+- fuer `splitMode = pre-post` plus `outputFormat = json` validiert 6.2
+  nur die Zulaessigkeit der Kombination und die Weitergabe des Modus;
+  die JSON-Nutzlastform wird nicht in 6.2 abgeschlossen
 
 ### 5.3 Fehlermeldungen und Help-Text angleichen
 
 - Help in `SchemaGenerateCommand` um den Split-Modus ergaenzen
-- Fehlertexte fuer die Exit-2-Pfade knapp und eindeutig festziehen
+- Fehlertexte fuer die Exit-2-Pfade auf konkrete Runner-Strings
+  festziehen:
+  - ``--split pre-post` requires `--output` unless `--output-format json` is used.`
+  - ``--split pre-post` cannot be combined with `--generate-rollback`.`
 - Root-/CLI-Kontext um die neue Nutzungsform nicht widerspruechlich zu
   `--output-format json` dokumentieren
 
@@ -233,6 +261,9 @@ Ziel:
 - JSON-Sonderfall explizit notieren:
   - `pre-post` ohne `--output` ist nur mit `--output-format json`
     zulaessig
+  - 6.2 validiert diese Kombination bereits, aber die semantische
+    Split-JSON-Struktur (`split_mode`, `ddl_parts`, `phase`) wird erst
+    in 6.4 abgeschlossen
 
 ### 5.5 Tests ergaenzen
 
@@ -240,13 +271,18 @@ Mindestens abzudecken:
 
 - fehlendes `--split` ergibt denselben Request-/Runner-Modus wie
   `--split single`
+- Direkt-Instanziierung von `SchemaGenerateRequest()` ohne expliziten
+  `splitMode` ergibt denselben Modus wie `single`
 - `--split single` bleibt gegenueber heutigen Single-Faellen
   funktional unveraendert
 - `--split pre-post` ohne `--output` und ohne JSON endet mit Exit 2
 - `--split pre-post --output-format json` ist ohne `--output`
   zulaessig
+- `--split pre-post --output-format json` wird in 6.2 nur auf
+  Zulaessigkeit und Modus-Weitergabe geprueft, nicht auf die finale
+  6.4-JSON-Nutzlast
 - `--split pre-post --generate-rollback` endet mit Exit 2
-- Fehlermeldungen benennen die konkrete ungueltige Kombination
+- Fehlermeldungen verwenden die in 5.3 festgezogenen Contracttexte
 - Help-/CLI-Parsing akzeptiert genau `single|pre-post`
 
 ---
@@ -263,11 +299,15 @@ Pflichtfaelle fuer 6.2:
   den 6.2-Preflight und bleibt fuer 6.4 als gueltiger Vertrag offen
 - `schema generate --split pre-post --output-format json` passiert den
   6.2-Preflight auch ohne `--output`
+- fuer diesen JSON-Fall prueft 6.2 die gueltige Kombination und die
+  unveraenderte Weitergabe von `splitMode = pre-post`, nicht schon die
+  finale 6.4-Ausgabeform
 - `schema generate --split pre-post` ohne `--output` und ohne JSON endet
   mit Exit 2
 - `schema generate --split pre-post --generate-rollback` endet mit
   Exit 2
-- die Exit-2-Meldungen sind stabil und testbar
+- die Exit-2-Meldungen sind ueber die in 5.3 definierten Contracttexte
+  stabil und testbar
 - `docs/cli-spec.md`, Help-Text und Runner-Verhalten sprechen denselben
   Vertrag
 
@@ -356,3 +396,20 @@ Mitigation:
 - konkrete Split-Dateien, `ddl_parts` und Report-Inhalte in 6.4
   umsetzen, aber gegen den hier fixierten Vertrag pruefen
 
+### 8.5 `pre-post + json` koennte versehentlich als fertige 6.2-Ausgabe missverstanden werden
+
+Risiko:
+
+- weil `pre-post` mit `--output-format json` bereits in 6.2 als
+  gueltige Kombination akzeptiert wird, koennte ein Zwischenstand
+  versehentlich als bereits semantisch fertige Split-JSON-Implementierung
+  gelesen werden
+
+Mitigation:
+
+- 6.2 fixiert fuer diesen Fall nur:
+  - Zulaessigkeit der Kombination
+  - Weitergabe von `splitMode = pre-post`
+- die eigentliche Split-JSON-Nutzlast bleibt ausdruecklich 6.4
+- ein stiller Rueckfall auf "legacy `ddl` als vollwertige `pre-post`-
+  Antwort" ist nicht der abgeschlossene Zielvertrag
