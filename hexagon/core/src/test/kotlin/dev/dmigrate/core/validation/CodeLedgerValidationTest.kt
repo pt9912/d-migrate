@@ -5,6 +5,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import java.io.File
 
 /**
@@ -76,10 +77,26 @@ class CodeLedgerValidationTest : FunSpec({
         return Regex("""source:\s+"([^"]+)"""").findAll(block).map { it.groupValues[1] }.toList()
     }
 
+    // Allowed values derived from the JSON Schema contract
     val allowedPathTypes = setOf("production", "test", "documentation")
     val allowedLevels = setOf("error", "warning")
     val allowedEntryTypes = setOf("standard", "rest_path")
     val allowedStatuses = setOf("active", "not_applicable")
+
+    // ─── Schema contract validation ─────────────────────────────
+
+    test("JSON Schema contract file exists") {
+        File(repoRoot, "ledger/code-ledger-0.9.2.schema.json").exists() shouldBe true
+    }
+
+    test("JSON Schema defines expected enum values for level, entry_type, status, path_type") {
+        val schema = File(repoRoot, "ledger/code-ledger-0.9.2.schema.json").readText()
+        // Verify the schema contains the expected enum definitions
+        for (level in allowedLevels) schema shouldContain "\"$level\""
+        for (et in allowedEntryTypes) schema shouldContain "\"$et\""
+        for (st in allowedStatuses) schema shouldContain "\"$st\""
+        for (pt in allowedPathTypes) schema shouldContain "\"$pt\""
+    }
 
     // ─── Error Ledger ────────────────────────────────────────────
 
@@ -194,6 +211,22 @@ class CodeLedgerValidationTest : FunSpec({
             }
         }
         badPaths.shouldBeEmpty()
+    }
+
+    test("error ledger: rest_path entries have mandatory fields") {
+        val content = readLedger("error-code-ledger-0.9.2.yaml")
+        val restPathCodes = extractCodes(content).filter { code ->
+            extractField(content, code, "entry_type") == "rest_path"
+        }
+        val missingFields = restPathCodes.flatMap { code ->
+            val missing = mutableListOf<String>()
+            if (extractField(content, code, "why_not_automated") == null) missing += "$code: why_not_automated"
+            if (extractField(content, code, "evidence_owner") == null) missing += "$code: evidence_owner"
+            if (extractField(content, code, "priority") == null) missing += "$code: priority"
+            if (extractField(content, code, "planned_remediation") == null) missing += "$code: planned_remediation"
+            missing
+        }
+        missingFields.shouldBeEmpty()
     }
 
     // ─── Warn Ledger ─────────────────────────────────────────────
