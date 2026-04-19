@@ -104,10 +104,11 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.generate(schema)
         // Order: header → custom types → sequences → tables → indices → circular FKs
         // → views → functions → procedures → triggers
+        // views is called twice: once for PRE_DATA bucket, once for POST_DATA bucket
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t", "indices:t",
-            "circular", "views", "functions", "procedures", "triggers",
+            "circular", "views", "views", "functions", "procedures", "triggers",
         )
     }
 
@@ -183,7 +184,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.callOrder shouldContainExactly listOf(
             "customTypes", "sequences",
             "table:t",
-            "circular", "views", "functions", "procedures", "triggers",
+            "circular", "views", "views", "functions", "procedures", "triggers",
         )
         result.notes.any { it.code == "E055" && it.blocksTable && it.objectName == "t" } shouldBe true
         result.skippedObjects shouldContainExactly listOf(
@@ -370,13 +371,111 @@ class AbstractDdlGeneratorTest : FunSpec({
             .any { it.sql.contains("CREATE TRIGGER") } shouldBe true
     }
 
-    test("generate() tags views as PRE_DATA (before Step C)") {
+    test("generate() tags views without function deps as PRE_DATA") {
         val gen = TestDdlGenerator()
         val result = gen.generate(schema(
             views = mapOf("v1" to ViewDefinition(query = "SELECT 1")),
         ))
         result.statementsForPhase(DdlPhase.PRE_DATA)
             .any { it.sql.contains("CREATE VIEW") } shouldBe true
+        result.statementsForPhase(DdlPhase.POST_DATA)
+            .none { it.sql.contains("CREATE VIEW") } shouldBe true
+    }
+
+    test("generate() tags views with explicit dependencies.functions as POST_DATA") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("calc" to FunctionDefinition()),
+            views = mapOf("v1" to ViewDefinition(
+                query = "SELECT calc(id) FROM t",
+                dependencies = DependencyInfo(functions = listOf("calc")),
+            )),
+        ))
+        result.statementsForPhase(DdlPhase.POST_DATA)
+            .any { it.sql.contains("CREATE VIEW") } shouldBe true
+        result.statementsForPhase(DdlPhase.PRE_DATA)
+            .none { it.sql.contains("CREATE VIEW") } shouldBe true
+    }
+
+    test("generate() heuristic detects function call in view query") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("calc_total" to FunctionDefinition()),
+            views = mapOf("v1" to ViewDefinition(
+                query = "SELECT calc_total(id) FROM orders",
+            )),
+        ))
+        result.statementsForPhase(DdlPhase.POST_DATA)
+            .any { it.sql.contains("CREATE VIEW") } shouldBe true
+    }
+
+    test("generate() heuristic ignores function name in string literal") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("calc" to FunctionDefinition()),
+            views = mapOf("v1" to ViewDefinition(
+                query = "SELECT 'calc(x)' AS label FROM t",
+            )),
+        ))
+        result.statementsForPhase(DdlPhase.PRE_DATA)
+            .any { it.sql.contains("CREATE VIEW") } shouldBe true
+    }
+
+    test("generate() heuristic ignores function name in comment") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("calc" to FunctionDefinition()),
+            views = mapOf("v1" to ViewDefinition(
+                query = "SELECT id FROM t -- calc(x)",
+            )),
+        ))
+        result.statementsForPhase(DdlPhase.PRE_DATA)
+            .any { it.sql.contains("CREATE VIEW") } shouldBe true
+    }
+
+    test("generate() transitive view→view propagation to POST_DATA") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("fn" to FunctionDefinition()),
+            views = mapOf(
+                "base" to ViewDefinition(
+                    query = "SELECT fn(id) FROM t",
+                    dependencies = DependencyInfo(functions = listOf("fn")),
+                ),
+                "derived" to ViewDefinition(
+                    query = "SELECT * FROM base",
+                    dependencies = DependencyInfo(views = listOf("base")),
+                ),
+            ),
+        ))
+        // Both views should be POST_DATA
+        result.statementsForPhase(DdlPhase.POST_DATA)
+            .filter { it.sql.contains("CREATE VIEW") }.size shouldBe 2
+    }
+
+    test("generate() view without query and with functions in schema gets E060 diagnostic") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("fn" to FunctionDefinition()),
+            views = mapOf("v_no_query" to ViewDefinition(query = null)),
+        ))
+        result.globalNotes.any { it.code == "E060" && it.objectName == "v_no_query" } shouldBe true
+        // Conservatively placed in POST_DATA
+        result.statementsForPhase(DdlPhase.POST_DATA)
+            .any { it.sql.contains("v_no_query") } shouldBe true
+    }
+
+    test("generate() no functions in schema means all views stay PRE_DATA") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            views = mapOf(
+                "v1" to ViewDefinition(query = "SELECT 1"),
+                "v2" to ViewDefinition(query = null),
+            ),
+        ))
+        result.statementsForPhase(DdlPhase.PRE_DATA)
+            .filter { it.sql.contains("CREATE VIEW") }.size shouldBe 2
+        result.globalNotes.none { it.code == "E060" } shouldBe true
     }
 
     test("generate() tags header as PRE_DATA") {

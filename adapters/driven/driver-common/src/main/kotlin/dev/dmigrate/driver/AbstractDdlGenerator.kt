@@ -47,13 +47,23 @@ abstract class AbstractDdlGenerator(
         statements += handleCircularReferences(circularEdges, skipped)
         tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
-        // ─── Views (PRE_DATA for now; Step C will split) ─────────
+        // ─── Views (split into PRE_DATA / POST_DATA) ───────────
         val sortedViews = sortViewsByDependencies(schema.views)
         statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
 
+        val globalNotes = mutableListOf<TransformationNote>()
+        val (preDataViews, postDataViews, viewDiagNotes) = classifyViewsByPhase(
+            sortedViews.sorted, schema.functions.keys,
+        )
+        globalNotes += viewDiagNotes
+
         preSkipCount = skipped.size
-        statements += generateViews(sortedViews.sorted, skipped)
+        statements += generateViews(preDataViews, skipped)
         tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+
+        preSkipCount = skipped.size
+        statements += generateViews(postDataViews, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         // ─── POST_DATA ───────────────────────────────────────────
         preSkipCount = skipped.size
@@ -68,7 +78,7 @@ abstract class AbstractDdlGenerator(
         statements += generateTriggers(schema.triggers, schema.tables, skipped).withPhase(DdlPhase.POST_DATA)
         tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
-        return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped)
+        return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped, globalNotes)
     }
 
     override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
@@ -344,5 +354,135 @@ abstract class AbstractDdlGenerator(
             .map { ref -> ref.trim('`', '"') }
             .filter { it != name && it in viewNames }
             .toSet()
+    }
+
+    // ── View phase classification (0.9.2 AP 6.3 Step C) ─────────
+
+    /**
+     * Classifies views into PRE_DATA and POST_DATA based on function
+     * dependencies. Returns (preDataViews, postDataViews, diagnosticNotes).
+     */
+    protected fun classifyViewsByPhase(
+        views: Map<String, ViewDefinition>,
+        functionNames: Set<String>,
+    ): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> {
+        if (views.isEmpty()) return Triple(views, emptyMap(), emptyList())
+
+        val diagnostics = mutableListOf<TransformationNote>()
+        val postDataDirect = mutableSetOf<String>()
+        val normalizedFuncNames = functionNames.map { it.lowercase() }.toSet()
+
+        // Level A: explicit dependencies.functions
+        for ((name, view) in views) {
+            val declaredFuncs = view.dependencies?.functions
+            if (!declaredFuncs.isNullOrEmpty()) {
+                postDataDirect += name
+                continue
+            }
+            // Level B: heuristic against known function names in query
+            if (view.query != null && normalizedFuncNames.isNotEmpty()) {
+                val inferred = inferViewFunctionDependencies(view.query!!, normalizedFuncNames)
+                if (inferred.isNotEmpty()) {
+                    postDataDirect += name
+                    continue
+                }
+            }
+            // Level C: view has no query, no declared function deps, but schema has functions
+            if (view.query == null && normalizedFuncNames.isNotEmpty()) {
+                postDataDirect += name
+                diagnostics += TransformationNote(
+                    type = NoteType.ACTION_REQUIRED,
+                    code = "E060",
+                    objectName = name,
+                    message = "View '$name' has no query text and no declared function dependencies. " +
+                        "Phase assignment cannot be reliably determined for split mode.",
+                    hint = "Add explicit dependencies.functions to the view definition.",
+                )
+            }
+        }
+
+        // Transitive propagation over view→view edges
+        val postDataAll = postDataDirect.toMutableSet()
+        val viewDeps = views.mapValues { (name, view) ->
+            declaredViewDependencies(name, view, views.keys) +
+                inferViewDependenciesFromQuery(name, view.query, views.keys)
+        }
+        var changed = true
+        while (changed) {
+            changed = false
+            for ((name, deps) in viewDeps) {
+                if (name !in postDataAll && deps.any { it in postDataAll }) {
+                    postDataAll += name
+                    changed = true
+                }
+            }
+        }
+
+        // Partition preserving original order
+        val preData = linkedMapOf<String, ViewDefinition>()
+        val postData = linkedMapOf<String, ViewDefinition>()
+        for ((name, view) in views) {
+            if (name in postDataAll) postData[name] = view else preData[name] = view
+        }
+        return Triple(preData, postData, diagnostics)
+    }
+
+    /**
+     * Finds function-call-like patterns (`name(`) in a view query for any
+     * known function name. Ignores content inside string literals and SQL
+     * comments.
+     */
+    private fun inferViewFunctionDependencies(
+        query: String,
+        normalizedFuncNames: Set<String>,
+    ): Set<String> {
+        val cleaned = stripSqlCommentsAndLiterals(query)
+        val callPattern = Regex("""(?i)\b([A-Za-z_][A-Za-z0-9_]*)\s*\(""")
+        return callPattern.findAll(cleaned)
+            .map { it.groupValues[1].lowercase() }
+            .filter { it in normalizedFuncNames }
+            .toSet()
+    }
+
+    /**
+     * Removes SQL comments (`--` to EOL, `/* ... */`) and string literals
+     * (`'...'` with `''` escaping) from SQL text, replacing them with spaces.
+     */
+    private fun stripSqlCommentsAndLiterals(sql: String): String {
+        val sb = StringBuilder(sql.length)
+        var i = 0
+        while (i < sql.length) {
+            when {
+                i + 1 < sql.length && sql[i] == '-' && sql[i + 1] == '-' -> {
+                    val end = sql.indexOf('\n', i)
+                    i = if (end < 0) sql.length else end + 1
+                    sb.append(' ')
+                }
+                i + 1 < sql.length && sql[i] == '/' && sql[i + 1] == '*' -> {
+                    val end = sql.indexOf("*/", i + 2)
+                    i = if (end < 0) sql.length else end + 2
+                    sb.append(' ')
+                }
+                sql[i] == '\'' -> {
+                    i++
+                    while (i < sql.length) {
+                        if (sql[i] == '\'' && i + 1 < sql.length && sql[i + 1] == '\'') {
+                            i += 2
+                        } else if (sql[i] == '\'') {
+                            i++
+                            break
+                        } else {
+                            i++
+                        }
+                    }
+                    sb.append(' ')
+                }
+                else -> {
+                    sb.append(sql[i])
+                    i++
+                }
+            }
+        }
+        return sb.toString()
     }
 }
