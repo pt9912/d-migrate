@@ -551,3 +551,250 @@ Mitigation:
 - vorhandene Coordinators weiterverwenden
 - neue Extraktionen nur dort, wo sie direkt die benannten Hotspots
   entschaerfen
+
+---
+
+## 9. Ist-Stand der betroffenen Codebasis (ermittelt 2026-04-19)
+
+### 9.1 DataExportRunner.kt
+
+- **Gesamt**: 758 LOC
+- **`executeWithPool()`**: Zeile 219–695 (477 LOC)
+- **ExportExecutor**: `fun interface` mit 16 Parametern (Zeile 36–68)
+
+Identifizierte Phasen in `executeWithPool()`:
+
+| Phase | Zeilen | LOC | Beschreibung |
+|-------|--------|-----|-------------|
+| 1 | 225–237 | 13 | Reader + Lister Aufloesung |
+| 2 | 239–261 | 23 | Tabellenaufzaehlung (explizit oder Auto-Discovery) |
+| 3 | 263–273 | 11 | ExportOutput Aufloesung |
+| 4 | 275–288 | 14 | ExportOptions aus CLI-Flags |
+| 5 | 297–438 | 142 | Resume-Preflight + Manifest-Lifecycle |
+| 6 | 513–528 | 16 | Per-Table ResumeMarker |
+| 7 | 532–565 | 34 | onChunkProcessed Callback-Setup |
+| 8 | 567–601 | 35 | Single-File Staging Redirect |
+| 9 | 603–629 | 27 | Streaming-Ausfuehrung (Executor-Aufruf) |
+| 10 | 632–637 | 6 | Per-Table Error Check |
+| 11 | 642–665 | 24 | Staging File Atomic Rename |
+| 12 | 669–675 | 7 | Manifest Cleanup |
+| 13 | 677–692 | 16 | Warnings + Progress Summary |
+
+### 9.2 DataImportRunner.kt
+
+- **Gesamt**: 851 LOC
+- **`executeWithPool()`**: Zeile 323–768 (446 LOC)
+- **ImportExecutor**: `fun interface` mit 14 Parametern (Zeile 57–83)
+
+Identifizierte Phasen in `executeWithPool()`:
+
+| Phase | Zeilen | LOC | Beschreibung |
+|-------|--------|-----|-------------|
+| 1 | 332–338 | 7 | Writer Lookup |
+| 2 | 340–368 | 29 | ImportOptions Konstruktion |
+| 3 | 370–403 | 34 | Directory Scan + effektive Tabellenliste |
+| 4 | 409–430 | 22 | Fingerprint-Berechnung |
+| 5 | 370–559 | ~190 | Resume-Preflight + Manifest-Lifecycle |
+| 6 | 568–594 | 27 | Initiales Manifest fuer frische Laeufe |
+| 7 | 596–693 | 98 | Per-Chunk und Per-Table Callback-Setup |
+| 8 | 695–724 | 30 | Streaming-Ausfuehrung (Executor-Aufruf) |
+| 9 | 728–745 | 18 | Result-Evaluation (Per-Table Errors) |
+| 10 | 749–755 | 7 | Manifest Cleanup |
+| 11 | 757–765 | 9 | Progress Summary |
+
+### 9.3 CLI-Wiring
+
+- `DataExportCommand.kt`: ExportExecutor-Lambda Zeile 176–197 (22 LOC)
+- `DataImportCommand.kt`: ImportExecutor-Lambda Zeile 190–214 (25 LOC)
+
+### 9.4 Tests
+
+- `DataExportRunnerTest.kt`: 1.786 LOC
+- `DataImportRunnerTest.kt`: 1.702 LOC
+
+---
+
+## 10. Konkrete Implementierungsschritte (verfeinert)
+
+### 10.1 Schritt A — ExportExecutor-Kontextobjekte definieren
+
+Neue Dateien in `hexagon/application/.../commands/`:
+
+```kotlin
+data class ExportExecutionContext(
+    val pool: ConnectionPool,
+    val reader: DataReader,
+    val lister: TableLister,
+    val factory: DataChunkWriterFactory,
+)
+
+data class ExportExecutionOptions(
+    val tables: List<String>,
+    val output: ExportOutput,
+    val format: DataExportFormat,
+    val options: ExportOptions,
+    val config: PipelineConfig,
+    val filter: DataFilter?,
+)
+
+data class ExportResumeState(
+    val operationId: String?,
+    val resuming: Boolean,
+    val skippedTables: Set<String>,
+    val resumeMarkers: Map<String, ResumeMarker>,
+)
+
+data class ExportCallbacks(
+    val progressReporter: ProgressReporter,
+    val onTableCompleted: (TableExportSummary) -> Unit,
+    val onChunkProcessed: (TableChunkProgress) -> Unit,
+)
+```
+
+`ExportExecutor` neue Signatur:
+
+```kotlin
+fun interface ExportExecutor {
+    fun execute(
+        context: ExportExecutionContext,
+        options: ExportExecutionOptions,
+        resume: ExportResumeState,
+        callbacks: ExportCallbacks,
+    ): ExportResult
+}
+```
+
+Abhaengigkeiten: keine. Eigenstaendig commitbar (nur neue Typen).
+
+### 10.2 Schritt B — ImportExecutor-Kontextobjekte definieren
+
+Analog zu Schritt A:
+
+```kotlin
+data class ImportExecutionContext(
+    val pool: ConnectionPool,
+    val input: ImportInput,
+)
+
+data class ImportExecutionOptions(
+    val format: DataExportFormat,
+    val options: ImportOptions,
+    val readOptions: FormatReadOptions,
+    val config: PipelineConfig,
+)
+
+data class ImportResumeState(
+    val operationId: String?,
+    val resuming: Boolean,
+    val skippedTables: Set<String>,
+    val resumeStateByTable: Map<String, ImportTableResumeState>,
+)
+
+data class ImportCallbacks(
+    val progressReporter: ProgressReporter,
+    val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
+    val onChunkCommitted: (ImportChunkCommit) -> Unit,
+    val onTableCompleted: (TableImportSummary) -> Unit,
+)
+```
+
+`ImportExecutor` neue Signatur:
+
+```kotlin
+fun interface ImportExecutor {
+    fun execute(
+        context: ImportExecutionContext,
+        options: ImportExecutionOptions,
+        resume: ImportResumeState,
+        callbacks: ImportCallbacks,
+    ): ImportResult
+}
+```
+
+Abhaengigkeiten: keine. Eigenstaendig commitbar.
+
+### 10.3 Schritt C — DataExportRunner.executeWithPool() zerlegen
+
+Die 477-LOC-Methode wird in benannte private Funktionen geschnitten.
+Zielstruktur fuer `executeWithPool()` (< 80 LOC):
+
+```kotlin
+fun executeWithPool(pool: ConnectionPool): Int {
+    val infra = resolveInfrastructure(pool)              // Phase 1
+    val tables = resolveTables(infra)                     // Phase 2
+    val output = resolveOutput()                         // Phase 3
+    val options = buildExportOptions()                    // Phase 4
+    val resume = resolveResumeContext(tables, output)     // Phase 5
+    val markers = resolveResumeMarkers(resume, tables)    // Phase 6
+    val callbacks = buildCallbacks(resume)                // Phase 7
+    val staging = setupStaging(output)                    // Phase 8
+    val result = executeStreaming(infra, options, resume,  // Phase 9
+                                 markers, callbacks, staging)
+    return finalizeResult(result, staging, resume)         // Phase 10-13
+}
+```
+
+Jede Schrittfunktion hat:
+- klaren Eingang (wenige Parameter oder vorheriger Schritt-Output)
+- klaren Ausgang (DTO oder benanntes Objekt)
+- eigene Fehlerbehandlung wo noetig (z.B. Exit 2/5/7)
+
+Resume-Logik bleibt beim bestehenden `ExportResumeCoordinator`.
+
+### 10.4 Schritt D — DataImportRunner.executeWithPool() zerlegen
+
+Analog zu Schritt C. Zielstruktur:
+
+```kotlin
+fun executeWithPool(pool: ConnectionPool): Int {
+    val writer = resolveWriter(pool)                      // Phase 1
+    val options = buildImportOptions()                    // Phase 2
+    val input = resolveInput(options)                     // Phase 3
+    val fingerprint = computeFingerprint(options, input)  // Phase 4
+    val resume = resolveResumeContext(fingerprint, input)  // Phase 5-6
+    val callbacks = buildCallbacks(resume)                 // Phase 7
+    val result = executeStreaming(writer, options, input,   // Phase 8
+                                 resume, callbacks)
+    return finalizeResult(result, resume)                   // Phase 9-11
+}
+```
+
+### 10.5 Schritt E — CLI-Wiring auf neue Kontexte umstellen
+
+- `DataExportCommand.kt`: ExportExecutor-Lambda mappt auf neue DTOs
+- `DataImportCommand.kt`: ImportExecutor-Lambda mappt auf neue DTOs
+- Sichtbares 1:1-Mapping von `StreamingExporter`/`StreamingImporter`
+  Parametern auf die neuen Kontextobjekte
+
+### 10.6 Schritt F — Test-Builder einfuehren und Tests migrieren
+
+Vor der Einzelmigration:
+- `testExportExecutor { }` Helper in `DataExportRunnerTest.kt`
+- `testImportExecutor { }` Helper in `DataImportRunnerTest.kt`
+
+Dann ~130 Testfaelle systematisch migrieren. Die meisten aendern sich
+nur in der Executor-Lambdasignatur.
+
+### 10.7 Schritt G — `docs/quality.md` aktualisieren
+
+- Runner-/Executor-Findings als umgesetzt markieren
+- LOC-Zahlen aktualisieren
+
+---
+
+## 11. Empfohlene Commit-Reihenfolge
+
+```
+A + B (DTO-Definitionen fuer Export + Import)
+  ↓
+C + D (Runner-Zerlegung, alte Executor-Signatur noch parallel)
+  ↓
+E (CLI-Wiring auf neue Kontexte)
+  ↓
+F (Test-Migration)
+  ↓
+G (Doku)
+```
+
+Alle Edits eines Schritts abschliessen, dann einmal `docker build`.
+Keine Zwischenbuilds bei Teilaenderungen.
