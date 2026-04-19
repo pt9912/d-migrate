@@ -11,9 +11,13 @@ abstract class AbstractDdlGenerator(
         val skipped = mutableListOf<SkippedObject>()
         val blockedTables = mutableSetOf<String>()
 
+        // ─── PRE_DATA (default phase) ────────────────────────────
         statements += generateHeader(schema)
         statements += generateCustomTypes(schema.customTypes)
+
+        var preSkipCount = skipped.size
         statements += generateSequences(schema.sequences, skipped)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
         val (sorted, circularEdges) = topologicalSort(schema.tables)
         val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
@@ -25,7 +29,6 @@ abstract class AbstractDdlGenerator(
                 continue
             }
             val tableStatements = generateTable(name, table, schema, deferredFks, options)
-            // Detect if generateTable blocked the table (e.g. SpatiaLite metadata).
             val blockNote = tableStatements.asSequence()
                 .flatMap { it.notes.asSequence() }
                 .firstOrNull { it.blocksTable }
@@ -36,18 +39,34 @@ abstract class AbstractDdlGenerator(
         }
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
-            // Also skip indices for tables blocked by generateTable.
             if (name in blockedTables) continue
             statements += generateIndices(name, table)
         }
-        statements += handleCircularReferences(circularEdges, skipped)
 
+        preSkipCount = skipped.size
+        statements += handleCircularReferences(circularEdges, skipped)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+
+        // ─── Views (PRE_DATA for now; Step C will split) ─────────
         val sortedViews = sortViewsByDependencies(schema.views)
         statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
+
+        preSkipCount = skipped.size
         statements += generateViews(sortedViews.sorted, skipped)
-        statements += generateFunctions(schema.functions, skipped)
-        statements += generateProcedures(schema.procedures, skipped)
-        statements += generateTriggers(schema.triggers, schema.tables, skipped)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+
+        // ─── POST_DATA ───────────────────────────────────────────
+        preSkipCount = skipped.size
+        statements += generateFunctions(schema.functions, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        preSkipCount = skipped.size
+        statements += generateProcedures(schema.procedures, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        preSkipCount = skipped.size
+        statements += generateTriggers(schema.triggers, schema.tables, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
 
         return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped)
     }
@@ -113,7 +132,17 @@ abstract class AbstractDdlGenerator(
             reason = blockNote.message,
             code = blockNote.code,
             hint = blockNote.hint,
+            phase = DdlPhase.PRE_DATA,
         )
+    }
+
+    private fun List<DdlStatement>.withPhase(phase: DdlPhase): List<DdlStatement> =
+        map { it.copy(phase = phase) }
+
+    private fun tagNewSkips(skipped: MutableList<SkippedObject>, fromIndex: Int, phase: DdlPhase) {
+        for (i in fromIndex until skipped.size) {
+            skipped[i] = skipped[i].copy(phase = phase)
+        }
     }
 
     // ── Shared logic ────────────────────────────
