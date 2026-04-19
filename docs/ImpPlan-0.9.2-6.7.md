@@ -198,6 +198,12 @@ Praezisierung:
   `docs/ddl-generation-rules.md`
 - Runner-Exit-Codes und Validierungsfehler muessen auf die tatsaechlich
   getesteten Stellen im Repo verweisen
+- die Ledgers werden fuer 0.9.2 als maschinenlesbare Dateien unter
+  `docs/` gefuehrt, bevorzugt YAML oder CSV
+- ein begleitender Test prueft mindestens:
+  - jeder im Ledger gefuehrte Code existiert in der referenzierten
+    Doku- oder Codequelle
+  - jeder referenzierte Testpfad existiert
 - Restpfad-Eintraege sind nur zulaessig mit Pflichtfeldern:
   - `why_not_automated`
   - `evidence_owner`
@@ -301,9 +307,13 @@ Damit gilt fuer 6.7:
 - Split-JSON und Split-Report gegen denselben `DdlResult`-Bestand
   pruefen
 - dafuer einen gemeinsamen Testanker verwenden:
-  - Shared Builder oder Fixture-Quelle fuer `DdlResult`
+  - Shared Kotlin-Builder fuer `DdlResult`
   - JSON-Serializer und Report-Writer greifen auf denselben
     Ausgangszustand zu
+- fuer 0.9.2 ist der Shared Builder die bevorzugte Form:
+  - keine doppelte Erwartungswelt ueber getrennte Fixtures
+  - flexibel fuer `globalNotes`, gemischte Phasen und
+    Split-spezifische Diagnosefaelle
 - Pflichtfelder:
   - `split_mode`
   - `ddl_parts.pre_data`
@@ -319,6 +329,8 @@ Damit gilt fuer 6.7:
 - ein explizites Error-Ledger fuer E006-E121 erstellen oder nachziehen
 - ein separates Warncode-Ledger fuer 0.9.2-relevante `W-*`-Codes
   erstellen oder nachziehen
+- die Ledgers werden als maschinenlesbare Dateien unter `docs/`
+  materialisiert
 - jeder Ledger-Eintrag haelt mindestens fest:
   - Quelle / Ebene
   - existierender Test oder neuer Zieltest
@@ -332,6 +344,9 @@ Damit gilt fuer 6.7:
   - `evidence_owner`
   - `priority`
   - `planned_remediation`
+- ein begleitender Test validiert mindestens:
+  - jeder Ledger-Code ist in der referenzierten Quelle auffindbar
+  - jeder referenzierte Testpfad existiert
 - die Matrix darf aus mehreren Testebenen zusammengesetzt sein
 - Ziel ist Nachweisbarkeit, nicht zwingend ein Test pro Code in nur
   einem Modul
