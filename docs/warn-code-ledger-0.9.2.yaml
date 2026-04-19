@@ -1,0 +1,19 @@
+version: "0.9.2"
+entries:
+  - code: W113
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/AbstractDdlGeneratorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt"
+        path_type: production
+
+  - code: W120
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt"
+    evidence_paths:
+      - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaValidator.kt"
+        path_type: production
