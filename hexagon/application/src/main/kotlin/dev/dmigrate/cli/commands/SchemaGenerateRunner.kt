@@ -43,7 +43,7 @@ data class SchemaGenerateRequest(
  *
  * Exit codes (Plan §6.10):
  * - 0 success
- * - 2 invalid --target
+ * - 2 invalid --target, invalid spatial profile, or invalid --split combination
  * - 3 validation failure
  * - 7 schema file parse error
  */
