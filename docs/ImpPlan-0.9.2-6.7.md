@@ -364,6 +364,13 @@ Damit gilt fuer 6.7:
     - 1 Trigger-Fall
     - 1 Fall mit Routine-abhaengiger View
     - 1 Diagnosefall
+- Kardinalitaetsregel fuer 6.7:
+  - die 3 Basisfaelle sind eigenstaendige, generische Split-Faelle
+  - Trigger-, Routine-View- und Diagnosefall zaehlen nicht in diese 3
+    Basisfaelle hinein
+  - der Mindestumfang pro Pflichtdialekt umfasst damit 6 disjunkte
+    Fixture-Rollen, vorbehaltlich dokumentierter Surrogate oder
+    Entfaelle fuer featurearme Dialekte
 - als 0.9.2-Pflichtdialekte gelten nur Dialekte, die im bestehenden
   0.9.2-Test- und CI-Umfang bereits als Split-relevante Zielsysteme
   gefuehrt werden
@@ -411,7 +418,7 @@ Damit gilt fuer 6.7:
   `SchemaGenerateHelpersTest` fuer 0.9.2-Vertrag nachziehen
 - Pflichtbereiche:
   - `--split pre-post`
-  - Dateinamenlogik
+  - Dateinamenableitung fuer den dateibasierten Basispfad-Fall
   - JSON-Output
   - Sidecar-Report
   - Exit-2-Fehlerpfade fuer unzulaessige Kombinationen
@@ -595,7 +602,11 @@ Wichtig:
 
 - `--split pre-post` ohne `--output` und ohne JSON endet mit Exit 2
 - `--split pre-post --generate-rollback` endet mit Exit 2
-- Dateinamenlogik fuer Split-Artefakte ist testseitig belegt
+- die Dateinamenableitung ist testseitig fuer genau den
+  dateibasierten Basispfad-Fall `out/schema.sql` belegt
+- Verzeichnis-Pfade und andere plattformspezifische Sonderfaelle sind
+  in 6.7 bewusst nicht abgedeckt und koennen spaeter in einem
+  Folge-AP separat vertraglich erweitert werden
 - 6.6-Refactor bleibt in Exit-Code- und Resume-Semantik stabil
 
 ### 6.4 Pflichtfaelle fuer Error- und Warncode-Ledger
