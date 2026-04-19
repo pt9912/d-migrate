@@ -4,7 +4,7 @@
 > Schema-Artefakte
 > **Arbeitspaket**: 6.6 (Runner-Zerlegung und Executor-Kontextschnitt
 > nachziehen)
-> **Status**: In Progress (2026-04-19) — Executor-Kontextschnitt umgesetzt, Runner-Zerlegung offen
+> **Status**: Done (2026-04-19)
 > **Referenz**: `docs/implementation-plan-0.9.2.md` Abschnitt 3.2,
 > Abschnitt 5.4, Abschnitt 6.6, Abschnitt 7, Abschnitt 8, Abschnitt
 > 9.4;
