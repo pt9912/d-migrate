@@ -168,8 +168,6 @@ Hinweis:
   `payloadFingerprint` ist `IDEMPOTENCY_CONFLICT` zurueckzugeben.
 - `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
   und wird nicht durch den Client gesetzt.
-- Bei Konflikt zwischen existierendem laufendem/fertigen Job und neuer Anfrage muss
-  ein strukturierter Konflikt-Fehler zurueckgeliefert werden.
 - Optionaler 2-Phasen-Flow fuer policy-gesteuerte write-Tools:
   - erster Aufruf kann `POLICY_REQUIRED` mit
     `error.details.approvalToken` liefern;
@@ -268,9 +266,10 @@ Antworten sollten standardmaessig liefern:
 - optionale `resourceUri` und/oder `artifactId`, falls grosse Daten referenziert werden
 - `executionMeta` mit stabilen Referenzen (z.B. `jobId`, `artifactId`, `createdAt`)
 - strukturierte `findings` maximal 200 Eintraege
-- bei Fehlern ein einheitlicher Fehlerblock mit: `error.code`, `error.message`, optional `error.details`
-- Die `requestId` ist in Erfolgs- und Fehlerantworten identisch und dient der
-  Korrelation zwischen `executionMeta.requestId` und `error.requestId`.
+- bei Fehlern ein einheitlicher Fehlerblock mit: `error.code`, `error.message`,
+  optional `error.details`, `error.requestId` und `error.retryable`
+  (die `requestId` ist in Erfolgs- und Fehlerantworten identisch und dient
+  der Korrelation mit `executionMeta.requestId`)
 
 Beispiel Erfolg:
 
@@ -303,7 +302,9 @@ Beispiel Fehler:
     "message": "idempotencyKey ist fuer dieses Tool in v1 verpflichtend.",
     "details": {
       "tool": "data_import_start"
-    }
+    },
+    "requestId": "req-a1b2",
+    "retryable": false
   }
 }
 ```
@@ -505,7 +506,7 @@ Empfohlene Sicherheitsgrundlagen:
     signiertes Principalsignal)
   - optional mTLS fuer Maschinen-zu-Maschinen-Verkehre
 - stdio:
-  - nur von vertrauenswuerdigem localem Prozess/Benutzer aufrufbar
+  - nur von vertrauenswuerdigem lokalem Prozess/Benutzer aufrufbar
   - mindestens eine der beiden Bedingungen ist verbindlich:
     - starke Prozess-/Benutzerauthentisierung durch den Host
     - Verbindungs-Token via Umgebung (`DMIGRATE_MCP_STDIO_TOKEN`)
