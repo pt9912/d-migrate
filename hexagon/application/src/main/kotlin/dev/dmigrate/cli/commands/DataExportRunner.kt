@@ -267,20 +267,23 @@ class DataExportRunner(
         pool: ConnectionPool,
     ): Int {
         val infra = resolveInfrastructure(connectionConfig) ?: return 7
-        val tables = resolveTables(request, infra.lister, pool) ?: return -1 // sentinel
-        if (tables is TablesResult.Exit) return tables.code
-        val effectiveTables = (tables as TablesResult.Ok).tables
+        val effectiveTables = when (val t = resolveTables(request, infra.lister, pool)) {
+            is TablesResult.Ok -> t.tables
+            is TablesResult.Exit -> return t.code
+        }
         val output = resolveOutput(request, effectiveTables) ?: return 2
-        val prepared = buildExportContext(request, connectionConfig, charset, pool, effectiveTables, output, infra)
-            ?: return -1 // sentinel handled inline
-        if (prepared is PreparedResult.Exit) return prepared.code
-        val ctx = (prepared as PreparedResult.Ok).value
+        val ctx = when (val p = buildExportContext(request, connectionConfig, charset, pool, effectiveTables, output, infra)) {
+            is PreparedResult.Ok -> p.value
+            is PreparedResult.Exit -> return p.code
+        }
         val checkpoint = resolveCheckpointContext(request) ?: return 7
-        val resume = resolveResumeContext(request, ctx, output, checkpoint, effectiveTables)
-            ?: return -1
-        if (resume is ResumeResult.Exit) return resume.code
-        val resumeCtx = (resume as ResumeResult.Ok).value
+        val resumeCtx = when (val r = resolveResumeContext(request, ctx, output, checkpoint, effectiveTables)) {
+            is ResumeResult.Ok -> r.value
+            is ResumeResult.Exit -> return r.code
+        }
         val markers = resolveMarkers(request, resumeCtx, ctx.primaryKeysByTable, effectiveTables) ?: return 3
+        val initExit = writeInitialManifest(request, resumeCtx, checkpoint.store, ctx.fingerprint, effectiveTables)
+        if (initExit != null) return initExit
         val callbacks = buildCallbacks(request, resumeCtx, checkpoint.store, ctx.fingerprint, effectiveTables, markers)
         val staging = setupStaging(output, checkpoint, resumeCtx.operationId)
         val result = executeStreaming(request, pool, ctx, output, staging, resumeCtx, markers, callbacks)
@@ -458,6 +461,28 @@ class DataExportRunner(
         }
     }
 
+    /** Write initial manifest for fresh runs. Returns exit code on failure, null on success. */
+    private fun writeInitialManifest(
+        request: DataExportRequest, resume: ResumeContext, store: CheckpointStore?,
+        fingerprint: String, tables: List<String>,
+    ): Int? {
+        if (store == null || resume.resuming) return null
+        val created = clock()
+        return try {
+            store.save(CheckpointManifest(
+                operationId = resume.operationId, operationType = CheckpointOperationType.EXPORT,
+                createdAt = created, updatedAt = created, format = request.format,
+                chunkSize = request.chunkSize,
+                tableSlices = tables.map { resume.initialSlices[it] ?: CheckpointTableSlice(table = it, status = CheckpointSliceStatus.PENDING) },
+                optionsFingerprint = fingerprint,
+            ))
+            null // success
+        } catch (e: CheckpointStoreException) {
+            stderr("Error: Failed to initialize checkpoint: ${e.message}")
+            7
+        }
+    }
+
     private fun buildCallbacks(
         request: DataExportRequest, resume: ResumeContext, store: CheckpointStore?,
         fingerprint: String, tables: List<String>, markers: Map<String, ResumeMarker>,
@@ -479,21 +504,6 @@ class DataExportRunner(
                     optionsFingerprint = fingerprint,
                 ))
             } catch (_: CheckpointStoreException) { /* silent mid-run save failure */ }
-        }
-
-        // Write initial manifest for fresh runs
-        if (store != null && !resume.resuming) {
-            val created = now()
-            try {
-                store.save(CheckpointManifest(
-                    operationId = operationId, operationType = CheckpointOperationType.EXPORT,
-                    createdAt = created, updatedAt = created, format = request.format,
-                    chunkSize = request.chunkSize, tableSlices = tables.map { tableStates.getValue(it) },
-                    optionsFingerprint = fingerprint,
-                ))
-            } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to initialize checkpoint: ${e.message}")
-            }
         }
 
         val onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit = { summary ->

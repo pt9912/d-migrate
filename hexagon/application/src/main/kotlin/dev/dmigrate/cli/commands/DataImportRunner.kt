@@ -385,18 +385,22 @@ class DataImportRunner(
     ): Int {
         resolveWriter(connectionConfig) ?: return 7
         val opts = buildImportOptions(request, charset, preparedImport)
-        val inputCtxResult = resolveInputContext(request, connectionConfig, resolvedUrl, format, preparedImport)
-        if (inputCtxResult is InputContextResult.Exit) return inputCtxResult.code
-        val inputCtx = (inputCtxResult as InputContextResult.Ok).value
+        val inputCtx = when (val r = resolveInputContext(request, connectionConfig, resolvedUrl, format, preparedImport)) {
+            is InputContextResult.Ok -> r.value
+            is InputContextResult.Exit -> return r.code
+        }
         val checkpoint = resolveCheckpointContext(request) ?: return 7
-        val resumeResult = resolveResumeContext(request, checkpoint, inputCtx)
-        if (resumeResult is ResumeResult.Exit) return resumeResult.code
-        val resumeCtx = (resumeResult as ResumeResult.Ok).value
+        val resumeCtx = when (val r = resolveResumeContext(request, checkpoint, inputCtx)) {
+            is ResumeResult.Ok -> r.value
+            is ResumeResult.Exit -> return r.code
+        }
+        val initExit = writeInitialManifest(request, format, resumeCtx, checkpoint.store, inputCtx)
+        if (initExit != null) return initExit
         val callbacks = buildCallbacks(request, format, resumeCtx, checkpoint.store, inputCtx)
-            ?: return 7
-        val streamingResult = executeStreaming(request, format, pool, preparedImport, opts, resumeCtx, callbacks)
-        if (streamingResult is StreamingResult.Exit) return streamingResult.code
-        val result = (streamingResult as StreamingResult.Ok).value
+        val result = when (val r = executeStreaming(request, format, pool, preparedImport, opts, resumeCtx, callbacks)) {
+            is StreamingResult.Ok -> r.value
+            is StreamingResult.Exit -> return r.code
+        }
         return finalizeAndReport(request, result, checkpoint.store, resumeCtx.operationId)
     }
 
@@ -659,50 +663,46 @@ class DataImportRunner(
     }
 
     /** Step 6+7: Write the initial manifest for fresh runs, then build chunk/table callbacks. */
+    /** Write initial manifest for fresh runs. Returns exit code on failure, null on success. */
+    private fun writeInitialManifest(
+        request: DataImportRequest,
+        format: DataExportFormat,
+        resumeCtx: ResumeContext,
+        store: CheckpointStore?,
+        inputCtx: InputContext,
+    ): Int? {
+        if (store == null || resumeCtx.resuming) return null
+        val created = clock()
+        return try {
+            store.save(CheckpointManifest(
+                operationId = resumeCtx.operationId,
+                operationType = CheckpointOperationType.IMPORT,
+                createdAt = created, updatedAt = created,
+                format = request.format ?: format.name.lowercase(Locale.US),
+                chunkSize = request.chunkSize,
+                tableSlices = inputCtx.effectiveTables.map { table ->
+                    resumeCtx.initialSlices[table] ?: CheckpointTableSlice(table = table, status = CheckpointSliceStatus.PENDING)
+                },
+                optionsFingerprint = inputCtx.fingerprint,
+            ))
+            null // success
+        } catch (e: CheckpointStoreException) {
+            stderr("Error: Failed to initialize checkpoint: ${e.message}")
+            7
+        }
+    }
+
     private fun buildCallbacks(
         request: DataImportRequest,
         format: DataExportFormat,
         resumeCtx: ResumeContext,
         store: CheckpointStore?,
         inputCtx: InputContext,
-    ): ImportCallbacks? {
+    ): ImportCallbacks {
         val operationId = resumeCtx.operationId
         val effectiveTables = inputCtx.effectiveTables
         val inputFilesByTable = inputCtx.inputFilesByTable
         val fingerprint = inputCtx.fingerprint
-
-        // Initial-Manifest-Schreibpfad: bei neuem Lauf anlegen, damit
-        // ein spaeterer Abbruch einen gueltigen Resume-Anker hat.
-        // `createdAt`/`updatedAt` werden beim Resume-Lauf vom bereits
-        // geladenen Manifest uebernommen (`complete()` raeumt am
-        // Lauf-Ende auf).
-        if (store != null && !resumeCtx.resuming) {
-            val created = clock()
-            val initial = CheckpointManifest(
-                operationId = operationId,
-                operationType = CheckpointOperationType.IMPORT,
-                createdAt = created,
-                updatedAt = created,
-                format = request.format ?: format.name.lowercase(Locale.US),
-                chunkSize = request.chunkSize,
-                // `initialSlices` already carries the `inputFile` binding from
-                // the directory scan; the initial manifest must mirror it so a
-                // later resume can validate against a fresh scan.
-                tableSlices = effectiveTables.map { table ->
-                    resumeCtx.initialSlices[table] ?: CheckpointTableSlice(
-                        table = table,
-                        status = CheckpointSliceStatus.PENDING,
-                    )
-                },
-                optionsFingerprint = fingerprint,
-            )
-            try {
-                store.save(initial)
-            } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to initialize checkpoint: ${e.message}")
-                return null
-            }
-        }
 
         // Manifest update per chunk-commit and per table-end.
         // `createdAt` is set now for fresh runs, taken from the loaded
