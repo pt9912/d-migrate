@@ -122,6 +122,8 @@ Verbindliche Folge:
 - `DdlStatement` ist die primaere Quelle fuer den Phasenbezug
 - `TransformationNote` und `SkippedObject` koennen dieselbe Information
   transportieren
+- fuer statement-gebundene Notes gilt als harte Praezedenzregel:
+  Statement-Phase gewinnt immer
 - `DdlResult` bekommt zusaetzlich `globalNotes`, damit nicht an
   Statements gebundene Diagnoseeintraege im Modell explizit darstellbar
   sind
@@ -204,8 +206,11 @@ Verbindliche Folge:
     `DdlResult.statements`
   - die Formatierung pro Statement ist identisch zu `DdlStatement.render()`
   - zwischen Statements gelten dieselben Trenner wie bei `render()`
-  - die Rueckgabe ist exakt derselbe String wie `render()` auf der
-    gefilterten Statement-Teilmenge
+  - die Rueckgabe ist exakt derselbe String wie
+    `statementsForPhase(phase).joinToString("\n\n") { it.render() }`
+  - damit gelten dieselben Regeln fuer Spacing, Separatoren sowie
+    fuehrende oder abschliessende Newlines wie bei `render()` auf
+    derselben gefilterten Statement-Teilmenge
   - eine leere Phasensicht rendert als leerer String ohne Zusatz-
     Leerzeilen oder abschliessenden Newline
 
@@ -221,6 +226,19 @@ Verbindliche Folge:
   - in Phasensichten wird `null` nicht materialisiert
   - in der Gesamtsicht darf `phase` fehlen, aber niemals implizit
     defaulten
+
+### 4.7 Keine separate Java-Interop-Zusage in 6.1
+
+Verbindliche Folge:
+
+- 6.1 behandelt die DDL-Modelltypen als repo-interne Kotlin-Port-API
+- Rueckwaertskompatible Kotlin-Call-Sites werden ueber Default-Parameter
+  abgesichert
+- eine gesonderte Java-Source-Kompatibilitaet fuer neue Konstruktor-
+  Parameter ist nicht Teil von 6.1
+- falls spaeter echte Java-Consumer dieses Modells auftauchen, ist deren
+  API-Haertung ein eigenes Nachfolge-Thema und nicht stiller Teil dieses
+  Arbeitspakets
 
 ---
 
@@ -263,6 +281,8 @@ Wichtig:
 - `notesForPhase(...)` ist keine unabhaengige zweite Sammlung, sondern
   eine deterministische, gefilterte Projektion der Gesamtsicht `notes`
   plus Phasenfilter nach den 6.1-Regeln
+- `skippedObjectsForPhase(...)` ist entsprechend eine deterministische,
+  gefilterte Projektion von `skippedObjects`
 - `notesForPhase(...)` muss Statement-Notes ueber deren Statement-Phase
   einsammeln
 - `notesForPhase(...)` darf zusaetzlich explizit phasengebundene globale
@@ -274,9 +294,14 @@ Wichtig:
   - zuerst Notes aus Statements der Phase in Statement-Reihenfolge
   - danach explizit phasengebundene globale Notes aus `globalNotes` in ihrer
     Ursprungsreihenfolge
+- die Reihenfolge in `skippedObjectsForPhase(...)` bleibt identisch zur
+  Ursprungsreihenfolge in `skippedObjects`
 - dieselbe Note darf in einer Sicht nicht doppelt auftauchen; falls
   Statement-Notes bereits ueber das Statement eingesammelt wurden, werden
   sie nicht ein zweites Mal als globale Note angehaengt
+- dieselben logischen Eintraege bleiben ueber Gesamt- und Phasensicht
+  korrelierbar; 6.1 verlangt stabile Mitgliedschaft und Reihenfolge, aber
+  keine Referenzidentitaet bestimmter Listeninstanzen
 - freistehende Notes mit `phase = null` duerfen in einer Phasensicht
   nicht versehentlich auftauchen
 - `skippedObjectsForPhase(...)` filtert ausschliesslich explizit
@@ -325,9 +350,14 @@ Mindestens abzudecken:
   nachvollziehbar und erzeugt keine zusaetzlichen Dopplungen
 - `skippedObjectsForPhase(...)` gibt Objekte mit `phase = null` nicht
   zurueck
+- `skippedObjectsForPhase(...)` behaelt die Reihenfolge aus
+  `skippedObjects` stabil bei
 - `renderPhase(...)` liefert exakt denselben Stringaufbau wie `render()`
   auf der gefilterten Statementmenge, inklusive Leerstring fuer leere
   Phasen
+- `renderPhase(...)` fuegt keine zusaetzlichen Separatoren oder
+  abschliessenden Newlines gegenueber `render()` auf derselben
+  gefilterten Statementliste hinzu
 - die betroffene Repo-Testsuite bleibt gruen, nicht nur die
   Port-Tests
 
@@ -361,6 +391,8 @@ Pflichtfaelle fuer 6.1:
 - `SkippedObject.phase = null` erzeugt keine implizite Zuordnung
 - `skippedObjectsForPhase(PRE_DATA|POST_DATA)` liefert niemals Skips mit
   `phase = null`
+- `skippedObjectsForPhase(...)` behaelt die Reihenfolge aus
+  `skippedObjects` stabil bei
 - die betroffenen Modul- und Regressionstests ausserhalb von
   `ports-read` bleiben gruen
 
