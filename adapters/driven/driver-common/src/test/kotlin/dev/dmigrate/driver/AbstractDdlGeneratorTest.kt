@@ -465,6 +465,20 @@ class AbstractDdlGeneratorTest : FunSpec({
             .any { it.sql.contains("v_no_query") } shouldBe true
     }
 
+    test("generate() view without query but with explicit empty deps stays PRE_DATA") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(schema(
+            functions = mapOf("fn" to FunctionDefinition()),
+            views = mapOf("v_explicit" to ViewDefinition(
+                query = null,
+                dependencies = DependencyInfo(), // author explicitly declared no deps
+            )),
+        ))
+        result.globalNotes.none { it.code == "E060" } shouldBe true
+        result.statementsForPhase(DdlPhase.PRE_DATA)
+            .any { it.sql.contains("v_explicit") } shouldBe true
+    }
+
     test("generate() no functions in schema means all views stay PRE_DATA") {
         val gen = TestDdlGenerator()
         val result = gen.generate(schema(

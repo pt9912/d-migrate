@@ -387,8 +387,8 @@ abstract class AbstractDdlGenerator(
                     continue
                 }
             }
-            // Level C: view has no query, no declared function deps, but schema has functions
-            if (view.query == null && normalizedFuncNames.isNotEmpty()) {
+            // Level C: view has no query, no declared deps at all, but schema has functions
+            if (view.query == null && view.dependencies == null && normalizedFuncNames.isNotEmpty()) {
                 postDataDirect += name
                 diagnostics += TransformationNote(
                     type = NoteType.ACTION_REQUIRED,
