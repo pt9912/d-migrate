@@ -28,7 +28,7 @@ Dieses Dokument bündelt Qualitätsmaßnahmen mit Fokus auf:
 ## Verbleibende Schwächen (Bestandsaufnahme)
 
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataImportRunner.kt` (971 LOC)
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt` (663 LOC)
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt` (658 LOC)
 
 Die `executeWithPool()`-Zerlegung und Executor-Schnittstellen sind vorhanden, aber weitere Extraktion der lokal gebündelten Logik lohnt sich weiterhin.
 
@@ -55,16 +55,16 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
   [DataTransferRunner.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt)  
   [DataExportHelpers.kt](/Development/d-migrate/hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt)
 - **Priorität / Aufwand / Risiko:** P1 / M / mittel  
-- **Ziel:** `DataTransferRunner` nutzt dieselbe Filter-Validierung wie Export (Identifier-Quoting, `--since` Typisierung, Marker-Semantik).
+- **Ziel:** `DataTransferRunner` nutzt dieselbe Filter-Aufbereitung wie Export (dialektgerechtes Identifier-Quoting, `--since`-Literal-Normalisierung/Typinferenz, Vergleichssemantik im `--since`-Pfad).
 - **Achtung:** Das ist eine **behaviorale Ausrichtung**, kein reines Refactoring.
 - **Konkrete Divergenzen:**  
   1. **Identifier-Quoting:** Transfer quotet manuell (`”\”${r.sinceColumn}\” > ?”`), Export nutzt `SqlIdentifiers.quoteQualifiedIdentifier()`. Bei `sinceColumn`-Werten mit eingebettetem `”` bricht das Quoting.  
   2. **Vergleichsoperator:** Transfer verwendet `>`, Export verwendet `>=`. Das ist ein semantischer Unterschied im Filterergebnis.  
-  3. **Fehlende Typprüfung:** Export ruft `parseSinceLiteral()` auf (Typvalidierung des `--since`-Werts), Transfer übergibt den Rohstring direkt als Parameter.
+  3. **Fehlende Literal-Normalisierung:** Export ruft `parseSinceLiteral()` auf (konservative Typinferenz mit Fallback auf Rohstring), Transfer übergibt den `--since`-Wert immer als untypisierten String direkt als Parameter.
 - **Akzeptanzkriterien:**  
-  - `--since` verhält sich identisch wie im Export-Pfad (für gleiches Eingabeverhalten).  
+  - `--since` verhält sich identisch wie im Export-Pfad (für gleiches Eingabeverhalten, inkl. konservativer Typinferenz und String-Fallback für nicht typisierbare Literale).  
   - Alle drei Divergenzen sind aufgelöst (oder bewusst als Abweichung dokumentiert, inkl. Migrationshinweis).  
-  - Fehlermeldungen bei ungültigen Filtern sind deterministisch und testenbar.
+  - Fehlermeldungen bei ungültigen Eingaben (insb. Flag-Kombinationen und Identifiern) sind deterministisch und testenbar.
 - **DoD:** Bestehende Verhaltenstests ergänzt/angepasst; neue Regressionstestfälle für mindestens 3 bestehende Filter-Varianten.
 
 ### 2) Runner-Entkopplung fokussieren
@@ -107,7 +107,7 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
   [SqliteDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt) (460 LOC)
 - **Priorität / Aufwand / Risiko:** P1 / L / hoch  
 - **Ziel:** DDL-Erzeugung in Phasen aufteilen: Basisschritt, Constraints/Indexes, Dialekt-Hooks.
-- **Risikobegründung:** Die Aufspaltung ändert die Vererbungshierarchie des Template-Method-Patterns und betrifft gleichzeitig drei Dialekt-Implementierungen (1257 LOC gesamt).
+- **Risikobegründung:** Die Aufspaltung ändert die Vererbungshierarchie des Template-Method-Patterns und betrifft gleichzeitig die gemeinsame Basisklasse plus drei Dialekt-Implementierungen (`AbstractDdlGenerator` + Postgres/MySQL/SQLite, zusammen 1745 LOC).
 - **Akzeptanzkriterien:**  
   - Gemeinsame Erzeugungspfade sind in klar benannte Unterkomponenten zerlegt.
   - Unit-Tests für zentrale Pfade in neuer Unterstruktur ergänzt.
@@ -130,7 +130,7 @@ Es gibt noch ein großes Bündel von Projektions-DTOs in dieser Datei.
 
 - **Status:** Offen  
 - **Datei:**  
-  [MysqlDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/MysqlDdlGenerator.kt)
+  [MysqlDdlGenerator.kt](/Development/d-migrate/adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt)
 - **Priorität / Aufwand / Risiko:** P2 / M / niedrig  
 - **Ziel:** Spezialfälle in `generateColumnSql(...)` (Identifier, Enum, Domains, Geometry) in kleine Builder/Helper auslagern.
 - **Akzeptanzkriterien:**  
