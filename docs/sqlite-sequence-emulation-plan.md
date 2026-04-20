@@ -315,23 +315,25 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --
 -- BEFORE INSERT (_bi):
 --
--- Schritt 1: Erschoepfungspruefung auf den AKTUELLEN next_value
---   (prueft ob der aktuelle Wert bereits jenseits der Grenze liegt —
---    das passiert nur, wenn ein vorheriger Aufruf ohne Zyklus den
---    Wert ueber die Grenze inkrementiert hat)
---   IF increment_by > 0 AND next_value > COALESCE(max_value, MAX_INT):
---     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
---     ELSE: next_value := COALESCE(min_value, 1)  -- cycle recovery
---   IF increment_by < 0 AND next_value < COALESCE(min_value, MIN_INT):
---     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
---     ELSE: next_value := COALESCE(max_value, MAX_INT)  -- cycle recovery
+-- Schritt 1: Erschoepfungspruefung ueber exhausted-Flag
+--   IF exhausted = 1: RAISE(ABORT, 'exhausted')
 --
 -- Schritt 2: Rueckgabewert sichern + inkrementieren (atomar)
 --   last_returned_value := next_value
---   IF wuerde_grenze_ueberschreiten (overflow-sichere Subtraktionspruefung):
+--
+--   Grenzvorausschau (sign-spezifisch, overflow-sicher):
+--     Fuer increment_by > 0 (aufsteigende Sequenz):
+--       Pruefe: next_value > max_value - increment_by
+--       (aequivalent zu next_value + increment_by > max_value,
+--        aber ohne die Addition auszufuehren)
+--     Fuer increment_by < 0 (absteigende Sequenz):
+--       Pruefe: next_value < min_value - increment_by
+--       (da increment_by negativ: min_value - increment_by = min_value + |inc|;
+--        aequivalent zu next_value + increment_by < min_value)
+--
+--   IF Grenze wuerde ueberschritten:
 --     IF cycle_enabled = 1: next_value := Zyklusstartwert
 --     IF cycle_enabled = 0: next_value bleibt, exhausted := 1
---       (naechster Aufruf erkennt exhausted-Flag in Schritt 1 und ABORTs)
 --   ELSE:
 --     next_value := next_value + increment_by
 --     (overflow-sicher: ELSE nur erreichbar wenn innerhalb der Grenze)
@@ -349,10 +351,13 @@ Hinweis zur Triggerlogik:
   `exhausted = 1` — kein numerischer Vergleich, kein Overflow-Risiko.
   Kein numerisches Sentinel (`max_value + 1`) noetig, das den
   64-bit INTEGER-Bereich ueberschreiten koennte.
-- **Overflow-sichere Vorausschau**: Schritt 2 prueft per
-  Subtraktionsformel (`next_value > max_value - increment_by`), ob
-  das naechste Inkrement die Grenze ueberschreiten wuerde. Bei
-  `cycle=1`: Zyklusstartwert. Bei `cycle=0`: `next_value` bleibt,
+- **Overflow-sichere Vorausschau** (sign-spezifisch): Schritt 2
+  prueft per Subtraktionsformel, ob das naechste Inkrement die
+  Grenze ueberschreiten wuerde:
+  - aufsteigend (`inc > 0`): `next_value > max_value - increment_by`
+  - absteigend (`inc < 0`): `next_value < min_value - increment_by`
+    (da `inc` negativ: `min_value - inc = min_value + |inc|`)
+  Bei `cycle=1`: Zyklusstartwert. Bei `cycle=0`: `next_value` bleibt,
   `exhausted` wird auf 1 gesetzt.
 - Dadurch wird der letzte gueltige Wert (z. B. `next_value = 10`
   bei `max_value = 10`) korrekt zurueckgegeben, bevor die Sequence
@@ -665,8 +670,13 @@ wiederholt. Die verbindlichen Regeln fuer `next_value`, `increment_by`,
 
 Zusaetzliche SQLite-spezifische Punkte:
 
-- `increment_by = 0` ist ungueltig und wird als Validierungsfehler im
-  neutralen Modell abgefangen (identisch zu MySQL)
+- `increment_by = 0` ist ungueltig und wird als **harter
+  Validierungsfehler** im neutralen Modell abgefangen, **bevor** der
+  Generator laeuft (identisch zu MySQL). Der Fehler wird ueber
+  `SchemaValidator` gemeldet (Exit-Code 3), nicht erst im
+  dialektspezifischen Generator. Damit ist ausgeschlossen, dass ein
+  Trigger mit `increment_by = 0` erzeugt wird, der permanent
+  denselben Wert zurueckgibt oder in eine Endlosschleife gerät
 - SQLite speichert alle Ganzzahlen als `INTEGER` (bis zu 8 Bytes,
   -9223372036854775808 bis 9223372036854775807); die effektiven
   Grenzwerte entsprechen `Long.MIN_VALUE`/`Long.MAX_VALUE` in Kotlin
@@ -959,6 +969,22 @@ Vertrag:
 - Nutzer, die eigene BEFORE INSERT-Trigger auf sequence-basierten
   Spalten verwenden, muessen sicherstellen, dass diese nach den
   Sequence-Triggern erzeugt werden
+
+Interaktion mit nutzerdefinierten AFTER INSERT-Triggern:
+
+Dieselbe Reihenfolgelogik gilt fuer AFTER INSERT-Trigger: die
+generierten `_ai`-Trigger stehen in Position 5, nutzerdefinierte
+AFTER INSERT-Trigger in Position 8. Damit feuert der `_ai`-Trigger
+(der den Sequence-Wert per UPDATE in die Zeile schreibt) **vor**
+nutzerdefinierten AFTER INSERT-Triggern.
+
+- nutzerdefinierte AFTER INSERT-Trigger sehen die Zeile **mit** dem
+  gesetzten Sequence-Wert (weil der `_ai`-Trigger bereits lief)
+- dies ist das gewuenschte Verhalten: der Sequence-Wert ist
+  verfuegbar, bevor nutzerdefinierte Logik auf die Zeile zugreift
+- bei Reverse einer bestehenden Datenbank gilt dieselbe
+  Einschraenkung wie bei BEFORE INSERT: die Erzeugungsreihenfolge
+  wird nicht garantiert
 
 ### 5.2 Rollback
 
@@ -1351,6 +1377,24 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
   Spalte: INSERT loest korrekte Sequence-Vergabe aus, der UPDATE-
   Trigger feuert durch die `_ai`-Kaskade, beide Ergebnisse sind
   konsistent (W122-Testfall)
+
+Pflicht-Tests fuer NOT NULL / W115 / W119 Randfaelle:
+
+- **required: true + INSERT ohne Wert**: Spalte hat kein NOT NULL
+  im DDL (W119); INSERT mit ausgelassenem Wert vergibt Sequence-Wert;
+  die Zeile hat danach einen nicht-NULL Wert (de-facto NOT NULL)
+- **required: true + explizites NULL**: INSERT mit `VALUES (NULL, ...)`
+  vergibt Sequence-Wert (W115 lossy, identisch zu ausgelassenem Wert)
+- **required: true + explizites NULL + FK auf Sequence-Spalte**:
+  wenn eine andere Tabelle einen FK auf die sequence-basierte Spalte
+  hat, muss der FK erst nach dem AFTER INSERT-UPDATE pruefbar sein;
+  in SQLite werden FK-Constraints standardmaessig am Statement-Ende
+  geprueft (nicht zwischen den Triggern), daher ist der FK nach dem
+  `_ai`-UPDATE erfuellt
+- **NOT NULL + explicit NULL + AFTER INSERT-Reihenfolge**: wenn ein
+  nutzerdefinierter AFTER INSERT-Trigger die sequence-basierte Spalte
+  liest, muss er den Wert sehen (weil `_ai` in Position 5, Nutzer
+  in Position 8); verifizieren, dass die Reihenfolge korrekt ist
 
 Pflicht-Tests fuer Reverse-Degradation (W116, W120):
 
