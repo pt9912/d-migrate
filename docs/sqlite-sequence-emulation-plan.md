@@ -612,6 +612,16 @@ Verhalten bei Generierung:
 - `E057` wird als `TransformationNote` an die betroffene Spalte
   gehaengt, nicht an die Tabelle; die Tabelle selbst wird nicht
   blockiert
+- **Konsequenz bei `required: true`**: die Spalte hat `NOT NULL` im
+  generierten DDL, aber keinen Trigger und keinen Default; ein
+  INSERT ohne expliziten Wert fuer diese Spalte scheitert zur
+  Laufzeit. Das ist das **erwartete Verhalten** fuer `E057`:
+  der Nutzer muss den Wert applikationsseitig bereitstellen.
+  Der `E057`-Hint weist explizit darauf hin:
+  "Use action_required mode or application-level sequencing."
+  Damit ist klar, dass die Spalte ohne manuellen Eingriff nicht
+  nutzbar ist — `E057` ist ein harter Abbruch fuer den
+  automatischen Pfad, kein stilles Fallback
 
 Verhalten bei Reverse:
 
@@ -869,11 +879,24 @@ INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42)
 ```
 
 Diese Faelle muessen in der Integrations-Teststrategie (§8.2)
-abgedeckt werden. Fall 5 (UPSERT-Gap) wird als bekannte
-Einschraenkung dokumentiert, nicht als Fehler. Die drei ON CONFLICT-
-Varianten (DO UPDATE, DO NOTHING, ABORT/ROLLBACK/FAIL) muessen
-jeweils separat getestet werden, da das Trigger-Verhalten sich
-zwischen den Pfaden unterscheidet.
+abgedeckt werden. Die drei ON CONFLICT-Varianten (DO UPDATE,
+DO NOTHING, ABORT/ROLLBACK/FAIL) muessen jeweils separat getestet
+werden, da das Trigger-Verhalten sich zwischen den Pfaden
+unterscheidet.
+
+Fall 5 (UPSERT-Gap) wird ueber `W121` als eigenes Warning-Signal
+gemeldet:
+
+- `W121`: Sequence values may be consumed without insertion when
+  INSERT ... ON CONFLICT is used on tables with sequence-backed
+  columns; BEFORE INSERT trigger fires before conflict detection
+- `W121` wird bei der Generierung an jede Tabelle gehaengt, die
+  sowohl sequence-basierte Spalten als auch UNIQUE/PK-Constraints
+  hat (da diese ON CONFLICT ausloesen koennen)
+- im Compare-Report macht `W121` sichtbar, dass die Emulation
+  bei Conflict-Handling Gaps erzeugen kann — ein Unterschied zu
+  nativen PostgreSQL-Sequences, die bei Conflict ebenfalls Gaps
+  erzeugen, aber ueber einen anderen Mechanismus
 
 Vorgeschlagene Reihenfolge:
 
@@ -943,17 +966,24 @@ Rollback muss die kanonischen Hilfsobjekte wieder entfernen:
 
 Vorgeschlagene Rollback-Reihenfolge:
 
-1. Generierte Sequence-Support-Trigger (`DROP TRIGGER IF EXISTS` fuer
+Der Rollback ist ein **Preflight + Execute**-Pattern: alle Pruefungen
+laufen vor dem ersten destruktiven Statement. Dadurch ist der
+Rollback atomar im Sinne von "ganz oder gar nicht".
+
+Preflight (keine Seiteneffekte):
+
+1. Abhaengigkeitspruefung auf `dmg_sequences`: der Generator prueft,
+   ob es Objekte gibt, die auf `dmg_sequences` verweisen und **nicht**
+   zum kanonischen Sequence-Support gehoeren
+2. Wenn fremde Abhaengigkeiten existieren: Rollback bricht **sofort**
+   ab mit Fehlercode `E058` — kein Trigger wird gedroppt, kein
+   Zustand wird veraendert
+
+Execute (nur wenn Preflight bestanden):
+
+3. Generierte Sequence-Support-Trigger (`DROP TRIGGER IF EXISTS` fuer
    jeden `_bi`- und `_ai`-Trigger)
-2. Abhaengigkeitspruefung auf `dmg_sequences`: vor dem DROP prueft
-   der Generator, ob es Trigger (oder andere Objekte) gibt, die auf
-   `dmg_sequences` verweisen und **nicht** zum kanonischen
-   Sequence-Support gehoeren
-3. Wenn fremde Abhaengigkeiten existieren: Rollback emittiert einen
-   Fehlercode (`E058`) statt eines stillen `DROP TABLE`, damit der
-   Nutzer die Abhaengigkeiten zuerst entfernen kann
-4. Wenn keine fremden Abhaengigkeiten: `dmg_sequences`
-   (`DROP TABLE IF EXISTS`)
+4. `dmg_sequences` (`DROP TABLE IF EXISTS`)
 
 Anders als bei MySQL gibt es keine Support-Routinen zum Droppen.
 
@@ -973,18 +1003,28 @@ Abhaengigkeitspruefung im Detail:
 
 Normalisierung und Matching-Strategie:
 
-- die Suche ist **case-insensitive** und erkennt sowohl unquoted
-  (`dmg_sequences`) als auch quoted (`"dmg_sequences"`) Formen
-- zusaetzlich wird schema-qualifizierter Zugriff erkannt
-  (`main.dmg_sequences`, `main."dmg_sequences"`)
+- die Suche ist **case-insensitive** und erkennt alle vier
+  SQLite-Identifier-Quoting-Formen:
+  - unquoted: `dmg_sequences`
+  - double-quoted: `"dmg_sequences"`
+  - bracket-quoted: `[dmg_sequences]`
+  - backtick-quoted: `` `dmg_sequences` ``
+  (SQLite akzeptiert alle vier Formen; siehe SQLite-Doku "SQL
+  Language Expressions", Abschnitt "column-name")
+- zusaetzlich wird schema-qualifizierter Zugriff erkannt, in
+  allen Quoting-Kombinationen:
+  - `main.dmg_sequences`, `main."dmg_sequences"`
+  - `main.[dmg_sequences]`, `` main.`dmg_sequences` ``
+  - `"main".dmg_sequences`, `"main"."dmg_sequences"` usw.
 - das Matching verwendet eine **Token-basierte** Erkennung:
   `dmg_sequences` wird als eigenstaendiger Identifier gesucht,
   nicht als beliebiger Substring; dadurch werden False Positives
   durch Identifier wie `my_dmg_sequences_backup` vermieden
-- konkret: der Scan prueft, ob `dmg_sequences` als SQL-Identifier
-  an einer Wort-Grenze steht (vorhergehendes Zeichen ist `.`, `"`,
-  Whitespace oder Zeilenanfang; nachfolgendes Zeichen ist `"`,
-  Whitespace, `,`, `)`, `;` oder Zeilenende)
+- konkret: der Scan erkennt `dmg_sequences` wenn es:
+  - von einem Quoting-Zeichen umschlossen ist (`"`, `[`/`]`, `` ` ``), oder
+  - an einer Wort-Grenze steht (vorhergehendes Zeichen ist `.`,
+    Whitespace oder Zeilenanfang; nachfolgendes Zeichen ist
+    Whitespace, `.`, `,`, `)`, `;` oder Zeilenende)
 - die Pruefung ist konservativ: im Zweifel wird `E058` emittiert
 - `E058`: Cannot drop dmg_sequences: non-managed objects reference
   this table; remove external dependencies first
@@ -1019,13 +1059,16 @@ Normalisierung und Matching-Strategie:
 - `WITHOUT ROWID`-Tabellen mit sequence-basierten Spalten:
   - `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
     automatic trigger assignment (§3.5)
+- UPSERT-Gap bei Conflict-Handling:
+  - `W121`: Sequence values may be consumed without insertion when
+    INSERT ... ON CONFLICT is used (§5.1)
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `W120`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
+`W119`, `W120`, `W121`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
 
 ---
 
@@ -1188,7 +1231,7 @@ Compare-Verhalten bei degradierten/modifizierten Triggern:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`, `E059`, `W120`)
+  `E057`, `E058`, `E059`, `W120`, `W121`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -1289,6 +1332,26 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
   stillem NULL
 - NOT NULL-Spalte mit SequenceNextVal akzeptiert INSERT ohne Wert
   (W119-Unterdrueckung wirkt korrekt)
+
+Pflicht-Tests fuer Reverse-Degradation (W116, W120):
+
+- **Marker fehlt bei beiden Triggern**: Sekundaer-Matching greift
+  (alle 5 Kriterien), Sequence wird mit `W116` rekonstruiert;
+  Compare zeigt laufzeit-nicht-vertrauenswuerdigen Diff
+- **Marker vorhanden, Body veraendert** (z. B. UPDATE dmg_sequences
+  entfernt): primaeres Matching greift, Body-Pruefung schlaegt fehl,
+  Trigger wird mit `W120` markiert; Sequence-Zuordnung bleibt, aber
+  Report flaggt "body-modified"
+- **Nur ein Trigger des Paares fehlt** (z. B. `_ai` manuell
+  gedroppt): weder primaeres noch sekundaeres Matching ergibt ein
+  vollstaendiges Paar; `_bi`-Trigger mit Marker wird als
+  degradiertes Einzelobjekt mit `W116` behandelt, Spaltenzuordnung
+  ist unvollstaendig
+- **Trigger umbenannt** (Name passt nicht mehr zum Schema, Marker
+  noch vorhanden): primaeres Matching greift weiterhin ueber Marker
+  (Marker ist autoritativ, nicht der Name); Trigger wird als
+  Supportobjekt erkannt, aber `W120` wenn Body-Pruefung zusaetzlich
+  fehlschlaegt
 
 ### 8.3 Round-Trip
 
