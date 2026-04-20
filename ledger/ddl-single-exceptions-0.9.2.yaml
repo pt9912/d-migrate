@@ -1,0 +1,15 @@
+version: "0.9.2"
+description: >
+  Dokumentierte Abweichungen in bestehenden single-DDL-Golden-Masters,
+  die durch 0.9.2-Arbeitspakete verursacht wurden. Jede Abweichung ist
+  bewusst und review-pflichtig.
+entries:
+  - fixture_path: "adapters/driven/formats/src/test/resources/fixtures/ddl/full-featured.mysql.sql"
+    reason: >
+      Entfernung der 3 sichtbaren -- TODO-Kommentarzeilen fuer
+      Composite Type (E054), Sequence invoice_seq (E056) und
+      Sequence simple_seq (E056). Die strukturierten Diagnosen
+      (ACTION_REQUIRED + SkippedObject) bleiben erhalten; nur der
+      SQL-Kommentarkanal entfaellt.
+    source_ap: "6.5"
+    approved_by: "review"

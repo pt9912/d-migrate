@@ -352,4 +352,159 @@ class CliGenerateTest : FunSpec({
             Files.deleteIfExists(sibling(".report.yaml"))
         }
     }
+
+    // ─── --split pre-post CLI integration (0.9.2 AP 6.7) ────────
+
+    test("--split pre-post --output writes pre-data and post-data files") {
+        val source = writeTempSchema("""
+            schema_format: "1.0"
+            name: "SplitTest"
+            version: "1.0.0"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: identifier
+                    auto_increment: true
+                primary_key: [id]
+            triggers:
+              trg:
+                table: t
+                event: insert
+                timing: after
+                for_each: row
+                body: "BEGIN END;"
+                source_dialect: postgresql
+        """.trimIndent())
+        val outFile = Files.createTempFile("d-migrate-split-", ".sql")
+        Files.deleteIfExists(outFile) // Remove temp file so we can assert runner doesn't write it
+        try {
+            val (_, stderr) = captureStreams {
+                shouldNotThrowAny {
+                    cli().parse(listOf(
+                        "--quiet",
+                        "schema", "generate",
+                        "--source", source.toString(),
+                        "--target", "postgresql",
+                        "--output", outFile.toString(),
+                        "--split", "pre-post",
+                    ))
+                }
+            }
+            val prePath = Path.of(outFile.toString().removeSuffix(".sql") + ".pre-data.sql")
+            val postPath = Path.of(outFile.toString().removeSuffix(".sql") + ".post-data.sql")
+            prePath.exists() shouldBe true
+            postPath.exists() shouldBe true
+            // Original file should NOT exist
+            outFile.exists() shouldBe false
+            prePath.readText() shouldContain "CREATE TABLE"
+            prePath.readText() shouldNotContain "CREATE TRIGGER"
+            postPath.readText() shouldContain "CREATE TRIGGER"
+            postPath.readText() shouldNotContain "CREATE TABLE"
+        } finally {
+            val base = outFile.toString().removeSuffix(".sql")
+            Files.deleteIfExists(Path.of("$base.pre-data.sql"))
+            Files.deleteIfExists(Path.of("$base.post-data.sql"))
+            Files.deleteIfExists(Path.of("$base.report.yaml"))
+            Files.deleteIfExists(outFile)
+            Files.deleteIfExists(source)
+        }
+    }
+
+    test("--split pre-post without --output exits 2") {
+        val source = writeTempSchema("""
+            schema_format: "1.0"
+            name: "SplitTest"
+            version: "1.0.0"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: identifier
+                primary_key: [id]
+        """.trimIndent())
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(listOf(
+                    "schema", "generate",
+                    "--source", source.toString(),
+                    "--target", "postgresql",
+                    "--split", "pre-post",
+                ))
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(source)
+        }
+    }
+
+    test("--split pre-post --generate-rollback exits 2") {
+        val source = writeTempSchema("""
+            schema_format: "1.0"
+            name: "SplitTest"
+            version: "1.0.0"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: identifier
+                primary_key: [id]
+        """.trimIndent())
+        val outFile = Files.createTempFile("d-migrate-split-", ".sql")
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(listOf(
+                    "schema", "generate",
+                    "--source", source.toString(),
+                    "--target", "postgresql",
+                    "--output", outFile.toString(),
+                    "--split", "pre-post",
+                    "--generate-rollback",
+                ))
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(outFile)
+            Files.deleteIfExists(source)
+        }
+    }
+
+    test("--split single is identical to no --split") {
+        val source = writeTempSchema("""
+            schema_format: "1.0"
+            name: "SplitTest"
+            version: "1.0.0"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: identifier
+                primary_key: [id]
+        """.trimIndent())
+        try {
+            val (outNoSplit, _) = captureStreams {
+                cli().parse(listOf(
+                    "--quiet",
+                    "schema", "generate",
+                    "--source", source.toString(),
+                    "--target", "postgresql",
+                ))
+            }
+            val (outSingle, _) = captureStreams {
+                cli().parse(listOf(
+                    "--quiet",
+                    "schema", "generate",
+                    "--source", source.toString(),
+                    "--target", "postgresql",
+                    "--split", "single",
+                ))
+            }
+            fun stripHeader(ddl: String) = ddl.lines()
+                .filter { !it.startsWith("-- Generated by") && !it.startsWith("-- Target:") }
+                .joinToString("\n").trim()
+            stripHeader(outNoSplit) shouldBe stripHeader(outSingle)
+        } finally {
+            Files.deleteIfExists(source)
+        }
+    }
 })

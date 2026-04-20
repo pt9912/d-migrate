@@ -86,7 +86,12 @@ class DataTransferRunner(
 
             val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
                 truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
-            val filter = buildFilter(request)
+            val filter = DataExportHelpers.resolveFilter(
+                rawFilter = request.filter,
+                dialect = srcCfg.dialect,
+                sinceColumn = request.sinceColumn,
+                since = request.since,
+            )
             val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
 
             try {
@@ -180,20 +185,20 @@ class DataTransferRunner(
     }
 
     private fun validateFlags(r: DataTransferRequest): String? {
-        if (r.sinceColumn != null && r.since == null) return "--since-column requires --since"
-        if (r.since != null && r.sinceColumn == null) return "--since requires --since-column"
-        if (r.filter != null && r.since != null && r.filter.contains("?")) return "--filter '?' forbidden with --since (M-R5)"
+        if (!r.sinceColumn.isNullOrBlank() && r.since.isNullOrBlank()) return "--since-column requires --since"
+        if (!r.since.isNullOrBlank() && r.sinceColumn.isNullOrBlank()) return "--since requires --since-column"
+        if (!r.sinceColumn.isNullOrBlank() && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
+            return "--since-column '${r.sinceColumn}' is not a valid identifier"
+        }
+        if (r.filter != null && !r.since.isNullOrBlank() && DataExportHelpers.containsLiteralQuestionMark(r.filter)) {
+            return "--filter '?' forbidden with --since (M-R5)"
+        }
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }
         try { OnConflict.valueOf(r.onConflict.uppercase()) } catch (_: Exception) { return "Unknown --on-conflict: ${r.onConflict}" }
         return null
     }
 
-    private fun buildFilter(r: DataTransferRequest): DataFilter? {
-        val w = r.filter?.let { DataFilter.WhereClause(it) }
-        val p = if (r.sinceColumn != null && r.since != null)
-            DataFilter.ParameterizedClause(sql = "\"${r.sinceColumn}\" > ?", params = listOf(r.since)) else null
-        return when { w != null && p != null -> DataFilter.Compound(listOf(w, p)); w != null -> w; p != null -> p; else -> null }
-    }
+    // buildFilter consolidated into DataExportHelpers.resolveFilter (Qualität Maßnahme 1)
 
     private fun scrub(m: String?) = if (m == null) "unknown" else
         Regex("[a-zA-Z][a-zA-Z0-9+\\-.]*://[^\\s]+").replace(m) { urlScrubber(it.value) }

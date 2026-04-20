@@ -11,10 +11,7 @@ kover {
     reports {
         verify {
             rule {
-                // 85%: module contains pure interfaces (ports) and enums
-                // that inflate the denominator without executable code.
-                // Rule engine and model are tested at 95%+.
-                minBound(85)
+                minBound(90)
             }
         }
     }

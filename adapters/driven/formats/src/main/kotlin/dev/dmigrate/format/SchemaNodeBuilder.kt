@@ -382,6 +382,7 @@ internal object SchemaNodeBuilder {
             }
             node.set<ObjectNode>("columns", colsNode)
         }
+        if (deps.functions.isNotEmpty()) node.set<ArrayNode>("functions", stringArray(mapper, deps.functions))
         return node
     }
 

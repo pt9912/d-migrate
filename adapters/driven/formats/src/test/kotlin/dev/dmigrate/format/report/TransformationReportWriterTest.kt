@@ -25,7 +25,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "version: \"2.0\""
         report shouldContain "file: \"schema.yaml\""
         report shouldContain "dialect: postgresql"
-        report shouldContain "generator: \"d-migrate 0.2.0\""
+        report shouldContain "generator: \"d-migrate 0.9.2\""
     }
 
     test("report contains summary counts") {
@@ -117,6 +117,50 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "code: E052"
         report shouldContain "hint: \"Enable postgis\""
         report shouldContain "action_required: 1"
+    }
+
+    // ─── Split Report Contract Tests (0.9.2 AP 6.7) ──────────
+
+    test("split report contains split_mode") {
+        val result = DdlResult(
+            statements = listOf(DdlStatement("CREATE TABLE t;", phase = DdlPhase.PRE_DATA)),
+        )
+        val report = writer.render(result, schema(), "postgresql", Path.of("s.yaml"), splitMode = "pre-post")
+        report shouldContain "split_mode: pre-post"
+    }
+
+    test("single report does not contain split_mode") {
+        val result = DdlResult(statements = listOf(DdlStatement("CREATE TABLE t;")))
+        val report = writer.render(result, schema(), "postgresql", Path.of("s.yaml"))
+        report shouldNotContain "split_mode"
+    }
+
+    test("split report contains phase on notes with explicit phase") {
+        val result = DdlResult(
+            statements = listOf(DdlStatement("CREATE TRIGGER trg;", phase = DdlPhase.POST_DATA,
+                notes = listOf(TransformationNote(NoteType.WARNING, "W102", "trg", "rewrite", phase = DdlPhase.POST_DATA)))),
+        )
+        val report = writer.render(result, schema(), "postgresql", Path.of("s.yaml"), splitMode = "pre-post")
+        report shouldContain "phase: post-data"
+    }
+
+    test("split report contains phase on skipped_objects with explicit phase") {
+        val result = DdlResult(
+            statements = emptyList(),
+            skippedObjects = listOf(SkippedObject("sequence", "seq1", "not supported", phase = DdlPhase.PRE_DATA)),
+        )
+        val report = writer.render(result, schema(), "mysql", Path.of("s.yaml"), splitMode = "pre-post")
+        report shouldContain "phase: pre-data"
+    }
+
+    test("single report does not contain phase on notes or skipped_objects") {
+        val result = DdlResult(
+            statements = listOf(DdlStatement("CREATE TABLE t;",
+                notes = listOf(TransformationNote(NoteType.WARNING, "W100", "col", "mapped", phase = DdlPhase.PRE_DATA)))),
+            skippedObjects = listOf(SkippedObject("function", "fn", "skipped", phase = DdlPhase.POST_DATA)),
+        )
+        val report = writer.render(result, schema(), "postgresql", Path.of("s.yaml"))
+        report shouldNotContain "phase:"
     }
 
     test("report renders spatial W120 notes alongside E052 skipped objects") {

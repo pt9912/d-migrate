@@ -1306,6 +1306,76 @@ erscheint im Report und auf stderr.
 
 ---
 
+## 17. Phasenbezogene DDL-Ordnung (0.9.2)
+
+Ab 0.9.2 traegt jedes DDL-Statement eine `DdlPhase` (`PRE_DATA` oder
+`POST_DATA`). Im Default-Modus (`--split single`) hat das keine Auswirkung —
+alle Statements werden wie bisher in einer Datei ausgegeben. Mit
+`--split pre-post` werden die Statements nach Phase getrennt.
+
+### 17.1 Zuordnung zu Phasen
+
+| Phase | Objekte | Begruendung |
+|-------|---------|-------------|
+| `PRE_DATA` | Custom Types, Sequences, Tabellen (topologisch sortiert), Indizes, Constraints, einfache Views | Strukturelle DDL, die vor einem Datenimport stehen muss |
+| `POST_DATA` | Functions, Procedures, Triggers, Views mit Routinen-Abhaengigkeiten | Ausfuehrbare Objekte, die bei aktivem Datenimport stoeren koennen |
+
+### 17.2 Reihenfolge innerhalb der Phasen
+
+**PRE_DATA** (analog zur bisherigen Gesamtreihenfolge aus §1.1):
+
+```
+1. Custom Types        (CREATE TYPE)
+2. Sequences           (CREATE SEQUENCE)
+3. Tabellen            (CREATE TABLE — topologisch sortiert nach FK)
+4. Indizes             (CREATE INDEX)
+5. Circular-FK-Nachzuegler (ALTER TABLE ADD CONSTRAINT)
+6. Views ohne Routinen-Abhaengigkeit (CREATE VIEW)
+```
+
+**POST_DATA**:
+
+```
+1. Views mit Routinen-Abhaengigkeit (CREATE VIEW)
+2. Functions           (CREATE FUNCTION)
+3. Procedures          (CREATE PROCEDURE)
+4. Triggers            (CREATE TRIGGER)
+```
+
+### 17.3 View-Phasenzuordnung
+
+Views werden ueber den `ViewPhaseClassifier` einer Phase zugewiesen:
+
+1. **Deklarierte Abhaengigkeiten**: Hat eine View `dependencies.functions`,
+   wird sie `POST_DATA` zugeordnet.
+2. **Inferierte Funktionsaufrufe**: Der Query-Text wird auf Funktionsnamen
+   geparst, die im Schema als Functions definiert sind. Treffer → `POST_DATA`.
+3. **Transitive Propagation**: Views, die von einer `POST_DATA`-View abhaengen
+   (ueber `dependencies.views`), werden ebenfalls `POST_DATA`.
+4. **Fallback**: Views ohne Query-Text und ohne deklarierte `dependencies.functions`
+   erzeugen bei vorhandenen Functions im Schema den Fehlercode E060.
+
+### 17.4 Ausgabeartefakte
+
+| Modus | Textausgabe (`--output`) | JSON-Ausgabe (`--output-format json`) |
+|-------|--------------------------|---------------------------------------|
+| `single` | `<name>.sql` (alle Statements) | `"ddl": "..."` |
+| `pre-post` | `<name>.pre-data.sql`, `<name>.post-data.sql` | `"ddl_parts": { "pre_data": "...", "post_data": "..." }` |
+
+Bei `--split pre-post` wird die Originaldatei (`<name>.sql`) **nicht** geschrieben.
+Der Sidecar-Report bleibt ein einzelnes Artefakt mit `split_mode: pre-post`.
+
+Notes und `skipped_objects` tragen im Split-Modus optional ein `phase`-Feld
+(`"pre-data"` oder `"post-data"`, Kebab-Case).
+
+### 17.5 Einschraenkungen
+
+- `--split pre-post` erfordert `--output` oder `--output-format json` (Exit 2)
+- `--split pre-post` kann nicht mit `--generate-rollback` kombiniert werden (Exit 2)
+- E060 bei nicht zuordenbaren Views fuehrt zu Exit 2
+
+---
+
 ## Verwandte Dokumentation
 
 - [Neutrales-Modell-Spezifikation](./neutral-model-spec.md) — Typsystem §3, Validierung §13, Transformationshinweise §11
@@ -1315,6 +1385,6 @@ erscheint im Report und auf stderr.
 
 ---
 
-**Version**: 1.1
-**Stand**: 2026-04-05
-**Status**: Spezifikation für 0.2.0
+**Version**: 1.2
+**Stand**: 2026-04-20
+**Status**: Spezifikation fuer 0.9.2 (§17 Phasenbezogene DDL-Ordnung hinzugefuegt)

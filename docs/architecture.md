@@ -75,21 +75,22 @@ d-migrate/
 
 | Schicht         | Modul                               | Rolle                                                                                                                                |
 | --------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Domain Core     | `hexagon:core`                      | Neutrales Modell, Validierung, Typsystem — keine externen Deps                                                                       |
-| Ports           | `hexagon:ports`                     | Port-Interfaces (`DatabaseDriver`, `DdlGenerator`, `DataReader`, `SchemaCodec`, `DataChunkWriter/Reader`, …) + zugehörige Datentypen |
-| Application     | `hexagon:application`               | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`)                                                                         |
+| Domain Core     | `hexagon:core`                      | Neutrales Modell, Validierung, Typsystem, FK-Topo-Sort — keine externen Deps                                                        |
+| Ports           | `hexagon:ports-common`              | Gemeinsame Typen (`DatabaseDialect`, `SqlIdentifiers`, `DialectCapabilities`, `ConnectionPool`, `SchemaCodec`, `DataExportFormat`)    |
+| Ports           | `hexagon:ports-read`                | Lese-Ports (`SchemaReader`, `DdlGenerator`, `DataReader`, `DataChunkReader`, `FormatReadOptions`, `ManualActionRequired`)             |
+| Ports           | `hexagon:ports-write`               | Schreib-Ports (`DataWriter`, `TableImportSession`, `ImportOptions`, `ExportOptions`, `DataChunkWriter`, Checkpoint, Streaming-Typen)  |
+| Ports           | `hexagon:ports`                     | Aggregator-Modul — re-exportiert `ports-common`, `ports-read`, `ports-write` für bestehende Consumer                                 |
+| Application     | `hexagon:application`               | Use-Case-Runner (`SchemaGenerateRunner`, `DataExportRunner`, `ExportResumeCoordinator`, `ImportResumeCoordinator`)                    |
+| Profiling       | `hexagon:profiling`                 | Profiling-Domänenmodell, Rule-Engine, Services — keine Treiber-Abhängigkeit                                                          |
 | Driving Adapter | `adapters:driving:cli`              | CLI-Einstiegspunkt (Clikt), Wiring aller Module                                                                                      |
-| Driven Adapter  | `adapters:driven:driver-common`     | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, …)                                               |
+| Driven Adapter  | `adapters:driven:driver-common`     | Gemeinsame DB-Infrastruktur (`AbstractDdlGenerator`, `HikariConnectionPoolFactory`, `SqlIdentifiers`, …)                              |
 | Driven Adapter  | `adapters:driven:driver-postgresql` | PostgreSQL-Implementierung der `DatabaseDriver`-Fassade                                                                              |
 | Driven Adapter  | `adapters:driven:driver-mysql`      | MySQL-Implementierung der `DatabaseDriver`-Fassade                                                                                   |
 | Driven Adapter  | `adapters:driven:driver-sqlite`     | SQLite-Implementierung der `DatabaseDriver`-Fassade                                                                                  |
+| Driven Adapter  | `adapters:driven:driver-*-profiling`| Optionale Profiling-Adapter pro Dialekt (Introspection, LogicalTypeResolver, ProfilingData)                                           |
 | Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
-| Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`)                                                                                             |
-
-> Hinweis: Der geplante Refactor fuer eine schmalere Library- und
-> Integrationsschnittstelle ist in
-> [`implementation-plan-0.9.1.md`](./implementation-plan-0.9.1.md)
-> beschrieben.
+| Driven Adapter  | `adapters:driven:integrations`      | Tool-Exporter (Flyway, Liquibase, Django, Knex)                                                                                      |
+| Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`, `StreamingImporter`, `TableExporter`, `TableImporter`)                                       |
 
 ```
               adapters:driving:cli  (Clikt)
@@ -103,24 +104,32 @@ d-migrate/
          │  └────────────┬─────────────┘  │
          │               │                │
          │  ┌────────────▼─────────────┐  │
-         │  │  hexagon:ports           │  │  ← Port-Interfaces
+         │  │  ports-read / ports-write│  │  ← Port-Interfaces
          │  └────────────┬─────────────┘  │
+         │          ports-common          │  ← Gemeinsame Typen
          │               │                │
          │  ┌────────────▼─────────────┐  │
          │  │  hexagon:core            │  │  ← Domain-Modell
          │  └──────────────────────────┘  │
+         │                                │
+         │  hexagon:profiling (optional)  │  ← Profiling-Domäne
          └────────────────┬───────────────┘
                           │
             ┌─────────────┼──────────────┐
             ▼             ▼              ▼
       driver-common   formats      streaming
       driver-pg/my/sl
+      driver-*-profiling (optional)
 ```
 **Erzwungene Regeln** (durch Gradle-Abhängigkeiten garantiert):
 - `hexagon:core` hat keine Abhängigkeiten auf andere Module
-- `hexagon:ports` hängt nur von `hexagon:core` ab
+- `hexagon:ports-common` hängt nur von `hexagon:core` ab
+- `hexagon:ports-read` hängt nur von `ports-common` ab
+- `hexagon:ports-write` hängt von `ports-common` und `ports-read` ab
+- `hexagon:ports` ist ein Aggregator und re-exportiert alle drei Port-Module
 - `hexagon:application` hängt nur vom Hexagon-Inneren ab, nicht von Adaptern
 - Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`)
+- Treiber-Kernmodule hängen **nicht** von `hexagon:profiling` ab; Profiling-Adapter sind optionale Zusatzmodule
 
 ---
 
@@ -128,12 +137,14 @@ d-migrate/
 
 ### 2.1 Projekt-Layout (Gradle Multi-Module)
 
-Die Module `hexagon:core`, `hexagon:ports`, `hexagon:application` sowie die
-Adapter-Module unter `adapters/` sind seit Milestone 0.4.0 implementiert.
-Weitere Module (integrations, ai, testdata, docs) beschreiben den geplanten
-Soll-Zustand fuer spaetere Milestones. Fuer 0.8.0 wird die
-Internationalisierungsbasis bewusst ohne eigenes Top-Level-`i18n`-Modul
-eingefuehrt.
+Die Module `hexagon:core`, `hexagon:ports-common`, `hexagon:ports-read`,
+`hexagon:ports-write`, `hexagon:ports` (Aggregator), `hexagon:application`,
+`hexagon:profiling` sowie die Adapter-Module unter `adapters/` sind
+implementiert. Seit 0.9.1 ist `hexagon:ports` in drei Teilmodule zerlegt;
+der Aggregator re-exportiert alle drei für bestehende Consumer. Die
+Profiling-Adapter liegen in optionalen `driver-*-profiling`-Modulen.
+Weitere Module (ai, testdata) beschreiben den geplanten Soll-Zustand
+für spätere Milestones.
 
 ```
 d-migrate/
@@ -147,20 +158,36 @@ d-migrate/
 │   │       ├── validation/                # SchemaValidator, ValidationResult
 │   │       └── data/                      # DataChunk, DataFilter, ColumnDescriptor
 │   │
-│   ├── ports/                             # Port-Interfaces + Datentypen
+│   ├── ports-common/                      # Gemeinsame Port-Typen
 │   │   └── dev/dmigrate/
 │   │       ├── driver/
-│   │       │   ├── DatabaseDriver.kt      # Zentrale Port-Fassade
-│   │       │   ├── DatabaseDriverRegistry.kt
 │   │       │   ├── DatabaseDialect.kt
-│   │       │   ├── DdlGenerator.kt        # + DdlResult, TransformationNote, …
+│   │       │   ├── DialectCapabilities.kt # Capability-Modell pro Dialekt
+│   │       │   ├── SqlIdentifiers.kt      # Zentrales Identifier-Quoting
 │   │       │   ├── TypeMapper.kt
 │   │       │   ├── connection/            # ConnectionPool, ConnectionConfig, JdbcUrlBuilder, PoolSettings
+│   │       │   └── data/                  # ResumeMarker
+│   │       └── format/
+│   │           ├── SchemaCodec.kt
+│   │           └── data/                  # DataExportFormat
+│   │
+│   ├── ports-read/                        # Lese-Ports (read-only Consumer)
+│   │   └── dev/dmigrate/
+│   │       ├── driver/
+│   │       │   ├── DdlGenerator.kt        # + DdlResult, DdlPhase, TransformationNote, …
+│   │       │   ├── ManualActionRequired.kt
+│   │       │   ├── SchemaReader.kt
 │   │       │   └── data/                  # DataReader, TableLister, ChunkSequence
-│   │       ├── format/
-│   │       │   ├── SchemaCodec.kt
-│   │       │   └── data/                  # DataChunkWriter/Reader, Factories, ExportOptions, FormatReadOptions, DataExportFormat
-│   │       └── streaming/                 # ExportOutput, ExportResult, PipelineConfig
+│   │       └── format/data/               # DataChunkReader, FormatReadOptions
+│   │
+│   ├── ports-write/                       # Schreib-Ports
+│   │   └── dev/dmigrate/
+│   │       ├── driver/data/               # DataWriter, TableImportSession, ImportOptions
+│   │       ├── format/data/               # DataChunkWriter, ExportOptions
+│   │       ├── migration/                 # MigrationBundle, ToolMigrationExporter
+│   │       └── streaming/                 # ExportOutput, ExportResult, PipelineConfig, Checkpoint
+│   │
+│   ├── ports/                             # Aggregator — re-exportiert ports-common/-read/-write
 │   │
 │   └── application/                       # Use Cases (Runner-Klassen)
 │       └── dev/dmigrate/cli/commands/
@@ -217,16 +244,22 @@ d-migrate/
 ```
 adapters:driving:cli
 ├── hexagon:application ──▶ hexagon:core, hexagon:ports
-├── hexagon:ports ──▶ hexagon:core
+├── hexagon:ports (Aggregator) ──▶ ports-common, ports-read, ports-write
+│   ├── hexagon:ports-common ──▶ hexagon:core
+│   ├── hexagon:ports-read ──▶ ports-common
+│   └── hexagon:ports-write ──▶ ports-common, ports-read
+├── hexagon:profiling ──▶ hexagon:core (optional, kein Treiber-Dep)
 ├── adapters:driven:driver-common ──▶ hexagon:ports, HikariCP, SLF4J
 ├── adapters:driven:driver-postgresql ──▶ hexagon:ports, driver-common
 ├── adapters:driven:driver-mysql ──▶ hexagon:ports, driver-common
 ├── adapters:driven:driver-sqlite ──▶ hexagon:ports, driver-common
-├── adapters:driven:formats ──▶ hexagon:ports, Jackson, DSL-JSON, SnakeYAML, Univocity
-└── adapters:driven:streaming ──▶ hexagon:ports
+├── adapters:driven:driver-*-profiling ──▶ driver-*, hexagon:profiling (optional)
+├── adapters:driven:formats ──▶ ports-read, ports-write, Jackson, DSL-JSON, SnakeYAML, Univocity
+├── adapters:driven:integrations ──▶ hexagon:ports, driver-common
+└── adapters:driven:streaming ──▶ ports-read, ports-write
 ```
 
-**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `hexagon:ports` hängt nur von `core` ab. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`).
+**Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab.
 
 ---
 
@@ -680,6 +713,73 @@ PostgreSQL, MySQL und SQLite implementieren je:
 Der Default-Report ist byte-reproduzierbar: stabile Tabellen-/Spaltenreihenfolge,
 stabile `topValues`-Sortierung, kein laufzeitvariables `generatedAt`.
 
+### 3.8 Phasenbezogenes DDL-Modell (0.9.2)
+
+0.9.2 fuehrt ein Phasenmodell ein, das DDL-Statements in `PRE_DATA` und
+`POST_DATA` klassifiziert. Damit kann `schema generate --split pre-post`
+importfreundliche Artefakte erzeugen, bei denen Trigger erst nach einem
+Datenimport aktiviert werden.
+
+#### Modell (`hexagon:ports-read`)
+
+```kotlin
+enum class DdlPhase {
+    /** Structural DDL: tables, columns, sequences, indexes, constraints. */
+    PRE_DATA,
+    /** Deferred DDL: triggers, functions, procedures, views with routine deps. */
+    POST_DATA,
+}
+
+data class DdlStatement(
+    val sql: String,
+    val notes: List<TransformationNote> = emptyList(),
+    val phase: DdlPhase = DdlPhase.PRE_DATA,
+)
+```
+
+`DdlResult` bietet Filtermethoden pro Phase:
+
+- `statementsForPhase(phase)` — Statements einer Phase
+- `renderPhase(phase)` — gerenderte DDL einer Phase
+- `notesForPhase(phase)` / `skippedObjectsForPhase(phase)` — Diagnostik pro Phase
+
+#### Objektzuordnung
+
+| Phase | Objekte |
+|-------|---------|
+| `PRE_DATA` | Custom Types, Sequences, Tabellen (topologisch sortiert), Indizes, Constraints, Views **ohne** Routinen-Abhaengigkeiten |
+| `POST_DATA` | Functions, Procedures, Triggers, Views **mit** Routinen-Abhaengigkeiten |
+
+Die Zuordnung von Views erfolgt ueber den `ViewPhaseClassifier`
+(`adapters:driven:driver-common`), der drei Regeln anwendet:
+
+1. **Deklarierte Abhaengigkeiten**: `dependencies.functions` im Schema → `POST_DATA`
+2. **Inferierte Funktionsaufrufe**: Query-Text wird auf Funktionsnamen geparst → `POST_DATA`
+3. **Transitive Propagation**: Views, die von einer `POST_DATA`-View abhaengen → `POST_DATA`
+
+Views ohne Query-Text und ohne deklarierte `dependencies.functions` erzeugen
+bei vorhandenen Functions im Schema den Fehlercode E060.
+
+#### Datenfluss
+
+```
+SchemaGenerateRunner
+    │  SplitMode: SINGLE | PRE_POST
+    ▼
+AbstractDdlGenerator.generate()
+    │  weist DdlPhase pro Statement zu
+    │  (PRE_DATA default, POST_DATA explizit fuer Routinen/Trigger)
+    ▼
+DdlResult
+    │
+    ├─ SINGLE:    renderAll() → eine Ausgabedatei
+    └─ PRE_POST:  renderPhase(PRE_DATA) → *.pre-data.sql
+                  renderPhase(POST_DATA) → *.post-data.sql
+```
+
+Der Default-Modus `SINGLE` bleibt rueckwaertskompatibel — alle Statements
+werden in einer Datei ausgegeben, die Phase-Information wird ignoriert.
+
 ---
 
 ## 4. Querschnittsthemen
@@ -1115,6 +1215,6 @@ surface and compiles without write/CLI/profiling imports.
 
 ---
 
-**Version**: 1.7
-**Stand**: 2026-04-14
-**Status**: Milestone 0.1.0–0.6.0 implementiert (core, ports, application, formats, cli, driver-postgresql/-mysql/-sqlite, streaming); 0.6.0: `SchemaReader` für PostgreSQL/MySQL/SQLite, `schema reverse` CLI, `schema compare` mit DB-Operanden (file/db, db/db), `data transfer` (DB-zu-DB-Streaming)
+**Version**: 1.8
+**Stand**: 2026-04-20
+**Status**: Milestone 0.1.0–0.9.2 implementiert; 0.9.2: phasenbezogenes DDL-Modell (`DdlPhase`), `--split pre-post` fuer importfreundliche Schema-Artefakte, `ViewPhaseClassifier` fuer Routinen-Abhaengigkeiten, Runner-Zerlegung, DDL-Interpolations-Haertung

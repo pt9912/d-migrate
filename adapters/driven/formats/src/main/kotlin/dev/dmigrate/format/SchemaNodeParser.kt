@@ -359,6 +359,7 @@ internal object SchemaNodeParser {
             tables = node["tables"]?.toStringList() ?: emptyList(),
             views = node["views"]?.toStringList() ?: emptyList(),
             columns = columns,
+            functions = node["functions"]?.toStringList() ?: emptyList(),
         )
     }
 

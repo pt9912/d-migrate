@@ -31,17 +31,8 @@ class PostgresTypeMapper : TypeMapper {
         is NeutralType.Enum -> "TEXT" // Actual ENUM handled via CREATE TYPE
         is NeutralType.Array -> "${toSql(resolveElementType(type.elementType))}[]"
         is NeutralType.Geometry -> {
-            val pgType = when (type.geometryType.schemaName) {
-                "geometry" -> "Geometry"
-                "point" -> "Point"
-                "linestring" -> "LineString"
-                "polygon" -> "Polygon"
-                "multipoint" -> "MultiPoint"
-                "multilinestring" -> "MultiLineString"
-                "multipolygon" -> "MultiPolygon"
-                "geometrycollection" -> "GeometryCollection"
-                else -> type.geometryType.schemaName.replaceFirstChar { it.uppercase() }
-            }
+            val pgType = GEOMETRY_PG_NAMES[type.geometryType.schemaName]
+                ?: type.geometryType.schemaName.replaceFirstChar { it.uppercase() }
             val srid = type.srid ?: 0
             "geometry($pgType, $srid)"
         }
@@ -64,5 +55,19 @@ class PostgresTypeMapper : TypeMapper {
         "boolean" -> NeutralType.BooleanType
         "uuid" -> NeutralType.Uuid
         else -> NeutralType.Text()
+    }
+
+    companion object {
+        /** Tabellarische Geometry-Typ-Zuordnung: schemaName → PostGIS PascalCase */
+        private val GEOMETRY_PG_NAMES = mapOf(
+            "geometry" to "Geometry",
+            "point" to "Point",
+            "linestring" to "LineString",
+            "polygon" to "Polygon",
+            "multipoint" to "MultiPoint",
+            "multilinestring" to "MultiLineString",
+            "multipolygon" to "MultiPolygon",
+            "geometrycollection" to "GeometryCollection",
+        )
     }
 }

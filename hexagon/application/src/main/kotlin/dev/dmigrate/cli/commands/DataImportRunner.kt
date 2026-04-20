@@ -6,81 +6,22 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataWriter
-import dev.dmigrate.driver.data.ImportOptions
-import dev.dmigrate.driver.data.OnConflict
-import dev.dmigrate.driver.data.OnError
-import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.format.data.DataExportFormat
-import dev.dmigrate.format.data.FormatReadOptions
 import dev.dmigrate.streaming.CheckpointConfig
 import dev.dmigrate.streaming.ImportInput
 import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.NoOpProgressReporter
-import dev.dmigrate.streaming.PipelineConfig
 import dev.dmigrate.streaming.ProgressReporter
-import dev.dmigrate.streaming.checkpoint.CheckpointManifest
-import dev.dmigrate.streaming.checkpoint.CheckpointOperationType
-import dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
-import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
-import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.util.Locale
-
-class CliUsageException(
-    message: String,
-    cause: Throwable? = null,
-) : IllegalArgumentException(message, cause)
-
-class ImportPreflightException(
-    message: String,
-    cause: Throwable? = null,
-) : IllegalArgumentException(message, cause)
-
-data class SchemaPreflightResult(
-    val input: ImportInput,
-    val schema: SchemaDefinition? = null,
-)
-
-/**
- * Thin seam over the streaming import, allowing the Runner to be tested
- * without a real [StreamingImporter][dev.dmigrate.streaming.StreamingImporter].
- * The production implementation is wired in the CLI module.
- */
-fun interface ImportExecutor {
-    fun execute(
-        pool: ConnectionPool,
-        input: ImportInput,
-        format: DataExportFormat,
-        options: ImportOptions,
-        readOptions: FormatReadOptions,
-        config: PipelineConfig,
-        onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
-        progressReporter: ProgressReporter,
-        /** Stable operation ID for the run. Set by the Runner (UUID for fresh runs,
-         *  from manifest on resume) and passed through to `StreamingImporter.import`. */
-        operationId: String?,
-        /** `true` when resuming from an existing manifest; `false` for a fresh run.
-         *  Flows into `ProgressEvent.RunStarted` so renderers show "Resuming run ..." vs "Starting run ...". */
-        resuming: Boolean,
-        /** Tables already `COMPLETED` in the manifest; the importer skips them entirely. */
-        skippedTables: Set<String>,
-        /** Per-table optional resume state. Contains an entry for every table with
-         *  `chunksProcessed > 0` in the manifest. */
-        resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
-        /** Callback after each successfully committed chunk. The Runner uses it to update the manifest. */
-        onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit,
-        /** Callback per completed table import. Also invoked on error / `failedFinish`. */
-        onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit,
-    ): ImportResult
-}
 
 /**
  * Immutable DTO with all CLI inputs for `d-migrate data import`.
@@ -152,6 +93,20 @@ class DataImportRunner(
     /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
 ) {
+
+    private val preflightValidator = ImportPreflightValidator(
+        writerLookup = writerLookup,
+        schemaTargetValidator = schemaTargetValidator,
+        stderr = stderr,
+    )
+
+    private val checkpointManager = ImportCheckpointManager(
+        checkpointStoreFactory = checkpointStoreFactory,
+        checkpointConfigResolver = checkpointConfigResolver,
+        clock = clock,
+        progressReporter = progressReporter,
+        stderr = stderr,
+    )
 
     fun execute(request: DataImportRequest): Int {
         // ─── 1. CLI-Validierungen ───────────────────────────────
@@ -329,411 +284,93 @@ class DataImportRunner(
         preparedImport: SchemaPreflightResult,
         pool: ConnectionPool,
     ): Int {
-        // ─── 8. Writer-Lookup ──────────────────────────────────
-        try {
-            writerLookup(connectionConfig.dialect)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 7
+        preflightValidator.resolveWriter(connectionConfig) ?: return 7
+        val opts = preflightValidator.buildImportOptions(request, charset, preparedImport)
+        val inputCtx = when (val r = preflightValidator.resolveInputContext(request, connectionConfig, resolvedUrl, format, preparedImport)) {
+            is InputContextResult.Ok -> r.value
+            is InputContextResult.Exit -> return r.code
         }
+        val checkpoint = checkpointManager.resolveCheckpointContext(request) ?: return 7
+        val resumeCtx = when (val r = checkpointManager.resolveResumeContext(request, checkpoint, inputCtx)) {
+            is ImportResumeResult.Ok -> r.value
+            is ImportResumeResult.Exit -> return r.code
+        }
+        val initExit = checkpointManager.writeInitialManifest(request, format, resumeCtx, checkpoint.store, inputCtx)
+        if (initExit != null) return initExit
+        val callbacks = checkpointManager.buildCallbacks(request, format, resumeCtx, checkpoint.store, inputCtx)
+        val result = when (val r = executeStreaming(request, format, pool, preparedImport, opts, resumeCtx, callbacks)) {
+            is StreamingResult.Ok -> r.value
+            is StreamingResult.Exit -> return r.code
+        }
+        return finalizeAndReport(request, result, checkpoint.store, resumeCtx.operationId)
+    }
 
-        // ─── 9. ImportOptions bauen ────────────────────────────
-        val triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase())
-        val onError = OnError.valueOf(request.onError.uppercase())
-        val onConflict = if (request.onConflict != null) {
-            OnConflict.valueOf(request.onConflict.uppercase())
-        } else {
-            OnConflict.ABORT
-        }
+    // ─── Step functions ──────────────────────────────────────────
 
-        val formatReadOptions = FormatReadOptions(
-            encoding = charset,
-            csvNoHeader = request.csvNoHeader,
-            csvNullString = request.csvNullString,
-        )
-        val importOptions = ImportOptions(
-            triggerMode = triggerMode,
-            reseedSequences = request.reseedSequences,
-            disableFkChecks = request.disableFkChecks,
-            truncate = request.truncate,
-            onConflict = onConflict,
-            onError = onError,
-        )
-        val pipelineConfig = PipelineConfig(chunkSize = request.chunkSize)
-        val onTableOpened: (String, List<TargetColumn>) -> Unit =
-            preparedImport.schema?.let { schema ->
-                { table, targetColumns ->
-                    schemaTargetValidator(schema, table, targetColumns)
-                }
-            } ?: { _, _ -> }
-
-        // ─── 9b. Resume-Preflight + Manifest-Lifecycle ──────────────
-        // Directory imports are scanned here before streaming — the scan
-        // yields a stable `table -> inputFile` mapping that flows into both
-        // the fingerprint and the manifest. This lets the preflight detect
-        // a changed file set immediately (fingerprint mismatch or
-        // slice.inputFile != scan.fileName).
-        val directoryScan: List<DirectoryImportScanner.ScannedTable>? =
-            when (val input = preparedImport.input) {
-                is ImportInput.Directory -> try {
-                    DirectoryImportScanner.scan(
-                        directory = input.path,
-                        format = format,
-                        tableFilter = input.tableFilter,
-                        tableOrder = input.tableOrder,
-                    )
-                } catch (e: IllegalArgumentException) {
-                    stderr("Error: ${e.message}")
-                    return 2
-                }
-                else -> null
-            }
-        val effectiveTables: List<String> = when (val input = preparedImport.input) {
-            is ImportInput.Stdin -> listOf(input.table)
-            is ImportInput.SingleFile -> listOf(input.table)
-            is ImportInput.Directory -> directoryScan!!.map { it.table }
-        }
-        val inputFilesByTable: Map<String, String> = directoryScan
-            ?.associate { it.table to it.fileName }
-            ?: emptyMap()
-        val inputTopology: String = when (preparedImport.input) {
-            is ImportInput.Stdin -> "stdin"
-            is ImportInput.SingleFile -> "single-file"
-            is ImportInput.Directory -> "directory"
-        }
-        val inputPath: String = when (val input = preparedImport.input) {
-            is ImportInput.Stdin -> "<stdin>"
-            is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
-            is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
-        }
-        val fingerprint = ImportOptionsFingerprint.compute(
-            ImportOptionsFingerprint.Input(
-                format = request.format
-                    ?: format.name.lowercase(Locale.US),
-                encoding = request.encoding,
-                csvNoHeader = request.csvNoHeader,
-                csvNullString = request.csvNullString,
-                onError = request.onError,
-                onConflict = request.onConflict ?: "abort",
-                triggerMode = request.triggerMode,
-                truncate = request.truncate,
-                disableFkChecks = request.disableFkChecks,
-                reseedSequences = request.reseedSequences,
-                chunkSize = request.chunkSize,
-                tables = effectiveTables,
-                inputTopology = inputTopology,
-                inputPath = inputPath,
-                targetDialect = connectionConfig.dialect.name,
-                targetUrl = resolvedUrl,
-                inputFilesByTable = inputFilesByTable,
-            )
-        )
-
-        // Merge CLI override (`--checkpoint-dir`) and config default
-        // (`pipeline.checkpoint.*`). CLI wins over config, config wins
-        // over runtime default.
-        val fromConfig: CheckpointConfig? = try {
-            checkpointConfigResolver(request.cliConfigPath)
-        } catch (e: Throwable) {
-            stderr("Error: Failed to resolve pipeline.checkpoint config: ${e.message}")
-            return 7
-        }
-        val mergedCheckpointConfig = CheckpointConfig.merge(
-            cliDirectory = request.checkpointDir,
-            config = fromConfig,
-        )
-        val checkpointDir: Path? = mergedCheckpointConfig.directory
-        val store: CheckpointStore? = checkpointStoreFactory?.let { factory ->
-            checkpointDir?.let { factory(it) }
-        }
-
-        // Resume context: on `--resume` the manifest is loaded, validated,
-        // and checked for compatibility against the current request.
-        val resumeCtx: ResumeContext = if (!request.resume.isNullOrBlank()) {
-            if (store == null) {
-                stderr(
-                    "Error: --resume requires a checkpoint directory; set " +
-                        "--checkpoint-dir or pipeline.checkpoint.directory."
-                )
-                return 7
-            }
-            val resolvedOpId = resolveResumeReference(request.resume, checkpointDir!!)
-                ?: run {
-                    stderr(
-                        "Error: --resume path must be inside the effective " +
-                            "checkpoint directory '$checkpointDir'."
-                    )
-                    return 7
-                }
-            val manifest: CheckpointManifest? = try {
-                store.load(resolvedOpId)
-            } catch (e: UnsupportedCheckpointVersionException) {
-                stderr("Error: ${e.message}")
-                return 7
-            } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to load checkpoint: ${e.message}")
-                return 7
-            }
-            if (manifest == null) {
-                stderr("Error: Checkpoint not found: '${request.resume}'")
-                return 7
-            }
-            if (manifest.operationType != CheckpointOperationType.IMPORT) {
-                stderr(
-                    "Error: Checkpoint type mismatch: expected IMPORT, got " +
-                        "${manifest.operationType}."
-                )
-                return 3
-            }
-            if (manifest.optionsFingerprint != fingerprint) {
-                stderr(
-                    "Error: Checkpoint options do not match the current request " +
-                        "(fingerprint mismatch); refuse to resume."
-                )
-                return 3
-            }
-            val manifestTables = manifest.tableSlices.map { it.table }
-            if (manifestTables != effectiveTables) {
-                stderr(
-                    "Error: Checkpoint table list does not match the current " +
-                        "request: manifest=$manifestTables, current=$effectiveTables."
-                )
-                return 3
-            }
-            // Per-slice `table -> inputFile` binding must match the current
-            // directory scan. The fingerprint usually catches this, but a
-            // manifest slice without `inputFile` must not be silently
-            // reinterpreted against a new scan.
-            if (inputFilesByTable.isNotEmpty()) {
-                val mismatch = manifest.tableSlices.firstOrNull { slice ->
-                    val expected = inputFilesByTable[slice.table]
-                    slice.inputFile != expected
-                }
-                if (mismatch != null) {
-                    stderr(
-                        "Error: Checkpoint input-file binding for table " +
-                            "'${mismatch.table}' does not match the current directory " +
-                            "scan (manifest=${mismatch.inputFile ?: "<none>"}, " +
-                            "current=${inputFilesByTable[mismatch.table] ?: "<none>"})."
-                    )
-                    return 3
-                }
-            }
-            val skipped = manifest.tableSlices
-                .filter { it.status == CheckpointSliceStatus.COMPLETED }
-                .map { it.table }
-                .toSet()
-            // Derive per-table resume state. Slices that are neither
-            // `COMPLETED` nor at 0 chunks get an entry — the importer
-            // then skips already-committed chunks and suppresses `truncate`.
-            val resumeStates = manifest.tableSlices
-                .filter { it.status != CheckpointSliceStatus.COMPLETED && it.chunksProcessed > 0L }
-                .associate { slice ->
-                    slice.table to dev.dmigrate.streaming.ImportTableResumeState(
-                        committedChunks = slice.chunksProcessed,
-                    )
-                }
-            ResumeContext(
-                operationId = manifest.operationId,
-                resuming = true,
-                skippedTables = skipped,
-                resumeStateByTable = resumeStates,
-                initialSlices = manifest.tableSlices.associateBy { it.table },
-            )
-        } else {
-            ResumeContext(
-                operationId = java.util.UUID.randomUUID().toString(),
-                resuming = false,
-                skippedTables = emptySet(),
-                resumeStateByTable = emptyMap(),
-                initialSlices = effectiveTables.associateWith { table ->
-                    CheckpointTableSlice(
-                        table = table,
-                        status = CheckpointSliceStatus.PENDING,
-                        // Directory imports populate `inputFile`; stdin / single-file
-                        // leaves the field `null`.
-                        inputFile = inputFilesByTable[table],
-                    )
-                },
-            )
-        }
-
+    /** Step 8: Execute the streaming import pipeline. */
+    private fun executeStreaming(
+        request: DataImportRequest,
+        format: DataExportFormat,
+        pool: ConnectionPool,
+        preparedImport: SchemaPreflightResult,
+        opts: ImportPreparedOptions,
+        resumeCtx: ImportResumeContext,
+        callbacks: ImportCallbacks,
+    ): StreamingResult {
         val operationId = resumeCtx.operationId
-
-        // Initial-Manifest-Schreibpfad: bei neuem Lauf anlegen, damit
-        // ein spaeterer Abbruch einen gueltigen Resume-Anker hat.
-        // `createdAt`/`updatedAt` werden beim Resume-Lauf vom bereits
-        // geladenen Manifest uebernommen (`complete()` raeumt am
-        // Lauf-Ende auf).
-        if (store != null && !resumeCtx.resuming) {
-            val created = clock()
-            val initial = CheckpointManifest(
-                operationId = operationId,
-                operationType = CheckpointOperationType.IMPORT,
-                createdAt = created,
-                updatedAt = created,
-                format = request.format ?: format.name.lowercase(Locale.US),
-                chunkSize = request.chunkSize,
-                // `initialSlices` already carries the `inputFile` binding from
-                // the directory scan; the initial manifest must mirror it so a
-                // later resume can validate against a fresh scan.
-                tableSlices = effectiveTables.map { table ->
-                    resumeCtx.initialSlices[table] ?: CheckpointTableSlice(
-                        table = table,
-                        status = CheckpointSliceStatus.PENDING,
-                    )
-                },
-                optionsFingerprint = fingerprint,
+        return try {
+            val rawResult = importExecutor.execute(
+                context = ImportExecutionContext(
+                    pool = pool,
+                    input = preparedImport.input,
+                ),
+                options = ImportExecutionOptions(
+                    format = format,
+                    options = opts.importOptions,
+                    readOptions = opts.formatReadOptions,
+                    config = opts.pipelineConfig,
+                ),
+                resume = ImportResumeState(
+                    operationId = operationId,
+                    resuming = resumeCtx.resuming,
+                    skippedTables = resumeCtx.skippedTables,
+                    resumeStateByTable = resumeCtx.resumeStateByTable,
+                ),
+                callbacks = ImportCallbacks(
+                    progressReporter = callbacks.progressReporter,
+                    onTableOpened = opts.onTableOpened,
+                    onChunkCommitted = callbacks.onChunkCommitted,
+                    onTableCompleted = callbacks.onTableCompleted,
+                ),
             )
-            try {
-                store.save(initial)
-            } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to initialize checkpoint: ${e.message}")
-                return 7
-            }
-        }
-
-        // Manifest update per chunk-commit and per table-end.
-        // `createdAt` is set now for fresh runs, taken from the loaded
-        // manifest on resume.
-        val tableStates = LinkedHashMap(resumeCtx.initialSlices)
-        val createdAt: Instant = if (resumeCtx.resuming && store != null) {
-            try {
-                store.load(operationId)?.createdAt ?: clock()
-            } catch (_: Throwable) { clock() }
-        } else {
-            clock()
-        }
-        val onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit = { commit ->
-            // Update and persist manifest slice. `inputFile` stays stable
-            // (from initial or loaded manifest); the scan is the source of truth.
-            val slice = CheckpointTableSlice(
-                table = commit.table,
-                status = CheckpointSliceStatus.IN_PROGRESS,
-                rowsProcessed = commit.rowsProcessedTotal,
-                chunksProcessed = commit.chunksCommitted,
-                inputFile = tableStates[commit.table]?.inputFile
-                    ?: inputFilesByTable[commit.table],
-            )
-            tableStates[commit.table] = slice
-            if (store != null) {
-                try {
-                    store.save(
-                        CheckpointManifest(
-                            operationId = operationId,
-                            operationType = CheckpointOperationType.IMPORT,
-                            createdAt = createdAt,
-                            updatedAt = clock(),
-                            format = request.format ?: format.name.lowercase(Locale.US),
-                            chunkSize = request.chunkSize,
-                            tableSlices = effectiveTables.map {
-                                tableStates[it] ?: CheckpointTableSlice(
-                                    table = it,
-                                    status = CheckpointSliceStatus.PENDING,
-                                )
-                            },
-                            optionsFingerprint = fingerprint,
-                        )
-                    )
-                } catch (_: CheckpointStoreException) {
-                    // Wie im Export-Pfad: ein verlorener Zwischen-Save
-                    // darf den Lauf nicht abbrechen; der naechste
-                    // Chunk versucht erneut, und `complete()` meldet
-                    // am Lauf-Ende ggf. den Fehler.
-                }
-            }
-        }
-        val onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit = { summary ->
-            // failedFinish or error must not mark the table as COMPLETED —
-            // the slice stays FAILED so a resume does not silently skip it.
-            val status = if (summary.error == null && summary.failedFinish == null) {
-                CheckpointSliceStatus.COMPLETED
-            } else {
-                CheckpointSliceStatus.FAILED
-            }
-            val slice = CheckpointTableSlice(
-                table = summary.table,
-                status = status,
-                // Bei COMPLETED: totalRows = inserted+updated+skipped+unknown+failed.
-                // Der existierende Tabellen-Summary liefert die
-                // Einzelzaehler; wir aggregieren fuer die Manifest-
-                // Fortschreibung.
-                rowsProcessed = summary.rowsInserted + summary.rowsUpdated +
-                    summary.rowsSkipped + summary.rowsUnknown + summary.rowsFailed,
-                chunksProcessed = tableStates[summary.table]?.chunksProcessed ?: 0L,
-                // `inputFile` is retained in the slice even on COMPLETED / FAILED
-                // so a later preflight can continue to validate the binding.
-                inputFile = tableStates[summary.table]?.inputFile
-                    ?: inputFilesByTable[summary.table],
-            )
-            tableStates[summary.table] = slice
-            if (store != null) {
-                try {
-                    store.save(
-                        CheckpointManifest(
-                            operationId = operationId,
-                            operationType = CheckpointOperationType.IMPORT,
-                            createdAt = createdAt,
-                            updatedAt = clock(),
-                            format = request.format ?: format.name.lowercase(Locale.US),
-                            chunkSize = request.chunkSize,
-                            tableSlices = effectiveTables.map {
-                                tableStates[it] ?: CheckpointTableSlice(
-                                    table = it,
-                                    status = CheckpointSliceStatus.PENDING,
-                                )
-                            },
-                            optionsFingerprint = fingerprint,
-                        )
-                    )
-                } catch (_: CheckpointStoreException) {
-                    // s.o.
-                }
-            }
-        }
-
-        // ─── 10. Streaming ─────────────────────────────────────
-        val rawResult: ImportResult = try {
-            val effectiveReporter = if (request.quiet || request.noProgress)
-                NoOpProgressReporter else progressReporter
-            importExecutor.execute(
-                pool = pool,
-                input = preparedImport.input,
-                format = format,
-                options = importOptions,
-                readOptions = formatReadOptions,
-                config = pipelineConfig,
-                onTableOpened = onTableOpened,
-                progressReporter = effectiveReporter,
-                operationId = operationId,
-                resuming = resumeCtx.resuming,
-                skippedTables = resumeCtx.skippedTables,
-                resumeStateByTable = resumeCtx.resumeStateByTable,
-                onChunkCommitted = onChunkCommitted,
-                onTableCompleted = onTableCompleted,
-            )
+            StreamingResult.Ok(rawResult.copy(operationId = operationId))
         } catch (e: UnsupportedTriggerModeException) {
             stderr("Error: ${e.message}")
-            return 2
+            StreamingResult.Exit(2)
         } catch (e: ImportSchemaMismatchException) {
             stderr("Error: ${e.message}")
-            return 3
+            StreamingResult.Exit(3)
         } catch (e: Throwable) {
             stderr("Error: Import failed: ${e.message}")
-            return 5
+            StreamingResult.Exit(5)
         }
-        val result: ImportResult = rawResult.copy(operationId = operationId)
+    }
 
-        // ─── 11. Result auswerten ──────────────────────────────
-
-        // Per-Tabelle-Fehler mit error → Exit 5
+    /** Step 9: Evaluate the result, clean up the manifest, and print the summary. */
+    private fun finalizeAndReport(
+        request: DataImportRequest,
+        result: ImportResult,
+        store: CheckpointStore?,
+        operationId: String,
+    ): Int {
+        // Per-Tabelle-Fehler mit error -> Exit 5
         val failedTable = result.tables.firstOrNull { it.error != null }
         if (failedTable != null) {
             stderr("Error: Failed to import table '${failedTable.table}': ${failedTable.error}")
             return 5
         }
 
-        // failedFinish → Exit 5
+        // failedFinish -> Exit 5
         val failedFinish = result.tables.firstOrNull { it.failedFinish != null }
         if (failedFinish != null) {
             stderr(
@@ -745,7 +382,7 @@ class DataImportRunner(
         }
 
         // Successful run -> remove manifest. Errors during complete() are
-        // reported as warnings, not as exit — the import was logically successful.
+        // reported as warnings, not as exit -- the import was logically successful.
         if (store != null) {
             try {
                 store.complete(operationId)
@@ -754,7 +391,7 @@ class DataImportRunner(
             }
         }
 
-        // ─── 12. ProgressSummary ───────────────────────────────
+        // ProgressSummary
         val suppressProgress = request.quiet || request.noProgress
         if (!suppressProgress) {
             stderr(formatProgressSummary(result))
@@ -799,21 +436,6 @@ class DataImportRunner(
             )
         return ImportInput.SingleFile(table, sourcePath)
     }
-
-    /** Internal resume context of a run. Carries per-table resume states for skip-ahead
-     *  and truncate-guard, as well as the initial slice state for manifest updates after each chunk. */
-    private data class ResumeContext(
-        val operationId: String,
-        val resuming: Boolean,
-        val skippedTables: Set<String>,
-        val resumeStateByTable: Map<String, dev.dmigrate.streaming.ImportTableResumeState>,
-        val initialSlices: Map<String, CheckpointTableSlice>,
-    )
-
-    private val resumeCoordinator = ImportResumeCoordinator()
-
-    private fun resolveResumeReference(resumeValue: String, checkpointDir: Path): String? =
-        resumeCoordinator.resolveResumeReference(resumeValue, checkpointDir)
 
     companion object {
 

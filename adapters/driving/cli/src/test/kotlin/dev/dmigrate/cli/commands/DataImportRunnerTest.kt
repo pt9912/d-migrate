@@ -66,8 +66,8 @@ class DataImportRunnerTest : FunSpec({
             error("FakeDataWriter.openTable() must not be called — runner delegates to ImportExecutor")
     }
 
-    val successExecutor: ImportExecutor = ImportExecutor { _, input, _, _, _, _, _, _, _, _, _, _, _, _ ->
-        val tables = when (input) {
+    val successExecutor: ImportExecutor = ImportExecutor { ctx, _, _, _ ->
+        val tables = when (val input = ctx.input) {
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.Directory -> listOf("t1")
@@ -440,7 +440,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 throw ImportSchemaMismatchException("column 'userId' has no exact match")
             },
         )
@@ -518,7 +518,7 @@ class DataImportRunnerTest : FunSpec({
                 "sqlite:///tmp/should-not-be-used.db"
             },
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 executorInvoked = true
                 error("importExecutor must not be called when schema preflight fails")
             },
@@ -578,7 +578,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 throw RuntimeException("streaming broke")
             },
         )
@@ -591,7 +591,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -617,7 +617,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 ImportResult(
                     tables = listOf(
                         TableImportSummary(
@@ -649,7 +649,7 @@ class DataImportRunnerTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 throw UnsupportedTriggerModeException(
                     "--trigger-mode disable is not supported for dialect MYSQL"
                 )
@@ -665,7 +665,7 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             poolFactory = { pool },
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, _, _, _, _, _, _, _ ->
+            importExecutor = ImportExecutor { _, _, _, _ ->
                 throw RuntimeException("boom")
             },
         )
@@ -705,14 +705,11 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
-            importExecutor = ImportExecutor {
-                pool, input, format, options, readOpts, config, _, reporter,
-                opId, resuming, skipped, resumeStates, onChunk, onDone,
-                ->
-                seenInput = input
+            importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
+                seenInput = ctx.input
                 successExecutor.execute(
-                    pool, input, format, options, readOpts, config, { _, _ -> }, reporter,
-                    opId, resuming, skipped, resumeStates, onChunk, onDone,
+                    ctx, opts, resume,
+                    callbacks.copy(onTableOpened = { _, _ -> }),
                 )
             },
         )
@@ -759,13 +756,13 @@ class DataImportRunnerTest : FunSpec({
             stderr,
             schemaPreflight = DataImportSchemaPreflight::prepare,
             schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { _, input, _, _, _, _, onTableOpened, _, _, _, _, _, _, _ ->
-                val tableName = when (input) {
+            importExecutor = ImportExecutor { ctx, _, _, callbacks ->
+                val tableName = when (val input = ctx.input) {
                     is ImportInput.Stdin -> input.table
                     is ImportInput.SingleFile -> input.table
                     is ImportInput.Directory -> "users"
                 }
-                onTableOpened(
+                callbacks.onTableOpened(
                     tableName,
                     listOf(
                         TargetColumn("id", nullable = false, jdbcType = java.sql.Types.INTEGER, sqlTypeName = "INTEGER"),
@@ -834,10 +831,10 @@ class DataImportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            importExecutor = ImportExecutor { _, input, _, _, _, _, _, pr, _, _, _, _, _, _ ->
-                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+            importExecutor = ImportExecutor { ctx, _, _, callbacks ->
+                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
-                val tables = when (input) {
+                val tables = when (val input = ctx.input) {
                     is ImportInput.Stdin -> listOf(input.table)
                     is ImportInput.SingleFile -> listOf(input.table)
                     is ImportInput.Directory -> emptyList()
@@ -854,8 +851,8 @@ class DataImportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
-                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+            importExecutor = ImportExecutor { _, _, _, callbacks ->
+                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
                 ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)
@@ -869,8 +866,8 @@ class DataImportRunnerTest : FunSpec({
         val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
         val stderr = StderrCapture()
         val runner = newRunner(stderr, progressReporter = reporter,
-            importExecutor = ImportExecutor { _, _, _, _, _, _, _, pr, _, _, _, _, _, _ ->
-                pr.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
+            importExecutor = ImportExecutor { _, _, _, callbacks ->
+                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
                     dev.dmigrate.streaming.ProgressOperation.IMPORT, 1))
                 ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)
@@ -1141,12 +1138,10 @@ class DataImportRunnerTest : FunSpec({
             val capturedSkipped = mutableListOf<Set<String>>()
             val capturedResumeStates =
                 mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
-            val captureExecutor: ImportExecutor = ImportExecutor {
-                _, input, _, _, _, _, _, _, _, _, skipped, resumeStates, _, onDone,
-                ->
-                capturedSkipped += skipped
-                capturedResumeStates += resumeStates
-                val table = when (input) {
+            val captureExecutor: ImportExecutor = ImportExecutor { ctx, _, resume, callbacks ->
+                capturedSkipped += resume.skippedTables
+                capturedResumeStates += resume.resumeStateByTable
+                val table = when (val input = ctx.input) {
                     is dev.dmigrate.streaming.ImportInput.Stdin -> input.table
                     is dev.dmigrate.streaming.ImportInput.SingleFile -> input.table
                     is dev.dmigrate.streaming.ImportInput.Directory -> "t1"
@@ -1157,7 +1152,7 @@ class DataImportRunnerTest : FunSpec({
                     sequenceAdjustments = emptyList(), targetColumns = emptyList(),
                     triggerMode = TriggerMode.FIRE, durationMs = 1,
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ImportResult(
                     tables = listOf(summary), totalRowsInserted = 5, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
@@ -1208,18 +1203,16 @@ class DataImportRunnerTest : FunSpec({
             )
             val capturedResumeStates =
                 mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
-            val executor: ImportExecutor = ImportExecutor {
-                _, input, _, _, _, _, _, _, _, _, _, resumeStates, _, onDone,
-                ->
-                capturedResumeStates += resumeStates
-                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+            val executor: ImportExecutor = ImportExecutor { ctx, _, resume, callbacks ->
+                capturedResumeStates += resume.resumeStateByTable
+                val table = (ctx.input as dev.dmigrate.streaming.ImportInput.SingleFile).table
                 val summary = TableImportSummary(
                     table = table, rowsInserted = 1, rowsUpdated = 0, rowsSkipped = 0,
                     rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
                     sequenceAdjustments = emptyList(), targetColumns = emptyList(),
                     triggerMode = TriggerMode.FIRE, durationMs = 1,
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ImportResult(
                     tables = listOf(summary), totalRowsInserted = 1, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
@@ -1243,19 +1236,17 @@ class DataImportRunnerTest : FunSpec({
         test("onChunkCommitted updates manifest with IN_PROGRESS status") {
             val storeDir = Files.createTempDirectory("d-migrate-d3-chunk-")
             val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
-            val executor: ImportExecutor = ImportExecutor {
-                _, input, _, _, _, _, _, _, _, _, _, _, onChunk, onDone,
-                ->
-                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+            val executor: ImportExecutor = ImportExecutor { ctx, _, _, callbacks ->
+                val table = (ctx.input as dev.dmigrate.streaming.ImportInput.SingleFile).table
                 // Emit two chunk commits before completing
-                onChunk(
+                callbacks.onChunkCommitted(
                     dev.dmigrate.streaming.ImportChunkCommit(
                         table = table, chunkIndex = 0, chunksCommitted = 1,
                         rowsInsertedTotal = 10, rowsUpdatedTotal = 0,
                         rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
                     )
                 )
-                onChunk(
+                callbacks.onChunkCommitted(
                     dev.dmigrate.streaming.ImportChunkCommit(
                         table = table, chunkIndex = 1, chunksCommitted = 2,
                         rowsInsertedTotal = 20, rowsUpdatedTotal = 0,
@@ -1268,7 +1259,7 @@ class DataImportRunnerTest : FunSpec({
                     sequenceAdjustments = emptyList(), targetColumns = emptyList(),
                     triggerMode = TriggerMode.FIRE, durationMs = 1,
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ImportResult(
                     tables = listOf(summary), totalRowsInserted = 20, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
@@ -1302,10 +1293,8 @@ class DataImportRunnerTest : FunSpec({
                 override fun list() = real.list()
                 override fun complete(operationId: String) = real.complete(operationId)
             }
-            val executor: ImportExecutor = ImportExecutor {
-                _, input, _, _, _, _, _, _, _, _, _, _, _, onDone,
-                ->
-                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+            val executor: ImportExecutor = ImportExecutor { ctx, _, _, callbacks ->
+                val table = (ctx.input as dev.dmigrate.streaming.ImportInput.SingleFile).table
                 val summary = TableImportSummary(
                     table = table, rowsInserted = 0, rowsUpdated = 0, rowsSkipped = 0,
                     rowsUnknown = 0, rowsFailed = 5, chunkFailures = emptyList(),
@@ -1313,7 +1302,7 @@ class DataImportRunnerTest : FunSpec({
                     triggerMode = TriggerMode.FIRE, durationMs = 1,
                     error = "duplicate key",
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ImportResult(
                     tables = listOf(summary), totalRowsInserted = 0, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 5,
@@ -1365,10 +1354,8 @@ class DataImportRunnerTest : FunSpec({
                 ),
             )
             val capturedSkipped = mutableListOf<Set<String>>()
-            val executor: ImportExecutor = ImportExecutor {
-                _, _, _, _, _, _, _, _, _, _, skipped, _, _, _,
-                ->
-                capturedSkipped += skipped
+            val executor: ImportExecutor = ImportExecutor { _, _, resume, _ ->
+                capturedSkipped += resume.skippedTables
                 ImportResult(
                     tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,
@@ -1396,18 +1383,16 @@ class DataImportRunnerTest : FunSpec({
             val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)
 
             // Run 1: commits 2 chunks then aborts.
-            val run1Executor: ImportExecutor = ImportExecutor {
-                _, input, _, _, _, _, _, _, _, _, _, _, onChunk, _,
-                ->
-                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
-                onChunk(
+            val run1Executor: ImportExecutor = ImportExecutor { ctx, _, _, callbacks ->
+                val table = (ctx.input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+                callbacks.onChunkCommitted(
                     dev.dmigrate.streaming.ImportChunkCommit(
                         table = table, chunkIndex = 0, chunksCommitted = 1,
                         rowsInsertedTotal = 100, rowsUpdatedTotal = 0,
                         rowsSkippedTotal = 0, rowsUnknownTotal = 0, rowsFailedTotal = 0,
                     )
                 )
-                onChunk(
+                callbacks.onChunkCommitted(
                     dev.dmigrate.streaming.ImportChunkCommit(
                         table = table, chunkIndex = 1, chunksCommitted = 2,
                         rowsInsertedTotal = 200, rowsUpdatedTotal = 0,
@@ -1441,18 +1426,16 @@ class DataImportRunnerTest : FunSpec({
             // receive resumeStateByTable with committedChunks = 2.
             val capturedResumeStates =
                 mutableListOf<Map<String, dev.dmigrate.streaming.ImportTableResumeState>>()
-            val run2Executor: ImportExecutor = ImportExecutor {
-                _, input, _, _, _, _, _, _, _, _, _, resumeStates, _, onDone,
-                ->
-                capturedResumeStates += resumeStates
-                val table = (input as dev.dmigrate.streaming.ImportInput.SingleFile).table
+            val run2Executor: ImportExecutor = ImportExecutor { ctx, _, resume, callbacks ->
+                capturedResumeStates += resume.resumeStateByTable
+                val table = (ctx.input as dev.dmigrate.streaming.ImportInput.SingleFile).table
                 val summary = TableImportSummary(
                     table = table, rowsInserted = 50, rowsUpdated = 0, rowsSkipped = 0,
                     rowsUnknown = 0, rowsFailed = 0, chunkFailures = emptyList(),
                     sequenceAdjustments = emptyList(), targetColumns = emptyList(),
                     triggerMode = TriggerMode.FIRE, durationMs = 1,
                 )
-                onDone(summary)
+                callbacks.onTableCompleted(summary)
                 ImportResult(
                     tables = listOf(summary), totalRowsInserted = 50, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0,

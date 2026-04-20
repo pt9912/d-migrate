@@ -11,9 +11,13 @@ abstract class AbstractDdlGenerator(
         val skipped = mutableListOf<SkippedObject>()
         val blockedTables = mutableSetOf<String>()
 
+        // ─── PRE_DATA (default phase) ────────────────────────────
         statements += generateHeader(schema)
         statements += generateCustomTypes(schema.customTypes)
+
+        var preSkipCount = skipped.size
         statements += generateSequences(schema.sequences, skipped)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
         val (sorted, circularEdges) = topologicalSort(schema.tables)
         val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
@@ -25,7 +29,6 @@ abstract class AbstractDdlGenerator(
                 continue
             }
             val tableStatements = generateTable(name, table, schema, deferredFks, options)
-            // Detect if generateTable blocked the table (e.g. SpatiaLite metadata).
             val blockNote = tableStatements.asSequence()
                 .flatMap { it.notes.asSequence() }
                 .firstOrNull { it.blocksTable }
@@ -36,20 +39,46 @@ abstract class AbstractDdlGenerator(
         }
         for ((name, table) in sorted) {
             if (shouldBlockTable(name, table, options)) continue
-            // Also skip indices for tables blocked by generateTable.
             if (name in blockedTables) continue
             statements += generateIndices(name, table)
         }
-        statements += handleCircularReferences(circularEdges, skipped)
 
+        preSkipCount = skipped.size
+        statements += handleCircularReferences(circularEdges, skipped)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+
+        // ─── Views (split into PRE_DATA / POST_DATA) ───────────
         val sortedViews = sortViewsByDependencies(schema.views)
         statements += sortedViews.notes.map { DdlStatement("", notes = listOf(it)) }
-        statements += generateViews(sortedViews.sorted, skipped)
-        statements += generateFunctions(schema.functions, skipped)
-        statements += generateProcedures(schema.procedures, skipped)
-        statements += generateTriggers(schema.triggers, schema.tables, skipped)
 
-        return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped)
+        val globalNotes = mutableListOf<TransformationNote>()
+        val (preDataViews, postDataViews, viewDiagNotes) = classifyViewsByPhase(
+            sortedViews.sorted, schema.functions.keys,
+        )
+        globalNotes += viewDiagNotes
+
+        preSkipCount = skipped.size
+        statements += generateViews(preDataViews, skipped)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+
+        preSkipCount = skipped.size
+        statements += generateViews(postDataViews, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        // ─── POST_DATA ───────────────────────────────────────────
+        preSkipCount = skipped.size
+        statements += generateFunctions(schema.functions, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        preSkipCount = skipped.size
+        statements += generateProcedures(schema.procedures, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        preSkipCount = skipped.size
+        statements += generateTriggers(schema.triggers, schema.tables, skipped).withPhase(DdlPhase.POST_DATA)
+        tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+
+        return DdlResult(statements.filter { it.sql.isNotBlank() || it.notes.isNotEmpty() }, skipped, globalNotes)
     }
 
     override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
@@ -113,12 +142,22 @@ abstract class AbstractDdlGenerator(
             reason = blockNote.message,
             code = blockNote.code,
             hint = blockNote.hint,
+            phase = DdlPhase.PRE_DATA,
         )
+    }
+
+    private fun List<DdlStatement>.withPhase(phase: DdlPhase): List<DdlStatement> =
+        map { it.copy(phase = phase) }
+
+    private fun tagNewSkips(skipped: MutableList<SkippedObject>, fromIndex: Int, phase: DdlPhase) {
+        for (i in fromIndex until skipped.size) {
+            skipped[i] = skipped[i].copy(phase = phase)
+        }
     }
 
     // ── Shared logic ────────────────────────────
 
-    protected open fun getVersion(): String = "0.9.1"
+    protected open fun getVersion(): String = "0.9.2"
 
     protected fun generateHeader(schema: SchemaDefinition): List<DdlStatement> {
         val header = buildString {
@@ -147,68 +186,10 @@ abstract class AbstractDdlGenerator(
         ReferentialAction.NO_ACTION -> "NO ACTION"
     }
 
-    protected open fun invertStatement(stmt: DdlStatement): DdlStatement? {
-        val sql = stmt.sql.trim()
-        return when {
-            sql.startsWith("CREATE TABLE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE TABLE")
-                DdlStatement("DROP TABLE IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE INDEX", ignoreCase = true) || sql.startsWith("CREATE UNIQUE INDEX", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, if ("UNIQUE" in sql.uppercase()) "CREATE UNIQUE INDEX" else "CREATE INDEX")
-                DdlStatement("DROP INDEX IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE TYPE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE TYPE")
-                DdlStatement("DROP TYPE IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE VIEW", ignoreCase = true) || sql.startsWith("CREATE OR REPLACE VIEW", ignoreCase = true) -> {
-                val keyword = if ("OR REPLACE" in sql.uppercase()) "CREATE OR REPLACE VIEW" else "CREATE VIEW"
-                val name = extractNameAfter(sql, keyword)
-                DdlStatement("DROP VIEW IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE MATERIALIZED VIEW", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE MATERIALIZED VIEW")
-                DdlStatement("DROP MATERIALIZED VIEW IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE FUNCTION", ignoreCase = true) || sql.startsWith("CREATE OR REPLACE FUNCTION", ignoreCase = true) -> {
-                val keyword = if ("OR REPLACE" in sql.uppercase()) "CREATE OR REPLACE FUNCTION" else "CREATE FUNCTION"
-                val name = extractNameAfter(sql, keyword)
-                DdlStatement("DROP FUNCTION IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE PROCEDURE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE PROCEDURE")
-                DdlStatement("DROP PROCEDURE IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE TRIGGER", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE TRIGGER")
-                DdlStatement("DROP TRIGGER IF EXISTS $name;")
-            }
-            sql.startsWith("CREATE SEQUENCE", ignoreCase = true) -> {
-                val name = extractNameAfter(sql, "CREATE SEQUENCE")
-                DdlStatement("DROP SEQUENCE IF EXISTS $name;")
-            }
-            sql.startsWith("ALTER TABLE", ignoreCase = true) && sql.contains("ADD CONSTRAINT", ignoreCase = true) -> {
-                val tableName = extractNameAfter(sql, "ALTER TABLE")
-                val addConstraintIdx = sql.uppercase().indexOf("ADD CONSTRAINT")
-                val constraintPart = sql.substring(addConstraintIdx + "ADD CONSTRAINT".length).trimStart()
-                val constraintName = constraintPart.split(Regex("[\\s(]"), limit = 2).first()
-                DdlStatement("ALTER TABLE $tableName DROP CONSTRAINT IF EXISTS $constraintName;")
-            }
-            sql.startsWith("--") -> null // Skip comments
-            else -> null
-        }
-    }
+    private val inverter = StatementInverter()
 
-    private fun extractNameAfter(sql: String, keyword: String): String {
-        val afterKeyword = sql.substring(keyword.length).trimStart()
-        // Handle IF NOT EXISTS
-        val cleaned = if (afterKeyword.uppercase().startsWith("IF NOT EXISTS"))
-            afterKeyword.substring("IF NOT EXISTS".length).trimStart()
-        else afterKeyword
-        // Take the first token (quoted or unquoted identifier)
-        return cleaned.split(Regex("[\\s(]"), limit = 2).first()
-    }
+    protected open fun invertStatement(stmt: DdlStatement): DdlStatement? =
+        inverter.invert(stmt)
 
     // ── Topological sort ────────────────────────
 
@@ -316,4 +297,15 @@ abstract class AbstractDdlGenerator(
             .filter { it != name && it in viewNames }
             .toSet()
     }
+
+    // ── View phase classification (delegates to ViewPhaseClassifier) ──
+
+    protected fun classifyViewsByPhase(
+        views: Map<String, ViewDefinition>,
+        functionNames: Set<String>,
+    ): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> =
+        ViewPhaseClassifier.classify(
+            views, functionNames,
+            ::declaredViewDependencies, ::inferViewDependenciesFromQuery,
+        )
 }

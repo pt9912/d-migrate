@@ -259,6 +259,26 @@ class PostgresMetadataQueriesTest : FunSpec({
         result[0]["table_name"] shouldBe "active_users"
     }
 
+    // ── listViewFunctionDependencies ─────────────────
+
+    test("listViewFunctionDependencies groups by view name") {
+        every { jdbc.queryList(match { it.contains("pg_depend") }, any(), any()) } returns listOf(
+            mapOf("view_name" to "v1", "function_name" to "fn_a"),
+            mapOf("view_name" to "v1", "function_name" to "fn_b"),
+            mapOf("view_name" to "v2", "function_name" to "fn_a"),
+        )
+        val result = PostgresMetadataQueries.listViewFunctionDependencies(jdbc, "public")
+        result.keys shouldBe setOf("v1", "v2")
+        result["v1"] shouldBe listOf("fn_a", "fn_b")
+        result["v2"] shouldBe listOf("fn_a")
+    }
+
+    test("listViewFunctionDependencies returns empty map when no deps") {
+        every { jdbc.queryList(match { it.contains("pg_depend") }, any(), any()) } returns emptyList()
+        val result = PostgresMetadataQueries.listViewFunctionDependencies(jdbc, "public")
+        result shouldBe emptyMap()
+    }
+
     // ── listFunctions ──────────────────────────────
 
     test("listFunctions returns function maps") {

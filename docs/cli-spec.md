@@ -344,7 +344,7 @@ Exit: `0` bei Erfolg, `3` bei Validierungsfehlern.
 Generiert datenbankspezifisches DDL aus einer Schema-Definition.
 
 ```
-d-migrate schema generate --source <path> --target <dialect> [--output <path>]
+d-migrate schema generate --source <path> --target <dialect> [--output <path>] [--split single|pre-post]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -354,7 +354,7 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>]
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
 | `--generate-rollback` | Nein | Boolean | Zusätzlich Rollback-DDL generieren |
 | `--spatial-profile` | Nein | String | Spatial-Profil für `geometry`-Spalten (siehe unten) |
-
+| `--split` | Nein | `single` / `pre-post` | DDL-Ausgabemodus (Default: `single`). `pre-post` erzeugt importfreundliche Artefakte (pre-data/post-data) |
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
@@ -389,8 +389,36 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - **`--output-format json`**: Action-required-Eintraege (`E052`-`E056`) erscheinen in `notes` und/oder `skipped_objects`, W120 in `notes`.
 - **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
 
+**`--split`** (0.9.2): Steuert den DDL-Ausgabemodus.
+
+| Modus | Verhalten |
+|---|---|
+| `single` (Default) | Gesamte DDL als ein Artefakt — identisch zum bisherigen Verhalten |
+| `pre-post` | Trennung in `pre-data` (Tabellen, Constraints, Sequences) und `post-data` (Trigger, Functions, Procedures) |
+
+Ausgabeartefakte für `--split pre-post`:
+
+- **Textausgabe** (`--output out/schema.sql`):
+  - `out/schema.pre-data.sql` — Tabellen, Constraints, Sequences, Views ohne Routine-Abhängigkeit
+  - `out/schema.post-data.sql` — Functions, Procedures, Triggers, Views mit Routine-Abhängigkeit
+  - Die Originaldatei `out/schema.sql` wird **nicht** geschrieben
+  - Der Report bleibt ein einzelnes Sidecar-Artefakt (`out/schema.report.yaml`) mit `split_mode: pre-post`
+- **JSON-Ausgabe** (`--output-format json`):
+  - `split_mode: "pre-post"` statt `ddl`-Feld
+  - `ddl_parts.pre_data` und `ddl_parts.post_data` mit dem jeweiligen DDL-String
+  - `notes` und `skipped_objects` tragen optional `phase: "pre-data"` oder `phase: "post-data"` (Kebab-Case)
+- **Kombination** (`--output ... --output-format json`):
+  - SQL-Dateien werden geschrieben **und** JSON wird ausgegeben
+  - Report bleibt ein einzelnes Sidecar-Artefakt
+
+Einschränkungen für `--split pre-post`:
+- Erfordert `--output` (Textausgabe) oder `--output-format json` (strukturierte Ausgabe). Ohne adressierbaren Ausgabeweg: Exit 2.
+- Kann nicht mit `--generate-rollback` kombiniert werden. Kombination: Exit 2.
+- Views, deren Phasenzuordnung nicht sicher bestimmbar ist (kein Query-Text, keine deklarierten `dependencies.functions`, aber Functions im Schema), erzeugen Exit 2 mit Fehlercode `E060`. Empfohlene Nutzeraktion: explizite `dependencies.functions` im View-Eintrag der Schema-Datei deklarieren.
+
 **Exit-Codes**:
 - `0`: DDL erfolgreich generiert (auch bei Warnungen und übersprungenen Objekten)
+- `2`: Ungültiger `--target`, ungültiges Spatial-Profil oder unzulässige `--split`-Kombination
 - `3`: Schema-Validierung fehlgeschlagen (DDL wird nicht erzeugt)
 - `7`: Schema-Datei nicht lesbar oder ungültiges YAML
 

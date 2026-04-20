@@ -182,10 +182,14 @@ class MysqlSchemaReader(
 
     private fun readViews(session: JdbcOperations, database: String): Map<String, ViewDefinition> {
         val rows = MysqlMetadataQueries.listViews(session, database)
+        val viewFuncDeps = MysqlMetadataQueries.listViewRoutineUsage(session, database)
         val result = LinkedHashMap<String, ViewDefinition>()
         for (row in rows) {
-            result[row["table_name"] as String] = ViewDefinition(
+            val viewName = row["table_name"] as String
+            val funcDeps = viewFuncDeps[viewName] ?: emptyList()
+            result[viewName] = ViewDefinition(
                 query = row["view_definition"] as? String,
+                dependencies = if (funcDeps.isNotEmpty()) DependencyInfo(functions = funcDeps) else null,
                 sourceDialect = "mysql",
             )
         }

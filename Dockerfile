@@ -39,21 +39,19 @@
 #     docker build --target coverage-verify -t d-migrate:coverage-verify .
 # ---------------------------------------------------------------------------
 
-# ---- Stage 1: build & test -------------------------------------------------
-FROM gradle:8.12-jdk21 AS build
-
-# Gradle tasks executed during the image build. Override with --build-arg to
-# skip tests or run a different subset (e.g. "assemble :adapters:driving:cli:installDist"
-# or "check").
-# Important: a full multi-stage `docker build` reaches the runtime stage below,
-# so `GRADLE_TASKS` must produce `:adapters:driving:cli:installDist`. If you want to
-# run only a subset that does not build the CLI distribution, use
-# `docker build --target build ...` instead.
-ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
+# ---- Stage: compile-only (no tests, no kover) -----------------------------
+# Fast feedback for compilation checks during development.
+# Usage: docker build --target compile .
+FROM gradle:8.12-jdk21 AS compile
 
 WORKDIR /src
-
 COPY --chown=gradle:gradle . .
+RUN gradle --no-daemon classes testClasses
+
+# ---- Stage 1: build & test (extends compile) ------------------------------
+FROM compile AS build
+
+ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
 RUN gradle --no-daemon ${GRADLE_TASKS}
 

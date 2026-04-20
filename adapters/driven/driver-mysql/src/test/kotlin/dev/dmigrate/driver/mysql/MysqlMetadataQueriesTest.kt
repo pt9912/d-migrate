@@ -160,6 +160,25 @@ class MysqlMetadataQueriesTest : FunSpec({
         result[0]["table_name"] shouldBe "active_users"
     }
 
+    // ── listViewRoutineUsage ──────────────────────────
+
+    test("listViewRoutineUsage groups by view name") {
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "v1", "routine_name" to "fn_a"),
+            mapOf("view_name" to "v1", "routine_name" to "fn_b"),
+        )
+        val result = MysqlMetadataQueries.listViewRoutineUsage(jdbc, "mydb")
+        result.keys shouldBe setOf("v1")
+        result["v1"] shouldBe listOf("fn_a", "fn_b")
+    }
+
+    test("listViewRoutineUsage returns empty map on older MySQL without VIEW_ROUTINE_USAGE") {
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } throws
+            RuntimeException("Table 'VIEW_ROUTINE_USAGE' doesn't exist")
+        val result = MysqlMetadataQueries.listViewRoutineUsage(jdbc, "mydb")
+        result shouldBe emptyMap()
+    }
+
     // ── listFunctions ──────────────────────────────
 
     test("listFunctions returns function maps") {

@@ -4,7 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-CACHE_VOLUME="${DMIGRATE_GRADLE_CACHE_VOLUME:-d-migrate-gradle-cache}"
 DEFAULT_TASKS="-PintegrationTests test koverVerify :koverVerify"
 IMAGE_TAG="d-migrate-integration-test:latest"
 
@@ -19,9 +18,6 @@ Usage:
   ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
   ./scripts/test-integration-docker.sh -PintegrationTests :adapters:driven:integrations:test
 
-Environment:
-  DMIGRATE_GRADLE_CACHE_VOLUME      Docker volume for Gradle caches
-                                    Default: d-migrate-gradle-cache
 EOF
 }
 
@@ -47,13 +43,6 @@ if [[ -t 0 && -t 1 ]]; then
     TTY_FLAG="-t"
 fi
 
-#docker volume rm -f ${CACHE_VOLUME}
-
-#remove build folders
-#find . -type d -name "build" -prune -exec rm -rf {} +
-
-
-
 echo "Building integration test image from Dockerfile (stage: integration-test)..."
 docker build --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
@@ -65,8 +54,6 @@ echo "  gradle tasks: ${GRADLE_TASKS}"
 exec docker run --rm ${TTY_FLAG} \
     --network=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -v "${CACHE_VOLUME}:/gradle-cache" \
-    -e GRADLE_USER_HOME=/gradle-cache \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     -w /src \

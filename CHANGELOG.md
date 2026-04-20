@@ -13,6 +13,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.2] - 2026-04-20
+
+### Added
+
+- **Phase-aware DDL model** (`DdlPhase.PRE_DATA` / `POST_DATA`): every `DdlStatement` carries a phase tag; `DdlResult` provides `statementsForPhase()`, `renderPhase()`, `notesForPhase()` and `skippedObjectsForPhase()` filter methods
+- **`--split single|pre-post` for `schema generate`**: optional DDL output split into `*.pre-data.sql` (tables, constraints, sequences, simple views) and `*.post-data.sql` (triggers, functions, procedures, views with routine dependencies); JSON output uses `ddl_parts.pre_data` / `ddl_parts.post_data` with `split_mode: "pre-post"`
+- **`ViewPhaseClassifier`**: classifies views into `PRE_DATA` or `POST_DATA` by declared `dependencies.functions`, inferred function calls in query text, and transitive propagation through view dependencies
+- **`DependencyInfo.functions`** and codec support: schema YAML views can declare function dependencies for reliable phase assignment
+- **SchemaReader catalog queries** for function/procedure metadata (AP 6.3 Steps F+G)
+- **Split Golden Master tests**, JSON/Report contract tests, CLI split tests and ledger validation (AP 6.7)
+- **E2E round-trip test**: DB→Export→Format→Import→DB→Schema Compare with strict DDL and NULL verification
+- **Error and warning code ledgers** (`ledger/error-codes.yaml`, `ledger/warn-codes.yaml`) with systematic validation against E006–E121
+- **REST, gRPC, and MCP service specifications** for future server interface
+
+### Changed
+
+- **Runner decomposition**: `DataExportRunner.executeWithPool` (446→26 LOC) and `DataImportRunner.executeWithPool` (477→24 LOC) decomposed into named step functions (AP 6.6)
+- **Executor parameter grouping**: `ExportExecutor` (16→4 params) and `ImportExecutor` (14→4 params) use context DTOs instead of flat parameter lists (AP 6.6)
+- **DDL interpolation hardened**: CHECK constraints, partition expressions, trigger conditions, and SpatiaLite function calls systematically reviewed; remaining 4 MySQL `-- TODO` placeholders replaced with `ManualActionRequired` entries (AP 6.5)
+- **Split SQL, JSON and report output** implemented for `schema generate` (AP 6.4): phase attribution in notes and `skipped_objects` (kebab-case `"pre-data"` / `"post-data"`)
+- **Quality refactoring**: `ViewPhaseClassifier` and `StatementInverter` extracted; `ColumnConstraintHelper` extracted per dialect; `SchemaCompare` projection DTOs extracted; Runner DTOs and MySQL column helpers refactored; `Preflight`/`Checkpoint` helpers extracted for both Runners
+- **Type mappings stabilized**: tabular geometry and document type fallbacks consolidated
+- `AbstractDdlGenerator.getVersion()` returns `0.9.2`
+- Documentation updated: `guide.md` (split examples and round-trip workflow), `architecture.md` (§3.8 phase-aware DDL model), `ddl-generation-rules.md` (§17 phase-based ordering), `quality.md` review findings refreshed
+
+### Fixed
+
+- `--since` / `--since-column` validation in `data transfer` aligned with `data export` (`isNullOrBlank` instead of `isNull`)
+- E060 diagnostic fires only when `dependencies` is null, not when empty
+- E2E test allowlist replaced with verifiable assertions (no comment-based suppression)
+- W120 `test_path` and evidence source corrected in warn-code ledger
+- Sequence diff assertions completed with shared JSON/Report anchor
+
 ## [0.9.1] - 2026-04-19
 
 ### Added

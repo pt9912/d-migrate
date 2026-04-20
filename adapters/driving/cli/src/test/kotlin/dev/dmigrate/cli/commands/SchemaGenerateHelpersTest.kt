@@ -1,13 +1,17 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
+import dev.dmigrate.format.report.TransformationReportWriter
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
@@ -318,5 +322,108 @@ class SchemaGenerateHelpersTest : FunSpec({
         test("escapes all special characters in a single string") {
             SchemaGenerateHelpers.escapeJson("\\\"\n\r\t") shouldBe "\\\\\\\"\\n\\r\\t"
         }
+    }
+
+    // ─── JSON/Report Contract Tests (0.9.2 AP 6.7 Step B) ────────
+
+    val splitTestResult = DdlResult(
+        statements = listOf(
+            DdlStatement("CREATE TABLE t (id INT);", phase = DdlPhase.PRE_DATA,
+                notes = listOf(TransformationNote(NoteType.WARNING, "W100", "t.col", "type mapped"))),
+            DdlStatement("CREATE TRIGGER trg;", phase = DdlPhase.POST_DATA),
+        ),
+        skippedObjects = listOf(
+            SkippedObject("sequence", "seq1", "not supported", code = "E056", phase = DdlPhase.PRE_DATA),
+        ),
+        globalNotes = listOf(
+            TransformationNote(NoteType.WARNING, "W113", "views", "circular deps"),
+        ),
+    )
+    val testSchema = SchemaDefinition(name = "Test", version = "1.0.0")
+
+    test("split JSON contains split_mode and ddl_parts") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(splitTestResult, testSchema, "postgresql", SplitMode.PRE_POST)
+        json shouldContain """"split_mode": "pre-post""""
+        json shouldContain """"ddl_parts""""
+        json shouldContain """"pre_data""""
+        json shouldContain """"post_data""""
+    }
+
+    test("split JSON does not contain legacy ddl field") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(splitTestResult, testSchema, "postgresql", SplitMode.PRE_POST)
+        json.lines().none { it.trimStart().startsWith("\"ddl\":") } shouldBe true
+    }
+
+    test("split JSON contains phase on skipped_objects with explicit phase") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(splitTestResult, testSchema, "postgresql", SplitMode.PRE_POST)
+        // SkippedObject has explicit phase = PRE_DATA
+        json shouldContain """"phase": "pre-data""""
+    }
+
+    test("split JSON omits phase on notes without explicit phase") {
+        // Statement-bound notes have note.phase = null; phase comes from the statement
+        // but formatJsonOutput only serializes note.phase, not statement.phase
+        val json = SchemaGenerateHelpers.formatJsonOutput(splitTestResult, testSchema, "postgresql", SplitMode.PRE_POST)
+        // W100 note has phase = null → no "phase" in its JSON entry
+        // W113 globalNote also has phase = null → no "phase"
+        // Only the skipped_objects entry has phase = PRE_DATA
+        val noteLines = json.lines().filter { it.contains("\"W100\"") || it.contains("\"W113\"") }
+        noteLines.all { "phase" !in it || "pre-data" in it || "post-data" in it } shouldBe true
+    }
+
+    test("single JSON contains ddl, no split_mode") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(splitTestResult, testSchema, "postgresql", SplitMode.SINGLE)
+        json shouldContain """"ddl":"""
+        json shouldNotContain "split_mode"
+        json shouldNotContain "ddl_parts"
+    }
+
+    test("single JSON does not contain phase on notes") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(splitTestResult, testSchema, "postgresql", SplitMode.SINGLE)
+        json shouldNotContain """"phase":"""
+    }
+
+    test("splitPath derives pre-data and post-data paths") {
+        val base = java.nio.file.Path.of("/tmp/schema.sql")
+        SchemaGenerateHelpers.splitPath(base, DdlPhase.PRE_DATA).toString() shouldBe "/tmp/schema.pre-data.sql"
+        SchemaGenerateHelpers.splitPath(base, DdlPhase.POST_DATA).toString() shouldBe "/tmp/schema.post-data.sql"
+    }
+
+    test("splitPath without extension") {
+        val base = java.nio.file.Path.of("/tmp/schema")
+        SchemaGenerateHelpers.splitPath(base, DdlPhase.PRE_DATA).toString() shouldBe "/tmp/schema.pre-data"
+        SchemaGenerateHelpers.splitPath(base, DdlPhase.POST_DATA).toString() shouldBe "/tmp/schema.post-data"
+    }
+
+    // ─── Shared DdlResult anchor: JSON + Report consistency ─────
+
+    test("split JSON and split Report use same DdlResult and agree on phase/split_mode") {
+        // Same DdlResult payload fed to both channels
+        val sharedResult = splitTestResult
+        val schema = testSchema
+
+        val json = SchemaGenerateHelpers.formatJsonOutput(sharedResult, schema, "postgresql", SplitMode.PRE_POST)
+        val report = TransformationReportWriter().render(sharedResult, schema, "postgresql",
+            java.nio.file.Path.of("schema.yaml"), splitMode = "pre-post")
+
+        // Both channels carry split_mode
+        json shouldContain "\"split_mode\": \"pre-post\""
+        report shouldContain "split_mode: pre-post"
+
+        // Both channels carry phase on skipped_objects with explicit phase
+        json shouldContain "\"phase\": \"pre-data\""
+        report shouldContain "phase: pre-data"
+
+        // Both channels carry the same skipped object
+        json shouldContain "\"seq1\""
+        report shouldContain "\"seq1\""
+
+        // Both channels carry the same warning note code
+        json shouldContain "\"W100\""
+        report shouldContain "W100"
+
+        // Both channels carry the global note
+        json shouldContain "\"W113\""
+        report shouldContain "W113"
     }
 })

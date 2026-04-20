@@ -29,6 +29,14 @@ dependencies {
 
 kover {
     reports {
+        filters {
+            excludes {
+                classes(
+                    // Internal SnakeYAML adapter — pure delegation, no logic
+                    "dev.dmigrate.format.data.yaml.StreamDataWriterAdapter",
+                )
+            }
+        }
         verify {
             rule {
                 minBound(90)
