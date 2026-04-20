@@ -566,28 +566,36 @@ Vertrag:
   UPDATE-Trigger hat UND sequence-basierte Spalten im
   `helper_table`-Modus verwendet
 
-W122-Schweregrad-Abstufung:
+W122-Schweregrad und Report-Klassifikation:
 
-- **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
-  unterschied**. UPDATE-Trigger feuern nicht. Die einzige sichtbare
-  Abweichung ist, dass ein `updated_at`-Trigger oder aehnliches
-  nicht auf die Sequence-Zuweisung reagiert. Das ist in der Regel
-  gewuenscht. W122 ist hier rein informativ.
-- **`recursive_triggers = ON`**: **potenziell gefaehrlich**. UPDATE-
-  Trigger feuern und koennen:
-  - harmlos sein (z. B. `updated_at`-Trigger setzt Timestamp)
-  - problematisch sein (z. B. Audit-Trigger protokolliert die
-    Sequence-Zuweisung als Datenaenderung)
-  - **gefaehrlich sein** wenn ein UPDATE-Trigger seinerseits
-    Aenderungen auf `dmg_sequences` oder die Sequence-Spalte macht
-    → moegliche Endlosrekursion oder Datenkorruption
-  In diesem Fall sollte W122 vom Nutzer als **Pflichtpruefung**
-  behandelt werden, nicht als informative Notiz.
+- W122 wird als `NoteType.INFO` emittiert (nicht als `WARNING`
+  oder `ACTION_REQUIRED`), da der problematische Pfad nur unter
+  einer spezifischen, nicht-standardmaessigen Konfiguration
+  (`recursive_triggers = ON`) aktiv wird
+- CI-Systeme sollten W122 **nicht** als harte Integrationsabweichung
+  werten; es ist ein **potenzielles Risiko**, kein konkreter Fehler
+- der Report-Text unterscheidet explizit zwischen den Modi:
 
-- `W122`: AFTER INSERT sequence trigger performs UPDATE on the same
-  table; with recursive_triggers=OFF (default) this is harmless;
-  with recursive_triggers=ON, existing UPDATE triggers will fire
-  and may cause unintended side effects or recursion
+  - **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
+    unterschied**. UPDATE-Trigger feuern nicht. Die einzige sichtbare
+    Abweichung ist, dass ein `updated_at`-Trigger oder aehnliches
+    nicht auf die Sequence-Zuweisung reagiert. Das ist in der Regel
+    gewuenscht.
+  - **`recursive_triggers = ON`**: **potenziell gefaehrlich**. UPDATE-
+    Trigger feuern und koennen:
+    - harmlos sein (z. B. `updated_at`-Trigger setzt Timestamp)
+    - problematisch sein (z. B. Audit-Trigger protokolliert die
+      Sequence-Zuweisung als Datenaenderung)
+    - **gefaehrlich sein** wenn ein UPDATE-Trigger seinerseits
+      Aenderungen auf `dmg_sequences` oder die Sequence-Spalte macht
+      → moegliche Endlosrekursion oder Datenkorruption
+    In diesem Fall sollte der Nutzer W122 als **Pflichtpruefung**
+    behandeln.
+
+- `W122` (INFO): AFTER INSERT sequence trigger performs UPDATE on
+  the same table; with recursive_triggers=OFF (default) this has
+  no observable effect; with recursive_triggers=ON, existing UPDATE
+  triggers will fire — verify compatibility
 
 Integrationstests muessen diesen Fall fuer **beide** Pragma-Settings
 abdecken (§8.2).
@@ -733,6 +741,26 @@ Verhalten bei Reverse:
   `WITHOUT ROWID`-Tabelle gefunden wird, wird er als degradiert
   markiert (Reverse-Warning `W116`), da die ROWID-basierte
   Emulation auf dieser Tabelle nicht funktionieren kann
+
+Roundtrip-Verhalten bei `WITHOUT ROWID` + `SequenceNextVal`:
+
+- bei der Vorwaertsgenerierung (neutral -> SQLite) erzeugt E057
+  einen `action_required`-Pfad fuer die betroffene Spalte; die
+  `SequenceDefinition` wird in `dmg_sequences` erzeugt, aber kein
+  Trigger-Paar
+- beim Reverse (SQLite -> neutral) erkennt der Reader die
+  `dmg_sequences`-Zeile als `SequenceDefinition`, findet aber kein
+  Trigger-Paar auf der `WITHOUT ROWID`-Tabelle
+- der Reader rekonstruiert die `SequenceDefinition`, kann aber die
+  Spaltenzuordnung (`DefaultValue.SequenceNextVal`) **nicht**
+  herstellen, weil kein Trigger existiert
+- der Reverse-Report emittiert `E057` auf Spaltenebene als
+  **Transformationshinweis**, damit der Nutzer nachvollziehen kann,
+  warum die Spaltenzuordnung fehlt
+- im Compare zwischen Original- und Reverse-Schema erscheint die
+  Sequence als vorhanden, aber die Spaltenzuordnung als fehlend —
+  das ist **erwartetes Verhalten**, kein Bug; der Roundtrip ist
+  fuer diesen spezifischen Pfad bewusst nicht verlustfrei
 
 Warning-Code:
 
@@ -1143,8 +1171,13 @@ Abhaengigkeitspruefung im Detail:
 - der Scan durchsucht **alle** Objekte in `sqlite_schema` (Typ
   `trigger`, `view`, `table`, `index`) nach Verweisen auf
   `dmg_sequences` im `sql`-Feld
-- Objekte, die ueber kanonischen Marker oder kanonischen Namen als
-  Sequence-Support identifiziert wurden, werden ausgenommen
+- Objekte werden nur dann als managed (= Sequence-Support) ausgenommen,
+  wenn sie **dieselbe strenge Erkennung** wie beim Reverse durchlaufen:
+  primaer ueber Marker-Kommentar, sekundaer ueber das vollstaendige
+  5-Kriterien-Matching (§6.1). Ein Trigger, der nur namentlich zum
+  kanonischen Schema passt, aber weder Marker noch Sekundaer-Kriterien
+  erfuellt, wird **nicht** als managed eingestuft und gilt als fremde
+  Abhaengigkeit
 - alle verbleibenden Treffer gelten als fremde Abhaengigkeiten
 - typische Faelle: nutzerdefinierte Trigger, die `dmg_sequences`
   lesen/schreiben; Views, die `dmg_sequences` referenzieren;
@@ -1237,8 +1270,9 @@ Normalisierung und Matching-Strategie:
   - `W121`: Sequence values may be consumed without insertion when
     INSERT ... ON CONFLICT is used (§5.1)
 - UPDATE-Trigger-Kaskade:
-  - `W122`: AFTER INSERT sequence trigger may cascade into existing
-    UPDATE triggers on the same table (§3.4)
+  - `W122` (INFO): AFTER INSERT sequence trigger may cascade into
+    existing UPDATE triggers on the same table; nur relevant bei
+    `recursive_triggers = ON` (§3.4)
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
