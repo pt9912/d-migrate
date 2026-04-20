@@ -674,4 +674,26 @@ class YamlSchemaCodecTest : FunSpec({
             codec.read(yaml.byteInputStream())
         }
     }
+
+    test("array default throws structured error") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "ArrayDefault"
+            version: "1.0.0"
+            encoding: "utf-8"
+            tables:
+              t:
+                columns:
+                  tags:
+                    type: text
+                    default:
+                      - a
+                      - b
+                primary_key: [tags]
+        """.trimIndent()
+        val ex = io.kotest.assertions.throwables.shouldThrow<Exception> {
+            codec.read(yaml.byteInputStream())
+        }
+        ex.message shouldContain "Unsupported default node type"
+    }
 })
