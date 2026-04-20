@@ -840,8 +840,10 @@ wiederholt. Die verbindlichen Regeln fuer `next_value`, `increment_by`,
 
 Konvention fuer `NULL`-Grenzen (`min_value`, `max_value`):
 
-`NULL` bedeutet **unbegrenzt** — die Sequence hat in der
-entsprechenden Richtung kein Limit. Das wird an **allen** Stellen
+`NULL` bedeutet **unbegrenzt innerhalb des SQLite INTEGER-Bereichs**
+(-2^63 bis 2^63-1). Es gibt kein nutzerdefiniertes Limit in der
+entsprechenden Richtung; das 64-bit INTEGER-Limit von SQLite wirkt
+als implizite physische Grenze. Das wird an **allen** Stellen
 konsistent abgebildet:
 
 | Stelle | `min_value = NULL` | `max_value = NULL` |
@@ -1205,9 +1207,13 @@ INSERT INTO "orders" DEFAULT VALUES;
 --      - Constraint-Pruefung erkennt Conflict
 --      - bestehende Zeile wird geloescht (DELETE-Trigger feuern),
 --        dann neue Zeile eingefuegt (AFTER INSERT feuert)
---      - Konsequenz: Sequence-Wert wird korrekt gesetzt, ABER die
---        alte Zeile geht verloren; kein Gap, aber Datenverlust
---        wenn die alte Zeile gewollt war
+--      - Konsequenz bei Erfolg: Sequence-Wert wird korrekt gesetzt,
+--        ABER die alte Zeile geht verloren; kein Gap
+--      - Konsequenz bei Fehler in DELETE-/INSERT-Phase (z. B.
+--        Constraint-Verletzung in einem DELETE-Trigger oder
+--        AFTER INSERT-Trigger): gesamtes Statement wird
+--        zurueckgerollt (REPLACE nutzt implizit ABORT-Semantik);
+--        Sequence-Inkrement wird ebenfalls zurueckgerollt → kein Gap
 --
 --   e) INSERT OR IGNORE:
 --      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
