@@ -191,6 +191,10 @@ internal object SchemaNodeBuilder {
             }
             is DefaultValue.BooleanLiteral -> node.put("default", default.value)
             is DefaultValue.FunctionCall -> node.put("default", default.name)
+            is DefaultValue.SequenceNextVal -> {
+                val defaultNode = node.putObject("default")
+                defaultNode.put("sequence_nextval", default.sequenceName)
+            }
         }
     }
 

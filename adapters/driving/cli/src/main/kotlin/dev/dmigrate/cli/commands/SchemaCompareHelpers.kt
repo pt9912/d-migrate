@@ -44,6 +44,7 @@ internal object SchemaCompareHelpers {
         is DefaultValue.NumberLiteral -> dv.value.toString()
         is DefaultValue.BooleanLiteral -> dv.value.toString()
         is DefaultValue.FunctionCall -> "${dv.name}()"
+        is DefaultValue.SequenceNextVal -> "sequence_nextval(${dv.sequenceName})"
     }
 
     fun indexSignature(idx: IndexDefinition): String = buildString {

@@ -134,13 +134,35 @@ internal object SchemaNodeParser {
             node.isNumber -> DefaultValue.NumberLiteral(node.numberValue())
             node.isTextual -> {
                 val text = node.textValue()
-                when (text) {
-                    "current_timestamp" -> DefaultValue.FunctionCall("current_timestamp")
-                    "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
+                when {
+                    text == "current_timestamp" -> DefaultValue.FunctionCall("current_timestamp")
+                    text == "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
+                    // Legacy nextval detection: keep as FunctionCall so the validator
+                    // can emit a targeted migration error (E122)
+                    text.matches(Regex("""nextval\(.*\)""", RegexOption.IGNORE_CASE)) ->
+                        DefaultValue.FunctionCall(text)
                     else -> DefaultValue.StringLiteral(text)
                 }
             }
-            else -> DefaultValue.StringLiteral(node.toString())
+            node.isObject -> {
+                val fieldName = node.fieldNames().asSequence().firstOrNull()
+                when {
+                    fieldName == "sequence_nextval" ->
+                        DefaultValue.SequenceNextVal(node.get("sequence_nextval").asText())
+                    fieldName == "nextval" -> throw IllegalArgumentException(
+                        "Unsupported default form 'nextval'. " +
+                            "Use 'default: { sequence_nextval: ${node.get("nextval")?.asText() ?: "<name>"} }' instead."
+                    )
+                    else -> throw IllegalArgumentException(
+                        "Unsupported default object form with key '$fieldName'. " +
+                            "Supported: sequence_nextval, or scalar values (string, number, boolean)."
+                    )
+                }
+            }
+            else -> throw IllegalArgumentException(
+                "Unsupported default node type: ${node.nodeType}. " +
+                    "Supported: scalar (string, number, boolean), or object with 'sequence_nextval'."
+            )
         }
     }
 

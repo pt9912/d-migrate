@@ -723,5 +723,6 @@ private class StubTypeMapper : TypeMapper {
         is DefaultValue.NumberLiteral -> default.value.toString()
         is DefaultValue.BooleanLiteral -> if (default.value) "TRUE" else "FALSE"
         is DefaultValue.FunctionCall -> "${default.name}()"
+        is DefaultValue.SequenceNextVal -> "nextval('${default.sequenceName}')"
     }
 }

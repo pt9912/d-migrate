@@ -47,6 +47,7 @@ class PostgresTypeMapper : TypeMapper {
             "gen_uuid" -> "gen_random_uuid()"
             else -> "${default.name}()"
         }
+        is DefaultValue.SequenceNextVal -> "nextval('${default.sequenceName}')"
     }
 
     private fun resolveElementType(name: String): NeutralType = when (name) {
