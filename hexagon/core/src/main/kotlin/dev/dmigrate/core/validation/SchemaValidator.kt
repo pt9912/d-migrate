@@ -336,10 +336,8 @@ class SchemaValidator {
         if (default is DefaultValue.FunctionCall &&
             default.name.matches(Regex("""nextval\(.*\)""", RegexOption.IGNORE_CASE))
         ) {
-            val seqName = default.name
-                .removePrefix("nextval(").removePrefix("nextval('")
-                .removeSuffix(")").removeSuffix("')")
-                .removeSuffix("'")
+            val seqName = Regex("""nextval\(\s*'?([^')]+)'?\s*\)""", RegexOption.IGNORE_CASE)
+                .find(default.name)?.groupValues?.get(1)?.trim() ?: default.name
             errors += ValidationError(
                 "E122",
                 "Legacy 'nextval(...)' notation is no longer supported. " +

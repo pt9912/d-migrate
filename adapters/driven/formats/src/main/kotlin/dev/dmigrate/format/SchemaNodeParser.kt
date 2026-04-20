@@ -145,7 +145,14 @@ internal object SchemaNodeParser {
                 }
             }
             node.isObject -> {
-                val fieldName = node.fieldNames().asSequence().firstOrNull()
+                val fields = node.fieldNames().asSequence().toList()
+                if (fields.size != 1) {
+                    throw IllegalArgumentException(
+                        "Default object must have exactly one key, got ${fields.size}: ${fields.joinToString(", ")}. " +
+                            "Supported: { sequence_nextval: <name> }"
+                    )
+                }
+                val fieldName = fields.first()
                 when {
                     fieldName == "sequence_nextval" ->
                         DefaultValue.SequenceNextVal(node.get("sequence_nextval").asText())
