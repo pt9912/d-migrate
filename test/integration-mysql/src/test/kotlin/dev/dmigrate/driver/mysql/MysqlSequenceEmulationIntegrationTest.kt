@@ -133,6 +133,36 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
             rs.getInt(1) shouldBe 0
         }
     }
+
+    test("transaction rollback retracts sequence increment (W117 semantics)") {
+        // Re-create the schema for this test (rollback test dropped everything)
+        val result2 = generator.generate(schema, helperOpts)
+        conn().use { c ->
+            for (block in splitMysqlStatements(result2.render())) {
+                if (block.isNotBlank()) {
+                    try { c.createStatement().use { it.execute(block) } }
+                    catch (_: Exception) { /* table may already exist from prior test */ }
+                }
+            }
+        }
+        conn().use { c ->
+            // Start transaction, get a value, then rollback
+            c.autoCommit = false
+            val val1 = c.createStatement().use { stmt ->
+                val rs = stmt.executeQuery("SELECT `dmg_nextval`('invoice_seq')")
+                rs.next(); rs.getLong(1)
+            }
+            c.rollback()
+            // After rollback, the increment is retracted — next call gets same value
+            c.autoCommit = true
+            val val2 = c.createStatement().use { stmt ->
+                val rs = stmt.executeQuery("SELECT `dmg_nextval`('invoice_seq')")
+                rs.next(); rs.getLong(1)
+            }
+            // W117: rollback retracts the increment, so val2 == val1
+            val2 shouldBe val1
+        }
+    }
 })
 
 /**

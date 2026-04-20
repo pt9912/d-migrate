@@ -1583,4 +1583,35 @@ class MysqlDdlGeneratorTest : FunSpec({
         val result = generator.generate(schema, helperOpts)
         result.skippedObjects.any { it.code == "E124" && it.name == "dmg_nextval" } shouldBe true
     }
+
+    test("E124: helper_table with trigger name collision emits collision for trigger") {
+        // Create a schema where a user trigger has the same name as the canonical support trigger
+        val trigName = MysqlSequenceNaming.triggerName("invoices", "invoice_number")
+        val schema = SchemaDefinition(
+            name = "TrigCollision", version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf("invoices" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                    "invoice_number" to ColumnDefinition(
+                        type = NeutralType.Integer,
+                        default = DefaultValue.SequenceNextVal("my_seq"),
+                    ),
+                ),
+                primaryKey = listOf("id"),
+            )),
+            triggers = mapOf(trigName to TriggerDefinition(
+                table = "invoices", event = TriggerEvent.INSERT, timing = TriggerTiming.BEFORE,
+            )),
+        )
+        val result = generator.generate(schema, helperOpts)
+        result.skippedObjects.any { it.code == "E124" && it.name == trigName } shouldBe true
+    }
+
+    test("helper_table rollback contains DROP TRIGGER for support triggers") {
+        val rollback = generator.generateRollback(seqSchema(), helperOpts)
+        val ddl = rollback.render()
+        ddl shouldContain "DROP TRIGGER"
+        ddl shouldContain "DROP FUNCTION"
+    }
 })

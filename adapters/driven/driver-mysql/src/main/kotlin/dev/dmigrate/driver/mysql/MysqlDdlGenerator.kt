@@ -527,17 +527,19 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // Handle DELIMITER-wrapped statements
         if (sql.startsWith("DELIMITER //", ignoreCase = true)) {
             val inner = sql.removePrefix("DELIMITER //").removeSuffix("DELIMITER ;").trim()
+            // Strip leading block comments (/* ... */) used by support object markers
+            val stripped = inner.replace(Regex("""/\*.*?\*/\s*""", RegexOption.DOT_MATCHES_ALL), "").trim()
             return when {
-                inner.startsWith("CREATE FUNCTION", ignoreCase = true) -> {
-                    val name = extractNameAfterKeyword(inner, "CREATE FUNCTION")
+                stripped.startsWith("CREATE FUNCTION", ignoreCase = true) -> {
+                    val name = extractNameAfterKeyword(stripped, "CREATE FUNCTION")
                     DdlStatement("DROP FUNCTION IF EXISTS $name;")
                 }
-                inner.startsWith("CREATE PROCEDURE", ignoreCase = true) -> {
-                    val name = extractNameAfterKeyword(inner, "CREATE PROCEDURE")
+                stripped.startsWith("CREATE PROCEDURE", ignoreCase = true) -> {
+                    val name = extractNameAfterKeyword(stripped, "CREATE PROCEDURE")
                     DdlStatement("DROP PROCEDURE IF EXISTS $name;")
                 }
-                inner.startsWith("CREATE TRIGGER", ignoreCase = true) -> {
-                    val name = extractNameAfterKeyword(inner, "CREATE TRIGGER")
+                stripped.startsWith("CREATE TRIGGER", ignoreCase = true) -> {
+                    val name = extractNameAfterKeyword(stripped, "CREATE TRIGGER")
                     DdlStatement("DROP TRIGGER IF EXISTS $name;")
                 }
                 else -> null
