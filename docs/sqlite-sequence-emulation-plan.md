@@ -108,9 +108,11 @@ zuverlaessig erkennen koennen.
 Vorgeschlagene Objekte:
 
 - zentrale Support-Tabelle `dmg_sequences`
-- pro sequence-basierter Spalte ein kanonischer `BEFORE INSERT`-Trigger,
-  der bei `NEW.<column> IS NULL` den naechsten Wert direkt ueber ein
-  inline `UPDATE`/`SELECT` auf `dmg_sequences` einsetzt
+- pro sequence-basierter Spalte ein kanonisches **Trigger-Paar**:
+  ein `BEFORE INSERT`-Trigger (`_bi`), der den naechsten Wert in
+  `dmg_sequences` reserviert, und ein `AFTER INSERT`-Trigger (`_ai`),
+  der den reservierten Wert per `UPDATE ... WHERE ROWID = NEW.ROWID`
+  in die eingefuegte Zeile schreibt
 
 Im Gegensatz zur MySQL-Variante gibt es **keine** separaten Stored
 Functions (`dmg_nextval`, `dmg_setval`), da SQLite keine benutzerdefinierten
@@ -181,16 +183,19 @@ Konsistent mit dem MySQL-Plan gilt:
 Vorgeschlagener Prefix:
 
 - Tabelle: `dmg_sequences`
-- Trigger: deterministisch begrenztes Schema
-  `dmg_seq_<table16>_<column16>_<hash10>_bi`
+- Trigger-Paar: deterministisch begrenztes Schema
+  - BEFORE INSERT: `dmg_seq_<table16>_<column16>_<hash10>_bi`
+  - AFTER INSERT:  `dmg_seq_<table16>_<column16>_<hash10>_ai`
 
 Vorgeschlagene Marker:
 
 - `managed_by = 'd-migrate'`
 - `format_version = 'sqlite-sequence-v1'`
-- Sequence-Support-Trigger starten mit einem kanonischen Marker-Kommentar,
-  z. B.
-  `/* d-migrate:sqlite-sequence-v1 object=sequence-trigger sequence=<name> table=<table> column=<column> */`
+- Sequence-Support-Trigger starten mit einem kanonischen Marker-Kommentar:
+  - BEFORE INSERT (`_bi`):
+    `/* d-migrate:sqlite-sequence-v1 object=sequence-trigger sequence=<name> table=<table> column=<column> */`
+  - AFTER INSERT (`_ai`):
+    `/* d-migrate:sqlite-sequence-v1 object=sequence-trigger-post sequence=<name> table=<table> column=<column> */`
 
 Trigger-Namensvertrag:
 
@@ -207,10 +212,15 @@ Trigger-Namensvertrag:
   - `hash10`: erste 10 Hex-Zeichen (lowercase) eines SHA-256-Hashes
     ueber den UTF-8-kodierten String
     `<canonical-table>\u0000<canonical-column>\u0000<sequence>`
-  - Suffix `_bi`
-- dieses Schema bleibt immer <= 55 Zeichen
+  - Suffix `_bi` (BEFORE INSERT) bzw. `_ai` (AFTER INSERT)
+- beide Trigger eines Paares verwenden denselben Hash; sie
+  unterscheiden sich nur im Suffix
+- das Schema bleibt immer <= 55 Zeichen (laengster Fall mit `_bi`;
+  `_ai` ist gleich lang)
 - Reverse identifiziert Sequence-Support-Trigger **nicht** nur ueber den
   Namen, sondern ueber Name + Marker-Kommentar + kanonische Body-Form
+- Reverse muss **beide** Trigger eines Paares (`_bi` + `_ai`)
+  erkennen; fehlt einer, ist die Emulation degradiert (`W116`)
 - Kollisionen auf `hash10` gelten als praktisch unwahrscheinlich; tritt
   dennoch eine Kollision auf, ist das ein expliziter Generate-Fehler und
   kein stilles Umbenennen
@@ -292,75 +302,49 @@ vom Zyklusanfang startet.
 
 SQLite-Trigger koennen `NEW.<column>` nicht direkt per `SET` zuweisen
 wie MySQL (`SET NEW.col = expr`). Es gibt in SQLite **keine**
-eingebaute Funktion, die das ermoeglicht. Die Zuweisung muss
-stattdessen ueber eine der folgenden Strategien erfolgen:
+eingebaute Funktion, die das ermoeglicht.
 
-- **Strategie A — Zwei-Trigger (BEFORE + AFTER INSERT)**:
-  Ein `BEFORE INSERT`-Trigger reserviert den naechsten Wert in
-  `dmg_sequences` (atomares `UPDATE`). Ein `AFTER INSERT`-Trigger
-  schreibt den reservierten Wert per
-  `UPDATE ... WHERE ROWID = NEW.ROWID` in die eingefuegte Zeile.
-  Vorteile: transparent, kein Applikationscode noetig.
-  Nachteile: erfordert `ROWID`-Zugriff; **bricht bei
-  `WITHOUT ROWID`-Tabellen** (siehe R5 und offene Fragen unten).
-  Phase A muss entscheiden, ob `WITHOUT ROWID`-Tabellen mit
-  sequence-basierten Spalten als Einschraenkung abgelehnt werden
-  (`action_required` oder Fehler) oder ob der `AFTER INSERT`-Trigger
-  alternativ ueber den PK der Tabelle adressiert.
+**Entscheidung: Zwei-Trigger-Strategie als kanonischer Produktpfad**
 
-- **Strategie B — Nur Tabelle + dokumentierte INSERT-Syntax (App-Level)**:
-  Kein automatischer Trigger. Die Anwendung holt den naechsten Wert
-  selbst aus `dmg_sequences` und setzt ihn explizit im `INSERT` ein.
-  Ein optionaler `BEFORE INSERT`-Trigger blockiert per `RAISE(ABORT)`
-  wenn `NEW.<column> IS NULL`, um fehlende Werte frueh abzufangen.
-  Vorteile: zuverlaessigste Strategie, kein `ROWID`-Problem,
-  kompatibel mit allen Tabellentypen.
-  Nachteile: weniger transparent; die Sequence-Vergabe ist nicht
-  automatisch, sondern erfordert Applikationslogik.
+Der `helper_table`-Modus nutzt verbindlich die **Zwei-Trigger-Strategie**:
 
-- **Strategie C — BEFORE INSERT mit RETURNING-basiertem Subselect**:
-  Seit SQLite 3.35.0 (2021-03-12) unterstuetzt `UPDATE ... RETURNING`.
-  Ein BEFORE INSERT-Trigger koennte theoretisch den Wert in einem
-  einzigen Statement reservieren und zurueckgeben. Problem: auch mit
-  RETURNING kann der Rueckgabewert nicht direkt in `NEW.<column>`
-  geschrieben werden; RETURNING ist primaer fuer die aufrufende
-  Applikation, nicht fuer Trigger-interne Logik.
+1. Ein `BEFORE INSERT`-Trigger (`_bi`) reserviert den naechsten Wert
+   in `dmg_sequences` (atomares `UPDATE`) und prueft Grenzen/Zyklus
+2. Ein `AFTER INSERT`-Trigger (`_ai`) schreibt den reservierten Wert
+   per `UPDATE ... WHERE ROWID = NEW.ROWID` in die eingefuegte Zeile
 
-Phase A muss die endgueltige Zuweisungsstrategie festlegen. Die
-zentrale Herausforderung ist die `NEW.<column>`-Zuweisung, die in
-SQLite-Triggern nicht direkt moeglich ist — es gibt keine eingebaute
-Funktion oder Syntax dafuer.
+Vorteile:
 
-Realistischer Ansatz fuer Phase A:
+- transparent, kein Applikationscode noetig
+- kanonische Trigger ermoeglichen vollstaendiges Reverse-Engineering
+  zurueck auf `DefaultValue.SequenceNextVal`
+- Compare/Diff bleibt auf Neutralmodell-Ebene stabil
 
-Die wahrscheinlichste Produktstrategie ist entweder:
+Einschraenkung:
 
-- **Strategie A** (Zwei-Trigger) fuer Tabellen mit `ROWID`
-  (= Standard), mit explizitem Ausschluss von `WITHOUT ROWID`-Tabellen
-- **Strategie B** (App-Level) als sicherster Fallback, der auf allen
-  Tabellentypen funktioniert
+- erfordert `ROWID`-Zugriff im `AFTER INSERT`-Trigger
+- **`WITHOUT ROWID`-Tabellen** koennen diesen Pfad nicht nutzen
+  (siehe §3.7)
 
-Beispiel fuer Strategie B (ausfuehrbares SQL):
+Alternative Ansaetze, die evaluiert und verworfen wurden:
+
+- **App-Level (kein automatischer Trigger)**: Die Anwendung holt den
+  Wert selbst aus `dmg_sequences`. Verworfen fuer `helper_table`, weil
+  ohne kanonische Trigger kein Reverse-Mapping auf
+  `DefaultValue.SequenceNextVal` moeglich ist — das bricht die
+  Kernziele des Plans (§1). Nutzer, die App-Level-Sequencing
+  bevorzugen, koennen `action_required` verwenden und die
+  `dmg_sequences`-Tabelle manuell anlegen; ein dokumentiertes
+  SQL-Pattern steht in §3.2 (manuelle Zugriffe).
+- **RETURNING-basiert**: `UPDATE ... RETURNING` (seit SQLite 3.35.0)
+  kann den Rueckgabewert nicht direkt in `NEW.<column>` schreiben;
+  RETURNING ist fuer die aufrufende Applikation, nicht fuer
+  Trigger-interne Logik.
+
+Kanonisches Trigger-Paar (ausfuehrbares SQL):
 
 ```sql
--- Anwendung holt naechsten Wert und fuehrt INSERT in einer Transaktion aus:
-BEGIN;
-UPDATE "dmg_sequences"
-    SET "next_value" = "next_value" + "increment_by"
-    WHERE "name" = 'order_number_seq';
-INSERT INTO "orders" ("order_number", ...)
-VALUES (
-    (SELECT "next_value" - "increment_by" FROM "dmg_sequences"
-     WHERE "name" = 'order_number_seq'),
-    ...
-);
-COMMIT;
-```
-
-Beispiel fuer Strategie A (ausfuehrbares SQL):
-
-```sql
--- BEFORE INSERT: reserviert den Wert
+-- BEFORE INSERT: reserviert den Wert, prueft Grenzen
 CREATE TRIGGER "dmg_seq_orders_order_num_a1b2c3d4e5_bi"
 BEFORE INSERT ON "orders"
 FOR EACH ROW
@@ -370,6 +354,42 @@ BEGIN
     UPDATE "dmg_sequences"
         SET "next_value" = "next_value" + "increment_by"
         WHERE "name" = 'order_number_seq';
+    -- Grenzpruefung: RAISE wenn erschoepft und kein Zyklus
+    SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
+        WHERE (SELECT "cycle_enabled" FROM "dmg_sequences"
+               WHERE "name" = 'order_number_seq') = 0
+        AND (
+            ((SELECT "increment_by" FROM "dmg_sequences"
+              WHERE "name" = 'order_number_seq') > 0
+             AND (SELECT "next_value" FROM "dmg_sequences"
+                  WHERE "name" = 'order_number_seq')
+                 > COALESCE((SELECT "max_value" FROM "dmg_sequences"
+                             WHERE "name" = 'order_number_seq'),
+                            9223372036854775807))
+            OR
+            ((SELECT "increment_by" FROM "dmg_sequences"
+              WHERE "name" = 'order_number_seq') < 0
+             AND (SELECT "next_value" FROM "dmg_sequences"
+                  WHERE "name" = 'order_number_seq')
+                 < COALESCE((SELECT "min_value" FROM "dmg_sequences"
+                             WHERE "name" = 'order_number_seq'),
+                            -9223372036854775808))
+        );
+    -- Zyklus-Reset (nur wenn cycle_enabled = 1 und Grenze ueberschritten)
+    UPDATE "dmg_sequences"
+        SET "next_value" = CASE
+            WHEN "increment_by" > 0 THEN COALESCE("min_value", 1)
+            ELSE COALESCE("max_value", 9223372036854775807)
+        END
+        WHERE "name" = 'order_number_seq'
+        AND "cycle_enabled" = 1
+        AND (
+            ("increment_by" > 0
+             AND "next_value" > COALESCE("max_value", 9223372036854775807))
+            OR
+            ("increment_by" < 0
+             AND "next_value" < COALESCE("min_value", -9223372036854775808))
+        );
 END;
 
 -- AFTER INSERT: schreibt den reservierten Wert in die Zeile
@@ -389,11 +409,50 @@ BEGIN
 END;
 ```
 
-Hinweis: Bei Strategie A ist die Grenzpruefung (Exhaustion, Cycle)
-im BEFORE INSERT-Trigger zu implementieren, **bevor** der INSERT
-durchlaeuft. Der obige Pseudocode-Ablauf (Schritte 1-3) bildet diese
-Reihenfolge ab. Die Zyklus-Logik muss zwischen dem UPDATE (Schritt 2)
-und dem Ende des BEFORE-Triggers liegen.
+Hinweis: Die Grenzpruefung und der Zyklus-Reset laufen im BEFORE
+INSERT-Trigger, **bevor** der INSERT durchlaeuft. Der Pseudocode-Ablauf
+(Schritte 1-3 oben) bildet diese Reihenfolge ab. Der zurueckgegebene
+Wert (`next_value - increment_by` im AFTER-Trigger) ist immer der
+Wert **vor** dem Inkrement.
+
+### 3.7 `WITHOUT ROWID`-Tabellen
+
+**Entscheidung:** `WITHOUT ROWID`-Tabellen mit sequence-basierten
+Spalten werden im `helper_table`-Modus **nicht** unterstuetzt.
+
+Verhalten bei Generierung:
+
+- wenn eine Tabelle im neutralen Modell als `WITHOUT ROWID` markiert
+  ist **und** eine Spalte `DefaultValue.SequenceNextVal(...)` traegt,
+  erzeugt der Generator fuer diese Spalte einen `action_required`-Pfad
+  mit Code `E057`
+- die `SequenceDefinition` selbst wird weiterhin in `dmg_sequences`
+  erzeugt (sie kann von anderen Tabellen genutzt werden)
+- nur das Trigger-Paar fuer die betroffene Spalte wird nicht erzeugt
+- der Rest der Tabelle (Spalten, Constraints, Indizes) wird normal
+  generiert
+
+Verhalten bei Reverse:
+
+- `WITHOUT ROWID`-Tabellen haben keine implizite `ROWID`; der Reader
+  erwartet dort keine Sequence-Support-Trigger
+- wenn dennoch ein Trigger mit passendem Marker auf einer
+  `WITHOUT ROWID`-Tabelle gefunden wird, wird er als degradiert
+  markiert (Reverse-Warning)
+
+Warning-Code:
+
+- `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
+  automatic trigger assignment; use action_required mode or
+  application-level sequencing
+
+Begruendung: Ein alternativer AFTER INSERT-Trigger, der ueber den PK
+statt ROWID adressiert, waere technisch moeglich, fuehrt aber zu
+einem zweiten Trigger-Pfad mit eigener Body-Form, eigener
+Reverse-Erkennung und eigenen Edge Cases (zusammengesetzte PKs,
+PK-Aenderungen). Fuer Phase 1 ist die klare Ablehnung das
+stabilere Design. Eine spaetere Ausbaustufe kann den PK-basierten
+Pfad ergaenzen, wenn der Bedarf belegt ist.
 
 ### 3.5 Sequenzsemantik
 
@@ -446,10 +505,11 @@ Identisch zum MySQL-Plan (§4.1):
 
 Folgen fuer SQLite:
 
-- `helper_table`: Mapping auf kanonischen `BEFORE INSERT`-Trigger
-  (oder Zwei-Trigger-Ansatz), der bei `NEW.<column> IS NULL` intern
-  den naechsten Wert aus `dmg_sequences` bezieht; diese Abbildung ist
-  lossy (identisch zu MySQL)
+- `helper_table`: Mapping auf kanonisches Trigger-Paar (`_bi` + `_ai`),
+  das bei `NEW.<column> IS NULL` intern den naechsten Wert aus
+  `dmg_sequences` reserviert und per ROWID in die Zeile schreibt;
+  diese Abbildung ist lossy (identisch zu MySQL);
+  `WITHOUT ROWID`-Tabellen erhalten `E057` statt Trigger (§3.7)
 - `action_required`: sequence-basierte Default-Semantik bleibt manuell
 
 ### 4.2 Generator-Optionen
@@ -519,7 +579,8 @@ Sequence einen Skip, sondern:
 2. Seed-Statements (ein `INSERT INTO "dmg_sequences"` pro Sequence)
 
 Zusaetzlich muessen Spalten mit `DefaultValue.SequenceNextVal(...)` im
-SQLite-DDL auf einen kanonischen Trigger-Pfad abgebildet werden.
+SQLite-DDL auf ein kanonisches Trigger-Paar (`_bi` + `_ai`) abgebildet
+werden (ausser bei `WITHOUT ROWID`-Tabellen, die `E057` erhalten).
 
 Praezisierung:
 
@@ -574,12 +635,13 @@ der vom Validator abgefangen wird.
 
 Rollback muss die kanonischen Hilfsobjekte wieder entfernen:
 
-- generierte Sequence-Support-Trigger droppen
+- generierte Sequence-Support-Trigger-Paare droppen (beide: `_bi` + `_ai`)
 - `dmg_sequences` droppen
 
 Vorgeschlagene Rollback-Reihenfolge:
 
-1. Generierte Sequence-Support-Trigger (`DROP TRIGGER IF EXISTS`)
+1. Generierte Sequence-Support-Trigger (`DROP TRIGGER IF EXISTS` fuer
+   jeden `_bi`- und `_ai`-Trigger)
 2. `dmg_sequences` (`DROP TABLE IF EXISTS`)
 
 Anders als bei MySQL gibt es keine Support-Routinen zum Droppen.
@@ -595,16 +657,19 @@ Anders als bei MySQL gibt es keine Support-Routinen zum Droppen.
     (SQLite ist Single-Writer; Caching bringt keinen Vorteil)
   - `W115`: SequenceNextVal uses lossy trigger semantics; explicit
     NULL is treated like omitted value (identisch zu MySQL)
+  - `W116`: Sequence metadata reconstructed, but required support
+    triggers are missing or incomplete (Reverse-Degradation;
+    identisch zu MySQL)
   - `W117`: Sequence values are transaction-bound in SQLite
     helper-table mode; rollback retracts sequence increments unlike
     native PostgreSQL sequences (identisch zu MySQL)
-  - `W118`: SQLite sequence trigger cannot directly assign
-    NEW.<column>; see documentation for the applied workaround
-    strategy (nur falls Strategie A oder B gewaehlt wird)
+- `WITHOUT ROWID`-Tabellen mit sequence-basierten Spalten:
+  - `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
+    automatic trigger assignment (§3.7)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
-`W114`, `W115` und `W117` sind mit dem MySQL-Plan geteilt; `W118` ist
-SQLite-spezifisch.
+`W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
+`E057` ist SQLite-spezifisch.
 
 ---
 
@@ -621,8 +686,8 @@ Dazu braucht er:
 - Pruefung der Marker `managed_by` und `format_version`
 - Rekonstruktion der `SequenceDefinition`-Felder aus den Zeilen
 - Rekonstruktion von sequence-basierten Spaltenwerten ueber kanonische
-  Sequence-Support-Trigger mit Name + Marker-Kommentar + kanonischer
-  Body-Form
+  Sequence-Support-Trigger-Paare (`_bi` + `_ai`) mit Name +
+  Marker-Kommentar + kanonischer Body-Form
 
 Die Hilfsobjekte duerfen danach nicht zugleich als normale Tabelle
 oder Trigger im neutralen Schema auftauchen.
@@ -688,20 +753,21 @@ Trotzdem zu pruefen:
 
 ### Phase A — Vertrag schaerfen
 
-- Zuweisungsstrategie fuer `NEW.<column>` in SQLite-Triggern
-  endgueltig festlegen (Zwei-Trigger, App-Level, oder alternative
-  Loesung) — mit Prototyp gegen echte SQLite-DB validieren
-- `WITHOUT ROWID`-Tabellen: Verhalten bei Strategie A festlegen
-  (Ablehnung mit `action_required`/Fehler, oder Adressierung ueber PK
-  statt ROWID)
+- Zwei-Trigger-Strategie (`_bi` + `_ai`) gegen echte SQLite-DB
+  prototypisch validieren (Entscheidung fuer diesen Ansatz steht,
+  Prototyp muss Korrektheit bestaetigen)
 - minimale SQLite-Version fuer `helper_table`-Modus festlegen
+  (Zwei-Trigger-Strategie benoetigt nur BEFORE/AFTER-Trigger und
+  ROWID — verfuegbar seit SQLite 3.0; die Mindestversion sollte
+  sich an der aeltesten im Projekt getesteten Version orientieren,
+  nicht an RETURNING/3.35.0)
 - kanonisches Hilfsobjekt-Layout finalisieren (Trigger-Body-Form
   haengt von der Zuweisungsstrategie ab)
 - DEFAULT-Constraint-Interaktion: Validierungsregel festlegen, dass
   `SequenceNextVal`-Spalten keinen `DEFAULT` tragen duerfen
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
-- Warning-Codes festziehen (`W114`, `W115`, `W117`, ggf. `W118`)
+- Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `E057`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -801,18 +867,19 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
 
 ## 9. Risiken
 
-### R1 — Zuweisungsstrategie fuer `NEW.<column>` ist nicht trivial
+### R1 — Zwei-Trigger-Strategie muss prototypisch validiert werden
 
-SQLite-Trigger koennen `NEW.<column>` nicht direkt per `SET` zuweisen.
-Das ist die **zentrale technische Herausforderung** dieses Plans und
-der Hauptunterschied zur MySQL-Variante.
+Die Entscheidung fuer die Zwei-Trigger-Strategie (`_bi` + `_ai`)
+steht (§3.4). Das Restrisiko liegt in der prototypischen Validierung:
+die AFTER INSERT-Zuweisung per `ROWID` muss unter allen relevanten
+Bedingungen korrekt funktionieren (mehrere Sequences pro Tabelle,
+Batch-INSERTs, Transaktions-Rollback).
 
 Gegenmassnahme:
 
-- Phase A evaluiert alle Strategien (Zwei-Trigger, App-Level,
-  RETURNING-basiert) und waehlt die zuverlaessigste
-- prototypische Implementierung vor der vollen Generierung
+- prototypische Implementierung in Phase A gegen echte SQLite-DB
 - Integrationstests gegen verschiedene SQLite-Versionen
+- Edge-Case-Tests fuer Batch-INSERT und Multi-Sequence-Tabellen
 
 ### R2 — Emulation ohne Stored Functions ist weniger ergonomisch
 
@@ -852,14 +919,21 @@ Gegenmassnahme:
 
 ### R5 — ROWID-Abhaengigkeit bei Zwei-Trigger-Strategie
 
-Falls die Zwei-Trigger-Strategie (Strategie A) gewaehlt wird, haengt
-der `AFTER INSERT`-Trigger von `ROWID` ab. `WITHOUT ROWID`-Tabellen
-wuerden diesen Pfad brechen.
+Die Zwei-Trigger-Strategie haengt von `ROWID` ab. `WITHOUT ROWID`-
+Tabellen mit sequence-basierten Spalten werden deshalb mit `E057`
+abgelehnt (§3.7).
+
+Restrisiko: Nutzer mit `WITHOUT ROWID`-Tabellen und Sequence-Bedarf
+muessen `action_required` verwenden und die Sequencing-Logik manuell
+implementieren. Wenn der Bedarf fuer einen PK-basierten AFTER
+INSERT-Trigger nachgewiesen wird, kann eine spaetere Ausbaustufe
+diesen Pfad ergaenzen.
 
 Gegenmassnahme:
 
-- `WITHOUT ROWID`-Tabellen als Einschraenkung dokumentieren
-- oder alternative Strategie waehlen, die nicht von `ROWID` abhaengt
+- klare `E057`-Fehlermeldung mit Hint auf `action_required`
+- PK-basierter Trigger als optionale spaetere Erweiterung
+  dokumentiert, nicht als Phase-1-Ziel
 
 ### R6 — Semantikabweichung gegen native PostgreSQL-Sequences
 
@@ -906,36 +980,42 @@ Grobe Einschaetzung pro Phase (T-Shirt-Sizing):
 
 ## 11. Empfehlung
 
+Bereits getroffene Entscheidungen:
+
+- **Zuweisungsstrategie**: Zwei-Trigger (`_bi` + `_ai`) als
+  kanonischer Produktpfad (§3.4)
+- **`WITHOUT ROWID`**: hard-fail mit `E057` (§3.7)
+- **App-Level (ex-Strategie B)**: nicht Teil von `helper_table`;
+  nur als Doku-Pattern fuer `action_required`-Nutzer
+
 Vor dem ersten Code:
 
-1. Zuweisungsstrategie fuer `NEW.<column>` in SQLite-Triggern
-   festlegen und prototypisch validieren
-2. `WITHOUT ROWID`-Verhalten bei Strategie A entscheiden
-3. DEFAULT-Constraint-Ausschluss fuer `SequenceNextVal`-Spalten als
-   Validierungsregel festlegen
-4. Minimale SQLite-Version festlegen (z. B. 3.35.0 fuer RETURNING)
-5. Abhaengigkeit zum MySQL-Plan klaeren: wird
+1. Zwei-Trigger-Prototyp gegen echte SQLite-DB validieren
+   (Korrektheit, Batch-INSERT, Multi-Sequence-Tabelle)
+2. Minimale SQLite-Version festlegen (Zwei-Trigger braucht nur
+   BEFORE/AFTER-Trigger + ROWID — keine RETURNING-Abhaengigkeit;
+   Minimum orientiert sich an der aeltesten getesteten Version)
+3. Abhaengigkeit zum MySQL-Plan klaeren: wird
    `DefaultValue.SequenceNextVal` gemeinsam oder getrennt implementiert?
-6. Kanonisches SQLite-Objektlayout und Trigger-Body-Form festlegen
-7. `cache`-Warnung (`W114`) fuer SQLite bestaetigen
-8. SQLite-spezifischen Warning-Code `W118` entscheiden
-9. Transaktionsvertrag fuer manuelle `dmg_sequences`-Zugriffe festlegen
+4. Kanonisches SQLite-Trigger-Body-Layout finalisieren (Grenzpruefung,
+   Zyklus-Reset, Marker-Kommentar-Position)
+5. `cache`-Warnung (`W114`) fuer SQLite bestaetigen
+6. Transaktionsvertrag fuer manuelle `dmg_sequences`-Zugriffe festlegen
 
-Erst danach sollte die eigentliche Implementierung beginnen. Die
-zentrale Unsicherheit liegt in der `NEW.<column>`-Zuweisungsstrategie —
-ohne einen validierten Prototyp droht eine Emulation, die zwar
-`dmg_sequences` erzeugt, aber die Werte nicht zuverlaessig in die
-Zielzeile schreiben kann.
+Erst danach sollte die eigentliche Implementierung beginnen. Das
+Hauptrisiko liegt jetzt in der prototypischen Validierung der
+Zwei-Trigger-Strategie unter realen Bedingungen.
 
 ### Vergleich mit MySQL-Plan
 
 | Aspekt | MySQL | SQLite |
 |---|---|---|
 | Stored Functions | `dmg_nextval`, `dmg_setval` | Nicht moeglich |
-| Nextval-Logik | In Stored Function | Inline in Trigger |
-| Trigger-Zuweisung | `SET NEW.<col> = ...` | Offen (Phase A) |
+| Nextval-Logik | In Stored Function | Inline in Trigger-Paar (`_bi` + `_ai`) |
+| Trigger-Zuweisung | `SET NEW.<col> = ...` (1 Trigger) | AFTER INSERT + ROWID (2 Trigger) |
+| `WITHOUT ROWID` | n/a (MySQL-Konzept existiert nicht) | `E057` hard-fail |
 | Concurrency | Row-Level-Lock auf `dmg_sequences` | Single-Writer (implizit serialisiert) |
 | Rollback-Semantik | Identisch (transaktionsgebunden) | Identisch |
-| Reverse-Komplexitaet | Tabelle + Routinen + Trigger | Tabelle + Trigger |
+| Reverse-Komplexitaet | Tabelle + Routinen + Trigger | Tabelle + Trigger-Paare |
 | Support-Routinen droppen | Ja | Nein (gibt es nicht) |
 | `format_version` | `mysql-sequence-v1` | `sqlite-sequence-v1` |
