@@ -52,7 +52,37 @@ Beispielausgabe:
 
 ---
 
-## 3. Klassen mit den meisten verfehlten Zeilen
+## 3. Klassen unter 90% Line-Coverage
+
+Listet alle Klassen auf, deren Line-Coverage unter 90% liegt, sortiert
+nach Prozent aufsteigend:
+
+```bash
+jq -r '
+  .report.packages[] as $pkg |
+  $pkg.classes[] |
+  .counters.LINE as $line |
+  select($line and (($line.missed + $line.covered) > 0)) |
+  { pkg: $pkg.name,
+    cls: (.sourceFile // .name),
+    pct: (($line.covered * 1000 / ($line.missed + $line.covered)) | floor | . / 10),
+    missed: $line.missed } |
+  select(.pct < 90) |
+  "\(.pct)%\t\(.missed) missed\t\(.pkg)/\(.cls)"
+' /tmp/coverage.json | sort -n
+```
+
+Beispielausgabe:
+
+```
+41.8%   25 missed   dev/dmigrate/cli/config/PipelineCheckpointResolver.kt
+66.6%   4 missed    dev/dmigrate/profiling/ProfilingSummary.kt
+83.3%   8 missed    dev/dmigrate/cli/config/NamedConnectionResolver.kt
+```
+
+---
+
+## 4. Klassen mit den meisten verfehlten Zeilen
 
 Zeigt pro Paket die Klassen mit den meisten verfehlten Zeilen, sortiert
 nach Anzahl absteigend. `PAKETNAME` durch den Paketpfad ersetzen
@@ -83,7 +113,7 @@ Beispielausgabe für `dev/dmigrate/cli/config`:
 
 ---
 
-## 4. Schwellenwert anpassen
+## 5. Schwellenwert anpassen
 
 Um einen anderen Schwellenwert als 90% zu verwenden, die Zeile
 `select(.pct < 90)` in Abschnitt 2 anpassen.
@@ -93,7 +123,7 @@ Fuer Branch-Coverage statt Line-Coverage `.counters.LINE` durch
 
 ---
 
-## 5. Referenzen
+## 6. Referenzen
 
 - [Dockerfile](../Dockerfile) — Stages `build`, `coverage-build`, `coverage-json`
 - [`.github/workflows/build.yml`](../.github/workflows/build.yml) — koverVerify und koverHtmlReport
