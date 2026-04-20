@@ -123,8 +123,10 @@ Fuer administrative Zwecke (Sequence zuruecksetzen, aktuellen Wert
 abfragen) wird stattdessen ein dokumentierter SQL-Befehl bereitgestellt:
 
 ```sql
--- Naechsten Wert abfragen:
-SELECT "next_value" FROM "dmg_sequences" WHERE "name" = 'invoice_seq';
+-- Aktuellen Zustand inspizieren (nur lesen, kein Verbrauch!):
+-- Dieser SELECT ist KEIN nextval — er liest nur den naechsten
+-- Wert, ohne ihn zu reservieren oder zu inkrementieren.
+SELECT "next_value", "exhausted" FROM "dmg_sequences" WHERE "name" = 'invoice_seq';
 
 -- Wert manuell setzen (dmg_setval-Aequivalent):
 -- Wichtig: exhausted und last_returned_value muessen ebenfalls
