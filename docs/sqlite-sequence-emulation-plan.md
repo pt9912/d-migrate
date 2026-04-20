@@ -839,18 +839,52 @@ Die Grenzvorausschau im Trigger verwendet Subtraktionen der Form
 Der `SchemaValidator` prueft deshalb zusaetzlich:
 
 - `|increment_by|` darf nicht groesser sein als der Abstand zwischen
-  `min_value` und `max_value` (d. h.
-  `|increment_by| <= max_value - min_value`)
-- diese Bedingung stellt sicher, dass die Subtraktionsformeln in den
-  Triggern nicht ueberlaufen koennen, da:
-  - fuer `inc > 0`: `max_value - inc >= max_value - (max_value - min_value) = min_value >= MIN_INT`
-  - fuer `inc < 0`: `min_value - inc = min_value + |inc| <= min_value + (max_value - min_value) = max_value <= MAX_INT`
+  `min_value` und `max_value`
+
+Implementierung der Pruefung (overflow-sicher in Kotlin):
+
+Die naive Berechnung `max_value - min_value` ist in `Long`-Arithmetik
+**nicht** sicher: bei Standardgrenzen (`min = Long.MIN_VALUE`,
+`max = Long.MAX_VALUE`) waere das Ergebnis `Long.MAX_VALUE -
+Long.MIN_VALUE = -1` (Wraparound). Der Validator verwendet deshalb
+eine **overflow-sichere Vergleichslogik ohne Subtraktion**:
+
+```kotlin
+// Overflow-sichere Pruefung: |increment_by| <= max_value - min_value
+// Umformuliert als zwei separate Vergleiche ohne Subtraktion:
+fun isIncrementInRange(inc: Long, min: Long, max: Long): Boolean {
+    // Trivialfall: inc = 0 wird separat als Fehler behandelt
+    if (inc > 0) {
+        // Pruefe: inc <= max - min, umgeschrieben als: min <= max - inc
+        // max - inc ist sicher wenn inc > 0 und max >= min (immer wahr)
+        // Aber max - inc kann underflow'en wenn inc > max - Long.MIN_VALUE
+        // Sichere Variante: inc <= max && min <= max - inc
+        //   (erster Check verhindert, dass max - inc negativ underflow't
+        //    fuer den Fall max < inc)
+        return inc <= max && min <= max - inc
+    } else { // inc < 0
+        // Pruefe: -inc <= max - min, d.h. |inc| <= max - min
+        // Umgeschrieben: min - inc <= max (da inc < 0: min - inc = min + |inc|)
+        // Sichere Variante: inc >= min && max >= min - inc
+        return inc >= min && max >= min - inc
+    }
+}
+```
+
+- bei `min_value = NULL` und/oder `max_value = NULL` werden die
+  Defaultwerte `Long.MIN_VALUE`/`Long.MAX_VALUE` eingesetzt; die
+  Pruefung `isIncrementInRange` ist auch fuer diese Extremwerte
+  korrekt (keine Subtraktion von `max - min`)
 - bei Verletzung: Validierungsfehler (Exit-Code 3) mit Hinweis,
   dass `|increment_by|` den Sequence-Bereich nicht ueberschreiten darf
-- bei `min_value = NULL` und/oder `max_value = NULL` (Defaultwerte
-  `MIN_INT`/`MAX_INT`) ist der Bereich `MAX_INT - MIN_INT`, was
-  fuer alle praktischen `increment_by`-Werte ausreicht; die
-  Validierung greift hier nicht
+
+Beweis der Subtraktionssicherheit in den Triggern:
+
+Wenn die Validator-Regel erfuellt ist (`|inc| <= max - min`), gilt:
+- fuer `inc > 0`: `max - inc >= max - (max - min) = min >= MIN_INT`
+  → keine Underflow-Gefahr in `max_value - increment_by`
+- fuer `inc < 0`: `min - inc = min + |inc| <= min + (max - min) = max <= MAX_INT`
+  → keine Overflow-Gefahr in `min_value - increment_by`
 
 ### 3.7 Concurrency-Vertrag
 
@@ -1251,17 +1285,19 @@ Scope der Abhaengigkeitspruefung:
   fehleranfaellig; eine vollstaendige Pruefung aller ATTACHed DBs
   wuerde `PRAGMA database_list` + Iteration ueber alle Schemas
   erfordern und ist fuer Phase 1 unverhältnismaessig
-- als optionaler Failsafe prueft der Preflight per
-  `PRAGMA database_list`, ob neben `main` (und `temp`) weitere
-  Datenbanken per ATTACH angebunden sind; wenn ja, emittiert der
-  Rollback `W123` (WARNING): "Attached databases detected; rollback
-  dependency scan covers main schema only — verify that attached
-  schemas do not reference dmg_sequences"
-- `W123` blockiert den Rollback standardmaessig **nicht**, gibt
-  aber eine deutliche Warnung aus; im `--strict`-Modus (falls
-  implementiert) kann `W123` den Rollback blockieren
-- der Nutzer muss bei vorhandenen ATTACHed DBs explizit
-  bestaetigen, dass keine Cross-Database-Referenzen bestehen
+- der Preflight prueft per `PRAGMA database_list`, ob neben `main`
+  (und `temp`) weitere Datenbanken per ATTACH angebunden sind
+- wenn ATTACHed Datenbanken erkannt werden, **blockiert** der
+  Rollback standardmaessig mit `E060`: "Attached databases detected;
+  rollback cannot guarantee dependency safety across schemas.
+  Use --force-rollback to override."
+- mit dem CLI-Flag `--force-rollback` kann der Nutzer den Rollback
+  trotz ATTACHed DBs erzwingen; in diesem Fall wird `W123`
+  (WARNING) statt `E060` emittiert
+- Begruendung fuer die harte Blockierung: ein destructives
+  `DROP TABLE dmg_sequences` bei unbekannten Cross-Database-
+  Abhaengigkeiten kann Daten in angehängten Schemas korrumpieren;
+  das ist schlimmer als ein blockierter Rollback
 - diese Einschraenkung wird zusaetzlich in der Nutzerdokumentation
   als **Precondition** formuliert: "Vor dem Rollback im
   `helper_table`-Modus sicherstellen, dass keine per ATTACH
@@ -1341,12 +1377,14 @@ Normalisierung und Matching-Strategie:
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
-  - `W123` (WARNING): Attached databases detected; rollback dependency
-    scan covers main schema only (§5.2)
+  - `E060`: Attached databases detected; rollback blocked (§5.2);
+    ueberschreibbar mit `--force-rollback` (dann `W123`)
+  - `W123` (WARNING): Rollback erzwungen trotz ATTACHed Datenbanken;
+    Cross-Database-Abhaengigkeiten nicht geprueft (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `W120`, `W121`, `W122`, `W123`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
+`W119`, `W120`, `W121`, `W122`, `W123`, `E057`, `E058`, `E059` und `E060` sind SQLite-spezifisch.
 
 ---
 
@@ -1417,19 +1455,30 @@ Reverse-Erkennungsstrategie und Fallback:
   3. Trigger-Event und -Timing passen (BEFORE INSERT bzw. AFTER INSERT)
   4. WHEN-Klausel hat die Form `NEW.<column> IS NULL` (identische
      Spalte in beiden Triggern)
-  5. **Minimale Body-Pruefung**: der `_bi`-Trigger-Body enthaelt
-     ein `UPDATE "dmg_sequences"` (Substring-Match, case-insensitive);
-     der `_ai`-Trigger-Body enthaelt ein `UPDATE ... WHERE ROWID`
+  5. **Token-basierte Body-Pruefung**: der Body wird **nicht** per
+     einfachem Substring-Match geprueft, sondern mit derselben
+     Token-basierten Erkennung wie die Rollback-Abhaengigkeitspruefung
+     (§5.2): String-Literale und Kommentare werden vorab entfernt,
+     Identifier werden case-insensitive und in allen Quoting-Formen
+     (`"..."`, `[...]`, `` `...` ``) erkannt.
+     Konkret:
+     - `_bi`-Trigger-Body muss den Identifier `dmg_sequences` als
+       Token enthalten (beliebige Quoting-Form, ggf.
+       schema-qualifiziert)
+     - `_ai`-Trigger-Body muss sowohl den Tabellennamen der
+       Zieltabelle als auch `ROWID` als Tokens enthalten
   Nur wenn **alle fuenf** Kriterien zutreffen, wird das Trigger-Paar
   als **wahrscheinliches** Sequence-Supportobjekt behandelt und mit
   `W116` (degradiert) markiert; die Spaltenzuordnung wird aus den
   Triggernamen und der WHEN-Klausel rekonstruiert
 - wenn nicht alle Kriterien zutreffen, werden die Trigger als
   normale nutzerdefinierte Trigger ins neutrale Schema uebernommen
-- das Sekundaer-Matching ist bewusst **eng begrenzt**: Trigger-Paar-
-  Anforderung + minimale Body-Pruefung zusammen mit Name/Event/WHEN
-  machen versehentliche Treffer auf nutzerdefinierte Trigger extrem
-  unwahrscheinlich
+- das Sekundaer-Matching ist bewusst **eng begrenzt**, aber
+  Quoting-tolerant: Trigger-Paar-Anforderung + Token-basierte
+  Body-Pruefung zusammen mit Name/Event/WHEN machen versehentliche
+  Treffer auf nutzerdefinierte Trigger extrem unwahrscheinlich,
+  waehrend alternativ formatierte kompatible Trigger (unquoted,
+  schema-qualifiziert) korrekt erkannt werden
 
 **Roundtrip-Risiko bei manueller Trigger-Bearbeitung:**
 
@@ -1445,9 +1494,10 @@ editiert, ergeben sich folgende Szenarien:
   aber Spaltenzuordnung fehlt
 - **Body geaendert, Marker und Name intakt**: primaeres Matching
   ueber Marker greift, aber der Reader fuehrt zusaetzlich eine
-  **minimale Body-Integritaetspruefung** durch:
-  - `_bi`-Trigger muss `UPDATE "dmg_sequences"` enthalten
-  - `_ai`-Trigger muss `UPDATE ... WHERE ROWID` enthalten
+  **Token-basierte Body-Integritaetspruefung** durch (identische
+  Logik wie beim Sekundaer-Matching):
+  - `_bi`-Trigger muss `dmg_sequences` als Identifier-Token enthalten
+  - `_ai`-Trigger muss Tabellennamen + `ROWID` als Tokens enthalten
   Wenn der Marker passt, aber die Body-Pruefung fehlschlaegt, wird
   der Trigger als `W120` (body-modified) markiert: die Zuordnung
   zur Sequence bleibt bestehen (Marker ist autoritativ), aber der
@@ -1518,7 +1568,7 @@ Compare-Verhalten bei degradierten/modifizierten Triggern:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`, `E059`, `W120`, `W121`, `W122`, `W123`)
+  `E057`, `E058`, `E059`, `E060`, `W120`, `W121`, `W122`, `W123`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -1804,6 +1854,13 @@ Bereits getroffene Entscheidungen:
   im Roundtrip stabil; kein Laufzeiteffekt in SQLite (W114)
 - **Existenzpruefung**: deterministischer `EXISTS`-Precheck statt
   `changes()`-Semantik (robuster ueber SQLite-Versionen)
+- **Overflow-Validierung**: Kotlin-Implementierung verwendet
+  overflow-sichere Vergleichslogik ohne `Long`-Subtraktion (§3.6);
+  kein `BigInteger` noetig
+- **ATTACH-Rollback**: standardmaessig blockierend (`E060`) wenn
+  ATTACHed DBs erkannt werden; ueberschreibbar mit `--force-rollback`
+- **Sekundaer-Matching**: Token-basierte Body-Pruefung statt
+  Substring-Match; erkennt alle Quoting-Formen
 
 Vor dem ersten Code:
 
