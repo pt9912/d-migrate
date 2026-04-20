@@ -426,4 +426,35 @@ class SchemaGenerateHelpersTest : FunSpec({
         json shouldContain "\"W113\""
         report shouldContain "W113"
     }
+
+    // ─── 0.9.3 AP 6.2: mysql_named_sequences + generator version ──
+
+    test("formatJsonOutput includes generator version 0.9.3") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "postgresql",
+        )
+        json shouldContain "\"generator\": \"d-migrate 0.9.3\""
+    }
+
+    test("formatJsonOutput with HELPER_TABLE includes mysql_named_sequences") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "mysql",
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+        )
+        json shouldContain "\"mysql_named_sequences\": \"helper_table\""
+    }
+
+    test("formatJsonOutput with null mysqlNamedSequenceMode omits field") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "postgresql",
+            mysqlNamedSequenceMode = null,
+        )
+        json shouldNotContain "mysql_named_sequences"
+    }
 })

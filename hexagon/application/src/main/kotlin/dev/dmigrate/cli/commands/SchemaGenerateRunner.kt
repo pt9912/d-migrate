@@ -110,7 +110,8 @@ class SchemaGenerateRunner(
             if (dialect != DatabaseDialect.MYSQL) {
                 printError(
                     "--mysql-named-sequences is only valid with --target mysql, " +
-                        "not ${dialect.name.lowercase()}.",
+                        "not ${dialect.name.lowercase()}. " +
+                        "Allowed values for MySQL: action_required, helper_table.",
                     request.source.toString(),
                 )
                 return 2

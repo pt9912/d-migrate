@@ -199,4 +199,28 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "warnings: 1"
         report shouldContain "action_required: 1"
     }
+
+    // ─── 0.9.3 AP 6.2: mysql_named_sequences in report ──────────
+
+    test("report with mysqlNamedSequenceMode includes field in target block") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "mysql",
+            Path.of("schema.yaml"),
+            mysqlNamedSequenceMode = "action_required",
+        )
+        report shouldContain "mysql_named_sequences: action_required"
+        report shouldContain "generator: \"d-migrate 0.9.3\""
+    }
+
+    test("report without mysqlNamedSequenceMode omits field") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "postgresql",
+            Path.of("schema.yaml"),
+        )
+        report shouldNotContain "mysql_named_sequences"
+    }
 })

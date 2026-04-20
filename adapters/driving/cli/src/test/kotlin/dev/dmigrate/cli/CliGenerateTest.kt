@@ -507,4 +507,80 @@ class CliGenerateTest : FunSpec({
             Files.deleteIfExists(source)
         }
     }
+
+    // ─── 0.9.3: --mysql-named-sequences E2E ──────────────────────
+
+    val minimalSchemaYaml = """
+        schema_format: "1.0"
+        name: "Minimal"
+        version: "1.0.0"
+        encoding: "utf-8"
+        tables:
+          users:
+            columns:
+              id: { type: identifier, auto_increment: true }
+              name: { type: text, max_length: 100, required: true }
+            primary_key: [id]
+    """.trimIndent()
+
+    test("E2E: --mysql-named-sequences helper_table with --target mysql succeeds") {
+        val source = writeTempSchema(minimalSchemaYaml)
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "schema", "generate",
+                        "--source", source.toString(),
+                        "--target", "mysql",
+                        "--mysql-named-sequences", "helper_table",
+                    )
+                )
+            }
+        } finally {
+            Files.deleteIfExists(source)
+        }
+    }
+
+    test("E2E: --mysql-named-sequences with --target postgresql exits 2") {
+        val source = writeTempSchema(minimalSchemaYaml)
+        try {
+            val (_, stderr) = captureStreams {
+                val ex = shouldThrow<ProgramResult> {
+                    cli().parse(
+                        listOf(
+                            "schema", "generate",
+                            "--source", source.toString(),
+                            "--target", "postgresql",
+                            "--mysql-named-sequences", "helper_table",
+                        )
+                    )
+                }
+                ex.statusCode shouldBe 2
+            }
+            stderr shouldContain "--mysql-named-sequences is only valid with --target mysql"
+        } finally {
+            Files.deleteIfExists(source)
+        }
+    }
+
+    test("E2E: --output-format json with --target mysql includes generator 0.9.3") {
+        val source = writeTempSchema(minimalSchemaYaml)
+        try {
+            val (out, _) = captureStreams {
+                shouldNotThrowAny {
+                    cli().parse(
+                        listOf(
+                            "--output-format", "json",
+                            "schema", "generate",
+                            "--source", source.toString(),
+                            "--target", "mysql",
+                        )
+                    )
+                }
+            }
+            out shouldContain "\"generator\": \"d-migrate 0.9.3\""
+        } finally {
+            Files.deleteIfExists(source)
+        }
+    }
 })
