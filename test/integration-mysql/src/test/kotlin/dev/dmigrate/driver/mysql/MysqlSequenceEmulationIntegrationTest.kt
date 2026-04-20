@@ -61,9 +61,14 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         val ddl = result.render()
         conn().use { c ->
             // Execute each statement (split on semicolons, handle DELIMITER)
-            for (block in splitMysqlStatements(ddl)) {
+            val statements = splitMysqlStatements(ddl)
+            for (block in statements) {
                 if (block.isNotBlank()) {
-                    c.createStatement().use { it.execute(block) }
+                    try {
+                        c.createStatement().use { it.execute(block) }
+                    } catch (e: Exception) {
+                        throw AssertionError("Failed to execute SQL:\n---\n$block\n---\nError: ${e.message}", e)
+                    }
                 }
             }
         }
