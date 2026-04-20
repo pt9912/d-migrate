@@ -177,6 +177,11 @@ Verbindliche Entscheidung:
   `--unsafe-filter`
 - `--filter` bleibt fuer 0.9.x als deprecated Alias erhalten
 - beide Flags duerfen nicht gemeinsam gesetzt werden
+- die CLI implementiert dafuer **zwei getrennte Optionen**, nicht nur
+  einen Clikt-Alias auf denselben Zielwert
+- die Mutual-Exclusion-Pruefung laeuft in `DataExportCommand`, bevor ein
+  `DataExportRequest` gebaut oder ein Resume-/Fingerprint-Pfad
+  vorbereitet wird
 - wenn der Legacy-Alias verwendet wird, wird eine klare
   stderr-Warnung ausgegeben
 - neue Dokumentation, Beispiele und Tests nutzen nur noch
@@ -219,6 +224,10 @@ default:
   als `SequenceNextVal` umgedeutet werden
 - generische `FunctionCall("nextval(...)")`-Varianten sind **nicht**
   der kanonische Generatorvertrag fuer 0.9.3
+- bestehende oder programmgesteuert erzeugte Defaults in der Form
+  `FunctionCall("nextval(...)")` bekommen **keinen** stillen Compat-
+  Shim; sie werden mit klarer Validierungs-/Generate-Fehlermeldung auf
+  die neue Objektform `default.sequence_nextval` verwiesen
 
 Begruendung:
 
@@ -313,8 +322,11 @@ Geaendert wird die sichtbare API-Schicht:
 
 - `DataExportCommand` definiert getrennte Optionen fuer
   `--unsafe-filter` und den Legacy-Alias `--filter`
+- `DataExportCommand` validiert explizit den Fall "beide gesetzt",
+  bevor in den Runner delegiert wird
 - `DataExportRequest` und die Runner-/Fingerprint-Pfade verwenden einen
-  expliziteren Namen (`unsafeFilter` oder aequivalent)
+  expliziteren Namen (`unsafeFilter` oder aequivalent), damit der
+  kanonische Begriff ab der DTO-Grenze eindeutig ist
 - Preflight-Fehler und Help-Texte nennen den Pfad konsistent
   "unsafe"
 
@@ -342,6 +354,10 @@ Folgen:
 - `SchemaValidator.isDefaultCompatible(...)` akzeptiert
   `SequenceNextVal` nur fuer numerische/identifier-aehnliche Spalten
   und nur, wenn die referenzierte Sequence existiert
+- `SchemaValidator` oder ein aequivalenter frueher Vorpruefpfad lehnt
+  alte `FunctionCall("nextval(...)")`-Defaults explizit ab und liefert
+  eine migrationsfaehige Fehlermeldung mit Verweis auf
+  `default.sequence_nextval`
 - `SchemaCompareHelpers.defaultValueToString(...)` rendert
   `sequence_nextval(<name>)` oder eine aequivalent klar als Sequence-
   Bezug erkennbare Diff-Darstellung; entscheidend ist die eindeutige
@@ -475,8 +491,9 @@ Abhaengigkeiten:
 ### 6.1 Filter-Haertung im Datenexport
 
 - `DataExportCommand` erweitert die CLI um:
-  - `--unsafe-filter`
-  - `--filter` als deprecated Alias
+  - `--unsafe-filter` als eigene Option
+  - `--filter` als separate deprecated Legacy-Option
+  - bewusst **kein** Clikt-Alias auf denselben Zielwert
 - klare Mutual-Exclusion-Regel, falls beide gesetzt sind
 - stderr-Warnung bei Nutzung des Legacy-Alias
 - `DataExportRequest`, `DataTransferRunner` und
@@ -506,6 +523,10 @@ Ergebnis:
   - `W114` bis `W117`
   - die `helper_table`-Semantik
   erweitern
+- Version-/Header-Vertrag fuer 0.9.3 explizit nachziehen:
+  - `AbstractDdlGenerator.getVersion()`
+  - Report-Generator-Header in `TransformationReportWriter`
+  - ggf. davon abhaengige Golden Masters
 - `ledger/warn-code-ledger-0.9.3.yaml` und bei Bedarf
   `ledger/error-code-ledger-0.9.3.yaml` anlegen
 - `ledger/code-ledger-0.9.3.schema.json` anlegen **oder**
@@ -537,6 +558,10 @@ Ergebnis:
   - PostgreSQL kennt einen nativen Pfad
   - MySQL/SQLite duerfen `SequenceNextVal` nicht still als freie
     Funktion behandeln
+  - bestehende `FunctionCall("nextval(...)")`-Faelle werden bewusst
+    **hart** mit klarer Migrationsfehlermeldung auf
+    `default.sequence_nextval` umgestellt; kein stilles Rewrite, kein
+    Warning-only-Pfad
   - TypeMapper-Faelle koennen fuer nicht unterstuetzte Dialekte
     absichtlich `error(...)`/gesonderte Generatorpfade oder
     strukturiertes Abfangen im Aufrufer verwenden
@@ -578,6 +603,8 @@ Ergebnis:
 - `docs/neutral-model-spec.md` ergaenzen:
   - `default.sequence_nextval: invoice_number_seq`
   - MySQL-Opt-in-Modus
+- `docs/schema-reference.md` im selben Zug aktualisieren, weil dort die
+  nutzerorientierte `default:`-Syntax beschrieben wird
 - `docs/roadmap.md` und ggf. `docs/mysql-sequence-emulation-plan.md`
   mit Verweis auf den umgesetzten Generator-Scope aktualisieren
 - neue Schema-Fixtures fuer sequence-basierte Defaults anlegen
@@ -599,6 +626,8 @@ Unit-Tests:
   - `SequenceNextVal` mit existierender Sequence ok
   - fehlende Sequence -> Validierungsfehler
   - nicht kompatibler Spaltentyp -> Validierungsfehler
+  - altes `FunctionCall("nextval(...)")` -> klarer Migrationsfehler mit
+    Verweis auf `default.sequence_nextval`
 - `YamlSchemaCodecTest`:
   - Round-Trip fuer `default.sequence_nextval`
 - `MysqlDdlGeneratorTest`:
@@ -612,6 +641,8 @@ Unit-Tests:
   - JSON/Report enthalten den effektiven Modus nur fuer MySQL
   - JSON/Report bleiben fuer PostgreSQL und SQLite ohne
     `mysql_named_sequences`-Feld
+- Golden-Master-/Header-Checks:
+  - DDL-Header und Report-Generatorstring zeigen `0.9.3`
 - `CodeLedgerValidationTest`:
   - prueft aktiv die 0.9.3-Ledgerdateien bzw. den verallgemeinerten
     Ledger-Resolver
@@ -669,6 +700,7 @@ Voraussichtlich direkt betroffen:
 - `docs/roadmap.md`
 - `docs/quality.md`
 - `docs/neutral-model-spec.md`
+- `docs/schema-reference.md`
 - `docs/ddl-generation-rules.md`
 - `docs/cli-spec.md`
 - `ledger/code-ledger-0.9.3.schema.json`
@@ -679,6 +711,7 @@ Voraussichtlich direkt betroffen:
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/DdlGenerationOptions.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ExportOptionsFingerprint.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataExportCommand.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt`
