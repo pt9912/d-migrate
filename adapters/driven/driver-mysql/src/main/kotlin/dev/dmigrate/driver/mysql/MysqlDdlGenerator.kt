@@ -71,7 +71,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // Columns
         for ((colName, col) in table.columns) {
-            columnLines += generateColumnSql(colName, col, schema, notes)
+            columnLines += generateColumnSql(colName, col, schema, name, notes)
             // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
             if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
                 notes += TransformationNote(
@@ -127,8 +127,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     private fun generateColumnSql(
         colName: String, col: ColumnDefinition, schema: SchemaDefinition,
-        notes: MutableList<TransformationNote>,
-    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, notes)
+        tableName: String, notes: MutableList<TransformationNote>,
+    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, tableName, notes)
 
     private fun buildForeignKeyClause(
         constraintName: String, fromColumns: List<String>, toTable: String,

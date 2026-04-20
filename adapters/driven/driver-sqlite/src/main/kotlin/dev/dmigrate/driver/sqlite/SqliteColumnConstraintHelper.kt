@@ -6,7 +6,7 @@ import dev.dmigrate.driver.*
 internal class SqliteColumnConstraintHelper(
     private val quoteIdentifier: (String) -> String,
     private val typeMapper: TypeMapper,
-    private val columnSql: (String, ColumnDefinition, SchemaDefinition) -> String,
+    private val columnSql: (String, String, ColumnDefinition, SchemaDefinition) -> String,
     private val referentialActionSql: (ReferentialAction) -> String,
 ) {
 
@@ -81,7 +81,7 @@ internal class SqliteColumnConstraintHelper(
         }
 
         // Default path: use base columnSql and then append inline FK if present
-        val baseSql = columnSql(colName, col, schema)
+        val baseSql = columnSql(tableName, colName, col, schema)
         return if (col.references != null && (tableName to colName) !in deferredFks) {
             "$baseSql ${inlineForeignKey(col.references!!)}"
         } else {

@@ -277,4 +277,11 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     ): List<DdlStatement> {
         return routineHelper.generateTriggers(triggers, tables, skipped)
     }
+
+    override fun resolveSequenceDefault(
+        tableName: String,
+        colName: String,
+        col: dev.dmigrate.core.model.ColumnDefinition,
+        seqDefault: dev.dmigrate.core.model.DefaultValue.SequenceNextVal,
+    ): String = "DEFAULT nextval('${seqDefault.sequenceName}')"
 }

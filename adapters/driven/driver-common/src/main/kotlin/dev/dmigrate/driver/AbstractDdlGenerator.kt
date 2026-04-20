@@ -168,15 +168,35 @@ abstract class AbstractDdlGenerator(
         return listOf(DdlStatement(header))
     }
 
-    protected fun columnSql(colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+    protected fun columnSql(tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
         val parts = mutableListOf<String>()
         parts += quoteIdentifier(colName)
         parts += typeMapper.toSql(col.type)
         if (col.required) parts += "NOT NULL"
-        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+        if (col.default != null) {
+            val seqDefault = col.default as? DefaultValue.SequenceNextVal
+            if (seqDefault != null) {
+                val resolved = resolveSequenceDefault(tableName, colName, col, seqDefault)
+                if (resolved != null) parts += resolved
+            } else {
+                parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+            }
+        }
         if (col.unique) parts += "UNIQUE"
         return parts.joinToString(" ")
     }
+
+    /**
+     * Dialect-specific resolution of SequenceNextVal defaults.
+     * Returns a complete DEFAULT clause (e.g. "DEFAULT nextval('seq')")
+     * or null to suppress the DEFAULT keyword entirely.
+     */
+    protected open fun resolveSequenceDefault(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        seqDefault: DefaultValue.SequenceNextVal,
+    ): String? = null
 
     protected fun referentialActionSql(action: ReferentialAction): String = when (action) {
         ReferentialAction.RESTRICT -> "RESTRICT"
