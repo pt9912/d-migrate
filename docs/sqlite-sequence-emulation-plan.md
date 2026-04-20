@@ -605,8 +605,11 @@ Literale/Kommentare vorab entfernt).
 Report-Text unterscheidet explizit:
 
 - **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
-  unterschied**. UPDATE-Trigger feuern nicht; W122 ist rein
-  informativ.
+  unterschied**. UPDATE-Trigger feuern nicht; auch Trigger, die
+  manuell auf dieselbe Tabelle geschrieben wurden, werden durch das
+  `_ai`-UPDATE nicht ausgeloest. Es gibt **keine** semantischen
+  Seiteneffekte — weder doppelte Schreibpfade noch inkonsistente
+  Zustaende. W122 ist hier rein informativ.
 - **`recursive_triggers = ON`**: bei INFO-Stufe ungefaehrlich;
   bei WARNING-Stufe **Pflichtpruefung** durch den Nutzer,
   da Rekursion/Korruption moeglich ist.
@@ -853,24 +856,30 @@ eine **overflow-sichere Vergleichslogik ohne Subtraktion**:
 // Overflow-sichere Pruefung: |increment_by| <= max_value - min_value
 // Umformuliert als zwei separate Vergleiche ohne Subtraktion:
 fun isIncrementInRange(inc: Long, min: Long, max: Long): Boolean {
-    // Trivialfall: inc = 0 wird separat als Fehler behandelt
+    // inc = 0 wird separat als Fehler behandelt (vor diesem Check)
+    // Long.MIN_VALUE explizit ablehnen: -Long.MIN_VALUE ist in
+    // Long-Arithmetik nicht darstellbar (Zweier-Komplement);
+    // kein praktischer Anwendungsfall fuer |inc| = 2^63.
+    if (inc == Long.MIN_VALUE) return false
     if (inc > 0) {
         // Pruefe: inc <= max - min, umgeschrieben als: min <= max - inc
-        // max - inc ist sicher wenn inc > 0 und max >= min (immer wahr)
-        // Aber max - inc kann underflow'en wenn inc > max - Long.MIN_VALUE
-        // Sichere Variante: inc <= max && min <= max - inc
-        //   (erster Check verhindert, dass max - inc negativ underflow't
-        //    fuer den Fall max < inc)
+        // Sicher weil: inc > 0, also max - inc < max <= MAX_VALUE;
+        // und inc <= max wird vorher geprueft, damit max - inc >= 0.
         return inc <= max && min <= max - inc
-    } else { // inc < 0
+    } else { // inc < 0, inc > Long.MIN_VALUE (durch obigen Check)
         // Pruefe: -inc <= max - min, d.h. |inc| <= max - min
         // Umgeschrieben: min - inc <= max (da inc < 0: min - inc = min + |inc|)
-        // Sichere Variante: inc >= min && max >= min - inc
+        // Sicher weil: inc >= min wird vorher geprueft, damit
+        // min - inc = min + |inc| <= min + (max - min) = max <= MAX_VALUE.
         return inc >= min && max >= min - inc
     }
 }
 ```
 
+- `increment_by = Long.MIN_VALUE` (-9223372036854775808) wird
+  **immer** abgelehnt, da `-Long.MIN_VALUE` in Long-Arithmetik nicht
+  darstellbar ist (Zweier-Komplement-Sonderfall); kein praktischer
+  Anwendungsfall fuer ein Inkrement dieser Groesse
 - bei `min_value = NULL` und/oder `max_value = NULL` werden die
   Defaultwerte `Long.MIN_VALUE`/`Long.MAX_VALUE` eingesetzt; die
   Pruefung `isIncrementInRange` ist auch fuer diese Extremwerte
@@ -1197,10 +1206,14 @@ Vertrag:
 - im `helper_table`-Modus des Generators ist die Reihenfolge
   deterministisch: Sequence-Support-Trigger werden immer vor
   nutzerdefinierten Triggern erzeugt
-- bei Reverse einer bestehenden Datenbank, in der nutzerdefinierte
-  Trigger vor Sequence-Triggern existieren, wird die
-  Erzeugungsreihenfolge **nicht** garantiert; dies ist ein bekannter
-  Randfall, der als Einschraenkung dokumentiert wird
+- bei Reverse einer bestehenden Datenbank prueft der Reader die
+  Erzeugungsreihenfolge in `sqlite_schema`: wenn ein nutzerdefinierter
+  BEFORE INSERT-Trigger auf derselben Tabelle **vor** dem Sequence-
+  Trigger (`_bi`) eingetragen ist, emittiert der Reader `W124`
+  (WARNING): "User-defined BEFORE INSERT trigger may mask sequence
+  assignment due to creation order"
+- `W124` macht das Maskierungsrisiko im Report sichtbar, ohne die
+  Sequence-Erkennung zu blockieren
 - der Generator emittiert **keinen** expliziten Reihenfolge-Hint
   (SQLite hat kein `PRECEDES`/`FOLLOWS` wie MySQL 8); die
   Reihenfolge ergibt sich allein aus der Erzeugungsreihenfolge
@@ -1276,9 +1289,13 @@ Abhaengigkeitspruefung im Detail:
 
 Scope der Abhaengigkeitspruefung:
 
-- der Scan durchsucht **nur** das `sqlite_schema` der Haupt-
-  Datenbank (`main`); Objekte in per `ATTACH` angebundenen
-  Datenbanken oder in `temp`-Schemas werden **nicht** geprueft
+- der Scan durchsucht das `sqlite_schema` der Haupt-Datenbank
+  (`main`) **und** das `temp.sqlite_schema` (temporaere Objekte);
+  Objekte in per `ATTACH` angebundenen Datenbanken werden **nicht**
+  geprueft
+- `temp`-Scan ist immer verfuegbar (kein ATTACH noetig) und deckt
+  temp-Trigger und temp-Views ab, die auf `main.dmg_sequences`
+  verweisen koennen
 - Begruendung: `dmg_sequences` wird im `main`-Schema erzeugt;
   Cross-Database-Trigger (die auf `main.dmg_sequences` zugreifen)
   sind in SQLite zwar syntaktisch moeglich, aber selten und
@@ -1301,8 +1318,8 @@ Scope der Abhaengigkeitspruefung:
 - diese Einschraenkung wird zusaetzlich in der Nutzerdokumentation
   als **Precondition** formuliert: "Vor dem Rollback im
   `helper_table`-Modus sicherstellen, dass keine per ATTACH
-  angebundenen Datenbanken oder `temp`-Objekte auf `dmg_sequences`
-  zugreifen."
+  angebundenen Datenbanken auf `dmg_sequences` zugreifen.
+  `temp`-Objekte werden automatisch geprueft."
 - eine spaetere Ausbaustufe kann den Scan auf alle Schemas erweitern
 
 Normalisierung und Matching-Strategie:
@@ -1371,9 +1388,13 @@ Normalisierung und Matching-Strategie:
   - `W121`: Sequence values may be consumed without insertion when
     INSERT ... ON CONFLICT is used (§5.1)
 - UPDATE-Trigger-Kaskade:
-  - `W122` (INFO): AFTER INSERT sequence trigger may cascade into
-    existing UPDATE triggers on the same table; nur relevant bei
-    `recursive_triggers = ON` (§3.4)
+  - `W122` (INFO/WARNING): AFTER INSERT sequence trigger may cascade
+    into existing UPDATE triggers on the same table; INFO wenn
+    harmlos, WARNING wenn Body `dmg_sequences`/Sequence-Spalte
+    referenziert (§3.4)
+- Trigger-Reihenfolge bei Reverse:
+  - `W124` (WARNING): User-defined BEFORE INSERT trigger may mask
+    sequence assignment due to creation order (§5.1)
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
@@ -1384,7 +1405,7 @@ Normalisierung und Matching-Strategie:
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `W120`, `W121`, `W122`, `W123`, `E057`, `E058`, `E059` und `E060` sind SQLite-spezifisch.
+`W119`, `W120`, `W121`, `W122`, `W123`, `W124`, `E057`, `E058`, `E059` und `E060` sind SQLite-spezifisch.
 
 ---
 
@@ -1568,7 +1589,7 @@ Compare-Verhalten bei degradierten/modifizierten Triggern:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`, `E059`, `E060`, `W120`, `W121`, `W122`, `W123`)
+  `E057`, `E058`, `E059`, `E060`, `W120`, `W121`, `W122`, `W123`, `W124`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
