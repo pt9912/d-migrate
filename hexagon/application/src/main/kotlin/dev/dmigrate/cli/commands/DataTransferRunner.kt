@@ -86,12 +86,17 @@ class DataTransferRunner(
 
             val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
                 truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
-            val filter = DataExportHelpers.resolveFilter(
-                rawFilter = request.filter,
-                dialect = srcCfg.dialect,
-                sinceColumn = request.sinceColumn,
-                since = request.since,
-            )
+            val filter = try {
+                DataExportHelpers.resolveFilter(
+                    rawFilter = request.filter,
+                    dialect = srcCfg.dialect,
+                    sinceColumn = request.sinceColumn,
+                    since = request.since,
+                )
+            } catch (e: DataExportHelpers.FilterResolveException) {
+                printError("Invalid --filter: ${e.parseError.message}", srcRef)
+                return 2
+            }
             val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
 
             try {
@@ -190,8 +195,13 @@ class DataTransferRunner(
         if (!r.sinceColumn.isNullOrBlank() && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
             return "--since-column '${r.sinceColumn}' is not a valid identifier"
         }
-        if (r.filter != null && !r.since.isNullOrBlank() && DataExportHelpers.containsLiteralQuestionMark(r.filter)) {
-            return "--filter '?' forbidden with --since (M-R5)"
+        // M-R5 '?' check is no longer needed: --filter now produces ParameterizedClause
+        // via the DSL parser, so no raw WhereClause with literal '?' can exist.
+        if (!r.filter.isNullOrBlank()) {
+            when (val result = FilterDslParser.parse(r.filter)) {
+                is FilterDslParseResult.Failure -> return "Invalid --filter: ${result.error.message}"
+                is FilterDslParseResult.Success -> { /* ok */ }
+            }
         }
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }
         try { OnConflict.valueOf(r.onConflict.uppercase()) } catch (_: Exception) { return "Unknown --on-conflict: ${r.onConflict}" }

@@ -248,7 +248,7 @@ class DataExportRunnerTest : FunSpec({
         runner.execute(request(tables = listOf("public.users"))) shouldBe 0
     }
 
-    test("Exit 0: --filter is passed as a WhereClause to the executor") {
+    test("Exit 0: --filter is parsed as DSL and passed as ParameterizedClause to the executor") {
         var capturedFilter: DataFilter? = null
         val stderr = StderrCapture()
         val runner = newRunner(
@@ -262,7 +262,8 @@ class DataExportRunnerTest : FunSpec({
             }
         )
         runner.execute(request(filter = "id = 42")) shouldBe 0
-        (capturedFilter as? DataFilter.WhereClause)?.sql shouldBe "id = 42"
+        val clause = capturedFilter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+        clause.params shouldBe listOf(42L)
     }
 
     test("Exit 0: blank --filter is dropped (treated as no filter)") {
@@ -331,7 +332,8 @@ class DataExportRunnerTest : FunSpec({
         ) shouldBe 0
 
         val filter = capturedFilter.shouldBeInstanceOf<DataFilter.Compound>()
-        filter.parts[0].shouldBeInstanceOf<DataFilter.WhereClause>().sql shouldBe "active = 1"
+        val dslPart = filter.parts[0].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+        dslPart.params shouldBe listOf(1L)
         val marker = filter.parts[1].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
         marker.sql shouldBe "\"updated_at\" >= ?"
         marker.params shouldBe listOf(LocalDateTime.parse("2026-01-01T10:15:30"))
@@ -472,7 +474,7 @@ class DataExportRunnerTest : FunSpec({
         stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
     }
 
-    test("Exit 2: M-R5 preflight rejects literal ? in --filter when combined with --since") {
+    test("Exit 2: invalid --filter DSL is rejected early") {
         var poolOpened = false
         val stderr = StderrCapture()
         val runner = newRunner(
@@ -484,13 +486,13 @@ class DataExportRunnerTest : FunSpec({
         )
         runner.execute(
             request(
-                filter = "name LIKE 'Order?%'",
+                filter = "LIMIT 10",
                 sinceColumn = "updated_at",
                 since = "2026-01-01",
             )
         ) shouldBe 2
         poolOpened shouldBe false
-        stderr.joined() shouldContain "--filter must not contain literal '?' when combined with --since"
+        stderr.joined() shouldContain "Invalid --filter"
     }
 
     // ─── Exit 4: Connection / lister I/O ─────────────────────────

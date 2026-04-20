@@ -571,7 +571,7 @@ class CliDataExportTest : FunSpec({
         }
     }
 
-    test("M-R5: literal ? in --filter with --since exits 2 before export") {
+    test("Invalid --filter DSL exits 2 before export") {
         val db = createSampleDatabase()
         try {
             val stderr = captureStderr {
@@ -582,15 +582,13 @@ class CliDataExportTest : FunSpec({
                             "--source", "sqlite:///${db.absolutePathString()}",
                             "--format", "json",
                             "--tables", "users",
-                            "--filter", "name LIKE 'Order?%'",
-                            "--since-column", "id",
-                            "--since", "2",
+                            "--filter", "LIMIT 10",
                         )
                     )
                 }
                 ex.statusCode shouldBe 2
             }
-            stderr shouldContain "--filter must not contain literal '?' when combined with --since"
+            stderr shouldContain "Invalid --filter"
         } finally {
             Files.deleteIfExists(db)
         }

@@ -51,17 +51,17 @@ internal object DataExportHelpers {
         if (raw.length == 1) raw[0] else null
 
     /**
-     * F32 / Plan §6.7: Baut den effektiven [DataFilter] aus dem CLI-Wert.
+     * Baut den effektiven [DataFilter] aus dem CLI-Wert.
      *
      * - `null` oder blank → `null` (kein Filter, identisch zum weggelassenen Flag)
-     * - sonst → [DataFilter.WhereClause] mit dem Roh-String
+     * - sonst → DSL parsen → [DataFilter.ParameterizedClause] mit Bind-Parametern
      *
-     * **Trusted Input**: [rawFilter] wird als Raw-SQL-Fragment direkt in die
-     * WHERE-Klausel interpoliert. Die Trust-Boundary ist die lokale Shell —
-     * der Aufrufer ist verantwortlich, dass der Wert nicht von
-     * nicht-vertrauenswürdigen Quellen stammt. Keine Sanitization oder
-     * Escaping findet statt; dies ist eine bewusste Designentscheidung
-     * (siehe `docs/ImpPlan-0.9.1-A.md` §4.3).
+     * Seit 0.9.3 wird `--filter` als geschlossene DSL geparst. Rohes SQL
+     * wird nicht mehr akzeptiert; nicht DSL-konforme Eingaben erzeugen
+     * eine [FilterDslParseResult.Failure].
+     *
+     * @return resolved filter, or `null` if no filter is active
+     * @throws FilterResolveException if the DSL parse fails
      */
     fun resolveFilter(
         rawFilter: String?,
@@ -69,9 +69,19 @@ internal object DataExportHelpers {
         sinceColumn: String? = null,
         since: String? = null,
     ): DataFilter? {
-        val rawClause = rawFilter?.takeIf { it.isNotBlank() }?.let { DataFilter.WhereClause(it) }
+        val dslClause = rawFilter?.takeIf { it.isNotBlank() }?.let { raw ->
+            val effectiveDialect = requireNotNull(dialect) {
+                "dialect is required when building a parameterized filter"
+            }
+            when (val result = FilterDslParser.parse(raw)) {
+                is FilterDslParseResult.Success ->
+                    FilterDslTranslator.toParameterizedClause(result.expr, effectiveDialect)
+                is FilterDslParseResult.Failure ->
+                    throw FilterResolveException(result.error)
+            }
+        }
         val hasSince = !sinceColumn.isNullOrBlank() && !since.isNullOrBlank()
-        if (!hasSince) return rawClause
+        if (!hasSince) return dslClause
 
         val effectiveDialect = requireNotNull(dialect) {
             "dialect is required when building a parameterized --since filter"
@@ -80,15 +90,29 @@ internal object DataExportHelpers {
             sql = "${quoteQualifiedIdentifier(sinceColumn!!, effectiveDialect)} >= ?",
             params = listOf(parseSinceLiteral(since!!)),
         )
-        return when (rawClause) {
+        return when (dslClause) {
             null -> markerClause
-            else -> DataFilter.Compound(listOf(rawClause, markerClause))
+            else -> DataFilter.Compound(listOf(dslClause, markerClause))
         }
     }
 
-    /** M-R5 CLI-Preflight: roher `--filter` darf in LF-013 kein `?` tragen. */
-    fun containsLiteralQuestionMark(rawFilter: String?): Boolean =
-        rawFilter?.contains('?') == true
+    /**
+     * Produces the canonical fingerprint form of a `--filter` DSL expression.
+     * Returns `null` if [rawFilter] is null or blank.
+     *
+     * @throws FilterResolveException if the DSL parse fails
+     */
+    fun canonicalizeFilter(rawFilter: String?): String? {
+        val trimmed = rawFilter?.takeIf { it.isNotBlank() } ?: return null
+        return when (val result = FilterDslParser.parse(trimmed)) {
+            is FilterDslParseResult.Success -> FilterDslTranslator.canonicalize(result.expr)
+            is FilterDslParseResult.Failure -> throw FilterResolveException(result.error)
+        }
+    }
+
+    /** Thrown when a `--filter` value cannot be parsed as the 0.9.3 DSL. */
+    class FilterResolveException(val parseError: FilterDslParseError) :
+        RuntimeException(parseError.message)
 
     internal fun quoteQualifiedIdentifier(value: String, dialect: DatabaseDialect): String =
         SqlIdentifiers.quoteQualifiedIdentifier(value, dialect)

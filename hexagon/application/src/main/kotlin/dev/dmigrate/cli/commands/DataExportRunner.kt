@@ -133,12 +133,17 @@ class DataExportRunner(
                 )
                 return 2
             }
-            if (DataExportHelpers.containsLiteralQuestionMark(request.filter)) {
-                stderr(
-                    "Error: --filter must not contain literal '?' when combined with --since " +
-                        "(parameterized query); use a rewritten predicate or escape the literal differently"
-                )
-                return 2
+        }
+        // Validate --filter DSL early (before any I/O)
+        if (!request.filter.isNullOrBlank()) {
+            when (val parseResult = FilterDslParser.parse(request.filter)) {
+                is FilterDslParseResult.Failure -> {
+                    val err = parseResult.error
+                    val posHint = if (err.index != null) " (at position ${err.index})" else ""
+                    stderr("Error: Invalid --filter expression${posHint}: ${err.message}")
+                    return 2
+                }
+                is FilterDslParseResult.Success -> { /* ok, will be resolved later */ }
             }
         }
 

@@ -4,6 +4,7 @@ import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.streaming.ExportResult
 import dev.dmigrate.streaming.TableExportSummary
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -131,20 +132,35 @@ class DataExportHelpersTest : FunSpec({
             DataExportHelpers.resolveFilter("\t\n").shouldBeNull()
         }
 
-        test("non-blank string wraps as WhereClause with the raw value") {
-            val filter = DataExportHelpers.resolveFilter("id = 42")
+        test("non-blank DSL string produces ParameterizedClause") {
+            val filter = DataExportHelpers.resolveFilter(
+                rawFilter = "id = 42",
+                dialect = DatabaseDialect.POSTGRESQL,
+            )
             filter.shouldNotBeNull()
-            filter.shouldBeInstanceOf<DataFilter.WhereClause>()
-            filter.sql shouldBe "id = 42"
+            val clause = filter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+            clause.sql shouldBe "\"id\" = ?"
+            clause.params shouldBe listOf(42L)
         }
 
-        test("does NOT trim — caller's whitespace inside the clause is preserved") {
-            val filter = DataExportHelpers.resolveFilter("  id = 42  ")
+        test("whitespace around DSL is trimmed before parsing") {
+            val filter = DataExportHelpers.resolveFilter(
+                rawFilter = "  id = 42  ",
+                dialect = DatabaseDialect.POSTGRESQL,
+            )
             filter.shouldNotBeNull()
-            filter.shouldBeInstanceOf<DataFilter.WhereClause>()
-            // F32 contract: we only check isNotBlank(), we don't trim. The exact
-            // value (with its leading/trailing spaces) is passed to the SQL layer.
-            filter.sql shouldBe "  id = 42  "
+            val clause = filter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+            clause.sql shouldBe "\"id\" = ?"
+            clause.params shouldBe listOf(42L)
+        }
+
+        test("invalid DSL throws FilterResolveException") {
+            shouldThrow<DataExportHelpers.FilterResolveException> {
+                DataExportHelpers.resolveFilter(
+                    rawFilter = "LIMIT 10",
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            }
         }
 
         test("builds a parameterized --since clause when no raw filter is present") {
@@ -159,7 +175,7 @@ class DataExportHelpersTest : FunSpec({
             clause.params shouldBe listOf(LocalDate.parse("2026-01-01"))
         }
 
-        test("combines raw filter and --since into a Compound") {
+        test("combines DSL filter and --since into a Compound") {
             val filter = DataExportHelpers.resolveFilter(
                 rawFilter = "active = 1",
                 dialect = DatabaseDialect.MYSQL,
@@ -167,22 +183,35 @@ class DataExportHelpersTest : FunSpec({
                 since = "2026-01-01T10:15:30",
             )
             val compound = filter.shouldBeInstanceOf<DataFilter.Compound>()
-            compound.parts[0].shouldBeInstanceOf<DataFilter.WhereClause>().sql shouldBe "active = 1"
+            val dslPart = compound.parts[0].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+            dslPart.sql shouldBe "`active` = ?"
+            dslPart.params shouldBe listOf(1L)
             val marker = compound.parts[1].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
             marker.sql shouldBe "`audit`.`updated_at` >= ?"
             marker.params shouldBe listOf(LocalDateTime.parse("2026-01-01T10:15:30"))
         }
     }
 
-    context("containsLiteralQuestionMark") {
+    // containsLiteralQuestionMark removed in 0.9.3: --filter now produces
+    // ParameterizedClause via DSL parser, M-R5 check is obsolete.
 
-        test("returns false for null or question-mark-free filters") {
-            DataExportHelpers.containsLiteralQuestionMark(null) shouldBe false
-            DataExportHelpers.containsLiteralQuestionMark("id = 42") shouldBe false
+    context("canonicalizeFilter") {
+
+        test("returns null for null or blank") {
+            DataExportHelpers.canonicalizeFilter(null) shouldBe null
+            DataExportHelpers.canonicalizeFilter("") shouldBe null
+            DataExportHelpers.canonicalizeFilter("   ") shouldBe null
         }
 
-        test("returns true when the raw filter string contains ?") {
-            DataExportHelpers.containsLiteralQuestionMark("note = 'really?'") shouldBe true
+        test("normalizes keyword case and whitespace") {
+            DataExportHelpers.canonicalizeFilter("status = 'OPEN'  and  active = true") shouldBe
+                "status = 'OPEN' AND active = true"
+        }
+
+        test("throws FilterResolveException for invalid DSL") {
+            shouldThrow<DataExportHelpers.FilterResolveException> {
+                DataExportHelpers.canonicalizeFilter("CONCAT(a, b) = 'x'")
+            }
         }
     }
 
