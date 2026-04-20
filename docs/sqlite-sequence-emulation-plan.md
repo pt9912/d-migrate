@@ -207,6 +207,29 @@ Vorgeschlagene Marker:
   - AFTER INSERT (`_ai`):
     `/* d-migrate:sqlite-sequence-v1 object=sequence-trigger-post sequence=<name> table=<table> column=<column> */`
 
+Identifier-Escaping in Marker-Kommentaren:
+
+- `<name>`, `<table>` und `<column>` im Marker sind immer die
+  **neutrale Kanonform** des Identifiers (dieselbe Form, die im
+  neutralen Schema und in den Trigger-Namen verwendet wird)
+- die neutrale Kanonform enthaelt keine SQL-Sonderzeichen, keine
+  Anführungszeichen und keine Whitespace-Zeichen; sie besteht aus
+  `[a-zA-Z0-9_]` und ggf. UTF-8-Buchstaben
+- falls ein Identifier Zeichen enthaelt, die in einem SQL-Kommentar
+  problematisch waeren (`*`, `/`, `=`, Whitespace), werden diese
+  im Marker **Percent-encoded** (RFC 3986):
+  - `*` → `%2A`, `/` → `%2F`, `=` → `%3D`, ` ` → `%20`
+  - `%` selbst → `%25`
+- der Reverse-Parser dekodiert Percent-Encoding beim Lesen
+- Begründung: SQL-Kommentare koennen durch `*/` vorzeitig beendet
+  werden und durch `=` die Key-Value-Struktur brechen; Percent-
+  Encoding ist eindeutig, umkehrbar und benoetigt keinen
+  eigenen Escape-Parser
+- Identifiers im SQL-Statement-Text (Tabellen-/Spaltennamen in
+  UPDATE/WHERE) verwenden weiterhin das normale Double-Quote-Quoting
+  des SQLite-Dialekts (`"identifier"`); das betrifft nur den
+  Marker-Kommentar
+
 Trigger-Namensvertrag:
 
 - SQLite hat kein hartes Identifier-Laengenlimit, aber der Plan uebernimmt
@@ -296,18 +319,13 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --
 -- Schritt 2: Rueckgabewert sichern + inkrementieren (atomar)
 --   last_returned_value := next_value
---   IF increment_by > 0
---      AND next_value > COALESCE(max_value, MAX_INT) - increment_by
---      AND cycle_enabled = 1:
---     next_value := COALESCE(min_value, 1)  -- naechster Aufruf startet vom Zyklusanfang
---   ELSE IF increment_by < 0
---      AND next_value < COALESCE(min_value, MIN_INT) - increment_by
---      AND cycle_enabled = 1:
---     next_value := COALESCE(max_value, MAX_INT)
+--   IF wuerde_grenze_ueberschreiten (overflow-sichere Subtraktionspruefung):
+--     IF cycle_enabled = 1: next_value := Zyklusstartwert
+--     IF cycle_enabled = 0: next_value := Sentinel (max+1 bzw. min-1)
+--       (naechster Aufruf erkennt Sentinel in Schritt 1 und ABORTs)
 --   ELSE:
---     next_value := next_value + increment_by  -- normales Inkrement
---     -- (bei nicht-Zyklus kann next_value hier ueber die Grenze steigen;
---     --  der naechste Aufruf faengt das in Schritt 1 ab)
+--     next_value := next_value + increment_by
+--     (overflow-sicher: ELSE nur erreichbar wenn innerhalb der Grenze)
 --   IF rows_affected = 0: RAISE(ABORT, 'sequence row not found')
 --
 -- AFTER INSERT (_ai):
@@ -357,7 +375,7 @@ Einschraenkung:
 
 - erfordert `ROWID`-Zugriff im `AFTER INSERT`-Trigger
 - **`WITHOUT ROWID`-Tabellen** koennen diesen Pfad nicht nutzen
-  (siehe §3.7)
+  (siehe §3.5)
 
 Alternative Ansaetze, die evaluiert und verworfen wurden:
 
@@ -429,30 +447,56 @@ BEGIN
     -- Schritt 2: Rueckgabewert sichern + next_value inkrementieren (atomar).
     -- Die CASE-Bedingungen verwenden die overflow-sichere
     -- Subtraktionsformel (next_value > max_value - increment_by)
-    -- fuer die Zyklus-Vorausschau: wuerde das Inkrement die Grenze
-    -- ueberschreiten? Wenn ja UND cycle=1: Zyklusstartwert setzen.
-    -- Wenn ja UND cycle=0: normales Inkrement — der Wert steigt ueber
-    -- die Grenze, und der NAECHSTE Aufruf faengt das in Schritt 1 ab.
-    -- Der ELSE-Zweig (next_value + increment_by) laeuft nur wenn
-    -- next_value <= max_value - increment_by, also kein Overflow.
+    -- fuer die Grenzvorausschau. Vier explizite Branches:
+    -- (a) cycle=1, positiv: Zyklusstartwert
+    -- (b) cycle=0, positiv: Sentinel max_value + 1 (naechster Aufruf ABORTs)
+    -- (c) cycle=1, negativ: Zyklusstartwert
+    -- (d) cycle=0, negativ: Sentinel min_value - 1
+    -- (e) ELSE: normales Inkrement (nur erreichbar wenn
+    --     next_value <= max_value - increment_by, also kein Overflow)
     UPDATE "dmg_sequences"
         SET "last_returned_value" = "next_value",
             "next_value" = CASE
+                -- (a) Zyklus-Reset positiv
                 WHEN "increment_by" > 0
                      AND "next_value"
                          > COALESCE("max_value", 9223372036854775807)
                            - "increment_by"
                      AND "cycle_enabled" = 1
                 THEN COALESCE("min_value", 1)
+                -- (b) Nicht-Zyklus Sentinel positiv
+                WHEN "increment_by" > 0
+                     AND "next_value"
+                         > COALESCE("max_value", 9223372036854775807)
+                           - "increment_by"
+                     AND "cycle_enabled" = 0
+                THEN COALESCE("max_value", 9223372036854775807) + 1
+                -- (c) Zyklus-Reset negativ
                 WHEN "increment_by" < 0
                      AND "next_value"
                          < COALESCE("min_value", -9223372036854775808)
                            - "increment_by"
                      AND "cycle_enabled" = 1
                 THEN COALESCE("max_value", 9223372036854775807)
+                -- (d) Nicht-Zyklus Sentinel negativ
+                WHEN "increment_by" < 0
+                     AND "next_value"
+                         < COALESCE("min_value", -9223372036854775808)
+                           - "increment_by"
+                     AND "cycle_enabled" = 0
+                THEN COALESCE("min_value", -9223372036854775808) - 1
+                -- (e) Normales Inkrement (overflow-sicher: nur erreichbar
+                --     wenn next_value innerhalb der Subtraktionsgrenze)
                 ELSE "next_value" + "increment_by"
             END
         WHERE "name" = 'order_number_seq';
+    -- Hinweis zu Branches (b)/(d): Die Sentinel-Werte max_value + 1
+    -- bzw. min_value - 1 koennen bei max_value = MAX_INT bzw.
+    -- min_value = MIN_INT ueberlaufen. Dieser Grenzfall ist nur
+    -- erreichbar wenn max_value/min_value NULL ist (Defaultwerte),
+    -- d.h. die Sequence hat effektiv keine Obergrenze. Phase A muss
+    -- diesen Grenzfall prototypisch validieren. In der Praxis setzen
+    -- Nutzer explizite max_value/min_value-Werte < MAX_INT.
     -- Guard: Sequence-Zeile muss existieren (changes() = 0 heisst kein UPDATE).
     -- Hinweis: changes() zaehlt gematchte Zeilen, nicht geaenderte Werte;
     -- selbst bei increment_by mit Netto-Null-Effekt (theoretisch durch
@@ -573,9 +617,18 @@ Verhalten bei Reverse:
 
 - `WITHOUT ROWID`-Tabellen haben keine implizite `ROWID`; der Reader
   erwartet dort keine Sequence-Support-Trigger
-- wenn dennoch ein Trigger mit passendem Marker auf einer
+- die `dmg_sequences`-Zeile wird weiterhin als `SequenceDefinition`
+  erkannt (sie ist tabellenunabhaengig)
+- wenn ein manuelles Trigger-Setup auf einer `WITHOUT ROWID`-Tabelle
+  gefunden wird, das `dmg_sequences` referenziert, aber keinen
+  kanonischen Marker traegt: der Trigger wird als normaler
+  nutzerdefinierter Trigger ins neutrale Schema uebernommen; er wird
+  **nicht** als Sequence-Supportobjekt interpretiert, auch wenn er
+  funktional eine Sequence-Emulation implementiert
+- wenn ein Trigger mit passendem Marker auf einer
   `WITHOUT ROWID`-Tabelle gefunden wird, wird er als degradiert
-  markiert (Reverse-Warning)
+  markiert (Reverse-Warning `W116`), da die ROWID-basierte
+  Emulation auf dieser Tabelle nicht funktionieren kann
 
 Warning-Code:
 
@@ -1094,6 +1147,25 @@ Trotzdem zu pruefen:
 - gleiche neutrale Sequence -> kein Diff
 - geaenderte Emulationszeile -> `sequencesChanged`
 - fehlende Supportobjekte -> Reverse-Warning oder unvollstaendige Sequence
+
+Compare-Verhalten bei degradierten/modifizierten Triggern:
+
+- `W116` (degradiert, Sekundaer-Matching): die Sequence-Zuordnung
+  wird im Compare beruecksichtigt, aber der Compare-Report markiert
+  die Emulation als **laufzeit-nicht-vertrauenswuerdig**; der
+  Metadaten-Diff ist stabil, aber der Report weist explizit darauf
+  hin, dass das tatsaechliche Laufzeitverhalten nicht verifiziert
+  werden kann
+- `W120` (body-modified): die Sequence-Zuordnung bleibt im Compare,
+  aber der Report markiert die betroffene Sequence als
+  **emulations-veraendert**; ein Compare zwischen Quell- und
+  Zielschema zeigt keinen Metadaten-Diff, aber der Report enthaelt
+  eine Warnung, dass die Emulation moeglicherweise nicht korrekt
+  arbeitet
+- in beiden Faellen gilt: der Compare ist **nicht** aequivalent
+  zu einem Compare mit intakten Triggern; Nutzer muessen die
+  Trigger-Integritaet vor einem vertrauenswuerdigen Roundtrip
+  sicherstellen
 
 ---
 
