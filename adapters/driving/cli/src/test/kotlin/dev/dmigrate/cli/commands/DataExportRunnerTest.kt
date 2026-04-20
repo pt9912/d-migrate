@@ -267,6 +267,35 @@ class DataExportRunnerTest : FunSpec({
         clause.params shouldBe listOf(42L)
     }
 
+    test("Fingerprint stability: semantically equal filters with different whitespace/case produce same fingerprint") {
+        // Two filter strings that differ only in whitespace and keyword case
+        // must produce the same canonical form and therefore the same fingerprint.
+        val filterA = parseFilter("status = 'OPEN'  AND  active = true")!!
+        val filterB = parseFilter("status='OPEN' and active=TRUE")!!
+        filterA.canonical shouldBe filterB.canonical
+
+        // Verify through the full fingerprint computation path
+        val fpA = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
+            format = "json", encoding = "utf-8", csvDelimiter = ",",
+            csvBom = false, csvNoHeader = false, csvNullString = "",
+            filter = filterA.canonical, sinceColumn = null, since = null,
+            tables = listOf("users"), outputMode = "stdout", outputPath = "<stdout>",
+        ))
+        val fpB = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
+            format = "json", encoding = "utf-8", csvDelimiter = ",",
+            csvBom = false, csvNoHeader = false, csvNullString = "",
+            filter = filterB.canonical, sinceColumn = null, since = null,
+            tables = listOf("users"), outputMode = "stdout", outputPath = "<stdout>",
+        ))
+        fpA shouldBe fpB
+    }
+
+    test("Fingerprint divergence: structurally different filters produce different fingerprints") {
+        val filterA = parseFilter("status = 'OPEN'")!!
+        val filterB = parseFilter("status = 'CLOSED'")!!
+        filterA.canonical shouldNotBe filterB.canonical
+    }
+
     test("Exit 0: null filter (no --filter flag) passes null to executor") {
         var capturedFilter: DataFilter? = null
         val stderr = StderrCapture()

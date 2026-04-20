@@ -287,6 +287,34 @@ class DataExportE2EMysqlTest : FunSpec({
         out shouldNotContain "\"name\": \"carol\""
     }
 
+    test("E2E MySQL: --filter DSL uses JDBC bind parameters (injection-safe)") {
+        // Insert a row with a single-quote in the name to prove bind parameters
+        // are used: if the filter value were string-interpolated, the quote
+        // would break the SQL syntax and the export would fail.
+        val rawJdbc = "jdbc:mysql://${container.host}:${container.firstMappedPort}/${container.databaseName}"
+        DriverManager.getConnection(rawJdbc, container.username, container.password).use { conn ->
+            conn.createStatement().use { it.execute("INSERT INTO users (name, active, score) VALUES ('O''Brien', 1, 5.0)") }
+        }
+        val out = captureStdout {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "--quiet",
+                        "data", "export",
+                        "--source", jdbcUrl(),
+                        "--format", "json",
+                        "--tables", "users",
+                        "--filter", "name = 'O''Brien'",
+                    )
+                )
+            }
+        }
+        // The single-quoted value passes through the DSL parser and is bound
+        // as a JDBC parameter. If it were interpolated as raw SQL, the query
+        // would fail with a syntax error.
+        out shouldContain "O'Brien"
+    }
+
     // ─── Cursor-Streaming via useCursorFetch ─────────────────────
 
     test("E2E MySQL: --chunk-size 2 streams via useCursorFetch (no truncation)") {

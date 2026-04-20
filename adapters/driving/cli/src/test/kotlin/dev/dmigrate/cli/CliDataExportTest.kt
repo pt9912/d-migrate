@@ -641,6 +641,52 @@ class CliDataExportTest : FunSpec({
         }
     }
 
+    test("E2E: resume with v1 legacy checkpoint WITHOUT --filter exits 3 (generic mismatch)") {
+        // A v1 checkpoint without --filter is a genuine option change, not a
+        // migration issue. The runner should produce Exit 3, not Exit 2.
+        val db = createSampleDatabase()
+        val ckptDir = Files.createTempDirectory("d-migrate-legacy-nofilter")
+        try {
+            val manifestYaml = """
+                schemaVersion: 1
+                operationId: legacy-op-2
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: PENDING
+                    rowsProcessed: 0
+                    chunksProcessed: 0
+                optionsFingerprint: ${"b".repeat(64)}
+            """.trimIndent()
+            Files.writeString(ckptDir.resolve("legacy-op-2.checkpoint.yaml"), manifestYaml)
+
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--output", ckptDir.resolve("out.json").toString(),
+                            "--resume", "legacy-op-2",
+                            "--checkpoint-dir", ckptDir.toString(),
+                        )
+                    )
+                }
+                ex.statusCode shouldBe 3
+            }
+            stderr shouldContain "fingerprint mismatch"
+        } finally {
+            Files.deleteIfExists(db)
+            ckptDir.toFile().deleteRecursively()
+        }
+    }
+
     // ─── F33: --tables Identifier-Validierung (§6.7) ─────────────
 
     test("F33 §6.7: --tables 'weird name' (whitespace) → Exit 2") {
