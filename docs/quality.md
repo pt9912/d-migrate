@@ -14,7 +14,32 @@ Zusatzaufgaben:
 - Schlage konkrete Verbesserungen vor, um die Qualität zu erhöhen.
 
 
-## Findings (Stand: 2026-04-18)
+## Findings (Stand: 2026-04-19)
+
+### Aktualisierung 19.04.2026 (fokussiert auf Codequalität)
+
+| Metrik | Bewertung | Begründung |
+| --- | ---: | --- |
+| Lesbarkeit & Namensgebung | 8/10 | Domainnahe Namen und konsistente Terminologie; CLI, Runner und Ports sind gut lesbar. Verbesserungspotenzial durch weitere Kürzung großer Orchestrierungsblöcke. |
+| Modularität & Struktur | 8/10 | Hexagonale Schichtung ist in der Breite stabil. Registry- und Interface-Layer sind klar getrennt. Einige Verantwortlichkeiten sind noch in einzelnen Runnern gebündelt. |
+| Wartbarkeit | 7.5/10 | Hohe Testdisziplin und DI fördern Erweiterbarkeit. Potenzial in `DataTransferRunner`/`SchemaCompareRunner` für weitere Schrittzerlegung und wiederverwendbare Validierung. |
+| Sicherheit | 6/10 | Prepared Statements und Identifier-Quoting sind korrekt eingesetzt, Credentials werden geschwärzt. Hauptprobleme: `--filter` als Trusted SQL-Input und weitere nicht parametrisierte DDL-Interpolation (CHECK/Partition/Trigger/Body-Kontexte). |
+
+#### Aktive Risiken / nächste Prioritäten
+
+- `--filter` im Transfer bleibt als roher SQL-Eingabepfad mit klarer „Trusted Input“-Dokumentation, aber weiterhin hohes Relevanzpotenzial.
+- DDL-Kontexte, die Metadaten roh in SQL einbetten (`constraint.expression`, Trigger-Conditionen, Routine-Bodies, Partition-Teile), sind weiterhin ein systematischer Unsicherheitsfokus.
+- DB-Sicherheitsdefaults in Connection/Hikari-Pfaden sollten stärker als Policy dokumentiert und gegen unsichere Optionen absichern.
+- Große CLI/Runner-Methoden haben funktionale Schichtwechsel in einem Durchlauf; weitere Zerlegung erhöht Testschärfe und Fehlersuche.
+
+#### Konkrete Maßnahmen (Top)
+
+- `--filter` als `--unsafe-filter` mit expliziter Warnung führen oder in strukturierte, erlaubte DSL überführen.
+- Einheitliches Validierungs- und Quoting/Parametrisierungs-Framework für alle SQL-Generationspfade aufbauen.
+- Security-Policy für JDBC-Defaults definieren (TLS/Trust/Auth-Optionen, Verbot unsicherer Fallbacks).
+- Datenfluss für Schema-/Checkpoint-Pfade auf Canonical-Path/Allowlist absichern und Symlink-/Traversal-Risiken gezielt testen.
+- Runner-Orchestrierung in benannte, einzeln testbare Schritte weiter splitten.
+- Routine-/DDL-Generatoren mit property-based und Fuzz-Tests auf Edge-Cases prüfen.
 
 ### Sicherheit
 
@@ -114,26 +139,25 @@ Die Bewertung basiert auf den Kernmodulen in hexagon/core, hexagon/application u
 
 | Metrik                    | Bewertung | Trend | Begründung |
 | ------------------------- | --------- | ----- | ---------- |
-| Lesbarkeit & Namensgebung | 8/10      | = | Exzellente Domänensprache (`SchemaDefinition`, `TableComparator`, `NeutralType` als sealed class mit data objects). Konsistente Benennung über alle Schichten. Idiomatisches Kotlin: sealed classes, Extension Functions, `?.let()`, Set-Algebra (`leftNames - rightNames`), data classes durchgängig, `data object` (Kotlin 1.9+). Keine Java-Style-Antipatterns (kein `lateinit` im Produktionscode, keine manuellen equals/hashCode). Abzug für `executeWithPool` (477/446 LOC), Konstruktoren mit 12-17 Parametern, und `ExportExecutor.execute()` mit 17 Parametern. |
-| Modularität & Struktur    | 8/10      | ↑ | Vorbildliche hexagonale Architektur, auf Gradle-Ebene erzwungen. **21 Module** (vorher 18) nach Ports-Split in `ports-common`/`ports-read`/`ports-write`. Core-Modul hat null externe Abhängigkeiten. Dependency Inversion sauber: Application hängt nur von Core und Ports ab, nie von Adaptern. Port-Interfaces fokussiert (kein God-Interface). `AbstractJdbcDataReader` als Template-Methode mit nur 31-38 LOC pro Dialekt-Override. `consumer-read-probe` kann jetzt nur `ports-read` beziehen (Ziel des Splits). Abzug: DataImportRunner (851 LOC) und DataExportRunner (758 LOC) bündeln noch zu viel Orchestrierung. |
-| Wartbarkeit               | 7/10      | ↓ | 90% Kover-Minimum auf Kernmodulen (core, alle Drivers, formats, streaming). Testqualität hoch: verhaltensgetriebene Benennung, Kotest FunSpec, Edge Cases, Test Doubles. Fehlerbehandlung konsistent über sealed classes und strukturierte Fehlercodes (E001-E121). Neuen Dialekt hinzufügen = 7 Port-Interfaces + 4 Zeilen Registration. Null FIXME/HACK/XXX-Marker. **Abzug gegenüber v2:** (1) RoutineDdlHelper (3 Dateien, sicherheitskritisch) haben keine Unit-Tests, (2) neue `ports-*`-Module ohne explizite Coverage-Schwellen, (3) kein E2E-Round-Trip-Test, (4) Fehlercodes E006-E121 nicht systematisch gegen Validierungsmatrix getestet. |
-| Sicherheit                | 6/10      | ↓ | Profiling-Adapter gehärtet (parametrisierte Queries + Quoting). PreparedStatements in Datenpfaden durchgängig. Zentrales Identifier-Quoting via `SqlIdentifiers`. Credential-Scrubbing via `LogScrubber`. Pfad-Validierung vorhanden. **Abzug gegenüber v2:** Vertiefte Analyse zeigt ein breiteres Interpolations-Muster in DDL-Generierung: CHECK-Constraints (alle 3 Dialekte), Partitions-Ausdrücke (PG+MySQL), Trigger-Bedingungen (PG+SQLite), SpatiaLite-Funktionsaufrufe, View-/Funktions-Bodies. Zwar mit schwächerem Angriffsvektor (Angreifer muss Quellschema kontrollieren), aber systematisch ungeprüft. |
+| Lesbarkeit & Namensgebung | 8/10      | = | Exzellente Domänensprache (`SchemaDefinition`, `SchemaComparator`, `TableComparator`) und konsistente Benennung über alle Schichten. Kotlin-idiomatischer Stil mit `sealed`/`data class` und klaren Ports. Leicht abfällig durch noch große Orchestrierungsmethoden im Transfer- und Compare-Flow. |
+| Modularität & Struktur    | 8/10      | ↑ | Hexagonale Architektur und Modultrennung sind konsistent, Kern bleibt testbar und entkoppelt. Stabile Interfaces (`ports-*`) und klarer Runner-Adapter-Fluss. Abzugspotenzial bleibt bei einigen zentralen Flows, die noch viel Inline-Logik kombinieren. |
+| Wartbarkeit               | 7.5/10    | = | 90% Kover auf Kernmodulen, klare DI, gute Testkultur und gute Fehlermodelle. Verbesserte Runner-Schrittabstraktion bereits umgesetzt. Restpotenzial liegt weiterhin bei weiteren Refaktorings in zentralen Flows und weniger impliziten Annahmen bei Config-/Path-Pfaden. |
+| Sicherheit                | 6/10      | ↓ | Prepared Statements und Identifier-Quoting sind stark umgesetzt, Credentials werden geschwärzt. Kritische Restbereiche: roher `--filter` als Trusted-Input (auch nach Zusatzvalidierung) und uneinheitlich parametrisierte/escaped DDL-Pfade (CHECK/Partition/Trigger/Routine-Bodies). |
 
-Dateien mit >400 LOC (potenzielle Hotspots):
+Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 2026-04-19):
 
 | Datei | LOC | Längste Funktion | Einschätzung |
 | ----- | --- | ---------------- | ------------ |
-| DataImportRunner.kt | ~900 | executeWithPool: 24 LOC (zerlegt in 8 Schritte) | ✅ Behoben (AP 6.6) |
-| DataExportRunner.kt | ~800 | executeWithPool: 26 LOC (zerlegt in 10 Schritte) | ✅ Behoben (AP 6.6) |
-| ValueDeserializer.kt | 647 | dispatch: 59 LOC, 16 Branches | Akzeptabel (Type-Dispatch) |
-| SqliteDataWriter.kt | 525 | — | Dialekt-spezifisch; erwartbar |
-| PostgresDataWriter.kt | 523 | — | Dialekt-spezifisch; erwartbar |
-| MysqlDataWriter.kt | 509 | — | Dialekt-spezifisch; erwartbar |
-| AbstractJdbcDataReader.kt | 489 | streamTableInternal: 58 LOC | Shared Template; gut |
-| SchemaNodeParser.kt | 462 | — | Single Responsibility (Parsing) |
-| SqliteDdlGenerator.kt | 458 | — | Dialekt-spezifisch; erwartbar |
-| MysqlDdlGenerator.kt | 446 | — | Dialekt-spezifisch; erwartbar |
-| SchemaCompareRunner.kt | 403 | — | Fokussierter Use Case |
+| ValueDeserializer.kt | 647 | dispatch: 59 LOC, 16 Branches | Akzeptabel (Type-Dispatch). |
+| SqliteDataWriter.kt | 525 | — | Dialekt-spezifisch; erwartbar. |
+| PostgresDataWriter.kt | 523 | — | Dialekt-spezifisch; erwartbar. |
+| MysqlDataWriter.kt | 509 | — | Dialekt-spezifisch; erwartbar. |
+| AbstractJdbcDataReader.kt | 489 | streamTableInternal: 58 LOC | Shared Template; gut. |
+| DataImportRunner.kt | 473 | executeWithPool: 24 LOC (zerlegt in 8 Schritte) | Kernpipeline stabil, Klasse bleibt groß; gute Schrittabstraktion, weitere Trennung einzelner Verantwortungen sinnvoll. |
+| SchemaNodeParser.kt | 463 | — | Single Responsibility (Parsing). |
+| SchemaCompareRunner.kt | 403 | — | Fokussierter Use Case. |
+| DataExportRunner.kt | 273 | executeWithPool: 26 LOC (zerlegt in 10 Schritte) | Kernpipeline stabil, Klasse bleibt groß; gute Schrittabstraktion, weitere Trennung einzelner Verantwortungen sinnvoll. |
+| DataTransferRunner.kt | 208 | execute / Hilfsorchestrierung | Klasse kleiner geworden, weiterhin Transferfluss-Logik im Fokus für weitere fachliche Zerlegung. |
 
 
 ## Konkrete Verbesserungen
@@ -142,7 +166,8 @@ Dateien mit >400 LOC (potenzielle Hotspots):
 
 - **`--filter` härten** (Milestone: 0.9.5):
   Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
-  Muss vor dem oeffentlichen Publish-Vertrag entschieden sein.
+  Siehe dazu den Security-Finding `--filter` roh in SQL (`DataExportCommand.kt`, `DataExportHelpers.kt`) und die dokumentierte `--filter`-Entscheidung in `ImpPlan-0.9.1-A.md`.
+  Muss vor dem öffentlichen Publish-Vertrag entschieden sein.
   Verankert in `docs/roadmap.md` unter Milestone 0.9.5.
 
 ### Erledigt
