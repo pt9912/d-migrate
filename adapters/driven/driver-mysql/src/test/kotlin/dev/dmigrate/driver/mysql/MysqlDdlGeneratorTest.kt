@@ -1525,12 +1525,23 @@ class MysqlDdlGeneratorTest : FunSpec({
         e056.any { it.objectName == "invoices.invoice_number" && it.hint?.contains("helper_table") == true } shouldBe true
     }
 
-    test("helper_table rollback is non-empty and contains DROP statements") {
+    test("helper_table rollback drops in correct order: triggers → routines → tables") {
         val rollback = generator.generateRollback(seqSchema(), helperOpts)
         val ddl = rollback.render()
         ddl shouldContain "DROP"
-        // At minimum: user table drop + support function/trigger drops
         rollback.statements.size shouldNotBe 0
+        // Verify ordering: trigger drops appear before function drops,
+        // function drops before dmg_sequences table drop
+        val lines = ddl.lines()
+        val triggerDropIdx = lines.indexOfFirst { it.contains("DROP TRIGGER") }
+        val funcDropIdx = lines.indexOfFirst { it.contains("DROP FUNCTION") }
+        val seqTableDropIdx = lines.indexOfFirst { it.contains("dmg_sequences") && it.contains("DROP") }
+        if (triggerDropIdx >= 0 && funcDropIdx >= 0) {
+            (triggerDropIdx < funcDropIdx) shouldBe true
+        }
+        if (funcDropIdx >= 0 && seqTableDropIdx >= 0) {
+            (funcDropIdx < seqTableDropIdx) shouldBe true
+        }
     }
 
     test("helper_table phases: dmg_sequences in PRE_DATA, routines and triggers in POST_DATA") {

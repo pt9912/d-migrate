@@ -13,6 +13,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     private var currentOptions: DdlGenerationOptions = DdlGenerationOptions()
     private var currentSchema: SchemaDefinition? = null
+    private var supportObjectsBlocked = false
     private val pendingSupportTriggers = mutableListOf<SupportTriggerSpec>()
     private val pendingSequenceNotes = mutableListOf<TransformationNote>()
 
@@ -28,6 +29,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         currentOptions = options
         currentSchema = schema
+        supportObjectsBlocked = false
         pendingSupportTriggers.clear()
         pendingSequenceNotes.clear()
         val result = super.generate(schema, options)
@@ -134,6 +136,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             )
             skipped += action.toSkipped()
             statements += DdlStatement("", listOf(action.toNote()))
+            supportObjectsBlocked = true
             return statements
         }
 
@@ -400,7 +403,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        if (!isHelperTable) return routineHelper.generateFunctions(functions, skipped)
+        if (!isHelperTable || supportObjectsBlocked) return routineHelper.generateFunctions(functions, skipped)
 
         val statements = mutableListOf<DdlStatement>()
 
@@ -475,7 +478,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        if (!isHelperTable) return routineHelper.generateTriggers(triggers, tables, skipped)
+        if (!isHelperTable || supportObjectsBlocked) return routineHelper.generateTriggers(triggers, tables, skipped)
 
         val statements = mutableListOf<DdlStatement>()
         // E124: collision check for support trigger names
