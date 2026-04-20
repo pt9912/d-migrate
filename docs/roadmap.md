@@ -13,7 +13,7 @@ Sie basiert auf den Anforderungen des [Lastenhefts](./lastenheft-d-migrate.md), 
 
 ```
 Phase 1: MVP          Phase 2: Beta         Phase 3: Stable       Phase 4: Growth
-0.1.0 - 0.5.5        0.6.0 - 0.9.5         1.0.0                 1.1.0 - 2.0.0
+0.1.0 - 0.5.5        0.6.0 - 0.9.8         1.0.0                 1.1.0 - 2.0.0
 Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 ──────────────────────────────────────────────────────────────────────────────────▶
 ```
@@ -159,7 +159,7 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 ---
 
-## Phase 2: Beta (0.6.0 - 0.9.5) — Monate 7-12
+## Phase 2: Beta (0.6.0 - 0.9.8) — Monate 7-12
 
 **Ziel**: Production-ready für erste Projekte
 
@@ -253,8 +253,8 @@ JSON/YAML-Report. Design: [profiling.md](./profiling.md).
 
 | Bereich | Aufgabe                                                               | LF-Ref | Status |
 | ------- | --------------------------------------------------------------------- | ------ | ------ |
-| Core    | Checkpoint/Resume für langläufige Operationen                         | LN-012 | ✅     |
-| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu) | LF-006 | ✅     |
+| Core    | Checkpoint/Resume für langläufige Operationen                         | LN-012 | ✅      |
+| CLI     | `--lang` Flag für Sprachauswahl (greift auf 0.8.0-ResourceBundles zu) | LF-006 | ✅      |
 
 **Zielbild nach Abschluss von 0.9.0**: Langläufige Export-/Import-
 Operationen sind unterbrechbar und können wieder aufgesetzt werden; die in
@@ -282,7 +282,7 @@ Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 > kein Resume; ein entsprechender Scope wird spaeter bewertet.
 
 > Hinweis: LF-013 (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
-> — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.5** ausgelagert,
+> — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.8** ausgelagert,
 > damit dieser Milestone klein und fokussiert bleibt.
 
 ### Milestone 0.9.1 — Beta: Library-Refactor und Integrationsschnitt ✅ (2026-04-19)
@@ -316,21 +316,21 @@ Vertrag festschreibt.
 
 ### Milestone 0.9.2 — Beta: DDL-Phasen und importfreundliche Schema-Artefakte
 
-| Bereich | Aufgabe                                                                                                                     | LF-Ref     | Status |
-| ------- | --------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ |
-| Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data` (AP 6.1)                                                        | —          | ✅      |
-| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single\|pre-post`) (AP 6.2)                                           | LF-003     | ✅      |
-| Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten) (AP 6.3)           | —          | ✅      |
-| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld (AP 6.4)                           | —          | ✅      |
-| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe (AP 6.4)                                     | —          | ✅      |
-| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet (AP 6.7) | —   | ✅      |
-| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (AP 6.7)                                                   | —          | ✅      |
-| Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (AP 6.5)          | —          | ✅      |
-| Quality | MySQL-TODO-Platzhalter: verbleibende 4 `-- TODO` in MysqlDdlGenerator durch ManualActionRequired ersetzen (AP 6.5)         | —          | ✅      |
-| Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477→26 / 446→24 LOC) (AP 6.6)                                  | —          | ✅      |
-| Quality | Executor-Parameter gruppieren: ExportExecutor (16→4) / ImportExecutor (14→4) → Kontext-DTOs (AP 6.6)                        | —          | ✅      |
-| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (AP 6.7)                                                              | —          | ✅      |
-| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          | ✅      |
+| Bereich | Aufgabe                                                                                                                              | LF-Ref | Status |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------ |
+| Core    | Phasenbezogenes DDL-Modell fuer `pre-data` und `post-data` (AP 6.1)                                                                  | —      | ✅      |
+| CLI     | Optionaler DDL-Split fuer `schema generate` (`--split single\|pre-post`) (AP 6.2)                                                    | LF-003 | ✅      |
+| Driver  | Objektzuordnung pro Phase (inkl. Trigger/Funktionen/Procedures sowie Views mit Routinen-Abhaengigkeiten) (AP 6.3)                    | —      | ✅      |
+| CLI     | JSON-Ausgabe fuer Split-Fall ueber `ddl_parts` statt Typwechsel im bestehenden `ddl`-Feld (AP 6.4)                                   | —      | ✅      |
+| Formats | Phase-Attribution fuer Notes und `skipped_objects` in Report- und JSON-Ausgabe (AP 6.4)                                              | —      | ✅      |
+| Test    | Golden-Master-, CLI- und Fehlerpfad-Tests fuer Split-Ausgabe, View-/Routinen-Abhaengigkeiten und Rueckwaertskompatibilitaet (AP 6.7) | —      | ✅      |
+| Test    | E2E-Round-Trip-Test: DB→Export→Format→Import→DB→Schema-Vergleich (AP 6.7)                                                            | —      | ✅      |
+| Quality | DDL-Interpolation systematisch absichern: CHECK-Constraints, Partitions, Trigger-Bedingungen, SpatiaLite (AP 6.5)                    | —      | ✅      |
+| Quality | MySQL-TODO-Platzhalter: verbleibende 4 `-- TODO` in MysqlDdlGenerator durch ManualActionRequired ersetzen (AP 6.5)                   | —      | ✅      |
+| Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477→26 / 446→24 LOC) (AP 6.6)                                            | —      | ✅      |
+| Quality | Executor-Parameter gruppieren: ExportExecutor (16→4) / ImportExecutor (14→4) → Kontext-DTOs (AP 6.6)                                 | —      | ✅      |
+| Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (AP 6.7)                                                                       | —      | ✅      |
+| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                                     | —      | ✅      |
 
 **Ergebnis**: `schema generate` kann optional importfreundliche
 Schema-Artefakte als `pre-data` und `post-data` erzeugen, ohne den bisherigen
@@ -346,14 +346,14 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 
 ### Milestone 0.9.3 — Beta: Filter-Haertung und MySQL-Sequence-Emulation (Generator)
 
-| Bereich  | Aufgabe                                                                                                       | LF-Ref |
-| -------- | ------------------------------------------------------------------------------------------------------------- | ------ |
-| Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`) | —      |
-| Core     | Phase A: MySQL-Sequence-Emulationsvertrag schaerfen (Namespace, Marker, Warning-Codes W114–W117, Concurrency) | —      |
-| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen                  | —      |
-| Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger | — |
-| CLI      | `--mysql-named-sequences action_required|helper_table` Option (opt-in, Default bleibt `action_required`)      | —      |
-| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                     | —      |
+| Bereich  | Aufgabe                                                                                                                                 | LF-Ref                                                          |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`)                           | —                                                               |
+| Core     | Phase A: MySQL-Sequence-Emulationsvertrag schaerfen (Namespace, Marker, Warning-Codes W114–W117, Concurrency)                           | —                                                               |
+| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen                                            | —                                                               |
+| Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger | —                                                               |
+| CLI      | `--mysql-named-sequences action_required                                                                                                | helper_table` Option (opt-in, Default bleibt `action_required`) | — |
+| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                               | —                                                               |
 
 **Ergebnis**: `schema generate --target mysql` kann benannte Sequences optional
 ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
@@ -363,20 +363,66 @@ Reverse-Engineering und Compare folgen in 0.9.4. Details:
 
 ### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare
 
-| Bereich | Aufgabe                                                                                                                            | LF-Ref |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Driver  | Phase D: `MysqlSchemaReader` — Erkennung von `dmg_sequences`, Support-Routinen und kanonischen Sequence-Triggern via Marker        | —      |
-| Driver  | Reverse von sequence-basierten Spaltenwerten zurueck auf `DefaultValue.SequenceNextVal`                                            | —      |
-| Core    | Phase E: Compare-Stabilisierung — emulierte Sequences auf Neutralmodell-Ebene vergleichen, kein Hilfsobjekt-Rauschen               | —      |
-| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                                  | —      |
-| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)                      | —      |
+| Bereich | Aufgabe                                                                                                                     | LF-Ref |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Driver  | Phase D: `MysqlSchemaReader` — Erkennung von `dmg_sequences`, Support-Routinen und kanonischen Sequence-Triggern via Marker | —      |
+| Driver  | Reverse von sequence-basierten Spaltenwerten zurueck auf `DefaultValue.SequenceNextVal`                                     | —      |
+| Core    | Phase E: Compare-Stabilisierung — emulierte Sequences auf Neutralmodell-Ebene vergleichen, kein Hilfsobjekt-Rauschen        | —      |
+| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                           | —      |
+| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)               | —      |
 
 **Ergebnis**: MySQL-Sequence-Emulation ist vollstaendig: generieren, reverse-en
 und vergleichen. Hilfsobjekte werden beim Reverse sauber auf `SequenceDefinition`
 zurueckgefaltet und tauchen nicht als Rauschen im Diff auf. Details:
 [`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md) Phase D+E.
 
-### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
+### Milestone 0.9.5 — Beta: MCP-Server
+
+| Bereich | Aufgabe                                                                                        | LF-Ref |
+| ------- | ---------------------------------------------------------------------------------------------- | ------ |
+| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface               | —      |
+| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung       | —      |
+| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                       | —      |
+| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                         | —      |
+| Server  | Segmentierter Artefakt-Upload mit Resumable-Multi-Part und SHA256-Validierung                  | —      |
+| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                  | —      |
+
+**Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
+ueber das Model Context Protocol gesteuert werden. Details:
+[`ki-mcp.md`](./ki-mcp.md).
+
+### Milestone 0.9.6 — Beta: REST-API
+
+| Bereich | Aufgabe                                                                                        | LF-Ref |
+| ------- | ---------------------------------------------------------------------------------------------- | ------ |
+| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                        | —      |
+| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | —     |
+| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                  | —      |
+| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                  | —      |
+| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)    | —      |
+| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis             | —      |
+| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                        | —      |
+
+**Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
+programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
+[`rest-service.md`](./rest-service.md).
+
+### Milestone 0.9.7 — Beta: gRPC-API
+
+| Bereich | Aufgabe                                                                                        | LF-Ref |
+| ------- | ---------------------------------------------------------------------------------------------- | ------ |
+| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung                  | —      |
+| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume                | —      |
+| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling                       | —      |
+| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs                         | —      |
+| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen               | —      |
+| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes                    | —      |
+
+**Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
+Low-Latency-Integration und Streaming-Szenarien. Details:
+[`grpc-service.md`](./grpc-service.md).
+
+### Milestone 0.9.8 — Beta-Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
 | ------- | ----------------------------------------- | ------ |
@@ -399,7 +445,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 > Pilot-Tasks haben eine deutlich andere Cadence als Code-Features (sie
 > brauchen Reviews durch Domain-Experten und externe Tester). Wenn sie im
 > 0.9.0-Code-Milestone hängen, verschiebt sich der Beta-Cut auf das
-> langsamste Element. 0.9.5 entkoppelt das, ohne die Inhalte zu streichen.
+> langsamste Element. 0.9.8 entkoppelt das, ohne die Inhalte zu streichen.
 
 ---
 
@@ -573,6 +619,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.27
+**Version**: 3.28
 **Stand**: 2026-04-20
-**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; Milestone 0.9.3 (Filter-Haertung + MySQL-Sequence-Generator) und 0.9.4 (MySQL-Sequence Reverse/Compare) geplant
+**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; geplant: 0.9.3 (Filter + MySQL-Sequence-Generator), 0.9.4 (Sequence Reverse/Compare), 0.9.5 (MCP), 0.9.6 (REST), 0.9.7 (gRPC), 0.9.8 (Docs/Pilot)
