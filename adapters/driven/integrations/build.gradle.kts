@@ -23,7 +23,7 @@ kover {
     reports {
         verify {
             rule {
-                minBound(if (project.hasProperty("integrationTests")) 90 else 90)
+                minBound(90)
             }
         }
     }
