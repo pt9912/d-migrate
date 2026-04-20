@@ -192,9 +192,21 @@ Wert liefern wuerde.
 
 Jede neutrale Sequence belegt genau eine Zeile in `dmg_sequences`.
 
-`cache_size = NULL` bedeutet "kein Caching konfiguriert" (nicht
-"Default-Caching des Dialekts"). Caching wird in SQLite nicht umgesetzt
-(siehe §3.4), da SQLite keinen Multi-Connection-Cache nutzen kann.
+`cache_size`-Behandlung und Roundtrip-Vertrag:
+
+- `cache_size` wird aus dem neutralen Modell (`SequenceDefinition.cache`)
+  **unveraendert** in die `dmg_sequences`-Zeile uebernommen und dort
+  als reine Metadaten persistiert
+- SQLite implementiert kein echtes Caching (Single-Writer, kein
+  Multi-Connection-Cache); `cache_size` hat keinen Laufzeiteffekt
+- beim Reverse liest der Reader `cache_size` aus `dmg_sequences`
+  und rekonstruiert `SequenceDefinition.cache` daraus; dadurch ist
+  der Roundtrip fuer `cache_size` **verlustfrei** auf Metadatenebene
+- bei der Generierung wird `W114` emittiert wenn `cache_size != NULL`,
+  um darauf hinzuweisen, dass der Wert gespeichert, aber nicht als
+  echte Preallocation umgesetzt wird
+- `cache_size = NULL` bedeutet "kein Caching konfiguriert" (nicht
+  "Default-Caching des Dialekts")
 
 ### 3.3 Namespace- und Kollisionsvertrag
 
@@ -322,6 +334,9 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --
 -- BEFORE INSERT (_bi):
 --
+-- Schritt 0: Existenzpruefung per EXISTS (deterministisch)
+--   IF NOT EXISTS(dmg_sequences WHERE name = seq): RAISE(ABORT, 'not found')
+--
 -- Schritt 1: Erschoepfungspruefung ueber exhausted-Flag
 --   IF exhausted = 1: RAISE(ABORT, 'exhausted')
 --
@@ -344,7 +359,6 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --   ELSE:
 --     next_value := next_value + increment_by
 --     (overflow-sicher: ELSE nur erreichbar wenn innerhalb der Grenze)
---   IF rows_affected = 0: RAISE(ABORT, 'sequence row not found')
 --
 -- AFTER INSERT (_ai):
 --
@@ -425,6 +439,12 @@ FOR EACH ROW
 WHEN NEW."order_number" IS NULL
 BEGIN
     /* d-migrate:sqlite-sequence-v1 object=sequence-trigger sequence=order_number_seq table=orders column=order_number */
+    -- Schritt 0: Existenzpruefung — Sequence-Zeile muss vorhanden sein.
+    -- Deterministischer EXISTS-Check, unabhaengig von changes()-Semantik.
+    SELECT RAISE(ABORT, 'dmg_sequences: sequence row order_number_seq not found')
+        WHERE NOT EXISTS (
+            SELECT 1 FROM "dmg_sequences" WHERE "name" = 'order_number_seq'
+        );
     -- Schritt 1: Erschoepfungspruefung ueber das exhausted-Flag.
     -- Kein numerischer Vergleich, kein Overflow-Risiko.
     SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
@@ -491,13 +511,8 @@ BEGIN
                 ELSE "exhausted"
             END
         WHERE "name" = 'order_number_seq';
-    -- Guard: Sequence-Zeile muss existieren (changes() = 0 heisst kein UPDATE).
-    -- Hinweis: changes() zaehlt gematchte Zeilen, nicht geaenderte Werte;
-    -- selbst bei increment_by mit Netto-Null-Effekt (theoretisch durch
-    -- Validierung ausgeschlossen, §3.6) wuerde changes() = 1 zurueckgeben,
-    -- solange die WHERE-Klausel matcht.
-    SELECT RAISE(ABORT, 'dmg_sequences: sequence row order_number_seq not found')
-        WHERE changes() = 0;
+    -- (Existenzpruefung bereits in Schritt 0 per EXISTS erledigt;
+    --  kein changes()-Check mehr noetig)
 END;
 
 -- AFTER INSERT: schreibt den gesicherten Rueckgabewert in die Zeile
@@ -1051,13 +1066,13 @@ gemeldet:
   DO NOTHING, INSERT OR IGNORE, INSERT OR FAIL with multi-row);
   ABORT and ROLLBACK roll back trigger side effects and do NOT
   produce gaps
-- `W121` wird **nicht** pauschal bei jeder Tabelle mit UNIQUE/PK
-  emittiert, sondern nur als **informative Dokumentations-Note**
-  im Report aufgenommen — es ist ein potenzielles Laufzeitverhalten,
-  das vom tatsaechlichen INSERT-Muster der Anwendung abhaengt
-- der Generator haengt `W121` an die Sequence-Definition (nicht
-  an die Tabelle), da das Gap-Risiko eine Eigenschaft der
-  Emulationsstrategie ist, nicht einer spezifischen Tabelle
+- `W121` wird als `NoteType.INFO` emittiert und an die **konkrete
+  Tabelle und Spalte** gehaengt, auf der die Sequence-Trigger
+  generiert wurden — nicht pauschal an die Sequence-Definition
+- der Report-Eintrag nennt explizit: Tabelle, Spalte, Sequence-Name
+  und die betroffenen Conflict-Formen
+- dadurch kann der Nutzer im Report gezielt die relevanten Tabellen
+  identifizieren, statt eine globale Note interpretieren zu muessen
 - im Compare-Report macht `W121` sichtbar, dass die Emulation
   bei bestimmten Conflict-Handling-Formen Gaps erzeugen kann
 
@@ -1196,12 +1211,20 @@ Scope der Abhaengigkeitspruefung:
   fehleranfaellig; eine vollstaendige Pruefung aller ATTACHed DBs
   wuerde `PRAGMA database_list` + Iteration ueber alle Schemas
   erfordern und ist fuer Phase 1 unverhältnismaessig
-- diese Einschraenkung wird explizit als **bekannte Limitierung**
-  dokumentiert: "Die Rollback-Abhaengigkeitspruefung erkennt nur
-  Verweise aus dem `main`-Schema. Objekte in per ATTACH angebundenen
-  Datenbanken oder im `temp`-Schema, die auf `dmg_sequences`
-  zugreifen, werden nicht erkannt und koennen nach dem Rollback
-  inkonsistent werden."
+- als optionaler Failsafe prueft der Preflight per
+  `PRAGMA database_list`, ob neben `main` (und `temp`) weitere
+  Datenbanken per ATTACH angebunden sind; wenn ja, emittiert der
+  Rollback `W123` (INFO): "Attached databases detected; rollback
+  dependency scan covers main schema only — verify that attached
+  schemas do not reference dmg_sequences"
+- `W123` blockiert den Rollback **nicht**, macht aber die
+  Einschraenkung im Report sichtbar, damit der Nutzer eine
+  bewusste Entscheidung treffen kann
+- diese Einschraenkung wird zusaetzlich in der Nutzerdokumentation
+  als **Precondition** formuliert: "Vor dem Rollback im
+  `helper_table`-Modus sicherstellen, dass keine per ATTACH
+  angebundenen Datenbanken oder `temp`-Objekte auf `dmg_sequences`
+  zugreifen."
 - eine spaetere Ausbaustufe kann den Scan auf alle Schemas erweitern
 
 Normalisierung und Matching-Strategie:
@@ -1276,10 +1299,12 @@ Normalisierung und Matching-Strategie:
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
+  - `W123` (INFO): Attached databases detected; rollback dependency
+    scan covers main schema only (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `W120`, `W121`, `W122`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
+`W119`, `W120`, `W121`, `W122`, `W123`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
 
 ---
 
@@ -1451,7 +1476,7 @@ Compare-Verhalten bei degradierten/modifizierten Triggern:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`, `E059`, `W120`, `W121`, `W122`)
+  `E057`, `E058`, `E059`, `W120`, `W121`, `W122`, `W123`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -1728,9 +1753,15 @@ Bereits getroffene Entscheidungen:
 
 - **Zuweisungsstrategie**: Zwei-Trigger (`_bi` + `_ai`) als
   kanonischer Produktpfad (§3.4)
-- **`WITHOUT ROWID`**: hard-fail mit `E057` (§3.5)
+- **`WITHOUT ROWID`**: hard-fail mit `E057` (§3.5); PK-basierter
+  `_ai`-Fallback ist **nicht** fuer Phase 1 geplant; die
+  Einschraenkung bleibt bestehen, bis ein konkreter Bedarf belegt ist
 - **App-Level (ex-Strategie B)**: nicht Teil von `helper_table`;
   nur als Doku-Pattern fuer `action_required`-Nutzer
+- **`cache_size`**: reine Metadaten, verlustfrei persistiert und
+  im Roundtrip stabil; kein Laufzeiteffekt in SQLite (W114)
+- **Existenzpruefung**: deterministischer `EXISTS`-Precheck statt
+  `changes()`-Semantik (robuster ueber SQLite-Versionen)
 
 Vor dem ersten Code:
 
