@@ -127,10 +127,13 @@ COPY --chown=gradle:gradle . .
 RUN gradle --no-daemon ${COVERAGE_TASKS}
 
 ARG YQ_VERSION=v4.44.6
+ARG JQ_VERSION=jq-1.8.1
 ADD https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 /usr/local/bin/yq
-RUN chmod +x /usr/local/bin/yq && \
+ADD https://github.com/jqlang/jq/releases/download/${JQ_VERSION}/jq-linux-amd64 /usr/local/bin/jq
+RUN chmod +x /usr/local/bin/yq /usr/local/bin/jq && \
     test -f /src/build/reports/kover/report.xml && \
-    yq -p xml -o json /src/build/reports/kover/report.xml > /src/build/reports/kover/report.json
+    yq -p xml -o json /src/build/reports/kover/report.xml | \
+    jq -f /src/scripts/kover-report-to-json.jq > /src/build/reports/kover/report.json
 
 # ---- Stage 4: coverage-verify ----------------------------------------------
 # Optional hard gate for CI-style coverage enforcement.
