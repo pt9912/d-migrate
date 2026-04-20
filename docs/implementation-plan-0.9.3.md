@@ -132,7 +132,8 @@ Reverse und Compare bleiben explizit fuer 0.9.4 offen.
 - die CLI akzeptiert unter `--filter` keine rohen SQL-Fragmente mehr
 - der neue Filter-Vertrag ist eine eigene Anwendungskomponente
   (`FilterDslParser`, eigener AST, strukturierter Parse-Fehler),
-  nicht ein nur in der CLI verankerter Adapter-Helfer
+  im Modul `hexagon/application`, nicht ein nur in der CLI verankerter
+  Adapter-Helfer
 - Help-Texte, CLI-Spec und Fehlermeldungen dokumentieren die sichere
   DSL und die Abgrenzung gegen bisherige Raw-SQL-Eingaben
 - `DefaultValue.SequenceNextVal(sequenceName: String)` wird im
@@ -227,6 +228,10 @@ Verbindliche Entscheidung:
   - alte Raw-SQL-`--filter`-Eingaben
   - alte oder programmgesteuerte
     `FunctionCall("nextval(...)")`-Schema-Notationen
+- die Ablehnung von `FunctionCall("nextval(...)")` ist ein expliziter
+  **Breaking Change** fuer bestehende Schema-Inputs ueber alle Dialekte,
+  auch wenn die praktische Wirkung vor allem PostgreSQL-Schemas treffen
+  kann, die diese historische Schreibweise heute noch verwenden
 
 Begruendung:
 
@@ -258,6 +263,10 @@ default:
   `FunctionCall("nextval(...)")` bekommen **keinen** stillen Compat-
   Shim; sie werden mit klarer Validierungs-/Generate-Fehlermeldung auf
   die neue Objektform `default.sequence_nextval` verwiesen
+- dieser Bruch wird in 0.9.3 nicht als "interner Cleanup", sondern als
+  sichtbare Breaking-Change-Migration behandelt; verpflichtend sind
+  Release-Note, Migrationshinweis und Vorher/Nachher-Beispiel fuer
+  betroffene PostgreSQL- und generische Schema-Dateien
 
 Begruendung:
 
@@ -295,6 +304,10 @@ Verbindliche Entscheidung:
   - `dmg_setval`
   - `dmg_seq_<table16>_<column16>_<hash10>_bi`
 - keine benutzerkonfigurierbaren Prefixe in diesem Milestone
+- `hash10` ist verbindlich definiert als die ersten 10 lowercase-
+  Hex-Zeichen eines SHA-256 ueber den kanonischen Schluessel
+  `<table-lower>\u0000<column-lower>`; dieselbe Regel gilt fuer Golden
+  Masters, Rollback und spaeteres Reverse
 - Namenskollisionen fuehren nicht zu stiller Umbenennung
 - der Generator faellt in Konfliktfaellen auf strukturierte
   `ACTION_REQUIRED`-/`E056`-Diagnose statt auf "best effort" zurueck
@@ -346,6 +359,9 @@ Der Datenexport behaelt seinen technischen Kern:
 - `DataExportHelpers.resolveFilter(...)` baut weiter einen
   `DataFilter`-Baum
 - `AbstractJdbcDataReader` behaelt die bestehende `WHERE`-Integration
+- `DataFilter.ColumnSubset` ist von 0.9.3 fachlich **nicht** betroffen;
+  der Milestone aendert nur den Nutzerpfad, der heute `WhereClause`
+  bzw. kuenftig `ParameterizedClause`/`Compound` befuellt
 
 Geaendert wird die sichtbare API-Schicht:
 
@@ -392,6 +408,9 @@ Tokenisierungs-/Whitespace-Vertrag:
   Leerzeichen, Tabs oder aehnliche Zwischenraeume als aequivalent
 - vor und nach dem Gesamtausdruck ist Whitespace erlaubt und wird
   abgeschnitten
+- ein nach dem Trim leerer `--filter`-Wert (`""`, `"   "`) ist
+  **ungueltig** und endet mit Exit 2; "kein Filter" bleibt weiterhin
+  nur der Fall, dass `--filter` gar nicht gesetzt ist
 - innerhalb von Identifiern, Zahlen oder Keywords ist kein Whitespace
   erlaubt
 - nach einer erfolgreich erkannten Klausel duerfen keine "restlichen"
@@ -423,6 +442,9 @@ Literal-Vertrag:
 - Booleans: `true | false` (case-insensitive)
 - `null` ist nur ueber `IS NULL` / `IS NOT NULL` erlaubt, nicht als
   Vergleichsliteral
+- Vergleichsformen wie `name = null`, `name != null` oder
+  `name IN (null)` sind explizit syntaxfehlerhaft und bekommen eine
+  gezielte DSL-Fehlermeldung mit Hinweis auf `IS NULL` / `IS NOT NULL`
 - Strings:
   - single-quoted
   - Escape nur ueber verdoppelte Quotes (`'O''Reilly'`)
@@ -477,6 +499,7 @@ Der DSL-Vertrag ist als eigenstaendige Parser-Stufe implementiert:
 - Schichtvertrag:
   - `FilterDslParser`, AST und Normalisierungslogik liegen in einer
     von CLI und Anwendungslogik gemeinsam nutzbaren Schicht
+    innerhalb von `hexagon/application`
   - `DataExportHelpers` darf diese Komponente direkt nutzen, ohne eine
     Abhaengigkeit auf `adapters/driving/cli` einzufuehren
   - die CLI bleibt fuer Argumententgegennahme und Exit-2-Diagnosen
@@ -516,6 +539,12 @@ Folgen:
 - `SchemaNodeParser.parseDefault(...)` mappt
   `default.sequence_nextval: <name>` auf
   `SequenceNextVal("<name>")`
+- die Implementierung lehnt sich bewusst an das bereits existierende
+  Parse-Muster fuer reservierte Default-Funktionsnamen wie
+  `current_timestamp` und `gen_uuid` an: reservierte Spezialfaelle
+  werden frueh im Codec erkannt, aber `nextval(...)` bleibt **kein**
+  freier Pattern-Match und wird nur ueber `default.sequence_nextval`
+  kanonisch modelliert
 - `SchemaNodeBuilder.buildDefault(...)` schreibt denselben Wert wieder
   als explizites Objekt
 - `SchemaValidator.isDefaultCompatible(...)` akzeptiert
@@ -550,7 +579,7 @@ Nicht Teil von 0.9.3:
 
 `DdlGenerationOptions` wird erweitert um:
 
-- `mysqlNamedSequenceMode: MysqlNamedSequenceMode`
+- `mysqlNamedSequenceMode: MysqlNamedSequenceMode?`
 
 Neues Enum:
 
@@ -573,6 +602,15 @@ Verbindlicher Output-Vertrag:
 - das neue Optionsfeld erscheint **nur** bei `target = mysql`
 - fuer PostgreSQL und SQLite bleibt das Feld vollstaendig absent,
   nicht `null` und nicht mit einem MySQL-Defaultwert befuellt
+- technische Regel dafuer:
+  - in `DdlGenerationOptions` ist das Feld nullable
+  - fuer Nicht-MySQL-Ziele bleibt es `null`
+  - JSON-Serializer und Report-Renderer muessen `null` konsequent
+    unterdruecken statt einen Default wie `action_required`
+    auszugeben
+- die Default-Aufloesung auf `action_required` passiert erst im
+  MySQL-spezifischen Runner-/Generatorpfad, nicht im gemeinsamen
+  Options-DTO fuer alle Targets
 
 Empfohlene Serialisierung fuer MySQL:
 
@@ -580,6 +618,25 @@ Empfohlene Serialisierung fuer MySQL:
   - `generator_options.mysql_named_sequences`
 - Report:
   - `target.mysql_named_sequences`
+
+### 5.3a Versionsvertrag fuer 0.9.3
+
+Der Versionsnachzug ist in 0.9.3 ein eigener, expliziter Vertrag und
+nicht nur impliziter Nachlauf der Generatorarbeit.
+
+Pflichtstellen:
+
+- `AbstractDdlGenerator.getVersion()` -> `0.9.3`
+- `TransformationReportWriter`-Header/Generatorstring -> `0.9.3`
+- `SchemaGenerateHelpers.formatJsonOutput()` bzw. aequivalente JSON-
+  Metadaten -> `d-migrate 0.9.3`
+- alle davon abhaengigen Golden Masters und Snapshot-Tests werden im
+  selben Milestone aktualisiert
+
+Akzeptanzkriterium:
+
+- es verbleibt keine user-visible `0.9.2`-Versionsausgabe in DDL,
+  Report oder JSON-Output des `schema generate`-Pfads
 
 ### 5.4 Generatorstruktur fuer `helper_table`
 
@@ -700,7 +757,8 @@ Abhaengigkeiten:
 - `docs/cli-spec.md`, `docs/quality.md` und Nutzerbeispiele werden auf
   die DSL unter `--filter` aktualisiert
 - `FilterDslParser` wird in einer nicht-CLI-gebundenen Schicht
-  eingefuehrt, so dass `DataExportHelpers` ihn direkt ohne
+  im Modul `hexagon/application` eingefuehrt, so dass
+  `DataExportHelpers` ihn direkt ohne
   Adapter-Abhaengigkeit nutzen kann
 - Resume mit altem Checkpoint, dessen gespeicherter Filter nur im
   frueheren Raw-SQL-Vertrag gueltig war, endet gezielt mit Exit 2 und
@@ -725,12 +783,21 @@ Ergebnis:
   - `W114` bis `W117`
   - die `helper_table`-Semantik
   erweitern
-- Version-/Header-Vertrag fuer 0.9.3 explizit nachziehen:
+- den Versionsvertrag aus 5.3a explizit nachziehen:
   - `AbstractDdlGenerator.getVersion()`
   - Report-Generator-Header in `TransformationReportWriter`
-  - ggf. davon abhaengige Golden Masters
+  - JSON-Metadaten in `SchemaGenerateHelpers.formatJsonOutput()`
+  - davon abhaengige Golden Masters
 - `ledger/warn-code-ledger-0.9.3.yaml` und bei Bedarf
   `ledger/error-code-ledger-0.9.3.yaml` anlegen
+- falls Filter-DSL-Parsefehler und Legacy-Checkpoint-Inkompatibilitaet
+  als strukturierte, user-visible Diagnosen auftreten, bekommen sie
+  eigene 0.9.3-Error-Codes im Error-Ledger; kein dauerhafter
+  stderr-only-Sonderpfad ohne Ledger-Eintrag
+- die harte Ablehnung historischer `FunctionCall("nextval(...)")`-
+  Eingaben wird in derselben Phase als Breaking Change fuer Release
+  Notes/Migrationsdoku markiert; der Ledger-/Diagnosepfad muss diesen
+  Fall stabil und wiedererkennbar benennen
 - `ledger/code-ledger-0.9.3.schema.json` anlegen **oder**
   `CodeLedgerValidationTest` auf eine versionstolerante Ledger-Aufloesung
   umstellen; in jedem Fall muss die bestehende Ledger-Validierung die
@@ -764,6 +831,9 @@ Ergebnis:
     **hart** mit klarer Migrationsfehlermeldung auf
     `default.sequence_nextval` umgestellt; kein stilles Rewrite, kein
     Warning-only-Pfad
+  - dieser Migrationsfehler ist als dialect-uebergreifender Breaking
+    Change dokumentiert; betroffene PostgreSQL-Schemas werden nicht
+    weich grandfathered
   - TypeMapper-Faelle koennen fuer nicht unterstuetzte Dialekte
     absichtlich `error(...)`/gesonderte Generatorpfade oder
     strukturiertes Abfangen im Aufrufer verwenden
@@ -811,6 +881,13 @@ Ergebnis:
   - MySQL-Opt-in-Modus
 - `docs/schema-reference.md` im selben Zug aktualisieren, weil dort die
   nutzerorientierte `default:`-Syntax beschrieben wird
+- Release-Notes/Migrationsdoku muessen den harten Wechsel von
+  `FunctionCall("nextval(...)")` auf `default.sequence_nextval` als
+  expliziten Breaking Change hervorheben:
+  - vor/nach-Migrationsbeispiel
+  - Hinweis, dass alle Dialekte betroffen sind, auch wenn bestehende
+    PostgreSQL-Schemas praktisch am haeufigsten getroffen werden koennen
+  - klare Such-/Ersetzungsheuristik fuer bestehende Schema-Dateien
 - `docs/roadmap.md` und ggf. `docs/mysql-sequence-emulation-plan.md`
   mit Verweis auf den umgesetzten Generator-Scope aktualisieren
 - neue Schema-Fixtures fuer sequence-basierte Defaults anlegen
@@ -829,6 +906,7 @@ Unit-Tests:
     AST-Baum, Normalform und Fehlerposition/-token ab
   - gueltige `--filter`-DSL wird erfolgreich in parametrisierte
     `DataFilter`-Formen ueberfuehrt
+  - leerer oder whitespace-only `--filter` -> Exit 2
   - nicht erlaubte Raw-SQL-Formen unter `--filter` -> Exit 2
   - Resume-/Fingerprint-Pfad bleibt fuer kanonisch gleiche DSL stabil
   - Resume mit altem Checkpoint und vormals gueltigem Raw-SQL-Filter
@@ -837,8 +915,17 @@ Unit-Tests:
   - Token-/Literal-Fehlerpfade fuer:
     - ungueltige Identifier
     - kaputte String-Literale
+    - `= null` / `!= null` / `IN (null)` mit Verweis auf
+      `IS NULL` / `IS NOT NULL`
     - unerlaubte Operatoren
     - `OR`/Klammern/Funktionsaufrufe
+- `DataExportE2EMysqlTest`:
+  - bestehende `--filter`-E2E-Faelle werden von Raw-SQL-Syntax auf die
+    0.9.3-DSL umgestellt
+  - mindestens ein erfolgreicher E2E-Lauf prueft die DSL gegen echte
+    JDBC-Bind-Parameter im Exportpfad
+  - mindestens ein E2E-Fall prueft, dass ein frueher zulaessiger
+    Raw-SQL-Filter nun mit klarer Migrationsdiagnose fehlschlaegt
 - `SchemaValidatorTest`:
   - `SequenceNextVal` mit existierender Sequence ok
   - fehlende Sequence -> Validierungsfehler
@@ -861,6 +948,9 @@ Unit-Tests:
   - JSON/Report enthalten den effektiven Modus nur fuer MySQL
   - JSON/Report bleiben fuer PostgreSQL und SQLite ohne
     `mysql_named_sequences`-Feld
+  - `DdlGenerationOptions.mysqlNamedSequenceMode = null` fuehrt bei
+    Nicht-MySQL-Ausgaben zu vollstaendig absentem Feld, nicht zu
+    `null`-Serialisierung und nicht zu implizitem `action_required`
   - Diff-/Report-Kurzform fuer `sequence_nextval(<name>)` wird als
     Lesedarstellung getestet, nicht als YAML-Eingabevertrag
 - Golden-Master-/Header-Checks:
@@ -898,11 +988,17 @@ gleichzeitig erfuellt sind:
 - `data export` dokumentiert und testet `--filter` nur noch als sichere,
   parameterisierte DSL
 - eine eigene `FilterDslParser`-Einheit existiert inkl. eigenem
-  Parse-Error-Typ und AST, und die Parser-Tests laufen grün
+  Parse-Error-Typ und AST im Modul `hexagon/application`, und die
+  Parser-Tests laufen grün
 - der CLI-Pfad baut fuer `--filter` keine rohen `WhereClause`-Fragmente
   mehr aus Nutzereingaben
 - Resume mit alten Raw-SQL-Checkpoints scheitert gezielt,
   migrationsfaehig und reproduzierbar statt diffus im spaeteren Lauf
+- die user-visible Versionsangaben in DDL, Report und JSON stehen
+  konsistent auf `0.9.3`
+- der Breaking Change fuer historische
+  `FunctionCall("nextval(...)")`-Schema-Notationen ist in Release-
+  Notes/Migrationsdoku sichtbar, mit klarer Vorher/Nachher-Anleitung
 - `DefaultValue.SequenceNextVal` ist in allen exhaustiven `when`-Pfaden
   beruecksichtigt
 - PostgreSQL rendert sequence-basierte Defaults nativ
@@ -914,6 +1010,8 @@ gleichzeitig erfuellt sind:
   korrekt nach Phasen
 - JSON, Report und stderr-Diagnosen zeigen den neuen Modus und die
   neuen Warnings konsistent
+- Nicht-MySQL-Ausgaben serialisieren kein
+  `mysql_named_sequences`-Feld, auch nicht implizit ueber DTO-Defaults
 
 Zusatz fuer Freigabe:
 
@@ -945,8 +1043,9 @@ Voraussichtlich direkt betroffen:
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataExportCommand.kt`
-- neuer `FilterDslParser` in einer gemeinsam nutzbaren
-  Anwendungs-/Hexagon-Schicht (nicht unter `adapters/driving/cli`)
+- neuer `FilterDslParser` in
+  `hexagon/application/src/main/kotlin/...` (nicht unter
+  `adapters/driving/cli`)
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateCommand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpers.kt`
@@ -964,9 +1063,9 @@ Voraussichtlich direkt betroffen:
 Voraussichtlich testseitig betroffen:
 
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt`
-- `FilterDslParserTest` in derselben nicht-CLI-gebundenen Schicht wie
-  der Parser
+- `hexagon/application/src/test/kotlin/.../FilterDslParserTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`
+- `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/DataExportE2EMysqlTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpersTest.kt`
 - `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt`
