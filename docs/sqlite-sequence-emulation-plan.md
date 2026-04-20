@@ -589,35 +589,43 @@ W122-Schweregrad mit statischer Analyse:
 Der Generator fuehrt eine **statische Pruefung** der UPDATE-Trigger-
 Bodys auf der Zieltabelle durch:
 
-- **kein UPDATE-Trigger vorhanden**: kein W122
-- **UPDATE-Trigger vorhanden, Body referenziert weder `dmg_sequences`
-  noch die sequence-basierte Spalte**: W122 als `NoteType.INFO`
-  (harmloser Beobachtungsunterschied; z. B. `updated_at`-Trigger)
-- **UPDATE-Trigger vorhanden, Body referenziert `dmg_sequences`
-  ODER die sequence-basierte Spalte**: W122 als `NoteType.WARNING`
-  (potenziell gefaehrlich bei `recursive_triggers = ON`;
-  Endlosrekursion oder Datenkorruption moeglich)
+- **kein UPDATE-Trigger auf der Zieltabelle vorhanden**: kein W122
+- **UPDATE-Trigger vorhanden**: W122 wird emittiert mit
+  abgestuftem Schweregrad:
 
-Die Body-Referenzpruefung verwendet dasselbe Token-basierte Matching
-wie die Rollback-Abhaengigkeitspruefung (case-insensitive, String-
-Literale/Kommentare vorab entfernt).
+  Bei `recursive_triggers = OFF` (Default):
 
-Report-Text unterscheidet explizit:
+  - **immer `NoteType.INFO`**, unabhaengig vom Trigger-Body.
+    UPDATE-Trigger feuern nicht; es gibt **keine** semantischen
+    Seiteneffekte. W122 ist rein informativ.
 
-- **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
-  unterschied**. UPDATE-Trigger feuern nicht; auch Trigger, die
-  manuell auf dieselbe Tabelle geschrieben wurden, werden durch das
-  `_ai`-UPDATE nicht ausgeloest. Es gibt **keine** semantischen
-  Seiteneffekte — weder doppelte Schreibpfade noch inkonsistente
-  Zustaende. W122 ist hier rein informativ.
-- **`recursive_triggers = ON`**: bei INFO-Stufe ungefaehrlich;
-  bei WARNING-Stufe **Pflichtpruefung** durch den Nutzer,
-  da Rekursion/Korruption moeglich ist.
+  Bei `recursive_triggers = ON`:
 
-- `W122` (INFO): AFTER INSERT sequence trigger performs UPDATE on
-  the same table; with recursive_triggers=OFF (default) this has
-  no observable effect; with recursive_triggers=ON, existing UPDATE
-  triggers will fire — verify compatibility
+  - **`NoteType.WARNING`** fuer **jeden** UPDATE-Trigger auf der
+    Zieltabelle, unabhaengig vom Body-Inhalt.
+    Begruendung: bei `recursive_triggers = ON` feuert jeder
+    UPDATE-Trigger auf der Zieltabelle durch das `_ai`-UPDATE.
+    Auch ein harmlos wirkender `updated_at`-Trigger kann ueber
+    seine eigene UPDATE-Semantik rekursiv zurueck auf dieselbe
+    Tabelle feuern oder unerwartete Seiteneffekte erzeugen.
+    Die Body-Analyse kann nicht alle Rekursionspfade erkennen
+    (z. B. indirekte Rekursion ueber mehrere Trigger/Tabellen).
+  - zusaetzlich: wenn der Body `dmg_sequences` oder die
+    sequence-basierte Spalte referenziert, wird der Warntext als
+    **hohes Risiko** markiert ("direct sequence interference
+    detected")
+
+Die Schweregrad-Entscheidung (INFO vs. WARNING) trifft der Generator
+**nicht** basierend auf dem aktuellen `recursive_triggers`-Setting
+der Datenbank (das kann sich aendern), sondern konservativ:
+
+- wenn UPDATE-Trigger existieren: W122 wird als WARNING emittiert
+- der Report-Text erklaert, dass das Risiko nur bei
+  `recursive_triggers = ON` besteht, und bei OFF harmlos ist
+
+- `W122` (WARNING): AFTER INSERT sequence trigger performs UPDATE on
+  the same table; existing UPDATE triggers will fire when
+  recursive_triggers is ON — verify compatibility
 
 Integrationstests muessen diesen Fall fuer **beide** Pragma-Settings
 abdecken (§8.2).
@@ -809,6 +817,31 @@ Pfad ergaenzen, wenn der Bedarf belegt ist.
 Die Semantik ist identisch zum MySQL-Plan (§3.5) und wird hier nicht
 wiederholt. Die verbindlichen Regeln fuer `next_value`, `increment_by`,
 `min_value`, `max_value` und `cycle` gelten dialektuebergreifend.
+
+Konvention fuer `NULL`-Grenzen (`min_value`, `max_value`):
+
+`NULL` bedeutet **unbegrenzt** — die Sequence hat in der
+entsprechenden Richtung kein Limit. Das wird an **allen** Stellen
+konsistent abgebildet:
+
+| Stelle | `min_value = NULL` | `max_value = NULL` |
+|---|---|---|
+| Validierung | `Long.MIN_VALUE` | `Long.MAX_VALUE` |
+| Trigger: Grenzpruefung `COALESCE(...)` | `-9223372036854775808` | `9223372036854775807` |
+| Trigger: Zyklus-Reset `COALESCE(...)` | `1` (aufsteigend) | `9223372036854775807` (absteigend) |
+| Reverse: Rekonstruktion | `NULL` (unveraendert) | `NULL` (unveraendert) |
+
+Semantischer Unterschied bei Zyklus-Reset:
+
+- bei `cycle_enabled = 1` und `min_value = NULL` springt eine
+  aufsteigende Sequence auf `1` (nicht auf `Long.MIN_VALUE`), weil
+  `COALESCE(min_value, 1)` den Zyklusstartwert bestimmt
+- diese Konvention ist konsistent mit PostgreSQL: `CREATE SEQUENCE ...
+  CYCLE` ohne explizites `MINVALUE` springt ebenfalls auf `1`
+  (bzw. `-1` fuer absteigende Sequences)
+- der Zyklus-Startwert ist deshalb **nicht** identisch mit dem
+  Validierungs-Default (`Long.MIN_VALUE`); die Tabelle oben macht
+  diesen Unterschied explizit
 
 Zusaetzliche SQLite-spezifische Punkte:
 
@@ -1177,17 +1210,22 @@ Fall 5 (Konflikt-Gap) wird ueber `W121` als eigenes Warning-Signal
 gemeldet:
 
 - `W121`: Sequence values may be consumed without insertion when
-  conflict-handling INSERT forms are used (ON CONFLICT DO UPDATE/
-  DO NOTHING, INSERT OR IGNORE, INSERT OR FAIL with multi-row);
-  ABORT and ROLLBACK roll back trigger side effects and do NOT
-  produce gaps
+  conflict-handling INSERT forms are used AND the sequence column
+  is NULL/omitted (triggering the WHEN NEW.<column> IS NULL path);
+  INSERTs with explicit non-NULL values do NOT trigger the sequence
+  and produce no gap. Affected conflict forms: ON CONFLICT DO
+  UPDATE/DO NOTHING, INSERT OR IGNORE, INSERT OR FAIL (multi-row);
+  ABORT and ROLLBACK roll back trigger side effects and produce
+  no gap.
 - `W121` wird als `NoteType.INFO` emittiert und an die **konkrete
   Tabelle und Spalte** gehaengt, auf der die Sequence-Trigger
-  generiert wurden — nicht pauschal an die Sequence-Definition
+  generiert wurden
 - der Report-Eintrag nennt explizit: Tabelle, Spalte, Sequence-Name
-  und die betroffenen Conflict-Formen
+  und die betroffenen Conflict-Formen; zusaetzlich den Hinweis,
+  dass das Gap-Risiko nur den NULL/ausgelassenen-Wert-Pfad betrifft
+  (nicht INSERT mit explizitem Wert)
 - dadurch kann der Nutzer im Report gezielt die relevanten Tabellen
-  identifizieren, statt eine globale Note interpretieren zu muessen
+  identifizieren und den tatsaechlichen Risiko-Scope einschaetzen
 - im Compare-Report macht `W121` sichtbar, dass die Emulation
   bei bestimmten Conflict-Handling-Formen Gaps erzeugen kann
 
@@ -1417,13 +1455,13 @@ Normalisierung und Matching-Strategie:
   - `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
     automatic trigger assignment (§3.5)
 - UPSERT-Gap bei Conflict-Handling:
-  - `W121`: Sequence values may be consumed without insertion when
-    INSERT ... ON CONFLICT is used (§5.1)
+  - `W121` (INFO): Sequence values may be consumed without insertion
+    when conflict-handling INSERT forms are used with NULL/omitted
+    sequence column; explicit non-NULL values are not affected (§5.1)
 - UPDATE-Trigger-Kaskade:
-  - `W122` (INFO/WARNING): AFTER INSERT sequence trigger may cascade
-    into existing UPDATE triggers on the same table; INFO wenn
-    harmlos, WARNING wenn Body `dmg_sequences`/Sequence-Spalte
-    referenziert (§3.4)
+  - `W122` (WARNING): AFTER INSERT sequence trigger may cascade into
+    existing UPDATE triggers on the same table; Risiko nur bei
+    `recursive_triggers = ON` (§3.4)
 - Trigger-Reihenfolge bei Reverse:
   - `W124` (WARNING): User-defined BEFORE INSERT trigger may mask
     sequence assignment due to creation order (§5.1)
