@@ -276,6 +276,7 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --
 -- Schritt 2: next_value inkrementieren
 --   next_value := next_value + increment_by
+--   IF rows_affected = 0: RAISE(ABORT, 'sequence row not found')
 --
 -- Schritt 3: Grenzpruefung (NACH Inkrement, auf den NEUEN next_value)
 --   IF increment_by > 0
@@ -354,6 +355,9 @@ BEGIN
     UPDATE "dmg_sequences"
         SET "next_value" = "next_value" + "increment_by"
         WHERE "name" = 'order_number_seq';
+    -- Guard: Sequence-Zeile muss existieren (changes() = 0 heisst kein UPDATE)
+    SELECT RAISE(ABORT, 'dmg_sequences: sequence row order_number_seq not found')
+        WHERE changes() = 0;
     -- Grenzpruefung: RAISE wenn erschoepft und kein Zyklus
     SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
         WHERE (SELECT "cycle_enabled" FROM "dmg_sequences"
@@ -415,6 +419,38 @@ INSERT-Trigger, **bevor** der INSERT durchlaeuft. Der Pseudocode-Ablauf
 Wert (`next_value - increment_by` im AFTER-Trigger) ist immer der
 Wert **vor** dem Inkrement.
 
+**NOT NULL-Kompatibilitaet bei Zwei-Trigger-Strategie**
+
+Die Zwei-Trigger-Strategie fuegt die Zeile zuerst mit `NULL` in der
+sequence-basierten Spalte ein (der INSERT durchlaeuft mit dem
+WHEN-gefilterten NULL-Wert), und der AFTER INSERT-Trigger schreibt
+danach den tatsaechlichen Wert per UPDATE. Wenn die Spalte ein
+`NOT NULL`-Constraint traegt, scheitert der INSERT **vor** dem
+AFTER INSERT-Trigger an der Constraint-Pruefung.
+
+**Entscheidung:** Der SQLite-Generator **unterdrueckt** `NOT NULL`
+auf sequence-basierten Spalten im generierten DDL.
+
+Verhalten im Detail:
+
+- wenn das neutrale Modell `required: true` und
+  `DefaultValue.SequenceNextVal(...)` auf derselben Spalte hat,
+  emittiert der SQLite-Generator die Spalte **ohne** `NOT NULL`
+- der AFTER INSERT-Trigger garantiert, dass nach jedem INSERT ein
+  Wert gesetzt wird; die Spalte ist de facto nie dauerhaft NULL
+- das unterdrueckte `NOT NULL` wird als lossy Mapping ueber `W119`
+  gemeldet
+- bei Reverse erkennt der Reader, dass die Spalte im DDL kein
+  `NOT NULL` hat, aber ueber einen Sequence-Trigger versorgt wird;
+  er rekonstruiert `required: true` im neutralen Modell, weil die
+  Trigger-Semantik das garantiert
+- fuer den Compare-Pfad ist das transparent: das neutrale Modell
+  hat `required: true`, unabhaengig von der DDL-Darstellung
+
+Ausnahme: Spalten mit `NeutralType.Identifier` (AUTOINCREMENT) sind
+nicht betroffen — diese nutzen SQLite's nativen Mechanismus und
+brauchen keinen Trigger.
+
 ### 3.7 `WITHOUT ROWID`-Tabellen
 
 **Entscheidung:** `WITHOUT ROWID`-Tabellen mit sequence-basierten
@@ -428,9 +464,16 @@ Verhalten bei Generierung:
   mit Code `E057`
 - die `SequenceDefinition` selbst wird weiterhin in `dmg_sequences`
   erzeugt (sie kann von anderen Tabellen genutzt werden)
-- nur das Trigger-Paar fuer die betroffene Spalte wird nicht erzeugt
-- der Rest der Tabelle (Spalten, Constraints, Indizes) wird normal
-  generiert
+- fuer die betroffene Spalte wird deterministisch **nichts** erzeugt:
+  kein Trigger-Paar (`_bi`/`_ai`), kein `DEFAULT`-Ausdruck, keine
+  NOT NULL-Unterdrueckung — die Spalte wird exakt so emittiert, wie
+  sie im neutralen Modell definiert ist (inklusive `NOT NULL` falls
+  `required: true`)
+- der Rest der Tabelle (andere Spalten, Constraints, Indizes) wird
+  normal generiert
+- `E057` wird als `TransformationNote` an die betroffene Spalte
+  gehaengt, nicht an die Tabelle; die Tabelle selbst wird nicht
+  blockiert
 
 Verhalten bei Reverse:
 
@@ -608,6 +651,56 @@ Wichtig: Interaktion mit DEFAULT-Constraints:
   neutralen Modell ist ein Validierungsfehler, der vor der Generierung
   abgefangen wird
 
+Normative Beispiele fuer Trigger-Semantik im `helper_table`-Modus:
+
+Gegeben: Tabelle `orders` mit Spalte `order_number` (SequenceNextVal,
+im neutralen Modell `required: true`, im generierten DDL ohne NOT NULL
+wegen W119).
+
+```sql
+-- Fall 1: INSERT ohne Angabe der Spalte
+--   → NEW."order_number" IS NULL → Trigger feuert → Wert wird gesetzt
+INSERT INTO "orders" ("customer_id") VALUES (42);
+-- Ergebnis: order_number = naechster Sequence-Wert ✓
+
+-- Fall 2: INSERT mit explizitem NULL
+--   → NEW."order_number" IS NULL → Trigger feuert → Wert wird gesetzt
+--   (lossy: identisch zu Fall 1, dokumentiert als W115)
+INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42);
+-- Ergebnis: order_number = naechster Sequence-Wert ✓
+
+-- Fall 3: INSERT mit explizitem Wert
+--   → NEW."order_number" IS NOT NULL → Trigger feuert NICHT
+--   → expliziter Wert bleibt erhalten
+INSERT INTO "orders" ("order_number", "customer_id") VALUES (999, 42);
+-- Ergebnis: order_number = 999, kein Sequence-Verbrauch ✓
+
+-- Fall 4: INSERT ... DEFAULT VALUES
+--   → alle Spalten erhalten ihren DEFAULT; da order_number keinen
+--     DEFAULT hat (Generator unterdrueckt ihn), ist NEW."order_number" NULL
+--   → Trigger feuert → Wert wird gesetzt
+INSERT INTO "orders" DEFAULT VALUES;
+-- Ergebnis: order_number = naechster Sequence-Wert ✓
+-- Hinweis: Andere Spalten ohne DEFAULT erhalten ebenfalls NULL;
+-- ob das sinnvoll ist, haengt vom Schema ab.
+
+-- Fall 5: INSERT ... ON CONFLICT DO UPDATE (UPSERT)
+--   → beim initialen INSERT-Versuch feuert der BEFORE INSERT-Trigger
+--     und reserviert einen Sequence-Wert
+--   → bei ON CONFLICT DO UPDATE wird der INSERT verworfen, aber der
+--     Sequence-Wert ist bereits verbraucht (next_value wurde inkrementiert)
+--   → der AFTER INSERT-Trigger feuert NICHT, weil kein INSERT stattfand
+--   → Konsequenz: Sequence-Wert geht bei Conflict verloren (Gap)
+INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42)
+    ON CONFLICT ("customer_id") DO UPDATE SET "updated_at" = datetime('now');
+-- Ergebnis bei Conflict: kein neuer order_number, aber Sequence-Gap ⚠
+-- Ergebnis ohne Conflict: order_number = naechster Sequence-Wert ✓
+```
+
+Diese Faelle muessen in der Integrations-Teststrategie (§8.2)
+abgedeckt werden. Fall 5 (UPSERT-Gap) wird als bekannte
+Einschraenkung dokumentiert, nicht als Fehler.
+
 Vorgeschlagene Reihenfolge:
 
 1. Header
@@ -663,13 +756,17 @@ Anders als bei MySQL gibt es keine Support-Routinen zum Droppen.
   - `W117`: Sequence values are transaction-bound in SQLite
     helper-table mode; rollback retracts sequence increments unlike
     native PostgreSQL sequences (identisch zu MySQL)
+- NOT NULL-Unterdrueckung auf sequence-basierten Spalten:
+  - `W119`: NOT NULL constraint suppressed on sequence-backed column
+    for two-trigger compatibility; column value is guaranteed by
+    AFTER INSERT trigger (§3.4)
 - `WITHOUT ROWID`-Tabellen mit sequence-basierten Spalten:
   - `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
     automatic trigger assignment (§3.7)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`E057` ist SQLite-spezifisch.
+`W119` und `E057` sind SQLite-spezifisch.
 
 ---
 
@@ -735,6 +832,37 @@ Reverse-Erkennungsstrategie und Fallback:
 - dieses Verhalten ist gewollt und wird als Stabilitaetsgarantie
   dokumentiert: keine Heuristik, kein "fuzzy" Matching
 
+**Roundtrip-Risiko bei manueller Trigger-Bearbeitung:**
+
+Wenn ein Nutzer einen generierten Sequence-Support-Trigger manuell
+editiert (z. B. den Marker-Kommentar entfernt, den Body aendert,
+oder den Trigger umbenennt), geht die Zuordnung zur Sequence beim
+naechsten Reverse unwiderruflich verloren:
+
+- die `dmg_sequences`-Zeile wird weiterhin als `SequenceDefinition`
+  rekonstruiert
+- die Spaltenzuordnung (`DefaultValue.SequenceNextVal`) fehlt
+- der editierte Trigger erscheint als normaler nutzerdefinierter
+  Trigger im neutralen Schema
+- ein anschliessender Compare zeigt die Sequence als "Spaltenzuordnung
+  fehlt" und den Trigger als "neues Objekt" — beides ist korrekt,
+  kann aber ueberraschend wirken
+
+Dieses Risiko wird in der Nutzerdokumentation explizit als
+**bewusstes Roundtrip-Risiko** dokumentiert:
+
+> "Sequence-Support-Trigger sind generierte Infrastruktur. Manuelle
+> Aenderungen an Triggernamen, Marker-Kommentaren oder Body-Form
+> fuehren dazu, dass d-migrate die Zuordnung zur Sequence beim
+> naechsten Reverse verliert. Aendern Sie Sequence-Parameter
+> ausschliesslich im neutralen Schema und generieren Sie neu."
+
+Der Grund fuer diese strenge Linie ist, dass jede Heuristik-basierte
+Fallback-Erkennung (z. B. "Trigger greift auf `dmg_sequences` zu,
+also ist es wohl ein Sequence-Trigger") zu False Positives bei
+aehnlichen, aber manuell erstellten Triggern fuehren wuerde.
+Stabilitaet schlaegt hier Bequemlichkeit.
+
 ### 6.2 Compare
 
 Sobald Reverse die Hilfsobjekte wieder auf `sequences` mappt, bleibt
@@ -767,7 +895,8 @@ Trotzdem zu pruefen:
   `SequenceNextVal`-Spalten keinen `DEFAULT` tragen duerfen
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
-- Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `E057`)
+- Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
+  `E057`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -834,6 +963,8 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
   - `W114` bei `cache`-Werten
   - `W115` bei sequence-basierten Spaltenwerten
   - `W117` bei jeder Sequence im `helper_table`-Modus
+  - `W119` bei `required: true` + `SequenceNextVal`-Spalten
+  - `E057` bei `WITHOUT ROWID` + `SequenceNextVal`-Spalten
   - Konflikt mit reservierten Hilfsnamen wird sauber abgelehnt
 - `SchemaGenerateRunnerTest`
   - neuer Optionspfad `--sqlite-named-sequences`
@@ -856,6 +987,15 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
 - Rollback einer Transaktion retrahiert den Sequence-Inkrement
 - mehrere Sequences auf verschiedenen Spalten derselben Tabelle
   funktionieren korrekt
+- INSERT ohne Angabe der Sequence-Spalte vergibt Wert (Fall 1)
+- INSERT mit explizitem NULL vergibt Wert (Fall 2, W115)
+- INSERT mit explizitem Wert behaelt ihn (Fall 3)
+- INSERT ... DEFAULT VALUES vergibt Wert (Fall 4)
+- INSERT ... ON CONFLICT verbraucht Sequence-Wert bei Conflict (Fall 5)
+- fehlende `dmg_sequences`-Zeile fuehrt zu RAISE(ABORT), nicht zu
+  stillem NULL
+- NOT NULL-Spalte mit SequenceNextVal akzeptiert INSERT ohne Wert
+  (W119-Unterdrueckung wirkt korrekt)
 
 ### 8.3 Round-Trip
 
