@@ -17,3 +17,9 @@ entries:
     evidence_paths:
       - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaValidator.kt"
         path_type: production
+
+  - code: E124
+    level: error
+    status: reserved
+    entry_type: standard
+    note: "Support object name collision. Reserved for AP 6.4 collision detection (not yet emitted)."

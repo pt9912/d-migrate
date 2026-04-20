@@ -4,7 +4,7 @@
 > MySQL-Sequence-Emulation (Generator)
 > **Arbeitspaket**: 6.4 (`Sequence Phase B: MySQL-Generator fuer
 > helper_table`)
-> **Status**: Draft (2026-04-20)
+> **Status**: Done (2026-04-20)
 > **Referenz**: `docs/implementation-plan-0.9.3.md` Abschnitt 4.4,
 > Abschnitt 4.5, Abschnitt 4.6, Abschnitt 4.7, Abschnitt 5.4,
 > Abschnitt 5.5, Abschnitt 5.6, Abschnitt 6.4, Abschnitt 6.6,

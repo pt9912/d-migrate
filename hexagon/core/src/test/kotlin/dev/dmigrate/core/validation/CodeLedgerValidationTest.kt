@@ -291,13 +291,12 @@ class CodeLedgerValidationTest : FunSpec({
         schema shouldContain "\"reserved\""
     }
 
-    test("0.9.3 warn ledger exists and contains W114-W117 as reserved") {
+    test("0.9.3 warn ledger exists and contains W114-W117") {
         val content = readLedger("warn-code-ledger-0.9.3.yaml")
         content shouldNotBe ""
         val codes = extractCodes(content).toSet()
         for (code in listOf("W114", "W115", "W116", "W117")) {
             codes.contains(code) shouldBe true
-            extractField(content, code, "status") shouldBe "reserved"
         }
     }
 
@@ -316,16 +315,18 @@ class CodeLedgerValidationTest : FunSpec({
         invalid.shouldBeEmpty()
     }
 
-    test("0.9.3 warn ledger: reserved entries do not require test_path") {
+    test("0.9.3 warn ledger: W114, W115, W117 are active with test_path") {
         val content = readLedger("warn-code-ledger-0.9.3.yaml")
-        val reservedCodes = extractCodes(content).filter { code ->
-            extractField(content, code, "status") == "reserved"
+        for (code in listOf("W114", "W115", "W117")) {
+            extractField(content, code, "status") shouldBe "active"
+            extractField(content, code, "test_path") shouldNotBe null
+            hasEvidencePaths(content, code) shouldBe true
         }
-        reservedCodes.shouldNotBeEmpty()
-        // Reserved entries are valid without test_path — this is a positive test
-        for (code in reservedCodes) {
-            extractField(content, code, "level") shouldNotBe null
-        }
+    }
+
+    test("0.9.3 warn ledger: W116 remains reserved") {
+        val content = readLedger("warn-code-ledger-0.9.3.yaml")
+        extractField(content, "W116", "status") shouldBe "reserved"
     }
 
     test("0.9.3 error ledger exists with version 0.9.3") {
@@ -334,13 +335,15 @@ class CodeLedgerValidationTest : FunSpec({
         content shouldContain "version: \"0.9.3\""
     }
 
-    test("0.9.3 error ledger contains E122 and E123 as active") {
+    test("0.9.3 error ledger contains E122, E123 as active and E124 as reserved") {
         val content = readLedger("error-code-ledger-0.9.3.yaml")
         val codes = extractCodes(content).toSet()
         codes.contains("E122") shouldBe true
         codes.contains("E123") shouldBe true
+        codes.contains("E124") shouldBe true
         extractField(content, "E122", "status") shouldBe "active"
         extractField(content, "E123", "status") shouldBe "active"
+        extractField(content, "E124", "status") shouldBe "reserved"
     }
 
     test("0.9.3 error ledger: active entries have test_path and evidence_paths") {

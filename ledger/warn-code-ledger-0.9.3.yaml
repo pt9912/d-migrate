@@ -2,15 +2,21 @@ version: "0.9.3"
 entries:
   - code: W114
     level: warning
-    status: reserved
+    status: active
     entry_type: standard
-    note: "Sequence cache stored but not emulated as preallocation. Activated in AP 6.4."
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production
 
   - code: W115
     level: warning
-    status: reserved
+    status: active
     entry_type: standard
-    note: "SequenceNextVal trigger cannot distinguish explicit NULL from omitted value (lossy). Activated in AP 6.4."
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production
 
   - code: W116
     level: warning
@@ -20,6 +26,9 @@ entries:
 
   - code: W117
     level: warning
-    status: reserved
+    status: active
     entry_type: standard
-    note: "Sequence values are transaction-bound in MySQL helper-table mode. Activated in AP 6.4."
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production
