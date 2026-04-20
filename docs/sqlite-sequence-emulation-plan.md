@@ -283,23 +283,31 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --
 -- BEFORE INSERT (_bi):
 --
--- Schritt 1: Overflow-sichere Grenzpruefung VOR dem Inkrement
---   (prueft ob next_value + increment_by die Grenze ueberschreiten
---    WUERDE, ohne die Addition auszufuehren; formuliert als
---    next_value > max_value - increment_by)
---   IF increment_by > 0
---      AND next_value > COALESCE(max_value, MAX_INT) - increment_by:
+-- Schritt 1: Erschoepfungspruefung auf den AKTUELLEN next_value
+--   (prueft ob der aktuelle Wert bereits jenseits der Grenze liegt —
+--    das passiert nur, wenn ein vorheriger Aufruf ohne Zyklus den
+--    Wert ueber die Grenze inkrementiert hat)
+--   IF increment_by > 0 AND next_value > COALESCE(max_value, MAX_INT):
 --     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
---   IF increment_by < 0
---      AND next_value < COALESCE(min_value, MIN_INT) - increment_by:
+--     ELSE: next_value := COALESCE(min_value, 1)  -- cycle recovery
+--   IF increment_by < 0 AND next_value < COALESCE(min_value, MIN_INT):
 --     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
+--     ELSE: next_value := COALESCE(max_value, MAX_INT)  -- cycle recovery
 --
 -- Schritt 2: Rueckgabewert sichern + inkrementieren (atomar)
 --   last_returned_value := next_value
---   IF Grenze ueberschritten AND cycle_enabled = 1:
---     next_value := cycle-Startwert (min_value bzw. max_value)
+--   IF increment_by > 0
+--      AND next_value > COALESCE(max_value, MAX_INT) - increment_by
+--      AND cycle_enabled = 1:
+--     next_value := COALESCE(min_value, 1)  -- naechster Aufruf startet vom Zyklusanfang
+--   ELSE IF increment_by < 0
+--      AND next_value < COALESCE(min_value, MIN_INT) - increment_by
+--      AND cycle_enabled = 1:
+--     next_value := COALESCE(max_value, MAX_INT)
 --   ELSE:
---     next_value := next_value + increment_by
+--     next_value := next_value + increment_by  -- normales Inkrement
+--     -- (bei nicht-Zyklus kann next_value hier ueber die Grenze steigen;
+--     --  der naechste Aufruf faengt das in Schritt 1 ab)
 --   IF rows_affected = 0: RAISE(ABORT, 'sequence row not found')
 --
 -- AFTER INSERT (_ai):
@@ -310,14 +318,18 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 
 Hinweis zur Triggerlogik:
 
-- Die Grenzpruefung laeuft **vor** dem Inkrement, formuliert als
-  `next_value > max_value - increment_by` statt
-  `next_value + increment_by > max_value`, um Integer-Overflow bei
-  Werten nahe `Long.MIN_VALUE`/`Long.MAX_VALUE` zu vermeiden
+- **Zweistufige Grenzpruefung**: Schritt 1 prueft den *aktuellen*
+  `next_value` gegen die Grenze (`next_value > max_value`) — das
+  faengt den Fall ab, dass ein vorheriger Nicht-Zyklus-Aufruf den
+  Wert ueber die Grenze inkrementiert hat. Schritt 2 prueft
+  overflow-sicher, ob das *naechste* Inkrement die Grenze
+  ueberschreiten wuerde (`next_value > max_value - increment_by`)
+  und entscheidet zwischen Zyklus-Reset und normalem Inkrement
+- Dadurch wird der letzte gueltige Wert (z. B. `next_value = 10`
+  bei `max_value = 10`) korrekt zurueckgegeben, bevor die Sequence
+  beim naechsten Aufruf erschoepft ist
 - `last_returned_value` wird im selben UPDATE wie das Inkrement
   gesichert; der AFTER INSERT-Trigger liest daraus statt zu rechnen
-- Zyklus-Reset und normales Inkrement sind im CASE-Ausdruck
-  desselben UPDATE zusammengefasst — kein separater Zyklus-UPDATE
 
 **Zentrale Limitation: NEW-Zuweisung in SQLite-Triggern**
 
@@ -372,13 +384,12 @@ FOR EACH ROW
 WHEN NEW."order_number" IS NULL
 BEGIN
     /* d-migrate:sqlite-sequence-v1 object=sequence-trigger sequence=order_number_seq table=orders column=order_number */
-    -- Schritt 1: Overflow-sichere Grenzpruefung VOR dem Inkrement.
-    -- Prueft ob next_value + increment_by die Grenze ueberschreiten
-    -- WUERDE, ohne die Addition tatsaechlich auszufuehren.
-    -- Formulierung als next_value > max_value - increment_by (statt
-    -- next_value + increment_by > max_value), um Integer-Overflow bei
-    -- Werten nahe Long.MIN_VALUE/MAX_VALUE zu vermeiden.
-    -- Bei cycle_enabled = 0: RAISE(ABORT).
+    -- Schritt 1: Erschoepfungspruefung auf den AKTUELLEN next_value.
+    -- Prueft ob der aktuelle Wert bereits jenseits der Grenze liegt.
+    -- Das passiert nur, wenn ein vorheriger Nicht-Zyklus-Aufruf den
+    -- Wert ueber die Grenze inkrementiert hat. Bei cycle_enabled = 1
+    -- wird stattdessen auf den Zyklusstartwert zurueckgesetzt.
+    -- Kein Overflow-Risiko: einfacher Vergleich ohne Arithmetik.
     SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
         WHERE (SELECT "cycle_enabled" FROM "dmg_sequences"
                WHERE "name" = 'order_number_seq') = 0
@@ -389,9 +400,7 @@ BEGIN
                   WHERE "name" = 'order_number_seq')
                  > COALESCE((SELECT "max_value" FROM "dmg_sequences"
                              WHERE "name" = 'order_number_seq'),
-                            9223372036854775807)
-                   - (SELECT "increment_by" FROM "dmg_sequences"
-                      WHERE "name" = 'order_number_seq'))
+                            9223372036854775807))
             OR
             ((SELECT "increment_by" FROM "dmg_sequences"
               WHERE "name" = 'order_number_seq') < 0
@@ -399,16 +408,33 @@ BEGIN
                   WHERE "name" = 'order_number_seq')
                  < COALESCE((SELECT "min_value" FROM "dmg_sequences"
                              WHERE "name" = 'order_number_seq'),
-                            -9223372036854775808)
-                   - (SELECT "increment_by" FROM "dmg_sequences"
-                      WHERE "name" = 'order_number_seq'))
+                            -9223372036854775808))
+        );
+    -- Zyklus-Recovery: wenn next_value jenseits der Grenze UND cycle=1,
+    -- zuruecksetzen bevor wir den Wert zurueckgeben.
+    UPDATE "dmg_sequences"
+        SET "next_value" = CASE
+            WHEN "increment_by" > 0 THEN COALESCE("min_value", 1)
+            ELSE COALESCE("max_value", 9223372036854775807)
+        END
+        WHERE "name" = 'order_number_seq'
+        AND "cycle_enabled" = 1
+        AND (
+            ("increment_by" > 0
+             AND "next_value" > COALESCE("max_value", 9223372036854775807))
+            OR
+            ("increment_by" < 0
+             AND "next_value" < COALESCE("min_value", -9223372036854775808))
         );
     -- Schritt 2: Rueckgabewert sichern + next_value inkrementieren (atomar).
-    -- Bei cycle_enabled = 1 und Grenzueberschreitung: next_value wird
-    -- direkt auf den Zyklusstartwert gesetzt statt normal inkrementiert.
-    -- Die CASE-Bedingungen verwenden dieselbe Subtraktionsformel wie
-    -- der Exhaustion-Check (next_value > max_value - increment_by),
-    -- um Integer-Overflow konsistent zu vermeiden.
+    -- Die CASE-Bedingungen verwenden die overflow-sichere
+    -- Subtraktionsformel (next_value > max_value - increment_by)
+    -- fuer die Zyklus-Vorausschau: wuerde das Inkrement die Grenze
+    -- ueberschreiten? Wenn ja UND cycle=1: Zyklusstartwert setzen.
+    -- Wenn ja UND cycle=0: normales Inkrement — der Wert steigt ueber
+    -- die Grenze, und der NAECHSTE Aufruf faengt das in Schritt 1 ab.
+    -- Der ELSE-Zweig (next_value + increment_by) laeuft nur wenn
+    -- next_value <= max_value - increment_by, also kein Overflow.
     UPDATE "dmg_sequences"
         SET "last_returned_value" = "next_value",
             "next_value" = CASE
@@ -753,12 +779,36 @@ INSERT INTO "orders" DEFAULT VALUES;
 -- ob das sinnvoll ist, haengt vom Schema ab.
 
 -- Fall 5: INSERT ... ON CONFLICT DO UPDATE (UPSERT)
---   → beim initialen INSERT-Versuch feuert der BEFORE INSERT-Trigger
---     und reserviert einen Sequence-Wert
---   → bei ON CONFLICT DO UPDATE wird der INSERT verworfen, aber der
---     Sequence-Wert ist bereits verbraucht (next_value wurde inkrementiert)
---   → der AFTER INSERT-Trigger feuert NICHT, weil kein INSERT stattfand
---   → Konsequenz: Sequence-Wert geht bei Conflict verloren (Gap)
+--
+--   SQLite-Trigger-Verhalten bei ON CONFLICT (dokumentiert in
+--   SQLite-Doku "CREATE TRIGGER", Abschnitt "ON CONFLICT"):
+--
+--   a) INSERT ... ON CONFLICT DO UPDATE:
+--      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
+--      - Constraint-Pruefung erkennt Conflict
+--      - INSERT wird in ein UPDATE umgewandelt (DO UPDATE-Pfad)
+--      - AFTER INSERT feuert NICHT (kein INSERT fand statt)
+--      - BEFORE UPDATE / AFTER UPDATE feuern stattdessen
+--      - Konsequenz: Sequence-Wert ist verbraucht (Gap), die Zeile
+--        hat den alten order_number-Wert (vom UPDATE, nicht INSERT)
+--
+--   b) INSERT ... ON CONFLICT DO NOTHING:
+--      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
+--      - Constraint-Pruefung erkennt Conflict
+--      - INSERT wird verworfen (NOTHING-Pfad)
+--      - AFTER INSERT feuert NICHT
+--      - Konsequenz: Sequence-Wert ist verbraucht (Gap), keine
+--        Zeile wurde eingefuegt oder geaendert
+--
+--   c) INSERT ... ON CONFLICT ABORT/ROLLBACK/FAIL:
+--      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
+--      - Constraint-Pruefung erkennt Conflict
+--      - Bei ABORT/FAIL: Statement wird abgebrochen, aber die
+--        Trigger-Seiteneffekte (dmg_sequences-UPDATE) bleiben
+--        innerhalb der aktuellen Transaktion bestehen
+--      - Bei ROLLBACK: gesamte Transaktion wird zurueckgerollt,
+--        inklusive Trigger-Seiteneffekte → kein Gap
+--
 INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42)
     ON CONFLICT ("customer_id") DO UPDATE SET "updated_at" = datetime('now');
 -- Ergebnis bei Conflict: kein neuer order_number, aber Sequence-Gap ⚠
@@ -767,7 +817,10 @@ INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42)
 
 Diese Faelle muessen in der Integrations-Teststrategie (§8.2)
 abgedeckt werden. Fall 5 (UPSERT-Gap) wird als bekannte
-Einschraenkung dokumentiert, nicht als Fehler.
+Einschraenkung dokumentiert, nicht als Fehler. Die drei ON CONFLICT-
+Varianten (DO UPDATE, DO NOTHING, ABORT/ROLLBACK/FAIL) muessen
+jeweils separat getestet werden, da das Trigger-Verhalten sich
+zwischen den Pfaden unterscheidet.
 
 Vorgeschlagene Reihenfolge:
 
@@ -904,6 +957,9 @@ Normalisierung und Matching-Strategie:
   - `W119`: NOT NULL constraint suppressed on sequence-backed column
     for two-trigger compatibility; column value is guaranteed by
     AFTER INSERT trigger (§3.4)
+- Body-Integritaet bei Reverse:
+  - `W120`: Sequence-support trigger has valid marker but modified
+    body; emulation may not function correctly (§6.1)
 - PRIMARY KEY-Einschraenkung:
   - `E059`: Sequence-backed column cannot be part of PRIMARY KEY in
     SQLite helper-table mode (§3.4)
@@ -916,7 +972,7 @@ Normalisierung und Matching-Strategie:
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
+`W119`, `W120`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
 
 ---
 
@@ -1005,16 +1061,25 @@ editiert, ergeben sich folgende Szenarien:
   `dmg_sequences`-Zeile bleibt als `SequenceDefinition` erkannt,
   aber Spaltenzuordnung fehlt
 - **Body geaendert, Marker und Name intakt**: primaeres Matching
-  ueber Marker greift weiterhin; Body-Aenderungen werden nicht
-  geprueft (der Trigger gilt als d-migrate-Supportobjekt, auch wenn
-  der Body abweicht)
+  ueber Marker greift, aber der Reader fuehrt zusaetzlich eine
+  **minimale Body-Integritaetspruefung** durch:
+  - `_bi`-Trigger muss `UPDATE "dmg_sequences"` enthalten
+  - `_ai`-Trigger muss `UPDATE ... WHERE ROWID` enthalten
+  Wenn der Marker passt, aber die Body-Pruefung fehlschlaegt, wird
+  der Trigger als `W120` (body-modified) markiert: die Zuordnung
+  zur Sequence bleibt bestehen (Marker ist autoritativ), aber der
+  Trigger wird als **moeglicherweise nicht funktional** geflaggt.
+  Reverse und Compare behandeln die Sequence-Zuordnung weiterhin,
+  aber der Report weist explizit darauf hin, dass die Emulation
+  veraendert wurde und moeglicherweise nicht korrekt arbeitet.
 
 Dieses abgestufte Verhalten wird in der Nutzerdokumentation als
 **Roundtrip-Risiko** dokumentiert:
 
 > "Sequence-Support-Trigger sind generierte Infrastruktur. Das
 > Entfernen des Marker-Kommentars fuehrt zu degradierter Erkennung
-> (W116). Das Umbenennen des Triggers fuehrt zum Verlust der
+> (W116). Das Aendern des Trigger-Bodys fuehrt zu einer Body-Modified-
+> Warnung (W120). Das Umbenennen des Triggers fuehrt zum Verlust der
 > Spaltenzuordnung. Aendern Sie Sequence-Parameter ausschliesslich
 > im neutralen Schema und generieren Sie neu."
 
@@ -1051,7 +1116,7 @@ Trotzdem zu pruefen:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`, `E059`)
+  `E057`, `E058`, `E059`, `W120`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
