@@ -818,7 +818,14 @@ Zusaetzliche SQLite-spezifische Punkte:
   `SchemaValidator` gemeldet (Exit-Code 3), nicht erst im
   dialektspezifischen Generator. Damit ist ausgeschlossen, dass ein
   Trigger mit `increment_by = 0` erzeugt wird, der permanent
-  denselben Wert zurueckgibt oder in eine Endlosschleife gerät
+  denselben Wert zurueckgibt oder in eine Endlosschleife geraet
+- `increment_by = Long.MIN_VALUE` wird explizit abgelehnt (§3.6,
+  Overflow-Schutz)
+- `min_value <= max_value` wird als Bereichskonsistenz geprueft
+- `min_value <= start <= max_value` wird geprueft, damit der
+  Startwert innerhalb des gueltigen Bereichs liegt
+- `isIncrementInRange(increment_by, min_value, max_value)` stellt
+  sicher, dass die Trigger-Subtraktionsformeln nicht ueberlaufen (§3.6)
 - SQLite speichert alle Ganzzahlen als `INTEGER` (bis zu 8 Bytes,
   -9223372036854775808 bis 9223372036854775807); die effektiven
   Grenzwerte entsprechen `Long.MIN_VALUE`/`Long.MAX_VALUE` in Kotlin
@@ -854,27 +861,45 @@ eine **overflow-sichere Vergleichslogik ohne Subtraktion**:
 
 ```kotlin
 // Overflow-sichere Pruefung: |increment_by| <= max_value - min_value
-// Umformuliert als zwei separate Vergleiche ohne Subtraktion:
+// Ohne max - min direkt zu berechnen (kann bei Extremwerten ueberlaufen).
 fun isIncrementInRange(inc: Long, min: Long, max: Long): Boolean {
     // inc = 0 wird separat als Fehler behandelt (vor diesem Check)
     // Long.MIN_VALUE explizit ablehnen: -Long.MIN_VALUE ist in
-    // Long-Arithmetik nicht darstellbar (Zweier-Komplement);
-    // kein praktischer Anwendungsfall fuer |inc| = 2^63.
+    // Long-Arithmetik nicht darstellbar (Zweier-Komplement).
     if (inc == Long.MIN_VALUE) return false
     if (inc > 0) {
         // Pruefe: inc <= max - min, umgeschrieben als: min <= max - inc
-        // Sicher weil: inc > 0, also max - inc < max <= MAX_VALUE;
-        // und inc <= max wird vorher geprueft, damit max - inc >= 0.
-        return inc <= max && min <= max - inc
+        // max - inc kann underflow'en; Vorab-Check:
+        // max - inc < Long.MIN_VALUE  ⟺  max < Long.MIN_VALUE + inc
+        // Long.MIN_VALUE + inc ist sicher da inc ∈ [1, MAX_VALUE]:
+        //   Ergebnis ∈ [MIN_VALUE+1, -1]
+        if (max < Long.MIN_VALUE + inc) return false  // max - inc wuerde underflow'en → inc zu gross
+        return min <= max - inc
     } else { // inc < 0, inc > Long.MIN_VALUE (durch obigen Check)
-        // Pruefe: -inc <= max - min, d.h. |inc| <= max - min
-        // Umgeschrieben: min - inc <= max (da inc < 0: min - inc = min + |inc|)
-        // Sicher weil: inc >= min wird vorher geprueft, damit
-        // min - inc = min + |inc| <= min + (max - min) = max <= MAX_VALUE.
-        return inc >= min && max >= min - inc
+        // Pruefe: |inc| <= max - min, umgeschrieben als: max >= min - inc
+        // min - inc = min + |inc| kann overflow'en; Vorab-Check:
+        // min - inc > Long.MAX_VALUE  ⟺  min > Long.MAX_VALUE + inc
+        // Long.MAX_VALUE + inc ist sicher da inc ∈ [MIN_VALUE+1, -1]:
+        //   Ergebnis ∈ [0, MAX_VALUE-1]
+        if (min > Long.MAX_VALUE + inc) return false  // min - inc wuerde overflow'en → |inc| zu gross
+        return max >= min - inc
     }
 }
 ```
+
+Verifikation mit Beispielen:
+
+- `min=-100, max=-1, inc=50`:
+  `max < MIN_VALUE + 50`? → `-1 < -9223372036854775758`? → false;
+  `min <= max - inc`? → `-100 <= -51`? → **true** ✓
+- `min=0, max=MAX_VALUE, inc=MAX_VALUE`:
+  `max < MIN_VALUE + MAX_VALUE`? → `MAX_VALUE < -1`? → false;
+  `min <= max - inc`? → `0 <= 0`? → **true** ✓
+- `min=MIN_VALUE, max=MIN_VALUE+5, inc=MAX_VALUE`:
+  `max < MIN_VALUE + MAX_VALUE`? → `MIN_VALUE+5 < -1`? → **true** → **false** ✓
+- `min=-5, max=MAX_VALUE, inc=-3`:
+  `min > MAX_VALUE + (-3)`? → `-5 > MAX_VALUE-3`? → false;
+  `max >= min - inc`? → `MAX_VALUE >= -5-(-3)`? → `MAX_VALUE >= -2`? → **true** ✓
 
 - `increment_by = Long.MIN_VALUE` (-9223372036854775808) wird
   **immer** abgelehnt, da `-Long.MIN_VALUE` in Long-Arithmetik nicht
@@ -889,11 +914,18 @@ fun isIncrementInRange(inc: Long, min: Long, max: Long): Boolean {
 
 Beweis der Subtraktionssicherheit in den Triggern:
 
-Wenn die Validator-Regel erfuellt ist (`|inc| <= max - min`), gilt:
-- fuer `inc > 0`: `max - inc >= max - (max - min) = min >= MIN_INT`
-  → keine Underflow-Gefahr in `max_value - increment_by`
-- fuer `inc < 0`: `min - inc = min + |inc| <= min + (max - min) = max <= MAX_INT`
-  → keine Overflow-Gefahr in `min_value - increment_by`
+Wenn `isIncrementInRange` true zurueckgibt, gilt:
+- fuer `inc > 0`: `min <= max - inc` wurde geprueft, also
+  `max - inc >= min >= Long.MIN_VALUE` → kein Underflow in
+  `max_value - increment_by`
+- fuer `inc < 0`: `max >= min - inc` wurde geprueft, also
+  `min - inc <= max <= Long.MAX_VALUE` → kein Overflow in
+  `min_value - increment_by`
+
+Die Vorab-Checks (`max < Long.MIN_VALUE + inc` bzw.
+`min > Long.MAX_VALUE + inc`) stellen sicher, dass die Subtraktionen
+`max - inc` und `min - inc` selbst nicht ueberlaufen, **bevor** sie
+ausgefuehrt werden.
 
 ### 3.7 Concurrency-Vertrag
 
@@ -1597,10 +1629,26 @@ Compare-Verhalten bei degradierten/modifizierten Triggern:
 - Transaktionsvertrag fuer manuelle `dmg_sequences`-Zugriffe
   dokumentieren (Advanced Operation, kein stabiles API)
 
-### Phase B — Generator und Optionen
+### Phase B — Generator, Optionen und Sequenz-Validierung
 
 Voraussetzung: `DefaultValue.SequenceNextVal` ist implementiert
 (ggf. aus MySQL-Plan Phase B).
+
+Sequenz-Validierung in `SchemaValidator` (eigene Taskgruppe):
+
+- `increment_by = 0` als harter Fehler (Exit-Code 3)
+- `increment_by = Long.MIN_VALUE` als harter Fehler
+- `min_value <= max_value` (Bereichskonsistenz)
+- `min_value <= start <= max_value` (Startwert innerhalb des Bereichs)
+- `isIncrementInRange(increment_by, min_value, max_value)` (§3.6)
+- PK + SequenceNextVal als `E059`
+- SequenceNextVal + expliziter DEFAULT als Validierungsfehler
+- CHECK-Constraint mit `IS NOT NULL` auf SequenceNextVal-Spalte
+  als Validierungsfehler (analog zu NOT NULL)
+- Unit-Tests fuer alle Validierungsregeln, insbesondere Grenzfaelle
+  bei `Long.MIN_VALUE`, `Long.MAX_VALUE`, negativen Bereichen
+
+Generator und CLI:
 
 - `DdlGenerationOptions` um `sqliteNamedSequenceMode` erweitern
 - `SqliteNamedSequenceMode` Enum anlegen
