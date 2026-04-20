@@ -54,33 +54,40 @@ Nach 6.4 soll klar gelten:
 
 ## 2. Ausgangslage
 
+### 2.1 Sequentielle Abhaengigkeit von 6.2 und 6.3
+
+6.4 setzt voraus, dass 6.2 und 6.3 **vollstaendig abgeschlossen**
+sind. Auf dem aktuellen HEAD fehlen die folgenden Voraussetzungen,
+die in 6.2/6.3 geliefert werden:
+
+- `DefaultValue.SequenceNextVal` existiert noch nicht
+  (`DefaultValue.kt` kennt nur 4 Subtypen)
+- `DdlGenerationOptions.mysqlNamedSequenceMode` existiert noch nicht
+- `MysqlNamedSequenceMode` Enum existiert noch nicht
+- `SchemaGenerateCommand` kennt `--mysql-named-sequences` noch nicht
+- `MysqlTypeMapper.toDefaultSql()` hat noch keinen `SequenceNextVal`-
+  Zweig (weder Guard noch Implementierung)
+- 0.9.3-Ledgerdateien existieren noch nicht
+  (`ledger/warn-code-ledger-0.9.3.yaml`, `code-ledger-0.9.3.schema.json`)
+- `CodeLedgerValidationTest` kennt noch keinen Status `reserved`
+
+All diese Artefakte werden in 6.2 bzw. 6.3 geliefert. 6.4 darf
+**nicht** parallel zu 6.2/6.3 gestartet werden.
+
+### 2.2 Verbleibende Luecken nach 6.2/6.3
+
 Nach 6.2 und 6.3 ist der Rahmen vorbereitet, aber der eigentliche
 Generatorpfad fehlt noch:
 
-- `MysqlNamedSequenceMode` und der sichtbare CLI-Vertrag sind bekannt
-- `SequenceNextVal` ist als neutraler Modelltyp vorbereitet
-- `MysqlDdlGenerator.generateSequences(...)` erzeugt heute weiterhin
-  nur `ACTION_REQUIRED`/`E056`
+- `MysqlDdlGenerator.generateSequences(...)` erzeugt weiterhin nur
+  `ACTION_REQUIRED`/`E056`
 - `TypeMapper.toDefaultSql(...)` ist fuer normale Defaults gedacht,
-  nicht fuer triggerbasierte Sequence-Emulation; in 6.3 wurde fuer
-  MySQL ein defensiver `error("...")`-Guard eingefuegt
-- `AbstractDdlGenerator.generateRollback(...)` basiert auf
-  Statement-Inversion via `invertStatement()` und versteht keine
-  DELIMITER-Bloecke
+  nicht fuer triggerbasierte Sequence-Emulation; der 6.3-`error()`-Guard
+  in `MysqlTypeMapper` ist ein reines Sicherheitsnetz
+- die Warnings `W114`, `W115`, `W117` sind im Ledger `reserved`,
+  aber noch nicht emittiert
 
-Das reicht fuer 0.9.3 nicht:
-
-- MySQL hat ohne 6.4 keinen produktiven Pfad fuer benannte Sequences
-- Supportobjekte muessen phasenrichtig verteilt werden
-- Rollback darf fuer Routinen/Trigger nicht auf generischer
-  String-Inversion beruhen
-- die Warnings `W114`, `W115`, `W117` muessen an konkreten
-  Erzeugungsstellen haengen
-
-### 2.1 Architektonische Restriktionen im bestehenden Generator
-
-Der `AbstractDdlGenerator`-Lifecycle hat fuer 6.4 drei strukturelle
-Engpaesse:
+### 2.3 Architektonische Restriktionen im bestehenden Generator
 
 **A. `generateSequences` hat keinen Zugriff auf `DdlGenerationOptions`:**
 
@@ -105,17 +112,13 @@ Beide empfangen User-definierte Objekte. Support-Routinen
 (BEFORE INSERT pro Spalte) sind aber keine User-Objekte — sie werden
 aus `schema.sequences` und den `SequenceNextVal`-Spalten abgeleitet.
 
-**C. `SequenceNextVal`-Spalten erreichen den `error()`-Guard:**
+**C. `SequenceNextVal`-Spalten muessen vor `toDefaultSql()` abgefangen werden:**
 
-Der Spaltenpfad fuer MySQL:
-```
-MysqlDdlGenerator.generateTable()
-  → MysqlColumnConstraintHelper.generateColumnSql()
-    → else → AbstractDdlGenerator.columnSql()
-      → typeMapper.toDefaultSql(SequenceNextVal) → error(...)
-```
-Der `error()`-Guard aus 6.3 feuert, bevor der Generator
-intervenieren kann. Es braucht einen Interception-Punkt davor.
+Der Masterplan (`implementation-plan-0.9.3.md`, Zeile 693-705)
+spezifiziert den Interception-Punkt **in `AbstractDdlGenerator.columnSql()`**
+ueber eine neue ueberschreibbare Methode `resolveSequenceDefault()`.
+Damit sieht `TypeMapper.toDefaultSql()` den Fall **nie** — fuer keinen
+Dialekt (siehe §4.6).
 
 ---
 
@@ -123,10 +126,10 @@ intervenieren kann. Es braucht einen Interception-Punkt davor.
 
 ### 3.1 In Scope
 
+- `AbstractDdlGenerator.columnSql()`: zentraler
+  `resolveSequenceDefault()`-Hook (Masterplan §5.4, Zeile 693)
 - `MysqlDdlGenerator`-Erweiterung: `generate()` Override mit
   Options-Persistierung und Support-Objekt-Injection
-- `MysqlColumnConstraintHelper.generateColumnSql()` Erweiterung
-  fuer `SequenceNextVal`-Interception
 - generatorinterne Support-Helfer fuer:
   - `dmg_sequences`
   - Seed-Statements
@@ -136,7 +139,7 @@ intervenieren kann. Es braucht einen Interception-Punkt davor.
   - generierte `BEFORE INSERT`-Trigger
 - MySQL-spezifische Behandlung von `SequenceNextVal` in beiden Modi
 - `W114`, `W115`, `W117` an den vorgesehenen Generatorstellen
-- expliziter Rollback-Pfad via `generateRollback()`-Override
+- **E124**: Support-Namenskollision als dedizierter Error-Code
 - Ledger-Hochstufung der Warning-Codes von `reserved` auf `active`
 - Unit-, Golden-Master- und MySQL-Integrationstests fuer
   `helper_table`
@@ -181,8 +184,8 @@ Verbindliche Folge:
   - `dmg_setval`
   - `dmg_seq_<table16>_<column16>_<hash10>_bi`
 - keine Prefix-/Suffix-Konfiguration in 0.9.3
-- Namenskollisionen fuehren nicht zu stillen Fallbacks, sondern zu
-  strukturierter Diagnose
+- Namenskollisionen fuehren zu einem strukturierten Fehler (siehe
+  §4.10)
 
 ### 4.3 Der 0.9.2-Phasenvertrag bleibt erhalten
 
@@ -207,7 +210,7 @@ Verbindliche Loesung:
   2. ruft `super.generate(schema, options)` auf
   3. das Feld wird in `generateSequences()`,
      `generateFunctions()`, `generateTriggers()` und
-     `generateColumnSql()` gelesen
+     `resolveSequenceDefault()` gelesen
 
 Begruendung:
 
@@ -242,41 +245,76 @@ Die Phasenzuordnung (`POST_DATA`) ergibt sich automatisch, weil
 `generateFunctions()` und `generateTriggers()` bereits mit
 `.withPhase(DdlPhase.POST_DATA)` tagged (Zeile 70, 78).
 
-### 4.6 `SequenceNextVal`-Interception in `MysqlColumnConstraintHelper`
+### 4.6 `SequenceNextVal`-Interception zentral in `AbstractDdlGenerator.columnSql()`
 
-Der `error()`-Guard in `MysqlTypeMapper.toDefaultSql()` aus 6.3 darf
-nicht erreicht werden. Die Interception muss davor greifen.
+Der Masterplan (`implementation-plan-0.9.3.md`, Zeile 693-705)
+spezifiziert den Interception-Punkt zentral in
+`AbstractDdlGenerator.columnSql()`, damit `TypeMapper.toDefaultSql()`
+den Fall `SequenceNextVal` **fuer keinen Dialekt** zu sehen bekommt.
 
 Verbindliche Loesung:
 
-`MysqlColumnConstraintHelper.generateColumnSql()` (Zeile 22-28)
-bekommt einen neuen Zweig **vor** dem `else`-Fall:
+`AbstractDdlGenerator.columnSql()` (Zeile 171-179) wird erweitert:
 
 ```kotlin
-fun generateColumnSql(...): String = when {
-    // ... bestehende Zweige (autoIncrement, Enum, Geometry) ...
-    col.default is DefaultValue.SequenceNextVal -> columnSequenceNextVal(colName, col, notes)
-    else -> columnSql(colName, col, schema)
+protected fun columnSql(colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+    val parts = mutableListOf<String>()
+    parts += quoteIdentifier(colName)
+    parts += typeMapper.toSql(col.type)
+    if (col.required) parts += "NOT NULL"
+    if (col.default != null) {
+        val seqDefault = col.default as? DefaultValue.SequenceNextVal
+        if (seqDefault != null) {
+            val resolved = resolveSequenceDefault(colName, col, seqDefault)
+            if (resolved != null) parts += resolved
+        } else {
+            parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+        }
+    }
+    if (col.unique) parts += "UNIQUE"
+    return parts.joinToString(" ")
 }
+
+/** Dialect-specific resolution of SequenceNextVal defaults.
+ *  Returns a complete DEFAULT clause or null (= suppress DEFAULT). */
+protected open fun resolveSequenceDefault(
+    colName: String,
+    col: ColumnDefinition,
+    seqDefault: DefaultValue.SequenceNextVal,
+): String? = null  // Base: suppress DEFAULT
 ```
 
-Verhalten von `columnSequenceNextVal()`:
+Dialekt-Overrides:
 
-- **`HELPER_TABLE`-Modus**: erzeugt die Spalte OHNE `DEFAULT`-Klausel
-  und sammelt die Trigger-Metadaten (siehe §4.7). Emittiert `W115`.
-- **`ACTION_REQUIRED`-Modus**: erzeugt die Spalte OHNE
-  `DEFAULT`-Klausel und emittiert eine `ACTION_REQUIRED`-Diagnose
-  (E056) mit Hinweis auf `--mysql-named-sequences helper_table`.
-- In beiden Faellen wird `toDefaultSql()` **nicht** aufgerufen.
+- `PostgresDdlGenerator.resolveSequenceDefault(...)`:
+  - gibt `"DEFAULT nextval('${seqDefault.sequenceName}')"` zurueck
+- `MysqlDdlGenerator.resolveSequenceDefault(...)`:
+  - `HELPER_TABLE`: gibt `null` zurueck (kein DEFAULT, Trigger
+    uebernimmt), sammelt Trigger-Metadaten (§4.7), emittiert `W115`
+  - `ACTION_REQUIRED`: gibt `null` zurueck, emittiert
+    `ACTION_REQUIRED`-Diagnose (E056)
+- `SqliteDdlGenerator` erbt die Base-Implementierung (`null`)
 
-Damit bleibt der 6.3-`error()`-Guard in `MysqlTypeMapper` als
-Sicherheitsnetz bestehen, wird aber im Normalbetrieb nie erreicht.
+Konsequenz fuer 6.3-Artefakte:
+
+- die `error()`-Guards in `MysqlTypeMapper.toDefaultSql()` und
+  `SqliteTypeMapper.toDefaultSql()` aus 6.3 werden nie erreicht,
+  bleiben aber als Sicherheitsnetz bestehen
+- der `SequenceNextVal`-Zweig in `PostgresTypeMapper.toDefaultSql()`
+  aus 6.3 wird ebenfalls nie erreicht (die Aufloesung passiert in
+  `resolveSequenceDefault()`); er bleibt als Defense-in-Depth
+
+Hinweis: Falls 6.3 den Masterplan-Hook in `columnSql()` bereits
+implementiert hat, entfaellt dieser Schritt in 6.4. Falls 6.3 statt
+des Hooks nur TypeMapper-Zweige eingefuehrt hat, muss 6.4 den Hook
+nachziehen.
 
 ### 4.7 Spalten-zu-Trigger-Metadatenfluss ueber Mutable State
 
 Waehrend `generateTable()` werden `SequenceNextVal`-Spalten erkannt
-(§4.6). Die daraus resultierenden Trigger muessen aber erst spaeter
-in `generateTriggers()` (POST_DATA) erzeugt werden.
+(§4.6, in `resolveSequenceDefault()`). Die daraus resultierenden
+Trigger muessen aber erst spaeter in `generateTriggers()` (POST_DATA)
+erzeugt werden.
 
 Verbindliche Loesung:
 
@@ -296,38 +334,43 @@ private data class SupportTriggerSpec(
 )
 ```
 
-- `columnSequenceNextVal()` in `MysqlColumnConstraintHelper`
-  (§4.6) fuegt im `HELPER_TABLE`-Modus einen Eintrag hinzu
-  (ueber einen Callback oder direkten Zugriff auf die Liste)
+- `resolveSequenceDefault()` in `MysqlDdlGenerator` fuegt im
+  `HELPER_TABLE`-Modus einen Eintrag hinzu
 - `generateTriggers()` liest die Liste und erzeugt die
   Support-Trigger
 - `generate()` leert die Liste zu Beginn jedes Laufs
 
-### 4.8 Rollback ueber `generateRollback()`-Override
+### 4.8 Rollback nutzt den bestehenden `invertStatement()`-Mechanismus
 
-`AbstractDdlGenerator.generateRollback()` (Zeile 84-88) hat keinen
-Hook fuer Prepend-Statements.
+Der bestehende `MysqlDdlGenerator.invertStatement()` (Zeile 292-316)
+behandelt DELIMITER-verpackte `CREATE FUNCTION`, `CREATE PROCEDURE`
+und `CREATE TRIGGER` bereits korrekt und erzeugt die zugehoerigen
+`DROP ... IF EXISTS`-Statements. Fuer `CREATE TABLE` delegiert
+`invertStatement()` an `super.invertStatement()`, das den
+`StatementInverter` nutzt.
 
-Verbindliche Loesung:
+Da die Support-Objekte (`dmg_nextval`, `dmg_setval`,
+Support-Trigger) im selben DELIMITER-Format erzeugt werden wie
+User-Routinen und User-Trigger, greift `invertStatement()` fuer
+sie automatisch.
 
-- `MysqlDdlGenerator` ueberschreibt `generateRollback(schema, options)`:
-  1. speichert `options` in `currentOptions` (wie in §4.4)
-  2. ruft `super.generateRollback(schema, options)` auf
-  3. erzeugt die Support-Objekt-Drops separat via
-     `generateSupportObjectRollback(schema)`:
-     - `DROP TRIGGER IF EXISTS` fuer jeden Support-Trigger
-     - `DROP FUNCTION IF EXISTS dmg_nextval`
-     - `DROP FUNCTION IF EXISTS dmg_setval`
-     - `DROP TABLE IF EXISTS dmg_sequences`
-  4. stellt die Support-Drops **vor** die invertierten regulaeren
-     Statements
-- im `ACTION_REQUIRED`-Modus wird direkt an
-  `super.generateRollback()` delegiert
+`AbstractDdlGenerator.generateRollback()` (Zeile 84-88) kehrt die
+Statement-Reihenfolge um und invertiert jedes Statement. Daraus
+ergibt sich die korrekte Drop-Reihenfolge natuerlich:
 
-Feste Drop-Reihenfolge:
-1. Trigger
-2. Routinen
-3. `dmg_sequences`
+- Forward: `dmg_sequences` (PRE_DATA) → Tabellen → `dmg_nextval`/
+  `dmg_setval` (POST_DATA) → Support-Trigger (POST_DATA) →
+  User-Trigger (POST_DATA)
+- Reversed + invertiert: User-Trigger-Drops → Support-Trigger-Drops →
+  Routine-Drops → Tabellen-Drops → `DROP TABLE dmg_sequences`
+
+Verbindliche Folge:
+
+- `MysqlDdlGenerator` ueberschreibt `generateRollback()` **nicht**
+- der bestehende Mechanismus wird wiederverwendet
+- die Support-DDL muss dem bestehenden DELIMITER-Format von
+  `MysqlRoutineDdlHelper` folgen, damit `invertStatement()` greift
+- Tests verifizieren die korrekte Drop-Reihenfolge explizit
 
 ### 4.9 Warning-Semantik wird an reale Erzeugungspunkte gebunden
 
@@ -336,7 +379,7 @@ Verbindliche Folge:
 - `W114` bei Sequence-Definitionen mit gesetztem `cache`
   (in `generateSequences()`)
 - `W115` pro betroffener Spalte mit `SequenceNextVal`
-  (in `columnSequenceNextVal()`)
+  (in `resolveSequenceDefault()`)
 - `W117` einmal pro DDL-Lauf im `helper_table`-Modus
   (in `generate()`, nach `super.generate()`)
 - `W116` bleibt in 6.4 weiterhin `reserved` im Ledger; er wird erst
@@ -348,6 +391,36 @@ Ledger-Hochstufung:
 - W114, W115, W117 werden in `ledger/warn-code-ledger-0.9.3.yaml`
   von `status: reserved` auf `status: active` hochgestuft
 - `test_path` und `evidence_paths` werden ergaenzt
+- Voraussetzung: 6.2 hat die 0.9.3-Ledgerdateien und das erweiterte
+  JSON-Schema (mit `reserved`-Status) bereits angelegt. Falls nicht,
+  muss 6.4 diese Dateien selbst anlegen (siehe §6.8).
+
+### 4.10 Support-Namenskollisionen bekommen E124
+
+Wenn das neutrale Schema bereits ein Objekt mit einem reservierten
+Support-Namen enthaelt (`dmg_sequences`, `dmg_nextval`, `dmg_setval`,
+oder einen Trigger nach dem kanonischen `dmg_seq_*`-Schema), darf
+`helper_table` **nicht** still generieren.
+
+Verbindliche Folge:
+
+- **E124**: "Support object name collision: '<name>' already exists
+  in the neutral schema. Rename the existing object or use
+  `--mysql-named-sequences action_required`."
+- der Fehler wird vor der Generierung der Support-Objekte geprueft
+  (in `generateSequences()` fuer Tabellen/Funktionen, in
+  `generateTriggers()` fuer Trigger)
+- der Fehler fuehrt zu einem `ACTION_REQUIRED`-Eintrag im Output,
+  nicht zu einem harten Abbruch — andere Tabellen/Sequences werden
+  weiterhin erzeugt
+- E124 wird im 0.9.3-Error-Ledger eingetragen (`status: active`)
+
+Begruendung:
+
+- das Diagnostic-Modell des Repos ist code-getrieben
+  (`ManualActionRequired` mit Code, Typ, Name, Reason, Hint)
+- der Masterplan (`mysql-sequence-emulation-plan.md`, Zeile 205-215)
+  verlangt explizit einen eigenen Code fuer diesen Konfliktpfad
 
 ---
 
@@ -369,9 +442,9 @@ generate(schema, options)
   │     │     └── HELPER_TABLE: dmg_sequences + Seed + W114
   │     ├── for table in sorted:
   │     │     └── generateTable()
-  │     │           └── generateColumnSql()
-  │     │                 └── SequenceNextVal? → columnSequenceNextVal()
-  │     │                       ├── Spalte OHNE DEFAULT
+  │     │           └── columnSql()
+  │     │                 └── SequenceNextVal? → resolveSequenceDefault()
+  │     │                       ├── return null (kein DEFAULT)
   │     │                       ├── pendingSupportTriggers += Spec
   │     │                       └── W115
   │     ├── generateFunctions()              → POST_DATA
@@ -391,19 +464,22 @@ generate(schema, options)
 PostgreSQL:
 
 - bleibt fachlich auf nativer Sequence-Unterstuetzung
+- `resolveSequenceDefault()` gibt
+  `"DEFAULT nextval('<seq>')"` zurueck
 - ist in 6.4 nur Abgrenzung, nicht Implementierungsziel
 
 MySQL `action_required`:
 
 - `SequenceDefinition` bleibt `E056`
-- `SequenceNextVal`-Spalten werden ohne `DEFAULT`-Klausel erzeugt;
-  die betroffene Spalte bekommt eine `ACTION_REQUIRED`-Diagnose
-  (E056) mit Hinweis auf `--mysql-named-sequences helper_table`
+- `resolveSequenceDefault()` gibt `null` zurueck und emittiert
+  `ACTION_REQUIRED`-Diagnose (E056) mit `helper_table`-Hinweis
 - kein Aufruf von `toDefaultSql()` fuer `SequenceNextVal`
 
 MySQL `helper_table`:
 
 - `SequenceDefinition` → Zeile in `dmg_sequences`
+- `resolveSequenceDefault()` gibt `null` zurueck, sammelt
+  Trigger-Metadaten
 - `SequenceNextVal(seq)` → kanonischer `BEFORE INSERT`-Trigger
 - `cache` bleibt Metadatum in `dmg_sequences`, ohne echte
   Preallocation
@@ -411,6 +487,7 @@ MySQL `helper_table`:
 SQLite:
 
 - bleibt in 0.9.3 ausserhalb des produktiven Generatorpfads
+- erbt die Base-Implementierung von `resolveSequenceDefault()` (`null`)
 
 ### 5.3 Namens-Utility und Triggervertrag
 
@@ -446,34 +523,43 @@ Trigger-Semantik:
 
 ### 5.4 Rollback-Vertrag
 
-`MysqlDdlGenerator` ueberschreibt `generateRollback()` (§4.8):
+Der bestehende Rollback-Mechanismus wird wiederverwendet (§4.8):
 
-- im `HELPER_TABLE`-Modus:
-  - erzeugt Support-Drops via `generateSupportObjectRollback(schema)`
-  - ruft `super.generateRollback(schema, options)` auf
-  - stellt Support-Drops vor die regulaeren invertierten Statements
-- im `ACTION_REQUIRED`-Modus:
-  - delegiert direkt an `super.generateRollback(schema, options)`
-
-Support-Drop-Statements:
-
-- direkte `DROP TRIGGER IF EXISTS` (fuer jeden Support-Trigger,
-  basierend auf dem Schema-Scan von Spalten mit `SequenceNextVal`)
-- direkte `DROP FUNCTION IF EXISTS dmg_nextval`
-- direkte `DROP FUNCTION IF EXISTS dmg_setval`
-- direktes `DROP TABLE IF EXISTS dmg_sequences`
+- `generateRollback()` in `AbstractDdlGenerator` kehrt die Statements
+  um und ruft `invertStatement()` pro Statement auf
+- `MysqlDdlGenerator.invertStatement()` (Zeile 292-316) behandelt
+  DELIMITER-verpackte `CREATE FUNCTION/PROCEDURE/TRIGGER` bereits
+  korrekt
+- `StatementInverter` (via `super.invertStatement()`) behandelt
+  `CREATE TABLE` korrekt
+- die natuerliche Umkehr-Reihenfolge ergibt den korrekten Drop-Pfad
 
 Pflicht-Akzeptanzkriterien:
 
 - feste Drop-Reihenfolge Trigger → Routinen → `dmg_sequences`
-- alle Drops sind idempotent
+  (ergibt sich aus der Umkehr der Erzeugungsreihenfolge)
+- alle Drops sind idempotent (`IF EXISTS`)
 - kompletter Up→Down-Lauf scheitert nicht an Supportobjekt-Reihenfolge
+
+Voraussetzung: Support-DDL muss dem bestehenden DELIMITER-Format
+von `MysqlRoutineDdlHelper` folgen.
 
 ---
 
 ## 6. Konkrete Arbeitsschritte
 
-### 6.1 `MysqlSequenceNaming` Utility anlegen
+### 6.1 `resolveSequenceDefault()`-Hook in `AbstractDdlGenerator`
+
+- `columnSql()` erweitern: vor `toDefaultSql()` pruefen, ob der
+  Default ein `SequenceNextVal` ist
+- neue `protected open fun resolveSequenceDefault(...)` mit
+  Base-Implementierung `null`
+- `PostgresDdlGenerator`: Override mit nativem
+  `"DEFAULT nextval('...')"`
+- `MysqlDdlGenerator`: Override mit Modus-Verzweigung (§4.6)
+- `SqliteDdlGenerator`: erbt Base-Implementierung
+
+### 6.2 `MysqlSequenceNaming` Utility anlegen
 
 - `MysqlSequenceNaming` als internes Objekt im MySQL-Adapter-Modul
 - `normalize(name): String`
@@ -481,7 +567,7 @@ Pflicht-Akzeptanzkriterien:
 - `triggerName(tableName, columnName): String`
 - Unit-Tests in `MysqlSequenceNamingTest`
 
-### 6.2 Options-Persistierung und Mutable State einfuehren
+### 6.3 Options-Persistierung und Mutable State einfuehren
 
 - `MysqlDdlGenerator`: privates Feld `currentOptions`
 - `MysqlDdlGenerator`: private Liste `pendingSupportTriggers`
@@ -489,7 +575,7 @@ Pflicht-Akzeptanzkriterien:
 - `generate()`-Override: Options speichern, Liste leeren,
   `super.generate()` aufrufen, W117 anhaengen
 
-### 6.3 `generateSequences()` Modusumschaltung
+### 6.4 `generateSequences()` Modusumschaltung
 
 - `ACTION_REQUIRED`: bisheriges E056-Verhalten
 - `HELPER_TABLE`:
@@ -497,54 +583,41 @@ Pflicht-Akzeptanzkriterien:
     Inkrement, Cache, aktuellen Wert
   - `INSERT INTO dmg_sequences` pro Sequence (Seed-Statements)
   - `W114` fuer Sequences mit gesetztem `cache`
-
-### 6.4 `SequenceNextVal`-Interception im Spaltenbau
-
-- `MysqlColumnConstraintHelper.generateColumnSql()`: neuer Zweig
-  fuer `col.default is DefaultValue.SequenceNextVal`
-- `MysqlColumnConstraintHelper` braucht dafuer Zugriff auf:
-  - den aktuellen Modus (ueber Callback oder Referenz auf
-    `currentOptions`)
-  - die `pendingSupportTriggers`-Liste (ueber Callback)
-- `columnSequenceNextVal()`:
-  - `HELPER_TABLE`: Spalte ohne DEFAULT, Trigger-Spec sammeln, W115
-  - `ACTION_REQUIRED`: Spalte ohne DEFAULT, E056-Diagnose
+  - E124-Pruefung fuer Namenskollision `dmg_sequences`
 
 ### 6.5 Support-Routinen und -Trigger erzeugen
 
 - `generateFunctions()`-Override:
-  - `HELPER_TABLE`: `dmg_nextval` + `dmg_setval` emittieren, dann
+  - `HELPER_TABLE`: `dmg_nextval` + `dmg_setval` emittieren
+    (DELIMITER-Format von `MysqlRoutineDdlHelper`), dann
     `MysqlRoutineDdlHelper` fuer User-Funktionen
   - `ACTION_REQUIRED`: direkt an `MysqlRoutineDdlHelper`
+  - E124-Pruefung fuer Namenskollision `dmg_nextval`/`dmg_setval`
 - `generateTriggers()`-Override:
   - `HELPER_TABLE`: Support-Trigger aus `pendingSupportTriggers`
-    erzeugen, dann `MysqlRoutineDdlHelper` fuer User-Trigger
+    erzeugen (DELIMITER-Format), dann `MysqlRoutineDdlHelper` fuer
+    User-Trigger
   - `ACTION_REQUIRED`: direkt an `MysqlRoutineDdlHelper`
+  - E124-Pruefung fuer Namenskollisionen bei Triggernamen
 
 ### 6.6 Warning- und Konfliktfaelle verankern
 
 - `W114`, `W115`, `W117` an den in §4.9 festgelegten Stellen
   emittieren
-- Konfliktfaelle fuer reservierte Supportnamen erkennen
-  (Schema enthaelt bereits Tabelle/Funktion/Trigger mit
-  `dmg_sequences`, `dmg_nextval`, `dmg_setval` oder dem generierten
-  Triggernamen)
-- keine stillen Fallback-Namen oder "best effort"-Umbenennungen
+- E124-Pruefungen an den in §4.10 und §6.4/§6.5 festgelegten Stellen
 
-### 6.7 Expliziten Rollback-Pfad nachziehen
-
-- `generateRollback()`-Override (§4.8)
-- `generateSupportObjectRollback(schema)`:
-  - Schema-Scan fuer `SequenceNextVal`-Spalten (fuer Triggernamen)
-  - Drop-Statements in fester Reihenfolge
-- feste Drop-Reihenfolge absichern
-
-### 6.8 Ledger-Hochstufung
+### 6.7 Ledger-Arbeit
 
 - W114, W115, W117 in `ledger/warn-code-ledger-0.9.3.yaml` von
   `status: reserved` auf `status: active` aendern
 - `test_path` und `evidence_paths` ergaenzen
 - W116 bleibt `reserved`
+- E124 in `ledger/error-code-ledger-0.9.3.yaml` eintragen mit
+  `status: active`, `test_path` und `evidence_paths`
+- falls die 0.9.3-Ledgerdateien oder das erweiterte JSON-Schema
+  (mit `reserved`-Status) aus 6.2 noch nicht existieren, muessen
+  sie in diesem Schritt angelegt werden (siehe 6.2 Plan §6.4 fuer
+  die vollstaendige Spezifikation)
 
 ---
 
@@ -564,14 +637,14 @@ Pflicht-Akzeptanzkriterien:
   - `helper_table` erzeugt Tabelle, Seed, Routinen und Trigger
   - `helper_table` + Spalte mit `SequenceNextVal`: kein DEFAULT
     in der Spalte, Support-Trigger vorhanden
-  - `toDefaultSql()`-`error()`-Guard wird nie erreicht
+  - `toDefaultSql()` wird fuer `SequenceNextVal` nie aufgerufen
   - Warning-Semantik `W114` / `W115` / `W117`
-  - Konfliktfall fuer reservierte Namen
+  - E124 bei Schema mit bereits vorhandenem `dmg_sequences`
   - Trigger-Namensbildung ist deterministisch
   - Phasen: `dmg_sequences` in PRE_DATA, Routinen/Trigger in
     POST_DATA
-  - Rollback: Support-Drops vor regulaeren invertierten Statements,
-    feste Drop-Reihenfolge
+  - Rollback: invertierte Reihenfolge ergibt korrekten Drop-Pfad
+    (Trigger-Drops vor Routine-Drops vor `DROP TABLE dmg_sequences`)
 - Golden Masters:
   - MySQL `action_required` (mit SequenceNextVal-Spalte)
   - MySQL `helper_table`
@@ -579,6 +652,7 @@ Pflicht-Akzeptanzkriterien:
   - Rollback `helper_table`
 - `CodeLedgerValidationTest`:
   - W114, W115, W117 sind `active` mit gueltigem `test_path`
+  - E124 ist `active` mit gueltigem `test_path`
 
 ### 7.2 MySQL-Integrationstests
 
@@ -605,13 +679,17 @@ Testfaelle:
 - `schema generate --target mysql --mysql-named-sequences helper_table`
   erzeugt produktive DDL statt nur `E056`
 - `action_required` + `SequenceNextVal`-Spalte erzeugt E056-Diagnose
-  mit Migrationshinweis, ohne den `error()`-Guard zu erreichen
+  mit Migrationshinweis
+- `TypeMapper.toDefaultSql()` wird fuer `SequenceNextVal` bei keinem
+  Dialekt erreicht (zentraler Hook in `columnSql()`)
 - Supportobjekte und Trigger sind deterministisch benannt
 - `PRE_DATA` / `POST_DATA` sind fuer Supportobjekte korrekt getrennt
-- Rollback fuer Supportobjekte ist explizit, idempotent und
-  reihenfolgesicher
+- Rollback nutzt den bestehenden `invertStatement()`-Mechanismus und
+  ergibt die korrekte Drop-Reihenfolge
+- E124 feuert bei Namenskollisionen
 - die vorgesehenen Warnings werden konsistent erzeugt
 - W114, W115, W117 sind im Ledger `active` mit Tests
+- E124 ist im Ledger `active` mit Tests
 
 ---
 
@@ -619,13 +697,14 @@ Testfaelle:
 
 Voraussichtlich direkt betroffen (Produktionscode):
 
+- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
+  — `columnSql()` Erweiterung, neue `resolveSequenceDefault()` Methode
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt`
   — `generate()`-Override, `generateFunctions()`-Override,
-  `generateTriggers()`-Override, `generateRollback()`-Override,
+  `generateTriggers()`-Override, `resolveSequenceDefault()`-Override,
   `currentOptions`, `pendingSupportTriggers`, `SupportTriggerSpec`
-- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlColumnConstraintHelper.kt`
-  — neuer `SequenceNextVal`-Zweig in `generateColumnSql()`,
-  `columnSequenceNextVal()`-Methode
+- `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt`
+  — `resolveSequenceDefault()`-Override (nativer Pfad)
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`
   — neues Utility-Objekt (Triggernamensbildung, Hash, Normierung)
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlRoutineDdlHelper.kt`
@@ -637,11 +716,7 @@ Voraussichtlich direkt betroffen (Produktionscode):
 - `docs/mysql-sequence-emulation-plan.md`
 - `docs/ddl-generation-rules.md`
 - `ledger/warn-code-ledger-0.9.3.yaml` — W114/W115/W117 Hochstufung
-
-Nicht betroffen (bewusst):
-
-- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
-  — keine Signatur- oder Verhaltensaenderung
+- `ledger/error-code-ledger-0.9.3.yaml` — E124
 
 Voraussichtlich testseitig betroffen:
 
@@ -649,12 +724,14 @@ Voraussichtlich testseitig betroffen:
   — neuer Test fuer Naming-Utility
 - `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt`
   — umfangreiche Erweiterung fuer beide Modi
+- `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/AbstractDdlGeneratorTest.kt`
+  — `resolveSequenceDefault()`-Verhalten im Base-Fall
 - `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt`
   — neue Golden Masters
 - `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`
   — neuer Integrationstest
 - `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/CodeLedgerValidationTest.kt`
-  — W114/W115/W117 sind jetzt `active`
+  — W114/W115/W117 sind jetzt `active`, E124 ist `active`
 
 ---
 
@@ -677,5 +754,14 @@ versprechen.
 ### 9.3 W116 bleibt `reserved`
 
 W116 wird in 6.4 weder emittiert noch auf `active` hochgestuft.
-Der Status `reserved` bleibt bestehen, bis ein spaeaeteres
+Der Status `reserved` bleibt bestehen, bis ein spaeteres
 Arbeitspaket die zugehoerige Semantik implementiert.
+
+### 9.4 Konsistenz mit 6.3 bei `resolveSequenceDefault()`
+
+Falls 6.3 den `resolveSequenceDefault()`-Hook bereits in
+`AbstractDdlGenerator.columnSql()` implementiert hat (wie vom
+Masterplan vorgesehen), entfaellt Schritt 6.1 in 6.4. Falls 6.3
+stattdessen nur TypeMapper-Zweige eingefuehrt hat, muss 6.4 den
+Hook nachziehen und die TypeMapper-Zweige werden zu reinem
+Defense-in-Depth. In beiden Faellen ist das Endergebnis identisch.
