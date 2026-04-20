@@ -517,26 +517,54 @@ im CASE-Ausdruck desselben UPDATE zusammengefasst. Der AFTER
 INSERT-Trigger liest `last_returned_value` statt zu rechnen —
 dadurch ist der Rueckgabewert vom `next_value`-Zustand entkoppelt.
 
-**UPDATE-Trigger-Kaskade durch AFTER INSERT**
+**UPDATE-Trigger-Kaskade durch AFTER INSERT und `recursive_triggers`**
 
 Der `_ai`-Trigger fuehrt ein `UPDATE` auf die Zieltabelle aus, um
-den Sequence-Wert in die eingefuegte Zeile zu schreiben. Dieses
-UPDATE kann **bestehende BEFORE/AFTER UPDATE-Trigger** auf derselben
-Tabelle ausloesen. Das ist ein bewusstes Kompatibilitaetsrisiko:
+den Sequence-Wert in die eingefuegte Zeile zu schreiben. Ob dieses
+UPDATE bestehende BEFORE/AFTER UPDATE-Trigger auf derselben Tabelle
+ausloest, haengt von `PRAGMA recursive_triggers` ab:
 
-- nutzerdefinierte UPDATE-Trigger sehen das UPDATE des `_ai`-Triggers
-  als normales UPDATE und feuern entsprechend
-- das kann gewuenscht sein (z. B. ein `updated_at`-Trigger) oder
-  unerwuenscht (z. B. ein Audit-Trigger, der das Sequence-Schreiben
-  als Datenaenderung protokolliert)
-- der Generator emittiert `W122` wenn die Zieltabelle
-  nutzerdefinierte UPDATE-Trigger hat und gleichzeitig
-  sequence-basierte Spalten im `helper_table`-Modus verwendet
-- `W122`: AFTER INSERT sequence trigger may cascade into existing
-  UPDATE triggers on the same table; verify that UPDATE trigger
-  behavior is compatible with sequence assignment
+- **`recursive_triggers = OFF`** (SQLite-Default): Trigger, die
+  innerhalb eines anderen Triggers auf dieselbe Tabelle feuern,
+  werden **nicht** ausgeloest. Das `_ai`-UPDATE loest keine
+  UPDATE-Trigger aus. Das ist der sicherere Modus.
+- **`recursive_triggers = ON`**: Das `_ai`-UPDATE loest bestehende
+  BEFORE/AFTER UPDATE-Trigger auf derselben Tabelle aus. Das kann
+  gewuenscht sein (z. B. `updated_at`-Trigger) oder unerwuenscht
+  (z. B. Audit-Trigger protokolliert die Sequence-Zuweisung als
+  Datenaenderung).
 
-Integrationstests muessen diesen Fall explizit abdecken (§8.2).
+Deterministische vs. rekursionsabhaengige Trigger-Pfade:
+
+Die Trigger-Ausfuehrung im `helper_table`-Modus hat zwei Ebenen:
+
+1. **INSERT-Ebene (deterministisch)**: Die Reihenfolge der BEFORE
+   INSERT (`_bi`) und AFTER INSERT (`_ai`) Trigger relativ zu
+   nutzerdefinierten INSERT-Triggern ist durch die DDL-
+   Erzeugungsreihenfolge festgelegt (Position 5 vs. 8). Dieses
+   Verhalten ist **unabhaengig** von `recursive_triggers`.
+
+2. **UPDATE-Nebenweg (rekursionsabhaengig)**: Ob das `_ai`-UPDATE
+   weitere UPDATE-Trigger ausloest, haengt von `recursive_triggers`
+   ab. Dieser Pfad ist **nicht** deterministisch steuerbar durch
+   die DDL-Erzeugungsreihenfolge allein.
+
+Vertrag:
+
+- der `helper_table`-Modus setzt **kein** bestimmtes
+  `recursive_triggers`-Setting voraus
+- die Sequence-Emulation selbst funktioniert mit beiden Settings
+  korrekt (der `_ai`-Trigger schreibt den Wert unabhaengig davon)
+- `W122` wird emittiert wenn die Zieltabelle nutzerdefinierte
+  UPDATE-Trigger hat UND sequence-basierte Spalten im
+  `helper_table`-Modus verwendet; die Warnung weist darauf hin,
+  dass das Verhalten von `recursive_triggers` abhaengt
+- `W122`: AFTER INSERT sequence trigger performs UPDATE on the same
+  table; whether this cascades into existing UPDATE triggers depends
+  on PRAGMA recursive_triggers (OFF by default)
+
+Integrationstests muessen diesen Fall fuer **beide** Pragma-Settings
+abdecken (§8.2).
 
 **NOT NULL-Kompatibilitaet bei Zwei-Trigger-Strategie**
 
@@ -885,6 +913,23 @@ INSERT INTO "orders" DEFAULT VALUES;
 --      - Bei ROLLBACK: gesamte Transaktion wird zurueckgerollt,
 --        inklusive Trigger-Seiteneffekte → kein Gap
 --
+--   d) INSERT OR REPLACE:
+--      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
+--      - Constraint-Pruefung erkennt Conflict
+--      - bestehende Zeile wird geloescht (DELETE-Trigger feuern),
+--        dann neue Zeile eingefuegt (AFTER INSERT feuert)
+--      - Konsequenz: Sequence-Wert wird korrekt gesetzt, ABER die
+--        alte Zeile geht verloren; kein Gap, aber Datenverlust
+--        wenn die alte Zeile gewollt war
+--
+--   e) INSERT OR IGNORE:
+--      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
+--      - Constraint-Pruefung erkennt Conflict
+--      - INSERT wird still verworfen
+--      - AFTER INSERT feuert NICHT
+--      - Konsequenz: Sequence-Wert ist verbraucht (Gap),
+--        identisch zu ON CONFLICT DO NOTHING
+--
 INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42)
     ON CONFLICT ("customer_id") DO UPDATE SET "updated_at" = datetime('now');
 -- Ergebnis bei Conflict: kein neuer order_number, aber Sequence-Gap ⚠
@@ -892,17 +937,19 @@ INSERT INTO "orders" ("order_number", "customer_id") VALUES (NULL, 42)
 ```
 
 Diese Faelle muessen in der Integrations-Teststrategie (§8.2)
-abgedeckt werden. Die drei ON CONFLICT-Varianten (DO UPDATE,
-DO NOTHING, ABORT/ROLLBACK/FAIL) muessen jeweils separat getestet
-werden, da das Trigger-Verhalten sich zwischen den Pfaden
-unterscheidet.
+abgedeckt werden. Alle fuenf Konflikt-Varianten (DO UPDATE,
+DO NOTHING, ABORT/ROLLBACK/FAIL, OR REPLACE, OR IGNORE) muessen
+jeweils separat getestet werden, da das Trigger-Verhalten sich
+zwischen den Pfaden unterscheidet.
 
-Fall 5 (UPSERT-Gap) wird ueber `W121` als eigenes Warning-Signal
+Fall 5 (Konflikt-Gap) wird ueber `W121` als eigenes Warning-Signal
 gemeldet:
 
 - `W121`: Sequence values may be consumed without insertion when
-  INSERT ... ON CONFLICT is used on tables with sequence-backed
-  columns; BEFORE INSERT trigger fires before conflict detection
+  conflict-handling INSERT forms are used on tables with sequence-
+  backed columns (ON CONFLICT DO UPDATE/DO NOTHING, INSERT OR
+  IGNORE, INSERT OR FAIL/ABORT); BEFORE INSERT trigger fires
+  before conflict detection
 - `W121` wird bei der Generierung an jede Tabelle gehaengt, die
   sowohl sequence-basierte Spalten als auch UNIQUE/PK-Constraints
   hat (da diese ON CONFLICT ausloesen koennen)
@@ -1374,9 +1421,15 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
 - NOT NULL-Spalte mit SequenceNextVal akzeptiert INSERT ohne Wert
   (W119-Unterdrueckung wirkt korrekt)
 - Tabelle mit bestehendem AFTER UPDATE-Trigger + sequence-basierter
-  Spalte: INSERT loest korrekte Sequence-Vergabe aus, der UPDATE-
-  Trigger feuert durch die `_ai`-Kaskade, beide Ergebnisse sind
-  konsistent (W122-Testfall)
+  Spalte, `recursive_triggers = ON`: INSERT loest korrekte
+  Sequence-Vergabe aus, der UPDATE-Trigger feuert durch die
+  `_ai`-Kaskade (W122-Testfall)
+- derselbe Test mit `recursive_triggers = OFF` (Default): UPDATE-
+  Trigger feuert **nicht**; Sequence-Vergabe ist trotzdem korrekt
+- INSERT OR REPLACE auf Tabelle mit Sequence-Spalte + Conflict:
+  alte Zeile wird geloescht, neue mit Sequence-Wert eingefuegt
+- INSERT OR IGNORE auf Tabelle mit Sequence-Spalte + Conflict:
+  INSERT wird verworfen, Sequence-Wert ist verbraucht (Gap)
 
 Pflicht-Tests fuer NOT NULL / W115 / W119 Randfaelle:
 
