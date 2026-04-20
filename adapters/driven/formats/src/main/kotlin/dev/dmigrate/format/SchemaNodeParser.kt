@@ -157,10 +157,12 @@ internal object SchemaNodeParser {
                     fieldName == "sequence_nextval" ->
                         DefaultValue.SequenceNextVal(node.get("sequence_nextval").asText())
                     fieldName == "nextval" -> {
-                        // Pass through as FunctionCall so the validator can emit E122
-                        // with a consistent migration message for all legacy forms.
-                        val seqName = node.get("nextval")?.asText() ?: ""
-                        DefaultValue.FunctionCall("nextval('$seqName')")
+                        val seqName = node.get("nextval")?.asText() ?: "<name>"
+                        throw IllegalArgumentException(
+                            "Legacy default form '{ nextval: $seqName }' is not supported since 0.9.3. " +
+                                "Use '{ sequence_nextval: $seqName }' instead. " +
+                                "(Before: default: { nextval: $seqName } → After: default: { sequence_nextval: $seqName })"
+                        )
                     }
                     else -> throw IllegalArgumentException(
                         "Unsupported default object form with key '$fieldName'. " +
