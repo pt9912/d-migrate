@@ -344,17 +344,37 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 > Nutzer-Feature-Milestone geschnitten. So bleiben Library-Refactor und
 > sichtbarer CLI-/Output-Vertrag getrennt planbar.
 
-### Milestone 0.9.3 — Beta: Filter-Haertung und Security
+### Milestone 0.9.3 — Beta: Filter-Haertung und MySQL-Sequence-Emulation (Generator)
 
 | Bereich  | Aufgabe                                                                                                       | LF-Ref |
 | -------- | ------------------------------------------------------------------------------------------------------------- | ------ |
 | Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`) | —      |
+| Core     | Phase A: MySQL-Sequence-Emulationsvertrag schaerfen (Namespace, Marker, Warning-Codes W114–W117, Concurrency) | —      |
+| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen                  | —      |
+| Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger | — |
+| CLI      | `--mysql-named-sequences action_required|helper_table` Option (opt-in, Default bleibt `action_required`)      | —      |
+| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                     | —      |
 
-**Ergebnis**: Der rohe SQL-Eingabepfad ueber `--filter` ist entweder durch
-explizite Benennung (`--unsafe-filter`) als unsicher gekennzeichnet oder durch
-eine strukturierte Filter-DSL ersetzt. Damit ist die letzte offene
-Security-Finding-Prioritaet aus `docs/quality.md` vor dem Publish-Vertrag
-abgearbeitet.
+**Ergebnis**: `schema generate --target mysql` kann benannte Sequences optional
+ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
+statt sie mit `E056` zu ueberspringen. Der Modus ist opt-in (`helper_table`).
+Reverse-Engineering und Compare folgen in 0.9.4. Details:
+[`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md).
+
+### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare
+
+| Bereich | Aufgabe                                                                                                                            | LF-Ref |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Driver  | Phase D: `MysqlSchemaReader` — Erkennung von `dmg_sequences`, Support-Routinen und kanonischen Sequence-Triggern via Marker        | —      |
+| Driver  | Reverse von sequence-basierten Spaltenwerten zurueck auf `DefaultValue.SequenceNextVal`                                            | —      |
+| Core    | Phase E: Compare-Stabilisierung — emulierte Sequences auf Neutralmodell-Ebene vergleichen, kein Hilfsobjekt-Rauschen               | —      |
+| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                                  | —      |
+| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)                      | —      |
+
+**Ergebnis**: MySQL-Sequence-Emulation ist vollstaendig: generieren, reverse-en
+und vergleichen. Hilfsobjekte werden beim Reverse sauber auf `SequenceDefinition`
+zurueckgefaltet und tauchen nicht als Rauschen im Diff auf. Details:
+[`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md) Phase D+E.
 
 ### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
 
@@ -553,6 +573,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.26
+**Version**: 3.27
 **Stand**: 2026-04-20
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0, 0.9.1 und 0.9.2 abgeschlossen; Milestone 0.9.3 geplant
+**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; Milestone 0.9.3 (Filter-Haertung + MySQL-Sequence-Generator) und 0.9.4 (MySQL-Sequence Reverse/Compare) geplant
