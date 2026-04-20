@@ -128,6 +128,23 @@ SELECT "next_value" FROM "dmg_sequences" WHERE "name" = 'invoice_seq';
 UPDATE "dmg_sequences" SET "next_value" = 42 WHERE "name" = 'invoice_seq';
 ```
 
+Transaktionsvertrag fuer manuelle Zugriffe:
+
+- manuelle `SELECT`/`UPDATE`-Operationen auf `dmg_sequences` sind
+  **kein stabiles API** im Sinne einer Stored Function, sondern eine
+  dokumentierte **Advanced Operation**
+- ein manuelles `UPDATE` auf `next_value` waehrend einer laufenden
+  Transaktion, die auch Trigger-basierte INSERTs ausfuehrt, kann zu
+  inkonsistenten Sequence-Werten fuehren, da der Trigger denselben
+  `next_value` liest und schreibt
+- manuelle Updates sollten deshalb nur in dedizierten Transaktionen
+  ohne gleichzeitige INSERTs auf sequence-basierte Tabellen erfolgen
+- SQLite's Single-Writer-Modell verhindert zwar parallele
+  Schreibzugriffe, aber innerhalb **einer** Transaktion koennen
+  Trigger-Writes und manuelle Writes interferieren
+- diese Einschraenkung wird in der Nutzerdokumentation als
+  Vorbedingung dokumentiert, nicht als Warning-Code
+
 Vorgeschlagenes Tabellenschema:
 
 ```sql
@@ -233,9 +250,117 @@ Deshalb wird verbindlich dokumentiert:
   implementiert; SQLite ist ein Embedded-DBMS mit Single-Writer und
   profitiert nicht von Connection-lokalem Caching
 
-Vorgeschlagener kanonischer Trigger-Body:
+Illustrativer Ablauf (Pseudocode):
+
+Der folgende Block beschreibt die **logische Abfolge** der
+Trigger-Operationen. Er ist **kein ausfuehrbares SQL** — insbesondere
+existiert keine SQLite-Funktion zum direkten Setzen von `NEW.<column>`
+in einem `BEFORE INSERT`-Trigger. Die tatsaechliche Zuweisungsstrategie
+ist eine offene Entscheidung fuer Phase A (siehe unten).
+
+```
+-- Pseudocode: Logischer Ablauf eines Sequence-Support-Triggers
+--
+-- Schritt 1: Aktuellen Wert merken (= Rueckgabewert)
+--   returned_value := next_value           -- aus dmg_sequences
+--
+-- Schritt 2: next_value inkrementieren
+--   next_value := next_value + increment_by
+--
+-- Schritt 3: Grenzpruefung (NACH Inkrement, auf den NEUEN next_value)
+--   IF increment_by > 0
+--      AND next_value > COALESCE(max_value, MAX_INT):
+--     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
+--     ELSE: next_value := COALESCE(min_value, 1)
+--   IF increment_by < 0
+--      AND next_value < COALESCE(min_value, MIN_INT):
+--     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
+--     ELSE: next_value := COALESCE(max_value, MAX_INT)
+--
+-- Schritt 4: returned_value in NEW.<column> einsetzen
+--   NEW.<column> := returned_value         -- NICHT direkt moeglich (s.u.)
+```
+
+Hinweis zur Zyklus-Logik: Die Grenzpruefung muss auf den **neuen**
+`next_value` (nach Inkrement) erfolgen, nicht auf den zurueckgegebenen
+Wert. Der zurueckgegebene Wert (`returned_value`) ist immer der Wert
+**vor** dem Inkrement und wird durch einen Cycle-Reset nicht veraendert.
+Der Reset setzt nur `next_value` zurueck, damit der **naechste** Aufruf
+vom Zyklusanfang startet.
+
+**Zentrale Limitation: NEW-Zuweisung in SQLite-Triggern**
+
+SQLite-Trigger koennen `NEW.<column>` nicht direkt per `SET` zuweisen
+wie MySQL (`SET NEW.col = expr`). Es gibt in SQLite **keine**
+eingebaute Funktion, die das ermoeglicht. Die Zuweisung muss
+stattdessen ueber eine der folgenden Strategien erfolgen:
+
+- **Strategie A — Zwei-Trigger (BEFORE + AFTER INSERT)**:
+  Ein `BEFORE INSERT`-Trigger reserviert den naechsten Wert in
+  `dmg_sequences` (atomares `UPDATE`). Ein `AFTER INSERT`-Trigger
+  schreibt den reservierten Wert per
+  `UPDATE ... WHERE ROWID = NEW.ROWID` in die eingefuegte Zeile.
+  Vorteile: transparent, kein Applikationscode noetig.
+  Nachteile: erfordert `ROWID`-Zugriff; **bricht bei
+  `WITHOUT ROWID`-Tabellen** (siehe R5 und offene Fragen unten).
+  Phase A muss entscheiden, ob `WITHOUT ROWID`-Tabellen mit
+  sequence-basierten Spalten als Einschraenkung abgelehnt werden
+  (`action_required` oder Fehler) oder ob der `AFTER INSERT`-Trigger
+  alternativ ueber den PK der Tabelle adressiert.
+
+- **Strategie B — Nur Tabelle + dokumentierte INSERT-Syntax (App-Level)**:
+  Kein automatischer Trigger. Die Anwendung holt den naechsten Wert
+  selbst aus `dmg_sequences` und setzt ihn explizit im `INSERT` ein.
+  Ein optionaler `BEFORE INSERT`-Trigger blockiert per `RAISE(ABORT)`
+  wenn `NEW.<column> IS NULL`, um fehlende Werte frueh abzufangen.
+  Vorteile: zuverlaessigste Strategie, kein `ROWID`-Problem,
+  kompatibel mit allen Tabellentypen.
+  Nachteile: weniger transparent; die Sequence-Vergabe ist nicht
+  automatisch, sondern erfordert Applikationslogik.
+
+- **Strategie C — BEFORE INSERT mit RETURNING-basiertem Subselect**:
+  Seit SQLite 3.35.0 (2021-03-12) unterstuetzt `UPDATE ... RETURNING`.
+  Ein BEFORE INSERT-Trigger koennte theoretisch den Wert in einem
+  einzigen Statement reservieren und zurueckgeben. Problem: auch mit
+  RETURNING kann der Rueckgabewert nicht direkt in `NEW.<column>`
+  geschrieben werden; RETURNING ist primaer fuer die aufrufende
+  Applikation, nicht fuer Trigger-interne Logik.
+
+Phase A muss die endgueltige Zuweisungsstrategie festlegen. Die
+zentrale Herausforderung ist die `NEW.<column>`-Zuweisung, die in
+SQLite-Triggern nicht direkt moeglich ist — es gibt keine eingebaute
+Funktion oder Syntax dafuer.
+
+Realistischer Ansatz fuer Phase A:
+
+Die wahrscheinlichste Produktstrategie ist entweder:
+
+- **Strategie A** (Zwei-Trigger) fuer Tabellen mit `ROWID`
+  (= Standard), mit explizitem Ausschluss von `WITHOUT ROWID`-Tabellen
+- **Strategie B** (App-Level) als sicherster Fallback, der auf allen
+  Tabellentypen funktioniert
+
+Beispiel fuer Strategie B (ausfuehrbares SQL):
 
 ```sql
+-- Anwendung holt naechsten Wert und fuehrt INSERT in einer Transaktion aus:
+BEGIN;
+UPDATE "dmg_sequences"
+    SET "next_value" = "next_value" + "increment_by"
+    WHERE "name" = 'order_number_seq';
+INSERT INTO "orders" ("order_number", ...)
+VALUES (
+    (SELECT "next_value" - "increment_by" FROM "dmg_sequences"
+     WHERE "name" = 'order_number_seq'),
+    ...
+);
+COMMIT;
+```
+
+Beispiel fuer Strategie A (ausfuehrbares SQL):
+
+```sql
+-- BEFORE INSERT: reserviert den Wert
 CREATE TRIGGER "dmg_seq_orders_order_num_a1b2c3d4e5_bi"
 BEFORE INSERT ON "orders"
 FOR EACH ROW
@@ -245,93 +370,30 @@ BEGIN
     UPDATE "dmg_sequences"
         SET "next_value" = "next_value" + "increment_by"
         WHERE "name" = 'order_number_seq';
-    SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
-        WHERE (
-            SELECT CASE
-                WHEN (SELECT "increment_by" FROM "dmg_sequences" WHERE "name" = 'order_number_seq') > 0
-                    AND (SELECT "next_value" - "increment_by" FROM "dmg_sequences" WHERE "name" = 'order_number_seq')
-                        > COALESCE((SELECT "max_value" FROM "dmg_sequences" WHERE "name" = 'order_number_seq'), 9223372036854775807)
-                THEN 1
-                WHEN (SELECT "increment_by" FROM "dmg_sequences" WHERE "name" = 'order_number_seq') < 0
-                    AND (SELECT "next_value" - "increment_by" FROM "dmg_sequences" WHERE "name" = 'order_number_seq')
-                        < COALESCE((SELECT "min_value" FROM "dmg_sequences" WHERE "name" = 'order_number_seq'), -9223372036854775808)
-                THEN 1
-                ELSE 0
-            END
-        ) = 1
-        AND (SELECT "cycle_enabled" FROM "dmg_sequences" WHERE "name" = 'order_number_seq') = 0;
-    UPDATE "dmg_sequences"
-        SET "next_value" = CASE
-            WHEN "increment_by" > 0
-                AND "next_value" - "increment_by"
-                    > COALESCE("max_value", 9223372036854775807)
-                THEN COALESCE("min_value", 1)
-            WHEN "increment_by" < 0
-                AND "next_value" - "increment_by"
-                    < COALESCE("min_value", -9223372036854775808)
-                THEN COALESCE("max_value", 9223372036854775807)
-            ELSE "next_value"
-        END
-        WHERE "name" = 'order_number_seq'
-        AND "cycle_enabled" = 1;
-    SELECT set_new_column_value(
-        (SELECT "next_value" - "increment_by" FROM "dmg_sequences" WHERE "name" = 'order_number_seq')
-    );
+END;
+
+-- AFTER INSERT: schreibt den reservierten Wert in die Zeile
+CREATE TRIGGER "dmg_seq_orders_order_num_a1b2c3d4e5_ai"
+AFTER INSERT ON "orders"
+FOR EACH ROW
+WHEN NEW."order_number" IS NULL
+BEGIN
+    /* d-migrate:sqlite-sequence-v1 object=sequence-trigger-post sequence=order_number_seq table=orders column=order_number */
+    UPDATE "orders"
+        SET "order_number" = (
+            SELECT "next_value" - "increment_by"
+            FROM "dmg_sequences"
+            WHERE "name" = 'order_number_seq'
+        )
+        WHERE ROWID = NEW.ROWID;
 END;
 ```
 
-**Wichtig: Limitation bei NEW-Zuweisung in SQLite-Triggern**
-
-SQLite-Trigger koennen `NEW.<column>` nicht direkt per `SET` zuweisen
-wie MySQL. Die Zuweisung muss stattdessen ueber eine der folgenden
-Strategien erfolgen:
-
-- **Strategie A — Zweistufe (INSERT + UPDATE)**:
-  Der Trigger laesst den `INSERT` mit `NULL` durch und fuehrt danach
-  ein `AFTER INSERT`-`UPDATE` auf die Zeile aus. Problem: erfordert
-  einen stabilen Zeilenidentifier (ROWID) und ist fehleranfaellig bei
-  Tabellen ohne ROWID.
-
-- **Strategie B — SELECT RAISE + App-Level Rewrite**:
-  Der Trigger verifiziert nur, dass ein Wert vorhanden ist, und
-  blockiert per `RAISE(ABORT)` wenn nicht. Die Anwendung muss den
-  naechsten Wert selbst aus `dmg_sequences` holen und im INSERT
-  mitgeben. Das ist zuverlaessiger, aber weniger transparent.
-
-- **Strategie C — BEFORE INSERT mit Compound SELECT**:
-  Seit SQLite 3.35.0 (2021-03-12) koennen `RETURNING`-Klauseln
-  verwendet werden. Aeltere Versionen erfordern einen Workaround.
-
-Phase A muss die endgueltige Zuweisungsstrategie festlegen. Der
-obige Trigger-Body ist deshalb **illustrativ**, nicht final. Die
-zentrale Herausforderung ist die `NEW.<column>`-Zuweisung, die in
-SQLite-Triggern nicht direkt moeglich ist.
-
-Realistischer Ansatz fuer Phase A:
-
-Da SQLite-Trigger `NEW.<column>` nicht direkt zuweisen koennen, ist
-die wahrscheinlichste Produktstrategie ein **Zwei-Trigger-Ansatz**:
-
-1. Ein `BEFORE INSERT`-Trigger, der den naechsten Wert in
-   `dmg_sequences` reserviert (atomares `UPDATE`)
-2. Ein `AFTER INSERT`-Trigger, der die eingefuegte Zeile per
-   `UPDATE ... WHERE ROWID = NEW.ROWID` mit dem reservierten Wert
-   aktualisiert
-
-Alternativ: **Nur Tabelle + dokumentierte INSERT-Syntax**, bei der
-die Anwendung den Wert selbst einsetzt:
-
-```sql
-INSERT INTO "orders" ("order_number", ...)
-VALUES (
-    (SELECT "next_value" FROM "dmg_sequences"
-     WHERE "name" = 'order_number_seq'),
-    ...
-);
--- gefolgt von:
-UPDATE "dmg_sequences" SET "next_value" = "next_value" + "increment_by"
-    WHERE "name" = 'order_number_seq';
-```
+Hinweis: Bei Strategie A ist die Grenzpruefung (Exhaustion, Cycle)
+im BEFORE INSERT-Trigger zu implementieren, **bevor** der INSERT
+durchlaeuft. Der obige Pseudocode-Ablauf (Schritte 1-3) bildet diese
+Reihenfolge ab. Die Zyklus-Logik muss zwischen dem UPDATE (Schritt 2)
+und dem Ende des BEFORE-Triggers liegen.
 
 ### 3.5 Sequenzsemantik
 
@@ -467,6 +529,24 @@ Praezisierung:
 - diese Abweichung ist bewusst dokumentiert und wird als lossy Mapping
   ueber `W115` ausgewiesen
 
+Wichtig: Interaktion mit DEFAULT-Constraints:
+
+- in SQLite fuellt der Engine die `DEFAULT`-Werte **bevor** ein
+  `BEFORE INSERT`-Trigger feuert
+- wenn eine Spalte sowohl `DEFAULT 42` als auch einen Sequence-Trigger
+  mit `WHEN NEW.<column> IS NULL` hat, greift der Trigger **nicht** bei
+  ausgelassenen Werten, weil `NEW.<column>` bereits den Default `42`
+  enthaelt
+- deshalb **duerfen** sequence-basierte Spalten im generierten DDL
+  **keinen** `DEFAULT`-Constraint haben (weder explizit noch ueber
+  `DefaultValue`); der Generator muss das sicherstellen
+- konkret: wenn eine Spalte `DefaultValue.SequenceNextVal(...)` traegt,
+  darf der SQLite-Generator keinen `DEFAULT`-Ausdruck an die Spalte
+  emittieren; der Trigger-Pfad ersetzt den Default vollstaendig
+- eine Spalte mit sowohl `DEFAULT` als auch `SequenceNextVal` im
+  neutralen Modell ist ein Validierungsfehler, der vor der Generierung
+  abgefangen wird
+
 Vorgeschlagene Reihenfolge:
 
 1. Header
@@ -478,12 +558,17 @@ Vorgeschlagene Reihenfolge:
 7. Views
 8. Nutzerdefinierte Trigger
 
-SQLite erlaubt nur einen Trigger pro (Event, Timing, Table, WHEN)-
-Kombination. Wenn zwei Sequences verschiedene Spalten derselben Tabelle
-bedienen, entsteht kein Konflikt, da die `WHEN`-Klausel unterschiedlich
-ist (`NEW.<col_a> IS NULL` vs. `NEW.<col_b> IS NULL`). Sollte dennoch
-ein Konflikt auftreten (z. B. zwei Sequences auf dieselbe Spalte), ist
-das ein Modellfehler, der vom Validator abgefangen wird.
+SQLite erlaubt mehrere Trigger mit gleichem Event und Timing auf
+derselben Tabelle, solange die Triggernamen verschieden sind. Die
+`WHEN`-Klausel spielt fuer die Eindeutigkeit keine Rolle — sie ist
+nur ein Ausfuehrungsfilter. Da jeder Sequence-Support-Trigger einen
+eindeutigen kanonischen Namen traegt (§3.3), koennen beliebig viele
+Sequences verschiedene Spalten derselben Tabelle bedienen, ohne dass
+es zu Namenskonflikten kommt.
+
+Wenn zwei Sequences auf **dieselbe** Spalte zeigen, ist das ein
+Modellfehler (zwei `DefaultValue.SequenceNextVal` auf einer Spalte),
+der vom Validator abgefangen wird.
 
 ### 5.2 Rollback
 
@@ -558,10 +643,32 @@ Wichtig:
 SQLite-spezifische Reader-Herausforderungen:
 
 - SQLite speichert das vollstaendige `CREATE TRIGGER`-Statement in
-  `sqlite_master.sql`; der Reader muss dieses parsen, um den
-  Marker-Kommentar und die Body-Form zu extrahieren
+  `sqlite_master.sql` (bzw. `sqlite_schema` ab SQLite 3.33.0); der
+  Reader muss dieses parsen, um den Marker-Kommentar und die Body-Form
+  zu extrahieren
 - da SQLite keine Routinen hat, ist der Reverse-Pfad einfacher als
   bei MySQL: nur Tabelle + Trigger muessen erkannt werden
+
+Reverse-Erkennungsstrategie und Fallback:
+
+- primaere Erkennung laeuft ueber den **Marker-Kommentar** im
+  Trigger-Body (erster Kommentar im `BEGIN...END`-Block)
+- der Marker enthaelt `d-migrate:sqlite-sequence-v1`, Objekttyp,
+  Sequence-Name, Tabelle und Spalte — das ist die autoritaive Quelle
+- **wenn der Marker-Kommentar fehlt oder nicht parsbar ist**, wird
+  der Trigger **nicht** als d-migrate-Supportobjekt erkannt, auch
+  wenn sein Name dem kanonischen Schema entspricht
+- es gibt bewusst **keinen** strukturellen Fallback (z. B. Analyse
+  des Trigger-Bodys auf `dmg_sequences`-Zugriffe ohne Marker), da
+  das zu False Positives bei aehnlich aussehenden, aber manuell
+  erstellten Triggern fuehren wuerde
+- Konsequenz: wenn ein Nutzer den Marker-Kommentar aus einem
+  generierten Trigger entfernt, verliert Reverse die Zuordnung zu
+  der Sequence; die `dmg_sequences`-Zeile wird weiterhin erkannt,
+  aber die Spaltenzuordnung fehlt, und der Trigger taucht als
+  normaler nutzerdefinierter Trigger im neutralen Schema auf
+- dieses Verhalten ist gewollt und wird als Stabilitaetsgarantie
+  dokumentiert: keine Heuristik, kein "fuzzy" Matching
 
 ### 6.2 Compare
 
@@ -583,10 +690,15 @@ Trotzdem zu pruefen:
 
 - Zuweisungsstrategie fuer `NEW.<column>` in SQLite-Triggern
   endgueltig festlegen (Zwei-Trigger, App-Level, oder alternative
-  Loesung)
+  Loesung) — mit Prototyp gegen echte SQLite-DB validieren
+- `WITHOUT ROWID`-Tabellen: Verhalten bei Strategie A festlegen
+  (Ablehnung mit `action_required`/Fehler, oder Adressierung ueber PK
+  statt ROWID)
 - minimale SQLite-Version fuer `helper_table`-Modus festlegen
 - kanonisches Hilfsobjekt-Layout finalisieren (Trigger-Body-Form
   haengt von der Zuweisungsstrategie ab)
+- DEFAULT-Constraint-Interaktion: Validierungsregel festlegen, dass
+  `SequenceNextVal`-Spalten keinen `DEFAULT` tragen duerfen
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W117`, ggf. `W118`)
@@ -594,6 +706,8 @@ Trotzdem zu pruefen:
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
 - SQLite `RAISE(ABORT, ...)` als Fehlerpfad validieren
+- Transaktionsvertrag fuer manuelle `dmg_sequences`-Zugriffe
+  dokumentieren (Advanced Operation, kein stabiles API)
 
 ### Phase B — Generator und Optionen
 
@@ -796,12 +910,16 @@ Vor dem ersten Code:
 
 1. Zuweisungsstrategie fuer `NEW.<column>` in SQLite-Triggern
    festlegen und prototypisch validieren
-2. Minimale SQLite-Version festlegen (z. B. 3.35.0 fuer RETURNING)
-3. Abhaengigkeit zum MySQL-Plan klaeren: wird
+2. `WITHOUT ROWID`-Verhalten bei Strategie A entscheiden
+3. DEFAULT-Constraint-Ausschluss fuer `SequenceNextVal`-Spalten als
+   Validierungsregel festlegen
+4. Minimale SQLite-Version festlegen (z. B. 3.35.0 fuer RETURNING)
+5. Abhaengigkeit zum MySQL-Plan klaeren: wird
    `DefaultValue.SequenceNextVal` gemeinsam oder getrennt implementiert?
-4. Kanonisches SQLite-Objektlayout und Trigger-Body-Form festlegen
-5. `cache`-Warnung (`W114`) fuer SQLite bestaetigen
-6. SQLite-spezifischen Warning-Code `W118` entscheiden
+6. Kanonisches SQLite-Objektlayout und Trigger-Body-Form festlegen
+7. `cache`-Warnung (`W114`) fuer SQLite bestaetigen
+8. SQLite-spezifischen Warning-Code `W118` entscheiden
+9. Transaktionsvertrag fuer manuelle `dmg_sequences`-Zugriffe festlegen
 
 Erst danach sollte die eigentliche Implementierung beginnen. Die
 zentrale Unsicherheit liegt in der `NEW.<column>`-Zuweisungsstrategie —
