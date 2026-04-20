@@ -254,10 +254,11 @@ Loesung: Der Validator faengt diese Form als E122 ab (siehe §4.5).
 
 Verbindliche Reihenfolge:
 
-1. `SchemaNodeParser` erkennt alle drei Formen — erzeugt entweder
-   `SequenceNextVal` (fuer `sequence_nextval`-Map) oder
-   `FunctionCall` (fuer Legacy-Text/Map) oder Parse-Fehler (fuer
-   unbekannte Map-Schluessel)
+1. `SchemaNodeParser` erkennt alle drei Formen:
+   - `sequence_nextval`-Map → `SequenceNextVal`
+   - Legacy-Text `nextval(...)` → `FunctionCall` (fuer Validator-E122)
+   - Map mit Schluessel `nextval` → Parse-Fehler mit Migrationshinweis
+   - Map mit anderem unbekanntem Schluessel → generischer Parse-Fehler
 2. `SchemaValidator` ist der zentrale, nutzernahe harte Abbruchpunkt
    fuer `FunctionCall("nextval(...)")` mit konsistenter
    Migrationsfehlermeldung (E122)
@@ -340,6 +341,15 @@ uebernehmen:
 behandelt `SequenceNextVal` ausschliesslich als Typ-Kompatibilitaets-
 Pruefung (numerische/identifier-aehnliche Spalten).
 
+Verhalten bei Mehrfachfehlern: Beide Methoden laufen unabhaengig.
+Fuer eine Spalte mit `SequenceNextVal("nonexistent")` auf einer
+`Text`-Spalte koennen gleichzeitig E009 (Typ-Inkompatibilitaet) und
+E123 (fehlende Sequence) feuern. Das ist gewollt — der Validator
+akkumuliert bewusst alle Fehler, damit der Nutzer alle Probleme in
+einem Lauf sieht, statt sie einzeln nacheinander zu entdecken.
+Dieses Verhalten ist konsistent mit der bestehenden Akkumulation
+(z.B. E005 + E009 fuer dieselbe Spalte).
+
 ### 4.7 Entfernung des Catch-All-Fallbacks im Parser
 
 Der aktuelle Catch-All in `SchemaNodeParser.parseDefault()`
@@ -376,11 +386,22 @@ Verbindliche Folge:
 
 Verbindliche Folge:
 
-- PostgreSQL kennt fuer `SequenceNextVal` einen nativen Pfad
-- MySQL/SQLite duerfen `SequenceNextVal` nicht still als freie Funktion
-  behandeln
-- Dialektpfade muessen diesen Fall explizit kennen, auch wenn die
-  eigentliche MySQL-Supportlogik erst in 6.4 folgt
+- PostgreSQL kennt fuer `SequenceNextVal` einen nativen Pfad:
+  - `PostgresTypeMapper.toDefaultSql(SequenceNextVal("foo"), ...)` →
+    `"nextval('foo')"`
+  - das ist nativer PostgreSQL-SQL und braucht keine Emulation
+- MySQL und SQLite haben in 6.3 noch keinen fachlichen Pfad fuer
+  `SequenceNextVal` (der folgt in 6.4 fuer MySQL). Die TypeMapper
+  muessen den neuen Zweig trotzdem exhaustiv behandeln:
+  - `MysqlTypeMapper.toDefaultSql(SequenceNextVal(...), ...)` →
+    `error("SequenceNextVal requires helper_table mode (not yet implemented)")`
+  - `SqliteTypeMapper.toDefaultSql(SequenceNextVal(...), ...)` →
+    `error("SequenceNextVal is not supported for SQLite")`
+  - diese Zweige sind defensive Guards, die in der Praxis nicht
+    erreicht werden sollen — der Validator und/oder Generator sollen
+    vorher abfangen (E056 / action_required)
+- der Mock-TypeMapper in `AbstractDdlGeneratorTest` muss ebenfalls
+  einen Zweig fuer `SequenceNextVal` erhalten
 
 ---
 
@@ -481,11 +502,15 @@ Compare:
 
 Dialektpfade:
 
-- `PostgresTypeMapper` bzw. der PostgreSQL-Dialektpfad kennt den
-  nativen Sequence-Fall fachlich
-- `MysqlTypeMapper` und `SqliteTypeMapper` duerfen
-  `SequenceNextVal` nicht still als freie Funktion oder String
-  behandeln
+- `PostgresTypeMapper.toDefaultSql()` liefert fuer `SequenceNextVal`
+  den nativen SQL-Ausdruck `nextval('<sequenceName>')`
+- `MysqlTypeMapper.toDefaultSql()` und
+  `SqliteTypeMapper.toDefaultSql()` enthalten in 6.3 einen defensiven
+  `error("...")`-Guard, der nicht erreicht werden soll (der Generator
+  fuer MySQL/SQLite faengt `SequenceNextVal` ueber den bestehenden
+  E056/action_required-Pfad vorher ab)
+- der Mock-TypeMapper in `AbstractDdlGeneratorTest` (Zeile 721-726)
+  bekommt ebenfalls einen Zweig
 - falls der steady-state Pfad den Fall spaeter in
   `AbstractDdlGenerator.columnSql()` abfaengt, bleiben die TypeMapper-
   Stellen trotzdem Teil des Audits und muessen defensiv konsistent sein
@@ -498,7 +523,17 @@ Dialektpfade:
 
 - `SequenceNextVal(sequenceName: String)` einfuehren
 - alle exhaustiven `when (default)`-/`when (dv)`-Stellen kompilierbar
-  nachziehen
+  nachziehen — vollstaendige Checkliste:
+
+  | Datei | Zeile | Funktion |
+  |-------|-------|----------|
+  | `SchemaValidator.kt` | 308 | `isDefaultCompatible()` |
+  | `SchemaNodeBuilder.kt` | 179 | `buildDefault()` |
+  | `SchemaCompareHelpers.kt` | 41 | `defaultValueToString()` |
+  | `PostgresTypeMapper.kt` | 41 | `toDefaultSql()` |
+  | `MysqlTypeMapper.kt` | 36 | `toDefaultSql()` |
+  | `SqliteTypeMapper.kt` | 33 | `toDefaultSql()` |
+  | `AbstractDdlGeneratorTest.kt` | 721 | Mock `toDefaultSql()` |
 
 ### 6.2 Schema-Codecs nachziehen
 
@@ -651,8 +686,16 @@ Voraussichtlich testseitig betroffen:
   — E122, E123, SequenceNextVal-Kompatibilitaet
 - `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/YamlSchemaCodecTest.kt`
   — Round-Trip, Legacy-Erkennung, Catch-All-Entfernung
-- Compare-/Golden-Master-nahe Tests fuer Default-Darstellung
-- Dialekt-/TypeMapper-nahe Tests fuer defensive Behandlung
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaCompareHelpersTest.kt`
+  — `defaultValueToString` fuer `SequenceNextVal`
+- `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlTypeMapperTest.kt`
+  — defensiver Guard-Test
+- `adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTypeMapperTest.kt`
+  — nativer `nextval('...')`-Test
+- `adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapperTest.kt`
+  — defensiver Guard-Test
+- `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/AbstractDdlGeneratorTest.kt`
+  — Mock-TypeMapper `toDefaultSql` Exhaustivitaet
 - `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/CodeLedgerValidationTest.kt`
   — E122/E123 muessen im 0.9.3-Ledger validiert werden
 
