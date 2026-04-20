@@ -127,7 +127,14 @@ abfragen) wird stattdessen ein dokumentierter SQL-Befehl bereitgestellt:
 SELECT "next_value" FROM "dmg_sequences" WHERE "name" = 'invoice_seq';
 
 -- Wert manuell setzen (dmg_setval-Aequivalent):
-UPDATE "dmg_sequences" SET "next_value" = 42 WHERE "name" = 'invoice_seq';
+-- Wichtig: exhausted und last_returned_value muessen ebenfalls
+-- zurueckgesetzt werden, damit die Sequence wieder funktioniert
+-- (insbesondere nach Erschoepfung bei cycle_enabled = 0).
+UPDATE "dmg_sequences"
+    SET "next_value" = 42,
+        "exhausted" = 0,
+        "last_returned_value" = NULL
+    WHERE "name" = 'invoice_seq';
 ```
 
 Transaktionsvertrag fuer manuelle Zugriffe:
@@ -616,6 +623,38 @@ Verhalten im Detail:
 Ausnahme: Spalten mit `NeutralType.Identifier` (AUTOINCREMENT) sind
 nicht betroffen — diese nutzen SQLite's nativen Mechanismus und
 brauchen keinen Trigger.
+
+**Weitere Constraint-Einschraenkungen bei Zwei-Trigger-Strategie**
+
+Da die Zeile zwischen INSERT und `_ai`-UPDATE den Wert `NULL` in der
+sequence-basierten Spalte traegt, koennen auch andere Constraints
+als `NOT NULL` mit dem Zwischenzustand kollidieren:
+
+- **CHECK-Constraints** auf der Spalte (z. B. `CHECK(order_number > 0)`)
+  werden beim INSERT ausgewertet, wenn die Spalte noch `NULL` ist;
+  `NULL` in einem CHECK-Ausdruck evaluiert zu `UNKNOWN`, was in
+  SQLite als "nicht verletzt" gilt — daher ist das in der Regel
+  kein Problem
+- **CHECK-Constraints, die NULL explizit ablehnen**
+  (z. B. `CHECK(order_number IS NOT NULL)`) scheitern beim INSERT
+  vor dem `_ai`-UPDATE — identisches Problem wie bei `NOT NULL`
+- **UNIQUE-Constraints** auf der Spalte: mehrere NULL-Werte sind in
+  SQLite bei UNIQUE erlaubt (NULL != NULL), daher kein Problem beim
+  INSERT; der `_ai`-UPDATE setzt den endgueltigen Wert
+- **FOREIGN KEY-Constraints** auf der Spalte: FK-Pruefung erfolgt
+  in SQLite standardmaessig am Statement-Ende (nach allen Triggern),
+  nicht zwischen den Triggern; daher kein Problem
+
+Validierungsregel:
+
+- der Generator prueft vor der DDL-Erzeugung, ob CHECK-Constraints
+  auf sequence-basierten Spalten `NULL` explizit ablehnen (z. B.
+  `IS NOT NULL`-Bedingung im CHECK); wenn ja, wird der CHECK analog
+  zu NOT NULL unterdrueckt und als lossy Mapping gemeldet
+- CHECK-Constraints, die `NULL` implizit tolerieren (Standard in
+  SQLite), werden normal emittiert — sie greifen erst nach dem
+  `_ai`-UPDATE, wenn ein nutzerdefinierter Trigger oder eine
+  spätere Aenderung den Wert veraendert
 
 **PRIMARY KEY-Einschraenkung bei Zwei-Trigger-Strategie**
 
@@ -1112,6 +1151,25 @@ Abhaengigkeitspruefung im Detail:
   Indizes auf `dmg_sequences` (unwahrscheinlich, aber moeglich)
 - in SQLite ist diese Pruefung statisch moeglich, weil alle
   DDL-Definitionen in `sqlite_schema.sql` als Text vorliegen
+
+Scope der Abhaengigkeitspruefung:
+
+- der Scan durchsucht **nur** das `sqlite_schema` der Haupt-
+  Datenbank (`main`); Objekte in per `ATTACH` angebundenen
+  Datenbanken oder in `temp`-Schemas werden **nicht** geprueft
+- Begruendung: `dmg_sequences` wird im `main`-Schema erzeugt;
+  Cross-Database-Trigger (die auf `main.dmg_sequences` zugreifen)
+  sind in SQLite zwar syntaktisch moeglich, aber selten und
+  fehleranfaellig; eine vollstaendige Pruefung aller ATTACHed DBs
+  wuerde `PRAGMA database_list` + Iteration ueber alle Schemas
+  erfordern und ist fuer Phase 1 unverhältnismaessig
+- diese Einschraenkung wird explizit als **bekannte Limitierung**
+  dokumentiert: "Die Rollback-Abhaengigkeitspruefung erkennt nur
+  Verweise aus dem `main`-Schema. Objekte in per ATTACH angebundenen
+  Datenbanken oder im `temp`-Schema, die auf `dmg_sequences`
+  zugreifen, werden nicht erkannt und koennen nach dem Rollback
+  inkonsistent werden."
+- eine spaetere Ausbaustufe kann den Scan auf alle Schemas erweitern
 
 Normalisierung und Matching-Strategie:
 
