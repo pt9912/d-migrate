@@ -11,7 +11,7 @@
 
 ## Was ist d-migrate?
 
-d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmalig in einem neutralen, datenbankunabhängigen Format (YAML) definierst und anschließend für mehrere Zielsysteme validierst, vergleichst und DDL erzeugst. Damit entfallen getrennte Migrationsskripte pro Datenbankengine.
+d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migration und Datenmanagement. Du definierst dein Schema einmalig in einem neutralen Format (YAML) und kannst es für PostgreSQL, MySQL und SQLite validieren, vergleichen und als DDL generieren. Darüber hinaus unterstützt d-migrate Reverse-Engineering bestehender Datenbanken, streaming-basierten Datenexport/-import/-transfer zwischen Datenbanken sowie die Integration in bestehende Migrations-Toolchains (Flyway, Liquibase, Django, Knex).
 
 **Aktuelle Fähigkeiten:**
 - Phasenbezogene DDL-Ausgabe mit `--split pre-post` fuer importfreundliche Schema-Artefakte (pre-data/post-data)
