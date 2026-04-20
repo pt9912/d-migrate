@@ -820,8 +820,6 @@ Ergebnis:
 
 - der CLI-Filterpfad ist fuer Nutzerwerte sicher und parameterisiert
 - Resume-Fingerprints bleiben innerhalb der DSL stabil
-- fruehere Raw-SQL-Faelle werden klar abgewiesen statt implizit
-  vertraut
 
 ### 6.2 Sequence Phase A1: Vertrag, Enum und Code-Ledger festziehen
 
