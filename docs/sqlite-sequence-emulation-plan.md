@@ -258,6 +258,10 @@ Identifier-Encoding in Marker-Kommentaren:
   normalisiert; das Encoding ist eine Absicherung fuer Edge Cases,
   nicht der Normalfall
 - der Reverse-Parser dekodiert Percent-Encoding beim Lesen
+- **vollstaendige Zeichensatz-Regel**: alle Zeichen ausserhalb von
+  `[a-zA-Z0-9_.-]` und UTF-8-Buchstaben (Unicode-Kategorie L)
+  werden percent-encoded; damit ist das Encoding-Schema geschlossen
+  und nicht auf eine kleine Beispielliste beschraenkt
 - Begründung: SQL-Kommentare koennen durch `*/` vorzeitig beendet
   werden und durch `=` die Key-Value-Struktur brechen; Percent-
   Encoding ist eindeutig, umkehrbar und benoetigt keinen
@@ -595,21 +599,34 @@ Vertrag:
 
 W122-Schweregrad mit statischer Analyse:
 
-Der Generator prueft, ob UPDATE-Trigger auf der Zieltabelle existieren:
+Der Generator prueft, ob UPDATE-Trigger auf der Zieltabelle existieren,
+die durch das `_ai`-UPDATE tatsaechlich feuern **koennten**:
 
 - **kein UPDATE-Trigger auf der Zieltabelle vorhanden**: kein W122
-- **UPDATE-Trigger vorhanden**: W122 wird als `NoteType.WARNING`
-  emittiert — **immer**, unabhaengig vom Body-Inhalt und unabhaengig
-  vom aktuellen `recursive_triggers`-Setting
+- **UPDATE-Trigger mit `UPDATE OF collist`**: W122 wird nur emittiert
+  wenn `collist` die sequence-basierte Spalte enthaelt; wenn der
+  Trigger nur auf andere Spalten reagiert, wird er **nicht** als
+  betroffen eingestuft (da das `_ai`-UPDATE nur die Sequence-Spalte
+  setzt)
+- **UPDATE-Trigger mit `WHEN`-Bedingung**: W122 wird emittiert, da
+  die WHEN-Bedingung zur Generierungszeit nicht statisch auswertbar
+  ist (sie kann von Laufzeitwerten abhaengen)
+- **UPDATE-Trigger ohne `OF`-Einschraenkung**: W122 wird immer
+  emittiert (der Trigger feuert bei jedem UPDATE auf der Tabelle)
+- Schweregrad: immer `NoteType.WARNING` wenn die obigen Kriterien
+  zutreffen
 
-Begruendung fuer die konservative Strategie:
+Begruendung:
 
 - der Generator kann das aktuelle `recursive_triggers`-Setting nicht
   zuverlaessig abfragen (es kann sich zwischen Generierung und
   Laufzeit aendern)
-- eine Body-Analyse kann indirekte Rekursionspfade nicht erkennen
-- deshalb: eine einzige, klare Schweregrad-Stufe (WARNING) statt
-  einer adaptiven INFO/WARNING-Abstufung, die zu Verwirrung fuehrt
+- die `UPDATE OF`-Pruefung reduziert False Positives erheblich,
+  da viele UPDATE-Trigger nur auf nicht-sequence-relevante Spalten
+  reagieren (z. B. `UPDATE OF "status"` auf einer Tabelle mit
+  Sequence-Spalte `"order_number"`)
+- WHEN-Bedingungen werden konservativ behandelt (immer WARNING),
+  da ihre Auswertung Laufzeitdaten erfordert
 
 Der Report-Text erklaert dem Nutzer den Kontext:
 
@@ -755,8 +772,14 @@ Verhalten bei Generierung:
      `-- ⚠ E057: Column <col> requires application-level sequencing (WITHOUT ROWID)`
 - der Hint weist explizit darauf hin:
   "Use action_required mode or application-level sequencing."
-  Damit ist unmissverstaendlich, dass das generierte Schema
-  ohne manuellen Eingriff nicht vollstaendig nutzbar ist
+- **Exit-Code-Verhalten**: wenn mindestens ein `E057` emittiert
+  wurde, endet `schema generate` weiterhin mit Exit-Code 0 (DDL
+  wurde erzeugt), aber das JSON-Output enthaelt ein Top-Level-Feld
+  `has_action_required: true`, und der stderr-Output zeigt eine
+  prominente Zusammenfassung:
+  `⚠ Schema generated with action-required items — not directly usable without manual intervention`
+- dadurch kann kein automatisierter Workflow ein Schema mit E057
+  versehentlich als vollstaendig funktional uebernehmen
 
 Verhalten bei Reverse:
 
@@ -1381,16 +1404,23 @@ Scope der Abhaengigkeitspruefung:
 - mit dem CLI-Flag `--force-rollback` kann der Nutzer den Rollback
   trotz ATTACHed DBs erzwingen; in diesem Fall wird `W123`
   (WARNING) statt `E060` emittiert
-- Begruendung fuer die harte Blockierung: ein destructives
-  `DROP TABLE dmg_sequences` bei unbekannten Cross-Database-
-  Abhaengigkeiten kann Daten in angehängten Schemas korrumpieren;
-  das ist schlimmer als ein blockierter Rollback
-- diese Einschraenkung wird zusaetzlich in der Nutzerdokumentation
-  als **Precondition** formuliert: "Vor dem Rollback im
-  `helper_table`-Modus sicherstellen, dass keine per ATTACH
-  angebundenen Datenbanken auf `dmg_sequences` zugreifen.
-  `temp`-Objekte werden automatisch geprueft."
+Trade-off-Dokumentation:
+
+- **Warum blockieren statt scannen**: der Scan aller ATTACHed Schemas
+  wuerde `PRAGMA database_list` + Iteration + Token-Matching pro
+  Schema erfordern; die Komplexitaet ist fuer Phase 1 nicht
+  gerechtfertigt, da ATTACH-Nutzung in Verbindung mit d-migrate
+  ein seltener Anwendungsfall ist
+- **Risiko bei False Positives**: E060 kann einen sicheren Rollback
+  blockieren, wenn ATTACHed DBs vorhanden sind, aber keine davon
+  `dmg_sequences` referenziert; in diesem Fall ist `--force-rollback`
+  der korrekte Weg
+- **Risiko bei `--force-rollback`**: wenn eine ATTACHed DB doch
+  `dmg_sequences` referenziert, kann der DROP die Referenz brechen;
+  der Nutzer traegt hier die Verantwortung (explizites Opt-in)
+- **`temp`-Objekte**: werden automatisch gescannt (kein E060 noetig)
 - eine spaetere Ausbaustufe kann den Scan auf alle Schemas erweitern
+  und E060 durch einen differenzierten Scan ersetzen
 
 Normalisierung und Matching-Strategie:
 
