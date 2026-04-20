@@ -557,11 +557,30 @@ Vertrag:
   korrekt (der `_ai`-Trigger schreibt den Wert unabhaengig davon)
 - `W122` wird emittiert wenn die Zieltabelle nutzerdefinierte
   UPDATE-Trigger hat UND sequence-basierte Spalten im
-  `helper_table`-Modus verwendet; die Warnung weist darauf hin,
-  dass das Verhalten von `recursive_triggers` abhaengt
+  `helper_table`-Modus verwendet
+
+W122-Schweregrad-Abstufung:
+
+- **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
+  unterschied**. UPDATE-Trigger feuern nicht. Die einzige sichtbare
+  Abweichung ist, dass ein `updated_at`-Trigger oder aehnliches
+  nicht auf die Sequence-Zuweisung reagiert. Das ist in der Regel
+  gewuenscht. W122 ist hier rein informativ.
+- **`recursive_triggers = ON`**: **potenziell gefaehrlich**. UPDATE-
+  Trigger feuern und koennen:
+  - harmlos sein (z. B. `updated_at`-Trigger setzt Timestamp)
+  - problematisch sein (z. B. Audit-Trigger protokolliert die
+    Sequence-Zuweisung als Datenaenderung)
+  - **gefaehrlich sein** wenn ein UPDATE-Trigger seinerseits
+    Aenderungen auf `dmg_sequences` oder die Sequence-Spalte macht
+    → moegliche Endlosrekursion oder Datenkorruption
+  In diesem Fall sollte W122 vom Nutzer als **Pflichtpruefung**
+  behandelt werden, nicht als informative Notiz.
+
 - `W122`: AFTER INSERT sequence trigger performs UPDATE on the same
-  table; whether this cascades into existing UPDATE triggers depends
-  on PRAGMA recursive_triggers (OFF by default)
+  table; with recursive_triggers=OFF (default) this is harmless;
+  with recursive_triggers=ON, existing UPDATE triggers will fire
+  and may cause unintended side effects or recursion
 
 Integrationstests muessen diesen Fall fuer **beide** Pragma-Settings
 abdecken (§8.2).
@@ -907,11 +926,26 @@ INSERT INTO "orders" DEFAULT VALUES;
 --   c) INSERT ... ON CONFLICT ABORT/ROLLBACK/FAIL:
 --      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
 --      - Constraint-Pruefung erkennt Conflict
---      - Bei ABORT/FAIL: Statement wird abgebrochen, aber die
---        Trigger-Seiteneffekte (dmg_sequences-UPDATE) bleiben
---        innerhalb der aktuellen Transaktion bestehen
---      - Bei ROLLBACK: gesamte Transaktion wird zurueckgerollt,
---        inklusive Trigger-Seiteneffekte → kein Gap
+--
+--      ABORT (Default):
+--        Statement wird abgebrochen und alle Aenderungen des
+--        aktuellen Statements (inklusive Trigger-Seiteneffekte
+--        wie das dmg_sequences-UPDATE) werden zurueckgerollt.
+--        Die umgebende Transaktion bleibt intakt.
+--        → kein Gap (Sequence-Inkrement wird zurueckgerollt)
+--
+--      FAIL:
+--        Statement wird abgebrochen, aber bereits ausgefuehrte
+--        Aenderungen innerhalb desselben Statements bleiben
+--        bestehen. Bei einem einzelnen INSERT ist das Verhalten
+--        identisch zu ABORT. Bei einem Multi-Row INSERT (z. B.
+--        INSERT INTO ... SELECT) bleiben die Trigger-Seiteneffekte
+--        der bereits verarbeiteten Zeilen bestehen → Gap moeglich
+--        fuer die fehlgeschlagene Zeile.
+--
+--      ROLLBACK:
+--        Gesamte Transaktion wird zurueckgerollt, inklusive aller
+--        Trigger-Seiteneffekte → kein Gap
 --
 --   d) INSERT OR REPLACE:
 --      - BEFORE INSERT feuert → Sequence-Wert wird reserviert
@@ -946,17 +980,19 @@ Fall 5 (Konflikt-Gap) wird ueber `W121` als eigenes Warning-Signal
 gemeldet:
 
 - `W121`: Sequence values may be consumed without insertion when
-  conflict-handling INSERT forms are used on tables with sequence-
-  backed columns (ON CONFLICT DO UPDATE/DO NOTHING, INSERT OR
-  IGNORE, INSERT OR FAIL/ABORT); BEFORE INSERT trigger fires
-  before conflict detection
-- `W121` wird bei der Generierung an jede Tabelle gehaengt, die
-  sowohl sequence-basierte Spalten als auch UNIQUE/PK-Constraints
-  hat (da diese ON CONFLICT ausloesen koennen)
+  conflict-handling INSERT forms are used (ON CONFLICT DO UPDATE/
+  DO NOTHING, INSERT OR IGNORE, INSERT OR FAIL with multi-row);
+  ABORT and ROLLBACK roll back trigger side effects and do NOT
+  produce gaps
+- `W121` wird **nicht** pauschal bei jeder Tabelle mit UNIQUE/PK
+  emittiert, sondern nur als **informative Dokumentations-Note**
+  im Report aufgenommen — es ist ein potenzielles Laufzeitverhalten,
+  das vom tatsaechlichen INSERT-Muster der Anwendung abhaengt
+- der Generator haengt `W121` an die Sequence-Definition (nicht
+  an die Tabelle), da das Gap-Risiko eine Eigenschaft der
+  Emulationsstrategie ist, nicht einer spezifischen Tabelle
 - im Compare-Report macht `W121` sichtbar, dass die Emulation
-  bei Conflict-Handling Gaps erzeugen kann — ein Unterschied zu
-  nativen PostgreSQL-Sequences, die bei Conflict ebenfalls Gaps
-  erzeugen, aber ueber einen anderen Mechanismus
+  bei bestimmten Conflict-Handling-Formen Gaps erzeugen kann
 
 Vorgeschlagene Reihenfolge:
 
@@ -1096,7 +1132,11 @@ Normalisierung und Matching-Strategie:
   `dmg_sequences` wird als eigenstaendiger Identifier gesucht,
   nicht als beliebiger Substring; dadurch werden False Positives
   durch Identifier wie `my_dmg_sequences_backup` vermieden
-- konkret: der Scan erkennt `dmg_sequences` wenn es:
+- **vor dem Matching** werden String-Literale (`'...'`) und
+  SQL-Kommentare (`-- ...` und `/* ... */`) aus dem `sql`-Feld
+  entfernt/maskiert, um False Positives durch `dmg_sequences` in
+  Kommentartexten oder String-Konstanten zu vermeiden
+- auf dem bereinigten Text erkennt der Scan `dmg_sequences` wenn es:
   - von einem Quoting-Zeichen umschlossen ist (`"`, `[`/`]`, `` ` ``), oder
   - an einer Wort-Grenze steht (vorhergehendes Zeichen ist `.`,
     Whitespace oder Zeilenanfang; nachfolgendes Zeichen ist
