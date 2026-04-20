@@ -406,17 +406,22 @@ BEGIN
     -- Schritt 2: Rueckgabewert sichern + next_value inkrementieren (atomar).
     -- Bei cycle_enabled = 1 und Grenzueberschreitung: next_value wird
     -- direkt auf den Zyklusstartwert gesetzt statt normal inkrementiert.
+    -- Die CASE-Bedingungen verwenden dieselbe Subtraktionsformel wie
+    -- der Exhaustion-Check (next_value > max_value - increment_by),
+    -- um Integer-Overflow konsistent zu vermeiden.
     UPDATE "dmg_sequences"
         SET "last_returned_value" = "next_value",
             "next_value" = CASE
                 WHEN "increment_by" > 0
-                     AND "next_value" + "increment_by"
+                     AND "next_value"
                          > COALESCE("max_value", 9223372036854775807)
+                           - "increment_by"
                      AND "cycle_enabled" = 1
                 THEN COALESCE("min_value", 1)
                 WHEN "increment_by" < 0
-                     AND "next_value" + "increment_by"
+                     AND "next_value"
                          < COALESCE("min_value", -9223372036854775808)
+                           - "increment_by"
                      AND "cycle_enabled" = 1
                 THEN COALESCE("max_value", 9223372036854775807)
                 ELSE "next_value" + "increment_by"
@@ -821,14 +826,19 @@ Anders als bei MySQL gibt es keine Support-Routinen zum Droppen.
 
 Abhaengigkeitspruefung im Detail:
 
-- der Generator durchsucht die generierten (oder bei Reverse: die
-  erkannten) Trigger nach Verweisen auf `dmg_sequences`, die **nicht**
-  ueber einen kanonischen Marker als Sequence-Support identifiziert
-  wurden
+- der Scan durchsucht **alle** Objekte in `sqlite_schema` (Typ
+  `trigger`, `view`, `table`, `index`) nach Textverweisen auf
+  `dmg_sequences` im `sql`-Feld
+- Objekte, die ueber kanonischen Marker oder kanonischen Namen als
+  Sequence-Support identifiziert wurden, werden ausgenommen
+- alle verbleibenden Treffer gelten als fremde Abhaengigkeiten
+- typische Faelle: nutzerdefinierte Trigger, die `dmg_sequences`
+  lesen/schreiben; Views, die `dmg_sequences` referenzieren;
+  Indizes auf `dmg_sequences` (unwahrscheinlich, aber moeglich)
 - in SQLite ist diese Pruefung statisch moeglich, weil alle
-  Trigger-Bodys in `sqlite_schema` als SQL-Text vorliegen
+  DDL-Definitionen in `sqlite_schema.sql` als Text vorliegen
 - die Pruefung ist konservativ: im Zweifel wird `E058` emittiert
-- `E058`: Cannot drop dmg_sequences: non-managed triggers reference
+- `E058`: Cannot drop dmg_sequences: non-managed objects reference
   this table; remove external dependencies first
 
 ### 5.3 Warning-/Error-Semantik
@@ -856,7 +866,7 @@ Abhaengigkeitspruefung im Detail:
   - `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
     automatic trigger assignment (§3.7)
 - Rollback-Abhaengigkeitskonflikte:
-  - `E058`: Cannot drop dmg_sequences: non-managed triggers reference
+  - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
