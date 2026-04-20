@@ -417,6 +417,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 )
                 skipped += action.toSkipped()
                 statements += DdlStatement("", listOf(action.toNote()))
+                supportObjectsBlocked = true
                 // Skip support routines but still emit user functions
                 statements += routineHelper.generateFunctions(functions, skipped)
                 return statements

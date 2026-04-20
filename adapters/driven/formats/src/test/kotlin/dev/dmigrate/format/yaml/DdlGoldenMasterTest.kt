@@ -156,4 +156,26 @@ class DdlGoldenMasterTest : FunSpec({
             }
         }
     }
+
+    // ── MySQL helper_table Golden Master (AP 6.4) ──────────────
+
+    test("sequence-emulation mysql helper_table generates support objects") {
+        val input = loadFixture("schemas/sequence-emulation.yaml")
+        val generator = dev.dmigrate.driver.mysql.MysqlDdlGenerator()
+        val opts = dev.dmigrate.driver.DdlGenerationOptions(
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+        )
+        val result = generator.generate(input, opts)
+        val ddl = result.render()
+        // Verify key support objects are present
+        ddl shouldContain "CREATE TABLE `dmg_sequences`"
+        ddl shouldContain "CREATE FUNCTION `dmg_nextval`"
+        ddl shouldContain "CREATE FUNCTION `dmg_setval`"
+        ddl shouldContain "BEFORE INSERT ON `invoices`"
+        ddl shouldContain "INSERT INTO `dmg_sequences`"
+        ddl shouldContain "'invoice_seq'"
+    }
+
+    // Rollback test for helper_table mode is covered by the integration test
+    // (MysqlSequenceEmulationIntegrationTest) which validates against real MySQL.
 })

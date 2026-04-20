@@ -77,6 +77,13 @@ subprojects {
             maxHeapSize = integrationHeap
         }
     }
+
+    // Ensure koverVerify always runs after test and is never served from
+    // build cache — prevents stale coverage data from prior Gradle invocations.
+    tasks.matching { it.name == "koverVerify" || it.name == "koverCachedVerify" }.configureEach {
+        mustRunAfter(tasks.named("test"))
+        outputs.cacheIf { false }
+    }
 }
 
 dependencies {
