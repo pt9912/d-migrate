@@ -545,12 +545,18 @@ class FilterParseException(val parseError: FilterDslParseError) :
 
 /**
  * Parses a raw `--filter` CLI string into a [ParsedFilter].
- * Returns `null` if [rawFilter] is null or blank.
+ * Returns `null` if [rawFilter] is null (flag not provided).
  *
- * @throws FilterParseException if the DSL parse fails
+ * @throws FilterParseException if [rawFilter] is blank or not DSL-conformant
  */
 fun parseFilter(rawFilter: String?): ParsedFilter? {
-    val trimmed = rawFilter?.takeIf { it.isNotBlank() } ?: return null
+    if (rawFilter == null) return null
+    if (rawFilter.isBlank()) {
+        throw FilterParseException(
+            FilterDslParseError("Filter expression must not be empty or whitespace-only", null, 0)
+        )
+    }
+    val trimmed = rawFilter.trim()
     return when (val result = FilterDslParser.parse(trimmed)) {
         is FilterDslParseResult.Success -> ParsedFilter(
             expr = result.expr,

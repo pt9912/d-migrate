@@ -123,12 +123,16 @@ class DataExportHelpersTest : FunSpec({
             parseFilter(null).shouldBeNull()
         }
 
-        test("empty string returns null") {
-            parseFilter("").shouldBeNull()
+        test("empty string throws FilterParseException") {
+            shouldThrow<FilterParseException> {
+                parseFilter("")
+            }
         }
 
-        test("whitespace-only returns null") {
-            parseFilter("   ").shouldBeNull()
+        test("whitespace-only throws FilterParseException") {
+            shouldThrow<FilterParseException> {
+                parseFilter("   ")
+            }
         }
 
         test("valid DSL produces ParsedFilter with canonical form") {
