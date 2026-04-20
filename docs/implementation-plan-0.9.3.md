@@ -304,6 +304,11 @@ Verbindliche Entscheidung:
   - `dmg_setval`
   - `dmg_seq_<table16>_<column16>_<hash10>_bi`
 - keine benutzerkonfigurierbaren Prefixe in diesem Milestone
+- `table16` und `column16` sind die **ersten 16 Zeichen** des
+  jeweiligen ASCII-lowercased Namens; kuerzere Namen werden ungekuerzt
+  uebernommen; nicht-alphanumerische Zeichen ausser `_` werden vor der
+  Kuerzung entfernt, um Kollisionen mit dem `_`-Trennzeichen im
+  Triggernamen zu vermeiden
 - `hash10` ist verbindlich definiert als die ersten 10 lowercase-
   Hex-Zeichen eines SHA-256 ueber den kanonischen Schluessel
   `<table-lower>\u0000<column-lower>`; dieselbe Regel gilt fuer Golden
@@ -362,6 +367,11 @@ Der Datenexport behaelt seinen technischen Kern:
 - `DataFilter.ColumnSubset` ist von 0.9.3 fachlich **nicht** betroffen;
   der Milestone aendert nur den Nutzerpfad, der heute `WhereClause`
   bzw. kuenftig `ParameterizedClause`/`Compound` befuellt
+- die bestehende Komposition von `--filter` und `--since` ueber
+  `DataFilter.Compound` bleibt erhalten; `--since` erzeugt weiterhin
+  einen eigenen `ParameterizedClause`, der zusammen mit dem neuen
+  DSL-basierten `ParameterizedClause` von `--filter` in einem
+  `Compound` zusammengefuehrt wird
 
 Geaendert wird die sichtbare API-Schicht:
 
@@ -393,7 +403,7 @@ Verbindlicher Ausdrucksrahmen:
 Zulaessige Grammatik auf hoher Ebene:
 
 ```text
-filter        := clause (" AND " clause)*
+filter        := clause (ws "AND" ws clause)*
 clause        := comparison | in_list | null_check
 comparison    := identifier ws? operator ws? literal
 in_list       := identifier ws? "IN" ws? "(" literal ("," literal)* ")"
@@ -511,6 +521,14 @@ Der normale Pfad:
 - kein rohes Nutzereingabe-SQL wird direkt in `WhereClause` weitergegeben
 - der Parser liefert die Fingerprint-Normalform mit deterministischer
   Parameternormalisierung und Tokenisierung
+- die Uebersetzung AST -> SQL + Parameterliste liegt in einer eigenen
+  Methode innerhalb von `FilterDslParser` oder einer zugehoerigen
+  Companion-Klasse im selben Paket (`hexagon/application`)
+- diese Methode ist **nicht** dialektspezifisch; sie erzeugt
+  generisches SQL mit `?`-Platzhaltern und unquoted Identifiern
+- Dialekt-Quoting der Identifier erfolgt erst in `DataExportHelpers`
+  ueber die bestehenden `quoteQualifiedIdentifier()`-Utilities, bevor
+  der fertige `ParameterizedClause` an den Reader weitergereicht wird
 
 Fehlervertrag:
 
@@ -539,14 +557,21 @@ Folgen:
 - `SchemaNodeParser.parseDefault(...)` mappt
   `default.sequence_nextval: <name>` auf
   `SequenceNextVal("<name>")`
+- da der Parser bisher nur **skalare** YAML-Nodes als Defaults
+  verarbeitet (Boolean, Number, String), wird die Fallunterscheidung
+  um **Map-Nodes** erweitert: ein Map-Node mit dem einzigen Schluessel
+  `sequence_nextval` wird als `SequenceNextVal` interpretiert;
+  unbekannte Map-Schluessel fuehren zu einem strukturierten Parse-Fehler
 - die Implementierung lehnt sich bewusst an das bereits existierende
   Parse-Muster fuer reservierte Default-Funktionsnamen wie
   `current_timestamp` und `gen_uuid` an: reservierte Spezialfaelle
   werden frueh im Codec erkannt, aber `nextval(...)` bleibt **kein**
   freier Pattern-Match und wird nur ueber `default.sequence_nextval`
   kanonisch modelliert
-- `SchemaNodeBuilder.buildDefault(...)` schreibt denselben Wert wieder
-  als explizites Objekt
+- `SchemaNodeBuilder.buildDefault(...)` schreibt `SequenceNextVal`
+  als explizites Map-Objekt `{ "sequence_nextval": "<name>" }` statt
+  als skalaren Wert; dies ist ein Strukturwechsel gegenueber den
+  bisherigen skalaren `put()`-Aufrufen fuer die anderen Default-Typen
 - `SchemaValidator.isDefaultCompatible(...)` akzeptiert
   `SequenceNextVal` nur fuer numerische/identifier-aehnliche Spalten
   und nur, wenn die referenzierte Sequence existiert
@@ -665,8 +690,19 @@ Bewusste Designgrenze:
 - `SequenceNextVal` wird **nicht** als normaler SQL-Default im
   `TypeMapper` aufgeloest, weil MySQL dafuer Trigger braucht und
   PostgreSQL Identifier-/Regclass-Quoting benoetigt
-- die Dialektgeneratoren bzw. deren Column-/Table-Helfer fangen diesen
-  Subtyp vorher explizit ab
+- der Interception-Punkt liegt in `AbstractDdlGenerator.columnSql()`:
+  vor dem Aufruf von `typeMapper.toDefaultSql(...)` wird geprueft, ob
+  der Default ein `SequenceNextVal` ist; in diesem Fall delegiert
+  `columnSql()` an eine neue, ueberschreibbare Methode
+  (z.B. `resolveSequenceDefault(col, seqName): String?`), die pro
+  Dialekt entscheidet:
+  - PostgreSQL: gibt `DEFAULT nextval('<seq>')` zurueck
+  - MySQL `helper_table`: gibt `null` zurueck (kein DEFAULT, Trigger
+    uebernimmt)
+  - MySQL `action_required` / SQLite: gibt `null` zurueck und
+    registriert eine strukturierte Diagnose
+- `TypeMapper.toDefaultSql(...)` bekommt `SequenceNextVal` damit
+  **nie** zu sehen und muss den Fall nicht behandeln
 
 ### 5.5 DDL-Vertrag pro Dialekt
 
@@ -714,9 +750,19 @@ Rollback-Reihenfolge:
 3. Seed-/Supportobjekt `dmg_sequences`
 
 Da `AbstractDdlGenerator.generateRollback(...)` heute rein auf
-Statement-Inversion basiert, ist fuer die DELIMITER-verpackten
-Routinen/Trigger und fuer die Hilfstabelle eine explizite, getestete
-Inversion notwendig.
+Statement-Inversion via `invertStatement()` basiert und DELIMITER-
+Bloecke nicht versteht, wird der Rollback fuer MySQL-Supportobjekte
+ueber einen eigenen Pfad in `MysqlDdlGenerator` erzeugt:
+
+- `MysqlDdlGenerator` ueberschreibt oder ergaenzt den Rollback-Pfad
+  mit einer dedizierten Methode (z.B. `generateSupportObjectRollback`),
+  die die Drop-Statements fuer Trigger, Routinen und `dmg_sequences`
+  in fester Reihenfolge erzeugt
+- diese Methode arbeitet nicht ueber `invertStatement()`, sondern
+  emittiert direkte `DROP TRIGGER IF EXISTS`, `DROP FUNCTION IF EXISTS`
+  und `DROP TABLE IF EXISTS`-Statements
+- die resultierenden Drop-Statements werden **vor** den invertierten
+  regulaeren Statements in den Rollback-Block eingefuegt
 
 Pflicht-Akzeptanzkriterien:
 
@@ -749,8 +795,14 @@ Abhaengigkeiten:
 - Literale aus der DSL werden in
   `DataFilter.ParameterizedClause`/`Compound` ueberfuehrt statt als
   rohes SQL interpoliert
-- `DataExportRequest`, `DataTransferRunner` und
-  `ExportOptionsFingerprint` werden auf eine kanonische DSL-
+- `DataExportRequest` traegt statt eines rohen Filter-Strings die
+  geparste DSL-Repraesentation oder den daraus abgeleiteten
+  `ParameterizedClause`
+- `DataTransferRunner` reicht den Filter als `ParameterizedClause`
+  bzw. `Compound` an den Reader weiter; die Aenderung betrifft die
+  Stelle, an der heute `DataFilter.WhereClause` aus dem Request
+  entnommen und an `AbstractJdbcDataReader` uebergeben wird
+- `ExportOptionsFingerprint` wird auf eine kanonische DSL-
   Repräsentation umgestellt
 - Eingaben, die erkennbar dem alten Raw-SQL-Stil entsprechen, enden mit
   Exit 2 und einer Migrationshilfe statt mit stiller Weiterverwendung
@@ -771,7 +823,7 @@ Ergebnis:
 - fruehere Raw-SQL-Faelle werden klar abgewiesen statt implizit
   vertraut
 
-### 6.2 Sequence Phase A: Vertrag, Enum und Code-Ledger festziehen
+### 6.2 Sequence Phase A1: Vertrag, Enum und Code-Ledger festziehen
 
 - `MysqlNamedSequenceMode` einfuehren
 - `DdlGenerationOptions` erweitern
@@ -810,7 +862,7 @@ Ergebnis:
 - alle sichtbaren Vertrage sind dokumentiert, bevor der Generatorcode
   folgt
 
-### 6.3 Sequence Phase A: Neutralmodell und Audit aller `DefaultValue`-Verzweigungen
+### 6.3 Sequence Phase A2: Neutralmodell und Audit aller `DefaultValue`-Verzweigungen
 
 - `DefaultValue.SequenceNextVal` einfuehren
 - alle exhaustiven `when (default)`-/`when (dv)`-Stellen anpassen,
@@ -912,6 +964,9 @@ Unit-Tests:
   - Resume mit altem Checkpoint und vormals gueltigem Raw-SQL-Filter
     wird explizit mit erklaerbarer Exit-2-Migrationsfehlermeldung
     abgewiesen
+  - Kombination `--filter` + `--since` erzeugt einen korrekten
+    `Compound` aus zwei `ParameterizedClause`-Teilen und bindet
+    Parameter in der richtigen Reihenfolge
   - Token-/Literal-Fehlerpfade fuer:
     - ungueltige Identifier
     - kaputte String-Literale
