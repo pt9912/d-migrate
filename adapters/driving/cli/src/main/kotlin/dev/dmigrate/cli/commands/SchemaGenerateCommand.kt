@@ -70,8 +70,8 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         val runner = SchemaGenerateRunner(
             schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
             generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-            reportWriter = { path, result, schema, dialect, src, splitModeStr, mysqlSeqStr ->
-                TransformationReportWriter().write(path, result, schema, dialect, src, splitModeStr, mysqlSeqStr)
+            reportWriter = { path, result, schema, dialect, src, splitModeStr, mysqlSeqMode ->
+                TransformationReportWriter().write(path, result, schema, dialect, src, splitModeStr, mysqlSeqMode)
             },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,

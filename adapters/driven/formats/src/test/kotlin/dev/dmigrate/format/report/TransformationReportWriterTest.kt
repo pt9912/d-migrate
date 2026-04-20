@@ -208,7 +208,7 @@ class TransformationReportWriterTest : FunSpec({
             SchemaDefinition(name = "T", version = "1"),
             "mysql",
             Path.of("schema.yaml"),
-            mysqlNamedSequenceMode = "action_required",
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
         )
         report shouldContain "mysql_named_sequences: action_required"
         report shouldContain "generator: \"d-migrate 0.9.3\""

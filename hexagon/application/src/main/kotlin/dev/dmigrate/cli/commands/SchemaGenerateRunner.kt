@@ -54,7 +54,7 @@ class SchemaGenerateRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
-    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, String?) -> Unit,
+    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, MysqlNamedSequenceMode?) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
         { path, content -> path.writeText(content) },
     private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode, MysqlNamedSequenceMode?) -> String,
@@ -301,7 +301,7 @@ class SchemaGenerateRunner(
         mysqlSeqMode: MysqlNamedSequenceMode? = null,
     ) {
         val reportPath = request.report ?: sidecarPath(outputPath, ".report.yaml")
-        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr, mysqlSeqMode?.cliName)
+        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr, mysqlSeqMode)
         if (!request.quiet) stderr("Report written to $reportPath")
     }
 }
