@@ -13,7 +13,6 @@
 > `docs/ddl-generation-rules.md`;
 > `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`;
 > `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt`;
-> `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlColumnConstraintHelper.kt`;
 > `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlRoutineDdlHelper.kt`;
 > `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlTypeMapper.kt`;
 > `docs/ImpPlan-0.9.3-6.2.md`;
@@ -257,7 +256,9 @@ Verbindliche Loesung:
 `AbstractDdlGenerator.columnSql()` (Zeile 171-179) wird erweitert:
 
 ```kotlin
-protected fun columnSql(colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+protected fun columnSql(
+    tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition
+): String {
     val parts = mutableListOf<String>()
     parts += quoteIdentifier(colName)
     parts += typeMapper.toSql(col.type)
@@ -265,7 +266,7 @@ protected fun columnSql(colName: String, col: ColumnDefinition, schema: SchemaDe
     if (col.default != null) {
         val seqDefault = col.default as? DefaultValue.SequenceNextVal
         if (seqDefault != null) {
-            val resolved = resolveSequenceDefault(colName, col, seqDefault)
+            val resolved = resolveSequenceDefault(tableName, colName, col, seqDefault)
             if (resolved != null) parts += resolved
         } else {
             parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
@@ -276,24 +277,78 @@ protected fun columnSql(colName: String, col: ColumnDefinition, schema: SchemaDe
 }
 
 /** Dialect-specific resolution of SequenceNextVal defaults.
- *  Returns a complete DEFAULT clause or null (= suppress DEFAULT). */
+ *  Returns a complete DEFAULT clause or null (= suppress DEFAULT).
+ *  Side effects (warnings, trigger metadata) are managed via
+ *  dialect-specific mutable state, not via return value. */
 protected open fun resolveSequenceDefault(
+    tableName: String,
     colName: String,
     col: ColumnDefinition,
     seqDefault: DefaultValue.SequenceNextVal,
 ): String? = null  // Base: suppress DEFAULT
 ```
 
+Signaturaenderung `columnSql()`:
+
+- `columnSql()` erhaelt einen neuen ersten Parameter `tableName: String`
+- alle Aufrufer von `columnSql()` muessen den Tabellennamen
+  durchreichen:
+  - `AbstractDdlGenerator.generate()` → `generateTable()` kennt den
+    Tabellennamen bereits
+  - `MysqlColumnConstraintHelper` erhaelt den Tabellennamen als
+    zusaetzlichen Parameter im Konstruktor-Callback oder pro Aufruf
+
 Dialekt-Overrides:
 
 - `PostgresDdlGenerator.resolveSequenceDefault(...)`:
   - gibt `"DEFAULT nextval('${seqDefault.sequenceName}')"` zurueck
+  - keine Side-Effects
 - `MysqlDdlGenerator.resolveSequenceDefault(...)`:
   - `HELPER_TABLE`: gibt `null` zurueck (kein DEFAULT, Trigger
-    uebernimmt), sammelt Trigger-Metadaten (§4.7), emittiert `W115`
-  - `ACTION_REQUIRED`: gibt `null` zurueck, emittiert
-    `ACTION_REQUIRED`-Diagnose (E056)
+    uebernimmt), sammelt Trigger-Metadaten in
+    `pendingSupportTriggers` (§4.7), sammelt `W115` in
+    `pendingSequenceNotes` (§4.7)
+  - `ACTION_REQUIRED`: gibt `null` zurueck, sammelt
+    `ACTION_REQUIRED`-Diagnose (E056) in `pendingSequenceNotes`
 - `SqliteDdlGenerator` erbt die Base-Implementierung (`null`)
+
+Warning-Emission:
+
+Da `resolveSequenceDefault()` nur `String?` zurueckgibt, werden
+Warnings und Notes ueber Mutable State auf `MysqlDdlGenerator`
+gesammelt:
+
+```kotlin
+private val pendingSequenceNotes = mutableListOf<TransformationNote>()
+```
+
+- `resolveSequenceDefault()` fuegt W115 bzw. E056-Notes zur Liste hinzu
+- die Notes werden nach der Spaltenverarbeitung an das
+  `DdlStatement` der Tabelle uebergeben (siehe §4.7)
+
+Schutz gegen `MysqlColumnConstraintHelper`-Spezialpfade:
+
+`MysqlColumnConstraintHelper.generateColumnSql()` (Zeile 22-28) hat
+Spezialpfade fuer `autoIncrement`, `Enum`/`Domain` und `Geometry`,
+die `toDefaultSql()` direkt aufrufen (Zeile 32, 59, 67) und damit
+den `resolveSequenceDefault()`-Hook umgehen. Der `error()`-Guard in
+`MysqlTypeMapper` wuerde in diesen Pfaden fuer `SequenceNextVal`
+feuern.
+
+Verbindliche Absicherung: Die Kombination `autoIncrement +
+SequenceNextVal` ist semantisch widerspruechlich (MySQL's
+`AUTO_INCREMENT` ist selbst ein Sequence-Mechanismus). **6.3 muss
+diese Kombination als Validierungsfehler ablehnen** — entweder ueber
+eine Erweiterung von `isDefaultCompatible` (SequenceNextVal ist
+nicht kompatibel mit `Identifier(autoIncrement=true)`) oder ueber
+eine dedizierte Pruefung in `validateSequenceDefaultReference`.
+Die uebrigen Spezialpfade (`Enum`, `Domain`, `Geometry`) sind bereits
+durch den bestehenden Validator abgesichert, da `SequenceNextVal`
+nur mit numerischen/identifier-aehnlichen Typen kompatibel ist (6.3
+§5.2).
+
+Falls 6.3 diese Validierung nicht enthaelt, muss sie in 6.4
+nachgezogen werden.
 
 Konsequenz fuer 6.3-Artefakte:
 
@@ -309,19 +364,20 @@ implementiert hat, entfaellt dieser Schritt in 6.4. Falls 6.3 statt
 des Hooks nur TypeMapper-Zweige eingefuehrt hat, muss 6.4 den Hook
 nachziehen.
 
-### 4.7 Spalten-zu-Trigger-Metadatenfluss ueber Mutable State
+### 4.7 Mutable State fuer Trigger-Metadaten und Notes
 
 Waehrend `generateTable()` werden `SequenceNextVal`-Spalten erkannt
 (§4.6, in `resolveSequenceDefault()`). Die daraus resultierenden
 Trigger muessen aber erst spaeter in `generateTriggers()` (POST_DATA)
-erzeugt werden.
+erzeugt werden. Gleichzeitig fallen Warnings (W115) und Diagnosen
+(E056) an, die `resolveSequenceDefault()` nicht direkt zurueckgeben
+kann (die Methode gibt nur `String?` zurueck).
 
-Verbindliche Loesung:
-
-- `MysqlDdlGenerator` erhaelt eine private mutable Liste:
+Verbindliche Loesung — drei mutable Felder auf `MysqlDdlGenerator`:
 
 ```kotlin
 private val pendingSupportTriggers = mutableListOf<SupportTriggerSpec>()
+private val pendingSequenceNotes = mutableListOf<TransformationNote>()
 ```
 
 - `SupportTriggerSpec` ist eine interne Datenklasse:
@@ -334,11 +390,20 @@ private data class SupportTriggerSpec(
 )
 ```
 
-- `resolveSequenceDefault()` in `MysqlDdlGenerator` fuegt im
-  `HELPER_TABLE`-Modus einen Eintrag hinzu
-- `generateTriggers()` liest die Liste und erzeugt die
-  Support-Trigger
-- `generate()` leert die Liste zu Beginn jedes Laufs
+Befuellung und Konsumierung:
+
+- `resolveSequenceDefault()` in `MysqlDdlGenerator`:
+  - `HELPER_TABLE`: fuegt `SupportTriggerSpec` zu
+    `pendingSupportTriggers` hinzu und `W115`-Note zu
+    `pendingSequenceNotes`
+  - `ACTION_REQUIRED`: fuegt E056-Note zu `pendingSequenceNotes`
+- `MysqlDdlGenerator` ueberschreibt `generateTable()` als
+  Wrapper, der nach `super.generateTable()` die gesammelten
+  `pendingSequenceNotes` an die Notes des letzten
+  Table-Statements anhaengt und die Liste danach leert
+- `generateTriggers()` liest `pendingSupportTriggers` und erzeugt
+  die Support-Trigger
+- `generate()` leert beide Listen zu Beginn jedes Laufs
 
 ### 4.8 Rollback nutzt den bestehenden `invertStatement()`-Mechanismus
 
@@ -433,29 +498,32 @@ Der Ablauf von `MysqlDdlGenerator.generate()` im
 
 ```
 generate(schema, options)
-  ├── currentOptions = options               (§4.4)
-  ├── pendingSupportTriggers.clear()         (§4.7)
+  ├── currentOptions = options                        (§4.4)
+  ├── pendingSupportTriggers.clear()                  (§4.7)
+  ├── pendingSequenceNotes.clear()                    (§4.7)
   ├── super.generate(schema, options)
   │     ├── generateHeader()
   │     ├── generateCustomTypes()
-  │     ├── generateSequences()              → PRE_DATA
+  │     ├── generateSequences()                       → PRE_DATA
   │     │     └── HELPER_TABLE: dmg_sequences + Seed + W114
   │     ├── for table in sorted:
-  │     │     └── generateTable()
-  │     │           └── columnSql()
-  │     │                 └── SequenceNextVal? → resolveSequenceDefault()
-  │     │                       ├── return null (kein DEFAULT)
-  │     │                       ├── pendingSupportTriggers += Spec
-  │     │                       └── W115
-  │     ├── generateFunctions()              → POST_DATA
+  │     │     └── generateTable()  [MySQL-Override]
+  │     │           ├── super.generateTable()
+  │     │           │     └── columnSql(tableName, ...)
+  │     │           │           └── SequenceNextVal? → resolveSequenceDefault()
+  │     │           │                 ├── return null (kein DEFAULT)
+  │     │           │                 ├── pendingSupportTriggers += Spec
+  │     │           │                 └── pendingSequenceNotes += W115
+  │     │           └── pendingSequenceNotes → an Table-Statement anhaengen + leeren
+  │     ├── generateFunctions()                       → POST_DATA
   │     │     ├── dmg_nextval (Support)
   │     │     ├── dmg_setval (Support)
   │     │     └── User-Funktionen
-  │     ├── generateTriggers()               → POST_DATA
+  │     ├── generateTriggers()                        → POST_DATA
   │     │     ├── Support-Trigger (aus pendingSupportTriggers)
   │     │     └── User-Trigger
   │     └── return DdlResult
-  ├── W117 an DdlResult anhaengen           (§4.9)
+  ├── W117 an DdlResult anhaengen                    (§4.9)
   └── return DdlResult
 ```
 
@@ -550,10 +618,15 @@ von `MysqlRoutineDdlHelper` folgen.
 
 ### 6.1 `resolveSequenceDefault()`-Hook in `AbstractDdlGenerator`
 
-- `columnSql()` erweitern: vor `toDefaultSql()` pruefen, ob der
-  Default ein `SequenceNextVal` ist
-- neue `protected open fun resolveSequenceDefault(...)` mit
-  Base-Implementierung `null`
+- `columnSql()` Signatur um `tableName: String` als ersten
+  Parameter erweitern
+- alle Aufrufer von `columnSql()` anpassen (inkl.
+  `MysqlColumnConstraintHelper`-Callback-Signatur)
+- vor `toDefaultSql()` pruefen, ob der Default ein
+  `SequenceNextVal` ist; falls ja, an `resolveSequenceDefault()`
+  delegieren
+- neue `protected open fun resolveSequenceDefault(tableName,
+  colName, col, seqDefault)` mit Base-Implementierung `null`
 - `PostgresDdlGenerator`: Override mit nativem
   `"DEFAULT nextval('...')"`
 - `MysqlDdlGenerator`: Override mit Modus-Verzweigung (§4.6)
@@ -570,10 +643,14 @@ von `MysqlRoutineDdlHelper` folgen.
 ### 6.3 Options-Persistierung und Mutable State einfuehren
 
 - `MysqlDdlGenerator`: privates Feld `currentOptions`
-- `MysqlDdlGenerator`: private Liste `pendingSupportTriggers`
+- `MysqlDdlGenerator`: private Listen `pendingSupportTriggers` und
+  `pendingSequenceNotes`
 - `SupportTriggerSpec` Datenklasse
-- `generate()`-Override: Options speichern, Liste leeren,
+- `generate()`-Override: Options speichern, beide Listen leeren,
   `super.generate()` aufrufen, W117 anhaengen
+- `generateTable()`-Override als Wrapper: `super.generateTable()`
+  aufrufen, `pendingSequenceNotes` an das Table-Statement
+  anhaengen, `pendingSequenceNotes` leeren
 
 ### 6.4 `generateSequences()` Modusumschaltung
 
@@ -698,11 +775,17 @@ Testfaelle:
 Voraussichtlich direkt betroffen (Produktionscode):
 
 - `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
-  — `columnSql()` Erweiterung, neue `resolveSequenceDefault()` Methode
+  — `columnSql()` Signatur um `tableName`, neue
+  `resolveSequenceDefault()` Methode
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt`
-  — `generate()`-Override, `generateFunctions()`-Override,
-  `generateTriggers()`-Override, `resolveSequenceDefault()`-Override,
-  `currentOptions`, `pendingSupportTriggers`, `SupportTriggerSpec`
+  — `generate()`-Override, `generateTable()`-Override (Notes-Wrapper),
+  `generateFunctions()`-Override, `generateTriggers()`-Override,
+  `resolveSequenceDefault()`-Override, `currentOptions`,
+  `pendingSupportTriggers`, `pendingSequenceNotes`,
+  `SupportTriggerSpec`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlColumnConstraintHelper.kt`
+  — `columnSql`-Callback-Signatur um `tableName` erweitern (keine
+  neue fachliche Logik, nur Signaturanpassung)
 - `adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGenerator.kt`
   — `resolveSequenceDefault()`-Override (nativer Pfad)
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`
