@@ -89,8 +89,12 @@ Ohne 6.2 waeren die Folgearbeitspakete unsauber aufgesetzt:
 - `DdlGenerationOptions.mysqlNamedSequenceMode: MysqlNamedSequenceMode?`
 - sichtbare CLI-Option
   `--mysql-named-sequences action_required|helper_table`
+- `SchemaGenerateRequest` um optionales Feld
+  `mysqlNamedSequences: String?` erweitern
 - Runner-Validierung: nur zusammen mit `--target mysql`
 - JSON-/Report-Vertrag fuer `mysql_named_sequences`
+- Signaturerweiterung von `formatJsonOutput` und
+  `TransformationReportWriter.render()` fuer den neuen Modus
 - 0.9.3-Versionsnachzug in DDL-, JSON- und Report-Ausgaben
 - Ledger-Arbeit fuer neue 0.9.3-Warn-/ggf. Error-Codes
 - Validierung der 0.9.3-Ledgerdateien in `CodeLedgerValidationTest`
@@ -158,12 +162,21 @@ Verbindliche Folge:
   - nicht `null`
   - nicht implizit `action_required`
 
-Empfohlene Serialisierung:
+Verbindliche Serialisierung:
 
 - JSON:
-  - `generator_options.mysql_named_sequences`
-- Report:
-  - `target.mysql_named_sequences`
+  - `mysql_named_sequences` als Top-Level-Feld (nach `target`)
+  - Begruendung: Die bestehende JSON-Struktur von `formatJsonOutput`
+    ist flach; ein verschachteltes `generator_options`-Objekt wuerde
+    die bestehende Konvention brechen und waere ein unnoetig grosser
+    Strukturbruch. Stattdessen wird das Feld analog zu `split_mode`
+    als eigenstaendiges Top-Level-Feld eingefuegt.
+  - Fuer Nicht-MySQL-Targets wird das Feld komplett weggelassen
+    (kein `null`, kein Leerstring).
+- Report (YAML):
+  - `mysql_named_sequences` als Feld im `target:`-Block, nach
+    `generator:` und vor `split_mode:` (falls vorhanden)
+  - Fuer Nicht-MySQL-Targets wird das Feld komplett weggelassen.
 
 ### 4.4 Warning-Codes werden jetzt fest verankert
 
@@ -177,6 +190,29 @@ Verbindliche Folge:
   Sequence-Inkremente
 - `W116` wird in 0.9.3 dokumentiert und im Ledger reserviert, aber
   noch nicht emittiert
+
+Ledger-Status-Vertrag fuer noch nicht emittierte Codes:
+
+- W114, W115, W117 werden als `reserved` im 0.9.3-Ledger angelegt
+  (kein emittierender Code in 6.2, daher kein `test_path` und keine
+  `evidence_paths` erforderlich)
+- W116 wird ebenfalls als `reserved` angelegt
+- der Status `reserved` wird im 0.9.3-JSON-Schema als neuer
+  erlaubter Wert eingefuehrt (neben `active` und `not_applicable`)
+- die `if/then`-Regel im JSON-Schema erzwingt `test_path` und
+  `evidence_paths` nur fuer `status: active`; fuer `reserved`
+  gelten dieselben laxen Anforderungen wie fuer `not_applicable`
+- `CodeLedgerValidationTest.allowedStatuses` wird um `reserved`
+  erweitert
+- in 6.3/6.4 werden die Codes auf `active` hochgestuft, sobald
+  emittierender Code und Tests existieren
+
+Begruendung:
+
+- `active` ohne `test_path` wuerde die bestehenden
+  `CodeLedgerValidationTest`-Regeln (Zeile 162-169) brechen
+- `not_applicable` ist semantisch falsch (die Codes sind anwendbar,
+  nur noch nicht implementiert)
 
 Zusatz:
 
@@ -200,15 +236,34 @@ Akzeptanzregel:
 - es verbleibt keine user-visible `0.9.2`-Ausgabe im
   `schema generate`-Pfad
 
-### 4.6 Namensvertrag fuer MySQL-Supportobjekte wird schon jetzt eingefroren
+Blast-Radius-Hinweis:
 
-Verbindliche Folge:
+Der String `0.9.2` kommt aktuell in ca. 36 Dateien vor. Nicht alle
+muessen geaendert werden — Kommentare wie `(0.9.2)` oder
+`(0.9.2 AP 6.1)` in Doc-Strings und Testkommentaren sind historische
+Verweise und bleiben bestehen. Geaendert werden ausschliesslich
+user-visible Ausgaben:
 
-- feste Support-Namen:
-  - `dmg_sequences`
-  - `dmg_nextval`
-  - `dmg_setval`
-  - `dmg_seq_<table16>_<column16>_<hash10>_bi`
+- Produktionscode: `AbstractDdlGenerator.getVersion()`,
+  `TransformationReportWriter.render()`,
+  `SchemaGenerateHelpers.formatJsonOutput()`
+- Golden Masters und Snapshot-Strings in Tests (siehe §8)
+
+### 4.6 Namensvertrag fuer MySQL-Supportobjekte (nur dokumentarisch)
+
+Dieser Vertrag wird in 6.2 ausschliesslich dokumentarisch
+festgelegt. Kein Code in 6.2 referenziert oder testet diese Namen.
+Die Codierung und Testabsicherung folgt in 6.4.
+
+Verbindliche Namen:
+
+- `dmg_sequences`
+- `dmg_nextval`
+- `dmg_setval`
+- `dmg_seq_<table16>_<column16>_<hash10>_bi`
+
+Namensregeln:
+
 - `table16` und `column16` sind die ersten 16 Zeichen des
   ASCII-lowercased Namens; nicht-alphanumerische Zeichen ausser `_`
   werden vor der Kuerzung entfernt.
@@ -237,8 +292,8 @@ Begruendung:
 Der sichtbare Pfad fuer 6.2 ist:
 
 - `SchemaGenerateCommand` parst `--mysql-named-sequences`
-- `SchemaGenerateRequest` transportiert den expliziten Override oder den
-  bereits normalisierten Modus
+- `SchemaGenerateRequest` transportiert den Rohwert als
+  `mysqlNamedSequences: String?` (analog zu `spatialProfile: String?`)
 - `SchemaGenerateRunner` validiert die Kombination mit `--target`
 - erst im MySQL-Pfad wird `null` fachlich auf `action_required`
   aufgeloest
@@ -268,6 +323,19 @@ Technische Regel:
 - kein spaeter Renderer darf selbst einen impliziten
   `action_required`-Default fuer Nicht-MySQL materialisieren
 
+Signaturerweiterungen:
+
+- `SchemaGenerateHelpers.formatJsonOutput()` erhaelt einen
+  zusaetzlichen Parameter `mysqlNamedSequenceMode: MysqlNamedSequenceMode?`
+  (nach `splitMode`). Der Lambda-Typ in `SchemaGenerateRunner`
+  und die Verdrahtung in `SchemaGenerateCommand` werden entsprechend
+  angepasst.
+- `TransformationReportWriter.render()` und `.write()` erhalten
+  einen zusaetzlichen Parameter
+  `mysqlNamedSequenceMode: MysqlNamedSequenceMode?` (Default `null`).
+  Die `reportWriter`-Lambda-Signatur in `SchemaGenerateRunner` wird
+  entsprechend erweitert.
+
 ### 5.3 Ledger- und Dokumentationsvertrag
 
 Die 0.9.3-Vertragsarbeit ist nur abgeschlossen, wenn dieselben Regeln
@@ -279,6 +347,15 @@ in Code, Ledger und Doku auftauchen:
 - `ledger/error-code-ledger-0.9.3.yaml` (falls noetig)
 - `ledger/code-ledger-0.9.3.schema.json`
 - `CodeLedgerValidationTest`
+
+Ledger-Strategie (verbindlich):
+
+- neue eigenstaendige 0.9.3-Ledgerdateien neben den bestehenden
+  0.9.2-Dateien
+- `CodeLedgerValidationTest` wird um einen versionparametrisierten
+  Testblock erweitert, der die 0.9.3-Dateien gegen das
+  0.9.3-JSON-Schema validiert
+- die 0.9.2-Tests bleiben unveraendert bestehen (Regressionsschutz)
 
 6.2 ist damit nicht nur "neue Option einbauen", sondern auch:
 
@@ -292,29 +369,98 @@ in Code, Ledger und Doku auftauchen:
 
 ### 6.1 Enum und Optionsmodell einfuehren
 
-- `MysqlNamedSequenceMode` anlegen
+- `MysqlNamedSequenceMode` anlegen (in `DdlGenerationOptions.kt`,
+  analog zu `SpatialProfile`)
 - `DdlGenerationOptions` um
-  `mysqlNamedSequenceMode: MysqlNamedSequenceMode?` erweitern
+  `mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null` erweitern
 - Modell-default fuer Nicht-MySQL bewusst `null` lassen
 
-### 6.2 CLI und Runner verdrahten
+### 6.2 CLI, Request und Runner verdrahten
 
+- `SchemaGenerateRequest` um `mysqlNamedSequences: String? = null`
+  erweitern
 - `SchemaGenerateCommand` um `--mysql-named-sequences` erweitern
-- erlaubte Werte `action_required|helper_table`
-- `SchemaGenerateRunner` validiert die Option gegen `--target`
+  (`.choice("action_required", "helper_table")`, nicht `.required()`)
+- `SchemaGenerateCommand.run()`: den Rohwert in `SchemaGenerateRequest`
+  durchreichen
+- `SchemaGenerateRunner.execute()` validiert die Option gegen
+  `--target`:
+  - `mysqlNamedSequences != null` bei Nicht-MySQL-Target: Exit 2
+  - fuer MySQL: `null` wird auf `ACTION_REQUIRED` aufgeloest
+  - `DdlGenerationOptions` wird mit dem aufgeloesten Modus erzeugt
 - explizite Exit-2-Diagnosen fuer Nicht-MySQL-Ziele einfuehren
 
 ### 6.3 JSON-, Report- und Versionsvertrag nachziehen
 
-- JSON-Ausgabe um `generator_options.mysql_named_sequences` erweitern
-- Report-Ausgabe um `target.mysql_named_sequences` erweitern
-- `AbstractDdlGenerator.getVersion()` auf `0.9.3`
-- `TransformationReportWriter` auf `0.9.3`
-- `SchemaGenerateHelpers.formatJsonOutput()` auf `d-migrate 0.9.3`
-- Golden Masters/Snapshots fuer diese sichtbaren Aenderungen
-  aktualisieren
+Signaturaenderungen:
+
+- `SchemaGenerateHelpers.formatJsonOutput()`: neuer Parameter
+  `mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null` nach
+  `splitMode`
+- Lambda-Typ `formatJsonOutput` in `SchemaGenerateRunner` von
+  `(DdlResult, SchemaDefinition, String, SplitMode) -> String` auf
+  `(DdlResult, SchemaDefinition, String, SplitMode, MysqlNamedSequenceMode?) -> String`
+  erweitern
+- Verdrahtung in `SchemaGenerateCommand` anpassen
+- `TransformationReportWriter.render()` und `.write()`: neuer
+  Parameter `mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null`
+  nach `splitMode`
+- Lambda-Typ `reportWriter` in `SchemaGenerateRunner` entsprechend
+  erweitern
+- Aufrufstellen in `SchemaGenerateRunner` (writeFileOutput,
+  writeSplitFileOutput, writeStdoutOutput) den aufgeloesten Modus
+  weiterreichen
+
+JSON-Ausgabe:
+
+- `mysql_named_sequences` als Top-Level-Feld nach `"target"` einfuegen
+  (nur bei `mysqlNamedSequenceMode != null`)
+- Wert: `"action_required"` oder `"helper_table"`
+
+Report-Ausgabe:
+
+- `mysql_named_sequences` im `target:`-Block nach `generator:` und
+  vor `split_mode:` (nur bei `mysqlNamedSequenceMode != null`)
+- Wert: `action_required` oder `helper_table`
+
+Versionsnachzug:
+
+- `AbstractDdlGenerator.getVersion()` auf `"0.9.3"`
+- `TransformationReportWriter.render()` Generatorstring auf
+  `"d-migrate 0.9.3"`
+- `SchemaGenerateHelpers.formatJsonOutput()` — falls dort ein
+  Versionsstring vorkommt — auf `"d-migrate 0.9.3"`
+
+Golden-Master- und Snapshot-Aktualisierungen:
+
+- `SchemaGenerateHelpersTest` — JSON-Snapshot-Strings
+- `SchemaGenerateRunnerTest` — alle Assertions gegen Report- und
+  JSON-Ausgaben
+- `TransformationReportWriterTest` — Report-String-Assertions
+- `DdlGoldenMasterTest` — DDL-Header-Assertions
+- `AbstractDdlGeneratorTest` — Header-Assertions
+- `CliGenerateTest` — CLI-Integrationstest-Assertions
 
 ### 6.4 Ledger und Doku aktualisieren
+
+Ledger-Dateien:
+
+- `ledger/code-ledger-0.9.3.schema.json` anlegen:
+  - Kopie von `code-ledger-0.9.2.schema.json`
+  - `$id` und `description` auf 0.9.3 aendern
+  - `status`-Enum um `"reserved"` erweitern (in `standardEntry`
+    und `restPathEntry`)
+  - `if/then`-Regel bleibt nur fuer `status: active`; `reserved`
+    erfordert weder `test_path` noch `evidence_paths`
+- `ledger/warn-code-ledger-0.9.3.yaml` anlegen:
+  - Eintraege fuer W114, W115, W116, W117 mit `status: reserved`
+  - jeder Eintrag erhaelt ein `note:`-Feld mit Verweis auf das
+    Arbeitspaket, das den Code aktiviert (6.3 oder 6.4)
+- `ledger/error-code-ledger-0.9.3.yaml` anlegen (falls neue
+  Error-Codes noetig, sonst minimal mit `version: "0.9.3"` und
+  leerem `entries`-Array)
+
+Dokumentation:
 
 - `docs/ddl-generation-rules.md` um:
   - neue MySQL-Option
@@ -322,9 +468,18 @@ in Code, Ledger und Doku auftauchen:
   - `helper_table`-Semantik
   erweitern
 - `docs/cli-spec.md` auf die sichtbare Option ziehen
-- 0.9.3-Ledgerdateien anlegen oder die Ledger-Aufloesung in
-  `CodeLedgerValidationTest` verallgemeinern
-- sicherstellen, dass die 0.9.3-Dateien aktiv validiert werden
+
+CodeLedgerValidationTest:
+
+- `allowedStatuses` um `"reserved"` erweitern
+- neuen Testblock fuer 0.9.3-Ledgerdateien anlegen:
+  - Schema-Datei existiert
+  - Warn-Ledger existiert und enthaelt W114-W117
+  - keine Duplikate
+  - gueltige `level`, `entry_type`, `status`-Werte
+  - `reserved`-Eintraege haben kein `test_path` — positiver Test,
+    dass die Validierung sie akzeptiert
+- bestehende 0.9.2-Tests bleiben unveraendert
 
 ---
 
@@ -332,20 +487,34 @@ in Code, Ledger und Doku auftauchen:
 
 ### 7.1 Unit- und Vertragstests
 
-- `SchemaGenerateRunnerTest` / `SchemaGenerateHelpersTest` /
-  `TransformationReportWriterTest`:
-  - Option validiert nur fuer MySQL
-  - JSON/Report enthalten den effektiven Modus nur fuer MySQL
-  - JSON/Report bleiben fuer PostgreSQL und SQLite ohne
+- `SchemaGenerateRunnerTest`:
+  - `--mysql-named-sequences helper_table` mit `--target mysql`
+    erzeugt Exit 0 und setzt den Modus korrekt
+  - `--mysql-named-sequences helper_table` mit `--target postgresql`
+    erzeugt Exit 2
+  - `--mysql-named-sequences` ohne Wert bei `--target mysql`
+    verwendet Default `action_required`
+  - JSON-/Report-Ausgabe fuer MySQL enthaelt
     `mysql_named_sequences`-Feld
-  - `DdlGenerationOptions.mysqlNamedSequenceMode = null` fuehrt bei
-    Nicht-MySQL-Ausgaben zu absentem Feld, nicht zu `null` oder
-    implizitem `action_required`
+  - JSON-/Report-Ausgabe fuer PostgreSQL/SQLite enthaelt kein
+    `mysql_named_sequences`-Feld (weder `null` noch absent)
+- `SchemaGenerateHelpersTest`:
+  - `formatJsonOutput` mit `mysqlNamedSequenceMode = HELPER_TABLE`
+    enthaelt `"mysql_named_sequences": "helper_table"`
+  - `formatJsonOutput` mit `mysqlNamedSequenceMode = null` enthaelt
+    kein `mysql_named_sequences`-Feld
+- `TransformationReportWriterTest`:
+  - Report mit `mysqlNamedSequenceMode = ACTION_REQUIRED` enthaelt
+    `mysql_named_sequences: action_required` im `target:`-Block
+  - Report mit `mysqlNamedSequenceMode = null` enthaelt kein
+    `mysql_named_sequences`-Feld
 - Golden-Master-/Header-Checks:
   - DDL-Header und Report-Generatorstring zeigen `0.9.3`
 - `CodeLedgerValidationTest`:
-  - prueft aktiv die 0.9.3-Ledgerdateien bzw. den verallgemeinerten
-    Ledger-Resolver
+  - 0.9.3-Schema-Datei existiert
+  - 0.9.3-Warn-Ledger enthaelt W114-W117 mit `status: reserved`
+  - keine Validierungsfehler fuer `reserved`-Eintraege ohne
+    `test_path`
 
 ### 7.2 Akzeptanzkriterien
 
@@ -357,34 +526,56 @@ in Code, Ledger und Doku auftauchen:
 - `DdlGenerationOptions` transportiert den Modus nullable und
   target-sicher
 - JSON und Report zeigen `mysql_named_sequences` nur fuer MySQL
+- JSON und Report zeigen fuer Nicht-MySQL kein
+  `mysql_named_sequences`-Feld (absent, nicht `null`)
 - `schema generate` zeigt user-visible konsistent `0.9.3`
 - die neuen 0.9.3-Ledgerdateien werden aktiv validiert
+- `reserved`-Eintraege im Warn-Ledger brechen keine bestehenden Tests
 
 ---
 
 ## 8. Betroffene Codebasis
 
-Voraussichtlich direkt betroffen:
+Voraussichtlich direkt betroffen (Produktionscode):
 
+- `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/DdlGenerationOptions.kt`
+  — Enum `MysqlNamedSequenceMode`, neues Feld
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateCommand.kt`
+  — neue CLI-Option, Request-Verdrahtung
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
+  — `SchemaGenerateRequest`-Erweiterung, Validierung,
+  Lambda-Signatur-Erweiterungen, Modus-Durchreichung
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpers.kt`
+  — `formatJsonOutput`-Signatur und JSON-Feld
+- `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/report/TransformationReportWriter.kt`
+  — `render()`/`write()`-Signatur und Report-Feld
+- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
+  — `getVersion()` von `"0.9.2"` auf `"0.9.3"`
+
+Voraussichtlich betroffen (Ledger und Doku):
+
+- `ledger/code-ledger-0.9.3.schema.json` (neu)
+- `ledger/warn-code-ledger-0.9.3.yaml` (neu)
+- `ledger/error-code-ledger-0.9.3.yaml` (neu, falls noetig)
 - `docs/ddl-generation-rules.md`
 - `docs/cli-spec.md`
-- `ledger/code-ledger-0.9.3.schema.json`
-- `ledger/warn-code-ledger-0.9.3.yaml`
-- `ledger/error-code-ledger-0.9.3.yaml` (falls neue Error-Codes noetig)
-- `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/DdlGenerationOptions.kt`
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateCommand.kt`
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpers.kt`
-- `adapters/driven/formats/src/main/kotlin/dev/dmigrate/format/report/TransformationReportWriter.kt`
-- `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`
 
-Voraussichtlich testseitig betroffen:
+Voraussichtlich betroffen (Tests):
 
-- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
-- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpersTest.kt`
-- `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/report/TransformationReportWriterTest.kt`
-- `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt`
 - `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/CodeLedgerValidationTest.kt`
+  — `allowedStatuses` + neuer 0.9.3-Testblock
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
+  — neue Testcases fuer `--mysql-named-sequences`, Versionsstrings
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpersTest.kt`
+  — neue Testcases fuer `formatJsonOutput` mit Modus, Versionsstrings
+- `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/report/TransformationReportWriterTest.kt`
+  — neue Testcases fuer Report mit Modus, Versionsstrings
+- `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt`
+  — DDL-Header-Snapshot-Update
+- `adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/AbstractDdlGeneratorTest.kt`
+  — Header-Assertions auf `0.9.3`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliGenerateTest.kt`
+  — CLI-Integrationstest-Assertions auf `0.9.3`
 
 ---
 
