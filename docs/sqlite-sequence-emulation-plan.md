@@ -237,19 +237,26 @@ Vorgeschlagene Marker:
   - AFTER INSERT (`_ai`):
     `/* d-migrate:sqlite-sequence-v1 object=sequence-trigger-post sequence=<name> table=<table> column=<column> */`
 
-Identifier-Escaping in Marker-Kommentaren:
+Identifier-Encoding in Marker-Kommentaren:
 
-- `<name>`, `<table>` und `<column>` im Marker sind immer die
+- `<name>`, `<table>` und `<column>` im Marker verwenden die
   **neutrale Kanonform** des Identifiers (dieselbe Form, die im
   neutralen Schema und in den Trigger-Namen verwendet wird)
-- die neutrale Kanonform enthaelt keine SQL-Sonderzeichen, keine
-  Anführungszeichen und keine Whitespace-Zeichen; sie besteht aus
-  `[a-zA-Z0-9_]` und ggf. UTF-8-Buchstaben
-- falls ein Identifier Zeichen enthaelt, die in einem SQL-Kommentar
-  problematisch waeren (`*`, `/`, `=`, Whitespace), werden diese
-  im Marker **Percent-encoded** (RFC 3986):
+- die neutrale Kanonform besteht **im Regelfall** aus
+  `[a-zA-Z0-9_]` und ggf. UTF-8-Buchstaben — diese Zeichen werden
+  direkt und ohne Encoding in den Marker geschrieben
+- **Encoding-Pfad** (nur fuer Sonderfaelle): das neutrale Modell
+  erlaubt theoretisch Identifier mit Sonderzeichen (z. B. wenn
+  ein Quellschema solche enthaelt). Falls ein Identifier nach der
+  Kanonisierung Zeichen enthaelt, die in einem SQL-Kommentar
+  problematisch waeren (`*`, `/`, `=`, Whitespace), werden
+  **nur diese Zeichen** per Percent-Encoding (RFC 3986) escaped:
   - `*` → `%2A`, `/` → `%2F`, `=` → `%3D`, ` ` → `%20`
   - `%` selbst → `%25`
+- in der Praxis trifft der Encoding-Pfad selten zu, da die
+  Kanonisierung die meisten Sonderzeichen bereits entfernt oder
+  normalisiert; das Encoding ist eine Absicherung fuer Edge Cases,
+  nicht der Normalfall
 - der Reverse-Parser dekodiert Percent-Encoding beim Lesen
 - Begründung: SQL-Kommentare koennen durch `*/` vorzeitig beendet
   werden und durch `=` die Key-Value-Struktur brechen; Percent-
@@ -479,7 +486,7 @@ BEGIN
                          < COALESCE("min_value", -9223372036854775808)
                            - "increment_by"
                      AND "cycle_enabled" = 1
-                THEN COALESCE("max_value", 9223372036854775807)
+                THEN COALESCE("max_value", -1)
                 -- (b) Nicht-Zyklus, Grenze erreicht: next_value bleibt
                 --     (exhausted-Flag wird separat gesetzt, s.u.)
                 WHEN "increment_by" > 0
@@ -588,42 +595,30 @@ Vertrag:
 
 W122-Schweregrad mit statischer Analyse:
 
-Der Generator fuehrt eine **statische Pruefung** der UPDATE-Trigger-
-Bodys auf der Zieltabelle durch:
+Der Generator prueft, ob UPDATE-Trigger auf der Zieltabelle existieren:
 
 - **kein UPDATE-Trigger auf der Zieltabelle vorhanden**: kein W122
-- **UPDATE-Trigger vorhanden**: W122 wird emittiert mit
-  abgestuftem Schweregrad:
+- **UPDATE-Trigger vorhanden**: W122 wird als `NoteType.WARNING`
+  emittiert — **immer**, unabhaengig vom Body-Inhalt und unabhaengig
+  vom aktuellen `recursive_triggers`-Setting
 
-  Bei `recursive_triggers = OFF` (Default):
+Begruendung fuer die konservative Strategie:
 
-  - **immer `NoteType.INFO`**, unabhaengig vom Trigger-Body.
-    UPDATE-Trigger feuern nicht; es gibt **keine** semantischen
-    Seiteneffekte. W122 ist rein informativ.
+- der Generator kann das aktuelle `recursive_triggers`-Setting nicht
+  zuverlaessig abfragen (es kann sich zwischen Generierung und
+  Laufzeit aendern)
+- eine Body-Analyse kann indirekte Rekursionspfade nicht erkennen
+- deshalb: eine einzige, klare Schweregrad-Stufe (WARNING) statt
+  einer adaptiven INFO/WARNING-Abstufung, die zu Verwirrung fuehrt
 
-  Bei `recursive_triggers = ON`:
+Der Report-Text erklaert dem Nutzer den Kontext:
 
-  - **`NoteType.WARNING`** fuer **jeden** UPDATE-Trigger auf der
-    Zieltabelle, unabhaengig vom Body-Inhalt.
-    Begruendung: bei `recursive_triggers = ON` feuert jeder
-    UPDATE-Trigger auf der Zieltabelle durch das `_ai`-UPDATE.
-    Auch ein harmlos wirkender `updated_at`-Trigger kann ueber
-    seine eigene UPDATE-Semantik rekursiv zurueck auf dieselbe
-    Tabelle feuern oder unerwartete Seiteneffekte erzeugen.
-    Die Body-Analyse kann nicht alle Rekursionspfade erkennen
-    (z. B. indirekte Rekursion ueber mehrere Trigger/Tabellen).
-  - zusaetzlich: wenn der Body `dmg_sequences` oder die
-    sequence-basierte Spalte referenziert, wird der Warntext als
-    **hohes Risiko** markiert ("direct sequence interference
-    detected")
-
-Die Schweregrad-Entscheidung (INFO vs. WARNING) trifft der Generator
-**nicht** basierend auf dem aktuellen `recursive_triggers`-Setting
-der Datenbank (das kann sich aendern), sondern konservativ:
-
-- wenn UPDATE-Trigger existieren: W122 wird als WARNING emittiert
-- der Report-Text erklaert, dass das Risiko nur bei
-  `recursive_triggers = ON` besteht, und bei OFF harmlos ist
+- bei `recursive_triggers = OFF` (Default): W122 ist de facto
+  harmlos, da UPDATE-Trigger nicht feuern; der Nutzer kann die
+  Warnung ignorieren
+- bei `recursive_triggers = ON`: W122 ist eine **Pflichtpruefung**,
+  da alle UPDATE-Trigger auf der Zieltabelle durch das `_ai`-UPDATE
+  ausgeloest werden und Rekursion/Seiteneffekte verursachen koennen
 
 - `W122` (WARNING): AFTER INSERT sequence trigger performs UPDATE on
   the same table; existing UPDATE triggers will fire when
@@ -830,7 +825,7 @@ konsistent abgebildet:
 |---|---|---|
 | Validierung | `Long.MIN_VALUE` | `Long.MAX_VALUE` |
 | Trigger: Grenzpruefung `COALESCE(...)` | `-9223372036854775808` | `9223372036854775807` |
-| Trigger: Zyklus-Reset `COALESCE(...)` | `1` (aufsteigend) | `9223372036854775807` (absteigend) |
+| Trigger: Zyklus-Reset `COALESCE(...)` | `1` (aufsteigend) | `-1` (absteigend) |
 | Reverse: Rekonstruktion | `NULL` (unveraendert) | `NULL` (unveraendert) |
 
 Semantischer Unterschied bei Zyklus-Reset:
@@ -838,9 +833,12 @@ Semantischer Unterschied bei Zyklus-Reset:
 - bei `cycle_enabled = 1` und `min_value = NULL` springt eine
   aufsteigende Sequence auf `1` (nicht auf `Long.MIN_VALUE`), weil
   `COALESCE(min_value, 1)` den Zyklusstartwert bestimmt
+- bei `cycle_enabled = 1` und `max_value = NULL` springt eine
+  absteigende Sequence auf `-1` (nicht auf `Long.MAX_VALUE`), weil
+  `COALESCE(max_value, -1)` den Zyklusstartwert bestimmt
 - diese Konvention ist konsistent mit PostgreSQL: `CREATE SEQUENCE ...
-  CYCLE` ohne explizites `MINVALUE` springt ebenfalls auf `1`
-  (bzw. `-1` fuer absteigende Sequences)
+  CYCLE` ohne explizites `MINVALUE` springt auf `1`, ohne
+  `MAXVALUE` springt auf `-1`
 - der Zyklus-Startwert ist deshalb **nicht** identisch mit dem
   Validierungs-Default (`Long.MIN_VALUE`); die Tabelle oben macht
   diesen Unterschied explizit
