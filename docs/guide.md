@@ -475,7 +475,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--format`            | Ausgabeformat: `json`, `yaml`, `csv` (Pflicht)            |
 | `--output`, `-o`      | Ausgabedatei oder -verzeichnis (Standard: stdout)         |
 | `--tables`            | Nur diese Tabellen (kommasepariert)                       |
-| `--filter`            | Roh-WHERE-Klausel (ohne `WHERE`-Keyword)                  |
+| `--filter`            | Filter-DSL-Ausdruck (Vergleiche, IN, IS NULL, AND/OR/NOT, Funktionen) |
 | `--since-column`      | Marker-Spalte für inkrementellen Export (LF-013)          |
 | `--since`             | Untere Grenze für `--since-column`                        |
 | `--split-files`       | Eine Datei pro Tabelle in `--output <dir>`                |

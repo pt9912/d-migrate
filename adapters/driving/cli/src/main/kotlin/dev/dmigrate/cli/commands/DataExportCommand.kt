@@ -61,8 +61,9 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val filter by option(
         "--filter",
-        help = "Raw SQL WHERE clause applied to all tables (without the 'WHERE' keyword). " +
-            "WARNING: not parameterized — see Plan §6.7 for the trust-boundary contract.",
+        help = "Filter DSL expression applied to all tables. Supports comparisons (=, !=, >, <, >=, <=), " +
+            "IN (...), IS NULL, IS NOT NULL, AND, OR, NOT, parentheses, arithmetic, and functions " +
+            "(LOWER, UPPER, TRIM, LENGTH, ABS, ROUND, COALESCE). All literals are bound as JDBC parameters.",
     )
 
     val sinceColumn by option(

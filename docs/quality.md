@@ -164,13 +164,14 @@ Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 
 
 ### Offen
 
-- **`--filter` härten** (Milestone: 0.9.3):
-  Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
-  Siehe dazu den Security-Finding `--filter` roh in SQL (`DataExportCommand.kt`, `DataExportHelpers.kt`) und die dokumentierte `--filter`-Entscheidung in `ImpPlan-0.9.1-A.md`.
-  Muss vor dem öffentlichen Publish-Vertrag entschieden sein.
-  Verankert in `docs/roadmap.md` unter Milestone 0.9.3.
-
 ### Erledigt
+
+- **`--filter` gehärtet** (Milestone: 0.9.3, AP 6.1):
+  `--filter` akzeptiert seit 0.9.3 nur noch eine geschlossene DSL (Vergleiche, `IN`, `IS NULL`,
+  `AND`/`OR`/`NOT`, Klammern, Arithmetik, Funktions-Allowlist). Alle Literale werden als
+  JDBC-Bind-Parameter gebunden. Rohes SQL wird nicht mehr akzeptiert (Exit 2).
+  `FilterDslParser` und `FilterDslTranslator` liegen in `hexagon/application`.
+  M-R5 (`?`-Check) entfällt, da keine `WhereClause` mehr erzeugt wird.
 
 - ~~E2E-Round-Trip-Test.~~
   Umgesetzt in 0.9.2 AP 6.7: `E2ERoundTripPostgresTest` — Export→Import→Schema/Daten-Vergleich
