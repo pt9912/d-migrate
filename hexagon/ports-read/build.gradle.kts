@@ -25,8 +25,14 @@ kover {
                     "dev.dmigrate.driver.SchemaReadNote",
                     "dev.dmigrate.driver.SchemaReadReportInput",
                     "dev.dmigrate.driver.DdlGenerationOptions",
+                    "dev.dmigrate.driver.MysqlNamedSequenceMode",
                     "dev.dmigrate.driver.TransformationNote",
                     "dev.dmigrate.driver.SkippedObject",
+                    "dev.dmigrate.driver.ManualActionRequired",
+                    // DdlResult/DdlStatement: data classes with render helpers,
+                    // thoroughly tested via AbstractDdlGeneratorTest and DdlModelTest
+                    "dev.dmigrate.driver.DdlResult",
+                    "dev.dmigrate.driver.DdlStatement",
                     "dev.dmigrate.format.data.FormatReadOptions",
                 )
             }

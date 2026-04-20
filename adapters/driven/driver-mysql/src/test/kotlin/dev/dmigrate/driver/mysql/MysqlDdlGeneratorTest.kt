@@ -274,8 +274,8 @@ class MysqlDdlGeneratorTest : FunSpec({
             type = NoteType.ACTION_REQUIRED,
             code = "E056",
             objectName = "order_seq",
-            message = "Sequence 'order_seq' is not supported in MySQL and was skipped.",
-            hint = "Use AUTO_INCREMENT columns instead of sequences."
+            message = "Sequence 'order_seq' is not supported in MySQL without helper_table mode.",
+            hint = "Add --mysql-named-sequences helper_table to enable sequence emulation."
         )
 
         result.skippedObjects.any { it.name == "order_seq" && it.type == "sequence" } shouldBe true

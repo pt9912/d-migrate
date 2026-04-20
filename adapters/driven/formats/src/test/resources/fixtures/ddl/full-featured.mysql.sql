@@ -6,12 +6,12 @@
 -- Hint: Consider restructuring the data model to avoid composite types.
 
 
--- [E056] Sequence 'invoice_seq' is not supported in MySQL and was skipped.
--- Hint: Use AUTO_INCREMENT columns instead of sequences.
+-- [E056] Sequence 'invoice_seq' is not supported in MySQL without helper_table mode.
+-- Hint: Add --mysql-named-sequences helper_table to enable sequence emulation.
 
 
--- [E056] Sequence 'simple_seq' is not supported in MySQL and was skipped.
--- Hint: Use AUTO_INCREMENT columns instead of sequences.
+-- [E056] Sequence 'simple_seq' is not supported in MySQL without helper_table mode.
+-- Hint: Add --mysql-named-sequences helper_table to enable sequence emulation.
 
 
 CREATE TABLE `customers` (
