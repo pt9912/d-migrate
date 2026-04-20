@@ -429,7 +429,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             appendLine("/* d-migrate:mysql-sequence-v1 object=nextval */")
             appendLine("CREATE FUNCTION `${MysqlSequenceNaming.NEXTVAL_ROUTINE}`(seq_name VARCHAR(255))")
             appendLine("RETURNS BIGINT")
-            appendLine("NOT DETERMINISTIC")
+            appendLine("DETERMINISTIC")
             appendLine("MODIFIES SQL DATA")
             appendLine("BEGIN")
             appendLine("    DECLARE val BIGINT;")

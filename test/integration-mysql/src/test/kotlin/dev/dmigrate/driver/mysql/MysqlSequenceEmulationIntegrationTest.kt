@@ -31,6 +31,7 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         .withDatabaseName("seqtest")
         .withUsername("test")
         .withPassword("test")
+        .withCommand("--log-bin-trust-function-creators=1")
 
     beforeSpec { container.start() }
     afterSpec { container.stop() }
@@ -67,6 +68,7 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
                     try {
                         c.createStatement().use { it.execute(block) }
                     } catch (e: Exception) {
+                        println("FAILED SQL BLOCK:\n---\n$block\n---\nERROR: ${e.message}")
                         throw AssertionError("Failed to execute SQL:\n---\n$block\n---\nError: ${e.message}", e)
                     }
                 }
