@@ -632,7 +632,7 @@ class YamlSchemaCodecTest : FunSpec({
         default shouldBe DefaultValue.FunctionCall("nextval('my_seq')")
     }
 
-    test("map default with key 'nextval' throws with migration hint") {
+    test("map default with key 'nextval' is parsed as FunctionCall for E122 in validator") {
         val yaml = """
             schema_format: "1.0"
             name: "BadMap"
@@ -647,10 +647,12 @@ class YamlSchemaCodecTest : FunSpec({
                       nextval: my_seq
                 primary_key: [id]
         """.trimIndent()
-        val ex = io.kotest.assertions.throwables.shouldThrow<Exception> {
-            codec.read(yaml.byteInputStream())
-        }
-        ex.message shouldContain "sequence_nextval"
+        val schema = codec.read(yaml.byteInputStream())
+        val default = schema.tables["t"]!!.columns["id"]!!.default
+        default shouldBe DefaultValue.FunctionCall("nextval('my_seq')")
+        // Validator will emit E122 for this FunctionCall
+        val result = validator.validate(schema)
+        result.errors.any { it.code == "E122" } shouldBe true
     }
 
     test("map default with unknown key throws structured error") {
