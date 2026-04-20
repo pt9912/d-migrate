@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.3 - Beta: Filter-Haertung und
 > MySQL-Sequence-Emulation (Generator)
 > **Arbeitspaket**: 6.1 (`Filter-Haertung im Datenexport`)
-> **Status**: Draft (2026-04-20)
+> **Status**: Done (2026-04-20)
 > **Referenz**: `docs/implementation-plan-0.9.3.md` Abschnitt 4.1,
 > Abschnitt 4.2, Abschnitt 4.2a, Abschnitt 5.1, Abschnitt 5.1a,
 > Abschnitt 5.1b, Abschnitt 6.1, Abschnitt 6.6, Abschnitt 7 und
