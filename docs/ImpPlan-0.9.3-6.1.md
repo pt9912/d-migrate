@@ -15,7 +15,7 @@
 > `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`;
 > `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt`;
 > `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ExportOptionsFingerprint.kt`;
-> `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractJdbcDataReader.kt`.
+> `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/data/AbstractJdbcDataReader.kt`.
 
 ---
 
@@ -38,8 +38,8 @@ Nach 6.1 soll klar gelten:
 
 - `data export --filter` ist eine enge DSL und kein SQL-Passthrough mehr
 - die Trust-Boundary ist im technischen Vertrag selbst sichtbar
-- alte Raw-SQL-Filter und alte Raw-SQL-Checkpoints scheitern frueh,
-  erklaerbar und testbar
+- alte, nicht DSL-konforme Raw-SQL-Filter und alte Raw-SQL-Checkpoints
+  scheitern frueh, erklaerbar und testbar
 - der Streaming-Kern bleibt erhalten; geaendert wird die
   Nutzer-Eingabeschicht
 
@@ -87,7 +87,7 @@ umbauen:
 - Uebersetzung DSL -> `DataFilter.ParameterizedClause` bzw.
   `DataFilter.Compound`
 - harte Exit-2-Fehler fuer:
-  - alte Raw-SQL-Filter
+  - alte, nicht DSL-konforme Raw-SQL-Filter
   - leere oder whitespace-only Filterwerte
   - nicht erlaubte Operatoren, Tokens und Funktionsformen
   - alte Raw-SQL-Checkpoints beim Resume
@@ -98,7 +98,6 @@ umbauen:
 ### 3.2 Bewusst nicht Teil von 6.1
 
 - ein SQL-Escape-Hatch neben `--filter`
-- eine breite SQL-Light-Sprache mit `OR`, Klammern oder Funktionen
 - Sequence- oder DDL-Generator-Arbeit
 - neue Export-Flags jenseits des bestehenden `--filter`
 
@@ -117,7 +116,10 @@ Verbindliche Folge:
 
 - der sichtbare Flag-Name bleibt `--filter`
 - ab 0.9.3 akzeptiert `--filter` keine rohe SQL-WHERE-Klausel mehr
-- ungueltige oder offensichtlich alte Raw-SQL-Ausdruecke enden mit
+- als inkompatibel gelten nur solche Ausdrucksformen, die nicht in den 0.9.3-DSL
+  aufgenommen sind (z. B. Dialekt-Operatoren, freies SQL wie `LIMIT`, `ORDER BY`,
+  `JOIN`, `EXISTS`, `UNION`, etc.)
+- ungueltige oder eindeutig nicht DSL-konforme Raw-SQL-Ausdruecke enden mit
   Exit 2 und Migrationshinweis
 
 Begruendung:
@@ -134,10 +136,13 @@ Verbindliche Folge:
 - Unterschiede nur in Whitespace, Keyword-Schreibweise oder
   Identifier-Kapitalisierung duerfen keine unterschiedlichen
   Fingerprints erzeugen
-- alte Checkpoints mit nicht DSL-kompatiblem Raw-SQL-Filter sind
+- die Fingerprint-Normalform ist von der spaeteren SQL-Identifier-
+  Ausgabe getrennt; SQL-Emission arbeitet weiter mit der im AST
+  erhaltenen Original-Schreibweise des unquoted Identifiers
+- alte Checkpoints mit nicht DSL-kompatiblem Raw-SQL-Filterstatus sind
   bewusst inkompatibel und werden mit Exit 2 abgewiesen
 
-### 4.3 Die DSL bleibt klein und abgeschlossen
+### 4.3 Die DSL bleibt abgeschlossen
 
 Verbindliche Folge:
 
@@ -146,12 +151,12 @@ Verbindliche Folge:
   - `IN (...)`
   - `IS NULL` / `IS NOT NULL`
   - `AND`-Verkettung
-- nicht erlaubt sind:
   - `OR`
   - `NOT`
   - Klammern
   - Funktionsaufrufe
   - Arithmetik
+- nicht erlaubt sind:
   - freie SQL-Fragmente
   - dialektspezifische Operatoren
 
@@ -167,12 +172,15 @@ Verbindliche Folge:
 
 Verbindliche Folge:
 
+jede Verwendung von `null` als Literal ist ungueltig, insbesondere:
+
 - `name = null`
 - `name != null`
+- `name > null` / `name >= null` / `name < null` / `name <= null`
 - `name IN (null)`
 
-sind explizit syntaxfehlerhaft und muessen eine gezielte Fehlermeldung
-mit Hinweis auf `IS NULL` / `IS NOT NULL` liefern.
+Diese Formen sind explizit syntaxfehlerhaft und muessen eine gezielte
+Fehlermeldung mit Hinweis auf `IS NULL` / `IS NOT NULL` liefern.
 
 ### 4.6 `DataFilter.ColumnSubset` bleibt unberuehrt
 
@@ -191,20 +199,46 @@ Verbindliche Folge:
   zusammengefuehrt
 - 6.1 fuehrt keinen konkurrierenden zweiten Kombinationspfad ein
 
+### 4.8 Handgeschriebener Recursive-Descent-Parser ohne externe Library
+
+Verbindliche Folge:
+
+- `FilterDslParser` wird als handgeschriebener Recursive-Descent-Parser
+  in Kotlin implementiert
+- keine externe Parser-Library (kein ANTLR, kein better-parse, kein
+  Parsek)
+- eine Methode pro Vorrangstufe (`parseOrExpr`, `parseAndExpr`,
+  `parseNotExpr`, `parsePredicate`, `parseAddExpr`, `parseMulExpr`,
+  `parseUnaryExpr`, `parseAtom`)
+
+Begruendung:
+
+- die Grammatik umfasst ~15 Produktionsregeln; das rechtfertigt keine
+  externe Abhaengigkeit
+- gezielte Fehlermeldungen mit Position und Token (z. B. "null ist kein
+  Literal, verwende IS NULL", "Funktion X nicht erlaubt") sind im
+  Recursive-Descent-Flow direkt formulierbar; bei Combinator-Libraries
+  oder Generatoren muesste das Error-Recovery-System der Library
+  konfiguriert werden
+- die Funktions-Allowlist und die `null`-Sonderregeln sind semantische
+  Pruefungen, die sich im Parser-Flow natuerlich einfuegen
+- kein Build-Plugin, kein Codegenerator, keine transitive Dependency
+
 ---
 
 ## 5. Zielarchitektur
 
 ### 5.1 Parser- und Schichtvertrag
 
-Der neue DSL-Pfad besteht aus einer eigenen Parser-Stufe:
+Der neue DSL-Pfad besteht aus einem handgeschriebenen
+Recursive-Descent-Parser (siehe 4.8):
 
 - `FilterDslParser.parse(raw: String): FilterDslParseResult`
 - `FilterDslParseError(message: String, token: String?, index: Int?)`
 - AST-Typen:
-  - `FilterDslExpression`
-  - `FilterClause`
-  - `FilterLiteral`
+  - `FilterExpr` (OR, AND, NOT, Predicate, GroupedExpr)
+  - `ValueExpr` (Literal, Identifier, Arithmetic, FunctionCall, GroupedValue)
+  - `FilterLiteral` (Integer, Decimal, Bool, StringLit)
 
 Schichtregel:
 
@@ -219,21 +253,84 @@ Schichtregel:
 Zulaessige Grammatik:
 
 ```text
-filter        := clause (ws "AND" ws clause)*
-clause        := comparison | in_list | null_check
-comparison    := identifier ws? operator ws? literal
-in_list       := identifier ws? "IN" ws? "(" literal ("," literal)* ")"
-null_check    := identifier ws? "IS NULL" | identifier ws? "IS NOT NULL"
+-- Boolsche Ebene (Vorrang: NOT > AND > OR)
+filter_expr   := or_expr
+or_expr       := and_expr (ws "OR" ws and_expr)*
+and_expr      := not_expr (ws "AND" ws not_expr)*
+not_expr      := "NOT" ws not_expr | predicate
+
+-- Praedikate
+predicate     := value_expr ws? operator ws? value_expr
+               | value_expr ws "IN" ws? "(" ws? value_expr (ws? "," ws? value_expr)* ws? ")"
+               | value_expr ws "IS" ws "NULL"
+               | value_expr ws "IS" ws "NOT" ws "NULL"
+               | "(" ws? filter_expr ws? ")"
 operator      := "=" | "!=" | ">" | ">=" | "<" | "<="
+
+-- Wertausdruecke (Vorrang: unary > * / > + -)
+value_expr    := add_expr
+add_expr      := mul_expr (ws? ("+" | "-") ws? mul_expr)*
+mul_expr      := unary_expr (ws? ("*" | "/") ws? unary_expr)*
+unary_expr    := "-" ws? atom | atom
+atom          := literal
+               | function_call
+               | qualified_identifier
+               | "(" ws? value_expr ws? ")"
+
+-- Funktionsaufrufe (feste Allowlist)
+function_call := allowed_fn ws? "(" ws? value_expr (ws? "," ws? value_expr)* ws? ")"
+allowed_fn    := "LOWER" | "UPPER" | "TRIM" | "LENGTH"
+               | "ABS" | "ROUND" | "COALESCE"
+
+-- Identifier
+identifier    := [A-Za-z_][A-Za-z0-9_]*
+qualified_identifier := identifier ("." identifier)?
+
+-- Literale
+literal       := bool_lit | numeric_lit | string_lit
+numeric_lit   := integer_lit | decimal_lit
+integer_lit   := "0" | [1-9][0-9]*
+decimal_lit   := ("0" | [1-9][0-9]*) "." [0-9]+
+bool_lit      := "true" | "false"    (case-insensitive)
+string_lit    := "'" ( [^'] | "''" )* "'"
+ws            := [ \t]+
 ```
+
+Alle Keywords (`AND`, `OR`, `NOT`, `IN`, `IS`, `NULL`, `true`, `false`,
+Funktionsnamen) und Operatoren sind beim Parsen case-insensitive.
+
+Vorrang-Uebersicht:
+
+- Arithmetik: unaeres `-` > `*` `/` > `+` `-`
+- Boolesch: `NOT` > `AND` > `OR`
+- Klammern ueberschreiben beide Vorrang-Ebenen:
+  `(filter_expr)` auf Praedikat-Ebene, `(value_expr)` auf Atom-Ebene
+
+Funktions-Allowlist:
+
+Die erlaubten Funktionsnamen sind abschliessend festgelegt. Ein nicht
+gelisteter Funktionsname ist ein Parse-Fehler mit gezielter Meldung.
+Funktionsaufrufe werden zusätzlich arity-validiert (z. B. per zentraler
+Allowlist-Metadata):
+- `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS` -> genau 1 Argument
+- `ROUND` -> 1 oder 2 Argumente
+- `COALESCE` -> mindestens 2 Argumente
+Die Liste kann in spaeteren Versionen erweitert werden, ohne die
+Grammatik zu aendern.
 
 Identifier-Vertrag:
 
-- `[A-Za-z_][A-Za-z0-9_]*`
-- optional qualifiziert als `<table>.<column>`
+- `[A-Za-z_][A-Za-z0-9_]*` (identisch mit `identifier` in der Grammatik)
+- optional qualifiziert als **genau eine** Ebene `<table>.<column>`
+- bewusst nicht unterstützt: weitere Ebenen wie `schema.table.column`;
+  ein Identifier mit mehr als einem Punkt ist ein Parse-Fehler mit
+  gezielter Meldung
 - kein Identifier-Escaping in der DSL selbst
 - Dialekt-Quoting erfolgt erst nach erfolgreichem Parse ueber die
   bestehenden Identifier-Utilities
+- case-sensitive bzw. nur ueber Quoting adressierbare Identifier sind in
+  0.9.3 bewusst **nicht** Teil des DSL-Vertrags; der Parser akzeptiert
+  nur konservative unquoted Identifiers
 
 Literal-Vertrag:
 
@@ -241,7 +338,23 @@ Literal-Vertrag:
 - `true | false` case-insensitive
 - Strings single-quoted mit verdoppelten Quotes als einzigem Escape
 - `null` nur ueber `IS NULL` / `IS NOT NULL`
-- `IN (...)` mit mindestens einem Literal
+- unaeres `-` ist als Vorzeichen in `unary_expr` modelliert, nicht
+  mehr als Teil des Literal-Tokens; `-1` ist damit `unary_expr("-",
+  integer_lit(1))`
+- `IN (...)` mit mindestens einem `value_expr`; Arithmetik und
+  Funktionsaufrufe sind innerhalb der Liste zulaessig
+- fuehrende Nullen werden fuer numerische Literale bewusst nicht als
+  alternative Schreibweise akzeptiert:
+  - `0` ist erlaubt
+  - `01`, `00`, `01.5` sind ungueltig
+- Integer- und Dezimalliterale bleiben im Fingerprint absichtlich
+  getrennt; `1` und `1.0` gelten in 0.9.3 nicht als dieselbe kanonische
+  Schreibweise
+
+- Keywords und Operatoren sind beim Parsen case-insensitive (siehe
+  Grammatik); fuer die Normalform werden sie uppercased (`AND`, `OR`,
+  `NOT`, `IN`, `IS NULL`, `IS NOT NULL`, Funktionsnamen,
+  Vergleichs- und Arithmetik-Operatoren)
 
 ### 5.3 Normalisierung und SQL-Erzeugung
 
@@ -255,17 +368,40 @@ Der normale Pfad lautet:
 
 Normalform-Regeln:
 
-- Keywords uppercased
+- Keywords und Funktionsnamen uppercased
+- Arithmetik- und Vergleichsoperatoren in kanonischer Schreibweise
 - ueberfluessige Leerzeichen entfernt
-- Identifier segmentweise ASCII-lowercased
-- Literalwerte semantisch unveraendert
+- fuer den Fingerprint werden Identifier segmentweise
+  ASCII-lowercased
+- fuer die spaetere SQL-Erzeugung bleibt die originale
+  Identifier-Schreibweise aus dem AST erhalten und wird erst danach
+  dialektspezifisch gequotet
+- Bool-Literale werden im Fingerprint auf `true` bzw. `false`
+  kanonisiert
+- Integer-Literale werden im Fingerprint in kanonischer dezimaler
+  Schreibweise ohne fuehrende Nullen gehalten
+- Dezimal-Literale bleiben als Dezimal-Literale erhalten; `1` und `1.0`
+  werden bewusst nicht zusammengezogen
+- Klammern, die durch Vorrangregeln redundant sind, bleiben im
+  Fingerprint **erhalten**; der Parser entfernt keine Klammern, um die
+  kanonische Form einfach und vorhersehbar zu halten.
+  Dadurch bleiben semantisch äquivalente Varianten wie `a = b`
+  und `(a = b)` in der Fingerprint-Repräsentation unterscheidbar.
 
 SQL-Erzeugung:
 
-- generisches SQL mit `?`-Platzhaltern
+- Literale werden als `?`-Platzhalter mit Bind-Parametern erzeugt
+- Identifier, Arithmetik-Operatoren, Funktionsnamen und boolsche
+  Operatoren werden als SQL-Text emittiert (nicht parameterisiert)
 - keine direkte Weitergabe roher Nutzereingaben als `WhereClause`
 - Dialekt-Quoting der Identifier erfolgt in `DataExportHelpers`
   ueber bestehende `quoteQualifiedIdentifier()`-Hilfen
+- dieses Quoting arbeitet auf der originalen, im AST erhaltenen
+  Identifier-Schreibweise; die lowercased Fingerprint-Form wird **nicht**
+  direkt zur SQL-Erzeugung wiederverwendet
+- Funktionsaufrufe werden 1:1 als SQL-Funktionsnamen emittiert;
+  die Allowlist stellt sicher, dass nur bekannte, sichere Funktionen
+  im erzeugten SQL erscheinen
 
 ### 5.4 Request-, Runner- und Reader-Pfad
 
@@ -284,15 +420,22 @@ Der Exportkern bleibt erhalten, aber der Filtertransport aendert sich:
 
 ### 6.1 Parser und AST einfuehren
 
-- `FilterDslParser` in `hexagon/application` anlegen
-- AST-Typen und Parse-Fehlertyp definieren
-- Tokenisierung, Grammar-Parse und Fehlerpositionen implementieren
+- `FilterDslParser` als handgeschriebenen Recursive-Descent-Parser in
+  `hexagon/application` anlegen (siehe Leitentscheidung 4.8)
+- AST-Typen (`FilterExpr`, `ValueExpr`, `FilterLiteral`) und
+  Parse-Fehlertyp definieren
+- eine Methode pro Vorrangstufe: `parseOrExpr`, `parseAndExpr`,
+  `parseNotExpr`, `parsePredicate`, `parseAddExpr`, `parseMulExpr`,
+  `parseUnaryExpr`, `parseAtom`
+- Funktions-Allowlist mit Arity-Metadata als zentrale Konstante pflegen
 
 ### 6.2 DSL -> `DataFilter` uebersetzen
 
 - Uebersetzung AST -> SQL + Parameterliste kapseln
 - nur `ParameterizedClause` und `Compound` erzeugen
 - keine erfolgreiche Nutzer-Eingabe darf in `WhereClause` enden
+- Funktionsaufrufe beim Übersetzen ebenfalls arity-validieren und bei
+  Verstoß klar begruenden
 
 ### 6.3 CLI- und Runner-Pfad umstellen
 
@@ -305,8 +448,14 @@ Der Exportkern bleibt erhalten, aber der Filtertransport aendert sich:
 ### 6.4 Fingerprint und Resume nachziehen
 
 - `ExportOptionsFingerprint` auf kanonische DSL-Normalform umstellen
-- alte Raw-SQL-Checkpoints gezielt mit Exit 2 und Migrationshinweis
-  ablehnen
+- der Resume-Pfad bekommt in `DataExportRunner` einen expliziten
+  vorgeschalteten Kompatibilitaetscheck:
+  - Checkpoint laden
+  - gespeicherten Filterstatus/Optionen validieren
+  - altes Raw-SQL-Format oder nicht DSL-kompatible gespeicherte
+    Filtertexte erkennen
+  - **vor** tieferer Runner-/Parser-Hydratisierung gezielt Exit 2 mit
+    Migrationshinweis ausgeben
 - Resume fuer semantisch gleiche DSL-Ausdruecke stabil halten
 
 ### 6.5 Sichtbare Vertrage aktualisieren
@@ -330,15 +479,26 @@ Alle muessen denselben Vertrag sprechen:
 
 - `FilterDslParserTest`:
   - Parser-Lexing
-  - AST-Baum
+  - AST-Baum fuer alle Ausdruecke (Vergleich, IN, IS NULL,
+    Arithmetik, Funktionsaufrufe, NOT, AND, OR, Klammern)
+  - Operator-Vorrang: `NOT` > `AND` > `OR`; unaeres `-` > `*` `/` > `+` `-`
+  - Klammern ueberschreiben Vorrang korrekt
   - Normalform
   - Fehlerposition/-token
+  - Trennung zwischen Fingerprint-Identifierform und originaler
+    AST-Identifierschreibweise
+  - numerische Literale mit fuehrenden Nullen -> Parse-Fehler
+  - `= null` / `!= null` / `IN (null)` -> Parse-Fehler mit Hinweis
+    auf `IS NULL` / `IS NOT NULL`
+  - Identifier mit mehr als einem Punkt -> Parse-Fehler
+  - nicht gelisteter Funktionsname -> Parse-Fehler mit Hinweis auf
+    erlaubte Funktionen
+  - ungültige Funktions-Arity -> Fehler mit konkreter Arity-Meldung
+  - Arithmetik in IN-Listen und auf beiden Seiten eines Vergleichs
 - `DataExportRunnerTest`, `CliDataExportTest`:
   - gueltige DSL -> `ParameterizedClause`
   - leerer oder whitespace-only `--filter` -> Exit 2
   - nicht erlaubte Raw-SQL-Formen -> Exit 2
-  - `= null` / `!= null` / `IN (null)` -> Exit 2 mit Hinweis auf
-    `IS NULL` / `IS NOT NULL`
   - Resume-/Fingerprint-Stabilitaet fuer kanonisch gleiche DSL
   - Resume mit altem Raw-SQL-Checkpoint -> Exit 2 mit Migrationshilfe
 
@@ -360,8 +520,12 @@ Alle muessen denselben Vertrag sprechen:
 - der CLI-Pfad erzeugt aus Nutzereingaben keine rohen
   `WhereClause`-Fragmente mehr
 - `FilterDslParser` liegt in `hexagon/application`
-- Fingerprints bleiben stabil bei reiner Umformatierung,
-  Keyword-Case-Aenderung und Identifier-Kapitalisierung
+- Fingerprints bleiben stabil bei reiner Umformatierung, Keyword-Case-
+  Aenderung und Identifier-Kapitalisierung; unterschiedliche reine
+  Klammerstruktur bleibt absichtlich unterscheidbar
+- SQL-Erzeugung verwendet weiterhin die originale
+  Identifier-Schreibweise des AST; Fingerprint-Normalisierung und
+  SQL-Identifierausgabe sind sauber getrennt
 - alte Raw-SQL-Checkpoints scheitern gezielt und reproduzierbar
 - `--since` und `--filter` komponieren weiter korrekt ueber
   `DataFilter.Compound`
@@ -377,30 +541,33 @@ Voraussichtlich direkt betroffen:
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataExportCommand.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportRunner.kt`
+  (enthaelt auch `DataExportRequest`)
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ExportOptionsFingerprint.kt`
 - neuer `FilterDslParser` in
-  `hexagon/application/src/main/kotlin/...`
+  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/FilterDslParser.kt`
 
 Voraussichtlich testseitig betroffen:
 
-- `hexagon/application/src/test/kotlin/.../FilterDslParserTest.kt`
+- `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/FilterDslParserTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`
-- `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/DataExportE2EMysqlTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataExportE2EMysqlTest.kt`
 
 ---
 
 ## 9. Offene Punkte
 
-### 9.1 DSL-Scope bleibt bewusst eng
-
-0.9.3 soll keine breite SQL-Light-Sprache einfuehren. Wenn spaeter mehr
-Ausdrucksformen noetig werden, muessen sie als explizite
-Vertragserweiterung mit eigener Testmatrix eingefuehrt werden.
-
-### 9.2 Alte Raw-SQL-Checkpoints bleiben ein bewusster Bruch
+### 9.1 Alte Raw-SQL-Checkpoints bleiben ein bewusster Bruch
 
 Der Resume-Bruch fuer alte Raw-SQL-Filter ist beabsichtigt. Wichtig ist
 nicht, ihn zu vermeiden, sondern ihn frueh, klar und reproduzierbar zu
 kommunizieren.
+
+### 9.2 Klarheit zum Bruchumfang
+
+Nicht jeder klassische SQL-Ausdruck ist automatisch inkompatibel. Als
+Bruch gelten nur Ausdruecke ausserhalb der explizit definierten DSL
+(`filter_expr`) oder unparsebare Speicherstände in Checkpoints.
+Filter wie `status = 'OPEN'`, `created_at >= 0` oder `name IN ('A','B')`
+sind DSL-konform und bleiben lauffähig.
