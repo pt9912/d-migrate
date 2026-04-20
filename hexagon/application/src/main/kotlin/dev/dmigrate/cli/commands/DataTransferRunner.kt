@@ -23,7 +23,7 @@ class TransferPreflightException(msg: String) : RuntimeException(msg)
 
 data class DataTransferRequest(
     val source: String, val target: String,
-    val tables: List<String>? = null, val filter: String? = null,
+    val tables: List<String>? = null, val filter: ParsedFilter? = null,
     val sinceColumn: String? = null, val since: String? = null,
     val onConflict: String = "abort", val triggerMode: String = "fire",
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
@@ -86,17 +86,12 @@ class DataTransferRunner(
 
             val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
                 truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
-            val filter = try {
-                DataExportHelpers.resolveFilter(
-                    rawFilter = request.filter,
-                    dialect = srcCfg.dialect,
-                    sinceColumn = request.sinceColumn,
-                    since = request.since,
-                )
-            } catch (e: DataExportHelpers.FilterResolveException) {
-                printError("Invalid --filter: ${e.parseError.message}", srcRef)
-                return 2
-            }
+            val filter = DataExportHelpers.resolveFilter(
+                parsedFilter = request.filter,
+                dialect = srcCfg.dialect,
+                sinceColumn = request.sinceColumn,
+                since = request.since,
+            )
             val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
 
             try {
@@ -195,14 +190,8 @@ class DataTransferRunner(
         if (!r.sinceColumn.isNullOrBlank() && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
             return "--since-column '${r.sinceColumn}' is not a valid identifier"
         }
-        // M-R5 '?' check is no longer needed: --filter now produces ParameterizedClause
-        // via the DSL parser, so no raw WhereClause with literal '?' can exist.
-        if (!r.filter.isNullOrBlank()) {
-            when (val result = FilterDslParser.parse(r.filter)) {
-                is FilterDslParseResult.Failure -> return "Invalid --filter: ${result.error.message}"
-                is FilterDslParseResult.Success -> { /* ok */ }
-            }
-        }
+        // No --filter validation needed: filter is already parsed into
+        // ParsedFilter by the CLI layer before constructing DataTransferRequest.
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }
         try { OnConflict.valueOf(r.onConflict.uppercase()) } catch (_: Exception) { return "Unknown --on-conflict: ${r.onConflict}" }
         return null

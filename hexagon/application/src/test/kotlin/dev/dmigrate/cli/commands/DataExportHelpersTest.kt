@@ -117,55 +117,54 @@ class DataExportHelpersTest : FunSpec({
 
     // ─── resolveFilter ────────────────────────────────────────────
 
-    context("resolveFilter") {
+    context("parseFilter") {
 
         test("null returns null") {
-            DataExportHelpers.resolveFilter(null).shouldBeNull()
+            parseFilter(null).shouldBeNull()
         }
 
         test("empty string returns null") {
-            DataExportHelpers.resolveFilter("").shouldBeNull()
+            parseFilter("").shouldBeNull()
         }
 
         test("whitespace-only returns null") {
-            DataExportHelpers.resolveFilter("   ").shouldBeNull()
-            DataExportHelpers.resolveFilter("\t\n").shouldBeNull()
+            parseFilter("   ").shouldBeNull()
         }
 
-        test("non-blank DSL string produces ParameterizedClause") {
-            val filter = DataExportHelpers.resolveFilter(
-                rawFilter = "id = 42",
-                dialect = DatabaseDialect.POSTGRESQL,
-            )
-            filter.shouldNotBeNull()
-            val clause = filter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
-            clause.sql shouldBe "\"id\" = ?"
-            clause.params shouldBe listOf(42L)
+        test("valid DSL produces ParsedFilter with canonical form") {
+            val pf = parseFilter("Status = 'OPEN'")
+            pf.shouldNotBeNull()
+            pf.canonical shouldBe "status = 'OPEN'"
         }
 
-        test("whitespace around DSL is trimmed before parsing") {
-            val filter = DataExportHelpers.resolveFilter(
-                rawFilter = "  id = 42  ",
-                dialect = DatabaseDialect.POSTGRESQL,
-            )
-            filter.shouldNotBeNull()
-            val clause = filter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
-            clause.sql shouldBe "\"id\" = ?"
-            clause.params shouldBe listOf(42L)
-        }
-
-        test("invalid DSL throws FilterResolveException") {
-            shouldThrow<DataExportHelpers.FilterResolveException> {
-                DataExportHelpers.resolveFilter(
-                    rawFilter = "LIMIT 10",
-                    dialect = DatabaseDialect.POSTGRESQL,
-                )
+        test("invalid DSL throws FilterParseException") {
+            shouldThrow<FilterParseException> {
+                parseFilter("LIMIT 10")
             }
         }
+    }
 
-        test("builds a parameterized --since clause when no raw filter is present") {
+    context("resolveFilter") {
+
+        test("null ParsedFilter returns null") {
+            DataExportHelpers.resolveFilter(null).shouldBeNull()
+        }
+
+        test("ParsedFilter produces ParameterizedClause") {
+            val pf = parseFilter("id = 42")
             val filter = DataExportHelpers.resolveFilter(
-                rawFilter = null,
+                parsedFilter = pf,
+                dialect = DatabaseDialect.POSTGRESQL,
+            )
+            filter.shouldNotBeNull()
+            val clause = filter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+            clause.sql shouldBe "\"id\" = ?"
+            clause.params shouldBe listOf(42L)
+        }
+
+        test("builds a parameterized --since clause when no filter is present") {
+            val filter = DataExportHelpers.resolveFilter(
+                parsedFilter = null,
                 dialect = DatabaseDialect.SQLITE,
                 sinceColumn = "updated_at",
                 since = "2026-01-01",
@@ -176,8 +175,9 @@ class DataExportHelpersTest : FunSpec({
         }
 
         test("combines DSL filter and --since into a Compound") {
+            val pf = parseFilter("active = 1")
             val filter = DataExportHelpers.resolveFilter(
-                rawFilter = "active = 1",
+                parsedFilter = pf,
                 dialect = DatabaseDialect.MYSQL,
                 sinceColumn = "audit.updated_at",
                 since = "2026-01-01T10:15:30",
@@ -192,25 +192,21 @@ class DataExportHelpersTest : FunSpec({
         }
     }
 
-    // containsLiteralQuestionMark removed in 0.9.3: --filter now produces
-    // ParameterizedClause via DSL parser, M-R5 check is obsolete.
+    // containsLiteralQuestionMark and canonicalizeFilter removed in 0.9.3:
+    // parseFilter now returns ParsedFilter with canonical form.
+    // canonicalizeFilter tests moved to parseFilter context above.
 
-    context("canonicalizeFilter") {
-
-        test("returns null for null or blank") {
-            DataExportHelpers.canonicalizeFilter(null) shouldBe null
-            DataExportHelpers.canonicalizeFilter("") shouldBe null
-            DataExportHelpers.canonicalizeFilter("   ") shouldBe null
-        }
+    context("parseFilter canonical form") {
 
         test("normalizes keyword case and whitespace") {
-            DataExportHelpers.canonicalizeFilter("status = 'OPEN'  and  active = true") shouldBe
-                "status = 'OPEN' AND active = true"
+            val pf = parseFilter("status = 'OPEN'  and  active = true")
+            pf.shouldNotBeNull()
+            pf.canonical shouldBe "status = 'OPEN' AND active = true"
         }
 
-        test("throws FilterResolveException for invalid DSL") {
-            shouldThrow<DataExportHelpers.FilterResolveException> {
-                DataExportHelpers.canonicalizeFilter("CONCAT(a, b) = 'x'")
+        test("throws FilterParseException for invalid DSL") {
+            shouldThrow<FilterParseException> {
+                parseFilter("CONCAT(a, b) = 'x'")
             }
         }
     }

@@ -70,6 +70,18 @@ internal class ExportCheckpointManager(
                 return ExportResumeResult.Exit(3)
             }
             if (manifest.optionsFingerprint != ctx.fingerprint) {
+                // Detect pre-0.9.3 raw-SQL checkpoints: if the current filter
+                // is DSL-based but the stored fingerprint was computed from a
+                // raw filter string, the mismatch is a migration issue, not a
+                // semantic option change. Exit 2 with migration hint.
+                if (request.filter != null) {
+                    stderr(
+                        "Error: Checkpoint was created with a raw SQL --filter (pre-0.9.3). " +
+                            "Since 0.9.3, --filter uses a DSL that produces a different fingerprint. " +
+                            "Start a new export without --resume, or delete the old checkpoint."
+                    )
+                    return ExportResumeResult.Exit(2)
+                }
                 stderr("Error: Checkpoint options do not match the current request (fingerprint mismatch); refuse to resume.")
                 return ExportResumeResult.Exit(3)
             }

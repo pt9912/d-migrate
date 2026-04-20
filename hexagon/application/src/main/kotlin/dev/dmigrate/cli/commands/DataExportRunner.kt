@@ -23,12 +23,23 @@ import java.time.Instant
 /**
  * Immutable DTO with all CLI inputs for `d-migrate data export`.
  */
+/**
+ * Parsed filter representation produced by [FilterDslParser].
+ * Carried by [DataExportRequest] and [DataTransferRequest] instead of
+ * a raw filter string, so the request layer never transports unparsed
+ * user input.
+ */
+data class ParsedFilter(
+    val expr: FilterExpr,
+    val canonical: String,
+)
+
 data class DataExportRequest(
     val source: String,
     val format: String,
     val output: Path?,
     val tables: List<String>?,
-    val filter: String?,
+    val filter: ParsedFilter?,
     val sinceColumn: String?,
     val since: String?,
     val encoding: String,
@@ -134,18 +145,9 @@ class DataExportRunner(
                 return 2
             }
         }
-        // Validate --filter DSL early (before any I/O)
-        if (!request.filter.isNullOrBlank()) {
-            when (val parseResult = FilterDslParser.parse(request.filter)) {
-                is FilterDslParseResult.Failure -> {
-                    val err = parseResult.error
-                    val posHint = if (err.index != null) " (at position ${err.index})" else ""
-                    stderr("Error: Invalid --filter expression${posHint}: ${err.message}")
-                    return 2
-                }
-                is FilterDslParseResult.Success -> { /* ok, will be resolved later */ }
-            }
-        }
+        // No --filter DSL validation needed here: the filter is already
+        // parsed into ParsedFilter by the CLI layer before constructing
+        // DataExportRequest.
 
         // Resume CLI preflight: stdout export cannot be resumed (stream
         // is not re-openable).

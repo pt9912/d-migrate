@@ -64,21 +64,16 @@ internal object DataExportHelpers {
      * @throws FilterResolveException if the DSL parse fails
      */
     fun resolveFilter(
-        rawFilter: String?,
+        parsedFilter: ParsedFilter?,
         dialect: DatabaseDialect? = null,
         sinceColumn: String? = null,
         since: String? = null,
     ): DataFilter? {
-        val dslClause = rawFilter?.takeIf { it.isNotBlank() }?.let { raw ->
+        val dslClause = parsedFilter?.let { pf ->
             val effectiveDialect = requireNotNull(dialect) {
                 "dialect is required when building a parameterized filter"
             }
-            when (val result = FilterDslParser.parse(raw)) {
-                is FilterDslParseResult.Success ->
-                    FilterDslTranslator.toParameterizedClause(result.expr, effectiveDialect)
-                is FilterDslParseResult.Failure ->
-                    throw FilterResolveException(result.error)
-            }
+            FilterDslTranslator.toParameterizedClause(pf.expr, effectiveDialect)
         }
         val hasSince = !sinceColumn.isNullOrBlank() && !since.isNullOrBlank()
         if (!hasSince) return dslClause
@@ -97,22 +92,13 @@ internal object DataExportHelpers {
     }
 
     /**
-     * Produces the canonical fingerprint form of a `--filter` DSL expression.
+     * Parses a raw `--filter` CLI string into a [ParsedFilter].
      * Returns `null` if [rawFilter] is null or blank.
      *
-     * @throws FilterResolveException if the DSL parse fails
+     * @throws FilterParseException if the DSL parse fails
      */
-    fun canonicalizeFilter(rawFilter: String?): String? {
-        val trimmed = rawFilter?.takeIf { it.isNotBlank() } ?: return null
-        return when (val result = FilterDslParser.parse(trimmed)) {
-            is FilterDslParseResult.Success -> FilterDslTranslator.canonicalize(result.expr)
-            is FilterDslParseResult.Failure -> throw FilterResolveException(result.error)
-        }
-    }
-
-    /** Thrown when a `--filter` value cannot be parsed as the 0.9.3 DSL. */
-    class FilterResolveException(val parseError: FilterDslParseError) :
-        RuntimeException(parseError.message)
+    fun parseFilter(rawFilter: String?): ParsedFilter? =
+        dev.dmigrate.cli.commands.parseFilter(rawFilter)
 
     internal fun quoteQualifiedIdentifier(value: String, dialect: DatabaseDialect): String =
         SqlIdentifiers.quoteQualifiedIdentifier(value, dialect)

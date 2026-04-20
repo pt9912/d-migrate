@@ -224,6 +224,11 @@ class FilterDslParserTest : FunSpec({
         err.message shouldContain "IS NULL"
     }
 
+    test("null in IN list") {
+        val err = parseFail("name IN ('a', null, 'b')")
+        err.message shouldContain "IS NULL"
+    }
+
     test("null literal with != operator") {
         val err = parseFail("name != null")
         err.message shouldContain "IS NULL"

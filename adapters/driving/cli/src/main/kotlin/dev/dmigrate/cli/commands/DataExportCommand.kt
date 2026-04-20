@@ -134,12 +134,20 @@ class DataExportCommand : CliktCommand(name = "export") {
         // Hierarchie: d-migrate → data → export → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        val parsedFilter = try {
+            parseFilter(filter)
+        } catch (e: FilterParseException) {
+            val err = e.parseError
+            val posHint = if (err.index != null) " (at position ${err.index})" else ""
+            System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
+            throw ProgramResult(2)
+        }
         val request = DataExportRequest(
             source = source,
             format = format,
             output = output,
             tables = tables,
-            filter = filter,
+            filter = parsedFilter,
             sinceColumn = sinceColumn,
             since = since,
             encoding = encoding,

@@ -43,11 +43,19 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        val parsedFilter = try {
+            parseFilter(filter)
+        } catch (e: FilterParseException) {
+            val err = e.parseError
+            val posHint = if (err.index != null) " (at position ${err.index})" else ""
+            System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
+            throw ProgramResult(2)
+        }
         val request = DataTransferRequest(
             source = source,
             target = target,
             tables = tables,
-            filter = filter,
+            filter = parsedFilter,
             sinceColumn = sinceColumn,
             since = since,
             onConflict = onConflict,

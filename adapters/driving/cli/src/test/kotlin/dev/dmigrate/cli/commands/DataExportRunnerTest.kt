@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
@@ -127,7 +128,7 @@ class DataExportRunnerTest : FunSpec({
         format = format,
         output = output,
         tables = tables,
-        filter = filter,
+        filter = parseFilter(filter),
         sinceColumn = sinceColumn,
         since = since,
         encoding = encoding,
@@ -474,25 +475,13 @@ class DataExportRunnerTest : FunSpec({
         stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
     }
 
-    test("Exit 2: invalid --filter DSL is rejected early") {
-        var poolOpened = false
-        val stderr = StderrCapture()
-        val runner = newRunner(
-            stderr,
-            poolFactory = {
-                poolOpened = true
-                FakeConnectionPool()
-            },
-        )
-        runner.execute(
-            request(
-                filter = "LIMIT 10",
-                sinceColumn = "updated_at",
-                since = "2026-01-01",
-            )
-        ) shouldBe 2
-        poolOpened shouldBe false
-        stderr.joined() shouldContain "Invalid --filter"
+    test("Exit 2: invalid --filter DSL throws FilterParseException at request construction") {
+        // Since 0.9.3, filter parsing happens in the CLI layer (DataExportCommand)
+        // before DataExportRequest is constructed. The Runner never sees invalid DSL.
+        // This test verifies that parseFilter rejects invalid input.
+        shouldThrow<FilterParseException> {
+            parseFilter("LIMIT 10")
+        }
     }
 
     // ─── Exit 4: Connection / lister I/O ─────────────────────────

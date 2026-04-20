@@ -80,27 +80,17 @@ internal class ExportPreflightValidator(
             encoding = charset, csvHeader = !request.csvNoHeader,
             csvDelimiter = delimiterChar, csvBom = request.csvBom, csvNullString = request.nullString,
         )
-        val filter = try {
-            DataExportHelpers.resolveFilter(
-                rawFilter = request.filter, dialect = config.dialect,
-                sinceColumn = request.sinceColumn, since = request.since,
-            )
-        } catch (e: DataExportHelpers.FilterResolveException) {
-            stderr("Error: Invalid --filter: ${e.parseError.message}")
-            return PreparedResult.Exit(2)
-        }
+        val filter = DataExportHelpers.resolveFilter(
+            parsedFilter = request.filter, dialect = config.dialect,
+            sinceColumn = request.sinceColumn, since = request.since,
+        )
         val pks: Map<String, List<String>> = if (!request.sinceColumn.isNullOrBlank()) {
             resolvePrimaryKeys(pool, config.dialect, tables)
         } else emptyMap()
-        val canonicalFilter = try {
-            DataExportHelpers.canonicalizeFilter(request.filter)
-        } catch (_: DataExportHelpers.FilterResolveException) {
-            null // already caught above
-        }
         val fingerprint = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
             format = request.format, encoding = request.encoding, csvDelimiter = request.csvDelimiter,
             csvBom = request.csvBom, csvNoHeader = request.csvNoHeader, csvNullString = request.nullString,
-            filter = canonicalFilter, sinceColumn = request.sinceColumn, since = request.since,
+            filter = request.filter?.canonical, sinceColumn = request.sinceColumn, since = request.since,
             tables = tables, outputMode = canonicalOutputMode(output), outputPath = canonicalOutputPath(output),
             primaryKeysByTable = pks,
         ))

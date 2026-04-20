@@ -23,18 +23,16 @@ Zusatzaufgaben:
 | Lesbarkeit & Namensgebung | 8/10 | Domainnahe Namen und konsistente Terminologie; CLI, Runner und Ports sind gut lesbar. Verbesserungspotenzial durch weitere Kürzung großer Orchestrierungsblöcke. |
 | Modularität & Struktur | 8/10 | Hexagonale Schichtung ist in der Breite stabil. Registry- und Interface-Layer sind klar getrennt. Einige Verantwortlichkeiten sind noch in einzelnen Runnern gebündelt. |
 | Wartbarkeit | 7.5/10 | Hohe Testdisziplin und DI fördern Erweiterbarkeit. Potenzial in `DataTransferRunner`/`SchemaCompareRunner` für weitere Schrittzerlegung und wiederverwendbare Validierung. |
-| Sicherheit | 6/10 | Prepared Statements und Identifier-Quoting sind korrekt eingesetzt, Credentials werden geschwärzt. Hauptprobleme: `--filter` als Trusted SQL-Input und weitere nicht parametrisierte DDL-Interpolation (CHECK/Partition/Trigger/Body-Kontexte). |
+| Sicherheit | 7/10 | Prepared Statements und Identifier-Quoting sind korrekt eingesetzt, Credentials werden geschwärzt. `--filter` ist seit 0.9.3 eine geschlossene DSL mit Bind-Parametern (kein rohes SQL mehr). Restrisiko: DDL-Interpolation in CHECK/Partition/Trigger/Body-Kontexten. |
 
 #### Aktive Risiken / nächste Prioritäten
 
-- `--filter` im Transfer bleibt als roher SQL-Eingabepfad mit klarer „Trusted Input“-Dokumentation, aber weiterhin hohes Relevanzpotenzial.
 - DDL-Kontexte, die Metadaten roh in SQL einbetten (`constraint.expression`, Trigger-Conditionen, Routine-Bodies, Partition-Teile), sind weiterhin ein systematischer Unsicherheitsfokus.
 - DB-Sicherheitsdefaults in Connection/Hikari-Pfaden sollten stärker als Policy dokumentiert und gegen unsichere Optionen absichern.
 - Große CLI/Runner-Methoden haben funktionale Schichtwechsel in einem Durchlauf; weitere Zerlegung erhöht Testschärfe und Fehlersuche.
 
 #### Konkrete Maßnahmen (Top)
 
-- `--filter` als `--unsafe-filter` mit expliziter Warnung führen oder in strukturierte, erlaubte DSL überführen.
 - Einheitliches Validierungs- und Quoting/Parametrisierungs-Framework für alle SQL-Generationspfade aufbauen.
 - Security-Policy für JDBC-Defaults definieren (TLS/Trust/Auth-Optionen, Verbot unsicherer Fallbacks).
 - Datenfluss für Schema-/Checkpoint-Pfade auf Canonical-Path/Allowlist absichern und Symlink-/Traversal-Risiken gezielt testen.

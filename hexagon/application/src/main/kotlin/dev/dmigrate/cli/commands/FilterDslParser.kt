@@ -310,6 +310,18 @@ object FilterDslParser {
                 values += parseValueExpr(s)
             }
             s.expect(TokenType.RPAREN, "')'")
+            // Reject null in IN lists (§4.5)
+            for (v in values) {
+                if (v is ValueExpr.NullKeyword) {
+                    throw FilterDslParseException(
+                        FilterDslParseError(
+                            "Cannot use 'null' inside IN (...); use IS NULL or IS NOT NULL instead",
+                            "null",
+                            v.pos,
+                        )
+                    )
+                }
+            }
             return FilterExpr.In(left, values)
         }
 
@@ -524,3 +536,26 @@ data class FilterDslParseError(
 )
 
 internal class FilterDslParseException(val error: FilterDslParseError) : RuntimeException(error.message)
+
+// ── Public parse + exception API ───────────────────────────────
+
+/** Thrown when a `--filter` value cannot be parsed as the 0.9.3 DSL. */
+class FilterParseException(val parseError: FilterDslParseError) :
+    RuntimeException(parseError.message)
+
+/**
+ * Parses a raw `--filter` CLI string into a [ParsedFilter].
+ * Returns `null` if [rawFilter] is null or blank.
+ *
+ * @throws FilterParseException if the DSL parse fails
+ */
+fun parseFilter(rawFilter: String?): ParsedFilter? {
+    val trimmed = rawFilter?.takeIf { it.isNotBlank() } ?: return null
+    return when (val result = FilterDslParser.parse(trimmed)) {
+        is FilterDslParseResult.Success -> ParsedFilter(
+            expr = result.expr,
+            canonical = FilterDslTranslator.canonicalize(result.expr),
+        )
+        is FilterDslParseResult.Failure -> throw FilterParseException(result.error)
+    }
+}
