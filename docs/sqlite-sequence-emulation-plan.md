@@ -380,6 +380,9 @@ Hinweis zur Triggerlogik:
     (da `inc` negativ: `min_value - inc = min_value + |inc|`)
   Bei `cycle=1`: Zyklusstartwert. Bei `cycle=0`: `next_value` bleibt,
   `exhausted` wird auf 1 gesetzt.
+- Die Subtraktionen sind durch die Validator-Regel
+  `|increment_by| <= max_value - min_value` (§3.6) vor Overflow
+  geschuetzt.
 - Dadurch wird der letzte gueltige Wert (z. B. `next_value = 10`
   bei `max_value = 10`) korrekt zurueckgegeben, bevor die Sequence
   beim naechsten Aufruf per Flag als erschoepft erkannt wird.
@@ -581,31 +584,32 @@ Vertrag:
   UPDATE-Trigger hat UND sequence-basierte Spalten im
   `helper_table`-Modus verwendet
 
-W122-Schweregrad und Report-Klassifikation:
+W122-Schweregrad mit statischer Analyse:
 
-- W122 wird als `NoteType.INFO` emittiert (nicht als `WARNING`
-  oder `ACTION_REQUIRED`), da der problematische Pfad nur unter
-  einer spezifischen, nicht-standardmaessigen Konfiguration
-  (`recursive_triggers = ON`) aktiv wird
-- CI-Systeme sollten W122 **nicht** als harte Integrationsabweichung
-  werten; es ist ein **potenzielles Risiko**, kein konkreter Fehler
-- der Report-Text unterscheidet explizit zwischen den Modi:
+Der Generator fuehrt eine **statische Pruefung** der UPDATE-Trigger-
+Bodys auf der Zieltabelle durch:
 
-  - **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
-    unterschied**. UPDATE-Trigger feuern nicht. Die einzige sichtbare
-    Abweichung ist, dass ein `updated_at`-Trigger oder aehnliches
-    nicht auf die Sequence-Zuweisung reagiert. Das ist in der Regel
-    gewuenscht.
-  - **`recursive_triggers = ON`**: **potenziell gefaehrlich**. UPDATE-
-    Trigger feuern und koennen:
-    - harmlos sein (z. B. `updated_at`-Trigger setzt Timestamp)
-    - problematisch sein (z. B. Audit-Trigger protokolliert die
-      Sequence-Zuweisung als Datenaenderung)
-    - **gefaehrlich sein** wenn ein UPDATE-Trigger seinerseits
-      Aenderungen auf `dmg_sequences` oder die Sequence-Spalte macht
-      → moegliche Endlosrekursion oder Datenkorruption
-    In diesem Fall sollte der Nutzer W122 als **Pflichtpruefung**
-    behandeln.
+- **kein UPDATE-Trigger vorhanden**: kein W122
+- **UPDATE-Trigger vorhanden, Body referenziert weder `dmg_sequences`
+  noch die sequence-basierte Spalte**: W122 als `NoteType.INFO`
+  (harmloser Beobachtungsunterschied; z. B. `updated_at`-Trigger)
+- **UPDATE-Trigger vorhanden, Body referenziert `dmg_sequences`
+  ODER die sequence-basierte Spalte**: W122 als `NoteType.WARNING`
+  (potenziell gefaehrlich bei `recursive_triggers = ON`;
+  Endlosrekursion oder Datenkorruption moeglich)
+
+Die Body-Referenzpruefung verwendet dasselbe Token-basierte Matching
+wie die Rollback-Abhaengigkeitspruefung (case-insensitive, String-
+Literale/Kommentare vorab entfernt).
+
+Report-Text unterscheidet explizit:
+
+- **`recursive_triggers = OFF`** (Default): **nur Beobachtungs-
+  unterschied**. UPDATE-Trigger feuern nicht; W122 ist rein
+  informativ.
+- **`recursive_triggers = ON`**: bei INFO-Stufe ungefaehrlich;
+  bei WARNING-Stufe **Pflichtpruefung** durch den Nutzer,
+  da Rekursion/Korruption moeglich ist.
 
 - `W122` (INFO): AFTER INSERT sequence trigger performs UPDATE on
   the same table; with recursive_triggers=OFF (default) this has
@@ -726,19 +730,25 @@ Verhalten bei Generierung:
   `required: true`)
 - der Rest der Tabelle (andere Spalten, Constraints, Indizes) wird
   normal generiert
-- `E057` wird als `TransformationNote` an die betroffene Spalte
-  gehaengt, nicht an die Tabelle; die Tabelle selbst wird nicht
-  blockiert
+- `E057` wird als `TransformationNote` mit `NoteType.ACTION_REQUIRED`
+  an die betroffene Spalte gehaengt **und** die Spalte wird in die
+  `skippedObjects`-Liste des Reports aufgenommen (Typ
+  `sequence_column`, Name `<table>.<column>`)
+- die Tabelle selbst wird **nicht** blockiert — nur die Spalten-
+  Zuordnung fehlt
 - **Konsequenz bei `required: true`**: die Spalte hat `NOT NULL` im
   generierten DDL, aber keinen Trigger und keinen Default; ein
   INSERT ohne expliziten Wert fuer diese Spalte scheitert zur
-  Laufzeit. Das ist das **erwartete Verhalten** fuer `E057`:
-  der Nutzer muss den Wert applikationsseitig bereitstellen.
-  Der `E057`-Hint weist explizit darauf hin:
+  Laufzeit
+- **UX-Strategie**: E057 erscheint im Report-Output auf drei Ebenen:
+  1. als `ACTION_REQUIRED`-Note auf stderr (wie andere E0xx-Codes)
+  2. als Eintrag in `skippedObjects` (sichtbar im JSON-Report)
+  3. im DDL als Kommentar vor der Tabelle:
+     `-- ⚠ E057: Column <col> requires application-level sequencing (WITHOUT ROWID)`
+- der Hint weist explizit darauf hin:
   "Use action_required mode or application-level sequencing."
-  Damit ist klar, dass die Spalte ohne manuellen Eingriff nicht
-  nutzbar ist — `E057` ist ein harter Abbruch fuer den
-  automatischen Pfad, kein stilles Fallback
+  Damit ist unmissverstaendlich, dass das generierte Schema
+  ohne manuellen Eingriff nicht vollstaendig nutzbar ist
 
 Verhalten bei Reverse:
 
@@ -811,6 +821,36 @@ Zusaetzliche SQLite-spezifische Punkte:
   Grenzwerte entsprechen `Long.MIN_VALUE`/`Long.MAX_VALUE` in Kotlin
 - der Fehlerpfad fuer erschoepfte Sequences nutzt `RAISE(ABORT, ...)`
   in SQLite, nicht einen SQL-Routine-Fehler wie in MySQL
+
+Overflow-Schutz fuer Subtraktionsformel:
+
+Die Grenzvorausschau im Trigger verwendet Subtraktionen der Form
+`max_value - increment_by` (positiv) bzw. `min_value - increment_by`
+(negativ). Diese Subtraktionen koennen bei extremen Werten von
+`increment_by` selbst ueberlaufen:
+
+- negativ: `min_value - (-|inc|) = min_value + |inc|`; bei
+  `min_value = 0` und `|inc| = MAX_INT` ist das Ergebnis `MAX_INT`
+  (kein Overflow); aber bei `min_value = 1` und `|inc| = MAX_INT`
+  waere das Ergebnis `MAX_INT + 1` → **Overflow**
+- positiv: `max_value - inc`; bei `max_value` nahe `MIN_INT` und
+  grossem `inc` kann das Ergebnis unter `MIN_INT` fallen → Overflow
+
+Der `SchemaValidator` prueft deshalb zusaetzlich:
+
+- `|increment_by|` darf nicht groesser sein als der Abstand zwischen
+  `min_value` und `max_value` (d. h.
+  `|increment_by| <= max_value - min_value`)
+- diese Bedingung stellt sicher, dass die Subtraktionsformeln in den
+  Triggern nicht ueberlaufen koennen, da:
+  - fuer `inc > 0`: `max_value - inc >= max_value - (max_value - min_value) = min_value >= MIN_INT`
+  - fuer `inc < 0`: `min_value - inc = min_value + |inc| <= min_value + (max_value - min_value) = max_value <= MAX_INT`
+- bei Verletzung: Validierungsfehler (Exit-Code 3) mit Hinweis,
+  dass `|increment_by|` den Sequence-Bereich nicht ueberschreiten darf
+- bei `min_value = NULL` und/oder `max_value = NULL` (Defaultwerte
+  `MIN_INT`/`MAX_INT`) ist der Bereich `MAX_INT - MIN_INT`, was
+  fuer alle praktischen `increment_by`-Werte ausreicht; die
+  Validierung greift hier nicht
 
 ### 3.7 Concurrency-Vertrag
 
@@ -1214,12 +1254,14 @@ Scope der Abhaengigkeitspruefung:
 - als optionaler Failsafe prueft der Preflight per
   `PRAGMA database_list`, ob neben `main` (und `temp`) weitere
   Datenbanken per ATTACH angebunden sind; wenn ja, emittiert der
-  Rollback `W123` (INFO): "Attached databases detected; rollback
+  Rollback `W123` (WARNING): "Attached databases detected; rollback
   dependency scan covers main schema only — verify that attached
   schemas do not reference dmg_sequences"
-- `W123` blockiert den Rollback **nicht**, macht aber die
-  Einschraenkung im Report sichtbar, damit der Nutzer eine
-  bewusste Entscheidung treffen kann
+- `W123` blockiert den Rollback standardmaessig **nicht**, gibt
+  aber eine deutliche Warnung aus; im `--strict`-Modus (falls
+  implementiert) kann `W123` den Rollback blockieren
+- der Nutzer muss bei vorhandenen ATTACHed DBs explizit
+  bestaetigen, dass keine Cross-Database-Referenzen bestehen
 - diese Einschraenkung wird zusaetzlich in der Nutzerdokumentation
   als **Precondition** formuliert: "Vor dem Rollback im
   `helper_table`-Modus sicherstellen, dass keine per ATTACH
@@ -1299,7 +1341,7 @@ Normalisierung und Matching-Strategie:
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
-  - `W123` (INFO): Attached databases detected; rollback dependency
+  - `W123` (WARNING): Attached databases detected; rollback dependency
     scan covers main schema only (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
