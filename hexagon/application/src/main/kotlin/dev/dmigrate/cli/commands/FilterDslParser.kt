@@ -156,7 +156,7 @@ object FilterDslParser {
                     val start = i
                     while (i < input.length && (input[i].isLetterOrDigit() || input[i] == '_')) i++
                     val text = input.substring(start, i)
-                    val upper = text.uppercase()
+                    val upper = text.uppercase(java.util.Locale.ROOT)
                     when {
                         upper in KEYWORDS -> tokens += Token(TokenType.KEYWORD, upper, start)
                         upper == "TRUE" || upper == "FALSE" -> tokens += Token(TokenType.BOOL, upper, start)
@@ -403,7 +403,7 @@ object FilterDslParser {
             }
             TokenType.BOOL -> {
                 s.advance()
-                ValueExpr.BoolLiteral(tok.text.uppercase() == "TRUE", tok.pos)
+                ValueExpr.BoolLiteral(tok.text.uppercase(java.util.Locale.ROOT) == "TRUE", tok.pos)
             }
             TokenType.KEYWORD -> {
                 if (tok.text == "NULL") {
@@ -459,7 +459,7 @@ object FilterDslParser {
     )
 
     private fun parseFunctionCall(s: ParserState, name: String, pos: Int): ValueExpr {
-        val upperName = name.uppercase()
+        val upperName = name.uppercase(java.util.Locale.ROOT)
         val arity = ALLOWED_FUNCTIONS[upperName]
             ?: throw FilterDslParseException(
                 FilterDslParseError(

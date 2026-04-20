@@ -121,7 +121,7 @@ object FilterDslTranslator {
     }
 
     private fun canonicalizeIdentifier(name: String): String =
-        name.split('.').joinToString(".") { it.lowercase() }
+        name.split('.').joinToString(".") { it.lowercase(java.util.Locale.ROOT) }
 
     // ── SQL emission ───────────────────────────────────────────
 
