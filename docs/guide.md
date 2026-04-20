@@ -286,6 +286,66 @@ Den Report-Pfad explizit überschreiben:
 
 Erzeugt zusätzlich `schema.rollback.sql` mit den inversen DDL-Statements (DROP TABLE, DROP INDEX, etc.).
 
+### Importfreundliche Schema-Artefakte (0.9.2)
+
+Wenn ein Schema Trigger, Functions oder Procedures enthält, kann `--split pre-post`
+die DDL in zwei Phasen aufteilen: `pre-data` (Tabellen, Constraints, Sequences,
+einfache Views) und `post-data` (Trigger, Functions, Procedures, Views mit
+Routinen-Abhängigkeiten). Das ist besonders nützlich, wenn Trigger während eines
+Datenimports stören würden.
+
+```bash
+# Split-DDL erzeugen
+d-migrate schema generate --source mein-schema.yaml --target postgresql \
+    --split pre-post --output schema.sql
+
+# Erzeugt: schema.pre-data.sql und schema.post-data.sql
+```
+
+Typischer Round-Trip-Workflow mit Split-DDL:
+
+```bash
+# 1. Pre-Data-Phase: Tabellen und Constraints anlegen
+psql -f schema.pre-data.sql
+
+# 2. Daten importieren (ohne aktive Trigger)
+d-migrate data import --source export/ --target postgresql://localhost/mydb \
+    --format json --schema mein-schema.yaml
+
+# 3. Post-Data-Phase: Trigger, Functions und Procedures aktivieren
+psql -f schema.post-data.sql
+```
+
+Strukturierte JSON-Ausgabe mit `ddl_parts`:
+
+```bash
+d-migrate --output-format json schema generate --source mein-schema.yaml \
+    --target mysql --split pre-post
+```
+
+```json
+{
+  "command": "schema.generate",
+  "status": "completed",
+  "exit_code": 0,
+  "target": "mysql",
+  "split_mode": "pre-post",
+  "ddl_parts": {
+    "pre_data": "CREATE TABLE `customers` (...);\\n...",
+    "post_data": "CREATE TRIGGER `trg_updated` ...\\n..."
+  },
+  "notes": [...],
+  "skipped_objects": [...]
+}
+```
+
+Einschränkungen:
+- `--split pre-post` erfordert `--output` oder `--output-format json` (kein stdout-Fallback)
+- Kann nicht mit `--generate-rollback` kombiniert werden
+- Views ohne Query-Text und ohne deklarierte `dependencies.functions` erzeugen
+  bei vorhandenen Functions im Schema einen Fehler E060 (Exit 2). Lösung:
+  `dependencies.functions` im Schema explizit deklarieren.
+
 ### Beispiel-Ausgabe (PostgreSQL)
 
 ```sql
@@ -404,6 +464,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--output`            | Ausgabedatei (Standard: stdout)                           |
 | `--report`            | Report-Datei (Standard: `<output>.report.yaml`)           |
 | `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
+| `--split`             | DDL-Ausgabemodus: `single` (Standard) oder `pre-post` fuer importfreundliche Trennung in `pre-data`/`post-data` |
 | `--spatial-profile`   | Spatial-Profil: `postgis`, `native`, `spatialite`, `none` |
 
 ### Optionen für `data export`

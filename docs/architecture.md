@@ -713,6 +713,73 @@ PostgreSQL, MySQL und SQLite implementieren je:
 Der Default-Report ist byte-reproduzierbar: stabile Tabellen-/Spaltenreihenfolge,
 stabile `topValues`-Sortierung, kein laufzeitvariables `generatedAt`.
 
+### 3.8 Phasenbezogenes DDL-Modell (0.9.2)
+
+0.9.2 fuehrt ein Phasenmodell ein, das DDL-Statements in `PRE_DATA` und
+`POST_DATA` klassifiziert. Damit kann `schema generate --split pre-post`
+importfreundliche Artefakte erzeugen, bei denen Trigger erst nach einem
+Datenimport aktiviert werden.
+
+#### Modell (`hexagon:ports-read`)
+
+```kotlin
+enum class DdlPhase {
+    /** Structural DDL: tables, columns, sequences, indexes, constraints. */
+    PRE_DATA,
+    /** Deferred DDL: triggers, functions, procedures, views with routine deps. */
+    POST_DATA,
+}
+
+data class DdlStatement(
+    val sql: String,
+    val notes: List<TransformationNote> = emptyList(),
+    val phase: DdlPhase = DdlPhase.PRE_DATA,
+)
+```
+
+`DdlResult` bietet Filtermethoden pro Phase:
+
+- `statementsForPhase(phase)` — Statements einer Phase
+- `renderPhase(phase)` — gerenderte DDL einer Phase
+- `notesForPhase(phase)` / `skippedObjectsForPhase(phase)` — Diagnostik pro Phase
+
+#### Objektzuordnung
+
+| Phase | Objekte |
+|-------|---------|
+| `PRE_DATA` | Custom Types, Sequences, Tabellen (topologisch sortiert), Indizes, Constraints, Views **ohne** Routinen-Abhaengigkeiten |
+| `POST_DATA` | Functions, Procedures, Triggers, Views **mit** Routinen-Abhaengigkeiten |
+
+Die Zuordnung von Views erfolgt ueber den `ViewPhaseClassifier`
+(`adapters:driven:driver-common`), der drei Regeln anwendet:
+
+1. **Deklarierte Abhaengigkeiten**: `dependencies.functions` im Schema → `POST_DATA`
+2. **Inferierte Funktionsaufrufe**: Query-Text wird auf Funktionsnamen geparst → `POST_DATA`
+3. **Transitive Propagation**: Views, die von einer `POST_DATA`-View abhaengen → `POST_DATA`
+
+Views ohne Query-Text und ohne deklarierte `dependencies.functions` erzeugen
+bei vorhandenen Functions im Schema den Fehlercode E060.
+
+#### Datenfluss
+
+```
+SchemaGenerateRunner
+    │  SplitMode: SINGLE | PRE_POST
+    ▼
+AbstractDdlGenerator.generate()
+    │  weist DdlPhase pro Statement zu
+    │  (PRE_DATA default, POST_DATA explizit fuer Routinen/Trigger)
+    ▼
+DdlResult
+    │
+    ├─ SINGLE:    renderAll() → eine Ausgabedatei
+    └─ PRE_POST:  renderPhase(PRE_DATA) → *.pre-data.sql
+                  renderPhase(POST_DATA) → *.post-data.sql
+```
+
+Der Default-Modus `SINGLE` bleibt rueckwaertskompatibel — alle Statements
+werden in einer Datei ausgegeben, die Phase-Information wird ignoriert.
+
 ---
 
 ## 4. Querschnittsthemen
@@ -1148,6 +1215,6 @@ surface and compiles without write/CLI/profiling imports.
 
 ---
 
-**Version**: 1.7
-**Stand**: 2026-04-14
-**Status**: Milestone 0.1.0–0.6.0 implementiert (core, ports, application, formats, cli, driver-postgresql/-mysql/-sqlite, streaming); 0.6.0: `SchemaReader` für PostgreSQL/MySQL/SQLite, `schema reverse` CLI, `schema compare` mit DB-Operanden (file/db, db/db), `data transfer` (DB-zu-DB-Streaming)
+**Version**: 1.8
+**Stand**: 2026-04-20
+**Status**: Milestone 0.1.0–0.9.2 implementiert; 0.9.2: phasenbezogenes DDL-Modell (`DdlPhase`), `--split pre-post` fuer importfreundliche Schema-Artefakte, `ViewPhaseClassifier` fuer Routinen-Abhaengigkeiten, Runner-Zerlegung, DDL-Interpolations-Haertung

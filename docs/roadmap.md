@@ -330,7 +330,7 @@ Vertrag festschreibt.
 | Quality | Runner-Zerlegung: `executeWithPool()` in Schrittfunktionen (477→26 / 446→24 LOC) (AP 6.6)                                  | —          | ✅      |
 | Quality | Executor-Parameter gruppieren: ExportExecutor (16→4) / ImportExecutor (14→4) → Kontext-DTOs (AP 6.6)                        | —          | ✅      |
 | Quality | Fehlercodes E006-E121 gegen Validierungsmatrix testen (AP 6.7)                                                              | —          | ✅      |
-| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          |        |
+| Docs    | Spezifikation und CLI-Doku fuer importfreundliche Schema-Artefakte aktualisieren                                            | —          | ✅      |
 
 **Ergebnis**: `schema generate` kann optional importfreundliche
 Schema-Artefakte als `pre-data` und `post-data` erzeugen, ohne den bisherigen
