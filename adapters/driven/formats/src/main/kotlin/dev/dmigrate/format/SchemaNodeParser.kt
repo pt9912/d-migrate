@@ -139,7 +139,7 @@ internal object SchemaNodeParser {
                     text == "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
                     // Legacy nextval detection: keep as FunctionCall so the validator
                     // can emit a targeted migration error (E122)
-                    text.matches(Regex("""nextval\(.*\)""", RegexOption.IGNORE_CASE)) ->
+                    text.matches(Regex("""^nextval\(.+\)$""", RegexOption.IGNORE_CASE)) ->
                         DefaultValue.FunctionCall(text)
                     else -> DefaultValue.StringLiteral(text)
                 }

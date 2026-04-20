@@ -110,6 +110,13 @@ class MysqlTypeMapperTest : FunSpec({
         mapper.toDefaultSql(DefaultValue.FunctionCall("gen_uuid"), NeutralType.Uuid) shouldContain "UUID"
     }
 
+    test("SequenceNextVal throws defensive error") {
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            mapper.toDefaultSql(DefaultValue.SequenceNextVal("my_seq"), NeutralType.Integer)
+        }
+        ex.message shouldContain "helper_table"
+    }
+
     // -- dialect --
 
     test("dialect is MYSQL") {

@@ -194,6 +194,15 @@ Tables:
         json shouldContain """"default": {"before": null, "after": """
     }
 
+    test("defaultValueToString renders SequenceNextVal as readable short form") {
+        SchemaCompareHelpers.defaultValueToString(DefaultValue.SequenceNextVal("invoice_seq")) shouldBe
+            "sequence_nextval(invoice_seq)"
+    }
+
+    test("defaultValueToString renders null as null") {
+        SchemaCompareHelpers.defaultValueToString(null) shouldBe null
+    }
+
     // --- YAML ---
 
     test("yaml identical contains stable fields") {

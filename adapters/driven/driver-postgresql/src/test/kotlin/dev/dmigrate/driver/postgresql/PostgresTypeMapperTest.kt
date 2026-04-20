@@ -185,4 +185,9 @@ class PostgresTypeMapperTest : FunSpec({
     test("FunctionCall unknown renders with parentheses") {
         mapper.toDefaultSql(DefaultValue.FunctionCall("custom_fn"), NeutralType.Text()) shouldBe "custom_fn()"
     }
+
+    test("SequenceNextVal renders native nextval SQL") {
+        mapper.toDefaultSql(DefaultValue.SequenceNextVal("invoice_seq"), NeutralType.Integer) shouldBe
+            "nextval('invoice_seq')"
+    }
 })
