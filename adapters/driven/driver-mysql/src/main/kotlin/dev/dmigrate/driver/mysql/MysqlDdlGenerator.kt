@@ -143,7 +143,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         val createTable = buildString {
             appendLine("CREATE TABLE `${MysqlSequenceNaming.SUPPORT_TABLE}` (")
             appendLine("    `managed_by` VARCHAR(32) NOT NULL,")
-            appendLine("    `format_version` VARCHAR(16) NOT NULL,")
+            appendLine("    `format_version` VARCHAR(32) NOT NULL,")
             appendLine("    `name` VARCHAR(255) NOT NULL,")
             appendLine("    `next_value` BIGINT NOT NULL,")
             appendLine("    `increment_by` BIGINT NOT NULL,")
