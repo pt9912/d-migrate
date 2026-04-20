@@ -40,15 +40,16 @@
 Milestone 0.9.3 schliesst zwei verbleibende Beta-Luecken, die vor einem
 stabilen 1.0-Vertrag nicht offen bleiben sollten:
 
-- der heutige rohe SQL-Exportfilter wird sichtbar als unsicher markiert
+- der heutige rohe SQL-Exportfilter wird durch einen sicheren
+  `--filter`-Vertrag ersetzt
 - MySQL kann benannte Sequences im DDL-Generator optional ueber
   kanonische Hilfsobjekte emulieren, statt sie immer nur mit `E056`
   zu ueberspringen
 
 Der Milestone liefert damit drei konkrete Nutzerergebnisse:
 
-- `data export` hat einen ehrlicheren, klarer benannten CLI-Vertrag
-  fuer Trusted-SQL-Eingaben
+- `data export` bekommt einen sicheren, parameterisierten
+  `--filter`-Vertrag statt roher SQL-Interpolation
 - `schema generate --target mysql` bekommt einen opt-in
   `helper_table`-Pfad fuer benannte Sequences
 - das neutrale Modell kann Sequence-Nutzung an Spaltendefaults explizit
@@ -59,7 +60,6 @@ Bewusst noch nicht Teil dieses Milestones:
 
 - Reverse-Engineering der MySQL-Emulation
 - Compare-/Diff-Normalisierung gegen die Hilfsobjekte
-- eine eigentliche Filter-DSL
 
 Diese Themen folgen laut Roadmap in 0.9.4 oder spaeter.
 
@@ -127,10 +127,14 @@ Reverse und Compare bleiben explizit fuer 0.9.4 offen.
 
 ### 3.1 In Scope
 
-- `data export` fuehrt `--unsafe-filter` als kanonischen Namen ein
-- `--filter` bleibt in 0.9.3 als deprecated Alias bestehen
-- Help-Texte, CLI-Spec und Fehlermeldungen machen den Trusted-SQL-
-  Vertrag explizit
+- `data export` behaelt den sichtbaren Flag-Namen `--filter`, fuehrt
+  darunter aber eine sichere Filter-DSL ein
+- die CLI akzeptiert unter `--filter` keine rohen SQL-Fragmente mehr
+- der neue Filter-Vertrag ist eine eigene Anwendungskomponente
+  (`FilterDslParser`, eigener AST, strukturierter Parse-Fehler),
+  nicht ein nur in der CLI verankerter Adapter-Helfer
+- Help-Texte, CLI-Spec und Fehlermeldungen dokumentieren die sichere
+  DSL und die Abgrenzung gegen bisherige Raw-SQL-Eingaben
 - `DefaultValue.SequenceNextVal(sequenceName: String)` wird im
   neutralen Modell eingefuehrt
 - YAML-/JSON-Schema-Codecs koennen den neuen Default-Typ lesen und
@@ -155,8 +159,7 @@ Reverse und Compare bleiben explizit fuer 0.9.4 offen.
 
 ### 3.2 Bewusst nicht Teil von 0.9.3
 
-- eine echte Filter-DSL
-- Entfernung des Legacy-Alias `--filter`
+- ein frei formulierbarer Raw-SQL-Escape-Hatch neben `--filter`
 - Reverse von `dmg_sequences`, Routinen oder Support-Triggern
 - Compare-/Diff-Normalisierung der MySQL-Hilfsobjekte
 - automatische Migration vorhandener, handgeschriebener
@@ -169,41 +172,68 @@ Reverse und Compare bleiben explizit fuer 0.9.4 offen.
 
 ## 4. Leitentscheidungen
 
-### 4.1 `--unsafe-filter` wird eingefuehrt, `--filter` bleibt nur noch als Alt-Alias
+### 4.1 `--filter` bleibt der sichtbare Name und wird sicher implementiert
 
 Verbindliche Entscheidung:
 
-- der sichtbare, dokumentierte Flag-Name ist ab 0.9.3
-  `--unsafe-filter`
-- `--filter` bleibt fuer 0.9.x als deprecated Alias erhalten
-- beide Flags duerfen nicht gemeinsam gesetzt werden
-- die CLI implementiert dafuer **zwei getrennte Optionen**, nicht nur
-  einen Clikt-Alias auf denselben Zielwert
-- die Mutual-Exclusion-Pruefung laeuft in `DataExportCommand`, bevor ein
-  `DataExportRequest` gebaut oder ein Resume-/Fingerprint-Pfad
-  vorbereitet wird
-- wenn der Legacy-Alias verwendet wird, wird eine klare
-  stderr-Warnung ausgegeben
-- neue Dokumentation, Beispiele und Tests nutzen nur noch
-  `--unsafe-filter`
+- der sichtbare, dokumentierte Flag-Name bleibt `--filter`
+- `--filter` akzeptiert ab 0.9.3 keine rohe SQL-WHERE-Klausel mehr,
+  sondern eine allowlist-basierte Filter-DSL
+- die CLI validiert die DSL vollstaendig in `DataExportCommand` bzw.
+  `DataExportHelpers`, bevor ein `DataExportRequest` gebaut oder ein
+  Resume-/Fingerprint-Pfad vorbereitet wird
+- ungueltige oder offensichtlich alte Raw-SQL-Ausdruecke enden mit
+  Exit 2 und klarer Migrationsfehlermeldung
+- neue Dokumentation, Beispiele und Tests nutzen nur noch die sichere
+  DSL unter `--filter`
 
 Begruendung:
 
-- das Milestone-Ziel ist Sichtbarmachung der Unsicherheit, nicht ein
-  halbgares Re-Design des Filtermodells
-- die Alias-Phase vermeidet unnoetige Script-Breaks mitten in der
-  Beta
+- das Roadmap-Ziel erlaubt explizit Filter-DSL als Haertungspfad
+- ein zweiter unsicherer Flag-Name wuerde den eigentlichen
+  Sicherheitsgewinn nur verschieben, nicht liefern
 
-### 4.2 Resume-/Fingerprint-Semantik bleibt fachlich stabil
+### 4.2 Resume-/Fingerprint-Semantik bleibt fuer die neue DSL stabil
 
 Verbindliche Entscheidung:
 
-- der Umstieg von `--filter` auf `--unsafe-filter` aendert die
-  Filtersemantik nicht
-- `ExportOptionsFingerprint` bleibt fuer denselben effektiven SQL-Text
-  bytegleich
-- bestehende Checkpoints bleiben dadurch wiederaufnehmbar, solange sich
-  der eigentliche Filterinhalt nicht aendert
+- innerhalb der neuen DSL bleibt `ExportOptionsFingerprint` fuer
+  denselben kanonischen Filterausdruck stabil
+- der Preflight/Fingerprint arbeitet auf einer kanonischen,
+  parserbasierten Repräsentation des Filters statt auf rohem SQL-Text
+- Unterschiede nur in Whitespace, Keyword-Schreibweise oder
+  Identifier-Kapitalisierung duerfen innerhalb der DSL **keine**
+  unterschiedlichen Fingerprints erzeugen
+- bestehende Checkpoints bleiben nur dann wiederaufnehmbar, wenn ihr
+  gespeicherter Filter bereits der neuen DSL entspricht
+- alte Checkpoints mit vormals gueltigem, aber nicht DSL-kompatiblem
+  Raw-SQL-Filter werden explizit als inkompatibel abgewiesen und nicht
+  still neu interpretiert
+
+### 4.2a Rueckwaertskompatibilitaet ist bewusst partiell, nicht absolut
+
+Verbindliche Entscheidung:
+
+- "rueckwaertskompatibel" in 0.9.3 bedeutet fuer den Filterpfad
+  **nicht**, dass alte Raw-SQL-`--filter`-Ausdruecke weiterlaufen
+- "rueckwaertskompatibel" fuer den Sequence-Teil bedeutet:
+  - bestehende CLI-Oberflaechen ausser `--filter` bleiben stabil
+  - `--mysql-named-sequences action_required` behaelt den bisherigen
+    DDL-Charakter fuer benannte Sequences (`E056`) bei
+  - nicht betroffene Default-Typen (`StringLiteral`, `NumberLiteral`,
+    `BooleanLiteral`, uebliche `FunctionCall`s wie
+    `current_timestamp`/`gen_uuid`) bleiben unveraendert
+- nicht rueckwaertskompatibel und deshalb bewusst mit Migrationsfehler:
+  - alte Raw-SQL-`--filter`-Eingaben
+  - alte oder programmgesteuerte
+    `FunctionCall("nextval(...)")`-Schema-Notationen
+
+Begruendung:
+
+- der Sicherheitsgewinn des Milestones lebt gerade davon, alte
+  unsichere Notationen nicht still weiterzutragen
+- fuer Reviews, Release Notes und Migrationstexte muss diese Grenze
+  explizit bleiben
 
 ### 4.3 Der neue neutrale Default-Vertrag ist explizit und nicht pattern-basiert
 
@@ -309,26 +339,163 @@ Verbindliche Entscheidung:
 
 ## 5. Zielarchitektur
 
-### 5.1 Filter-Haertung ohne Funktionsumbau des Streaming-Kerns
+### 5.1 Sicherer `--filter` ohne Funktionsumbau des Streaming-Kerns
 
 Der Datenexport behaelt seinen technischen Kern:
 
-- `DataFilter.WhereClause` bleibt der rohe SQL-Pfad
-- `DataExportHelpers.resolveFilter(...)` baut weiter denselben
-  Filterbaum
+- `DataExportHelpers.resolveFilter(...)` baut weiter einen
+  `DataFilter`-Baum
 - `AbstractJdbcDataReader` behaelt die bestehende `WHERE`-Integration
 
 Geaendert wird die sichtbare API-Schicht:
 
-- `DataExportCommand` definiert getrennte Optionen fuer
-  `--unsafe-filter` und den Legacy-Alias `--filter`
-- `DataExportCommand` validiert explizit den Fall "beide gesetzt",
-  bevor in den Runner delegiert wird
-- `DataExportRequest` und die Runner-/Fingerprint-Pfade verwenden einen
-  expliziteren Namen (`unsafeFilter` oder aequivalent), damit der
-  kanonische Begriff ab der DTO-Grenze eindeutig ist
-- Preflight-Fehler und Help-Texte nennen den Pfad konsistent
-  "unsafe"
+- `DataExportCommand` behaelt genau eine Nutzeroption `--filter`
+- `DataExportHelpers` delegiert den DSL-Input an einen
+  anwendungsschichtnahen `FilterDslParser` und bildet daraus eine
+  kanonische, parametrisierte Repräsentation
+- der CLI-Pfad emittiert fuer `--filter` keinen
+  `DataFilter.WhereClause` mehr, sondern nur noch sichere
+  `ParameterizedClause`-/`Compound`-Formen
+- `DataExportRequest` und `ExportOptionsFingerprint` arbeiten mit dem
+  kanonischen DSL-Ausdruck oder dessen parserbasierter Normalform
+- Preflight-Fehler und Help-Texte benennen den Filterpfad konsistent als
+  "safe DSL", nicht als Trusted-Raw-SQL-Eingabe
+
+### 5.1a DSL-Spezifikation fuer `--filter`
+
+0.9.3 fuehrt bewusst eine abgeschlossene Filter-DSL ein. Sie ist
+nicht "SQL light", sondern ein enges, parserbares Teilformat.
+
+Verbindlicher Ausdrucksrahmen:
+
+- ein Filter ist eine `AND`-verkettete Liste von Klauseln
+- es gibt in 0.9.3 **kein** `OR`, kein `NOT`, keine Klammerung und keine
+  freien Funktionsaufrufe
+- jede Klausel adressiert genau einen Spalten-Identifier links und genau
+  einen Operator
+
+Zulaessige Grammatik auf hoher Ebene:
+
+```text
+filter        := clause (" AND " clause)*
+clause        := comparison | in_list | null_check
+comparison    := identifier ws? operator ws? literal
+in_list       := identifier ws? "IN" ws? "(" literal ("," literal)* ")"
+null_check    := identifier ws? "IS NULL" | identifier ws? "IS NOT NULL"
+operator      := "=" | "!=" | ">" | ">=" | "<" | "<="
+```
+
+Tokenisierungs-/Whitespace-Vertrag:
+
+- zwischen Keywords, Identifiern, Operatoren und Literalen ist beliebige
+  ASCII-Whitespace zulaessig; Parser und Fingerprint behandeln mehrere
+  Leerzeichen, Tabs oder aehnliche Zwischenraeume als aequivalent
+- vor und nach dem Gesamtausdruck ist Whitespace erlaubt und wird
+  abgeschnitten
+- innerhalb von Identifiern, Zahlen oder Keywords ist kein Whitespace
+  erlaubt
+- nach einer erfolgreich erkannten Klausel duerfen keine "restlichen"
+  freien Tokens uebrig bleiben; insbesondere fuehren doppelte Operatoren,
+  haengende Kommata oder nachgestellte SQL-Fragmente zu Exit 2
+
+Identifier-Vertrag:
+
+- unquoted Identifiers folgen dem bestehenden konservativen Muster
+  `[A-Za-z_][A-Za-z0-9_]*`
+- qualifizierte Identifiers mit genau einem Punkt sind erlaubt:
+  `<table>.<column>`
+- es gibt in 0.9.3 **kein** Identifier-Escaping in der DSL selbst:
+  keine Backticks, keine doppelten Quotes, keine eckigen Klammern, keine
+  Escape-Sequenzen
+- keine freien SQL-Quotes, Backticks oder doppelten Quotes in der
+  Nutzereingabe; Dialekt-Quoting erfolgt erst nach erfolgreichem Parse
+  intern ueber die vorhandenen Identifier-Utilities
+- Spalten oder Tabellen, die nur ueber Dialekt-Quoting adressierbar
+  waeren, sind mit der 0.9.3-DSL bewusst **nicht** adressierbar; das ist
+  Teil des Sicherheits- und Einfachheitsvertrags
+- Identifier ausserhalb dieser Allowlist fuehren zu Exit 2
+
+Literal-Vertrag:
+
+- Zahlen:
+  - ganzzahlig: `-?[0-9]+`
+  - dezimal: `-?[0-9]+\\.[0-9]+`
+- Booleans: `true | false` (case-insensitive)
+- `null` ist nur ueber `IS NULL` / `IS NOT NULL` erlaubt, nicht als
+  Vergleichsliteral
+- Strings:
+  - single-quoted
+  - Escape nur ueber verdoppelte Quotes (`'O''Reilly'`)
+  - keine Backslash-Escapes
+  - kein implizites Concatenation-Verhalten ueber benachbarte Literale
+- Datums-/Zeitwerte laufen in 0.9.3 ebenfalls als String-Literale und
+  werden nicht gesondert syntaktisch ausgezeichnet
+- `IN (...)` enthaelt mindestens ein Literal; leere Listen sind
+  unzulaessig
+- die Reihenfolge der gebundenen Parameter folgt strikt der
+  Links-nach-rechts-Reihenfolge der Literale im geparsten Ausdruck
+
+Parser-/Normalisierungsvertrag:
+
+- Keywords der DSL sind case-insensitive (`and`, `AND`, `In`, ...)
+- der Fingerprint arbeitet auf einer Normalform:
+  - Keywords uppercased
+  - ueberfluessige Leerzeichen entfernt
+  - Identifier segmentweise ASCII-lowercased
+    (`Orders.Customer_ID` -> `orders.customer_id`)
+  - diese Identifier-Kanonisierung gilt **fuer Fingerprint und Resume**,
+    nicht als Vorgabe fuer spaetere Dialekt-Quoting-Ausgabe
+  - Literalwerte semantisch unveraendert
+- damit bleiben Fingerprints stabil bei reiner Umformatierung,
+  Keyword-Case-Aenderung oder Identifier-Kapitalisierung
+- erfolgreiche Parse-Ergebnisse werden ausschliesslich als
+  `ParameterizedClause` bzw. `Compound` weitergereicht
+- kein erfolgreicher DSL-Pfad darf einen rohen `WhereClause` aus
+  Nutzereingaben erzeugen
+
+Nicht erlaubt in 0.9.3:
+
+- `OR`, `NOT`, Klammerausdruecke
+- Funktionsaufrufe (`lower(name) = 'x'`)
+- arithmetische Ausdruecke (`price * qty > 10`)
+- freie SQL-Fragmente (`EXISTS (...)`, `1=1`, Subqueries)
+- dialect-spezifische Operatoren (`ILIKE`, JSON-Operatoren, Regex)
+
+### 5.1b Parser-/AST-Vertrag fuer `--filter`
+
+Der DSL-Vertrag ist als eigenstaendige Parser-Stufe implementiert:
+
+- eigener Parser:
+  - `FilterDslParser.parse(raw: String): FilterDslParseResult`
+- eigener Fehler-Typ:
+  - `FilterDslParseError(message: String, token: String?, index: Int?)`
+  - enthält die erste gefundene Fehlerstelle fuer präzise Exit-2-Meldungen
+- eigener AST, der vor SQL-Emission vollständig getrennt bleibt:
+  - `FilterDslExpression` (AND-Liste)
+  - `FilterClause` (`ComparisonClause`, `InListClause`, `NullCheckClause`)
+  - `FilterLiteral` (`StringLiteral`, `NumberLiteral`, `BooleanLiteral`)
+- Schichtvertrag:
+  - `FilterDslParser`, AST und Normalisierungslogik liegen in einer
+    von CLI und Anwendungslogik gemeinsam nutzbaren Schicht
+  - `DataExportHelpers` darf diese Komponente direkt nutzen, ohne eine
+    Abhaengigkeit auf `adapters/driving/cli` einzufuehren
+  - die CLI bleibt fuer Argumententgegennahme und Exit-2-Diagnosen
+    zustaendig, nicht fuer die eigentliche DSL-Implementierung
+
+Der normale Pfad:
+
+- parse -> AST -> canonical SQL + Parameterliste -> `DataFilter.ParameterizedClause`
+- kein rohes Nutzereingabe-SQL wird direkt in `WhereClause` weitergegeben
+- der Parser liefert die Fingerprint-Normalform mit deterministischer
+  Parameternormalisierung und Tokenisierung
+
+Fehlervertrag:
+
+- nicht parsbare Eingaben enden mit Exit 2
+- die Fehlermeldung nennt:
+  - die erste fehlerhafte Stelle oder das fehlerhafte Token
+  - die erlaubte DSL-Teilmenge
+  - einen kurzen Migrationshinweis fuer fruehere Raw-SQL-Nutzung
 
 ### 5.2 Neutralmodell und Schema-Codecs
 
@@ -358,10 +525,21 @@ Folgen:
   alte `FunctionCall("nextval(...)")`-Defaults explizit ab und liefert
   eine migrationsfaehige Fehlermeldung mit Verweis auf
   `default.sequence_nextval`
+- verbindliche Ablehnungsreihenfolge fuer Legacy-`nextval(...)`:
+  1. Schema-Codec/Parser darf die historische Form hoechstens noch als
+     generisches `FunctionCall` einlesen, aber **nicht** als
+     `SequenceNextVal` umdeuten
+  2. `SchemaValidator` ist der zentrale, nutzernahe harte
+     Migrationsabbruchpunkt mit konsistenter Fehlermeldung
+  3. Generator-/TypeMapper-Pfade behalten zusaetzlich defensive Guards,
+     duerfen aber keinen stillen Fallback oder Rewrite mehr enthalten
 - `SchemaCompareHelpers.defaultValueToString(...)` rendert
   `sequence_nextval(<name>)` oder eine aequivalent klar als Sequence-
   Bezug erkennbare Diff-Darstellung; entscheidend ist die eindeutige
   Trennung von freien String-Literalen
+- diese Diff-/Report-Darstellung ist ausdruecklich eine
+  lesbare Kurzform und **keine** kanonische Eingabeform fuer YAML/JSON;
+  die Eingabeform bleibt `default.sequence_nextval`
 
 Nicht Teil von 0.9.3:
 
@@ -460,6 +638,13 @@ SQLite:
 - `SequenceNextVal` fuehrt wie MySQL `action_required` zu
   strukturierter Diagnose statt zu stiller SQL-Erzeugung
 
+Abgrenzung fuer die Implementierung:
+
+- die Verantwortung fuer PostgreSQL-/SQLite-Verhalten wird in 0.9.3 in
+  den jeweiligen Dialektmodulen geklaert und getestet
+- das Arbeitspaket "MySQL-Generator" in Abschnitt 6.4 umfasst dagegen
+  ausschliesslich die neuen MySQL-Supportobjekte und deren Triggerpfad
+
 ### 5.6 Rollback
 
 Im Single-Output mit `--generate-rollback` muss der neue MySQL-Pfad
@@ -476,6 +661,17 @@ Statement-Inversion basiert, ist fuer die DELIMITER-verpackten
 Routinen/Trigger und fuer die Hilfstabelle eine explizite, getestete
 Inversion notwendig.
 
+Pflicht-Akzeptanzkriterien:
+
+- die Drop-Reihenfolge ist fest und wird in Tests explizit assertet:
+  1. Trigger
+  2. Routinen
+  3. Support-Tabelle
+- jeder Drop ist idempotent formuliert (`IF EXISTS` oder aequivalente
+  sichere Form)
+- ein kompletter Up->Down-Lauf im `helper_table`-Modus darf an
+  Supportobjekten nicht an Reihenfolgefehlern scheitern
+
 ---
 
 ## 6. Konkrete Arbeitspakete
@@ -490,26 +686,32 @@ Abhaengigkeiten:
 
 ### 6.1 Filter-Haertung im Datenexport
 
-- `DataExportCommand` erweitert die CLI um:
-  - `--unsafe-filter` als eigene Option
-  - `--filter` als separate deprecated Legacy-Option
-  - bewusst **kein** Clikt-Alias auf denselben Zielwert
-- klare Mutual-Exclusion-Regel, falls beide gesetzt sind
-- stderr-Warnung bei Nutzung des Legacy-Alias
+- `DataExportCommand` behaelt genau eine Nutzeroption `--filter`
+- `DataExportHelpers` delegiert an `FilterDslParser` (5.1b) und bekommt
+  dessen parsebare Repräsentation
+- Literale aus der DSL werden in
+  `DataFilter.ParameterizedClause`/`Compound` ueberfuehrt statt als
+  rohes SQL interpoliert
 - `DataExportRequest`, `DataTransferRunner` und
-  `ExportOptionsFingerprint` werden auf den expliziteren
-  Begriff umgestellt
-- `DataExportHelpers.resolveFilter(...)` und
-  `containsLiteralQuestionMark(...)` werden nur semantisch umbenannt,
-  nicht fachlich veraendert
-- `docs/cli-spec.md` und `docs/quality.md` werden auf den neuen Namen
-  aktualisiert
+  `ExportOptionsFingerprint` werden auf eine kanonische DSL-
+  Repräsentation umgestellt
+- Eingaben, die erkennbar dem alten Raw-SQL-Stil entsprechen, enden mit
+  Exit 2 und einer Migrationshilfe statt mit stiller Weiterverwendung
+- `docs/cli-spec.md`, `docs/quality.md` und Nutzerbeispiele werden auf
+  die DSL unter `--filter` aktualisiert
+- `FilterDslParser` wird in einer nicht-CLI-gebundenen Schicht
+  eingefuehrt, so dass `DataExportHelpers` ihn direkt ohne
+  Adapter-Abhaengigkeit nutzen kann
+- Resume mit altem Checkpoint, dessen gespeicherter Filter nur im
+  frueheren Raw-SQL-Vertrag gueltig war, endet gezielt mit Exit 2 und
+  einer Migrationshilfe statt mit einem generischen Resume-Fehler
 
 Ergebnis:
 
-- sichtbare Trust-Boundary ist konsistent
-- bestehende Exporte bleiben lauffaehig
-- Resume-Fingerprints bleiben stabil
+- der CLI-Filterpfad ist fuer Nutzerwerte sicher und parameterisiert
+- Resume-Fingerprints bleiben innerhalb der DSL stabil
+- fruehere Raw-SQL-Faelle werden klar abgewiesen statt implizit
+  vertraut
 
 ### 6.2 Sequence Phase A: Vertrag, Enum und Code-Ledger festziehen
 
@@ -581,17 +783,21 @@ Ergebnis:
   - Trigger-Namensbildung
 - `MysqlDdlGenerator.generateSequences(...)` schaltet zwischen
   `ACTION_REQUIRED` und `HELPER_TABLE`
-- Spalten mit `SequenceNextVal` werden beim Tabellenbau speziell
-  behandelt:
-  - PostgreSQL: nativer Default
-  - MySQL `helper_table`: kein SQL-DEFAULT, stattdessen Trigger-Spez
-  - MySQL `action_required` / SQLite: strukturierte Diagnose
+- der MySQL-spezifische Tabellenbau behandelt `SequenceNextVal` nur fuer
+  MySQL:
+  - `helper_table`: kein SQL-DEFAULT, stattdessen Trigger-Spez
+  - `action_required`: strukturierte Diagnose
+- PostgreSQL-/SQLite-spezifische Behandlung von `SequenceNextVal` wird
+  in 6.3 bzw. den jeweiligen Dialektmodulen separat nachgezogen und ist
+  **nicht** Teil der MySQL-Supportobjekt-Arbeit
 - kanonische Marker-Kommentare und feste Objektform laut
   `docs/mysql-sequence-emulation-plan.md`
 - `W114`, `W115`, `W117` werden an den vorgesehenen Stellen erzeugt
 - Kollisionen mit reservierten Hilfsnamen erzeugen keinen stillen
   Fallback
 - Rollback-Inversion fuer Supportobjekte absichern
+- feste Drop-Assertions fuer Trigger -> Routinen -> `dmg_sequences`
+  werden in Unit- und Integrationstests verankert
 
 Ergebnis:
 
@@ -619,15 +825,29 @@ Ergebnis:
 Unit-Tests:
 
 - `DataExportRunnerTest`, `CliDataExportTest`:
-  - `--unsafe-filter` erfolgreich
-  - `--filter` alias mit Warnung
-  - beide Flags zusammen -> Exit 2
+  - `FilterDslParserTest` ist eigenständig und deckt Parser-Lexing,
+    AST-Baum, Normalform und Fehlerposition/-token ab
+  - gueltige `--filter`-DSL wird erfolgreich in parametrisierte
+    `DataFilter`-Formen ueberfuehrt
+  - nicht erlaubte Raw-SQL-Formen unter `--filter` -> Exit 2
+  - Resume-/Fingerprint-Pfad bleibt fuer kanonisch gleiche DSL stabil
+  - Resume mit altem Checkpoint und vormals gueltigem Raw-SQL-Filter
+    wird explizit mit erklaerbarer Exit-2-Migrationsfehlermeldung
+    abgewiesen
+  - Token-/Literal-Fehlerpfade fuer:
+    - ungueltige Identifier
+    - kaputte String-Literale
+    - unerlaubte Operatoren
+    - `OR`/Klammern/Funktionsaufrufe
 - `SchemaValidatorTest`:
   - `SequenceNextVal` mit existierender Sequence ok
   - fehlende Sequence -> Validierungsfehler
   - nicht kompatibler Spaltentyp -> Validierungsfehler
   - altes `FunctionCall("nextval(...)")` -> klarer Migrationsfehler mit
     Verweis auf `default.sequence_nextval`
+  - Generator-/TypeMapper-nahe Tests bestaetigen zusaetzlich, dass
+    derselbe Legacy-Fall keinen stillen Fallback mehr bekommt, falls er
+    den Validator irrtuemlich umgehen sollte
 - `YamlSchemaCodecTest`:
   - Round-Trip fuer `default.sequence_nextval`
 - `MysqlDdlGeneratorTest`:
@@ -641,6 +861,8 @@ Unit-Tests:
   - JSON/Report enthalten den effektiven Modus nur fuer MySQL
   - JSON/Report bleiben fuer PostgreSQL und SQLite ohne
     `mysql_named_sequences`-Feld
+  - Diff-/Report-Kurzform fuer `sequence_nextval(<name>)` wird als
+    Lesedarstellung getestet, nicht als YAML-Eingabevertrag
 - Golden-Master-/Header-Checks:
   - DDL-Header und Report-Generatorstring zeigen `0.9.3`
 - `CodeLedgerValidationTest`:
@@ -663,6 +885,8 @@ Integrationstests (MySQL):
   Support-Trigger
 - explizites `NULL` triggert denselben Pfad und belegt damit die
   lossy-Semantik hinter `W115`
+- Up->Down-Lauf prueft explizit die feste Drop-Reihenfolge:
+  Trigger vor Routinen vor `dmg_sequences`
 
 ---
 
@@ -671,13 +895,20 @@ Integrationstests (MySQL):
 Der Milestone gilt als abgeschlossen, wenn die folgenden Aussagen
 gleichzeitig erfuellt sind:
 
-- `data export` dokumentiert und testet nur noch `--unsafe-filter` als
-  kanonischen Vertrag
-- der Legacy-Alias `--filter` ist getestet, aber sichtbar abgewertet
+- `data export` dokumentiert und testet `--filter` nur noch als sichere,
+  parameterisierte DSL
+- eine eigene `FilterDslParser`-Einheit existiert inkl. eigenem
+  Parse-Error-Typ und AST, und die Parser-Tests laufen grün
+- der CLI-Pfad baut fuer `--filter` keine rohen `WhereClause`-Fragmente
+  mehr aus Nutzereingaben
+- Resume mit alten Raw-SQL-Checkpoints scheitert gezielt,
+  migrationsfaehig und reproduzierbar statt diffus im spaeteren Lauf
 - `DefaultValue.SequenceNextVal` ist in allen exhaustiven `when`-Pfaden
   beruecksichtigt
 - PostgreSQL rendert sequence-basierte Defaults nativ
-- MySQL `action_required` bleibt rueckwaertskompatibel
+- MySQL `action_required` bleibt fuer den bisherigen DDL-Pfad
+  rueckwaertskompatibel; die neue strikte Sequence-Notation ist davon
+  bewusst ausgenommen
 - MySQL `helper_table` erzeugt stabile Golden Masters
 - Split-Output trennt Hilfstabelle und Support-Routinen/Trigger
   korrekt nach Phasen
@@ -714,6 +945,8 @@ Voraussichtlich direkt betroffen:
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataTransferRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunner.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/DataExportCommand.kt`
+- neuer `FilterDslParser` in einer gemeinsam nutzbaren
+  Anwendungs-/Hexagon-Schicht (nicht unter `adapters/driving/cli`)
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateCommand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpers.kt`
@@ -731,6 +964,8 @@ Voraussichtlich direkt betroffen:
 Voraussichtlich testseitig betroffen:
 
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt`
+- `FilterDslParserTest` in derselben nicht-CLI-gebundenen Schicht wie
+  der Parser
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateRunnerTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpersTest.kt`
@@ -746,11 +981,12 @@ Voraussichtlich testseitig betroffen:
 
 ## 9. Risiken und offene Punkte
 
-### 9.1 Legacy-Alias-Dauer
+### 9.1 DSL-Scope fuer `--filter`
 
-Offen bleibt nur der Zeitpunkt der spaeteren Entfernung von `--filter`.
-Fuer 0.9.3 ist die Alias-Phase richtig; fuer 1.0.0 sollte der Altname
-nicht mehr kanonisch in der Hilfe erscheinen.
+Offen bleibt nur, wie klein die erste DSL genau gezogen wird. Fuer
+0.9.3 ist ein bewusst enger Scope richtig; eine zu breite Phase-1-DSL
+wuerde denselben Risiko-Raum wie Raw-SQL nur unter neuem Namen
+reproduzieren.
 
 ### 9.2 Schema-Syntax fuer Sequence-Defaults
 
@@ -787,7 +1023,7 @@ Das ist beabsichtigt und kein Lueckenfehler:
 
 0.9.3 sollte bewusst den kleinen, klaren Schnitt liefern:
 
-- `--unsafe-filter` statt einer halbfertigen DSL
+- sichere `--filter`-DSL statt weiterem Trusted-Raw-SQL-Vertrag
 - `DefaultValue.SequenceNextVal` als sauberer Modellanker
 - MySQL `helper_table` nur im Generatorpfad und nur opt-in
 
