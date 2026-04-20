@@ -4,7 +4,7 @@
 > MySQL-Sequence-Emulation (Generator)
 > **Arbeitspaket**: 6.3 (`Sequence Phase A2: Neutralmodell und Audit
 > aller DefaultValue-Verzweigungen`)
-> **Status**: Draft (2026-04-20)
+> **Status**: Done (2026-04-20)
 > **Referenz**: `docs/implementation-plan-0.9.3.md` Abschnitt 4.2a,
 > Abschnitt 4.3, Abschnitt 5.2, Abschnitt 5.5, Abschnitt 6.3,
 > Abschnitt 6.5, Abschnitt 6.6, Abschnitt 7 und Abschnitt 8;

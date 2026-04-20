@@ -350,7 +350,7 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
 | Security | `--filter` gehaertet: geschlossene DSL mit Bind-Parametern (AP 6.1)                                                                    | —      | ✅      |
 | Core     | Phase A: MySQL-Sequence-Emulationsvertrag, Enum, CLI-Option, Ledger W114–W117, Version 0.9.3 (AP 6.2)                                  | —      | ✅      |
-| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen                                            | —      |        |
+| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen (AP 6.3)                                   | —      | ✅      |
 | Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger | —      |        |
 | CLI      | `--mysql-named-sequences action_required\|helper_table` Option (opt-in, Default bleibt `action_required`)                               | —      | ✅      |
 | Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                               | —      |        |
@@ -619,6 +619,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.29
+**Version**: 3.30
 **Stand**: 2026-04-20
-**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; 0.9.3 in Arbeit (AP 6.1 + 6.2 Done, AP 6.3–6.6 offen); geplant: 0.9.4, 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; 0.9.3 in Arbeit (AP 6.1–6.3 Done, AP 6.4–6.6 offen); geplant: 0.9.4, 0.9.5, 0.9.6, 0.9.7, 0.9.8
