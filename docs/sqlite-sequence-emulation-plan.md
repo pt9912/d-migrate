@@ -156,6 +156,7 @@ CREATE TABLE "dmg_sequences" (
     "name" TEXT NOT NULL,
     "next_value" INTEGER NOT NULL,
     "last_returned_value" INTEGER NULL,
+    "exhausted" INTEGER NOT NULL DEFAULT 0,
     "increment_by" INTEGER NOT NULL,
     "min_value" INTEGER NULL,
     "max_value" INTEGER NULL,
@@ -164,6 +165,14 @@ CREATE TABLE "dmg_sequences" (
     PRIMARY KEY ("name")
 );
 ```
+
+`exhausted` ist ein Boolean-Flag (0/1), das anzeigt, ob die Sequence
+bei `cycle_enabled = 0` erschoepft ist. Der BEFORE INSERT-Trigger
+setzt `exhausted = 1` wenn das naechste Inkrement die Grenze
+ueberschreiten wuerde. Der Erschoepfungs-RAISE prueft dieses Flag
+statt eines numerischen Sentinel-Werts — dadurch entfaellt das
+Problem, dass `max_value + 1` oder `min_value - 1` den 64-bit
+INTEGER-Bereich von SQLite ueberschreiten koennte.
 
 `last_returned_value` speichert den zuletzt von einem Trigger
 zurueckgegebenen Wert. Die Spalte ist `NULL` nach der initialen
@@ -321,8 +330,8 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --   last_returned_value := next_value
 --   IF wuerde_grenze_ueberschreiten (overflow-sichere Subtraktionspruefung):
 --     IF cycle_enabled = 1: next_value := Zyklusstartwert
---     IF cycle_enabled = 0: next_value := Sentinel (max+1 bzw. min-1)
---       (naechster Aufruf erkennt Sentinel in Schritt 1 und ABORTs)
+--     IF cycle_enabled = 0: next_value bleibt, exhausted := 1
+--       (naechster Aufruf erkennt exhausted-Flag in Schritt 1 und ABORTs)
 --   ELSE:
 --     next_value := next_value + increment_by
 --     (overflow-sicher: ELSE nur erreichbar wenn innerhalb der Grenze)
@@ -336,16 +345,18 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 
 Hinweis zur Triggerlogik:
 
-- **Zweistufige Grenzpruefung**: Schritt 1 prueft den *aktuellen*
-  `next_value` gegen die Grenze (`next_value > max_value`) — das
-  faengt den Fall ab, dass ein vorheriger Nicht-Zyklus-Aufruf den
-  Wert ueber die Grenze inkrementiert hat. Schritt 2 prueft
-  overflow-sicher, ob das *naechste* Inkrement die Grenze
-  ueberschreiten wuerde (`next_value > max_value - increment_by`)
-  und entscheidet zwischen Zyklus-Reset und normalem Inkrement
+- **Erschoepfung ueber `exhausted`-Flag**: Schritt 1 prueft nur
+  `exhausted = 1` — kein numerischer Vergleich, kein Overflow-Risiko.
+  Kein numerisches Sentinel (`max_value + 1`) noetig, das den
+  64-bit INTEGER-Bereich ueberschreiten koennte.
+- **Overflow-sichere Vorausschau**: Schritt 2 prueft per
+  Subtraktionsformel (`next_value > max_value - increment_by`), ob
+  das naechste Inkrement die Grenze ueberschreiten wuerde. Bei
+  `cycle=1`: Zyklusstartwert. Bei `cycle=0`: `next_value` bleibt,
+  `exhausted` wird auf 1 gesetzt.
 - Dadurch wird der letzte gueltige Wert (z. B. `next_value = 10`
   bei `max_value = 10`) korrekt zurueckgegeben, bevor die Sequence
-  beim naechsten Aufruf erschoepft ist
+  beim naechsten Aufruf per Flag als erschoepft erkannt wird.
 - `last_returned_value` wird im selben UPDATE wie das Inkrement
   gesichert; der AFTER INSERT-Trigger liest daraus statt zu rechnen
 
@@ -402,58 +413,19 @@ FOR EACH ROW
 WHEN NEW."order_number" IS NULL
 BEGIN
     /* d-migrate:sqlite-sequence-v1 object=sequence-trigger sequence=order_number_seq table=orders column=order_number */
-    -- Schritt 1: Erschoepfungspruefung auf den AKTUELLEN next_value.
-    -- Prueft ob der aktuelle Wert bereits jenseits der Grenze liegt.
-    -- Das passiert nur, wenn ein vorheriger Nicht-Zyklus-Aufruf den
-    -- Wert ueber die Grenze inkrementiert hat. Bei cycle_enabled = 1
-    -- wird stattdessen auf den Zyklusstartwert zurueckgesetzt.
-    -- Kein Overflow-Risiko: einfacher Vergleich ohne Arithmetik.
+    -- Schritt 1: Erschoepfungspruefung ueber das exhausted-Flag.
+    -- Kein numerischer Vergleich, kein Overflow-Risiko.
     SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
-        WHERE (SELECT "cycle_enabled" FROM "dmg_sequences"
-               WHERE "name" = 'order_number_seq') = 0
-        AND (
-            ((SELECT "increment_by" FROM "dmg_sequences"
-              WHERE "name" = 'order_number_seq') > 0
-             AND (SELECT "next_value" FROM "dmg_sequences"
-                  WHERE "name" = 'order_number_seq')
-                 > COALESCE((SELECT "max_value" FROM "dmg_sequences"
-                             WHERE "name" = 'order_number_seq'),
-                            9223372036854775807))
-            OR
-            ((SELECT "increment_by" FROM "dmg_sequences"
-              WHERE "name" = 'order_number_seq') < 0
-             AND (SELECT "next_value" FROM "dmg_sequences"
-                  WHERE "name" = 'order_number_seq')
-                 < COALESCE((SELECT "min_value" FROM "dmg_sequences"
-                             WHERE "name" = 'order_number_seq'),
-                            -9223372036854775808))
-        );
-    -- Zyklus-Recovery: wenn next_value jenseits der Grenze UND cycle=1,
-    -- zuruecksetzen bevor wir den Wert zurueckgeben.
-    UPDATE "dmg_sequences"
-        SET "next_value" = CASE
-            WHEN "increment_by" > 0 THEN COALESCE("min_value", 1)
-            ELSE COALESCE("max_value", 9223372036854775807)
-        END
-        WHERE "name" = 'order_number_seq'
-        AND "cycle_enabled" = 1
-        AND (
-            ("increment_by" > 0
-             AND "next_value" > COALESCE("max_value", 9223372036854775807))
-            OR
-            ("increment_by" < 0
-             AND "next_value" < COALESCE("min_value", -9223372036854775808))
-        );
+        WHERE (SELECT "exhausted" FROM "dmg_sequences"
+               WHERE "name" = 'order_number_seq') = 1;
     -- Schritt 2: Rueckgabewert sichern + next_value inkrementieren (atomar).
     -- Die CASE-Bedingungen verwenden die overflow-sichere
     -- Subtraktionsformel (next_value > max_value - increment_by)
-    -- fuer die Grenzvorausschau. Vier explizite Branches:
-    -- (a) cycle=1, positiv: Zyklusstartwert
-    -- (b) cycle=0, positiv: Sentinel max_value + 1 (naechster Aufruf ABORTs)
-    -- (c) cycle=1, negativ: Zyklusstartwert
-    -- (d) cycle=0, negativ: Sentinel min_value - 1
-    -- (e) ELSE: normales Inkrement (nur erreichbar wenn
-    --     next_value <= max_value - increment_by, also kein Overflow)
+    -- fuer die Grenzvorausschau. Drei Pfade:
+    -- (a) cycle=1, Grenze erreicht: Zyklusstartwert
+    -- (b) cycle=0, Grenze erreicht: next_value bleibt, exhausted=1
+    -- (c) ELSE: normales Inkrement (overflow-sicher: nur erreichbar
+    --     wenn next_value innerhalb der Subtraktionsgrenze)
     UPDATE "dmg_sequences"
         SET "last_returned_value" = "next_value",
             "next_value" = CASE
@@ -464,39 +436,49 @@ BEGIN
                            - "increment_by"
                      AND "cycle_enabled" = 1
                 THEN COALESCE("min_value", 1)
-                -- (b) Nicht-Zyklus Sentinel positiv
-                WHEN "increment_by" > 0
-                     AND "next_value"
-                         > COALESCE("max_value", 9223372036854775807)
-                           - "increment_by"
-                     AND "cycle_enabled" = 0
-                THEN COALESCE("max_value", 9223372036854775807) + 1
-                -- (c) Zyklus-Reset negativ
+                -- (a) Zyklus-Reset negativ
                 WHEN "increment_by" < 0
                      AND "next_value"
                          < COALESCE("min_value", -9223372036854775808)
                            - "increment_by"
                      AND "cycle_enabled" = 1
                 THEN COALESCE("max_value", 9223372036854775807)
-                -- (d) Nicht-Zyklus Sentinel negativ
+                -- (b) Nicht-Zyklus, Grenze erreicht: next_value bleibt
+                --     (exhausted-Flag wird separat gesetzt, s.u.)
+                WHEN "increment_by" > 0
+                     AND "next_value"
+                         > COALESCE("max_value", 9223372036854775807)
+                           - "increment_by"
+                     AND "cycle_enabled" = 0
+                THEN "next_value"
                 WHEN "increment_by" < 0
                      AND "next_value"
                          < COALESCE("min_value", -9223372036854775808)
                            - "increment_by"
                      AND "cycle_enabled" = 0
-                THEN COALESCE("min_value", -9223372036854775808) - 1
-                -- (e) Normales Inkrement (overflow-sicher: nur erreichbar
+                THEN "next_value"
+                -- (c) Normales Inkrement (overflow-sicher: nur erreichbar
                 --     wenn next_value innerhalb der Subtraktionsgrenze)
                 ELSE "next_value" + "increment_by"
+            END,
+            -- exhausted-Flag setzen wenn cycle=0 und Grenze erreicht
+            "exhausted" = CASE
+                WHEN "cycle_enabled" = 0
+                     AND (
+                         ("increment_by" > 0
+                          AND "next_value"
+                              > COALESCE("max_value", 9223372036854775807)
+                                - "increment_by")
+                         OR
+                         ("increment_by" < 0
+                          AND "next_value"
+                              < COALESCE("min_value", -9223372036854775808)
+                                - "increment_by")
+                     )
+                THEN 1
+                ELSE "exhausted"
             END
         WHERE "name" = 'order_number_seq';
-    -- Hinweis zu Branches (b)/(d): Die Sentinel-Werte max_value + 1
-    -- bzw. min_value - 1 koennen bei max_value = MAX_INT bzw.
-    -- min_value = MIN_INT ueberlaufen. Dieser Grenzfall ist nur
-    -- erreichbar wenn max_value/min_value NULL ist (Defaultwerte),
-    -- d.h. die Sequence hat effektiv keine Obergrenze. Phase A muss
-    -- diesen Grenzfall prototypisch validieren. In der Praxis setzen
-    -- Nutzer explizite max_value/min_value-Werte < MAX_INT.
     -- Guard: Sequence-Zeile muss existieren (changes() = 0 heisst kein UPDATE).
     -- Hinweis: changes() zaehlt gematchte Zeilen, nicht geaenderte Werte;
     -- selbst bei increment_by mit Netto-Null-Effekt (theoretisch durch
@@ -529,6 +511,27 @@ Inkrement und ist overflow-sicher formuliert (`next_value > max_value
 im CASE-Ausdruck desselben UPDATE zusammengefasst. Der AFTER
 INSERT-Trigger liest `last_returned_value` statt zu rechnen —
 dadurch ist der Rueckgabewert vom `next_value`-Zustand entkoppelt.
+
+**UPDATE-Trigger-Kaskade durch AFTER INSERT**
+
+Der `_ai`-Trigger fuehrt ein `UPDATE` auf die Zieltabelle aus, um
+den Sequence-Wert in die eingefuegte Zeile zu schreiben. Dieses
+UPDATE kann **bestehende BEFORE/AFTER UPDATE-Trigger** auf derselben
+Tabelle ausloesen. Das ist ein bewusstes Kompatibilitaetsrisiko:
+
+- nutzerdefinierte UPDATE-Trigger sehen das UPDATE des `_ai`-Triggers
+  als normales UPDATE und feuern entsprechend
+- das kann gewuenscht sein (z. B. ein `updated_at`-Trigger) oder
+  unerwuenscht (z. B. ein Audit-Trigger, der das Sequence-Schreiben
+  als Datenaenderung protokolliert)
+- der Generator emittiert `W122` wenn die Zieltabelle
+  nutzerdefinierte UPDATE-Trigger hat und gleichzeitig
+  sequence-basierte Spalten im `helper_table`-Modus verwendet
+- `W122`: AFTER INSERT sequence trigger may cascade into existing
+  UPDATE triggers on the same table; verify that UPDATE trigger
+  behavior is compatible with sequence assignment
+
+Integrationstests muessen diesen Fall explizit abdecken (§8.2).
 
 **NOT NULL-Kompatibilitaet bei Zwei-Trigger-Strategie**
 
@@ -1062,13 +1065,16 @@ Normalisierung und Matching-Strategie:
 - UPSERT-Gap bei Conflict-Handling:
   - `W121`: Sequence values may be consumed without insertion when
     INSERT ... ON CONFLICT is used (§5.1)
+- UPDATE-Trigger-Kaskade:
+  - `W122`: AFTER INSERT sequence trigger may cascade into existing
+    UPDATE triggers on the same table (§3.4)
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `W120`, `W121`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
+`W119`, `W120`, `W121`, `W122`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
 
 ---
 
@@ -1116,7 +1122,16 @@ SQLite-spezifische Reader-Herausforderungen:
 Reverse-Erkennungsstrategie und Fallback:
 
 - primaere Erkennung laeuft ueber den **Marker-Kommentar** im
-  Trigger-Body (erster Kommentar im `BEGIN...END`-Block)
+  Trigger-Body: der Parser sucht den Marker-String
+  `d-migrate:sqlite-sequence-v1` **irgendwo** innerhalb eines
+  `/* ... */`-Kommentars im `BEGIN...END`-Block (nicht nur im ersten
+  Kommentar). Dadurch ist die Erkennung robust gegen:
+  - Kommentar-Reihenfolge (Marker muss nicht der erste Kommentar sein)
+  - zusaetzliche Praeambel-Kommentare vor dem Marker
+  - Whitespace-/Zeilenumbruch-Unterschiede innerhalb des Kommentars
+- innerhalb des gefundenen Marker-Kommentars werden die Key-Value-
+  Paare (`object=`, `sequence=`, `table=`, `column=`) per
+  Whitespace-tolerantem Parsing extrahiert
 - der Marker enthaelt `d-migrate:sqlite-sequence-v1`, Objekttyp,
   Sequence-Name, Tabelle und Spalte — das ist die autoritaive Quelle
 - **wenn der Marker-Kommentar fehlt oder nicht parsbar ist**, greift
@@ -1231,7 +1246,7 @@ Compare-Verhalten bei degradierten/modifizierten Triggern:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`, `E059`, `W120`, `W121`)
+  `E057`, `E058`, `E059`, `W120`, `W121`, `W122`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -1332,6 +1347,10 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
   stillem NULL
 - NOT NULL-Spalte mit SequenceNextVal akzeptiert INSERT ohne Wert
   (W119-Unterdrueckung wirkt korrekt)
+- Tabelle mit bestehendem AFTER UPDATE-Trigger + sequence-basierter
+  Spalte: INSERT loest korrekte Sequence-Vergabe aus, der UPDATE-
+  Trigger feuert durch die `_ai`-Kaskade, beide Ergebnisse sind
+  konsistent (W122-Testfall)
 
 Pflicht-Tests fuer Reverse-Degradation (W116, W120):
 
