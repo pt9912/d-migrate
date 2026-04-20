@@ -346,14 +346,14 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 
 ### Milestone 0.9.3 — Beta: Filter-Haertung und MySQL-Sequence-Emulation (Generator)
 
-| Bereich  | Aufgabe                                                                                                                                 | LF-Ref | Status |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
-| Security | `--filter` gehaertet: geschlossene DSL mit Bind-Parametern (AP 6.1)                                                                    | —      | ✅      |
-| Core     | Phase A: MySQL-Sequence-Emulationsvertrag, Enum, CLI-Option, Ledger W114–W117, Version 0.9.3 (AP 6.2)                                  | —      | ✅      |
-| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen (AP 6.3)                                   | —      | ✅      |
+| Bereich  | Aufgabe                                                                                                                                          | LF-Ref | Status |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------ |
+| Security | `--filter` gehaertet: geschlossene DSL mit Bind-Parametern (AP 6.1)                                                                              | —      | ✅      |
+| Core     | Phase A: MySQL-Sequence-Emulationsvertrag, Enum, CLI-Option, Ledger W114–W117, Version 0.9.3 (AP 6.2)                                            | —      | ✅      |
+| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen (AP 6.3)                                            | —      | ✅      |
 | Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger (AP 6.4) | —      | ✅      |
-| CLI      | `--mysql-named-sequences action_required\|helper_table` Option (opt-in, Default bleibt `action_required`)                               | —      | ✅      |
-| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                               | —      |        |
+| CLI      | `--mysql-named-sequences action_required\|helper_table` Option (opt-in, Default bleibt `action_required`)                                        | —      | ✅      |
+| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                                        | —      |        |
 
 **Ergebnis**: `schema generate --target mysql` kann benannte Sequences optional
 ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
@@ -378,14 +378,14 @@ zurueckgefaltet und tauchen nicht als Rauschen im Diff auf. Details:
 
 ### Milestone 0.9.5 — Beta: MCP-Server
 
-| Bereich | Aufgabe                                                                                        | LF-Ref |
-| ------- | ---------------------------------------------------------------------------------------------- | ------ |
-| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface               | —      |
-| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung       | —      |
-| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                       | —      |
-| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                         | —      |
-| Server  | Segmentierter Artefakt-Upload mit Resumable-Multi-Part und SHA256-Validierung                  | —      |
-| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                  | —      |
+| Bereich | Aufgabe                                                                                  | LF-Ref |
+| ------- | ---------------------------------------------------------------------------------------- | ------ |
+| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface         | —      |
+| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung | —      |
+| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                 | —      |
+| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                   | —      |
+| Server  | Segmentierter Artefakt-Upload mit Resumable-Multi-Part und SHA256-Validierung            | —      |
+| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                            | —      |
 
 **Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
 ueber das Model Context Protocol gesteuert werden. Details:
@@ -393,15 +393,15 @@ ueber das Model Context Protocol gesteuert werden. Details:
 
 ### Milestone 0.9.6 — Beta: REST-API
 
-| Bereich | Aufgabe                                                                                        | LF-Ref |
-| ------- | ---------------------------------------------------------------------------------------------- | ------ |
-| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                        | —      |
-| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | —     |
-| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                  | —      |
-| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                  | —      |
-| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)    | —      |
-| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis             | —      |
-| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                        | —      |
+| Bereich | Aufgabe                                                                                          | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------------------ | ------ |
+| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | LF-022 |
+| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | LF-022 |
+| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | LF-022 |
+| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | LF-022 |
+| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | LF-022 |
+| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | LF-022 |
+| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | LF-022 |
 
 **Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
 programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
@@ -409,14 +409,14 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 
 ### Milestone 0.9.7 — Beta: gRPC-API
 
-| Bereich | Aufgabe                                                                                        | LF-Ref |
-| ------- | ---------------------------------------------------------------------------------------------- | ------ |
-| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung                  | —      |
-| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume                | —      |
-| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling                       | —      |
-| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs                         | —      |
-| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen               | —      |
-| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes                    | —      |
+| Bereich | Aufgabe                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------- | ------ |
+| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung    | —      |
+| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume | —      |
+| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling         | —      |
+| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs           | —      |
+| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen | —      |
+| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes      | —      |
 
 **Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
 Low-Latency-Integration und Streaming-Szenarien. Details:
@@ -525,12 +525,18 @@ Validierung deterministisch im Profiling-Kern bleiben.
 > Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
 > Privacy-by-Design und der Trennung aus `docs/profiling.md` §10.
 
-### Milestone 1.2.0 — Weitere Datenbanken
+### Milestone 1.2.0 — Weitere Datenbanken (MS SQL Server)
+
+| Bereich | Aufgabe                                     | LF-Ref |
+| ------- | ------------------------------------------- | ------ |
+| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | LF-019 |
+| Test    | Cross-DB-Tests mit 4 Datenbanksystemen      | 8.7    |
+
+### Milestone 1.2.5 — Weitere Datenbanken (Oracle)
 
 | Bereich | Aufgabe                                                  | LF-Ref |
 | ------- | -------------------------------------------------------- | ------ |
 | Driver  | Oracle-Treiber (JDBC, PL/SQL-Support)                    | LF-019 |
-| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support)              | LF-019 |
 | Core    | Erweitertes Typsystem für Oracle/MSSQL-spezifische Typen | LF-019 |
 | Test    | Cross-DB-Tests mit 5 Datenbanksystemen                   | 8.7    |
 
@@ -561,11 +567,9 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 | Bereich   | Aufgabe                                        | LF-Ref |
 | --------- | ---------------------------------------------- | ------ |
-| API       | REST-API für Remote-Zugriff                    | LF-022 |
 | GUI       | Grafische Benutzeroberfläche für Schema-Design | LF-018 |
 | Core      | Schema-Optimierungsvorschläge                  | LF-020 |
 | Core      | Rollenbasierte Zugriffskontrolle               | LN-028 |
-| Community | Steering Committee etablieren                  | —      |
 | Community | LTS-Support für 1.x-Linie (24 Monate)          | —      |
 
 **Ergebnis**: Feature-Complete, Enterprise-ready, aktive Community.
