@@ -77,16 +77,19 @@ COPY --chown=gradle:gradle test/consumer-read-probe/build.gradle.kts test/consum
 
 RUN gradle --no-daemon resolveAllDependencies
 
-# ---- Stage: compile-only (no tests, no kover) -----------------------------
+# ---- Stage: compile-only (production classes only, no tests) ---------------
 # Fast feedback for compilation checks during development.
 # Usage: docker build --target compile .
 FROM deps AS compile
 
 WORKDIR /src
 COPY --chown=gradle:gradle . .
-RUN gradle --no-daemon classes testClasses
+RUN gradle --no-daemon classes
 
-# ---- Stage 1: build & test (extends compile) ------------------------------
+# ---- Stage 1: build & test ------------------------------------------------
+# Compiles test classes, runs tests, verifies coverage, and builds the CLI
+# distribution — all in a single Gradle invocation so Kover instrumentation
+# is always fresh (no stale testClasses from the compile stage).
 FROM compile AS build
 
 ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
