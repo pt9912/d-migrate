@@ -344,6 +344,18 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 > Nutzer-Feature-Milestone geschnitten. So bleiben Library-Refactor und
 > sichtbarer CLI-/Output-Vertrag getrennt planbar.
 
+### Milestone 0.9.3 — Beta: Filter-Haertung und Security
+
+| Bereich  | Aufgabe                                                                                                       | LF-Ref |
+| -------- | ------------------------------------------------------------------------------------------------------------- | ------ |
+| Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`) | —      |
+
+**Ergebnis**: Der rohe SQL-Eingabepfad ueber `--filter` ist entweder durch
+explizite Benennung (`--unsafe-filter`) als unsicher gekennzeichnet oder durch
+eine strukturierte Filter-DSL ersetzt. Damit ist die letzte offene
+Security-Finding-Prioritaet aus `docs/quality.md` vor dem Publish-Vertrag
+abgearbeitet.
+
 ### Milestone 0.9.5 — Beta-Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
@@ -354,7 +366,6 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 | Docs    | API-Dokumentation                         | —      |
 | QA      | Performance-Benchmarks dokumentiert       | —      |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
-| Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`) | — |
 
 **Ergebnis**: Die Beta-Dokumentation ist vollständig und Pilotanwender haben
 das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
@@ -542,6 +553,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.25
+**Version**: 3.26
 **Stand**: 2026-04-20
-**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0, 0.9.1 und 0.9.2 abgeschlossen
+**Status**: Milestone 0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.5.5, 0.6.0, 0.7.0, 0.7.5, 0.8.0, 0.9.0, 0.9.1 und 0.9.2 abgeschlossen; Milestone 0.9.3 geplant

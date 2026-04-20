@@ -164,11 +164,11 @@ Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 
 
 ### Offen
 
-- **`--filter` härten** (Milestone: 0.9.5):
+- **`--filter` härten** (Milestone: 0.9.3):
   Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
   Siehe dazu den Security-Finding `--filter` roh in SQL (`DataExportCommand.kt`, `DataExportHelpers.kt`) und die dokumentierte `--filter`-Entscheidung in `ImpPlan-0.9.1-A.md`.
   Muss vor dem öffentlichen Publish-Vertrag entschieden sein.
-  Verankert in `docs/roadmap.md` unter Milestone 0.9.5.
+  Verankert in `docs/roadmap.md` unter Milestone 0.9.3.
 
 ### Erledigt
 
