@@ -13,8 +13,8 @@
 > `docs/ImpPlan-0.9.3-6.5.md`;
 > `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt`;
 > `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`;
-> `hexagon/application/src/test/kotlin/.../FilterDslParserTest.kt`;
-> `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/DataExportE2EMysqlTest.kt`;
+> `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/FilterDslParserTest.kt`;
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataExportE2EMysqlTest.kt`;
 > `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt`;
 > `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/YamlSchemaCodecTest.kt`;
 > `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt`;
@@ -22,6 +22,7 @@
 > `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/SchemaGenerateHelpersTest.kt`;
 > `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/report/TransformationReportWriterTest.kt`;
 > `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt`;
+> `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`;
 > `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/CodeLedgerValidationTest.kt`.
 
 ---
@@ -234,10 +235,16 @@ Pflichtabdeckung:
 
 ### 5.5 MySQL-Integrationstests
 
+Betroffene Tests:
+
+- `MysqlSequenceEmulationIntegrationTest` (neu)
+- ggf. bestehende MySQL-Integrationen im Modul `test/integration-mysql`
+
 Pflichtabdeckung:
 
-- `dmg_nextval('invoice_seq')` liefert monoton steigende Werte
-- parallele Aufrufe erzeugen keine Duplikate
+- `dmg_nextval('invoice_seq')` liefert fuer erfolgreich
+  committete serielle Aufrufe monoton steigende Werte
+- parallele committete Aufrufe erzeugen keine Duplikate
 - Rollback einer Transaktion zieht den Inkrement-Schritt zurueck
 - `INSERT` ohne Spaltenwert fuellt ueber den Support-Trigger
 - explizites `NULL` triggert denselben Pfad und belegt `W115`
@@ -331,8 +338,8 @@ Voraussichtlich testseitig betroffen:
 
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliDataExportTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/DataExportRunnerTest.kt`
-- `hexagon/application/src/test/kotlin/.../FilterDslParserTest.kt`
-- `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/DataExportE2EMysqlTest.kt`
+- `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/FilterDslParserTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/DataExportE2EMysqlTest.kt`
 - `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt`
 - `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/YamlSchemaCodecTest.kt`
 - Compare-/TypeMapper-nahe Tests
@@ -342,7 +349,7 @@ Voraussichtlich testseitig betroffen:
 - `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/report/TransformationReportWriterTest.kt`
 - `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/yaml/DdlGoldenMasterTest.kt`
 - `hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/CodeLedgerValidationTest.kt`
-- `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/...`
+- `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`
 
 Artefaktseitig betroffen:
 
