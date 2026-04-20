@@ -116,3 +116,19 @@ kover {
         }
     }
 }
+
+tasks.register("resolveAllDependencies") {
+    group = "build setup"
+    description = "Resolves all resolvable configurations across all projects to warm the Gradle dependency cache."
+
+    doLast {
+        allprojects.forEach { project ->
+            project.configurations
+                .filter { it.isCanBeResolved }
+                .forEach { configuration ->
+                    logger.lifecycle("Resolving ${project.path}:${configuration.name}")
+                    configuration.resolve()
+                }
+        }
+    }
+}

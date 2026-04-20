@@ -39,10 +39,48 @@
 #     docker build --target coverage-verify -t d-migrate:coverage-verify .
 # ---------------------------------------------------------------------------
 
+# ---- Stage: dependency warmup ---------------------------------------------
+# Copies only Gradle metadata first so dependency resolution can be cached
+# independently from source code changes.
+FROM gradle:8.12-jdk21 AS deps
+
+WORKDIR /src
+
+COPY --chown=gradle:gradle settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY --chown=gradle:gradle gradle/ gradle/
+# The following per-file COPY block is intentionally verbose so Docker can
+# cache dependency resolution independently from source changes. If the build
+# environment reliably supports `COPY --parents`, these entries can later be
+# collapsed into one or a few grouped COPY instructions while preserving the
+# directory structure.
+COPY --chown=gradle:gradle hexagon/ports-common/build.gradle.kts hexagon/ports-common/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/ports-read/build.gradle.kts hexagon/ports-read/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/ports-write/build.gradle.kts hexagon/ports-write/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/ports/build.gradle.kts hexagon/ports/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/application/build.gradle.kts hexagon/application/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/core/build.gradle.kts hexagon/core/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/profiling/build.gradle.kts hexagon/profiling/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-common/build.gradle.kts adapters/driven/driver-common/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-postgresql/build.gradle.kts adapters/driven/driver-postgresql/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-postgresql-profiling/build.gradle.kts adapters/driven/driver-postgresql-profiling/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-mysql/build.gradle.kts adapters/driven/driver-mysql/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-mysql-profiling/build.gradle.kts adapters/driven/driver-mysql-profiling/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/driver-sqlite-profiling/build.gradle.kts adapters/driven/driver-sqlite-profiling/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/formats/build.gradle.kts adapters/driven/formats/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/streaming/build.gradle.kts adapters/driven/streaming/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driving/cli/build.gradle.kts adapters/driving/cli/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-postgresql/build.gradle.kts test/integration-postgresql/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-mysql/build.gradle.kts test/integration-mysql/build.gradle.kts
+COPY --chown=gradle:gradle test/consumer-read-probe/build.gradle.kts test/consumer-read-probe/build.gradle.kts
+
+RUN gradle --no-daemon resolveAllDependencies
+
 # ---- Stage: compile-only (no tests, no kover) -----------------------------
 # Fast feedback for compilation checks during development.
 # Usage: docker build --target compile .
-FROM gradle:8.12-jdk21 AS compile
+FROM deps AS compile
 
 WORKDIR /src
 COPY --chown=gradle:gradle . .
