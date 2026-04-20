@@ -592,6 +592,55 @@ class CliDataExportTest : FunSpec({
         }
     }
 
+    // ─── Legacy-Checkpoint: pre-0.9.3 v1 manifest with --filter → Exit 2 ──
+
+    test("E2E: resume with v1 legacy checkpoint and --filter exits 2") {
+        val db = createSampleDatabase()
+        val ckptDir = Files.createTempDirectory("d-migrate-legacy-ckpt")
+        try {
+            // Write a synthetic v1 manifest to the checkpoint directory
+            val manifestYaml = """
+                schemaVersion: 1
+                operationId: legacy-op-1
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: PENDING
+                    rowsProcessed: 0
+                    chunksProcessed: 0
+                optionsFingerprint: ${"a".repeat(64)}
+            """.trimIndent()
+            Files.writeString(ckptDir.resolve("legacy-op-1.checkpoint.yaml"), manifestYaml)
+
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--filter", "id > 0",
+                            "--output", ckptDir.resolve("out.json").toString(),
+                            "--resume", "legacy-op-1",
+                            "--checkpoint-dir", ckptDir.toString(),
+                        )
+                    )
+                }
+                ex.statusCode shouldBe 2
+            }
+            stderr shouldContain "schema version 1"
+            stderr shouldContain "pre-0.9.3"
+        } finally {
+            Files.deleteIfExists(db)
+            ckptDir.toFile().deleteRecursively()
+        }
+    }
+
     // ─── F33: --tables Identifier-Validierung (§6.7) ─────────────
 
     test("F33 §6.7: --tables 'weird name' (whitespace) → Exit 2") {

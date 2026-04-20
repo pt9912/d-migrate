@@ -35,7 +35,7 @@ private val MysqlIntegrationTag = NamedTag("integration")
  * - Round-Trip JSON/YAML/CSV mit echten MySQL-Typen (INT, VARCHAR, DECIMAL, TINYINT, DATETIME)
  * - §6.17 Empty-Table-Vertrag pro Format gegen eine echte leere MySQL-Tabelle
  * - `--split-files` mit Auto-Discovery via `MysqlTableLister`
- * - `--filter` (Roh-WHERE) wird server-seitig angewendet
+ * - `--filter` (DSL, parametrisiert seit 0.9.3) wird server-seitig angewendet
  * - Cursor-Streaming `useCursorFetch=true` (Plan §3.3 / §6.13)
  */
 class DataExportE2EMysqlTest : FunSpec({
