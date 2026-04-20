@@ -168,6 +168,13 @@ Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 
   JDBC-Bind-Parameter gebunden. Rohes SQL wird nicht mehr akzeptiert (Exit 2).
   `FilterDslParser` und `FilterDslTranslator` liegen in `hexagon/application`.
   M-R5 (`?`-Check) entfällt, da keine `WhereClause` mehr erzeugt wird.
+  Akzeptanzmatrix:
+  - `--filter ""` / whitespace-only → Exit 2 (Test: `CliDataExportTest`)
+  - nicht DSL-konforme Eingaben → Exit 2 mit Position/Token (Test: `CliDataExportTest`, `FilterDslParserTest`)
+  - `= null` / `IN (null)` → Exit 2 mit Hinweis auf IS NULL (Test: `FilterDslParserTest`)
+  - Fingerprint stabil bei Whitespace/Case-Änderung (Test: `FilterDslParserTest`)
+  - Legacy-Checkpoint (schemaVersion 1) + --filter → Exit 2 mit Migrationshinweis (Test: `DataExportRunnerTest`)
+  - Manifest schemaVersion 1→2 Bump für formale Erkennung (`CheckpointManifest.CURRENT_SCHEMA_VERSION = 2`)
 
 - ~~E2E-Round-Trip-Test.~~
   Umgesetzt in 0.9.2 AP 6.7: `E2ERoundTripPostgresTest` — Export→Import→Schema/Daten-Vergleich

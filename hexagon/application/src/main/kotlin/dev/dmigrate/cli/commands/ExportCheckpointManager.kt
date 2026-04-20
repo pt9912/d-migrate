@@ -70,22 +70,16 @@ internal class ExportCheckpointManager(
                 return ExportResumeResult.Exit(3)
             }
             if (manifest.optionsFingerprint != ctx.fingerprint) {
-                // Distinguish two cases:
-                // (a) Pre-0.9.3 raw-SQL checkpoint: the stored fingerprint was
-                //     computed from the raw --filter text. Since 0.9.3, the
-                //     fingerprint uses the DSL canonical form, so any checkpoint
-                //     with a --filter will mismatch. → Exit 2 with migration hint.
-                // (b) Genuine option change between runs. → Exit 3.
-                //
-                // Detection: if the current request carries a DSL filter, the
-                // mismatch is likely (a). Without a filter, only (b) is possible.
-                // This heuristic has no false negatives for (a) because a
-                // filter-bearing 0.9.3 checkpoint always produces a matching
-                // fingerprint for the same canonical DSL.
-                if (request.filter != null) {
+                // Formal detection via schemaVersion:
+                // v1 checkpoints used raw --filter text for fingerprinting.
+                // v2 (0.9.3+) uses DSL canonical form. The formats are
+                // incompatible, so a v1 checkpoint with a --filter always
+                // mismatches against a v2 fingerprint.
+                if (manifest.schemaVersion < 2 && request.filter != null) {
                     stderr(
-                        "Error: Checkpoint fingerprint mismatch. If this checkpoint was created " +
-                            "before 0.9.3, the --filter fingerprint format has changed (raw SQL → DSL canonical form). " +
+                        "Error: Checkpoint was created with schema version ${manifest.schemaVersion} " +
+                            "(pre-0.9.3), which used raw SQL for the --filter fingerprint. " +
+                            "Since 0.9.3 (schema version 2), --filter uses a DSL canonical form. " +
                             "Start a new export without --resume, or delete the old checkpoint."
                     )
                     return ExportResumeResult.Exit(2)

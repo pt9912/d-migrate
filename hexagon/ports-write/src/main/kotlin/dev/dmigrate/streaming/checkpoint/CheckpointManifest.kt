@@ -55,7 +55,12 @@ data class CheckpointManifest(
          * kompatiblen Manifest-Aenderung inkrementiert werden; Loader
          * weigern sich dann explizit, aeltere/neuere Versionen zu oeffnen.
          */
-        const val CURRENT_SCHEMA_VERSION: Int = 1
+        /**
+         * v1: 0.9.0 initial manifest format (raw --filter fingerprint)
+         * v2: 0.9.3 DSL-based --filter fingerprint (canonical form)
+         */
+        const val CURRENT_SCHEMA_VERSION: Int = 2
+        const val MIN_SUPPORTED_SCHEMA_VERSION: Int = 1
     }
 }
 

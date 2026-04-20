@@ -922,6 +922,43 @@ class DataExportRunnerTest : FunSpec({
             stderr.joined() shouldContain "fingerprint mismatch"
         }
 
+        test("--resume with v1 legacy checkpoint and --filter exits 2 with migration hint") {
+            val store = InMemoryCheckpointStore()
+            // Simulate a pre-0.9.3 v1 manifest with raw-SQL-based fingerprint
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    schemaVersion = 1,
+                    operationId = "op-legacy",
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json",
+                    chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                        ),
+                    ),
+                    // Raw-SQL-based fingerprint from pre-0.9.3 — will not match DSL canonical form
+                    optionsFingerprint = "a".repeat(64),
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, checkpointStoreFactory = { store })
+            val exit = runner.execute(
+                request(
+                    filter = "status = 'OPEN'",
+                    output = Path.of("/tmp/d-migrate-legacy-ckpt.json"),
+                    resume = "op-legacy",
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-ckpt"),
+                ),
+            )
+            exit shouldBe 2
+            stderr.joined() shouldContain "schema version 1"
+            stderr.joined() shouldContain "pre-0.9.3"
+        }
+
         test("--resume mit operationType-Mismatch (IMPORT) endet mit Exit 3") {
             val store = InMemoryCheckpointStore()
             store.save(

@@ -190,7 +190,8 @@ class FileCheckpointStore(
     private fun fromMap(map: Map<*, *>, path: Path): CheckpointManifest {
         val schemaVersion = (map["schemaVersion"] as? Number)?.toInt()
             ?: throw CheckpointStoreException("Checkpoint manifest at $path is missing 'schemaVersion'")
-        if (schemaVersion != CheckpointManifest.CURRENT_SCHEMA_VERSION) {
+        if (schemaVersion < CheckpointManifest.MIN_SUPPORTED_SCHEMA_VERSION ||
+            schemaVersion > CheckpointManifest.CURRENT_SCHEMA_VERSION) {
             throw UnsupportedCheckpointVersionException(foundVersion = schemaVersion)
         }
         val operationId = (map["operationId"] as? String)?.takeIf { it.isNotBlank() }
