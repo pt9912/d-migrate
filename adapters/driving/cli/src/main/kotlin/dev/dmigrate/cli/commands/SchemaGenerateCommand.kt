@@ -45,6 +45,9 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         help = "DDL output split mode: 'single' (default) or 'pre-post' for import-friendly artifacts")
         .choice("single", "pre-post")
         .default("single")
+    val mysqlNamedSequences by option("--mysql-named-sequences",
+        help = "MySQL named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
+        .choice("action_required", "helper_table")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -62,12 +65,13 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             verbose = ctx.verbose,
             quiet = ctx.quiet,
             splitMode = splitMode,
+            mysqlNamedSequences = mysqlNamedSequences,
         )
         val runner = SchemaGenerateRunner(
             schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
             generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-            reportWriter = { path, result, schema, dialect, src, splitModeStr ->
-                TransformationReportWriter().write(path, result, schema, dialect, src, splitModeStr)
+            reportWriter = { path, result, schema, dialect, src, splitModeStr, mysqlSeqStr ->
+                TransformationReportWriter().write(path, result, schema, dialect, src, splitModeStr, mysqlSeqStr)
             },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,

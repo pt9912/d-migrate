@@ -25,7 +25,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "version: \"2.0\""
         report shouldContain "file: \"schema.yaml\""
         report shouldContain "dialect: postgresql"
-        report shouldContain "generator: \"d-migrate 0.9.2\""
+        report shouldContain "generator: \"d-migrate 0.9.3\""
     }
 
     test("report contains summary counts") {

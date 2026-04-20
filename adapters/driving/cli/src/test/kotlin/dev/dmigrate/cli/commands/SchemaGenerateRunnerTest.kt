@@ -135,7 +135,7 @@ class SchemaGenerateRunnerTest : FunSpec({
             schemaReader = schemaReader,
             validator = validator,
             generatorLookup = { generator },
-            reportWriter = { path, result, schema, dialect, source, _ ->
+            reportWriter = { path, result, schema, dialect, source, _, _ ->
                 reportWrites += ReportRecord(path, result, schema, dialect, source)
             },
             fileWriter = { path, content -> fileWrites += WriteRecord(path, content) },
@@ -514,7 +514,7 @@ class SchemaGenerateRunnerTest : FunSpec({
                 observedDialect = dialect
                 FakeGenerator(dialect = dialect)
             },
-            reportWriter = { _, _, _, _, _, _ -> },
+            reportWriter = { _, _, _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
@@ -538,7 +538,7 @@ class SchemaGenerateRunnerTest : FunSpec({
                 observedDialect = dialect
                 FakeGenerator(dialect = dialect)
             },
-            reportWriter = { _, _, _, _, _, _ -> },
+            reportWriter = { _, _, _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,

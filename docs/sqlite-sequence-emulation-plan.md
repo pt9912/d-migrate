@@ -155,6 +155,7 @@ CREATE TABLE "dmg_sequences" (
     "format_version" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "next_value" INTEGER NOT NULL,
+    "last_returned_value" INTEGER NULL,
     "increment_by" INTEGER NOT NULL,
     "min_value" INTEGER NULL,
     "max_value" INTEGER NULL,
@@ -163,6 +164,15 @@ CREATE TABLE "dmg_sequences" (
     PRIMARY KEY ("name")
 );
 ```
+
+`last_returned_value` speichert den zuletzt von einem Trigger
+zurueckgegebenen Wert. Die Spalte ist `NULL` nach der initialen
+Seed-Erzeugung und wird erst beim ersten Trigger-Aufruf gesetzt.
+Sie ist **nicht** Teil des neutralen Modells (`SequenceDefinition`),
+sondern ein Implementierungsdetail der SQLite-Emulation, das den
+AFTER INSERT-Trigger vom `next_value`-Zustand entkoppelt — insbesondere
+bei Zyklus-Resets, bei denen `next_value - increment_by` den falschen
+Wert liefern wuerde.
 
 Jede neutrale Sequence belegt genau eine Zeile in `dmg_sequences`.
 
@@ -269,16 +279,16 @@ in einem `BEFORE INSERT`-Trigger. Die tatsaechliche Zuweisungsstrategie
 ist eine offene Entscheidung fuer Phase A (siehe unten).
 
 ```
--- Pseudocode: Logischer Ablauf eines Sequence-Support-Triggers
+-- Pseudocode: Logischer Ablauf des Trigger-Paares
 --
--- Schritt 1: Aktuellen Wert merken (= Rueckgabewert)
---   returned_value := next_value           -- aus dmg_sequences
+-- BEFORE INSERT (_bi):
 --
--- Schritt 2: next_value inkrementieren
+-- Schritt 1: Aktuellen Wert in last_returned_value sichern + inkrementieren
+--   last_returned_value := next_value
 --   next_value := next_value + increment_by
 --   IF rows_affected = 0: RAISE(ABORT, 'sequence row not found')
 --
--- Schritt 3: Grenzpruefung (NACH Inkrement, auf den NEUEN next_value)
+-- Schritt 2: Grenzpruefung (NACH Inkrement, auf den NEUEN next_value)
 --   IF increment_by > 0
 --      AND next_value > COALESCE(max_value, MAX_INT):
 --     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
@@ -288,16 +298,18 @@ ist eine offene Entscheidung fuer Phase A (siehe unten).
 --     IF cycle_enabled = 0: RAISE(ABORT, 'exhausted')
 --     ELSE: next_value := COALESCE(max_value, MAX_INT)
 --
--- Schritt 4: returned_value in NEW.<column> einsetzen
---   NEW.<column> := returned_value         -- NICHT direkt moeglich (s.u.)
+-- AFTER INSERT (_ai):
+--
+-- Schritt 3: last_returned_value in die eingefuegte Zeile schreiben
+--   UPDATE table SET column = last_returned_value WHERE ROWID = NEW.ROWID
 ```
 
-Hinweis zur Zyklus-Logik: Die Grenzpruefung muss auf den **neuen**
-`next_value` (nach Inkrement) erfolgen, nicht auf den zurueckgegebenen
-Wert. Der zurueckgegebene Wert (`returned_value`) ist immer der Wert
-**vor** dem Inkrement und wird durch einen Cycle-Reset nicht veraendert.
-Der Reset setzt nur `next_value` zurueck, damit der **naechste** Aufruf
-vom Zyklusanfang startet.
+Hinweis zur Zyklus-Logik: Der zurueckgegebene Wert wird in
+`last_returned_value` gesichert, **bevor** `next_value` inkrementiert
+wird. Dadurch ist der AFTER INSERT-Trigger vom Zustand von `next_value`
+entkoppelt ��� auch nach einem Zyklus-Reset (der nur `next_value`
+veraendert) liest der AFTER-Trigger den korrekten Wert aus
+`last_returned_value`.
 
 **Zentrale Limitation: NEW-Zuweisung in SQLite-Triggern**
 
@@ -345,20 +357,26 @@ Alternative Ansaetze, die evaluiert und verworfen wurden:
 Kanonisches Trigger-Paar (ausfuehrbares SQL):
 
 ```sql
--- BEFORE INSERT: reserviert den Wert, prueft Grenzen
+-- BEFORE INSERT: sichert Rueckgabewert, inkrementiert, prueft Grenzen
 CREATE TRIGGER "dmg_seq_orders_order_num_a1b2c3d4e5_bi"
 BEFORE INSERT ON "orders"
 FOR EACH ROW
 WHEN NEW."order_number" IS NULL
 BEGIN
     /* d-migrate:sqlite-sequence-v1 object=sequence-trigger sequence=order_number_seq table=orders column=order_number */
+    -- Schritt 1: Rueckgabewert sichern + next_value inkrementieren (atomar)
     UPDATE "dmg_sequences"
-        SET "next_value" = "next_value" + "increment_by"
+        SET "last_returned_value" = "next_value",
+            "next_value" = "next_value" + "increment_by"
         WHERE "name" = 'order_number_seq';
     -- Guard: Sequence-Zeile muss existieren (changes() = 0 heisst kein UPDATE)
+    -- Hinweis: changes() zaehlt gematchte Zeilen, nicht geaenderte Werte;
+    -- selbst bei increment_by mit Netto-Null-Effekt (theoretisch durch
+    -- Validierung ausgeschlossen, §3.5) wuerde changes() = 1 zurueckgeben,
+    -- solange die WHERE-Klausel matcht.
     SELECT RAISE(ABORT, 'dmg_sequences: sequence row order_number_seq not found')
         WHERE changes() = 0;
-    -- Grenzpruefung: RAISE wenn erschoepft und kein Zyklus
+    -- Schritt 2: Grenzpruefung auf den NEUEN next_value
     SELECT RAISE(ABORT, 'dmg_sequences: sequence order_number_seq exhausted')
         WHERE (SELECT "cycle_enabled" FROM "dmg_sequences"
                WHERE "name" = 'order_number_seq') = 0
@@ -379,7 +397,7 @@ BEGIN
                              WHERE "name" = 'order_number_seq'),
                             -9223372036854775808))
         );
-    -- Zyklus-Reset (nur wenn cycle_enabled = 1 und Grenze ueberschritten)
+    -- Zyklus-Reset: setzt nur next_value zurueck, last_returned_value bleibt
     UPDATE "dmg_sequences"
         SET "next_value" = CASE
             WHEN "increment_by" > 0 THEN COALESCE("min_value", 1)
@@ -396,7 +414,7 @@ BEGIN
         );
 END;
 
--- AFTER INSERT: schreibt den reservierten Wert in die Zeile
+-- AFTER INSERT: schreibt den gesicherten Rueckgabewert in die Zeile
 CREATE TRIGGER "dmg_seq_orders_order_num_a1b2c3d4e5_ai"
 AFTER INSERT ON "orders"
 FOR EACH ROW
@@ -405,7 +423,7 @@ BEGIN
     /* d-migrate:sqlite-sequence-v1 object=sequence-trigger-post sequence=order_number_seq table=orders column=order_number */
     UPDATE "orders"
         SET "order_number" = (
-            SELECT "next_value" - "increment_by"
+            SELECT "last_returned_value"
             FROM "dmg_sequences"
             WHERE "name" = 'order_number_seq'
         )
@@ -413,11 +431,10 @@ BEGIN
 END;
 ```
 
-Hinweis: Die Grenzpruefung und der Zyklus-Reset laufen im BEFORE
-INSERT-Trigger, **bevor** der INSERT durchlaeuft. Der Pseudocode-Ablauf
-(Schritte 1-3 oben) bildet diese Reihenfolge ab. Der zurueckgegebene
-Wert (`next_value - increment_by` im AFTER-Trigger) ist immer der
-Wert **vor** dem Inkrement.
+Hinweis: Der AFTER INSERT-Trigger liest `last_returned_value` statt
+`next_value - increment_by`. Dadurch ist der zurueckgegebene Wert
+vom Zustand von `next_value` entkoppelt — auch nach einem Zyklus-Reset
+bleibt `last_returned_value` korrekt.
 
 **NOT NULL-Kompatibilitaet bei Zwei-Trigger-Strategie**
 
@@ -723,6 +740,42 @@ es zu Namenskonflikten kommt.
 Wenn zwei Sequences auf **dieselbe** Spalte zeigen, ist das ein
 Modellfehler (zwei `DefaultValue.SequenceNextVal` auf einer Spalte),
 der vom Validator abgefangen wird.
+
+Interaktion mit nutzerdefinierten BEFORE INSERT-Triggern:
+
+SQLite fuehrt BEFORE INSERT-Trigger in der Reihenfolge ihrer
+Erzeugung aus. Im generierten DDL stehen Sequence-Support-Trigger
+(Position 5) **vor** nutzerdefinierten Triggern (Position 8). Damit
+feuern Sequence-Trigger zuerst, und nutzerdefinierte Trigger sehen
+den Zustand **nach** der Sequence-Reservierung.
+
+Moegliche Interferenz:
+
+- wenn ein nutzerdefinierter BEFORE INSERT-Trigger `NEW.<column>`
+  auf einen nicht-NULL-Wert setzt, **und** dieser Trigger vor dem
+  Sequence-Trigger erzeugt wurde (z. B. bei manuell erstellten
+  Triggern in einer bestehenden Datenbank), dann evaluiert der
+  Sequence-Trigger `WHEN NEW.<column> IS NULL` zu `FALSE` und
+  feuert nicht
+- das kann gewuenscht sein (bewusstes Override durch den Nutzer)
+  oder ueberraschend (unbeabsichtigte Maskierung)
+
+Vertrag:
+
+- im `helper_table`-Modus des Generators ist die Reihenfolge
+  deterministisch: Sequence-Support-Trigger werden immer vor
+  nutzerdefinierten Triggern erzeugt
+- bei Reverse einer bestehenden Datenbank, in der nutzerdefinierte
+  Trigger vor Sequence-Triggern existieren, wird die
+  Erzeugungsreihenfolge **nicht** garantiert; dies ist ein bekannter
+  Randfall, der als Einschraenkung dokumentiert wird
+- der Generator emittiert **keinen** expliziten Reihenfolge-Hint
+  (SQLite hat kein `PRECEDES`/`FOLLOWS` wie MySQL 8); die
+  Reihenfolge ergibt sich allein aus der Erzeugungsreihenfolge
+  im DDL-Script
+- Nutzer, die eigene BEFORE INSERT-Trigger auf sequence-basierten
+  Spalten verwenden, muessen sicherstellen, dass diese nach den
+  Sequence-Triggern erzeugt werden
 
 ### 5.2 Rollback
 
