@@ -346,14 +346,14 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 
 ### Milestone 0.9.3 — Beta: Filter-Haertung und MySQL-Sequence-Emulation (Generator)
 
-| Bereich  | Aufgabe                                                                                                                                 | LF-Ref                                                          |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Security | `--filter` haerten: als `--unsafe-filter` umbenennen oder minimale Filter-DSL (Finding aus `docs/quality.md`)                           | —                                                               |
-| Core     | Phase A: MySQL-Sequence-Emulationsvertrag schaerfen (Namespace, Marker, Warning-Codes W114–W117, Concurrency)                           | —                                                               |
-| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen                                            | —                                                               |
-| Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger | —                                                               |
-| CLI      | `--mysql-named-sequences action_required                                                                                                | helper_table` Option (opt-in, Default bleibt `action_required`) | — |
-| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                               | —                                                               |
+| Bereich  | Aufgabe                                                                                                                                 | LF-Ref | Status |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| Security | `--filter` gehaertet: geschlossene DSL mit Bind-Parametern (AP 6.1)                                                                    | —      | ✅      |
+| Core     | Phase A: MySQL-Sequence-Emulationsvertrag, Enum, CLI-Option, Ledger W114–W117, Version 0.9.3 (AP 6.2)                                  | —      | ✅      |
+| Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen                                            | —      |        |
+| Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger | —      |        |
+| CLI      | `--mysql-named-sequences action_required\|helper_table` Option (opt-in, Default bleibt `action_required`)                               | —      | ✅      |
+| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                               | —      |        |
 
 **Ergebnis**: `schema generate --target mysql` kann benannte Sequences optional
 ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
