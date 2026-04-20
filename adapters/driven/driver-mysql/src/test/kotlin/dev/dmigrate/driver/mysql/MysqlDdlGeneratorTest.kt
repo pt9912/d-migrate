@@ -1541,4 +1541,35 @@ class MysqlDdlGeneratorTest : FunSpec({
         postData shouldContain "CREATE FUNCTION `dmg_nextval`"
         postData shouldContain "BEFORE INSERT"
     }
+
+    test("E124: helper_table with schema containing dmg_sequences table emits collision") {
+        val schema = SchemaDefinition(
+            name = "Collision", version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf(
+                "dmg_sequences" to TableDefinition(
+                    columns = linkedMapOf("id" to ColumnDefinition(type = NeutralType.Integer)),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+        )
+        val result = generator.generate(schema, helperOpts)
+        result.skippedObjects.any { it.code == "E124" && it.name == "dmg_sequences" } shouldBe true
+    }
+
+    test("E124: helper_table with schema containing dmg_nextval function emits collision") {
+        val schema = SchemaDefinition(
+            name = "FnCollision", version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(type = NeutralType.Integer)),
+                primaryKey = listOf("id"),
+            )),
+            functions = mapOf("dmg_nextval" to FunctionDefinition(
+                returns = ReturnType("BIGINT"), language = "SQL",
+            )),
+        )
+        val result = generator.generate(schema, helperOpts)
+        result.skippedObjects.any { it.code == "E124" && it.name == "dmg_nextval" } shouldBe true
+    }
 })

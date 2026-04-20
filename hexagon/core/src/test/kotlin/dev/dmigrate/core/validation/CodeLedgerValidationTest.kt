@@ -335,15 +335,13 @@ class CodeLedgerValidationTest : FunSpec({
         content shouldContain "version: \"0.9.3\""
     }
 
-    test("0.9.3 error ledger contains E122, E123 as active and E124 as reserved") {
+    test("0.9.3 error ledger contains E122, E123, E124 as active") {
         val content = readLedger("error-code-ledger-0.9.3.yaml")
         val codes = extractCodes(content).toSet()
-        codes.contains("E122") shouldBe true
-        codes.contains("E123") shouldBe true
-        codes.contains("E124") shouldBe true
-        extractField(content, "E122", "status") shouldBe "active"
-        extractField(content, "E123", "status") shouldBe "active"
-        extractField(content, "E124", "status") shouldBe "reserved"
+        for (code in listOf("E122", "E123", "E124")) {
+            codes.contains(code) shouldBe true
+            extractField(content, code, "status") shouldBe "active"
+        }
     }
 
     test("0.9.3 error ledger: active entries have test_path and evidence_paths") {

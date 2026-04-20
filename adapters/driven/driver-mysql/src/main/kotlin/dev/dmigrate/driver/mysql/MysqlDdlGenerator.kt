@@ -12,6 +12,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     // ── Sequence emulation state (§4.4, §4.7) ──
 
     private var currentOptions: DdlGenerationOptions = DdlGenerationOptions()
+    private var currentSchema: SchemaDefinition? = null
     private val pendingSupportTriggers = mutableListOf<SupportTriggerSpec>()
     private val pendingSequenceNotes = mutableListOf<TransformationNote>()
 
@@ -26,11 +27,12 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
         currentOptions = options
+        currentSchema = schema
         pendingSupportTriggers.clear()
         pendingSequenceNotes.clear()
         val result = super.generate(schema, options)
-        // W117: global warning for transaction-bound sequence increments
-        if (isHelperTable && pendingSupportTriggers.isNotEmpty()) {
+        // W117: global warning for transaction-bound sequence increments (once per run in helper_table)
+        if (isHelperTable && schema.sequences?.isNotEmpty() == true) {
             val w117 = TransformationNote(
                 type = NoteType.WARNING, code = "W117",
                 objectName = MysqlSequenceNaming.SUPPORT_TABLE,
@@ -122,9 +124,18 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         val statements = mutableListOf<DdlStatement>()
         val notes = mutableListOf<TransformationNote>()
 
-        // E124: collision check
-        // (Collision with user tables/functions checked here for dmg_sequences only;
-        //  routine/trigger collisions checked in generateFunctions/generateTriggers)
+        // E124: collision check for dmg_sequences table name
+        val schema = currentSchema
+        if (schema != null && MysqlSequenceNaming.SUPPORT_TABLE in (schema.tables?.keys ?: emptySet())) {
+            val action = ManualActionRequired(
+                code = "E124", objectType = "table", objectName = MysqlSequenceNaming.SUPPORT_TABLE,
+                reason = "Support object name collision: '${MysqlSequenceNaming.SUPPORT_TABLE}' already exists in the neutral schema.",
+                hint = "Rename the existing table or use --mysql-named-sequences action_required.",
+            )
+            skipped += action.toSkipped()
+            statements += DdlStatement("", listOf(action.toNote()))
+            return statements
+        }
 
         val createTable = buildString {
             appendLine("CREATE TABLE `${MysqlSequenceNaming.SUPPORT_TABLE}` (")
@@ -392,6 +403,23 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         if (!isHelperTable) return routineHelper.generateFunctions(functions, skipped)
 
         val statements = mutableListOf<DdlStatement>()
+
+        // E124: collision check for support routine names
+        for (routineName in listOf(MysqlSequenceNaming.NEXTVAL_ROUTINE, MysqlSequenceNaming.SETVAL_ROUTINE)) {
+            if (routineName in (functions.keys)) {
+                val action = ManualActionRequired(
+                    code = "E124", objectType = "function", objectName = routineName,
+                    reason = "Support object name collision: '$routineName' already exists in the neutral schema.",
+                    hint = "Rename the existing function or use --mysql-named-sequences action_required.",
+                )
+                skipped += action.toSkipped()
+                statements += DdlStatement("", listOf(action.toNote()))
+                // Skip support routines but still emit user functions
+                statements += routineHelper.generateFunctions(functions, skipped)
+                return statements
+            }
+        }
+
         // dmg_nextval routine
         val nextvalSql = buildString {
             appendLine("DELIMITER //")
@@ -450,9 +478,23 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         if (!isHelperTable) return routineHelper.generateTriggers(triggers, tables, skipped)
 
         val statements = mutableListOf<DdlStatement>()
-        // Generate support triggers for SequenceNextVal columns
+        // E124: collision check for support trigger names
         for (spec in pendingSupportTriggers) {
             val trigName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
+            if (trigName in triggers) {
+                val action = ManualActionRequired(
+                    code = "E124", objectType = "trigger", objectName = trigName,
+                    reason = "Support object name collision: '$trigName' already exists in the neutral schema.",
+                    hint = "Rename the existing trigger or use --mysql-named-sequences action_required.",
+                )
+                skipped += action.toSkipped()
+                statements += DdlStatement("", listOf(action.toNote()))
+            }
+        }
+        // Generate support triggers for SequenceNextVal columns (skip colliding ones)
+        for (spec in pendingSupportTriggers) {
+            val trigName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
+            if (trigName in triggers) continue // already reported as E124
             val triggerSql = buildString {
                 appendLine("DELIMITER //")
                 appendLine("/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=${spec.sequenceName} table=${spec.tableName} column=${spec.columnName} */")

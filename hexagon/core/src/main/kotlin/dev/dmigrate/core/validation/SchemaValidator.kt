@@ -319,8 +319,9 @@ class SchemaValidator {
             "gen_uuid" -> type is NeutralType.Uuid
             else -> true // unknown functions are allowed
         }
-        is DefaultValue.SequenceNextVal -> type is NeutralType.Integer || type is NeutralType.SmallInt
-                || type is NeutralType.BigInteger || type is NeutralType.Identifier
+        is DefaultValue.SequenceNextVal -> (type is NeutralType.Integer || type is NeutralType.SmallInt
+                || type is NeutralType.BigInteger || type is NeutralType.Identifier)
+                && !(type is NeutralType.Identifier && type.autoIncrement)
     }
 
     // E122: Legacy nextval(...) notation → migration error

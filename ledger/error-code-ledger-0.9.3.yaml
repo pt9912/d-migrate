@@ -20,6 +20,9 @@ entries:
 
   - code: E124
     level: error
-    status: reserved
+    status: active
     entry_type: standard
-    note: "Support object name collision. Reserved for AP 6.4 collision detection (not yet emitted)."
+    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt"
+        path_type: production

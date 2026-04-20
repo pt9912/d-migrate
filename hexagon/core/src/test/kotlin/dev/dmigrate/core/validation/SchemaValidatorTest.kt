@@ -798,6 +798,22 @@ class SchemaValidatorTest : FunSpec({
 
     // ─── SequenceNextVal (0.9.3 AP 6.3) ─────────────────────────
 
+    test("E009: SequenceNextVal on autoIncrement identifier is incompatible") {
+        val schema = SchemaDefinition(
+            name = "T", version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(
+                    type = NeutralType.Identifier(autoIncrement = true),
+                    default = DefaultValue.SequenceNextVal("my_seq"),
+                )),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val result = SchemaValidator().validate(schema)
+        result.errors.any { it.code == "E009" } shouldBe true
+    }
+
     test("E009: SequenceNextVal on text column is type-incompatible") {
         val schema = SchemaDefinition(
             name = "T", version = "1",
