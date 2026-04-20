@@ -619,6 +619,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.28
+**Version**: 3.29
 **Stand**: 2026-04-20
-**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; geplant: 0.9.3 (Filter + MySQL-Sequence-Generator), 0.9.4 (Sequence Reverse/Compare), 0.9.5 (MCP), 0.9.6 (REST), 0.9.7 (gRPC), 0.9.8 (Docs/Pilot)
+**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; 0.9.3 in Arbeit (AP 6.1 + 6.2 Done, AP 6.3–6.6 offen); geplant: 0.9.4, 0.9.5, 0.9.6, 0.9.7, 0.9.8
