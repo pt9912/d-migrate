@@ -44,16 +44,16 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 
 ## 2. Voraussetzungen
 
-| Voraussetzung | Prüfung |
-|---|---|
-| Sauberer Working-Tree auf `develop` | `git status` zeigt keine Änderungen |
-| `develop` ist auf dem aktuellen Stand | `git pull --ff-only origin develop` |
-| `main` ist auf dem aktuellen Stand | `git checkout main && git pull --ff-only origin main && git checkout develop` |
-| Docker verfügbar (lokaler Pre-Release-Build) | `docker version` |
-| `gh` CLI authentifiziert | `gh auth status` |
-| `brew` verfügbar auf einem Verifikations-Host | `brew --version` |
-| Schreibrechte auf `main` und Tags im Remote | — |
-| Alle PRs für den Release sind gemerged | GitHub-Milestone leer |
+| Voraussetzung                                 | Prüfung                                                                       |
+| --------------------------------------------- | ----------------------------------------------------------------------------- |
+| Sauberer Working-Tree auf `develop`           | `git status` zeigt keine Änderungen                                           |
+| `develop` ist auf dem aktuellen Stand         | `git pull --ff-only origin develop`                                           |
+| `main` ist auf dem aktuellen Stand            | `git checkout main && git pull --ff-only origin main && git checkout develop` |
+| Docker verfügbar (lokaler Pre-Release-Build)  | `docker version`                                                              |
+| `gh` CLI authentifiziert                      | `gh auth status`                                                              |
+| `brew` verfügbar auf einem Verifikations-Host | `brew --version`                                                              |
+| Schreibrechte auf `main` und Tags im Remote   | —                                                                             |
+| Alle PRs für den Release sind gemerged        | GitHub-Milestone leer                                                         |
 
 ---
 
@@ -271,6 +271,7 @@ docker run --rm \
 ls -la "${SMOKE_OUT}"/flyway/ "${SMOKE_OUT}"/flyway-rb/ "${SMOKE_OUT}"/liquibase/ "${SMOKE_OUT}"/django/ "${SMOKE_OUT}"/knex/
 
 rm -rf "${SMOKE_OUT}"
+find . -type d -name "build" -prune -exec rm -rf {} + 
 ```
 
 Hinweis: Diese Smokes prüfen nur, dass die CLI die erwarteten Artefakte
@@ -345,14 +346,14 @@ git pull --ff-only origin develop
 
 Alle folgenden Dateien anpassen:
 
-| Datei | Änderung |
-|---|---|
-| `build.gradle.kts` | `version = "X.Y.Z-SNAPSHOT"` → `"X.Y.Z"` |
-| `CHANGELOG.md` | `[Unreleased]` und neue Sektion `[X.Y.Z] - YYYY-MM-DD` einfügen, alle Einträge unter den neuen Header verschieben |
-| `README.md` | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen |
-| `docs/guide.md`, `docs/cli-spec.md`, `docs/architecture.md`, `docs/releasing.md` | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert |
-| `docs/roadmap.md` | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen |
-| `adapters/driven/driver-common/.../AbstractDdlGenerator.kt` | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen |
+| Datei                                                                            | Änderung                                                                                                          |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `build.gradle.kts`                                                               | `version = "X.Y.Z-SNAPSHOT"` → `"X.Y.Z"`                                                                          |
+| `CHANGELOG.md`                                                                   | `[Unreleased]` und neue Sektion `[X.Y.Z] - YYYY-MM-DD` einfügen, alle Einträge unter den neuen Header verschieben |
+| `README.md`                                                                      | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen           |
+| `docs/guide.md`, `docs/cli-spec.md`, `docs/architecture.md`, `docs/releasing.md` | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert                      |
+| `docs/roadmap.md`                                                                | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen                                       |
+| `adapters/driven/driver-common/.../AbstractDdlGenerator.kt`                      | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen                                                       |
 
 Hinweis: `Main.kt` braucht **nicht** manuell angepasst zu werden — die
 CLI-Version wird zur Build-Zeit aus `build.gradle.kts` via
@@ -567,13 +568,13 @@ git merge --ff-only origin/main   # main-Commits in develop nachziehen (falls n�
 
 Danach:
 
-| Datei | Änderung |
-|---|---|
-| `build.gradle.kts` | `version = "X.Y.Z"` → nächste Entwicklungsversion, z.B. `"X.(Y+1).0-SNAPSHOT"` |
-| `CHANGELOG.md` | Neuen leeren `## [Unreleased]`-Block einfügen |
-| `docs/roadmap.md` | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren |
+| Datei                             | Änderung                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `build.gradle.kts`                | `version = "X.Y.Z"` → nächste Entwicklungsversion, z.B. `"X.(Y+1).0-SNAPSHOT"`                                                       |
+| `CHANGELOG.md`                    | Neuen leeren `## [Unreleased]`-Block einfügen                                                                                        |
+| `docs/roadmap.md`                 | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren                                                                  |
 | `packaging/homebrew/d-migrate.rb` | verifizierten URL-/SHA-Stand des zuletzt publizierten Releases nachziehen, falls die Formula erst nach dem Publish finalisiert wurde |
-| `docs/implementation-plan-X.Y.md` | Optional: neuen Plan für nächste Minor-Version anlegen |
+| `docs/implementation-plan-X.Y.md` | Optional: neuen Plan für nächste Minor-Version anlegen                                                                               |
 
 ```bash
 git add build.gradle.kts CHANGELOG.md docs/roadmap.md
