@@ -163,6 +163,44 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
             val2 shouldBe val1
         }
     }
+
+    test("parallel dmg_nextval calls produce no duplicates") {
+        // Reset sequence to a known state
+        conn().use { c ->
+            c.createStatement().use {
+                it.execute("UPDATE `dmg_sequences` SET `next_value` = 5000 WHERE `name` = 'invoice_seq'")
+            }
+        }
+        val threads = 10
+        val callsPerThread = 20
+        val allValues = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+        val latch = java.util.concurrent.CountDownLatch(threads)
+        val errors = java.util.concurrent.atomic.AtomicInteger(0)
+
+        repeat(threads) {
+            Thread {
+                try {
+                    conn().use { c ->
+                        repeat(callsPerThread) {
+                            val v = c.createStatement().use { stmt ->
+                                val rs = stmt.executeQuery("SELECT `dmg_nextval`('invoice_seq')")
+                                rs.next(); rs.getLong(1)
+                            }
+                            allValues.add(v)
+                        }
+                    }
+                } catch (_: Exception) {
+                    errors.incrementAndGet()
+                } finally {
+                    latch.countDown()
+                }
+            }.start()
+        }
+        latch.await()
+        errors.get() shouldBe 0
+        // All values must be unique — no duplicates
+        allValues.size shouldBe threads * callsPerThread
+    }
 })
 
 /**

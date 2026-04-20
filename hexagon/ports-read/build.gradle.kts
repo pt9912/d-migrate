@@ -11,19 +11,17 @@ kover {
         filters {
             excludes {
                 classes(
-                    // Interfaces (including $DefaultImpls inner classes)
+                    // All Kotlin-generated $DefaultImpls inner classes
+                    "*\$DefaultImpls",
+                    // Interfaces
                     "dev.dmigrate.driver.data.ChunkSequence",
                     "dev.dmigrate.driver.data.DataReader",
-                    "dev.dmigrate.driver.data.DataReader\$DefaultImpls",
                     "dev.dmigrate.driver.data.TableLister",
                     "dev.dmigrate.driver.DdlGenerator",
-                    "dev.dmigrate.driver.DdlGenerator\$DefaultImpls",
                     "dev.dmigrate.driver.SchemaReader",
-                    "dev.dmigrate.driver.SchemaReader\$DefaultImpls",
                     "dev.dmigrate.format.data.DataChunkReaderFactory",
-                    "dev.dmigrate.format.data.DataChunkReaderFactory\$DefaultImpls",
                     "dev.dmigrate.format.data.DataChunkReader",
-                    // Pure data containers without logic
+                    // Pure data containers / enums without testable logic
                     "dev.dmigrate.driver.SchemaReadOptions",
                     "dev.dmigrate.driver.SchemaReadResult",
                     "dev.dmigrate.driver.SchemaReadNote",
@@ -33,10 +31,13 @@ kover {
                     "dev.dmigrate.driver.TransformationNote",
                     "dev.dmigrate.driver.SkippedObject",
                     "dev.dmigrate.driver.ManualActionRequired",
-                    // DdlResult/DdlStatement: data classes with render helpers,
-                    // thoroughly tested via AbstractDdlGeneratorTest and DdlModelTest
                     "dev.dmigrate.driver.DdlResult",
                     "dev.dmigrate.driver.DdlStatement",
+                    "dev.dmigrate.driver.DdlPhase",
+                    "dev.dmigrate.driver.NoteType",
+                    "dev.dmigrate.driver.ReverseSourceKind",
+                    "dev.dmigrate.driver.ReverseSourceRef",
+                    "dev.dmigrate.driver.SchemaReadSeverity",
                     "dev.dmigrate.format.data.FormatReadOptions",
                 )
             }

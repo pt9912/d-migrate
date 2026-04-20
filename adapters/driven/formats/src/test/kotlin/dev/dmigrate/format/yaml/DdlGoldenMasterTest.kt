@@ -176,6 +176,27 @@ class DdlGoldenMasterTest : FunSpec({
         ddl shouldContain "'invoice_seq'"
     }
 
-    // Rollback test for helper_table mode is covered by the integration test
-    // (MysqlSequenceEmulationIntegrationTest) which validates against real MySQL.
+    test("sequence-emulation mysql helper_table: pre-data contains dmg_sequences, post-data contains routines and triggers") {
+        val input = loadFixture("schemas/sequence-emulation.yaml")
+        val generator = dev.dmigrate.driver.mysql.MysqlDdlGenerator()
+        val opts = dev.dmigrate.driver.DdlGenerationOptions(
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+        )
+        val result = generator.generate(input, opts)
+        val preData = result.renderPhase(dev.dmigrate.driver.DdlPhase.PRE_DATA)
+        val postData = result.renderPhase(dev.dmigrate.driver.DdlPhase.POST_DATA)
+
+        // PRE_DATA: support table + seed + user table
+        preData shouldContain "CREATE TABLE `dmg_sequences`"
+        preData shouldContain "INSERT INTO `dmg_sequences`"
+        preData shouldContain "CREATE TABLE `invoices`"
+        preData shouldNotContain "CREATE FUNCTION"
+        preData shouldNotContain "CREATE TRIGGER"
+
+        // POST_DATA: support routines + support trigger
+        postData shouldContain "CREATE FUNCTION `dmg_nextval`"
+        postData shouldContain "CREATE FUNCTION `dmg_setval`"
+        postData shouldContain "BEFORE INSERT ON `invoices`"
+        postData shouldNotContain "CREATE TABLE"
+    }
 })
