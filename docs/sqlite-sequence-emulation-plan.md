@@ -430,7 +430,7 @@ BEGIN
     -- Guard: Sequence-Zeile muss existieren (changes() = 0 heisst kein UPDATE).
     -- Hinweis: changes() zaehlt gematchte Zeilen, nicht geaenderte Werte;
     -- selbst bei increment_by mit Netto-Null-Effekt (theoretisch durch
-    -- Validierung ausgeschlossen, §3.5) wuerde changes() = 1 zurueckgeben,
+    -- Validierung ausgeschlossen, §3.6) wuerde changes() = 1 zurueckgeben,
     -- solange die WHERE-Klausel matcht.
     SELECT RAISE(ABORT, 'dmg_sequences: sequence row order_number_seq not found')
         WHERE changes() = 0;
@@ -492,7 +492,34 @@ Ausnahme: Spalten mit `NeutralType.Identifier` (AUTOINCREMENT) sind
 nicht betroffen — diese nutzen SQLite's nativen Mechanismus und
 brauchen keinen Trigger.
 
-### 3.7 `WITHOUT ROWID`-Tabellen
+**PRIMARY KEY-Einschraenkung bei Zwei-Trigger-Strategie**
+
+SQLite erzwingt `NOT NULL` implizit auf `PRIMARY KEY`-Spalten (ausser
+bei `INTEGER PRIMARY KEY`, das als Alias fuer `ROWID` eine Sonder-
+stellung hat). Die W119-NOT NULL-Unterdrueckung kann diese implizite
+Constraint nicht aufheben — ein INSERT mit `NULL` in einer PK-Spalte
+scheitert unabhaengig von einem expliziten `NOT NULL`.
+
+**Entscheidung:** Sequence-basierte Spalten duerfen **nicht** Teil
+eines `PRIMARY KEY` sein, wenn der `helper_table`-Modus aktiv ist.
+
+Verhalten:
+
+- wenn eine Spalte `DefaultValue.SequenceNextVal(...)` traegt **und**
+  im `PRIMARY KEY` der Tabelle enthalten ist, erzeugt der Generator
+  einen Validierungsfehler mit Code `E059`
+- die Pruefung erfolgt vor der DDL-Generierung im Validator, nicht
+  erst im dialektspezifischen Generator
+- `E059`: Sequence-backed column cannot be part of PRIMARY KEY in
+  SQLite helper-table mode; use INTEGER PRIMARY KEY AUTOINCREMENT
+  or application-level sequencing
+- Hinweis: `INTEGER PRIMARY KEY` (ohne AUTOINCREMENT) in SQLite ist
+  ein ROWID-Alias und akzeptiert NULL-INSERTs (SQLite vergibt dann
+  automatisch eine ROWID); dieses Verhalten ist jedoch ein SQLite-
+  spezifischer Sonderfall und wird hier nicht als Sequence-Ersatz
+  modelliert
+
+### 3.5 `WITHOUT ROWID`-Tabellen
 
 **Entscheidung:** `WITHOUT ROWID`-Tabellen mit sequence-basierten
 Spalten werden im `helper_table`-Modus **nicht** unterstuetzt.
@@ -538,7 +565,7 @@ PK-Aenderungen). Fuer Phase 1 ist die klare Ablehnung das
 stabilere Design. Eine spaetere Ausbaustufe kann den PK-basierten
 Pfad ergaenzen, wenn der Bedarf belegt ist.
 
-### 3.5 Sequenzsemantik
+### 3.6 Sequenzsemantik
 
 Die Semantik ist identisch zum MySQL-Plan (§3.5) und wird hier nicht
 wiederholt. Die verbindlichen Regeln fuer `next_value`, `increment_by`,
@@ -554,7 +581,7 @@ Zusaetzliche SQLite-spezifische Punkte:
 - der Fehlerpfad fuer erschoepfte Sequences nutzt `RAISE(ABORT, ...)`
   in SQLite, nicht einen SQL-Routine-Fehler wie in MySQL
 
-### 3.6 Concurrency-Vertrag
+### 3.7 Concurrency-Vertrag
 
 SQLite's Concurrency-Modell unterscheidet sich grundlegend von MySQL:
 
@@ -593,7 +620,7 @@ Folgen fuer SQLite:
   das bei `NEW.<column> IS NULL` intern den naechsten Wert aus
   `dmg_sequences` reserviert und per ROWID in die Zeile schreibt;
   diese Abbildung ist lossy (identisch zu MySQL);
-  `WITHOUT ROWID`-Tabellen erhalten `E057` statt Trigger (§3.7)
+  `WITHOUT ROWID`-Tabellen erhalten `E057` statt Trigger (§3.5)
 - `action_required`: sequence-basierte Default-Semantik bleibt manuell
 
 ### 4.2 Generator-Optionen
@@ -827,7 +854,7 @@ Anders als bei MySQL gibt es keine Support-Routinen zum Droppen.
 Abhaengigkeitspruefung im Detail:
 
 - der Scan durchsucht **alle** Objekte in `sqlite_schema` (Typ
-  `trigger`, `view`, `table`, `index`) nach Textverweisen auf
+  `trigger`, `view`, `table`, `index`) nach Verweisen auf
   `dmg_sequences` im `sql`-Feld
 - Objekte, die ueber kanonischen Marker oder kanonischen Namen als
   Sequence-Support identifiziert wurden, werden ausgenommen
@@ -837,6 +864,21 @@ Abhaengigkeitspruefung im Detail:
   Indizes auf `dmg_sequences` (unwahrscheinlich, aber moeglich)
 - in SQLite ist diese Pruefung statisch moeglich, weil alle
   DDL-Definitionen in `sqlite_schema.sql` als Text vorliegen
+
+Normalisierung und Matching-Strategie:
+
+- die Suche ist **case-insensitive** und erkennt sowohl unquoted
+  (`dmg_sequences`) als auch quoted (`"dmg_sequences"`) Formen
+- zusaetzlich wird schema-qualifizierter Zugriff erkannt
+  (`main.dmg_sequences`, `main."dmg_sequences"`)
+- das Matching verwendet eine **Token-basierte** Erkennung:
+  `dmg_sequences` wird als eigenstaendiger Identifier gesucht,
+  nicht als beliebiger Substring; dadurch werden False Positives
+  durch Identifier wie `my_dmg_sequences_backup` vermieden
+- konkret: der Scan prueft, ob `dmg_sequences` als SQL-Identifier
+  an einer Wort-Grenze steht (vorhergehendes Zeichen ist `.`, `"`,
+  Whitespace oder Zeilenanfang; nachfolgendes Zeichen ist `"`,
+  Whitespace, `,`, `)`, `;` oder Zeilenende)
 - die Pruefung ist konservativ: im Zweifel wird `E058` emittiert
 - `E058`: Cannot drop dmg_sequences: non-managed objects reference
   this table; remove external dependencies first
@@ -862,16 +904,19 @@ Abhaengigkeitspruefung im Detail:
   - `W119`: NOT NULL constraint suppressed on sequence-backed column
     for two-trigger compatibility; column value is guaranteed by
     AFTER INSERT trigger (§3.4)
+- PRIMARY KEY-Einschraenkung:
+  - `E059`: Sequence-backed column cannot be part of PRIMARY KEY in
+    SQLite helper-table mode (§3.4)
 - `WITHOUT ROWID`-Tabellen mit sequence-basierten Spalten:
   - `E057`: Sequence-backed column on WITHOUT ROWID table cannot use
-    automatic trigger assignment (§3.7)
+    automatic trigger assignment (§3.5)
 - Rollback-Abhaengigkeitskonflikte:
   - `E058`: Cannot drop dmg_sequences: non-managed objects reference
     this table; remove external dependencies first (§5.2)
 
 Diese Codes muessen vor Implementierung zentral dokumentiert werden.
 `W114`, `W115`, `W116` und `W117` sind mit dem MySQL-Plan geteilt;
-`W119`, `E057` und `E058` sind SQLite-spezifisch.
+`W119`, `E057`, `E058` und `E059` sind SQLite-spezifisch.
 
 ---
 
@@ -923,28 +968,29 @@ Reverse-Erkennungsstrategie und Fallback:
 - der Marker enthaelt `d-migrate:sqlite-sequence-v1`, Objekttyp,
   Sequence-Name, Tabelle und Spalte — das ist die autoritaive Quelle
 - **wenn der Marker-Kommentar fehlt oder nicht parsbar ist**, greift
-  ein **deterministisches Sekundaer-Matching** ueber drei Kriterien:
-  1. Triggername entspricht dem kanonischen Schema
-     (`dmg_seq_<...>_bi` / `dmg_seq_<...>_ai`)
-  2. Trigger-Event und -Timing passen (BEFORE INSERT / AFTER INSERT)
-  3. WHEN-Klausel hat die Form `NEW.<column> IS NULL`
-  Nur wenn **alle drei** Kriterien zutreffen, wird der Trigger als
-  **wahrscheinliches** Sequence-Supportobjekt behandelt und mit
-  `W116` (degradiert) markiert; die Spaltenzuordnung wird aus dem
-  Triggernamen und der WHEN-Klausel heuristisch rekonstruiert
-- wenn keines der drei Kriterien zutrifft, wird der Trigger als
-  normaler nutzerdefinierter Trigger ins neutrale Schema uebernommen
-- das Sekundaer-Matching ist bewusst **eng begrenzt**: es prueft
-  nur deterministische, strukturelle Merkmale (Name, Event, WHEN),
-  keine Body-Analyse; dadurch bleibt das False-Positive-Risiko
-  minimal
-- Konsequenz: wenn ein Nutzer den Marker-Kommentar aus einem
-  generierten Trigger entfernt, verliert Reverse die Zuordnung zu
-  der Sequence; die `dmg_sequences`-Zeile wird weiterhin erkannt,
-  aber die Spaltenzuordnung fehlt, und der Trigger taucht als
-  normaler nutzerdefinierter Trigger im neutralen Schema auf
-- dieses Verhalten ist gewollt und wird als Stabilitaetsgarantie
-  dokumentiert: keine Heuristik, kein "fuzzy" Matching
+  ein **deterministisches Sekundaer-Matching** mit folgenden
+  Anforderungen (alle muessen zutreffen):
+  1. **Trigger-Paar vorhanden**: sowohl der `_bi`- als auch der
+     `_ai`-Trigger muessen existieren (nur ein einzelner Trigger
+     reicht nicht — das reduziert False Positives erheblich)
+  2. Triggernamen entsprechen dem kanonischen Schema
+     (`dmg_seq_<...>_bi` und `dmg_seq_<...>_ai` mit identischem Hash)
+  3. Trigger-Event und -Timing passen (BEFORE INSERT bzw. AFTER INSERT)
+  4. WHEN-Klausel hat die Form `NEW.<column> IS NULL` (identische
+     Spalte in beiden Triggern)
+  5. **Minimale Body-Pruefung**: der `_bi`-Trigger-Body enthaelt
+     ein `UPDATE "dmg_sequences"` (Substring-Match, case-insensitive);
+     der `_ai`-Trigger-Body enthaelt ein `UPDATE ... WHERE ROWID`
+  Nur wenn **alle fuenf** Kriterien zutreffen, wird das Trigger-Paar
+  als **wahrscheinliches** Sequence-Supportobjekt behandelt und mit
+  `W116` (degradiert) markiert; die Spaltenzuordnung wird aus den
+  Triggernamen und der WHEN-Klausel rekonstruiert
+- wenn nicht alle Kriterien zutreffen, werden die Trigger als
+  normale nutzerdefinierte Trigger ins neutrale Schema uebernommen
+- das Sekundaer-Matching ist bewusst **eng begrenzt**: Trigger-Paar-
+  Anforderung + minimale Body-Pruefung zusammen mit Name/Event/WHEN
+  machen versehentliche Treffer auf nutzerdefinierte Trigger extrem
+  unwahrscheinlich
 
 **Roundtrip-Risiko bei manueller Trigger-Bearbeitung:**
 
@@ -1005,7 +1051,7 @@ Trotzdem zu pruefen:
 - Marker- und Namespace-Vertrag finalisieren (konsistent mit MySQL)
 - Konfliktcode fuer reservierte Hilfsnamen festlegen
 - Warning-Codes festziehen (`W114`, `W115`, `W116`, `W117`, `W119`,
-  `E057`, `E058`)
+  `E057`, `E058`, `E059`)
 - CLI-/Config-Vertrag dokumentieren
 - Abhaengigkeit zum MySQL-Plan fuer
   `DefaultValue.SequenceNextVal` klaeren
@@ -1074,6 +1120,7 @@ die `DefaultValue.SequenceNextVal`-Behandlung.
   - `W117` bei jeder Sequence im `helper_table`-Modus
   - `W119` bei `required: true` + `SequenceNextVal`-Spalten
   - `E057` bei `WITHOUT ROWID` + `SequenceNextVal`-Spalten
+  - `E059` bei PRIMARY KEY + `SequenceNextVal`-Spalten
   - Konflikt mit reservierten Hilfsnamen wird sauber abgelehnt
 - `SchemaGenerateRunnerTest`
   - neuer Optionspfad `--sqlite-named-sequences`
@@ -1170,7 +1217,7 @@ Gegenmassnahme:
 
 Die Zwei-Trigger-Strategie haengt von `ROWID` ab. `WITHOUT ROWID`-
 Tabellen mit sequence-basierten Spalten werden deshalb mit `E057`
-abgelehnt (§3.7).
+abgelehnt (§3.5).
 
 Restrisiko: Nutzer mit `WITHOUT ROWID`-Tabellen und Sequence-Bedarf
 muessen `action_required` verwenden und die Sequencing-Logik manuell
@@ -1233,7 +1280,7 @@ Bereits getroffene Entscheidungen:
 
 - **Zuweisungsstrategie**: Zwei-Trigger (`_bi` + `_ai`) als
   kanonischer Produktpfad (§3.4)
-- **`WITHOUT ROWID`**: hard-fail mit `E057` (§3.7)
+- **`WITHOUT ROWID`**: hard-fail mit `E057` (§3.5)
 - **App-Level (ex-Strategie B)**: nicht Teil von `helper_table`;
   nur als Doku-Pattern fuer `action_required`-Nutzer
 
