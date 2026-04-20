@@ -27,7 +27,7 @@ d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migra
 - Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
 - Transaktionaler Datenimport mit UPSERT, Truncate, Trigger-Handling und Reseeding
 - Direkter DB-zu-DB-Datentransfer mit `data transfer`
-- Inkrementeller Export über `--since-column` / `--since` (LF-013)
+- Inkrementeller Export über `--since-column` / `--since`
 - Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
 - CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `data export`, `data import`, `data transfer` und `data profile`
 - Internationalisierte CLI-Ausgabe (EN/DE) mit ResourceBundle-Fallback, ICU4J-Unicode-Utilities, expliziter Zeitzonen-/Temporal-Policy und konsolidiertem CSV-/BOM-Encoding-Vertrag
