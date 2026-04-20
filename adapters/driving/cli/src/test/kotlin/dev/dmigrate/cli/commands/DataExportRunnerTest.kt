@@ -267,7 +267,7 @@ class DataExportRunnerTest : FunSpec({
         clause.params shouldBe listOf(42L)
     }
 
-    test("Exit 0: blank --filter is dropped (treated as no filter)") {
+    test("Exit 0: null filter (no --filter flag) passes null to executor") {
         var capturedFilter: DataFilter? = null
         val stderr = StderrCapture()
         val runner = newRunner(
@@ -280,7 +280,8 @@ class DataExportRunnerTest : FunSpec({
                 )
             }
         )
-        runner.execute(request(filter = "   ")) shouldBe 0
+        // null filter = --filter not provided (blank is rejected at CLI layer)
+        runner.execute(request(filter = null)) shouldBe 0
         capturedFilter shouldBe null
     }
 

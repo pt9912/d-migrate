@@ -43,6 +43,10 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        if (filter != null && filter!!.isBlank()) {
+            System.err.println("Error: --filter must not be empty or whitespace-only. Omit the flag to transfer without a filter.")
+            throw ProgramResult(2)
+        }
         val parsedFilter = try {
             parseFilter(filter)
         } catch (e: FilterParseException) {

@@ -72,12 +72,10 @@ Zusatzaufgaben:
   Das ist ein schwächerer Angriffsvektor als direkte Nutzereingabe, aber bei Migration
   von nicht vertrauenswürdigen Datenbanken oder manipulierten Schema-Dateien real.
 
-- **Mittel — `--filter` akzeptiert rohes SQL** (dokumentierte Design-Entscheidung):
-  WhereClause wird ohne Parametrisierung übernommen.
-  Trust-Boundary ist die lokale Shell (nur CLI-Operator hat Zugriff).
-  Dokumentiert in `DataExportCommand.kt:62-66` und `ImpPlan-0.9.1-A.md §4.3`.
-  Seit v1 ergänzt: `containsLiteralQuestionMark()`-Validierung und expliziter Trusted-Input-Kommentar.
-  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt:57-72`.
+- **Erledigt — `--filter` gehärtet (0.9.3 AP 6.1)**:
+  Seit 0.9.3 akzeptiert `--filter` nur noch eine geschlossene DSL. Alle Literale
+  werden als JDBC-Bind-Parameter gebunden. `WhereClause` und `containsLiteralQuestionMark()`
+  sind entfernt. Details: `FilterDslParser.kt`, `FilterDslTranslator.kt`.
 
 - **Mittel — MySQL-DDL enthält 4 `-- TODO`-Platzhalter** (teilweise behoben):
   Composite Types, Sequences, EXCLUDE-Constraints, nicht unterstützte Index-Typen.
@@ -140,7 +138,7 @@ Die Bewertung basiert auf den Kernmodulen in hexagon/core, hexagon/application u
 | Lesbarkeit & Namensgebung | 8/10      | = | Exzellente Domänensprache (`SchemaDefinition`, `SchemaComparator`, `TableComparator`) und konsistente Benennung über alle Schichten. Kotlin-idiomatischer Stil mit `sealed`/`data class` und klaren Ports. Leicht abfällig durch noch große Orchestrierungsmethoden im Transfer- und Compare-Flow. |
 | Modularität & Struktur    | 8/10      | ↑ | Hexagonale Architektur und Modultrennung sind konsistent, Kern bleibt testbar und entkoppelt. Stabile Interfaces (`ports-*`) und klarer Runner-Adapter-Fluss. Abzugspotenzial bleibt bei einigen zentralen Flows, die noch viel Inline-Logik kombinieren. |
 | Wartbarkeit               | 7.5/10    | = | 90% Kover auf Kernmodulen, klare DI, gute Testkultur und gute Fehlermodelle. Verbesserte Runner-Schrittabstraktion bereits umgesetzt. Restpotenzial liegt weiterhin bei weiteren Refaktorings in zentralen Flows und weniger impliziten Annahmen bei Config-/Path-Pfaden. |
-| Sicherheit                | 6/10      | ↓ | Prepared Statements und Identifier-Quoting sind stark umgesetzt, Credentials werden geschwärzt. Kritische Restbereiche: roher `--filter` als Trusted-Input (auch nach Zusatzvalidierung) und uneinheitlich parametrisierte/escaped DDL-Pfade (CHECK/Partition/Trigger/Routine-Bodies). |
+| Sicherheit                | 7/10      | ↑ | Prepared Statements, Identifier-Quoting und DSL-basierter `--filter` (seit 0.9.3) sind korrekt eingesetzt, Credentials werden geschwärzt. Restbereiche: uneinheitlich parametrisierte/escaped DDL-Pfade (CHECK/Partition/Trigger/Routine-Bodies). |
 
 Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 2026-04-19):
 
@@ -213,7 +211,7 @@ Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 
   Umgesetzt: Von 656 auf 316 LOC reduziert; `TableComparator` extrahiert.
 
 - ~~Constraint-Expressions dokumentieren.~~
-  Umgesetzt: `constraint.expression` und `--filter` als Trusted Input dokumentiert mit Design-Referenz.
+  Umgesetzt: `constraint.expression` als Trusted Input dokumentiert. `--filter` seit 0.9.3 durch DSL ersetzt (kein Trusted-Input-Pfad mehr).
 
 - ~~Ports-Modul nach Lese-/Schreib-Verantwortung aufteilen.~~
   Umgesetzt (Phase G-2): `hexagon:ports` → `ports-common` + `ports-read` + `ports-write`.

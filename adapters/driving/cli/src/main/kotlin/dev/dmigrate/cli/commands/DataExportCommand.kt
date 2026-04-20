@@ -134,6 +134,11 @@ class DataExportCommand : CliktCommand(name = "export") {
         // Hierarchie: d-migrate → data → export → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        // §4.4: --filter "" and whitespace-only are invalid (Exit 2)
+        if (filter != null && filter!!.isBlank()) {
+            System.err.println("Error: --filter must not be empty or whitespace-only. Omit the flag to export without a filter.")
+            throw ProgramResult(2)
+        }
         val parsedFilter = try {
             parseFilter(filter)
         } catch (e: FilterParseException) {

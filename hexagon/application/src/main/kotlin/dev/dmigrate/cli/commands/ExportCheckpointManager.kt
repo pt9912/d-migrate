@@ -70,14 +70,22 @@ internal class ExportCheckpointManager(
                 return ExportResumeResult.Exit(3)
             }
             if (manifest.optionsFingerprint != ctx.fingerprint) {
-                // Detect pre-0.9.3 raw-SQL checkpoints: if the current filter
-                // is DSL-based but the stored fingerprint was computed from a
-                // raw filter string, the mismatch is a migration issue, not a
-                // semantic option change. Exit 2 with migration hint.
+                // Distinguish two cases:
+                // (a) Pre-0.9.3 raw-SQL checkpoint: the stored fingerprint was
+                //     computed from the raw --filter text. Since 0.9.3, the
+                //     fingerprint uses the DSL canonical form, so any checkpoint
+                //     with a --filter will mismatch. → Exit 2 with migration hint.
+                // (b) Genuine option change between runs. → Exit 3.
+                //
+                // Detection: if the current request carries a DSL filter, the
+                // mismatch is likely (a). Without a filter, only (b) is possible.
+                // This heuristic has no false negatives for (a) because a
+                // filter-bearing 0.9.3 checkpoint always produces a matching
+                // fingerprint for the same canonical DSL.
                 if (request.filter != null) {
                     stderr(
-                        "Error: Checkpoint was created with a raw SQL --filter (pre-0.9.3). " +
-                            "Since 0.9.3, --filter uses a DSL that produces a different fingerprint. " +
+                        "Error: Checkpoint fingerprint mismatch. If this checkpoint was created " +
+                            "before 0.9.3, the --filter fingerprint format has changed (raw SQL → DSL canonical form). " +
                             "Start a new export without --resume, or delete the old checkpoint."
                     )
                     return ExportResumeResult.Exit(2)

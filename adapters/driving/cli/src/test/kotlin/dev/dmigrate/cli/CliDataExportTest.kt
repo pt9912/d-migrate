@@ -519,11 +519,11 @@ class CliDataExportTest : FunSpec({
         }
     }
 
-    test("F32: --filter empty/blank value behaves like no filter") {
+    test("F32 (0.9.3): --filter empty/blank value exits 2") {
         val db = createSampleDatabase()
         try {
-            val out = captureStdout {
-                shouldNotThrowAny {
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
                     cli().parse(
                         listOf(
                             "data", "export",
@@ -534,11 +534,9 @@ class CliDataExportTest : FunSpec({
                         )
                     )
                 }
+                ex.statusCode shouldBe 2
             }
-            // Alle drei Rows müssen drin sein
-            out shouldContain "\"name\": \"alice\""
-            out shouldContain "\"name\": \"bob\""
-            out shouldContain "\"name\": \"charlie\""
+            stderr shouldContain "--filter must not be empty"
         } finally {
             Files.deleteIfExists(db)
         }
