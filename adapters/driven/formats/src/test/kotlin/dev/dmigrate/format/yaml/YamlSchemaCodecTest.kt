@@ -7,6 +7,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 
 class YamlSchemaCodecTest : FunSpec({
 
@@ -578,5 +579,97 @@ class YamlSchemaCodecTest : FunSpec({
         codec.write(out, schema)
         val reparsed = codec.read(out.toByteArray().inputStream())
         reparsed.views["v1"]!!.dependencies!!.functions shouldBe listOf("f1", "f2")
+    }
+
+    // ─── SequenceNextVal codec (0.9.3 AP 6.3) ───────────────────
+
+    test("round-trip for default.sequence_nextval") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "SeqTest"
+            version: "1.0.0"
+            encoding: "utf-8"
+            sequences:
+              invoice_seq:
+                start: 1000
+            tables:
+              invoices:
+                columns:
+                  id:
+                    type: integer
+                    default:
+                      sequence_nextval: invoice_seq
+                primary_key: [id]
+        """.trimIndent()
+        val schema = codec.read(yaml.byteInputStream())
+        schema.tables["invoices"]!!.columns["id"]!!.default shouldBe
+            DefaultValue.SequenceNextVal("invoice_seq")
+
+        // Round-trip: write and re-read
+        val out = java.io.ByteArrayOutputStream()
+        codec.write(out, schema)
+        val reparsed = codec.read(out.toByteArray().inputStream())
+        reparsed.tables["invoices"]!!.columns["id"]!!.default shouldBe
+            DefaultValue.SequenceNextVal("invoice_seq")
+    }
+
+    test("legacy text default nextval is parsed as FunctionCall for validator") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "LegacyTest"
+            version: "1.0.0"
+            encoding: "utf-8"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: integer
+                    default: "nextval('my_seq')"
+                primary_key: [id]
+        """.trimIndent()
+        val schema = codec.read(yaml.byteInputStream())
+        val default = schema.tables["t"]!!.columns["id"]!!.default
+        default shouldBe DefaultValue.FunctionCall("nextval('my_seq')")
+    }
+
+    test("map default with key 'nextval' throws with migration hint") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "BadMap"
+            version: "1.0.0"
+            encoding: "utf-8"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: integer
+                    default:
+                      nextval: my_seq
+                primary_key: [id]
+        """.trimIndent()
+        val ex = io.kotest.assertions.throwables.shouldThrow<Exception> {
+            codec.read(yaml.byteInputStream())
+        }
+        ex.message shouldContain "sequence_nextval"
+    }
+
+    test("map default with unknown key throws structured error") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "UnknownKey"
+            version: "1.0.0"
+            encoding: "utf-8"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: integer
+                    default:
+                      unknown_form: value
+                primary_key: [id]
+        """.trimIndent()
+        io.kotest.assertions.throwables.shouldThrow<Exception> {
+            codec.read(yaml.byteInputStream())
+        }
     }
 })

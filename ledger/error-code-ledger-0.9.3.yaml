@@ -1,2 +1,19 @@
 version: "0.9.3"
-entries: []
+entries:
+  - code: E122
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt"
+    evidence_paths:
+      - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaValidator.kt"
+        path_type: production
+
+  - code: E123
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "hexagon/core/src/test/kotlin/dev/dmigrate/core/validation/SchemaValidatorTest.kt"
+    evidence_paths:
+      - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaValidator.kt"
+        path_type: production

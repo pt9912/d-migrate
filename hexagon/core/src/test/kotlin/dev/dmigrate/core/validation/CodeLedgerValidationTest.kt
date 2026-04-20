@@ -333,4 +333,24 @@ class CodeLedgerValidationTest : FunSpec({
         content shouldNotBe ""
         content shouldContain "version: \"0.9.3\""
     }
+
+    test("0.9.3 error ledger contains E122 and E123 as active") {
+        val content = readLedger("error-code-ledger-0.9.3.yaml")
+        val codes = extractCodes(content).toSet()
+        codes.contains("E122") shouldBe true
+        codes.contains("E123") shouldBe true
+        extractField(content, "E122", "status") shouldBe "active"
+        extractField(content, "E123", "status") shouldBe "active"
+    }
+
+    test("0.9.3 error ledger: active entries have test_path and evidence_paths") {
+        val content = readLedger("error-code-ledger-0.9.3.yaml")
+        val activeCodes = extractCodes(content).filter { code ->
+            extractField(content, code, "status") == "active"
+        }
+        val missing = activeCodes.filter { code ->
+            extractField(content, code, "test_path") == null || !hasEvidencePaths(content, code)
+        }
+        missing.shouldBeEmpty()
+    }
 })

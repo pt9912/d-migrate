@@ -5,6 +5,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 
 class SchemaValidatorTest : FunSpec({
 
@@ -793,5 +794,74 @@ class SchemaValidatorTest : FunSpec({
         ))
         val result = validator.validate(s)
         result.isValid shouldBe true
+    }
+
+    // ─── SequenceNextVal (0.9.3 AP 6.3) ─────────────────────────
+
+    test("E009: SequenceNextVal on text column is type-incompatible") {
+        val schema = SchemaDefinition(
+            name = "T", version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf("name" to ColumnDefinition(
+                    type = NeutralType.Text(),
+                    default = DefaultValue.SequenceNextVal("my_seq"),
+                )),
+                primaryKey = listOf("name"),
+            )),
+        )
+        val result = SchemaValidator().validate(schema)
+        result.errors.any { it.code == "E009" } shouldBe true
+    }
+
+    test("SequenceNextVal on integer column with existing sequence passes") {
+        val schema = SchemaDefinition(
+            name = "T", version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal("my_seq"),
+                )),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val result = SchemaValidator().validate(schema)
+        result.errors.filter { it.code in setOf("E009", "E122", "E123") }.shouldBeEmpty()
+    }
+
+    test("E122: legacy nextval FunctionCall triggers migration error") {
+        val schema = SchemaDefinition(
+            name = "T", version = "1",
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.FunctionCall("nextval('my_seq')"),
+                )),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val result = SchemaValidator().validate(schema)
+        val e122 = result.errors.filter { it.code == "E122" }
+        e122 shouldHaveSize 1
+        e122.first().message shouldContain "sequence_nextval"
+    }
+
+    test("E123: SequenceNextVal references non-existent sequence") {
+        val schema = SchemaDefinition(
+            name = "T", version = "1",
+            sequences = mapOf("other_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf("t" to TableDefinition(
+                columns = linkedMapOf("id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal("missing_seq"),
+                )),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val result = SchemaValidator().validate(schema)
+        val e123 = result.errors.filter { it.code == "E123" }
+        e123 shouldHaveSize 1
+        e123.first().message shouldContain "missing_seq"
     }
 })
