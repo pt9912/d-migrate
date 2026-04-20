@@ -511,7 +511,18 @@ CREATE SEQUENCE "invoice_number_seq"
     CACHE 20;
 ```
 
-MySQL: Emulation über dedizierte Hilfstabelle (konfigurierbar) oder `action_required` (E056).
+MySQL: Gesteuert ueber `--mysql-named-sequences` (seit 0.9.3):
+
+- `action_required` (Default): Sequences werden mit E056 uebersprungen.
+- `helper_table`: Emulation ueber kanonische Hilfsobjekte:
+  - Tabelle `dmg_sequences` mit Metadaten pro Sequence
+  - Routinen `dmg_nextval(seq_name)` und `dmg_setval(seq_name, value)`
+  - `BEFORE INSERT`-Trigger pro sequence-basierter Spalte
+  - Lossy-Mapping-Warnung W115 (explizites NULL vs. ausgelassener Wert)
+  - Cache-Warnung W114 (Preallocation nicht emuliert)
+  - Transaktionswarnung W117 (Rollback retrahiert Inkremente)
+
+Details: [`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md).
 
 SQLite: Keine nativen benannten Sequenzen. `action_required` (E056) wird erzeugt.
 
@@ -1264,6 +1275,10 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | E055 | action_required | `schema generate` | Partitioning is not supported in the target dialect |
 | E056 | action_required | `schema generate` | Named sequence cannot be generated natively and needs emulation/manual handling |
 | W113 | Warnung | `schema generate` | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
+| W114 | Warnung | `schema generate` | Sequence cache value stored but not emulated as preallocation in MySQL helper-table mode |
+| W115 | Warnung | `schema generate` | SequenceNextVal uses lossy MySQL trigger semantics; explicit NULL is treated like omitted value |
+| W116 | Warnung | `schema reverse` | Sequence metadata reconstructed, but required support objects (routines/triggers) are missing |
+| W117 | Warnung | `schema generate` | Sequence values are transaction-bound in MySQL helper-table mode; rollback retracts increments |
 | W120 | Warnung | `schema generate` | SRID could not be fully transferred to target dialect |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in

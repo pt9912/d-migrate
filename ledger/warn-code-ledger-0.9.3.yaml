@@ -1,0 +1,25 @@
+version: "0.9.3"
+entries:
+  - code: W114
+    level: warning
+    status: reserved
+    entry_type: standard
+    note: "Sequence cache stored but not emulated as preallocation. Activated in AP 6.4."
+
+  - code: W115
+    level: warning
+    status: reserved
+    entry_type: standard
+    note: "SequenceNextVal trigger cannot distinguish explicit NULL from omitted value (lossy). Activated in AP 6.4."
+
+  - code: W116
+    level: warning
+    status: reserved
+    entry_type: standard
+    note: "Sequence metadata reconstructed but required support objects missing (degraded). Activated in 0.9.4."
+
+  - code: W117
+    level: warning
+    status: reserved
+    entry_type: standard
+    note: "Sequence values are transaction-bound in MySQL helper-table mode. Activated in AP 6.4."
