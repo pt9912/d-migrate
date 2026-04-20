@@ -24,7 +24,7 @@ import kotlin.io.path.deleteIfExists
  * - Lifecycle (single-use ChunkSequence, idempotent close, connection return)
  * - Empty-table contract (Plan §6.17): one chunk with columns + emptyList rows
  * - Multi-chunk streaming with chunkSize splitting
- * - DataFilter (WhereClause, ColumnSubset, Compound)
+ * - DataFilter (ParameterizedClause, ColumnSubset, Compound)
  * - Setup-error cleanup (invalid SQL must release the borrowed connection)
  *
  * The concrete SqliteDataReader in d-migrate-driver-sqlite has its own
@@ -116,8 +116,8 @@ class AbstractJdbcDataReaderTest : FunSpec({
         shouldThrow<IllegalStateException> { seq.iterator() }
     }
 
-    test("DataFilter.WhereClause is applied server-side") {
-        val seq = reader.streamTable(pool, "items", filter = DataFilter.WhereClause("qty >= 30"))
+    test("DataFilter.ParameterizedClause is applied server-side") {
+        val seq = reader.streamTable(pool, "items", filter = DataFilter.ParameterizedClause("qty >= ?", listOf(30)))
         val rows = seq.toList().flatMap { it.rows.toList() }
         rows.size shouldBe 3
         rows.map { it[0] as Int }.sorted() shouldBe listOf(3, 4, 5)
@@ -134,8 +134,8 @@ class AbstractJdbcDataReaderTest : FunSpec({
         val filter = DataFilter.Compound(
             listOf(
                 DataFilter.ColumnSubset(listOf("name", "qty")),
-                DataFilter.WhereClause("qty > 20"),
-                DataFilter.WhereClause("qty < 50"),
+                DataFilter.ParameterizedClause("qty > ?", listOf(20)),
+                DataFilter.ParameterizedClause("qty < ?", listOf(50)),
             )
         )
         val chunk = reader.streamTable(pool, "items", filter = filter).toList().single()
@@ -179,9 +179,9 @@ class AbstractJdbcDataReaderTest : FunSpec({
     // M-R6: DataFilter.ParameterizedClause + bindParams integration
     // ───────────────────────────────────────────────────────────────────
 
-    test("M-R6: pure WhereClause — no regression against 0.3.0 (no params bound)") {
-        // This is the classic path: raw SQL, no ? placeholders, no binding.
-        val filter = DataFilter.WhereClause("qty >= 30")
+    test("M-R6: pure ParameterizedClause — no regression against 0.3.0") {
+        // ParameterizedClause with bind params replaces the old WhereClause path.
+        val filter = DataFilter.ParameterizedClause("qty >= ?", listOf(30))
         val chunks = reader.streamTable(pool, "items", filter = filter).toList()
         val rows = chunks.flatMap { it.rows.toList() }
         rows.size shouldBe 3
@@ -199,10 +199,10 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int }.sorted() shouldBe listOf(3, 4, 5)
     }
 
-    test("M-R6: Compound([WhereClause, ParameterizedClause]) — SQL composed with AND, params bound in order") {
+    test("M-R6: Compound([ParameterizedClause, ParameterizedClause]) — SQL composed with AND, params bound in order") {
         val filter = DataFilter.Compound(
             listOf(
-                DataFilter.WhereClause("name LIKE 'item-%'"),
+                DataFilter.ParameterizedClause("name LIKE ?", listOf("item-%")),
                 DataFilter.ParameterizedClause("qty BETWEEN ? AND ?", listOf(20, 40)),
             )
         )
@@ -252,19 +252,18 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.size shouldBe 0
     }
 
-    test("M-R5: literal ? in WhereClause + ParameterizedClause is rejected early") {
+    test("M-R5: two ParameterizedClauses combined in Compound bind params in order") {
         val filter = DataFilter.Compound(
             listOf(
-                DataFilter.WhereClause("name = 'x?'"),
+                DataFilter.ParameterizedClause("name = ?", listOf("item-3")),
                 DataFilter.ParameterizedClause("qty >= ?", listOf(20)),
             )
         )
 
-        val ex = shouldThrow<IllegalArgumentException> {
-            reader.streamTable(pool, "items", filter = filter).toList()
-        }
-        ex.message!!.contains("WhereClause") shouldBe true
-        ex.message!!.contains("ParameterizedClause") shouldBe true
+        val rows = reader.streamTable(pool, "items", filter = filter).toList()
+            .flatMap { it.rows.toList() }
+        rows.size shouldBe 1
+        rows.single()[0] as Int shouldBe 3
     }
 
     // ───────────────────────────────────────────────────────────────────
@@ -359,7 +358,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
     }
 
-    test("C.2 ResumeMarker composes with DataFilter.WhereClause via AND") {
+    test("C.2 ResumeMarker composes with DataFilter.ParameterizedClause via AND") {
         val marker = ResumeMarker(
             markerColumn = "qty",
             tieBreakerColumns = listOf("id"),
@@ -371,7 +370,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         val rows = reader.streamTable(
             pool = pool,
             table = "items",
-            filter = DataFilter.WhereClause("qty < 50"),
+            filter = DataFilter.ParameterizedClause("qty < ?", listOf(50)),
             chunkSize = 100,
             resumeMarker = marker,
         ).toList().flatMap { it.rows.toList() }

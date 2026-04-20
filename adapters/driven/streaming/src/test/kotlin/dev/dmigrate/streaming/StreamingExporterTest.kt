@@ -318,7 +318,7 @@ class StreamingExporterTest : FunSpec({
     // ─── DataFilter pass-through ────────────────────────────────
 
     test("DataFilter is passed through to the reader") {
-        val filter = DataFilter.WhereClause("id > 0")
+        val filter = DataFilter.ParameterizedClause("id > ?", listOf(0))
         val reader = FakeDataReader(
             mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
         )

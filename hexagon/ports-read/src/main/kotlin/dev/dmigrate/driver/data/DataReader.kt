@@ -33,7 +33,7 @@ interface DataReader {
      * @param pool Connection-Pool — der Reader borgt sich pro Aufruf eine
      *   eigene Connection daraus
      * @param table Tabellenname (kann schema-qualifiziert sein, z.B. `"public.orders"`)
-     * @param filter Optionaler Filter (WhereClause / ColumnSubset / Compound)
+     * @param filter Optionaler Filter (ParameterizedClause / ColumnSubset / Compound)
      * @param chunkSize Anzahl Rows pro Chunk (Default: 10 000)
      */
     fun streamTable(
