@@ -11,13 +11,17 @@ kover {
         filters {
             excludes {
                 classes(
-                    // Interfaces
+                    // Interfaces (including $DefaultImpls inner classes)
                     "dev.dmigrate.driver.data.ChunkSequence",
                     "dev.dmigrate.driver.data.DataReader",
+                    "dev.dmigrate.driver.data.DataReader\$DefaultImpls",
                     "dev.dmigrate.driver.data.TableLister",
                     "dev.dmigrate.driver.DdlGenerator",
+                    "dev.dmigrate.driver.DdlGenerator\$DefaultImpls",
                     "dev.dmigrate.driver.SchemaReader",
+                    "dev.dmigrate.driver.SchemaReader\$DefaultImpls",
                     "dev.dmigrate.format.data.DataChunkReaderFactory",
+                    "dev.dmigrate.format.data.DataChunkReaderFactory\$DefaultImpls",
                     "dev.dmigrate.format.data.DataChunkReader",
                     // Pure data containers without logic
                     "dev.dmigrate.driver.SchemaReadOptions",

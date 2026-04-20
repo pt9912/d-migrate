@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.TransformationNote
@@ -9,6 +10,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
@@ -1437,5 +1439,106 @@ class MysqlDdlGeneratorTest : FunSpec({
         rendered shouldContain "`Robert'; DROP TABLE users; --`"
         // Embedded backtick is escaped as ``
         rendered shouldContain "`col``inject`"
+    }
+
+    // ── helper_table mode (0.9.3 AP 6.4) ───────────────────────
+
+    val helperOpts = DdlGenerationOptions(
+        mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
+    )
+
+    fun seqSchema(
+        seqName: String = "invoice_seq",
+        tableName: String = "invoices",
+        colName: String = "invoice_number",
+        cache: Int? = null,
+    ) = SchemaDefinition(
+        name = "SeqTest", version = "1",
+        sequences = mapOf(seqName to SequenceDefinition(start = 1000, increment = 1, cache = cache)),
+        tables = mapOf(tableName to TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                colName to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal(seqName),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )),
+    )
+
+    test("helper_table generates dmg_sequences table and seed") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        val ddl = result.render()
+        ddl shouldContain "CREATE TABLE `dmg_sequences`"
+        ddl shouldContain "INSERT INTO `dmg_sequences`"
+        ddl shouldContain "'invoice_seq'"
+        ddl shouldContain "1000" // start value
+    }
+
+    test("helper_table generates dmg_nextval and dmg_setval routines") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        val ddl = result.render()
+        ddl shouldContain "CREATE FUNCTION `dmg_nextval`"
+        ddl shouldContain "CREATE FUNCTION `dmg_setval`"
+        ddl shouldContain "DELIMITER //"
+    }
+
+    test("helper_table generates BEFORE INSERT trigger for SequenceNextVal column") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        val ddl = result.render()
+        ddl shouldContain "BEFORE INSERT ON `invoices`"
+        ddl shouldContain "dmg_nextval"
+        ddl shouldContain "invoice_seq"
+        ddl shouldContain "NEW.`invoice_number`"
+    }
+
+    test("helper_table column with SequenceNextVal has no DEFAULT clause on that column") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        val ddl = result.render()
+        // The sequence-backed column should NOT have DEFAULT — trigger handles it
+        // Extract just the invoice_number column line
+        val colLine = ddl.lines().firstOrNull { it.contains("`invoice_number`") }
+        colLine shouldNotBe null
+        colLine!! shouldNotContain "DEFAULT"
+    }
+
+    test("helper_table emits W115 per SequenceNextVal column") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        result.notes.any { it.code == "W115" && it.objectName == "invoices.invoice_number" } shouldBe true
+    }
+
+    test("helper_table emits W117 global warning") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        result.globalNotes.any { it.code == "W117" } shouldBe true
+    }
+
+    test("helper_table emits W114 when sequence has cache") {
+        val result = generator.generate(seqSchema(cache = 20), helperOpts)
+        result.notes.any { it.code == "W114" && it.objectName == "invoice_seq" } shouldBe true
+    }
+
+    test("action_required + SequenceNextVal emits E056 with helper_table hint") {
+        val result = generator.generate(seqSchema())
+        val notes = result.notes
+        val e056 = notes.filter { it.code == "E056" }
+        e056.any { it.objectName == "invoices.invoice_number" && it.hint?.contains("helper_table") == true } shouldBe true
+    }
+
+    test("helper_table rollback is non-empty and contains DROP statements") {
+        val rollback = generator.generateRollback(seqSchema(), helperOpts)
+        val ddl = rollback.render()
+        ddl shouldContain "DROP"
+        // At minimum: user table drop + support function/trigger drops
+        rollback.statements.size shouldNotBe 0
+    }
+
+    test("helper_table phases: dmg_sequences in PRE_DATA, routines and triggers in POST_DATA") {
+        val result = generator.generate(seqSchema(), helperOpts)
+        val preData = result.renderPhase(dev.dmigrate.driver.DdlPhase.PRE_DATA)
+        val postData = result.renderPhase(dev.dmigrate.driver.DdlPhase.POST_DATA)
+        preData shouldContain "CREATE TABLE `dmg_sequences`"
+        postData shouldContain "CREATE FUNCTION `dmg_nextval`"
+        postData shouldContain "BEFORE INSERT"
     }
 })
