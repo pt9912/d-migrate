@@ -374,6 +374,106 @@ class FilterDslParserTest : FunSpec({
         clause.params shouldBe listOf(100L)
     }
 
+    // ── SQL emission: remaining branches ─────────────────────────
+
+    test("toParameterizedClause handles NOT") {
+        val expr = parseOk("NOT active = true")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldBe "NOT \"active\" = ?"
+    }
+
+    test("toParameterizedClause handles grouped filter") {
+        val expr = parseOk("(a = 1 OR b = 2) AND c = 3")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldContain "("
+        clause.sql shouldContain "OR"
+        clause.sql shouldContain "AND"
+    }
+
+    test("toParameterizedClause handles decimal literal") {
+        val expr = parseOk("price > 9.99")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.params shouldBe listOf(java.math.BigDecimal("9.99"))
+    }
+
+    test("toParameterizedClause handles unary minus") {
+        val expr = parseOk("balance > -100")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldContain "-?"
+    }
+
+    test("toParameterizedClause handles function call in SQL") {
+        val expr = parseOk("LOWER(name) = 'alice'")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldBe "LOWER(\"name\") = ?"
+    }
+
+    test("toParameterizedClause handles IS NOT NULL") {
+        val expr = parseOk("email IS NOT NULL")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldBe "\"email\" IS NOT NULL"
+        clause.params shouldBe emptyList()
+    }
+
+    test("toParameterizedClause handles grouped value expression") {
+        val expr = parseOk("(a + b) * c > 0")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldContain "(\"a\" + \"b\")"
+    }
+
+    test("toParameterizedClause handles COALESCE with multiple args") {
+        val expr = parseOk("COALESCE(a, b, 0) > 0")
+        val clause = FilterDslTranslator.toParameterizedClause(expr, DatabaseDialect.POSTGRESQL)
+        clause.sql shouldContain "COALESCE(\"a\", \"b\", ?)"
+    }
+
+    // ── Canonical fingerprint: remaining branches ──────────────
+
+    test("canonicalize handles NOT") {
+        val expr = parseOk("NOT x = 1")
+        FilterDslTranslator.canonicalize(expr) shouldBe "NOT x = 1"
+    }
+
+    test("canonicalize handles OR") {
+        val expr = parseOk("a = 1 OR b = 2")
+        FilterDslTranslator.canonicalize(expr) shouldBe "a = 1 OR b = 2"
+    }
+
+    test("canonicalize handles IN list") {
+        val expr = parseOk("id IN (1, 2, 3)")
+        FilterDslTranslator.canonicalize(expr) shouldBe "id IN (1, 2, 3)"
+    }
+
+    test("canonicalize handles IS NOT NULL") {
+        val expr = parseOk("x IS NOT NULL")
+        FilterDslTranslator.canonicalize(expr) shouldBe "x IS NOT NULL"
+    }
+
+    test("canonicalize handles decimal literal") {
+        val expr = parseOk("price = 9.99")
+        FilterDslTranslator.canonicalize(expr) shouldBe "price = 9.99"
+    }
+
+    test("canonicalize handles unary minus") {
+        val expr = parseOk("x = -5")
+        FilterDslTranslator.canonicalize(expr) shouldBe "x = -5"
+    }
+
+    test("canonicalize handles function call") {
+        val expr = parseOk("LOWER(x) = 'a'")
+        FilterDslTranslator.canonicalize(expr) shouldBe "LOWER(x) = 'a'"
+    }
+
+    test("canonicalize handles arithmetic") {
+        val expr = parseOk("a + b > 0")
+        FilterDslTranslator.canonicalize(expr) shouldBe "a + b > 0"
+    }
+
+    test("canonicalize handles grouped value") {
+        val expr = parseOk("(a + b) > 0")
+        FilterDslTranslator.canonicalize(expr) shouldBe "(a + b) > 0"
+    }
+
     // ── Complex expressions ────────────────────────────────────
 
     test("complex filter round-trips through parse and canonicalize") {
