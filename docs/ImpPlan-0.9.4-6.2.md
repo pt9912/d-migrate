@@ -239,6 +239,13 @@ Architektur-Verortung:
   - sequence-bezogene `SchemaReadNote`s
 - `scanSequenceSupport(...)` bleibt D1-Infrastruktur und wird in D2
   nicht mit Fachmapping ueberladen
+- fuer die Zeilenvalidierung fuehrt D2 eine zweite, fachliche
+  Resultstufe ein:
+  - bevorzugt als getrennte Validierungsobjekte wie
+    `ValidSequenceRowCandidate` vs. `InvalidSequenceRowEvidence`
+  - D2 darf nicht auf nicht-nullbaren Snapshot-Feldern mit
+    Platzhalterwerten wie `0L` oder `1L` weiterarbeiten, wenn eine
+    Pflichtspalte fachlich nicht lesbar war
 
 ### 5.2 Kanonische Grundform von `dmg_sequences`
 
@@ -322,6 +329,17 @@ Eine lokal gueltige D2-Zeile muss mindestens sicher liefern koennen:
 - `cycle_enabled`
 - `cache_size` oder `NULL`
 
+Sonderregeln fuer `cycle_enabled`:
+
+- `cycle_enabled` ist ein Pflichtfeld und darf in D2 nicht `NULL` sein
+- zulaessig sind nur sauber lesbare Bool-Repraesentationen:
+  - `0` -> `false`
+  - `1` -> `true`
+- andere Werte wie negativ, groesser als `1` oder fachlich nicht lesbar
+  machen die betroffene Zeile invalide
+- D2 fuehrt hier keine implizite "alles ausser 1 ist false"-Heuristik
+  ein
+
 Sonderregeln fuer `cache_size`:
 
 - `NULL` bleibt zulaessig und wird unveraendert als fehlender Cachewert
@@ -331,9 +349,9 @@ Sonderregeln fuer `cache_size`:
 - `0` ist in D2 zulaessig und wird unveraendert als
   `SequenceDefinition.cache = 0` materialisiert; das Neutralmodell kann
   diesen Wert ohne Sonderbehandlung tragen
-- sehr grosse, aber noch zieltyp-kompatible Werte bleiben zulaessig;
-  Ueberlaeufe oder nicht lesbare Grosswerte degradieren nur den
-  betroffenen Key
+- Werte groesser als `Int.MAX_VALUE` sind fuer D2 nicht
+  zieltyp-kompatibel und degradieren nur den betroffenen Key
+- sehr grosse, aber noch `Int`-kompatible Werte bleiben zulaessig
 - fuer Pflichtnumerics wie `next_value` oder `increment_by` gilt
   explizit:
   - nicht lesbare Werte machen die betroffene Zeile invalide
@@ -397,9 +415,14 @@ Sequence-Schluesseln:
   - erzeugt in 6.1 noch keine Diagnose allein aus dem Status
   - wird erst in D2 bei bereits bestaetigter Sequence-Materialisierung
     zur sequence-bezogenen degradierenden Begleitevidenz
-  - daraus entsteht dann aggregierbares `W116`
-- `routineState.not_accessible`
+  - Aggregationsebene ist der materialisierte Sequence-Key:
+    - kein globales DB-weites Routine-`W116`
+    - keine getrennte Note pro fehlender Routine
+    - hoechstens eine degradierte `W116` pro betroffener Sequence,
+      auch wenn beide Support-Routinen fehlen
+  - `routineState.not_accessible`
   - Sequence-Rekonstruktion bleibt moeglich
+  - Aggregationsebene ist ebenfalls der materialisierte Sequence-Key
   - aggregierbares sequence-bezogenes `W116`
 
 Leitregel:
@@ -431,8 +454,13 @@ Leitregel:
 - Zusatzspalten bewusst tolerieren und ignorieren
 - `invalid_shape` frueh und eindeutig vom zeilenweisen Inhaltsfehler
   trennen
-- Support-Row-Query weiter streng an `ReverseScope` binden; kein
-  impliziter Rueckfall auf unscopte Current-Schema-Lesung
+- Support-Row-Query weiter streng an `ReverseScope` binden:
+  - bevorzugt ueber explizite Schema-Qualifizierung oder
+    schema-parametrisierte Query
+  - falls technisch nur unqualifiziert gelesen werden kann, muss D2
+    explizit absichern, dass die aktive Connection-Datenbank exakt dem
+    `ReverseScope` entspricht
+  - kein stiller Rueckfall auf ambienten Current-Schema-Kontext
 
 ### D2-3 Zeilenvalidierung und Mapping implementieren
 
@@ -440,11 +468,16 @@ Leitregel:
 - string-artige Pflichtfelder ueber eine zentrale D2-Normalisierung
   vergleichen
 - Zeilen lokal validieren
+- aus der Zeilenvalidierung explizit zwischen:
+  - gueltigem Sequence-Kandidaten
+  - invalider Zeilenevidenz
+  unterscheiden
 - gueltige Zeilen auf `SequenceDefinition` mappen
 - `next_value -> start` explizit an einer zentralen Stelle dokumentiert
   und testbar implementieren
-- `cache_size`-Sonderwerte (`NULL`, `0`, negativ, nicht lesbar,
-  Zieltyp-Ueberlauf) explizit gegen den D2-Vertrag pruefen
+- `cycle_enabled`- und `cache_size`-Sonderwerte (`NULL`, `0`, negativ,
+  nicht lesbar, Zieltyp-Ueberlauf) explizit gegen den D2-Vertrag
+  pruefen
 - nicht lesbare Pflichtnumerics als Invaliditaet behandeln, statt
   Defaultwerte zu injizieren
 
@@ -476,10 +509,13 @@ Leitregel:
   - CHAR-Padding in `managed_by`, `format_version` und `name`
   - Zusatzspalten ohne Grundformverlust
   - fehlende Pflichtspalten mit degradiertem `W116`
-  - `cache_size`-Randfaelle (`NULL`, `0`, negativ, Grosswert)
+  - `cycle_enabled`-Randfaelle (`NULL`, `0`, `1`, > `1`, negativ)
+  - `cache_size`-Randfaelle (`NULL`, `0`, negativ, > `Int.MAX_VALUE`)
   - nicht lesbare Pflichtnumerics ohne stillen `0`-/`1`-Fallback
   - einzelne kaputte Zeilen ohne Totalausfall
   - mehrere Sequences parallel, davon eine degradiert
+  - deterministische Sortierung bei 3+ Sequences nach normalisiertem
+    Sequence-Key
   - mehrdeutige Sequence-Keys ohne stille Ueberschreibung
   - fehlende Support-Routinen bei weiter rekonstruierbaren Sequences
   - `supportTableState.missing` ohne `W116` und ohne implizite
@@ -520,20 +556,32 @@ Pflichtfaelle fuer 6.2:
    konsistente D2-Normalisierung validiert, so dass Padding- oder
    Leseunterschiede nicht zu driftender Filter- und Key-Semantik
    fuehren.
-11. `cache_size`-Randfaelle sind explizit abgesichert:
-    `NULL` bleibt zulaessig, invalide oder nicht lesbare Werte
-    degradieren nur den betroffenen Sequence-Key.
-12. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
+11. `cycle_enabled` akzeptiert in D2 nur kanonische Bool-Werte
+    (`0`/`1`); `NULL`, negative oder andere numerische Werte machen nur
+    die betroffene Zeile invalide.
+12. `cache_size`-Randfaelle sind explizit abgesichert:
+    `NULL` bleibt zulaessig, `0` bleibt zulaessig, Werte groesser als
+    `Int.MAX_VALUE`, invalide oder nicht lesbare Werte degradieren nur
+    den betroffenen Sequence-Key.
+13. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
     betroffenen Zeile, nicht zu stillen `0`-/`1`-Defaults.
-13. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
+14. D2 verwendet fuer invalide Zeilen keine Fake-Werte in
+    fachlich gemappten Kandidaten, sondern trennt gueltige Kandidaten
+    und invalide Zeilenevidenz.
+15. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
     impliziten Sequence-Materialisierung.
-14. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
+16. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
     Hard-Fail oder kompatiblem Nicht-Sequence-Fall, nicht zu einem
     stillen Teilergebnis.
-15. `SequenceDefinition.description` bleibt in D2 explizit `null`.
-16. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
+17. Fehlende oder nicht lesbare Support-Routinen aggregieren in D2 pro
+    betroffenem Sequence-Key, nicht global pro Datenbank und nicht pro
+    Routineobjekt.
+18. `SequenceDefinition.description` bleibt in D2 explizit `null`.
+19. Die Sequence-Reihenfolge bleibt bei 3+ Eintraegen deterministisch
+    aufsteigend nach dem normalisierten Sequence-Key.
+20. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
     Laufzeitzaehler wird nicht in D2 "wegkorrigiert".
-17. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
+21. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
     ein kompatibler Nicht-Sequence-Fall ohne implizite Sequences.
 
 Akzeptanzkriterium fuer 6.2:
@@ -551,6 +599,9 @@ Voraussichtlich direkt betroffen:
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`
+  nur falls fuer D2 ueber Konstantenzugriff hinaus doch Reader-Helfer
+  angepasst werden muessen; nach aktuellem Plan eher nicht direkt zu
+  aendern
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SequenceDefinition.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`
@@ -626,7 +677,23 @@ Gegenmassnahme:
   - `name`: `trim()` ohne Case-Faltung
 - CHAR-Padding-Testfaelle verpflichtend machen
 
-### 9.5 Konfliktpfad wird spaeter aufgeweicht
+### 9.5 Unsaubere Bool-/Integer-Lesung verfaelscht Sequence-Zeilen
+
+Risiko:
+
+- `cycle_enabled`, `next_value`, `increment_by` oder `cache_size`
+  koennten bei nicht lesbaren Werten still in scheinbar gueltige
+  Standardwerte kippen
+- daraus entstuenden fachlich falsche `SequenceDefinition`s
+
+Gegenmassnahme:
+
+- `cycle_enabled` nur fuer `0`/`1` akzeptieren
+- nicht lesbare Pflichtnumerics und Zieltyp-Ueberlaeufe immer als
+  Zeileninvaliditaet behandeln
+- gueltige Kandidaten und invalide Evidenzobjekte sauber trennen
+
+### 9.6 Konfliktpfad wird spaeter aufgeweicht
 
 Risiko:
 
@@ -638,7 +705,7 @@ Gegenmassnahme:
 - Konfliktvertrag aus 6.1 unveraendert in D2 uebernehmen
 - Akzeptanztests fuer mehrdeutige Keys verpflichtend machen
 
-### 9.6 Support-Routinen werden faelschlich zur Pflicht fuer D2
+### 9.7 Support-Routinen werden faelschlich zur Pflicht fuer D2
 
 Risiko:
 
@@ -651,17 +718,17 @@ Gegenmassnahme:
 - `SequenceDefinition` weiter aus `dmg_sequences` rekonstruieren, sofern
   die Primaerquelle lesbar ist
 
-### 9.7 Stille Numerics-Fallbacks verfaelschen Sequence-Metadaten
+### 9.8 Unqualifizierte Support-Row-Queries driften vom Scope ab
 
 Risiko:
 
-- nicht lesbare Pflichtfelder wie `next_value` oder `increment_by`
-  koennten durch Defaultwerte maskiert werden
-- daraus entstuenden scheinbar gueltige, fachlich aber falsche
-  `SequenceDefinition`s
+- eine unqualifizierte `dmg_sequences`-Abfrage verlaesst sich still auf
+  den ambienten Connection-Kontext
+- in Multi-Schema- oder Testaufbauten koennten dadurch falsche Tabellen
+  gelesen werden
 
 Gegenmassnahme:
 
-- nicht lesbare Pflichtnumerics in D2 immer als Invaliditaet der
-  betroffenen Zeile behandeln
-- kein stilles Auffuellen mit `0L`, `1L` oder aehnlichen Defaults
+- Support-Row-Query explizit an `ReverseScope` binden
+- wenn explizite Schema-Qualifizierung technisch nicht moeglich ist,
+  aktive Connection-Datenbank gegen `ReverseScope` verifizieren
