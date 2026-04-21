@@ -546,6 +546,44 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 ./gradlew :adapters:driving:cli:run --args="--output-format json schema validate --source mein-schema.yaml"
 ```
 
+## MySQL-Sequence-Emulation: Reverse und Compare (0.9.4)
+
+Wenn du `schema generate --target mysql --mysql-named-sequences helper_table`
+verwendet hast, legt d-migrate kanonische Hilfsobjekte in der MySQL-Datenbank
+an (`dmg_sequences`-Tabelle, `dmg_nextval`/`dmg_setval`-Routinen und
+`BEFORE INSERT`-Trigger).
+
+### Reverse-Engineering
+
+`schema reverse` erkennt diese Hilfsobjekte automatisch und faltet sie
+zurueck auf native `sequences` und `default: { sequence_nextval: ... }` im
+neutralen Schema. Die Hilfsobjekte tauchen dabei nicht als normale Tabellen,
+Routinen oder Trigger im Ergebnis auf.
+
+Voraussetzung: Die Hilfsobjekte muessen die kanonische Form und die
+d-migrate-Marker tragen (so wie sie von `schema generate` erzeugt werden).
+Handgeschriebene oder anderweitig modifizierte Sequence-Loesungen werden
+nicht erkannt.
+
+**Warnung W116 — Fehlende Support-Objekte**: Wenn die `dmg_sequences`-Tabelle
+vorhanden ist, aber Support-Routinen (`dmg_nextval`/`dmg_setval`) oder
+Sequence-Trigger fehlen oder nicht kanonisch sind, erscheint `W116`. Die
+Sequence-Metadaten werden trotzdem rekonstruiert, aber die Zuordnung zu
+Spalten-Defaults kann unvollstaendig sein. `W116` bedeutet: die Sequence
+ist rekonstruierbar, aber nicht voll betriebsfaehig.
+
+### Compare-Verhalten
+
+`schema compare` arbeitet auf Neutralmodell-Ebene. Wenn beide Seiten
+dieselbe Sequence beschreiben — egal ob als Datei oder als reverse-te
+MySQL-DB — ergibt sich kein Diff.
+
+Operandseitiges `W116` (z.B. bei `schema compare --source file:schema.yaml
+--target db:mysql://...`) bleibt als Diagnose sichtbar, beeinflusst aber
+den Exit-Code nicht: Exit 0 bei identischen Schemas, Exit 1 nur bei
+echten Schema-Unterschieden. In der JSON-/YAML-Ausgabe erscheint `W116`
+unter `target_operand.notes`, nicht als Diff-Eintrag.
+
 ## Neutrales Typsystem
 
 d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch übersetzt werden:
