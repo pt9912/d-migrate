@@ -225,7 +225,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.3](https://github.com/pt9912/d-migrate/releases/tag/v0.9.3)** — Beta: Filter-Härtung und MySQL-Sequence-Emulation (Generator) — sichere `--filter`-DSL mit Bind-Parametern, `default.sequence_nextval` als kanonische Schema-Form, `--mysql-named-sequences helper_table` für MySQL-Sequence-Emulation über `dmg_sequences`/Routinen/Trigger.
+Aktuelles Release: **[v0.9.4](https://github.com/pt9912/d-migrate/releases/tag/v0.9.4)** — Beta: MySQL-Sequence Reverse-Engineering und Compare — `schema reverse` rekonstruiert Sequences aus `dmg_sequences`-Hilfstabellen, Support-Routinen und kanonischen Triggern; `schema compare` zeigt Sequence-Diffs in JSON/YAML; W116-Diagnostik für degradierte Support-Objekte.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
