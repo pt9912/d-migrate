@@ -843,6 +843,52 @@ class SchemaComparatorTest : FunSpec({
         diff.sequencesChanged[0].cycle!!.after shouldBe true
     }
 
+    test("sequence changed reports increment, min/max, cycle, and cache diffs") {
+        val left = schema(sequences = mapOf(
+            "id_seq" to SequenceDefinition(
+                start = 1,
+                increment = 1,
+                minValue = 10,
+                maxValue = 100,
+                cycle = false,
+                cache = 5,
+            ),
+        ))
+        val right = schema(sequences = mapOf(
+            "id_seq" to SequenceDefinition(
+                start = 1,
+                increment = 10,
+                minValue = 20,
+                maxValue = 200,
+                cycle = true,
+                cache = 25,
+            ),
+        ))
+
+        val diff = comparator.compare(left, right)
+        diff.sequencesAdded.shouldBeEmpty()
+        diff.sequencesRemoved.shouldBeEmpty()
+        diff.sequencesChanged shouldHaveSize 1
+
+        val changed = diff.sequencesChanged[0]
+        changed.name shouldBe "id_seq"
+        changed.increment.shouldNotBeNull()
+        changed.increment!!.before shouldBe 1L
+        changed.increment!!.after shouldBe 10L
+        changed.minValue.shouldNotBeNull()
+        changed.minValue!!.before shouldBe 10L
+        changed.minValue!!.after shouldBe 20L
+        changed.maxValue.shouldNotBeNull()
+        changed.maxValue!!.before shouldBe 100L
+        changed.maxValue!!.after shouldBe 200L
+        changed.cycle.shouldNotBeNull()
+        changed.cycle!!.before shouldBe false
+        changed.cycle!!.after shouldBe true
+        changed.cache.shouldNotBeNull()
+        changed.cache!!.before shouldBe 5
+        changed.cache!!.after shouldBe 25
+    }
+
     test("identical sequences produce no diff") {
         val seq = SequenceDefinition(start = 1, increment = 1)
         val left = schema(sequences = mapOf("s" to seq))

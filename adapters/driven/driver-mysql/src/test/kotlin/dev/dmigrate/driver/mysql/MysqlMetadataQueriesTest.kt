@@ -252,4 +252,161 @@ class MysqlMetadataQueriesTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns emptyList()
         MysqlMetadataQueries.listTableRefs(jdbc, "empty").shouldBeEmpty()
     }
+
+    // ── Sequence-support queries (0.9.4 AP 6.1) ──────────
+
+    test("checkSupportTableExists returns true when dmg_sequences is present") {
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb") shouldBe true
+    }
+
+    test("checkSupportTableExists returns false when dmg_sequences is absent") {
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns null
+        MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb") shouldBe false
+    }
+
+    test("checkSupportTableExists returns null on permission error") {
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } throws
+            RuntimeException("access denied")
+        MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb").shouldBeNull()
+    }
+
+    test("checkSupportTableShape returns true when all columns have correct types") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "bigint"),
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+        )
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe true
+    }
+
+    test("checkSupportTableShape returns false when columns are missing") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "value", "data_type" to "text"),
+        )
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
+    }
+
+    test("checkSupportTableShape returns true when extra columns present alongside required columns") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "bigint"),
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+            // Extra non-canonical columns — must not break shape validation
+            mapOf("column_name" to "description", "data_type" to "varchar"),
+            mapOf("column_name" to "created_at", "data_type" to "timestamp"),
+        )
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe true
+    }
+
+    test("checkSupportTableShape returns false when column type is wrong") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "varchar"),  // wrong type!
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+        )
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
+    }
+
+    test("lookupSupportRoutine returns CONFIRMED when marker and signature match") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
+            mapOf("routine_name" to "dmg_nextval",
+                "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END",
+                "data_type" to "bigint", "dtd_identifier" to "bigint")
+        every { jdbc.queryList(match { "information_schema.parameters" in it }, any(), any()) } returns listOf(
+            mapOf("ordinal_position" to 1),
+        )
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.CONFIRMED
+    }
+
+    test("lookupSupportRoutine returns MISSING when routine does not exist") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.MISSING
+    }
+
+    test("lookupSupportRoutine returns NON_CANONICAL when marker is absent (user object)") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
+            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "BEGIN RETURN 1; END",
+                "data_type" to "bigint", "dtd_identifier" to "bigint")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.NON_CANONICAL
+    }
+
+    test("lookupSupportRoutine returns NON_CANONICAL when return type does not match") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
+            mapOf("routine_name" to "dmg_nextval",
+                "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END",
+                "data_type" to "varchar", "dtd_identifier" to "varchar(255)")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.NON_CANONICAL
+    }
+
+    test("lookupSupportRoutine returns NOT_ACCESSIBLE on permission error") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } throws
+            RuntimeException("access denied")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.NOT_ACCESSIBLE
+    }
+
+    test("listPotentialSupportTriggers returns CONFIRMED for valid trigger") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to "dmg_seq_orders_invoice_number_7b0a7b2f55_bi",
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                "action_statement" to "/* d-migrate:mysql-sequence-v1 object=sequence-trigger */ IF NEW.invoice_number IS NULL THEN SET NEW.invoice_number = dmg_nextval('invoice_seq'); END IF;"),
+        )
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.accessible shouldBe true
+        result.triggers shouldHaveSize 1
+        result.triggers[0].state shouldBe SupportTriggerState.CONFIRMED
+        result.triggers[0].tableName shouldBe "orders"
+        result.triggers[0].columnName shouldBe "invoice_number"
+    }
+
+    test("listPotentialSupportTriggers returns MISSING_MARKER when marker absent") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                "action_statement" to "BEGIN SET NEW.col = 1; END"),
+        )
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.triggers[0].state shouldBe SupportTriggerState.MISSING_MARKER
+    }
+
+    test("listPotentialSupportTriggers returns NON_CANONICAL for wrong timing") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
+                "action_timing" to "AFTER", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                "action_statement" to "/* d-migrate:mysql-sequence-v1 */ dmg_nextval"),
+        )
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.triggers[0].state shouldBe SupportTriggerState.NON_CANONICAL
+    }
+
+    test("listPotentialSupportTriggers returns not accessible on query failure") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } throws
+            RuntimeException("access denied")
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.accessible shouldBe false
+        result.triggers.shouldBeEmpty()
+    }
 })

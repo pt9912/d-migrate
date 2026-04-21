@@ -172,6 +172,7 @@ Hinweise:
 - Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als normalisiertes, JaCoCo-artiges JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
 - Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
 - Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
+- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (`[text](pfad)`) in `docs/` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
 - Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
 - Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
@@ -224,7 +225,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.3](https://github.com/pt9912/d-migrate/releases/tag/v0.9.3)** — Beta: Filter-Härtung und MySQL-Sequence-Emulation (Generator) — sichere `--filter`-DSL mit Bind-Parametern, `default.sequence_nextval` als kanonische Schema-Form, `--mysql-named-sequences helper_table` für MySQL-Sequence-Emulation über `dmg_sequences`/Routinen/Trigger.
+Aktuelles Release: **[v0.9.4](https://github.com/pt9912/d-migrate/releases/tag/v0.9.4)** — Beta: MySQL-Sequence Reverse-Engineering und Compare — `schema reverse` rekonstruiert Sequences aus `dmg_sequences`-Hilfstabellen, Support-Routinen und kanonischen Triggern; `schema compare` zeigt Sequence-Diffs in JSON/YAML; W116-Diagnostik für degradierte Support-Objekte.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 

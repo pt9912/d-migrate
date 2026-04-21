@@ -102,7 +102,7 @@ internal object SchemaGenerateHelpers {
             appendLine("""  "command": "schema.generate",""")
             appendLine("""  "status": "completed",""")
             appendLine("""  "exit_code": 0,""")
-            appendLine("""  "generator": "d-migrate 0.9.3",""")
+            appendLine("""  "generator": "d-migrate 0.9.4",""")
             appendLine("""  "target": "$dialect",""")
             if (mysqlNamedSequenceMode != null) {
                 appendLine("""  "mysql_named_sequences": "${mysqlNamedSequenceMode.cliName}",""")

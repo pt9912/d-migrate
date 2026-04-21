@@ -1,6 +1,6 @@
 # Implementierungsplan: Vollständige MySQL-Sequence-Emulation
 
-> Status: Phase A–C abgeschlossen (2026-04-21); Phase D+E offen (→ 0.9.4)
+> Status: Phase A–E2 abgeschlossen (2026-04-21)
 >
 > Zweck: Produktplan fuer eine **vollstaendige** MySQL-Variante von
 > benannten Sequences im DDL-Pfad, inklusive DDL-Generierung,
@@ -15,8 +15,21 @@
 >   `helper_table`-Modus, Support-Objekte, Trigger, Rollback
 > - Phase C (Tests + Golden Masters): abgeschlossen in AP 6.4/6.5 —
 >   Unit-Tests, Integrationstests, Golden Masters fuer beide Modi
-> - Phase D (Reverse): offen — geplant fuer 0.9.4
-> - Phase E (Compare + Stabilisierung): offen — geplant fuer 0.9.4
+> - Phase D (Reverse): abgeschlossen in 0.9.4 AP 6.1–6.3 —
+>   `MysqlSchemaReader` erkennt `dmg_sequences`, Support-Routinen und
+>   kanonische Sequence-Trigger; faltet Hilfsobjekte zurueck auf
+>   `SequenceDefinition` und `DefaultValue.SequenceNextVal`;
+>   degradierte Zustaende erzeugen `W116`
+> - Phase E (Compare + Stabilisierung):
+>   - E1 abgeschlossen in 0.9.4 AP 6.4 — Compare bleibt auf
+>     Neutralmodell-Ebene sequence-stabil; operandseitiges `W116`
+>     ist Diagnose, kein Diff; Exit-Codes folgen nur Validation oder
+>     echtem Diff; `source_operand`/`target_operand` in JSON/YAML
+>     sichtbar
+>   - E2 (Doku- und Vertragsnachzug): abgeschlossen in 0.9.4 AP 6.5 —
+>     Roadmap, Spezialplan, CLI-Spec, Guide und Ledger auf den
+>     0.9.4-Vertragsstand nachgezogen; W116 konsistent als aktiv
+>     dokumentiert
 >
 > Referenzen:
 > - `docs/ddl-generation-rules.md` §7

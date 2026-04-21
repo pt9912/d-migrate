@@ -23,6 +23,9 @@ internal object CompareRendererJson {
             appendLine("  },")
         }
 
+        renderOperandIfPresent(this, "source_operand", doc.sourceOperand)
+        renderOperandIfPresent(this, "target_operand", doc.targetOperand)
+
         val jd = doc.diff
         if (jd != null) {
             appendLine("""  "diff": {""")
@@ -164,6 +167,42 @@ internal object CompareRendererJson {
         for (e in result.errors) items += """{"level": "error", "code": "${e.code}", "message": "${esc(e.message)}"}"""
         for (w in result.warnings) items += """{"level": "warning", "code": "${w.code}", "message": "${esc(w.message)}"}"""
         return """    "$side": [${items.joinToString(", ")}]"""
+    }
+
+    private fun renderOperandIfPresent(sb: StringBuilder, key: String, info: OperandInfo?) {
+        if (info == null) return
+        if (info.notes.isEmpty() && info.skippedObjects.isEmpty()) return
+        sb.appendLine("""  "$key": {""")
+        sb.appendLine("""    "reference": "${esc(info.reference)}",""")
+        sb.appendLine("""    "notes": [${renderNotes(info)}],""")
+        sb.appendLine("""    "skipped_objects": [${renderSkipped(info)}]""")
+        sb.appendLine("  },")
+    }
+
+    private fun renderNotes(info: OperandInfo): String {
+        if (info.notes.isEmpty()) return ""
+        return info.notes.joinToString(", ") { n ->
+            val fields = mutableListOf<String>()
+            fields += """"severity": "${n.severity.name.lowercase()}""""
+            fields += """"code": "${esc(n.code)}""""
+            fields += """"object_name": "${esc(n.objectName)}""""
+            fields += """"message": "${esc(n.message)}""""
+            n.hint?.let { fields += """"hint": "${esc(it)}"""" }
+            "{${fields.joinToString(", ")}}"
+        }
+    }
+
+    private fun renderSkipped(info: OperandInfo): String {
+        if (info.skippedObjects.isEmpty()) return ""
+        return info.skippedObjects.joinToString(", ") { s ->
+            val fields = mutableListOf<String>()
+            fields += """"type": "${esc(s.type)}""""
+            fields += """"name": "${esc(s.name)}""""
+            fields += """"reason": "${esc(s.reason)}""""
+            s.code?.let { fields += """"code": "${esc(it)}"""" }
+            s.hint?.let { fields += """"hint": "${esc(it)}"""" }
+            "{${fields.joinToString(", ")}}"
+        }
     }
 
     private fun esc(s: String) = SchemaCompareHelpers.esc(s)

@@ -21,6 +21,9 @@ internal object CompareRendererYaml {
             renderValidation(this, yv)
         }
 
+        renderOperandIfPresent(this, "source_operand", doc.sourceOperand)
+        renderOperandIfPresent(this, "target_operand", doc.targetOperand)
+
         val yd = doc.diff
         if (yd != null) {
             appendLine("diff:")
@@ -169,6 +172,33 @@ internal object CompareRendererYaml {
             sb.appendLine("    - level: warning")
             sb.appendLine("      code: \"${w.code}\"")
             sb.appendLine("      message: \"${esc(w.message)}\"")
+        }
+    }
+
+    private fun renderOperandIfPresent(sb: StringBuilder, key: String, info: OperandInfo?) {
+        if (info == null) return
+        if (info.notes.isEmpty() && info.skippedObjects.isEmpty()) return
+        sb.appendLine("$key:")
+        sb.appendLine("  reference: \"${esc(info.reference)}\"")
+        if (info.notes.isNotEmpty()) {
+            sb.appendLine("  notes:")
+            for (n in info.notes) {
+                sb.appendLine("    - severity: ${n.severity.name.lowercase()}")
+                sb.appendLine("      code: \"${esc(n.code)}\"")
+                sb.appendLine("      object_name: \"${esc(n.objectName)}\"")
+                sb.appendLine("      message: \"${esc(n.message)}\"")
+                n.hint?.let { sb.appendLine("      hint: \"${esc(it)}\"") }
+            }
+        }
+        if (info.skippedObjects.isNotEmpty()) {
+            sb.appendLine("  skipped_objects:")
+            for (s in info.skippedObjects) {
+                sb.appendLine("    - type: \"${esc(s.type)}\"")
+                sb.appendLine("      name: \"${esc(s.name)}\"")
+                sb.appendLine("      reason: \"${esc(s.reason)}\"")
+                s.code?.let { sb.appendLine("      code: \"${esc(it)}\"") }
+                s.hint?.let { sb.appendLine("      hint: \"${esc(it)}\"") }
+            }
         }
     }
 

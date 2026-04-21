@@ -362,20 +362,30 @@ statt sie mit `E056` zu ueberspringen. Der Modus ist opt-in (`helper_table`).
 Reverse-Engineering und Compare folgen in 0.9.4. Details:
 [`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md).
 
-### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare
+### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare ✅ (2026-04-21)
 
-| Bereich | Aufgabe                                                                                                                     | LF-Ref |
-| ------- | --------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Driver  | Phase D: `MysqlSchemaReader` — Erkennung von `dmg_sequences`, Support-Routinen und kanonischen Sequence-Triggern via Marker | —      |
-| Driver  | Reverse von sequence-basierten Spaltenwerten zurueck auf `DefaultValue.SequenceNextVal`                                     | —      |
-| Core    | Phase E: Compare-Stabilisierung — emulierte Sequences auf Neutralmodell-Ebene vergleichen, kein Hilfsobjekt-Rauschen        | —      |
-| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                           | —      |
-| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)               | —      |
+| Bereich | Aufgabe                                                                                                                     | LF-Ref | Status |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| Driver  | Phase D1: Reader-Vertrag und Metadatenzugriff (AP 6.1)                                                                      | —      | ✅      |
+| Driver  | Phase D2: Sequence-Reverse aus `dmg_sequences` (AP 6.2)                                                                     | —      | ✅      |
+| Driver  | Phase D3: Sequence-Default-Reverse ueber Trigger (AP 6.3)                                                                   | —      | ✅      |
+| Core    | Phase E1: Compare-Stabilisierung — Renderer-Nachzug und Exit-Code-Vertrag (AP 6.4)                                          | —      | ✅      |
+| Docs    | Phase E2: Doku- und Vertragsnachzug (AP 6.5)                                                                                | —      | ✅      |
+| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                           | —      | ✅      |
+| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)               | —      | ✅      |
 
 **Ergebnis**: MySQL-Sequence-Emulation ist vollstaendig: generieren, reverse-en
 und vergleichen. Hilfsobjekte werden beim Reverse sauber auf `SequenceDefinition`
-zurueckgefaltet und tauchen nicht als Rauschen im Diff auf. Details:
-[`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md) Phase D+E.
+zurueckgefaltet und tauchen nicht als Rauschen im Diff auf. Degradierte
+Zustaende (fehlende Support-Routinen oder Trigger) erzeugen `W116` als
+Diagnosemeldung; `schema compare` bleibt dabei exit-code-stabil und zeigt
+`W116` als operandseitige Diagnose, nicht als eigenen Diff. Details:
+[`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md) Phase D+E;
+Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
+[`ImpPlan-0.9.4-6.2.md`](./ImpPlan-0.9.4-6.2.md),
+[`ImpPlan-0.9.4-6.3.md`](./ImpPlan-0.9.4-6.3.md),
+[`ImpPlan-0.9.4-6.4.md`](./ImpPlan-0.9.4-6.4.md),
+[`ImpPlan-0.9.4-6.5.md`](./ImpPlan-0.9.4-6.5.md).
 
 ### Milestone 0.9.5 — Beta: MCP-Server
 
@@ -624,6 +634,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.33
+**Version**: 3.37
 **Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.3 abgeschlossen; geplant: 0.9.4, 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Status**: Milestone 0.1.0–0.9.4 abgeschlossen; geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8
