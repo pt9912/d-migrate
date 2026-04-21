@@ -165,6 +165,12 @@ Verbindliche Folge:
   Namen oder Triggertexten ein
 - `SchemaComparator` bleibt primaer auf `SchemaDefinition`,
   `SequenceDefinition` und `DefaultValue` ausgerichtet
+- `skippedObjects` sind Begleitmetadaten ausserhalb des neutralen
+  Compare-Modells:
+  - sie erzeugen selbst keinen eigenen Diff-Typ
+  - fehlt dadurch auf einer Seite ein Objekt im neutralen Modell,
+    entsteht ein normaler fachlicher Diff und kein
+    `skippedObjects`-Sonderfall
 - wenn E1 Anpassungen braucht, dann nur auf bereits normalisierten
   Neutralmodell-Strukturen
 
@@ -289,6 +295,9 @@ Designentscheidung fuer E1:
 - bei `--output-format json` oder `yaml` traegt das strukturierte
   Dokument die Operanddiagnose allein; es gibt dort keine zusaetzliche
   stderr-Doppelung
+- bei `--output-format plain` ist die Doppelsichtbarkeit bewusst:
+  - sofortige Runner-Emission auf `stderr`
+  - zusaetzliche Diagnose im Plain-Dokument
 
 Praktische Folge:
 
@@ -359,6 +368,9 @@ Done-Kriterien fuer E1-0:
 - Compare-Ist-Stand fuer Validation, Notes, `skippedObjects` und
   Exit-Codes ist im E1-Aufgabenschnitt oder in begleitenden
   Testfixtures explizit festgehalten
+- dieser Ist-Stand ist als konkrete Baseline in
+  `SchemaCompareRunnerTest` und/oder `CliSchemaCompareTest` verankert,
+  nicht nur als freier Kommentar
 - offene E1a-/E1b-Luecken sind als konkrete Codepfade benannt
 - fuer E1 ist entschieden, ob Tests bereits auf echte D1-D3-`W116`-
   Emission aufsetzen koennen oder voruebergehend mit synthetischen
@@ -403,6 +415,8 @@ Done-Kriterien fuer E1a:
   Rendervertrag aufnehmen
 - sicherstellen, dass Plain-/JSON-/YAML-Ausgabe dieselbe fachliche
   Operanddiagnose zeigen
+- bestehende JSON-/YAML-Testassertions auf additive Felder pruefen und
+  bei Bedarf gezielt erweitern, statt den Altvertrag still zu brechen
 
 Done-Kriterien fuer E1b:
 
@@ -467,6 +481,8 @@ Abhaengigkeiten:
 - `E1-0` vor `E1a` bis `E1d`
 - `E1a` vor `E1c`
 - `E1b` vor `E1d`
+- `E1a` und `E1b` sind fachlich parallelisierbar, sobald `E1-0` den
+  Ist-Vertrag sauber geschnitten hat
 - `E1c` und `E1d` vor `E1e`
 - `E1e` laeuft inkrementell mit, ist aber Abschluss-Gate fuer 6.4
 
@@ -482,6 +498,7 @@ Pflichtfaelle fuer 6.4:
    `sequencesChanged`.
 3. Hilfsobjekt-Rauschen taucht nach D2/D3 im Compare nicht mehr als
    Tabellen-, Funktions- oder Trigger-Diff auf.
+   Dieser Fall ist bis zum Abschluss von D2/D3 blockiert.
 4. Operandseitiges `W116` bleibt sichtbar, ohne selbst einen
    Diff-Eintrag zu erzeugen.
 5. file-vs-db mit operandseitigem `W116`, aber ohne fachlichen Diff,
@@ -509,6 +526,12 @@ Pflichtfaelle fuer 6.4:
     `targetOperand`.
 15. Bei `--output-format json` oder `yaml` erscheinen operandseitige
     Notes nicht zusaetzlich auf `stderr`.
+16. Bei `--output-format plain` bleiben operandseitige Notes bewusst
+    sowohl ueber Runner-`stderr` als auch im Plain-Dokument sichtbar.
+17. Bei gleichzeitigem Validation-Fehler und operandseitigen Notes
+    enthaelt das Dokument beides korrekt getrennt:
+    `validation` nur die Fehler, `sourceOperand`/`targetOperand` nur
+    die Notes.
 
 Akzeptanzkriterium fuer 6.4:
 
@@ -536,6 +559,8 @@ aber voraussichtlich nicht direkt zu aendern:
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandResolver.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ResolvedSchemaOperand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererPlain.kt`
+  (voraussichtlich unveraendert, aber in E1d gegen den finalen
+  Dokumentvertrag zu verifizieren)
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`
 
@@ -610,3 +635,22 @@ Gegenmassnahme:
 
 - Runner- und CLI-Tests fuer Plain, JSON, YAML und Exit-Codes
 - mindestens ein End-to-End-Fall neutral -> MySQL -> reverse -> compare
+
+### 9.6 E1 bleibt von unfertigen D2/D3-Ergebnissen abhaengig
+
+Risiko:
+
+- D2 und D3 sind fuer den echten sequence-emulierten Reverse-Pfad noch
+  nicht final abgeschlossen
+- dadurch koennen Teile der E1-Verifikation nur mit synthetischen
+  Operand-Notes vorab abgesichert werden
+- 6.4 kann nicht vollstaendig abgeschlossen werden, solange der
+  abschliessende E1e-Gate-Test nicht auf echtem D1-D3-Output laeuft
+
+Gegenmassnahme:
+
+- synthetische Operand-Notes nur als Vorababsicherung verwenden
+- den echten End-to-End-Fall als verpflichtendes Abschluss-Gate in E1e
+  verankern
+- blockierte Verifikationsfaelle im Plan explizit markieren statt
+  implizit offen zu lassen
