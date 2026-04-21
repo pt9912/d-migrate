@@ -10,7 +10,7 @@ import dev.dmigrate.driver.*
 internal class MysqlColumnConstraintHelper(
     private val quoteIdentifier: (String) -> String,
     private val typeMapper: TypeMapper,
-    private val columnSql: (String, ColumnDefinition, SchemaDefinition) -> String,
+    private val columnSql: (String, String, ColumnDefinition, SchemaDefinition) -> String,
     private val referentialActionSql: (ReferentialAction) -> String,
 ) {
 
@@ -18,13 +18,14 @@ internal class MysqlColumnConstraintHelper(
         colName: String,
         col: ColumnDefinition,
         schema: SchemaDefinition,
+        tableName: String,
         notes: MutableList<TransformationNote>,
     ): String = when {
         col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement ->
             columnAutoIncrement(colName, col)
-        col.type is NeutralType.Enum -> columnEnum(colName, col, schema)
+        col.type is NeutralType.Enum -> columnEnum(tableName, colName, col, schema)
         col.type is NeutralType.Geometry -> columnGeometry(colName, col, notes)
-        else -> columnSql(colName, col, schema)
+        else -> columnSql(tableName, colName, col, schema)
     }
 
     private fun columnAutoIncrement(colName: String, col: ColumnDefinition): String {
@@ -34,7 +35,7 @@ internal class MysqlColumnConstraintHelper(
         return parts.joinToString(" ")
     }
 
-    private fun columnEnum(colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+    private fun columnEnum(tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
         val type = col.type as NeutralType.Enum
         if (type.refType != null) {
             val customType = schema.customTypes[type.refType]
@@ -49,7 +50,7 @@ internal class MysqlColumnConstraintHelper(
         if (type.values != null) {
             return columnEnumInline(colName, col, type.values!!)
         }
-        return columnSql(colName, col, schema)
+        return columnSql(tableName, colName, col, schema)
     }
 
     private fun columnEnumInline(colName: String, col: ColumnDefinition, values: List<String>): String {

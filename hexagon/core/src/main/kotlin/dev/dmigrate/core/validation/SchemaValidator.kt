@@ -48,6 +48,7 @@ class SchemaValidator {
                 validateForeignKeyTypeCompatibility(path, colName, col, schema, errors)
                 validateRefTypeExists(path, col, schema, errors)
                 validateDefaultTypeCompatibility(path, col, errors)
+                validateSequenceDefaultReference(path, col, schema, errors)
             }
 
             checkFloatWarning(tableName, table, warnings)
@@ -317,6 +318,47 @@ class SchemaValidator {
                     || type is NeutralType.Time
             "gen_uuid" -> type is NeutralType.Uuid
             else -> true // unknown functions are allowed
+        }
+        is DefaultValue.SequenceNextVal -> (type is NeutralType.Integer || type is NeutralType.SmallInt
+                || type is NeutralType.BigInteger || type is NeutralType.Identifier)
+                && !(type is NeutralType.Identifier && type.autoIncrement)
+    }
+
+    // E122: Legacy nextval(...) notation → migration error
+    // E123: SequenceNextVal references non-existent sequence
+    private fun validateSequenceDefaultReference(
+        path: String,
+        col: ColumnDefinition,
+        schema: SchemaDefinition,
+        errors: MutableList<ValidationError>,
+    ) {
+        val default = col.default ?: return
+        // E122: Legacy nextval(...) as FunctionCall
+        if (default is DefaultValue.FunctionCall &&
+            default.name.matches(Regex("""nextval\(.*\)""", RegexOption.IGNORE_CASE))
+        ) {
+            val seqName = Regex("""nextval\(\s*'?([^')]+)'?\s*\)""", RegexOption.IGNORE_CASE)
+                .find(default.name)?.groupValues?.get(1)?.trim() ?: default.name
+            errors += ValidationError(
+                "E122",
+                "Legacy 'nextval(...)' notation is no longer supported. " +
+                    "Replace with: default: { sequence_nextval: $seqName }  " +
+                    "(before: default: \"${default.name}\" → after: default: { sequence_nextval: $seqName })",
+                path,
+            )
+        }
+        // E123: SequenceNextVal references non-existent sequence
+        if (default is DefaultValue.SequenceNextVal) {
+            val sequences = schema.sequences
+            if (sequences == null || default.sequenceName !in sequences) {
+                val available = sequences?.keys?.sorted()?.take(10)?.joinToString(", ") ?: "(none)"
+                errors += ValidationError(
+                    "E123",
+                    "Sequence '${default.sequenceName}' referenced in default does not exist. " +
+                        "Available sequences: $available",
+                    path,
+                )
+            }
         }
     }
 

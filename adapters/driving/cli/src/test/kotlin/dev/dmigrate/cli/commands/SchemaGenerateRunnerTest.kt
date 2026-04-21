@@ -13,6 +13,7 @@ import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -82,6 +83,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         verbose: Boolean = false,
         quiet: Boolean = false,
         splitMode: SplitMode = SplitMode.SINGLE,
+        mysqlNamedSequences: String? = null,
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
@@ -93,6 +95,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         verbose = verbose,
         quiet = quiet,
         splitMode = splitMode,
+        mysqlNamedSequences = mysqlNamedSequences,
     )
 
     class StdoutCapture {
@@ -135,7 +138,7 @@ class SchemaGenerateRunnerTest : FunSpec({
             schemaReader = schemaReader,
             validator = validator,
             generatorLookup = { generator },
-            reportWriter = { path, result, schema, dialect, source, _ ->
+            reportWriter = { path, result, schema, dialect, source, _, _ ->
                 reportWrites += ReportRecord(path, result, schema, dialect, source)
             },
             fileWriter = { path, content -> fileWrites += WriteRecord(path, content) },
@@ -514,7 +517,7 @@ class SchemaGenerateRunnerTest : FunSpec({
                 observedDialect = dialect
                 FakeGenerator(dialect = dialect)
             },
-            reportWriter = { _, _, _, _, _, _ -> },
+            reportWriter = { _, _, _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
@@ -538,7 +541,7 @@ class SchemaGenerateRunnerTest : FunSpec({
                 observedDialect = dialect
                 FakeGenerator(dialect = dialect)
             },
-            reportWriter = { _, _, _, _, _, _ -> },
+            reportWriter = { _, _, _, _, _, _, _ -> },
             fileWriter = { _, _ -> },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,
@@ -788,5 +791,60 @@ class SchemaGenerateRunnerTest : FunSpec({
         h.fileWrites.any { it.path.toString().contains("pre-data") } shouldBe true
         // JSON output
         h.stdout.joined() shouldContain "ddl_parts"
+    }
+
+    // ─── --mysql-named-sequences (0.9.3 AP 6.2) ────────────────
+
+    test("Exit 0: --mysql-named-sequences helper_table with --target mysql sets mode") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.MYSQL)
+        h.runner().execute(
+            request(target = "mysql", mysqlNamedSequences = "helper_table")
+        ) shouldBe 0
+    }
+
+    test("Exit 0: --target mysql without --mysql-named-sequences defaults to action_required") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.MYSQL)
+        h.runner().execute(request(target = "mysql")) shouldBe 0
+    }
+
+    test("Exit 2: --mysql-named-sequences with --target postgresql") {
+        val h = harness()
+        h.runner().execute(
+            request(target = "postgresql", mysqlNamedSequences = "helper_table")
+        ) shouldBe 2
+        h.stderr.joined() shouldContain "--mysql-named-sequences is only valid with --target mysql"
+        h.stderr.joined() shouldContain "Allowed values"
+    }
+
+    test("Exit 2: --mysql-named-sequences with --target sqlite") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)
+        h.runner().execute(
+            request(target = "sqlite", mysqlNamedSequences = "action_required")
+        ) shouldBe 2
+        h.stderr.joined() shouldContain "--mysql-named-sequences is only valid with --target mysql"
+    }
+
+    test("JSON output for MySQL includes mysql_named_sequences field") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.MYSQL)
+        h.runner().execute(
+            request(target = "mysql", outputFormat = "json", mysqlNamedSequences = "helper_table")
+        ) shouldBe 0
+        h.stdout.joined() shouldContain "\"mysql_named_sequences\": \"helper_table\""
+    }
+
+    test("JSON output for PostgreSQL does NOT include mysql_named_sequences field") {
+        val h = harness()
+        h.runner().execute(request(target = "postgresql", outputFormat = "json")) shouldBe 0
+        h.stdout.joined() shouldNotContain "mysql_named_sequences"
+    }
+
+    test("JSON output includes generator version 0.9.3") {
+        val h = harness()
+        h.runner().execute(request(outputFormat = "json")) shouldBe 0
+        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.3\""
     }
 })

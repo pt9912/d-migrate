@@ -96,7 +96,12 @@ default: 42                    # Zahl
 default: true                  # Boolean
 default: current_timestamp     # DB-Funktion (pro Dialekt uebersetzt)
 default: gen_uuid              # UUID-Generierung (pro Dialekt uebersetzt)
+default:                       # Sequence-basierter Default (0.9.3)
+  sequence_nextval: invoice_seq  # Referenziert schema.sequences
 ```
+
+Hinweis: `sequence_nextval` ist eine Objektform und nur fuer numerische/Identifier-Spalten
+zulaessig. Alte `nextval(...)`-Textnotationen werden seit 0.9.3 mit E122 abgelehnt.
 
 ---
 

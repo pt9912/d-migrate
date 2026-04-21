@@ -81,7 +81,7 @@ class CodeLedgerValidationTest : FunSpec({
     val allowedPathTypes = setOf("production", "test", "documentation")
     val allowedLevels = setOf("error", "warning")
     val allowedEntryTypes = setOf("standard", "rest_path")
-    val allowedStatuses = setOf("active", "not_applicable")
+    val allowedStatuses = setOf("active", "not_applicable", "reserved")
 
     // ─── Schema contract validation ─────────────────────────────
 
@@ -89,12 +89,12 @@ class CodeLedgerValidationTest : FunSpec({
         File(repoRoot, "ledger/code-ledger-0.9.2.schema.json").exists() shouldBe true
     }
 
-    test("JSON Schema defines expected enum values for level, entry_type, status, path_type") {
+    test("0.9.2 JSON Schema defines expected enum values for level, entry_type, status, path_type") {
         val schema = File(repoRoot, "ledger/code-ledger-0.9.2.schema.json").readText()
-        // Verify the schema contains the expected enum definitions
+        val v092Statuses = setOf("active", "not_applicable")
         for (level in allowedLevels) schema shouldContain "\"$level\""
         for (et in allowedEntryTypes) schema shouldContain "\"$et\""
-        for (st in allowedStatuses) schema shouldContain "\"$st\""
+        for (st in v092Statuses) schema shouldContain "\"$st\""
         for (pt in allowedPathTypes) schema shouldContain "\"$pt\""
     }
 
@@ -278,5 +278,80 @@ class CodeLedgerValidationTest : FunSpec({
             }
         }
         badPaths.shouldBeEmpty()
+    }
+
+    // ─── 0.9.3 Ledger Validation ────────────────────────────────
+
+    test("0.9.3 JSON Schema contract file exists") {
+        File(repoRoot, "ledger/code-ledger-0.9.3.schema.json").exists() shouldBe true
+    }
+
+    test("0.9.3 JSON Schema allows 'reserved' status") {
+        val schema = File(repoRoot, "ledger/code-ledger-0.9.3.schema.json").readText()
+        schema shouldContain "\"reserved\""
+    }
+
+    test("0.9.3 warn ledger exists and contains W114-W117") {
+        val content = readLedger("warn-code-ledger-0.9.3.yaml")
+        content shouldNotBe ""
+        val codes = extractCodes(content).toSet()
+        for (code in listOf("W114", "W115", "W116", "W117")) {
+            codes.contains(code) shouldBe true
+        }
+    }
+
+    test("0.9.3 warn ledger has no duplicate codes") {
+        val content = readLedger("warn-code-ledger-0.9.3.yaml")
+        val codes = extractCodes(content)
+        codes.size shouldBe codes.toSet().size
+    }
+
+    test("0.9.3 warn ledger: every entry has valid level and entry_type") {
+        val content = readLedger("warn-code-ledger-0.9.3.yaml")
+        val invalid = extractCodes(content).filter { code ->
+            extractField(content, code, "level") !in allowedLevels ||
+                extractField(content, code, "entry_type") !in allowedEntryTypes
+        }
+        invalid.shouldBeEmpty()
+    }
+
+    test("0.9.3 warn ledger: W114, W115, W117 are active with test_path") {
+        val content = readLedger("warn-code-ledger-0.9.3.yaml")
+        for (code in listOf("W114", "W115", "W117")) {
+            extractField(content, code, "status") shouldBe "active"
+            extractField(content, code, "test_path") shouldNotBe null
+            hasEvidencePaths(content, code) shouldBe true
+        }
+    }
+
+    test("0.9.3 warn ledger: W116 remains reserved") {
+        val content = readLedger("warn-code-ledger-0.9.3.yaml")
+        extractField(content, "W116", "status") shouldBe "reserved"
+    }
+
+    test("0.9.3 error ledger exists with version 0.9.3") {
+        val content = readLedger("error-code-ledger-0.9.3.yaml")
+        content shouldNotBe ""
+        content shouldContain "version: \"0.9.3\""
+    }
+
+    test("0.9.3 error ledger contains E122, E123, E124 as active") {
+        val content = readLedger("error-code-ledger-0.9.3.yaml")
+        val codes = extractCodes(content).toSet()
+        for (code in listOf("E122", "E123", "E124")) {
+            codes.contains(code) shouldBe true
+            extractField(content, code, "status") shouldBe "active"
+        }
+    }
+
+    test("0.9.3 error ledger: active entries have test_path and evidence_paths") {
+        val content = readLedger("error-code-ledger-0.9.3.yaml")
+        val activeCodes = extractCodes(content).filter { code ->
+            extractField(content, code, "status") == "active"
+        }
+        val missing = activeCodes.filter { code ->
+            extractField(content, code, "test_path") == null || !hasEvidencePaths(content, code)
+        }
+        missing.shouldBeEmpty()
     }
 })

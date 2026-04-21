@@ -42,5 +42,7 @@ class MysqlTypeMapper : TypeMapper {
             "gen_uuid" -> "(UUID())"
             else -> "${default.name}()"
         }
+        is DefaultValue.SequenceNextVal ->
+            error("SequenceNextVal requires helper_table mode (not yet implemented in 6.3)")
     }
 }

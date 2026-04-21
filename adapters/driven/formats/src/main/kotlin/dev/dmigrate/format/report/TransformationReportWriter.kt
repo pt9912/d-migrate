@@ -3,6 +3,7 @@ package dev.dmigrate.format.report
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
+import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import java.nio.file.Path
 import java.time.Instant
@@ -17,8 +18,9 @@ class TransformationReportWriter {
         dialect: String,
         sourceFile: Path,
         splitMode: String? = null,
+        mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
     ) {
-        output.writeText(render(result, schema, dialect, sourceFile, splitMode))
+        output.writeText(render(result, schema, dialect, sourceFile, splitMode, mysqlNamedSequenceMode))
     }
 
     fun render(
@@ -27,6 +29,7 @@ class TransformationReportWriter {
         dialect: String,
         sourceFile: Path,
         splitMode: String? = null,
+        mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
     ): String = buildString {
         appendLine("source:")
         appendLine("  schema: \"${escapeYaml(schema.name)}\"")
@@ -35,7 +38,8 @@ class TransformationReportWriter {
         appendLine("target:")
         appendLine("  dialect: $dialect")
         appendLine("  generated_at: \"${Instant.now()}\"")
-        appendLine("  generator: \"d-migrate 0.9.2\"")
+        appendLine("  generator: \"d-migrate 0.9.3\"")
+        if (mysqlNamedSequenceMode != null) appendLine("  mysql_named_sequences: ${mysqlNamedSequenceMode.cliName}")
         if (splitMode != null) appendLine("  split_mode: $splitMode")
         appendLine()
 

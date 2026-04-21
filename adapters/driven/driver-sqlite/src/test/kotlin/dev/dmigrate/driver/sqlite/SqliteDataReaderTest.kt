@@ -21,7 +21,7 @@ import kotlin.io.path.deleteIfExists
  * - Lifecycle (single-use ChunkSequence, close() idempotent, Connection-Return)
  * - Empty-Table-Vertrag aus §6.17 (mindestens ein Chunk mit columns + leere rows)
  * - Multiple Chunks (chunkSize wird respektiert)
- * - DataFilter (WhereClause + ColumnSubset)
+ * - DataFilter (ParameterizedClause + ColumnSubset)
  * - TableLister (sqlite_*-Tabellen werden ausgeschlossen)
  *
  * Tests laufen gegen eine temporäre Datei-DB statt :memory:, weil Hikari
@@ -115,9 +115,9 @@ class SqliteDataReaderTest : FunSpec({
         chunk.chunkIndex shouldBe 0L
     }
 
-    test("DataFilter.WhereClause filters rows server-side") {
+    test("DataFilter.ParameterizedClause filters rows server-side") {
         val reader = SqliteDataReader()
-        val filter = DataFilter.WhereClause("id > 4")
+        val filter = DataFilter.ParameterizedClause("id > ?", listOf(4))
         val rows = reader.streamTable(pool, "users", filter = filter).toList()
             .flatMap { it.rows.toList() }
         rows.size shouldBe 3
@@ -137,7 +137,7 @@ class SqliteDataReaderTest : FunSpec({
         val filter = DataFilter.Compound(
             listOf(
                 DataFilter.ColumnSubset(listOf("name")),
-                DataFilter.WhereClause("id IN (1, 3, 5)"),
+                DataFilter.ParameterizedClause("id IN (?, ?, ?)", listOf(1, 3, 5)),
             )
         )
         val chunks = reader.streamTable(pool, "users", filter = filter).toList()

@@ -986,7 +986,7 @@ tables:
 - ✅ CLI mit grundlegenden Kommandos
 - 🎯 Ziel: Funktionaler Prototyp für Early Adopters
 
-**Phase 2: Beta (0.6.0 - 0.9.5) - Monate 7-12**
+**Phase 2: Beta (0.6.0 - 0.9.8) - Monate 7-12**
 - 🚧 Reverse-Engineering (LF-004)
 - 🚧 Flyway/Liquibase-Integration
 - 🚧 Erweiterte Datentypen (JSON, Arrays, Binary)

@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://d-migrate.dev/schemas/code-ledger-0.9.3.schema.json",
+  "title": "Error/Warning Code Ledger",
+  "description": "Schema for d-migrate error and warning code ledger YAML files (0.9.3)",
+  "type": "object",
+  "required": ["version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "The d-migrate version this ledger applies to"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/standardEntry" },
+          { "$ref": "#/definitions/restPathEntry" }
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "standardEntry": {
+      "type": "object",
+      "required": ["code", "level", "entry_type"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[EW]\\d{3}$",
+          "description": "The error or warning code identifier"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["error", "warning"],
+          "description": "Severity level of the code"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "not_applicable", "reserved"],
+          "description": "Whether the code is active, not applicable, or reserved for a future AP"
+        },
+        "entry_type": {
+          "type": "string",
+          "const": "standard"
+        },
+        "test_path": {
+          "type": "string",
+          "description": "Path to the test file that exercises this code"
+        },
+        "evidence_paths": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/evidencePath" },
+          "description": "Paths to files that evidence this code"
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note explaining special circumstances"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": { "const": "active" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["code", "level", "entry_type", "test_path", "evidence_paths"]
+      }
+    },
+    "restPathEntry": {
+      "type": "object",
+      "required": ["code", "level", "entry_type"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[EW]\\d{3}$",
+          "description": "The error or warning code identifier"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["error", "warning"],
+          "description": "Severity level of the code"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "not_applicable", "reserved"],
+          "description": "Whether the code is active, not applicable, or reserved for a future AP"
+        },
+        "entry_type": {
+          "type": "string",
+          "const": "rest_path"
+        },
+        "test_path": {
+          "type": "string",
+          "description": "Path to the test file that exercises this code"
+        },
+        "evidence_paths": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/evidencePath" },
+          "description": "Paths to files that evidence this code"
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note explaining special circumstances"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": { "const": "active" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["code", "level", "entry_type", "test_path", "evidence_paths"]
+      }
+    },
+    "evidencePath": {
+      "type": "object",
+      "required": ["source", "path_type"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Relative path to the evidence file"
+        },
+        "path_type": {
+          "type": "string",
+          "enum": ["production", "test", "documentation"],
+          "description": "The type of file this path points to"
+        }
+      }
+    }
+  }
+}

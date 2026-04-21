@@ -97,7 +97,7 @@ class MysqlDataWriter(
             return session
         } catch (t: Throwable) {
             try {
-                conn.rollback()
+                if (!conn.autoCommit) conn.rollback()
             } catch (cleanup: Throwable) {
                 t.addSuppressed(cleanup)
             }

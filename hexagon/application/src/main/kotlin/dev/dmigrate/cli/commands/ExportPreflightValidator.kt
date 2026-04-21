@@ -81,7 +81,7 @@ internal class ExportPreflightValidator(
             csvDelimiter = delimiterChar, csvBom = request.csvBom, csvNullString = request.nullString,
         )
         val filter = DataExportHelpers.resolveFilter(
-            rawFilter = request.filter, dialect = config.dialect,
+            parsedFilter = request.filter, dialect = config.dialect,
             sinceColumn = request.sinceColumn, since = request.since,
         )
         val pks: Map<String, List<String>> = if (!request.sinceColumn.isNullOrBlank()) {
@@ -90,7 +90,7 @@ internal class ExportPreflightValidator(
         val fingerprint = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
             format = request.format, encoding = request.encoding, csvDelimiter = request.csvDelimiter,
             csvBom = request.csvBom, csvNoHeader = request.csvNoHeader, csvNullString = request.nullString,
-            filter = request.filter, sinceColumn = request.sinceColumn, since = request.since,
+            filter = request.filter?.canonical, sinceColumn = request.sinceColumn, since = request.since,
             tables = tables, outputMode = canonicalOutputMode(output), outputPath = canonicalOutputPath(output),
             primaryKeysByTable = pks,
         ))

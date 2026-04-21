@@ -1,0 +1,24 @@
+schema_format: "1.0"
+name: "Sequence Emulation"
+version: "1.0.0"
+encoding: "utf-8"
+
+sequences:
+  invoice_seq:
+    start: 1000
+    increment: 1
+
+tables:
+  invoices:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      invoice_number:
+        type: biginteger
+        default:
+          sequence_nextval: invoice_seq
+      description:
+        type: text
+        max_length: 200
+    primary_key: [id]

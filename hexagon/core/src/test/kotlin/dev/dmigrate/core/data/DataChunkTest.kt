@@ -46,14 +46,15 @@ class DataChunkTest : FunSpec({
         DataChunk("t", cols, rows, 0) shouldNotBe DataChunk("t", cols, rows, 1)
     }
 
-    test("DataFilter sealed class — WhereClause carries raw SQL") {
-        val f = DataFilter.WhereClause("created_at >= '2024-01-01'")
-        f.sql shouldBe "created_at >= '2024-01-01'"
+    test("DataFilter sealed class — ParameterizedClause carries SQL + params") {
+        val f = DataFilter.ParameterizedClause("created_at >= ?", listOf("2024-01-01"))
+        f.sql shouldBe "created_at >= ?"
+        f.params shouldBe listOf("2024-01-01")
     }
 
     test("DataFilter ColumnSubset and Compound are constructible") {
         val sub = DataFilter.ColumnSubset(listOf("id", "name"))
-        val compound = DataFilter.Compound(listOf(sub, DataFilter.WhereClause("id > 0")))
+        val compound = DataFilter.Compound(listOf(sub, DataFilter.ParameterizedClause("id > ?", listOf(0))))
         compound.parts.size shouldBe 2
     }
 

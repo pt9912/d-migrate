@@ -23,18 +23,16 @@ Zusatzaufgaben:
 | Lesbarkeit & Namensgebung | 8/10 | Domainnahe Namen und konsistente Terminologie; CLI, Runner und Ports sind gut lesbar. Verbesserungspotenzial durch weitere Kürzung großer Orchestrierungsblöcke. |
 | Modularität & Struktur | 8/10 | Hexagonale Schichtung ist in der Breite stabil. Registry- und Interface-Layer sind klar getrennt. Einige Verantwortlichkeiten sind noch in einzelnen Runnern gebündelt. |
 | Wartbarkeit | 7.5/10 | Hohe Testdisziplin und DI fördern Erweiterbarkeit. Potenzial in `DataTransferRunner`/`SchemaCompareRunner` für weitere Schrittzerlegung und wiederverwendbare Validierung. |
-| Sicherheit | 6/10 | Prepared Statements und Identifier-Quoting sind korrekt eingesetzt, Credentials werden geschwärzt. Hauptprobleme: `--filter` als Trusted SQL-Input und weitere nicht parametrisierte DDL-Interpolation (CHECK/Partition/Trigger/Body-Kontexte). |
+| Sicherheit | 7/10 | Prepared Statements und Identifier-Quoting sind korrekt eingesetzt, Credentials werden geschwärzt. `--filter` ist seit 0.9.3 eine geschlossene DSL mit Bind-Parametern (kein rohes SQL mehr). Restrisiko: DDL-Interpolation in CHECK/Partition/Trigger/Body-Kontexten. |
 
 #### Aktive Risiken / nächste Prioritäten
 
-- `--filter` im Transfer bleibt als roher SQL-Eingabepfad mit klarer „Trusted Input“-Dokumentation, aber weiterhin hohes Relevanzpotenzial.
 - DDL-Kontexte, die Metadaten roh in SQL einbetten (`constraint.expression`, Trigger-Conditionen, Routine-Bodies, Partition-Teile), sind weiterhin ein systematischer Unsicherheitsfokus.
 - DB-Sicherheitsdefaults in Connection/Hikari-Pfaden sollten stärker als Policy dokumentiert und gegen unsichere Optionen absichern.
 - Große CLI/Runner-Methoden haben funktionale Schichtwechsel in einem Durchlauf; weitere Zerlegung erhöht Testschärfe und Fehlersuche.
 
 #### Konkrete Maßnahmen (Top)
 
-- `--filter` als `--unsafe-filter` mit expliziter Warnung führen oder in strukturierte, erlaubte DSL überführen.
 - Einheitliches Validierungs- und Quoting/Parametrisierungs-Framework für alle SQL-Generationspfade aufbauen.
 - Security-Policy für JDBC-Defaults definieren (TLS/Trust/Auth-Optionen, Verbot unsicherer Fallbacks).
 - Datenfluss für Schema-/Checkpoint-Pfade auf Canonical-Path/Allowlist absichern und Symlink-/Traversal-Risiken gezielt testen.
@@ -74,12 +72,10 @@ Zusatzaufgaben:
   Das ist ein schwächerer Angriffsvektor als direkte Nutzereingabe, aber bei Migration
   von nicht vertrauenswürdigen Datenbanken oder manipulierten Schema-Dateien real.
 
-- **Mittel — `--filter` akzeptiert rohes SQL** (dokumentierte Design-Entscheidung):
-  WhereClause wird ohne Parametrisierung übernommen.
-  Trust-Boundary ist die lokale Shell (nur CLI-Operator hat Zugriff).
-  Dokumentiert in `DataExportCommand.kt:62-66` und `ImpPlan-0.9.1-A.md §4.3`.
-  Seit v1 ergänzt: `containsLiteralQuestionMark()`-Validierung und expliziter Trusted-Input-Kommentar.
-  `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/DataExportHelpers.kt:57-72`.
+- **Erledigt — `--filter` gehärtet (0.9.3 AP 6.1)**:
+  Seit 0.9.3 akzeptiert `--filter` nur noch eine geschlossene DSL. Alle Literale
+  werden als JDBC-Bind-Parameter gebunden. `WhereClause` und `containsLiteralQuestionMark()`
+  sind entfernt. Details: `FilterDslParser.kt`, `FilterDslTranslator.kt`.
 
 - **Mittel — MySQL-DDL enthält 4 `-- TODO`-Platzhalter** (teilweise behoben):
   Composite Types, Sequences, EXCLUDE-Constraints, nicht unterstützte Index-Typen.
@@ -142,7 +138,7 @@ Die Bewertung basiert auf den Kernmodulen in hexagon/core, hexagon/application u
 | Lesbarkeit & Namensgebung | 8/10      | = | Exzellente Domänensprache (`SchemaDefinition`, `SchemaComparator`, `TableComparator`) und konsistente Benennung über alle Schichten. Kotlin-idiomatischer Stil mit `sealed`/`data class` und klaren Ports. Leicht abfällig durch noch große Orchestrierungsmethoden im Transfer- und Compare-Flow. |
 | Modularität & Struktur    | 8/10      | ↑ | Hexagonale Architektur und Modultrennung sind konsistent, Kern bleibt testbar und entkoppelt. Stabile Interfaces (`ports-*`) und klarer Runner-Adapter-Fluss. Abzugspotenzial bleibt bei einigen zentralen Flows, die noch viel Inline-Logik kombinieren. |
 | Wartbarkeit               | 7.5/10    | = | 90% Kover auf Kernmodulen, klare DI, gute Testkultur und gute Fehlermodelle. Verbesserte Runner-Schrittabstraktion bereits umgesetzt. Restpotenzial liegt weiterhin bei weiteren Refaktorings in zentralen Flows und weniger impliziten Annahmen bei Config-/Path-Pfaden. |
-| Sicherheit                | 6/10      | ↓ | Prepared Statements und Identifier-Quoting sind stark umgesetzt, Credentials werden geschwärzt. Kritische Restbereiche: roher `--filter` als Trusted-Input (auch nach Zusatzvalidierung) und uneinheitlich parametrisierte/escaped DDL-Pfade (CHECK/Partition/Trigger/Routine-Bodies). |
+| Sicherheit                | 7/10      | ↑ | Prepared Statements, Identifier-Quoting und DSL-basierter `--filter` (seit 0.9.3) sind korrekt eingesetzt, Credentials werden geschwärzt. Restbereiche: uneinheitlich parametrisierte/escaped DDL-Pfade (CHECK/Partition/Trigger/Routine-Bodies). |
 
 Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 2026-04-19):
 
@@ -164,13 +160,21 @@ Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 
 
 ### Offen
 
-- **`--filter` härten** (Milestone: 0.9.5):
-  Als `--unsafe-filter` umbenennen oder minimale Filter-DSL anbieten.
-  Siehe dazu den Security-Finding `--filter` roh in SQL (`DataExportCommand.kt`, `DataExportHelpers.kt`) und die dokumentierte `--filter`-Entscheidung in `ImpPlan-0.9.1-A.md`.
-  Muss vor dem öffentlichen Publish-Vertrag entschieden sein.
-  Verankert in `docs/roadmap.md` unter Milestone 0.9.5.
-
 ### Erledigt
+
+- **`--filter` gehärtet** (Milestone: 0.9.3, AP 6.1):
+  `--filter` akzeptiert seit 0.9.3 nur noch eine geschlossene DSL (Vergleiche, `IN`, `IS NULL`,
+  `AND`/`OR`/`NOT`, Klammern, Arithmetik, Funktions-Allowlist). Alle Literale werden als
+  JDBC-Bind-Parameter gebunden. Rohes SQL wird nicht mehr akzeptiert (Exit 2).
+  `FilterDslParser` und `FilterDslTranslator` liegen in `hexagon/application`.
+  M-R5 (`?`-Check) entfällt, da keine `WhereClause` mehr erzeugt wird.
+  Akzeptanzmatrix:
+  - `--filter ""` / whitespace-only → Exit 2 (Test: `CliDataExportTest`)
+  - nicht DSL-konforme Eingaben → Exit 2 mit Position/Token (Test: `CliDataExportTest`, `FilterDslParserTest`)
+  - `= null` / `IN (null)` → Exit 2 mit Hinweis auf IS NULL (Test: `FilterDslParserTest`)
+  - Fingerprint stabil bei Whitespace/Case-Änderung (Test: `FilterDslParserTest`)
+  - Legacy-Checkpoint (schemaVersion 1) + --filter → Exit 2 mit Migrationshinweis (Test: `DataExportRunnerTest`)
+  - Manifest schemaVersion 1→2 Bump für formale Erkennung (`CheckpointManifest.CURRENT_SCHEMA_VERSION = 2`)
 
 - ~~E2E-Round-Trip-Test.~~
   Umgesetzt in 0.9.2 AP 6.7: `E2ERoundTripPostgresTest` — Export→Import→Schema/Daten-Vergleich
@@ -214,7 +218,7 @@ Dateien mit 200+ LOC (potenzielle Hotspots, sortiert nach LOC absteigend, Stand 
   Umgesetzt: Von 656 auf 316 LOC reduziert; `TableComparator` extrahiert.
 
 - ~~Constraint-Expressions dokumentieren.~~
-  Umgesetzt: `constraint.expression` und `--filter` als Trusted Input dokumentiert mit Design-Referenz.
+  Umgesetzt: `constraint.expression` als Trusted Input dokumentiert. `--filter` seit 0.9.3 durch DSL ersetzt (kein Trusted-Input-Pfad mehr).
 
 - ~~Ports-Modul nach Lese-/Schreib-Verantwortung aufteilen.~~
   Umgesetzt (Phase G-2): `hexagon:ports` → `ports-common` + `ports-read` + `ports-write`.

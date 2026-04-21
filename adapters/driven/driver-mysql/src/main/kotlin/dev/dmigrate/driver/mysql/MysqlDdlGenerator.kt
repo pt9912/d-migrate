@@ -9,6 +9,73 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     private val routineHelper = MysqlRoutineDdlHelper(::quoteIdentifier)
 
+    // ── Sequence emulation state (§4.4, §4.7) ──
+
+    private var currentOptions: DdlGenerationOptions = DdlGenerationOptions()
+    private var currentSchema: SchemaDefinition? = null
+    private var supportObjectsBlocked = false
+    private val pendingSupportTriggers = mutableListOf<SupportTriggerSpec>()
+    private val pendingSequenceNotes = mutableListOf<TransformationNote>()
+
+    private data class SupportTriggerSpec(
+        val tableName: String,
+        val columnName: String,
+        val sequenceName: String,
+    )
+
+    private val isHelperTable: Boolean
+        get() = currentOptions.mysqlNamedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE
+
+    override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        currentOptions = options
+        currentSchema = schema
+        supportObjectsBlocked = false
+        pendingSupportTriggers.clear()
+        pendingSequenceNotes.clear()
+        val result = super.generate(schema, options)
+        // W117: global warning for transaction-bound sequence increments (once per run in helper_table)
+        if (isHelperTable && schema.sequences?.isNotEmpty() == true) {
+            val w117 = TransformationNote(
+                type = NoteType.WARNING, code = "W117",
+                objectName = MysqlSequenceNaming.SUPPORT_TABLE,
+                message = "Sequence values in MySQL helper-table mode are transaction-bound; " +
+                    "rollback retracts increments (unlike native PostgreSQL sequences).",
+            )
+            return DdlResult(result.statements, result.skippedObjects, result.globalNotes + w117)
+        }
+        return result
+    }
+
+    // ── SequenceNextVal interception (§4.6) ──────
+
+    override fun resolveSequenceDefault(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        seqDefault: DefaultValue.SequenceNextVal,
+    ): String? {
+        if (isHelperTable) {
+            // Collect trigger metadata; actual trigger DDL generated in generateTriggers()
+            pendingSupportTriggers += SupportTriggerSpec(tableName, colName, seqDefault.sequenceName)
+            pendingSequenceNotes += TransformationNote(
+                type = NoteType.WARNING, code = "W115",
+                objectName = "$tableName.$colName",
+                message = "SequenceNextVal on '$colName' uses lossy MySQL trigger semantics; " +
+                    "explicit NULL is treated like an omitted value.",
+            )
+            return null // no DEFAULT clause — trigger handles it
+        }
+        // ACTION_REQUIRED: emit E056 for this column
+        pendingSequenceNotes += TransformationNote(
+            type = NoteType.ACTION_REQUIRED, code = "E056",
+            objectName = "$tableName.$colName",
+            message = "Sequence-based default on '$colName' requires " +
+                "--mysql-named-sequences helper_table to generate support objects.",
+            hint = "Add --mysql-named-sequences helper_table to enable sequence emulation.",
+        )
+        return null
+    }
+
     // ── Quoting ──────────────────────────────────
 
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
@@ -40,15 +107,83 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         sequences: Map<String, SequenceDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
+        if (!isHelperTable) {
+            // ACTION_REQUIRED mode: skip all sequences with E056
+            val statements = mutableListOf<DdlStatement>()
+            for ((name, _) in sequences) {
+                val action = ManualActionRequired(
+                    code = "E056", objectType = "sequence", objectName = name,
+                    reason = "Sequence '$name' is not supported in MySQL without helper_table mode.",
+                    hint = "Add --mysql-named-sequences helper_table to enable sequence emulation.",
+                )
+                skipped += action.toSkipped()
+                statements += DdlStatement("", listOf(action.toNote()))
+            }
+            return statements
+        }
+
+        // HELPER_TABLE mode: emit dmg_sequences table + seed statements
         val statements = mutableListOf<DdlStatement>()
-        for ((name, _) in sequences) {
+        val notes = mutableListOf<TransformationNote>()
+
+        // E124: collision check for dmg_sequences table name
+        val schema = currentSchema
+        if (schema != null && MysqlSequenceNaming.SUPPORT_TABLE in (schema.tables?.keys ?: emptySet())) {
             val action = ManualActionRequired(
-                code = "E056", objectType = "sequence", objectName = name,
-                reason = "Sequence '$name' is not supported in MySQL and was skipped.",
-                hint = "Use AUTO_INCREMENT columns instead of sequences.",
+                code = "E124", objectType = "table", objectName = MysqlSequenceNaming.SUPPORT_TABLE,
+                reason = "Support object name collision: '${MysqlSequenceNaming.SUPPORT_TABLE}' already exists in the neutral schema.",
+                hint = "Rename the existing table or use --mysql-named-sequences action_required.",
             )
             skipped += action.toSkipped()
             statements += DdlStatement("", listOf(action.toNote()))
+            supportObjectsBlocked = true
+            return statements
+        }
+
+        val createTable = buildString {
+            appendLine("CREATE TABLE `${MysqlSequenceNaming.SUPPORT_TABLE}` (")
+            appendLine("    `managed_by` VARCHAR(32) NOT NULL,")
+            appendLine("    `format_version` VARCHAR(32) NOT NULL,")
+            appendLine("    `name` VARCHAR(255) NOT NULL,")
+            appendLine("    `next_value` BIGINT NOT NULL,")
+            appendLine("    `increment_by` BIGINT NOT NULL,")
+            appendLine("    `min_value` BIGINT NULL,")
+            appendLine("    `max_value` BIGINT NULL,")
+            appendLine("    `cycle_enabled` TINYINT(1) NOT NULL,")
+            appendLine("    `cache_size` INT NULL,")
+            appendLine("    PRIMARY KEY (`name`)")
+            append(") ENGINE=InnoDB;")
+        }
+        statements += DdlStatement(createTable)
+
+        // Seed one row per sequence
+        for ((name, seq) in sequences) {
+            val start = seq.start ?: 1L
+            val increment = seq.increment ?: 1L
+            val minVal = seq.minValue?.toString() ?: "NULL"
+            val maxVal = seq.maxValue?.toString() ?: "NULL"
+            val cycle = if (seq.cycle == true) 1 else 0
+            val cache = seq.cache?.toString() ?: "NULL"
+            val seedSql = "INSERT INTO `${MysqlSequenceNaming.SUPPORT_TABLE}` " +
+                "(`managed_by`, `format_version`, `name`, `next_value`, `increment_by`, " +
+                "`min_value`, `max_value`, `cycle_enabled`, `cache_size`) VALUES " +
+                "('d-migrate', 'mysql-sequence-v1', '$name', $start, $increment, " +
+                "$minVal, $maxVal, $cycle, $cache);"
+            statements += DdlStatement(seedSql)
+
+            // W114: cache stored but not preallocation-emulated
+            if (seq.cache != null) {
+                notes += TransformationNote(
+                    type = NoteType.WARNING, code = "W114",
+                    objectName = name,
+                    message = "Sequence '$name' has cache=${seq.cache} but MySQL helper-table mode " +
+                        "does not emulate preallocation; cache value is stored as metadata only.",
+                )
+            }
+        }
+
+        if (notes.isNotEmpty()) {
+            statements += DdlStatement("", notes)
         }
         return statements
     }
@@ -56,7 +191,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.NATIVE
 
-    // ── Tables ───────────────────────────────────
+    // ── Tables (wrapper to attach pending sequence notes) ──
 
     override fun generateTable(
         name: String,
@@ -71,7 +206,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // Columns
         for ((colName, col) in table.columns) {
-            columnLines += generateColumnSql(colName, col, schema, notes)
+            columnLines += generateColumnSql(colName, col, schema, name, notes)
             // C3: Warn when datetime with timezone is mapped to DATETIME (no TZ support in MySQL)
             if (col.type is NeutralType.DateTime && (col.type as NeutralType.DateTime).timezone) {
                 notes += TransformationNote(
@@ -116,6 +251,9 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             }
             append("\nENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;")
         }
+        // Attach pending sequence notes (W115 / E056) collected during columnSql()
+        notes += pendingSequenceNotes
+        pendingSequenceNotes.clear()
         statements += DdlStatement(tableSql, notes)
 
         return statements
@@ -127,8 +265,8 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
     private fun generateColumnSql(
         colName: String, col: ColumnDefinition, schema: SchemaDefinition,
-        notes: MutableList<TransformationNote>,
-    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, notes)
+        tableName: String, notes: MutableList<TransformationNote>,
+    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, tableName, notes)
 
     private fun buildForeignKeyClause(
         constraintName: String, fromColumns: List<String>, toTable: String,
@@ -265,7 +403,64 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return routineHelper.generateFunctions(functions, skipped)
+        if (!isHelperTable || supportObjectsBlocked) return routineHelper.generateFunctions(functions, skipped)
+
+        val statements = mutableListOf<DdlStatement>()
+
+        // E124: collision check for support routine names
+        for (routineName in listOf(MysqlSequenceNaming.NEXTVAL_ROUTINE, MysqlSequenceNaming.SETVAL_ROUTINE)) {
+            if (routineName in (functions.keys)) {
+                val action = ManualActionRequired(
+                    code = "E124", objectType = "function", objectName = routineName,
+                    reason = "Support object name collision: '$routineName' already exists in the neutral schema.",
+                    hint = "Rename the existing function or use --mysql-named-sequences action_required.",
+                )
+                skipped += action.toSkipped()
+                statements += DdlStatement("", listOf(action.toNote()))
+                supportObjectsBlocked = true
+                // Skip support routines but still emit user functions
+                statements += routineHelper.generateFunctions(functions, skipped)
+                return statements
+            }
+        }
+
+        // dmg_nextval routine
+        val nextvalSql = buildString {
+            appendLine("DELIMITER //")
+            appendLine("/* d-migrate:mysql-sequence-v1 object=nextval */")
+            appendLine("CREATE FUNCTION `${MysqlSequenceNaming.NEXTVAL_ROUTINE}`(seq_name VARCHAR(255))")
+            appendLine("RETURNS BIGINT")
+            appendLine("DETERMINISTIC")
+            appendLine("MODIFIES SQL DATA")
+            appendLine("BEGIN")
+            appendLine("    DECLARE val BIGINT;")
+            appendLine("    UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` SET `next_value` = `next_value` + `increment_by` WHERE `name` = seq_name;")
+            appendLine("    SELECT `next_value` - `increment_by` INTO val FROM `${MysqlSequenceNaming.SUPPORT_TABLE}` WHERE `name` = seq_name;")
+            appendLine("    RETURN val;")
+            appendLine("END //")
+            append("DELIMITER ;")
+        }
+        statements += DdlStatement(nextvalSql)
+
+        // dmg_setval routine
+        val setvalSql = buildString {
+            appendLine("DELIMITER //")
+            appendLine("/* d-migrate:mysql-sequence-v1 object=setval */")
+            appendLine("CREATE FUNCTION `${MysqlSequenceNaming.SETVAL_ROUTINE}`(seq_name VARCHAR(255), new_value BIGINT)")
+            appendLine("RETURNS BIGINT")
+            appendLine("DETERMINISTIC")
+            appendLine("MODIFIES SQL DATA")
+            appendLine("BEGIN")
+            appendLine("    UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` SET `next_value` = new_value WHERE `name` = seq_name;")
+            appendLine("    RETURN new_value;")
+            appendLine("END //")
+            append("DELIMITER ;")
+        }
+        statements += DdlStatement(setvalSql)
+
+        // Then user functions
+        statements += routineHelper.generateFunctions(functions, skipped)
+        return statements
     }
 
     // ── Procedures ───────────────────────────────
@@ -284,7 +479,44 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return routineHelper.generateTriggers(triggers, tables, skipped)
+        if (!isHelperTable || supportObjectsBlocked) return routineHelper.generateTriggers(triggers, tables, skipped)
+
+        val statements = mutableListOf<DdlStatement>()
+        // E124: collision check for support trigger names
+        for (spec in pendingSupportTriggers) {
+            val trigName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
+            if (trigName in triggers) {
+                val action = ManualActionRequired(
+                    code = "E124", objectType = "trigger", objectName = trigName,
+                    reason = "Support object name collision: '$trigName' already exists in the neutral schema.",
+                    hint = "Rename the existing trigger or use --mysql-named-sequences action_required.",
+                )
+                skipped += action.toSkipped()
+                statements += DdlStatement("", listOf(action.toNote()))
+            }
+        }
+        // Generate support triggers for SequenceNextVal columns (skip colliding ones)
+        for (spec in pendingSupportTriggers) {
+            val trigName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
+            if (trigName in triggers) continue // already reported as E124
+            val triggerSql = buildString {
+                appendLine("DELIMITER //")
+                appendLine("/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=${spec.sequenceName} table=${spec.tableName} column=${spec.columnName} */")
+                appendLine("CREATE TRIGGER `$trigName`")
+                appendLine("    BEFORE INSERT ON `${spec.tableName}`")
+                appendLine("    FOR EACH ROW")
+                appendLine("BEGIN")
+                appendLine("    IF NEW.`${spec.columnName}` IS NULL THEN")
+                appendLine("        SET NEW.`${spec.columnName}` = `${MysqlSequenceNaming.NEXTVAL_ROUTINE}`('${spec.sequenceName}');")
+                appendLine("    END IF;")
+                appendLine("END //")
+                append("DELIMITER ;")
+            }
+            statements += DdlStatement(triggerSql)
+        }
+        // Then user triggers
+        statements += routineHelper.generateTriggers(triggers, tables, skipped)
+        return statements
     }
 
     // ── Rollback overrides ──────────────────────
@@ -295,17 +527,19 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // Handle DELIMITER-wrapped statements
         if (sql.startsWith("DELIMITER //", ignoreCase = true)) {
             val inner = sql.removePrefix("DELIMITER //").removeSuffix("DELIMITER ;").trim()
+            // Strip leading block comments (/* ... */) used by support object markers
+            val stripped = inner.replace(Regex("""/\*.*?\*/\s*""", RegexOption.DOT_MATCHES_ALL), "").trim()
             return when {
-                inner.startsWith("CREATE FUNCTION", ignoreCase = true) -> {
-                    val name = extractNameAfterKeyword(inner, "CREATE FUNCTION")
+                stripped.startsWith("CREATE FUNCTION", ignoreCase = true) -> {
+                    val name = extractNameAfterKeyword(stripped, "CREATE FUNCTION")
                     DdlStatement("DROP FUNCTION IF EXISTS $name;")
                 }
-                inner.startsWith("CREATE PROCEDURE", ignoreCase = true) -> {
-                    val name = extractNameAfterKeyword(inner, "CREATE PROCEDURE")
+                stripped.startsWith("CREATE PROCEDURE", ignoreCase = true) -> {
+                    val name = extractNameAfterKeyword(stripped, "CREATE PROCEDURE")
                     DdlStatement("DROP PROCEDURE IF EXISTS $name;")
                 }
-                inner.startsWith("CREATE TRIGGER", ignoreCase = true) -> {
-                    val name = extractNameAfterKeyword(inner, "CREATE TRIGGER")
+                stripped.startsWith("CREATE TRIGGER", ignoreCase = true) -> {
+                    val name = extractNameAfterKeyword(stripped, "CREATE TRIGGER")
                     DdlStatement("DROP TRIGGER IF EXISTS $name;")
                 }
                 else -> null

@@ -7,8 +7,8 @@ import java.time.LocalDate
 
 class DataFilterTest : FunSpec({
 
-    test("WhereClause carries raw SQL") {
-        val f = DataFilter.WhereClause("created_at >= '2024-01-01'")
+    test("ParameterizedClause with emptyList carries raw SQL without params") {
+        val f = DataFilter.ParameterizedClause("created_at >= '2024-01-01'", emptyList())
         f.sql shouldBe "created_at >= '2024-01-01'"
     }
 
@@ -21,7 +21,7 @@ class DataFilterTest : FunSpec({
         val compound = DataFilter.Compound(
             listOf(
                 DataFilter.ColumnSubset(listOf("id", "name")),
-                DataFilter.WhereClause("id > 0"),
+                DataFilter.ParameterizedClause("id > ?", listOf(0)),
             )
         )
         compound.parts.size shouldBe 2
@@ -48,14 +48,14 @@ class DataFilterTest : FunSpec({
     test("ParameterizedClause can be nested inside Compound") {
         val compound = DataFilter.Compound(
             listOf(
-                DataFilter.WhereClause("status = 'active'"),
+                DataFilter.ParameterizedClause("status = ?", listOf("active")),
                 DataFilter.ParameterizedClause("\"since\" >= ?", listOf(42L)),
             )
         )
         compound.parts.size shouldBe 2
-        val raw = compound.parts[0] as DataFilter.WhereClause
+        val raw = compound.parts[0] as DataFilter.ParameterizedClause
         val param = compound.parts[1] as DataFilter.ParameterizedClause
-        raw.sql shouldBe "status = 'active'"
+        raw.sql shouldBe "status = ?"
         param.params shouldContainExactly listOf<Any?>(42L)
     }
 

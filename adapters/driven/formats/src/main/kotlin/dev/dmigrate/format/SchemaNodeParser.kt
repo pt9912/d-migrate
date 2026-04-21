@@ -134,13 +134,46 @@ internal object SchemaNodeParser {
             node.isNumber -> DefaultValue.NumberLiteral(node.numberValue())
             node.isTextual -> {
                 val text = node.textValue()
-                when (text) {
-                    "current_timestamp" -> DefaultValue.FunctionCall("current_timestamp")
-                    "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
+                when {
+                    text == "current_timestamp" -> DefaultValue.FunctionCall("current_timestamp")
+                    text == "gen_uuid" -> DefaultValue.FunctionCall("gen_uuid")
+                    // Legacy nextval detection: keep as FunctionCall so the validator
+                    // can emit a targeted migration error (E122)
+                    text.matches(Regex("""^nextval\(.+\)$""", RegexOption.IGNORE_CASE)) ->
+                        DefaultValue.FunctionCall(text)
                     else -> DefaultValue.StringLiteral(text)
                 }
             }
-            else -> DefaultValue.StringLiteral(node.toString())
+            node.isObject -> {
+                val fields = node.fieldNames().asSequence().toList()
+                if (fields.size != 1) {
+                    throw IllegalArgumentException(
+                        "Default object must have exactly one key, got ${fields.size}: ${fields.joinToString(", ")}. " +
+                            "Supported: { sequence_nextval: <name> }"
+                    )
+                }
+                val fieldName = fields.first()
+                when {
+                    fieldName == "sequence_nextval" ->
+                        DefaultValue.SequenceNextVal(node.get("sequence_nextval").asText())
+                    fieldName == "nextval" -> {
+                        val seqName = node.get("nextval")?.asText() ?: "<name>"
+                        throw IllegalArgumentException(
+                            "Legacy default form '{ nextval: $seqName }' is not supported since 0.9.3. " +
+                                "Use '{ sequence_nextval: $seqName }' instead. " +
+                                "(Before: default: { nextval: $seqName } → After: default: { sequence_nextval: $seqName })"
+                        )
+                    }
+                    else -> throw IllegalArgumentException(
+                        "Unsupported default object form with key '$fieldName'. " +
+                            "Supported: sequence_nextval, or scalar values (string, number, boolean)."
+                    )
+                }
+            }
+            else -> throw IllegalArgumentException(
+                "Unsupported default node type: ${node.nodeType}. " +
+                    "Supported: scalar (string, number, boolean), or object with 'sequence_nextval'."
+            )
         }
     }
 

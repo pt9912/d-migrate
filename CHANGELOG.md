@@ -13,6 +13,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.3] - 2026-04-21
+
+### Added
+
+- **Safe `--filter` DSL** for `data export`: the `--filter` flag now
+  accepts a closed, parameterized filter language instead of raw SQL.
+  Supports comparisons, `IN (...)`, `IS NULL`/`IS NOT NULL`, `AND`,
+  `OR`, `NOT`, parentheses, function calls (allowlist), and arithmetic.
+  All literals are bound as JDBC parameters. Canonicalized fingerprints
+  ensure stable checkpoint resume across whitespace and case variations
+- **`default.sequence_nextval` schema form**: columns can now declare
+  `default: { sequence_nextval: <sequence-name> }` to express that
+  the column's default value comes from a named sequence. This replaces
+  the legacy `nextval(...)` function-call notation
+- **`--mysql-named-sequences` CLI option** for `schema generate`:
+  `action_required` (default — sequences skipped with E056) or
+  `helper_table` (opt-in — emulates named sequences via `dmg_sequences`
+  support table, `dmg_nextval`/`dmg_setval` routines, and canonical
+  `BEFORE INSERT` triggers)
+- **MySQL `helper_table` sequence emulation**: generates `dmg_sequences`
+  table, `dmg_nextval`/`dmg_setval` support routines, and per-column
+  `BEFORE INSERT` triggers for sequence-based defaults
+- **Warning codes W114, W115, W117**: W114 — cache stored but not
+  emulated in MySQL helper-table mode; W115 — lossy trigger semantics
+  (explicit NULL treated like omitted value); W117 — sequence values
+  are transaction-bound in MySQL (rollback retracts increments)
+- **Error codes E122, E123, E124**: E122 — legacy `nextval(...)` notation
+  rejected; E123 — `sequence_nextval` references non-existent sequence;
+  E124 — support object name collision with user schema objects
+
+### Changed
+
+- **Breaking: `--filter` is now a closed DSL** — raw SQL fragments,
+  dialect-specific operators (`LIKE`, `BETWEEN`, `ILIKE`), and
+  subqueries are no longer accepted. Existing checkpoints with
+  pre-0.9.3 raw-SQL fingerprints are rejected with Exit 2 and a
+  migration hint
+- **Breaking: `nextval(...)` function-call notation removed** —
+  columns that previously used `default: "nextval(invoice_seq)"` must
+  migrate to the object form `default: { sequence_nextval: invoice_seq }`.
+  This affects all dialects. Search-and-replace heuristic:
+  replace `default: "nextval(<name>)"` with
+  `default: { sequence_nextval: <name> }` in all schema YAML files.
+  The parser now rejects the legacy form with error E122
+- `AbstractDdlGenerator.getVersion()` returns `0.9.3`
+
 ## [0.9.2] - 2026-04-20
 
 ### Added

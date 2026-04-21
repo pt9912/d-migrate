@@ -6,7 +6,7 @@ import dev.dmigrate.driver.*
 internal class PostgresColumnConstraintHelper(
     private val quoteIdentifier: (String) -> String,
     private val typeMapper: TypeMapper,
-    private val columnSql: (String, ColumnDefinition, SchemaDefinition) -> String,
+    private val columnSql: (String, String, ColumnDefinition, SchemaDefinition) -> String,
     private val referentialActionSql: (ReferentialAction) -> String,
 ) {
 
@@ -60,7 +60,7 @@ internal class PostgresColumnConstraintHelper(
         }
 
         // Default: delegate to base class columnSql
-        return columnSql(colName, col, schema)
+        return columnSql(tableName, colName, col, schema)
     }
 
     fun buildForeignKeyClause(

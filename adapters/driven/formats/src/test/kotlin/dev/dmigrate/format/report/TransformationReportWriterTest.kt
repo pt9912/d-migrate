@@ -25,7 +25,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "version: \"2.0\""
         report shouldContain "file: \"schema.yaml\""
         report shouldContain "dialect: postgresql"
-        report shouldContain "generator: \"d-migrate 0.9.2\""
+        report shouldContain "generator: \"d-migrate 0.9.3\""
     }
 
     test("report contains summary counts") {
@@ -198,5 +198,50 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "name: \"blocked_places\""
         report shouldContain "warnings: 1"
         report shouldContain "action_required: 1"
+    }
+
+    // ─── 0.9.3 AP 6.2: mysql_named_sequences in report ──────────
+
+    test("report with mysqlNamedSequenceMode includes field in target block") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "mysql",
+            Path.of("schema.yaml"),
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
+        )
+        report shouldContain "mysql_named_sequences: action_required"
+        report shouldContain "generator: \"d-migrate 0.9.3\""
+    }
+
+    test("report without mysqlNamedSequenceMode omits field (postgresql)") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "postgresql",
+            Path.of("schema.yaml"),
+        )
+        report shouldNotContain "mysql_named_sequences"
+    }
+
+    test("report without mysqlNamedSequenceMode omits field (mysql with null)") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "mysql",
+            Path.of("schema.yaml"),
+            mysqlNamedSequenceMode = null,
+        )
+        report shouldNotContain "mysql_named_sequences"
+    }
+
+    test("report without mysqlNamedSequenceMode omits field (sqlite)") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "sqlite",
+            Path.of("schema.yaml"),
+        )
+        report shouldNotContain "mysql_named_sequences"
     }
 })

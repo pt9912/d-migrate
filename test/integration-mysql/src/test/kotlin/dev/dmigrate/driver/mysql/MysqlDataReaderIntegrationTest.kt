@@ -27,7 +27,7 @@ private val IntegrationTag = NamedTag("integration")
  * - Lifecycle (single-use ChunkSequence, idempotent close, connection return)
  * - Empty-table contract from §6.17
  * - Multi-chunk streaming with chunkSize splitting
- * - DataFilter (WhereClause + ColumnSubset)
+ * - DataFilter (ParameterizedClause + ColumnSubset)
  * - MysqlTableLister returns user tables only
  * - MysqlJdbcUrlBuilder defaults are wired (useCursorFetch=true, allowPublicKeyRetrieval=true)
  */
@@ -118,9 +118,9 @@ class MysqlDataReaderIntegrationTest : FunSpec({
         chunk.columns.map { it.name } shouldContainExactly listOf("id", "label")
     }
 
-    test("DataFilter.WhereClause filters rows server-side") {
+    test("DataFilter.ParameterizedClause filters rows server-side") {
         val rows = reader
-            .streamTable(pool(), "users", filter = DataFilter.WhereClause("id > 4"))
+            .streamTable(pool(), "users", filter = DataFilter.ParameterizedClause("id > ?", listOf(4)))
             .toList()
             .flatMap { it.rows.toList() }
         rows.size shouldBe 3

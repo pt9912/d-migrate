@@ -23,7 +23,7 @@ class TransferPreflightException(msg: String) : RuntimeException(msg)
 
 data class DataTransferRequest(
     val source: String, val target: String,
-    val tables: List<String>? = null, val filter: String? = null,
+    val tables: List<String>? = null, val filter: ParsedFilter? = null,
     val sinceColumn: String? = null, val since: String? = null,
     val onConflict: String = "abort", val triggerMode: String = "fire",
     val truncate: Boolean = false, val chunkSize: Int = 10_000,
@@ -87,7 +87,7 @@ class DataTransferRunner(
             val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
                 truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
             val filter = DataExportHelpers.resolveFilter(
-                rawFilter = request.filter,
+                parsedFilter = request.filter,
                 dialect = srcCfg.dialect,
                 sinceColumn = request.sinceColumn,
                 since = request.since,
@@ -190,9 +190,8 @@ class DataTransferRunner(
         if (!r.sinceColumn.isNullOrBlank() && DataExportHelpers.firstInvalidTableIdentifier(listOf(r.sinceColumn)) != null) {
             return "--since-column '${r.sinceColumn}' is not a valid identifier"
         }
-        if (r.filter != null && !r.since.isNullOrBlank() && DataExportHelpers.containsLiteralQuestionMark(r.filter)) {
-            return "--filter '?' forbidden with --since (M-R5)"
-        }
+        // No --filter validation needed: filter is already parsed into
+        // ParsedFilter by the CLI layer before constructing DataTransferRequest.
         try { TriggerMode.valueOf(r.triggerMode.uppercase()) } catch (_: Exception) { return "Unknown --trigger-mode: ${r.triggerMode}" }
         try { OnConflict.valueOf(r.onConflict.uppercase()) } catch (_: Exception) { return "Unknown --on-conflict: ${r.onConflict}" }
         return null

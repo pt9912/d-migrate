@@ -519,11 +519,11 @@ class CliDataExportTest : FunSpec({
         }
     }
 
-    test("F32: --filter empty/blank value behaves like no filter") {
+    test("F32 (0.9.3): --filter empty/blank value exits 2") {
         val db = createSampleDatabase()
         try {
-            val out = captureStdout {
-                shouldNotThrowAny {
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
                     cli().parse(
                         listOf(
                             "data", "export",
@@ -534,11 +534,9 @@ class CliDataExportTest : FunSpec({
                         )
                     )
                 }
+                ex.statusCode shouldBe 2
             }
-            // Alle drei Rows müssen drin sein
-            out shouldContain "\"name\": \"alice\""
-            out shouldContain "\"name\": \"bob\""
-            out shouldContain "\"name\": \"charlie\""
+            stderr shouldContain "--filter must not be empty"
         } finally {
             Files.deleteIfExists(db)
         }
@@ -571,7 +569,7 @@ class CliDataExportTest : FunSpec({
         }
     }
 
-    test("M-R5: literal ? in --filter with --since exits 2 before export") {
+    test("Invalid --filter DSL exits 2 before export") {
         val db = createSampleDatabase()
         try {
             val stderr = captureStderr {
@@ -582,17 +580,110 @@ class CliDataExportTest : FunSpec({
                             "--source", "sqlite:///${db.absolutePathString()}",
                             "--format", "json",
                             "--tables", "users",
-                            "--filter", "name LIKE 'Order?%'",
-                            "--since-column", "id",
-                            "--since", "2",
+                            "--filter", "LIMIT 10",
                         )
                     )
                 }
                 ex.statusCode shouldBe 2
             }
-            stderr shouldContain "--filter must not contain literal '?' when combined with --since"
+            stderr shouldContain "Invalid --filter"
         } finally {
             Files.deleteIfExists(db)
+        }
+    }
+
+    // ─── Legacy-Checkpoint: pre-0.9.3 v1 manifest with --filter → Exit 2 ──
+
+    test("E2E: resume with v1 legacy checkpoint and --filter exits 2") {
+        val db = createSampleDatabase()
+        val ckptDir = Files.createTempDirectory("d-migrate-legacy-ckpt")
+        try {
+            // Write a synthetic v1 manifest to the checkpoint directory
+            val manifestYaml = """
+                schemaVersion: 1
+                operationId: legacy-op-1
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: PENDING
+                    rowsProcessed: 0
+                    chunksProcessed: 0
+                optionsFingerprint: ${"a".repeat(64)}
+            """.trimIndent()
+            Files.writeString(ckptDir.resolve("legacy-op-1.checkpoint.yaml"), manifestYaml)
+
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--filter", "id > 0",
+                            "--output", ckptDir.resolve("out.json").toString(),
+                            "--resume", "legacy-op-1",
+                            "--checkpoint-dir", ckptDir.toString(),
+                        )
+                    )
+                }
+                ex.statusCode shouldBe 2
+            }
+            stderr shouldContain "schema version 1"
+            stderr shouldContain "pre-0.9.3"
+        } finally {
+            Files.deleteIfExists(db)
+            ckptDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("E2E: resume with v1 legacy checkpoint WITHOUT --filter exits 3 (generic mismatch)") {
+        // A v1 checkpoint without --filter is a genuine option change, not a
+        // migration issue. The runner should produce Exit 3, not Exit 2.
+        val db = createSampleDatabase()
+        val ckptDir = Files.createTempDirectory("d-migrate-legacy-nofilter")
+        try {
+            val manifestYaml = """
+                schemaVersion: 1
+                operationId: legacy-op-2
+                operationType: EXPORT
+                createdAt: '2026-04-16T10:00:00Z'
+                updatedAt: '2026-04-16T10:00:00Z'
+                format: json
+                chunkSize: 10000
+                tableSlices:
+                  - table: users
+                    status: PENDING
+                    rowsProcessed: 0
+                    chunksProcessed: 0
+                optionsFingerprint: ${"b".repeat(64)}
+            """.trimIndent()
+            Files.writeString(ckptDir.resolve("legacy-op-2.checkpoint.yaml"), manifestYaml)
+
+            val stderr = captureStderr {
+                val ex = shouldThrow<ProgramResult> {
+                    cli().parse(
+                        listOf(
+                            "data", "export",
+                            "--source", "sqlite:///${db.absolutePathString()}",
+                            "--format", "json",
+                            "--tables", "users",
+                            "--output", ckptDir.resolve("out.json").toString(),
+                            "--resume", "legacy-op-2",
+                            "--checkpoint-dir", ckptDir.toString(),
+                        )
+                    )
+                }
+                ex.statusCode shouldBe 3
+            }
+            stderr shouldContain "fingerprint mismatch"
+        } finally {
+            Files.deleteIfExists(db)
+            ckptDir.toFile().deleteRecursively()
         }
     }
 

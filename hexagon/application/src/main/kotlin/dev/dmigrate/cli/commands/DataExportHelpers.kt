@@ -51,27 +51,32 @@ internal object DataExportHelpers {
         if (raw.length == 1) raw[0] else null
 
     /**
-     * F32 / Plan §6.7: Baut den effektiven [DataFilter] aus dem CLI-Wert.
+     * Baut den effektiven [DataFilter] aus dem CLI-Wert.
      *
      * - `null` oder blank → `null` (kein Filter, identisch zum weggelassenen Flag)
-     * - sonst → [DataFilter.WhereClause] mit dem Roh-String
+     * - sonst → DSL parsen → [DataFilter.ParameterizedClause] mit Bind-Parametern
      *
-     * **Trusted Input**: [rawFilter] wird als Raw-SQL-Fragment direkt in die
-     * WHERE-Klausel interpoliert. Die Trust-Boundary ist die lokale Shell —
-     * der Aufrufer ist verantwortlich, dass der Wert nicht von
-     * nicht-vertrauenswürdigen Quellen stammt. Keine Sanitization oder
-     * Escaping findet statt; dies ist eine bewusste Designentscheidung
-     * (siehe `docs/ImpPlan-0.9.1-A.md` §4.3).
+     * Seit 0.9.3 wird `--filter` als geschlossene DSL geparst. Rohes SQL
+     * wird nicht mehr akzeptiert; nicht DSL-konforme Eingaben erzeugen
+     * eine [FilterDslParseResult.Failure].
+     *
+     * @return resolved filter, or `null` if no filter is active
+     * @throws FilterResolveException if the DSL parse fails
      */
     fun resolveFilter(
-        rawFilter: String?,
+        parsedFilter: ParsedFilter?,
         dialect: DatabaseDialect? = null,
         sinceColumn: String? = null,
         since: String? = null,
     ): DataFilter? {
-        val rawClause = rawFilter?.takeIf { it.isNotBlank() }?.let { DataFilter.WhereClause(it) }
+        val dslClause = parsedFilter?.let { pf ->
+            val effectiveDialect = requireNotNull(dialect) {
+                "dialect is required when building a parameterized filter"
+            }
+            FilterDslTranslator.toParameterizedClause(pf.expr, effectiveDialect)
+        }
         val hasSince = !sinceColumn.isNullOrBlank() && !since.isNullOrBlank()
-        if (!hasSince) return rawClause
+        if (!hasSince) return dslClause
 
         val effectiveDialect = requireNotNull(dialect) {
             "dialect is required when building a parameterized --since filter"
@@ -80,15 +85,20 @@ internal object DataExportHelpers {
             sql = "${quoteQualifiedIdentifier(sinceColumn!!, effectiveDialect)} >= ?",
             params = listOf(parseSinceLiteral(since!!)),
         )
-        return when (rawClause) {
+        return when (dslClause) {
             null -> markerClause
-            else -> DataFilter.Compound(listOf(rawClause, markerClause))
+            else -> DataFilter.Compound(listOf(dslClause, markerClause))
         }
     }
 
-    /** M-R5 CLI-Preflight: roher `--filter` darf in LF-013 kein `?` tragen. */
-    fun containsLiteralQuestionMark(rawFilter: String?): Boolean =
-        rawFilter?.contains('?') == true
+    /**
+     * Parses a raw `--filter` CLI string into a [ParsedFilter].
+     * Returns `null` if [rawFilter] is null or blank.
+     *
+     * @throws FilterParseException if the DSL parse fails
+     */
+    fun parseFilter(rawFilter: String?): ParsedFilter? =
+        dev.dmigrate.cli.commands.parseFilter(rawFilter)
 
     internal fun quoteQualifiedIdentifier(value: String, dialect: DatabaseDialect): String =
         SqlIdentifiers.quoteQualifiedIdentifier(value, dialect)

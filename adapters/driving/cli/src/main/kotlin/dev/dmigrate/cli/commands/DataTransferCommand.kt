@@ -27,7 +27,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
         .required()
     val tables by option("--tables", help = "Comma-separated list of tables to transfer")
         .split(",")
-    val filter by option("--filter", help = "WHERE clause for source filtering. Trusted Input — raw SQL, no sanitization")
+    val filter by option("--filter", help = "Filter DSL expression for source filtering. Same grammar as data export --filter.")
     val sinceColumn by option("--since-column", help = "Column for incremental transfer")
     val since by option("--since", help = "Value for incremental transfer (requires --since-column)")
     val onConflict by option("--on-conflict", help = "Conflict handling: abort|skip|update")
@@ -43,11 +43,23 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        if (filter != null && filter!!.isBlank()) {
+            System.err.println("Error: --filter must not be empty or whitespace-only. Omit the flag to transfer without a filter.")
+            throw ProgramResult(2)
+        }
+        val parsedFilter = try {
+            parseFilter(filter)
+        } catch (e: FilterParseException) {
+            val err = e.parseError
+            val posHint = if (err.index != null) " (at position ${err.index})" else ""
+            System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
+            throw ProgramResult(2)
+        }
         val request = DataTransferRequest(
             source = source,
             target = target,
             tables = tables,
-            filter = filter,
+            filter = parsedFilter,
             sinceColumn = sinceColumn,
             since = since,
             onConflict = onConflict,

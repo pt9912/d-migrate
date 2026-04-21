@@ -11,7 +11,7 @@
 
 ## Was ist d-migrate?
 
-d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmalig in einem neutralen, datenbankunabhängigen Format (YAML) definierst und anschließend für mehrere Zielsysteme validierst, vergleichst und DDL erzeugst. Damit entfallen getrennte Migrationsskripte pro Datenbankengine.
+d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migration und Datenmanagement. Du definierst dein Schema einmalig in einem neutralen Format (YAML) und kannst es für PostgreSQL, MySQL und SQLite validieren, vergleichen und als DDL generieren. Darüber hinaus unterstützt d-migrate Reverse-Engineering bestehender Datenbanken, streaming-basierten Datenexport/-import/-transfer zwischen Datenbanken sowie die Integration in bestehende Migrations-Toolchains (Flyway, Liquibase, Django, Knex).
 
 **Aktuelle Fähigkeiten:**
 - Phasenbezogene DDL-Ausgabe mit `--split pre-post` fuer importfreundliche Schema-Artefakte (pre-data/post-data)
@@ -27,7 +27,7 @@ d-migrate ist ein Kommandozeilenwerkzeug, mit dem du dein Datenbankschema einmal
 - Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
 - Transaktionaler Datenimport mit UPSERT, Truncate, Trigger-Handling und Reseeding
 - Direkter DB-zu-DB-Datentransfer mit `data transfer`
-- Inkrementeller Export über `--since-column` / `--since` (LF-013)
+- Inkrementeller Export über `--since-column` / `--since`
 - Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
 - CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `data export`, `data import`, `data transfer` und `data profile`
 - Internationalisierte CLI-Ausgabe (EN/DE) mit ResourceBundle-Fallback, ICU4J-Unicode-Utilities, expliziter Zeitzonen-/Temporal-Policy und konsolidiertem CSV-/BOM-Encoding-Vertrag
@@ -169,7 +169,7 @@ Hinweise:
 - Die Build-Stage nutzt `eclipse-temurin:21-jdk-noble` und cached Gradle-Abhängigkeiten über BuildKit-Cache-Mounts, sodass wiederholte Builds schnell sind.
 - Die Runtime-Stage nutzt `eclipse-temurin:21-jre-noble` (dasselbe Basisimage wie das veröffentlichte OCI-Image aus `:adapters:driving:cli:jibDockerBuild`).
 - Die `coverage`-Stage führt `test koverHtmlReport koverXmlReport` aus und liefert den aggregierten Root-Kover-HTML-Report über einen eingebauten HTTP-Server auf Port `8080` aus.
-- Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
+- Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als normalisiertes, JaCoCo-artiges JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
 - Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
 - Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
 - Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
@@ -224,7 +224,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.1](https://github.com/pt9912/d-migrate/releases/tag/v0.9.1)** — Beta: Library-Refactor und Integrationsschnitt — Sicherheits-Härtung (SQL-Identifier-Quoting), Zerlegung großer Orchestrierungs-/Dialekt-Klassen, Port-Split (`ports-common`/`ports-read`/`ports-write`), Profiling-Extraktion in optionale Module, deduplizierter FK-Topo-Sort.
+Aktuelles Release: **[v0.9.3](https://github.com/pt9912/d-migrate/releases/tag/v0.9.3)** — Beta: Filter-Härtung und MySQL-Sequence-Emulation (Generator) — sichere `--filter`-DSL mit Bind-Parametern, `default.sequence_nextval` als kanonische Schema-Form, `--mysql-named-sequences helper_table` für MySQL-Sequence-Emulation über `dmg_sequences`/Routinen/Trigger.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 

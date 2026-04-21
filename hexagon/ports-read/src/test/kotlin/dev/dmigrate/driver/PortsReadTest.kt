@@ -89,6 +89,63 @@ class PortsReadTest : FunSpec({
         )
     }
 
+    // ── MysqlNamedSequenceMode enum ────────────────────────────────
+
+    test("MysqlNamedSequenceMode has two values") {
+        MysqlNamedSequenceMode.entries.map { it.name } shouldBe listOf("ACTION_REQUIRED", "HELPER_TABLE")
+    }
+
+    test("MysqlNamedSequenceMode.fromCliName resolves known names") {
+        MysqlNamedSequenceMode.fromCliName("action_required") shouldBe MysqlNamedSequenceMode.ACTION_REQUIRED
+        MysqlNamedSequenceMode.fromCliName("helper_table") shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+    }
+
+    test("MysqlNamedSequenceMode.fromCliName is case-insensitive") {
+        MysqlNamedSequenceMode.fromCliName("HELPER_TABLE") shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+        MysqlNamedSequenceMode.fromCliName("Action_Required") shouldBe MysqlNamedSequenceMode.ACTION_REQUIRED
+    }
+
+    test("MysqlNamedSequenceMode.fromCliName returns null for unknown") {
+        MysqlNamedSequenceMode.fromCliName("auto") shouldBe null
+    }
+
+    test("MysqlNamedSequenceMode valueOf round-trips") {
+        MysqlNamedSequenceMode.valueOf("ACTION_REQUIRED") shouldBe MysqlNamedSequenceMode.ACTION_REQUIRED
+        MysqlNamedSequenceMode.valueOf("HELPER_TABLE") shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+    }
+
+    test("MysqlNamedSequenceMode toString contains name") {
+        MysqlNamedSequenceMode.ACTION_REQUIRED.toString() shouldContain "ACTION_REQUIRED"
+        MysqlNamedSequenceMode.HELPER_TABLE.toString() shouldContain "HELPER_TABLE"
+    }
+
+    test("MysqlNamedSequenceMode cliName properties") {
+        MysqlNamedSequenceMode.ACTION_REQUIRED.cliName shouldBe "action_required"
+        MysqlNamedSequenceMode.HELPER_TABLE.cliName shouldBe "helper_table"
+    }
+
+    test("DdlGenerationOptions carries mysqlNamedSequenceMode") {
+        val opts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+        opts.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+
+        val defaultOpts = DdlGenerationOptions()
+        defaultOpts.mysqlNamedSequenceMode shouldBe null
+    }
+
+    test("DdlGenerationOptions copy and equality") {
+        val a = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED)
+        val b = a.copy(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+        a shouldNotBe b
+        b.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+        a.copy() shouldBe a
+    }
+
+    test("DdlGenerationOptions toString contains class name") {
+        val opts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+        opts.toString() shouldContain "DdlGenerationOptions"
+        opts.toString() shouldContain "HELPER_TABLE"
+    }
+
     test("SpatialProfilePolicy.resolve returns NotAllowedForDialect for spatialite on PostgreSQL") {
         val result = SpatialProfilePolicy.resolve(DatabaseDialect.POSTGRESQL, "spatialite")
         result shouldBe SpatialProfilePolicy.Result.NotAllowedForDialect(

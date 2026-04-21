@@ -8,8 +8,9 @@
 ## 1. Coverage-JSON erzeugen
 
 Der aggregierte Kover-XML-Report wird im Dockerfile in der Stage
-`coverage-json` via `yq` nach JSON konvertiert und als einzige Datei
-im Image abgelegt.
+`coverage-json` zuerst via `yq` eingelesen und anschliessend via `jq`
+in ein normalisiertes, JaCoCo-artiges JSON ueberfuehrt. Diese Datei
+wird als einziges Artefakt im Image abgelegt.
 
 ```bash
 docker build --target coverage-json -t d-migrate:coverage-json .
@@ -28,20 +29,12 @@ nach Prozent aufsteigend:
 
 ```bash
 jq -r '
-  .report.package[] |
-  {
-    name: ."+@name",
-    classes: [.class // [] | if type == "array" then .[] else . end |
-      { counters: [.counter // [] | if type == "array" then .[] else . end |
-          select(."+@type" == "LINE") |
-          { missed: (."+@missed" | tonumber), covered: (."+@covered" | tonumber) }
-      ]}
-    ]
-  } |
-  ((.classes | map(.counters[0] // {missed:0,covered:0}) | map(.missed) | add // 0)) as $m |
-  ((.classes | map(.counters[0] // {missed:0,covered:0}) | map(.covered) | add // 0)) as $c |
-  select(($m + $c) > 0) |
-  { pkg: .name, pct: (($c * 1000 / ($m + $c)) | floor | . / 10), missed: $m } |
+  .report.packages[] |
+  .counters.LINE as $line |
+  select($line and (($line.missed + $line.covered) > 0)) |
+  { pkg: .name,
+    pct: (($line.covered * 1000 / ($line.missed + $line.covered)) | floor | . / 10),
+    missed: $line.missed } |
   select(.pct < 90) |
   "\(.pct)%\t\(.missed) missed\t\(.pkg)"
 ' /tmp/coverage.json | sort -n
@@ -59,7 +52,37 @@ Beispielausgabe:
 
 ---
 
-## 3. Klassen mit den meisten verfehlten Zeilen
+## 3. Klassen unter 90% Line-Coverage
+
+Listet alle Klassen auf, deren Line-Coverage unter 90% liegt, sortiert
+nach Prozent aufsteigend:
+
+```bash
+jq -r '
+  .report.packages[] as $pkg |
+  $pkg.classes[] |
+  .counters.LINE as $line |
+  select($line and (($line.missed + $line.covered) > 0)) |
+  { pkg: $pkg.name,
+    cls: (.sourceFile // .name),
+    pct: (($line.covered * 1000 / ($line.missed + $line.covered)) | floor | . / 10),
+    missed: $line.missed } |
+  select(.pct < 90) |
+  "\(.pct)%\t\(.missed) missed\t\(.pkg)/\(.cls)"
+' /tmp/coverage.json | sort -n
+```
+
+Beispielausgabe:
+
+```
+41.8%   25 missed   dev/dmigrate/cli/config/PipelineCheckpointResolver.kt
+66.6%   4 missed    dev/dmigrate/profiling/ProfilingSummary.kt
+83.3%   8 missed    dev/dmigrate/cli/config/NamedConnectionResolver.kt
+```
+
+---
+
+## 4. Klassen mit den meisten verfehlten Zeilen
 
 Zeigt pro Paket die Klassen mit den meisten verfehlten Zeilen, sortiert
 nach Anzahl absteigend. `PAKETNAME` durch den Paketpfad ersetzen
@@ -67,21 +90,17 @@ nach Anzahl absteigend. `PAKETNAME` durch den Paketpfad ersetzen
 
 ```bash
 jq -r --arg pkg "dev/dmigrate/PAKETNAME" '
-  .report.package[] | select(."+@name" == $pkg) |
-  [.class // [] | if type == "array" then .[] else . end |
-    { file: ."+@sourcefilename",
-      counters: [.counter // [] | if type == "array" then .[] else . end |
-        select(."+@type" == "LINE") |
-        { missed: (."+@missed" | tonumber), covered: (."+@covered" | tonumber) }
-    ]} |
-    select(.counters | length > 0) | select(.counters[0].missed > 0) |
-    { file, missed: .counters[0].missed,
-      total: (.counters[0].missed + .counters[0].covered),
-      pct: ((.counters[0].covered * 1000 / (.counters[0].missed + .counters[0].covered)) | floor | . / 10)
-    }
-  ] | sort_by(-.missed)[] |
+  .report.packages[] | select(.name == $pkg) |
+  .classes[] |
+  .counters.LINE as $line |
+  select($line and $line.missed > 0) |
+  { file: (.sourceFile // .name),
+    missed: $line.missed,
+    total: ($line.missed + $line.covered),
+    pct: (($line.covered * 1000 / ($line.missed + $line.covered)) | floor | . / 10)
+  } |
   "\(.missed)/\(.total) missed (\(.pct)%)\t\(.file)"
-' /tmp/coverage.json
+' /tmp/coverage.json | sort -nr
 ```
 
 Beispielausgabe für `dev/dmigrate/cli/config`:
@@ -94,17 +113,17 @@ Beispielausgabe für `dev/dmigrate/cli/config`:
 
 ---
 
-## 4. Schwellenwert anpassen
+## 5. Schwellenwert anpassen
 
 Um einen anderen Schwellenwert als 90% zu verwenden, die Zeile
 `select(.pct < 90)` in Abschnitt 2 anpassen.
 
-Für Branch-Coverage statt Line-Coverage `"LINE"` durch `"BRANCH"`
-ersetzen.
+Fuer Branch-Coverage statt Line-Coverage `.counters.LINE` durch
+`.counters.BRANCH` ersetzen.
 
 ---
 
-## 5. Referenzen
+## 6. Referenzen
 
 - [Dockerfile](../Dockerfile) — Stages `build`, `coverage-build`, `coverage-json`
 - [`.github/workflows/build.yml`](../.github/workflows/build.yml) — koverVerify und koverHtmlReport

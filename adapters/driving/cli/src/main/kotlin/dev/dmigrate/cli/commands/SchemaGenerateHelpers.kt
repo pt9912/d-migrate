@@ -77,6 +77,7 @@ internal object SchemaGenerateHelpers {
         schema: SchemaDefinition,
         dialect: String,
         splitMode: SplitMode = SplitMode.SINGLE,
+        mysqlNamedSequenceMode: dev.dmigrate.driver.MysqlNamedSequenceMode? = null,
     ): String {
         val isSplit = splitMode == SplitMode.PRE_POST
         val notes = result.notes.joinToString(",\n") { n ->
@@ -101,7 +102,11 @@ internal object SchemaGenerateHelpers {
             appendLine("""  "command": "schema.generate",""")
             appendLine("""  "status": "completed",""")
             appendLine("""  "exit_code": 0,""")
+            appendLine("""  "generator": "d-migrate 0.9.3",""")
             appendLine("""  "target": "$dialect",""")
+            if (mysqlNamedSequenceMode != null) {
+                appendLine("""  "mysql_named_sequences": "${mysqlNamedSequenceMode.cliName}",""")
+            }
             appendLine("""  "schema": {"name": "${escapeJson(schema.name)}", "version": "${escapeJson(schema.version)}"},""")
             if (isSplit) {
                 appendLine("""  "split_mode": "pre-post",""")

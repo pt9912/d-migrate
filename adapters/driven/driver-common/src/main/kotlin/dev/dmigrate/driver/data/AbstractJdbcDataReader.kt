@@ -140,9 +140,8 @@ abstract class AbstractJdbcDataReader : DataReader {
      *
      * **M-R6**: Rückgabe ist jetzt ein [SelectQuery] mit SQL + Bind-Params,
      * damit [DataFilter.ParameterizedClause] positional gebundene Werte
-     * mitführen kann. Pure [DataFilter.WhereClause]/[DataFilter.ColumnSubset]-
-     * Pfade liefern `params = emptyList()` und verhalten sich identisch
-     * zum 0.3.0-Vertrag.
+     * mitführen kann. [DataFilter.ColumnSubset]-Pfade liefern
+     * `params = emptyList()`.
      */
     protected open fun buildSelectQuery(table: String, filter: DataFilter?): SelectQuery =
         buildSelectQuery(table, filter, resumeMarker = null)
@@ -163,7 +162,8 @@ abstract class AbstractJdbcDataReader : DataReader {
         filter: DataFilter?,
         resumeMarker: ResumeMarker?,
     ): SelectQuery {
-        validateM5LiteralQuestionMark(filter)
+        // M-R5 validation removed in 0.9.3: WhereClause no longer exists,
+        // all user filters are ParameterizedClause from the DSL parser.
         val columnList = projection(filter)
         val fragments = collectWhereFragments(filter).toMutableList()
         // Marker-Position liefert ggf. eine zusaetzliche WHERE-Cascade;
@@ -289,73 +289,25 @@ abstract class AbstractJdbcDataReader : DataReader {
     private fun collectColumnSubset(filter: DataFilter?): List<String>? = when (filter) {
         null -> null
         is DataFilter.ColumnSubset -> filter.columns
-        is DataFilter.WhereClause -> null
         is DataFilter.ParameterizedClause -> null
         is DataFilter.Compound -> filter.parts.firstNotNullOfOrNull { collectColumnSubset(it) }
     }
 
     /**
-     * M-R5: Ein roher [DataFilter.WhereClause] mit literalem `?` darf nicht
-     * im selben [DataFilter.Compound] wie eine [DataFilter.ParameterizedClause]
-     * auftauchen. Sonst driftet die JDBC-Bind-Position des echten
-     * Parameter-Clauses von den rohen `?`-Zeichen im String-Pfad weg.
-     *
-     * Der Plan ordnet die Prüfung dem CLI-Pre-Flight zu; wir erzwingen sie
-     * zusätzlich hier auf Reader-Ebene, damit jeder direkte Programmatic-
-     * Caller denselben Schutz bekommt und der Verbotstest nicht nur auf
-     * CLI-Verhalten beruht.
-     */
-    private fun validateM5LiteralQuestionMark(filter: DataFilter?) {
-        when (filter) {
-            null,
-            is DataFilter.WhereClause,
-            is DataFilter.ColumnSubset,
-            is DataFilter.ParameterizedClause,
-                -> return
-
-            is DataFilter.Compound -> {
-                if (containsParameterizedClause(filter)) {
-                    firstRawWhereClauseWithQuestionMark(filter)?.let { sql ->
-                        throw IllegalArgumentException(
-                            "Raw WhereClause must not contain '?' when combined with " +
-                                "ParameterizedClause in the same Compound: $sql"
-                        )
-                    }
-                }
-                filter.parts.forEach(::validateM5LiteralQuestionMark)
-            }
-        }
-    }
-
-    private fun containsParameterizedClause(filter: DataFilter): Boolean = when (filter) {
-        is DataFilter.ParameterizedClause -> true
-        is DataFilter.Compound -> filter.parts.any(::containsParameterizedClause)
-        else -> false
-    }
-
-    private fun firstRawWhereClauseWithQuestionMark(filter: DataFilter): String? = when (filter) {
-        is DataFilter.WhereClause -> filter.sql.takeIf { it.contains('?') }
-        is DataFilter.Compound -> filter.parts.firstNotNullOfOrNull(::firstRawWhereClauseWithQuestionMark)
-        else -> null
-    }
-
-    /**
-     * Sammelt alle WHERE-Fragmente (rohe + parametrisierte) aus dem Filter-
-     * Baum in Traversierungsreihenfolge. [DataFilter.Compound] liefert
-     * seine Parts linker-nach-rechts; das garantiert eine deterministische
+     * Sammelt alle WHERE-Fragmente aus dem Filter-Baum in
+     * Traversierungsreihenfolge. [DataFilter.Compound] liefert seine Parts
+     * links-nach-rechts; das garantiert eine deterministische
      * `?`-Positionierung in der finalen SQL-Form.
      */
     private fun collectWhereFragments(filter: DataFilter?): List<WhereFragment> = when (filter) {
         null -> emptyList()
-        is DataFilter.WhereClause -> listOf(WhereFragment(filter.sql, emptyList()))
         is DataFilter.ColumnSubset -> emptyList()
         is DataFilter.ParameterizedClause -> listOf(WhereFragment(filter.sql, filter.params))
         is DataFilter.Compound -> filter.parts.flatMap { collectWhereFragments(it) }
     }
 
     /**
-     * Internes SQL-Fragment mit optionalen Bind-Params. [WhereClause] liefert
-     * immer `params = emptyList()`; [ParameterizedClause] trägt seine
+     * Internes SQL-Fragment mit Bind-Params. [ParameterizedClause] trägt seine
      * positional gebundenen Werte mit.
      */
     private data class WhereFragment(val sql: String, val params: List<Any?>)

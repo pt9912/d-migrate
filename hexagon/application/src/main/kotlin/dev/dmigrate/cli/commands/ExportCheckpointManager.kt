@@ -70,6 +70,20 @@ internal class ExportCheckpointManager(
                 return ExportResumeResult.Exit(3)
             }
             if (manifest.optionsFingerprint != ctx.fingerprint) {
+                // Formal detection via schemaVersion:
+                // v1 checkpoints used raw --filter text for fingerprinting.
+                // v2 (0.9.3+) uses DSL canonical form. The formats are
+                // incompatible, so a v1 checkpoint with a --filter always
+                // mismatches against a v2 fingerprint.
+                if (manifest.schemaVersion < 2 && request.filter != null) {
+                    stderr(
+                        "Error: Checkpoint was created with schema version ${manifest.schemaVersion} " +
+                            "(pre-0.9.3), which used raw SQL for the --filter fingerprint. " +
+                            "Since 0.9.3 (schema version 2), --filter uses a DSL canonical form. " +
+                            "Start a new export without --resume, or delete the old checkpoint."
+                    )
+                    return ExportResumeResult.Exit(2)
+                }
                 stderr("Error: Checkpoint options do not match the current request (fingerprint mismatch); refuse to resume.")
                 return ExportResumeResult.Exit(3)
             }

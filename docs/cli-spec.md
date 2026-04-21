@@ -355,6 +355,7 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>] [
 | `--generate-rollback` | Nein | Boolean | Zusätzlich Rollback-DDL generieren |
 | `--spatial-profile` | Nein | String | Spatial-Profil für `geometry`-Spalten (siehe unten) |
 | `--split` | Nein | `single` / `pre-post` | DDL-Ausgabemodus (Default: `single`). `pre-post` erzeugt importfreundliche Artefakte (pre-data/post-data) |
+| `--mysql-named-sequences` | Nein | `action_required` / `helper_table` | MySQL-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target mysql` zulaessig; bei PostgreSQL/SQLite: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences`, `dmg_nextval`/`dmg_setval`, `BEFORE INSERT`-Trigger). |
 | `--report` | Nein | Pfad | Transformations-Report separat speichern (Default: `<output>.report.yaml`) |
 
 Dialekt-Aliase: `postgres` → `postgresql`, `maria` / `mariadb` → `mysql`
@@ -372,7 +373,7 @@ Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--ta
 
 **Ausgabeverhalten**:
 - **stdout**: DDL-Output (wenn kein `--output`)
-- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052-E056)
+- **stderr**: Warnungen (W1xx, W114–W117, W120) und action_required-Hinweise (E052-E056, E122–E124)
 - **`--output`**: DDL in Datei + automatisch `<name>.report.yaml` als Sidecar
 - **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
 
@@ -388,6 +389,16 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - **`--generate-rollback`**: Rollback-DDL enthaelt die inversen Spatial-Statements (z.B. `DiscardGeometryColumn` fuer SpatiaLite). Blockierte Tabellen (E052) erzeugen kein Rollback-DDL. Details: [DDL-Generierungsregeln §16.7](./ddl-generation-rules.md).
 - **`--output-format json`**: Action-required-Eintraege (`E052`-`E056`) erscheinen in `notes` und/oder `skipped_objects`, W120 in `notes`.
 - **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
+
+Sequence-spezifische Ausgaben (0.9.3, `--mysql-named-sequences`):
+- **E056** (Sequence/Emulationsfall): Im `action_required`-Modus fuer uebersprungene Sequences und fuer Spalten mit `SequenceNextVal`-Default ohne Emulation.
+- **E122** (Legacy-Notation): Schema verwendet die abgekuendigte `nextval(...)`-Notation statt `default: { sequence_nextval: ... }`.
+- **E123** (Fehlende Sequence): `sequence_nextval` referenziert eine nicht definierte Sequence.
+- **E124** (Namenskollision): Ein neutrales Schema-Objekt kollidiert mit einem reservierten Support-Objektnamen (`dmg_sequences`, `dmg_nextval`, `dmg_setval`).
+- **W114** (Cache nicht emuliert): Sequence hat `cache`-Wert, der im `helper_table`-Modus nur als Metadatum gespeichert, aber nicht als Preallocation umgesetzt wird.
+- **W115** (Lossy Trigger-Semantik): `SequenceNextVal` auf einer Spalte nutzt MySQL-Trigger; explizites `NULL` wird wie ein ausgelassener Wert behandelt.
+- **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse rekonstruiert, aber erforderliche Support-Objekte (Routinen/Trigger) fehlen. Reserviert fuer `schema reverse` (0.9.4).
+- **W117** (Transaktionsgebundene Werte): Sequence-Werte im `helper_table`-Modus werden bei Rollback zurueckgerollt — anders als native PostgreSQL-Sequences.
 
 **`--split`** (0.9.2): Steuert den DDL-Ausgabemodus.
 
@@ -607,7 +618,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | `--format` | Ja | String | — | Ausgabeformat: `json`, `yaml`, `csv` (kein Default — explizit setzen, §6.15) |
 | `--output`, `-o` | Nein | Pfad | stdout | Ziel-Datei (Single-Tabelle) oder Verzeichnis (mit `--split-files`) |
 | `--tables` | Nein | Liste | alle Tabellen | Nur diese Tabellen (kommasepariert). Strikt validiert gegen `[A-Za-z_][A-Za-z0-9_]*` (optional `schema.table`); ungültige Werte → Exit 2. |
-| `--filter` | Nein | String | — | Roh-WHERE-Klausel ohne `WHERE`-Keyword. **Trusted Input** — der Wert wird als Raw-SQL-Fragment direkt in die WHERE-Klausel interpoliert, ohne Sanitization. Die Trust-Boundary ist die lokale Shell: nur der CLI-Aufrufer kontrolliert den Inhalt. |
+| `--filter` | Nein | String | — | Filter-DSL-Ausdruck (seit 0.9.3). Erlaubte Operatoren: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN (...)`, `IS NULL`, `IS NOT NULL`, `AND`, `OR`, `NOT`, Klammern. Erlaubte Funktionen: `LOWER`, `UPPER`, `TRIM`, `LENGTH`, `ABS`, `ROUND`, `COALESCE`. Arithmetik (`+`, `-`, `*`, `/`) und qualifizierte Identifier (`table.column`) sind zulaessig. Alle Literale werden als Bind-Parameter an JDBC gebunden. Rohes SQL wird nicht mehr akzeptiert — nicht DSL-konforme Eingaben enden mit Exit 2. |
 | `--since-column` | Nein | String | — | Marker-Spalte für inkrementellen Export (LF-013). Muss zusammen mit `--since` gesetzt werden; gleiche Identifier-Regel wie `--tables`. |
 | `--since` | Nein | String | — | Untere Marker-Grenze für LF-013. Wird typisiert und parametrisiert an JDBC gebunden; nur zusammen mit `--since-column` gültig. |
 | `--encoding` | Nein | String | `utf-8` | Output-Encoding (z.B. `utf-8`, `iso-8859-1`, `utf-16`) |
@@ -637,7 +648,7 @@ d-migrate data export --source <url-or-name> --format <format> [--output <path>]
 | Code | Trigger |
 |---|---|
 | `0` | Erfolg, alle Tabellen geschrieben |
-| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, M-R5-Verstoß (`--filter` mit literalem `?` zusammen mit `--since`), unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** (seit 0.9.0) |
+| `2` | CLI-Fehler: ungültige Optionen, unzulässige Flag-Kombination, ungültiger `--csv-delimiter`/`--encoding`/`--tables`/`--since-column`-Identifier, fehlendes Gegenstück zu `--since-column`/`--since`, nicht DSL-konformer `--filter`-Ausdruck (seit 0.9.3), unverträgliche `--output`/`--split-files`-Kombi, **oder `--resume` auf stdout-Export** (seit 0.9.0) |
 | `3` | Preflight-Fehler — seit 0.9.0: semantisch inkompatible Resume-Referenz (operationType-Mismatch, Fingerprint-Mismatch aus Format/Encoding/CSV-Optionen/Filter/`--since-*`/Tabellen-Reihenfolge/Output-Modus/Output-Pfad/PK-Signatur, Tabellenliste divergiert, oder Manifest hat `resumePosition` aber aktueller Request hat kein `--since-column`). Mapping ist symmetrisch zum Import-Preflight (§4.5) |
 | `4` | Connection-Fehler (HikariCP konnte keine Connection öffnen, `TableLister` failed) |
 | `5` | Export-Fehler während Streaming (SQLException, IOException, Writer-Failure, fehlende Tabelle) |
@@ -660,15 +671,19 @@ d-migrate data export --source local_pg --format csv \
 d-migrate data export --source local_pg --format csv --tables customers \
     --csv-delimiter ';' --csv-bom --output customers.csv
 
-# Filter (Trust-Boundary: lokale Shell, nicht parametrisiert!)
+# Filter-DSL (seit 0.9.3 — alle Literale als Bind-Parameter)
 d-migrate data export --source prod --format json --tables orders \
     --filter "created_at > '2026-01-01'" --output recent.json
+
+# Filter mit Funktionen und Arithmetik
+d-migrate data export --source prod --format json --tables orders \
+    --filter "LOWER(status) = 'open' AND amount * quantity > 100" --output filtered.json
 
 # Inkrementeller Export per Marker-Spalte (LF-013)
 d-migrate data export --source local_pg --format json --tables orders \
     --since-column updated_at --since "2026-01-01T00:00:00" --output orders.delta.json
 
-# Inkrementeller Export kombiniert mit zusätzlichem Roh-Filter
+# Filter-DSL kombiniert mit inkrementellem Export
 d-migrate data export --source local_pg --format csv --tables orders \
     --filter "status = 'open'" \
     --since-column updated_at --since "2026-01-01T00:00:00" \
@@ -684,18 +699,8 @@ d-migrate data export --source local_pg --format json \
 - `--since-column` und `--since` sind nur gemeinsam gültig. Fehlt einer der beiden Werte, endet der Command mit Exit 2.
 - `--since-column` folgt derselben Identifier-Regel wie `--tables`: erlaubt sind `<name>` oder `schema.column`, ohne Quotes und ohne Whitespace.
 - Der `--since`-Wert wird im Runner typisiert und als JDBC-Bind-Parameter an eine `DataFilter.ParameterizedClause("<quoted-column> >= ?", [typedSince])` übergeben. Die Typisierung folgt dem 0.8.0-Phase-E-Vertrag (`docs/ImpPlan-0.8.0-E.md` §4.5) und bleibt konservativ: ein Offset-haltiger ISO-String bleibt `OffsetDateTime` (§4.2), ein lokaler ISO-DateTime bleibt `LocalDateTime` (§4.3), ein ISO-Datum bleibt `LocalDate`, Integer als `Long`, Dezimalwerte als `BigDecimal`, sonst als String. Eine in der Konfiguration gesetzte `i18n.default_timezone` löst **keine** stille Zonierung eines lokalen Literals aus (§4.4).
-- Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([WhereClause(filter), ParameterizedClause(...)])` kombiniert; der Reader bindet die Parameter in stabiler Reihenfolge.
-- **M-R5**: `--filter` darf in diesem kombinierten Pfad kein literales `?` enthalten. Beispiel eines verbotenen Aufrufs:
-
-```bash
-d-migrate data export --source local_pg --format json --tables orders \
-    --filter "note LIKE 'really?%'" \
-    --since-column updated_at --since "2026-01-01T00:00:00"
-```
-
-Verhalten:
-- Exit 2
-- stderr: `--filter must not contain literal '?' when combined with --since (parameterized query); use a rewritten predicate or escape the literal differently`
+- Wenn zusätzlich `--filter` gesetzt ist, werden beide Bedingungen intern als `DataFilter.Compound([ParameterizedClause(dsl), ParameterizedClause(since)])` kombiniert; der Reader bindet alle Parameter in stabiler Reihenfolge.
+- Seit 0.9.3 erzeugt `--filter` immer eine `ParameterizedClause` via DSL-Parser. Die M-R5-Einschraenkung (kein literales `?` in `--filter`) entfaellt, da keine rohen `WhereClause`-Fragmente mehr erzeugt werden.
 
 #### `data import` *(0.4.0, umgesetzt)*
 
@@ -759,7 +764,7 @@ kanonisch beschrieben.
 | `--source` | Ja | URL oder Alias | — | Quell-Datenbank |
 | `--target` | Ja | URL oder Alias | — | Ziel-Datenbank |
 | `--tables` | Nein | Liste | alle | Kommaseparierte Tabellenliste |
-| `--filter` | Nein | String | — | Roh-WHERE-Klausel fuer die Quellabfrage. **Trusted Input** — Raw-SQL, keine Sanitization. Trust-Boundary ist die lokale Shell. |
+| `--filter` | Nein | String | — | Filter-DSL-Ausdruck fuer die Quellabfrage (seit 0.9.3). Gleiche DSL-Grammatik wie bei `data export --filter`. Alle Literale werden als Bind-Parameter an JDBC gebunden. |
 | `--since-column` | Nein | String | — | Marker-Spalte fuer inkrementellen Transfer (LF-013) |
 | `--since` | Nein | String | — | Untere Marker-Grenze (nur zusammen mit `--since-column`) |
 | `--on-conflict` | Nein | String | `abort` | Konfliktbehandlung: `abort`, `skip`, `update` |

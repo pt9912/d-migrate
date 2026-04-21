@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.DataFilter
@@ -105,7 +106,8 @@ class DataTransferRunnerTest : FunSpec({
         sinceColumn: String? = null, since: String? = null, filter: String? = null,
     ) = DataTransferRequest(source = source, target = target, tables = tables,
         onConflict = onConflict, triggerMode = triggerMode, quiet = quiet,
-        noProgress = noProgress, sinceColumn = sinceColumn, since = since, filter = filter)
+        noProgress = noProgress, sinceColumn = sinceColumn, since = since,
+        filter = parseFilter(filter))
 
     // ── Exit 0 ──────────────────────────────────
 
@@ -139,9 +141,12 @@ class DataTransferRunnerTest : FunSpec({
         runner.execute(request(sinceColumn = "ts")) shouldBe 2
     }
 
-    test("filter with ? and since → exit 2 (M-R5)") {
-        val (runner, _, _) = buildRunner()
-        runner.execute(request(filter = "x = ?", sinceColumn = "ts", since = "v")) shouldBe 2
+    test("invalid filter DSL throws FilterParseException") {
+        // Since 0.9.3, --filter is parsed in the CLI layer; the runner
+        // never sees invalid DSL. This verifies the parse rejects '?'.
+        shouldThrow<FilterParseException> {
+            parseFilter("x = ?")
+        }
     }
 
     test("unknown trigger mode → exit 2") {

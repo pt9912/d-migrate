@@ -6,6 +6,8 @@ package dev.dmigrate.driver
  */
 data class DdlGenerationOptions(
     val spatialProfile: SpatialProfile = SpatialProfile.NONE,
+    /** MySQL-specific: how to handle named sequences. `null` for non-MySQL targets. */
+    val mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
 )
 
 /**
@@ -23,6 +25,25 @@ enum class SpatialProfile(val cliName: String) {
         private val BY_CLI_NAME = entries.associateBy { it.cliName }
 
         fun fromCliName(name: String): SpatialProfile? = BY_CLI_NAME[name.lowercase()]
+    }
+}
+
+/**
+ * MySQL named-sequence emulation strategy (0.9.3).
+ * Controls whether `schema generate --target mysql` produces
+ * emulated sequence support objects or skips with E056.
+ */
+enum class MysqlNamedSequenceMode(val cliName: String) {
+    /** Skip sequences with action_required E056 (default, backward compatible). */
+    ACTION_REQUIRED("action_required"),
+    /** Emit dmg_sequences table, dmg_nextval/dmg_setval routines, and BEFORE INSERT triggers. */
+    HELPER_TABLE("helper_table");
+
+    companion object {
+        private val BY_CLI_NAME = entries.associateBy { it.cliName }
+
+        fun fromCliName(name: String): MysqlNamedSequenceMode? =
+            BY_CLI_NAME[name.lowercase(java.util.Locale.ROOT)]
     }
 }
 

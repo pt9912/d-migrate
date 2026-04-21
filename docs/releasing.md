@@ -73,10 +73,21 @@ Tests aller Module aus. Erwartetes Ergebnis: `BUILD SUCCESSFUL`.
 Für eine garantiert frische Test-Ausführung ohne Build-Cache:
 
 ```bash
-docker run --rm -v "$(pwd):/src" -w /src --entrypoint /bin/sh \
+docker run --rm \
+  -u "$(id -u):$(id -g)" \
+  -e HOME=/tmp/home \
+  -e GRADLE_USER_HOME=/tmp/gradle \
+  -v "$(pwd):/src" \
+  -w /src \
+  --entrypoint /bin/sh \
   eclipse-temurin:21-jdk-noble \
-  -c "./gradlew --no-daemon --no-build-cache --rerun-tasks build"
+  -c 'mkdir -p "$HOME" "$GRADLE_USER_HOME" && ./gradlew --no-daemon --no-build-cache --rerun-tasks build'
 ```
+
+Der Lauf verwendet bewusst die aktuelle Host-UID/GID, damit im
+gemounteten Workspace keine root-owned Build-Artefakte entstehen.
+`HOME` und `GRADLE_USER_HOME` werden explizit auf beschreibbare
+Temp-Pfade im Container gesetzt.
 
 ### 3.2 Lokaler Preflight der Release-Assets
 

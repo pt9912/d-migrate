@@ -23,12 +23,23 @@ import java.time.Instant
 /**
  * Immutable DTO with all CLI inputs for `d-migrate data export`.
  */
+/**
+ * Parsed filter representation produced by [FilterDslParser].
+ * Carried by [DataExportRequest] and [DataTransferRequest] instead of
+ * a raw filter string, so the request layer never transports unparsed
+ * user input.
+ */
+data class ParsedFilter(
+    val expr: FilterExpr,
+    val canonical: String,
+)
+
 data class DataExportRequest(
     val source: String,
     val format: String,
     val output: Path?,
     val tables: List<String>?,
-    val filter: String?,
+    val filter: ParsedFilter?,
     val sinceColumn: String?,
     val since: String?,
     val encoding: String,
@@ -133,14 +144,10 @@ class DataExportRunner(
                 )
                 return 2
             }
-            if (DataExportHelpers.containsLiteralQuestionMark(request.filter)) {
-                stderr(
-                    "Error: --filter must not contain literal '?' when combined with --since " +
-                        "(parameterized query); use a rewritten predicate or escape the literal differently"
-                )
-                return 2
-            }
         }
+        // No --filter DSL validation needed here: the filter is already
+        // parsed into ParsedFilter by the CLI layer before constructing
+        // DataExportRequest.
 
         // Resume CLI preflight: stdout export cannot be resumed (stream
         // is not re-openable).

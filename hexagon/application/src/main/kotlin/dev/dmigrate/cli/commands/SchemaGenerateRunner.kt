@@ -5,6 +5,7 @@ import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
@@ -34,6 +35,7 @@ data class SchemaGenerateRequest(
     val verbose: Boolean,
     val quiet: Boolean,
     val splitMode: SplitMode = SplitMode.SINGLE,
+    val mysqlNamedSequences: String? = null,
 )
 
 /**
@@ -52,10 +54,10 @@ class SchemaGenerateRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
-    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?) -> Unit,
+    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, MysqlNamedSequenceMode?) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
         { path, content -> path.writeText(content) },
-    private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode) -> String,
+    private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode, MysqlNamedSequenceMode?) -> String,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
     private val splitPath: (Path, dev.dmigrate.driver.DdlPhase) -> Path,
@@ -103,7 +105,35 @@ class SchemaGenerateRunner(
                 return 2
             }
         }
-        val options = DdlGenerationOptions(spatialProfile = spatialProfile)
+        // ─── 2b. Resolve MySQL named-sequence mode ─────────────
+        val mysqlSeqMode: MysqlNamedSequenceMode? = if (request.mysqlNamedSequences != null) {
+            if (dialect != DatabaseDialect.MYSQL) {
+                printError(
+                    "--mysql-named-sequences is only valid with --target mysql, " +
+                        "not ${dialect.name.lowercase()}. " +
+                        "Allowed values for MySQL: action_required, helper_table.",
+                    request.source.toString(),
+                )
+                return 2
+            }
+            MysqlNamedSequenceMode.fromCliName(request.mysqlNamedSequences)
+                ?: run {
+                    printError(
+                        "Unknown --mysql-named-sequences value '${request.mysqlNamedSequences}'. " +
+                            "Allowed: action_required, helper_table",
+                        request.source.toString(),
+                    )
+                    return 2
+                }
+        } else if (dialect == DatabaseDialect.MYSQL) {
+            MysqlNamedSequenceMode.ACTION_REQUIRED
+        } else {
+            null
+        }
+        val options = DdlGenerationOptions(
+            spatialProfile = spatialProfile,
+            mysqlNamedSequenceMode = mysqlSeqMode,
+        )
 
         // ─── 3. Read schema ────────────────────────────────────
         val schema = try {
@@ -146,10 +176,10 @@ class SchemaGenerateRunner(
         if (request.splitMode == SplitMode.PRE_POST) {
             // Split output: file and/or json
             if (request.output != null) {
-                writeSplitFileOutput(request, result, schema, dialectName, splitModeStr)
+                writeSplitFileOutput(request, result, schema, dialectName, splitModeStr, mysqlSeqMode)
             }
             if (request.outputFormat == "json") {
-                stdout(formatJsonOutput(result, schema, dialectName, request.splitMode))
+                stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))
             }
             if (request.output == null && request.outputFormat != "json") {
                 // Should not reach here — preflight catches this
@@ -160,7 +190,7 @@ class SchemaGenerateRunner(
             val ddl = result.render()
             when {
                 request.outputFormat == "json" -> {
-                    stdout(formatJsonOutput(result, schema, dialectName, request.splitMode))
+                    stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))
                 }
                 request.output != null -> {
                     writeFileOutput(request, generator, schema, result, dialect, ddl, options, splitModeStr)
@@ -200,6 +230,7 @@ class SchemaGenerateRunner(
         schema: SchemaDefinition,
         dialect: String,
         splitModeStr: String?,
+        mysqlSeqMode: MysqlNamedSequenceMode? = null,
     ) {
         val outputPath = request.output!!
         val prePath = splitPath(outputPath, dev.dmigrate.driver.DdlPhase.PRE_DATA)
@@ -211,7 +242,7 @@ class SchemaGenerateRunner(
         fileWriter(postPath, postDdl + "\n")
         if (!request.quiet) stderr("Post-data DDL written to $postPath")
 
-        writeReport(request, result, schema, dialect, outputPath, splitModeStr)
+        writeReport(request, result, schema, dialect, outputPath, splitModeStr, mysqlSeqMode)
     }
 
     private fun writeFileOutput(
@@ -235,7 +266,7 @@ class SchemaGenerateRunner(
             if (!request.quiet) stderr("Rollback DDL written to $rbPath")
         }
 
-        writeReport(request, result, schema, dialect.name.lowercase(), outputPath, splitModeStr)
+        writeReport(request, result, schema, dialect.name.lowercase(), outputPath, splitModeStr, options.mysqlNamedSequenceMode)
     }
 
     private fun writeStdoutOutput(
@@ -256,7 +287,7 @@ class SchemaGenerateRunner(
         }
 
         if (request.report != null) {
-            writeReport(request, result, schema, dialect.name.lowercase(), request.report, null)
+            writeReport(request, result, schema, dialect.name.lowercase(), request.report, null, options.mysqlNamedSequenceMode)
         }
     }
 
@@ -267,9 +298,10 @@ class SchemaGenerateRunner(
         dialect: String,
         outputPath: Path,
         splitModeStr: String?,
+        mysqlSeqMode: MysqlNamedSequenceMode? = null,
     ) {
         val reportPath = request.report ?: sidecarPath(outputPath, ".report.yaml")
-        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr)
+        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr, mysqlSeqMode)
         if (!request.quiet) stderr("Report written to $reportPath")
     }
 }

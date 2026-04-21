@@ -61,8 +61,9 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val filter by option(
         "--filter",
-        help = "Raw SQL WHERE clause applied to all tables (without the 'WHERE' keyword). " +
-            "WARNING: not parameterized — see Plan §6.7 for the trust-boundary contract.",
+        help = "Filter DSL expression applied to all tables. Supports comparisons (=, !=, >, <, >=, <=), " +
+            "IN (...), IS NULL, IS NOT NULL, AND, OR, NOT, parentheses, arithmetic, and functions " +
+            "(LOWER, UPPER, TRIM, LENGTH, ABS, ROUND, COALESCE). All literals are bound as JDBC parameters.",
     )
 
     val sinceColumn by option(
@@ -133,12 +134,25 @@ class DataExportCommand : CliktCommand(name = "export") {
         // Hierarchie: d-migrate → data → export → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
+        // §4.4: --filter "" and whitespace-only are invalid (Exit 2)
+        if (filter != null && filter!!.isBlank()) {
+            System.err.println("Error: --filter must not be empty or whitespace-only. Omit the flag to export without a filter.")
+            throw ProgramResult(2)
+        }
+        val parsedFilter = try {
+            parseFilter(filter)
+        } catch (e: FilterParseException) {
+            val err = e.parseError
+            val posHint = if (err.index != null) " (at position ${err.index})" else ""
+            System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
+            throw ProgramResult(2)
+        }
         val request = DataExportRequest(
             source = source,
             format = format,
             output = output,
             tables = tables,
-            filter = filter,
+            filter = parsedFilter,
             sinceColumn = sinceColumn,
             since = since,
             encoding = encoding,

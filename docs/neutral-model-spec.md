@@ -416,7 +416,22 @@ columns:
   id:
     type: uuid
     default: gen_uuid          # DB-spezifisch aufgelöst: uuid_generate_v4() / UUID() / etc.
+
+  # Sequence-basierter Default (0.9.3)
+  invoice_number:
+    type: integer
+    default:
+      sequence_nextval: invoice_seq   # Referenziert eine benannte Sequence aus schema.sequences
 ```
+
+`sequence_nextval` ist eine Objektform (nicht skalar) und referenziert eine
+benannte Sequence aus `schema.sequences`. Nur fuer numerische und
+Identifier-Spalten zulaessig. PostgreSQL erzeugt nativ `DEFAULT nextval('...')`;
+MySQL nutzt im `helper_table`-Modus kanonische Emulationsobjekte (0.9.3).
+
+Historische `nextval(...)`-Notationen als freier Text oder FunctionCall werden
+seit 0.9.3 mit E122 abgelehnt. Migration: `default: "nextval('seq')"` →
+`default: { sequence_nextval: seq }`.
 
 ---
 

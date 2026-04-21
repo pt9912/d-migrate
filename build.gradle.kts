@@ -11,7 +11,7 @@ fun normalizedReleaseVersion(raw: String?): String? {
     return normalized.takeIf { semverLike.matches(it) }
 }
 
-val defaultProjectVersion = "0.9.2"
+val defaultProjectVersion = "0.9.3"
 val resolvedProjectVersion =
     normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
@@ -77,6 +77,13 @@ subprojects {
             maxHeapSize = integrationHeap
         }
     }
+
+    // Ensure koverVerify always runs after test and is never served from
+    // build cache — prevents stale coverage data from prior Gradle invocations.
+    tasks.matching { it.name == "koverVerify" || it.name == "koverCachedVerify" }.configureEach {
+        mustRunAfter(tasks.named("test"))
+        outputs.cacheIf { false }
+    }
 }
 
 dependencies {
@@ -113,6 +120,22 @@ kover {
             rule {
                 minBound(90)
             }
+        }
+    }
+}
+
+tasks.register("resolveAllDependencies") {
+    group = "build setup"
+    description = "Resolves all resolvable configurations across all projects to warm the Gradle dependency cache."
+
+    doLast {
+        allprojects.forEach { project ->
+            project.configurations
+                .filter { it.isCanBeResolved }
+                .forEach { configuration ->
+                    logger.lifecycle("Resolving ${project.path}:${configuration.name}")
+                    configuration.resolve()
+                }
         }
     }
 }

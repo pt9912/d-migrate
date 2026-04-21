@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
@@ -127,7 +128,7 @@ class DataExportRunnerTest : FunSpec({
         format = format,
         output = output,
         tables = tables,
-        filter = filter,
+        filter = parseFilter(filter),
         sinceColumn = sinceColumn,
         since = since,
         encoding = encoding,
@@ -248,7 +249,7 @@ class DataExportRunnerTest : FunSpec({
         runner.execute(request(tables = listOf("public.users"))) shouldBe 0
     }
 
-    test("Exit 0: --filter is passed as a WhereClause to the executor") {
+    test("Exit 0: --filter is parsed as DSL and passed as ParameterizedClause to the executor") {
         var capturedFilter: DataFilter? = null
         val stderr = StderrCapture()
         val runner = newRunner(
@@ -262,10 +263,40 @@ class DataExportRunnerTest : FunSpec({
             }
         )
         runner.execute(request(filter = "id = 42")) shouldBe 0
-        (capturedFilter as? DataFilter.WhereClause)?.sql shouldBe "id = 42"
+        val clause = capturedFilter.shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+        clause.params shouldBe listOf(42L)
     }
 
-    test("Exit 0: blank --filter is dropped (treated as no filter)") {
+    test("Fingerprint stability: semantically equal filters with different whitespace/case produce same fingerprint") {
+        // Two filter strings that differ only in whitespace and keyword case
+        // must produce the same canonical form and therefore the same fingerprint.
+        val filterA = parseFilter("status = 'OPEN'  AND  active = true")!!
+        val filterB = parseFilter("status='OPEN' and active=TRUE")!!
+        filterA.canonical shouldBe filterB.canonical
+
+        // Verify through the full fingerprint computation path
+        val fpA = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
+            format = "json", encoding = "utf-8", csvDelimiter = ",",
+            csvBom = false, csvNoHeader = false, csvNullString = "",
+            filter = filterA.canonical, sinceColumn = null, since = null,
+            tables = listOf("users"), outputMode = "stdout", outputPath = "<stdout>",
+        ))
+        val fpB = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
+            format = "json", encoding = "utf-8", csvDelimiter = ",",
+            csvBom = false, csvNoHeader = false, csvNullString = "",
+            filter = filterB.canonical, sinceColumn = null, since = null,
+            tables = listOf("users"), outputMode = "stdout", outputPath = "<stdout>",
+        ))
+        fpA shouldBe fpB
+    }
+
+    test("Fingerprint divergence: structurally different filters produce different fingerprints") {
+        val filterA = parseFilter("status = 'OPEN'")!!
+        val filterB = parseFilter("status = 'CLOSED'")!!
+        filterA.canonical shouldNotBe filterB.canonical
+    }
+
+    test("Exit 0: null filter (no --filter flag) passes null to executor") {
         var capturedFilter: DataFilter? = null
         val stderr = StderrCapture()
         val runner = newRunner(
@@ -278,7 +309,8 @@ class DataExportRunnerTest : FunSpec({
                 )
             }
         )
-        runner.execute(request(filter = "   ")) shouldBe 0
+        // null filter = --filter not provided (blank is rejected at CLI layer)
+        runner.execute(request(filter = null)) shouldBe 0
         capturedFilter shouldBe null
     }
 
@@ -331,7 +363,8 @@ class DataExportRunnerTest : FunSpec({
         ) shouldBe 0
 
         val filter = capturedFilter.shouldBeInstanceOf<DataFilter.Compound>()
-        filter.parts[0].shouldBeInstanceOf<DataFilter.WhereClause>().sql shouldBe "active = 1"
+        val dslPart = filter.parts[0].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
+        dslPart.params shouldBe listOf(1L)
         val marker = filter.parts[1].shouldBeInstanceOf<DataFilter.ParameterizedClause>()
         marker.sql shouldBe "\"updated_at\" >= ?"
         marker.params shouldBe listOf(LocalDateTime.parse("2026-01-01T10:15:30"))
@@ -472,25 +505,13 @@ class DataExportRunnerTest : FunSpec({
         stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
     }
 
-    test("Exit 2: M-R5 preflight rejects literal ? in --filter when combined with --since") {
-        var poolOpened = false
-        val stderr = StderrCapture()
-        val runner = newRunner(
-            stderr,
-            poolFactory = {
-                poolOpened = true
-                FakeConnectionPool()
-            },
-        )
-        runner.execute(
-            request(
-                filter = "name LIKE 'Order?%'",
-                sinceColumn = "updated_at",
-                since = "2026-01-01",
-            )
-        ) shouldBe 2
-        poolOpened shouldBe false
-        stderr.joined() shouldContain "--filter must not contain literal '?' when combined with --since"
+    test("Exit 2: invalid --filter DSL throws FilterParseException at request construction") {
+        // Since 0.9.3, filter parsing happens in the CLI layer (DataExportCommand)
+        // before DataExportRequest is constructed. The Runner never sees invalid DSL.
+        // This test verifies that parseFilter rejects invalid input.
+        shouldThrow<FilterParseException> {
+            parseFilter("LIMIT 10")
+        }
     }
 
     // ─── Exit 4: Connection / lister I/O ─────────────────────────
@@ -928,6 +949,43 @@ class DataExportRunnerTest : FunSpec({
             )
             exit shouldBe 3
             stderr.joined() shouldContain "fingerprint mismatch"
+        }
+
+        test("--resume with v1 legacy checkpoint and --filter exits 2 with migration hint") {
+            val store = InMemoryCheckpointStore()
+            // Simulate a pre-0.9.3 v1 manifest with raw-SQL-based fingerprint
+            store.save(
+                dev.dmigrate.streaming.checkpoint.CheckpointManifest(
+                    schemaVersion = 1,
+                    operationId = "op-legacy",
+                    operationType = dev.dmigrate.streaming.checkpoint.CheckpointOperationType.EXPORT,
+                    createdAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    updatedAt = java.time.Instant.parse("2026-04-16T10:00:00Z"),
+                    format = "json",
+                    chunkSize = 10_000,
+                    tableSlices = listOf(
+                        dev.dmigrate.streaming.checkpoint.CheckpointTableSlice(
+                            table = "users",
+                            status = dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus.PENDING,
+                        ),
+                    ),
+                    // Raw-SQL-based fingerprint from pre-0.9.3 — will not match DSL canonical form
+                    optionsFingerprint = "a".repeat(64),
+                ),
+            )
+            val stderr = StderrCapture()
+            val runner = newRunner(stderr, checkpointStoreFactory = { store })
+            val exit = runner.execute(
+                request(
+                    filter = "status = 'OPEN'",
+                    output = Path.of("/tmp/d-migrate-legacy-ckpt.json"),
+                    resume = "op-legacy",
+                    checkpointDir = Path.of("/tmp/d-migrate-c1-ckpt"),
+                ),
+            )
+            exit shouldBe 2
+            stderr.joined() shouldContain "schema version 1"
+            stderr.joined() shouldContain "pre-0.9.3"
         }
 
         test("--resume mit operationType-Mismatch (IMPORT) endet mit Exit 3") {

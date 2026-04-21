@@ -110,6 +110,13 @@ class SqliteTypeMapperTest : FunSpec({
         mapper.toDefaultSql(DefaultValue.FunctionCall("gen_uuid"), NeutralType.Uuid) shouldContain "hex"
     }
 
+    test("SequenceNextVal throws defensive error") {
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            mapper.toDefaultSql(DefaultValue.SequenceNextVal("my_seq"), NeutralType.Integer)
+        }
+        ex.message shouldContain "not supported"
+    }
+
     // -- dialect --
 
     test("dialect is SQLITE") {
