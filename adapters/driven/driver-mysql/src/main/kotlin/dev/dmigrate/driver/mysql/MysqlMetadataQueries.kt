@@ -343,7 +343,17 @@ object MysqlMetadataQueries {
                 """.trimIndent(), database, routineName,
             ) ?: return SupportRoutineState.MISSING
 
-            val definition = row["routine_definition"] as? String ?: ""
+            // routine_definition may be NULL in information_schema (MySQL security).
+            // Fall back to SHOW CREATE FUNCTION which returns the full body.
+            var definition = row["routine_definition"] as? String ?: ""
+            if (definition.isEmpty()) {
+                val safeDb = database.replace("`", "``")
+                val safeName = routineName.replace("`", "``")
+                val showRow = try {
+                    session.querySingle("SHOW CREATE FUNCTION `$safeDb`.`$safeName`")
+                } catch (_: Exception) { null }
+                definition = (showRow?.get("Create Function") as? String) ?: ""
+            }
             val dataType = (row["data_type"] as? String)?.lowercase() ?: ""
 
             // Check marker — routine exists but no d-migrate marker → user object
