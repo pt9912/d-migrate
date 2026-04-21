@@ -270,6 +270,23 @@ Verbindliche Entscheidung:
 - compare-seitige Codeaenderungen sind nur dann zulaessig, wenn nach
   sauberer Reader-Normalisierung noch ein echter Neutralmodell-Spalt
   verbleibt
+- Reverse-Warnungen wie `W116` sind im Compare **Begleitsignale** der
+  Operanden, keine eigene Diff-Kategorie
+- `schema compare` behaelt damit seine bestehende Exit-Semantik:
+  - Exit 0 bei "identical"
+  - Exit 1 bei echtem Diff
+  - `W116` allein kippt den Exit-Code nicht auf Fehler oder Diff
+- in Plain-Output erscheinen `W116`-Notes operandseitig auf `stderr`
+  wie andere Reverse-Warnungen; in `json`/`yaml` bleiben sie Teil der
+  operandbezogenen Validation-/Notes-Struktur statt in einen
+  synthetischen Diff-Eintrag uebersetzt zu werden
+
+Begruendung:
+
+- der degradierte Zustand soll fuer CI und Nutzer sichtbar sein, aber
+  nicht still in "Schema ist verschieden" umgedeutet werden
+- Diff-Semantik und Diagnose-Semantik muessen getrennt bleiben, damit
+  Compare-Automation stabil bleibt
 
 ---
 
@@ -325,13 +342,37 @@ Wichtig:
   Kernmetadaten (`dmg_sequences`, Tabellen, Spalten) darf den Lauf
   hart scheitern lassen
 
+Konkreter Fallback-Vertrag fuer 0.9.4:
+
+- **Pfad A: Support-Tabelle lesbar, Routinen/Trigger nicht lesbar**
+  - `schema.sequences` wird aus `dmg_sequences` rekonstruiert
+  - Spaltenzuordnungen werden nur dort gesetzt, wo Trigger trotzdem
+    bestaetigt werden koennen
+  - nicht bestaetigbare Routinen/Trigger fuehren zu aggregiertem
+    `W116`
+- **Pfad B: Trigger-Marker nicht lesbar, aber Triggertext vorhanden**
+  - Marker gilt als "nicht bestaetigbar"
+  - der Reader prueft den Trigger ueber den normalisierten
+    Semantikpfad weiter
+  - nur wenn auch diese Pruefung scheitert, faellt die Spaltenzuordnung
+    aus und `W116` wird emittiert
+- **Pfad C: weder Marker noch ausreichender Triggertext lesbar**
+  - keine Spaltenzuordnung
+  - Sequence-Rekonstruktion bleibt moeglich, sofern `dmg_sequences`
+    lesbar ist
+  - `W116` dokumentiert den degradierten Triggerpfad
+- **Pfad D: `dmg_sequences` selbst nicht lesbar**
+  - kein Sequence-Reverse
+  - das bleibt ein harter Reverse-Fehler, weil die primaere
+    Wahrheitsquelle fehlt
+
 ### 5.3 Rekonstruktion der `SequenceDefinition`
 
 Eine Sequence wird nur dann aus einer `dmg_sequences`-Zeile
 rekonstruiert, wenn:
 
 - die Tabelle `dmg_sequences` existiert
-- die kanonischen Spalten vorhanden sind
+- die kanonische Grundform der Tabelle vorhanden ist
 - die jeweilige Zeile `managed_by = 'd-migrate'` und
   `format_version = 'mysql-sequence-v1'` traegt
 
@@ -344,6 +385,31 @@ Mapping:
 - `max_value` -> `maxValue`
 - `cycle_enabled` -> `cycle`
 - `cache_size` -> `cache`
+
+Kanonische Grundform der Tabelle:
+
+- **erforderliche Spaltennamen**:
+  `managed_by`, `format_version`, `name`, `next_value`,
+  `increment_by`, `min_value`, `max_value`, `cycle_enabled`,
+  `cache_size`
+- **zusatzliche Spalten sind zulaessig**, solange die erforderlichen
+  Spalten eindeutig vorhanden bleiben
+- **relevante Typsemantik** statt exakter SQL-Typgleichheit:
+  - `name`: string-artig lesbar
+  - `managed_by`, `format_version`: string-artig lesbar
+  - `next_value`, `increment_by`, `min_value`, `max_value`:
+    integer-artig lesbar
+  - `cycle_enabled`: boolean-/tinyint-artig lesbar
+  - `cache_size`: integer-artig oder `NULL`
+- reine MySQL-Typdetailabweichungen wie `VARCHAR(255)` vs.
+  `VARCHAR(191)` oder `TINYINT(1)` vs. kompatible numerische
+  Bool-Repraesentationen zerstoeren die Grundform **nicht**
+- Grundform gilt dagegen als verloren, wenn:
+  - eine erforderliche Spalte fehlt oder mehrfach/uneindeutig
+    aufloesbar ist
+  - eine erforderliche Spalte nicht mehr in die benoetigte
+    Zielsemantik gelesen werden kann
+  - `name` als eindeutiger Sequence-Key nicht mehr rekonstruierbar ist
 
 Leitlinie fuer 0.9.4:
 
@@ -385,6 +451,8 @@ Stattdessen wird ein robuster Normalisierungspfad festgelegt:
   Sequence-Name oder der Routinenname relevant ist
 - MySQL-Metadatenformatierung pro Version oder Connector darf fuer sich
   allein keinen `W116` ausloesen
+- Marker- oder Kommentarverlust fuehrt nicht sofort zum Ausfall, solange
+  der semantische Triggertext noch ausreichend lesbar ist
 
 Ein Trigger gilt danach als kanonisch bestaetigt, wenn mindestens diese
 Kriterien zugleich zutreffen:
@@ -404,6 +472,9 @@ Sekundaerregel fuer 0.9.4:
 - wenn der Marker lesbar ist, aber die Body-Formatierung von der
   Generator-Textform abweicht, zaehlt die semantische
   Normalisierungspruefung
+- wenn der Marker nicht lesbar oder durch Metadatenzugriff nicht
+  verfuegbar ist, darf derselbe semantische Normalisierungspfad als
+  expliziter Fallback genutzt werden
 - wenn weder Marker noch robuste Semantik bestaetigbar sind, gibt es
   keine Spaltenzuordnung und stattdessen `W116`
 
@@ -498,6 +569,10 @@ Akzeptanzkriterien:
   statt als Hard-Error behandeln
 - kanonische Trigger via Name + Marker + normalisierte Semantik
   validieren, nicht via starrem Textvergleich
+- expliziten Fallback-Pfad implementieren:
+  - primaer Marker + Semantik
+  - sekundaer nur Semantik auf ausreichend lesbarem Triggertext
+  - tertiaer klare Nicht-Erkennung mit `W116`
 - Spaltenzuordnung `table.column -> sequenceName` aufbauen
 - betroffene `ColumnDefinition.default` zu
   `DefaultValue.SequenceNextVal(sequenceName)` setzen
@@ -513,6 +588,8 @@ Akzeptanzkriterien:
 - kanonische Support-Trigger erscheinen nicht als normale Trigger
 - reine Formatierungs- oder Quoting-Unterschiede im ausgelesenen
   Triggertext loesen fuer intakte generierte Trigger kein `W116` aus
+- fehlt nur der Marker, aber der semantische Triggertext ist intakt,
+  bleibt die Spaltenzuordnung dennoch reverse-bar
 
 ### 6.4 Phase E1: Compare-Stabilisierung
 
@@ -528,6 +605,10 @@ Akzeptanzkriterien:
   diff-frei
 - geaenderte Sequence-Metadaten fuehren zu `sequencesChanged`
 - Hilfsobjekt-Rauschen taucht im Diff nicht auf
+- operandseitiges `W116` bleibt in Compare sichtbar, ohne selbst einen
+  Diff-Eintrag oder Exit-1 auszulösen
+- Plain-/JSON-/YAML-Ausgabe behandeln `W116` konsistent als Diagnose des
+  jeweiligen Operanden, nicht als eigenstaendige Vergleichsart
 
 ### 6.5 Phase E2: Doku- und Vertragsnachzug
 
@@ -597,6 +678,19 @@ Pflichtfaelle fuer 0.9.4:
    aehnlich benannte, aber nicht markierte Objekte werden nicht
    versehentlich weggefiltert
 
+8. **Compare mit degradiertem Operand**
+   operandseitiges `W116` bleibt in Compare sichtbar, aber ohne
+   kuenstlichen Diff-Eintrag; Exit-Code folgt weiter nur der
+   Diff-Entscheidung
+
+9. **Markerloser, aber semantisch intakter Trigger**
+   fehlender Marker allein verhindert die Spaltenzuordnung nicht,
+   solange der normalisierte Triggertext die kanonische Semantik traegt
+
+10. **Grundform vs. Zusatzspalten**
+    zusaetzliche Spalten in `dmg_sequences` brechen den Reverse nicht;
+    fehlende Pflichtspalten dagegen schon
+
 Coverage-Ziel:
 
 - mindestens dieselbe Modulschwelle wie in den betroffenen
@@ -654,6 +748,10 @@ Gegenmassnahme:
 - Metadatenstrategie vor breiter Testimplementierung festziehen
 - Trigger-/Routine-Erkennung explizit auf Normalisierung und
   semantische Tokens statt auf Rohtextform aufbauen
+- Fallback-Reihenfolge bereits in Phase D3 fix implementieren:
+  - Marker + Semantik
+  - nur Semantik
+  - sonst klare Nicht-Erkennung mit `W116`
 
 ### 9.2 Laufzeitzustand vs. Sollzustand in `dmg_sequences`
 
