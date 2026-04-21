@@ -246,6 +246,17 @@ Verbindliche Formregeln:
 - Validierung erfolgt ueber `information_schema.columns`
   (`DATA_TYPE`/`COLUMN_TYPE`) plus JDBC-Lesekompatibilitaet, nicht ueber
   exakte DDL-Textgleichheit
+- fuer string-artige Pflichtfelder gilt in D2 eine explizite
+  Lesesemantik:
+  - JDBC-Strings werden vor Fachvergleich als gelesene Werte behandelt,
+    nicht als rohe SQL-Literale
+  - fuehrende und folgende Leerzeichen aus CHAR-/VARCHAR-Lesung duerfen
+    nicht still zu wechselnder Validierungssemantik fuehren
+  - `managed_by` und `format_version` werden gegen ihre kanonischen
+    Literalwerte nach derselben Normalisierung geprueft
+  - `name` bleibt nach derselben Normalisierung der fachliche
+    Sequence-Key; D2 fuehrt keine separate zweite
+    Case-/Padding-Heuristik ein
 
 Grundform gilt in D2 als verloren, wenn:
 
@@ -262,6 +273,16 @@ Eine Zeile ist nur dann D2-relevant, wenn:
 - `managed_by = 'd-migrate'`
 - `format_version = 'mysql-sequence-v1'`
 
+Vergleichssemantik fuer string-artige Zeilenwerte:
+
+- D2 verwendet fuer `managed_by`, `format_version` und `name` eine
+  einheitliche Reader-Normalisierung vor dem Fachvergleich
+- diese Normalisierung muss mindestens konsistent mit JDBC-Lesewerten
+  und MySQL-CHAR-Padding sein
+- dieselbe Normalisierung wird sowohl fuer Filterung als auch fuer
+  Konflikterkennung auf `name` verwendet, damit kein Drift zwischen
+  "Zeile gilt" und "Key kollidiert" entsteht
+
 Fremde oder historisch nicht passende Zeilen:
 
 - werden nicht zu `SequenceDefinition` gemappt
@@ -277,6 +298,19 @@ Eine lokal gueltige D2-Zeile muss mindestens sicher liefern koennen:
 - `max_value`
 - `cycle_enabled`
 - `cache_size` oder `NULL`
+
+Sonderregeln fuer `cache_size`:
+
+- `NULL` bleibt zulaessig und wird unveraendert als fehlender Cachewert
+  behandelt
+- nicht numerische Werte sind invalide
+- negative Werte sind invalide
+- fuer `0` gilt in D2: nur materialisieren, wenn das Neutralmodell
+  diesen Wert ohne Sondersemantik tragen kann; sonst den betroffenen
+  Sequence-Key degradieren statt still umzudeuten
+- sehr grosse, aber noch zieltyp-kompatible Werte bleiben zulaessig;
+  Ueberlaeufe oder nicht lesbare Grosswerte degradieren nur den
+  betroffenen Key
 
 Gemischte Qualitaet fuer denselben neutralen Sequence-Key:
 
@@ -323,6 +357,9 @@ Sequence-Schluesseln:
 - `supportTableState.not_accessible`
   - harter Sequence-Pfad nur gemaess D1-Gating-Regel
   - keine Teilrekonstruktion auf Verdacht
+  - Testvertrag: entweder harter Abbruch nach legitimierter
+    Primaerquelle oder kompatibler Nicht-Sequence-Fall gemaess Gating,
+    aber keine partielle implizite Sequence-Materialisierung
 - invalide oder widerspruechliche Einzelzeile
   - blockiert nur den betroffenen Sequence-Key
   - aggregierbares `W116`
@@ -361,10 +398,14 @@ Leitregel:
 ### 6.3 Zeilenvalidierung und Mapping implementieren
 
 - `managed_by`- und `format_version`-Filter anwenden
+- string-artige Pflichtfelder ueber eine zentrale D2-Normalisierung
+  vergleichen
 - Zeilen lokal validieren
 - gueltige Zeilen auf `SequenceDefinition` mappen
 - `next_value -> start` explizit an einer zentralen Stelle dokumentiert
   und testbar implementieren
+- `cache_size`-Sonderwerte (`NULL`, `0`, negativ, nicht lesbar,
+  Zieltyp-Ueberlauf) explizit gegen den D2-Vertrag pruefen
 
 ### 6.4 Konflikt- und W116-Pfad festziehen
 
@@ -387,12 +428,19 @@ Leitregel:
 
 - `MysqlSchemaReaderTest` fuer:
   - intakte Sequence-Rekonstruktion aus `dmg_sequences`
+  - konsistente Normalisierung von `managed_by`,
+    `format_version` und `name`
   - Zusatzspalten ohne Grundformverlust
   - fehlende Pflichtspalten mit degradiertem `W116`
+  - `cache_size`-Randfaelle (`NULL`, `0`, negativ, Grosswert)
   - einzelne kaputte Zeilen ohne Totalausfall
   - mehrere Sequences parallel, davon eine degradiert
   - mehrdeutige Sequence-Keys ohne stille Ueberschreibung
   - fehlende Support-Routinen bei weiter rekonstruierbaren Sequences
+  - `supportTableState.missing` ohne `W116` und ohne implizite
+    Sequence-Materialisierung
+  - `supportTableState.not_accessible` gemaess D1-Gating-Regel ohne
+    partielle Sequence-Materialisierung auf Verdacht
   - Unterdrueckung von `dmg_sequences` als sichtbare Tabelle
   erweitern
 
@@ -420,9 +468,21 @@ Pflichtfaelle fuer 6.2:
    `SequenceDefinition`.
 8. Fehlen `dmg_nextval` oder `dmg_setval`, bleiben die Sequences
    sichtbar, aber der Report enthaelt sequence-bezogenes `W116`.
-9. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
+9. `managed_by`, `format_version` und `name` werden ueber eine
+   konsistente D2-Normalisierung validiert, so dass Padding- oder
+   Leseunterschiede nicht zu driftender Filter- und Key-Semantik
+   fuehren.
+10. `cache_size`-Randfaelle sind explizit abgesichert:
+    `NULL` bleibt zulaessig, invalide oder nicht lesbare Werte
+    degradieren nur den betroffenen Sequence-Key.
+11. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
+    impliziten Sequence-Materialisierung.
+12. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
+    Hard-Fail oder kompatiblem Nicht-Sequence-Fall, nicht zu einem
+    stillen Teilergebnis.
+13. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
    Laufzeitzaehler wird nicht in D2 "wegkorrigiert".
-10. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
+14. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
     ein kompatibler Nicht-Sequence-Fall ohne implizite Sequences.
 
 Akzeptanzkriterium fuer 6.2:
