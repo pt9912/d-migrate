@@ -5,6 +5,15 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.SchemaCommand
+import dev.dmigrate.cli.commands.CompareRendererJson
+import dev.dmigrate.cli.commands.CompareRendererYaml
+import dev.dmigrate.cli.commands.OperandInfo
+import dev.dmigrate.cli.commands.SchemaCompareDocument
+import dev.dmigrate.cli.commands.SchemaCompareSummary
+import dev.dmigrate.core.validation.ValidationResult
+import dev.dmigrate.driver.SchemaReadNote
+import dev.dmigrate.driver.SchemaReadSeverity
+import dev.dmigrate.driver.SkippedObject
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -34,6 +43,55 @@ class CliSchemaCompareTest : FunSpec({
         }
         return capture.toString(Charsets.UTF_8)
     }
+
+    fun compareDocWithOperandDiagnostics() = SchemaCompareDocument(
+        status = "identical",
+        exitCode = 0,
+        source = "file:/tmp/source.yaml",
+        target = "db:seqtest",
+        summary = SchemaCompareSummary(),
+        diff = null,
+        validation = null,
+        sourceOperand = OperandInfo(
+            reference = "file:/tmp/source.yaml",
+            validation = ValidationResult(),
+            notes = listOf(
+                SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "W116",
+                    objectName = "invoices.invoice_number",
+                    message = "Degraded sequence emulation detected",
+                )
+            ),
+            skippedObjects = listOf(
+                SkippedObject(
+                    type = "trigger",
+                    name = "dmg_seq_invoices_invoice_number_bi",
+                    reason = "Support-trigger not representable in neutral model",
+                    code = "W116",
+                )
+            ),
+        ),
+        targetOperand = OperandInfo(
+            reference = "db:seqtest",
+            validation = ValidationResult(),
+            notes = listOf(
+                SchemaReadNote(
+                    severity = SchemaReadSeverity.INFO,
+                    code = "I100",
+                    objectName = "invoice_seq",
+                    message = "Sequence emulation confirmed",
+                )
+            ),
+            skippedObjects = listOf(
+                SkippedObject(
+                    type = "function",
+                    name = "dmg_nextval",
+                    reason = "Support routine hidden from compare result",
+                )
+            ),
+        ),
+    )
 
     // §8.3: --help
     test("schema compare --help is reachable") {
@@ -153,6 +211,32 @@ class CliSchemaCompareTest : FunSpec({
         output shouldContain """"status": "identical""""
         output shouldContain """"validation""""
         output shouldContain """"W001""""
+    }
+
+    test("json renderer includes source_operand and target_operand diagnostics") {
+        val output = CompareRendererJson.render(compareDocWithOperandDiagnostics())
+
+        output shouldContain """"source_operand": {"""
+        output shouldContain """"target_operand": {"""
+        output shouldContain """"reference": "file:/tmp/source.yaml""""
+        output shouldContain """"reference": "db:seqtest""""
+        output shouldContain """"code": "W116""""
+        output shouldContain """"object_name": "invoices.invoice_number""""
+        output shouldContain """"skipped_objects": [{"type": "trigger""""
+        output shouldContain """"name": "dmg_nextval""""
+    }
+
+    test("yaml renderer includes source_operand and target_operand diagnostics") {
+        val output = CompareRendererYaml.render(compareDocWithOperandDiagnostics())
+
+        output shouldContain "source_operand:"
+        output shouldContain "target_operand:"
+        output shouldContain "reference: \"file:/tmp/source.yaml\""
+        output shouldContain "reference: \"db:seqtest\""
+        output shouldContain "code: \"W116\""
+        output shouldContain "object_name: \"invoices.invoice_number\""
+        output shouldContain "skipped_objects:"
+        output shouldContain "name: \"dmg_nextval\""
     }
 
     // MINOR-2: write failure at CLI level returns exit 7

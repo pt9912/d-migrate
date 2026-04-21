@@ -1,6 +1,12 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.cli.commands.DiffView
+import dev.dmigrate.cli.commands.ResolvedSchemaOperand
+import dev.dmigrate.cli.commands.SchemaCompareDocument
+import dev.dmigrate.cli.commands.SchemaCompareRequest
+import dev.dmigrate.cli.commands.SchemaCompareRunner
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import io.kotest.core.NamedTag
@@ -78,6 +84,34 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
                 )
             }
         }
+    }
+
+    fun resetSequenceState(nextValue: Long) {
+        conn().use { c ->
+            c.createStatement().use { stmt ->
+                stmt.execute(
+                    "UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` " +
+                        "SET `next_value` = $nextValue WHERE `name` = 'invoice_seq'"
+                )
+            }
+        }
+    }
+
+    fun readLiveMysqlOperand(reference: String = "db:seqtest"): ResolvedSchemaOperand {
+        val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+            override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun activeConnections() = 0
+            override fun close() {}
+        }
+        val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions(includeTriggers = true))
+        return ResolvedSchemaOperand(
+            reference = reference,
+            schema = result.schema,
+            validation = dev.dmigrate.core.validation.SchemaValidator().validate(result.schema),
+            notes = result.notes,
+            skippedObjects = result.skippedObjects,
+        )
     }
 
     test("generated DDL executes against real MySQL") {
@@ -319,6 +353,95 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         result.schema.sequences.containsKey("invoice_seq") shouldBe true
         val col = result.schema.tables["invoices"]?.columns?.get("invoice_number")
         (col?.default is dev.dmigrate.core.model.DefaultValue.SequenceNextVal) shouldBe true
+    }
+
+    test("compare reverse snapshot against live reverse output stays diff-free") {
+        recreateCanonicalSupportTrigger()
+        resetSequenceState(nextValue = 1000L)
+        val sourceSnapshot = readLiveMysqlOperand(reference = "/tmp/source.yaml")
+
+        var capturedDoc: SchemaCompareDocument? = null
+        val runner = SchemaCompareRunner(
+            fileLoader = { sourceSnapshot },
+            dbLoader = { _, _ -> readLiveMysqlOperand() },
+            comparator = { left, right -> SchemaComparator().compare(left, right) },
+            projectDiff = { DiffView() },
+            renderPlain = { doc ->
+                capturedDoc = doc
+                doc.status
+            },
+            renderJson = { error("unused in integration test") },
+            renderYaml = { error("unused in integration test") },
+            printError = { message, source ->
+                throw AssertionError("Unexpected compare error for $source: $message")
+            },
+            stdout = {},
+            stderr = {},
+        )
+
+        runner.execute(
+            SchemaCompareRequest(
+                source = "/tmp/source.yaml",
+                target = "db:seqtest",
+                output = null,
+                outputFormat = "plain",
+                quiet = false,
+            )
+        ) shouldBe 0
+
+        capturedDoc!!.status shouldBe "identical"
+        capturedDoc!!.summary.totalChanges shouldBe 0
+        capturedDoc!!.targetOperand!!.notes.none { it.code == "W116" } shouldBe true
+        capturedDoc!!.targetOperand!!.skippedObjects.none { it.code == "W116" } shouldBe true
+    }
+
+    test("compare reverse snapshot reports only sequencesChanged for live sequence drift") {
+        recreateCanonicalSupportTrigger()
+        resetSequenceState(nextValue = 1000L)
+        val sourceSnapshot = readLiveMysqlOperand(reference = "/tmp/source.yaml")
+        resetSequenceState(nextValue = 2000L)
+
+        var capturedDoc: SchemaCompareDocument? = null
+        val runner = SchemaCompareRunner(
+            fileLoader = { sourceSnapshot },
+            dbLoader = { _, _ -> readLiveMysqlOperand() },
+            comparator = { left, right -> SchemaComparator().compare(left, right) },
+            projectDiff = { DiffView() },
+            renderPlain = { doc ->
+                capturedDoc = doc
+                doc.status
+            },
+            renderJson = { error("unused in integration test") },
+            renderYaml = { error("unused in integration test") },
+            printError = { message, source ->
+                throw AssertionError("Unexpected compare error for $source: $message")
+            },
+            stdout = {},
+            stderr = {},
+        )
+
+        runner.execute(
+            SchemaCompareRequest(
+                source = "/tmp/source.yaml",
+                target = "db:seqtest",
+                output = null,
+                outputFormat = "plain",
+                quiet = false,
+            )
+        ) shouldBe 1
+
+        capturedDoc!!.status shouldBe "different"
+        capturedDoc!!.summary.sequencesChanged shouldBe 1
+        capturedDoc!!.summary.tablesChanged shouldBe 0
+        capturedDoc!!.summary.tablesAdded shouldBe 0
+        capturedDoc!!.summary.tablesRemoved shouldBe 0
+        capturedDoc!!.summary.functionsAdded shouldBe 0
+        capturedDoc!!.summary.functionsRemoved shouldBe 0
+        capturedDoc!!.summary.functionsChanged shouldBe 0
+        capturedDoc!!.summary.triggersAdded shouldBe 0
+        capturedDoc!!.summary.triggersRemoved shouldBe 0
+        capturedDoc!!.summary.triggersChanged shouldBe 0
+        capturedDoc!!.targetOperand!!.notes.none { it.code == "W116" } shouldBe true
     }
 
     test("reverse tolerates formatting and quoting differences in support trigger") {

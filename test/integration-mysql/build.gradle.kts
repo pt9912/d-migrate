@@ -6,6 +6,7 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-mysql-profiling"))
     testImplementation(project(":adapters:driven:driver-common"))
+    testImplementation(project(":hexagon:application"))
     testImplementation(project(":hexagon:profiling"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))
