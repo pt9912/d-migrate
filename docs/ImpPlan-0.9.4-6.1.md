@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.4 - Beta: MySQL-Sequence Reverse-Engineering und Compare
 > **Arbeitspaket**: 6.1 (`Phase D1: Reader-Vertrag und Metadatenzugriff festziehen`)
-> **Status**: Refined (2026-04-21)
+> **Status**: Done (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 4.1 bis
 > 4.5, Abschnitt 5.1 bis 5.4, Abschnitt 6.1, Abschnitt 6.6, Abschnitt 7
 > und Abschnitt 9;
