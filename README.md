@@ -145,10 +145,6 @@ docker run --rm d-migrate:coverage-json > coverage.json
 # Optional den 90%-Kover-Gate wie in CI hart prüfen
 docker build --target coverage-verify -t d-migrate:coverage-verify .
 
-# Markdown-Link-Targets in docs/ auf Gültigkeit prüfen
-docker build -f Dockerfile.verify-docs -t d-migrate:verify-docs .
-docker run --rm d-migrate:verify-docs
-
 # Tests überspringen — nur CLI-Distribution erstellen
 docker build --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" \
   -t d-migrate:dev .
@@ -176,7 +172,7 @@ Hinweise:
 - Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als normalisiertes, JaCoCo-artiges JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
 - Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
 - Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
-- `Dockerfile.verify-docs` ist ein eigenständiges Dockerfile mit eigenem `.dockerignore`, das Markdown-Link-Targets (`[text](pfad)`) in `docs/` gegen das Dateisystem prüft. Externer HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
+- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (`[text](pfad)`) in `docs/` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
 - Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
 - Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),

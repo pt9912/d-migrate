@@ -124,42 +124,6 @@ kover {
     }
 }
 
-tasks.register("verifyDocRefs") {
-    group = "verification"
-    description = "Checks that markdown link targets in docs/*.md exist."
-
-    doLast {
-        val linkPattern = Regex("""\[.*?]\(((?!https?://)[^)#\s]+)""")
-        val docsDir = rootDir.resolve("docs")
-        var broken = 0
-
-        docsDir.walk()
-            .filter { it.extension == "md" }
-            .sorted()
-            .forEach { md ->
-                linkPattern.findAll(md.readText())
-                    .map { it.groupValues[1] }
-                    .distinct()
-                    .forEach { target ->
-                        val resolved = if (target.startsWith("/")) {
-                            File(target)
-                        } else {
-                            md.parentFile.resolve(target)
-                        }
-                        if (!resolved.exists()) {
-                            logger.lifecycle("BROKEN: ${md.relativeTo(rootDir)} -> $target")
-                            broken++
-                        }
-                    }
-            }
-
-        if (broken > 0) {
-            throw GradleException("$broken broken doc link(s) in docs/")
-        }
-        logger.lifecycle("All doc links OK.")
-    }
-}
-
 tasks.register("resolveAllDependencies") {
     group = "build setup"
     description = "Resolves all resolvable configurations across all projects to warm the Gradle dependency cache."
