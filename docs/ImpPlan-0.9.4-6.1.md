@@ -176,6 +176,15 @@ Verbindliche Folge:
 - nur der Verlust der primaeren Wahrheitsquelle bei **vorhandener, aber
   nicht lesbarer** `dmg_sequences`-Metadatenquelle bleibt ein harter
   Abbruchgrund
+- daraus folgt fuer 6.1 eine harte Gating-Regel:
+  - `not_accessible` auf der Support-Abstraktion darf nur dann in einen
+    harten Sequence-Pfad kippen, wenn `dmg_sequences` zuvor als
+    vorhandene oder eindeutig adressierbare Primaerquelle legitimiert
+    wurde
+  - kann 6.1 dagegen keine belastbare Existenzlegitimation fuer
+    `dmg_sequences` herstellen und liegen auch sonst keine bestaetigten
+    Sequence-Supportobjekte vor, bleibt der Fall im kompatiblen
+    Nicht-Sequence-Pfad
 - die Unterscheidung zwischen `missing` und `not_accessible` muss in
   6.1 explizit ueber einen zweistufigen Erkennungsprozess erfolgen:
   - Schritt 1: Existenz-/Adressierbarkeitspruefung fuer
@@ -202,6 +211,12 @@ Verbindliche Folge:
 - diese Schluessel muessen stabil und explizit sein:
   - `SequenceDiagnosticKey(reverseScope, neutralSequenceKey)`
   - `ColumnDiagnosticKey(reverseScope, canonicalTable, canonicalColumn)`
+- `reverseScope` ist in 6.1 nicht nur ein freier String, sondern ein
+  eigener Namensraumwert:
+  - empfohlen als Wertobjekt `ReverseScope(catalogName?, schemaName)`
+  - mindestens muss 6.1 festlegen, welche Kanonisierung fuer MySQL
+    innerhalb eines Reader-Laufs verwendet wird
+  - D2/D3 duerfen diesen Scope nicht lokal neu definieren
 - die Schluessel werden in 6.1 als strukturierte Composite-Keys
   modelliert, nicht als String mit Trennzeichenkodierung
 - erst spaetere Render-/Logpfade duerfen daraus lesbare Strings
@@ -327,11 +342,14 @@ Semantik von `supportTableState`:
   - Support-Tabelle ist vorhanden, aber nicht kanonisch auswertbar
   - degradierter Sequence-Pfad; spaeter aggregierbares `W116`
 - `not_accessible`:
-  - Support-Tabelle ist adressierbar oder die Existenzpruefung liefert
-    nur einen Rechte-/Zugriffsfehler, aber kein sauberes "nicht
-    vorhanden"
-  - harter Abbruchgrund fuer den Sequence-Pfad, weil die primaere
-    Wahrheitsquelle nicht inspizierbar ist
+  - fuer einen technisch intendierten Zugriffspfad auf die
+    Support-Tabelle tritt ein eindeutiger Rechte- oder technischer
+    Metadatenfehler auf
+  - der Zustand beschreibt einen gescheiterten Zugriff, nicht
+    "adressierbar und zugleich lesbar"
+  - er fuehrt nur dann in den harten Sequence-Pfad, wenn
+    `dmg_sequences` zuvor als vorhandene oder eindeutig adressierbare
+    Primaerquelle legitimiert wurde
   - dieser Zustand darf nicht durch spaeteres "wir haben keine Zeilen
     gefunden" zu `missing` umgedeutet werden
 
@@ -387,8 +405,13 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 - fuer `dmg_sequences` einen expliziten Rueckgabezustand vorsehen, bei
   dem die Existenzfrage selbst technisch nicht entscheidbar ist; dieser
   Zustand mappt nach `not_accessible`, nicht nach `missing`
-- Query-Tests fuer die neuen Pfade anlegen oder vorhandene Tests
-  erweitern
+- Query-Tests fuer die neuen Pfade verpflichtend nachziehen:
+  - mindestens je ein Test fuer `missing`, `not_accessible`,
+    `invalid_shape` und `non_canonical`
+  - zusaetzlich ein Test fuer die Gating-Regel:
+    `not_accessible` ohne belastbare Existenzlegitimation fuer
+    `dmg_sequences` darf nicht implizit den Nicht-Sequence-Fall
+    zerstoeren
 
 ### 6.3 Support-Snapshot einfuehren
 
@@ -399,6 +422,8 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 ### 6.4 W116-Aggregation festziehen
 
 - Aggregationsschluessel fuer Sequence- und Spaltenebene festlegen
+- `ReverseScope` als expliziten Bestandteil dieser Schluessel
+  modellieren und fuer MySQL kanonisch festschreiben
 - dafuer strukturierte Composite-Key-Typen statt Stringkodierung
   einfuehren
 - technische Einzelereignisse in aggregierbare Diagnoseeintraege
@@ -440,20 +465,25 @@ Pflichtfaelle fuer 6.1:
    solange `dmg_sequences` lesbar bleibt.
 3. `missing`, `not_accessible`, `invalid_shape` und `non_canonical`
    werden intern unterscheidbar modelliert.
-4. Doppelte/mehrdeutige Sequence-Keys fuehren nicht zu stiller
+4. `not_accessible` auf `dmg_sequences` fuehrt nur dann in einen harten
+   Sequence-Pfad, wenn die Tabelle zuvor als vorhandene oder eindeutig
+   adressierbare Primaerquelle legitimiert wurde.
+5. Doppelte/mehrdeutige Sequence-Keys fuehren nicht zu stiller
    Ueberschreibung.
-5. Die Aggregation liefert pro Sequence bzw. pro Spalte genau eine
+6. Die Aggregation liefert pro Sequence bzw. pro Spalte genau eine
    zusammengefuehrte Diagnosebasis.
-6. Ein Schema ohne `dmg_sequences` und ohne Supportobjekte bleibt ein
+7. `ReverseScope` ist fuer die Aggregation als kanonischer Namensraum
+   festgelegt und wird nicht je Phase lokal neu interpretiert.
+8. Ein Schema ohne `dmg_sequences` und ohne Supportobjekte bleibt ein
    kompatibler Nicht-Sequence-Fall: kein Hard-Error, kein implizites
    `W116`, keine zusaetzlichen Reverse-Notes.
-7. Bei gemischter Zeilenqualitaet fuer denselben Sequence-Key wird der
+9. Bei gemischter Zeilenqualitaet fuer denselben Sequence-Key wird der
    gesamte Key blockiert; es gibt keinen partiellen "beste Zeile
    gewinnt"-Pfad.
-8. Deaktivierte Include-Flags bleiben fuer Nutzerobjekte sauber:
+10. Deaktivierte Include-Flags bleiben fuer Nutzerobjekte sauber:
    Support-Scans erzeugen weder sichtbare Supportobjekte noch
    zusaetzliche Nutzer-Notes.
-9. Bestehende Nicht-Sequence-Reader-Faelle bleiben gegen bestehende
+11. Bestehende Nicht-Sequence-Reader-Faelle bleiben gegen bestehende
    Test-Baselines unveraendert:
    keine Drift in Schemaobjekten, Notes und Hard-/Soft-Fail-Verhalten.
 
@@ -527,6 +557,8 @@ Gegenmassnahme:
 - kein gemeinsamer Catch-All fuer "nicht vorhanden" und "nicht lesbar"
 - negativer Existenzbefund nur bei technisch erfolgreicher Pruefung
   als `missing`
+- harter Sequence-Pfad nur nach vorgelagerter
+  Existenz-/Adressierbarkeitslegitimation von `dmg_sequences`
 
 ### 9.4 Aggregation wird zu spaet festgezogen
 
@@ -538,6 +570,7 @@ Risiko:
 Gegenmassnahme:
 
 - Aggregationsschluessel und Diagnosebasis schon in 6.1 definieren
+- `ReverseScope` als kanonisches Wertobjekt mitfestschreiben
 
 ### 9.5 Mehrdeutige Keys werden zu still behandelt
 
