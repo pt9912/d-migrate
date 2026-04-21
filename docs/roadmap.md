@@ -370,7 +370,7 @@ Reverse-Engineering und Compare folgen in 0.9.4. Details:
 | Driver  | Phase D2: Sequence-Reverse aus `dmg_sequences` (AP 6.2)                                                                     | —      | ✅      |
 | Driver  | Phase D3: Sequence-Default-Reverse ueber Trigger (AP 6.3)                                                                   | —      | ✅      |
 | Core    | Phase E1: Compare-Stabilisierung — Renderer-Nachzug und Exit-Code-Vertrag (AP 6.4)                                          | —      | ✅      |
-| Docs    | Phase E2: Doku- und Vertragsnachzug (AP 6.5)                                                                                | —      | 🔧     |
+| Docs    | Phase E2: Doku- und Vertragsnachzug (AP 6.5)                                                                                | —      | ✅      |
 | Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                           | —      | ✅      |
 | Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)               | —      | ✅      |
 
@@ -636,4 +636,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.37
 **Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.3 abgeschlossen; 0.9.4 in Arbeit (AP 6.1–6.4 Done, AP 6.5 in Arbeit); geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Status**: Milestone 0.1.0–0.9.3 abgeschlossen; 0.9.4 in Arbeit (AP 6.1–6.5 Done); geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8

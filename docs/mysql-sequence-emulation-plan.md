@@ -1,6 +1,6 @@
 # Implementierungsplan: Vollständige MySQL-Sequence-Emulation
 
-> Status: Phase A–E1 abgeschlossen (2026-04-21); Phase E2 (Doku-Nachzug) in Arbeit
+> Status: Phase A–E2 abgeschlossen (2026-04-21)
 >
 > Zweck: Produktplan fuer eine **vollstaendige** MySQL-Variante von
 > benannten Sequences im DDL-Pfad, inklusive DDL-Generierung,
@@ -26,7 +26,10 @@
 >     ist Diagnose, kein Diff; Exit-Codes folgen nur Validation oder
 >     echtem Diff; `source_operand`/`target_operand` in JSON/YAML
 >     sichtbar
->   - E2 (Doku- und Vertragsnachzug) in Arbeit — 0.9.4 AP 6.5
+>   - E2 (Doku- und Vertragsnachzug): abgeschlossen in 0.9.4 AP 6.5 —
+>     Roadmap, Spezialplan, CLI-Spec, Guide und Ledger auf den
+>     0.9.4-Vertragsstand nachgezogen; W116 konsistent als aktiv
+>     dokumentiert
 >
 > Referenzen:
 > - `docs/ddl-generation-rules.md` §7

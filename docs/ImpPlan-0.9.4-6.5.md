@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.4 - Beta: MySQL-Sequence Reverse-Engineering und Compare
 > **Arbeitspaket**: 6.5 (`Phase E2: Doku- und Vertragsnachzug`)
-> **Status**: Draft (2026-04-21)
+> **Status**: Done (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 6.5,
 > Abschnitt 7 und Abschnitt 9 (im Masterplan);
 > `docs/ImpPlan-0.9.4-6.1.md`;
