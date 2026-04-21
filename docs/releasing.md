@@ -474,29 +474,24 @@ if [ "$LINES" -lt 5 ]; then
 fi
 ```
 
-Der `release-homebrew.yml`-Workflow erstellt den GitHub-Release automatisch beim
-Tag-Push. Falls der Release dadurch bereits existiert, schlägt `gh release create`
-fehl. In diesem Fall die Release-Notes nachträglich setzen:
+**Wichtig: Zuerst prüfen, ob der Release bereits existiert.** Der
+`release-homebrew.yml`-Workflow erstellt den GitHub-Release automatisch beim
+Tag-Push. `gh release create` schlägt fehl, wenn der Release schon da ist.
 
 ```bash
-# Release existiert bereits (vom Workflow erstellt) → Body aktualisieren:
-gh release edit vX.Y.Z --notes-file /tmp/release-notes.md
-```
-
-Falls der Release noch nicht existiert (Workflow deaktiviert oder fehlgeschlagen):
-
-```bash
-gh release create vX.Y.Z \
-  --target main \
-  --title "vX.Y.Z" \
-  --notes-file /tmp/release-notes.md \
-  ./release-assets/*
-```
-
-Falls Assets erneut hochgeladen werden müssen:
-
-```bash
-gh release upload vX.Y.Z ./release-assets/* --clobber
+# Prüfen, ob der Release bereits existiert:
+if gh release view vX.Y.Z >/dev/null 2>&1; then
+  echo "Release vX.Y.Z existiert bereits — Notes aktualisieren und Assets hochladen"
+  gh release edit vX.Y.Z --notes-file /tmp/release-notes.md
+  gh release upload vX.Y.Z ./release-assets/* --clobber
+else
+  echo "Release vX.Y.Z existiert noch nicht — neu erstellen"
+  gh release create vX.Y.Z \
+    --target main \
+    --title "vX.Y.Z" \
+    --notes-file /tmp/release-notes.md \
+    ./release-assets/*
+fi
 ```
 
 ### 4.7 Homebrew-Formula auf finale URL und SHA bringen
@@ -685,7 +680,7 @@ Für jeden Release abhaken:
 
 **Veröffentlichung**
 - [ ] `release-assets` aus dem grünen Tag-Build heruntergeladen
-- [ ] `gh release create vX.Y.Z` oder `gh release upload vX.Y.Z` mit `./release-assets/*` ausgeführt
+- [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
 - [ ] `packaging/homebrew/d-migrate.rb` auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht

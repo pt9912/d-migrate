@@ -83,9 +83,15 @@ subprojects {
         outputs.cacheIf { false }
     }
 
-    // Ensure koverVerify always runs after test and is never served from
-    // build cache — prevents stale coverage data from prior Gradle invocations.
-    tasks.matching { it.name == "koverVerify" || it.name == "koverCachedVerify" }.configureEach {
+    // Ensure kover verification and artifact tasks always run after test
+    // and are never served from build cache — prevents stale coverage
+    // data from prior Gradle invocations. Excludes koverFindJar (needed
+    // by test itself) to avoid circular dependency.
+    val koverNoCacheTasks = setOf(
+        "koverVerify", "koverCachedVerify",
+        "koverGenerateArtifact", "koverGenerateArtifactJvm",
+    )
+    tasks.matching { it.name in koverNoCacheTasks }.configureEach {
         mustRunAfter(tasks.named("test"))
         outputs.cacheIf { false }
     }
