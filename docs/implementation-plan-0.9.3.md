@@ -394,20 +394,36 @@ nicht "SQL light", sondern ein enges, parserbares Teilformat.
 
 Verbindlicher Ausdrucksrahmen:
 
-- ein Filter ist eine `AND`-verkettete Liste von Klauseln
-- es gibt in 0.9.3 **kein** `OR`, kein `NOT`, keine Klammerung und keine
-  freien Funktionsaufrufe
-- jede Klausel adressiert genau einen Spalten-Identifier links und genau
-  einen Operator
+- erlaubt sind:
+  - Vergleichsklauseln
+  - `IN (...)`
+  - `IS NULL` / `IS NOT NULL`
+  - `AND`-Verkettung
+  - `OR`
+  - `NOT`
+  - Klammern
+  - Funktionsaufrufe (mit Allowlist)
+  - Arithmetik
+- nicht erlaubt sind:
+  - freie SQL-Fragmente
+  - dialektspezifische Operatoren
 
 Zulaessige Grammatik auf hoher Ebene:
 
 ```text
-filter        := clause (ws "AND" ws clause)*
-clause        := comparison | in_list | null_check
-comparison    := identifier ws? operator ws? literal
-in_list       := identifier ws? "IN" ws? "(" literal ("," literal)* ")"
-null_check    := identifier ws? "IS NULL" | identifier ws? "IS NOT NULL"
+filter_expr   := or_expr
+or_expr       := and_expr (ws "OR" ws and_expr)*
+and_expr      := not_expr (ws "AND" ws not_expr)*
+not_expr      := "NOT" ws not_expr | predicate
+predicate     := value_expr ws? operator ws? value_expr
+               | value_expr ws "IN" ws? "(" value_expr ("," value_expr)* ")"
+               | value_expr ws "IS" ws "NULL"
+               | value_expr ws "IS" ws "NOT" ws "NULL"
+               | "(" filter_expr ")"
+value_expr    := unary_expr (("+"|"-") unary_expr)*
+unary_expr    := ("*"|"/") atom_expr | atom_expr
+atom_expr     := identifier | literal | function_call | "(" value_expr ")"
+function_call := allowed_name "(" value_expr ("," value_expr)* ")"
 operator      := "=" | "!=" | ">" | ">=" | "<" | "<="
 ```
 
@@ -487,11 +503,10 @@ Parser-/Normalisierungsvertrag:
 
 Nicht erlaubt in 0.9.3:
 
-- `OR`, `NOT`, Klammerausdruecke
-- Funktionsaufrufe (`lower(name) = 'x'`)
-- arithmetische Ausdruecke (`price * qty > 10`)
 - freie SQL-Fragmente (`EXISTS (...)`, `1=1`, Subqueries)
-- dialect-spezifische Operatoren (`ILIKE`, JSON-Operatoren, Regex)
+- dialektspezifische Operatoren (`ILIKE`, `LIKE`, `BETWEEN`,
+  JSON-Operatoren, Regex)
+- nicht in der Allowlist enthaltene Funktionsnamen
 
 ### 5.1b Parser-/AST-Vertrag fuer `--filter`
 
@@ -965,13 +980,16 @@ Unit-Tests:
   - Kombination `--filter` + `--since` erzeugt einen korrekten
     `Compound` aus zwei `ParameterizedClause`-Teilen und bindet
     Parameter in der richtigen Reihenfolge
+  - erlaubte Konstrukte (positive Abdeckung):
+    - `OR`, `NOT`, Klammern, Funktionsaufrufe (Allowlist),
+      Arithmetik werden korrekt geparst und parameterisiert
   - Token-/Literal-Fehlerpfade fuer:
     - ungueltige Identifier
     - kaputte String-Literale
     - `= null` / `!= null` / `IN (null)` mit Verweis auf
       `IS NULL` / `IS NOT NULL`
-    - unerlaubte Operatoren
-    - `OR`/Klammern/Funktionsaufrufe
+    - unerlaubte Operatoren und dialektspezifische Schluesselwoerter
+    - nicht erlaubte Funktionsnamen und falsche Arität
 - `DataExportE2EMysqlTest`:
   - bestehende `--filter`-E2E-Faelle werden von Raw-SQL-Syntax auf die
     0.9.3-DSL umgestellt

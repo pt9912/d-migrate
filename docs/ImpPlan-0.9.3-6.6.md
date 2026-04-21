@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.3 - Beta: Filter-Haertung und
 > MySQL-Sequence-Emulation (Generator)
 > **Arbeitspaket**: 6.6 (`Phase C: Tests und Verifikation`)
-> **Status**: Draft (2026-04-20)
+> **Status**: Done (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.3.md` Abschnitt 6.6,
 > Abschnitt 7 und Abschnitt 8;
 > `docs/ImpPlan-0.9.3-6.1.md`;
@@ -167,13 +167,19 @@ Pflichtabdeckung:
 - nicht erlaubte Raw-SQL-Formen -> Exit 2
 - Resume-/Fingerprint-Stabilitaet fuer kanonisch gleiche DSL
 - Resume mit altem Raw-SQL-Checkpoint -> Exit 2 mit Migrationshilfe
-- Kombination `--filter` + `--since`
-- Token-/Literal-Fehler:
+- Kombination `--filter` + `--since` erzeugt einen korrekten
+  `Compound` aus zwei `ParameterizedClause`-Teilen und bindet
+  Parameter in der richtigen Reihenfolge
+- erlaubte Konstrukte (positive Abdeckung):
+  - `OR`, `NOT`, Klammern, Funktionsaufrufe (Allowlist),
+    Arithmetik werden korrekt geparst und parameterisiert
+- Token-/Literal-Fehlerpfade fuer:
   - ungueltige Identifier
-  - kaputte Strings
-  - `= null` / `!= null` / `IN (null)`
-  - unerlaubte Operatoren
-  - `OR` / Klammern / Funktionsaufrufe
+  - kaputte String-Literale
+  - `= null` / `!= null` / `IN (null)` mit Verweis auf
+    `IS NULL` / `IS NOT NULL`
+  - unerlaubte Operatoren und dialektspezifische Schluesselwoerter
+  - nicht erlaubte Funktionsnamen und falsche Arität
 
 ### 5.2 Neutralmodell- und Codec-Tests
 

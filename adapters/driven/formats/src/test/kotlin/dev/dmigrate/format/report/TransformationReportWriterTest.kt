@@ -214,11 +214,32 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "generator: \"d-migrate 0.9.3\""
     }
 
-    test("report without mysqlNamedSequenceMode omits field") {
+    test("report without mysqlNamedSequenceMode omits field (postgresql)") {
         val report = TransformationReportWriter().render(
             DdlResult(listOf(DdlStatement("SELECT 1"))),
             SchemaDefinition(name = "T", version = "1"),
             "postgresql",
+            Path.of("schema.yaml"),
+        )
+        report shouldNotContain "mysql_named_sequences"
+    }
+
+    test("report without mysqlNamedSequenceMode omits field (mysql with null)") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "mysql",
+            Path.of("schema.yaml"),
+            mysqlNamedSequenceMode = null,
+        )
+        report shouldNotContain "mysql_named_sequences"
+    }
+
+    test("report without mysqlNamedSequenceMode omits field (sqlite)") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "sqlite",
             Path.of("schema.yaml"),
         )
         report shouldNotContain "mysql_named_sequences"

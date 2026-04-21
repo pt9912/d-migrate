@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.3 - Beta: Filter-Haertung und
 > MySQL-Sequence-Emulation (Generator)
 > **Arbeitspaket**: 6.5 (`Doku- und Fixture-Nachzug`)
-> **Status**: Draft (2026-04-20)
+> **Status**: Done (2026-04-20)
 > **Referenz**: `docs/implementation-plan-0.9.3.md` Abschnitt 4.2a,
 > Abschnitt 4.3, Abschnitt 5.2, Abschnitt 6.5, Abschnitt 6.6,
 > Abschnitt 7 und Abschnitt 8;
@@ -55,15 +55,15 @@ sind.
 Mehrere Dokumente und Artefakte wurden in 6.2/6.3/6.4 bereits als
 Arbeitsschritte zugesagt:
 
-| Artefakt | Zugesagt in | Rolle von 6.5 |
-|----------|-------------|---------------|
-| `docs/ddl-generation-rules.md` | 6.2 §6.4 | Verifikation + Konsolidierung |
-| `docs/cli-spec.md` | 6.2 §6.4 | Verifikation + Konsolidierung |
-| `docs/neutral-model-spec.md` | 6.3 §6.6 | Verifikation + Konsolidierung |
-| `docs/schema-reference.md` | 6.3 §6.6 | Verifikation + Konsolidierung |
-| Schema-Fixtures | 6.3 §6.6 ("vorbereiten") | Erweitern + Absichern |
-| GM-Versionsupdate 0.9.2 → 0.9.3 | 6.2 §6.3 | Verifikation |
-| MySQL `helper_table` GMs | 6.4 §7.1 | Erweitern + Absichern |
+| Artefakt                        | Zugesagt in              | Rolle von 6.5                 |
+| ------------------------------- | ------------------------ | ----------------------------- |
+| `docs/ddl-generation-rules.md`  | 6.2 §6.4                 | Verifikation + Konsolidierung |
+| `docs/cli-spec.md`              | 6.2 §6.4                 | Verifikation + Konsolidierung |
+| `docs/neutral-model-spec.md`    | 6.3 §6.6                 | Verifikation + Konsolidierung |
+| `docs/schema-reference.md`      | 6.3 §6.6                 | Verifikation + Konsolidierung |
+| Schema-Fixtures                 | 6.3 §6.6 ("vorbereiten") | Erweitern + Absichern         |
+| GM-Versionsupdate 0.9.2 → 0.9.3 | 6.2 §6.3                 | Verifikation                  |
+| MySQL `helper_table` GMs        | 6.4 §7.1                 | Erweitern + Absichern         |
 
 6.5 hat drei Rollen:
 

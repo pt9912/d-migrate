@@ -448,11 +448,21 @@ class SchemaGenerateHelpersTest : FunSpec({
         json shouldContain "\"mysql_named_sequences\": \"helper_table\""
     }
 
-    test("formatJsonOutput with null mysqlNamedSequenceMode omits field") {
+    test("formatJsonOutput with null mysqlNamedSequenceMode omits field (postgresql)") {
         val json = SchemaGenerateHelpers.formatJsonOutput(
             DdlResult(listOf(DdlStatement("SELECT 1"))),
             SchemaDefinition(name = "T", version = "1"),
             "postgresql",
+            mysqlNamedSequenceMode = null,
+        )
+        json shouldNotContain "mysql_named_sequences"
+    }
+
+    test("formatJsonOutput with null mysqlNamedSequenceMode omits field (mysql)") {
+        val json = SchemaGenerateHelpers.formatJsonOutput(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "mysql",
             mysqlNamedSequenceMode = null,
         )
         json shouldNotContain "mysql_named_sequences"

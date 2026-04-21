@@ -276,6 +276,38 @@ class FilterDslParserTest : FunSpec({
         err.message shouldContain "Unexpected character"
     }
 
+    test("trailing OR without right operand") {
+        parseFail("a = 1 OR")
+    }
+
+    test("leading OR without left operand") {
+        parseFail("OR a = 1")
+    }
+
+    test("unclosed parenthesis") {
+        parseFail("(a = 1")
+    }
+
+    test("unmatched closing parenthesis") {
+        parseFail("a = 1)")
+    }
+
+    test("empty parentheses") {
+        parseFail("() AND a = 1")
+    }
+
+    test("unclosed function call") {
+        parseFail("LOWER(name = 'x'")
+    }
+
+    test("disallowed SQL operator LIKE") {
+        parseFail("name LIKE '%alice%'")
+    }
+
+    test("disallowed SQL operator BETWEEN") {
+        parseFail("age BETWEEN 18 AND 65")
+    }
+
     // ── Canonical fingerprint ──────────────────────────────────
 
     test("canonicalize normalizes keyword case and whitespace") {
