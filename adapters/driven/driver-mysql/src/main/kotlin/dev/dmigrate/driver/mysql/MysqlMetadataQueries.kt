@@ -317,6 +317,29 @@ object MysqlMetadataQueries {
     /** Verifies guard pattern: NEW.<column> IS NULL */
     private val TRIGGER_GUARD_PATTERN = Regex("""NEW\.`?(\w+)`?\s+IS\s+NULL""", RegexOption.IGNORE_CASE)
 
+    /** Strip backtick quoting from identifiers. */
+    private fun String.stripBackticks(): String =
+        if (startsWith("`") && endsWith("`")) substring(1, length - 1).replace("``", "`")
+        else this
+
+    /**
+     * Resolve a potentially schema-qualified identifier against the active scope.
+     * Returns the unqualified name if it's in scope, or null if it points elsewhere.
+     */
+    private fun unqualify(name: String, activeSchema: String): String? {
+        val stripped = name.stripBackticks()
+        if ('.' !in stripped) return stripped // unqualified → in scope
+        val parts = stripped.split('.', limit = 2)
+        val schema = parts[0].stripBackticks()
+        val local = parts[1].stripBackticks()
+        return if (schema.equals(activeSchema, ignoreCase = true)) local else null // cross-schema → reject
+    }
+
+    /** Extracts marker fields: sequence=X table=Y column=Z */
+    private val MARKER_SEQUENCE_PATTERN = Regex("""sequence=(\S+)""")
+    private val MARKER_TABLE_PATTERN = Regex("""table=(\S+)""")
+    private val MARKER_COLUMN_PATTERN = Regex("""column=(\S+)""")
+
     /** Expected signatures for support routines (return type + parameter form). */
     private val expectedRoutineSignatures = mapOf(
         MysqlSequenceNaming.NEXTVAL_ROUTINE to RoutineSignature(
@@ -461,9 +484,17 @@ object MysqlMetadataQueries {
             }
 
             // Extract column, sequence, and guard from body for validation
-            val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
-            val sequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)
-            val guardColumn = TRIGGER_GUARD_PATTERN.find(body)?.groupValues?.get(1)
+            val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)?.stripBackticks()
+            val sequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)?.stripBackticks()
+            val guardColumn = TRIGGER_GUARD_PATTERN.find(body)?.groupValues?.get(1)?.stripBackticks()
+
+            // Extract marker fields for cross-validation
+            val markerSeq = MARKER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)
+            val markerTable = MARKER_TABLE_PATTERN.find(body)?.groupValues?.get(1)
+            val markerColumn = MARKER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
+
+            // Scope check: reject schema-qualified sequence names pointing elsewhere
+            val seqUnqualified = sequence?.let { unqualify(it, database) }
 
             val state = when {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
@@ -475,10 +506,16 @@ object MysqlMetadataQueries {
                 // Guard: NEW.<column> IS NULL must reference the same column
                 guardColumn == null -> SupportTriggerState.NON_CANONICAL
                 !guardColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+                // Scope: cross-schema sequence reference → NON_CANONICAL
+                seqUnqualified == null -> SupportTriggerState.NON_CANONICAL
+                // Marker cross-validation: extracted values must match marker fields
+                markerSeq != null && !markerSeq.equals(seqUnqualified, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+                markerTable != null && !markerTable.equals(table, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+                markerColumn != null && !markerColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
                 else -> SupportTriggerState.CONFIRMED
             }
 
-            SupportTriggerAssessment(name, state, table, column, sequence)
+            SupportTriggerAssessment(name, state, table, column, seqUnqualified ?: sequence)
         }
         return SupportTriggerScanResult(result, accessible = true)
     }

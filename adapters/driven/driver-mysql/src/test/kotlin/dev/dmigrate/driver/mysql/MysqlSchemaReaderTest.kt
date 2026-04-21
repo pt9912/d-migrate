@@ -1298,6 +1298,94 @@ class MysqlSchemaReaderTest : FunSpec({
         d3.confirmedTriggerNames shouldBe setOf(goodTrig)
     }
 
+    test("D3: marker with mismatched sequence field produces NON_CANONICAL") {
+        // Marker says sequence=other_seq but body calls dmg_nextval('invoice_seq')
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "invoice_seq", "next_value" to 1000L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        stubNoRoutinesOrTriggers()
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to confirmedTriggerName,
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                // Marker says sequence=OTHER but body uses invoice_seq
+                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=OTHER table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq'); END IF; END"),
+        )
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        // Marker mismatch → NON_CANONICAL (not CONFIRMED)
+        snapshot.triggerAssessments[0].state shouldBe SupportTriggerState.NON_CANONICAL
+    }
+
+    test("D3: cross-schema qualified sequence reference produces NON_CANONICAL") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns emptyList()
+        stubNoRoutinesOrTriggers()
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to confirmedTriggerName,
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                // Sequence qualified with different schema
+                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('other_db.invoice_seq'); END IF; END"),
+        )
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.triggerAssessments[0].state shouldBe SupportTriggerState.NON_CANONICAL
+    }
+
+    test("D3: includeTriggers=false via full read() still materializes SequenceNextVal") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        // Table + column stubs — registered AFTER stubCanonicalShape to take precedence
+        every { jdbc.queryList(match { it.contains("information_schema.tables") && "table_type" in it }, any()) } returns listOf(
+            mapOf("table_name" to "orders", "table_schema" to "mydb", "table_type" to "BASE TABLE"),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.columns") && "ordinal_position" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "id", "data_type" to "int", "column_type" to "int(11)",
+                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
+                "extra" to "auto_increment", "character_maximum_length" to null,
+                "numeric_precision" to 10, "numeric_scale" to 0),
+            mapOf("column_name" to "invoice_number", "data_type" to "bigint", "column_type" to "bigint(20)",
+                "is_nullable" to "YES", "column_default" to null, "ordinal_position" to 2,
+                "extra" to "", "character_maximum_length" to null,
+                "numeric_precision" to 19, "numeric_scale" to 0),
+        )
+        every { jdbc.queryList(match { it.contains("constraint_name = 'PRIMARY'") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("referential_constraints") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
+        every { jdbc.querySingle(match { it.contains("engine") }, any(), any()) } returns null
+        // Sequence rows
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "invoice_seq", "next_value" to 1000L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        // Trigger with full marker
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to confirmedTriggerName,
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq'); END IF; END"),
+        )
+        // Full read() with includeTriggers=false
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+        // Column should have SequenceNextVal
+        result.schema.tables["orders"]!!.columns["invoice_number"]!!.default shouldBe DefaultValue.SequenceNextVal("invoice_seq")
+        // No triggers visible
+        result.schema.triggers.size shouldBe 0
+        // Sequence materialized
+        result.schema.sequences.containsKey("invoice_seq") shouldBe true
+    }
+
     test("D3: MISSING_MARKER without verankerbare Spalte produces no W116") {
         val tables = makeTable(
             "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
