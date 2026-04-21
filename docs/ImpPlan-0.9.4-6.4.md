@@ -47,7 +47,8 @@ Nach 6.4 soll klar gelten:
 
 - Compare bewertet weiterhin nur das neutrale Schema, nicht die
   MySQL-Supportobjekte direkt
-- `W116` bleibt ein Begleitsignal des jeweiligen Operanden
+- `W116` bleibt gem. Abschnitt 4.2 ein Begleitsignal des jeweiligen
+  Operanden
 - file-vs-file, file-vs-db und db-vs-db behalten dieselbe
   Exit-Semantik
 - strukturierte Compare-Ausgabe verliert operandseitige Reverse-Notes
@@ -279,7 +280,8 @@ Verbindlicher E1-Vertrag:
   Validation-Ergebnisse
 - operandseitige Notes werden in Plain weiterhin sofort sichtbar
   ausgegeben
-- operandseitige Notes beeinflussen den Compare-Exit nicht direkt
+- operandseitige Notes beeinflussen gem. Abschnitt 4.2 den
+  Compare-Exit nicht direkt
 
 Designentscheidung fuer E1:
 
@@ -312,6 +314,10 @@ E1 zieht den strukturierten Compare-Vertrag explizit nach:
   - `targetOperand.skippedObjects`
 - Plain darf zusaetzlich eine komfortable, menschenlesbare Darstellung
   liefern, aber keine exklusiven Informationen tragen
+- der JSON-/YAML-Nachzug ist additiv:
+  - bestehende Felder und ihre Semantik bleiben erhalten
+  - `sourceOperand` und `targetOperand` werden nur ergaenzt, nicht als
+    Ersatz fuer bestehende Felder eingefuehrt
 
 Praezisierung:
 
@@ -377,8 +383,11 @@ Done-Kriterien fuer E1a:
 - ein eventuell noetiger Compare-Eingriff bleibt minimal und
   neutralmodellbasiert
 - der semantische Vertrag "operandseitiges `W116` ist Diagnose, kein
-  Diff" ist im Runner-Code explizit durch Guard-Struktur und
-  Dokumentaufbau abgesichert, nicht nur implizit durch Testverhalten
+  Diff" ist im Runner-Code explizit abgesichert:
+  - Operand-Notes werden beim Bau von `CompareValidation` nicht
+    einbezogen
+  - der Dokumentaufbau traegt Notes nur ueber `sourceOperand` bzw.
+    `targetOperand`
 - der Bau von `CompareValidation` ist explizit gegen das Einschleusen
   von Reverse-Notes abgesichert
 - falls `SchemaComparator` wider Erwarten nicht diff-stabil ist, ist
@@ -449,6 +458,9 @@ Done-Kriterien fuer E1e:
 - CLI-Tests decken Plain/JSON/YAML-Sichtbarkeit ab
 - mindestens ein sequence-emulierter End-to-End-Fall ist als
   Regression Guard verankert, falls E1 ihn benoetigt
+- synthetische Operand-Notes sind fuer Vorababsicherung zulaessig,
+  aber 6.4 gilt erst dann als voll abgeschlossen, wenn mindestens ein
+  Test auf echtem D1-D3-Output aufsetzt
 
 Abhaengigkeiten:
 
@@ -492,11 +504,11 @@ Pflichtfaelle fuer 6.4:
     und `skippedObjects`.
 13. Compare-`validation` enthaelt nur echte Validation-Ergebnisse, nicht
     operandseitige Reverse-Notes.
-14. Ein Compare mit operandseitigem `W116`, aber identischem neutralem
-    Modell, bleibt diff-frei.
-15. JSON/YAML enthalten operandseitige Notes nicht innerhalb von
+14. JSON/YAML enthalten operandseitige Notes nicht innerhalb von
     `validation`, sondern ausschliesslich unter `sourceOperand` bzw.
     `targetOperand`.
+15. Bei `--output-format json` oder `yaml` erscheinen operandseitige
+    Notes nicht zusaetzlich auf `stderr`.
 
 Akzeptanzkriterium fuer 6.4:
 
@@ -512,7 +524,6 @@ Voraussichtlich direkt betroffen:
 
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareProjection.kt`
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandResolver.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererJson.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererYaml.kt`
 - `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunnerTest.kt`
@@ -522,6 +533,7 @@ Als fachliche Zieltypen bzw. konsumierte Vertragsanbieter relevant,
 aber voraussichtlich nicht direkt zu aendern:
 
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandResolver.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ResolvedSchemaOperand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererPlain.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
