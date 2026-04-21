@@ -291,6 +291,26 @@ aus. D3 braucht zusaetzlich eine explizite Extraktion des Sequence-Keys
 aus `dmg_nextval('<sequence>')` oder einen gleichwertig robusten,
 D3-eigenen Parserpfad.
 
+Kanonisierung von Trigger-/Sequence-Identifikatoren:
+
+- Identifier aus Marker, Triggerbody und Metadaten werden vor
+  Vergleich in eine gemeinsame D3-Normalform ueberfuehrt
+- diese Normalform entfernt aeussere Identifier-Quotes
+  (Backticks/kompatible SQL-Quoting-Huellen), normalisiert harmlose
+  Schema-Qualifizierung auf den aktiven `ReverseScope` und vergleicht
+  anhand der readerseitig bereits etablierten MySQL-Identifiersemantik
+- fuer `dmg_nextval('<sequence>')` gilt:
+  - unqualifizierte Namen werden gegen den aktiven `ReverseScope`
+    aufgeloest
+  - qualifizierte Namen sind nur dann kanonisch, wenn sie auf denselben
+    Scope zeigen
+  - widerspruechliche Schema-/Catalog-Praefixe bleiben
+    `NON_CANONICAL`
+- der Marker selbst bleibt fachlich strikt; toleriert werden dort nur
+  die fuer den Markertransport irrelevanten Huelleffekte, nicht aber
+  inhaltlich abweichende Objekt-, Tabellen-, Spalten- oder
+  Sequence-Identitaeten
+
 Mindestens zu tolerieren:
 
 - Kommentare ausserhalb des Support-Markers
@@ -347,10 +367,18 @@ Fuer D3 gilt:
   - kein `W116` allein aus dem Status
 - `SupportTriggerState.MISSING_MARKER`
   - keine Spaltenzuordnung
-  - aggregierbares spaltenbezogenes `W116`
+  - aggregierbares spaltenbezogenes `W116`, wenn die betroffene Spalte
+    fachlich verankert werden kann
+  - ist selbst die Spalte nicht belastbar verankerbar, bleibt der Fall
+    in 0.9.4 nur interne Evidenz und erzeugt bewusst kein finales
+    `W116`
 - `SupportTriggerState.NON_CANONICAL`
   - keine Spaltenzuordnung
-  - aggregierbares spaltenbezogenes `W116`
+  - aggregierbares spaltenbezogenes `W116`, wenn die betroffene Spalte
+    fachlich verankert werden kann
+  - ist selbst die Spalte nicht belastbar verankerbar, bleibt der Fall
+    in 0.9.4 nur interne Evidenz und erzeugt bewusst kein finales
+    `W116`
 - `SupportTriggerState.NOT_ACCESSIBLE`
   - keine Spaltenzuordnung
   - aggregierbares spaltenbezogenes `W116`, sofern die betroffene
@@ -372,6 +400,15 @@ Leitregel:
   Spalte
 - Trigger-Hashes oder rohe Triggernamen bleiben interne Evidenz, nicht
   finale Nutzeridentitaet
+- mehrere D3-Ursachen fuer denselben `ColumnDiagnosticKey(...)` werden
+  deterministisch zusammengefuehrt; mindestens diese Prioritaet gilt:
+  - `NOT_ACCESSIBLE` vor `NON_CANONICAL`
+  - `NON_CANONICAL` vor `MISSING_MARKER`
+  - Default-Konflikt wird als zusaetzlicher, aber nachrangiger Grund
+    an dieselbe Spaltendiagnose angehaengt
+- die Ausgabe bleibt trotzdem bei hoechstens einer finalen `W116` pro
+  Spalte; Mehrfachursachen werden nur im konsistent sortierten Hint
+  zusammengefuehrt
 
 ### 5.6 Trigger-Scan-Zugriff und Gating
 
@@ -387,6 +424,9 @@ Wenn einzelne Trigger degradiert sind:
 
 - nur die betroffenen Spalten verlieren ihre Zuordnung
 - andere bestaetigte Trigger derselben DB bleiben reverse-bar
+- nicht fachlich verankerbare degradierte Trigger werden in 0.9.4
+  bewusst nicht auf eine Ersatzidentitaet wie Triggername oder Hash
+  hochgezogen; sie bleiben interne Evidenz statt finaler Note
 
 ---
 
