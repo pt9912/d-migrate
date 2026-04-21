@@ -1,0 +1,460 @@
+# Implementierungsplan: 0.9.4 - Arbeitspaket 6.1 `Reader-Vertrag und Metadatenzugriff festziehen`
+
+> **Milestone**: 0.9.4 - Beta: MySQL-Sequence Reverse-Engineering und Compare
+> **Arbeitspaket**: 6.1 (`Phase D1: Reader-Vertrag und Metadatenzugriff festziehen`)
+> **Status**: Draft (2026-04-21)
+> **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 4.1 bis
+> 4.5, Abschnitt 5.1 bis 5.4, Abschnitt 6.1, Abschnitt 6.6, Abschnitt 7
+> und Abschnitt 9;
+> `docs/mysql-sequence-emulation-plan.md` Abschnitt 6;
+> `docs/ddl-generation-rules.md`;
+> `docs/cli-spec.md`;
+> `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadOptions.kt`;
+> `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`;
+> `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`;
+> `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`;
+> `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`;
+> `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`;
+> `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`.
+
+---
+
+## 1. Ziel
+
+Arbeitspaket 6.1 zieht den technischen Unterbau fuer den 0.9.4-Reverse-
+Pfad in den MySQL-Reader ein. Es liefert noch **keine** komplette
+Sequence-Rekonstruktion, sondern den belastbaren Rahmen, auf dem 6.2
+(`dmg_sequences` -> `schema.sequences`) und 6.3
+(`BEFORE INSERT`-Trigger -> `SequenceNextVal`) aufsetzen.
+
+6.1 liefert vier konkrete Ergebnisse:
+
+- `MysqlSchemaReader` bekommt einen expliziten internen
+  Sequence-Support-Scan statt nur flacher Objektlese-Pfade
+- `MysqlMetadataQueries` bekommt die gezielten Abfragen, die fuer
+  Support-Tabelle, Support-Routinen und Support-Trigger noetig sind
+- der degradierte Reverse-Vertrag (`W116`) wird als Reader-Infrastruktur
+  festgelegt, inklusive Aggregation und Berechtigungs-Fallback
+- Konflikt- und Mehrdeutigkeitsregeln fuer Sequence-Keys werden vor D2
+  und D3 zentral festgezogen
+
+Nach 6.1 soll klar gelten:
+
+- der Reader kann interne Supportobjekte inspizieren, ohne das
+  oeffentliche `SchemaReadOptions`-API zu aendern
+- fehlende Metadatenrechte auf Routinen/Trigger fuehren nicht
+  automatisch zum Hard-Error
+- `W116` wird nicht ad hoc an beliebigen Stellen erzeugt, sondern ueber
+  einen konsistenten Aggregationspfad
+- D2 und D3 muessen nicht mehr ueber Reader-Grundsatzfragen diskutieren,
+  sondern koennen direkt auf eine klare Infrastruktur aufsetzen
+
+---
+
+## 2. Ausgangslage
+
+Der heutige `MysqlSchemaReader` ist noch auf allgemeines Reverse
+ausgelegt:
+
+- Tabellen werden ueber `information_schema.tables` gelesen
+- Views, Funktionen, Prozeduren und Trigger werden optional ueber die
+  Include-Flags geladen
+- das Ergebnis wird direkt in `SchemaDefinition` ueberfuehrt
+
+Was heute fehlt:
+
+- ein eigener interner Scan fuer d-migrate-Supportobjekte
+- gezielte Metadatenabfragen fuer `dmg_sequences`,
+  `dmg_nextval`, `dmg_setval` und Sequence-Support-Trigger
+- ein gemeinsamer Ort fuer degradierte Reverse-Notes
+- ein Konfliktvertrag fuer mehrdeutige Sequence-Keys
+
+Konsequenz:
+
+- `dmg_sequences` wird heute nur als normale Basistabelle gesehen
+- Support-Routinen und Support-Trigger koennen nicht getrennt von
+  Nutzerobjekten behandelt werden
+- `W116` existiert fachlich im Plan, aber noch nicht als konkrete
+  Reader-Infrastruktur
+
+Gleichzeitig darf 6.1 den bestehenden Reverse-Vertrag nicht unnötig
+brechen:
+
+- Include-Flags bleiben sichtbare Output-Flags fuer Nutzerobjekte
+- normale Tabellen-, View- und Routine-Pfade muessen weiterlaufen
+- bestehende Reader-Tests fuer Nicht-Sequence-Faelle duerfen nicht
+  still kippen
+
+---
+
+## 3. Scope fuer 6.1
+
+### 3.1 In Scope
+
+- interne Zerlegung von `MysqlSchemaReader.read(...)` in:
+  - allgemeine Objektlese-Pfade
+  - Sequence-Support-Scan
+  - Post-Processing-/Anreicherungsphase
+- neue oder erweiterte `MysqlMetadataQueries` fuer:
+  - Support-Tabellenform
+  - Support-Zeilen
+  - Support-Routinen
+  - Support-Trigger
+- Hilfsdatentyp fuer den internen Support-Scan, z. B.
+  `MysqlSequenceReverseSupport`
+- Reader-seitige Aggregationsregeln fuer `W116`
+- Berechtigungs- und Metadaten-Fallback fuer Support-Routinen und
+  Support-Trigger
+- Konfliktregeln fuer mehrdeutige Sequence-Keys
+- Unit-Tests auf Reader-/Query-Ebene fuer die neue Infrastruktur
+
+### 3.2 Bewusst nicht Teil von 6.1
+
+- eigentliche Rekonstruktion von `SequenceDefinition` aus
+  `dmg_sequences`-Zeilen
+- eigentliche Rekonstruktion von `DefaultValue.SequenceNextVal(...)`
+  aus Triggern
+- Compare-Renderer- oder CLI-Ausgabeaenderungen
+- neue oeffentliche Flags fuer `schema reverse`
+- Heuristiken fuer fremde, nicht markierte Sequence-Loesungen
+
+Praezisierung:
+
+6.1 loest "wie liest und bewertet der Reader Support-Metadaten
+robust?", nicht "welches vollstaendige Reverse-Ergebnis wird schon
+produziert?".
+
+---
+
+## 4. Leitentscheidungen
+
+### 4.1 6.1 schafft Infrastruktur, keine Teil-Rekonstruktion auf Verdacht
+
+Verbindliche Folge:
+
+- 6.1 fuehrt keine halbfertige Sequence-Rekonstruktion ein
+- die neuen Reader-Hilfstypen duerfen Support-Metadaten sammeln,
+  klassifizieren und mit Diagnosezustand versehen
+- erst 6.2 und 6.3 materialisieren daraus `schema.sequences` bzw.
+  `SequenceNextVal`
+
+Begruendung:
+
+- damit bleibt der Cut zwischen Infrastruktur und Fachmapping klar
+- Review und Tests koennen D1 sauber von D2/D3 trennen
+
+### 4.2 Include-Flags bleiben Nutzervertrag, nicht Reader-Sperre
+
+Verbindliche Folge:
+
+- `includeFunctions`, `includeProcedures` und `includeTriggers`
+  bestimmen weiter nur, welche **Nutzerobjekte** im neutralen Ergebnis
+  auftauchen
+- 6.1 darf Support-Routinen und Support-Trigger intern trotzdem lesen,
+  wenn sie fuer den Sequence-Support-Scan benoetigt werden
+
+### 4.3 Berechtigungsfehler auf Zusatzmetadaten werden degradiert
+
+Verbindliche Folge:
+
+- Fehler beim Lesen von Support-Routinen oder Support-Triggern werden in
+  6.1 nicht als Hard-Error modelliert, solange Kernmetadaten
+  (`dmg_sequences`, Tabellen, Spalten) lesbar bleiben
+- solche Faelle werden in den internen Support-Scan als
+  "nicht bestaetigbar" ueberfuehrt und spaeter als `W116`
+  aggregierbar gemacht
+- eine **fehlende** `dmg_sequences`-Tabelle ist dagegen ein kompatibler
+  Soft-Missing-Fall:
+  - kein Sequence-Support erkannt
+  - kein `W116` allein wegen Abwesenheit der Tabelle
+  - kein Hard-Error
+- nur der Verlust der primaeren Wahrheitsquelle bei **vorhandener, aber
+  nicht lesbarer** `dmg_sequences`-Metadatenquelle bleibt ein harter
+  Abbruchgrund
+
+### 4.4 W116 wird auf Objektidentitaeten aggregiert
+
+Verbindliche Folge:
+
+- 6.1 definiert die Aggregationsschluessel bereits vor der
+  Fachrekonstruktion:
+  - Sequence-Ebene fuer `dmg_sequences`-/Routine-Probleme
+  - Spaltenebene fuer Trigger-/Default-Zuordnung
+- diese Schluessel muessen stabil und explizit sein:
+  - Sequence-Schluessel =
+    `<reverse-scope>\u0000<neutral-sequence-key>`
+  - Spalten-Schluessel =
+    `<reverse-scope>\u0000<canonical-table>\u0000<canonical-column>`
+- konkurrierende technische Ursachen fuer denselben Schluessel
+  (z. B. mehrere invalide Zeilen derselben Sequence oder mehrere
+  Triggerbeobachtungen derselben Spalte) werden in genau einer
+  aggregierten Diagnose zusammengefuehrt
+- Rohzeilen oder einzelne fehlgeschlagene Metadatenabfragen sind nur
+  interne Evidenz, nicht direkte Nutzer-Notes
+- mehrfache technische Einzelursachen duerfen zu genau einer
+  aggregierten Diagnose pro betroffenem Fachobjekt zusammenlaufen
+
+### 4.5 Markerloser Trigger bleibt in 6.1 ein degradiertes Signal
+
+Verbindliche Folge:
+
+- semantische Trigger-Normalisierung ist in 6.1 nur
+  Bestaetigungsinfrastruktur fuer markierte Support-Trigger
+- fehlt der Marker, darf 6.1 den Trigger hoechstens als "plausibel,
+  aber nicht bestaetigbar" markieren
+- daraus entsteht **keine** implizite Spaltenzuordnung
+
+### 4.6 Mehrdeutige Sequence-Keys werden frueh blockiert
+
+Verbindliche Folge:
+
+- 6.1 definiert einen zentralen Konfliktpfad fuer doppelte oder
+  mehrdeutige Sequence-Keys
+- D2 und D3 duerfen sich auf einen eindeutigen Keyspace verlassen
+- Konflikte werden nicht still durch "last write wins" aufgeloest
+
+---
+
+## 5. Zielarchitektur fuer 6.1
+
+### 5.1 Reader-Schichten
+
+`MysqlSchemaReader.read(...)` wird intern in drei Ebenen getrennt:
+
+1. Basismetadaten und allgemeine Objektlisten lesen
+2. Sequence-Support-Scan ausfuehren
+3. Ergebnis aus allgemeinem Schema und Supportdiagnostik zusammensetzen
+
+Der Sequence-Support-Scan liefert in 6.1 noch keine fertige
+`SchemaDefinition`, sondern einen internen Snapshot mit mindestens:
+
+- Tabellenform-/Zeilenstatus fuer `dmg_sequences`
+- Routinenstatus fuer `dmg_nextval` und `dmg_setval`
+- Triggerstatus fuer potenzielle Sequence-Support-Trigger
+- Konfliktzustand fuer Sequence-Key-Mehrdeutigkeiten
+- aggregierbare Reverse-Diagnosen
+
+### 5.2 Query-Vertrag
+
+`MysqlMetadataQueries` wird um gezielte Support-Abfragen erweitert.
+Erwartete Bausteine:
+
+- Abfrage fuer `dmg_sequences`-Spaltenform
+- Abfrage fuer `dmg_sequences`-Zeilen
+- gezielte Routine-Lookups fuer `dmg_nextval`/`dmg_setval`
+- gezielte Trigger-Lookups fuer moegliche Support-Trigger
+
+Wichtig fuer 6.1:
+
+- keine "lade immer alle Trigger/Funktionen"-Ausweitung des
+  Nutzervertrags
+- Supportabfragen bleiben gezielt und separat vom sichtbaren
+  Include-Flag-Pfad
+- Permission-Denied und "metadata not accessible" werden als eigener
+  technischer Status modelliert, nicht nur als rohe Exception
+
+### 5.3 Support-Snapshot
+
+Empfohlene interne Struktur:
+
+- `supportTableState`
+  - `missing`
+  - `available`
+  - `invalid_shape`
+  - `not_accessible`
+- `sequenceRows`
+  - rohe Zeilen
+  - vorvalidierte Zeilen
+  - Konflikt-/Mehrdeutigkeitsmarken
+- `routineState`
+  - pro Support-Routine: `confirmed`, `missing`, `not_accessible`
+- `triggerState`
+  - pro potenziellem Support-Trigger:
+    `confirmed`, `missing_marker`, `not_accessible`,
+    `non_canonical`, `user_object`
+- `diagnostics`
+  - aggregierbare Vorstufe fuer spaetere `SchemaReadNote`s
+
+Der genaue Typname ist offen; wichtig ist die funktionale Trennung.
+
+Semantik von `supportTableState`:
+
+- `missing`:
+  - kompatibler Nicht-Sequence-Fall
+  - kein Hard-Error
+  - kein `W116` allein wegen fehlender Tabelle
+- `available`:
+  - primaere Wahrheitsquelle ist lesbar
+- `invalid_shape`:
+  - Support-Tabelle ist vorhanden, aber nicht kanonisch auswertbar
+  - degradierter Sequence-Pfad; spaeter aggregierbares `W116`
+- `not_accessible`:
+  - Support-Tabelle scheint vorhanden oder adressiert, ist aber nicht
+    lesbar
+  - harter Abbruchgrund fuer den Sequence-Pfad, weil die primaere
+    Wahrheitsquelle nicht inspizierbar ist
+
+### 5.4 Konflikt- und Aggregationspfad
+
+6.1 legt die Basisregeln fest:
+
+- jede `dmg_sequences`-Zeile wird zunaechst lokal bewertet
+- mehrere technische Probleme derselben Sequence werden auf einen
+  Sequence-Schluessel aggregiert
+- Triggerprobleme werden auf den stabilen Spalten-Schluessel
+  `<reverse-scope>\u0000<canonical-table>\u0000<canonical-column>`
+  aggregiert
+- mehrdeutige Sequence-Keys blockieren spaetere Rekonstruktion fuer
+  genau diesen Key
+
+Diese Regeln muessen bereits in D1 zentral liegen, damit D2 und D3
+nicht eigene konkurrierende Aggregationslogiken erfinden.
+
+---
+
+## 6. Konkrete Arbeitsschritte
+
+### 6.1 Reader intern zerlegen
+
+- `MysqlSchemaReader.read(...)` in private Teilschritte schneiden
+- Basispfade fuer Tabellen/Views/Funktionen/Prozeduren/Trigger
+  isolieren
+- Hook fuer Sequence-Support-Scan einziehen
+
+### 6.2 `MysqlMetadataQueries` erweitern
+
+- gezielte Support-Abfragen einfuehren
+- Rueckgabeformen so schneiden, dass `not_accessible` von `missing`
+  unterschieden werden kann
+- Query-Tests fuer die neuen Pfade anlegen oder vorhandene Tests
+  erweitern
+
+### 6.3 Support-Snapshot einfuehren
+
+- internen Support-Datentyp anlegen
+- Support-Tabelle, Routinen und Trigger in diesem Snapshot sammeln
+- Konflikt- und Diagnosestatus strukturiert ablegen
+
+### 6.4 W116-Aggregation festziehen
+
+- Aggregationsschluessel fuer Sequence- und Spaltenebene festlegen
+- technische Einzelereignisse in aggregierbare Diagnoseeintraege
+  ueberfuehren
+- Mappingpfad zu spaeteren `SchemaReadNote`s vorbereiten
+
+### 6.5 Konfliktvertrag fuer Sequence-Keys festziehen
+
+- Regel fuer doppelte oder mehrdeutige Keys in der Infrastruktur
+  verankern
+- verhindern, dass nachfolgende Phasen durch Map-Ueberschreibung
+  nondeterministisch werden
+
+### 6.6 Reader-Tests nachziehen
+
+- `MysqlSchemaReaderTest` fuer:
+  - Supportabfragen ohne API-Aenderung
+  - degradierte Zusatzmetadatenrechte
+  - Aggregationsverhalten
+  - mehrdeutige Sequence-Keys
+  - Nicht-Sequence-Faelle ohne Supportobjekte und ohne zusaetzliche
+    Diagnose-Notes
+  erweitern
+
+---
+
+## 7. Verifikation
+
+Pflichtfaelle fuer 6.1:
+
+1. Support-Metadaten koennen intern gelesen werden, ohne das
+   oeffentliche `SchemaReadOptions`-API zu aendern.
+2. Fehlende Rechte auf Routinen/Trigger fuehren nicht zum Hard-Error,
+   solange `dmg_sequences` lesbar bleibt.
+3. `missing`, `not_accessible`, `invalid_shape` und `non_canonical`
+   werden intern unterscheidbar modelliert.
+4. Doppelte/mehrdeutige Sequence-Keys fuehren nicht zu stiller
+   Ueberschreibung.
+5. Die Aggregation liefert pro Sequence bzw. pro Spalte genau eine
+   zusammengefuehrte Diagnosebasis.
+6. Ein Schema ohne `dmg_sequences` und ohne Supportobjekte bleibt ein
+   kompatibler Nicht-Sequence-Fall: kein Hard-Error, kein implizites
+   `W116`, keine zusaetzlichen Reverse-Notes.
+7. Bestehende Nicht-Sequence-Reader-Faelle bleiben unveraendert.
+
+Akzeptanzkriterium fuer 6.1:
+
+- der Reader hat nach 6.1 eine belastbare interne Support-Infrastruktur,
+  auf der 6.2 und 6.3 ohne weitere Grundsatzentscheidungen aufsetzen
+  koennen
+
+---
+
+## 8. Betroffene Codebasis
+
+Voraussichtlich direkt betroffen:
+
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`
+- `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
+- `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`
+- `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`
+- ggf. `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt`
+
+Bewusst noch nicht direkt produktiv betroffen:
+
+- `SchemaComparator`
+- `SchemaCompareRunner`
+- JSON-/YAML-Renderer fuer Compare
+- eigentliche `SequenceDefinition`- und `SequenceNextVal`-Materialisierung
+
+---
+
+## 9. Risiken und Abgrenzung
+
+### 9.1 D1 driftet in D2/D3 hinein
+
+Risiko:
+
+- Infrastruktur und Fachmapping werden vermischt
+- der Teilplan verliert seinen klaren Cut
+
+Gegenmassnahme:
+
+- 6.1 erzeugt nur den Support-Snapshot und den Diagnosevertrag
+- eigentliche Materialisierung bleibt fuer 6.2 und 6.3 reserviert
+
+### 9.2 Query-Fallback wird zu breit
+
+Risiko:
+
+- Supportabfragen lesen ploetzlich wieder "alles"
+- Include-Flags verlieren indirekt ihre Bedeutung
+
+Gegenmassnahme:
+
+- nur gezielte Support-Lookups
+- keine implizite Generalisierung des bestehenden Funktions-/Triggerpfads
+
+### 9.3 Aggregation wird zu spaet festgezogen
+
+Risiko:
+
+- D2 und D3 fuehren jeweils eigene `W116`-Logik ein
+- spaetere Compare-/Report-Pfade bekommen widerspruechliche Diagnosen
+
+Gegenmassnahme:
+
+- Aggregationsschluessel und Diagnosebasis schon in 6.1 definieren
+
+### 9.4 Mehrdeutige Keys werden zu still behandelt
+
+Risiko:
+
+- spaetere Maps ueberschreiben Werte nondeterministisch
+- Reverse-Ergebnisse haengen von Einlesereihenfolge ab
+
+Gegenmassnahme:
+
+- Konfliktpfad in 6.1 explizit modellieren
+- keine "last write wins"-Semantik
