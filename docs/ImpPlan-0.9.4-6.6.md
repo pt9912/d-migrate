@@ -64,12 +64,35 @@ Teilplaene verteilt:
 
 Der Teststand dazu ist heute noch auf mehrere Ebenen verteilt:
 
-- Driver-Unit-Tests pruefen Reader-Verhalten isoliert
-- MySQL-Integrationstests pruefen echte JDBC-/Metadata-Pfade
-- `SchemaCompareRunnerTest` prueft Dokument- und Exit-Vertraege
-- `CliSchemaCompareTest` prueft Nutzer- und Output-Sichtbarkeit
+- `MysqlSchemaReaderTest` hat bereits 63 Tests und deckt
+  Supportobjekte, `W116`, Unterdrueckung sowie D2-/D3-Materialisierung
+  breit ab
+- `MysqlMetadataQueriesTest` hat bereits 37 Tests und deckt
+  Support-Routine-, Trigger- und Metadatenzustandsklassen gezielt ab
+- `SchemaCompareRunnerTest` hat bereits 29 Tests und deckt
+  operandseitiges `W116`, Exit-Code-Vertrag, Validation-Trennung sowie
+  file-vs-file, file-vs-db und db-vs-db-Grundpfade ab
+- `CliSchemaCompareTest` hat bereits 19 Tests und deckt sichtbare
+  JSON-/YAML-Operanddiagnostik und Nutzeroutput ab
+- `CompareRendererOperandTest` hat bereits 11 Tests und deckt die
+  direkte Renderer-Sicht fuer Plain, JSON und YAML inklusive
+  Validation-Trennung ab
+- `MysqlSequenceEmulationIntegrationTest` hat bereits 15 Tests und
+  deckt echte MySQL-Round-Trip- und Degradationsfaelle gegen eine
+  reale DB ab
 
-Was fuer 6.6 noch fehlt, ist der verbindliche Gesamtschnitt:
+6.6 startet damit nicht auf gruenem Feld. Der eigentliche offene Punkt
+ist nicht "ob Tests existieren", sondern:
+
+- ob die vorhandene Testbasis den finalen 0.9.4-Vertrag vollstaendig
+  und ohne blinde Flecken abdeckt
+- welche wenigen Delta-Faelle gegen Masterplan und Teilplaene noch
+  explizit fehlen
+- wie vorhandene Unit-, Integration-, Runner-, Renderer- und CLI-Tests
+  zu einer sichtbaren Verifikationsmatrix zusammengezogen werden
+
+Was fuer 6.6 noch fehlt, ist daher der verbindliche Audit- und
+Delta-Schnitt:
 
 - welche 0.9.4-Faelle werden auf welcher Testebene abgesichert
 - welche Faelle verlangen zwingend echte MySQL-Integration statt nur
@@ -94,12 +117,13 @@ Konsequenz ohne 6.6:
 ### 3.1 In Scope
 
 - D1 bis D3 und E1 sind fachliche Voraussetzung fuer 6.6
-- Testnachzug in:
+- Audit und Delta-Nachzug in:
   - `MysqlSchemaReaderTest`
   - `MysqlMetadataQueriesTest`, falls Query- oder
     Metadatenklassifikation dort gezielt abgesichert werden muss
   - MySQL-Testcontainer-Integrationstests fuer Reverse und Compare
   - `SchemaCompareRunnerTest`
+  - `CompareRendererOperandTest`
   - `CliSchemaCompareTest`
 - verbindliche Round-Trip-Absicherung
   `neutral -> generate -> MySQL -> reverse -> compare`
@@ -149,7 +173,10 @@ Verbindliche Folge:
   Quoting- und Markerrealitaet sowie den Round-Trip
 - Runner-Tests pruefen Compare-Dokument, Operanddiagnosen und
   Exit-Codes
-- CLI-Tests pruefen sichtbaren Plain-/JSON-/YAML-Vertrag
+- Renderer-Unit-Tests pruefen die direkte Plain-/JSON-/YAML-
+  Serialisierung unabhaengig vom CLI-Einstieg
+- CLI-Tests pruefen sichtbaren Nutzervertrag ueber den echten
+  Kommandoeingang
 
 ### 4.3 Ein echter Round-Trip ist Pflicht und kein optionaler Bonus
 
@@ -196,7 +223,7 @@ Verbindliche Folge:
 
 ### 5.1 Testschichten und Verantwortung
 
-6.6 organisiert die 0.9.4-Testabdeckung in vier Schichten:
+6.6 organisiert die 0.9.4-Testabdeckung in fuenf Schichten:
 
 1. Driver-Unit
    - `MysqlSchemaReaderTest`
@@ -218,12 +245,18 @@ Verbindliche Folge:
      - Compare-Dokument
      - `sourceOperand`/`targetOperand`
      - Exit-Code-Vertrag
-4. CLI-Output
+4. Renderer-Unit
+   - `CompareRendererOperandTest`
+   - Verantwortung:
+     - direkte Plain-/JSON-/YAML-Darstellung
+     - Trennung von Operand-Notes und `validation`
+     - strukturierte Operandfelder ohne CLI-Nebenpfade
+5. CLI-Output
    - `CliSchemaCompareTest`
    - Verantwortung:
+     - sichtbarer Nutzervertrag am Kommandoeingang
      - Plain-Sichtbarkeit
      - strukturierte JSON-/YAML-Ausgabe
-     - keine kuenstliche Vermischung von `validation` und Operand-Notes
 
 ### 5.2 Testmatrix nach Fachfall
 
@@ -232,6 +265,7 @@ Verbindliche Folge:
 - Reader-/Aggregationsfaelle primaer in Driver-Unit
 - Metadata-/Quoting-/Markerrealitaet primaer in Driver-Integration
 - Compare-Diff-/Exit-Semantik primaer in Runner-Tests
+- Renderer-Vertrag primaer in Renderer-Unit-Tests
 - Outputformat- und Sichtbarkeitsvertrag primaer in CLI-Tests
 
 Verbindliche Regel:
@@ -247,6 +281,7 @@ Testartefakt-Schnitt:
 
 - Driver-Tests liefern die fachliche Reverse-Evidenz
 - Runner-/CLI-Tests liefern die Compare- und Output-Evidenz
+- Renderer-Unit-Tests liefern den direkten Serialisierungsnachweis
 - der Round-Trip-Test ist das integrative Abschlussartefakt fuer
   0.9.4
 
@@ -265,41 +300,51 @@ Empfohlene Reihenfolge:
 
 ### T0 Testmatrix und Lueckenbild festziehen
 
+- die vorhandene Testbasis gegen den 0.9.4-Masterplan auditiert
+  zusammenfassen
 - die 0.9.4-Pflichtfaelle aus dem Masterplan auf konkrete Testorte
-  mappen
+  mappen und nur echte Delta-Luecken markieren
 - markieren, welche Faelle:
   - rein unit-testbar sind
   - zwingend echte MySQL-Integration brauchen
   - Runner-/CLI-Vertrag brauchen
-- offene Alt-Tests oder Luecken gegen D1 bis E1 sichtbar benennen
+- festlegen, dass die T0-Matrix in diesem Teilplan selbst lebt:
+  Ausgangslage in Abschnitt 2, Pflichtabdeckung in Abschnitt 7
+- offene Alt-Tests oder Delta-Luecken gegen D1 bis E1 sichtbar benennen
 
 Done-Kriterien:
 
 - jeder Pflichtfall hat einen primaeren Testort
+- die vorhandene Testbasis ist als Audit-Stand im Teilplan selbst
+  benannt, nicht nur implizit vorausgesetzt
 - Round-Trip- und Exit-Code-Faelle sind explizit als Pflicht-Gates
   markiert
 
-### T1 Driver-Unit-Tests fuer D1 bis D3 nachziehen
+### T1 Driver-Unit-Audit und Delta fuer D1 bis D3
 
-- `MysqlSchemaReaderTest` um Supportobjekt-,
-  Unterdrueckungs- und Degradationsfaelle erweitern
-- wo sinnvoll `MysqlMetadataQueriesTest` um gezielte
-  Grundform-/Metadatenfaelle erweitern
+- `MysqlSchemaReaderTest` und `MysqlMetadataQueriesTest` gegen die
+  finalen D1-/D2-/D3-Vertraege auditieren
+- nur dort erweitern, wo der Audit echte Delta-Luecken zeigt:
+  Supportobjekt-, Unterdrueckungs-, Grundform- oder
+  Degradationsfaelle
 - positive und degradierte Sequence-/Trigger-Faelle gegen dieselben
   Aggregationsvertraege absichern
 
 Done-Kriterien:
 
-- D1-, D2- und D3-Kernvertraege haben Unit-Test-Evidenz
+- D1-, D2- und D3-Kernvertraege haben nach dem Audit belastbare
+  Unit-Test-Evidenz
 - `W116` wird in Sequence- und Trigger-Degradationsfaellen explizit
   assertiert
 - Supportobjekt-Unterdrueckung und Nicht-Unterdrueckung nicht-
   kanonischer Objekte sind abgedeckt
 
-### T2 MySQL-Integration und Round-Trip aufbauen
+### T2 MySQL-Integration auditieren und Round-Trip-Gate absichern
 
-- bestehende MySQL-Testcontainer-Tests erweitern oder gezielt neue
-  Faelle anlegen
+- `MysqlSequenceEmulationIntegrationTest` als bestehende Basis gegen
+  den finalen 0.9.4-Vertrag auditieren
+- nur fehlende Delta-Faelle gegen echte MySQL-DB ergaenzen oder
+  gezielt neue Faelle anlegen
 - intakten Round-Trip
   `neutral -> generate -> MySQL -> reverse -> compare`
   verbindlich absichern
@@ -315,11 +360,15 @@ Done-Kriterien:
 - Compare gegen echte reverse-te Operanden bleibt frei von
   Hilfsobjekt-Rauschen
 
-### T3 Runner-Vertraege fuer Compare absichern
+### T3 Runner-Vertraege auditieren und Delta absichern
 
-- `SchemaCompareRunnerTest` fuer db-basierte Sequence-Faelle,
-  operandseitige Notes und Exit-Code-Pfade erweitern
+- `SchemaCompareRunnerTest` gegen file-vs-file, file-vs-db und db-vs-db
+  auditieren; nur fehlende Delta-Faelle fuer operandseitige Notes und
+  Exit-Codes nachziehen
 - absichern, dass `CompareValidation` keine Operand-Notes aufnimmt
+- db-vs-db gilt primaer als Runner-Pfad ueber zwei `db:`-Operanden und
+  `dbLoader`; eine zweite Live-DB ist fuer 6.6 nur dann Pflicht, wenn
+  der fachliche Vertrag anders nicht belegbar ist
 - exit-stabile Faelle fuer `W116` ohne Diff explizit pruefen
 
 Done-Kriterien:
@@ -329,11 +378,12 @@ Done-Kriterien:
 - `sourceOperand`/`targetOperand` und `validation` bleiben sauber
   getrennt
 
-### T4 CLI-Output und strukturierte Renderer pruefen
+### T4 Renderer- und CLI-Vertrag auditieren und Delta absichern
 
-- `CliSchemaCompareTest` fuer Plain-, JSON- und YAML-Pfade erweitern
-- `CompareRendererOperandTest` fuer operandseitige Notes und
-  strukturierte Operanddarstellung gezielt nutzen oder erweitern
+- `CompareRendererOperandTest` und `CliSchemaCompareTest` gegen den
+  finalen Outputvertrag auditieren
+- nur fehlende Delta-Faelle fuer Plain-, JSON- und YAML-Pfade
+  ergaenzen
 - absichern, dass operandseitige Notes im strukturierten Dokument
   sichtbar bleiben
 - pruefen, dass JSON/YAML keine zusaetzliche Plain-`stderr`-Doppelung
@@ -377,6 +427,11 @@ Abhaengigkeiten:
 ## 7. Verifikation
 
 Pflichtfaelle fuer 6.6:
+
+Faelle 1 bis 14 uebernehmen den fachlichen Vertrag aus Abschnitt 7 des
+Masterplans. Faelle 15 und 16 erweitern den Produkt-Scope nicht,
+sondern machen den in den Masterplan-Faellen 8 und 9 bereits
+enthaltenen Exit- und Outputvertrag fuer Testzwecke explizit.
 
 1. **Intakter Round-Trip**
    `neutral -> generate -> MySQL -> reverse -> compare` bleibt
@@ -434,12 +489,15 @@ Pflichtfaelle fuer 6.6:
     Primaer: Unit, ergaenzend Integration.
 
 12. **Mehrere Sequences gleichzeitig**
-    mehrere Sequences bleiben parallel stabil; ein degradierter Zustand
-    einer Sequence blockiert die anderen nicht.
+    mindestens zwei Sequences in verschiedenen Tabellen bleiben im
+    Reverse parallel stabil; ein degradierter Zustand einer Sequence
+    blockiert die andere nicht.
     Primaer: Integration, ergaenzend Unit.
 
 13. **Eine Sequence wird mehrfach genutzt**
-    dieselbe Sequence wird mehreren Spalten korrekt zugeordnet.
+    dieselbe Sequence kann mehreren Spalten in verschiedenen Tabellen
+    zugeordnet sein; der Reverse faltet alle betroffenen Spalten wieder
+    auf dieselbe neutrale Sequence zurueck.
     Primaer: Integration, ergaenzend Unit.
 
 14. **Mehrdeutiger Sequence-Key**
