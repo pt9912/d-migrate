@@ -213,9 +213,9 @@ Verbindliche Folge:
 - Runner- und CLI-Tests duerfen vor dem finalen T5-Gate mit
   synthetischen Operand-Notes arbeiten, wenn der fachliche
   Dokument-/Renderer-Vertrag bereits unabhaengig pruefbar ist
-- mindestens ein finaler Test muss echten D1-D3-Output als
-  Eingangsevidenz nutzen; ohne diesen Nachweis ist 6.6 nicht
-  abgeschlossen
+- der Audit muss bestaetigen, dass mindestens ein existierender oder
+  neuer Test echten D1-D3-Output als Eingangsevidenz nutzt; ohne
+  diesen Nachweis ist 6.6 nicht abgeschlossen
 
 ---
 
@@ -265,8 +265,12 @@ Verbindliche Folge:
 - Reader-/Aggregationsfaelle primaer in Driver-Unit
 - Metadata-/Quoting-/Markerrealitaet primaer in Driver-Integration
 - Compare-Diff-/Exit-Semantik primaer in Runner-Tests
-- Renderer-Vertrag primaer in Renderer-Unit-Tests
-- Outputformat- und Sichtbarkeitsvertrag primaer in CLI-Tests
+- Renderer-Vertrag primaer in Renderer-Unit-Tests:
+  Serialisierungsvertrag, Note-Platzierung, Feld-Trennung,
+  Auslassung leerer Bloecke
+- Outputformat- und Sichtbarkeitsvertrag primaer in CLI-Tests:
+  Nutzervertrag am Kommandoeingang, `stderr`-Verhalten, Formatwahl,
+  Datei-/Stdout-Ausgabe
 
 Verbindliche Regel:
 
@@ -291,7 +295,7 @@ Empfohlene Reihenfolge:
 2. T1 Driver-Unit-Faelle aus D1 bis D3 nachziehen
 3. T2 echte MySQL-Integration und Round-Trip aufbauen
 4. T3 Runner-Vertraege absichern
-5. T4 CLI-Sichtbarkeit und strukturierte Ausgabe absichern
+5. T4 Renderer- und CLI-Vertrag auditieren und Delta absichern
 6. T5 Abschluss-Gegenlauf und Coverage-Gate
 
 ---
@@ -391,10 +395,12 @@ Done-Kriterien:
 
 Done-Kriterien:
 
-- Plain zeigt operandseitige Notes sichtbar
-- JSON/YAML enthalten operandseitige Notes in
-  `sourceOperand`/`targetOperand`
-- `validation` bleibt in JSON/YAML frei von operandseitigen Notes
+- Renderer-Unit belegt, dass JSON/YAML operandseitige Notes in
+  `sourceOperand`/`targetOperand` tragen
+- Renderer-Unit belegt, dass `validation` in JSON/YAML frei von
+  operandseitigen Notes bleibt
+- CLI belegt die sichtbare Plain-Ausgabe und den Nutzervertrag am
+  Kommandoeingang
 
 ### T5 Abschluss-Gegenlauf und Coverage-Gate
 
@@ -433,88 +439,114 @@ Masterplans. Faelle 15 und 16 erweitern den Produkt-Scope nicht,
 sondern machen den in den Masterplan-Faellen 8 und 9 bereits
 enthaltenen Exit- und Outputvertrag fuer Testzwecke explizit.
 
+Statusschema pro Pflichtfall:
+
+- `offen` = Audit fuer diesen Fall noch nicht auf konkreten Test
+  rueckgefuehrt
+- `abgedeckt durch ...` = vorhandene Testevidenz ist ausreichend und
+  konkret benannt
+- `Delta in Tn` = es fehlt gezielte Nacharbeit in T1 bis T4
+- `blockiert ...` = Fall ist bewusst verschoben oder haengt an einem
+  externen Vorzustand
+
 1. **Intakter Round-Trip**
    `neutral -> generate -> MySQL -> reverse -> compare` bleibt
    diff-frei und exit-stabil.
    Primaer: Integration.
+   Status bei Planstart: offen.
 
 2. **Sequence-Metadaten-Diff**
    geaenderte `increment`-, `minValue`-, `maxValue`-, `cycle`- oder
    `cache`-Werte fuehren genau zu Sequence-Diffs.
    Primaer: Runner, ergaenzend Integration.
+   Status bei Planstart: offen.
 
 3. **Support-Routinen fehlen**
    Sequences bleiben reverse-bar, aber der Operand traegt
    sequence-bezogenes `W116`.
    Primaer: Unit, ergaenzend Integration.
+   Status bei Planstart: offen.
 
 4. **Support-Trigger fehlt**
    Sequence bleibt sichtbar, `SequenceNextVal` wird nicht
    rekonstruiert, `W116` erscheint.
    Primaer: Unit, ergaenzend Integration.
+   Status bei Planstart: offen.
 
 5. **Include-Flag-Unabhaengigkeit**
    Reverse funktioniert fuer Sequence-Erkennung auch mit
    `includeTriggers = false` und `includeFunctions = false`.
    Primaer: Unit.
+   Status bei Planstart: offen.
 
 6. **Supportobjekt-Unterdrueckung**
    intakte `dmg_sequences`, Support-Routinen und kanonische
    Sequence-Trigger erscheinen nicht als normale Nutzerobjekte.
    Primaer: Unit, ergaenzend Integration.
+   Status bei Planstart: offen.
 
 7. **Nicht-kanonische Objekte bleiben Nutzerobjekte**
    aehnlich benannte oder markerlose Nutzerobjekte werden nicht
    versehentlich weggefiltert.
    Primaer: Unit.
+   Status bei Planstart: offen.
 
 8. **Compare mit degradiertem Operand**
    operandseitiges `W116` bleibt sichtbar, erzeugt aber keinen
    kuenstlichen Diff-Eintrag.
    Primaer: Runner.
+   Status bei Planstart: offen.
 
 9. **Compare JSON/YAML mit degradiertem Operand**
    operandseitiges `W116` bleibt auch in `sourceOperand`/
    `targetOperand` maschinenlesbar sichtbar.
-   Primaer: CLI.
+   Primaer: Renderer-Unit, ergaenzend CLI.
+   Status bei Planstart: offen.
 
 10. **Markerloser, aber semantisch intakter Trigger**
     es entsteht in 0.9.4 keine Spaltenzuordnung auf Verdacht, sondern
     degradierte Diagnose mit `W116`.
     Primaer: Unit, ergaenzend Integration.
+    Status bei Planstart: offen.
 
 11. **Grundform vs. Zusatzspalten**
     Zusatzspalten in `dmg_sequences` brechen den Reverse nicht; fehlende
     Pflichtspalten oder unvereinbare Grundform schon.
     Primaer: Unit, ergaenzend Integration.
+    Status bei Planstart: offen.
 
 12. **Mehrere Sequences gleichzeitig**
     mindestens zwei Sequences in verschiedenen Tabellen bleiben im
     Reverse parallel stabil; ein degradierter Zustand einer Sequence
     blockiert die andere nicht.
     Primaer: Integration, ergaenzend Unit.
+    Status bei Planstart: offen.
 
 13. **Eine Sequence wird mehrfach genutzt**
     dieselbe Sequence kann mehreren Spalten in verschiedenen Tabellen
     zugeordnet sein; der Reverse faltet alle betroffenen Spalten wieder
     auf dieselbe neutrale Sequence zurueck.
     Primaer: Integration, ergaenzend Unit.
+    Status bei Planstart: offen.
 
 14. **Mehrdeutiger Sequence-Key**
     kollidierende Sequence-Keys werden nicht still ueberschrieben,
     sondern degradiert mit aggregiertem `W116`.
     Primaer: Unit.
+    Status bei Planstart: offen.
 
 15. **Exit-Code-Stabilitaet bei operandseitigem `W116`**
     file-vs-file, file-vs-db und db-vs-db bleiben bei rein
     operandseitigem `W116` auf Exit 0, solange kein realer Diff oder
     Validation-Fehler vorliegt.
     Primaer: Runner, ergaenzend CLI.
+    Status bei Planstart: offen.
 
 16. **Plain-/JSON-/YAML-Trennung**
     Plain zeigt Notes sichtbar; JSON/YAML tragen die Notes strukturiert
     und halten `validation` frei von Operand-Notes.
-    Primaer: CLI.
+    Primaer: Renderer-Unit, ergaenzend CLI.
+    Status bei Planstart: offen.
 
 Coverage-Ziel:
 
@@ -526,8 +558,9 @@ Coverage-Ziel:
 Gesamt-Gate:
 
 6.6 ist erst dann abgeschlossen, wenn T5 erledigt ist und alle
-Pflichtfaelle aus diesem Abschnitt bestanden oder mit begruendeter
-Blockade dokumentiert sind.
+Pflichtfaelle aus diesem Abschnitt als `abgedeckt durch ...`,
+`Delta in Tn` oder `blockiert ...` konkret dokumentiert und fuer den
+finalen Stand bestanden oder begruendet verschoben sind.
 
 ---
 
@@ -627,12 +660,16 @@ Gegenmassnahme:
 
 Risiko:
 
-- solange D1 bis D3 oder E1 noch fachlich in Bewegung sind, kann 6.6
-  nur teilweise finalisiert werden
+- trotz breiter bestehender Testbasis kann 6.6 inkonsistent werden,
+  wenn D1 bis D3 oder E1 nach dem Audit noch fachlich nachgezogen
+  werden und der vorhandene Teststand dann gegen einen veralteten
+  Vertrag laeuft
 
 Gegenmassnahme:
 
 - T0 frueh als Testmatrix-Schnitt festziehen
 - synthetische Notes und vorlaeufige Runner-/CLI-Tests nutzen, wo
   noetig
-- den Abschluss von T5 an echten D1-D3-Output koppeln
+- in T5 explizit bestaetigen, dass bestehende oder neue Tests echten
+  D1-D3-Output als Eingang nutzen und noch dem finalen Vertrag
+  entsprechen
