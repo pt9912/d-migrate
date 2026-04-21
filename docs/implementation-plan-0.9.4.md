@@ -259,6 +259,9 @@ Praktische Semantik:
     nicht lesbare Routinen
   - pro betroffener Spalte hoechstens eine aggregierte Note fuer
     fehlende, nicht lesbare oder nicht bestaetigbare Triggerzuordnung
+- invalide `dmg_sequences`-Einzelzeilen werden **nicht** als rohe
+  Einzelnote pro DB-Zeile ausgegeben, sondern in dieselbe
+  Sequence-bezogene Aggregation eingefaltet
 
 ### 4.5 Compare wird ueber Reverse-Normalisierung stabilisiert
 
@@ -287,6 +290,9 @@ Begruendung:
   nicht still in "Schema ist verschieden" umgedeutet werden
 - Diff-Semantik und Diagnose-Semantik muessen getrennt bleiben, damit
   Compare-Automation stabil bleibt
+- der bestehende Compare-Runner-/Renderer-Pfad muss dafuer produktiv
+  nachgezogen werden; die heutige Plain-only-Sichtbarkeit reicht nicht
+  fuer den 0.9.4-Vertrag
 
 ---
 
@@ -533,6 +539,10 @@ Erwartetes Ergebnis:
   `MysqlSequenceReverseSupport`
 - festlegen, an welcher Stelle `W116` gesammelt und strukturiert an
   `SchemaReadResult.notes` angehaengt wird
+- die Aggregation explizit auf Objektidentitaeten statt auf rohe
+  Metadatenzeilen festziehen:
+  - Sequence-Ebene fuer `dmg_sequences`-/Routine-Probleme
+  - Spaltenebene fuer Trigger-/Default-Zuordnung
 
 Akzeptanzkriterium:
 
@@ -550,7 +560,8 @@ Akzeptanzkriterium:
   ohne die Sequence-Rekonstruktion komplett zu verlieren
 - teilinvalide `dmg_sequences`-Zeilen nur lokal verwerfen:
   - gueltige Zeilen bleiben reverse-bar
-  - pro verworfener Zeile genau eine stabile `W116`-Note
+  - Diagnose wird pro betroffener Sequence aggregiert, nicht pro
+    verworfener Rohzeile
 
 Akzeptanzkriterien:
 
@@ -598,6 +609,14 @@ Akzeptanzkriterien:
 - pruefen, ob `SchemaComparator` unveraendert ausreicht
 - nur falls notwendig: minimale compare-seitige Anpassung auf
   Neutralmodell-Ebene, keine MySQL-Stringfilter
+- `SchemaCompareRunner` so nachziehen, dass operandseitige Reverse-Notes
+  fuer strukturierte Ausgabe nicht nur implizit in Plain-`stderr`,
+  sondern explizit im `SchemaCompareDocument`-Output sichtbar bleiben
+- `CompareRendererJson` und `CompareRendererYaml` um serialisierte
+  `sourceOperand`-/`targetOperand`-Diagnostik erweitern
+- `SchemaCompareProjection`/Rendervertrag fuer operandseitige Notes und
+  `skippedObjects` festziehen, damit `W116` in `json`/`yaml`
+  maschinenlesbar bleibt
 
 Akzeptanzkriterien:
 
@@ -609,6 +628,9 @@ Akzeptanzkriterien:
   Diff-Eintrag oder Exit-1 auszulösen
 - Plain-/JSON-/YAML-Ausgabe behandeln `W116` konsistent als Diagnose des
   jeweiligen Operanden, nicht als eigenstaendige Vergleichsart
+- `json`/`yaml` enthalten operandseitige Notes tatsaechlich im
+  strukturierten Dokument; Plain bleibt nur eine zusaetzliche
+  Darstellungsform, nicht der einzige Sichtbarkeitspfad
 
 ### 6.5 Phase E2: Doku- und Vertragsnachzug
 
@@ -619,11 +641,15 @@ Akzeptanzkriterien:
   konkretisieren
 - `docs/guide.md` um Reverse-/Compare-Hinweise fuer MySQL-Sequences
   ergaenzen
+- `ledger/warn-code-ledger-0.9.4.yaml` anlegen bzw. aktivieren und
+  `W116` dort von "reserved" auf "active" heben
 
 Akzeptanzkriterium:
 
 - die Nutzerdokumentation beschreibt klar, wann Sequences sauber
   erkannt werden und wann `W116` erscheint
+- Ledger und Plan widersprechen sich nicht beim Aktivierungsstatus von
+  `W116`
 
 ### 6.6 Phase D/E: Tests und Verifikation
 
@@ -631,8 +657,9 @@ Akzeptanzkriterium:
   erweitern
 - neue oder erweiterte MySQL-Testcontainer-Integrationstests fuer
   Reverse und Compare anlegen
-- `SchemaCompareRunnerTest` bzw. CLI-Compare-Tests fuer db-basierte
-  Sequence-Faelle erweitern
+- `hexagon/application/.../SchemaCompareRunnerTest.kt` und
+  `adapters/driving/cli/.../CliSchemaCompareTest.kt` fuer db-basierte
+  Sequence-Faelle und strukturierten W116-Output erweitern
 - Round-Trip-Test neutral -> generate -> MySQL -> reverse -> compare
   verbindlich machen
 
@@ -682,6 +709,10 @@ Pflichtfaelle fuer 0.9.4:
    operandseitiges `W116` bleibt in Compare sichtbar, aber ohne
    kuenstlichen Diff-Eintrag; Exit-Code folgt weiter nur der
    Diff-Entscheidung
+
+8a. **Compare JSON/YAML mit degradiertem Operand**
+   operandseitiges `W116` ist nicht nur in Plain-`stderr`, sondern auch
+   im strukturierten `sourceOperand`-/`targetOperand`-Teil sichtbar
 
 9. **Markerloser, aber semantisch intakter Trigger**
    fehlender Marker allein verhindert die Spaltenzuordnung nicht,
@@ -807,7 +838,23 @@ Gegenmassnahme:
 
 - Rekonstruktion strikt zeilenweise
 - Tabellenform global validieren, Zeileninhalt lokal bewerten
-- pro verworfener Zeile genau eine deduplizierte `W116`-Note
+- W116 nicht pro Rohzeile ausgeben, sondern pro betroffener Sequence
+  aggregieren; Rohzeilen sind nur interne Evidenz
+
+### 9.6 Compare-Renderer hinken dem 0.9.4-Vertrag hinterher
+
+Risiko:
+
+- `SchemaCompareRunner` und die JSON-/YAML-Renderer zeigen
+  operandseitige Reverse-Notes heute nicht in derselben strukturierten
+  Form wie der Plan es fuer `W116` verlangt
+
+Gegenmassnahme:
+
+- Compare-Ausgabe explizit als Teil von Phase E1 behandeln, nicht als
+  impliziten Nebeneffekt
+- Runner- und Renderer-Tests muessen `W116` in Plain, JSON und YAML
+  abdecken
 
 ---
 
