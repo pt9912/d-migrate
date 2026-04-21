@@ -78,13 +78,6 @@ data class SqlTransformRequest(
   val mode: SqlTransformMode = SqlTransformMode.STRICT,
 )
 
-data class SqlTransformFailureContextData(
-  val code: String,
-  val message: String,
-  val causeClass: String? = null,
-  val causeMessage: String? = null,
-)
-
 data class SqlTransformError(
   val code: SqlTransformErrorCode,
   val context: SqlTransformFailureContext,
@@ -93,6 +86,8 @@ data class SqlTransformError(
   val targetDialect: DatabaseDialect,
   val causeClass: String? = null,
   val causeMessage: String? = null,
+  val primaryError: String? = null,
+  val legacyError: String? = null,
   val details: Map<String, String> = emptyMap(),
   val querySnippet: String? = null,
   val position: Int? = null,
@@ -131,11 +126,6 @@ data class SqlTransformResultFailure(
   override val visibility: SqlTransformVisibility = SqlTransformVisibility.USER,
 ) : SqlTransformResult
 
-data class SqlTransformResultTechnicalFailure(
-  val payload: SqlTransformFailure,
-  override val visibility: SqlTransformVisibility = SqlTransformVisibility.TECHNICAL,
-) : SqlTransformResult
-
 interface SqlQueryTransformPort {
   fun transform(request: SqlTransformRequest): SqlTransformResult
 }
@@ -146,7 +136,7 @@ interface SqlQueryTransformPort {
 - `W111_UNKNOWN_FUNCTION` wird gesetzt, wenn eine Funktionsreferenz im Quell-Dialekt existiert,
   aber für den Ziel-Dialekt keine Transformationsregel vorhanden ist.
 - Die betroffene Funktion bleibt in der SQL-Ausgabe unverändert.
-- Ausgabe ist stabil sortiert (funktionsname aufsteigend, dann Position).
+- Ausgabe ist stabil sortiert (Funktionsname case-insensitive aufsteigend, dann Position).
 - `sourceFunction` enthält den Funktionsnamen, `position` den besten verfügbaren Offset/Tokenindex.
 - `W111` wird nur ausgelöst, wenn ein expliziter `sourceDialect` vorliegt und dieser vom `targetDialect` abweicht.
 
@@ -173,15 +163,16 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
   2. Bei Parser-/Transformationsfehler wird der bestehende Legacy-Tokenizer-Fallback aufgerufen.
   3. Bei Erfolg des Legacy-Pfads wird `SqlTransformSuccess(fallbackUsed = true)` geliefert.
   4. Bei Fehler im Legacy-Pfad wird `SqlTransformFailure` mit `code = LEGACY_FALLBACK_ERROR` geliefert.
-- Für Schritt 4 werden im `details`-Block mindestens zwei Einträge gesetzt:
-  - `details["primary_error"]`
-  - `details["legacy_error"]`
+- Für Schritt 4 werden die dedizierten Fehlerfelder in `SqlTransformError` gesetzt:
+  - `primaryError`: Fehlerbeschreibung des Parser-Pfads
+  - `legacyError`: Fehlerbeschreibung des Legacy-Fallback-Pfads
 - Ergebnis ist deterministisch: entweder Success (ggf. mit Fallback-Hinweis) oder eindeutiger Failure.
 
 ## W198-Risikokodierung
 
 - `W198_PARSER_FALLBACK_USED` ist in dieser Planphase als technische Diagnose gekennzeichnet.
-- `SqlTransformResultTechnicalFailure`/`SqlTransformResultSuccess` trägt die Sichtbarkeit.
+- `SqlTransformResultSuccess` bzw. `SqlTransformResultFailure` tragen über das Feld `visibility` die Sichtbarkeit.
+- Bei `fallbackUsed = true` wird automatisch ein `W198_PARSER_FALLBACK_USED`-Eintrag in `SqlTransformSuccess.warnings` ergänzt.
 - Standardausgabe im `ViewQueryTransformer` konvertiert `W198` nicht in Nutzer-`TransformationNote`.
 - `W198` darf erst dann als Nutzerwarnung ausgegeben werden, wenn der Ledger-Status auf `active` wechselt.
 - Für Monitoring/Runbook wird `W198` intern gezählt und an den Observability-Sink gemeldet.
@@ -194,6 +185,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
   - `null`/blank: kein Source-Dialect-Diff, daher keine `W111`-Probe.
   - ungültiger String: `INPUT_VALIDATION`.
 - Die Normalisierung des Source-Dialekts erfolgt über `DatabaseDialect.fromString`.
+- Die Fassade fängt `IllegalArgumentException` aus `fromString` und übersetzt sie in `SqlTransformResultFailure` mit `code = INPUT_VALIDATION` und `context = INPUT_VALIDATION`.
 
 ## Metriken und Observability (verbindlich)
 
@@ -211,7 +203,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
 - `fallback_attempt_total = sum_fallback_total` über alle `fallback_reason`.
 - `fallback_rate = fallback_attempt_total / attempts_total` mit Filter `mode="FALLBACK_ALLOWED"`.
 - `legacy_fallback_failure_rate = d_migrate_sql_transform_failure_total{fallback_reason="legacy_error"} / d_migrate_sql_transform_attempts_total` mit gleichem Mode-Filter.
-- Schwellwerte:
+- Initiale Schwellwerte (nach Pilotlauf anhand realer Baseline anpassen):
   - `fallback_rate > 0.5%` -> Lauf als instabil markieren
   - `legacy_fallback_failure_rate > 0.1%` -> Schwerewarnung
 - Bei `attempts_total == 0` wird keine Division ausgeführt.
@@ -235,13 +227,13 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
 - Bei `STRICT` werden Fehler nicht maskiert.
 - Legacy-Fallback nutzt die bestehende Token-basierte Logik weiter und bleibt als kontrollierter Ausweichweg gebunden.
 
-## Dependency-Management (praktisch korrekt)
+## Dependency-Management (geplant)
 
 - JSqlParser hängt nur am Modul `adapters/driven/driver-common`.
 - In diesem Repository gibt es kein `gradle/libs.versions.toml`.
-- Version wird im Zentralen Katalog gepflegt:
-  - `gradle.properties`: z. B. `jsqlparserVersion=5.x.y`
-  - `adapters/driven/driver-common/build.gradle.kts`: `implementation("com.github.jsqlparser:jsqlparser:${rootProject.properties["jsqlparserVersion"]}")`
+- Version wird im zentralen Katalog angelegt:
+  - Neu in `gradle.properties`: `jsqlparserVersion=5.x.y` (konkrete Version bei Implementierung festlegen)
+  - Neu in `adapters/driven/driver-common/build.gradle.kts`: `implementation("com.github.jsqlparser:jsqlparser:${rootProject.properties["jsqlparserVersion"]}")`
 - Keine parserbezogenen Transitiven in `hexagon/ports`, `hexagon/core` oder anderen Modulen.
 
 ## Fassade und bestehender Call-Site-Flow
@@ -267,6 +259,8 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
   - `FALLBACK_ALLOWED` + SQL-Fehler + Parsererfolg -> `SqlTransformSuccess(fallbackUsed=true)`.
   - `FALLBACK_ALLOWED` + Fehler in Parser und Legacy -> `SqlTransformFailure(code = LEGACY_FALLBACK_ERROR)`.
   - deterministische `W111` inkl. `sourceFunction` und `position`.
+  - `FALLBACK_ALLOWED` + Legacy-Erfolg -> `W198` automatisch in `warnings` enthalten.
+  - Fassade: ungültiger `sourceDialect`-String -> `IllegalArgumentException` wird in `SqlTransformResultFailure(code = INPUT_VALIDATION)` übersetzt.
   - `fallback_rate`/`legacy_fallback_failure_rate` mit `attempts_total == 0`.
 - Ledger-Tests:
   - `warn-code-ledger-0.9.3.yaml` enthält `W111` mit `status: active`.
@@ -277,7 +271,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
 - Deterministische `W111`-Signale in definierten Fällen.
 - `STRICT` darf keinen stillen Fallback durchführen.
 - `STRICT`-Fehler liefern definiert `SqlTransformFailure`.
-- `fallback_rate <= 0.5%` und `legacy_fallback_failure_rate <= 0.1%` in kontrollierten Läufen.
+- `fallback_rate` und `legacy_fallback_failure_rate` liegen in kontrollierten Läufen unter den initial definierten Schwellwerten (nach Pilotlauf anpassen).
 - JSqlParser-Imports nur in `adapters/driven/driver-common`.
 - `W111`-Ledger-Eintrag ist in der Zielversion aktiv und konsistent validierbar.
 - Fassade bleibt API-kompatibel zu bestehender Aufruferlandschaft, ergänzt aber neue Fallback/Mode-Wahl explizit.
@@ -291,7 +285,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
 - Performance-Overhead auf großen Views.
   - Gegenmaßnahme: Dauer-Histogramm + Regressionstests nach Länge/Komplexität.
 - `W198` bleibt technisch, bis Stabilität nachgewiesen ist.
-  - Gegenmaßnahme: separater technischem Metrikpfad, keine aktive Nutzer-Ausgabe vor `active`.
+  - Gegenmaßnahme: separatem technischen Metrikpfad, keine aktive Nutzer-Ausgabe vor `active`.
 
 ## Nächster Schritt
 
