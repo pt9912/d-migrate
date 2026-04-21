@@ -66,6 +66,42 @@ class MysqlSchemaReader(
         }
     }
 
+    // ── Safe numeric helpers (D2 range validation) ──
+
+    /** Safely convert to Long, returning null on overflow or non-numeric input. */
+    private fun safeLong(value: Any?): Long? {
+        if (value == null) return null
+        return try {
+            when (value) {
+                is Long -> value
+                is Int -> value.toLong()
+                is Short -> value.toLong()
+                is Byte -> value.toLong()
+                is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Long.MIN_VALUE)..java.math.BigInteger.valueOf(Long.MAX_VALUE)) value.toLong() else null
+                is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Long.MIN_VALUE) && value <= java.math.BigDecimal.valueOf(Long.MAX_VALUE)) value.toLong() else null
+                is Number -> value.toLong()  // fallback for other Number types
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /** Safely convert to Int, returning null on overflow or non-numeric input. */
+    private fun safeInt(value: Any?): Int? {
+        if (value == null) return null
+        return try {
+            when (value) {
+                is Int -> value
+                is Short -> value.toInt()
+                is Byte -> value.toInt()
+                is Long -> if (value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) value.toInt() else null
+                is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Int.MIN_VALUE.toLong())..java.math.BigInteger.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
+                is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Int.MIN_VALUE.toLong()) && value <= java.math.BigDecimal.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
+                is Number -> value.toInt()  // fallback
+                else -> null
+            }
+        } catch (_: Exception) { null }
+    }
+
     // ── Sequence support scan (0.9.4 AP 6.1) ──────
 
     internal fun scanSequenceSupport(
@@ -153,12 +189,12 @@ class MysqlSchemaReader(
         val sequenceRows = rawRows.map { row ->
             SequenceRowSnapshot(
                 name = (row["name"] as? String),
-                nextValue = (row["next_value"] as? Number)?.toLong(),
-                incrementBy = (row["increment_by"] as? Number)?.toLong(),
-                minValue = (row["min_value"] as? Number)?.toLong(),
-                maxValue = (row["max_value"] as? Number)?.toLong(),
-                cycleEnabledRaw = (row["cycle_enabled"] as? Number)?.toInt(),
-                cacheSize = (row["cache_size"] as? Number)?.toInt(),
+                nextValue = safeLong(row["next_value"]),
+                incrementBy = safeLong(row["increment_by"]),
+                minValue = safeLong(row["min_value"]),
+                maxValue = safeLong(row["max_value"]),
+                cycleEnabledRaw = safeInt(row["cycle_enabled"]),
+                cacheSize = safeInt(row["cache_size"]),
                 managedBy = (row["managed_by"] as? String),
                 formatVersion = (row["format_version"] as? String),
             )
@@ -167,8 +203,12 @@ class MysqlSchemaReader(
         // D2 trim-normalization for name keys
         val trimmedRows = sequenceRows.map { it to it.name?.trim() }
 
-        // Detect ambiguous keys: same trimmed name appears multiple times
-        val byName = trimmedRows.filter { it.second != null }.groupBy { it.second!! }
+        // Filter to d-migrate rows only for ambiguity detection
+        fun isDMigrateRow(row: SequenceRowSnapshot): Boolean =
+            row.managedBy?.trim() == "d-migrate" && row.formatVersion?.trim() == "mysql-sequence-v1"
+
+        val dmigrateTrimedRows = trimmedRows.filter { isDMigrateRow(it.first) && !it.second.isNullOrEmpty() }
+        val byName = dmigrateTrimedRows.groupBy { it.second!! }
         val ambiguousKeys = byName.filter { it.value.size > 1 }.keys
 
         // Step 4: targeted routine lookups
@@ -183,12 +223,8 @@ class MysqlSchemaReader(
         val triggerScan = MysqlMetadataQueries.listPotentialSupportTriggers(session, database)
         val triggerStates = triggerScan.triggers.associate { it.triggerName to it.state }
 
-        // Step 6: identify d-migrate rows and aggregate diagnostics
-        fun isDMigrateRow(row: SequenceRowSnapshot): Boolean =
-            row.managedBy?.trim() == "d-migrate" && row.formatVersion?.trim() == "mysql-sequence-v1"
-
-        val dmigrateRowNames = trimmedRows
-            .filter { isDMigrateRow(it.first) && it.second != null && it.second!!.isNotEmpty() }
+        // Step 6: identify confirmed d-migrate row names for diagnostics
+        val dmigrateRowNames = dmigrateTrimedRows
             .map { it.second!! }
             .filter { it !in ambiguousKeys }
             .toSet()
@@ -342,6 +378,22 @@ class MysqlSchemaReader(
                         hint = routineCauses.joinToString("; "),
                     )
                 }
+            }
+        }
+
+        // D1 trigger/scan diagnostics — pass through when sequences were materialized
+        if (sequences.isNotEmpty()) {
+            for (diag in snapshot.diagnostics.filter { it.emitsW116 }) {
+                allNotes += SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "W116",
+                    objectName = when (val k = diag.key) {
+                        is SequenceDiagnosticKey -> k.sequenceName
+                        is ColumnDiagnosticKey -> "${k.tableName}.${k.columnName}"
+                    },
+                    message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
+                    hint = diag.causes.joinToString("; "),
+                )
             }
         }
 

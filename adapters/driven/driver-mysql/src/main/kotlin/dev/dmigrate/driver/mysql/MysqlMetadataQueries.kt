@@ -262,16 +262,19 @@ object MysqlMetadataQueries {
     fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
         val actualColumns = session.queryList(
             """
-            SELECT column_name, data_type
+            SELECT column_name, data_type, column_type
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             """.trimIndent(), database, MysqlSequenceNaming.SUPPORT_TABLE,
         ).associate {
-            (it["column_name"] as String).lowercase() to (it["data_type"] as? String)?.lowercase()
+            (it["column_name"] as String).lowercase() to Pair(
+                (it["data_type"] as? String)?.lowercase(),
+                (it["column_type"] as? String)?.lowercase(),
+            )
         }
         return REQUIRED_COLUMN_TYPES.all { (col, allowedTypes) ->
-            val actualType = actualColumns[col] ?: return false
-            actualType in allowedTypes
+            val (dataType, _) = actualColumns[col] ?: return false
+            dataType in allowedTypes
         }
     }
 
@@ -280,12 +283,13 @@ object MysqlMetadataQueries {
      * Caller is responsible for validation and conflict detection.
      */
     fun listSupportSequenceRows(session: JdbcOperations, database: String): List<Map<String, Any?>> {
+        val safeDb = database.replace("`", "``")
         return session.queryList(
             """
             SELECT managed_by, format_version, name,
                    next_value, increment_by, min_value, max_value,
                    cycle_enabled, cache_size
-            FROM `$database`.`${MysqlSequenceNaming.SUPPORT_TABLE}`
+            FROM `$safeDb`.`${MysqlSequenceNaming.SUPPORT_TABLE}`
             """.trimIndent(),
         )
     }

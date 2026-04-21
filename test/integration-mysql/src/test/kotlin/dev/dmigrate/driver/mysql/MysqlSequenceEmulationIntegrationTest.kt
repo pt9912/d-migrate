@@ -39,6 +39,7 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
     fun conn() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
 
     val generator = MysqlDdlGenerator()
+    val reader = MysqlSchemaReader()
     val helperOpts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
 
     val schema = SchemaDefinition(
@@ -200,6 +201,32 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         errors.get() shouldBe 0
         // All values must be unique — no duplicates
         allValues.size shouldBe threads * callsPerThread
+    }
+
+    // ── D2 reverse integration tests (0.9.4 AP 6.2) ──────────
+
+    test("reverse from real MySQL reconstructs schema.sequences from dmg_sequences") {
+        // The DDL from the first test already set up dmg_sequences + routines + triggers.
+        // Now reverse-read the database and verify sequence reconstruction.
+        val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+            override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun activeConnections() = 0
+            override fun close() {}
+        }
+        val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions())
+
+        // dmg_sequences should be suppressed (AVAILABLE)
+        result.schema.tables.keys.none { it == MysqlSequenceNaming.SUPPORT_TABLE } shouldBe true
+
+        // Sequence reconstructed
+        result.schema.sequences.containsKey("invoice_seq") shouldBe true
+        val seq = result.schema.sequences["invoice_seq"]!!
+        seq.increment shouldBe 1L
+        seq.description shouldBe null
+
+        // Invoices table should still be present
+        result.schema.tables.containsKey("invoices") shouldBe true
     }
 })
 
