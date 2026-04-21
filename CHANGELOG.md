@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.9.3] - 2026-04-21
+
+### Added
+
+- **Safe `--filter` DSL** for `data export`: the `--filter` flag now
+  accepts a closed, parameterized filter language instead of raw SQL.
+  Supports comparisons, `IN (...)`, `IS NULL`/`IS NOT NULL`, `AND`,
+  `OR`, `NOT`, parentheses, function calls (allowlist), and arithmetic.
+  All literals are bound as JDBC parameters. Canonicalized fingerprints
+  ensure stable checkpoint resume across whitespace and case variations
 - **`default.sequence_nextval` schema form**: columns can now declare
   `default: { sequence_nextval: <sequence-name> }` to express that
   the column's default value comes from a named sequence. This replaces
@@ -31,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: `--filter` is now a closed DSL** — raw SQL fragments,
+  dialect-specific operators (`LIKE`, `BETWEEN`, `ILIKE`), and
+  subqueries are no longer accepted. Existing checkpoints with
+  pre-0.9.3 raw-SQL fingerprints are rejected with Exit 2 and a
+  migration hint
 - **Breaking: `nextval(...)` function-call notation removed** —
   columns that previously used `default: "nextval(invoice_seq)"` must
   migrate to the object form `default: { sequence_nextval: invoice_seq }`.
@@ -38,9 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replace `default: "nextval(<name>)"` with
   `default: { sequence_nextval: <name> }` in all schema YAML files.
   The parser now rejects the legacy form with error E122
-- Version strings updated to 0.9.3
-
-### Fixed
+- `AbstractDdlGenerator.getVersion()` returns `0.9.3`
 
 ## [0.9.2] - 2026-04-20
 

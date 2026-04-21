@@ -224,7 +224,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.1](https://github.com/pt9912/d-migrate/releases/tag/v0.9.1)** — Beta: Library-Refactor und Integrationsschnitt — Sicherheits-Härtung (SQL-Identifier-Quoting), Zerlegung großer Orchestrierungs-/Dialekt-Klassen, Port-Split (`ports-common`/`ports-read`/`ports-write`), Profiling-Extraktion in optionale Module, deduplizierter FK-Topo-Sort.
+Aktuelles Release: **[v0.9.3](https://github.com/pt9912/d-migrate/releases/tag/v0.9.3)** — Beta: Filter-Härtung und MySQL-Sequence-Emulation (Generator) — sichere `--filter`-DSL mit Bind-Parametern, `default.sequence_nextval` als kanonische Schema-Form, `--mysql-named-sequences helper_table` für MySQL-Sequence-Emulation über `dmg_sequences`/Routinen/Trigger.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
