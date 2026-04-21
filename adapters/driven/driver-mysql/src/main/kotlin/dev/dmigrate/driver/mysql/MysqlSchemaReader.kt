@@ -488,7 +488,7 @@ class MysqlSchemaReader(
         materializedSequences: Map<String, SequenceDefinition>,
         tables: Map<String, TableDefinition>,
     ): D3Result {
-        if (snapshot.supportTableState != SupportTableState.AVAILABLE || materializedSequences.isEmpty()) {
+        if (snapshot.supportTableState != SupportTableState.AVAILABLE) {
             return D3Result(tables, emptySet(), emptyList())
         }
 
@@ -547,6 +547,27 @@ class MysqlSchemaReader(
                     // else: not verankerbar → internal evidence only, no final W116
                 }
                 SupportTriggerState.USER_OBJECT -> { /* not a support trigger */ }
+            }
+        }
+
+        // Trigger scan not accessible → W116 per materialized sequence
+        // (column defaults cannot be verified, but sequences survive)
+        if (snapshot.triggerAssessments.isEmpty() && materializedSequences.isNotEmpty()) {
+            // Check if the trigger scan was marked inaccessible via D1 diagnostics
+            val triggerScanDiags = snapshot.diagnostics.filter {
+                it.emitsW116 && it.key is SequenceDiagnosticKey &&
+                    it.causes.any { c -> "trigger" in c.lowercase() && "not accessible" in c.lowercase() }
+            }
+            if (triggerScanDiags.isNotEmpty()) {
+                for (seqKey in materializedSequences.keys) {
+                    d3Notes += SchemaReadNote(
+                        severity = SchemaReadSeverity.WARNING,
+                        code = "W116",
+                        objectName = seqKey,
+                        message = "Sequence metadata reconstructed, but trigger verification was not possible",
+                        hint = "support trigger metadata is not accessible",
+                    )
+                }
             }
         }
 

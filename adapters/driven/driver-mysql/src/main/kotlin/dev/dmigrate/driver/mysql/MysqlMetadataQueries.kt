@@ -467,7 +467,7 @@ object MysqlMetadataQueries {
 
             val state = when {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
-                timing != "BEFORE" || event != "INSERT" -> SupportTriggerState.NON_CANONICAL
+                !timing.equals("BEFORE", ignoreCase = true) || !event.equals("INSERT", ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
                 "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
                 "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
                 column == null || sequence == null -> SupportTriggerState.NON_CANONICAL

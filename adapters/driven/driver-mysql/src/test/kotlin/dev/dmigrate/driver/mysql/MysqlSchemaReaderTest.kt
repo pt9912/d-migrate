@@ -1158,7 +1158,7 @@ class MysqlSchemaReaderTest : FunSpec({
         d3.notes.any { it.code == "W116" && "orders.invoice_number" in it.objectName } shouldBe true
     }
 
-    test("D3: trigger referencing non-materialized sequence produces no SequenceNextVal") {
+    test("D3: trigger referencing non-materialized sequence produces no SequenceNextVal and W116") {
         val tables = makeTable(
             "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
             "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
@@ -1174,6 +1174,8 @@ class MysqlSchemaReaderTest : FunSpec({
         val d3 = reader.materializeSequenceDefaults(snapshot, emptyMap(), tables)
         val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
         col.default shouldBe null
+        // W116 for non-materialized sequence reference
+        d3.notes.any { it.code == "W116" && "orders.invoice_number" in it.objectName } shouldBe true
     }
 
     test("D3: conflicting existing default produces W116, no overwrite") {
@@ -1275,18 +1277,25 @@ class MysqlSchemaReaderTest : FunSpec({
         d3.notes.shouldBeEmpty()
     }
 
-    test("D3: NOT_ACCESSIBLE trigger scan still preserves D2 sequences") {
+    test("D3: NOT_ACCESSIBLE trigger scan preserves D2 sequences with W116") {
         // When trigger scan is not accessible, D2 sequences survive
-        // but no column defaults are set
+        // but no column defaults are set and W116 is emitted per sequence
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
         val snapshot = MysqlSequenceSupportSnapshot(
-            scope = ReverseScope(catalogName = "mydb", schemaName = "mydb"),
+            scope = scope,
             supportTableState = SupportTableState.AVAILABLE,
             sequenceRows = emptyList(),
             ambiguousKeys = emptySet(),
             routineStates = emptyMap(),
             triggerStates = emptyMap(),
             triggerAssessments = emptyList(), // scan inaccessible → no assessments
-            diagnostics = emptyList(),
+            diagnostics = listOf(
+                SupportDiagnostic(
+                    key = SequenceDiagnosticKey(scope, "invoice_seq"),
+                    causes = listOf("support trigger metadata is not accessible"),
+                    emitsW116 = true,
+                ),
+            ),
         )
         val tables = makeTable(
             "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
@@ -1298,6 +1307,8 @@ class MysqlSchemaReaderTest : FunSpec({
         // Sequences survived, but no column defaults
         d3.enrichedTables["orders"]!!.columns["invoice_number"]!!.default shouldBe null
         d3.confirmedTriggerNames.shouldBeEmpty()
+        // W116 emitted for trigger inaccessibility
+        d3.notes.any { it.code == "W116" && "invoice_seq" in it.objectName } shouldBe true
     }
 
     test("D3: confirmed trigger with wrong forward-verified name is not confirmed") {
