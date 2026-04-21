@@ -10,11 +10,13 @@
 > `docs/mysql-sequence-emulation-plan.md` Abschnitt 6;
 > `docs/ddl-generation-rules.md`;
 > `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SequenceDefinition.kt`;
+> `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SchemaDefinition.kt`;
 > `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`;
 > `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`;
 > `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`;
 > `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`;
 > `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`;
+> `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceReverseSupport.kt`;
 > `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`.
 
 ---
@@ -101,6 +103,8 @@ Konsequenz ohne 6.2:
   - Support-Snapshot
   - Status-zu-Diagnose-Vertrag
   - Konflikt- und Aggregationsschluessel
+- gezielte Korrektur des aktuellen D1-Scaffolds, wo dieser fuer D2
+  fachlich noch nicht ausreicht
 - Validierung der kanonischen Grundform von `dmg_sequences`
 - zeilenweise Bewertung von Support-Zeilen
 - Mapping gueltiger Zeilen auf `SequenceDefinition`
@@ -246,6 +250,13 @@ Architektur-Verortung:
   - sequence-bezogene `SchemaReadNote`s
 - `scanSequenceSupport(...)` bleibt D1-Infrastruktur und wird in D2
   nicht mit Fachmapping ueberladen
+- zwischen D1-Snapshot und fachlichem Mapping liegt in D2 bevorzugt eine
+  eigene Vorvalidierungsstufe:
+  - zuerst globale Tabellenform- und Typsemantik pruefen
+  - erst danach lokale Zeilenvalidierung und Materialisierung starten
+  - D2 mutiert den D1-Snapshot dabei nicht rueckwirkend, sondern
+    arbeitet mit einer zweiten, fachlichen Sicht auf denselben
+    Rohdatenbestand
 - fuer die Zeilenvalidierung fuehrt D2 eine zweite, fachliche
   Resultstufe ein:
   - bevorzugt als getrennte Validierungsobjekte wie
@@ -257,6 +268,12 @@ Architektur-Verortung:
   - D1 nur rohe Leseevidenz sammelt
   - D2 daraus die fachlich gueltigen Kandidaten und invalide Evidenz
     explizit neu ableitet
+- wenn `SequenceRowSnapshot` als D1-Rohtyp bestehen bleibt, muss er fuer
+  D2 die Unterscheidung "nicht lesbar" vs. "fachlich gelesener Wert"
+  weitergeben koennen:
+  - bevorzugt ueber nullable Felder oder rohe Lesewerte ohne
+    fachlichen Default
+  - nicht ueber bereits eingesetzte Platzhalter wie `0L` oder `1L`
 - alternativ ist auch ein Refactoring des D1-Rohtyps zulaessig; fuer den
   D2-Vertrag ist nur entscheidend, dass fachliches Mapping nie auf
   Platzhalter-Fallbacks basiert
@@ -295,6 +312,10 @@ Verbindliche Formregeln:
     `invalid_shape`
   - solche Faelle werden nicht als "eigentlich kanonische Tabelle mit
     kaputten Einzelzeilen" behandelt
+  - bevorzugt wird dafuer die bestehende
+    `checkSupportTableShape(...)`-Stufe in der Query-/Reader-Grenze
+    erweitert, statt dieselbe Shape-Logik spaeter implizit in die
+    Zeilenvalidierung zu verschieben
 - fuer string-artige Pflichtfelder gilt in D2 eine explizite
   Lesesemantik:
   - JDBC-Strings werden vor Fachvergleich als gelesene Werte behandelt,
@@ -307,6 +328,11 @@ Verbindliche Formregeln:
   - fuer `name` gibt es in D2 keine zusaetzliche Case-Faltung, keine
     Sonderzeichenbereinigung und keine Wiederverwendung einer
     Naming-Heuristik wie `MysqlSequenceNaming.normalize()`
+  - Begruendung:
+    - D2 rekonstruiert den neutralen Sequence-Key aus persistierten
+      Metadaten, nicht aus Generator-Namensheuristik
+    - jede zusaetzliche Case- oder Sonderzeichen-Normalisierung wuerde
+      ueber die in `dmg_sequences` gespeicherte Wahrheit hinausraten
 
 Grundform gilt in D2 als verloren, wenn:
 
@@ -333,6 +359,9 @@ Vergleichssemantik fuer string-artige Zeilenwerte:
 - dieselbe Normalisierung wird sowohl fuer Filterung als auch fuer
   Konflikterkennung auf `name` verwendet, damit kein Drift zwischen
   "Zeile gilt" und "Key kollidiert" entsteht
+- ergibt `name.trim()` einen Leerstring, ist die Zeile invalide; das ist
+  ein Zeilenfehler, nicht automatisch ein Verlust der gesamten
+  Tabellenform
 
 Fremde oder historisch nicht passende Zeilen:
 
@@ -346,10 +375,18 @@ Eine lokal gueltige D2-Zeile muss mindestens sicher liefern koennen:
 - `name`
 - `next_value`
 - `increment_by`
-- `min_value`
-- `max_value`
+- `min_value` oder `NULL`
+- `max_value` oder `NULL`
 - `cycle_enabled`
 - `cache_size` oder `NULL`
+
+Sonderregeln fuer `min_value` und `max_value`:
+
+- `NULL` ist in D2 zulaessig und wird unveraendert als `null` in das
+  Neutralmodell uebernommen
+- nicht lesbare Werte machen die betroffene Zeile invalide
+- Werte ausserhalb des fachlich lesbaren `Long`-Bereichs gelten als
+  nicht lesbar und invalidieren die betroffene Zeile
 
 Sonderregeln fuer `cycle_enabled`:
 
@@ -378,6 +415,10 @@ Sonderregeln fuer `cache_size`:
   explizit:
   - nicht lesbare Werte machen die betroffene Zeile invalide
   - D2 fuehrt hier keine stillen Fallbacks wie `0L` oder `1L` ein
+- dieselbe Regel gilt fuer andere fachlich als `Long` zu lesende
+  Pflichtwerte:
+  - Werte ausserhalb von `Long.MIN_VALUE .. Long.MAX_VALUE` sind fuer
+    D2 nicht lesbar und invalidieren die betroffene Zeile
 
 Gemischte Qualitaet fuer denselben neutralen Sequence-Key:
 
@@ -411,6 +452,7 @@ Weitere Regeln:
 - Sortierung und Materialisierung muessen deterministisch bleiben:
   - D2 materialisiert Sequences stabil aufsteigend nach dem
     normalisierten neutralen Sequence-Key in lexikographischer Ordnung
+    gemaess Kotlin-`String.compareTo()`, nicht gemaess MySQL-Collation
   - damit bleiben Compare und Tests reproduzierbar
 
 ### 5.5 Status-zu-Diagnose-Vertrag auf Sequence-Ebene
@@ -450,6 +492,12 @@ Sequence-Schluesseln:
   - Sequence-Rekonstruktion bleibt moeglich
   - Aggregationsebene ist ebenfalls der materialisierte Sequence-Key
   - aggregierbares sequence-bezogenes `W116`
+- fehlerhaft als `missing` klassifizierte Nutzer- oder nicht kanonische
+  Routinen sind in D2 zu korrigieren:
+  - Nutzerobjekt oder nicht kanonische Routine ist keine fehlende
+    Support-Routine
+  - daraus darf fuer sich allein kein sequence-bezogenes `W116`
+    entstehen
 
 Leitregel:
 
@@ -460,6 +508,19 @@ Leitregel:
 ---
 
 ## 6. Konkrete Arbeitsschritte
+
+### D2-0 D1-Scaffold-Korrekturen buendeln
+
+- bestehende D1-Lesepfade dort korrigieren, wo sie D2 fachlich
+  widersprechen:
+  - `INVALID_SHAPE` nicht unterdruecken
+  - `listSupportSequenceRows(...)` sauber an `ReverseScope` binden
+  - Markerfelder nicht roh mit `==` vergleichen
+  - keine stillen `0L`-/`1L`-Fallbacks
+  - keine `W116` fuer fremde Markerzeilen
+  - Routine-Diagnosen nicht auf Routinenamen aggregieren
+  - falsch als `missing` klassifizierte Nutzer-/Nicht-Support-Routinen
+    berichtigen
 
 ### D2-1 D1-Snapshot an D2 anbinden
 
@@ -478,6 +539,8 @@ Leitregel:
   pruefen
 - Typsemantik gegen ResultSet-Lesbarkeit absichern und in die
   Grundformvalidierung einziehen
+- die bestehende Shape-Pruefung gezielt um Typsemantik erweitern, statt
+  diesen Teil still in die spaetere Zeilenvalidierung zu verschieben
 - Zusatzspalten bewusst tolerieren und ignorieren
 - `invalid_shape` frueh und eindeutig vom zeilenweisen Inhaltsfehler
   trennen
@@ -535,6 +598,8 @@ Leitregel:
 
 - `MysqlSchemaReaderTest` fuer:
   - intakte Sequence-Rekonstruktion aus `dmg_sequences`
+  - expliziten CHAR-Padding-Fall in `managed_by`, `format_version` und
+    `name`
   - konsistente Normalisierung von `managed_by`,
     `format_version` und `name`
   - CHAR-Padding in `managed_by`, `format_version` und `name`
@@ -569,6 +634,8 @@ Pflichtfaelle fuer 6.2:
 
 1. Eine frisch generierte MySQL-DB mit kanonischer `dmg_sequences`-
    Tabelle liefert die erwarteten `schema.sequences`.
+   Dieser Fall ist primaer als MySQL-Integrationstest bzw.
+   Testcontainer-Fall zu verstehen, nicht nur als reiner Unit-Test.
 2. `dmg_sequences` erscheint nach erfolgreicher D2-Erkennung nicht mehr
    als normale Tabelle im Reverse-Ergebnis.
 3. Zusatzspalten in `dmg_sequences` brechen den Reverse nicht, solange
@@ -594,34 +661,40 @@ Pflichtfaelle fuer 6.2:
    konsistente D2-Normalisierung validiert, so dass Padding- oder
    Leseunterschiede nicht zu driftender Filter- und Key-Semantik
    fuehren.
-12. `cycle_enabled` akzeptiert in D2 nur kanonische Bool-Werte
+12. Ein expliziter CHAR-Padding-Fall in `managed_by`,
+    `format_version` und `name` bleibt nach `trim()` stabil und fuehrt
+    weder zu Markerbruch noch zu Key-Drift.
+13. `cycle_enabled` akzeptiert in D2 nur kanonische Bool-Werte
     (`0`/`1`); `NULL`, negative oder andere numerische Werte machen nur
     die betroffene Zeile invalide.
-13. `cache_size`-Randfaelle sind explizit abgesichert:
+14. `min_value` und `max_value` duerfen in D2 explizit `NULL` sein;
+    nicht lesbare oder ausserhalb von `Long` liegende Werte
+    invalidieren nur die betroffene Zeile.
+15. `cache_size`-Randfaelle sind explizit abgesichert:
     `NULL` bleibt zulaessig, `0` bleibt zulaessig, Werte groesser als
     `Int.MAX_VALUE`, invalide oder nicht lesbare Werte degradieren nur
     den betroffenen Sequence-Key.
-14. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
+16. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
     betroffenen Zeile, nicht zu stillen `0`-/`1`-Defaults.
-15. D2 verwendet fuer invalide Zeilen keine Fake-Werte in
+17. D2 verwendet fuer invalide Zeilen keine Fake-Werte in
     fachlich gemappten Kandidaten, sondern trennt gueltige Kandidaten
     und invalide Zeilenevidenz.
-16. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
+18. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
     impliziten Sequence-Materialisierung.
-17. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
+19. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
     Hard-Fail oder kompatiblem Nicht-Sequence-Fall, nicht zu einem
     stillen Teilergebnis.
-18. Fremde oder historisch nicht passende Markerzeilen fuehren fuer
+20. Fremde oder historisch nicht passende Markerzeilen fuehren fuer
     sich allein zu keinem `W116`.
-19. Fehlende oder nicht lesbare Support-Routinen aggregieren in D2 pro
+21. Fehlende oder nicht lesbare Support-Routinen aggregieren in D2 pro
     betroffenem Sequence-Key, nicht global pro Datenbank und nicht pro
     Routineobjekt.
-20. `SequenceDefinition.description` bleibt in D2 explizit `null`.
-21. Die Sequence-Reihenfolge bleibt bei 3+ Eintraegen deterministisch
+22. `SequenceDefinition.description` bleibt in D2 explizit `null`.
+23. Die Sequence-Reihenfolge bleibt bei 3+ Eintraegen deterministisch
     aufsteigend nach dem normalisierten Sequence-Key.
-22. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
+24. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
     Laufzeitzaehler wird nicht in D2 "wegkorrigiert".
-23. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
+25. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
     ein kompatibler Nicht-Sequence-Fall ohne implizite Sequences.
 
 Akzeptanzkriterium fuer 6.2:
@@ -638,11 +711,13 @@ Voraussichtlich direkt betroffen:
 
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`
+- `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceReverseSupport.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`
   nur falls fuer D2 ueber Konstantenzugriff hinaus doch Reader-Helfer
   angepasst werden muessen; nach aktuellem Plan eher nicht direkt zu
   aendern
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SequenceDefinition.kt`
+- `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SchemaDefinition.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`
 - `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`
