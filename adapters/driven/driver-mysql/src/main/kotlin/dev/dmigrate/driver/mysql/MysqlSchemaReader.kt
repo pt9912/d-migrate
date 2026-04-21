@@ -42,11 +42,14 @@ class MysqlSchemaReader(
             // Phase 2: internal sequence support scan
             val supportSnapshot = scanSequenceSupport(session, metaDb, scope)
 
-            // Phase 3: assemble result — filter support objects, aggregate diagnostics
+            // Phase 3: D2 — materialize sequences from support snapshot
+            val d2Result = materializeSupportSequences(supportSnapshot)
+
+            // Phase 4: assemble result — filter support objects, aggregate diagnostics
             val filteredTables = filterSupportTable(tables, supportSnapshot)
             val filteredFunctions = filterSupportRoutines(functions, supportSnapshot)
             val filteredTriggers = filterSupportTriggers(triggers, supportSnapshot)
-            notes += aggregateSupportDiagnostics(supportSnapshot)
+            notes += d2Result.notes
 
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.mysqlName(database),
@@ -56,6 +59,7 @@ class MysqlSchemaReader(
                 functions = filteredFunctions,
                 procedures = procedures,
                 triggers = filteredTriggers,
+                sequences = d2Result.sequences,
             )
 
             return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)
@@ -147,32 +151,25 @@ class MysqlSchemaReader(
         }
 
         val sequenceRows = rawRows.map { row ->
-            val managedBy = row["managed_by"] as? String ?: ""
-            val formatVersion = row["format_version"] as? String ?: ""
-            val valid = managedBy == "d-migrate" && formatVersion == "mysql-sequence-v1"
             SequenceRowSnapshot(
-                name = row["name"] as? String ?: "",
-                nextValue = (row["next_value"] as? Number)?.toLong() ?: 0L,
-                incrementBy = (row["increment_by"] as? Number)?.toLong() ?: 1L,
+                name = (row["name"] as? String),
+                nextValue = (row["next_value"] as? Number)?.toLong(),
+                incrementBy = (row["increment_by"] as? Number)?.toLong(),
                 minValue = (row["min_value"] as? Number)?.toLong(),
                 maxValue = (row["max_value"] as? Number)?.toLong(),
-                cycleEnabled = (row["cycle_enabled"] as? Number)?.toInt() == 1,
+                cycleEnabledRaw = (row["cycle_enabled"] as? Number)?.toInt(),
                 cacheSize = (row["cache_size"] as? Number)?.toInt(),
-                managedBy = managedBy,
-                formatVersion = formatVersion,
-                valid = valid,
-                conflictReason = if (!valid) "invalid markers: managed_by=$managedBy, format_version=$formatVersion" else null,
+                managedBy = (row["managed_by"] as? String),
+                formatVersion = (row["format_version"] as? String),
             )
         }
 
-        // Detect ambiguous keys: same name appears multiple times, or mixed validity
-        val byName = sequenceRows.groupBy { it.name }
-        val ambiguousKeys = mutableSetOf<String>()
-        for ((name, rows) in byName) {
-            if (rows.size > 1) {
-                ambiguousKeys += name
-            }
-        }
+        // D2 trim-normalization for name keys
+        val trimmedRows = sequenceRows.map { it to it.name?.trim() }
+
+        // Detect ambiguous keys: same trimmed name appears multiple times
+        val byName = trimmedRows.filter { it.second != null }.groupBy { it.second!! }
+        val ambiguousKeys = byName.filter { it.value.size > 1 }.keys
 
         // Step 4: targeted routine lookups
         val routineStates = mapOf(
@@ -186,12 +183,20 @@ class MysqlSchemaReader(
         val triggerScan = MysqlMetadataQueries.listPotentialSupportTriggers(session, database)
         val triggerStates = triggerScan.triggers.associate { it.triggerName to it.state }
 
-        // Step 6: aggregate diagnostics
-        val confirmedSeqs = sequenceRows.filter { it.valid && it.name !in ambiguousKeys }
+        // Step 6: identify d-migrate rows and aggregate diagnostics
+        fun isDMigrateRow(row: SequenceRowSnapshot): Boolean =
+            row.managedBy?.trim() == "d-migrate" && row.formatVersion?.trim() == "mysql-sequence-v1"
+
+        val dmigrateRowNames = trimmedRows
+            .filter { isDMigrateRow(it.first) && it.second != null && it.second!!.isNotEmpty() }
+            .map { it.second!! }
+            .filter { it !in ambiguousKeys }
+            .toSet()
+
         val diagnostics = buildSupportDiagnostics(
             scope, sequenceRows, ambiguousKeys, routineStates,
             triggerScan.triggers, triggerScanAccessible = triggerScan.accessible,
-            confirmedSequenceNames = confirmedSeqs.map { it.name }.toSet(),
+            confirmedSequenceNames = dmigrateRowNames,
         )
 
         return MysqlSequenceSupportSnapshot(
@@ -203,6 +208,168 @@ class MysqlSchemaReader(
             triggerStates = triggerStates,
             diagnostics = diagnostics,
         )
+    }
+
+    // ── D2: Sequence materialization (0.9.4 AP 6.2) ──
+
+    internal data class D2Result(
+        val sequences: Map<String, SequenceDefinition>,
+        val notes: List<SchemaReadNote>,
+    )
+
+    /**
+     * Materializes SequenceDefinitions from the D1 support snapshot.
+     * Only produces sequences when supportTableState == AVAILABLE.
+     */
+    internal fun materializeSupportSequences(
+        snapshot: MysqlSequenceSupportSnapshot,
+    ): D2Result {
+        if (snapshot.supportTableState != SupportTableState.AVAILABLE) {
+            return D2Result(emptyMap(), aggregateSupportNotes(snapshot))
+        }
+
+        val sequences = LinkedHashMap<String, SequenceDefinition>()
+        val d2Notes = mutableListOf<SchemaReadNote>()
+
+        // Phase 1: filter d-migrate rows, validate, detect conflicts
+        data class ValidCandidate(val key: String, val row: SequenceRowSnapshot)
+        data class InvalidEvidence(val key: String, val reason: String)
+
+        val candidates = mutableListOf<ValidCandidate>()
+        val invalids = mutableListOf<InvalidEvidence>()
+
+        for (row in snapshot.sequenceRows) {
+            val managedBy = row.managedBy?.trim() ?: continue  // foreign row → skip silently
+            val formatVersion = row.formatVersion?.trim() ?: continue
+            if (managedBy != "d-migrate" || formatVersion != "mysql-sequence-v1") continue  // foreign → skip, no W116
+
+            val name = row.name?.trim()
+            if (name.isNullOrEmpty()) {
+                invalids += InvalidEvidence("(empty)", "sequence name is empty or null")
+                continue
+            }
+            if (name in snapshot.ambiguousKeys) continue  // handled separately
+
+            // Validate required numerics — no silent fallbacks
+            val nextValue = row.nextValue
+            if (nextValue == null) {
+                invalids += InvalidEvidence(name, "next_value is not readable")
+                continue
+            }
+            val incrementBy = row.incrementBy
+            if (incrementBy == null) {
+                invalids += InvalidEvidence(name, "increment_by is not readable")
+                continue
+            }
+            if (incrementBy == 0L) {
+                invalids += InvalidEvidence(name, "increment_by = 0 is invalid")
+                continue
+            }
+
+            // Validate cycle_enabled — only 0/1 accepted
+            val cycleRaw = row.cycleEnabledRaw
+            if (cycleRaw == null || (cycleRaw != 0 && cycleRaw != 1)) {
+                invalids += InvalidEvidence(name, "cycle_enabled value '$cycleRaw' is not a canonical boolean (0/1)")
+                continue
+            }
+
+            // Validate cache_size — null ok, negative invalid, overflow invalid
+            val cacheSize = row.cacheSize
+            if (cacheSize != null && cacheSize < 0) {
+                invalids += InvalidEvidence(name, "cache_size = $cacheSize is negative")
+                continue
+            }
+
+            candidates += ValidCandidate(name, row)
+        }
+
+        // Phase 2: materialize valid candidates (sorted by key for determinism)
+        for (candidate in candidates.sortedBy { it.key }) {
+            val row = candidate.row
+            sequences[candidate.key] = SequenceDefinition(
+                description = null,
+                start = row.nextValue!!,
+                increment = row.incrementBy!!,
+                minValue = row.minValue,
+                maxValue = row.maxValue,
+                cycle = row.cycleEnabledRaw == 1,
+                cache = row.cacheSize,
+            )
+        }
+
+        // Phase 3: aggregate notes
+        val allNotes = mutableListOf<SchemaReadNote>()
+
+        // Ambiguous keys → W116 per key
+        for (name in snapshot.ambiguousKeys) {
+            allNotes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "W116",
+                objectName = name,
+                message = "Sequence metadata reconstructed, but multiple rows claim key '$name'",
+            )
+        }
+
+        // Invalid d-migrate rows → W116 per key
+        for (invalid in invalids) {
+            allNotes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "W116",
+                objectName = invalid.key,
+                message = "Sequence metadata reconstructed, but row is invalid: ${invalid.reason}",
+            )
+        }
+
+        // Routine diagnostics — only when sequences were materialized
+        if (sequences.isNotEmpty()) {
+            val routineCauses = mutableListOf<String>()
+            for ((name, state) in snapshot.routineStates) {
+                when (state) {
+                    SupportRoutineState.MISSING -> routineCauses += "support routine '$name' is missing"
+                    SupportRoutineState.NOT_ACCESSIBLE -> routineCauses += "support routine '$name' is not accessible"
+                    SupportRoutineState.NON_CANONICAL -> routineCauses += "support routine '$name' is not canonical"
+                    SupportRoutineState.CONFIRMED -> { /* no cause */ }
+                }
+            }
+            if (routineCauses.isNotEmpty()) {
+                // Emit one W116 per materialized sequence, not per routine
+                for (seqKey in sequences.keys) {
+                    allNotes += SchemaReadNote(
+                        severity = SchemaReadSeverity.WARNING,
+                        code = "W116",
+                        objectName = seqKey,
+                        message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
+                        hint = routineCauses.joinToString("; "),
+                    )
+                }
+            }
+        }
+
+        return D2Result(sequences, allNotes)
+    }
+
+    /**
+     * Produces notes from the D1 snapshot for non-AVAILABLE states
+     * (INVALID_SHAPE, NOT_ACCESSIBLE after legitimation).
+     */
+    private fun aggregateSupportNotes(
+        snapshot: MysqlSequenceSupportSnapshot,
+    ): List<SchemaReadNote> {
+        return snapshot.diagnostics
+            .filter { it.emitsW116 }
+            .groupBy { it.key }
+            .map { (key, diags) ->
+                SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "W116",
+                    objectName = when (key) {
+                        is SequenceDiagnosticKey -> key.sequenceName
+                        is ColumnDiagnosticKey -> "${key.tableName}.${key.columnName}"
+                    },
+                    message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
+                    hint = diags.flatMap { it.causes }.joinToString("; "),
+                )
+            }
     }
 
     private fun buildSupportDiagnostics(
@@ -220,28 +387,27 @@ class MysqlSchemaReader(
             causesByKey.getOrPut(key) { mutableListOf() } += cause
         }
 
-        // Sequence-level: ambiguous keys
+        // Sequence-level: ambiguous keys (among d-migrate rows only)
         for (name in ambiguousKeys) {
             addCause(SequenceDiagnosticKey(scope, name), "multiple rows for sequence key '$name'")
         }
 
-        // Sequence-level: invalid marker rows (non-ambiguous)
-        for (row in rows) {
-            if (row.name !in ambiguousKeys && !row.valid) {
-                addCause(SequenceDiagnosticKey(scope, row.name), row.conflictReason ?: "invalid markers")
-            }
-        }
+        // Note: foreign marker rows (managed_by != d-migrate) are silently
+        // ignored — they are not d-migrate support objects and produce no W116.
+        // Only d-migrate rows with fachlich invalid content emit W116.
+        // (This is handled in D2 materializeSupportSequences, not here.)
 
         // Routine-level: only emit when confirmed sequences exist (fachliche Legitimierung)
         if (confirmedSequenceNames.isNotEmpty()) {
             for ((name, state) in routineStates) {
                 val cause = when (state) {
                     SupportRoutineState.NOT_ACCESSIBLE -> "support routine '$name' is not accessible"
-                    SupportRoutineState.NON_CANONICAL -> "support routine '$name' has marker but signature does not match canonical form"
-                    SupportRoutineState.CONFIRMED, SupportRoutineState.MISSING -> null
+                    SupportRoutineState.NON_CANONICAL -> "support routine '$name' is not canonical"
+                    SupportRoutineState.MISSING -> "support routine '$name' is missing"
+                    SupportRoutineState.CONFIRMED -> null
                 }
                 if (cause != null) {
-                    // Bind to each confirmed sequence (shared infrastructure)
+                    // Bind to each confirmed sequence key (not per routine name)
                     for (seq in confirmedSequenceNames) {
                         addCause(SequenceDiagnosticKey(scope, seq), cause)
                     }
@@ -288,28 +454,11 @@ class MysqlSchemaReader(
         tables: Map<String, TableDefinition>,
         snapshot: MysqlSequenceSupportSnapshot,
     ): Map<String, TableDefinition> {
-        // §4.3 Gating: filter only when existence is positively confirmed.
-        //
-        // AVAILABLE: existence confirmed, readable → filter
-        // INVALID_SHAPE: existence confirmed, not canonical → filter
-        // NOT_ACCESSIBLE with diagnostics: existence was confirmed (Gate A
-        //   passed) but subsequent access failed → filter (hard path)
-        // NOT_ACCESSIBLE without diagnostics: existence check itself failed
-        //   (Gate A) → no legitimation → do not filter
-        // MISSING: existence negatively confirmed → do not filter
-        return when (snapshot.supportTableState) {
-            SupportTableState.AVAILABLE,
-            SupportTableState.INVALID_SHAPE -> tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
-            SupportTableState.NOT_ACCESSIBLE -> {
-                // Distinguish legitimated (has diagnostics) from unlegitimated
-                if (snapshot.diagnostics.isNotEmpty()) {
-                    tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
-                } else {
-                    tables
-                }
-            }
-            SupportTableState.MISSING -> tables
-        }
+        // D2 §4.6: suppress dmg_sequences ONLY when the canonical support
+        // form is confirmed (AVAILABLE). All other states — INVALID_SHAPE,
+        // NOT_ACCESSIBLE, MISSING — leave the table as a normal user object.
+        if (snapshot.supportTableState != SupportTableState.AVAILABLE) return tables
+        return tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
     }
 
     private fun filterSupportRoutines(

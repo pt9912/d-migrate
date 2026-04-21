@@ -53,21 +53,24 @@ enum class SupportTriggerState {
     USER_OBJECT,
 }
 
-/** Pre-validated row from dmg_sequences. */
+/**
+ * Raw row snapshot from dmg_sequences (D1 evidence).
+ *
+ * Fields use nullable types to distinguish "not readable" from
+ * "fachlich gelesener Wert". D2 derives validated candidates from
+ * this raw evidence without silent 0L/1L fallbacks.
+ */
 data class SequenceRowSnapshot(
-    val name: String,
-    val nextValue: Long,
-    val incrementBy: Long,
+    val name: String?,
+    val nextValue: Long?,
+    val incrementBy: Long?,
     val minValue: Long?,
     val maxValue: Long?,
-    val cycleEnabled: Boolean,
+    /** Raw tinyint value — D2 validates 0/1 only. */
+    val cycleEnabledRaw: Int?,
     val cacheSize: Int?,
-    val managedBy: String,
-    val formatVersion: String,
-    /** Whether managed_by/format_version markers pass validation. */
-    val valid: Boolean,
-    /** Non-null if this row's key is ambiguous or conflicting. */
-    val conflictReason: String?,
+    val managedBy: String?,
+    val formatVersion: String?,
 )
 
 /** Diagnostic key: either sequence-level or column-level. */

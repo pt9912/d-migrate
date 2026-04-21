@@ -242,19 +242,37 @@ object MysqlMetadataQueries {
      * Verifies the canonical column shape of dmg_sequences.
      * Returns `true` if all required columns are present.
      */
+    /** Required columns with their acceptable type classes for D2. */
+    private val REQUIRED_COLUMN_TYPES = mapOf(
+        "managed_by" to setOf("char", "varchar", "text", "tinytext", "mediumtext", "longtext"),
+        "format_version" to setOf("char", "varchar", "text", "tinytext", "mediumtext", "longtext"),
+        "name" to setOf("char", "varchar", "text", "tinytext", "mediumtext", "longtext"),
+        "next_value" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
+        "increment_by" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
+        "min_value" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
+        "max_value" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
+        "cycle_enabled" to setOf("tinyint"),
+        "cache_size" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
+    )
+
+    /**
+     * Verifies the canonical column shape of dmg_sequences including
+     * type semantics (D2 requirement).
+     */
     fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
-        val requiredColumns = setOf(
-            "managed_by", "format_version", "name", "next_value",
-            "increment_by", "min_value", "max_value", "cycle_enabled", "cache_size",
-        )
         val actualColumns = session.queryList(
             """
-            SELECT column_name
+            SELECT column_name, data_type
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             """.trimIndent(), database, MysqlSequenceNaming.SUPPORT_TABLE,
-        ).map { (it["column_name"] as String).lowercase() }.toSet()
-        return requiredColumns.all { it in actualColumns }
+        ).associate {
+            (it["column_name"] as String).lowercase() to (it["data_type"] as? String)?.lowercase()
+        }
+        return REQUIRED_COLUMN_TYPES.all { (col, allowedTypes) ->
+            val actualType = actualColumns[col] ?: return false
+            actualType in allowedTypes
+        }
     }
 
     /**
@@ -314,9 +332,9 @@ object MysqlMetadataQueries {
             val definition = row["routine_definition"] as? String ?: ""
             val dataType = (row["data_type"] as? String)?.lowercase() ?: ""
 
-            // Check marker
+            // Check marker — routine exists but no d-migrate marker → user object
             if ("d-migrate:mysql-sequence-v1" !in definition) {
-                return SupportRoutineState.MISSING // present but no marker → user object
+                return SupportRoutineState.NON_CANONICAL
             }
 
             // Check signature: return type and specific marker

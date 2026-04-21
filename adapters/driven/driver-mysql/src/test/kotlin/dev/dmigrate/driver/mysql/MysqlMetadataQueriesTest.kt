@@ -272,16 +272,41 @@ class MysqlMetadataQueriesTest : FunSpec({
         MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb").shouldBeNull()
     }
 
-    test("checkSupportTableShape returns true when all required columns are present") {
-        every { jdbc.queryList(match { "information_schema.columns" in it && "data_type" !in it }, any(), any()) } returns
-            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
-                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+    test("checkSupportTableShape returns true when all columns have correct types") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "bigint"),
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+        )
         MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe true
     }
 
     test("checkSupportTableShape returns false when columns are missing") {
-        every { jdbc.queryList(match { "information_schema.columns" in it && "data_type" !in it }, any(), any()) } returns
-            listOf(mapOf("column_name" to "name"), mapOf("column_name" to "value"))
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "value", "data_type" to "text"),
+        )
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
+    }
+
+    test("checkSupportTableShape returns false when column type is wrong") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "varchar"),  // wrong type!
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+        )
         MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
     }
 
@@ -301,10 +326,11 @@ class MysqlMetadataQueriesTest : FunSpec({
         MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.MISSING
     }
 
-    test("lookupSupportRoutine returns MISSING when marker is absent (user object)") {
+    test("lookupSupportRoutine returns NON_CANONICAL when marker is absent (user object)") {
         every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
-            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "BEGIN RETURN 1; END")
-        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.MISSING
+            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "BEGIN RETURN 1; END",
+                "data_type" to "bigint", "dtd_identifier" to "bigint")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.NON_CANONICAL
     }
 
     test("lookupSupportRoutine returns NON_CANONICAL when return type does not match") {
