@@ -624,6 +624,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.34
+**Version**: 3.35
 **Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.3 abgeschlossen; 0.9.4 in Arbeit (AP 6.1 Done); geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Status**: Milestone 0.1.0–0.9.3 abgeschlossen; 0.9.4 in Arbeit (AP 6.1–6.2 Done); geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8
