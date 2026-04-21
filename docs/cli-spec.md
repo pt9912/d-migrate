@@ -373,7 +373,7 @@ Eine unzulässige Kombination aus `--target` und `--spatial-profile` (z.B. `--ta
 
 **Ausgabeverhalten**:
 - **stdout**: DDL-Output (wenn kein `--output`)
-- **stderr**: Warnungen (W1xx, W120) und action_required-Hinweise (E052-E056)
+- **stderr**: Warnungen (W1xx, W114–W117, W120) und action_required-Hinweise (E052-E056, E122–E124)
 - **`--output`**: DDL in Datei + automatisch `<name>.report.yaml` als Sidecar
 - **`--output-format json`**: DDL + Notes + skipped_objects als JSON nach stdout
 
@@ -389,6 +389,16 @@ Spatial-Bezug fuer `--generate-rollback`, JSON-Output und Sidecar-Report:
 - **`--generate-rollback`**: Rollback-DDL enthaelt die inversen Spatial-Statements (z.B. `DiscardGeometryColumn` fuer SpatiaLite). Blockierte Tabellen (E052) erzeugen kein Rollback-DDL. Details: [DDL-Generierungsregeln §16.7](./ddl-generation-rules.md).
 - **`--output-format json`**: Action-required-Eintraege (`E052`-`E056`) erscheinen in `notes` und/oder `skipped_objects`, W120 in `notes`.
 - **Sidecar-Report**: Spatial-Warnungen und uebersprungene Objekte werden im Report dokumentiert wie alle anderen `action_required`-Faelle.
+
+Sequence-spezifische Ausgaben (0.9.3, `--mysql-named-sequences`):
+- **E056** (Sequence/Emulationsfall): Im `action_required`-Modus fuer uebersprungene Sequences und fuer Spalten mit `SequenceNextVal`-Default ohne Emulation.
+- **E122** (Legacy-Notation): Schema verwendet die abgekuendigte `nextval(...)`-Notation statt `default: { sequence_nextval: ... }`.
+- **E123** (Fehlende Sequence): `sequence_nextval` referenziert eine nicht definierte Sequence.
+- **E124** (Namenskollision): Ein neutrales Schema-Objekt kollidiert mit einem reservierten Support-Objektnamen (`dmg_sequences`, `dmg_nextval`, `dmg_setval`).
+- **W114** (Cache nicht emuliert): Sequence hat `cache`-Wert, der im `helper_table`-Modus nur als Metadatum gespeichert, aber nicht als Preallocation umgesetzt wird.
+- **W115** (Lossy Trigger-Semantik): `SequenceNextVal` auf einer Spalte nutzt MySQL-Trigger; explizites `NULL` wird wie ein ausgelassener Wert behandelt.
+- **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse rekonstruiert, aber erforderliche Support-Objekte (Routinen/Trigger) fehlen. Reserviert fuer `schema reverse` (0.9.4).
+- **W117** (Transaktionsgebundene Werte): Sequence-Werte im `helper_table`-Modus werden bei Rollback zurueckgerollt — anders als native PostgreSQL-Sequences.
 
 **`--split`** (0.9.2): Steuert den DDL-Ausgabemodus.
 

@@ -346,6 +346,42 @@ Einschränkungen:
   bei vorhandenen Functions im Schema einen Fehler E060 (Exit 2). Lösung:
   `dependencies.functions` im Schema explizit deklarieren.
 
+### Sequence-basierte Spaltenwerte (0.9.3)
+
+Spalten koennen ihren Default-Wert aus einer benannten Sequence beziehen.
+Dafuer wird im Schema die Objektform `default: { sequence_nextval: ... }`
+verwendet:
+
+```yaml
+sequences:
+  invoice_seq:
+    start: 10000
+    increment: 1
+
+tables:
+  orders:
+    columns:
+      invoice_number:
+        type: biginteger
+        default:
+          sequence_nextval: invoice_seq
+    primary_key: [id]
+```
+
+PostgreSQL bildet das auf natives `DEFAULT nextval('invoice_seq')` ab.
+MySQL unterstuetzt keine nativen Sequences; mit der Option
+`--mysql-named-sequences helper_table` werden stattdessen kanonische
+Hilfsobjekte (`dmg_sequences`-Tabelle, Routinen und `BEFORE INSERT`-Trigger)
+generiert:
+
+```bash
+d-migrate schema generate --source mein-schema.yaml --target mysql \
+    --mysql-named-sequences helper_table
+```
+
+Ohne diese Option (Standardmodus `action_required`) werden Sequences mit
+E056-Hinweisen uebersprungen.
+
 ### Beispiel-Ausgabe (PostgreSQL)
 
 ```sql
@@ -465,6 +501,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--report`            | Report-Datei (Standard: `<output>.report.yaml`)           |
 | `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
 | `--split`             | DDL-Ausgabemodus: `single` (Standard) oder `pre-post` fuer importfreundliche Trennung in `pre-data`/`post-data` |
+| `--mysql-named-sequences` | MySQL-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber Hilfsobjekte). Nur fuer `--target mysql`; bei PostgreSQL/SQLite Exit 2. |
 | `--spatial-profile`   | Spatial-Profil: `postgis`, `native`, `spatialite`, `none` |
 
 ### Optionen für `data export`

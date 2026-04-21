@@ -29,6 +29,7 @@ CREATE TABLE "orders" (
     "uuid_field" UUID DEFAULT gen_random_uuid(),
     "active" BOOLEAN DEFAULT TRUE,
     "amount" DECIMAL(10,2) DEFAULT 0,
+    "invoice_number" BIGINT DEFAULT nextval('invoice_seq'),
     CONSTRAINT "fk_orders_customer_id" FOREIGN KEY ("customer_id") REFERENCES "customers" ("id") ON DELETE CASCADE ON UPDATE NO ACTION,
     CONSTRAINT "chk_amount" CHECK (amount >= 0),
     CONSTRAINT "uq_uuid" UNIQUE ("uuid_field"),

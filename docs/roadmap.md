@@ -353,7 +353,8 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 | Core     | `DefaultValue.SequenceNextVal` im neutralen Modell; Audit aller `when(defaultValue)`-Stellen (AP 6.3)                                            | —      | ✅      |
 | Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger (AP 6.4) | —      | ✅      |
 | CLI      | `--mysql-named-sequences action_required\|helper_table` Option (opt-in, Default bleibt `action_required`)                                        | —      | ✅      |
-| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                                        | —      |        |
+| Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                                        | —      | ✅      |
+| Docs     | Doku- und Fixture-Nachzug: CHANGELOG, Guide, Roadmap, Fixture-Erweiterung, Golden Masters fuer `helper_table` (AP 6.5)                          | —      | ✅      |
 
 **Ergebnis**: `schema generate --target mysql` kann benannte Sequences optional
 ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
@@ -623,6 +624,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.31
-**Stand**: 2026-04-20
-**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; 0.9.3 in Arbeit (AP 6.1–6.4 Done, AP 6.5–6.6 offen); geplant: 0.9.4, 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Version**: 3.32
+**Stand**: 2026-04-21
+**Status**: Milestone 0.1.0–0.9.2 abgeschlossen; 0.9.3 in Arbeit (AP 6.1–6.5 Done, AP 6.6 offen); geplant: 0.9.4, 0.9.5, 0.9.6, 0.9.7, 0.9.8

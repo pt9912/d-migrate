@@ -1,11 +1,22 @@
 # Implementierungsplan: Vollständige MySQL-Sequence-Emulation
 
-> Status: Draft (2026-04-17)
+> Status: Phase A–C abgeschlossen (2026-04-21); Phase D+E offen (→ 0.9.4)
 >
 > Zweck: Produktplan fuer eine **vollstaendige** MySQL-Variante von
 > benannten Sequences im DDL-Pfad, inklusive DDL-Generierung,
 > Reverse-Engineering, Compare-/Diff-Kompatibilitaet und klarem
 > Betriebsvertrag.
+>
+> Umsetzungsstand:
+> - Phase A (Vertrag): abgeschlossen in AP 6.2 — Enum, CLI-Option,
+>   Ledger W114–W117, Version 0.9.3
+> - Phase B (Generator + Optionen): abgeschlossen in AP 6.3/6.4 —
+>   `DefaultValue.SequenceNextVal`, `MysqlDdlGenerator` mit
+>   `helper_table`-Modus, Support-Objekte, Trigger, Rollback
+> - Phase C (Tests + Golden Masters): abgeschlossen in AP 6.4/6.5 —
+>   Unit-Tests, Integrationstests, Golden Masters fuer beide Modi
+> - Phase D (Reverse): offen — geplant fuer 0.9.4
+> - Phase E (Compare + Stabilisierung): offen — geplant fuer 0.9.4
 >
 > Referenzen:
 > - `docs/ddl-generation-rules.md` §7

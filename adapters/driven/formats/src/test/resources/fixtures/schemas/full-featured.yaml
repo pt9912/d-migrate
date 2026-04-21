@@ -71,6 +71,10 @@ tables:
         precision: 10
         scale: 2
         default: 0
+      invoice_number:
+        type: biginteger
+        default:
+          sequence_nextval: invoice_seq
     primary_key: [id]
     indices:
       - name: idx_customer

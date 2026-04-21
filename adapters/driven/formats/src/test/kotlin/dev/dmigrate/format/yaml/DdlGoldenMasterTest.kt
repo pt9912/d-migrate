@@ -157,6 +157,41 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
+    // ── MySQL helper_table Golden Masters for full-featured (AP 6.5) ──
+
+    test("full-featured mysql helper_table generates correct DDL (golden master)") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = MysqlDdlGenerator()
+        val opts = DdlGenerationOptions(
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.sql")
+        val actual = generator.generate(input, opts).render()
+        stripHeader(actual) shouldBe stripHeader(expected)
+    }
+
+    test("full-featured mysql helper_table: pre-data golden master") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = MysqlDdlGenerator()
+        val opts = DdlGenerationOptions(
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.pre-data.sql")
+        val result = generator.generate(input, opts)
+        stripHeader(result.renderPhase(DdlPhase.PRE_DATA)) shouldBe stripHeader(expected)
+    }
+
+    test("full-featured mysql helper_table: post-data golden master") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = MysqlDdlGenerator()
+        val opts = DdlGenerationOptions(
+            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.post-data.sql")
+        val result = generator.generate(input, opts)
+        stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
+    }
+
     // ── MySQL helper_table Golden Master (AP 6.4) ──────────────
 
     test("sequence-emulation mysql helper_table generates support objects") {
