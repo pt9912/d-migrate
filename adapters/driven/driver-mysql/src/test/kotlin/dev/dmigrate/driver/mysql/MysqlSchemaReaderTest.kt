@@ -827,6 +827,51 @@ class MysqlSchemaReaderTest : FunSpec({
         d2.notes.any { it.code == "W116" && "seq_a" in it.objectName } shouldBe true
     }
 
+    test("D2: cycle_enabled as Boolean (bit(1) JDBC return) is valid") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "bool_cycle", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to true, "cache_size" to null),
+        )
+        stubNoRoutinesOrTriggers()
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val d2 = reader.materializeSupportSequences(reader.scanSequenceSupport(jdbc, "mydb", scope))
+        d2.sequences.keys shouldBe setOf("bool_cycle")
+        d2.sequences["bool_cycle"]!!.cycle shouldBe true
+    }
+
+    test("D2: cycle_enabled as Boolean false is valid") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "bool_no_cycle", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to false, "cache_size" to null),
+        )
+        stubNoRoutinesOrTriggers()
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val d2 = reader.materializeSupportSequences(reader.scanSequenceSupport(jdbc, "mydb", scope))
+        d2.sequences.keys shouldBe setOf("bool_no_cycle")
+        d2.sequences["bool_no_cycle"]!!.cycle shouldBe false
+    }
+
+    test("D2: Double value for next_value is rejected (no lossy fallback)") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "float_seq", "next_value" to 1.5, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        stubNoRoutinesOrTriggers()
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val d2 = reader.materializeSupportSequences(reader.scanSequenceSupport(jdbc, "mydb", scope))
+        d2.sequences.size shouldBe 0
+        d2.notes.any { it.code == "W116" } shouldBe true
+    }
+
     test("D2: empty dmg_sequences produces 0 sequences and no W116") {
         stubEmptyDefaults()
         stubCanonicalShape()

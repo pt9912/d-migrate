@@ -68,38 +68,57 @@ class MysqlSchemaReader(
 
     // ── Safe numeric helpers (D2 range validation) ──
 
-    /** Safely convert to Long, returning null on overflow or non-numeric input. */
+    /**
+     * Safely convert to Long. Returns null on overflow, non-integer types
+     * (Double/Float), or non-numeric input. No lossy fallback.
+     */
     private fun safeLong(value: Any?): Long? {
         if (value == null) return null
-        return try {
-            when (value) {
-                is Long -> value
-                is Int -> value.toLong()
-                is Short -> value.toLong()
-                is Byte -> value.toLong()
-                is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Long.MIN_VALUE)..java.math.BigInteger.valueOf(Long.MAX_VALUE)) value.toLong() else null
-                is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Long.MIN_VALUE) && value <= java.math.BigDecimal.valueOf(Long.MAX_VALUE)) value.toLong() else null
-                is Number -> value.toLong()  // fallback for other Number types
-                else -> null
-            }
-        } catch (_: Exception) { null }
+        return when (value) {
+            is Long -> value
+            is Int -> value.toLong()
+            is Short -> value.toLong()
+            is Byte -> value.toLong()
+            is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Long.MIN_VALUE)..java.math.BigInteger.valueOf(Long.MAX_VALUE)) value.toLong() else null
+            is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Long.MIN_VALUE) && value <= java.math.BigDecimal.valueOf(Long.MAX_VALUE)) value.toLong() else null
+            // Double/Float/other Number types are explicitly rejected — lossy conversion
+            else -> null
+        }
     }
 
-    /** Safely convert to Int, returning null on overflow or non-numeric input. */
+    /**
+     * Safely convert to Int. Returns null on overflow, non-integer types
+     * (Double/Float), or non-numeric input. No lossy fallback.
+     */
     private fun safeInt(value: Any?): Int? {
         if (value == null) return null
-        return try {
-            when (value) {
-                is Int -> value
-                is Short -> value.toInt()
-                is Byte -> value.toInt()
-                is Long -> if (value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) value.toInt() else null
-                is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Int.MIN_VALUE.toLong())..java.math.BigInteger.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
-                is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Int.MIN_VALUE.toLong()) && value <= java.math.BigDecimal.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
-                is Number -> value.toInt()  // fallback
-                else -> null
-            }
-        } catch (_: Exception) { null }
+        return when (value) {
+            is Int -> value
+            is Short -> value.toInt()
+            is Byte -> value.toInt()
+            is Long -> if (value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) value.toInt() else null
+            is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Int.MIN_VALUE.toLong())..java.math.BigInteger.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
+            is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Int.MIN_VALUE.toLong()) && value <= java.math.BigDecimal.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
+            // Double/Float/other Number types are explicitly rejected
+            else -> null
+        }
+    }
+
+    /**
+     * Safely convert cycle_enabled to Int (0/1). Handles both Integer
+     * and Boolean return types from MySQL JDBC (bit(1) columns may
+     * come back as Boolean).
+     */
+    private fun safeCycleInt(value: Any?): Int? {
+        if (value == null) return null
+        return when (value) {
+            is Boolean -> if (value) 1 else 0
+            is Int -> value
+            is Short -> value.toInt()
+            is Byte -> value.toInt()
+            is Long -> if (value in 0L..1L) value.toInt() else value.toInt() // preserve for validation
+            else -> null
+        }
     }
 
     // ── Sequence support scan (0.9.4 AP 6.1) ──────
@@ -196,7 +215,7 @@ class MysqlSchemaReader(
                 incrementBy = safeLong(row["increment_by"]),
                 minValue = safeLong(rawMinValue),
                 maxValue = safeLong(rawMaxValue),
-                cycleEnabledRaw = safeInt(row["cycle_enabled"]),
+                cycleEnabledRaw = safeCycleInt(row["cycle_enabled"]),
                 cacheSize = safeInt(rawCacheSize),
                 managedBy = (row["managed_by"] as? String),
                 formatVersion = (row["format_version"] as? String),
@@ -422,8 +441,13 @@ class MysqlSchemaReader(
     }
 
     /**
-     * Produces notes from the D1 snapshot for non-AVAILABLE states
-     * (INVALID_SHAPE, NOT_ACCESSIBLE after legitimation).
+     * Produces notes from the D1 snapshot for non-AVAILABLE states.
+     *
+     * - MISSING: no diagnostics (compatible non-sequence case)
+     * - NOT_ACCESSIBLE without diagnostics (Gate A): no notes
+     *   (no existence legitimation → non-sequence path per §4.3)
+     * - NOT_ACCESSIBLE with diagnostics (post-legitimation): W116
+     * - INVALID_SHAPE: W116 for the degraded table form
      */
     private fun aggregateSupportNotes(
         snapshot: MysqlSequenceSupportSnapshot,

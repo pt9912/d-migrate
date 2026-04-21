@@ -263,6 +263,11 @@ object MysqlMetadataQueries {
      * COLUMN_TYPE is read alongside for potential future disambiguation.
      * `bit` is accepted for cycle_enabled since MySQL JDBC robustly
      * reads bit(1) as Boolean/Integer.
+     *
+     * Limitation: this checks the declared type, not actual JDBC read
+     * behavior. Driver-specific edge cases (e.g. unsigned bigint read
+     * as BigInteger) are caught downstream by safeLong()/safeInt()
+     * during row validation, not here.
      */
     fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
         val actualColumns = session.queryList(
