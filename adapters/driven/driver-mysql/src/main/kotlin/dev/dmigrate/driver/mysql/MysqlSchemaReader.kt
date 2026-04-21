@@ -402,18 +402,16 @@ class MysqlSchemaReader(
             }
         }
 
-        // D1 trigger/scan diagnostics — pass through when sequences were materialized.
-        // Skip ambiguous-key diagnostics (already emitted above by D2).
+        // D1 trigger/scan diagnostics — pass through only ColumnDiagnosticKey
+        // entries (trigger-level). Skip all SequenceDiagnosticKey entries since D2
+        // handles ambiguity, invalid rows, and routine diagnostics itself.
         if (sequences.isNotEmpty()) {
-            val ambiguousSeqKeys = snapshot.ambiguousKeys.map { SequenceDiagnosticKey(snapshot.scope, it) }.toSet()
-            for (diag in snapshot.diagnostics.filter { it.emitsW116 && it.key !in ambiguousSeqKeys }) {
+            for (diag in snapshot.diagnostics.filter { it.emitsW116 && it.key is ColumnDiagnosticKey }) {
+                val k = diag.key as ColumnDiagnosticKey
                 allNotes += SchemaReadNote(
                     severity = SchemaReadSeverity.WARNING,
                     code = "W116",
-                    objectName = when (val k = diag.key) {
-                        is SequenceDiagnosticKey -> k.sequenceName
-                        is ColumnDiagnosticKey -> "${k.tableName}.${k.columnName}"
-                    },
+                    objectName = "${k.tableName}.${k.columnName}",
                     message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
                     hint = diag.causes.joinToString("; "),
                 )
@@ -462,35 +460,16 @@ class MysqlSchemaReader(
             causesByKey.getOrPut(key) { mutableListOf() } += cause
         }
 
+        // D1 only handles ambiguity and trigger-level diagnostics.
+        // Routine diagnostics are entirely handled by D2 materializeSupportSequences()
+        // based on actually materialized sequence keys (not pre-validation names).
+
         // Sequence-level: ambiguous keys (among d-migrate rows only)
         for (name in ambiguousKeys) {
             addCause(SequenceDiagnosticKey(scope, name), "multiple rows for sequence key '$name'")
         }
 
-        // Note: foreign marker rows (managed_by != d-migrate) are silently
-        // ignored — they are not d-migrate support objects and produce no W116.
-        // Only d-migrate rows with fachlich invalid content emit W116.
-        // (This is handled in D2 materializeSupportSequences, not here.)
-
-        // Routine-level: only emit when confirmed sequences exist (fachliche Legitimierung)
-        if (confirmedSequenceNames.isNotEmpty()) {
-            for ((name, state) in routineStates) {
-                val cause = when (state) {
-                    SupportRoutineState.NOT_ACCESSIBLE -> "support routine '$name' is not accessible"
-                    SupportRoutineState.NON_CANONICAL -> "support routine '$name' is not canonical"
-                    SupportRoutineState.MISSING -> "support routine '$name' is missing"
-                    SupportRoutineState.CONFIRMED -> null
-                }
-                if (cause != null) {
-                    // Bind to each confirmed sequence key (not per routine name)
-                    for (seq in confirmedSequenceNames) {
-                        addCause(SequenceDiagnosticKey(scope, seq), cause)
-                    }
-                }
-            }
-        }
-
-        // Trigger-scan-level: entire scan inaccessible — emit per confirmed sequence
+        // Trigger-scan-level: entire scan inaccessible
         if (!triggerScanAccessible && confirmedSequenceNames.isNotEmpty()) {
             for (seq in confirmedSequenceNames) {
                 addCause(SequenceDiagnosticKey(scope, seq),
@@ -498,8 +477,8 @@ class MysqlSchemaReader(
             }
         }
 
-        // Trigger-level: degraded states — only when confirmed sequences exist
-        // (fachliche Verankerung am bestätigten Sequence-Kontext)
+        // Trigger-level: degraded states → ColumnDiagnosticKey
+        // (only when at least one d-migrate row exists as context)
         if (confirmedSequenceNames.isNotEmpty()) {
             for (assessment in triggerAssessments) {
                 when (assessment.state) {
@@ -565,25 +544,6 @@ class MysqlSchemaReader(
             val (_, trigName) = ObjectKeyCodec.parseTriggerKey(key)
             trigName !in confirmed
         }
-    }
-
-    private fun aggregateSupportDiagnostics(
-        snapshot: MysqlSequenceSupportSnapshot,
-    ): List<SchemaReadNote> {
-        return snapshot.diagnostics
-            .filter { it.emitsW116 }
-            .map { diag ->
-                SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "W116",
-                    objectName = when (val k = diag.key) {
-                        is SequenceDiagnosticKey -> k.sequenceName
-                        is ColumnDiagnosticKey -> "${k.tableName}.${k.columnName}"
-                    },
-                    message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
-                    hint = diag.causes.joinToString("; "),
-                )
-            }
     }
 
     // ── Tables ──────────────────────────────────
