@@ -276,6 +276,9 @@ object MysqlMetadataQueries {
      * Targeted routine lookup for a specific support routine.
      * Checks existence, marker comment in definition, and routine type.
      */
+    /** Extracts column name from SET NEW.`column` in trigger body. */
+    private val TRIGGER_COLUMN_PATTERN = Regex("""SET\s+NEW\.`?(\w+)`?\s*=""", RegexOption.IGNORE_CASE)
+
     /** Expected signatures for support routines (return type + parameter form). */
     private val expectedRoutineSignatures = mapOf(
         MysqlSequenceNaming.NEXTVAL_ROUTINE to RoutineSignature(
@@ -351,8 +354,16 @@ object MysqlMetadataQueries {
      * Result of a support trigger scan.
      * [accessible] is false when the query itself failed (permission error).
      */
+    /** Individual trigger assessment with table/column context for diagnostic keys. */
+    data class SupportTriggerAssessment(
+        val triggerName: String,
+        val state: SupportTriggerState,
+        val tableName: String,
+        val columnName: String?,
+    )
+
     data class SupportTriggerScanResult(
-        val triggers: List<Pair<String, SupportTriggerState>>,
+        val triggers: List<SupportTriggerAssessment>,
         val accessible: Boolean,
     )
 
@@ -364,7 +375,7 @@ object MysqlMetadataQueries {
             session.queryList(
                 """
                 SELECT trigger_name, action_timing, event_manipulation,
-                       action_statement
+                       action_statement, event_object_table
                 FROM information_schema.triggers
                 WHERE trigger_schema = ?
                   AND trigger_name LIKE 'dmg_seq_%'
@@ -381,6 +392,7 @@ object MysqlMetadataQueries {
             val timing = row["action_timing"] as? String ?: ""
             val event = row["event_manipulation"] as? String ?: ""
             val body = row["action_statement"] as? String ?: ""
+            val table = row["event_object_table"] as? String ?: ""
 
             val state = when {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
@@ -389,7 +401,10 @@ object MysqlMetadataQueries {
                 "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
                 else -> SupportTriggerState.CONFIRMED
             }
-            name to state
+            // Extract column from SET NEW.`column` pattern in body
+            val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
+
+            SupportTriggerAssessment(name, state, table, column)
         }
         return SupportTriggerScanResult(result, accessible = true)
     }

@@ -325,32 +325,37 @@ class MysqlMetadataQueriesTest : FunSpec({
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
             mapOf("trigger_name" to "dmg_seq_orders_invoice_number_7b0a7b2f55_bi",
                 "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
                 "action_statement" to "/* d-migrate:mysql-sequence-v1 object=sequence-trigger */ IF NEW.invoice_number IS NULL THEN SET NEW.invoice_number = dmg_nextval('invoice_seq'); END IF;"),
         )
         val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
         result.accessible shouldBe true
         result.triggers shouldHaveSize 1
-        result.triggers[0].second shouldBe SupportTriggerState.CONFIRMED
+        result.triggers[0].state shouldBe SupportTriggerState.CONFIRMED
+        result.triggers[0].tableName shouldBe "orders"
+        result.triggers[0].columnName shouldBe "invoice_number"
     }
 
     test("listPotentialSupportTriggers returns MISSING_MARKER when marker absent") {
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
             mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
                 "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
                 "action_statement" to "BEGIN SET NEW.col = 1; END"),
         )
         val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
-        result.triggers[0].second shouldBe SupportTriggerState.MISSING_MARKER
+        result.triggers[0].state shouldBe SupportTriggerState.MISSING_MARKER
     }
 
     test("listPotentialSupportTriggers returns NON_CANONICAL for wrong timing") {
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
             mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
                 "action_timing" to "AFTER", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
                 "action_statement" to "/* d-migrate:mysql-sequence-v1 */ dmg_nextval"),
         )
         val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
-        result.triggers[0].second shouldBe SupportTriggerState.NON_CANONICAL
+        result.triggers[0].state shouldBe SupportTriggerState.NON_CANONICAL
     }
 
     test("listPotentialSupportTriggers returns not accessible on query failure") {

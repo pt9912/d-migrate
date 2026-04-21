@@ -157,12 +157,14 @@ class MysqlSchemaReader(
 
         // Step 5: targeted trigger lookups
         val triggerScan = MysqlMetadataQueries.listPotentialSupportTriggers(session, database)
-        val triggerStates = triggerScan.triggers.toMap()
+        val triggerStates = triggerScan.triggers.associate { it.triggerName to it.state }
 
         // Step 6: aggregate diagnostics
+        val confirmedSeqs = sequenceRows.filter { it.valid && it.name !in ambiguousKeys }
         val diagnostics = buildSupportDiagnostics(
-            scope, sequenceRows, ambiguousKeys, routineStates, triggerStates,
-            triggerScanAccessible = triggerScan.accessible,
+            scope, sequenceRows, ambiguousKeys, routineStates,
+            triggerScan.triggers, triggerScanAccessible = triggerScan.accessible,
+            confirmedSequenceNames = confirmedSeqs.map { it.name }.toSet(),
         )
 
         return MysqlSequenceSupportSnapshot(
@@ -181,106 +183,73 @@ class MysqlSchemaReader(
         rows: List<SequenceRowSnapshot>,
         ambiguousKeys: Set<String>,
         routineStates: Map<String, SupportRoutineState>,
-        triggerStates: Map<String, SupportTriggerState>,
+        triggerAssessments: List<MysqlMetadataQueries.SupportTriggerAssessment>,
         triggerScanAccessible: Boolean,
+        confirmedSequenceNames: Set<String>,
     ): List<SupportDiagnostic> {
-        val diags = mutableListOf<SupportDiagnostic>()
+        // Collect causes per key, then deduplicate
+        val causesByKey = LinkedHashMap<Any, MutableList<String>>()
+        fun addCause(key: Any, cause: String) {
+            causesByKey.getOrPut(key) { mutableListOf() } += cause
+        }
 
         // Sequence-level: ambiguous keys
         for (name in ambiguousKeys) {
-            diags += SupportDiagnostic(
-                key = SequenceDiagnosticKey(scope, name),
-                causes = listOf("multiple rows for sequence key '$name'"),
-                emitsW116 = true,
-            )
+            addCause(SequenceDiagnosticKey(scope, name), "multiple rows for sequence key '$name'")
         }
 
         // Sequence-level: invalid marker rows (non-ambiguous)
         for (row in rows) {
             if (row.name !in ambiguousKeys && !row.valid) {
-                diags += SupportDiagnostic(
-                    key = SequenceDiagnosticKey(scope, row.name),
-                    causes = listOf(row.conflictReason ?: "invalid markers"),
-                    emitsW116 = true,
-                )
+                addCause(SequenceDiagnosticKey(scope, row.name), row.conflictReason ?: "invalid markers")
             }
         }
 
-        // Routine-level: degraded states
-        for ((name, state) in routineStates) {
-            when (state) {
-                SupportRoutineState.NOT_ACCESSIBLE -> diags += SupportDiagnostic(
-                    key = SequenceDiagnosticKey(scope, name),
-                    causes = listOf("support routine '$name' is not accessible"),
-                    emitsW116 = true,
-                )
-                SupportRoutineState.NON_CANONICAL -> diags += SupportDiagnostic(
-                    key = SequenceDiagnosticKey(scope, name),
-                    causes = listOf("support routine '$name' has marker but signature does not match canonical form"),
-                    emitsW116 = true,
-                )
-                SupportRoutineState.CONFIRMED,
-                SupportRoutineState.MISSING -> { /* no diagnostic */ }
+        // Routine-level: only emit when confirmed sequences exist (fachliche Legitimierung)
+        if (confirmedSequenceNames.isNotEmpty()) {
+            for ((name, state) in routineStates) {
+                val cause = when (state) {
+                    SupportRoutineState.NOT_ACCESSIBLE -> "support routine '$name' is not accessible"
+                    SupportRoutineState.NON_CANONICAL -> "support routine '$name' has marker but signature does not match canonical form"
+                    SupportRoutineState.CONFIRMED, SupportRoutineState.MISSING -> null
+                }
+                if (cause != null) {
+                    // Bind to each confirmed sequence (shared infrastructure)
+                    for (seq in confirmedSequenceNames) {
+                        addCause(SequenceDiagnosticKey(scope, seq), cause)
+                    }
+                }
             }
         }
 
         // Trigger-scan-level: entire scan inaccessible — emit per confirmed sequence
-        if (!triggerScanAccessible) {
-            val confirmedSeqs = rows.filter { it.valid && it.name !in ambiguousKeys }
-            if (confirmedSeqs.isNotEmpty()) {
-                for (seq in confirmedSeqs) {
-                    diags += SupportDiagnostic(
-                        key = SequenceDiagnosticKey(scope, seq.name),
-                        causes = listOf("support trigger metadata is not accessible; column-level verification for sequence '${seq.name}' not possible"),
-                        emitsW116 = true,
-                    )
-                }
-            } else {
-                diags += SupportDiagnostic(
-                    key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
-                    causes = listOf("support trigger metadata is not accessible"),
-                    emitsW116 = true,
-                )
+        if (!triggerScanAccessible && confirmedSequenceNames.isNotEmpty()) {
+            for (seq in confirmedSequenceNames) {
+                addCause(SequenceDiagnosticKey(scope, seq),
+                    "support trigger metadata is not accessible; column-level verification not possible")
             }
         }
 
-        // Trigger-level: degraded states — keyed by trigger hash
-        // (actual table/column resolution deferred to D3)
-        for ((name, state) in triggerStates) {
-            val hash = extractTriggerHash(name)
-            when (state) {
+        // Trigger-level: degraded states — keyed by ColumnDiagnosticKey
+        for (assessment in triggerAssessments) {
+            when (assessment.state) {
                 SupportTriggerState.MISSING_MARKER,
                 SupportTriggerState.NON_CANONICAL,
                 SupportTriggerState.NOT_ACCESSIBLE -> {
-                    diags += SupportDiagnostic(
-                        key = SequenceDiagnosticKey(scope, "trigger:$hash"),
-                        causes = listOf("support trigger '$name' has state $state"),
-                        emitsW116 = true,
+                    val colKey = ColumnDiagnosticKey(
+                        scope, assessment.tableName, assessment.columnName ?: assessment.triggerName,
                     )
+                    addCause(colKey, "support trigger '${assessment.triggerName}' has state ${assessment.state}")
                 }
                 SupportTriggerState.CONFIRMED,
                 SupportTriggerState.USER_OBJECT -> { /* no diagnostic */ }
             }
         }
 
-        return diags
-    }
-
-    /**
-     * Extracts the hash10 segment from a canonical support trigger name.
-     * Format: `dmg_seq_<table16>_<column16>_<hash10>_bi`
-     *
-     * Since table16/column16 can themselves contain underscores,
-     * string-splitting is unreliable. Instead we extract the hash
-     * (always 10 hex chars before `_bi`) and use it as the diagnostic key.
-     * The actual table/column resolution happens in D3 by matching the
-     * hash against known sequence-column combinations.
-     */
-    private fun extractTriggerHash(triggerName: String): String {
-        // Remove suffix "_bi" → "dmg_seq_<table16>_<column16>_<hash10>"
-        val withoutSuffix = triggerName.removeSuffix("_bi")
-        // Hash is the last 10 characters
-        return if (withoutSuffix.length >= 10) withoutSuffix.takeLast(10) else triggerName
+        // Build deduplicated diagnostics: one per key
+        return causesByKey.map { (key, causes) ->
+            SupportDiagnostic(key = key, causes = causes, emitsW116 = true)
+        }
     }
 
     // ── Support object filtering ───────────────────
@@ -289,9 +258,13 @@ class MysqlSchemaReader(
         tables: Map<String, TableDefinition>,
         snapshot: MysqlSequenceSupportSnapshot,
     ): Map<String, TableDefinition> {
-        if (snapshot.supportTableState == SupportTableState.MISSING) return tables
-        // Filter dmg_sequences for AVAILABLE, INVALID_SHAPE, and NOT_ACCESSIBLE
-        // (when existence was legitimated before the access failure)
+        // Only filter when existence is positively confirmed
+        // AVAILABLE: table confirmed readable
+        // INVALID_SHAPE: table confirmed present but not canonical
+        // MISSING / NOT_ACCESSIBLE: no hard existence proof → do not filter
+        if (snapshot.supportTableState != SupportTableState.AVAILABLE &&
+            snapshot.supportTableState != SupportTableState.INVALID_SHAPE
+        ) return tables
         return tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
     }
 
