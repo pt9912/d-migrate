@@ -69,22 +69,42 @@ class MysqlSchemaReader(
         database: String,
         scope: ReverseScope,
     ): MysqlSequenceSupportSnapshot {
-        // Step 1: two-phase existence check for dmg_sequences
+        // Step 1: two-phase existence check for dmg_sequences (§4.3 Gating)
         val exists = MysqlMetadataQueries.checkSupportTableExists(session, database)
+
+        // Gate A: existence undecidable → no legitimation → non-sequence path
         if (exists == null) {
             return MysqlSequenceSupportSnapshot.nonSequence(scope)
                 .copy(supportTableState = SupportTableState.NOT_ACCESSIBLE)
         }
+        // Gate B: existence negatively confirmed → non-sequence path
         if (exists == false) {
             return MysqlSequenceSupportSnapshot.nonSequence(scope)
         }
 
+        // --- Existence legitimated: dmg_sequences is confirmed present ---
+
         // Step 2: verify canonical column shape
+        // Shape-check failure AFTER existence legitimation → hard NOT_ACCESSIBLE
+        // (this is the "vorhandene, aber nicht lesbare Primärquelle" case from §4.3)
         val shapeOk = try {
             MysqlMetadataQueries.checkSupportTableShape(session, database)
         } catch (_: Exception) {
-            return MysqlSequenceSupportSnapshot.nonSequence(scope)
-                .copy(supportTableState = SupportTableState.NOT_ACCESSIBLE)
+            return MysqlSequenceSupportSnapshot(
+                scope = scope,
+                supportTableState = SupportTableState.NOT_ACCESSIBLE,
+                sequenceRows = emptyList(),
+                ambiguousKeys = emptySet(),
+                routineStates = emptyMap(),
+                triggerStates = emptyMap(),
+                diagnostics = listOf(
+                    SupportDiagnostic(
+                        key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
+                        causes = listOf("dmg_sequences exists but metadata is not accessible"),
+                        emitsW116 = true,
+                    )
+                ),
+            )
         }
         if (!shapeOk) {
             return MysqlSequenceSupportSnapshot(
@@ -105,6 +125,7 @@ class MysqlSchemaReader(
         }
 
         // Step 3: read rows, validate markers, detect conflicts
+        // Row-read failure AFTER existence legitimation → hard NOT_ACCESSIBLE with diagnostic
         val rawRows = try {
             MysqlMetadataQueries.listSupportSequenceRows(session, database)
         } catch (_: Exception) {
@@ -115,7 +136,13 @@ class MysqlSchemaReader(
                 ambiguousKeys = emptySet(),
                 routineStates = emptyMap(),
                 triggerStates = emptyMap(),
-                diagnostics = emptyList(),
+                diagnostics = listOf(
+                    SupportDiagnostic(
+                        key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
+                        causes = listOf("dmg_sequences exists but rows are not readable"),
+                        emitsW116 = true,
+                    )
+                ),
             )
         }
 
@@ -230,19 +257,22 @@ class MysqlSchemaReader(
             }
         }
 
-        // Trigger-level: degraded states — keyed by ColumnDiagnosticKey
-        for (assessment in triggerAssessments) {
-            when (assessment.state) {
-                SupportTriggerState.MISSING_MARKER,
-                SupportTriggerState.NON_CANONICAL,
-                SupportTriggerState.NOT_ACCESSIBLE -> {
-                    val colKey = ColumnDiagnosticKey(
-                        scope, assessment.tableName, assessment.columnName ?: assessment.triggerName,
-                    )
-                    addCause(colKey, "support trigger '${assessment.triggerName}' has state ${assessment.state}")
+        // Trigger-level: degraded states — only when confirmed sequences exist
+        // (fachliche Verankerung am bestätigten Sequence-Kontext)
+        if (confirmedSequenceNames.isNotEmpty()) {
+            for (assessment in triggerAssessments) {
+                when (assessment.state) {
+                    SupportTriggerState.MISSING_MARKER,
+                    SupportTriggerState.NON_CANONICAL,
+                    SupportTriggerState.NOT_ACCESSIBLE -> {
+                        val colKey = ColumnDiagnosticKey(
+                            scope, assessment.tableName, assessment.columnName ?: assessment.triggerName,
+                        )
+                        addCause(colKey, "support trigger '${assessment.triggerName}' has state ${assessment.state}")
+                    }
+                    SupportTriggerState.CONFIRMED,
+                    SupportTriggerState.USER_OBJECT -> { /* no diagnostic */ }
                 }
-                SupportTriggerState.CONFIRMED,
-                SupportTriggerState.USER_OBJECT -> { /* no diagnostic */ }
             }
         }
 
@@ -258,20 +288,28 @@ class MysqlSchemaReader(
         tables: Map<String, TableDefinition>,
         snapshot: MysqlSequenceSupportSnapshot,
     ): Map<String, TableDefinition> {
-        // Only filter when existence is positively confirmed (plan §4.3).
+        // §4.3 Gating: filter only when existence is positively confirmed.
         //
-        // AVAILABLE: table confirmed readable → filter
-        // INVALID_SHAPE: table confirmed present but not canonical → filter
-        // MISSING: existence check succeeded negatively → do not filter
-        // NOT_ACCESSIBLE: existence check itself failed (permissions or
-        //   metadata disruption) → no hard existence proof, so the table
-        //   stays in the user result. This is the designed tradeoff per
-        //   §4.3: NOT_ACCESSIBLE without prior existence legitimation
-        //   must not silently remove a potentially legitimate user table.
-        if (snapshot.supportTableState != SupportTableState.AVAILABLE &&
-            snapshot.supportTableState != SupportTableState.INVALID_SHAPE
-        ) return tables
-        return tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
+        // AVAILABLE: existence confirmed, readable → filter
+        // INVALID_SHAPE: existence confirmed, not canonical → filter
+        // NOT_ACCESSIBLE with diagnostics: existence was confirmed (Gate A
+        //   passed) but subsequent access failed → filter (hard path)
+        // NOT_ACCESSIBLE without diagnostics: existence check itself failed
+        //   (Gate A) → no legitimation → do not filter
+        // MISSING: existence negatively confirmed → do not filter
+        return when (snapshot.supportTableState) {
+            SupportTableState.AVAILABLE,
+            SupportTableState.INVALID_SHAPE -> tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
+            SupportTableState.NOT_ACCESSIBLE -> {
+                // Distinguish legitimated (has diagnostics) from unlegitimated
+                if (snapshot.diagnostics.isNotEmpty()) {
+                    tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
+                } else {
+                    tables
+                }
+            }
+            SupportTableState.MISSING -> tables
+        }
     }
 
     private fun filterSupportRoutines(

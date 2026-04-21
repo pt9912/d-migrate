@@ -531,6 +531,53 @@ class MysqlSchemaReaderTest : FunSpec({
         result.notes.none { it.code == "W116" } shouldBe true
     }
 
+    test("BASELINE: non-sequence single-table schema produces identical result with support scan") {
+        // This test is the dedicated regression baseline per §7.14:
+        // an established non-sequence fixture must produce exactly the same
+        // schema objects, notes, and error behavior as before the support scan.
+        stubEmptyDefaults()
+        stubTableQueries()
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "users", "table_schema" to "mydb", "table_type" to "BASE TABLE"),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns listOf(
+            mapOf("column_name" to "id", "data_type" to "int", "column_type" to "int(11)",
+                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
+                "extra" to "auto_increment", "character_maximum_length" to null,
+                "numeric_precision" to 10, "numeric_scale" to 0),
+            mapOf("column_name" to "name", "data_type" to "varchar", "column_type" to "varchar(255)",
+                "is_nullable" to "YES", "column_default" to null, "ordinal_position" to 2,
+                "extra" to "", "character_maximum_length" to 255,
+                "numeric_precision" to null, "numeric_scale" to null),
+        )
+        every { jdbc.queryList(match { it.contains("constraint_name = 'PRIMARY'") }, any(), any()) } returns listOf(
+            mapOf("column_name" to "id"),
+        )
+        every { jdbc.querySingle(match { it.contains("engine") }, any(), any()) } returns
+            mapOf("engine" to "InnoDB")
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+
+        // Schema objects: exactly one table, no sequences, no extra objects
+        result.schema.tables.keys shouldBe setOf("users")
+        result.schema.tables["users"]!!.columns.keys shouldBe setOf("id", "name")
+        result.schema.tables["users"]!!.primaryKey shouldBe listOf("id")
+        result.schema.views.size shouldBe 0
+        result.schema.functions.size shouldBe 0
+        result.schema.procedures.size shouldBe 0
+        result.schema.triggers.size shouldBe 0
+        result.schema.sequences.size shouldBe 0
+
+        // Notes: no W116, no support-scan artifacts
+        result.notes.none { it.code == "W116" } shouldBe true
+        result.notes.none { it.code.startsWith("W1") && it.code != "W100" && it.code != "W102" && it.code != "W103" } shouldBe true
+
+        // Skipped: empty
+        result.skippedObjects.shouldBeEmpty()
+    }
+
     test("scanSequenceSupport returns MISSING when dmg_sequences does not exist") {
         stubEmptyDefaults()
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns null
