@@ -1,15 +1,13 @@
 package dev.dmigrate.driver.postgresql
 
-import dev.dmigrate.core.data.ColumnDescriptor
-import dev.dmigrate.core.data.DataChunk
-import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.DataWriter
-import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import dev.dmigrate.driver.data.SchemaSync
+import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
@@ -167,179 +165,23 @@ class PostgresDataWriter(
 }
 
 internal class PostgresTableImportSession(
-    private val conn: Connection,
-    private val savedAutoCommit: Boolean,
-    private val table: String,
+    conn: Connection,
+    savedAutoCommit: Boolean,
+    table: String,
     private val qualifiedTable: QualifiedTableName,
-    override val targetColumns: List<TargetColumn>,
+    targetColumns: List<TargetColumn>,
     private val generatedAlwaysColumns: Set<String>,
-    private val primaryKeyColumns: List<String>,
-    private val options: ImportOptions,
+    primaryKeyColumns: List<String>,
+    options: ImportOptions,
     private val schemaSync: SchemaSync,
     private var triggersDisabled: Boolean,
-) : TableImportSession {
+) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
-    private enum class State { OPEN, WRITTEN, FAILED, FINISHED, CLOSED }
-
-    private val targetColumnsByName = targetColumns.associateBy { it.name }
-    private var state: State = State.OPEN
-    private var hasWritten: Boolean = false
-    private var truncatePerformed: Boolean = false
     private var triggersReenabled: Boolean = false
-    private var importedColumns: List<ColumnDescriptor>? = null
-    private var preparedStatement: PreparedStatement? = null
-    private var importedTargetColumns: List<TargetColumn>? = null
-    private var lastFailure: Throwable? = null
 
-    override fun write(chunk: DataChunk): WriteResult {
-        requireState(State.OPEN, "write")
-        if (chunk.table != table) {
-            state = State.FAILED
-            val failure = ImportSchemaMismatchException(
-                "Chunk table '${chunk.table}' does not match open target table '$table'"
-            )
-            lastFailure = failure
-            throw failure
-        }
+    // ─── Dialect hooks ──────────────────────────────────────────────────
 
-        return try {
-            val plan = ensureInsertPlan(chunk)
-            validateRowWidths(chunk, plan.size)
-
-            val result = when (options.onConflict) {
-                OnConflict.UPDATE -> executeUpsertChunk(plan, chunk.rows)
-                else -> executeInsertChunk(plan, chunk.rows)
-            }
-            state = State.WRITTEN
-            hasWritten = true
-            result
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun commitChunk() {
-        requireState(State.WRITTEN, "commitChunk")
-        try {
-            conn.commit()
-            preparedStatement?.clearBatch()
-            state = State.OPEN
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun rollbackChunk() {
-        requireState(State.WRITTEN, "rollbackChunk")
-        try {
-            conn.rollback()
-            preparedStatement?.clearBatch()
-            state = State.OPEN
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun markTruncatePerformed() {
-        check(state == State.OPEN && !hasWritten) {
-            "markTruncatePerformed() requires OPEN before any write, " +
-                "current state: $state, hasWritten: $hasWritten"
-        }
-        truncatePerformed = true
-    }
-
-    override fun finishTable(): FinishTableResult {
-        requireState(State.OPEN, "finishTable")
-        return try {
-            val adjustments = if (options.reseedSequences) {
-                schemaSync.reseedGenerators(conn, table, importedColumns.orEmpty())
-            } else {
-                emptyList()
-            }
-
-            val enableFailure = if (triggersDisabled && !triggersReenabled) {
-                runCatching {
-                    schemaSync.enableTriggers(conn, table)
-                    triggersReenabled = true
-                }.exceptionOrNull()
-            } else {
-                null
-            }
-
-            state = State.FINISHED
-            if (enableFailure == null) {
-                FinishTableResult.Success(adjustments)
-            } else {
-                lastFailure = enableFailure
-                FinishTableResult.PartialFailure(adjustments, enableFailure)
-            }
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun close() {
-        if (state == State.CLOSED) return
-
-        try {
-            if (state == State.WRITTEN || state == State.OPEN || state == State.FAILED) {
-                runCatching { conn.rollback() }.onFailure(::recordCleanupFailure)
-            }
-            if (triggersDisabled && !triggersReenabled) {
-                runCatching {
-                    schemaSync.enableTriggers(conn, table)
-                    triggersReenabled = true
-                }.onFailure(::recordCleanupFailure)
-            }
-        } finally {
-            runCatching { preparedStatement?.close() }.onFailure(::recordCleanupFailure)
-            runCatching { conn.autoCommit = savedAutoCommit }.onFailure(::recordCleanupFailure)
-            runCatching { conn.close() }.onFailure(::recordCleanupFailure)
-            state = State.CLOSED
-        }
-    }
-
-    private fun ensureInsertPlan(chunk: DataChunk): List<TargetColumn> {
-        importedColumns?.let { existing ->
-            if (existing != chunk.columns) {
-                throw ImportSchemaMismatchException(
-                    "All chunks for table '$table' must use the same column layout; " +
-                        "expected ${existing.map { it.name }}, got ${chunk.columns.map { it.name }}"
-                )
-            }
-            return importedTargetColumns!!
-        }
-
-        val duplicates = chunk.columns.groupBy { it.name }.filterValues { it.size > 1 }.keys
-        if (duplicates.isNotEmpty()) {
-            throw ImportSchemaMismatchException(
-                "Chunk for table '$table' contains duplicate columns: ${duplicates.joinToString()}"
-            )
-        }
-
-        val resolvedTargetColumns = chunk.columns.map { sourceColumn ->
-            targetColumnsByName[sourceColumn.name]
-                ?: throw ImportSchemaMismatchException(
-                    "Target table '$table' has no column '${sourceColumn.name}'"
-                )
-        }
-
-        val sql = buildInsertSql(resolvedTargetColumns)
-        preparedStatement = conn.prepareStatement(sql)
-        importedColumns = chunk.columns
-        importedTargetColumns = resolvedTargetColumns
-        return resolvedTargetColumns
-    }
-
-    private fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
+    override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {
             " OVERRIDING SYSTEM VALUE"
         } else {
@@ -367,6 +209,59 @@ internal class PostgresTableImportSession(
         }
     }
 
+    override fun executeChunk(
+        importedTargetColumns: List<TargetColumn>,
+        rows: List<Array<Any?>>,
+    ): WriteResult = when (options.onConflict) {
+        OnConflict.UPDATE -> executeUpsertChunk(importedTargetColumns, rows)
+        else -> executeInsertChunk(importedTargetColumns, rows)
+    }
+
+    override fun bindRow(
+        stmt: PreparedStatement,
+        importedTargetColumns: List<TargetColumn>,
+        row: Array<Any?>,
+    ) {
+        importedTargetColumns.forEachIndexed { index, targetColumn ->
+            bindValue(stmt, index + 1, targetColumn, row[index])
+        }
+    }
+
+    override fun reseedSequences(): List<SequenceAdjustment> =
+        schemaSync.reseedGenerators(conn, table, importedColumns.orEmpty())
+
+    override fun finishDialectCleanup(): Throwable? =
+        if (triggersDisabled && !triggersReenabled) {
+            runCatching {
+                schemaSync.enableTriggers(conn, table)
+                triggersReenabled = true
+            }.exceptionOrNull()
+        } else {
+            null
+        }
+
+    override fun closePreFinally() {
+        if (triggersDisabled && !triggersReenabled) {
+            runCatching {
+                schemaSync.enableTriggers(conn, table)
+                triggersReenabled = true
+            }.onFailure(::recordCleanupFailure)
+        }
+    }
+
+    override fun closeFinally() {
+        runCatching { conn.autoCommit = savedAutoCommit }.onFailure(::recordCleanupFailure)
+    }
+
+    /**
+     * PostgreSQL does not need the PK-columns-in-import check because the
+     * ON CONFLICT clause references PK columns from table metadata, not
+     * from the imported data.
+     */
+    override fun validateUpsertColumns(resolvedTargetColumns: List<TargetColumn>) {}
+
+    // ─── PostgreSQL-specific execution strategies ──────────��────────────
+
     private fun buildUpsertClause(importedTargetColumns: List<TargetColumn>): String {
         val pkSet = primaryKeyColumns.toSet()
         val updateColumns = importedTargetColumns.filterNot { it.name in pkSet }
@@ -382,26 +277,6 @@ internal class PostgresTableImportSession(
             "${quotePostgresIdentifier(it.name)} = EXCLUDED.${quotePostgresIdentifier(it.name)}"
         }
         return " ON CONFLICT ($conflictTarget) DO UPDATE SET $assignments"
-    }
-
-    private fun validateRowWidths(chunk: DataChunk, columnCount: Int) {
-        chunk.rows.forEachIndexed { rowIndex, row ->
-            if (row.size != columnCount) {
-                throw ImportSchemaMismatchException(
-                    "Chunk row $rowIndex for table '$table' has ${row.size} values, expected $columnCount"
-                )
-            }
-        }
-    }
-
-    private fun bindRow(
-        stmt: PreparedStatement,
-        importedTargetColumns: List<TargetColumn>,
-        row: Array<Any?>,
-    ) {
-        importedTargetColumns.forEachIndexed { index, targetColumn ->
-            bindValue(stmt, index + 1, targetColumn, row[index])
-        }
     }
 
     private fun executeInsertChunk(
@@ -509,15 +384,5 @@ internal class PostgresTableImportSession(
             rowsSkipped = skipped,
             rowsUnknown = unknown,
         )
-    }
-
-    private fun requireState(expected: State, operation: String) {
-        check(state == expected) {
-            "$operation requires $expected, current state: $state"
-        }
-    }
-
-    private fun recordCleanupFailure(t: Throwable) {
-        lastFailure?.addSuppressed(t)
     }
 }

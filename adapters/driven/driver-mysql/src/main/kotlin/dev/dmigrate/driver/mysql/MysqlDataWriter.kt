@@ -1,14 +1,12 @@
 package dev.dmigrate.driver.mysql
 
-import dev.dmigrate.core.data.ColumnDescriptor
-import dev.dmigrate.core.data.DataChunk
-import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.data.AbstractTableImportSession
 import dev.dmigrate.driver.data.DataWriter
-import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
+import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
@@ -19,7 +17,6 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.Statement
-import java.util.concurrent.Executor
 
 class MysqlDataWriter(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
@@ -160,197 +157,22 @@ class MysqlDataWriter(
 }
 
 internal class MysqlTableImportSession(
-    private val conn: Connection,
-    private val savedAutoCommit: Boolean,
-    private val table: String,
+    conn: Connection,
+    savedAutoCommit: Boolean,
+    table: String,
     private val qualifiedTable: MysqlQualifiedTableName,
-    override val targetColumns: List<TargetColumn>,
-    private val primaryKeyColumns: List<String>,
-    private val options: ImportOptions,
+    targetColumns: List<TargetColumn>,
+    primaryKeyColumns: List<String>,
+    options: ImportOptions,
     private val schemaSync: MysqlSchemaSync,
     private var fkChecksDisabled: Boolean,
-) : TableImportSession {
+) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 
-    private enum class State { OPEN, WRITTEN, FAILED, FINISHED, CLOSED }
-
-    private val targetColumnsByName = targetColumns.associateBy { it.name }
-    private var state: State = State.OPEN
-    private var hasWritten: Boolean = false
-    private var truncatePerformed: Boolean = false
-    private var importedColumns: List<ColumnDescriptor>? = null
-    private var preparedStatement: PreparedStatement? = null
-    private var importedTargetColumns: List<TargetColumn>? = null
-    private var lastFailure: Throwable? = null
     private var discardConnection: Boolean = false
 
-    override fun write(chunk: DataChunk): WriteResult {
-        requireState(State.OPEN, "write")
-        if (chunk.table != table) {
-            state = State.FAILED
-            val failure = ImportSchemaMismatchException(
-                "Chunk table '${chunk.table}' does not match open target table '$table'"
-            )
-            lastFailure = failure
-            throw failure
-        }
+    // ─── Dialect hooks ──────────────────────────────────────────────────
 
-        return try {
-            val plan = ensureInsertPlan(chunk)
-            validateRowWidths(chunk, plan.size)
-            val result = when (options.onConflict) {
-                OnConflict.UPDATE -> executeUpsertChunk(plan, chunk.rows)
-                OnConflict.SKIP -> executeSkipChunk(plan, chunk.rows)
-                OnConflict.ABORT -> executeBatchChunk(plan, chunk.rows)
-            }
-            state = State.WRITTEN
-            hasWritten = true
-            result
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun commitChunk() {
-        requireState(State.WRITTEN, "commitChunk")
-        try {
-            conn.commit()
-            preparedStatement?.clearBatch()
-            state = State.OPEN
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun rollbackChunk() {
-        requireState(State.WRITTEN, "rollbackChunk")
-        try {
-            conn.rollback()
-            preparedStatement?.clearBatch()
-            state = State.OPEN
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun markTruncatePerformed() {
-        check(state == State.OPEN && !hasWritten) {
-            "markTruncatePerformed() requires OPEN before any write, current state: $state, hasWritten: $hasWritten"
-        }
-        truncatePerformed = true
-    }
-
-    override fun finishTable(): FinishTableResult {
-        requireState(State.OPEN, "finishTable")
-        return try {
-            val adjustments = if (options.reseedSequences) {
-                schemaSync.reseedGenerators(
-                    conn = conn,
-                    table = table,
-                    importedColumns = importedColumns.orEmpty(),
-                    truncatePerformed = truncatePerformed,
-                )
-            } else {
-                emptyList()
-            }
-
-            val fkResetFailure = if (fkChecksDisabled) {
-                runCatching {
-                    MysqlDataWriter.setForeignKeyChecks(conn, enabled = true)
-                    fkChecksDisabled = false
-                }.exceptionOrNull()
-            } else {
-                null
-            }
-
-            state = State.FINISHED
-            if (fkResetFailure == null) {
-                FinishTableResult.Success(adjustments)
-            } else {
-                lastFailure = fkResetFailure
-                FinishTableResult.PartialFailure(adjustments, fkResetFailure)
-            }
-        } catch (t: Throwable) {
-            state = State.FAILED
-            lastFailure = t
-            throw t
-        }
-    }
-
-    override fun close() {
-        if (state == State.CLOSED) return
-
-        try {
-            if (state == State.WRITTEN || state == State.OPEN || state == State.FAILED) {
-                runCatching { conn.rollback() }.onFailure(::recordCleanupFailure)
-            }
-        } finally {
-            runCatching { preparedStatement?.close() }.onFailure(::recordCleanupFailure)
-            runCatching { conn.autoCommit = savedAutoCommit }.onFailure(::recordCleanupFailure)
-            if (fkChecksDisabled) {
-                runCatching {
-                    MysqlDataWriter.setForeignKeyChecks(conn, enabled = true)
-                    fkChecksDisabled = false
-                }.onFailure {
-                    discardConnection = true
-                    recordCleanupFailure(it)
-                }
-            }
-            if (discardConnection) {
-                runCatching { conn.abort(DIRECT_EXECUTOR) }.onFailure(::recordCleanupFailure)
-            }
-            runCatching { conn.close() }.onFailure(::recordCleanupFailure)
-            state = State.CLOSED
-        }
-    }
-
-    private fun ensureInsertPlan(chunk: DataChunk): List<TargetColumn> {
-        importedColumns?.let { existing ->
-            if (existing != chunk.columns) {
-                throw ImportSchemaMismatchException(
-                    "All chunks for table '$table' must use the same column layout; " +
-                        "expected ${existing.map { it.name }}, got ${chunk.columns.map { it.name }}"
-                )
-            }
-            return importedTargetColumns!!
-        }
-
-        val duplicates = chunk.columns.groupBy { it.name }.filterValues { it.size > 1 }.keys
-        if (duplicates.isNotEmpty()) {
-            throw ImportSchemaMismatchException(
-                "Chunk for table '$table' contains duplicate columns: ${duplicates.joinToString()}"
-            )
-        }
-
-        val resolvedTargetColumns = chunk.columns.map { sourceColumn ->
-            targetColumnsByName[sourceColumn.name]
-                ?: throw ImportSchemaMismatchException(
-                    "Target table '$table' has no column '${sourceColumn.name}'"
-                )
-        }
-
-        if (options.onConflict == OnConflict.UPDATE) {
-            val importedNames = resolvedTargetColumns.map { it.name }.toSet()
-            val missingPrimaryKeys = primaryKeyColumns.filterNot { it in importedNames }
-            if (missingPrimaryKeys.isNotEmpty()) {
-                throw ImportSchemaMismatchException(
-                    "onConflict=update for table '$table' requires all primary key columns; missing ${missingPrimaryKeys.joinToString()}"
-                )
-            }
-        }
-
-        preparedStatement = conn.prepareStatement(buildInsertSql(resolvedTargetColumns))
-        importedColumns = chunk.columns
-        importedTargetColumns = resolvedTargetColumns
-        return resolvedTargetColumns
-    }
-
-    private fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
+    override fun buildInsertSql(importedTargetColumns: List<TargetColumn>): String {
         if (importedTargetColumns.isEmpty()) {
             return when (options.onConflict) {
                 OnConflict.ABORT -> "INSERT INTO ${qualifiedTable.quotedPath()} () VALUES ()"
@@ -371,6 +193,66 @@ internal class MysqlTableImportSession(
         }
     }
 
+    override fun executeChunk(
+        importedTargetColumns: List<TargetColumn>,
+        rows: List<Array<Any?>>,
+    ): WriteResult = when (options.onConflict) {
+        OnConflict.UPDATE -> executeUpsertChunk(importedTargetColumns, rows)
+        OnConflict.SKIP -> executeSkipChunk(importedTargetColumns, rows)
+        OnConflict.ABORT -> executeBatchChunk(importedTargetColumns, rows)
+    }
+
+    override fun bindRow(
+        stmt: PreparedStatement,
+        importedTargetColumns: List<TargetColumn>,
+        row: Array<Any?>,
+    ) {
+        importedTargetColumns.forEachIndexed { index, targetColumn ->
+            val value = row[index]
+            if (value == null) {
+                stmt.setNull(index + 1, targetColumn.jdbcType)
+            } else {
+                stmt.setObject(index + 1, value)
+            }
+        }
+    }
+
+    override fun reseedSequences(): List<SequenceAdjustment> =
+        schemaSync.reseedGenerators(
+            conn = conn,
+            table = table,
+            importedColumns = importedColumns.orEmpty(),
+            truncatePerformed = truncatePerformed,
+        )
+
+    override fun finishDialectCleanup(): Throwable? =
+        if (fkChecksDisabled) {
+            runCatching {
+                MysqlDataWriter.setForeignKeyChecks(conn, enabled = true)
+                fkChecksDisabled = false
+            }.exceptionOrNull()
+        } else {
+            null
+        }
+
+    override fun closeFinally() {
+        runCatching { conn.autoCommit = savedAutoCommit }.onFailure(::recordCleanupFailure)
+        if (fkChecksDisabled) {
+            runCatching {
+                MysqlDataWriter.setForeignKeyChecks(conn, enabled = true)
+                fkChecksDisabled = false
+            }.onFailure {
+                discardConnection = true
+                recordCleanupFailure(it)
+            }
+        }
+        if (discardConnection) {
+            runCatching { conn.abort(DIRECT_EXECUTOR) }.onFailure(::recordCleanupFailure)
+        }
+    }
+
+    // ─── MySQL-specific execution strategies ────────────────────────────
+
     private fun buildUpsertClause(importedTargetColumns: List<TargetColumn>): String {
         if (primaryKeyColumns.isEmpty()) {
             error("ON DUPLICATE KEY UPDATE requires primaryKeyColumns to be loaded")
@@ -386,16 +268,6 @@ internal class MysqlTableImportSession(
             "$column = VALUES($column)"
         }
         return " ON DUPLICATE KEY UPDATE $assignments"
-    }
-
-    private fun validateRowWidths(chunk: DataChunk, columnCount: Int) {
-        chunk.rows.forEachIndexed { rowIndex, row ->
-            if (row.size != columnCount) {
-                throw ImportSchemaMismatchException(
-                    "Chunk row $rowIndex for table '$table' has ${row.size} values, expected $columnCount"
-                )
-            }
-        }
     }
 
     private fun executeBatchChunk(
@@ -458,21 +330,6 @@ internal class MysqlTableImportSession(
         )
     }
 
-    private fun bindRow(
-        stmt: PreparedStatement,
-        importedTargetColumns: List<TargetColumn>,
-        row: Array<Any?>,
-    ) {
-        importedTargetColumns.forEachIndexed { index, targetColumn ->
-            val value = row[index]
-            if (value == null) {
-                stmt.setNull(index + 1, targetColumn.jdbcType)
-            } else {
-                stmt.setObject(index + 1, value)
-            }
-        }
-    }
-
     private fun abortWriteResult(counts: IntArray): WriteResult {
         var inserted = 0L
         for (count in counts) {
@@ -487,23 +344,5 @@ internal class MysqlTableImportSession(
             rowsUpdated = 0,
             rowsSkipped = 0,
         )
-    }
-
-    private fun requireState(expected: State, operation: String) {
-        check(state == expected) {
-            "$operation requires state $expected, current state: $state"
-        }
-    }
-
-    private fun recordCleanupFailure(t: Throwable) {
-        if (lastFailure == null) {
-            lastFailure = t
-        } else {
-            lastFailure?.addSuppressed(t)
-        }
-    }
-
-    private companion object {
-        private val DIRECT_EXECUTOR = Executor { command -> command.run() }
     }
 }
