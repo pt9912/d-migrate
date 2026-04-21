@@ -14,7 +14,8 @@
 > `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt`;
 > `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunnerTest.kt`;
 > `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaCompareTest.kt`;
-> `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`.
+> `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/CompareRendererOperandTest.kt`;
+> `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`.
 
 ---
 
@@ -59,7 +60,7 @@ Teilplaene verteilt:
 - D3 beschreibt Trigger-basiertes Default-Reverse und spaltenbezogene
   `W116`
 - E1 beschreibt Compare-, Runner- und Renderer-Vertrag
-- E2 zieht den Nutzer- und Ledger-Vertrag nach
+- E2 konsolidiert Nutzer- und Ledger-Dokumentation
 
 Der Teststand dazu ist heute noch auf mehrere Ebenen verteilt:
 
@@ -182,10 +183,12 @@ Verbindliche Folge:
 
 Verbindliche Folge:
 
-- Runner- und CLI-Tests duerfen bis zur vollstaendigen D1-D3-Emission
-  synthetische Operand-Notes verwenden
+- Runner- und CLI-Tests duerfen vor dem finalen T5-Gate mit
+  synthetischen Operand-Notes arbeiten, wenn der fachliche
+  Dokument-/Renderer-Vertrag bereits unabhaengig pruefbar ist
 - mindestens ein finaler Test muss echten D1-D3-Output als
-  Eingangsevidenz nutzen, sobald diese Pfade implementiert sind
+  Eingangsevidenz nutzen; ohne diesen Nachweis ist 6.6 nicht
+  abgeschlossen
 
 ---
 
@@ -329,6 +332,8 @@ Done-Kriterien:
 ### T4 CLI-Output und strukturierte Renderer pruefen
 
 - `CliSchemaCompareTest` fuer Plain-, JSON- und YAML-Pfade erweitern
+- `CompareRendererOperandTest` fuer operandseitige Notes und
+  strukturierte Operanddarstellung gezielt nutzen oder erweitern
 - absichern, dass operandseitige Notes im strukturierten Dokument
   sichtbar bleiben
 - pruefen, dass JSON/YAML keine zusaetzliche Plain-`stderr`-Doppelung
@@ -350,10 +355,10 @@ Done-Kriterien:
 
 Done-Kriterien:
 
-- alle Pflichtfaelle aus Abschnitt 7 sind einem gruenden Test
+- alle Pflichtfaelle aus Abschnitt 7 sind einem gruenen Test
   zugeordnet und bestanden oder explizit als blockiert markiert
-- mindestens dieselbe Modulschwelle wie in den betroffenen
-  Driver-/Application-Modulen ist erreicht
+- pro betroffenem Modul gilt der Projektstandard von mindestens
+  90% Line-Coverage
 - 6.6 ist erst voll abgeschlossen, wenn mindestens ein Test echten
   D1-D3-Output als Eingang fuer Compare- oder CLI-Verifikation nutzt
 
@@ -362,8 +367,10 @@ Abhaengigkeiten:
 - T0 vor T1 bis T5
 - T1 vor dem finalen T2-Round-Trip-Gate
 - T2 vor finalem Abschluss von T5
-- T3 und T4 koennen nach T0 parallel zu T1/T2 laufen, solange ihre
-  Eingangsartefakte verfuegbar sind
+- T3 und T4 koennen nach T0 parallel zu T1/T2 anlaufen, wenn fuer
+  Zwischenstufen synthetische Operand-Notes genuegen
+- der finale Abschluss von T3 und T4 haengt an echtem D1-D3-Output und
+  damit spaetestens an T2
 
 ---
 
@@ -453,8 +460,8 @@ Pflichtfaelle fuer 6.6:
 
 Coverage-Ziel:
 
-- mindestens dieselbe Modulschwelle wie in den betroffenen
-  Driver-/Application-Modulen
+- pro betroffenem Modul gilt der Projektstandard von mindestens
+  90% Line-Coverage
 - Schwerpunkt auf den neuen Reverse-Pfaden in `driver-mysql`
 - keine 0.9.4-Pflichtpruefung bleibt allein auf manueller Sichtkontrolle
 
@@ -472,9 +479,10 @@ Voraussichtlich direkt betroffen:
 
 - `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`
 - `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt`
-- `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`
+- `test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt`
 - `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunnerTest.kt`
 - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaCompareTest.kt`
+- `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/CompareRendererOperandTest.kt`
 
 Fachlich relevante Vertragsanbieter, voraussichtlich nicht direkt zu
 aendern:
@@ -483,9 +491,9 @@ aendern:
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceReverseSupport.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt`
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/render/CompareRendererPlain.kt`
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/render/CompareRendererJson.kt`
-- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/render/CompareRendererYaml.kt`
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererPlain.kt`
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererJson.kt`
+- `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererYaml.kt`
 
 Optional, falls der bestehende Testaufbau nicht ausreicht:
 
