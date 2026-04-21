@@ -49,6 +49,8 @@ class MysqlSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
+        // Support-table existence check → not found by default (uses querySingle)
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns null
     }
 
     fun stubTableQueries() {
@@ -518,6 +520,175 @@ class MysqlSchemaReaderTest : FunSpec({
         // Table name preserved from original, not normalized
         result.schema.tables.keys shouldBe setOf("Users")
     }
+
+    // ── Sequence support scan tests (0.9.4 AP 6.1) ──────────
+
+    test("schema without dmg_sequences is compatible non-sequence case") {
+        stubEmptyDefaults()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+        result.notes.none { it.code == "W116" } shouldBe true
+    }
+
+    test("scanSequenceSupport returns MISSING when dmg_sequences does not exist") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns null
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.supportTableState shouldBe SupportTableState.MISSING
+        snapshot.sequenceRows.shouldBeEmpty()
+        snapshot.diagnostics.shouldBeEmpty()
+    }
+
+    test("scanSequenceSupport returns NOT_ACCESSIBLE when existence check fails") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } throws RuntimeException("access denied")
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.supportTableState shouldBe SupportTableState.NOT_ACCESSIBLE
+    }
+
+    test("scanSequenceSupport returns INVALID_SHAPE when columns do not match") {
+        stubEmptyDefaults()
+        // dmg_sequences exists
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        // But shape check fails — missing required columns
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "name"),
+            mapOf("column_name" to "value"),
+        )
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.supportTableState shouldBe SupportTableState.INVALID_SHAPE
+        snapshot.diagnostics.any { it.emitsW116 } shouldBe true
+    }
+
+    test("scanSequenceSupport returns AVAILABLE with valid rows") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "invoice_seq", "next_value" to 1000L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0,
+                "cache_size" to null),
+        )
+        // Routines confirmed
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), eq("dmg_nextval")) } returns
+            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END")
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), eq("dmg_setval")) } returns
+            mapOf("routine_name" to "dmg_setval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=setval */ BEGIN END")
+        // No support triggers
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.supportTableState shouldBe SupportTableState.AVAILABLE
+        snapshot.sequenceRows shouldHaveSize 1
+        snapshot.sequenceRows[0].name shouldBe "invoice_seq"
+        snapshot.sequenceRows[0].valid shouldBe true
+        snapshot.routineStates[MysqlSequenceNaming.NEXTVAL_ROUTINE] shouldBe SupportRoutineState.CONFIRMED
+        snapshot.routineStates[MysqlSequenceNaming.SETVAL_ROUTINE] shouldBe SupportRoutineState.CONFIRMED
+    }
+
+    test("scanSequenceSupport detects ambiguous sequence keys") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        // Two rows with same name → ambiguous
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "dup_seq", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "dup_seq", "next_value" to 100L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.ambiguousKeys shouldBe setOf("dup_seq")
+        snapshot.diagnostics.any { it.emitsW116 && (it.key as? SequenceDiagnosticKey)?.sequenceName == "dup_seq" } shouldBe true
+    }
+
+    test("scanSequenceSupport detects invalid marker rows") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "other-tool", "format_version" to "v2",
+                "name" to "foreign_seq", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.sequenceRows[0].valid shouldBe false
+        snapshot.diagnostics.any { it.emitsW116 } shouldBe true
+    }
+
+    test("support objects are filtered from user schema regardless of include flags") {
+        stubEmptyDefaults()
+        stubTableQueries()
+        // Tables include dmg_sequences as a regular table
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "users", "table_schema" to "mydb", "table_type" to "BASE TABLE"),
+            mapOf("table_name" to "dmg_sequences", "table_schema" to "mydb", "table_type" to "BASE TABLE"),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns listOf(
+            mapOf("column_name" to "id", "data_type" to "int", "column_type" to "int(11)",
+                "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
+                "extra" to "auto_increment", "character_maximum_length" to null,
+                "numeric_precision" to 10, "numeric_scale" to 0),
+        )
+        every { jdbc.queryList(match { it.contains("constraint_name = 'PRIMARY'") }, any(), any()) } returns listOf(
+            mapOf("column_name" to "id"),
+        )
+        // dmg_sequences exists and is readable
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns emptyList()
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = true,
+            includeProcedures = true, includeTriggers = true)
+        val result = reader.read(pool, opts)
+
+        // dmg_sequences should be filtered out from user tables
+        result.schema.tables shouldContainKey "users"
+        result.schema.tables.keys shouldBe setOf("users")
+    }
+
+    test("disabled include flags produce no support objects and no extra notes") {
+        stubEmptyDefaults()
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+        result.notes.none { it.code == "W116" } shouldBe true
+        result.schema.functions.size shouldBe 0
+        result.schema.triggers.size shouldBe 0
+    }
+
+    // ── existing tests (unchanged baseline) ───────
 
     test("read with FK backing index suppression") {
         stubEmptyDefaults()

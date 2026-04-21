@@ -214,4 +214,142 @@ object MysqlMetadataQueries {
             """.trimIndent(), database,
         )
     }
+
+    // ── Sequence-Support queries (0.9.4 AP 6.1) ──────────────
+
+    /**
+     * Two-step existence check for dmg_sequences.
+     * Returns `true` (exists), `false` (does not exist), or `null`
+     * (technically undecidable — e.g. permission error on information_schema).
+     */
+    fun checkSupportTableExists(session: JdbcOperations, database: String): Boolean? {
+        return try {
+            val row = session.querySingle(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = ? AND table_name = ?
+                  AND table_type = 'BASE TABLE'
+                """.trimIndent(), database, MysqlSequenceNaming.SUPPORT_TABLE,
+            )
+            row != null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Verifies the canonical column shape of dmg_sequences.
+     * Returns `true` if all required columns are present.
+     */
+    fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
+        val requiredColumns = setOf(
+            "managed_by", "format_version", "name", "next_value",
+            "increment_by", "min_value", "max_value", "cycle_enabled", "cache_size",
+        )
+        val actualColumns = session.queryList(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            """.trimIndent(), database, MysqlSequenceNaming.SUPPORT_TABLE,
+        ).map { (it["column_name"] as String).lowercase() }.toSet()
+        return requiredColumns.all { it in actualColumns }
+    }
+
+    /**
+     * Reads all rows from dmg_sequences, returning raw row maps.
+     * Caller is responsible for validation and conflict detection.
+     */
+    fun listSupportSequenceRows(session: JdbcOperations, database: String): List<Map<String, Any?>> {
+        return session.queryList(
+            """
+            SELECT managed_by, format_version, name,
+                   next_value, increment_by, min_value, max_value,
+                   cycle_enabled, cache_size
+            FROM `$database`.`${MysqlSequenceNaming.SUPPORT_TABLE}`
+            """.trimIndent(),
+        )
+    }
+
+    /**
+     * Targeted routine lookup for a specific support routine.
+     * Checks existence, marker comment in definition, and routine type.
+     */
+    fun lookupSupportRoutine(
+        session: JdbcOperations,
+        database: String,
+        routineName: String,
+    ): SupportRoutineState {
+        return try {
+            val row = session.querySingle(
+                """
+                SELECT routine_name, routine_definition
+                FROM information_schema.routines
+                WHERE routine_schema = ? AND routine_name = ?
+                  AND routine_type = 'FUNCTION'
+                """.trimIndent(), database, routineName,
+            ) ?: return SupportRoutineState.MISSING
+
+            val definition = row["routine_definition"] as? String ?: ""
+            if ("d-migrate:mysql-sequence-v1" in definition) {
+                SupportRoutineState.CONFIRMED
+            } else {
+                SupportRoutineState.MISSING // present but no marker → user object
+            }
+        } catch (_: Exception) {
+            SupportRoutineState.NOT_ACCESSIBLE
+        }
+    }
+
+    /**
+     * Lists potential support triggers matching the canonical name pattern.
+     * Returns trigger name → state after marker/body inspection.
+     */
+    /**
+     * Result of a support trigger scan.
+     * [accessible] is false when the query itself failed (permission error).
+     */
+    data class SupportTriggerScanResult(
+        val triggers: List<Pair<String, SupportTriggerState>>,
+        val accessible: Boolean,
+    )
+
+    fun listPotentialSupportTriggers(
+        session: JdbcOperations,
+        database: String,
+    ): SupportTriggerScanResult {
+        val rows = try {
+            session.queryList(
+                """
+                SELECT trigger_name, action_timing, event_manipulation,
+                       action_statement
+                FROM information_schema.triggers
+                WHERE trigger_schema = ?
+                  AND trigger_name LIKE 'dmg_seq_%'
+                  AND trigger_name LIKE '%_bi'
+                ORDER BY trigger_name
+                """.trimIndent(), database,
+            )
+        } catch (_: Exception) {
+            return SupportTriggerScanResult(emptyList(), accessible = false)
+        }
+
+        val result = rows.map { row ->
+            val name = row["trigger_name"] as String
+            val timing = row["action_timing"] as? String ?: ""
+            val event = row["event_manipulation"] as? String ?: ""
+            val body = row["action_statement"] as? String ?: ""
+
+            val state = when {
+                !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
+                timing != "BEFORE" || event != "INSERT" -> SupportTriggerState.NON_CANONICAL
+                "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
+                "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
+                else -> SupportTriggerState.CONFIRMED
+            }
+            name to state
+        }
+        return SupportTriggerScanResult(result, accessible = true)
+    }
 }

@@ -30,25 +30,294 @@ class MysqlSchemaReader(
             val lctn = lowerCaseTableNames(conn)
 
             val metaDb = normalizeMysqlMetadataIdentifier(database, lctn)
+            val scope = ReverseScope(catalogName = database, schemaName = database)
 
+            // Phase 1: read base objects (existing paths)
             val tables = readTables(session, metaDb, lctn, notes)
             val views = if (options.includeViews) readViews(session, metaDb) else emptyMap()
             val functions = if (options.includeFunctions) readFunctions(session, metaDb, notes) else emptyMap()
             val procedures = if (options.includeProcedures) readProcedures(session, metaDb, notes) else emptyMap()
             val triggers = if (options.includeTriggers) readTriggers(session, metaDb) else emptyMap()
 
+            // Phase 2: internal sequence support scan
+            val supportSnapshot = scanSequenceSupport(session, metaDb, scope)
+
+            // Phase 3: assemble result — filter support objects, aggregate diagnostics
+            val filteredTables = filterSupportTable(tables, supportSnapshot)
+            val filteredFunctions = filterSupportRoutines(functions, supportSnapshot)
+            val filteredTriggers = filterSupportTriggers(triggers, supportSnapshot)
+            notes += aggregateSupportDiagnostics(supportSnapshot)
+
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.mysqlName(database),
                 version = ReverseScopeCodec.REVERSE_VERSION,
-                tables = tables,
+                tables = filteredTables,
                 views = views,
-                functions = functions,
+                functions = filteredFunctions,
                 procedures = procedures,
-                triggers = triggers,
+                triggers = filteredTriggers,
             )
 
             return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)
         }
+    }
+
+    // ── Sequence support scan (0.9.4 AP 6.1) ──────
+
+    internal fun scanSequenceSupport(
+        session: JdbcOperations,
+        database: String,
+        scope: ReverseScope,
+    ): MysqlSequenceSupportSnapshot {
+        // Step 1: two-phase existence check for dmg_sequences
+        val exists = MysqlMetadataQueries.checkSupportTableExists(session, database)
+        if (exists == null) {
+            return MysqlSequenceSupportSnapshot.nonSequence(scope)
+                .copy(supportTableState = SupportTableState.NOT_ACCESSIBLE)
+        }
+        if (exists == false) {
+            return MysqlSequenceSupportSnapshot.nonSequence(scope)
+        }
+
+        // Step 2: verify canonical column shape
+        val shapeOk = try {
+            MysqlMetadataQueries.checkSupportTableShape(session, database)
+        } catch (_: Exception) {
+            return MysqlSequenceSupportSnapshot.nonSequence(scope)
+                .copy(supportTableState = SupportTableState.NOT_ACCESSIBLE)
+        }
+        if (!shapeOk) {
+            return MysqlSequenceSupportSnapshot(
+                scope = scope,
+                supportTableState = SupportTableState.INVALID_SHAPE,
+                sequenceRows = emptyList(),
+                ambiguousKeys = emptySet(),
+                routineStates = emptyMap(),
+                triggerStates = emptyMap(),
+                diagnostics = listOf(
+                    SupportDiagnostic(
+                        key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
+                        causes = listOf("dmg_sequences column shape is not canonical"),
+                        emitsW116 = true,
+                    )
+                ),
+            )
+        }
+
+        // Step 3: read rows, validate markers, detect conflicts
+        val rawRows = try {
+            MysqlMetadataQueries.listSupportSequenceRows(session, database)
+        } catch (_: Exception) {
+            return MysqlSequenceSupportSnapshot(
+                scope = scope,
+                supportTableState = SupportTableState.NOT_ACCESSIBLE,
+                sequenceRows = emptyList(),
+                ambiguousKeys = emptySet(),
+                routineStates = emptyMap(),
+                triggerStates = emptyMap(),
+                diagnostics = emptyList(),
+            )
+        }
+
+        val sequenceRows = rawRows.map { row ->
+            val managedBy = row["managed_by"] as? String ?: ""
+            val formatVersion = row["format_version"] as? String ?: ""
+            val valid = managedBy == "d-migrate" && formatVersion == "mysql-sequence-v1"
+            SequenceRowSnapshot(
+                name = row["name"] as? String ?: "",
+                nextValue = (row["next_value"] as? Number)?.toLong() ?: 0L,
+                incrementBy = (row["increment_by"] as? Number)?.toLong() ?: 1L,
+                minValue = (row["min_value"] as? Number)?.toLong(),
+                maxValue = (row["max_value"] as? Number)?.toLong(),
+                cycleEnabled = (row["cycle_enabled"] as? Number)?.toInt() == 1,
+                cacheSize = (row["cache_size"] as? Number)?.toInt(),
+                managedBy = managedBy,
+                formatVersion = formatVersion,
+                valid = valid,
+                conflictReason = if (!valid) "invalid markers: managed_by=$managedBy, format_version=$formatVersion" else null,
+            )
+        }
+
+        // Detect ambiguous keys: same name appears multiple times, or mixed validity
+        val byName = sequenceRows.groupBy { it.name }
+        val ambiguousKeys = mutableSetOf<String>()
+        for ((name, rows) in byName) {
+            if (rows.size > 1) {
+                ambiguousKeys += name
+            }
+        }
+
+        // Step 4: targeted routine lookups
+        val routineStates = mapOf(
+            MysqlSequenceNaming.NEXTVAL_ROUTINE to
+                MysqlMetadataQueries.lookupSupportRoutine(session, database, MysqlSequenceNaming.NEXTVAL_ROUTINE),
+            MysqlSequenceNaming.SETVAL_ROUTINE to
+                MysqlMetadataQueries.lookupSupportRoutine(session, database, MysqlSequenceNaming.SETVAL_ROUTINE),
+        )
+
+        // Step 5: targeted trigger lookups
+        val triggerScan = MysqlMetadataQueries.listPotentialSupportTriggers(session, database)
+        val triggerStates = triggerScan.triggers.toMap()
+
+        // Step 6: aggregate diagnostics
+        val diagnostics = buildSupportDiagnostics(
+            scope, sequenceRows, ambiguousKeys, routineStates, triggerStates,
+            triggerScanAccessible = triggerScan.accessible,
+        )
+
+        return MysqlSequenceSupportSnapshot(
+            scope = scope,
+            supportTableState = SupportTableState.AVAILABLE,
+            sequenceRows = sequenceRows,
+            ambiguousKeys = ambiguousKeys,
+            routineStates = routineStates,
+            triggerStates = triggerStates,
+            diagnostics = diagnostics,
+        )
+    }
+
+    private fun buildSupportDiagnostics(
+        scope: ReverseScope,
+        rows: List<SequenceRowSnapshot>,
+        ambiguousKeys: Set<String>,
+        routineStates: Map<String, SupportRoutineState>,
+        triggerStates: Map<String, SupportTriggerState>,
+        triggerScanAccessible: Boolean,
+    ): List<SupportDiagnostic> {
+        val diags = mutableListOf<SupportDiagnostic>()
+
+        // Sequence-level: ambiguous keys
+        for (name in ambiguousKeys) {
+            diags += SupportDiagnostic(
+                key = SequenceDiagnosticKey(scope, name),
+                causes = listOf("multiple rows for sequence key '$name'"),
+                emitsW116 = true,
+            )
+        }
+
+        // Sequence-level: invalid marker rows (non-ambiguous)
+        for (row in rows) {
+            if (row.name !in ambiguousKeys && !row.valid) {
+                diags += SupportDiagnostic(
+                    key = SequenceDiagnosticKey(scope, row.name),
+                    causes = listOf(row.conflictReason ?: "invalid markers"),
+                    emitsW116 = true,
+                )
+            }
+        }
+
+        // Routine-level: not_accessible
+        for ((name, state) in routineStates) {
+            if (state == SupportRoutineState.NOT_ACCESSIBLE) {
+                diags += SupportDiagnostic(
+                    key = SequenceDiagnosticKey(scope, name),
+                    causes = listOf("support routine '$name' is not accessible"),
+                    emitsW116 = true,
+                )
+            }
+        }
+
+        // Trigger-scan-level: entire scan inaccessible
+        if (!triggerScanAccessible) {
+            diags += SupportDiagnostic(
+                key = SequenceDiagnosticKey(scope, "trigger-scan"),
+                causes = listOf("support trigger metadata is not accessible"),
+                emitsW116 = true,
+            )
+        }
+
+        // Trigger-level: degraded states with real table/column from trigger name
+        for ((name, state) in triggerStates) {
+            val (tableName, columnName) = parseTriggerTableColumn(name)
+            when (state) {
+                SupportTriggerState.MISSING_MARKER,
+                SupportTriggerState.NON_CANONICAL,
+                SupportTriggerState.NOT_ACCESSIBLE -> {
+                    diags += SupportDiagnostic(
+                        key = ColumnDiagnosticKey(scope, tableName, columnName),
+                        causes = listOf("support trigger '$name' has state $state"),
+                        emitsW116 = true,
+                    )
+                }
+                SupportTriggerState.CONFIRMED,
+                SupportTriggerState.USER_OBJECT -> { /* no diagnostic */ }
+            }
+        }
+
+        return diags
+    }
+
+    /**
+     * Extracts table and column segments from a canonical support trigger name.
+     * Format: `dmg_seq_<table16>_<column16>_<hash10>_bi`
+     */
+    private fun parseTriggerTableColumn(triggerName: String): Pair<String, String> {
+        // dmg_seq_ = 8 chars, _bi = 3 chars, _hash10 = 11 chars
+        val core = triggerName.removePrefix("dmg_seq_").removeSuffix("_bi")
+        // core = <table16>_<column16>_<hash10>
+        val lastUnderscore = core.lastIndexOf('_')
+        if (lastUnderscore < 0) return triggerName to ""
+        val withoutHash = core.substring(0, lastUnderscore)
+        val midUnderscore = withoutHash.indexOf('_')
+        if (midUnderscore < 0) return withoutHash to ""
+        return withoutHash.substring(0, midUnderscore) to withoutHash.substring(midUnderscore + 1)
+    }
+
+    // ── Support object filtering ───────────────────
+
+    private fun filterSupportTable(
+        tables: Map<String, TableDefinition>,
+        snapshot: MysqlSequenceSupportSnapshot,
+    ): Map<String, TableDefinition> {
+        if (snapshot.supportTableState == SupportTableState.MISSING) return tables
+        // Filter dmg_sequences for AVAILABLE, INVALID_SHAPE, and NOT_ACCESSIBLE
+        // (when existence was legitimated before the access failure)
+        return tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
+    }
+
+    private fun filterSupportRoutines(
+        functions: Map<String, FunctionDefinition>,
+        snapshot: MysqlSequenceSupportSnapshot,
+    ): Map<String, FunctionDefinition> {
+        val confirmed = snapshot.routineStates
+            .filter { it.value == SupportRoutineState.CONFIRMED }
+            .keys
+        if (confirmed.isEmpty()) return functions
+        return functions.filterKeys { it !in confirmed }
+    }
+
+    private fun filterSupportTriggers(
+        triggers: Map<String, TriggerDefinition>,
+        snapshot: MysqlSequenceSupportSnapshot,
+    ): Map<String, TriggerDefinition> {
+        val confirmed = snapshot.triggerStates
+            .filter { it.value == SupportTriggerState.CONFIRMED }
+            .keys
+        if (confirmed.isEmpty()) return triggers
+        return triggers.filterKeys { key ->
+            // trigger keys use ObjectKeyCodec format — extract trigger name
+            confirmed.none { trigName -> key.endsWith(trigName) || key == trigName }
+        }
+    }
+
+    private fun aggregateSupportDiagnostics(
+        snapshot: MysqlSequenceSupportSnapshot,
+    ): List<SchemaReadNote> {
+        return snapshot.diagnostics
+            .filter { it.emitsW116 }
+            .map { diag ->
+                SchemaReadNote(
+                    severity = SchemaReadSeverity.WARNING,
+                    code = "W116",
+                    objectName = when (val k = diag.key) {
+                        is SequenceDiagnosticKey -> k.sequenceName
+                        is ColumnDiagnosticKey -> "${k.tableName}.${k.columnName}"
+                        else -> "unknown"
+                    },
+                    message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
+                    hint = diag.causes.joinToString("; "),
+                )
+            }
     }
 
     // ── Tables ──────────────────────────────────

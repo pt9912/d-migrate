@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.4 - Beta: MySQL-Sequence Reverse-Engineering und Compare
 > **Arbeitspaket**: 6.1 (`Phase D1: Reader-Vertrag und Metadatenzugriff festziehen`)
-> **Status**: Draft (2026-04-21)
+> **Status**: Refined (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 4.1 bis
 > 4.5, Abschnitt 5.1 bis 5.4, Abschnitt 6.1, Abschnitt 6.6, Abschnitt 7
 > und Abschnitt 9;
@@ -48,6 +48,26 @@ Nach 6.1 soll klar gelten:
   einen konsistenten Aggregationspfad
 - D2 und D3 muessen nicht mehr ueber Reader-Grundsatzfragen diskutieren,
   sondern koennen direkt auf eine klare Infrastruktur aufsetzen
+
+---
+
+## 1a. Codebase-Kompatibilitaet (verifiziert 2026-04-21)
+
+Alle Plan-Annahmen wurden gegen den aktuellen Code geprueft:
+
+| Annahme | Ist-Stand |
+|---|---|
+| `SchemaReadResult` hat `notes: List<SchemaReadNote>` | ✓ vorhanden |
+| `SchemaReadNote` hat `severity`, `code`, `objectName`, `message`, `hint` | ✓ vorhanden |
+| `SchemaReadOptions` hat Include-Flags fuer Views/Functions/Procedures/Triggers | ✓ 4 Flags, alle default `true` |
+| `MysqlSchemaReader.read()` sammelt Notes in `mutableListOf` | ✓ bestehender Pfad |
+| `MysqlMetadataQueries` ist ein `object` mit `list*`-Funktionen | ✓ 14 Funktionen |
+| `SchemaDefinition` hat `sequences: Map<String, SequenceDefinition>` | ✓ vorhanden |
+| `MysqlSequenceNaming` hat `SUPPORT_TABLE`, `NEXTVAL_ROUTINE`, `SETVAL_ROUTINE`, `triggerName()`, `isSupportTriggerName()` | ✓ vorhanden |
+| `MysqlSchemaReaderTest` nutzt Mockk mit `JdbcOperations`-Stubs | ✓ 14 bestehende Tests |
+
+Keine oeffentliche API-Aenderung noetig. Alle neuen Typen sind
+reader-intern.
 
 ---
 
@@ -263,28 +283,85 @@ Verbindliche Folge:
 
 `MysqlSchemaReader.read(...)` wird intern in drei Ebenen getrennt:
 
-1. Basismetadaten und allgemeine Objektlisten lesen
-2. Sequence-Support-Scan ausfuehren
-3. Ergebnis aus allgemeinem Schema und Supportdiagnostik zusammensetzen
+1. Basismetadaten und allgemeine Objektlisten lesen (bestehender Pfad)
+2. `scanSequenceSupport(jdbc, scope)` ausfuehren →
+   `MysqlSequenceSupportSnapshot`
+3. Ergebnis zusammensetzen:
+   - bestaetigte Supportobjekte (`dmg_sequences` Tabelle,
+     Support-Routinen, Support-Trigger) aus `SchemaDefinition`
+     herausfiltern
+   - aggregierte Diagnosen in `SchemaReadNote`s ueberfuehren
+   - `SchemaReadResult` mit bereinigtem Schema und Notes zurueckgeben
+
+Konkret fuer die bestehende `read()`-Methode:
+
+```kotlin
+override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
+    return pool.use { conn ->
+        val jdbc = JdbcOperations(conn)
+        val dbName = conn.catalog ?: ...
+        val scope = ReverseScope(catalogName = dbName, schemaName = dbName)
+        val notes = mutableListOf<SchemaReadNote>()
+        val skipped = mutableListOf<SkippedObject>()
+
+        // Phase 1: bestehende Objektlese-Pfade (unveraendert)
+        val tables = readTables(jdbc, dbName, notes)
+        val views = if (options.includeViews) readViews(jdbc, dbName) else null
+        // ... functions, procedures, triggers wie bisher
+
+        // Phase 2: interner Sequence-Support-Scan
+        val supportSnapshot = scanSequenceSupport(jdbc, scope)
+
+        // Phase 3: Ergebnis zusammensetzen
+        val filteredTables = filterSupportObjects(tables, supportSnapshot)
+        val filteredFunctions = filterSupportRoutines(functions, supportSnapshot)
+        val filteredTriggers = filterSupportTriggers(triggers, supportSnapshot)
+        notes += aggregateSupportDiagnostics(supportSnapshot)
+
+        SchemaReadResult(
+            schema = SchemaDefinition(
+                tables = filteredTables,
+                // ... views, functions, procedures, triggers gefiltert
+            ),
+            notes = notes,
+            skippedObjects = skipped,
+        )
+    }
+}
+```
 
 Der Sequence-Support-Scan liefert in 6.1 noch keine fertige
-`SchemaDefinition`, sondern einen internen Snapshot mit mindestens:
-
-- Tabellenform-/Zeilenstatus fuer `dmg_sequences`
-- Routinenstatus fuer `dmg_nextval` und `dmg_setval`
-- Triggerstatus fuer potenzielle Sequence-Support-Trigger
-- Konfliktzustand fuer Sequence-Key-Mehrdeutigkeiten
-- aggregierbare Reverse-Diagnosen
+`SequenceDefinition`-Map, sondern nur den internen
+`MysqlSequenceSupportSnapshot`. Erst 6.2 materialisiert
+`schema.sequences` daraus.
 
 ### 5.2 Query-Vertrag
 
 `MysqlMetadataQueries` wird um gezielte Support-Abfragen erweitert.
-Erwartete Bausteine:
+Konkrete Funktionen (Stil analog zu den bestehenden `list*`-Funktionen
+in `MysqlMetadataQueries`):
 
-- Abfrage fuer `dmg_sequences`-Spaltenform
-- Abfrage fuer `dmg_sequences`-Zeilen
-- gezielte Routine-Lookups fuer `dmg_nextval`/`dmg_setval`
-- gezielte Trigger-Lookups fuer moegliche Support-Trigger
+- `checkSupportTableExists(jdbc, schema)` — Existenzpruefung ueber
+  `information_schema.tables` mit `TABLE_NAME = 'dmg_sequences'` und
+  `TABLE_SCHEMA = ?`. Rueckgabe: `Boolean?` (`true` = vorhanden,
+  `false` = nicht vorhanden, `null` = technisch nicht entscheidbar).
+- `checkSupportTableShape(jdbc, schema)` — Spaltenform-Pruefung ueber
+  `information_schema.columns` mit Abgleich gegen die kanonischen
+  Spaltennamen (`managed_by`, `format_version`, `name`, `next_value`,
+  `increment_by`, `min_value`, `max_value`, `cycle_enabled`,
+  `cache_size`). Rueckgabe: `Boolean` (alle Pflichtspalten vorhanden).
+- `listSupportSequenceRows(jdbc, schema)` — `SELECT * FROM
+  dmg_sequences` mit `TABLE_SCHEMA`-Filterung. Rueckgabe:
+  `List<SequenceRowSnapshot>`.
+- `lookupSupportRoutine(jdbc, schema, routineName)` — gezielter
+  Routine-Lookup ueber `information_schema.routines` mit
+  `ROUTINE_NAME = ?` und Marker-Pruefung im `ROUTINE_DEFINITION`.
+  Rueckgabe: `SupportRoutineState`.
+- `listPotentialSupportTriggers(jdbc, schema)` — Trigger-Lookup
+  ueber `information_schema.triggers` mit `TRIGGER_NAME LIKE
+  'dmg_seq_%_bi'` und `TRIGGER_SCHEMA = ?`. Rueckgabe:
+  `List<Pair<String, SupportTriggerState>>` (Triggername + Status
+  nach Marker-/Body-Pruefung).
 
 Wichtig fuer 6.1:
 
@@ -317,27 +394,86 @@ Wichtig fuer 6.1:
 
 ### 5.3 Support-Snapshot
 
-Empfohlene interne Struktur:
+Konkrete Kotlin-Typen im Paket
+`dev.dmigrate.driver.mysql`:
 
-- `supportTableState`
-  - `missing`
-  - `available`
-  - `invalid_shape`
-  - `not_accessible`
-- `sequenceRows`
-  - rohe Zeilen
-  - vorvalidierte Zeilen
-  - Konflikt-/Mehrdeutigkeitsmarken
-- `routineState`
-  - pro Support-Routine: `confirmed`, `missing`, `not_accessible`
-- `triggerState`
-  - pro potenziellem Support-Trigger:
-    `confirmed`, `missing_marker`, `not_accessible`,
-    `non_canonical`, `user_object`
-- `diagnostics`
-  - aggregierbare Vorstufe fuer spaetere `SchemaReadNote`s
+```kotlin
+/** Kanonischer Namensraum eines Reader-Laufs. */
+data class ReverseScope(
+    val catalogName: String?,   // MySQL: database name
+    val schemaName: String,     // MySQL: database name (identisch)
+)
 
-Der genaue Typname ist offen; wichtig ist die funktionale Trennung.
+/** Aggregationsschluessel fuer Sequence-Diagnosen. */
+data class SequenceDiagnosticKey(
+    val scope: ReverseScope,
+    val sequenceName: String,
+)
+
+/** Aggregationsschluessel fuer Spalten-Diagnosen. */
+data class ColumnDiagnosticKey(
+    val scope: ReverseScope,
+    val tableName: String,
+    val columnName: String,
+)
+
+/** Status der dmg_sequences Support-Tabelle. */
+enum class SupportTableState {
+    MISSING,          // Tabelle existiert nicht (technisch sicher)
+    AVAILABLE,        // Tabelle vorhanden und lesbar
+    INVALID_SHAPE,    // Tabelle vorhanden, Spaltenform nicht kanonisch
+    NOT_ACCESSIBLE,   // Existenzfrage nicht entscheidbar oder Zugriff verweigert
+}
+
+/** Status einer einzelnen Support-Routine. */
+enum class SupportRoutineState {
+    CONFIRMED,        // Routine vorhanden, Marker und Signatur geprueft
+    MISSING,          // Routine nicht gefunden
+    NOT_ACCESSIBLE,   // Rechte-/Lookup-Fehler
+}
+
+/** Status eines potenziellen Support-Triggers. */
+enum class SupportTriggerState {
+    CONFIRMED,        // Marker + Body kanonisch
+    MISSING_MARKER,   // Name passt, Marker fehlt
+    NON_CANONICAL,    // Marker vorhanden, Body nicht kanonisch lesbar
+    NOT_ACCESSIBLE,   // Rechte-/Lookup-Fehler
+    USER_OBJECT,      // Namenskonflikt mit Nutzerobjekt
+}
+
+/** Vorvalidierte dmg_sequences-Zeile. */
+data class SequenceRowSnapshot(
+    val name: String,
+    val nextValue: Long,
+    val incrementBy: Long,
+    val minValue: Long?,
+    val maxValue: Long?,
+    val cycleEnabled: Boolean,
+    val cacheSize: Int?,
+    val managedBy: String,
+    val formatVersion: String,
+    val valid: Boolean,           // Marker/Schema-Pruefung bestanden
+    val conflictReason: String?,  // null wenn eindeutig
+)
+
+/** Aggregierbare Diagnosebasis (Vorstufe fuer SchemaReadNote). */
+data class SupportDiagnostic(
+    val key: Any,                 // SequenceDiagnosticKey oder ColumnDiagnosticKey
+    val causes: List<String>,     // technische Einzelursachen
+    val emitsW116: Boolean,       // ob nach Aggregation W116 erzeugt wird
+)
+
+/** Gesamter interner Support-Snapshot. */
+data class MysqlSequenceSupportSnapshot(
+    val scope: ReverseScope,
+    val supportTableState: SupportTableState,
+    val sequenceRows: List<SequenceRowSnapshot>,
+    val ambiguousKeys: Set<String>,   // blockierte Sequence-Namen
+    val routineStates: Map<String, SupportRoutineState>,  // dmg_nextval, dmg_setval
+    val triggerStates: Map<String, SupportTriggerState>,  // trigger-name -> status
+    val diagnostics: List<SupportDiagnostic>,
+)
+```
 
 Semantik von `supportTableState`:
 

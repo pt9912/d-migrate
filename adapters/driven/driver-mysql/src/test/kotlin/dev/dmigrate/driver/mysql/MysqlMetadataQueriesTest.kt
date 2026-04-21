@@ -252,4 +252,99 @@ class MysqlMetadataQueriesTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns emptyList()
         MysqlMetadataQueries.listTableRefs(jdbc, "empty").shouldBeEmpty()
     }
+
+    // ── Sequence-support queries (0.9.4 AP 6.1) ──────────
+
+    test("checkSupportTableExists returns true when dmg_sequences is present") {
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb") shouldBe true
+    }
+
+    test("checkSupportTableExists returns false when dmg_sequences is absent") {
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns null
+        MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb") shouldBe false
+    }
+
+    test("checkSupportTableExists returns null on permission error") {
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } throws
+            RuntimeException("access denied")
+        MysqlMetadataQueries.checkSupportTableExists(jdbc, "mydb").shouldBeNull()
+    }
+
+    test("checkSupportTableShape returns true when all required columns are present") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe true
+    }
+
+    test("checkSupportTableShape returns false when columns are missing") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "data_type" !in it }, any(), any()) } returns
+            listOf(mapOf("column_name" to "name"), mapOf("column_name" to "value"))
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
+    }
+
+    test("lookupSupportRoutine returns CONFIRMED when marker is present") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
+            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.CONFIRMED
+    }
+
+    test("lookupSupportRoutine returns MISSING when routine does not exist") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.MISSING
+    }
+
+    test("lookupSupportRoutine returns MISSING when marker is absent (user object)") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
+            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "BEGIN RETURN 1; END")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.MISSING
+    }
+
+    test("lookupSupportRoutine returns NOT_ACCESSIBLE on permission error") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } throws
+            RuntimeException("access denied")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.NOT_ACCESSIBLE
+    }
+
+    test("listPotentialSupportTriggers returns CONFIRMED for valid trigger") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to "dmg_seq_orders_invoice_number_7b0a7b2f55_bi",
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "action_statement" to "/* d-migrate:mysql-sequence-v1 object=sequence-trigger */ IF NEW.invoice_number IS NULL THEN SET NEW.invoice_number = dmg_nextval('invoice_seq'); END IF;"),
+        )
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.accessible shouldBe true
+        result.triggers shouldHaveSize 1
+        result.triggers[0].second shouldBe SupportTriggerState.CONFIRMED
+    }
+
+    test("listPotentialSupportTriggers returns MISSING_MARKER when marker absent") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "action_statement" to "BEGIN SET NEW.col = 1; END"),
+        )
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.triggers[0].second shouldBe SupportTriggerState.MISSING_MARKER
+    }
+
+    test("listPotentialSupportTriggers returns NON_CANONICAL for wrong timing") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
+                "action_timing" to "AFTER", "event_manipulation" to "INSERT",
+                "action_statement" to "/* d-migrate:mysql-sequence-v1 */ dmg_nextval"),
+        )
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.triggers[0].second shouldBe SupportTriggerState.NON_CANONICAL
+    }
+
+    test("listPotentialSupportTriggers returns not accessible on query failure") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } throws
+            RuntimeException("access denied")
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+        result.accessible shouldBe false
+        result.triggers.shouldBeEmpty()
+    }
 })
