@@ -4,7 +4,7 @@
 > **Arbeitspaket**: 6.5 (`Phase E2: Doku- und Vertragsnachzug`)
 > **Status**: Draft (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 6.5,
-> Abschnitt 6.6, Abschnitt 7 und Abschnitt 9;
+> Abschnitt 7 und Abschnitt 9;
 > `docs/ImpPlan-0.9.4-6.1.md`;
 > `docs/ImpPlan-0.9.4-6.2.md`;
 > `docs/ImpPlan-0.9.4-6.3.md`;
@@ -235,6 +235,17 @@ Jeder E2-Schritt muss ein sichtbares, reviewbares Artefakt erzeugen:
 - Guide-Nachzug als konkrete Nutzerhinweise
 - Ledger-Nachzug als bestaetigter `W116`-Eintrag mit passender Evidenz
 
+Empfohlene Review- und Commit-Strategie fuer E2:
+
+- `E2a` und `E2b` bevorzugt zuerst, damit Status- und Fachvertrag
+  stabilisiert sind
+- `E2c` danach auf Basis des konsolidierten Vertragsstandes
+- `E2d` zuletzt als nutzerorientierte Verdichtung des finalen
+  CLI-/Vertragsstandes
+- Commits duerfen pro Dokument oder als kleiner logisch
+  zusammenhaengender Doku-Schnitt erfolgen; entscheidend ist, dass
+  jeder Schritt als reviewbares Artefakt separat nachvollziehbar bleibt
+
 ### 5.4 Konsistenzregeln zwischen den Dokumenten
 
 Fuer E2 gilt:
@@ -276,6 +287,11 @@ Done-Kriterien fuer E2-0:
 - den sichtbaren Status mindestens auf `AP 6.1-6.4 Done` anheben,
   damit `roadmap.md` nicht auf einem aelteren Zwischenstand stehen
   bleibt
+- dabei explizit entscheiden, wie die 0.9.4-AP-Nummerierung in der
+  Roadmap sichtbar gemacht wird:
+  - entweder durch eine eigene Statusspalte fuer die 0.9.4-Tabelle
+  - oder durch einen klaren Statustext, der `AP 6.1-6.4` eindeutig auf
+    0.9.4 bezieht
 
 Done-Kriterien fuer E2a:
 
@@ -402,16 +418,23 @@ Pflichtfaelle fuer 6.5:
 Maschinell gestuetzte Mindestchecks sind fuer E2 sinnvoll, auch wenn
 die Hauptverifikation redaktionell bleibt:
 
-- ein einfacher Check darf absichern, dass in `docs/cli-spec.md` nach
-  E2 keine Kombination aus `W116` und `reserviert` mehr stehenbleibt
-- ein einfacher Check darf absichern, dass `ledger/warn-code-ledger-
-  0.9.4.yaml` und `docs/cli-spec.md` beide `W116` auf aktivem 0.9.4-
-  Stand fuehren
+- `rg -n "W116.*[Rr]eserviert|[Rr]eserviert.*W116" docs/cli-spec.md`
+  liefert nach E2 keinen Treffer mehr
+- `rg -n "W116" docs/guide.md` liefert nach E2 mindestens einen
+  nutzerrelevanten Treffer
+- ein einfacher Check darf absichern, dass
+  `ledger/warn-code-ledger-0.9.4.yaml` und `docs/cli-spec.md` beide
+  `W116` auf aktivem 0.9.4-Stand fuehren
 
 Akzeptanzkriterium fuer 6.5:
 
 - der 0.9.4-Nutzer- und Vertragsstand zu MySQL-Sequence-Reverse,
   Compare und `W116` ist projektweit konsistent dokumentiert.
+
+Gesamt-Gate fuer 6.5:
+
+- 6.5 gilt erst dann als abgeschlossen, wenn `E2f` erledigt ist und
+  alle Pflichtfaelle aus Abschnitt 7 bestanden haben
 
 ---
 
@@ -508,5 +531,8 @@ Risiko:
 
 Gegenmassnahme:
 
-- E2 erst gegen die finalen Teilplaene abgleichen
+- vor dem finalen E2-Schnitt gezielt pruefen, ob nach dem letzten
+  relevanten Teilplan-Commit noch fachliche Aenderungen an
+  Reverse/Compare eingeflossen sind, die den Vertragsstand verschieben
+- E2 erst gegen diesen tatsaechlich letzten Fachstand abgleichen
 - `E2f` als bewussten Konsistenz- und Gegenleseschritt behandeln
