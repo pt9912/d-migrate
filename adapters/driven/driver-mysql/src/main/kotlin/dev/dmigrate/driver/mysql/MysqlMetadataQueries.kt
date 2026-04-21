@@ -469,6 +469,7 @@ object MysqlMetadataQueries {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
                 !timing.equals("BEFORE", ignoreCase = true) || !event.equals("INSERT", ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
                 "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
+                "object=sequence-trigger" !in body -> SupportTriggerState.NON_CANONICAL
                 "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
                 column == null || sequence == null -> SupportTriggerState.NON_CANONICAL
                 // Guard: NEW.<column> IS NULL must reference the same column

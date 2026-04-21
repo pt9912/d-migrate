@@ -432,21 +432,9 @@ class MysqlSchemaReader(
             }
         }
 
-        // D1 trigger/scan diagnostics — pass through only ColumnDiagnosticKey
-        // entries (trigger-level). Skip all SequenceDiagnosticKey entries since D2
-        // handles ambiguity, invalid rows, and routine diagnostics itself.
-        if (sequences.isNotEmpty()) {
-            for (diag in snapshot.diagnostics.filter { it.emitsW116 && it.key is ColumnDiagnosticKey }) {
-                val k = diag.key as ColumnDiagnosticKey
-                allNotes += SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "W116",
-                    objectName = "${k.tableName}.${k.columnName}",
-                    message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
-                    hint = diag.causes.joinToString("; "),
-                )
-            }
-        }
+        // D1 trigger/column diagnostics are NOT passed through here.
+        // D3 (materializeSequenceDefaults) owns all trigger-level W116 emission
+        // to prevent double-emission for the same column.
 
         return D2Result(sequences, allNotes)
     }
@@ -576,10 +564,11 @@ class MysqlSchemaReader(
             val tableAssignments = assignments[tableName] ?: return@mapValues tableDef
             val enrichedColumns = tableDef.columns.mapValues { (colName, colDef) ->
                 val seqName = tableAssignments[colName] ?: return@mapValues colDef
-                // Check for conflicting existing default
+                // Check for conflicting existing default — only null or identical SequenceNextVal are compatible
                 val existingDefault = colDef.default
-                if (existingDefault != null && existingDefault !is DefaultValue.SequenceNextVal) {
-                    // Conflicting user default — do not overwrite, degrade
+                val compatible = existingDefault == null ||
+                    (existingDefault is DefaultValue.SequenceNextVal && existingDefault.sequenceName == seqName)
+                if (!compatible) {
                     addColumnCause(tableName, colName, "confirmed trigger but column has conflicting default '$existingDefault'")
                     colDef
                 } else {

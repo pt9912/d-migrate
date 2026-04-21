@@ -1178,6 +1178,41 @@ class MysqlSchemaReaderTest : FunSpec({
         d3.notes.any { it.code == "W116" && "orders.invoice_number" in it.objectName } shouldBe true
     }
 
+    test("D3: conflicting SequenceNextVal with different sequence produces W116") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger,
+                default = DefaultValue.SequenceNextVal("other_seq")),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        // Different sequence → conflict, not overwritten
+        val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
+        col.default shouldBe DefaultValue.SequenceNextVal("other_seq")
+        d3.notes.any { it.code == "W116" && "conflicting" in (it.hint ?: "") } shouldBe true
+    }
+
+    test("D3: identical SequenceNextVal default is compatible (no conflict)") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger,
+                default = DefaultValue.SequenceNextVal("invoice_seq")),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
+        col.default shouldBe DefaultValue.SequenceNextVal("invoice_seq")
+        d3.notes.none { it.code == "W116" } shouldBe true
+    }
+
     test("D3: conflicting existing default produces W116, no overwrite") {
         val tables = makeTable(
             "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
