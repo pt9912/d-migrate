@@ -64,8 +64,8 @@ Der Compare-Unterbau ist fuer 0.9.4 bereits weit vorbereitet:
   Table-/Column-Vergleichspfad auf Neutralmodell-Ebene mitabgedeckt
 - `ResolvedSchemaOperand` und `OperandInfo` koennen Validation,
   Reverse-Notes und `skippedObjects` bereits transportieren
-- `SchemaCompareRunner` fuehrt operandseitige Reverse-Notes in Plain
-  bereits auf `stderr` aus
+- `SchemaCompareRunner` fuehrt operandseitige Reverse-Notes bei
+  `--output-format plain` bereits auf `stderr` aus
 - das Compare-Dokument in `SchemaCompareProjection.kt`
   (`SchemaCompareDocument`) enthaelt schon `sourceOperand` und
   `targetOperand`
@@ -210,6 +210,17 @@ Verbindliche Folge:
 - Reverse-Notes werden nicht kuenstlich in Validation-Warnungen
   umetikettiert
 
+### 4.6 E1 darf vor fertigem D1-D3-Vertrag mit synthetischen Operand-Notes testen
+
+Verbindliche Folge:
+
+- E1 bleibt in seiner Compare-Arbeit nicht blockiert, wenn D1 bis D3
+  die finale `W116`-Emission noch nicht vollstaendig liefern
+- bis dahin sind synthetische Operand-Notes als Testeingang fuer
+  Runner-, Renderer- und Exit-Code-Vertraege zulaessig
+- sobald D1 bis D3 die echte Reverse-Emission liefern, muessen diese
+  Testfaelle auf reale Reverse-Operanden gespiegelt oder ersetzt werden
+
 ---
 
 ## 5. Zielarchitektur fuer 6.4
@@ -340,7 +351,8 @@ kaschiert.
 Done-Kriterien fuer E1-0:
 
 - Compare-Ist-Stand fuer Validation, Notes, `skippedObjects` und
-  Exit-Codes ist dokumentiert
+  Exit-Codes ist im E1-Aufgabenschnitt oder in begleitenden
+  Testfixtures explizit festgehalten
 - offene E1a-/E1b-Luecken sind als konkrete Codepfade benannt
 - fuer E1 ist entschieden, ob Tests bereits auf echte D1-D3-`W116`-
   Emission aufsetzen koennen oder voruebergehend mit synthetischen
@@ -365,9 +377,14 @@ Done-Kriterien fuer E1a:
 - ein eventuell noetiger Compare-Eingriff bleibt minimal und
   neutralmodellbasiert
 - der semantische Vertrag "operandseitiges `W116` ist Diagnose, kein
-  Diff" ist im Runner-Code explizit abgesichert
+  Diff" ist im Runner-Code explizit durch Guard-Struktur und
+  Dokumentaufbau abgesichert, nicht nur implizit durch Testverhalten
 - der Bau von `CompareValidation` ist explizit gegen das Einschleusen
   von Reverse-Notes abgesichert
+- falls `SchemaComparator` wider Erwarten nicht diff-stabil ist, ist
+  die Eskalation dokumentiert:
+  - erst Reverse-Ursache in D1 bis D3 pruefen
+  - erst danach minimalen neutralmodellbasierten Compare-Fix zulassen
 
 ### E1b Renderer- und Output-Nachzug umsetzen
 
@@ -448,7 +465,7 @@ Abhaengigkeiten:
 Pflichtfaelle fuer 6.4:
 
 1. Neutral vs. reverse ist fuer intakte MySQL-Sequence-Emulation
-   diff-frei.
+   ohne operandseitiges `W116` diff-frei.
 2. Geaenderte Sequence-Metadaten fuehren zu genau
    `sequencesChanged`.
 3. Hilfsobjekt-Rauschen taucht nach D2/D3 im Compare nicht mehr als
@@ -477,6 +494,9 @@ Pflichtfaelle fuer 6.4:
     operandseitige Reverse-Notes.
 14. Ein Compare mit operandseitigem `W116`, aber identischem neutralem
     Modell, bleibt diff-frei.
+15. JSON/YAML enthalten operandseitige Notes nicht innerhalb von
+    `validation`, sondern ausschliesslich unter `sourceOperand` bzw.
+    `targetOperand`.
 
 Akzeptanzkriterium fuer 6.4:
 
@@ -492,6 +512,7 @@ Voraussichtlich direkt betroffen:
 
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunner.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaCompareProjection.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandResolver.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererJson.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererYaml.kt`
 - `hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunnerTest.kt`
@@ -501,7 +522,6 @@ Als fachliche Zieltypen bzw. konsumierte Vertragsanbieter relevant,
 aber voraussichtlich nicht direkt zu aendern:
 
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandResolver.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ResolvedSchemaOperand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererPlain.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
