@@ -11,10 +11,10 @@
 
 ## Aktueller Ist-Stand / Abgleich
 
-- `W111` wird aktuell bereits in [ViewQueryTransformer](/Development/d-migrate/adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/ViewQueryTransformer.kt) sowie in
-  [ViewQueryTransformerTest](/Development/d-migrate/adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/ViewQueryTransformerTest.kt) und
-  [PostgresDdlGeneratorTest](/Development/d-migrate/adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorTest.kt) verwendet.
-- Der aktuelle `warn-code-ledger-0.9.2.yaml` und `warn-code-ledger-0.9.3.yaml` enthalten `W111` aktuell nicht.
+- `W111` wird aktuell bereits in [ViewQueryTransformer](../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/ViewQueryTransformer.kt) sowie in
+  [ViewQueryTransformerTest](../adapters/driven/driver-common/src/test/kotlin/dev/dmigrate/driver/ViewQueryTransformerTest.kt) und
+  [PostgresDdlGeneratorTest](../adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDdlGeneratorTest.kt) verwendet.
+- Die aktuellen `warn-code-ledger-0.9.2.yaml` und `warn-code-ledger-0.9.3.yaml` enthalten `W111` aktuell nicht.
 - Deshalb ist die Umsetzung in diesem Dokument so formuliert, dass `W111` zunächst als dokumentierte Voraussetzung betrachtet wird und vor Aktivierung des neuen Adapters im Zielversion-Ledger eindeutig hinterlegt wird.
 
 ## Architekturentscheidungen (verbindlich)
@@ -24,12 +24,12 @@
   - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlQueryTransformPort.kt`
   - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlTransformRequest.kt`
   - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlTransformResult.kt`
-  - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlQueryTransformationWarning.kt`
-  - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlQueryTransformError.kt`
+  - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlTransformWarning.kt`
+  - `hexagon/ports/src/main/kotlin/dev/dmigrate/driver/sql/SqlTransformError.kt`
 - Adapter-Implementierung liegt in `adapters/driven/driver-common`:
   - `adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/JSqlParserQueryTransformer.kt`
 - `ViewQueryTransformer` bleibt Fassade und hängt über den Port an die Adapter-Transformation.
-- Bestehende Aufrufer wie [PostgresRoutineDdlHelper](/Development/d-migrate/adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresRoutineDdlHelper.kt) behalten die Aufrufform. Für neue Fallback/Failure-Funktionalität werden gezielte, nicht-invasive Überladungen ergänzt.
+- Bestehende Aufrufer wie [PostgresRoutineDdlHelper](../adapters/driven/driver-postgresql/src/main/kotlin/dev/dmigrate/driver/postgresql/PostgresRoutineDdlHelper.kt) behalten die Aufrufform. Für neue Fallback/Failure-Funktionalität werden gezielte, nicht-invasive Überladungen ergänzt.
 
 ## Port-Vertrag (verbindlich)
 
@@ -200,7 +200,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
   - `d_migrate_sql_transform_failure_total{mode,target_dialect,source_dialect,error_code}`
   - `d_migrate_sql_transform_fallback_total{mode,target_dialect,source_dialect,fallback_reason="parser_error|legacy_error|legacy_success"}`
   - `d_migrate_sql_transform_duration_ms_bucket{status="success|failure",mode,target_dialect,source_dialect}`
-- `fallback_attempt_total = sum_fallback_total` über alle `fallback_reason`.
+- `fallback_attempt_total = sum(d_migrate_sql_transform_fallback_total)` über alle `fallback_reason`.
 - `fallback_rate = fallback_attempt_total / attempts_total` mit Filter `mode="FALLBACK_ALLOWED"`.
 - `legacy_fallback_failure_rate = d_migrate_sql_transform_failure_total{fallback_reason="legacy_error"} / d_migrate_sql_transform_attempts_total` mit gleichem Mode-Filter.
 - Initiale Schwellwerte (nach Pilotlauf anhand realer Baseline anpassen):
@@ -256,7 +256,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
   - `sourceDialect = null` ist kein Fehler im User-Output-Pfad.
   - `sourceDialect` ungültig -> `INPUT_VALIDATION`.
   - `STRICT` + ungültiges SQL -> `SqlTransformFailure` mit passendem Error-Code.
-  - `FALLBACK_ALLOWED` + SQL-Fehler + Parsererfolg -> `SqlTransformSuccess(fallbackUsed=true)`.
+  - `FALLBACK_ALLOWED` + JSqlParser-Fehler + Legacy-Erfolg -> `SqlTransformSuccess(fallbackUsed=true)`.
   - `FALLBACK_ALLOWED` + Fehler in Parser und Legacy -> `SqlTransformFailure(code = LEGACY_FALLBACK_ERROR)`.
   - deterministische `W111` inkl. `sourceFunction` und `position`.
   - `FALLBACK_ALLOWED` + Legacy-Erfolg -> `W198` automatisch in `warnings` enthalten.
@@ -285,7 +285,7 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
 - Performance-Overhead auf großen Views.
   - Gegenmaßnahme: Dauer-Histogramm + Regressionstests nach Länge/Komplexität.
 - `W198` bleibt technisch, bis Stabilität nachgewiesen ist.
-  - Gegenmaßnahme: separatem technischen Metrikpfad, keine aktive Nutzer-Ausgabe vor `active`.
+  - Gegenmaßnahme: separater technischer Metrikpfad, keine aktive Nutzer-Ausgabe vor `active`.
 
 ## Nächster Schritt
 
