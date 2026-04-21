@@ -258,6 +258,10 @@ object MysqlMetadataQueries {
     /**
      * Verifies the canonical column shape of dmg_sequences including
      * type semantics (D2 requirement).
+     *
+     * Currently validates DATA_TYPE against allowed type classes.
+     * COLUMN_TYPE is read for future use (e.g. bit(1) disambiguation)
+     * but not yet evaluated — this is a conservative 0.9.4 decision.
      */
     fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
         val actualColumns = session.queryList(

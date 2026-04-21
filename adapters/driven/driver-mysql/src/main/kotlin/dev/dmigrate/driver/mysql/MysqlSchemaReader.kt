@@ -187,16 +187,23 @@ class MysqlSchemaReader(
         }
 
         val sequenceRows = rawRows.map { row ->
+            val rawMinValue = row["min_value"]
+            val rawMaxValue = row["max_value"]
+            val rawCacheSize = row["cache_size"]
             SequenceRowSnapshot(
                 name = (row["name"] as? String),
                 nextValue = safeLong(row["next_value"]),
                 incrementBy = safeLong(row["increment_by"]),
-                minValue = safeLong(row["min_value"]),
-                maxValue = safeLong(row["max_value"]),
+                minValue = safeLong(rawMinValue),
+                maxValue = safeLong(rawMaxValue),
                 cycleEnabledRaw = safeInt(row["cycle_enabled"]),
-                cacheSize = safeInt(row["cache_size"]),
+                cacheSize = safeInt(rawCacheSize),
                 managedBy = (row["managed_by"] as? String),
                 formatVersion = (row["format_version"] as? String),
+                // Overflow: source was non-null but conversion failed
+                minValueOverflow = rawMinValue != null && safeLong(rawMinValue) == null,
+                maxValueOverflow = rawMaxValue != null && safeLong(rawMaxValue) == null,
+                cacheSizeOverflow = rawCacheSize != null && safeInt(rawCacheSize) == null,
             )
         }
 
@@ -309,7 +316,21 @@ class MysqlSchemaReader(
                 continue
             }
 
+            // Validate min_value/max_value — SQL NULL ok, overflow invalid
+            if (row.minValueOverflow) {
+                invalids += InvalidEvidence(name, "min_value exceeds Long range")
+                continue
+            }
+            if (row.maxValueOverflow) {
+                invalids += InvalidEvidence(name, "max_value exceeds Long range")
+                continue
+            }
+
             // Validate cache_size — null ok, negative invalid, overflow invalid
+            if (row.cacheSizeOverflow) {
+                invalids += InvalidEvidence(name, "cache_size exceeds Int range")
+                continue
+            }
             val cacheSize = row.cacheSize
             if (cacheSize != null && cacheSize < 0) {
                 invalids += InvalidEvidence(name, "cache_size = $cacheSize is negative")
@@ -381,9 +402,11 @@ class MysqlSchemaReader(
             }
         }
 
-        // D1 trigger/scan diagnostics — pass through when sequences were materialized
+        // D1 trigger/scan diagnostics — pass through when sequences were materialized.
+        // Skip ambiguous-key diagnostics (already emitted above by D2).
         if (sequences.isNotEmpty()) {
-            for (diag in snapshot.diagnostics.filter { it.emitsW116 }) {
+            val ambiguousSeqKeys = snapshot.ambiguousKeys.map { SequenceDiagnosticKey(snapshot.scope, it) }.toSet()
+            for (diag in snapshot.diagnostics.filter { it.emitsW116 && it.key !in ambiguousSeqKeys }) {
                 allNotes += SchemaReadNote(
                     severity = SchemaReadSeverity.WARNING,
                     code = "W116",

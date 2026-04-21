@@ -71,6 +71,10 @@ data class SequenceRowSnapshot(
     val cacheSize: Int?,
     val managedBy: String?,
     val formatVersion: String?,
+    // Raw indicators: true = source column had a non-null value that could not be converted
+    val minValueOverflow: Boolean = false,
+    val maxValueOverflow: Boolean = false,
+    val cacheSizeOverflow: Boolean = false,
 )
 
 /** Diagnostic key: either sequence-level or column-level. */
