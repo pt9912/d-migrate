@@ -22,7 +22,7 @@ entries:
     level: warning
     status: active
     entry_type: standard
-    test_path: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt"
+    test_path: "test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt"
     evidence_paths:
       - source: "adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt"
         path_type: production
@@ -32,6 +32,14 @@ entries:
         path_type: production
       - source: "adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererYaml.kt"
         path_type: production
+      - source: "adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt"
+        path_type: test
+      - source: "hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaCompareRunnerTest.kt"
+        path_type: test
+      - source: "adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/CliSchemaCompareTest.kt"
+        path_type: test
+      - source: "test/integration-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceEmulationIntegrationTest.kt"
+        path_type: test
 
   - code: W117
     level: warning

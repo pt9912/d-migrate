@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden), `schema reverse` (0.6.0) und `data transfer` (0.6.0).
+> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose und `source_operand`/`target_operand`), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse mit `W116`) und `data transfer` (0.6.0).
 
 ---
 
@@ -397,7 +397,7 @@ Sequence-spezifische Ausgaben (0.9.3, `--mysql-named-sequences`):
 - **E124** (Namenskollision): Ein neutrales Schema-Objekt kollidiert mit einem reservierten Support-Objektnamen (`dmg_sequences`, `dmg_nextval`, `dmg_setval`).
 - **W114** (Cache nicht emuliert): Sequence hat `cache`-Wert, der im `helper_table`-Modus nur als Metadatum gespeichert, aber nicht als Preallocation umgesetzt wird.
 - **W115** (Lossy Trigger-Semantik): `SequenceNextVal` auf einer Spalte nutzt MySQL-Trigger; explizites `NULL` wird wie ein ausgelassener Wert behandelt.
-- **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse rekonstruiert, aber erforderliche Support-Objekte (Routinen/Trigger) fehlen. Reserviert fuer `schema reverse` (0.9.4).
+- **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse aus `dmg_sequences` rekonstruiert, aber erforderliche Support-Objekte (Routinen und/oder Trigger) fehlen oder sind nicht kanonisch. Die Sequence ist dann rekonstruierbar, aber nicht voll betriebsfaehig. `W116` erscheint als Reverse-Note auf Sequence- oder Spaltenebene. Bei `schema compare` bleibt `W116` eine operandseitige Diagnose: es erzeugt keinen eigenen Diff-Eintrag und beeinflusst den Exit-Code nicht (Exit folgt nur aus Validation oder echtem Schema-Diff). Aktiv seit 0.9.4.
 - **W117** (Transaktionsgebundene Werte): Sequence-Werte im `helper_table`-Modus werden bei Rollback zurueckgerollt — anders als native PostgreSQL-Sequences.
 
 **`--split`** (0.9.2): Steuert den DDL-Ausgabemodus.
@@ -527,12 +527,22 @@ damit sie nicht mit Dateipfaden kollidieren.
 
 **Ausgabeverhalten**:
 - **stdout**: Diff-Ausgabe im Textformat (wenn kein `--output`)
-- **stderr**: Fehler und ggf. Fortschrittshinweise
+- **stderr**: Fehler, Fortschrittshinweise und operandseitige Diagnose-Notes (z.B. `W116`) im Plain-Modus
 - **`--output`**: Diff-Ergebnis in Datei statt stdout (Format folgt `--output-format`)
 - **`--output-format json|yaml`**: Diff als strukturiertes JSON bzw. YAML
 
+**Operandseitige Diagnose (seit 0.9.4)**: Wenn ein Operand ein `db:`-Reverse-Ergebnis ist, koennen operandseitige Notes und uebersprungene Objekte auftreten (z.B. `W116` bei fehlenden MySQL-Sequence-Supportobjekten). Diese Diagnose wird additiv im strukturierten Output transportiert:
+
+- `source_operand` und `target_operand` sind optionale Felder im JSON-/YAML-Dokument (nur gesetzt, wenn der jeweilige Operand Metadaten traegt)
+- Jedes Feld enthaelt:
+  - `reference`: Operand-Referenz (Dateipfad oder Connection-URL, maskiert)
+  - `notes`: Liste operandseitiger Diagnose-Eintraege (z.B. `W116`)
+  - `skipped_objects`: Liste uebersprungener Objekte des Operanden
+- Im Plain-Modus erscheinen operandseitige Notes zusaetzlich auf `stderr`
+- Operandseitige Notes beeinflussen den Compare-Exit-Code **nicht**: `W116` allein erzeugt weder Exit 1 noch Exit 3/4/7. Exit-Codes folgen ausschliesslich aus Validation-Fehlern oder echtem Schema-Diff.
+
 **Exit-Codes**:
-- `0`: Schemas identisch (keine Unterschiede)
+- `0`: Schemas identisch (keine Unterschiede; auch bei operandseitigen Warnungen wie `W116`)
 - `1`: Unterschiede gefunden (zur Nutzung in Scripting: `if d-migrate schema compare ...`)
 - `2`: Ungültige CLI-Argumente
 - `3`: Schema-Validierung fehlgeschlagen
@@ -1196,6 +1206,6 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ---
 
-**Version**: 1.5
-**Stand**: 2026-04-14
-**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden), `schema reverse` (0.6.0) und `data transfer` (0.6.0) implementiert
+**Version**: 1.6
+**Stand**: 2026-04-21
+**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse) und `data transfer` (0.6.0) implementiert
