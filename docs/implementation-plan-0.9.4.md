@@ -207,6 +207,13 @@ Verbindliche Entscheidung:
 - fuer die interne Erkennung der Sequence-Emulation darf
   `MysqlSchemaReader` Support-Routinen und Support-Trigger auch dann
   inspizieren, wenn die entsprechenden Include-Flags `false` sind
+- fehlende Rechte auf Routine-/Trigger-Metadaten duerfen dabei einen
+  ansonsten erfolgreichen Reverse-Lauf **nicht** in einen Hard-Error
+  eskalieren, solange Tabellenmetadaten und `dmg_sequences` lesbar
+  bleiben
+- stattdessen gilt bei Metadatenzugriffen auf Support-Routinen oder
+  Support-Trigger: "best effort reverse mit degradiertem Ergebnis"
+  statt "kompletter Abbruch"
 
 Begruendung:
 
@@ -214,6 +221,9 @@ Begruendung:
   Sequence-Reverse nicht von diesen Flags abhaengt
 - ohne diese Entkopplung waere Round-Trip-Verhalten fragil und fuer
   Nutzer schwer nachvollziehbar
+- in Read-only- oder eingeschraenkten DB-Accounts waere ein
+  Rechtefehler auf Trigger-/Routinen-Metadaten sonst ein unnoetiger
+  Bruch fuer bestehende Reverse-Szenarien
 
 ### 4.4 Degradierte Zustaende werden als `W116` sichtbar, nicht still kaschiert
 
@@ -222,6 +232,9 @@ Verbindliche Entscheidung:
 - wenn `dmg_sequences` gueltig ist, aber benoetigte Supportobjekte
   fehlen oder nicht kanonisch sind, wird Reverse nicht komplett
   abgebrochen
+- derselbe degradierte Pfad gilt auch fuer den Fall, dass
+  Supportobjekte wegen fehlender MySQL-Metadatenrechte nicht gelesen
+  werden koennen
 - stattdessen gilt:
   - Sequences werden so weit wie sicher moeglich rekonstruiert
   - Spaltenzuordnungen werden nur dort rekonstruiert, wo der Trigger
@@ -233,11 +246,19 @@ Praktische Semantik:
 - fehlende oder ungueltige Routinen:
   - Sequence-Metadaten bleiben lesbar
   - `W116` markiert "rekonstruiert, aber nicht voll betriebsfaehig"
+- nicht lesbare Routinen-/Trigger-Metadaten wegen Berechtigungen:
+  - gelten semantisch wie "nicht bestaetigbar"
+  - fuehren ebenfalls zu `W116`, nicht zu Exit 4
 - fehlender oder ungueltiger Support-Trigger fuer eine Spalte:
   - die Sequence bleibt erhalten
   - die betroffene Spalte erhaelt **kein**
     `DefaultValue.SequenceNextVal`
   - `W116` nennt das betroffene Objekt
+- `W116` wird im Report stabil dedupliziert:
+  - pro Sequence hoechstens eine aggregierte Note fuer fehlende oder
+    nicht lesbare Routinen
+  - pro betroffener Spalte hoechstens eine aggregierte Note fuer
+    fehlende, nicht lesbare oder nicht bestaetigbare Triggerzuordnung
 
 ### 4.5 Compare wird ueber Reverse-Normalisierung stabilisiert
 
@@ -298,14 +319,20 @@ Wichtig:
 - die Reader-Erweiterung soll nicht auf "alle Trigger immer lesen"
   fuer die Nutzer-API hinauslaufen
 - interne Supportabfragen duerfen gezielt und billig bleiben
+- Permission-Denied- oder "metadata not accessible"-Faelle auf diesen
+  Zusatzabfragen muessen gezielt abgefangen und als degradierte Notes
+  (`W116`) weitergefuehrt werden; nur der Zugriff auf
+  Kernmetadaten (`dmg_sequences`, Tabellen, Spalten) darf den Lauf
+  hart scheitern lassen
 
 ### 5.3 Rekonstruktion der `SequenceDefinition`
 
-Eine Sequence wird nur dann aus `dmg_sequences` rekonstruiert, wenn:
+Eine Sequence wird nur dann aus einer `dmg_sequences`-Zeile
+rekonstruiert, wenn:
 
 - die Tabelle `dmg_sequences` existiert
 - die kanonischen Spalten vorhanden sind
-- jede auszuwertende Zeile `managed_by = 'd-migrate'` und
+- die jeweilige Zeile `managed_by = 'd-migrate'` und
   `format_version = 'mysql-sequence-v1'` traegt
 
 Mapping:
@@ -325,6 +352,14 @@ Leitlinie fuer 0.9.4:
 - Live-Laufzeitabweichungen nach produktiver Nutzung sind fuer Compare
   erwartbar; 0.9.4 zielt auf generate/reverse-Stabilitaet, nicht auf
   "aktuellen Zaehlerstand als Sollzustand"
+- `dmg_sequences` wird **zeilenweise** ausgewertet, nicht all-or-
+  nothing:
+  - eine invalide oder fremde Zeile blockiert nicht die Rekonstruktion
+    anderer gueltiger Sequence-Zeilen
+  - nur die betroffene Zeile wird uebersprungen und mit `W116`
+    dokumentiert
+  - nur wenn die Tabelle als Ganzes ihre kanonische Grundform verliert,
+    findet gar kein Sequence-Reverse statt
 
 Das muss in Doku und Tests explizit bleiben, damit Compare nicht als
 "Laufzeitzustands-Diff" missverstanden wird.
@@ -334,8 +369,25 @@ Das muss in Doku und Tests explizit bleiben, damit Compare nicht als
 Fuer sequence-basierte Spalten wird ein interner Trigger-Scan
 eingefuehrt.
 
-Ein Support-Trigger gilt als kanonisch, wenn mindestens diese Kriterien
-zugleich zutreffen:
+Ein Support-Trigger gilt als kanonisch, wenn diese Erkennung in zwei
+Stufen erfolgreich ist:
+
+1. primaere Marker-Erkennung
+2. robuste Strukturpruefung auf normalisiertem Triggertext
+
+Die Erkennung darf **nicht** auf exakter SQL-Textgleichheit beruhen.
+Stattdessen wird ein robuster Normalisierungspfad festgelegt:
+
+- Kommentare, Delimiter-Artefakte und irrelevante Whitespace-
+  Unterschiede werden toleriert
+- Identifier werden quoting- und case-insensitiv verglichen
+- String-Literale werden nur dort semantisch ausgewertet, wo der
+  Sequence-Name oder der Routinenname relevant ist
+- MySQL-Metadatenformatierung pro Version oder Connector darf fuer sich
+  allein keinen `W116` ausloesen
+
+Ein Trigger gilt danach als kanonisch bestaetigt, wenn mindestens diese
+Kriterien zugleich zutreffen:
 
 - Triggername entspricht `MysqlSequenceNaming.triggerName(table, column)`
 - Marker-Kommentar enthaelt
@@ -343,8 +395,17 @@ zugleich zutreffen:
 - Marker benennt dieselbe Sequence, Tabelle und Spalte wie Name und
   Metadaten
 - Timing/Event sind `BEFORE INSERT`
-- Trigger-Body setzt `NEW.<column>` ueber `dmg_nextval('<sequence>')`,
-  wenn `NEW.<column> IS NULL`
+- der normalisierte Trigger-Body zeigt semantisch denselben Ablauf:
+  `NEW.<column> IS NULL` guard und Zuweisung ueber
+  `dmg_nextval('<sequence>')`
+
+Sekundaerregel fuer 0.9.4:
+
+- wenn der Marker lesbar ist, aber die Body-Formatierung von der
+  Generator-Textform abweicht, zaehlt die semantische
+  Normalisierungspruefung
+- wenn weder Marker noch robuste Semantik bestaetigbar sind, gibt es
+  keine Spaltenzuordnung und stattdessen `W116`
 
 Ergebnis:
 
@@ -416,6 +477,9 @@ Akzeptanzkriterium:
   als kanonisches Supportobjekt erkannt wurde
 - fehlende oder inkonsistente Support-Routinen als `W116` markieren,
   ohne die Sequence-Rekonstruktion komplett zu verlieren
+- teilinvalide `dmg_sequences`-Zeilen nur lokal verwerfen:
+  - gueltige Zeilen bleiben reverse-bar
+  - pro verworfener Zeile genau eine stabile `W116`-Note
 
 Akzeptanzkriterien:
 
@@ -424,11 +488,16 @@ Akzeptanzkriterien:
 - `dmg_sequences` taucht nicht mehr als normale Tabelle im Schema auf
 - fehlen `dmg_nextval` oder `dmg_setval`, bleiben die Sequences
   sichtbar, aber der Report enthaelt `W116`
+- eine kaputte Einzelzeile in `dmg_sequences` verhindert nicht die
+  Rekonstruktion anderer gueltiger Sequences
 
 ### 6.3 Phase D3: Sequence-Default-Reverse ueber Trigger
 
 - Support-Trigger intern laden, auch bei `includeTriggers = false`
-- kanonische Trigger via Name + Marker + Minimalform validieren
+- Metadatenzugriffsfehler auf Trigger als degradierte `W116`-Faelle
+  statt als Hard-Error behandeln
+- kanonische Trigger via Name + Marker + normalisierte Semantik
+  validieren, nicht via starrem Textvergleich
 - Spaltenzuordnung `table.column -> sequenceName` aufbauen
 - betroffene `ColumnDefinition.default` zu
   `DefaultValue.SequenceNextVal(sequenceName)` setzen
@@ -442,6 +511,8 @@ Akzeptanzkriterien:
   Default
 - derselbe Pfad funktioniert auch mit `includeTriggers = false`
 - kanonische Support-Trigger erscheinen nicht als normale Trigger
+- reine Formatierungs- oder Quoting-Unterschiede im ausgelesenen
+  Triggertext loesen fuer intakte generierte Trigger kein `W116` aus
 
 ### 6.4 Phase E1: Compare-Stabilisierung
 
@@ -573,11 +644,16 @@ Metadatenquelle:
   `information_schema.triggers.action_statement` Marker nicht
   verlaesslich transportieren, braucht der Reader einen gezielten
   Fallback
+- fehlende Metadatenrechte duerfen fachlich denselben degradierten Pfad
+  nehmen wie "Marker nicht bestaetigbar", statt den gesamten Lauf
+  scheitern zu lassen
 
 Gegenmassnahme:
 
 - frueh mit echter MySQL-DB absichern
 - Metadatenstrategie vor breiter Testimplementierung festziehen
+- Trigger-/Routine-Erkennung explizit auf Normalisierung und
+  semantische Tokens statt auf Rohtextform aufbauen
 
 ### 9.2 Laufzeitzustand vs. Sollzustand in `dmg_sequences`
 
@@ -620,6 +696,20 @@ Gegenmassnahme:
 
 - Trigger-Reverse ist kein Optionalteil, sondern Kern des Milestones
 - Akzeptanzkriterien muessen Sequences **und** Spaltendefaults abdecken
+
+### 9.5 Teilinvalides `dmg_sequences` darf nicht zum Totalausfall fuehren
+
+Risiko:
+
+- eine einzelne kaputte, manuell veraenderte oder fremde Zeile in
+  `dmg_sequences` koennte sonst den gesamten Sequence-Reverse
+  unnoetig blockieren
+
+Gegenmassnahme:
+
+- Rekonstruktion strikt zeilenweise
+- Tabellenform global validieren, Zeileninhalt lokal bewerten
+- pro verworfener Zeile genau eine deduplizierte `W116`-Note
 
 ---
 
