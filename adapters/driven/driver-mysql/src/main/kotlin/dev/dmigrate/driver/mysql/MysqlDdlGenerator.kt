@@ -427,12 +427,12 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // dmg_nextval routine
         val nextvalSql = buildString {
             appendLine("DELIMITER //")
-            appendLine("/* d-migrate:mysql-sequence-v1 object=nextval */")
             appendLine("CREATE FUNCTION `${MysqlSequenceNaming.NEXTVAL_ROUTINE}`(seq_name VARCHAR(255))")
             appendLine("RETURNS BIGINT")
             appendLine("DETERMINISTIC")
             appendLine("MODIFIES SQL DATA")
             appendLine("BEGIN")
+            appendLine("    /* d-migrate:mysql-sequence-v1 object=nextval */")
             appendLine("    DECLARE val BIGINT;")
             appendLine("    UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` SET `next_value` = `next_value` + `increment_by` WHERE `name` = seq_name;")
             appendLine("    SELECT `next_value` - `increment_by` INTO val FROM `${MysqlSequenceNaming.SUPPORT_TABLE}` WHERE `name` = seq_name;")
@@ -445,12 +445,12 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         // dmg_setval routine
         val setvalSql = buildString {
             appendLine("DELIMITER //")
-            appendLine("/* d-migrate:mysql-sequence-v1 object=setval */")
             appendLine("CREATE FUNCTION `${MysqlSequenceNaming.SETVAL_ROUTINE}`(seq_name VARCHAR(255), new_value BIGINT)")
             appendLine("RETURNS BIGINT")
             appendLine("DETERMINISTIC")
             appendLine("MODIFIES SQL DATA")
             appendLine("BEGIN")
+            appendLine("    /* d-migrate:mysql-sequence-v1 object=setval */")
             appendLine("    UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` SET `next_value` = new_value WHERE `name` = seq_name;")
             appendLine("    RETURN new_value;")
             appendLine("END //")
@@ -501,11 +501,11 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             if (trigName in triggers) continue // already reported as E124
             val triggerSql = buildString {
                 appendLine("DELIMITER //")
-                appendLine("/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=${spec.sequenceName} table=${spec.tableName} column=${spec.columnName} */")
                 appendLine("CREATE TRIGGER `$trigName`")
                 appendLine("    BEFORE INSERT ON `${spec.tableName}`")
                 appendLine("    FOR EACH ROW")
                 appendLine("BEGIN")
+                appendLine("    /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=${spec.sequenceName} table=${spec.tableName} column=${spec.columnName} */")
                 appendLine("    IF NEW.`${spec.columnName}` IS NULL THEN")
                 appendLine("        SET NEW.`${spec.columnName}` = `${MysqlSequenceNaming.NEXTVAL_ROUTINE}`('${spec.sequenceName}');")
                 appendLine("    END IF;")

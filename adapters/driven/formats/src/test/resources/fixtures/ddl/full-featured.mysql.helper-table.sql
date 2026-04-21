@@ -74,12 +74,12 @@ SELECT COUNT(*) FROM orders
 ;
 
 DELIMITER //
-/* d-migrate:mysql-sequence-v1 object=nextval */
 CREATE FUNCTION `dmg_nextval`(seq_name VARCHAR(255))
 RETURNS BIGINT
 DETERMINISTIC
 MODIFIES SQL DATA
 BEGIN
+    /* d-migrate:mysql-sequence-v1 object=nextval */
     DECLARE val BIGINT;
     UPDATE `dmg_sequences` SET `next_value` = `next_value` + `increment_by` WHERE `name` = seq_name;
     SELECT `next_value` - `increment_by` INTO val FROM `dmg_sequences` WHERE `name` = seq_name;
@@ -88,12 +88,12 @@ END //
 DELIMITER ;
 
 DELIMITER //
-/* d-migrate:mysql-sequence-v1 object=setval */
 CREATE FUNCTION `dmg_setval`(seq_name VARCHAR(255), new_value BIGINT)
 RETURNS BIGINT
 DETERMINISTIC
 MODIFIES SQL DATA
 BEGIN
+    /* d-migrate:mysql-sequence-v1 object=setval */
     UPDATE `dmg_sequences` SET `next_value` = new_value WHERE `name` = seq_name;
     RETURN new_value;
 END //
@@ -108,11 +108,11 @@ DELIMITER ;
 -- TODO: Rewrite procedure `update_status` for MySQL (source dialect: postgresql)
 
 DELIMITER //
-/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */
 CREATE TRIGGER `dmg_seq_orders_invoice_number_7b0a7b2f55_bi`
     BEFORE INSERT ON `orders`
     FOR EACH ROW
 BEGIN
+    /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */
     IF NEW.`invoice_number` IS NULL THEN
         SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq');
     END IF;
