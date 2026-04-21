@@ -251,7 +251,7 @@ object MysqlMetadataQueries {
         "increment_by" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
         "min_value" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
         "max_value" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
-        "cycle_enabled" to setOf("tinyint"),
+        "cycle_enabled" to setOf("tinyint", "bit"),
         "cache_size" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
     )
 
@@ -259,9 +259,10 @@ object MysqlMetadataQueries {
      * Verifies the canonical column shape of dmg_sequences including
      * type semantics (D2 requirement).
      *
-     * Currently validates DATA_TYPE against allowed type classes.
-     * COLUMN_TYPE is read for future use (e.g. bit(1) disambiguation)
-     * but not yet evaluated — this is a conservative 0.9.4 decision.
+     * Validates DATA_TYPE against allowed type classes per §5.2.
+     * COLUMN_TYPE is read alongside for potential future disambiguation.
+     * `bit` is accepted for cycle_enabled since MySQL JDBC robustly
+     * reads bit(1) as Boolean/Integer.
      */
     fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
         val actualColumns = session.queryList(

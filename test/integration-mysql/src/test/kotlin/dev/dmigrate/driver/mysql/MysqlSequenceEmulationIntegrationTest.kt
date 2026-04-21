@@ -228,6 +228,23 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         // Invoices table should still be present
         result.schema.tables.containsKey("invoices") shouldBe true
     }
+
+    test("reverse from real MySQL: sequence start reflects current next_value") {
+        // After the earlier tests, dmg_nextval was called multiple times.
+        // The reverse should reflect the current next_value as start.
+        val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+            override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun activeConnections() = 0
+            override fun close() {}
+        }
+        val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions())
+        val seq = result.schema.sequences["invoice_seq"]!!
+        // After usage, start (= current next_value) should be > original 1000
+        (seq.start >= 1000L) shouldBe true
+        // Support routines should not appear as user functions
+        result.schema.functions.keys.none { it.startsWith("dmg_") } shouldBe true
+    }
 })
 
 /**

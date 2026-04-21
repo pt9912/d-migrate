@@ -808,6 +808,25 @@ class MysqlSchemaReaderTest : FunSpec({
         d2.sequences["null_min"]!!.minValue shouldBe null
     }
 
+    test("D2: trim collision — 'seq_a' and 'seq_a ' collide on same key") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "seq_a", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "seq_a ", "next_value" to 2L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        stubNoRoutinesOrTriggers()
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val d2 = reader.materializeSupportSequences(reader.scanSequenceSupport(jdbc, "mydb", scope))
+        // Both rows collide after trim() → ambiguous key → no SequenceDefinition
+        d2.sequences.size shouldBe 0
+        d2.notes.any { it.code == "W116" && "seq_a" in it.objectName } shouldBe true
+    }
+
     test("D2: empty dmg_sequences produces 0 sequences and no W116") {
         stubEmptyDefaults()
         stubCanonicalShape()
