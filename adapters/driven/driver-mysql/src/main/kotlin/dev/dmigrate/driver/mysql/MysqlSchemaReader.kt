@@ -215,8 +215,8 @@ class MysqlSchemaReader(
         confirmedSequenceNames: Set<String>,
     ): List<SupportDiagnostic> {
         // Collect causes per key, then deduplicate
-        val causesByKey = LinkedHashMap<Any, MutableList<String>>()
-        fun addCause(key: Any, cause: String) {
+        val causesByKey = LinkedHashMap<DiagnosticKey, MutableList<String>>()
+        fun addCause(key: DiagnosticKey, cause: String) {
             causesByKey.getOrPut(key) { mutableListOf() } += cause
         }
 
@@ -355,7 +355,6 @@ class MysqlSchemaReader(
                     objectName = when (val k = diag.key) {
                         is SequenceDiagnosticKey -> k.sequenceName
                         is ColumnDiagnosticKey -> "${k.tableName}.${k.columnName}"
-                        else -> "unknown"
                     },
                     message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
                     hint = diag.causes.joinToString("; "),

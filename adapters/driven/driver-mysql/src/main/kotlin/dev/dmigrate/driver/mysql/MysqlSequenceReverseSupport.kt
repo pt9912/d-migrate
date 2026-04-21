@@ -14,18 +14,6 @@ data class ReverseScope(
     val schemaName: String,
 )
 
-/** Aggregation key for sequence-level diagnostics. */
-data class SequenceDiagnosticKey(
-    val scope: ReverseScope,
-    val sequenceName: String,
-)
-
-/** Aggregation key for column-level diagnostics. */
-data class ColumnDiagnosticKey(
-    val scope: ReverseScope,
-    val tableName: String,
-    val columnName: String,
-)
 
 /** Status of the dmg_sequences support table. */
 enum class SupportTableState {
@@ -82,9 +70,23 @@ data class SequenceRowSnapshot(
     val conflictReason: String?,
 )
 
+/** Diagnostic key: either sequence-level or column-level. */
+sealed interface DiagnosticKey
+
+data class SequenceDiagnosticKey(
+    val scope: ReverseScope,
+    val sequenceName: String,
+) : DiagnosticKey
+
+data class ColumnDiagnosticKey(
+    val scope: ReverseScope,
+    val tableName: String,
+    val columnName: String,
+) : DiagnosticKey
+
 /** Aggregatable diagnostic basis (precursor to SchemaReadNote). */
 data class SupportDiagnostic(
-    val key: Any,
+    val key: DiagnosticKey,
     val causes: List<String>,
     val emitsW116: Boolean,
 )
