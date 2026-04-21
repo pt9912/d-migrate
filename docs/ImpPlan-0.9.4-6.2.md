@@ -74,9 +74,8 @@ Was nach 6.1 noch fehlt:
 - Korrektur des aktuellen 6.1-Scaffolds dort, wo er fuer D2 noch zu
   breit oder zu weich ist:
   - Unterdrueckung von `dmg_sequences` auch bei `INVALID_SHAPE`
-  - `listSupportSequenceRows(...)` nutzt den uebergebenen
-    `database`-/`ReverseScope`-Kontext noch nicht verbindlich in der SQL-
-    Abfrage
+  - die bereits erfolgte Scope-Bindung von `listSupportSequenceRows(...)`
+    muss in D2 nur noch gegen den Endvertrag verifiziert werden
   - rohe `==`-Vergleiche fuer Markerfelder
   - stille Numerics-Fallbacks wie `0L` oder `1L`
   - `W116` fuer fremde Markerzeilen statt nur fuer echte d-migrate-
@@ -245,6 +244,7 @@ Architektur-Verortung:
   `MysqlSchemaReader`, z. B. `materializeSupportSequences(...)`
 - dieser Schritt konsumiert ausschliesslich den D1-Snapshot und baut
   daraus:
+  - `SchemaDefinition(..., sequences = ...)`
   - `schema.sequences`
   - table suppression fuer `dmg_sequences`
   - sequence-bezogene `SchemaReadNote`s
@@ -310,9 +310,26 @@ Verbindliche Formregeln:
     integer-artig lesbar
   - `cycle_enabled`: boolean-/tinyint-artig lesbar
   - `cache_size`: integer-artig oder `NULL`
+- fuer D2 gelten dabei mindestens diese MySQL-Typklassen als
+  kompatibel:
+  - string-artig:
+    `char`, `varchar`, `text`, `tinytext`, `mediumtext`, `longtext`
+  - integer-artig:
+    `tinyint`, `smallint`, `mediumint`, `int`, `bigint`
+  - boolean-/tinyint-artig:
+    `tinyint`
+  - weitere Typen wie `bit(1)` sind nur zulaessig, wenn die
+    JDBC-Lesbarkeit dieselbe fachliche Bool-Semantik robust liefert;
+    sonst bleiben sie Post-0.9.4 oder gelten als `invalid_shape`
 - Validierung erfolgt ueber `information_schema.columns`
   (`DATA_TYPE`/`COLUMN_TYPE`) plus JDBC-Lesekompatibilitaet, nicht ueber
   exakte DDL-Textgleichheit
+- "JDBC-Lesekompatibilitaet" meint in D2:
+  - der Treiber liefert den Wert ueber den vorgesehenen Lesezugriff
+    ohne Fachverlust oder Exception
+  - reine technische Lesbarkeit als beliebiger String reicht nicht, wenn
+    die Zielsemantik (`Long`, `Int`, Bool) dadurch nicht sicher
+    herleitbar ist
 - Typsemantik-Pruefung gehoert in D2 zur Grundformvalidierung der
   Tabelle selbst, nicht erst zur spaeten Zeilenbewertung:
   - eine Tabelle mit `name` als nicht string-artigem Typ oder
@@ -361,6 +378,13 @@ Eine Zeile ist nur dann D2-relevant, wenn:
 
 - `managed_by = 'd-migrate'`
 - `format_version = 'mysql-sequence-v1'`
+
+Eine kanonische, aber leere `dmg_sequences`-Tabelle bedeutet in D2:
+
+- `supportTableState = AVAILABLE`
+- `dmg_sequences` wird als Supporttabelle unterdrueckt
+- `schema.sequences` bleibt leer
+- es entsteht kein `W116` allein wegen der leeren Tabelle
 
 Vergleichssemantik fuer string-artige Zeilenwerte:
 
@@ -432,6 +456,10 @@ Sonderregeln fuer `cache_size`:
   Pflichtwerte:
   - Werte ausserhalb von `Long.MIN_VALUE .. Long.MAX_VALUE` sind fuer
     D2 nicht lesbar und invalidieren die betroffene Zeile
+- `increment_by = 0` ist in D2 invalide:
+  - die betroffene Zeile wird nicht materialisiert
+  - es entsteht der degradierte Sequence-Key-Pfad statt stiller
+    Korrektur
 
 Gemischte Qualitaet fuer denselben neutralen Sequence-Key:
 
@@ -483,6 +511,11 @@ Sequence-Schluesseln:
 - `supportTableState.not_accessible`
   - harter Sequence-Pfad nur gemaess D1-Gating-Regel
   - keine Teilrekonstruktion auf Verdacht
+  - D1-Gating-Regel fuer D2 in Kurzform:
+    - Hard-Fail nur, wenn `dmg_sequences` zuvor als vorhandene oder
+      eindeutig adressierbare Primaerquelle legitimiert wurde
+    - sonst kompatibler Nicht-Sequence-Fall ohne implizite
+      Teilmaterialisierung
   - Testvertrag: entweder harter Abbruch nach legitimierter
     Primaerquelle oder kompatibler Nicht-Sequence-Fall gemaess Gating,
     aber keine partielle implizite Sequence-Materialisierung
@@ -507,9 +540,9 @@ Sequence-Schluesseln:
   - aggregierbares sequence-bezogenes `W116`
 - fehlerhaft als `missing` klassifizierte Nutzer- oder nicht kanonische
   Routinen sind in D2 zu korrigieren:
-  - bevorzugt durch Erweiterung von `SupportRoutineState` um einen
-    eigenen Zustand wie `USER_OBJECT`, analog zu
-    `SupportTriggerState.USER_OBJECT`
+  - bevorzugt durch konsistente Nutzung des bereits vorhandenen
+    `SupportRoutineState.NON_CANONICAL` fuer Nutzer- oder anderweitig
+    nicht kanonische Routinen
   - Nutzerobjekt oder nicht kanonische Routine ist keine fehlende
     Support-Routine
   - daraus darf fuer sich allein kein sequence-bezogenes `W116`
@@ -530,16 +563,30 @@ Leitregel:
 - bestehende D1-Lesepfade dort korrigieren, wo sie D2 fachlich
   widersprechen:
   - `INVALID_SHAPE` nicht unterdruecken
-  - `listSupportSequenceRows(...)` sauber an `ReverseScope` binden
+  - die bereits erfolgte `ReverseScope`-Bindung von
+    `listSupportSequenceRows(...)` nur noch verifizieren und gegen den
+    finalen Quoting-Vertrag absichern
   - Schema-Identifier dabei sicher quoten; reine String-Interpolation
-    bleibt nur zulaessig, wenn der Identifier vorab auf kanonische
-    DB-/Schema-Namen begrenzt oder anderweitig sicher erzeugt wird
+    bleibt in D2 zulaessig, wenn der Identifier vorab sicher gequotet
+    bzw. fuer Backticks escaped wird
   - Markerfelder nicht roh mit `==` vergleichen
   - keine stillen `0L`-/`1L`-Fallbacks
   - keine `W116` fuer fremde Markerzeilen
   - Routine-Diagnosen nicht auf Routinenamen aggregieren
   - falsch als `missing` klassifizierte Nutzer-/Nicht-Support-Routinen
     berichtigen
+- D2-0 greift dabei bewusst in bestehende D1-Scanlogik und ihre Tests
+  ein; es ist kein rein vorbereitender Dokumentationsschritt
+
+Abhaengigkeiten:
+
+- `D2-0` vor `D2-1` bis `D2-4`
+- `D2-2` vor `D2-3`
+- `D2-3` vor `D2-4`
+- `D2-5` kann parallel zu `D2-3`/`D2-4` vorbereitet werden, haengt aber
+  vom finalen Kanonizitaetsvertrag ab
+- `D2-6` laeuft inkrementell mit und deckt Unit- sowie
+  Integrationstestfaelle ab
 
 ### D2-1 D1-Snapshot an D2 anbinden
 
@@ -564,11 +611,13 @@ Leitregel:
 - `invalid_shape` frueh und eindeutig vom zeilenweisen Inhaltsfehler
   trennen
 - Support-Row-Query weiter streng an `ReverseScope` binden:
-  - bevorzugt ueber explizite Schema-Qualifizierung bzw.
-    schema-parametrisierte Query; der `database`-Parameter der Query
-    darf nicht ungenutzt bleiben
+  - die bestehende explizite Schema-Qualifizierung bleibt fuer D2
+    akzeptabel, muss aber sicher gequotet bleiben
   - wenn ueber Identifier-Interpolation qualifiziert wird, muss das
-    Quoting fuer den Schema-Namen verbindlich sicher sein
+    Quoting fuer den Schema-Namen verbindlich sicher sein:
+    - Backticks im Namen werden escaped oder
+    - der Name wird vorab auf einen sicheren kanonischen
+      Datenbank-Identifier begrenzt
   - falls technisch nur unqualifiziert gelesen werden kann, muss D2
     explizit absichern, dass die aktive Connection-Datenbank exakt dem
     `ReverseScope` entspricht
@@ -617,7 +666,7 @@ Leitregel:
 
 ### D2-6 Reader-Tests nachziehen
 
-- `MysqlSchemaReaderTest` fuer:
+- Unit-Tests in `MysqlSchemaReaderTest` fuer:
   - intakte Sequence-Rekonstruktion aus `dmg_sequences`
   - expliziten CHAR-Padding-Fall in `managed_by`, `format_version` und
     `name`
@@ -645,6 +694,10 @@ Leitregel:
   - Unterdrueckung von `dmg_sequences` nur bei `AVAILABLE`, nicht bei
     `INVALID_SHAPE`
   erweitern
+- Integrationstests im MySQL-/Testcontainer-Setup fuer:
+  - kompletten Round-Trip mit realer `dmg_sequences`-Tabelle
+  - scope-gebundene Zeilenlesung gegen echte DB-Metadaten
+  - Materialisierung von `schema.sequences` im End-to-End-Lauf
 
 ---
 
@@ -694,27 +747,34 @@ Pflichtfaelle fuer 6.2:
     `NULL` bleibt zulaessig, `0` bleibt zulaessig, Werte groesser als
     `Int.MAX_VALUE`, invalide oder nicht lesbare Werte degradieren nur
     den betroffenen Sequence-Key.
-16. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
+16. `increment_by = 0` ist invalide und fuehrt nicht zu einer
+    materialisierten Sequence.
+17. Eine kanonische, aber leere `dmg_sequences`-Tabelle wird
+    unterdrueckt, erzeugt 0 Sequences und kein `W116`.
+18. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
     betroffenen Zeile, nicht zu stillen `0`-/`1`-Defaults.
-17. D2 verwendet fuer invalide Zeilen keine Fake-Werte in
+19. D2 verwendet fuer invalide Zeilen keine Fake-Werte in
     fachlich gemappten Kandidaten, sondern trennt gueltige Kandidaten
     und invalide Zeilenevidenz.
-18. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
+20. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
     impliziten Sequence-Materialisierung.
-19. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
+21. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
     Hard-Fail oder kompatiblem Nicht-Sequence-Fall, nicht zu einem
     stillen Teilergebnis.
-20. Fremde oder historisch nicht passende Markerzeilen fuehren fuer
+22. Fremde oder historisch nicht passende Markerzeilen fuehren fuer
     sich allein zu keinem `W116`.
-21. Fehlende oder nicht lesbare Support-Routinen aggregieren in D2 pro
+23. Zwei Zeilen mit Namen wie `seq_a` und `seq_a ` kollidieren nach
+    `trim()` auf denselben Sequence-Key und laufen in den
+    Konfliktpfad.
+24. Fehlende oder nicht lesbare Support-Routinen aggregieren in D2 pro
     betroffenem Sequence-Key, nicht global pro Datenbank und nicht pro
     Routineobjekt.
-22. `SequenceDefinition.description` bleibt in D2 explizit `null`.
-23. Die Sequence-Reihenfolge bleibt bei 3+ Eintraegen deterministisch
+25. `SequenceDefinition.description` bleibt in D2 explizit `null`.
+26. Die Sequence-Reihenfolge bleibt bei 3+ Eintraegen deterministisch
     aufsteigend nach dem normalisierten Sequence-Key.
-24. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
+27. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
     Laufzeitzaehler wird nicht in D2 "wegkorrigiert".
-25. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
+28. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
     ein kompatibler Nicht-Sequence-Fall ohne implizite Sequences.
 
 Akzeptanzkriterium fuer 6.2:
@@ -770,7 +830,21 @@ Gegenmassnahme:
 - Tests auf frisch generierte Round-Trip-Faelle fokussieren
 - keine versteckte Heuristik fuer "aktuellen Zaehlerstand" einbauen
 
-### 9.2 Teilinvalides `dmg_sequences` darf nicht zum Totalausfall fuehren
+### 9.2 Mehrstatement-Reads sehen theoretisch inkonsistente DDL-Sichten
+
+Risiko:
+
+- zwischen Shape-Check und Zeilenlesung koennte in derselben DB
+  theoretisch DDL wechseln
+
+Gegenmassnahme:
+
+- fuer 0.9.4 wird das als tolerierbares Read-Only-Scan-Risiko
+  akzeptiert
+- kein eigener Transaktionsvertrag fuer den Reverse-Read in diesem
+  Milestone
+
+### 9.3 Teilinvalides `dmg_sequences` darf nicht zum Totalausfall fuehren
 
 Risiko:
 
@@ -783,7 +857,7 @@ Gegenmassnahme:
 - Zeileninhalt lokal bewerten
 - `W116` pro Sequence aggregieren, nicht pro Rohzeile
 
-### 9.3 Ueberunterdrueckung von Nutzerobjekten
+### 9.4 Ueberunterdrueckung von Nutzerobjekten
 
 Risiko:
 
@@ -796,7 +870,7 @@ Gegenmassnahme:
 - Name allein reicht nie
 - Negativtests fuer nicht kanonische Tabellen im selben Namensraum
 
-### 9.4 Weiche Feldnormalisierung erzeugt Drift
+### 9.5 Weiche Feldnormalisierung erzeugt Drift
 
 Risiko:
 
@@ -812,7 +886,7 @@ Gegenmassnahme:
   - `name`: `trim()` ohne Case-Faltung
 - CHAR-Padding-Testfaelle verpflichtend machen
 
-### 9.5 Unsaubere Bool-/Integer-Lesung verfaelscht Sequence-Zeilen
+### 9.6 Unsaubere Bool-/Integer-Lesung verfaelscht Sequence-Zeilen
 
 Risiko:
 
@@ -828,7 +902,7 @@ Gegenmassnahme:
   Zeileninvaliditaet behandeln
 - gueltige Kandidaten und invalide Evidenzobjekte sauber trennen
 
-### 9.6 Konfliktpfad wird spaeter aufgeweicht
+### 9.7 Konfliktpfad wird spaeter aufgeweicht
 
 Risiko:
 
@@ -840,7 +914,7 @@ Gegenmassnahme:
 - Konfliktvertrag aus 6.1 unveraendert in D2 uebernehmen
 - Akzeptanztests fuer mehrdeutige Keys verpflichtend machen
 
-### 9.7 Support-Routinen werden faelschlich zur Pflicht fuer D2
+### 9.8 Support-Routinen werden faelschlich zur Pflicht fuer D2
 
 Risiko:
 
@@ -853,7 +927,20 @@ Gegenmassnahme:
 - `SequenceDefinition` weiter aus `dmg_sequences` rekonstruieren, sofern
   die Primaerquelle lesbar ist
 
-### 9.8 Unqualifizierte Support-Row-Queries driften vom Scope ab
+### 9.9 Viele Sequence-Zeilen bleiben ein In-Memory-Scan
+
+Risiko:
+
+- sehr grosse `dmg_sequences`-Tabellen werden in 0.9.4 voll in den
+  Reader geladen
+
+Gegenmassnahme:
+
+- fuer 0.9.4 bewusste In-Memory-Entscheidung beibehalten
+- Performance-Optimierungen wie Streaming oder Pagination sind
+  Post-0.9.4
+
+### 9.10 Unqualifizierte Support-Row-Queries driften vom Scope ab
 
 Risiko:
 
