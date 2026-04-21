@@ -25,8 +25,8 @@ Arbeitspaket 6.6 zieht die verstreuten Test- und
 Verifikationsanforderungen aus D1 bis D3, E1 und E2 in ein
 verbindliches Testpaket zusammen. Der Teilplan beschreibt nicht neue
 Produktlogik, sondern den Nachweis, dass Reverse, Compare, `W116` und
-Supportobjekt-Unterdrueckung auf Unit-, Integrations-, Runner- und
-CLI-Ebene stabil funktionieren.
+Supportobjekt-Unterdrueckung auf Unit-, Integrations-, Runner-,
+Renderer-Unit- und CLI-Ebene stabil funktionieren.
 
 6.6 liefert fuenf konkrete Ergebnisse:
 
@@ -134,8 +134,8 @@ Konsequenz ohne 6.6:
   - Supportobjekt-Unterdrueckung
   - operandseitige Notes in Plain/JSON/YAML
   - Exit-Code-Stabilitaet bei operandseitigem `W116`
-- Zuordnung der 0.9.4-Pflichtfaelle auf Unit-, Integration-, Runner-
-  und CLI-Testtypen
+- Zuordnung der 0.9.4-Pflichtfaelle auf Unit-, Integration-, Runner-,
+  Renderer-Unit- und CLI-Testtypen
 
 ### 3.2 Bewusst nicht Teil von 6.6
 
@@ -425,8 +425,9 @@ Abhaengigkeiten:
 - T2 vor finalem Abschluss von T5
 - T3 und T4 koennen nach T0 parallel zu T1/T2 anlaufen, wenn fuer
   Zwischenstufen synthetische Operand-Notes genuegen
-- der finale Abschluss von T3 und T4 haengt an echtem D1-D3-Output und
-  damit spaetestens an T2
+- der finale Abschluss von T5 haengt daran, dass T2 den
+  D1-D3-Realitaetsnachweis geliefert hat; T3 und T4 selbst schliessen
+  ab, wenn ihr Audit und ggf. Delta auf ihrer Schicht erledigt ist
 
 ---
 
