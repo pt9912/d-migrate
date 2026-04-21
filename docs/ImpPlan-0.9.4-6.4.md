@@ -59,13 +59,15 @@ Nach 6.4 soll klar gelten:
 
 Der Compare-Unterbau ist fuer 0.9.4 bereits weit vorbereitet:
 
-- `SchemaComparator` vergleicht schon heute `schema.sequences` und
-  `DefaultValue.SequenceNextVal(...)` auf Neutralmodell-Ebene
+- `SchemaComparator` vergleicht schon heute `schema.sequences`; 
+  `DefaultValue.SequenceNextVal(...)` wird ueber den
+  Table-/Column-Vergleichspfad auf Neutralmodell-Ebene mitabgedeckt
 - `ResolvedSchemaOperand` und `OperandInfo` koennen Validation,
   Reverse-Notes und `skippedObjects` bereits transportieren
 - `SchemaCompareRunner` fuehrt operandseitige Reverse-Notes in Plain
   bereits auf `stderr` aus
-- `SchemaCompareProjection` enthaelt schon `sourceOperand` und
+- das Compare-Dokument in `SchemaCompareProjection.kt`
+  (`SchemaCompareDocument`) enthaelt schon `sourceOperand` und
   `targetOperand`
 
 Was nach D1 bis D3 fuer E1 noch fehlt:
@@ -104,6 +106,11 @@ Konsequenz ohne 6.4:
   unterbestimmt
 - CI-/Automationspfade muessen Plain-`stderr` parsen, um `W116`
   operandseitig zu sehen
+- da `W116` in `cli-spec.md` fuer 0.9.4 noch als reserviert gefuehrt
+  ist, braucht E1 fuer fruehe Tests und Runner-Absicherung entweder:
+  - bereits umgesetzte W116-Emission aus D1 bis D3
+  - oder synthetische Compare-Operanden mit Notes, bis D1 bis D3 den
+    finalen Reverse-Pfad liefern
 
 ---
 
@@ -231,7 +238,7 @@ Nach der Operand-Aufloesung und Normalisierung fuehrt
 Architektur-Verortung:
 
 - E1a lebt primaer in `SchemaCompareRunner` und den zugehoerigen Tests
-- E1b lebt im Projektionsvertrag
+- E1b lebt im Dokumentvertrag `SchemaCompareDocument` in
   `SchemaCompareProjection.kt` und in den Compare-Renderern
 - `SchemaComparator` bleibt dabei moeglichst unangetastet; wenn E1 dort
   eingreift, dann nur minimal und neutralmodellbasiert
@@ -262,6 +269,13 @@ Verbindlicher E1-Vertrag:
 - operandseitige Notes werden in Plain weiterhin sofort sichtbar
   ausgegeben
 - operandseitige Notes beeinflussen den Compare-Exit nicht direkt
+
+Designentscheidung fuer E1:
+
+- Runner-seitige `stderr`-Emission bleibt bewusst plain-only
+- bei `--output-format json` oder `yaml` traegt das strukturierte
+  Dokument die Operanddiagnose allein; es gibt dort keine zusaetzliche
+  stderr-Doppelung
 
 Praktische Folge:
 
@@ -328,6 +342,9 @@ Done-Kriterien fuer E1-0:
 - Compare-Ist-Stand fuer Validation, Notes, `skippedObjects` und
   Exit-Codes ist dokumentiert
 - offene E1a-/E1b-Luecken sind als konkrete Codepfade benannt
+- fuer E1 ist entschieden, ob Tests bereits auf echte D1-D3-`W116`-
+  Emission aufsetzen koennen oder voruebergehend mit synthetischen
+  Operand-Notes arbeiten muessen
 
 ### E1a Compare-Semantik absichern
 
@@ -336,6 +353,10 @@ Done-Kriterien fuer E1-0:
 - `SchemaCompareRunner` explizit gegen operandseitiges `W116`
   absichern, damit Exit-Codes allein von Validation oder echtem Diff
   abhaengen
+- explizit verifizieren, dass der Bau von `CompareValidation`
+  weiterhin ausschliesslich aus `sourceNormalized.validation` und
+  `targetNormalized.validation` erfolgt, auch wenn Operand-Notes
+  vorhanden sind
 
 Done-Kriterien fuer E1a:
 
@@ -345,6 +366,8 @@ Done-Kriterien fuer E1a:
   neutralmodellbasiert
 - der semantische Vertrag "operandseitiges `W116` ist Diagnose, kein
   Diff" ist im Runner-Code explizit abgesichert
+- der Bau von `CompareValidation` ist explizit gegen das Einschleusen
+  von Reverse-Notes abgesichert
 
 ### E1b Renderer- und Output-Nachzug umsetzen
 
@@ -438,19 +461,21 @@ Pflichtfaelle fuer 6.4:
    Exit 1.
 7. db-vs-db mit operandseitigem `W116` auf nur einer Seite folgt
    weiterhin ausschliesslich dem realen Diff.
-8. Validation-Fehler bleiben Exit 3, auch wenn operandseitige Notes
+8. file-vs-file mit operandseitigem `W116` auf beiden Seiten, aber
+   identischem neutralem Modell, bleibt Exit 0 und diff-frei.
+9. Validation-Fehler bleiben Exit 3, auch wenn operandseitige Notes
    zusaetzlich vorhanden sind.
-9. Plain zeigt operandseitige Notes und `skippedObjects` weiterhin
+10. Plain zeigt operandseitige Notes und `skippedObjects` weiterhin
    sichtbar an.
    Regression Guard: dieser Pfad ist bereits vorhanden und darf durch
    E1 nicht regressieren.
-10. JSON enthaelt `sourceOperand` und `targetOperand` inklusive Notes
+11. JSON enthaelt `sourceOperand` und `targetOperand` inklusive Notes
     und `skippedObjects`.
-11. YAML enthaelt `sourceOperand` und `targetOperand` inklusive Notes
+12. YAML enthaelt `sourceOperand` und `targetOperand` inklusive Notes
     und `skippedObjects`.
-12. Compare-`validation` enthaelt nur echte Validation-Ergebnisse, nicht
+13. Compare-`validation` enthaelt nur echte Validation-Ergebnisse, nicht
     operandseitige Reverse-Notes.
-13. Ein Compare mit operandseitigem `W116`, aber identischem neutralem
+14. Ein Compare mit operandseitigem `W116`, aber identischem neutralem
     Modell, bleibt diff-frei.
 
 Akzeptanzkriterium fuer 6.4:
@@ -476,7 +501,7 @@ Als fachliche Zieltypen bzw. konsumierte Vertragsanbieter relevant,
 aber voraussichtlich nicht direkt zu aendern:
 
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
-- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandNormalizer.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandResolver.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ResolvedSchemaOperand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererPlain.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
