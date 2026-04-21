@@ -41,6 +41,7 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
     val generator = MysqlDdlGenerator()
     val reader = MysqlSchemaReader()
     val helperOpts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+    val supportTriggerName = MysqlSequenceNaming.triggerName("invoices", "invoice_number")
 
     val schema = SchemaDefinition(
         name = "SeqIntegration", version = "1",
@@ -57,6 +58,27 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
             primaryKey = listOf("id"),
         )),
     )
+
+    fun recreateCanonicalSupportTrigger() {
+        conn().use { c ->
+            c.createStatement().use { stmt ->
+                stmt.execute("DROP TRIGGER IF EXISTS `$supportTriggerName`")
+                stmt.execute(
+                    """
+                    CREATE TRIGGER `$supportTriggerName`
+                        BEFORE INSERT ON `invoices`
+                        FOR EACH ROW
+                    BEGIN
+                        /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=invoices column=invoice_number */
+                        IF NEW.`invoice_number` IS NULL THEN
+                            SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq');
+                        END IF;
+                    END
+                    """.trimIndent()
+                )
+            }
+        }
+    }
 
     test("generated DDL executes against real MySQL") {
         val result = generator.generate(schema, helperOpts)
@@ -252,6 +274,131 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
         (seq.start >= 1000L) shouldBe true
         // Support routines should not appear as user functions
         result.schema.functions.keys.none { it.startsWith("dmg_") } shouldBe true
+    }
+
+    test("reverse with includeTriggers=false still reconstructs SequenceNextVal") {
+        val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+            override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun activeConnections() = 0
+            override fun close() {}
+        }
+        // includeTriggers=false — support scan still reads triggers internally
+        val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions(includeTriggers = false))
+
+        // Sequences still reconstructed
+        result.schema.sequences.containsKey("invoice_seq") shouldBe true
+
+        // Column defaults still set via D3 (trigger scan works internally)
+        val col = result.schema.tables["invoices"]?.columns?.get("invoice_number")
+        (col?.default is dev.dmigrate.core.model.DefaultValue.SequenceNextVal) shouldBe true
+
+        // No user triggers visible
+        result.schema.triggers.size shouldBe 0
+
+        // dmg_sequences suppressed
+        result.schema.tables.keys.none { it == MysqlSequenceNaming.SUPPORT_TABLE } shouldBe true
+    }
+
+    test("reverse: support trigger not visible in user triggers") {
+        val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+            override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+            override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+            override fun activeConnections() = 0
+            override fun close() {}
+        }
+        // includeTriggers=true — confirmed support triggers must be suppressed
+        val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions(includeTriggers = true))
+
+        // No trigger with dmg_seq_ prefix in user output
+        result.schema.triggers.keys.none { key ->
+            key.contains("dmg_seq_")
+        } shouldBe true
+
+        // Sequences and column defaults still work
+        result.schema.sequences.containsKey("invoice_seq") shouldBe true
+        val col = result.schema.tables["invoices"]?.columns?.get("invoice_number")
+        (col?.default is dev.dmigrate.core.model.DefaultValue.SequenceNextVal) shouldBe true
+    }
+
+    test("reverse tolerates formatting and quoting differences in support trigger") {
+        try {
+            conn().use { c ->
+                c.createStatement().use { stmt ->
+                    stmt.execute("DROP TRIGGER IF EXISTS `$supportTriggerName`")
+                    stmt.execute(
+                        """
+                        CREATE TRIGGER `$supportTriggerName`
+                            BEFORE INSERT ON `invoices`
+                            FOR EACH ROW
+                        BEGIN
+                            /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=invoices column=invoice_number */
+
+                            IF   NEW.`invoice_number`   IS   NULL   THEN
+                                SET
+                                    NEW.`invoice_number`
+                                    =
+                                    `dmg_nextval`('`seqtest`.`invoice_seq`');
+                            END IF;
+                        END
+                        """.trimIndent()
+                    )
+                }
+            }
+
+            val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+                override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+                override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+                override fun activeConnections() = 0
+                override fun close() {}
+            }
+            val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions(includeTriggers = true))
+
+            result.schema.sequences.containsKey("invoice_seq") shouldBe true
+            val col = result.schema.tables["invoices"]?.columns?.get("invoice_number")
+            (col?.default is dev.dmigrate.core.model.DefaultValue.SequenceNextVal) shouldBe true
+            result.schema.triggers.keys.none { it.contains("dmg_seq_") } shouldBe true
+            result.notes.none { it.code == "W116" && it.objectName == "invoices.invoice_number" } shouldBe true
+        } finally {
+            recreateCanonicalSupportTrigger()
+        }
+    }
+
+    test("reverse treats markerless support-like trigger as degraded without SequenceNextVal") {
+        try {
+            conn().use { c ->
+                c.createStatement().use { stmt ->
+                    stmt.execute("DROP TRIGGER IF EXISTS `$supportTriggerName`")
+                    stmt.execute(
+                        """
+                        CREATE TRIGGER `$supportTriggerName`
+                            BEFORE INSERT ON `invoices`
+                            FOR EACH ROW
+                        BEGIN
+                            IF NEW.`invoice_number` IS NULL THEN
+                                SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq');
+                            END IF;
+                        END
+                        """.trimIndent()
+                    )
+                }
+            }
+
+            val pool = object : dev.dmigrate.driver.connection.ConnectionPool {
+                override val dialect = dev.dmigrate.driver.DatabaseDialect.MYSQL
+                override fun borrow() = DriverManager.getConnection(container.jdbcUrl, container.username, container.password)
+                override fun activeConnections() = 0
+                override fun close() {}
+            }
+            val result = reader.read(pool, dev.dmigrate.driver.SchemaReadOptions(includeTriggers = true))
+
+            result.schema.sequences.containsKey("invoice_seq") shouldBe true
+            result.schema.tables["invoices"]!!.columns["invoice_number"]!!.default shouldBe null
+            result.notes.any { it.code == "W116" && it.objectName == "invoices.invoice_number" } shouldBe true
+            result.schema.triggers.keys.any { it.contains(supportTriggerName) } shouldBe true
+        } finally {
+            recreateCanonicalSupportTrigger()
+        }
     }
 })
 

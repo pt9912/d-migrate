@@ -324,15 +324,30 @@ object MysqlMetadataQueries {
 
     /**
      * Resolve a potentially schema-qualified identifier against the active scope.
+     * Handles backtick-quoted segments: `mydb`.`seq` or mydb.seq or `mydb.seq`.
      * Returns the unqualified name if it's in scope, or null if it points elsewhere.
      */
     private fun unqualify(name: String, activeSchema: String): String? {
-        val stripped = name.stripBackticks()
-        if ('.' !in stripped) return stripped // unqualified → in scope
-        val parts = stripped.split('.', limit = 2)
-        val schema = parts[0].stripBackticks()
-        val local = parts[1].stripBackticks()
-        return if (schema.equals(activeSchema, ignoreCase = true)) local else null // cross-schema → reject
+        // First strip outer backticks (handles `mydb.seq` as single quoted identifier)
+        val outer = name.stripBackticks()
+        // Split on unquoted dot — find the first dot not inside backticks
+        val dotIdx = findUnquotedDot(outer)
+        if (dotIdx < 0) return outer.stripBackticks() // unqualified → in scope
+        val schema = outer.substring(0, dotIdx).stripBackticks()
+        val local = outer.substring(dotIdx + 1).stripBackticks()
+        return if (schema.equals(activeSchema, ignoreCase = true)) local else null
+    }
+
+    /** Find the first '.' that is not inside backtick-quoted segments. */
+    private fun findUnquotedDot(s: String): Int {
+        var inBacktick = false
+        for (i in s.indices) {
+            when (s[i]) {
+                '`' -> inBacktick = !inBacktick
+                '.' -> if (!inBacktick) return i
+            }
+        }
+        return -1
     }
 
     /** Extracts marker fields: sequence=X table=Y column=Z */

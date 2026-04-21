@@ -1321,6 +1321,29 @@ class MysqlSchemaReaderTest : FunSpec({
         snapshot.triggerAssessments[0].state shouldBe SupportTriggerState.NON_CANONICAL
     }
 
+    test("D3: backtick-quoted same-schema sequence reference is in-scope") {
+        stubEmptyDefaults()
+        stubCanonicalShape()
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "invoice_seq", "next_value" to 1000L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        stubNoRoutinesOrTriggers()
+        // Sequence reference uses backtick-quoted schema: `mydb`.`invoice_seq`
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf("trigger_name" to confirmedTriggerName,
+                "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('`mydb`.`invoice_seq`'); END IF; END"),
+        )
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        // Backtick-quoted same-schema reference should resolve to in-scope
+        snapshot.triggerAssessments[0].state shouldBe SupportTriggerState.CONFIRMED
+        snapshot.triggerAssessments[0].sequenceName shouldBe "invoice_seq"
+    }
+
     test("D3: cross-schema qualified sequence reference produces NON_CANONICAL") {
         stubEmptyDefaults()
         stubCanonicalShape()
