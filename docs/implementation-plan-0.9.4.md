@@ -58,6 +58,10 @@ Bewusst nicht Teil dieses Milestones:
 - Lockerung des kanonischen Namens-/Marker-Vertrags
 - Wechsel des Generator-Defaults von `action_required` auf
   `helper_table`
+- Compare-Normalisierung des laufenden Sequence-Zaehlerstands:
+  `next_value` wird in 0.9.4 weiter auf `SequenceDefinition.start`
+  gemappt; produktiv fortgeschriebene Laufzeitwerte koennen deshalb
+  weiterhin als Sequence-Diff erscheinen
 - SQLite- oder andere Dialektarbeiten
 
 ---
@@ -392,6 +396,16 @@ Mapping:
 - `cycle_enabled` -> `cycle`
 - `cache_size` -> `cache`
 
+Bewusste Einschraenkung fuer 0.9.4:
+
+- `next_value -> start` bleibt ein Designzeit-Mapping fuer den
+  Round-Trip frisch generierter Schemata
+- nach produktiver Nutzung kann `next_value` vom urspruenglichen
+  neutralen `start` abweichen; `SchemaComparator` wird diesen Zustand in
+  0.9.4 weiterhin als Sequence-Diff anzeigen
+- eine moegliche spaetere Option wie `ignoreRuntimeState` ist bewusst
+  Post-0.9.4
+
 Kanonische Grundform der Tabelle:
 
 - **erforderliche Spaltennamen**:
@@ -410,12 +424,19 @@ Kanonische Grundform der Tabelle:
 - reine MySQL-Typdetailabweichungen wie `VARCHAR(255)` vs.
   `VARCHAR(191)` oder `TINYINT(1)` vs. kompatible numerische
   Bool-Repraesentationen zerstoeren die Grundform **nicht**
+- Validierung erfolgt dabei ueber `information_schema.columns`
+  (`DATA_TYPE`/`COLUMN_TYPE`) plus JDBC-ResultSet-Kompatibilitaet beim
+  Lesen, nicht ueber exakte DDL-Typstrings
 - Grundform gilt dagegen als verloren, wenn:
   - eine erforderliche Spalte fehlt oder mehrfach/uneindeutig
     aufloesbar ist
   - eine erforderliche Spalte nicht mehr in die benoetigte
     Zielsemantik gelesen werden kann
   - `name` als eindeutiger Sequence-Key nicht mehr rekonstruierbar ist
+- zusaetzliche Spalten einer erkannten Support-Tabelle werden in 0.9.4
+  stillschweigend ignoriert und nicht als eigene Nutzer-Tabellenstruktur
+  reverse-bar gemacht; dafuer wird bewusst **keine** zusaetzliche
+  Warning erzeugt, um den Supportobjekt-Pfad nicht zu verrauschen
 
 Leitlinie fuer 0.9.4:
 
@@ -530,6 +551,12 @@ Erwartetes Ergebnis:
 
 ### 6.1 Phase D1: Reader-Vertrag und Metadatenzugriff festziehen
 
+Reihenfolge:
+
+- D1 schafft die interne Reverse-Infrastruktur
+- D2 setzt D1 voraus und nutzt diese fuer `dmg_sequences`
+- D3 setzt D2 voraus und baut darauf die Spaltenzuordnung ueber Trigger
+
 - `MysqlSchemaReader` in interne Teilschritte zerlegen:
   - normale Objektlese-Pfade
   - Sequence-Support-Scan
@@ -604,11 +631,16 @@ Akzeptanzkriterien:
 
 ### 6.4 Phase E1: Compare-Stabilisierung
 
+### 6.4a Phase E1: Compare-Semantik
+
 - bestehende Compare-Tests um sequence-emulierte MySQL-Faelle erweitern
 - file-vs-file, file-vs-db und db-vs-db Pfade absichern
 - pruefen, ob `SchemaComparator` unveraendert ausreicht
 - nur falls notwendig: minimale compare-seitige Anpassung auf
   Neutralmodell-Ebene, keine MySQL-Stringfilter
+
+### 6.4b Phase E1: Renderer- und Output-Nachzug
+
 - `SchemaCompareRunner` so nachziehen, dass operandseitige Reverse-Notes
   fuer strukturierte Ausgabe nicht nur implizit in Plain-`stderr`,
   sondern explizit im `SchemaCompareDocument`-Output sichtbar bleiben
@@ -625,7 +657,7 @@ Akzeptanzkriterien:
 - geaenderte Sequence-Metadaten fuehren zu `sequencesChanged`
 - Hilfsobjekt-Rauschen taucht im Diff nicht auf
 - operandseitiges `W116` bleibt in Compare sichtbar, ohne selbst einen
-  Diff-Eintrag oder Exit-1 auszulösen
+  Diff-Eintrag oder Exit-1 auszuloesen
 - Plain-/JSON-/YAML-Ausgabe behandeln `W116` konsistent als Diagnose des
   jeweiligen Operanden, nicht als eigenstaendige Vergleichsart
 - `json`/`yaml` enthalten operandseitige Notes tatsaechlich im
@@ -710,17 +742,27 @@ Pflichtfaelle fuer 0.9.4:
    kuenstlichen Diff-Eintrag; Exit-Code folgt weiter nur der
    Diff-Entscheidung
 
-8a. **Compare JSON/YAML mit degradiertem Operand**
+9. **Compare JSON/YAML mit degradiertem Operand**
    operandseitiges `W116` ist nicht nur in Plain-`stderr`, sondern auch
    im strukturierten `sourceOperand`-/`targetOperand`-Teil sichtbar
 
-9. **Markerloser, aber semantisch intakter Trigger**
+10. **Markerloser, aber semantisch intakter Trigger**
    fehlender Marker allein verhindert die Spaltenzuordnung nicht,
    solange der normalisierte Triggertext die kanonische Semantik traegt
 
-10. **Grundform vs. Zusatzspalten**
+11. **Grundform vs. Zusatzspalten**
     zusaetzliche Spalten in `dmg_sequences` brechen den Reverse nicht;
     fehlende Pflichtspalten dagegen schon
+
+12. **Mehrere Sequences gleichzeitig**
+    mindestens zwei Sequences in verschiedenen Tabellen bleiben im
+    Reverse parallel stabil; ein degradierter Zustand einer Sequence
+    blockiert die andere nicht
+
+13. **Eine Sequence wird mehrfach genutzt**
+    dieselbe Sequence kann mehreren Spalten in verschiedenen Tabellen
+    zugeordnet sein; der Reverse faltet alle betroffenen Spalten wieder
+    auf dieselbe neutrale Sequence zurueck
 
 Coverage-Ziel:
 
