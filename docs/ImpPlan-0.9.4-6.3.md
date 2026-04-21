@@ -78,11 +78,15 @@ Was nach 6.2 noch fehlt:
 Aktueller Scaffold-Gap vor D3:
 
 - `listPotentialSupportTriggers(...)` arbeitet heute nur mit Name,
-  Timing/Event, Markertext und einfachem `dmg_nextval`-Token
+  Timing/Event, Markertext, regexbasierter Spaltenextraktion und
+  einfachem `dmg_nextval`-Token; der referenzierte Sequence-Key aus
+  `dmg_nextval('<sequence>')` wird in D1 bewusst noch nicht explizit
+  extrahiert
 - `buildSupportDiagnostics(...)` schluesselt degradierte Triggerfaelle
   zwar bereits ueber `ColumnDiagnosticKey(...)`, nutzt dabei aber noch
-  keinen durchgaengig bestaetigten Spaltenschluessel; im Fallback wird
-  noch der Triggername als Spaltenersatz verwendet
+  keinen durchgaengig bestaetigten Spaltenschluessel; wenn die
+  regexbasierte Spaltenextraktion leer bleibt, faellt der aktuelle
+  Code noch auf den Triggernamen als Spaltenersatz zurueck
 - `filterSupportTriggers(...)` unterdrueckt nur bestaetigte Trigger,
   ohne dass bisher Spaltendefaults gesetzt werden
 - `SchemaDefinition` wird noch ohne nachtraegliche
@@ -245,8 +249,11 @@ Architektur-Verortung:
 Ein Trigger gilt in D3 nur dann als kanonisch bestaetigt, wenn alle
 folgenden Bedingungen zugleich erfuellt sind:
 
-- Triggername entspricht
-  `MysqlSequenceNaming.triggerName(tableName, columnName)`
+- aus Marker und/oder Triggerbody muessen Tabelle, Spalte und
+  Sequence fachlich rekonstruierbar sein; auf dieser Basis wird der
+  erwartete Triggername vorwaerts ueber
+  `MysqlSequenceNaming.triggerName(tableName, columnName)` berechnet
+  und gegen den gelesenen Triggernamen geprueft
 - der Marker-Kommentar enthaelt
   `d-migrate:mysql-sequence-v1 object=sequence-trigger`
 - Marker, Triggername und Triggerinhalt benennen dieselbe
@@ -306,6 +313,12 @@ Weitere Regeln:
   materialisiert sein
 - verweist ein Trigger auf einen nicht vorhandenen oder mehrdeutigen
   Sequence-Key, entsteht keine Spaltenzuordnung
+- als kompatibler bestehender Default gelten in D3 nur:
+  - `null`
+  - ein bereits identischer `DefaultValue.SequenceNextVal(sequenceName)`
+- jeder andere bereits gelesene Nutzerdefault gilt als
+  widerspruechlich, z. B. Literal-, Funktions- oder anderer
+  Sequence-Default
 - eine bestaetigte Triggerzuordnung ueberschreibt in D3 keinen bereits
   widerspruechlichen Nutzerdefault auf Verdacht; bei Widerspruch bleibt
   der degradierte Pfad mit `W116`
@@ -375,6 +388,15 @@ Wenn einzelne Trigger degradiert sind:
     Vertrag haerten
 - D3-0 ist kein reiner Vorbereitungsschritt, sondern fasst bewusst
   bestehende Reader-Scaffold-Logik und zugehoerige Tests an
+
+Done-Kriterien fuer D3-0:
+
+- degradierte Triggerdiagnosen fallen nicht mehr auf Triggernamen als
+  Spaltenersatz zurueck, wenn die Spalte fachlich nicht verankert ist
+- `filterSupportTriggers(...)` haengt nicht mehr an
+  `endsWith(...)`-Matching gegen serialisierte Object-Keys
+- die neue D3-Evidenz kann spaeter `sequenceName` getrennt vom reinen
+  `dmg_nextval`-Token transportieren
 
 ### D3-1 Trigger-Rohdaten an D3 anbinden
 
@@ -458,7 +480,7 @@ Wenn einzelne Trigger degradiert sind:
 
 Abhaengigkeiten:
 
-- `D3-0` vor `D3-2` bis `D3-6`
+- `D3-0` vor `D3-1` bis `D3-6`
 - `D3-1` vor `D3-2`
 - `D3-2` vor `D3-3`
 - `D3-3` vor `D3-4` und `D3-6`
@@ -632,3 +654,6 @@ Gegenmassnahme:
 
 - fuer 0.9.4 als bewusste In-Memory-Entscheidung akzeptieren
 - Scan auf den kanonischen Namensraum und Triggernamensraum begrenzen
+- als bewusste technische Schuld dokumentieren; relevant wird das erst
+  bei ungewoehnlich grossen Schemas mit deutlich dreistelligen bis
+  vierstelligen potenziellen Support-Triggern
