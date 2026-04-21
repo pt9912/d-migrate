@@ -355,6 +355,13 @@ Weitere Regeln:
 - eine bestaetigte Triggerzuordnung ueberschreibt in D3 keinen bereits
   widerspruechlichen Nutzerdefault auf Verdacht; bei Widerspruch bleibt
   der degradierte Pfad mit `W116`
+- dieser Konflikt erzeugt in D3 einen expliziten Fachzustand
+  "bestaetigter Support-Trigger, aber Default-Konflikt":
+  - der Trigger bleibt fuer die Support-Erkennung bestaetigt
+  - die Spaltenzuordnung wird nicht materialisiert
+  - die finale Spaltendiagnose traegt den Konflikt als Ursache
+  - die Triggerunterdrueckung folgt weiterhin dem bestaetigten
+    Support-Status, nicht dem ausgefallenen Default-Mapping
 
 ### 5.5 Status-zu-Diagnose-Vertrag auf Trigger-Ebene
 
@@ -400,6 +407,9 @@ Leitregel:
   Spalte
 - Trigger-Hashes oder rohe Triggernamen bleiben interne Evidenz, nicht
   finale Nutzeridentitaet
+- fuer fehlenden Marker gilt derselbe Vertrag auch in der Verifikation:
+  finales `W116` nur bei fachlich verankerbarer Spalte, sonst nur
+  interne Evidenz
 - mehrere D3-Ursachen fuer denselben `ColumnDiagnosticKey(...)` werden
   deterministisch zusammengefuehrt; mindestens diese Prioritaet gilt:
   - `NOT_ACCESSIBLE` vor `NON_CANONICAL`
@@ -518,6 +528,8 @@ Done-Kriterien fuer D3-0:
   - intakten Support-Trigger mit `SequenceNextVal`
   - `includeTriggers = false` bei weiter funktionierender D3-Erkennung
   - Markerverlust ohne Fehlzuordnung
+  - Markerverlust ohne fachlich verankerbare Spalte erzeugt bewusst
+    kein finales `W116`
   - nicht kanonischen Trigger ohne Fehlzuordnung
   - Triggermetadaten nicht lesbar mit degradiertem `W116`
   - bestaetigten Support-Trigger bei bereits widerspruechlichem
@@ -558,8 +570,9 @@ Pflichtfaelle fuer 6.3:
    Trigger im Reverse-Ergebnis.
 4. Reine Formatierungs-, Quoting- oder Delimiter-Unterschiede im
    Triggertext loesen fuer intakte Trigger kein `W116` aus.
-5. Fehlt nur der Marker, entsteht keine Spaltenzuordnung, aber ein
-   degradiertes `W116`.
+5. Fehlt nur der Marker, entsteht nur dann ein degradiertes `W116`,
+   wenn die betroffene Spalte fachlich verankerbar bleibt; sonst bleibt
+   der Fall interne Evidenz ohne finale Note.
 6. Ein nicht kanonischer Trigger mit Marker, aber abweichender Semantik,
    fuehrt nicht zu einer Fehlzuordnung.
 7. Ist der gesamte Trigger-Scan nicht lesbar, bleiben D2-Sequences
@@ -578,9 +591,10 @@ Pflichtfaelle fuer 6.3:
 13. Die Triggerunterdrueckung greift nur fuer bestaetigte Support-
     Trigger, nicht fuer `MISSING_MARKER`, `NON_CANONICAL`,
     `NOT_ACCESSIBLE` oder `USER_OBJECT`.
-14. Eine Spalte mit bereits widerspruechlichem Nutzerdefault wird durch
-    einen bestaetigten Support-Trigger nicht still ueberschrieben,
-    sondern bleibt degradiert mit `W116`.
+14. Ein bestaetigter Support-Trigger mit widerspruechlichem bereits
+    gelesenen Nutzerdefault materialisiert kein `SequenceNextVal`, wird
+    nicht still ueberschrieben und wird als Konfliktursache in
+    derselben finalen Spaltendiagnose mit `W116` gefuehrt.
 15. Ein D1-strukturell bestaetigter Trigger, dessen Sequence-Key in D2
     wegen Mehrdeutigkeit oder Blockierung nicht materialisiert wurde,
     erzeugt kein `SequenceNextVal`.
