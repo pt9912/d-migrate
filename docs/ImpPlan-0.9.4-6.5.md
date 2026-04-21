@@ -76,8 +76,6 @@ Was nach D1 bis D3 und E1 fuer E2 noch fehlt:
 - Absicherung, dass additive JSON/YAML-Outputfelder aus E1 nicht in
   der Doku fehlen
 
-Aktueller Dokumentations-Gap vor E2:
-
 - `docs/cli-spec.md` spricht bei `W116` noch von "reserviert", obwohl
   das 0.9.4-Ledger bereits `active` fuehrt
 - `docs/mysql-sequence-emulation-plan.md` markiert Phase D/E noch als
@@ -280,12 +278,17 @@ Fuer E2 gilt:
   - Reverse-/Compare-Vertrag
   - 0.9.4-Status
   explizit benennen
+- als sichtbares Artefakt ein kurzes Widerspruchs-Protokoll im
+  Arbeitsschnitt oder Commit festhalten, damit Review und Folgearbeit
+  denselben E2-Ausgangspunkt teilen
 
 Done-Kriterien fuer E2-0:
 
 - alle relevanten 0.9.4-Dokumentpfade sind erfasst
 - Widersprueche und veraltete Aussagen sind als konkreter E2-
   Aenderungsschnitt festgehalten
+- das Widerspruchs-Protokoll ist als explizites Review-Artefakt
+  vorhanden
 
 ### E2a Roadmap nachziehen
 
@@ -295,11 +298,15 @@ Done-Kriterien fuer E2-0:
 - den sichtbaren Status mindestens auf `AP 6.1-6.4 Done` anheben,
   damit `roadmap.md` nicht auf einem aelteren Zwischenstand stehen
   bleibt
+- `AP 6.5` als laufendes Arbeitspaket sichtbar machen, damit die
+  Roadmap nach dem E2-Nachzug nicht sofort wieder hinter dem
+  Umsetzungsstand zurueckfaellt
 - dabei explizit entscheiden, wie die 0.9.4-AP-Nummerierung in der
   Roadmap sichtbar gemacht wird:
-  - entweder durch eine eigene Statusspalte fuer die 0.9.4-Tabelle
-  - oder durch einen klaren Statustext, der `AP 6.1-6.4` eindeutig auf
-    0.9.4 bezieht
+  - bevorzugt durch einen klaren Statustext, der `AP 6.1-6.4 Done`
+    und `AP 6.5 in Arbeit` eindeutig auf 0.9.4 bezieht
+  - nur falls die Roadmap-Struktur dabei unleserlich bleibt, alternativ
+    durch eine eigene Statusspalte fuer die 0.9.4-Tabelle
 
 Done-Kriterien fuer E2a:
 
@@ -309,6 +316,8 @@ Done-Kriterien fuer E2a:
   stimmt
 - der Roadmap-Status steht nicht mehr bei nur `AP 6.1 Done`, wenn die
   Teilplaene fuer `6.2`, `6.3` und `6.4` bereits vorliegen
+- der sichtbare Roadmap-Status macht auch `AP 6.5` als laufenden
+  Nachzug erkennbar
 
 ### E2b Spezialplan aktualisieren
 
@@ -392,9 +401,15 @@ Abhaengigkeiten:
 
 - `E2-0` vor `E2a` bis `E2e`
 - `E2c` haengt fachlich von D1 bis D3 und E1 ab
+- `E2e` laeuft bereits frueh parallel zu `E2a` und `E2b`, weil das
+  Ledger fuer Aktivierungs- und Evidenzfragen selbst Eingangsquelle ist
 - `E2e` vor `E2f`
 - `E2a` bis `E2d` sind nach `E2-0` weitgehend parallelisierbar
 - empfohlene Reihenfolge trotz Parallelisierbarkeit:
+  - `E2a` und `E2b` zuerst, damit Status- und Fachvertrag stabilisiert
+    sind
+  - `E2e` frueh parallel dazu, damit Ledger-Status und Evidenzpfade
+    nicht erst am Ende als Ueberraschung sichtbar werden
   - `E2b` vor `E2c`, damit die CLI-Spec den bereits konsolidierten
     Sequence-Vertrag referenziert
   - `E2c` vor `E2d`, damit der Guide nur den finalen Nutzervertrag
@@ -403,9 +418,9 @@ Abhaengigkeiten:
 
 Lesbare Ablaufskizze:
 
-- `E2-0` -> `{E2a, E2b}` -> `E2c` -> `E2d`
-- `E2e` laeuft nach dem inhaltlichen Nachzug gegen den finalen
-  Vertragsstand
+- `E2-0` -> `{E2a, E2b, E2e}` -> `E2c` -> `E2d`
+- `E2e` startet frueh, wird aber vor `E2f` noch einmal gegen den
+  finalen Vertragsstand gegengeprueft
 - `E2f` schliesst den Gesamtcheck ab
 
 ---
@@ -416,23 +431,25 @@ Pflichtfaelle fuer 6.5:
 
 1. `roadmap.md` beschreibt 0.9.4 konsistent zum Masterplan und verweist
    korrekt auf den Sequence-Plan.
-2. `mysql-sequence-emulation-plan.md` fuehrt Phase D/E nicht mehr nur
+2. `roadmap.md` zeigt den sichtbaren 0.9.4-AP-Fortschritt mindestens
+   bis `AP 6.1-6.4 Done` und `AP 6.5 in Arbeit`.
+3. `mysql-sequence-emulation-plan.md` fuehrt Phase D/E nicht mehr nur
    als offen, sondern als 0.9.4-Vertrag mit aktuellem Status.
-3. `cli-spec.md` beschreibt `W116` als aktiven 0.9.4-Warncode, nicht
+4. `cli-spec.md` beschreibt `W116` als aktiven 0.9.4-Warncode, nicht
    mehr als reserviert.
-4. `cli-spec.md` beschreibt `schema reverse` fuer MySQL-Sequences und
+5. `cli-spec.md` beschreibt `schema reverse` fuer MySQL-Sequences und
    `W116` konsistent zum Reverse-Vertrag aus D1 bis D3.
-5. `cli-spec.md` beschreibt `schema compare` so, dass operandseitiges
+6. `cli-spec.md` beschreibt `schema compare` so, dass operandseitiges
    `W116` sichtbar bleibt, aber keinen eigenen Diff-/Exit-Typ bildet.
-6. `cli-spec.md` dokumentiert additive `sourceOperand`/`targetOperand`-
+7. `cli-spec.md` dokumentiert additive `sourceOperand`/`targetOperand`-
    Felder fuer JSON/YAML ohne Bruch bestehender Feldsemantik.
-7. `guide.md` erklaert nutzerverstaendlich, wann MySQL-Sequences sauber
+8. `guide.md` erklaert nutzerverstaendlich, wann MySQL-Sequences sauber
    reverse-bar sind.
-8. `guide.md` erklaert nutzerverstaendlich, wann `W116` erscheint und
+9. `guide.md` erklaert nutzerverstaendlich, wann `W116` erscheint und
    wie Compare damit umgeht.
-9. `ledger/warn-code-ledger-0.9.4.yaml` und `cli-spec.md` stimmen bei
+10. `ledger/warn-code-ledger-0.9.4.yaml` und `cli-spec.md` stimmen bei
    Aktivierung und Bedeutung von `W116` ueberein.
-10. Roadmap, Spezialplan, CLI-Spec und Guide widersprechen sich nicht
+11. Roadmap, Spezialplan, CLI-Spec und Guide widersprechen sich nicht
     bei Scope oder Sichtbarkeit von `W116`.
 
 Maschinell gestuetzte Mindestchecks sind fuer E2 sinnvoll, auch wenn
@@ -442,6 +459,8 @@ die Hauptverifikation redaktionell bleibt:
   liefert nach E2 keinen Treffer mehr
 - `rg -n "W116" docs/guide.md` liefert nach E2 mindestens einen
   nutzerrelevanten Treffer
+- `rg -n "reverse|Reverse" docs/guide.md` liefert nach E2 mindestens
+  einen Reverse-bezogenen Nutzerhinweis
 - `rg -n "sourceOperand|targetOperand" docs/cli-spec.md` liefert nach
   E2 mindestens einen Treffer im `schema compare`-Outputkontext
 - `rg -n "status:\\s*active|status: active" ledger/warn-code-ledger-0.9.4.yaml`
@@ -495,56 +514,7 @@ Bewusst noch nicht direkt betroffen:
 
 ## 9. Risiken und Abgrenzung
 
-### 9.1 CLI-Spec und Ledger laufen auseinander
-
-Risiko:
-
-- `cli-spec.md` bleibt bei "W116 reserviert", waehrend das Ledger
-  bereits `active` fuehrt
-
-Gegenmassnahme:
-
-- Ledger als Statusquelle behandeln
-- `cli-spec.md` explizit auf aktiven 0.9.4-Stand ziehen
-
-### 9.2 Spezialplan und Roadmap sprechen unterschiedlichen 0.9.4-Status
-
-Risiko:
-
-- Roadmap beschreibt 0.9.4 grob oder als in Arbeit, waehrend der
-  Spezialplan D/E noch als offen stehenlaesst
-
-Gegenmassnahme:
-
-- beide Dokumente im selben E2-Schnitt aktualisieren
-- Statusmarker explizit gegeneinander pruefen
-
-### 9.3 Guide bleibt zu technisch oder zu leer
-
-Risiko:
-
-- der Guide uebernimmt entweder zu viele Spezialdetails oder erklaert
-  `W116` und Compare gar nicht
-
-Gegenmassnahme:
-
-- Guide auf nutzerrelevante Hinweise begrenzen
-- Detailvertraege in CLI-Spec und Spezialplan belassen
-
-### 9.4 Additive Compare-Ausgabe bleibt unterdokumentiert
-
-Risiko:
-
-- E1 fuehrt additive `sourceOperand`-/`targetOperand`-Felder ein,
-  aber die Doku erwaehnt sie nicht oder beschreibt sie als Bruch
-
-Gegenmassnahme:
-
-- additive Natur in `cli-spec.md` explizit nennen
-- Guide nur auf Sichtbarkeit hinweisen, nicht die komplette
-  Feldstruktur wiederholen
-
-### 9.5 Doku-Nachzug bleibt hinter dem echten 0.9.4-Codepfad zurueck
+### 9.1 Doku-Nachzug bleibt hinter dem echten 0.9.4-Codepfad zurueck
 
 Risiko:
 
@@ -558,3 +528,53 @@ Gegenmassnahme:
   Reverse/Compare eingeflossen sind, die den Vertragsstand verschieben
 - E2 erst gegen diesen tatsaechlich letzten Fachstand abgleichen
 - `E2f` als bewussten Konsistenz- und Gegenleseschritt behandeln
+
+### 9.2 CLI-Spec und Ledger laufen auseinander
+
+Risiko:
+
+- `cli-spec.md` bleibt bei "W116 reserviert", waehrend das Ledger
+  bereits `active` fuehrt
+
+Gegenmassnahme:
+
+- Ledger als Statusquelle behandeln
+- `cli-spec.md` explizit auf aktiven 0.9.4-Stand ziehen
+
+### 9.3 Spezialplan und Roadmap sprechen unterschiedlichen 0.9.4-Status
+
+Risiko:
+
+- Roadmap beschreibt 0.9.4 grob oder als in Arbeit, waehrend der
+  Spezialplan D/E noch als offen stehenlaesst
+
+Gegenmassnahme:
+
+- beide Dokumente im selben E2-Schnitt aktualisieren
+- Statusmarker explizit gegeneinander pruefen
+
+### 9.4 Guide bleibt zu technisch oder zu leer
+
+Risiko:
+
+- der Guide uebernimmt entweder zu viele Spezialdetails oder erklaert
+  `W116` und Compare gar nicht
+
+Gegenmassnahme:
+
+- Guide auf nutzerrelevante Hinweise begrenzen
+- Mindestumfang in `E2d` explizit gegenpruefen
+- Detailvertraege in CLI-Spec und Spezialplan belassen
+
+### 9.5 Additive Compare-Ausgabe bleibt unterdokumentiert
+
+Risiko:
+
+- E1 fuehrt additive `sourceOperand`-/`targetOperand`-Felder ein,
+  aber die Doku erwaehnt sie nicht oder beschreibt sie als Bruch
+
+Gegenmassnahme:
+
+- additive Natur in `cli-spec.md` explizit nennen
+- Guide nur auf Sichtbarkeit hinweisen, nicht die komplette
+  Feldstruktur wiederholen
