@@ -30,7 +30,7 @@ class MysqlSchemaReader(
             val lctn = lowerCaseTableNames(conn)
 
             val metaDb = normalizeMysqlMetadataIdentifier(database, lctn)
-            val scope = ReverseScope(catalogName = database, schemaName = database)
+            val scope = ReverseScope(catalogName = metaDb, schemaName = metaDb)
 
             // Phase 1: read base objects (existing paths)
             val tables = readTables(session, metaDb, lctn, notes)
@@ -244,15 +244,16 @@ class MysqlSchemaReader(
             }
         }
 
-        // Trigger-level: degraded states with real table/column from trigger name
+        // Trigger-level: degraded states — keyed by trigger hash
+        // (actual table/column resolution deferred to D3)
         for ((name, state) in triggerStates) {
-            val (tableName, columnName) = parseTriggerTableColumn(name)
+            val hash = extractTriggerHash(name)
             when (state) {
                 SupportTriggerState.MISSING_MARKER,
                 SupportTriggerState.NON_CANONICAL,
                 SupportTriggerState.NOT_ACCESSIBLE -> {
                     diags += SupportDiagnostic(
-                        key = ColumnDiagnosticKey(scope, tableName, columnName),
+                        key = SequenceDiagnosticKey(scope, "trigger:$hash"),
                         causes = listOf("support trigger '$name' has state $state"),
                         emitsW116 = true,
                     )
@@ -266,19 +267,20 @@ class MysqlSchemaReader(
     }
 
     /**
-     * Extracts table and column segments from a canonical support trigger name.
+     * Extracts the hash10 segment from a canonical support trigger name.
      * Format: `dmg_seq_<table16>_<column16>_<hash10>_bi`
+     *
+     * Since table16/column16 can themselves contain underscores,
+     * string-splitting is unreliable. Instead we extract the hash
+     * (always 10 hex chars before `_bi`) and use it as the diagnostic key.
+     * The actual table/column resolution happens in D3 by matching the
+     * hash against known sequence-column combinations.
      */
-    private fun parseTriggerTableColumn(triggerName: String): Pair<String, String> {
-        // dmg_seq_ = 8 chars, _bi = 3 chars, _hash10 = 11 chars
-        val core = triggerName.removePrefix("dmg_seq_").removeSuffix("_bi")
-        // core = <table16>_<column16>_<hash10>
-        val lastUnderscore = core.lastIndexOf('_')
-        if (lastUnderscore < 0) return triggerName to ""
-        val withoutHash = core.substring(0, lastUnderscore)
-        val midUnderscore = withoutHash.indexOf('_')
-        if (midUnderscore < 0) return withoutHash to ""
-        return withoutHash.substring(0, midUnderscore) to withoutHash.substring(midUnderscore + 1)
+    private fun extractTriggerHash(triggerName: String): String {
+        // Remove suffix "_bi" → "dmg_seq_<table16>_<column16>_<hash10>"
+        val withoutSuffix = triggerName.removeSuffix("_bi")
+        // Hash is the last 10 characters
+        return if (withoutSuffix.length >= 10) withoutSuffix.takeLast(10) else triggerName
     }
 
     // ── Support object filtering ───────────────────
@@ -301,7 +303,12 @@ class MysqlSchemaReader(
             .filter { it.value == SupportRoutineState.CONFIRMED }
             .keys
         if (confirmed.isEmpty()) return functions
-        return functions.filterKeys { it !in confirmed }
+        // Routine map keys use ObjectKeyCodec format: "name(params)"
+        // Match on the raw name prefix before the '(' delimiter
+        return functions.filterKeys { key ->
+            val rawName = key.substringBefore('(')
+            rawName !in confirmed
+        }
     }
 
     private fun filterSupportTriggers(
