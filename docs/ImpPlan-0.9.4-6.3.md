@@ -80,8 +80,9 @@ Aktueller Scaffold-Gap vor D3:
 - `listPotentialSupportTriggers(...)` arbeitet heute nur mit Name,
   Timing/Event, Markertext und einfachem `dmg_nextval`-Token
 - `buildSupportDiagnostics(...)` schluesselt degradierte Triggerfaelle
-  aktuell ueber einen Trigger-Hash (`trigger:<hash>`) statt ueber die
-  spaeter benoetigte `table.column`-Identitaet
+  zwar bereits ueber `ColumnDiagnosticKey(...)`, nutzt dabei aber noch
+  keinen durchgaengig bestaetigten Spaltenschluessel; im Fallback wird
+  noch der Triggername als Spaltenersatz verwendet
 - `filterSupportTriggers(...)` unterdrueckt nur bestaetigte Trigger,
   ohne dass bisher Spaltendefaults gesetzt werden
 - `SchemaDefinition` wird noch ohne nachtraegliche
@@ -226,6 +227,10 @@ Architektur-Verortung:
 
 - D3 lebt als eigener privater Reader-Schritt, z. B.
   `materializeSequenceDefaults(...)`
+- im bestehenden `read()`-Ablauf liegt D3 nach dem internen
+  Support-Scan aus Phase 2 und vor dem finalen `SchemaDefinition`-Bau;
+  praktisch schiebt D3 damit den bisherigen Assemblierungsblock aus
+  Phase 3 nach hinten und reichert dessen Eingaben fachlich an
 - dieser Schritt konsumiert:
   - die D2-materialisierten `schema.sequences`
   - die Triggerrohdaten bzw. Triggerstatus aus dem Support-Snapshot
@@ -260,6 +265,11 @@ Trigger, die nur teilweise passen, werden nicht rekonstruiert.
 ### 5.3 Trigger-Normalisierung
 
 D3 fuehrt eine robuste, semantische Normalisierung des Triggertexts ein.
+
+Der bestehende Regex fuer `SET NEW.<column> = ...` reicht dafuer nicht
+aus. D3 braucht zusaetzlich eine explizite Extraktion des Sequence-Keys
+aus `dmg_nextval('<sequence>')` oder einen gleichwertig robusten,
+D3-eigenen Parserpfad.
 
 Mindestens zu tolerieren:
 
@@ -354,27 +364,40 @@ Wenn einzelne Trigger degradiert sind:
 
 - bestehende Trigger-Minimalheuristik dort korrigieren, wo sie fuer D3
   fachlich nicht ausreicht:
-  - Triggerdiagnosen nicht final auf `trigger:<hash>` belassen
+  - Triggerdiagnosen nicht bei Triggernamen als
+    Spaltenersatzidentitaet stehenlassen
   - bestaetigte Trigger nicht nur filtern, sondern fachlich fuer
     Spaltenzuordnung weiterverwenden
   - Markerverlust weiterhin degrade statt markerloser Rekonstruktion
   - `includeTriggers = false` weiter sauber vom Supportpfad trennen
+  - fragiles `endsWith(...)`-Matching in `filterSupportTriggers(...)`
+    gegen eine stabile Triggeridentitaet aus dem Reader-/Object-Key-
+    Vertrag haerten
+- D3-0 ist kein reiner Vorbereitungsschritt, sondern fasst bewusst
+  bestehende Reader-Scaffold-Logik und zugehoerige Tests an
 
 ### D3-1 Trigger-Rohdaten an D3 anbinden
 
 - Triggerscan aus D1 so anschliessen, dass D3 mehr als nur
   Statusbooleans konsumieren kann
-- falls noetig den Snapshot um fachlich benoetigte Triggerevidenz
-  erweitern:
+- den bestehenden `SupportTriggerAssessment`-Traeger oder einen
+  gleichwertigen D3-internen Folgetyp um die fuer D3 zwingend benoetigte
+  Sequence-Evidenz erweitern:
   - Triggername
+  - `tableName`
+  - `columnName`
+  - `sequenceName: String?` aus `dmg_nextval('<sequence>')`
   - Triggertext/normalisierte Tokens
   - Timing/Event
-  - ggf. aus Name ableitbare Hash-/Segmentinformation
+  - ggf. aus Name ableitbare Segmentinformation
 
 ### D3-2 Trigger-Normalisierung implementieren
 
 - semantische Normalisierung fuer Support-Trigger einziehen
 - Marker, Name, Timing/Event und Body gemeinsam validieren
+- neben der Spaltenextraktion auch den referenzierten Sequence-Key
+  explizit aus dem Trigger-Body extrahieren und gegen Marker/Namensraum
+  querpruefen
 - harmlose Formatierungsunterschiede tolerieren
 - markerlosen Trigger ausdruecklich auf Diagnosepfad begrenzen
 
@@ -400,6 +423,10 @@ Wenn einzelne Trigger degradiert sind:
   nicht aggressiv unterdruecken
 - Triggerunterdrueckung an denselben Kanonizitaetsvertrag binden wie die
   Default-Materialisierung
+- D3-5 ist fachlich von D3-4 unabhaengig:
+  - beide nutzen denselben Bestaetigungsvertrag
+  - D3-4 materialisiert Spaltendefaults
+  - D3-5 filtert nur sichtbare Triggerobjekte
 
 ### D3-6 Trigger-W116 auf Spaltenebene finalisieren
 
@@ -417,6 +444,8 @@ Wenn einzelne Trigger degradiert sind:
   - Markerverlust ohne Fehlzuordnung
   - nicht kanonischen Trigger ohne Fehlzuordnung
   - Triggermetadaten nicht lesbar mit degradiertem `W116`
+  - bestaetigten Support-Trigger bei bereits widerspruechlichem
+    Nutzerdefault ohne stille Ueberschreibung
   - bestaetigte Support-Trigger verschwinden aus `schema.triggers`
   - `USER_OBJECT` bleibt sichtbarer Nutzertrigger
   - mehrere Spalten auf dieselbe Sequence
@@ -433,6 +462,8 @@ Abhaengigkeiten:
 - `D3-1` vor `D3-2`
 - `D3-2` vor `D3-3`
 - `D3-3` vor `D3-4` und `D3-6`
+- `D3-4` und `D3-5` sind fachlich parallelisierbar, sobald
+  `D3-3` den Bestaetigungsvertrag geliefert hat
 - `D3-5` haengt vom finalen Bestaetigungsvertrag aus `D3-2`/`D3-3` ab
 
 ---
@@ -469,6 +500,9 @@ Pflichtfaelle fuer 6.3:
 13. Die Triggerunterdrueckung greift nur fuer bestaetigte Support-
     Trigger, nicht fuer `MISSING_MARKER`, `NON_CANONICAL`,
     `NOT_ACCESSIBLE` oder `USER_OBJECT`.
+14. Eine Spalte mit bereits widerspruechlichem Nutzerdefault wird durch
+    einen bestaetigten Support-Trigger nicht still ueberschrieben,
+    sondern bleibt degradiert mit `W116`.
 
 Akzeptanzkriterium fuer 6.3:
 
@@ -486,13 +520,17 @@ Voraussichtlich direkt betroffen:
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueries.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceNaming.kt`
 - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSequenceReverseSupport.kt`
+- `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`
+- ggf. `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt`
+
+Als fachliche Zieltypen bzw. konsumierte Vertragsanbieter relevant,
+aber voraussichtlich nicht direkt zu aendern:
+
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/ColumnDefinition.kt`
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/DefaultValue.kt`
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SchemaDefinition.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadNote.kt`
-- `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReaderTest.kt`
-- ggf. `adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt`
 
 Bewusst noch nicht direkt produktiv betroffen:
 
@@ -594,4 +632,3 @@ Gegenmassnahme:
 
 - fuer 0.9.4 als bewusste In-Memory-Entscheidung akzeptieren
 - Scan auf den kanonischen Namensraum und Triggernamensraum begrenzen
-
