@@ -299,6 +299,10 @@ Kanonisierung von Trigger-/Sequence-Identifikatoren:
   (Backticks/kompatible SQL-Quoting-Huellen), normalisiert harmlose
   Schema-Qualifizierung auf den aktiven `ReverseScope` und vergleicht
   anhand der readerseitig bereits etablierten MySQL-Identifiersemantik
+- fuer die Scope-Aufloesung gilt in D3 deterministisch der aktive
+  `ReverseScope` des aktuellen Reverse-Laufs; weder ein abweichendes
+  Trigger-Objektschema noch ein anderes, nur im Body referenziertes
+  Schema erweitert diesen Geltungsbereich
 - fuer `dmg_nextval('<sequence>')` gilt:
   - unqualifizierte Namen werden gegen den aktiven `ReverseScope`
     aufgeloest
@@ -306,6 +310,12 @@ Kanonisierung von Trigger-/Sequence-Identifikatoren:
     Scope zeigen
   - widerspruechliche Schema-/Catalog-Praefixe bleiben
     `NON_CANONICAL`
+- daraus folgt fuer 0.9.4 bewusst:
+  - cross-schema referenzierende Trigger gelten nicht als kanonische
+    d-migrate-Support-Trigger
+  - bei mehrdeutigem oder scope-fremdem Qualifier gewinnt nie ein
+    alternativer Scope; der Fall degradiert deterministisch statt
+    heuristisch umgebogen zu werden
 - der Marker selbst bleibt fachlich strikt; toleriert werden dort nur
   die fuer den Markertransport irrelevanten Huelleffekte, nicht aber
   inhaltlich abweichende Objekt-, Tabellen-, Spalten- oder
@@ -362,6 +372,11 @@ Weitere Regeln:
   - die finale Spaltendiagnose traegt den Konflikt als Ursache
   - die Triggerunterdrueckung folgt weiterhin dem bestaetigten
     Support-Status, nicht dem ausgefallenen Default-Mapping
+  - dieses Verhalten ist in 0.9.4 bewusst so gewollt:
+    der Support-Trigger wird nicht als Nutzertrigger sichtbar gehalten,
+    obwohl die Spalte wegen Konflikt degradiert bleibt; die Nutzeranalyse
+    laeuft hier ueber die Spaltendiagnose, nicht ueber ein zusaetzlich
+    sichtbares Triggerobjekt
 
 ### 5.5 Status-zu-Diagnose-Vertrag auf Trigger-Ebene
 
