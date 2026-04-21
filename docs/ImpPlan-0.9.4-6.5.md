@@ -273,6 +273,9 @@ Done-Kriterien fuer E2-0:
 - `docs/roadmap.md` fuer den 0.9.4-Status aktualisieren
 - Scope, Status und Verweisstruktur auf D/E mit dem aktuellen
   Umsetzungsstand abgleichen
+- den sichtbaren Status mindestens auf `AP 6.1-6.4 Done` anheben,
+  damit `roadmap.md` nicht auf einem aelteren Zwischenstand stehen
+  bleibt
 
 Done-Kriterien fuer E2a:
 
@@ -280,6 +283,8 @@ Done-Kriterien fuer E2a:
   zum Masterplan
 - Status- und Verweisstand auf `mysql-sequence-emulation-plan.md`
   stimmt
+- der Roadmap-Status steht nicht mehr bei nur `AP 6.1 Done`, wenn die
+  Teilplaene fuer `6.2`, `6.3` und `6.4` bereits vorliegen
 
 ### E2b Spezialplan aktualisieren
 
@@ -315,6 +320,13 @@ Done-Kriterien fuer E2c:
 - `docs/guide.md` um praxisnahe Hinweise zu MySQL-Sequence-Reverse und
   Compare-Verhalten erweitern
 - Nutzerwarnung und Erwartungsmanagement fuer `W116` einziehen
+- mindestens ein konkreter Nutzerhinweis aufnehmen, z. B.:
+  - bei intakter kanonischer MySQL-Sequence-Emulation faltet
+    `schema reverse` die Supportobjekte wieder zu Sequences und
+    `SequenceNextVal` zurueck
+  - bei fehlenden oder nicht kanonischen Supportobjekten erscheint
+    `W116`, waehrend `schema compare` diese Diagnose sichtbar macht,
+    aber nicht allein zum Diff macht
 
 Done-Kriterien fuer E2d:
 
@@ -350,9 +362,14 @@ Done-Kriterien fuer E2f:
 Abhaengigkeiten:
 
 - `E2-0` vor `E2a` bis `E2e`
-- `E2c` haengt fachlich von D1 bis E3 und E1 ab
+- `E2c` haengt fachlich von D1 bis D3 und E1 ab
 - `E2e` vor `E2f`
 - `E2a` bis `E2d` sind nach `E2-0` weitgehend parallelisierbar
+- empfohlene Reihenfolge trotz Parallelisierbarkeit:
+  - `E2b` vor `E2c`, damit die CLI-Spec den bereits konsolidierten
+    Sequence-Vertrag referenziert
+  - `E2c` vor `E2d`, damit der Guide nur den finalen Nutzervertrag
+    zusammenfasst statt Zwischenstaende zu erklaeren
 - `E2f` ist Abschluss-Gate fuer 6.5
 
 ---
@@ -382,6 +399,15 @@ Pflichtfaelle fuer 6.5:
 10. Roadmap, Spezialplan, CLI-Spec und Guide widersprechen sich nicht
     bei Scope oder Sichtbarkeit von `W116`.
 
+Maschinell gestuetzte Mindestchecks sind fuer E2 sinnvoll, auch wenn
+die Hauptverifikation redaktionell bleibt:
+
+- ein einfacher Check darf absichern, dass in `docs/cli-spec.md` nach
+  E2 keine Kombination aus `W116` und `reserviert` mehr stehenbleibt
+- ein einfacher Check darf absichern, dass `ledger/warn-code-ledger-
+  0.9.4.yaml` und `docs/cli-spec.md` beide `W116` auf aktivem 0.9.4-
+  Stand fuehren
+
 Akzeptanzkriterium fuer 6.5:
 
 - der 0.9.4-Nutzer- und Vertragsstand zu MySQL-Sequence-Reverse,
@@ -394,10 +420,17 @@ Akzeptanzkriterium fuer 6.5:
 Voraussichtlich direkt betroffen:
 
 - `docs/roadmap.md`
+  - Milestone-0.9.4-Status und sichtbaren AP-Fortschritt nachziehen
 - `docs/mysql-sequence-emulation-plan.md`
+  - Phase-D/E-Status und Gesamtvertrag auf den 0.9.4-Stand ziehen
 - `docs/cli-spec.md`
+  - `W116` von reserviert auf aktiv heben und Reverse-/Compare-Vertrag
+    konkretisieren
 - `docs/guide.md`
+  - praxisnahe Hinweise zu MySQL-Sequence-Reverse, `W116` und Compare
+    ergaenzen
 - `ledger/warn-code-ledger-0.9.4.yaml`
+  - Evidenz- und Statusabgleich gegen den finalen 0.9.4-Vertrag
 
 Als fachliche Quellen relevant, aber voraussichtlich nicht direkt zu
 aendern:
@@ -477,4 +510,3 @@ Gegenmassnahme:
 
 - E2 erst gegen die finalen Teilplaene abgleichen
 - `E2f` als bewussten Konsistenz- und Gegenleseschritt behandeln
-
