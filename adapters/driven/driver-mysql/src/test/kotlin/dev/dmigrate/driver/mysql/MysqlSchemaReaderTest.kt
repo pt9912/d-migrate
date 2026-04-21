@@ -1079,6 +1079,188 @@ class MysqlSchemaReaderTest : FunSpec({
         d2.notes.any { it.code == "W116" && it.objectName == "seq1" && it.hint?.contains("not canonical") == true } shouldBe true
     }
 
+    // ── D3: Sequence defaults from triggers (0.9.4 AP 6.3) ──
+
+    fun makeSnapshot(
+        sequences: Map<String, SequenceDefinition> = mapOf("invoice_seq" to SequenceDefinition(start = 1000)),
+        triggerAssessments: List<MysqlMetadataQueries.SupportTriggerAssessment> = emptyList(),
+    ): MysqlSequenceSupportSnapshot {
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val triggerStates = triggerAssessments.associate { it.triggerName to it.state }
+        return MysqlSequenceSupportSnapshot(
+            scope = scope,
+            supportTableState = SupportTableState.AVAILABLE,
+            sequenceRows = emptyList(),
+            ambiguousKeys = emptySet(),
+            routineStates = emptyMap(),
+            triggerStates = triggerStates,
+            triggerAssessments = triggerAssessments,
+            diagnostics = emptyList(),
+        )
+    }
+
+    fun makeTable(vararg cols: Pair<String, ColumnDefinition>): Map<String, TableDefinition> = mapOf(
+        "orders" to TableDefinition(columns = linkedMapOf(*cols), primaryKey = listOf("id")),
+    )
+
+    val confirmedTriggerName = MysqlSequenceNaming.triggerName("orders", "invoice_number")
+
+    test("D3: confirmed trigger materializes SequenceNextVal on column") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, snapshot.let {
+            mapOf("invoice_seq" to SequenceDefinition(start = 1000))
+        }, tables)
+        val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
+        col.default shouldBe DefaultValue.SequenceNextVal("invoice_seq")
+        d3.confirmedTriggerNames shouldBe setOf(confirmedTriggerName)
+    }
+
+    test("D3: includeTriggers=false does not prevent D3 recognition") {
+        // D3 works through the snapshot, not through user-visible triggers.
+        // This test verifies that trigger assessments are processed regardless
+        // of the includeTriggers flag by testing materializeSequenceDefaults directly.
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        // D3 works even though no user triggers were read (includeTriggers=false scenario)
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        d3.enrichedTables["orders"]!!.columns["invoice_number"]!!.default shouldBe DefaultValue.SequenceNextVal("invoice_seq")
+    }
+
+    test("D3: MISSING_MARKER trigger produces no SequenceNextVal") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                confirmedTriggerName, SupportTriggerState.MISSING_MARKER, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
+        col.default shouldBe null  // not set
+        d3.confirmedTriggerNames.shouldBeEmpty()
+        d3.notes.any { it.code == "W116" && "orders.invoice_number" in it.objectName } shouldBe true
+    }
+
+    test("D3: trigger referencing non-materialized sequence produces no SequenceNextVal") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
+        )
+        val snapshot = makeSnapshot(
+            sequences = emptyMap(),  // no sequences materialized
+            triggerAssessments = listOf(
+                MysqlMetadataQueries.SupportTriggerAssessment(
+                    confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "ghost_seq",
+                ),
+            ),
+        )
+        val d3 = reader.materializeSequenceDefaults(snapshot, emptyMap(), tables)
+        val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
+        col.default shouldBe null
+    }
+
+    test("D3: conflicting existing default produces W116, no overwrite") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger, default = DefaultValue.NumberLiteral(0)),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        // Default NOT overwritten
+        val col = d3.enrichedTables["orders"]!!.columns["invoice_number"]!!
+        col.default shouldBe DefaultValue.NumberLiteral(0)
+        // W116 emitted for the conflict
+        d3.notes.any { it.code == "W116" && "conflicting" in (it.hint ?: "") } shouldBe true
+        // Trigger still confirmed (suppressed despite default conflict)
+        d3.confirmedTriggerNames shouldBe setOf(confirmedTriggerName)
+    }
+
+    test("D3: USER_OBJECT trigger is not suppressed and no W116") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                "dmg_seq_orders_col_abc1234567_bi", SupportTriggerState.USER_OBJECT, "orders", null, null,
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        d3.confirmedTriggerNames.shouldBeEmpty()
+        d3.notes.shouldBeEmpty()
+    }
+
+    test("D3: multiple columns on same sequence") {
+        val tables = mapOf("orders" to TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                "col_a" to ColumnDefinition(type = NeutralType.BigInteger),
+                "col_b" to ColumnDefinition(type = NeutralType.BigInteger),
+            ),
+            primaryKey = listOf("id"),
+        ))
+        val trigA = MysqlSequenceNaming.triggerName("orders", "col_a")
+        val trigB = MysqlSequenceNaming.triggerName("orders", "col_b")
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(trigA, SupportTriggerState.CONFIRMED, "orders", "col_a", "invoice_seq"),
+            MysqlMetadataQueries.SupportTriggerAssessment(trigB, SupportTriggerState.CONFIRMED, "orders", "col_b", "invoice_seq"),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        d3.enrichedTables["orders"]!!.columns["col_a"]!!.default shouldBe DefaultValue.SequenceNextVal("invoice_seq")
+        d3.enrichedTables["orders"]!!.columns["col_b"]!!.default shouldBe DefaultValue.SequenceNextVal("invoice_seq")
+        d3.confirmedTriggerNames shouldBe setOf(trigA, trigB)
+    }
+
+    test("D3: degraded trigger does not block other confirmed triggers") {
+        val tables = mapOf("orders" to TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                "good_col" to ColumnDefinition(type = NeutralType.BigInteger),
+                "bad_col" to ColumnDefinition(type = NeutralType.BigInteger),
+            ),
+            primaryKey = listOf("id"),
+        ))
+        val goodTrig = MysqlSequenceNaming.triggerName("orders", "good_col")
+        val badTrig = MysqlSequenceNaming.triggerName("orders", "bad_col")
+        val snapshot = makeSnapshot(
+            sequences = mapOf(
+                "good_seq" to SequenceDefinition(start = 1),
+                "bad_seq" to SequenceDefinition(start = 1),
+            ),
+            triggerAssessments = listOf(
+                MysqlMetadataQueries.SupportTriggerAssessment(goodTrig, SupportTriggerState.CONFIRMED, "orders", "good_col", "good_seq"),
+                MysqlMetadataQueries.SupportTriggerAssessment(badTrig, SupportTriggerState.NON_CANONICAL, "orders", "bad_col", "bad_seq"),
+            ),
+        )
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf(
+            "good_seq" to SequenceDefinition(start = 1),
+            "bad_seq" to SequenceDefinition(start = 1),
+        ), tables)
+        d3.enrichedTables["orders"]!!.columns["good_col"]!!.default shouldBe DefaultValue.SequenceNextVal("good_seq")
+        d3.enrichedTables["orders"]!!.columns["bad_col"]!!.default shouldBe null
+        d3.confirmedTriggerNames shouldBe setOf(goodTrig)
+    }
+
     // ── existing tests (unchanged baseline) ───────
 
     test("read with FK backing index suppression") {

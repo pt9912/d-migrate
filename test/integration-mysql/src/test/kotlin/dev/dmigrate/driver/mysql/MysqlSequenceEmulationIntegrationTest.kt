@@ -227,6 +227,14 @@ class MysqlSequenceEmulationIntegrationTest : FunSpec({
 
         // Invoices table should still be present
         result.schema.tables.containsKey("invoices") shouldBe true
+
+        // D3: invoice_number column should have SequenceNextVal default
+        val col = result.schema.tables["invoices"]!!.columns["invoice_number"]
+        (col?.default is dev.dmigrate.core.model.DefaultValue.SequenceNextVal) shouldBe true
+        (col?.default as dev.dmigrate.core.model.DefaultValue.SequenceNextVal).sequenceName shouldBe "invoice_seq"
+
+        // Support trigger should not appear in triggers
+        result.schema.triggers.keys.none { it.contains("dmg_seq_") } shouldBe true
     }
 
     test("reverse from real MySQL: sequence start reflects current next_value") {

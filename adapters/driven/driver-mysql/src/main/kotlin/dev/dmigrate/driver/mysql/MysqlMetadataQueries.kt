@@ -311,6 +311,9 @@ object MysqlMetadataQueries {
     /** Extracts column name from SET NEW.`column` in trigger body. */
     private val TRIGGER_COLUMN_PATTERN = Regex("""SET\s+NEW\.`?(\w+)`?\s*=""", RegexOption.IGNORE_CASE)
 
+    /** Extracts sequence name from dmg_nextval('seqname') in trigger body. */
+    private val TRIGGER_SEQUENCE_PATTERN = Regex("""`?dmg_nextval`?\s*\(\s*'([^']+)'\s*\)""", RegexOption.IGNORE_CASE)
+
     /** Expected signatures for support routines (return type + parameter form). */
     private val expectedRoutineSignatures = mapOf(
         MysqlSequenceNaming.NEXTVAL_ROUTINE to RoutineSignature(
@@ -402,6 +405,7 @@ object MysqlMetadataQueries {
         val state: SupportTriggerState,
         val tableName: String,
         val columnName: String?,
+        val sequenceName: String?,
     )
 
     data class SupportTriggerScanResult(
@@ -445,8 +449,10 @@ object MysqlMetadataQueries {
             }
             // Extract column from SET NEW.`column` pattern in body
             val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
+            // Extract sequence from dmg_nextval('seqname') in body
+            val sequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)
 
-            SupportTriggerAssessment(name, state, table, column)
+            SupportTriggerAssessment(name, state, table, column, sequence)
         }
         return SupportTriggerScanResult(result, accessible = true)
     }

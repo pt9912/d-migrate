@@ -106,6 +106,7 @@ data class MysqlSequenceSupportSnapshot(
     val ambiguousKeys: Set<String>,
     val routineStates: Map<String, SupportRoutineState>,
     val triggerStates: Map<String, SupportTriggerState>,
+    val triggerAssessments: List<MysqlMetadataQueries.SupportTriggerAssessment>,
     val diagnostics: List<SupportDiagnostic>,
 ) {
     companion object {
@@ -117,6 +118,7 @@ data class MysqlSequenceSupportSnapshot(
             ambiguousKeys = emptySet(),
             routineStates = emptyMap(),
             triggerStates = emptyMap(),
+            triggerAssessments = emptyList(),
             diagnostics = emptyList(),
         )
     }

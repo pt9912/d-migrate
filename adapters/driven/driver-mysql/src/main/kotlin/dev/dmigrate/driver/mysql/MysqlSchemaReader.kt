@@ -42,14 +42,23 @@ class MysqlSchemaReader(
             // Phase 2: internal sequence support scan
             val supportSnapshot = scanSequenceSupport(session, metaDb, scope)
 
-            // Phase 3: D2 — materialize sequences from support snapshot
+            // Phase 3a: D2 — materialize sequences from support snapshot
             val d2Result = materializeSupportSequences(supportSnapshot)
 
+            // Phase 3b: D3 — materialize sequence defaults from triggers
+            val d3Result = materializeSequenceDefaults(
+                supportSnapshot, d2Result.sequences, tables,
+            )
+
             // Phase 4: assemble result — filter support objects, aggregate diagnostics
-            val filteredTables = filterSupportTable(tables, supportSnapshot)
+            val filteredTables = filterSupportTable(d3Result.enrichedTables, supportSnapshot)
             val filteredFunctions = filterSupportRoutines(functions, supportSnapshot)
-            val filteredTriggers = filterSupportTriggers(triggers, supportSnapshot)
+            val filteredTriggers = filterSupportTriggers(
+                d3Result.filteredTriggers(triggers, supportSnapshot),
+                supportSnapshot,
+            )
             notes += d2Result.notes
+            notes += d3Result.notes
 
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.mysqlName(database),
@@ -156,6 +165,7 @@ class MysqlSchemaReader(
                 ambiguousKeys = emptySet(),
                 routineStates = emptyMap(),
                 triggerStates = emptyMap(),
+                triggerAssessments = emptyList(),
                 diagnostics = listOf(
                     SupportDiagnostic(
                         key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
@@ -173,6 +183,7 @@ class MysqlSchemaReader(
                 ambiguousKeys = emptySet(),
                 routineStates = emptyMap(),
                 triggerStates = emptyMap(),
+                triggerAssessments = emptyList(),
                 diagnostics = listOf(
                     SupportDiagnostic(
                         key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
@@ -195,6 +206,7 @@ class MysqlSchemaReader(
                 ambiguousKeys = emptySet(),
                 routineStates = emptyMap(),
                 triggerStates = emptyMap(),
+                triggerAssessments = emptyList(),
                 diagnostics = listOf(
                     SupportDiagnostic(
                         key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
@@ -268,6 +280,7 @@ class MysqlSchemaReader(
             ambiguousKeys = ambiguousKeys,
             routineStates = routineStates,
             triggerStates = triggerStates,
+            triggerAssessments = triggerScan.triggers,
             diagnostics = diagnostics,
         )
     }
@@ -449,6 +462,129 @@ class MysqlSchemaReader(
      * - NOT_ACCESSIBLE with diagnostics (post-legitimation): W116
      * - INVALID_SHAPE: W116 for the degraded table form
      */
+    // ── D3: Sequence defaults from triggers (0.9.4 AP 6.3) ──
+
+    internal data class D3Result(
+        val enrichedTables: Map<String, TableDefinition>,
+        val confirmedTriggerNames: Set<String>,
+        val notes: List<SchemaReadNote>,
+    ) {
+        /** Remove confirmed support triggers from user triggers. */
+        fun filteredTriggers(
+            triggers: Map<String, TriggerDefinition>,
+            snapshot: MysqlSequenceSupportSnapshot,
+        ): Map<String, TriggerDefinition> {
+            if (confirmedTriggerNames.isEmpty()) return triggers
+            return triggers.filterKeys { key ->
+                val (_, trigName) = ObjectKeyCodec.parseTriggerKey(key)
+                trigName !in confirmedTriggerNames
+            }
+        }
+    }
+
+    /**
+     * D3: Materializes SequenceNextVal defaults on columns from confirmed
+     * support triggers. Runs after D2 (sequences available).
+     */
+    internal fun materializeSequenceDefaults(
+        snapshot: MysqlSequenceSupportSnapshot,
+        materializedSequences: Map<String, SequenceDefinition>,
+        tables: Map<String, TableDefinition>,
+    ): D3Result {
+        if (snapshot.supportTableState != SupportTableState.AVAILABLE || materializedSequences.isEmpty()) {
+            return D3Result(tables, emptySet(), emptyList())
+        }
+
+        val confirmedTriggers = mutableSetOf<String>()
+        // table -> column -> sequenceName for confirmed assignments
+        val assignments = mutableMapOf<String, MutableMap<String, String>>()
+        val d3Notes = mutableListOf<SchemaReadNote>()
+
+        // Collect W116 causes per column for deduplication
+        val columnCauses = LinkedHashMap<Pair<String, String>, MutableList<String>>()
+        fun addColumnCause(table: String, column: String, cause: String) {
+            columnCauses.getOrPut(table to column) { mutableListOf() } += cause
+        }
+
+        for (assessment in snapshot.triggerAssessments) {
+            val trigName = assessment.triggerName
+            val table = assessment.tableName
+            val column = assessment.columnName
+            val seqName = assessment.sequenceName
+
+            when (assessment.state) {
+                SupportTriggerState.CONFIRMED -> {
+                    // D3 full validation: marker + name + sequence must be consistent
+                    if (column == null || seqName == null) {
+                        // Body parsing failed — degrade
+                        if (column != null) {
+                            addColumnCause(table, column, "support trigger '$trigName' confirmed but sequence name not extractable")
+                        }
+                        continue
+                    }
+
+                    // Verify sequence exists in D2 materialization
+                    if (seqName !in materializedSequences) {
+                        addColumnCause(table, column, "support trigger '$trigName' references non-materialized sequence '$seqName'")
+                        continue
+                    }
+
+                    // Forward-verify trigger name
+                    val expectedName = MysqlSequenceNaming.triggerName(table, column)
+                    if (trigName != expectedName) {
+                        addColumnCause(table, column, "support trigger name '$trigName' does not match expected '$expectedName'")
+                        continue
+                    }
+
+                    // All checks passed — confirmed assignment
+                    confirmedTriggers += trigName
+                    assignments.getOrPut(table) { mutableMapOf() }[column] = seqName
+                }
+                SupportTriggerState.MISSING_MARKER,
+                SupportTriggerState.NON_CANONICAL,
+                SupportTriggerState.NOT_ACCESSIBLE -> {
+                    // Degraded — only emit W116 if column is fachlich verankerbar
+                    if (column != null && table.isNotEmpty()) {
+                        addColumnCause(table, column, "support trigger '$trigName' has state ${assessment.state}")
+                    }
+                    // else: not verankerbar → internal evidence only, no final W116
+                }
+                SupportTriggerState.USER_OBJECT -> { /* not a support trigger */ }
+            }
+        }
+
+        // Enrich column defaults
+        val enrichedTables = tables.mapValues { (tableName, tableDef) ->
+            val tableAssignments = assignments[tableName] ?: return@mapValues tableDef
+            val enrichedColumns = tableDef.columns.mapValues { (colName, colDef) ->
+                val seqName = tableAssignments[colName] ?: return@mapValues colDef
+                // Check for conflicting existing default
+                val existingDefault = colDef.default
+                if (existingDefault != null && existingDefault !is DefaultValue.SequenceNextVal) {
+                    // Conflicting user default — do not overwrite, degrade
+                    addColumnCause(tableName, colName, "confirmed trigger but column has conflicting default '$existingDefault'")
+                    colDef
+                } else {
+                    colDef.copy(default = DefaultValue.SequenceNextVal(seqName))
+                }
+            }
+            tableDef.copy(columns = LinkedHashMap(enrichedColumns))
+        }
+
+        // Emit W116 per column (deduplicated)
+        for ((tableCol, causes) in columnCauses) {
+            d3Notes += SchemaReadNote(
+                severity = SchemaReadSeverity.WARNING,
+                code = "W116",
+                objectName = "${tableCol.first}.${tableCol.second}",
+                message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
+                hint = causes.joinToString("; "),
+            )
+        }
+
+        return D3Result(enrichedTables, confirmedTriggers, d3Notes)
+    }
+
     private fun aggregateSupportNotes(
         snapshot: MysqlSequenceSupportSnapshot,
     ): List<SchemaReadNote> {
