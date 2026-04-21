@@ -1261,6 +1261,64 @@ class MysqlSchemaReaderTest : FunSpec({
         d3.confirmedTriggerNames shouldBe setOf(goodTrig)
     }
 
+    test("D3: MISSING_MARKER without verankerbare Spalte produces no W116") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+        )
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            // columnName = null → not verankerbar
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                "dmg_seq_orders_unknown_abc1234567_bi", SupportTriggerState.MISSING_MARKER, "orders", null, null,
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        d3.notes.shouldBeEmpty()
+    }
+
+    test("D3: NOT_ACCESSIBLE trigger scan still preserves D2 sequences") {
+        // When trigger scan is not accessible, D2 sequences survive
+        // but no column defaults are set
+        val snapshot = MysqlSequenceSupportSnapshot(
+            scope = ReverseScope(catalogName = "mydb", schemaName = "mydb"),
+            supportTableState = SupportTableState.AVAILABLE,
+            sequenceRows = emptyList(),
+            ambiguousKeys = emptySet(),
+            routineStates = emptyMap(),
+            triggerStates = emptyMap(),
+            triggerAssessments = emptyList(), // scan inaccessible → no assessments
+            diagnostics = emptyList(),
+        )
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
+        )
+        val d3 = reader.materializeSequenceDefaults(
+            snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables,
+        )
+        // Sequences survived, but no column defaults
+        d3.enrichedTables["orders"]!!.columns["invoice_number"]!!.default shouldBe null
+        d3.confirmedTriggerNames.shouldBeEmpty()
+    }
+
+    test("D3: confirmed trigger with wrong forward-verified name is not confirmed") {
+        val tables = makeTable(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
+        )
+        // Trigger name doesn't match MysqlSequenceNaming.triggerName("orders", "invoice_number")
+        val wrongName = "dmg_seq_orders_invoicenumber_0000000000_bi"
+        val snapshot = makeSnapshot(triggerAssessments = listOf(
+            MysqlMetadataQueries.SupportTriggerAssessment(
+                wrongName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "invoice_seq",
+            ),
+        ))
+        val d3 = reader.materializeSequenceDefaults(snapshot, mapOf("invoice_seq" to SequenceDefinition(start = 1000)), tables)
+        // Forward verification failed → no SequenceNextVal, trigger NOT confirmed
+        d3.enrichedTables["orders"]!!.columns["invoice_number"]!!.default shouldBe null
+        d3.confirmedTriggerNames.shouldBeEmpty()
+        d3.notes.any { it.code == "W116" } shouldBe true
+    }
+
     // ── existing tests (unchanged baseline) ───────
 
     test("read with FK backing index suppression") {

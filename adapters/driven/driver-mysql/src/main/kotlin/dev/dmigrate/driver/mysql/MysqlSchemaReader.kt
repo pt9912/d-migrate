@@ -51,12 +51,10 @@ class MysqlSchemaReader(
             )
 
             // Phase 4: assemble result — filter support objects, aggregate diagnostics
+            // Trigger filtering is owned by D3 (based on its own validation), not D1.
             val filteredTables = filterSupportTable(d3Result.enrichedTables, supportSnapshot)
             val filteredFunctions = filterSupportRoutines(functions, supportSnapshot)
-            val filteredTriggers = filterSupportTriggers(
-                d3Result.filteredTriggers(triggers, supportSnapshot),
-                supportSnapshot,
-            )
+            val filteredTriggers = d3Result.filteredTriggers(triggers)
             notes += d2Result.notes
             notes += d3Result.notes
 
@@ -469,10 +467,9 @@ class MysqlSchemaReader(
         val confirmedTriggerNames: Set<String>,
         val notes: List<SchemaReadNote>,
     ) {
-        /** Remove confirmed support triggers from user triggers. */
+        /** Remove D3-confirmed support triggers from user triggers. */
         fun filteredTriggers(
             triggers: Map<String, TriggerDefinition>,
-            snapshot: MysqlSequenceSupportSnapshot,
         ): Map<String, TriggerDefinition> {
             if (confirmedTriggerNames.isEmpty()) return triggers
             return triggers.filterKeys { key ->
@@ -645,10 +642,13 @@ class MysqlSchemaReader(
                     SupportTriggerState.MISSING_MARKER,
                     SupportTriggerState.NON_CANONICAL,
                     SupportTriggerState.NOT_ACCESSIBLE -> {
-                        val colKey = ColumnDiagnosticKey(
-                            scope, assessment.tableName, assessment.columnName ?: assessment.triggerName,
-                        )
-                        addCause(colKey, "support trigger '${assessment.triggerName}' has state ${assessment.state}")
+                        // Only emit if column is fachlich verankerbar (not null)
+                        val col = assessment.columnName
+                        if (col != null && assessment.tableName.isNotEmpty()) {
+                            val colKey = ColumnDiagnosticKey(scope, assessment.tableName, col)
+                            addCause(colKey, "support trigger '${assessment.triggerName}' has state ${assessment.state}")
+                        }
+                        // else: not verankerbar → internal evidence only, no W116
                     }
                     SupportTriggerState.CONFIRMED,
                     SupportTriggerState.USER_OBJECT -> { /* no diagnostic */ }

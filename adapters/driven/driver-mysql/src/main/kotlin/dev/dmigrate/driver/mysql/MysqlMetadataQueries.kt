@@ -314,6 +314,9 @@ object MysqlMetadataQueries {
     /** Extracts sequence name from dmg_nextval('seqname') in trigger body. */
     private val TRIGGER_SEQUENCE_PATTERN = Regex("""`?dmg_nextval`?\s*\(\s*'([^']+)'\s*\)""", RegexOption.IGNORE_CASE)
 
+    /** Verifies guard pattern: NEW.<column> IS NULL */
+    private val TRIGGER_GUARD_PATTERN = Regex("""NEW\.`?(\w+)`?\s+IS\s+NULL""", RegexOption.IGNORE_CASE)
+
     /** Expected signatures for support routines (return type + parameter form). */
     private val expectedRoutineSignatures = mapOf(
         MysqlSequenceNaming.NEXTVAL_ROUTINE to RoutineSignature(
@@ -457,17 +460,22 @@ object MysqlMetadataQueries {
                 if (showBody != null && showBody.isNotEmpty()) body = showBody
             }
 
+            // Extract column, sequence, and guard from body for validation
+            val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
+            val sequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)
+            val guardColumn = TRIGGER_GUARD_PATTERN.find(body)?.groupValues?.get(1)
+
             val state = when {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
                 timing != "BEFORE" || event != "INSERT" -> SupportTriggerState.NON_CANONICAL
                 "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
                 "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
+                column == null || sequence == null -> SupportTriggerState.NON_CANONICAL
+                // Guard: NEW.<column> IS NULL must reference the same column
+                guardColumn == null -> SupportTriggerState.NON_CANONICAL
+                !guardColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
                 else -> SupportTriggerState.CONFIRMED
             }
-            // Extract column from SET NEW.`column` pattern in body
-            val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
-            // Extract sequence from dmg_nextval('seqname') in body
-            val sequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)
 
             SupportTriggerAssessment(name, state, table, column, sequence)
         }
