@@ -175,6 +175,9 @@ Verbindliche Entscheidung:
   als d-migrate-Supportobjekt interpretiert
 - 0.9.4 fuehrt keinen generischen "best effort"-Importer fuer fremde
   Sequence-Loesungen ein
+- die semantische Trigger-Normalisierung ist nur eine
+  Bestaetigungspruefung fuer bereits markierte Supportobjekte, kein
+  Ersatz fuer einen fehlenden Marker
 
 Begruendung:
 
@@ -362,10 +365,10 @@ Konkreter Fallback-Vertrag fuer 0.9.4:
     `W116`
 - **Pfad B: Trigger-Marker nicht lesbar, aber Triggertext vorhanden**
   - Marker gilt als "nicht bestaetigbar"
-  - der Reader prueft den Trigger ueber den normalisierten
-    Semantikpfad weiter
-  - nur wenn auch diese Pruefung scheitert, faellt die Spaltenzuordnung
-    aus und `W116` wird emittiert
+  - der normalisierte Triggertext darf in 0.9.4 nur noch als
+    Zusatzdiagnose ausgewertet werden, nicht als Ersatz fuer den Marker
+  - es gibt deshalb keine automatische Spaltenzuordnung; stattdessen
+    `W116`
 - **Pfad C: weder Marker noch ausreichender Triggertext lesbar**
   - keine Spaltenzuordnung
   - Sequence-Rekonstruktion bleibt moeglich, sofern `dmg_sequences`
@@ -405,6 +408,22 @@ Bewusste Einschraenkung fuer 0.9.4:
   0.9.4 weiterhin als Sequence-Diff anzeigen
 - eine moegliche spaetere Option wie `ignoreRuntimeState` ist bewusst
   Post-0.9.4
+
+Namens- und Konfliktvertrag:
+
+- `dmg_sequences.name` wird unveraendert als neutraler
+  `SequenceDefinition`-Name uebernommen
+- der Reader darf dabei **keine** stillen Ueberschreibungen erzeugen
+- wenn mehrere gelesene Zeilen nach Reader-Normalisierung oder
+  Identifier-Behandlung auf denselben neutralen Sequence-Key fallen,
+  gilt der Key als mehrdeutig:
+  - fuer diesen Key wird keine `SequenceDefinition` emittiert
+  - Trigger-Zuordnungen auf diesen Key werden nicht als
+    `SequenceNextVal` rekonstruiert
+  - der Konflikt wird als aggregiertes `W116` dokumentiert
+- verweist ein Support-Trigger auf einen nicht existierenden oder
+  mehrdeutigen Sequence-Key, wird ebenfalls keine Spaltenzuordnung
+  erzeugt; statt dessen entsteht `W116`
 
 Kanonische Grundform der Tabelle:
 
@@ -478,8 +497,9 @@ Stattdessen wird ein robuster Normalisierungspfad festgelegt:
   Sequence-Name oder der Routinenname relevant ist
 - MySQL-Metadatenformatierung pro Version oder Connector darf fuer sich
   allein keinen `W116` ausloesen
-- Marker- oder Kommentarverlust fuehrt nicht sofort zum Ausfall, solange
-  der semantische Triggertext noch ausreichend lesbar ist
+- Marker- oder Kommentarverlust fuehrt fuer die Spaltenzuordnung in
+  0.9.4 in den degradierten `W116`-Pfad; der semantische Triggertext
+  bleibt dann nur Diagnosehilfe
 
 Ein Trigger gilt danach als kanonisch bestaetigt, wenn mindestens diese
 Kriterien zugleich zutreffen:
@@ -500,8 +520,9 @@ Sekundaerregel fuer 0.9.4:
   Generator-Textform abweicht, zaehlt die semantische
   Normalisierungspruefung
 - wenn der Marker nicht lesbar oder durch Metadatenzugriff nicht
-  verfuegbar ist, darf derselbe semantische Normalisierungspfad als
-  expliziter Fallback genutzt werden
+  verfuegbar ist, gibt es in 0.9.4 **keine** markerlose
+  Trigger-Rekonstruktion; der Body darf nur noch fuer die Diagnose
+  ("plausibel, aber nicht bestaetigbar") ausgewertet werden
 - wenn weder Marker noch robuste Semantik bestaetigbar sind, gibt es
   keine Spaltenzuordnung und stattdessen `W116`
 
@@ -570,6 +591,8 @@ Reihenfolge:
   Metadatenzeilen festziehen:
   - Sequence-Ebene fuer `dmg_sequences`-/Routine-Probleme
   - Spaltenebene fuer Trigger-/Default-Zuordnung
+- Konfliktregeln fuer mehrdeutige Sequence-Keys explizit in der
+  Reverse-Infrastruktur verankern, bevor D2/D3 die Maps fuellen
 
 Akzeptanzkriterium:
 
@@ -609,7 +632,7 @@ Akzeptanzkriterien:
   validieren, nicht via starrem Textvergleich
 - expliziten Fallback-Pfad implementieren:
   - primaer Marker + Semantik
-  - sekundaer nur Semantik auf ausreichend lesbarem Triggertext
+  - sekundaer nur Diagnose auf ausreichend lesbarem Triggertext
   - tertiaer klare Nicht-Erkennung mit `W116`
 - Spaltenzuordnung `table.column -> sequenceName` aufbauen
 - betroffene `ColumnDefinition.default` zu
@@ -626,20 +649,27 @@ Akzeptanzkriterien:
 - kanonische Support-Trigger erscheinen nicht als normale Trigger
 - reine Formatierungs- oder Quoting-Unterschiede im ausgelesenen
   Triggertext loesen fuer intakte generierte Trigger kein `W116` aus
-- fehlt nur der Marker, aber der semantische Triggertext ist intakt,
-  bleibt die Spaltenzuordnung dennoch reverse-bar
+- fehlt nur der Marker, bleibt die Spaltenzuordnung degradiert und wird
+  mit `W116` statt mit einer Fehlzuordnung behandelt
 
 ### 6.4 Phase E1: Compare-Stabilisierung
 
-### 6.4a Phase E1: Compare-Semantik
+Phase E1 hat zwei verbindliche Teilpakete:
+
+#### 6.4a Compare-Semantik
 
 - bestehende Compare-Tests um sequence-emulierte MySQL-Faelle erweitern
 - file-vs-file, file-vs-db und db-vs-db Pfade absichern
 - pruefen, ob `SchemaComparator` unveraendert ausreicht
 - nur falls notwendig: minimale compare-seitige Anpassung auf
   Neutralmodell-Ebene, keine MySQL-Stringfilter
+- `SchemaCompareRunner` explizit gegen operandseitige `W116`-Notes
+  absichern, damit Compare-Exit-Codes weiterhin **nur** aus
+  Invaliditaet oder echtem Diff entstehen
+- Exit-Vertrag fuer file-vs-file, file-vs-db und db-vs-db testseitig
+  festziehen: `W116` allein erzeugt weder Exit 1 noch Exit 3/4/7
 
-### 6.4b Phase E1: Renderer- und Output-Nachzug
+#### 6.4b Renderer- und Output-Nachzug
 
 - `SchemaCompareRunner` so nachziehen, dass operandseitige Reverse-Notes
   fuer strukturierte Ausgabe nicht nur implizit in Plain-`stderr`,
@@ -663,6 +693,9 @@ Akzeptanzkriterien:
 - `json`/`yaml` enthalten operandseitige Notes tatsaechlich im
   strukturierten Dokument; Plain bleibt nur eine zusaetzliche
   Darstellungsform, nicht der einzige Sichtbarkeitspfad
+- file-vs-db und db-vs-db behalten bei rein operandseitigem `W116`
+  Exit 0 bzw. Exit 1 ausschliesslich gemaess realem Diff, nicht gemaess
+  Diagnose-Note
 
 ### 6.5 Phase E2: Doku- und Vertragsnachzug
 
@@ -692,6 +725,8 @@ Akzeptanzkriterium:
 - `hexagon/application/.../SchemaCompareRunnerTest.kt` und
   `adapters/driving/cli/.../CliSchemaCompareTest.kt` fuer db-basierte
   Sequence-Faelle und strukturierten W116-Output erweitern
+- Exit-Code-Tests fuer `schema compare` mit operandseitigem `W116`
+  nachziehen
 - Round-Trip-Test neutral -> generate -> MySQL -> reverse -> compare
   verbindlich machen
 
@@ -747,8 +782,8 @@ Pflichtfaelle fuer 0.9.4:
    im strukturierten `sourceOperand`-/`targetOperand`-Teil sichtbar
 
 10. **Markerloser, aber semantisch intakter Trigger**
-   fehlender Marker allein verhindert die Spaltenzuordnung nicht,
-   solange der normalisierte Triggertext die kanonische Semantik traegt
+   fehlender Marker allein bleibt in 0.9.4 ein degradierter Zustand:
+   keine Spaltenzuordnung, aber `W116` statt Fehlzuordnung
 
 11. **Grundform vs. Zusatzspalten**
     zusaetzliche Spalten in `dmg_sequences` brechen den Reverse nicht;
@@ -763,6 +798,11 @@ Pflichtfaelle fuer 0.9.4:
     dieselbe Sequence kann mehreren Spalten in verschiedenen Tabellen
     zugeordnet sein; der Reverse faltet alle betroffenen Spalten wieder
     auf dieselbe neutrale Sequence zurueck
+
+14. **Mehrdeutiger Sequence-Key**
+    kollidierende oder mehrdeutige Sequence-Namen werden nicht still
+    ueberschrieben; stattdessen keine Rekonstruktion fuer diesen Key und
+    aggregiertes `W116`
 
 Coverage-Ziel:
 
