@@ -4,7 +4,7 @@
 > **Arbeitspaket**: 6.5 (`Phase E2: Doku- und Vertragsnachzug`)
 > **Status**: Draft (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 6.5,
-> Abschnitt 7 und Abschnitt 9;
+> Abschnitt 7 und Abschnitt 9 (im Masterplan);
 > `docs/ImpPlan-0.9.4-6.1.md`;
 > `docs/ImpPlan-0.9.4-6.2.md`;
 > `docs/ImpPlan-0.9.4-6.3.md`;
@@ -76,7 +76,7 @@ Was nach D1 bis D3 und E1 fuer E2 noch fehlt:
 - Absicherung, dass additive JSON/YAML-Outputfelder aus E1 nicht in
   der Doku fehlen
 
-Aktueller Scaffold-Gap vor E2:
+Aktueller Dokumentations-Gap vor E2:
 
 - `docs/cli-spec.md` spricht bei `W116` noch von "reserviert", obwohl
   das 0.9.4-Ledger bereits `active` fuehrt
@@ -163,6 +163,9 @@ Verbindliche Folge:
   - wann MySQL-Sequences sauber reverse-bar sind
   - wann `W116` erscheint
   - was `schema compare` mit operandseitigem `W116` macht
+- Mindestumfang fuer E2d:
+  - mindestens ein Reverse-Nutzerhinweis
+  - mindestens ein Compare-Nutzerhinweis
 - Detailvertraege bleiben im Spezialplan und in den Teilplaenen
 
 ### 4.4 Spezialplan und Masterplan muessen denselben Stand sprechen
@@ -175,6 +178,9 @@ Verbindliche Folge:
   - Phase-D/E-Status
   - `W116`-Bedeutung
   - Compare-Rolle
+- `docs/implementation-plan-0.9.4.md` gilt dabei in E2 als bereits
+  fachlich fuehrende Quelle und wird nur dann selbst geaendert, wenn
+  sich im E2-Gegenlesen ein echter Widerspruch zeigt
 
 ### 4.5 Additive Output-Felder bleiben additiv dokumentiert
 
@@ -234,6 +240,8 @@ Jeder E2-Schritt muss ein sichtbares, reviewbares Artefakt erzeugen:
   Compare-Abschnitte
 - Guide-Nachzug als konkrete Nutzerhinweise
 - Ledger-Nachzug als bestaetigter `W116`-Eintrag mit passender Evidenz
+- E2-0-Nachzug als kleines Widerspruchs-Protokoll im Commit oder im
+  Arbeitsschnitt, damit der Review-Einstieg sichtbar bleibt
 
 Empfohlene Review- und Commit-Strategie fuer E2:
 
@@ -322,6 +330,9 @@ Done-Kriterien fuer E2b:
 - Warncode-Status von `W116` auf den aktiven 0.9.4-Stand bringen
 - Reverse-/Compare-Vertrag fuer operandseitige Diagnose und Outputformate
   ergaenzen
+- additive `sourceOperand`-/`targetOperand`-Felder an der Stelle
+  dokumentieren, an der `schema compare`-Outputformate beschrieben
+  werden, nicht nur implizit im Warncode-Abschnitt
 
 Done-Kriterien fuer E2c:
 
@@ -348,6 +359,8 @@ Done-Kriterien fuer E2d:
 
 - Guide erklaert fuer Nutzer knapp, wann Sequence-Reverse funktioniert
 - Guide erklaert knapp, was `W116` fuer Reverse und Compare bedeutet
+- Guide enthaelt mindestens einen Reverse- und einen Compare-
+  Nutzerhinweis
 
 ### E2e Ledger und Evidenzpfade absichern
 
@@ -388,6 +401,13 @@ Abhaengigkeiten:
     zusammenfasst statt Zwischenstaende zu erklaeren
 - `E2f` ist Abschluss-Gate fuer 6.5
 
+Lesbare Ablaufskizze:
+
+- `E2-0` -> `{E2a, E2b}` -> `E2c` -> `E2d`
+- `E2e` laeuft nach dem inhaltlichen Nachzug gegen den finalen
+  Vertragsstand
+- `E2f` schliesst den Gesamtcheck ab
+
 ---
 
 ## 7. Verifikation
@@ -422,9 +442,11 @@ die Hauptverifikation redaktionell bleibt:
   liefert nach E2 keinen Treffer mehr
 - `rg -n "W116" docs/guide.md` liefert nach E2 mindestens einen
   nutzerrelevanten Treffer
-- ein einfacher Check darf absichern, dass
-  `ledger/warn-code-ledger-0.9.4.yaml` und `docs/cli-spec.md` beide
-  `W116` auf aktivem 0.9.4-Stand fuehren
+- `rg -n "sourceOperand|targetOperand" docs/cli-spec.md` liefert nach
+  E2 mindestens einen Treffer im `schema compare`-Outputkontext
+- `rg -n "status:\\s*active|status: active" ledger/warn-code-ledger-0.9.4.yaml`
+  und `rg -n "W116" docs/cli-spec.md` liefern konsistent den aktiven
+  0.9.4-Stand
 
 Akzeptanzkriterium fuer 6.5:
 
