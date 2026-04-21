@@ -578,11 +578,20 @@ class MysqlSchemaReaderTest : FunSpec({
                 "min_value" to null, "max_value" to null, "cycle_enabled" to 0,
                 "cache_size" to null),
         )
-        // Routines confirmed
+        // Routines confirmed (marker + correct return type + correct param count)
         every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), eq("dmg_nextval")) } returns
-            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END")
+            mapOf("routine_name" to "dmg_nextval",
+                "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END",
+                "data_type" to "bigint", "dtd_identifier" to "bigint")
         every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), eq("dmg_setval")) } returns
-            mapOf("routine_name" to "dmg_setval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=setval */ BEGIN END")
+            mapOf("routine_name" to "dmg_setval",
+                "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=setval */ BEGIN END",
+                "data_type" to "bigint", "dtd_identifier" to "bigint")
+        // Parameter counts: nextval has 1 param, setval has 2
+        every { jdbc.queryList(match { "information_schema.parameters" in it && "routine_type = 'FUNCTION'" in it }, eq("mydb"), eq("dmg_nextval")) } returns
+            listOf(mapOf("ordinal_position" to 1))
+        every { jdbc.queryList(match { "information_schema.parameters" in it && "routine_type = 'FUNCTION'" in it }, eq("mydb"), eq("dmg_setval")) } returns
+            listOf(mapOf("ordinal_position" to 1), mapOf("ordinal_position" to 2))
         // No support triggers
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
 
@@ -686,6 +695,64 @@ class MysqlSchemaReaderTest : FunSpec({
         result.notes.none { it.code == "W116" } shouldBe true
         result.schema.functions.size shouldBe 0
         result.schema.triggers.size shouldBe 0
+    }
+
+    test("scanSequenceSupport scope binds queries to target database only") {
+        stubEmptyDefaults()
+        // dmg_sequences exists in target schema "mydb"
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        // Row query uses schema-qualified FROM `mydb`.`dmg_sequences`
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "seq1", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+
+        // Snapshot is scoped to "mydb"
+        snapshot.scope.schemaName shouldBe "mydb"
+        snapshot.supportTableState shouldBe SupportTableState.AVAILABLE
+        snapshot.sequenceRows shouldHaveSize 1
+
+        // A different scope should not see these rows
+        val otherScope = ReverseScope(catalogName = "other_db", schemaName = "other_db")
+        // Reset stubs: other_db has no dmg_sequences
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns null
+        val otherSnapshot = reader.scanSequenceSupport(jdbc, "other_db", otherScope)
+        otherSnapshot.supportTableState shouldBe SupportTableState.MISSING
+    }
+
+    test("scanSequenceSupport routine NON_CANONICAL when signature does not match") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "data_type" !in it }, any(), any()) } returns
+            listOf("managed_by", "format_version", "name", "next_value", "increment_by",
+                "min_value", "max_value", "cycle_enabled", "cache_size").map { mapOf("column_name" to it) }
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns listOf(
+            mapOf("managed_by" to "d-migrate", "format_version" to "mysql-sequence-v1",
+                "name" to "seq1", "next_value" to 1L, "increment_by" to 1L,
+                "min_value" to null, "max_value" to null, "cycle_enabled" to 0, "cache_size" to null),
+        )
+        // dmg_nextval has marker but wrong return type (varchar instead of bigint)
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, eq("mydb"), eq("dmg_nextval")) } returns
+            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */",
+                "data_type" to "varchar", "dtd_identifier" to "varchar(255)")
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, eq("mydb"), eq("dmg_setval")) } returns null
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.routineStates[MysqlSequenceNaming.NEXTVAL_ROUTINE] shouldBe SupportRoutineState.NON_CANONICAL
+        snapshot.diagnostics.any { it.emitsW116 && it.causes.any { c -> "signature" in c } } shouldBe true
     }
 
     // ── existing tests (unchanged baseline) ───────

@@ -206,24 +206,42 @@ class MysqlSchemaReader(
             }
         }
 
-        // Routine-level: not_accessible
+        // Routine-level: degraded states
         for ((name, state) in routineStates) {
-            if (state == SupportRoutineState.NOT_ACCESSIBLE) {
-                diags += SupportDiagnostic(
+            when (state) {
+                SupportRoutineState.NOT_ACCESSIBLE -> diags += SupportDiagnostic(
                     key = SequenceDiagnosticKey(scope, name),
                     causes = listOf("support routine '$name' is not accessible"),
                     emitsW116 = true,
                 )
+                SupportRoutineState.NON_CANONICAL -> diags += SupportDiagnostic(
+                    key = SequenceDiagnosticKey(scope, name),
+                    causes = listOf("support routine '$name' has marker but signature does not match canonical form"),
+                    emitsW116 = true,
+                )
+                SupportRoutineState.CONFIRMED,
+                SupportRoutineState.MISSING -> { /* no diagnostic */ }
             }
         }
 
-        // Trigger-scan-level: entire scan inaccessible
+        // Trigger-scan-level: entire scan inaccessible — emit per confirmed sequence
         if (!triggerScanAccessible) {
-            diags += SupportDiagnostic(
-                key = SequenceDiagnosticKey(scope, "trigger-scan"),
-                causes = listOf("support trigger metadata is not accessible"),
-                emitsW116 = true,
-            )
+            val confirmedSeqs = rows.filter { it.valid && it.name !in ambiguousKeys }
+            if (confirmedSeqs.isNotEmpty()) {
+                for (seq in confirmedSeqs) {
+                    diags += SupportDiagnostic(
+                        key = SequenceDiagnosticKey(scope, seq.name),
+                        causes = listOf("support trigger metadata is not accessible; column-level verification for sequence '${seq.name}' not possible"),
+                        emitsW116 = true,
+                    )
+                }
+            } else {
+                diags += SupportDiagnostic(
+                    key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
+                    causes = listOf("support trigger metadata is not accessible"),
+                    emitsW116 = true,
+                )
+            }
         }
 
         // Trigger-level: degraded states with real table/column from trigger name

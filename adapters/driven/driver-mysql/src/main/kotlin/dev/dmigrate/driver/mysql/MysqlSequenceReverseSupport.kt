@@ -45,6 +45,8 @@ enum class SupportRoutineState {
     CONFIRMED,
     /** Routine not found. */
     MISSING,
+    /** Marker present but signature does not match (wrong return type, param count, or specific marker). */
+    NON_CANONICAL,
     /** Permission or lookup error. */
     NOT_ACCESSIBLE,
 }

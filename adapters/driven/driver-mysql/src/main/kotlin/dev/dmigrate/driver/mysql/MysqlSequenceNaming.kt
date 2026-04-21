@@ -62,7 +62,15 @@ object MysqlSequenceNaming {
     /** All reserved support object names (for collision detection). */
     val reservedNames: Set<String> = setOf(SUPPORT_TABLE, NEXTVAL_ROUTINE, SETVAL_ROUTINE)
 
-    /** Checks if a trigger name matches the canonical support trigger pattern. */
+    /**
+     * Checks if a trigger name matches the canonical support trigger pattern.
+     * Format: `dmg_seq_<table16>_<column16>_<hex10>_bi`
+     * The hash segment must be exactly 10 lowercase hex characters.
+     */
+    private val CANONICAL_PATTERN = Regex(
+        "^dmg_seq_[a-z0-9_]{1,16}_[a-z0-9_]{1,16}_[0-9a-f]{10}_bi$"
+    )
+
     fun isSupportTriggerName(name: String): Boolean =
-        name.startsWith(TRIGGER_PREFIX) && name.endsWith(TRIGGER_SUFFIX)
+        CANONICAL_PATTERN.matches(name)
 }

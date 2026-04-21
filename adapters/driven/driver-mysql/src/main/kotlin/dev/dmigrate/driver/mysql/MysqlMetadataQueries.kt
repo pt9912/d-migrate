@@ -276,6 +276,22 @@ object MysqlMetadataQueries {
      * Targeted routine lookup for a specific support routine.
      * Checks existence, marker comment in definition, and routine type.
      */
+    /** Expected signatures for support routines (return type + parameter form). */
+    private val expectedRoutineSignatures = mapOf(
+        MysqlSequenceNaming.NEXTVAL_ROUTINE to RoutineSignature(
+            returnType = "bigint", paramCount = 1, marker = "object=nextval",
+        ),
+        MysqlSequenceNaming.SETVAL_ROUTINE to RoutineSignature(
+            returnType = "bigint", paramCount = 2, marker = "object=setval",
+        ),
+    )
+
+    private data class RoutineSignature(
+        val returnType: String,
+        val paramCount: Int,
+        val marker: String,
+    )
+
     fun lookupSupportRoutine(
         session: JdbcOperations,
         database: String,
@@ -284,7 +300,8 @@ object MysqlMetadataQueries {
         return try {
             val row = session.querySingle(
                 """
-                SELECT routine_name, routine_definition
+                SELECT routine_name, routine_definition, data_type,
+                       dtd_identifier
                 FROM information_schema.routines
                 WHERE routine_schema = ? AND routine_name = ?
                   AND routine_type = 'FUNCTION'
@@ -292,11 +309,35 @@ object MysqlMetadataQueries {
             ) ?: return SupportRoutineState.MISSING
 
             val definition = row["routine_definition"] as? String ?: ""
-            if ("d-migrate:mysql-sequence-v1" in definition) {
-                SupportRoutineState.CONFIRMED
-            } else {
-                SupportRoutineState.MISSING // present but no marker → user object
+            val dataType = (row["data_type"] as? String)?.lowercase() ?: ""
+
+            // Check marker
+            if ("d-migrate:mysql-sequence-v1" !in definition) {
+                return SupportRoutineState.MISSING // present but no marker → user object
             }
+
+            // Check signature: return type and specific marker
+            val expected = expectedRoutineSignatures[routineName]
+            if (expected != null) {
+                if (dataType != expected.returnType) return SupportRoutineState.NON_CANONICAL
+                if (expected.marker !in definition) return SupportRoutineState.NON_CANONICAL
+            }
+
+            // Check parameter count
+            if (expected != null) {
+                val paramRows = session.queryList(
+                    """
+                    SELECT ordinal_position
+                    FROM information_schema.parameters
+                    WHERE specific_schema = ? AND specific_name = ?
+                      AND routine_type = 'FUNCTION'
+                      AND ordinal_position > 0
+                    """.trimIndent(), database, routineName,
+                )
+                if (paramRows.size != expected.paramCount) return SupportRoutineState.NON_CANONICAL
+            }
+
+            SupportRoutineState.CONFIRMED
         } catch (_: Exception) {
             SupportRoutineState.NOT_ACCESSIBLE
         }

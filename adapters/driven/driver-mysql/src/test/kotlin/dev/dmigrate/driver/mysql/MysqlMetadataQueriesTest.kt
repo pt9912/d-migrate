@@ -285,9 +285,14 @@ class MysqlMetadataQueriesTest : FunSpec({
         MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
     }
 
-    test("lookupSupportRoutine returns CONFIRMED when marker is present") {
+    test("lookupSupportRoutine returns CONFIRMED when marker and signature match") {
         every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
-            mapOf("routine_name" to "dmg_nextval", "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END")
+            mapOf("routine_name" to "dmg_nextval",
+                "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END",
+                "data_type" to "bigint", "dtd_identifier" to "bigint")
+        every { jdbc.queryList(match { "information_schema.parameters" in it }, any(), any()) } returns listOf(
+            mapOf("ordinal_position" to 1),
+        )
         MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.CONFIRMED
     }
 
@@ -300,6 +305,14 @@ class MysqlMetadataQueriesTest : FunSpec({
         every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
             mapOf("routine_name" to "dmg_nextval", "routine_definition" to "BEGIN RETURN 1; END")
         MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.MISSING
+    }
+
+    test("lookupSupportRoutine returns NON_CANONICAL when return type does not match") {
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns
+            mapOf("routine_name" to "dmg_nextval",
+                "routine_definition" to "/* d-migrate:mysql-sequence-v1 object=nextval */ BEGIN END",
+                "data_type" to "varchar", "dtd_identifier" to "varchar(255)")
+        MysqlMetadataQueries.lookupSupportRoutine(jdbc, "mydb", "dmg_nextval") shouldBe SupportRoutineState.NON_CANONICAL
     }
 
     test("lookupSupportRoutine returns NOT_ACCESSIBLE on permission error") {
