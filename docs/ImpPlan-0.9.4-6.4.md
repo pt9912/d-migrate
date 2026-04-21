@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.4 - Beta: MySQL-Sequence Reverse-Engineering und Compare
 > **Arbeitspaket**: 6.4 (`Phase E1: Compare-Stabilisierung`)
-> **Status**: Draft (2026-04-21)
+> **Status**: Done (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 4.4,
 > Abschnitt 5.6, Abschnitt 6.4, Abschnitt 6.6, Abschnitt 7 und
 > Abschnitt 9;
