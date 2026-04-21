@@ -69,6 +69,11 @@ Was nach 6.1 noch fehlt:
   Supportform kanonisch erkannt ist
 - klare Behandlung von gemischter Zeilenqualitaet, mehrdeutigen Keys
   und Laufzeitwerten in `next_value`
+- Korrektur des aktuellen 6.1-Scaffolds dort, wo er fuer D2 noch zu
+  breit oder zu weich ist:
+  - Unterdrueckung von `dmg_sequences` auch bei `INVALID_SHAPE`
+  - rohe `==`-Vergleiche fuer Markerfelder
+  - stille Numerics-Fallbacks wie `0L` oder `1L`
 
 Konsequenz ohne 6.2:
 
@@ -192,8 +197,12 @@ Verbindliche Folge:
 - sobald `dmg_sequences` im aktiven `ReverseScope` als kanonische
   Support-Tabelle bestaetigt ist, erscheint sie nicht zusaetzlich in
   `schema.tables`
+- fuer D2 bedeutet "bestaetigt" bewusst nur `supportTableState =
+  AVAILABLE`
 - die Unterdrueckung haengt nicht davon ab, ob alle Einzelzeilen gueltig
   sind; entscheidend ist die kanonische Tabellenform
+- ein aktuelles 6.1-Scaffold, das `INVALID_SHAPE` bereits
+  mitunterdrueckt, wird in D2 auf diesen engeren Vertrag korrigiert
 - nicht kanonische oder nicht bestaetigte Tabellen bleiben normale
   Nutzerobjekte
 
@@ -218,6 +227,18 @@ logisch diese Schritte aus:
 
 D2 fuehrt dabei keine Spaltenzuordnung ein; die Sequence-Liste muss
 isoliert stabil sein, bevor 6.3 Defaults anreichert.
+
+Architektur-Verortung:
+
+- D2 lebt als eigener privater Materialisierungsschritt in
+  `MysqlSchemaReader`, z. B. `materializeSupportSequences(...)`
+- dieser Schritt konsumiert ausschliesslich den D1-Snapshot und baut
+  daraus:
+  - `schema.sequences`
+  - table suppression fuer `dmg_sequences`
+  - sequence-bezogene `SchemaReadNote`s
+- `scanSequenceSupport(...)` bleibt D1-Infrastruktur und wird in D2
+  nicht mit Fachmapping ueberladen
 
 ### 5.2 Kanonische Grundform von `dmg_sequences`
 
@@ -250,13 +271,14 @@ Verbindliche Formregeln:
   Lesesemantik:
   - JDBC-Strings werden vor Fachvergleich als gelesene Werte behandelt,
     nicht als rohe SQL-Literale
-  - fuehrende und folgende Leerzeichen aus CHAR-/VARCHAR-Lesung duerfen
-    nicht still zu wechselnder Validierungssemantik fuehren
-  - `managed_by` und `format_version` werden gegen ihre kanonischen
-    Literalwerte nach derselben Normalisierung geprueft
-  - `name` bleibt nach derselben Normalisierung der fachliche
-    Sequence-Key; D2 fuehrt keine separate zweite
-    Case-/Padding-Heuristik ein
+  - `managed_by` und `format_version` werden vor dem Vergleich per
+    `trim()` normalisiert und danach exakt gegen ihre kanonischen
+    Literalwerte geprueft
+  - `name` wird fuer Key-Bildung und Konflikterkennung ebenfalls per
+    `trim()` normalisiert
+  - fuer `name` gibt es in D2 keine zusaetzliche Case-Faltung, keine
+    Sonderzeichenbereinigung und keine Wiederverwendung einer
+    Naming-Heuristik wie `MysqlSequenceNaming.normalize()`
 
 Grundform gilt in D2 als verloren, wenn:
 
@@ -277,8 +299,9 @@ Vergleichssemantik fuer string-artige Zeilenwerte:
 
 - D2 verwendet fuer `managed_by`, `format_version` und `name` eine
   einheitliche Reader-Normalisierung vor dem Fachvergleich
-- diese Normalisierung muss mindestens konsistent mit JDBC-Lesewerten
-  und MySQL-CHAR-Padding sein
+- diese Normalisierung ist fuer D2 verbindlich:
+  - `managed_by`, `format_version`: `trim()` vor exaktem Vergleich
+  - `name`: `trim()` vor Key-Bildung, ohne Case-Faltung
 - dieselbe Normalisierung wird sowohl fuer Filterung als auch fuer
   Konflikterkennung auf `name` verwendet, damit kein Drift zwischen
   "Zeile gilt" und "Key kollidiert" entsteht
@@ -305,12 +328,16 @@ Sonderregeln fuer `cache_size`:
   behandelt
 - nicht numerische Werte sind invalide
 - negative Werte sind invalide
-- fuer `0` gilt in D2: nur materialisieren, wenn das Neutralmodell
-  diesen Wert ohne Sondersemantik tragen kann; sonst den betroffenen
-  Sequence-Key degradieren statt still umzudeuten
+- `0` ist in D2 zulaessig und wird unveraendert als
+  `SequenceDefinition.cache = 0` materialisiert; das Neutralmodell kann
+  diesen Wert ohne Sonderbehandlung tragen
 - sehr grosse, aber noch zieltyp-kompatible Werte bleiben zulaessig;
   Ueberlaeufe oder nicht lesbare Grosswerte degradieren nur den
   betroffenen Key
+- fuer Pflichtnumerics wie `next_value` oder `increment_by` gilt
+  explizit:
+  - nicht lesbare Werte machen die betroffene Zeile invalide
+  - D2 fuehrt hier keine stillen Fallbacks wie `0L` oder `1L` ein
 
 Gemischte Qualitaet fuer denselben neutralen Sequence-Key:
 
@@ -325,6 +352,7 @@ Gemischte Qualitaet fuer denselben neutralen Sequence-Key:
 
 Verbindliches D2-Mapping:
 
+- `description` -> `SequenceDefinition.description = null`
 - `name` -> `SequenceDefinition.name`
 - `next_value` -> `SequenceDefinition.start`
 - `increment_by` -> `SequenceDefinition.increment`
@@ -336,11 +364,13 @@ Verbindliches D2-Mapping:
 Weitere Regeln:
 
 - `dmg_sequences.name` wird unveraendert als neutraler Sequence-Name
-  uebernommen
+  nach D2-`trim()`-Normalisierung uebernommen
 - D2 fuehrt keine eigene Umbenennung oder Kompatibilitaetsheuristik fuer
   Sequence-Namen ein
-- Sortierung und Materialisierung muessen deterministisch bleiben,
-  damit Compare und Tests reproduzierbar sind
+- Sortierung und Materialisierung muessen deterministisch bleiben:
+  - D2 materialisiert Sequences stabil aufsteigend nach dem
+    normalisierten neutralen Sequence-Key
+  - damit bleiben Compare und Tests reproduzierbar
 
 ### 5.5 Status-zu-Diagnose-Vertrag auf Sequence-Ebene
 
@@ -363,7 +393,12 @@ Sequence-Schluesseln:
 - invalide oder widerspruechliche Einzelzeile
   - blockiert nur den betroffenen Sequence-Key
   - aggregierbares `W116`
-- fehlende oder nicht bestaetigbare Support-Routine
+- `routineState.missing`
+  - erzeugt in 6.1 noch keine Diagnose allein aus dem Status
+  - wird erst in D2 bei bereits bestaetigter Sequence-Materialisierung
+    zur sequence-bezogenen degradierenden Begleitevidenz
+  - daraus entsteht dann aggregierbares `W116`
+- `routineState.not_accessible`
   - Sequence-Rekonstruktion bleibt moeglich
   - aggregierbares sequence-bezogenes `W116`
 
@@ -377,7 +412,7 @@ Leitregel:
 
 ## 6. Konkrete Arbeitsschritte
 
-### 6.1 D1-Snapshot an D2 anbinden
+### D2-1 D1-Snapshot an D2 anbinden
 
 - Support-Snapshot aus 6.1 im Reader so anschliessen, dass D2 die
   benoetigten Table-/Row-/Routine-Status konsumiert
@@ -385,8 +420,10 @@ Leitregel:
   - globalem Tabellenstatus
   - lokaler Zeilenvalidierung
   - sequence-bezogener Diagnoseaggregation
+- D2 als eigene private Reader-Methode verorten, statt D1-Scan und
+  Fachmapping in einem Block zu vermischen
 
-### 6.2 Grundformvalidierung implementieren
+### D2-2 Grundformvalidierung implementieren
 
 - kanonische Pflichtspalten fuer `dmg_sequences` programmatisch
   pruefen
@@ -394,8 +431,10 @@ Leitregel:
 - Zusatzspalten bewusst tolerieren und ignorieren
 - `invalid_shape` frueh und eindeutig vom zeilenweisen Inhaltsfehler
   trennen
+- Support-Row-Query weiter streng an `ReverseScope` binden; kein
+  impliziter Rueckfall auf unscopte Current-Schema-Lesung
 
-### 6.3 Zeilenvalidierung und Mapping implementieren
+### D2-3 Zeilenvalidierung und Mapping implementieren
 
 - `managed_by`- und `format_version`-Filter anwenden
 - string-artige Pflichtfelder ueber eine zentrale D2-Normalisierung
@@ -406,33 +445,39 @@ Leitregel:
   und testbar implementieren
 - `cache_size`-Sonderwerte (`NULL`, `0`, negativ, nicht lesbar,
   Zieltyp-Ueberlauf) explizit gegen den D2-Vertrag pruefen
+- nicht lesbare Pflichtnumerics als Invaliditaet behandeln, statt
+  Defaultwerte zu injizieren
 
-### 6.4 Konflikt- und W116-Pfad festziehen
+### D2-4 Konflikt- und W116-Pfad festziehen
 
 - mehrdeutige Sequence-Keys gemaess D1 blockieren
 - sequence-bezogene Aggregation statt Rohzeilen-Notes umsetzen
-- fehlende oder inkonsistente Support-Routinen als degradierte
+- fehlende, nicht bestaetigbare oder inkonsistente Support-Routinen als
+  D2-spezifisch degradierte
   Sequence-Diagnose einfalten
 - sicherstellen, dass gueltige andere Sequences parallel materialisiert
   bleiben
 
-### 6.5 Supporttabelle unterdruecken
+### D2-5 Supporttabelle unterdruecken
 
-- `dmg_sequences` bei bestaetigter kanonischer Supportform aus
+- `dmg_sequences` nur bei `supportTableState = AVAILABLE` aus
   `schema.tables` entfernen
-- nicht kanonische Tabellen nicht versehentlich unterdruecken
+- `INVALID_SHAPE` und andere nicht bestaetigte Zustaende explizit nicht
+  unterdruecken
 - Unterdrueckung und Sequence-Materialisierung an denselben
   Kanonizitaetsvertrag binden
 
-### 6.6 Reader-Tests nachziehen
+### D2-6 Reader-Tests nachziehen
 
 - `MysqlSchemaReaderTest` fuer:
   - intakte Sequence-Rekonstruktion aus `dmg_sequences`
   - konsistente Normalisierung von `managed_by`,
     `format_version` und `name`
+  - CHAR-Padding in `managed_by`, `format_version` und `name`
   - Zusatzspalten ohne Grundformverlust
   - fehlende Pflichtspalten mit degradiertem `W116`
   - `cache_size`-Randfaelle (`NULL`, `0`, negativ, Grosswert)
+  - nicht lesbare Pflichtnumerics ohne stillen `0`-/`1`-Fallback
   - einzelne kaputte Zeilen ohne Totalausfall
   - mehrere Sequences parallel, davon eine degradiert
   - mehrdeutige Sequence-Keys ohne stille Ueberschreibung
@@ -441,7 +486,8 @@ Leitregel:
     Sequence-Materialisierung
   - `supportTableState.not_accessible` gemaess D1-Gating-Regel ohne
     partielle Sequence-Materialisierung auf Verdacht
-  - Unterdrueckung von `dmg_sequences` als sichtbare Tabelle
+  - Unterdrueckung von `dmg_sequences` nur bei `AVAILABLE`, nicht bei
+    `INVALID_SHAPE`
   erweitern
 
 ---
@@ -466,23 +512,28 @@ Pflichtfaelle fuer 6.2:
 7. Mehrdeutige oder kollidierende Sequence-Keys werden nicht still
    ueberschrieben; fuer den betroffenen Key entsteht keine
    `SequenceDefinition`.
-8. Fehlen `dmg_nextval` oder `dmg_setval`, bleiben die Sequences
+8. `dmg_sequences` wird nur bei `supportTableState = AVAILABLE`
+   unterdrueckt; `INVALID_SHAPE` bleibt als normale Tabelle sichtbar.
+9. Fehlen `dmg_nextval` oder `dmg_setval`, bleiben die Sequences
    sichtbar, aber der Report enthaelt sequence-bezogenes `W116`.
-9. `managed_by`, `format_version` und `name` werden ueber eine
+10. `managed_by`, `format_version` und `name` werden ueber eine
    konsistente D2-Normalisierung validiert, so dass Padding- oder
    Leseunterschiede nicht zu driftender Filter- und Key-Semantik
    fuehren.
-10. `cache_size`-Randfaelle sind explizit abgesichert:
+11. `cache_size`-Randfaelle sind explizit abgesichert:
     `NULL` bleibt zulaessig, invalide oder nicht lesbare Werte
     degradieren nur den betroffenen Sequence-Key.
-11. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
+12. Nicht lesbare Pflichtnumerics fuehren zur Invalidierung der
+    betroffenen Zeile, nicht zu stillen `0`-/`1`-Defaults.
+13. `supportTableState.missing` fuehrt zu keinem `W116` und zu keiner
     impliziten Sequence-Materialisierung.
-12. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
+14. `supportTableState.not_accessible` fuehrt nur gemaess D1-Gating zu
     Hard-Fail oder kompatiblem Nicht-Sequence-Fall, nicht zu einem
     stillen Teilergebnis.
-13. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
-   Laufzeitzaehler wird nicht in D2 "wegkorrigiert".
-14. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
+15. `SequenceDefinition.description` bleibt in D2 explizit `null`.
+16. `next_value` wird in 0.9.4 auf `start` gemappt; ein spaeterer
+    Laufzeitzaehler wird nicht in D2 "wegkorrigiert".
+17. Ein Schema ohne bestaetigte `dmg_sequences`-Supporttabelle bleibt
     ein kompatibler Nicht-Sequence-Fall ohne implizite Sequences.
 
 Akzeptanzkriterium fuer 6.2:
@@ -555,11 +606,27 @@ Risiko:
 
 Gegenmassnahme:
 
-- Unterdrueckung nur bei bestaetigter kanonischer Grundform
+- Unterdrueckung nur bei `supportTableState = AVAILABLE`
 - Name allein reicht nie
 - Negativtests fuer nicht kanonische Tabellen im selben Namensraum
 
-### 9.4 Konfliktpfad wird spaeter aufgeweicht
+### 9.4 Weiche Feldnormalisierung erzeugt Drift
+
+Risiko:
+
+- Markerfilter, Key-Bildung und Konflikterkennung koennten je Feld
+  leicht unterschiedliche Vergleichsregeln verwenden
+- CHAR-Padding oder rohe JDBC-Werte fuehren dann zu instabiler
+  Materialisierung
+
+Gegenmassnahme:
+
+- D2-Normalisierung pro Feld explizit festschreiben:
+  - `managed_by`, `format_version`: `trim()` + exakter Vergleich
+  - `name`: `trim()` ohne Case-Faltung
+- CHAR-Padding-Testfaelle verpflichtend machen
+
+### 9.5 Konfliktpfad wird spaeter aufgeweicht
 
 Risiko:
 
@@ -571,7 +638,7 @@ Gegenmassnahme:
 - Konfliktvertrag aus 6.1 unveraendert in D2 uebernehmen
 - Akzeptanztests fuer mehrdeutige Keys verpflichtend machen
 
-### 9.5 Support-Routinen werden faelschlich zur Pflicht fuer D2
+### 9.6 Support-Routinen werden faelschlich zur Pflicht fuer D2
 
 Risiko:
 
@@ -583,3 +650,18 @@ Gegenmassnahme:
 - Routinen in D2 nur als degradierende Begleitevidenz behandeln
 - `SequenceDefinition` weiter aus `dmg_sequences` rekonstruieren, sofern
   die Primaerquelle lesbar ist
+
+### 9.7 Stille Numerics-Fallbacks verfaelschen Sequence-Metadaten
+
+Risiko:
+
+- nicht lesbare Pflichtfelder wie `next_value` oder `increment_by`
+  koennten durch Defaultwerte maskiert werden
+- daraus entstuenden scheinbar gueltige, fachlich aber falsche
+  `SequenceDefinition`s
+
+Gegenmassnahme:
+
+- nicht lesbare Pflichtnumerics in D2 immer als Invaliditaet der
+  betroffenen Zeile behandeln
+- kein stilles Auffuellen mit `0L`, `1L` oder aehnlichen Defaults
