@@ -1,0 +1,46 @@
+# Lean context for doc-link verification.
+# Includes docs/, repo-root files, and source tree (for path resolution).
+
+# VCS
+.git
+.gitignore
+
+# Gradle / Kotlin caches and build outputs
+.gradle
+.kotlin
+build/
+**/build/
+**/.gradle/
+
+# IDE / editor
+.idea
+.vscode
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+Dockerfile.verify-docs.dockerignore
+
+# Tool / runtime data
+.d-migrate/
+.codex
+.claude
+
+# Env files and logs
+.env
+.env.*
+*.log
+
+# Temporary files
+tmp/
+temp/
+dist/
+
+release/
+release-assets/

@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1.7
+
+# ---------------------------------------------------------------------------
+# Verify markdown link targets in docs/*.md.
+#
+# Usage:
+#   docker build -f Dockerfile.verify-docs -t d-migrate:verify-docs .
+#   docker run --rm d-migrate:verify-docs
+# ---------------------------------------------------------------------------
+
+FROM gradle:8.12-jdk21
+
+WORKDIR /src
+
+COPY --chown=gradle:gradle settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY --chown=gradle:gradle gradle/ gradle/
+COPY --chown=gradle:gradle hexagon/ hexagon/
+COPY --chown=gradle:gradle adapters/ adapters/
+COPY --chown=gradle:gradle test/ test/
+COPY --chown=gradle:gradle docs/ docs/
+COPY --chown=gradle:gradle README.md CHANGELOG.md Dockerfile ./
+COPY --chown=gradle:gradle .github/ .github/
+
+ENTRYPOINT ["gradle", "--no-daemon", "--console=plain", "verifyDocRefs"]
