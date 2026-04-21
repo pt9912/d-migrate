@@ -582,6 +582,24 @@ class SchemaCompareRunnerTest : FunSpec({
         runner.execute(request(source = "/tmp/a.yaml", target = "db:staging")) shouldBe 0
     }
 
+    test("db-vs-db with W116 on both sides but identical model stays exit 0") {
+        val h = Harness()
+        val runner = SchemaCompareRunner(
+            fileLoader = { op -> operandWithW116(op.path.toString()) },
+            dbLoader = { op, _ -> operandWithW116("db:${op.source}") },
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { _, _ -> },
+            stdout = h.stdout.sink,
+            stderr = h.stderr.sink,
+        )
+        runner.execute(request(source = "db:prod", target = "db:staging")) shouldBe 0
+        h.stdout.joined() shouldContain "identical"
+    }
+
     test("validation error plus operand notes: document separates them correctly") {
         val h = Harness()
         var capturedDoc: SchemaCompareDocument? = null

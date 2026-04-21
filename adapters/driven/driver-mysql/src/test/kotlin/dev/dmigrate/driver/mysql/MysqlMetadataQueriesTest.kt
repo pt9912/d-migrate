@@ -295,6 +295,24 @@ class MysqlMetadataQueriesTest : FunSpec({
         MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe false
     }
 
+    test("checkSupportTableShape returns true when extra columns present alongside required columns") {
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "bigint"),
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+            // Extra non-canonical columns — must not break shape validation
+            mapOf("column_name" to "description", "data_type" to "varchar"),
+            mapOf("column_name" to "created_at", "data_type" to "timestamp"),
+        )
+        MysqlMetadataQueries.checkSupportTableShape(jdbc, "mydb") shouldBe true
+    }
+
     test("checkSupportTableShape returns false when column type is wrong") {
         every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it }, any(), any()) } returns listOf(
             mapOf("column_name" to "managed_by", "data_type" to "varchar"),

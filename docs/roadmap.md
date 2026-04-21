@@ -362,7 +362,7 @@ statt sie mit `E056` zu ueberspringen. Der Modus ist opt-in (`helper_table`).
 Reverse-Engineering und Compare folgen in 0.9.4. Details:
 [`mysql-sequence-emulation-plan.md`](./mysql-sequence-emulation-plan.md).
 
-### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare
+### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare ✅ (2026-04-21)
 
 | Bereich | Aufgabe                                                                                                                     | LF-Ref | Status |
 | ------- | --------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
@@ -636,4 +636,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.37
 **Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.3 abgeschlossen; 0.9.4 in Arbeit (AP 6.1–6.5 Done); geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Status**: Milestone 0.1.0–0.9.4 abgeschlossen; geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8

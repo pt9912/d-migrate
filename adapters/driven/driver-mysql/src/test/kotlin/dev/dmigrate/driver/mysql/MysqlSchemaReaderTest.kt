@@ -616,6 +616,32 @@ class MysqlSchemaReaderTest : FunSpec({
         snapshot.supportTableState shouldBe SupportTableState.INVALID_SHAPE
     }
 
+    test("PF11: scanSequenceSupport returns AVAILABLE when dmg_sequences has extra columns") {
+        stubEmptyDefaults()
+        every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
+            mapOf("table_name" to "dmg_sequences")
+        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "ordinal_position" !in it }, any(), any()) } returns listOf(
+            mapOf("column_name" to "managed_by", "data_type" to "varchar"),
+            mapOf("column_name" to "format_version", "data_type" to "varchar"),
+            mapOf("column_name" to "name", "data_type" to "varchar"),
+            mapOf("column_name" to "next_value", "data_type" to "bigint"),
+            mapOf("column_name" to "increment_by", "data_type" to "bigint"),
+            mapOf("column_name" to "min_value", "data_type" to "bigint"),
+            mapOf("column_name" to "max_value", "data_type" to "bigint"),
+            mapOf("column_name" to "cycle_enabled", "data_type" to "tinyint"),
+            mapOf("column_name" to "cache_size", "data_type" to "int"),
+            // Extra non-canonical columns — must not break shape validation
+            mapOf("column_name" to "description", "data_type" to "varchar"),
+            mapOf("column_name" to "created_at", "data_type" to "timestamp"),
+        )
+        every { jdbc.queryList(match { "dmg_sequences" in it && "managed_by" in it }) } returns emptyList()
+        every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
+        val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
+        val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
+        snapshot.supportTableState shouldBe SupportTableState.AVAILABLE
+    }
+
     // ── D2 helper: stub canonical dmg_sequences shape ─────
     fun stubCanonicalShape() {
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns

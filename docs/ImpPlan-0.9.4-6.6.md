@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.4 - Beta: MySQL-Sequence Reverse-Engineering und Compare
 > **Arbeitspaket**: 6.6 (`Phase D/E: Tests und Verifikation`)
-> **Status**: Draft (2026-04-21)
+> **Status**: Done (2026-04-21)
 > **Referenz**: `docs/implementation-plan-0.9.4.md` Abschnitt 6.6,
 > Abschnitt 7 und Abschnitt 9 (im Masterplan);
 > `docs/ImpPlan-0.9.4-6.1.md`;
@@ -454,100 +454,154 @@ Statusschema pro Pflichtfall:
    `neutral -> generate -> MySQL -> reverse -> compare` bleibt
    diff-frei und exit-stabil.
    Primaer: Integration.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `MysqlSequenceEmulationIntegrationTest`
+   (`compare reverse snapshot against live reverse output stays diff-free`,
+   `PF1: round-trip neutral sequence definition survives generate-reverse cycle`).
 
 2. **Sequence-Metadaten-Diff**
    geaenderte `increment`-, `minValue`-, `maxValue`-, `cycle`- oder
    `cache`-Werte fuehren genau zu Sequence-Diffs.
    Primaer: Runner, ergaenzend Integration.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `SchemaComparatorTest`
+   (`sequence changed`, `sequence changed reports increment, min/max, cycle, and cache diffs`)
+   und `MysqlSequenceEmulationIntegrationTest`
+   (`compare reverse snapshot reports sequence metadata drift as pure sequencesChanged`).
 
 3. **Support-Routinen fehlen**
    Sequences bleiben reverse-bar, aber der Operand traegt
    sequence-bezogenes `W116`.
    Primaer: Unit, ergaenzend Integration.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+   (`D2: missing routines produce W116 per materialized sequence`)
+   und `MysqlSequenceEmulationIntegrationTest`
+   (`PF3: missing support routines produce W116 against real MySQL`).
 
 4. **Support-Trigger fehlt**
    Sequence bleibt sichtbar, `SequenceNextVal` wird nicht
    rekonstruiert, `W116` erscheint.
    Primaer: Unit, ergaenzend Integration.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `MysqlMetadataQueriesTest`
+   (`listPotentialSupportTriggers returns MISSING_MARKER when marker absent`),
+   `MysqlSchemaReaderTest` (`D3: MISSING_MARKER trigger produces no SequenceNextVal`)
+   und `MysqlSequenceEmulationIntegrationTest`
+   (`reverse treats markerless support-like trigger as degraded without SequenceNextVal`).
 
 5. **Include-Flag-Unabhaengigkeit**
    Reverse funktioniert fuer Sequence-Erkennung auch mit
    `includeTriggers = false` und `includeFunctions = false`.
    Primaer: Unit.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+   (`D3: includeTriggers=false does not prevent D3 recognition`,
+   `D3: includeTriggers=false via full read() still materializes SequenceNextVal`)
+   und `MysqlSequenceEmulationIntegrationTest`
+   (`reverse with includeTriggers=false still reconstructs SequenceNextVal`).
 
 6. **Supportobjekt-Unterdrueckung**
    intakte `dmg_sequences`, Support-Routinen und kanonische
    Sequence-Trigger erscheinen nicht als normale Nutzerobjekte.
    Primaer: Unit, ergaenzend Integration.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+   (`BASELINE: non-sequence single-table schema produces identical result with support scan`)
+   und `MysqlSequenceEmulationIntegrationTest`
+   (`reverse: support trigger not visible in user triggers`,
+   `PF1: round-trip neutral sequence definition survives generate-reverse cycle`).
 
 7. **Nicht-kanonische Objekte bleiben Nutzerobjekte**
    aehnlich benannte oder markerlose Nutzerobjekte werden nicht
    versehentlich weggefiltert.
    Primaer: Unit.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+   (`D3: USER_OBJECT trigger is not suppressed and no W116`)
+   und `MysqlSequenceEmulationIntegrationTest`
+   (`reverse treats markerless support-like trigger as degraded without SequenceNextVal`).
 
 8. **Compare mit degradiertem Operand**
    operandseitiges `W116` bleibt sichtbar, erzeugt aber keinen
    kuenstlichen Diff-Eintrag.
    Primaer: Runner.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `SchemaCompareRunnerTest`
+   (`operand W116 without diff returns exit 0`,
+   `operand W116 with real diff returns exit 1`,
+   `file-vs-db with W116 on target only follows real diff`).
 
 9. **Compare JSON/YAML mit degradiertem Operand**
    operandseitiges `W116` bleibt auch in `sourceOperand`/
    `targetOperand` maschinenlesbar sichtbar.
    Primaer: Renderer-Unit, ergaenzend CLI.
-   Status bei Planstart: offen.
+   Status: `abgedeckt durch` `CompareRendererOperandTest`
+   (JSON/YAML-Operanddiagnostik) und `CliSchemaCompareTest`
+   (`json renderer includes source_operand and target_operand diagnostics`,
+   `yaml renderer includes source_operand and target_operand diagnostics`).
 
 10. **Markerloser, aber semantisch intakter Trigger**
     es entsteht in 0.9.4 keine Spaltenzuordnung auf Verdacht, sondern
     degradierte Diagnose mit `W116`.
     Primaer: Unit, ergaenzend Integration.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+    (`D3: MISSING_MARKER trigger produces no SequenceNextVal`,
+    `D3: MISSING_MARKER without verankerbare Spalte produces no W116`)
+    und `MysqlSequenceEmulationIntegrationTest`
+    (`reverse treats markerless support-like trigger as degraded without SequenceNextVal`).
 
 11. **Grundform vs. Zusatzspalten**
     Zusatzspalten in `dmg_sequences` brechen den Reverse nicht; fehlende
     Pflichtspalten oder unvereinbare Grundform schon.
     Primaer: Unit, ergaenzend Integration.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+    (INVALID_SHAPE-Test fuer falsche Pflichtspaltentypen,
+    `PF11: scanSequenceSupport returns AVAILABLE when dmg_sequences has extra columns`,
+    `D2: valid row materializes to SequenceDefinition`).
 
 12. **Mehrere Sequences gleichzeitig**
     mindestens zwei Sequences in verschiedenen Tabellen bleiben im
     Reverse parallel stabil; ein degradierter Zustand einer Sequence
     blockiert die andere nicht.
     Primaer: Integration, ergaenzend Unit.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `MysqlSequenceEmulationIntegrationTest`
+    (`PF12: multiple sequences in different tables reverse independently`)
+    und `MysqlSchemaReaderTest`
+    (`D3: degraded trigger does not block other confirmed triggers`).
 
 13. **Eine Sequence wird mehrfach genutzt**
     dieselbe Sequence kann mehreren Spalten in verschiedenen Tabellen
     zugeordnet sein; der Reverse faltet alle betroffenen Spalten wieder
     auf dieselbe neutrale Sequence zurueck.
     Primaer: Integration, ergaenzend Unit.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `MysqlSequenceEmulationIntegrationTest`
+    (`PF13: shared sequence across multiple tables reverses to same sequence`)
+    und `MysqlSchemaReaderTest`
+    (`D3: multiple columns on same sequence`).
 
 14. **Mehrdeutiger Sequence-Key**
     kollidierende Sequence-Keys werden nicht still ueberschrieben,
     sondern degradiert mit aggregiertem `W116`.
     Primaer: Unit.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `MysqlSchemaReaderTest`
+    (`D2: ambiguous keys produce W116 but no SequenceDefinition`).
 
 15. **Exit-Code-Stabilitaet bei operandseitigem `W116`**
     file-vs-file, file-vs-db und db-vs-db bleiben bei rein
     operandseitigem `W116` auf Exit 0, solange kein realer Diff oder
     Validation-Fehler vorliegt.
     Primaer: Runner, ergaenzend CLI.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `SchemaCompareRunnerTest`
+    (`file-vs-file with W116 on both sides but identical model stays exit 0`,
+    `file-vs-db with W116 on target only follows real diff`,
+    `db-vs-db with W116 on both sides but identical model stays exit 0`)
+    und `CliSchemaCompareTest` (strukturierter Operand-Output fuer degradierte Operanden).
 
 16. **Plain-/JSON-/YAML-Trennung**
     Plain zeigt Notes sichtbar; JSON/YAML tragen die Notes strukturiert
     und halten `validation` frei von Operand-Notes.
     Primaer: Renderer-Unit, ergaenzend CLI.
-    Status bei Planstart: offen.
+    Status: `abgedeckt durch` `CompareRendererOperandTest`
+    (`plain still renders operand info as before`,
+    `json does not place operand notes inside validation`,
+    `yaml does not place operand notes inside validation`)
+    und `SchemaCompareRunnerTest`
+    (`operand notes appear on stderr only for plain format`,
+    `operand notes do not appear on stderr for json format`,
+    `operand notes do not appear on stderr for yaml format`).
 
 Coverage-Ziel:
 
