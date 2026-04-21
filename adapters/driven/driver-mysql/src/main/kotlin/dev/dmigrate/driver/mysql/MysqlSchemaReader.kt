@@ -258,10 +258,16 @@ class MysqlSchemaReader(
         tables: Map<String, TableDefinition>,
         snapshot: MysqlSequenceSupportSnapshot,
     ): Map<String, TableDefinition> {
-        // Only filter when existence is positively confirmed
-        // AVAILABLE: table confirmed readable
-        // INVALID_SHAPE: table confirmed present but not canonical
-        // MISSING / NOT_ACCESSIBLE: no hard existence proof → do not filter
+        // Only filter when existence is positively confirmed (plan §4.3).
+        //
+        // AVAILABLE: table confirmed readable → filter
+        // INVALID_SHAPE: table confirmed present but not canonical → filter
+        // MISSING: existence check succeeded negatively → do not filter
+        // NOT_ACCESSIBLE: existence check itself failed (permissions or
+        //   metadata disruption) → no hard existence proof, so the table
+        //   stays in the user result. This is the designed tradeoff per
+        //   §4.3: NOT_ACCESSIBLE without prior existence legitimation
+        //   must not silently remove a potentially legitimate user table.
         if (snapshot.supportTableState != SupportTableState.AVAILABLE &&
             snapshot.supportTableState != SupportTableState.INVALID_SHAPE
         ) return tables
@@ -293,8 +299,9 @@ class MysqlSchemaReader(
             .keys
         if (confirmed.isEmpty()) return triggers
         return triggers.filterKeys { key ->
-            // trigger keys use ObjectKeyCodec format — extract trigger name
-            confirmed.none { trigName -> key.endsWith(trigName) || key == trigName }
+            // Trigger keys use ObjectKeyCodec format: "table::name"
+            val (_, trigName) = ObjectKeyCodec.parseTriggerKey(key)
+            trigName !in confirmed
         }
     }
 
