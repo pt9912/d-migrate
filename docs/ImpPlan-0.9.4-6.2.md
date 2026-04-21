@@ -273,6 +273,14 @@ Architektur-Verortung:
   weitergeben koennen:
   - bevorzugt ueber nullable Felder oder rohe Lesewerte ohne
     fachlichen Default
+  - konkret betrifft das mindestens:
+    - `nextValue: Long?`
+    - `incrementBy: Long?`
+    - `minValue: Long?`
+    - `maxValue: Long?`
+    - `cycleEnabled` nicht als bereits ausgewertetes `Boolean`, sondern
+      als rohe bool-/numeric-lesbare Evidenz
+    - `cacheSize: Int?` nur nach sicherem Zieltyp-Nachweis
   - nicht ueber bereits eingesetzte Platzhalter wie `0L` oder `1L`
 - alternativ ist auch ein Refactoring des D1-Rohtyps zulaessig; fuer den
   D2-Vertrag ist nur entscheidend, dass fachliches Mapping nie auf
@@ -316,6 +324,11 @@ Verbindliche Formregeln:
     `checkSupportTableShape(...)`-Stufe in der Query-/Reader-Grenze
     erweitert, statt dieselbe Shape-Logik spaeter implizit in die
     Zeilenvalidierung zu verschieben
+  - konkrete Query-Erweiterung:
+    - `column_name` allein reicht nicht mehr
+    - D2 liest fuer die Pflichtspalten zusaetzlich mindestens
+      `DATA_TYPE` und `COLUMN_TYPE`
+    - diese Werte werden gegen die in D2 erlaubten Typklassen geprueft
 - fuer string-artige Pflichtfelder gilt in D2 eine explizite
   Lesesemantik:
   - JDBC-Strings werden vor Fachvergleich als gelesene Werte behandelt,
@@ -494,6 +507,9 @@ Sequence-Schluesseln:
   - aggregierbares sequence-bezogenes `W116`
 - fehlerhaft als `missing` klassifizierte Nutzer- oder nicht kanonische
   Routinen sind in D2 zu korrigieren:
+  - bevorzugt durch Erweiterung von `SupportRoutineState` um einen
+    eigenen Zustand wie `USER_OBJECT`, analog zu
+    `SupportTriggerState.USER_OBJECT`
   - Nutzerobjekt oder nicht kanonische Routine ist keine fehlende
     Support-Routine
   - daraus darf fuer sich allein kein sequence-bezogenes `W116`
@@ -515,6 +531,9 @@ Leitregel:
   widersprechen:
   - `INVALID_SHAPE` nicht unterdruecken
   - `listSupportSequenceRows(...)` sauber an `ReverseScope` binden
+  - Schema-Identifier dabei sicher quoten; reine String-Interpolation
+    bleibt nur zulaessig, wenn der Identifier vorab auf kanonische
+    DB-/Schema-Namen begrenzt oder anderweitig sicher erzeugt wird
   - Markerfelder nicht roh mit `==` vergleichen
   - keine stillen `0L`-/`1L`-Fallbacks
   - keine `W116` fuer fremde Markerzeilen
@@ -548,6 +567,8 @@ Leitregel:
   - bevorzugt ueber explizite Schema-Qualifizierung bzw.
     schema-parametrisierte Query; der `database`-Parameter der Query
     darf nicht ungenutzt bleiben
+  - wenn ueber Identifier-Interpolation qualifiziert wird, muss das
+    Quoting fuer den Schema-Namen verbindlich sicher sein
   - falls technisch nur unqualifiziert gelesen werden kann, muss D2
     explizit absichern, dass die aktive Connection-Datenbank exakt dem
     `ReverseScope` entspricht
@@ -602,7 +623,6 @@ Leitregel:
     `name`
   - konsistente Normalisierung von `managed_by`,
     `format_version` und `name`
-  - CHAR-Padding in `managed_by`, `format_version` und `name`
   - Zusatzspalten ohne Grundformverlust
   - Typsemantikfehler in Pflichtspalten als `invalid_shape`
   - fehlende Pflichtspalten mit degradiertem `W116`
