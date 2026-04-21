@@ -328,13 +328,12 @@ object MysqlMetadataQueries {
      * Returns the unqualified name if it's in scope, or null if it points elsewhere.
      */
     private fun unqualify(name: String, activeSchema: String): String? {
-        // First strip outer backticks (handles `mydb.seq` as single quoted identifier)
-        val outer = name.stripBackticks()
-        // Split on unquoted dot — find the first dot not inside backticks
-        val dotIdx = findUnquotedDot(outer)
-        if (dotIdx < 0) return outer.stripBackticks() // unqualified → in scope
-        val schema = outer.substring(0, dotIdx).stripBackticks()
-        val local = outer.substring(dotIdx + 1).stripBackticks()
+        // Split on unquoted dot first, so segmented identifiers like
+        // `mydb`.`seq` stay intact during scope resolution.
+        val dotIdx = findUnquotedDot(name)
+        if (dotIdx < 0) return name.stripBackticks() // unqualified → in scope
+        val schema = name.substring(0, dotIdx).stripBackticks()
+        val local = name.substring(dotIdx + 1).stripBackticks()
         return if (schema.equals(activeSchema, ignoreCase = true)) local else null
     }
 
@@ -500,7 +499,7 @@ object MysqlMetadataQueries {
 
             // Extract column, sequence, and guard from body for validation
             val column = TRIGGER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)?.stripBackticks()
-            val sequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)?.stripBackticks()
+            val rawSequence = TRIGGER_SEQUENCE_PATTERN.find(body)?.groupValues?.get(1)
             val guardColumn = TRIGGER_GUARD_PATTERN.find(body)?.groupValues?.get(1)?.stripBackticks()
 
             // Extract marker fields for cross-validation
@@ -509,7 +508,7 @@ object MysqlMetadataQueries {
             val markerColumn = MARKER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
 
             // Scope check: reject schema-qualified sequence names pointing elsewhere
-            val seqUnqualified = sequence?.let { unqualify(it, database) }
+            val seqUnqualified = rawSequence?.let { unqualify(it, database) }
 
             val state = when {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
@@ -517,7 +516,7 @@ object MysqlMetadataQueries {
                 "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
                 "object=sequence-trigger" !in body -> SupportTriggerState.NON_CANONICAL
                 "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
-                column == null || sequence == null -> SupportTriggerState.NON_CANONICAL
+                column == null || rawSequence == null -> SupportTriggerState.NON_CANONICAL
                 // Guard: NEW.<column> IS NULL must reference the same column
                 guardColumn == null -> SupportTriggerState.NON_CANONICAL
                 !guardColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
@@ -530,7 +529,7 @@ object MysqlMetadataQueries {
                 else -> SupportTriggerState.CONFIRMED
             }
 
-            SupportTriggerAssessment(name, state, table, column, seqUnqualified ?: sequence)
+            SupportTriggerAssessment(name, state, table, column, seqUnqualified ?: rawSequence?.stripBackticks())
         }
         return SupportTriggerScanResult(result, accessible = true)
     }
