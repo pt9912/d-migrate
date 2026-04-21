@@ -202,11 +202,11 @@ Es gibt genau einen Steuerungshebel: `SqlTransformMode`.
   - `d_migrate_sql_transform_duration_ms_bucket{status="success|failure",mode,target_dialect,source_dialect}`
 - `fallback_attempt_total = sum(d_migrate_sql_transform_fallback_total)` über alle `fallback_reason`.
 - `fallback_rate = fallback_attempt_total / attempts_total` mit Filter `mode="FALLBACK_ALLOWED"`.
-- `legacy_fallback_failure_rate = d_migrate_sql_transform_failure_total{fallback_reason="legacy_error"} / d_migrate_sql_transform_attempts_total` mit gleichem Mode-Filter.
+- `legacy_fallback_failure_rate = d_migrate_sql_transform_fallback_total{fallback_reason="legacy_error"} / fallback_attempt_total` mit Filter `mode="FALLBACK_ALLOWED"`.
 - Initiale Schwellwerte (nach Pilotlauf anhand realer Baseline anpassen):
   - `fallback_rate > 0.5%` -> Lauf als instabil markieren
   - `legacy_fallback_failure_rate > 0.1%` -> Schwerewarnung
-- Bei `attempts_total == 0` wird keine Division ausgeführt.
+- Bei `attempts_total == 0` bzw. `fallback_attempt_total == 0` wird die jeweilige Division nicht ausgeführt.
 
 ## Warnungs-Katalog-Anbindung (Ledger)
 
