@@ -152,7 +152,13 @@ Verbindliche Folge:
   auftauchen
 - 6.1 darf Support-Routinen und Support-Trigger intern trotzdem lesen,
   wenn sie fuer den Sequence-Support-Scan benoetigt werden
+- Supportobjekte werden in 6.1 unabhaengig vom Include-Flag-Zustand
+  immer aus `SchemaDefinition` bzw. dem sichtbaren Nutzerergebnis
+  herausgefiltert
 - daraus darf aber kein sichtbarer Nebenpfad entstehen:
+  - auch bei aktivierten Include-Flags duerfen bestaetigte
+    Support-Routinen und Support-Trigger nicht als Nutzerobjekte in den
+    sichtbaren Output ruecken
   - bei deaktivierten Include-Flags duerfen keine Supportobjekte im
     Nutzerergebnis auftauchen
   - ein reiner Support-Scan darf keine zusaetzlichen sichtbaren Notes
@@ -286,6 +292,11 @@ Wichtig fuer 6.1:
   Nutzervertrags
 - Supportabfragen bleiben gezielt und separat vom sichtbaren
   Include-Flag-Pfad
+- alle Supportabfragen muessen verbindlich auf den kanonischen
+  `ReverseScope` des Reader-Laufs begrenzt werden:
+  - Filterung auf den aktiven Katalog-/Schema-Namensraum
+  - keine schemauebergreifende "best effort"-Suche
+  - kein Rueckfall auf gleichnamige Objekte ausserhalb des Scopes
 - Permission-Denied und "metadata not accessible" werden als eigener
   technischer Status modelliert, nicht nur als rohe Exception
 - neben Berechtigungsfehlern muessen in 6.1 auch
@@ -353,7 +364,56 @@ Semantik von `supportTableState`:
   - dieser Zustand darf nicht durch spaeteres "wir haben keine Zeilen
     gefunden" zu `missing` umgedeutet werden
 
-### 5.4 Konflikt- und Aggregationspfad
+### 5.4 Status-zu-Diagnose-Vertrag
+
+6.1 legt fuer Supportstatus einen einheitlichen Mappingpfad fest:
+
+- `supportTableState.missing`
+  - kein `W116`
+  - kein Hard-Error
+  - kompatibler Nicht-Sequence-Fall
+- `supportTableState.available`
+  - kein `W116` allein aus dem Tabellenstatus
+- `supportTableState.invalid_shape`
+  - aggregierbare Sequence-Diagnose
+  - spaeter genau eine `W116` pro betroffenem Sequence-Schluessel
+- `supportTableState.not_accessible`
+  - harter Sequence-Pfad nur nach vorgelagerter Existenzlegitimation
+  - ohne diese Legitimation kein `W116` nur aus der unentscheidbaren
+    Tabellenexistenz
+- `routineState.confirmed`
+  - keine Diagnose allein aus dem Status
+- `routineState.missing`
+  - keine Diagnose allein aus dem Status
+  - relevant nur als Evidenz in Kombination mit bestaetigter
+    Sequence-Unterstuetzung
+- `routineState.not_accessible`
+  - aggregierbare Sequence-Diagnose
+  - spaeter `W116`, wenn derselbe Sequence-Schluessel bereits fachlich
+    legitimiert ist
+- `triggerState.confirmed`
+  - keine Diagnose allein aus dem Status
+- `triggerState.missing_marker`
+  - aggregierbare Spaltendiagnose
+  - spaeter `W116`, aber keine implizite Spaltenzuordnung
+- `triggerState.not_accessible`
+  - aggregierbare Spaltendiagnose
+  - spaeter `W116`, wenn die betroffene Spalte ueber bestaetigte
+    Supportevidenz im Scope verankert ist
+- `triggerState.non_canonical`
+  - aggregierbare Spaltendiagnose
+  - spaeter `W116`
+- `triggerState.user_object`
+  - keine `W116`
+  - Supporterkennung fuer dieses Objekt endet still mit
+    "kein Supportobjekt"
+
+Leitregel:
+
+- 6.1 erzeugt nie sofort Nutzer-Notes aus Einzelstatus
+- erst der Aggregationspfad entscheidet ueber `W116` oder "keine Note"
+
+### 5.5 Konflikt- und Aggregationspfad
 
 6.1 legt die Basisregeln fest:
 
@@ -400,6 +460,9 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 - gezielte Support-Abfragen einfuehren
 - Rueckgabeformen so schneiden, dass `not_accessible` von `missing`
   unterschieden werden kann
+- alle Supportabfragen explizit an `ReverseScope` binden:
+  - Katalog-/Schemafilter in jeder Lookup-Familie
+  - Kanonisierung der Scope-Werte an einer Stelle statt ad hoc je Query
 - den zweistufigen Erkennungsprozess fuer `dmg_sequences` abbilden:
   Existenz-/Adressierbarkeitspruefung getrennt von Form-/Datenzugriff
 - fuer `dmg_sequences` einen expliziten Rueckgabezustand vorsehen, bei
@@ -424,6 +487,10 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 - Aggregationsschluessel fuer Sequence- und Spaltenebene festlegen
 - `ReverseScope` als expliziten Bestandteil dieser Schluessel
   modellieren und fuer MySQL kanonisch festschreiben
+- Emissionstabelle fuer `W116` dokumentieren:
+  - welcher Supportstatus nur Evidenz bleibt
+  - welcher Supportstatus in eine aggregierte Diagnose laufen darf
+  - welcher Supportstatus explizit zu keiner Note fuehrt
 - dafuer strukturierte Composite-Key-Typen statt Stringkodierung
   einfuehren
 - technische Einzelereignisse in aggregierbare Diagnoseeintraege
@@ -442,8 +509,12 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 - `MysqlSchemaReaderTest` fuer:
   - Supportabfragen ohne API-Aenderung
   - degradierte Zusatzmetadatenrechte
+  - aktivierte Include-Flags ohne sichtbare Supportobjekte im
+    Nutzerergebnis
   - deaktivierte Include-Flags ohne sichtbare Supportobjekte und ohne
     zusaetzliche Nutzer-Notes
+  - ReverseScope-Haertung gegen gleichnamige Supportobjekte ausserhalb
+    des Ziel-Schemas
   - Aggregationsverhalten
   - mehrdeutige Sequence-Keys
   - Nicht-Sequence-Faelle ohne Supportobjekte und ohne zusaetzliche
@@ -474,16 +545,25 @@ Pflichtfaelle fuer 6.1:
    zusammengefuehrte Diagnosebasis.
 7. `ReverseScope` ist fuer die Aggregation als kanonischer Namensraum
    festgelegt und wird nicht je Phase lokal neu interpretiert.
-8. Ein Schema ohne `dmg_sequences` und ohne Supportobjekte bleibt ein
+8. Supportobjekte erscheinen unabhaengig vom Include-Flag-Zustand nie
+   als sichtbare Nutzerobjekte im Ergebnis.
+9. Ein Schema ohne `dmg_sequences` und ohne Supportobjekte bleibt ein
    kompatibler Nicht-Sequence-Fall: kein Hard-Error, kein implizites
    `W116`, keine zusaetzlichen Reverse-Notes.
-9. Bei gemischter Zeilenqualitaet fuer denselben Sequence-Key wird der
+10. Support-Queries bleiben auf den kanonischen `ReverseScope`
+    begrenzt; gleichnamige Objekte ausserhalb des Scopes werden nicht
+    herangezogen.
+11. Fuer die Status `missing`, `missing_marker`, `not_accessible`,
+    `invalid_shape`, `non_canonical` und `user_object` ist verbindlich
+    festgelegt, ob sie nur Evidenz bleiben, in `W116` aggregieren oder
+    zu keiner Note fuehren.
+12. Bei gemischter Zeilenqualitaet fuer denselben Sequence-Key wird der
    gesamte Key blockiert; es gibt keinen partiellen "beste Zeile
    gewinnt"-Pfad.
-10. Deaktivierte Include-Flags bleiben fuer Nutzerobjekte sauber:
+13. Deaktivierte Include-Flags bleiben fuer Nutzerobjekte sauber:
    Support-Scans erzeugen weder sichtbare Supportobjekte noch
    zusaetzliche Nutzer-Notes.
-11. Bestehende Nicht-Sequence-Reader-Faelle bleiben gegen bestehende
+14. Bestehende Nicht-Sequence-Reader-Faelle bleiben gegen bestehende
    Test-Baselines unveraendert:
    keine Drift in Schemaobjekten, Notes und Hard-/Soft-Fail-Verhalten.
 
@@ -571,6 +651,8 @@ Gegenmassnahme:
 
 - Aggregationsschluessel und Diagnosebasis schon in 6.1 definieren
 - `ReverseScope` als kanonisches Wertobjekt mitfestschreiben
+- Emissionsvertrag fuer `W116` als kleine Status-zu-Note-Tabelle
+  dokumentieren
 
 ### 9.5 Mehrdeutige Keys werden zu still behandelt
 
