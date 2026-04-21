@@ -346,17 +346,20 @@ object MysqlMetadataQueries {
                 """.trimIndent(), database, routineName,
             ) ?: return SupportRoutineState.MISSING
 
-            // routine_definition may be NULL in information_schema (MySQL security).
-            // Fall back to SHOW CREATE FUNCTION which returns the full body.
-            var definition = row["routine_definition"] as? String ?: ""
-            if (definition.isEmpty()) {
-                val safeDb = database.replace("`", "``")
-                val safeName = routineName.replace("`", "``")
-                val showRow = try {
-                    session.querySingle("SHOW CREATE FUNCTION `$safeDb`.`$safeName`")
-                } catch (_: Exception) { null }
-                definition = (showRow?.get("Create Function") as? String) ?: ""
-            }
+            // MySQL's information_schema.routines.routine_definition often strips
+            // comments (including d-migrate markers). SHOW CREATE FUNCTION preserves
+            // the original source text. Try SHOW CREATE first, fall back to
+            // routine_definition.
+            val safeDb = database.replace("`", "``")
+            val safeName = routineName.replace("`", "``")
+            val showRow = try {
+                session.querySingle("SHOW CREATE FUNCTION `$safeDb`.`$safeName`")
+            } catch (_: Exception) { null }
+            // SHOW CREATE returns column "Create Function" with full body
+            val showBody = showRow?.values?.filterIsInstance<String>()
+                ?.firstOrNull { "FUNCTION" in it.uppercase() || "BEGIN" in it.uppercase() }
+                ?: ""
+            val definition = showBody.ifEmpty { row["routine_definition"] as? String ?: "" }
             val dataType = (row["data_type"] as? String)?.lowercase() ?: ""
 
             // Check marker — routine exists but no d-migrate marker → user object
@@ -433,12 +436,26 @@ object MysqlMetadataQueries {
             return SupportTriggerScanResult(emptyList(), accessible = false)
         }
 
+        val safeDb = database.replace("`", "``")
+
         val result = rows.map { row ->
             val name = row["trigger_name"] as String
             val timing = row["action_timing"] as? String ?: ""
             val event = row["event_manipulation"] as? String ?: ""
-            val body = row["action_statement"] as? String ?: ""
+            var body = row["action_statement"] as? String ?: ""
             val table = row["event_object_table"] as? String ?: ""
+
+            // MySQL's information_schema may strip comments from action_statement.
+            // Fall back to SHOW CREATE TRIGGER which preserves the original source.
+            if ("d-migrate:mysql-sequence-v1" !in body) {
+                val safeTrig = name.replace("`", "``")
+                val showRow = try {
+                    session.querySingle("SHOW CREATE TRIGGER `$safeDb`.`$safeTrig`")
+                } catch (_: Exception) { null }
+                val showBody = showRow?.values?.filterIsInstance<String>()
+                    ?.firstOrNull { "BEGIN" in it.uppercase() || "SET" in it.uppercase() }
+                if (showBody != null && showBody.isNotEmpty()) body = showBody
+            }
 
             val state = when {
                 !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
