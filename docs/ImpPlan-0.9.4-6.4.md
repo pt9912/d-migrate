@@ -81,15 +81,21 @@ Was nach D1 bis D3 fuer E1 noch fehlt:
 
 Aktueller Scaffold-Gap vor E1:
 
-- `SchemaCompareRunner` baut die Compare-`validation` heute nur aus
-  echten Validation-Warnungen, nicht aus operandseitigen Reverse-Notes
+- `SchemaCompareRunner` baut die Compare-`validation` heute bereits
+  korrekt nur aus echten Validation-Warnungen; dieser Ist-Zustand ist
+  in E1 zu halten und testseitig abzusichern, nicht zu aendern
 - `SchemaCompareProjection` hat den noetigen Operand-Slot bereits, aber
   der Rendervertrag fuer JSON/YAML bildet `sourceOperand.notes` und
   `targetOperand.notes` noch nicht ab
 - `CompareRendererJson` und `CompareRendererYaml` serialisieren heute
   `validation` und `diff`, aber noch keine operandseitige Diagnose
-- Plain-Ausgabe hat damit aktuell mehr Sichtbarkeit fuer operandseitige
-  Reverse-Notes als JSON/YAML
+- operandseitige Sichtbarkeit verteilt sich aktuell auf zwei getrennte
+  Pfade:
+  - Runner-seitige `stderr`-Emission nur im Plain-Format
+  - Plain-Renderer-Darstellung im Dokument selbst
+- E1 muss daher explizit zwischen Runner-Sichtbarkeit und
+  Renderer-/Dokumentvertrag unterscheiden; die eigentliche Luecke liegt
+  in JSON/YAML, nicht im bereits vorhandenen Plain-Pfad an sich
 
 Konsequenz ohne 6.4:
 
@@ -209,7 +215,9 @@ Nach der Operand-Aufloesung und Normalisierung fuehrt
 1. beide Operanden inklusive Validation, Notes und `skippedObjects`
    aufloesen
 2. Validation-Fehler unveraendert als Exit 3 behandeln
-3. operandseitige Reverse-Notes in Plain weiter sichtbar ausgeben
+3. operandseitige Reverse-Notes in Plain weiter sichtbar halten:
+   - sofortige Runner-Emission auf `stderr`
+   - zusaetzliche Sichtbarkeit im Plain-Dokument des Renderers
 4. Compare auf dem normalisierten Neutralmodell ausfuehren
 5. `SchemaCompareDocument` mit:
    - `summary`
@@ -323,14 +331,20 @@ Done-Kriterien fuer E1-0:
 
 ### E1a Compare-Semantik absichern
 
-- Compare-Tests um sequence-emulierte MySQL-Faelle erweitern
-- file-vs-file, file-vs-db und db-vs-db gegen operandseitiges `W116`
-  absichern
 - pruefen, ob `SchemaComparator` unveraendert diff-stabil bleibt
 - falls noetig nur minimale, neutralmodellbasierte Anpassung vornehmen
 - `SchemaCompareRunner` explizit gegen operandseitiges `W116`
   absichern, damit Exit-Codes allein von Validation oder echtem Diff
   abhaengen
+
+Done-Kriterien fuer E1a:
+
+- es ist entschieden und belegt, ob `SchemaComparator` unveraendert
+  ausreicht
+- ein eventuell noetiger Compare-Eingriff bleibt minimal und
+  neutralmodellbasiert
+- der semantische Vertrag "operandseitiges `W116` ist Diagnose, kein
+  Diff" ist im Runner-Code explizit abgesichert
 
 ### E1b Renderer- und Output-Nachzug umsetzen
 
@@ -341,6 +355,14 @@ Done-Kriterien fuer E1-0:
 - sicherstellen, dass Plain-/JSON-/YAML-Ausgabe dieselbe fachliche
   Operanddiagnose zeigen
 
+Done-Kriterien fuer E1b:
+
+- JSON und YAML serialisieren operandseitige Notes und
+  `skippedObjects`
+- Plain behaelt seine bestehende Sichtbarkeit als Regression Guard
+- Renderer transportieren keine operandseitigen Informationen mehr nur
+  implizit ueber Plain-`stderr`
+
 ### E1c Exit-Code-Vertrag testseitig festziehen
 
 - explizite Runner- und CLI-Tests fuer:
@@ -348,6 +370,13 @@ Done-Kriterien fuer E1-0:
   - Exit 1 bei operandseitigem `W116` mit echtem Diff
   - Exit 3 nur bei Validation-Fehler
   - Exit 4/7 weiterhin nur bei Lese-/Verbindungs- oder IO-Fehlern
+
+Done-Kriterien fuer E1c:
+
+- Exit-0/1/3/4/7-Verhalten ist fuer operandseitige Diagnosefaelle
+  explizit getestet
+- file-vs-file, file-vs-db und db-vs-db folgen demselben
+  Exit-Grundvertrag
 
 ### E1d Compare-Dokumentvertrag stabilisieren
 
@@ -357,6 +386,14 @@ Done-Kriterien fuer E1-0:
   stabil sind
 - keine operandseitigen Notes in `validation` verschieben
 
+Done-Kriterien fuer E1d:
+
+- `SchemaCompareDocument`, Renderpfade und Tests verwenden denselben
+  Operandvertrag
+- `validation` bleibt validation-only
+- `sourceOperand`/`targetOperand` sind als stabile maschinenlesbare
+  Diagnosefelder festgezogen
+
 ### E1e Tests nachziehen
 
 - `SchemaCompareRunnerTest` fuer operandseitiges `W116`,
@@ -365,6 +402,13 @@ Done-Kriterien fuer E1-0:
   operandseitigen Notes und `skippedObjects` erweitern
 - falls notwendig Integrationstest fuer neutral -> MySQL -> reverse ->
   compare als E1-Abschluss mitziehen
+
+Done-Kriterien fuer E1e:
+
+- Runner-Tests decken Compare-Semantik und Exit-Code-Vertrag ab
+- CLI-Tests decken Plain/JSON/YAML-Sichtbarkeit ab
+- mindestens ein sequence-emulierter End-to-End-Fall ist als
+  Regression Guard verankert, falls E1 ihn benoetigt
 
 Abhaengigkeiten:
 
@@ -398,6 +442,8 @@ Pflichtfaelle fuer 6.4:
    zusaetzlich vorhanden sind.
 9. Plain zeigt operandseitige Notes und `skippedObjects` weiterhin
    sichtbar an.
+   Regression Guard: dieser Pfad ist bereits vorhanden und darf durch
+   E1 nicht regressieren.
 10. JSON enthaelt `sourceOperand` und `targetOperand` inklusive Notes
     und `skippedObjects`.
 11. YAML enthaelt `sourceOperand` und `targetOperand` inklusive Notes
@@ -430,6 +476,7 @@ Als fachliche Zieltypen bzw. konsumierte Vertragsanbieter relevant,
 aber voraussichtlich nicht direkt zu aendern:
 
 - `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/SchemaComparator.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/CompareOperandNormalizer.kt`
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/ResolvedSchemaOperand.kt`
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/CompareRendererPlain.kt`
 - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SchemaReadResult.kt`
@@ -460,7 +507,8 @@ Gegenmassnahme:
 
 Risiko:
 
-- operandseitige Notes und `skippedObjects` sind nur in Plain sichtbar
+- E1b koennte die bestehende JSON/YAML-Luecke nicht vollstaendig
+  schliessen, obwohl Plain bereits mehr Sichtbarkeit bietet
 - Automationspfade verlieren Diagnoseinformationen
 
 Gegenmassnahme:
@@ -505,4 +553,3 @@ Gegenmassnahme:
 
 - Runner- und CLI-Tests fuer Plain, JSON, YAML und Exit-Codes
 - mindestens ein End-to-End-Fall neutral -> MySQL -> reverse -> compare
-
