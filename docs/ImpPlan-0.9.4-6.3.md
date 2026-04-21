@@ -110,6 +110,9 @@ Konsequenz ohne 6.3:
   - `schema.sequences`
   - Support-Snapshot
   - Diagnose- und Gating-Vertrag
+- D3 startet erst nach vollstaendig umgesetztem D2-Vertrag; ein
+  paralleler Start gegen noch ungehaertete D2-Rohdaten ist nicht Teil
+  dieses Arbeitspakets
 - robuste Erkennung kanonischer Sequence-Support-Trigger
 - Aufbau einer Spaltenzuordnung `table.column -> sequenceName`
 - Anreicherung von `ColumnDefinition.default` zu
@@ -233,8 +236,15 @@ Architektur-Verortung:
   `materializeSequenceDefaults(...)`
 - im bestehenden `read()`-Ablauf liegt D3 nach dem internen
   Support-Scan aus Phase 2 und vor dem finalen `SchemaDefinition`-Bau;
-  praktisch schiebt D3 damit den bisherigen Assemblierungsblock aus
-  Phase 3 nach hinten und reichert dessen Eingaben fachlich an
+  praktisch ergibt sich damit:
+  - Phase 2: `scanSequenceSupport(...)` aus D1
+  - Phase 2b: `materializeSupportSequences(...)` aus D2
+  - Phase 2c: `materializeSequenceDefaults(...)` aus D3
+  - Phase 3: filtern, Diagnosen aggregieren, `SchemaDefinition` bauen
+- die bestehende Triggerfilterung aus Phase 3 wird in D3 nicht
+  parallel dupliziert, sondern fachlich ersetzt bzw. von D3-5
+  vorangetrieben; Phase 3 konsumiert danach den bereits D3-bereinigten
+  Triggerbestand
 - dieser Schritt konsumiert:
   - die D2-materialisierten `schema.sequences`
   - die Triggerrohdaten bzw. Triggerstatus aus dem Support-Snapshot
@@ -249,11 +259,14 @@ Architektur-Verortung:
 Ein Trigger gilt in D3 nur dann als kanonisch bestaetigt, wenn alle
 folgenden Bedingungen zugleich erfuellt sind:
 
-- aus Marker und/oder Triggerbody muessen Tabelle, Spalte und
-  Sequence fachlich rekonstruierbar sein; auf dieser Basis wird der
-  erwartete Triggername vorwaerts ueber
-  `MysqlSequenceNaming.triggerName(tableName, columnName)` berechnet
-  und gegen den gelesenen Triggernamen geprueft
+- aus Marker und Triggerbody muessen Tabelle, Spalte und Sequence
+  fachlich rekonstruierbar sein; D3 arbeitet dabei in dieser
+  Validierungsreihenfolge:
+  - Triggerbody/Metadaten lesen
+  - Spalte und Sequence aus dem Body extrahieren
+  - erwarteten Namen vorwaerts ueber
+    `MysqlSequenceNaming.triggerName(tableName, columnName)` berechnen
+  - gelesenen Triggernamen dagegen pruefen
 - der Marker-Kommentar enthaelt
   `d-migrate:mysql-sequence-v1 object=sequence-trigger`
 - Marker, Triggername und Triggerinhalt benennen dieselbe
@@ -341,7 +354,13 @@ Fuer D3 gilt:
 - `SupportTriggerState.NOT_ACCESSIBLE`
   - keine Spaltenzuordnung
   - aggregierbares spaltenbezogenes `W116`, sofern die betroffene
-    Spalte/Sequence fachlich verankert werden kann
+    Spalte fachlich verankert werden kann
+  - fachlich verankert heisst in D3:
+    - Tabelle kommt belastbar aus den Trigger-Metadaten
+    - die Spalte ist aus Triggerbody oder kanonischer Triggerstruktur
+      extrahierbar
+  - eine bereits materialisierte D2-Sequence ist fuer diese
+    Mindestverankerung hilfreich, aber nicht zwingend
 - `SupportTriggerState.USER_OBJECT`
   - kein Support-Trigger
   - keine Unterdrueckung
@@ -383,9 +402,6 @@ Wenn einzelne Trigger degradiert sind:
     Spaltenzuordnung weiterverwenden
   - Markerverlust weiterhin degrade statt markerloser Rekonstruktion
   - `includeTriggers = false` weiter sauber vom Supportpfad trennen
-  - fragiles `endsWith(...)`-Matching in `filterSupportTriggers(...)`
-    gegen eine stabile Triggeridentitaet aus dem Reader-/Object-Key-
-    Vertrag haerten
 - D3-0 ist kein reiner Vorbereitungsschritt, sondern fasst bewusst
   bestehende Reader-Scaffold-Logik und zugehoerige Tests an
 
@@ -393,8 +409,6 @@ Done-Kriterien fuer D3-0:
 
 - degradierte Triggerdiagnosen fallen nicht mehr auf Triggernamen als
   Spaltenersatz zurueck, wenn die Spalte fachlich nicht verankert ist
-- `filterSupportTriggers(...)` haengt nicht mehr an
-  `endsWith(...)`-Matching gegen serialisierte Object-Keys
 - die neue D3-Evidenz kann spaeter `sequenceName` getrennt vom reinen
   `dmg_nextval`-Token transportieren
 
@@ -402,9 +416,9 @@ Done-Kriterien fuer D3-0:
 
 - Triggerscan aus D1 so anschliessen, dass D3 mehr als nur
   Statusbooleans konsumieren kann
-- den bestehenden `SupportTriggerAssessment`-Traeger oder einen
-  gleichwertigen D3-internen Folgetyp um die fuer D3 zwingend benoetigte
-  Sequence-Evidenz erweitern:
+- D1 bleibt dabei bewusst stabil; D3 baut einen eigenen internen
+  Folgetyp auf, der `SupportTriggerAssessment` konsumiert und um die fuer
+  D3 zwingend benoetigte Sequence-Evidenz anreichert:
   - Triggername
   - `tableName`
   - `columnName`
@@ -487,6 +501,8 @@ Abhaengigkeiten:
 - `D3-4` und `D3-5` sind fachlich parallelisierbar, sobald
   `D3-3` den Bestaetigungsvertrag geliefert hat
 - `D3-5` haengt vom finalen Bestaetigungsvertrag aus `D3-2`/`D3-3` ab
+- `D3-7` laeuft inkrementell zu `D3-0` bis `D3-6` mit, ist aber als
+  Abschluss-Gate fuer das Arbeitspaket verpflichtend
 
 ---
 
@@ -525,6 +541,9 @@ Pflichtfaelle fuer 6.3:
 14. Eine Spalte mit bereits widerspruechlichem Nutzerdefault wird durch
     einen bestaetigten Support-Trigger nicht still ueberschrieben,
     sondern bleibt degradiert mit `W116`.
+15. Ein D1-strukturell bestaetigter Trigger, dessen Sequence-Key in D2
+    wegen Mehrdeutigkeit oder Blockierung nicht materialisiert wurde,
+    erzeugt kein `SequenceNextVal`.
 
 Akzeptanzkriterium fuer 6.3:
 
