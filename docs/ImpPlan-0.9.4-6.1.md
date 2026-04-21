@@ -152,6 +152,11 @@ Verbindliche Folge:
   auftauchen
 - 6.1 darf Support-Routinen und Support-Trigger intern trotzdem lesen,
   wenn sie fuer den Sequence-Support-Scan benoetigt werden
+- daraus darf aber kein sichtbarer Nebenpfad entstehen:
+  - bei deaktivierten Include-Flags duerfen keine Supportobjekte im
+    Nutzerergebnis auftauchen
+  - ein reiner Support-Scan darf keine zusaetzlichen sichtbaren Notes
+    fuer Nicht-Sequence-Faelle erzeugen
 
 ### 4.3 Berechtigungsfehler auf Zusatzmetadaten werden degradiert
 
@@ -171,6 +176,20 @@ Verbindliche Folge:
 - nur der Verlust der primaeren Wahrheitsquelle bei **vorhandener, aber
   nicht lesbarer** `dmg_sequences`-Metadatenquelle bleibt ein harter
   Abbruchgrund
+- die Unterscheidung zwischen `missing` und `not_accessible` muss in
+  6.1 explizit ueber einen zweistufigen Erkennungsprozess erfolgen:
+  - Schritt 1: Existenz-/Adressierbarkeitspruefung fuer
+    `dmg_sequences` ueber eine gezielte Metadatenabfrage mit
+    unterscheidbarem Ergebniszustand
+  - Schritt 2: nur wenn die Tabelle adressierbar ist, Form-/Datenzugriff
+    pruefen; dabei muessen Zugriffsfehler separat von inhaltlich
+    ungueltiger Tabellenform modelliert werden
+  - "nicht vorhanden" und "vorhanden, aber nicht lesbar" duerfen nicht
+    aus demselben Catch-All-Zweig abgeleitet werden
+  - wenn bereits die Existenzpruefung wegen Rechten oder technischer
+    Metadatenstoerung kein sauberes "vorhanden"/"nicht vorhanden"
+    liefern kann, ist das als `not_accessible` zu klassifizieren, nicht
+    als `missing`
 
 ### 4.4 W116 wird auf Objektidentitaeten aggregiert
 
@@ -181,10 +200,12 @@ Verbindliche Folge:
   - Sequence-Ebene fuer `dmg_sequences`-/Routine-Probleme
   - Spaltenebene fuer Trigger-/Default-Zuordnung
 - diese Schluessel muessen stabil und explizit sein:
-  - Sequence-Schluessel =
-    `<reverse-scope>\u0000<neutral-sequence-key>`
-  - Spalten-Schluessel =
-    `<reverse-scope>\u0000<canonical-table>\u0000<canonical-column>`
+  - `SequenceDiagnosticKey(reverseScope, neutralSequenceKey)`
+  - `ColumnDiagnosticKey(reverseScope, canonicalTable, canonicalColumn)`
+- die Schluessel werden in 6.1 als strukturierte Composite-Keys
+  modelliert, nicht als String mit Trennzeichenkodierung
+- erst spaetere Render-/Logpfade duerfen daraus lesbare Strings
+  ableiten
 - konkurrierende technische Ursachen fuer denselben Schluessel
   (z. B. mehrere invalide Zeilen derselben Sequence oder mehrere
   Triggerbeobachtungen derselben Spalte) werden in genau einer
@@ -252,6 +273,21 @@ Wichtig fuer 6.1:
   Include-Flag-Pfad
 - Permission-Denied und "metadata not accessible" werden als eigener
   technischer Status modelliert, nicht nur als rohe Exception
+- neben Berechtigungsfehlern muessen in 6.1 auch
+  Metadaten-/Parsing-Fehler sauber klassifiziert werden:
+  - Zugriff nicht moeglich (`not_accessible`)
+  - Objekt fehlt (`missing`)
+  - Metadaten formal vorhanden, aber nicht kanonisch lesbar
+    (`invalid_shape` bzw. `non_canonical`)
+  - Nutzerobjekt statt Supportobjekt (`user_object`)
+- fuer Routinen- und Trigger-Lookups gilt dabei derselbe
+  Fehlerklassenvertrag:
+  - Rechte-/Sichtbarkeitsfehler laufen nach `not_accessible`
+  - SQL-/Lookup-Fehler bei technisch vorhandener Quelle laufen ebenfalls
+    nach `not_accessible`, wenn dadurch keine verlaessliche fachliche
+    Bewertung mehr moeglich ist
+  - Parser-/Normalisierungsfehler auf gelesenen Definitionen laufen nach
+    `non_canonical`, nicht nach `missing`
 
 ### 5.3 Support-Snapshot
 
@@ -283,16 +319,21 @@ Semantik von `supportTableState`:
   - kompatibler Nicht-Sequence-Fall
   - kein Hard-Error
   - kein `W116` allein wegen fehlender Tabelle
+  - wird nur gesetzt, wenn die Existenzpruefung negativ, aber technisch
+    erfolgreich war
 - `available`:
   - primaere Wahrheitsquelle ist lesbar
 - `invalid_shape`:
   - Support-Tabelle ist vorhanden, aber nicht kanonisch auswertbar
   - degradierter Sequence-Pfad; spaeter aggregierbares `W116`
 - `not_accessible`:
-  - Support-Tabelle scheint vorhanden oder adressiert, ist aber nicht
-    lesbar
+  - Support-Tabelle ist adressierbar oder die Existenzpruefung liefert
+    nur einen Rechte-/Zugriffsfehler, aber kein sauberes "nicht
+    vorhanden"
   - harter Abbruchgrund fuer den Sequence-Pfad, weil die primaere
     Wahrheitsquelle nicht inspizierbar ist
+  - dieser Zustand darf nicht durch spaeteres "wir haben keine Zeilen
+    gefunden" zu `missing` umgedeutet werden
 
 ### 5.4 Konflikt- und Aggregationspfad
 
@@ -301,11 +342,26 @@ Semantik von `supportTableState`:
 - jede `dmg_sequences`-Zeile wird zunaechst lokal bewertet
 - mehrere technische Probleme derselben Sequence werden auf einen
   Sequence-Schluessel aggregiert
-- Triggerprobleme werden auf den stabilen Spalten-Schluessel
-  `<reverse-scope>\u0000<canonical-table>\u0000<canonical-column>`
-  aggregiert
+- Triggerprobleme werden auf `ColumnDiagnosticKey(...)` aggregiert
 - mehrdeutige Sequence-Keys blockieren spaetere Rekonstruktion fuer
   genau diesen Key
+- fuer gemischte Qualitaet auf demselben Sequence-Key gilt in 6.1
+  verbindlich:
+  - sobald mehr als eine Zeile denselben neutralen Sequence-Key
+    beansprucht und mindestens eine davon nicht konsistent mit den
+    anderen ist, wird der gesamte Key als mehrdeutig blockiert
+  - "nicht konsistent" umfasst hier explizit auch gemischte
+    Zeilenqualitaet:
+    - eine fachlich verwertbare Zeile plus eine invalide oder
+      widerspruechliche Schwesterzeile fuer denselben Key blockiert den
+      gesamten Key
+    - eine Teilmenge gueltiger Zeilen darf nicht selektiv weiterverwendet
+      werden, solange derselbe Key gleichzeitig widerspruechliche Evidenz
+      traegt
+  - es gibt fuer diesen Key keinen "beste gueltige Zeile gewinnt"-
+    Fallback und kein `last write wins`
+  - die Rohzeilen bleiben interne Evidenz; nach aussen erscheint genau
+    eine aggregierte Konfliktdiagnose
 
 Diese Regeln muessen bereits in D1 zentral liegen, damit D2 und D3
 nicht eigene konkurrierende Aggregationslogiken erfinden.
@@ -326,6 +382,11 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 - gezielte Support-Abfragen einfuehren
 - Rueckgabeformen so schneiden, dass `not_accessible` von `missing`
   unterschieden werden kann
+- den zweistufigen Erkennungsprozess fuer `dmg_sequences` abbilden:
+  Existenz-/Adressierbarkeitspruefung getrennt von Form-/Datenzugriff
+- fuer `dmg_sequences` einen expliziten Rueckgabezustand vorsehen, bei
+  dem die Existenzfrage selbst technisch nicht entscheidbar ist; dieser
+  Zustand mappt nach `not_accessible`, nicht nach `missing`
 - Query-Tests fuer die neuen Pfade anlegen oder vorhandene Tests
   erweitern
 
@@ -338,6 +399,8 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 ### 6.4 W116-Aggregation festziehen
 
 - Aggregationsschluessel fuer Sequence- und Spaltenebene festlegen
+- dafuer strukturierte Composite-Key-Typen statt Stringkodierung
+  einfuehren
 - technische Einzelereignisse in aggregierbare Diagnoseeintraege
   ueberfuehren
 - Mappingpfad zu spaeteren `SchemaReadNote`s vorbereiten
@@ -354,10 +417,15 @@ nicht eigene konkurrierende Aggregationslogiken erfinden.
 - `MysqlSchemaReaderTest` fuer:
   - Supportabfragen ohne API-Aenderung
   - degradierte Zusatzmetadatenrechte
+  - deaktivierte Include-Flags ohne sichtbare Supportobjekte und ohne
+    zusaetzliche Nutzer-Notes
   - Aggregationsverhalten
   - mehrdeutige Sequence-Keys
   - Nicht-Sequence-Faelle ohne Supportobjekte und ohne zusaetzliche
     Diagnose-Notes
+  - Baseline-Vergleich gegen bestehende Nicht-Sequence-Fixtures oder
+    bestehende Reader-Testfaelle ohne Ergebnisdrift in Schemaobjekten,
+    Notes und Fehlerverhalten
   erweitern
 
 ---
@@ -379,7 +447,15 @@ Pflichtfaelle fuer 6.1:
 6. Ein Schema ohne `dmg_sequences` und ohne Supportobjekte bleibt ein
    kompatibler Nicht-Sequence-Fall: kein Hard-Error, kein implizites
    `W116`, keine zusaetzlichen Reverse-Notes.
-7. Bestehende Nicht-Sequence-Reader-Faelle bleiben unveraendert.
+7. Bei gemischter Zeilenqualitaet fuer denselben Sequence-Key wird der
+   gesamte Key blockiert; es gibt keinen partiellen "beste Zeile
+   gewinnt"-Pfad.
+8. Deaktivierte Include-Flags bleiben fuer Nutzerobjekte sauber:
+   Support-Scans erzeugen weder sichtbare Supportobjekte noch
+   zusaetzliche Nutzer-Notes.
+9. Bestehende Nicht-Sequence-Reader-Faelle bleiben gegen bestehende
+   Test-Baselines unveraendert:
+   keine Drift in Schemaobjekten, Notes und Hard-/Soft-Fail-Verhalten.
 
 Akzeptanzkriterium fuer 6.1:
 
@@ -436,7 +512,23 @@ Gegenmassnahme:
 - nur gezielte Support-Lookups
 - keine implizite Generalisierung des bestehenden Funktions-/Triggerpfads
 
-### 9.3 Aggregation wird zu spaet festgezogen
+### 9.3 `missing` und `not_accessible` driften auseinander
+
+Risiko:
+
+- eingeschraenkte Metadatenrechte werden faelschlich als "Objekt fehlt"
+  gelesen
+- echte Berechtigungsprobleme verschwinden als Soft-Missing
+- oder harmlose Nicht-Sequence-Faelle werden faelschlich zu Hard-Fails
+
+Gegenmassnahme:
+
+- zweistufige Existenz-/Adressierbarkeitspruefung explizit modellieren
+- kein gemeinsamer Catch-All fuer "nicht vorhanden" und "nicht lesbar"
+- negativer Existenzbefund nur bei technisch erfolgreicher Pruefung
+  als `missing`
+
+### 9.4 Aggregation wird zu spaet festgezogen
 
 Risiko:
 
@@ -447,7 +539,7 @@ Gegenmassnahme:
 
 - Aggregationsschluessel und Diagnosebasis schon in 6.1 definieren
 
-### 9.4 Mehrdeutige Keys werden zu still behandelt
+### 9.5 Mehrdeutige Keys werden zu still behandelt
 
 Risiko:
 
@@ -458,3 +550,18 @@ Gegenmassnahme:
 
 - Konfliktpfad in 6.1 explizit modellieren
 - keine "last write wins"-Semantik
+
+### 9.6 Nicht-Sequence-Baseline bleibt unbeweisbar
+
+Risiko:
+
+- "unveraendert" bleibt nur eine verbale Zusage
+- spaetere Reader-Aenderungen schieben unbeabsichtigt Notes oder
+  Fehlerverhalten in bestehende Faelle
+
+Gegenmassnahme:
+
+- bestehende Nicht-Sequence-Fixtures oder etablierte Reader-Testfaelle
+  als Baseline benennen und weiterverwenden
+- bei 6.1 explizit auf Schemaobjekte, Notes und Hard-/Soft-Fail-
+  Verhalten vergleichen
