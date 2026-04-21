@@ -76,6 +76,11 @@ subprojects {
         if (integrationHeap != null) {
             maxHeapSize = integrationHeap
         }
+
+        // Kover consumes execution data produced by the actual test run.
+        // Restoring test outputs from the build cache can leave coverage
+        // verification with stale or incomplete counters on CI.
+        outputs.cacheIf { false }
     }
 
     // Ensure koverVerify always runs after test and is never served from
