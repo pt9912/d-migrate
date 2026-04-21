@@ -292,9 +292,9 @@ Testartefakt-Schnitt:
 Empfohlene Reihenfolge:
 
 1. T0 Testmatrix und Lueckenbild festziehen
-2. T1 Driver-Unit-Faelle aus D1 bis D3 nachziehen
-3. T2 echte MySQL-Integration und Round-Trip aufbauen
-4. T3 Runner-Vertraege absichern
+2. T1 Driver-Unit-Audit und Delta fuer D1 bis D3
+3. T2 MySQL-Integration auditieren und Round-Trip-Gate absichern
+4. T3 Runner-Vertraege auditieren und Delta absichern
 5. T4 Renderer- und CLI-Vertrag auditieren und Delta absichern
 6. T5 Abschluss-Gegenlauf und Coverage-Gate
 
