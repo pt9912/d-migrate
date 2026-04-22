@@ -194,10 +194,10 @@ class DataExportRunner(
             is TablesResult.Exit -> return t.code
         }
         val output = preflight.resolveOutput(request, effectiveTables) ?: return 2
-        val ctx = when (val p = preflight.buildExportContext(
+        val ctx = when (val p = preflight.buildExportContext(ExportPreflightValidator.ExportContextInput(
             request, connectionConfig, charset, pool, effectiveTables, output, infra,
             resumeCoordinator::resolvePrimaryKeys,
-        )) {
+        ))) {
             is PreparedResult.Ok -> p.value
             is PreparedResult.Exit -> return p.code
         }
@@ -211,16 +211,21 @@ class DataExportRunner(
         if (initExit != null) return initExit
         val callbacks = checkpointManager.buildCallbacks(request, resumeCtx, checkpoint.store, ctx.fingerprint, effectiveTables, markers)
         val staging = checkpointManager.setupStaging(output, checkpoint, resumeCtx.operationId)
-        val result = executeStreaming(request, pool, ctx, output, staging, resumeCtx, markers, callbacks)
+        val result = executeStreaming(StreamingParams(request, pool, ctx, output, staging, resumeCtx, markers, callbacks))
             ?: return 5
         return finalizeAndReport(request, result, staging, checkpoint.store, resumeCtx.operationId)
     }
 
-    private fun executeStreaming(
-        request: DataExportRequest, pool: ConnectionPool, ctx: ExportPreparedContext,
-        output: ExportOutput, staging: StagingRedirect?, resume: ExportResumeContext,
-        markers: Map<String, ResumeMarker>, callbacks: ExportCallbacks,
-    ): ExportResult? {
+    private data class StreamingParams(
+        val request: DataExportRequest, val pool: ConnectionPool, val ctx: ExportPreparedContext,
+        val output: ExportOutput, val staging: StagingRedirect?, val resume: ExportResumeContext,
+        val markers: Map<String, ResumeMarker>, val callbacks: ExportCallbacks,
+    )
+
+    private fun executeStreaming(params: StreamingParams): ExportResult? {
+        val request = params.request; val pool = params.pool; val ctx = params.ctx
+        val output = params.output; val staging = params.staging; val resume = params.resume
+        val markers = params.markers; val callbacks = params.callbacks
         val executorOutput = staging?.let { ExportOutput.SingleFile(it.staging) } ?: output
         val executorMarkers = if (output is ExportOutput.SingleFile) {
             markers.mapValues { (_, m) -> m.copy(position = null) }

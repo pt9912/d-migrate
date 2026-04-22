@@ -68,8 +68,28 @@ class SchemaReverseRunner(
     private val renderYaml: (SchemaReverseDocument) -> String = { doc -> renderYamlDefault(doc) },
 ) {
 
+    private data class ResolvedContext(
+        val reportPath: Path,
+        val resolvedUrl: String,
+        val userFacingSource: String,
+        val sourceRef: ReverseSourceRef,
+        val config: dev.dmigrate.driver.connection.ConnectionConfig,
+    )
+
     fun execute(request: SchemaReverseRequest): Int {
-        // 1. Pre-validate format/extension
+        val ctx = when (val r = validateAndResolve(request)) {
+            is ResolvedContext -> r
+            else -> return r as Int
+        }
+
+        val result = readSchema(request, ctx) ?: return 4
+        writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
+        writeReportFile(request, ctx, result)?.let { return it }
+        printOutput(request, result, ctx.userFacingSource, ctx.reportPath)
+        return 0
+    }
+
+    private fun validateAndResolve(request: SchemaReverseRequest): Any {
         try {
             formatValidator(request.output, request.format)
         } catch (e: IllegalArgumentException) {
@@ -77,27 +97,19 @@ class SchemaReverseRunner(
             return 2
         }
 
-        // 2. Report path
         val reportPath = request.report ?: sidecarPath(request.output, ".report.yaml")
-
-        // 3. Output/report collision check
-        val normalizedOutput = request.output.toAbsolutePath().normalize()
-        val normalizedReport = reportPath.toAbsolutePath().normalize()
-        if (normalizedOutput == normalizedReport) {
+        if (request.output.toAbsolutePath().normalize() == reportPath.toAbsolutePath().normalize()) {
             printError("Output and report paths must not be the same", request.source)
             return 2
         }
 
-        // 4. Source resolution
-        val resolvedUrl: String
-        try {
-            resolvedUrl = sourceResolver(request.source, request.cliConfigPath)
+        val resolvedUrl = try {
+            sourceResolver(request.source, request.cliConfigPath)
         } catch (e: Exception) {
             printError("Failed to resolve source: ${scrubMessage(e.message)}", request.source)
             return 7
         }
 
-        // 5. Build user-facing source reference (scrubbed)
         val isAlias = !request.source.contains("://")
         val userFacingSource = if (isAlias) request.source else urlScrubber(resolvedUrl)
         val sourceRef = ReverseSourceRef(
@@ -105,19 +117,19 @@ class SchemaReverseRunner(
             value = userFacingSource,
         )
 
-        // 6. Parse URL and determine dialect
-        val config: dev.dmigrate.driver.connection.ConnectionConfig
-        try {
-            config = urlParser(resolvedUrl)
+        val config = try {
+            urlParser(resolvedUrl)
         } catch (e: Exception) {
             printError("Failed to parse connection URL: ${scrubMessage(e.message)}", userFacingSource)
             return 7
         }
 
-        // 7. Create pool and read schema
-        val result: SchemaReadResult
-        try {
-            val pool = poolFactory(config)
+        return ResolvedContext(reportPath, resolvedUrl, userFacingSource, sourceRef, config)
+    }
+
+    private fun readSchema(request: SchemaReverseRequest, ctx: ResolvedContext): SchemaReadResult? {
+        return try {
+            val pool = poolFactory(ctx.config)
             pool.use { p ->
                 val options = SchemaReadOptions(
                     includeViews = request.includeAll || request.includeViews,
@@ -125,77 +137,69 @@ class SchemaReverseRunner(
                     includeFunctions = request.includeAll || request.includeFunctions,
                     includeTriggers = request.includeAll || request.includeTriggers,
                 )
-                val reader = driverLookup(config.dialect).schemaReader()
-                result = reader.read(p, options)
+                val reader = driverLookup(ctx.config.dialect).schemaReader()
+                reader.read(p, options)
             }
         } catch (e: Exception) {
-            printError("Connection or metadata error: ${scrubMessage(e.message)}", userFacingSource)
-            return 4
+            printError("Connection or metadata error: ${scrubMessage(e.message)}", ctx.userFacingSource)
+            null
         }
+    }
 
-        // 8. Write schema file
-        try {
+    private fun writeSchemaFile(request: SchemaReverseRequest, result: SchemaReadResult, userFacingSource: String): Int? {
+        return try {
             request.output.parent?.toFile()?.mkdirs()
             schemaWriter(request.output, result.schema, request.format)
+            null
         } catch (e: Exception) {
             printError("Failed to write schema: ${scrubMessage(e.message)}", userFacingSource)
-            return 7
+            7
         }
+    }
 
-        // 9. Write report
-        try {
-            reportPath.parent?.toFile()?.mkdirs()
-            val reportInput = SchemaReadReportInput(source = sourceRef, result = result)
-            reportWriter(reportPath, reportInput)
+    private fun writeReportFile(request: SchemaReverseRequest, ctx: ResolvedContext, result: SchemaReadResult): Int? {
+        return try {
+            ctx.reportPath.parent?.toFile()?.mkdirs()
+            val reportInput = SchemaReadReportInput(source = ctx.sourceRef, result = result)
+            reportWriter(ctx.reportPath, reportInput)
+            null
         } catch (e: Exception) {
-            printError("Failed to write report: ${scrubMessage(e.message)}", userFacingSource)
-            return 7
+            printError("Failed to write report: ${scrubMessage(e.message)}", ctx.userFacingSource)
+            7
         }
+    }
 
-        // 10. Output
-        val warnings = result.notes.count { it.severity == SchemaReadSeverity.WARNING }
-        val actionRequired = result.notes.count { it.severity == SchemaReadSeverity.ACTION_REQUIRED }
-
+    private fun printOutput(request: SchemaReverseRequest, result: SchemaReadResult, userFacingSource: String, reportPath: Path) {
         when (request.outputFormat) {
-            "json", "yaml" -> {
-                if (!request.quiet) {
-                    val doc = SchemaReverseDocument(
-                        status = "success",
-                        exitCode = 0,
-                        source = userFacingSource,
-                        output = request.output.toString(),
-                        report = reportPath.toString(),
-                        notesCount = result.notes.size,
-                        warningsCount = warnings,
-                        actionRequiredCount = actionRequired,
-                        skippedObjectsCount = result.skippedObjects.size,
-                    )
-                    val rendered = if (request.outputFormat == "json") renderJson(doc) else renderYaml(doc)
-                    stdout(rendered)
-                }
-                // No stderr notes in json/yaml mode for successful runs
-            }
-            else -> {
-                // Plain mode
-                if (!request.quiet) {
-                    stdout("Schema written to ${request.output}")
-                    stdout("Report written to $reportPath")
-                }
-
-                // stderr: notes and skipped objects
-                if (!request.quiet) {
-                    for (note in result.notes) {
-                        if (note.severity == SchemaReadSeverity.INFO && !request.verbose) continue
-                        stderr("  ${note.severity.name} [${note.code}] ${note.objectName}: ${note.message}")
-                    }
-                    for (skip in result.skippedObjects) {
-                        stderr("  SKIPPED [${skip.code ?: "-"}] ${skip.type} ${skip.name}: ${skip.reason}")
-                    }
-                }
-            }
+            "json", "yaml" -> printStructuredOutput(request, result, userFacingSource, reportPath)
+            else -> printPlainOutput(request, result, reportPath)
         }
+    }
 
-        return 0
+    private fun printStructuredOutput(request: SchemaReverseRequest, result: SchemaReadResult, userFacingSource: String, reportPath: Path) {
+        if (request.quiet) return
+        val doc = SchemaReverseDocument(
+            status = "success", exitCode = 0, source = userFacingSource,
+            output = request.output.toString(), report = reportPath.toString(),
+            notesCount = result.notes.size,
+            warningsCount = result.notes.count { it.severity == SchemaReadSeverity.WARNING },
+            actionRequiredCount = result.notes.count { it.severity == SchemaReadSeverity.ACTION_REQUIRED },
+            skippedObjectsCount = result.skippedObjects.size,
+        )
+        stdout(if (request.outputFormat == "json") renderJson(doc) else renderYaml(doc))
+    }
+
+    private fun printPlainOutput(request: SchemaReverseRequest, result: SchemaReadResult, reportPath: Path) {
+        if (request.quiet) return
+        stdout("Schema written to ${request.output}")
+        stdout("Report written to $reportPath")
+        for (note in result.notes) {
+            if (note.severity == SchemaReadSeverity.INFO && !request.verbose) continue
+            stderr("  ${note.severity.name} [${note.code}] ${note.objectName}: ${note.message}")
+        }
+        for (skip in result.skippedObjects) {
+            stderr("  SKIPPED [${skip.code ?: "-"}] ${skip.type} ${skip.name}: ${skip.reason}")
+        }
     }
 
     private fun scrubMessage(message: String?): String {

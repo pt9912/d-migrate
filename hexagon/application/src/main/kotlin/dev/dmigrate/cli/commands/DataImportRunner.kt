@@ -108,16 +108,122 @@ class DataImportRunner(
         stderr = stderr,
     )
 
-    fun execute(request: DataImportRequest): Int {
-        // ─── 1. CLI-Validierungen ───────────────────────────────
+    private sealed interface PreflightResult {
+        data class Ok(
+            val format: DataExportFormat,
+            val preparedImport: SchemaPreflightResult,
+            val charset: Charset?,
+            val resolvedUrl: String,
+            val connectionConfig: ConnectionConfig,
+        ) : PreflightResult
+        data class Exit(val code: Int) : PreflightResult
+    }
 
-        // --table und --tables sind gegenseitig exklusiv
+    fun execute(request: DataImportRequest): Int {
+        val ctx = when (val r = validateAndResolve(request)) {
+            is PreflightResult.Ok -> r
+            is PreflightResult.Exit -> return r.code
+        }
+
+        val pool: ConnectionPool = try {
+            poolFactory(ctx.connectionConfig)
+        } catch (e: Throwable) {
+            stderr("Error: Failed to connect to database: ${e.message}")
+            return 4
+        }
+
+        return try {
+            executeWithPool(request, ctx.connectionConfig, ctx.resolvedUrl, ctx.charset, ctx.format, ctx.preparedImport, pool)
+        } finally {
+            try { pool.close() } catch (_: Throwable) {}
+        }
+    }
+
+    private fun validateAndResolve(request: DataImportRequest): PreflightResult {
+        validateCliFlags(request)?.let { return PreflightResult.Exit(it) }
+
+        val isStdin = request.source == "-"
+        val sourcePath = if (!isStdin) Path.of(request.source) else null
+
+        val format = resolveFormat(request, isStdin, sourcePath)
+            ?: return PreflightResult.Exit(2)
+
+        if (sourcePath != null && !Files.exists(sourcePath)) {
+            stderr("Error: Source path does not exist: $sourcePath")
+            return PreflightResult.Exit(2)
+        }
+
+        val importInput = try {
+            resolveImportInput(request, isStdin, sourcePath)
+        } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}")
+            return PreflightResult.Exit(2)
+        }
+
+        val preparedImport = if (request.schema != null) {
+            try {
+                schemaPreflight(request.schema, importInput, format)
+            } catch (e: ImportPreflightException) {
+                stderr("Error: ${e.message}")
+                return PreflightResult.Exit(3)
+            }
+        } else {
+            SchemaPreflightResult(importInput)
+        }
+
+        val charset: Charset? = if (request.encoding != null) {
+            try {
+                Charset.forName(request.encoding)
+            } catch (e: Exception) {
+                stderr("Error: Unknown encoding '${request.encoding}': ${e.message}")
+                return PreflightResult.Exit(2)
+            }
+        } else {
+            null
+        }
+
+        val resolvedUrl = try {
+            targetResolver(request.target, request.cliConfigPath)
+        } catch (e: CliUsageException) {
+            stderr("Error: ${e.message}")
+            return PreflightResult.Exit(2)
+        } catch (e: Exception) {
+            stderr("Error: ${e.message}")
+            return PreflightResult.Exit(7)
+        }
+
+        val connectionConfig = try {
+            urlParser(resolvedUrl)
+        } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}")
+            return PreflightResult.Exit(7)
+        }
+
+        if (request.disableFkChecks && connectionConfig.dialect == DatabaseDialect.POSTGRESQL) {
+            stderr(
+                "Error: --disable-fk-checks is not supported for PostgreSQL. " +
+                    "Use DEFERRABLE constraints or --schema-based ordering instead."
+            )
+            return PreflightResult.Exit(2)
+        }
+
+        if (request.triggerMode == "disable" &&
+            connectionConfig.dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)
+        ) {
+            stderr(
+                "Error: --trigger-mode disable is not supported for dialect ${connectionConfig.dialect}."
+            )
+            return PreflightResult.Exit(2)
+        }
+
+        return PreflightResult.Ok(format, preparedImport, charset, resolvedUrl, connectionConfig)
+    }
+
+    private fun validateCliFlags(request: DataImportRequest): Int? {
         if (request.table != null && !request.tables.isNullOrEmpty()) {
             stderr("Error: --table and --tables are mutually exclusive.")
             return 2
         }
-
-        // Identifier-Validierung für --table
         if (request.table != null) {
             val invalid = DataExportHelpers.firstInvalidQualifiedIdentifier(request.table)
             if (invalid != null) {
@@ -129,8 +235,6 @@ class DataImportRunner(
                 return 2
             }
         }
-
-        // Identifier-Validierung für --tables
         if (!request.tables.isNullOrEmpty()) {
             val invalid = DataExportHelpers.firstInvalidTableIdentifier(request.tables)
             if (invalid != null) {
@@ -142,16 +246,10 @@ class DataImportRunner(
                 return 2
             }
         }
-
-        // --truncate + explicit --on-conflict abort → Exit 2
         if (request.truncate && request.onConflict == "abort") {
             stderr("Error: --truncate with explicit --on-conflict abort is contradictory.")
             return 2
         }
-
-        // Resume CLI preflight: stdin import is inherently non-resumable —
-        // the calling process cannot re-provide the stream. Semantic
-        // preflight against the manifest happens later in `executeWithPool`.
         if (!request.resume.isNullOrBlank() && request.source == "-") {
             stderr(
                 "Error: --resume is not supported for stdin import; " +
@@ -159,12 +257,10 @@ class DataImportRunner(
             )
             return 2
         }
+        return null
+    }
 
-        // ─── 2. Source-Pfad + Format auflösen ───────────────────
-        val isStdin = request.source == "-"
-        val sourcePath = if (!isStdin) Path.of(request.source) else null
-
-        // Format bestimmen
+    private fun resolveFormat(request: DataImportRequest, isStdin: Boolean, sourcePath: Path?): DataExportFormat? {
         val formatName = request.format
             ?: sourcePath?.let { inferFormatFromExtension(it) }
 
@@ -174,104 +270,14 @@ class DataImportRunner(
             } else {
                 stderr("Error: Cannot detect format from '${request.source}'. Use --format to specify json, yaml, or csv.")
             }
-            return 2
-        }
-
-        val format = try {
-            DataExportFormat.fromCli(formatName)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 2
-        }
-
-        // Source-Pfad-Validierung (nicht-stdin)
-        if (sourcePath != null && !Files.exists(sourcePath)) {
-            stderr("Error: Source path does not exist: $sourcePath")
-            return 2
-        }
-
-        // ─── 3. ImportInput ableiten ────────────────────────────
-        val importInput = try {
-            resolveImportInput(request, isStdin, sourcePath)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 2
-        }
-
-        // ─── 4. Optionales --schema-Preflight ───────────────────
-        val preparedImport = if (request.schema != null) {
-            try {
-                schemaPreflight(request.schema, importInput, format)
-            } catch (e: ImportPreflightException) {
-                stderr("Error: ${e.message}")
-                return 3
-            }
-        } else {
-            SchemaPreflightResult(importInput)
-        }
-
-        // ─── 5. Encoding parsen ─────────────────────────────────
-        val charset: Charset? = if (request.encoding != null) {
-            try {
-                Charset.forName(request.encoding)
-            } catch (e: Exception) {
-                stderr("Error: Unknown encoding '${request.encoding}': ${e.message}")
-                return 2
-            }
-        } else {
-            null // auto-detect
-        }
-
-        // ─── 6. Target auflösen → vollständige Connection-URL ───
-        val resolvedUrl = try {
-            targetResolver(request.target, request.cliConfigPath)
-        } catch (e: CliUsageException) {
-            stderr("Error: ${e.message}")
-            return 2
-        } catch (e: Exception) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
-
-        // ─── 7. URL → ConnectionConfig ──────────────────────────
-        val connectionConfig = try {
-            urlParser(resolvedUrl)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
-
-        // --disable-fk-checks auf PG → Exit 2
-        if (request.disableFkChecks && connectionConfig.dialect == DatabaseDialect.POSTGRESQL) {
-            stderr(
-                "Error: --disable-fk-checks is not supported for PostgreSQL. " +
-                    "Use DEFERRABLE constraints or --schema-based ordering instead."
-            )
-            return 2
-        }
-
-        // --trigger-mode disable auf MySQL/SQLite → Exit 2
-        if (request.triggerMode == "disable" &&
-            connectionConfig.dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)
-        ) {
-            stderr(
-                "Error: --trigger-mode disable is not supported for dialect ${connectionConfig.dialect}."
-            )
-            return 2
-        }
-
-        // ─── 8. Pool öffnen ────────────────────────────────────
-        val pool: ConnectionPool = try {
-            poolFactory(connectionConfig)
-        } catch (e: Throwable) {
-            stderr("Error: Failed to connect to database: ${e.message}")
-            return 4
+            return null
         }
 
         return try {
-            executeWithPool(request, connectionConfig, resolvedUrl, charset, format, preparedImport, pool)
-        } finally {
-            try { pool.close() } catch (_: Throwable) {}
+            DataExportFormat.fromCli(formatName)
+        } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}")
+            null
         }
     }
 
@@ -309,7 +315,7 @@ class DataImportRunner(
 
     /** Step 8: Execute the streaming import pipeline. */
     private fun executeStreaming(
-        request: DataImportRequest,
+        _request: DataImportRequest,
         format: DataExportFormat,
         pool: ConnectionPool,
         preparedImport: SchemaPreflightResult,
@@ -418,10 +424,8 @@ class DataImportRunner(
         requireNotNull(sourcePath)
 
         if (Files.isDirectory(sourcePath)) {
-            if (request.table != null) {
-                throw IllegalArgumentException(
-                    "--table is only supported for stdin or single-file imports. Use --tables for directory sources."
-                )
+            require(request.table == null) {
+                "--table is only supported for stdin or single-file imports. Use --tables for directory sources."
             }
             return ImportInput.Directory(
                 path = sourcePath,

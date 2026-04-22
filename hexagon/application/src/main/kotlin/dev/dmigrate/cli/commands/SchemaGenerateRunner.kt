@@ -67,75 +67,24 @@ class SchemaGenerateRunner(
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
+    private sealed interface Preflight {
+        data class Ok(
+            val dialect: DatabaseDialect,
+            val options: DdlGenerationOptions,
+            val mysqlSeqMode: MysqlNamedSequenceMode?,
+        ) : Preflight
+        data class Exit(val code: Int) : Preflight
+    }
+
     fun execute(request: SchemaGenerateRequest): Int {
-        // ─── 0. Split-mode preflight ────────────────────────────
-        if (request.splitMode == SplitMode.PRE_POST) {
-            if (request.generateRollback) {
-                stderr("`--split pre-post` cannot be combined with `--generate-rollback`.")
-                return 2
-            }
-            if (request.output == null && request.outputFormat != "json") {
-                stderr("`--split pre-post` requires `--output` unless `--output-format json` is used.")
-                return 2
-            }
+        val pre = when (val r = validateAndResolveOptions(request)) {
+            is Preflight.Ok -> r
+            is Preflight.Exit -> return r.code
         }
+        val dialect = pre.dialect
+        val options = pre.options
+        val mysqlSeqMode = pre.mysqlSeqMode
 
-        // ─── 1. Parse dialect ───────────────────────────────────
-        val dialect = try {
-            DatabaseDialect.fromString(request.target)
-        } catch (e: IllegalArgumentException) {
-            printError(e.message ?: "Unknown dialect", request.source.toString())
-            return 2
-        }
-
-        // ─── 2. Resolve spatial profile (before schema read) ──
-        val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)
-        val spatialProfile = when (profileResult) {
-            is SpatialProfilePolicy.Result.Resolved -> profileResult.profile
-            is SpatialProfilePolicy.Result.UnknownProfile -> {
-                printError("Unknown spatial profile '${profileResult.raw}'. " +
-                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
-                    request.source.toString())
-                return 2
-            }
-            is SpatialProfilePolicy.Result.NotAllowedForDialect -> {
-                printError("Spatial profile '${profileResult.profile.cliName}' is not allowed for ${profileResult.dialect.name.lowercase()}. " +
-                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
-                    request.source.toString())
-                return 2
-            }
-        }
-        // ─── 2b. Resolve MySQL named-sequence mode ─────────────
-        val mysqlSeqMode: MysqlNamedSequenceMode? = if (request.mysqlNamedSequences != null) {
-            if (dialect != DatabaseDialect.MYSQL) {
-                printError(
-                    "--mysql-named-sequences is only valid with --target mysql, " +
-                        "not ${dialect.name.lowercase()}. " +
-                        "Allowed values for MySQL: action_required, helper_table.",
-                    request.source.toString(),
-                )
-                return 2
-            }
-            MysqlNamedSequenceMode.fromCliName(request.mysqlNamedSequences)
-                ?: run {
-                    printError(
-                        "Unknown --mysql-named-sequences value '${request.mysqlNamedSequences}'. " +
-                            "Allowed: action_required, helper_table",
-                        request.source.toString(),
-                    )
-                    return 2
-                }
-        } else if (dialect == DatabaseDialect.MYSQL) {
-            MysqlNamedSequenceMode.ACTION_REQUIRED
-        } else {
-            null
-        }
-        val options = DdlGenerationOptions(
-            spatialProfile = spatialProfile,
-            mysqlNamedSequenceMode = mysqlSeqMode,
-        )
-
-        // ─── 3. Read schema ────────────────────────────────────
         val schema = try {
             schemaReader(request.source)
         } catch (e: Exception) {
@@ -143,64 +92,146 @@ class SchemaGenerateRunner(
             return 7
         }
 
-        // ─── 4. Validate ───────────────────────────────────────
         val validationResult = validator(schema)
         if (!validationResult.isValid) {
             printValidationResult(validationResult, schema, request.source.toString())
             return 3
         }
 
-        // ─── 5. Generate DDL ──────────────────────────────────
         val generator = generatorLookup(dialect)
         val result = generator.generate(schema, options)
 
-        // ─── 5b. Check for unresolvable split diagnostics ────
-        if (request.splitMode == SplitMode.PRE_POST) {
-            val splitDiags = result.globalNotes.filter { it.code == "E060" }
-            if (splitDiags.isNotEmpty()) {
-                for (d in splitDiags) {
-                    stderr("  \u2717 Split error [${d.code}]: ${d.message}")
-                    if (d.hint != null) stderr("    \u2192 Hint: ${d.hint}")
-                }
-                return 2
+        val splitExit = checkSplitDiagnostics(request, result)
+        if (splitExit != null) return splitExit
+
+        printNotes(result, request.verbose)
+
+        return routeOutput(request, result, schema, generator, dialect, options, mysqlSeqMode)
+    }
+
+    private fun validateAndResolveOptions(request: SchemaGenerateRequest): Preflight {
+        val splitExit = validateSplitModePreflight(request)
+        if (splitExit != null) return Preflight.Exit(splitExit)
+
+        val dialect = try {
+            DatabaseDialect.fromString(request.target)
+        } catch (e: IllegalArgumentException) {
+            printError(e.message ?: "Unknown dialect", request.source.toString())
+            return Preflight.Exit(2)
+        }
+
+        val spatialProfile = when (val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)) {
+            is SpatialProfilePolicy.Result.Resolved -> profileResult.profile
+            is SpatialProfilePolicy.Result.UnknownProfile -> {
+                printError("Unknown spatial profile '${profileResult.raw}'. " +
+                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
+                    request.source.toString())
+                return Preflight.Exit(2)
+            }
+            is SpatialProfilePolicy.Result.NotAllowedForDialect -> {
+                printError("Spatial profile '${profileResult.profile.cliName}' is not allowed for ${profileResult.dialect.name.lowercase()}. " +
+                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
+                    request.source.toString())
+                return Preflight.Exit(2)
             }
         }
 
-        // ─── 5c. Print notes & skipped objects on stderr ─────
-        printNotes(result, request.verbose)
+        val mysqlSeqMode = resolveMysqlSeqMode(request, dialect) ?: return Preflight.Exit(2)
+        val options = DdlGenerationOptions(
+            spatialProfile = spatialProfile,
+            mysqlNamedSequenceMode = mysqlSeqMode.value,
+        )
 
-        // ─── 6. Route output (json | file | stdout) ──────────
+        return Preflight.Ok(dialect, options, mysqlSeqMode.value)
+    }
+
+    private data class OptionalMode(val value: MysqlNamedSequenceMode?)
+
+    private fun resolveMysqlSeqMode(request: SchemaGenerateRequest, dialect: DatabaseDialect): OptionalMode? {
+        if (request.mysqlNamedSequences != null) {
+            if (dialect != DatabaseDialect.MYSQL) {
+                printError(
+                    "--mysql-named-sequences is only valid with --target mysql, " +
+                        "not ${dialect.name.lowercase()}. " +
+                        "Allowed values for MySQL: action_required, helper_table.",
+                    request.source.toString(),
+                )
+                return null
+            }
+            val mode = MysqlNamedSequenceMode.fromCliName(request.mysqlNamedSequences)
+            if (mode == null) {
+                printError(
+                    "Unknown --mysql-named-sequences value '${request.mysqlNamedSequences}'. " +
+                        "Allowed: action_required, helper_table",
+                    request.source.toString(),
+                )
+                return null
+            }
+            return OptionalMode(mode)
+        }
+        return if (dialect == DatabaseDialect.MYSQL) OptionalMode(MysqlNamedSequenceMode.ACTION_REQUIRED)
+        else OptionalMode(null)
+    }
+
+    private fun validateSplitModePreflight(request: SchemaGenerateRequest): Int? {
+        if (request.splitMode != SplitMode.PRE_POST) return null
+        if (request.generateRollback) {
+            stderr("`--split pre-post` cannot be combined with `--generate-rollback`.")
+            return 2
+        }
+        if (request.output == null && request.outputFormat != "json") {
+            stderr("`--split pre-post` requires `--output` unless `--output-format json` is used.")
+            return 2
+        }
+        return null
+    }
+
+    private fun checkSplitDiagnostics(request: SchemaGenerateRequest, result: DdlResult): Int? {
+        if (request.splitMode != SplitMode.PRE_POST) return null
+        val splitDiags = result.globalNotes.filter { it.code == "E060" }
+        if (splitDiags.isEmpty()) return null
+        for (d in splitDiags) {
+            stderr("  \u2717 Split error [${d.code}]: ${d.message}")
+            if (d.hint != null) stderr("    \u2192 Hint: ${d.hint}")
+        }
+        return 2
+    }
+
+    private fun routeOutput(
+        request: SchemaGenerateRequest,
+        result: DdlResult,
+        schema: SchemaDefinition,
+        generator: DdlGenerator,
+        dialect: DatabaseDialect,
+        options: DdlGenerationOptions,
+        mysqlSeqMode: MysqlNamedSequenceMode?,
+    ): Int {
         val dialectName = dialect.name.lowercase()
         val splitModeStr = if (request.splitMode == SplitMode.PRE_POST) "pre-post" else null
 
         if (request.splitMode == SplitMode.PRE_POST) {
-            // Split output: file and/or json
             if (request.output != null) {
                 writeSplitFileOutput(request, result, schema, dialectName, splitModeStr, mysqlSeqMode)
             }
             if (request.outputFormat == "json") {
                 stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))
             }
-            if (request.output == null && request.outputFormat != "json") {
-                // Should not reach here — preflight catches this
-                return 2
-            }
+            if (request.output == null && request.outputFormat != "json") return 2
         } else {
-            // Single output: json | file | stdout (unchanged)
             val ddl = result.render()
             when {
-                request.outputFormat == "json" -> {
+                request.outputFormat == "json" ->
                     stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))
-                }
                 request.output != null -> {
-                    writeFileOutput(request, generator, schema, result, dialect, ddl, options, splitModeStr)
+                    val gen = GeneratedDdl(generator, schema, result, dialect, ddl, options)
+                    writeFileOutput(request, gen, splitModeStr)
                 }
                 else -> {
-                    writeStdoutOutput(request, generator, schema, result, dialect, ddl, options)
+                    val gen = GeneratedDdl(generator, schema, result, dialect, ddl, options)
+                    writeStdoutOutput(request, gen)
                 }
             }
         }
-
         return 0
     }
 
@@ -245,49 +276,37 @@ class SchemaGenerateRunner(
         writeReport(request, result, schema, dialect, outputPath, splitModeStr, mysqlSeqMode)
     }
 
-    private fun writeFileOutput(
-        request: SchemaGenerateRequest,
-        generator: DdlGenerator,
-        schema: SchemaDefinition,
-        result: DdlResult,
-        dialect: DatabaseDialect,
-        ddl: String,
-        options: DdlGenerationOptions,
-        splitModeStr: String?,
-    ) {
+    private data class GeneratedDdl(
+        val generator: DdlGenerator, val schema: SchemaDefinition, val result: DdlResult,
+        val dialect: DatabaseDialect, val ddl: String, val options: DdlGenerationOptions,
+    )
+
+    private fun writeFileOutput(request: SchemaGenerateRequest, gen: GeneratedDdl, splitModeStr: String?) {
         val outputPath = request.output!!
-        fileWriter(outputPath, ddl + "\n")
+        fileWriter(outputPath, gen.ddl + "\n")
         if (!request.quiet) stderr("DDL written to $outputPath")
 
         if (request.generateRollback) {
-            val rollbackResult = generator.generateRollback(schema, options)
+            val rollbackResult = gen.generator.generateRollback(gen.schema, gen.options)
             val rbPath = rollbackPath(outputPath)
             fileWriter(rbPath, rollbackResult.render() + "\n")
             if (!request.quiet) stderr("Rollback DDL written to $rbPath")
         }
 
-        writeReport(request, result, schema, dialect.name.lowercase(), outputPath, splitModeStr, options.mysqlNamedSequenceMode)
+        writeReport(request, gen.result, gen.schema, gen.dialect.name.lowercase(), outputPath, splitModeStr, gen.options.mysqlNamedSequenceMode)
     }
 
-    private fun writeStdoutOutput(
-        request: SchemaGenerateRequest,
-        generator: DdlGenerator,
-        schema: SchemaDefinition,
-        result: DdlResult,
-        dialect: DatabaseDialect,
-        ddl: String,
-        options: DdlGenerationOptions,
-    ) {
-        stdout(ddl)
+    private fun writeStdoutOutput(request: SchemaGenerateRequest, gen: GeneratedDdl) {
+        stdout(gen.ddl)
         if (request.generateRollback) {
             stdout("\n-- ═══════════════════════════════════════")
             stdout("-- ROLLBACK")
             stdout("-- ═══════════════════════════════════════\n")
-            stdout(generator.generateRollback(schema, options).render())
+            stdout(gen.generator.generateRollback(gen.schema, gen.options).render())
         }
 
         if (request.report != null) {
-            writeReport(request, result, schema, dialect.name.lowercase(), request.report, null, options.mysqlNamedSequenceMode)
+            writeReport(request, gen.result, gen.schema, gen.dialect.name.lowercase(), request.report, null, gen.options.mysqlNamedSequenceMode)
         }
     }
 

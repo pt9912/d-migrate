@@ -34,7 +34,7 @@ class OutputFormatter(
         }
     }
 
-    private fun printPlain(result: ValidationResult, schema: SchemaDefinition, source: String) {
+    private fun printPlain(result: ValidationResult, schema: SchemaDefinition, _source: String) {
         if (!context.quiet) {
             println(messages.text("cli.validation.header", norm(schema.name), schema.version))
             println()

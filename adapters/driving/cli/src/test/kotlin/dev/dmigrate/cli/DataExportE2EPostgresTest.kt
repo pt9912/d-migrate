@@ -118,11 +118,11 @@ class DataExportE2EPostgresTest : FunSpec({
                     Quad("alice", "alice@example.com", true, "98.50"),
                     Quad("bob", "bob@example.com", true, "75.25"),
                     Quad("carol", null, false, "0.00"),
-                ).forEach { (name, email, active, score) ->
-                    ps.setString(1, name)
-                    if (email == null) ps.setNull(2, java.sql.Types.VARCHAR) else ps.setString(2, email)
-                    ps.setBoolean(3, active)
-                    ps.setBigDecimal(4, java.math.BigDecimal(score))
+                ).forEach { q ->
+                    ps.setString(1, q.name)
+                    if (q.email == null) ps.setNull(2, java.sql.Types.VARCHAR) else ps.setString(2, q.email)
+                    ps.setBoolean(3, q.active)
+                    ps.setBigDecimal(4, java.math.BigDecimal(q.score))
                     ps.executeUpdate()
                 }
             }

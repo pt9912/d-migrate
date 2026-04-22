@@ -65,24 +65,8 @@ class DataImportE2EPostgresTest : FunSpec({
         return captured.toString(Charsets.UTF_8)
     }
 
-    fun queryAll(table: String): List<Map<String, Any?>> {
-        val rows = mutableListOf<Map<String, Any?>>()
-        DriverManager.getConnection(rawJdbc(), container.username, container.password).use { conn ->
-            conn.prepareStatement("SELECT * FROM $table ORDER BY id").use { ps ->
-                ps.executeQuery().use { rs ->
-                    val meta = rs.metaData
-                    while (rs.next()) {
-                        val row = linkedMapOf<String, Any?>()
-                        for (i in 1..meta.columnCount) {
-                            row[meta.getColumnName(i)] = rs.getObject(i)
-                        }
-                        rows += row
-                    }
-                }
-            }
-        }
-        return rows
-    }
+    fun queryAll(table: String): List<Map<String, Any?>> =
+        JdbcTestHelper.queryAll(rawJdbc(), table, container.username, container.password)
 
     fun truncateAll() {
         DriverManager.getConnection(rawJdbc(), container.username, container.password).use { conn ->

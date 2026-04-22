@@ -510,27 +510,34 @@ object MysqlMetadataQueries {
             // Scope check: reject schema-qualified sequence names pointing elsewhere
             val seqUnqualified = rawSequence?.let { unqualify(it, database) }
 
-            val state = when {
-                !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
-                !timing.equals("BEFORE", ignoreCase = true) || !event.equals("INSERT", ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-                "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
-                "object=sequence-trigger" !in body -> SupportTriggerState.NON_CANONICAL
-                "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
-                column == null || rawSequence == null -> SupportTriggerState.NON_CANONICAL
-                // Guard: NEW.<column> IS NULL must reference the same column
-                guardColumn == null -> SupportTriggerState.NON_CANONICAL
-                !guardColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-                // Scope: cross-schema sequence reference → NON_CANONICAL
-                seqUnqualified == null -> SupportTriggerState.NON_CANONICAL
-                // Marker cross-validation: extracted values must match marker fields
-                markerSeq != null && !markerSeq.equals(seqUnqualified, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-                markerTable != null && !markerTable.equals(table, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-                markerColumn != null && !markerColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-                else -> SupportTriggerState.CONFIRMED
-            }
+            val state = assessTriggerState(
+                name, timing, event, body, table, column, rawSequence,
+                guardColumn, seqUnqualified, markerSeq, markerTable, markerColumn,
+            )
 
             SupportTriggerAssessment(name, state, table, column, seqUnqualified ?: rawSequence?.stripBackticks())
         }
         return SupportTriggerScanResult(result, accessible = true)
+    }
+
+    private fun assessTriggerState(
+        name: String, timing: String, event: String, body: String,
+        table: String, column: String?, rawSequence: String?,
+        guardColumn: String?, seqUnqualified: String?,
+        markerSeq: String?, markerTable: String?, markerColumn: String?,
+    ): SupportTriggerState = when {
+        !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
+        !timing.equals("BEFORE", ignoreCase = true) || !event.equals("INSERT", ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
+        "object=sequence-trigger" !in body -> SupportTriggerState.NON_CANONICAL
+        "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
+        column == null || rawSequence == null -> SupportTriggerState.NON_CANONICAL
+        guardColumn == null -> SupportTriggerState.NON_CANONICAL
+        !guardColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        seqUnqualified == null -> SupportTriggerState.NON_CANONICAL
+        markerSeq != null && !markerSeq.equals(seqUnqualified, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        markerTable != null && !markerTable.equals(table, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        markerColumn != null && !markerColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        else -> SupportTriggerState.CONFIRMED
     }
 }

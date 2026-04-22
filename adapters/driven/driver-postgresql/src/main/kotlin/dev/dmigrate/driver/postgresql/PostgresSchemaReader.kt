@@ -102,7 +102,7 @@ class PostgresSchemaReader(
             val colName = row["column_name"] as String
             val isPkCol = colName in pkColumns
             val isIdentity = (row["is_identity"] as? String) == "YES"
-            val mapping = PostgresTypeMapping.mapColumn(
+            val mapping = PostgresTypeMapping.mapColumn(PostgresTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
                 udtName = (row["udt_name"] as? String) ?: (row["data_type"] as String),
                 isPkCol = isPkCol,
@@ -113,7 +113,7 @@ class PostgresSchemaReader(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = tableName,
                 colName = colName,
-            )
+            ))
             if (mapping.note != null) notes += mapping.note
             val neutralType = mapping.type
 
@@ -290,7 +290,7 @@ class PostgresSchemaReader(
     private fun readFunctions(
         session: JdbcOperations,
         schema: String,
-        notes: MutableList<SchemaReadNote>,
+        _notes: MutableList<SchemaReadNote>,
     ): Map<String, FunctionDefinition> {
         val rows = PostgresMetadataQueries.listFunctions(session, schema)
         val result = LinkedHashMap<String, FunctionDefinition>()
@@ -330,7 +330,7 @@ class PostgresSchemaReader(
     private fun readProcedures(
         session: JdbcOperations,
         schema: String,
-        notes: MutableList<SchemaReadNote>,
+        _notes: MutableList<SchemaReadNote>,
     ): Map<String, ProcedureDefinition> {
         val rows = PostgresMetadataQueries.listProcedures(session, schema)
         val result = LinkedHashMap<String, ProcedureDefinition>()

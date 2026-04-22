@@ -8,7 +8,6 @@ import dev.dmigrate.format.data.SerializedValue
 import dev.dmigrate.format.data.ValueSerializer
 import org.snakeyaml.engine.v2.api.Dump
 import org.snakeyaml.engine.v2.api.DumpSettings
-import org.snakeyaml.engine.v2.api.StreamDataWriter
 import org.snakeyaml.engine.v2.common.FlowStyle
 import org.snakeyaml.engine.v2.common.NonPrintableStyle
 import java.io.OutputStream
@@ -35,7 +34,6 @@ class YamlChunkWriter(
 ) : DataChunkWriter {
 
     private val streamWriter = OutputStreamWriter(output, options.encoding)
-    private val sink = StreamDataWriterAdapter(streamWriter)
     private val dump: Dump = run {
         val settings = DumpSettings.builder()
             .setDefaultFlowStyle(FlowStyle.BLOCK)
@@ -138,15 +136,3 @@ class YamlChunkWriter(
     }
 }
 
-/** Adapter von SnakeYAML's [StreamDataWriter] auf einen [java.io.Writer]. */
-private class StreamDataWriterAdapter(private val writer: java.io.Writer) : StreamDataWriter {
-    override fun write(str: String) {
-        writer.write(str)
-    }
-    override fun write(str: String, off: Int, len: Int) {
-        writer.write(str, off, len)
-    }
-    override fun flush() {
-        writer.flush()
-    }
-}

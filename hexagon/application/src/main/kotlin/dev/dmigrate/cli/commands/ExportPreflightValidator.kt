@@ -66,11 +66,16 @@ internal class ExportPreflightValidator(
         }
     }
 
-    fun buildExportContext(
-        request: DataExportRequest, config: ConnectionConfig, charset: Charset,
-        pool: ConnectionPool, tables: List<String>, output: ExportOutput, infra: ExportInfra,
-        resolvePrimaryKeys: (ConnectionPool, DatabaseDialect, List<String>) -> Map<String, List<String>>,
-    ): PreparedResult {
+    data class ExportContextInput(
+        val request: DataExportRequest, val config: ConnectionConfig, val charset: Charset,
+        val pool: ConnectionPool, val tables: List<String>, val output: ExportOutput, val infra: ExportInfra,
+        val resolvePrimaryKeys: (ConnectionPool, DatabaseDialect, List<String>) -> Map<String, List<String>>,
+    )
+
+    fun buildExportContext(input: ExportContextInput): PreparedResult {
+        val request = input.request; val config = input.config; val charset = input.charset
+        val pool = input.pool; val tables = input.tables; val output = input.output; val infra = input.infra
+        val resolvePrimaryKeys = input.resolvePrimaryKeys
         val delimiterChar = DataExportHelpers.parseCsvDelimiter(request.csvDelimiter)
             ?: run {
                 stderr("Error: --csv-delimiter must be a single character, got '${request.csvDelimiter}'")

@@ -48,120 +48,97 @@ internal class ImportCheckpointManager(
         return ImportCheckpointContext(store, checkpointDir)
     }
 
-    /** Load, validate, and build the resume context (or create a fresh one). */
     fun resolveResumeContext(
         request: DataImportRequest,
         checkpoint: ImportCheckpointContext,
         inputCtx: InputContext,
     ): ImportResumeResult {
-        val effectiveTables = inputCtx.effectiveTables
-        val inputFilesByTable = inputCtx.inputFilesByTable
-        val fingerprint = inputCtx.fingerprint
-
         if (!request.resume.isNullOrBlank()) {
-            val store = checkpoint.store ?: run {
-                stderr(
-                    "Error: --resume requires a checkpoint directory; set " +
-                        "--checkpoint-dir or pipeline.checkpoint.directory."
-                )
-                return ImportResumeResult.Exit(7)
-            }
-            val resolvedOpId = resumeCoordinator.resolveResumeReference(request.resume, checkpoint.dir!!)
-                ?: run {
-                    stderr(
-                        "Error: --resume path must be inside the effective " +
-                            "checkpoint directory '${checkpoint.dir}'."
-                    )
-                    return ImportResumeResult.Exit(7)
-                }
-            val manifest: CheckpointManifest? = try {
-                store.load(resolvedOpId)
-            } catch (e: UnsupportedCheckpointVersionException) {
-                stderr("Error: ${e.message}")
-                return ImportResumeResult.Exit(7)
-            } catch (e: CheckpointStoreException) {
-                stderr("Error: Failed to load checkpoint: ${e.message}")
-                return ImportResumeResult.Exit(7)
-            }
-            if (manifest == null) {
-                stderr("Error: Checkpoint not found: '${request.resume}'")
-                return ImportResumeResult.Exit(7)
-            }
-            if (manifest.operationType != CheckpointOperationType.IMPORT) {
-                stderr(
-                    "Error: Checkpoint type mismatch: expected IMPORT, got " +
-                        "${manifest.operationType}."
-                )
-                return ImportResumeResult.Exit(3)
-            }
-            if (manifest.optionsFingerprint != fingerprint) {
-                stderr(
-                    "Error: Checkpoint options do not match the current request " +
-                        "(fingerprint mismatch); refuse to resume."
-                )
-                return ImportResumeResult.Exit(3)
-            }
-            val manifestTables = manifest.tableSlices.map { it.table }
-            if (manifestTables != effectiveTables) {
-                stderr(
-                    "Error: Checkpoint table list does not match the current " +
-                        "request: manifest=$manifestTables, current=$effectiveTables."
-                )
-                return ImportResumeResult.Exit(3)
-            }
-            // Per-slice `table -> inputFile` binding must match the current
-            // directory scan. The fingerprint usually catches this, but a
-            // manifest slice without `inputFile` must not be silently
-            // reinterpreted against a new scan.
-            if (inputFilesByTable.isNotEmpty()) {
-                val mismatch = manifest.tableSlices.firstOrNull { slice ->
-                    val expected = inputFilesByTable[slice.table]
-                    slice.inputFile != expected
-                }
-                if (mismatch != null) {
-                    stderr(
-                        "Error: Checkpoint input-file binding for table " +
-                            "'${mismatch.table}' does not match the current directory " +
-                            "scan (manifest=${mismatch.inputFile ?: "<none>"}, " +
-                            "current=${inputFilesByTable[mismatch.table] ?: "<none>"})."
-                    )
-                    return ImportResumeResult.Exit(3)
-                }
-            }
-            val skipped = manifest.tableSlices
-                .filter { it.status == CheckpointSliceStatus.COMPLETED }
-                .map { it.table }
-                .toSet()
-            // Derive per-table resume state. Slices that are neither
-            // `COMPLETED` nor at 0 chunks get an entry -- the importer
-            // then skips already-committed chunks and suppresses `truncate`.
-            val resumeStates = manifest.tableSlices
-                .filter { it.status != CheckpointSliceStatus.COMPLETED && it.chunksProcessed > 0L }
-                .associate { slice ->
-                    slice.table to dev.dmigrate.streaming.ImportTableResumeState(
-                        committedChunks = slice.chunksProcessed,
-                    )
-                }
-            return ImportResumeResult.Ok(ImportResumeContext(
-                operationId = manifest.operationId,
-                resuming = true,
-                skippedTables = skipped,
-                resumeStateByTable = resumeStates,
-                initialSlices = manifest.tableSlices.associateBy { it.table },
-            ))
+            return resolveExistingResume(request.resume, checkpoint, inputCtx)
         }
+        return buildFreshContext(inputCtx)
+    }
+
+    private fun resolveExistingResume(
+        resumeRef: String,
+        checkpoint: ImportCheckpointContext,
+        inputCtx: InputContext,
+    ): ImportResumeResult {
+        val store = checkpoint.store ?: run {
+            stderr("Error: --resume requires a checkpoint directory; set --checkpoint-dir or pipeline.checkpoint.directory.")
+            return ImportResumeResult.Exit(7)
+        }
+        val resolvedOpId = resumeCoordinator.resolveResumeReference(resumeRef, checkpoint.dir!!) ?: run {
+            stderr("Error: --resume path must be inside the effective checkpoint directory '${checkpoint.dir}'.")
+            return ImportResumeResult.Exit(7)
+        }
+        val manifest = loadManifest(store, resolvedOpId, resumeRef) ?: return ImportResumeResult.Exit(7)
+        validateManifest(manifest, inputCtx)?.let { return it }
+        return buildResumeContextFromManifest(manifest)
+    }
+
+    private fun loadManifest(store: CheckpointStore, opId: String, resumeRef: String): CheckpointManifest? {
+        val manifest = try {
+            store.load(opId)
+        } catch (e: UnsupportedCheckpointVersionException) {
+            stderr("Error: ${e.message}"); return null
+        } catch (e: CheckpointStoreException) {
+            stderr("Error: Failed to load checkpoint: ${e.message}"); return null
+        }
+        if (manifest == null) stderr("Error: Checkpoint not found: '$resumeRef'")
+        return manifest
+    }
+
+    private fun validateManifest(manifest: CheckpointManifest, inputCtx: InputContext): ImportResumeResult? {
+        if (manifest.operationType != CheckpointOperationType.IMPORT) {
+            stderr("Error: Checkpoint type mismatch: expected IMPORT, got ${manifest.operationType}.")
+            return ImportResumeResult.Exit(3)
+        }
+        if (manifest.optionsFingerprint != inputCtx.fingerprint) {
+            stderr("Error: Checkpoint options do not match the current request (fingerprint mismatch); refuse to resume.")
+            return ImportResumeResult.Exit(3)
+        }
+        val manifestTables = manifest.tableSlices.map { it.table }
+        if (manifestTables != inputCtx.effectiveTables) {
+            stderr("Error: Checkpoint table list does not match the current request: manifest=$manifestTables, current=${inputCtx.effectiveTables}.")
+            return ImportResumeResult.Exit(3)
+        }
+        if (inputCtx.inputFilesByTable.isNotEmpty()) {
+            val mismatch = manifest.tableSlices.firstOrNull { slice ->
+                slice.inputFile != inputCtx.inputFilesByTable[slice.table]
+            }
+            if (mismatch != null) {
+                stderr("Error: Checkpoint input-file binding for table '${mismatch.table}' does not match the current directory scan (manifest=${mismatch.inputFile ?: "<none>"}, current=${inputCtx.inputFilesByTable[mismatch.table] ?: "<none>"}).")
+                return ImportResumeResult.Exit(3)
+            }
+        }
+        return null
+    }
+
+    private fun buildResumeContextFromManifest(manifest: CheckpointManifest): ImportResumeResult {
+        val skipped = manifest.tableSlices
+            .filter { it.status == CheckpointSliceStatus.COMPLETED }
+            .map { it.table }.toSet()
+        val resumeStates = manifest.tableSlices
+            .filter { it.status != CheckpointSliceStatus.COMPLETED && it.chunksProcessed > 0L }
+            .associate { slice ->
+                slice.table to dev.dmigrate.streaming.ImportTableResumeState(committedChunks = slice.chunksProcessed)
+            }
+        return ImportResumeResult.Ok(ImportResumeContext(
+            operationId = manifest.operationId, resuming = true,
+            skippedTables = skipped, resumeStateByTable = resumeStates,
+            initialSlices = manifest.tableSlices.associateBy { it.table },
+        ))
+    }
+
+    private fun buildFreshContext(inputCtx: InputContext): ImportResumeResult {
         return ImportResumeResult.Ok(ImportResumeContext(
             operationId = java.util.UUID.randomUUID().toString(),
-            resuming = false,
-            skippedTables = emptySet(),
-            resumeStateByTable = emptyMap(),
-            initialSlices = effectiveTables.associateWith { table ->
+            resuming = false, skippedTables = emptySet(), resumeStateByTable = emptyMap(),
+            initialSlices = inputCtx.effectiveTables.associateWith { table ->
                 CheckpointTableSlice(
-                    table = table,
-                    status = CheckpointSliceStatus.PENDING,
-                    // Directory imports populate `inputFile`; stdin / single-file
-                    // leaves the field `null`.
-                    inputFile = inputFilesByTable[table],
+                    table = table, status = CheckpointSliceStatus.PENDING,
+                    inputFile = inputCtx.inputFilesByTable[table],
                 )
             },
         ))

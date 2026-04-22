@@ -82,7 +82,7 @@ class GoldenMasterRoundTripTest : FunSpec({
         return result
     }
 
-    fun assertValueEquivalent(expected: Any?, actual: Any?, context: String) {
+    fun assertValueEquivalent(expected: Any?, actual: Any?, _context: String) {
         when {
             expected == null -> actual.shouldBeNull()
             expected is Number && actual is Number ->

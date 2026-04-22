@@ -118,35 +118,16 @@ internal object SchemaNodeBuilder {
 
     private fun buildNeutralType(node: ObjectNode, type: NeutralType) {
         when (type) {
-            is NeutralType.Identifier -> {
-                node.put("type", "identifier")
-                if (type.autoIncrement) node.put("auto_increment", true)
-            }
-            is NeutralType.Text -> {
-                node.put("type", "text")
-                if (type.maxLength != null) node.put("max_length", type.maxLength)
-            }
-            is NeutralType.Char -> {
-                node.put("type", "char")
-                node.put("length", type.length)
-            }
+            is NeutralType.Identifier -> buildIdentifierType(node, type)
+            is NeutralType.Text -> buildTextType(node, type)
+            is NeutralType.Char -> { node.put("type", "char"); node.put("length", type.length) }
             is NeutralType.Integer -> node.put("type", "integer")
             is NeutralType.SmallInt -> node.put("type", "smallint")
             is NeutralType.BigInteger -> node.put("type", "biginteger")
-            is NeutralType.Float -> {
-                node.put("type", "float")
-                if (type.floatPrecision == FloatPrecision.SINGLE) node.put("float_precision", "single")
-            }
-            is NeutralType.Decimal -> {
-                node.put("type", "decimal")
-                node.put("precision", type.precision)
-                node.put("scale", type.scale)
-            }
+            is NeutralType.Float -> buildFloatType(node, type)
+            is NeutralType.Decimal -> buildDecimalType(node, type)
             is NeutralType.BooleanType -> node.put("type", "boolean")
-            is NeutralType.DateTime -> {
-                node.put("type", "datetime")
-                if (type.timezone) node.put("timezone", true)
-            }
+            is NeutralType.DateTime -> buildDateTimeType(node, type)
             is NeutralType.Date -> node.put("type", "date")
             is NeutralType.Time -> node.put("type", "time")
             is NeutralType.Uuid -> node.put("type", "uuid")
@@ -154,26 +135,51 @@ internal object SchemaNodeBuilder {
             is NeutralType.Xml -> node.put("type", "xml")
             is NeutralType.Binary -> node.put("type", "binary")
             is NeutralType.Email -> node.put("type", "email")
-            is NeutralType.Enum -> {
-                node.put("type", "enum")
-                if (type.refType != null) node.put("ref_type", type.refType)
-                if (!type.values.isNullOrEmpty()) {
-                    val arr = node.putArray("values")
-                    type.values!!.forEach { arr.add(it) }
-                }
-            }
-            is NeutralType.Array -> {
-                node.put("type", "array")
-                node.put("element_type", type.elementType)
-            }
-            is NeutralType.Geometry -> {
-                node.put("type", "geometry")
-                if (type.geometryType != GeometryType.GEOMETRY) {
-                    node.put("geometry_type", type.geometryType.schemaName)
-                }
-                if (type.srid != null) node.put("srid", type.srid)
-            }
+            is NeutralType.Enum -> buildEnumType(node, type)
+            is NeutralType.Array -> { node.put("type", "array"); node.put("element_type", type.elementType) }
+            is NeutralType.Geometry -> buildGeometryType(node, type)
         }
+    }
+
+    private fun buildIdentifierType(node: ObjectNode, type: NeutralType.Identifier) {
+        node.put("type", "identifier")
+        if (type.autoIncrement) node.put("auto_increment", true)
+    }
+
+    private fun buildTextType(node: ObjectNode, type: NeutralType.Text) {
+        node.put("type", "text")
+        if (type.maxLength != null) node.put("max_length", type.maxLength)
+    }
+
+    private fun buildFloatType(node: ObjectNode, type: NeutralType.Float) {
+        node.put("type", "float")
+        if (type.floatPrecision == FloatPrecision.SINGLE) node.put("float_precision", "single")
+    }
+
+    private fun buildDecimalType(node: ObjectNode, type: NeutralType.Decimal) {
+        node.put("type", "decimal")
+        node.put("precision", type.precision)
+        node.put("scale", type.scale)
+    }
+
+    private fun buildDateTimeType(node: ObjectNode, type: NeutralType.DateTime) {
+        node.put("type", "datetime")
+        if (type.timezone) node.put("timezone", true)
+    }
+
+    private fun buildEnumType(node: ObjectNode, type: NeutralType.Enum) {
+        node.put("type", "enum")
+        if (type.refType != null) node.put("ref_type", type.refType)
+        if (!type.values.isNullOrEmpty()) {
+            val arr = node.putArray("values")
+            type.values!!.forEach { arr.add(it) }
+        }
+    }
+
+    private fun buildGeometryType(node: ObjectNode, type: NeutralType.Geometry) {
+        node.put("type", "geometry")
+        if (type.geometryType != GeometryType.GEOMETRY) node.put("geometry_type", type.geometryType.schemaName)
+        if (type.srid != null) node.put("srid", type.srid)
     }
 
     private fun buildDefault(node: ObjectNode, default: DefaultValue) {

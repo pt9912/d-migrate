@@ -15,7 +15,25 @@ internal object PostgresTypeMapping {
         val note: SchemaReadNote? = null,
     )
 
-    fun mapColumn(
+    data class ColumnInput(
+        val dataType: String,
+        val udtName: String,
+        val isPkCol: Boolean,
+        val isIdentity: Boolean,
+        val colDefault: String?,
+        val charMaxLen: Int?,
+        val numPrecision: Int?,
+        val numScale: Int?,
+        val tableName: String,
+        val colName: String,
+    )
+
+    fun mapColumn(input: ColumnInput): MappingResult = mapColumn(
+        input.dataType, input.udtName, input.isPkCol, input.isIdentity, input.colDefault,
+        input.charMaxLen, input.numPrecision, input.numScale, input.tableName, input.colName,
+    )
+
+    internal fun mapColumn(
         dataType: String,
         udtName: String,
         isPkCol: Boolean,
@@ -49,43 +67,59 @@ internal object PostgresTypeMapping {
             }
         }
 
-        return when (dt) {
-            "integer" -> MappingResult(NeutralType.Integer)
-            "bigint" -> MappingResult(NeutralType.BigInteger)
-            "smallint" -> MappingResult(NeutralType.SmallInt)
-            "boolean" -> MappingResult(NeutralType.BooleanType)
-            "text" -> MappingResult(NeutralType.Text())
-            "character varying" -> MappingResult(NeutralType.Text(maxLength = charMaxLen))
-            "character" -> MappingResult(NeutralType.Char(length = charMaxLen ?: 1))
-            "numeric", "decimal" -> {
-                if (numPrecision != null && numScale != null) MappingResult(NeutralType.Decimal(numPrecision, numScale))
-                else MappingResult(NeutralType.Float())
-            }
-            "real" -> MappingResult(NeutralType.Float(FloatPrecision.SINGLE))
-            "double precision" -> MappingResult(NeutralType.Float(FloatPrecision.DOUBLE))
-            "timestamp without time zone" -> MappingResult(NeutralType.DateTime(timezone = false))
-            "timestamp with time zone" -> MappingResult(NeutralType.DateTime(timezone = true))
-            "date" -> MappingResult(NeutralType.Date)
-            "time without time zone", "time with time zone" -> MappingResult(NeutralType.Time)
-            "uuid" -> MappingResult(NeutralType.Uuid)
-            "json", "jsonb" -> MappingResult(NeutralType.Json)
-            "xml" -> MappingResult(NeutralType.Xml)
-            "bytea" -> MappingResult(NeutralType.Binary)
-            "user-defined" -> mapUserDefined(udt, tableName, colName)
-            "array" -> {
-                val elementUdt = udt.removePrefix("_")
-                MappingResult(NeutralType.Array(mapArrayElementType(elementUdt)))
-            }
-            else -> MappingResult(
+        return mapIntegerTypes(dt)
+            ?: mapStringTypes(dt, charMaxLen)
+            ?: mapNumericTypes(dt, numPrecision, numScale)
+            ?: mapTemporalTypes(dt)
+            ?: mapSpecialTypes(dt, udt, tableName, colName)
+            ?: MappingResult(
                 NeutralType.Text(),
                 SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R301",
+                    severity = SchemaReadSeverity.WARNING, code = "R301",
                     objectName = "$tableName.$colName",
                     message = "Unknown PostgreSQL type '$dataType' (udt: $udtName) mapped to text",
                 ),
             )
-        }
+    }
+
+    private fun mapIntegerTypes(dt: String): MappingResult? = when (dt) {
+        "integer" -> MappingResult(NeutralType.Integer)
+        "bigint" -> MappingResult(NeutralType.BigInteger)
+        "smallint" -> MappingResult(NeutralType.SmallInt)
+        "boolean" -> MappingResult(NeutralType.BooleanType)
+        else -> null
+    }
+
+    private fun mapStringTypes(dt: String, charMaxLen: Int?): MappingResult? = when (dt) {
+        "text" -> MappingResult(NeutralType.Text())
+        "character varying" -> MappingResult(NeutralType.Text(maxLength = charMaxLen))
+        "character" -> MappingResult(NeutralType.Char(length = charMaxLen ?: 1))
+        else -> null
+    }
+
+    private fun mapNumericTypes(dt: String, numPrecision: Int?, numScale: Int?): MappingResult? = when (dt) {
+        "numeric", "decimal" -> if (numPrecision != null && numScale != null) MappingResult(NeutralType.Decimal(numPrecision, numScale)) else MappingResult(NeutralType.Float())
+        "real" -> MappingResult(NeutralType.Float(FloatPrecision.SINGLE))
+        "double precision" -> MappingResult(NeutralType.Float(FloatPrecision.DOUBLE))
+        else -> null
+    }
+
+    private fun mapTemporalTypes(dt: String): MappingResult? = when (dt) {
+        "timestamp without time zone" -> MappingResult(NeutralType.DateTime(timezone = false))
+        "timestamp with time zone" -> MappingResult(NeutralType.DateTime(timezone = true))
+        "date" -> MappingResult(NeutralType.Date)
+        "time without time zone", "time with time zone" -> MappingResult(NeutralType.Time)
+        else -> null
+    }
+
+    private fun mapSpecialTypes(dt: String, udt: String, tableName: String, colName: String): MappingResult? = when (dt) {
+        "uuid" -> MappingResult(NeutralType.Uuid)
+        "json", "jsonb" -> MappingResult(NeutralType.Json)
+        "xml" -> MappingResult(NeutralType.Xml)
+        "bytea" -> MappingResult(NeutralType.Binary)
+        "user-defined" -> mapUserDefined(udt, tableName, colName)
+        "array" -> MappingResult(NeutralType.Array(mapArrayElementType(udt.removePrefix("_"))))
+        else -> null
     }
 
     fun mapUserDefined(udtName: String, tableName: String, colName: String): MappingResult {

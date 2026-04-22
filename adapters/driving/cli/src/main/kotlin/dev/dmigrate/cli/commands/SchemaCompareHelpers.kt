@@ -25,17 +25,20 @@ internal object SchemaCompareHelpers {
         is NeutralType.Xml -> "xml"
         is NeutralType.Binary -> "binary"
         is NeutralType.Email -> "email"
-        is NeutralType.Enum -> when {
-            type.refType != null -> "enum(ref:${type.refType})"
-            type.values != null -> "enum(${type.values!!.joinToString(",")})"
-            else -> "enum"
-        }
+        is NeutralType.Enum -> enumTypeToString(type)
         is NeutralType.Array -> "array(${type.elementType})"
-        is NeutralType.Geometry -> {
-            val gt = type.geometryType.schemaName
-            val srid = type.srid
-            if (srid != null) "geometry($gt,$srid)" else "geometry($gt)"
-        }
+        is NeutralType.Geometry -> geometryTypeToString(type)
+    }
+
+    private fun enumTypeToString(type: NeutralType.Enum): String = when {
+        type.refType != null -> "enum(ref:${type.refType})"
+        type.values != null -> "enum(${type.values!!.joinToString(",")})"
+        else -> "enum"
+    }
+
+    private fun geometryTypeToString(type: NeutralType.Geometry): String {
+        val gt = type.geometryType.schemaName
+        return if (type.srid != null) "geometry($gt,${type.srid})" else "geometry($gt)"
     }
 
     fun defaultValueToString(dv: DefaultValue?): String? = when (dv) {

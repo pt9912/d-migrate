@@ -59,13 +59,20 @@ internal object CompareRendererYaml {
     }
 
     private fun renderDiff(sb: StringBuilder, diff: DiffView) {
-        val m = diff.schemaMetadata
-        if (m != null) {
-            sb.appendLine("  schema_metadata:")
-            m.name?.let { sb.appendLine("    name: {before: \"${esc(it.before)}\", after: \"${esc(it.after)}\"}") }
-            m.version?.let { sb.appendLine("    version: {before: \"${esc(it.before)}\", after: \"${esc(it.after)}\"}") }
-        }
+        renderDiffMetadata(sb, diff.schemaMetadata)
+        renderDiffCustomTypes(sb, diff)
+        renderDiffTables(sb, diff)
+        renderDiffViews(sb, diff)
+    }
 
+    private fun renderDiffMetadata(sb: StringBuilder, m: MetadataChangeView?) {
+        if (m == null) return
+        sb.appendLine("  schema_metadata:")
+        m.name?.let { sb.appendLine("    name: {before: \"${esc(it.before)}\", after: \"${esc(it.after)}\"}") }
+        m.version?.let { sb.appendLine("    version: {before: \"${esc(it.before)}\", after: \"${esc(it.after)}\"}") }
+    }
+
+    private fun renderDiffCustomTypes(sb: StringBuilder, diff: DiffView) {
         if (diff.customTypesAdded.isNotEmpty()) {
             sb.appendLine("  custom_types_added:")
             for (e in diff.customTypesAdded) sb.appendLine("    - {name: \"${esc(e.name)}\", kind: \"${esc(e.kind)}\"}")
@@ -83,28 +90,17 @@ internal object CompareRendererYaml {
                 for (ch in e.changes) sb.appendLine("        - \"${esc(ch)}\"")
             }
         }
+    }
 
-        if (diff.tablesAdded.isNotEmpty()) {
-            sb.appendLine("  tables_added:")
-            for (t in diff.tablesAdded) sb.appendLine("    - \"${esc(t.name)}\"")
-        }
-        if (diff.tablesRemoved.isNotEmpty()) {
-            sb.appendLine("  tables_removed:")
-            for (t in diff.tablesRemoved) sb.appendLine("    - \"${esc(t.name)}\"")
-        }
-        if (diff.tablesChanged.isNotEmpty()) {
-            sb.appendLine("  tables_changed:")
-            for (t in diff.tablesChanged) renderTableChange(sb, t)
-        }
+    private fun renderDiffTables(sb: StringBuilder, diff: DiffView) {
+        if (diff.tablesAdded.isNotEmpty()) { sb.appendLine("  tables_added:"); for (t in diff.tablesAdded) sb.appendLine("    - \"${esc(t.name)}\"") }
+        if (diff.tablesRemoved.isNotEmpty()) { sb.appendLine("  tables_removed:"); for (t in diff.tablesRemoved) sb.appendLine("    - \"${esc(t.name)}\"") }
+        if (diff.tablesChanged.isNotEmpty()) { sb.appendLine("  tables_changed:"); for (t in diff.tablesChanged) renderTableChange(sb, t) }
+    }
 
-        if (diff.viewsAdded.isNotEmpty()) {
-            sb.appendLine("  views_added:")
-            for (v in diff.viewsAdded) sb.appendLine("    - \"${esc(v.name)}\"")
-        }
-        if (diff.viewsRemoved.isNotEmpty()) {
-            sb.appendLine("  views_removed:")
-            for (v in diff.viewsRemoved) sb.appendLine("    - \"${esc(v.name)}\"")
-        }
+    private fun renderDiffViews(sb: StringBuilder, diff: DiffView) {
+        if (diff.viewsAdded.isNotEmpty()) { sb.appendLine("  views_added:"); for (v in diff.viewsAdded) sb.appendLine("    - \"${esc(v.name)}\"") }
+        if (diff.viewsRemoved.isNotEmpty()) { sb.appendLine("  views_removed:"); for (v in diff.viewsRemoved) sb.appendLine("    - \"${esc(v.name)}\"") }
         if (diff.viewsChanged.isNotEmpty()) {
             sb.appendLine("  views_changed:")
             for (v in diff.viewsChanged) {
@@ -119,17 +115,19 @@ internal object CompareRendererYaml {
 
     private fun renderTableChange(sb: StringBuilder, t: TableChangeView) {
         sb.appendLine("    - name: \"${esc(t.name)}\"")
+        renderTableColumns(sb, t)
+        t.primaryKey?.let {
+            sb.appendLine("      primary_key: {before: [${it.before.joinToString(", ") { s -> "\"${esc(s)}\"" }}], after: [${it.after.joinToString(", ") { s -> "\"${esc(s)}\"" }}]}")
+        }
+        renderTableIndicesAndConstraints(sb, t)
+    }
+
+    private fun renderTableColumns(sb: StringBuilder, t: TableChangeView) {
         if (t.columnsAdded.isNotEmpty()) {
             sb.appendLine("      columns_added:")
-            for (c in t.columnsAdded) {
-                sb.appendLine("        - name: \"${esc(c.name)}\"")
-                sb.appendLine("          type: \"${esc(c.type)}\"")
-            }
+            for (c in t.columnsAdded) { sb.appendLine("        - name: \"${esc(c.name)}\""); sb.appendLine("          type: \"${esc(c.type)}\"") }
         }
-        if (t.columnsRemoved.isNotEmpty()) {
-            sb.appendLine("      columns_removed:")
-            for (n in t.columnsRemoved) sb.appendLine("        - \"${esc(n)}\"")
-        }
+        if (t.columnsRemoved.isNotEmpty()) { sb.appendLine("      columns_removed:"); for (n in t.columnsRemoved) sb.appendLine("        - \"${esc(n)}\"") }
         if (t.columnsChanged.isNotEmpty()) {
             sb.appendLine("      columns_changed:")
             for (c in t.columnsChanged) {
@@ -141,9 +139,9 @@ internal object CompareRendererYaml {
                 c.references?.let { sb.appendLine("          references: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
             }
         }
-        t.primaryKey?.let {
-            sb.appendLine("      primary_key: {before: [${it.before.joinToString(", ") { s -> "\"${esc(s)}\"" }}], after: [${it.after.joinToString(", ") { s -> "\"${esc(s)}\"" }}]}")
-        }
+    }
+
+    private fun renderTableIndicesAndConstraints(sb: StringBuilder, t: TableChangeView) {
         if (t.indicesAdded.isNotEmpty()) { sb.appendLine("      indices_added:"); for (sig in t.indicesAdded) sb.appendLine("        - \"${esc(sig)}\"") }
         if (t.indicesRemoved.isNotEmpty()) { sb.appendLine("      indices_removed:"); for (sig in t.indicesRemoved) sb.appendLine("        - \"${esc(sig)}\"") }
         if (t.indicesChanged.isNotEmpty()) { sb.appendLine("      indices_changed:"); for (ch in t.indicesChanged) sb.appendLine("        - {before: \"${esc(ch.before)}\", after: \"${esc(ch.after)}\"}") }

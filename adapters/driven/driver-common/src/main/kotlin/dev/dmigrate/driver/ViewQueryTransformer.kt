@@ -46,58 +46,63 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         while (i < sql.length) {
             val c = sql[i]
             when {
-                c.isWhitespace() -> {
-                    val start = i
-                    while (i < sql.length && sql[i].isWhitespace()) i++
-                    tokens += Token(TType.WS, sql.substring(start, i))
-                }
-                c == '\'' -> {
-                    val start = i
-                    i++ // skip opening quote
-                    while (i < sql.length) {
-                        if (sql[i] == '\'' && i + 1 < sql.length && sql[i + 1] == '\'') {
-                            i += 2 // escaped quote
-                        } else if (sql[i] == '\'') {
-                            i++; break
-                        } else {
-                            i++
-                        }
-                    }
-                    tokens += Token(TType.STRING, sql.substring(start, i))
-                }
+                c.isWhitespace() -> i = scanWhitespace(sql, i, tokens)
+                c == '\'' -> i = scanStringLiteral(sql, i, tokens)
                 c == '(' -> { tokens += Token(TType.LPAREN, "("); i++ }
                 c == ')' -> { tokens += Token(TType.RPAREN, ")"); i++ }
                 c == ',' -> { tokens += Token(TType.COMMA, ","); i++ }
-                c.isLetter() || c == '_' -> {
-                    val start = i
-                    while (i < sql.length && (sql[i].isLetterOrDigit() || sql[i] == '_')) i++
-                    tokens += Token(TType.WORD, sql.substring(start, i))
-                }
-                c.isDigit() -> {
-                    val start = i
-                    while (i < sql.length && sql[i].isDigit()) i++
-                    if (i < sql.length && sql[i] == '.' && i + 1 < sql.length && sql[i + 1].isDigit()) {
-                        i++ // skip dot
-                        while (i < sql.length && sql[i].isDigit()) i++
-                    }
-                    tokens += Token(TType.NUMBER, sql.substring(start, i))
-                }
-                c == '"' || c == '`' -> {
-                    // Quoted identifier — preserve as-is
-                    val quote = c
-                    val start = i
-                    i++
-                    while (i < sql.length && sql[i] != quote) i++
-                    if (i < sql.length) i++ // skip closing quote
-                    tokens += Token(TType.WORD, sql.substring(start, i))
-                }
-                else -> {
-                    tokens += Token(TType.OTHER, c.toString())
-                    i++
-                }
+                c.isLetter() || c == '_' -> i = scanWord(sql, i, tokens)
+                c.isDigit() -> i = scanNumber(sql, i, tokens)
+                c == '"' || c == '`' -> i = scanQuotedIdentifier(sql, i, tokens)
+                else -> { tokens += Token(TType.OTHER, c.toString()); i++ }
             }
         }
         return tokens
+    }
+
+    private fun scanWhitespace(sql: String, start: Int, tokens: MutableList<Token>): Int {
+        var i = start
+        while (i < sql.length && sql[i].isWhitespace()) i++
+        tokens += Token(TType.WS, sql.substring(start, i))
+        return i
+    }
+
+    private fun scanStringLiteral(sql: String, start: Int, tokens: MutableList<Token>): Int {
+        var i = start + 1
+        while (i < sql.length) {
+            if (sql[i] == '\'' && i + 1 < sql.length && sql[i + 1] == '\'') { i += 2 }
+            else if (sql[i] == '\'') { i++; break }
+            else i++
+        }
+        tokens += Token(TType.STRING, sql.substring(start, i))
+        return i
+    }
+
+    private fun scanWord(sql: String, start: Int, tokens: MutableList<Token>): Int {
+        var i = start
+        while (i < sql.length && (sql[i].isLetterOrDigit() || sql[i] == '_')) i++
+        tokens += Token(TType.WORD, sql.substring(start, i))
+        return i
+    }
+
+    private fun scanNumber(sql: String, start: Int, tokens: MutableList<Token>): Int {
+        var i = start
+        while (i < sql.length && sql[i].isDigit()) i++
+        if (i < sql.length && sql[i] == '.' && i + 1 < sql.length && sql[i + 1].isDigit()) {
+            i++
+            while (i < sql.length && sql[i].isDigit()) i++
+        }
+        tokens += Token(TType.NUMBER, sql.substring(start, i))
+        return i
+    }
+
+    private fun scanQuotedIdentifier(sql: String, start: Int, tokens: MutableList<Token>): Int {
+        val quote = sql[start]
+        var i = start + 1
+        while (i < sql.length && sql[i] != quote) i++
+        if (i < sql.length) i++
+        tokens += Token(TType.WORD, sql.substring(start, i))
+        return i
     }
 
     private fun render(tokens: List<Token>): String = tokens.joinToString("") { it.text }
@@ -174,30 +179,28 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             var i = 0
             while (i < tokens.size) {
                 val tok = tokens[i]
-                if (tok.type == TType.WORD && tok.text.equals("EXTRACT", ignoreCase = true)) {
-                    val parenIdx = (i + 1 until tokens.size).firstOrNull { tokens[it].type != TType.WS }
-                    if (parenIdx != null && tokens[parenIdx].type == TType.LPAREN) {
-                        val inner = extractInnerTokens(tokens, parenIdx)
-                        if (inner != null) {
-                            val (innerTokens, endIdx) = inner
-                            val words = innerTokens.filter { it.type == TType.WORD }
-                            if (words.size >= 3 &&
-                                words[0].text.equals(unit, ignoreCase = true) &&
-                                words[1].text.equals("FROM", ignoreCase = true)
-                            ) {
-                                val fromIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FROM", ignoreCase = true) }
-                                val expr = innerTokens.drop(fromIdx + 1).dropWhile { it.type == TType.WS }
-                                result += transform(expr)
-                                i = endIdx + 1
-                                continue
-                            }
-                        }
-                    }
+                val replaced = tryReplaceExtract(tokens, i, tok)
+                if (replaced != null) {
+                    result += replaced.first
+                    i = replaced.second
+                    continue
                 }
                 result += tok
                 i++
             }
             return result
+        }
+
+        private fun tryReplaceExtract(tokens: List<Token>, i: Int, tok: Token): Pair<List<Token>, Int>? {
+            if (tok.type != TType.WORD || !tok.text.equals("EXTRACT", ignoreCase = true)) return null
+            val parenIdx = (i + 1 until tokens.size).firstOrNull { tokens[it].type != TType.WS } ?: return null
+            if (tokens[parenIdx].type != TType.LPAREN) return null
+            val (innerTokens, endIdx) = extractInnerTokens(tokens, parenIdx) ?: return null
+            val words = innerTokens.filter { it.type == TType.WORD }
+            if (words.size < 3 || !words[0].text.equals(unit, ignoreCase = true) || !words[1].text.equals("FROM", ignoreCase = true)) return null
+            val fromIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FROM", ignoreCase = true) }
+            val expr = innerTokens.drop(fromIdx + 1).dropWhile { it.type == TType.WS }
+            return transform(expr) to (endIdx + 1)
         }
     }
 
@@ -210,29 +213,30 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             var i = 0
             while (i < tokens.size) {
                 val tok = tokens[i]
-                if (tok.type == TType.WORD && tok.text.equals("SUBSTRING", ignoreCase = true)) {
-                    val parenIdx = (i + 1 until tokens.size).firstOrNull { tokens[it].type != TType.WS }
-                    if (parenIdx != null && tokens[parenIdx].type == TType.LPAREN) {
-                        val inner = extractInnerTokens(tokens, parenIdx)
-                        if (inner != null) {
-                            val (innerTokens, endIdx) = inner
-                            val fromIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FROM", ignoreCase = true) }
-                            val forIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FOR", ignoreCase = true) }
-                            if (fromIdx >= 0 && forIdx > fromIdx) {
-                                val expr = innerTokens.take(fromIdx).dropLastWhile { it.type == TType.WS }
-                                val fromVal = innerTokens.subList(fromIdx + 1, forIdx).firstOrNull { it.type == TType.NUMBER }?.text ?: "1"
-                                val forVal = innerTokens.drop(forIdx + 1).firstOrNull { it.type == TType.NUMBER }?.text ?: "1"
-                                result += transform(expr, fromVal, forVal)
-                                i = endIdx + 1
-                                continue
-                            }
-                        }
-                    }
+                val replaced = tryReplaceSubstring(tokens, i, tok)
+                if (replaced != null) {
+                    result += replaced.first
+                    i = replaced.second
+                    continue
                 }
                 result += tok
                 i++
             }
             return result
+        }
+
+        private fun tryReplaceSubstring(tokens: List<Token>, i: Int, tok: Token): Pair<List<Token>, Int>? {
+            if (tok.type != TType.WORD || !tok.text.equals("SUBSTRING", ignoreCase = true)) return null
+            val parenIdx = (i + 1 until tokens.size).firstOrNull { tokens[it].type != TType.WS } ?: return null
+            if (tokens[parenIdx].type != TType.LPAREN) return null
+            val (innerTokens, endIdx) = extractInnerTokens(tokens, parenIdx) ?: return null
+            val fromIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FROM", ignoreCase = true) }
+            val forIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FOR", ignoreCase = true) }
+            if (fromIdx < 0 || forIdx <= fromIdx) return null
+            val expr = innerTokens.take(fromIdx).dropLastWhile { it.type == TType.WS }
+            val fromVal = innerTokens.subList(fromIdx + 1, forIdx).firstOrNull { it.type == TType.NUMBER }?.text ?: "1"
+            val forVal = innerTokens.drop(forIdx + 1).firstOrNull { it.type == TType.NUMBER }?.text ?: "1"
+            return transform(expr, fromVal, forVal) to (endIdx + 1)
         }
     }
 

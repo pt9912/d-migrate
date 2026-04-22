@@ -20,73 +20,71 @@ internal class SqliteColumnConstraintHelper(
     ): String {
         val type = col.type
 
-        // Identifier type: TypeMapper returns "INTEGER PRIMARY KEY AUTOINCREMENT" (already includes PK)
         if (type is NeutralType.Identifier && type.autoIncrement) {
-            val parts = mutableListOf<String>()
-            parts += quoteIdentifier(colName)
-            parts += typeMapper.toSql(type)
-            // NOT NULL is implicit for INTEGER PRIMARY KEY in SQLite
-            if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-            if (col.unique) parts += "UNIQUE"
-            return parts.joinToString(" ")
+            return generateAutoIncrementColumn(colName, col, type)
         }
-
-        // Enum with ref_type: resolve from custom types and inline CHECK
         if (type is NeutralType.Enum && type.refType != null) {
-            val customType = schema.customTypes[type.refType]
-            val parts = mutableListOf<String>()
-            parts += quoteIdentifier(colName)
-            parts += "TEXT"
-            if (col.required) parts += "NOT NULL"
-            if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-            if (col.unique) parts += "UNIQUE"
-            // If the custom type has enum values, add inline CHECK
-            if (customType != null && customType.kind == CustomTypeKind.ENUM && customType.values != null) {
-                val allowed = customType.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
-                parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
-            }
-            // Inline reference if present
-            if (col.references != null && (tableName to colName) !in deferredFks) {
-                parts += inlineForeignKey(col.references!!)
-            }
-            return parts.joinToString(" ")
+            return generateEnumRefTypeColumn(colName, col, type, schema, tableName, deferredFks)
         }
-
-        // Enum with inline values: TEXT + CHECK
         if (type is NeutralType.Enum && type.values != null) {
-            val parts = mutableListOf<String>()
-            parts += quoteIdentifier(colName)
-            parts += "TEXT"
-            if (col.required) parts += "NOT NULL"
-            if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
-            if (col.unique) parts += "UNIQUE"
-            val allowed = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
-            parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
-            // Inline reference if present
-            if (col.references != null && (tableName to colName) !in deferredFks) {
-                parts += inlineForeignKey(col.references!!)
-            }
-            return parts.joinToString(" ")
+            return generateEnumInlineColumn(colName, col, type, tableName, deferredFks)
         }
-
-        // Decimal type: warn about precision loss
         if (type is NeutralType.Decimal) {
             notes += TransformationNote(
-                type = NoteType.WARNING,
-                code = "W200",
-                objectName = "$tableName.$colName",
+                type = NoteType.WARNING, code = "W200", objectName = "$tableName.$colName",
                 message = "Decimal(${type.precision},${type.scale}) mapped to REAL in SQLite. Precision may be lost.",
                 hint = "Store as TEXT if exact decimal precision is required."
             )
         }
+        return generateDefaultColumn(colName, col, schema, tableName, deferredFks)
+    }
 
-        // Default path: use base columnSql and then append inline FK if present
+    private fun generateAutoIncrementColumn(colName: String, col: ColumnDefinition, type: NeutralType): String {
+        val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(type))
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
+        if (col.unique) parts += "UNIQUE"
+        return parts.joinToString(" ")
+    }
+
+    private fun generateEnumRefTypeColumn(
+        colName: String, col: ColumnDefinition, type: NeutralType.Enum,
+        schema: SchemaDefinition, tableName: String, deferredFks: Set<Pair<String, String>>,
+    ): String {
+        val customType = schema.customTypes[type.refType]
+        val parts = mutableListOf(quoteIdentifier(colName), "TEXT")
+        if (col.required) parts += "NOT NULL"
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
+        if (col.unique) parts += "UNIQUE"
+        if (customType != null && customType.kind == CustomTypeKind.ENUM && customType.values != null) {
+            val allowed = customType.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
+            parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
+        }
+        if (col.references != null && (tableName to colName) !in deferredFks) parts += inlineForeignKey(col.references!!)
+        return parts.joinToString(" ")
+    }
+
+    private fun generateEnumInlineColumn(
+        colName: String, col: ColumnDefinition, type: NeutralType.Enum,
+        tableName: String, deferredFks: Set<Pair<String, String>>,
+    ): String {
+        val parts = mutableListOf(quoteIdentifier(colName), "TEXT")
+        if (col.required) parts += "NOT NULL"
+        if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, type)}"
+        if (col.unique) parts += "UNIQUE"
+        val allowed = type.values!!.joinToString(", ") { "'${it.replace("'", "''")}'" }
+        parts += "CHECK (${quoteIdentifier(colName)} IN ($allowed))"
+        if (col.references != null && (tableName to colName) !in deferredFks) parts += inlineForeignKey(col.references!!)
+        return parts.joinToString(" ")
+    }
+
+    private fun generateDefaultColumn(
+        colName: String, col: ColumnDefinition, schema: SchemaDefinition,
+        tableName: String, deferredFks: Set<Pair<String, String>>,
+    ): String {
         val baseSql = columnSql(tableName, colName, col, schema)
         return if (col.references != null && (tableName to colName) !in deferredFks) {
             "$baseSql ${inlineForeignKey(col.references!!)}"
-        } else {
-            baseSql
-        }
+        } else baseSql
     }
 
     private fun inlineForeignKey(ref: ReferenceDefinition): String {

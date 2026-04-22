@@ -72,55 +72,55 @@ object EncodingDetector {
         val first4 = ByteArray(4)
         val read = readFully(pb, first4)
 
-        // Prüfe UTF-32 zuerst, weil UTF-16 LE BOM (FF FE) ein Prefix von
-        // UTF-32 LE BOM (FF FE 00 00) ist. Ohne diese Reihenfolge würde
-        // UTF-32-LE still als UTF-16-LE fehldeuten.
-        if (read == 4 &&
-            first4[0] == 0x00.toByte() && first4[1] == 0x00.toByte() &&
-            first4[2] == 0xFE.toByte() && first4[3] == 0xFF.toByte()
+        rejectUtf32Bom(first4, read)
+
+        val detected = detectUtf8Bom(first4, read, pb)
+            ?: detectUtf16BeBom(first4, read, pb)
+            ?: detectUtf16LeBom(first4, read, pb)
+
+        if (detected != null) return detected
+
+        if (read > 0) pb.unread(first4, 0, read)
+        return Detected(StandardCharsets.UTF_8, pb)
+    }
+
+    private fun rejectUtf32Bom(bytes: ByteArray, read: Int) {
+        if (read < 4) return
+        if (bytes[0] == 0x00.toByte() && bytes[1] == 0x00.toByte() &&
+            bytes[2] == 0xFE.toByte() && bytes[3] == 0xFF.toByte()
         ) {
             throw UnsupportedFileEncodingException(
                 "UTF-32 BE BOM detected — UTF-32 is not supported in 0.4.0. " +
                     "Set --encoding explicitly (e.g. UTF-16LE) or convert the file."
             )
         }
-        if (read == 4 &&
-            first4[0] == 0xFF.toByte() && first4[1] == 0xFE.toByte() &&
-            first4[2] == 0x00.toByte() && first4[3] == 0x00.toByte()
+        if (bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() &&
+            bytes[2] == 0x00.toByte() && bytes[3] == 0x00.toByte()
         ) {
             throw UnsupportedFileEncodingException(
                 "UTF-32 LE BOM detected — UTF-32 is not supported in 0.4.0. " +
                     "Set --encoding explicitly (e.g. UTF-16LE) or convert the file."
             )
         }
+    }
 
-        // UTF-8 BOM (3 bytes)
-        if (read >= 3 &&
-            first4[0] == 0xEF.toByte() && first4[1] == 0xBB.toByte() && first4[2] == 0xBF.toByte()
-        ) {
-            // Push back the 4th byte (if any) — the BOM is consumed.
-            if (read == 4) pb.unread(first4, 3, 1)
-            return Detected(StandardCharsets.UTF_8, pb)
-        }
-
-        // UTF-16 BE BOM (2 bytes, 0xFE 0xFF)
-        if (read >= 2 && first4[0] == 0xFE.toByte() && first4[1] == 0xFF.toByte()) {
-            // Push back bytes 2..read-1 (the tail we already read past the BOM).
-            if (read > 2) pb.unread(first4, 2, read - 2)
-            return Detected(StandardCharsets.UTF_16BE, pb)
-        }
-
-        // UTF-16 LE BOM (2 bytes, 0xFF 0xFE)
-        // Safe here because UTF-32 LE was already handled above.
-        if (read >= 2 && first4[0] == 0xFF.toByte() && first4[1] == 0xFE.toByte()) {
-            if (read > 2) pb.unread(first4, 2, read - 2)
-            return Detected(StandardCharsets.UTF_16LE, pb)
-        }
-
-        // No BOM → UTF-8 fallback, push ALL read bytes back so the parser
-        // starts from position 0 of the real content.
-        if (read > 0) pb.unread(first4, 0, read)
+    private fun detectUtf8Bom(bytes: ByteArray, read: Int, pb: PushbackInputStream): Detected? {
+        if (read < 3) return null
+        if (bytes[0] != 0xEF.toByte() || bytes[1] != 0xBB.toByte() || bytes[2] != 0xBF.toByte()) return null
+        if (read == 4) pb.unread(bytes, 3, 1)
         return Detected(StandardCharsets.UTF_8, pb)
+    }
+
+    private fun detectUtf16BeBom(bytes: ByteArray, read: Int, pb: PushbackInputStream): Detected? {
+        if (read < 2 || bytes[0] != 0xFE.toByte() || bytes[1] != 0xFF.toByte()) return null
+        if (read > 2) pb.unread(bytes, 2, read - 2)
+        return Detected(StandardCharsets.UTF_16BE, pb)
+    }
+
+    private fun detectUtf16LeBom(bytes: ByteArray, read: Int, pb: PushbackInputStream): Detected? {
+        if (read < 2 || bytes[0] != 0xFF.toByte() || bytes[1] != 0xFE.toByte()) return null
+        if (read > 2) pb.unread(bytes, 2, read - 2)
+        return Detected(StandardCharsets.UTF_16LE, pb)
     }
 
     /**

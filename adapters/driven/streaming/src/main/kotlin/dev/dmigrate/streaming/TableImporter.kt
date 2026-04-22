@@ -24,29 +24,110 @@ import dev.dmigrate.format.data.ValueDeserializer
  * Handles resume offset (skip committed chunks), binding plan
  * construction, chunk error recovery, and finish/close lifecycle.
  */
+internal data class TableImportParams(
+    val pool: ConnectionPool,
+    val writer: DataWriter,
+    val tableInput: ResolvedTableInput,
+    val format: DataExportFormat,
+    val options: ImportOptions,
+    val readOptions: FormatReadOptions = FormatReadOptions(),
+    val config: PipelineConfig,
+    val reporter: ProgressReporter,
+    val ordinal: Int,
+    val tableCount: Int,
+    val resumeState: ImportTableResumeState?,
+    val onChunkCommitted: (ImportChunkCommit) -> Unit,
+)
+
 internal class TableImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
 ) {
 
-    fun import(
-        pool: ConnectionPool,
-        writer: DataWriter,
-        tableInput: ResolvedTableInput,
-        format: DataExportFormat,
-        options: ImportOptions,
-        readOptions: FormatReadOptions = FormatReadOptions(),
-        config: PipelineConfig,
-        reporter: ProgressReporter,
-        ordinal: Int,
-        tableCount: Int,
-        resumeState: ImportTableResumeState?,
-        onChunkCommitted: (ImportChunkCommit) -> Unit,
-    ): TableImportSummary {
+    fun import(params: TableImportParams): TableImportSummary {
+        val pool = params.pool; val writer = params.writer; val tableInput = params.tableInput
+        val format = params.format; val options = params.options; val readOptions = params.readOptions
+        val config = params.config; val reporter = params.reporter; val ordinal = params.ordinal
+        val tableCount = params.tableCount; val resumeState = params.resumeState
+        val onChunkCommitted = params.onChunkCommitted
         val tableStartedAt = System.nanoTime()
         var reader: DataChunkReader? = null
         var session: TableImportSession? = null
         var primaryFailure: Throwable? = null
+        val state = ImportLoopState()
+
+        val committedChunksOffset: Long = resumeState?.committedChunks ?: 0L
+        val effectiveOptions = if (committedChunksOffset > 0L) options.copy(truncate = false) else options
+        state.chunksCommittedTotal = committedChunksOffset
+
+        try {
+            reader = readerFactory.create(
+                format = format, input = tableInput.openInput(), table = tableInput.table,
+                chunkSize = config.chunkSize, options = readOptions,
+            )
+            session = writer.openTable(pool, tableInput.table, effectiveOptions)
+            onTableOpened(tableInput.table, session.targetColumns)
+            reporter.report(ProgressEvent.ImportTableStarted(tableInput.table, ordinal, tableCount))
+            state.targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
+
+            skipCommittedChunks(reader, committedChunksOffset)
+
+            val firstChunk = reader.nextChunk()
+            val bindingPlan = buildBindingPlan(
+                table = tableInput.table, headerColumns = reader.headerColumns(),
+                firstChunk = firstChunk, targetColumns = session.targetColumns,
+            )
+            val deserializer = buildDeserializer(session.targetColumns, readOptions)
+            val chunkCtx = ChunkContext(tableInput.table, ordinal, tableCount, options, format, bindingPlan, deserializer)
+
+            importChunks(reader, session, chunkCtx, state, reporter, onChunkCommitted, firstChunk)
+
+            if (state.error == null) {
+                when (val finish = session.finishTable()) {
+                    is FinishTableResult.Success -> state.sequenceAdjustments = finish.adjustments
+                    is FinishTableResult.PartialFailure -> { state.sequenceAdjustments = finish.adjustments; state.partialFinish = finish }
+                }
+            }
+        } catch (t: Throwable) {
+            primaryFailure = t
+            throw t
+        } finally {
+            var cleanupFailure: Throwable? = null
+            closeAndCollect(reader, primaryFailure) { cleanupFailure = cleanupFailure?.apply { addSuppressed(it) } ?: it }
+            closeAndCollect(session, primaryFailure) { cleanupFailure = cleanupFailure?.apply { addSuppressed(it) } ?: it }
+            if (primaryFailure == null && cleanupFailure != null) primaryFailure = cleanupFailure
+        }
+        primaryFailure?.let { throw it }
+
+        val tableDurationMs = elapsedMs(tableStartedAt)
+        val tableStatus = if (state.error == null && state.partialFinish == null) TableProgressStatus.COMPLETED else TableProgressStatus.FAILED
+        reporter.report(ProgressEvent.ImportTableFinished(
+            table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
+            rowsInserted = state.rowsInserted, rowsUpdated = state.rowsUpdated,
+            rowsSkipped = state.rowsSkipped, rowsUnknown = state.rowsUnknown, rowsFailed = state.rowsFailed,
+            durationMs = tableDurationMs, status = tableStatus,
+        ))
+
+        return TableImportSummary(
+            table = tableInput.table,
+            rowsInserted = state.rowsInserted, rowsUpdated = state.rowsUpdated,
+            rowsSkipped = state.rowsSkipped, rowsUnknown = state.rowsUnknown, rowsFailed = state.rowsFailed,
+            chunkFailures = state.chunkFailures.toList(),
+            sequenceAdjustments = state.sequenceAdjustments,
+            targetColumns = state.targetColumns,
+            triggerMode = options.triggerMode,
+            failedFinish = state.partialFinish?.toFailedFinishInfo(),
+            error = state.error, durationMs = tableDurationMs,
+        )
+    }
+
+    private fun skipCommittedChunks(reader: DataChunkReader, offset: Long) {
+        if (offset <= 0L) return
+        var skipped = 0L
+        while (skipped < offset) { reader.nextChunk() ?: break; skipped += 1 }
+    }
+
+    private class ImportLoopState {
         var rowsInserted = 0L
         var rowsUpdated = 0L
         var rowsSkipped = 0L
@@ -57,180 +138,121 @@ internal class TableImporter(
         var partialFinish: FinishTableResult.PartialFailure? = null
         var error: String? = null
         var targetColumns = emptyList<ColumnDescriptor>()
+        var chunksCommittedTotal = 0L
+        val totalRows get() = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed
+    }
 
-        val committedChunksOffset: Long = resumeState?.committedChunks ?: 0L
-        val effectiveOptions = if (committedChunksOffset > 0L) {
-            options.copy(truncate = false)
-        } else {
-            options
-        }
-        var chunksCommittedTotal: Long = committedChunksOffset
+    private class ChunkContext(
+        val table: String, val ordinal: Int, val tableCount: Int,
+        val options: ImportOptions, val format: DataExportFormat,
+        val bindingPlan: BindingPlan, val deserializer: ValueDeserializer,
+    )
 
-        try {
-            reader = readerFactory.create(
-                format = format,
-                input = tableInput.openInput(),
-                table = tableInput.table,
-                chunkSize = config.chunkSize,
-                options = readOptions,
-            )
-            session = writer.openTable(pool, tableInput.table, effectiveOptions)
-            onTableOpened(tableInput.table, session.targetColumns)
-            reporter.report(ProgressEvent.ImportTableStarted(tableInput.table, ordinal, tableCount))
-            targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
-
-            if (committedChunksOffset > 0L) {
-                var skipped = 0L
-                while (skipped < committedChunksOffset) {
-                    reader.nextChunk() ?: break
-                    skipped += 1
-                }
+    private fun importChunks(
+        reader: DataChunkReader, session: TableImportSession, ctx: ChunkContext,
+        state: ImportLoopState, reporter: ProgressReporter,
+        onChunkCommitted: (ImportChunkCommit) -> Unit, firstChunk: DataChunk?,
+    ) {
+        var nextChunk: DataChunk? = firstChunk
+        while (nextChunk != null) {
+            val normalizedChunk = try {
+                normalizeChunk(nextChunk, ctx.table, ctx.bindingPlan, ctx.deserializer, ctx.format == DataExportFormat.CSV)
+            } catch (t: Throwable) {
+                val decision = handleNormFailure(nextChunk, t, ctx, state, reporter)
+                if (decision == LoopAction.ABORT) throw t
+                nextChunk = advanceOrBreak(reader, ctx, state, nextChunk.chunkIndex + 1) ?: break; continue
             }
 
-            val firstChunk = reader.nextChunk()
-            val bindingPlan = buildBindingPlan(
-                table = tableInput.table,
-                headerColumns = reader.headerColumns(),
-                firstChunk = firstChunk,
-                targetColumns = session.targetColumns,
-            )
-            val deserializer = buildDeserializer(session.targetColumns, readOptions)
+            val writeResult = try {
+                session.write(normalizedChunk)
+            } catch (t: Throwable) {
+                val action = handleWriteFailure(session, normalizedChunk, t, ctx, state, reporter, reader)
+                if (action == LoopAction.ABORT) throw t
+                if (action == LoopAction.BREAK) break
+                nextChunk = advanceOrBreak(reader, ctx, state, normalizedChunk.chunkIndex + 1) ?: break; continue
+            }
 
-            var nextChunk: DataChunk? = firstChunk
-            var nextChunkIndex = firstChunk?.chunkIndex ?: 0L
-            while (nextChunk != null) {
-                val normalizedChunk = try {
-                    normalizeChunk(nextChunk, tableInput.table, bindingPlan, deserializer,
-                        format == DataExportFormat.CSV)
-                } catch (t: Throwable) {
-                    when (handleChunkFailure(nextChunk, t, options, chunkFailures)) {
-                        ChunkDecision.ABORT -> throw t
-                        ChunkDecision.CONTINUE -> {
-                            rowsFailed += nextChunk.rows.size.toLong()
-                            reporter.report(ProgressEvent.ImportChunkProcessed(
-                                table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
-                                chunkIndex = nextChunk.chunkIndex.toInt() + 1,
-                                rowsInChunk = nextChunk.rows.size.toLong(),
-                                rowsProcessed = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed,
-                                rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
-                                rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
-                            ))
-                            when (val readResult = tryReadNextChunk(reader, tableInput.table,
-                                nextChunk.chunkIndex + 1, options, chunkFailures)) {
-                                is ReadNextChunkResult.Chunk -> { nextChunk = readResult.chunk; nextChunkIndex = nextChunk!!.chunkIndex }
-                                is ReadNextChunkResult.EndOfInput -> break
-                                is ReadNextChunkResult.Failed -> { error = readResult.reason; break }
-                            }
-                            continue
-                        }
-                    }
-                }
-
-                val writeResult = try {
-                    session.write(normalizedChunk)
-                } catch (t: Throwable) {
-                    val recovered = runCatching { session.rollbackChunk() }.isSuccess
-                    rowsFailed += normalizedChunk.rows.size.toLong()
-                    when (handleChunkFailure(normalizedChunk, t, options, chunkFailures)) {
-                        ChunkDecision.ABORT -> throw t
-                        ChunkDecision.CONTINUE -> {
-                            reporter.report(ProgressEvent.ImportChunkProcessed(
-                                table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
-                                chunkIndex = normalizedChunk.chunkIndex.toInt() + 1,
-                                rowsInChunk = normalizedChunk.rows.size.toLong(),
-                                rowsProcessed = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed,
-                                rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
-                                rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
-                            ))
-                            if (!recovered) { error = t.message ?: t::class.simpleName; break }
-                            when (val readResult = tryReadNextChunk(reader, tableInput.table,
-                                normalizedChunk.chunkIndex + 1, options, chunkFailures)) {
-                                is ReadNextChunkResult.Chunk -> { nextChunk = readResult.chunk; nextChunkIndex = nextChunk!!.chunkIndex }
-                                is ReadNextChunkResult.EndOfInput -> break
-                                is ReadNextChunkResult.Failed -> { error = readResult.reason; break }
-                            }
-                            continue
-                        }
-                    }
-                }
-
-                try {
-                    session.commitChunk()
-                    rowsInserted += writeResult.rowsInserted
-                    rowsUpdated += writeResult.rowsUpdated
-                    rowsSkipped += writeResult.rowsSkipped
-                    rowsUnknown += writeResult.rowsUnknown
-                    reporter.report(ProgressEvent.ImportChunkProcessed(
-                        table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
-                        chunkIndex = normalizedChunk.chunkIndex.toInt() + 1,
-                        rowsInChunk = normalizedChunk.rows.size.toLong(),
-                        rowsProcessed = rowsInserted + rowsUpdated + rowsSkipped + rowsUnknown + rowsFailed,
-                        rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
-                        rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
+            try {
+                session.commitChunk()
+                state.rowsInserted += writeResult.rowsInserted
+                state.rowsUpdated += writeResult.rowsUpdated
+                state.rowsSkipped += writeResult.rowsSkipped
+                state.rowsUnknown += writeResult.rowsUnknown
+                reportChunkProcessed(reporter, ctx, normalizedChunk, state)
+                state.chunksCommittedTotal += 1
+                runCatching {
+                    onChunkCommitted(ImportChunkCommit(
+                        table = ctx.table, chunkIndex = normalizedChunk.chunkIndex,
+                        chunksCommitted = state.chunksCommittedTotal,
+                        rowsInsertedTotal = state.rowsInserted, rowsUpdatedTotal = state.rowsUpdated,
+                        rowsSkippedTotal = state.rowsSkipped, rowsUnknownTotal = state.rowsUnknown,
+                        rowsFailedTotal = state.rowsFailed,
                     ))
-                    chunksCommittedTotal += 1
-                    runCatching {
-                        onChunkCommitted(ImportChunkCommit(
-                            table = tableInput.table, chunkIndex = normalizedChunk.chunkIndex,
-                            chunksCommitted = chunksCommittedTotal,
-                            rowsInsertedTotal = rowsInserted, rowsUpdatedTotal = rowsUpdated,
-                            rowsSkippedTotal = rowsSkipped, rowsUnknownTotal = rowsUnknown,
-                            rowsFailedTotal = rowsFailed,
-                        ))
-                    }
-                } catch (t: Throwable) {
-                    rowsFailed += normalizedChunk.rows.size.toLong()
-                    when (handleChunkFailure(normalizedChunk, t, options, chunkFailures)) {
-                        ChunkDecision.ABORT -> throw t
-                        ChunkDecision.CONTINUE -> { error = t.message ?: t::class.simpleName; break }
-                    }
                 }
-
-                nextChunkIndex = normalizedChunk.chunkIndex + 1
-                when (val readResult = tryReadNextChunk(reader, tableInput.table,
-                    nextChunkIndex, options, chunkFailures)) {
-                    is ReadNextChunkResult.Chunk -> { nextChunk = readResult.chunk; nextChunkIndex = nextChunk!!.chunkIndex }
-                    is ReadNextChunkResult.EndOfInput -> break
-                    is ReadNextChunkResult.Failed -> { error = readResult.reason; break }
+            } catch (t: Throwable) {
+                state.rowsFailed += normalizedChunk.rows.size.toLong()
+                when (handleChunkFailure(normalizedChunk, t, ctx.options, state.chunkFailures)) {
+                    ChunkDecision.ABORT -> throw t
+                    ChunkDecision.CONTINUE -> { state.error = t.message ?: t::class.simpleName; break }
                 }
             }
 
-            if (error == null) {
-                when (val finish = session.finishTable()) {
-                    is FinishTableResult.Success -> sequenceAdjustments = finish.adjustments
-                    is FinishTableResult.PartialFailure -> { sequenceAdjustments = finish.adjustments; partialFinish = finish }
-                }
-            }
-        } catch (t: Throwable) {
-            primaryFailure = t
-            throw t
-        } finally {
-            var cleanupFailure: Throwable? = null
-            closeAndCollect(reader, primaryFailure) { cleanupFailure = cleanupFailure?.apply { addSuppressed(it) } ?: it }
-            closeAndCollect(session, primaryFailure) { cleanupFailure = cleanupFailure?.apply { addSuppressed(it) } ?: it }
-            if (primaryFailure == null && cleanupFailure != null) throw cleanupFailure!!
+            nextChunk = advanceOrBreak(reader, ctx, state, normalizedChunk.chunkIndex + 1) ?: break
         }
+    }
 
-        val tableDurationMs = elapsedMs(tableStartedAt)
-        val tableStatus = if (error == null && partialFinish == null) TableProgressStatus.COMPLETED else TableProgressStatus.FAILED
-        reporter.report(ProgressEvent.ImportTableFinished(
-            table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
-            rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
-            rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
-            durationMs = tableDurationMs, status = tableStatus,
+    private enum class LoopAction { ABORT, BREAK, CONTINUE }
+
+    private fun handleNormFailure(
+        chunk: DataChunk, t: Throwable, ctx: ChunkContext, state: ImportLoopState, reporter: ProgressReporter,
+    ): LoopAction {
+        return when (handleChunkFailure(chunk, t, ctx.options, state.chunkFailures)) {
+            ChunkDecision.ABORT -> LoopAction.ABORT
+            ChunkDecision.CONTINUE -> {
+                state.rowsFailed += chunk.rows.size.toLong()
+                reportChunkProcessed(reporter, ctx, chunk, state)
+                LoopAction.CONTINUE
+            }
+        }
+    }
+
+    private fun handleWriteFailure(
+        session: TableImportSession, chunk: DataChunk, t: Throwable,
+        ctx: ChunkContext, state: ImportLoopState, reporter: ProgressReporter,
+        reader: DataChunkReader,
+    ): LoopAction {
+        val recovered = runCatching { session.rollbackChunk() }.isSuccess
+        state.rowsFailed += chunk.rows.size.toLong()
+        return when (handleChunkFailure(chunk, t, ctx.options, state.chunkFailures)) {
+            ChunkDecision.ABORT -> LoopAction.ABORT
+            ChunkDecision.CONTINUE -> {
+                reportChunkProcessed(reporter, ctx, chunk, state)
+                if (!recovered) { state.error = t.message ?: t::class.simpleName; LoopAction.BREAK }
+                else LoopAction.CONTINUE
+            }
+        }
+    }
+
+    private fun reportChunkProcessed(
+        reporter: ProgressReporter, ctx: ChunkContext, chunk: DataChunk, state: ImportLoopState,
+    ) {
+        reporter.report(ProgressEvent.ImportChunkProcessed(
+            table = ctx.table, tableOrdinal = ctx.ordinal, tableCount = ctx.tableCount,
+            chunkIndex = chunk.chunkIndex.toInt() + 1, rowsInChunk = chunk.rows.size.toLong(),
+            rowsProcessed = state.totalRows,
+            rowsInserted = state.rowsInserted, rowsUpdated = state.rowsUpdated,
+            rowsSkipped = state.rowsSkipped, rowsUnknown = state.rowsUnknown, rowsFailed = state.rowsFailed,
         ))
+    }
 
-        return TableImportSummary(
-            table = tableInput.table,
-            rowsInserted = rowsInserted, rowsUpdated = rowsUpdated,
-            rowsSkipped = rowsSkipped, rowsUnknown = rowsUnknown, rowsFailed = rowsFailed,
-            chunkFailures = chunkFailures.toList(),
-            sequenceAdjustments = sequenceAdjustments,
-            targetColumns = targetColumns,
-            triggerMode = options.triggerMode,
-            failedFinish = partialFinish?.toFailedFinishInfo(),
-            error = error, durationMs = tableDurationMs,
-        )
+    private fun advanceOrBreak(
+        reader: DataChunkReader, ctx: ChunkContext, state: ImportLoopState, nextIdx: Long,
+    ): DataChunk? {
+        return when (val readResult = tryReadNextChunk(reader, ctx.table, nextIdx, ctx.options, state.chunkFailures)) {
+            is ReadNextChunkResult.Chunk -> readResult.chunk
+            is ReadNextChunkResult.EndOfInput -> null
+            is ReadNextChunkResult.Failed -> { state.error = readResult.reason; null }
+        }
     }
 
     // ── chunk processing helpers ───────────────────

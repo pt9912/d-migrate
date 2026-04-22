@@ -162,7 +162,7 @@ class ValueDeserializer(
 
     private fun dispatch(
         hint: JdbcTypeHint,
-        table: String,
+        _table: String,
         columnName: String,
         value: Any,
         isCsvSource: Boolean,
@@ -433,7 +433,7 @@ class ValueDeserializer(
         )
     }
 
-    private fun toOther(hint: JdbcTypeHint, columnName: String, value: Any, isCsvSource: Boolean): Any {
+    private fun toOther(hint: JdbcTypeHint, columnName: String, value: Any, _isCsvSource: Boolean): Any {
         // OTHER ist der Sammel-Pfad für PG: UUID, JSON/JSONB, INTERVAL,
         // XML. Die Differenzierung läuft über den sqlTypeName-Hint.
         val sqlTypeName = hint.sqlTypeName?.lowercase() ?: ""
@@ -475,7 +475,7 @@ class ValueDeserializer(
         is String -> try {
             // Binärdaten aus JSON/YAML/CSV kommen als Base64.
             Base64.getDecoder().decode(value)
-        } catch (e: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             throw ImportSchemaMismatchException(
                 "column '$columnName' expects BINARY/BLOB (Base64), got invalid Base64 string"
             )
@@ -558,76 +558,15 @@ class ValueDeserializer(
      * eine zweite Jackson-Dependency ziehen. Für rekursive Strukturen
      * korrekt, aber ohne Pretty-Printing.
      */
-    private fun simpleJsonString(value: Any?): String = buildString {
-        append(jsonToken(value))
-    }
+    private fun simpleJsonString(value: Any?): String = DeserializerHelpers.simpleJsonString(value)
 
-    private fun looksDecimalToken(text: String): Boolean =
-        text.any { it == '.' || it == 'e' || it == 'E' }
+    private fun looksDecimalToken(text: String): Boolean = DeserializerHelpers.looksDecimalToken(text)
 
-    private fun parseExactLong(hint: JdbcTypeHint, columnName: String, text: String): Long {
-        val numeric = try {
-            BigDecimal(text)
-        } catch (e: NumberFormatException) {
-            throw ImportSchemaMismatchException(
-                "column '$columnName' expects NUMERIC/DECIMAL, got '$text'"
-            )
-        }
-        val canonical = numeric.stripTrailingZeros()
-        if (canonical.scale() > 0) {
-            throw ImportSchemaMismatchException(
-                "column '$columnName' expects integer-shaped NUMERIC/DECIMAL, got decimal '$text'"
-            )
-        }
-        val longValue = try {
-            canonical.longValueExact()
-        } catch (_: ArithmeticException) {
-            throw ImportSchemaMismatchException(
-                "column '$columnName' expects integer-shaped NUMERIC/DECIMAL within 64-bit range, got '$text'"
-            )
-        }
-        return checkedLong(hint, columnName, longValue)
-    }
+    private fun parseExactLong(hint: JdbcTypeHint, columnName: String, text: String): Long =
+        DeserializerHelpers.parseExactLong(hint, columnName, text)
 
-    private fun checkedLong(hint: JdbcTypeHint, columnName: String, value: Long): Long {
-        hint.precision?.let { precision ->
-            val digits = value.toString().removePrefix("-").length
-            if (digits > precision) {
-                throw ImportSchemaMismatchException(
-                    "column '$columnName' expects NUMERIC/DECIMAL precision <= $precision, got $value"
-                )
-            }
-        }
-        return value
-    }
-
-    private fun jsonToken(value: Any?): String = when (value) {
-        null -> "null"
-        is Boolean -> value.toString()
-        is Number -> value.toString()
-        is String -> "\"" + escapeJson(value) + "\""
-        is Map<*, *> -> value.entries.joinToString(
-            separator = ",",
-            prefix = "{",
-            postfix = "}",
-        ) { "\"${escapeJson(it.key.toString())}\":${jsonToken(it.value)}" }
-        is List<*> -> value.joinToString(separator = ",", prefix = "[", postfix = "]") { jsonToken(it) }
-        is Array<*> -> value.joinToString(separator = ",", prefix = "[", postfix = "]") { jsonToken(it) }
-        else -> "\"${escapeJson(value.toString())}\""
-    }
-
-    private fun escapeJson(s: String): String = buildString(s.length) {
-        for (c in s) when (c) {
-            '\\' -> append("\\\\")
-            '"' -> append("\\\"")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            '\b' -> append("\\b")
-            '\u000C' -> append("\\f")
-            else -> if (c.code < 0x20) append("\\u%04x".format(c.code)) else append(c)
-        }
-    }
+    private fun checkedLong(hint: JdbcTypeHint, columnName: String, value: Long): Long =
+        DeserializerHelpers.checkedLong(hint, columnName, value)
 
     private fun typeMismatch(
         table: String,

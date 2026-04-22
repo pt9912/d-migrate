@@ -224,7 +224,7 @@ class SchemaValidator {
 
     // E017: Foreign key type incompatible with referenced column
     private fun validateForeignKeyTypeCompatibility(
-        path: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition,
+        path: String, _colName: String, col: ColumnDefinition, schema: SchemaDefinition,
         errors: MutableList<ValidationError>
     ) {
         val ref = col.references ?: return
@@ -303,26 +303,34 @@ class SchemaValidator {
         return false
     }
 
-    // Note: Geometry columns with defaults are not in 0.5.5 scope. A WKT string
-    // default (e.g. "POINT(0 0)") would currently produce E009 because StringLiteral
-    // is not compatible with Geometry. This is acceptable for now.
     private fun isDefaultCompatible(default: DefaultValue, type: NeutralType): Boolean = when (default) {
-        is DefaultValue.StringLiteral -> type is NeutralType.Text || type is NeutralType.Char
-                || type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid
-        is DefaultValue.NumberLiteral -> type is NeutralType.Integer || type is NeutralType.SmallInt
-                || type is NeutralType.BigInteger || type is NeutralType.Float
-                || type is NeutralType.Decimal || type is NeutralType.Identifier
+        is DefaultValue.StringLiteral -> isStringDefaultCompatible(type)
+        is DefaultValue.NumberLiteral -> isNumericDefaultCompatible(type)
         is DefaultValue.BooleanLiteral -> type is NeutralType.BooleanType
-        is DefaultValue.FunctionCall -> when (default.name) {
-            "current_timestamp" -> type is NeutralType.DateTime || type is NeutralType.Date
-                    || type is NeutralType.Time
-            "gen_uuid" -> type is NeutralType.Uuid
-            else -> true // unknown functions are allowed
-        }
-        is DefaultValue.SequenceNextVal -> (type is NeutralType.Integer || type is NeutralType.SmallInt
-                || type is NeutralType.BigInteger || type is NeutralType.Identifier)
-                && !(type is NeutralType.Identifier && type.autoIncrement)
+        is DefaultValue.FunctionCall -> isFunctionDefaultCompatible(default, type)
+        is DefaultValue.SequenceNextVal -> isSequenceDefaultCompatible(type)
     }
+
+    private fun isStringDefaultCompatible(type: NeutralType): Boolean =
+        type is NeutralType.Text || type is NeutralType.Char
+            || type is NeutralType.Enum || type == NeutralType.Email || type is NeutralType.Uuid
+
+    private fun isNumericDefaultCompatible(type: NeutralType): Boolean =
+        type is NeutralType.Integer || type is NeutralType.SmallInt
+            || type is NeutralType.BigInteger || type is NeutralType.Float
+            || type is NeutralType.Decimal || type is NeutralType.Identifier
+
+    private fun isFunctionDefaultCompatible(default: DefaultValue.FunctionCall, type: NeutralType): Boolean =
+        when (default.name) {
+            "current_timestamp" -> type is NeutralType.DateTime || type is NeutralType.Date || type is NeutralType.Time
+            "gen_uuid" -> type is NeutralType.Uuid
+            else -> true
+        }
+
+    private fun isSequenceDefaultCompatible(type: NeutralType): Boolean =
+        (type is NeutralType.Integer || type is NeutralType.SmallInt
+            || type is NeutralType.BigInteger || type is NeutralType.Identifier)
+            && !(type is NeutralType.Identifier && type.autoIncrement)
 
     // E122: Legacy nextval(...) notation → migration error
     // E123: SequenceNextVal references non-existent sequence

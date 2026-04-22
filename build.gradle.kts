@@ -63,8 +63,12 @@ subprojects {
         // `-Dkotest.tags=perf` (oder ein anderes explizites Tag-Filter) gesetzt
         // wird. Ein explizit gesetzter `kotest.tags`-Wert gewinnt immer gegen
         // den Default hier.
-        if (explicitKotestTags == null && !project.hasProperty("integrationTests")) {
-            systemProperty("kotest.tags", "!integration & !perf")
+        if (explicitKotestTags == null) {
+            if (project.hasProperty("integrationTests")) {
+                systemProperty("kotest.tags", "!perf")
+            } else {
+                systemProperty("kotest.tags", "!integration & !perf")
+            }
         }
 
         // Forked Test-JVM Heap: Default ~512 MB reicht fuer die schnellen

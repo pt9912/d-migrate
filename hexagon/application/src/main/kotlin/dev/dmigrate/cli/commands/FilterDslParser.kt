@@ -83,92 +83,87 @@ object FilterDslParser {
             val c = input[i]
             when {
                 c.isWhitespace() -> i++
-                c == '(' -> { tokens += Token(TokenType.LPAREN, "(", i); i++ }
-                c == ')' -> { tokens += Token(TokenType.RPAREN, ")", i); i++ }
-                c == ',' -> { tokens += Token(TokenType.COMMA, ",", i); i++ }
-                c == '.' -> { tokens += Token(TokenType.DOT, ".", i); i++ }
-                c == '=' -> { tokens += Token(TokenType.OP, "=", i); i++ }
-                c == '!' && i + 1 < input.length && input[i + 1] == '=' -> {
-                    tokens += Token(TokenType.OP, "!=", i); i += 2
+                c in SINGLE_CHAR_TOKENS -> { tokens += Token(SINGLE_CHAR_TOKENS.getValue(c), c.toString(), i); i++ }
+                c in ARITH_CHARS -> { tokens += Token(TokenType.ARITH, c.toString(), i); i++ }
+                c == '=' || c == '!' || c == '>' || c == '<' -> {
+                    val (tok, next) = tokenizeOperator(input, i); tokens += tok; i = next
                 }
-                c == '>' && i + 1 < input.length && input[i + 1] == '=' -> {
-                    tokens += Token(TokenType.OP, ">=", i); i += 2
-                }
-                c == '<' && i + 1 < input.length && input[i + 1] == '=' -> {
-                    tokens += Token(TokenType.OP, "<=", i); i += 2
-                }
-                c == '>' -> { tokens += Token(TokenType.OP, ">", i); i++ }
-                c == '<' -> { tokens += Token(TokenType.OP, "<", i); i++ }
-                c == '+' -> { tokens += Token(TokenType.ARITH, "+", i); i++ }
-                c == '*' -> { tokens += Token(TokenType.ARITH, "*", i); i++ }
-                c == '/' -> { tokens += Token(TokenType.ARITH, "/", i); i++ }
-                c == '-' -> { tokens += Token(TokenType.ARITH, "-", i); i++ }
-                c == '\'' -> {
-                    val start = i
-                    i++ // skip opening quote
-                    val sb = StringBuilder()
-                    while (i < input.length) {
-                        if (input[i] == '\'') {
-                            if (i + 1 < input.length && input[i + 1] == '\'') {
-                                sb.append('\'')
-                                i += 2
-                            } else {
-                                break
-                            }
-                        } else {
-                            sb.append(input[i])
-                            i++
-                        }
-                    }
-                    if (i >= input.length) {
-                        throw FilterDslParseException(
-                            FilterDslParseError("Unterminated string literal", null, start)
-                        )
-                    }
-                    i++ // skip closing quote
-                    tokens += Token(TokenType.STRING, sb.toString(), start)
-                }
-                c.isDigit() -> {
-                    val start = i
-                    while (i < input.length && input[i].isDigit()) i++
-                    if (i < input.length && input[i] == '.' && i + 1 < input.length && input[i + 1].isDigit()) {
-                        i++ // skip dot
-                        while (i < input.length && input[i].isDigit()) i++
-                        val text = input.substring(start, i)
-                        val intPart = text.substringBefore('.')
-                        if (intPart.length > 1 && intPart.startsWith('0')) {
-                            throw FilterDslParseException(
-                                FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, start)
-                            )
-                        }
-                        tokens += Token(TokenType.DECIMAL, text, start)
-                    } else {
-                        val text = input.substring(start, i)
-                        if (text.length > 1 && text.startsWith('0')) {
-                            throw FilterDslParseException(
-                                FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, start)
-                            )
-                        }
-                        tokens += Token(TokenType.INTEGER, text, start)
-                    }
-                }
-                c.isLetter() || c == '_' -> {
-                    val start = i
-                    while (i < input.length && (input[i].isLetterOrDigit() || input[i] == '_')) i++
-                    val text = input.substring(start, i)
-                    val upper = text.uppercase(java.util.Locale.ROOT)
-                    when {
-                        upper in KEYWORDS -> tokens += Token(TokenType.KEYWORD, upper, start)
-                        upper == "TRUE" || upper == "FALSE" -> tokens += Token(TokenType.BOOL, upper, start)
-                        else -> tokens += Token(TokenType.IDENTIFIER, text, start)
-                    }
-                }
+                c == '\'' -> { val (tok, next) = tokenizeString(input, i); tokens += tok; i = next }
+                c.isDigit() -> { val (tok, next) = tokenizeNumber(input, i); tokens += tok; i = next }
+                c.isLetter() || c == '_' -> { val (tok, next) = tokenizeWord(input, i); tokens += tok; i = next }
                 else -> throw FilterDslParseException(
                     FilterDslParseError("Unexpected character '${c}'", c.toString(), i)
                 )
             }
         }
         return tokens
+    }
+
+    private val SINGLE_CHAR_TOKENS = mapOf(
+        '(' to TokenType.LPAREN, ')' to TokenType.RPAREN,
+        ',' to TokenType.COMMA, '.' to TokenType.DOT,
+    )
+    private val ARITH_CHARS = setOf('+', '-', '*', '/')
+
+    private fun tokenizeOperator(input: String, pos: Int): Pair<Token, Int> {
+        val c = input[pos]
+        val hasNext = pos + 1 < input.length
+        return when {
+            c == '=' -> Token(TokenType.OP, "=", pos) to pos + 1
+            c == '!' && hasNext && input[pos + 1] == '=' -> Token(TokenType.OP, "!=", pos) to pos + 2
+            c == '>' && hasNext && input[pos + 1] == '=' -> Token(TokenType.OP, ">=", pos) to pos + 2
+            c == '<' && hasNext && input[pos + 1] == '=' -> Token(TokenType.OP, "<=", pos) to pos + 2
+            c == '>' -> Token(TokenType.OP, ">", pos) to pos + 1
+            else -> Token(TokenType.OP, "<", pos) to pos + 1
+        }
+    }
+
+    private fun tokenizeString(input: String, startPos: Int): Pair<Token, Int> {
+        var i = startPos + 1
+        val sb = StringBuilder()
+        while (i < input.length) {
+            if (input[i] == '\'') {
+                if (i + 1 < input.length && input[i + 1] == '\'') { sb.append('\''); i += 2 }
+                else break
+            } else { sb.append(input[i]); i++ }
+        }
+        if (i >= input.length) {
+            throw FilterDslParseException(FilterDslParseError("Unterminated string literal", null, startPos))
+        }
+        return Token(TokenType.STRING, sb.toString(), startPos) to (i + 1)
+    }
+
+    private fun tokenizeNumber(input: String, startPos: Int): Pair<Token, Int> {
+        var i = startPos
+        while (i < input.length && input[i].isDigit()) i++
+        if (i < input.length && input[i] == '.' && i + 1 < input.length && input[i + 1].isDigit()) {
+            i++
+            while (i < input.length && input[i].isDigit()) i++
+            val text = input.substring(startPos, i)
+            val intPart = text.substringBefore('.')
+            if (intPart.length > 1 && intPart.startsWith('0')) {
+                throw FilterDslParseException(FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, startPos))
+            }
+            return Token(TokenType.DECIMAL, text, startPos) to i
+        }
+        val text = input.substring(startPos, i)
+        if (text.length > 1 && text.startsWith('0')) {
+            throw FilterDslParseException(FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, startPos))
+        }
+        return Token(TokenType.INTEGER, text, startPos) to i
+    }
+
+    private fun tokenizeWord(input: String, startPos: Int): Pair<Token, Int> {
+        var i = startPos
+        while (i < input.length && (input[i].isLetterOrDigit() || input[i] == '_')) i++
+        val text = input.substring(startPos, i)
+        val upper = text.uppercase(java.util.Locale.ROOT)
+        val token = when {
+            upper in KEYWORDS -> Token(TokenType.KEYWORD, upper, startPos)
+            upper == "TRUE" || upper == "FALSE" -> Token(TokenType.BOOL, upper, startPos)
+            else -> Token(TokenType.IDENTIFIER, text, startPos)
+        }
+        return token to i
     }
 
     // ── Parser state ───────────────────────────────────────────

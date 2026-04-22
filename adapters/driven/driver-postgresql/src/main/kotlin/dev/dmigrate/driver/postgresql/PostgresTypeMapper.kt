@@ -14,10 +14,7 @@ class PostgresTypeMapper : TypeMapper {
         is NeutralType.Integer -> "INTEGER"
         is NeutralType.SmallInt -> "SMALLINT"
         is NeutralType.BigInteger -> "BIGINT"
-        is NeutralType.Float -> when (type.floatPrecision) {
-            FloatPrecision.SINGLE -> "REAL"
-            FloatPrecision.DOUBLE -> "DOUBLE PRECISION"
-        }
+        is NeutralType.Float -> floatToSql(type)
         is NeutralType.Decimal -> "DECIMAL(${type.precision},${type.scale})"
         is NeutralType.BooleanType -> "BOOLEAN"
         is NeutralType.DateTime -> if (type.timezone) "TIMESTAMP WITH TIME ZONE" else "TIMESTAMP"
@@ -28,14 +25,20 @@ class PostgresTypeMapper : TypeMapper {
         is NeutralType.Xml -> "XML"
         is NeutralType.Binary -> "BYTEA"
         is NeutralType.Email -> "VARCHAR(${NeutralType.Email.MAX_LENGTH})"
-        is NeutralType.Enum -> "TEXT" // Actual ENUM handled via CREATE TYPE
+        is NeutralType.Enum -> "TEXT"
         is NeutralType.Array -> "${toSql(resolveElementType(type.elementType))}[]"
-        is NeutralType.Geometry -> {
-            val pgType = GEOMETRY_PG_NAMES[type.geometryType.schemaName]
-                ?: type.geometryType.schemaName.replaceFirstChar { it.uppercase() }
-            val srid = type.srid ?: 0
-            "geometry($pgType, $srid)"
-        }
+        is NeutralType.Geometry -> geometryToSql(type)
+    }
+
+    private fun floatToSql(type: NeutralType.Float): String = when (type.floatPrecision) {
+        FloatPrecision.SINGLE -> "REAL"
+        FloatPrecision.DOUBLE -> "DOUBLE PRECISION"
+    }
+
+    private fun geometryToSql(type: NeutralType.Geometry): String {
+        val pgType = GEOMETRY_PG_NAMES[type.geometryType.schemaName]
+            ?: type.geometryType.schemaName.replaceFirstChar { it.uppercase() }
+        return "geometry($pgType, ${type.srid ?: 0})"
     }
 
     override fun toDefaultSql(default: DefaultValue, type: NeutralType): String = when (default) {

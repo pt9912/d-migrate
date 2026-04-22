@@ -211,7 +211,7 @@ class ValueSerializerTest : FunSpec({
         // Hier prüfen wir nur, dass unbekannte Klassen mit toString() landen.
         val stubPgObject = object {
             @Suppress("unused")
-            fun getValue(): String = "json:{}"
+            val value: String = "json:{}"
             override fun toString() = "PGobject(json:{})"
         }
         // Stub hat nicht den FQN org.postgresql.util.PGobject — fällt auf W202

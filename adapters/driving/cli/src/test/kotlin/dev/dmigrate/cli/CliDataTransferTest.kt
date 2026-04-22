@@ -60,7 +60,7 @@ class CliDataTransferTest : FunSpec({
     // ── Unresolvable source/target → exit 7 ────────────────────────
 
     test("unresolvable source alias exits with code 7") {
-        val stderr = captureStreams {
+        captureStreams {
             val ex = shouldThrow<ProgramResult> {
                 cli().parse(listOf("data", "transfer",
                     "--source", "nonexistent_source",
@@ -73,7 +73,7 @@ class CliDataTransferTest : FunSpec({
     // ── Flag validation → exit 2 ───────────────────────────────────
 
     test("--since without --since-column exits with code 2") {
-        val stderr = captureStreams {
+        captureStreams {
             val ex = shouldThrow<ProgramResult> {
                 cli().parse(listOf("data", "transfer",
                     "--source", "src",
@@ -85,7 +85,7 @@ class CliDataTransferTest : FunSpec({
     }
 
     test("--since-column without --since exits with code 2") {
-        val stderr = captureStreams {
+        captureStreams {
             val ex = shouldThrow<ProgramResult> {
                 cli().parse(listOf("data", "transfer",
                     "--source", "src",
@@ -97,7 +97,7 @@ class CliDataTransferTest : FunSpec({
     }
 
     test("unknown --on-conflict value exits with code 2") {
-        val stderr = captureStreams {
+        captureStreams {
             val ex = shouldThrow<ProgramResult> {
                 cli().parse(listOf("data", "transfer",
                     "--source", "src",
@@ -109,7 +109,7 @@ class CliDataTransferTest : FunSpec({
     }
 
     test("unknown --trigger-mode value exits with code 2") {
-        val stderr = captureStreams {
+        captureStreams {
             val ex = shouldThrow<ProgramResult> {
                 cli().parse(listOf("data", "transfer",
                     "--source", "src",

@@ -14,31 +14,32 @@ class SqliteLogicalTypeResolver : LogicalTypeResolverPort {
 
     override fun resolve(dbType: String): LogicalType {
         val normalized = dbType.lowercase().trim()
-        return when {
-            normalized == "integer" || normalized.startsWith("int") ||
-                normalized == "bigint" || normalized == "smallint" ||
-                normalized == "tinyint" || normalized == "mediumint" -> LogicalType.INTEGER
+        if (normalized.isEmpty()) return LogicalType.UNKNOWN
+        return resolveInteger(normalized)
+            ?: resolveDecimal(normalized)
+            ?: resolveTemporalOrOther(normalized)
+            ?: LogicalType.STRING
+    }
 
-            normalized == "real" || normalized == "float" || normalized == "double" ||
-                normalized.startsWith("decimal") || normalized.startsWith("numeric") -> LogicalType.DECIMAL
+    private fun resolveInteger(n: String): LogicalType? = when {
+        n == "integer" || n.startsWith("int") || n == "bigint" ||
+            n == "smallint" || n == "tinyint" || n == "mediumint" -> LogicalType.INTEGER
+        else -> null
+    }
 
-            normalized == "boolean" || normalized == "tinyint(1)" -> LogicalType.BOOLEAN
+    private fun resolveDecimal(n: String): LogicalType? = when {
+        n == "real" || n == "float" || n == "double" ||
+            n.startsWith("decimal") || n.startsWith("numeric") -> LogicalType.DECIMAL
+        else -> null
+    }
 
-            normalized == "date" -> LogicalType.DATE
-
-            normalized == "datetime" || normalized == "timestamp" ||
-                normalized == "time" -> LogicalType.DATETIME
-
-            normalized == "blob" -> LogicalType.BINARY
-
-            normalized == "json" -> LogicalType.JSON
-
-            normalized == "text" || normalized.startsWith("varchar") ||
-                normalized.startsWith("char") || normalized == "clob" -> LogicalType.STRING
-
-            normalized.isEmpty() -> LogicalType.UNKNOWN
-
-            else -> LogicalType.STRING // SQLite TEXT affinity default
-        }
+    private fun resolveTemporalOrOther(n: String): LogicalType? = when {
+        n == "boolean" || n == "tinyint(1)" -> LogicalType.BOOLEAN
+        n == "date" -> LogicalType.DATE
+        n == "datetime" || n == "timestamp" || n == "time" -> LogicalType.DATETIME
+        n == "blob" -> LogicalType.BINARY
+        n == "json" -> LogicalType.JSON
+        n == "text" || n.startsWith("varchar") || n.startsWith("char") || n == "clob" -> LogicalType.STRING
+        else -> null
     }
 }

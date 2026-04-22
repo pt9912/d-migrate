@@ -125,11 +125,11 @@ class StreamingExporter(
                     val counting = CountingOutputStream(nonClosing)
                     val writer = writerFactory.create(format, counting, options)
                     try {
-                        val summary = tableExporter.export(
+                        val summary = tableExporter.export(TableExportParams(
                             pool, table, filter, config, writer, counting,
                             progressReporter, 1, 1,
                             resumeMarkers[table], onChunkProcessed,
-                        )
+                        ))
                         tableSummaries += summary
                         onTableCompleted(summary)
                     } finally {
@@ -147,11 +147,11 @@ class StreamingExporter(
                 if (effectiveTables.isNotEmpty()) {
                     val table = effectiveTables.single()
                     exportToFile(output.path, format, options) { counting, writer ->
-                        val summary = tableExporter.export(
+                        val summary = tableExporter.export(TableExportParams(
                             pool, table, filter, config, writer, counting,
                             progressReporter, 1, 1,
                             resumeMarkers[table], onChunkProcessed,
-                        )
+                        ))
                         tableSummaries += summary
                         onTableCompleted(summary)
                         totalBytes += counting.count
@@ -166,11 +166,11 @@ class StreamingExporter(
                     if (table in skippedTables) continue
                     val path = output.directory.resolve(ExportOutput.fileNameFor(table, format))
                     exportToFile(path, format, options) { counting, writer ->
-                        val summary = tableExporter.export(
+                        val summary = tableExporter.export(TableExportParams(
                             pool, table, filter, config, writer, counting,
                             progressReporter, index + 1, activeCount,
                             resumeMarkers[table], onChunkProcessed,
-                        )
+                        ))
                         tableSummaries += summary
                         onTableCompleted(summary)
                         totalBytes += counting.count

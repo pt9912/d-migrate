@@ -161,7 +161,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        tables: Map<String, TableDefinition>,
+        _tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.mapNotNull { (name, trigger) -> generateTrigger(name, trigger, skipped) }

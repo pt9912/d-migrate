@@ -144,7 +144,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        tables: Map<String, TableDefinition>,
+        _tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.flatMap { (name, trigger) -> generateTrigger(name, trigger, skipped) }

@@ -63,180 +63,167 @@ class ToolExportRunner(
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
+    private data class ResolvedPreflight(
+        val dialect: DatabaseDialect,
+        val options: DdlGenerationOptions,
+        val schema: SchemaDefinition,
+        val identity: dev.dmigrate.migration.MigrationIdentity,
+    )
+
+    private sealed interface PreflightResult {
+        data class Ok(val value: ResolvedPreflight) : PreflightResult
+        data class Exit(val code: Int) : PreflightResult
+    }
+
     fun execute(request: ToolExportRequest): Int {
-        // ─── 1. Parse dialect ───────────────────────────────────
+        val pre = when (val r = resolvePreflight(request)) {
+            is PreflightResult.Ok -> r.value
+            is PreflightResult.Exit -> return r.code
+        }
+        return executeWithPreflight(request, pre)
+    }
+
+    private fun resolvePreflight(request: ToolExportRequest): PreflightResult {
         val dialect = try {
             DatabaseDialect.fromString(request.target)
         } catch (e: IllegalArgumentException) {
-            stderr("[ERROR] ${e.message}")
-            return 2
+            stderr("[ERROR] ${e.message}"); return PreflightResult.Exit(2)
         }
 
-        // ─── 2. Resolve spatial profile ─────────────────────────
-        val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)
-        val spatialProfile = when (profileResult) {
+        val spatialProfile = when (val profileResult = SpatialProfilePolicy.resolve(dialect, request.spatialProfile)) {
             is SpatialProfilePolicy.Result.Resolved -> profileResult.profile
             is SpatialProfilePolicy.Result.UnknownProfile -> {
-                stderr("[ERROR] Unknown spatial profile '${profileResult.raw}'")
-                return 2
+                stderr("[ERROR] Unknown spatial profile '${profileResult.raw}'"); return PreflightResult.Exit(2)
             }
             is SpatialProfilePolicy.Result.NotAllowedForDialect -> {
                 stderr("[ERROR] Spatial profile '${profileResult.profile.cliName}' not allowed for ${profileResult.dialect.name.lowercase()}")
-                return 2
+                return PreflightResult.Exit(2)
             }
         }
         val options = DdlGenerationOptions(spatialProfile = spatialProfile)
 
-        // ─── 3. Read schema ─────────────────────────────────────
-        val schema = try {
-            schemaReader(request.source)
-        } catch (e: Exception) {
-            stderr("[ERROR] Failed to parse schema file: ${e.message}")
-            return 7
+        val schema = try { schemaReader(request.source) } catch (e: Exception) {
+            stderr("[ERROR] Failed to parse schema file: ${e.message}"); return PreflightResult.Exit(7)
         }
 
-        // ─── 4. Validate ────────────────────────────────────────
         val validationResult = validator(schema)
         if (!validationResult.isValid) {
             stderr("[ERROR] Schema validation failed (${validationResult.errors.size} errors)")
-            return 3
+            return PreflightResult.Exit(3)
         }
 
-        // ─── 5. Resolve identity ────────────────────────────────
         val identity = try {
             MigrationIdentityResolver.resolve(
-                tool = request.tool,
-                dialect = dialect,
-                cliVersion = request.version,
-                schemaVersion = schema.version,
-                schemaName = schema.name,
+                tool = request.tool, dialect = dialect,
+                cliVersion = request.version, schemaVersion = schema.version, schemaName = schema.name,
             )
         } catch (e: MigrationIdentityResolver.ResolutionException) {
-            stderr("[ERROR] ${e.message}")
-            return 2
+            stderr("[ERROR] ${e.message}"); return PreflightResult.Exit(2)
         }
 
-        // ─── 6. Generate DDL ────────────────────────────────────
-        val generator = generatorLookup(dialect)
-        val upResult = generator.generate(schema, options)
+        return PreflightResult.Ok(ResolvedPreflight(dialect, options, schema, identity))
+    }
+
+    private fun executeWithPreflight(request: ToolExportRequest, pre: ResolvedPreflight): Int {
+        val generator = generatorLookup(pre.dialect)
+        val upResult = generator.generate(pre.schema, pre.options)
         val up = DdlNormalizer.normalize(upResult)
 
         val downResult: DdlResult?
         val rollback = if (request.generateRollback) {
-            val dr = generator.generateRollback(schema, options)
+            val dr = generator.generateRollback(pre.schema, pre.options)
             downResult = dr
             MigrationRollback.Requested(DdlNormalizer.normalize(dr))
-        } else {
-            downResult = null
-            MigrationRollback.NotRequested
-        }
+        } else { downResult = null; MigrationRollback.NotRequested }
 
-        // ─── 7. Build bundle ────────────────────────────────────
         val bundle = MigrationBundle(
-            identity = identity,
-            schema = schema,
-            options = options,
-            up = up,
-            rollback = rollback,
+            identity = pre.identity, schema = pre.schema, options = pre.options, up = up, rollback = rollback,
         )
 
-        // ─── 8. Render artifacts ────────────────────────────────
-        val exporter = exporterLookup(request.tool)
-        val exportResult = try {
-            exporter.render(bundle)
-        } catch (e: Exception) {
-            stderr("[ERROR] Render failed: ${e.message}")
-            return 7
+        val exportResult = try { exporterLookup(request.tool).render(bundle) } catch (e: Exception) {
+            stderr("[ERROR] Render failed: ${e.message}"); return 7
         }
 
-        // ─── 9. Check collisions ────────────────────────────────
+        checkCollisions(request, exportResult)?.let { return it }
+        checkReportCollisions(request, exportResult)?.let { return it }
+
+        writeArtifacts(request, exportResult)?.let { return it }
+        printGeneratorNotes(upResult, request.verbose)
+        if (downResult != null) printGeneratorNotes(downResult, request.verbose)
+        printExportNotes(exportResult, request.verbose)
+        writeReport(request, pre, upResult, downResult, exportResult)?.let { return it }
+
+        return 0
+    }
+
+    private fun checkCollisions(request: ToolExportRequest, exportResult: ToolExportResult): Int? {
         val inRunCollisions = ArtifactCollisionChecker.findInRunCollisions(exportResult.artifacts)
         if (inRunCollisions.isNotEmpty()) {
             for (c in inRunCollisions) stderr("[ERROR] ${c.reason}")
             return 7
         }
-
-        val existing = try {
-            existingPaths(request.output)
-        } catch (e: Exception) {
-            stderr("[ERROR] Failed to scan output directory: ${e.message}")
-            return 7
+        val existing = try { existingPaths(request.output) } catch (e: Exception) {
+            stderr("[ERROR] Failed to scan output directory: ${e.message}"); return 7
         }
-        val fileCollisions = ArtifactCollisionChecker.findExistingFileCollisions(
-            exportResult.artifacts, existing
-        )
+        val fileCollisions = ArtifactCollisionChecker.findExistingFileCollisions(exportResult.artifacts, existing)
         if (fileCollisions.isNotEmpty()) {
             for (c in fileCollisions) stderr("[ERROR] ${c.reason}")
             return 7
         }
+        return null
+    }
 
-        // ─── 9b. Check report path collisions ──────────────────────
-        if (request.report != null) {
-            val reportCanonical = request.report.normalize().toAbsolutePath()
-
-            // Report must not collide with any artifact
-            for (artifact in exportResult.artifacts) {
-                val artifactCanonical = request.output.resolve(artifact.relativePath.path)
-                    .normalize().toAbsolutePath()
-                if (artifactCanonical == reportCanonical) {
-                    stderr("[ERROR] Report path collides with artifact: ${artifact.relativePath.normalized}")
-                    return 7
-                }
-            }
-
-            // Report must not silently overwrite an existing file
-            val reportExisting = existing.any { path ->
-                request.output.resolve(path).normalize().toAbsolutePath() == reportCanonical
-            }
-            val reportFileExists = try {
-                java.nio.file.Files.exists(reportCanonical)
-            } catch (_: Exception) { false }
-            if (reportExisting || reportFileExists) {
-                stderr("[ERROR] Report file already exists: ${request.report}")
+    private fun checkReportCollisions(request: ToolExportRequest, exportResult: ToolExportResult): Int? {
+        if (request.report == null) return null
+        val reportCanonical = request.report.normalize().toAbsolutePath()
+        for (artifact in exportResult.artifacts) {
+            val artifactCanonical = request.output.resolve(artifact.relativePath.path).normalize().toAbsolutePath()
+            if (artifactCanonical == reportCanonical) {
+                stderr("[ERROR] Report path collides with artifact: ${artifact.relativePath.normalized}")
                 return 7
             }
         }
+        val existing = try { existingPaths(request.output) } catch (_: Exception) { emptySet() }
+        val reportExisting = existing.any { path ->
+            request.output.resolve(path).normalize().toAbsolutePath() == reportCanonical
+        }
+        val reportFileExists = try { java.nio.file.Files.exists(reportCanonical) } catch (_: Exception) { false }
+        if (reportExisting || reportFileExists) {
+            stderr("[ERROR] Report file already exists: ${request.report}")
+            return 7
+        }
+        return null
+    }
 
-        // ─── 10. Write artifacts ────────────────────────────────
+    private fun writeArtifacts(request: ToolExportRequest, exportResult: ToolExportResult): Int? {
         mkdirs(request.output)
         for (artifact in exportResult.artifacts) {
             val target = request.output.resolve(artifact.relativePath.path)
             target.parent?.let { mkdirs(it) }
-            try {
-                fileWriter(target, artifact.content)
-            } catch (e: Exception) {
-                stderr("[ERROR] Failed to write ${artifact.relativePath.normalized}: ${e.message}")
-                return 7
+            try { fileWriter(target, artifact.content) } catch (e: Exception) {
+                stderr("[ERROR] Failed to write ${artifact.relativePath.normalized}: ${e.message}"); return 7
             }
             if (!request.quiet) stderr("  Written: ${artifact.relativePath.normalized}")
         }
+        return null
+    }
 
-        // ─── 11. Print diagnostics (up + down + export) ────────
-        printGeneratorNotes(upResult, request.verbose)
-        if (downResult != null) printGeneratorNotes(downResult, request.verbose)
-        printExportNotes(exportResult, request.verbose)
-
-        // ─── 12. Write report ───────────────────────────────────
-        if (request.report != null) {
-            val reportData = ToolExportReportData(
-                source = request.source,
-                tool = request.tool,
-                dialect = dialect,
-                identity = identity,
-                upResult = upResult,
-                downResult = downResult,
-                exportResult = exportResult,
-            )
-            try {
-                reportWriter(request.report, reportData)
-                if (!request.quiet) stderr("  Report written to ${request.report}")
-            } catch (e: Exception) {
-                stderr("[ERROR] Failed to write report: ${e.message}")
-                return 7
-            }
+    private fun writeReport(
+        request: ToolExportRequest, pre: ResolvedPreflight,
+        upResult: DdlResult, downResult: DdlResult?, exportResult: ToolExportResult,
+    ): Int? {
+        if (request.report == null) return null
+        val reportData = ToolExportReportData(
+            source = request.source, tool = request.tool, dialect = pre.dialect,
+            identity = pre.identity, upResult = upResult, downResult = downResult, exportResult = exportResult,
+        )
+        return try {
+            reportWriter(request.report, reportData)
+            if (!request.quiet) stderr("  Report written to ${request.report}")
+            null
+        } catch (e: Exception) {
+            stderr("[ERROR] Failed to write report: ${e.message}"); 7
         }
-
-        return 0
     }
 
     private fun printGeneratorNotes(result: DdlResult, verbose: Boolean) {

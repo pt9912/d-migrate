@@ -42,7 +42,6 @@ class DataTransferRunner(
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
     fun execute(request: DataTransferRequest): Int {
-        // Scrub raw operand strings for all user-facing output
         val safeSrc = scrubRef(request.source)
         val safeTgt = scrubRef(request.target)
 
@@ -71,67 +70,81 @@ class DataTransferRunner(
         catch (e: Exception) { srcPool.close(); printError("Target connection: ${scrub(e.message)}", tgtRef); return 4 }
 
         try {
-            val srcDrv = driverLookup(srcCfg.dialect); val tgtDrv = driverLookup(tgtCfg.dialect)
-            val readOpts = SchemaReadOptions(includeViews = false, includeProcedures = false,
-                includeFunctions = false, includeTriggers = false)
-            val srcSchema: SchemaDefinition; val tgtSchema: SchemaDefinition
-            try {
-                srcSchema = srcDrv.schemaReader().read(srcPool, readOpts).schema
-                tgtSchema = tgtDrv.schemaReader().read(tgtPool, readOpts).schema
-            } catch (e: Exception) { printError("Schema read: ${scrub(e.message)}", srcRef); return 4 }
+            return executeWithPools(request, srcCfg, tgtCfg, srcPool, tgtPool, srcRef, tgtRef)
+        } finally { tgtPool.close(); srcPool.close() }
+    }
 
-            val tables: List<String>
-            try { tables = preflight(request, srcSchema, tgtSchema) }
-            catch (e: TransferPreflightException) { printError("Preflight: ${e.message}", srcRef); return 3 }
+    private fun executeWithPools(
+        request: DataTransferRequest, srcCfg: ConnectionConfig, tgtCfg: ConnectionConfig,
+        srcPool: ConnectionPool, tgtPool: ConnectionPool, srcRef: String, tgtRef: String,
+    ): Int {
+        val srcDrv = driverLookup(srcCfg.dialect); val tgtDrv = driverLookup(tgtCfg.dialect)
+        val readOpts = SchemaReadOptions(includeViews = false, includeProcedures = false,
+            includeFunctions = false, includeTriggers = false)
+        val srcSchema: SchemaDefinition; val tgtSchema: SchemaDefinition
+        try {
+            srcSchema = srcDrv.schemaReader().read(srcPool, readOpts).schema
+            tgtSchema = tgtDrv.schemaReader().read(tgtPool, readOpts).schema
+        } catch (e: Exception) { printError("Schema read: ${scrub(e.message)}", srcRef); return 4 }
 
-            val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
-                truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
-            val filter = DataExportHelpers.resolveFilter(
-                parsedFilter = request.filter,
-                dialect = srcCfg.dialect,
-                sinceColumn = request.sinceColumn,
-                since = request.since,
-            )
-            val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
+        val tables: List<String>
+        try { tables = preflight(request, srcSchema, tgtSchema) }
+        catch (e: TransferPreflightException) { printError("Preflight: ${e.message}", srcRef); return 3 }
 
-            try {
-                for (table in tables) {
-                    reader.streamTable(srcPool, table, filter, request.chunkSize).use { seq ->
-                        writer.openTable(tgtPool, table, opts).use { s ->
-                            // Build index mapping: source col position → target col position
-                            val tgtNames = s.targetColumns.map { it.name }
-                            var chunkIdx = 0L
-                            for (chunk in seq) {
-                                val srcNames = chunk.columns.map { it.name }
-                                val srcIdx = tgtNames.map { tgt -> srcNames.indexOf(tgt) }
-                                val reordered = chunk.rows.map { row ->
-                                    Array(tgtNames.size) { i ->
-                                        val si = srcIdx[i]
-                                        if (si >= 0) row[si] else null
-                                    }
-                                }
-                                val tgtDescriptors = s.targetColumns.map { ColumnDescriptor(it.name, it.nullable, it.sqlTypeName) }
-                                val normalized = DataChunk(table, tgtDescriptors, reordered, chunkIdx++)
-                                s.write(normalized)
-                                s.commitChunk()
-                            }
-                            s.finishTable()
+        val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
+            truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
+        val filter = DataExportHelpers.resolveFilter(
+            parsedFilter = request.filter,
+            dialect = srcCfg.dialect,
+            sinceColumn = request.sinceColumn,
+            since = request.since,
+        )
+        val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
+
+        try {
+            for (table in tables) {
+                transferTable(reader, writer, srcPool, tgtPool, table, filter, request.chunkSize, opts)
+                if (!request.quiet && !request.noProgress) stderr("  Transferred: $table")
+            }
+        } catch (e: ImportSchemaMismatchException) {
+            printError("Schema mismatch: ${e.message}", tgtRef); return 3
+        } catch (e: UnsupportedTriggerModeException) {
+            printError("Trigger mode: ${e.message}", tgtRef); return 2
+        } catch (e: Exception) {
+            printError("Transfer error: ${scrub(e.message)}", srcRef); return 5
+        }
+
+        if (!request.quiet && !request.noProgress)
+            stderr("Transfer complete: ${tables.size} table(s) $srcRef -> $tgtRef")
+        return 0
+    }
+
+    private fun transferTable(
+        reader: dev.dmigrate.driver.data.DataReader, writer: dev.dmigrate.driver.data.DataWriter,
+        srcPool: ConnectionPool, tgtPool: ConnectionPool, table: String,
+        filter: DataFilter?, chunkSize: Int, opts: ImportOptions,
+    ) {
+        reader.streamTable(srcPool, table, filter, chunkSize).use { seq ->
+            writer.openTable(tgtPool, table, opts).use { s ->
+                val tgtNames = s.targetColumns.map { it.name }
+                var chunkIdx = 0L
+                for (chunk in seq) {
+                    val srcNames = chunk.columns.map { it.name }
+                    val srcIdx = tgtNames.map { tgt -> srcNames.indexOf(tgt) }
+                    val reordered = chunk.rows.map { row ->
+                        Array(tgtNames.size) { i ->
+                            val si = srcIdx[i]
+                            if (si >= 0) row[si] else null
                         }
                     }
-                    if (!request.quiet && !request.noProgress) stderr("  Transferred: $table")
+                    val tgtDescriptors = s.targetColumns.map { ColumnDescriptor(it.name, it.nullable, it.sqlTypeName) }
+                    val normalized = DataChunk(table, tgtDescriptors, reordered, chunkIdx++)
+                    s.write(normalized)
+                    s.commitChunk()
                 }
-            } catch (e: ImportSchemaMismatchException) {
-                printError("Schema mismatch: ${e.message}", tgtRef); return 3
-            } catch (e: UnsupportedTriggerModeException) {
-                printError("Trigger mode: ${e.message}", tgtRef); return 2
-            } catch (e: Exception) {
-                printError("Transfer error: ${scrub(e.message)}", srcRef); return 5
+                s.finishTable()
             }
-
-            if (!request.quiet && !request.noProgress)
-                stderr("Transfer complete: ${tables.size} table(s) $srcRef -> $tgtRef")
-            return 0
-        } finally { tgtPool.close(); srcPool.close() }
+        }
     }
 
     private fun preflight(r: DataTransferRequest, src: SchemaDefinition, tgt: SchemaDefinition): List<String> {

@@ -254,8 +254,8 @@ abstract class AbstractDdlGenerator(
         val originalOrder = views.keys.toList()
         val deps = views.mapValuesTo(linkedMapOf()) { (name, view) ->
             (
-                declaredViewDependencies(name, view, viewNames) +
-                    inferViewDependenciesFromQuery(name, view.query, viewNames)
+                ViewDependencyResolver.declaredViewDependencies(name, view, viewNames) +
+                    ViewDependencyResolver.inferViewDependenciesFromQuery(name, view.query, viewNames)
                 ).toMutableSet()
         }
         val inDegree = deps.mapValuesTo(mutableMapOf()) { (_, depSet) -> depSet.size }
@@ -290,42 +290,12 @@ abstract class AbstractDdlGenerator(
         return ViewSortResult(ordered, notes)
     }
 
-    private fun declaredViewDependencies(
-        name: String,
-        view: ViewDefinition,
-        viewNames: Set<String>,
-    ): Set<String> = view.dependencies?.views
-        ?.asSequence()
-        ?.filter { it != name && it in viewNames }
-        ?.toSet()
-        ?: emptySet()
-
-    private fun inferViewDependenciesFromQuery(
-        name: String,
-        query: String?,
-        viewNames: Set<String>,
-    ): Set<String> {
-        if (query.isNullOrBlank()) return emptySet()
-
-        val regex = Regex(
-            """(?i)\b(?:from|join)\s+([`"]?[A-Za-z_][A-Za-z0-9_]*[`"]?(?:\.[`"]?[A-Za-z_][A-Za-z0-9_]*[`"]?)?)"""
-        )
-        return regex.findAll(query)
-            .map { it.groupValues[1] }
-            .map { ref -> ref.substringAfterLast('.') }
-            .map { ref -> ref.trim('`', '"') }
-            .filter { it != name && it in viewNames }
-            .toSet()
-    }
-
-    // ── View phase classification (delegates to ViewPhaseClassifier) ──
-
     protected fun classifyViewsByPhase(
         views: Map<String, ViewDefinition>,
         functionNames: Set<String>,
     ): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> =
         ViewPhaseClassifier.classify(
             views, functionNames,
-            ::declaredViewDependencies, ::inferViewDependenciesFromQuery,
+            ViewDependencyResolver::declaredViewDependencies, ViewDependencyResolver::inferViewDependenciesFromQuery,
         )
 }

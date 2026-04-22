@@ -60,7 +60,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
     }
 
-    fun stubTableQueries(tableName: String, columns: List<Map<String, Any?>>, pkColumns: List<String>) {
+    fun stubTableQueries(_tableName: String, columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
         every { jdbc.queryList(match { it.contains("PRIMARY KEY") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }

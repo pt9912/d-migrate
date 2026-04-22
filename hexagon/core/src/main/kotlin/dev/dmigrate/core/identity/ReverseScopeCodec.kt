@@ -30,10 +30,8 @@ object ReverseScopeCodec {
     fun decodeComponent(encoded: String): String {
         // Validate: every % must be followed by exactly two hex digits
         val invalidPercent = Regex("%(?![0-9A-Fa-f]{2})").find(encoded)
-        if (invalidPercent != null) {
-            throw IllegalArgumentException(
-                "Invalid percent-encoding at position ${invalidPercent.range.first} in '$encoded'"
-            )
+        require(invalidPercent == null) {
+            "Invalid percent-encoding at position ${invalidPercent!!.range.first} in '$encoded'"
         }
         return Regex("%([0-9A-Fa-f]{2})").replace(encoded) {
             it.groupValues[1].toInt(16).toChar().toString()
