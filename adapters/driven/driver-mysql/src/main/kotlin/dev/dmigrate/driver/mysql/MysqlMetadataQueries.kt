@@ -99,7 +99,6 @@ object MysqlMetadataQueries {
               AND tc.constraint_schema = cc.constraint_schema
             WHERE tc.constraint_type = 'CHECK'
               AND tc.table_schema = ? AND tc.table_name = ?
-              AND tc.constraint_name NOT LIKE '%_chk_%' OR tc.constraint_name LIKE '%_chk_%'
             ORDER BY tc.constraint_name
             """.trimIndent(), schemaName, table,
         ).map { row ->

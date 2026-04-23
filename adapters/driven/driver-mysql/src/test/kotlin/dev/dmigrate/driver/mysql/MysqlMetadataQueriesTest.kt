@@ -129,6 +129,27 @@ class MysqlMetadataQueriesTest : FunSpec({
         result[0].expression shouldBe "(age > 0)"
     }
 
+    test("listCheckConstraints scopes the query to schema and table without leaking OR precedence") {
+        var capturedSql: String? = null
+        every { jdbc.queryList(match { it.contains("FROM information_schema.table_constraints") }, any(), any()) } answers {
+            capturedSql = firstArg()
+            emptyList()
+        }
+
+        MysqlMetadataQueries.listCheckConstraints(jdbc, "mydb", "users").shouldBeEmpty()
+
+        capturedSql shouldBe """
+            SELECT tc.constraint_name, cc.check_clause
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.check_constraints cc
+              ON tc.constraint_name = cc.constraint_name
+              AND tc.constraint_schema = cc.constraint_schema
+            WHERE tc.constraint_type = 'CHECK'
+              AND tc.table_schema = ? AND tc.table_name = ?
+            ORDER BY tc.constraint_name
+        """.trimIndent()
+    }
+
     // ── listIndices ────────────────────────────────
 
     test("listIndices groups by index name") {

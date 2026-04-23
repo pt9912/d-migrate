@@ -51,6 +51,8 @@ class SqliteProfilingTest : FunSpec({
             stmt.execute("INSERT INTO users (name, email, age, score) VALUES ('Charlie', '', NULL, 92.1)")
             stmt.execute("INSERT INTO users (name, email, age, score) VALUES ('Alice', 'alice2@example.com', 30, 88.0)")
             stmt.execute("INSERT INTO users (name, email, age, score) VALUES ('Eve', NULL, 22, NULL)")
+            stmt.execute("""CREATE TABLE int_compat_values (raw_value TEXT NOT NULL)""")
+            stmt.execute("""INSERT INTO int_compat_values (raw_value) VALUES ('-2'), ('2'), ('-2.5'), ('2.5'), ('abc')""")
         }
     }
 
@@ -132,6 +134,21 @@ class SqliteProfilingTest : FunSpec({
         val strCompat = compat.first { it.targetType == TargetLogicalType.STRING }
         strCompat.compatibleCount shouldBe 5
         strCompat.incompatibleCount shouldBe 0
+    }
+
+    test("targetTypeCompatibility for INTEGER rejects negative and positive decimals symmetrically") {
+        val compat = data.targetTypeCompatibility(
+            pool,
+            "int_compat_values",
+            "raw_value",
+            listOf(TargetLogicalType.INTEGER),
+        ).single()
+
+        compat.determinationStatus shouldBe DeterminationStatus.FULL_SCAN
+        compat.checkedValueCount shouldBe 5
+        compat.compatibleCount shouldBe 2
+        compat.incompatibleCount shouldBe 3
+        compat.exampleInvalidValues shouldBe listOf("-2.5", "2.5", "abc")
     }
 
     // ── Security: malicious identifiers ─────────────────────

@@ -153,7 +153,8 @@ class SqliteProfilingDataAdapter(
         return withJdbc(pool) { jdbc ->
             targetTypes.map { targetType ->
                 val castExpr = when (targetType) {
-                    TargetLogicalType.INTEGER -> "$c GLOB '-[0-9]*' OR $c GLOB '[0-9]*' AND cast($c as integer) = cast($c as real)"
+                    TargetLogicalType.INTEGER ->
+                        "($c GLOB '-[0-9]*' OR $c GLOB '[0-9]*') AND cast($c as integer) = cast($c as real)"
                     TargetLogicalType.DECIMAL -> "($c GLOB '-[0-9]*' OR $c GLOB '[0-9]*')"
                     TargetLogicalType.BOOLEAN -> "lower($c) IN ('0', '1', 'true', 'false', 'yes', 'no')"
                     TargetLogicalType.DATE -> "$c GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
