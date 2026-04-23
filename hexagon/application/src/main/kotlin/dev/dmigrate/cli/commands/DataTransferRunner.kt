@@ -42,6 +42,17 @@ class DataTransferRunner(
     private val printError: (String, String) -> Unit,
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
+    private data class TransferTableContext(
+        val reader: dev.dmigrate.driver.data.DataReader,
+        val writer: dev.dmigrate.driver.data.DataWriter,
+        val srcPool: ConnectionPool,
+        val tgtPool: ConnectionPool,
+        val table: String,
+        val filter: DataFilter?,
+        val chunkSize: Int,
+        val opts: ImportOptions,
+    )
+
     fun execute(request: DataTransferRequest): Int {
         val safeSrc = scrubRef(request.source)
         val safeTgt = scrubRef(request.target)
@@ -113,7 +124,18 @@ class DataTransferRunner(
 
         try {
             for (table in tables) {
-                transferTable(reader, writer, srcPool, tgtPool, table, filter, request.chunkSize, opts)
+                transferTable(
+                    TransferTableContext(
+                        reader = reader,
+                        writer = writer,
+                        srcPool = srcPool,
+                        tgtPool = tgtPool,
+                        table = table,
+                        filter = filter,
+                        chunkSize = request.chunkSize,
+                        opts = opts,
+                    )
+                )
                 if (!request.quiet && !request.noProgress) stderr("  Transferred: $table")
             }
         } catch (e: ImportSchemaMismatchException) {
@@ -129,13 +151,14 @@ class DataTransferRunner(
         return 0
     }
 
-    private fun transferTable(
-        reader: dev.dmigrate.driver.data.DataReader, writer: dev.dmigrate.driver.data.DataWriter,
-        srcPool: ConnectionPool, tgtPool: ConnectionPool, table: String,
-        filter: DataFilter?, chunkSize: Int, opts: ImportOptions,
-    ) {
-        reader.streamTable(srcPool, table, filter, chunkSize).use { seq ->
-            writer.openTable(tgtPool, table, opts).use { s ->
+    private fun transferTable(ctx: TransferTableContext) {
+        ctx.reader.streamTable(
+            ctx.srcPool,
+            ctx.table,
+            ctx.filter,
+            ctx.chunkSize,
+        ).use { seq ->
+            ctx.writer.openTable(ctx.tgtPool, ctx.table, ctx.opts).use { s ->
                 val tgtNames = s.targetColumns.map { it.name }
                 var chunkIdx = 0L
                 for (chunk in seq) {
@@ -147,8 +170,10 @@ class DataTransferRunner(
                             if (si >= 0) row[si] else null
                         }
                     }
-                    val tgtDescriptors = s.targetColumns.map { ColumnDescriptor(it.name, it.nullable, it.sqlTypeName) }
-                    val normalized = DataChunk(table, tgtDescriptors, reordered, chunkIdx++)
+                    val tgtDescriptors = s.targetColumns.map {
+                        ColumnDescriptor(it.name, it.nullable, it.sqlTypeName)
+                    }
+                    val normalized = DataChunk(ctx.table, tgtDescriptors, reordered, chunkIdx++)
                     s.write(normalized)
                     s.commitChunk()
                 }
@@ -177,15 +202,24 @@ class DataTransferRunner(
 
     private fun compat(s: ColumnDefinition, t: ColumnDefinition): Boolean {
         if (s.type == t.type) return true
-        val a = s.type; val b = t.type
+        val a = s.type
+        val b = t.type
         if (a is NeutralType.Integer && b is NeutralType.BigInteger) return true
-        if (a is NeutralType.SmallInt && (b is NeutralType.Integer || b is NeutralType.BigInteger)) return true
-        if (a is NeutralType.Identifier && (b is NeutralType.Integer || b is NeutralType.BigInteger || b is NeutralType.Identifier)) return true
+        if (a is NeutralType.SmallInt && isIntegralTargetType(b)) return true
+        if (isIdentifierCompatible(a, b)) return true
         if (a is NeutralType.Integer && b is NeutralType.Identifier) return true
         if (a is NeutralType.Text && b is NeutralType.Text) return true
         if (a is NeutralType.Char && b is NeutralType.Text) return true
         return false
     }
+
+    private fun isIdentifierCompatible(source: NeutralType, target: NeutralType): Boolean {
+        if (source !is NeutralType.Identifier) return false
+        return isIntegralTargetType(target) || target is NeutralType.Identifier
+    }
+
+    private fun isIntegralTargetType(target: NeutralType): Boolean =
+        target is NeutralType.Integer || target is NeutralType.BigInteger
 
     private fun topoSort(tables: List<String>, schema: SchemaDefinition): List<String> {
         val tableSet = tables.toSet()

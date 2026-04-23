@@ -70,7 +70,7 @@ internal object FilterDslTokenizer {
     private fun tokenizeNumber(input: String, startPos: Int): Pair<Token, Int> {
         var i = startPos
         while (i < input.length && input[i].isDigit()) i++
-        if (i < input.length && input[i] == '.' && i + 1 < input.length && input[i + 1].isDigit()) {
+        if (hasDecimalPart(input, i)) {
             i++
             while (i < input.length && input[i].isDigit()) i++
             val text = input.substring(startPos, i)
@@ -85,6 +85,12 @@ internal object FilterDslTokenizer {
             throw FilterDslParseException(FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, startPos))
         }
         return Token(TokenType.INTEGER, text, startPos) to i
+    }
+
+    private fun hasDecimalPart(input: String, index: Int): Boolean {
+        if (index >= input.length || input[index] != '.') return false
+        val nextIndex = index + 1
+        return nextIndex < input.length && input[nextIndex].isDigit()
     }
 
     private fun tokenizeWord(input: String, startPos: Int): Pair<Token, Int> {

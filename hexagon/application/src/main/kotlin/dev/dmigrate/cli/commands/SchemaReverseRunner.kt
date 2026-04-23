@@ -84,7 +84,7 @@ class SchemaReverseRunner(
 
         val result = readSchema(request, ctx) ?: return 4
         writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
-        writeReportFile(request, ctx, result)?.let { return it }
+        writeReportFile(ctx, result)?.let { return it }
         printOutput(request, result, ctx.userFacingSource, ctx.reportPath)
         return 0
     }
@@ -157,7 +157,7 @@ class SchemaReverseRunner(
         }
     }
 
-    private fun writeReportFile(request: SchemaReverseRequest, ctx: ResolvedContext, result: SchemaReadResult): Int? {
+    private fun writeReportFile(ctx: ResolvedContext, result: SchemaReadResult): Int? {
         return try {
             ctx.reportPath.parent?.toFile()?.mkdirs()
             val reportInput = SchemaReadReportInput(source = ctx.sourceRef, result = result)

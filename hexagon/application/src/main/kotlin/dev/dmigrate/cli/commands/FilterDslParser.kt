@@ -27,6 +27,7 @@ package dev.dmigrate.cli.commands
  * ```
  */
 object FilterDslParser {
+    private val GROUP_TERMINATORS = setOf("AND", "OR")
 
     fun parse(raw: String): FilterDslParseResult {
         val trimmed = raw.trim()
@@ -154,10 +155,7 @@ object FilterDslParser {
                 val inner = parseOrExpr(s)
                 s.expect(TokenType.RPAREN, "')'")
                 // Valid grouped filter if followed by AND/OR/end/closing-paren
-                if (s.isAtEnd() ||
-                    (s.peek().type == TokenType.KEYWORD && s.peek().text in setOf("AND", "OR")) ||
-                    s.peek().type == TokenType.RPAREN
-                ) {
+                if (isGroupedFilterTail(s)) {
                     FilterExpr.Group(inner)
                 } else {
                     null // not a filter group, backtrack
@@ -221,6 +219,13 @@ object FilterDslParser {
         }
 
         throw s.error("Expected operator, 'IS', or 'IN' but found '${tok.text}'", tok)
+    }
+
+    private fun isGroupedFilterTail(state: ParserState): Boolean {
+        if (state.isAtEnd()) return true
+        val token = state.peek()
+        if (token.type == TokenType.RPAREN) return true
+        return token.type == TokenType.KEYWORD && token.text in GROUP_TERMINATORS
     }
 
     private fun checkNullLiteral(expr: ValueExpr, opToken: Token) {

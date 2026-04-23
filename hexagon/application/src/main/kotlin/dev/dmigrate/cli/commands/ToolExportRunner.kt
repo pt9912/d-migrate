@@ -96,7 +96,10 @@ class ToolExportRunner(
                 stderr("[ERROR] Unknown spatial profile '${profileResult.raw}'"); return PreflightResult.Exit(2)
             }
             is SpatialProfilePolicy.Result.NotAllowedForDialect -> {
-                stderr("[ERROR] Spatial profile '${profileResult.profile.cliName}' not allowed for ${profileResult.dialect.name.lowercase()}")
+                stderr(
+                    "[ERROR] Spatial profile '${profileResult.profile.cliName}' not allowed for " +
+                        profileResult.dialect.name.lowercase()
+                )
                 return PreflightResult.Exit(2)
             }
         }

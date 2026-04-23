@@ -56,7 +56,12 @@ class DataTransferRunnerTest : FunSpec({
     }
     val fakeReader = object : DataReader {
         override val dialect = DatabaseDialect.SQLITE
-        override fun streamTable(pool: ConnectionPool, table: String, filter: dev.dmigrate.core.data.DataFilter?, chunkSize: Int) = EmptyChunkSequence()
+        override fun streamTable(
+            pool: ConnectionPool,
+            table: String,
+            filter: dev.dmigrate.core.data.DataFilter?,
+            chunkSize: Int,
+        ) = EmptyChunkSequence()
     }
     val fakeWriter = object : DataWriter {
         override val dialect = DatabaseDialect.SQLITE

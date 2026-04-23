@@ -1,9 +1,0 @@
-<?xml version="1.0" ?>
-<SmellBaseline>
-  <ManuallySuppressedIssues/>
-  <CurrentIssues>
-    <ID>ComplexCondition:TableComparator.kt$TableComparator$typeDiff == null &amp;&amp; requiredDiff == null &amp;&amp; defaultDiff == null &amp;&amp; uniqueDiff == null &amp;&amp; refDiff == null</ID>
-    <ID>FunctionParameterNaming:SchemaValidator.kt$SchemaValidator$_colName: String</ID>
-    <ID>UnusedParameter:SchemaValidator.kt$SchemaValidator$_colName: String</ID>
-  </CurrentIssues>
-</SmellBaseline>

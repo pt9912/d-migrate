@@ -100,7 +100,10 @@ internal class ImportCheckpointManager(
         }
         val manifestTables = manifest.tableSlices.map { it.table }
         if (manifestTables != inputCtx.effectiveTables) {
-            stderr("Error: Checkpoint table list does not match the current request: manifest=$manifestTables, current=${inputCtx.effectiveTables}.")
+            stderr(
+                "Error: Checkpoint table list does not match the current request: " +
+                    "manifest=$manifestTables, current=${inputCtx.effectiveTables}."
+            )
             return ImportResumeResult.Exit(3)
         }
         if (inputCtx.inputFilesByTable.isNotEmpty()) {
@@ -108,7 +111,11 @@ internal class ImportCheckpointManager(
                 slice.inputFile != inputCtx.inputFilesByTable[slice.table]
             }
             if (mismatch != null) {
-                stderr("Error: Checkpoint input-file binding for table '${mismatch.table}' does not match the current directory scan (manifest=${mismatch.inputFile ?: "<none>"}, current=${inputCtx.inputFilesByTable[mismatch.table] ?: "<none>"}).")
+                stderr(
+                    "Error: Checkpoint input-file binding for table '${mismatch.table}' does not match " +
+                        "the current directory scan (manifest=${mismatch.inputFile ?: "<none>"}, " +
+                        "current=${inputCtx.inputFilesByTable[mismatch.table] ?: "<none>"})."
+                )
                 return ImportResumeResult.Exit(3)
             }
         }

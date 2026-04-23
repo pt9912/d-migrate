@@ -99,7 +99,11 @@ internal class HighCardinalityRule(private val threshold: Double = 0.95) : Colum
         if (ratio >= threshold) {
             return listOf(ProfileWarning(
                 code = WarningCode.HIGH_CARDINALITY,
-                message = "Column '${column.name}' has very high cardinality (${column.distinctCount} distinct / ${column.nonNullCount} non-null = ${(ratio * 100).toInt()}%)",
+                message = buildString {
+                    append("Column '${column.name}' has very high cardinality (")
+                    append("${column.distinctCount} distinct / ${column.nonNullCount} non-null = ")
+                    append("${(ratio * 100).toInt()}%)")
+                },
                 severity = Severity.INFO,
             ))
         }
@@ -143,7 +147,9 @@ internal class InvalidTargetTypeValuesRule : ColumnWarningRule {
                     " (e.g. ${compat.exampleInvalidValues.joinToString(", ")})" else ""
                 ProfileWarning(
                     code = WarningCode.INVALID_TARGET_TYPE_VALUES,
-                    message = "Column '${column.name}' has ${compat.incompatibleCount} values incompatible with target type ${compat.targetType}$examples",
+                    message =
+                        "Column '${column.name}' has ${compat.incompatibleCount} values " +
+                            "incompatible with target type ${compat.targetType}$examples",
                     severity = Severity.WARN,
                 )
             }

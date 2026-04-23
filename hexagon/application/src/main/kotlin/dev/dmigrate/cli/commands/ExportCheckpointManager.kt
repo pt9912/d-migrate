@@ -94,7 +94,10 @@ internal class ExportCheckpointManager(
             }
             val skipped = manifest.tableSlices.filter { it.status == CheckpointSliceStatus.COMPLETED }.map { it.table }.toSet()
             if (output is ExportOutput.SingleFile && tables.isNotEmpty() && tables.all { it in skipped }) {
-                stderr("Error: single-file resume has no pending table; the previous run is already completed. Remove --resume or choose a different output.")
+                stderr(
+                    "Error: single-file resume has no pending table; the previous run is already completed. " +
+                        "Remove --resume or choose a different output."
+                )
                 return ExportResumeResult.Exit(3)
             }
             return ExportResumeResult.Ok(ExportResumeContext(
@@ -136,7 +139,12 @@ internal class ExportCheckpointManager(
                 operationId = resume.operationId, operationType = CheckpointOperationType.EXPORT,
                 createdAt = created, updatedAt = created, format = request.format,
                 chunkSize = request.chunkSize,
-                tableSlices = tables.map { resume.initialSlices[it] ?: CheckpointTableSlice(table = it, status = CheckpointSliceStatus.PENDING) },
+                tableSlices = tables.map { table ->
+                    resume.initialSlices[table] ?: CheckpointTableSlice(
+                        table = table,
+                        status = CheckpointSliceStatus.PENDING,
+                    )
+                },
                 optionsFingerprint = fingerprint,
             ))
             null // success

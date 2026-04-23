@@ -47,7 +47,13 @@ class ProfileServiceTest : FunSpec({
             listOf(ValueFrequency("a", 3, 0.6), ValueFrequency("b", 2, 0.4))
         override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?) = null
         override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?) = null
-        override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List<dev.dmigrate.profiling.types.TargetLogicalType>, schema: String?) = emptyList<dev.dmigrate.profiling.model.TargetTypeCompatibility>()
+        override fun targetTypeCompatibility(
+            pool: ConnectionPool,
+            table: String,
+            column: String,
+            targetTypes: List<dev.dmigrate.profiling.types.TargetLogicalType>,
+            schema: String?,
+        ) = emptyList<dev.dmigrate.profiling.model.TargetTypeCompatibility>()
     }
 
     val resolver = object : LogicalTypeResolverPort {

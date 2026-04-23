@@ -129,9 +129,12 @@ class SchemaGenerateRunner(
                 return Preflight.Exit(2)
             }
             is SpatialProfilePolicy.Result.NotAllowedForDialect -> {
-                printError("Spatial profile '${profileResult.profile.cliName}' is not allowed for ${profileResult.dialect.name.lowercase()}. " +
-                    "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
-                    request.source.toString())
+                printError(
+                    "Spatial profile '${profileResult.profile.cliName}' is not allowed for " +
+                        "${profileResult.dialect.name.lowercase()}. " +
+                        "Allowed: ${SpatialProfilePolicy.allowedFor(dialect).joinToString { it.cliName }}",
+                    request.source.toString(),
+                )
                 return Preflight.Exit(2)
             }
         }
@@ -293,7 +296,15 @@ class SchemaGenerateRunner(
             if (!request.quiet) stderr("Rollback DDL written to $rbPath")
         }
 
-        writeReport(request, gen.result, gen.schema, gen.dialect.name.lowercase(), outputPath, splitModeStr, gen.options.mysqlNamedSequenceMode)
+        writeReport(
+            request,
+            gen.result,
+            gen.schema,
+            gen.dialect.name.lowercase(),
+            outputPath,
+            splitModeStr,
+            gen.options.mysqlNamedSequenceMode,
+        )
     }
 
     private fun writeStdoutOutput(request: SchemaGenerateRequest, gen: GeneratedDdl) {
@@ -306,7 +317,15 @@ class SchemaGenerateRunner(
         }
 
         if (request.report != null) {
-            writeReport(request, gen.result, gen.schema, gen.dialect.name.lowercase(), request.report, null, gen.options.mysqlNamedSequenceMode)
+            writeReport(
+                request,
+                gen.result,
+                gen.schema,
+                gen.dialect.name.lowercase(),
+                request.report,
+                null,
+                gen.options.mysqlNamedSequenceMode,
+            )
         }
     }
 

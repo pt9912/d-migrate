@@ -302,7 +302,15 @@ class DataImportRunner(
     ): Int {
         preflightValidator.resolveWriter(connectionConfig) ?: return 7
         val opts = preflightValidator.buildImportOptions(request, charset, preparedImport)
-        val inputCtx = when (val r = preflightValidator.resolveInputContext(request, connectionConfig, resolvedUrl, format, preparedImport)) {
+        val inputCtx = when (
+            val r = preflightValidator.resolveInputContext(
+                request,
+                connectionConfig,
+                resolvedUrl,
+                format,
+                preparedImport,
+            )
+        ) {
             is InputContextResult.Ok -> r.value
             is InputContextResult.Exit -> return r.code
         }
@@ -314,7 +322,16 @@ class DataImportRunner(
         val initExit = checkpointManager.writeInitialManifest(request, format, resumeCtx, checkpoint.store, inputCtx)
         if (initExit != null) return initExit
         val callbacks = checkpointManager.buildCallbacks(request, format, resumeCtx, checkpoint.store, inputCtx)
-        val result = when (val r = executeStreaming(request, format, pool, preparedImport, opts, resumeCtx, callbacks)) {
+        val result = when (
+            val r = executeStreaming(
+                format,
+                pool,
+                preparedImport,
+                opts,
+                resumeCtx,
+                callbacks,
+            )
+        ) {
             is StreamingResult.Ok -> r.value
             is StreamingResult.Exit -> return r.code
         }
@@ -325,7 +342,6 @@ class DataImportRunner(
 
     /** Step 8: Execute the streaming import pipeline. */
     private fun executeStreaming(
-        _request: DataImportRequest,
         format: DataExportFormat,
         pool: ConnectionPool,
         preparedImport: SchemaPreflightResult,

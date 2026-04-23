@@ -114,10 +114,12 @@ internal class TableComparator {
         val refDiff = if (fkAbsorbed) null
             else if (left.references == right.references) null
             else ValueChange(left.references, right.references)
-        if (typeDiff == null && requiredDiff == null && defaultDiff == null &&
-            uniqueDiff == null && refDiff == null) return null
+        if (hasNoColumnDiff(typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff)) return null
         return ColumnDiff(name, typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff)
     }
+
+    private fun hasNoColumnDiff(vararg diffs: Any?): Boolean =
+        diffs.all { it == null }
 
     private fun projectColumn(col: ColumnDefinition): ColumnDefinition =
         col.copy(unique = false, references = null)

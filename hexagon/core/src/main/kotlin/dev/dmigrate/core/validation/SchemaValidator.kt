@@ -45,7 +45,7 @@ class SchemaValidator {
                 validateColumnType(path, col, errors)
                 validateForeignKeyTableExists(path, col, schema, errors)
                 validateForeignKeyColumnExists(path, col, schema, errors)
-                validateForeignKeyTypeCompatibility(path, colName, col, schema, errors)
+                validateForeignKeyTypeCompatibility(path, col, schema, errors)
                 validateRefTypeExists(path, col, schema, errors)
                 validateDefaultTypeCompatibility(path, col, errors)
                 validateSequenceDefaultReference(path, col, schema, errors)
@@ -224,7 +224,7 @@ class SchemaValidator {
 
     // E017: Foreign key type incompatible with referenced column
     private fun validateForeignKeyTypeCompatibility(
-        path: String, _colName: String, col: ColumnDefinition, schema: SchemaDefinition,
+        path: String, col: ColumnDefinition, schema: SchemaDefinition,
         errors: MutableList<ValidationError>
     ) {
         val ref = col.references ?: return
