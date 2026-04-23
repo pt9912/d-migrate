@@ -27,7 +27,7 @@ internal object SqliteTypeMapping {
         val maxLen = extractMaxLength(raw)
 
         return mapIntegerType(raw)
-            ?: mapNumericType(raw, maxLen)
+            ?: mapNumericType(raw)
             ?: mapStringType(raw, maxLen)
             ?: mapTemporalType(raw)
             ?: mapSpecialType(raw)
@@ -42,7 +42,7 @@ internal object SqliteTypeMapping {
         else -> null
     }
 
-    private fun mapNumericType(raw: String, maxLen: Int?): MappingResult? = when {
+    private fun mapNumericType(raw: String): MappingResult? = when {
         raw == "REAL" || raw == "DOUBLE" || raw == "FLOAT" -> MappingResult(NeutralType.Float())
         raw == "BOOLEAN" || raw == "TINYINT(1)" -> MappingResult(NeutralType.BooleanType)
         raw.startsWith("DECIMAL") || raw.startsWith("NUMERIC") -> {

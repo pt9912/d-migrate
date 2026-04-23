@@ -29,11 +29,17 @@ internal data class TableExportParams(
 
 internal class TableExporter(private val reader: DataReader) {
 
+    private data class ChunkProgressContext(
+        val table: String,
+        val onChunkProcessed: (TableChunkProgress) -> Unit,
+    )
+
     fun export(params: TableExportParams): TableExportSummary {
         val pool = params.pool; val table = params.table; val filter = params.filter
         val config = params.config; val writer = params.writer; val counting = params.counting
         val reporter = params.reporter; val ordinal = params.ordinal; val tableCount = params.tableCount
         val resumeMarker = params.resumeMarker; val onChunkProcessed = params.onChunkProcessed
+        val chunkProgress = ChunkProgressContext(table, onChunkProcessed)
         reporter.report(ProgressEvent.ExportTableStarted(table, ordinal, tableCount))
 
         val tableStart = System.nanoTime()
@@ -68,7 +74,7 @@ internal class TableExporter(private val reader: DataReader) {
                         chunkIndex = chunks.toInt(), rowsInChunk = chunk.rows.size.toLong(),
                         rowsProcessed = rows, bytesWritten = counting.count - bytesBefore,
                     ))
-                    emitChunkProgress(resumeMarker, chunk, markerIdx, tieIdxs, table, rows, chunks, onChunkProcessed)
+                    emitChunkProgress(resumeMarker, chunk, markerIdx, tieIdxs, chunkProgress, rows, chunks)
                 }
                 if (!beginCalled) {
                     error = "Reader returned no chunks for table '$table' " +
@@ -121,10 +127,9 @@ internal class TableExporter(private val reader: DataReader) {
         chunk: dev.dmigrate.core.data.DataChunk,
         markerIdx: Int,
         tieIdxs: IntArray,
-        table: String,
+        chunkProgress: ChunkProgressContext,
         rows: Long,
         chunks: Long,
-        onChunkProcessed: (TableChunkProgress) -> Unit,
     ) {
         if (resumeMarker == null || chunk.rows.isEmpty()) return
         val lastRow = chunk.rows.last()
@@ -132,10 +137,17 @@ internal class TableExporter(private val reader: DataReader) {
         val tieValues: List<Any?> = if (tieIdxs.isEmpty()) emptyList()
         else tieIdxs.map { i -> if (i >= 0) lastRow[i] else null }
         runCatching {
-            onChunkProcessed(TableChunkProgress(
-                table = table, rowsProcessed = rows, chunksProcessed = chunks,
-                position = ResumeMarker.Position(lastMarkerValue = markerValue, lastTieBreakerValues = tieValues),
-            ))
+            chunkProgress.onChunkProcessed(
+                TableChunkProgress(
+                    table = chunkProgress.table,
+                    rowsProcessed = rows,
+                    chunksProcessed = chunks,
+                    position = ResumeMarker.Position(
+                        lastMarkerValue = markerValue,
+                        lastTieBreakerValues = tieValues,
+                    ),
+                )
+            )
         }
     }
 }

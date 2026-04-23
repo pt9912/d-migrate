@@ -65,6 +65,8 @@ internal object CompareRendererJson {
 
     private fun renderDiff(sb: StringBuilder, diff: DiffView) {
         val parts = mutableListOf<String>()
+        fun renderNamedKindEntry(name: String, kind: String): String =
+            """{"name": "${esc(name)}", "kind": "${esc(kind)}"}"""
 
         val m = diff.schemaMetadata
         if (m != null) {
@@ -74,13 +76,22 @@ internal object CompareRendererJson {
             parts += """    "schema_metadata": {${fields.joinToString(", ")}}"""
         }
 
-        if (diff.customTypesAdded.isNotEmpty())
-            parts += """    "custom_types_added": [${diff.customTypesAdded.joinToString(", ") { """{"name": "${esc(it.name)}", "kind": "${esc(it.kind)}"}""" }}]"""
-        if (diff.customTypesRemoved.isNotEmpty())
-            parts += """    "custom_types_removed": [${diff.customTypesRemoved.joinToString(", ") { """{"name": "${esc(it.name)}", "kind": "${esc(it.kind)}"}""" }}]"""
+        if (diff.customTypesAdded.isNotEmpty()) {
+            val items = diff.customTypesAdded.joinToString(", ") {
+                renderNamedKindEntry(it.name, it.kind)
+            }
+            parts += """    "custom_types_added": [$items]"""
+        }
+        if (diff.customTypesRemoved.isNotEmpty()) {
+            val items = diff.customTypesRemoved.joinToString(", ") {
+                renderNamedKindEntry(it.name, it.kind)
+            }
+            parts += """    "custom_types_removed": [$items]"""
+        }
         if (diff.customTypesChanged.isNotEmpty()) {
             val items = diff.customTypesChanged.joinToString(", ") { e ->
-                """{"name": "${esc(e.name)}", "kind": "${esc(e.kind)}", "changes": [${e.changes.joinToString(", ") { "\"${esc(it)}\"" }}]}"""
+                val changes = renderQuotedStrings(e.changes)
+                """{"name": "${esc(e.name)}", "kind": "${esc(e.kind)}", "changes": [$changes]}"""
             }
             parts += """    "custom_types_changed": [$items]"""
         }
@@ -104,7 +115,9 @@ internal object CompareRendererJson {
                 v.materialized?.let { fields += """"materialized": {"before": "${esc(it.before)}", "after": "${esc(it.after)}"}""" }
                 if (v.queryChanged) fields += """"query": "changed""""
                 v.refresh?.let { fields += """"refresh": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }
-                v.sourceDialect?.let { fields += """"source_dialect": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }
+                v.sourceDialect?.let {
+                    fields += renderNullableChangeField("source_dialect", it.before, it.after)
+                }
                 "{${fields.joinToString(", ")}}"
             }
             parts += """    "views_changed": [$items]"""
@@ -133,9 +146,7 @@ internal object CompareRendererJson {
             }
             append(""", "columns_changed": [$cols]""")
         }
-        t.primaryKey?.let {
-            append(""", "primary_key": {"before": [${it.before.joinToString(", ") { s -> "\"${esc(s)}\"" }}], "after": [${it.after.joinToString(", ") { s -> "\"${esc(s)}\"" }}]}""")
-        }
+        t.primaryKey?.let { append(renderPrimaryKeyField(it.before, it.after)) }
         if (t.indicesAdded.isNotEmpty())
             append(""", "indices_added": [${t.indicesAdded.joinToString(", ") { "\"${esc(it)}\"" }}]""")
         if (t.indicesRemoved.isNotEmpty())
@@ -204,6 +215,22 @@ internal object CompareRendererJson {
             "{${fields.joinToString(", ")}}"
         }
     }
+
+    private fun renderQuotedStrings(values: List<String>): String =
+        values.joinToString(", ") { "\"${esc(it)}\"" }
+
+    private fun renderPrimaryKeyField(before: List<String>, after: List<String>): String =
+        buildString {
+            append(""", "primary_key": {""")
+            append(""""before": [${renderQuotedStrings(before)}], """)
+            append(""""after": [${renderQuotedStrings(after)}]}""")
+        }
+
+    private fun renderNullableChangeField(
+        name: String,
+        before: String?,
+        after: String?,
+    ): String = """"$name": {"before": ${nullable(before)}, "after": ${nullable(after)}}"""
 
     private fun esc(s: String) = SchemaCompareHelpers.esc(s)
     private fun nullable(s: String?): String = if (s == null) "null" else "\"${esc(s)}\""

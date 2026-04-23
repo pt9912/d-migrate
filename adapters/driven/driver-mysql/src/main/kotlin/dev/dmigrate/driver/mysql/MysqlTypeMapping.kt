@@ -26,26 +26,11 @@ internal object MysqlTypeMapping {
         val colName: String,
     )
 
-    fun mapColumn(input: ColumnInput): MappingResult = mapColumn(
-        input.dataType, input.columnType, input.isAutoIncrement,
-        input.charMaxLen, input.numPrecision, input.numScale,
-        input.tableName, input.colName,
-    )
+    fun mapColumn(input: ColumnInput): MappingResult {
+        val dt = input.dataType.lowercase()
+        val ct = input.columnType.lowercase()
 
-    internal fun mapColumn(
-        dataType: String,
-        columnType: String,
-        isAutoIncrement: Boolean,
-        charMaxLen: Int?,
-        numPrecision: Int?,
-        numScale: Int?,
-        tableName: String,
-        colName: String,
-    ): MappingResult {
-        val dt = dataType.lowercase()
-        val ct = columnType.lowercase()
-
-        if (isAutoIncrement) {
+        if (input.isAutoIncrement) {
             return when (dt) {
                 "int" -> MappingResult(NeutralType.Identifier(autoIncrement = true))
                 "bigint" -> MappingResult(
@@ -53,7 +38,7 @@ internal object MysqlTypeMapping {
                     SchemaReadNote(
                         severity = SchemaReadSeverity.INFO,
                         code = "R300",
-                        objectName = "$tableName.$colName",
+                        objectName = "${input.tableName}.${input.colName}",
                         message = "bigint auto_increment mapped to BigInteger (not Identifier) to preserve type width",
                     ),
                 )
@@ -62,15 +47,15 @@ internal object MysqlTypeMapping {
         }
 
         return mapIntegerTypes(dt, ct)
-            ?: mapStringTypes(dt, charMaxLen, tableName, colName)
-            ?: mapNumericTypes(dt, numPrecision, numScale)
+            ?: mapStringTypes(dt, input.charMaxLen, input.tableName, input.colName)
+            ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, ct, tableName, colName)
+            ?: mapSpecialTypes(dt, ct, input.tableName, input.colName)
             ?: MappingResult(
                 NeutralType.Text(),
                 SchemaReadNote(
                     severity = SchemaReadSeverity.WARNING, code = "R301",
-                    objectName = "$tableName.$colName",
+                    objectName = "${input.tableName}.${input.colName}",
                     message = "Unknown MySQL type '$dt' mapped to text",
                 ),
             )
@@ -100,7 +85,11 @@ internal object MysqlTypeMapping {
     }
 
     private fun mapNumericTypes(dt: String, numPrecision: Int?, numScale: Int?): MappingResult? = when (dt) {
-        "decimal", "numeric" -> if (numPrecision != null && numScale != null) MappingResult(NeutralType.Decimal(numPrecision, numScale)) else MappingResult(NeutralType.Float())
+        "decimal", "numeric" -> if (numPrecision != null && numScale != null) {
+            MappingResult(NeutralType.Decimal(numPrecision, numScale))
+        } else {
+            MappingResult(NeutralType.Float())
+        }
         "float" -> MappingResult(NeutralType.Float(FloatPrecision.SINGLE))
         "double" -> MappingResult(NeutralType.Float(FloatPrecision.DOUBLE))
         else -> null

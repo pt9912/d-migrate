@@ -434,8 +434,14 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             appendLine("BEGIN")
             appendLine("    /* d-migrate:mysql-sequence-v1 object=nextval */")
             appendLine("    DECLARE val BIGINT;")
-            appendLine("    UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` SET `next_value` = `next_value` + `increment_by` WHERE `name` = seq_name;")
-            appendLine("    SELECT `next_value` - `increment_by` INTO val FROM `${MysqlSequenceNaming.SUPPORT_TABLE}` WHERE `name` = seq_name;")
+            appendLine(
+                "    UPDATE `${MysqlSequenceNaming.SUPPORT_TABLE}` " +
+                    "SET `next_value` = `next_value` + `increment_by` WHERE `name` = seq_name;"
+            )
+            appendLine(
+                "    SELECT `next_value` - `increment_by` INTO val " +
+                    "FROM `${MysqlSequenceNaming.SUPPORT_TABLE}` WHERE `name` = seq_name;"
+            )
             appendLine("    RETURN val;")
             appendLine("END //")
             append("DELIMITER ;")
@@ -479,7 +485,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        if (!isHelperTable || supportObjectsBlocked) return routineHelper.generateTriggers(triggers, tables, skipped)
+        if (!isHelperTable || supportObjectsBlocked) return routineHelper.generateTriggers(triggers, skipped)
 
         val statements = mutableListOf<DdlStatement>()
         // E124: collision check for support trigger names
@@ -505,7 +511,10 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
                 appendLine("    BEFORE INSERT ON `${spec.tableName}`")
                 appendLine("    FOR EACH ROW")
                 appendLine("BEGIN")
-                appendLine("    /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=${spec.sequenceName} table=${spec.tableName} column=${spec.columnName} */")
+                appendLine(
+                    "    /* d-migrate:mysql-sequence-v1 object=sequence-trigger " +
+                        "sequence=${spec.sequenceName} table=${spec.tableName} column=${spec.columnName} */"
+                )
                 appendLine("    IF NEW.`${spec.columnName}` IS NULL THEN")
                 appendLine("        SET NEW.`${spec.columnName}` = `${MysqlSequenceNaming.NEXTVAL_ROUTINE}`('${spec.sequenceName}');")
                 appendLine("    END IF;")
@@ -515,7 +524,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
             statements += DdlStatement(triggerSql)
         }
         // Then user triggers
-        statements += routineHelper.generateTriggers(triggers, tables, skipped)
+        statements += routineHelper.generateTriggers(triggers, skipped)
         return statements
     }
 

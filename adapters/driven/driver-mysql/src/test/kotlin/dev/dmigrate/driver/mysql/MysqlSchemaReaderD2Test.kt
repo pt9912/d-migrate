@@ -16,6 +16,11 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Statement
 
+private fun isSupportShapeQuery(sql: String): Boolean =
+    "information_schema.columns" in sql &&
+        "table_name = ?" in sql &&
+        "ordinal_position" !in sql
+
 class MysqlSchemaReaderD2Test : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
@@ -55,7 +60,9 @@ class MysqlSchemaReaderD2Test : FunSpec({
     fun stubCanonicalShape() {
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
             mapOf("table_name" to "dmg_sequences")
-        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "ordinal_position" !in it }, any(), any()) } returns listOf(
+        every {
+            jdbc.queryList(match(::isSupportShapeQuery), any(), any())
+        } returns listOf(
             mapOf("column_name" to "managed_by", "data_type" to "varchar"),
             mapOf("column_name" to "format_version", "data_type" to "varchar"),
             mapOf("column_name" to "name", "data_type" to "varchar"),
@@ -72,7 +79,6 @@ class MysqlSchemaReaderD2Test : FunSpec({
         every { jdbc.querySingle(match { "routine_name = ?" in it }, any(), any()) } returns null
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns emptyList()
     }
-
     test("D2: valid row materializes to SequenceDefinition") {
         stubEmptyDefaults()
         stubCanonicalShape()
@@ -398,7 +404,9 @@ class MysqlSchemaReaderD2Test : FunSpec({
         )
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
             mapOf("table_name" to "dmg_sequences")
-        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "ordinal_position" !in it }, any(), any()) } returns listOf(
+        every {
+            jdbc.queryList(match(::isSupportShapeQuery), any(), any())
+        } returns listOf(
             mapOf("column_name" to "name", "data_type" to "varchar"),
             mapOf("column_name" to "value", "data_type" to "text"),
         )

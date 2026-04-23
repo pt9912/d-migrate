@@ -101,7 +101,6 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        _tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.mapNotNull { (name, trigger) -> generateTrigger(name, trigger, skipped) }
@@ -131,7 +130,9 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
                 sourceDialect = trigger.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for SQLite (source dialect: ${trigger.sourceDialect})", listOf(action.toNote()))
+            val todo = "-- TODO: Rewrite trigger ${quoteIdentifier(name)} " +
+                "for SQLite (source dialect: ${trigger.sourceDialect})"
+            return DdlStatement(todo, listOf(action.toNote()))
         }
 
         val timing = trigger.timing.name

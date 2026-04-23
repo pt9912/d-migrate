@@ -97,8 +97,9 @@ class DataImportRunnerTest : FunSpec({
     val tempJsonFile: Path = Files.createTempFile("dmigrate-import-test-", ".json").also {
         Files.writeString(it, """[{"id":1}]""")
     }
-
-    val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-test-")
+    val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-").also {
+        Files.writeString(it.resolve("users.json"), """[{"id":1}]""")
+    }
 
     fun request(
         target: String? = "sqlite:///tmp/d-migrate-runner-fake.db",
@@ -180,7 +181,12 @@ class DataImportRunnerTest : FunSpec({
         schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
             SchemaPreflightResult(input)
         },
-        schemaTargetValidator: (schema: dev.dmigrate.core.model.SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
+        schemaTargetValidator:
+            (
+                schema: dev.dmigrate.core.model.SchemaDefinition,
+                table: String,
+                targetColumns: List<TargetColumn>,
+            ) -> Unit =
             { _, _, _ -> },
         importExecutor: ImportExecutor = successExecutor,
         progressReporter: dev.dmigrate.streaming.ProgressReporter = dev.dmigrate.streaming.NoOpProgressReporter,

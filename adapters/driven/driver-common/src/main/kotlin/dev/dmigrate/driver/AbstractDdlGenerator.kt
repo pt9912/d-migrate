@@ -90,7 +90,13 @@ abstract class AbstractDdlGenerator(
     // ── Abstract methods ────────────────────────
 
     abstract fun quoteIdentifier(name: String): String
-    abstract fun generateTable(name: String, table: TableDefinition, schema: SchemaDefinition, deferredFks: Set<Pair<String, String>> = emptySet(), options: DdlGenerationOptions = DdlGenerationOptions()): List<DdlStatement>
+    abstract fun generateTable(
+        name: String,
+        table: TableDefinition,
+        schema: SchemaDefinition,
+        deferredFks: Set<Pair<String, String>> = emptySet(),
+        options: DdlGenerationOptions = DdlGenerationOptions(),
+    ): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
     abstract fun generateSequences(sequences: Map<String, SequenceDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement>
@@ -98,7 +104,11 @@ abstract class AbstractDdlGenerator(
     abstract fun generateViews(views: Map<String, ViewDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateFunctions(functions: Map<String, FunctionDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateProcedures(procedures: Map<String, ProcedureDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
-    abstract fun generateTriggers(triggers: Map<String, TriggerDefinition>, tables: Map<String, TableDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
+    abstract fun generateTriggers(
+        triggers: Map<String, TriggerDefinition>,
+        tables: Map<String, TableDefinition>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement>
 
     // ── Spatial helpers ──────────────────────────
 
@@ -118,7 +128,13 @@ abstract class AbstractDdlGenerator(
             type = NoteType.ACTION_REQUIRED,
             code = "E052",
             objectName = name,
-            message = "Table '$name' skipped: contains geometry columns incompatible with spatial profile '${options.spatialProfile.cliName}'",
+            message = buildString {
+                append("Table '")
+                append(name)
+                append("' skipped: contains geometry columns incompatible with spatial profile '")
+                append(options.spatialProfile.cliName)
+                append("'")
+            },
             hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
             blocksTable = true,
         )
@@ -127,32 +143,6 @@ abstract class AbstractDdlGenerator(
     protected open fun canGenerateSpatial(profile: SpatialProfile): Boolean = when (profile) {
         SpatialProfile.POSTGIS, SpatialProfile.NATIVE, SpatialProfile.SPATIALITE -> true
         SpatialProfile.NONE -> false
-    }
-
-    private fun registerBlockedTable(
-        name: String,
-        blockNote: TransformationNote,
-        blockedTables: MutableSet<String>,
-        skipped: MutableList<SkippedObject>,
-    ) {
-        blockedTables += name
-        skipped += SkippedObject(
-            type = "table",
-            name = name,
-            reason = blockNote.message,
-            code = blockNote.code,
-            hint = blockNote.hint,
-            phase = DdlPhase.PRE_DATA,
-        )
-    }
-
-    private fun List<DdlStatement>.withPhase(phase: DdlPhase): List<DdlStatement> =
-        map { it.copy(phase = phase) }
-
-    private fun tagNewSkips(skipped: MutableList<SkippedObject>, fromIndex: Int, phase: DdlPhase) {
-        for (i in fromIndex until skipped.size) {
-            skipped[i] = skipped[i].copy(phase = phase)
-        }
     }
 
     // ── Shared logic ────────────────────────────
@@ -283,19 +273,52 @@ abstract class AbstractDdlGenerator(
                 type = NoteType.WARNING,
                 code = "W113",
                 objectName = "views",
-                message = "Views contain unresolved or circular dependencies: ${remaining.joinToString(", ")}. Original order is preserved for the remaining views.",
+                message = buildString {
+                    append("Views contain unresolved or circular dependencies: ")
+                    append(remaining.joinToString(", "))
+                    append(". Original order is preserved for the remaining views.")
+                },
                 hint = "Declare consistent view dependencies or adjust view definitions to break the cycle."
             )
         )
         return ViewSortResult(ordered, notes)
     }
 
-    protected fun classifyViewsByPhase(
-        views: Map<String, ViewDefinition>,
-        functionNames: Set<String>,
-    ): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> =
-        ViewPhaseClassifier.classify(
-            views, functionNames,
-            ViewDependencyResolver::declaredViewDependencies, ViewDependencyResolver::inferViewDependenciesFromQuery,
-        )
 }
+
+private fun registerBlockedTable(
+    name: String,
+    blockNote: TransformationNote,
+    blockedTables: MutableSet<String>,
+    skipped: MutableList<SkippedObject>,
+) {
+    blockedTables += name
+    skipped += SkippedObject(
+        type = "table",
+        name = name,
+        reason = blockNote.message,
+        code = blockNote.code,
+        hint = blockNote.hint,
+        phase = DdlPhase.PRE_DATA,
+    )
+}
+
+private fun List<DdlStatement>.withPhase(phase: DdlPhase): List<DdlStatement> =
+    map { it.copy(phase = phase) }
+
+private fun tagNewSkips(skipped: MutableList<SkippedObject>, fromIndex: Int, phase: DdlPhase) {
+    for (i in fromIndex until skipped.size) {
+        skipped[i] = skipped[i].copy(phase = phase)
+    }
+}
+
+private fun classifyViewsByPhase(
+    views: Map<String, ViewDefinition>,
+    functionNames: Set<String>,
+): Triple<Map<String, ViewDefinition>, Map<String, ViewDefinition>, List<TransformationNote>> =
+    ViewPhaseClassifier.classify(
+        views,
+        functionNames,
+        ViewDependencyResolver::declaredViewDependencies,
+        ViewDependencyResolver::inferViewDependenciesFromQuery,
+    )

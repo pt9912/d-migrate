@@ -188,7 +188,12 @@ object MysqlMetadataQueries {
         )
     }
 
-    fun listRoutineParameters(session: JdbcOperations, schemaName: String, routineName: String, routineType: String): List<Map<String, Any?>> {
+    fun listRoutineParameters(
+        session: JdbcOperations,
+        schemaName: String,
+        routineName: String,
+        routineType: String,
+    ): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT parameter_name, data_type, dtd_identifier,
@@ -456,6 +461,21 @@ object MysqlMetadataQueries {
         val accessible: Boolean,
     )
 
+    private data class SupportTriggerInput(
+        val name: String,
+        val timing: String,
+        val event: String,
+        val body: String,
+        val table: String,
+        val column: String?,
+        val rawSequence: String?,
+        val guardColumn: String?,
+        val seqUnqualified: String?,
+        val markerSeq: String?,
+        val markerTable: String?,
+        val markerColumn: String?,
+    )
+
     fun listPotentialSupportTriggers(
         session: JdbcOperations,
         schemaName: String,
@@ -511,33 +531,50 @@ object MysqlMetadataQueries {
             val seqUnqualified = rawSequence?.let { unqualify(it, schemaName) }
 
             val state = assessTriggerState(
-                name, timing, event, body, table, column, rawSequence,
-                guardColumn, seqUnqualified, markerSeq, markerTable, markerColumn,
+                SupportTriggerInput(
+                    name = name,
+                    timing = timing,
+                    event = event,
+                    body = body,
+                    table = table,
+                    column = column,
+                    rawSequence = rawSequence,
+                    guardColumn = guardColumn,
+                    seqUnqualified = seqUnqualified,
+                    markerSeq = markerSeq,
+                    markerTable = markerTable,
+                    markerColumn = markerColumn,
+                )
             )
 
-            SupportTriggerAssessment(name, state, table, column, seqUnqualified ?: rawSequence?.stripBackticks())
+            SupportTriggerAssessment(
+                name,
+                state,
+                table,
+                column,
+                seqUnqualified ?: rawSequence?.stripBackticks(),
+            )
         }
         return SupportTriggerScanResult(result, accessible = true)
     }
 
-    private fun assessTriggerState(
-        name: String, timing: String, event: String, body: String,
-        table: String, column: String?, rawSequence: String?,
-        guardColumn: String?, seqUnqualified: String?,
-        markerSeq: String?, markerTable: String?, markerColumn: String?,
-    ): SupportTriggerState = when {
-        !MysqlSequenceNaming.isSupportTriggerName(name) -> SupportTriggerState.USER_OBJECT
-        !timing.equals("BEFORE", ignoreCase = true) || !event.equals("INSERT", ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-        "d-migrate:mysql-sequence-v1" !in body -> SupportTriggerState.MISSING_MARKER
-        "object=sequence-trigger" !in body -> SupportTriggerState.NON_CANONICAL
-        "dmg_nextval" !in body -> SupportTriggerState.NON_CANONICAL
-        column == null || rawSequence == null -> SupportTriggerState.NON_CANONICAL
-        guardColumn == null -> SupportTriggerState.NON_CANONICAL
-        !guardColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-        seqUnqualified == null -> SupportTriggerState.NON_CANONICAL
-        markerSeq != null && !markerSeq.equals(seqUnqualified, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-        markerTable != null && !markerTable.equals(table, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
-        markerColumn != null && !markerColumn.equals(column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+    private fun assessTriggerState(input: SupportTriggerInput): SupportTriggerState = when {
+        !MysqlSequenceNaming.isSupportTriggerName(input.name) -> SupportTriggerState.USER_OBJECT
+        !input.timing.equals("BEFORE", ignoreCase = true) ||
+            !input.event.equals("INSERT", ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        "d-migrate:mysql-sequence-v1" !in input.body -> SupportTriggerState.MISSING_MARKER
+        "object=sequence-trigger" !in input.body -> SupportTriggerState.NON_CANONICAL
+        "dmg_nextval" !in input.body -> SupportTriggerState.NON_CANONICAL
+        input.column == null || input.rawSequence == null -> SupportTriggerState.NON_CANONICAL
+        input.guardColumn == null -> SupportTriggerState.NON_CANONICAL
+        !input.guardColumn.equals(input.column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        input.seqUnqualified == null -> SupportTriggerState.NON_CANONICAL
+        input.markerSeq != null &&
+            !input.markerSeq.equals(input.seqUnqualified, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        input.markerTable != null &&
+            !input.markerTable.equals(input.table, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
+        input.markerColumn != null &&
+            !input.markerColumn.equals(input.column, ignoreCase = true) -> SupportTriggerState.NON_CANONICAL
         else -> SupportTriggerState.CONFIRMED
     }
 }

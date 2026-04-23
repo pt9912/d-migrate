@@ -15,7 +15,6 @@ internal class PostgresColumnConstraintHelper(
         col: ColumnDefinition,
         schema: SchemaDefinition,
         tableName: String,
-        _notes: MutableList<TransformationNote>
     ): String {
         val type = col.type
 

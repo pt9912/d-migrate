@@ -395,34 +395,31 @@ internal object SchemaNodeParser {
             functions = node["functions"]?.toStringList() ?: emptyList(),
         )
     }
-
-    // ── Extension Helpers ───────────────────────
-
-    internal fun JsonNode.requiredText(field: String): String =
-        this[field]?.asText() ?: throw IllegalArgumentException("Missing required field: $field")
-
-    internal fun JsonNode.optionalText(field: String): String? =
-        this[field]?.takeIf { !it.isNull }?.asText()
-
-    internal fun JsonNode.textOrDefault(field: String, default: String): String =
-        this[field]?.asText() ?: default
-
-    internal fun JsonNode.requiredInt(field: String): Int =
-        this[field]?.asInt() ?: throw IllegalArgumentException("Missing required field: $field")
-
-    internal fun JsonNode.optionalInt(field: String): Int? =
-        this[field]?.takeIf { !it.isNull && it.isNumber }?.asInt()
-
-    internal fun JsonNode.optionalLong(field: String): Long? =
-        this[field]?.takeIf { !it.isNull && it.isNumber }?.asLong()
-
-    internal fun JsonNode.optionalBool(field: String): Boolean? =
-        this[field]?.takeIf { !it.isNull && it.isBoolean }?.booleanValue()
-
-    internal fun JsonNode.boolOrDefault(field: String, default: Boolean): Boolean =
-        this[field]?.takeIf { !it.isNull }?.asBoolean() ?: default
-
-    internal fun JsonNode.toStringList(): List<String> =
-        if (isArray) map { it.asText() } else emptyList()
-
 }
+
+private fun JsonNode.requiredText(field: String): String =
+    this[field]?.asText() ?: throw IllegalArgumentException("Missing required field: $field")
+
+private fun JsonNode.optionalText(field: String): String? =
+    this[field]?.takeIf { !it.isNull }?.asText()
+
+private fun JsonNode.textOrDefault(field: String, default: String): String =
+    this[field]?.asText() ?: default
+
+private fun JsonNode.requiredInt(field: String): Int =
+    this[field]?.asInt() ?: throw IllegalArgumentException("Missing required field: $field")
+
+private fun JsonNode.optionalInt(field: String): Int? =
+    this[field]?.takeIf { !it.isNull && it.isNumber }?.asInt()
+
+private fun JsonNode.optionalLong(field: String): Long? =
+    this[field]?.takeIf { !it.isNull && it.isNumber }?.asLong()
+
+private fun JsonNode.optionalBool(field: String): Boolean? =
+    this[field]?.takeIf { !it.isNull && it.isBoolean }?.booleanValue()
+
+private fun JsonNode.boolOrDefault(field: String, default: Boolean): Boolean =
+    this[field]?.takeIf { !it.isNull }?.asBoolean() ?: default
+
+private fun JsonNode.toStringList(): List<String> =
+    if (isArray) map { it.asText() } else emptyList()

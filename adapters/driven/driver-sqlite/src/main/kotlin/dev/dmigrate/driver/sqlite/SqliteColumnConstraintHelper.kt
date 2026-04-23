@@ -124,7 +124,9 @@ internal class SqliteColumnConstraintHelper(
                 val fromCols = constraint.columns?.joinToString(", ") { quoteIdentifier(it) } ?: ""
                 val toCols = ref.columns.joinToString(", ") { quoteIdentifier(it) }
                 buildString {
-                    append("CONSTRAINT ${quoteIdentifier(constraint.name)} FOREIGN KEY ($fromCols) REFERENCES ${quoteIdentifier(ref.table)} ($toCols)")
+                    append("CONSTRAINT ${quoteIdentifier(constraint.name)} ")
+                    append("FOREIGN KEY ($fromCols) ")
+                    append("REFERENCES ${quoteIdentifier(ref.table)} ($toCols)")
                     if (ref.onDelete != null) append(" ON DELETE ${referentialActionSql(ref.onDelete!!)}")
                     if (ref.onUpdate != null) append(" ON UPDATE ${referentialActionSql(ref.onUpdate!!)}")
                 }

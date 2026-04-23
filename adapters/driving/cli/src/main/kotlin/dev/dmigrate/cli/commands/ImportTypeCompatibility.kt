@@ -20,21 +20,22 @@ internal object ImportTypeCompatibility {
         val jdbcType = targetColumn.jdbcType
         return when (schemaType) {
             is NeutralType.Identifier -> isIdentifierCompatible(jdbcType)
-            is NeutralType.Text, is NeutralType.Email -> isTextCompatible(jdbcType, sqlTypeName)
-            is NeutralType.Char -> jdbcType in setOf(Types.CHAR, Types.NCHAR)
-            NeutralType.Integer -> jdbcType == Types.INTEGER || sqlTypeName == "INT4"
-            NeutralType.SmallInt -> jdbcType == Types.SMALLINT || sqlTypeName == "INT2"
-            NeutralType.BigInteger -> jdbcType == Types.BIGINT || sqlTypeName == "INT8"
-            is NeutralType.Float -> isFloatCompatible(schemaType, jdbcType)
-            is NeutralType.Decimal -> jdbcType in setOf(Types.DECIMAL, Types.NUMERIC)
-            NeutralType.BooleanType -> isBooleanCompatible(jdbcType, sqlTypeName)
-            is NeutralType.DateTime -> jdbcType in setOf(Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE)
-            NeutralType.Date -> jdbcType == Types.DATE
-            NeutralType.Time -> jdbcType in setOf(Types.TIME, Types.TIME_WITH_TIMEZONE)
-            NeutralType.Uuid -> sqlTypeName == "UUID" || jdbcType in setOf(Types.CHAR, Types.VARCHAR)
-            NeutralType.Json -> isJsonCompatible(jdbcType, sqlTypeName)
-            NeutralType.Xml -> isXmlCompatible(jdbcType, sqlTypeName)
-            NeutralType.Binary -> jdbcType in setOf(Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY, Types.BLOB)
+            is NeutralType.Text,
+            is NeutralType.Email,
+            is NeutralType.Char -> isTextFamilyCompatible(schemaType, jdbcType, sqlTypeName)
+            NeutralType.Integer,
+            NeutralType.SmallInt,
+            NeutralType.BigInteger,
+            is NeutralType.Float,
+            is NeutralType.Decimal,
+            NeutralType.BooleanType -> isNumericFamilyCompatible(schemaType, jdbcType, sqlTypeName)
+            is NeutralType.DateTime,
+            NeutralType.Date,
+            NeutralType.Time -> isTemporalFamilyCompatible(schemaType, jdbcType)
+            NeutralType.Uuid,
+            NeutralType.Json,
+            NeutralType.Xml,
+            NeutralType.Binary -> isStructuredFamilyCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Enum -> isEnumCompatible(schemaType, jdbcType, sqlTypeName)
             is NeutralType.Array -> jdbcType == Types.ARRAY || sqlTypeName.endsWith("[]")
             is NeutralType.Geometry -> true
@@ -44,8 +45,39 @@ internal object ImportTypeCompatibility {
     private fun isIdentifierCompatible(jdbcType: Int): Boolean =
         jdbcType in setOf(Types.SMALLINT, Types.INTEGER, Types.BIGINT, Types.NUMERIC, Types.DECIMAL)
 
+    private fun isTextFamilyCompatible(
+        schemaType: NeutralType,
+        jdbcType: Int,
+        sqlTypeName: String,
+    ): Boolean = when (schemaType) {
+        is NeutralType.Char -> jdbcType in setOf(Types.CHAR, Types.NCHAR)
+        else -> isTextCompatible(jdbcType, sqlTypeName)
+    }
+
     private fun isTextCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
-        jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.LONGVARCHAR, Types.NCHAR, Types.NVARCHAR, Types.LONGNVARCHAR, Types.CLOB) || sqlTypeName.contains("TEXT")
+        jdbcType in setOf(
+            Types.CHAR,
+            Types.VARCHAR,
+            Types.LONGVARCHAR,
+            Types.NCHAR,
+            Types.NVARCHAR,
+            Types.LONGNVARCHAR,
+            Types.CLOB,
+        ) || sqlTypeName.contains("TEXT")
+
+    private fun isNumericFamilyCompatible(
+        schemaType: NeutralType,
+        jdbcType: Int,
+        sqlTypeName: String,
+    ): Boolean = when (schemaType) {
+        NeutralType.Integer -> jdbcType == Types.INTEGER || sqlTypeName == "INT4"
+        NeutralType.SmallInt -> jdbcType == Types.SMALLINT || sqlTypeName == "INT2"
+        NeutralType.BigInteger -> jdbcType == Types.BIGINT || sqlTypeName == "INT8"
+        is NeutralType.Float -> isFloatCompatible(schemaType, jdbcType)
+        is NeutralType.Decimal -> jdbcType in setOf(Types.DECIMAL, Types.NUMERIC)
+        NeutralType.BooleanType -> isBooleanCompatible(jdbcType, sqlTypeName)
+        else -> false
+    }
 
     private fun isFloatCompatible(type: NeutralType.Float, jdbcType: Int): Boolean =
         if (type.floatPrecision.name == "SINGLE") jdbcType in setOf(Types.REAL, Types.FLOAT)
@@ -53,6 +85,31 @@ internal object ImportTypeCompatibility {
 
     private fun isBooleanCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
         jdbcType == Types.BOOLEAN || (jdbcType == Types.BIT && !isMultiBit(sqlTypeName))
+
+    private fun isTemporalFamilyCompatible(
+        schemaType: NeutralType,
+        jdbcType: Int,
+    ): Boolean = when (schemaType) {
+        is NeutralType.DateTime ->
+            jdbcType in setOf(Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE)
+        NeutralType.Date -> jdbcType == Types.DATE
+        NeutralType.Time -> jdbcType in setOf(Types.TIME, Types.TIME_WITH_TIMEZONE)
+        else -> false
+    }
+
+    private fun isStructuredFamilyCompatible(
+        schemaType: NeutralType,
+        jdbcType: Int,
+        sqlTypeName: String,
+    ): Boolean = when (schemaType) {
+        NeutralType.Uuid ->
+            sqlTypeName == "UUID" || jdbcType in setOf(Types.CHAR, Types.VARCHAR)
+        NeutralType.Json -> isJsonCompatible(jdbcType, sqlTypeName)
+        NeutralType.Xml -> isXmlCompatible(jdbcType, sqlTypeName)
+        NeutralType.Binary ->
+            jdbcType in setOf(Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY, Types.BLOB)
+        else -> false
+    }
 
     private fun isJsonCompatible(jdbcType: Int, sqlTypeName: String): Boolean =
         sqlTypeName in setOf("JSON", "JSONB") || jdbcType in setOf(Types.VARCHAR, Types.LONGVARCHAR, Types.CLOB)
@@ -64,7 +121,12 @@ internal object ImportTypeCompatibility {
         val ref = type.refType?.uppercase()
         return sqlTypeName == "ENUM" ||
             jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.NCHAR, Types.NVARCHAR) ||
-            (jdbcType == Types.OTHER && sqlTypeName.isNotEmpty() && sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES && (ref == null || sqlTypeName == ref))
+            (
+                jdbcType == Types.OTHER &&
+                    sqlTypeName.isNotEmpty() &&
+                    sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES &&
+                    (ref == null || sqlTypeName == ref)
+                )
     }
 
     fun isMultiBit(sqlTypeName: String): Boolean {

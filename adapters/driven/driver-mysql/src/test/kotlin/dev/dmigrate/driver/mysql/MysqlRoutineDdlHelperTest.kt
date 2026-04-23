@@ -170,7 +170,7 @@ class MysqlRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "DELIMITER //"
@@ -195,7 +195,7 @@ class MysqlRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "-- TODO"
@@ -219,7 +219,7 @@ class MysqlRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "-- TODO"

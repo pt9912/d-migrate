@@ -1,6 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
@@ -373,24 +372,11 @@ class DataExportRunnerValidationTest : FunSpec({
 
     // ─── Edge case: blank source ─────────────────────────────────
 
-    test("Exit 2: blank --source is ultimately an encoding/validation error") {
-        // Real NamedConnectionResolver.resolve() throws IllegalArgumentException
-        // for a blank source; that is NOT a ConfigResolveException, so it
-        // escapes out of the resolver and up through the caller. We don't
-        // swallow it in the runner — this test pins that fact so future
-        // refactors know the contract.
+    test("Exit 7: blank --source is reported as source resolution error") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
-        // IllegalArgumentException bubbles out — Clikt would turn it into
-        // a UsageError upstream. For the runner-level test we just assert
-        // that the resolve() call doesn't silently return 0.
-        try {
-            runner.execute(request(source = "   "))
-        } catch (e: IllegalArgumentException) {
-            // expected — the runner does not catch this (it relies on the
-            // Clikt harness to map blank args to usage errors before reaching
-            // the runner in real usage)
-        }
+        runner.execute(request(source = "   ")) shouldBe 7
+        stderr.joined() shouldContain "--source must not be blank"
     }
 
     // ─── File-system side effect probe: make sure pool is not

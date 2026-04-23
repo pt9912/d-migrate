@@ -100,7 +100,11 @@ internal class TableImporter(
         primaryFailure?.let { throw it }
 
         val tableDurationMs = elapsedMs(tableStartedAt)
-        val tableStatus = if (state.error == null && state.partialFinish == null) TableProgressStatus.COMPLETED else TableProgressStatus.FAILED
+        val tableStatus = if (state.error == null && state.partialFinish == null) {
+            TableProgressStatus.COMPLETED
+        } else {
+            TableProgressStatus.FAILED
+        }
         reporter.report(ProgressEvent.ImportTableFinished(
             table = tableInput.table, tableOrdinal = ordinal, tableCount = tableCount,
             rowsInserted = state.rowsInserted, rowsUpdated = state.rowsUpdated,
@@ -166,7 +170,7 @@ internal class TableImporter(
             val writeResult = try {
                 session.write(normalizedChunk)
             } catch (t: Throwable) {
-                val action = handleWriteFailure(session, normalizedChunk, t, ctx, state, reporter, reader)
+                val action = handleWriteFailure(session, normalizedChunk, t, ctx, state, reporter)
                 if (action == LoopAction.ABORT) throw t
                 if (action == LoopAction.BREAK) break
                 nextChunk = advanceOrBreak(reader, ctx, state, normalizedChunk.chunkIndex + 1) ?: break; continue
@@ -219,7 +223,6 @@ internal class TableImporter(
     private fun handleWriteFailure(
         session: TableImportSession, chunk: DataChunk, t: Throwable,
         ctx: ChunkContext, state: ImportLoopState, reporter: ProgressReporter,
-        reader: DataChunkReader,
     ): LoopAction {
         val recovered = runCatching { session.rollbackChunk() }.isSuccess
         state.rowsFailed += chunk.rows.size.toLong()

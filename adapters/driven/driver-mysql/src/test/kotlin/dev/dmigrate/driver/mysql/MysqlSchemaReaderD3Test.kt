@@ -14,6 +14,21 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Statement
 
+private fun isSupportShapeQuery(sql: String): Boolean =
+    "information_schema.columns" in sql &&
+        "table_name = ?" in sql &&
+        "ordinal_position" !in sql
+
+private fun isOrderedColumnQuery(sql: String): Boolean =
+    sql.contains("information_schema.columns") && "ordinal_position" in sql
+
+private fun supportTriggerStatement(markerSequence: String, callSequence: String): String =
+    "BEGIN " +
+        "/* d-migrate:mysql-sequence-v1 object=sequence-trigger " +
+        "sequence=$markerSequence table=orders column=invoice_number */ " +
+        "IF NEW.`invoice_number` IS NULL THEN " +
+        "SET NEW.`invoice_number` = `dmg_nextval`('$callSequence'); END IF; END"
+
 class MysqlSchemaReaderD3Test : FunSpec({
 
     val conn = mockk<Connection>(relaxUnitFun = true)
@@ -44,7 +59,9 @@ class MysqlSchemaReaderD3Test : FunSpec({
     fun stubCanonicalShape() {
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
             mapOf("table_name" to "dmg_sequences")
-        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "ordinal_position" !in it }, any(), any()) } returns listOf(
+        every {
+            jdbc.queryList(match(::isSupportShapeQuery), any(), any())
+        } returns listOf(
             mapOf("column_name" to "managed_by", "data_type" to "varchar"),
             mapOf("column_name" to "format_version", "data_type" to "varchar"),
             mapOf("column_name" to "name", "data_type" to "varchar"),
@@ -63,7 +80,6 @@ class MysqlSchemaReaderD3Test : FunSpec({
     }
 
     fun makeSnapshot(
-        _sequences: Map<String, SequenceDefinition> = mapOf("invoice_seq" to SequenceDefinition(start = 1000)),
         triggerAssessments: List<MysqlMetadataQueries.SupportTriggerAssessment> = emptyList(),
     ): MysqlSequenceSupportSnapshot {
         val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
@@ -141,7 +157,6 @@ class MysqlSchemaReaderD3Test : FunSpec({
             "invoice_number" to ColumnDefinition(type = NeutralType.BigInteger),
         )
         val snapshot = makeSnapshot(
-            _sequences = emptyMap(),
             triggerAssessments = listOf(
                 MysqlMetadataQueries.SupportTriggerAssessment(
                     confirmedTriggerName, SupportTriggerState.CONFIRMED, "orders", "invoice_number", "ghost_seq",
@@ -252,10 +267,6 @@ class MysqlSchemaReaderD3Test : FunSpec({
         val goodTrig = MysqlSequenceNaming.triggerName("orders", "good_col")
         val badTrig = MysqlSequenceNaming.triggerName("orders", "bad_col")
         val snapshot = makeSnapshot(
-            _sequences = mapOf(
-                "good_seq" to SequenceDefinition(start = 1),
-                "bad_seq" to SequenceDefinition(start = 1),
-            ),
             triggerAssessments = listOf(
                 MysqlMetadataQueries.SupportTriggerAssessment(goodTrig, SupportTriggerState.CONFIRMED, "orders", "good_col", "good_seq"),
                 MysqlMetadataQueries.SupportTriggerAssessment(badTrig, SupportTriggerState.NON_CANONICAL, "orders", "bad_col", "bad_seq"),
@@ -283,7 +294,8 @@ class MysqlSchemaReaderD3Test : FunSpec({
             mapOf("trigger_name" to confirmedTriggerName,
                 "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
                 "event_object_table" to "orders",
-                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=OTHER table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq'); END IF; END"),
+                "action_statement" to supportTriggerStatement("OTHER", "invoice_seq"),
+            ),
         )
         val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
         val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
@@ -303,7 +315,11 @@ class MysqlSchemaReaderD3Test : FunSpec({
             mapOf("trigger_name" to confirmedTriggerName,
                 "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
                 "event_object_table" to "orders",
-                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('`mydb`.`invoice_seq`'); END IF; END"),
+                "action_statement" to supportTriggerStatement(
+                    "invoice_seq",
+                    "`mydb`.`invoice_seq`",
+                ),
+            ),
         )
         val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
         val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
@@ -320,7 +336,11 @@ class MysqlSchemaReaderD3Test : FunSpec({
             mapOf("trigger_name" to confirmedTriggerName,
                 "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
                 "event_object_table" to "orders",
-                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('other_db.invoice_seq'); END IF; END"),
+                "action_statement" to supportTriggerStatement(
+                    "invoice_seq",
+                    "other_db.invoice_seq",
+                ),
+            ),
         )
         val scope = ReverseScope(catalogName = "mydb", schemaName = "mydb")
         val snapshot = reader.scanSequenceSupport(jdbc, "mydb", scope)
@@ -333,7 +353,9 @@ class MysqlSchemaReaderD3Test : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") && "table_type" in it }, any()) } returns listOf(
             mapOf("table_name" to "orders", "table_schema" to "mydb", "table_type" to "BASE TABLE"),
         )
-        every { jdbc.queryList(match { it.contains("information_schema.columns") && "ordinal_position" in it }, any(), any()) } returns listOf(
+        every {
+            jdbc.queryList(match(::isOrderedColumnQuery), any(), any())
+        } returns listOf(
             mapOf("column_name" to "id", "data_type" to "int", "column_type" to "int(11)",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "extra" to "auto_increment", "character_maximum_length" to null,
@@ -358,7 +380,11 @@ class MysqlSchemaReaderD3Test : FunSpec({
             mapOf("trigger_name" to confirmedTriggerName,
                 "action_timing" to "BEFORE", "event_manipulation" to "INSERT",
                 "event_object_table" to "orders",
-                "action_statement" to "BEGIN /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=orders column=invoice_number */ IF NEW.`invoice_number` IS NULL THEN SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq'); END IF; END"),
+                "action_statement" to supportTriggerStatement(
+                    "invoice_seq",
+                    "invoice_seq",
+                ),
+            ),
         )
         val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
             includeProcedures = false, includeTriggers = false)

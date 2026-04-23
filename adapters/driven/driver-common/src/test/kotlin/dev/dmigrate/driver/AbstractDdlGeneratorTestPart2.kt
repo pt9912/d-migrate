@@ -17,6 +17,7 @@ import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.ViewDefinition
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
@@ -170,6 +171,56 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         val gen = TestDdlGenerator(blockedTable = "t")
         val result = gen.generate(schema("t" to table()))
         result.skippedObjects.any { it.name == "t" && it.phase == DdlPhase.PRE_DATA } shouldBe true
+    }
+
+    test("generate() blocks geometry tables when spatial profile is NONE") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(
+            schema(
+                "geo" to TableDefinition(
+                    columns = mapOf("shape" to ColumnDefinition(type = NeutralType.Geometry())),
+                ),
+            ),
+            DdlGenerationOptions(spatialProfile = SpatialProfile.NONE),
+        )
+
+        result.notes.any { it.code == "E052" && it.objectName == "geo" } shouldBe true
+        result.skippedObjects shouldContainExactly listOf(
+            SkippedObject(
+                type = "table",
+                name = "geo",
+                reason = "Table 'geo' skipped: contains geometry columns incompatible with spatial profile 'none'",
+                code = "E052",
+                hint = "Use --spatial-profile to enable spatial DDL generation for this dialect",
+                phase = DdlPhase.PRE_DATA,
+            ),
+        )
+        result.statements.none { it.sql.contains("CREATE TABLE \"geo\"") } shouldBe true
+        gen.callOrder shouldContainExactly listOf(
+            "customTypes", "sequences",
+            "circular", "views", "views", "functions", "procedures", "triggers",
+        )
+    }
+
+    test("generate() allows geometry tables when spatial profile supports them") {
+        val gen = TestDdlGenerator()
+        val result = gen.generate(
+            schema(
+                "geo" to TableDefinition(
+                    columns = mapOf("shape" to ColumnDefinition(type = NeutralType.Geometry())),
+                ),
+            ),
+            DdlGenerationOptions(spatialProfile = SpatialProfile.POSTGIS),
+        )
+
+        result.notes.none { it.code == "E052" } shouldBe true
+        result.skippedObjects.shouldBeEmpty()
+        result.statements.any { it.sql.contains("CREATE TABLE \"geo\"") } shouldBe true
+        gen.callOrder shouldContainExactly listOf(
+            "customTypes", "sequences",
+            "table:geo", "indices:geo",
+            "circular", "views", "views", "functions", "procedures", "triggers",
+        )
     }
 
     test("full scenario: mixed objects land in correct phases") {

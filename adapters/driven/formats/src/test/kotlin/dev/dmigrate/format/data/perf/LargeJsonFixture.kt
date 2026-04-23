@@ -179,7 +179,20 @@ object LargeJsonFixture {
     private val TAGS = listOf("alpha", "bravo", "charlie", "delta", "echo")
 
     private val sourcePathCandidates = listOf(
-        Path.of("adapters", "driven", "formats", "src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
+        Path.of(
+            "adapters",
+            "driven",
+            "formats",
+            "src",
+            "test",
+            "kotlin",
+            "dev",
+            "dmigrate",
+            "format",
+            "data",
+            "perf",
+            "LargeJsonFixture.kt",
+        ),
         Path.of("src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
     )
 

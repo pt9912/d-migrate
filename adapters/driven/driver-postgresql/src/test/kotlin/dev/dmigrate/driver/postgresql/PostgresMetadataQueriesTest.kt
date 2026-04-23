@@ -86,8 +86,22 @@ class PostgresMetadataQueriesTest : FunSpec({
 
     test("listForeignKeys maps all PG action codes") {
         every { jdbc.queryList(match { it.contains("pg_constraint") }, any(), any()) } returns listOf(
-            mapOf("constraint_name" to "fk1", "columns" to "{a}", "referenced_table" to "t", "referenced_columns" to "{b}", "confdeltype" to "n", "confupdtype" to "d"),
-            mapOf("constraint_name" to "fk2", "columns" to "{c}", "referenced_table" to "t", "referenced_columns" to "{d}", "confdeltype" to "r", "confupdtype" to null),
+            mapOf(
+                "constraint_name" to "fk1",
+                "columns" to "{a}",
+                "referenced_table" to "t",
+                "referenced_columns" to "{b}",
+                "confdeltype" to "n",
+                "confupdtype" to "d",
+            ),
+            mapOf(
+                "constraint_name" to "fk2",
+                "columns" to "{c}",
+                "referenced_table" to "t",
+                "referenced_columns" to "{d}",
+                "confdeltype" to "r",
+                "confupdtype" to null,
+            ),
         )
         val result = PostgresMetadataQueries.listForeignKeys(jdbc, "public", "x")
         result[0].onDelete shouldBe "SET NULL"

@@ -2,7 +2,12 @@ package dev.dmigrate.format.report
 
 import dev.dmigrate.profiling.model.ColumnProfile
 import dev.dmigrate.profiling.model.DatabaseProfile
+import dev.dmigrate.profiling.model.NumericStats
+import dev.dmigrate.profiling.model.ProfileWarning
 import dev.dmigrate.profiling.model.TableProfile
+import dev.dmigrate.profiling.model.TargetTypeCompatibility
+import dev.dmigrate.profiling.model.TemporalStats
+import dev.dmigrate.profiling.model.ValueFrequency
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
@@ -61,7 +66,7 @@ class ProfileReportWriter {
             if (i < table.columns.size - 1) appendLine(",") else appendLine()
         }
         appendLine("$indent  ],")
-        appendLine("""$indent  "warnings": [${table.warnings.joinToString(", ") { """{"code": "${it.code}", "severity": "${it.severity}", "message": ${jsonStr(it.message)}}""" }}]""")
+        appendLine("""$indent  "warnings": ${renderWarningsJson(table.warnings)}""")
         append("$indent}")
     }
 
@@ -85,28 +90,26 @@ class ProfileReportWriter {
         if (col.topValues.isNotEmpty()) {
             appendLine("""$indent  "topValues": [""")
             col.topValues.forEachIndexed { i, v ->
-                append("""$indent    {"value": ${if (v.value != null) jsonStr(v.value) else "null"}, "count": ${v.count}, "ratio": ${v.ratio}}""")
+                append("$indent    ${renderTopValueJson(v)}")
                 if (i < col.topValues.size - 1) appendLine(",") else appendLine()
             }
             appendLine("$indent  ],")
         }
         col.numericStats?.let { s ->
-            appendLine("""$indent  "numericStats": {"min": ${s.min}, "max": ${s.max}, "avg": ${s.avg}, "sum": ${s.sum}, "stddev": ${s.stddev}, "zeroCount": ${s.zeroCount}, "negativeCount": ${s.negativeCount}},""")
+            appendLine("""$indent  "numericStats": ${renderNumericStatsJson(s)},""")
         }
         col.temporalStats?.let { s ->
-            appendLine("""$indent  "temporalStats": {"minTimestamp": ${jsonStr(s.minTimestamp)}, "maxTimestamp": ${jsonStr(s.maxTimestamp)}},""")
+            appendLine("""$indent  "temporalStats": ${renderTemporalStatsJson(s)},""")
         }
         if (col.targetCompatibility.isNotEmpty()) {
             appendLine("""$indent  "targetCompatibility": [""")
             col.targetCompatibility.forEachIndexed { i, c ->
-                val examples = if (c.exampleInvalidValues.isNotEmpty())
-                    """, "exampleInvalidValues": [${c.exampleInvalidValues.joinToString(", ") { jsonStr(it) }}]""" else ""
-                append("""$indent    {"targetType": "${c.targetType}", "checkedValueCount": ${c.checkedValueCount}, "compatibleCount": ${c.compatibleCount}, "incompatibleCount": ${c.incompatibleCount}, "determinationStatus": "${c.determinationStatus}"$examples}""")
+                append("$indent    ${renderTargetCompatibilityJson(c)}")
                 if (i < col.targetCompatibility.size - 1) appendLine(",") else appendLine()
             }
             appendLine("$indent  ],")
         }
-        appendLine("""$indent  "warnings": [${col.warnings.joinToString(", ") { """{"code": "${it.code}", "severity": "${it.severity}", "message": ${jsonStr(it.message)}}""" }}]""")
+        appendLine("""$indent  "warnings": ${renderWarningsJson(col.warnings)}""")
         append("$indent}")
     }
 
@@ -194,10 +197,53 @@ class ProfileReportWriter {
         return "\"${s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")}\""
     }
 
+    private fun renderWarningsJson(warnings: List<ProfileWarning>): String =
+        warnings.joinToString(prefix = "[", postfix = "]") { warning ->
+            """{"code": "${warning.code}", "severity": "${warning.severity}", "message": ${jsonStr(warning.message)}}"""
+        }
+
+    private fun renderTopValueJson(value: ValueFrequency): String =
+        """{"value": ${value.value?.let(::jsonStr) ?: "null"}, "count": ${value.count}, "ratio": ${value.ratio}}"""
+
+    private fun renderNumericStatsJson(stats: NumericStats): String =
+        buildString {
+            append("""{"min": ${stats.min}, "max": ${stats.max}, "avg": ${stats.avg}""")
+            append(""", "sum": ${stats.sum}, "stddev": ${stats.stddev}""")
+            append(""", "zeroCount": ${stats.zeroCount}, "negativeCount": ${stats.negativeCount}}""")
+        }
+
+    private fun renderTemporalStatsJson(stats: TemporalStats): String =
+        """{"minTimestamp": ${jsonStr(stats.minTimestamp)}, "maxTimestamp": ${jsonStr(stats.maxTimestamp)}}"""
+
+    private fun renderTargetCompatibilityJson(compatibility: TargetTypeCompatibility): String {
+        val examples = if (compatibility.exampleInvalidValues.isNotEmpty()) {
+            val rendered = compatibility.exampleInvalidValues.joinToString(", ") { jsonStr(it) }
+            """, "exampleInvalidValues": [$rendered]"""
+        } else {
+            ""
+        }
+        return buildString {
+            append("""{"targetType": "${compatibility.targetType}"""")
+            append("""", "checkedValueCount": ${compatibility.checkedValueCount}""")
+            append("""", "compatibleCount": ${compatibility.compatibleCount}""")
+            append("""", "incompatibleCount": ${compatibility.incompatibleCount}""")
+            append("""", "determinationStatus": "${compatibility.determinationStatus}"""")
+            append(examples)
+            append("}")
+        }
+    }
+
     private fun yamlStr(s: String?): String {
         if (s == null) return "null"
-        return if (s.contains(":") || s.contains("#") || s.contains("\"") || s.contains("'") || s.contains("\n")) {
+        return if (needsYamlQuoting(s)) {
             "\"${s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")}\""
         } else s
     }
+
+    private fun needsYamlQuoting(value: String): Boolean =
+        value.contains(":") ||
+            value.contains("#") ||
+            value.contains("\"") ||
+            value.contains("'") ||
+            value.contains("\n")
 }

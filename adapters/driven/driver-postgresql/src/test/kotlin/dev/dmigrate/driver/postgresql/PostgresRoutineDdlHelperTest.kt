@@ -163,7 +163,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 2
         // First statement: trigger function
@@ -189,7 +189,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "-- TODO"
@@ -213,7 +213,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "-- TODO"

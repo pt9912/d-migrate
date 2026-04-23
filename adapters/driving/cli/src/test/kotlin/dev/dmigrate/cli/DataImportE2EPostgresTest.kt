@@ -354,7 +354,10 @@ class DataImportE2EPostgresTest : FunSpec({
 
     test("--trigger-mode disable prevents trigger from firing") {
         val dataFile = Files.createTempFile("pg-trigger-", ".json")
-        Files.writeString(dataFile, """[{"id":1,"name":"triggertest","email":null,"active":true,"score":"0","updated_at":"2026-01-01T00:00:00"}]""")
+        Files.writeString(
+            dataFile,
+            """[{"id":1,"name":"triggertest","email":null,"active":true,"score":"0","updated_at":"2026-01-01T00:00:00"}]""",
+        )
         try {
             shouldNotThrowAny {
                 cli().parse(
@@ -378,7 +381,10 @@ class DataImportE2EPostgresTest : FunSpec({
 
     test("trigger fires normally when --trigger-mode is fire (default)") {
         val dataFile = Files.createTempFile("pg-trigger-fire-", ".json")
-        Files.writeString(dataFile, """[{"id":1,"name":"firedtest","email":null,"active":true,"score":"0","updated_at":"2026-01-01T00:00:00"}]""")
+        Files.writeString(
+            dataFile,
+            """[{"id":1,"name":"firedtest","email":null,"active":true,"score":"0","updated_at":"2026-01-01T00:00:00"}]""",
+        )
         try {
             shouldNotThrowAny {
                 cli().parse(
@@ -454,7 +460,10 @@ class DataImportE2EPostgresTest : FunSpec({
                 conn.createStatement().use { stmt ->
                     stmt.execute("ALTER TABLE users DISABLE TRIGGER trg_user_insert")
                     stmt.execute("UPDATE users SET name = 'ALICE_UPDATED', updated_at = '2026-06-15 12:00:00' WHERE id = 1")
-                    stmt.execute("INSERT INTO users (id, name, active, score, updated_at) VALUES (3, 'charlie', true, 30, '2026-06-15 12:00:00')")
+                    stmt.execute(
+                        "INSERT INTO users (id, name, active, score, updated_at) " +
+                            "VALUES (3, 'charlie', true, 30, '2026-06-15 12:00:00')",
+                    )
                     stmt.execute("ALTER TABLE users ENABLE TRIGGER trg_user_insert")
                 }
             }

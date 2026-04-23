@@ -121,7 +121,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         }
 
         val notes = mutableListOf<TransformationNote>()
-        val columnLines = buildColumnLines(name, table, schema, deferredFks, isSpatiaLite, geometryCols, notes)
+        val columnLines = buildColumnLines(name, table, schema, deferredFks, isSpatiaLite, notes)
 
         if (table.partitioning != null) {
             notes += TransformationNote(
@@ -142,16 +142,26 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
     ): List<DdlStatement>? {
         val geoColNames = geometryCols.keys
         for ((colName, col) in geometryCols) {
-            if (col.required || col.unique || col.default != null || col.references != null || colName in table.primaryKey) {
+            if (hasSpatialMetadataConflict(table, colName, col)) {
                 return blockTableForSpatialMetadata(name, colName, "required/unique/default/references/PK")
             }
         }
         for (constraint in table.constraints) {
             val cols = constraint.columns.orEmpty()
-            if (cols.any { it in geoColNames }) return blockTableForSpatialMetadata(name, cols.first { it in geoColNames }, "table-level constraint '${constraint.name}'")
+            val blockingColumn = cols.firstOrNull { it in geoColNames }
+            if (blockingColumn != null) {
+                return blockTableForSpatialMetadata(
+                    name,
+                    blockingColumn,
+                    "table-level constraint '${constraint.name}'",
+                )
+            }
         }
         for (idx in table.indices) {
-            if (idx.columns.any { it in geoColNames }) return blockTableForSpatialMetadata(name, idx.columns.first { it in geoColNames }, "index on geometry column")
+            val blockingColumn = idx.columns.firstOrNull { it in geoColNames }
+            if (blockingColumn != null) {
+                return blockTableForSpatialMetadata(name, blockingColumn, "index on geometry column")
+            }
         }
         return null
     }
@@ -159,7 +169,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
     private fun buildColumnLines(
         name: String, table: TableDefinition, schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>, isSpatiaLite: Boolean,
-        geometryCols: Map<String, ColumnDefinition>, notes: MutableList<TransformationNote>,
+        notes: MutableList<TransformationNote>,
     ): List<String> {
         val lines = mutableListOf<String>()
         val normalCols = table.columns.filter { it.value.type !is NeutralType.Geometry }
@@ -180,7 +190,19 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             val geo = col.type as NeutralType.Geometry
             val geoType = geo.geometryType.schemaName.uppercase()
             val srid = geo.srid ?: 0
-            DdlStatement("SELECT AddGeometryColumn('${name.replace("'", "''")}', '${colName.replace("'", "''")}', $srid, '$geoType', 'XY');")
+            DdlStatement(
+                buildString {
+                    append("SELECT AddGeometryColumn('")
+                    append(name.replace("'", "''"))
+                    append("', '")
+                    append(colName.replace("'", "''"))
+                    append("', ")
+                    append(srid)
+                    append(", '")
+                    append(geoType)
+                    append("', 'XY');")
+                }
+            )
         }
     }
 
@@ -216,7 +238,14 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                         type = NoteType.WARNING,
                         code = "W102",
                         objectName = indexName,
-                        message = "${index.type.name} index '${indexName}' on table '$tableName' is not supported in SQLite. Only BTREE is available.",
+                        message = buildString {
+                            append(index.type.name)
+                            append(" index '")
+                            append(indexName)
+                            append("' on table '")
+                            append(tableName)
+                            append("' is not supported in SQLite. Only BTREE is available.")
+                        },
                         hint = "The index has been skipped. If needed, create a standard BTREE index instead."
                     )
                 )
@@ -246,7 +275,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             skipped += SkippedObject(
                 "foreign_key",
                 constraintName,
-                "Circular foreign key from '${edge.fromTable}.${edge.fromColumn}' to '${edge.toTable}.${edge.toColumn}' cannot be added in SQLite (no ALTER TABLE ADD CONSTRAINT)"
+                circularForeignKeySkipReason(edge),
             )
             statements += DdlStatement(
                 "-- Circular FK ${quoteIdentifier(constraintName)} skipped: SQLite cannot ALTER TABLE ADD CONSTRAINT",
@@ -255,7 +284,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
                         type = NoteType.ACTION_REQUIRED,
                         code = "E019",
                         objectName = constraintName,
-                        message = "Circular foreign key from '${edge.fromTable}.${edge.fromColumn}' to '${edge.toTable}.${edge.toColumn}' cannot be created in SQLite.",
+                        message = circularForeignKeyMessage(edge),
                         hint = "SQLite does not support ALTER TABLE ADD CONSTRAINT. Enforce referential integrity at the application level."
                     )
                 )
@@ -291,7 +320,7 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         triggers: Map<String, TriggerDefinition>,
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = routineHelper.generateTriggers(triggers, tables, skipped)
+    ): List<DdlStatement> = routineHelper.generateTriggers(triggers, skipped)
 
     // -- Rollback inversion overrides --------------------------
 
@@ -324,4 +353,41 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
             hint = "Remove metadata from geometry column or use a different dialect",
             blocksTable = true,
         ))))
+
+    private fun hasSpatialMetadataConflict(
+        table: TableDefinition,
+        colName: String,
+        col: ColumnDefinition,
+    ): Boolean =
+        col.required ||
+            col.unique ||
+            col.default != null ||
+            col.references != null ||
+            colName in table.primaryKey
+
+    private fun circularForeignKeySkipReason(edge: CircularFkEdge): String =
+        buildString {
+            append("Circular foreign key from '")
+            append(edge.fromTable)
+            append('.')
+            append(edge.fromColumn)
+            append("' to '")
+            append(edge.toTable)
+            append('.')
+            append(edge.toColumn)
+            append("' cannot be added in SQLite (no ALTER TABLE ADD CONSTRAINT)")
+        }
+
+    private fun circularForeignKeyMessage(edge: CircularFkEdge): String =
+        buildString {
+            append("Circular foreign key from '")
+            append(edge.fromTable)
+            append('.')
+            append(edge.fromColumn)
+            append("' to '")
+            append(edge.toTable)
+            append('.')
+            append(edge.toColumn)
+            append("' cannot be created in SQLite.")
+        }
 }

@@ -26,7 +26,6 @@ internal class MysqlRoutineReader {
     fun readFunctions(
         session: JdbcOperations,
         database: String,
-        _notes: MutableList<SchemaReadNote>,
     ): Map<String, FunctionDefinition> {
         val rows = MysqlMetadataQueries.listFunctions(session, database)
         val result = LinkedHashMap<String, FunctionDefinition>()
@@ -60,7 +59,6 @@ internal class MysqlRoutineReader {
     fun readProcedures(
         session: JdbcOperations,
         database: String,
-        _notes: MutableList<SchemaReadNote>,
     ): Map<String, ProcedureDefinition> {
         val rows = MysqlMetadataQueries.listProcedures(session, database)
         val result = LinkedHashMap<String, ProcedureDefinition>()

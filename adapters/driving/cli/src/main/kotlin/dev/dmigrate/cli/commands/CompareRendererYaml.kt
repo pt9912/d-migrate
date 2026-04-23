@@ -93,14 +93,17 @@ internal object CompareRendererYaml {
     }
 
     private fun renderDiffTables(sb: StringBuilder, diff: DiffView) {
-        if (diff.tablesAdded.isNotEmpty()) { sb.appendLine("  tables_added:"); for (t in diff.tablesAdded) sb.appendLine("    - \"${esc(t.name)}\"") }
-        if (diff.tablesRemoved.isNotEmpty()) { sb.appendLine("  tables_removed:"); for (t in diff.tablesRemoved) sb.appendLine("    - \"${esc(t.name)}\"") }
-        if (diff.tablesChanged.isNotEmpty()) { sb.appendLine("  tables_changed:"); for (t in diff.tablesChanged) renderTableChange(sb, t) }
+        appendQuotedList(sb, "  ", "tables_added", diff.tablesAdded.map { it.name })
+        appendQuotedList(sb, "  ", "tables_removed", diff.tablesRemoved.map { it.name })
+        if (diff.tablesChanged.isNotEmpty()) {
+            sb.appendLine("  tables_changed:")
+            for (t in diff.tablesChanged) renderTableChange(sb, t)
+        }
     }
 
     private fun renderDiffViews(sb: StringBuilder, diff: DiffView) {
-        if (diff.viewsAdded.isNotEmpty()) { sb.appendLine("  views_added:"); for (v in diff.viewsAdded) sb.appendLine("    - \"${esc(v.name)}\"") }
-        if (diff.viewsRemoved.isNotEmpty()) { sb.appendLine("  views_removed:"); for (v in diff.viewsRemoved) sb.appendLine("    - \"${esc(v.name)}\"") }
+        appendQuotedList(sb, "  ", "views_added", diff.viewsAdded.map { it.name })
+        appendQuotedList(sb, "  ", "views_removed", diff.viewsRemoved.map { it.name })
         if (diff.viewsChanged.isNotEmpty()) {
             sb.appendLine("  views_changed:")
             for (v in diff.viewsChanged) {
@@ -108,7 +111,12 @@ internal object CompareRendererYaml {
                 v.materialized?.let { sb.appendLine("      materialized: {before: ${it.before}, after: ${it.after}}") }
                 v.refresh?.let { sb.appendLine("      refresh: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
                 if (v.queryChanged) sb.appendLine("      query: changed")
-                v.sourceDialect?.let { sb.appendLine("      source_dialect: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
+                v.sourceDialect?.let {
+                    sb.appendLine(
+                        "      source_dialect: " +
+                            renderNullableChange(it.before, it.after),
+                    )
+                }
             }
         }
     }
@@ -117,7 +125,11 @@ internal object CompareRendererYaml {
         sb.appendLine("    - name: \"${esc(t.name)}\"")
         renderTableColumns(sb, t)
         t.primaryKey?.let {
-            sb.appendLine("      primary_key: {before: [${it.before.joinToString(", ") { s -> "\"${esc(s)}\"" }}], after: [${it.after.joinToString(", ") { s -> "\"${esc(s)}\"" }}]}")
+            sb.appendLine(
+                "      primary_key: " +
+                    "{before: [${renderInlineQuotedList(it.before)}], " +
+                    "after: [${renderInlineQuotedList(it.after)}]}",
+            )
         }
         renderTableIndicesAndConstraints(sb, t)
     }
@@ -125,9 +137,12 @@ internal object CompareRendererYaml {
     private fun renderTableColumns(sb: StringBuilder, t: TableChangeView) {
         if (t.columnsAdded.isNotEmpty()) {
             sb.appendLine("      columns_added:")
-            for (c in t.columnsAdded) { sb.appendLine("        - name: \"${esc(c.name)}\""); sb.appendLine("          type: \"${esc(c.type)}\"") }
+            for (c in t.columnsAdded) {
+                sb.appendLine("        - name: \"${esc(c.name)}\"")
+                sb.appendLine("          type: \"${esc(c.type)}\"")
+            }
         }
-        if (t.columnsRemoved.isNotEmpty()) { sb.appendLine("      columns_removed:"); for (n in t.columnsRemoved) sb.appendLine("        - \"${esc(n)}\"") }
+        appendQuotedList(sb, "      ", "columns_removed", t.columnsRemoved)
         if (t.columnsChanged.isNotEmpty()) {
             sb.appendLine("      columns_changed:")
             for (c in t.columnsChanged) {
@@ -142,12 +157,26 @@ internal object CompareRendererYaml {
     }
 
     private fun renderTableIndicesAndConstraints(sb: StringBuilder, t: TableChangeView) {
-        if (t.indicesAdded.isNotEmpty()) { sb.appendLine("      indices_added:"); for (sig in t.indicesAdded) sb.appendLine("        - \"${esc(sig)}\"") }
-        if (t.indicesRemoved.isNotEmpty()) { sb.appendLine("      indices_removed:"); for (sig in t.indicesRemoved) sb.appendLine("        - \"${esc(sig)}\"") }
-        if (t.indicesChanged.isNotEmpty()) { sb.appendLine("      indices_changed:"); for (ch in t.indicesChanged) sb.appendLine("        - {before: \"${esc(ch.before)}\", after: \"${esc(ch.after)}\"}") }
-        if (t.constraintsAdded.isNotEmpty()) { sb.appendLine("      constraints_added:"); for (sig in t.constraintsAdded) sb.appendLine("        - \"${esc(sig)}\"") }
-        if (t.constraintsRemoved.isNotEmpty()) { sb.appendLine("      constraints_removed:"); for (sig in t.constraintsRemoved) sb.appendLine("        - \"${esc(sig)}\"") }
-        if (t.constraintsChanged.isNotEmpty()) { sb.appendLine("      constraints_changed:"); for (ch in t.constraintsChanged) sb.appendLine("        - {before: \"${esc(ch.before)}\", after: \"${esc(ch.after)}\"}") }
+        appendQuotedList(sb, "      ", "indices_added", t.indicesAdded)
+        appendQuotedList(sb, "      ", "indices_removed", t.indicesRemoved)
+        appendBeforeAfterList(
+            sb,
+            "      ",
+            "indices_changed",
+            t.indicesChanged,
+            before = { it.before },
+            after = { it.after },
+        )
+        appendQuotedList(sb, "      ", "constraints_added", t.constraintsAdded)
+        appendQuotedList(sb, "      ", "constraints_removed", t.constraintsRemoved)
+        appendBeforeAfterList(
+            sb,
+            "      ",
+            "constraints_changed",
+            t.constraintsChanged,
+            before = { it.before },
+            after = { it.after },
+        )
     }
 
     private fun renderValidation(sb: StringBuilder, v: CompareValidation) {
@@ -199,6 +228,42 @@ internal object CompareRendererYaml {
             }
         }
     }
+
+    private fun appendQuotedList(
+        sb: StringBuilder,
+        indent: String,
+        label: String,
+        values: List<String>,
+    ) {
+        if (values.isEmpty()) return
+        sb.appendLine("$indent$label:")
+        for (value in values) {
+            sb.appendLine("$indent  - \"${esc(value)}\"")
+        }
+    }
+
+    private fun <T> appendBeforeAfterList(
+        sb: StringBuilder,
+        indent: String,
+        label: String,
+        changes: List<T>,
+        before: (T) -> String,
+        after: (T) -> String,
+    ) {
+        if (changes.isEmpty()) return
+        sb.appendLine("$indent$label:")
+        for (change in changes) {
+            sb.appendLine(
+                "$indent  - {before: \"${esc(before(change))}\", after: \"${esc(after(change))}\"}",
+            )
+        }
+    }
+
+    private fun renderInlineQuotedList(values: List<String>): String =
+        values.joinToString(", ") { "\"${esc(it)}\"" }
+
+    private fun renderNullableChange(before: String?, after: String?): String =
+        "{before: ${nullable(before)}, after: ${nullable(after)}}"
 
     private fun esc(s: String) = SchemaCompareHelpers.esc(s)
     private fun nullable(s: String?): String = if (s == null) "null" else "\"${esc(s)}\""

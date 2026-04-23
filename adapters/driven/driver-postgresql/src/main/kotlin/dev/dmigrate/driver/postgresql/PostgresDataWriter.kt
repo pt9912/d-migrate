@@ -175,7 +175,11 @@ internal class PostgresTableImportSession(
             when (options.onConflict) {
                 OnConflict.ABORT -> baseInsert
                 OnConflict.SKIP -> "$baseInsert ON CONFLICT DO NOTHING"
-                OnConflict.UPDATE -> "$baseInsert${buildUpsertClause(importedTargetColumns)} RETURNING (xmax = 0) AS inserted"
+                OnConflict.UPDATE ->
+                    buildReturningInsert(
+                        baseInsert,
+                        buildUpsertClause(importedTargetColumns),
+                    )
             }
         } else {
             val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
@@ -183,12 +187,22 @@ internal class PostgresTableImportSession(
             val baseInsert =
                 "INSERT INTO ${qualifiedTable.quotedPath()} ($columnList)$overridingSystemValue VALUES ($placeholders)"
             when (options.onConflict) {
-                OnConflict.UPDATE -> "$baseInsert${buildUpsertClause(importedTargetColumns)} RETURNING (xmax = 0) AS inserted"
+                OnConflict.UPDATE ->
+                    buildReturningInsert(
+                        baseInsert,
+                        buildUpsertClause(importedTargetColumns),
+                    )
                 OnConflict.ABORT -> baseInsert
                 OnConflict.SKIP -> "$baseInsert ON CONFLICT DO NOTHING"
             }
         }
     }
+
+    private fun buildReturningInsert(
+        baseInsert: String,
+        upsertClause: String = "",
+    ): String =
+        "$baseInsert$upsertClause RETURNING (xmax = 0) AS inserted"
 
     override fun executeChunk(
         importedTargetColumns: List<TargetColumn>,
@@ -324,7 +338,13 @@ internal class PostgresTableImportSession(
         val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
         val singleRow = "(${importedTargetColumns.joinToString(", ") { "?" }})"
         val allRows = (1..rowCount).joinToString(", ") { singleRow }
-        return "INSERT INTO ${qualifiedTable.quotedPath()} ($columnList)$overridingSystemValue VALUES $allRows${buildUpsertClause(importedTargetColumns)} RETURNING (xmax = 0) AS inserted"
+        val baseInsert =
+            "INSERT INTO ${qualifiedTable.quotedPath()} " +
+                "($columnList)$overridingSystemValue VALUES $allRows"
+        return buildReturningInsert(
+            baseInsert,
+            buildUpsertClause(importedTargetColumns),
+        )
     }
 
     private fun bindValue(

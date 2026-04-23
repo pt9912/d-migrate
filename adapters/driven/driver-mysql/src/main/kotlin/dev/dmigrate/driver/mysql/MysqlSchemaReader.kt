@@ -30,8 +30,8 @@ class MysqlSchemaReader(
 
             val tables = readTables(session, metaDb, lctn, notes)
             val views = if (options.includeViews) routineReader.readViews(session, metaDb) else emptyMap()
-            val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb, notes) else emptyMap()
-            val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb, notes) else emptyMap()
+            val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb) else emptyMap()
+            val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb) else emptyMap()
             val triggers = if (options.includeTriggers) routineReader.readTriggers(session, metaDb) else emptyMap()
 
             val supportSnapshot = sequenceSupport.scanSequenceSupport(session, metaDb, scope)

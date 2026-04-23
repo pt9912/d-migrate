@@ -68,7 +68,9 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 sourceDialect = fn.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite function ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${fn.sourceDialect})", listOf(action.toNote()))
+            val todo = "-- TODO: Rewrite function ${quoteIdentifier(name)} " +
+                "for PostgreSQL (source dialect: ${fn.sourceDialect})"
+            return DdlStatement(todo, listOf(action.toNote()))
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -123,7 +125,9 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 sourceDialect = proc.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite procedure ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${proc.sourceDialect})", listOf(action.toNote()))
+            val todo = "-- TODO: Rewrite procedure ${quoteIdentifier(name)} " +
+                "for PostgreSQL (source dialect: ${proc.sourceDialect})"
+            return DdlStatement(todo, listOf(action.toNote()))
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -144,7 +148,6 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        _tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.flatMap { (name, trigger) -> generateTrigger(name, trigger, skipped) }
@@ -174,7 +177,9 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 sourceDialect = trigger.sourceDialect,
             )
             skipped += action.toSkipped()
-            return listOf(DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${trigger.sourceDialect})", listOf(action.toNote())))
+            val todo = "-- TODO: Rewrite trigger ${quoteIdentifier(name)} " +
+                "for PostgreSQL (source dialect: ${trigger.sourceDialect})"
+            return listOf(DdlStatement(todo, listOf(action.toNote())))
         }
 
         // PostgreSQL triggers require a separate trigger function

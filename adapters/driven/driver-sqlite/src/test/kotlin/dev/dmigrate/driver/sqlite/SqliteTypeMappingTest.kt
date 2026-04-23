@@ -89,8 +89,14 @@ class SqliteTypeMappingTest : FunSpec({
     test("parseDefault string") { SqliteTypeMapping.parseDefault("'hello'") shouldBe DefaultValue.StringLiteral("hello") }
     test("parseDefault integer") { SqliteTypeMapping.parseDefault("42") shouldBe DefaultValue.NumberLiteral(42L) }
     test("parseDefault double") { SqliteTypeMapping.parseDefault("3.14") shouldBe DefaultValue.NumberLiteral(3.14) }
-    test("parseDefault CURRENT_TIMESTAMP") { SqliteTypeMapping.parseDefault("CURRENT_TIMESTAMP") shouldBe DefaultValue.FunctionCall("current_timestamp") }
-    test("parseDefault datetime()") { SqliteTypeMapping.parseDefault("(datetime('now'))") shouldBe DefaultValue.FunctionCall("current_timestamp") }
+    test("parseDefault CURRENT_TIMESTAMP") {
+        SqliteTypeMapping.parseDefault("CURRENT_TIMESTAMP") shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
+    }
+    test("parseDefault datetime()") {
+        SqliteTypeMapping.parseDefault("(datetime('now'))") shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
+    }
 
     // ── Helpers ─────────────────────────────────
 

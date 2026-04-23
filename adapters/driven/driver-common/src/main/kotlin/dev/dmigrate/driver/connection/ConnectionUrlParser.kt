@@ -48,12 +48,19 @@ object ConnectionUrlParser {
         }
 
         val scheme = uri.scheme
-            ?: throw IllegalArgumentException("Connection URL is missing a dialect scheme (expected '<dialect>://...'): ${LogScrubber.maskUrl(url)}")
+            ?: throw IllegalArgumentException(
+                "Connection URL is missing a dialect scheme " +
+                    "(expected '<dialect>://...'): ${LogScrubber.maskUrl(url)}"
+            )
 
         val dialect = try {
             DatabaseDialect.fromString(scheme)
         } catch (e: IllegalArgumentException) {
-            throw IllegalArgumentException("Unknown database dialect '$scheme' in URL ${LogScrubber.maskUrl(url)}. Supported: postgresql, mysql, sqlite", e)
+            throw IllegalArgumentException(
+                "Unknown database dialect '$scheme' in URL ${LogScrubber.maskUrl(url)}. " +
+                    "Supported: postgresql, mysql, sqlite",
+                e,
+            )
         }
 
         val host = uri.host

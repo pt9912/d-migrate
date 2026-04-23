@@ -88,7 +88,7 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
     private fun scanNumber(sql: String, start: Int, tokens: MutableList<Token>): Int {
         var i = start
         while (i < sql.length && sql[i].isDigit()) i++
-        if (i < sql.length && sql[i] == '.' && i + 1 < sql.length && sql[i + 1].isDigit()) {
+        if (hasFractionalPart(sql, i)) {
             i++
             while (i < sql.length && sql[i].isDigit()) i++
         }
@@ -197,11 +197,16 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
             if (tokens[parenIdx].type != TType.LPAREN) return null
             val (innerTokens, endIdx) = extractInnerTokens(tokens, parenIdx) ?: return null
             val words = innerTokens.filter { it.type == TType.WORD }
-            if (words.size < 3 || !words[0].text.equals(unit, ignoreCase = true) || !words[1].text.equals("FROM", ignoreCase = true)) return null
+            if (!matchesExtractPrefix(words)) return null
             val fromIdx = innerTokens.indexOfFirst { it.type == TType.WORD && it.text.equals("FROM", ignoreCase = true) }
             val expr = innerTokens.drop(fromIdx + 1).dropWhile { it.type == TType.WS }
             return transform(expr) to (endIdx + 1)
         }
+
+        private fun matchesExtractPrefix(words: List<Token>): Boolean =
+            words.size >= 3 &&
+                words[0].text.equals(unit, ignoreCase = true) &&
+                words[1].text.equals("FROM", ignoreCase = true)
     }
 
     /** Replaces SUBSTRING(expr FROM n FOR m) with dialect-specific form */
@@ -302,6 +307,38 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
         private fun comma() = Token(TType.COMMA, ",")
         private fun str(text: String) = Token(TType.STRING, text)
         private fun other(text: String) = Token(TType.OTHER, text)
+
+        private fun hasFractionalPart(sql: String, dotIndex: Int): Boolean =
+            dotIndex < sql.length &&
+                sql[dotIndex] == '.' &&
+                dotIndex + 1 < sql.length &&
+                sql[dotIndex + 1].isDigit()
+
+        private fun joinArgs(args: List<List<Token>>): List<Token> =
+            args.flatMapIndexed { index, arg ->
+                if (index > 0) listOf(comma(), ws()) + arg else arg
+            }
+
+        private fun originalDateTrunc(args: List<List<Token>>): List<Token> =
+            listOf(word("DATE_TRUNC"), lparen()) + joinArgs(args) + listOf(rparen())
+
+        private fun substringCall(name: String, expr: List<Token>, from: String, len: String): List<Token> =
+            listOf(word(name), lparen()) +
+                expr +
+                listOf(comma(), ws(), word(from), comma(), ws(), word(len), rparen())
+
+        private fun castStrftimeInt(pattern: String, expr: List<Token>): List<Token> =
+            listOf(
+                word("CAST"),
+                lparen(),
+                word("strftime"),
+                lparen(),
+                str(pattern),
+                comma(),
+                ws(),
+            ) +
+                expr +
+                listOf(rparen(), ws(), word("AS"), ws(), word("INTEGER"), rparen())
     }
 
     // ── Dialect rules ──────────────────────────────────────────
@@ -319,19 +356,25 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
                 val unit = args[0].firstOrNull { it.type == TType.STRING }?.text?.removeSurrounding("'")
                 val col = args[1].dropWhile { it.type == TType.WS }
                 when (unit) {
-                    "month" -> listOf(word("DATE_FORMAT"), lparen()) + col + listOf(comma(), ws(), str("'%Y-%m-01'"), rparen())
-                    "year" -> listOf(word("DATE_FORMAT"), lparen()) + col + listOf(comma(), ws(), str("'%Y-01-01'"), rparen())
+                    "month" -> listOf(word("DATE_FORMAT"), lparen()) +
+                        col +
+                        listOf(comma(), ws(), str("'%Y-%m-01'"), rparen())
+                    "year" -> listOf(word("DATE_FORMAT"), lparen()) +
+                        col +
+                        listOf(comma(), ws(), str("'%Y-01-01'"), rparen())
                     "day" -> listOf(word("DATE"), lparen()) + col + listOf(rparen())
-                    else -> listOf(word("DATE_TRUNC"), lparen()) + args.flatMapIndexed { i, a -> if (i > 0) listOf(comma(), ws()) + a else a } + listOf(rparen())
+                    else -> originalDateTrunc(args)
                 }
             } else listOf(word("DATE_TRUNC"), lparen(), rparen())
         },
         ExtractReplace("YEAR") { expr -> listOf(word("YEAR"), lparen()) + expr + listOf(rparen()) },
         ExtractReplace("MONTH") { expr -> listOf(word("MONTH"), lparen()) + expr + listOf(rparen()) },
-        SubstringReplace { expr, from, len -> listOf(word("SUBSTRING"), lparen()) + expr + listOf(comma(), ws(), word(from), comma(), ws(), word(len), rparen()) },
+        SubstringReplace { expr, from, len ->
+            substringCall("SUBSTRING", expr, from, len)
+        },
         FuncReplace("LENGTH") { _, args ->
             listOf(word("CHAR_LENGTH"), lparen()) +
-                args.flatMapIndexed { i, a -> if (i > 0) listOf(comma(), ws()) + a else a } +
+                joinArgs(args) +
                 listOf(rparen())
         },
         WordReplace("CURRENT_DATE", "CURDATE()"),
@@ -350,15 +393,23 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
                 val unit = args[0].firstOrNull { it.type == TType.STRING }?.text?.removeSurrounding("'")
                 val col = args[1].dropWhile { it.type == TType.WS }
                 when (unit) {
-                    "month" -> listOf(word("strftime"), lparen(), str("'%Y-%m-01'"), comma(), ws()) + col + listOf(rparen())
-                    "year" -> listOf(word("strftime"), lparen(), str("'%Y-01-01'"), comma(), ws()) + col + listOf(rparen())
+                    "month" -> listOf(word("strftime"), lparen(), str("'%Y-%m-01'"), comma(), ws()) +
+                        col +
+                        listOf(rparen())
+                    "year" -> listOf(word("strftime"), lparen(), str("'%Y-01-01'"), comma(), ws()) +
+                        col +
+                        listOf(rparen())
                     "day" -> listOf(word("date"), lparen()) + col + listOf(rparen())
-                    else -> listOf(word("DATE_TRUNC"), lparen()) + args.flatMapIndexed { i, a -> if (i > 0) listOf(comma(), ws()) + a else a } + listOf(rparen())
+                    else -> originalDateTrunc(args)
                 }
             } else listOf(word("DATE_TRUNC"), lparen(), rparen())
         },
-        ExtractReplace("YEAR") { expr -> listOf(word("CAST"), lparen(), word("strftime"), lparen(), str("'%Y'"), comma(), ws()) + expr + listOf(rparen(), ws(), word("AS"), ws(), word("INTEGER"), rparen()) },
-        ExtractReplace("MONTH") { expr -> listOf(word("CAST"), lparen(), word("strftime"), lparen(), str("'%m'"), comma(), ws()) + expr + listOf(rparen(), ws(), word("AS"), ws(), word("INTEGER"), rparen()) },
+        ExtractReplace("YEAR") { expr ->
+            castStrftimeInt("'%Y'", expr)
+        },
+        ExtractReplace("MONTH") { expr ->
+            castStrftimeInt("'%m'", expr)
+        },
         FuncReplace("CONCAT") { _, args ->
             if (args.size >= 2) {
                 args.flatMapIndexed { i, a ->
@@ -367,7 +418,9 @@ class ViewQueryTransformer(private val targetDialect: DatabaseDialect) {
                 }
             } else listOf(word("CONCAT"), lparen(), rparen())
         },
-        SubstringReplace { expr, from, len -> listOf(word("SUBSTR"), lparen()) + expr + listOf(comma(), ws(), word(from), comma(), ws(), word(len), rparen()) },
+        SubstringReplace { expr, from, len ->
+            substringCall("SUBSTR", expr, from, len)
+        },
         WordReplace("TRUE", "1"),
         WordReplace("FALSE", "0"),
     )

@@ -221,7 +221,9 @@ class ValueSerializerTest : FunSpec({
 
     test("java.sql.Blob → Base64") {
         val blob = StubBlob(byteArrayOf(1, 2, 3))
-        serializer.serialize("t", "c", blob) shouldBe SerializedValue.Text(java.util.Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
+        serializer.serialize("t", "c", blob) shouldBe SerializedValue.Text(
+            java.util.Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3))
+        )
     }
 
     test("java.sql.Clob → String content") {
@@ -278,7 +280,10 @@ private class StubBlob(private val bytes: ByteArray) : java.sql.Blob {
     override fun length() = bytes.size.toLong()
     override fun getBytes(pos: Long, length: Int) = bytes.copyOfRange(pos.toInt() - 1, pos.toInt() - 1 + length)
     override fun getBinaryStream() = bytes.inputStream()
-    override fun getBinaryStream(pos: Long, length: Long) = bytes.copyOfRange(pos.toInt() - 1, pos.toInt() - 1 + length.toInt()).inputStream()
+    override fun getBinaryStream(
+        pos: Long,
+        length: Long,
+    ) = bytes.copyOfRange(pos.toInt() - 1, pos.toInt() - 1 + length.toInt()).inputStream()
     override fun position(pattern: ByteArray, start: Long) = -1L
     override fun position(pattern: java.sql.Blob, start: Long) = -1L
     override fun setBytes(pos: Long, bytes: ByteArray) = throw UnsupportedOperationException()

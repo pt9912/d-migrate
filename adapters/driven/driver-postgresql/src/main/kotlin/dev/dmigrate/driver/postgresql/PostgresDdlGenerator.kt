@@ -111,7 +111,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
         // Columns
         for ((colName, col) in table.columns) {
-            columnLines += generateColumnSql(colName, col, schema, name, notes)
+            columnLines += generateColumnSql(colName, col, schema, name)
         }
 
         // Inline foreign key constraints (non-circular, from column references)
@@ -164,8 +164,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         col: ColumnDefinition,
         schema: SchemaDefinition,
         tableName: String,
-        notes: MutableList<TransformationNote>
-    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, tableName, notes)
+    ): String = columnConstraintHelper.generateColumnSql(colName, col, schema, tableName)
 
     private fun buildForeignKeyClause(
         constraintName: String,
@@ -291,7 +290,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        return routineHelper.generateTriggers(triggers, tables, skipped)
+        return routineHelper.generateTriggers(triggers, skipped)
     }
 
     override fun resolveSequenceDefault(

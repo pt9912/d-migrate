@@ -52,6 +52,11 @@ class MysqlSchemaReaderSequenceTest : FunSpec({
         every { jdbc.querySingle(match { it.contains("engine") }, any(), any()) } returns null
     }
 
+    fun isSupportShapeQuery(sql: String): Boolean =
+        "information_schema.columns" in sql &&
+            "table_name = ?" in sql &&
+            "ordinal_position" !in sql
+
     test("schema without dmg_sequences is compatible non-sequence case") {
         stubEmptyDefaults()
         val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
@@ -123,7 +128,9 @@ class MysqlSchemaReaderSequenceTest : FunSpec({
         stubEmptyDefaults()
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
             mapOf("table_name" to "dmg_sequences")
-        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "ordinal_position" !in it }, any(), any()) } returns listOf(
+        every {
+            jdbc.queryList(match(::isSupportShapeQuery), any(), any())
+        } returns listOf(
             mapOf("column_name" to "managed_by", "data_type" to "varchar"),
             mapOf("column_name" to "format_version", "data_type" to "varchar"),
             mapOf("column_name" to "name", "data_type" to "varchar"),
@@ -143,7 +150,9 @@ class MysqlSchemaReaderSequenceTest : FunSpec({
         stubEmptyDefaults()
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
             mapOf("table_name" to "dmg_sequences")
-        every { jdbc.queryList(match { "information_schema.columns" in it && "table_name = ?" in it && "ordinal_position" !in it }, any(), any()) } returns listOf(
+        every {
+            jdbc.queryList(match(::isSupportShapeQuery), any(), any())
+        } returns listOf(
             mapOf("column_name" to "managed_by", "data_type" to "varchar"),
             mapOf("column_name" to "format_version", "data_type" to "varchar"),
             mapOf("column_name" to "name", "data_type" to "varchar"),

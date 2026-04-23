@@ -110,7 +110,7 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "CREATE TRIGGER \"audit_insert\""
@@ -133,7 +133,7 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "-- TODO"
@@ -157,7 +157,7 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "-- TODO"

@@ -32,7 +32,7 @@ class PostgresSchemaReader(
 
             val tables = readTables(session, schema, notes)
             val sequences = readSequences(session, schema)
-            val customTypes = readCustomTypes(session, schema, notes)
+            val customTypes = readCustomTypes(session, schema)
 
             // Extension notes (Phase B contract: extensions as notes, not model objects)
             val extensions = PostgresMetadataQueries.listInstalledExtensions(session)
@@ -46,8 +46,8 @@ class PostgresSchemaReader(
                 )
             }
             val views = if (options.includeViews) readViews(session, schema) else emptyMap()
-            val functions = if (options.includeFunctions) readFunctions(session, schema, notes) else emptyMap()
-            val procedures = if (options.includeProcedures) readProcedures(session, schema, notes) else emptyMap()
+            val functions = if (options.includeFunctions) readFunctions(session, schema) else emptyMap()
+            val procedures = if (options.includeProcedures) readProcedures(session, schema) else emptyMap()
             val triggers = if (options.includeTriggers) readTriggers(session, schema) else emptyMap()
 
             val schemaDef = SchemaDefinition(
@@ -224,7 +224,6 @@ class PostgresSchemaReader(
     private fun readCustomTypes(
         session: JdbcOperations,
         schema: String,
-        notes: MutableList<SchemaReadNote>,
     ): Map<String, CustomTypeDefinition> {
         val result = LinkedHashMap<String, CustomTypeDefinition>()
 
@@ -290,7 +289,6 @@ class PostgresSchemaReader(
     private fun readFunctions(
         session: JdbcOperations,
         schema: String,
-        _notes: MutableList<SchemaReadNote>,
     ): Map<String, FunctionDefinition> {
         val rows = PostgresMetadataQueries.listFunctions(session, schema)
         val result = LinkedHashMap<String, FunctionDefinition>()
@@ -330,7 +328,6 @@ class PostgresSchemaReader(
     private fun readProcedures(
         session: JdbcOperations,
         schema: String,
-        _notes: MutableList<SchemaReadNote>,
     ): Map<String, ProcedureDefinition> {
         val rows = PostgresMetadataQueries.listProcedures(session, schema)
         val result = LinkedHashMap<String, ProcedureDefinition>()

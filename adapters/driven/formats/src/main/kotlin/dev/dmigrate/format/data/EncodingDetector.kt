@@ -85,18 +85,13 @@ object EncodingDetector {
     }
 
     private fun rejectUtf32Bom(bytes: ByteArray, read: Int) {
-        if (read < 4) return
-        if (bytes[0] == 0x00.toByte() && bytes[1] == 0x00.toByte() &&
-            bytes[2] == 0xFE.toByte() && bytes[3] == 0xFF.toByte()
-        ) {
+        if (hasUtf32BeBom(bytes, read)) {
             throw UnsupportedFileEncodingException(
                 "UTF-32 BE BOM detected — UTF-32 is not supported in 0.4.0. " +
                     "Set --encoding explicitly (e.g. UTF-16LE) or convert the file."
             )
         }
-        if (bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() &&
-            bytes[2] == 0x00.toByte() && bytes[3] == 0x00.toByte()
-        ) {
+        if (hasUtf32LeBom(bytes, read)) {
             throw UnsupportedFileEncodingException(
                 "UTF-32 LE BOM detected — UTF-32 is not supported in 0.4.0. " +
                     "Set --encoding explicitly (e.g. UTF-16LE) or convert the file."
@@ -105,20 +100,19 @@ object EncodingDetector {
     }
 
     private fun detectUtf8Bom(bytes: ByteArray, read: Int, pb: PushbackInputStream): Detected? {
-        if (read < 3) return null
-        if (bytes[0] != 0xEF.toByte() || bytes[1] != 0xBB.toByte() || bytes[2] != 0xBF.toByte()) return null
+        if (!hasUtf8Bom(bytes, read)) return null
         if (read == 4) pb.unread(bytes, 3, 1)
         return Detected(StandardCharsets.UTF_8, pb)
     }
 
     private fun detectUtf16BeBom(bytes: ByteArray, read: Int, pb: PushbackInputStream): Detected? {
-        if (read < 2 || bytes[0] != 0xFE.toByte() || bytes[1] != 0xFF.toByte()) return null
+        if (!hasUtf16BeBom(bytes, read)) return null
         if (read > 2) pb.unread(bytes, 2, read - 2)
         return Detected(StandardCharsets.UTF_16BE, pb)
     }
 
     private fun detectUtf16LeBom(bytes: ByteArray, read: Int, pb: PushbackInputStream): Detected? {
-        if (read < 2 || bytes[0] != 0xFF.toByte() || bytes[1] != 0xFE.toByte()) return null
+        if (!hasUtf16LeBom(bytes, read)) return null
         if (read > 2) pb.unread(bytes, 2, read - 2)
         return Detected(StandardCharsets.UTF_16LE, pb)
     }
@@ -166,24 +160,32 @@ object EncodingDetector {
     private fun matchBomFor(charset: Charset, bytes: ByteArray, read: Int): Int {
         val name = charset.name().uppercase()
         return when (name) {
-            "UTF-8" -> if (
-                read >= 3 &&
-                bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()
-            ) 3 else 0
-
-            "UTF-16BE" -> if (
-                read >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()
-            ) 2 else 0
-
-            "UTF-16LE" -> if (
-                read >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() &&
-                // Don't eat a UTF-32 LE BOM as if it were UTF-16 LE
-                !(read >= 4 && bytes[2] == 0x00.toByte() && bytes[3] == 0x00.toByte())
-            ) 2 else 0
-
+            "UTF-8" -> if (hasUtf8Bom(bytes, read)) 3 else 0
+            "UTF-16BE" -> if (hasUtf16BeBom(bytes, read)) 2 else 0
+            "UTF-16LE" -> if (hasUtf16LeBom(bytes, read)) 2 else 0
             else -> 0
         }
     }
+
+    private fun hasUtf32BeBom(bytes: ByteArray, read: Int): Boolean =
+        read >= 4 && matchesPrefix(bytes, 0x00, 0x00, 0xFE, 0xFF)
+
+    private fun hasUtf32LeBom(bytes: ByteArray, read: Int): Boolean =
+        read >= 4 && matchesPrefix(bytes, 0xFF, 0xFE, 0x00, 0x00)
+
+    private fun hasUtf8Bom(bytes: ByteArray, read: Int): Boolean =
+        read >= 3 && matchesPrefix(bytes, 0xEF, 0xBB, 0xBF)
+
+    private fun hasUtf16BeBom(bytes: ByteArray, read: Int): Boolean =
+        read >= 2 && matchesPrefix(bytes, 0xFE, 0xFF)
+
+    private fun hasUtf16LeBom(bytes: ByteArray, read: Int): Boolean =
+        read >= 2 &&
+            matchesPrefix(bytes, 0xFF, 0xFE) &&
+            !hasUtf32LeBom(bytes, read)
+
+    private fun matchesPrefix(bytes: ByteArray, vararg expected: Int): Boolean =
+        expected.indices.all { index -> bytes[index] == expected[index].toByte() }
 
     /**
      * Liest bis zu [buf].size Bytes aus [s], sammelt auch kurze

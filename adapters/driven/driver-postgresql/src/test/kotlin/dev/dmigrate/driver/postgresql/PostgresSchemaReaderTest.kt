@@ -60,7 +60,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
     }
 
-    fun stubTableQueries(_tableName: String, columns: List<Map<String, Any?>>, pkColumns: List<String>) {
+    fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
         every { jdbc.queryList(match { it.contains("PRIMARY KEY") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }
@@ -78,7 +78,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "users", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("users", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -228,7 +228,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "events", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("events", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -314,7 +314,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "orders", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("orders", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -372,7 +372,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "items", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("items", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -392,7 +392,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "logs", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("logs", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -413,7 +413,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "data", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("data", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -433,7 +433,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "t", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("t", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,
@@ -453,7 +453,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
             mapOf("table_name" to "parts", "table_schema" to "public", "table_type" to "BASE TABLE"),
         )
-        stubTableQueries("parts", listOf(
+        stubTableQueries(listOf(
             mapOf("column_name" to "id", "data_type" to "integer", "udt_name" to "int4",
                 "is_nullable" to "NO", "column_default" to null, "ordinal_position" to 1,
                 "character_maximum_length" to null, "numeric_precision" to 32, "numeric_scale" to 0,

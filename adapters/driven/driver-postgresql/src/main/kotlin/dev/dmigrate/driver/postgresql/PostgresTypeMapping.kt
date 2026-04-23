@@ -28,28 +28,12 @@ internal object PostgresTypeMapping {
         val colName: String,
     )
 
-    fun mapColumn(input: ColumnInput): MappingResult = mapColumn(
-        input.dataType, input.udtName, input.isPkCol, input.isIdentity, input.colDefault,
-        input.charMaxLen, input.numPrecision, input.numScale, input.tableName, input.colName,
-    )
-
-    internal fun mapColumn(
-        dataType: String,
-        udtName: String,
-        isPkCol: Boolean,
-        isIdentity: Boolean,
-        colDefault: String?,
-        charMaxLen: Int?,
-        numPrecision: Int?,
-        numScale: Int?,
-        tableName: String,
-        colName: String,
-    ): MappingResult {
-        val dt = dataType.lowercase()
-        val udt = udtName.lowercase()
+    fun mapColumn(input: ColumnInput): MappingResult {
+        val dt = input.dataType.lowercase()
+        val udt = input.udtName.lowercase()
 
         // Serial/identity → Identifier for integer, BigInteger for bigint
-        if (isPkCol && (isIdentity || isSerialDefault(colDefault))) {
+        if (input.isPkCol && (input.isIdentity || isSerialDefault(input.colDefault))) {
             return when {
                 udt == "int4" || udt == "int2" || dt == "integer" || dt == "smallint" ->
                     MappingResult(NeutralType.Identifier(autoIncrement = true))
@@ -59,7 +43,7 @@ internal object PostgresTypeMapping {
                         SchemaReadNote(
                             severity = SchemaReadSeverity.INFO,
                             code = "R300",
-                            objectName = "$tableName.$colName",
+                            objectName = "${input.tableName}.${input.colName}",
                             message = "bigint auto-increment mapped to BigInteger (not Identifier) to preserve type width",
                         ),
                     )
@@ -68,16 +52,16 @@ internal object PostgresTypeMapping {
         }
 
         return mapIntegerTypes(dt)
-            ?: mapStringTypes(dt, charMaxLen)
-            ?: mapNumericTypes(dt, numPrecision, numScale)
+            ?: mapStringTypes(dt, input.charMaxLen)
+            ?: mapNumericTypes(dt, input.numPrecision, input.numScale)
             ?: mapTemporalTypes(dt)
-            ?: mapSpecialTypes(dt, udt, tableName, colName)
+            ?: mapSpecialTypes(dt, udt, input.tableName, input.colName)
             ?: MappingResult(
                 NeutralType.Text(),
                 SchemaReadNote(
                     severity = SchemaReadSeverity.WARNING, code = "R301",
-                    objectName = "$tableName.$colName",
-                    message = "Unknown PostgreSQL type '$dataType' (udt: $udtName) mapped to text",
+                    objectName = "${input.tableName}.${input.colName}",
+                    message = "Unknown PostgreSQL type '${input.dataType}' (udt: ${input.udtName}) mapped to text",
                 ),
             )
     }
@@ -98,7 +82,11 @@ internal object PostgresTypeMapping {
     }
 
     private fun mapNumericTypes(dt: String, numPrecision: Int?, numScale: Int?): MappingResult? = when (dt) {
-        "numeric", "decimal" -> if (numPrecision != null && numScale != null) MappingResult(NeutralType.Decimal(numPrecision, numScale)) else MappingResult(NeutralType.Float())
+        "numeric", "decimal" -> if (numPrecision != null && numScale != null) {
+            MappingResult(NeutralType.Decimal(numPrecision, numScale))
+        } else {
+            MappingResult(NeutralType.Float())
+        }
         "real" -> MappingResult(NeutralType.Float(FloatPrecision.SINGLE))
         "double precision" -> MappingResult(NeutralType.Float(FloatPrecision.DOUBLE))
         else -> null

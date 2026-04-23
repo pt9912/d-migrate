@@ -1,6 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
@@ -410,13 +409,11 @@ class DataExportRunnerHappyPathTest : FunSpec({
 
     // ─── Edge case: blank source ─────────────────────────────────
 
-    test("Exit 2: blank --source is ultimately an encoding/validation error") {
+    test("Exit 7: blank --source is reported as source resolution error") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
-        try {
-            runner.execute(request(source = "   "))
-        } catch (_: IllegalArgumentException) {
-        }
+        runner.execute(request(source = "   ")) shouldBe 7
+        stderr.joined() shouldContain "--source must not be blank"
     }
 
     // ─── File-system side effect probe ───────────────────────────

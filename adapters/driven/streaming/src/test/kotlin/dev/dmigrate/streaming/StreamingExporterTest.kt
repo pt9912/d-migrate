@@ -183,7 +183,13 @@ class StreamingExporterTest : FunSpec({
         )
 
         result.tables shouldContainExactly listOf(
-            TableExportSummary(table = "users", rows = 2, chunks = 1, bytes = result.tables.single().bytes, durationMs = result.tables.single().durationMs),
+            TableExportSummary(
+                table = "users",
+                rows = 2,
+                chunks = 1,
+                bytes = result.tables.single().bytes,
+                durationMs = result.tables.single().durationMs,
+            ),
         )
         result.totalRows shouldBe 2
         result.totalChunks shouldBe 1
