@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.*
 
 /**
@@ -32,7 +33,7 @@ object SqliteMetadataQueries {
     }
 
     fun listColumns(session: JdbcMetadataSession, table: String): List<ColumnProjection> {
-        val rows = session.queryList("PRAGMA table_info('${escapeSql(table)}')")
+        val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table)})")
         return rows.map { row ->
             val rawType = (row["type"] as? String) ?: ""
             ColumnProjection(
@@ -47,14 +48,14 @@ object SqliteMetadataQueries {
     }
 
     fun listPrimaryKeyColumns(session: JdbcMetadataSession, table: String): List<String> {
-        val rows = session.queryList("PRAGMA table_info('${escapeSql(table)}')")
+        val rows = session.queryList("PRAGMA table_info(${SqlIdentifiers.quoteStringLiteral(table)})")
         return rows.filter { (it["pk"] as Number).toInt() > 0 }
             .sortedBy { (it["pk"] as Number).toInt() }
             .map { it["name"] as String }
     }
 
     fun listForeignKeys(session: JdbcMetadataSession, table: String): List<ForeignKeyProjection> {
-        val rows = session.queryList("PRAGMA foreign_key_list('${escapeSql(table)}')")
+        val rows = session.queryList("PRAGMA foreign_key_list(${SqlIdentifiers.quoteStringLiteral(table)})")
         return rows.groupBy { it["id"] as Number }.map { (_, fkRows) ->
             val sorted = fkRows.sortedBy { (it["seq"] as Number).toInt() }
             val first = sorted.first()
@@ -70,12 +71,12 @@ object SqliteMetadataQueries {
     }
 
     fun listIndices(session: JdbcMetadataSession, table: String): List<IndexProjection> {
-        val indexRows = session.queryList("PRAGMA index_list('${escapeSql(table)}')")
+        val indexRows = session.queryList("PRAGMA index_list(${SqlIdentifiers.quoteStringLiteral(table)})")
         return indexRows.mapNotNull { idx ->
             val indexName = idx["name"] as String
             // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints)
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
-            val colRows = session.queryList("PRAGMA index_info('${escapeSql(indexName)}')")
+            val colRows = session.queryList("PRAGMA index_info(${SqlIdentifiers.quoteStringLiteral(indexName)})")
             val cols = colRows.sortedBy { (it["seqno"] as Number).toInt() }
                 .mapNotNull { it["name"] as? String }
             if (cols.isEmpty()) return@mapNotNull null
@@ -107,6 +108,4 @@ object SqliteMetadataQueries {
         )
         return row?.get("sql") as? String
     }
-
-    private fun escapeSql(s: String) = s.replace("'", "''")
 }

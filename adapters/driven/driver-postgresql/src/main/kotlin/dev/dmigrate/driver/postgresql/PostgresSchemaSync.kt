@@ -3,13 +3,14 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.SequenceAdjustment
+import dev.dmigrate.driver.data.TriggerManagement
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
 
 class PostgresSchemaSync(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
-) : SchemaSync {
+) : SchemaSync, TriggerManagement {
 
     override fun reseedGenerators(
         conn: Connection,

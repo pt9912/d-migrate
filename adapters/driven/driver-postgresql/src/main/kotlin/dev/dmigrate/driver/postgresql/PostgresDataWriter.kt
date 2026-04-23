@@ -41,7 +41,7 @@ class PostgresDataWriter(
         }
         val conn = pool.borrow()
         val jdbc = jdbcFactory(conn)
-        val sync = schemaSync()
+        val sync = PostgresSchemaSync(jdbcFactory)
         val qualified = parseQualifiedTableName(table)
         var triggersDisabled = false
         var savedAutoCommit: Boolean? = null
@@ -173,7 +173,7 @@ internal class PostgresTableImportSession(
     private val generatedAlwaysColumns: Set<String>,
     primaryKeyColumns: List<String>,
     options: ImportOptions,
-    private val schemaSync: SchemaSync,
+    private val schemaSync: PostgresSchemaSync,
     private var triggersDisabled: Boolean,
 ) : AbstractTableImportSession(conn, savedAutoCommit, table, targetColumns, primaryKeyColumns, options) {
 

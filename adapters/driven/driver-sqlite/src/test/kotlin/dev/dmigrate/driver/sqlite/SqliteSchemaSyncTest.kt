@@ -110,19 +110,4 @@ class SqliteSchemaSyncTest : FunSpec({
         }
     }
 
-    test("trigger disable mode is unsupported") {
-        pool.borrow().use { conn ->
-            shouldThrow<UnsupportedTriggerModeException> {
-                schemaSync.disableTriggers(conn, "sync_autoinc")
-            }
-        }
-    }
-
-    test("trigger strict mode is unsupported") {
-        pool.borrow().use { conn ->
-            shouldThrow<UnsupportedTriggerModeException> {
-                schemaSync.assertNoUserTriggers(conn, "sync_autoinc")
-            }
-        }
-    }
 })

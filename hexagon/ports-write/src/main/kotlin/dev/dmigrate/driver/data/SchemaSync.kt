@@ -38,40 +38,4 @@ interface SchemaSync {
         table: String,
         importedColumns: List<ColumnDescriptor>,
     ): List<SequenceAdjustment>
-
-    /**
-     * Deaktiviert user-seitige Trigger für den Import einer Tabelle.
-     *
-     * Wird writer-intern aus `openTable(...)` vor dem ersten Chunk aufgerufen,
-     * wenn `triggerMode = disable` ist.
-     *
-     * Vertrag:
-     * - Dialekte ohne sicheren Disable-Pfad werfen
-     *   [UnsupportedTriggerModeException]
-     * - auf PostgreSQL läuft der Aufruf außerhalb der Chunk-Transaktionen in
-     *   einer eigenen Mini-Transaktion
-     */
-    fun disableTriggers(conn: Connection, table: String)
-
-    /**
-     * Führt den Sicherheits-Pre-Flight für `triggerMode = strict` aus.
-     *
-     * Der Aufruf verändert den Trigger-Zustand nicht. Stattdessen bricht er mit
-     * einer klaren Exception ab, wenn auf der Zieltabelle User-Trigger
-     * vorhanden sind.
-     */
-    fun assertNoUserTriggers(conn: Connection, table: String)
-
-    /**
-     * Reaktiviert zuvor deaktivierte Trigger.
-     *
-     * Vertrag:
-     * - wird beim erfolgreichen Tabellenabschluss und im Cleanup-Pfad
-     *   `close()` verwendet
-     * - muss idempotent sein
-     * - Fehler sind harte Fehler und werden nicht geschluckt
-     * - auf PostgreSQL läuft der Aufruf symmetrisch zu [disableTriggers] in
-     *   einer eigenen Mini-Transaktion außerhalb der Chunk-Transaktionen
-     */
-    fun enableTriggers(conn: Connection, table: String)
 }

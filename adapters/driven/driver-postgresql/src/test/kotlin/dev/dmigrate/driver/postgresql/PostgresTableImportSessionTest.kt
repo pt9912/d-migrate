@@ -6,7 +6,6 @@ import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
-import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.WriteResult
@@ -39,7 +38,7 @@ class PostgresTableImportSessionTest : FunSpec({
         }
     }
 
-    fun mockSync(): SchemaSync = mockk<SchemaSync>(relaxUnitFun = true) {
+    fun mockSync(): PostgresSchemaSync = mockk<PostgresSchemaSync>(relaxUnitFun = true) {
         every { reseedGenerators(any(), any(), any()) } returns emptyList()
     }
 
@@ -60,7 +59,7 @@ class PostgresTableImportSessionTest : FunSpec({
         generatedAlwaysColumns: Set<String> = emptySet(),
         primaryKeyColumns: List<String> = emptyList(),
         options: ImportOptions = ImportOptions(),
-        schemaSync: SchemaSync = mockSync(),
+        schemaSync: PostgresSchemaSync = mockSync(),
         triggersDisabled: Boolean = false,
         savedAutoCommit: Boolean = true,
     ): PostgresTableImportSession {
@@ -96,7 +95,7 @@ class PostgresTableImportSessionTest : FunSpec({
         generatedAlwaysColumns: Set<String> = emptySet(),
         primaryKeyColumns: List<String> = emptyList(),
         chunk: DataChunk = makeChunk(),
-        schemaSync: SchemaSync = mockSync(),
+        schemaSync: PostgresSchemaSync = mockSync(),
         triggersDisabled: Boolean = false,
     ): Pair<PostgresTableImportSession, PreparedStatement> {
         val stmt = mockStmt()
@@ -121,20 +120,10 @@ class PostgresTableImportSessionTest : FunSpec({
     test("close keeps trigger re-enable retry as suppressed on partial failure cause") {
         val firstEnableFailure = RuntimeException("first enable failed")
         val secondEnableFailure = RuntimeException("second enable failed")
-        val schemaSync = object : SchemaSync {
-            var enableCalls = 0
-
-            override fun reseedGenerators(
-                conn: Connection,
-                table: String,
-                importedColumns: List<ColumnDescriptor>,
-            ) = emptyList<SequenceAdjustment>()
-
-            override fun disableTriggers(conn: Connection, table: String) = Unit
-
-            override fun assertNoUserTriggers(conn: Connection, table: String) = Unit
-
-            override fun enableTriggers(conn: Connection, table: String) {
+        var enableCalls = 0
+        val schemaSync = mockk<PostgresSchemaSync>(relaxUnitFun = true) {
+            every { reseedGenerators(any(), any(), any()) } returns emptyList()
+            every { enableTriggers(any(), any()) } answers {
                 enableCalls++
                 throw if (enableCalls == 1) firstEnableFailure else secondEnableFailure
             }

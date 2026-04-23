@@ -278,8 +278,8 @@ class SchemaValidator {
         )
         for ((colName, col) in table.columns) {
             if (col.type is NeutralType.Float) {
-                val lowerName = colName.lowercase()
-                if (monetaryPatterns.any { lowerName.contains(it) }) {
+                val segments = colName.lowercase().split("_")
+                if (monetaryPatterns.any { it in segments }) {
                     warnings += ValidationWarning(
                         "W001",
                         "Column uses FLOAT — consider DECIMAL for monetary values",

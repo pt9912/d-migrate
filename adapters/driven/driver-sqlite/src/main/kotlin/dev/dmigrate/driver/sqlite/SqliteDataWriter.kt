@@ -10,7 +10,6 @@ import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
-import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.driver.data.WriteResult
 import java.sql.Connection
 import java.sql.PreparedStatement
@@ -27,16 +26,9 @@ class SqliteDataWriter : DataWriter {
         table: String,
         options: ImportOptions,
     ): TableImportSession {
-        when (options.triggerMode) {
-            TriggerMode.FIRE -> Unit
-            TriggerMode.DISABLE ->
-                throw UnsupportedTriggerModeException(
-                    "triggerMode=disable is not supported for SQLite in 0.4.0"
-                )
-            TriggerMode.STRICT ->
-                throw UnsupportedTriggerModeException(
-                    "triggerMode=strict is not supported for SQLite in 0.4.0"
-                )
+        check(options.triggerMode == TriggerMode.FIRE) {
+            "triggerMode=${options.triggerMode} is not supported for SQLite — " +
+                "the Runner should have validated this via DialectCapabilities"
         }
 
         val conn = pool.borrow()

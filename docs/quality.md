@@ -57,12 +57,12 @@ die Violation-Menge ändern kann.
 Tests sind über Kotest-Tags kategorisiert. Der Gradle-Build filtert
 automatisch je nach Modus:
 
-| Modus | Befehl | Tag-Filter |
-|---|---|---|
-| Unit-Tests (Default) | `docker build .` | `!integration & !perf` |
-| Integration-Tests | `./scripts/test-integration-docker.sh` | `!perf` |
-| Perf-Tests (opt-in) | `-Dkotest.tags=perf` | nur `perf` |
-| Expliziter Filter | `-Dkotest.tags='...'` | wie angegeben |
+| Modus                | Befehl                                 | Tag-Filter             |
+| -------------------- | -------------------------------------- | ---------------------- |
+| Unit-Tests (Default) | `docker build .`                       | `!integration & !perf` |
+| Integration-Tests    | `./scripts/test-integration-docker.sh` | `!perf`                |
+| Perf-Tests (opt-in)  | `-Dkotest.tags=perf`                   | nur `perf`             |
+| Expliziter Filter    | `-Dkotest.tags='...'`                  | wie angegeben          |
 
 Perf-Tests (`perf`-Tag) prüfen Memory-Budgets mit großen Fixtures
 (100 MB JSON, 100k YAML) und laufen nie automatisch. Ergebnisse und
@@ -104,175 +104,183 @@ Zusatzaufgaben:
 Das Ergebnis im Markdown-Format darstellen und wenn möglich Tabellen verwenden.
 
 ## Result 
-Gesamtüberblick                  
- 
-┌──────────────────────┬──────────────────────────────────┐
-│      Kenngröße       │               Wert               │
-├──────────────────────┼──────────────────────────────────┤
-│ Module               │ 18 Gradle-Module                 │
-├──────────────────────┼──────────────────────────────────┤
-│ Produktivcode        │ ~480 Kotlin-Dateien, ~29.000 LOC │
-├──────────────────────┼──────────────────────────────────┤
-│ Architektur          │ Hexagonal (Ports & Adapters)     │
-├──────────────────────┼──────────────────────────────────┤
-│ Kotlin/JDK           │ 2.1.20 / 21                      │
-├──────────────────────┼──────────────────────────────────┤
-│ Coverage-Anforderung │ 90% (CLI: 80%)                   │
-└──────────────────────┴──────────────────────────────────┘
-                
----    
-Metrik-Bewertung
-                
-1. Lesbarkeit & Namensgebung: 8/10
- 
-┌───────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────┐ 
-│                Stärke                 │                                 Beispiel                                  │ 
-├───────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤ 
-│ Konsistentes Dialect-Prefix-Muster    │ MysqlDriver, PostgresDriver, SqliteDriver                                 │
-├───────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
-│ Parallele Klassenstruktur pro Treiber │ {Dialect}DataReader, {Dialect}TypeMapper, {Dialect}SchemaReader           │ 
-├───────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤ 
-│ Aussagekräftige Sealed Classes        │ NeutralType.Decimal(precision, scale), DefaultValue.SequenceNextVal(name) │ 
-├───────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤ 
-│ Kompakte Domain-Modelle               │ SchemaDefinition (17 Zeilen), ColumnDefinition (9 Zeilen)                 │
-├───────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤ 
-│ DSL-artige Test-Fixtures              │ schema(), table(), col()                                                  │
-└───────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────┘ 
-                
-┌───────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────┐
-│             Schwäche              │                                     Detail                                     │
-├───────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────┤
-│ Parameter-Inkonsistenz            │ MySQL nutzt database, PostgreSQL schema für semantisch gleiches Konzept        │
-├───────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────┤
-│ Test-Dateinamen                   │ SchemaComparatorTestPart2Part2b.kt — unklar, nach Größe statt Thema gesplittet │
-├───────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────┤
-│ Vereinzelt unklare Funktionsnamen │ lowerCaseTableNames() in MysqlIdentifiers — Query oder Config?                 │
-└───────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────┘
-                
----    
-2. Modularität & Struktur: 9/10
-      
-┌───────────────────────┬───────────┬──────────────────────────────────────────────────────────────────────────────────────────┐
-│     SOLID-Prinzip     │ Bewertung │                                        Begründung                                        │                
-├───────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────┤
-│ Single Responsibility │ Exzellent │ Validators, Comparators, Codecs jeweils fokussiert                                       │                
-├───────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────┤
-│ Open/Closed           │ Gut       │ Sealed Classes ermöglichen exhaustive Pattern-Matches; SchemaComparator hat Wiederholung │                
-├───────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────┤                
-│ Liskov Substitution   │ Exzellent │ NeutralType-Hierarchie sauber substituierbar                                             │                
-├───────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────┤                
-│ Interface Segregation │ Gut       │ Ports in 3 Module aufgeteilt (common, read, write)                                       │
-├───────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────┤                
-│ Dependency Inversion  │ Exzellent │ Core hat null externe Abhängigkeiten; Gradle erzwingt Schichtung                         │
-└───────────────────────┴───────────┴──────────────────────────────────────────────────────────────────────────────────────────┘                
-                
-Architektur-Highlights:          
-- Core-Modul ist komplett frei von externen Dependencies (nur Kotlin stdlib)
-- Gradle-Abhängigkeiten garantieren die hexagonale Schichtung                        
-- Application-Layer hängt nur von Core + Ports ab, nie von Adaptern
-- CLI-Commands sind dünne Shells, die an testbare Runner-Klassen delegieren          
- 
-Strukturelle Schwäche — Duplikation in MetadataQueries:    
-MySQL (543 LOC), PostgreSQL (376 LOC) und SQLite (112 LOC) implementieren fast identische Methoden (listTableRefs, listColumns, listForeignKeys, etc.) mit minimalen Dialekt-Unterschieden. ~1.000 Zeilen könnten auf ~400 reduziert werden.                   
- 
----    
-3. Wartbarkeit: 8/10             
-                
-┌──────────────────────────────────┬─────────────────────────────────────────────────────────────────────────┐
-│              Stärke              │                                 Detail                                  │
-├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
-│ Dependency Injection durchgängig │ Runner-Klassen sind vollständig injizierbar → jeder Fehlerpfad testbar  │
-├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
-│ Immutable DTOs                   │ Request/Response als data class mit Defaults                            │        
-├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤        
-│ Exit-Code-Strategie              │ 7-stufig: 0=OK, 2=CLI, 3=Preflight, 4=Connection, 5=Streaming, 7=Config │        
-├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤        
-│ Idempotente Ressourcen-Freigabe  │ close() mit Guard-Flags in allen Writer/Reader-Klassen                  │
-├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤        
-│ State Machine in Import          │ OPEN → WRITTEN → FINISHED → CLOSED, mit FAILED als Terminal-State       │
-├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤        
-│ Checkpoint/Resume                │ Streaming-Pipeline mit YAML-Checkpoints und Resume-Fähigkeit            │
-└──────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘        
-                
-┌──────────────────────────────┬───────────────────────────────────────────────────────────────────────────────┐      
-│           Schwäche           │                                    Detail                                     │
-├──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
-│ SchemaComparator-Repetition  │ 6× fast identisches Muster für verschiedene Schema-Objekte (~150 LOC sparbar) │
-├──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
-│ Type-Mapper-Tests dupliziert │ MysqlTypeMapperTest vs PostgresTypeMapperTest — ~350 LOC auf ~150 reduzierbar │      
-├──────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤      
-│ Kein Structured Logging      │ Direkte System.err.println()-Aufrufe statt log-level-basiertem Logging        │      
-└──────────────────────────────┴───────────────────────────────────────────────────────────────────────────────┘      
-                
----    
-4. Sicherheit: 8/10
-                    
-┌───────────────────────────┬───────────┬──────────────────────────────────────────────────────────────┐
-│          Bereich          │ Bewertung │                            Detail                            │              
-├───────────────────────────┼───────────┼──────────────────────────────────────────────────────────────┤
-│ SQL-Injection-Schutz      │ Sehr gut  │ Durchgängig PreparedStatement mit Parameter-Binding          │              
-├───────────────────────────┼───────────┼──────────────────────────────────────────────────────────────┤
-│ Identifier-Quoting        │ Exzellent │ Zentralisiert in SqlIdentifiers.kt, dialekt-bewusst (" vs `) │              
-├───────────────────────────┼───────────┼──────────────────────────────────────────────────────────────┤              
-│ Env-Variable-Substitution │ Gut       │ ${VAR} vs $${VAR}-Escaping korrekt implementiert             │              
-├───────────────────────────┼───────────┼──────────────────────────────────────────────────────────────┤              
-│ Connection-Pool           │ Gut       │ HikariCP mit SQLite-Sonderbehandlung (poolSize=1)            │
-└───────────────────────────┴───────────┴──────────────────────────────────────────────────────────────┘              
-                
-┌─────────────────────────────────────┬─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐   
-│               Risiko                │ Schwere │             Detail             │
-├─────────────────────────────────────┼─────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤   
-│ SQLite PRAGMA String-Interpolation  │ Mittel  │ SqliteMetadataQueries.kt:35,50,57,73,78 — nutzt lokales escapeSql() statt zentrales SqlIdentifiers.quoteStringLiteral(). SQLite PRAGMA unterstützt kein Parameter-Binding, aber die lokale               │
-│                                     │         │ Escape-Implementierung ist fehleranfälliger.                                                                        │   
-├─────────────────────────────────────┼─────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤   
-│ DefaultValue.FunctionCall           │ Niedrig │ Alle TypeMapper fallen auf "${default.name}()" zurück — keine Validierung des Funktionsnamens (Werte stammen aber aus Schema-Metadaten)                                                                  │
-│ unvalidiert                         │         │                                │   
-├─────────────────────────────────────┼─────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ Stille Exception-Unterdrückung      │ Niedrig │ HikariConnectionPoolFactory:56 — catch (_: IllegalArgumentException) verschluckt Driver-Registrierungs-Fehler ohne Logging                                                                               │   
-└─────────────────────────────────────┴─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘   
+Gesamtübersicht                                                                                                                                                                                                    
+                                                                                                                                                                                                                     
+  ┌───────────────────────────┬───────────┬─────────────────────────────────────────────────────┐                                                                                                                    
+  │          Metrik           │ Bewertung │                       Tendenz                       │
+  ├───────────────────────────┼───────────┼─────────────────────────────────────────────────────┤                                                                                                                    
+  │ Lesbarkeit & Namensgebung │   9/10    │ Durchgehend stark                                   │
+  ├───────────────────────────┼───────────┼─────────────────────────────────────────────────────┤
+  │ Modularität & Struktur    │   7/10    │ Architektur exzellent, SOLID-Verletzungen im Detail │                                                                                                                    
+  ├───────────────────────────┼───────────┼─────────────────────────────────────────────────────┤                                                                                                                    
+  │ Wartbarkeit               │   8/10    │ Gut erweiterbar, einige God-Class-Kandidaten        │                                                                                                                    
+  ├───────────────────────────┼───────────┼─────────────────────────────────────────────────────┤                                                                                                                    
+  │ Sicherheit                │   9/10    │ Keine kritischen Schwachstellen                     │
+  └───────────────────────────┴───────────┴─────────────────────────────────────────────────────┘                                                                                                                    
+                                                            
+  ---
+  1. Lesbarkeit & Namensgebung — 9/10
+                                                                                                                                                                                                                     
+  Stärken:
+                                                                                                                                                                                                                     
+  ┌────────────────────┬───────────┬────────────────────────────────────────────────────────────────────────────────────────┐
+  │       Aspekt       │ Bewertung │                                       Beispiele                                        │                                                                                        
+  ├────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Klassen-Benennung  │ Exzellent │ SchemaComparator, ViewDependencyResolver, FilterDslParser — Intention sofort klar      │
+  ├────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Methoden-Benennung │ Exzellent │ streamTable(), generateRollback(), resolveSequenceDefault() — verb-basiert, konsistent │                                                                                        
+  ├────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────────────┤                                                                                        
+  │ Properties         │ Exzellent │ Plural für Collections (tables, columns), Adjektive für Booleans (required, unique)    │                                                                                        
+  ├────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────────────┤                                                                                        
+  │ Test-Naming        │ Exzellent │ Narrative Form: "W001: FLOAT column with monetary name generates warning"              │
+  ├────────────────────┼───────────┼────────────────────────────────────────────────────────────────────────────────────────┤                                                                                        
+  │ Sealed Classes     │ Exzellent │ FilterDslParseResult.Success/Failure — algebraisch sauber                              │
+  └────────────────────┴───────────┴────────────────────────────────────────────────────────────────────────────────────────┘                                                                                        
+                                                            
+  Einziger Abzug: Die *TestPart2.kt / *TestPart2Part2b.kt-Namensgebung bei 27 Test-Dateien ist nicht semantisch.                                                                                                     
+                                                            
+  ---                                                                                                                                                                                                                
+  2. Modularität & Struktur — 7/10                          
+                                  
+  Hexagonale Architektur: Exzellent (9.5/10)
+                                                                                                                                                                                                                     
+  hexagon/core          (Domain-Modelle, keine Abhängigkeiten)
+     ↓                                                                                                                                                                                                               
+  hexagon/ports-common  (Shared Port-Typen)                 
+     ↓                                                                                                                                                                                                               
+  hexagon/ports-read    hexagon/ports-write                 
+     ↓                     ↓                                                                                                                                                                                         
+  hexagon/application   (CLI Runner, Use Cases)             
+     ↓                                                                                                                                                                                                               
+  adapters/driving/cli  adapters/driven/driver-*
+                                                                                                                                                                                                                     
+  - Keine zirkulären Abhängigkeiten                         
+  - Kein Adapter importiert von einem anderen Adapter                                                                                                                                                                
+  - Port/Adapter-Grenzen konsequent eingehalten                                                                                                                                                                      
+                                                                                                                                                                                                                     
+  SOLID-Verletzungen: Verbesserungswürdig (6/10)                                                                                                                                                                     
+                                                                                                                                                                                                                     
+  ┌─────────┬─────────┬────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────┐                                                           
+  │ Prinzip │ Schwere │           Fundstelle           │                                             Problem                                             │
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ SRP     │ Hoch    │ ValueDeserializer.kt (586 LOC) │ 20+ Typ-Konvertierungen in einer Klasse; dispatch() ist ein Monolith                            │
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ SRP     │ Hoch    │ FilterDslParser.kt (562 LOC)   │ Tokenizer + Parser + Fehlerbehandlung in einem Object                                           │                                                           
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ SRP     │ Hoch    │ DataImportRunner.kt (477 LOC)  │ CLI-Validierung, Format-Auflösung, Checkpoint-Management, Streaming-Execution in einer Klasse   │                                                           
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ OCP     │ Hoch    │ DataImportRunner.kt:202-217    │ Harte Dialekt-Checks (dialect == DatabaseDialect.POSTGRESQL) statt Capability-Interface         │
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ LSP     │ Hoch    │ MysqlSchemaSync.kt             │ disableTriggers() wirft UnsupportedTriggerModeException statt den Interface-Vertrag zu erfüllen │
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ ISP     │ Mittel  │ SchemaSync.kt                  │ Mischt Sequence-Reseeding mit Trigger-Management — MySQL kann nur Ersteres                      │
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ ISP     │ Mittel  │ DatabaseDriver.kt              │ Fat Interface (DDL + DataRead + DataWrite + TableLister + UrlBuilder + SchemaReader)            │
+  ├─────────┼─────────┼────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┤                                                           
+  │ DIP     │ Mittel  │ Main.kt:26-28                  │ Harte Driver-Registrierung ohne Plugin-Mechanismus                                              │
+  └─────────┴─────────┴────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┘                                                           
+                                                            
+  ---                                                                                                                                                                                                                
+  3. Wartbarkeit — 8/10                                     
 
----    
-Zusammenfassung 
-                
-┌───────────────────────────┬────────┬───────────────────────────────────────────────────┐
-│          Metrik           │ Score  │                       Trend                       │  
-├───────────────────────────┼────────┼───────────────────────────────────────────────────┤
-│ Lesbarkeit & Namensgebung │ 8/10   │ Konsistent, vereinzelt Inkonsistenzen             │  
-├───────────────────────────┼────────┼───────────────────────────────────────────────────┤
-│ Modularität & Struktur    │ 9/10   │ Vorbildliche Hexagonal-Architektur                │  
-├───────────────────────────┼────────┼───────────────────────────────────────────────────┤  
-│ Wartbarkeit               │ 8/10   │ Hohe Testbarkeit, etwas Duplikation               │  
-├───────────────────────────┼────────┼───────────────────────────────────────────────────┤  
-│ Sicherheit                │ 8/10   │ Durchgängig parametrisiert, ein SQLite-Sonderfall │
-├───────────────────────────┼────────┼───────────────────────────────────────────────────┤  
-│ Gesamt                    │ 8.3/10 │ Produktionsreife, professionelle Codebasis        │
-└───────────────────────────┴────────┴───────────────────────────────────────────────────┘  
-                
----    
-Konkrete Verbesserungsvorschläge
-      
-┌─────┬───────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────┬──────────────────────────────┐
-│  #  │ Priorität │                                                Vorschlag                                                 │           Betroffene Dateien            │      Geschätzter Effekt      │    
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤
-│ 1   │ Hoch      │ SQLite PRAGMA: lokales escapeSql() durch SqlIdentifiers.quoteStringLiteral() ersetzen                    │ SqliteMetadataQueries.kt                │ Zentralisierte Sicherheit    │    
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤
-│ 2   │ Hoch      │ Generische Vergleichsmethode in SchemaComparator extrahieren (z.B. compareObjectMaps<T>())               │ SchemaComparator.kt                     │ ~150 LOC weniger Duplikation │    
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 3   │ Hoch      │ MetadataQueries: Gemeinsame Basis-Logik in driver-common extrahieren, nur SQL-Strings dialekt-spezifisch │ Mysql/Postgres/SqliteMetadataQueries.kt │ ~600 LOC weniger Duplikation │    
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 4   │ Mittel    │ Parameter-Naming vereinheitlichen: schemaName statt database/schema Wechsel                              │ Alle MetadataQueries                    │ Konsistenz                   │
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 5   │ Mittel    │ Test-Dateien nach Thema statt Größe splitten (z.B. SchemaComparatorConstraintTest.kt)                    │ *TestPart2*.kt                          │ Bessere Auffindbarkeit       │
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 6   │ Mittel    │ TypeMapper-Tests parametrisieren (data-driven) statt pro Dialekt zu duplizieren                          │ *TypeMapperTest.kt                      │ ~200 LOC gespart             │
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 7   │ Mittel    │ Structured Logging einführen (SLF4J ist bereits Dependency) statt System.err.println()                   │ CLI-Adapter                             │ Log-Level-Steuerung          │
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 8   │ Niedrig   │ HikariConnectionPoolFactory:56 — Driver-Registrierungs-Fehler loggen statt verschlucken                  │ HikariConnectionPoolFactory.kt          │ Bessere Fehlerdiagnose       │
-├─────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────┼──────────────────────────────┤    
-│ 9   │ Niedrig   │ Monetäre Spalten-Erkennung in SchemaValidator präzisieren (_price, _amount statt Substring-Match)        │ SchemaValidator.kt:275-278              │ Weniger False Positives      │
-└─────┴───────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────┴──────────────────────────────┘    
-                
----    
-Fazit: Die Codebasis ist architektonisch vorbildlich — die hexagonale Schichtung wird durch Gradle-Abhängigkeiten erzwungen, Domain-Modelle sind schlank und immutabel, und die Testabdeckung liegt bei einem Test/Source-Ratio von 1.7x. Die Haupthebel für
-weitere Qualitätssteigerung liegen bei der Reduktion von MetadataQueries-Duplikation und der Zentralisierung des SQLite-PRAGMA-Escapings.  
+  Stärken:
+
+  ┌─────────────────────────────────┬───────────┬──────────────────────────────────────────────────────────────────────────────────────┐                                                                             
+  │             Aspekt              │ Bewertung │                                       Details                                        │
+  ├─────────────────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────┤                                                                             
+  │ Erweiterbarkeit (neuer Dialekt) │ Gut       │ AbstractDdlGenerator + TypeMapper-Interface ermöglichen schrittweise Implementierung │
+  ├─────────────────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────┤
+  │ Exception-Hierarchie            │ Exzellent │ Domänen-spezifisch, saubere Exit-Code-Zuordnung (0-7), kein printStackTrace()        │                                                                             
+  ├─────────────────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────┤                                                                             
+  │ Test-Abdeckung                  │ Exzellent │ Kover-enforced pro Modul, umfangreiche Unit- und Integrationstests                   │                                                                             
+  ├─────────────────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────┤                                                                             
+  │ Immutability                    │ Exzellent │ Kotlin Data Classes durchgängig, minimale mutable State                              │
+  ├─────────────────────────────────┼───────────┼──────────────────────────────────────────────────────────────────────────────────────┤                                                                             
+  │ Dokumentation                   │ Sehr gut  │ KDoc-Header, Block-Kommentare für Algorithmen, Cleanup-Verträge dokumentiert         │
+  └─────────────────────────────────┴───────────┴──────────────────────────────────────────────────────────────────────────────────────┘                                                                             
+                                                            
+  Schwächen:                                                                                                                                                                                                         
+                                                            
+  ┌────────────────────────────┬─────────────────────────────────────────────────┬─────────────────────────────────────────────────────┐                                                                             
+  │           Aspekt           │                     Problem                     │                     Auswirkung                      │
+  ├────────────────────────────┼─────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤                                                                             
+  │ Template Method Bloat      │ AbstractDdlGenerator hat 20+ abstrakte Methoden │ Neuer Dialekt muss alles implementieren             │
+  ├────────────────────────────┼─────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤
+  │ God-Class-Kandidaten       │ 3 Klassen > 500 LOC                             │ Änderungen an einem Concern riskieren Seiteneffekte │                                                                             
+  ├────────────────────────────┼─────────────────────────────────────────────────┼─────────────────────────────────────────────────────┤                                                                             
+  │ Starre Trigger-Architektur │ Feature-Checks per Enum statt Capabilities      │ Neues Feature erfordert Änderungen an Runners       │                                                                             
+  └────────────────────────────┴─────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘                                                                             
+                                                            
+  ---                                                                                                                                                                                                                
+  4. Sicherheit — 9/10                                      
+                      
+  Keine kritischen Schwachstellen gefunden.
+                                                                                                                                                                                                                     
+  ┌─────────────────┬────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │   Prüfbereich   │ Status │                                                                 Details                                                                  │                                            
+  ├─────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ SQL Injection   │ Sicher │ Durchgehend Prepared Statements mit ?-Platzhaltern; SqlIdentifiers.quoteStringLiteral() für PRAGMA-Argumente                             │
+  ├─────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Path Traversal  │ Sicher │ ArtifactRelativePath validiert: normalize(), rejektiert .., rejektiert absolute Pfade; Resume-Checkpoints validieren startsWith(baseDir) │                                            
+  ├─────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                                            
+  │ Deserialization │ Sicher │ Jackson: FAIL_ON_READING_DUP_TREE_KEY aktiv, kein enableDefaultTyping(); SnakeYAML: YAML-Aliases explizit rejektiert                     │                                            
+  ├─────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                                            
+  │ Credentials     │ Sicher │ ConnectionConfig.toString() maskiert Passwörter als ***; keine Secrets in Logs                                                           │
+  ├─────────────────┼────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                                            
+  │ Dependencies    │ Sicher │ Alle Versionen aktuell (Jackson 2.21.2, Kotlin 2.1.20, HikariCP 6.2.1); nur Maven Central                                                │
+  └─────────────────┴────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘                                            
+                                                            
+  Einzige theoretische Risiken (Low):                                                                                                                                                                                
+                                                            
+  ┌─────────────────────────────────────────────────────────────────┬─────────────────────────────────┬─────────────────────────────────────────────────────────┐                                                    
+  │                             Risiko                              │               Ort               │                        Bewertung                        │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────┼─────────────────────────────────────────────────────────┤                                                    
+  │ Partition-Boundary-Werte werden unvalidiert in DDL interpoliert │ PostgresDdlGenerator.kt:166-167 │ Low — Quelle ist geparste Schema-Datei, kein User-Input │
+  ├─────────────────────────────────────────────────────────────────┼─────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ CHECK-Constraint-Ausdrücke direkt in DDL übernommen             │ PostgresDdlGenerator.kt:55      │ Low — Aus Schema-Definition, nicht extern               │                                                    
+  └─────────────────────────────────────────────────────────────────┴─────────────────────────────────┴─────────────────────────────────────────────────────────┘                                                    
+                                                                                                                                                                                                                     
+  ---                                                                                                                                                                                                                
+  Konkrete Verbesserungsvorschläge                          
+                                  
+  Priorität 1 — Hoher Impact
+                                                                                                                                                                                                                     
+  ┌─────┬───────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────────┬───────────────────────────────────────────────────────────────┐   
+  │  #  │                                         Vorschlag                                         │             Betroffene Dateien             │                       Erwarteter Effekt                       │   
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤   
+  │ 1   │ ValueDeserializer aufspalten: Typ-Konverter in TypeConverter<T>-Interface + Registry      │ ValueDeserializer.kt                       │ 586 → ~150 LOC pro Klasse; neue Typen ohne Monolith-Änderung  │
+  │     │ extrahieren                                                                               │                                            │                                                               │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤   
+  │ 2   │ DialectCapabilities-Interface einführen: supportsTriggerMode(), supportsDisableFkChecks() │ DataImportRunner.kt, SchemaSync.kt,        │ Eliminiert alle dialect == DatabaseDialect.X-Checks aus       │   
+  │     │  statt Enum-Checks                                                                        │ DataWriter.kt                              │ Application-Layer                                             │   
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤   
+  │ 3   │ SchemaSync splitten: SequenceReseedStrategy + TriggerManagementStrategy                   │ SchemaSync.kt, MysqlSchemaSync.kt          │ LSP-Verletzung behoben; MySQL implementiert nur was es kann   │
+  └─────┴───────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘   
+  
+  Priorität 2 — Mittlerer Impact                                                                                                                                                                                     
+                                                            
+  ┌─────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────┬─────────────────────────────────────────────────────────┐   
+  │  #  │                                                Vorschlag                                                │         Betroffene Dateien         │                    Erwarteter Effekt                    │
+  ├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ 4   │ FilterDslParser trennen: Separater FilterDslTokenizer + FilterDslParser                                 │ FilterDslParser.kt                 │ Tokenizer ~100 LOC, Parser ~250 LOC; unabhängig testbar │
+  ├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ 5   │ DataImportRunner entflechten: Checkpoint-Logic in CheckpointCoordinator, Validierung in ImportValidator │ DataImportRunner.kt                │ 477 → ~200 LOC Runner + fokussierte Helfer              │   
+  ├─────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼─────────────────────────────────────────────────────────┤   
+  │ 6   │ ServiceLoader für Driver-Registrierung statt hartem register() in Main.kt                               │ Main.kt, DatabaseDriverRegistry.kt │ Neuer Dialekt ohne Main-Änderung                        │   
+  └─────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────┴─────────────────────────────────────────────────────────┘   
+                                                            
+  Priorität 3 — Nice-to-Have                                                                                                                                                                                         
+                                                            
+  ┌─────┬───────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────┬──────────────────────────────────────────────────────────┐ 
+  │  #  │                                               Vorschlag                                               │         Betroffene Dateien         │                    Erwarteter Effekt                     │ 
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼──────────────────────────────────────────────────────────┤    
+  │ 7   │ AbstractDdlGenerator Template-Methoden gruppieren: TableDdlStrategy, ViewDdlStrategy etc. als         │ AbstractDdlGenerator.kt            │ Reduziert Kopplung; neuer Dialekt muss nicht 20+         │ 
+  │     │ Composition statt Inheritance                                                                         │                                    │ Methoden overriden                                       │    
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼──────────────────────────────────────────────────────────┤    
+  │ 8   │ DatabaseDriver Interface verschlanken: Separate DatabaseReadDriver / DatabaseWriteDriver              │ DatabaseDriver.kt                  │ Minimale Implementierungen möglich (z.B.                 │ 
+  │     │                                                                                                       │                                    │ Read-Only-Profiler)                                      │    
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼──────────────────────────────────────────────────────────┤
+  │ 9   │ FAIL_ON_UNKNOWN_PROPERTIES aktivieren in Jackson-Konfiguration                                        │ JsonSchemaCodec.kt,                │ Strikte Deserialisierung, frühere Fehlererkennung        │    
+  │     │                                                                                                       │ YamlSchemaCodec.kt                 │                                                          │
+  └─────┴───────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────┴──────────────────────────────────────────────────────────┘    
+                                                            

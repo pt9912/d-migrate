@@ -11,7 +11,7 @@ import dev.dmigrate.driver.metadata.*
  */
 object PostgresMetadataQueries {
 
-    fun listTableRefs(session: JdbcOperations, schema: String): List<TableRef> {
+    fun listTableRefs(session: JdbcOperations, schemaName: String): List<TableRef> {
         return session.queryList(
             """
             SELECT table_name, table_schema, table_type
@@ -19,7 +19,7 @@ object PostgresMetadataQueries {
             WHERE table_schema = ?
               AND table_type = 'BASE TABLE'
             ORDER BY table_name
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         ).map { row ->
             TableRef(
                 name = row["table_name"] as String,
@@ -29,7 +29,7 @@ object PostgresMetadataQueries {
         }
     }
 
-    fun listColumns(session: JdbcOperations, schema: String, table: String): List<Map<String, Any?>> {
+    fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT column_name, data_type, udt_name, is_nullable,
@@ -39,11 +39,11 @@ object PostgresMetadataQueries {
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         )
     }
 
-    fun listPrimaryKeyColumns(session: JdbcOperations, schema: String, table: String): List<String> {
+    fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> {
         return session.queryList(
             """
             SELECT kcu.column_name
@@ -54,11 +54,11 @@ object PostgresMetadataQueries {
             WHERE tc.constraint_type = 'PRIMARY KEY'
               AND tc.table_schema = ? AND tc.table_name = ?
             ORDER BY kcu.ordinal_position
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         ).map { it["column_name"] as String }
     }
 
-    fun listForeignKeys(session: JdbcOperations, schema: String, table: String): List<ForeignKeyProjection> {
+    fun listForeignKeys(session: JdbcOperations, schemaName: String, table: String): List<ForeignKeyProjection> {
         // Uses pg_constraint directly to avoid the cartesian product from
         // information_schema.constraint_column_usage on composite FKs.
         val rows = session.queryList(
@@ -79,7 +79,7 @@ object PostgresMetadataQueries {
               AND n.nspname = ? AND sf.relname = ?
             GROUP BY c.conname, tf.relname, c.confdeltype, c.confupdtype
             ORDER BY c.conname
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         )
         return rows.map { row ->
             val cols = parseArrayColumn(row["columns"])
@@ -110,7 +110,7 @@ object PostgresMetadataQueries {
         else -> null
     }
 
-    fun listUniqueConstraintColumns(session: JdbcOperations, schema: String, table: String): Map<String, List<String>> {
+    fun listUniqueConstraintColumns(session: JdbcOperations, schemaName: String, table: String): Map<String, List<String>> {
         val rows = session.queryList(
             """
             SELECT tc.constraint_name, kcu.column_name
@@ -121,13 +121,13 @@ object PostgresMetadataQueries {
             WHERE tc.constraint_type = 'UNIQUE'
               AND tc.table_schema = ? AND tc.table_name = ?
             ORDER BY tc.constraint_name, kcu.ordinal_position
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["constraint_name"] as String }
             .mapValues { (_, v) -> v.map { it["column_name"] as String } }
     }
 
-    fun listCheckConstraints(session: JdbcOperations, schema: String, table: String): List<ConstraintProjection> {
+    fun listCheckConstraints(session: JdbcOperations, schemaName: String, table: String): List<ConstraintProjection> {
         return session.queryList(
             """
             SELECT tc.constraint_name, cc.check_clause
@@ -139,7 +139,7 @@ object PostgresMetadataQueries {
               AND tc.table_schema = ? AND tc.table_name = ?
               AND tc.constraint_name NOT LIKE '%_not_null'
             ORDER BY tc.constraint_name
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         ).map { row ->
             ConstraintProjection(
                 name = row["constraint_name"] as String,
@@ -153,7 +153,7 @@ object PostgresMetadataQueries {
      * Lists non-backing indices. Uses pg_index to exclude primary key
      * and unique constraint backing indices.
      */
-    fun listIndices(session: JdbcOperations, schema: String, table: String): List<IndexProjection> {
+    fun listIndices(session: JdbcOperations, schemaName: String, table: String): List<IndexProjection> {
         return session.queryList(
             """
             SELECT i.relname AS index_name,
@@ -176,7 +176,7 @@ object PostgresMetadataQueries {
               )
             GROUP BY i.relname, ix.indisunique, am.amname
             ORDER BY i.relname
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         ).map { row ->
             val cols = row["columns"]
             val columnList = when (cols) {
@@ -193,7 +193,7 @@ object PostgresMetadataQueries {
         }
     }
 
-    fun listSequences(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listSequences(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         // information_schema.sequences does NOT have a cache_size column;
         // pg_sequences (system view) does — LEFT JOIN to get it.
         return session.queryList(
@@ -206,11 +206,11 @@ object PostgresMetadataQueries {
               ON ps.schemaname = s.sequence_schema AND ps.sequencename = s.sequence_name
             WHERE s.sequence_schema = ?
             ORDER BY s.sequence_name
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun getPartitionInfo(session: JdbcOperations, schema: String, table: String): Map<String, Any?>? {
+    fun getPartitionInfo(session: JdbcOperations, schemaName: String, table: String): Map<String, Any?>? {
         return session.querySingle(
             """
             SELECT pt.partstrat, array_agg(a.attname ORDER BY pos.n) AS key_columns
@@ -221,7 +221,7 @@ object PostgresMetadataQueries {
             JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = pos.attnum
             WHERE n.nspname = ? AND c.relname = ?
             GROUP BY pt.partstrat
-            """.trimIndent(), schema, table,
+            """.trimIndent(), schemaName, table,
         )
     }
 
@@ -231,7 +231,7 @@ object PostgresMetadataQueries {
         ).map { it["extname"] as String }
     }
 
-    fun listEnumTypes(session: JdbcOperations, schema: String): Map<String, List<String>> {
+    fun listEnumTypes(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
         val rows = session.queryList(
             """
             SELECT t.typname, e.enumlabel
@@ -240,13 +240,13 @@ object PostgresMetadataQueries {
             JOIN pg_namespace n ON n.oid = t.typnamespace
             WHERE n.nspname = ?
             ORDER BY t.typname, e.enumsortorder
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
         return rows.groupBy { it["typname"] as String }
             .mapValues { (_, v) -> v.map { it["enumlabel"] as String } }
     }
 
-    fun listDomainTypes(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listDomainTypes(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT t.typname,
@@ -264,11 +264,11 @@ object PostgresMetadataQueries {
             LEFT JOIN pg_constraint c ON c.contypid = t.oid AND c.contype = 'c'
             WHERE t.typtype = 'd' AND n.nspname = ?
             ORDER BY t.typname
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listCompositeTypes(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listCompositeTypes(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT t.typname, a.attname, a.attnum,
@@ -280,22 +280,22 @@ object PostgresMetadataQueries {
             WHERE t.typtype = 'c' AND n.nspname = ?
               AND NOT EXISTS (SELECT 1 FROM pg_class r WHERE r.oid = t.typrelid AND r.relkind != 'c')
             ORDER BY t.typname, a.attnum
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listViews(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listViews(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT table_name, view_definition
             FROM information_schema.views
             WHERE table_schema = ?
             ORDER BY table_name
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listViewFunctionDependencies(session: JdbcOperations, schema: String): Map<String, List<String>> {
+    fun listViewFunctionDependencies(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
         val rows = session.queryList(
             """
             SELECT DISTINCT v.relname AS view_name, p.proname AS function_name
@@ -309,7 +309,7 @@ object PostgresMetadataQueries {
               AND d.refclassid = 'pg_proc'::regclass
               AND d.deptype IN ('n', 'a')
             ORDER BY view_name, function_name
-            """.trimIndent(), schema, schema,
+            """.trimIndent(), schemaName, schemaName,
         )
         return rows.groupBy(
             { it["view_name"] as String },
@@ -317,7 +317,7 @@ object PostgresMetadataQueries {
         )
     }
 
-    fun listFunctions(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listFunctions(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT r.routine_name, r.specific_name, r.routine_type, r.data_type,
@@ -328,11 +328,11 @@ object PostgresMetadataQueries {
               AND r.routine_type = 'FUNCTION'
               AND r.routine_name NOT LIKE 'pg_%'
             ORDER BY r.specific_name
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listProcedures(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listProcedures(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT r.routine_name, r.specific_name, r.routine_type,
@@ -341,12 +341,12 @@ object PostgresMetadataQueries {
             WHERE r.routine_schema = ?
               AND r.routine_type = 'PROCEDURE'
             ORDER BY r.specific_name
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 
     /** List parameters for a specific routine identified by its `specific_name`. */
-    fun listRoutineParameters(session: JdbcOperations, schema: String, specificName: String): List<Map<String, Any?>> {
+    fun listRoutineParameters(session: JdbcOperations, schemaName: String, specificName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT parameter_name, data_type, udt_name, parameter_mode,
@@ -356,11 +356,11 @@ object PostgresMetadataQueries {
               AND specific_name = ?
               AND ordinal_position > 0
             ORDER BY ordinal_position
-            """.trimIndent(), schema, specificName,
+            """.trimIndent(), schemaName, specificName,
         )
     }
 
-    fun listTriggers(session: JdbcOperations, schema: String): List<Map<String, Any?>> {
+    fun listTriggers(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT trigger_name, event_object_table,
@@ -370,7 +370,7 @@ object PostgresMetadataQueries {
             FROM information_schema.triggers
             WHERE trigger_schema = ?
             ORDER BY event_object_table, trigger_name
-            """.trimIndent(), schema,
+            """.trimIndent(), schemaName,
         )
     }
 }

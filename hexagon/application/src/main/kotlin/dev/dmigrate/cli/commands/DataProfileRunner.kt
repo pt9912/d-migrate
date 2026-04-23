@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingException
 import dev.dmigrate.profiling.model.DatabaseProfile
@@ -66,7 +67,7 @@ class DataProfileRunner(
         }
 
         // ─── 4. Validate schema flag ────────────────────────────
-        if (request.schema != null && dialect != DatabaseDialect.POSTGRESQL) {
+        if (request.schema != null && !DialectCapabilities.forDialect(dialect).supportsSchemaParameter) {
             stderr("[ERROR] --schema is only supported for PostgreSQL, not ${dialect.name.lowercase()}")
             return 2
         }

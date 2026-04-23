@@ -10,7 +10,6 @@ import dev.dmigrate.driver.data.SequenceAdjustment
 import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
-import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.driver.data.WriteResult
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
@@ -31,16 +30,9 @@ class MysqlDataWriter(
         table: String,
         options: ImportOptions,
     ): TableImportSession {
-        when (options.triggerMode) {
-            TriggerMode.FIRE -> Unit
-            TriggerMode.DISABLE ->
-                throw UnsupportedTriggerModeException(
-                    "triggerMode=disable is not supported for MySQL in 0.4.0"
-                )
-            TriggerMode.STRICT ->
-                throw UnsupportedTriggerModeException(
-                    "triggerMode=strict is not supported for MySQL in 0.4.0"
-                )
+        check(options.triggerMode == TriggerMode.FIRE) {
+            "triggerMode=${options.triggerMode} is not supported for MySQL — " +
+                "the Runner should have validated this via DialectCapabilities"
         }
 
         val conn = pool.borrow()

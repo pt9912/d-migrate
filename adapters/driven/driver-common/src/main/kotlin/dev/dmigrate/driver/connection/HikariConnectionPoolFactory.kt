@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource
 import com.zaxxer.hikari.HikariPoolMXBean
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import org.slf4j.LoggerFactory
 import java.sql.Connection
 
 /**
@@ -20,6 +21,8 @@ import java.sql.Connection
  *   Schreibzugriffe; siehe `connection-config-spec.md` §2.2)
  */
 object HikariConnectionPoolFactory {
+
+    private val log = LoggerFactory.getLogger(HikariConnectionPoolFactory::class.java)
 
     /** Erzeugt einen offenen [ConnectionPool]. Caller MUSS `pool.close()` aufrufen. */
     fun create(config: ConnectionConfig): ConnectionPool {
@@ -53,7 +56,8 @@ object HikariConnectionPoolFactory {
     internal fun buildJdbcUrl(config: ConnectionConfig): String {
         val builder = try {
             DatabaseDriverRegistry.get(config.dialect).urlBuilder()
-        } catch (_: IllegalArgumentException) {
+        } catch (e: IllegalArgumentException) {
+            log.debug("No registered driver for {}, using fallback URL builder: {}", config.dialect, e.message)
             FallbackJdbcUrlBuilder(config.dialect)
         }
         return builder.buildJdbcUrl(config)

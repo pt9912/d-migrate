@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataWriter
@@ -199,19 +200,28 @@ class DataImportRunner(
             return PreflightResult.Exit(7)
         }
 
-        if (request.disableFkChecks && connectionConfig.dialect == DatabaseDialect.POSTGRESQL) {
+        val caps = DialectCapabilities.forDialect(connectionConfig.dialect)
+
+        if (request.disableFkChecks && !caps.supportsDisableFkChecks) {
+            val dialectName = connectionConfig.dialect.name.lowercase()
+                .replaceFirstChar { it.uppercase() }
             stderr(
-                "Error: --disable-fk-checks is not supported for PostgreSQL. " +
+                "Error: --disable-fk-checks is not supported for $dialectName. " +
                     "Use DEFERRABLE constraints or --schema-based ordering instead."
             )
             return PreflightResult.Exit(2)
         }
 
-        if (request.triggerMode == "disable" &&
-            connectionConfig.dialect in listOf(DatabaseDialect.MYSQL, DatabaseDialect.SQLITE)
-        ) {
+        if (request.triggerMode == "disable" && !caps.supportsTriggerDisable) {
             stderr(
                 "Error: --trigger-mode disable is not supported for dialect ${connectionConfig.dialect}."
+            )
+            return PreflightResult.Exit(2)
+        }
+
+        if (request.triggerMode == "strict" && !caps.supportsTriggerStrict) {
+            stderr(
+                "Error: --trigger-mode strict is not supported for dialect ${connectionConfig.dialect}."
             )
             return PreflightResult.Exit(2)
         }

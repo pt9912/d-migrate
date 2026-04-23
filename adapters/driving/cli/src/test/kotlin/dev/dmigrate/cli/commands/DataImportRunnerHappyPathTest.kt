@@ -342,7 +342,7 @@ class DataImportRunnerHappyPathTest : FunSpec({
             disableFkChecks = true,
         )) shouldBe 2
         stderr.joined() shouldContain "--disable-fk-checks"
-        stderr.joined() shouldContain "PostgreSQL"
+        stderr.joined().lowercase() shouldContain "postgresql"
     }
 
     test("Exit 2: --trigger-mode disable on MySQL") {

@@ -10,7 +10,7 @@ import dev.dmigrate.driver.metadata.*
  */
 object MysqlMetadataQueries {
 
-    fun listTableRefs(session: JdbcOperations, database: String): List<TableRef> {
+    fun listTableRefs(session: JdbcOperations, schemaName: String): List<TableRef> {
         return session.queryList(
             """
             SELECT table_name, table_schema, table_type
@@ -18,7 +18,7 @@ object MysqlMetadataQueries {
             WHERE table_schema = ?
               AND table_type = 'BASE TABLE'
             ORDER BY table_name
-            """.trimIndent(), database,
+            """.trimIndent(), schemaName,
         ).map { row ->
             TableRef(
                 name = row["table_name"] as String,
@@ -28,15 +28,15 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listTableEngine(session: JdbcOperations, database: String, table: String): String? {
+    fun listTableEngine(session: JdbcOperations, schemaName: String, table: String): String? {
         val row = session.querySingle(
             "SELECT engine FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
-            database, table,
+            schemaName, table,
         )
         return row?.get("engine") as? String
     }
 
-    fun listColumns(session: JdbcOperations, database: String, table: String): List<Map<String, Any?>> {
+    fun listColumns(session: JdbcOperations, schemaName: String, table: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT column_name, data_type, column_type, is_nullable,
@@ -45,11 +45,11 @@ object MysqlMetadataQueries {
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
-            """.trimIndent(), database, table,
+            """.trimIndent(), schemaName, table,
         )
     }
 
-    fun listPrimaryKeyColumns(session: JdbcOperations, database: String, table: String): List<String> {
+    fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> {
         return session.queryList(
             """
             SELECT column_name
@@ -57,11 +57,11 @@ object MysqlMetadataQueries {
             WHERE table_schema = ? AND table_name = ?
               AND constraint_name = 'PRIMARY'
             ORDER BY ordinal_position
-            """.trimIndent(), database, table,
+            """.trimIndent(), schemaName, table,
         ).map { it["column_name"] as String }
     }
 
-    fun listForeignKeys(session: JdbcOperations, database: String, table: String): List<ForeignKeyProjection> {
+    fun listForeignKeys(session: JdbcOperations, schemaName: String, table: String): List<ForeignKeyProjection> {
         val rows = session.queryList(
             """
             SELECT kcu.constraint_name, kcu.column_name,
@@ -74,7 +74,7 @@ object MysqlMetadataQueries {
             WHERE kcu.table_schema = ? AND kcu.table_name = ?
               AND kcu.referenced_table_name IS NOT NULL
             ORDER BY kcu.constraint_name, kcu.ordinal_position
-            """.trimIndent(), database, table,
+            """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["constraint_name"] as String }.map { (name, fkRows) ->
             val first = fkRows.first()
@@ -89,7 +89,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listCheckConstraints(session: JdbcOperations, database: String, table: String): List<ConstraintProjection> {
+    fun listCheckConstraints(session: JdbcOperations, schemaName: String, table: String): List<ConstraintProjection> {
         return session.queryList(
             """
             SELECT tc.constraint_name, cc.check_clause
@@ -101,7 +101,7 @@ object MysqlMetadataQueries {
               AND tc.table_schema = ? AND tc.table_name = ?
               AND tc.constraint_name NOT LIKE '%_chk_%' OR tc.constraint_name LIKE '%_chk_%'
             ORDER BY tc.constraint_name
-            """.trimIndent(), database, table,
+            """.trimIndent(), schemaName, table,
         ).map { row ->
             ConstraintProjection(
                 name = row["constraint_name"] as String,
@@ -111,7 +111,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listIndices(session: JdbcOperations, database: String, table: String): List<IndexProjection> {
+    fun listIndices(session: JdbcOperations, schemaName: String, table: String): List<IndexProjection> {
         val rows = session.queryList(
             """
             SELECT index_name, column_name, non_unique, seq_in_index, index_type
@@ -119,7 +119,7 @@ object MysqlMetadataQueries {
             WHERE table_schema = ? AND table_name = ?
               AND index_name != 'PRIMARY'
             ORDER BY index_name, seq_in_index
-            """.trimIndent(), database, table,
+            """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["index_name"] as String }.map { (name, idxRows) ->
             IndexProjection(
@@ -132,18 +132,18 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listViews(session: JdbcOperations, database: String): List<Map<String, Any?>> {
+    fun listViews(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT table_name, view_definition
             FROM information_schema.views
             WHERE table_schema = ?
             ORDER BY table_name
-            """.trimIndent(), database,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listViewRoutineUsage(session: JdbcOperations, database: String): Map<String, List<String>> {
+    fun listViewRoutineUsage(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
         return try {
             val rows = session.queryList(
                 """
@@ -151,7 +151,7 @@ object MysqlMetadataQueries {
                 FROM INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE
                 WHERE TABLE_SCHEMA = ?
                 ORDER BY view_name, routine_name
-                """.trimIndent(), database,
+                """.trimIndent(), schemaName,
             )
             rows.groupBy(
                 { it["view_name"] as String },
@@ -163,7 +163,7 @@ object MysqlMetadataQueries {
         }
     }
 
-    fun listFunctions(session: JdbcOperations, database: String): List<Map<String, Any?>> {
+    fun listFunctions(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT routine_name, routine_type, data_type,
@@ -172,11 +172,11 @@ object MysqlMetadataQueries {
             FROM information_schema.routines
             WHERE routine_schema = ? AND routine_type = 'FUNCTION'
             ORDER BY routine_name
-            """.trimIndent(), database,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listProcedures(session: JdbcOperations, database: String): List<Map<String, Any?>> {
+    fun listProcedures(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT routine_name, routine_type,
@@ -184,11 +184,11 @@ object MysqlMetadataQueries {
             FROM information_schema.routines
             WHERE routine_schema = ? AND routine_type = 'PROCEDURE'
             ORDER BY routine_name
-            """.trimIndent(), database,
+            """.trimIndent(), schemaName,
         )
     }
 
-    fun listRoutineParameters(session: JdbcOperations, database: String, routineName: String, routineType: String): List<Map<String, Any?>> {
+    fun listRoutineParameters(session: JdbcOperations, schemaName: String, routineName: String, routineType: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT parameter_name, data_type, dtd_identifier,
@@ -198,11 +198,11 @@ object MysqlMetadataQueries {
               AND routine_type = ?
               AND ordinal_position > 0
             ORDER BY ordinal_position
-            """.trimIndent(), database, routineName, routineType,
+            """.trimIndent(), schemaName, routineName, routineType,
         )
     }
 
-    fun listTriggers(session: JdbcOperations, database: String): List<Map<String, Any?>> {
+    fun listTriggers(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
             SELECT trigger_name, event_object_table,
@@ -211,7 +211,7 @@ object MysqlMetadataQueries {
             FROM information_schema.triggers
             WHERE trigger_schema = ?
             ORDER BY event_object_table, trigger_name
-            """.trimIndent(), database,
+            """.trimIndent(), schemaName,
         )
     }
 
@@ -222,7 +222,7 @@ object MysqlMetadataQueries {
      * Returns `true` (exists), `false` (does not exist), or `null`
      * (technically undecidable — e.g. permission error on information_schema).
      */
-    fun checkSupportTableExists(session: JdbcOperations, database: String): Boolean? {
+    fun checkSupportTableExists(session: JdbcOperations, schemaName: String): Boolean? {
         return try {
             val row = session.querySingle(
                 """
@@ -230,7 +230,7 @@ object MysqlMetadataQueries {
                 FROM information_schema.tables
                 WHERE table_schema = ? AND table_name = ?
                   AND table_type = 'BASE TABLE'
-                """.trimIndent(), database, MysqlSequenceNaming.SUPPORT_TABLE,
+                """.trimIndent(), schemaName, MysqlSequenceNaming.SUPPORT_TABLE,
             )
             row != null
         } catch (_: Exception) {
@@ -269,13 +269,13 @@ object MysqlMetadataQueries {
      * as BigInteger) are caught downstream by safeLong()/safeInt()
      * during row validation, not here.
      */
-    fun checkSupportTableShape(session: JdbcOperations, database: String): Boolean {
+    fun checkSupportTableShape(session: JdbcOperations, schemaName: String): Boolean {
         val actualColumns = session.queryList(
             """
             SELECT column_name, data_type, column_type
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
-            """.trimIndent(), database, MysqlSequenceNaming.SUPPORT_TABLE,
+            """.trimIndent(), schemaName, MysqlSequenceNaming.SUPPORT_TABLE,
         ).associate {
             (it["column_name"] as String).lowercase() to Pair(
                 (it["data_type"] as? String)?.lowercase(),
@@ -292,8 +292,8 @@ object MysqlMetadataQueries {
      * Reads all rows from dmg_sequences, returning raw row maps.
      * Caller is responsible for validation and conflict detection.
      */
-    fun listSupportSequenceRows(session: JdbcOperations, database: String): List<Map<String, Any?>> {
-        val safeDb = database.replace("`", "``")
+    fun listSupportSequenceRows(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
+        val safeDb = schemaName.replace("`", "``")
         return session.queryList(
             """
             SELECT managed_by, format_version, name,
@@ -372,7 +372,7 @@ object MysqlMetadataQueries {
 
     fun lookupSupportRoutine(
         session: JdbcOperations,
-        database: String,
+        schemaName: String,
         routineName: String,
     ): SupportRoutineState {
         return try {
@@ -383,14 +383,14 @@ object MysqlMetadataQueries {
                 FROM information_schema.routines
                 WHERE routine_schema = ? AND routine_name = ?
                   AND routine_type = 'FUNCTION'
-                """.trimIndent(), database, routineName,
+                """.trimIndent(), schemaName, routineName,
             ) ?: return SupportRoutineState.MISSING
 
             // MySQL's information_schema.routines.routine_definition often strips
             // comments (including d-migrate markers). SHOW CREATE FUNCTION preserves
             // the original source text. Try SHOW CREATE first, fall back to
             // routine_definition.
-            val safeDb = database.replace("`", "``")
+            val safeDb = schemaName.replace("`", "``")
             val safeName = routineName.replace("`", "``")
             val showRow = try {
                 session.querySingle("SHOW CREATE FUNCTION `$safeDb`.`$safeName`")
@@ -423,7 +423,7 @@ object MysqlMetadataQueries {
                     WHERE specific_schema = ? AND specific_name = ?
                       AND routine_type = 'FUNCTION'
                       AND ordinal_position > 0
-                    """.trimIndent(), database, routineName,
+                    """.trimIndent(), schemaName, routineName,
                 )
                 if (paramRows.size != expected.paramCount) return SupportRoutineState.NON_CANONICAL
             }
@@ -458,7 +458,7 @@ object MysqlMetadataQueries {
 
     fun listPotentialSupportTriggers(
         session: JdbcOperations,
-        database: String,
+        schemaName: String,
     ): SupportTriggerScanResult {
         val rows = try {
             session.queryList(
@@ -470,13 +470,13 @@ object MysqlMetadataQueries {
                   AND trigger_name LIKE 'dmg_seq_%'
                   AND trigger_name LIKE '%_bi'
                 ORDER BY trigger_name
-                """.trimIndent(), database,
+                """.trimIndent(), schemaName,
             )
         } catch (_: Exception) {
             return SupportTriggerScanResult(emptyList(), accessible = false)
         }
 
-        val safeDb = database.replace("`", "``")
+        val safeDb = schemaName.replace("`", "``")
 
         val result = rows.map { row ->
             val name = row["trigger_name"] as String
@@ -508,7 +508,7 @@ object MysqlMetadataQueries {
             val markerColumn = MARKER_COLUMN_PATTERN.find(body)?.groupValues?.get(1)
 
             // Scope check: reject schema-qualified sequence names pointing elsewhere
-            val seqUnqualified = rawSequence?.let { unqualify(it, database) }
+            val seqUnqualified = rawSequence?.let { unqualify(it, schemaName) }
 
             val state = assessTriggerState(
                 name, timing, event, body, table, column, rawSequence,

@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
+import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -91,7 +92,16 @@ class DataTransferRunner(
         try { tables = preflight(request, srcSchema, tgtSchema) }
         catch (e: TransferPreflightException) { printError("Preflight: ${e.message}", srcRef); return 3 }
 
-        val opts = ImportOptions(triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase()),
+        val caps = DialectCapabilities.forDialect(tgtCfg.dialect)
+        val triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase())
+        if (triggerMode == TriggerMode.DISABLE && !caps.supportsTriggerDisable) {
+            printError("--trigger-mode disable is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
+        }
+        if (triggerMode == TriggerMode.STRICT && !caps.supportsTriggerStrict) {
+            printError("--trigger-mode strict is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
+        }
+
+        val opts = ImportOptions(triggerMode = triggerMode,
             truncate = request.truncate, onConflict = OnConflict.valueOf(request.onConflict.uppercase()))
         val filter = DataExportHelpers.resolveFilter(
             parsedFilter = request.filter,

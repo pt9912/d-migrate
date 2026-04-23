@@ -112,23 +112,4 @@ class MysqlSchemaSyncTest : FunSpec({
         result[0].newValue shouldBe 51
     }
 
-    // ── trigger methods ────────────────────────────
-
-    test("disableTriggers throws UnsupportedTriggerModeException") {
-        shouldThrow<UnsupportedTriggerModeException> {
-            sync.disableTriggers(conn, "users")
-        }
-    }
-
-    test("assertNoUserTriggers throws UnsupportedTriggerModeException") {
-        shouldThrow<UnsupportedTriggerModeException> {
-            sync.assertNoUserTriggers(conn, "users")
-        }
-    }
-
-    test("enableTriggers throws UnsupportedTriggerModeException") {
-        shouldThrow<UnsupportedTriggerModeException> {
-            sync.enableTriggers(conn, "users")
-        }
-    }
 })

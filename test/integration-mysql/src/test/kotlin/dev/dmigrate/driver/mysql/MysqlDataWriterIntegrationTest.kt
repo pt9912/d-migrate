@@ -289,27 +289,23 @@ class MysqlDataWriterIntegrationTest : FunSpec({
     }
 
     test("triggerMode disable is rejected for MySQL") {
-        val ex = shouldThrow<dev.dmigrate.driver.data.UnsupportedTriggerModeException> {
+        shouldThrow<IllegalStateException> {
             writer.openTable(
                 pool!!,
                 "writer_users",
                 ImportOptions(triggerMode = dev.dmigrate.driver.data.TriggerMode.DISABLE),
             ).close()
         }
-
-        ex.message shouldBe "triggerMode=disable is not supported for MySQL in 0.4.0"
     }
 
     test("triggerMode strict is rejected for MySQL") {
-        val ex = shouldThrow<dev.dmigrate.driver.data.UnsupportedTriggerModeException> {
+        shouldThrow<IllegalStateException> {
             writer.openTable(
                 pool!!,
                 "writer_users",
                 ImportOptions(triggerMode = dev.dmigrate.driver.data.TriggerMode.STRICT),
             ).close()
         }
-
-        ex.message shouldBe "triggerMode=strict is not supported for MySQL in 0.4.0"
     }
 
     test("onConflict update upserts rows and reports inserted vs updated") {

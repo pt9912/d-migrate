@@ -3,7 +3,6 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.SequenceAdjustment
-import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import java.sql.Connection
 
 class SqliteSchemaSync : SchemaSync {
@@ -54,24 +53,6 @@ class SqliteSchemaSync : SchemaSync {
                 sequenceName = null,
                 newValue = maxValue + 1,
             )
-        )
-    }
-
-    override fun disableTriggers(conn: Connection, table: String) {
-        throw UnsupportedTriggerModeException(
-            "triggerMode=disable is not supported for SQLite in 0.4.0"
-        )
-    }
-
-    override fun assertNoUserTriggers(conn: Connection, table: String) {
-        throw UnsupportedTriggerModeException(
-            "triggerMode=strict is not supported for SQLite in 0.4.0"
-        )
-    }
-
-    override fun enableTriggers(conn: Connection, table: String) {
-        throw UnsupportedTriggerModeException(
-            "triggerMode=disable is not supported for SQLite in 0.4.0"
         )
     }
 
