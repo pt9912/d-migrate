@@ -283,10 +283,10 @@ class PostgresTableImportSessionTest : FunSpec({
         val capturedSql = slot<String>()
         every { conn.prepareStatement(capture(capturedSql)) } returns stmt
 
-        // For UPDATE (upsert), executeQuery is called per row, not executeBatch
+        // Multi-row upsert: executeQuery returns one row per input row
         val rs = mockk<ResultSet>(relaxUnitFun = true)
         every { stmt.executeQuery() } returns rs
-        every { rs.next() } returns true
+        every { rs.next() } returnsMany listOf(true, false)
         every { rs.getBoolean(1) } returns true
 
         val session = newSession(

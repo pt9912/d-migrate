@@ -194,7 +194,7 @@ class MysqlTableImportSessionTest : FunSpec({
     test("buildInsertSql for SKIP generates INSERT IGNORE INTO") {
         val conn = mockk<Connection>(relaxUnitFun = true)
         val ps = stubInsertPreparedStatement(conn)
-        every { ps.executeUpdate() } returns 1
+        every { ps.executeBatch() } returns intArrayOf(1)
         val (session, _) = buildSession(conn = conn, options = ImportOptions(onConflict = OnConflict.SKIP))
 
         session.write(makeChunk())
@@ -205,7 +205,7 @@ class MysqlTableImportSessionTest : FunSpec({
     test("buildInsertSql for UPDATE generates INSERT ON DUPLICATE KEY UPDATE") {
         val conn = mockk<Connection>(relaxUnitFun = true)
         val ps = stubInsertPreparedStatement(conn)
-        every { ps.executeUpdate() } returns 1
+        every { ps.executeBatch() } returns intArrayOf(1)
         val (session, _) = buildSession(
             conn = conn,
             primaryKeyColumns = listOf("id"),
@@ -240,10 +240,7 @@ class MysqlTableImportSessionTest : FunSpec({
         val conn = mockk<Connection>(relaxUnitFun = true)
         val ps = stubInsertPreparedStatement(conn)
         // First row inserted (1), second row skipped (0)
-        var callCount = 0
-        every { ps.executeUpdate() } answers {
-            if (callCount++ == 0) 1 else 0
-        }
+        every { ps.executeBatch() } returns intArrayOf(1, 0)
         val (session, _) = buildSession(conn = conn, options = ImportOptions(onConflict = OnConflict.SKIP))
 
         val chunk = makeChunk(rows = listOf(arrayOf(1, "Alice"), arrayOf(2, "Bob")))

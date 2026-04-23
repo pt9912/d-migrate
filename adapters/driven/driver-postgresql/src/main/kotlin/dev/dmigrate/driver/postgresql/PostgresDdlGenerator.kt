@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
+import dev.dmigrate.driver.SqlIdentifiers
 
 class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
@@ -187,19 +188,34 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             append("CREATE TABLE ${quoteIdentifier(partition.name)} PARTITION OF ${quoteIdentifier(parentTable)}")
             when (type) {
                 PartitionType.RANGE -> {
-                    append(" FOR VALUES FROM (${partition.from}) TO (${partition.to})")
+                    val from = validatePartitionBound(partition.from, "FROM", partition.name)
+                    val to = validatePartitionBound(partition.to, "TO", partition.name)
+                    append(" FOR VALUES FROM ($from) TO ($to)")
                 }
                 PartitionType.LIST -> {
-                    val vals = partition.values?.joinToString(", ") ?: ""
+                    val vals = partition.values?.onEach {
+                        validatePartitionBound(it, "IN", partition.name)
+                    }?.joinToString(", ") ?: ""
                     append(" FOR VALUES IN ($vals)")
                 }
                 PartitionType.HASH -> {
-                    append(" FOR VALUES WITH (${partition.from})")
+                    val from = validatePartitionBound(partition.from, "WITH", partition.name)
+                    append(" FOR VALUES WITH ($from)")
                 }
             }
             append(";")
         }
         return DdlStatement(sql)
+    }
+
+    private fun validatePartitionBound(value: String?, clause: String, partitionName: String): String {
+        requireNotNull(value) {
+            "Partition '$partitionName' $clause bound must not be null"
+        }
+        require(!value.contains(';') && !value.contains("--") && !value.contains("/*")) {
+            "Partition '$partitionName' $clause bound contains unsafe characters: $value"
+        }
+        return value
     }
 
     // ── Indices ──────────────────────────────────
@@ -283,5 +299,5 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         colName: String,
         col: dev.dmigrate.core.model.ColumnDefinition,
         seqDefault: dev.dmigrate.core.model.DefaultValue.SequenceNextVal,
-    ): String = "DEFAULT nextval('${seqDefault.sequenceName}')"
+    ): String = "DEFAULT nextval(${SqlIdentifiers.quoteStringLiteral(seqDefault.sequenceName)})"
 }

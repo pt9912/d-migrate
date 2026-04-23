@@ -11,6 +11,7 @@ import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.WriteResult
+import dev.dmigrate.driver.data.runSuppressing
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
@@ -85,30 +86,10 @@ class MysqlDataWriter(
             }
             return session
         } catch (t: Throwable) {
-            try {
-                if (!conn.autoCommit) conn.rollback()
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
-            try {
-                if (savedAutoCommit != null) {
-                    conn.autoCommit = savedAutoCommit
-                }
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
-            try {
-                if (fkChecksDisabled) {
-                    jdbc.execute("SET FOREIGN_KEY_CHECKS = 1")
-                }
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
-            try {
-                conn.close()
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
+            t.runSuppressing { if (!conn.autoCommit) conn.rollback() }
+            t.runSuppressing { if (savedAutoCommit != null) conn.autoCommit = savedAutoCommit }
+            t.runSuppressing { if (fkChecksDisabled) jdbc.execute("SET FOREIGN_KEY_CHECKS = 1") }
+            t.runSuppressing { conn.close() }
             throw t
         }
     }
@@ -284,11 +265,20 @@ internal class MysqlTableImportSession(
         rows: List<Array<Any?>>,
     ): WriteResult {
         val stmt = preparedStatement!!
-        var inserted = 0L
-        var skipped = 0L
         for (row in rows) {
             bindRow(stmt, importedTargetColumns, row)
-            if (stmt.executeUpdate() == 0) skipped++ else inserted++
+            stmt.addBatch()
+        }
+        val counts = stmt.executeBatch()
+        var inserted = 0L
+        var skipped = 0L
+        for (count in counts) {
+            when {
+                count == 0 -> skipped++
+                count > 0 -> inserted++
+                count == Statement.SUCCESS_NO_INFO -> inserted++
+                else -> skipped++
+            }
         }
         return WriteResult(
             rowsInserted = inserted,
@@ -302,12 +292,16 @@ internal class MysqlTableImportSession(
         rows: List<Array<Any?>>,
     ): WriteResult {
         val stmt = preparedStatement!!
+        for (row in rows) {
+            bindRow(stmt, importedTargetColumns, row)
+            stmt.addBatch()
+        }
+        val counts = stmt.executeBatch()
         var inserted = 0L
         var updated = 0L
         var unknown = 0L
-        for (row in rows) {
-            bindRow(stmt, importedTargetColumns, row)
-            when (stmt.executeUpdate()) {
+        for (count in counts) {
+            when (count) {
                 Statement.SUCCESS_NO_INFO -> unknown++
                 1 -> inserted++
                 0, 2 -> updated++

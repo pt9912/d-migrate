@@ -4,6 +4,7 @@ import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.connection.ConnectionPool
+import org.slf4j.LoggerFactory
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -121,15 +122,15 @@ abstract class AbstractJdbcDataReader : DataReader {
         } catch (t: Throwable) {
             // Cleanup bei Setup-Fehler — nicht den ChunkSequence-Lifecycle aufrufen,
             // weil der noch nicht initialisiert ist.
-            try { rs?.close() } catch (_: Throwable) {}
-            try { stmt?.close() } catch (_: Throwable) {}
-            try {
+            t.runSuppressing { rs?.close() }
+            t.runSuppressing { stmt?.close() }
+            t.runSuppressing {
                 if (savedAutoCommit != null && needsAutoCommitFalse) {
                     conn.rollback()
                     conn.autoCommit = savedAutoCommit
                 }
-            } catch (_: Throwable) {}
-            try { conn.close() } catch (_: Throwable) {}
+            }
+            t.runSuppressing { conn.close() }
             throw t
         }
     }
@@ -343,6 +344,7 @@ internal class JdbcChunkSequence(
     private val chunkSize: Int,
 ) : ChunkSequence {
 
+    private val log = LoggerFactory.getLogger(JdbcChunkSequence::class.java)
     private var iteratorRequested = false
     private var closed = false
 
@@ -360,11 +362,19 @@ internal class JdbcChunkSequence(
     override fun close() {
         if (closed) return
         closed = true
-        try { rs.close() } catch (_: Throwable) {}
-        try { stmt.close() } catch (_: Throwable) {}
-        try { conn.rollback() } catch (_: Throwable) {}
-        try { conn.autoCommit = savedAutoCommit } catch (_: Throwable) {}
-        try { conn.close() } catch (_: Throwable) {}
+        tryClose { rs.close() }
+        tryClose { stmt.close() }
+        tryClose { conn.rollback() }
+        tryClose { conn.autoCommit = savedAutoCommit }
+        tryClose { conn.close() }
+    }
+
+    private inline fun tryClose(action: () -> Unit) {
+        try {
+            action()
+        } catch (t: Throwable) {
+            log.debug("Cleanup failure while closing ChunkSequence for table '{}': {}", table, t.message)
+        }
     }
 
     private inner class JdbcChunkIterator : Iterator<DataChunk> {

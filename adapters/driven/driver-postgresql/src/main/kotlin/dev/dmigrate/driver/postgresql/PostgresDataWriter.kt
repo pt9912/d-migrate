@@ -12,6 +12,7 @@ import dev.dmigrate.driver.data.TableImportSession
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.driver.data.TriggerMode
 import dev.dmigrate.driver.data.WriteResult
+import dev.dmigrate.driver.data.runSuppressing
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import org.postgresql.util.PGobject
@@ -97,30 +98,10 @@ class PostgresDataWriter(
             }
             return session
         } catch (t: Throwable) {
-            try {
-                if (triggersDisabled) {
-                    sync.enableTriggers(conn, table)
-                }
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
-            try {
-                conn.rollback()
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
-            try {
-                if (savedAutoCommit != null) {
-                    conn.autoCommit = savedAutoCommit
-                }
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
-            try {
-                conn.close()
-            } catch (cleanup: Throwable) {
-                t.addSuppressed(cleanup)
-            }
+            t.runSuppressing { if (triggersDisabled) sync.enableTriggers(conn, table) }
+            t.runSuppressing { conn.rollback() }
+            t.runSuppressing { if (savedAutoCommit != null) conn.autoCommit = savedAutoCommit }
+            t.runSuppressing { conn.close() }
             throw t
         }
     }
@@ -295,21 +276,55 @@ internal class PostgresTableImportSession(
         importedTargetColumns: List<TargetColumn>,
         rows: List<Array<Any?>>,
     ): WriteResult {
+        if (rows.isEmpty()) return WriteResult(rowsInserted = 0, rowsUpdated = 0, rowsSkipped = 0)
+
+        // Edge case: DEFAULT VALUES cannot be multi-rowed
+        if (importedTargetColumns.isEmpty()) {
+            return executeUpsertChunkRowByRow(rows)
+        }
+
+        val sql = buildMultiRowUpsertSql(importedTargetColumns, rows.size)
+        conn.prepareStatement(sql).use { batchStmt ->
+            var paramIdx = 1
+            for (row in rows) {
+                for ((colIdx, targetColumn) in importedTargetColumns.withIndex()) {
+                    bindValue(batchStmt, paramIdx++, targetColumn, row[colIdx])
+                }
+            }
+            var inserted = 0L
+            var updated = 0L
+            batchStmt.executeQuery().use { rs ->
+                while (rs.next()) {
+                    if (rs.getBoolean(1)) inserted++ else updated++
+                }
+            }
+            return WriteResult(rowsInserted = inserted, rowsUpdated = updated, rowsSkipped = 0)
+        }
+    }
+
+    private fun executeUpsertChunkRowByRow(rows: List<Array<Any?>>): WriteResult {
         val stmt = preparedStatement!!
         var inserted = 0L
         var updated = 0L
         for (row in rows) {
-            bindRow(stmt, importedTargetColumns, row)
             stmt.executeQuery().use { rs ->
                 check(rs.next()) { "UPSERT RETURNING returned no row for table '$table'" }
                 if (rs.getBoolean(1)) inserted++ else updated++
             }
         }
-        return WriteResult(
-            rowsInserted = inserted,
-            rowsUpdated = updated,
-            rowsSkipped = 0,
-        )
+        return WriteResult(rowsInserted = inserted, rowsUpdated = updated, rowsSkipped = 0)
+    }
+
+    private fun buildMultiRowUpsertSql(importedTargetColumns: List<TargetColumn>, rowCount: Int): String {
+        val overridingSystemValue = if (importedTargetColumns.any { it.name in generatedAlwaysColumns }) {
+            " OVERRIDING SYSTEM VALUE"
+        } else {
+            ""
+        }
+        val columnList = importedTargetColumns.joinToString(", ") { quotePostgresIdentifier(it.name) }
+        val singleRow = "(${importedTargetColumns.joinToString(", ") { "?" }})"
+        val allRows = (1..rowCount).joinToString(", ") { singleRow }
+        return "INSERT INTO ${qualifiedTable.quotedPath()} ($columnList)$overridingSystemValue VALUES $allRows${buildUpsertClause(importedTargetColumns)} RETURNING (xmax = 0) AS inserted"
     }
 
     private fun bindValue(
