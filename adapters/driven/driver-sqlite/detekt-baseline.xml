@@ -1,0 +1,22 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:SqliteDdlGenerator.kt$SqliteDdlGenerator$col.required || col.unique || col.default != null || col.references != null || colName in table.primaryKey</ID>
+    <ID>FunctionParameterNaming:SqliteRoutineDdlHelper.kt$SqliteRoutineDdlHelper$_tables: Map&lt;String, TableDefinition&gt;</ID>
+    <ID>MaxLineLength:SqliteColumnConstraintHelper.kt$SqliteColumnConstraintHelper$append("CONSTRAINT ${quoteIdentifier(constraint.name)} FOREIGN KEY ($fromCols) REFERENCES ${quoteIdentifier(ref.table)} ($toCols)")</ID>
+    <ID>MaxLineLength:SqliteDdlGenerator.kt$SqliteDdlGenerator$"Circular foreign key from '${edge.fromTable}.${edge.fromColumn}' to '${edge.toTable}.${edge.toColumn}' cannot be added in SQLite (no ALTER TABLE ADD CONSTRAINT)"</ID>
+    <ID>MaxLineLength:SqliteDdlGenerator.kt$SqliteDdlGenerator$DdlStatement("SELECT AddGeometryColumn('${name.replace("'", "''")}', '${colName.replace("'", "''")}', $srid, '$geoType', 'XY');")</ID>
+    <ID>MaxLineLength:SqliteDdlGenerator.kt$SqliteDdlGenerator$if (cols.any { it in geoColNames }) return blockTableForSpatialMetadata(name, cols.first { it in geoColNames }, "table-level constraint '${constraint.name}'")</ID>
+    <ID>MaxLineLength:SqliteDdlGenerator.kt$SqliteDdlGenerator$if (idx.columns.any { it in geoColNames }) return blockTableForSpatialMetadata(name, idx.columns.first { it in geoColNames }, "index on geometry column")</ID>
+    <ID>MaxLineLength:SqliteDdlGenerator.kt$SqliteDdlGenerator$message = "${index.type.name} index '${indexName}' on table '$tableName' is not supported in SQLite. Only BTREE is available."</ID>
+    <ID>MaxLineLength:SqliteDdlGenerator.kt$SqliteDdlGenerator$message = "Circular foreign key from '${edge.fromTable}.${edge.fromColumn}' to '${edge.toTable}.${edge.toColumn}' cannot be created in SQLite."</ID>
+    <ID>MaxLineLength:SqliteRoutineDdlHelper.kt$SqliteRoutineDdlHelper$return DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for SQLite (source dialect: ${trigger.sourceDialect})", listOf(action.toNote()))</ID>
+    <ID>MaxLineLength:SqliteTypeMapper.kt$SqliteTypeMapper$"gen_uuid" -&gt; "(lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-'||substr('89ab',abs(random())%4+1,1)||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))))"</ID>
+    <ID>MaxLineLength:SqliteTypeMappingTest.kt$SqliteTypeMappingTest$test("parseDefault CURRENT_TIMESTAMP") { SqliteTypeMapping.parseDefault("CURRENT_TIMESTAMP") shouldBe DefaultValue.FunctionCall("current_timestamp") }</ID>
+    <ID>MaxLineLength:SqliteTypeMappingTest.kt$SqliteTypeMappingTest$test("parseDefault datetime()") { SqliteTypeMapping.parseDefault("(datetime('now'))") shouldBe DefaultValue.FunctionCall("current_timestamp") }</ID>
+    <ID>UnusedParameter:SqliteDdlGenerator.kt$SqliteDdlGenerator$geometryCols: Map&lt;String, ColumnDefinition&gt;</ID>
+    <ID>UnusedParameter:SqliteRoutineDdlHelper.kt$SqliteRoutineDdlHelper$_tables: Map&lt;String, TableDefinition&gt;</ID>
+    <ID>UnusedParameter:SqliteTypeMapping.kt$SqliteTypeMapping$maxLen: Int?</ID>
+  </CurrentIssues>
+</SmellBaseline>

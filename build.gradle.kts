@@ -1,6 +1,10 @@
+import io.gitlab.arturbosch.detekt.Detekt
+import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+
 plugins {
     kotlin("jvm") version "2.1.20" apply false
     id("org.jetbrains.kotlinx.kover") version "0.9.8"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
 fun normalizedReleaseVersion(raw: String?): String? {
@@ -29,9 +33,34 @@ allprojects {
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "org.jetbrains.kotlinx.kover")
+    apply(plugin = "io.gitlab.arturbosch.detekt")
 
     configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)
+    }
+
+    configure<DetektExtension> {
+        buildUponDefaultConfig = true
+        allRules = false
+        parallel = true
+        ignoreFailures = false
+        config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+        baseline = project.file("detekt-baseline.xml")
+    }
+
+    tasks.withType<Detekt>().configureEach {
+        jvmTarget = "21"
+        reports {
+            html.required.set(true)
+            xml.required.set(true)
+            sarif.required.set(true)
+            txt.required.set(false)
+            md.required.set(false)
+        }
+    }
+
+    tasks.named("check") {
+        dependsOn("detekt")
     }
 
     dependencies {

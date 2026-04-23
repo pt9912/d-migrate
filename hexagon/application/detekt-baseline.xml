@@ -1,0 +1,27 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:DataTransferRunner.kt$DataTransferRunner$a is NeutralType.Identifier &amp;&amp; (b is NeutralType.Integer || b is NeutralType.BigInteger || b is NeutralType.Identifier)</ID>
+    <ID>ComplexCondition:FilterDslParser.kt$FilterDslParser$s.isAtEnd() || (s.peek().type == TokenType.KEYWORD &amp;&amp; s.peek().text in setOf("AND", "OR")) || s.peek().type == TokenType.RPAREN</ID>
+    <ID>ComplexCondition:FilterDslTokenizer.kt$FilterDslTokenizer$i &lt; input.length &amp;&amp; input[i] == '.' &amp;&amp; i + 1 &lt; input.length &amp;&amp; input[i + 1].isDigit()</ID>
+    <ID>FunctionParameterNaming:DataImportRunner.kt$DataImportRunner$_request: DataImportRequest</ID>
+    <ID>LongParameterList:DataTransferRunner.kt$DataTransferRunner$( reader: dev.dmigrate.driver.data.DataReader, writer: dev.dmigrate.driver.data.DataWriter, srcPool: ConnectionPool, tgtPool: ConnectionPool, table: String, filter: DataFilter?, chunkSize: Int, opts: ImportOptions, )</ID>
+    <ID>MaxLineLength:DataImportRunner.kt$DataImportRunner$val</ID>
+    <ID>MaxLineLength:DataProfileRunnerTest.kt$DataProfileRunnerTest.&lt;no name provided&gt;$override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List&lt;dev.dmigrate.profiling.types.TargetLogicalType&gt;, schema: String?)</ID>
+    <ID>MaxLineLength:DataProfileRunnerTest.kt$DataProfileRunnerTest.&lt;no name provided&gt;$override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?)</ID>
+    <ID>MaxLineLength:DataTransferRunner.kt$DataTransferRunner$if (a is NeutralType.Identifier &amp;&amp; (b is NeutralType.Integer || b is NeutralType.BigInteger || b is NeutralType.Identifier)) return true</ID>
+    <ID>MaxLineLength:DataTransferRunnerTest.kt$DataTransferRunnerTest.&lt;no name provided&gt;$override fun streamTable(pool: ConnectionPool, table: String, filter: dev.dmigrate.core.data.DataFilter?, chunkSize: Int)</ID>
+    <ID>MaxLineLength:ExportCheckpointManager.kt$ExportCheckpointManager$stderr("Error: single-file resume has no pending table; the previous run is already completed. Remove --resume or choose a different output.")</ID>
+    <ID>MaxLineLength:ExportCheckpointManager.kt$ExportCheckpointManager$tableSlices = tables.map { resume.initialSlices[it] ?: CheckpointTableSlice(table = it, status = CheckpointSliceStatus.PENDING) }</ID>
+    <ID>MaxLineLength:ImportCheckpointManager.kt$ImportCheckpointManager$stderr("Error: Checkpoint input-file binding for table '${mismatch.table}' does not match the current directory scan (manifest=${mismatch.inputFile ?: "&lt;none&gt;"}, current=${inputCtx.inputFilesByTable[mismatch.table] ?: "&lt;none&gt;"}).")</ID>
+    <ID>MaxLineLength:ImportCheckpointManager.kt$ImportCheckpointManager$stderr("Error: Checkpoint table list does not match the current request: manifest=$manifestTables, current=${inputCtx.effectiveTables}.")</ID>
+    <ID>MaxLineLength:MigrationVersionValidator.kt$MigrationVersionValidator$"Knex version must be numeric with optional _slug (e.g., '20260414120000', '20260414120000_create_users'), got: '$version'"</ID>
+    <ID>MaxLineLength:SchemaGenerateRunner.kt$SchemaGenerateRunner$printError</ID>
+    <ID>MaxLineLength:SchemaGenerateRunner.kt$SchemaGenerateRunner$writeReport(request, gen.result, gen.schema, gen.dialect.name.lowercase(), outputPath, splitModeStr, gen.options.mysqlNamedSequenceMode)</ID>
+    <ID>MaxLineLength:SchemaGenerateRunner.kt$SchemaGenerateRunner$writeReport(request, gen.result, gen.schema, gen.dialect.name.lowercase(), request.report, null, gen.options.mysqlNamedSequenceMode)</ID>
+    <ID>MaxLineLength:ToolExportRunner.kt$ToolExportRunner$stderr("[ERROR] Spatial profile '${profileResult.profile.cliName}' not allowed for ${profileResult.dialect.name.lowercase()}")</ID>
+    <ID>UnusedParameter:DataImportRunner.kt$DataImportRunner$_request: DataImportRequest</ID>
+    <ID>UnusedParameter:SchemaReverseRunner.kt$SchemaReverseRunner$request: SchemaReverseRequest</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -8,8 +8,6 @@
 # in detekt-baseline.xml files per module and can be fixed incrementally.
 
 complexity:
-  ComplexMethod:
-    active: false
   CyclomaticComplexMethod:
     active: true
     threshold: 25

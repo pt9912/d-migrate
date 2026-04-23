@@ -87,9 +87,9 @@ COPY --chown=gradle:gradle . .
 RUN gradle --no-daemon classes
 
 # ---- Stage: detekt-baseline ------------------------------------------------
-# Generates per-module detekt-baseline.xml files that capture existing static
-# analysis violations. New code must comply with the strict detekt.yml rules;
-# existing violations are tracked in the baselines and fixed incrementally.
+# Helper stage for generating/exporting per-module detekt-baseline.xml files.
+# This stage is intentionally non-failing so already generated baselines can
+# still be extracted even when detektBaseline returns non-zero.
 #
 # Usage:
 #   docker build --target detekt-baseline -t d-migrate:detekt-baseline .
@@ -101,6 +101,12 @@ RUN find /src -name "detekt-baseline.xml" -not -path "/src/build/*" \
       -printf '%P\n' | tar cf /src/detekt-baselines.tar -C /src -T -
 
 ENTRYPOINT ["cat", "/src/detekt-baselines.tar"]
+
+# ---- Stage: detekt ---------------------------------------------------------
+# Actual static-analysis gate. This stage MUST fail on detekt violations.
+FROM compile AS detekt
+
+RUN gradle --no-daemon detekt
 
 # ---- Stage 1: build & test ------------------------------------------------
 # Compiles test classes, runs tests, verifies coverage, and builds the CLI

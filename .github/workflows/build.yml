@@ -38,7 +38,7 @@ jobs:
         with:
           cache-disabled: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Build, test and verify coverage
+      - name: Build, test, run detekt and verify coverage
         run: ./gradlew build koverVerify
 
       - name: Generate coverage reports
@@ -77,6 +77,14 @@ jobs:
         with:
           name: coverage-reports
           path: '**/build/reports/kover/html/**'
+          retention-days: 14
+
+      - name: Upload detekt reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: detekt-reports
+          path: '**/build/reports/detekt/**'
           retention-days: 14
 
       - name: Build release assets

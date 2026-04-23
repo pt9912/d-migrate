@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:ImportTypeCompatibility.kt$ImportTypeCompatibility$fun isTypeCompatible( schemaType: NeutralType, targetColumn: TargetColumn, ): Boolean</ID>
+    <ID>FunctionParameterNaming:OutputFormatter.kt$OutputFormatter$_source: String</ID>
+    <ID>MaxLineLength:CompareRendererJson.kt$CompareRendererJson$"""{"name": "${esc(e.name)}", "kind": "${esc(e.kind)}", "changes": [${e.changes.joinToString(", ") { "\"${esc(it)}\"" }}]}"""</ID>
+    <ID>MaxLineLength:CompareRendererJson.kt$CompareRendererJson$append(""", "primary_key": {"before": [${it.before.joinToString(", ") { s -&gt; "\"${esc(s)}\"" }}], "after": [${it.after.joinToString(", ") { s -&gt; "\"${esc(s)}\"" }}]}""")</ID>
+    <ID>MaxLineLength:CompareRendererJson.kt$CompareRendererJson$parts += """ "custom_types_added": [${diff.customTypesAdded.joinToString(", ") { """{"name": "${esc(it.name)}", "kind": "${esc(it.kind)}"}""" }}]"""</ID>
+    <ID>MaxLineLength:CompareRendererJson.kt$CompareRendererJson$parts += """ "custom_types_removed": [${diff.customTypesRemoved.joinToString(", ") { """{"name": "${esc(it.name)}", "kind": "${esc(it.kind)}"}""" }}]"""</ID>
+    <ID>MaxLineLength:CompareRendererJson.kt$CompareRendererJson$v.sourceDialect?.let { fields += """"source_dialect": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$for (c in t.columnsAdded) { sb.appendLine(" - name: \"${esc(c.name)}\""); sb.appendLine(" type: \"${esc(c.type)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (diff.tablesAdded.isNotEmpty()) { sb.appendLine(" tables_added:"); for (t in diff.tablesAdded) sb.appendLine(" - \"${esc(t.name)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (diff.tablesRemoved.isNotEmpty()) { sb.appendLine(" tables_removed:"); for (t in diff.tablesRemoved) sb.appendLine(" - \"${esc(t.name)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (diff.viewsAdded.isNotEmpty()) { sb.appendLine(" views_added:"); for (v in diff.viewsAdded) sb.appendLine(" - \"${esc(v.name)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (diff.viewsRemoved.isNotEmpty()) { sb.appendLine(" views_removed:"); for (v in diff.viewsRemoved) sb.appendLine(" - \"${esc(v.name)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.columnsRemoved.isNotEmpty()) { sb.appendLine(" columns_removed:"); for (n in t.columnsRemoved) sb.appendLine(" - \"${esc(n)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.constraintsAdded.isNotEmpty()) { sb.appendLine(" constraints_added:"); for (sig in t.constraintsAdded) sb.appendLine(" - \"${esc(sig)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.constraintsChanged.isNotEmpty()) { sb.appendLine(" constraints_changed:"); for (ch in t.constraintsChanged) sb.appendLine(" - {before: \"${esc(ch.before)}\", after: \"${esc(ch.after)}\"}") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.constraintsRemoved.isNotEmpty()) { sb.appendLine(" constraints_removed:"); for (sig in t.constraintsRemoved) sb.appendLine(" - \"${esc(sig)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.indicesAdded.isNotEmpty()) { sb.appendLine(" indices_added:"); for (sig in t.indicesAdded) sb.appendLine(" - \"${esc(sig)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.indicesChanged.isNotEmpty()) { sb.appendLine(" indices_changed:"); for (ch in t.indicesChanged) sb.appendLine(" - {before: \"${esc(ch.before)}\", after: \"${esc(ch.after)}\"}") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$if (t.indicesRemoved.isNotEmpty()) { sb.appendLine(" indices_removed:"); for (sig in t.indicesRemoved) sb.appendLine(" - \"${esc(sig)}\"") }</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$sb.appendLine(" primary_key: {before: [${it.before.joinToString(", ") { s -&gt; "\"${esc(s)}\"" }}], after: [${it.after.joinToString(", ") { s -&gt; "\"${esc(s)}\"" }}]}")</ID>
+    <ID>MaxLineLength:CompareRendererYaml.kt$CompareRendererYaml$v.sourceDialect?.let { sb.appendLine(" source_dialect: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }</ID>
+    <ID>MaxLineLength:DataImportE2EPostgresTest.kt$DataImportE2EPostgresTest$Files.writeString(dataFile, """[{"id":1,"name":"firedtest","email":null,"active":true,"score":"0","updated_at":"2026-01-01T00:00:00"}]""")</ID>
+    <ID>MaxLineLength:DataImportE2EPostgresTest.kt$DataImportE2EPostgresTest$Files.writeString(dataFile, """[{"id":1,"name":"triggertest","email":null,"active":true,"score":"0","updated_at":"2026-01-01T00:00:00"}]""")</ID>
+    <ID>MaxLineLength:DataImportE2EPostgresTest.kt$DataImportE2EPostgresTest$stmt.execute("INSERT INTO users (id, name, active, score, updated_at) VALUES (3, 'charlie', true, 30, '2026-06-15 12:00:00')")</ID>
+    <ID>MaxLineLength:DataImportRunnerCallbackTest.kt$DataImportRunnerCallbackTest$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataImportRunnerDirectoryTest.kt$DataImportRunnerDirectoryTest$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataImportRunnerExitCodeTest.kt$DataImportRunnerExitCodeTest$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataImportRunnerHappyPathTest.kt$DataImportRunnerHappyPathTest$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataImportRunnerHappyPathTestPart2.kt$DataImportRunnerHappyPathTestPart2$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataImportRunnerResumeTest.kt$DataImportRunnerResumeTest$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataImportRunnerTest.kt$DataImportRunnerTest$schemaTargetValidator</ID>
+    <ID>MaxLineLength:DataProfileCliTest.kt$DataProfileCliTest.&lt;no name provided&gt;$override fun targetTypeCompatibility(pool: ConnectionPool, table: String, column: String, targetTypes: List&lt;dev.dmigrate.profiling.types.TargetLogicalType&gt;, schema: String?)</ID>
+    <ID>MaxLineLength:DataProfileCliTest.kt$DataProfileCliTest.&lt;no name provided&gt;$override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?)</ID>
+    <ID>MaxLineLength:ImportTypeCompatibility.kt$ImportTypeCompatibility$(jdbcType == Types.OTHER &amp;&amp; sqlTypeName.isNotEmpty() &amp;&amp; sqlTypeName !in WELL_KNOWN_OTHER_TYPE_NAMES &amp;&amp; (ref == null || sqlTypeName == ref))</ID>
+    <ID>MaxLineLength:ImportTypeCompatibility.kt$ImportTypeCompatibility$jdbcType in setOf(Types.CHAR, Types.VARCHAR, Types.LONGVARCHAR, Types.NCHAR, Types.NVARCHAR, Types.LONGNVARCHAR, Types.CLOB) || sqlTypeName.contains("TEXT")</ID>
+    <ID>MaxLineLength:OutputFormatter.kt$OutputFormatter$results += """ {"level": "error", "code": "${e.code}", "object": "${escapeJson(e.objectPath)}", "message": "${escapeJson(e.message)}"}"""</ID>
+    <ID>MaxLineLength:OutputFormatter.kt$OutputFormatter$results += """ {"level": "warning", "code": "${w.code}", "object": "${escapeJson(w.objectPath)}", "message": "${escapeJson(w.message)}"}"""</ID>
+    <ID>MaxLineLength:SchemaGenerateHelpers.kt$SchemaGenerateHelpers$""" {"type": "${n.type.name.lowercase()}", "code": "${n.code}", "object": "${escapeJson(n.objectName)}", "message": "${escapeJson(n.message)}"$phaseField}"""</ID>
+    <ID>SwallowedException:DataExportRunnerValidationTest.kt$DataExportRunnerValidationTest$e: IllegalArgumentException</ID>
+    <ID>UnusedParameter:OutputFormatter.kt$OutputFormatter$_source: String</ID>
+    <ID>UnusedPrivateProperty:DataImportRunnerCallbackTest.kt$DataImportRunnerCallbackTest$val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-test-")</ID>
+    <ID>UnusedPrivateProperty:DataImportRunnerDirectoryTest.kt$DataImportRunnerDirectoryTest$val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-test-")</ID>
+    <ID>UnusedPrivateProperty:DataImportRunnerExitCodeTest.kt$DataImportRunnerExitCodeTest$val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-test-")</ID>
+    <ID>UnusedPrivateProperty:DataImportRunnerHappyPathTestPart2.kt$DataImportRunnerHappyPathTestPart2$val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-test-")</ID>
+    <ID>UnusedPrivateProperty:DataImportRunnerResumeTest.kt$DataImportRunnerResumeTest$val tempDir: Path = Files.createTempDirectory("dmigrate-import-dir-test-")</ID>
+  </CurrentIssues>
+</SmellBaseline>
