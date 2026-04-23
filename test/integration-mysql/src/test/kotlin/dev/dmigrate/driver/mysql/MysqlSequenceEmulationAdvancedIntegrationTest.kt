@@ -12,8 +12,7 @@ import dev.dmigrate.driver.MysqlNamedSequenceMode
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import org.testcontainers.containers.MySQLContainer
-import org.testcontainers.utility.DockerImageName
+import org.testcontainers.mysql.MySQLContainer
 import java.sql.DriverManager
 
 /**
@@ -33,7 +32,7 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
 
     tags(IntegrationTag)
 
-    val container = MySQLContainer(DockerImageName.parse("mysql:8"))
+    val container = MySQLContainer("mysql:8")
         .withDatabaseName("seqtest")
         .withUsername("test")
         .withPassword("test")

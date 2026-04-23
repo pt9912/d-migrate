@@ -33,7 +33,7 @@ internal object SchemaNodeParser {
     private fun parseTables(node: JsonNode?): Map<String, TableDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, TableDefinition>()
-        for ((name, tableNode) in node.fields()) {
+        for ((name, tableNode) in node.objectEntries()) {
             result[name] = parseTable(tableNode)
         }
         return result
@@ -62,7 +62,7 @@ internal object SchemaNodeParser {
     internal fun parseColumns(node: JsonNode?): Map<String, ColumnDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, ColumnDefinition>()
-        for ((name, colNode) in node.fields()) {
+        for ((name, colNode) in node.objectEntries()) {
             result[name] = parseColumn(colNode)
         }
         return result
@@ -251,7 +251,7 @@ internal object SchemaNodeParser {
     private fun parseCustomTypes(node: JsonNode?): Map<String, CustomTypeDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, CustomTypeDefinition>()
-        for ((name, typeNode) in node.fields()) {
+        for ((name, typeNode) in node.objectEntries()) {
             result[name] = CustomTypeDefinition(
                 kind = typeNode.requiredText("kind").toCustomTypeKind(),
                 values = typeNode["values"]?.toStringList(),
@@ -271,7 +271,7 @@ internal object SchemaNodeParser {
     private fun parseProcedures(node: JsonNode?): Map<String, ProcedureDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, ProcedureDefinition>()
-        for ((name, n) in node.fields()) {
+        for ((name, n) in node.objectEntries()) {
             result[name] = ProcedureDefinition(
                 description = n.optionalText("description"),
                 parameters = parseParameters(n["parameters"]),
@@ -287,7 +287,7 @@ internal object SchemaNodeParser {
     private fun parseFunctions(node: JsonNode?): Map<String, FunctionDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, FunctionDefinition>()
-        for ((name, n) in node.fields()) {
+        for ((name, n) in node.objectEntries()) {
             result[name] = FunctionDefinition(
                 description = n.optionalText("description"),
                 parameters = parseParameters(n["parameters"]),
@@ -327,7 +327,7 @@ internal object SchemaNodeParser {
     private fun parseViews(node: JsonNode?): Map<String, ViewDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, ViewDefinition>()
-        for ((name, n) in node.fields()) {
+        for ((name, n) in node.objectEntries()) {
             result[name] = ViewDefinition(
                 description = n.optionalText("description"),
                 materialized = n.boolOrDefault("materialized", false),
@@ -345,7 +345,7 @@ internal object SchemaNodeParser {
     private fun parseTriggers(node: JsonNode?): Map<String, TriggerDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, TriggerDefinition>()
-        for ((name, n) in node.fields()) {
+        for ((name, n) in node.objectEntries()) {
             result[name] = TriggerDefinition(
                 description = n.optionalText("description"),
                 table = n.requiredText("table"),
@@ -366,7 +366,7 @@ internal object SchemaNodeParser {
     private fun parseSequences(node: JsonNode?): Map<String, SequenceDefinition> {
         if (node == null || !node.isObject) return emptyMap()
         val result = LinkedHashMap<String, SequenceDefinition>()
-        for ((name, n) in node.fields()) {
+        for ((name, n) in node.objectEntries()) {
             result[name] = SequenceDefinition(
                 description = n.optionalText("description"),
                 start = n.optionalLong("start") ?: 1,
@@ -385,7 +385,7 @@ internal object SchemaNodeParser {
     private fun parseDependencies(node: JsonNode?): DependencyInfo? {
         if (node == null || !node.isObject) return null
         val columns = mutableMapOf<String, List<String>>()
-        node["columns"]?.fields()?.forEach { (table, cols) ->
+        node["columns"]?.objectEntries()?.forEach { (table, cols) ->
             columns[table] = cols.toStringList()
         }
         return DependencyInfo(
@@ -423,3 +423,6 @@ private fun JsonNode.boolOrDefault(field: String, default: Boolean): Boolean =
 
 private fun JsonNode.toStringList(): List<String> =
     if (isArray) map { it.asText() } else emptyList()
+
+private fun JsonNode.objectEntries(): Sequence<Pair<String, JsonNode>> =
+    fieldNames().asSequence().map { fieldName -> fieldName to get(fieldName) }
