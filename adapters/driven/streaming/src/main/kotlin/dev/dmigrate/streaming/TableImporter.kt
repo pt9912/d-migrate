@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.FinishTableResult
@@ -26,6 +27,13 @@ internal data class TableImportParams(
     val onChunkCommitted: (ImportChunkCommit) -> Unit,
 )
 
+internal data class PreparedTableImport(
+    val reader: DataChunkReader,
+    val session: TableImportSession,
+    val firstChunk: DataChunk?,
+    val chunkContext: ChunkContext,
+)
+
 internal class TableImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
@@ -47,51 +55,25 @@ internal class TableImporter(
         state.chunksCommittedTotal = committedChunksOffset
 
         try {
-            reader = readerFactory.create(
-                format = params.format,
-                input = params.tableInput.openInput(),
-                table = params.tableInput.table,
-                chunkSize = params.config.chunkSize,
-                options = params.readOptions,
+            val prepared = prepareImport(
+                params = params,
+                effectiveOptions = effectiveOptions,
+                state = state,
+                committedChunksOffset = committedChunksOffset,
             )
-            session = params.writer.openTable(params.pool, params.tableInput.table, effectiveOptions)
-            onTableOpened(params.tableInput.table, session.targetColumns)
-            params.reporter.report(
-                ProgressEvent.ImportTableStarted(params.tableInput.table, params.ordinal, params.tableCount)
+            reader = prepared.reader
+            session = prepared.session
+
+            importChunks(
+                prepared.reader,
+                prepared.session,
+                prepared.chunkContext,
+                state,
+                params.reporter,
+                params.onChunkCommitted,
+                prepared.firstChunk,
             )
-            state.targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
-
-            skipCommittedChunks(reader, committedChunksOffset)
-
-            val firstChunk = reader.nextChunk()
-            val bindingPlan = buildBindingPlan(
-                table = params.tableInput.table,
-                headerColumns = reader.headerColumns(),
-                firstChunk = firstChunk,
-                targetColumns = session.targetColumns,
-            )
-            val deserializer = buildDeserializer(session.targetColumns, params.readOptions)
-            val chunkContext = ChunkContext(
-                table = params.tableInput.table,
-                ordinal = params.ordinal,
-                tableCount = params.tableCount,
-                options = params.options,
-                format = params.format,
-                bindingPlan = bindingPlan,
-                deserializer = deserializer,
-            )
-
-            importChunks(reader, session, chunkContext, state, params.reporter, params.onChunkCommitted, firstChunk)
-
-            if (state.error == null) {
-                when (val finish = session.finishTable()) {
-                    is FinishTableResult.Success -> state.sequenceAdjustments = finish.adjustments
-                    is FinishTableResult.PartialFailure -> {
-                        state.sequenceAdjustments = finish.adjustments
-                        state.partialFinish = finish
-                    }
-                }
-            }
+            finishImport(prepared.session, state)
         } catch (throwable: Throwable) {
             primaryFailure = throwable
             throw throwable
@@ -107,12 +89,78 @@ internal class TableImporter(
         }
         primaryFailure?.let { throw it }
 
-        val tableDurationMs = elapsedMs(tableStartedAt)
-        val tableStatus = if (state.error == null && state.partialFinish == null) {
-            TableProgressStatus.COMPLETED
-        } else {
-            TableProgressStatus.FAILED
+        return buildSummary(params, state, tableStartedAt)
+    }
+
+    private fun prepareImport(
+        params: TableImportParams,
+        effectiveOptions: ImportOptions,
+        state: ImportLoopState,
+        committedChunksOffset: Long,
+    ): PreparedTableImport {
+        val reader = readerFactory.create(
+            format = params.format,
+            input = params.tableInput.openInput(),
+            table = params.tableInput.table,
+            chunkSize = params.config.chunkSize,
+            options = params.readOptions,
+        )
+        val session = params.writer.openTable(params.pool, params.tableInput.table, effectiveOptions)
+        onTableOpened(params.tableInput.table, session.targetColumns)
+        params.reporter.report(
+            ProgressEvent.ImportTableStarted(params.tableInput.table, params.ordinal, params.tableCount)
+        )
+        state.targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
+
+        skipCommittedChunks(reader, committedChunksOffset)
+
+        val firstChunk = reader.nextChunk()
+        val chunkContext = buildChunkContext(params, reader, session, firstChunk)
+        return PreparedTableImport(reader, session, firstChunk, chunkContext)
+    }
+
+    private fun buildChunkContext(
+        params: TableImportParams,
+        reader: DataChunkReader,
+        session: TableImportSession,
+        firstChunk: DataChunk?,
+    ): ChunkContext {
+        val bindingPlan = buildBindingPlan(
+            table = params.tableInput.table,
+            headerColumns = reader.headerColumns(),
+            firstChunk = firstChunk,
+            targetColumns = session.targetColumns,
+        )
+        val deserializer = buildDeserializer(session.targetColumns, params.readOptions)
+        return ChunkContext(
+            table = params.tableInput.table,
+            ordinal = params.ordinal,
+            tableCount = params.tableCount,
+            options = params.options,
+            format = params.format,
+            bindingPlan = bindingPlan,
+            deserializer = deserializer,
+        )
+    }
+
+    private fun finishImport(session: TableImportSession, state: ImportLoopState) {
+        if (state.error != null) return
+        when (val finish = session.finishTable()) {
+            is FinishTableResult.Success -> state.sequenceAdjustments = finish.adjustments
+            is FinishTableResult.PartialFailure -> {
+                state.sequenceAdjustments = finish.adjustments
+                state.partialFinish = finish
+            }
         }
+    }
+
+    private fun buildSummary(
+        params: TableImportParams,
+        state: ImportLoopState,
+        tableStartedAt: Long,
+    ): TableImportSummary {
+        val tableDurationMs = elapsedMs(tableStartedAt)
+        val tableStatus = tableStatusOf(state)
         params.reporter.report(
             ProgressEvent.ImportTableFinished(
                 table = params.tableInput.table,
@@ -144,6 +192,13 @@ internal class TableImporter(
             durationMs = tableDurationMs,
         )
     }
+
+    private fun tableStatusOf(state: ImportLoopState): TableProgressStatus =
+        if (state.error == null && state.partialFinish == null) {
+            TableProgressStatus.COMPLETED
+        } else {
+            TableProgressStatus.FAILED
+        }
 
     private fun skipCommittedChunks(reader: DataChunkReader, offset: Long) {
         if (offset <= 0L) return

@@ -22,6 +22,18 @@ class ViewQueryTransformerTest : FunSpec({
         result shouldBe "SELECT DATE_FORMAT(created_at, '%Y-01-01') FROM t"
     }
 
+    test("MySQL: unsupported DATE_TRUNC unit falls back to original function call") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val (result, _) = transformer.transform("SELECT DATE_TRUNC('quarter', created_at) FROM t", "postgresql")
+        result.replace(Regex("\\s+"), " ") shouldBe "SELECT DATE_TRUNC('quarter', created_at) FROM t"
+    }
+
+    test("MySQL: malformed DATE_TRUNC call stays as empty function call") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
+        val (result, _) = transformer.transform("SELECT DATE_TRUNC() FROM t", "postgresql")
+        result shouldBe "SELECT DATE_TRUNC() FROM t"
+    }
+
     test("MySQL: EXTRACT YEAR FROM transforms to YEAR()") {
         val transformer = ViewQueryTransformer(DatabaseDialect.MYSQL)
         val (result, _) = transformer.transform("SELECT EXTRACT(YEAR FROM created_at) FROM t", "postgresql")
@@ -82,6 +94,12 @@ class ViewQueryTransformerTest : FunSpec({
         val transformer = ViewQueryTransformer(DatabaseDialect.SQLITE)
         val (result, _) = transformer.transform("SELECT SUBSTRING(name FROM 1 FOR 3) FROM t", "postgresql")
         result shouldBe "SELECT SUBSTR(name, 1, 3) FROM t"
+    }
+
+    test("SQLite: EXTRACT MONTH FROM transforms to CAST(strftime('%m', ...) AS INTEGER)") {
+        val transformer = ViewQueryTransformer(DatabaseDialect.SQLITE)
+        val (result, _) = transformer.transform("SELECT EXTRACT(MONTH FROM created_at) FROM t", "postgresql")
+        result shouldBe "SELECT CAST(strftime('%m', created_at) AS INTEGER) FROM t"
     }
 
     test("SQLite: TRUE transforms to 1") {

@@ -173,6 +173,22 @@ class AbstractDdlGeneratorTestPart2 : FunSpec({
         result.skippedObjects.any { it.name == "t" && it.phase == DdlPhase.PRE_DATA } shouldBe true
     }
 
+    test("tagNewSkips only tags entries added after the recorded index") {
+        val skipped = mutableListOf(
+            SkippedObject(type = "table", name = "existing", reason = "already tagged", phase = DdlPhase.PRE_DATA),
+            SkippedObject(type = "view", name = "new_view", reason = "new skip"),
+            SkippedObject(type = "trigger", name = "new_trigger", reason = "new skip"),
+        )
+
+        tagNewSkips(skipped, fromIndex = 1, phase = DdlPhase.POST_DATA)
+
+        skipped.map { it.phase } shouldContainExactly listOf(
+            DdlPhase.PRE_DATA,
+            DdlPhase.POST_DATA,
+            DdlPhase.POST_DATA,
+        )
+    }
+
     test("generate() blocks geometry tables when spatial profile is NONE") {
         val gen = TestDdlGenerator()
         val result = gen.generate(
