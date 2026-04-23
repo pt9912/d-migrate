@@ -221,6 +221,43 @@ class MysqlDdlGeneratorSequenceTest : FunSpec({
         result.skippedObjects.any { it.code == "E124" && it.name == trigName } shouldBe true
     }
 
+    test("helper_table collision state is reset between runs on the same generator") {
+        val collisionSchema = SchemaDefinition(
+            name = "FnCollision",
+            version = "1",
+            sequences = mapOf("my_seq" to SequenceDefinition(start = 1)),
+            tables = mapOf(
+                "invoices" to TableDefinition(
+                    columns = linkedMapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                        "invoice_number" to ColumnDefinition(
+                            type = NeutralType.Integer,
+                            default = DefaultValue.SequenceNextVal("my_seq"),
+                        ),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+            functions = mapOf(
+                "dmg_nextval" to FunctionDefinition(
+                    returns = ReturnType("BIGINT"),
+                    language = "SQL",
+                ),
+            ),
+        )
+
+        val first = generator.generate(collisionSchema, helperOpts)
+        first.skippedObjects.any { it.code == "E124" && it.name == "dmg_nextval" } shouldBe true
+
+        val second = generator.generate(seqSchema(), helperOpts)
+        val ddl = second.render()
+
+        ddl shouldContain "CREATE FUNCTION `dmg_nextval`"
+        ddl shouldContain "CREATE FUNCTION `dmg_setval`"
+        ddl shouldContain "CREATE TRIGGER"
+        second.globalNotes.any { it.code == "W117" } shouldBe true
+    }
+
     test("helper_table rollback contains DROP TRIGGER for support triggers") {
         val rollback = generator.generateRollback(seqSchema(), helperOpts)
         val ddl = rollback.render()

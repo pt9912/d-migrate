@@ -45,6 +45,7 @@ class MysqlDataWriterIntegrationTest : FunSpec({
                 database = container.databaseName,
                 user = container.username,
                 password = container.password,
+                params = mapOf("allowPublicKeyRetrieval" to "true"),
                 pool = PoolSettings(maximumPoolSize = 1, minimumIdle = 1),
             )
         )

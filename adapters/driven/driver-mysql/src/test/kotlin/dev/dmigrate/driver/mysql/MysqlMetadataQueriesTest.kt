@@ -406,6 +406,36 @@ class MysqlMetadataQueriesTest : FunSpec({
         result.triggers[0].columnName shouldBe "invoice_number"
     }
 
+    test("listPotentialSupportTriggers falls back to SHOW CREATE TRIGGER when action_statement is degraded") {
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf(
+                "trigger_name" to "dmg_seq_orders_invoice_number_7b0a7b2f55_bi",
+                "action_timing" to "BEFORE",
+                "event_manipulation" to "INSERT",
+                "event_object_table" to "orders",
+                "action_statement" to "SET NEW.invoice_number = dmg_nextval('invoice_seq')",
+            ),
+        )
+        every { jdbc.querySingle(match { it.startsWith("SHOW CREATE TRIGGER") }) } returns mapOf(
+            "SQL Original Statement" to (
+                "BEGIN " +
+                    "/* d-migrate:mysql-sequence-v1 object=sequence-trigger " +
+                    "sequence=invoice_seq table=orders column=invoice_number */ " +
+                    "IF NEW.`invoice_number` IS NULL THEN " +
+                    "SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq'); END IF; END"
+                ),
+        )
+
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+
+        result.accessible shouldBe true
+        result.triggers shouldHaveSize 1
+        result.triggers[0].state shouldBe SupportTriggerState.CONFIRMED
+        result.triggers[0].tableName shouldBe "orders"
+        result.triggers[0].columnName shouldBe "invoice_number"
+        result.triggers[0].sequenceName shouldBe "invoice_seq"
+    }
+
     test("listPotentialSupportTriggers returns MISSING_MARKER when marker absent") {
         every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
             mapOf("trigger_name" to "dmg_seq_orders_col_abc1234567_bi",
@@ -413,6 +443,7 @@ class MysqlMetadataQueriesTest : FunSpec({
                 "event_object_table" to "orders",
                 "action_statement" to "BEGIN SET NEW.col = 1; END"),
         )
+        every { jdbc.querySingle(match { it.startsWith("SHOW CREATE TRIGGER") }) } returns null
         val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
         result.triggers[0].state shouldBe SupportTriggerState.MISSING_MARKER
     }
@@ -424,6 +455,7 @@ class MysqlMetadataQueriesTest : FunSpec({
                 "event_object_table" to "orders",
                 "action_statement" to "/* d-migrate:mysql-sequence-v1 */ dmg_nextval"),
         )
+        every { jdbc.querySingle(match { it.startsWith("SHOW CREATE TRIGGER") }) } returns null
         val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
         result.triggers[0].state shouldBe SupportTriggerState.NON_CANONICAL
     }

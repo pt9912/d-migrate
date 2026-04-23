@@ -53,6 +53,7 @@ class MysqlDataReaderIntegrationTest : FunSpec({
             database = container.databaseName,
             user = container.username,
             password = container.password,
+            params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val p = HikariConnectionPoolFactory.create(cfg)
         pool = p

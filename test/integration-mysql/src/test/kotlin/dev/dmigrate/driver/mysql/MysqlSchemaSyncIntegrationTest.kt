@@ -38,6 +38,7 @@ class MysqlSchemaSyncIntegrationTest : FunSpec({
                 database = container.databaseName,
                 user = container.username,
                 password = container.password,
+                params = mapOf("allowPublicKeyRetrieval" to "true"),
             )
         )
 

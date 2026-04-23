@@ -76,8 +76,15 @@ class HikariJdbcUrlTest : FunSpec({
         url shouldContain "useCursorFetch=true"
     }
 
-    test("MySQL JDBC URL injects allowPublicKeyRetrieval=true") {
+    test("MySQL JDBC URL does not inject allowPublicKeyRetrieval by default") {
         val url = HikariConnectionPoolFactory.buildJdbcUrl(mysqlConfig())
+        url shouldNotContain "allowPublicKeyRetrieval"
+    }
+
+    test("user can opt in to MySQL allowPublicKeyRetrieval explicitly") {
+        val url = HikariConnectionPoolFactory.buildJdbcUrl(
+            mysqlConfig(mapOf("allowPublicKeyRetrieval" to "true"))
+        )
         url shouldContain "allowPublicKeyRetrieval=true"
     }
 

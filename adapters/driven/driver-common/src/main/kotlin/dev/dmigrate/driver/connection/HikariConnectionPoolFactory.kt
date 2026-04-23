@@ -85,7 +85,6 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
         DatabaseDialect.MYSQL -> mapOf(
             "useCursorFetch" to "true",
             "rewriteBatchedStatements" to "true",
-            "allowPublicKeyRetrieval" to "true",
         )
     }
 

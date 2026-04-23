@@ -41,6 +41,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
             database = "profiling_test",
             user = "test",
             password = "test",
+            params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val pool = HikariConnectionPoolFactory.create(config)
         pool.borrow().use { conn ->
@@ -69,6 +70,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
     fun pool() = HikariConnectionPoolFactory.create(ConnectionConfig(
         DatabaseDialect.MYSQL, container.host, container.firstMappedPort,
         "profiling_test", "test", "test",
+        params = mapOf("allowPublicKeyRetrieval" to "true"),
     ))
 
     test("resolver: varchar → STRING") { resolver.resolve("varchar(100)") shouldBe LogicalType.STRING }

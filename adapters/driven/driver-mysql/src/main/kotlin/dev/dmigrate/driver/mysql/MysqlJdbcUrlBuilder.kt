@@ -11,8 +11,11 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
  * - `useCursorFetch=true` — serverseitiger Cursor für sauberes Streaming.
  *   **Bewusst gegen `Statement.setFetchSize(Integer.MIN_VALUE)`** wegen
  *   row-by-row Protokoll-Overhead und HikariCP-Inkompatibilität.
- * - `allowPublicKeyRetrieval=true` — nötig für `caching_sha2_password`
- *   ohne TLS (Connector/J 9.x Default: `false`).
+ *
+ * Security-by-default:
+ * - `allowPublicKeyRetrieval` wird **nicht** implizit aktiviert.
+ *   Falls ein Non-TLS-Setup mit `caching_sha2_password` es benötigt, muss der
+ *   Parameter explizit über `ConnectionConfig.params` gesetzt werden.
  */
 class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
 
@@ -23,7 +26,6 @@ class MysqlJdbcUrlBuilder : JdbcUrlBuilder {
     override fun defaultParams(): Map<String, String> = mapOf(
         "useCursorFetch" to "true",
         "rewriteBatchedStatements" to "true",
-        "allowPublicKeyRetrieval" to "true",
     )
 
     override fun baseJdbcUrl(config: ConnectionConfig): String {

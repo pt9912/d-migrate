@@ -9,6 +9,10 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     override val dialect = DatabaseDialect.POSTGRESQL
 
     private val routineHelper = PostgresRoutineDdlHelper(::quoteIdentifier)
+    private val typeSequenceSupport = PostgresTypeSequenceDdlSupport(
+        quoteIdentifier = ::quoteIdentifier,
+        typeMapper = typeMapper,
+    )
     private val columnConstraintHelper = PostgresColumnConstraintHelper(
         quoteIdentifier = ::quoteIdentifier,
         typeMapper = typeMapper,
@@ -22,68 +26,15 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
     // ── Custom types (ENUM, COMPOSITE, DOMAIN) ──
 
-    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> {
-        return types.flatMap { (name, typeDef) -> generateCustomType(name, typeDef) }
-    }
-
-    private fun generateCustomType(name: String, typeDef: CustomTypeDefinition): List<DdlStatement> {
-        return when (typeDef.kind) {
-            CustomTypeKind.ENUM -> {
-                val values = typeDef.values ?: return emptyList()
-                val enumValues = values.joinToString(", ") { "'${it.replace("'", "''")}'" }
-                listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS ENUM ($enumValues);"))
-            }
-            CustomTypeKind.COMPOSITE -> {
-                val fields = typeDef.fields ?: return emptyList()
-                val fieldsSql = fields.entries.joinToString(",\n    ") { (fieldName, col) ->
-                    "${quoteIdentifier(fieldName)} ${typeMapper.toSql(col.type)}"
-                }
-                listOf(DdlStatement("CREATE TYPE ${quoteIdentifier(name)} AS (\n    $fieldsSql\n);"))
-            }
-            CustomTypeKind.DOMAIN -> {
-                val baseType = typeDef.baseType ?: return emptyList()
-                val sqlType = buildString {
-                    append(baseType.uppercase())
-                    if (typeDef.precision != null) {
-                        append("(${typeDef.precision}")
-                        if (typeDef.scale != null) append(",${typeDef.scale}")
-                        append(")")
-                    }
-                }
-                val sql = buildString {
-                    append("CREATE DOMAIN ${quoteIdentifier(name)} AS $sqlType")
-                    if (typeDef.check != null) {
-                        append(" CHECK (${typeDef.check})")
-                    }
-                    append(";")
-                }
-                listOf(DdlStatement(sql))
-            }
-        }
-    }
+    override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =
+        typeSequenceSupport.generateCustomTypes(types)
 
     // ── Sequences ────────────────────────────────
 
     override fun generateSequences(
         sequences: Map<String, SequenceDefinition>,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> {
-        return sequences.map { (name, seq) -> generateSequence(name, seq) }
-    }
-
-    private fun generateSequence(name: String, seq: SequenceDefinition): DdlStatement {
-        val sql = buildString {
-            append("CREATE SEQUENCE ${quoteIdentifier(name)}")
-            append(" START WITH ${seq.start}")
-            append(" INCREMENT BY ${seq.increment}")
-            if (seq.minValue != null) append(" MINVALUE ${seq.minValue}")
-            if (seq.maxValue != null) append(" MAXVALUE ${seq.maxValue}")
-            if (seq.cycle) append(" CYCLE") else append(" NO CYCLE")
-            if (seq.cache != null) append(" CACHE ${seq.cache}")
-            append(";")
-        }
-        return DdlStatement(sql)
-    }
+    ): List<DdlStatement> = typeSequenceSupport.generateSequences(sequences)
 
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.POSTGIS
