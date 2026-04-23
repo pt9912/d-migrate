@@ -265,20 +265,11 @@ internal class MysqlTableImportSession(
         rows: List<Array<Any?>>,
     ): WriteResult {
         val stmt = preparedStatement!!
-        for (row in rows) {
-            bindRow(stmt, importedTargetColumns, row)
-            stmt.addBatch()
-        }
-        val counts = stmt.executeBatch()
         var inserted = 0L
         var skipped = 0L
-        for (count in counts) {
-            when {
-                count == 0 -> skipped++
-                count > 0 -> inserted++
-                count == Statement.SUCCESS_NO_INFO -> inserted++
-                else -> skipped++
-            }
+        for (row in rows) {
+            bindRow(stmt, importedTargetColumns, row)
+            if (stmt.executeUpdate() == 0) skipped++ else inserted++
         }
         return WriteResult(
             rowsInserted = inserted,
@@ -292,16 +283,12 @@ internal class MysqlTableImportSession(
         rows: List<Array<Any?>>,
     ): WriteResult {
         val stmt = preparedStatement!!
-        for (row in rows) {
-            bindRow(stmt, importedTargetColumns, row)
-            stmt.addBatch()
-        }
-        val counts = stmt.executeBatch()
         var inserted = 0L
         var updated = 0L
         var unknown = 0L
-        for (count in counts) {
-            when (count) {
+        for (row in rows) {
+            bindRow(stmt, importedTargetColumns, row)
+            when (stmt.executeUpdate()) {
                 Statement.SUCCESS_NO_INFO -> unknown++
                 1 -> inserted++
                 0, 2 -> updated++
