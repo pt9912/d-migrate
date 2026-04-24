@@ -13,7 +13,7 @@ Sie basiert auf den Anforderungen des [Lastenhefts](./lastenheft-d-migrate.md), 
 
 ```
 Phase 1: MVP          Phase 2: Beta         Phase 3: Stable       Phase 4: Growth
-0.1.0 - 0.5.5        0.6.0 - 0.9.8         1.0.0                 1.1.0 - 2.0.0
+0.1.0 - 0.5.5        0.6.0 - 0.9.9        1.0.0                 1.1.0 - 2.0.0
 Monate 1-6            Monate 7-12           Monate 13-15          Monate 16-24
 ──────────────────────────────────────────────────────────────────────────────────▶
 ```
@@ -159,7 +159,7 @@ Dieser Milestone basiert auf dem [Change Request Spatial Types](./change-request
 
 ---
 
-## Phase 2: Beta (0.6.0 - 0.9.8) — Monate 7-12
+## Phase 2: Beta (0.6.0 - 0.9.9) — Monate 7-12
 
 **Ziel**: Production-ready für erste Projekte
 
@@ -282,7 +282,7 @@ Damit ist die Kern-Funktionalität für Beta-Tester abgeschlossen.
 > kein Resume; ein entsprechender Scope wird spaeter bewertet.
 
 > Hinweis: LF-013 (Inkrementeller Export/Import) wurde nach 0.4.0 vorverlegt
-> — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.8** ausgelagert,
+> — siehe Begründung dort. Docs und Pilot-QA sind in **0.9.9** ausgelagert,
 > damit dieser Milestone klein und fokussiert bleibt.
 
 ### Milestone 0.9.1 — Beta: Library-Refactor und Integrationsschnitt ✅ (2026-04-19)
@@ -354,7 +354,7 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 | Driver   | Phase B: `MysqlDdlGenerator` — `helper_table`-Modus mit `dmg_sequences`, `dmg_nextval`/`dmg_setval`, kanonische `BEFORE INSERT`-Trigger (AP 6.4) | —      | ✅      |
 | CLI      | `--mysql-named-sequences action_required\|helper_table` Option (opt-in, Default bleibt `action_required`)                                        | —      | ✅      |
 | Test     | Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                                        | —      | ✅      |
-| Docs     | Doku- und Fixture-Nachzug: CHANGELOG, Guide, Roadmap, Fixture-Erweiterung, Golden Masters fuer `helper_table` (AP 6.5)                          | —      | ✅      |
+| Docs     | Doku- und Fixture-Nachzug: CHANGELOG, Guide, Roadmap, Fixture-Erweiterung, Golden Masters fuer `helper_table` (AP 6.5)                           | —      | ✅      |
 
 **Ergebnis**: `schema generate --target mysql` kann benannte Sequences optional
 ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
@@ -364,15 +364,15 @@ Reverse-Engineering und Compare folgen in 0.9.4. Details:
 
 ### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare ✅ (2026-04-21)
 
-| Bereich | Aufgabe                                                                                                                     | LF-Ref | Status |
-| ------- | --------------------------------------------------------------------------------------------------------------------------- | ------ | ------ |
-| Driver  | Phase D1: Reader-Vertrag und Metadatenzugriff (AP 6.1)                                                                      | —      | ✅      |
-| Driver  | Phase D2: Sequence-Reverse aus `dmg_sequences` (AP 6.2)                                                                     | —      | ✅      |
-| Driver  | Phase D3: Sequence-Default-Reverse ueber Trigger (AP 6.3)                                                                   | —      | ✅      |
-| Core    | Phase E1: Compare-Stabilisierung — Renderer-Nachzug und Exit-Code-Vertrag (AP 6.4)                                          | —      | ✅      |
-| Docs    | Phase E2: Doku- und Vertragsnachzug (AP 6.5)                                                                                | —      | ✅      |
-| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                                           | —      | ✅      |
-| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten)               | —      | ✅      |
+| Bereich | Aufgabe                                                                                                       | LF-Ref | Status |
+| ------- | ------------------------------------------------------------------------------------------------------------- | ------ | ------ |
+| Driver  | Phase D1: Reader-Vertrag und Metadatenzugriff (AP 6.1)                                                        | —      | ✅      |
+| Driver  | Phase D2: Sequence-Reverse aus `dmg_sequences` (AP 6.2)                                                       | —      | ✅      |
+| Driver  | Phase D3: Sequence-Default-Reverse ueber Trigger (AP 6.3)                                                     | —      | ✅      |
+| Core    | Phase E1: Compare-Stabilisierung — Renderer-Nachzug und Exit-Code-Vertrag (AP 6.4)                            | —      | ✅      |
+| Docs    | Phase E2: Doku- und Vertragsnachzug (AP 6.5)                                                                  | —      | ✅      |
+| Test    | Round-Trip-Tests: neutral → MySQL-DDL → MySQL reverse → neutral (sequence-stabil)                             | —      | ✅      |
+| Test    | Integrationstests gegen echte MySQL-DB (Reverse, Compare, degradierter Zustand bei fehlenden Supportobjekten) | —      | ✅      |
 
 **Ergebnis**: MySQL-Sequence-Emulation ist vollstaendig: generieren, reverse-en
 und vergleichen. Hilfsobjekte werden beim Reverse sauber auf `SequenceDefinition`
@@ -387,7 +387,13 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 [`ImpPlan-0.9.4-6.4.md`](./ImpPlan-0.9.4-6.4.md),
 [`ImpPlan-0.9.4-6.5.md`](./ImpPlan-0.9.4-6.5.md).
 
-### Milestone 0.9.5 — Beta: MCP-Server
+### Milestone 0.9.5 — Qualitätsverbesserung
+
+| Bereich | Aufgabe            | LF-Ref |
+| ------- | ------------------ | ------ |
+| Quality | Quality verbessern | —      |
+
+### Milestone 0.9.6 — Beta: MCP-Server
 
 | Bereich | Aufgabe                                                                                  | LF-Ref |
 | ------- | ---------------------------------------------------------------------------------------- | ------ |
@@ -402,7 +408,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 ueber das Model Context Protocol gesteuert werden. Details:
 [`ki-mcp.md`](./ki-mcp.md).
 
-### Milestone 0.9.6 — Beta: REST-API
+### Milestone 0.9.7 — Beta: REST-API
 
 | Bereich | Aufgabe                                                                                          | LF-Ref |
 | ------- | ------------------------------------------------------------------------------------------------ | ------ |
@@ -418,7 +424,7 @@ ueber das Model Context Protocol gesteuert werden. Details:
 programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 [`rest-service.md`](./rest-service.md).
 
-### Milestone 0.9.7 — Beta: gRPC-API
+### Milestone 0.9.8 — Beta: gRPC-API
 
 | Bereich | Aufgabe                                                                          | LF-Ref |
 | ------- | -------------------------------------------------------------------------------- | ------ |
@@ -433,7 +439,7 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 Low-Latency-Integration und Streaming-Szenarien. Details:
 [`grpc-service.md`](./grpc-service.md).
 
-### Milestone 0.9.8 — Beta-Dokumentation und Pilot-Validierung
+### Milestone 0.9.9 — Beta-Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
 | ------- | ----------------------------------------- | ------ |
@@ -456,7 +462,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 > Pilot-Tasks haben eine deutlich andere Cadence als Code-Features (sie
 > brauchen Reviews durch Domain-Experten und externe Tester). Wenn sie im
 > 0.9.0-Code-Milestone hängen, verschiebt sich der Beta-Cut auf das
-> langsamste Element. 0.9.8 entkoppelt das, ohne die Inhalte zu streichen.
+> langsamste Element. 0.9.9 entkoppelt das, ohne die Inhalte zu streichen.
 
 ---
 
@@ -636,4 +642,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.37
 **Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.4 abgeschlossen; geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8
+**Status**: Milestone 0.1.0–0.9.4 abgeschlossen; geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8, 0.9.9
