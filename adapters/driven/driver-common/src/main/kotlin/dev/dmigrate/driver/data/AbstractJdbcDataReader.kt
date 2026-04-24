@@ -10,19 +10,18 @@ import java.sql.ResultSet
  * Treiber. Konkrete Treiber überschreiben:
  *
  * - [quoteIdentifier] — Treiber-spezifisches Quoting (`"x"` für PG/SQLite, `` `x` `` für MySQL)
- * - [fetchSize] — Treiber-interne Streaming-Tuning-Konstante (siehe §6.13)
+ * - [fetchSize] — Treiber-interne Streaming-Tuning-Konstante
  * - [needsAutoCommitFalse] — ob `setAutoCommit(false)` für Cursor-Streaming nötig ist
  *   (PostgreSQL: ja; MySQL mit useCursorFetch: nein zwingend; SQLite: irrelevant)
  * - optional [buildSelectSql] für treiberspezifische Variationen
  *
- * Der Lifecycle aus §6.12 ist hier zentral implementiert: jede streamTable-
- * Operation läuft in einer eigenen Transaktion, die in [ChunkSequence.close]
- * mit `rollback()`, `setAutoCommit(true)` und `conn.close()` (= Hikari-Return)
+ * Der JDBC-Lifecycle ist hier zentral implementiert: jede streamTable-Operation
+ * läuft in einer eigenen Transaktion, die in [ChunkSequence.close] mit
+ * `rollback()`, `setAutoCommit(true)` und `conn.close()` (= Hikari-Return)
  * abgeschlossen wird — auch bei Exception.
  *
- * Der Empty-Table-Vertrag aus §6.17 wird hier ebenfalls erfüllt: auch wenn
- * das ResultSet keine Rows liefert, emittiert die ChunkSequence einen Chunk
- * mit den `columns` und `rows = emptyList()`.
+ * Auch leere Tabellen emittieren einen Chunk mit den Spaltenmetadaten und
+ * `rows = emptyList()`.
  */
 abstract class AbstractJdbcDataReader : DataReader {
 
@@ -53,11 +52,7 @@ abstract class AbstractJdbcDataReader : DataReader {
         resumeMarker = null,
     )
 
-    /**
-     * 0.9.0 Phase C.2: Mid-Table-Resume-Pfad. Delegiert an den
-     * gemeinsamen JDBC-Lifecycle. Marker-Paging-spezifische SQL-
-     * Erzeugung geschieht in [buildSelectQuery].
-     */
+    /** Mid-Table-Resume nutzt denselben JDBC-Lifecycle wie ein normaler Stream. */
     final override fun streamTable(
         pool: ConnectionPool,
         table: String,
@@ -91,13 +86,8 @@ abstract class AbstractJdbcDataReader : DataReader {
             if (needsAutoCommitFalse) {
                 conn.autoCommit = false
             }
-            // M-R6: buildSelectQuery liefert jetzt SQL + zu bindende Params in einem
-            // WhereFragment-Tripel, damit DataFilter.ParameterizedClause (LF-013,
-            // siehe implementation-plan-0.4.0.md §3.8 / §6.12.1) sauber
-            // parametrisiert werden kann, ohne String-Konkatenation.
-            // 0.9.0 Phase C.2: zusaetzlich wird ein optionaler `resumeMarker`
-            // in die SQL-Erzeugung verschoben (lexikografischer Composite-
-            // Marker-Filter + deterministische Sortierung).
+            // buildSelectQuery liefert SQL + Bind-Parameter, damit Filter und
+            // Resume-Marker ohne String-Konkatenation parametrisiert bleiben.
             val query = buildSelectQuery(table, filter, resumeMarker)
             stmt = conn.prepareStatement(
                 query.sql,

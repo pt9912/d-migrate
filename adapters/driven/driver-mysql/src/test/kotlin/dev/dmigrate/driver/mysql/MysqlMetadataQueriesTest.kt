@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.metadata.JdbcOperations
+import dev.dmigrate.driver.SqlIdentifiers
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
@@ -404,6 +405,37 @@ class MysqlMetadataQueriesTest : FunSpec({
         result.triggers[0].state shouldBe SupportTriggerState.CONFIRMED
         result.triggers[0].tableName shouldBe "orders"
         result.triggers[0].columnName shouldBe "invoice_number"
+    }
+
+    test("listPotentialSupportTriggers decodes escaped sequence literals and percent-encoded markers") {
+        val sequenceName = "odd seq\\'\u03a9"
+        val tableName = "orders*/archive"
+        val columnName = "invoice*/number"
+        val sequenceLiteral = SqlIdentifiers.quoteStringLiteral(sequenceName.replace("\\", "\\\\"))
+
+        every { jdbc.queryList(match { "trigger_name LIKE" in it }, any()) } returns listOf(
+            mapOf(
+                "trigger_name" to MysqlSequenceNaming.triggerName(tableName, columnName),
+                "action_timing" to "BEFORE",
+                "event_manipulation" to "INSERT",
+                "event_object_table" to tableName,
+                "action_statement" to (
+                    "/* d-migrate:mysql-sequence-v1 object=sequence-trigger " +
+                        "sequence=odd%20seq%5C%27%CE%A9 table=orders%2A%2Farchive " +
+                        "column=invoice%2A%2Fnumber */ " +
+                        "IF NEW.`invoice*/number` IS NULL THEN " +
+                        "SET NEW.`invoice*/number` = `dmg_nextval`($sequenceLiteral); END IF;"
+                    ),
+            ),
+        )
+
+        val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
+
+        result.triggers shouldHaveSize 1
+        result.triggers[0].state shouldBe SupportTriggerState.CONFIRMED
+        result.triggers[0].tableName shouldBe tableName
+        result.triggers[0].columnName shouldBe columnName
+        result.triggers[0].sequenceName shouldBe sequenceName
     }
 
     test("listPotentialSupportTriggers falls back to SHOW CREATE TRIGGER when action_statement is degraded") {

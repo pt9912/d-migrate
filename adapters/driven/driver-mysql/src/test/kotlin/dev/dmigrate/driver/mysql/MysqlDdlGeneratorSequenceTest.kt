@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.TransformationNote
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -109,6 +110,22 @@ class MysqlDdlGeneratorSequenceTest : FunSpec({
         ddl shouldContain "dmg_nextval"
         ddl shouldContain "invoice_seq"
         ddl shouldContain "NEW.`invoice_number`"
+    }
+
+    test("helper_table escapes sequence names in seed and trigger string literals") {
+        val seqName = "odd seq\\'\u03a9"
+        val tableName = "orders*/archive"
+        val colName = "invoice*/number"
+        val escapedSequenceName = SqlIdentifiers.quoteStringLiteral(seqName.replace("\\", "\\\\"))
+        val result = generator.generate(seqSchema(seqName = seqName, tableName = tableName, colName = colName), helperOpts)
+        val ddl = result.render()
+
+        ddl shouldContain "VALUES ('d-migrate', 'mysql-sequence-v1', $escapedSequenceName, 1000"
+        ddl shouldContain "`dmg_nextval`($escapedSequenceName);"
+        ddl shouldContain "sequence=odd%20seq%5C%27%CE%A9 table=orders%2A%2Farchive column=invoice%2A%2Fnumber */"
+        ddl shouldNotContain "sequence=$seqName"
+        ddl shouldNotContain "table=$tableName"
+        ddl shouldNotContain "column=$colName"
     }
 
     test("helper_table column with SequenceNextVal has no DEFAULT clause on that column") {

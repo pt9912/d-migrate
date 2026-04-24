@@ -217,6 +217,33 @@ class DataTransferRunnerTest : FunSpec({
         runner.execute(request()) shouldBe 4
     }
 
+    test("connection close still closes source when target close fails") {
+        var sourceClosed = false
+        val sourcePool = object : ConnectionPool {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun borrow(): Connection = throw UnsupportedOperationException()
+            override fun activeConnections() = 0
+            override fun close() {
+                sourceClosed = true
+            }
+        }
+        val targetPool = object : ConnectionPool {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun borrow(): Connection = throw UnsupportedOperationException()
+            override fun activeConnections() = 0
+            override fun close() {
+                throw RuntimeException("close failed")
+            }
+        }
+
+        TransferConnections(
+            source = TransferEndpoint(fakeCfg, sourcePool, "source"),
+            target = TransferEndpoint(fakeCfg, targetPool, "target"),
+        ).close()
+
+        sourceClosed shouldBe true
+    }
+
     // ── Exit 7 ──────────────────────────────────
 
     test("source resolution failure → exit 7") {

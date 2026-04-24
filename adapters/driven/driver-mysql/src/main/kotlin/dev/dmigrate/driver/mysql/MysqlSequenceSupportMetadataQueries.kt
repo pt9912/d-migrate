@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.metadata.JdbcOperations
+import java.io.ByteArrayOutputStream
 
 internal object MysqlSequenceSupportMetadataQueries {
     private val requiredColumnTypes = mapOf(
@@ -15,10 +16,12 @@ internal object MysqlSequenceSupportMetadataQueries {
         "cache_size" to setOf("tinyint", "smallint", "mediumint", "int", "bigint"),
     )
 
-    private val triggerColumnPattern = Regex("""SET\s+NEW\.`?(\w+)`?\s*=""", RegexOption.IGNORE_CASE)
+    private val triggerColumnPattern =
+        Regex("""SET\s+NEW\.(?:`((?:``|[^`])+)`|(\w+))\s*=""", RegexOption.IGNORE_CASE)
     private val triggerSequencePattern =
-        Regex("""`?dmg_nextval`?\s*\(\s*'([^']+)'\s*\)""", RegexOption.IGNORE_CASE)
-    private val triggerGuardPattern = Regex("""NEW\.`?(\w+)`?\s+IS\s+NULL""", RegexOption.IGNORE_CASE)
+        Regex("""`?dmg_nextval`?\s*\(\s*'((?:''|\\.|[^'])*)'\s*\)""", RegexOption.IGNORE_CASE)
+    private val triggerGuardPattern =
+        Regex("""NEW\.(?:`((?:``|[^`])+)`|(\w+))\s+IS\s+NULL""", RegexOption.IGNORE_CASE)
     private val markerSequencePattern = Regex("""sequence=(\S+)""")
     private val markerTablePattern = Regex("""table=(\S+)""")
     private val markerColumnPattern = Regex("""column=(\S+)""")
@@ -190,12 +193,15 @@ internal object MysqlSequenceSupportMetadataQueries {
                 if (!showBody.isNullOrEmpty()) body = showBody
             }
 
-            val column = triggerColumnPattern.find(body)?.groupValues?.get(1)?.stripBackticks()
-            val rawSequence = triggerSequencePattern.find(body)?.groupValues?.get(1)
-            val guardColumn = triggerGuardPattern.find(body)?.groupValues?.get(1)?.stripBackticks()
-            val markerSeq = markerSequencePattern.find(body)?.groupValues?.get(1)
-            val markerTable = markerTablePattern.find(body)?.groupValues?.get(1)
-            val markerColumn = markerColumnPattern.find(body)?.groupValues?.get(1)
+            val column = triggerColumnPattern.find(body)?.mysqlIdentifier()
+            val rawSequence = triggerSequencePattern.find(body)
+                ?.groupValues
+                ?.get(1)
+                ?.let(::unescapeMysqlStringLiteral)
+            val guardColumn = triggerGuardPattern.find(body)?.mysqlIdentifier()
+            val markerSeq = markerSequencePattern.find(body)?.groupValues?.get(1)?.let(::decodeMarkerValue)
+            val markerTable = markerTablePattern.find(body)?.groupValues?.get(1)?.let(::decodeMarkerValue)
+            val markerColumn = markerColumnPattern.find(body)?.groupValues?.get(1)?.let(::decodeMarkerValue)
             val unqualifiedSequence = rawSequence?.let { unqualify(it, schemaName) }
 
             val state = assessTriggerState(
@@ -253,6 +259,82 @@ internal object MysqlSequenceSupportMetadataQueries {
         } else {
             this
         }
+    }
+
+    private fun MatchResult.mysqlIdentifier(): String {
+        val quoted = groupValues[1]
+        return if (quoted.isNotEmpty()) quoted.replace("``", "`") else groupValues[2]
+    }
+
+    private fun unescapeMysqlStringLiteral(value: String): String = buildString {
+        var index = 0
+        while (index < value.length) {
+            val char = value[index]
+            when {
+                char == '\'' && index + 1 < value.length && value[index + 1] == '\'' -> {
+                    append('\'')
+                    index += 2
+                }
+                char == '\\' && index + 1 < value.length -> {
+                    append(unescapeMysqlBackslash(value[index + 1]))
+                    index += 2
+                }
+                else -> {
+                    append(char)
+                    index++
+                }
+            }
+        }
+    }
+
+    private fun unescapeMysqlBackslash(value: Char): Char = when (value) {
+        '0' -> '\u0000'
+        '\'' -> '\''
+        '"' -> '"'
+        'b' -> '\b'
+        'n' -> '\n'
+        'r' -> '\r'
+        't' -> '\t'
+        'Z' -> '\u001A'
+        '\\' -> '\\'
+        else -> value
+    }
+
+    private fun decodeMarkerValue(value: String): String {
+        val output = StringBuilder()
+        val bytes = ByteArrayOutputStream()
+
+        fun flushBytes() {
+            if (bytes.size() == 0) return
+            output.append(bytes.toByteArray().toString(Charsets.UTF_8))
+            bytes.reset()
+        }
+
+        var index = 0
+        while (index < value.length) {
+            if (value[index] == '%' && index + 2 < value.length) {
+                val high = hexValue(value[index + 1])
+                val low = hexValue(value[index + 2])
+                if (high >= 0 && low >= 0) {
+                    bytes.write((high shl 4) + low)
+                    index += 3
+                    continue
+                }
+            }
+            flushBytes()
+            output.append(value[index])
+            index++
+        }
+
+        flushBytes()
+        return output.toString()
+    }
+
+    private fun hexValue(value: Char): Int = when (value) {
+        in '0'..'9' -> value - '0'
+        in 'a'..'f' -> value - 'a' + 10
+        in 'A'..'F' -> value - 'A' + 10
+        else -> -1
     }
 
     private fun unqualify(name: String, activeSchema: String): String? {
