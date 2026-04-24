@@ -89,7 +89,10 @@ class MysqlProfilingIntegrationTest : FunSpec({
                         score DECIMAL(5,2)
                     )
                 """.trimIndent())
-                stmt.execute("INSERT INTO `$tenantDb`.users (name, email, age, score) VALUES ('Tenant Alice', 'tenant@example.com', 41, 77.70)")
+                stmt.execute(
+                    "INSERT INTO `$tenantDb`.users (name, email, age, score) " +
+                        "VALUES ('Tenant Alice', 'tenant@example.com', 41, 77.70)"
+                )
             }
         }
     }

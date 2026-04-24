@@ -1,5 +1,6 @@
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     kotlin("jvm") version "2.1.20" apply false
@@ -114,6 +115,10 @@ subprojects {
         // Restoring test outputs from the build cache can leave coverage
         // verification with stale or incomplete counters on CI.
         outputs.cacheIf { false }
+    }
+
+    tasks.withType<Test>().configureEach {
+        dependsOn("detekt")
     }
 
     // Ensure kover verification and artifact tasks always run after test
