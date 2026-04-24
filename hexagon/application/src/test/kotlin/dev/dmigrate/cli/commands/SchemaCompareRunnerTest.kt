@@ -8,6 +8,7 @@ import dev.dmigrate.core.validation.ValidationWarning
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.SkippedObject
+import dev.dmigrate.driver.connection.ConnectionSecretMasker
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -242,6 +243,36 @@ class SchemaCompareRunnerTest : FunSpec({
             stderr = h.stderr.sink,
         )
         runner.execute(request(target = "db:staging")) shouldBe 4
+    }
+
+    test("db: config errors scrub secrets in message and source") {
+        val calls = mutableListOf<Pair<String, String>>()
+        val runner = SchemaCompareRunner(
+            fileLoader = { op ->
+                ResolvedSchemaOperand(op.path.toString(), schemaA, ValidationResult())
+            },
+            dbLoader = { _, _ ->
+                throw CompareConfigException(
+                    "bad jdbc:postgresql://db.example.com/app?user=alice&password=secret"
+                )
+            },
+            urlScrubber = ConnectionSecretMasker::mask,
+            comparator = { _, _ -> emptyDiff },
+            projectDiff = { fakeDiffView },
+            renderPlain = { "PLAIN:${it.status}" },
+            renderJson = { """{"status":"${it.status}"}""" },
+            renderYaml = { "status: ${it.status}" },
+            printError = { msg, src -> calls += msg to src },
+        )
+
+        runner.execute(
+            request(target = "db:jdbc:postgresql://admin:secret@db.example.com/app?user=alice&password=secret")
+        ) shouldBe 7
+
+        calls shouldBe listOf(
+            "Config/URL error: bad jdbc:postgresql://db.example.com/app?user=alice&password=***" to
+                "db:jdbc:postgresql://admin:***@db.example.com/app?user=alice&password=***"
+        )
     }
 
     test("db: without dbLoader returns exit 2") {

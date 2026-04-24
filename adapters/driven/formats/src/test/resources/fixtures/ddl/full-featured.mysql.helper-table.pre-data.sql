@@ -5,7 +5,6 @@
 -- [E054] Composite type 'address' is not supported in MySQL and was skipped.
 -- Hint: Consider restructuring the data model to avoid composite types.
 
-
 CREATE TABLE `dmg_sequences` (
     `managed_by` VARCHAR(32) NOT NULL,
     `format_version` VARCHAR(32) NOT NULL,
@@ -24,7 +23,6 @@ INSERT INTO `dmg_sequences` (`managed_by`, `format_version`, `name`, `next_value
 INSERT INTO `dmg_sequences` (`managed_by`, `format_version`, `name`, `next_value`, `increment_by`, `min_value`, `max_value`, `cycle_enabled`, `cache_size`) VALUES ('d-migrate', 'mysql-sequence-v1', 'simple_seq', 1, 1, NULL, NULL, 0, NULL);
 
 -- [W114] Sequence 'invoice_seq' has cache=20 but MySQL helper-table mode does not emulate preallocation; cache value is stored as metadata only.
-
 
 CREATE TABLE `customers` (
     `id` INT NOT NULL AUTO_INCREMENT,

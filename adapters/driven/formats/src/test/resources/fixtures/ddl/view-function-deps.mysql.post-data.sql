@@ -13,8 +13,6 @@ SELECT * FROM computed_view;
 
 -- [E053] Function 'calc_total' was written for 'postgresql' and must be manually rewritten for MySQL.
 -- Hint: Rewrite the function body using MySQL-compatible syntax.
--- TODO: Rewrite function `calc_total` for MySQL (source dialect: postgresql)
 
 -- [E053] Trigger 'trg_audit' was written for 'postgresql' and must be manually rewritten for MySQL.
 -- Hint: Rewrite the trigger body using MySQL-compatible syntax.
--- TODO: Rewrite trigger `trg_audit` for MySQL (source dialect: postgresql)

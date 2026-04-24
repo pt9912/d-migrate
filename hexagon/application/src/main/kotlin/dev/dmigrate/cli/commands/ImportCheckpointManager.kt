@@ -14,6 +14,7 @@ import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import java.nio.file.Path
 import java.time.Instant
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Checkpoint/resume lifecycle for `d-migrate data import`.
@@ -192,15 +193,22 @@ internal class ImportCheckpointManager(
         val effectiveTables = inputCtx.effectiveTables
         val inputFilesByTable = inputCtx.inputFilesByTable
         val fingerprint = inputCtx.fingerprint
+        val warningKeys = ConcurrentHashMap.newKeySet<String>()
 
-        // Manifest update per chunk-commit and per table-end.
-        // `createdAt` is set now for fresh runs, taken from the loaded
-        // manifest on resume.
+        fun warnOnce(key: String, message: String) {
+            if (warningKeys.add(key)) {
+                stderr("Warning: $message")
+            }
+        }
+
         val tableStates = LinkedHashMap(resumeCtx.initialSlices)
         val createdAt: Instant = if (resumeCtx.resuming && store != null) {
             try {
                 store.load(operationId)?.createdAt ?: clock()
-            } catch (_: Throwable) { clock() }
+            } catch (e: Throwable) {
+                warnOnce("checkpoint-created-at", "Failed to reload checkpoint metadata: ${e.message ?: e::class.simpleName}")
+                clock()
+            }
         } else {
             clock()
         }
@@ -225,17 +233,12 @@ internal class ImportCheckpointManager(
                         optionsFingerprint = fingerprint,
                     )
                 )
-            } catch (_: CheckpointStoreException) {
-                // Wie im Export-Pfad: ein verlorener Zwischen-Save
-                // darf den Lauf nicht abbrechen; der naechste
-                // Chunk versucht erneut, und `complete()` meldet
-                // am Lauf-Ende ggf. den Fehler.
+            } catch (e: CheckpointStoreException) {
+                warnOnce("checkpoint-save", "Failed to update import checkpoint during the run: ${e.message}")
             }
         }
 
         val onChunkCommitted: (dev.dmigrate.streaming.ImportChunkCommit) -> Unit = { commit ->
-            // Update and persist manifest slice. `inputFile` stays stable
-            // (from initial or loaded manifest); the scan is the source of truth.
             val slice = CheckpointTableSlice(
                 table = commit.table,
                 status = CheckpointSliceStatus.IN_PROGRESS,
@@ -248,8 +251,6 @@ internal class ImportCheckpointManager(
             saveManifest()
         }
         val onTableCompleted: (dev.dmigrate.streaming.TableImportSummary) -> Unit = { summary ->
-            // failedFinish or error must not mark the table as COMPLETED --
-            // the slice stays FAILED so a resume does not silently skip it.
             val status = if (summary.error == null && summary.failedFinish == null) {
                 CheckpointSliceStatus.COMPLETED
             } else {
@@ -258,15 +259,9 @@ internal class ImportCheckpointManager(
             val slice = CheckpointTableSlice(
                 table = summary.table,
                 status = status,
-                // Bei COMPLETED: totalRows = inserted+updated+skipped+unknown+failed.
-                // Der existierende Tabellen-Summary liefert die
-                // Einzelzaehler; wir aggregieren fuer die Manifest-
-                // Fortschreibung.
                 rowsProcessed = summary.rowsInserted + summary.rowsUpdated +
                     summary.rowsSkipped + summary.rowsUnknown + summary.rowsFailed,
                 chunksProcessed = tableStates[summary.table]?.chunksProcessed ?: 0L,
-                // `inputFile` is retained in the slice even on COMPLETED / FAILED
-                // so a later preflight can continue to validate the binding.
                 inputFile = tableStates[summary.table]?.inputFile
                     ?: inputFilesByTable[summary.table],
             )

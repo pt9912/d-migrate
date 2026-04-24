@@ -28,12 +28,10 @@ import dev.dmigrate.streaming.StreamingExporter
  * `d-migrate data export` — streamt Tabellen aus einer Datenbank in eines
  * der drei unterstützten Formate (json/yaml/csv).
  *
- * Plan §3.6 / §6.10 / §6.14 / §6.15 / §6.17. Der Command ist eine dünne
- * Clikt-Schale: er sammelt die CLI-Argumente in einen [DataExportRequest]
- * und delegiert an [DataExportRunner], der die gesamte Geschäftslogik
- * hält. Dieser Split existiert, damit alle Exit-Code-Pfade ohne echten
- * Connection-Pool, ohne Datenbank und ohne Clikt-Kontext testbar sind —
- * siehe `DataExportRunnerTest`.
+ * Der Command ist eine dünne Clikt-Schale: er sammelt die CLI-Argumente
+ * in einen [DataExportRequest] und delegiert an [DataExportRunner], damit
+ * die Geschäftslogik unabhängig von Clikt, Filesystem und Datenbank
+ * getestet werden kann.
  */
 class DataExportCommand : CliktCommand(name = "export") {
     override fun help(context: Context) =
@@ -102,20 +100,13 @@ class DataExportCommand : CliktCommand(name = "export") {
             "(UTF-8, UTF-16 BE/LE); no-op for other encodings",
     ).flag()
 
-    val csvNoHeader by option(
-        "--csv-no-header",
-        help = "Omit the CSV header row (§6.17 default: header on)",
-    ).flag()
+    val csvNoHeader by option("--csv-no-header", help = "Omit the CSV header row").flag()
 
     val nullString by option(
         "--null-string",
         help = "CSV NULL representation; default: empty string",
     ).default("")
 
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
-    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
-    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
-    // Phase B bis D des Milestones.
     val resume by option(
         "--resume",
         help = "Resume an earlier export from a checkpoint reference " +
@@ -131,10 +122,8 @@ class DataExportCommand : CliktCommand(name = "export") {
     ).path()
 
     override fun run() {
-        // Hierarchie: d-migrate → data → export → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
-        // §4.4: --filter "" and whitespace-only are invalid (Exit 2)
         if (filter != null && filter!!.isBlank()) {
             System.err.println("Error: --filter must not be empty or whitespace-only. Omit the flag to export without a filter.")
             throw ProgramResult(2)
@@ -204,32 +193,18 @@ class DataExportCommand : CliktCommand(name = "export") {
                         onTableCompleted = callbacks.onTableCompleted,
                         resumeMarkers = resume.resumeMarkers,
                         onChunkProcessed = callbacks.onChunkProcessed,
+                        warningSink = callbacks.warningSink,
                     )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
-            // 0.9.0 Phase C.1: dateibasierter CheckpointStore. Die CLI-
-            // Seite wired den produktiven Adapter hier ein; der
-            // Runner selbst kennt `FileCheckpointStore` nicht (Hex-
-            // Richtung: application -> ports, nicht application -> adapters).
             checkpointStoreFactory = { dir ->
                 dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
             },
-            // 0.9.0 Phase C.1 §4.4 / §5.2: Config-Resolver fuer
-            // `pipeline.checkpoint.*` — der Runner ruft
-            // `CheckpointConfig.merge(cliDirectory, config)` und sticht
-            // die Config damit in `--checkpoint-dir` um.
             checkpointConfigResolver = { cliCfg ->
                 dev.dmigrate.cli.config.PipelineCheckpointResolver(
                     configPathFromCli = cliCfg,
                 ).resolve()
             },
-            // 0.9.0 Phase C.2 §5.3: PK-Lookup fuer den Runner. Die
-            // produktive Wiring laedt das Schema genau einmal pro
-            // Pool+Dialekt, damit mehrfache `primaryKeyLookup`-
-            // Aufrufe (pro Tabelle) nicht wiederholt den
-            // SchemaReader triggern. Ein Fehlschlag beim Schema-Load
-            // mappt auf "keine PK bekannt" — der Runner faellt dann
-            // per Phase-C.2-§4.1-Fall-2 auf C.1-Verhalten zurueck.
             primaryKeyLookup = pkLookupFromSchemaReader(),
         )
         val exitCode = runner.execute(request)
@@ -237,16 +212,8 @@ class DataExportCommand : CliktCommand(name = "export") {
     }
 
     /**
-     * 0.9.0 Phase C.2 §5.3: produktive PK-Quelle. Liest das Schema
-     * beim **ersten** Aufruf genau einmal per
-     * `DatabaseDriverRegistry.get(dialect).schemaReader()` ein und
-     * merkt sich das Ergebnis in einem local-scoped Cache. Jeder
-     * spaetere Aufruf liefert die PK aus dem Cache.
-     *
-     * Ein Fehlschlag beim Schema-Laden degradiert auf "keine PK
-     * bekannt" — der Runner greift dann Phase-C.2-§4.1-Fall-2
-     * (C.1-Fallback mit stderr-Hinweis). Kein Exit, der Lauf geht
-     * weiter.
+     * Lädt das Schema beim ersten Aufruf einmal und liest Primary Keys
+     * danach aus einem lokalen Cache.
      */
     private fun pkLookupFromSchemaReader(): (
         dev.dmigrate.driver.connection.ConnectionPool,
@@ -267,7 +234,7 @@ class DataExportCommand : CliktCommand(name = "export") {
                 loaded
             }
             // Wir probieren schema-qualifizierte und unqualifizierte
-            // Keys, weil --tables beide Formen akzeptiert (§3.6).
+            // Keys, weil --tables beide Formen akzeptiert.
             resolved[table]
                 ?: resolved[table.substringAfterLast('.')]
                 ?: emptyList()

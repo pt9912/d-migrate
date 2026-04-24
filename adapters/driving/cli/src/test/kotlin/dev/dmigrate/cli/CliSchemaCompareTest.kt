@@ -19,6 +19,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -40,6 +41,18 @@ class CliSchemaCompareTest : FunSpec({
             block()
         } finally {
             System.setOut(original)
+        }
+        return capture.toString(Charsets.UTF_8)
+    }
+
+    fun captureStderr(block: () -> Unit): String {
+        val original = System.err
+        val capture = ByteArrayOutputStream()
+        System.setErr(PrintStream(capture, true, Charsets.UTF_8))
+        try {
+            block()
+        } finally {
+            System.setErr(original)
         }
         return capture.toString(Charsets.UTF_8)
     }
@@ -277,6 +290,23 @@ class CliSchemaCompareTest : FunSpec({
                 "--target", resourcePath("valid-schema.yaml")))
         }
         ex.statusCode shouldBe 7
+    }
+
+    test("schema compare scrubs credentials in cli stderr for missing-host db url parse failures") {
+        val stderr = captureStderr {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(listOf(
+                    "schema", "compare",
+                    "--source", resourcePath("valid-schema.yaml"),
+                    "--target", "db:postgresql://admin:secret@/db?password=secret"
+                ))
+            }
+            ex.statusCode shouldBe 7
+        }
+
+        stderr shouldContain "***"
+        stderr shouldNotContain "secret"
+        stderr shouldContain "db:postgresql://admin:***@/db?password=***"
     }
 
     test("mixed file/db operands: file source, db target with unresolvable alias") {

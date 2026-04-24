@@ -67,10 +67,12 @@ class SchemaReverseRunner(
     private val renderJson: (SchemaReverseDocument) -> String = { doc -> renderJsonDefault(doc) },
     private val renderYaml: (SchemaReverseDocument) -> String = { doc -> renderYamlDefault(doc) },
 ) {
+    private val userFacingErrors = UserFacingErrors(urlScrubber)
+    private val userFacingPrintError = userFacingErrors.printError(printError)
+    private val userFacingStderr = userFacingErrors.stderrSink(stderr)
 
     private data class ResolvedContext(
         val reportPath: Path,
-        val resolvedUrl: String,
         val userFacingSource: String,
         val sourceRef: ReverseSourceRef,
         val config: dev.dmigrate.driver.connection.ConnectionConfig,
@@ -93,20 +95,20 @@ class SchemaReverseRunner(
         try {
             formatValidator(request.output, request.format)
         } catch (e: IllegalArgumentException) {
-            printError(e.message ?: "Invalid format/extension", request.source)
+            userFacingPrintError(e.message ?: "Invalid format/extension", request.source)
             return 2
         }
 
         val reportPath = request.report ?: sidecarPath(request.output, ".report.yaml")
         if (request.output.toAbsolutePath().normalize() == reportPath.toAbsolutePath().normalize()) {
-            printError("Output and report paths must not be the same", request.source)
+            userFacingPrintError("Output and report paths must not be the same", request.source)
             return 2
         }
 
         val resolvedUrl = try {
             sourceResolver(request.source, request.cliConfigPath)
         } catch (e: Exception) {
-            printError("Failed to resolve source: ${scrubMessage(e.message)}", request.source)
+            userFacingPrintError("Failed to resolve source: ${e.message}", request.source)
             return 7
         }
 
@@ -120,11 +122,11 @@ class SchemaReverseRunner(
         val config = try {
             urlParser(resolvedUrl)
         } catch (e: Exception) {
-            printError("Failed to parse connection URL: ${scrubMessage(e.message)}", userFacingSource)
+            userFacingPrintError("Failed to parse connection URL: ${e.message}", userFacingSource)
             return 7
         }
 
-        return ResolvedContext(reportPath, resolvedUrl, userFacingSource, sourceRef, config)
+        return ResolvedContext(reportPath, userFacingSource, sourceRef, config)
     }
 
     private fun readSchema(request: SchemaReverseRequest, ctx: ResolvedContext): SchemaReadResult? {
@@ -141,7 +143,7 @@ class SchemaReverseRunner(
                 reader.read(p, options)
             }
         } catch (e: Exception) {
-            printError("Connection or metadata error: ${scrubMessage(e.message)}", ctx.userFacingSource)
+            userFacingPrintError("Connection or metadata error: ${e.message}", ctx.userFacingSource)
             null
         }
     }
@@ -152,7 +154,7 @@ class SchemaReverseRunner(
             schemaWriter(request.output, result.schema, request.format)
             null
         } catch (e: Exception) {
-            printError("Failed to write schema: ${scrubMessage(e.message)}", userFacingSource)
+            userFacingPrintError("Failed to write schema: ${e.message}", userFacingSource)
             7
         }
     }
@@ -164,7 +166,7 @@ class SchemaReverseRunner(
             reportWriter(ctx.reportPath, reportInput)
             null
         } catch (e: Exception) {
-            printError("Failed to write report: ${scrubMessage(e.message)}", ctx.userFacingSource)
+            userFacingPrintError("Failed to write report: ${e.message}", ctx.userFacingSource)
             7
         }
     }
@@ -195,18 +197,10 @@ class SchemaReverseRunner(
         stdout("Report written to $reportPath")
         for (note in result.notes) {
             if (note.severity == SchemaReadSeverity.INFO && !request.verbose) continue
-            stderr("  ${note.severity.name} [${note.code}] ${note.objectName}: ${note.message}")
+            userFacingStderr("  ${note.severity.name} [${note.code}] ${note.objectName}: ${note.message}")
         }
         for (skip in result.skippedObjects) {
-            stderr("  SKIPPED [${skip.code ?: "-"}] ${skip.type} ${skip.name}: ${skip.reason}")
-        }
-    }
-
-    private fun scrubMessage(message: String?): String {
-        if (message == null) return "unknown error"
-        // Scrub any URLs that might be in exception messages
-        return Regex("[a-zA-Z][a-zA-Z0-9+\\-.]*://[^\\s]+").replace(message) {
-            urlScrubber(it.value)
+            userFacingStderr("  SKIPPED [${skip.code ?: "-"}] ${skip.type} ${skip.name}: ${skip.reason}")
         }
     }
 

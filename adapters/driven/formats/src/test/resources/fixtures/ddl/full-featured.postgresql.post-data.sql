@@ -25,4 +25,3 @@ CREATE TRIGGER "trg_updated"
 
 -- [E053] Trigger 'trg_insert' has no body and must be manually implemented.
 -- Hint: Provide a trigger body in the schema definition.
--- TODO: Implement trigger "trg_insert"

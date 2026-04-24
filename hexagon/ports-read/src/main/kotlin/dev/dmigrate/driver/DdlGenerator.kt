@@ -61,7 +61,13 @@ data class DdlStatement(
             appendLine("-- [${note.code}] ${note.message}")
             if (note.hint != null) appendLine("-- Hint: ${note.hint}")
         }
-        append(sql)
+        if (sql.isBlank()) {
+            if (isNotEmpty() && last() == '\n') {
+                setLength(length - 1)
+            }
+        } else {
+            append(sql)
+        }
     }
 }
 

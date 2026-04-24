@@ -88,11 +88,13 @@ class DataImportRunner(
     /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
 ) {
+    private val userFacingErrors = UserFacingErrors()
+    private val userFacingStderr = userFacingErrors.stderrSink(stderr)
 
     private val preflightValidator = ImportPreflightValidator(
         writerLookup = writerLookup,
         schemaTargetValidator = schemaTargetValidator,
-        stderr = stderr,
+        stderr = userFacingStderr,
     )
 
     private val checkpointManager = ImportCheckpointManager(
@@ -100,7 +102,7 @@ class DataImportRunner(
         checkpointConfigResolver = checkpointConfigResolver,
         clock = clock,
         progressReporter = progressReporter,
-        stderr = stderr,
+        stderr = userFacingStderr,
     )
 
     private val preflightResolver = ImportPreflightResolver(
@@ -108,7 +110,7 @@ class DataImportRunner(
         urlParser = urlParser,
         schemaPreflight = schemaPreflight,
         stdinProvider = stdinProvider,
-        stderr = stderr,
+        stderr = userFacingStderr,
     )
 
     private val executionPlanner = ImportExecutionPlanner(
@@ -118,46 +120,49 @@ class DataImportRunner(
 
     private val streamingInvoker = ImportStreamingInvoker(
         importExecutor = importExecutor,
-        stderr = stderr,
+        stderr = userFacingStderr,
     )
 
     fun execute(request: DataImportRequest): Int {
-        val ctx = when (val result = preflightResolver.resolve(request)) {
+        val ctx = when (val result = resolveRequest(request)) {
             is ImportPreflightResolution.Ok -> result.value
             is ImportPreflightResolution.Exit -> return result.code
         }
 
-        val pool: ConnectionPool = try {
-            poolFactory(ctx.connectionConfig)
-        } catch (e: Throwable) {
-            stderr("Error: Failed to connect to database: ${e.message}")
-            return 4
-        }
+        val pool = connect(ctx.connectionConfig) ?: return 4
 
         return try {
-            executeWithPool(request, ctx.connectionConfig, ctx.resolvedUrl, ctx.charset, ctx.format, ctx.preparedImport, pool)
+            runImport(request, ctx, pool)
         } finally {
-            try { pool.close() } catch (_: Throwable) {}
+            runCatching { pool.close() }
         }
     }
 
-    private fun executeWithPool(
+    private fun resolveRequest(request: DataImportRequest): ImportPreflightResolution =
+        preflightResolver.resolve(request)
+
+    private fun connect(connectionConfig: ConnectionConfig): ConnectionPool? {
+        return try {
+            poolFactory(connectionConfig)
+        } catch (e: Throwable) {
+            userFacingStderr("Error: Failed to connect to database: ${e.message}")
+            null
+        }
+    }
+
+    private fun runImport(
         request: DataImportRequest,
-        connectionConfig: ConnectionConfig,
-        resolvedUrl: String,
-        charset: Charset?,
-        format: DataExportFormat,
-        preparedImport: SchemaPreflightResult,
+        context: ImportPreflightContext,
         pool: ConnectionPool,
     ): Int {
         val executionPlan = when (
             val result = executionPlanner.prepare(
                 request = request,
-                connectionConfig = connectionConfig,
-                resolvedUrl = resolvedUrl,
-                charset = charset,
-                format = format,
-                preparedImport = preparedImport,
+                connectionConfig = context.connectionConfig,
+                resolvedUrl = context.resolvedUrl,
+                charset = context.charset,
+                format = context.format,
+                preparedImport = context.preparedImport,
             )
         ) {
             is ImportExecutionPlanResult.Ok -> result.value
@@ -165,9 +170,9 @@ class DataImportRunner(
         }
         val result = when (
             val r = streamingInvoker.execute(
-                format,
+                context.format,
                 pool,
-                preparedImport,
+                context.preparedImport,
                 executionPlan,
             )
         ) {
@@ -194,7 +199,7 @@ class DataImportRunner(
             result = result,
             store = store,
             operationId = operationId,
-            stderr = stderr,
+            stderr = userFacingStderr,
         )
     }
 

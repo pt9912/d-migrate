@@ -89,7 +89,7 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         val ddl = result.render()
 
         ddl shouldContain "E053"
-        ddl shouldContain "-- TODO: Rewrite trigger `trg_pg` for MySQL (source dialect: postgresql)"
+        ddl shouldContain "-- [E053] Trigger 'trg_pg' was written for 'postgresql' and must be manually rewritten for MySQL."
         result.skippedObjects.any { it.name == "trg_pg" } shouldBe true
     }
 
@@ -495,7 +495,7 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
         val ddl = result.render()
 
         ddl shouldContain "E053"
-        ddl shouldContain "-- TODO: Rewrite procedure `pg_proc` for MySQL (source dialect: postgresql)"
+        ddl shouldContain "-- [E053] Procedure 'pg_proc' was written for 'postgresql' and must be manually rewritten for MySQL."
         result.skippedObjects.any { it.name == "pg_proc" } shouldBe true
     }
 

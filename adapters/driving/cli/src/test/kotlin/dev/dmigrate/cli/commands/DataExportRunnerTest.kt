@@ -249,6 +249,36 @@ class DataExportRunnerTest : FunSpec({
         runner.execute(request(tables = listOf("public.users"))) shouldBe 0
     }
 
+    test("Exit 7: source resolution errors scrub credentials") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            sourceResolver = { _, _ ->
+                throw IllegalArgumentException("bad alias -> postgresql://admin:secret@host/db")
+            },
+        )
+
+        runner.execute(request(source = "prod")) shouldBe 7
+
+        stderr.joined() shouldContain "***"
+        stderr.joined() shouldNotContain "secret"
+    }
+
+    test("Exit 4: connection errors scrub credentials") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            poolFactory = {
+                throw IllegalStateException("failed for postgresql://admin:secret@host/db")
+            },
+        )
+
+        runner.execute(request(source = "postgresql://admin:secret@host/db")) shouldBe 4
+
+        stderr.joined() shouldContain "***"
+        stderr.joined() shouldNotContain "secret"
+    }
+
     test("Exit 0: --filter is parsed as DSL and passed as ParameterizedClause to the executor") {
         var capturedFilter: DataFilter? = null
         val stderr = StderrCapture()

@@ -319,7 +319,7 @@ class MysqlDdlGeneratorTestPart2b : FunSpec({
         val ddl = result.render()
 
         ddl shouldContain "E053"
-        ddl shouldContain "-- TODO: Rewrite function `pg_func` for MySQL (source dialect: postgresql)"
+        ddl shouldContain "-- [E053] Function 'pg_func' was written for 'postgresql' and must be manually rewritten for MySQL."
 
         val note = result.notes.find { it.code == "E053" && it.objectName == "pg_func" }
         note!!.message shouldContain "must be manually rewritten for MySQL"

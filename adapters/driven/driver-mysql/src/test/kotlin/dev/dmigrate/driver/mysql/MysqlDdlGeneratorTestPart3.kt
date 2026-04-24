@@ -200,7 +200,7 @@ class MysqlDdlGeneratorTestPart3 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "-- TODO: Implement function `stub_func`"
+        ddl shouldContain "-- [E053] Function 'stub_func' has no body and must be manually implemented."
         val note = result.notes.find { it.code == "E053" && it.objectName == "stub_func" }
         note!!.message shouldContain "has no body and must be manually implemented"
         result.skippedObjects.any { it.name == "stub_func" } shouldBe true
@@ -221,7 +221,7 @@ class MysqlDdlGeneratorTestPart3 : FunSpec({
         val result = generator.generate(schema)
         val ddl = result.render()
 
-        ddl shouldContain "-- TODO: Implement trigger `stub_trg`"
+        ddl shouldContain "-- [E053] Trigger 'stub_trg' has no body and must be manually implemented."
         val note = result.notes.find { it.code == "E053" && it.objectName == "stub_trg" }
         note!!.message shouldContain "has no body and must be manually implemented"
         result.skippedObjects.any { it.name == "stub_trg" } shouldBe true

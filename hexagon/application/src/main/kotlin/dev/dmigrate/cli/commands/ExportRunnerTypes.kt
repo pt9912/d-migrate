@@ -49,6 +49,7 @@ data class ExportCallbacks(
     val progressReporter: ProgressReporter,
     val onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit,
     val onChunkProcessed: (dev.dmigrate.streaming.TableChunkProgress) -> Unit,
+    val warningSink: (String) -> Unit = {},
 )
 
 /**

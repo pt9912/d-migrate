@@ -70,7 +70,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped.shouldBeEmpty()
     }
 
-    test("generateFunctions with null body produces TODO and ManualActionRequired note") {
+    test("generateFunctions with null body produces action-required note") {
         val functions = mapOf(
             "missing_fn" to FunctionDefinition(body = null)
         )
@@ -79,8 +79,8 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         val result = helper.generateFunctions(functions, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "\"missing_fn\""
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "-- [E053] Function 'missing_fn' has no body and must be manually implemented."
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"
@@ -88,7 +88,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped[0].name shouldBe "missing_fn"
     }
 
-    test("generateFunctions with wrong sourceDialect produces TODO") {
+    test("generateFunctions with wrong sourceDialect produces action-required note") {
         val functions = mapOf(
             "mysql_fn" to FunctionDefinition(
                 body = "SELECT 1",
@@ -100,8 +100,8 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         val result = helper.generateFunctions(functions, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "mysql"
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "must be manually rewritten for PostgreSQL"
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"
@@ -131,7 +131,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped.shouldBeEmpty()
     }
 
-    test("generateProcedures with null body produces TODO") {
+    test("generateProcedures with null body produces action-required note") {
         val procedures = mapOf(
             "missing_proc" to ProcedureDefinition(body = null)
         )
@@ -140,8 +140,8 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         val result = helper.generateProcedures(procedures, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "\"missing_proc\""
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "-- [E053] Procedure 'missing_proc' has no body and must be manually implemented."
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"
@@ -178,7 +178,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped.shouldBeEmpty()
     }
 
-    test("generateTriggers with null body produces TODO") {
+    test("generateTriggers with null body produces action-required note") {
         val triggers = mapOf(
             "missing_trg" to TriggerDefinition(
                 table = "orders",
@@ -192,8 +192,8 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "\"missing_trg\""
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "-- [E053] Trigger 'missing_trg' has no body and must be manually implemented."
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"
@@ -201,7 +201,7 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         skipped[0].name shouldBe "missing_trg"
     }
 
-    test("generateTriggers with wrong sourceDialect produces TODO") {
+    test("generateTriggers with wrong sourceDialect produces action-required note") {
         val triggers = mapOf(
             "mysql_trg" to TriggerDefinition(
                 table = "items",
@@ -216,8 +216,8 @@ class PostgresRoutineDdlHelperTest : FunSpec({
         val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "mysql"
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "must be manually rewritten for PostgreSQL"
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"

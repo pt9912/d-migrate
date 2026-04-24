@@ -42,6 +42,10 @@ class DataTransferRunner(
     private val printError: (String, String) -> Unit,
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
+    private val userFacingErrors = UserFacingErrors(urlScrubber)
+    private val userFacingPrintError = userFacingErrors.printError(printError)
+    private val userFacingStderr = userFacingErrors.stderrSink(stderr)
+
     private data class TransferTableContext(
         val reader: dev.dmigrate.driver.data.DataReader,
         val writer: dev.dmigrate.driver.data.DataWriter,
@@ -54,32 +58,32 @@ class DataTransferRunner(
     )
 
     fun execute(request: DataTransferRequest): Int {
-        val safeSrc = scrubRef(request.source)
-        val safeTgt = scrubRef(request.target)
+        val safeSrc = userFacingErrors.scrubRef(request.source)
+        val safeTgt = userFacingErrors.scrubRef(request.target)
 
         val err = validateFlags(request)
-        if (err != null) { printError(err, safeSrc); return 2 }
+        if (err != null) { userFacingPrintError(err, safeSrc); return 2 }
 
         val srcUrl: String; val tgtUrl: String; val srcRef: String; val tgtRef: String
         try {
             srcUrl = sourceResolver(request.source, request.cliConfigPath)
             srcRef = if (request.source.contains("://")) urlScrubber(srcUrl) else request.source
-        } catch (e: Exception) { printError("Source config: ${scrub(e.message)}", safeSrc); return 7 }
+        } catch (e: Exception) { userFacingPrintError("Source config: ${e.message}", safeSrc); return 7 }
         try {
             tgtUrl = targetResolver(request.target, request.cliConfigPath)
             tgtRef = if (request.target.contains("://")) urlScrubber(tgtUrl) else request.target
-        } catch (e: Exception) { printError("Target config: ${scrub(e.message)}", safeTgt); return 7 }
+        } catch (e: Exception) { userFacingPrintError("Target config: ${e.message}", safeTgt); return 7 }
 
         val srcCfg: ConnectionConfig; val tgtCfg: ConnectionConfig
         try { srcCfg = urlParser(srcUrl); tgtCfg = urlParser(tgtUrl) }
-        catch (e: Exception) { printError("URL parse: ${scrub(e.message)}", srcRef); return 7 }
+        catch (e: Exception) { userFacingPrintError("URL parse: ${e.message}", srcRef); return 7 }
 
         val srcPool: ConnectionPool
         try { srcPool = poolFactory(srcCfg) }
-        catch (e: Exception) { printError("Source connection: ${scrub(e.message)}", srcRef); return 4 }
+        catch (e: Exception) { userFacingPrintError("Source connection: ${e.message}", srcRef); return 4 }
         val tgtPool: ConnectionPool
         try { tgtPool = poolFactory(tgtCfg) }
-        catch (e: Exception) { srcPool.close(); printError("Target connection: ${scrub(e.message)}", tgtRef); return 4 }
+        catch (e: Exception) { srcPool.close(); userFacingPrintError("Target connection: ${e.message}", tgtRef); return 4 }
 
         try {
             return executeWithPools(request, srcCfg, tgtCfg, srcPool, tgtPool, srcRef, tgtRef)
@@ -97,19 +101,19 @@ class DataTransferRunner(
         try {
             srcSchema = srcDrv.schemaReader().read(srcPool, readOpts).schema
             tgtSchema = tgtDrv.schemaReader().read(tgtPool, readOpts).schema
-        } catch (e: Exception) { printError("Schema read: ${scrub(e.message)}", srcRef); return 4 }
+        } catch (e: Exception) { userFacingPrintError("Schema read: ${e.message}", srcRef); return 4 }
 
         val tables: List<String>
         try { tables = preflight(request, srcSchema, tgtSchema) }
-        catch (e: TransferPreflightException) { printError("Preflight: ${e.message}", srcRef); return 3 }
+        catch (e: TransferPreflightException) { userFacingPrintError("Preflight: ${e.message}", srcRef); return 3 }
 
         val caps = DialectCapabilities.forDialect(tgtCfg.dialect)
         val triggerMode = TriggerMode.valueOf(request.triggerMode.uppercase())
         if (triggerMode == TriggerMode.DISABLE && !caps.supportsTriggerDisable) {
-            printError("--trigger-mode disable is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
+            userFacingPrintError("--trigger-mode disable is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
         }
         if (triggerMode == TriggerMode.STRICT && !caps.supportsTriggerStrict) {
-            printError("--trigger-mode strict is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
+            userFacingPrintError("--trigger-mode strict is not supported for dialect ${tgtCfg.dialect}", tgtRef); return 2
         }
 
         val opts = ImportOptions(triggerMode = triggerMode,
@@ -136,18 +140,18 @@ class DataTransferRunner(
                         opts = opts,
                     )
                 )
-                if (!request.quiet && !request.noProgress) stderr("  Transferred: $table")
+                if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")
             }
         } catch (e: ImportSchemaMismatchException) {
-            printError("Schema mismatch: ${e.message}", tgtRef); return 3
+            userFacingPrintError("Schema mismatch: ${e.message}", tgtRef); return 3
         } catch (e: UnsupportedTriggerModeException) {
-            printError("Trigger mode: ${e.message}", tgtRef); return 2
+            userFacingPrintError("Trigger mode: ${e.message}", tgtRef); return 2
         } catch (e: Exception) {
-            printError("Transfer error: ${scrub(e.message)}", srcRef); return 5
+            userFacingPrintError("Transfer error: ${e.message}", srcRef); return 5
         }
 
         if (!request.quiet && !request.noProgress)
-            stderr("Transfer complete: ${tables.size} table(s) $srcRef -> $tgtRef")
+            userFacingStderr("Transfer complete: ${tables.size} table(s) $srcRef -> $tgtRef")
         return 0
     }
 
@@ -254,11 +258,4 @@ class DataTransferRunner(
         return null
     }
 
-    // buildFilter consolidated into DataExportHelpers.resolveFilter (Qualität Maßnahme 1)
-
-    private fun scrub(m: String?) = if (m == null) "unknown" else
-        Regex("[a-zA-Z][a-zA-Z0-9+\\-.]*://[^\\s]+").replace(m) { urlScrubber(it.value) }
-
-    private fun scrubRef(raw: String) =
-        if (raw.contains("://")) urlScrubber(raw) else raw
 }

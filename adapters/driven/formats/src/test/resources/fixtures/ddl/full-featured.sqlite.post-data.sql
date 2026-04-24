@@ -8,8 +8,6 @@
 
 -- [E053] Trigger 'trg_updated' was written for 'postgresql' and must be manually rewritten for SQLite.
 -- Hint: Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;.
--- TODO: Rewrite trigger "trg_updated" for SQLite (source dialect: postgresql)
 
 -- [E053] Trigger 'trg_insert' has no body and must be manually implemented.
 -- Hint: Provide a trigger body in the schema definition.
--- TODO: Implement trigger "trg_insert"

@@ -25,6 +25,7 @@ internal data class TableExportParams(
     val tableCount: Int,
     val resumeMarker: ResumeMarker?,
     val onChunkProcessed: (TableChunkProgress) -> Unit,
+    val warningSink: (String) -> Unit,
 )
 
 internal class TableExporter(private val reader: DataReader) {
@@ -32,6 +33,8 @@ internal class TableExporter(private val reader: DataReader) {
     private data class ChunkProgressContext(
         val table: String,
         val onChunkProcessed: (TableChunkProgress) -> Unit,
+        val warningSink: (String) -> Unit,
+        var warningEmitted: Boolean = false,
     )
 
     fun export(params: TableExportParams): TableExportSummary {
@@ -39,7 +42,7 @@ internal class TableExporter(private val reader: DataReader) {
         val config = params.config; val writer = params.writer; val counting = params.counting
         val reporter = params.reporter; val ordinal = params.ordinal; val tableCount = params.tableCount
         val resumeMarker = params.resumeMarker; val onChunkProcessed = params.onChunkProcessed
-        val chunkProgress = ChunkProgressContext(table, onChunkProcessed)
+        val chunkProgress = ChunkProgressContext(table, onChunkProcessed, params.warningSink)
         reporter.report(ProgressEvent.ExportTableStarted(table, ordinal, tableCount))
 
         val tableStart = System.nanoTime()
@@ -77,8 +80,7 @@ internal class TableExporter(private val reader: DataReader) {
                     emitChunkProgress(resumeMarker, chunk, markerIdx, tieIdxs, chunkProgress, rows, chunks)
                 }
                 if (!beginCalled) {
-                    error = "Reader returned no chunks for table '$table' " +
-                        "(violates Plan §6.17 — empty tables must still emit one chunk)"
+                    error = "Reader returned no chunks for table '$table'; empty tables must still emit one chunk."
                 } else {
                     writer.end()
                 }
@@ -148,6 +150,14 @@ internal class TableExporter(private val reader: DataReader) {
                     ),
                 )
             )
+        }.onFailure { error ->
+            if (!chunkProgress.warningEmitted) {
+                chunkProgress.warningEmitted = true
+                chunkProgress.warningSink(
+                    "Warning: Failed to persist chunk progress for table '${chunkProgress.table}': " +
+                        "${error.message ?: error::class.simpleName}"
+                )
+            }
         }
     }
 }

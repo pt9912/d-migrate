@@ -136,8 +136,44 @@ class StreamingExporterTest : FunSpec({
                 format = DataExportFormat.JSON,
                 resumeMarkers = mapOf("users" to marker),
                 onChunkProcessed = { progressCalls += it },
-            )
+        )
         progressCalls.shouldBeEmpty()
+    }
+
+    test("C.2: failing onChunkProcessed emits one warning and export continues") {
+        val reader = FakeDataReader(
+            mapOf("users" to listOf(
+                chunk("users", 0, arrayOf<Any?>(1, "alice"), arrayOf<Any?>(2, "bob")),
+                chunk("users", 1, arrayOf<Any?>(3, "carol")),
+            ))
+        )
+        val marker = dev.dmigrate.driver.data.ResumeMarker(
+            markerColumn = "id",
+            tieBreakerColumns = emptyList(),
+            position = null,
+        )
+        val warnings = mutableListOf<String>()
+        val tmpDir = Files.createTempDirectory("d-migrate-c2-warning-")
+        try {
+            val result = StreamingExporter(reader, FakeTableLister(listOf("users")), RecordingChunkWriterFactory())
+                .export(
+                    pool = pool,
+                    tables = listOf("users"),
+                    output = ExportOutput.FilePerTable(tmpDir),
+                    format = DataExportFormat.JSON,
+                    resumeMarkers = mapOf("users" to marker),
+                    onChunkProcessed = { throw IllegalStateException("checkpoint writer unavailable") },
+                    warningSink = { warnings += it },
+                )
+
+            result.totalRows shouldBe 3
+            result.totalChunks shouldBe 2
+            warnings shouldContainExactly listOf(
+                "Warning: Failed to persist chunk progress for table 'users': checkpoint writer unavailable"
+            )
+        } finally {
+            Files.walk(tmpDir).sorted(Comparator.reverseOrder()).forEach { runCatching { Files.delete(it) } }
+        }
     }
 
     test("C.2: tables without resumeMarker take the legacy 4-param path") {
@@ -306,7 +342,7 @@ class StreamingExporterTest : FunSpec({
         )
     }
 
-    test("Reader that returns zero chunks (violates §6.17) reports an error") {
+    test("Reader that returns zero chunks reports an error") {
         val reader = FakeDataReader(mapOf("broken" to emptyList()))
         val exporter = StreamingExporter(reader, FakeTableLister(emptyList()), RecordingChunkWriterFactory())
 
@@ -317,7 +353,7 @@ class StreamingExporterTest : FunSpec({
             format = DataExportFormat.JSON,
         )
 
-        result.tables.single().error!!.contains("§6.17") shouldBe true
+        result.tables.single().error!!.contains("empty tables must still emit one chunk") shouldBe true
         result.success shouldBe false
     }
 

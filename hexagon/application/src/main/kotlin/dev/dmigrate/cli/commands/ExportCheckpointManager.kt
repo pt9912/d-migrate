@@ -14,6 +14,7 @@ import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
 import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import java.nio.file.Path
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Checkpoint and resume management for `d-migrate data export`.
@@ -161,8 +162,21 @@ internal class ExportCheckpointManager(
         val operationId = resume.operationId
         val tableStates = LinkedHashMap(resume.initialSlices)
         val now = { clock() }
+        val warningKeys = ConcurrentHashMap.newKeySet<String>()
+
+        fun warnOnce(key: String, message: String) {
+            if (warningKeys.add(key)) {
+                stderr("Warning: $message")
+            }
+        }
+
         val createdAt: Instant = if (resume.resuming && store != null) {
-            try { store.load(operationId)?.createdAt ?: now() } catch (_: Throwable) { now() }
+            try {
+                store.load(operationId)?.createdAt ?: now()
+            } catch (e: Throwable) {
+                warnOnce("checkpoint-created-at", "Failed to reload checkpoint metadata: ${e.message ?: e::class.simpleName}")
+                now()
+            }
         } else now()
 
         fun saveManifest() {
@@ -174,7 +188,9 @@ internal class ExportCheckpointManager(
                     chunkSize = request.chunkSize, tableSlices = tables.map { tableStates.getValue(it) },
                     optionsFingerprint = fingerprint,
                 ))
-            } catch (_: CheckpointStoreException) { /* silent mid-run save failure */ }
+            } catch (e: CheckpointStoreException) {
+                warnOnce("checkpoint-save", "Failed to update export checkpoint during the run: ${e.message}")
+            }
         }
 
         val onTableCompleted: (dev.dmigrate.streaming.TableExportSummary) -> Unit = { summary ->
@@ -199,7 +215,12 @@ internal class ExportCheckpointManager(
         }
 
         val effectiveReporter = if (request.quiet || request.noProgress) NoOpProgressReporter else progressReporter
-        return ExportCallbacks(effectiveReporter, onTableCompleted, onChunkProcessed)
+        return ExportCallbacks(
+            progressReporter = effectiveReporter,
+            onTableCompleted = onTableCompleted,
+            onChunkProcessed = onChunkProcessed,
+            warningSink = stderr,
+        )
     }
 
     fun setupStaging(output: ExportOutput, checkpoint: ExportCheckpointContext, operationId: String): StagingRedirect? {

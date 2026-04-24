@@ -252,6 +252,36 @@ class DataImportRunnerTest : FunSpec({
         runner.execute(request(source = tempDir.toString(), format = "json", table = null)) shouldBe 0
     }
 
+    test("Exit 7: target resolution errors scrub credentials") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            targetResolver = { _, _ ->
+                throw IllegalArgumentException("bad alias -> postgresql://admin:secret@host/db")
+            },
+        )
+
+        runner.execute(request(target = "prod")) shouldBe 7
+
+        stderr.joined() shouldContain "***"
+        stderr.joined() shouldNotContain "secret"
+    }
+
+    test("Exit 4: connection errors scrub credentials") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            poolFactory = {
+                throw IllegalStateException("failed for postgresql://admin:secret@host/db")
+            },
+        )
+
+        runner.execute(request(target = "postgresql://admin:secret@host/db")) shouldBe 4
+
+        stderr.joined() shouldContain "***"
+        stderr.joined() shouldNotContain "secret"
+    }
+
     test("Exit 0: --quiet suppresses progress summary") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)

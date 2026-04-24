@@ -95,7 +95,7 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         val result = generator.generate(s)
         val rendered = result.render()
         rendered shouldContain "E053"
-        rendered shouldContain "TODO"
+        rendered shouldContain "-- [E053] Function 'mysql_func' was written for 'mysql' and must be manually rewritten for PostgreSQL."
         result.skippedObjects.any { it.name == "mysql_func" } shouldBe true
     }
 
@@ -108,7 +108,7 @@ class PostgresDdlGeneratorRoutineTest : FunSpec({
         val result = generator.generate(s)
         val rendered = result.render()
         rendered shouldContain "E053"
-        rendered shouldContain "TODO"
+        rendered shouldContain "-- [E053] Function 'empty_func' has no body and must be manually implemented."
         result.skippedObjects.any { it.name == "empty_func" } shouldBe true
     }
 
