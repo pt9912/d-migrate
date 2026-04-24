@@ -387,7 +387,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 [`ImpPlan-0.9.4-6.4.md`](./ImpPlan-0.9.4-6.4.md),
 [`ImpPlan-0.9.4-6.5.md`](./ImpPlan-0.9.4-6.5.md).
 
-### Milestone 0.9.5 — Qualitätsverbesserung
+### Milestone 0.9.5 — Qualitätsverbesserung ✅ (2026-04-24)
 
 | Bereich | Aufgabe            | LF-Ref |
 | ------- | ------------------ | ------ |
@@ -642,4 +642,4 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 **Version**: 3.37
 **Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.4 abgeschlossen; geplant: 0.9.5, 0.9.6, 0.9.7, 0.9.8, 0.9.9
+**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; geplant: 0.9.6, 0.9.7, 0.9.8, 0.9.9

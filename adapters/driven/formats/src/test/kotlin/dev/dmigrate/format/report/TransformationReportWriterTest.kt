@@ -25,7 +25,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "version: \"2.0\""
         report shouldContain "file: \"schema.yaml\""
         report shouldContain "dialect: postgresql"
-        report shouldContain "generator: \"d-migrate 0.9.4\""
+        report shouldContain "generator: \"d-migrate 0.9.5\""
     }
 
     test("report contains summary counts") {
@@ -211,7 +211,7 @@ class TransformationReportWriterTest : FunSpec({
             mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
         )
         report shouldContain "mysql_named_sequences: action_required"
-        report shouldContain "generator: \"d-migrate 0.9.4\""
+        report shouldContain "generator: \"d-migrate 0.9.5\""
     }
 
     test("report without mysqlNamedSequenceMode omits field (postgresql)") {

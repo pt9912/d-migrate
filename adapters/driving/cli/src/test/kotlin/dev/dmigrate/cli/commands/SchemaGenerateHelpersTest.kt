@@ -429,13 +429,13 @@ class SchemaGenerateHelpersTest : FunSpec({
 
     // ─── 0.9.3 AP 6.2: mysql_named_sequences + generator version ──
 
-    test("formatJsonOutput includes generator version 0.9.4") {
+    test("formatJsonOutput includes generator version 0.9.5") {
         val json = SchemaGenerateHelpers.formatJsonOutput(
             DdlResult(listOf(DdlStatement("SELECT 1"))),
             SchemaDefinition(name = "T", version = "1"),
             "postgresql",
         )
-        json shouldContain "\"generator\": \"d-migrate 0.9.4\""
+        json shouldContain "\"generator\": \"d-migrate 0.9.5\""
     }
 
     test("formatJsonOutput with HELPER_TABLE includes mysql_named_sequences") {

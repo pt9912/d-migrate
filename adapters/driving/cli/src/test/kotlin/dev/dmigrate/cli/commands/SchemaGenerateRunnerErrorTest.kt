@@ -530,9 +530,9 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         h.stdout.joined() shouldNotContain "mysql_named_sequences"
     }
 
-    test("JSON output includes generator version 0.9.4") {
+    test("JSON output includes generator version 0.9.5") {
         val h = harness()
         h.runner().execute(request(outputFormat = "json")) shouldBe 0
-        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.4\""
+        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.5\""
     }
 })

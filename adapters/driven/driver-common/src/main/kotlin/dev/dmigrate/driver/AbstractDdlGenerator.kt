@@ -147,7 +147,7 @@ abstract class AbstractDdlGenerator(
 
     // ── Shared logic ────────────────────────────
 
-    protected open fun getVersion(): String = "0.9.4"
+    protected open fun getVersion(): String = "0.9.5"
 
     protected fun generateHeader(schema: SchemaDefinition): List<DdlStatement> {
         val header = buildString {

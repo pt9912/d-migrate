@@ -13,6 +13,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.5] - 2026-04-24
+
+### Added
+
+- **MySQL profiling schema support**: `data profile` now accepts `--schema`
+  for MySQL end-to-end. Schema introspection and profiling queries use the
+  requested database name instead of silently falling back to the current
+  database.
+- **Profiling integration coverage**: the MySQL profiling integration suite now
+  exercises cross-database schema selection against a real Testcontainers
+  MySQL instance, including a second database created at runtime.
+
+### Changed
+
+- **Shared profiling SQL helpers** now centralize identifier and
+  schema-qualified table rendering for PostgreSQL, MySQL, and SQLite
+  profiling adapters.
+- **`ProfileDatabaseService`** preserves schema information discovered by
+  introspection when profiling tables without an explicit `--schema` override.
+- **Core quality refactors** split `FilterDslTokenizer` from filter parsing,
+  switched driver discovery to `ServiceLoader`, and separated
+  `ValueDeserializer`, `DialectCapabilities`, and `SchemaSync` concerns for
+  maintainability.
+- **Build hygiene**: detekt is enforced before test tasks, compiler warnings
+  were cleaned up, and the release/roadmap docs now reflect the 0.9.5 quality
+  milestone.
+- **`AbstractDdlGenerator.getVersion()`** returns `0.9.5`.
+- **Metadata and profiling precedence fixes** ensure explicit connection/schema
+  context is preferred consistently when discovering and profiling tables.
+
+### Fixed
+
+- **MySQL sequence DDL escaping** now quotes string literals correctly for
+  sequence names, avoiding broken SQL and identifier-injection regressions.
+- **Import/transfer robustness** tightened DDL injection handling, row-by-row
+  fallback behavior, and cleanup paths in the transfer/import stack.
+- **Detekt enforcement** now runs before test tasks so style issues are caught
+  locally before the GitHub Actions workflows.
+- **ProfileTableService** classifies optional profiling failures and reports
+  unexpected errors with operation context instead of hiding them silently.
+
 ## [0.9.4] - 2026-04-21
 
 ### Added
