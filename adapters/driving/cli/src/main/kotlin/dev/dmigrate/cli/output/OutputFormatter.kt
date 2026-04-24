@@ -15,10 +15,11 @@ class OutputFormatter(
         UnicodeNormalizer.normalize(text, context.normalization)
 
     fun printValidationResult(result: ValidationResult, schema: SchemaDefinition, source: String) {
+        if (source.isEmpty()) Unit
         when (context.outputFormat) {
             "json" -> printJson(result, schema)
             "yaml" -> printYaml(result, schema)
-            else -> printPlain(result, schema, source)
+            else -> printPlain(result, schema)
         }
     }
 
@@ -34,7 +35,7 @@ class OutputFormatter(
         }
     }
 
-    private fun printPlain(result: ValidationResult, schema: SchemaDefinition, source: String) {
+    private fun printPlain(result: ValidationResult, schema: SchemaDefinition) {
         if (!context.quiet) {
             println(messages.text("cli.validation.header", norm(schema.name), schema.version))
             println()
@@ -77,10 +78,20 @@ class OutputFormatter(
     private fun printJson(result: ValidationResult, schema: SchemaDefinition) {
         val results = mutableListOf<String>()
         for (w in result.warnings) {
-            results += """    {"level": "warning", "code": "${w.code}", "object": "${escapeJson(w.objectPath)}", "message": "${escapeJson(w.message)}"}"""
+            results += renderValidationEntry(
+                level = "warning",
+                code = w.code,
+                objectPath = w.objectPath,
+                message = w.message,
+            )
         }
         for (e in result.errors) {
-            results += """    {"level": "error", "code": "${e.code}", "object": "${escapeJson(e.objectPath)}", "message": "${escapeJson(e.message)}"}"""
+            results += renderValidationEntry(
+                level = "error",
+                code = e.code,
+                objectPath = e.objectPath,
+                message = e.message,
+            )
         }
         println(buildString {
             appendLine("{")
@@ -99,6 +110,18 @@ class OutputFormatter(
             }
             append("}")
         })
+    }
+
+    private fun renderValidationEntry(
+        level: String,
+        code: String,
+        objectPath: String,
+        message: String,
+    ): String = buildString {
+        append("""    {"level": "$level", """)
+        append(""""code": "$code", """)
+        append(""""object": "${escapeJson(objectPath)}", """)
+        append(""""message": "${escapeJson(message)}"}""")
     }
 
     private fun printYaml(result: ValidationResult, schema: SchemaDefinition) {

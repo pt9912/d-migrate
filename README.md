@@ -225,7 +225,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.4](https://github.com/pt9912/d-migrate/releases/tag/v0.9.4)** — Beta: MySQL-Sequence Reverse-Engineering und Compare — `schema reverse` rekonstruiert Sequences aus `dmg_sequences`-Hilfstabellen, Support-Routinen und kanonischen Triggern; `schema compare` zeigt Sequence-Diffs in JSON/YAML; W116-Diagnostik für degradierte Support-Objekte.
+Aktuelles Release: **[v0.9.5](https://github.com/pt9912/d-migrate/releases/tag/v0.9.5)** — Qualitätsverbesserung — MySQL-Profiling unterstützt `--schema` jetzt end-to-end; shared SQL-Helpers und strengere Test-/CI-Gates verbessern die Release- und Qualitätsbasis.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 

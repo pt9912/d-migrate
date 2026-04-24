@@ -86,6 +86,28 @@ WORKDIR /src
 COPY --chown=gradle:gradle . .
 RUN gradle --no-daemon classes
 
+# ---- Stage: detekt-baseline ------------------------------------------------
+# Helper stage for generating/exporting per-module detekt-baseline.xml files.
+# This stage is intentionally non-failing so already generated baselines can
+# still be extracted even when detektBaseline returns non-zero.
+#
+# Usage:
+#   docker build --target detekt-baseline -t d-migrate:detekt-baseline .
+#   docker run --rm d-migrate:detekt-baseline | tar xf -
+FROM compile AS detekt-baseline
+
+RUN gradle --no-daemon detektBaseline --continue || true
+RUN find /src -name "detekt-baseline.xml" -not -path "/src/build/*" \
+      -printf '%P\n' | tar cf /src/detekt-baselines.tar -C /src -T -
+
+ENTRYPOINT ["cat", "/src/detekt-baselines.tar"]
+
+# ---- Stage: detekt ---------------------------------------------------------
+# Actual static-analysis gate. This stage MUST fail on detekt violations.
+FROM compile AS detekt
+
+RUN gradle --no-daemon detekt
+
 # ---- Stage 1: build & test ------------------------------------------------
 # Compiles test classes, runs tests, verifies coverage, and builds the CLI
 # distribution — all in a single Gradle invocation so Kover instrumentation

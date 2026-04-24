@@ -23,9 +23,6 @@ import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.driver.DatabaseDriverRegistry
-import dev.dmigrate.driver.mysql.MysqlDriver
-import dev.dmigrate.driver.postgresql.PostgresDriver
-import dev.dmigrate.driver.sqlite.SqliteDriver
 import java.nio.file.Path
 import java.time.ZoneId
 import java.util.Locale
@@ -152,9 +149,7 @@ class DMigrate(
  * `exitProcess` ausführen wollen.
  */
 internal fun registerDrivers() {
-    DatabaseDriverRegistry.register(PostgresDriver())
-    DatabaseDriverRegistry.register(MysqlDriver())
-    DatabaseDriverRegistry.register(SqliteDriver())
+    DatabaseDriverRegistry.loadAll()
 }
 
 /**

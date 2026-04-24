@@ -64,24 +64,8 @@ class CliDataImportTest : FunSpec({
         return db
     }
 
-    fun queryAll(db: Path, table: String): List<Map<String, Any?>> {
-        val rows = mutableListOf<Map<String, Any?>>()
-        DriverManager.getConnection("jdbc:sqlite:${db.absolutePathString()}").use { conn ->
-            conn.prepareStatement("SELECT * FROM $table ORDER BY id").use { ps ->
-                ps.executeQuery().use { rs ->
-                    val meta = rs.metaData
-                    while (rs.next()) {
-                        val row = linkedMapOf<String, Any?>()
-                        for (i in 1..meta.columnCount) {
-                            row[meta.getColumnName(i)] = rs.getObject(i)
-                        }
-                        rows += row
-                    }
-                }
-            }
-        }
-        return rows
-    }
+    fun queryAll(db: Path, table: String): List<Map<String, Any?>> =
+        JdbcTestHelper.queryAll("jdbc:sqlite:${db.absolutePathString()}", table)
 
     fun captureStdout(block: () -> Unit): String {
         val original = System.out

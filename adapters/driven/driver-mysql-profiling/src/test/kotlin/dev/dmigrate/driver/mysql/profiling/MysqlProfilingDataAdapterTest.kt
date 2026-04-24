@@ -8,6 +8,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.mockk.clearMocks
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -55,7 +56,9 @@ class MysqlProfilingDataAdapterTest : FunSpec({
     }
 
     test("numericStats returns stats") {
-        every { jdbc.querySingle(match { it.contains("min") && it.contains("max") && !it.contains("min_ts") }) } returns mapOf(
+        every {
+            jdbc.querySingle(match { it.contains("min") && it.contains("max") && !it.contains("min_ts") })
+        } returns mapOf(
             "min_val" to 1.0, "max_val" to 100.0, "avg_val" to 50.0,
             "sum_val" to 500.0, "stddev_val" to 28.0,
             "zero_count" to 0L, "neg_count" to 0L,
@@ -86,6 +89,7 @@ class MysqlProfilingDataAdapterTest : FunSpec({
     // ── security: malicious identifiers ────────────
 
     test("rowCount quotes malicious table name to prevent injection") {
+        clearMocks(jdbc)
         every { jdbc.querySingle(any()) } returns mapOf("cnt" to 1L)
         adapter.rowCount(pool, "Robert'; DROP TABLE users; --")
         verify {
@@ -95,7 +99,21 @@ class MysqlProfilingDataAdapterTest : FunSpec({
         }
     }
 
+    test("rowCount schema-qualifies MySQL table path when schema is provided") {
+        clearMocks(jdbc)
+        every { jdbc.querySingle(any()) } returns mapOf("cnt" to 1L)
+
+        adapter.rowCount(pool, "select`; DROP", schema = "tenant.one")
+
+        verify {
+            jdbc.querySingle(match {
+                it.contains("FROM `tenant.one`.`select``; DROP`")
+            })
+        }
+    }
+
     test("columnMetrics quotes malicious column name with backtick escape") {
+        clearMocks(jdbc)
         every { jdbc.querySingle(any()) } returns mapOf(
             "non_null_count" to 1L, "null_count" to 0L,
             "distinct_count" to 1L, "dup_count" to 0L,
@@ -106,6 +124,26 @@ class MysqlProfilingDataAdapterTest : FunSpec({
             jdbc.querySingle(match {
                 it.contains("`col``inject`")
             })
+        }
+    }
+
+    test("profiling SQL quotes edge-case identifiers consistently") {
+        clearMocks(jdbc)
+        val cases = listOf(
+            "has`quote" to "`has``quote`",
+            "has.dot" to "`has.dot`",
+            "semi;colon" to "`semi;colon`",
+            "select" to "`select`",
+            "unicodе" to "`unicodе`",
+            "" to "``",
+        )
+
+        cases.forEach { (identifier, expected) ->
+            every { jdbc.querySingle(any()) } returns mapOf("cnt" to 1L)
+            adapter.rowCount(pool, identifier)
+            verify {
+                jdbc.querySingle(match { it.contains("FROM $expected") })
+            }
         }
     }
 })

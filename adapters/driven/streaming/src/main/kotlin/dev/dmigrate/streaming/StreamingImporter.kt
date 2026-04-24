@@ -57,7 +57,7 @@ class StreamingImporter(
 
         for ((index, tableInput) in discoveredInputs.withIndex()) {
             if (tableInput.table in skippedTables) continue
-            val summary = tableImporter.import(
+            val summary = tableImporter.import(TableImportParams(
                 pool = pool,
                 writer = writer,
                 tableInput = tableInput,
@@ -70,7 +70,7 @@ class StreamingImporter(
                 tableCount = discoveredInputs.size,
                 resumeState = resumeStateByTable[tableInput.table],
                 onChunkCommitted = onChunkCommitted,
-            )
+            ))
             summaries += summary
             onTableCompleted(summary)
         }

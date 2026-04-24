@@ -110,7 +110,7 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
         result[0].sql shouldContain "CREATE TRIGGER \"audit_insert\""
@@ -122,7 +122,7 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         skipped.shouldBeEmpty()
     }
 
-    test("generateTriggers with null body produces TODO") {
+    test("generateTriggers with null body produces action-required note") {
         val triggers = mapOf(
             "missing_trg" to TriggerDefinition(
                 table = "orders",
@@ -133,11 +133,11 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "\"missing_trg\""
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "-- [E053] Trigger 'missing_trg' has no body and must be manually implemented."
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"
@@ -145,7 +145,7 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         skipped[0].name shouldBe "missing_trg"
     }
 
-    test("generateTriggers with wrong sourceDialect produces TODO") {
+    test("generateTriggers with wrong sourceDialect produces action-required note") {
         val triggers = mapOf(
             "pg_trg" to TriggerDefinition(
                 table = "items",
@@ -157,11 +157,11 @@ class SqliteRoutineDdlHelperTest : FunSpec({
         )
         val skipped = mutableListOf<SkippedObject>()
 
-        val result = helper.generateTriggers(triggers, emptyMap(), skipped)
+        val result = helper.generateTriggers(triggers, skipped)
 
         result shouldHaveSize 1
-        result[0].sql shouldContain "-- TODO"
-        result[0].sql shouldContain "postgresql"
+        result[0].sql shouldBe ""
+        result[0].render() shouldContain "must be manually rewritten for SQLite"
         result[0].notes shouldHaveSize 1
         result[0].notes[0].type shouldBe NoteType.ACTION_REQUIRED
         result[0].notes[0].code shouldBe "E053"

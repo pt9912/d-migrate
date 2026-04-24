@@ -4,6 +4,8 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
 internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> String) {
+    private fun actionRequired(action: ManualActionRequired): DdlStatement =
+        DdlStatement(sql = "", notes = listOf(action.toNote()))
 
     // ── Views ────────────────────────────────────
 
@@ -65,7 +67,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Provide a function body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Implement function ${quoteIdentifier(name)}", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         if (fn.sourceDialect != null && fn.sourceDialect != "mysql") {
@@ -76,7 +78,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 sourceDialect = fn.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite function ${quoteIdentifier(name)} for MySQL (source dialect: ${fn.sourceDialect})", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -127,7 +129,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Provide a procedure body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Implement procedure ${quoteIdentifier(name)}", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         if (proc.sourceDialect != null && proc.sourceDialect != "mysql") {
@@ -138,7 +140,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 sourceDialect = proc.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite procedure ${quoteIdentifier(name)} for MySQL (source dialect: ${proc.sourceDialect})", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -161,7 +163,6 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.mapNotNull { (name, trigger) -> generateTrigger(name, trigger, skipped) }
@@ -180,7 +181,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 hint = "Provide a trigger body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Implement trigger ${quoteIdentifier(name)}", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         if (trigger.sourceDialect != null && trigger.sourceDialect != "mysql") {
@@ -191,7 +192,7 @@ internal class MysqlRoutineDdlHelper(private val quoteIdentifier: (String) -> St
                 sourceDialect = trigger.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for MySQL (source dialect: ${trigger.sourceDialect})", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         val timing = trigger.timing.name

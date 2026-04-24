@@ -9,6 +9,7 @@ import dev.dmigrate.profiling.model.TableProfile
 import dev.dmigrate.profiling.rules.WarningEvaluator
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
+import java.sql.SQLFeatureNotSupportedException
 
 /**
  * Orchestrates profiling for a single table.
@@ -83,16 +84,35 @@ class ProfileTableService(
         }
 
         val numericStats = if (logicalType in setOf(LogicalType.INTEGER, LogicalType.DECIMAL)) {
-            try { adapters.data.numericStats(pool, table, column, schema) } catch (_: Exception) { null }
+            optionalProfilingValue(
+                operation = "numericStats",
+                table = table,
+                column = column,
+                fallback = null,
+            ) {
+                adapters.data.numericStats(pool, table, column, schema)
+            }
         } else null
 
         val temporalStats = if (logicalType in setOf(LogicalType.DATE, LogicalType.DATETIME)) {
-            try { adapters.data.temporalStats(pool, table, column, schema) } catch (_: Exception) { null }
+            optionalProfilingValue(
+                operation = "temporalStats",
+                table = table,
+                column = column,
+                fallback = null,
+            ) {
+                adapters.data.temporalStats(pool, table, column, schema)
+            }
         } else null
 
-        val compatibility = try {
+        val compatibility = optionalProfilingValue(
+            operation = "targetTypeCompatibility",
+            table = table,
+            column = column,
+            fallback = emptyList(),
+        ) {
             adapters.data.targetTypeCompatibility(pool, table, column, targetTypes, schema)
-        } catch (_: Exception) { emptyList() }
+        }
 
         val profile = ColumnProfile(
             name = column,
@@ -118,4 +138,30 @@ class ProfileTableService(
 
         return profile.copy(warnings = warningEvaluator.evaluateColumn(profile))
     }
+
+    private inline fun <T> optionalProfilingValue(
+        operation: String,
+        table: String,
+        column: String,
+        fallback: T,
+        block: () -> T,
+    ): T {
+        return try {
+            block()
+        } catch (e: Exception) {
+            if (e.isExpectedOptionalProfilingFailure()) {
+                fallback
+            } else {
+                throw ProfilingQueryError(
+                    "Failed optional profiling step '$operation' for '$table.$column': ${e.message}",
+                    e,
+                )
+            }
+        }
+    }
+
+    private fun Exception.isExpectedOptionalProfilingFailure(): Boolean =
+        this is UnsupportedOperationException ||
+            this is SQLFeatureNotSupportedException ||
+            cause is SQLFeatureNotSupportedException
 }

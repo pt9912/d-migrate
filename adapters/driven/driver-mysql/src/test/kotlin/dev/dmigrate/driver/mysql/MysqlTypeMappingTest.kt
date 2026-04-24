@@ -9,9 +9,25 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 
 class MysqlTypeMappingTest : FunSpec({
 
-    fun map(dataType: String, columnType: String = dataType, isAI: Boolean = false,
-            charMaxLen: Int? = null, numP: Int? = null, numS: Int? = null) =
-        MysqlTypeMapping.mapColumn(dataType, columnType, isAI, charMaxLen, numP, numS, "t", "c")
+    fun map(
+        dataType: String,
+        columnType: String = dataType,
+        isAI: Boolean = false,
+        charMaxLen: Int? = null,
+        numP: Int? = null,
+        numS: Int? = null,
+    ) = MysqlTypeMapping.mapColumn(
+        MysqlTypeMapping.ColumnInput(
+            dataType = dataType,
+            columnType = columnType,
+            isAutoIncrement = isAI,
+            charMaxLen = charMaxLen,
+            numPrecision = numP,
+            numScale = numS,
+            tableName = "t",
+            colName = "c",
+        ),
+    )
 
     // ── Basic types ─────────────────────────────
 
@@ -120,10 +136,30 @@ class MysqlTypeMappingTest : FunSpec({
 
     test("parseDefault null") { MysqlTypeMapping.parseDefault(null, NeutralType.Text()).shouldBeNull() }
     test("parseDefault NULL") { MysqlTypeMapping.parseDefault("NULL", NeutralType.Text()).shouldBeNull() }
-    test("parseDefault CURRENT_TIMESTAMP") { MysqlTypeMapping.parseDefault("CURRENT_TIMESTAMP", NeutralType.DateTime()) shouldBe DefaultValue.FunctionCall("current_timestamp") }
-    test("parseDefault boolean 1") { MysqlTypeMapping.parseDefault("1", NeutralType.BooleanType) shouldBe DefaultValue.BooleanLiteral(true) }
-    test("parseDefault boolean 0") { MysqlTypeMapping.parseDefault("0", NeutralType.BooleanType) shouldBe DefaultValue.BooleanLiteral(false) }
-    test("parseDefault string") { MysqlTypeMapping.parseDefault("'hello'", NeutralType.Text()) shouldBe DefaultValue.StringLiteral("hello") }
+    test("parseDefault CURRENT_TIMESTAMP") {
+        MysqlTypeMapping.parseDefault(
+            "CURRENT_TIMESTAMP",
+            NeutralType.DateTime(),
+        ) shouldBe DefaultValue.FunctionCall("current_timestamp")
+    }
+    test("parseDefault boolean 1") {
+        MysqlTypeMapping.parseDefault(
+            "1",
+            NeutralType.BooleanType,
+        ) shouldBe DefaultValue.BooleanLiteral(true)
+    }
+    test("parseDefault boolean 0") {
+        MysqlTypeMapping.parseDefault(
+            "0",
+            NeutralType.BooleanType,
+        ) shouldBe DefaultValue.BooleanLiteral(false)
+    }
+    test("parseDefault string") {
+        MysqlTypeMapping.parseDefault(
+            "'hello'",
+            NeutralType.Text(),
+        ) shouldBe DefaultValue.StringLiteral("hello")
+    }
     test("parseDefault integer") { MysqlTypeMapping.parseDefault("42", NeutralType.Integer) shouldBe DefaultValue.NumberLiteral(42L) }
 
     // ── Param type mapping ──────────────────────

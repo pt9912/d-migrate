@@ -11,83 +11,76 @@ internal object CompareRendererPlain {
         appendLine("Schema Compare: ${doc.source} <-> ${doc.target}")
         appendLine()
 
-        if (doc.status == "invalid") {
-            appendLine("Status: INVALID")
-            val v = doc.validation
-            if (v != null) {
-                v.source?.let { renderValidation(this, it, "source") }
-                v.target?.let { renderValidation(this, it, "target") }
-            }
-            return@buildString
-        }
-
-        if (doc.status == "identical") {
-            appendLine("Status: IDENTICAL")
-            appendLine("No differences found.")
-            return@buildString
-        }
+        if (doc.status == "invalid") { renderInvalid(this, doc); return@buildString }
+        if (doc.status == "identical") { appendLine("Status: IDENTICAL"); appendLine("No differences found."); return@buildString }
 
         appendLine("Status: DIFFERENT")
         appendLine()
         renderSummary(this, doc.summary)
-
         val diff = doc.diff ?: return@buildString
-
-        val metadata = diff.schemaMetadata
-        if (metadata != null) {
-            appendLine()
-            appendLine("Schema Metadata:")
-            metadata.name?.let { appendLine("  name: ${it.before} -> ${it.after}") }
-            metadata.version?.let { appendLine("  version: ${it.before} -> ${it.after}") }
-        }
-
-        if (diff.customTypesAdded.isNotEmpty() || diff.customTypesRemoved.isNotEmpty() ||
-            diff.customTypesChanged.isNotEmpty()) {
-            appendLine()
-            appendLine("Custom Types:")
-            for (e in diff.customTypesAdded) appendLine("  + ${e.name} (${e.kind}): ${e.detail}")
-            for (e in diff.customTypesRemoved) appendLine("  - ${e.name} (${e.kind}): ${e.detail}")
-            for (e in diff.customTypesChanged) {
-                appendLine("  ~ ${e.name} (${e.kind}):")
-                for (ch in e.changes) appendLine("      $ch")
-            }
-        }
-
-        if (diff.tablesAdded.isNotEmpty() || diff.tablesRemoved.isNotEmpty() ||
-            diff.tablesChanged.isNotEmpty()) {
-            appendLine()
-            appendLine("Tables:")
-            for (t in diff.tablesAdded) appendLine("  + ${t.name} (${t.columnCount} columns)")
-            for (t in diff.tablesRemoved) appendLine("  - ${t.name} (${t.columnCount} columns)")
-            for (t in diff.tablesChanged) {
-                appendLine("  ~ ${t.name}:")
-                renderTableChange(this, t)
-            }
-        }
-
-        if (diff.viewsAdded.isNotEmpty() || diff.viewsRemoved.isNotEmpty() ||
-            diff.viewsChanged.isNotEmpty()) {
-            appendLine()
-            appendLine("Views:")
-            for (v in diff.viewsAdded) appendLine("  + ${v.name}${if (v.materialized) " (materialized)" else ""}")
-            for (v in diff.viewsRemoved) appendLine("  - ${v.name}${if (v.materialized) " (materialized)" else ""}")
-            for (v in diff.viewsChanged) {
-                appendLine("  ~ ${v.name}:")
-                v.materialized?.let { appendLine("      materialized: ${it.before} -> ${it.after}") }
-                v.refresh?.let { appendLine("      refresh: ${it.before} -> ${it.after}") }
-                if (v.queryChanged) appendLine("      query: changed")
-                v.sourceDialect?.let { appendLine("      source_dialect: ${it.before} -> ${it.after}") }
-            }
-        }
-
-        renderObjectList(this, "Sequences", diff.sequencesAdded, diff.sequencesRemoved, diff.sequencesChanged)
-        renderObjectList(this, "Functions", diff.functionsAdded, diff.functionsRemoved, diff.functionsChanged)
-        renderObjectList(this, "Procedures", diff.proceduresAdded, diff.proceduresRemoved, diff.proceduresChanged)
-        renderObjectList(this, "Triggers", diff.triggersAdded, diff.triggersRemoved, diff.triggersChanged)
-
+        renderDiffSections(this, diff)
         renderOperandInfo(this, doc.sourceOperand, "source")
         renderOperandInfo(this, doc.targetOperand, "target")
     }.trimEnd()
+
+    private fun renderInvalid(sb: StringBuilder, doc: SchemaCompareDocument) {
+        sb.appendLine("Status: INVALID")
+        val v = doc.validation ?: return
+        v.source?.let { renderValidation(sb, it, "source") }
+        v.target?.let { renderValidation(sb, it, "target") }
+    }
+
+    private fun renderDiffSections(sb: StringBuilder, diff: DiffView) {
+        renderMetadata(sb, diff.schemaMetadata)
+        renderCustomTypes(sb, diff)
+        renderTables(sb, diff)
+        renderViews(sb, diff)
+        renderObjectList(sb, "Sequences", diff.sequencesAdded, diff.sequencesRemoved, diff.sequencesChanged)
+        renderObjectList(sb, "Functions", diff.functionsAdded, diff.functionsRemoved, diff.functionsChanged)
+        renderObjectList(sb, "Procedures", diff.proceduresAdded, diff.proceduresRemoved, diff.proceduresChanged)
+        renderObjectList(sb, "Triggers", diff.triggersAdded, diff.triggersRemoved, diff.triggersChanged)
+    }
+
+    private fun renderMetadata(sb: StringBuilder, metadata: MetadataChangeView?) {
+        if (metadata == null) return
+        sb.appendLine()
+        sb.appendLine("Schema Metadata:")
+        metadata.name?.let { sb.appendLine("  name: ${it.before} -> ${it.after}") }
+        metadata.version?.let { sb.appendLine("  version: ${it.before} -> ${it.after}") }
+    }
+
+    private fun renderCustomTypes(sb: StringBuilder, diff: DiffView) {
+        if (diff.customTypesAdded.isEmpty() && diff.customTypesRemoved.isEmpty() && diff.customTypesChanged.isEmpty()) return
+        sb.appendLine(); sb.appendLine("Custom Types:")
+        for (e in diff.customTypesAdded) sb.appendLine("  + ${e.name} (${e.kind}): ${e.detail}")
+        for (e in diff.customTypesRemoved) sb.appendLine("  - ${e.name} (${e.kind}): ${e.detail}")
+        for (e in diff.customTypesChanged) {
+            sb.appendLine("  ~ ${e.name} (${e.kind}):")
+            for (ch in e.changes) sb.appendLine("      $ch")
+        }
+    }
+
+    private fun renderTables(sb: StringBuilder, diff: DiffView) {
+        if (diff.tablesAdded.isEmpty() && diff.tablesRemoved.isEmpty() && diff.tablesChanged.isEmpty()) return
+        sb.appendLine(); sb.appendLine("Tables:")
+        for (t in diff.tablesAdded) sb.appendLine("  + ${t.name} (${t.columnCount} columns)")
+        for (t in diff.tablesRemoved) sb.appendLine("  - ${t.name} (${t.columnCount} columns)")
+        for (t in diff.tablesChanged) { sb.appendLine("  ~ ${t.name}:"); renderTableChange(sb, t) }
+    }
+
+    private fun renderViews(sb: StringBuilder, diff: DiffView) {
+        if (diff.viewsAdded.isEmpty() && diff.viewsRemoved.isEmpty() && diff.viewsChanged.isEmpty()) return
+        sb.appendLine(); sb.appendLine("Views:")
+        for (v in diff.viewsAdded) sb.appendLine("  + ${v.name}${if (v.materialized) " (materialized)" else ""}")
+        for (v in diff.viewsRemoved) sb.appendLine("  - ${v.name}${if (v.materialized) " (materialized)" else ""}")
+        for (v in diff.viewsChanged) {
+            sb.appendLine("  ~ ${v.name}:")
+            v.materialized?.let { sb.appendLine("      materialized: ${it.before} -> ${it.after}") }
+            v.refresh?.let { sb.appendLine("      refresh: ${it.before} -> ${it.after}") }
+            if (v.queryChanged) sb.appendLine("      query: changed")
+            v.sourceDialect?.let { sb.appendLine("      source_dialect: ${it.before} -> ${it.after}") }
+        }
+    }
 
     private fun renderSummary(sb: StringBuilder, s: SchemaCompareSummary) {
         sb.appendLine("Summary: ${s.totalChanges} change(s)")

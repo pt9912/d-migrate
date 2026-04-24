@@ -1,0 +1,116 @@
+# d-migrate detekt configuration
+#
+# Builds upon detekt's default ruleset (buildUponDefaultConfig = true).
+# Only overrides and project-specific tuning listed below.
+#
+# Strategy: strict thresholds + per-module baselines for existing code.
+# New code must comply with these limits. Existing violations are tracked
+# in detekt-baseline.xml files per module and can be fixed incrementally.
+
+complexity:
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 25
+  LongMethod:
+    active: true
+    threshold: 100
+  LongParameterList:
+    active: true
+    functionThreshold: 8
+    constructorThreshold: 14
+    ignoreDefaultParameters: true
+    ignoreDataClasses: true
+  TooManyFunctions:
+    active: true
+    thresholdInFiles: 25
+    thresholdInClasses: 25
+    thresholdInInterfaces: 15
+    thresholdInObjects: 25
+    thresholdInEnums: 10
+  LargeClass:
+    active: true
+    threshold: 600
+  NestedBlockDepth:
+    active: true
+    threshold: 5
+  NamedArguments:
+    active: false
+
+style:
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: true
+    excludeRawStrings: true
+  ReturnCount:
+    active: true
+    max: 15
+    excludeGuardClauses: true
+    excludeLabeled: true
+    excludedFunctions:
+      - 'equals'
+  MagicNumber:
+    active: false
+  ForbiddenComment:
+    active: false
+  UnnecessaryAbstractClass:
+    active: false
+  WildcardImport:
+    active: true
+    excludeImports:
+      - 'dev.dmigrate.core.model.*'
+      - 'dev.dmigrate.core.diff.*'
+      - 'dev.dmigrate.driver.*'
+      - 'dev.dmigrate.driver.data.*'
+      - 'dev.dmigrate.driver.metadata.*'
+      - 'io.mockk.*'
+  LoopWithTooManyJumpStatements:
+    active: false
+  ThrowsCount:
+    active: true
+    max: 5
+  UnusedPrivateMember:
+    active: true
+    allowedNames: '(_|ignored|expected|serialVersionUID)'
+
+naming:
+  MatchingDeclarationName:
+    active: false
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][_A-Za-z0-9]*'
+    propertyPattern: '[A-Za-z][_A-Za-z0-9]*'
+    privatePropertyPattern: '[_a-zA-Z][A-Za-z0-9_]*'
+
+empty-blocks:
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: true
+    ignoredExceptionTypes:
+      - 'InterruptedException'
+      - 'MalformedURLException'
+      - 'NumberFormatException'
+      - 'ParseException'
+    allowedExceptionNameRegex: '(_|ignore|expected|cleanup)'
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - 'Error'
+      - 'Exception'
+      - 'Throwable'
+
+potential-bugs:
+  active: true
+
+performance:
+  active: true
+  SpreadOperator:
+    active: false

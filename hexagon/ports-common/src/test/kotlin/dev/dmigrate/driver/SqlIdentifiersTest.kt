@@ -12,6 +12,15 @@ import io.kotest.matchers.shouldBe
  */
 class SqlIdentifiersTest : FunSpec({
 
+    val edgeCases = listOf(
+        "embedded quote" to "a\"b",
+        "dotted name" to "tenant.users",
+        "semicolon" to "users; DROP TABLE users",
+        "keyword" to "select",
+        "unicode" to "tаble",
+        "empty" to "",
+    )
+
     // ── quoteIdentifier: PostgreSQL / SQLite (double-quote) ────────
 
     test("PostgreSQL: simple name is double-quoted") {
@@ -41,6 +50,15 @@ class SqlIdentifiersTest : FunSpec({
         SqlIdentifiers.quoteIdentifier("", DatabaseDialect.POSTGRESQL) shouldBe "\"\""
     }
 
+    test("PostgreSQL: identifier contract covers edge-case names") {
+        edgeCases.forEach { (_, name) ->
+            val quoted = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
+            quoted.first() shouldBe '"'
+            quoted.last() shouldBe '"'
+            quoted.substring(1, quoted.length - 1).replace("\"\"", "").contains("\"") shouldBe false
+        }
+    }
+
     // ── quoteIdentifier: MySQL (backtick) ──────────────────────────
 
     test("MySQL: simple name is backtick-quoted") {
@@ -61,10 +79,30 @@ class SqlIdentifiersTest : FunSpec({
         SqlIdentifiers.quoteIdentifier("select", DatabaseDialect.MYSQL) shouldBe "`select`"
     }
 
+    test("MySQL: identifier contract covers edge-case names") {
+        val mysqlCases = edgeCases + ("embedded backtick" to "a`b")
+
+        mysqlCases.forEach { (_, name) ->
+            val quoted = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.MYSQL)
+            quoted.first() shouldBe '`'
+            quoted.last() shouldBe '`'
+            quoted.substring(1, quoted.length - 1).replace("``", "").contains("`") shouldBe false
+        }
+    }
+
     // ── quoteIdentifier: SQLite (same as PostgreSQL) ───────────────
 
     test("SQLite: embedded double-quote is escaped") {
         SqlIdentifiers.quoteIdentifier("""x"y""", DatabaseDialect.SQLITE) shouldBe "\"x\"\"y\""
+    }
+
+    test("SQLite: identifier contract covers edge-case names") {
+        edgeCases.forEach { (_, name) ->
+            val quoted = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.SQLITE)
+            quoted.first() shouldBe '"'
+            quoted.last() shouldBe '"'
+            quoted.substring(1, quoted.length - 1).replace("\"\"", "").contains("\"") shouldBe false
+        }
     }
 
     // ── quoteQualifiedIdentifier ───────────────────────────────────

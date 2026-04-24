@@ -12,8 +12,20 @@ class PostgresTypeMappingTest : FunSpec({
     fun map(dataType: String, udtName: String = dataType, isPk: Boolean = false,
             isIdentity: Boolean = false, colDefault: String? = null,
             charMaxLen: Int? = null, numP: Int? = null, numS: Int? = null) =
-        PostgresTypeMapping.mapColumn(dataType, udtName, isPk, isIdentity, colDefault,
-            charMaxLen, numP, numS, "t", "c")
+        PostgresTypeMapping.mapColumn(
+            PostgresTypeMapping.ColumnInput(
+                dataType = dataType,
+                udtName = udtName,
+                isPkCol = isPk,
+                isIdentity = isIdentity,
+                colDefault = colDefault,
+                charMaxLen = charMaxLen,
+                numPrecision = numP,
+                numScale = numS,
+                tableName = "t",
+                colName = "c",
+            )
+        )
 
     // ── Basic types ─────────────────────────────
 
@@ -121,9 +133,15 @@ class PostgresTypeMappingTest : FunSpec({
     test("parseDefault nextval → null") { PostgresTypeMapping.parseDefault("nextval('seq')").shouldBeNull() }
     test("parseDefault true") { PostgresTypeMapping.parseDefault("true") shouldBe DefaultValue.BooleanLiteral(true) }
     test("parseDefault false") { PostgresTypeMapping.parseDefault("false") shouldBe DefaultValue.BooleanLiteral(false) }
-    test("parseDefault CURRENT_TIMESTAMP") { PostgresTypeMapping.parseDefault("CURRENT_TIMESTAMP") shouldBe DefaultValue.FunctionCall("current_timestamp") }
+    test("parseDefault CURRENT_TIMESTAMP") {
+        PostgresTypeMapping.parseDefault("CURRENT_TIMESTAMP") shouldBe
+            DefaultValue.FunctionCall("current_timestamp")
+    }
     test("parseDefault now()") { PostgresTypeMapping.parseDefault("now()") shouldBe DefaultValue.FunctionCall("current_timestamp") }
-    test("parseDefault gen_random_uuid()") { PostgresTypeMapping.parseDefault("gen_random_uuid()") shouldBe DefaultValue.FunctionCall("gen_uuid") }
+    test("parseDefault gen_random_uuid()") {
+        PostgresTypeMapping.parseDefault("gen_random_uuid()") shouldBe
+            DefaultValue.FunctionCall("gen_uuid")
+    }
     test("parseDefault string literal") { PostgresTypeMapping.parseDefault("'hello'") shouldBe DefaultValue.StringLiteral("hello") }
     test("parseDefault integer") { PostgresTypeMapping.parseDefault("42") shouldBe DefaultValue.NumberLiteral(42L) }
     test("parseDefault cast") { PostgresTypeMapping.parseDefault("'pending'::order_status") shouldBe DefaultValue.StringLiteral("pending") }
@@ -133,7 +151,10 @@ class PostgresTypeMappingTest : FunSpec({
     test("decimal maps same as numeric") { map("decimal", numP = 8, numS = 4).type shouldBe NeutralType.Decimal(8, 4) }
     test("time with time zone") { map("time with time zone").type shouldBe NeutralType.Time }
     test("char default length 1") { map("character").type shouldBe NeutralType.Char(length = 1) }
-    test("user-defined enum column") { map("user-defined", udtName = "status_type").type shouldBe NeutralType.Enum(refType = "status_type") }
+    test("user-defined enum column") {
+        map("user-defined", udtName = "status_type").type shouldBe
+            NeutralType.Enum(refType = "status_type")
+    }
     test("smallint serial PK → Identifier") {
         map("smallint", udtName = "int2", isPk = true, colDefault = "nextval('t_id_seq')").type shouldBe
             NeutralType.Identifier(autoIncrement = true)
@@ -149,8 +170,14 @@ class PostgresTypeMappingTest : FunSpec({
     test("parseDefault double") { PostgresTypeMapping.parseDefault("3.14") shouldBe DefaultValue.NumberLiteral(3.14) }
     test("parseDefault cast number") { PostgresTypeMapping.parseDefault("0::integer") shouldBe DefaultValue.NumberLiteral(0L) }
     test("parseDefault cast double") { PostgresTypeMapping.parseDefault("1.5::numeric") shouldBe DefaultValue.NumberLiteral(1.5) }
-    test("parseDefault cast string literal") { PostgresTypeMapping.parseDefault("'active'::varchar") shouldBe DefaultValue.StringLiteral("active") }
-    test("parseDefault cast function") { PostgresTypeMapping.parseDefault("clock_timestamp()::timestamptz") shouldBe DefaultValue.FunctionCall("clock_timestamp()::timestamptz") }
+    test("parseDefault cast string literal") {
+        PostgresTypeMapping.parseDefault("'active'::varchar") shouldBe
+            DefaultValue.StringLiteral("active")
+    }
+    test("parseDefault cast function") {
+        PostgresTypeMapping.parseDefault("clock_timestamp()::timestamptz") shouldBe
+            DefaultValue.FunctionCall("clock_timestamp()::timestamptz")
+    }
     test("parseDefault plain string") { PostgresTypeMapping.parseDefault("'hello'") shouldBe DefaultValue.StringLiteral("hello") }
     test("parseDefault unknown expression") { PostgresTypeMapping.parseDefault("random()") shouldBe DefaultValue.FunctionCall("random()") }
 
@@ -179,7 +206,10 @@ class PostgresTypeMappingTest : FunSpec({
     test("composite text") { PostgresTypeMapping.mapCompositeFieldType("text") shouldBe NeutralType.Text() }
     test("composite boolean") { PostgresTypeMapping.mapCompositeFieldType("boolean") shouldBe NeutralType.BooleanType }
     test("composite bool") { PostgresTypeMapping.mapCompositeFieldType("bool") shouldBe NeutralType.BooleanType }
-    test("composite varchar(100)") { PostgresTypeMapping.mapCompositeFieldType("character varying(100)") shouldBe NeutralType.Text(maxLength = 100) }
+    test("composite varchar(100)") {
+        PostgresTypeMapping.mapCompositeFieldType("character varying(100)") shouldBe
+            NeutralType.Text(maxLength = 100)
+    }
     test("composite varchar no length") { PostgresTypeMapping.mapCompositeFieldType("varchar") shouldBe NeutralType.Text(maxLength = null) }
     test("composite numeric(10,2)") { PostgresTypeMapping.mapCompositeFieldType("numeric(10,2)") shouldBe NeutralType.Decimal(10, 2) }
     test("composite numeric no precision") { PostgresTypeMapping.mapCompositeFieldType("numeric") shouldBe NeutralType.Float() }
@@ -190,8 +220,14 @@ class PostgresTypeMappingTest : FunSpec({
     test("composite date") { PostgresTypeMapping.mapCompositeFieldType("date") shouldBe NeutralType.Date }
     test("composite time") { PostgresTypeMapping.mapCompositeFieldType("time") shouldBe NeutralType.Time }
     test("composite time with tz") { PostgresTypeMapping.mapCompositeFieldType("time with time zone") shouldBe NeutralType.Time }
-    test("composite timestamp") { PostgresTypeMapping.mapCompositeFieldType("timestamp without time zone") shouldBe NeutralType.DateTime(timezone = false) }
-    test("composite timestamptz") { PostgresTypeMapping.mapCompositeFieldType("timestamp with time zone") shouldBe NeutralType.DateTime(timezone = true) }
+    test("composite timestamp") {
+        PostgresTypeMapping.mapCompositeFieldType("timestamp without time zone") shouldBe
+            NeutralType.DateTime(timezone = false)
+    }
+    test("composite timestamptz") {
+        PostgresTypeMapping.mapCompositeFieldType("timestamp with time zone") shouldBe
+            NeutralType.DateTime(timezone = true)
+    }
     test("composite unknown") { PostgresTypeMapping.mapCompositeFieldType("hstore") shouldBe NeutralType.Text() }
 
     // ── Param type mapping ──────────────────────

@@ -212,20 +212,11 @@ class NamedConnectionResolver(
         val root = parsed as? Map<String, Any?>
             ?: throw ConfigResolveException("Failed to parse $configPath: top-level YAML must be a mapping")
 
-        val database = root["database"] as? Map<String, Any?>
-            ?: throw ConfigResolveException(
-                "Connection name '$name' is not defined in $configPath under database.connections."
-            )
-
-        val connections = database["connections"] as? Map<String, Any?>
-            ?: throw ConfigResolveException(
-                "Connection name '$name' is not defined in $configPath under database.connections."
-            )
-
-        val raw = connections[name]
-            ?: throw ConfigResolveException(
-                "Connection name '$name' is not defined in $configPath under database.connections."
-            )
+        val notDefinedMsg = "Connection name '$name' is not defined in $configPath under database.connections."
+        val raw = (root["database"] as? Map<String, Any?>)
+            ?.let { it["connections"] as? Map<String, Any?> }
+            ?.get(name)
+            ?: throw ConfigResolveException(notDefinedMsg)
 
         return when (raw) {
             is String -> raw

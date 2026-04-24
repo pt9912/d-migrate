@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.TargetColumn
@@ -12,6 +13,7 @@ import dev.dmigrate.streaming.PipelineConfig
 import dev.dmigrate.streaming.ProgressReporter
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
+import java.nio.charset.Charset
 import java.nio.file.Path
 
 // ─── Public exception types ────────────────────────────────────────
@@ -91,6 +93,33 @@ internal data class ImportPreparedOptions(
     val pipelineConfig: PipelineConfig,
     val onTableOpened: (String, List<TargetColumn>) -> Unit,
 )
+
+/** Prepared execution state for the streaming phase of an import run. */
+internal data class ImportExecutionPlan(
+    val options: ImportPreparedOptions,
+    val checkpointStore: CheckpointStore?,
+    val resumeContext: ImportResumeContext,
+    val callbacks: ImportCallbacks,
+)
+
+internal sealed class ImportExecutionPlanResult {
+    data class Ok(val value: ImportExecutionPlan) : ImportExecutionPlanResult()
+    data class Exit(val code: Int) : ImportExecutionPlanResult()
+}
+
+/** Resolved preflight state required before a DB connection is opened. */
+internal data class ImportPreflightContext(
+    val format: DataExportFormat,
+    val preparedImport: SchemaPreflightResult,
+    val charset: Charset?,
+    val resolvedUrl: String,
+    val connectionConfig: ConnectionConfig,
+)
+
+internal sealed class ImportPreflightResolution {
+    data class Ok(val value: ImportPreflightContext) : ImportPreflightResolution()
+    data class Exit(val code: Int) : ImportPreflightResolution()
+}
 
 /** Result of scanning the input directory/file and computing the fingerprint. */
 internal data class InputContext(

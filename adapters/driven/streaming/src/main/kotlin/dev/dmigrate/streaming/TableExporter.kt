@@ -13,21 +13,36 @@ import dev.dmigrate.format.data.DataChunkWriter
  * Extracted from [StreamingExporter] to allow independent testing of
  * per-table export logic without output routing concerns.
  */
+internal data class TableExportParams(
+    val pool: ConnectionPool,
+    val table: String,
+    val filter: dev.dmigrate.core.data.DataFilter?,
+    val config: PipelineConfig,
+    val writer: DataChunkWriter,
+    val counting: CountingOutputStream,
+    val reporter: ProgressReporter,
+    val ordinal: Int,
+    val tableCount: Int,
+    val resumeMarker: ResumeMarker?,
+    val onChunkProcessed: (TableChunkProgress) -> Unit,
+    val warningSink: (String) -> Unit,
+)
+
 internal class TableExporter(private val reader: DataReader) {
 
-    fun export(
-        pool: ConnectionPool,
-        table: String,
-        filter: dev.dmigrate.core.data.DataFilter?,
-        config: PipelineConfig,
-        writer: DataChunkWriter,
-        counting: CountingOutputStream,
-        reporter: ProgressReporter,
-        ordinal: Int,
-        tableCount: Int,
-        resumeMarker: ResumeMarker?,
-        onChunkProcessed: (TableChunkProgress) -> Unit,
-    ): TableExportSummary {
+    private data class ChunkProgressContext(
+        val table: String,
+        val onChunkProcessed: (TableChunkProgress) -> Unit,
+        val warningSink: (String) -> Unit,
+        var warningEmitted: Boolean = false,
+    )
+
+    fun export(params: TableExportParams): TableExportSummary {
+        val pool = params.pool; val table = params.table; val filter = params.filter
+        val config = params.config; val writer = params.writer; val counting = params.counting
+        val reporter = params.reporter; val ordinal = params.ordinal; val tableCount = params.tableCount
+        val resumeMarker = params.resumeMarker; val onChunkProcessed = params.onChunkProcessed
+        val chunkProgress = ChunkProgressContext(table, onChunkProcessed, params.warningSink)
         reporter.report(ProgressEvent.ExportTableStarted(table, ordinal, tableCount))
 
         val tableStart = System.nanoTime()
@@ -50,15 +65,9 @@ internal class TableExporter(private val reader: DataReader) {
                     if (!beginCalled) {
                         writer.begin(table, chunk.columns)
                         beginCalled = true
-                        if (resumeMarker != null) {
-                            markerIdx = chunk.columns.indexOfFirst {
-                                it.name.equals(resumeMarker.markerColumn, ignoreCase = true)
-                            }
-                            tieIdxs = IntArray(resumeMarker.tieBreakerColumns.size) { i ->
-                                val col = resumeMarker.tieBreakerColumns[i]
-                                chunk.columns.indexOfFirst { it.name.equals(col, ignoreCase = true) }
-                            }
-                        }
+                        val indices = resolveMarkerIndices(resumeMarker, chunk.columns)
+                        markerIdx = indices.first
+                        tieIdxs = indices.second
                     }
                     writer.write(chunk)
                     rows += chunk.rows.size.toLong()
@@ -68,32 +77,10 @@ internal class TableExporter(private val reader: DataReader) {
                         chunkIndex = chunks.toInt(), rowsInChunk = chunk.rows.size.toLong(),
                         rowsProcessed = rows, bytesWritten = counting.count - bytesBefore,
                     ))
-                    if (resumeMarker != null && chunk.rows.isNotEmpty()) {
-                        val lastRow = chunk.rows.last()
-                        val markerValue = if (markerIdx >= 0) lastRow[markerIdx] else null
-                        val tieValues: List<Any?> = if (tieIdxs.isEmpty()) {
-                            emptyList()
-                        } else {
-                            tieIdxs.map { i -> if (i >= 0) lastRow[i] else null }
-                        }
-                        runCatching {
-                            onChunkProcessed(
-                                TableChunkProgress(
-                                    table = table,
-                                    rowsProcessed = rows,
-                                    chunksProcessed = chunks,
-                                    position = ResumeMarker.Position(
-                                        lastMarkerValue = markerValue,
-                                        lastTieBreakerValues = tieValues,
-                                    ),
-                                )
-                            )
-                        }
-                    }
+                    emitChunkProgress(resumeMarker, chunk, markerIdx, tieIdxs, chunkProgress, rows, chunks)
                 }
                 if (!beginCalled) {
-                    error = "Reader returned no chunks for table '$table' " +
-                        "(violates Plan §6.17 — empty tables must still emit one chunk)"
+                    error = "Reader returned no chunks for table '$table'; empty tables must still emit one chunk."
                 } else {
                     writer.end()
                 }
@@ -122,5 +109,55 @@ internal class TableExporter(private val reader: DataReader) {
             durationMs = durationMs,
             error = error,
         )
+    }
+
+    private fun resolveMarkerIndices(
+        resumeMarker: ResumeMarker?,
+        columns: List<dev.dmigrate.core.data.ColumnDescriptor>,
+    ): Pair<Int, IntArray> {
+        if (resumeMarker == null) return -1 to IntArray(0)
+        val markerIdx = columns.indexOfFirst { it.name.equals(resumeMarker.markerColumn, ignoreCase = true) }
+        val tieIdxs = IntArray(resumeMarker.tieBreakerColumns.size) { i ->
+            val col = resumeMarker.tieBreakerColumns[i]
+            columns.indexOfFirst { it.name.equals(col, ignoreCase = true) }
+        }
+        return markerIdx to tieIdxs
+    }
+
+    private fun emitChunkProgress(
+        resumeMarker: ResumeMarker?,
+        chunk: dev.dmigrate.core.data.DataChunk,
+        markerIdx: Int,
+        tieIdxs: IntArray,
+        chunkProgress: ChunkProgressContext,
+        rows: Long,
+        chunks: Long,
+    ) {
+        if (resumeMarker == null || chunk.rows.isEmpty()) return
+        val lastRow = chunk.rows.last()
+        val markerValue = if (markerIdx >= 0) lastRow[markerIdx] else null
+        val tieValues: List<Any?> = if (tieIdxs.isEmpty()) emptyList()
+        else tieIdxs.map { i -> if (i >= 0) lastRow[i] else null }
+        runCatching {
+            chunkProgress.onChunkProcessed(
+                TableChunkProgress(
+                    table = chunkProgress.table,
+                    rowsProcessed = rows,
+                    chunksProcessed = chunks,
+                    position = ResumeMarker.Position(
+                        lastMarkerValue = markerValue,
+                        lastTieBreakerValues = tieValues,
+                    ),
+                )
+            )
+        }.onFailure { error ->
+            if (!chunkProgress.warningEmitted) {
+                chunkProgress.warningEmitted = true
+                chunkProgress.warningSink(
+                    "Warning: Failed to persist chunk progress for table '${chunkProgress.table}': " +
+                        "${error.message ?: error::class.simpleName}"
+                )
+            }
+        }
     }
 }

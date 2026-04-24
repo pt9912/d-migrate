@@ -42,6 +42,7 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             database = "dmigrate_test",
             user = "dmigrate",
             password = "dmigrate",
+            params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val pool = HikariConnectionPoolFactory.create(config)
         pool.borrow().use { conn ->
@@ -114,6 +115,7 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
             database = "dmigrate_test",
             user = "dmigrate",
             password = "dmigrate",
+            params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
     )
 

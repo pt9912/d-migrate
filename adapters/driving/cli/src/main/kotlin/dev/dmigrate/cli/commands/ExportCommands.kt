@@ -49,26 +49,28 @@ private fun CliktCommand.resolveCliContext(): CliContext {
     return root?.cliContext() ?: CliContext()
 }
 
-private fun CliktCommand.executeExport(
-    tool: MigrationTool,
-    source: Path,
-    output: Path,
-    target: String,
-    version: String?,
-    spatialProfile: String?,
-    generateRollback: Boolean,
-    report: Path?,
-) {
+private data class ExportParams(
+    val tool: MigrationTool,
+    val source: Path,
+    val output: Path,
+    val target: String,
+    val version: String?,
+    val spatialProfile: String?,
+    val generateRollback: Boolean,
+    val report: Path?,
+)
+
+private fun CliktCommand.executeExport(params: ExportParams) {
     val ctx = resolveCliContext()
     val request = ToolExportRequest(
-        tool = tool,
-        source = source,
-        output = output,
-        target = target,
-        version = version,
-        spatialProfile = spatialProfile,
-        generateRollback = generateRollback,
-        report = report,
+        tool = params.tool,
+        source = params.source,
+        output = params.output,
+        target = params.target,
+        version = params.version,
+        spatialProfile = params.spatialProfile,
+        generateRollback = params.generateRollback,
+        report = params.report,
         verbose = ctx.verbose,
         quiet = ctx.quiet,
     )
@@ -121,8 +123,8 @@ class ExportFlywayCommand : CliktCommand(name = "flyway") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(
-        MigrationTool.FLYWAY, source, output, target, version, spatialProfile, generateRollback, report)
+    override fun run() = executeExport(ExportParams(
+        MigrationTool.FLYWAY, source, output, target, version, spatialProfile, generateRollback, report))
 }
 
 // ── Liquibase ───────────────────────────────────────────────────
@@ -144,8 +146,8 @@ class ExportLiquibaseCommand : CliktCommand(name = "liquibase") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(
-        MigrationTool.LIQUIBASE, source, output, target, version, spatialProfile, generateRollback, report)
+    override fun run() = executeExport(ExportParams(
+        MigrationTool.LIQUIBASE, source, output, target, version, spatialProfile, generateRollback, report))
 }
 
 // ── Django ───────────────────────────────────────────────────────
@@ -168,8 +170,8 @@ class ExportDjangoCommand : CliktCommand(name = "django") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(
-        MigrationTool.DJANGO, source, output, target, version, spatialProfile, generateRollback, report)
+    override fun run() = executeExport(ExportParams(
+        MigrationTool.DJANGO, source, output, target, version, spatialProfile, generateRollback, report))
 }
 
 // ── Knex ─────────────────────────────────────────────────────────
@@ -192,6 +194,6 @@ class ExportKnexCommand : CliktCommand(name = "knex") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(
-        MigrationTool.KNEX, source, output, target, version, spatialProfile, generateRollback, report)
+    override fun run() = executeExport(ExportParams(
+        MigrationTool.KNEX, source, output, target, version, spatialProfile, generateRollback, report))
 }

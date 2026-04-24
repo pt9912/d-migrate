@@ -3,7 +3,6 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.driver.data.SchemaSync
 import dev.dmigrate.driver.data.SequenceAdjustment
-import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
 import java.sql.Connection
@@ -61,24 +60,6 @@ class MysqlSchemaSync(
                 sequenceName = null,
                 newValue = nextValue,
             )
-        )
-    }
-
-    override fun disableTriggers(conn: Connection, table: String) {
-        throw UnsupportedTriggerModeException(
-            "triggerMode=disable is not supported for MySQL in 0.4.0"
-        )
-    }
-
-    override fun assertNoUserTriggers(conn: Connection, table: String) {
-        throw UnsupportedTriggerModeException(
-            "triggerMode=strict is not supported for MySQL in 0.4.0"
-        )
-    }
-
-    override fun enableTriggers(conn: Connection, table: String) {
-        throw UnsupportedTriggerModeException(
-            "triggerMode=disable is not supported for MySQL in 0.4.0"
         )
     }
 

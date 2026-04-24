@@ -17,4 +17,3 @@ SELECT * FROM computed_view;
 
 -- [E053] Trigger 'trg_audit' was written for 'postgresql' and must be manually rewritten for SQLite.
 -- Hint: Rewrite the trigger body using SQLite-compatible syntax with BEGIN...END;.
--- TODO: Rewrite trigger "trg_audit" for SQLite (source dialect: postgresql)

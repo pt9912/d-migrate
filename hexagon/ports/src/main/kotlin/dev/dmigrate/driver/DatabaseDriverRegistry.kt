@@ -20,6 +20,17 @@ object DatabaseDriverRegistry {
         drivers[driver.dialect] = driver
     }
 
+    /**
+     * Discovers and registers all [DatabaseDriver] implementations
+     * available on the classpath via [java.util.ServiceLoader].
+     */
+    @Synchronized
+    fun loadAll() {
+        for (driver in java.util.ServiceLoader.load(DatabaseDriver::class.java)) {
+            drivers[driver.dialect] = driver
+        }
+    }
+
     @Synchronized
     fun get(dialect: DatabaseDialect): DatabaseDriver =
         drivers[dialect]

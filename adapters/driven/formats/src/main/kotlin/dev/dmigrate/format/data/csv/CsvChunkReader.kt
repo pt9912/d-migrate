@@ -232,7 +232,7 @@ class CsvChunkReader(
         var inQuotes = false
         var index = 0
         while (index < parsedContent.length) {
-            when (val ch = parsedContent[index]) {
+            when (parsedContent[index]) {
                 quote -> {
                     if (inQuotes && index + 1 < parsedContent.length && parsedContent[index + 1] == quote) {
                         index++

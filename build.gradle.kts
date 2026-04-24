@@ -1,6 +1,11 @@
+import io.gitlab.arturbosch.detekt.Detekt
+import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     kotlin("jvm") version "2.1.20" apply false
     id("org.jetbrains.kotlinx.kover") version "0.9.8"
+    id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
 fun normalizedReleaseVersion(raw: String?): String? {
@@ -11,7 +16,7 @@ fun normalizedReleaseVersion(raw: String?): String? {
     return normalized.takeIf { semverLike.matches(it) }
 }
 
-val defaultProjectVersion = "0.9.4"
+val defaultProjectVersion = "0.9.5"
 val resolvedProjectVersion =
     normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
@@ -29,9 +34,34 @@ allprojects {
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "org.jetbrains.kotlinx.kover")
+    apply(plugin = "io.gitlab.arturbosch.detekt")
 
     configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)
+    }
+
+    configure<DetektExtension> {
+        buildUponDefaultConfig = true
+        allRules = false
+        parallel = true
+        ignoreFailures = false
+        config.setFrom(rootProject.file("config/detekt/detekt.yml"))
+        baseline = project.file("detekt-baseline.xml")
+    }
+
+    tasks.withType<Detekt>().configureEach {
+        jvmTarget = "21"
+        reports {
+            html.required.set(true)
+            xml.required.set(true)
+            sarif.required.set(true)
+            txt.required.set(false)
+            md.required.set(false)
+        }
+    }
+
+    tasks.named("check") {
+        dependsOn("detekt")
     }
 
     dependencies {
@@ -63,8 +93,12 @@ subprojects {
         // `-Dkotest.tags=perf` (oder ein anderes explizites Tag-Filter) gesetzt
         // wird. Ein explizit gesetzter `kotest.tags`-Wert gewinnt immer gegen
         // den Default hier.
-        if (explicitKotestTags == null && !project.hasProperty("integrationTests")) {
-            systemProperty("kotest.tags", "!integration & !perf")
+        if (explicitKotestTags == null) {
+            if (project.hasProperty("integrationTests")) {
+                systemProperty("kotest.tags", "!perf")
+            } else {
+                systemProperty("kotest.tags", "!integration & !perf")
+            }
         }
 
         // Forked Test-JVM Heap: Default ~512 MB reicht fuer die schnellen
@@ -81,6 +115,10 @@ subprojects {
         // Restoring test outputs from the build cache can leave coverage
         // verification with stale or incomplete counters on CI.
         outputs.cacheIf { false }
+    }
+
+    tasks.withType<Test>().configureEach {
+        dependsOn("detekt")
     }
 
     // Ensure kover verification and artifact tasks always run after test

@@ -20,15 +20,7 @@ import java.nio.charset.Charset
 import java.nio.file.Path
 import java.time.Instant
 
-/**
- * Immutable DTO with all CLI inputs for `d-migrate data export`.
- */
-/**
- * Parsed filter representation produced by [FilterDslParser].
- * Carried by [DataExportRequest] and [DataTransferRequest] instead of
- * a raw filter string, so the request layer never transports unparsed
- * user input.
- */
+/** Parsed filter representation produced by [FilterDslParser]. */
 data class ParsedFilter(
     val expr: FilterExpr,
     val canonical: String,
@@ -101,43 +93,41 @@ class DataExportRunner(
     private val primaryKeyLookup: (ConnectionPool, DatabaseDialect, String) -> List<String> =
         { _, _, _ -> emptyList() },
 ) {
+    private val userFacingErrors = UserFacingErrors()
+    private val userFacingStderr = userFacingErrors.stderrSink(stderr)
 
-    private val resumeCoordinator = ExportResumeCoordinator(primaryKeyLookup, stderr)
+    private val resumeCoordinator = ExportResumeCoordinator(primaryKeyLookup, userFacingStderr)
 
-    private val preflight = ExportPreflightValidator(readerLookup, listerLookup, writerFactoryBuilder, stderr)
+    private val preflight = ExportPreflightValidator(readerLookup, listerLookup, writerFactoryBuilder, userFacingStderr)
 
     private val checkpointManager = ExportCheckpointManager(
-        checkpointStoreFactory, checkpointConfigResolver, resumeCoordinator, clock, progressReporter, stderr,
+        checkpointStoreFactory, checkpointConfigResolver, resumeCoordinator, clock, progressReporter, userFacingStderr,
     )
 
     fun execute(request: DataExportRequest): Int {
-        // ─── 1. Source auflösen → vollständige Connection-URL ───
-        val resolvedUrl = try {
-            sourceResolver(request.source, request.cliConfigPath)
-        } catch (e: Exception) {
-            stderr("Error: ${e.message}")
-            return 7
-        }
+        validateRequest(request)?.let { return it }
+        val connectionConfig = resolveConnection(request) ?: return 7
+        val charset = resolveCharset(request) ?: return 2
+        val pool = connect(connectionConfig) ?: return 4
 
-        // ─── 2. URL → ConnectionConfig ──────────────────────────
-        val connectionConfig = try {
-            urlParser(resolvedUrl)
-        } catch (e: IllegalArgumentException) {
-            stderr("Error: ${e.message}")
-            return 7
+        return try {
+            executeWithPool(request, connectionConfig, charset, pool)
+        } finally {
+            runCatching { pool.close() }
         }
+    }
 
-        // ─── 2b. Incremental-export CLI-Preflight (LF-013 / M-R5) ──
+    private fun validateRequest(request: DataExportRequest): Int? {
         val hasSinceColumn = !request.sinceColumn.isNullOrBlank()
         val hasSinceValue = !request.since.isNullOrBlank()
         if (hasSinceColumn != hasSinceValue) {
-            stderr("Error: --since-column and --since must be used together.")
+            userFacingStderr("Error: --since-column and --since must be used together.")
             return 2
         }
         if (hasSinceColumn) {
             val invalidSinceColumn = DataExportHelpers.firstInvalidQualifiedIdentifier(request.sinceColumn!!)
             if (invalidSinceColumn != null) {
-                stderr(
+                userFacingStderr(
                     "Error: --since-column value '$invalidSinceColumn' is not a valid identifier. " +
                         "Expected '<name>' or '<schema>.<name>' matching " +
                         DataExportHelpers.TABLE_IDENTIFIER_PATTERN + "."
@@ -145,40 +135,47 @@ class DataExportRunner(
                 return 2
             }
         }
-        // No --filter DSL validation needed here: the filter is already
-        // parsed into ParsedFilter by the CLI layer before constructing
-        // DataExportRequest.
-
-        // Resume CLI preflight: stdout export cannot be resumed (stream
-        // is not re-openable).
         if (!request.resume.isNullOrBlank() && request.output == null) {
-            stderr(
+            userFacingStderr(
                 "Error: --resume is not supported for stdout export; " +
                     "set --output <file-or-dir> or drop --resume."
             )
             return 2
         }
+        return null
+    }
 
-        // ─── 3. Encoding parsen ─────────────────────────────────
-        val charset = try {
-            Charset.forName(request.encoding)
+    private fun resolveConnection(request: DataExportRequest): ConnectionConfig? {
+        val resolvedUrl = try {
+            sourceResolver(request.source, request.cliConfigPath)
         } catch (e: Exception) {
-            stderr("Error: Unknown encoding '${request.encoding}': ${e.message}")
-            return 2
-        }
-
-        // ─── 4. Pool öffnen ─────────────────────────────────────
-        val pool: ConnectionPool = try {
-            poolFactory(connectionConfig)
-        } catch (e: Throwable) {
-            stderr("Error: Failed to connect to database: ${e.message}")
-            return 4
+            userFacingStderr("Error: ${e.message}")
+            return null
         }
 
         return try {
-            executeWithPool(request, connectionConfig, charset, pool)
-        } finally {
-            try { pool.close() } catch (_: Throwable) {}
+            urlParser(resolvedUrl)
+        } catch (e: IllegalArgumentException) {
+            userFacingStderr("Error: ${e.message}")
+            null
+        }
+    }
+
+    private fun resolveCharset(request: DataExportRequest): Charset? {
+        return try {
+            Charset.forName(request.encoding)
+        } catch (e: Exception) {
+            userFacingStderr("Error: Unknown encoding '${request.encoding}': ${e.message}")
+            null
+        }
+    }
+
+    private fun connect(connectionConfig: ConnectionConfig): ConnectionPool? {
+        return try {
+            poolFactory(connectionConfig)
+        } catch (e: Throwable) {
+            userFacingStderr("Error: Failed to connect to database: ${e.message}")
+            null
         }
     }
 
@@ -194,10 +191,10 @@ class DataExportRunner(
             is TablesResult.Exit -> return t.code
         }
         val output = preflight.resolveOutput(request, effectiveTables) ?: return 2
-        val ctx = when (val p = preflight.buildExportContext(
+        val ctx = when (val p = preflight.buildExportContext(ExportPreflightValidator.ExportContextInput(
             request, connectionConfig, charset, pool, effectiveTables, output, infra,
             resumeCoordinator::resolvePrimaryKeys,
-        )) {
+        ))) {
             is PreparedResult.Ok -> p.value
             is PreparedResult.Exit -> return p.code
         }
@@ -211,16 +208,21 @@ class DataExportRunner(
         if (initExit != null) return initExit
         val callbacks = checkpointManager.buildCallbacks(request, resumeCtx, checkpoint.store, ctx.fingerprint, effectiveTables, markers)
         val staging = checkpointManager.setupStaging(output, checkpoint, resumeCtx.operationId)
-        val result = executeStreaming(request, pool, ctx, output, staging, resumeCtx, markers, callbacks)
+        val result = executeStreaming(StreamingParams(request, pool, ctx, output, staging, resumeCtx, markers, callbacks))
             ?: return 5
         return finalizeAndReport(request, result, staging, checkpoint.store, resumeCtx.operationId)
     }
 
-    private fun executeStreaming(
-        request: DataExportRequest, pool: ConnectionPool, ctx: ExportPreparedContext,
-        output: ExportOutput, staging: StagingRedirect?, resume: ExportResumeContext,
-        markers: Map<String, ResumeMarker>, callbacks: ExportCallbacks,
-    ): ExportResult? {
+    private data class StreamingParams(
+        val request: DataExportRequest, val pool: ConnectionPool, val ctx: ExportPreparedContext,
+        val output: ExportOutput, val staging: StagingRedirect?, val resume: ExportResumeContext,
+        val markers: Map<String, ResumeMarker>, val callbacks: ExportCallbacks,
+    )
+
+    private fun executeStreaming(params: StreamingParams): ExportResult? {
+        val request = params.request; val pool = params.pool; val ctx = params.ctx
+        val output = params.output; val staging = params.staging; val resume = params.resume
+        val markers = params.markers; val callbacks = params.callbacks
         val executorOutput = staging?.let { ExportOutput.SingleFile(it.staging) } ?: output
         val executorMarkers = if (output is ExportOutput.SingleFile) {
             markers.mapValues { (_, m) -> m.copy(position = null) }
@@ -238,7 +240,7 @@ class DataExportRunner(
             )
             raw.copy(operationId = resume.operationId)
         } catch (e: Throwable) {
-            stderr("Error: Export failed: ${e.message}"); null
+            userFacingStderr("Error: Export failed: ${e.message}"); null
         }
     }
 
@@ -248,7 +250,7 @@ class DataExportRunner(
     ): Int {
         val failed = result.tables.firstOrNull { it.error != null }
         if (failed != null) {
-            stderr("Error: Failed to export table '${failed.table}': ${failed.error}")
+            userFacingStderr("Error: Failed to export table '${failed.table}': ${failed.error}")
             return 5
         }
         if (staging != null) {
@@ -260,19 +262,21 @@ class DataExportRunner(
                     java.nio.file.Files.move(staging.staging, staging.target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 }
             } catch (e: Throwable) {
-                stderr("Error: Failed to move staging file to target '${staging.target}': ${e.message ?: e::class.simpleName}")
+                userFacingStderr(
+                    "Error: Failed to move staging file to target '${staging.target}': ${e.message ?: e::class.simpleName}"
+                )
                 return 5
             }
         }
         if (store != null) {
             try { store.complete(operationId) } catch (e: CheckpointStoreException) {
-                stderr("Warning: Failed to remove completed checkpoint: ${e.message}")
+                userFacingStderr("Warning: Failed to remove completed checkpoint: ${e.message}")
             }
         }
-        if (!request.quiet) { for (line in collectWarnings()) { stderr(line) } }
+        if (!request.quiet) { for (line in collectWarnings()) { userFacingStderr(line) } }
         if (!request.quiet && !request.noProgress) {
-            stderr(DataExportHelpers.formatProgressSummary(result))
-            result.operationId?.let { stderr("Run operation id: $it") }
+            userFacingStderr(DataExportHelpers.formatProgressSummary(result))
+            result.operationId?.let { userFacingStderr("Run operation id: $it") }
         }
         return 0
     }

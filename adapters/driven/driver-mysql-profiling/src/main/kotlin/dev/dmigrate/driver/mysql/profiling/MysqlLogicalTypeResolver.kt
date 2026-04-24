@@ -10,39 +10,48 @@ class MysqlLogicalTypeResolver : LogicalTypeResolverPort {
 
     override fun resolve(dbType: String): LogicalType {
         val normalized = dbType.lowercase().trim()
-        return when {
-            normalized.startsWith("tinyint(1)") -> LogicalType.BOOLEAN
+        if (normalized.startsWith("tinyint(1)")) return LogicalType.BOOLEAN
+        return resolveNumeric(normalized)
+            ?: resolveTemporalTypes(normalized)
+            ?: resolveBinaryAndSpecial(normalized)
+            ?: resolveStringTypes(normalized)
+            ?: LogicalType.UNKNOWN
+    }
 
-            normalized.startsWith("int") || normalized.startsWith("tinyint") ||
-                normalized.startsWith("smallint") || normalized.startsWith("mediumint") ||
-                normalized.startsWith("bigint") -> LogicalType.INTEGER
+    private fun resolveNumeric(n: String): LogicalType? = when {
+        n.startsWith("int") || n.startsWith("tinyint") || n.startsWith("smallint") ||
+            n.startsWith("mediumint") || n.startsWith("bigint") -> LogicalType.INTEGER
+        n.startsWith("decimal") || n.startsWith("numeric") ||
+            n == "float" || n == "double" || n.startsWith("double") -> LogicalType.DECIMAL
+        else -> null
+    }
 
-            normalized.startsWith("decimal") || normalized.startsWith("numeric") ||
-                normalized == "float" || normalized == "double" ||
-                normalized.startsWith("double") -> LogicalType.DECIMAL
+    private fun resolveTemporalTypes(n: String): LogicalType? = when {
+        n == "date" -> LogicalType.DATE
+        n.startsWith("datetime") || n.startsWith("timestamp") ||
+            n.startsWith("time") || n == "year" -> LogicalType.DATETIME
+        else -> null
+    }
 
-            normalized == "date" -> LogicalType.DATE
+    private fun resolveBinaryAndSpecial(n: String): LogicalType? = when {
+        n == "blob" || n == "tinyblob" || n == "mediumblob" || n == "longblob" ||
+            n.startsWith("binary") || n.startsWith("varbinary") -> LogicalType.BINARY
+        n == "json" -> LogicalType.JSON
+        n in GEOMETRY_TYPES -> LogicalType.GEOMETRY
+        else -> null
+    }
 
-            normalized.startsWith("datetime") || normalized.startsWith("timestamp") ||
-                normalized.startsWith("time") || normalized == "year" -> LogicalType.DATETIME
+    private fun resolveStringTypes(n: String): LogicalType? = when {
+        n.startsWith("varchar") || n.startsWith("char") ||
+            n == "text" || n == "tinytext" || n == "mediumtext" || n == "longtext" ||
+            n.startsWith("enum") || n.startsWith("set") -> LogicalType.STRING
+        else -> null
+    }
 
-            normalized == "blob" || normalized == "tinyblob" ||
-                normalized == "mediumblob" || normalized == "longblob" ||
-                normalized.startsWith("binary") || normalized.startsWith("varbinary") -> LogicalType.BINARY
-
-            normalized == "json" -> LogicalType.JSON
-
-            normalized == "point" || normalized == "linestring" ||
-                normalized == "polygon" || normalized == "geometry" ||
-                normalized == "multipoint" || normalized == "multilinestring" ||
-                normalized == "multipolygon" || normalized == "geometrycollection" -> LogicalType.GEOMETRY
-
-            normalized.startsWith("varchar") || normalized.startsWith("char") ||
-                normalized == "text" || normalized == "tinytext" ||
-                normalized == "mediumtext" || normalized == "longtext" ||
-                normalized.startsWith("enum") || normalized.startsWith("set") -> LogicalType.STRING
-
-            else -> LogicalType.UNKNOWN
-        }
+    private companion object {
+        val GEOMETRY_TYPES = setOf(
+            "point", "linestring", "polygon", "geometry",
+            "multipoint", "multilinestring", "multipolygon", "geometrycollection",
+        )
     }
 }

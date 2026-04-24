@@ -179,7 +179,20 @@ object LargeJsonFixture {
     private val TAGS = listOf("alpha", "bravo", "charlie", "delta", "echo")
 
     private val sourcePathCandidates = listOf(
-        Path.of("adapters", "driven", "formats", "src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
+        Path.of(
+            "adapters",
+            "driven",
+            "formats",
+            "src",
+            "test",
+            "kotlin",
+            "dev",
+            "dmigrate",
+            "format",
+            "data",
+            "perf",
+            "LargeJsonFixture.kt",
+        ),
         Path.of("src", "test", "kotlin", "dev", "dmigrate", "format", "data", "perf", "LargeJsonFixture.kt"),
     )
 
@@ -205,14 +218,13 @@ object LargeJsonFixture {
 
     /**
      * Profilings-Helfer für den Phase-B-Spike: liefert den aktuellen
-     * `used = total - free` Heap-Wert in Bytes nach einem expliziten
-     * `System.gc()`-Aufruf. Nicht präzise, aber stabil genug für eine
-     * "retained heap nach 100k Rows bleibt in derselben Größenordnung
-     * wie einige wenige Chunks, nicht proportional zur Gesamtdatei"-
-     * Assertion (§6.2).
+     * `used = total - free` Heap-Wert in Bytes. Nicht präzise, aber
+     * stabil genug für eine "retained heap nach 100k Rows bleibt in
+     * derselben Größenordnung wie einige wenige Chunks, nicht proportional
+     * zur Gesamtdatei"-Assertion (§6.2).
      */
+    @Suppress("ExplicitGarbageCollectionCall")
     fun usedHeapBytes(): Long {
-        // Request GC and give the runtime a brief window to honour it.
         System.gc()
         Thread.sleep(50)
         System.gc()

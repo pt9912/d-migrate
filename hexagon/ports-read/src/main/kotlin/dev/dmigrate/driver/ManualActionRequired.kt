@@ -2,15 +2,11 @@ package dev.dmigrate.driver
 
 /**
  * Structured representation of a DDL generation decision that requires
- * manual intervention. Replaces unstructured `-- TODO: ...` SQL comments
- * with a typed model.
+ * manual intervention.
  *
  * Each instance maps to the existing DDL diagnostic contract:
  * - as [TransformationNote] with [NoteType.ACTION_REQUIRED]
  * - optionally as [SkippedObject] when no executable DDL was produced
- *
- * In 0.9.1 the default rendering still emits `-- TODO: ...` comments
- * for backwards compatibility with existing tests and user expectations.
  */
 data class ManualActionRequired(
     val code: String,
@@ -40,7 +36,7 @@ data class ManualActionRequired(
         phase = phase,
     )
 
-    /** Renders as a `-- TODO: ...` SQL comment for backwards compatibility. */
+    /** Legacy helper for callers that still need a plain TODO-style comment. */
     fun toTodoComment(): String = buildString {
         append("-- TODO: $reason")
         if (hint != null) append(" ($hint)")

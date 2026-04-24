@@ -8,13 +8,25 @@ class SchemaComparator {
 
     fun compare(left: SchemaDefinition, right: SchemaDefinition): SchemaDiff {
         val metadataDiff = compareMetadata(left, right)
-        val customTypeDiffs = compareCustomTypes(left, right)
+        val customTypeDiffs = compareObjectMaps(
+            left.customTypes, right.customTypes, ::NamedCustomType, ::compareCustomType,
+        )
         val tableDiffs = tableComparator.compareTables(left, right)
-        val viewDiffs = compareViews(left, right)
-        val sequenceDiffs = compareSequences(left, right)
-        val functionDiffs = compareFunctions(left, right)
-        val procedureDiffs = compareProcedures(left, right)
-        val triggerDiffs = compareTriggers(left, right)
+        val viewDiffs = compareObjectMaps(
+            left.views, right.views, ::NamedView, ::compareView,
+        )
+        val sequenceDiffs = compareObjectMaps(
+            left.sequences, right.sequences, ::NamedSequence, ::compareSequence,
+        )
+        val functionDiffs = compareObjectMaps(
+            left.functions, right.functions, ::NamedFunction, ::compareFunction,
+        )
+        val procedureDiffs = compareObjectMaps(
+            left.procedures, right.procedures, ::NamedProcedure, ::compareProcedure,
+        )
+        val triggerDiffs = compareObjectMaps(
+            left.triggers, right.triggers, ::NamedTrigger, ::compareTrigger,
+        )
 
         return SchemaDiff(
             schemaMetadata = metadataDiff,
@@ -52,30 +64,33 @@ class SchemaComparator {
         return SchemaMetadataDiff(name = nameDiff, version = versionDiff)
     }
 
-    // --- Custom Types (ENUM, DOMAIN, COMPOSITE) ---
+    // --- Generic map-diff helper ---
 
-    private data class CustomTypeDiffs(
-        val added: List<NamedCustomType>,
-        val removed: List<NamedCustomType>,
-        val changed: List<CustomTypeDiff>,
+    private data class DiffResult<N, D>(
+        val added: List<N>,
+        val removed: List<N>,
+        val changed: List<D>,
     )
 
-    private fun compareCustomTypes(left: SchemaDefinition, right: SchemaDefinition): CustomTypeDiffs {
-        val leftNames = left.customTypes.keys
-        val rightNames = right.customTypes.keys
+    private inline fun <T, N, D> compareObjectMaps(
+        leftMap: Map<String, T>,
+        rightMap: Map<String, T>,
+        wrapNamed: (String, T) -> N,
+        compareDetail: (String, T, T) -> D?,
+    ): DiffResult<N, D> {
+        val leftNames = leftMap.keys
+        val rightNames = rightMap.keys
 
-        val added = (rightNames - leftNames).sorted().map {
-            NamedCustomType(it, right.customTypes.getValue(it))
-        }
-        val removed = (leftNames - rightNames).sorted().map {
-            NamedCustomType(it, left.customTypes.getValue(it))
-        }
+        val added = (rightNames - leftNames).sorted().map { wrapNamed(it, rightMap.getValue(it)) }
+        val removed = (leftNames - rightNames).sorted().map { wrapNamed(it, leftMap.getValue(it)) }
         val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareCustomType(name, left.customTypes.getValue(name), right.customTypes.getValue(name))
+            compareDetail(name, leftMap.getValue(name), rightMap.getValue(name))
         }
 
-        return CustomTypeDiffs(added, removed, changed)
+        return DiffResult(added, removed, changed)
     }
+
+    // --- Detail comparisons per object type ---
 
     private fun compareCustomType(
         name: String,
@@ -98,31 +113,6 @@ class SchemaComparator {
         return if (diff.hasChanges()) diff else null
     }
 
-    // --- Views ---
-
-    private data class ViewDiffs(
-        val added: List<NamedView>,
-        val removed: List<NamedView>,
-        val changed: List<ViewDiff>,
-    )
-
-    private fun compareViews(left: SchemaDefinition, right: SchemaDefinition): ViewDiffs {
-        val leftNames = left.views.keys
-        val rightNames = right.views.keys
-
-        val added = (rightNames - leftNames).sorted().map {
-            NamedView(it, right.views.getValue(it))
-        }
-        val removed = (leftNames - rightNames).sorted().map {
-            NamedView(it, left.views.getValue(it))
-        }
-        val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareView(name, left.views.getValue(name), right.views.getValue(name))
-        }
-
-        return ViewDiffs(added, removed, changed)
-    }
-
     private fun compareView(
         name: String,
         left: ViewDefinition,
@@ -136,31 +126,6 @@ class SchemaComparator {
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
         )
         return if (diff.hasChanges()) diff else null
-    }
-
-    // --- Sequences ---
-
-    private data class SequenceDiffs(
-        val added: List<NamedSequence>,
-        val removed: List<NamedSequence>,
-        val changed: List<SequenceDiff>,
-    )
-
-    private fun compareSequences(left: SchemaDefinition, right: SchemaDefinition): SequenceDiffs {
-        val leftNames = left.sequences.keys
-        val rightNames = right.sequences.keys
-
-        val added = (rightNames - leftNames).sorted().map {
-            NamedSequence(it, right.sequences.getValue(it))
-        }
-        val removed = (leftNames - rightNames).sorted().map {
-            NamedSequence(it, left.sequences.getValue(it))
-        }
-        val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareSequence(name, left.sequences.getValue(name), right.sequences.getValue(name))
-        }
-
-        return SequenceDiffs(added, removed, changed)
     }
 
     private fun compareSequence(
@@ -178,31 +143,6 @@ class SchemaComparator {
             cache = valueChangeOrNull(left.cache, right.cache),
         )
         return if (diff.hasChanges()) diff else null
-    }
-
-    // --- Functions ---
-
-    private data class FunctionDiffs(
-        val added: List<NamedFunction>,
-        val removed: List<NamedFunction>,
-        val changed: List<FunctionDiff>,
-    )
-
-    private fun compareFunctions(left: SchemaDefinition, right: SchemaDefinition): FunctionDiffs {
-        val leftNames = left.functions.keys
-        val rightNames = right.functions.keys
-
-        val added = (rightNames - leftNames).sorted().map {
-            NamedFunction(it, right.functions.getValue(it))
-        }
-        val removed = (leftNames - rightNames).sorted().map {
-            NamedFunction(it, left.functions.getValue(it))
-        }
-        val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareFunction(name, left.functions.getValue(name), right.functions.getValue(name))
-        }
-
-        return FunctionDiffs(added, removed, changed)
     }
 
     private fun compareFunction(
@@ -223,31 +163,6 @@ class SchemaComparator {
         return if (diff.hasChanges()) diff else null
     }
 
-    // --- Procedures ---
-
-    private data class ProcedureDiffs(
-        val added: List<NamedProcedure>,
-        val removed: List<NamedProcedure>,
-        val changed: List<ProcedureDiff>,
-    )
-
-    private fun compareProcedures(left: SchemaDefinition, right: SchemaDefinition): ProcedureDiffs {
-        val leftNames = left.procedures.keys
-        val rightNames = right.procedures.keys
-
-        val added = (rightNames - leftNames).sorted().map {
-            NamedProcedure(it, right.procedures.getValue(it))
-        }
-        val removed = (leftNames - rightNames).sorted().map {
-            NamedProcedure(it, left.procedures.getValue(it))
-        }
-        val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareProcedure(name, left.procedures.getValue(name), right.procedures.getValue(name))
-        }
-
-        return ProcedureDiffs(added, removed, changed)
-    }
-
     private fun compareProcedure(
         name: String,
         left: ProcedureDefinition,
@@ -262,31 +177,6 @@ class SchemaComparator {
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
         )
         return if (diff.hasChanges()) diff else null
-    }
-
-    // --- Triggers ---
-
-    private data class TriggerDiffs(
-        val added: List<NamedTrigger>,
-        val removed: List<NamedTrigger>,
-        val changed: List<TriggerDiff>,
-    )
-
-    private fun compareTriggers(left: SchemaDefinition, right: SchemaDefinition): TriggerDiffs {
-        val leftNames = left.triggers.keys
-        val rightNames = right.triggers.keys
-
-        val added = (rightNames - leftNames).sorted().map {
-            NamedTrigger(it, right.triggers.getValue(it))
-        }
-        val removed = (leftNames - rightNames).sorted().map {
-            NamedTrigger(it, left.triggers.getValue(it))
-        }
-        val changed = (leftNames intersect rightNames).sorted().mapNotNull { name ->
-            compareTrigger(name, left.triggers.getValue(name), right.triggers.getValue(name))
-        }
-
-        return TriggerDiffs(added, removed, changed)
     }
 
     private fun compareTrigger(

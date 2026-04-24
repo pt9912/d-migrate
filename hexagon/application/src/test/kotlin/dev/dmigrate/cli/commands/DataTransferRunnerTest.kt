@@ -56,7 +56,12 @@ class DataTransferRunnerTest : FunSpec({
     }
     val fakeReader = object : DataReader {
         override val dialect = DatabaseDialect.SQLITE
-        override fun streamTable(pool: ConnectionPool, table: String, filter: dev.dmigrate.core.data.DataFilter?, chunkSize: Int) = EmptyChunkSequence()
+        override fun streamTable(
+            pool: ConnectionPool,
+            table: String,
+            filter: dev.dmigrate.core.data.DataFilter?,
+            chunkSize: Int,
+        ) = EmptyChunkSequence()
     }
     val fakeWriter = object : DataWriter {
         override val dialect = DatabaseDialect.SQLITE
@@ -210,6 +215,33 @@ class DataTransferRunnerTest : FunSpec({
     test("pool failure → exit 4") {
         val (runner, _, _) = buildRunner(poolFactory = { throw RuntimeException("refused") })
         runner.execute(request()) shouldBe 4
+    }
+
+    test("connection close still closes source when target close fails") {
+        var sourceClosed = false
+        val sourcePool = object : ConnectionPool {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun borrow(): Connection = throw UnsupportedOperationException()
+            override fun activeConnections() = 0
+            override fun close() {
+                sourceClosed = true
+            }
+        }
+        val targetPool = object : ConnectionPool {
+            override val dialect = DatabaseDialect.SQLITE
+            override fun borrow(): Connection = throw UnsupportedOperationException()
+            override fun activeConnections() = 0
+            override fun close() {
+                throw RuntimeException("close failed")
+            }
+        }
+
+        TransferConnections(
+            source = TransferEndpoint(fakeCfg, sourcePool, "source"),
+            target = TransferEndpoint(fakeCfg, targetPool, "target"),
+        ).close()
+
+        sourceClosed shouldBe true
     }
 
     // ── Exit 7 ──────────────────────────────────

@@ -4,6 +4,19 @@ import java.sql.Connection
 import java.sql.ResultSetMetaData
 
 /**
+ * Runs [action] and adds any thrown exception as suppressed on this
+ * [Throwable]. Used in cleanup paths where multiple resources must be
+ * released and individual failures must not mask the original exception.
+ */
+inline fun Throwable.runSuppressing(action: () -> Unit) {
+    try {
+        action()
+    } catch (cleanup: Throwable) {
+        addSuppressed(cleanup)
+    }
+}
+
+/**
  * Shared utility for DataWriter implementations.
  *
  * Reads target column metadata from the database via `SELECT * LIMIT 0`

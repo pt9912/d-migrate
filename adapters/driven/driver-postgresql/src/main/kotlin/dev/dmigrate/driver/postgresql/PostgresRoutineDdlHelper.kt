@@ -4,6 +4,8 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
 internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) -> String) {
+    private fun actionRequired(action: ManualActionRequired): DdlStatement =
+        DdlStatement(sql = "", notes = listOf(action.toNote()))
 
     // ── Views ────────────────────────────────────
 
@@ -57,7 +59,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 hint = "Provide a function body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Implement function ${quoteIdentifier(name)}", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         if (fn.sourceDialect != null && fn.sourceDialect != "postgresql") {
@@ -68,7 +70,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 sourceDialect = fn.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite function ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${fn.sourceDialect})", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         val params = fn.parameters.joinToString(", ") { param ->
@@ -112,7 +114,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 hint = "Provide a procedure body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Implement procedure ${quoteIdentifier(name)}", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         if (proc.sourceDialect != null && proc.sourceDialect != "postgresql") {
@@ -123,7 +125,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 sourceDialect = proc.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite procedure ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${proc.sourceDialect})", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         val params = proc.parameters.joinToString(", ") { param ->
@@ -144,7 +146,6 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.flatMap { (name, trigger) -> generateTrigger(name, trigger, skipped) }
@@ -163,7 +164,7 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 hint = "Provide a trigger body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return listOf(DdlStatement("-- TODO: Implement trigger ${quoteIdentifier(name)}", listOf(action.toNote())))
+            return listOf(actionRequired(action))
         }
 
         if (trigger.sourceDialect != null && trigger.sourceDialect != "postgresql") {
@@ -174,14 +175,12 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
                 sourceDialect = trigger.sourceDialect,
             )
             skipped += action.toSkipped()
-            return listOf(DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for PostgreSQL (source dialect: ${trigger.sourceDialect})", listOf(action.toNote())))
+            return listOf(actionRequired(action))
         }
 
-        // PostgreSQL triggers require a separate trigger function
         val funcName = "trg_fn_${name}"
         val statements = mutableListOf<DdlStatement>()
 
-        // 1. Create trigger function
         val funcSql = buildString {
             append("CREATE OR REPLACE FUNCTION ${quoteIdentifier(funcName)}() RETURNS TRIGGER AS \$\$\n")
             append(body)
@@ -189,7 +188,6 @@ internal class PostgresRoutineDdlHelper(private val quoteIdentifier: (String) ->
         }
         statements += DdlStatement(funcSql)
 
-        // 2. Create trigger
         val timing = trigger.timing.name
         val event = trigger.event.name
         val forEach = trigger.forEach.name

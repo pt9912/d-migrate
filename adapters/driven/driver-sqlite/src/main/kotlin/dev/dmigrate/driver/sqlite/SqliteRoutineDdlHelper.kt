@@ -4,6 +4,8 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 
 internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> String) {
+    private fun actionRequired(action: ManualActionRequired): DdlStatement =
+        DdlStatement(sql = "", notes = listOf(action.toNote()))
 
     // -- Views -------------------------------------------------
 
@@ -51,7 +53,6 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
         functions: Map<String, FunctionDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        // SQLite does not support user-defined SQL functions via DDL. Skip all with E054.
         val statements = mutableListOf<DdlStatement>()
         for ((name, _) in functions) {
             skipped += SkippedObject("function", name, "Functions are not supported in SQLite DDL")
@@ -77,7 +78,6 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
         procedures: Map<String, ProcedureDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
-        // SQLite does not support stored procedures. Skip all with E054.
         val statements = mutableListOf<DdlStatement>()
         for ((name, _) in procedures) {
             skipped += SkippedObject("procedure", name, "Procedures are not supported in SQLite")
@@ -101,7 +101,6 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
 
     fun generateTriggers(
         triggers: Map<String, TriggerDefinition>,
-        tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return triggers.mapNotNull { (name, trigger) -> generateTrigger(name, trigger, skipped) }
@@ -120,7 +119,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
                 hint = "Provide a trigger body in the schema definition.",
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Implement trigger ${quoteIdentifier(name)}", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") {
@@ -131,7 +130,7 @@ internal class SqliteRoutineDdlHelper(private val quoteIdentifier: (String) -> S
                 sourceDialect = trigger.sourceDialect,
             )
             skipped += action.toSkipped()
-            return DdlStatement("-- TODO: Rewrite trigger ${quoteIdentifier(name)} for SQLite (source dialect: ${trigger.sourceDialect})", listOf(action.toNote()))
+            return actionRequired(action)
         }
 
         val timing = trigger.timing.name

@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.TransformationNote
 import java.nio.file.Path
 
 /**
@@ -80,10 +81,8 @@ internal object SchemaGenerateHelpers {
         mysqlNamedSequenceMode: dev.dmigrate.driver.MysqlNamedSequenceMode? = null,
     ): String {
         val isSplit = splitMode == SplitMode.PRE_POST
-        val notes = result.notes.joinToString(",\n") { n ->
-            val phaseField = if (isSplit && n.phase != null)
-                """, "phase": "${phaseToKebab(n.phase!!)}" """ else ""
-            """    {"type": "${n.type.name.lowercase()}", "code": "${n.code}", "object": "${escapeJson(n.objectName)}", "message": "${escapeJson(n.message)}"$phaseField}"""
+        val notes = result.notes.joinToString(",\n") { note ->
+            renderJsonNote(note, isSplit)
         }
         val skipped = result.skippedObjects.joinToString(",\n") { s ->
             val fields = mutableListOf<String>()
@@ -102,7 +101,7 @@ internal object SchemaGenerateHelpers {
             appendLine("""  "command": "schema.generate",""")
             appendLine("""  "status": "completed",""")
             appendLine("""  "exit_code": 0,""")
-            appendLine("""  "generator": "d-migrate 0.9.4",""")
+            appendLine("""  "generator": "d-migrate 0.9.5",""")
             appendLine("""  "target": "$dialect",""")
             if (mysqlNamedSequenceMode != null) {
                 appendLine("""  "mysql_named_sequences": "${mysqlNamedSequenceMode.cliName}",""")
@@ -126,6 +125,20 @@ internal object SchemaGenerateHelpers {
                 appendLine("""  "skipped_objects": ["""); appendLine(skipped); appendLine("  ]")
             }
             append("}")
+        }
+    }
+
+    private fun renderJsonNote(note: TransformationNote, isSplit: Boolean): String {
+        val phaseField = if (isSplit && note.phase != null) {
+            """, "phase": "${phaseToKebab(note.phase!!)}" """
+        } else {
+            ""
+        }
+        return buildString {
+            append("""    {"type": "${note.type.name.lowercase()}", """)
+            append(""""code": "${note.code}", """)
+            append(""""object": "${escapeJson(note.objectName)}", """)
+            append(""""message": "${escapeJson(note.message)}"$phaseField}""")
         }
     }
 

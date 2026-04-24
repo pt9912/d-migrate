@@ -141,16 +141,16 @@ class MysqlDataWriterTest : FunSpec({
         session.close()
     }
 
-    test("openTable with triggerMode=DISABLE throws UnsupportedTriggerModeException") {
+    test("openTable with triggerMode=DISABLE throws IllegalStateException") {
         val mocks = buildMocks()
-        shouldThrow<UnsupportedTriggerModeException> {
+        shouldThrow<IllegalStateException> {
             mocks.writer.openTable(mocks.pool, "users", ImportOptions(triggerMode = TriggerMode.DISABLE))
         }
     }
 
-    test("openTable with triggerMode=STRICT throws UnsupportedTriggerModeException") {
+    test("openTable with triggerMode=STRICT throws IllegalStateException") {
         val mocks = buildMocks()
-        shouldThrow<UnsupportedTriggerModeException> {
+        shouldThrow<IllegalStateException> {
             mocks.writer.openTable(mocks.pool, "users", ImportOptions(triggerMode = TriggerMode.STRICT))
         }
     }

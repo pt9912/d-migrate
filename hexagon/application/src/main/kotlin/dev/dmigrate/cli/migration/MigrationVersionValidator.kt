@@ -40,8 +40,11 @@ object MigrationVersionValidator {
             }
             MigrationTool.KNEX -> {
                 if (KNEX_VERSION.matches(version)) ValidationResult(true)
-                else ValidationResult(false,
-                    "Knex version must be numeric with optional _slug (e.g., '20260414120000', '20260414120000_create_users'), got: '$version'")
+                else ValidationResult(
+                    false,
+                    "Knex version must be numeric with optional _slug " +
+                        "(e.g., '20260414120000', '20260414120000_create_users'), got: '$version'",
+                )
             }
         }
     }

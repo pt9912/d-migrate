@@ -156,10 +156,6 @@ private fun generateReorderFixture(path: Path, rows: Long) {
 }
 
 private fun usedHeapBytes(): Long {
-    System.gc()
-    Thread.sleep(50)
-    System.gc()
-    Thread.sleep(50)
     val rt = Runtime.getRuntime()
     return rt.totalMemory() - rt.freeMemory()
 }

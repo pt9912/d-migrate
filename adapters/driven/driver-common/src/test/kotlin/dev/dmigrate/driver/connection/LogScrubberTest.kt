@@ -37,13 +37,14 @@ class LogScrubberTest : FunSpec({
             "postgresql://admin:***@host:5432/mydb?sslmode=require&app=test"
     }
 
-    test("preserves URL with multiple credential-like substrings") {
-        // Nur der erste authority-block wird ersetzt; "password=secret" als query-param
-        // ist ein anderer Match-Punkt — der wird NICHT abgedeckt, weil die Regex
-        // sich auf den authority-block fokussiert. Das ist akzeptabel: Connection-URLs
-        // mit Inline-Credentials in Query-Params sind kein Standard-Pattern.
-        LogScrubber.maskUrl("postgresql://admin:secret@host/db") shouldBe
-            "postgresql://admin:***@host/db"
+    test("masks password query parameter in jdbc url") {
+        LogScrubber.maskUrl("jdbc:postgresql://host:5432/mydb?user=admin&password=secret&sslmode=require") shouldBe
+            "jdbc:postgresql://host:5432/mydb?user=admin&password=***&sslmode=require"
+    }
+
+    test("masks password query parameter in sqlite dsn form") {
+        LogScrubber.maskUrl("sqlite::memory:?password=secret&cache=shared") shouldBe
+            "sqlite::memory:?password=***&cache=shared"
     }
 
     test("string without URL pattern is unchanged") {

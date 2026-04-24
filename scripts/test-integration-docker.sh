@@ -46,16 +46,19 @@ fi
 echo "Building integration test image from Dockerfile (stage: integration-test)..."
 docker build --target integration-test -t "${IMAGE_TAG}" "${REPO_ROOT}"
 
+LOG_FILE="${DMIGRATE_TEST_LOG:-/tmp/d-migrate-integration-$(date +%Y%m%d-%H%M%S).log}"
+
 echo "Running integration tests in container:"
 echo "  image:        ${IMAGE_TAG}"
 echo "  repo:         ${REPO_ROOT}"
 echo "  gradle tasks: ${GRADLE_TASKS}"
+echo "  log file:     ${LOG_FILE}"
 
-exec docker run --rm ${TTY_FLAG} \
+docker run --rm ${TTY_FLAG} \
     --network=host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
     -w /src \
     "${IMAGE_TAG}" \
-    bash -lc "gradle --no-daemon ${GRADLE_TASKS}"
+    bash -lc "gradle --no-daemon ${GRADLE_TASKS}" 2>&1 | tee "${LOG_FILE}"

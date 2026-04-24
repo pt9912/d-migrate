@@ -43,6 +43,9 @@ class SchemaCompareRunner(
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
+    private val userFacingErrors = UserFacingErrors(urlScrubber)
+    private val userFacingPrintError = userFacingErrors.printError(printError)
+    private val userFacingStderr = userFacingErrors.stderrSink(stderr)
 
     fun execute(request: SchemaCompareRequest): Int {
         // 1. Parse operands
@@ -52,7 +55,7 @@ class SchemaCompareRunner(
             sourceOp = operandParser(request.source)
             targetOp = operandParser(request.target)
         } catch (e: IllegalArgumentException) {
-            printError("Invalid operand: ${e.message}", request.source)
+            userFacingPrintError("Invalid operand: ${e.message}", request.source)
             return 2
         }
 
@@ -61,12 +64,12 @@ class SchemaCompareRunner(
             val normalizedOutput = request.output.toAbsolutePath().normalize()
             if (sourceOp is CompareOperand.File &&
                 normalizedOutput == sourceOp.path.toAbsolutePath().normalize()) {
-                printError("Output path must not be the same as source or target", request.output.toString())
+                userFacingPrintError("Output path must not be the same as source or target", request.output.toString())
                 return 2
             }
             if (targetOp is CompareOperand.File &&
                 normalizedOutput == targetOp.path.toAbsolutePath().normalize()) {
-                printError("Output path must not be the same as source or target", request.output.toString())
+                userFacingPrintError("Output path must not be the same as source or target", request.output.toString())
                 return 2
             }
         }
@@ -84,7 +87,7 @@ class SchemaCompareRunner(
             sourceNormalized = normalizer(sourceResolved)
             targetNormalized = normalizer(targetResolved)
         } catch (e: IllegalStateException) {
-            printError("Invalid reverse marker: ${e.message}", request.source)
+            userFacingPrintError("Invalid reverse marker: ${e.message}", request.source)
             return 7
         }
 
@@ -155,7 +158,7 @@ class SchemaCompareRunner(
                 try {
                     fileLoader(operand)
                 } catch (e: Exception) {
-                    printError("Failed to read operand: ${e.message}", rawRef)
+                    userFacingPrintError("Failed to read operand: ${e.message}", rawRef)
                     lastExitCode = 7
                     null
                 }
@@ -163,18 +166,18 @@ class SchemaCompareRunner(
             is CompareOperand.Database -> {
                 val loader = dbLoader
                 if (loader == null) {
-                    printError("Database operands require a DB loader", rawRef)
+                    userFacingPrintError("Database operands require a DB loader", rawRef)
                     lastExitCode = 2
                     return null
                 }
                 try {
                     loader(operand, configPath)
                 } catch (e: CompareConfigException) {
-                    printError("Config/URL error: ${scrubMessage(e.message)}", scrubRef(rawRef))
+                    userFacingPrintError("Config/URL error: ${e.message}", rawRef)
                     lastExitCode = 7
                     null
                 } catch (e: Exception) {
-                    printError("Connection/metadata error: ${scrubMessage(e.message)}", scrubRef(rawRef))
+                    userFacingPrintError("Connection/metadata error: ${e.message}", rawRef)
                     lastExitCode = 4
                     null
                 }
@@ -184,15 +187,14 @@ class SchemaCompareRunner(
 
     private fun emitWarnings(operand: ResolvedSchemaOperand, side: String, request: SchemaCompareRequest) {
         for (w in operand.validation.warnings) {
-            stderr("  Warning [${w.code}] ($side): ${w.message}")
+            userFacingStderr("  Warning [${w.code}] ($side): ${w.message}")
         }
-        // Operand-side reverse notes (same visibility as validation warnings)
         for (note in operand.notes) {
             if (note.severity == SchemaReadSeverity.INFO && !request.verbose) continue
-            stderr("  ${note.severity.name} [${note.code}] ($side) ${note.objectName}: ${note.message}")
+            userFacingStderr("  ${note.severity.name} [${note.code}] ($side) ${note.objectName}: ${note.message}")
         }
         for (skip in operand.skippedObjects) {
-            stderr("  SKIPPED [${skip.code ?: "-"}] ($side) ${skip.type} ${skip.name}: ${skip.reason}")
+            userFacingStderr("  SKIPPED [${skip.code ?: "-"}] ($side) ${skip.type} ${skip.name}: ${skip.reason}")
         }
     }
 
@@ -239,7 +241,7 @@ class SchemaCompareRunner(
                 ensureParentDirectories(request.output)
                 fileWriter(request.output, rendered)
             } catch (e: Exception) {
-                printError("Failed to write output: ${e.message}", request.output.toString())
+                userFacingPrintError("Failed to write output: ${e.message}", request.output.toString())
                 return 7
             }
         } else {
@@ -248,20 +250,5 @@ class SchemaCompareRunner(
             }
         }
         return null
-    }
-
-    private fun scrubMessage(message: String?): String {
-        if (message == null) return "unknown error"
-        return Regex("[a-zA-Z][a-zA-Z0-9+\\-.]*://[^\\s]+").replace(message) {
-            urlScrubber(it.value)
-        }
-    }
-
-    private fun scrubRef(raw: String): String {
-        val operandValue = when {
-            raw.startsWith("db:") -> raw.removePrefix("db:")
-            else -> return raw
-        }
-        return if (operandValue.contains("://")) "db:${urlScrubber(operandValue)}" else raw
     }
 }

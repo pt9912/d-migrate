@@ -1,6 +1,5 @@
 package dev.dmigrate.driver.mysql
 
-import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.identity.ReverseScopeCodec
 import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
@@ -10,15 +9,12 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
 import java.sql.Connection
 
-/**
- * MySQL [SchemaReader] implementation.
- *
- * Uses `information_schema` with `lower_case_table_names`-aware
- * identifier normalization.
- */
 class MysqlSchemaReader(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
 ) : SchemaReader {
+
+    private val sequenceSupport = MysqlSequenceSupport()
+    private val routineReader = MysqlRoutineReader()
 
     override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
         val notes = mutableListOf<SchemaReadNote>()
@@ -32,28 +28,22 @@ class MysqlSchemaReader(
             val metaDb = normalizeMysqlMetadataIdentifier(database, lctn)
             val scope = ReverseScope(catalogName = metaDb, schemaName = metaDb)
 
-            // Phase 1: read base objects (existing paths)
             val tables = readTables(session, metaDb, lctn, notes)
-            val views = if (options.includeViews) readViews(session, metaDb) else emptyMap()
-            val functions = if (options.includeFunctions) readFunctions(session, metaDb, notes) else emptyMap()
-            val procedures = if (options.includeProcedures) readProcedures(session, metaDb, notes) else emptyMap()
-            val triggers = if (options.includeTriggers) readTriggers(session, metaDb) else emptyMap()
+            val views = if (options.includeViews) routineReader.readViews(session, metaDb) else emptyMap()
+            val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb) else emptyMap()
+            val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb) else emptyMap()
+            val triggers = if (options.includeTriggers) routineReader.readTriggers(session, metaDb) else emptyMap()
 
-            // Phase 2: internal sequence support scan
-            val supportSnapshot = scanSequenceSupport(session, metaDb, scope)
+            val supportSnapshot = sequenceSupport.scanSequenceSupport(session, metaDb, scope)
 
-            // Phase 3a: D2 — materialize sequences from support snapshot
-            val d2Result = materializeSupportSequences(supportSnapshot)
+            val d2Result = sequenceSupport.materializeSupportSequences(supportSnapshot)
 
-            // Phase 3b: D3 — materialize sequence defaults from triggers
-            val d3Result = materializeSequenceDefaults(
+            val d3Result = sequenceSupport.materializeSequenceDefaults(
                 supportSnapshot, d2Result.sequences, tables,
             )
 
-            // Phase 4: assemble result — filter support objects, aggregate diagnostics
-            // Trigger filtering is owned by D3 (based on its own validation), not D1.
-            val filteredTables = filterSupportTable(d3Result.enrichedTables, supportSnapshot)
-            val filteredFunctions = filterSupportRoutines(functions, supportSnapshot)
+            val filteredTables = sequenceSupport.filterSupportTable(d3Result.enrichedTables, supportSnapshot)
+            val filteredFunctions = sequenceSupport.filterSupportRoutines(functions, supportSnapshot)
             val filteredTriggers = d3Result.filteredTriggers(triggers)
             notes += d2Result.notes
             notes += d3Result.notes
@@ -73,650 +63,21 @@ class MysqlSchemaReader(
         }
     }
 
-    // ── Safe numeric helpers (D2 range validation) ──
-
-    /**
-     * Safely convert to Long. Returns null on overflow, non-integer types
-     * (Double/Float), or non-numeric input. No lossy fallback.
-     */
-    private fun safeLong(value: Any?): Long? {
-        if (value == null) return null
-        return when (value) {
-            is Long -> value
-            is Int -> value.toLong()
-            is Short -> value.toLong()
-            is Byte -> value.toLong()
-            is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Long.MIN_VALUE)..java.math.BigInteger.valueOf(Long.MAX_VALUE)) value.toLong() else null
-            is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Long.MIN_VALUE) && value <= java.math.BigDecimal.valueOf(Long.MAX_VALUE)) value.toLong() else null
-            // Double/Float/other Number types are explicitly rejected — lossy conversion
-            else -> null
-        }
-    }
-
-    /**
-     * Safely convert to Int. Returns null on overflow, non-integer types
-     * (Double/Float), or non-numeric input. No lossy fallback.
-     */
-    private fun safeInt(value: Any?): Int? {
-        if (value == null) return null
-        return when (value) {
-            is Int -> value
-            is Short -> value.toInt()
-            is Byte -> value.toInt()
-            is Long -> if (value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) value.toInt() else null
-            is java.math.BigInteger -> if (value in java.math.BigInteger.valueOf(Int.MIN_VALUE.toLong())..java.math.BigInteger.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
-            is java.math.BigDecimal -> if (value.scale() == 0 && value >= java.math.BigDecimal.valueOf(Int.MIN_VALUE.toLong()) && value <= java.math.BigDecimal.valueOf(Int.MAX_VALUE.toLong())) value.toInt() else null
-            // Double/Float/other Number types are explicitly rejected
-            else -> null
-        }
-    }
-
-    /**
-     * Safely convert cycle_enabled to Int (0/1). Handles both Integer
-     * and Boolean return types from MySQL JDBC (bit(1) columns may
-     * come back as Boolean).
-     */
-    private fun safeCycleInt(value: Any?): Int? {
-        if (value == null) return null
-        return when (value) {
-            is Boolean -> if (value) 1 else 0
-            is Int -> value
-            is Short -> value.toInt()
-            is Byte -> value.toInt()
-            is Long -> if (value in 0L..1L) value.toInt() else value.toInt() // preserve for validation
-            else -> null
-        }
-    }
-
-    // ── Sequence support scan (0.9.4 AP 6.1) ──────
-
     internal fun scanSequenceSupport(
         session: JdbcOperations,
         database: String,
         scope: ReverseScope,
-    ): MysqlSequenceSupportSnapshot {
-        // Step 1: two-phase existence check for dmg_sequences (§4.3 Gating)
-        val exists = MysqlMetadataQueries.checkSupportTableExists(session, database)
+    ): MysqlSequenceSupportSnapshot = sequenceSupport.scanSequenceSupport(session, database, scope)
 
-        // Gate A: existence undecidable → no legitimation → non-sequence path
-        if (exists == null) {
-            return MysqlSequenceSupportSnapshot.nonSequence(scope)
-                .copy(supportTableState = SupportTableState.NOT_ACCESSIBLE)
-        }
-        // Gate B: existence negatively confirmed → non-sequence path
-        if (exists == false) {
-            return MysqlSequenceSupportSnapshot.nonSequence(scope)
-        }
-
-        // --- Existence legitimated: dmg_sequences is confirmed present ---
-
-        // Step 2: verify canonical column shape
-        // Shape-check failure AFTER existence legitimation → hard NOT_ACCESSIBLE
-        // (this is the "vorhandene, aber nicht lesbare Primärquelle" case from §4.3)
-        val shapeOk = try {
-            MysqlMetadataQueries.checkSupportTableShape(session, database)
-        } catch (_: Exception) {
-            return MysqlSequenceSupportSnapshot(
-                scope = scope,
-                supportTableState = SupportTableState.NOT_ACCESSIBLE,
-                sequenceRows = emptyList(),
-                ambiguousKeys = emptySet(),
-                routineStates = emptyMap(),
-                triggerStates = emptyMap(),
-                triggerAssessments = emptyList(),
-                diagnostics = listOf(
-                    SupportDiagnostic(
-                        key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
-                        causes = listOf("dmg_sequences exists but metadata is not accessible"),
-                        emitsW116 = true,
-                    )
-                ),
-            )
-        }
-        if (!shapeOk) {
-            return MysqlSequenceSupportSnapshot(
-                scope = scope,
-                supportTableState = SupportTableState.INVALID_SHAPE,
-                sequenceRows = emptyList(),
-                ambiguousKeys = emptySet(),
-                routineStates = emptyMap(),
-                triggerStates = emptyMap(),
-                triggerAssessments = emptyList(),
-                diagnostics = listOf(
-                    SupportDiagnostic(
-                        key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
-                        causes = listOf("dmg_sequences column shape is not canonical"),
-                        emitsW116 = true,
-                    )
-                ),
-            )
-        }
-
-        // Step 3: read rows, validate markers, detect conflicts
-        // Row-read failure AFTER existence legitimation → hard NOT_ACCESSIBLE with diagnostic
-        val rawRows = try {
-            MysqlMetadataQueries.listSupportSequenceRows(session, database)
-        } catch (_: Exception) {
-            return MysqlSequenceSupportSnapshot(
-                scope = scope,
-                supportTableState = SupportTableState.NOT_ACCESSIBLE,
-                sequenceRows = emptyList(),
-                ambiguousKeys = emptySet(),
-                routineStates = emptyMap(),
-                triggerStates = emptyMap(),
-                triggerAssessments = emptyList(),
-                diagnostics = listOf(
-                    SupportDiagnostic(
-                        key = SequenceDiagnosticKey(scope, MysqlSequenceNaming.SUPPORT_TABLE),
-                        causes = listOf("dmg_sequences exists but rows are not readable"),
-                        emitsW116 = true,
-                    )
-                ),
-            )
-        }
-
-        val sequenceRows = rawRows.map { row ->
-            val rawMinValue = row["min_value"]
-            val rawMaxValue = row["max_value"]
-            val rawCacheSize = row["cache_size"]
-            SequenceRowSnapshot(
-                name = (row["name"] as? String),
-                nextValue = safeLong(row["next_value"]),
-                incrementBy = safeLong(row["increment_by"]),
-                minValue = safeLong(rawMinValue),
-                maxValue = safeLong(rawMaxValue),
-                cycleEnabledRaw = safeCycleInt(row["cycle_enabled"]),
-                cacheSize = safeInt(rawCacheSize),
-                managedBy = (row["managed_by"] as? String),
-                formatVersion = (row["format_version"] as? String),
-                // Overflow: source was non-null but conversion failed
-                minValueOverflow = rawMinValue != null && safeLong(rawMinValue) == null,
-                maxValueOverflow = rawMaxValue != null && safeLong(rawMaxValue) == null,
-                cacheSizeOverflow = rawCacheSize != null && safeInt(rawCacheSize) == null,
-            )
-        }
-
-        // D2 trim-normalization for name keys
-        val trimmedRows = sequenceRows.map { it to it.name?.trim() }
-
-        // Filter to d-migrate rows only for ambiguity detection
-        fun isDMigrateRow(row: SequenceRowSnapshot): Boolean =
-            row.managedBy?.trim() == "d-migrate" && row.formatVersion?.trim() == "mysql-sequence-v1"
-
-        val dmigrateTrimedRows = trimmedRows.filter { isDMigrateRow(it.first) && !it.second.isNullOrEmpty() }
-        val byName = dmigrateTrimedRows.groupBy { it.second!! }
-        val ambiguousKeys = byName.filter { it.value.size > 1 }.keys
-
-        // Step 4: targeted routine lookups
-        val routineStates = mapOf(
-            MysqlSequenceNaming.NEXTVAL_ROUTINE to
-                MysqlMetadataQueries.lookupSupportRoutine(session, database, MysqlSequenceNaming.NEXTVAL_ROUTINE),
-            MysqlSequenceNaming.SETVAL_ROUTINE to
-                MysqlMetadataQueries.lookupSupportRoutine(session, database, MysqlSequenceNaming.SETVAL_ROUTINE),
-        )
-
-        // Step 5: targeted trigger lookups
-        val triggerScan = MysqlMetadataQueries.listPotentialSupportTriggers(session, database)
-        val triggerStates = triggerScan.triggers.associate { it.triggerName to it.state }
-
-        // Step 6: identify confirmed d-migrate row names for diagnostics
-        val dmigrateRowNames = dmigrateTrimedRows
-            .map { it.second!! }
-            .filter { it !in ambiguousKeys }
-            .toSet()
-
-        val diagnostics = buildSupportDiagnostics(
-            scope, sequenceRows, ambiguousKeys, routineStates,
-            triggerScan.triggers, triggerScanAccessible = triggerScan.accessible,
-            confirmedSequenceNames = dmigrateRowNames,
-        )
-
-        return MysqlSequenceSupportSnapshot(
-            scope = scope,
-            supportTableState = SupportTableState.AVAILABLE,
-            sequenceRows = sequenceRows,
-            ambiguousKeys = ambiguousKeys,
-            routineStates = routineStates,
-            triggerStates = triggerStates,
-            triggerAssessments = triggerScan.triggers,
-            diagnostics = diagnostics,
-        )
-    }
-
-    // ── D2: Sequence materialization (0.9.4 AP 6.2) ──
-
-    internal data class D2Result(
-        val sequences: Map<String, SequenceDefinition>,
-        val notes: List<SchemaReadNote>,
-    )
-
-    /**
-     * Materializes SequenceDefinitions from the D1 support snapshot.
-     * Only produces sequences when supportTableState == AVAILABLE.
-     */
     internal fun materializeSupportSequences(
         snapshot: MysqlSequenceSupportSnapshot,
-    ): D2Result {
-        if (snapshot.supportTableState != SupportTableState.AVAILABLE) {
-            return D2Result(emptyMap(), aggregateSupportNotes(snapshot))
-        }
+    ): MysqlSequenceSupport.D2Result = sequenceSupport.materializeSupportSequences(snapshot)
 
-        val sequences = LinkedHashMap<String, SequenceDefinition>()
-        val d2Notes = mutableListOf<SchemaReadNote>()
-
-        // Phase 1: filter d-migrate rows, validate, detect conflicts
-        data class ValidCandidate(val key: String, val row: SequenceRowSnapshot)
-        data class InvalidEvidence(val key: String, val reason: String)
-
-        val candidates = mutableListOf<ValidCandidate>()
-        val invalids = mutableListOf<InvalidEvidence>()
-
-        for (row in snapshot.sequenceRows) {
-            val managedBy = row.managedBy?.trim() ?: continue  // foreign row → skip silently
-            val formatVersion = row.formatVersion?.trim() ?: continue
-            if (managedBy != "d-migrate" || formatVersion != "mysql-sequence-v1") continue  // foreign → skip, no W116
-
-            val name = row.name?.trim()
-            if (name.isNullOrEmpty()) {
-                invalids += InvalidEvidence("(empty)", "sequence name is empty or null")
-                continue
-            }
-            if (name in snapshot.ambiguousKeys) continue  // handled separately
-
-            // Validate required numerics — no silent fallbacks
-            val nextValue = row.nextValue
-            if (nextValue == null) {
-                invalids += InvalidEvidence(name, "next_value is not readable")
-                continue
-            }
-            val incrementBy = row.incrementBy
-            if (incrementBy == null) {
-                invalids += InvalidEvidence(name, "increment_by is not readable")
-                continue
-            }
-            if (incrementBy == 0L) {
-                invalids += InvalidEvidence(name, "increment_by = 0 is invalid")
-                continue
-            }
-
-            // Validate cycle_enabled — only 0/1 accepted
-            val cycleRaw = row.cycleEnabledRaw
-            if (cycleRaw == null || (cycleRaw != 0 && cycleRaw != 1)) {
-                invalids += InvalidEvidence(name, "cycle_enabled value '$cycleRaw' is not a canonical boolean (0/1)")
-                continue
-            }
-
-            // Validate min_value/max_value — SQL NULL ok, overflow invalid
-            if (row.minValueOverflow) {
-                invalids += InvalidEvidence(name, "min_value exceeds Long range")
-                continue
-            }
-            if (row.maxValueOverflow) {
-                invalids += InvalidEvidence(name, "max_value exceeds Long range")
-                continue
-            }
-
-            // Validate cache_size — null ok, negative invalid, overflow invalid
-            if (row.cacheSizeOverflow) {
-                invalids += InvalidEvidence(name, "cache_size exceeds Int range")
-                continue
-            }
-            val cacheSize = row.cacheSize
-            if (cacheSize != null && cacheSize < 0) {
-                invalids += InvalidEvidence(name, "cache_size = $cacheSize is negative")
-                continue
-            }
-
-            candidates += ValidCandidate(name, row)
-        }
-
-        // Phase 2: materialize valid candidates (sorted by key for determinism)
-        for (candidate in candidates.sortedBy { it.key }) {
-            val row = candidate.row
-            sequences[candidate.key] = SequenceDefinition(
-                description = null,
-                start = row.nextValue!!,
-                increment = row.incrementBy!!,
-                minValue = row.minValue,
-                maxValue = row.maxValue,
-                cycle = row.cycleEnabledRaw == 1,
-                cache = row.cacheSize,
-            )
-        }
-
-        // Phase 3: aggregate notes
-        val allNotes = mutableListOf<SchemaReadNote>()
-
-        // Ambiguous keys → W116 per key
-        for (name in snapshot.ambiguousKeys) {
-            allNotes += SchemaReadNote(
-                severity = SchemaReadSeverity.WARNING,
-                code = "W116",
-                objectName = name,
-                message = "Sequence metadata reconstructed, but multiple rows claim key '$name'",
-            )
-        }
-
-        // Invalid d-migrate rows → W116 per key
-        for (invalid in invalids) {
-            allNotes += SchemaReadNote(
-                severity = SchemaReadSeverity.WARNING,
-                code = "W116",
-                objectName = invalid.key,
-                message = "Sequence metadata reconstructed, but row is invalid: ${invalid.reason}",
-            )
-        }
-
-        // Routine diagnostics — only when sequences were materialized
-        if (sequences.isNotEmpty()) {
-            val routineCauses = mutableListOf<String>()
-            for ((name, state) in snapshot.routineStates) {
-                when (state) {
-                    SupportRoutineState.MISSING -> routineCauses += "support routine '$name' is missing"
-                    SupportRoutineState.NOT_ACCESSIBLE -> routineCauses += "support routine '$name' is not accessible"
-                    SupportRoutineState.NON_CANONICAL -> routineCauses += "support routine '$name' is not canonical"
-                    SupportRoutineState.CONFIRMED -> { /* no cause */ }
-                }
-            }
-            if (routineCauses.isNotEmpty()) {
-                // Emit one W116 per materialized sequence, not per routine
-                for (seqKey in sequences.keys) {
-                    allNotes += SchemaReadNote(
-                        severity = SchemaReadSeverity.WARNING,
-                        code = "W116",
-                        objectName = seqKey,
-                        message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
-                        hint = routineCauses.joinToString("; "),
-                    )
-                }
-            }
-        }
-
-        // D1 trigger/column diagnostics are NOT passed through here.
-        // D3 (materializeSequenceDefaults) owns all trigger-level W116 emission
-        // to prevent double-emission for the same column.
-
-        return D2Result(sequences, allNotes)
-    }
-
-    /**
-     * Produces notes from the D1 snapshot for non-AVAILABLE states.
-     *
-     * - MISSING: no diagnostics (compatible non-sequence case)
-     * - NOT_ACCESSIBLE without diagnostics (Gate A): no notes
-     *   (no existence legitimation → non-sequence path per §4.3)
-     * - NOT_ACCESSIBLE with diagnostics (post-legitimation): W116
-     * - INVALID_SHAPE: W116 for the degraded table form
-     */
-    // ── D3: Sequence defaults from triggers (0.9.4 AP 6.3) ──
-
-    internal data class D3Result(
-        val enrichedTables: Map<String, TableDefinition>,
-        val confirmedTriggerNames: Set<String>,
-        val notes: List<SchemaReadNote>,
-    ) {
-        /** Remove D3-confirmed support triggers from user triggers. */
-        fun filteredTriggers(
-            triggers: Map<String, TriggerDefinition>,
-        ): Map<String, TriggerDefinition> {
-            if (confirmedTriggerNames.isEmpty()) return triggers
-            return triggers.filterKeys { key ->
-                val (_, trigName) = ObjectKeyCodec.parseTriggerKey(key)
-                trigName !in confirmedTriggerNames
-            }
-        }
-    }
-
-    /**
-     * D3: Materializes SequenceNextVal defaults on columns from confirmed
-     * support triggers. Runs after D2 (sequences available).
-     */
     internal fun materializeSequenceDefaults(
         snapshot: MysqlSequenceSupportSnapshot,
         materializedSequences: Map<String, SequenceDefinition>,
         tables: Map<String, TableDefinition>,
-    ): D3Result {
-        if (snapshot.supportTableState != SupportTableState.AVAILABLE) {
-            return D3Result(tables, emptySet(), emptyList())
-        }
-
-        val confirmedTriggers = mutableSetOf<String>()
-        // table -> column -> sequenceName for confirmed assignments
-        val assignments = mutableMapOf<String, MutableMap<String, String>>()
-        val d3Notes = mutableListOf<SchemaReadNote>()
-
-        // Collect W116 causes per column for deduplication
-        val columnCauses = LinkedHashMap<Pair<String, String>, MutableList<String>>()
-        fun addColumnCause(table: String, column: String, cause: String) {
-            columnCauses.getOrPut(table to column) { mutableListOf() } += cause
-        }
-
-        for (assessment in snapshot.triggerAssessments) {
-            val trigName = assessment.triggerName
-            val table = assessment.tableName
-            val column = assessment.columnName
-            val seqName = assessment.sequenceName
-
-            when (assessment.state) {
-                SupportTriggerState.CONFIRMED -> {
-                    // D3 full validation: marker + name + sequence must be consistent
-                    if (column == null || seqName == null) {
-                        // Body parsing failed — degrade
-                        if (column != null) {
-                            addColumnCause(table, column, "support trigger '$trigName' confirmed but sequence name not extractable")
-                        }
-                        continue
-                    }
-
-                    // Verify sequence exists in D2 materialization
-                    if (seqName !in materializedSequences) {
-                        addColumnCause(table, column, "support trigger '$trigName' references non-materialized sequence '$seqName'")
-                        continue
-                    }
-
-                    // Forward-verify trigger name
-                    val expectedName = MysqlSequenceNaming.triggerName(table, column)
-                    if (trigName != expectedName) {
-                        addColumnCause(table, column, "support trigger name '$trigName' does not match expected '$expectedName'")
-                        continue
-                    }
-
-                    // All checks passed — confirmed assignment
-                    confirmedTriggers += trigName
-                    assignments.getOrPut(table) { mutableMapOf() }[column] = seqName
-                }
-                SupportTriggerState.MISSING_MARKER,
-                SupportTriggerState.NON_CANONICAL,
-                SupportTriggerState.NOT_ACCESSIBLE -> {
-                    // Degraded — only emit W116 if column is fachlich verankerbar
-                    if (column != null && table.isNotEmpty()) {
-                        addColumnCause(table, column, "support trigger '$trigName' has state ${assessment.state}")
-                    }
-                    // else: not verankerbar → internal evidence only, no final W116
-                }
-                SupportTriggerState.USER_OBJECT -> { /* not a support trigger */ }
-            }
-        }
-
-        // Trigger scan not accessible → W116 per materialized sequence
-        // (column defaults cannot be verified, but sequences survive)
-        if (snapshot.triggerAssessments.isEmpty() && materializedSequences.isNotEmpty()) {
-            // Check if the trigger scan was marked inaccessible via D1 diagnostics
-            val triggerScanDiags = snapshot.diagnostics.filter {
-                it.emitsW116 && it.key is SequenceDiagnosticKey &&
-                    it.causes.any { c -> "trigger" in c.lowercase() && "not accessible" in c.lowercase() }
-            }
-            if (triggerScanDiags.isNotEmpty()) {
-                for (seqKey in materializedSequences.keys) {
-                    d3Notes += SchemaReadNote(
-                        severity = SchemaReadSeverity.WARNING,
-                        code = "W116",
-                        objectName = seqKey,
-                        message = "Sequence metadata reconstructed, but trigger verification was not possible",
-                        hint = "support trigger metadata is not accessible",
-                    )
-                }
-            }
-        }
-
-        // Enrich column defaults
-        val enrichedTables = tables.mapValues { (tableName, tableDef) ->
-            val tableAssignments = assignments[tableName] ?: return@mapValues tableDef
-            val enrichedColumns = tableDef.columns.mapValues { (colName, colDef) ->
-                val seqName = tableAssignments[colName] ?: return@mapValues colDef
-                // Check for conflicting existing default — only null or identical SequenceNextVal are compatible
-                val existingDefault = colDef.default
-                val compatible = existingDefault == null ||
-                    (existingDefault is DefaultValue.SequenceNextVal && existingDefault.sequenceName == seqName)
-                if (!compatible) {
-                    addColumnCause(tableName, colName, "confirmed trigger but column has conflicting default '$existingDefault'")
-                    colDef
-                } else {
-                    colDef.copy(default = DefaultValue.SequenceNextVal(seqName))
-                }
-            }
-            tableDef.copy(columns = LinkedHashMap(enrichedColumns))
-        }
-
-        // Emit W116 per column (deduplicated)
-        for ((tableCol, causes) in columnCauses) {
-            d3Notes += SchemaReadNote(
-                severity = SchemaReadSeverity.WARNING,
-                code = "W116",
-                objectName = "${tableCol.first}.${tableCol.second}",
-                message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
-                hint = causes.joinToString("; "),
-            )
-        }
-
-        return D3Result(enrichedTables, confirmedTriggers, d3Notes)
-    }
-
-    private fun aggregateSupportNotes(
-        snapshot: MysqlSequenceSupportSnapshot,
-    ): List<SchemaReadNote> {
-        return snapshot.diagnostics
-            .filter { it.emitsW116 }
-            .groupBy { it.key }
-            .map { (key, diags) ->
-                SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "W116",
-                    objectName = when (key) {
-                        is SequenceDiagnosticKey -> key.sequenceName
-                        is ColumnDiagnosticKey -> "${key.tableName}.${key.columnName}"
-                    },
-                    message = "Sequence metadata reconstructed, but required support objects are missing or degraded",
-                    hint = diags.flatMap { it.causes }.joinToString("; "),
-                )
-            }
-    }
-
-    private fun buildSupportDiagnostics(
-        scope: ReverseScope,
-        rows: List<SequenceRowSnapshot>,
-        ambiguousKeys: Set<String>,
-        routineStates: Map<String, SupportRoutineState>,
-        triggerAssessments: List<MysqlMetadataQueries.SupportTriggerAssessment>,
-        triggerScanAccessible: Boolean,
-        confirmedSequenceNames: Set<String>,
-    ): List<SupportDiagnostic> {
-        // Collect causes per key, then deduplicate
-        val causesByKey = LinkedHashMap<DiagnosticKey, MutableList<String>>()
-        fun addCause(key: DiagnosticKey, cause: String) {
-            causesByKey.getOrPut(key) { mutableListOf() } += cause
-        }
-
-        // D1 only handles ambiguity and trigger-level diagnostics.
-        // Routine diagnostics are entirely handled by D2 materializeSupportSequences()
-        // based on actually materialized sequence keys (not pre-validation names).
-
-        // Sequence-level: ambiguous keys (among d-migrate rows only)
-        for (name in ambiguousKeys) {
-            addCause(SequenceDiagnosticKey(scope, name), "multiple rows for sequence key '$name'")
-        }
-
-        // Trigger-scan-level: entire scan inaccessible
-        if (!triggerScanAccessible && confirmedSequenceNames.isNotEmpty()) {
-            for (seq in confirmedSequenceNames) {
-                addCause(SequenceDiagnosticKey(scope, seq),
-                    "support trigger metadata is not accessible; column-level verification not possible")
-            }
-        }
-
-        // Trigger-level: degraded states → ColumnDiagnosticKey
-        // (only when at least one d-migrate row exists as context)
-        if (confirmedSequenceNames.isNotEmpty()) {
-            for (assessment in triggerAssessments) {
-                when (assessment.state) {
-                    SupportTriggerState.MISSING_MARKER,
-                    SupportTriggerState.NON_CANONICAL,
-                    SupportTriggerState.NOT_ACCESSIBLE -> {
-                        // Only emit if column is fachlich verankerbar (not null)
-                        val col = assessment.columnName
-                        if (col != null && assessment.tableName.isNotEmpty()) {
-                            val colKey = ColumnDiagnosticKey(scope, assessment.tableName, col)
-                            addCause(colKey, "support trigger '${assessment.triggerName}' has state ${assessment.state}")
-                        }
-                        // else: not verankerbar → internal evidence only, no W116
-                    }
-                    SupportTriggerState.CONFIRMED,
-                    SupportTriggerState.USER_OBJECT -> { /* no diagnostic */ }
-                }
-            }
-        }
-
-        // Build deduplicated diagnostics: one per key
-        return causesByKey.map { (key, causes) ->
-            SupportDiagnostic(key = key, causes = causes, emitsW116 = true)
-        }
-    }
-
-    // ── Support object filtering ───────────────────
-
-    private fun filterSupportTable(
-        tables: Map<String, TableDefinition>,
-        snapshot: MysqlSequenceSupportSnapshot,
-    ): Map<String, TableDefinition> {
-        // D2 §4.6: suppress dmg_sequences ONLY when the canonical support
-        // form is confirmed (AVAILABLE). All other states — INVALID_SHAPE,
-        // NOT_ACCESSIBLE, MISSING — leave the table as a normal user object.
-        if (snapshot.supportTableState != SupportTableState.AVAILABLE) return tables
-        return tables.filterKeys { it != MysqlSequenceNaming.SUPPORT_TABLE }
-    }
-
-    private fun filterSupportRoutines(
-        functions: Map<String, FunctionDefinition>,
-        snapshot: MysqlSequenceSupportSnapshot,
-    ): Map<String, FunctionDefinition> {
-        val confirmed = snapshot.routineStates
-            .filter { it.value == SupportRoutineState.CONFIRMED }
-            .keys
-        if (confirmed.isEmpty()) return functions
-        // Routine map keys use ObjectKeyCodec format: "name(params)"
-        // Match on the raw name prefix before the '(' delimiter
-        return functions.filterKeys { key ->
-            val rawName = key.substringBefore('(')
-            rawName !in confirmed
-        }
-    }
-
-    private fun filterSupportTriggers(
-        triggers: Map<String, TriggerDefinition>,
-        snapshot: MysqlSequenceSupportSnapshot,
-    ): Map<String, TriggerDefinition> {
-        val confirmed = snapshot.triggerStates
-            .filter { it.value == SupportTriggerState.CONFIRMED }
-            .keys
-        if (confirmed.isEmpty()) return triggers
-        return triggers.filterKeys { key ->
-            // Trigger keys use ObjectKeyCodec format: "table::name"
-            val (_, trigName) = ObjectKeyCodec.parseTriggerKey(key)
-            trigName !in confirmed
-        }
-    }
-
-    // ── Tables ──────────────────────────────────
+    ): MysqlSequenceSupport.D3Result = sequenceSupport.materializeSequenceDefaults(snapshot, materializedSequences, tables)
 
     private fun readTables(
         session: JdbcOperations,
@@ -747,20 +108,14 @@ class MysqlSchemaReader(
         val checks = MysqlMetadataQueries.listCheckConstraints(session, database, metaTable)
         val engine = MysqlMetadataQueries.listTableEngine(session, database, metaTable)
 
-        // MySQL auto-creates a support index for each FK. We suppress indices
-        // whose name matches a FK constraint name (MySQL's default naming).
-        // When the name does NOT match but columns overlap, we keep the index
-        // as a regular entry and add a note (false-positive before silent loss).
         val fkConstraintNames = fks.map { it.name }.toSet()
         val fkColumnLists = fks.map { it.columns }
         val indices = mutableListOf<dev.dmigrate.driver.metadata.IndexProjection>()
         for (idx in allIndices) {
             if (idx.name in fkConstraintNames) {
-                // Safely identified as FK backing index — suppress
                 continue
             }
             if (fkColumnLists.any { it == idx.columns }) {
-                // Columns match an FK but name differs — keep with note
                 notes += SchemaReadNote(
                     severity = SchemaReadSeverity.INFO,
                     code = "R330",
@@ -781,7 +136,7 @@ class MysqlSchemaReader(
             val isPkCol = colName in pkColumns
             val extra = (row["extra"] as? String) ?: ""
             val isAutoIncrement = extra.contains("auto_increment", ignoreCase = true)
-            val mapping = MysqlTypeMapping.mapColumn(
+            val mapping = MysqlTypeMapping.mapColumn(MysqlTypeMapping.ColumnInput(
                 dataType = row["data_type"] as String,
                 columnType = (row["column_type"] as? String) ?: (row["data_type"] as String),
                 isAutoIncrement = isAutoIncrement,
@@ -790,7 +145,7 @@ class MysqlSchemaReader(
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
                 tableName = displayName,
                 colName = colName,
-            )
+            ))
             if (mapping.note != null) notes += mapping.note
             val neutralType = mapping.type
 
@@ -811,15 +166,13 @@ class MysqlSchemaReader(
             )
         }
 
-        // Multi-column constraints
         val constraints = mutableListOf<ConstraintDefinition>()
         constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(fks)
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         constraints += SchemaReaderUtils.buildCheckConstraints(checks)
 
-        // Non-unique indices + single-col unique (not in constraints)
         val indexDefs = indices.filter { !it.isUnique || it.columns.size == 1 }
-            .filter { !(it.isUnique && it.columns.size == 1) } // single-col unique on ColumnDefinition
+            .filter { !(it.isUnique && it.columns.size == 1) }
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
@@ -842,126 +195,4 @@ class MysqlSchemaReader(
             metadata = metadata,
         )
     }
-
-    // ── Views ───────────────────────────────────
-
-    private fun readViews(session: JdbcOperations, database: String): Map<String, ViewDefinition> {
-        val rows = MysqlMetadataQueries.listViews(session, database)
-        val viewFuncDeps = MysqlMetadataQueries.listViewRoutineUsage(session, database)
-        val result = LinkedHashMap<String, ViewDefinition>()
-        for (row in rows) {
-            val viewName = row["table_name"] as String
-            val funcDeps = viewFuncDeps[viewName] ?: emptyList()
-            result[viewName] = ViewDefinition(
-                query = row["view_definition"] as? String,
-                dependencies = if (funcDeps.isNotEmpty()) DependencyInfo(functions = funcDeps) else null,
-                sourceDialect = "mysql",
-            )
-        }
-        return result
-    }
-
-    // ── Functions ───────────────────────────────
-
-    private fun readFunctions(
-        session: JdbcOperations,
-        database: String,
-        notes: MutableList<SchemaReadNote>,
-    ): Map<String, FunctionDefinition> {
-        val rows = MysqlMetadataQueries.listFunctions(session, database)
-        val result = LinkedHashMap<String, FunctionDefinition>()
-        for (row in rows) {
-            val name = row["routine_name"] as String
-            val params = MysqlMetadataQueries.listRoutineParameters(session, database, name, "FUNCTION")
-            val paramDefs = params.map { p ->
-                ParameterDefinition(
-                    name = (p["parameter_name"] as? String) ?: "p${p["ordinal_position"]}",
-                    type = MysqlTypeMapping.mapParamType(p["data_type"] as? String ?: "text"),
-                    direction = when ((p["parameter_mode"] as? String)?.uppercase()) {
-                        "OUT" -> ParameterDirection.OUT
-                        "INOUT" -> ParameterDirection.INOUT
-                        else -> ParameterDirection.IN
-                    },
-                )
-            }
-            val key = ObjectKeyCodec.routineKey(name, paramDefs)
-            result[key] = FunctionDefinition(
-                parameters = paramDefs,
-                returns = (row["dtd_identifier"] as? String)?.let { ReturnType(type = MysqlTypeMapping.mapParamType(it)) },
-                language = row["routine_body"] as? String,
-                body = row["routine_definition"] as? String,
-                deterministic = (row["is_deterministic"] as? String) == "YES",
-                sourceDialect = "mysql",
-            )
-        }
-        return result
-    }
-
-    // ── Procedures ──────────────────────────────
-
-    private fun readProcedures(
-        session: JdbcOperations,
-        database: String,
-        notes: MutableList<SchemaReadNote>,
-    ): Map<String, ProcedureDefinition> {
-        val rows = MysqlMetadataQueries.listProcedures(session, database)
-        val result = LinkedHashMap<String, ProcedureDefinition>()
-        for (row in rows) {
-            val name = row["routine_name"] as String
-            val params = MysqlMetadataQueries.listRoutineParameters(session, database, name, "PROCEDURE")
-            val paramDefs = params.map { p ->
-                ParameterDefinition(
-                    name = (p["parameter_name"] as? String) ?: "p${p["ordinal_position"]}",
-                    type = MysqlTypeMapping.mapParamType(p["data_type"] as? String ?: "text"),
-                    direction = when ((p["parameter_mode"] as? String)?.uppercase()) {
-                        "OUT" -> ParameterDirection.OUT
-                        "INOUT" -> ParameterDirection.INOUT
-                        else -> ParameterDirection.IN
-                    },
-                )
-            }
-            val key = ObjectKeyCodec.routineKey(name, paramDefs)
-            result[key] = ProcedureDefinition(
-                parameters = paramDefs,
-                language = row["routine_body"] as? String,
-                body = row["routine_definition"] as? String,
-                sourceDialect = "mysql",
-            )
-        }
-        return result
-    }
-
-    // ── Triggers ────────────────────────────────
-
-    private fun readTriggers(session: JdbcOperations, database: String): Map<String, TriggerDefinition> {
-        val rows = MysqlMetadataQueries.listTriggers(session, database)
-        val result = LinkedHashMap<String, TriggerDefinition>()
-        for (row in rows) {
-            val name = row["trigger_name"] as String
-            val table = row["event_object_table"] as String
-            val key = ObjectKeyCodec.triggerKey(table, name)
-            result[key] = TriggerDefinition(
-                table = table,
-                event = when ((row["event_manipulation"] as String).uppercase()) {
-                    "INSERT" -> TriggerEvent.INSERT
-                    "UPDATE" -> TriggerEvent.UPDATE
-                    "DELETE" -> TriggerEvent.DELETE
-                    else -> TriggerEvent.INSERT
-                },
-                timing = when ((row["action_timing"] as String).uppercase()) {
-                    "BEFORE" -> TriggerTiming.BEFORE
-                    "AFTER" -> TriggerTiming.AFTER
-                    else -> TriggerTiming.BEFORE
-                },
-                forEach = when ((row["action_orientation"] as? String)?.uppercase()) {
-                    "STATEMENT" -> TriggerForEach.STATEMENT
-                    else -> TriggerForEach.ROW
-                },
-                body = row["action_statement"] as? String,
-                sourceDialect = "mysql",
-            )
-        }
-        return result
-    }
-
 }

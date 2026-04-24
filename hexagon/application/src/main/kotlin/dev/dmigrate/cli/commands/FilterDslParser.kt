@@ -27,6 +27,7 @@ package dev.dmigrate.cli.commands
  * ```
  */
 object FilterDslParser {
+    private val GROUP_TERMINATORS = setOf("AND", "OR")
 
     fun parse(raw: String): FilterDslParseResult {
         val trimmed = raw.trim()
@@ -36,7 +37,7 @@ object FilterDslParser {
             )
         }
         val tokens = try {
-            tokenize(trimmed)
+            FilterDslTokenizer.tokenize(trimmed)
         } catch (e: FilterDslParseException) {
             return FilterDslParseResult.Failure(e.error)
         }
@@ -45,7 +46,7 @@ object FilterDslParser {
                 FilterDslParseError("Filter expression must not be empty", null, 0)
             )
         }
-        val state = ParserState(tokens)
+        val state = FilterDslParserState(tokens)
         return try {
             val expr = parseOrExpr(state)
             if (!state.isAtEnd()) {
@@ -58,180 +59,9 @@ object FilterDslParser {
         }
     }
 
-    // ── Tokenizer ──────────────────────────────────────────────
-
-    private enum class TokenType {
-        IDENTIFIER, INTEGER, DECIMAL, STRING, BOOL,
-        KEYWORD, // AND, OR, NOT, IN, IS, NULL
-        OP,      // = != > >= < <=
-        ARITH,   // + - * /
-        LPAREN, RPAREN, COMMA, DOT,
-    }
-
-    private data class Token(
-        val type: TokenType,
-        val text: String,
-        val pos: Int,
-    )
-
-    private val KEYWORDS = setOf("AND", "OR", "NOT", "IN", "IS", "NULL")
-
-    private fun tokenize(input: String): List<Token> {
-        val tokens = mutableListOf<Token>()
-        var i = 0
-        while (i < input.length) {
-            val c = input[i]
-            when {
-                c.isWhitespace() -> i++
-                c == '(' -> { tokens += Token(TokenType.LPAREN, "(", i); i++ }
-                c == ')' -> { tokens += Token(TokenType.RPAREN, ")", i); i++ }
-                c == ',' -> { tokens += Token(TokenType.COMMA, ",", i); i++ }
-                c == '.' -> { tokens += Token(TokenType.DOT, ".", i); i++ }
-                c == '=' -> { tokens += Token(TokenType.OP, "=", i); i++ }
-                c == '!' && i + 1 < input.length && input[i + 1] == '=' -> {
-                    tokens += Token(TokenType.OP, "!=", i); i += 2
-                }
-                c == '>' && i + 1 < input.length && input[i + 1] == '=' -> {
-                    tokens += Token(TokenType.OP, ">=", i); i += 2
-                }
-                c == '<' && i + 1 < input.length && input[i + 1] == '=' -> {
-                    tokens += Token(TokenType.OP, "<=", i); i += 2
-                }
-                c == '>' -> { tokens += Token(TokenType.OP, ">", i); i++ }
-                c == '<' -> { tokens += Token(TokenType.OP, "<", i); i++ }
-                c == '+' -> { tokens += Token(TokenType.ARITH, "+", i); i++ }
-                c == '*' -> { tokens += Token(TokenType.ARITH, "*", i); i++ }
-                c == '/' -> { tokens += Token(TokenType.ARITH, "/", i); i++ }
-                c == '-' -> { tokens += Token(TokenType.ARITH, "-", i); i++ }
-                c == '\'' -> {
-                    val start = i
-                    i++ // skip opening quote
-                    val sb = StringBuilder()
-                    while (i < input.length) {
-                        if (input[i] == '\'') {
-                            if (i + 1 < input.length && input[i + 1] == '\'') {
-                                sb.append('\'')
-                                i += 2
-                            } else {
-                                break
-                            }
-                        } else {
-                            sb.append(input[i])
-                            i++
-                        }
-                    }
-                    if (i >= input.length) {
-                        throw FilterDslParseException(
-                            FilterDslParseError("Unterminated string literal", null, start)
-                        )
-                    }
-                    i++ // skip closing quote
-                    tokens += Token(TokenType.STRING, sb.toString(), start)
-                }
-                c.isDigit() -> {
-                    val start = i
-                    while (i < input.length && input[i].isDigit()) i++
-                    if (i < input.length && input[i] == '.' && i + 1 < input.length && input[i + 1].isDigit()) {
-                        i++ // skip dot
-                        while (i < input.length && input[i].isDigit()) i++
-                        val text = input.substring(start, i)
-                        val intPart = text.substringBefore('.')
-                        if (intPart.length > 1 && intPart.startsWith('0')) {
-                            throw FilterDslParseException(
-                                FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, start)
-                            )
-                        }
-                        tokens += Token(TokenType.DECIMAL, text, start)
-                    } else {
-                        val text = input.substring(start, i)
-                        if (text.length > 1 && text.startsWith('0')) {
-                            throw FilterDslParseException(
-                                FilterDslParseError("Leading zeros not allowed in numeric literal '$text'", text, start)
-                            )
-                        }
-                        tokens += Token(TokenType.INTEGER, text, start)
-                    }
-                }
-                c.isLetter() || c == '_' -> {
-                    val start = i
-                    while (i < input.length && (input[i].isLetterOrDigit() || input[i] == '_')) i++
-                    val text = input.substring(start, i)
-                    val upper = text.uppercase(java.util.Locale.ROOT)
-                    when {
-                        upper in KEYWORDS -> tokens += Token(TokenType.KEYWORD, upper, start)
-                        upper == "TRUE" || upper == "FALSE" -> tokens += Token(TokenType.BOOL, upper, start)
-                        else -> tokens += Token(TokenType.IDENTIFIER, text, start)
-                    }
-                }
-                else -> throw FilterDslParseException(
-                    FilterDslParseError("Unexpected character '${c}'", c.toString(), i)
-                )
-            }
-        }
-        return tokens
-    }
-
-    // ── Parser state ───────────────────────────────────────────
-
-    private class ParserState(private val tokens: List<Token>) {
-        private var pos = 0
-
-        fun isAtEnd(): Boolean = pos >= tokens.size
-        fun peek(): Token = tokens[pos]
-        fun advance(): Token = tokens[pos++]
-        fun save(): Int = pos
-        fun restore(saved: Int) { pos = saved }
-
-        fun matchKeyword(vararg keywords: String): Token? {
-            if (isAtEnd()) return null
-            val tok = peek()
-            if (tok.type == TokenType.KEYWORD && tok.text in keywords) {
-                return advance()
-            }
-            return null
-        }
-
-        fun matchType(type: TokenType): Token? {
-            if (isAtEnd()) return null
-            if (peek().type == type) return advance()
-            return null
-        }
-
-        fun expect(type: TokenType, description: String): Token {
-            if (isAtEnd()) {
-                val lastPos = if (tokens.isNotEmpty()) tokens.last().pos + tokens.last().text.length else 0
-                throw FilterDslParseException(
-                    FilterDslParseError("Expected $description but reached end of input", null, lastPos)
-                )
-            }
-            val tok = peek()
-            if (tok.type != type) {
-                throw error("Expected $description but found '${tok.text}'", tok)
-            }
-            return advance()
-        }
-
-        fun expectKeyword(keyword: String): Token {
-            if (isAtEnd()) {
-                val lastPos = if (tokens.isNotEmpty()) tokens.last().pos + tokens.last().text.length else 0
-                throw FilterDslParseException(
-                    FilterDslParseError("Expected '$keyword' but reached end of input", null, lastPos)
-                )
-            }
-            val tok = peek()
-            if (tok.type != TokenType.KEYWORD || tok.text != keyword) {
-                throw error("Expected '$keyword' but found '${tok.text}'", tok)
-            }
-            return advance()
-        }
-
-        fun error(message: String, tok: Token): FilterDslParseException =
-            FilterDslParseException(FilterDslParseError(message, tok.text, tok.pos))
-    }
-
     // ── Recursive descent ──────────────────────────────────────
 
-    private fun parseOrExpr(s: ParserState): FilterExpr {
+    private fun parseOrExpr(s: FilterDslParserState): FilterExpr {
         var left = parseAndExpr(s)
         while (s.matchKeyword("OR") != null) {
             val right = parseAndExpr(s)
@@ -240,7 +70,7 @@ object FilterDslParser {
         return left
     }
 
-    private fun parseAndExpr(s: ParserState): FilterExpr {
+    private fun parseAndExpr(s: FilterDslParserState): FilterExpr {
         var left = parseNotExpr(s)
         while (s.matchKeyword("AND") != null) {
             val right = parseNotExpr(s)
@@ -249,7 +79,7 @@ object FilterDslParser {
         return left
     }
 
-    private fun parseNotExpr(s: ParserState): FilterExpr {
+    private fun parseNotExpr(s: FilterDslParserState): FilterExpr {
         if (s.matchKeyword("NOT") != null) {
             val inner = parseNotExpr(s)
             return FilterExpr.Not(inner)
@@ -257,7 +87,7 @@ object FilterDslParser {
         return parsePredicate(s)
     }
 
-    private fun parsePredicate(s: ParserState): FilterExpr {
+    private fun parsePredicate(s: FilterDslParserState): FilterExpr {
         // Grouped filter expression: ( filter_expr )
         // Use backtracking to distinguish from (value_expr) in comparisons.
         if (!s.isAtEnd() && s.peek().type == TokenType.LPAREN) {
@@ -267,10 +97,7 @@ object FilterDslParser {
                 val inner = parseOrExpr(s)
                 s.expect(TokenType.RPAREN, "')'")
                 // Valid grouped filter if followed by AND/OR/end/closing-paren
-                if (s.isAtEnd() ||
-                    (s.peek().type == TokenType.KEYWORD && s.peek().text in setOf("AND", "OR")) ||
-                    s.peek().type == TokenType.RPAREN
-                ) {
+                if (isGroupedFilterTail(s)) {
                     FilterExpr.Group(inner)
                 } else {
                     null // not a filter group, backtrack
@@ -282,7 +109,7 @@ object FilterDslParser {
             s.restore(saved)
         }
 
-        val left = parseValueExpr(s)
+        val left = FilterDslValueParser.parseValueExpr(s)
 
         if (s.isAtEnd()) {
             throw FilterDslParseException(
@@ -305,9 +132,9 @@ object FilterDslParser {
         if (tok.type == TokenType.KEYWORD && tok.text == "IN") {
             s.advance()
             s.expect(TokenType.LPAREN, "'('")
-            val values = mutableListOf(parseValueExpr(s))
+            val values = mutableListOf(FilterDslValueParser.parseValueExpr(s))
             while (s.matchType(TokenType.COMMA) != null) {
-                values += parseValueExpr(s)
+                values += FilterDslValueParser.parseValueExpr(s)
             }
             s.expect(TokenType.RPAREN, "')'")
             // Reject null in IN lists (§4.5)
@@ -328,12 +155,19 @@ object FilterDslParser {
         // Comparison operators
         if (tok.type == TokenType.OP) {
             val op = s.advance()
-            val right = parseValueExpr(s)
+            val right = FilterDslValueParser.parseValueExpr(s)
             checkNullLiteral(right, op)
             return FilterExpr.Comparison(left, op.text, right)
         }
 
         throw s.error("Expected operator, 'IS', or 'IN' but found '${tok.text}'", tok)
+    }
+
+    private fun isGroupedFilterTail(state: FilterDslParserState): Boolean {
+        if (state.isAtEnd()) return true
+        val token = state.peek()
+        if (token.type == TokenType.RPAREN) return true
+        return token.type == TokenType.KEYWORD && token.text in GROUP_TERMINATORS
     }
 
     private fun checkNullLiteral(expr: ValueExpr, opToken: Token) {
@@ -346,151 +180,6 @@ object FilterDslParser {
                 )
             )
         }
-    }
-
-    // ── Value expressions (arithmetic) ─────────────────────────
-
-    private fun parseValueExpr(s: ParserState): ValueExpr = parseAddExpr(s)
-
-    private fun parseAddExpr(s: ParserState): ValueExpr {
-        var left = parseMulExpr(s)
-        while (!s.isAtEnd() && s.peek().type == TokenType.ARITH && s.peek().text in setOf("+", "-")) {
-            val op = s.advance()
-            val right = parseMulExpr(s)
-            left = ValueExpr.Arithmetic(left, op.text, right)
-        }
-        return left
-    }
-
-    private fun parseMulExpr(s: ParserState): ValueExpr {
-        var left = parseUnaryExpr(s)
-        while (!s.isAtEnd() && s.peek().type == TokenType.ARITH && s.peek().text in setOf("*", "/")) {
-            val op = s.advance()
-            val right = parseUnaryExpr(s)
-            left = ValueExpr.Arithmetic(left, op.text, right)
-        }
-        return left
-    }
-
-    private fun parseUnaryExpr(s: ParserState): ValueExpr {
-        if (!s.isAtEnd() && s.peek().type == TokenType.ARITH && s.peek().text == "-") {
-            val op = s.advance()
-            val inner = parseAtom(s)
-            return ValueExpr.UnaryMinus(inner)
-        }
-        return parseAtom(s)
-    }
-
-    private fun parseAtom(s: ParserState): ValueExpr {
-        if (s.isAtEnd()) {
-            throw FilterDslParseException(
-                FilterDslParseError("Expected value but reached end of input", null, 0)
-            )
-        }
-        val tok = s.peek()
-        return when (tok.type) {
-            TokenType.INTEGER -> {
-                s.advance()
-                ValueExpr.IntLiteral(tok.text.toLong(), tok.pos)
-            }
-            TokenType.DECIMAL -> {
-                s.advance()
-                ValueExpr.DecLiteral(tok.text.toBigDecimal(), tok.pos)
-            }
-            TokenType.STRING -> {
-                s.advance()
-                ValueExpr.StrLiteral(tok.text, tok.pos)
-            }
-            TokenType.BOOL -> {
-                s.advance()
-                ValueExpr.BoolLiteral(tok.text.uppercase(java.util.Locale.ROOT) == "TRUE", tok.pos)
-            }
-            TokenType.KEYWORD -> {
-                if (tok.text == "NULL") {
-                    s.advance()
-                    ValueExpr.NullKeyword(tok.pos)
-                } else {
-                    throw s.error("Unexpected keyword '${tok.text}' in value position", tok)
-                }
-            }
-            TokenType.IDENTIFIER -> {
-                s.advance()
-                // Check for function call: identifier followed by '('
-                if (!s.isAtEnd() && s.peek().type == TokenType.LPAREN) {
-                    val fnName = tok.text
-                    return parseFunctionCall(s, fnName, tok.pos)
-                }
-                // Check for qualified identifier: identifier.identifier
-                if (!s.isAtEnd() && s.peek().type == TokenType.DOT) {
-                    s.advance() // consume dot
-                    val col = s.expect(TokenType.IDENTIFIER, "column name after '.'")
-                    // Reject further dots
-                    if (!s.isAtEnd() && s.peek().type == TokenType.DOT) {
-                        throw s.error(
-                            "Multi-level qualified identifiers (schema.table.column) are not supported; " +
-                                "use table.column",
-                            s.peek(),
-                        )
-                    }
-                    return ValueExpr.Identifier("${tok.text}.${col.text}", tok.pos)
-                }
-                ValueExpr.Identifier(tok.text, tok.pos)
-            }
-            TokenType.LPAREN -> {
-                s.advance()
-                val inner = parseValueExpr(s)
-                s.expect(TokenType.RPAREN, "')'")
-                ValueExpr.GroupedValue(inner)
-            }
-            else -> throw s.error("Expected value but found '${tok.text}'", tok)
-        }
-    }
-
-    // ── Function calls ─────────────────────────────────────────
-
-    private val ALLOWED_FUNCTIONS: Map<String, IntRange> = mapOf(
-        "LOWER" to 1..1,
-        "UPPER" to 1..1,
-        "TRIM" to 1..1,
-        "LENGTH" to 1..1,
-        "ABS" to 1..1,
-        "ROUND" to 1..2,
-        "COALESCE" to 2..Int.MAX_VALUE,
-    )
-
-    private fun parseFunctionCall(s: ParserState, name: String, pos: Int): ValueExpr {
-        val upperName = name.uppercase(java.util.Locale.ROOT)
-        val arity = ALLOWED_FUNCTIONS[upperName]
-            ?: throw FilterDslParseException(
-                FilterDslParseError(
-                    "Function '$name' is not allowed; permitted functions: ${ALLOWED_FUNCTIONS.keys.sorted().joinToString(", ")}",
-                    name,
-                    pos,
-                )
-            )
-
-        s.advance() // consume '('
-        val args = mutableListOf<ValueExpr>()
-        if (!s.isAtEnd() && s.peek().type != TokenType.RPAREN) {
-            args += parseValueExpr(s)
-            while (s.matchType(TokenType.COMMA) != null) {
-                args += parseValueExpr(s)
-            }
-        }
-        s.expect(TokenType.RPAREN, "')'")
-
-        if (args.size !in arity) {
-            val expected = if (arity.first == arity.last) "${arity.first}" else "${arity.first}–${arity.last}"
-            throw FilterDslParseException(
-                FilterDslParseError(
-                    "Function '$upperName' expects $expected argument(s) but got ${args.size}",
-                    upperName,
-                    pos,
-                )
-            )
-        }
-
-        return ValueExpr.FunctionCall(upperName, args, pos)
     }
 }
 

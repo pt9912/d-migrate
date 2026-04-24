@@ -66,78 +66,51 @@ class ValueSerializer(
         if (value == null) return SerializedValue.Null
 
         return when (value) {
-            // ─── Primitive direkt ───────────────────────────────
             is String -> SerializedValue.Text(value)
             is Boolean -> SerializedValue.Bool(value)
-            is Byte -> SerializedValue.Integer(value.toLong())
-            is Short -> SerializedValue.Integer(value.toLong())
-            is Int -> SerializedValue.Integer(value.toLong())
-            is Long -> SerializedValue.Integer(value)
+            is Byte, is Short, is Int, is Long -> serializeIntegral(value)
             is Float -> serializeFloating(table, column, value.toDouble())
             is Double -> serializeFloating(table, column, value)
-
-            // ─── Präzisions-relevante Numerik (F30) ─────────────
-            // Plan §6.4.1:
-            //   BigInteger → JSON-String (Präzisionsschutz), YAML-Number, CSV dezimal
-            //   BigDecimal → JSON-String, YAML-String,        CSV unformatiert
             is BigInteger -> SerializedValue.PreciseInteger(value)
             is BigDecimal -> SerializedValue.PreciseDecimal(value.toPlainString())
-
-            // ─── Datum/Zeit als ISO 8601 ────────────────────────
-            // 0.8.0 Phase E (`docs/ImpPlan-0.8.0-E.md` §4.1-§4.3):
-            //   - §4.1 ISO 8601 bleibt der einzige Standardpfad; kein Locale.
-            //   - §4.2 OffsetDateTime bleibt offsethaltig.
-            //   - §4.2 ZonedDateTime wird offsetbasiert serialisiert; die ZoneId
-            //          ist in 0.8.0 bewusst nicht Teil des Vertrags (§8 R3).
-            //   - §4.3 LocalDate/LocalTime/LocalDateTime bleiben ohne Offset
-            //          und werden nicht still zoniert.
-            // Die Formatter hier sind die "Render-Seite" desselben Vertrags,
-            // den `cli.i18n.TemporalFormatPolicy` in `hexagon:application`
-            // benennt (modulgrenz-konform: keine Ruckwaertsabhaengigkeit von
-            // `formats` auf `application`).
-            is SqlDate -> SerializedValue.Text(value.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE))
-            is SqlTime -> SerializedValue.Text(value.toLocalTime().format(DateTimeFormatter.ISO_LOCAL_TIME))
-            is Timestamp -> SerializedValue.Text(value.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-            is LocalDate -> SerializedValue.Text(value.format(DateTimeFormatter.ISO_LOCAL_DATE))
-            is LocalTime -> SerializedValue.Text(value.format(DateTimeFormatter.ISO_LOCAL_TIME))
-            is LocalDateTime -> SerializedValue.Text(value.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-            is OffsetDateTime -> SerializedValue.Text(value.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-            is ZonedDateTime -> SerializedValue.Text(value.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-            is Instant -> SerializedValue.Text(value.toString())
-
-            // ─── UUID ───────────────────────────────────────────
+            is SqlDate, is SqlTime, is Timestamp,
+            is LocalDate, is LocalTime, is LocalDateTime,
+            is OffsetDateTime, is ZonedDateTime, is Instant -> serializeTemporal(value)
             is UUID -> SerializedValue.Text(value.toString())
-
-            // ─── Binärdaten als Base64 ──────────────────────────
             is ByteArray -> SerializedValue.Text(base64(value))
-
-            // ─── JDBC LOB-Typen ─────────────────────────────────
             is Blob -> SerializedValue.Text(base64(readBlob(value)))
             is Clob -> SerializedValue.Text(readClob(value))
-
-            // ─── JDBC Array — F29: rekursive Sequence ───────────
-            // Plan §6.4.1:
-            //   JSON → rekursive JSON-Array-Serialisierung
-            //   YAML → YAML-Sequence
-            //   CSV  → nicht unterstützt → W201 + null
-            //
-            // SerializedValue.Sequence trägt die rekursiv serialisierten
-            // Elemente; CsvChunkWriter erkennt Sequence und ersetzt sie
-            // beim Render durch null + W201 (siehe CsvChunkWriter.renderValue).
             is SqlArray -> serializeSqlArray(table, column, value)
-
-            // ─── JDBC Struct (W201) ─────────────────────────────
             is Struct -> {
                 emit("W201", table, column, value, "java.sql.Struct is not supported in 0.3.0; using toString()")
                 SerializedValue.Text(value.toString())
             }
-
-            // ─── PostgreSQL-spezifische Typen via class name ────
-            // (Wir referenzieren die Klassen NICHT direkt, weil das eine
-            // Compile-Time-Dependency auf den PG-Treiber wäre.)
             else -> serializeByClassName(table, column, value)
         }
     }
+
+    private fun serializeIntegral(value: Any): SerializedValue = when (value) {
+        is Byte -> SerializedValue.Integer(value.toLong())
+        is Short -> SerializedValue.Integer(value.toLong())
+        is Int -> SerializedValue.Integer(value.toLong())
+        is Long -> SerializedValue.Integer(value)
+        else -> SerializedValue.Integer((value as Number).toLong())
+    }
+
+    private fun serializeTemporal(value: Any): SerializedValue = SerializedValue.Text(
+        when (value) {
+            is SqlDate -> value.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE)
+            is SqlTime -> value.toLocalTime().format(DateTimeFormatter.ISO_LOCAL_TIME)
+            is Timestamp -> value.toLocalDateTime().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            is LocalDate -> value.format(DateTimeFormatter.ISO_LOCAL_DATE)
+            is LocalTime -> value.format(DateTimeFormatter.ISO_LOCAL_TIME)
+            is LocalDateTime -> value.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            is OffsetDateTime -> value.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+            is ZonedDateTime -> value.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+            is Instant -> value.toString()
+            else -> value.toString()
+        }
+    )
 
     /**
      * F29: java.sql.Array → SerializedValue.Sequence (rekursiv).

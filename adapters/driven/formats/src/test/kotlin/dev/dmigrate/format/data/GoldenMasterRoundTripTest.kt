@@ -82,7 +82,7 @@ class GoldenMasterRoundTripTest : FunSpec({
         return result
     }
 
-    fun assertValueEquivalent(expected: Any?, actual: Any?, context: String) {
+    fun assertValueEquivalent(expected: Any?, actual: Any?) {
         when {
             expected == null -> actual.shouldBeNull()
             expected is Number && actual is Number ->
@@ -103,7 +103,7 @@ class GoldenMasterRoundTripTest : FunSpec({
             val act = actualRows[i]
             act.size shouldBe exp.size
             for (j in exp.indices) {
-                assertValueEquivalent(exp[j], act[j], "row[$i]col[$j]")
+                assertValueEquivalent(exp[j], act[j])
             }
         }
     }

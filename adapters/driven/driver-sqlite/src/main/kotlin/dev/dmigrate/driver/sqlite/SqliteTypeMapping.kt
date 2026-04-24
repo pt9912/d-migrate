@@ -26,61 +26,84 @@ internal object SqliteTypeMapping {
         val raw = rawType.uppercase().trim()
         val maxLen = extractMaxLength(raw)
 
-        return when {
-            raw == "INTEGER" || raw == "INT" -> MappingResult(NeutralType.Integer)
-            raw == "BIGINT" -> MappingResult(NeutralType.BigInteger)
-            raw == "SMALLINT" -> MappingResult(NeutralType.SmallInt)
-            raw == "TEXT" -> MappingResult(NeutralType.Text())
-            raw == "BLOB" -> MappingResult(NeutralType.Binary)
-            raw == "REAL" || raw == "DOUBLE" || raw == "FLOAT" -> MappingResult(NeutralType.Float())
-            raw == "BOOLEAN" || raw == "TINYINT(1)" -> MappingResult(NeutralType.BooleanType)
-            raw.startsWith("VARCHAR") || raw.startsWith("CHARACTER VARYING") ->
-                MappingResult(NeutralType.Text(maxLength = maxLen))
-            raw.startsWith("CHAR(") ->
-                MappingResult(NeutralType.Char(length = maxLen ?: 1))
-            raw.startsWith("DECIMAL") || raw.startsWith("NUMERIC") -> {
-                val (p, s) = extractPrecisionScale(raw)
-                if (p != null && s != null) MappingResult(NeutralType.Decimal(p, s))
-                else MappingResult(NeutralType.Float())
-            }
-            raw == "DATE" -> MappingResult(NeutralType.Date)
-            raw == "TIME" -> MappingResult(NeutralType.Time)
-            raw == "DATETIME" || raw == "TIMESTAMP" -> MappingResult(NeutralType.DateTime())
-            raw == "UUID" -> MappingResult(NeutralType.Uuid)
-            raw == "JSON" || raw == "JSONB" -> MappingResult(NeutralType.Json)
-            raw == "GEOMETRY" || raw.startsWith("GEOMETRY(") ||
-                raw == "POINT" || raw == "LINESTRING" || raw == "POLYGON" ||
-                raw == "MULTIPOINT" || raw == "MULTILINESTRING" || raw == "MULTIPOLYGON" ->
-                MappingResult(
-                    NeutralType.Geometry(geometryType = GeometryType.of(raw.substringBefore("(").lowercase())),
-                    SchemaReadNote(
-                        severity = SchemaReadSeverity.INFO,
-                        code = "R220",
-                        objectName = "$tableName.$colName",
-                        message = "Geometry column '$raw' — SpatiaLite-specific handling may be needed",
-                        hint = "Verify spatial profile compatibility",
-                    ),
-                )
-            raw == "" -> MappingResult(
-                NeutralType.Text(),
-                SchemaReadNote(
-                    severity = SchemaReadSeverity.INFO,
-                    code = "R200",
-                    objectName = "$tableName.$colName",
-                    message = "Untyped column mapped to text",
-                ),
-            )
-            else -> MappingResult(
-                NeutralType.Text(),
-                SchemaReadNote(
-                    severity = SchemaReadSeverity.WARNING,
-                    code = "R201",
-                    objectName = "$tableName.$colName",
-                    message = "Unknown SQLite type '$rawType' mapped to text",
-                    hint = "Review the column type manually",
-                ),
-            )
+        return mapIntegerType(raw)
+            ?: mapNumericType(raw)
+            ?: mapStringType(raw, maxLen)
+            ?: mapTemporalType(raw)
+            ?: mapSpecialType(raw)
+            ?: mapGeometryType(raw, tableName, colName)
+            ?: mapFallback(raw, rawType, tableName, colName)
+    }
+
+    private fun mapIntegerType(raw: String): MappingResult? = when (raw) {
+        "INTEGER", "INT" -> MappingResult(NeutralType.Integer)
+        "BIGINT" -> MappingResult(NeutralType.BigInteger)
+        "SMALLINT" -> MappingResult(NeutralType.SmallInt)
+        else -> null
+    }
+
+    private fun mapNumericType(raw: String): MappingResult? = when {
+        raw == "REAL" || raw == "DOUBLE" || raw == "FLOAT" -> MappingResult(NeutralType.Float())
+        raw == "BOOLEAN" || raw == "TINYINT(1)" -> MappingResult(NeutralType.BooleanType)
+        raw.startsWith("DECIMAL") || raw.startsWith("NUMERIC") -> {
+            val (p, s) = extractPrecisionScale(raw)
+            if (p != null && s != null) MappingResult(NeutralType.Decimal(p, s))
+            else MappingResult(NeutralType.Float())
         }
+        else -> null
+    }
+
+    private fun mapStringType(raw: String, maxLen: Int?): MappingResult? = when {
+        raw == "TEXT" -> MappingResult(NeutralType.Text())
+        raw.startsWith("VARCHAR") || raw.startsWith("CHARACTER VARYING") ->
+            MappingResult(NeutralType.Text(maxLength = maxLen))
+        raw.startsWith("CHAR(") -> MappingResult(NeutralType.Char(length = maxLen ?: 1))
+        else -> null
+    }
+
+    private fun mapTemporalType(raw: String): MappingResult? = when (raw) {
+        "DATE" -> MappingResult(NeutralType.Date)
+        "TIME" -> MappingResult(NeutralType.Time)
+        "DATETIME", "TIMESTAMP" -> MappingResult(NeutralType.DateTime())
+        else -> null
+    }
+
+    private fun mapSpecialType(raw: String): MappingResult? = when {
+        raw == "BLOB" -> MappingResult(NeutralType.Binary)
+        raw == "UUID" -> MappingResult(NeutralType.Uuid)
+        raw == "JSON" || raw == "JSONB" -> MappingResult(NeutralType.Json)
+        else -> null
+    }
+
+    private fun mapGeometryType(raw: String, tableName: String, colName: String): MappingResult? {
+        val isGeometry = raw == "GEOMETRY" || raw.startsWith("GEOMETRY(") ||
+            raw == "POINT" || raw == "LINESTRING" || raw == "POLYGON" ||
+            raw == "MULTIPOINT" || raw == "MULTILINESTRING" || raw == "MULTIPOLYGON"
+        if (!isGeometry) return null
+        return MappingResult(
+            NeutralType.Geometry(geometryType = GeometryType.of(raw.substringBefore("(").lowercase())),
+            SchemaReadNote(
+                severity = SchemaReadSeverity.INFO, code = "R220",
+                objectName = "$tableName.$colName",
+                message = "Geometry column '$raw' — SpatiaLite-specific handling may be needed",
+                hint = "Verify spatial profile compatibility",
+            ),
+        )
+    }
+
+    private fun mapFallback(raw: String, rawType: String, tableName: String, colName: String): MappingResult {
+        if (raw == "") return MappingResult(
+            NeutralType.Text(),
+            SchemaReadNote(severity = SchemaReadSeverity.INFO, code = "R200",
+                objectName = "$tableName.$colName", message = "Untyped column mapped to text"),
+        )
+        return MappingResult(
+            NeutralType.Text(),
+            SchemaReadNote(severity = SchemaReadSeverity.WARNING, code = "R201",
+                objectName = "$tableName.$colName",
+                message = "Unknown SQLite type '$rawType' mapped to text",
+                hint = "Review the column type manually"),
+        )
     }
 
     fun parseDefault(raw: String?): DefaultValue? {

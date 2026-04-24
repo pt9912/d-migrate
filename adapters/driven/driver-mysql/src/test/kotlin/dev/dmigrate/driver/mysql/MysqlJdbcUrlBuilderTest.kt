@@ -26,11 +26,10 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         builder.dialect shouldBe DatabaseDialect.MYSQL
     }
 
-    test("defaultParams contains cursor fetch, batched statements and allowPublicKeyRetrieval") {
+    test("defaultParams contains cursor fetch and batched statements only") {
         builder.defaultParams() shouldBe mapOf(
             "useCursorFetch" to "true",
             "rewriteBatchedStatements" to "true",
-            "allowPublicKeyRetrieval" to "true",
         )
     }
 
@@ -49,8 +48,13 @@ class MysqlJdbcUrlBuilderTest : FunSpec({
         url shouldContain "rewriteBatchedStatements=true"
     }
 
-    test("buildJdbcUrl injects allowPublicKeyRetrieval") {
+    test("buildJdbcUrl does not inject allowPublicKeyRetrieval by default") {
         val url = builder.buildJdbcUrl(cfg())
+        url shouldNotContain "allowPublicKeyRetrieval"
+    }
+
+    test("buildJdbcUrl preserves explicit allowPublicKeyRetrieval opt-in") {
+        val url = builder.buildJdbcUrl(cfg(mapOf("allowPublicKeyRetrieval" to "true")))
         url shouldContain "allowPublicKeyRetrieval=true"
     }
 

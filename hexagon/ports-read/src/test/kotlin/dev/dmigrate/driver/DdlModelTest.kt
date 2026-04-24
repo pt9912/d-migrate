@@ -22,6 +22,15 @@ class DdlModelTest : FunSpec({
         rendered shouldContain "CREATE TABLE t (id INT);"
     }
 
+    test("DdlStatement render with blank SQL keeps note-only output stable") {
+        val stmt = DdlStatement(
+            "",
+            listOf(TransformationNote(NoteType.ACTION_REQUIRED, "A001", "t", "manual step needed", "do it")),
+        )
+
+        stmt.render() shouldBe "-- [A001] manual step needed\n-- Hint: do it"
+    }
+
     test("DdlResult render joins statements") {
         val result = DdlResult(
             statements = listOf(

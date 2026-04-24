@@ -5,15 +5,19 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.MysqlDriver
+import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
+import dev.dmigrate.profiling.service.ProfileDatabaseService
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.testcontainers.mysql.MySQLContainer
+import java.sql.DriverManager
 
 private val IntegrationTag = NamedTag("integration")
 
@@ -21,14 +25,18 @@ class MysqlProfilingIntegrationTest : FunSpec({
 
     tags(IntegrationTag)
 
+    val primaryDb = "profiling_test"
+    val tenantDb = "profiling_tenant"
+
     val container = MySQLContainer("mysql:8")
-        .withDatabaseName("profiling_test")
+        .withDatabaseName(primaryDb)
         .withUsername("test")
         .withPassword("test")
 
     val introspection = MysqlSchemaIntrospectionAdapter()
     val data = MysqlProfilingDataAdapter()
     val resolver = MysqlLogicalTypeResolver()
+    val profileService = ProfileDatabaseService(ProfilingAdapterSet(introspection, data, resolver))
 
     beforeSpec {
         DatabaseDriverRegistry.register(MysqlDriver())
@@ -38,9 +46,10 @@ class MysqlProfilingIntegrationTest : FunSpec({
             dialect = DatabaseDialect.MYSQL,
             host = container.host,
             port = container.firstMappedPort,
-            database = "profiling_test",
+            database = primaryDb,
             user = "test",
             password = "test",
+            params = mapOf("allowPublicKeyRetrieval" to "true"),
         )
         val pool = HikariConnectionPoolFactory.create(config)
         pool.borrow().use { conn ->
@@ -62,13 +71,41 @@ class MysqlProfilingIntegrationTest : FunSpec({
             }
         }
         pool.close()
+
+        DriverManager.getConnection(
+            "jdbc:mysql://${container.host}:${container.firstMappedPort}/?allowPublicKeyRetrieval=true&useSSL=false",
+            "root",
+            container.password,
+        ).use { conn ->
+            conn.createStatement().use { stmt ->
+                stmt.execute("CREATE DATABASE `$tenantDb`")
+                stmt.execute("GRANT ALL PRIVILEGES ON `$tenantDb`.* TO 'test'@'%'")
+                stmt.execute("""
+                    CREATE TABLE `$tenantDb`.users (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        email VARCHAR(254) UNIQUE,
+                        age INT,
+                        score DECIMAL(5,2)
+                    )
+                """.trimIndent())
+                stmt.execute(
+                    "INSERT INTO `$tenantDb`.users (name, email, age, score) " +
+                        "VALUES ('Tenant Alice', 'tenant@example.com', 41, 77.70)"
+                )
+            }
+        }
     }
 
-    afterSpec { container.stop() }
+    afterSpec {
+        if (container.isRunning) container.stop()
+        DatabaseDriverRegistry.clear()
+    }
 
     fun pool() = HikariConnectionPoolFactory.create(ConnectionConfig(
         DatabaseDialect.MYSQL, container.host, container.firstMappedPort,
-        "profiling_test", "test", "test",
+        primaryDb, "test", "test",
+        params = mapOf("allowPublicKeyRetrieval" to "true"),
     ))
 
     test("resolver: varchar → STRING") { resolver.resolve("varchar(100)") shouldBe LogicalType.STRING }
@@ -77,6 +114,14 @@ class MysqlProfilingIntegrationTest : FunSpec({
 
     test("listTables includes users") {
         pool().use { p -> introspection.listTables(p).any { it.name == "users" } shouldBe true }
+    }
+
+    test("listTables respects an explicitly requested MySQL database") {
+        pool().use { p ->
+            val tables = introspection.listTables(p, tenantDb)
+            tables.map { it.name } shouldContainExactly listOf("users")
+            tables.single().schema shouldBe tenantDb
+        }
     }
 
     test("listColumns detects PK and unique") {
@@ -123,6 +168,18 @@ class MysqlProfilingIntegrationTest : FunSpec({
             compat shouldHaveSize 2
             compat.first { it.targetType == TargetLogicalType.INTEGER }.determinationStatus shouldBe DeterminationStatus.FULL_SCAN
             compat.first { it.targetType == TargetLogicalType.STRING }.compatibleCount shouldBe 5
+        }
+    }
+
+    test("profile service uses the requested MySQL database when schema is passed") {
+        pool().use { p ->
+            val defaultProfile = profileService.profile(p, "MySQL", tables = listOf("users"))
+            defaultProfile.tables.single().rowCount shouldBe 5
+
+            val tenantProfile = profileService.profile(p, "MySQL", schema = tenantDb, tables = listOf("users"))
+            tenantProfile.schemaName shouldBe tenantDb
+            tenantProfile.tables.single().rowCount shouldBe 1
+            tenantProfile.tables.single().columns.first { it.name == "name" }.topValues.single().value shouldBe "Tenant Alice"
         }
     }
 

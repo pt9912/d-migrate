@@ -1,10 +1,10 @@
 package dev.dmigrate.driver.mysql.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
+import dev.dmigrate.driver.profiling.ProfilingSqlNames
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.model.NumericStats
 import dev.dmigrate.profiling.model.TargetTypeCompatibility
@@ -19,19 +19,22 @@ class MysqlProfilingDataAdapter(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
 ) : ProfilingDataPort {
 
-    private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.MYSQL)
+    private val sqlNames = ProfilingSqlNames(DatabaseDialect.MYSQL)
+
+    private fun qi(name: String): String = sqlNames.identifier(name)
+    private fun qt(table: String, schema: String?): String = sqlNames.tablePath(table, schema)
 
     private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
         pool.borrow().use { conn -> block(jdbcFactory(conn)) }
 
     override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long =
         withJdbc(pool) { jdbc ->
-            val row = jdbc.querySingle("SELECT count(*) as cnt FROM ${qi(table)}")!!
+            val row = jdbc.querySingle("SELECT count(*) as cnt FROM ${qt(table, schema)}")!!
             (row["cnt"] as Number).toLong()
         }
 
     override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?): ColumnMetrics {
-        val t = qi(table)
+        val t = qt(table, schema)
         val c = qi(column)
         val isText = dbType.lowercase().let {
             it.contains("char") || it.contains("text") || it.contains("enum") || it.contains("set")
@@ -71,10 +74,10 @@ class MysqlProfilingDataAdapter(
     }
 
     override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?): List<ValueFrequency> {
-        val t = qi(table)
+        val t = qt(table, schema)
         val c = qi(column)
         return withJdbc(pool) { jdbc ->
-            val total = rowCount(pool, table).toDouble()
+            val total = rowCount(pool, table, schema).toDouble()
             if (total == 0.0) return@withJdbc emptyList()
             val rows = jdbc.queryList("""
                 SELECT cast($c as char) as val, count(*) as cnt
@@ -89,7 +92,7 @@ class MysqlProfilingDataAdapter(
     }
 
     override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?): NumericStats? {
-        val t = qi(table)
+        val t = qt(table, schema)
         val c = qi(column)
         return withJdbc(pool) { jdbc ->
             val row = jdbc.querySingle("""
@@ -113,7 +116,7 @@ class MysqlProfilingDataAdapter(
     }
 
     override fun temporalStats(pool: ConnectionPool, table: String, column: String, schema: String?): TemporalStats? {
-        val t = qi(table)
+        val t = qt(table, schema)
         val c = qi(column)
         return withJdbc(pool) { jdbc ->
             val row = jdbc.querySingle("""
@@ -127,7 +130,7 @@ class MysqlProfilingDataAdapter(
     override fun targetTypeCompatibility(
         pool: ConnectionPool, table: String, column: String, targetTypes: List<TargetLogicalType>, schema: String?,
     ): List<TargetTypeCompatibility> {
-        val t = qi(table)
+        val t = qt(table, schema)
         val c = qi(column)
         return withJdbc(pool) { jdbc ->
             targetTypes.map { targetType ->
