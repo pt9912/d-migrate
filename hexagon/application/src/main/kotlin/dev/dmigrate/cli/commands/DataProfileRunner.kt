@@ -27,7 +27,7 @@ data class DataProfileRequest(
  *
  * Exit codes:
  * - 0 success
- * - 2 invalid request (bad topN, schema on non-PG)
+ * - 2 invalid request (bad topN, schema on unsupported dialect)
  * - 4 connection error
  * - 5 profiling execution error
  * - 7 config/URL/registry error
@@ -68,7 +68,7 @@ class DataProfileRunner(
 
         // ─── 4. Validate schema flag ────────────────────────────
         if (request.schema != null && !DialectCapabilities.forDialect(dialect).supportsSchemaParameter) {
-            stderr("[ERROR] --schema is only supported for PostgreSQL, not ${dialect.name.lowercase()}")
+            stderr("[ERROR] --schema is not supported for ${dialect.name.lowercase()}")
             return 2
         }
 

@@ -38,7 +38,7 @@ class DataProfileCommand : CliktCommand(name = "profile") {
         .required()
     val tables by option("--tables", help = "Comma-separated table names (default: all)")
         .split(",")
-    val schema by option("--schema", help = "Database schema (PostgreSQL only, default: public)")
+    val schema by option("--schema", help = "Database schema (supported for PostgreSQL and MySQL, default: none/public)")
     val topN by option("--top-n", help = "Number of top values per column (default: 10)")
         .int().default(10)
     val format by option("--format", help = "Output format: json, yaml (default: json)")

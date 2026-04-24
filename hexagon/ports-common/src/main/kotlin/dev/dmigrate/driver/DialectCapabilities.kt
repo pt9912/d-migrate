@@ -24,7 +24,7 @@ data class DialectCapabilities(
     val supportsTriggerDisable: Boolean = false,
     /** Whether the dialect supports `triggerMode=strict` (PostgreSQL: yes, others: no). */
     val supportsTriggerStrict: Boolean = false,
-    /** Whether the dialect supports a `--schema` parameter for namespace scoping (PostgreSQL: yes). */
+    /** Whether the dialect supports a `--schema` parameter for namespace scoping. */
     val supportsSchemaParameter: Boolean = false,
 ) {
     companion object {
@@ -53,7 +53,7 @@ data class DialectCapabilities(
                 supportsDisableFkChecks = true,
                 supportsTriggerDisable = false,
                 supportsTriggerStrict = false,
-                supportsSchemaParameter = false,
+                supportsSchemaParameter = true,
             )
             DatabaseDialect.SQLITE -> DialectCapabilities(
                 supportsViews = true,

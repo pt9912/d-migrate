@@ -1,7 +1,6 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.driver.metadata.JdbcOperations
-import java.io.ByteArrayOutputStream
 
 internal object MysqlSequenceSupportMetadataQueries {
     private val requiredColumnTypes = mapOf(
@@ -79,13 +78,14 @@ internal object MysqlSequenceSupportMetadataQueries {
     }
 
     fun listSupportSequenceRows(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
-        val safeDb = schemaName.replace("`", "``")
+        val qualifiedSupportTable = MysqlSequenceSqlCodec.quoteIdentifier(schemaName) +
+            "." + MysqlSequenceSqlCodec.quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)
         return session.queryList(
             """
             SELECT managed_by, format_version, name,
                    next_value, increment_by, min_value, max_value,
                    cycle_enabled, cache_size
-            FROM `$safeDb`.`${MysqlSequenceNaming.SUPPORT_TABLE}`
+            FROM $qualifiedSupportTable
             """.trimIndent(),
         )
     }
@@ -108,10 +108,12 @@ internal object MysqlSequenceSupportMetadataQueries {
                 routineName,
             ) ?: return SupportRoutineState.MISSING
 
-            val safeDb = schemaName.replace("`", "``")
-            val safeName = routineName.replace("`", "``")
             val showRow = try {
-                session.querySingle("SHOW CREATE FUNCTION `$safeDb`.`$safeName`")
+                val qualifiedRoutine = MysqlSequenceSqlCodec.quoteIdentifier(schemaName) +
+                    "." + MysqlSequenceSqlCodec.quoteIdentifier(routineName)
+                session.querySingle(
+                    "SHOW CREATE FUNCTION $qualifiedRoutine"
+                )
             } catch (_: Exception) {
                 null
             }
@@ -173,7 +175,6 @@ internal object MysqlSequenceSupportMetadataQueries {
             return MysqlMetadataQueries.SupportTriggerScanResult(emptyList(), accessible = false)
         }
 
-        val safeDb = schemaName.replace("`", "``")
         val result = rows.map { row ->
             val name = row["trigger_name"] as String
             val timing = row["action_timing"] as? String ?: ""
@@ -182,9 +183,12 @@ internal object MysqlSequenceSupportMetadataQueries {
             val table = row["event_object_table"] as? String ?: ""
 
             if ("d-migrate:mysql-sequence-v1" !in body) {
-                val safeTrigger = name.replace("`", "``")
                 val showRow = try {
-                    session.querySingle("SHOW CREATE TRIGGER `$safeDb`.`$safeTrigger`")
+                    val qualifiedTrigger = MysqlSequenceSqlCodec.quoteIdentifier(schemaName) +
+                        "." + MysqlSequenceSqlCodec.quoteIdentifier(name)
+                    session.querySingle(
+                        "SHOW CREATE TRIGGER $qualifiedTrigger"
+                    )
                 } catch (_: Exception) {
                     null
                 }
@@ -197,11 +201,20 @@ internal object MysqlSequenceSupportMetadataQueries {
             val rawSequence = triggerSequencePattern.find(body)
                 ?.groupValues
                 ?.get(1)
-                ?.let(::unescapeMysqlStringLiteral)
+                ?.let(MysqlSequenceSqlCodec::unescapeStringLiteral)
             val guardColumn = triggerGuardPattern.find(body)?.mysqlIdentifier()
-            val markerSeq = markerSequencePattern.find(body)?.groupValues?.get(1)?.let(::decodeMarkerValue)
-            val markerTable = markerTablePattern.find(body)?.groupValues?.get(1)?.let(::decodeMarkerValue)
-            val markerColumn = markerColumnPattern.find(body)?.groupValues?.get(1)?.let(::decodeMarkerValue)
+            val markerSeq = markerSequencePattern.find(body)
+                ?.groupValues
+                ?.get(1)
+                ?.let(MysqlSequenceSqlCodec::decodeMarkerValue)
+            val markerTable = markerTablePattern.find(body)
+                ?.groupValues
+                ?.get(1)
+                ?.let(MysqlSequenceSqlCodec::decodeMarkerValue)
+            val markerColumn = markerColumnPattern.find(body)
+                ?.groupValues
+                ?.get(1)
+                ?.let(MysqlSequenceSqlCodec::decodeMarkerValue)
             val unqualifiedSequence = rawSequence?.let { unqualify(it, schemaName) }
 
             val state = assessTriggerState(
@@ -264,77 +277,6 @@ internal object MysqlSequenceSupportMetadataQueries {
     private fun MatchResult.mysqlIdentifier(): String {
         val quoted = groupValues[1]
         return if (quoted.isNotEmpty()) quoted.replace("``", "`") else groupValues[2]
-    }
-
-    private fun unescapeMysqlStringLiteral(value: String): String = buildString {
-        var index = 0
-        while (index < value.length) {
-            val char = value[index]
-            when {
-                char == '\'' && index + 1 < value.length && value[index + 1] == '\'' -> {
-                    append('\'')
-                    index += 2
-                }
-                char == '\\' && index + 1 < value.length -> {
-                    append(unescapeMysqlBackslash(value[index + 1]))
-                    index += 2
-                }
-                else -> {
-                    append(char)
-                    index++
-                }
-            }
-        }
-    }
-
-    private fun unescapeMysqlBackslash(value: Char): Char = when (value) {
-        '0' -> '\u0000'
-        '\'' -> '\''
-        '"' -> '"'
-        'b' -> '\b'
-        'n' -> '\n'
-        'r' -> '\r'
-        't' -> '\t'
-        'Z' -> '\u001A'
-        '\\' -> '\\'
-        else -> value
-    }
-
-    private fun decodeMarkerValue(value: String): String {
-        val output = StringBuilder()
-        val bytes = ByteArrayOutputStream()
-
-        fun flushBytes() {
-            if (bytes.size() == 0) return
-            output.append(bytes.toByteArray().toString(Charsets.UTF_8))
-            bytes.reset()
-        }
-
-        var index = 0
-        while (index < value.length) {
-            if (value[index] == '%' && index + 2 < value.length) {
-                val high = hexValue(value[index + 1])
-                val low = hexValue(value[index + 2])
-                if (high >= 0 && low >= 0) {
-                    bytes.write((high shl 4) + low)
-                    index += 3
-                    continue
-                }
-            }
-            flushBytes()
-            output.append(value[index])
-            index++
-        }
-
-        flushBytes()
-        return output.toString()
-    }
-
-    private fun hexValue(value: Char): Int = when (value) {
-        in '0'..'9' -> value - '0'
-        in 'a'..'f' -> value - 'a' + 10
-        in 'A'..'F' -> value - 'A' + 10
-        else -> -1
     }
 
     private fun unqualify(name: String, activeSchema: String): String? {

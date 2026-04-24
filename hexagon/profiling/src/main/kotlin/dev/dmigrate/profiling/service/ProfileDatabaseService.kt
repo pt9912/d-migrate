@@ -34,14 +34,14 @@ class ProfileDatabaseService(
         }
 
         val targetTables = if (tables != null) {
-            val available = allTables.map { it.name }.toSet()
-            tables.filter { it in available }
+            val availableByName = allTables.associateBy { it.name }
+            tables.mapNotNull { availableByName[it] }
         } else {
-            allTables.map { it.name }.sorted()
+            allTables.sortedBy { it.name }
         }
 
-        val tableProfiles = targetTables.map { tableName ->
-            tableService.profile(pool, tableName, schema)
+        val tableProfiles = targetTables.map { table ->
+            tableService.profile(pool, table.name, schema ?: table.schema)
         }
 
         return DatabaseProfile(

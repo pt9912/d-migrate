@@ -113,11 +113,10 @@ class DataProfileRunnerTest : FunSpec({
         runner().execute(request(topN = 1001)) shouldBe 2
     }
 
-    test("schema on MySQL returns exit 2") {
+    test("schema on MySQL is allowed") {
         runner(
             dialectResolver = { DatabaseDialect.MYSQL }
-        ).execute(request(schema = "myschema")) shouldBe 2
-        stderrLines.any { it.contains("--schema") } shouldBe true
+        ).execute(request(schema = "myschema")) shouldBe 0
     }
 
     test("schema on SQLite returns exit 2") {

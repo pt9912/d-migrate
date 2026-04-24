@@ -1,10 +1,10 @@
 package dev.dmigrate.driver.postgresql.profiling
 
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.JdbcOperations
+import dev.dmigrate.driver.profiling.ProfilingSqlNames
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.model.NumericStats
 import dev.dmigrate.profiling.model.TargetTypeCompatibility
@@ -19,10 +19,10 @@ class PostgresProfilingDataAdapter(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,
 ) : ProfilingDataPort {
 
-    private fun qi(name: String): String = SqlIdentifiers.quoteIdentifier(name, DatabaseDialect.POSTGRESQL)
+    private val sqlNames = ProfilingSqlNames(DatabaseDialect.POSTGRESQL)
 
-    private fun qt(table: String, schema: String?): String =
-        if (schema != null) "${qi(schema)}.${qi(table)}" else qi(table)
+    private fun qi(name: String): String = sqlNames.identifier(name)
+    private fun qt(table: String, schema: String?): String = sqlNames.tablePath(table, schema)
 
     private inline fun <T> withJdbc(pool: ConnectionPool, block: (JdbcOperations) -> T): T =
         pool.borrow().use { conn -> block(jdbcFactory(conn)) }

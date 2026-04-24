@@ -100,7 +100,8 @@ internal class MysqlSequenceDdlSupport(
                 code = "E124",
                 objectType = "table",
                 objectName = MysqlSequenceNaming.SUPPORT_TABLE,
-                reason = "Support object name collision: '${MysqlSequenceNaming.SUPPORT_TABLE}' already exists in the neutral schema.",
+                reason = "Support object name collision: '${MysqlSequenceNaming.SUPPORT_TABLE}' " +
+                    "already exists in the neutral schema.",
                 hint = "Rename the existing table or use --mysql-named-sequences action_required.",
             )
             skipped += action.toSkipped()
@@ -207,12 +208,14 @@ internal class MysqlSequenceDdlSupport(
         val maxValue = sequence.maxValue?.toString() ?: "NULL"
         val cycle = if (sequence.cycle == true) 1 else 0
         val cache = sequence.cache?.toString() ?: "NULL"
-        val nameLiteral = quoteMysqlStringLiteral(name)
+        val nameLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(name)
         return "INSERT INTO ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
             "(${quoteIdentifier("managed_by")}, ${quoteIdentifier("format_version")}, ${quoteIdentifier("name")}, " +
             "${quoteIdentifier("next_value")}, ${quoteIdentifier("increment_by")}, ${quoteIdentifier("min_value")}, " +
-            "${quoteIdentifier("max_value")}, ${quoteIdentifier("cycle_enabled")}, ${quoteIdentifier("cache_size")}) VALUES " +
-            "('d-migrate', 'mysql-sequence-v1', $nameLiteral, $start, $increment, $minValue, $maxValue, $cycle, $cache);"
+            "${quoteIdentifier("max_value")}, ${quoteIdentifier("cycle_enabled")}, " +
+            "${quoteIdentifier("cache_size")}) VALUES " +
+            "('d-migrate', 'mysql-sequence-v1', $nameLiteral, $start, $increment, " +
+            "$minValue, $maxValue, $cycle, $cache);"
     }
 
     private fun buildNextvalRoutineSql(): String = buildString {
@@ -226,12 +229,14 @@ internal class MysqlSequenceDdlSupport(
         appendLine("    DECLARE val BIGINT;")
         appendLine(
             "    UPDATE ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
-                "SET ${quoteIdentifier("next_value")} = ${quoteIdentifier("next_value")} + ${quoteIdentifier("increment_by")} " +
+                "SET ${quoteIdentifier("next_value")} = ${quoteIdentifier("next_value")} + " +
+                "${quoteIdentifier("increment_by")} " +
                 "WHERE ${quoteIdentifier("name")} = seq_name;"
         )
         appendLine(
             "    SELECT ${quoteIdentifier("next_value")} - ${quoteIdentifier("increment_by")} INTO val " +
-                "FROM ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} WHERE ${quoteIdentifier("name")} = seq_name;"
+                "FROM ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
+                "WHERE ${quoteIdentifier("name")} = seq_name;"
         )
         appendLine("    RETURN val;")
         appendLine("END //")
@@ -259,7 +264,7 @@ internal class MysqlSequenceDdlSupport(
     }
 
     private fun buildSupportTriggerSql(spec: SupportTriggerSpec, triggerName: String): String = buildString {
-        val sequenceLiteral = quoteMysqlStringLiteral(spec.sequenceName)
+        val sequenceLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(spec.sequenceName)
         appendLine("DELIMITER //")
         appendLine("CREATE TRIGGER ${quoteIdentifier(triggerName)}")
         appendLine("    BEFORE INSERT ON ${quoteIdentifier(spec.tableName)}")
@@ -267,8 +272,9 @@ internal class MysqlSequenceDdlSupport(
         appendLine("BEGIN")
         appendLine(
             "    /* d-migrate:mysql-sequence-v1 object=sequence-trigger " +
-                "sequence=${markerValue(spec.sequenceName)} table=${markerValue(spec.tableName)} " +
-                "column=${markerValue(spec.columnName)} */"
+                "sequence=${MysqlSequenceSqlCodec.markerValue(spec.sequenceName)} " +
+                "table=${MysqlSequenceSqlCodec.markerValue(spec.tableName)} " +
+                "column=${MysqlSequenceSqlCodec.markerValue(spec.columnName)} */"
         )
         appendLine("    IF NEW.${quoteIdentifier(spec.columnName)} IS NULL THEN")
         appendLine(
@@ -280,31 +286,4 @@ internal class MysqlSequenceDdlSupport(
         append("DELIMITER ;")
     }
 
-    private fun quoteMysqlStringLiteral(value: String): String =
-        SqlIdentifiers.quoteStringLiteral(value.replace("\\", "\\\\"))
-
-    private fun markerValue(value: String): String = buildString {
-        value.toByteArray(Charsets.UTF_8).forEach { byte ->
-            val unsigned = byte.toInt() and 0xff
-            if (isMarkerSafeByte(unsigned)) {
-                append(unsigned.toChar())
-            } else {
-                append('%')
-                append(MARKER_HEX[unsigned ushr 4])
-                append(MARKER_HEX[unsigned and 0x0f])
-            }
-        }
-    }
-
-    private fun isMarkerSafeByte(value: Int): Boolean =
-        value in 'A'.code..'Z'.code ||
-            value in 'a'.code..'z'.code ||
-            value in '0'.code..'9'.code ||
-            value == '_'.code ||
-            value == '-'.code ||
-            value == '.'.code
-
-    private companion object {
-        val MARKER_HEX = "0123456789ABCDEF".toCharArray()
-    }
 }

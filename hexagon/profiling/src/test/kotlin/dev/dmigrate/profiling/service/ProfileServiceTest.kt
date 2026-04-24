@@ -3,6 +3,7 @@ package dev.dmigrate.profiling.service
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
+import dev.dmigrate.profiling.ProfilingQueryError
 import dev.dmigrate.profiling.SchemaIntrospectionError
 import dev.dmigrate.profiling.model.ValueFrequency
 import dev.dmigrate.profiling.port.ColumnMetrics
@@ -15,8 +16,11 @@ import dev.dmigrate.profiling.types.LogicalType
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.shouldBe
 import java.sql.Connection
+import java.sql.SQLException
+import java.sql.SQLFeatureNotSupportedException
 
 class ProfileServiceTest : FunSpec({
 
@@ -41,7 +45,13 @@ class ProfileServiceTest : FunSpec({
 
     val data = object : ProfilingDataPort {
         override fun rowCount(pool: ConnectionPool, table: String, schema: String?) = 5L
-        override fun columnMetrics(pool: ConnectionPool, table: String, column: String, dbType: String, schema: String?) =
+        override fun columnMetrics(
+            pool: ConnectionPool,
+            table: String,
+            column: String,
+            dbType: String,
+            schema: String?,
+        ) =
             ColumnMetrics(5, 0, 5, 0)
         override fun topValues(pool: ConnectionPool, table: String, column: String, limit: Int, schema: String?) =
             listOf(ValueFrequency("a", 3, 0.6), ValueFrequency("b", 2, 0.4))
@@ -79,6 +89,33 @@ class ProfileServiceTest : FunSpec({
         val service = ProfileTableService(adapters)
         val profile = service.profile(fakePool, "users")
         profile.columns[1].topValues shouldHaveSize 2
+    }
+
+    test("unsupported optional numeric stats are omitted") {
+        val dataWithUnsupportedNumericStats = object : ProfilingDataPort by data {
+            override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?) =
+                throw SQLFeatureNotSupportedException("numeric stats unsupported")
+        }
+        val service = ProfileTableService(ProfilingAdapterSet(introspection, dataWithUnsupportedNumericStats, resolver))
+
+        val profile = service.profile(fakePool, "users")
+
+        profile.columns.first { it.name == "id" }.numericStats shouldBe null
+    }
+
+    test("unexpected optional numeric stats failures include operation context") {
+        val dataWithBrokenNumericStats = object : ProfilingDataPort by data {
+            override fun numericStats(pool: ConnectionPool, table: String, column: String, schema: String?) =
+                throw SQLException("permission denied")
+        }
+        val service = ProfileTableService(ProfilingAdapterSet(introspection, dataWithBrokenNumericStats, resolver))
+
+        val ex = shouldThrow<ProfilingQueryError> {
+            service.profile(fakePool, "users")
+        }
+
+        ex.message!! shouldContain "numericStats"
+        ex.message!! shouldContain "users.id"
     }
 
     test("introspection error throws SchemaIntrospectionError") {
@@ -120,6 +157,25 @@ class ProfileServiceTest : FunSpec({
         val db = service.profile(fakePool, "PostgreSQL", tables = listOf("users"))
         db.tables shouldHaveSize 1
         db.tables[0].name shouldBe "users"
+    }
+
+    test("uses schema discovered by introspection for table profiling") {
+        val scopedIntrospection = object : SchemaIntrospectionPort {
+            override fun listTables(pool: ConnectionPool, schema: String?) = listOf(TableSchema("users", "tenant_a"))
+            override fun listColumns(pool: ConnectionPool, table: String, schema: String?) = columns
+        }
+        val seenSchemas = mutableListOf<String?>()
+        val scopedData = object : ProfilingDataPort by data {
+            override fun rowCount(pool: ConnectionPool, table: String, schema: String?): Long {
+                seenSchemas += schema
+                return 5L
+            }
+        }
+        val service = ProfileDatabaseService(ProfilingAdapterSet(scopedIntrospection, scopedData, resolver))
+
+        service.profile(fakePool, "MySQL")
+
+        seenSchemas shouldBe listOf("tenant_a")
     }
 
     test("filter with unknown table is silently skipped") {
