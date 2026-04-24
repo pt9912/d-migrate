@@ -18,7 +18,7 @@ object FilterDslTranslator {
         return DataFilter.ParameterizedClause(renderer.render(expr), renderer.params)
     }
 
-    private interface FilterAstVisitor {
+    private interface FilterExprVisitor {
         fun visit(expr: FilterExpr.Comparison)
         fun visit(expr: FilterExpr.In)
         fun visit(expr: FilterExpr.IsNull)
@@ -27,6 +27,9 @@ object FilterDslTranslator {
         fun visit(expr: FilterExpr.Or)
         fun visit(expr: FilterExpr.Not)
         fun visit(expr: FilterExpr.Group)
+    }
+
+    private interface ValueExprVisitor {
         fun visit(expr: ValueExpr.IntLiteral)
         fun visit(expr: ValueExpr.DecLiteral)
         fun visit(expr: ValueExpr.StrLiteral)
@@ -39,7 +42,7 @@ object FilterDslTranslator {
         fun visit(expr: ValueExpr.GroupedValue)
     }
 
-    private abstract class RenderingVisitor : FilterAstVisitor {
+    private abstract class RenderingVisitor : FilterExprVisitor, ValueExprVisitor {
         protected val out = StringBuilder()
 
         fun render(expr: FilterExpr): String {
@@ -199,7 +202,7 @@ object FilterDslTranslator {
         }
     }
 
-    private fun FilterExpr.accept(visitor: FilterAstVisitor) {
+    private fun FilterExpr.accept(visitor: FilterExprVisitor) {
         when (this) {
             is FilterExpr.Comparison -> visitor.visit(this)
             is FilterExpr.In -> visitor.visit(this)
@@ -212,7 +215,7 @@ object FilterDslTranslator {
         }
     }
 
-    private fun ValueExpr.accept(visitor: FilterAstVisitor) {
+    private fun ValueExpr.accept(visitor: ValueExprVisitor) {
         when (this) {
             is ValueExpr.IntLiteral -> visitor.visit(this)
             is ValueExpr.DecLiteral -> visitor.visit(this)
