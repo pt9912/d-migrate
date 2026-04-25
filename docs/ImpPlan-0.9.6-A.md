@@ -346,6 +346,12 @@ Die Paketgrenze ist Teil des Phase-A-Vertrags:
   Begruendung im Code-Review zulaessig und muss dieselbe
   Abhaengigkeitsrichtung erzwingen: Core/Ports nach innen,
   Driving-/Driven-Adapter nach aussen
+- `hexagon:ports-common` darf nicht von `hexagon:profiling` abhaengen.
+  `ProfileStore` ist dort deshalb nur ein tenant-scoped Metadaten-/
+  Artefaktindex mit Profile-ID, Resource-URI, Job-/Artifact-Refs,
+  Retention, Pagination und Suchfeldern. Profilingspezifische Projektionen
+  wie `DatabaseProfile` bleiben in `hexagon:profiling` oder werden in einem
+  separaten, bewusst begruendeten Inner-Hexagon-Refactoring verschoben.
 - `hexagon/application` enthaelt die adapterneutralen Services fuer Upload,
   Idempotency, Approval-Grant-Validierung, Quotas, Fehler und Audit, kennt
   aber keine MCP-, HTTP-, JSON-RPC-, REST- oder gRPC-Wire-Typen
@@ -454,6 +460,15 @@ Die Interfaces muessen atomare Operationen ausdruecken koennen, insbesondere:
   Lease-/Recovery-/TTL- und Konfliktpfaden
 - Sync-Effect-Reservierung fuer `approvalKey`, damit synchrone
   Nebenwirkungen wie Upload-Init oder KI-Provider-Aufrufe retry-sicher sind
+- Read-only-Init-Resume fuer `uploadIntent=schema_staging_readonly` ueber
+  `clientRequestId`:
+  - Store-Key ist (`tenantId`, `callerId`, `toolName`, `clientRequestId`)
+  - identische Init-Metadaten liefern dieselbe `uploadSessionId`
+  - abweichende Init-Metadaten liefern `IDEMPOTENCY_CONFLICT`
+  - Reservierung traegt `initResumeExpiresAt` und wird spaetestens mit der
+    Upload-Session-Lease entfernt
+  - ohne `clientRequestId` ist ein erfolgreicher read-only Init bewusst
+    nicht resumable
 - Upload-Session-Statuswechsel fuer Abort/Expiry/Complete
 - Byte-Cleanup nach TTL, Abort oder Expiry
 - Connection-Reference-Lookups mit Tenant-/Principal-Filterung und
@@ -464,6 +479,13 @@ Die Interfaces muessen atomare Operationen ausdruecken koennen, insbesondere:
 Artefakte zeigen. Trotzdem brauchen sie explizite Store-/Index-Abstraktionen,
 damit `schema_list`, Resource-Resolver, Tenant-Scope, Pagination und Retention
 nicht von artefaktspezifischen Details abhaengen.
+
+Fuer `ProfileStore` gilt wegen der bestehenden Modulgrenze zusaetzlich:
+Der Store-Port in `hexagon:ports-common` darf keine Typen aus
+`hexagon:profiling` referenzieren. Er indexiert nur Profile-Metadaten und
+Artefakt-/Job-Referenzen. Typed Reads oder Projektionen auf
+`DatabaseProfile` bleiben Aufgabe von `hexagon:profiling` bzw. eines
+spaeter explizit festgelegten inneren Profiling-Ports.
 
 `ConnectionReferenceStore` ist ein non-secret Index. Bootstrap-Quellen sind
 Projekt-/Serverkonfiguration, Seeds oder ein spaeterer Config-Provider. Der
@@ -532,6 +554,8 @@ Aufgaben:
 - Store-Interfaces fuer Jobs, Artefakte, Schemas, Profile, Diffs, Uploads,
   Connection-Refs, Idempotency, Sync-Effect-Idempotency, Approval-Grants,
   Quotas und Audit definieren
+- `ProfileStore` als reinen Metadaten-/Artefaktindex ohne
+  `hexagon:profiling`-Typabhaengigkeit definieren
 - atomare Methoden fuer Idempotency, Sync-Effect-Idempotency und
   Segmentwrites ausdruecken
 - Idempotency-State-Machine verbindlich modellieren:
@@ -544,6 +568,10 @@ Aufgaben:
 - genehmigter Retry aus `AWAITING_APPROVAL` muss die Reservierung atomar
   claimen, genau eine Job-Erzeugung ausloesen und danach `COMMITTED`
   deduplizieren
+- read-only `artifact_upload_init(uploadIntent=schema_staging_readonly)`
+  ueber `clientRequestId` als eigenen Init-Resume-Pfad modellieren,
+  inklusive Store-Key, TTL, Konfliktfall und nicht-resumable Verhalten ohne
+  `clientRequestId`
 - TTL-/Cleanup-Verhalten in Interfaces oder Service-Vertraege aufnehmen
 - Fehlerfaelle fuer unbekannt, abgelaufen, fremd, konfliktbehaftet und
   quota-limitiert modellieren
@@ -776,6 +804,7 @@ Pflichtabdeckung:
   - Filesystem-Cleanup
 - Schema-/Profile-/Diff-Stores:
   - typisierte Artefakt-Indizes
+  - `ProfileStore` ohne direkte `hexagon:profiling`-Typen
   - tenant-scoped Lookup
   - Pagination
   - Retention-/Expiry-Filter
@@ -792,6 +821,12 @@ Pflichtabdeckung:
   - `approvalKey`-Scope
   - identischer Retry liefert dasselbe Ergebnis
   - abweichender Payload liefert `IDEMPOTENCY_CONFLICT`
+- Read-only Init-Resume:
+  - `clientRequestId`-Scope fuer `schema_staging_readonly`
+  - identischer Init liefert dieselbe `uploadSessionId`
+  - abweichende Init-Metadaten liefern `IDEMPOTENCY_CONFLICT`
+  - `initResumeExpiresAt`
+  - ohne `clientRequestId` nicht resumable
 - Approval-Grants:
   - `correlationKind=idempotencyKey`
   - `correlationKind=approvalKey`
@@ -858,8 +893,19 @@ Voraussichtlich betroffen:
   - gemeinsame Services fuer Upload, Idempotency, Quotas, Fehler und Audit
 - bestehende Port-Module oder ein gemeinsames Port-Modul
   - adapterneutrale Store-Interfaces und Kernmodelle
+- `hexagon:ports-common`
+  - konkrete Zielablage fuer gemeinsame Modelle und Store-/Service-Ports;
+    `ProfileStore` bleibt dort ein Metadaten-/Artefaktindex ohne
+    Abhaengigkeit auf `hexagon:profiling`
+- driven Infrastrukturmodul fuer file-backed Byte-Stores, z.B.
+  `adapters:driven:storage-file` oder ein dediziertes internes
+  Infrastrukturmodul
+  - file-backed `UploadSegmentStore`
+  - file-backed `ArtifactContentStore`
+  - Filesystem-Cleanup, atomare Writes und Range-Reads
 - Testquellen der betroffenen Module
   - In-Memory-Stores
+  - Contract-Tests fuer In-Memory- und file-backed Stores
   - Fingerprint- und Store-Tests
 
 Bewusst nicht betroffen:
@@ -961,6 +1007,10 @@ Phase A ist abgeschlossen, wenn:
 - `IdempotencyStore` bildet `PENDING`, `AWAITING_APPROVAL`, `COMMITTED`,
   `DENIED`, Lease-/Recovery-/TTL- und Konfliktpfade atomar ab
 - Sync-Effect-Idempotency fuer `approvalKey` ist modelliert und getestet
+- read-only Init-Resume fuer
+  `artifact_upload_init(uploadIntent=schema_staging_readonly)` ueber
+  `clientRequestId` ist mit Store-Key, TTL, Konfliktverhalten und
+  nicht-resumable Verhalten ohne `clientRequestId` modelliert und getestet
 - `UploadSegmentStore` und `ArtifactContentStore` atomare Writes,
   Range-/Chunk-Reads, TTL-Cleanup und File-Spooling-Vertrag abbilden
 - file-backed `UploadSegmentStore`/`ArtifactContentStore` oder ein
@@ -975,6 +1025,10 @@ Phase A ist abgeschlossen, wenn:
 - `SchemaStore`, `ProfileStore` und `DiffStore` bzw. gleichwertige
   Store-/Index-Abstraktionen fuer Discovery, Resource-Resolver,
   Tenant-Scope, Pagination und Retention existieren
+- `ProfileStore` in `hexagon:ports-common` referenziert keine
+  `hexagon:profiling`-Typen; profilingspezifische Projektionen bleiben in
+  `hexagon:profiling` oder einem explizit begruendeten inneren Profiling-
+  Port
 - In-Memory-Implementierungen fuer Unit-Tests existieren
 - Fingerprint-Kanonik fuer Idempotency, Approval und Upload-Init-Metadaten
   implementiert und getestet ist
