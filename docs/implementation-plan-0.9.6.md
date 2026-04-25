@@ -344,12 +344,20 @@ Verbindliche Entscheidung:
 - `artifact_upload_abort` fuer die eigene aktive Session braucht Tenant-,
   Principal- und Session-Owner-Pruefung, aber keine Policy-Freigabe;
   fremde oder administrative Abbrueche sind policy-gesteuert
-- `schema_reverse_start` und `data_profile_start` sind ebenfalls
-  policyfaehig, weil sie kostenintensiv oder sensitiv sein koennen
-- wenn eine Policy-Freigabe fehlt, liefert das Tool
-  `POLICY_REQUIRED` mit `approvalToken`
+- `schema_reverse_start` und `data_profile_start` sind immer
+  policy-gesteuert und auditpflichtig; sie duerfen nie stillschweigend
+  starten
+- wenn eine Policy-Freigabe fehlt, liefert das Tool `POLICY_REQUIRED`
+  mit `approvalRequestId`, `approvalKey` bzw. `idempotencyKey`,
+  `payloadFingerprint`, erforderlichen Scopes/Entscheidungsgruenden und
+  einer menschenlesbaren Challenge, aber ohne verwendbares
+  `approvalToken`
+- ein verwendbares `approvalToken` entsteht erst, nachdem ein
+  serverseitiger Policy-, Human- oder Admin-Mechanismus den
+  `approvalRequestId` geprueft und einen Grant ausgestellt hat; ein
+  blosser Retry desselben Agenten darf keine Freigabe erzeugen
 - bei Start-Tools muss der zweite Aufruf denselben `idempotencyKey` und
-  das passende `approvalToken` enthalten
+  ein zum ausgestellten Grant passendes `approvalToken` enthalten
 - bei nicht-asynchronen policy-pflichtigen Tools ohne
   `idempotencyKey`, z.B. `artifact_upload_init`, administrative
   `artifact_upload_abort`-Aufrufe und die KI-nahen Tools, muss der
@@ -475,6 +483,12 @@ Verbindliche Entscheidung:
   laufen und muss Modell-/Provider-Metadaten auditierbar machen
 - `testdata_plan` plant Testdaten, schreibt aber keine produktiven
   Daten ohne separates datenveraenderndes Tool
+- weil `docs/architecture.md` `ai/` und `testdata/` noch als geplante
+  Module beschreibt, umfasst 0.9.6 einen minimalen adapterneutralen
+  KI-/Testdaten-Port mit NoOp- bzw. lokaler Implementierung, damit die
+  MCP-Tools real registrierbar, testbar und auditierbar sind
+- externe KI-Provider bleiben optional und duerfen nur per expliziter
+  Konfiguration, Secret-Scrubbing und erlaubender Policy genutzt werden
 - MCP-Prompts werden als kuratierte Vorlagen fuer Analyse-,
   Transformations- und Testdatenablaeufe registriert
 - Prompt-Inputs muessen auf Ressourcen, Artefakte und verdichtete
@@ -531,6 +545,8 @@ Neue und zu erweiternde Bereiche:
   - Idempotency-Service
   - Policy-Service-Schnittstelle
   - Audit-Service-Schnittstelle
+  - KI-/Testdaten-Port mit NoOp- bzw. lokaler Default-Implementierung
+  - Secret-Scrubbing und Prompt-Hygiene-Service
 - `hexagon/ports-common` oder `hexagon/application`
   - gemeinsame Principal-, Error-, Pagination- und Resource-URI-Modelle
 - bestehende Adapter und Ports
@@ -567,6 +583,7 @@ Erwartete Kernmodelle und Projektionen:
     Connection-Provider, nie das Secret selbst
 - `ApprovalGrant`
   - `approvalKey`
+  - `approvalRequestId`
   - `approvalTokenFingerprint`
   - `toolName`
   - `callerId`
@@ -902,7 +919,9 @@ Akzeptanz:
 - bei sensitiven oder produktiven Connection-Refs ist der async
   Policy-Flow verbindlich:
   - ohne `idempotencyKey` liefert das Tool `IDEMPOTENCY_KEY_REQUIRED`
-  - ohne gueltiges `approvalToken` liefert das Tool `POLICY_REQUIRED`
+  - ohne gueltigen, extern ausgestellten Grant liefert das Tool
+    `POLICY_REQUIRED` mit `approvalRequestId`, nicht mit verwendbarem
+    Token
   - das Token ist an `idempotencyKey`, Caller und `payloadFingerprint`
     gebunden
 - `job_cancel` kann einen laufenden `schema_compare_start`-Job
@@ -918,6 +937,11 @@ Tools:
 - `artifact_list`
 - `schema_list`
 
+Weitere Discovery-Tools:
+
+- `job_status_get` nimmt keine Listenfilter an, sondern genau eine
+  Job-Referenz und liefert eine einzelne Job-Projektion
+
 Gemeinsame Regeln:
 
 - Filter sind allowlist-basiert
@@ -928,6 +952,27 @@ Gemeinsame Regeln:
   kann, muss er fuer 0.9.6 trotzdem eine konsistente Zaehllogik fuer
   die gefilterte Ergebnisliste bereitstellen; eine spaetere Lockerung
   muesste zuerst `docs/ki-mcp.md` aendern
+
+`job_status_get`:
+
+- Eingabe ist genau eine Job-Referenz:
+  - `jobId`
+  - tenant-scoped Job-`resourceUri`
+- `jobId` wird immer im Tenant des abgeleiteten Principal-Kontexts
+  gesucht; `resourceUri` muss denselben Tenant adressieren
+- Antwort ist die aktuelle `ManagedJob`-Projektion gemaess
+  `docs/job-contract.md` inklusive terminaler Jobs, `expiresAt`,
+  Artefaktreferenzen, Fortschritt und optionalem Fehler
+- eigene Jobs sind sichtbar; Admins oder Principals mit explizitem Scope
+  duerfen erlaubte fremde Jobs sehen
+- fremde Tenant-Jobs liefern `TENANT_SCOPE_DENIED`
+- nicht erlaubte Jobs im selben Tenant liefern `FORBIDDEN_PRINCIPAL`
+- unbekannte oder nach Retention geloeschte Jobs liefern
+  `RESOURCE_NOT_FOUND`
+- terminale, aber noch nicht retenierte Jobs liefern ihren terminalen
+  Status; abgelaufene Retention wird ueber `expiresAt` und
+  `RESOURCE_NOT_FOUND` modelliert, nicht ueber einen separaten
+  `expired`-Jobstatus
 
 Akzeptanz:
 
@@ -946,8 +991,10 @@ Gemeinsame Regeln:
 
 - `idempotencyKey` ist Pflicht
 - Verbindungen werden nur ueber `connectionRef` referenziert
-- fuer policy-pflichtige Verbindungen wird das `approvalToken` an
-  denselben `idempotencyKey` und Payload-Fingerprint gebunden
+- fuer policy-pflichtige Starts liefert fehlende Freigabe
+  `POLICY_REQUIRED` mit `approvalRequestId`; ein spaeter extern
+  ausgestelltes `approvalToken` wird an denselben `idempotencyKey` und
+  Payload-Fingerprint gebunden
 - Start liefert `jobId`, `resourceUri` und `executionMeta`
 - Fortschritt wird ueber `job_status_get` abgefragt
 
@@ -998,12 +1045,13 @@ Gemeinsame Regeln:
 
 - `artifact_upload_init` ist policy-gesteuert
 - fehlende Freigabe fuer `artifact_upload_init` liefert
-  `POLICY_REQUIRED`
+  `POLICY_REQUIRED` mit `approvalRequestId`, nicht mit verwendbarem Token
 - der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
   umgehen
 - `approvalKey` ist fuer `artifact_upload_init` Pflicht
 - beim zweiten Init-Aufruf muss der Client dasselbe `approvalKey` und
-  das passende `approvalToken` senden
+  ein durch Policy-/Human-/Admin-Mechanismus ausgestelltes
+  `approvalToken` senden
 - das Init-`approvalToken` ist an `toolName`, `callerId`,
   `approvalKey` und den session-metadatenbezogenen
   `payloadFingerprint` gebunden
@@ -1032,6 +1080,8 @@ Gemeinsame Regeln:
 Verbindliche Validierungen:
 
 - `artifactKind` ist allowlist-basiert
+- fuer grosse neutrale Schemas ist `artifactKind=schema` erlaubt; andere
+  Upload-Arten erzeugen kein `schemaRef`
 - `mimeType` ist allowlist-basiert
 - `sizeBytes` ist Pflicht
 - Gesamt-`checksumSha256` ist bereits fuer `artifact_upload_init`
@@ -1069,6 +1119,10 @@ Verbindliche Validierungen:
 - nach erfolgreichem Abschluss wird daraus ein Artefakt gemaess
   `docs/job-contract.md`; `mimeType` wird zu `contentType` und
   `checksumSha256` zu `sha256` gemappt
+- wenn `artifactKind=schema` ist, wird das finalisierte Artefakt
+  zusaetzlich validiert und in `SchemaStore` materialisiert; die Antwort
+  enthaelt dann `schemaRef`/`resourceUri`, oder bei ungueltigem Schema
+  ein strukturiertes Validierungsergebnis ohne Schema-Registrierung
 
 Antwort:
 
@@ -1078,6 +1132,8 @@ Antwort:
 - jede erfolgreiche Segmentannahme liefert `uploadSessionId`,
   Uploadstatus, naechsten erwarteten `segmentIndex` oder
   `segmentOffset` und `uploadSessionTtlSeconds`
+- finale Annahme eines gueltigen `artifactKind=schema` liefert neben
+  Artefaktdaten auch die erzeugte `schemaRef`
 - Initial-TTL ist `900`, Minimum `300`, Maximum `3600`
 - bei `300` Sekunden ohne Aktivitaet wird die Session `EXPIRED` und
   Zwischensegmente werden verworfen
@@ -1136,7 +1192,7 @@ Gemeinsame Regeln:
 - alle drei Tools sind policy-gesteuert
 - `approvalKey` ist fuer alle drei Tools Pflicht
 - beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
-  passende `approvalToken` senden
+  passende, extern ausgestellte `approvalToken` senden
 - das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
   `payloadFingerprint` gebunden
 - Wiederverwendung desselben Tokens mit anderem Payload liefert
@@ -1179,6 +1235,10 @@ Akzeptanz:
 
 - fehlender `approvalKey` liefert `VALIDATION_ERROR`
 - fehlende Freigabe liefert `POLICY_REQUIRED`
+- `POLICY_REQUIRED` enthaelt nur Challenge-/Request-Daten
+  (`approvalRequestId`, `approvalKey` oder `idempotencyKey`,
+  `payloadFingerprint`, erforderliche Scopes/Gruende), aber kein
+  verwendbares `approvalToken`
 - unpassendes oder fuer anderen Payload ausgestelltes `approvalToken`
   liefert `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
 - externe Provider-Nutzung ohne erlaubende Policy liefert
@@ -1535,12 +1595,26 @@ Abnahmekriterien:
 - Upload-Init, administrative Upload-Abbrueche, Import und Transfer
   laufen nur mit Policy-Freigabe; eigene aktive Upload-Sessions duerfen
   per Owner-Pruefung abgebrochen werden
-- Import/Transfer-Retries mit gleichem `idempotencyKey` deduplizieren;
-  abweichender Payload mit gleichem Key liefert
+- Import/Transfer-Retries mit gleichem Idempotency-Store-Key
+  deduplizieren; abweichender Payload mit gleichem Store-Key liefert
   `IDEMPOTENCY_CONFLICT`
 
 ### Phase G - KI-nahe Tools, Prompts, Tests und Dokumentation
 
+- adapterneutralen `AiProviderPort` bzw. KI-Ausfuehrungsport definieren:
+  Eingabe-Summary, Modell-/Provider-Auswahl, Policy-Kontext,
+  Prompt-Fingerprint und redigierte Payloads
+- `NoOp`-Provider fuer Tests und lokale Beta-Defaults implementieren,
+  der keine externen Netzwerkaufrufe macht und deterministische
+  Plan-/Transformationsantworten liefert
+- optionale lokale Provider-Konfiguration fuer Ollama/LM Studio
+  vorbereiten; externe Provider wie OpenAI/Anthropic bleiben nur
+  konfigurierbar, wenn Secrets, Endpoint, Modell und erlaubende Policy
+  explizit gesetzt sind
+- Secret-Scrubbing und Prompt-Hygiene vor jedem Provider-Aufruf erzwingen
+  und in Tests mit Secret-/Massendaten-Faellen abdecken
+- Provider-, Modell-, Modellversions-, Prompt-Fingerprint- und
+  Payload-Fingerprint-Metadaten in Audit-Ereignisse schreiben
 - `procedure_transform_plan`, `procedure_transform_execute` und
   `testdata_plan` policy- und audit-gesteuert anbinden
 - MCP-Prompts fuer kuratierte Analyse-, Transformations- und
@@ -1564,6 +1638,10 @@ Abnahmekriterien:
   Abnahmekriterien abgedeckt
 - KI-nahe Tools liefern Policy-, Audit- und Prompt-Hygiene-Fehler
   strukturiert statt als rohe Exceptions
+- KI-nahe Tools funktionieren im Beta-Testpfad mit dem `NoOp`-Provider
+  ohne externe Secrets oder Netzwerkzugriff
+- externe Provider-Aufrufe sind ohne erlaubende Konfiguration und Policy
+  blockiert
 - MCP-Prompts sind ueber Discovery sichtbar und referenzieren nur
   erlaubte Ressourcen/Tools
 - Doku nennt die konkreten Startpfade fuer lokale und entfernte
@@ -1615,6 +1693,15 @@ Pflichtabdeckung:
   von `adapters/driving/cli` und ohne dupliziertes YAML-Parsing
 - SchemaStore, ProfileStore und DiffStore bzw. gleichwertige typisierte
   Artefakt-Indizes fuer Listing, Resource-Resolution und Tenant-Scope
+- Schema-Materialisierung aus finalisiertem `artifactKind=schema`-
+  Upload inklusive Validierungsfehler ohne Registrierung
+- job_status_get-Vertrag fuer `jobId`/`resourceUri`, Owner-/Admin-
+  Berechtigungen, Tenant-Fehler, terminale Jobs und Retention
+- Policy-Challenge-Flow: `POLICY_REQUIRED` enthaelt keinen verwendbaren
+  Token; Grants entstehen nur serverseitig nach Policy-/Human-/Admin-
+  Entscheidung
+- minimaler `AiProviderPort`, `NoOp`-Provider, Provider-Konfiguration,
+  Secret-Scrubbing und Provider-Audit-Metadaten
 - Cancel-Berechtigungen und terminale Jobzustaende
 - CancellationToken-/Worker-Handle-Propagation und Side-Effect-Stopp
   nach Cancel
@@ -1643,6 +1730,8 @@ Fuer Start-Tools zusaetzlich:
 - gleicher `idempotencyKey` in anderem Tenant-, Caller- oder
   Operations-Scope ist unabhaengig und leakt keine fremde Nutzung
 - Policy-Required-Flow
+- Policy-Required-Flow gibt `approvalRequestId`/Challenge zurueck und
+  kein direkt wiederverwendbares `approvalToken`
 - `schema_compare` weist `connectionRef` synchron ab; connection-backed
   Vergleiche laufen ueber `schema_compare_start`
 - synchroner Approval-Flow mit `approvalKey` fuer
@@ -1682,6 +1771,11 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `artifact_upload` ueber `stdio` mit `contentBase64`
 - `artifact_upload` ueber streambares HTTP mit `contentBase64` im
   `tools/call`-JSON-RPC-Argument
+- `artifactKind=schema` Upload materialisiert nach erfolgreicher
+  Validierung eine `schemaRef`; ungueltige Schema-Artefakte werden nicht
+  registriert
+- `job_status_get` fuer eigenen Job, erlaubten Admin-/Scope-Zugriff,
+  fremden Tenant, unbekannten Job und terminalen Job vor Retention
 - fachlicher Toolfehler mit `isError=true` und
   `structuredContent.error.code`
 - unbekannter Toolname als Protokollfehler mit numerischem
@@ -1742,6 +1836,7 @@ Verbindliche Negativfaelle:
 - KI-nahes Tool ohne `approvalKey`
 - Wiederverwendung eines Approval-Tokens mit anderem
   `payloadFingerprint`
+- `POLICY_REQUIRED`-Antwort enthaelt kein verwendbares `approvalToken`
 - zweiter Approval-Aufruf mit zusaetzlichem `approvalToken` veraendert
   den Payload-Fingerprint nicht
 - Upload-Berechtigung bleibt ueber mehrere Segmente derselben Session
@@ -1923,6 +2018,8 @@ Gegenmassnahme:
 - Upload-Session-IDs opak, kryptografisch erzeugt oder streng
   validiert und an Tenant, Principal, Approval-Fingerprint,
   Session-Metadaten und session-scoped Berechtigungen gebunden sind
+- grosse neutrale Schemas ueber `artifactKind=schema` Uploads zu
+  `schemaRef` materialisiert werden koennen
 - `job_cancel` eigene oder erlaubte Jobs kontrolliert abbrechen kann
 - Cancel in laufende Worker propagiert wird und nach angenommenem
   Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet
@@ -1933,6 +2030,11 @@ Gegenmassnahme:
   d-migrate-Langlaeufer einfuehrt
 - KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md`
   registriert, policy-gesteuert und auditierbar sind
+- KI-nahe Tools mindestens ueber einen adapterneutralen
+  `AiProviderPort` und `NoOp`-/lokalen Provider lauffaehig sind; externe
+  Provider brauchen Konfiguration, Secret-Scrubbing und erlaubende Policy
+- `POLICY_REQUIRED` nie ein self-approvendes `approvalToken` ausstellt,
+  sondern nur `approvalRequestId`/Challenge-Daten
 - Fehler immer als strukturiertes Envelope erscheinen
 - Tenant-Scope- und Principal-Pruefungen in Tool- und Resource-Pfaden
   aktiv sind

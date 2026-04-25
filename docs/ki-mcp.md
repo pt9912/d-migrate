@@ -176,10 +176,15 @@ Hinweis:
   `IDEMPOTENCY_CONFLICT` zurueckzugeben.
 - `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
   und wird nicht durch den Client gesetzt.
-- Optionaler 2-Phasen-Flow fuer policy-gesteuerte write-Tools:
+- 2-Phasen-Flow fuer policy-gesteuerte Tools:
   - erster Aufruf kann `POLICY_REQUIRED` mit
-    `error.details.approvalToken` liefern;
-  - zweiter Aufruf muss denselben `idempotencyKey` und dieses Token enthalten.
+    `error.details.approvalRequestId`, `approvalKey` bzw.
+    `idempotencyKey`, `payloadFingerprint` und einer Challenge liefern,
+    aber nie mit einem verwendbaren `approvalToken`;
+  - ein verwendbares `approvalToken` entsteht erst durch einen
+    serverseitig geprueften Policy-, Human- oder Admin-Grant;
+  - zweiter Aufruf muss denselben `idempotencyKey` bzw. `approvalKey`
+    und dieses extern ausgestellte Token enthalten.
 
 ### 5.3 KI-nahe Spezialtools
 
@@ -194,6 +199,11 @@ Policy, Prompt-Hygiene und Audit abgesichert:
 
 Diese Tools muessen strikt an die in `docs/design.md` beschriebene
 Provider- und Audit-Strategie gekoppelt sein.
+Fuer 0.9.6 ist dafuer mindestens ein adapterneutraler KI-/Testdaten-Port
+mit `NoOp`- oder lokaler Provider-Implementierung noetig. Externe
+Provider sind optional und brauchen explizite Konfiguration,
+Secret-Scrubbing, Provider-/Modell-Audit-Metadaten und erlaubende
+Policy.
 
 ---
 
@@ -419,6 +429,10 @@ Fuer Uploads ist im d-migrate-`v1`-Kontext ein expliziter Init-Pfad
 verbindlich:
 
 - `artifactKind` und `mimeType` werden serverseitig validiert
+- `artifactKind=schema` ist der verbindliche Pfad, um grosse neutrale
+  Schema-Dateien nach erfolgreichem Upload in eine `schemaRef` zu
+  materialisieren; ungueltige Schemas erzeugen kein Schema-Register-
+  Objekt
 - `sizeBytes` ist Pflicht, um harte Payload-Limits durchzusetzen.
 - `checksumSha256` fuer das vollstaendige Artefakt ist bereits in
   `artifact_upload_init` Pflicht.
@@ -473,8 +487,8 @@ verbindlich:
   - max. Uploadgroesse: `200 MiB`
   - erlaubte `mimeType`: `application/json`, `application/sql`,
     `application/yaml`, `text/plain`, `text/yaml`
-  - erlaubte `artifactKind`: `ddl`, `transform-script`, `seed-data`,
-    `rules`, `generic`
+  - erlaubte `artifactKind`: `schema`, `ddl`, `transform-script`,
+    `seed-data`, `rules`, `generic`
   - `sizeBytes` ist verpflichtende Referenzgroesse fuer die erwartete
     Endgroesse.
   - Der Server prueft die kumulierte `segment`-Groesse laufend; bei
@@ -510,6 +524,12 @@ Verbindliche Fehlercodes:
 - `PROMPT_HYGIENE_BLOCKED`
 - `TENANT_SCOPE_DENIED`
 - `INTERNAL_AGENT_ERROR`
+
+`POLICY_REQUIRED` enthaelt Challenge-Daten wie `approvalRequestId`,
+`approvalKey` bzw. `idempotencyKey`, `payloadFingerprint` und
+erforderliche Scopes/Gruende, aber kein verwendbares `approvalToken`.
+Verwendbare Tokens duerfen erst nach serverseitig geprueftem Policy-,
+Human- oder Admin-Grant ausgegeben werden.
 
 MCP-Wire-Mapping:
 
