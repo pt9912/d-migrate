@@ -393,21 +393,21 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 | ------- | ------------------ | ------ |
 | Quality | Quality verbessern | —      |
 
-### Milestone 0.9.6 — Beta: MCP-Server
+### Milestone 0.9.6 — MCP-Server
 
-| Bereich | Aufgabe                                                                                  | LF-Ref |
-| ------- | ---------------------------------------------------------------------------------------- | ------ |
-| Server  | MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext | —      |
-| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface         | —      |
-| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung | —      |
-| Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs            | —      |
-| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                 | —      |
-| Server  | Job-Steuerung: Statusabfrage und `job_cancel` fuer eigene oder erlaubte Jobs             | —      |
-| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                   | —      |
-| Server  | Segmentierter Artefakt-Upload und `artifact_upload_abort` mit SHA256-Validierung         | —      |
+| Bereich | Aufgabe                                                                                                            | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------------------------------------ | ------ |
+| Server  | MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext       | —      |
+| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface                                   | —      |
+| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung                           | —      |
+| Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs                                      | —      |
+| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                                           | —      |
+| Server  | Job-Steuerung: Statusabfrage und `job_cancel` fuer eigene oder erlaubte Jobs                                       | —      |
+| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                                             | —      |
+| Server  | Segmentierter Artefakt-Upload und `artifact_upload_abort` mit SHA256-Validierung                                   | —      |
 | Server  | KI-nahe MCP-Tools: `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan` mit Policy und Audit | —      |
-| Server  | MCP-Prompts fuer kuratierte Analyse-, Transformations- und Testdatenablaeufe             | —      |
-| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                            | —      |
+| Server  | MCP-Prompts fuer kuratierte Analyse-, Transformations- und Testdatenablaeufe                                       | —      |
+| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                                      | —      |
 
 **Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
 ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
@@ -415,7 +415,7 @@ ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 [`ki-mcp.md`](./ki-mcp.md).
 
-### Milestone 0.9.7 — Beta: REST-API
+### Milestone 0.9.7 — REST-API
 
 | Bereich | Aufgabe                                                                                          | LF-Ref |
 | ------- | ------------------------------------------------------------------------------------------------ | ------ |
@@ -431,7 +431,7 @@ kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 [`rest-service.md`](./rest-service.md).
 
-### Milestone 0.9.8 — Beta: gRPC-API
+### Milestone 0.9.8 — gRPC-API
 
 | Bereich | Aufgabe                                                                          | LF-Ref |
 | ------- | -------------------------------------------------------------------------------- | ------ |
@@ -446,7 +446,7 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 Low-Latency-Integration und Streaming-Szenarien. Details:
 [`grpc-service.md`](./grpc-service.md).
 
-### Milestone 0.9.9 — Beta-Dokumentation und Pilot-Validierung
+### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
 | ------- | ----------------------------------------- | ------ |

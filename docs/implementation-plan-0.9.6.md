@@ -1,7 +1,7 @@
-# Implementierungsplan: Milestone 0.9.6 - Beta: MCP-Server
+# Implementierungsplan: Milestone 0.9.6 - MCP-Server
 
 > Dieses Dokument beschreibt den konkreten Implementierungsplan fuer
-> Milestone 0.9.6. Es setzt den Roadmap-Punkt "Beta: MCP-Server" um und
+> Milestone 0.9.6. Es setzt den Roadmap-Punkt "MCP-Server" um und
 > macht `d-migrate` fuer KI-Agenten ueber das Model Context Protocol
 > steuerbar.
 >
@@ -54,7 +54,7 @@ Bewusst nicht Teil dieses Milestones:
 - freie SQL-Ausfuehrung ueber MCP
 - Uebergabe von JDBC-Secrets im Prompt- oder Tool-Payload
 - persistente Multi-Tenant-Produktinfrastruktur jenseits des fuer die
-  Beta noetigen lokalen Stores
+  noetigen lokalen Stores
 - SSE-basierte Notifications, Resource-Subscriptions oder
   Push-Notifications. Der MCP-konforme Streamable-HTTP-`GET`-Pfad
   bleibt trotzdem definiert: der Server liefert entweder einen
@@ -196,7 +196,7 @@ Konsequenz:
   Consent-/Client-Registration-UI, Mandanten-Admin und vollstaendige
   Remote-Server-Betriebsplattform
 - allgemeine Freigabe-UI fuer Policy-Grants; 0.9.6 braucht stattdessen
-  einen schmalen Beta-Grant-Pfad gemaess Abschnitt 4.5
+  einen schmalen Grant-Pfad gemaess Abschnitt 4.5
 - produktive Langzeitpersistenz fuer Jobs und Artefakte ueber
   Prozessneustarts hinaus, sofern sie nicht bereits durch bestehende
   Infrastruktur vorhanden ist
@@ -229,7 +229,7 @@ Begruendung:
 - der gemeinsame Job-/Artefaktkern muss adapterunabhaengig bleiben
 - ein schlanker Adapter reduziert das Risiko divergierender Semantik
 
-### 4.2 `stdio` und streambares HTTP sind Beta-Transporte
+### 4.2 `stdio` und streambares HTTP sind Transporte
 
 Verbindliche Entscheidung:
 
@@ -261,7 +261,7 @@ Verbindliche Entscheidung:
 - der HTTP-Resource-Server hat einen fail-closed Tokenvalidierungsvertrag:
   - erlaubte Issuer werden konfiguriert und muessen exakt mit Token-
     `iss` und Protected-Resource-Metadata uebereinstimmen
-  - JWKS-basierte JWT-Validierung ist der Beta-Default; alternativ darf
+  - JWKS-basierte JWT-Validierung ist der Default; alternativ darf
     ein explizit konfigurierter Introspection-Endpoint genutzt werden
   - akzeptierte Signaturalgorithmen sind allowlist-basiert; `none`,
     ungekennzeichnete symmetrische Fallbacks und unerwartete
@@ -294,7 +294,7 @@ Verbindliche Entscheidung:
   Resource Metadata enthaelt mindestens die oben genannten Scope-Namen
 - Deaktivierung von HTTP-Auth ist nur fuer lokale Tests und Demos ueber
   eine explizite unsichere Konfiguration erlaubt; entfernte HTTP-Clients
-  duerfen ohne Auth nicht als Beta-fertig gelten
+  duerfen ohne Auth nicht als fertig gelten
 - unsichere HTTP-Auth-Deaktivierung ist nur zulaessig, wenn der Server
   ausschliesslich an Loopback-Adressen (`127.0.0.1` oder `::1`) bindet,
   keine oeffentliche Base-URL ausweist und keine nicht-lokale
@@ -323,7 +323,7 @@ Verbindliche Entscheidung:
 
 Begruendung:
 
-- lokale IDE- und Agent-Runtimes sind der wichtigste Beta-Pfad
+- lokale IDE- und Agent-Runtimes sind der wichtigste Pfad
 - entfernte Agent-Plattformen brauchen denselben Tool-Vertrag ueber
   einen remote-faehigen Transport
 - Tool-Vertraege, Ressourcen, Policies und Fehlercodes bleiben
@@ -454,7 +454,7 @@ Verbindliche Entscheidung:
 - KI-nahe Tools (`procedure_transform_plan`,
   `procedure_transform_execute`, `testdata_plan`) sind immer
   policy- und auditpflichtig
-- 0.9.6 muss mindestens einen produktiv nutzbaren Beta-Grant-Aussteller
+- 0.9.6 muss mindestens einen produktiv nutzbaren Grant-Aussteller
   implementieren, damit policy-pflichtige Pfade nicht dauerhaft bei
   `POLICY_REQUIRED` enden:
   - lokale Policy-Allowlist fuer klar begrenzte Operationen, Principals,
@@ -466,7 +466,7 @@ Verbindliche Entscheidung:
     fuer Loopback/`stdio`, deutlich als unsicher markiert und immer audit-
     pflichtig
 - Test-Seeds allein gelten nicht als produktiver Grant-Pfad; ohne
-  konfigurierten Beta-Grant-Aussteller muss der Server kontrolliert
+  konfigurierten Grant-Aussteller muss der Server kontrolliert
   fail-closed starten oder alle policy-pflichtigen Tools mit dokumentiertem
   `POLICY_REQUIRED` blockieren
 
@@ -734,7 +734,7 @@ Erwartete Kernmodelle und Projektionen:
   - numerisches MCP/JSON-RPC-`error.code`
   - d-migrate-Fehlercode in `error.data.dmigrateCode`
 
-### 5.3 Stores fuer die Beta
+### 5.3 Stores
 
 0.9.6 braucht einen klaren, testbaren Store-Vertrag:
 
@@ -757,7 +757,7 @@ Store-/Index-Abstraktion, damit `schema_list`, Resource-Resolver,
 Tenant-Scope-Pruefung, Paginierung und Retention nicht von
 dateispezifischen Artefaktdetails abhaengen.
 
-Connection-Refs werden ausserhalb von MCP registriert. Fuer die Beta
+Connection-Refs werden ausserhalb von MCP registriert. Fuer die Version
 muss der Store aus mindestens einer klaren Bootstrap-Quelle befuellt
 werden:
 
@@ -767,7 +767,7 @@ werden:
 - Test-/Demo-Seeds fuer Integrationstests ohne echte Secrets
 
 Der MCP-Adapter darf keine freien Connection-Secrets im Tool-Payload
-annehmen. Das Beta-Modell trennt strikt:
+annehmen. Das Modell trennt strikt:
 
 - `ConnectionReferenceStore` enthaelt nur non-secret Metadaten:
   `connectionId`, Tenant, Dialekt, Owner, Sensitivitaet,
@@ -787,7 +787,7 @@ annehmen. Das Beta-Modell trennt strikt:
   Konfigurationsfehler enden; Test-Seeds duerfen nur non-secret Dummy-
   Referenzen enthalten
 
-Beta-Default:
+Default:
 
 - lokaler In-Memory-Store fuer Tests und kurzlebige `stdio`-Server
 - optional dateibasierter Store unter einem konfigurierbaren
@@ -1578,7 +1578,7 @@ Fuer policy-gesteuerte Operationen wird zusaetzlich protokolliert:
   noetig
 - Store-Interfaces fuer Jobs, Artefakte, Upload-Sessions,
   Connection-Refs, Idempotency, Approval-Grants und Audit definieren
-- In-Memory-Implementierungen fuer Beta und Tests bereitstellen
+- In-Memory-Implementierungen fuer Tests bereitstellen
 - deterministische Payload-Fingerprint-Funktion implementieren
 - Fingerprint-Kanonik fuer Approval und Idempotenz definieren:
   transiente Kontrollfelder werden ausgeschlossen, Upload-Segmente
@@ -1768,9 +1768,9 @@ Abnahmekriterien:
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
 - sensitive Connection-Refs liefern Policy-Metadaten fuer
   `schema_compare_start`, Reverse, Import und Transfer
-- Connection-Refs koennen in Beta-Tests aus dokumentierten Seeds
+- Connection-Refs koennen in Tests aus dokumentierten Seeds
   geladen werden, ohne Secrets in MCP-Payloads zu uebergeben
-- reale connection-backed Beta-Pfade funktionieren nur mit dokumentiertem
+- reale connection-backed Pfade funktionieren nur mit dokumentiertem
   Credential-/Secret-Provider; fehlt dieser, liefern sie einen
   fail-closed Konfigurationsfehler statt teilweise expandierter Secret-URLs
 - CLI- und MCP-Startpfade nutzen dieselbe adapterneutrale
@@ -1789,7 +1789,7 @@ Abnahmekriterien:
   CancellationToken/Worker-Handle geprueft wird und welche Side Effects
   nach Cancel verhindert werden
 - Gate-Entscheidung: `job_cancel` bleibt harte 0.9.6-DoD. Eine reduzierte
-  Beta-Semantik wie nur `cancel_requested`, Store-Status ohne Worker-
+  Semantik wie nur `cancel_requested`, Store-Status ohne Worker-
   Propagation oder "best effort ohne Side-Effect-Stopp" ist fuer 0.9.6
   ausgeschlossen
 - wenn der Spike fuer einen der genannten Langlaeufer keine kooperative
@@ -1808,7 +1808,7 @@ Abnahmekriterien:
 - Idempotency-Pruefung fuer Start-Tools anbinden
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
-- Beta-Grant-Aussteller implementieren und dokumentieren:
+- Grant-Aussteller implementieren und dokumentieren:
   lokale Policy-Allowlist, Admin-CLI oder signierte Grant-Datei; optionaler
   Demo-Auto-Approval-Modus nur fuer Loopback/`stdio` und mit Audit
 - `ApprovalGrantStore` speichert Grant-Metadaten, Ablauf, Issuer-
@@ -1825,7 +1825,7 @@ Abnahmekriterien:
 - identische Wiederholung liefert denselben Job
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT`
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`
-- policy-pflichtige Tools koennen ueber mindestens einen Beta-Grant-Pfad
+- policy-pflichtige Tools koennen ueber mindestens einen Grant-Pfad
   produktiv freigegeben werden; ohne konfigurierten Grant-Aussteller ist
   das Verhalten fail-closed und dokumentiert
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job
@@ -1883,7 +1883,7 @@ Abnahmekriterien:
 - adapterneutralen `AiProviderPort` bzw. KI-Ausfuehrungsport definieren:
   Eingabe-Summary, Modell-/Provider-Auswahl, Policy-Kontext,
   Prompt-Fingerprint und redigierte Payloads
-- `NoOp`-Provider fuer Tests und lokale Beta-Defaults implementieren,
+- `NoOp`-Provider fuer Tests und lokale Defaults implementieren,
   der keine externen Netzwerkaufrufe macht und deterministische
   Plan-/Transformationsantworten liefert
 - optionale lokale Provider-Konfiguration fuer Ollama/LM Studio
@@ -1911,7 +1911,7 @@ Abnahmekriterien:
   Payload-Limits
 - Policy- und Idempotency-Konflikttests
 - Dokumentation fuer Start, Tool-Liste, Sicherheitsmodell und bekannte
-  Beta-Grenzen aktualisieren
+  Grenzen aktualisieren
 
 Abnahmekriterien:
 
@@ -1920,7 +1920,7 @@ Abnahmekriterien:
   Abnahmekriterien abgedeckt
 - KI-nahe Tools liefern Policy-, Audit- und Prompt-Hygiene-Fehler
   strukturiert statt als rohe Exceptions
-- KI-nahe Tools funktionieren im Beta-Testpfad mit dem `NoOp`-Provider
+- KI-nahe Tools funktionieren im Testpfad mit dem `NoOp`-Provider
   ohne externe Secrets oder Netzwerkzugriff
 - KI-nahe Tool-Retries mit gleichem `approvalKey` und identischem Payload
   liefern dasselbe Ergebnis bzw. dieselbe Artefakt-/Provider-Referenz;
@@ -1951,7 +1951,7 @@ Pflichtabdeckung:
 - atomare Idempotency-Reservierung `reserveOrGet` mit `PENDING`/
   `COMMITTED`, Konfliktpfad und TTL-/Fehlerbehandlung
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
-- Beta-Grant-Aussteller fuer lokale Allowlist, Admin-CLI oder signierte
+- Grant-Aussteller fuer lokale Allowlist, Admin-CLI oder signierte
   Grant-Datei inklusive Ablauf, Issuer-Fingerprint und Audit-Metadaten
 - Sync-Effect-Idempotency fuer `approvalKey` mit atomarer Reservierung,
   identischer Wiederholung und Konfliktpfad
@@ -2213,7 +2213,7 @@ Nach Umsetzung muessen mindestens diese Dokumente konsistent sein:
 
 Dokumentation muss explizit nennen:
 
-- `stdio` und streambares HTTP sind die Beta-Transporte
+- `stdio` und streambares HTTP sind die Transporte
 - MCP-`initialize` nutzt datierte `protocolVersion`-Strings
   (`2025-11-25`); d-migrate `v1` ist nur die Tool-/Resource-
   Vertragsversion
@@ -2268,7 +2268,7 @@ Gegenmassnahme:
   kapseln
 - Tool-Handler unabhaengig vom konkreten SDK testbar halten
 
-### 11.2 Zu viel Infrastruktur im Beta-Milestone
+### 11.2 Zu viel Infrastruktur im Milestone
 
 Risiko:
 
@@ -2277,7 +2277,7 @@ Risiko:
 
 Gegenmassnahme:
 
-- Beta-Store bewusst einfach halten
+- Store bewusst einfach halten
 - keine Remote-Mandantenverwaltung implementieren
 - klare Store-Interfaces fuer spaetere Persistenz definieren
 
@@ -2387,7 +2387,7 @@ Gegenmassnahme:
   fruehen Auth-, Validation-, Scope-, Policy- und Idempotency-Fehlern
 - MCP-Integrationstests mindestens Initialize, Tool-Aufruf,
   Resource-Zugriff, Fehlerfall und Upload abdecken
-- Dokumentation die konkreten Beta-Startpfade und die Sicherheitsgrenzen
+- Dokumentation die konkreten Startpfade und die Sicherheitsgrenzen
   beschreibt
 
 ---
@@ -2398,4 +2398,4 @@ Direkte Anschlussarbeiten laut Roadmap:
 
 - 0.9.7 REST-API auf demselben Job-/Artefakt-/Policy-Kern aufbauen
 - 0.9.8 gRPC-API auf denselben Kernvertraegen aufbauen
-- 0.9.9 Beta-Dokumentation, API-Dokumentation und Pilot-Validierung
+- 0.9.9 Dokumentation, API-Dokumentation und Pilot-Validierung
