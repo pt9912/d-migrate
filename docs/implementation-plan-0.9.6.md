@@ -263,6 +263,9 @@ Verbindliche Entscheidung:
 
 - `data_import_start` und `data_transfer_start` brauchen eine Policy-
   Freigabe
+- `artifact_upload` und `artifact_upload_abort` sind ebenfalls
+  policy-gesteuert, weil sie Eingabeartefakte fuer spaetere
+  Datenoperationen erzeugen oder verwerfen koennen
 - `schema_reverse_start` und `data_profile_start` sind ebenfalls
   policyfaehig, weil sie kostenintensiv oder sensitiv sein koennen
 - wenn eine Policy-Freigabe fehlt, liefert das Tool
@@ -343,7 +346,13 @@ Vertraege gehoeren nicht in `adapters/driving/mcp`.
 
 ### 5.2 Kernmodelle
 
-Erwartete neue Kernmodelle:
+`docs/job-contract.md` ist fuer Jobs und Artefakte normativ. 0.9.6
+fuehrt deshalb keinen abweichenden MCP-spezifischen Job- oder
+Artefaktvertrag ein. Der MCP-Adapter darf diese Modelle nur
+protokollspezifisch projizieren, z.B. durch `resourceUri`,
+`executionMeta` oder gekuerzte Summaries.
+
+Erwartete Kernmodelle und Projektionen:
 
 - `PrincipalContext`
   - `principalId`
@@ -353,25 +362,33 @@ Erwartete neue Kernmodelle:
 - `ServerResourceUri`
   - typisierte Abbildung von
     `dmigrate://tenants/{tenantId}/...`
-- `ManagedJob`
+- `ManagedJob` gemaess `docs/job-contract.md`
   - `jobId`
-  - `tenantId`
   - `operation`
   - `status`
   - `createdAt`
+  - `updatedAt`
   - `expiresAt`
-  - optionale `artifactIds`
-  - optionale strukturierte Summary
-- `ManagedArtifact`
+  - `createdBy`
+  - `artifacts`
+  - optional `error`
+  - optional `progress`
+- MCP-Job-Projektion
+  - tenant-scoped `resourceUri`
+  - gekuerzte Summary fuer Tool-Responses
+  - `executionMeta.requestId`
+- `ManagedArtifact` gemaess `docs/job-contract.md`
   - `artifactId`
-  - `tenantId`
-  - `artifactKind`
-  - `mimeType`
+  - `filename`
+  - `contentType`
   - `sizeBytes`
-  - `checksumSha256`
+  - `sha256`
   - `createdAt`
   - `expiresAt`
-  - immutable Content-Referenz
+- MCP-Artefakt-Projektion
+  - tenant-scoped `resourceUri`
+  - optionale MCP-Metadaten wie erlaubter Upload-Typ oder
+    Ergebnis-Kategorie, ohne den Kernvertrag umzubenennen
 - `UploadSession`
   - `uploadSessionId`
   - `tenantId`
@@ -570,8 +587,11 @@ Gemeinsame Regeln:
 - Filter sind allowlist-basiert
 - Paginierung nutzt `limit` und `cursor`
 - `limit` hat ein serverseitiges Maximum
-- Antworten enthalten `items`, `nextCursor` und bei Listen
-  `totalCount`, sofern guenstig bestimmbar
+- Antworten enthalten stabil `items`, `nextCursor` und `totalCount`
+- wenn ein Store die exakte Gesamtzahl intern nicht billig bestimmen
+  kann, muss er fuer 0.9.6 trotzdem eine konsistente Zaehllogik fuer
+  die gefilterte Ergebnisliste bereitstellen; eine spaetere Lockerung
+  muesste zuerst `docs/ki-mcp.md` aendern
 
 Akzeptanz:
 
@@ -628,6 +648,13 @@ Tools:
 - `artifact_upload`
 - `artifact_upload_abort`
 
+Gemeinsame Regeln:
+
+- beide Tools sind policy-gesteuert
+- fehlende Freigabe liefert `POLICY_REQUIRED`
+- der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
+  umgehen
+
 Verbindliche Validierungen:
 
 - `artifactKind` ist allowlist-basiert
@@ -636,6 +663,9 @@ Verbindliche Validierungen:
 - maximale Uploadgroesse ist `200 MiB`
 - jedes Segment braucht `segmentSha256`
 - finales Segment braucht `checksumSha256`
+- nach erfolgreichem Abschluss wird daraus ein Artefakt gemaess
+  `docs/job-contract.md`; `mimeType` wird zu `contentType` und
+  `checksumSha256` zu `sha256` gemappt
 
 Akzeptanz:
 
@@ -715,8 +745,11 @@ Fuer policy-gesteuerte Operationen wird zusaetzlich protokolliert:
 
 ### Phase A - Gemeinsamer Serverkern
 
-- Kernmodelle fuer Principal, Resource-URI, Job, Artefakt, Upload,
-  Fehler, Pagination und Execution-Meta einfuehren
+- Kernmodelle fuer Principal, Resource-URI, Upload, Fehler,
+  Pagination und Execution-Meta einfuehren
+- Job- und Artefaktmodelle aus `docs/job-contract.md` verwenden und
+  nur adapterneutrale Ergaenzungen dort vornehmen, falls wirklich
+  noetig
 - Store-Interfaces fuer Jobs, Artefakte, Upload-Sessions,
   Idempotency und Audit definieren
 - In-Memory-Implementierungen fuer Beta und Tests bereitstellen
@@ -783,8 +816,10 @@ Abnahmekriterien:
 - Idempotency-Pruefung fuer Start-Tools anbinden
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
-- Jobstatus fuer `queued`, `running`, `succeeded`, `failed`,
-  `cancelled` und `expired` definieren
+- Jobstatus exakt aus `docs/job-contract.md` verwenden:
+  `queued`, `running`, `succeeded`, `failed`, `cancelled`
+- Ablauf und Retention von Jobs ueber `expiresAt` modellieren, nicht
+  ueber einen zusaetzlichen Jobstatus
 
 Abnahmekriterien:
 
@@ -798,6 +833,7 @@ Abnahmekriterien:
 - `artifact_upload` mit Session- und Segmentverwaltung umsetzen
 - `artifact_upload_abort` umsetzen
 - SHA-256-Pruefung pro Segment und Gesamtartefakt erzwingen
+- Policy-Pruefung fuer Upload und Upload-Abbruch anbinden
 - `data_import_start` an hochgeladene Artefakte binden
 - `data_transfer_start` an Connection-Refs und Policy binden
 - Upload- und Artefakt-Limits zentral konfigurieren
@@ -807,7 +843,8 @@ Abnahmekriterien:
 - Upload-Resume mit wiederholten Segmenten funktioniert
 - Hash-Abweichungen werden abgewiesen
 - finalisierte Artefakte sind immutable
-- Import/Transfer starten nur mit Policy-Freigabe
+- Upload, Upload-Abbruch, Import und Transfer laufen nur mit
+  Policy-Freigabe
 
 ### Phase G - Tests und Dokumentation
 
@@ -992,7 +1029,8 @@ Gegenmassnahme:
 - Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
 - Start-Tools Idempotency-Key, Payload-Fingerprint und Konflikte korrekt
   behandeln
-- policy-pflichtige Datenoperationen den Approval-Flow erzwingen
+- policy-pflichtige Upload- und Datenoperationen den Approval-Flow
+  erzwingen
 - Artefakt-Uploads segmentiert, resumable und SHA-256-validiert sind
 - Fehler immer als strukturiertes Envelope erscheinen
 - Tenant-Scope- und Principal-Pruefungen in Tool- und Resource-Pfaden
