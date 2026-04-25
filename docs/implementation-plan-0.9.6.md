@@ -164,6 +164,7 @@ Konsequenz:
   - Schemas
   - Profile
   - Diffs
+  - Connection-Refs
 - strukturierte Fehler-Envelopes mit den in `docs/ki-mcp.md`
   festgelegten Codes
 - KI-nahe Spezialtools:
@@ -1348,6 +1349,13 @@ Abnahmekriterien:
   streambares HTTP verpflichtend implementieren:
   - HTTP 401 mit `WWW-Authenticate` und `resource_metadata`
   - Protected Resource Metadata well-known Endpoint
+  - Protected Resource Metadata als JSON-Dokument mit mindestens:
+    - `resource`: kanonische HTTPS-URI des MCP-Servers bzw. MCP-
+      Endpunkts
+    - `authorization_servers`: nicht-leere Liste der zulaessigen
+      Authorization-Server-Issuer-URIs
+    - optional `scopes_supported`, falls der Server Scope-Discovery fuer
+      Basisfunktionen anbieten kann
   - HTTP 403 mit Scope-Challenge bei unzureichenden Scopes
   - Token-Audience-/Resource-Validierung
   - keine Tokens in Query-Parametern
@@ -1371,6 +1379,11 @@ Abnahmekriterien:
 - HTTP-Auth-Tests decken fuer nicht-lokales HTTP 401/403,
   `WWW-Authenticate`, Protected-Resource-Metadata und Scope-Challenges
   ab
+- Golden-Test validiert das Protected-Resource-Metadata-Dokument:
+  `resource` entspricht der kanonischen Server-/Endpoint-URI,
+  `authorization_servers` ist vorhanden, nicht leer und enthaelt nur
+  zugelassene HTTPS-Issuer; optionales `scopes_supported` ist konsistent
+  mit den dokumentierten Scope-Challenges
 - ein separater Test zeigt, dass Auth-Deaktivierung nur fuer lokale
   Test-/Demo-Konfigurationen erlaubt ist
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
@@ -1490,8 +1503,9 @@ Abnahmekriterien:
 - fehlendes oder zu grosses `contentBase64` wird mit
   `VALIDATION_ERROR` bzw. `PAYLOAD_TOO_LARGE` abgewiesen
 - finalisierte Artefakte sind immutable
-- Upload, Upload-Abbruch, Import und Transfer laufen nur mit
-  Policy-Freigabe
+- Upload-Init, administrative Upload-Abbrueche, Import und Transfer
+  laufen nur mit Policy-Freigabe; eigene aktive Upload-Sessions duerfen
+  per Owner-Pruefung abgebrochen werden
 - Import/Transfer-Retries mit gleichem `idempotencyKey` deduplizieren;
   abweichender Payload mit gleichem Key liefert
   `IDEMPOTENCY_CONFLICT`
@@ -1743,8 +1757,9 @@ Dokumentation muss explizit nennen:
   `MCP-Session-Id` und `GET`-Semantik
 - HTTP-Authorization dokumentiert 401/403-Verhalten,
   `WWW-Authenticate`, Protected Resource Metadata und Scope-
-  Challenges fuer nicht-lokale HTTP-Clients; Auth-Deaktivierung ist nur
-  fuer lokale Tests/Demos erlaubt
+  Challenges fuer nicht-lokale HTTP-Clients; das Metadata-Dokument nennt
+  mindestens `resource` und `authorization_servers`; Auth-Deaktivierung
+  ist nur fuer lokale Tests/Demos erlaubt
 - `stdio` ohne vertrauenswuerdigen Host-/Prozesskontext und ohne
   `DMIGRATE_MCP_STDIO_TOKEN` liefert `AUTH_REQUIRED`
 - Secrets werden nicht ueber MCP-Payloads uebergeben

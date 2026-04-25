@@ -561,6 +561,10 @@ Empfohlene Sicherheitsgrundlagen:
   - bei unzureichenden Scopes: HTTP 403 mit Scope-Challenge
   - Protected Resource Metadata wird ueber well-known URI oder die im
     `WWW-Authenticate` referenzierte URL angeboten
+  - das Metadata-Dokument enthaelt mindestens `resource` als kanonische
+    MCP-Server-/Endpoint-URI und eine nicht-leere
+    `authorization_servers`-Liste mit den zulaessigen HTTPS-Issuern;
+    optionales `scopes_supported` muss zu den Scope-Challenges passen
   - Tokens duerfen nicht aus Query-Parametern gelesen werden und muessen
     auf Audience/Resource des MCP-Servers validiert werden
   - Auth-Deaktivierung ist nur fuer lokale Tests/Demos mit expliziter
