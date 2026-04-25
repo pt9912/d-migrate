@@ -125,6 +125,9 @@ Konsequenz:
 - OAuth-2.1-kompatible MCP-Authorization fuer HTTP mit Protected
   Resource Metadata, `WWW-Authenticate`-Challenges und Scope-
   Fehlermapping
+  - in Scope ist Resource-Server-Verhalten: Token validieren,
+    Protected Resource Metadata anbieten, Scopes challengen und 401/403
+    korrekt mappen
 - Capability-/Initialize-Vertrag fuer MCP `protocolVersion`
   `2025-11-25`; `v1` bezeichnet nur den d-migrate-spezifischen
   Tool-/Resource-Vertrag, nicht die MCP-Protokollversion
@@ -182,8 +185,9 @@ Konsequenz:
 - MCP-Tools fuer rohe Datenexports als Chat-Inline-Daten
 - Tool fuer freie SQL-Ausfuehrung
 - direkte JDBC-URL- oder Secret-Parameter im MCP-Tool-Payload
-- vollstaendige Remote-Server-Betriebsplattform mit OAuth,
-  Mandantenverwaltung und Admin-UI
+- eigener OAuth-/Authorization-Server, Dynamic Client Registration,
+  Consent-/Client-Registration-UI, Mandanten-Admin und vollstaendige
+  Remote-Server-Betriebsplattform
 - produktive Langzeitpersistenz fuer Jobs und Artefakte ueber
   Prozessneustarts hinaus, sofern sie nicht bereits durch bestehende
   Infrastruktur vorhanden ist
@@ -323,9 +327,14 @@ Verbindliche Entscheidung:
 
 - `data_import_start` und `data_transfer_start` brauchen eine Policy-
   Freigabe
-- `artifact_upload_init`, `artifact_upload` und `artifact_upload_abort`
-  sind ebenfalls policy-gesteuert, weil sie Eingabeartefakte fuer
-  spaetere Datenoperationen erzeugen oder verwerfen koennen
+- `artifact_upload_init` ist policy-gesteuert, weil damit ein
+  Eingabeartefakt fuer spaetere Datenoperationen vorbereitet wird
+- `artifact_upload` nutzt danach eine serverseitige, session-scoped
+  Upload-Berechtigung aus dem erfolgreichen Init-Aufruf; einzelne
+  Segmente brauchen keine erneute Policy-Freigabe
+- `artifact_upload_abort` fuer die eigene aktive Session braucht Tenant-,
+  Principal- und Session-Owner-Pruefung, aber keine Policy-Freigabe;
+  fremde oder administrative Abbrueche sind policy-gesteuert
 - `schema_reverse_start` und `data_profile_start` sind ebenfalls
   policyfaehig, weil sie kostenintensiv oder sensitiv sein koennen
 - wenn eine Policy-Freigabe fehlt, liefert das Tool
@@ -333,9 +342,9 @@ Verbindliche Entscheidung:
 - bei Start-Tools muss der zweite Aufruf denselben `idempotencyKey` und
   das passende `approvalToken` enthalten
 - bei nicht-asynchronen policy-pflichtigen Tools ohne
-  `idempotencyKey`, z.B. `artifact_upload_init`, `artifact_upload`,
-  `artifact_upload_abort` und die KI-nahen Tools, muss der Client einen
-  stabilen `approvalKey` mitsenden; das `approvalToken` wird an
+  `idempotencyKey`, z.B. `artifact_upload_init`, administrative
+  `artifact_upload_abort`-Aufrufe und die KI-nahen Tools, muss der
+  Client einen stabilen `approvalKey` mitsenden; das `approvalToken` wird an
   (`toolName`, `callerId`, `approvalKey`, `payloadFingerprint`)
   gebunden
 - fehlt bei einer policy-pflichtigen synchronen Operation der
@@ -345,6 +354,10 @@ Verbindliche Entscheidung:
   `checksumSha256`, Tenant, Principal, optionaler Zielkontext), nicht
   aus Segmentbytes, `segmentSha256`, `contentBase64` oder
   Segmentpositionen
+- ein erfolgreicher `artifact_upload_init` wandelt die Freigabe in eine
+  serverseitige Upload-Berechtigung um, die explizit an
+  `uploadSessionId`, Tenant, Principal, `artifactKind`, `mimeType`,
+  `sizeBytes`, `checksumSha256` und Ablaufzeit gebunden ist
 - produktive oder als sensitiv markierte Verbindungen duerfen nicht
   ohne Policy-Freigabe genutzt werden
 - KI-nahe Tools (`procedure_transform_plan`,
@@ -403,8 +416,9 @@ Verbindliche Entscheidung:
   werden serverseitig validiert
 - Sessions koennen `ACTIVE`, `COMPLETED`, `EXPIRED` oder `ABORTED`
   sein
-- `artifact_upload_abort` setzt die Session auf `ABORTED` und verwirft
-  Zwischensegmente
+- `artifact_upload_abort` setzt die eigene aktive Session nach
+  Tenant-/Principal-/Owner-Pruefung auf `ABORTED` und verwirft
+  Zwischensegmente; fremde oder administrative Abbrueche brauchen Policy
 
 Begruendung:
 
@@ -661,11 +675,13 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
 3. Principal aus Transportkontext ableiten
 4. Tool-Payload gegen Tool-Schema validieren
 5. Tenant- und Resource-Scopes pruefen
-6. Policy pruefen
-7. Idempotency pruefen, falls Start-Tool
+6. bestehenden Idempotency-Treffer fuer Start-Tools pruefen, falls nach
+   Auth, Schema-Validierung und Scope-Pruefung eindeutig bestimmbar
+7. Policy pruefen, falls kein bestehender Idempotency-Treffer vorliegt
+   oder der Idempotency-Key mit anderem Payload/Caller kollidiert
 8. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
    machen
-9. Anwendung ausfuehren oder Job anlegen
+9. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
 10. Ergebnis zuschneiden und Limits anwenden
 11. Artefakte/Ressourcen referenzieren
 12. Erfolg oder Fehler als einheitliches Envelope liefern
@@ -675,6 +691,12 @@ Verbindliche Audit-Semantik:
 
 - ein `requestId` existiert vor Auth-, Schema-, Scope-, Policy- oder
   Idempotency-Pruefungen
+- identische Start-Tool-Retries mit bestehendem Idempotency-Treffer geben
+  nach Auth, Schema-Validierung und Scope-Pruefung denselben Job zurueck,
+  auch wenn ein frueherer Approval-Grant inzwischen abgelaufen oder
+  entzogen ist
+- Policy wird fuer neue Starts und fuer Idempotency-Konflikte geprueft,
+  nicht fuer reine Deduplizierungsantworten
 - auch `AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
   `POLICY_REQUIRED` und `IDEMPOTENCY_CONFLICT` werden auditierbar
   abgeschlossen
@@ -960,23 +982,38 @@ Tools:
 
 Gemeinsame Regeln:
 
-- alle drei Tools sind policy-gesteuert
-- fehlende Freigabe liefert `POLICY_REQUIRED`
+- `artifact_upload_init` ist policy-gesteuert
+- fehlende Freigabe fuer `artifact_upload_init` liefert
+  `POLICY_REQUIRED`
 - der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
   umgehen
-- `approvalKey` ist fuer alle drei Tools Pflicht
-- beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
-  passende `approvalToken` senden
-- das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
-  den session-metadatenbezogenen `payloadFingerprint` gebunden
+- `approvalKey` ist fuer `artifact_upload_init` Pflicht
+- beim zweiten Init-Aufruf muss der Client dasselbe `approvalKey` und
+  das passende `approvalToken` senden
+- das Init-`approvalToken` ist an `toolName`, `callerId`,
+  `approvalKey` und den session-metadatenbezogenen
+  `payloadFingerprint` gebunden
+- nach erfolgreichem Init legt der Server eine session-scoped
+  Upload-Berechtigung an; sie ist an `uploadSessionId`, Tenant,
+  Principal, `artifactKind`, `mimeType`, `sizeBytes`,
+  `checksumSha256`, Approval-Fingerprint und Ablaufzeit gebunden
+- `artifact_upload` prueft `uploadSessionId`, Tenant, Principal,
+  Session-Owner, Session-Status und die session-scoped
+  Upload-Berechtigung statt pro Segment eine neue Policy-Freigabe zu
+  verlangen
+- `artifact_upload_abort` fuer die eigene aktive Session prueft
+  `uploadSessionId`, Tenant, Principal und Session-Owner, aber kein
+  `approvalKey`; administrative oder fremde Abbrueche bleiben
+  policy-gesteuert und brauchen `approvalKey`/`approvalToken`
 - `artifact_upload_init` ist der einzige Aufruf, der eine neue
   Upload-Session erzeugt; `artifact_upload` und `artifact_upload_abort`
   referenzieren immer eine bestehende `uploadSessionId`
 - Segmentdaten, `segmentSha256`, `contentBase64`, `segmentIndex` und
   `segmentOffset` sind nicht Teil des
   Approval-Fingerprints; sie werden separat pro Segment validiert
-- Wiederverwendung desselben Tokens mit anderen Session-Metadaten liefert
-  `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
+- Wiederverwendung desselben Tokens mit anderen Session-Metadaten oder
+  mit einer anderen `uploadSessionId` liefert `POLICY_REQUIRED` oder
+  `FORBIDDEN_PRINCIPAL`
 
 Verbindliche Validierungen:
 
@@ -987,7 +1024,8 @@ Verbindliche Validierungen:
   Pflicht und Teil des Approval-Fingerprints
 - maximale Uploadgroesse ist `200 MiB`
 - `uploadSessionId` ist fuer `artifact_upload_init` nicht Pflicht, fuer
-  `artifact_upload` und `artifact_upload_abort` aber verbindlich
+  `artifact_upload` und `artifact_upload_abort` aber verbindlich und
+  Bestandteil jeder session-scoped Upload- oder Abort-Berechtigung
 - serverseitig erzeugte `uploadSessionId` ist 36 Zeichen lang, wird
   kryptografisch sicher erzeugt und als opaker Wert behandelt
 - falls ein Client fuer Resume einen Session-Kandidaten sendet, muss er
@@ -998,6 +1036,9 @@ Verbindliche Validierungen:
 - Wiederverwendung einer Session-ID mit anderem Tenant, Principal,
   Approval-Fingerprint oder anderen Session-Metadaten liefert
   `VALIDATION_ERROR` oder `FORBIDDEN_PRINCIPAL`
+- `artifact_upload_abort` ohne Session-Owner-Recht liefert
+  `FORBIDDEN_PRINCIPAL`; administrative Abbrueche ohne Policy-Freigabe
+  liefern `POLICY_REQUIRED`
 - `segmentIndex` beginnt bei `1` und ist fortlaufend
 - `segmentOffset` ist der Byte-Offset in der vollstaendigen
   Artefakt-Bytefolge
@@ -1432,7 +1473,8 @@ Abnahmekriterien:
   ueber decodierte Bytes berechnen
 - `artifact_upload_abort` umsetzen
 - SHA-256-Pruefung pro Segment und Gesamtartefakt erzwingen
-- Policy-Pruefung fuer Upload-Init, Upload und Upload-Abbruch anbinden
+- Policy-Pruefung fuer Upload-Init und administrative Upload-Abbrueche
+  anbinden; eigene Upload-Abbrueche ueber Session-Owner-Pruefung erlauben
 - `data_import_start` an hochgeladene Artefakte binden
 - `data_transfer_start` an Connection-Refs und Policy binden
 - Idempotency-Pruefung fuer `data_import_start` und
@@ -1516,6 +1558,10 @@ Pflichtabdeckung:
   `segmentIndex`-Validierung
 - `artifact_upload_init` erzwingt Gesamt-`checksumSha256` vor dem ersten
   Segment und bindet Session-ID an die Init-Metadaten
+- session-scoped Upload-Berechtigung bindet `uploadSessionId`, Tenant,
+  Principal, Init-Metadaten, Approval-Fingerprint und Ablaufzeit
+- eigener Upload-Abbruch braucht keine Policy, administrative oder
+  fremde Abbrueche aber schon
 - Cursor-Serialisierung und -Validierung
 - Runtime-Bootstrap fuer Driver- und Codec-Registries
 - ConnectionReferenceStore und Connection-Resolver inklusive
@@ -1545,13 +1591,18 @@ Fuer Start-Tools zusaetzlich:
 
 - fehlender Idempotency-Key
 - identische Wiederholung
+- identische Wiederholung eines bereits akzeptierten Jobs liefert auch
+  nach Ablauf oder Entzug des Approval-Grants denselben Job, sofern Auth,
+  Schema und Scope weiter gueltig sind
 - Konflikt mit anderem Payload
 - Policy-Required-Flow
 - `schema_compare` weist `connectionRef` synchron ab; connection-backed
   Vergleiche laufen ueber `schema_compare_start`
 - synchroner Approval-Flow mit `approvalKey` fuer
-  `artifact_upload_init`, `artifact_upload`, `artifact_upload_abort` und
-  KI-nahe Tools
+  `artifact_upload_init`, administrative `artifact_upload_abort`-Aufrufe
+  und KI-nahe Tools
+- `artifact_upload` akzeptiert Segmente nur mit gueltiger
+  session-scoped Upload-Berechtigung
 - Idempotency-Flow fuer `data_import_start` und `data_transfer_start`
 
 ### 9.3 Integrationstests
@@ -1634,13 +1685,18 @@ Verbindliche Negativfaelle:
   Freigabe
 - `artifact_upload_init` ohne `approvalKey`
 - `artifact_upload` ohne vorherige Upload-Session
-- `artifact_upload` ohne `approvalKey`
+- `artifact_upload` mit gueltiger Session, aber fehlender oder fremder
+  session-scoped Upload-Berechtigung
+- `artifact_upload_abort` der eigenen aktiven Session ohne Policy ist
+  erlaubt
+- administrativer `artifact_upload_abort` ohne Policy-Freigabe
 - KI-nahes Tool ohne `approvalKey`
 - Wiederverwendung eines Approval-Tokens mit anderem
   `payloadFingerprint`
 - zweiter Approval-Aufruf mit zusaetzlichem `approvalToken` veraendert
   den Payload-Fingerprint nicht
-- Upload-Approval bleibt ueber mehrere Segmente derselben Session stabil
+- Upload-Berechtigung bleibt ueber mehrere Segmente derselben Session
+  stabil und kann nicht fuer eine andere `uploadSessionId` genutzt werden
 - `data_import_start` oder `data_transfer_start` ohne
   `idempotencyKey`
 - `data_import_start` oder `data_transfer_start` mit gleichem
@@ -1806,13 +1862,13 @@ Gegenmassnahme:
 - `schema_compare` synchron nur `schemaRef` akzeptiert und
   connection-backed Vergleiche ueber `schema_compare_start` als
   idempotente, abbrechbare Jobs laufen
-- policy-pflichtige Upload- und Datenoperationen den Approval-Flow
-  erzwingen
+- policy-pflichtige Upload-Init-, administrative Upload-Abbruch- und
+  Datenoperationen den Approval-Flow erzwingen
 - Artefakt-Uploads mit `artifact_upload_init` beginnen, danach
   segmentiert, resumable und SHA-256-validiert sind
 - Upload-Session-IDs opak, kryptografisch erzeugt oder streng
-  validiert und an Tenant, Principal, Approval-Fingerprint und
-  Session-Metadaten gebunden sind
+  validiert und an Tenant, Principal, Approval-Fingerprint,
+  Session-Metadaten und session-scoped Berechtigungen gebunden sind
 - `job_cancel` eigene oder erlaubte Jobs kontrolliert abbrechen kann
 - Cancel in laufende Worker propagiert wird und nach angenommenem
   Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet

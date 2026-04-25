@@ -151,8 +151,8 @@ Ressourcen sollen:
 | `data_import_start` | Importjob anlegen | bestaetigungspflichtig / policy-gesteuert |
 | `data_transfer_start` | DB-zu-DB-Transfer starten | bestaetigungspflichtig / policy-gesteuert |
 | `artifact_upload_init` | Upload-Session mit Metadaten und Gesamt-Checksumme anlegen | policy-gesteuert |
-| `artifact_upload` | Eingabe-Artefakt fuer spaetere Jobs hochladen | policy-gesteuert |
-| `artifact_upload_abort` | laufenden Artefakt-Upload gezielt abbrechen | policy-gesteuert |
+| `artifact_upload` | Eingabe-Artefakt fuer spaetere Jobs hochladen | session-scoped nach Init |
+| `artifact_upload_abort` | eigenen laufenden Artefakt-Upload abbrechen; administrative Abbrueche policy-gesteuert | Owner-Pruefung / policy-gesteuert |
 | `job_cancel` | langen Lauf abbrechen | nur fuer eigene oder erlaubte Jobs |
 
 Hinweis:
@@ -413,6 +413,9 @@ verbindlich:
   opake `uploadSessionId` und liefert Status, erwarteten ersten
   `segmentIndex`, erwarteten ersten `segmentOffset` und
   `uploadSessionTtlSeconds`.
+- Der erfolgreiche Init-Aufruf erzeugt eine serverseitige,
+  session-scoped Upload-Berechtigung, die an `uploadSessionId`, Tenant,
+  Principal, Init-Metadaten und Ablaufzeit gebunden ist.
 - Ein optionaler clientseitiger Session-Kandidat ist nur fuer
   Resume-faehige Clients erlaubt und muss atomar kollisionsfrei an
   Tenant, Principal, Approval-Fingerprint und Init-Metadaten gebunden
@@ -446,8 +449,10 @@ verbindlich:
   - `uploadSessionTtlSeconds` muss im Response gesetzt werden:
     Initial `900`, Minimum `300`, Maximum `3600`.
   - Bei `300` Sekunden ohne Aktivitaet wird der Status `EXPIRED` gesetzt und Segmente verworfen.
-  - Der Client kann `artifact_upload_abort` aufrufen, um Status `ABORTED` zu setzen
-    und alle Zwischensegmente sofort zu verwerfen.
+  - Der Client kann eine eigene aktive Session per `artifact_upload_abort`
+    ohne erneute Policy-Freigabe auf Status `ABORTED` setzen und alle
+    Zwischensegmente sofort verwerfen; fremde oder administrative
+    Abbrueche bleiben policy-gesteuert.
   - Bei `isFinalSegment=true` wird der Uploadstatus auf `COMPLETED` gesetzt.
   - Bei Statuswechsel auf `EXPIRED` ist der Fehlercode `UPLOAD_SESSION_EXPIRED` moeglich.
   - Bei explizitem Abbruch ist der Fehlercode `UPLOAD_SESSION_ABORTED` moeglich.
@@ -546,6 +551,9 @@ Empfohlene Sicherheitsgrundlagen:
 - jeder MCP-Aufruf muss ein verifizierbares `principalId` haben
 - HTTP:
   - fuer entfernte bzw. nicht-lokale Clients ist Auth verbindlich
+  - d-migrate agiert hier als Resource Server; ein eigener
+    Authorization Server, Client-Registration-UI oder Mandanten-Admin
+    gehoert nicht zum 0.9.6-Ziel
   - `Authorization` Header mit Bearer-Token (oder aequivalentes
     signiertes Principalsignal)
   - bei fehlendem oder ungueltigem Token: HTTP 401 mit
