@@ -167,7 +167,7 @@ Tool-Resultate:
 | `data_profile_start` | Profiling-Job fuer Analyse und Migrationsplanung starten | policy-gesteuert |
 | `data_import_start` | Importjob anlegen | bestaetigungspflichtig / policy-gesteuert |
 | `data_transfer_start` | DB-zu-DB-Transfer starten | bestaetigungspflichtig / policy-gesteuert |
-| `artifact_upload_init` | Upload-Session mit Metadaten und Gesamt-Checksumme anlegen | policy-gesteuert |
+| `artifact_upload_init` | Upload-Session mit Metadaten und Gesamt-Checksumme anlegen | read-only Schema-Staging: Quota/Audit; Job-Inputs: policy-gesteuert |
 | `artifact_upload` | Eingabe-Artefakt fuer spaetere Jobs hochladen | session-scoped nach Init |
 | `artifact_upload_abort` | eigenen laufenden Artefakt-Upload abbrechen; administrative Abbrueche policy-gesteuert | Owner-Pruefung / policy-gesteuert |
 | `job_cancel` | langen Lauf abbrechen | nur fuer eigene oder erlaubte Jobs |
@@ -193,9 +193,17 @@ Hinweis:
   `IDEMPOTENCY_CONFLICT` zurueckzugeben.
 - Idempotency-Reservierung und Job-Anlage muessen atomar sein:
   `reserveOrGet(scopeKey,payloadFingerprint)` liefert bei identischem
-  Fingerprint denselben Pending-/Committed-Job, erzeugt bei leerem Key
-  genau eine Pending-Reservierung und beendet Konflikte ohne
-  Policy-Pruefung mit `IDEMPOTENCY_CONFLICT`.
+  Fingerprint denselben Pending-/Awaiting-/Committed-Eintrag, erzeugt bei
+  leerem Key genau eine Pending-Reservierung und beendet Konflikte ohne
+  Policy-Pruefung mit `IDEMPOTENCY_CONFLICT`. Fehlt ein Grant, wechselt die
+  Reservierung nach `AWAITING_APPROVAL`; ein genehmigter zweiter Aufruf
+  muss diese Reservierung atomar claimen, genau einen Job erzeugen und
+  danach als `COMMITTED` deduplizieren. `PENDING` hat eine
+  `pendingLeaseExpiresAt`-Lease und kann nach Ablauf fuer denselben
+  Scope/Fingerprint recovered werden. `AWAITING_APPROVAL` hat
+  `awaitingApprovalExpiresAt`; abgelaufene Challenges duerfen erneuert
+  werden. Explizite Ablehnung setzt `DENIED` und liefert bis zum Ablauf
+  `POLICY_DENIED`.
 - `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
   und wird nicht durch den Client gesetzt.
 - 2-Phasen-Flow fuer policy-gesteuerte Tools:
@@ -483,6 +491,14 @@ verbindlich:
   Schema-Dateien nach erfolgreichem Upload in eine `schemaRef` zu
   materialisieren; ungueltige Schemas erzeugen kein Schema-Register-
   Objekt
+- `uploadIntent` trennt read-only und write-nahe Artefakte:
+  - `schema_staging_readonly` ist nur fuer `artifactKind=schema` erlaubt,
+    braucht keine Write-Policy und erzeugt eine read-only `schemaRef` fuer
+    `schema_validate`, `schema_generate` und `schema_compare`
+  - `job_input` ist fuer Import, Transfer, Transformation, Seed-Daten,
+    Regeln und KI-nahe Tools policy-gesteuert
+  - read-only gestagte Schemas duerfen nicht implizit als `job_input`
+    wiederverwendet werden
 - `sizeBytes` ist Pflicht, um harte Payload-Limits durchzusetzen.
 - `checksumSha256` fuer das vollstaendige Artefakt ist bereits in
   `artifact_upload_init` Pflicht.
@@ -493,8 +509,10 @@ verbindlich:
 - Der erfolgreiche Init-Aufruf erzeugt eine serverseitige,
   session-scoped Upload-Berechtigung, die an `uploadSessionId`, Tenant,
   Principal, Init-Metadaten und Ablaufzeit gebunden ist.
-- Wiederholtes `artifact_upload_init` mit gleichem `approvalKey` und
-  identischem Payload liefert dieselbe `uploadSessionId`; dadurch erzeugen
+- Wiederholtes policy-pflichtiges `artifact_upload_init` mit gleichem
+  `approvalKey` und identischem Payload liefert dieselbe
+  `uploadSessionId`; read-only Schema-Staging kann fuer Retry-Deduplizierung
+  stattdessen einen stabilen `clientRequestId` nutzen. Dadurch erzeugen
   Agent-Retries nach Timeouts keine doppelten Upload-Sessions.
 - Ein optionaler clientseitiger Session-Kandidat ist nur fuer
   Resume-faehige Clients erlaubt und muss atomar kollisionsfrei an
@@ -507,7 +525,8 @@ verbindlich:
   `contentBase64` uebertragen; streambares HTTP bleibt ein normaler
   JSON-RPC-POST und verwendet keinen separaten binaeren Upload-Body.
   - Segmentierte Uploads sind verbindlich mit:
-    - `uploadSessionId` (verbindlich, 36 Zeichen)
+    - `uploadSessionId` (verbindlich, opak, sichtbar ASCII/URL-sicher,
+      mindestens 128 Bit Entropie, maximal 128 Zeichen)
     - `segmentIndex` (beginnend bei 1, fortlaufend)
     - `segmentOffset` (Byte-Offset)
     - `segmentTotal` (erwartete Gesamt-Segmentanzahl)
@@ -558,6 +577,15 @@ verbindlich:
   - Der Server prueft die kumulierte `segment`-Groesse laufend; bei
     Ueberschreitung von `sizeBytes` oder des Max-Limits wird die Session
     sofort mit `PAYLOAD_TOO_LARGE` beendet (siehe 8.4).
+- Uploadsegmente und finalisierte Artefaktbytes werden in produktnahen
+  `stdio`- und HTTP-Pfaden ueber einen Byte-/Segment-Store mit
+  File-Spooling oder gleichwertiger externer Speicherung gehalten, nicht
+  vollstaendig im Heap. Der Store muss atomare Segmentwrites,
+  Range-/Chunk-Reads, Gesamt-Hash-Berechnung und TTL-/Abort-Cleanup
+  unterstuetzen.
+- Pro Tenant/Principal gelten konfigurierbare Quotas fuer aktive
+  Upload-Sessions, reservierte Bytes, gespeicherte Bytes und parallele
+  Segmentwrites; Verletzungen liefern `RATE_LIMITED`.
 
 ### 8.4 Standardisierte Fehlercodes
 
@@ -580,6 +608,7 @@ Verbindliche Fehlercodes:
 - `VALIDATION_ERROR`
 - `RATE_LIMITED`
 - `OPERATION_TIMEOUT`
+- `POLICY_DENIED`
 - `PAYLOAD_TOO_LARGE`
 - `UPLOAD_SESSION_EXPIRED`
 - `UPLOAD_SESSION_ABORTED`
@@ -594,6 +623,16 @@ Verbindliche Fehlercodes:
 erforderliche Scopes/Gruende, aber kein verwendbares `approvalToken`.
 Verwendbare Tokens duerfen erst nach serverseitig geprueftem Policy-,
 Human- oder Admin-Grant ausgegeben werden.
+
+`RATE_LIMITED` deckt Rate Limits und Quotas pro Tenant/Principal ab, u.a.
+aktive Jobs, aktive Upload-Sessions, Upload-/Artefaktbytes, parallele
+Segmentwrites und KI-/Provider-Aufrufe. `OPERATION_TIMEOUT` deckt
+Runner-Starts, Upload-Finalisierung, langlaufende Tool-Handler und
+Provider-Aufrufe ab. Beide Fehler muessen auditierbar sein und duerfen
+keine fremden Ressourcendetails leaken. Reine Deduplizierungsantworten fuer
+bereits angelegte Jobs, Sessions oder Artefakt-/Provider-Referenzen
+verbrauchen keine neue Quota; neue Jobs, Sessions, Segmente,
+Finalisierungen und Provider-Aufrufe werden vor der Nebenwirkung quotiert.
 
 MCP-Wire-Mapping:
 
@@ -732,6 +771,10 @@ Empfehlung:
 
 ## 11. Einfuehrungsreihenfolge
 
+Die Phasen sind Gates innerhalb von 0.9.6, keine Verschiebung nach 0.9.7.
+Ein fruehes Gate darf nicht als vollstaendig abgeschlossener Milestone
+markiert werden.
+
 ### Phase 1
 
 - `capabilities_list`
@@ -751,12 +794,20 @@ Empfehlung:
 - `schema_compare_start`
 - `data_profile_start`
 - Artefakt-Ressourcen
+- Idempotency-Zustand `AWAITING_APPROVAL` und genehmigter Retry, der genau
+  einen Job erzeugt
+- Byte-/Segment-Store mit File-Spooling fuer Artefaktinhalte und Upload-
+  Segmente
+- read-only Schema-Staging fuer grosse Schemas ohne Write-Policy, aber mit
+  Quota und Audit
 
 ### Phase 3
 
 - kontrollierte Write-Tools fuer `artifact_upload_init`,
   `artifact_upload`, `data_import_start` und `data_transfer_start`
 - `artifact_upload_abort`
+- Quotas, Rate Limits und Timeouts fuer aktive Jobs, Upload-Sessions,
+  Upload-/Artefaktbytes und Provider-Aufrufe
 
 ### Phase 4
 

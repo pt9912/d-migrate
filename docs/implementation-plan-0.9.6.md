@@ -205,6 +205,29 @@ Konsequenz:
 - Veraenderung der CLI-Vertraege ausser Start-/Konfigurationsdoku fuer
   den MCP-Server
 
+### 3.3 Liefer-Gates innerhalb von 0.9.6
+
+Der Milestone bleibt fachlich vollstaendig, wird aber innerhalb von 0.9.6
+ueber explizite Gates geliefert. Das ist keine Verschiebung nach 0.9.7:
+
+- Gate 0.9.6-MVP:
+  - `stdio` plus HTTP-Initialize/Transport-Grundpfad
+  - MCP-`protocolVersion` `2025-11-25`
+  - `capabilities_list`, read-only Schema-Tools und Discovery
+  - read-only Schema-Staging fuer grosse Schemas
+  - Resource-/Artifact-Byte-Stores mit File-Spooling
+  - Auth-/Principal-Ableitung, Audit, Quotas und strukturierte Fehler
+  - Idempotency inklusive `AWAITING_APPROVAL`-Recovery-Vertrag
+- Gate 0.9.6-Controlled-Operations:
+  - Streamable-HTTP-Auth mit JWKS/Introspection und Scope-Challenges
+  - Policy-Grant-Pfad, Start-Tools, Import/Transfer, Uploads fuer
+    `job_input`, `job_cancel` inklusive Cancel-Gate
+- Gate 0.9.6-AI-and-Prompts:
+  - KI-nahe Tools mit NoOp/lokalem Provider, Prompt-Hygiene und Audit
+  - MCP-Prompts fuer kuratierte Ablaeufe
+- Die finale Definition of Done bleibt die vollstaendige 0.9.6-DoD; ein
+  frueheres Gate darf nicht als abgeschlossener Milestone markiert werden
+
 ---
 
 ## 4. Leitentscheidungen
@@ -372,12 +395,29 @@ Verbindliche Entscheidung:
 - Idempotency-Pruefung und Job-Anlage sind eine atomare Store-Operation:
   `reserveOrGet(scopeKey, payloadFingerprint)`
   - existiert ein Eintrag mit identischem Fingerprint, wird dessen Job
-    oder Pending-Reservierung zurueckgegeben
+    oder Pending-/Awaiting-Approval-Reservierung geladen
   - existiert ein Eintrag mit anderem Fingerprint, endet der Aufruf
     deterministisch mit `IDEMPOTENCY_CONFLICT`
   - existiert kein Eintrag, wird eine `PENDING`-Reservierung atomar
     angelegt, bevor Policy oder Job-Erzeugung weitere Nebenwirkungen
     ausloesen
+  - `PENDING` traegt `pendingLeaseExpiresAt`; verwaiste Reservierungen
+    duerfen nach Ablauf vom naechsten identischen Request desselben
+    Scope/Fingerprints atomar uebernommen oder erneuert werden
+  - fehlt fuer eine policy-pflichtige Operation ein Grant, wird die
+    Reservierung atomar auf `AWAITING_APPROVAL` gesetzt und der Aufruf
+    liefert `POLICY_REQUIRED`
+  - `AWAITING_APPROVAL` traegt `awaitingApprovalExpiresAt` und optional
+    `approvalRequestId`; nach Ablauf liefert ein identischer Request erneut
+    `POLICY_REQUIRED` mit neuer Challenge oder erneuert die bestehende
+    Challenge atomar
+  - explizite Ablehnung setzt die Reservierung auf `DENIED` mit
+    `deniedAt`, `denialReasonCode` und optionaler `denialExpiresAt`;
+    identische Requests liefern bis zum Ablauf `POLICY_DENIED`
+  - ein zweiter Aufruf mit identischem Scope/Fingerprint und gueltigem
+    `approvalToken` muss dieselbe `AWAITING_APPROVAL`-Reservierung atomar
+    claimen, daraus genau einen Job erzeugen und die Reservierung auf
+    `COMMITTED` setzen
   - nach erfolgreicher Job-Anlage wird die Reservierung auf `COMMITTED`
     mit `jobId` gesetzt; bei nicht-retrybaren Fehlern wird sie mit
     Fehlerstatus abgeschlossen oder nach definierter TTL freigegeben
@@ -398,8 +438,19 @@ Verbindliche Entscheidung:
 
 - `data_import_start` und `data_transfer_start` brauchen eine Policy-
   Freigabe
-- `artifact_upload_init` ist policy-gesteuert, weil damit ein
-  Eingabeartefakt fuer spaetere Datenoperationen vorbereitet wird
+- `artifact_upload_init` wird nach Upload-Intent getrennt:
+  - `uploadIntent=schema_staging_readonly` fuer `artifactKind=schema`
+    materialisiert nach erfolgreicher Validierung eine read-only
+    `schemaRef` fuer `schema_validate`, `schema_generate` und
+    `schema_compare`; dieser Pfad braucht keine Write-Policy, aber
+    `dmigrate:read`, Quota, Audit, Byte-Store und strikte MIME-/Schema-
+    Validierung
+  - `uploadIntent=job_input` oder ein Zielkontext fuer Import, Transfer,
+    Transformation, Seed-Daten oder andere spaetere Write-/KI-Operationen
+    bleibt policy-gesteuert
+  - read-only gestagte Schema-Artefakte duerfen nicht spaeter implizit als
+    Import-/Transfer-/KI-Eingaben verwendet werden; dafuer ist ein neuer
+    policy-pflichtiger Init- oder Materialisierungspfad erforderlich
 - `artifact_upload` nutzt danach eine serverseitige, session-scoped
   Upload-Berechtigung aus dem erfolgreichen Init-Aufruf; einzelne
   Segmente brauchen keine erneute Policy-Freigabe
@@ -421,7 +472,8 @@ Verbindliche Entscheidung:
 - bei Start-Tools muss der zweite Aufruf denselben `idempotencyKey` und
   ein zum ausgestellten Grant passendes `approvalToken` enthalten
 - bei nicht-asynchronen policy-pflichtigen Tools ohne
-  `idempotencyKey`, z.B. `artifact_upload_init`, administrative
+  `idempotencyKey`, z.B. policy-pflichtige `artifact_upload_init`-
+  Varianten, administrative
   `artifact_upload_abort`-Aufrufe und die KI-nahen Tools, muss der
   Client einen stabilen `approvalKey` mitsenden
 - dieser `approvalKey` ist zugleich der Idempotency-Key fuer synchrone
@@ -442,9 +494,9 @@ Verbindliche Entscheidung:
   `approvalKey`, liefert der Server `VALIDATION_ERROR`
 - fuer `artifact_upload_init` wird der Approval-Fingerprint aus den
   Session-Metadaten gebildet (`artifactKind`, `mimeType`, `sizeBytes`,
-  `checksumSha256`, Tenant, Principal, optionaler Zielkontext), nicht
-  aus Segmentbytes, `segmentSha256`, `contentBase64` oder
-  Segmentpositionen
+  `checksumSha256`, `uploadIntent`, Tenant, Principal, optionaler
+  Zielkontext), nicht aus Segmentbytes, `segmentSha256`, `contentBase64`
+  oder Segmentpositionen
 - ein erfolgreicher `artifact_upload_init` wandelt die Freigabe in eine
   serverseitige Upload-Berechtigung um, die explizit an
   `uploadSessionId`, Tenant, Principal, `artifactKind`, `mimeType`,
@@ -487,6 +539,7 @@ Verbindliche Entscheidung:
   - `mimeType`
   - `sizeBytes`
   - Gesamt-`checksumSha256`
+  - `uploadIntent`
   - Tenant, Principal und optionaler Zielkontext aus dem Request-Kontext
   - optionaler clientseitiger Session-Kandidat nur fuer Resume-faehige
     Clients
@@ -744,11 +797,15 @@ Erwartete Kernmodelle und Projektionen:
 - `ProfileStore`
 - `DiffStore`
 - `UploadSessionStore`
+- `UploadSegmentStore`
 - `ConnectionReferenceStore`
+- `ArtifactContentStore`
 - `IdempotencyStore`
 - `ApprovalGrantStore`
 - `SyncEffectIdempotencyStore` oder explizite Wiederverwendung des
   `IdempotencyStore` fuer synchrone Nebenwirkungen mit `approvalKey`
+- `QuotaStore` bzw. Quota-Zaehler fuer aktive Jobs, Upload-Sessions,
+  Upload-Bytes und Provider-Aufrufe
 - `AuditSink`
 
 Schemas, Profile und Diffs duerfen intern als typisierte Artefakte
@@ -756,6 +813,26 @@ persistiert werden. Trotzdem braucht 0.9.6 je Typ eine explizite
 Store-/Index-Abstraktion, damit `schema_list`, Resource-Resolver,
 Tenant-Scope-Pruefung, Paginierung und Retention nicht von
 dateispezifischen Artefaktdetails abhaengen.
+
+Artefaktbytes und Uploadsegmente sind nicht Teil des Metadaten-Stores:
+
+- `UploadSegmentStore` nimmt Segmente atomar je `uploadSessionId`,
+  `segmentIndex` und `segmentOffset` an und verhindert konkurrierende
+  abweichende Writes fuer dieselbe Position
+- `ArtifactContentStore` materialisiert finalisierte Artefakte immutable
+  und bietet Range-/Chunk-Reads fuer `artifact_chunk_get`,
+  `resources/read`-Chunk-URIs, Import und Cleanup
+- beide Stores berechnen bzw. validieren Segment- und Gesamt-SHA-256 ueber
+  gespeicherte Bytes und koennen finalisierte Artefakte aus Segmenten ohne
+  vollstaendiges Laden in den Heap zusammensetzen
+- Quotas fuer aktive Sessions, reservierte Bytes, gespeicherte Bytes und
+  Tenant-/Principal-Grenzen werden vor Segmentannahme und Finalisierung
+  geprueft
+- TTL-/Abort-/Expiry-Cleanup entfernt Segmente und nicht referenzierte
+  Inhalte deterministisch
+- ausserhalb reiner Unit-Tests ist File-Spooling oder ein gleichwertiger
+  externer Byte-Store verpflichtend; 200-MiB-Uploads duerfen nicht in einer
+  RAM-only-Implementierung enden
 
 Connection-Refs werden ausserhalb von MCP registriert. Fuer die Version
 muss der Store aus mindestens einer klaren Bootstrap-Quelle befuellt
@@ -790,15 +867,19 @@ annehmen. Das Modell trennt strikt:
 Default:
 
 - lokaler In-Memory-Store fuer Tests und kurzlebige `stdio`-Server
-- optional dateibasierter Store unter einem konfigurierbaren
-  Arbeitsverzeichnis, falls vorhandene Infrastruktur das einfach
-  erlaubt
+- File-Spooling fuer `UploadSegmentStore` und `ArtifactContentStore` unter
+  einem konfigurierbaren Arbeitsverzeichnis fuer alle realen `stdio`- und
+  HTTP-Pfade
+- In-Memory-Byte-Stores sind nur fuer reine Unit-Tests und sehr kleine
+  Contract-Fakes erlaubt
 
 Nicht erlaubt:
 
 - Tool-Handler halten globale mutable Maps ohne Store-Abstraktion
 - Artefakte liegen dauerhaft in Prompt- oder Tool-Response-Strukturen
 - Secrets werden im Store persistiert
+- Uploadsegmente oder finalisierte Artefaktbytes werden in produktnahen
+  Pfaden vollstaendig im Heap gehalten
 
 ### 5.4 MCP-Tool-Pipeline
 
@@ -811,10 +892,18 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
 5. Tenant- und Resource-Scopes pruefen
 6. `reserveOrGet(scopeKey, payloadFingerprint)` fuer Start-Tools
    atomar ausfuehren
-   - vorhandener identischer Treffer liefert denselben Job bzw. dieselbe
-     Pending-Reservierung
+   - vorhandener identischer Treffer liefert denselben Job oder die
+     passende Pending-/Awaiting-/Committed-Reservierung
    - vorhandener Treffer mit anderem Fingerprint beendet den Aufruf
      sofort mit `IDEMPOTENCY_CONFLICT`
+   - vorhandener `AWAITING_APPROVAL`-Treffer ohne gueltigen Grant liefert
+     erneut `POLICY_REQUIRED`
+   - vorhandener `AWAITING_APPROVAL`-Treffer mit gueltigem Grant wird
+     atomar in Job-Erzeugung ueberfuehrt und danach `COMMITTED`
+   - abgelaufene `PENDING`-Leases werden nur fuer identischen
+     Scope/Fingerprint atomar recovered; abgelaufene oder abgelehnte
+     Approval-Reservierungen liefern eine neue Challenge bzw.
+     `POLICY_DENIED`
 7. fuer synchrone policy-pflichtige Tools mit Nebenwirkungen
    `reserveOrGetSyncEffect(approvalScopeKey, payloadFingerprint)` atomar
    ausfuehren
@@ -822,16 +911,25 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
      dieselbe Artefakt-/Provider-Referenz oder dasselbe Ergebnis
    - vorhandener Treffer mit anderem Fingerprint endet mit
      `IDEMPOTENCY_CONFLICT`
-8. Policy nur fuer neue oder noch nicht genehmigte Pending-Starts und
-   Sync-Effect-Reservierungen
-   pruefen, niemals fuer Idempotency-Konflikte
-9. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
+8. Quota- und Rate-Limit-Pruefung ausfuehren, aber nur fuer neue Side
+   Effects:
+   - reine Deduplizierungsantworten fuer `COMMITTED` Jobs, bestehende
+     Upload-Sessions oder bestehende Provider-/Artefakt-Referenzen
+     verbrauchen keine neue Quota
+   - neue Jobs, neue Upload-Sessions, neue Segmente, Upload-Finalisierung
+     und neue Provider-Aufrufe muessen vor der jeweiligen Nebenwirkung
+     quotiert werden
+   - Upload-Segmente werden vor Byte-Store-Write gegen Session-, Byte- und
+     Parallelitaetsquotas geprueft
+9. Policy nur fuer neue oder noch nicht genehmigte Pending-Starts und
+   Sync-Effect-Reservierungen pruefen, niemals fuer Idempotency-Konflikte
+10. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
    machen
-10. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
-11. Ergebnis zuschneiden und Limits anwenden
-12. Artefakte/Ressourcen referenzieren
-13. Erfolg oder Fehler als einheitliches Envelope liefern
-14. Audit-Scope in einem `finally`-Pfad mit Outcome abschliessen
+11. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
+12. Ergebnis zuschneiden und Limits anwenden
+13. Artefakte/Ressourcen referenzieren
+14. Erfolg oder Fehler als einheitliches Envelope liefern
+15. Audit-Scope in einem `finally`-Pfad mit Outcome abschliessen
 
 Verbindliche Audit-Semantik:
 
@@ -846,6 +944,12 @@ Verbindliche Audit-Semantik:
   Policy wird dafuer nicht geprueft
 - Policy wird fuer neue Starts und noch nicht genehmigte Pending-
   Reservierungen geprueft, nicht fuer reine Deduplizierungsantworten
+- ein genehmigter Retry einer `AWAITING_APPROVAL`-Reservierung darf nicht
+  nur die Reservierung zurueckgeben; er muss die reservierte Operation
+  genau einmal starten oder einen bereits `COMMITTED` Job zurueckgeben
+- Deduplizierungsantworten verbrauchen keine neue Quota; Quota- und
+  Timeout-Entscheidungen werden erst vor neuen Side Effects relevant und
+  trotzdem im selben Audit-Scope dokumentiert
 - synchrone Side-Effect-Retries mit bestehendem `approvalKey`-Treffer
   liefern nach Auth, Schema-Validierung und Scope-Pruefung dasselbe
   Ergebnis zurueck; abweichende Payloads enden ohne Policy-Pruefung mit
@@ -968,6 +1072,30 @@ Akzeptanz:
 - Tool funktioniert ohne Datenbankverbindung
 - Secrets oder lokale Pfade werden nicht offengelegt
 - Antwort bleibt stabil genug fuer Client-Discovery
+
+### 6.1a Limits, Quotas und Timeouts
+
+0.9.6 muss operative Grenzen explizit erzwingen:
+
+- pro Tenant und Principal gibt es konfigurierbare Limits fuer:
+  - aktive Jobs insgesamt und je Operation
+  - aktive Upload-Sessions
+  - reservierte und gespeicherte Upload-/Artefaktbytes
+  - parallele Segmentwrites
+  - KI-/Provider-Aufrufe pro Zeitfenster
+  - HTTP-Requests bzw. Tool-Aufrufe pro Zeitfenster
+- bei Quota- oder Rate-Limit-Verletzung liefert das Tool fachlich
+  `RATE_LIMITED`; HTTP-Transporte mappen das auf HTTP 429, sofern der
+  Fehler ausserhalb eines erfolgreichen `tools/call`-Results entsteht
+- `RATE_LIMITED` enthaelt strukturierte Details wie `limitName`,
+  `retryAfterSeconds`, Tenant/Principal-Scope und keine fremden
+  Ressourcendetails
+- lange Tool-Handler, Runner-Starts, Upload-Finalisierung und
+  KI-/Provider-Aufrufe haben konfigurierte Timeouts
+- ein Timeout liefert `OPERATION_TIMEOUT`; bei bereits gestarteten Jobs wird
+  der Jobstatus gemaess `docs/job-contract.md` aktualisiert und weitere
+  Side Effects werden ueber Cancellation-/Cleanup-Pfade verhindert
+- Timeout- und Rate-Limit-Entscheidungen werden auditiert
 
 ### 6.2 `schema_validate`
 
@@ -1166,6 +1294,9 @@ Gemeinsame Regeln:
   `POLICY_REQUIRED` mit `approvalRequestId`; ein spaeter extern
   ausgestelltes `approvalToken` wird an denselben `idempotencyKey` und
   Payload-Fingerprint gebunden
+- der erste Aufruf ohne Grant setzt die Idempotency-Reservierung auf
+  `AWAITING_APPROVAL`; der genehmigte zweite Aufruf claimt diese
+  Reservierung atomar und erzeugt genau einen Job
 - Start liefert `jobId`, `resourceUri` und `executionMeta`
 - Fortschritt wird ueber `job_status_get` abgefragt
 
@@ -1174,6 +1305,7 @@ Akzeptanz:
 - fehlender `idempotencyKey` liefert `IDEMPOTENCY_KEY_REQUIRED`
 - identische Wiederholung liefert denselben Job
 - Konflikte liefern `IDEMPOTENCY_CONFLICT`
+- genehmigter Retry nach `AWAITING_APPROVAL` startet genau einen Job
 
 ### 6.7 Datenoperationen
 
@@ -1189,6 +1321,9 @@ Gemeinsame Regeln:
 - Deduplizierung nutzt denselben Payload-Fingerprint-Vertrag wie
   andere Start-Tools; `approvalToken` ist dabei ausgeschlossen
 - immer policy-gesteuert
+- fehlende Freigabe setzt die Idempotency-Reservierung auf
+  `AWAITING_APPROVAL`; ein spaeter genehmigter Retry claimt diese
+  Reservierung atomar
 - Import nutzt zuvor hochgeladenes `artifactId`
 - Transfer nutzt tenant-scoped Source- und Target-Connection-Refs
 - kein rohes SQL im Tool-Payload
@@ -1214,16 +1349,28 @@ Tools:
 
 Gemeinsame Regeln:
 
-- `artifact_upload_init` ist policy-gesteuert
-- fehlende Freigabe fuer `artifact_upload_init` liefert
-  `POLICY_REQUIRED` mit `approvalRequestId`, nicht mit verwendbarem Token
+- `artifact_upload_init` verlangt `uploadIntent`
+- `uploadIntent=schema_staging_readonly` ist nur fuer
+  `artifactKind=schema` erlaubt, braucht keine Write-Policy und erzeugt
+  nach erfolgreicher Validierung eine read-only `schemaRef`
+- read-only Schema-Staging braucht trotzdem `dmigrate:read`, Audit, Quotas,
+  Byte-Store, Upload-Limits und Schema-Validierung; fehlende Auth/Quota
+  scheitert mit `AUTH_REQUIRED`, `FORBIDDEN_PRINCIPAL` oder `RATE_LIMITED`
+- `uploadIntent=job_input` und alle Uploads fuer Import, Transfer,
+  Transformation, Seed-Daten, Regeln oder KI-nahe Tools sind
+  policy-gesteuert
+- fehlende Freigabe fuer einen policy-pflichtigen `artifact_upload_init`
+  liefert `POLICY_REQUIRED` mit `approvalRequestId`, nicht mit
+  verwendbarem Token
 - der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
   umgehen
-- `approvalKey` ist fuer `artifact_upload_init` Pflicht
-- beim zweiten Init-Aufruf muss der Client dasselbe `approvalKey` und
-  ein durch Policy-/Human-/Admin-Mechanismus ausgestelltes
-  `approvalToken` senden
-- das Init-`approvalToken` ist an `toolName`, `callerId`,
+- `approvalKey` ist fuer policy-pflichtige Init-Pfade Pflicht; fuer
+  read-only Schema-Staging ist ein stabiler `clientRequestId` empfohlen,
+  aber nicht Voraussetzung fuer Write-Policy
+- beim zweiten policy-pflichtigen Init-Aufruf muss der Client dasselbe
+  `approvalKey` und ein durch Policy-/Human-/Admin-Mechanismus
+  ausgestelltes `approvalToken` senden
+- das policy-pflichtige Init-`approvalToken` ist an `toolName`, `callerId`,
   `approvalKey` und den session-metadatenbezogenen
   `payloadFingerprint` gebunden
 - `approvalKey` dedupliziert den erfolgreichen Init-Aufruf: gleicher
@@ -1258,6 +1405,11 @@ Verbindliche Validierungen:
 - `artifactKind` ist allowlist-basiert
 - fuer grosse neutrale Schemas ist `artifactKind=schema` erlaubt; andere
   Upload-Arten erzeugen kein `schemaRef`
+- `uploadIntent=schema_staging_readonly` ist nur mit `artifactKind=schema`
+  gueltig; andere Kombinationen liefern `VALIDATION_ERROR`
+- `uploadIntent=job_input` ist fuer Artefakte erforderlich, die spaeter von
+  `data_import_start`, `data_transfer_start`, KI-nahen Tools oder
+  Transformationen genutzt werden
 - `mimeType` ist allowlist-basiert
 - `sizeBytes` ist Pflicht
 - Gesamt-`checksumSha256` ist bereits fuer `artifact_upload_init`
@@ -1266,11 +1418,13 @@ Verbindliche Validierungen:
 - `uploadSessionId` ist fuer `artifact_upload_init` nicht Pflicht, fuer
   `artifact_upload` und `artifact_upload_abort` aber verbindlich und
   Bestandteil jeder session-scoped Upload- oder Abort-Berechtigung
-- serverseitig erzeugte `uploadSessionId` ist 36 Zeichen lang, wird
-  kryptografisch sicher erzeugt und als opaker Wert behandelt
+- serverseitig erzeugte `uploadSessionId` ist ein opaker Token mit
+  mindestens 128 Bit Entropie, sichtbaren ASCII- bzw. URL-sicheren Zeichen
+  und maximal 128 Zeichen Laenge; Clients duerfen keine UUID- oder
+  Laengen-Semantik ableiten
 - falls ein Client fuer Resume einen Session-Kandidaten sendet, muss er
-  UUID-kompatibel bzw. opak validierbar sein, atomar kollisionsfrei
-  angelegt werden und an Tenant, Principal, `approvalKey`,
+  dieselben Zeichen-/Laengen-/Entropieanforderungen erfuellen, atomar
+  kollisionsfrei angelegt werden und an Tenant, Principal, `approvalKey`,
   Approval-Fingerprint, `artifactKind`, `mimeType`, `sizeBytes` und
   `checksumSha256` gebunden werden
 - Wiederverwendung einer Session-ID mit anderem Tenant, Principal,
@@ -1299,6 +1453,9 @@ Verbindliche Validierungen:
   zusaetzlich validiert und in `SchemaStore` materialisiert; die Antwort
   enthaelt dann `schemaRef`/`resourceUri`, oder bei ungueltigem Schema
   ein strukturiertes Validierungsergebnis ohne Schema-Registrierung
+- read-only materialisierte `schemaRef`s sind als
+  `schema_staging_readonly` markiert und duerfen nur von read-only Tools
+  genutzt werden
 
 Antwort:
 
@@ -1484,6 +1641,7 @@ Akzeptanz:
 - `VALIDATION_ERROR`
 - `RATE_LIMITED`
 - `OPERATION_TIMEOUT`
+- `POLICY_DENIED`
 - `PAYLOAD_TOO_LARGE`
 - `UPLOAD_SESSION_EXPIRED`
 - `UPLOAD_SESSION_ABORTED`
@@ -1576,8 +1734,13 @@ Fuer policy-gesteuerte Operationen wird zusaetzlich protokolliert:
 - Job- und Artefaktmodelle aus `docs/job-contract.md` verwenden und
   nur adapterneutrale Ergaenzungen dort vornehmen, falls wirklich
   noetig
-- Store-Interfaces fuer Jobs, Artefakte, Upload-Sessions,
-  Connection-Refs, Idempotency, Approval-Grants und Audit definieren
+- Store-Interfaces fuer Jobs, Artefakte, Artefaktbytes, Upload-Sessions,
+  Uploadsegmente, Connection-Refs, Idempotency, Approval-Grants, Quotas
+  und Audit definieren
+- `UploadSegmentStore` und `ArtifactContentStore` mit File-Spooling fuer
+  produktnahe Pfade definieren; In-Memory nur fuer Unit-Tests
+- Quota-/Rate-Limit-Service fuer Tenant-/Principal-Grenzen und Timeout-
+  Konfiguration einfuehren
 - In-Memory-Implementierungen fuer Tests bereitstellen
 - deterministische Payload-Fingerprint-Funktion implementieren
 - Fingerprint-Kanonik fuer Approval und Idempotenz definieren:
@@ -1593,6 +1756,9 @@ Abnahmekriterien:
 - Unit-Tests decken Fingerprint-Stabilitaet, Idempotency-Konflikte,
   Approval-Grant-Bindung ohne rohe Tokens, Upload-Session-Fingerprint,
   Resource-URI-Parsing und Tenant-Scope-Pruefung ab
+- Unit-Tests decken `UploadSegmentStore`, `ArtifactContentStore`, atomare
+  Segmentwrites, Range-/Chunk-Reads, TTL-Cleanup, Quotas und Timeout-
+  Mapping ab
 
 ### Phase B - MCP-Modul und Transport
 
@@ -1710,6 +1876,10 @@ Abnahmekriterien:
 - `schema_generate` an bestehende DDL-Generatoren anbinden
 - `schema_generate` fuer `schemaRef` und kleine Inline-Schemas
   anbinden, ohne Upload- oder Policy-Zwang fuer Inline-Read-only-Nutzung
+- grosse Schema-Dateien koennen ueber
+  `artifact_upload_init(uploadIntent=schema_staging_readonly)` ohne
+  Write-Policy in eine read-only `schemaRef` materialisiert und danach von
+  `schema_validate`, `schema_generate` und `schema_compare` genutzt werden
 - `schema_compare` an bestehende Compare-Pfade anbinden
 - `schema_compare` auf bereits materialisierte `schemaRef`-Eingaenge
   beschraenken; `connectionRef` liefert `VALIDATION_ERROR` mit Hinweis
@@ -1724,6 +1894,9 @@ Abnahmekriterien:
 - bestehende Warnungen bleiben maschinenlesbar sichtbar
 - `schema_generate` erzeugt DDL fuer kleine Inline-Schemas ohne
   vorheriges Materialisieren
+- read-only Schema-Staging fuer grosse Schemas funktioniert ohne
+  Approval-Flow und verletzt trotzdem Quota-, Audit- und Byte-Store-
+  Anforderungen nicht
 - keine Tool-Antwort verletzt die Inline-Limits
 
 ### Phase D - Discovery und Ressourcen
@@ -1808,6 +1981,13 @@ Abnahmekriterien:
 - Idempotency-Pruefung fuer Start-Tools anbinden
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
+- Idempotency-Zustandsautomat fuer Start-Tools implementieren:
+  `PENDING`, `AWAITING_APPROVAL`, `COMMITTED`, `FAILED`
+- genehmigte Retries aus `AWAITING_APPROVAL` muessen die Reservierung
+  atomar claimen und genau eine Job-Erzeugung ausloesen
+- Quotas fuer aktive Jobs pro Tenant/Principal und Operation pruefen;
+  Ueberschreitung liefert `RATE_LIMITED`
+- Start-/Runner-Timeouts konfigurieren und auf `OPERATION_TIMEOUT` mappen
 - Grant-Aussteller implementieren und dokumentieren:
   lokale Policy-Allowlist, Admin-CLI oder signierte Grant-Datei; optionaler
   Demo-Auto-Approval-Modus nur fuer Loopback/`stdio` und mit Audit
@@ -1828,6 +2008,12 @@ Abnahmekriterien:
 - policy-pflichtige Tools koennen ueber mindestens einen Grant-Pfad
   produktiv freigegeben werden; ohne konfigurierten Grant-Aussteller ist
   das Verhalten fail-closed und dokumentiert
+- erster policy-pflichtiger Start ohne Grant erzeugt
+  `AWAITING_APPROVAL`; zweiter Aufruf mit gueltigem Grant startet genau
+  einen Job und setzt die Reservierung auf `COMMITTED`
+- wiederholter zweiter Aufruf nach `COMMITTED` liefert denselben Job
+- Quota- und Timeout-Faelle liefern `RATE_LIMITED` bzw.
+  `OPERATION_TIMEOUT` und werden auditiert
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job
   und dedupliziert ueber `idempotencyKey`
 - `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
@@ -1842,11 +2028,17 @@ Abnahmekriterien:
 
 - `artifact_upload_init` mit Policy, vollstaendigen Session-Metadaten,
   Gesamt-Checksumme und serverseitiger Session-Erzeugung umsetzen
+- `artifact_upload_init` fuer
+  `uploadIntent=schema_staging_readonly` ohne Write-Policy, aber mit
+  `dmigrate:read`, Quota, Audit und read-only `schemaRef`-Materialisierung
+  umsetzen
 - `approvalKey` fuer `artifact_upload_init` als synchrone Idempotency-
-  Reservierung nutzen, sodass Agent-Retries dieselbe Session statt
-  doppelter Sessions erzeugen
+  Reservierung fuer policy-pflichtige Init-Pfade nutzen, sodass
+  Agent-Retries dieselbe Session statt doppelter Sessions erzeugen
 - `artifact_upload` mit Segmentverwaltung fuer bestehende Sessions
   umsetzen
+- Segmentbytes in `UploadSegmentStore` schreiben; finalisierte Artefakte
+  immutable in `ArtifactContentStore` materialisieren
 - `contentBase64` decodieren, Segmentgroessenlimit erzwingen und Hashes
   ueber decodierte Bytes berechnen
 - `artifact_upload_abort` umsetzen
@@ -1858,18 +2050,36 @@ Abnahmekriterien:
 - Idempotency-Pruefung fuer `data_import_start` und
   `data_transfer_start` anbinden
 - Upload- und Artefakt-Limits zentral konfigurieren
+- Quotas fuer aktive Upload-Sessions, reservierte Upload-Bytes, gespeicherte
+  Artefaktbytes und parallele Segmentwrites erzwingen
+- Cleanup fuer TTL, Abort und Expiry gegen `UploadSegmentStore` und
+  `ArtifactContentStore` anbinden
 
 Abnahmekriterien:
 
 - Upload-Init liefert vor dem ersten Segment eine `uploadSessionId`, TTL
   und erwartete Startposition
-- wiederholtes `artifact_upload_init` mit gleichem `approvalKey` und
-  identischem Payload liefert dieselbe `uploadSessionId`; abweichender
-  Payload mit gleichem Scope liefert `IDEMPOTENCY_CONFLICT`
+- wiederholtes policy-pflichtiges `artifact_upload_init` mit gleichem
+  `approvalKey` und identischem Payload liefert dieselbe
+  `uploadSessionId`; abweichender Payload mit gleichem Scope liefert
+  `IDEMPOTENCY_CONFLICT`
+- read-only Schema-Staging kann grosse Schemas ohne Write-Policy zu einer
+  nur read-only nutzbaren `schemaRef` materialisieren
+- Versuch, eine read-only gestagte `schemaRef` oder ein
+  `schema_staging_readonly`-Artefakt fuer Import/Transfer/KI-Tools zu
+  nutzen, liefert `VALIDATION_ERROR` oder `POLICY_REQUIRED` fuer einen
+  neuen policy-pflichtigen Pfad
 - Upload-Resume mit wiederholten Segmenten funktioniert
 - Hash-Abweichungen werden abgewiesen
 - fehlendes oder zu grosses `contentBase64` wird mit
   `VALIDATION_ERROR` bzw. `PAYLOAD_TOO_LARGE` abgewiesen
+- Segmentwrites sind atomar; konkurrierende abweichende Writes fuer dieselbe
+  Session/Position liefern einen deterministischen Fehler
+- `artifact_chunk_get`, Import aus Artefakt und Resource-Chunk-Reads lesen
+  aus `ArtifactContentStore`, nicht aus Tool-Response- oder Heap-Kopien
+- 200-MiB-Upload-Test nutzt File-Spooling oder einen gleichwertigen Byte-
+  Store und belegt, dass keine RAM-only-Implementierung erforderlich ist
+- Quota-Verletzungen fuer aktive Sessions oder Bytes liefern `RATE_LIMITED`
 - finalisierte Artefakte sind immutable
 - Upload-Init, administrative Upload-Abbrueche, Import und Transfer
   laufen nur mit Policy-Freigabe; eigene aktive Upload-Sessions duerfen
@@ -1948,13 +2158,20 @@ Pflichtabdeckung:
 - Upload-Approval-Fingerprint ueber Session-Metadaten, nicht ueber
   Segmentdaten
 - Idempotency-Store
-- atomare Idempotency-Reservierung `reserveOrGet` mit `PENDING`/
-  `COMMITTED`, Konfliktpfad und TTL-/Fehlerbehandlung
+- atomare Idempotency-Reservierung `reserveOrGet` mit `PENDING`,
+  `AWAITING_APPROVAL`, `COMMITTED`, Konfliktpfad und TTL-/
+  Fehlerbehandlung
+- genehmigter Retry aus `AWAITING_APPROVAL` erzeugt genau einen Job und
+  liefert bei weiteren Wiederholungen denselben `COMMITTED` Job
+- Lease-/Recovery-/Denial-Semantik fuer `PENDING`,
+  `AWAITING_APPROVAL` und `DENIED`, inklusive `POLICY_DENIED`
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
 - Grant-Aussteller fuer lokale Allowlist, Admin-CLI oder signierte
   Grant-Datei inklusive Ablauf, Issuer-Fingerprint und Audit-Metadaten
 - Sync-Effect-Idempotency fuer `approvalKey` mit atomarer Reservierung,
   identischer Wiederholung und Konfliktpfad
+- Quota-/Rate-Limit-Service fuer aktive Jobs, Upload-Sessions,
+  Upload-Bytes, parallele Segmentwrites und Provider-Aufrufe
 - Policy-Entscheidungen
 - HTTP-Tokenvalidator fuer Issuer, JWKS/Introspection, Algorithmus-
   Allowlist, Audience/Resource, Pflichtclaims, Ablauf und Scope-Mapping
@@ -1972,8 +2189,11 @@ Pflichtabdeckung:
 - SHA-256-Segment- und Gesamtpruefung
 - Base64-Decoding, Segmentgroessenlimit und Hash-Berechnung ueber
   decodierte Segmentbytes
-- Upload-Session-TTL, `uploadSessionId`-Laenge und fortlaufende
-  `segmentIndex`-Validierung
+- `UploadSegmentStore` und `ArtifactContentStore`: atomare Segmentwrites,
+  immutable Finalisierung, Range-/Chunk-Reads, File-Spooling, Quotas und
+  TTL-/Abort-Cleanup
+- Upload-Session-TTL, opake `uploadSessionId` mit Zeichen-/Entropie-/
+  Laengenvalidierung und fortlaufende `segmentIndex`-Validierung
 - `artifact_upload_init` erzwingt Gesamt-`checksumSha256` vor dem ersten
   Segment und bindet Session-ID an die Init-Metadaten
 - session-scoped Upload-Berechtigung bindet `uploadSessionId`, Tenant,
@@ -2041,8 +2261,8 @@ Fuer Start-Tools und synchrone Side-Effect-Tools zusaetzlich:
 - `schema_compare` weist `connectionRef` synchron ab; connection-backed
   Vergleiche laufen ueber `schema_compare_start`
 - synchroner Approval-Flow mit `approvalKey` fuer
-  `artifact_upload_init`, administrative `artifact_upload_abort`-Aufrufe
-  und KI-nahe Tools
+  policy-pflichtige `artifact_upload_init`-Varianten, administrative
+  `artifact_upload_abort`-Aufrufe und KI-nahe Tools
 - synchrone Nebenwirkungen deduplizieren ueber `approvalKey`; identische
   Retries erzeugen keine zweite Upload-Session, keinen zweiten Provider-
   Aufruf und kein zweites Artefakt
@@ -2081,6 +2301,10 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `schema_compare` mit zwei `schemaRef`-Eingaengen
 - `schema_compare_start` mit `connectionRef`, `idempotencyKey`,
   Policy-Flow und abbrechbarem Job
+- `schema_reverse_start` mit Connection-Ref, Policy-Flow, Driver-Lookup,
+  Jobstatus und abbrechbarem Runner
+- `data_profile_start` mit Connection-Ref, Policy-Flow, Profiling-Adapter,
+  Jobstatus und abbrechbarem Runner
 - nicht-lokaler HTTP-Transport erzwingt Auth und liefert fuer fehlende
   oder unzureichende Tokens die dokumentierten 401/403-Antworten
 - HTTP-Transport akzeptiert nur Tokens von konfigurierten Issuern mit
@@ -2092,6 +2316,15 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `artifactKind=schema` Upload materialisiert nach erfolgreicher
   Validierung eine `schemaRef`; ungueltige Schema-Artefakte werden nicht
   registriert
+- `data_import_start` referenziert ein hochgeladenes Artefakt, nutzt
+  Policy/Idempotency, startet den Import-Runner und kann abgebrochen werden
+- `data_transfer_start` nutzt tenant-scoped Source-/Target-Connection-Refs,
+  Policy/Idempotency, Transfer-Runner und Cancel-Propagation
+- Rate-Limit-/Quota-Integration fuer aktive Jobs, aktive Upload-Sessions,
+  Upload-Bytes und Provider-Aufrufe liefert `RATE_LIMITED` bzw. HTTP 429
+  ausserhalb erfolgreicher Tool-Results
+- Timeout-Integration fuer Runner-Start, Upload-Finalisierung und
+  KI-/Provider-Aufruf liefert `OPERATION_TIMEOUT` und Audit-Outcome
 - `job_status_get` fuer eigenen Job, erlaubten Admin-/Scope-Zugriff,
   fremden Tenant, unbekannten Job und terminalen Job vor Retention
 - fachlicher Toolfehler mit `isError=true` und
@@ -2131,8 +2364,12 @@ Verbindliche Negativfaelle:
 - zu grosse Inline-Payload
 - nicht erlaubter MIME-Type
 - `artifact_upload_init` ohne Gesamt-`checksumSha256`
+- `uploadIntent=schema_staging_readonly` mit anderem `artifactKind` als
+  `schema`
+- read-only gestagtes Schema als `job_input` fuer Import/Transfer/KI-Tool
 - fehlendes `contentBase64`
-- ungueltige `uploadSessionId`-Laenge
+- ungueltige `uploadSessionId`-Zeichen, zu geringe Entropie oder Laenge
+  ueber 128 Zeichen
 - clientseitig wiederverwendete `uploadSessionId` mit anderem Tenant,
   Principal, Approval-Fingerprint oder anderen Session-Metadaten
 - `segmentIndex=0` oder nicht fortlaufender Segmentindex
@@ -2155,9 +2392,9 @@ Verbindliche Negativfaelle:
   Chunk-URI oder Artefakt-Referenz
 - HTTP-Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-
   lokaler Bind-Adresse
-- `artifact_upload_init` ohne `approvalKey`
-- `artifact_upload_init`-Retry mit gleichem `approvalKey` erzeugt keine
-  zweite Session
+- policy-pflichtiges `artifact_upload_init` ohne `approvalKey`
+- policy-pflichtiges `artifact_upload_init`-Retry mit gleichem
+  `approvalKey` erzeugt keine zweite Session
 - KI-nahes Tool-Retry mit gleichem `approvalKey` erzeugt keinen zweiten
   Provider-Aufruf
 - gleicher `approvalKey` mit abweichendem Payload liefert
@@ -2180,6 +2417,15 @@ Verbindliche Negativfaelle:
   `idempotencyKey`
 - `data_import_start` oder `data_transfer_start` mit gleichem
   `idempotencyKey`, aber anderem Payload
+- policy-pflichtiger Start bleibt nach erstem Aufruf ohne Grant in
+  `AWAITING_APPROVAL` und startet erst beim genehmigten Retry
+- genehmigte parallele Retries derselben `AWAITING_APPROVAL`-Reservierung
+  erzeugen maximal einen Job
+- verwaiste `PENDING`-Reservierung nach `pendingLeaseExpiresAt` wird fuer
+  denselben Scope/Fingerprint recovered
+- explizit abgelehnte Approval-Reservierung liefert `POLICY_DENIED`
+- ueberschrittene Job-, Upload-Session-, Byte- oder Provider-Quota
+- Runner-, Upload-Finalisierungs- oder Provider-Timeout
 - `job_cancel` fuer fremde Tenants oder fremde Principals
 - Worker publiziert nach angenommenem Cancel ein neues Artefakt oder
   startet weitere Daten-Schreiboperationen
@@ -2239,6 +2485,10 @@ Dokumentation muss explizit nennen:
   Nicht-MCP-Upload-Bodies sind keine 0.9.6-Standardtransport-Funktion
 - Upload-Responses enthalten TTL-Informationen, und abgelaufene
   Sessions werden definiert verworfen
+- produktnahe Upload- und Artefaktpfade nutzen File-Spooling bzw.
+  Byte-Stores fuer Segmente und Inhalte; In-Memory ist nur fuer Unit-Tests
+- Quotas, Rate Limits und Timeouts sind dokumentiert und mappen auf
+  `RATE_LIMITED` bzw. `OPERATION_TIMEOUT`
 - fachliche Toolfehler erscheinen als `isError=true`-Tool-Result mit
   `structuredContent.error.code`; JSON-RPC-Errors bleiben
   Protokollfehlern vorbehalten
@@ -2280,6 +2530,9 @@ Gegenmassnahme:
 - Store bewusst einfach halten
 - keine Remote-Mandantenverwaltung implementieren
 - klare Store-Interfaces fuer spaetere Persistenz definieren
+- Byte-Stores trotzdem explizit machen: File-Spooling fuer Segmente und
+  Artefaktinhalte ist verpflichtend, damit 200-MiB-Uploads, Chunk-Reads und
+  Cleanup nicht als RAM-only-Sonderfall enden
 
 ### 11.3 Sicherheitsbruch durch bequeme Tool-Payloads
 
@@ -2314,6 +2567,9 @@ Gegenmassnahme:
 0.9.6 ist abgeschlossen, wenn:
 
 - `adapters:driving:mcp` gebaut und getestet wird
+- die Gates 0.9.6-MVP, 0.9.6-Controlled-Operations und
+  0.9.6-AI-and-Prompts abgeschlossen sind; kein Teil-Gate gilt allein als
+  abgeschlossener Milestone
 - lokale und entfernte MCP-Clients den Server ueber `stdio` bzw. HTTP
   initialisieren koennen
 - Initialize MCP `protocolVersion` `2025-11-25` nutzt und d-migrate
@@ -2353,8 +2609,11 @@ Gegenmassnahme:
 - `schema_compare` synchron nur `schemaRef` akzeptiert und
   connection-backed Vergleiche ueber `schema_compare_start` als
   idempotente, abbrechbare Jobs laufen
-- policy-pflichtige Upload-Init-, administrative Upload-Abbruch- und
+- policy-pflichtige Upload-Init-Pfade, administrative Upload-Abbrueche und
   Datenoperationen den Approval-Flow erzwingen
+- read-only Schema-Staging grosse Schemas ohne Write-Policy, aber mit
+  `dmigrate:read`, Quota, Audit und read-only `schemaRef`-Markierung
+  ermoeglicht
 - Artefakt-Uploads mit `artifact_upload_init` beginnen, danach
   segmentiert, resumable und SHA-256-validiert sind
 - Upload-Session-IDs opak, kryptografisch erzeugt oder streng
@@ -2362,6 +2621,8 @@ Gegenmassnahme:
   Session-Metadaten und session-scoped Berechtigungen gebunden sind
 - grosse neutrale Schemas ueber `artifactKind=schema` Uploads zu
   `schemaRef` materialisiert werden koennen
+- read-only gestagte Schemas nicht implizit als Import-/Transfer-/KI-
+  Eingaben wiederverwendet werden koennen
 - `job_cancel` eigene oder erlaubte Jobs kontrolliert abbrechen kann
 - Cancel in laufende Worker propagiert wird und nach angenommenem
   Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet
