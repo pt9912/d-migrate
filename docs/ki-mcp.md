@@ -771,9 +771,9 @@ Empfehlung:
 
 ## 11. Einfuehrungsreihenfolge
 
-Die Phasen sind Gates innerhalb von 0.9.6, keine Verschiebung nach 0.9.7.
-Ein fruehes Gate darf nicht als vollstaendig abgeschlossener Milestone
-markiert werden.
+Die Phasen sind Lieferabschnitte innerhalb von 0.9.6, keine Verschiebung
+nach 0.9.7 und kein reduzierter MVP-Scope. Ein einzelner Abschnitt darf
+nicht als vollstaendig abgeschlossener Milestone markiert werden.
 
 ### Phase 1
 

@@ -205,12 +205,13 @@ Konsequenz:
 - Veraenderung der CLI-Vertraege ausser Start-/Konfigurationsdoku fuer
   den MCP-Server
 
-### 3.3 Liefer-Gates innerhalb von 0.9.6
+### 3.3 Lieferabschnitte innerhalb von 0.9.6
 
 Der Milestone bleibt fachlich vollstaendig, wird aber innerhalb von 0.9.6
-ueber explizite Gates geliefert. Das ist keine Verschiebung nach 0.9.7:
+ueber explizite Lieferabschnitte umgesetzt. Das ist keine Verschiebung
+nach 0.9.7 und kein reduzierter MVP-Scope:
 
-- Gate 0.9.6-MVP:
+- Abschnitt 0.9.6-A - Read-only MCP Core:
   - `stdio` plus HTTP-Initialize/Transport-Grundpfad
   - MCP-`protocolVersion` `2025-11-25`
   - `capabilities_list`, read-only Schema-Tools und Discovery
@@ -218,15 +219,16 @@ ueber explizite Gates geliefert. Das ist keine Verschiebung nach 0.9.7:
   - Resource-/Artifact-Byte-Stores mit File-Spooling
   - Auth-/Principal-Ableitung, Audit, Quotas und strukturierte Fehler
   - Idempotency inklusive `AWAITING_APPROVAL`-Recovery-Vertrag
-- Gate 0.9.6-Controlled-Operations:
+- Abschnitt 0.9.6-B - Controlled Operations:
   - Streamable-HTTP-Auth mit JWKS/Introspection und Scope-Challenges
   - Policy-Grant-Pfad, Start-Tools, Import/Transfer, Uploads fuer
     `job_input`, `job_cancel` inklusive Cancel-Gate
-- Gate 0.9.6-AI-and-Prompts:
+- Abschnitt 0.9.6-C - AI and Prompts:
   - KI-nahe Tools mit NoOp/lokalem Provider, Prompt-Hygiene und Audit
   - MCP-Prompts fuer kuratierte Ablaeufe
 - Die finale Definition of Done bleibt die vollstaendige 0.9.6-DoD; ein
-  frueheres Gate darf nicht als abgeschlossener Milestone markiert werden
+  einzelner Lieferabschnitt darf nicht als abgeschlossener Milestone
+  markiert werden
 
 ---
 
@@ -1206,7 +1208,11 @@ Akzeptanz:
     gebunden
 - `job_cancel` kann einen laufenden `schema_compare_start`-Job
   abbrechen
-- Reverse-Warnungen der Operanden bleiben als Diagnose sichtbar
+- Diagnosehinweise der Operanden bleiben sichtbar:
+  - bei `schemaRef` sind das Schema-Materialisierungs- oder
+    Validierungswarnungen
+  - bei `connectionRef` sind das Introspection-/Reverse-Warnungen aus dem
+    vorgeschalteten materialisierenden Schritt
 
 ### 6.5 Discovery-Tools
 
@@ -1880,6 +1886,13 @@ Abnahmekriterien:
   `artifact_upload_init(uploadIntent=schema_staging_readonly)` ohne
   Write-Policy in eine read-only `schemaRef` materialisiert und danach von
   `schema_validate`, `schema_generate` und `schema_compare` genutzt werden
+- dafuer in Phase C ein read-only Upload-Subset implementieren:
+  - `artifact_upload_init` nur fuer `uploadIntent=schema_staging_readonly`
+  - Segmentannahme in `UploadSegmentStore`
+  - File-Spooling, Gesamt-Hash, TTL-/Abort-Cleanup
+  - Finalisierung zu `schema_staging_readonly`-Artefakt und read-only
+    `schemaRef`
+  - keine Policy-/Approval-Pfade und keine Nutzung als `job_input`
 - `schema_compare` an bestehende Compare-Pfade anbinden
 - `schema_compare` auf bereits materialisierte `schemaRef`-Eingaenge
   beschraenken; `connectionRef` liefert `VALIDATION_ERROR` mit Hinweis
@@ -1897,6 +1910,8 @@ Abnahmekriterien:
 - read-only Schema-Staging fuer grosse Schemas funktioniert ohne
   Approval-Flow und verletzt trotzdem Quota-, Audit- und Byte-Store-
   Anforderungen nicht
+- das Phase-C-Subset reicht fuer read-only Schema-Staging im
+  Lieferabschnitt 0.9.6-A; policy-pflichtige Upload-Intents bleiben Phase F
 - keine Tool-Antwort verletzt die Inline-Limits
 
 ### Phase D - Discovery und Ressourcen
@@ -1982,7 +1997,7 @@ Abnahmekriterien:
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
 - Idempotency-Zustandsautomat fuer Start-Tools implementieren:
-  `PENDING`, `AWAITING_APPROVAL`, `COMMITTED`, `FAILED`
+  `PENDING`, `AWAITING_APPROVAL`, `DENIED`, `COMMITTED`, `FAILED`
 - genehmigte Retries aus `AWAITING_APPROVAL` muessen die Reservierung
   atomar claimen und genau eine Job-Erzeugung ausloesen
 - Quotas fuer aktive Jobs pro Tenant/Principal und Operation pruefen;
@@ -2024,14 +2039,12 @@ Abnahmekriterien:
 - nach angenommenem Cancel publiziert der Worker keine neuen Artefakte
   und startet keine weiteren Daten-Schreiboperationen
 
-### Phase F - Datenoperationen und Uploads
+### Phase F - Datenoperationen und policy-pflichtige Uploads
 
-- `artifact_upload_init` mit Policy, vollstaendigen Session-Metadaten,
-  Gesamt-Checksumme und serverseitiger Session-Erzeugung umsetzen
-- `artifact_upload_init` fuer
-  `uploadIntent=schema_staging_readonly` ohne Write-Policy, aber mit
-  `dmigrate:read`, Quota, Audit und read-only `schemaRef`-Materialisierung
-  umsetzen
+- policy-pflichtige `artifact_upload_init`-Varianten mit vollstaendigen
+  Session-Metadaten, Gesamt-Checksumme und serverseitiger Session-
+  Erzeugung umsetzen; das read-only Schema-Staging-Subset existiert bereits
+  aus Phase C
 - `approvalKey` fuer `artifact_upload_init` als synchrone Idempotency-
   Reservierung fuer policy-pflichtige Init-Pfade nutzen, sodass
   Agent-Retries dieselbe Session statt doppelter Sessions erzeugen
@@ -2275,24 +2288,13 @@ Fuer Start-Tools und synchrone Side-Effect-Tools zusaetzlich:
 ### 9.3 Integrationstests
 
 Mindestens ein Integrationstest startet den MCP-Server ueber `stdio` und
-ein weiterer ueber HTTP. Beide pruefen:
+ein weiterer ueber HTTP.
+
+Gemeinsame Tests fuer `stdio` und HTTP:
 
 - Initialize/Capabilities
 - Initialize verhandelt MCP `protocolVersion` `2025-11-25` und trennt
   davon den d-migrate-Toolvertrag `v1`
-- Streamable-HTTP-POST mit `Accept: application/json,
-  text/event-stream`
-- HTTP-Folgeaufruf mit `MCP-Protocol-Version`
-- JSON-RPC-Notification/-Response per Streamable-HTTP-POST liefert
-  `202 Accepted` ohne Body
-- JSON-RPC-Request per Streamable-HTTP-POST liefert
-  `Content-Type: application/json` oder `text/event-stream`
-- ungueltiger `Origin` liefert HTTP 403
-- optionales `MCP-Session-Id` wird korrekt ausgegeben, verlangt,
-  abgewiesen oder mit HTTP 404 als abgelaufen behandelt
-- HTTP-`GET` liefert SSE oder HTTP 405 gemaess Server-Konfiguration
-- HTTP-`DELETE` mit `MCP-Session-Id` terminiert die Session oder liefert
-  HTTP 405, wenn clientseitige Terminierung deaktiviert ist
 - `capabilities_list`
 - `schema_validate` mit kleinem Schema
 - `schema_generate` mit kleinem Inline-Schema und mit Artefakt-Fallback
@@ -2305,14 +2307,6 @@ ein weiterer ueber HTTP. Beide pruefen:
   Jobstatus und abbrechbarem Runner
 - `data_profile_start` mit Connection-Ref, Policy-Flow, Profiling-Adapter,
   Jobstatus und abbrechbarem Runner
-- nicht-lokaler HTTP-Transport erzwingt Auth und liefert fuer fehlende
-  oder unzureichende Tokens die dokumentierten 401/403-Antworten
-- HTTP-Transport akzeptiert nur Tokens von konfigurierten Issuern mit
-  gueltiger JWKS-/Introspection-Pruefung, erlaubtem Algorithmus,
-  passender Audience/Resource und den benoetigten Tool-/Resource-Scopes
-- `artifact_upload` ueber `stdio` mit `contentBase64`
-- `artifact_upload` ueber streambares HTTP mit `contentBase64` im
-  `tools/call`-JSON-RPC-Argument
 - `artifactKind=schema` Upload materialisiert nach erfolgreicher
   Validierung eine `schemaRef`; ungueltige Schema-Artefakte werden nicht
   registriert
@@ -2345,6 +2339,36 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `job_cancel`
 - ein KI-nahes Spezialtool mit Policy-/Audit-Pfad
 - MCP-Prompt-Discovery
+
+HTTP-only Tests:
+
+- Streamable-HTTP-POST mit `Accept: application/json,
+  text/event-stream`
+- HTTP-Folgeaufruf mit `MCP-Protocol-Version`
+- JSON-RPC-Notification/-Response per Streamable-HTTP-POST liefert
+  `202 Accepted` ohne Body
+- JSON-RPC-Request per Streamable-HTTP-POST liefert
+  `Content-Type: application/json` oder `text/event-stream`
+- ungueltiger `Origin` liefert HTTP 403
+- optionales `MCP-Session-Id` wird korrekt ausgegeben, verlangt,
+  abgewiesen oder mit HTTP 404 als abgelaufen behandelt
+- HTTP-`GET` liefert SSE oder HTTP 405 gemaess Server-Konfiguration
+- HTTP-`DELETE` mit `MCP-Session-Id` terminiert die Session oder liefert
+  HTTP 405, wenn clientseitige Terminierung deaktiviert ist
+- nicht-lokaler HTTP-Transport erzwingt Auth und liefert fuer fehlende
+  oder unzureichende Tokens die dokumentierten 401/403-Antworten
+- HTTP-Transport akzeptiert nur Tokens von konfigurierten Issuern mit
+  gueltiger JWKS-/Introspection-Pruefung, erlaubtem Algorithmus,
+  passender Audience/Resource und den benoetigten Tool-/Resource-Scopes
+- `artifact_upload` ueber streambares HTTP mit `contentBase64` im
+  `tools/call`-JSON-RPC-Argument
+
+Stdio-only Tests:
+
+- Principal-Ableitung aus vertrauenswuerdigem Host-/Prozesskontext,
+  `DMIGRATE_MCP_STDIO_TOKEN` oder explizitem Test-Principal
+- fehlender stdio-Principal liefert `AUTH_REQUIRED`
+- `artifact_upload` ueber `stdio` mit `contentBase64`
 
 Wenn die verwendete MCP-Bibliothek einen Testclient anbietet, wird
 dieser genutzt. Falls nicht, wird die JSON-RPC-Kommunikation in Tests
@@ -2567,9 +2591,8 @@ Gegenmassnahme:
 0.9.6 ist abgeschlossen, wenn:
 
 - `adapters:driving:mcp` gebaut und getestet wird
-- die Gates 0.9.6-MVP, 0.9.6-Controlled-Operations und
-  0.9.6-AI-and-Prompts abgeschlossen sind; kein Teil-Gate gilt allein als
-  abgeschlossener Milestone
+- die Lieferabschnitte 0.9.6-A, 0.9.6-B und 0.9.6-C abgeschlossen sind;
+  kein einzelner Abschnitt gilt allein als abgeschlossener Milestone
 - lokale und entfernte MCP-Clients den Server ueber `stdio` bzw. HTTP
   initialisieren koennen
 - Initialize MCP `protocolVersion` `2025-11-25` nutzt und d-migrate
