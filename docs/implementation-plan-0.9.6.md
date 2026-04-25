@@ -274,6 +274,24 @@ Verbindliche Entscheidung:
     Scopes liefern 403 mit Scope-Challenge
   - Tokenvalidierung darf nie auf "Bearer-String wird Principal" oder
     ungepruefte lokale Decodierung zurueckfallen
+- Scope-Namen sind in 0.9.6 rollenartig und stabil; granulare
+  `dmigrate:tool:<name>`-Scopes werden bewusst nicht eingefuehrt:
+  - `dmigrate:read`: read-only Tools, `resources/list`,
+    `resources/templates/list`, `resources/read` und Listen-Tools fuer
+    eigene Tenant-Ressourcen
+  - `dmigrate:job:start`: `schema_reverse_start`,
+    `schema_compare_start`, `data_profile_start`
+  - `dmigrate:artifact:upload`: `artifact_upload_init`,
+    `artifact_upload`, eigene `artifact_upload_abort`
+  - `dmigrate:data:write`: `data_import_start`, `data_transfer_start`
+  - `dmigrate:job:cancel`: `job_cancel` fuer eigene Jobs
+  - `dmigrate:ai:execute`: `procedure_transform_plan`,
+    `procedure_transform_execute`, `testdata_plan`
+  - `dmigrate:admin`: Cross-Tenant-Listen, fremde Jobs/Ressourcen,
+    administrative Upload-Abbrueche und fremde Job-Cancels
+- `WWW-Authenticate`-Challenges nennen immer die fuer den konkreten
+  Request minimal notwendigen Scopes; `scopes_supported` in Protected
+  Resource Metadata enthaelt mindestens die oben genannten Scope-Namen
 - Deaktivierung von HTTP-Auth ist nur fuer lokale Tests und Demos ueber
   eine explizite unsichere Konfiguration erlaubt; entfernte HTTP-Clients
   duerfen ohne Auth nicht als Beta-fertig gelten
@@ -1097,11 +1115,13 @@ Gemeinsame Regeln:
 - Filter sind allowlist-basiert
 - Paginierung nutzt `limit` und `cursor`
 - `limit` hat ein serverseitiges Maximum
-- Antworten enthalten stabil `items`, `nextCursor` und `totalCount`
-- wenn ein Store die exakte Gesamtzahl intern nicht billig bestimmen
-  kann, muss er fuer 0.9.6 trotzdem eine konsistente Zaehllogik fuer
-  die gefilterte Ergebnisliste bereitstellen; eine spaetere Lockerung
-  muesste zuerst `docs/ki-mcp.md` aendern
+- Antworten enthalten stabil `items` und `nextCursor`
+- `totalCount` ist optional und darf nur gesetzt werden, wenn der Store die
+  exakte gefilterte Gesamtzahl ohne vollstaendigen teuren Scan bestimmen
+  kann
+- wenn nur eine guenstige Naeherung verfuegbar ist, darf die Antwort
+  `totalCountEstimate` statt `totalCount` enthalten; Clients duerfen weder
+  `totalCount` noch `totalCountEstimate` fuer Pagination benoetigen
 
 `job_status_get`:
 
@@ -1290,10 +1310,16 @@ Antwort:
   `segmentOffset` und `uploadSessionTtlSeconds`
 - finale Annahme eines gueltigen `artifactKind=schema` liefert neben
   Artefaktdaten auch die erzeugte `schemaRef`
-- `uploadSessionTtlSeconds` ist die verbleibende absolute Lease-TTL der
-  Session; Initialwert `900`, Minimum `300`, Maximum `3600`
-- jede erfolgreiche Segmentannahme darf die absolute Lease bis maximal
-  `3600` Sekunden ab Session-Erzeugung erneuern
+- `uploadSessionTtlSeconds` ist die verbleibende Lease-TTL der Session und
+  darf im Verlauf gegen `0` laufen
+- der konfigurierbare Initialwert ist `900` Sekunden; die absolute
+  Max-Lease ist `3600` Sekunden ab Session-Erzeugung
+- ein optional konfigurierbarer Mindestwert von `300` Sekunden gilt nur fuer
+  neu ausgestellte oder erneuerte Lease-Werte, nicht fuer die kurz vor
+  Ablauf gemeldete Restlaufzeit
+- jede erfolgreiche Segmentannahme darf die Lease erneuern, aber niemals
+  ueber die absolute Max-Lease von `3600` Sekunden ab Session-Erzeugung
+  hinaus
 - zusaetzlich gilt ein Idle-Timeout von `300` Sekunden ohne erfolgreiche
   Segmentannahme; bei Idle-Timeout oder abgelaufener absoluter Lease wird
   die Session `EXPIRED` und Zwischensegmente werden verworfen
@@ -1597,8 +1623,7 @@ Abnahmekriterien:
       Endpunkts
     - `authorization_servers`: nicht-leere Liste der zulaessigen
       Authorization-Server-Issuer-URIs
-    - optional `scopes_supported`, falls der Server Scope-Discovery fuer
-      Basisfunktionen anbieten kann
+    - `scopes_supported` mit den dokumentierten d-migrate-Scope-Namen
   - HTTP 403 mit Scope-Challenge bei unzureichenden Scopes
   - Token-Audience-/Resource-Validierung
   - konfigurierter Issuer muss exakt zu Token-`iss` und Metadata passen
@@ -1607,6 +1632,11 @@ Abnahmekriterien:
     Netzwerk-/Parsefehlern, unbekanntem `kid` oder inaktivem Token
   - Algorithmus-Allowlist, Ablauf-/Clock-Skew-Pruefung und Scope-Mapping
     fuer jedes Tool und jede Resource-Klasse
+  - Scope-Tabelle implementieren und in Protected Resource Metadata als
+    `scopes_supported` veroeffentlichen:
+    `dmigrate:read`, `dmigrate:job:start`, `dmigrate:artifact:upload`,
+    `dmigrate:data:write`, `dmigrate:job:cancel`, `dmigrate:ai:execute`,
+    `dmigrate:admin`
   - Principal-Claims (`sub`, optional Tenant-/Gruppenclaims) werden
     deterministisch gemappt; fehlende Pflichtclaims liefern 401
   - keine Tokens in Query-Parametern
@@ -1649,11 +1679,14 @@ Abnahmekriterien:
 - HTTP-Auth-Tests decken Issuer-Mismatch, fehlendes/ungueltiges JWKS,
   nicht erlaubten Algorithmus, abgelaufenes Token, Audience-/Resource-
   Mismatch, fehlende Pflichtclaims und Scope-Mapping pro Tool ab
+- Scope-Tests pruefen fuer jede Scope-Klasse mindestens einen positiven und
+  einen negativen Request sowie die konkrete `scope`-Challenge im
+  `WWW-Authenticate`-Header
 - Golden-Test validiert das Protected-Resource-Metadata-Dokument:
   `resource` entspricht der kanonischen Server-/Endpoint-URI,
   `authorization_servers` ist vorhanden, nicht leer und enthaelt nur
-  zugelassene HTTPS-Issuer; optionales `scopes_supported` ist konsistent
-  mit den dokumentierten Scope-Challenges
+  zugelassene HTTPS-Issuer; `scopes_supported` enthaelt die dokumentierten
+  Scope-Namen und ist konsistent mit den Scope-Challenges
 - ein separater Test zeigt, dass Auth-Deaktivierung nur fuer lokale
   Test-/Demo-Konfigurationen erlaubt ist
 - Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-lokaler
@@ -1726,7 +1759,9 @@ Abnahmekriterien:
 
 Abnahmekriterien:
 
-- Listen liefern stabile `items`, `nextCursor` und `totalCount`
+- Listen liefern stabile `items` und `nextCursor`; `totalCount` ist exakt
+  und optional, `totalCountEstimate` ist optional und als Naeherung
+  gekennzeichnet
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list`
   auffindbar, auch wenn die Persistenz intern ueber typisierte
   Artefakte erfolgt
@@ -1742,7 +1777,7 @@ Abnahmekriterien:
   Config-/Connection-Ref-Aufloesung
 - ungueltige Cursor liefern `VALIDATION_ERROR`
 
-### Phase E - Async-Jobs, Idempotenz und Policy
+### Phase E0 - Cancel-Gate fuer bestehende Runner
 
 - Vorab-Spike fuer Cancel-Faehigkeit der bestehenden Runner:
   - `SchemaReverseRunner`
@@ -1753,6 +1788,16 @@ Abnahmekriterien:
 - Spike-Abnahme: fuer jeden Pfad ist dokumentiert, an welchen Stellen
   CancellationToken/Worker-Handle geprueft wird und welche Side Effects
   nach Cancel verhindert werden
+- Gate-Entscheidung: `job_cancel` bleibt harte 0.9.6-DoD. Eine reduzierte
+  Beta-Semantik wie nur `cancel_requested`, Store-Status ohne Worker-
+  Propagation oder "best effort ohne Side-Effect-Stopp" ist fuer 0.9.6
+  ausgeschlossen
+- wenn der Spike fuer einen der genannten Langlaeufer keine kooperative
+  Cancel-Propagation mit Side-Effect-Stopp nachweisen kann, ist der
+  Milestone blockiert und Phase E darf nicht als fertig gelten
+
+### Phase E - Async-Jobs, Idempotenz und Policy
+
 - Job-Start-Service fuer `schema_reverse_start`, `data_profile_start`
   und `schema_compare_start` einfuehren
 - `job_cancel` an Jobkern und Berechtigungspruefung anbinden
@@ -2321,8 +2366,11 @@ Gegenmassnahme:
 - Cancel in laufende Worker propagiert wird und nach angenommenem
   Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet
   werden
-- der Cancel-Spike fuer bestehende Runner abgeschlossen ist und die
-  notwendigen kooperativen Checkpoints dokumentiert sind
+- der Cancel-Spike als Phase-Gate vor der `job_cancel`-Umsetzung
+  abgeschlossen ist und die notwendigen kooperativen Checkpoints
+  dokumentiert sind
+- reduzierte `cancel_requested`-Semantik ohne Worker-Propagation und
+  Side-Effect-Stopp erfuellt die 0.9.6-DoD nicht
 - 0.9.6 bewusst keine parallele MCP-Tasks-Abstraktion fuer
   d-migrate-Langlaeufer einfuehrt
 - KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md`

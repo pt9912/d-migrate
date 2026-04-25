@@ -289,7 +289,12 @@ Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-
 - `schema_list`: optional adressierendes `tenantId` + Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `profile_list`: optional adressierendes `tenantId` + Filter (`connectionId`, `jobId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `diff_list`: optional adressierendes `tenantId` + Filter (`jobId`, `leftSchemaId`, `rightSchemaId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- Alle Listen-Tools liefern mindestens `items`, `nextCursor` und `totalCount`.
+- Alle Listen-Tools liefern mindestens `items` und `nextCursor`.
+  `totalCount` ist optional und darf nur gesetzt werden, wenn der Store die
+  exakte gefilterte Gesamtzahl ohne teuren Vollscan bestimmen kann.
+  Alternativ darf `totalCountEstimate` als klar erkennbare Naeherung
+  geliefert werden; Clients muessen fuer Pagination nur `nextCursor`
+  verwenden.
 
 ---
 
@@ -404,7 +409,7 @@ Beispiel paginierte Antwort (`job_list`):
     }
   ],
   "nextCursor": "eyJqb2JJZCI6ImpvYi0xMjQifQ==",
-  "totalCount": 47
+  "totalCountEstimate": 47
 }
 ```
 
@@ -522,8 +527,13 @@ verbindlich:
     serverseitig gegen das vollstaendige Artefakt geprueft.
 - Session-Management:
   - `uploadSessionTtlSeconds` muss im Response gesetzt werden:
-    Initial `900`, Minimum `300`, Maximum `3600`; der Wert beschreibt
-    die verbleibende absolute Lease-TTL.
+    Der Wert beschreibt die verbleibende Lease-TTL und darf gegen `0`
+    laufen.
+  - Der konfigurierbare Initialwert ist `900` Sekunden; die absolute
+    Max-Lease ist `3600` Sekunden ab Session-Erzeugung.
+  - Ein optionaler Mindestwert von `300` Sekunden gilt nur fuer neu
+    ausgestellte oder erneuerte Lease-Werte, nicht fuer die kurz vor Ablauf
+    gemeldete Restlaufzeit.
   - Jede erfolgreiche Segmentannahme darf die Lease bis maximal `3600`
     Sekunden ab Session-Erzeugung erneuern.
   - Zusaetzlich gilt ein Idle-Timeout von `300` Sekunden ohne
@@ -651,7 +661,8 @@ Empfohlene Sicherheitsgrundlagen:
   - das Metadata-Dokument enthaelt mindestens `resource` als kanonische
     MCP-Server-/Endpoint-URI und eine nicht-leere
     `authorization_servers`-Liste mit den zulaessigen HTTPS-Issuern;
-    optionales `scopes_supported` muss zu den Scope-Challenges passen
+    `scopes_supported` enthaelt die d-migrate-Scope-Namen und muss zu den
+    Scope-Challenges passen
   - Tokens duerfen nicht aus Query-Parametern gelesen werden und muessen
     auf Audience/Resource des MCP-Servers validiert werden
   - Tokenvalidierung ist fail-closed: konfigurierte Issuer muessen exakt
@@ -659,6 +670,14 @@ Empfohlene Sicherheitsgrundlagen:
     explizit konfigurierte Introspection geprueft, `aud`/Resource,
     Ablauf/Clock-Skew, Pflichtclaims und Tool-/Resource-Scopes werden
     validiert; ein blosser Bearer-String darf nie als Principal genuegen
+  - 0.9.6 nutzt rollenartige Scopes statt granularer Tool-Scopes:
+    `dmigrate:read`, `dmigrate:job:start`,
+    `dmigrate:artifact:upload`, `dmigrate:data:write`,
+    `dmigrate:job:cancel`, `dmigrate:ai:execute` und
+    `dmigrate:admin`.
+  - `WWW-Authenticate` nennt fuer den konkreten Request die minimal
+    notwendigen Scopes; `dmigrate:admin` ist nur fuer Cross-Tenant- oder
+    fremde administrative Aktionen erforderlich.
   - Auth-Deaktivierung ist nur fuer lokale Tests/Demos mit expliziter
     unsicherer Konfiguration erlaubt und muss auf Loopback-Bindung
     (`127.0.0.1` oder `::1`) ohne Public Base URL beschraenkt sein;
@@ -689,7 +708,10 @@ clientseitige Session-Terminierung nicht angeboten wird.
 0.9.6 fuehrt keine parallele MCP-Tasks-Abstraktion fuer
 d-migrate-Langlaeufer ein. Das d-migrate-Jobmodell mit
 `job_status_get`, `job_list` und `job_cancel` bleibt die einheitliche
-Steuerflaeche.
+Steuerflaeche. `job_cancel` ist dabei nur gueltig, wenn die betroffenen
+Runner kooperative Cancellation-Checkpoints und Side-Effect-Stopp
+unterstuetzen; eine reine `cancel_requested`-Markierung ohne Worker-
+Propagation erfuellt den 0.9.6-Vertrag nicht.
 
 ### 10.1 Versionierung
 
