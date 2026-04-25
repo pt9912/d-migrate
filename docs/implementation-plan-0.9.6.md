@@ -284,8 +284,15 @@ Verbindliche Entscheidung:
   policyfaehig, weil sie kostenintensiv oder sensitiv sein koennen
 - wenn eine Policy-Freigabe fehlt, liefert das Tool
   `POLICY_REQUIRED` mit `approvalToken`
-- der zweite Aufruf muss denselben `idempotencyKey` und das passende
-  `approvalToken` enthalten
+- bei Start-Tools muss der zweite Aufruf denselben `idempotencyKey` und
+  das passende `approvalToken` enthalten
+- bei nicht-asynchronen Tools ohne `idempotencyKey`, z.B.
+  `schema_compare` mit sensitiver `connectionRef`, muss der Client
+  einen stabilen `approvalKey` mitsenden; das `approvalToken` wird an
+  (`toolName`, `callerId`, `approvalKey`, `payloadFingerprint`)
+  gebunden
+- fehlt bei einer policy-pflichtigen synchronen Operation der
+  `approvalKey`, liefert der Server `VALIDATION_ERROR`
 - produktive oder als sensitiv markierte Verbindungen duerfen nicht
   ohne Policy-Freigabe genutzt werden
 - KI-nahe Tools (`procedure_transform_plan`,
@@ -310,8 +317,14 @@ Verbindliche Entscheidung:
   - `segmentOffset`
   - `segmentTotal`
   - `isFinalSegment`
+  - `contentBase64`
   - `segmentSha256`
   - optional `clientRequestId`
+- `contentBase64` ist die Base64-codierte Bytefolge des Segments und
+  wird fuer `stdio` und streambares HTTP identisch im Tool-Input
+  uebertragen
+- `segmentSha256` wird ueber die decodierten Segmentbytes berechnet,
+  nicht ueber den Base64-Text
 - bei `isFinalSegment=true` ist `checksumSha256` fuer das
   Gesamtartefakt Pflicht
 - Wiederholungen desselben Segments sind idempotent
@@ -386,6 +399,7 @@ Neue und zu erweiternde Bereiche:
   - `include("adapters:driving:mcp")`
 - `adapters/driving/mcp`
   - MCP-Transporte fuer `stdio` und streambares HTTP
+  - Runtime-Bootstrap fuer Driver, Codecs und optionale Integrationen
   - Tool-Registry
   - Resource-Registry
   - JSON-Schema-Mapping
@@ -425,6 +439,13 @@ Erwartete Kernmodelle und Projektionen:
 - `ServerResourceUri`
   - typisierte Abbildung von
     `dmigrate://tenants/{tenantId}/...`
+- `ApprovalGrant`
+  - `approvalKey`
+  - `approvalTokenFingerprint`
+  - `toolName`
+  - `callerId`
+  - `payloadFingerprint`
+  - `expiresAt`
 - `ManagedJob` gemaess `docs/job-contract.md`
   - `jobId`
   - `operation`
@@ -480,6 +501,7 @@ Erwartete Kernmodelle und Projektionen:
 - `ArtifactStore`
 - `UploadSessionStore`
 - `IdempotencyStore`
+- `ApprovalGrantStore`
 - `AuditSink`
 
 Beta-Default:
@@ -505,17 +527,46 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
 4. Tenant- und Resource-Scopes pruefen
 5. Policy pruefen
 6. Idempotency pruefen, falls Start-Tool
-7. Anwendung ausfuehren oder Job anlegen
-8. Ergebnis zuschneiden und Limits anwenden
-9. Artefakte/Ressourcen referenzieren
-10. Audit-Ereignis schreiben
-11. Erfolg oder Fehler als einheitliches Envelope liefern
+7. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
+   machen
+8. Anwendung ausfuehren oder Job anlegen
+9. Ergebnis zuschneiden und Limits anwenden
+10. Artefakte/Ressourcen referenzieren
+11. Audit-Ereignis schreiben
+12. Erfolg oder Fehler als einheitliches Envelope liefern
 
-Fehler in den Schritten 2 bis 9 duerfen nicht als rohe Exception an
+Fehler in den Schritten 2 bis 10 duerfen nicht als rohe Exception an
 den MCP-Client gelangen. Sie werden auf die standardisierten
 Fehlercodes gemappt.
 
-### 5.5 Ressourcen
+### 5.5 Runtime-Bootstrap fuer Driver und Codecs
+
+Der MCP-Adapter muss denselben Runtime-Bootstrap wie die CLI
+ausfuehren, bevor ein Tool fachliche Arbeit startet.
+
+Verbindliche Regeln:
+
+- `DatabaseDriverRegistry.loadAll()` oder eine gemeinsame
+  Bootstrap-Funktion wird beim MCP-Serverstart ausgefuehrt
+- `adapters:driving:mcp` bringt die noetigen driven Driver-,
+  Profiling-, Streaming- und Format-/Codec-Module als
+  Runtime-Dependencies mit
+- der Bootstrap ist testbar gekapselt, damit Tests ohne Prozess-Exit
+  pruefen koennen, dass PostgreSQL-, MySQL-, SQLite-Driver und
+  Schema-Codecs gefunden werden
+- Tool-Handler duerfen Driver nicht lazy per Klassenname oder
+  ad-hoc-Reflection nachladen
+
+Akzeptanz:
+
+- ein MCP-Integrationstest startet den echten MCP-Bootstrap und fuehrt
+  danach mindestens einen Driver-Lookup und einen Schema-Codec-Lookup
+  aus
+- `schema_generate`, `schema_reverse_start`, Import und Transfer laufen
+  im Testpfad nicht gegen eine manuell injizierte Spezialregistry,
+  sondern gegen die normale Runtime-Registry
+
+### 5.6 Ressourcen
 
 0.9.6 implementiert mindestens diese Resource-URI-Formen:
 
@@ -622,6 +673,8 @@ Verbindliche Eingaben:
 - `right`
 - beide Seiten jeweils als `schemaRef` oder `connectionRef`
 - optionale Compare-Optionen
+- optional `approvalKey` und `approvalToken`, falls eine Seite eine
+  policy-pflichtige oder sensitive `connectionRef` nutzt
 
 Antwort:
 
@@ -634,6 +687,11 @@ Akzeptanz:
 - Connection-Refs muessen tenant-scoped `dmigrate://.../connections/...`
   sein
 - freie JDBC-Strings werden mit `VALIDATION_ERROR` abgewiesen
+- bei sensitiven oder produktiven Connection-Refs ist der synchrone
+  Policy-Flow verbindlich:
+  - ohne `approvalKey` liefert das Tool `VALIDATION_ERROR`
+  - ohne gueltiges `approvalToken` liefert das Tool `POLICY_REQUIRED`
+  - das Token ist an `approvalKey` und `payloadFingerprint` gebunden
 - Reverse-Warnungen der Operanden bleiben als Diagnose sichtbar
 
 ### 6.5 Discovery-Tools
@@ -673,6 +731,8 @@ Gemeinsame Regeln:
 
 - `idempotencyKey` ist Pflicht
 - Verbindungen werden nur ueber `connectionRef` referenziert
+- fuer policy-pflichtige Verbindungen wird das `approvalToken` an
+  denselben `idempotencyKey` und Payload-Fingerprint gebunden
 - Start liefert `jobId`, `resourceUri` und `executionMeta`
 - Fortschritt wird ueber `job_status_get` abgefragt
 
@@ -724,8 +784,15 @@ Verbindliche Validierungen:
 - `mimeType` ist allowlist-basiert
 - `sizeBytes` ist Pflicht
 - maximale Uploadgroesse ist `200 MiB`
+- `contentBase64` ist fuer jedes nicht-leere Segment Pflicht
+- maximale Segmentgroesse nach Base64-Decoding: `4 MiB`
+- `segmentOffset` und `sizeBytes` beziehen sich auf decodierte Bytes
 - jedes Segment braucht `segmentSha256`
+- `segmentSha256` ist SHA-256 ueber die decodierten Bytes aus
+  `contentBase64`
 - finales Segment braucht `checksumSha256`
+- `checksumSha256` ist SHA-256 ueber die vollstaendige rekonstruierte
+  Artefakt-Bytefolge
 - nach erfolgreichem Abschluss wird daraus ein Artefakt gemaess
   `docs/job-contract.md`; `mimeType` wird zu `contentType` und
   `checksumSha256` zu `sha256` gemappt
@@ -910,7 +977,8 @@ Fuer policy-gesteuerte Operationen wird zusaetzlich protokolliert:
 
 - ob ein Approval erforderlich war
 - welche Policy-Regel gegriffen hat
-- welches Approval-Token verwendet wurde
+- welcher Approval-Grant verwendet wurde, aber nur als Token-ID oder
+  SHA-256-Fingerprint, niemals als roher `approvalToken`
 - ob der Job wirklich neu gestartet oder idempotent dedupliziert wurde
 
 ---
@@ -925,21 +993,26 @@ Fuer policy-gesteuerte Operationen wird zusaetzlich protokolliert:
   nur adapterneutrale Ergaenzungen dort vornehmen, falls wirklich
   noetig
 - Store-Interfaces fuer Jobs, Artefakte, Upload-Sessions,
-  Idempotency und Audit definieren
+  Idempotency, Approval-Grants und Audit definieren
 - In-Memory-Implementierungen fuer Beta und Tests bereitstellen
 - deterministische Payload-Fingerprint-Funktion implementieren
+- Approval-Grant-Service fuer synchrone und asynchrone
+  policy-pflichtige Tools implementieren
 - Error-Mapper fuer Anwendungsausnahmen und Validierungsfehler bauen
 
 Abnahmekriterien:
 
 - Kernmodelle sind adapterunabhaengig
 - Unit-Tests decken Fingerprint-Stabilitaet, Idempotency-Konflikte,
-  Resource-URI-Parsing und Tenant-Scope-Pruefung ab
+  Approval-Grant-Bindung, Resource-URI-Parsing und Tenant-Scope-
+  Pruefung ab
 
 ### Phase B - MCP-Modul und Transport
 
 - `adapters:driving:mcp` in Gradle aufnehmen
 - MCP-Server-Bootstrap fuer `stdio` und streambares HTTP implementieren
+- Runtime-Bootstrap fuer Driver, Profiling-Adapter, Streaming-Adapter
+  und Schema-Codecs aus der CLI teilen oder aequivalent kapseln
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
 - Initialize-/Capability-Antwort bereitstellen
 - Tool-Registry und Resource-Registry aufbauen
@@ -951,6 +1024,7 @@ Abnahmekriterien:
 
 - ein MCP-Client kann den Server initialisieren
 - lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
+- Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
 - unbekannte Tools liefern `UNSUPPORTED_TOOL_OPERATION`
 
@@ -960,6 +1034,8 @@ Abnahmekriterien:
   anbinden
 - `schema_generate` an bestehende DDL-Generatoren anbinden
 - `schema_compare` an bestehende Compare-Pfade anbinden
+- synchronen Policy-Flow fuer `schema_compare` mit sensitiver
+  `connectionRef` ueber `approvalKey` und `approvalToken` anbinden
 - Output-Limits und Artefakt-Fallback umsetzen
 - Findings und Notes strukturiert mappen
 
@@ -1011,6 +1087,8 @@ Abnahmekriterien:
 ### Phase F - Datenoperationen und Uploads
 
 - `artifact_upload` mit Session- und Segmentverwaltung umsetzen
+- `contentBase64` decodieren, Segmentgroessenlimit erzwingen und Hashes
+  ueber decodierte Bytes berechnen
 - `artifact_upload_abort` umsetzen
 - SHA-256-Pruefung pro Segment und Gesamtartefakt erzwingen
 - Policy-Pruefung fuer Upload und Upload-Abbruch anbinden
@@ -1022,6 +1100,8 @@ Abnahmekriterien:
 
 - Upload-Resume mit wiederholten Segmenten funktioniert
 - Hash-Abweichungen werden abgewiesen
+- fehlendes oder zu grosses `contentBase64` wird mit
+  `VALIDATION_ERROR` bzw. `PAYLOAD_TOO_LARGE` abgewiesen
 - finalisierte Artefakte sind immutable
 - Upload, Upload-Abbruch, Import und Transfer laufen nur mit
   Policy-Freigabe
@@ -1068,12 +1148,16 @@ Pflichtabdeckung:
 - Tenant-Scope-Pruefung
 - Payload-Fingerprint
 - Idempotency-Store
+- Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
 - Policy-Entscheidungen
 - Fehlercode-Mapping
 - Inline-Limit-Entscheidung
 - Upload-Session-Zustandsautomat
 - SHA-256-Segment- und Gesamtpruefung
+- Base64-Decoding, Segmentgroessenlimit und Hash-Berechnung ueber
+  decodierte Bytes
 - Cursor-Serialisierung und -Validierung
+- Runtime-Bootstrap fuer Driver- und Codec-Registries
 - Cancel-Berechtigungen und terminale Jobzustaende
 - Prompt-Registry und Prompt-Parameter-Validierung
 - Prompt-Hygiene-Pruefung fuer Secrets und Massendaten
@@ -1095,6 +1179,8 @@ Fuer Start-Tools zusaetzlich:
 - identische Wiederholung
 - Konflikt mit anderem Payload
 - Policy-Required-Flow
+- synchroner Approval-Flow mit `approvalKey` fuer connection-backed
+  read-only Tools
 
 ### 9.3 Integrationstests
 
@@ -1105,6 +1191,10 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `capabilities_list`
 - `schema_validate` mit kleinem Schema
 - `schema_generate` mit Artefakt-Fallback
+- Driver-Lookup ueber die normale MCP-Runtime-Registry
+- Schema-Codec-Lookup ueber die normale MCP-Runtime-Registry
+- `schema_compare` mit sensitiver `connectionRef` und synchronem
+  Approval-Flow
 - `job_list`
 - Upload eines kleinen Artefakts in mehreren Segmenten
 - `job_cancel`
@@ -1124,10 +1214,15 @@ Verbindliche Negativfaelle:
 - fremder Tenant
 - zu grosse Inline-Payload
 - nicht erlaubter MIME-Type
+- fehlendes `contentBase64`
+- Segmenthash ueber andere Bytes als `contentBase64`
 - Upload-Hash-Mismatch
 - Upload nach Abort
 - Upload nach Expiry
 - Import ohne Approval
+- `schema_compare` mit sensitiver `connectionRef` ohne `approvalKey`
+- Wiederverwendung eines Approval-Tokens mit anderem
+  `payloadFingerprint`
 - `job_cancel` fuer fremde Tenants oder fremde Principals
 - KI-nahes Tool ohne Policy-Freigabe
 - externer KI-Provider ohne erlaubende Policy
@@ -1161,6 +1256,10 @@ Dokumentation muss explizit nennen:
 - grosse Ergebnisse werden als Ressourcen/Artefakte referenziert
 - Write-Tools brauchen Policy-Freigabe
 - Uploads sind segmentiert und hash-validiert
+- Upload-Segmente nutzen `contentBase64`; Hashes gelten ueber die
+  decodierten Bytes
+- Audit speichert Approval-Grants nur als Token-ID oder Fingerprint,
+  nie als rohen `approvalToken`
 - KI-nahe Tools brauchen Policy, Prompt-Hygiene und Audit
 - MCP-Prompts sind kuratierte Vorlagen und keine versteckten
   Tool-Ausfuehrungen
@@ -1232,8 +1331,12 @@ Gegenmassnahme:
 - alle in Scope genannten Tools registriert sind
 - read-only Tools gegen bestehende Anwendungskomponenten laufen
 - Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
+- MCP-Bootstrap Driver und Schema-Codecs fuer die realen Tool-Pfade
+  registriert
 - Start-Tools Idempotency-Key, Payload-Fingerprint und Konflikte korrekt
   behandeln
+- synchrone connection-backed Tools den `approvalKey`-/`approvalToken`-
+  Flow fuer sensitive Ressourcen korrekt erzwingen
 - policy-pflichtige Upload- und Datenoperationen den Approval-Flow
   erzwingen
 - Artefakt-Uploads segmentiert, resumable und SHA-256-validiert sind
