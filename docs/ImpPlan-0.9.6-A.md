@@ -340,11 +340,11 @@ Verbindliche Folge:
 
 Die Paketgrenze ist Teil des Phase-A-Vertrags:
 
-- gemeinsame Modelle und Store-/Service-Ports gehoeren in ein neues oder
-  bestehendes gemeinsames Port-Modul, bevorzugt `hexagon:ports-common`;
-  falls dieses Modul im Code noch nicht existiert, legt Phase A es an
-- alternative Modulwahl ist nur zulaessig, wenn sie dieselbe
-  Abhaengigkeitsrichtung erzwingt: Core/Ports nach innen,
+- gemeinsame Modelle und Store-/Service-Ports gehoeren in das bestehende
+  Modul `hexagon:ports-common`
+- eine Alternative zu `hexagon:ports-common` ist nur mit expliziter
+  Begruendung im Code-Review zulaessig und muss dieselbe
+  Abhaengigkeitsrichtung erzwingen: Core/Ports nach innen,
   Driving-/Driven-Adapter nach aussen
 - `hexagon/application` enthaelt die adapterneutralen Services fuer Upload,
   Idempotency, Approval-Grant-Validierung, Quotas, Fehler und Audit, kennt
@@ -367,22 +367,42 @@ Mindestens zu definieren oder zu konsolidieren:
 - `UploadSegment`
 - `ManagedJob` gemaess `docs/job-contract.md`
 - `ManagedArtifact` gemaess `docs/job-contract.md`
+- interne `JobRecord`-/`ArtifactRecord`-Storage-Envelopes fuer Tenant- und
+  Owner-Scope
 - `ConnectionReference`
 - `ApprovalGrant`
 - `ToolErrorEnvelope` bzw. adapterneutraler Fehlerkern
 - `PageRequest` / `PageResult`
 - `ExecutionMeta`
 
+`ManagedJob` und `ManagedArtifact` bleiben die oeffentlichen,
+protokollneutralen Modelle aus `docs/job-contract.md`. Store-Records muessen
+zusaetzlich ein internes, nicht zwingend nach aussen projiziertes Security-
+Envelope tragen:
+
+- `tenantId`
+- `ownerPrincipalId`
+- `createdBy` aus dem oeffentlichen Vertrag
+- `visibility` (`owner`, `tenant`, `admin`)
+- optional `adminScope` oder erlaubte Admin-/Service-Principals
+- `resourceUri`
+- Retention-/Expiry-Metadaten, sofern nicht bereits im oeffentlichen Modell
+  enthalten
+
+Stores und Resource-Resolver duerfen Tenant-/Owner-Pruefungen nie allein aus
+`createdBy` oder aus der Resource-URI ableiten. Die Resource-URI ist
+adressierend; das Storage-Envelope ist autorisierend.
+
 `UploadSession` hat eine explizite Zustandsmaschine:
 
-- erlaubte States: `OPEN`, `COMPLETED`, `ABORTED`, `EXPIRED`
+- erlaubte States: `ACTIVE`, `COMPLETED`, `ABORTED`, `EXPIRED`
 - erlaubte Uebergaenge:
-  - `OPEN -> COMPLETED` nur nach erfolgreicher Finalisierung,
+  - `ACTIVE -> COMPLETED` nur nach erfolgreicher Finalisierung,
     Gesamt-Hash-Pruefung und Artefaktmaterialisierung
-  - `OPEN -> ABORTED` durch Owner-/Admin-Abbruch
-  - `OPEN -> EXPIRED` bei Idle-Timeout oder abgelaufener absoluter Lease
+  - `ACTIVE -> ABORTED` durch Owner-/Admin-Abbruch
+  - `ACTIVE -> EXPIRED` bei Idle-Timeout oder abgelaufener absoluter Lease
   - terminale States bleiben terminal
-- Resume ist nur im State `OPEN` erlaubt und muss erwarteten
+- Resume ist nur im State `ACTIVE` erlaubt und muss erwarteten
   `segmentIndex`, `segmentOffset`, `segmentTotal`, bisherige Segmenthashes
   und Lease-Informationen konsistent liefern
 - Finalize-Invarianten:
@@ -482,9 +502,12 @@ Aufgaben:
 - Pagination- und Execution-Meta-Modelle definieren
 - Fehlerkern mit d-migrate-Codes und strukturierten Details definieren
 - Job-/Artefaktfelder gegen `docs/job-contract.md` abgleichen
-- `UploadSession`-State-Machine mit `OPEN`, `COMPLETED`, `ABORTED`,
+- `UploadSession`-State-Machine mit `ACTIVE`, `COMPLETED`, `ABORTED`,
   `EXPIRED`, erlaubten Uebergaengen, Resume-Regeln und Finalize-
   Invarianten definieren
+- interne `JobRecord`-/`ArtifactRecord`-Envelopes mit `tenantId`,
+  `ownerPrincipalId`, `visibility`, optionalem `adminScope`, `resourceUri`
+  und Retention-/Expiry-Metadaten definieren
 - `ConnectionReference` als non-secret Modell mit Policy-Metadaten,
   `credentialRef`/`providerRef` und Tenant-/Principal-Filterdaten
   definieren
@@ -494,6 +517,9 @@ Abnahme:
 - Modelle enthalten keine MCP-spezifischen Wire-Typen
 - Tenant-Scope kann ohne Request-Payload-Vertrauen entschieden werden
 - Job-/Artefaktprojektionen weichen nicht vom gemeinsamen Vertrag ab
+- Store-Records fuer Jobs und Artefakte enthalten Tenant-/Owner-
+  Sicherheitsmetadaten und Resource-Resolver pruefen gegen diese Records,
+  nicht nur gegen `createdBy` oder URI-Bestandteile
 - Upload-Session-Transitions sind vollstaendig und terminale States nehmen
   keine neuen Segmente an
 - Connection-Refs enthalten keine Secrets und sind fuer Policy-Entscheidungen
@@ -735,10 +761,10 @@ Pflichtabdeckung:
   - Zahlen/String/Boolean/`null`/Defaultwerte sind deterministisch
   - Konflikt bei anderem Payload
 - UploadSession-State-Machine:
-  - erlaubte States `OPEN`, `COMPLETED`, `ABORTED`, `EXPIRED`
+  - erlaubte States `ACTIVE`, `COMPLETED`, `ABORTED`, `EXPIRED`
   - erlaubte Transitions
   - terminale States akzeptieren keine Segmente
-  - Resume nur in `OPEN`
+  - Resume nur in `ACTIVE`
   - Finalize prueft lueckenlose Segmente, Segmenthashes und Gesamthash
 - Upload-Stores:
   - atomarer Segmentwrite
@@ -921,9 +947,14 @@ Phase A ist abgeschlossen, wenn:
 - `PrincipalContext` Tenant-Sets, `effectiveTenantId`, Scopes, Admin-Status,
   Audit-Subject, Auth-Quelle und Ablaufzeit ausdrueckt
 - die Modulgrenze umgesetzt ist: gemeinsame Modelle/Ports in
-  `hexagon:ports-common` oder einem aequivalenten gemeinsamen Port-Modul,
+  `hexagon:ports-common`,
   Services in `hexagon/application`, file-backed Byte-Stores in driven
   Infrastruktur, keine Wire-Typen im Kern
+- interne Job-/Artefakt-Store-Records zwingend `tenantId`,
+  `ownerPrincipalId`, `visibility`, optionalen `adminScope`, `resourceUri`
+  und Retention-/Expiry-Metadaten enthalten; oeffentliche
+  `ManagedJob`-/`ManagedArtifact`-Projektionen bleiben
+  `docs/job-contract.md`-konform
 - Store-Interfaces fuer Jobs, Artefakte, Artefaktbytes, Upload-Sessions,
   Uploadsegmente, Schemas, Profile, Diffs, Connection-Refs, Idempotency,
   Sync-Effect-Idempotency, Approval-Grants, Quotas und Audit existieren
@@ -935,7 +966,7 @@ Phase A ist abgeschlossen, wenn:
 - file-backed `UploadSegmentStore`/`ArtifactContentStore` oder ein
   gleichwertiges produktnahes Spooling-Modul existiert und besteht
   Contract-Tests
-- `UploadSession`-State-Machine mit `OPEN`, `COMPLETED`, `ABORTED`,
+- `UploadSession`-State-Machine mit `ACTIVE`, `COMPLETED`, `ABORTED`,
   `EXPIRED`, Resume-Regeln und Finalize-Invarianten ist definiert und
   getestet
 - `ConnectionReferenceStore` liefert non-secret, tenant-/principal-
