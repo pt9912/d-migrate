@@ -216,6 +216,10 @@ Verbindliche Entscheidung:
   - aus Host-/Prozesskontext, sofern verfuegbar
   - sonst aus `DMIGRATE_MCP_STDIO_TOKEN`
   - in Testumgebungen aus einem expliziten Test-Principal
+- wenn weder ein vertrauenswuerdiger Host-/Prozesskontext noch
+  `DMIGRATE_MCP_STDIO_TOKEN` verfuegbar ist, liefert jeder Tool- und
+  Resource-Aufruf `AUTH_REQUIRED`; ein stiller lokaler Default-
+  Principal ist verboten
 - fuer HTTP wird der Principal aus `Authorization`-Header oder
   aequivalentem signiertem Principalsignal abgeleitet
 - optionales mTLS wird als konfigurierbarer Maschinen-zu-Maschinen-
@@ -286,9 +290,11 @@ Verbindliche Entscheidung:
   `POLICY_REQUIRED` mit `approvalToken`
 - bei Start-Tools muss der zweite Aufruf denselben `idempotencyKey` und
   das passende `approvalToken` enthalten
-- bei nicht-asynchronen Tools ohne `idempotencyKey`, z.B.
-  `schema_compare` mit sensitiver `connectionRef`, muss der Client
-  einen stabilen `approvalKey` mitsenden; das `approvalToken` wird an
+- bei nicht-asynchronen policy-pflichtigen Tools ohne
+  `idempotencyKey`, z.B. `schema_compare` mit sensitiver
+  `connectionRef`, `artifact_upload`, `artifact_upload_abort` und die
+  KI-nahen Tools, muss der Client einen stabilen `approvalKey`
+  mitsenden; das `approvalToken` wird an
   (`toolName`, `callerId`, `approvalKey`, `payloadFingerprint`)
   gebunden
 - fehlt bei einer policy-pflichtigen synchronen Operation der
@@ -320,11 +326,14 @@ Verbindliche Entscheidung:
   - `contentBase64`
   - `segmentSha256`
   - optional `clientRequestId`
-- `contentBase64` ist die Base64-codierte Bytefolge des Segments und
-  wird fuer `stdio` und streambares HTTP identisch im Tool-Input
+- fuer `stdio` werden Segmentbytes als `contentBase64` im Tool-Input
   uebertragen
+- fuer streambares HTTP sind zwei Uebertragungen zulaessig:
+  `contentBase64` im Tool-Input oder ein ausgehandelter Chunk-Body
+  gemaess HTTP-MCP; Metadaten bleiben in beiden Faellen identisch
 - `segmentSha256` wird ueber die decodierten Segmentbytes berechnet,
-  nicht ueber den Base64-Text
+  nicht ueber den Base64-Text; bei HTTP-Chunk-Body gilt derselbe Hash
+  ueber die empfangenen Body-Bytes
 - bei `isFinalSegment=true` ist `checksumSha256` fuer das
   Gesamtartefakt Pflicht
 - Wiederholungen desselben Segments sind idempotent
@@ -522,20 +531,34 @@ Nicht erlaubt:
 Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
 
 1. `requestId` erzeugen oder uebernehmen
-2. Principal aus Transportkontext ableiten
-3. Tool-Payload gegen Tool-Schema validieren
-4. Tenant- und Resource-Scopes pruefen
-5. Policy pruefen
-6. Idempotency pruefen, falls Start-Tool
-7. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
+2. Audit-Scope fuer diesen Aufruf oeffnen
+3. Principal aus Transportkontext ableiten
+4. Tool-Payload gegen Tool-Schema validieren
+5. Tenant- und Resource-Scopes pruefen
+6. Policy pruefen
+7. Idempotency pruefen, falls Start-Tool
+8. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
    machen
-8. Anwendung ausfuehren oder Job anlegen
-9. Ergebnis zuschneiden und Limits anwenden
-10. Artefakte/Ressourcen referenzieren
-11. Audit-Ereignis schreiben
+9. Anwendung ausfuehren oder Job anlegen
+10. Ergebnis zuschneiden und Limits anwenden
+11. Artefakte/Ressourcen referenzieren
 12. Erfolg oder Fehler als einheitliches Envelope liefern
+13. Audit-Scope in einem `finally`-Pfad mit Outcome abschliessen
 
-Fehler in den Schritten 2 bis 10 duerfen nicht als rohe Exception an
+Verbindliche Audit-Semantik:
+
+- ein `requestId` existiert vor Auth-, Schema-, Scope-, Policy- oder
+  Idempotency-Pruefungen
+- auch `AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
+  `POLICY_REQUIRED` und `IDEMPOTENCY_CONFLICT` werden auditierbar
+  abgeschlossen
+- wenn kein Principal abgeleitet werden kann, enthaelt das
+  Audit-Ereignis keinen erfundenen Principal, sondern nur `requestId`,
+  Transport, Toolname soweit erkennbar und Fehlercode `AUTH_REQUIRED`
+- rohe Secrets, rohe Uploadinhalte und rohe Approval-Tokens duerfen auch
+  im Fehlerpfad nicht im Audit landen
+
+Fehler in den Schritten 3 bis 11 duerfen nicht als rohe Exception an
 den MCP-Client gelangen. Sie werden auf die standardisierten
 Fehlercodes gemappt.
 
@@ -576,6 +599,7 @@ Akzeptanz:
 - `dmigrate://tenants/{tenantId}/profiles/{profileId}`
 - `dmigrate://tenants/{tenantId}/diffs/{diffId}`
 - `dmigrate://tenants/{tenantId}/connections/{connectionId}`
+- `dmigrate://capabilities`
 
 Verbindliche Regeln:
 
@@ -777,6 +801,13 @@ Gemeinsame Regeln:
 - fehlende Freigabe liefert `POLICY_REQUIRED`
 - der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
   umgehen
+- `approvalKey` ist fuer beide Tools Pflicht
+- beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
+  passende `approvalToken` senden
+- das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
+  `payloadFingerprint` gebunden
+- Wiederverwendung desselben Tokens mit anderem Payload liefert
+  `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
 
 Verbindliche Validierungen:
 
@@ -784,7 +815,13 @@ Verbindliche Validierungen:
 - `mimeType` ist allowlist-basiert
 - `sizeBytes` ist Pflicht
 - maximale Uploadgroesse ist `200 MiB`
-- `contentBase64` ist fuer jedes nicht-leere Segment Pflicht
+- `uploadSessionId` ist verbindlich und 36 Zeichen lang
+- `segmentIndex` beginnt bei `1` und ist fortlaufend
+- `segmentOffset` ist der Byte-Offset in der vollstaendigen
+  Artefakt-Bytefolge
+- `contentBase64` ist fuer jedes nicht-leere `stdio`-Segment Pflicht;
+  bei streambarem HTTP darf stattdessen ein ausgehandelter Chunk-Body
+  genutzt werden
 - maximale Segmentgroesse nach Base64-Decoding: `4 MiB`
 - `segmentOffset` und `sizeBytes` beziehen sich auf decodierte Bytes
 - jedes Segment braucht `segmentSha256`
@@ -797,10 +834,21 @@ Verbindliche Validierungen:
   `docs/job-contract.md`; `mimeType` wird zu `contentType` und
   `checksumSha256` zu `sha256` gemappt
 
+Antwort:
+
+- jede erfolgreiche Segmentannahme liefert `uploadSessionId`,
+  Uploadstatus, naechsten erwarteten `segmentIndex` oder
+  `segmentOffset` und `uploadSessionTtlSeconds`
+- Initial-TTL ist `900`, Minimum `300`, Maximum `3600`
+- bei `300` Sekunden ohne Aktivitaet wird die Session `EXPIRED` und
+  Zwischensegmente werden verworfen
+
 Akzeptanz:
 
 - wiederholtes identisches Segment ist erfolgreich oder liefert den
   bestehenden Segmentstatus
+- Wiederholung mit gleicher Segmentposition, aber anderem Inhalt oder
+  Hash liefert `VALIDATION_ERROR`
 - abweichender Hash fuer ein bereits angenommenes Segment liefert
   `VALIDATION_ERROR`
 - zu grosse Uploads liefern `PAYLOAD_TOO_LARGE`
@@ -845,6 +893,13 @@ Tools:
 Gemeinsame Regeln:
 
 - alle drei Tools sind policy-gesteuert
+- `approvalKey` ist fuer alle drei Tools Pflicht
+- beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
+  passende `approvalToken` senden
+- das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
+  `payloadFingerprint` gebunden
+- Wiederverwendung desselben Tokens mit anderem Payload liefert
+  `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
 - alle drei Tools schreiben Audit-Ereignisse mit Toolname,
   Principal, Tenant, Resource-Refs und Payload-Fingerprint
 - Eingaben nutzen `schemaRef`, `artifactRef`, `profileRef`,
@@ -881,7 +936,10 @@ Gemeinsame Regeln:
 
 Akzeptanz:
 
+- fehlender `approvalKey` liefert `VALIDATION_ERROR`
 - fehlende Freigabe liefert `POLICY_REQUIRED`
+- unpassendes oder fuer anderen Payload ausgestelltes `approvalToken`
+  liefert `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
 - externe Provider-Nutzung ohne erlaubende Policy liefert
   `PROMPT_HYGIENE_BLOCKED` oder `FORBIDDEN_PRINCIPAL`
 - Resultate enthalten keine Secrets und keine unlimitierten Rohdaten
@@ -959,13 +1017,23 @@ Jeder Tool-Aufruf erzeugt mindestens ein Audit-Ereignis:
 
 - `requestId`
 - `toolName`
-- `principalId`
-- `tenantId`
+- `principalId`, falls ableitbar
+- `tenantId`, falls ableitbar
 - Zeitpunkt
 - normalisierter Payload-Fingerprint
 - betroffene Resource-IDs
 - Ergebnisstatus
 - Fehlercode, falls vorhanden
+
+Audit ist ein Around-/Finally-Vertrag:
+
+- der Audit-Scope wird direkt nach Erzeugung von `requestId`
+  begonnen
+- der Outcome wird auch bei fruehen Fehlern wie `AUTH_REQUIRED`,
+  `VALIDATION_ERROR`, `POLICY_REQUIRED`, `TENANT_SCOPE_DENIED` oder
+  `IDEMPOTENCY_CONFLICT` geschrieben
+- ein fehlender Principal wird als Auth-Fehler protokolliert, aber nie
+  durch einen Default-Principal ersetzt
 
 Nicht im Audit-Event:
 
@@ -1150,12 +1218,16 @@ Pflichtabdeckung:
 - Idempotency-Store
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
 - Policy-Entscheidungen
+- Around-/Finally-Audit fuer Auth-, Validation-, Scope-, Policy- und
+  Idempotency-Fehler
 - Fehlercode-Mapping
 - Inline-Limit-Entscheidung
 - Upload-Session-Zustandsautomat
 - SHA-256-Segment- und Gesamtpruefung
-- Base64-Decoding, Segmentgroessenlimit und Hash-Berechnung ueber
-  decodierte Bytes
+- Base64-Decoding, HTTP-Chunk-Body-Verarbeitung, Segmentgroessenlimit
+  und Hash-Berechnung ueber Segmentbytes
+- Upload-Session-TTL, `uploadSessionId`-Laenge und fortlaufende
+  `segmentIndex`-Validierung
 - Cursor-Serialisierung und -Validierung
 - Runtime-Bootstrap fuer Driver- und Codec-Registries
 - Cancel-Berechtigungen und terminale Jobzustaende
@@ -1181,6 +1253,8 @@ Fuer Start-Tools zusaetzlich:
 - Policy-Required-Flow
 - synchroner Approval-Flow mit `approvalKey` fuer connection-backed
   read-only Tools
+- synchroner Approval-Flow mit `approvalKey` fuer `artifact_upload`,
+  `artifact_upload_abort` und KI-nahe Tools
 
 ### 9.3 Integrationstests
 
@@ -1195,6 +1269,8 @@ ein weiterer ueber HTTP. Beide pruefen:
 - Schema-Codec-Lookup ueber die normale MCP-Runtime-Registry
 - `schema_compare` mit sensitiver `connectionRef` und synchronem
   Approval-Flow
+- `artifact_upload` ueber `stdio` mit `contentBase64`
+- `artifact_upload` ueber HTTP mit ausgehandeltem Chunk-Body
 - `job_list`
 - Upload eines kleinen Artefakts in mehreren Segmenten
 - `job_cancel`
@@ -1214,13 +1290,20 @@ Verbindliche Negativfaelle:
 - fremder Tenant
 - zu grosse Inline-Payload
 - nicht erlaubter MIME-Type
-- fehlendes `contentBase64`
-- Segmenthash ueber andere Bytes als `contentBase64`
+- fehlendes `contentBase64` bei `stdio` oder fehlender Chunk-Body bei
+  HTTP
+- ungueltige `uploadSessionId`-Laenge
+- `segmentIndex=0` oder nicht fortlaufender Segmentindex
+- Upload nach TTL-Ablauf
+- Segmenthash ueber andere Bytes als die decodierten `contentBase64`-
+  Bytes bzw. HTTP-Chunk-Body-Bytes
 - Upload-Hash-Mismatch
 - Upload nach Abort
 - Upload nach Expiry
 - Import ohne Approval
 - `schema_compare` mit sensitiver `connectionRef` ohne `approvalKey`
+- `artifact_upload` ohne `approvalKey`
+- KI-nahes Tool ohne `approvalKey`
 - Wiederverwendung eines Approval-Tokens mit anderem
   `payloadFingerprint`
 - `job_cancel` fuer fremde Tenants oder fremde Principals
@@ -1252,12 +1335,17 @@ Nach Umsetzung muessen mindestens diese Dokumente konsistent sein:
 Dokumentation muss explizit nennen:
 
 - `stdio` und streambares HTTP sind die Beta-Transporte
+- `stdio` ohne vertrauenswuerdigen Host-/Prozesskontext und ohne
+  `DMIGRATE_MCP_STDIO_TOKEN` liefert `AUTH_REQUIRED`
 - Secrets werden nicht ueber MCP-Payloads uebergeben
 - grosse Ergebnisse werden als Ressourcen/Artefakte referenziert
 - Write-Tools brauchen Policy-Freigabe
 - Uploads sind segmentiert und hash-validiert
-- Upload-Segmente nutzen `contentBase64`; Hashes gelten ueber die
-  decodierten Bytes
+- Upload-Segmente nutzen bei `stdio` `contentBase64`; HTTP darf
+  ausgehandelte Chunk-Bodies nutzen; Hashes gelten jeweils ueber die
+  tatsaechlichen Segmentbytes
+- Upload-Responses enthalten TTL-Informationen, und abgelaufene
+  Sessions werden definiert verworfen
 - Audit speichert Approval-Grants nur als Token-ID oder Fingerprint,
   nie als rohen `approvalToken`
 - KI-nahe Tools brauchen Policy, Prompt-Hygiene und Audit
@@ -1346,7 +1434,8 @@ Gegenmassnahme:
 - Fehler immer als strukturiertes Envelope erscheinen
 - Tenant-Scope- und Principal-Pruefungen in Tool- und Resource-Pfaden
   aktiv sind
-- Audit-Ereignisse fuer Tool-Aufrufe geschrieben werden
+- Audit-Ereignisse fuer alle Tool-Aufrufe geschrieben werden, auch bei
+  fruehen Auth-, Validation-, Scope-, Policy- und Idempotency-Fehlern
 - MCP-Integrationstests mindestens Initialize, Tool-Aufruf,
   Resource-Zugriff, Fehlerfall und Upload abdecken
 - Dokumentation die konkreten Beta-Startpfade und die Sicherheitsgrenzen
