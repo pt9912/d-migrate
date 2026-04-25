@@ -53,6 +53,25 @@ kover {
                     "dev.dmigrate.server.core.pagination.PageResult",
                     "dev.dmigrate.server.core.execution.ExecutionMeta",
                     "dev.dmigrate.server.core.approval.ApprovalGrant",
+                    // Server-core idempotency outcomes (0.9.6 phase A AP 6.2)
+                    "dev.dmigrate.server.core.idempotency.IdempotencyKey",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyScope",
+                    "dev.dmigrate.server.core.idempotency.SyncEffectScope",
+                    "dev.dmigrate.server.core.idempotency.InitResumeScope",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Reserved",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$ExistingPending",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$AwaitingApproval",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Committed",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Denied",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Conflict",
+                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$Reserved",
+                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$Existing",
+                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$Conflict",
+                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$Reserved",
+                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$Existing",
+                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$Conflict",
+                    // Server-core audit (AP 6.2 minimal seed; expanded in AP 6.8)
+                    "dev.dmigrate.server.core.audit.AuditEvent",
                 )
             }
         }
