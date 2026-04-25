@@ -1,9 +1,14 @@
 plugins {
     `java-library`
+    `java-test-fixtures`
 }
 
 dependencies {
     api(project(":hexagon:core"))
+
+    testFixturesApi(project(":hexagon:core"))
+    testFixturesApi("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
+    testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
 }
 
 kover {
