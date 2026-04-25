@@ -207,6 +207,17 @@ Hinweis:
     serverseitig geprueften Policy-, Human- oder Admin-Grant;
   - zweiter Aufruf muss denselben `idempotencyKey` bzw. `approvalKey`
     und dieses extern ausgestellte Token enthalten.
+- 0.9.6 braucht einen Beta-tauglichen Grant-Aussteller, obwohl keine
+  vollstaendige Consent-/Admin-UI Teil des Milestones ist: lokale
+  Policy-Allowlist, Admin-CLI oder signierte Grant-Datei. Ein optionaler
+  Local-Demo-Auto-Approval-Modus ist nur fuer Loopback/`stdio` zulaessig,
+  muss explizit unsicher konfiguriert werden und ist immer auditpflichtig.
+- Fuer synchrone policy-pflichtige Tools ohne `idempotencyKey` ist
+  `approvalKey` zugleich der Idempotency-Key fuer Nebenwirkungen. Gleicher
+  Tenant/Caller/Tool/`approvalKey` mit identischem `payloadFingerprint`
+  liefert dasselbe Ergebnis bzw. dieselbe Upload-Session oder Artefakt-/
+  Provider-Referenz; abweichender Payload liefert
+  `IDEMPOTENCY_CONFLICT`.
 
 ### 5.3 KI-nahe Spezialtools
 
@@ -261,6 +272,12 @@ Wichtig:
   Config-/Connection-Ref-Aufloesung nutzen; der MCP-Adapter darf nicht
   vom CLI-Adapter abhaengen und kein eigenes YAML-Parsing duplizieren.
   MCP bietet nur lesenden Zugriff auf non-secret Verbindungsreferenzen.
+- Das Beta-Modell trennt Connection-Referenz und Secret-Materialisierung:
+  Resource-/Listenpfade sehen nur non-secret Metadaten und
+  `credentialRef`/`providerRef`; ein adapterneutraler
+  `ConnectionSecretResolver` loest Secrets erst in autorisierten
+  Runner-/Driver-Pfaden auf. `.d-migrate.yaml`-Bootstrap darf keine rohen
+  Secrets oder bereits expandierten Secret-URLs in MCP-Stores uebernehmen.
 
 ### 6.1 Tool-Discovery fuer Ressourcen-IDs
 
@@ -471,6 +488,9 @@ verbindlich:
 - Der erfolgreiche Init-Aufruf erzeugt eine serverseitige,
   session-scoped Upload-Berechtigung, die an `uploadSessionId`, Tenant,
   Principal, Init-Metadaten und Ablaufzeit gebunden ist.
+- Wiederholtes `artifact_upload_init` mit gleichem `approvalKey` und
+  identischem Payload liefert dieselbe `uploadSessionId`; dadurch erzeugen
+  Agent-Retries nach Timeouts keine doppelten Upload-Sessions.
 - Ein optionaler clientseitiger Session-Kandidat ist nur fuer
   Resume-faehige Clients erlaubt und muss atomar kollisionsfrei an
   Tenant, Principal, Approval-Fingerprint und Init-Metadaten gebunden
@@ -634,6 +654,11 @@ Empfohlene Sicherheitsgrundlagen:
     optionales `scopes_supported` muss zu den Scope-Challenges passen
   - Tokens duerfen nicht aus Query-Parametern gelesen werden und muessen
     auf Audience/Resource des MCP-Servers validiert werden
+  - Tokenvalidierung ist fail-closed: konfigurierte Issuer muessen exakt
+    passen, JWTs werden ueber JWKS mit Algorithmus-Allowlist oder ueber
+    explizit konfigurierte Introspection geprueft, `aud`/Resource,
+    Ablauf/Clock-Skew, Pflichtclaims und Tool-/Resource-Scopes werden
+    validiert; ein blosser Bearer-String darf nie als Principal genuegen
   - Auth-Deaktivierung ist nur fuer lokale Tests/Demos mit expliziter
     unsicherer Konfiguration erlaubt und muss auf Loopback-Bindung
     (`127.0.0.1` oder `::1`) ohne Public Base URL beschraenkt sein;

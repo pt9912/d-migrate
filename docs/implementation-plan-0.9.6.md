@@ -128,6 +128,9 @@ Konsequenz:
   - in Scope ist Resource-Server-Verhalten: Token validieren,
     Protected Resource Metadata anbieten, Scopes challengen und 401/403
     korrekt mappen
+  - in Scope ist ein konkreter Validierungsvertrag fuer konfigurierte
+    Issuer, JWKS oder Introspection, Algorithmus-Allowlist,
+    Audience/Resource-Pruefung und Tool-/Resource-Scopes
 - Capability-/Initialize-Vertrag fuer MCP `protocolVersion`
   `2025-11-25`; `v1` bezeichnet nur den d-migrate-spezifischen
   Tool-/Resource-Vertrag, nicht die MCP-Protokollversion
@@ -192,6 +195,8 @@ Konsequenz:
 - eigener OAuth-/Authorization-Server, Dynamic Client Registration,
   Consent-/Client-Registration-UI, Mandanten-Admin und vollstaendige
   Remote-Server-Betriebsplattform
+- allgemeine Freigabe-UI fuer Policy-Grants; 0.9.6 braucht stattdessen
+  einen schmalen Beta-Grant-Pfad gemaess Abschnitt 4.5
 - produktive Langzeitpersistenz fuer Jobs und Artefakte ueber
   Prozessneustarts hinaus, sofern sie nicht bereits durch bestehende
   Infrastruktur vorhanden ist
@@ -253,6 +258,22 @@ Verbindliche Entscheidung:
     im `WWW-Authenticate` referenzierte URL angeboten
   - Access Tokens duerfen nicht aus Query-Parametern gelesen werden
   - Tokens werden auf Audience/Resource des MCP-Servers validiert
+- der HTTP-Resource-Server hat einen fail-closed Tokenvalidierungsvertrag:
+  - erlaubte Issuer werden konfiguriert und muessen exakt mit Token-
+    `iss` und Protected-Resource-Metadata uebereinstimmen
+  - JWKS-basierte JWT-Validierung ist der Beta-Default; alternativ darf
+    ein explizit konfigurierter Introspection-Endpoint genutzt werden
+  - akzeptierte Signaturalgorithmen sind allowlist-basiert; `none`,
+    ungekennzeichnete symmetrische Fallbacks und unerwartete
+    Algorithmuswechsel sind verboten
+  - `aud` oder OAuth-Resource-Indicator muss die kanonische MCP-Server-
+    URI bzw. den MCP-Endpunkt enthalten
+  - Ablauf (`exp`), Not-Before (`nbf`), Issued-At-Toleranz und Clock-Skew
+    werden zentral konfiguriert und getestet
+  - Tool- und Resource-Aufrufe mappen auf dokumentierte Scopes; fehlende
+    Scopes liefern 403 mit Scope-Challenge
+  - Tokenvalidierung darf nie auf "Bearer-String wird Principal" oder
+    ungepruefte lokale Decodierung zurueckfallen
 - Deaktivierung von HTTP-Auth ist nur fuer lokale Tests und Demos ueber
   eine explizite unsichere Konfiguration erlaubt; entfernte HTTP-Clients
   duerfen ohne Auth nicht als Beta-fertig gelten
@@ -384,9 +405,21 @@ Verbindliche Entscheidung:
 - bei nicht-asynchronen policy-pflichtigen Tools ohne
   `idempotencyKey`, z.B. `artifact_upload_init`, administrative
   `artifact_upload_abort`-Aufrufe und die KI-nahen Tools, muss der
-  Client einen stabilen `approvalKey` mitsenden; das `approvalToken` wird an
-  (`toolName`, `callerId`, `approvalKey`, `payloadFingerprint`)
-  gebunden
+  Client einen stabilen `approvalKey` mitsenden
+- dieser `approvalKey` ist zugleich der Idempotency-Key fuer synchrone
+  Nebenwirkungen:
+  - der Store-Scope ist (`tenantId`, `callerId`, `toolName`,
+    `approvalKey`)
+  - identischer Scope und identischer `payloadFingerprint` liefern dasselbe
+    Ergebnis, dieselbe Upload-Session bzw. dieselbe erzeugte Artefakt-/
+    Provider-Referenz zurueck
+  - identischer Scope mit anderem `payloadFingerprint` liefert
+    `IDEMPOTENCY_CONFLICT`
+  - die Reservierung erfolgt atomar vor Session-Erzeugung,
+    Provider-Aufruf, Artefakt-Publish oder anderen Nebenwirkungen
+  - `approvalToken` ist transient und darf den Fingerprint nicht veraendern
+- das `approvalToken` wird an (`toolName`, `callerId`, `approvalKey`,
+  `payloadFingerprint`) gebunden
 - fehlt bei einer policy-pflichtigen synchronen Operation der
   `approvalKey`, liefert der Server `VALIDATION_ERROR`
 - fuer `artifact_upload_init` wird der Approval-Fingerprint aus den
@@ -403,6 +436,21 @@ Verbindliche Entscheidung:
 - KI-nahe Tools (`procedure_transform_plan`,
   `procedure_transform_execute`, `testdata_plan`) sind immer
   policy- und auditpflichtig
+- 0.9.6 muss mindestens einen produktiv nutzbaren Beta-Grant-Aussteller
+  implementieren, damit policy-pflichtige Pfade nicht dauerhaft bei
+  `POLICY_REQUIRED` enden:
+  - lokale Policy-Allowlist fuer klar begrenzte Operationen, Principals,
+    Tenant, Toolnamen, Scopes und Fingerprints
+  - oder Admin-CLI fuer `approvalRequestId`-Pruefung und Grant-Ausstellung
+  - oder signierte Grant-Datei mit Ablaufzeit, Issuer-Fingerprint und
+    Audit-Spur
+  - optional zusaetzlich ein expliziter Local-Demo-Auto-Approval-Modus, nur
+    fuer Loopback/`stdio`, deutlich als unsicher markiert und immer audit-
+    pflichtig
+- Test-Seeds allein gelten nicht als produktiver Grant-Pfad; ohne
+  konfigurierten Beta-Grant-Aussteller muss der Server kontrolliert
+  fail-closed starten oder alle policy-pflichtigen Tools mit dokumentiertem
+  `POLICY_REQUIRED` blockieren
 
 Begruendung:
 
@@ -681,6 +729,8 @@ Erwartete Kernmodelle und Projektionen:
 - `ConnectionReferenceStore`
 - `IdempotencyStore`
 - `ApprovalGrantStore`
+- `SyncEffectIdempotencyStore` oder explizite Wiederverwendung des
+  `IdempotencyStore` fuer synchrone Nebenwirkungen mit `approvalKey`
 - `AuditSink`
 
 Schemas, Profile und Diffs duerfen intern als typisierte Artefakte
@@ -699,8 +749,25 @@ werden:
 - Test-/Demo-Seeds fuer Integrationstests ohne echte Secrets
 
 Der MCP-Adapter darf keine freien Connection-Secrets im Tool-Payload
-annehmen. Connection-Bootstrap liest nur non-secret Metadaten direkt;
-Secrets bleiben im bestehenden Credential-Store oder Provider.
+annehmen. Das Beta-Modell trennt strikt:
+
+- `ConnectionReferenceStore` enthaelt nur non-secret Metadaten:
+  `connectionId`, Tenant, Dialekt, Owner, Sensitivitaet,
+  Produktionskennzeichen und einen `credentialRef`/`providerRef`
+- lokale `.d-migrate.yaml`-Eintraege duerfen fuer MCP-Bootstrap nur dann
+  genutzt werden, wenn Secret-Anteile als `envRef`, `credentialRef` oder
+  Provider-Verweis modelliert sind; rohe Passwoerter oder vollstaendig
+  expandierte Secret-URLs werden nicht in MCP-Stores uebernommen
+- ein adapterneutraler `ConnectionSecretResolver` materialisiert Secrets
+  erst innerhalb autorisierter Runner/Driver-Aufrufe und nie fuer
+  Discovery, Listen, Resource-Reads, Audit oder Tool-Responses
+- der bestehende CLI-Resolver darf nicht unveraendert aus dem MCP-Adapter
+  heraus aufgerufen werden, wenn er ENV-Substitution zu vollstaendigen
+  Secret-URLs bereits waehrend Discovery/Bootstrap ausfuehrt
+- existiert kein Credential-/Secret-Provider fuer reale Verbindungen,
+  muessen connection-backed Tools fail-closed mit einem klaren
+  Konfigurationsfehler enden; Test-Seeds duerfen nur non-secret Dummy-
+  Referenzen enthalten
 
 Beta-Default:
 
@@ -730,15 +797,23 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
      Pending-Reservierung
    - vorhandener Treffer mit anderem Fingerprint beendet den Aufruf
      sofort mit `IDEMPOTENCY_CONFLICT`
-7. Policy nur fuer neue oder noch nicht genehmigte Pending-Starts
+7. fuer synchrone policy-pflichtige Tools mit Nebenwirkungen
+   `reserveOrGetSyncEffect(approvalScopeKey, payloadFingerprint)` atomar
+   ausfuehren
+   - vorhandener identischer Treffer liefert dieselbe Upload-Session,
+     dieselbe Artefakt-/Provider-Referenz oder dasselbe Ergebnis
+   - vorhandener Treffer mit anderem Fingerprint endet mit
+     `IDEMPOTENCY_CONFLICT`
+8. Policy nur fuer neue oder noch nicht genehmigte Pending-Starts und
+   Sync-Effect-Reservierungen
    pruefen, niemals fuer Idempotency-Konflikte
-8. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
+9. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
    machen
-9. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
-10. Ergebnis zuschneiden und Limits anwenden
-11. Artefakte/Ressourcen referenzieren
-12. Erfolg oder Fehler als einheitliches Envelope liefern
-13. Audit-Scope in einem `finally`-Pfad mit Outcome abschliessen
+10. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
+11. Ergebnis zuschneiden und Limits anwenden
+12. Artefakte/Ressourcen referenzieren
+13. Erfolg oder Fehler als einheitliches Envelope liefern
+14. Audit-Scope in einem `finally`-Pfad mit Outcome abschliessen
 
 Verbindliche Audit-Semantik:
 
@@ -753,6 +828,10 @@ Verbindliche Audit-Semantik:
   Policy wird dafuer nicht geprueft
 - Policy wird fuer neue Starts und noch nicht genehmigte Pending-
   Reservierungen geprueft, nicht fuer reine Deduplizierungsantworten
+- synchrone Side-Effect-Retries mit bestehendem `approvalKey`-Treffer
+  liefern nach Auth, Schema-Validierung und Scope-Pruefung dasselbe
+  Ergebnis zurueck; abweichende Payloads enden ohne Policy-Pruefung mit
+  `IDEMPOTENCY_CONFLICT`
 - auch `AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
   `POLICY_REQUIRED` und `IDEMPOTENCY_CONFLICT` werden auditierbar
   abgeschlossen
@@ -1127,6 +1206,11 @@ Gemeinsame Regeln:
 - das Init-`approvalToken` ist an `toolName`, `callerId`,
   `approvalKey` und den session-metadatenbezogenen
   `payloadFingerprint` gebunden
+- `approvalKey` dedupliziert den erfolgreichen Init-Aufruf: gleicher
+  Tenant, Caller, Toolname, `approvalKey` und `payloadFingerprint` liefern
+  dieselbe `uploadSessionId` und dieselbe session-scoped
+  Upload-Berechtigung; abweichender Payload liefert
+  `IDEMPOTENCY_CONFLICT`
 - nach erfolgreichem Init legt der Server eine session-scoped
   Upload-Berechtigung an; sie ist an `uploadSessionId`, Tenant,
   Principal, `artifactKind`, `mimeType`, `sizeBytes`,
@@ -1271,6 +1355,10 @@ Gemeinsame Regeln:
   passende, extern ausgestellte `approvalToken` senden
 - das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
   `payloadFingerprint` gebunden
+- `approvalKey` dedupliziert synchrone Nebenwirkungen: gleicher Tenant,
+  Caller, Toolname, `approvalKey` und `payloadFingerprint` liefern dasselbe
+  Tool-Ergebnis bzw. dieselbe Artefakt-/Provider-Referenz; abweichender
+  Payload liefert `IDEMPOTENCY_CONFLICT`
 - Wiederverwendung desselben Tokens mit anderem Payload liefert
   `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
 - alle drei Tools schreiben Audit-Ereignisse mit Toolname,
@@ -1513,6 +1601,14 @@ Abnahmekriterien:
       Basisfunktionen anbieten kann
   - HTTP 403 mit Scope-Challenge bei unzureichenden Scopes
   - Token-Audience-/Resource-Validierung
+  - konfigurierter Issuer muss exakt zu Token-`iss` und Metadata passen
+  - JWKS-Validierung mit Cache/Rotation oder explizite Introspection-
+    Konfiguration; beides fail-closed bei fehlender Konfiguration,
+    Netzwerk-/Parsefehlern, unbekanntem `kid` oder inaktivem Token
+  - Algorithmus-Allowlist, Ablauf-/Clock-Skew-Pruefung und Scope-Mapping
+    fuer jedes Tool und jede Resource-Klasse
+  - Principal-Claims (`sub`, optional Tenant-/Gruppenclaims) werden
+    deterministisch gemappt; fehlende Pflichtclaims liefern 401
   - keine Tokens in Query-Parametern
 - Auth-Deaktivierung nur fuer lokale Tests/Demos mit expliziter
   unsicherer Konfiguration zulassen
@@ -1550,6 +1646,9 @@ Abnahmekriterien:
 - HTTP-Auth-Tests decken fuer nicht-lokales HTTP 401/403,
   `WWW-Authenticate`, Protected-Resource-Metadata und Scope-Challenges
   ab
+- HTTP-Auth-Tests decken Issuer-Mismatch, fehlendes/ungueltiges JWKS,
+  nicht erlaubten Algorithmus, abgelaufenes Token, Audience-/Resource-
+  Mismatch, fehlende Pflichtclaims und Scope-Mapping pro Tool ab
 - Golden-Test validiert das Protected-Resource-Metadata-Dokument:
   `resource` entspricht der kanonischen Server-/Endpoint-URI,
   `authorization_servers` ist vorhanden, nicht leer und enthaelt nur
@@ -1616,6 +1715,12 @@ Abnahmekriterien:
 - Bootstrap fuer Connection-Refs aus `.d-migrate.yaml` oder
   aequivalenter Projekt-/Serverkonfiguration anbinden; Tests nutzen
   explizite Seeds ohne echte Secrets
+- adapterneutralen `ConnectionSecretResolver` fuer Ausfuehrungspfade
+  definieren; Discovery/Bootstrap duerfen nur `credentialRef`/
+  `providerRef` und non-secret Metadaten sehen
+- bestehende Named-Connection-Logik so splitten, dass ENV-/Secret-
+  Substitution erst im autorisierten Runner/Driver-Pfad passiert und nicht
+  beim MCP-Resource-Bootstrap
 - Cursor-Paginierung und Filtervalidierung einfuehren
 - Tenant-Scope-Pruefung fuer jede Resource-Aufloesung erzwingen
 
@@ -1630,6 +1735,9 @@ Abnahmekriterien:
   `schema_compare_start`, Reverse, Import und Transfer
 - Connection-Refs koennen in Beta-Tests aus dokumentierten Seeds
   geladen werden, ohne Secrets in MCP-Payloads zu uebergeben
+- reale connection-backed Beta-Pfade funktionieren nur mit dokumentiertem
+  Credential-/Secret-Provider; fehlt dieser, liefern sie einen
+  fail-closed Konfigurationsfehler statt teilweise expandierter Secret-URLs
 - CLI- und MCP-Startpfade nutzen dieselbe adapterneutrale
   Config-/Connection-Ref-Aufloesung
 - ungueltige Cursor liefern `VALIDATION_ERROR`
@@ -1655,6 +1763,12 @@ Abnahmekriterien:
 - Idempotency-Pruefung fuer Start-Tools anbinden
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
+- Beta-Grant-Aussteller implementieren und dokumentieren:
+  lokale Policy-Allowlist, Admin-CLI oder signierte Grant-Datei; optionaler
+  Demo-Auto-Approval-Modus nur fuer Loopback/`stdio` und mit Audit
+- `ApprovalGrantStore` speichert Grant-Metadaten, Ablauf, Issuer-
+  Fingerprint, Scope, Payload-Fingerprint und Token-Fingerprint, aber nie
+  rohe Tokens
 - Jobstatus exakt aus `docs/job-contract.md` verwenden:
   `queued`, `running`, `succeeded`, `failed`, `cancelled`
 - Ablauf und Retention von Jobs ueber `expiresAt` modellieren, nicht
@@ -1666,6 +1780,9 @@ Abnahmekriterien:
 - identische Wiederholung liefert denselben Job
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT`
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`
+- policy-pflichtige Tools koennen ueber mindestens einen Beta-Grant-Pfad
+  produktiv freigegeben werden; ohne konfigurierten Grant-Aussteller ist
+  das Verhalten fail-closed und dokumentiert
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job
   und dedupliziert ueber `idempotencyKey`
 - `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
@@ -1680,6 +1797,9 @@ Abnahmekriterien:
 
 - `artifact_upload_init` mit Policy, vollstaendigen Session-Metadaten,
   Gesamt-Checksumme und serverseitiger Session-Erzeugung umsetzen
+- `approvalKey` fuer `artifact_upload_init` als synchrone Idempotency-
+  Reservierung nutzen, sodass Agent-Retries dieselbe Session statt
+  doppelter Sessions erzeugen
 - `artifact_upload` mit Segmentverwaltung fuer bestehende Sessions
   umsetzen
 - `contentBase64` decodieren, Segmentgroessenlimit erzwingen und Hashes
@@ -1698,6 +1818,9 @@ Abnahmekriterien:
 
 - Upload-Init liefert vor dem ersten Segment eine `uploadSessionId`, TTL
   und erwartete Startposition
+- wiederholtes `artifact_upload_init` mit gleichem `approvalKey` und
+  identischem Payload liefert dieselbe `uploadSessionId`; abweichender
+  Payload mit gleichem Scope liefert `IDEMPOTENCY_CONFLICT`
 - Upload-Resume mit wiederholten Segmenten funktioniert
 - Hash-Abweichungen werden abgewiesen
 - fehlendes oder zu grosses `contentBase64` wird mit
@@ -1728,6 +1851,9 @@ Abnahmekriterien:
   Payload-Fingerprint-Metadaten in Audit-Ereignisse schreiben
 - `procedure_transform_plan`, `procedure_transform_execute` und
   `testdata_plan` policy- und audit-gesteuert anbinden
+- `approvalKey` fuer KI-nahe Tools als synchrone Idempotency-Reservierung
+  nutzen, damit Timeouts/Agent-Retries keine doppelten Provider-Kosten oder
+  Artefakt-Publishes erzeugen
 - MCP-Prompts fuer kuratierte Analyse-, Transformations- und
   Testdatenablaeufe registrieren
 - Prompt-Hygiene-Pruefung fuer Secrets, rohe Massendaten und externe
@@ -1751,6 +1877,9 @@ Abnahmekriterien:
   strukturiert statt als rohe Exceptions
 - KI-nahe Tools funktionieren im Beta-Testpfad mit dem `NoOp`-Provider
   ohne externe Secrets oder Netzwerkzugriff
+- KI-nahe Tool-Retries mit gleichem `approvalKey` und identischem Payload
+  liefern dasselbe Ergebnis bzw. dieselbe Artefakt-/Provider-Referenz;
+  abweichender Payload mit gleichem Scope liefert `IDEMPOTENCY_CONFLICT`
 - externe Provider-Aufrufe sind ohne erlaubende Konfiguration und Policy
   blockiert
 - MCP-Prompts sind ueber Discovery sichtbar und referenzieren nur
@@ -1777,7 +1906,13 @@ Pflichtabdeckung:
 - atomare Idempotency-Reservierung `reserveOrGet` mit `PENDING`/
   `COMMITTED`, Konfliktpfad und TTL-/Fehlerbehandlung
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
+- Beta-Grant-Aussteller fuer lokale Allowlist, Admin-CLI oder signierte
+  Grant-Datei inklusive Ablauf, Issuer-Fingerprint und Audit-Metadaten
+- Sync-Effect-Idempotency fuer `approvalKey` mit atomarer Reservierung,
+  identischer Wiederholung und Konfliktpfad
 - Policy-Entscheidungen
+- HTTP-Tokenvalidator fuer Issuer, JWKS/Introspection, Algorithmus-
+  Allowlist, Audience/Resource, Pflichtclaims, Ablauf und Scope-Mapping
 - Around-/Finally-Audit fuer Auth-, Validation-, Scope-, Policy- und
   Idempotency-Fehler
 - Fehlercode-Mapping
@@ -1808,6 +1943,9 @@ Pflichtabdeckung:
   oder Test-Seeds ohne Secrets
 - adapterneutraler Config-/Connection-Ref-Bootstrap ohne Abhaengigkeit
   von `adapters/driving/cli` und ohne dupliziertes YAML-Parsing
+- Connection-Secret-Materialisierung nur im autorisierten Runner-/Driver-
+  Pfad ueber `ConnectionSecretResolver`; Discovery/Audit/Listings sehen
+  nur `credentialRef`/`providerRef`
 - SchemaStore, ProfileStore und DiffStore bzw. gleichwertige typisierte
   Artefakt-Indizes fuer Listing, Resource-Resolution und Tenant-Scope
 - Schema-Materialisierung aus finalisiertem `artifactKind=schema`-
@@ -1838,7 +1976,7 @@ Pflichtabdeckung je Tool:
 - strukturierter Fehler
 - Audit-Ereignis
 
-Fuer Start-Tools zusaetzlich:
+Fuer Start-Tools und synchrone Side-Effect-Tools zusaetzlich:
 
 - fehlender Idempotency-Key
 - identische Wiederholung
@@ -1860,6 +1998,11 @@ Fuer Start-Tools zusaetzlich:
 - synchroner Approval-Flow mit `approvalKey` fuer
   `artifact_upload_init`, administrative `artifact_upload_abort`-Aufrufe
   und KI-nahe Tools
+- synchrone Nebenwirkungen deduplizieren ueber `approvalKey`; identische
+  Retries erzeugen keine zweite Upload-Session, keinen zweiten Provider-
+  Aufruf und kein zweites Artefakt
+- gleicher `approvalKey`-Scope mit anderem Payload liefert
+  `IDEMPOTENCY_CONFLICT`
 - `artifact_upload` akzeptiert Segmente nur mit gueltiger
   session-scoped Upload-Berechtigung
 - Idempotency-Flow fuer `data_import_start` und `data_transfer_start`
@@ -1895,6 +2038,9 @@ ein weiterer ueber HTTP. Beide pruefen:
   Policy-Flow und abbrechbarem Job
 - nicht-lokaler HTTP-Transport erzwingt Auth und liefert fuer fehlende
   oder unzureichende Tokens die dokumentierten 401/403-Antworten
+- HTTP-Transport akzeptiert nur Tokens von konfigurierten Issuern mit
+  gueltiger JWKS-/Introspection-Pruefung, erlaubtem Algorithmus,
+  passender Audience/Resource und den benoetigten Tool-/Resource-Scopes
 - `artifact_upload` ueber `stdio` mit `contentBase64`
 - `artifact_upload` ueber streambares HTTP mit `contentBase64` im
   `tools/call`-JSON-RPC-Argument
@@ -1965,6 +2111,12 @@ Verbindliche Negativfaelle:
 - HTTP-Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-
   lokaler Bind-Adresse
 - `artifact_upload_init` ohne `approvalKey`
+- `artifact_upload_init`-Retry mit gleichem `approvalKey` erzeugt keine
+  zweite Session
+- KI-nahes Tool-Retry mit gleichem `approvalKey` erzeugt keinen zweiten
+  Provider-Aufruf
+- gleicher `approvalKey` mit abweichendem Payload liefert
+  `IDEMPOTENCY_CONFLICT`
 - `artifact_upload` ohne vorherige Upload-Session
 - `artifact_upload` mit gueltiger Session, aber fehlender oder fremder
   session-scoped Upload-Berechtigung
