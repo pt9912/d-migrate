@@ -141,6 +141,7 @@ Konsequenz:
   - `schema_list`
 - kontrollierte Start-Tools:
   - `schema_reverse_start`
+  - `schema_compare_start`
   - `data_profile_start`
 - Job-Steuerung:
   - `job_cancel`
@@ -148,6 +149,7 @@ Konsequenz:
   - `data_import_start`
   - `data_transfer_start`
 - Artefakt-Upload:
+  - `artifact_upload_init`
   - `artifact_upload`
   - `artifact_upload_abort`
   - segmentierter Upload mit `uploadSessionId`
@@ -231,8 +233,8 @@ Verbindliche Entscheidung:
   Principal ist verboten
 - fuer HTTP wird der Principal aus `Authorization`-Header oder
   aequivalentem signiertem Principalsignal abgeleitet
-- HTTP-Authorization folgt fuer den Beta-Server der MCP-2025-11-25-
-  Authorization-Spezifikation, sofern HTTP-Auth aktiviert ist:
+- HTTP-Authorization folgt fuer nicht-lokales streambares HTTP
+  verpflichtend der MCP-2025-11-25-Authorization-Spezifikation:
   - fehlendes, ungueltiges oder abgelaufenes Token liefert HTTP 401
     mit `WWW-Authenticate: Bearer ...`
   - die Challenge enthaelt `resource_metadata` und, wenn bestimmbar,
@@ -243,6 +245,9 @@ Verbindliche Entscheidung:
     im `WWW-Authenticate` referenzierte URL angeboten
   - Access Tokens duerfen nicht aus Query-Parametern gelesen werden
   - Tokens werden auf Audience/Resource des MCP-Servers validiert
+- Deaktivierung von HTTP-Auth ist nur fuer lokale Tests und Demos ueber
+  eine explizite unsichere Konfiguration erlaubt; entfernte HTTP-Clients
+  duerfen ohne Auth nicht als Beta-fertig gelten
 - Streamable HTTP implementiert die MCP-Transportregeln fuer
   `protocolVersion` `2025-11-25`:
   - JSON-RPC-Nachrichten laufen ueber einen einzelnen MCP-Endpunkt mit
@@ -318,9 +323,9 @@ Verbindliche Entscheidung:
 
 - `data_import_start` und `data_transfer_start` brauchen eine Policy-
   Freigabe
-- `artifact_upload` und `artifact_upload_abort` sind ebenfalls
-  policy-gesteuert, weil sie Eingabeartefakte fuer spaetere
-  Datenoperationen erzeugen oder verwerfen koennen
+- `artifact_upload_init`, `artifact_upload` und `artifact_upload_abort`
+  sind ebenfalls policy-gesteuert, weil sie Eingabeartefakte fuer
+  spaetere Datenoperationen erzeugen oder verwerfen koennen
 - `schema_reverse_start` und `data_profile_start` sind ebenfalls
   policyfaehig, weil sie kostenintensiv oder sensitiv sein koennen
 - wenn eine Policy-Freigabe fehlt, liefert das Tool
@@ -328,15 +333,14 @@ Verbindliche Entscheidung:
 - bei Start-Tools muss der zweite Aufruf denselben `idempotencyKey` und
   das passende `approvalToken` enthalten
 - bei nicht-asynchronen policy-pflichtigen Tools ohne
-  `idempotencyKey`, z.B. `schema_compare` mit sensitiver
-  `connectionRef`, `artifact_upload`, `artifact_upload_abort` und die
-  KI-nahen Tools, muss der Client einen stabilen `approvalKey`
-  mitsenden; das `approvalToken` wird an
+  `idempotencyKey`, z.B. `artifact_upload_init`, `artifact_upload`,
+  `artifact_upload_abort` und die KI-nahen Tools, muss der Client einen
+  stabilen `approvalKey` mitsenden; das `approvalToken` wird an
   (`toolName`, `callerId`, `approvalKey`, `payloadFingerprint`)
   gebunden
 - fehlt bei einer policy-pflichtigen synchronen Operation der
   `approvalKey`, liefert der Server `VALIDATION_ERROR`
-- fuer `artifact_upload` wird der Approval-Fingerprint aus den
+- fuer `artifact_upload_init` wird der Approval-Fingerprint aus den
   Session-Metadaten gebildet (`artifactKind`, `mimeType`, `sizeBytes`,
   `checksumSha256`, Tenant, Principal, optionaler Zielkontext), nicht
   aus Segmentbytes, `segmentSha256`, `contentBase64` oder
@@ -358,7 +362,20 @@ Begruendung:
 
 Verbindliche Entscheidung:
 
-- `artifact_upload` akzeptiert grosse Inhalte nur ueber Segmente
+- `artifact_upload_init` erzeugt vor dem ersten Segment eine Upload-
+  Session aus vollstaendigen Metadaten:
+  - `artifactKind`
+  - `mimeType`
+  - `sizeBytes`
+  - Gesamt-`checksumSha256`
+  - Tenant, Principal und optionaler Zielkontext aus dem Request-Kontext
+  - optionaler clientseitiger Session-Kandidat nur fuer Resume-faehige
+    Clients
+- `artifact_upload_init` verlangt noch keine `uploadSessionId`; der
+  Server erzeugt sie primaer kryptografisch als opaken Wert und gibt sie
+  mit TTL und erwartetem erstem Segment zurueck
+- `artifact_upload` akzeptiert grosse Inhalte nur ueber Segmente einer
+  bestehenden Upload-Session
 - jedes Segment enthaelt:
   - `uploadSessionId`
   - `segmentIndex`
@@ -368,9 +385,9 @@ Verbindliche Entscheidung:
   - `contentBase64`
   - `segmentSha256`
   - optional `clientRequestId`
-- fuer den d-migrate-MCP-Toolvertrag `v1` werden Segmentbytes in beiden Standardtransporten
-  (`stdio` und streambares HTTP) als `contentBase64` im
-  `tools/call`-JSON-RPC-Argument uebertragen
+- fuer den d-migrate-MCP-Toolvertrag `v1` werden Segmentbytes in beiden
+  Standardtransporten (`stdio` und streambares HTTP) als
+  `contentBase64` im `tools/call`-JSON-RPC-Argument uebertragen
 - streambares HTTP nutzt weiterhin einen normalen MCP-JSON-RPC-POST;
   es gibt keinen separaten binaeren Upload-Body innerhalb des
   MCP-Standardtransports
@@ -378,8 +395,9 @@ Verbindliche Entscheidung:
   dokumentierte Extension und ist nicht Teil dieses 0.9.6-Vertrags
 - `segmentSha256` wird ueber die decodierten Segmentbytes berechnet,
   nicht ueber den Base64-Text
-- bei `isFinalSegment=true` ist `checksumSha256` fuer das
-  Gesamtartefakt Pflicht
+- `checksumSha256` wird beim Init-Aufruf festgelegt und bei
+  `isFinalSegment=true` gegen das rekonstruierte Gesamtartefakt
+  validiert
 - Wiederholungen desselben Segments sind idempotent
 - Reihenfolge, Offset, Segmentgroesse, Segmenthash und Gesamthash
   werden serverseitig validiert
@@ -593,11 +611,20 @@ Erwartete Kernmodelle und Projektionen:
 
 - `JobStore`
 - `ArtifactStore`
+- `SchemaStore`
+- `ProfileStore`
+- `DiffStore`
 - `UploadSessionStore`
 - `ConnectionReferenceStore`
 - `IdempotencyStore`
 - `ApprovalGrantStore`
 - `AuditSink`
+
+Schemas, Profile und Diffs duerfen intern als typisierte Artefakte
+persistiert werden. Trotzdem braucht 0.9.6 je Typ eine explizite
+Store-/Index-Abstraktion, damit `schema_list`, Resource-Resolver,
+Tenant-Scope-Pruefung, Paginierung und Retention nicht von
+dateispezifischen Artefaktdetails abhaengen.
 
 Connection-Refs werden ausserhalb von MCP registriert. Fuer die Beta
 muss der Store aus mindestens einer klaren Bootstrap-Quelle befuellt
@@ -792,37 +819,58 @@ Akzeptanz:
   strukturiert sichtbar
 - DDL wird nicht abgeschnitten, sondern als Artefakt referenziert
 
-### 6.4 `schema_compare`
+### 6.4 `schema_compare` und `schema_compare_start`
 
 Zweck:
 
-- zwei Schemas oder Umgebungen vergleichen
+- zwei bereits materialisierte Schemas synchron vergleichen oder einen
+  connection-backed Vergleich als Job starten
 
 Verbindliche Eingaben:
 
-- `left`
-- `right`
-- beide Seiten jeweils als `schemaRef` oder `connectionRef`
+`schema_compare`:
+
+- `left.schemaRef`
+- `right.schemaRef`
 - optionale Compare-Optionen
-- optional `approvalKey` und `approvalToken`, falls eine Seite eine
-  policy-pflichtige oder sensitive `connectionRef` nutzt
+
+`schema_compare_start`:
+
+- `left` und `right`, jeweils als `schemaRef` oder `connectionRef`
+- `idempotencyKey`
+- optionale Compare-Optionen
+- optional `approvalToken`, falls eine Seite eine policy-pflichtige
+  oder sensitive `connectionRef` nutzt
 
 Antwort:
+
+`schema_compare`:
 
 - Summary
 - Findings bis Limit
 - Diff-Resource oder Artefakt bei groesserem Ergebnis
 
+`schema_compare_start`:
+
+- `jobId`
+- `resourceUri`
+- `executionMeta`
+
 Akzeptanz:
 
-- Connection-Refs muessen tenant-scoped `dmigrate://.../connections/...`
-  sein
+- `schema_compare` akzeptiert keine `connectionRef`; connection-backed
+  Vergleiche muessen `schema_compare_start` nutzen
+- bei `schema_compare_start` muessen Connection-Refs tenant-scoped
+  `dmigrate://.../connections/...` sein
 - freie JDBC-Strings werden mit `VALIDATION_ERROR` abgewiesen
-- bei sensitiven oder produktiven Connection-Refs ist der synchrone
+- bei sensitiven oder produktiven Connection-Refs ist der async
   Policy-Flow verbindlich:
-  - ohne `approvalKey` liefert das Tool `VALIDATION_ERROR`
+  - ohne `idempotencyKey` liefert das Tool `IDEMPOTENCY_KEY_REQUIRED`
   - ohne gueltiges `approvalToken` liefert das Tool `POLICY_REQUIRED`
-  - das Token ist an `approvalKey` und `payloadFingerprint` gebunden
+  - das Token ist an `idempotencyKey`, Caller und `payloadFingerprint`
+    gebunden
+- `job_cancel` kann einen laufenden `schema_compare_start`-Job
+  abbrechen
 - Reverse-Warnungen der Operanden bleiben als Diagnose sichtbar
 
 ### 6.5 Discovery-Tools
@@ -906,20 +954,24 @@ Akzeptanz:
 
 Tools:
 
+- `artifact_upload_init`
 - `artifact_upload`
 - `artifact_upload_abort`
 
 Gemeinsame Regeln:
 
-- beide Tools sind policy-gesteuert
+- alle drei Tools sind policy-gesteuert
 - fehlende Freigabe liefert `POLICY_REQUIRED`
 - der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
   umgehen
-- `approvalKey` ist fuer beide Tools Pflicht
+- `approvalKey` ist fuer alle drei Tools Pflicht
 - beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
   passende `approvalToken` senden
 - das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
   den session-metadatenbezogenen `payloadFingerprint` gebunden
+- `artifact_upload_init` ist der einzige Aufruf, der eine neue
+  Upload-Session erzeugt; `artifact_upload` und `artifact_upload_abort`
+  referenzieren immer eine bestehende `uploadSessionId`
 - Segmentdaten, `segmentSha256`, `contentBase64`, `segmentIndex` und
   `segmentOffset` sind nicht Teil des
   Approval-Fingerprints; sie werden separat pro Segment validiert
@@ -931,10 +983,13 @@ Verbindliche Validierungen:
 - `artifactKind` ist allowlist-basiert
 - `mimeType` ist allowlist-basiert
 - `sizeBytes` ist Pflicht
+- Gesamt-`checksumSha256` ist bereits fuer `artifact_upload_init`
+  Pflicht und Teil des Approval-Fingerprints
 - maximale Uploadgroesse ist `200 MiB`
-- `uploadSessionId` ist verbindlich und 36 Zeichen lang
-- `uploadSessionId` wird primaer serverseitig kryptografisch erzeugt
-  und als opaker Wert behandelt
+- `uploadSessionId` ist fuer `artifact_upload_init` nicht Pflicht, fuer
+  `artifact_upload` und `artifact_upload_abort` aber verbindlich
+- serverseitig erzeugte `uploadSessionId` ist 36 Zeichen lang, wird
+  kryptografisch sicher erzeugt und als opaker Wert behandelt
 - falls ein Client fuer Resume einen Session-Kandidaten sendet, muss er
   UUID-kompatibel bzw. opak validierbar sein, atomar kollisionsfrei
   angelegt werden und an Tenant, Principal, `approvalKey`,
@@ -953,15 +1008,18 @@ Verbindliche Validierungen:
 - jedes Segment braucht `segmentSha256`
 - `segmentSha256` ist SHA-256 ueber die decodierten Bytes aus
   `contentBase64`
-- finales Segment braucht `checksumSha256`
 - `checksumSha256` ist SHA-256 ueber die vollstaendige rekonstruierte
-  Artefakt-Bytefolge
+  Artefakt-Bytefolge und muss dem in `artifact_upload_init` registrierten
+  Wert entsprechen
 - nach erfolgreichem Abschluss wird daraus ein Artefakt gemaess
   `docs/job-contract.md`; `mimeType` wird zu `contentType` und
   `checksumSha256` zu `sha256` gemappt
 
 Antwort:
 
+- `artifact_upload_init` liefert `uploadSessionId`, Uploadstatus,
+  erwarteten ersten `segmentIndex`, erwarteten ersten `segmentOffset` und
+  `uploadSessionTtlSeconds`
 - jede erfolgreiche Segmentannahme liefert `uploadSessionId`,
   Uploadstatus, naechsten erwarteten `segmentIndex` oder
   `segmentOffset` und `uploadSessionTtlSeconds`
@@ -971,6 +1029,8 @@ Antwort:
 
 Akzeptanz:
 
+- erster Upload-Pfad ohne vorheriges `artifact_upload_init` liefert
+  `RESOURCE_NOT_FOUND` oder `VALIDATION_ERROR`
 - wiederholtes identisches Segment ist erfolgreich oder liefert den
   bestehenden Segmentstatus
 - Wiederholung mit gleicher Segmentposition, aber anderem Inhalt oder
@@ -1243,13 +1303,15 @@ Abnahmekriterien:
   - `Origin`-Validierung gegen DNS-Rebinding
   - optionales `MCP-Session-Id` mit 400/404-Fehlerpfaden
   - definierte `GET`-Semantik fuer SSE oder HTTP 405
-- HTTP-Authorization nach MCP 2025-11-25 implementieren oder bewusst
-  per Konfiguration deaktivieren; wenn aktiviert:
+- HTTP-Authorization nach MCP 2025-11-25 fuer nicht-lokales
+  streambares HTTP verpflichtend implementieren:
   - HTTP 401 mit `WWW-Authenticate` und `resource_metadata`
   - Protected Resource Metadata well-known Endpoint
   - HTTP 403 mit Scope-Challenge bei unzureichenden Scopes
   - Token-Audience-/Resource-Validierung
   - keine Tokens in Query-Parametern
+- Auth-Deaktivierung nur fuer lokale Tests/Demos mit expliziter
+  unsicherer Konfiguration zulassen
 - Runtime-Bootstrap fuer Driver, Profiling-Adapter, Streaming-Adapter
   und Schema-Codecs aus der CLI teilen oder aequivalent kapseln
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
@@ -1265,9 +1327,11 @@ Abnahmekriterien:
 - lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
 - HTTP-Transporttests decken Accept-Header, `MCP-Protocol-Version`,
   Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik ab
-- HTTP-Auth-Tests decken 401/403, `WWW-Authenticate`,
-  Protected-Resource-Metadata und Scope-Challenges ab, sofern HTTP-Auth
-  aktiviert ist
+- HTTP-Auth-Tests decken fuer nicht-lokales HTTP 401/403,
+  `WWW-Authenticate`, Protected-Resource-Metadata und Scope-Challenges
+  ab
+- ein separater Test zeigt, dass Auth-Deaktivierung nur fuer lokale
+  Test-/Demo-Konfigurationen erlaubt ist
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
 - unbekannte Toolnamen liefern einen MCP-/JSON-RPC-Protokollfehler;
@@ -1280,8 +1344,9 @@ Abnahmekriterien:
   anbinden
 - `schema_generate` an bestehende DDL-Generatoren anbinden
 - `schema_compare` an bestehende Compare-Pfade anbinden
-- synchronen Policy-Flow fuer `schema_compare` mit sensitiver
-  `connectionRef` ueber `approvalKey` und `approvalToken` anbinden
+- `schema_compare` auf bereits materialisierte `schemaRef`-Eingaenge
+  beschraenken; `connectionRef` liefert `VALIDATION_ERROR` mit Hinweis
+  auf `schema_compare_start`
 - Output-Limits und Artefakt-Fallback umsetzen
 - Findings und Notes strukturiert mappen
 
@@ -1296,8 +1361,8 @@ Abnahmekriterien:
 
 - `job_status_get`, `job_list`, `artifact_list`, `schema_list`
   implementieren
-- Resource-Resolver fuer Jobs, Artefakte, Schemas, Profile und Diffs
-  implementieren
+- Resource-Resolver und Store-/Index-Abstraktionen fuer Jobs,
+  Artefakte, Schemas, Profile und Diffs implementieren
 - Resource-Resolver und Store fuer tenant-scoped Connection-Refs
   implementieren, inklusive Sensitivitaets-/Produktionsmetadaten fuer
   Policy
@@ -1312,7 +1377,7 @@ Abnahmekriterien:
 - Listen liefern stabile `items`, `nextCursor` und `totalCount`
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
 - sensitive Connection-Refs liefern Policy-Metadaten fuer
-  `schema_compare`, Reverse, Import und Transfer
+  `schema_compare_start`, Reverse, Import und Transfer
 - Connection-Refs koennen in Beta-Tests aus dokumentierten Seeds
   geladen werden, ohne Secrets in MCP-Payloads zu uebergeben
 - ungueltige Cursor liefern `VALIDATION_ERROR`
@@ -1328,8 +1393,8 @@ Abnahmekriterien:
 - Spike-Abnahme: fuer jeden Pfad ist dokumentiert, an welchen Stellen
   CancellationToken/Worker-Handle geprueft wird und welche Side Effects
   nach Cancel verhindert werden
-- Job-Start-Service fuer `schema_reverse_start` und
-  `data_profile_start` einfuehren
+- Job-Start-Service fuer `schema_reverse_start`, `data_profile_start`
+  und `schema_compare_start` einfuehren
 - `job_cancel` an Jobkern und Berechtigungspruefung anbinden
 - CancellationToken bzw. Job-Worker-Handle in Reverse-, Profiling-,
   Import- und Transfer-Runner propagieren
@@ -1349,6 +1414,8 @@ Abnahmekriterien:
 - identische Wiederholung liefert denselben Job
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT`
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`
+- `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job
+  und dedupliziert ueber `idempotencyKey`
 - `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen und
   erzeugt einen stabilen `cancelled`-Status gemaess
   `docs/job-contract.md`
@@ -1357,12 +1424,15 @@ Abnahmekriterien:
 
 ### Phase F - Datenoperationen und Uploads
 
-- `artifact_upload` mit Session- und Segmentverwaltung umsetzen
+- `artifact_upload_init` mit Policy, vollstaendigen Session-Metadaten,
+  Gesamt-Checksumme und serverseitiger Session-Erzeugung umsetzen
+- `artifact_upload` mit Segmentverwaltung fuer bestehende Sessions
+  umsetzen
 - `contentBase64` decodieren, Segmentgroessenlimit erzwingen und Hashes
   ueber decodierte Bytes berechnen
 - `artifact_upload_abort` umsetzen
 - SHA-256-Pruefung pro Segment und Gesamtartefakt erzwingen
-- Policy-Pruefung fuer Upload und Upload-Abbruch anbinden
+- Policy-Pruefung fuer Upload-Init, Upload und Upload-Abbruch anbinden
 - `data_import_start` an hochgeladene Artefakte binden
 - `data_transfer_start` an Connection-Refs und Policy binden
 - Idempotency-Pruefung fuer `data_import_start` und
@@ -1371,6 +1441,8 @@ Abnahmekriterien:
 
 Abnahmekriterien:
 
+- Upload-Init liefert vor dem ersten Segment eine `uploadSessionId`, TTL
+  und erwartete Startposition
 - Upload-Resume mit wiederholten Segmenten funktioniert
 - Hash-Abweichungen werden abgewiesen
 - fehlendes oder zu grosses `contentBase64` wird mit
@@ -1442,12 +1514,16 @@ Pflichtabdeckung:
   decodierte Segmentbytes
 - Upload-Session-TTL, `uploadSessionId`-Laenge und fortlaufende
   `segmentIndex`-Validierung
+- `artifact_upload_init` erzwingt Gesamt-`checksumSha256` vor dem ersten
+  Segment und bindet Session-ID an die Init-Metadaten
 - Cursor-Serialisierung und -Validierung
 - Runtime-Bootstrap fuer Driver- und Codec-Registries
 - ConnectionReferenceStore und Connection-Resolver inklusive
   Sensitivitaets-/Produktionsmetadaten
 - Connection-Ref-Bootstrap aus lokaler Projekt-/Serverkonfiguration
   oder Test-Seeds ohne Secrets
+- SchemaStore, ProfileStore und DiffStore bzw. gleichwertige typisierte
+  Artefakt-Indizes fuer Listing, Resource-Resolution und Tenant-Scope
 - Cancel-Berechtigungen und terminale Jobzustaende
 - CancellationToken-/Worker-Handle-Propagation und Side-Effect-Stopp
   nach Cancel
@@ -1471,10 +1547,11 @@ Fuer Start-Tools zusaetzlich:
 - identische Wiederholung
 - Konflikt mit anderem Payload
 - Policy-Required-Flow
-- synchroner Approval-Flow mit `approvalKey` fuer connection-backed
-  read-only Tools
-- synchroner Approval-Flow mit `approvalKey` fuer `artifact_upload`,
-  `artifact_upload_abort` und KI-nahe Tools
+- `schema_compare` weist `connectionRef` synchron ab; connection-backed
+  Vergleiche laufen ueber `schema_compare_start`
+- synchroner Approval-Flow mit `approvalKey` fuer
+  `artifact_upload_init`, `artifact_upload`, `artifact_upload_abort` und
+  KI-nahe Tools
 - Idempotency-Flow fuer `data_import_start` und `data_transfer_start`
 
 ### 9.3 Integrationstests
@@ -1497,8 +1574,11 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `schema_generate` mit Artefakt-Fallback
 - Driver-Lookup ueber die normale MCP-Runtime-Registry
 - Schema-Codec-Lookup ueber die normale MCP-Runtime-Registry
-- `schema_compare` mit sensitiver `connectionRef` und synchronem
-  Approval-Flow
+- `schema_compare` mit zwei `schemaRef`-Eingaengen
+- `schema_compare_start` mit sensitiver `connectionRef`,
+  `idempotencyKey`, Policy-Flow und abbrechbarem Job
+- nicht-lokaler HTTP-Transport erzwingt Auth und liefert fuer fehlende
+  oder unzureichende Tokens die dokumentierten 401/403-Antworten
 - `artifact_upload` ueber `stdio` mit `contentBase64`
 - `artifact_upload` ueber streambares HTTP mit `contentBase64` im
   `tools/call`-JSON-RPC-Argument
@@ -1533,6 +1613,7 @@ Verbindliche Negativfaelle:
 - fremder Tenant
 - zu grosse Inline-Payload
 - nicht erlaubter MIME-Type
+- `artifact_upload_init` ohne Gesamt-`checksumSha256`
 - fehlendes `contentBase64`
 - ungueltige `uploadSessionId`-Laenge
 - clientseitig wiederverwendete `uploadSessionId` mit anderem Tenant,
@@ -1547,7 +1628,12 @@ Verbindliche Negativfaelle:
 - Upload nach Abort
 - Upload nach Expiry
 - Import ohne Approval
-- `schema_compare` mit sensitiver `connectionRef` ohne `approvalKey`
+- `schema_compare` mit `connectionRef`
+- `schema_compare_start` mit `connectionRef` ohne `idempotencyKey`
+- `schema_compare_start` mit sensitiver `connectionRef` ohne Policy-
+  Freigabe
+- `artifact_upload_init` ohne `approvalKey`
+- `artifact_upload` ohne vorherige Upload-Session
 - `artifact_upload` ohne `approvalKey`
 - KI-nahes Tool ohne `approvalKey`
 - Wiederverwendung eines Approval-Tokens mit anderem
@@ -1569,6 +1655,7 @@ Verbindliche Negativfaelle:
 - Prompt mit Secret- oder Rohdatenparameter
 - Connection-Ref als freier JDBC-String
 - rohe SQL-Payloads in Datenoperationen
+- nicht-lokaler HTTP-Start mit deaktivierter Auth-Konfiguration
 
 ---
 
@@ -1600,13 +1687,15 @@ Dokumentation muss explizit nennen:
   `MCP-Session-Id` und `GET`-Semantik
 - HTTP-Authorization dokumentiert 401/403-Verhalten,
   `WWW-Authenticate`, Protected Resource Metadata und Scope-
-  Challenges, sofern HTTP-Auth aktiviert ist
+  Challenges fuer nicht-lokale HTTP-Clients; Auth-Deaktivierung ist nur
+  fuer lokale Tests/Demos erlaubt
 - `stdio` ohne vertrauenswuerdigen Host-/Prozesskontext und ohne
   `DMIGRATE_MCP_STDIO_TOKEN` liefert `AUTH_REQUIRED`
 - Secrets werden nicht ueber MCP-Payloads uebergeben
 - grosse Ergebnisse werden als Ressourcen/Artefakte referenziert
 - Write-Tools brauchen Policy-Freigabe
-- Uploads sind segmentiert und hash-validiert
+- Uploads beginnen mit `artifact_upload_init`, sind danach segmentiert
+  und hash-validiert
 - Upload-Segmente nutzen bei `stdio` und streambarem HTTP
   `contentBase64`; Hashes gelten ueber die decodierten Segmentbytes
 - streambares HTTP nutzt fuer MCP-Toolcalls JSON-RPC-POSTs; binaere
@@ -1695,9 +1784,13 @@ Gegenmassnahme:
 - streambares HTTP Accept-Header, `MCP-Protocol-Version`,
   Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik
   gemaess MCP-Spezifikation abdeckt
+- nicht-lokales streambares HTTP Auth nach MCP 2025-11-25 erzwingt und
+  Auth-Deaktivierung nur fuer lokale Tests/Demos zulaesst
 - alle in Scope genannten Tools registriert sind
 - read-only Tools gegen bestehende Anwendungskomponenten laufen
 - Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
+- Schemas, Profile und Diffs ueber explizite Store-/Index-
+  Abstraktionen auffindbar und als Ressourcen aufloesbar sind
 - MCP-Bootstrap Driver und Schema-Codecs fuer die realen Tool-Pfade
   registriert
 - tenant-scoped Connection-Refs ueber einen eigenen Store/Resolver
@@ -1710,11 +1803,13 @@ Gegenmassnahme:
   behandeln
 - Import und Transfer dieselben Idempotenzregeln wie andere Start-Tools
   erzwingen
-- synchrone connection-backed Tools den `approvalKey`-/`approvalToken`-
-  Flow fuer sensitive Ressourcen korrekt erzwingen
+- `schema_compare` synchron nur `schemaRef` akzeptiert und
+  connection-backed Vergleiche ueber `schema_compare_start` als
+  idempotente, abbrechbare Jobs laufen
 - policy-pflichtige Upload- und Datenoperationen den Approval-Flow
   erzwingen
-- Artefakt-Uploads segmentiert, resumable und SHA-256-validiert sind
+- Artefakt-Uploads mit `artifact_upload_init` beginnen, danach
+  segmentiert, resumable und SHA-256-validiert sind
 - Upload-Session-IDs opak, kryptografisch erzeugt oder streng
   validiert und an Tenant, Principal, Approval-Fingerprint und
   Session-Metadaten gebunden sind

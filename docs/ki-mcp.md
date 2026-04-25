@@ -134,7 +134,7 @@ Ressourcen sollen:
 | --- | --- |
 | `schema_validate` | neutrales Schema validieren |
 | `schema_generate` | DDL fuer ein Zielsystem erzeugen |
-| `schema_compare` | Unterschiede zwischen zwei Schemata oder Umgebungen ermitteln |
+| `schema_compare` | Unterschiede zwischen zwei bereits materialisierten Schemata ermitteln |
 | `capabilities_list` | Dialekte, Formate, Features, KI-Backends anzeigen |
 | `job_status_get` | Status eines langen Laufs abfragen |
 | `job_list` | Zugelassene Jobs eines Tenants auflisten |
@@ -146,9 +146,11 @@ Ressourcen sollen:
 | Tool | Zweck | Default-Schutz |
 | --- | --- | --- |
 | `schema_reverse_start` | Reverse-Engineering-Job starten | policy-gesteuert |
+| `schema_compare_start` | Vergleichsjob mit Connection-Refs oder langlaufender Introspection starten | policy-gesteuert |
 | `data_profile_start` | Profiling-Job fuer Analyse und Migrationsplanung starten | policy-gesteuert |
 | `data_import_start` | Importjob anlegen | bestaetigungspflichtig / policy-gesteuert |
 | `data_transfer_start` | DB-zu-DB-Transfer starten | bestaetigungspflichtig / policy-gesteuert |
+| `artifact_upload_init` | Upload-Session mit Metadaten und Gesamt-Checksumme anlegen | policy-gesteuert |
 | `artifact_upload` | Eingabe-Artefakt fuer spaetere Jobs hochladen | policy-gesteuert |
 | `artifact_upload_abort` | laufenden Artefakt-Upload gezielt abbrechen | policy-gesteuert |
 | `job_cancel` | langen Lauf abbrechen | nur fuer eigene oder erlaubte Jobs |
@@ -242,13 +244,17 @@ Beispiel `schema_compare`:
     "schemaRef": "dmigrate://tenants/{tenantId}/schemas/source"
   },
   "right": {
-    "connectionRef": "dmigrate://tenants/{tenantId}/connections/target-staging"
+    "schemaRef": "dmigrate://tenants/{tenantId}/schemas/target-staging"
   },
   "options": {
     "includeCompatibleChanges": true
   }
 }
 ```
+
+Connection-backed Vergleiche verwenden `schema_compare_start`, weil sie
+live Introspection ausloesen koennen und deshalb Idempotenz,
+Jobstatus, Policy und `job_cancel` brauchen.
 
 Beispiel `schema_generate`:
 
@@ -345,8 +351,8 @@ Fuer die d-migrate-MCP-Toolvertragsversion `v1` gilt verbindlich:
   ein Konfliktstatus.
 - grosse Ergebnisse werden nur ueber `resourceUri` oder `artifactId`
   bereitgestellt
-- Importdaten werden ueber `artifact_upload` vorbereitet und anschliessend per
-  `data_import_start` referenziert
+- Importdaten werden ueber `artifact_upload_init` und `artifact_upload`
+  vorbereitet und anschliessend per `data_import_start` referenziert
 - ein Tool darf keine komplette Exportdatei oder ganze Tabelleninhalte inline
   zurueckgeben
 - Verbindungen werden nur als vorregistrierte, tenantgebundene Referenzen im
@@ -396,14 +402,24 @@ bevorzugte Option, analog zu `docs/design.md`.
 
 ### 8.3 Artefakt-Upload-Vertrag
 
-Fuer `artifact_upload` ist der sichere Eintrittspfad im d-migrate-`v1`-
-Kontext verbindlich:
+Fuer Uploads ist im d-migrate-`v1`-Kontext ein expliziter Init-Pfad
+verbindlich:
 
 - `artifactKind` und `mimeType` werden serverseitig validiert
 - `sizeBytes` ist Pflicht, um harte Payload-Limits durchzusetzen.
+- `checksumSha256` fuer das vollstaendige Artefakt ist bereits in
+  `artifact_upload_init` Pflicht.
+- `artifact_upload_init` erzeugt serverseitig eine kryptografisch
+  opake `uploadSessionId` und liefert Status, erwarteten ersten
+  `segmentIndex`, erwarteten ersten `segmentOffset` und
+  `uploadSessionTtlSeconds`.
+- Ein optionaler clientseitiger Session-Kandidat ist nur fuer
+  Resume-faehige Clients erlaubt und muss atomar kollisionsfrei an
+  Tenant, Principal, Approval-Fingerprint und Init-Metadaten gebunden
+  werden.
 - Bei stdio-MCP und streambarem HTTP-MCP werden grosse Artefakte in
   fortlaufenden Segmenten als wiederholbare `artifact_upload`-Aufrufe
-  geliefert.
+  fuer eine bestehende Upload-Session geliefert.
 - Segmentbytes werden in MCP-`tools/call`-Argumenten als
   `contentBase64` uebertragen; streambares HTTP bleibt ein normaler
   JSON-RPC-POST und verwendet keinen separaten binaeren Upload-Body.
@@ -418,14 +434,14 @@ Kontext verbindlich:
   - Segment-Kandidaten sind bis Abschluss idempotent; Wiederholungen derselben
     `segmentIndex`/`segmentOffset`-Kombination werden toleriert.
   - Der Server verifiziert Reihenfolge, Offsets, Segmentgroesse und die Segment-Checksumme.
-  - Ist `isFinalSegment=true`, muss die Gesamt-`checksumSha256` gesetzt sein; diese
-    wird nach Abschluss serverseitig validiert.
+  - Bei `isFinalSegment=true` wird die rekonstruierte Gesamt-Checksumme
+    gegen den in `artifact_upload_init` registrierten Wert validiert.
   - Bei Abbruch/Unterbrechung bleiben Segmente fuer die `uploadSessionId` bis zu einem
     Statuswechsel (`EXPIRED` oder `ABORTED`) erhalten, sofern die Session-Lease
     aktiv ist.
   - `segmentSha256` ist fuer jedes Segment verpflichtend und serverseitig zu pruefen.
-  - Die finale Gesamt-`checksumSha256` ist bei `isFinalSegment=true` verpflichtend
-    und wird serverseitig gegen das vollstaendige Artefakt geprueft.
+  - Die finale Gesamt-`checksumSha256` kommt aus dem Init-Aufruf und wird
+    serverseitig gegen das vollstaendige Artefakt geprueft.
 - Session-Management:
   - `uploadSessionTtlSeconds` muss im Response gesetzt werden:
     Initial `900`, Minimum `300`, Maximum `3600`.
@@ -529,6 +545,7 @@ Empfohlene Sicherheitsgrundlagen:
 
 - jeder MCP-Aufruf muss ein verifizierbares `principalId` haben
 - HTTP:
+  - fuer entfernte bzw. nicht-lokale Clients ist Auth verbindlich
   - `Authorization` Header mit Bearer-Token (oder aequivalentes
     signiertes Principalsignal)
   - bei fehlendem oder ungueltigem Token: HTTP 401 mit
@@ -538,6 +555,8 @@ Empfohlene Sicherheitsgrundlagen:
     `WWW-Authenticate` referenzierte URL angeboten
   - Tokens duerfen nicht aus Query-Parametern gelesen werden und muessen
     auf Audience/Resource des MCP-Servers validiert werden
+  - Auth-Deaktivierung ist nur fuer lokale Tests/Demos mit expliziter
+    unsicherer Konfiguration erlaubt
   - optional mTLS fuer Maschinen-zu-Maschinen-Verkehre
 - stdio:
   - nur von vertrauenswuerdigem lokalem Prozess/Benutzer aufrufbar
@@ -593,13 +612,14 @@ Empfehlung:
 ### Phase 2
 
 - `schema_reverse_start`
+- `schema_compare_start`
 - `data_profile_start`
 - Artefakt-Ressourcen
 
 ### Phase 3
 
-- kontrollierte Write-Tools fuer `artifact_upload`, `data_import_start` und
-  `data_transfer_start`
+- kontrollierte Write-Tools fuer `artifact_upload_init`,
+  `artifact_upload`, `data_import_start` und `data_transfer_start`
 - `artifact_upload_abort`
 
 ### Phase 4
