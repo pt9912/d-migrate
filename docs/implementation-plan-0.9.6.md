@@ -55,7 +55,11 @@ Bewusst nicht Teil dieses Milestones:
 - Uebergabe von JDBC-Secrets im Prompt- oder Tool-Payload
 - persistente Multi-Tenant-Produktinfrastruktur jenseits des fuer die
   Beta noetigen lokalen Stores
-- Server-Sent Events, Resource-Subscriptions oder Push-Notifications
+- SSE-basierte Notifications, Resource-Subscriptions oder
+  Push-Notifications. Der MCP-konforme Streamable-HTTP-`GET`-Pfad
+  bleibt trotzdem definiert: der Server liefert entweder einen
+  `text/event-stream` fuer Transport-Interop oder HTTP 405, wenn keine
+  serverinitiierte Stream-Kommunikation angeboten wird.
 
 ---
 
@@ -118,6 +122,9 @@ Konsequenz:
 - MCP-Server-Start ueber `stdio` fuer lokale IDE-/Agenten-Integration
 - streambarer HTTP-Transport fuer entfernte Agent-Plattformen
 - HTTP-Auth mit Bearer-Token und optionalem mTLS-Anschluss
+- OAuth-2.1-kompatible MCP-Authorization fuer HTTP mit Protected
+  Resource Metadata, `WWW-Authenticate`-Challenges und Scope-
+  Fehlermapping
 - Capability-/Initialize-Vertrag fuer MCP `protocolVersion`
   `2025-11-25`; `v1` bezeichnet nur den d-migrate-spezifischen
   Tool-/Resource-Vertrag, nicht die MCP-Protokollversion
@@ -224,6 +231,18 @@ Verbindliche Entscheidung:
   Principal ist verboten
 - fuer HTTP wird der Principal aus `Authorization`-Header oder
   aequivalentem signiertem Principalsignal abgeleitet
+- HTTP-Authorization folgt fuer den Beta-Server der MCP-2025-11-25-
+  Authorization-Spezifikation, sofern HTTP-Auth aktiviert ist:
+  - fehlendes, ungueltiges oder abgelaufenes Token liefert HTTP 401
+    mit `WWW-Authenticate: Bearer ...`
+  - die Challenge enthaelt `resource_metadata` und, wenn bestimmbar,
+    `scope`
+  - unzureichende Scopes liefern HTTP 403 mit
+    `WWW-Authenticate`-Scope-Challenge
+  - Protected Resource Metadata wird ueber die well-known URI oder die
+    im `WWW-Authenticate` referenzierte URL angeboten
+  - Access Tokens duerfen nicht aus Query-Parametern gelesen werden
+  - Tokens werden auf Audience/Resource des MCP-Servers validiert
 - Streamable HTTP implementiert die MCP-Transportregeln fuer
   `protocolVersion` `2025-11-25`:
   - JSON-RPC-Nachrichten laufen ueber einen einzelnen MCP-Endpunkt mit
@@ -427,6 +446,25 @@ Begruendung:
 - KI-nahe Tools sind besonders sensibel und duerfen deshalb nicht als
   freie Modellaufrufe ausserhalb von Policy und Audit entstehen
 
+### 4.9 d-migrate-Jobs bleiben das Async-Modell
+
+Verbindliche Entscheidung:
+
+- 0.9.6 nutzt fuer fachliche Langlaeufer strikt das bestehende
+  d-migrate-Jobmodell aus `docs/job-contract.md`
+- experimentelle oder optionale MCP-Tasks aus der MCP-Spezifikation
+  werden in 0.9.6 nicht parallel zu `job_*` eingefuehrt
+- MCP-Cancel-Notifications fuer einzelne JSON-RPC-Requests ersetzen
+  nicht `job_cancel`; sie koennen nur das Warten auf eine konkrete
+  MCP-Antwort beenden
+
+Begruendung:
+
+- ein zweites Async-Modell wuerde REST/gRPC/MCP auseinanderlaufen
+  lassen
+- `job_status_get`, `job_list` und `job_cancel` bleiben damit die
+  einheitliche Steuerflaeche fuer Agenten und spaetere APIs
+
 ---
 
 ## 5. Zielarchitektur
@@ -544,6 +582,10 @@ Erwartete Kernmodelle und Projektionen:
   - `structuredContent.error.code` fuer die stabilen
     d-migrate-Fehlercodes
   - kurze menschenlesbare Diagnose in `content`
+- `McpResourceError`
+  - JSON-RPC-Error fuer `resources/read` und andere Resource-Requests
+  - numerisches MCP/JSON-RPC-`error.code`
+  - d-migrate-Fehlercode in `error.data.dmigrateCode`
 
 ### 5.3 Stores fuer die Beta
 
@@ -668,6 +710,11 @@ Verbindliche Regeln:
   aufgeloest und enthalten Policy-Metadaten wie Dialekt, Owner,
   Sensitivitaet und Produktionsklassifizierung
 - nicht existente Ressourcen liefern `RESOURCE_NOT_FOUND`
+- Resource-Fehler werden nicht als `tools/call`-Result mit
+  `isError=true` modelliert. `resources/read` und andere Resource-
+  Requests liefern JSON-RPC-Errors; `RESOURCE_NOT_FOUND` wird dabei
+  z.B. auf JSON-RPC `error.code=-32002` gemappt und der stabile
+  d-migrate-Code steht in `error.data.dmigrateCode`.
 - grosse Ressourcen werden chunkbar oder als Artefakt-Referenz
   bereitgestellt
 
@@ -886,6 +933,16 @@ Verbindliche Validierungen:
 - `sizeBytes` ist Pflicht
 - maximale Uploadgroesse ist `200 MiB`
 - `uploadSessionId` ist verbindlich und 36 Zeichen lang
+- `uploadSessionId` wird primaer serverseitig kryptografisch erzeugt
+  und als opaker Wert behandelt
+- falls ein Client fuer Resume einen Session-Kandidaten sendet, muss er
+  UUID-kompatibel bzw. opak validierbar sein, atomar kollisionsfrei
+  angelegt werden und an Tenant, Principal, `approvalKey`,
+  Approval-Fingerprint, `artifactKind`, `mimeType`, `sizeBytes` und
+  `checksumSha256` gebunden werden
+- Wiederverwendung einer Session-ID mit anderem Tenant, Principal,
+  Approval-Fingerprint oder anderen Session-Metadaten liefert
+  `VALIDATION_ERROR` oder `FORBIDDEN_PRINCIPAL`
 - `segmentIndex` beginnt bei `1` und ist fortlaufend
 - `segmentOffset` ist der Byte-Offset in der vollstaendigen
   Artefakt-Bytefolge
@@ -1079,8 +1136,14 @@ MCP-Wire-Mapping:
   MCP-Schema nicht erfuellt
 - fachliche Tool-Ausfuehrungsfehler werden als normales
   `tools/call`-Result mit `isError=true` zurueckgegeben
+- Resource-Request-Fehler werden als JSON-RPC-Errors zurueckgegeben,
+  nicht als Tool-Result. `RESOURCE_NOT_FOUND` nutzt fuer
+  `resources/read` den JSON-RPC-Code `-32002`; der stabile
+  d-migrate-Code steht in `error.data.dmigrateCode`.
 - die stabilen d-migrate-Fehlercodes stehen dabei nicht im numerischen
-  JSON-RPC-`error.code`, sondern in `structuredContent.error.code`
+  JSON-RPC-`error.code`, sondern bei Toolfehlern in
+  `structuredContent.error.code` und bei Resource-Fehlern in
+  `error.data.dmigrateCode`
 - `structuredContent.error` enthaelt mindestens `code`, `message`,
   optional `details`, `requestId` und `retryable`
 - `content` enthaelt nur eine kurze, bereinigte menschliche Diagnose
@@ -1180,6 +1243,13 @@ Abnahmekriterien:
   - `Origin`-Validierung gegen DNS-Rebinding
   - optionales `MCP-Session-Id` mit 400/404-Fehlerpfaden
   - definierte `GET`-Semantik fuer SSE oder HTTP 405
+- HTTP-Authorization nach MCP 2025-11-25 implementieren oder bewusst
+  per Konfiguration deaktivieren; wenn aktiviert:
+  - HTTP 401 mit `WWW-Authenticate` und `resource_metadata`
+  - Protected Resource Metadata well-known Endpoint
+  - HTTP 403 mit Scope-Challenge bei unzureichenden Scopes
+  - Token-Audience-/Resource-Validierung
+  - keine Tokens in Query-Parametern
 - Runtime-Bootstrap fuer Driver, Profiling-Adapter, Streaming-Adapter
   und Schema-Codecs aus der CLI teilen oder aequivalent kapseln
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
@@ -1195,6 +1265,9 @@ Abnahmekriterien:
 - lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
 - HTTP-Transporttests decken Accept-Header, `MCP-Protocol-Version`,
   Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik ab
+- HTTP-Auth-Tests decken 401/403, `WWW-Authenticate`,
+  Protected-Resource-Metadata und Scope-Challenges ab, sofern HTTP-Auth
+  aktiviert ist
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
 - unbekannte Toolnamen liefern einen MCP-/JSON-RPC-Protokollfehler;
@@ -1433,6 +1506,8 @@ ein weiterer ueber HTTP. Beide pruefen:
   `structuredContent.error.code`
 - unbekannter Toolname als Protokollfehler mit numerischem
   JSON-RPC-`error.code`
+- `resources/read` fuer fehlende Resource liefert JSON-RPC-Error
+  `-32002` mit `error.data.dmigrateCode=RESOURCE_NOT_FOUND`
 - fachlich nicht unterstuetzte Option eines bekannten Tools als
   `isError=true` mit `UNSUPPORTED_TOOL_OPERATION`
 - `job_list`
@@ -1452,12 +1527,16 @@ Verbindliche Negativfaelle:
 - unbekannter Toolname muss ein MCP-/JSON-RPC-Protokollfehler sein
 - bekannte Tools mit nicht unterstuetzter fachlicher Option liefern
   `isError=true` mit `UNSUPPORTED_TOOL_OPERATION`
+- fehlende Resource muss JSON-RPC-Error mit d-migrate-Code in
+  `error.data` liefern
 - fehlender Principal
 - fremder Tenant
 - zu grosse Inline-Payload
 - nicht erlaubter MIME-Type
 - fehlendes `contentBase64`
 - ungueltige `uploadSessionId`-Laenge
+- clientseitig wiederverwendete `uploadSessionId` mit anderem Tenant,
+  Principal, Approval-Fingerprint oder anderen Session-Metadaten
 - `segmentIndex=0` oder nicht fortlaufender Segmentindex
 - Upload nach TTL-Ablauf
 - Segmenthash ueber andere Bytes als die decodierten
@@ -1483,6 +1562,8 @@ Verbindliche Negativfaelle:
 - `job_cancel` fuer fremde Tenants oder fremde Principals
 - Worker publiziert nach angenommenem Cancel ein neues Artefakt oder
   startet weitere Daten-Schreiboperationen
+- MCP-Tasks werden parallel zu d-migrate-Jobs fuer denselben
+  Langlaeufer verwendet
 - KI-nahes Tool ohne Policy-Freigabe
 - externer KI-Provider ohne erlaubende Policy
 - Prompt mit Secret- oder Rohdatenparameter
@@ -1517,6 +1598,9 @@ Dokumentation muss explizit nennen:
 - Streamable HTTP dokumentiert Accept-Header,
   `MCP-Protocol-Version`, Origin-Validierung, optionale
   `MCP-Session-Id` und `GET`-Semantik
+- HTTP-Authorization dokumentiert 401/403-Verhalten,
+  `WWW-Authenticate`, Protected Resource Metadata und Scope-
+  Challenges, sofern HTTP-Auth aktiviert ist
 - `stdio` ohne vertrauenswuerdigen Host-/Prozesskontext und ohne
   `DMIGRATE_MCP_STDIO_TOKEN` liefert `AUTH_REQUIRED`
 - Secrets werden nicht ueber MCP-Payloads uebergeben
@@ -1534,6 +1618,8 @@ Dokumentation muss explizit nennen:
   Protokollfehlern vorbehalten
 - unbekannte Toolnamen werden als MCP-/JSON-RPC-Protokollfehler
   behandelt, nicht als d-migrate-`UNSUPPORTED_TOOL_OPERATION`
+- Resource-Fehler erscheinen als JSON-RPC-Errors mit stabilem
+  d-migrate-Code in `error.data.dmigrateCode`
 - Audit speichert Approval-Grants nur als Token-ID oder Fingerprint,
   nie als rohen `approvalToken`
 - KI-nahe Tools brauchen Policy, Prompt-Hygiene und Audit
@@ -1629,12 +1715,17 @@ Gegenmassnahme:
 - policy-pflichtige Upload- und Datenoperationen den Approval-Flow
   erzwingen
 - Artefakt-Uploads segmentiert, resumable und SHA-256-validiert sind
+- Upload-Session-IDs opak, kryptografisch erzeugt oder streng
+  validiert und an Tenant, Principal, Approval-Fingerprint und
+  Session-Metadaten gebunden sind
 - `job_cancel` eigene oder erlaubte Jobs kontrolliert abbrechen kann
 - Cancel in laufende Worker propagiert wird und nach angenommenem
   Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet
   werden
 - der Cancel-Spike fuer bestehende Runner abgeschlossen ist und die
   notwendigen kooperativen Checkpoints dokumentiert sind
+- 0.9.6 bewusst keine parallele MCP-Tasks-Abstraktion fuer
+  d-migrate-Langlaeufer einfuehrt
 - KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md`
   registriert, policy-gesteuert und auditierbar sind
 - Fehler immer als strukturiertes Envelope erscheinen

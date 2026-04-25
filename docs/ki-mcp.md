@@ -492,6 +492,10 @@ MCP-Wire-Mapping:
 - `UNSUPPORTED_TOOL_OPERATION` gilt nur fuer bekannte d-migrate-Tools
   mit fachlich nicht unterstuetzten Optionen oder Operationen; ein
   unbekannter Toolname bleibt ein MCP-/JSON-RPC-Protokollfehler.
+- Resource-Request-Fehler wie eine fehlende Resource werden als
+  JSON-RPC-Errors beantwortet. Der stabile d-migrate-Code steht dabei in
+  `error.data.dmigrateCode`, z.B. `RESOURCE_NOT_FOUND` bei
+  JSON-RPC-Code `-32002`.
 
 ---
 
@@ -527,6 +531,13 @@ Empfohlene Sicherheitsgrundlagen:
 - HTTP:
   - `Authorization` Header mit Bearer-Token (oder aequivalentes
     signiertes Principalsignal)
+  - bei fehlendem oder ungueltigem Token: HTTP 401 mit
+    `WWW-Authenticate` und Protected-Resource-Metadata-Hinweis
+  - bei unzureichenden Scopes: HTTP 403 mit Scope-Challenge
+  - Protected Resource Metadata wird ueber well-known URI oder die im
+    `WWW-Authenticate` referenzierte URL angeboten
+  - Tokens duerfen nicht aus Query-Parametern gelesen werden und muessen
+    auf Audience/Resource des MCP-Servers validiert werden
   - optional mTLS fuer Maschinen-zu-Maschinen-Verkehre
 - stdio:
   - nur von vertrauenswuerdigem lokalem Prozess/Benutzer aufrufbar
@@ -539,7 +550,15 @@ Fortschrittsmeldungen fuer langlaufende Jobs werden in der
 d-migrate-MCP-Toolvertragsversion `v1` ueber Polling
 (`job_status_get`) abgebildet. SSE-basierte Notifications oder
 MCP-Resource-Subscriptions sind nicht Teil des verbindlichen 0.9.6-
-Umfangs.
+Umfangs. Der Streamable-HTTP-`GET`-Pfad bleibt trotzdem MCP-konform:
+der Server liefert entweder `text/event-stream` fuer Transport-Interop
+oder HTTP 405, wenn keine serverinitiierte Stream-Kommunikation
+angeboten wird.
+
+0.9.6 fuehrt keine parallele MCP-Tasks-Abstraktion fuer
+d-migrate-Langlaeufer ein. Das d-migrate-Jobmodell mit
+`job_status_get`, `job_list` und `job_cancel` bleibt die einheitliche
+Steuerflaeche.
 
 ### 10.1 Versionierung
 
