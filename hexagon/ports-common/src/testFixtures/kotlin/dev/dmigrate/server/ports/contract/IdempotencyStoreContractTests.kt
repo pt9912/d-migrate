@@ -107,6 +107,28 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         }
     }
 
+    test("parallel commits after AWAITING_APPROVAL transition exactly one to COMMITTED") {
+        val store = factory()
+        val s = scope("approved")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+        val pool = Executors.newFixedThreadPool(8)
+        try {
+            val tasks = List(16) { i ->
+                Callable { store.commit(s, "job_$i", Fixtures.NOW.plusSeconds(2)) }
+            }
+            val results = pool.invokeAll(tasks).map { it.get() }
+            results.count { it } shouldBe 1
+            results.count { !it } shouldBe 15
+        } finally {
+            pool.shutdown()
+            pool.awaitTermination(2, TimeUnit.SECONDS)
+        }
+        val final = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(3))
+        final.shouldBeInstanceOf<IdempotencyReserveOutcome.Committed>()
+        final.resultRef.startsWith("job_") shouldBe true
+    }
+
     test("cleanupExpired removes terminal entries past their retention") {
         val store = factory()
         val s1 = scope("k1")

@@ -1450,6 +1450,15 @@ Modulplatzierung gemaess `docs/architecture.md` 1.2:
 Persistente Sinks (DB/Datei) sind Phase-B-Thema und liegen ebenfalls
 auessen.
 
+Contract-Test-Strategie: `AuditSink` exportiert nur `emit(event)` und
+hat absichtlich kein Read-API. `AuditSinkContractTests` nimmt deshalb
+einen `() -> InMemoryAuditSink`-Factory (nicht `() -> AuditSink`) und
+verifiziert ueber die test-only `recorded()`-Methode der In-Memory-
+Implementierung. Driven-Sinks (`LoggingAuditSink`, kuenftige DB-Sinks)
+brauchen keinen Contract-Test gegen den Read-Pfad; ihre Korrektheit
+wird ueber das Output-Verhalten geprueft (Logger-Spy, DB-Query, etc.)
+in den jeweiligen Adapter-Modulen.
+
 ### 14.8 testFixtures vs. dediziertes Test-Modul
 
 Default: **`java-test-fixtures`-Plugin** in den betroffenen Modulen.
@@ -1468,3 +1477,27 @@ beim ersten Build-Fehler getroffen, nicht spekulativ.
 modifiziert. Sie sind in Phase B/C potenzielle Konsumenten der neuen
 Kernservices, aber nicht Teil der Phase-A-Auslieferung. Phase A fuegt
 ausschliesslich neue Pakete unter `dev.dmigrate.server.*` hinzu.
+
+### 14.10 Pagination-Token-Format
+
+`PageRequest.pageToken` ist aus Sicht des Vertrags ein **opaker String**.
+Phase-A-Default in den In-Memory-Stores: einfacher numerischer Offset
+(`"0"`, `"2"`, `"4"`, ...). Das ist akzeptabel, weil:
+
+- Der Token wird vom Server erzeugt und vom Client unveraendert
+  zurueckgereicht (Client darf keine Struktur annehmen — siehe
+  `docs/job-contract.md` §4 zu IDs)
+- Die Phase-A-Stores sind In-Memory und brauchen keine
+  Manipulationssicherheit
+
+Verbindliche Regel fuer spaetere Adapter (Phase B/C):
+
+- Sobald ein produktiver Store oder ein oeffentlicher Adapter (REST/MCP/
+  gRPC) Pagination publiziert, **muss** der Token auf einer adapter-
+  spezifischen Ebene gekapselt werden (Base64-codiert, signiert, oder
+  HMAC-MAC), damit Clients nicht durch Token-Modifikation an fremde
+  Daten kommen oder Cursor-Stabilitaet brechen koennen
+- Der Kernvertrag (`PageRequest`/`PageResult`) bleibt unveraendert; die
+  Kapselung ist Adapter-Verantwortung
+- In-Memory-Stores duerfen weiterhin Offset-Tokens verwenden; Tests
+  duerfen die Kapselung nicht annehmen

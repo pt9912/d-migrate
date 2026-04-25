@@ -2106,6 +2106,15 @@ Abnahmekriterien:
   Substitution erst im autorisierten Runner/Driver-Pfad passiert und nicht
   beim MCP-Resource-Bootstrap
 - Cursor-Paginierung und Filtervalidierung einfuehren
+- Cursor-/Pagination-Token gegenueber Clients **kapseln**: sobald ein
+  produktiver Store oder ein oeffentlicher Adapter (REST/MCP/gRPC)
+  Pagination publiziert, muss der Token auf Adapter-Ebene Base64-codiert,
+  signiert oder per HMAC-MAC versiegelt werden, damit Clients nicht
+  durch Token-Modifikation an fremde Daten kommen oder Cursor-
+  Stabilitaet brechen koennen. Der Kernvertrag (`PageRequest`/
+  `PageResult`) bleibt unveraendert; die Kapselung ist Adapter-
+  Verantwortung. Phase-A-In-Memory-Stores duerfen weiterhin
+  Offset-Tokens verwenden; Tests duerfen die Kapselung nicht annehmen.
 - Tenant-Scope-Pruefung fuer jede Resource-Aufloesung erzwingen
 
 Abnahmekriterien:
@@ -2113,6 +2122,8 @@ Abnahmekriterien:
 - Listen liefern stabile `items` und `nextCursor`; `totalCount` ist exakt
   und optional, `totalCountEstimate` ist optional und als Naeherung
   gekennzeichnet
+- modifizierte oder fremde Cursor-/Pagination-Token liefern
+  `VALIDATION_ERROR`, niemals fremde Tenant-Daten
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list`
   auffindbar, auch wenn die Persistenz intern ueber typisierte
   Artefakte erfolgt
