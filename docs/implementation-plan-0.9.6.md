@@ -141,6 +141,7 @@ Konsequenz:
   - `job_status_get`
   - `job_list`
   - `artifact_list`
+  - `artifact_chunk_get`
   - `schema_list`
   - `profile_list`
   - `diff_list`
@@ -827,17 +828,24 @@ Verbindliche Regeln:
   d-migrate-Code steht in `error.data.dmigrateCode`.
 - grosse Ressourcen werden chunkbar oder als Artefakt-Referenz
   bereitgestellt
-- `resources/read` liefert maximal `64 KiB` serialisierte Nutzdaten pro
-  Antwort und akzeptiert fuer chunkbare Ressourcen optionale Parameter:
-  `cursor`, `limitBytes` und optional `rangeStart`/`rangeEnd`
-- `limitBytes` ist serverseitig auf `64 KiB` begrenzt; groessere Werte
-  werden gekappt oder mit `VALIDATION_ERROR` abgewiesen
-- chunkbare Resource-Antworten enthalten `contents`, optional
-  `nextCursor`, `range`, `truncated=true` und eine stabile
-  `resourceVersion` oder `etag`, damit Clients keine ungebundenen
-  Prompt-Dumps erhalten
-- `rangeStart`/`rangeEnd` beziehen sich auf Bytes der kanonischen
-  Resource-Repräsentation; `cursor` ist bevorzugt und opak
+- `resources/read` bleibt MCP-konform und nimmt nur `uri` entgegen; es
+  gibt keine zusaetzlichen `resources/read`-Parameter wie `cursor`,
+  `limitBytes`, `rangeStart` oder `rangeEnd`
+- `resources/read` liefert maximal `64 KiB` serialisierte Nutzdaten und
+  genau ein MCP-`contents[]`-Result; groessere Ressourcen werden nicht
+  inline fortgesetzt
+- chunkbare Inhalte werden ueber stabile Chunk-URIs modelliert, z.B.
+  `dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}`
+  oder aequivalente Resource-Template-URIs
+- Chunk-Resources enthalten im Text/JSON-Payload nur den Chunk-Inhalt
+  plus minimale Metadaten wie `chunkId`, `nextChunkUri`, `range`,
+  `truncated=true` und `etag`/`resourceVersion`
+- grosse Artefakte koennen alternativ ueber das Tool
+  `artifact_chunk_get` gelesen werden; dieses Tool ist d-migrate-
+  spezifisch und nicht Teil des MCP-`resources/read`-Schemas
+- `resources/list` und `resources/templates/list` muessen Chunk-Templates
+  und normale Ressourcen auffindbar machen, statt implizite
+  `resources/read`-Parameter zu verlangen
 
 ---
 
@@ -982,6 +990,7 @@ Tools:
 - `job_status_get`
 - `job_list`
 - `artifact_list`
+- `artifact_chunk_get`
 - `schema_list`
 - `profile_list`
 - `diff_list`
@@ -994,6 +1003,15 @@ Weitere Discovery-Tools:
   Profile und Diffs; sie duerfen intern auf typisierte Artefaktindizes
   oder Job-Artefakte mappen, muessen aber eigene Tool-Schemas,
   Filterallowlists und Resource-URIs liefern
+- `artifact_chunk_get` ist kein MCP-Resource-Request, sondern ein
+  d-migrate-Tool fuer grosse Artefakte:
+  - Eingabe: `artifactId` oder Artefakt-`resourceUri`, optional
+    `chunkId`
+  - Antwort: maximal `64 KiB` decodierte Nutzdaten, `chunkId`, optional
+    `nextChunkId`, `nextChunkUri`, `range`, `truncated` und
+    `etag`/`resourceVersion`
+  - Zugriff folgt denselben Tenant-/Principal-Regeln wie
+    `resources/read`
 
 Gemeinsame Regeln:
 
@@ -1188,9 +1206,13 @@ Antwort:
   `segmentOffset` und `uploadSessionTtlSeconds`
 - finale Annahme eines gueltigen `artifactKind=schema` liefert neben
   Artefaktdaten auch die erzeugte `schemaRef`
-- Initial-TTL ist `900`, Minimum `300`, Maximum `3600`
-- bei `300` Sekunden ohne Aktivitaet wird die Session `EXPIRED` und
-  Zwischensegmente werden verworfen
+- `uploadSessionTtlSeconds` ist die verbleibende absolute Lease-TTL der
+  Session; Initialwert `900`, Minimum `300`, Maximum `3600`
+- jede erfolgreiche Segmentannahme darf die absolute Lease bis maximal
+  `3600` Sekunden ab Session-Erzeugung erneuern
+- zusaetzlich gilt ein Idle-Timeout von `300` Sekunden ohne erfolgreiche
+  Segmentannahme; bei Idle-Timeout oder abgelaufener absoluter Lease wird
+  die Session `EXPIRED` und Zwischensegmente werden verworfen
 
 Akzeptanz:
 
@@ -1468,6 +1490,11 @@ Abnahmekriterien:
 - Streamable-HTTP-Endpunkt mit MCP-konformen `POST`-/`GET`-Regeln
   implementieren:
   - `Accept: application/json, text/event-stream` fuer `POST`
+  - JSON-RPC-Notification oder JSON-RPC-Response per `POST` liefert bei
+    Annahme HTTP `202 Accepted` ohne Body
+  - JSON-RPC-Request per `POST` liefert entweder
+    `Content-Type: application/json` mit genau einem JSON-Objekt oder
+    `Content-Type: text/event-stream` fuer SSE
   - `MCP-Protocol-Version` nach erfolgreichem Initialize
   - `Origin`-Validierung gegen DNS-Rebinding
   - optionales `MCP-Session-Id` mit 400/404-Fehlerpfaden
@@ -1498,6 +1525,13 @@ Abnahmekriterien:
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
 - Initialize-/Capability-Antwort bereitstellen
 - Tool-Registry und Resource-Registry aufbauen
+- MCP-Standard-Discovery implementieren:
+  - `resources/list` mit Pagination fuer konkret bekannte Ressourcen
+  - `resources/templates/list` fuer parametrisierte Resource-URIs,
+    inklusive Chunk-URIs fuer grosse Artefakte
+  - `resources` Capability im Initialize-Result korrekt setzen; keine
+    `subscribe`/`listChanged`-Flags setzen, solange diese nicht
+    implementiert sind
 - JSON-Schema-Definitionen fuer alle 0.9.6-Tools erzeugen oder
   pflegen
 - Startbefehl und lokale Konfiguration dokumentieren
@@ -1509,6 +1543,10 @@ Abnahmekriterien:
 - HTTP-Transporttests decken Accept-Header, `MCP-Protocol-Version`,
   Origin-Validierung, optionales `MCP-Session-Id`, `GET`-Semantik und
   `DELETE` mit `MCP-Session-Id` ab
+- Streamable-HTTP-POST-Tests decken MCP-Wire-Semantik ab:
+  Notifications und JSON-RPC-Responses liefern `202 Accepted` ohne Body;
+  JSON-RPC-Requests liefern `Content-Type: application/json` oder
+  `text/event-stream`
 - HTTP-Auth-Tests decken fuer nicht-lokales HTTP 401/403,
   `WWW-Authenticate`, Protected-Resource-Metadata und Scope-Challenges
   ab
@@ -1523,6 +1561,12 @@ Abnahmekriterien:
   Bind-Adresse wird mit klarem Konfigurationsfehler abgelehnt
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
+- `resources/list` liefert Jobs, Artefakte, Schemas, Profile, Diffs und
+  Connection-Refs tenant-/principal-gefiltert mit MCP-konformem
+  `nextCursor`
+- `resources/templates/list` veroeffentlicht die
+  `dmigrate://tenants/{tenantId}/...`-Templates inklusive Chunk-
+  Resource-Template
 - unbekannte Toolnamen liefern einen MCP-/JSON-RPC-Protokollfehler;
   `UNSUPPORTED_TOOL_OPERATION` wird nur fuer bekannte Tools mit
   fachlich nicht unterstuetzter Operation/Option genutzt
@@ -1552,8 +1596,10 @@ Abnahmekriterien:
 
 ### Phase D - Discovery und Ressourcen
 
-- `job_status_get`, `job_list`, `artifact_list`, `schema_list`,
-  `profile_list` und `diff_list` implementieren
+- `job_status_get`, `job_list`, `artifact_list`, `artifact_chunk_get`,
+  `schema_list`, `profile_list` und `diff_list` implementieren
+- MCP-Standard-Discovery `resources/list` und
+  `resources/templates/list` an dieselben Store-/Resolver-Regeln binden
 - Resource-Resolver und Store-/Index-Abstraktionen fuer Jobs,
   Artefakte, Schemas, Profile und Diffs implementieren
 - Resource-Resolver und Store fuer tenant-scoped Connection-Refs
@@ -1738,9 +1784,10 @@ Pflichtabdeckung:
 - MCP-Wire-Mapping: JSON-RPC-Errors nur fuer Protokollfehler,
   fachliche Toolfehler als `tools/call`-Result mit `isError=true`
 - Inline-Limit-Entscheidung
-- `resources/read`-Limitierung und Chunking mit `cursor`,
-  `limitBytes`, optionaler Byte-Range, `nextCursor` und `etag`/
-  `resourceVersion`
+- `resources/read`-Limitierung ohne schemafremde Parameter; Chunking
+  ueber Resource-Templates/Chunk-URIs oder `artifact_chunk_get`
+- MCP-Standard-Discovery ueber `resources/list` und
+  `resources/templates/list`
 - Upload-Session-Zustandsautomat
 - SHA-256-Segment- und Gesamtpruefung
 - Base64-Decoding, Segmentgroessenlimit und Hash-Berechnung ueber
@@ -1767,6 +1814,8 @@ Pflichtabdeckung:
   Upload inklusive Validierungsfehler ohne Registrierung
 - job_status_get-Vertrag fuer `jobId`/`resourceUri`, Owner-/Admin-
   Berechtigungen, Tenant-Fehler, terminale Jobs und Retention
+- MCP-konforme Resource-Reads: `resources/read` nur mit `uri`, Chunking
+  ueber Resource-Templates/Chunk-URIs oder `artifact_chunk_get`
 - Policy-Challenge-Flow: `POLICY_REQUIRED` enthaelt keinen verwendbaren
   Token; Grants entstehen nur serverseitig nach Policy-/Human-/Admin-
   Entscheidung
@@ -1826,6 +1875,10 @@ ein weiterer ueber HTTP. Beide pruefen:
 - Streamable-HTTP-POST mit `Accept: application/json,
   text/event-stream`
 - HTTP-Folgeaufruf mit `MCP-Protocol-Version`
+- JSON-RPC-Notification/-Response per Streamable-HTTP-POST liefert
+  `202 Accepted` ohne Body
+- JSON-RPC-Request per Streamable-HTTP-POST liefert
+  `Content-Type: application/json` oder `text/event-stream`
 - ungueltiger `Origin` liefert HTTP 403
 - optionales `MCP-Session-Id` wird korrekt ausgegeben, verlangt,
   abgewiesen oder mit HTTP 404 als abgelaufen behandelt
@@ -1856,6 +1909,11 @@ ein weiterer ueber HTTP. Beide pruefen:
   JSON-RPC-`error.code`
 - `resources/read` fuer fehlende Resource liefert JSON-RPC-Error
   `-32002` mit `error.data.dmigrateCode=RESOURCE_NOT_FOUND`
+- `resources/read` akzeptiert nur `uri` und liefert MCP-konforme
+  `contents[]`; grosse Ressourcen werden ueber Chunk-URI oder
+  `artifact_chunk_get` getestet
+- `resources/list` und `resources/templates/list`
+- `artifact_chunk_get` fuer ein grosses Artefakt mit `nextChunkUri`
 - fachlich nicht unterstuetzte Option eines bekannten Tools als
   `isError=true` mit `UNSUPPORTED_TOOL_OPERATION`
 - `job_list`
@@ -1900,9 +1958,10 @@ Verbindliche Negativfaelle:
 - `schema_compare_start` mit `connectionRef` ohne `idempotencyKey`
 - `schema_compare_start` ohne Policy-Freigabe
 - Listen-Tool mit fremdem `tenantId` ohne Admin-/Cross-Tenant-Scope
-- `resources/read` ohne Cursor/Range fuer eine Ressource ueber dem
-  Antwortlimit
-- `resources/read` mit `limitBytes` ueber dem Servermaximum
+- `resources/read` mit schemafremden Parametern wie `cursor`,
+  `limitBytes`, `rangeStart` oder `rangeEnd`
+- `resources/read` fuer eine Ressource ueber dem Antwortlimit ohne
+  Chunk-URI oder Artefakt-Referenz
 - HTTP-Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-
   lokaler Bind-Adresse
 - `artifact_upload_init` ohne `approvalKey`
@@ -2089,8 +2148,9 @@ Gegenmassnahme:
   behandeln
 - Idempotency-Reservierung atomar ist und Konflikte ohne Policy-Pruefung
   als `IDEMPOTENCY_CONFLICT` enden
-- `resources/read` grosse Ressourcen nur begrenzt und chunkbar ueber
-  Cursor/Range mit serverseitigem Antwortlimit liefert
+- `resources/read` grosse Ressourcen nicht ueber schemafremde Parameter
+  paginiert, sondern ueber Resource-Templates/Chunk-URIs oder
+  `artifact_chunk_get` begrenzt bereitstellt
 - Import und Transfer dieselben Idempotenzregeln wie andere Start-Tools
   erzwingen
 - `schema_compare` synchron nur `schemaRef` akzeptiert und

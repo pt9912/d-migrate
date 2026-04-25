@@ -127,13 +127,16 @@ Ressourcen sollen:
 Fuer `resources/read` gilt dasselbe Prompt-Schutzprinzip wie fuer
 Tool-Resultate:
 
-- pro Antwort maximal `64 KiB` serialisierte Nutzdaten
-- chunkbare Ressourcen akzeptieren `cursor`, `limitBytes` und optional
-  `rangeStart`/`rangeEnd`
-- Antworten koennen `nextCursor`, `range`, `truncated=true` und
-  `etag` oder `resourceVersion` enthalten
-- `cursor` ist opak; Byte-Ranges beziehen sich auf die kanonische
-  Resource-Repräsentation
+- `resources/read` bleibt MCP-konform und nimmt nur `uri` entgegen
+- pro Antwort maximal `64 KiB` serialisierte Nutzdaten in `contents[]`
+- chunkbare Ressourcen werden ueber eigene Chunk-URIs oder Resource-
+  Templates adressiert, nicht ueber zusaetzliche `resources/read`-
+  Parameter
+- Chunk-Resources koennen im Payload Metadaten wie `chunkId`,
+  `nextChunkUri`, `range`, `truncated=true` und `etag` oder
+  `resourceVersion` enthalten
+- grosse Artefakte koennen alternativ ueber ein d-migrate-spezifisches
+  Tool wie `artifact_chunk_get` gelesen werden
 
 ---
 
@@ -150,6 +153,7 @@ Tool-Resultate:
 | `job_status_get` | Status eines langen Laufs abfragen |
 | `job_list` | Zugelassene Jobs eines Tenants auflisten |
 | `artifact_list` | Artefakt- und Berichtuebersicht mit Filterung |
+| `artifact_chunk_get` | begrenzten Chunk eines grossen Artefakts lesen |
 | `schema_list` | Verfuegbare bzw. angelegte Schema-Artefakte listen |
 | `profile_list` | Profiling-Reports auffinden |
 | `diff_list` | Schema-Vergleichsergebnisse auffinden |
@@ -264,6 +268,7 @@ Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-
 
 - `job_list`: optional adressierendes `tenantId` + Filter (`status`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `artifact_list`: optional adressierendes `tenantId` + Filter (`artifactKind`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `artifact_chunk_get`: `artifactId` oder Artefakt-`resourceUri` + optional `chunkId`; Antwort maximal `64 KiB` mit optionalem `nextChunkId`/`nextChunkUri`
 - `schema_list`: optional adressierendes `tenantId` + Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `profile_list`: optional adressierendes `tenantId` + Filter (`connectionId`, `jobId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `diff_list`: optional adressierendes `tenantId` + Filter (`jobId`, `leftSchemaId`, `rightSchemaId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
@@ -497,8 +502,14 @@ verbindlich:
     serverseitig gegen das vollstaendige Artefakt geprueft.
 - Session-Management:
   - `uploadSessionTtlSeconds` muss im Response gesetzt werden:
-    Initial `900`, Minimum `300`, Maximum `3600`.
-  - Bei `300` Sekunden ohne Aktivitaet wird der Status `EXPIRED` gesetzt und Segmente verworfen.
+    Initial `900`, Minimum `300`, Maximum `3600`; der Wert beschreibt
+    die verbleibende absolute Lease-TTL.
+  - Jede erfolgreiche Segmentannahme darf die Lease bis maximal `3600`
+    Sekunden ab Session-Erzeugung erneuern.
+  - Zusaetzlich gilt ein Idle-Timeout von `300` Sekunden ohne
+    erfolgreiche Segmentannahme; bei Idle-Timeout oder abgelaufener
+    absoluter Lease wird der Status `EXPIRED` gesetzt und Segmente
+    verworfen.
   - Der Client kann eine eigene aktive Session per `artifact_upload_abort`
     ohne erneute Policy-Freigabe auf Status `ABORTED` setzen und alle
     Zwischensegmente sofort verwerfen; fremde oder administrative
