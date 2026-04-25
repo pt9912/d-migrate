@@ -523,8 +523,10 @@ Abnahme:
 Aufgaben:
 
 - Quota-Schluessel fuer Tenant/Principal/Operation definieren
+- aktive Jobs insgesamt und je Operation zaehlbar machen
 - aktive Upload-Sessions und reservierte Bytes zaehlbar machen
 - parallele Segmentwrites begrenzen
+- Provider-/Tool-Aufrufe pro Zeitfenster zaehlbar machen
 - Timeout-Konfiguration fuer spaetere Handler/Runner vorbereiten
 - Fehlerdetails fuer `RATE_LIMITED` und `OPERATION_TIMEOUT` definieren
 
@@ -532,7 +534,11 @@ Abnahme:
 
 - Quota-Verletzungen liefern strukturierte Details ohne fremde Ressourcen
 - identische Idempotency-Treffer verbrauchen keine neue Quota
-- neue Sessions/Segmente werden vor Side Effects quotiert
+- neue Jobs, Sessions, Segmente und Provider-/Tool-Aufrufe werden vor Side
+  Effects quotiert
+- aktive Job-Quota, Upload-Session-Quota, Byte-Quota, parallele
+  Segmentwrite-Quota und Provider-/Tool-Aufruf-Rate-Limit sind getrennt
+  konfigurier- und testbar
 
 ### 6.7 Error-Mapper bauen
 
@@ -542,6 +548,15 @@ Aufgaben:
 - Validierungsfehler strukturiert abbilden
 - Tenant-/Principal-Fehler trennen
 - Resource-not-found, expired, aborted und conflict deterministisch trennen
+- komplettes Kern-Code-Vokabular aus `docs/ki-mcp.md` abbilden:
+  `AUTH_REQUIRED`, `FORBIDDEN_PRINCIPAL`, `POLICY_REQUIRED`,
+  `IDEMPOTENCY_CONFLICT`, `IDEMPOTENCY_KEY_REQUIRED`,
+  `RESOURCE_NOT_FOUND`, `VALIDATION_ERROR`, `RATE_LIMITED`,
+  `OPERATION_TIMEOUT`, `POLICY_DENIED`, `PAYLOAD_TOO_LARGE`,
+  `UPLOAD_SESSION_EXPIRED`, `UPLOAD_SESSION_ABORTED`,
+  `UNSUPPORTED_MEDIA_TYPE`, `UNSUPPORTED_TOOL_OPERATION`,
+  `PROMPT_HYGIENE_BLOCKED`, `TENANT_SCOPE_DENIED` und
+  `INTERNAL_AGENT_ERROR`
 
 Abnahme:
 
@@ -549,6 +564,7 @@ Abnahme:
 - fehlende/malformed Eingaben liefern `VALIDATION_ERROR`
 - wohlgeformte, aber unbekannte Ressourcen liefern `RESOURCE_NOT_FOUND`
 - fremde Tenants liefern `TENANT_SCOPE_DENIED`
+- jeder verbindliche Fehlercode hat einen deterministischen Mapper-Test
 
 ### 6.8 Audit-Kernvertrag und Scrubbing definieren
 
@@ -641,19 +657,32 @@ Pflichtabdeckung:
   - Scope-Mismatch
   - Tenant-/Caller-/Tool-/Correlation-Mismatch
 - Quotas und Timeouts:
+  - aktive Job-Quota
   - aktive Session-Quota
   - Byte-Quota
   - parallele Segmentwrite-Quota
+  - Provider-/Tool-Aufruf-Rate-Limit
   - `RATE_LIMITED`
   - `OPERATION_TIMEOUT`
 - Error-Mapper:
+  - `AUTH_REQUIRED`
+  - `POLICY_REQUIRED`
+  - `POLICY_DENIED`
+  - `IDEMPOTENCY_KEY_REQUIRED`
   - `VALIDATION_ERROR`
   - `RESOURCE_NOT_FOUND`
   - `TENANT_SCOPE_DENIED`
   - `FORBIDDEN_PRINCIPAL`
   - `IDEMPOTENCY_CONFLICT`
+  - `RATE_LIMITED`
+  - `OPERATION_TIMEOUT`
+  - `PAYLOAD_TOO_LARGE`
   - `UPLOAD_SESSION_EXPIRED`
   - `UPLOAD_SESSION_ABORTED`
+  - `UNSUPPORTED_MEDIA_TYPE`
+  - `UNSUPPORTED_TOOL_OPERATION`
+  - `PROMPT_HYGIENE_BLOCKED`
+  - `INTERNAL_AGENT_ERROR`
 - Audit:
   - Around-/Finally-Outcome fuer Erfolg
   - Outcome fuer `AUTH_REQUIRED`
@@ -788,8 +817,12 @@ Phase A ist abgeschlossen, wenn:
 - der Approval-Grant-Service Grants gegen Tenant, Caller, Tool,
   Correlation, Payload-Fingerprint, Scope und Ablauf validiert
 - Quota-/Rate-Limit- und Timeout-Grundlagen implementiert und getestet sind
-- Error-Mapping fuer Validierung, Tenant-Scope, Resource-Not-Found,
-  Idempotency-Konflikt, Upload-Expiry und Upload-Abort deterministisch ist
+- Quota-Tests decken aktive Jobs, Upload-Sessions, Upload-/Artefaktbytes,
+  parallele Segmentwrites und Provider-/Tool-Aufrufe pro Zeitfenster ab
+- Error-Mapping fuer das vollstaendige Kern-Code-Vokabular aus
+  `docs/ki-mcp.md` deterministisch ist, inklusive Auth, Policy,
+  Idempotency, Validation, Media/Payload, Rate-Limit, Timeout,
+  Upload-Session, Prompt-Hygiene, Tenant-Scope und internem Fehler
 - Audit-Event-Struktur, Around-/Finally-Scope, fruehe Fehler-Outcomes und
   Secret-Scrubbing implementiert und getestet sind
 - Unit-Tests die in Abschnitt 7 genannten Pflichtfaelle abdecken
