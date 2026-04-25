@@ -118,11 +118,16 @@ Erlaubt sind nur:
 - Store-Interfaces:
   - `JobStore`
   - `ArtifactStore`
+  - `SchemaStore`
+  - `ProfileStore`
+  - `DiffStore`
   - `ArtifactContentStore`
   - `UploadSessionStore`
   - `UploadSegmentStore`
   - `ConnectionReferenceStore`
   - `IdempotencyStore`
+  - `SyncEffectIdempotencyStore` oder explizite Wiederverwendung des
+    `IdempotencyStore` fuer synchrone Nebenwirkungen mit `approvalKey`
   - `ApprovalGrantStore`
   - Quota-/Rate-Limit-Store oder aequivalente Zaehler
   - `AuditSink`
@@ -136,6 +141,8 @@ Erlaubt sind nur:
 - Quota-/Rate-Limit-Service fuer Tenant-/Principal-Grenzen
 - Timeout-Konfiguration und Timeout-Fehlermapping
 - Error-Mapper fuer Anwendungsausnahmen und Validierungsfehler
+- Audit-Event-Kernvertrag inklusive Around-/Finally-Scope, Outcome,
+  Secret-Scrubbing und fruehen Fehlerpfaden
 - Unit-Tests fuer die Kernservices und Stores
 
 ### 3.2 Bewusst nicht Teil von Phase A
@@ -279,8 +286,11 @@ Verbindliche Folge:
 - rohe Approval-Tokens werden nie persistiert oder auditiert
 - ein Grant mit nur `approvalKey` ohne `correlationKind` ist ungueltig
 
-Phase A stellt nur das Modell und den Store-Vertrag bereit. Produktive
-Grant-Aussteller folgen in spaeteren Phasen.
+Phase A implementiert den adapterneutralen Approval-Grant-Service fuer
+Validierung und Redeem-Entscheidungen. Produktive Grant-Aussteller folgen in
+spaeteren Phasen; der Kernservice muss aber bereits Grants gegen Tenant,
+Caller, Tool, `correlationKind`, `correlationKey`, Payload-Fingerprint,
+Scopes und Ablaufzeit pruefen koennen.
 
 ### 4.7 Quotas, Rate Limits und Timeouts sind Kernverhalten
 
@@ -351,11 +361,16 @@ Mindestens zu definieren:
 
 - `JobStore`
 - `ArtifactStore`
+- `SchemaStore`
+- `ProfileStore`
+- `DiffStore`
 - `ArtifactContentStore`
 - `UploadSessionStore`
 - `UploadSegmentStore`
 - `ConnectionReferenceStore`
 - `IdempotencyStore`
+- `SyncEffectIdempotencyStore` oder explizite Wiederverwendung des
+  `IdempotencyStore` fuer synchrone Nebenwirkungen mit `approvalKey`
 - `ApprovalGrantStore`
 - `QuotaStore` oder aequivalente Quota-Zaehler
 - `AuditSink`
@@ -363,9 +378,18 @@ Mindestens zu definieren:
 Die Interfaces muessen atomare Operationen ausdruecken koennen, insbesondere:
 
 - Segmentwrite nur einmal fuer dieselbe Session/Position
-- Idempotency-Reservierung ohne Race zwischen parallelen Requests
+- Idempotency-Reservierung ohne Race zwischen parallelen Requests,
+  inklusive `PENDING`, `AWAITING_APPROVAL`, `COMMITTED`, `DENIED`,
+  Lease-/Recovery-/TTL- und Konfliktpfaden
+- Sync-Effect-Reservierung fuer `approvalKey`, damit synchrone
+  Nebenwirkungen wie Upload-Init oder KI-Provider-Aufrufe retry-sicher sind
 - Upload-Session-Statuswechsel fuer Abort/Expiry/Complete
 - Byte-Cleanup nach TTL, Abort oder Expiry
+
+`SchemaStore`, `ProfileStore` und `DiffStore` duerfen intern auf typisierte
+Artefakte zeigen. Trotzdem brauchen sie explizite Store-/Index-Abstraktionen,
+damit `schema_list`, Resource-Resolver, Tenant-Scope, Pagination und Retention
+nicht von artefaktspezifischen Details abhaengen.
 
 ### 5.4 Test-Implementierungen
 
@@ -404,9 +428,21 @@ Abnahme:
 
 Aufgaben:
 
-- Store-Interfaces fuer Jobs, Artefakte, Uploads, Connection-Refs,
-  Idempotency, Approval-Grants, Quotas und Audit definieren
-- atomare Methoden fuer Idempotency und Segmentwrites ausdruecken
+- Store-Interfaces fuer Jobs, Artefakte, Schemas, Profile, Diffs, Uploads,
+  Connection-Refs, Idempotency, Sync-Effect-Idempotency, Approval-Grants,
+  Quotas und Audit definieren
+- atomare Methoden fuer Idempotency, Sync-Effect-Idempotency und
+  Segmentwrites ausdruecken
+- Idempotency-State-Machine verbindlich modellieren:
+  - `PENDING` mit `pendingLeaseExpiresAt` und Recovery fuer denselben
+    Scope/Fingerprint
+  - `AWAITING_APPROVAL` mit `awaitingApprovalExpiresAt`
+  - `COMMITTED` als deduplizierbarer Erfolgseintrag
+  - `DENIED` mit `POLICY_DENIED` bis zum Ablauf
+  - Konfliktpfad fuer gleicher Scope-Key mit anderem Payload-Fingerprint
+- genehmigter Retry aus `AWAITING_APPROVAL` muss die Reservierung atomar
+  claimen, genau eine Job-Erzeugung ausloesen und danach `COMMITTED`
+  deduplizieren
 - TTL-/Cleanup-Verhalten in Interfaces oder Service-Vertraege aufnehmen
 - Fehlerfaelle fuer unbekannt, abgelaufen, fremd, konfliktbehaftet und
   quota-limitiert modellieren
@@ -416,6 +452,10 @@ Abnahme:
 - Interfaces reichen fuer spaetere MCP-Tool-Handler aus
 - In-Memory-Tests koennen Race- und Konfliktfaelle nachstellen
 - Byte-Stores koennen Range-/Chunk-Reads ausdruecken
+- `schema_list`, `profile_list`, `diff_list` und Resource-Resolver koennen
+  ueber explizite Store-/Index-Abstraktionen implementiert werden
+- parallele identische Starts erzeugen maximal eine `PENDING`-Reservierung
+  und genehmigte parallele Retries maximal einen `COMMITTED` Job
 
 ### 6.3 Upload-Byte-Store-Vertrag implementieren
 
@@ -462,6 +502,12 @@ Aufgaben:
 - Scope-, Issuer- und Ablaufmetadaten speichern
 - Validierung gegen Tenant, Caller, Tool, Correlation und Payload-
   Fingerprint definieren
+- adapterneutralen Approval-Grant-Service implementieren:
+  - Grant anhand Token-Fingerprint laden
+  - Ablaufzeit, Issuer, Scopes und Correlation pruefen
+  - Payload-Fingerprint vergleichen
+  - Reuse mit anderem Payload, Tenant, Caller, Tool oder Correlation
+    deterministisch ablehnen
 
 Abnahme:
 
@@ -469,6 +515,8 @@ Abnahme:
 - Sync-Tool-Grants koennen ueber `approvalKey` validiert werden
 - Reuse mit anderem Payload wird abgewiesen
 - rohe Tokens tauchen nicht in Store oder Audit auf
+- abgelaufene Grants werden abgewiesen
+- fehlende Scopes werden abgewiesen
 
 ### 6.6 Quota-, Rate-Limit- und Timeout-Grundlagen
 
@@ -502,6 +550,43 @@ Abnahme:
 - wohlgeformte, aber unbekannte Ressourcen liefern `RESOURCE_NOT_FOUND`
 - fremde Tenants liefern `TENANT_SCOPE_DENIED`
 
+### 6.8 Audit-Kernvertrag und Scrubbing definieren
+
+Aufgaben:
+
+- Audit-Event-Struktur definieren:
+  - `requestId`
+  - `tenantId` bzw. adressierter Tenant, sofern bekannt
+  - `principalId` oder authentifizierbare Fehlerkontextdaten
+  - `toolName` oder Resource-Methode, sofern bekannt
+  - Outcome-Code
+  - Fehlercode
+  - Payload-Fingerprint
+  - Resource-/Artifact-/Job-Refs
+  - Zeitstempel und Dauer
+- Around-/Finally-Audit-Scope modellieren:
+  - Scope beginnt direkt nach `requestId`-Erzeugung
+  - Scope endet im `finally`-Pfad mit Erfolg oder Fehler
+  - fruehe Fehler wie Auth, Validation, Scope, Policy und Idempotency werden
+    ebenfalls auditiert
+- Secret-Scrubbing fuer Audit-Felder definieren:
+  - keine rohen Tokens
+  - keine JDBC-Secrets
+  - keine kompletten Uploadsegmente
+  - keine ungefilterten SQL-/DDL-/Prozedurtexte
+  - Approval-Tokens nur als ID oder Fingerprint
+- AuditSink-Test-Doubles fuer Unit-Tests bereitstellen
+
+Abnahme:
+
+- `AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
+  `POLICY_REQUIRED`, `POLICY_DENIED` und `IDEMPOTENCY_CONFLICT` erzeugen
+  Audit-Outcomes
+- bei fehlendem Principal wird kein erfundener Principal auditiert
+- gescrubbte Felder enthalten keine bekannten Secret-/Token-Marker
+- identische Retries sind im Audit erkennbar, ohne Payloads im Klartext zu
+  speichern
+
 ---
 
 ## 7. Verifikationsstrategie
@@ -529,11 +614,32 @@ Pflichtabdeckung:
   - Range-/Chunk-Read
   - TTL-Cleanup
   - Abort-Cleanup
+- Schema-/Profile-/Diff-Stores:
+  - typisierte Artefakt-Indizes
+  - tenant-scoped Lookup
+  - Pagination
+  - Retention-/Expiry-Filter
+- Idempotency-State-Machine:
+  - atomare `PENDING`-Reservierung
+  - parallele identische Starts erzeugen nur eine Reservierung
+  - `PENDING`-Lease-Recovery
+  - Wechsel nach `AWAITING_APPROVAL`
+  - genehmigter Retry erzeugt genau einen `COMMITTED` Job
+  - `DENIED` liefert `POLICY_DENIED` bis Ablauf
+  - gleicher Store-Key mit anderem Payload liefert
+    `IDEMPOTENCY_CONFLICT`
+- Sync-Effect-Idempotency:
+  - `approvalKey`-Scope
+  - identischer Retry liefert dasselbe Ergebnis
+  - abweichender Payload liefert `IDEMPOTENCY_CONFLICT`
 - Approval-Grants:
   - `correlationKind=idempotencyKey`
   - `correlationKind=approvalKey`
   - Token-Fingerprint statt Roh-Token
   - Reuse mit anderem Payload
+  - Ablaufzeit
+  - Scope-Mismatch
+  - Tenant-/Caller-/Tool-/Correlation-Mismatch
 - Quotas und Timeouts:
   - aktive Session-Quota
   - Byte-Quota
@@ -548,6 +654,14 @@ Pflichtabdeckung:
   - `IDEMPOTENCY_CONFLICT`
   - `UPLOAD_SESSION_EXPIRED`
   - `UPLOAD_SESSION_ABORTED`
+- Audit:
+  - Around-/Finally-Outcome fuer Erfolg
+  - Outcome fuer `AUTH_REQUIRED`
+  - Outcome fuer `VALIDATION_ERROR`
+  - Outcome fuer `TENANT_SCOPE_DENIED`
+  - Outcome fuer `POLICY_REQUIRED` und `POLICY_DENIED`
+  - Outcome fuer `IDEMPOTENCY_CONFLICT`
+  - Scrubbing fuer Tokens, Secrets, Uploadsegmente und Roh-SQL/-DDL
 
 ### 7.2 Keine Integrationstests in Phase A erforderlich
 
@@ -656,18 +770,28 @@ Phase A ist abgeschlossen, wenn:
 - `PrincipalContext` Tenant-Sets, `effectiveTenantId`, Scopes, Admin-Status,
   Audit-Subject, Auth-Quelle und Ablaufzeit ausdrueckt
 - Store-Interfaces fuer Jobs, Artefakte, Artefaktbytes, Upload-Sessions,
-  Uploadsegmente, Connection-Refs, Idempotency, Approval-Grants, Quotas und
-  Audit existieren
+  Uploadsegmente, Schemas, Profile, Diffs, Connection-Refs, Idempotency,
+  Sync-Effect-Idempotency, Approval-Grants, Quotas und Audit existieren
+- `IdempotencyStore` bildet `PENDING`, `AWAITING_APPROVAL`, `COMMITTED`,
+  `DENIED`, Lease-/Recovery-/TTL- und Konfliktpfade atomar ab
+- Sync-Effect-Idempotency fuer `approvalKey` ist modelliert und getestet
 - `UploadSegmentStore` und `ArtifactContentStore` atomare Writes,
   Range-/Chunk-Reads, TTL-Cleanup und File-Spooling-Vertrag abbilden
+- `SchemaStore`, `ProfileStore` und `DiffStore` bzw. gleichwertige
+  Store-/Index-Abstraktionen fuer Discovery, Resource-Resolver,
+  Tenant-Scope, Pagination und Retention existieren
 - In-Memory-Implementierungen fuer Unit-Tests existieren
 - Fingerprint-Kanonik fuer Idempotency, Approval und Upload-Init-Metadaten
   implementiert und getestet ist
 - `ApprovalGrant` `correlationKind`/`correlationKey`, Token-Fingerprint,
   Issuer-Fingerprint, Scope, Payload-Fingerprint und Ablauf abbildet
+- der Approval-Grant-Service Grants gegen Tenant, Caller, Tool,
+  Correlation, Payload-Fingerprint, Scope und Ablauf validiert
 - Quota-/Rate-Limit- und Timeout-Grundlagen implementiert und getestet sind
 - Error-Mapping fuer Validierung, Tenant-Scope, Resource-Not-Found,
   Idempotency-Konflikt, Upload-Expiry und Upload-Abort deterministisch ist
+- Audit-Event-Struktur, Around-/Finally-Scope, fruehe Fehler-Outcomes und
+  Secret-Scrubbing implementiert und getestet sind
 - Unit-Tests die in Abschnitt 7 genannten Pflichtfaelle abdecken
 
 ---
