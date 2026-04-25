@@ -105,6 +105,12 @@ Tools muessen:
 - begrenzte und erklaerbare Resultate liefern
 - keine ungefilterten Massendaten in den Chat kippen
 
+Tool-Schemas verwenden JSON Schema 2020-12. Wenn ein `inputSchema` oder
+`outputSchema` ein `$schema`-Feld enthaelt, muss es
+`https://json-schema.org/draft/2020-12/schema` sein; ohne `$schema` gilt
+2020-12 als MCP-Dialektannahme. Aeltere Draft-spezifische Keywords sind im
+d-migrate-MCP-Vertrag nicht zulaessig.
+
 Verbindliche Antwortgrenzen:
 
 - ein Tool-Resultat darf hoechstens `64 KiB` serialisierte Nutzdaten inline
@@ -177,6 +183,11 @@ Tool-Resultate:
 | `artifact_upload` | Eingabe-Artefakt fuer spaetere Jobs hochladen | session-scoped nach Init |
 | `artifact_upload_abort` | eigenen laufenden Artefakt-Upload abbrechen; administrative Abbrueche policy-gesteuert | Owner-Pruefung / policy-gesteuert |
 | `job_cancel` | langen Lauf abbrechen | nur fuer eigene oder erlaubte Jobs |
+
+Bei `job_cancel` bedeutet "erlaubte Jobs" fuer 0.9.6: eigene Jobs oder
+Jobs desselben Tenants, fuer die der Principal administrative Rechte besitzt.
+Cross-Tenant-Cancel ist ausgeschlossen, sofern der `PrincipalContext` nicht
+explizit mehrere erlaubte Tenants enthaelt.
 
 Hinweis:
 
@@ -306,7 +317,7 @@ Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-
 
 - `job_list`: optional adressierendes `tenantId` + Filter (`status`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `artifact_list`: optional adressierendes `tenantId` + Filter (`artifactKind`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- `artifact_chunk_get`: `artifactId` oder Artefakt-`resourceUri` + optional `chunkId`; Antwort maximal `64 KiB` mit optionalem `nextChunkId`/`nextChunkUri`
+- `artifact_chunk_get`: `artifactId` oder Artefakt-`resourceUri` + optional `chunkId`; Antwort maximal `64 KiB` serialisierte Tool-Response inklusive Nutzdaten und Metadaten, mit optionalem `nextChunkId`/`nextChunkUri`
 - `schema_list`: optional adressierendes `tenantId` + Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `profile_list`: optional adressierendes `tenantId` + Filter (`connectionId`, `jobId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `diff_list`: optional adressierendes `tenantId` + Filter (`jobId`, `leftSchemaId`, `rightSchemaId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
@@ -527,10 +538,9 @@ verbindlich:
   `uploadSessionId`; read-only Schema-Staging kann fuer Retry-Deduplizierung
   stattdessen einen stabilen `clientRequestId` nutzen. Dadurch erzeugen
   Agent-Retries nach Timeouts keine doppelten Upload-Sessions.
-- Ein optionaler clientseitiger Session-Kandidat ist nur fuer
-  Resume-faehige Clients erlaubt und muss atomar kollisionsfrei an
-  Tenant, Principal, Approval-Fingerprint und Init-Metadaten gebunden
-  werden.
+- Clients duerfen keine `uploadSessionId` vorschlagen; Resume erfolgt ueber
+  `approvalKey` bzw. `clientRequestId` plus identische Init-Metadaten und
+  gibt die serverseitig erzeugte Session zurueck.
 - Bei stdio-MCP und streambarem HTTP-MCP werden grosse Artefakte in
   fortlaufenden Segmenten als wiederholbare `artifact_upload`-Aufrufe
   fuer eine bestehende Upload-Session geliefert.
@@ -577,8 +587,14 @@ verbindlich:
     Zwischensegmente sofort verwerfen; fremde oder administrative
     Abbrueche bleiben policy-gesteuert.
   - Bei `isFinalSegment=true` wird der Uploadstatus auf `COMPLETED` gesetzt.
-  - Bei Statuswechsel auf `EXPIRED` ist der Fehlercode `UPLOAD_SESSION_EXPIRED` moeglich.
-  - Bei explizitem Abbruch ist der Fehlercode `UPLOAD_SESSION_ABORTED` moeglich.
+  - Upload-Fehler sind deterministisch:
+    - fehlende oder syntaktisch ungueltige `uploadSessionId`:
+      `VALIDATION_ERROR`
+    - wohlgeformte, aber unbekannte `uploadSessionId`: `RESOURCE_NOT_FOUND`
+    - tenant- oder principal-fremde Session: `TENANT_SCOPE_DENIED` bzw.
+      `FORBIDDEN_PRINCIPAL`
+    - Status `EXPIRED`: `UPLOAD_SESSION_EXPIRED`
+    - Status `ABORTED`: `UPLOAD_SESSION_ABORTED`
 - Standard-Limits:
   - max. Uploadgroesse: `200 MiB`
   - erlaubte `mimeType`: `application/json`, `application/sql`,
@@ -727,6 +743,11 @@ Empfohlene Sicherheitsgrundlagen:
     `dmigrate:artifact:upload`, `dmigrate:data:write`,
     `dmigrate:job:cancel`, `dmigrate:ai:execute` und
     `dmigrate:admin`.
+  - `artifact_upload_init` und `artifact_upload` werden intent- und
+    session-basiert autorisiert: `uploadIntent=schema_staging_readonly`
+    braucht `dmigrate:read` plus Quota/Audit; policy-pflichtige Job-Input-
+    Uploads brauchen `dmigrate:artifact:upload` und die daraus entstandene
+    session-scoped Upload-Berechtigung.
   - `WWW-Authenticate` nennt fuer den konkreten Request die minimal
     notwendigen Scopes; `dmigrate:admin` ist nur fuer Cross-Tenant- oder
     fremde administrative Aktionen erforderlich.
@@ -741,6 +762,12 @@ Empfohlene Sicherheitsgrundlagen:
   - mindestens eine der beiden Bedingungen ist verbindlich:
     - starke Prozess-/Benutzerauthentisierung durch den Host
     - Verbindungs-Token via Umgebung (`DMIGRATE_MCP_STDIO_TOKEN`)
+  - `DMIGRATE_MCP_STDIO_TOKEN` wird per Token-Fingerprint-Lookup oder lokal
+    signiertem Token validiert und mappt deterministisch auf
+    `principalId`, `tenantId`, Scopes, Admin-Status, Ablaufzeit und
+    Audit-Identitaet
+  - ungueltige, unbekannte, abgelaufene oder scope-arme Tokens liefern
+    `AUTH_REQUIRED` bzw. `FORBIDDEN_PRINCIPAL`
   - der daraus abgeleitete `principalId` ist in Logs und Audit-Trail konsistent zu verwenden
 
 Fortschrittsmeldungen fuer langlaufende Jobs werden in der

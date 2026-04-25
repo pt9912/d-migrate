@@ -173,10 +173,12 @@ Konsequenz:
   - Connection-Refs
 - strukturierte Fehler-Envelopes mit den in `docs/ki-mcp.md`
   festgelegten Codes
-- schmales MCP-Admin-Grant-Unterkommando nur als Grant-Aussteller fuer
-  `approvalRequestId`-Pruefung und Grant-Ausstellung, ohne generelle
-  Mandantenverwaltung oder bestehende CLI-Vertragsaenderungen ausser dem
-  explizit dokumentierten MCP-Admin-Unterkommando
+- mindestens ein produktiver Grant-Aussteller fuer `approvalRequestId`-
+  Pruefung und Grant-Ausstellung: lokale Policy-Allowlist, signierte
+  Grant-Datei oder schmales MCP-Admin-Grant-Unterkommando. Das Admin-
+  Unterkommando ist nur dann in Scope, wenn es als gewaehlter
+  Grant-Aussteller umgesetzt wird; generelle Mandantenverwaltung bleibt
+  ausgeschlossen
 - KI-nahe Spezialtools:
   - `procedure_transform_plan`
   - `procedure_transform_execute`
@@ -270,6 +272,17 @@ Verbindliche Entscheidung:
   - aus Host-/Prozesskontext, sofern verfuegbar
   - sonst aus `DMIGRATE_MCP_STDIO_TOKEN`
   - in Testumgebungen aus einem expliziten Test-Principal
+- `DMIGRATE_MCP_STDIO_TOKEN` darf nie direkt als Principal gelten:
+  - Default ist ein serverseitiger Token-Fingerprint-Lookup gegen eine
+    lokale, dateibasierte oder konfigurierte Token-Registry
+  - alternativ sind lokal signierte Tokens erlaubt, wenn Signatur,
+    Issuer, Audience, Ablaufzeit und Schluessel-ID validiert werden
+  - der validierte Token-Eintrag mappt deterministisch auf `principalId`,
+    `tenantId`, Scopes/Rollen, `isAdmin`, Ablaufzeit und Audit-Identitaet
+  - ungueltige, unbekannte, abgelaufene oder scope-arme Tokens liefern
+    `AUTH_REQUIRED` bzw. `FORBIDDEN_PRINCIPAL`
+  - Audit speichert nur Token-ID oder Token-Fingerprint, nie den rohen
+    Tokenwert
 - wenn weder ein vertrauenswuerdiger Host-/Prozesskontext noch
   `DMIGRATE_MCP_STDIO_TOKEN` verfuegbar ist, liefert jeder Tool- und
   Resource-Aufruf `AUTH_REQUIRED`; ein stiller lokaler Default-
@@ -311,14 +324,22 @@ Verbindliche Entscheidung:
     eigene Tenant-Ressourcen
   - `dmigrate:job:start`: `schema_reverse_start`,
     `schema_compare_start`, `data_profile_start`
-  - `dmigrate:artifact:upload`: `artifact_upload_init`,
-    `artifact_upload`, eigene `artifact_upload_abort`
+  - `dmigrate:artifact:upload`: policy-pflichtige
+    `artifact_upload_init`-Intents wie `job_input`, dazugehoerige
+    `artifact_upload`-Segmente und eigene `artifact_upload_abort`
+  - `dmigrate:read`: zusaetzlich `artifact_upload_init` und
+    `artifact_upload` fuer `uploadIntent=schema_staging_readonly`; die
+    daraus entstehende session-scoped Upload-Berechtigung ist nur fuer
+    read-only Schema-Staging gueltig
   - `dmigrate:data:write`: `data_import_start`, `data_transfer_start`
   - `dmigrate:job:cancel`: `job_cancel` fuer eigene Jobs
   - `dmigrate:ai:execute`: `procedure_transform_plan`,
     `procedure_transform_execute`, `testdata_plan`
-  - `dmigrate:admin`: Cross-Tenant-Listen, fremde Jobs/Ressourcen,
-    administrative Upload-Abbrueche und fremde Job-Cancels
+  - `dmigrate:admin`: Cross-Tenant-Listen, fremde Ressourcen, administrative
+    Upload-Abbrueche und erlaubte administrative Aktionen im selben Tenant
+- Cross-Tenant-Job-Cancel ist in 0.9.6 nicht erlaubt; auch Admins duerfen
+  `job_cancel` nur innerhalb ihres Tenants oder eines explizit im
+  PrincipalContext erlaubten Tenant-Sets ausfuehren
 - `WWW-Authenticate`-Challenges nennen immer die fuer den konkreten
   Request minimal notwendigen Scopes; `scopes_supported` in Protected
   Resource Metadata enthaelt mindestens die oben genannten Scope-Namen
@@ -550,11 +571,12 @@ Verbindliche Entscheidung:
   - Gesamt-`checksumSha256`
   - `uploadIntent`
   - Tenant, Principal und optionaler Zielkontext aus dem Request-Kontext
-  - optionaler clientseitiger Session-Kandidat nur fuer Resume-faehige
-    Clients
 - `artifact_upload_init` verlangt noch keine `uploadSessionId`; der
   Server erzeugt sie primaer kryptografisch als opaken Wert und gibt sie
   mit TTL und erwartetem erstem Segment zurueck
+- Clients duerfen keine `uploadSessionId` vorschlagen; Init-Resume erfolgt
+  ueber `approvalKey` bzw. `clientRequestId` plus identische
+  Init-Metadaten und gibt die serverseitig erzeugte Session zurueck
 - `artifact_upload` akzeptiert grosse Inhalte nur ueber Segmente einer
   bestehenden Upload-Session
 - jedes Segment enthaelt:
@@ -608,6 +630,9 @@ Verbindliche Entscheidung:
   keine weiteren Daten-Schreiboperationen begonnen werden
 - ein Principal darf nur eigene Jobs abbrechen; Administratoren duerfen
   Jobs innerhalb desselben Tenants abbrechen
+- "fremde Jobs" meint bei `job_cancel` nur Jobs desselben Tenants mit
+  anderem Principal; Cross-Tenant-Cancel ist ausgeschlossen, sofern der
+  PrincipalContext nicht explizit mehrere erlaubte Tenants enthaelt
 - Cancel fuer fremde Tenants liefert `TENANT_SCOPE_DENIED`
 - Cancel fuer nicht erlaubte Jobs liefert `FORBIDDEN_PRINCIPAL`
 - bereits terminale Jobs bleiben terminal und werden nicht in
@@ -1254,9 +1279,13 @@ Weitere Discovery-Tools:
   d-migrate-Tool fuer grosse Artefakte:
   - Eingabe: `artifactId` oder Artefakt-`resourceUri`, optional
     `chunkId`
-  - Antwort: maximal `64 KiB` decodierte Nutzdaten, `chunkId`, optional
-    `nextChunkId`, `nextChunkUri`, `range`, `truncated` und
-    `etag`/`resourceVersion`
+  - Antwort: maximal `64 KiB` serialisierte Tool-Response inklusive
+    Nutzdaten und Metadaten
+  - fuer binaere Chunks muss die decodierte Byte-Groesse niedriger
+    konfiguriert werden, sodass Base64-Expansion und JSON-Metadaten
+    zusammen unter dem serialisierten `64 KiB`-Limit bleiben
+  - Antwort enthaelt `chunkId`, optional `nextChunkId`, `nextChunkUri`,
+    `range`, `truncated` und `etag`/`resourceVersion`
   - Zugriff folgt denselben Tenant-/Principal-Regeln wie
     `resources/read`
 
@@ -1444,11 +1473,11 @@ Verbindliche Validierungen:
   mindestens 128 Bit Entropie, sichtbaren ASCII- bzw. URL-sicheren Zeichen
   und maximal 128 Zeichen Laenge; Clients duerfen keine UUID- oder
   Laengen-Semantik ableiten
-- falls ein Client fuer Resume einen Session-Kandidaten sendet, muss er
-  dieselben Zeichen-/Laengen-/Entropieanforderungen erfuellen, atomar
-  kollisionsfrei angelegt werden und an Tenant, Principal, `approvalKey`,
-  Approval-Fingerprint, `artifactKind`, `mimeType`, `sizeBytes` und
-  `checksumSha256` gebunden werden
+- clientseitige `uploadSessionId`-Kandidaten sind verboten; Resume eines
+  Init-Aufrufs nutzt `approvalKey` fuer policy-pflichtige Pfade oder
+  `clientRequestId` fuer read-only Schema-Staging plus identische
+  Init-Metadaten und gibt die urspruenglich serverseitig erzeugte
+  `uploadSessionId` zurueck
 - Wiederverwendung einer Session-ID mit anderem Tenant, Principal,
   Approval-Fingerprint oder anderen Session-Metadaten liefert
   `VALIDATION_ERROR` oder `FORBIDDEN_PRINCIPAL`
@@ -1505,8 +1534,15 @@ Antwort:
 
 Akzeptanz:
 
-- erster Upload-Pfad ohne vorheriges `artifact_upload_init` liefert
-  `RESOURCE_NOT_FOUND` oder `VALIDATION_ERROR`
+- Upload-Fehler sind deterministisch:
+  - fehlende oder syntaktisch ungueltige `uploadSessionId` liefert
+    `VALIDATION_ERROR`
+  - wohlgeformte, aber unbekannte `uploadSessionId` liefert
+    `RESOURCE_NOT_FOUND`
+  - tenant- oder principal-fremde Session liefert `TENANT_SCOPE_DENIED` bzw.
+    `FORBIDDEN_PRINCIPAL`
+  - abgebrochene Session liefert `UPLOAD_SESSION_ABORTED`
+  - abgelaufene Session liefert `UPLOAD_SESSION_EXPIRED`
 - wiederholtes identisches Segment ist erfolgreich oder liefert den
   bestehenden Segmentstatus
 - Wiederholung mit gleicher Segmentposition, aber anderem Inhalt oder
@@ -1514,8 +1550,6 @@ Akzeptanz:
 - abweichender Hash fuer ein bereits angenommenes Segment liefert
   `VALIDATION_ERROR`
 - zu grosse Uploads liefern `PAYLOAD_TOO_LARGE`
-- abgebrochene Sessions liefern `UPLOAD_SESSION_ABORTED`
-- abgelaufene Sessions liefern `UPLOAD_SESSION_EXPIRED`
 
 ### 6.9 `job_cancel`
 
@@ -1537,6 +1571,8 @@ Antwort:
 Akzeptanz:
 
 - nur eigene oder explizit erlaubte Jobs koennen abgebrochen werden
+- Admin-Abbruch fremder Jobs ist auf denselben Tenant bzw. explizit
+  erlaubte Tenant-Sets im PrincipalContext begrenzt
 - fremde Tenant-Jobs liefern `TENANT_SCOPE_DENIED`
 - nicht erlaubte Jobs liefern `FORBIDDEN_PRINCIPAL`
 - unbekannte Jobs liefern `RESOURCE_NOT_FOUND`
@@ -1840,6 +1876,10 @@ Abnahmekriterien:
 - Runtime-Bootstrap fuer Driver, Profiling-Adapter, Streaming-Adapter
   und Schema-Codecs aus der CLI teilen oder aequivalent kapseln
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
+- stdio-Tokenvalidierung implementieren:
+  Token-Fingerprint-Lookup oder lokal signierte Tokens, Mapping auf
+  `principalId`, `tenantId`, Scopes, `isAdmin`, Ablaufzeit und Audit-
+  Identitaet
 - Initialize-/Capability-Antwort bereitstellen
 - Tool-Registry und Resource-Registry aufbauen
 - MCP-Standard-Discovery implementieren:
@@ -1850,7 +1890,11 @@ Abnahmekriterien:
     `subscribe`/`listChanged`-Flags setzen, solange diese nicht
     implementiert sind
 - JSON-Schema-Definitionen fuer alle 0.9.6-Tools erzeugen oder
-  pflegen
+  pflegen; `inputSchema` und `outputSchema` verwenden JSON Schema 2020-12.
+  Wenn der Generator ein `$schema`-Feld ausgibt, muss es
+  `https://json-schema.org/draft/2020-12/schema` enthalten; fehlt `$schema`,
+  wird 2020-12 gemaess MCP-Tool-Schema-Vertrag als Dialekt angenommen.
+  Aeltere Draft-spezifische Keywords sind verboten.
 - Startbefehl und lokale Konfiguration dokumentieren
 
 Abnahmekriterien:
@@ -1870,6 +1914,9 @@ Abnahmekriterien:
 - HTTP-Auth-Tests decken Issuer-Mismatch, fehlendes/ungueltiges JWKS,
   nicht erlaubten Algorithmus, abgelaufenes Token, Audience-/Resource-
   Mismatch, fehlende Pflichtclaims und Scope-Mapping pro Tool ab
+- stdio-Auth-Tests decken unbekannte, ungueltige, abgelaufene und
+  scope-arme `DMIGRATE_MCP_STDIO_TOKEN`-Werte sowie korrektes Mapping auf
+  Tenant, Scopes, Admin-Status und Audit-Identitaet ab
 - Scope-Tests pruefen fuer jede Scope-Klasse mindestens einen positiven und
   einen negativen Request sowie die konkrete `scope`-Challenge im
   `WWW-Authenticate`-Header
@@ -1878,6 +1925,9 @@ Abnahmekriterien:
   `authorization_servers` ist vorhanden, nicht leer und enthaelt nur
   zugelassene HTTPS-Issuer; `scopes_supported` enthaelt die dokumentierten
   Scope-Namen und ist konsistent mit den Scope-Challenges
+- Golden-Test validiert Tool-JSON-Schemas gegen JSON Schema 2020-12 und
+  prueft, dass ein vorhandenes `$schema` exakt auf
+  `https://json-schema.org/draft/2020-12/schema` zeigt
 - ein separater Test zeigt, dass Auth-Deaktivierung nur fuer lokale
   Test-/Demo-Konfigurationen erlaubt ist
 - Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-lokaler
@@ -2389,6 +2439,11 @@ Stdio-only Tests:
 
 - Principal-Ableitung aus vertrauenswuerdigem Host-/Prozesskontext,
   `DMIGRATE_MCP_STDIO_TOKEN` oder explizitem Test-Principal
+- `DMIGRATE_MCP_STDIO_TOKEN` wird per Fingerprint-Lookup oder lokaler
+  Signaturvalidierung geprueft und mappt Tenant, Scopes, Admin-Status,
+  Ablaufzeit und Audit-Identitaet
+- ungueltiger, unbekannter, abgelaufener oder scope-armer stdio-Token
+  liefert `AUTH_REQUIRED` bzw. `FORBIDDEN_PRINCIPAL`
 - fehlender stdio-Principal liefert `AUTH_REQUIRED`
 - `artifact_upload` ueber `stdio` mit `contentBase64`
 
@@ -2416,8 +2471,8 @@ Verbindliche Negativfaelle:
 - fehlendes `contentBase64`
 - ungueltige `uploadSessionId`-Zeichen, zu geringe Entropie oder Laenge
   ueber 128 Zeichen
-- clientseitig wiederverwendete `uploadSessionId` mit anderem Tenant,
-  Principal, Approval-Fingerprint oder anderen Session-Metadaten
+- clientseitig gesetzte oder vorgeschlagene `uploadSessionId` im
+  `artifact_upload_init`
 - `segmentIndex=0` oder nicht fortlaufender Segmentindex
 - Upload nach TTL-Ablauf
 - Segmenthash ueber andere Bytes als die decodierten
