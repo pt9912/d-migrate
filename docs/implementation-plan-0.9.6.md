@@ -387,6 +387,14 @@ Verbindliche Entscheidung:
 
 - Tool-Responses bleiben unter `64 KiB` serialisierter Nutzdaten
 - `findings` werden inline auf maximal `200` Eintraege begrenzt
+- nicht-Upload-Tool-Requests bleiben unter `256 KiB` serialisiertem
+  JSON-Argumentpayload
+- Inline-Schemas in `schema_validate`, `schema_generate` und vergleichbaren
+  read-only Tools bleiben unter `32 KiB` serialisiertem JSON; groessere
+  Schemas muessen ueber Schema-Staging/Artefaktpfade laufen
+- `artifact_upload` ist die einzige Toolfamilie mit groesseren Requests:
+  maximal `6 MiB` serialisierter JSON-RPC-Request und maximal `4 MiB`
+  decodierte Segmentbytes pro Aufruf
 - bei groesseren Ergebnissen gibt das Tool eine Summary plus
   `resourceUri` und/oder `artifactId` zurueck
 - row-basierte Import-, Export- oder Transferdaten erscheinen nie
@@ -517,8 +525,11 @@ Verbindliche Entscheidung:
   - die Reservierung erfolgt atomar vor Session-Erzeugung,
     Provider-Aufruf, Artefakt-Publish oder anderen Nebenwirkungen
   - `approvalToken` ist transient und darf den Fingerprint nicht veraendern
-- das `approvalToken` wird an (`toolName`, `callerId`, `approvalKey`,
-  `tenantId`, `payloadFingerprint`) gebunden
+- das `approvalToken` wird an (`toolName`, `callerId`, `tenantId`,
+  `correlationKind`, `correlationKey`, `payloadFingerprint`) gebunden:
+  `correlationKind=idempotencyKey` fuer Start-Tools,
+  `correlationKind=approvalKey` fuer synchrone policy-pflichtige
+  Side-Effect-Tools
 - fehlt bei einer policy-pflichtigen synchronen Operation der
   `approvalKey`, liefert der Server `VALIDATION_ERROR`
 - fuer `artifact_upload_init` wird der Approval-Fingerprint aus den
@@ -758,13 +769,18 @@ Erwartete Kernmodelle und Projektionen:
   - Verweis auf serverseitig verwaltetes Secret oder lokalen
     Connection-Provider, nie das Secret selbst
 - `ApprovalGrant`
-  - `approvalKey`
+  - `correlationKind` (`idempotencyKey` oder `approvalKey`)
+  - `correlationKey`
   - `approvalRequestId`
   - `approvalTokenFingerprint`
   - `toolName`
   - `tenantId`
   - `callerId`
   - `payloadFingerprint`
+  - `issuerFingerprint`
+  - `issuedScopes`
+  - `grantSource` (`policy-allowlist`, `admin-command`,
+    `signed-grant-file`, `local-demo-auto-approval`)
   - `expiresAt`
 - `ManagedJob` gemaess `docs/job-contract.md`
   - `jobId`
@@ -842,6 +858,12 @@ Erwartete Kernmodelle und Projektionen:
 - `QuotaStore` bzw. Quota-Zaehler fuer aktive Jobs, Upload-Sessions,
   Upload-Bytes und Provider-Aufrufe
 - `AuditSink`
+
+`ApprovalGrantStore` speichert Grants mit Ablauf, Token-Fingerprint,
+Issuer-Fingerprint, Scope-Metadaten und Bindung an
+`correlationKind`/`correlationKey` (`idempotencyKey` fuer Start-Tools,
+`approvalKey` fuer synchrone Nebenwirkungen). Ein Grant mit nur
+`approvalKey` ohne Korrelationstyp ist ungueltig.
 
 Schemas, Profile und Diffs duerfen intern als typisierte Artefakte
 persistiert werden. Trotzdem braucht 0.9.6 je Typ eine explizite
@@ -1108,6 +1130,13 @@ Pflichtfelder der Antwort:
 - `formats`
 - `tools`
 - `limits`
+  - `maxToolResponseBytes=65536`
+  - `maxNonUploadToolRequestBytes=262144`
+  - `maxInlineSchemaBytes=32768`
+  - `maxUploadToolRequestBytes=6291456`
+  - `maxUploadSegmentBytes=4194304`
+  - `maxInlineFindings=200`
+  - `maxArtifactUploadBytes=209715200`
 - `executionMeta`
 
 Akzeptanz:
@@ -1115,6 +1144,9 @@ Akzeptanz:
 - Tool funktioniert ohne Datenbankverbindung
 - Secrets oder lokale Pfade werden nicht offengelegt
 - Antwort bleibt stabil genug fuer Client-Discovery
+- `limits` enthaelt die numerischen Inline-, Request-, Segment- und
+  Upload-Grenzen; Clients duerfen `PAYLOAD_TOO_LARGE` gegen diese Werte
+  vorab vermeiden
 
 ### 6.1a Limits, Quotas und Timeouts
 
@@ -1144,7 +1176,8 @@ Akzeptanz:
 
 Zweck:
 
-- neutrales Schema aus `schemaRef` oder kleinem Inline-Payload validieren
+- neutrales Schema aus `schemaRef` oder Inline-Payload bis
+  `maxInlineSchemaBytes` validieren
 
 Verbindliche Eingaben:
 
@@ -1376,6 +1409,10 @@ Gemeinsame Regeln:
   `AWAITING_APPROVAL`; ein spaeter genehmigter Retry claimt diese
   Reservierung atomar
 - Import nutzt zuvor hochgeladenes `artifactId`
+- `data_import_start` verlangt ein tenant-scoped `targetConnectionRef`;
+  implizite Zielaufloesung aus lokaler CLI-Konfiguration ist im MCP-
+  Toolvertrag verboten, weil Zielauswahl Teil von Payload-Schema, Policy,
+  Fingerprint und Audit sein muss
 - Transfer nutzt tenant-scoped Source- und Target-Connection-Refs
 - kein rohes SQL im Tool-Payload
 
@@ -1386,6 +1423,8 @@ Akzeptanz:
 - gleicher Idempotency-Store-Key mit anderem Payload liefert
   `IDEMPOTENCY_CONFLICT`
 - fehlende Freigabe liefert `POLICY_REQUIRED`
+- `data_import_start` ohne `targetConnectionRef` liefert
+  `VALIDATION_ERROR`
 - zweiter Aufruf mit passendem Token startet oder dedupliziert den Job
 - ungueltige oder fremde Artefakte liefern `RESOURCE_NOT_FOUND` oder
   `TENANT_SCOPE_DENIED`
@@ -2076,9 +2115,9 @@ Abnahmekriterien:
   lokale Policy-Allowlist, schmales MCP-Admin-Grant-Unterkommando oder
   signierte Grant-Datei; optionaler Demo-Auto-Approval-Modus nur fuer
   Loopback/`stdio` und mit Audit
-- `ApprovalGrantStore` speichert Grant-Metadaten, Tenant, Ablauf, Issuer-
-  Fingerprint, Scope, Payload-Fingerprint und Token-Fingerprint, aber nie
-  rohe Tokens
+- `ApprovalGrantStore` speichert Grant-Metadaten, Tenant, Ablauf,
+  `correlationKind`, `correlationKey`, Issuer-Fingerprint, Scope,
+  Payload-Fingerprint und Token-Fingerprint, aber nie rohe Tokens
 - Jobstatus exakt aus `docs/job-contract.md` verwenden:
   `queued`, `running`, `succeeded`, `failed`, `cancelled`
 - Ablauf und Retention von Jobs ueber `expiresAt` modellieren, nicht
@@ -2128,7 +2167,8 @@ Abnahmekriterien:
 - SHA-256-Pruefung pro Segment und Gesamtartefakt erzwingen
 - Policy-Pruefung fuer Upload-Init und administrative Upload-Abbrueche
   anbinden; eigene Upload-Abbrueche ueber Session-Owner-Pruefung erlauben
-- `data_import_start` an hochgeladene Artefakte binden
+- `data_import_start` an hochgeladene Artefakte und ein tenant-scoped
+  `targetConnectionRef` binden
 - `data_transfer_start` an Connection-Refs und Policy binden
 - Idempotency-Pruefung fuer `data_import_start` und
   `data_transfer_start` anbinden
@@ -2248,7 +2288,8 @@ Pflichtabdeckung:
   liefert bei weiteren Wiederholungen denselben `COMMITTED` Job
 - Lease-/Recovery-/Denial-Semantik fuer `PENDING`,
   `AWAITING_APPROVAL` und `DENIED`, inklusive `POLICY_DENIED`
-- Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
+- Approval-Grant-Store mit `correlationKind`/`correlationKey` und
+  Token-Fingerprint statt Roh-Token
 - Grant-Aussteller fuer lokale Allowlist, schmales
   MCP-Admin-Grant-Unterkommando oder signierte Grant-Datei inklusive
   Ablauf, Issuer-Fingerprint und Audit-Metadaten
@@ -2354,6 +2395,9 @@ Fuer Start-Tools und synchrone Side-Effect-Tools zusaetzlich:
   `IDEMPOTENCY_CONFLICT`
 - `artifact_upload` akzeptiert Segmente nur mit gueltiger
   session-scoped Upload-Berechtigung
+- `artifact_upload_abort` der eigenen aktiven Session ohne Policy ist
+  erfolgreich und prueft nur Tenant, Principal, Session-Owner und
+  Session-Status
 - Idempotency-Flow fuer `data_import_start` und `data_transfer_start`
 
 ### 9.3 Integrationstests
@@ -2381,8 +2425,9 @@ Gemeinsame Tests fuer `stdio` und HTTP:
 - `artifactKind=schema` Upload materialisiert nach erfolgreicher
   Validierung eine `schemaRef`; ungueltige Schema-Artefakte werden nicht
   registriert
-- `data_import_start` referenziert ein hochgeladenes Artefakt, nutzt
-  Policy/Idempotency, startet den Import-Runner und kann abgebrochen werden
+- `data_import_start` referenziert ein hochgeladenes Artefakt, nutzt ein
+  tenant-scoped `targetConnectionRef`, Policy/Idempotency, startet den
+  Import-Runner und kann abgebrochen werden
 - `data_transfer_start` nutzt tenant-scoped Source-/Target-Connection-Refs,
   Policy/Idempotency, Transfer-Runner und Cancel-Propagation
 - Rate-Limit-/Quota-Integration fuer aktive Jobs, aktive Upload-Sessions,
@@ -2483,6 +2528,7 @@ Verbindliche Negativfaelle:
 - Upload nach Abort
 - Upload nach Expiry
 - Import ohne Approval
+- `data_import_start` ohne `targetConnectionRef`
 - `schema_compare` mit `connectionRef`
 - `schema_compare_start` mit `connectionRef` ohne `idempotencyKey`
 - `schema_compare_start` ohne Policy-Freigabe
@@ -2503,8 +2549,7 @@ Verbindliche Negativfaelle:
 - `artifact_upload` ohne vorherige Upload-Session
 - `artifact_upload` mit gueltiger Session, aber fehlender oder fremder
   session-scoped Upload-Berechtigung
-- `artifact_upload_abort` der eigenen aktiven Session ohne Policy ist
-  erlaubt
+- `artifact_upload_abort` einer fremden Session ohne Owner-Recht
 - administrativer `artifact_upload_abort` ohne Policy-Freigabe
 - KI-nahes Tool ohne `approvalKey`
 - Wiederverwendung eines Approval-Tokens mit anderem

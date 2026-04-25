@@ -117,6 +117,12 @@ Verbindliche Antwortgrenzen:
   liefern
 - ein Tool-Resultat darf hoechstens `200` strukturierte Findings inline
   liefern
+- nicht-Upload-Tool-Requests duerfen hoechstens `256 KiB` serialisierten
+  JSON-Argumentpayload enthalten
+- Inline-Schemas duerfen hoechstens `32 KiB` serialisiertes JSON belegen;
+  groessere Schemas laufen ueber Schema-Staging/Artefakte
+- `artifact_upload` darf hoechstens `6 MiB` serialisierten JSON-RPC-Request
+  und `4 MiB` decodierte Segmentbytes pro Aufruf nutzen
 - row-basierte Export- oder Importdaten duerfen nie inline in eine Tool-
   Antwort geschrieben werden
 - bei Ueberschreitung muss die Antwort auf Summary plus `resourceUri` und/oder
@@ -169,6 +175,12 @@ Tool-Resultate:
 | `schema_list` | Verfuegbare bzw. angelegte Schema-Artefakte listen |
 | `profile_list` | Profiling-Reports auffinden |
 | `diff_list` | Schema-Vergleichsergebnisse auffinden |
+
+`capabilities_list.limits` muss mindestens diese numerischen Grenzen
+ausweisen: `maxToolResponseBytes=65536`,
+`maxNonUploadToolRequestBytes=262144`, `maxInlineSchemaBytes=32768`,
+`maxUploadToolRequestBytes=6291456`, `maxUploadSegmentBytes=4194304`,
+`maxInlineFindings=200` und `maxArtifactUploadBytes=209715200`.
 
 ### 5.2 Kontrollierte Write-Tools
 
@@ -233,8 +245,11 @@ Hinweis:
   - zweiter Aufruf muss denselben `idempotencyKey` bzw. `approvalKey`
     und dieses extern ausgestellte Token enthalten.
   - Approval-Grants und `approvalToken`-Fingerprints sind immer an
-    `tenantId`, `callerId`, Toolname, `approvalKey` bzw. `idempotencyKey`
-    und `payloadFingerprint` gebunden.
+    `tenantId`, `callerId`, Toolname, `correlationKind`,
+    `correlationKey` und `payloadFingerprint` gebunden.
+    `correlationKind=idempotencyKey` gilt fuer Start-Tools,
+    `correlationKind=approvalKey` fuer synchrone policy-pflichtige
+    Side-Effect-Tools.
 - 0.9.6 braucht einen Beta-tauglichen Grant-Aussteller, obwohl keine
   vollstaendige Consent-/Admin-UI Teil des Milestones ist: lokale
   Policy-Allowlist, ein schmales MCP-Admin-Grant-Unterkommando oder
@@ -457,7 +472,9 @@ Fuer die d-migrate-MCP-Toolvertragsversion `v1` gilt verbindlich:
 - grosse Ergebnisse werden nur ueber `resourceUri` oder `artifactId`
   bereitgestellt
 - Importdaten werden ueber `artifact_upload_init` und `artifact_upload`
-  vorbereitet und anschliessend per `data_import_start` referenziert
+  vorbereitet und anschliessend per `data_import_start` zusammen mit einem
+  tenant-scoped `targetConnectionRef` referenziert; eine implizite
+  Zielaufloesung aus lokaler CLI-Konfiguration ist fuer MCP verboten
 - ein Tool darf keine komplette Exportdatei oder ganze Tabelleninhalte inline
   zurueckgeben
 - Verbindungen werden nur als vorregistrierte, tenantgebundene Referenzen im
@@ -597,6 +614,8 @@ verbindlich:
     - Status `ABORTED`: `UPLOAD_SESSION_ABORTED`
 - Standard-Limits:
   - max. Uploadgroesse: `200 MiB`
+  - max. decodierte Segmentgroesse: `4 MiB`
+  - max. serialisierter `artifact_upload`-Request: `6 MiB`
   - erlaubte `mimeType`: `application/json`, `application/sql`,
     `application/yaml`, `text/plain`, `text/yaml`
   - erlaubte `artifactKind`: `schema`, `ddl`, `transform-script`,
