@@ -303,7 +303,7 @@ Verbindliche Entscheidung:
 - fuer `artifact_upload` wird der Approval-Fingerprint aus den
   Session-Metadaten gebildet (`artifactKind`, `mimeType`, `sizeBytes`,
   `checksumSha256`, Tenant, Principal, optionaler Zielkontext), nicht
-  aus Segmentbytes, `segmentSha256`, `contentBase64`, Chunk-Body oder
+  aus Segmentbytes, `segmentSha256`, `contentBase64` oder
   Segmentpositionen
 - produktive oder als sensitiv markierte Verbindungen duerfen nicht
   ohne Policy-Freigabe genutzt werden
@@ -332,14 +332,16 @@ Verbindliche Entscheidung:
   - `contentBase64`
   - `segmentSha256`
   - optional `clientRequestId`
-- fuer `stdio` werden Segmentbytes als `contentBase64` im Tool-Input
-  uebertragen
-- fuer streambares HTTP sind zwei Uebertragungen zulaessig:
-  `contentBase64` im Tool-Input oder ein ausgehandelter Chunk-Body
-  gemaess HTTP-MCP; Metadaten bleiben in beiden Faellen identisch
+- fuer MCP `v1` werden Segmentbytes in beiden Standardtransporten
+  (`stdio` und streambares HTTP) als `contentBase64` im
+  `tools/call`-JSON-RPC-Argument uebertragen
+- streambares HTTP nutzt weiterhin einen normalen MCP-JSON-RPC-POST;
+  es gibt keinen separaten binaeren Upload-Body innerhalb des
+  MCP-Standardtransports
+- ein spaeterer dedizierter Nicht-MCP-Upload-Endpunkt waere eine eigene
+  dokumentierte Extension und ist nicht Teil dieses 0.9.6-Vertrags
 - `segmentSha256` wird ueber die decodierten Segmentbytes berechnet,
-  nicht ueber den Base64-Text; bei HTTP-Chunk-Body gilt derselbe Hash
-  ueber die empfangenen Body-Bytes
+  nicht ueber den Base64-Text
 - bei `isFinalSegment=true` ist `checksumSha256` fuer das
   Gesamtartefakt Pflicht
 - Wiederholungen desselben Segments sind idempotent
@@ -362,6 +364,12 @@ Verbindliche Entscheidung:
 
 - `job_cancel` ist kein freier Kill-Schalter, sondern eine
   berechtigte Zustandsaenderung im gemeinsamen Jobmodell
+- laufende Worker muessen ein `CancellationToken` oder einen
+  aequivalenten Job-Worker-Handle beobachten
+- langlaufende Pfade fuer Reverse, Profiling, Import und Transfer
+  muessen kooperative Cancel-Checkpoints setzen
+- nach angenommenem Cancel duerfen keine neuen Artefakte publiziert und
+  keine weiteren Daten-Schreiboperationen begonnen werden
 - ein Principal darf nur eigene Jobs abbrechen; Administratoren duerfen
   Jobs innerhalb desselben Tenants abbrechen
 - Cancel fuer fremde Tenants liefert `TENANT_SCOPE_DENIED`
@@ -514,6 +522,11 @@ Erwartete Kernmodelle und Projektionen:
   - `details`
   - `requestId`
   - `retryable`
+- `McpToolErrorResult`
+  - MCP-Tool-Result mit `isError=true`
+  - `structuredContent.error.code` fuer die stabilen
+    d-migrate-Fehlercodes
+  - kurze menschenlesbare Diagnose in `content`
 
 ### 5.3 Stores fuer die Beta
 
@@ -526,6 +539,19 @@ Erwartete Kernmodelle und Projektionen:
 - `IdempotencyStore`
 - `ApprovalGrantStore`
 - `AuditSink`
+
+Connection-Refs werden ausserhalb von MCP registriert. Fuer die Beta
+muss der Store aus mindestens einer klaren Bootstrap-Quelle befuellt
+werden:
+
+- bestehende CLI-/Projektkonfiguration wie `.d-migrate.yaml` oder
+  aequivalente lokale Konfigurationsdateien
+- serverseitiger Credential-/Connection-Provider, falls vorhanden
+- Test-/Demo-Seeds fuer Integrationstests ohne echte Secrets
+
+Der MCP-Adapter darf keine freien Connection-Secrets im Tool-Payload
+annehmen. Connection-Bootstrap liest nur non-secret Metadaten direkt;
+Secrets bleiben im bestehenden Credential-Store oder Provider.
 
 Beta-Default:
 
@@ -830,8 +856,8 @@ Gemeinsame Regeln:
   passende `approvalToken` senden
 - das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
   den session-metadatenbezogenen `payloadFingerprint` gebunden
-- Segmentdaten, `segmentSha256`, `contentBase64`, Chunk-Body,
-  `segmentIndex` und `segmentOffset` sind nicht Teil des
+- Segmentdaten, `segmentSha256`, `contentBase64`, `segmentIndex` und
+  `segmentOffset` sind nicht Teil des
   Approval-Fingerprints; sie werden separat pro Segment validiert
 - Wiederverwendung desselben Tokens mit anderen Session-Metadaten liefert
   `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
@@ -846,9 +872,8 @@ Verbindliche Validierungen:
 - `segmentIndex` beginnt bei `1` und ist fortlaufend
 - `segmentOffset` ist der Byte-Offset in der vollstaendigen
   Artefakt-Bytefolge
-- `contentBase64` ist fuer jedes nicht-leere `stdio`-Segment Pflicht;
-  bei streambarem HTTP darf stattdessen ein ausgehandelter Chunk-Body
-  genutzt werden
+- `contentBase64` ist fuer jedes nicht-leere Segment Pflicht, sowohl
+  bei `stdio` als auch bei streambarem HTTP
 - maximale Segmentgroesse nach Base64-Decoding: `4 MiB`
 - `segmentOffset` und `sizeBytes` beziehen sich auf decodierte Bytes
 - jedes Segment braucht `segmentSha256`
@@ -1029,6 +1054,20 @@ Akzeptanz:
 - `TENANT_SCOPE_DENIED`
 - `INTERNAL_AGENT_ERROR`
 
+MCP-Wire-Mapping:
+
+- Protokollfehler bleiben JSON-RPC-Errors mit numerischem
+  `error.code`, z.B. parse error, invalid request, unknown method oder
+  ein nicht existierendes Tool im MCP-Protokollpfad
+- fachliche Tool-Ausfuehrungsfehler werden als normales
+  `tools/call`-Result mit `isError=true` zurueckgegeben
+- die stabilen d-migrate-Fehlercodes stehen dabei nicht im numerischen
+  JSON-RPC-`error.code`, sondern in `structuredContent.error.code`
+- `structuredContent.error` enthaelt mindestens `code`, `message`,
+  optional `details`, `requestId` und `retryable`
+- `content` enthaelt nur eine kurze, bereinigte menschliche Diagnose
+  und keine Secrets, Rohdaten oder Approval-Tokens
+
 Mapping-Regeln:
 
 - Nutzer- oder Payloadfehler werden nicht als
@@ -1153,6 +1192,9 @@ Abnahmekriterien:
 - Resource-Resolver und Store fuer tenant-scoped Connection-Refs
   implementieren, inklusive Sensitivitaets-/Produktionsmetadaten fuer
   Policy
+- Bootstrap fuer Connection-Refs aus `.d-migrate.yaml` oder
+  aequivalenter Projekt-/Serverkonfiguration anbinden; Tests nutzen
+  explizite Seeds ohne echte Secrets
 - Cursor-Paginierung und Filtervalidierung einfuehren
 - Tenant-Scope-Pruefung fuer jede Resource-Aufloesung erzwingen
 
@@ -1162,6 +1204,8 @@ Abnahmekriterien:
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
 - sensitive Connection-Refs liefern Policy-Metadaten fuer
   `schema_compare`, Reverse, Import und Transfer
+- Connection-Refs koennen in Beta-Tests aus dokumentierten Seeds
+  geladen werden, ohne Secrets in MCP-Payloads zu uebergeben
 - ungueltige Cursor liefern `VALIDATION_ERROR`
 
 ### Phase E - Async-Jobs, Idempotenz und Policy
@@ -1169,6 +1213,10 @@ Abnahmekriterien:
 - Job-Start-Service fuer `schema_reverse_start` und
   `data_profile_start` einfuehren
 - `job_cancel` an Jobkern und Berechtigungspruefung anbinden
+- CancellationToken bzw. Job-Worker-Handle in Reverse-, Profiling-,
+  Import- und Transfer-Runner propagieren
+- kooperative Cancel-Checkpoints vor Artefakt-Publish und vor
+  datenveraendernden Schreibabschnitten einfuehren
 - Idempotency-Pruefung fuer Start-Tools anbinden
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
@@ -1186,6 +1234,8 @@ Abnahmekriterien:
 - `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen und
   erzeugt einen stabilen `cancelled`-Status gemaess
   `docs/job-contract.md`
+- nach angenommenem Cancel publiziert der Worker keine neuen Artefakte
+  und startet keine weiteren Daten-Schreiboperationen
 
 ### Phase F - Datenoperationen und Uploads
 
@@ -1265,18 +1315,24 @@ Pflichtabdeckung:
 - Around-/Finally-Audit fuer Auth-, Validation-, Scope-, Policy- und
   Idempotency-Fehler
 - Fehlercode-Mapping
+- MCP-Wire-Mapping: JSON-RPC-Errors nur fuer Protokollfehler,
+  fachliche Toolfehler als `tools/call`-Result mit `isError=true`
 - Inline-Limit-Entscheidung
 - Upload-Session-Zustandsautomat
 - SHA-256-Segment- und Gesamtpruefung
-- Base64-Decoding, HTTP-Chunk-Body-Verarbeitung, Segmentgroessenlimit
-  und Hash-Berechnung ueber Segmentbytes
+- Base64-Decoding, Segmentgroessenlimit und Hash-Berechnung ueber
+  decodierte Segmentbytes
 - Upload-Session-TTL, `uploadSessionId`-Laenge und fortlaufende
   `segmentIndex`-Validierung
 - Cursor-Serialisierung und -Validierung
 - Runtime-Bootstrap fuer Driver- und Codec-Registries
 - ConnectionReferenceStore und Connection-Resolver inklusive
   Sensitivitaets-/Produktionsmetadaten
+- Connection-Ref-Bootstrap aus lokaler Projekt-/Serverkonfiguration
+  oder Test-Seeds ohne Secrets
 - Cancel-Berechtigungen und terminale Jobzustaende
+- CancellationToken-/Worker-Handle-Propagation und Side-Effect-Stopp
+  nach Cancel
 - Prompt-Registry und Prompt-Parameter-Validierung
 - Prompt-Hygiene-Pruefung fuer Secrets und Massendaten
 
@@ -1317,7 +1373,11 @@ ein weiterer ueber HTTP. Beide pruefen:
 - `schema_compare` mit sensitiver `connectionRef` und synchronem
   Approval-Flow
 - `artifact_upload` ueber `stdio` mit `contentBase64`
-- `artifact_upload` ueber HTTP mit ausgehandeltem Chunk-Body
+- `artifact_upload` ueber streambares HTTP mit `contentBase64` im
+  `tools/call`-JSON-RPC-Argument
+- fachlicher Toolfehler mit `isError=true` und
+  `structuredContent.error.code`
+- Protokollfehler mit numerischem JSON-RPC-`error.code`
 - `job_list`
 - Upload eines kleinen Artefakts in mehreren Segmenten
 - `job_cancel`
@@ -1337,13 +1397,14 @@ Verbindliche Negativfaelle:
 - fremder Tenant
 - zu grosse Inline-Payload
 - nicht erlaubter MIME-Type
-- fehlendes `contentBase64` bei `stdio` oder fehlender Chunk-Body bei
-  HTTP
+- fehlendes `contentBase64`
 - ungueltige `uploadSessionId`-Laenge
 - `segmentIndex=0` oder nicht fortlaufender Segmentindex
 - Upload nach TTL-Ablauf
-- Segmenthash ueber andere Bytes als die decodierten `contentBase64`-
-  Bytes bzw. HTTP-Chunk-Body-Bytes
+- Segmenthash ueber andere Bytes als die decodierten
+  `contentBase64`-Bytes
+- HTTP-Upload-Versuch mit separatem binaerem Nicht-JSON-RPC-Body im
+  MCP-Endpunkt
 - Upload-Hash-Mismatch
 - Upload nach Abort
 - Upload nach Expiry
@@ -1361,6 +1422,8 @@ Verbindliche Negativfaelle:
 - `data_import_start` oder `data_transfer_start` mit gleichem
   `idempotencyKey`, aber anderem Payload
 - `job_cancel` fuer fremde Tenants oder fremde Principals
+- Worker publiziert nach angenommenem Cancel ein neues Artefakt oder
+  startet weitere Daten-Schreiboperationen
 - KI-nahes Tool ohne Policy-Freigabe
 - externer KI-Provider ohne erlaubende Policy
 - Prompt mit Secret- oder Rohdatenparameter
@@ -1395,11 +1458,15 @@ Dokumentation muss explizit nennen:
 - grosse Ergebnisse werden als Ressourcen/Artefakte referenziert
 - Write-Tools brauchen Policy-Freigabe
 - Uploads sind segmentiert und hash-validiert
-- Upload-Segmente nutzen bei `stdio` `contentBase64`; HTTP darf
-  ausgehandelte Chunk-Bodies nutzen; Hashes gelten jeweils ueber die
-  tatsaechlichen Segmentbytes
+- Upload-Segmente nutzen bei `stdio` und streambarem HTTP
+  `contentBase64`; Hashes gelten ueber die decodierten Segmentbytes
+- streambares HTTP nutzt fuer MCP-Toolcalls JSON-RPC-POSTs; binaere
+  Nicht-MCP-Upload-Bodies sind keine 0.9.6-Standardtransport-Funktion
 - Upload-Responses enthalten TTL-Informationen, und abgelaufene
   Sessions werden definiert verworfen
+- fachliche Toolfehler erscheinen als `isError=true`-Tool-Result mit
+  `structuredContent.error.code`; JSON-RPC-Errors bleiben
+  Protokollfehlern vorbehalten
 - Audit speichert Approval-Grants nur als Token-ID oder Fingerprint,
   nie als rohen `approvalToken`
 - KI-nahe Tools brauchen Policy, Prompt-Hygiene und Audit
@@ -1478,6 +1545,9 @@ Gegenmassnahme:
 - tenant-scoped Connection-Refs ueber einen eigenen Store/Resolver
   aufgeloest werden und Policy-Metadaten fuer sensitive Verbindungen
   liefern
+- Connection-Refs aus dokumentierter Projekt-/Serverkonfiguration oder
+  Test-Seeds gebootstrappt werden, ohne Secrets in MCP-Payloads
+  anzunehmen
 - Start-Tools Idempotency-Key, Payload-Fingerprint und Konflikte korrekt
   behandeln
 - Import und Transfer dieselben Idempotenzregeln wie andere Start-Tools
@@ -1488,6 +1558,9 @@ Gegenmassnahme:
   erzwingen
 - Artefakt-Uploads segmentiert, resumable und SHA-256-validiert sind
 - `job_cancel` eigene oder erlaubte Jobs kontrolliert abbrechen kann
+- Cancel in laufende Worker propagiert wird und nach angenommenem
+  Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet
+  werden
 - KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md`
   registriert, policy-gesteuert und auditierbar sind
 - Fehler immer als strukturiertes Envelope erscheinen
