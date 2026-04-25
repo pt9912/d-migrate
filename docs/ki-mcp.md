@@ -164,12 +164,16 @@ Hinweis:
 - `payloadFingerprint` ist ein Hash des normalisierten Payloads ohne
   `idempotencyKey`, empfohlen als `SHA-256` ueber deterministisch
   serialisiertem JSON (64-stellig, hex-codiert).
-- Deduplizierung basiert auf dem Tripel
-  (`idempotencyKey`,`callerId`,`payloadFingerprint`).
-  Wiederholte Requests mit gleichem Tripel muessen auf denselben
-  bestehenden Job gemappt werden.
-- Bei `idempotencyKey`-Wiederverwendung mit anderem `callerId` oder anderem
-  `payloadFingerprint` ist `IDEMPOTENCY_CONFLICT` zurueckzugeben.
+- Deduplizierung basiert auf einem serverseitigen Scope-Key
+  (`tenantId`,`callerId`,`operation`,`idempotencyKey`) plus
+  `payloadFingerprint`.
+  Wiederholte Requests mit gleichem Scope-Key und identischem
+  `payloadFingerprint` muessen auf denselben bestehenden Job gemappt
+  werden.
+- Bei `idempotencyKey`-Wiederverwendung in anderem Tenant-, Caller- oder
+  Operations-Scope ist kein Konflikt sichtbar zu machen.
+- Bei gleichem Scope-Key mit anderem `payloadFingerprint` ist
+  `IDEMPOTENCY_CONFLICT` zurueckzugeben.
 - `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
   und wird nicht durch den Client gesetzt.
 - Optionaler 2-Phasen-Flow fuer policy-gesteuerte write-Tools:
@@ -217,9 +221,11 @@ Wichtig:
 - Verbindungsreferenzen fuer Tool-Inputs nutzen nur tenant-scoped Resource-URIs
   (`dmigrate://tenants/{tenantId}/connections/{connectionId}`), nicht
   unscoped Prefixe wie `conn:<id>`.
-- Connections werden ausserhalb von MCP registriert und verwaltet (z.B. ueber
-  CLI oder Admin-UI). MCP bietet nur lesenden Zugriff auf non-secret
-  Verbindungsreferenzen.
+- Connections werden ausserhalb von MCP registriert und verwaltet. CLI
+  und MCP muessen dafuer eine gemeinsame adapterneutrale
+  Config-/Connection-Ref-Aufloesung nutzen; der MCP-Adapter darf nicht
+  vom CLI-Adapter abhaengen und kein eigenes YAML-Parsing duplizieren.
+  MCP bietet nur lesenden Zugriff auf non-secret Verbindungsreferenzen.
 
 ### 6.1 Tool-Discovery fuer Ressourcen-IDs
 
@@ -268,6 +274,12 @@ Beispiel `schema_generate`:
   }
 }
 ```
+
+Alternativ darf `schema_generate` fuer kleine, neutrale Schemas ein
+Inline-`schema` statt `schemaRef` akzeptieren. Dieser Pfad bleibt
+read-only und braucht keinen vorgelagerten Upload und keine
+Policy-Freigabe; zu grosse Inline-Schemas muessen `PAYLOAD_TOO_LARGE`
+liefern.
 
 Antworten sollten standardmaessig liefern:
 
@@ -346,9 +358,10 @@ Fuer die d-migrate-MCP-Toolvertragsversion `v1` gilt verbindlich:
 - langlaufende oder grosse Operationen werden als Start-Tool plus
   `jobId` modelliert
 - Start-Tools muessen idempotent angreifbar sein:
-  bei identischem Tripel (`idempotencyKey`,`callerId`,`payloadFingerprint`)
-  muss derselbe laufende/fertige Job zurueckgegeben werden oder
-  ein Konfliktstatus.
+  bei identischem Scope-Key
+  (`tenantId`,`callerId`,`operation`,`idempotencyKey`) und identischem
+  `payloadFingerprint` muss derselbe laufende/fertige Job
+  zurueckgegeben werden; Konflikte entstehen nur im selben Scope.
 - grosse Ergebnisse werden nur ueber `resourceUri` oder `artifactId`
   bereitgestellt
 - Importdaten werden ueber `artifact_upload_init` und `artifact_upload`
@@ -585,6 +598,11 @@ Umfangs. Der Streamable-HTTP-`GET`-Pfad bleibt trotzdem MCP-konform:
 der Server liefert entweder `text/event-stream` fuer Transport-Interop
 oder HTTP 405, wenn keine serverinitiierte Stream-Kommunikation
 angeboten wird.
+
+Bei session-basiertem streambarem HTTP soll der Client nicht mehr
+benoetigte Sessions per `DELETE` mit `MCP-Session-Id` beenden koennen.
+Der Server terminiert die Session oder liefert HTTP 405, wenn
+clientseitige Session-Terminierung nicht angeboten wird.
 
 0.9.6 fuehrt keine parallele MCP-Tasks-Abstraktion fuer
 d-migrate-Langlaeufer ein. Das d-migrate-Jobmodell mit

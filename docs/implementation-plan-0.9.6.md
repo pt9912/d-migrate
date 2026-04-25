@@ -268,6 +268,9 @@ Verbindliche Entscheidung:
   - `GET` oeffnet entweder einen SSE-Stream mit
     `Content-Type: text/event-stream` oder liefert HTTP 405, wenn keine
     Server-initiierte Stream-Kommunikation angeboten wird
+  - `DELETE` mit `MCP-Session-Id` terminiert die Session explizit oder
+    liefert HTTP 405, wenn clientseitige Session-Terminierung nicht
+    unterstuetzt wird
 - optionales mTLS wird als konfigurierbarer Maschinen-zu-Maschinen-
   Schutz vorbereitet
 
@@ -303,17 +306,22 @@ Begruendung:
 Verbindliche Entscheidung:
 
 - alle `*_start`-Tools verlangen `idempotencyKey`
-- Deduplizierung nutzt das Tripel:
-  (`idempotencyKey`, `callerId`, `payloadFingerprint`)
+- der Idempotency-Store-Key ist auf
+  (`tenantId`, `callerId`, `operation`, `idempotencyKey`) gescoped
 - `callerId` wird serverseitig aus dem Auth-/Principal-Kontext
   abgeleitet
+- `tenantId` und `operation` werden ebenfalls serverseitig bestimmt;
+  der Client kann keinen fremden Idempotency-Scope setzen
 - `payloadFingerprint` ist ein SHA-256 ueber deterministisch
   serialisierten, normalisierten Payload ohne transiente Kontrollfelder:
   `idempotencyKey`, `approvalToken`, `clientRequestId`, `requestId`
-- wiederholte Requests mit identischem Tripel geben denselben Job
-  zurueck
-- gleicher `idempotencyKey` mit anderem Caller oder anderem Payload
-  fuehrt zu `IDEMPOTENCY_CONFLICT`
+- wiederholte Requests mit identischem Store-Key und identischem
+  `payloadFingerprint` geben denselben Job zurueck
+- gleicher `idempotencyKey` in anderem Tenant-, Caller- oder
+  Operations-Scope ist unabhaengig und darf fremde Nutzung nicht sichtbar
+  machen
+- gleicher Store-Key mit anderem `payloadFingerprint` fuehrt zu
+  `IDEMPOTENCY_CONFLICT`
 
 Begruendung:
 
@@ -679,7 +687,7 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
 6. bestehenden Idempotency-Treffer fuer Start-Tools pruefen, falls nach
    Auth, Schema-Validierung und Scope-Pruefung eindeutig bestimmbar
 7. Policy pruefen, falls kein bestehender Idempotency-Treffer vorliegt
-   oder der Idempotency-Key mit anderem Payload/Caller kollidiert
+   oder der Idempotency-Store-Key mit anderem Payload kollidiert
 8. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
    machen
 9. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
@@ -826,7 +834,9 @@ Zweck:
 
 Verbindliche Eingaben:
 
-- `schemaRef`
+- genau eine Schema-Quelle:
+  - `schemaRef`
+  - kleines neutrales Inline-`schema`
 - `targetDialect`
 - optionale DDL-Optionen
 
@@ -838,6 +848,9 @@ Antwort:
 
 Akzeptanz:
 
+- kleine Inline-Schemas koennen ohne vorgelagerten Upload und ohne
+  Policy-Freigabe in DDL umgewandelt werden
+- zu grosse Inline-Schemas liefern `PAYLOAD_TOO_LARGE`
 - vorhandene Generatorwarnungen werden als Findings oder Notes
   strukturiert sichtbar
 - DDL wird nicht abgeschnitten, sondern als Artefakt referenziert
@@ -966,7 +979,7 @@ Akzeptanz:
 
 - fehlender `idempotencyKey` liefert `IDEMPOTENCY_KEY_REQUIRED`
 - identische Wiederholung liefert denselben Job
-- gleicher `idempotencyKey` mit anderem Payload liefert
+- gleicher Idempotency-Store-Key mit anderem Payload liefert
   `IDEMPOTENCY_CONFLICT`
 - fehlende Freigabe liefert `POLICY_REQUIRED`
 - zweiter Aufruf mit passendem Token startet oder dedupliziert den Job
@@ -1345,6 +1358,7 @@ Abnahmekriterien:
   - `Origin`-Validierung gegen DNS-Rebinding
   - optionales `MCP-Session-Id` mit 400/404-Fehlerpfaden
   - definierte `GET`-Semantik fuer SSE oder HTTP 405
+  - definierte `DELETE`-Semantik fuer Session-Terminierung oder HTTP 405
 - HTTP-Authorization nach MCP 2025-11-25 fuer nicht-lokales
   streambares HTTP verpflichtend implementieren:
   - HTTP 401 mit `WWW-Authenticate` und `resource_metadata`
@@ -1375,7 +1389,8 @@ Abnahmekriterien:
 - ein MCP-Client kann den Server initialisieren
 - lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
 - HTTP-Transporttests decken Accept-Header, `MCP-Protocol-Version`,
-  Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik ab
+  Origin-Validierung, optionales `MCP-Session-Id`, `GET`-Semantik und
+  `DELETE` mit `MCP-Session-Id` ab
 - HTTP-Auth-Tests decken fuer nicht-lokales HTTP 401/403,
   `WWW-Authenticate`, Protected-Resource-Metadata und Scope-Challenges
   ab
@@ -1397,6 +1412,8 @@ Abnahmekriterien:
 - `schema_validate` an bestehenden Validator und Format-Reader
   anbinden
 - `schema_generate` an bestehende DDL-Generatoren anbinden
+- `schema_generate` fuer `schemaRef` und kleine Inline-Schemas
+  anbinden, ohne Upload- oder Policy-Zwang fuer Inline-Read-only-Nutzung
 - `schema_compare` an bestehende Compare-Pfade anbinden
 - `schema_compare` auf bereits materialisierte `schemaRef`-Eingaenge
   beschraenken; `connectionRef` liefert `VALIDATION_ERROR` mit Hinweis
@@ -1409,6 +1426,8 @@ Abnahmekriterien:
 - kleine Ergebnisse koennen inline geliefert werden
 - grosse Ergebnisse werden als Artefakt referenziert
 - bestehende Warnungen bleiben maschinenlesbar sichtbar
+- `schema_generate` erzeugt DDL fuer kleine Inline-Schemas ohne
+  vorheriges Materialisieren
 - keine Tool-Antwort verletzt die Inline-Limits
 
 ### Phase D - Discovery und Ressourcen
@@ -1420,6 +1439,14 @@ Abnahmekriterien:
 - Resource-Resolver und Store fuer tenant-scoped Connection-Refs
   implementieren, inklusive Sensitivitaets-/Produktionsmetadaten fuer
   Policy
+- bestehende CLI-Config-/Connection-Aufloesung aus
+  `adapters/driving/cli` in einen adapterneutralen Dienst oder ein
+  gemeinsames Config-Modul herausziehen, z.B. in `hexagon/application`
+  oder ein dediziertes Shared-Config-Modul
+- CLI und MCP muessen diesen gemeinsamen Bootstrap nutzen; der MCP-
+  Adapter darf nicht vom CLI-Adapter oder
+  `dev.dmigrate.cli.config.NamedConnectionResolver` abhaengen und darf
+  Config-Parsing nicht duplizieren
 - Bootstrap fuer Connection-Refs aus `.d-migrate.yaml` oder
   aequivalenter Projekt-/Serverkonfiguration anbinden; Tests nutzen
   explizite Seeds ohne echte Secrets
@@ -1434,6 +1461,8 @@ Abnahmekriterien:
   `schema_compare_start`, Reverse, Import und Transfer
 - Connection-Refs koennen in Beta-Tests aus dokumentierten Seeds
   geladen werden, ohne Secrets in MCP-Payloads zu uebergeben
+- CLI- und MCP-Startpfade nutzen dieselbe adapterneutrale
+  Config-/Connection-Ref-Aufloesung
 - ungueltige Cursor liefern `VALIDATION_ERROR`
 
 ### Phase E - Async-Jobs, Idempotenz und Policy
@@ -1582,6 +1611,8 @@ Pflichtabdeckung:
   Sensitivitaets-/Produktionsmetadaten
 - Connection-Ref-Bootstrap aus lokaler Projekt-/Serverkonfiguration
   oder Test-Seeds ohne Secrets
+- adapterneutraler Config-/Connection-Ref-Bootstrap ohne Abhaengigkeit
+  von `adapters/driving/cli` und ohne dupliziertes YAML-Parsing
 - SchemaStore, ProfileStore und DiffStore bzw. gleichwertige typisierte
   Artefakt-Indizes fuer Listing, Resource-Resolution und Tenant-Scope
 - Cancel-Berechtigungen und terminale Jobzustaende
@@ -1609,6 +1640,8 @@ Fuer Start-Tools zusaetzlich:
   nach Ablauf oder Entzug des Approval-Grants denselben Job, sofern Auth,
   Schema und Scope weiter gueltig sind
 - Konflikt mit anderem Payload
+- gleicher `idempotencyKey` in anderem Tenant-, Caller- oder
+  Operations-Scope ist unabhaengig und leakt keine fremde Nutzung
 - Policy-Required-Flow
 - `schema_compare` weist `connectionRef` synchron ab; connection-backed
   Vergleiche laufen ueber `schema_compare_start`
@@ -1634,9 +1667,11 @@ ein weiterer ueber HTTP. Beide pruefen:
 - optionales `MCP-Session-Id` wird korrekt ausgegeben, verlangt,
   abgewiesen oder mit HTTP 404 als abgelaufen behandelt
 - HTTP-`GET` liefert SSE oder HTTP 405 gemaess Server-Konfiguration
+- HTTP-`DELETE` mit `MCP-Session-Id` terminiert die Session oder liefert
+  HTTP 405, wenn clientseitige Terminierung deaktiviert ist
 - `capabilities_list`
 - `schema_validate` mit kleinem Schema
-- `schema_generate` mit Artefakt-Fallback
+- `schema_generate` mit kleinem Inline-Schema und mit Artefakt-Fallback
 - Driver-Lookup ueber die normale MCP-Runtime-Registry
 - Schema-Codec-Lookup ueber die normale MCP-Runtime-Registry
 - `schema_compare` mit zwei `schemaRef`-Eingaengen
@@ -1754,7 +1789,8 @@ Dokumentation muss explizit nennen:
   Vertragsversion
 - Streamable HTTP dokumentiert Accept-Header,
   `MCP-Protocol-Version`, Origin-Validierung, optionale
-  `MCP-Session-Id` und `GET`-Semantik
+  `MCP-Session-Id`, `GET`-Semantik und `DELETE`-Semantik fuer
+  Session-Terminierung oder HTTP 405
 - HTTP-Authorization dokumentiert 401/403-Verhalten,
   `WWW-Authenticate`, Protected Resource Metadata und Scope-
   Challenges fuer nicht-lokale HTTP-Clients; das Metadata-Dokument nennt
@@ -1853,8 +1889,8 @@ Gegenmassnahme:
 - Initialize MCP `protocolVersion` `2025-11-25` nutzt und d-migrate
   `v1` nur als Tool-/Resource-Vertragsversion ausweist
 - streambares HTTP Accept-Header, `MCP-Protocol-Version`,
-  Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik
-  gemaess MCP-Spezifikation abdeckt
+  Origin-Validierung, optionales `MCP-Session-Id`, `GET`-Semantik und
+  `DELETE`-Semantik gemaess MCP-Spezifikation abdeckt
 - nicht-lokales streambares HTTP Auth nach MCP 2025-11-25 erzwingt und
   Auth-Deaktivierung nur fuer lokale Tests/Demos zulaesst
 - alle in Scope genannten Tools registriert sind
@@ -1870,6 +1906,9 @@ Gegenmassnahme:
 - Connection-Refs aus dokumentierter Projekt-/Serverkonfiguration oder
   Test-Seeds gebootstrappt werden, ohne Secrets in MCP-Payloads
   anzunehmen
+- CLI und MCP fuer Connection-Refs dieselbe adapterneutrale Config-/
+  Connection-Aufloesung nutzen; der MCP-Adapter haengt nicht vom CLI-
+  Adapter ab
 - Start-Tools Idempotency-Key, Payload-Fingerprint und Konflikte korrekt
   behandeln
 - Import und Transfer dieselben Idempotenzregeln wie andere Start-Tools
