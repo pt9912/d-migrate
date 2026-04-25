@@ -219,7 +219,8 @@ ueber explizite Lieferabschnitte umgesetzt. Das ist keine Verschiebung
 nach 0.9.7 und kein reduzierter MVP-Scope:
 
 - Abschnitt 0.9.6-A - Read-only MCP Core:
-  - `stdio` plus HTTP-Initialize/Transport-Grundpfad
+  - `stdio` plus HTTP-Initialize/Transport-Grundpfad nur fuer Loopback,
+    solange die vollstaendige HTTP-Auth aus Abschnitt B noch nicht aktiv ist
   - MCP-`protocolVersion` `2025-11-25`
   - `capabilities_list`, read-only Schema-Tools und Discovery
   - read-only Schema-Staging fuer grosse Schemas
@@ -368,6 +369,10 @@ Verbindliche Entscheidung:
     Whitespace und Parameter werden robust geparst
   - nach Initialize muessen HTTP-Requests den ausgehandelten
     `MCP-Protocol-Version`-Header senden
+  - nach erfolgreichem Initialize liefern fehlende, syntaktisch ungueltige
+    oder nicht unterstuetzte `MCP-Protocol-Version`-Header einen
+    MCP-konformen Transport-/JSON-RPC-Fehler und werden nicht als normaler
+    Tool-Fehler modelliert
   - der Server validiert `Origin` gegen DNS-Rebinding und antwortet bei
     ungueltigem Origin mit HTTP 403
   - `MCP-Session-Id` ist optional, aber wenn der Server eine Session-ID
@@ -596,6 +601,16 @@ Verbindliche Entscheidung:
 - Clients duerfen keine `uploadSessionId` vorschlagen; Init-Resume erfolgt
   ueber `approvalKey` bzw. `clientRequestId` plus identische
   Init-Metadaten und gibt die serverseitig erzeugte Session zurueck
+- fuer `uploadIntent=schema_staging_readonly` ist `clientRequestId`
+  verpflichtend, wenn der Init-Aufruf resumable/idempotent sein soll:
+  - Store-Key ist (`tenantId`, `callerId`, `toolName`, `clientRequestId`)
+  - identische Init-Metadaten liefern dieselbe `uploadSessionId`
+  - abweichende Init-Metadaten liefern `IDEMPOTENCY_CONFLICT`
+  - die Reservierung hat `initResumeExpiresAt` und wird spaetestens mit der
+    Upload-Session-Lease entfernt
+  - ohne `clientRequestId` ist ein erfolgreicher read-only Init bewusst nicht
+    resumable; Agenten muessen dann doppelte Sessions ueber Quotas/Cleanup
+    behandeln
 - `artifact_upload` akzeptiert grosse Inhalte nur ueber Segmente einer
   bestehenden Upload-Session
 - jedes Segment enthaelt:
@@ -1478,8 +1493,9 @@ Gemeinsame Regeln:
 - der Approval-Flow darf Segmentvalidierung und Hashpruefung nicht
   umgehen
 - `approvalKey` ist fuer policy-pflichtige Init-Pfade Pflicht; fuer
-  read-only Schema-Staging ist ein stabiler `clientRequestId` empfohlen,
-  aber nicht Voraussetzung fuer Write-Policy
+  read-only Schema-Staging ist `clientRequestId` Pflicht, wenn der Init-
+  Aufruf resumable sein soll. Ohne `clientRequestId` darf der Server eine
+  neue Session erzeugen und muss dies als nicht resumable auditieren.
 - beim zweiten policy-pflichtigen Init-Aufruf muss der Client dasselbe
   `approvalKey` und ein durch Policy-/Human-/Admin-Mechanismus
   ausgestelltes `approvalToken` senden
@@ -1728,6 +1744,12 @@ Verbindliche Prompts:
 
 Regeln:
 
+- Server implementiert MCP-Standardmethoden `prompts/list` und
+  `prompts/get`
+- `prompts/list` liefert Name, Beschreibung, Argument-Schema und stabile
+  Version/Revision je Prompt
+- `prompts/get` validiert Argumente, erzeugt nur Prompt-Nachrichten aus
+  erlaubten Resource-/Artifact-Refs und gibt keine Secrets oder Rohdaten aus
 - Prompts sind Vorlagen, keine versteckten Tool-Ausfuehrungen
 - Prompts verweisen auf MCP-Tools und Ressourcen, statt grosse Inhalte
   direkt in den Kontext zu kopieren
@@ -1739,9 +1761,12 @@ Regeln:
 Akzeptanz:
 
 - Prompts sind ueber MCP-Discovery sichtbar
+- `prompts/list` und `prompts/get` funktionieren ueber `stdio` und HTTP
 - jeder Prompt nennt die erforderlichen Resource-Refs und die
   erwarteten Tool-Schritte
 - unzulaessige Parameter liefern `VALIDATION_ERROR`
+- unbekannter Prompt liefert MCP-konformen `prompts/get`-/JSON-RPC-Fehler
+  mit d-migrate-Code in `error.data`
 - Prompt-Hygiene-Verletzungen liefern `PROMPT_HYGIENE_BLOCKED`
 
 ---
@@ -1966,6 +1991,9 @@ Abnahmekriterien:
 - HTTP-Transporttests decken robuste Accept-Header-Auswertung,
   `MCP-Protocol-Version`, Origin-Validierung, optionales
   `MCP-Session-Id`, `GET`-Semantik und `DELETE` mit `MCP-Session-Id` ab
+- negative HTTP-Transporttests decken fehlenden, syntaktisch ungueltigen
+  und nicht unterstuetzten `MCP-Protocol-Version`-Header fuer Folgeaufrufe
+  nach erfolgreichem Initialize ab
 - Streamable-HTTP-POST-Tests decken MCP-Wire-Semantik ab:
   Notifications und JSON-RPC-Responses liefern `202 Accepted` ohne Body;
   JSON-RPC-Requests liefern `Content-Type: application/json` oder
@@ -1994,6 +2022,8 @@ Abnahmekriterien:
   Test-/Demo-Konfigurationen erlaubt ist
 - Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-lokaler
   Bind-Adresse wird mit klarem Konfigurationsfehler abgelehnt
+- Abschnitt-0.9.6-A-HTTP ohne vollstaendige JWKS-/Introspection-Auth darf
+  nur auf Loopback starten; nicht-lokale Bindings schlagen fail-closed fehl
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
 - `resources/list` liefert Jobs, Artefakte, Schemas, Profile, Diffs und
@@ -2259,6 +2289,8 @@ Abnahmekriterien:
   Artefakt-Publishes erzeugen
 - MCP-Prompts fuer kuratierte Analyse-, Transformations- und
   Testdatenablaeufe registrieren
+- `prompts/list` und `prompts/get` inklusive Argument-Schemas,
+  Argumentvalidierung, unbekanntem Prompt und Hygiene-Fehlern implementieren
 - Prompt-Hygiene-Pruefung fuer Secrets, rohe Massendaten und externe
   Provider-Policies anbinden
 - Unit-Tests fuer alle Kernservices
@@ -2287,6 +2319,9 @@ Abnahmekriterien:
   blockiert
 - MCP-Prompts sind ueber Discovery sichtbar und referenzieren nur
   erlaubte Ressourcen/Tools
+- `prompts/get` liefert fuer jeden verbindlichen Prompt validierte
+  Prompt-Nachrichten; ungueltige Argumente, unbekannte Prompts und Hygiene-
+  Verletzungen sind getestet
 - Doku nennt die konkreten Startpfade fuer lokale und entfernte
   MCP-Clients
 
@@ -2480,6 +2515,7 @@ Gemeinsame Tests fuer `stdio` und HTTP:
 - `job_cancel`
 - ein KI-nahes Spezialtool mit Policy-/Audit-Pfad
 - MCP-Prompt-Discovery
+- `prompts/list` und `prompts/get` mit gueltigen Argumenten
 
 HTTP-only Tests:
 
@@ -2487,6 +2523,8 @@ HTTP-only Tests:
   `application/json` und `text/event-stream` in beliebiger Reihenfolge
   listet
 - HTTP-Folgeaufruf mit `MCP-Protocol-Version`
+- HTTP-Folgeaufruf ohne, mit ungueltigem oder nicht unterstuetztem
+  `MCP-Protocol-Version`-Header wird abgewiesen
 - JSON-RPC-Notification/-Response per Streamable-HTTP-POST liefert
   `202 Accepted` ohne Body
 - JSON-RPC-Request per Streamable-HTTP-POST liefert
@@ -2607,6 +2645,8 @@ Verbindliche Negativfaelle:
 - KI-nahes Tool ohne Policy-Freigabe
 - externer KI-Provider ohne erlaubende Policy
 - Prompt mit Secret- oder Rohdatenparameter
+- `prompts/get` mit unbekanntem Prompt
+- `prompts/get` mit ungueltigen Argumenten
 - Connection-Ref als freier JDBC-String
 - rohe SQL-Payloads in Datenoperationen
 - nicht-lokaler HTTP-Start mit deaktivierter Auth-Konfiguration

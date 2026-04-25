@@ -96,6 +96,12 @@ Der MCP-Server soll drei Dinge bereitstellen:
 - `prompts` fuer kuratierte Analyse-, Transformations- und
   Testdatenablaeufe
 
+Prompts sind erst abnahmefaehig, wenn Clients sie ueber `prompts/list`
+auffinden und ueber `prompts/get` mit validierten Argumenten abrufen
+koennen. `prompts/get` darf nur kuratierte Prompt-Nachrichten aus erlaubten
+Resource-/Artifact-Refs erzeugen; unbekannte Prompts, ungueltige Argumente
+und Prompt-Hygiene-Verletzungen muessen deterministische Fehler liefern.
+
 ### 4.1 Tool-Grundsaetze
 
 Tools muessen:
@@ -558,12 +564,18 @@ verbindlich:
   Principal, Init-Metadaten und Ablaufzeit gebunden ist.
 - Wiederholtes policy-pflichtiges `artifact_upload_init` mit gleichem
   `approvalKey` und identischem Payload liefert dieselbe
-  `uploadSessionId`; read-only Schema-Staging kann fuer Retry-Deduplizierung
-  stattdessen einen stabilen `clientRequestId` nutzen. Dadurch erzeugen
-  Agent-Retries nach Timeouts keine doppelten Upload-Sessions.
+  `uploadSessionId`; read-only Schema-Staging nutzt fuer resumable Init-
+  Retries einen stabilen `clientRequestId`.
 - Clients duerfen keine `uploadSessionId` vorschlagen; Resume erfolgt ueber
   `approvalKey` bzw. `clientRequestId` plus identische Init-Metadaten und
   gibt die serverseitig erzeugte Session zurueck.
+- Fuer `uploadIntent=schema_staging_readonly` gilt:
+  `clientRequestId` ist nur dann verpflichtend, wenn der Init-Aufruf
+  resumable/idempotent sein soll. Store-Key ist
+  (`tenantId`,`callerId`,`toolName`,`clientRequestId`); identische
+  Init-Metadaten liefern dieselbe Session, abweichende Metadaten
+  `IDEMPOTENCY_CONFLICT`. Ohne `clientRequestId` darf ein erfolgreicher Init
+  eine neue nicht-resumable Session erzeugen und muss dies auditieren.
 - Bei stdio-MCP und streambarem HTTP-MCP werden grosse Artefakte in
   fortlaufenden Segmenten als wiederholbare `artifact_upload`-Aufrufe
   fuer eine bestehende Upload-Session geliefert.
@@ -741,6 +753,9 @@ Empfohlene Sicherheitsgrundlagen:
 - jeder MCP-Aufruf muss ein verifizierbares `principalId` haben
 - HTTP:
   - fuer entfernte bzw. nicht-lokale Clients ist Auth verbindlich
+  - solange nur der Abschnitt-0.9.6-A-HTTP-Grundpfad ohne vollstaendige
+    JWKS-/Introspection-Auth aktiv ist, darf HTTP nur auf Loopback binden;
+    nicht-lokale Bindings muessen fail-closed abgelehnt werden
   - d-migrate agiert hier als Resource Server; ein eigener
     Authorization Server, Client-Registration-UI oder Mandanten-Admin
     gehoert nicht zum 0.9.6-Ziel
