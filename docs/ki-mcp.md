@@ -124,6 +124,17 @@ Ressourcen sollen:
 - auf Artefakte, Reports und Schemata zeigen
 - grosse Inhalte bei Bedarf chunkbar oder referenzierbar machen
 
+Fuer `resources/read` gilt dasselbe Prompt-Schutzprinzip wie fuer
+Tool-Resultate:
+
+- pro Antwort maximal `64 KiB` serialisierte Nutzdaten
+- chunkbare Ressourcen akzeptieren `cursor`, `limitBytes` und optional
+  `rangeStart`/`rangeEnd`
+- Antworten koennen `nextCursor`, `range`, `truncated=true` und
+  `etag` oder `resourceVersion` enthalten
+- `cursor` ist opak; Byte-Ranges beziehen sich auf die kanonische
+  Resource-Repräsentation
+
 ---
 
 ## 5. Vorgeschlagene Tools
@@ -176,6 +187,11 @@ Hinweis:
   Operations-Scope ist kein Konflikt sichtbar zu machen.
 - Bei gleichem Scope-Key mit anderem `payloadFingerprint` ist
   `IDEMPOTENCY_CONFLICT` zurueckzugeben.
+- Idempotency-Reservierung und Job-Anlage muessen atomar sein:
+  `reserveOrGet(scopeKey,payloadFingerprint)` liefert bei identischem
+  Fingerprint denselben Pending-/Committed-Job, erzeugt bei leerem Key
+  genau eine Pending-Reservierung und beendet Konflikte ohne
+  Policy-Pruefung mit `IDEMPOTENCY_CONFLICT`.
 - `callerId` ist serverseitig aus dem Auth-Kontext abgeleitet (z.B. Principal-ID)
   und wird nicht durch den Client gesetzt.
 - 2-Phasen-Flow fuer policy-gesteuerte Tools:
@@ -230,6 +246,9 @@ Wichtig:
   anhand des principalbasierten Scopes im Token geprueft.
 - Tenant-/Principal-Pruefungen gelten bei jeder Ressourcenauflosung;
   bei Fremdzugriff ist `TENANT_SCOPE_DENIED` zu liefern.
+- Listen-Tools leiten den effektiven Tenant aus dem Principal ab. Ein
+  `tenantId`-Parameter ist nur adressierend; abweichende Tenant-IDs sind
+  nur fuer Admins oder explizite Cross-Tenant-Scopes erlaubt.
 - Verbindungsreferenzen fuer Tool-Inputs nutzen nur tenant-scoped Resource-URIs
   (`dmigrate://tenants/{tenantId}/connections/{connectionId}`), nicht
   unscoped Prefixe wie `conn:<id>`.
@@ -243,12 +262,12 @@ Wichtig:
 
 Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-Listen:
 
-- `job_list`: `tenantId` + optionale Filter (`status`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- `artifact_list`: `tenantId` + optionale Filter (`artifactKind`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- `schema_list`: `tenantId` + optionale Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- `profile_list`: `tenantId` + optionale Filter (`connectionId`, `jobId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- `diff_list`: `tenantId` + optionale Filter (`jobId`, `leftSchemaId`, `rightSchemaId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
-- Alle drei Tools liefern mindestens `items`, `nextCursor` und `totalCount`.
+- `job_list`: optional adressierendes `tenantId` + Filter (`status`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `artifact_list`: optional adressierendes `tenantId` + Filter (`artifactKind`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `schema_list`: optional adressierendes `tenantId` + Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `profile_list`: optional adressierendes `tenantId` + Filter (`connectionId`, `jobId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `diff_list`: optional adressierendes `tenantId` + Filter (`jobId`, `leftSchemaId`, `rightSchemaId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- Alle Listen-Tools liefern mindestens `items`, `nextCursor` und `totalCount`.
 
 ---
 
@@ -605,7 +624,10 @@ Empfohlene Sicherheitsgrundlagen:
   - Tokens duerfen nicht aus Query-Parametern gelesen werden und muessen
     auf Audience/Resource des MCP-Servers validiert werden
   - Auth-Deaktivierung ist nur fuer lokale Tests/Demos mit expliziter
-    unsicherer Konfiguration erlaubt
+    unsicherer Konfiguration erlaubt und muss auf Loopback-Bindung
+    (`127.0.0.1` oder `::1`) ohne Public Base URL beschraenkt sein;
+    `0.0.0.0`, Public Hostnames oder nicht-lokale Bind-Adressen sind
+    dabei hart abzulehnen
   - optional mTLS fuer Maschinen-zu-Maschinen-Verkehre
 - stdio:
   - nur von vertrauenswuerdigem lokalem Prozess/Benutzer aufrufbar

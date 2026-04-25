@@ -255,6 +255,11 @@ Verbindliche Entscheidung:
 - Deaktivierung von HTTP-Auth ist nur fuer lokale Tests und Demos ueber
   eine explizite unsichere Konfiguration erlaubt; entfernte HTTP-Clients
   duerfen ohne Auth nicht als Beta-fertig gelten
+- unsichere HTTP-Auth-Deaktivierung ist nur zulaessig, wenn der Server
+  ausschliesslich an Loopback-Adressen (`127.0.0.1` oder `::1`) bindet,
+  keine oeffentliche Base-URL ausweist und keine nicht-lokale
+  Bind-Adresse wie `0.0.0.0` nutzt; andernfalls muss der Start hart
+  fehlschlagen
 - Streamable HTTP implementiert die MCP-Transportregeln fuer
   `protocolVersion` `2025-11-25`:
   - JSON-RPC-Nachrichten laufen ueber einen einzelnen MCP-Endpunkt mit
@@ -324,6 +329,21 @@ Verbindliche Entscheidung:
   machen
 - gleicher Store-Key mit anderem `payloadFingerprint` fuehrt zu
   `IDEMPOTENCY_CONFLICT`
+- Idempotency-Pruefung und Job-Anlage sind eine atomare Store-Operation:
+  `reserveOrGet(scopeKey, payloadFingerprint)`
+  - existiert ein Eintrag mit identischem Fingerprint, wird dessen Job
+    oder Pending-Reservierung zurueckgegeben
+  - existiert ein Eintrag mit anderem Fingerprint, endet der Aufruf
+    deterministisch mit `IDEMPOTENCY_CONFLICT`
+  - existiert kein Eintrag, wird eine `PENDING`-Reservierung atomar
+    angelegt, bevor Policy oder Job-Erzeugung weitere Nebenwirkungen
+    ausloesen
+  - nach erfolgreicher Job-Anlage wird die Reservierung auf `COMMITTED`
+    mit `jobId` gesetzt; bei nicht-retrybaren Fehlern wird sie mit
+    Fehlerstatus abgeschlossen oder nach definierter TTL freigegeben
+- parallele identische Starts duerfen hoechstens eine Job-Anlage
+  ausloesen; weitere Aufrufe sehen dieselbe Pending-/Committed-
+  Reservierung
 
 Begruendung:
 
@@ -703,10 +723,14 @@ Jeder Tool-Aufruf laeuft logisch durch dieselbe Pipeline:
 3. Principal aus Transportkontext ableiten
 4. Tool-Payload gegen Tool-Schema validieren
 5. Tenant- und Resource-Scopes pruefen
-6. bestehenden Idempotency-Treffer fuer Start-Tools pruefen, falls nach
-   Auth, Schema-Validierung und Scope-Pruefung eindeutig bestimmbar
-7. Policy pruefen, falls kein bestehender Idempotency-Treffer vorliegt
-   oder der Idempotency-Store-Key mit anderem Payload kollidiert
+6. `reserveOrGet(scopeKey, payloadFingerprint)` fuer Start-Tools
+   atomar ausfuehren
+   - vorhandener identischer Treffer liefert denselben Job bzw. dieselbe
+     Pending-Reservierung
+   - vorhandener Treffer mit anderem Fingerprint beendet den Aufruf
+     sofort mit `IDEMPOTENCY_CONFLICT`
+7. Policy nur fuer neue oder noch nicht genehmigte Pending-Starts
+   pruefen, niemals fuer Idempotency-Konflikte
 8. Driver, Codecs und benoetigte Adapter registrieren bzw. verfuegbar
    machen
 9. Anwendung ausfuehren, Upload-Session fortsetzen oder Job anlegen
@@ -723,8 +747,11 @@ Verbindliche Audit-Semantik:
   nach Auth, Schema-Validierung und Scope-Pruefung denselben Job zurueck,
   auch wenn ein frueherer Approval-Grant inzwischen abgelaufen oder
   entzogen ist
-- Policy wird fuer neue Starts und fuer Idempotency-Konflikte geprueft,
-  nicht fuer reine Deduplizierungsantworten
+- Idempotency-Konflikte werden nach Auth, Schema-Validierung und Scope-
+  Pruefung deterministisch als `IDEMPOTENCY_CONFLICT` abgeschlossen;
+  Policy wird dafuer nicht geprueft
+- Policy wird fuer neue Starts und noch nicht genehmigte Pending-
+  Reservierungen geprueft, nicht fuer reine Deduplizierungsantworten
 - auch `AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
   `POLICY_REQUIRED` und `IDEMPOTENCY_CONFLICT` werden auditierbar
   abgeschlossen
@@ -782,6 +809,12 @@ Verbindliche Regeln:
 - `tenantId` ist adressierend, aber nicht autorisierend
 - Zugriff wird immer gegen `PrincipalContext` geprueft
 - Fremdzugriff liefert `TENANT_SCOPE_DENIED`
+- Listen-Tools leiten den effektiven Tenant grundsaetzlich aus dem
+  `PrincipalContext` ab; ein optionales `tenantId`-Eingabefeld ist nur
+  adressierend
+- wenn ein Client-`tenantId` vom Principal-Tenant abweicht, ist der
+  Aufruf nur fuer Admins oder Principals mit explizitem Cross-Tenant-
+  Scope erlaubt; sonst gilt `TENANT_SCOPE_DENIED`
 - Connection-Ressourcen enthalten keine Secrets
 - Connection-Ressourcen werden ueber `ConnectionReferenceStore`
   aufgeloest und enthalten Policy-Metadaten wie Dialekt, Owner,
@@ -794,6 +827,17 @@ Verbindliche Regeln:
   d-migrate-Code steht in `error.data.dmigrateCode`.
 - grosse Ressourcen werden chunkbar oder als Artefakt-Referenz
   bereitgestellt
+- `resources/read` liefert maximal `64 KiB` serialisierte Nutzdaten pro
+  Antwort und akzeptiert fuer chunkbare Ressourcen optionale Parameter:
+  `cursor`, `limitBytes` und optional `rangeStart`/`rangeEnd`
+- `limitBytes` ist serverseitig auf `64 KiB` begrenzt; groessere Werte
+  werden gekappt oder mit `VALIDATION_ERROR` abgewiesen
+- chunkbare Resource-Antworten enthalten `contents`, optional
+  `nextCursor`, `range`, `truncated=true` und eine stabile
+  `resourceVersion` oder `etag`, damit Clients keine ungebundenen
+  Prompt-Dumps erhalten
+- `rangeStart`/`rangeEnd` beziehen sich auf Bytes der kanonischen
+  Resource-Repräsentation; `cursor` ist bevorzugt und opak
 
 ---
 
@@ -1445,6 +1489,10 @@ Abnahmekriterien:
   - keine Tokens in Query-Parametern
 - Auth-Deaktivierung nur fuer lokale Tests/Demos mit expliziter
   unsicherer Konfiguration zulassen
+- Auth-Deaktivierung bei HTTP nur erlauben, wenn die Bind-Adresse
+  Loopback ist (`127.0.0.1` oder `::1`) und keine oeffentliche Base-URL
+  konfiguriert ist; `0.0.0.0`, public Hostnames oder nicht-lokale
+  Adressen muessen den Start verweigern
 - Runtime-Bootstrap fuer Driver, Profiling-Adapter, Streaming-Adapter
   und Schema-Codecs aus der CLI teilen oder aequivalent kapseln
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
@@ -1471,6 +1519,8 @@ Abnahmekriterien:
   mit den dokumentierten Scope-Challenges
 - ein separater Test zeigt, dass Auth-Deaktivierung nur fuer lokale
   Test-/Demo-Konfigurationen erlaubt ist
+- Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-lokaler
+  Bind-Adresse wird mit klarem Konfigurationsfehler abgelehnt
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
 - unbekannte Toolnamen liefern einen MCP-/JSON-RPC-Protokollfehler;
@@ -1678,6 +1728,8 @@ Pflichtabdeckung:
 - Upload-Approval-Fingerprint ueber Session-Metadaten, nicht ueber
   Segmentdaten
 - Idempotency-Store
+- atomare Idempotency-Reservierung `reserveOrGet` mit `PENDING`/
+  `COMMITTED`, Konfliktpfad und TTL-/Fehlerbehandlung
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
 - Policy-Entscheidungen
 - Around-/Finally-Audit fuer Auth-, Validation-, Scope-, Policy- und
@@ -1686,6 +1738,9 @@ Pflichtabdeckung:
 - MCP-Wire-Mapping: JSON-RPC-Errors nur fuer Protokollfehler,
   fachliche Toolfehler als `tools/call`-Result mit `isError=true`
 - Inline-Limit-Entscheidung
+- `resources/read`-Limitierung und Chunking mit `cursor`,
+  `limitBytes`, optionaler Byte-Range, `nextCursor` und `etag`/
+  `resourceVersion`
 - Upload-Session-Zustandsautomat
 - SHA-256-Segment- und Gesamtpruefung
 - Base64-Decoding, Segmentgroessenlimit und Hash-Berechnung ueber
@@ -1742,6 +1797,10 @@ Fuer Start-Tools zusaetzlich:
   nach Ablauf oder Entzug des Approval-Grants denselben Job, sofern Auth,
   Schema und Scope weiter gueltig sind
 - Konflikt mit anderem Payload
+- Idempotency-Konflikt liefert `IDEMPOTENCY_CONFLICT` ohne vorherige
+  Policy-Pruefung
+- parallele identische Starts gegen denselben Store-Key erzeugen nur
+  eine `PENDING`-Reservierung und maximal einen Job
 - gleicher `idempotencyKey` in anderem Tenant-, Caller- oder
   Operations-Scope ist unabhaengig und leakt keine fremde Nutzung
 - Policy-Required-Flow
@@ -1840,6 +1899,12 @@ Verbindliche Negativfaelle:
 - `schema_compare` mit `connectionRef`
 - `schema_compare_start` mit `connectionRef` ohne `idempotencyKey`
 - `schema_compare_start` ohne Policy-Freigabe
+- Listen-Tool mit fremdem `tenantId` ohne Admin-/Cross-Tenant-Scope
+- `resources/read` ohne Cursor/Range fuer eine Ressource ueber dem
+  Antwortlimit
+- `resources/read` mit `limitBytes` ueber dem Servermaximum
+- HTTP-Auth-Deaktivierung mit `0.0.0.0`, Public Base URL oder nicht-
+  lokaler Bind-Adresse
 - `artifact_upload_init` ohne `approvalKey`
 - `artifact_upload` ohne vorherige Upload-Session
 - `artifact_upload` mit gueltiger Session, aber fehlender oder fremder
@@ -2001,7 +2066,8 @@ Gegenmassnahme:
   Origin-Validierung, optionales `MCP-Session-Id`, `GET`-Semantik und
   `DELETE`-Semantik gemaess MCP-Spezifikation abdeckt
 - nicht-lokales streambares HTTP Auth nach MCP 2025-11-25 erzwingt und
-  Auth-Deaktivierung nur fuer lokale Tests/Demos zulaesst
+  Auth-Deaktivierung nur fuer lokale Tests/Demos auf Loopback-Bindung
+  ohne Public Base URL zulaesst
 - alle in Scope genannten Tools registriert sind
 - read-only Tools gegen bestehende Anwendungskomponenten laufen
 - Discovery-Tools Jobs, Artefakte, Schemas, Profile und Diffs paginiert
@@ -2021,6 +2087,10 @@ Gegenmassnahme:
   Adapter ab
 - Start-Tools Idempotency-Key, Payload-Fingerprint und Konflikte korrekt
   behandeln
+- Idempotency-Reservierung atomar ist und Konflikte ohne Policy-Pruefung
+  als `IDEMPOTENCY_CONFLICT` enden
+- `resources/read` grosse Ressourcen nur begrenzt und chunkbar ueber
+  Cursor/Range mit serverseitigem Antwortlimit liefert
 - Import und Transfer dieselben Idempotenzregeln wie andere Start-Tools
   erzwingen
 - `schema_compare` synchron nur `schemaRef` akzeptiert und
