@@ -93,8 +93,8 @@ Der MCP-Server soll drei Dinge bereitstellen:
 
 - `tools` fuer aktive Operationen
 - `resources` fuer gezielten Read-Kontext
-- optional spaeter `prompts`, falls kuratierte Analyse- oder
-  Transformationsworkflows gebraucht werden
+- `prompts` fuer kuratierte Analyse-, Transformations- und
+  Testdatenablaeufe
 
 ### 4.1 Tool-Grundsaetze
 
@@ -156,7 +156,8 @@ Ressourcen sollen:
 Hinweis:
 
 - Alle `*_start`-Tools muessen Idempotenz unterstuetzen.
-- Fuer alle `*_start`-Tools ist in `v1` ein `idempotencyKey` verbindlich.
+- Fuer alle `*_start`-Tools ist in der d-migrate-MCP-Toolvertragsversion
+  `v1` ein `idempotencyKey` verbindlich.
   Bei fehlendem `idempotencyKey` gilt `IDEMPOTENCY_KEY_REQUIRED`.
 - `payloadFingerprint` ist ein Hash des normalisierten Payloads ohne
   `idempotencyKey`, empfohlen als `SHA-256` ueber deterministisch
@@ -176,7 +177,8 @@ Hinweis:
 
 ### 5.3 KI-nahe Spezialtools
 
-Spaeter sinnvoll, wenn der KI-Pfad im Produkt wirklich ausgebaut wird:
+Die KI-nahen Spezialtools gehoeren zum MCP-Zielbild und werden ueber
+Policy, Prompt-Hygiene und Audit abgesichert:
 
 | Tool | Zweck | Default-Schutz |
 | --- | --- | --- |
@@ -300,7 +302,7 @@ Beispiel Fehler:
 {
   "error": {
     "code": "IDEMPOTENCY_KEY_REQUIRED",
-    "message": "idempotencyKey ist fuer dieses Tool in v1 verpflichtend.",
+    "message": "idempotencyKey ist fuer dieses Tool im d-migrate-MCP-Toolvertrag v1 verpflichtend.",
     "details": {
       "tool": "data_import_start"
     },
@@ -333,7 +335,7 @@ Beispiel paginierte Antwort (`job_list`):
 }
 ```
 
-Fuer `v1` gilt verbindlich:
+Fuer die d-migrate-MCP-Toolvertragsversion `v1` gilt verbindlich:
 
 - langlaufende oder grosse Operationen werden als Start-Tool plus
   `jobId` modelliert
@@ -394,13 +396,17 @@ bevorzugte Option, analog zu `docs/design.md`.
 
 ### 8.3 Artefakt-Upload-Vertrag
 
-Fuer `artifact_upload` ist der sichere Eintrittspfad im `v1`-Kontext verbindlich:
+Fuer `artifact_upload` ist der sichere Eintrittspfad im d-migrate-`v1`-
+Kontext verbindlich:
 
 - `artifactKind` und `mimeType` werden serverseitig validiert
 - `sizeBytes` ist Pflicht, um harte Payload-Limits durchzusetzen.
-- Bei HTTP-MCP darf optional `Transfer-Encoding: chunked` genutzt werden.
-- Bei stdio-MCP werden grosse Artefakte in fortlaufenden Segmenten als
-  wiederholbare `artifact_upload`-Aufrufe geliefert.
+- Bei stdio-MCP und streambarem HTTP-MCP werden grosse Artefakte in
+  fortlaufenden Segmenten als wiederholbare `artifact_upload`-Aufrufe
+  geliefert.
+- Segmentbytes werden in MCP-`tools/call`-Argumenten als
+  `contentBase64` uebertragen; streambares HTTP bleibt ein normaler
+  JSON-RPC-POST und verwendet keinen separaten binaeren Upload-Body.
   - Segmentierte Uploads sind verbindlich mit:
     - `uploadSessionId` (verbindlich, 36 Zeichen)
     - `segmentIndex` (beginnend bei 1, fortlaufend)
@@ -471,6 +477,22 @@ Verbindliche Fehlercodes:
 - `TENANT_SCOPE_DENIED`
 - `INTERNAL_AGENT_ERROR`
 
+MCP-Wire-Mapping:
+
+- Protokollfehler wie unbekannte Toolnamen, malformed
+  `tools/call`-Requests oder Schema-Verletzungen des MCP-Protokolls
+  werden als JSON-RPC-Error mit numerischem `error.code` beantwortet.
+- Fachliche Tool-Ausfuehrungsfehler wie `VALIDATION_ERROR`,
+  `POLICY_REQUIRED`, `TENANT_SCOPE_DENIED` oder
+  `UNSUPPORTED_TOOL_OPERATION` werden als `tools/call`-Result mit
+  `isError=true` geliefert.
+- Die stabilen d-migrate-Fehlercodes stehen dabei in
+  `structuredContent.error.code`, nicht im numerischen
+  JSON-RPC-`error.code`.
+- `UNSUPPORTED_TOOL_OPERATION` gilt nur fuer bekannte d-migrate-Tools
+  mit fachlich nicht unterstuetzten Optionen oder Operationen; ein
+  unbekannter Toolname bleibt ein MCP-/JSON-RPC-Protokollfehler.
+
 ---
 
 ## 9. Auditierbarkeit
@@ -513,23 +535,26 @@ Empfohlene Sicherheitsgrundlagen:
     - Verbindungs-Token via Umgebung (`DMIGRATE_MCP_STDIO_TOKEN`)
   - der daraus abgeleitete `principalId` ist in Logs und Audit-Trail konsistent zu verwenden
 
-Fortschrittsmeldungen fuer langlaufende Jobs werden in `v1` ueber Polling
+Fortschrittsmeldungen fuer langlaufende Jobs werden in der
+d-migrate-MCP-Toolvertragsversion `v1` ueber Polling
 (`job_status_get`) abgebildet. SSE-basierte Notifications oder
-MCP-Resource-Subscriptions sind als Optimierung fuer spaetere Versionen
-vorgesehen.
+MCP-Resource-Subscriptions sind nicht Teil des verbindlichen 0.9.6-
+Umfangs.
 
 ### 10.1 Versionierung
 
-Die unterstuetzte Protokollversion wird in der MCP-`initialize`-Phase ueber
-Capability-Negotiation ausgehandelt. Der Server muss mindestens die
-aktuell spezifizierte Version (`v1`) anbieten. Bei inkompatiblen Versionen
-ist die Verbindung mit einer klaren Fehlermeldung abzulehnen.
+Die MCP-Protokollversion wird in der `initialize`-Phase ueber das
+datierte Feld `protocolVersion` ausgehandelt. Fuer 0.9.6 ist die
+MCP-Protokollversion `2025-11-25` massgeblich. `v1` bezeichnet dagegen
+nur den d-migrate-spezifischen Tool-/Resource-Vertrag und darf nicht als
+MCP-`protocolVersion` verwendet werden. Bei inkompatiblen
+MCP-Protokollversionen ist die Verbindung mit einer klaren
+JSON-RPC-Fehlermeldung abzulehnen.
 
 Empfehlung:
 
-- lokal zuerst mit `stdio`
-- spaeter optional ein remote-faehiger MCP-Server fuer Team- oder
-  Plattformbetrieb
+- `stdio` fuer lokale IDE-/CLI-Agenten
+- streambares HTTP fuer entfernte Agent-Plattformen
 
 ---
 

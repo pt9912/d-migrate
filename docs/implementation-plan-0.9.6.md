@@ -118,7 +118,9 @@ Konsequenz:
 - MCP-Server-Start ueber `stdio` fuer lokale IDE-/Agenten-Integration
 - streambarer HTTP-Transport fuer entfernte Agent-Plattformen
 - HTTP-Auth mit Bearer-Token und optionalem mTLS-Anschluss
-- Capability-/Initialize-Vertrag fuer MCP `v1`
+- Capability-/Initialize-Vertrag fuer MCP `protocolVersion`
+  `2025-11-25`; `v1` bezeichnet nur den d-migrate-spezifischen
+  Tool-/Resource-Vertrag, nicht die MCP-Protokollversion
 - Tool-Registry mit stabilen Namen, Beschreibungen, JSON-Schemas und
   Request-/Response-Mapping
 - read-only Tools:
@@ -222,6 +224,21 @@ Verbindliche Entscheidung:
   Principal ist verboten
 - fuer HTTP wird der Principal aus `Authorization`-Header oder
   aequivalentem signiertem Principalsignal abgeleitet
+- Streamable HTTP implementiert die MCP-Transportregeln fuer
+  `protocolVersion` `2025-11-25`:
+  - JSON-RPC-Nachrichten laufen ueber einen einzelnen MCP-Endpunkt mit
+    `POST` und optional `GET`
+  - `POST`-Requests muessen `Accept: application/json,
+    text/event-stream` enthalten
+  - nach Initialize muessen HTTP-Requests den ausgehandelten
+    `MCP-Protocol-Version`-Header senden
+  - der Server validiert `Origin` gegen DNS-Rebinding und antwortet bei
+    ungueltigem Origin mit HTTP 403
+  - `MCP-Session-Id` ist optional, aber wenn der Server eine Session-ID
+    vergibt, muss sie fuer Folge-Requests validiert werden
+  - `GET` oeffnet entweder einen SSE-Stream mit
+    `Content-Type: text/event-stream` oder liefert HTTP 405, wenn keine
+    Server-initiierte Stream-Kommunikation angeboten wird
 - optionales mTLS wird als konfigurierbarer Maschinen-zu-Maschinen-
   Schutz vorbereitet
 
@@ -332,7 +349,7 @@ Verbindliche Entscheidung:
   - `contentBase64`
   - `segmentSha256`
   - optional `clientRequestId`
-- fuer MCP `v1` werden Segmentbytes in beiden Standardtransporten
+- fuer den d-migrate-MCP-Toolvertrag `v1` werden Segmentbytes in beiden Standardtransporten
   (`stdio` und streambares HTTP) als `contentBase64` im
   `tools/call`-JSON-RPC-Argument uebertragen
 - streambares HTTP nutzt weiterhin einen normalen MCP-JSON-RPC-POST;
@@ -1057,8 +1074,9 @@ Akzeptanz:
 MCP-Wire-Mapping:
 
 - Protokollfehler bleiben JSON-RPC-Errors mit numerischem
-  `error.code`, z.B. parse error, invalid request, unknown method oder
-  ein nicht existierendes Tool im MCP-Protokollpfad
+  `error.code`, z.B. parse error, invalid request, unknown method,
+  unbekannter Toolname in `tools/call` oder ein Request, der das
+  MCP-Schema nicht erfuellt
 - fachliche Tool-Ausfuehrungsfehler werden als normales
   `tools/call`-Result mit `isError=true` zurueckgegeben
 - die stabilen d-migrate-Fehlercodes stehen dabei nicht im numerischen
@@ -1067,6 +1085,10 @@ MCP-Wire-Mapping:
   optional `details`, `requestId` und `retryable`
 - `content` enthaelt nur eine kurze, bereinigte menschliche Diagnose
   und keine Secrets, Rohdaten oder Approval-Tokens
+- `UNSUPPORTED_TOOL_OPERATION` bleibt ein fachlicher Fehlercode fuer
+  bekannte d-migrate-Tools, die eine nicht unterstuetzte fachliche
+  Operation oder Option anfordern; ein unbekannter Toolname wird dagegen
+  als JSON-RPC-/MCP-Protokollfehler beantwortet
 
 Mapping-Regeln:
 
@@ -1148,6 +1170,16 @@ Abnahmekriterien:
 
 - `adapters:driving:mcp` in Gradle aufnehmen
 - MCP-Server-Bootstrap fuer `stdio` und streambares HTTP implementieren
+- Initialize fuer MCP `protocolVersion` `2025-11-25` implementieren;
+  d-migrate `v1` wird nur als Tool-/Resource-Vertragsversion in
+  Capabilities oder `capabilities_list` sichtbar
+- Streamable-HTTP-Endpunkt mit MCP-konformen `POST`-/`GET`-Regeln
+  implementieren:
+  - `Accept: application/json, text/event-stream` fuer `POST`
+  - `MCP-Protocol-Version` nach erfolgreichem Initialize
+  - `Origin`-Validierung gegen DNS-Rebinding
+  - optionales `MCP-Session-Id` mit 400/404-Fehlerpfaden
+  - definierte `GET`-Semantik fuer SSE oder HTTP 405
 - Runtime-Bootstrap fuer Driver, Profiling-Adapter, Streaming-Adapter
   und Schema-Codecs aus der CLI teilen oder aequivalent kapseln
 - Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
@@ -1161,9 +1193,13 @@ Abnahmekriterien:
 
 - ein MCP-Client kann den Server initialisieren
 - lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
+- HTTP-Transporttests decken Accept-Header, `MCP-Protocol-Version`,
+  Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik ab
 - Driver- und Codec-Registry sind nach MCP-Serverstart befuellt
 - `capabilities_list` funktioniert ohne DB-Verbindung
-- unbekannte Tools liefern `UNSUPPORTED_TOOL_OPERATION`
+- unbekannte Toolnamen liefern einen MCP-/JSON-RPC-Protokollfehler;
+  `UNSUPPORTED_TOOL_OPERATION` wird nur fuer bekannte Tools mit
+  fachlich nicht unterstuetzter Operation/Option genutzt
 
 ### Phase C - Read-only Tools
 
@@ -1210,6 +1246,15 @@ Abnahmekriterien:
 
 ### Phase E - Async-Jobs, Idempotenz und Policy
 
+- Vorab-Spike fuer Cancel-Faehigkeit der bestehenden Runner:
+  - `SchemaReverseRunner`
+  - Profiling-Runner/-Services
+  - `DataImportRunner`
+  - `DataTransferRunner`
+  - betroffene Streaming-/Writer-Pfade
+- Spike-Abnahme: fuer jeden Pfad ist dokumentiert, an welchen Stellen
+  CancellationToken/Worker-Handle geprueft wird und welche Side Effects
+  nach Cancel verhindert werden
 - Job-Start-Service fuer `schema_reverse_start` und
   `data_profile_start` einfuehren
 - `job_cancel` an Jobkern und Berechtigungspruefung anbinden
@@ -1365,6 +1410,15 @@ Mindestens ein Integrationstest startet den MCP-Server ueber `stdio` und
 ein weiterer ueber HTTP. Beide pruefen:
 
 - Initialize/Capabilities
+- Initialize verhandelt MCP `protocolVersion` `2025-11-25` und trennt
+  davon den d-migrate-Toolvertrag `v1`
+- Streamable-HTTP-POST mit `Accept: application/json,
+  text/event-stream`
+- HTTP-Folgeaufruf mit `MCP-Protocol-Version`
+- ungueltiger `Origin` liefert HTTP 403
+- optionales `MCP-Session-Id` wird korrekt ausgegeben, verlangt,
+  abgewiesen oder mit HTTP 404 als abgelaufen behandelt
+- HTTP-`GET` liefert SSE oder HTTP 405 gemaess Server-Konfiguration
 - `capabilities_list`
 - `schema_validate` mit kleinem Schema
 - `schema_generate` mit Artefakt-Fallback
@@ -1377,7 +1431,10 @@ ein weiterer ueber HTTP. Beide pruefen:
   `tools/call`-JSON-RPC-Argument
 - fachlicher Toolfehler mit `isError=true` und
   `structuredContent.error.code`
-- Protokollfehler mit numerischem JSON-RPC-`error.code`
+- unbekannter Toolname als Protokollfehler mit numerischem
+  JSON-RPC-`error.code`
+- fachlich nicht unterstuetzte Option eines bekannten Tools als
+  `isError=true` mit `UNSUPPORTED_TOOL_OPERATION`
 - `job_list`
 - Upload eines kleinen Artefakts in mehreren Segmenten
 - `job_cancel`
@@ -1392,7 +1449,9 @@ minimal und lokal gekapselt.
 
 Verbindliche Negativfaelle:
 
-- unbekanntes Tool
+- unbekannter Toolname muss ein MCP-/JSON-RPC-Protokollfehler sein
+- bekannte Tools mit nicht unterstuetzter fachlicher Option liefern
+  `isError=true` mit `UNSUPPORTED_TOOL_OPERATION`
 - fehlender Principal
 - fremder Tenant
 - zu grosse Inline-Payload
@@ -1452,6 +1511,12 @@ Nach Umsetzung muessen mindestens diese Dokumente konsistent sein:
 Dokumentation muss explizit nennen:
 
 - `stdio` und streambares HTTP sind die Beta-Transporte
+- MCP-`initialize` nutzt datierte `protocolVersion`-Strings
+  (`2025-11-25`); d-migrate `v1` ist nur die Tool-/Resource-
+  Vertragsversion
+- Streamable HTTP dokumentiert Accept-Header,
+  `MCP-Protocol-Version`, Origin-Validierung, optionale
+  `MCP-Session-Id` und `GET`-Semantik
 - `stdio` ohne vertrauenswuerdigen Host-/Prozesskontext und ohne
   `DMIGRATE_MCP_STDIO_TOKEN` liefert `AUTH_REQUIRED`
 - Secrets werden nicht ueber MCP-Payloads uebergeben
@@ -1467,6 +1532,8 @@ Dokumentation muss explizit nennen:
 - fachliche Toolfehler erscheinen als `isError=true`-Tool-Result mit
   `structuredContent.error.code`; JSON-RPC-Errors bleiben
   Protokollfehlern vorbehalten
+- unbekannte Toolnamen werden als MCP-/JSON-RPC-Protokollfehler
+  behandelt, nicht als d-migrate-`UNSUPPORTED_TOOL_OPERATION`
 - Audit speichert Approval-Grants nur als Token-ID oder Fingerprint,
   nie als rohen `approvalToken`
 - KI-nahe Tools brauchen Policy, Prompt-Hygiene und Audit
@@ -1537,6 +1604,11 @@ Gegenmassnahme:
 - `adapters:driving:mcp` gebaut und getestet wird
 - lokale und entfernte MCP-Clients den Server ueber `stdio` bzw. HTTP
   initialisieren koennen
+- Initialize MCP `protocolVersion` `2025-11-25` nutzt und d-migrate
+  `v1` nur als Tool-/Resource-Vertragsversion ausweist
+- streambares HTTP Accept-Header, `MCP-Protocol-Version`,
+  Origin-Validierung, optionales `MCP-Session-Id` und `GET`-Semantik
+  gemaess MCP-Spezifikation abdeckt
 - alle in Scope genannten Tools registriert sind
 - read-only Tools gegen bestehende Anwendungskomponenten laufen
 - Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
@@ -1561,6 +1633,8 @@ Gegenmassnahme:
 - Cancel in laufende Worker propagiert wird und nach angenommenem
   Cancel keine neuen Artefakte oder Daten-Schreibabschnitte gestartet
   werden
+- der Cancel-Spike fuer bestehende Runner abgeschlossen ist und die
+  notwendigen kooperativen Checkpoints dokumentiert sind
 - KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md`
   registriert, policy-gesteuert und auditierbar sind
 - Fehler immer als strukturiertes Envelope erscheinen
