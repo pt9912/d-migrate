@@ -35,6 +35,24 @@ kover {
                     "dev.dmigrate.core.diff.NamedFunction",
                     "dev.dmigrate.core.diff.NamedProcedure",
                     "dev.dmigrate.core.diff.NamedTrigger",
+                    // Server-core (0.9.6 phase A) — pure data carriers
+                    "dev.dmigrate.server.core.principal.PrincipalContext",
+                    "dev.dmigrate.server.core.principal.TenantId",
+                    "dev.dmigrate.server.core.principal.PrincipalId",
+                    "dev.dmigrate.server.core.resource.ServerResourceUri",
+                    "dev.dmigrate.server.core.job.ManagedJob",
+                    "dev.dmigrate.server.core.job.JobError",
+                    "dev.dmigrate.server.core.job.JobProgress",
+                    "dev.dmigrate.server.core.artifact.ManagedArtifact",
+                    "dev.dmigrate.server.core.upload.UploadSession",
+                    "dev.dmigrate.server.core.upload.UploadSegment",
+                    "dev.dmigrate.server.core.connection.ConnectionReference",
+                    "dev.dmigrate.server.core.error.ToolErrorEnvelope",
+                    "dev.dmigrate.server.core.error.ToolErrorDetail",
+                    "dev.dmigrate.server.core.pagination.PageRequest",
+                    "dev.dmigrate.server.core.pagination.PageResult",
+                    "dev.dmigrate.server.core.execution.ExecutionMeta",
+                    "dev.dmigrate.server.core.approval.ApprovalGrant",
                 )
             }
         }
