@@ -199,7 +199,12 @@ ausweisen: `maxToolResponseBytes=65536`,
 Bei `job_cancel` bedeutet "erlaubte Jobs" fuer 0.9.6: eigene Jobs oder
 Jobs desselben Tenants, fuer die der Principal administrative Rechte besitzt.
 Cross-Tenant-Cancel ist ausgeschlossen, sofern der `PrincipalContext` nicht
-explizit mehrere erlaubte Tenants enthaelt.
+explizit mehrere erlaubte Tenants enthaelt. Ein `PrincipalContext` muss fuer
+Tenant-Entscheidungen mindestens `principalId`, Home-`tenantId`,
+`effectiveTenantId`, `allowedTenantIds`, Scopes/Rollen, Admin-Status,
+Audit-Subject, Auth-Quelle und Ablaufzeit modellieren; `isAdmin` hebt die
+Tenant-Grenze ohne passenden `effectiveTenantId`/`allowedTenantIds`-Eintrag
+nicht automatisch auf.
 
 Hinweis:
 
@@ -310,7 +315,8 @@ Wichtig:
   bei Fremdzugriff ist `TENANT_SCOPE_DENIED` zu liefern.
 - Listen-Tools leiten den effektiven Tenant aus dem Principal ab. Ein
   `tenantId`-Parameter ist nur adressierend; abweichende Tenant-IDs sind
-  nur fuer Admins oder explizite Cross-Tenant-Scopes erlaubt.
+  nur erlaubt, wenn sie im `allowedTenantIds`/`effectiveTenantId`-Modell des
+  Principal enthalten sind.
 - Verbindungsreferenzen fuer Tool-Inputs nutzen nur tenant-scoped Resource-URIs
   (`dmigrate://tenants/{tenantId}/connections/{connectionId}`), nicht
   unscoped Prefixe wie `conn:<id>`.
@@ -777,14 +783,20 @@ Empfohlene Sicherheitsgrundlagen:
     dabei hart abzulehnen
   - optional mTLS fuer Maschinen-zu-Maschinen-Verkehre
 - stdio:
-  - nur von vertrauenswuerdigem lokalem Prozess/Benutzer aufrufbar
+  - nur von validierter Host-Attestation oder explizit validiertem Token
+    ableitbar
   - mindestens eine der beiden Bedingungen ist verbindlich:
-    - starke Prozess-/Benutzerauthentisierung durch den Host
+    - Host-Attestation mit Registry-Mapping auf Principal, Tenant,
+      `allowedTenantIds`, Scopes, Admin-Status, Ablaufzeit und
+      Audit-Identitaet
     - Verbindungs-Token via Umgebung (`DMIGRATE_MCP_STDIO_TOKEN`)
+  - OS-Usernamen, Prozessdaten, Arbeitsverzeichnisse oder ungepruefte
+    Umgebungsvariablen duerfen ohne Registry-Mapping keinen Principal
+    erzeugen; in diesem Fall gilt `AUTH_REQUIRED`
   - `DMIGRATE_MCP_STDIO_TOKEN` wird per Token-Fingerprint-Lookup oder lokal
     signiertem Token validiert und mappt deterministisch auf
-    `principalId`, `tenantId`, Scopes, Admin-Status, Ablaufzeit und
-    Audit-Identitaet
+    `principalId`, `tenantId`, `allowedTenantIds`, Scopes, Admin-Status,
+    Ablaufzeit und Audit-Identitaet
   - ungueltige, unbekannte, abgelaufene oder scope-arme Tokens liefern
     `AUTH_REQUIRED` bzw. `FORBIDDEN_PRINCIPAL`
   - der daraus abgeleitete `principalId` ist in Logs und Audit-Trail konsistent zu verwenden

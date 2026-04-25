@@ -225,9 +225,11 @@ nach 0.9.7 und kein reduzierter MVP-Scope:
   - read-only Schema-Staging fuer grosse Schemas
   - Resource-/Artifact-Byte-Stores mit File-Spooling
   - Auth-/Principal-Ableitung, Audit, Quotas und strukturierte Fehler
-  - Idempotency inklusive `AWAITING_APPROVAL`-Recovery-Vertrag
+  - Idempotency nur fuer read-only/schema-staging-relevante Wiederaufnahme
+    ohne Policy-Zustand
 - Abschnitt 0.9.6-B - Controlled Operations:
   - Streamable-HTTP-Auth mit JWKS/Introspection und Scope-Challenges
+  - Idempotency inklusive `AWAITING_APPROVAL`-/`DENIED`-Recovery-Vertrag
   - Policy-Grant-Pfad, Start-Tools, Import/Transfer, Uploads fuer
     `job_input`, `job_cancel` inklusive Cancel-Gate
 - Abschnitt 0.9.6-C - AI and Prompts:
@@ -269,9 +271,15 @@ Verbindliche Entscheidung:
   Startpfade
 - jeder MCP-Aufruf bekommt trotzdem einen expliziten `PrincipalContext`
 - fuer `stdio` wird der Principal lokal abgeleitet:
-  - aus Host-/Prozesskontext, sofern verfuegbar
+  - aus explizit registrierter Host-Attestation, sofern verfuegbar
   - sonst aus `DMIGRATE_MCP_STDIO_TOKEN`
   - in Testumgebungen aus einem expliziten Test-Principal
+- Host-Attestation ist nur vertrauenswuerdig, wenn sie ueber eine
+  konfigurierte Registry validiert wird und deterministisch auf
+  `principalId`, `tenantId`, `allowedTenantIds`, Scopes/Rollen, `isAdmin`,
+  Ablaufzeit und Audit-Identitaet mappt. Reine OS-Usernamen,
+  Prozess-IDs, Parent-Prozessdaten, Arbeitsverzeichnisse oder ungepruefte
+  Umgebungsvariablen duerfen keinen Principal erzeugen.
 - `DMIGRATE_MCP_STDIO_TOKEN` darf nie direkt als Principal gelten:
   - Default ist ein serverseitiger Token-Fingerprint-Lookup gegen eine
     lokale, dateibasierte oder konfigurierte Token-Registry
@@ -283,7 +291,7 @@ Verbindliche Entscheidung:
     `AUTH_REQUIRED` bzw. `FORBIDDEN_PRINCIPAL`
   - Audit speichert nur Token-ID oder Token-Fingerprint, nie den rohen
     Tokenwert
-- wenn weder ein vertrauenswuerdiger Host-/Prozesskontext noch
+- wenn weder eine validierte Host-Attestation noch
   `DMIGRATE_MCP_STDIO_TOKEN` verfuegbar ist, liefert jeder Tool- und
   Resource-Aufruf `AUTH_REQUIRED`; ein stiller lokaler Default-
   Principal ist verboten
@@ -736,6 +744,12 @@ Neue und zu erweiternde Bereiche:
   - Secret-Scrubbing und Prompt-Hygiene-Service
 - `hexagon/ports-common` oder `hexagon/application`
   - gemeinsame Principal-, Error-, Pagination- und Resource-URI-Modelle
+- `hexagon:ports` bzw. ein bestehendes Port-Modul
+  - adapterneutraler Port fuer Connection-/Project-Config-Bootstrap und
+    Secret-Resolver-Referenzen
+- dediziertes Config-/Driven-Modul
+  - YAML-/Projektkonfigurationsparser und non-secret Connection-Metadaten-
+    Bootstrap fuer CLI und MCP
 - bestehende Adapter und Ports
   - werden nur angebunden, nicht fachlich dupliziert
 
@@ -755,9 +769,18 @@ Erwartete Kernmodelle und Projektionen:
 
 - `PrincipalContext`
   - `principalId`
-  - `tenantId`
+  - `tenantId` als Default-/Home-Tenant
+  - `effectiveTenantId` fuer den aktuellen Request
+  - `allowedTenantIds` als explizit autorisierte Tenant-Menge
   - Rollen oder Scopes
   - `isAdmin`
+  - `auditSubject`
+  - `authSource`
+  - `expiresAt`
+  `effectiveTenantId` muss entweder `tenantId` entsprechen oder in
+  `allowedTenantIds` enthalten sein; sonst liefert Tenant-Aufloesung
+  `TENANT_SCOPE_DENIED`. `isAdmin` hebt diese Tenant-Grenze nicht
+  automatisch auf.
 - `ServerResourceUri`
   - typisierte Abbildung von
     `dmigrate://tenants/{tenantId}/...`
@@ -2034,9 +2057,11 @@ Abnahmekriterien:
   implementieren, inklusive Sensitivitaets-/Produktionsmetadaten fuer
   Policy
 - bestehende CLI-Config-/Connection-Aufloesung aus
-  `adapters/driving/cli` in einen adapterneutralen Dienst oder ein
-  gemeinsames Config-Modul herausziehen, z.B. in `hexagon/application`
-  oder ein dediziertes Shared-Config-Modul
+  `adapters/driving/cli` hinter einen adapterneutralen Port ziehen:
+  Contract in `hexagon:ports` bzw. einem bestehenden Port-Modul,
+  YAML-/Projektkonfigurationsparser in einem dedizierten Config-/Driven-
+  Modul. `hexagon:application` darf nur den Port benutzen und bekommt
+  keinen YAML-/CLI-Parser, weil diese Schicht nur Core/Ports kennt.
 - CLI und MCP muessen diesen gemeinsamen Bootstrap nutzen; der MCP-
   Adapter darf nicht vom CLI-Adapter oder
   `dev.dmigrate.cli.config.NamedConnectionResolver` abhaengen und darf
@@ -2482,8 +2507,10 @@ HTTP-only Tests:
 
 Stdio-only Tests:
 
-- Principal-Ableitung aus vertrauenswuerdigem Host-/Prozesskontext,
+- Principal-Ableitung aus validierter Host-Attestation,
   `DMIGRATE_MCP_STDIO_TOKEN` oder explizitem Test-Principal
+- ungepruefte OS-User-, Prozess- oder Umgebungsdaten ohne Registry-Mapping
+  liefern `AUTH_REQUIRED`
 - `DMIGRATE_MCP_STDIO_TOKEN` wird per Fingerprint-Lookup oder lokaler
   Signaturvalidierung geprueft und mappt Tenant, Scopes, Admin-Status,
   Ablaufzeit und Audit-Identitaet
@@ -2618,7 +2645,7 @@ Dokumentation muss explizit nennen:
   Challenges fuer nicht-lokale HTTP-Clients; das Metadata-Dokument nennt
   mindestens `resource` und `authorization_servers`; Auth-Deaktivierung
   ist nur fuer lokale Tests/Demos erlaubt
-- `stdio` ohne vertrauenswuerdigen Host-/Prozesskontext und ohne
+- `stdio` ohne validierte Host-Attestation und ohne
   `DMIGRATE_MCP_STDIO_TOKEN` liefert `AUTH_REQUIRED`
 - Secrets werden nicht ueber MCP-Payloads uebergeben
 - grosse Ergebnisse werden als Ressourcen/Artefakte referenziert
