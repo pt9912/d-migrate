@@ -140,6 +140,8 @@ Ressourcen sollen:
 | `job_list` | Zugelassene Jobs eines Tenants auflisten |
 | `artifact_list` | Artefakt- und Berichtuebersicht mit Filterung |
 | `schema_list` | Verfuegbare bzw. angelegte Schema-Artefakte listen |
+| `profile_list` | Profiling-Reports auffinden |
+| `diff_list` | Schema-Vergleichsergebnisse auffinden |
 
 ### 5.2 Kontrollierte Write-Tools
 
@@ -244,6 +246,8 @@ Damit Clients/Agenten Discoverability haben, liefern diese Tools konsistente ID-
 - `job_list`: `tenantId` + optionale Filter (`status`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `artifact_list`: `tenantId` + optionale Filter (`artifactKind`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - `schema_list`: `tenantId` + optionale Filter (`owner`, `connectionId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `profile_list`: `tenantId` + optionale Filter (`connectionId`, `jobId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
+- `diff_list`: `tenantId` + optionale Filter (`jobId`, `leftSchemaId`, `rightSchemaId`, `createdAfter`, `createdBefore`, `limit`, `cursor`)
 - Alle drei Tools liefern mindestens `items`, `nextCursor` und `totalCount`.
 
 ---
@@ -658,6 +662,8 @@ Empfehlung:
 - `job_list`
 - `artifact_list`
 - `schema_list`
+- `profile_list`
+- `diff_list`
 
 ### Phase 2
 

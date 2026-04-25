@@ -142,6 +142,8 @@ Konsequenz:
   - `job_list`
   - `artifact_list`
   - `schema_list`
+  - `profile_list`
+  - `diff_list`
 - kontrollierte Start-Tools:
   - `schema_reverse_start`
   - `schema_compare_start`
@@ -344,9 +346,9 @@ Verbindliche Entscheidung:
 - `artifact_upload_abort` fuer die eigene aktive Session braucht Tenant-,
   Principal- und Session-Owner-Pruefung, aber keine Policy-Freigabe;
   fremde oder administrative Abbrueche sind policy-gesteuert
-- `schema_reverse_start` und `data_profile_start` sind immer
-  policy-gesteuert und auditpflichtig; sie duerfen nie stillschweigend
-  starten
+- `schema_reverse_start`, `schema_compare_start` und
+  `data_profile_start` sind immer policy-gesteuert und auditpflichtig;
+  sie duerfen nie stillschweigend starten
 - wenn eine Policy-Freigabe fehlt, liefert das Tool `POLICY_REQUIRED`
   mit `approvalRequestId`, `approvalKey` bzw. `idempotencyKey`,
   `payloadFingerprint`, erforderlichen Scopes/Entscheidungsgruenden und
@@ -892,8 +894,9 @@ Verbindliche Eingaben:
 - `left` und `right`, jeweils als `schemaRef` oder `connectionRef`
 - `idempotencyKey`
 - optionale Compare-Optionen
-- optional `approvalToken`, falls eine Seite eine policy-pflichtige
-  oder sensitive `connectionRef` nutzt
+- optional `approvalToken`; weil `schema_compare_start` immer
+  policy-gesteuert ist, liefert fehlende Freigabe `POLICY_REQUIRED` mit
+  `approvalRequestId`
 
 Antwort:
 
@@ -916,8 +919,8 @@ Akzeptanz:
 - bei `schema_compare_start` muessen Connection-Refs tenant-scoped
   `dmigrate://.../connections/...` sein
 - freie JDBC-Strings werden mit `VALIDATION_ERROR` abgewiesen
-- bei sensitiven oder produktiven Connection-Refs ist der async
-  Policy-Flow verbindlich:
+- der async Policy-Flow ist fuer `schema_compare_start` immer
+  verbindlich:
   - ohne `idempotencyKey` liefert das Tool `IDEMPOTENCY_KEY_REQUIRED`
   - ohne gueltigen, extern ausgestellten Grant liefert das Tool
     `POLICY_REQUIRED` mit `approvalRequestId`, nicht mit verwendbarem
@@ -936,11 +939,17 @@ Tools:
 - `job_list`
 - `artifact_list`
 - `schema_list`
+- `profile_list`
+- `diff_list`
 
 Weitere Discovery-Tools:
 
 - `job_status_get` nimmt keine Listenfilter an, sondern genau eine
   Job-Referenz und liefert eine einzelne Job-Projektion
+- `profile_list` und `diff_list` sind explizite Listenflaechen fuer
+  Profile und Diffs; sie duerfen intern auf typisierte Artefaktindizes
+  oder Job-Artefakte mappen, muessen aber eigene Tool-Schemas,
+  Filterallowlists und Resource-URIs liefern
 
 Gemeinsame Regeln:
 
@@ -985,6 +994,7 @@ Akzeptanz:
 Tools:
 
 - `schema_reverse_start`
+- `schema_compare_start`
 - `data_profile_start`
 
 Gemeinsame Regeln:
@@ -1492,8 +1502,8 @@ Abnahmekriterien:
 
 ### Phase D - Discovery und Ressourcen
 
-- `job_status_get`, `job_list`, `artifact_list`, `schema_list`
-  implementieren
+- `job_status_get`, `job_list`, `artifact_list`, `schema_list`,
+  `profile_list` und `diff_list` implementieren
 - Resource-Resolver und Store-/Index-Abstraktionen fuer Jobs,
   Artefakte, Schemas, Profile und Diffs implementieren
 - Resource-Resolver und Store fuer tenant-scoped Connection-Refs
@@ -1516,6 +1526,9 @@ Abnahmekriterien:
 Abnahmekriterien:
 
 - Listen liefern stabile `items`, `nextCursor` und `totalCount`
+- Profile und Diffs sind ueber `profile_list` bzw. `diff_list`
+  auffindbar, auch wenn die Persistenz intern ueber typisierte
+  Artefakte erfolgt
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
 - sensitive Connection-Refs liefern Policy-Metadaten fuer
   `schema_compare_start`, Reverse, Import und Transfer
@@ -1559,6 +1572,8 @@ Abnahmekriterien:
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job
   und dedupliziert ueber `idempotencyKey`
+- `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
+  policy-pflichtig und auditierbar
 - `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen und
   erzeugt einen stabilen `cancelled`-Status gemaess
   `docs/job-contract.md`
@@ -1764,8 +1779,8 @@ ein weiterer ueber HTTP. Beide pruefen:
 - Driver-Lookup ueber die normale MCP-Runtime-Registry
 - Schema-Codec-Lookup ueber die normale MCP-Runtime-Registry
 - `schema_compare` mit zwei `schemaRef`-Eingaengen
-- `schema_compare_start` mit sensitiver `connectionRef`,
-  `idempotencyKey`, Policy-Flow und abbrechbarem Job
+- `schema_compare_start` mit `connectionRef`, `idempotencyKey`,
+  Policy-Flow und abbrechbarem Job
 - nicht-lokaler HTTP-Transport erzwingt Auth und liefert fuer fehlende
   oder unzureichende Tokens die dokumentierten 401/403-Antworten
 - `artifact_upload` ueber `stdio` mit `contentBase64`
@@ -1824,8 +1839,7 @@ Verbindliche Negativfaelle:
 - Import ohne Approval
 - `schema_compare` mit `connectionRef`
 - `schema_compare_start` mit `connectionRef` ohne `idempotencyKey`
-- `schema_compare_start` mit sensitiver `connectionRef` ohne Policy-
-  Freigabe
+- `schema_compare_start` ohne Policy-Freigabe
 - `artifact_upload_init` ohne `approvalKey`
 - `artifact_upload` ohne vorherige Upload-Session
 - `artifact_upload` mit gueltiger Session, aber fehlender oder fremder
@@ -1990,7 +2004,8 @@ Gegenmassnahme:
   Auth-Deaktivierung nur fuer lokale Tests/Demos zulaesst
 - alle in Scope genannten Tools registriert sind
 - read-only Tools gegen bestehende Anwendungskomponenten laufen
-- Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
+- Discovery-Tools Jobs, Artefakte, Schemas, Profile und Diffs paginiert
+  liefern
 - Schemas, Profile und Diffs ueber explizite Store-/Index-
   Abstraktionen auffindbar und als Ressourcen aufloesbar sind
 - MCP-Bootstrap Driver und Schema-Codecs fuer die realen Tool-Pfade
