@@ -238,6 +238,9 @@ Verbindliche Folge:
 - 200-MiB-Uploads duerfen nicht in einer einzelnen Heap-Struktur gehalten
   werden muessen
 - In-Memory-Stores sind nur fuer Unit-Tests zulaessig
+- Phase A liefert deshalb neben In-Memory-Testdoubles auch eine file-backed
+  `UploadSegmentStore`-/`ArtifactContentStore`-Implementierung oder ein
+  gleichwertiges produktnahes Spooling-Modul mit Contract-Tests
 - spaetere Tool-Responses und `resources/read` duerfen grosse Inhalte nur
   referenzieren oder chunkweise lesen
 
@@ -252,6 +255,13 @@ Ausgeschlossen werden mindestens:
 - `approvalToken`
 - `clientRequestId`
 - `requestId`
+
+Die Exclusion gilt nur fuer den expliziten top-level Tool-Control-Envelope
+des normalisierten Requests. Gleichnamige fachliche Felder innerhalb von
+Nutzdatenobjekten, Arrays oder eingebetteten Artefaktmetadaten werden nicht
+rekursiv entfernt. Der Fingerprint-Service muss Normalisierung fuer
+Objektfeldreihenfolge, Arrays, Zahlen, Strings, Booleans, `null` und
+Defaultwerte eindeutig definieren und testen.
 
 Upload-Segmente werden nicht mit Upload-Session-Metadaten vermischt:
 
@@ -328,16 +338,24 @@ Verbindliche Folge:
 
 ### 5.1 Modul- und Paketgrenzen
 
-Die genaue Paketgrenze wird beim Coding anhand bestehender Modulabhaengigkeiten
-entschieden. Leitlinie:
+Die Paketgrenze ist Teil des Phase-A-Vertrags:
 
-- gemeinsame Modelle und Ports gehoeren nicht in `adapters/driving/mcp`
-- `hexagon/application` darf gemeinsame Services orchestrieren, aber keine
-  MCP-Protokolltypen kennen
-- Port-Vertraege gehoeren in bestehende Port-Module oder ein geeignetes
-  gemeinsames Modul
-- Test-In-Memory-Implementierungen duerfen in Testquellen oder dedizierten
-  Test-Hilfsmodulen liegen
+- gemeinsame Modelle und Store-/Service-Ports gehoeren in ein neues oder
+  bestehendes gemeinsames Port-Modul, bevorzugt `hexagon:ports-common`;
+  falls dieses Modul im Code noch nicht existiert, legt Phase A es an
+- alternative Modulwahl ist nur zulaessig, wenn sie dieselbe
+  Abhaengigkeitsrichtung erzwingt: Core/Ports nach innen,
+  Driving-/Driven-Adapter nach aussen
+- `hexagon/application` enthaelt die adapterneutralen Services fuer Upload,
+  Idempotency, Approval-Grant-Validierung, Quotas, Fehler und Audit, kennt
+  aber keine MCP-, HTTP-, JSON-RPC-, REST- oder gRPC-Wire-Typen
+- file-backed Byte-Store-Implementierungen liegen in einem driven Adapter
+  oder einem dedizierten Infrastrukturmodul, nicht in
+  `adapters/driving/mcp`
+- Test-In-Memory-Implementierungen liegen in Testquellen oder dedizierten
+  Test-Hilfsmodulen
+- `adapters/driving/mcp` darf in Phase A noch nicht entstehen und darf
+  spaeter nur gegen diese Ports und Services linken
 
 ### 5.2 Erwartete Kernmodelle
 
@@ -354,6 +372,39 @@ Mindestens zu definieren oder zu konsolidieren:
 - `ToolErrorEnvelope` bzw. adapterneutraler Fehlerkern
 - `PageRequest` / `PageResult`
 - `ExecutionMeta`
+
+`UploadSession` hat eine explizite Zustandsmaschine:
+
+- erlaubte States: `OPEN`, `COMPLETED`, `ABORTED`, `EXPIRED`
+- erlaubte Uebergaenge:
+  - `OPEN -> COMPLETED` nur nach erfolgreicher Finalisierung,
+    Gesamt-Hash-Pruefung und Artefaktmaterialisierung
+  - `OPEN -> ABORTED` durch Owner-/Admin-Abbruch
+  - `OPEN -> EXPIRED` bei Idle-Timeout oder abgelaufener absoluter Lease
+  - terminale States bleiben terminal
+- Resume ist nur im State `OPEN` erlaubt und muss erwarteten
+  `segmentIndex`, `segmentOffset`, `segmentTotal`, bisherige Segmenthashes
+  und Lease-Informationen konsistent liefern
+- Finalize-Invarianten:
+  - alle Segmente sind lueckenlos vorhanden
+  - Segment-Hashes stimmen
+  - Gesamt-`checksumSha256` stimmt
+  - finalisiertes Artefakt ist immutable
+  - nach `COMPLETED`, `ABORTED` oder `EXPIRED` werden keine neuen Segmente
+    akzeptiert
+
+`ConnectionReference` enthaelt mindestens:
+
+- `connectionId`
+- `tenantId`
+- non-secret Anzeigename
+- Dialekt
+- Sensitivitaets-/Produktionsklassifizierung fuer Policy
+- `credentialRef` oder `providerRef` auf serverseitig verwaltete Secrets
+- optional erlaubte Principal-/Scope-Metadaten
+- `resourceUri`
+
+Secrets selbst sind nie Teil von `ConnectionReference`.
 
 ### 5.3 Erwartete Store-Interfaces
 
@@ -385,11 +436,20 @@ Die Interfaces muessen atomare Operationen ausdruecken koennen, insbesondere:
   Nebenwirkungen wie Upload-Init oder KI-Provider-Aufrufe retry-sicher sind
 - Upload-Session-Statuswechsel fuer Abort/Expiry/Complete
 - Byte-Cleanup nach TTL, Abort oder Expiry
+- Connection-Reference-Lookups mit Tenant-/Principal-Filterung und
+  non-secret Policy-Metadaten
+- Quota-Accounting mit `reserve`, `commit`, `release` und `refund`
 
 `SchemaStore`, `ProfileStore` und `DiffStore` duerfen intern auf typisierte
 Artefakte zeigen. Trotzdem brauchen sie explizite Store-/Index-Abstraktionen,
 damit `schema_list`, Resource-Resolver, Tenant-Scope, Pagination und Retention
 nicht von artefaktspezifischen Details abhaengen.
+
+`ConnectionReferenceStore` ist ein non-secret Index. Bootstrap-Quellen sind
+Projekt-/Serverkonfiguration, Seeds oder ein spaeterer Config-Provider. Der
+Store liefert keine JDBC-URL mit Secrets, keine Passwoerter und keine Tokens,
+sondern nur Metadaten und `credentialRef`/`providerRef` fuer autorisierte
+Runner-/Driver-Pfade.
 
 ### 5.4 Test-Implementierungen
 
@@ -402,6 +462,11 @@ Diese Implementierungen muessen trotzdem:
 - Quota-Verletzungen deterministisch ausloesen koennen
 - keine Semantik verstecken, die produktive Stores spaeter nicht erfuellen
   muessen
+
+File-backed Byte-Stores sind keine Testdoubles. Phase A muss fuer sie dieselben
+Contract-Tests wie fuer In-Memory-Stores ausfuehren und zusaetzlich
+Dateisystem-Cleanup, atomare Writes und Range-Reads gegen echte Dateien
+abdecken.
 
 ---
 
@@ -417,12 +482,22 @@ Aufgaben:
 - Pagination- und Execution-Meta-Modelle definieren
 - Fehlerkern mit d-migrate-Codes und strukturierten Details definieren
 - Job-/Artefaktfelder gegen `docs/job-contract.md` abgleichen
+- `UploadSession`-State-Machine mit `OPEN`, `COMPLETED`, `ABORTED`,
+  `EXPIRED`, erlaubten Uebergaengen, Resume-Regeln und Finalize-
+  Invarianten definieren
+- `ConnectionReference` als non-secret Modell mit Policy-Metadaten,
+  `credentialRef`/`providerRef` und Tenant-/Principal-Filterdaten
+  definieren
 
 Abnahme:
 
 - Modelle enthalten keine MCP-spezifischen Wire-Typen
 - Tenant-Scope kann ohne Request-Payload-Vertrauen entschieden werden
 - Job-/Artefaktprojektionen weichen nicht vom gemeinsamen Vertrag ab
+- Upload-Session-Transitions sind vollstaendig und terminale States nehmen
+  keine neuen Segmente an
+- Connection-Refs enthalten keine Secrets und sind fuer Policy-Entscheidungen
+  ausreichend klassifiziert
 
 ### 6.2 Store-Interfaces definieren
 
@@ -454,6 +529,9 @@ Abnahme:
 - Byte-Stores koennen Range-/Chunk-Reads ausdruecken
 - `schema_list`, `profile_list`, `diff_list` und Resource-Resolver koennen
   ueber explizite Store-/Index-Abstraktionen implementiert werden
+- `ConnectionReferenceStore` liefert tenant-/principal-gefilterte,
+  non-secret Connection-Metadaten mit Sensitivitaets-/Produktions-
+  klassifizierung und `credentialRef`/`providerRef`
 - parallele identische Starts erzeugen maximal eine `PENDING`-Reservierung
   und genehmigte parallele Retries maximal einen `COMMITTED` Job
 
@@ -463,7 +541,7 @@ Aufgaben:
 
 - `UploadSegmentStore` fuer unfertige Segmente implementieren
 - `ArtifactContentStore` fuer finalisierte Artefakte implementieren
-- File-Spooling fuer produktnahe Pfade vorsehen
+- file-backed Implementierungen fuer produktnahe Pfade bereitstellen
 - In-Memory-Implementierung nur fuer Unit-Tests bereitstellen
 - Hash- und Range-Read-Hilfen definieren
 
@@ -474,15 +552,20 @@ Abnahme:
   Konflikt
 - Range-/Chunk-Reads funktionieren fuer finalisierte Artefakte
 - TTL-/Abort-/Expiry-Cleanup entfernt unfertige Segmente
+- file-backed Store besteht dieselben Contract-Tests wie In-Memory plus
+  Tests fuer echte Dateien, atomare Writes und Filesystem-Cleanup
 
 ### 6.4 Fingerprint-Service implementieren
 
 Aufgaben:
 
 - deterministische JSON-/Payload-Normalisierung festlegen
-- transiente Kontrollfelder ausschliessen
+- transiente Kontrollfelder nur aus dem top-level Tool-Control-Envelope
+  ausschliessen; gleichnamige fachliche Nested Fields bleiben erhalten
 - Fingerprint fuer Start-Tools, Sync-Tools und Upload-Init-Metadaten
   unterscheiden
+- Normalisierung fuer verschachtelte Objekte, Arrays, Zahlen, Strings,
+  Booleans, `null`, fehlende Felder und Defaultwerte festlegen
 - SHA-256 hex-codiert als Standardausgabe festlegen
 
 Abnahme:
@@ -491,6 +574,11 @@ Abnahme:
 - Feldreihenfolge beeinflusst den Fingerprint nicht
 - `approvalToken`, `idempotencyKey`, `clientRequestId` und `requestId`
   veraendern den Fingerprint nicht
+- gleichnamige verschachtelte fachliche Felder werden nicht entfernt und
+  veraendern den Fingerprint
+- Arrays bleiben reihenfolgesensitiv; Objektfeldreihenfolge ist irrelevant
+- Zahlen-/String-Unterschiede, `null` und explizite Defaultwerte sind
+  deterministisch getestet
 - Upload-Segmentdaten veraendern den Session-Metadaten-Fingerprint nicht
 
 ### 6.5 Approval-Grant-Service und Store-Vertrag vorbereiten
@@ -527,6 +615,15 @@ Aufgaben:
 - aktive Upload-Sessions und reservierte Bytes zaehlbar machen
 - parallele Segmentwrites begrenzen
 - Provider-/Tool-Aufrufe pro Zeitfenster zaehlbar machen
+- Lifecycle-Semantik fuer Quota-Accounting definieren:
+  - `reserve` vor Side Effects
+  - `commit` nach erfolgreicher Job-/Session-/Segment-/Provider-
+    Reservierung
+  - `release` bei Job-Terminalstatus, Upload-Abort, Upload-Expiry,
+    erfolgreicher Upload-Finalisierung und Provider-Aufrufende
+  - `refund` bei fehlgeschlagener Reservierung, fehlgeschlagener
+    Finalisierung vor Publish und Idempotency-Recovery ohne neue Side
+    Effects
 - Timeout-Konfiguration fuer spaetere Handler/Runner vorbereiten
 - Fehlerdetails fuer `RATE_LIMITED` und `OPERATION_TIMEOUT` definieren
 
@@ -539,6 +636,9 @@ Abnahme:
 - aktive Job-Quota, Upload-Session-Quota, Byte-Quota, parallele
   Segmentwrite-Quota und Provider-/Tool-Aufruf-Rate-Limit sind getrennt
   konfigurier- und testbar
+- Terminalstatus, Abort, Expiry, fehlgeschlagene Finalisierung und
+  Idempotency-Recovery geben reservierte Quota deterministisch frei oder
+  erstatten sie
 
 ### 6.7 Error-Mapper bauen
 
@@ -620,16 +720,34 @@ Pflichtabdeckung:
   - gueltige Job-/Artefakt-/Schema-/Connection-URIs
   - malformed URI
   - Tenant-Mismatch
+- ConnectionReferenceStore:
+  - non-secret Felder
+  - Bootstrap aus Test-Seed oder Projekt-/Serverkonfiguration
+  - Tenant-/Principal-Filterung
+  - Sensitivitaets-/Produktionsklassifizierung
+  - `credentialRef`/`providerRef` statt Secret
 - Fingerprint-Stabilitaet:
   - stabile Feldreihenfolge
   - Ausschluss transienter Kontrollfelder
+  - top-level Control-Feld wird ausgeschlossen
+  - gleichnamiges Nested-Fachfeld bleibt enthalten
+  - Array-Reihenfolge bleibt relevant
+  - Zahlen/String/Boolean/`null`/Defaultwerte sind deterministisch
   - Konflikt bei anderem Payload
+- UploadSession-State-Machine:
+  - erlaubte States `OPEN`, `COMPLETED`, `ABORTED`, `EXPIRED`
+  - erlaubte Transitions
+  - terminale States akzeptieren keine Segmente
+  - Resume nur in `OPEN`
+  - Finalize prueft lueckenlose Segmente, Segmenthashes und Gesamthash
 - Upload-Stores:
   - atomarer Segmentwrite
   - abweichender Segmentwrite-Konflikt
   - Range-/Chunk-Read
   - TTL-Cleanup
   - Abort-Cleanup
+  - file-backed Contract-Test mit echter Datei
+  - Filesystem-Cleanup
 - Schema-/Profile-/Diff-Stores:
   - typisierte Artefakt-Indizes
   - tenant-scoped Lookup
@@ -662,6 +780,10 @@ Pflichtabdeckung:
   - Byte-Quota
   - parallele Segmentwrite-Quota
   - Provider-/Tool-Aufruf-Rate-Limit
+  - Release bei Job-Terminalstatus
+  - Release bei Upload-Abort und Upload-Expiry
+  - Release/Refund bei fehlgeschlagener Finalisierung
+  - Refund bei Idempotency-Recovery ohne neue Side Effects
   - `RATE_LIMITED`
   - `OPERATION_TIMEOUT`
 - Error-Mapper:
@@ -798,6 +920,10 @@ Phase A ist abgeschlossen, wenn:
   werden
 - `PrincipalContext` Tenant-Sets, `effectiveTenantId`, Scopes, Admin-Status,
   Audit-Subject, Auth-Quelle und Ablaufzeit ausdrueckt
+- die Modulgrenze umgesetzt ist: gemeinsame Modelle/Ports in
+  `hexagon:ports-common` oder einem aequivalenten gemeinsamen Port-Modul,
+  Services in `hexagon/application`, file-backed Byte-Stores in driven
+  Infrastruktur, keine Wire-Typen im Kern
 - Store-Interfaces fuer Jobs, Artefakte, Artefaktbytes, Upload-Sessions,
   Uploadsegmente, Schemas, Profile, Diffs, Connection-Refs, Idempotency,
   Sync-Effect-Idempotency, Approval-Grants, Quotas und Audit existieren
@@ -806,12 +932,23 @@ Phase A ist abgeschlossen, wenn:
 - Sync-Effect-Idempotency fuer `approvalKey` ist modelliert und getestet
 - `UploadSegmentStore` und `ArtifactContentStore` atomare Writes,
   Range-/Chunk-Reads, TTL-Cleanup und File-Spooling-Vertrag abbilden
+- file-backed `UploadSegmentStore`/`ArtifactContentStore` oder ein
+  gleichwertiges produktnahes Spooling-Modul existiert und besteht
+  Contract-Tests
+- `UploadSession`-State-Machine mit `OPEN`, `COMPLETED`, `ABORTED`,
+  `EXPIRED`, Resume-Regeln und Finalize-Invarianten ist definiert und
+  getestet
+- `ConnectionReferenceStore` liefert non-secret, tenant-/principal-
+  gefilterte Connection-Metadaten mit Policy-Klassifizierung und
+  `credentialRef`/`providerRef`
 - `SchemaStore`, `ProfileStore` und `DiffStore` bzw. gleichwertige
   Store-/Index-Abstraktionen fuer Discovery, Resource-Resolver,
   Tenant-Scope, Pagination und Retention existieren
 - In-Memory-Implementierungen fuer Unit-Tests existieren
 - Fingerprint-Kanonik fuer Idempotency, Approval und Upload-Init-Metadaten
   implementiert und getestet ist
+- Fingerprint-Tests decken top-level Control-Exclusion, Nested Fields,
+  Arrays, Typunterschiede, `null` und Defaultwerte ab
 - `ApprovalGrant` `correlationKind`/`correlationKey`, Token-Fingerprint,
   Issuer-Fingerprint, Scope, Payload-Fingerprint und Ablauf abbildet
 - der Approval-Grant-Service Grants gegen Tenant, Caller, Tool,
@@ -819,6 +956,9 @@ Phase A ist abgeschlossen, wenn:
 - Quota-/Rate-Limit- und Timeout-Grundlagen implementiert und getestet sind
 - Quota-Tests decken aktive Jobs, Upload-Sessions, Upload-/Artefaktbytes,
   parallele Segmentwrites und Provider-/Tool-Aufrufe pro Zeitfenster ab
+- Quota-Lifecycle-Tests decken `reserve`, `commit`, `release` und `refund`
+  bei Terminalstatus, Abort, Expiry, fehlgeschlagener Finalisierung und
+  Idempotency-Recovery ab
 - Error-Mapping fuer das vollstaendige Kern-Code-Vokabular aus
   `docs/ki-mcp.md` deterministisch ist, inklusive Auth, Policy,
   Idempotency, Validation, Media/Payload, Rate-Limit, Timeout,
