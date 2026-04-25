@@ -1069,3 +1069,402 @@ Phase B baut darauf auf:
 Phase B darf keine Kernmodelle nachtraeglich MCP-spezifisch umformen. Wenn
 beim Adapterbau Luecken sichtbar werden, muessen sie als adapterneutrale
 Ergaenzung in den Phase-A-Kern zurueckgefuehrt werden.
+
+---
+
+## 12. Verbindliche Paket-, Modul- und Klassenstruktur
+
+Dieser Abschnitt konkretisiert Abschnitt 5 fuer die Implementierung. Die hier
+festgelegten Modul-, Paket- und Klassennamen sind verbindlich. Abweichungen
+sind nur mit expliziter Begruendung im Code-Review zulaessig und muessen die
+Modulgrenzen und Abhaengigkeitsrichtungen aus 5.1 erhalten.
+
+### 12.1 Modulzuordnung (verbindlich)
+
+`docs/architecture.md` 1.2 legt fest:
+
+- `hexagon:core` = Domain (Modell, Validierung, Typsystem), keine externen Deps
+- `hexagon:ports-common` = gemeinsame Port-Typen (Interfaces, Port-DTOs)
+- `hexagon:application` = Use-Cases, haengt nur am Hexagon-Inneren, nie an Adaptern
+- Driven-Adapter fuer Logging/Infra (z. B. SLF4J) liegen ausserhalb des Hexagons
+
+Daraus folgt fuer Phase A:
+
+| Inhalt | Modul | Begruendung |
+| --- | --- | --- |
+| Domaenenentitaeten (Principal, Resource, Job, Artifact, Upload, Approval, Idempotency-State, Connection, Error-Vokabular, Audit-Event-Modell, Pagination, Execution) | `hexagon:core` | reine Domain, keine externen Deps, konsistent mit `architecture.md` 1.2 |
+| Store-Ports (alle in 5.3 genannten Interfaces, Sealed-Outcome-Typen) | `hexagon:ports-common` | Port-Interfaces gemeinsam fuer Driving- und Driven-Adapter |
+| Services (Fingerprint, Idempotency, Approval, Upload, Quota, Error, Audit-Scope/Scrubber, Tenant-Scope) | `hexagon:application` | adapterneutrale Anwendungsschicht, nutzt nur Core und Ports |
+| In-Memory-Stores fuer Tests | `src/testFixtures/kotlin` der jeweiligen Port-Module (Default, siehe 14.8) | Test-Doubles, kein Produktionscode |
+| Contract-Tests (gemeinsamer Vertrag fuer In-Memory + file-backed) | `src/testFixtures` von `hexagon:ports-common` | jede konkrete Implementierung ruft die gemeinsame Suite auf |
+| File-backed `UploadSegmentStore`, `ArtifactContentStore` | NEU `adapters:driven:storage-file` | Filesystem-Infrastruktur ist Driven-Adapter, nicht Hexagon-intern |
+| `LoggingAuditSink` (SLF4J) | NEU `adapters:driven:audit-logging` | SLF4J ist laut Modultabelle Driven-Adapter-Dep (`driver-common`), darf nicht im Hexagon-Inneren liegen |
+| `InMemoryAuditSink` | `src/testFixtures` von `hexagon:ports-common` | Test-Double |
+
+Konsequenzen:
+
+- `hexagon:core` bekommt unter `dev.dmigrate.server.core.*` die neuen
+  Server-Domaenenentitaeten; Bestands-Pakete unter `dev.dmigrate.core.*`
+  (Schema-Domain) bleiben unveraendert
+- `hexagon:ports-common` bleibt unabhaengig von `hexagon:profiling` und
+  enthaelt ausschliesslich Port-Interfaces fuer den Server-Kern
+- `hexagon:application` hat heute Deps auf `core`, `ports`, `profiling`;
+  Phase A ergaenzt **keine** Adapter-Deps. Logging-Sink ist deshalb in
+  einem Driven-Modul
+- `settings.gradle.kts` bekommt zwei neue Eintraege:
+  `adapters:driven:storage-file` und `adapters:driven:audit-logging`
+- `adapters:driven:storage-file` haengt nur an `hexagon:ports-common`
+- `adapters:driven:audit-logging` haengt an `hexagon:ports-common` und SLF4J
+- `adapters/driving/cli` bleibt in Phase A unangetastet (bestaetigt 3.2)
+- `java-test-fixtures`-Plugin wird in den betroffenen Modulen aktiviert
+
+### 12.2 Kotlin-Pakete
+
+Server-Kernpakete leben unter `dev.dmigrate.server.*`. Das trennt sie
+sichtbar von bestehenden CLI-/Driver-/Format-/Schema-Paketen. Die physische
+Modulzuordnung (siehe 12.1) bestimmt das Modul; das Paket bleibt logisch.
+
+| Inhalt | Paket | Modul |
+| --- | --- | --- |
+| `PrincipalContext`, `TenantId`, `PrincipalId`, Tenant-Scope-Pruefung | `dev.dmigrate.server.core.principal` | `hexagon:core` |
+| `ServerResourceUri`, `ResourceKind` | `dev.dmigrate.server.core.resource` | `hexagon:core` |
+| `ManagedJob`, `JobRecord`, `JobStatus`, `JobVisibility` | `dev.dmigrate.server.core.job` | `hexagon:core` |
+| `ManagedArtifact`, `ArtifactRecord`, `ArtifactKind` | `dev.dmigrate.server.core.artifact` | `hexagon:core` |
+| `UploadSession`, `UploadSegment`, `UploadSessionState`, Transitions | `dev.dmigrate.server.core.upload` | `hexagon:core` |
+| `IdempotencyKey`, `IdempotencyState`, `IdempotencyReserveOutcome`, `SyncEffectReserveOutcome` | `dev.dmigrate.server.core.idempotency` | `hexagon:core` |
+| `ApprovalGrant`, `ApprovalCorrelationKind` | `dev.dmigrate.server.core.approval` | `hexagon:core` |
+| `ConnectionReference`, `ConnectionSensitivity` | `dev.dmigrate.server.core.connection` | `hexagon:core` |
+| `ToolErrorCode`, `ToolErrorDetail`, `ToolErrorEnvelope` | `dev.dmigrate.server.core.error` | `hexagon:core` |
+| `PageRequest`, `PageResult` | `dev.dmigrate.server.core.pagination` | `hexagon:core` |
+| `ExecutionMeta` | `dev.dmigrate.server.core.execution` | `hexagon:core` |
+| `AuditEvent`, `AuditOutcome` | `dev.dmigrate.server.core.audit` | `hexagon:core` |
+| Store-Ports (alle Stores aus 5.3 inkl. `AuditSink`) | `dev.dmigrate.server.ports` | `hexagon:ports-common` |
+| Quota-Ports + Counter-Vertraege | `dev.dmigrate.server.ports.quota` | `hexagon:ports-common` |
+| In-Memory-Stores (testFixtures), `InMemoryAuditSink` | `dev.dmigrate.server.ports.memory` | `hexagon:ports-common` testFixtures |
+| Contract-Test-Basisklassen (testFixtures) | `dev.dmigrate.server.ports.contract` | `hexagon:ports-common` testFixtures |
+| File-backed Stores | `dev.dmigrate.server.adapter.storage.file` | `adapters:driven:storage-file` |
+| `LoggingAuditSink` | `dev.dmigrate.server.adapter.audit.logging` | `adapters:driven:audit-logging` |
+| Services | `dev.dmigrate.server.application.<scope>` mit `<scope>` aus `fingerprint`, `idempotency`, `approval`, `upload`, `quota`, `error`, `audit`, `tenant`, `config` | `hexagon:application` |
+
+### 12.3 Klassen pro AP
+
+#### AP 6.1 Kernmodelle
+
+| Klasse | Paket | Typ |
+| --- | --- | --- |
+| `PrincipalContext` | `...core.principal` | data class |
+| `TenantId`, `PrincipalId` | `...core.principal` | value class |
+| `TenantScopeChecker` | `...core.principal` | object (Resolve-Logik fuer `effectiveTenantId`) |
+| `ServerResourceUri` | `...core.resource` | data class + Companion-Parser |
+| `ResourceKind` | `...core.resource` | enum (`JOBS`, `ARTIFACTS`, `SCHEMAS`, `PROFILES`, `DIFFS`, `CONNECTIONS`, `UPLOAD_SESSIONS`) |
+| `ManagedJob` | `...core.job` | data class (oeffentlicher Vertrag aus `docs/job-contract.md`) |
+| `JobStatus` | `...core.job` | enum |
+| `JobRecord` | `...core.job` | data class (Storage-Envelope mit `tenantId`, `ownerPrincipalId`, `visibility`, `adminScope?`, `resourceUri`, Retention) |
+| `JobVisibility` | `...core.job` | enum (`OWNER`, `TENANT`, `ADMIN`) |
+| `ManagedArtifact`, `ArtifactRecord` | `...core.artifact` | data classes |
+| `ArtifactKind` | `...core.artifact` | enum |
+| `UploadSession` | `...core.upload` | data class |
+| `UploadSessionState` | `...core.upload` | enum (`ACTIVE`, `COMPLETED`, `ABORTED`, `EXPIRED`) |
+| `UploadSegment` | `...core.upload` | data class |
+| `UploadSessionTransitions` | `...core.upload` | object (allowed-transitions Tabelle + Validator) |
+| `ConnectionReference` | `...core.connection` | data class |
+| `ConnectionSensitivity` | `...core.connection` | enum (`NON_PRODUCTION`, `PRODUCTION`, `SENSITIVE`) |
+| `ToolErrorCode` | `...core.error` | enum (alle 18 Codes aus 6.7) |
+| `ToolErrorEnvelope`, `ToolErrorDetail` | `...core.error` | data classes |
+| `PageRequest`, `PageResult<T>` | `...core.pagination` | data classes |
+| `ExecutionMeta` | `...core.execution` | data class |
+| `ApprovalGrant` | `...core.approval` | data class |
+| `ApprovalCorrelationKind` | `...core.approval` | enum (`IDEMPOTENCY_KEY`, `APPROVAL_KEY`) |
+
+#### AP 6.2 Store-Interfaces
+
+Alle in 5.3 genannten Stores sind Kotlin-`interface`s in
+`dev.dmigrate.server.ports`. Sealed-Result-Typen liegen daneben:
+
+| Klasse | Paket |
+| --- | --- |
+| `JobStore`, `ArtifactStore`, `SchemaStore`, `ProfileStore`, `DiffStore` | `...server.ports` |
+| `UploadSessionStore`, `UploadSegmentStore` | `...server.ports` |
+| `ConnectionReferenceStore` | `...server.ports` |
+| `IdempotencyStore`, `SyncEffectIdempotencyStore` | `...server.ports` |
+| `ApprovalGrantStore` | `...server.ports` |
+| `QuotaStore`, `QuotaKey`, `QuotaCounter` | `...server.ports.quota` |
+| `AuditSink` | `...server.ports` |
+| `IdempotencyReserveOutcome`, `SyncEffectReserveOutcome` (sealed) | `...server.core.idempotency` |
+| `ArtifactContentStore` | `...server.ports` |
+
+#### AP 6.3 Byte-Stores
+
+| Klasse | Paket | Modul |
+| --- | --- | --- |
+| `UploadSegmentStore`, `ArtifactContentStore` | `...server.ports` | `hexagon:ports-common` |
+| `ByteStoreContractTests` (Basisklasse, abstrakt) | `...server.ports.contract` | `hexagon:ports-common` testFixtures |
+| `InMemoryUploadSegmentStore`, `InMemoryArtifactContentStore` | `...server.ports.memory` | `hexagon:ports-common` testFixtures |
+| `FileBackedUploadSegmentStore`, `FileBackedArtifactContentStore` | `...server.adapter.storage.file` | `adapters:driven:storage-file` |
+
+#### AP 6.4 Fingerprint-Service
+
+| Klasse | Paket |
+| --- | --- |
+| `PayloadFingerprintService` | `...application.fingerprint` |
+| `JsonCanonicalizer` (RFC 8785-kompatibel) | `...application.fingerprint` |
+| `FingerprintScope` | `...application.fingerprint` (enum: `START_TOOL`, `SYNC_TOOL`, `UPLOAD_INIT`, `UPLOAD_SEGMENT`) |
+| `FingerprintNormalization` | `...application.fingerprint` (Top-level-Control-Exclusion + Tenant-Bind) |
+
+#### AP 6.5 Approval-Grant-Service
+
+| Klasse | Paket |
+| --- | --- |
+| `ApprovalGrantService` | `...application.approval` |
+| `ApprovalGrantValidator` | `...application.approval` |
+| `ApprovalGrantValidation` (sealed) | `...application.approval` |
+
+#### AP 6.6 Quota/Rate-Limit/Timeout
+
+| Klasse | Paket |
+| --- | --- |
+| `QuotaService` | `...application.quota` |
+| `QuotaOutcome` (sealed: `Granted`, `RateLimited(detail)`) | `...application.quota` |
+| `RateLimiter` | `...application.quota` |
+| `TimeoutBudget` | `...application.quota` |
+| `ServerCoreLimits` (config carrier) | `...application.config` |
+
+#### AP 6.7 Error-Mapper
+
+| Klasse | Paket |
+| --- | --- |
+| `ApplicationException` (sealed root) | `...application.error` |
+| Konkrete Subtypen je Code (`AuthRequiredException`, `TenantScopeDeniedException`, ...) | `...application.error` |
+| `ErrorMapper` | `...application.error` |
+
+#### AP 6.8 Audit-Kern
+
+| Klasse | Paket | Modul |
+| --- | --- | --- |
+| `AuditEvent`, `AuditOutcome` | `...server.core.audit` | `hexagon:core` |
+| `AuditSink` | `...server.ports` | `hexagon:ports-common` |
+| `AuditScope` (around-/finally-Wrapper) | `...server.application.audit` | `hexagon:application` |
+| `SecretScrubber` | `...server.application.audit` | `hexagon:application` |
+| `LoggingAuditSink` | `...server.adapter.audit.logging` | `adapters:driven:audit-logging` (NEU) |
+| `InMemoryAuditSink` (testFixtures) | `...server.ports.memory` | `hexagon:ports-common` testFixtures |
+
+---
+
+## 13. Arbeitspaket-Abhaengigkeiten und Test-Tabelle
+
+### 13.1 Abhaengigkeitsgraph
+
+```text
+AP 6.1 (Kernmodelle, inkl. ToolErrorCode-Enum)
+  |
+  +-- AP 6.4 (Fingerprint, ohne Stores)
+  |     |
+  |     +-- AP 6.5 (Approval)
+  |     +-- AP 6.8 (Audit, payloadFingerprint im Event)
+  |
+  +-- AP 6.7 (Error-Mapper, ohne Stores)
+  |
+  +-- AP 6.2 (Store-Ports)
+        |
+        +-- AP 6.3 (Byte-Stores: file-backed + InMemory + Contract-Tests)
+        +-- AP 6.5 (ApprovalGrantStore)
+        +-- AP 6.6 (QuotaStore)
+        +-- AP 6.8 (AuditSink)
+```
+
+Empfohlene Implementierungsreihenfolge fuer einen sequenziellen Run:
+
+1. AP 6.1 (Kernmodelle, neue Modulpakete, `ToolErrorCode`)
+2. parallel: AP 6.4 (Fingerprint), AP 6.7 (Error-Mapper)
+3. AP 6.2 (Store-Ports inkl. Sealed-Outcomes)
+4. parallel: AP 6.3 (Byte-Stores + neuer Modulslot), AP 6.5 (Approval), AP 6.6 (Quota), AP 6.8 (Audit)
+
+### 13.2 Test-Klassen pro AP
+
+Tests laufen in den jeweiligen Modulen unter `src/test/kotlin/...test`.
+Contract-Test-Basisklassen liegen in `src/testFixtures/kotlin/...contract`.
+
+| AP | Pflicht-Testklassen |
+| --- | --- |
+| 6.1 | `PrincipalContextTest`, `TenantScopeCheckerTest`, `ServerResourceUriParserTest`, `ResourceKindTest`, `JobRecordTest`, `JobVisibilityTest`, `ArtifactRecordTest`, `UploadSessionTransitionsTest`, `UploadSessionFinalizeInvariantsTest`, `ConnectionReferenceTest`, `ToolErrorEnvelopeTest`, `PaginationTest` |
+| 6.2 | `JobStoreContractTest`, `ArtifactStoreContractTest`, `SchemaStoreContractTest`, `ProfileStoreContractTest`, `DiffStoreContractTest`, `UploadSessionStoreContractTest`, `UploadSegmentStoreContractTest`, `ConnectionReferenceStoreContractTest`, `IdempotencyStoreContractTest` (inkl. parallel-reserve, lease-recovery, awaiting-approval, committed, denied, conflict), `SyncEffectIdempotencyStoreContractTest`, `ReadOnlyInitResumeContractTest`, `ApprovalGrantStoreContractTest`, `QuotaStoreContractTest`, `AuditSinkContractTest` |
+| 6.3 | `ByteStoreContractTests` (abstract), `InMemoryUploadSegmentStoreTest`, `InMemoryArtifactContentStoreTest`, `FileBackedUploadSegmentStoreTest`, `FileBackedArtifactContentStoreTest`, `FileBackedAtomicWriteTest`, `FileBackedRangeReadTest`, `FileBackedTtlCleanupTest` |
+| 6.4 | `JsonCanonicalizerTest`, `PayloadFingerprintServiceTest`, `FingerprintTopLevelExclusionTest`, `FingerprintNestedFieldRetentionTest`, `FingerprintArrayOrderTest`, `FingerprintNullAndDefaultsTest`, `FingerprintTenantBindTest`, `UploadSessionFingerprintVsSegmentTest` |
+| 6.5 | `ApprovalGrantValidatorTest` (correlation-kinds, expiry, reuse, scope-mismatch, tenant/caller/tool-mismatch, payload-mismatch), `ApprovalGrantTokenFingerprintTest`, `ApprovalGrantServiceTest` |
+| 6.6 | `QuotaServiceTest` (aktive Jobs, Sessions, Bytes, parallel Segmentwrites, Provider-Calls), `QuotaLifecycleTest` (reserve/commit/release/refund inkl. Terminalstatus, Abort, Expiry, Failed-Finalize, Idempotency-Recovery), `RateLimiterTest`, `TimeoutBudgetTest`, `RateLimitedDetailScrubbingTest` |
+| 6.7 | `ErrorMapperTest` (parametrisiert pro Code: alle 18 Codes aus `docs/ki-mcp.md`), `ValidationErrorMapperTest`, `AppExceptionHierarchyTest` |
+| 6.8 | `AuditScopeAroundFinallyTest`, `AuditEarlyFailureTest` (`AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`, `POLICY_REQUIRED`/`POLICY_DENIED`, `IDEMPOTENCY_CONFLICT`), `SecretScrubberTest`, `AuditOutcomeMappingTest`, `LoggingAuditSinkTest` |
+
+### 13.3 Coverage-Ziele
+
+- Bestehende Kover-Verify-Regel `minBound(90)` gilt unveraendert fuer
+  `hexagon:core`, `hexagon:ports-common` und `hexagon:application`
+- Neue Module `adapters:driven:storage-file` und
+  `adapters:driven:audit-logging` uebernehmen dieselbe
+  `minBound(90)`-Regel
+- Reine data classes / enums / sealed-Hierarchien duerfen ueber den
+  bestehenden `kover.reports.filters.excludes`-Mechanismus ausgenommen
+  werden, aber **keine** Service-Logik
+- Contract-Test-Basisklassen sind selbst testbar; ihre Coverage zaehlt
+  nicht gegen die Service-Module, weil sie in testFixtures liegen
+
+---
+
+## 14. Offene Entscheidungen mit Default-Empfehlung
+
+Diese Defaults gelten ab Phase-A-Start, falls nicht vor dem ersten Edit
+explizit ueberschrieben.
+
+### 14.1 JSON-Kanonisierung fuer Fingerprints
+
+- Default: **RFC 8785 JCS-kompatibel**
+- Felder lexikographisch nach UTF-16-Codepoint sortiert
+- Kein Whitespace
+- Strings: UTF-8, `\uXXXX`-Escapes nur fuer Kontroll-, Quote- und Backslash-Zeichen
+- Zahlen: nur Integer im fingerprintbaren Payload (Groessen, Offsets, Indizes); Floats sind in Phase A nicht erlaubt. Spaetere Tools, die Floats brauchen, fuegen die Zahlen-Kanonisierung in einer eigenen Refinement-Iteration hinzu
+- Booleans: `true`/`false`
+- `null`: explizit erhalten
+- Unicode-Normalisierung: NFC fuer alle Stringwerte vor dem Hashing
+
+### 14.2 Default-TTLs/-Leases
+
+| Parameter | Default | Begruendung |
+| --- | --- | --- |
+| `idempotency.pendingLease` | 60 s | typische Job-Annahme < 1 min |
+| `idempotency.awaitingApproval` | 600 s | manuelle Approval-Schritte |
+| `idempotency.committedRetention` | 24 h | dominierende Job-Retention |
+| `idempotency.initResumeTtl` | 600 s | read-only Init-Resume |
+| `approval.grantDefaultTtl` | 300 s | kurzlebige Tokens |
+| `upload.sessionIdleTimeout` | 900 s | grosse Uploads ueber instabile Netze |
+| `upload.sessionAbsoluteLease` | 3600 s | obere Schranke pro Session |
+| `quota.activeJobsPerTenant` | 16 | konservativ |
+| `quota.activeUploadsPerTenant` | 4 | begrenzt parallele Spool-Files |
+| `quota.uploadBytesPerTenant` | 1 GiB | konservativ; per Deployment ueberschreibbar |
+| `quota.providerCallsPerMinute` | 60 | KI-Provider-Schutz |
+
+Carrier: `dev.dmigrate.server.application.config.ServerCoreLimits` (data class),
+per Konstruktorinjektion in Services. Unit-Tests setzen abweichende Werte.
+
+### 14.3 `IdempotencyStore.reserve(...)` Rueckgabetyp
+
+```kotlin
+sealed interface IdempotencyReserveOutcome {
+    data class Reserved(
+        val key: IdempotencyKey,
+        val leaseExpiresAt: Instant,
+    ) : IdempotencyReserveOutcome
+
+    data class ExistingPending(
+        val key: IdempotencyKey,
+        val leaseExpiresAt: Instant,
+    ) : IdempotencyReserveOutcome
+
+    data class AwaitingApproval(
+        val key: IdempotencyKey,
+        val expiresAt: Instant,
+    ) : IdempotencyReserveOutcome
+
+    data class Committed(
+        val key: IdempotencyKey,
+        val resultRef: String,
+    ) : IdempotencyReserveOutcome
+
+    data class Denied(
+        val key: IdempotencyKey,
+        val expiresAt: Instant,
+        val reason: String,
+    ) : IdempotencyReserveOutcome
+
+    data class Conflict(
+        val key: IdempotencyKey,
+        val existingFingerprint: String,
+    ) : IdempotencyReserveOutcome
+}
+```
+
+`SyncEffectIdempotencyStore.reserveSyncEffect(...)` verwendet eine
+strukturell aequivalente Hierarchie unter dem Namen
+`SyncEffectReserveOutcome`. Die Hierarchien werden bewusst nicht geteilt,
+damit Aufrufstellen den Scope (`idempotencyKey` vs. `approvalKey`) sehen.
+
+### 14.4 `ApprovalGrant.issuerFingerprint`
+
+- Format: SHA-256 hex einer kanonischen Issuer-Identitaet
+- Phase-A-Default: `sha256("issuerType:issuerId")` mit
+  `issuerType` aus {`local`, `oidc`, `service-account`} und `issuerId` als
+  Issuer-eindeutigem String (`iss`-Claim oder Service-Identifier)
+- Phase A speichert nur den Fingerprint; produktive Verifikation gegen
+  Public-Key/JWKS folgt in spaeteren Phasen, muss aber denselben
+  Fingerprint herstellen
+
+### 14.5 `ServerResourceUri`-Schema
+
+```text
+dmigrate://tenants/{tenantId}/{kind}/{id}
+```
+
+- `kind` aus `ResourceKind`-Enum, in URI klein-kebab-cased (`upload-sessions`, `connections`, `jobs`, ...)
+- `tenantId` und `id` matchen `[A-Za-z0-9_\-]+`
+- Parsing-Fehler -> `VALIDATION_ERROR`
+- Tenant-Mismatch gegenueber `effectiveTenantId` -> `TENANT_SCOPE_DENIED`
+- unbekannte Ressource -> `RESOURCE_NOT_FOUND`
+
+### 14.6 `payloadFingerprint`-Algorithmus
+
+```text
+payloadFingerprint = sha256_hex( jcs_canonicalize( normalize( payload ) ) )
+```
+
+Normalisierung:
+
+- Top-level Control-Felder entfernen: `idempotencyKey`, `approvalToken`,
+  `clientRequestId`, `requestId`
+- Tenant-/Caller-Bindung explizit als
+  `_bind = { tenantId, callerId, toolName, scope }` voranstellen, damit
+  identische Fachpayloads ueber Tenants/Caller hinweg unterschiedliche
+  Fingerprints liefern
+- alle anderen Felder bleiben strukturell unveraendert
+
+Upload-Init-Fingerprint nutzt `scope = UPLOAD_INIT` und bindet
+`artifactKind`, `mimeType`, `sizeBytes`, `checksumSha256`, `uploadIntent`.
+Upload-Segment-Hash ist davon getrennt und nutzt nur `segmentSha256`.
+
+### 14.7 `AuditSink`-Vertrag
+
+```kotlin
+interface AuditSink {
+    fun emit(event: AuditEvent)
+}
+```
+
+Modulplatzierung gemaess `docs/architecture.md` 1.2:
+
+- `AuditSink`-Interface in `hexagon:ports-common`
+- `AuditEvent`/`AuditOutcome` in `hexagon:core`
+- `LoggingAuditSink` (SLF4J, strukturierter Logger `dev.dmigrate.audit`)
+  in NEUEM Modul `adapters:driven:audit-logging` — SLF4J ist laut
+  Architektur ein Driven-Adapter-Dep, darf nicht im Hexagon-Inneren
+  liegen
+- `InMemoryAuditSink` in `hexagon:ports-common` testFixtures
+
+Persistente Sinks (DB/Datei) sind Phase-B-Thema und liegen ebenfalls
+auessen.
+
+### 14.8 testFixtures vs. dediziertes Test-Modul
+
+Default: **`java-test-fixtures`-Plugin** in den betroffenen Modulen.
+In-Memory-Stores und Contract-Test-Basisklassen werden ueber
+`testFixturesApi` exportiert.
+
+Falls `java-test-fixtures` mit Coverage- oder Publishing-Setup kollidiert,
+Fallback auf ein neues Modul `test:server-core-fixtures` analog zu
+bestehenden `test:integration-*`-Modulen. Die Fallback-Entscheidung wird
+beim ersten Build-Fehler getroffen, nicht spekulativ.
+
+### 14.9 Anti-Scope-Bestaetigung fuer bestehende CLI-Pfade
+
+`adapters/driving/cli` und alle `*Runner`-Klassen in
+`hexagon/application/.../cli/commands/` werden in Phase A **nicht**
+modifiziert. Sie sind in Phase B/C potenzielle Konsumenten der neuen
+Kernservices, aber nicht Teil der Phase-A-Auslieferung. Phase A fuegt
+ausschliesslich neue Pakete unter `dev.dmigrate.server.*` hinzu.
