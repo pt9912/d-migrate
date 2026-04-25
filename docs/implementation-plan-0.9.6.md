@@ -29,10 +29,10 @@ Der Adapter stellt die bestehenden `d-migrate`-Faehigkeiten als
 agentenfreundliche Tools und Ressourcen bereit, ohne Fachlogik in den
 Adapter zu verschieben.
 
-Der Milestone liefert sechs konkrete Nutzerergebnisse:
+Der Milestone liefert konkrete Nutzerergebnisse:
 
-- `d-migrate` kann als lokaler MCP-Server gestartet und von MCP-Clients
-  initialisiert werden
+- `d-migrate` kann als MCP-Server ueber `stdio` und streambares HTTP
+  gestartet und von MCP-Clients initialisiert werden
 - read-only Tools fuer `schema_validate`, `schema_compare` und
   `schema_generate` sind verfuegbar
 - Jobs, Artefakte und bekannte Schemas koennen ueber Discovery-Tools mit
@@ -43,12 +43,14 @@ Der Milestone liefert sechs konkrete Nutzerergebnisse:
   versehentlich ohne Freigabe ausgefuehrt werden
 - grosse Eingabeartefakte koennen segmentiert, wiederaufnehmbar und mit
   SHA-256-Pruefung hochgeladen werden
+- laufende Jobs koennen ueber `job_cancel` fuer eigene oder erlaubte
+  Jobs abgebrochen werden
+- KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md` sind
+  verfuegbar und policy-/audit-gesteuert
 
 Bewusst nicht Teil dieses Milestones:
 
 - eine vollstaendige REST- oder gRPC-Implementierung
-- MCP-Spezialtools fuer KI-basierte Procedure-Transformation oder
-  Testdatengenerierung
 - freie SQL-Ausfuehrung ueber MCP
 - Uebergabe von JDBC-Secrets im Prompt- oder Tool-Payload
 - persistente Multi-Tenant-Produktinfrastruktur jenseits des fuer die
@@ -79,12 +81,14 @@ Reverse, Profiling, Import oder Transfer enthalten.
 `docs/ki-mcp.md` beschreibt bereits:
 
 - Tool-Gruppen fuer read-only, kontrollierte Write-Operationen und
-  spaetere KI-Spezialpfade
+  KI-nahe Spezialpfade
 - Ressourcen fuer Jobs, Artefakte, Schemas, Profile und Diffs
 - Antwortgrenzen fuer inline Tool-Resultate
 - ein strukturiertes Fehler-Envelope
 - Idempotency-Key- und Approval-Token-Verhalten
 - segmentierte Artefakt-Uploads
+- `stdio` und streambares HTTP als Transportmodi
+- MCP-Prompts fuer kuratierte Agentenablaeufe
 - Auth-, Policy- und Audit-Grundsaetze
 
 0.9.6 ist die erste produktive Umsetzung dieses Zielbilds. Der Plan
@@ -112,8 +116,8 @@ Konsequenz:
 
 - neues Gradle-Modul `adapters:driving:mcp`
 - MCP-Server-Start ueber `stdio` fuer lokale IDE-/Agenten-Integration
-- interne Transportabstraktion, damit streambares HTTP spaeter ohne
-  Tool-Vertragsbruch ergaenzt werden kann
+- streambarer HTTP-Transport fuer entfernte Agent-Plattformen
+- HTTP-Auth mit Bearer-Token und optionalem mTLS-Anschluss
 - Capability-/Initialize-Vertrag fuer MCP `v1`
 - Tool-Registry mit stabilen Namen, Beschreibungen, JSON-Schemas und
   Request-/Response-Mapping
@@ -129,6 +133,8 @@ Konsequenz:
 - kontrollierte Start-Tools:
   - `schema_reverse_start`
   - `data_profile_start`
+- Job-Steuerung:
+  - `job_cancel`
 - policy-gesteuerte Datenoperationen:
   - `data_import_start`
   - `data_transfer_start`
@@ -146,6 +152,12 @@ Konsequenz:
   - Diffs
 - strukturierte Fehler-Envelopes mit den in `docs/ki-mcp.md`
   festgelegten Codes
+- KI-nahe Spezialtools:
+  - `procedure_transform_plan`
+  - `procedure_transform_execute`
+  - `testdata_plan`
+- MCP-Prompts fuer kuratierte Analyse-, Transformations- und
+  Testdatenablaeufe
 - Limits fuer Inline-Antworten, Findings und Uploadgroessen
 - Audit-Ereignisse fuer jeden Tool-Aufruf
 - Unit-, Adapter- und Integrationstests fuer Tool-Contracts,
@@ -164,7 +176,6 @@ Konsequenz:
 - produktive Langzeitpersistenz fuer Jobs und Artefakte ueber
   Prozessneustarts hinaus, sofern sie nicht bereits durch bestehende
   Infrastruktur vorhanden ist
-- KI-Provider-Aufrufe fuer Procedure-Transformationen
 - neue Datenbank-Treiberfaehigkeiten, die nicht fuer die MCP-Oberflaeche
   selbst erforderlich sind
 - Veraenderung der CLI-Vertraege ausser Start-/Konfigurationsdoku fuer
@@ -194,24 +205,27 @@ Begruendung:
 - der gemeinsame Job-/Artefaktkern muss adapterunabhaengig bleiben
 - ein schlanker Adapter reduziert das Risiko divergierender Semantik
 
-### 4.2 `stdio` ist der Beta-Transport
+### 4.2 `stdio` und streambares HTTP sind Beta-Transporte
 
 Verbindliche Entscheidung:
 
-- 0.9.6 liefert `stdio` als unterstuetzten Startpfad
+- 0.9.6 liefert `stdio` und streambares HTTP als unterstuetzte
+  Startpfade
 - jeder MCP-Aufruf bekommt trotzdem einen expliziten `PrincipalContext`
 - fuer `stdio` wird der Principal lokal abgeleitet:
   - aus Host-/Prozesskontext, sofern verfuegbar
   - sonst aus `DMIGRATE_MCP_STDIO_TOKEN`
   - in Testumgebungen aus einem expliziten Test-Principal
-- streambares HTTP bleibt architektonisch vorbereitet, aber nicht
-  Abnahmekriterium fuer 0.9.6
+- fuer HTTP wird der Principal aus `Authorization`-Header oder
+  aequivalentem signiertem Principalsignal abgeleitet
+- optionales mTLS wird als konfigurierbarer Maschinen-zu-Maschinen-
+  Schutz vorbereitet
 
 Begruendung:
 
 - lokale IDE- und Agent-Runtimes sind der wichtigste Beta-Pfad
-- HTTP-Security wuerde ohne REST-Milestone zu viel Infrastruktur in
-  0.9.6 ziehen
+- entfernte Agent-Plattformen brauchen denselben Tool-Vertrag ueber
+  einen remote-faehigen Transport
 - Tool-Vertraege, Ressourcen, Policies und Fehlercodes bleiben
   transportneutral
 
@@ -274,6 +288,9 @@ Verbindliche Entscheidung:
   `approvalToken` enthalten
 - produktive oder als sensitiv markierte Verbindungen duerfen nicht
   ohne Policy-Freigabe genutzt werden
+- KI-nahe Tools (`procedure_transform_plan`,
+  `procedure_transform_execute`, `testdata_plan`) sind immer
+  policy- und auditpflichtig
 
 Begruendung:
 
@@ -311,6 +328,52 @@ Begruendung:
 - Agenten muessen Uploads nach Unterbrechung wiederholen koennen
 - SHA-256-Pruefung verhindert still korrupte Eingabeartefakte
 
+### 4.7 `job_cancel` ist kontrollierte Job-Steuerung
+
+Verbindliche Entscheidung:
+
+- `job_cancel` ist kein freier Kill-Schalter, sondern eine
+  berechtigte Zustandsaenderung im gemeinsamen Jobmodell
+- ein Principal darf nur eigene Jobs abbrechen; Administratoren duerfen
+  Jobs innerhalb desselben Tenants abbrechen
+- Cancel fuer fremde Tenants liefert `TENANT_SCOPE_DENIED`
+- Cancel fuer nicht erlaubte Jobs liefert `FORBIDDEN_PRINCIPAL`
+- bereits terminale Jobs bleiben terminal und werden nicht in
+  `cancelled` umgeschrieben
+- erfolgreich angenommene Abbrueche enden im Jobstatus `cancelled`
+  gemaess `docs/job-contract.md`
+
+Begruendung:
+
+- `docs/ki-mcp.md` fuehrt `job_cancel` als kontrolliertes Write-Tool
+  auf
+- Abbruch ist sicherheitsrelevant, weil Agenten sonst fremde oder
+  produktive Laeufe stoeren koennten
+
+### 4.8 KI-nahe Tools und Prompts sind Teil von 0.9.6
+
+Verbindliche Entscheidung:
+
+- `procedure_transform_plan`, `procedure_transform_execute` und
+  `testdata_plan` werden als MCP-Tools registriert und getestet
+- diese Tools nutzen denselben Policy-, Audit-, Resource- und
+  Fehlervertrag wie andere kontrollierte Tools
+- `procedure_transform_execute` darf nur mit expliziter Freigabe
+  laufen und muss Modell-/Provider-Metadaten auditierbar machen
+- `testdata_plan` plant Testdaten, schreibt aber keine produktiven
+  Daten ohne separates datenveraenderndes Tool
+- MCP-Prompts werden als kuratierte Vorlagen fuer Analyse-,
+  Transformations- und Testdatenablaeufe registriert
+- Prompt-Inputs muessen auf Ressourcen, Artefakte und verdichtete
+  Summaries referenzieren; Secrets oder rohe Massendaten sind verboten
+
+Begruendung:
+
+- die Roadmap verlangt fuer 0.9.6 die vollstaendige Umsetzung von
+  `docs/ki-mcp.md`
+- KI-nahe Tools sind besonders sensibel und duerfen deshalb nicht als
+  freie Modellaufrufe ausserhalb von Policy und Audit entstehen
+
 ---
 
 ## 5. Zielarchitektur
@@ -322,7 +385,7 @@ Neue und zu erweiternde Bereiche:
 - `settings.gradle.kts`
   - `include("adapters:driving:mcp")`
 - `adapters/driving/mcp`
-  - MCP-Transport
+  - MCP-Transporte fuer `stdio` und streambares HTTP
   - Tool-Registry
   - Resource-Registry
   - JSON-Schema-Mapping
@@ -677,6 +740,117 @@ Akzeptanz:
 - abgebrochene Sessions liefern `UPLOAD_SESSION_ABORTED`
 - abgelaufene Sessions liefern `UPLOAD_SESSION_EXPIRED`
 
+### 6.9 `job_cancel`
+
+Zweck:
+
+- einen laufenden oder wartenden Job kontrolliert abbrechen
+
+Verbindliche Eingaben:
+
+- `jobId` oder tenant-scoped Job-`resourceUri`
+- optionaler menschenlesbarer `reason`
+
+Antwort:
+
+- aktueller Jobstatus gemaess `docs/job-contract.md`
+- `executionMeta` mit `requestId`
+- optional `resourceUri` des Jobs
+
+Akzeptanz:
+
+- nur eigene oder explizit erlaubte Jobs koennen abgebrochen werden
+- fremde Tenant-Jobs liefern `TENANT_SCOPE_DENIED`
+- nicht erlaubte Jobs liefern `FORBIDDEN_PRINCIPAL`
+- unbekannte Jobs liefern `RESOURCE_NOT_FOUND`
+- bereits terminale Jobs bleiben unveraendert terminal und liefern
+  ihren aktuellen Status
+- erfolgreich angenommene Abbrueche erzeugen Status `cancelled`
+
+### 6.10 KI-nahe Spezialtools
+
+Tools:
+
+- `procedure_transform_plan`
+- `procedure_transform_execute`
+- `testdata_plan`
+
+Gemeinsame Regeln:
+
+- alle drei Tools sind policy-gesteuert
+- alle drei Tools schreiben Audit-Ereignisse mit Toolname,
+  Principal, Tenant, Resource-Refs und Payload-Fingerprint
+- Eingaben nutzen `schemaRef`, `artifactRef`, `profileRef`,
+  `connectionRef` oder kleine strukturierte Inline-Optionen
+- Secrets, freie JDBC-Strings und rohe Massendaten sind unzulaessig
+- grosse Planungs- oder Transformationsresultate werden als Artefakte
+  oder Ressourcen referenziert
+- bei Prompt- oder Datenhygiene-Verletzungen gilt
+  `PROMPT_HYGIENE_BLOCKED`
+
+`procedure_transform_plan`:
+
+- erstellt einen Analyse- und Transformationsplan fuer eine gespeicherte
+  Prozedur oder ein Prozedur-Artefakt
+- darf ohne expliziten Execute-Schritt keinen Ziel-DB-Code als
+  auszufuehrendes Artefakt freigeben
+- liefert Summary, Findings und ggf. Plan-Artefakt
+
+`procedure_transform_execute`:
+
+- fuehrt eine freigegebene Prozedurtransformation aus
+- ist bestaetigungspflichtig und policy-gesteuert
+- muss Provider, Modell, Modellversion, Prompt-/Payload-Fingerprint und
+  Zielartefakt im Audit-Trail erfassen
+- darf keine Secrets oder unredigierten Massendaten an externe Provider
+  geben
+
+`testdata_plan`:
+
+- erzeugt einen Testdatenplan aus Schema, Regeln und optionalen
+  Profil-Summaries
+- erzeugt keine produktiven Datenbank-Schreiboperationen
+- groessere Plaene werden als Artefakt oder Ressource referenziert
+
+Akzeptanz:
+
+- fehlende Freigabe liefert `POLICY_REQUIRED`
+- externe Provider-Nutzung ohne erlaubende Policy liefert
+  `PROMPT_HYGIENE_BLOCKED` oder `FORBIDDEN_PRINCIPAL`
+- Resultate enthalten keine Secrets und keine unlimitierten Rohdaten
+- alle Tool-Aufrufe sind auditierbar
+
+### 6.11 MCP-Prompts
+
+Zweck:
+
+- kuratierte Analyse-, Transformations- und Testdatenablaeufe fuer
+  Agenten auffindbar machen
+
+Verbindliche Prompts:
+
+- Procedure-Analyse auf Basis von Schema-/Artefaktreferenzen
+- Procedure-Transformation mit explizitem Policy-Hinweis
+- Testdatenplanung auf Basis von Schema, Regeln und Profil-Summaries
+
+Regeln:
+
+- Prompts sind Vorlagen, keine versteckten Tool-Ausfuehrungen
+- Prompts verweisen auf MCP-Tools und Ressourcen, statt grosse Inhalte
+  direkt in den Kontext zu kopieren
+- Prompt-Parameter sind schema-validiert und duerfen keine Secrets
+  enthalten
+- Prompt-Definitionen muessen versioniert oder stabil benannt sein,
+  damit Clients sie referenzieren koennen
+
+Akzeptanz:
+
+- Prompts sind ueber MCP-Discovery sichtbar
+- jeder Prompt nennt die erforderlichen Resource-Refs und die
+  erwarteten Tool-Schritte
+- unzulaessige Parameter liefern `VALIDATION_ERROR`
+- Prompt-Hygiene-Verletzungen liefern `PROMPT_HYGIENE_BLOCKED`
+
 ---
 
 ## 7. Fehler- und Audit-Vertrag
@@ -765,7 +939,8 @@ Abnahmekriterien:
 ### Phase B - MCP-Modul und Transport
 
 - `adapters:driving:mcp` in Gradle aufnehmen
-- MCP-Server-Bootstrap fuer `stdio` implementieren
+- MCP-Server-Bootstrap fuer `stdio` und streambares HTTP implementieren
+- Principal-Ableitung fuer lokale und HTTP-Transporte implementieren
 - Initialize-/Capability-Antwort bereitstellen
 - Tool-Registry und Resource-Registry aufbauen
 - JSON-Schema-Definitionen fuer alle 0.9.6-Tools erzeugen oder
@@ -775,6 +950,7 @@ Abnahmekriterien:
 Abnahmekriterien:
 
 - ein MCP-Client kann den Server initialisieren
+- lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
 - `capabilities_list` funktioniert ohne DB-Verbindung
 - unbekannte Tools liefern `UNSUPPORTED_TOOL_OPERATION`
 
@@ -813,6 +989,7 @@ Abnahmekriterien:
 
 - Job-Start-Service fuer `schema_reverse_start` und
   `data_profile_start` einfuehren
+- `job_cancel` an Jobkern und Berechtigungspruefung anbinden
 - Idempotency-Pruefung fuer Start-Tools anbinden
 - Policy-Service fuer kontrollierte Operationen einfuehren
 - Approval-Token-Flow fuer policy-pflichtige Operationen abbilden
@@ -827,6 +1004,9 @@ Abnahmekriterien:
 - identische Wiederholung liefert denselben Job
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT`
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`
+- `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen und
+  erzeugt einen stabilen `cancelled`-Status gemaess
+  `docs/job-contract.md`
 
 ### Phase F - Datenoperationen und Uploads
 
@@ -846,11 +1026,17 @@ Abnahmekriterien:
 - Upload, Upload-Abbruch, Import und Transfer laufen nur mit
   Policy-Freigabe
 
-### Phase G - Tests und Dokumentation
+### Phase G - KI-nahe Tools, Prompts, Tests und Dokumentation
 
+- `procedure_transform_plan`, `procedure_transform_execute` und
+  `testdata_plan` policy- und audit-gesteuert anbinden
+- MCP-Prompts fuer kuratierte Analyse-, Transformations- und
+  Testdatenablaeufe registrieren
+- Prompt-Hygiene-Pruefung fuer Secrets, rohe Massendaten und externe
+  Provider-Policies anbinden
 - Unit-Tests fuer alle Kernservices
 - MCP-Handler-Tests fuer jedes Tool
-- Integrationstest mit echtem MCP-Transport ueber `stdio`
+- Integrationstests mit echten MCP-Transporten ueber `stdio` und HTTP
 - Fehler-Envelope-Golden-Tests
 - Upload-Tests fuer Resume, Abort, Expiry, Hash-Fehler und
   Payload-Limits
@@ -863,7 +1049,12 @@ Abnahmekriterien:
 - neue Tests laufen in den passenden Gradle-Modulen
 - alle Roadmap-Aufgaben aus 0.9.6 sind durch Tests oder dokumentierte
   Abnahmekriterien abgedeckt
-- Doku nennt den konkreten Startpfad fuer lokale MCP-Clients
+- KI-nahe Tools liefern Policy-, Audit- und Prompt-Hygiene-Fehler
+  strukturiert statt als rohe Exceptions
+- MCP-Prompts sind ueber Discovery sichtbar und referenzieren nur
+  erlaubte Ressourcen/Tools
+- Doku nennt die konkreten Startpfade fuer lokale und entfernte
+  MCP-Clients
 
 ---
 
@@ -883,6 +1074,9 @@ Pflichtabdeckung:
 - Upload-Session-Zustandsautomat
 - SHA-256-Segment- und Gesamtpruefung
 - Cursor-Serialisierung und -Validierung
+- Cancel-Berechtigungen und terminale Jobzustaende
+- Prompt-Registry und Prompt-Parameter-Validierung
+- Prompt-Hygiene-Pruefung fuer Secrets und Massendaten
 
 ### 9.2 Adaptertests
 
@@ -905,7 +1099,7 @@ Fuer Start-Tools zusaetzlich:
 ### 9.3 Integrationstests
 
 Mindestens ein Integrationstest startet den MCP-Server ueber `stdio` und
-prueft:
+ein weiterer ueber HTTP. Beide pruefen:
 
 - Initialize/Capabilities
 - `capabilities_list`
@@ -913,6 +1107,9 @@ prueft:
 - `schema_generate` mit Artefakt-Fallback
 - `job_list`
 - Upload eines kleinen Artefakts in mehreren Segmenten
+- `job_cancel`
+- ein KI-nahes Spezialtool mit Policy-/Audit-Pfad
+- MCP-Prompt-Discovery
 
 Wenn die verwendete MCP-Bibliothek einen Testclient anbietet, wird
 dieser genutzt. Falls nicht, wird die JSON-RPC-Kommunikation in Tests
@@ -931,6 +1128,10 @@ Verbindliche Negativfaelle:
 - Upload nach Abort
 - Upload nach Expiry
 - Import ohne Approval
+- `job_cancel` fuer fremde Tenants oder fremde Principals
+- KI-nahes Tool ohne Policy-Freigabe
+- externer KI-Provider ohne erlaubende Policy
+- Prompt mit Secret- oder Rohdatenparameter
 - Connection-Ref als freier JDBC-String
 - rohe SQL-Payloads in Datenoperationen
 
@@ -955,11 +1156,14 @@ Nach Umsetzung muessen mindestens diese Dokumente konsistent sein:
 
 Dokumentation muss explizit nennen:
 
-- `stdio` ist der Beta-Transport
+- `stdio` und streambares HTTP sind die Beta-Transporte
 - Secrets werden nicht ueber MCP-Payloads uebergeben
 - grosse Ergebnisse werden als Ressourcen/Artefakte referenziert
 - Write-Tools brauchen Policy-Freigabe
 - Uploads sind segmentiert und hash-validiert
+- KI-nahe Tools brauchen Policy, Prompt-Hygiene und Audit
+- MCP-Prompts sind kuratierte Vorlagen und keine versteckten
+  Tool-Ausfuehrungen
 
 ---
 
@@ -1023,7 +1227,8 @@ Gegenmassnahme:
 0.9.6 ist abgeschlossen, wenn:
 
 - `adapters:driving:mcp` gebaut und getestet wird
-- ein lokaler MCP-Client den Server ueber `stdio` initialisieren kann
+- lokale und entfernte MCP-Clients den Server ueber `stdio` bzw. HTTP
+  initialisieren koennen
 - alle in Scope genannten Tools registriert sind
 - read-only Tools gegen bestehende Anwendungskomponenten laufen
 - Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
@@ -1032,13 +1237,16 @@ Gegenmassnahme:
 - policy-pflichtige Upload- und Datenoperationen den Approval-Flow
   erzwingen
 - Artefakt-Uploads segmentiert, resumable und SHA-256-validiert sind
+- `job_cancel` eigene oder erlaubte Jobs kontrolliert abbrechen kann
+- KI-nahe Spezialtools und MCP-Prompts aus `docs/ki-mcp.md`
+  registriert, policy-gesteuert und auditierbar sind
 - Fehler immer als strukturiertes Envelope erscheinen
 - Tenant-Scope- und Principal-Pruefungen in Tool- und Resource-Pfaden
   aktiv sind
 - Audit-Ereignisse fuer Tool-Aufrufe geschrieben werden
 - MCP-Integrationstests mindestens Initialize, Tool-Aufruf,
   Resource-Zugriff, Fehlerfall und Upload abdecken
-- Dokumentation den konkreten Beta-Startpfad und die Sicherheitsgrenzen
+- Dokumentation die konkreten Beta-Startpfade und die Sicherheitsgrenzen
   beschreibt
 
 ---
@@ -1049,12 +1257,4 @@ Direkte Anschlussarbeiten laut Roadmap:
 
 - 0.9.7 REST-API auf demselben Job-/Artefakt-/Policy-Kern aufbauen
 - 0.9.8 gRPC-API auf denselben Kernvertraegen aufbauen
-- 0.9.9 Frontend fuer Jobs, Artefakte, Diffs und Migrationsablaeufe
-
-Moegliche spaetere MCP-Erweiterungen:
-
-- streambares HTTP als zweiter Transport
-- `job_cancel`, falls Cancel im Jobkern stabil verfuegbar ist
-- MCP-Prompts fuer kuratierte Analyseablaeufe
-- Procedure-Transformationstools mit KI-Audit-Trail
-- Testdatenplanung als separates, policy-gesteuertes Tool
+- 0.9.9 Beta-Dokumentation, API-Dokumentation und Pilot-Validierung
