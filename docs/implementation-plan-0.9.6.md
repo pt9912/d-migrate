@@ -262,7 +262,8 @@ Verbindliche Entscheidung:
 - `callerId` wird serverseitig aus dem Auth-/Principal-Kontext
   abgeleitet
 - `payloadFingerprint` ist ein SHA-256 ueber deterministisch
-  serialisierten Payload ohne `idempotencyKey`
+  serialisierten, normalisierten Payload ohne transiente Kontrollfelder:
+  `idempotencyKey`, `approvalToken`, `clientRequestId`, `requestId`
 - wiederholte Requests mit identischem Tripel geben denselben Job
   zurueck
 - gleicher `idempotencyKey` mit anderem Caller oder anderem Payload
@@ -299,6 +300,11 @@ Verbindliche Entscheidung:
   gebunden
 - fehlt bei einer policy-pflichtigen synchronen Operation der
   `approvalKey`, liefert der Server `VALIDATION_ERROR`
+- fuer `artifact_upload` wird der Approval-Fingerprint aus den
+  Session-Metadaten gebildet (`artifactKind`, `mimeType`, `sizeBytes`,
+  `checksumSha256`, Tenant, Principal, optionaler Zielkontext), nicht
+  aus Segmentbytes, `segmentSha256`, `contentBase64`, Chunk-Body oder
+  Segmentpositionen
 - produktive oder als sensitiv markierte Verbindungen duerfen nicht
   ohne Policy-Freigabe genutzt werden
 - KI-nahe Tools (`procedure_transform_plan`,
@@ -448,6 +454,13 @@ Erwartete Kernmodelle und Projektionen:
 - `ServerResourceUri`
   - typisierte Abbildung von
     `dmigrate://tenants/{tenantId}/...`
+- `ConnectionReference`
+  - `connectionId`
+  - `tenantId`
+  - non-secret Anzeigename und Dialekt
+  - Sensitivitaets-/Produktionsklassifizierung fuer Policy
+  - Verweis auf serverseitig verwaltetes Secret oder lokalen
+    Connection-Provider, nie das Secret selbst
 - `ApprovalGrant`
   - `approvalKey`
   - `approvalTokenFingerprint`
@@ -509,6 +522,7 @@ Erwartete Kernmodelle und Projektionen:
 - `JobStore`
 - `ArtifactStore`
 - `UploadSessionStore`
+- `ConnectionReferenceStore`
 - `IdempotencyStore`
 - `ApprovalGrantStore`
 - `AuditSink`
@@ -607,6 +621,9 @@ Verbindliche Regeln:
 - Zugriff wird immer gegen `PrincipalContext` geprueft
 - Fremdzugriff liefert `TENANT_SCOPE_DENIED`
 - Connection-Ressourcen enthalten keine Secrets
+- Connection-Ressourcen werden ueber `ConnectionReferenceStore`
+  aufgeloest und enthalten Policy-Metadaten wie Dialekt, Owner,
+  Sensitivitaet und Produktionsklassifizierung
 - nicht existente Ressourcen liefern `RESOURCE_NOT_FOUND`
 - grosse Ressourcen werden chunkbar oder als Artefakt-Referenz
   bereitgestellt
@@ -776,6 +793,9 @@ Tools:
 Gemeinsame Regeln:
 
 - immer idempotent
+- `idempotencyKey` ist Pflicht
+- Deduplizierung nutzt denselben Payload-Fingerprint-Vertrag wie
+  andere Start-Tools; `approvalToken` ist dabei ausgeschlossen
 - immer policy-gesteuert
 - Import nutzt zuvor hochgeladenes `artifactId`
 - Transfer nutzt tenant-scoped Source- und Target-Connection-Refs
@@ -783,6 +803,10 @@ Gemeinsame Regeln:
 
 Akzeptanz:
 
+- fehlender `idempotencyKey` liefert `IDEMPOTENCY_KEY_REQUIRED`
+- identische Wiederholung liefert denselben Job
+- gleicher `idempotencyKey` mit anderem Payload liefert
+  `IDEMPOTENCY_CONFLICT`
 - fehlende Freigabe liefert `POLICY_REQUIRED`
 - zweiter Aufruf mit passendem Token startet oder dedupliziert den Job
 - ungueltige oder fremde Artefakte liefern `RESOURCE_NOT_FOUND` oder
@@ -805,8 +829,11 @@ Gemeinsame Regeln:
 - beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
   passende `approvalToken` senden
 - das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
-  `payloadFingerprint` gebunden
-- Wiederverwendung desselben Tokens mit anderem Payload liefert
+  den session-metadatenbezogenen `payloadFingerprint` gebunden
+- Segmentdaten, `segmentSha256`, `contentBase64`, Chunk-Body,
+  `segmentIndex` und `segmentOffset` sind nicht Teil des
+  Approval-Fingerprints; sie werden separat pro Segment validiert
+- Wiederverwendung desselben Tokens mit anderen Session-Metadaten liefert
   `POLICY_REQUIRED` oder `FORBIDDEN_PRINCIPAL`
 
 Verbindliche Validierungen:
@@ -1061,9 +1088,12 @@ Fuer policy-gesteuerte Operationen wird zusaetzlich protokolliert:
   nur adapterneutrale Ergaenzungen dort vornehmen, falls wirklich
   noetig
 - Store-Interfaces fuer Jobs, Artefakte, Upload-Sessions,
-  Idempotency, Approval-Grants und Audit definieren
+  Connection-Refs, Idempotency, Approval-Grants und Audit definieren
 - In-Memory-Implementierungen fuer Beta und Tests bereitstellen
 - deterministische Payload-Fingerprint-Funktion implementieren
+- Fingerprint-Kanonik fuer Approval und Idempotenz definieren:
+  transiente Kontrollfelder werden ausgeschlossen, Upload-Segmente
+  werden separat von Upload-Session-Metadaten behandelt
 - Approval-Grant-Service fuer synchrone und asynchrone
   policy-pflichtige Tools implementieren
 - Error-Mapper fuer Anwendungsausnahmen und Validierungsfehler bauen
@@ -1072,8 +1102,8 @@ Abnahmekriterien:
 
 - Kernmodelle sind adapterunabhaengig
 - Unit-Tests decken Fingerprint-Stabilitaet, Idempotency-Konflikte,
-  Approval-Grant-Bindung, Resource-URI-Parsing und Tenant-Scope-
-  Pruefung ab
+  Approval-Grant-Bindung ohne rohe Tokens, Upload-Session-Fingerprint,
+  Resource-URI-Parsing und Tenant-Scope-Pruefung ab
 
 ### Phase B - MCP-Modul und Transport
 
@@ -1120,6 +1150,9 @@ Abnahmekriterien:
   implementieren
 - Resource-Resolver fuer Jobs, Artefakte, Schemas, Profile und Diffs
   implementieren
+- Resource-Resolver und Store fuer tenant-scoped Connection-Refs
+  implementieren, inklusive Sensitivitaets-/Produktionsmetadaten fuer
+  Policy
 - Cursor-Paginierung und Filtervalidierung einfuehren
 - Tenant-Scope-Pruefung fuer jede Resource-Aufloesung erzwingen
 
@@ -1127,6 +1160,8 @@ Abnahmekriterien:
 
 - Listen liefern stabile `items`, `nextCursor` und `totalCount`
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
+- sensitive Connection-Refs liefern Policy-Metadaten fuer
+  `schema_compare`, Reverse, Import und Transfer
 - ungueltige Cursor liefern `VALIDATION_ERROR`
 
 ### Phase E - Async-Jobs, Idempotenz und Policy
@@ -1162,6 +1197,8 @@ Abnahmekriterien:
 - Policy-Pruefung fuer Upload und Upload-Abbruch anbinden
 - `data_import_start` an hochgeladene Artefakte binden
 - `data_transfer_start` an Connection-Refs und Policy binden
+- Idempotency-Pruefung fuer `data_import_start` und
+  `data_transfer_start` anbinden
 - Upload- und Artefakt-Limits zentral konfigurieren
 
 Abnahmekriterien:
@@ -1173,6 +1210,9 @@ Abnahmekriterien:
 - finalisierte Artefakte sind immutable
 - Upload, Upload-Abbruch, Import und Transfer laufen nur mit
   Policy-Freigabe
+- Import/Transfer-Retries mit gleichem `idempotencyKey` deduplizieren;
+  abweichender Payload mit gleichem Key liefert
+  `IDEMPOTENCY_CONFLICT`
 
 ### Phase G - KI-nahe Tools, Prompts, Tests und Dokumentation
 
@@ -1215,6 +1255,10 @@ Pflichtabdeckung:
 - Resource-URI-Parser
 - Tenant-Scope-Pruefung
 - Payload-Fingerprint
+- Ausschluss transienter Kontrollfelder aus dem Fingerprint:
+  `idempotencyKey`, `approvalToken`, `clientRequestId`, `requestId`
+- Upload-Approval-Fingerprint ueber Session-Metadaten, nicht ueber
+  Segmentdaten
 - Idempotency-Store
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
 - Policy-Entscheidungen
@@ -1230,6 +1274,8 @@ Pflichtabdeckung:
   `segmentIndex`-Validierung
 - Cursor-Serialisierung und -Validierung
 - Runtime-Bootstrap fuer Driver- und Codec-Registries
+- ConnectionReferenceStore und Connection-Resolver inklusive
+  Sensitivitaets-/Produktionsmetadaten
 - Cancel-Berechtigungen und terminale Jobzustaende
 - Prompt-Registry und Prompt-Parameter-Validierung
 - Prompt-Hygiene-Pruefung fuer Secrets und Massendaten
@@ -1255,6 +1301,7 @@ Fuer Start-Tools zusaetzlich:
   read-only Tools
 - synchroner Approval-Flow mit `approvalKey` fuer `artifact_upload`,
   `artifact_upload_abort` und KI-nahe Tools
+- Idempotency-Flow fuer `data_import_start` und `data_transfer_start`
 
 ### 9.3 Integrationstests
 
@@ -1306,6 +1353,13 @@ Verbindliche Negativfaelle:
 - KI-nahes Tool ohne `approvalKey`
 - Wiederverwendung eines Approval-Tokens mit anderem
   `payloadFingerprint`
+- zweiter Approval-Aufruf mit zusaetzlichem `approvalToken` veraendert
+  den Payload-Fingerprint nicht
+- Upload-Approval bleibt ueber mehrere Segmente derselben Session stabil
+- `data_import_start` oder `data_transfer_start` ohne
+  `idempotencyKey`
+- `data_import_start` oder `data_transfer_start` mit gleichem
+  `idempotencyKey`, aber anderem Payload
 - `job_cancel` fuer fremde Tenants oder fremde Principals
 - KI-nahes Tool ohne Policy-Freigabe
 - externer KI-Provider ohne erlaubende Policy
@@ -1421,8 +1475,13 @@ Gegenmassnahme:
 - Discovery-Tools Jobs, Artefakte und Schemas paginiert liefern
 - MCP-Bootstrap Driver und Schema-Codecs fuer die realen Tool-Pfade
   registriert
+- tenant-scoped Connection-Refs ueber einen eigenen Store/Resolver
+  aufgeloest werden und Policy-Metadaten fuer sensitive Verbindungen
+  liefern
 - Start-Tools Idempotency-Key, Payload-Fingerprint und Konflikte korrekt
   behandeln
+- Import und Transfer dieselben Idempotenzregeln wie andere Start-Tools
+  erzwingen
 - synchrone connection-backed Tools den `approvalKey`-/`approvalToken`-
   Flow fuer sensitive Ressourcen korrekt erzwingen
 - policy-pflichtige Upload- und Datenoperationen den Approval-Flow
