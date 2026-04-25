@@ -132,9 +132,15 @@ Tool-Resultate:
 - chunkbare Ressourcen werden ueber eigene Chunk-URIs oder Resource-
   Templates adressiert, nicht ueber zusaetzliche `resources/read`-
   Parameter
-- Chunk-Resources koennen im Payload Metadaten wie `chunkId`,
-  `nextChunkUri`, `range`, `truncated=true` und `etag` oder
-  `resourceVersion` enthalten
+- Chunk-Resources trennen Text und Binaerinhalt:
+  - textuelle Ressourcen koennen als MCP-Text-Content Metadaten wie
+    `chunkId`, `nextChunkUri`, `range`, `truncated=true` und `etag` oder
+    `resourceVersion` enthalten
+  - binaere Artefakt-Chunks werden als MCP-Blob-Content geliefert, sofern
+    die verwendete MCP-Bibliothek das fuer `resources/read` unterstuetzt,
+    oder ausschliesslich ueber `artifact_chunk_get`
+  - `resources/read` fuehrt kein eigenes Base64-in-JSON-Ersatzformat fuer
+    binaere Artefakte ein
 - grosse Artefakte koennen alternativ ueber ein d-migrate-spezifisches
   Tool wie `artifact_chunk_get` gelesen werden
 
@@ -215,11 +221,18 @@ Hinweis:
     serverseitig geprueften Policy-, Human- oder Admin-Grant;
   - zweiter Aufruf muss denselben `idempotencyKey` bzw. `approvalKey`
     und dieses extern ausgestellte Token enthalten.
+  - Approval-Grants und `approvalToken`-Fingerprints sind immer an
+    `tenantId`, `callerId`, Toolname, `approvalKey` bzw. `idempotencyKey`
+    und `payloadFingerprint` gebunden.
 - 0.9.6 braucht einen Beta-tauglichen Grant-Aussteller, obwohl keine
   vollstaendige Consent-/Admin-UI Teil des Milestones ist: lokale
-  Policy-Allowlist, Admin-CLI oder signierte Grant-Datei. Ein optionaler
-  Local-Demo-Auto-Approval-Modus ist nur fuer Loopback/`stdio` zulaessig,
-  muss explizit unsicher konfiguriert werden und ist immer auditpflichtig.
+  Policy-Allowlist, ein schmales MCP-Admin-Grant-Unterkommando oder
+  signierte Grant-Datei. Das Admin-Unterkommando darf nur
+  `approvalRequestId` pruefen und Grants ausstellen; generelle
+  Mandantenverwaltung oder weitere CLI-Vertragsaenderungen gehoeren nicht
+  dazu. Ein optionaler Local-Demo-Auto-Approval-Modus ist nur fuer
+  Loopback/`stdio` zulaessig, muss explizit unsicher konfiguriert werden
+  und ist immer auditpflichtig.
 - Fuer synchrone policy-pflichtige Tools ohne `idempotencyKey` ist
   `approvalKey` zugleich der Idempotency-Key fuer Nebenwirkungen. Gleicher
   Tenant/Caller/Tool/`approvalKey` mit identischem `payloadFingerprint`

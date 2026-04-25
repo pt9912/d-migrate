@@ -173,6 +173,10 @@ Konsequenz:
   - Connection-Refs
 - strukturierte Fehler-Envelopes mit den in `docs/ki-mcp.md`
   festgelegten Codes
+- schmales MCP-Admin-Grant-Unterkommando nur als Grant-Aussteller fuer
+  `approvalRequestId`-Pruefung und Grant-Ausstellung, ohne generelle
+  Mandantenverwaltung oder bestehende CLI-Vertragsaenderungen ausser dem
+  explizit dokumentierten MCP-Admin-Unterkommando
 - KI-nahe Spezialtools:
   - `procedure_transform_plan`
   - `procedure_transform_execute`
@@ -203,7 +207,8 @@ Konsequenz:
 - neue Datenbank-Treiberfaehigkeiten, die nicht fuer die MCP-Oberflaeche
   selbst erforderlich sind
 - Veraenderung der CLI-Vertraege ausser Start-/Konfigurationsdoku fuer
-  den MCP-Server
+  den MCP-Server und dem explizit in Scope stehenden schmalen
+  MCP-Admin-Grant-Unterkommando
 
 ### 3.3 Lieferabschnitte innerhalb von 0.9.6
 
@@ -329,8 +334,9 @@ Verbindliche Entscheidung:
   `protocolVersion` `2025-11-25`:
   - JSON-RPC-Nachrichten laufen ueber einen einzelnen MCP-Endpunkt mit
     `POST` und optional `GET`
-  - `POST`-Requests muessen `Accept: application/json,
-    text/event-stream` enthalten
+  - `POST`-Requests muessen im `Accept`-Header sowohl
+    `application/json` als auch `text/event-stream` listen; Reihenfolge,
+    Whitespace und Parameter werden robust geparst
   - nach Initialize muessen HTTP-Requests den ausgehandelten
     `MCP-Protocol-Version`-Header senden
   - der Server validiert `Origin` gegen DNS-Rebinding und antwortet bei
@@ -491,7 +497,7 @@ Verbindliche Entscheidung:
     Provider-Aufruf, Artefakt-Publish oder anderen Nebenwirkungen
   - `approvalToken` ist transient und darf den Fingerprint nicht veraendern
 - das `approvalToken` wird an (`toolName`, `callerId`, `approvalKey`,
-  `payloadFingerprint`) gebunden
+  `tenantId`, `payloadFingerprint`) gebunden
 - fehlt bei einer policy-pflichtigen synchronen Operation der
   `approvalKey`, liefert der Server `VALIDATION_ERROR`
 - fuer `artifact_upload_init` wird der Approval-Fingerprint aus den
@@ -513,7 +519,8 @@ Verbindliche Entscheidung:
   `POLICY_REQUIRED` enden:
   - lokale Policy-Allowlist fuer klar begrenzte Operationen, Principals,
     Tenant, Toolnamen, Scopes und Fingerprints
-  - oder Admin-CLI fuer `approvalRequestId`-Pruefung und Grant-Ausstellung
+  - oder schmales MCP-Admin-Grant-Unterkommando fuer
+    `approvalRequestId`-Pruefung und Grant-Ausstellung
   - oder signierte Grant-Datei mit Ablaufzeit, Issuer-Fingerprint und
     Audit-Spur
   - optional zusaetzlich ein expliziter Local-Demo-Auto-Approval-Modus, nur
@@ -730,6 +737,7 @@ Erwartete Kernmodelle und Projektionen:
   - `approvalRequestId`
   - `approvalTokenFingerprint`
   - `toolName`
+  - `tenantId`
   - `callerId`
   - `payloadFingerprint`
   - `expiresAt`
@@ -1040,9 +1048,17 @@ Verbindliche Regeln:
 - chunkbare Inhalte werden ueber stabile Chunk-URIs modelliert, z.B.
   `dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}`
   oder aequivalente Resource-Template-URIs
-- Chunk-Resources enthalten im Text/JSON-Payload nur den Chunk-Inhalt
-  plus minimale Metadaten wie `chunkId`, `nextChunkUri`, `range`,
-  `truncated=true` und `etag`/`resourceVersion`
+- Chunk-Resources unterscheiden Text und Binaerinhalt:
+  - textuelle Ressourcen duerfen als MCP-Text-Content geliefert werden und
+    enthalten neben dem Text nur minimale Metadaten wie `chunkId`,
+    `nextChunkUri`, `range`, `truncated=true` und `etag`/
+    `resourceVersion`
+  - binaere Artefakt-Chunks werden entweder als MCP-Blob-Content geliefert,
+    sofern die verwendete MCP-Bibliothek Blob-Contents fuer
+    `resources/read` unterstuetzt, oder ausschliesslich ueber
+    `artifact_chunk_get`
+  - `resources/read` erfindet kein Base64-in-JSON-Ersatzformat fuer binaere
+    Artefakte
 - grosse Artefakte koennen alternativ ueber das Tool
   `artifact_chunk_get` gelesen werden; dieses Tool ist d-migrate-
   spezifisch und nicht Teil des MCP-`resources/read`-Schemas
@@ -1376,8 +1392,8 @@ Gemeinsame Regeln:
 - beim zweiten policy-pflichtigen Init-Aufruf muss der Client dasselbe
   `approvalKey` und ein durch Policy-/Human-/Admin-Mechanismus
   ausgestelltes `approvalToken` senden
-- das policy-pflichtige Init-`approvalToken` ist an `toolName`, `callerId`,
-  `approvalKey` und den session-metadatenbezogenen
+- das policy-pflichtige Init-`approvalToken` ist an `toolName`, `tenantId`,
+  `callerId`, `approvalKey` und den session-metadatenbezogenen
   `payloadFingerprint` gebunden
 - `approvalKey` dedupliziert den erfolgreichen Init-Aufruf: gleicher
   Tenant, Caller, Toolname, `approvalKey` und `payloadFingerprint` liefern
@@ -1542,8 +1558,8 @@ Gemeinsame Regeln:
 - `approvalKey` ist fuer alle drei Tools Pflicht
 - beim zweiten Aufruf muss der Client dasselbe `approvalKey` und das
   passende, extern ausgestellte `approvalToken` senden
-- das `approvalToken` ist an `toolName`, `callerId`, `approvalKey` und
-  `payloadFingerprint` gebunden
+- das `approvalToken` ist an `toolName`, `tenantId`, `callerId`,
+  `approvalKey` und `payloadFingerprint` gebunden
 - `approvalKey` dedupliziert synchrone Nebenwirkungen: gleicher Tenant,
   Caller, Toolname, `approvalKey` und `payloadFingerprint` liefern dasselbe
   Tool-Ergebnis bzw. dieselbe Artefakt-/Provider-Referenz; abweichender
@@ -1775,7 +1791,10 @@ Abnahmekriterien:
   Capabilities oder `capabilities_list` sichtbar
 - Streamable-HTTP-Endpunkt mit MCP-konformen `POST`-/`GET`-Regeln
   implementieren:
-  - `Accept: application/json, text/event-stream` fuer `POST`
+  - `POST`-`Accept`-Header muss Media Ranges robust parsen und sowohl
+    `application/json` als auch `text/event-stream` als unterstuetzte
+    Content Types erkennen; Reihenfolge, Whitespace und Parameter sind
+    nicht normativ
   - JSON-RPC-Notification oder JSON-RPC-Response per `POST` liefert bei
     Annahme HTTP `202 Accepted` ohne Body
   - JSON-RPC-Request per `POST` liefert entweder
@@ -1838,9 +1857,9 @@ Abnahmekriterien:
 
 - ein MCP-Client kann den Server initialisieren
 - lokale und HTTP-Transporttests laufen gegen dieselbe Tool-Registry
-- HTTP-Transporttests decken Accept-Header, `MCP-Protocol-Version`,
-  Origin-Validierung, optionales `MCP-Session-Id`, `GET`-Semantik und
-  `DELETE` mit `MCP-Session-Id` ab
+- HTTP-Transporttests decken robuste Accept-Header-Auswertung,
+  `MCP-Protocol-Version`, Origin-Validierung, optionales
+  `MCP-Session-Id`, `GET`-Semantik und `DELETE` mit `MCP-Session-Id` ab
 - Streamable-HTTP-POST-Tests decken MCP-Wire-Semantik ab:
   Notifications und JSON-RPC-Responses liefern `202 Accepted` ohne Body;
   JSON-RPC-Requests liefern `Content-Type: application/json` oder
@@ -2004,9 +2023,10 @@ Abnahmekriterien:
   Ueberschreitung liefert `RATE_LIMITED`
 - Start-/Runner-Timeouts konfigurieren und auf `OPERATION_TIMEOUT` mappen
 - Grant-Aussteller implementieren und dokumentieren:
-  lokale Policy-Allowlist, Admin-CLI oder signierte Grant-Datei; optionaler
-  Demo-Auto-Approval-Modus nur fuer Loopback/`stdio` und mit Audit
-- `ApprovalGrantStore` speichert Grant-Metadaten, Ablauf, Issuer-
+  lokale Policy-Allowlist, schmales MCP-Admin-Grant-Unterkommando oder
+  signierte Grant-Datei; optionaler Demo-Auto-Approval-Modus nur fuer
+  Loopback/`stdio` und mit Audit
+- `ApprovalGrantStore` speichert Grant-Metadaten, Tenant, Ablauf, Issuer-
   Fingerprint, Scope, Payload-Fingerprint und Token-Fingerprint, aber nie
   rohe Tokens
 - Jobstatus exakt aus `docs/job-contract.md` verwenden:
@@ -2179,8 +2199,9 @@ Pflichtabdeckung:
 - Lease-/Recovery-/Denial-Semantik fuer `PENDING`,
   `AWAITING_APPROVAL` und `DENIED`, inklusive `POLICY_DENIED`
 - Approval-Grant-Store mit Token-Fingerprint statt Roh-Token
-- Grant-Aussteller fuer lokale Allowlist, Admin-CLI oder signierte
-  Grant-Datei inklusive Ablauf, Issuer-Fingerprint und Audit-Metadaten
+- Grant-Aussteller fuer lokale Allowlist, schmales
+  MCP-Admin-Grant-Unterkommando oder signierte Grant-Datei inklusive
+  Ablauf, Issuer-Fingerprint und Audit-Metadaten
 - Sync-Effect-Idempotency fuer `approvalKey` mit atomarer Reservierung,
   identischer Wiederholung und Konfliktpfad
 - Quota-/Rate-Limit-Service fuer aktive Jobs, Upload-Sessions,
@@ -2342,8 +2363,9 @@ Gemeinsame Tests fuer `stdio` und HTTP:
 
 HTTP-only Tests:
 
-- Streamable-HTTP-POST mit `Accept: application/json,
-  text/event-stream`
+- Streamable-HTTP-POST mit robust geparstem `Accept`-Header, der
+  `application/json` und `text/event-stream` in beliebiger Reihenfolge
+  listet
 - HTTP-Folgeaufruf mit `MCP-Protocol-Version`
 - JSON-RPC-Notification/-Response per Streamable-HTTP-POST liefert
   `202 Accepted` ohne Body
