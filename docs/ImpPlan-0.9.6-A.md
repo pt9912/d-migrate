@@ -612,8 +612,17 @@ Aufgaben:
 - atomare Schreibstrategie verbindlich festlegen:
   - Schreiben in `<finalpath>.tmp.<uuid>` im selben Verzeichnis
   - `sha256` streamend ueber `DigestInputStream` berechnen
-  - `Files.move(... ATOMIC_MOVE)` ohne `REPLACE_EXISTING` als
-    Sichtbarkeitsschritt; existierendes Ziel mappt deterministisch auf
+  - **Atomic-Visibility-Schritt via `Files.createLink(final, tmp)`**
+    statt `Files.move(... ATOMIC_MOVE)` ohne `REPLACE_EXISTING`:
+    auf Linux ueberschreibt `rename(2)` (was `Files.move` mit
+    `ATOMIC_MOVE` aufruft) das Ziel auch ohne `REPLACE_EXISTING`
+    silent — die im urspruenglichen Plan geforderte
+    "fail-on-existing"-Semantik laesst sich damit nicht einhalten.
+    `Files.createLink` (POSIX `link(2)`) liefert exakt die geforderte
+    Atomar-mit-EEXIST-bei-Existenz-Semantik portable und ohne
+    Filesystem-Spezifika; der `tmp`-Pfad wird anschliessend
+    via `Files.deleteIfExists` aufgeraeumt
+  - existierendes Ziel mappt deterministisch auf
     `AlreadyStored`/`AlreadyExists` (gleicher Hash) bzw. `Conflict`
     (anderer Hash); abgebrochene Writes hinterlassen kein sichtbares Ziel
 - Path-Traversal-Schutz: `sessionId` und `artifactId` werden vor jedem
