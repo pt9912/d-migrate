@@ -1,6 +1,8 @@
 package dev.dmigrate.mcp.transport
 
 import dev.dmigrate.mcp.protocol.McpService
+import org.eclipse.lsp4j.jsonrpc.Endpoint
+import org.eclipse.lsp4j.jsonrpc.MessageConsumer
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
 import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.eclipse.lsp4j.jsonrpc.services.GenericEndpoint
@@ -31,9 +33,17 @@ internal object McpEndpointFactory {
 
     fun remoteEndpoint(
         localService: McpService,
-        outboundConsumer: org.eclipse.lsp4j.jsonrpc.MessageConsumer,
-    ): RemoteEndpoint {
-        val genericEndpoint = GenericEndpoint(localService)
-        return RemoteEndpoint(outboundConsumer, genericEndpoint)
-    }
+        outboundConsumer: MessageConsumer,
+    ): RemoteEndpoint = remoteEndpoint(GenericEndpoint(localService), outboundConsumer)
+
+    /**
+     * Variant that takes a pre-built [Endpoint] (typically a cached
+     * `GenericEndpoint` held by `SessionState`) — avoids the
+     * reflection scan that `GenericEndpoint(service)` runs in its
+     * constructor.
+     */
+    fun remoteEndpoint(
+        localEndpoint: Endpoint,
+        outboundConsumer: MessageConsumer,
+    ): RemoteEndpoint = RemoteEndpoint(outboundConsumer, localEndpoint)
 }

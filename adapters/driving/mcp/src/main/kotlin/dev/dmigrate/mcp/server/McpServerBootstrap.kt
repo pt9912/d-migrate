@@ -61,9 +61,13 @@ object McpServerBootstrap {
             port = config.port,
             host = config.bindAddress,
             module = {
-                // AP 6.4: minimal POST /mcp. AP 6.5 layers Origin /
-                // session / GET / DELETE on top.
-                installMcpHttpRoute(serviceFactory = { McpServiceImpl(serverVersion) })
+                // AP 6.5: full Streamable-HTTP route (POST/GET/DELETE,
+                // Origin, Session-Id, Protocol-Version, Accept). AP 6.6
+                // wraps Bearer/JWKS auth around the dispatch chain.
+                installMcpHttpRoute(
+                    config = config,
+                    serviceFactory = { McpServiceImpl(serverVersion) },
+                )
             },
         )
         engine.start(wait = false)
