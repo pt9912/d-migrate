@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.server
 
+import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -40,6 +41,7 @@ object McpServerBootstrap {
     fun startHttp(config: McpServerConfig): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
+        RuntimeBootstrap.initialize()
         // Routes (`/mcp`, `/.well-known/...`) follow in AP 6.4/6.5.
         val engine = embeddedServer(
             factory = CIO,
@@ -57,6 +59,7 @@ object McpServerBootstrap {
     fun startStdio(config: McpServerConfig): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
+        RuntimeBootstrap.initialize()
         return McpStartOutcome.Started(StdioHandle())
     }
 }

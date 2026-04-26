@@ -22,7 +22,7 @@ import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.cli.output.OutputFormatter
-import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import java.nio.file.Path
 import java.time.ZoneId
 import java.util.Locale
@@ -143,13 +143,15 @@ class DMigrate(
 /**
  * Bootstrap §6.18 / Phase E: Treiber registrieren ihre JdbcUrlBuilder,
  * DataReader und TableLister einmal beim Programmstart vor dem ersten
- * Command-Dispatch.
+ * Command-Dispatch. Seit 0.9.6 Phase B (§6.3) delegiert die CLI auf
+ * den gemeinsamen `RuntimeBootstrap`, damit MCP und CLI denselben
+ * Pfad nutzen.
  *
  * `internal` für [Main.kt]-Tests, die die Bootstrap-Sequenz ohne
  * `exitProcess` ausführen wollen.
  */
 internal fun registerDrivers() {
-    DatabaseDriverRegistry.loadAll()
+    RuntimeBootstrap.initialize()
 }
 
 /**
