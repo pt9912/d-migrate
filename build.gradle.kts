@@ -150,6 +150,7 @@ dependencies {
     kover(project(":adapters:driven:driver-mysql-profiling"))
     kover(project(":adapters:driven:driver-sqlite"))
     kover(project(":adapters:driven:driver-sqlite-profiling"))
+    kover(project(":adapters:driven:audit-logging"))
     kover(project(":adapters:driven:formats"))
     kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))

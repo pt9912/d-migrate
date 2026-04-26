@@ -997,13 +997,72 @@ Aufgaben:
   - Scope endet im `finally`-Pfad mit Erfolg oder Fehler
   - fruehe Fehler wie Auth, Validation, Scope, Policy und Idempotency werden
     ebenfalls auditiert
+- `AuditScope`-API mit Builder fuer late-bound Felder:
+  ```kotlin
+  class AuditScope(
+      private val sink: AuditSink,
+      private val clock: Clock,
+      private val scrubber: SecretScrubber,
+  ) {
+      fun <T> around(context: AuditContext, block: (AuditFields) -> T): T
+  }
+
+  data class AuditContext(
+      val requestId: String,
+      val toolName: String? = null,
+      val tenantId: TenantId? = null,
+      val principalId: PrincipalId? = null,
+  )
+
+  class AuditFields {
+      var payloadFingerprint: String? = null
+      var resourceRefs: List<String> = emptyList()
+  }
+  ```
+  Der `block` erhaelt eine mutable [AuditFields]-Instanz, ueber die er
+  spaet gebundene Felder (Fingerprint nach Canonicalization, Resource-Refs
+  nach Lookup) befuellt. `around` misst `durationMs`, faengt Throwables,
+  emittiert das Event im `finally`-Pfad und **wirft die Original-Exception
+  weiter**.
+- Outcome-Mapping fuer den Scope:
+  - Block returnt -> `SUCCESS`, `errorCode = null`
+  - `ApplicationException` -> `FAILURE`, `errorCode = ex.code`, rethrow
+  - jede andere `Throwable` -> `FAILURE`,
+    `errorCode = INTERNAL_AGENT_ERROR`, rethrow
 - Secret-Scrubbing fuer Audit-Felder definieren:
   - keine rohen Tokens
   - keine JDBC-Secrets
   - keine kompletten Uploadsegmente
   - keine ungefilterten SQL-/DDL-/Prozedurtexte
   - Approval-Tokens nur als ID oder Fingerprint
+- `SecretScrubber` als adapterneutrales Helper-Object:
+  ```kotlin
+  class SecretScrubber {
+      fun scrub(text: String): String
+  }
+  ```
+  `AuditScope` ruft `scrubber.scrub(...)` ueber jede `resourceRef`
+  vor `sink.emit`. `AuditEvent` haelt sowieso keine Raw-Payloads (nur
+  Fingerprints/IDs), daher zielt das Scrubbing auf
+  versehentlich-eingeschleuste Marker in `resourceRefs`. Phase-A-
+  Patterns: JDBC-Passwords (`password=...`), Bearer-Tokens, Approval-
+  Token-Marker (`tok_...`).
+- `LoggingAuditSink` schreibt **eine Zeile pro Event** als manuell
+  formatiertes JSON (kein Jackson — neues Modul soll duenn bleiben),
+  Logger-Name `dev.dmigrate.audit`, Level `INFO`. Beispiel:
+  ```
+  {"requestId":"req-1","outcome":"SUCCESS","toolName":"data.export",
+   "tenantId":"acme","durationMs":42}
+  ```
+  `null`-Felder werden ausgelassen, damit Log-Aggregatoren keine
+  unnoetigen Keys parsen.
+- Neues Modul `adapters:driven:audit-logging` analog zu
+  `adapters:driven:storage-file`: haengt an `:hexagon:ports-common`,
+  `implementation` SLF4J, keine weiteren Deps. Eintrag in
+  `settings.gradle.kts` + Kover-Aggregator in Root-`build.gradle.kts`.
 - AuditSink-Test-Doubles fuer Unit-Tests bereitstellen
+  (`InMemoryAuditSink` existiert seit AP 6.2 in
+  `hexagon:ports-common` testFixtures)
 
 Abnahme:
 
@@ -1011,9 +1070,15 @@ Abnahme:
   `POLICY_REQUIRED`, `POLICY_DENIED` und `IDEMPOTENCY_CONFLICT` erzeugen
   Audit-Outcomes
 - bei fehlendem Principal wird kein erfundener Principal auditiert
+  (`AuditContext.principalId == null` -> `AuditEvent.principalId == null`)
 - gescrubbte Felder enthalten keine bekannten Secret-/Token-Marker
 - identische Retries sind im Audit erkennbar, ohne Payloads im Klartext zu
   speichern
+- `AuditScope.around` rethrowt die Original-Exception nach dem
+  `sink.emit`-Aufruf — Caller sehen denselben Throwable, den sie ohne
+  Audit-Wrapper sehen wuerden
+- `LoggingAuditSink` schreibt deterministisches JSON, das von einem
+  Logger-Spy in `LoggingAuditSinkTest` parsbar bestaetigt wird
 
 ---
 
@@ -1513,12 +1578,14 @@ wird vom Service durchgereicht.
 
 | Klasse | Paket | Modul |
 | --- | --- | --- |
-| `AuditEvent`, `AuditOutcome` | `...server.core.audit` | `hexagon:core` |
-| `AuditSink` | `...server.ports` | `hexagon:ports-common` |
+| `AuditEvent`, `AuditOutcome` | `...server.core.audit` | `hexagon:core` (seit AP 6.1) |
+| `AuditSink` | `...server.ports` | `hexagon:ports-common` (seit AP 6.2) |
 | `AuditScope` (around-/finally-Wrapper) | `...server.application.audit` | `hexagon:application` |
+| `AuditContext` (data class) | `...server.application.audit` | `hexagon:application` |
+| `AuditFields` (mutable Builder fuer late-bound Felder) | `...server.application.audit` | `hexagon:application` |
 | `SecretScrubber` | `...server.application.audit` | `hexagon:application` |
 | `LoggingAuditSink` | `...server.adapter.audit.logging` | `adapters:driven:audit-logging` (NEU) |
-| `InMemoryAuditSink` (testFixtures) | `...server.ports.memory` | `hexagon:ports-common` testFixtures |
+| `InMemoryAuditSink` (testFixtures) | `...server.ports.memory` | `hexagon:ports-common` testFixtures (seit AP 6.2) |
 
 ---
 
