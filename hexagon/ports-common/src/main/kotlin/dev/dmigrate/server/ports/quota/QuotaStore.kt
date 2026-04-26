@@ -11,10 +11,19 @@ enum class QuotaDimension {
     PROVIDER_CALLS,
 }
 
+/**
+ * Identifies a quota counter slot. The §4.7 plan demands "active jobs
+ * per tenant/principal **and operation**", so [operation] participates
+ * in the key alongside the optional [principalId]. `null` means
+ * tenant-scoped (or tenant+principal-scoped) without per-operation
+ * partitioning; non-null applies the limit per `(tenant, principal?,
+ * operation)` triple.
+ */
 data class QuotaKey(
     val tenantId: TenantId,
     val dimension: QuotaDimension,
     val principalId: PrincipalId? = null,
+    val operation: String? = null,
 )
 
 data class QuotaCounter(

@@ -20,13 +20,15 @@ data class UploadLimits(
 
 /**
  * Per-tenant defaults from `ImpPlan-0.9.6-A.md` §14.2. Per-principal
- * overrides are deliberately omitted in Phase A — `QuotaKey` already
- * supports them at the store level, but no default is configured here.
+ * and per-operation overrides are deliberately omitted in Phase A —
+ * `QuotaKey` already supports both at the store level, but no
+ * default is configured here.
  */
 data class QuotaLimits(
     val activeJobsPerTenant: Long = 16,
     val activeUploadsPerTenant: Long = 4,
     val uploadBytesPerTenant: Long = 1L * 1024 * 1024 * 1024,
+    val parallelSegmentWritesPerSession: Long = 4,
     val providerCallsPerMinute: Long = 60,
 )
 

@@ -1700,15 +1700,17 @@ explizit ueberschrieben.
 | `quota.activeJobsPerTenant` | 16 | konservativ |
 | `quota.activeUploadsPerTenant` | 4 | begrenzt parallele Spool-Files |
 | `quota.uploadBytesPerTenant` | 1 GiB | konservativ; per Deployment ueberschreibbar |
+| `quota.parallelSegmentWritesPerSession` | 4 | begrenzt File-Handle-Druck pro Session |
 | `quota.providerCallsPerMinute` | 60 | KI-Provider-Schutz |
 
 Carrier: `dev.dmigrate.server.application.config.ServerCoreLimits` (data class
 mit nested `IdempotencyLimits`/`ApprovalLimits`/`UploadLimits`/`QuotaLimits`),
 per Konstruktorinjektion in Services. Defaults entsprechen der Tabelle oben;
-Unit-Tests setzen abweichende Werte ueber `copy(...)`. Per-Principal-Limits
-(Subset von `QuotaLimits` mit `principalId`-Override) bleiben in Phase A
-absichtlich offen — `QuotaKey.principalId: PrincipalId?` erlaubt sie schon
-auf Store-Ebene, aber kein Default ist konfiguriert.
+Unit-Tests setzen abweichende Werte ueber `copy(...)`. Per-Principal- und
+Per-Operation-Limits (Subsets von `QuotaLimits` mit `principalId`- bzw.
+`operation`-Override) bleiben in Phase A absichtlich offen —
+`QuotaKey.principalId: PrincipalId?` und `QuotaKey.operation: String?`
+erlauben sie schon auf Store-Ebene, aber kein Default ist konfiguriert.
 
 ### 14.3 `IdempotencyStore.reserve(...)` Rueckgabetyp
 

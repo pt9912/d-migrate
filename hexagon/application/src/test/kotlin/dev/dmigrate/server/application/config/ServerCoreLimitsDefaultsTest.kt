@@ -23,6 +23,7 @@ class ServerCoreLimitsDefaultsTest : FunSpec({
         limits.quota.activeJobsPerTenant shouldBe 16L
         limits.quota.activeUploadsPerTenant shouldBe 4L
         limits.quota.uploadBytesPerTenant shouldBe 1L * 1024 * 1024 * 1024
+        limits.quota.parallelSegmentWritesPerSession shouldBe 4L
         limits.quota.providerCallsPerMinute shouldBe 60L
     }
 
