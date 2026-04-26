@@ -7,12 +7,14 @@ in `docs/` nutzen ebenfalls Markdown.
 
 ## Problem
 
-Die SHA-256-Berechnung mit Hex-Ausgabe wird im Repo an neun Stellen neu
-implementiert (acht Quellcodefiles im Refactoring-Scope, eine Stelle im
-Buildscript ausgenommen). Vier verschiedene Schreibweisen (`joinToString
-{ "%02x" }`, `joinToString separator=""`, Lookup-Table,
+Die SHA-256-Berechnung mit Hex-Ausgabe wird im Repo an inzwischen elf
+Stellen neu implementiert (zehn Quellcodefiles im Refactoring-Scope,
+eine Stelle im Buildscript ausgenommen). Vier verschiedene Schreibweisen
+(`joinToString { "%02x" }`, `joinToString separator=""`, Lookup-Table,
 Buildscript-Variante) machen Refactorings, Performance-Tuning und Tests
-unnötig fragmentiert.
+unnötig fragmentiert. AP 6.4 und 6.5 (0.9.6 Phase A) haben jeweils eine
+weitere Lookup-Table-Kopie hinzugefuegt — der Druck zur Konsolidierung
+waechst.
 
 ### Aktuelle Fundstellen
 
@@ -24,6 +26,8 @@ unnötig fragmentiert.
 | `hexagon/ports-common/src/testFixtures/kotlin/dev/dmigrate/server/ports/memory/InMemoryArtifactContentStore.kt` | 52 | `joinToString(separator="") { ... "%02x".format(byte) }` |
 | `hexagon/ports-common/src/testFixtures/kotlin/dev/dmigrate/server/ports/memory/InMemoryUploadSegmentStore.kt` | 85 | gleiche Form wie ArtifactContent |
 | `adapters/driven/storage-file/src/main/kotlin/dev/dmigrate/server/adapter/storage/file/StreamingHashWriter.kt` | 43–52 | Lookup-Table (schnellste Variante) |
+| `hexagon/application/src/main/kotlin/dev/dmigrate/server/application/fingerprint/PayloadFingerprintService.kt` | 28–41 | Lookup-Table-Kopie (0.9.6 AP 6.4) |
+| `hexagon/application/src/main/kotlin/dev/dmigrate/server/application/approval/ApprovalTokenFingerprint.kt` | 21–32 | Lookup-Table-Kopie (0.9.6 AP 6.5) |
 | `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/data/perf/LargeJsonFixture.kt` | 74, 211 | `joinToString("") { "%02x".format(it) }` |
 | `adapters/driven/formats/src/test/kotlin/dev/dmigrate/format/data/perf/LargeJsonFixtureTest.kt` | 152 | gleiche Form |
 | `adapters/driving/cli/build.gradle.kts` | 38 | Buildscript-lokal — nicht im Refactoring-Scope |
