@@ -68,14 +68,15 @@ class InMemoryUploadSessionStore : UploadSessionStore {
         return outcome ?: TransitionOutcome.NotFound
     }
 
-    override fun expireDue(now: Instant): Int {
-        var expired = 0
+    override fun expireDue(now: Instant): List<UploadSession> {
+        val expired = mutableListOf<UploadSession>()
         sessions.replaceAll { _, session ->
             if (session.state == UploadSessionState.ACTIVE &&
                 (session.idleTimeoutAt.isBefore(now) || session.absoluteLeaseExpiresAt.isBefore(now))
             ) {
-                expired++
-                session.copy(state = UploadSessionState.EXPIRED, updatedAt = now)
+                val transitioned = session.copy(state = UploadSessionState.EXPIRED, updatedAt = now)
+                expired.add(transitioned)
+                transitioned
             } else {
                 session
             }

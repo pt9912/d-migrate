@@ -77,7 +77,9 @@ abstract class UploadSessionStoreContractTests(factory: () -> UploadSessionStore
             ),
         )
         store.save(Fixtures.uploadSession("fresh"))
-        store.expireDue(Fixtures.NOW) shouldBe 1
+        val expired = store.expireDue(Fixtures.NOW)
+        expired.map { it.uploadSessionId } shouldBe listOf("stale")
+        expired.single().state shouldBe UploadSessionState.EXPIRED
         store.findById(Fixtures.tenant("acme"), "stale")?.state shouldBe UploadSessionState.EXPIRED
         store.findById(Fixtures.tenant("acme"), "fresh")?.state shouldBe UploadSessionState.ACTIVE
     }

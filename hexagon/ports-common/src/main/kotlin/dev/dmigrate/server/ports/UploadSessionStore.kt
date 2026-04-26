@@ -28,7 +28,14 @@ interface UploadSessionStore {
         now: Instant,
     ): TransitionOutcome
 
-    fun expireDue(now: Instant): Int
+    /**
+     * Transitions every ACTIVE session whose `idleTimeoutAt` or
+     * `absoluteLeaseExpiresAt` is before [now] to `EXPIRED`. Returns
+     * the affected sessions in their post-transition form so callers
+     * (the `UploadSessionService`) can drive segment cleanup per
+     * session.
+     */
+    fun expireDue(now: Instant): List<UploadSession>
 }
 
 sealed interface TransitionOutcome {
