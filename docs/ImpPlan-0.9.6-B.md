@@ -560,11 +560,14 @@ Akzeptanz:
 
 Aufgaben:
 
-- gemeinsame MCP-Server-Konfiguration modellieren
+- gemeinsame MCP-Server-Konfiguration modellieren — verbindlicher
+  Feldsatz und Validierungsregeln in §12.12
 - `stdio`-Startpfad implementieren
 - HTTP-Startpfad implementieren
 - Bind-Adresse, Base-URL, Auth-Modus, Issuer, JWKS/Introspection,
   Clock-Skew und Scope-Mapping konfigurierbar machen
+- `McpLimits`-Block in `ServerCoreLimits` ergaenzen
+  (`sessionIdleTimeout` Default 30 Min, §12.5)
 - unsichere lokale Demo-Konfiguration explizit markieren
 
 Akzeptanz:
@@ -574,6 +577,8 @@ Akzeptanz:
   Konfiguration
 - HTTP ohne Auth auf `0.0.0.0`, Public Base URL oder nicht-lokaler
   Bind-Adresse wird abgelehnt
+- alle Verstoesse aus §12.12 sind Startfehler vor dem ersten Client-
+  Request
 
 ### 6.3 Runtime-Bootstrap kapseln
 
@@ -1183,29 +1188,58 @@ Handler, den Phase B implementiert. Begruendung:
 §11 wird entsprechend angepasst: `capabilities_list` zaehlt nicht zu
 "Phase C baut darauf auf" sondern ist bereits in Phase B vorhanden.
 
-### 12.4 Session-ID-Pflicht
+### 12.12 Server-Konfiguration (`McpServerConfig`)
 
-Default:
+Verbindlicher Feldsatz fuer AP 6.2 (alle anderen §-Verweise sind die
+fachliche Grundlage; dieses Anchor ist die Referenz beim Coden):
 
-- `MCP-Session-Id` optional halten, solange keine serverseitigen Streams
-  oder Sessionzustand zwingend erforderlich sind
+```kotlin
+enum class AuthMode { DISABLED, JWT_JWKS, JWT_INTROSPECTION }
 
-Verbindlich:
+data class McpServerConfig(
+    // Bind / HTTP
+    val bindAddress: String = "127.0.0.1",
+    val port: Int = 0,
+    val publicBaseUrl: URI? = null,
+    val allowedOrigins: Set<String> = setOf(
+        "http://localhost:*", "http://127.0.0.1:*",
+    ),
+    // Auth (HTTP)
+    val authMode: AuthMode = AuthMode.JWT_JWKS,
+    val issuer: URI? = null,
+    val jwksUrl: URI? = null,
+    val introspectionUrl: URI? = null,
+    val audience: String? = null,
+    val algorithmAllowlist: Set<String> = setOf(
+        "RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
+    ),
+    val clockSkew: Duration = Duration.ofSeconds(60),
+    val scopeMapping: Map<String, Set<String>> = defaultScopeMapping(), // §12.9
+    // stdio
+    val stdioTokenFile: Path? = null, // §12.10
+)
+```
 
-- wenn der Server eine Session-ID vergibt, muss sie fuer Folge-Requests
-  validiert werden
-- unbekannte oder abgelaufene Session-IDs liefern definierte Fehlerpfade
+Verbindliche Validierung beim Serverstart (§4.3, §4.4, §12.6):
 
-### 12.5 Discovery ohne fertige Tool-Handler
+- `authMode == DISABLED` verlangt:
+  - `InetAddress.getByName(bindAddress).isLoopbackAddress` `== true`
+  - `publicBaseUrl == null`
+  - `bindAddress` ist nicht `0.0.0.0`, `::`, oder ein DNS-Name, der zu
+    nicht-loopback aufloest
+- `authMode in {JWT_JWKS, JWT_INTROSPECTION}` verlangt:
+  - `issuer != null`, `audience != null`
+  - `JWT_JWKS` zusaetzlich `jwksUrl != null`
+  - `JWT_INTROSPECTION` zusaetzlich `introspectionUrl != null`
+- `allowedOrigins`:
+  - darf `*` (Wildcard alleine) nicht enthalten
+  - bei nicht-loopback-Bind muss die Liste explizit gesetzt sein (Default
+    nur fuer Loopback erlaubt)
+- `algorithmAllowlist`:
+  - darf `none` und `HS*` nicht enthalten
 
-Default:
+Alle Verstoesse sind Startfehler vor dem ersten Client-Request (§5.2).
 
-- Tool-Metadaten und Schemas fuer 0.9.6 vollstaendig registrieren
-- noch nicht implementierte Handler liefern bekannte fachliche Fehler,
-  keine unbekannten Toolnamen
-
-Verbindlich:
-
-- Capabilities duerfen nur implementierte MCP-Faehigkeiten bewerben
-- Toollisten duerfen geplante Tools zeigen, wenn ihr Status und Schema
-  stabil sind und Aufrufe kontrolliert fehlschlagen
+Session-Idle-Timeout kommt nicht aus `McpServerConfig`, sondern aus
+`ServerCoreLimits.mcp.sessionIdleTimeout` (§12.5). AP 6.2 ergaenzt
+dafuer einen `McpLimits`-Block in `ServerCoreLimits`.
