@@ -1282,3 +1282,96 @@ Verbindliche Validierung beim Serverstart (§4.3, §4.4, §12.6):
   lesbar ist (§12.10 — File-Backed Lookup)
 
 Alle Verstoesse sind Startfehler vor dem ersten Client-Request (§5.2).
+
+### 12.13 Streamable-HTTP-Vertraege (verbindlich, fuer AP 6.5 Implementation)
+
+**Routing**
+
+| Methode | Pfad   | Phase B Verhalten |
+| ------- | ------ | ----------------- |
+| `POST`  | `/mcp` | JSON-RPC-Dispatch |
+| `GET`   | `/mcp` | HTTP `405 Method Not Allowed` (kein SSE in Phase B; Server-Push folgt fruehestens Phase C/D) |
+| `DELETE`| `/mcp` | mit gueltiger `MCP-Session-Id`: `200 OK` + Session entfernen; ohne ID: `405` |
+
+**`Accept`-Header (POST)**
+
+- Phase B antwortet ausschliesslich mit `application/json` — SSE-Pfad
+  ist nicht implementiert.
+- Akzeptiert (kein 4xx): fehlend, `*/*`, `application/json`,
+  `application/json, text/event-stream`, oder `text/event-stream,
+  application/json`.
+- Abgelehnt mit `406 Not Acceptable`: `Accept: text/event-stream`
+  alleine (Client verlangt SSE only) — Body: JSON-RPC-Error
+  `-32600` "client requires SSE; not implemented in Phase B".
+
+**Validierungs-Reihenfolge fuer `POST /mcp`**
+
+1. `Origin`-Check (§12.6) — Mismatch: HTTP `403 Forbidden` ohne
+   JSON-RPC-Body, generischer text/plain.
+2. Body parsen — Parse-Error: HTTP `400 Bad Request` mit
+   JSON-RPC-Error-Body `-32700`.
+3. Methode bestimmen (Request/Notification, Methodenname).
+4. `MCP-Session-Id`-/`MCP-Protocol-Version`-Header pruefen
+   (Initialize-Spezialfall siehe unten).
+5. Auth (AP 6.6) — danach erst der Dispatch.
+6. JSON-RPC-Dispatch via `RemoteEndpoint`.
+
+**Initialize-Spezialfall**
+
+- Ein Request mit `method == "initialize"` darf weder
+  `MCP-Session-Id` noch `MCP-Protocol-Version` Header tragen — der
+  Server vergibt beide Werte erst durch dieses Request.
+- Server-Antwort auf erfolgreiches Initialize enthaelt zwei zusaetzliche
+  Response-Header:
+  - `MCP-Session-Id: <uuid v4>`
+  - `MCP-Protocol-Version: 2025-11-25`
+- Initialize-Race ist erlaubt: zwei parallele Initialize-Requests
+  bekommen jeweils eine eigene UUID v4. Kein server-seitiges Locking
+  noetig.
+
+**Folge-Request-Header (alles ausser `initialize`)**
+
+- `MCP-Session-Id` MUSS gesetzt und in der Session-Map vorhanden sein.
+  - fehlt oder unbekannt: HTTP `404 Not Found` mit JSON-RPC-Error
+    `-32000` "session expired or unknown".
+- `MCP-Protocol-Version` MUSS gesetzt und gleich der bei Initialize
+  ausgehandelten Version sein.
+  - fehlt oder weicht ab: HTTP `400 Bad Request` mit JSON-RPC-Error
+    `-32001` "MCP-Protocol-Version mismatch".
+
+**Antwort-Statuscodes (POST)**
+
+- erfolgreicher JSON-RPC-Request: `200 OK` mit
+  `Content-Type: application/json` und JSON-RPC-Response-Body.
+- erfolgreiche Notification (Body ist JSON-RPC-Notification, ohne
+  `id`): `202 Accepted` ohne Body.
+- erfolgreich empfangene Server-Response (Client liefert eine Response
+  auf eine vom Server gestellte Request): `202 Accepted` ohne Body.
+- `Content-Length: 0` Body: HTTP `400 Bad Request`.
+
+**Session-Lifecycle (vertieft §12.5)**
+
+- `SessionState` Felder in Phase B:
+  ```kotlin
+  data class SessionState(
+      val negotiatedProtocolVersion: String,
+      val createdAt: Instant,
+      var lastSeen: Instant,
+      // principalContext: PrincipalContext  ← AP 6.6 ergaenzt
+  )
+  ```
+- Session-Map: `ConcurrentHashMap<UUID, SessionState>` im
+  `McpServerHandle`-Lifetime.
+- TTL-Reaper: Hintergrund-Coroutine prueft alle 60 s; Sessions mit
+  `lastSeen + sessionIdleTimeout < now` werden entfernt.
+- bei jedem akzeptierten Request wird `lastSeen` aktualisiert.
+
+**`installMcpHttpRoute`-Anpassung gegenueber AP 6.4**
+
+- AP 6.4 antwortete Notifications mit `204 No Content` — wird auf
+  `202 Accepted` umgestellt (Plan-Vertrag).
+- AP 6.4 hatte einen einzigen `serviceFactory()` pro Request — AP 6.5
+  baut einen Session-Map-basierten Lookup darauf, sodass nach
+  Initialize derselbe `McpServiceImpl` (mit derselben
+  `negotiatedProtocolVersion`) fuer alle Folge-Requests der Session
+  benutzt wird.
