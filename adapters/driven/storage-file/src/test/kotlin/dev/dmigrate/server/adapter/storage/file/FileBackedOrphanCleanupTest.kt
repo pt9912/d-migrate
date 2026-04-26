@@ -2,10 +2,12 @@ package dev.dmigrate.server.adapter.storage.file
 
 import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.ports.WriteArtifactOutcome
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
+import java.io.IOException
 import java.nio.file.Files
 
 class FileBackedOrphanCleanupTest : FunSpec({
@@ -58,8 +60,8 @@ class FileBackedOrphanCleanupTest : FunSpec({
         Files.exists(sessionDir.resolve("7.meta.json")) shouldBe false
     }
 
-    test("recovery rebuilds sidecar from existing .bin if missing") {
-        val root = Files.createTempDirectory("d-migrate-recovery-")
+    test("missing sidecar over existing .bin throws — §6.3 forbids re-hash recovery") {
+        val root = Files.createTempDirectory("d-migrate-no-rehash-")
         val store = FileBackedUploadSegmentStore(root)
         val payload = "abc".toByteArray()
         store.writeSegment(
@@ -67,16 +69,26 @@ class FileBackedOrphanCleanupTest : FunSpec({
             ByteArrayInputStream(payload),
         )
         Files.delete(root.resolve("segments").resolve("u1").resolve("0.meta.json"))
-        store.listSegments("u1").map { it.segmentIndex } shouldBe listOf(0)
-        Files.exists(root.resolve("segments").resolve("u1").resolve("0.meta.json")) shouldBe true
+        shouldThrow<IOException> { store.listSegments("u1") }
     }
 
-    test("artifact recovery rebuilds sidecar after sidecar removal") {
-        val root = Files.createTempDirectory("d-migrate-art-recover-")
+    test("cleanupOrphans removes data files left behind without sidecar") {
+        val root = Files.createTempDirectory("d-migrate-orphan-bin-")
+        val store = FileBackedUploadSegmentStore(root)
+        val sessionDir = root.resolve("segments").resolve("alive")
+        Files.createDirectories(sessionDir)
+        Files.write(sessionDir.resolve("3.bin"), byteArrayOf(1, 2, 3))
+        val removed = store.cleanupOrphans(activeSessions = setOf("alive"))
+        removed shouldBe 1
+        Files.exists(sessionDir.resolve("3.bin")) shouldBe false
+    }
+
+    test("artifact re-write after sidecar removal throws — §6.3 forbids rehash") {
+        val root = Files.createTempDirectory("d-migrate-art-stale-")
         val store = FileBackedArtifactContentStore(root)
         val payload = "hello".toByteArray()
-        val first = store.write("art", ByteArrayInputStream(payload), payload.size.toLong())
-        first.shouldBeInstanceOf<WriteArtifactOutcome.Stored>()
+        store.write("art", ByteArrayInputStream(payload), payload.size.toLong())
+            .shouldBeInstanceOf<WriteArtifactOutcome.Stored>()
         Files.list(root.resolve("artifacts")).use { stream ->
             stream.filter { it.fileName.toString() != "__staging" && Files.isDirectory(it) }
                 .forEach { shard ->
@@ -84,8 +96,12 @@ class FileBackedOrphanCleanupTest : FunSpec({
                     if (Files.exists(meta)) Files.delete(meta)
                 }
         }
-        val second = store.write("art", ByteArrayInputStream(payload), payload.size.toLong())
-        second.shouldBeInstanceOf<WriteArtifactOutcome.AlreadyExists>()
-        second.existingSha256 shouldBe first.sha256
+        // Re-write attempt: data createLink fails (existing data still
+        // present), and the catch path tries to read the sidecar →
+        // IOException because the sidecar was manually deleted. The
+        // store refuses rather than silently rebuilding from a rehash.
+        shouldThrow<IOException> {
+            store.write("art", ByteArrayInputStream(payload), payload.size.toLong())
+        }
     }
 })

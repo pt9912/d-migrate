@@ -9,6 +9,7 @@ import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.util.UUID
 import kotlin.io.path.deleteRecursively
 
 class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore {
@@ -24,7 +25,7 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
         val finalMeta = sessionDir.resolve("${segment.segmentIndex}${FileLayout.META}")
 
         val tmpBin = sessionDir.resolve(
-            "${segment.segmentIndex}${FileLayout.BIN}${FileLayout.TMP_INFIX}${java.util.UUID.randomUUID()}",
+            "${segment.segmentIndex}${FileLayout.BIN}${FileLayout.TMP_INFIX}${UUID.randomUUID()}",
         )
         val written = try {
             StreamingHashWriter.copyAndHash(source, tmpBin)
@@ -42,24 +43,29 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
             )
         }
 
+        // Data first, then sidecar. The data createLink is the
+        // synchronization point — only one writer wins. The losing
+        // writer reads the existing sidecar (§6.3 forbids rehash) for
+        // conflict resolution. A crash between the two steps leaves
+        // data without sidecar; cleanupOrphans removes it.
+        val sidecar = Sidecar(written.sha256, written.sizeBytes, segment.segmentOffset)
         return try {
             Files.createLink(finalBin, tmpBin)
             Files.deleteIfExists(tmpBin)
-            Sidecar.writeAtomically(finalMeta, Sidecar(written.sha256, written.sizeBytes))
+            Sidecar.writeAtomically(finalMeta, sidecar)
             WriteSegmentOutcome.Stored(segment.copy(segmentSha256 = written.sha256))
         } catch (_: FileAlreadyExistsException) {
             Files.deleteIfExists(tmpBin)
-            resolveExisting(segment, written.sha256, finalBin, finalMeta)
+            resolveExisting(segment, written.sha256, finalMeta)
         }
     }
 
     private fun resolveExisting(
         segment: UploadSegment,
         attemptedSha: String,
-        finalBin: Path,
         finalMeta: Path,
     ): WriteSegmentOutcome {
-        val existingSha = Sidecar.readOrRecover(finalBin, finalMeta).sha256
+        val existingSha = Sidecar.readWithRetry(finalMeta).sha256
         return if (existingSha == attemptedSha) {
             WriteSegmentOutcome.AlreadyStored(segment.copy(segmentSha256 = existingSha))
         } else {
@@ -82,11 +88,12 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
                     val name = binPath.fileName.toString()
                     val index = name.removeSuffix(FileLayout.BIN).toInt()
                     val meta = sessionDir.resolve("$index${FileLayout.META}")
-                    val sidecar = Sidecar.readOrRecover(binPath, meta)
+                    val sidecar = Sidecar.read(meta)
                     UploadSegment(
                         uploadSessionId = uploadSessionId,
                         segmentIndex = index,
-                        segmentOffset = 0L,
+                        segmentOffset = sidecar.segmentOffset
+                            ?: error("segment $index of $uploadSessionId has no persisted offset"),
                         sizeBytes = sidecar.sizeBytes,
                         segmentSha256 = sidecar.sha256,
                     )
@@ -149,9 +156,17 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
         for (entry in entries) {
             val name = entry.fileName.toString()
             val isTmp = name.contains(FileLayout.TMP_INFIX)
+            // Sidecar present without matching .bin = crash between
+            // sidecar-move and data-move. Drop the dangling sidecar so
+            // a retry can write a fresh one.
             val isOrphanMeta = name.endsWith(FileLayout.META) &&
                 !Files.exists(sessionDir.resolve(name.removeSuffix(FileLayout.META) + FileLayout.BIN))
-            if (isTmp || isOrphanMeta) {
+            // Data present without matching .meta.json = crash before
+            // sidecar move (impossible under the new write order, but
+            // covered for completeness in case a legacy spool exists).
+            val isOrphanBin = name.endsWith(FileLayout.BIN) &&
+                !Files.exists(sessionDir.resolve(name.removeSuffix(FileLayout.BIN) + FileLayout.META))
+            if (isTmp || isOrphanMeta || isOrphanBin) {
                 Files.deleteIfExists(entry)
                 removed++
             }

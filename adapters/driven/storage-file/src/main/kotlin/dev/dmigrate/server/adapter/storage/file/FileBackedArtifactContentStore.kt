@@ -43,14 +43,21 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
         }
 
         Files.createDirectories(finalBin.parent)
+        // Data first, then sidecar. The data createLink is the
+        // synchronization point — only one writer wins. The losing
+        // writer reads the existing sidecar (§6.3 forbids rehash) for
+        // conflict resolution. A crash between the two steps leaves
+        // data without sidecar; cleanupOrphans (or the next caller via
+        // Sidecar.read's IOException) flags the corruption.
+        val sidecar = Sidecar(written.sha256, written.sizeBytes)
         return try {
             Files.createLink(finalBin, tmpBin)
             Files.deleteIfExists(tmpBin)
-            Sidecar.writeAtomically(finalMeta, Sidecar(written.sha256, written.sizeBytes))
+            Sidecar.writeAtomically(finalMeta, sidecar)
             WriteArtifactOutcome.Stored(artifactId, written.sha256, written.sizeBytes)
         } catch (_: FileAlreadyExistsException) {
             Files.deleteIfExists(tmpBin)
-            val existingSha = Sidecar.readOrRecover(finalBin, finalMeta).sha256
+            val existingSha = Sidecar.readWithRetry(finalMeta).sha256
             if (existingSha == written.sha256) {
                 WriteArtifactOutcome.AlreadyExists(artifactId, existingSha)
             } else {

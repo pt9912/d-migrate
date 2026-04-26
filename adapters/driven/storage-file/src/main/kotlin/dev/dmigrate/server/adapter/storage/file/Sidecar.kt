@@ -3,20 +3,39 @@ package dev.dmigrate.server.adapter.storage.file
 import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import java.security.MessageDigest
 import java.util.UUID
 
-internal data class Sidecar(val sha256: String, val sizeBytes: Long) {
+/**
+ * Per-file metadata stored alongside each finalized data file. The
+ * §6.3 plan demands `existingSegmentSha256` / `existingSha256` come
+ * from the sidecar — never from a re-hash of the data file. To uphold
+ * that invariant under crash recovery, callers move the sidecar
+ * **before** the data file: `data exists ⇒ sidecar exists`. Dangling
+ * sidecars (sidecar without data) are cleaned up by `cleanupOrphans`.
+ *
+ * `segmentOffset` is required for upload segments (Resume + Finalize
+ * need to know where each segment fits in the session) and absent for
+ * artifact sidecars.
+ */
+internal data class Sidecar(
+    val sha256: String,
+    val sizeBytes: Long,
+    val segmentOffset: Long? = null,
+) {
 
-    fun serialize(): ByteArray =
-        """{"sha256":"$sha256","sizeBytes":$sizeBytes}""".toByteArray(Charsets.UTF_8)
+    fun serialize(): ByteArray {
+        val offsetField = if (segmentOffset != null) ""","segmentOffset":$segmentOffset""" else ""
+        return """{"sha256":"$sha256","sizeBytes":$sizeBytes$offsetField}""".toByteArray(Charsets.UTF_8)
+    }
 
     companion object {
 
         private val SHA_REGEX = Regex(""""sha256"\s*:\s*"([0-9a-f]{64})"""")
         private val SIZE_REGEX = Regex(""""sizeBytes"\s*:\s*(\d+)""")
+        private val OFFSET_REGEX = Regex(""""segmentOffset"\s*:\s*(\d+)""")
 
         fun parse(bytes: ByteArray): Sidecar {
             val text = bytes.toString(Charsets.UTF_8)
@@ -24,17 +43,44 @@ internal data class Sidecar(val sha256: String, val sizeBytes: Long) {
                 ?: throw IOException("sidecar missing sha256: $text")
             val size = SIZE_REGEX.find(text)?.groupValues?.get(1)?.toLong()
                 ?: throw IOException("sidecar missing sizeBytes: $text")
-            return Sidecar(sha, size)
+            val offset = OFFSET_REGEX.find(text)?.groupValues?.get(1)?.toLong()
+            return Sidecar(sha, size, offset)
         }
 
-        fun read(path: Path): Sidecar = parse(Files.readAllBytes(path))
-
-        fun readOrRecover(finalBin: Path, finalMeta: Path): Sidecar {
-            if (Files.exists(finalMeta)) return read(finalMeta)
-            val recovered = rehash(finalBin)
-            writeAtomically(finalMeta, recovered)
-            return recovered
+        fun read(path: Path): Sidecar {
+            return try {
+                parse(Files.readAllBytes(path))
+            } catch (failure: NoSuchFileException) {
+                throw IOException(
+                    "sidecar missing at $path — re-hashing the data file is forbidden by §6.3; " +
+                        "run cleanupOrphans to remove stale data before retrying",
+                    failure,
+                )
+            }
         }
+
+        /**
+         * Bounded retry on the conflict-resolution path, where data has
+         * already been linked but the sidecar may not yet be visible
+         * (the winning writer publishes data first, then sidecar). The
+         * race window is microseconds; a few short polls cover it
+         * without resorting to a rehash, which §6.3 forbids.
+         */
+        fun readWithRetry(path: Path, attempts: Int = MAX_ATTEMPTS): Sidecar {
+            var lastFailure: IOException? = null
+            repeat(attempts) {
+                try {
+                    return read(path)
+                } catch (failure: IOException) {
+                    lastFailure = failure
+                    @Suppress("MagicNumber")
+                    Thread.sleep(1)
+                }
+            }
+            throw lastFailure ?: IOException("sidecar at $path not present after $attempts retries")
+        }
+
+        private const val MAX_ATTEMPTS: Int = 100
 
         fun writeAtomically(target: Path, sidecar: Sidecar) {
             val parent = target.parent
@@ -53,21 +99,6 @@ internal data class Sidecar(val sha256: String, val sizeBytes: Long) {
             } finally {
                 Files.deleteIfExists(tmp)
             }
-        }
-
-        private fun rehash(path: Path): Sidecar {
-            val digest = MessageDigest.getInstance("SHA-256")
-            var total = 0L
-            Files.newInputStream(path).use { input ->
-                val buffer = ByteArray(StreamingHashWriter.BUFFER_SIZE)
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    digest.update(buffer, 0, n)
-                    total += n
-                }
-            }
-            return Sidecar(digest.digest().toHex(), total)
         }
     }
 }
