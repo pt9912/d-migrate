@@ -191,7 +191,10 @@ Nicht erlaubt:
 
 ### 3.2 Bewusst nicht Teil von Phase B
 
-- produktive Implementierung aller read-only Tool-Handler
+- produktive Implementierung aller read-only Tool-Handler **ausser
+  `capabilities_list`** (siehe §12.11 — Phase B liefert
+  `capabilities_list` als reine Registry-Projektion ohne
+  Store-/Driver-Anbindung)
 - fachliche Implementierung von `schema_validate`, `schema_generate` oder
   `schema_compare`
 - Start-Tools wie `schema_reverse_start`, `schema_compare_start` oder
@@ -969,9 +972,13 @@ Gegenmassnahme:
 Phase C darf beginnen, wenn Phase B die MCP-Transportbasis stabil
 bereitstellt.
 
+Phase B liefert bereits:
+
+- `capabilities_list` (siehe §12.11) — read-only Registry-Projektion
+  ohne Driver-/Store-Anbindung
+
 Phase C baut darauf auf:
 
-- `capabilities_list`
 - `schema_validate`
 - `schema_generate`
 - `schema_compare`
@@ -986,44 +993,195 @@ B und muss dort korrigiert werden.
 
 ---
 
-## 12. Offene Entscheidungen mit Default-Empfehlung
+## 12. Library-Entscheidungen und offene Punkte
 
 ### 12.1 MCP-Bibliothek
 
-Default:
+Verbindlich:
 
-- vorhandene MCP-Bibliothek verwenden, wenn sie Initialize, Tools,
-  Resources und Streamable HTTP ausreichend abbildet
-- HTTP-Wire-Verhalten trotzdem mit eigenen Adaptertests absichern
-
-Fallback:
-
-- minimalen Transportadapter kapseln und Tool-/Resource-Registry davon
-  unabhaengig halten
+- **kein** vorhandenes Kotlin-MCP-SDK einbinden — die MCP-Schicht
+  (Initialize, Tools, Resources, Capabilities) wird auf
+  `org.eclipse.lsp4j.jsonrpc` als JSON-RPC-Transport selbst aufgebaut.
+  lsp4j liefert das JSON-RPC-Framing, Request/Response-Lifecycle und
+  Cancellation; der MCP-Methoden-Handler wird als d-migrate-eigener
+  Code implementiert.
+- HTTP-Wire-Verhalten wird mit eigenen Adaptertests gegen den Ktor-
+  Endpunkt abgesichert (siehe §12.2).
+- stdio-Framing folgt **MCP 2025-11-25**: newline-delimited JSON
+  (`\n`-getrennte JSON-Objekte ohne Content-Length-Header). lsp4j
+  unterstuetzt beide Framings ueber `MessageJsonHandler`/
+  `StreamMessageProducer` — die MCP-Variante muss explizit gewaehlt
+  werden, der LSP-Default ist Content-Length.
 
 ### 12.2 HTTP-Server-Technologie
 
-Default:
+Verbindlich:
 
-- Technologie waehlen, die im Repo bereits naheliegt oder leichtgewichtig
-  testbar ist
-- in-process Tests ohne globale Ports bevorzugen
+- **Ktor** (Server-Engine `CIO`) als HTTP-Server. Idiomatisch in
+  Kotlin, leichtgewichtig in-process testbar, native Coroutine-
+  Integration, kein Reflection-Magic.
+- in-process Tests ueber `testApplication { ... }` (Ktor-Test-DSL),
+  keine globalen Ports.
 
 Verbot:
 
 - Transportauswahl darf keine Fachlogik in HTTP-spezifische Klassen ziehen
+- Ktor-Routing-Code ruft die Tool-/Resource-Registry, niemals
+  Application-Services direkt
 
-### 12.3 JWKS oder Introspection
+### 12.3 JWT-/JWKS-Library
 
-Default:
+Verbindlich:
 
-- JWKS fuer lokale und produktnahe JWT-Validierung
-- Introspection nur bei expliziter Konfiguration
+- **Nimbus JOSE-JWT** (`com.nimbusds:nimbus-jose-jwt`) fuer
+  Tokenvalidierung. Bietet `RemoteJWKSet` mit eingebautem Cache und
+  Rotation, Algorithm-Allowlist via `JWSVerifier`-Whitelist,
+  Audience-/Resource-Validation, Clock-Skew-Behandlung. RFC 7662
+  Token Introspection wird ueber Nimbus' `OAuth2TokenValidator` plus
+  HTTP-Client (Ktor-Client) realisiert.
+- JWKS ist Default fuer JWT-Validierung; Introspection nur bei
+  expliziter Konfiguration.
 
 Verbindlich:
 
 - beide Varianten fail-closed
 - keine ungepruefte lokale JWT-Decodierung als Auth
+- Algorithm-Allowlist Phase A: `RS256`, `RS384`, `RS512`, `ES256`,
+  `ES384`, `ES512` (matched OAuth 2.1 Verbot von `none` und
+  symmetrischen HS-Algorithms ueber JWKS)
+- Clock-Skew-Default: 60 Sekunden
+
+### 12.4 stdio-Framing und JSON-RPC
+
+Verbindlich:
+
+- newline-delimited JSON (`\n`) ueber stdio
+- lsp4j wird mit `RemoteEndpoint`-Setup ueber JSON-RPC verwendet, das
+  Wire-Format aber durch Custom-`MessageProducer`/`MessageConsumer`
+  auf NDJSON umgestellt
+- HTTP nutzt dasselbe lsp4j-Endpoint, eingebettet in den Ktor-Handler
+
+### 12.5 Session-ID-Lifecycle
+
+Verbindlich (vorher offen, jetzt fixiert):
+
+- Server vergibt `MCP-Session-Id` als UUID v4 bei der ersten
+  HTTP-Antwort nach Initialize
+- in-memory `ConcurrentHashMap<UUID, SessionState>` haelt
+  `(principalContext, lastSeen)`
+- TTL: 30 Minuten Idle (Default; `ServerCoreLimits.mcp.sessionIdleTimeout`)
+- unbekannte/abgelaufene IDs liefern HTTP 404 mit JSON-RPC-Error
+  `-32000` `session expired or unknown`
+- `DELETE /mcp` mit gueltiger Session-Id terminiert die Session
+  (200 OK), ohne Id liefert 405
+
+### 12.6 Origin-Allow-List
+
+Verbindlich:
+
+- `McpServerConfig.allowedOrigins: Set<String>` als Konfiguration
+- lokaler Default (Test/Demo): `http://localhost:*`, `http://127.0.0.1:*`
+- nicht-lokaler Betrieb verlangt explizite Origin-Liste; leere Liste
+  ist Startfehler
+- Wildcard `*` ist verboten (kein "alles erlauben")
+- Origin-Match: exakte Origin-Komponente (Scheme + Host + Port);
+  kein Substring/Regex
+
+### 12.7 Protected Resource Metadata Path
+
+Verbindlich:
+
+- Pfad: `/.well-known/oauth-protected-resource` (RFC 9728)
+- Inhalt JSON wie in §4.4 spezifiziert
+- `WWW-Authenticate`-Challenge enthaelt
+  `resource_metadata="<absolute URL zum Metadata-Endpoint>"`
+
+### 12.8 JSON-RPC-Error-Mapping
+
+Verbindlich (Code → Bedeutung):
+
+| JSON-RPC code | Bedeutung | wann |
+| --- | --- | --- |
+| `-32700` | Parse error | malformed JSON Body |
+| `-32600` | Invalid Request | Body nicht JSON-RPC 2.0 |
+| `-32601` | Method not found | unbekannter Toolname oder unbekannte MCP-Methode |
+| `-32602` | Invalid params | Schema-Validation-Fehler an JSON-RPC-Layer |
+| `-32603` | Internal error | unerwarteter Fehler in lsp4j/Bootstrap |
+| `-32000` | Session expired or unknown | (custom) abgelaufene `MCP-Session-Id` |
+| `-32001` | MCP-Protocol-Version mismatch | (custom) ungueltiger oder fehlender Header nach Initialize |
+
+Tool-Fehler folgen MCP-`tools/call`-Konvention:
+- `UNSUPPORTED_TOOL_OPERATION` → Tool-Result mit `isError=true`,
+  `content` enthaelt `ToolErrorEnvelope` aus AP 6.7
+- alle anderen `ApplicationException`-Subtypen → Tool-Result mit
+  `isError=true`, `content` enthaelt `ToolErrorEnvelope`
+
+Resource-Fehler (`resources/read`, `resources/list`) → JSON-RPC-Error
+mit `data` = `ToolErrorEnvelope`-Projektion.
+
+Auth-Fehler bleiben am HTTP-Layer (401/403), erscheinen nicht im
+JSON-RPC-Layer.
+
+### 12.9 Scope-Tabelle pro Tool/Resource
+
+Verbindlich (Phase B baut die Tabelle, Tool-Handler folgen in
+Phase C/D):
+
+| Operation | Scope |
+| --- | --- |
+| `capabilities_list`, `tools/list`, `resources/list`, `resources/templates/list`, `resources/read` | `dmigrate:read` |
+| `schema_validate`, `schema_compare`, `schema_generate`, `schema_list`, `profile_list`, `diff_list`, `job_list`, `job_status_get`, `artifact_list`, `artifact_chunk_get` | `dmigrate:read` |
+| `schema_reverse_start`, `schema_compare_start`, `data_profile_start`, `data_export_start` | `dmigrate:job:start` |
+| `artifact_upload_init`, `artifact_upload_chunk`, `artifact_upload_complete`, `artifact_upload_abort` | `dmigrate:artifact:upload` |
+| `data_import_start`, `data_transfer_start` | `dmigrate:data:write` |
+| `job_cancel` | `dmigrate:job:cancel` |
+| `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan`, `testdata_execute` | `dmigrate:ai:execute` |
+| Cross-Tenant-Reads, `connections/list` mit Admin-Filter | `dmigrate:admin` |
+
+Granulare `dmigrate:tool:<name>`-Scopes werden in 0.9.6 nicht
+eingefuehrt. Die Tabelle deckt das vollstaendige 0.9.6-Vokabular ab,
+auch wenn Phase B die meisten Tools nur als Registry-Eintrag (ohne
+Handler) liefert.
+
+### 12.10 Token-Registry fuer stdio
+
+Verbindlich:
+
+- neuer Port `StdioTokenStore` in `hexagon:ports-common` (Phase B
+  ergaenzt diesen Port; Phase A war fertig)
+- API:
+  ```kotlin
+  interface StdioTokenStore {
+      fun lookup(tokenFingerprint: String): StdioTokenGrant?
+  }
+  data class StdioTokenGrant(
+      val principalId: PrincipalId,
+      val tenantId: TenantId,
+      val scopes: Set<String>,
+      val isAdmin: Boolean,
+      val auditSubject: String,
+      val expiresAt: Instant,
+  )
+  ```
+- file-backed Default-Implementierung im mcp-Modul:
+  YAML-/JSON-File mit Token-Fingerprint → Grant (Pfad ueber
+  `McpServerConfig.stdioTokenFile`)
+- `DMIGRATE_MCP_STDIO_TOKEN`-Env-Var wird gehasht (sha256_hex), das
+  Resultat ist der Fingerprint fuer den Lookup; rohe Token-Werte
+  erscheinen nie im Audit (`SecretScrubber` deckt das `tok_*`-Prefix)
+
+### 12.11 `capabilities_list` als Phase-B-Pfad
+
+Klarstellung: `capabilities_list` ist der einzige fachliche Tool-
+Handler, den Phase B implementiert. Begruendung:
+
+- §1 verlangt explizit "ohne Datenbankverbindung" funktionsfaehig
+- der Handler liefert nur Registry-Metadaten (Tool-Liste, Scope-
+  Tabelle, Vertragsversionen) — keine Stores, keine Driver
+- alle anderen 0.9.6-Tools bleiben Phase C/D-Scope (siehe §3.2)
+
+§11 wird entsprechend angepasst: `capabilities_list` zaehlt nicht zu
+"Phase C baut darauf auf" sondern ist bereits in Phase B vorhanden.
 
 ### 12.4 Session-ID-Pflicht
 
