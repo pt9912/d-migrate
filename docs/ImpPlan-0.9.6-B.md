@@ -1375,3 +1375,199 @@ Alle Verstoesse sind Startfehler vor dem ersten Client-Request (§5.2).
   Initialize derselbe `McpServiceImpl` (mit derselben
   `negotiatedProtocolVersion`) fuer alle Folge-Requests der Session
   benutzt wird.
+
+### 12.14 HTTP-Auth-Vertraege (verbindlich, fuer AP 6.6 Implementation)
+
+**Geltungsbereich**
+
+- Diese Regeln gelten ausschliesslich fuer den HTTP-Transport (`POST /mcp`).
+  stdio-Auth ist §6.7 und nutzt `DMIGRATE_MCP_STDIO_TOKEN` plus die
+  Token-Registry aus §12.10.
+- `authMode == DISABLED`: Auth-Schicht ist no-op. Kein Token wird
+  gelesen, keine Challenge erzeugt, kein Scope-Check ausgefuehrt.
+  PrincipalContext wird mit `authSource = ANONYMOUS`,
+  `principalId = "anonymous"`, `homeTenantId = TenantId("default")`,
+  `scopes = setOf("dmigrate:admin")` (Demo-Owner) und einer beliebig
+  langen `expiresAt` gesetzt. Nur in Loopback-Demo zulaessig.
+
+**Token-Quelle (verbindlich)**
+
+- ausschliesslich `Authorization: Bearer <token>` Header
+  (RFC 6750 §2.1). Query-Parameter (`?access_token=...`) wird
+  abgelehnt; Cookies und Body werden nicht inspiziert.
+- fehlender Header bei `authMode != DISABLED` -> HTTP 401 mit
+  `WWW-Authenticate`-Challenge.
+
+**Validierungs-Reihenfolge (Erweiterung von §12.13)**
+
+1. `Origin`-Check
+2. `Accept`-Check
+3. Body parsen
+4. JSON-RPC-Parse (Methode + id bekannt)
+5. **Bearer-Validation** (Token vorhanden + signatur-/claim-gueltig)
+6. **Method-aware Header-Check** (`MCP-Session-Id`, `MCP-Protocol-Version`
+   — Initialize-Spezialfall wie in §12.13)
+7. **Scope-Check** (Method aus Schritt 4 gegen
+   `McpServerConfig.scopeMapping[method]`)
+8. Dispatch
+
+Initialize selbst (`method = "initialize"`) und `notifications/initialized`
+sind scope-frei: ohne diese beiden Methoden koennte ein Client die
+Session nicht aufbauen, in der seine Tool-Aufrufe Scope-gueltig waeren.
+Bearer-Validation gilt aber auch fuer Initialize.
+
+**Pflichtclaims (alle JWT-Modi)**
+
+| Claim | Verbindliche Pruefung |
+| ----- | --------------------- |
+| `iss` | exakter String-Match gegen `McpServerConfig.issuer` |
+| `sub` | non-empty String |
+| `exp` | `now <= exp + clockSkew` |
+| `nbf` | wenn vorhanden: `now >= nbf - clockSkew` |
+| `iat` | wenn vorhanden: nicht in Zukunft (mit clockSkew) |
+| `aud` | `McpServerConfig.audience` ist im `aud`-Wert enthalten — `aud` darf String oder Array of String sein |
+| Algorithmus | JWS-`alg` muss in `McpServerConfig.algorithmAllowlist` (§12.12 Default `RS256/RS384/RS512/ES256/ES384/ES512`) |
+| `kid` | muss bei JWKS-Mode aufloesbar sein; unbekanntes `kid` -> abweisen |
+
+**Claims -> PrincipalContext Mapping**
+
+```
+PrincipalContext(
+    principalId         = PrincipalId(claims.subject),
+    homeTenantId        = TenantId(claims.stringClaim("tenant_id") ?: claims.stringClaim("tid") ?: "default"),
+    effectiveTenantId   = homeTenantId,                    // initial; cross-tenant-impersonation Phase E
+    allowedTenantIds    = setOf(homeTenantId),             // Phase B: nur eigener Tenant
+    scopes              = parseScopes(claims),             // siehe unten
+    isAdmin             = "dmigrate:admin" in scopes,
+    auditSubject        = claims.subject,
+    authSource          = AuthSource.OIDC,
+    expiresAt           = claims.expirationTime.toInstant(),
+)
+```
+
+`parseScopes(claims)`:
+
+- bevorzugt `scope` (RFC 8693, space-separated String) ueber `scp` (Microsoft, JSON-Array). Bei beiden vorhanden gilt `scope`.
+- leere Scope-Liste ist erlaubt (fuehrt zu 403 bei jeder Method, die einen Scope verlangt).
+
+**Token-Caching**
+
+- per-Request Validation: jedes `POST /mcp` validiert sein
+  Authorization-Header neu. Nimbus' `RemoteJWKSet` cached intern die
+  JWKS-Schluessel und vermeidet so den Netzwerk-Roundtrip; das Token
+  selbst wird trotzdem jedes Mal verifiziert.
+- `SessionState.principalContext` (siehe unten) ist ein
+  Audit-/Last-Validation-Snapshot, kein Source-of-Truth fuer
+  Authorisierung.
+
+**SessionState-Erweiterung gegenueber AP 6.5**
+
+```kotlin
+class SessionState(
+    val negotiatedProtocolVersion: String,
+    val createdAt: Instant,
+    @Volatile var lastSeen: Instant,
+    val service: McpService,
+    val principalContext: PrincipalContext, // <- AP 6.6 ergaenzt
+)
+```
+
+- Initialize-Erfolg: AP 6.5 erzeugt Session ohne Principal; AP 6.6
+  fuegt den im Schritt 5 validierten PrincipalContext in den
+  Konstruktor.
+- Folge-Requests: jede neu validierte PrincipalContext-Instanz wird
+  ignoriert (oder optional als `lastValidatedAt` gepatcht — Phase B
+  laesst es weg).
+
+**Network- / Parse-Fehler**
+
+- JWKS-Endpoint nicht erreichbar, JSON-Parse-Error im Token, JWS-
+  Signaturfehler, abgelaufenes Token, falsches `aud` etc.: HTTP 401
+  mit `WWW-Authenticate`-Challenge und `error="invalid_token"`,
+  `error_description="<kurz, ohne sensitive Daten>"`. Kein 503 (Client
+  soll das Token erneuern, nicht den Server-Health probieren).
+
+**`WWW-Authenticate`-Challenges (RFC 6750 §3)**
+
+| HTTP | Challenge |
+| ---- | --------- |
+| `401` (kein Token) | `Bearer realm="dmigrate-mcp", resource_metadata="<absolute URL>"` |
+| `401` (token invalid/expired/sig fail) | `Bearer realm="dmigrate-mcp", error="invalid_token", error_description="<text>", resource_metadata="<absolute URL>"` |
+| `403` (insufficient_scope) | `Bearer realm="dmigrate-mcp", error="insufficient_scope", scope="<minimal required>", resource_metadata="<absolute URL>"` |
+
+`<absolute URL>` ist die `publicBaseUrl` (oder, lokal:
+`http://127.0.0.1:<port>`) plus `/.well-known/oauth-protected-resource`.
+
+**Protected Resource Metadata Endpoint**
+
+- HTTP-Pfad: `GET /.well-known/oauth-protected-resource` (RFC 9728,
+  §12.7).
+- Content-Type: `application/json`.
+- Body (verbindliche Felder fuer Golden-Test in §6.6 Akzeptanz):
+  ```json
+  {
+    "resource": "<canonical HTTPS URI of MCP server>",
+    "authorization_servers": ["<issuer>"],
+    "scopes_supported": [
+      "dmigrate:read",
+      "dmigrate:job:start",
+      "dmigrate:artifact:upload",
+      "dmigrate:data:write",
+      "dmigrate:job:cancel",
+      "dmigrate:ai:execute",
+      "dmigrate:admin"
+    ],
+    "bearer_methods_supported": ["header"]
+  }
+  ```
+- Reihenfolge der Felder ist Teil des Golden-Tests. Reihenfolge der
+  `scopes_supported` matcht §4.5 (read, job:start, artifact:upload,
+  data:write, job:cancel, ai:execute, admin).
+- Endpoint ist auch im DISABLED-Mode verfuegbar (Demo-Tools fragen das
+  Dokument an), liefert dann `authorization_servers = []` und ein
+  klares Hinweis-Feld:
+  ```json
+  { "x-dmigrate-auth-mode": "disabled" }
+  ```
+
+**Introspection-Modus (`AuthMode.JWT_INTROSPECTION`)**
+
+- HTTP-Client: Ktor-Client (CIO engine, schon Teil der Phase-B-Deps
+  laut §12.3). Nimbus' OAuth2TokenValidator wird nicht direkt
+  benutzt — wir bauen den Introspection-Call selbst auf einem
+  Ktor-Client auf, weil das `RemoteJWKSet` aus Nimbus genug ist und
+  ein zusaetzlicher Nimbus-OAuth2-Client unnoetigen Footprint
+  hinzufuegt.
+- Format: `POST <introspectionUrl>` mit
+  `application/x-www-form-urlencoded` Body `token=<bearer>`.
+  Authentifizierung des Servers gegen den Introspection-Endpoint
+  bleibt aussen vor (AP 6.6 nutzt unauthenticated Calls auf einen
+  vertrauenswuerdigen internen Endpoint; Production-Setup mit
+  Client-Credentials kommt in einer spaeteren Iteration).
+- Antwort `{"active": false}` -> 401 mit `error="invalid_token"`.
+- Antwort `{"active": true, ...}` -> Claims werden wie bei JWT
+  gemappt (selbe Tabelle).
+
+**Scope-Mapping-Lookup**
+
+- Quelle: `McpServerConfig.scopeMapping` (Default §12.9 in
+  `McpServerConfig.DEFAULT_SCOPE_MAPPING`).
+- Lookup-Key: JSON-RPC-Method-Name (z. B. `"tools/list"`,
+  `"capabilities_list"`, `"resources/read"`).
+- unbekannte Methode (kein Mapping-Eintrag) -> standardmaessig
+  `dmigrate:admin` verlangen (fail-closed: Method existiert noch nicht
+  oder Tippfehler im Mapping).
+
+**Test-Vertrag (AP 6.6)**
+
+- 401 ohne Token (mit Challenge inkl. `resource_metadata`)
+- 401 mit ungueltigem Token (signatur-fail, exp abgelaufen, falscher
+  aud, falscher iss, unbekanntes kid, nicht-erlaubter Algorithmus)
+- 403 mit gueltigem Token aber unzureichenden Scopes (z. B.
+  `tools/list` ohne `dmigrate:read`)
+- 200 mit gueltigem Token + ausreichenden Scopes
+- DISABLED-Mode: Auth komplett uebersprungen, PrincipalContext mit
+  `AuthSource.ANONYMOUS`
+- Protected Resource Metadata Golden-Test (JSON-Field-Set + -Reihenfolge)
+- Introspection-Mode mit `active: false` -> 401
+- Audience als Array enthaelt config -> akzeptiert
