@@ -308,8 +308,10 @@ Tokenvalidierung ist fail-closed:
 
 ### 4.5 Scope-Namen bleiben rollenartig
 
-Phase B implementiert die Scope-Tabelle und veroeffentlicht sie in
-Protected Resource Metadata.
+Phase B implementiert die transportseitige Scope-Tabelle und
+veroeffentlicht sie in Protected Resource Metadata. Diese Tabelle beschreibt
+den vollstaendigen 0.9.6-Scope-Vertrag, nicht automatisch die in Phase B
+bereits fachlich implementierten Tools.
 
 Verbindliche Scope-Namen:
 
@@ -324,6 +326,10 @@ Verbindliche Scope-Namen:
 Granulare `dmigrate:tool:<name>`-Scopes werden in 0.9.6 nicht eingefuehrt.
 Challenges nennen immer den fuer den konkreten Request minimal notwendigen
 Scope.
+
+Die Aufnahme von `dmigrate:job:cancel` bereitet die Auth- und Challenge-
+Semantik fuer Phase E0/E vor. `job_cancel` selbst bleibt gemaess Abschnitt
+3.2 bewusst ausserhalb der Phase-B-Funktionsimplementierung.
 
 ### 4.6 Streamable HTTP ist Transport, kein Tool-Vertrag
 
