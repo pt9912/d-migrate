@@ -95,4 +95,51 @@ class UploadSessionFinalizeInvariantsTest : FunSpec({
         result.expected shouldBe expectedTotalChecksum
         result.actual shouldBe "different"
     }
+
+    test("rejects finalize when a segment carries a blank hash") {
+        val result = UploadSessionTransitions.validateFinalize(
+            session = session(),
+            segments = listOf(segment(0), segment(1, hash = "  "), segment(2)),
+            actualTotalChecksum = expectedTotalChecksum,
+        )
+        result.shouldBeInstanceOf<UploadSessionTransitions.FinalizeValidation.EmptySegmentHash>()
+        result.segmentIndex shouldBe 1
+    }
+
+    test("rejects finalize when a segment offset is not contiguous") {
+        val skewed = UploadSegment(
+            uploadSessionId = "u1",
+            segmentIndex = 1,
+            segmentOffset = 1500L,
+            sizeBytes = 1000L,
+            segmentSha256 = "h1",
+        )
+        val result = UploadSessionTransitions.validateFinalize(
+            session = session(),
+            segments = listOf(segment(0), skewed, segment(2)),
+            actualTotalChecksum = expectedTotalChecksum,
+        )
+        result.shouldBeInstanceOf<UploadSessionTransitions.FinalizeValidation.SegmentOffsetMismatch>()
+        result.segmentIndex shouldBe 1
+        result.expected shouldBe 1000L
+        result.actual shouldBe 1500L
+    }
+
+    test("rejects finalize when sum of segment sizes does not match session size") {
+        val short = UploadSegment(
+            uploadSessionId = "u1",
+            segmentIndex = 2,
+            segmentOffset = 2000L,
+            sizeBytes = 500L,
+            segmentSha256 = "h2",
+        )
+        val result = UploadSessionTransitions.validateFinalize(
+            session = session(),
+            segments = listOf(segment(0), segment(1), short),
+            actualTotalChecksum = expectedTotalChecksum,
+        )
+        result.shouldBeInstanceOf<UploadSessionTransitions.FinalizeValidation.SegmentSizeMismatch>()
+        result.expected shouldBe 3000L
+        result.actual shouldBe 2500L
+    }
 })
