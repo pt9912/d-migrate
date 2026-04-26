@@ -905,6 +905,64 @@ Aufgaben:
   `UNSUPPORTED_MEDIA_TYPE`, `UNSUPPORTED_TOOL_OPERATION`,
   `PROMPT_HYGIENE_BLOCKED`, `TENANT_SCOPE_DENIED` und
   `INTERNAL_AGENT_ERROR`
+- `ApplicationException` als sealed root, erweitert `RuntimeException`:
+  ```kotlin
+  sealed class ApplicationException(
+      val code: ToolErrorCode,
+      message: String,
+      cause: Throwable? = null,
+  ) : RuntimeException(message, cause) {
+      open fun details(): List<ToolErrorDetail> = emptyList()
+  }
+  ```
+  `cause` propagiert intern (Stack-Tracing), wird **nie** in
+  `ToolErrorEnvelope.details` serialisiert. Jeder Subtyp liefert eine
+  deterministische Default-Message ohne PII und seine eigenen Details.
+- Genau ein konkreter Subtyp pro `ToolErrorCode` (18 insgesamt) mit
+  Code-spezifischen Feldern:
+  | Code | Subtyp | Felder |
+  | --- | --- | --- |
+  | `AUTH_REQUIRED` | `AuthRequiredException` | — |
+  | `FORBIDDEN_PRINCIPAL` | `ForbiddenPrincipalException` | `principalId`, optional `reason` |
+  | `POLICY_REQUIRED` | `PolicyRequiredException` | `policyName` |
+  | `POLICY_DENIED` | `PolicyDeniedException` | `policyName`, optional `reason` |
+  | `IDEMPOTENCY_KEY_REQUIRED` | `IdempotencyKeyRequiredException` | — |
+  | `IDEMPOTENCY_CONFLICT` | `IdempotencyConflictException` | `existingFingerprint` |
+  | `RESOURCE_NOT_FOUND` | `ResourceNotFoundException` | `resourceUri` |
+  | `VALIDATION_ERROR` | `ValidationErrorException` | `violations: List<ValidationViolation>` |
+  | `RATE_LIMITED` | `RateLimitedException` | `detail: RateLimitedDetail` (aus AP 6.6) |
+  | `OPERATION_TIMEOUT` | `OperationTimeoutException` | `operation`, `budget: Duration` |
+  | `PAYLOAD_TOO_LARGE` | `PayloadTooLargeException` | `actualBytes`, `maxBytes` |
+  | `UPLOAD_SESSION_EXPIRED` | `UploadSessionExpiredException` | `sessionId` |
+  | `UPLOAD_SESSION_ABORTED` | `UploadSessionAbortedException` | `sessionId` |
+  | `UNSUPPORTED_MEDIA_TYPE` | `UnsupportedMediaTypeException` | `actual`, `allowed` |
+  | `UNSUPPORTED_TOOL_OPERATION` | `UnsupportedToolOperationException` | `toolName`, `operation` |
+  | `PROMPT_HYGIENE_BLOCKED` | `PromptHygieneBlockedException` | `reason` |
+  | `TENANT_SCOPE_DENIED` | `TenantScopeDeniedException` | `requestedTenant` |
+  | `INTERNAL_AGENT_ERROR` | `InternalAgentErrorException` | optional `cause` |
+- `ValidationErrorException` haelt eine Liste:
+  ```kotlin
+  data class ValidationViolation(val field: String, val reason: String)
+  ```
+  `details()` mappt jede `violation` auf
+  `ToolErrorDetail(field, reason)` in Insertion-Order.
+- `RateLimitedException(detail: RateLimitedDetail)` brueckt zu AP 6.6:
+  `details()` liefert genau `dimension`/`current`/`limit` aus
+  `RateLimitedDetail` — `tenantId`/`principalId` sind dort schon
+  abgestreift, der Mapper produziert keinen weiteren Leak.
+- `ErrorMapper`-API als Interface:
+  ```kotlin
+  interface ErrorMapper {
+      fun map(throwable: Throwable, requestId: String? = null): ToolErrorEnvelope
+  }
+  ```
+  Verhalten:
+  - `ApplicationException` -> Envelope aus `code`, `message`,
+    `details()` und `requestId`
+  - jede andere `Throwable` -> `INTERNAL_AGENT_ERROR` mit
+    deterministischer generischer Message (kein Stacktrace, kein
+    Original-`message`, keine `cause`-Daten in den Details — Schutz
+    vor Information Disclosure)
 
 Abnahme:
 
@@ -913,6 +971,12 @@ Abnahme:
 - wohlgeformte, aber unbekannte Ressourcen liefern `RESOURCE_NOT_FOUND`
 - fremde Tenants liefern `TENANT_SCOPE_DENIED`
 - jeder verbindliche Fehlercode hat einen deterministischen Mapper-Test
+- jeder der 18 Codes hat genau einen Subtyp; Bidirektionalitaet
+  (`subtype.code == X`) ist getestet
+- unbekannte Throwables fallen deterministisch auf
+  `INTERNAL_AGENT_ERROR` ohne Information Disclosure
+- `ValidationErrorException`-Details bewahren Insertion-Order der
+  `violations`-Liste
 
 ### 6.8 Audit-Kernvertrag und Scrubbing definieren
 
@@ -1439,9 +1503,11 @@ wird vom Service durchgereicht.
 
 | Klasse | Paket |
 | --- | --- |
-| `ApplicationException` (sealed root) | `...application.error` |
-| Konkrete Subtypen je Code (`AuthRequiredException`, `TenantScopeDeniedException`, ...) | `...application.error` |
-| `ErrorMapper` | `...application.error` |
+| `ApplicationException` (sealed root, erweitert `RuntimeException`) | `...application.error` |
+| 18 konkrete Subtypen je Code (`AuthRequiredException`, ..., `InternalAgentErrorException` — siehe Tabelle in §6.7) | `...application.error` |
+| `ValidationViolation` (data class) | `...application.error` |
+| `ErrorMapper` (interface) | `...application.error` |
+| `DefaultErrorMapper` | `...application.error` |
 
 #### AP 6.8 Audit-Kern
 
