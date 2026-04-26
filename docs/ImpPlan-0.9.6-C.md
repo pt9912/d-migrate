@@ -33,7 +33,9 @@ Phase C liefert konkrete technische Ergebnisse:
   - `artifact_upload_init(uploadIntent=schema_staging_readonly)`
   - `artifact_upload` fuer Segmente dieser Session
   - `artifact_upload_abort` fuer eigene aktive read-only Staging-Sessions
-  - Finalisierung zu `schema_staging_readonly`-Artefakt und `schemaRef`
+  - implizite Finalisierung beim komplettierenden Segment zu
+    `schema_staging_readonly`-Artefakt und `schemaRef`, sofern das Schema
+    gueltig ist
 - Output-Limits fuer Tool-Responses
 - Artefakt- und Resource-Fallback fuer groessere Ergebnisse
 - strukturierte Findings, Notes und Generatorwarnungen
@@ -144,25 +146,34 @@ im MCP-Adapter nachgebaut.
   - `jobId` oder `resourceUri`
   - Owner-/Admin-/Tenant-Pruefung
   - terminale Jobs vor Retention
-  - `RESOURCE_NOT_FOUND` und `TENANT_SCOPE_DENIED`
+  - no-oracle `RESOURCE_NOT_FOUND` fuer unbekannte, abgelaufene und nicht
+    autorisiert sichtbare Jobs
+  - `TENANT_SCOPE_DENIED` nur fuer syntaktisch fremde Tenant-URIs ohne
+    Existenzbestaetigung
 - `artifact_chunk_get`
   - Chunk-Reads fuer grosse Artefakte
   - `nextChunkUri`
-  - Text-/Binary-Behandlung gemaess Resource-Vertrag
+  - explizites Text-/Base64-Response-Schema
+  - `maxArtifactChunkBytes=32768`
 - read-only Schema-Staging:
   - `artifact_upload_init` nur fuer `uploadIntent=schema_staging_readonly`
   - Segmentannahme in `UploadSegmentStore`
   - File-Spooling
   - Segment- und Gesamt-SHA-256
   - TTL- und Abort-Cleanup
-  - Finalisierung zu `schema_staging_readonly`-Artefakt
+  - implizite Finalisierung beim komplettierenden `artifact_upload`-
+    Segment
+  - Finalisierung zu `schema_staging_readonly`-Artefakt nur fuer gueltige
+    Schemas
   - Materialisierung einer read-only `schemaRef`
-  - Validierungsfehler ohne Registrierung als `schemaRef`
+  - Validierungsfehler ohne Registrierung als `schemaRef` und ohne
+    dauerhaft veroeffentlichtes Rohartefakt
 - Output-Limits:
   - maximal `64 KiB` serialisierte Tool-Response-Nutzdaten
   - maximal `200` Findings inline
   - maximal `256 KiB` nicht-Upload-Tool-Request-Payload
   - maximal `32 KiB` Inline-Schema
+  - maximal `32 KiB` Artefakt-Chunk-Rohdaten je `artifact_chunk_get`
   - Uploadsegmentgrenzen aus `capabilities_list`
 - Audit fuer alle read-only Tools und read-only Upload-Subset-Pfade
 - Quota-/Rate-Limit-Pruefung fuer Upload-Sessions, Segmentwrites und
@@ -221,6 +232,7 @@ Verbindliche Limits:
 - `maxInlineSchemaBytes=32768`
 - `maxUploadToolRequestBytes=6291456`
 - `maxUploadSegmentBytes=4194304`
+- `maxArtifactChunkBytes=32768`
 - `maxInlineFindings=200`
 - `maxArtifactUploadBytes=209715200`
 
@@ -363,12 +375,30 @@ Der read-only Staging-Flow:
 4. Client sendet Segmente ueber `artifact_upload`.
 5. Server validiert Segmentindex, Offset, Segmentgroesse und Segmenthash.
 6. Server schreibt Segmentbytes in `UploadSegmentStore`.
-7. Bei Vollstaendigkeit validiert der Server Gesamt-SHA-256.
-8. Server materialisiert ein immutable Artefakt im `ArtifactContentStore`.
-9. Server versucht Schema-Parsing und Validierung.
-10. Bei gueltigem Schema wird eine read-only `schemaRef` registriert.
-11. Bei ungueltigem Schema wird keine `schemaRef` registriert; der Fehler
+7. Das Segment, das die erwartete Gesamtgroesse exakt komplettiert, ist das
+   einzige Finalisierungssignal.
+8. Der Server validiert beim komplettierenden `artifact_upload` den
+   Gesamt-SHA-256 ueber gespeicherte Bytes.
+9. Server materialisiert nur bei erfolgreicher Hashpruefung ein immutable
+   Staging-Artefakt im `ArtifactContentStore`.
+10. Server versucht Schema-Parsing und Validierung.
+11. Bei gueltigem Schema wird eine read-only `schemaRef` registriert.
+12. Bei ungueltigem Schema wird keine `schemaRef` registriert; der Fehler
     bleibt strukturiert sichtbar.
+
+Es gibt in Phase C keinen separaten Finalize-Tool-Aufruf und kein optionales
+`finalize=true`-Feld. Wiederholungen des komplettierenden Segments sind
+idempotent: bei identischem Segment und bereits finalisierter Session liefert
+`artifact_upload` dasselbe Finalisierungsergebnis inklusive `schemaRef` oder
+denselben strukturierten Validierungsfehler.
+
+Wenn Schema-Parsing oder Validierung fehlschlaegt, wird das hochgeladene
+Rohartefakt nicht dauerhaft als normales Artefakt veroeffentlicht. Die
+Session wechselt in `failed_validation`; gespeicherte Rohbytes und Segmente
+werden nur fuer eine kurze, konfigurierbare Failure-Retention gehalten
+(`stagingFailureRetention`, Default maximal 24 Stunden) und zaehlen bis zum
+Cleanup gegen Storage-Quotas. Danach entfernt Cleanup Rohbytes, Segmente und
+nicht referenzierte Staging-Metadaten deterministisch.
 
 Der Flow darf keinen policy-pflichtigen `job_input` erzeugen.
 
@@ -392,13 +422,35 @@ DDL- und Diff-Ergebnisse werden nie still abgeschnitten.
 Verbindlich:
 
 - Zugriff gegen Tenant und Principal pruefen
-- Chunkgroesse begrenzen
+- Chunkgroesse auf `maxArtifactChunkBytes=32768` Rohbytes begrenzen
 - `nextChunkUri` oder aehnliche Fortsetzungsreferenz liefern
-- Textartefakte als Text liefern
-- Binaerartefakte nicht als frei erfundenes Base64-in-JSON-Resource-
-  Ersatzformat ueber `resources/read` modellieren
-- `RESOURCE_NOT_FOUND` fuer fehlende Artefakte
-- `TENANT_SCOPE_DENIED` fuer fremde Artefakte
+- Textartefakte mit `encoding="text"` und Feld `text` liefern
+- Binaerartefakte mit `encoding="base64"` und Feld `contentBase64`
+  liefern
+- `lengthBytes` beschreibt immer die dekodierte Rohdatenlaenge
+- `sha256` beschreibt den Chunk ueber die dekodierten Rohdaten
+- `nextChunkUri` ist `null`, wenn kein weiterer Chunk existiert
+- `RESOURCE_NOT_FOUND` fuer fehlende, abgelaufene oder nicht autorisiert
+  sichtbare Artefakte
+
+Pflichtfelder der Antwort:
+
+- `artifactId`
+- `resourceUri`
+- `chunkId`
+- `offset`
+- `lengthBytes`
+- `contentType`
+- `encoding` (`text` oder `base64`)
+- genau eines von `text` oder `contentBase64`
+- `sha256`
+- `nextChunkUri`
+- `executionMeta`
+
+Binaerartefakte duerfen ueber `artifact_chunk_get` Base64 liefern. Das
+Verbot aus dem Resource-Vertrag bezieht sich auf `resources/read`: dort wird
+kein frei erfundenes Base64-in-JSON-Ersatzformat fuer binaere Artefakte
+modelliert.
 
 ### 5.6 `job_status_get`
 
@@ -409,9 +461,14 @@ Verbindlich:
 - Eingabe ist `jobId` oder `resourceUri`
 - Job muss im Tenant des Principals liegen oder explizit erlaubt sein
 - terminale Jobs bleiben bis Retention sichtbar
-- fremde Tenants liefern `TENANT_SCOPE_DENIED`
-- unbekannte oder abgelaufene Jobs liefern `RESOURCE_NOT_FOUND`
-- Fehlerdetails leaken keine fremden Job-IDs
+- Fehlerpfad ist no-oracle: unbekannte, abgelaufene, nicht autorisiert
+  sichtbare und fremde Jobs liefern nach aussen einheitlich
+  `RESOURCE_NOT_FOUND`
+- `TENANT_SCOPE_DENIED` wird nur fuer syntaktisch gueltige Resource-URIs
+  genutzt, deren `tenantId` explizit ausserhalb der erlaubten Tenant-Menge
+  des Principals liegt und bei denen keine konkrete fremde Job-Existenz
+  bestaetigt wird
+- Fehlerdetails leaken keine fremden Job-IDs oder Tenant-IDs
 
 ---
 
@@ -558,16 +615,21 @@ Aufgaben:
 
 - Vollstaendigkeit der Segmente pruefen
 - Gesamt-SHA-256 ueber gespeicherte Bytes validieren
-- Artefakt immutable materialisieren
+- Artefakt nach erfolgreicher Hashpruefung immutable materialisieren
 - Schema parsen und validieren
 - gueltiges Schema im `SchemaStore` registrieren
-- ungueltiges Schema nicht registrieren
-- Cleanup fuer abgelaufene oder abgebrochene Sessions ausloesen
+- ungueltiges Schema nicht registrieren und kein dauerhaftes normales
+  Rohartefakt veroeffentlichen
+- invalidierte Staging-Rohbytes nach `stagingFailureRetention` cleanupen
+- Cleanup fuer abgelaufene, abgebrochene oder validierungsfehlgeschlagene
+  Sessions ausloesen
 
 Akzeptanz:
 
 - grosses gueltiges Schema erzeugt `schemaRef`
 - ungueltiges Schema erzeugt strukturierte Fehler und keine `schemaRef`
+- ungueltiges Schema hinterlaesst hoechstens temporaere Staging-Bytes bis
+  zur Failure-Retention
 - File-Spooling wird verwendet
 
 ### 6.10 `artifact_upload_abort` fuer eigene read-only Sessions
@@ -593,13 +655,16 @@ Aufgaben:
 - Tenant-/Principal-Scope pruefen
 - Range-/Chunk-Read aus `ArtifactContentStore` nutzen
 - `nextChunkUri` setzen
-- Text/Binary-Handling gemaess Resource-Vertrag abbilden
+- Text/Binary-Handling gemaess explizitem Tool-Response-Schema abbilden
+- Chunk auf `maxArtifactChunkBytes=32768` Rohbytes begrenzen
 
 Akzeptanz:
 
 - grosses Artefakt kann in Chunks gelesen werden
-- fehlendes Artefakt liefert `RESOURCE_NOT_FOUND`
-- fremdes Artefakt liefert `TENANT_SCOPE_DENIED`
+- Text-Chunks liefern `encoding="text"` und `text`
+- Binaer-Chunks liefern `encoding="base64"` und `contentBase64`
+- fehlendes, abgelaufenes oder nicht autorisiert sichtbares Artefakt
+  liefert `RESOURCE_NOT_FOUND`
 
 ### 6.12 `job_status_get` implementieren
 
@@ -608,13 +673,18 @@ Aufgaben:
 - `jobId` oder `resourceUri` akzeptieren
 - Job aus `JobStore` laden
 - Owner-/Admin-/Tenant-Regeln pruefen
+- no-oracle Fehlerpfad fuer unbekannte, abgelaufene und nicht autorisiert
+  sichtbare Jobs anwenden
 - terminale Jobs vor Retention darstellen
 - Ergebnis als gekuerzte Job-Projektion liefern
 
 Akzeptanz:
 
 - eigener Jobstatus ist abrufbar
-- fremder Tenant wird abgewiesen
+- fremder oder nicht autorisiert sichtbarer Job liefert nach aussen
+  `RESOURCE_NOT_FOUND`, ohne Existenz zu bestaetigen
+- syntaktisch fremde Tenant-URI kann `TENANT_SCOPE_DENIED` liefern, ohne
+  konkrete Job-Existenz zu bestaetigen
 - unbekannter Job liefert `RESOURCE_NOT_FOUND`
 
 ### 6.13 Output-Limits und Artefakt-Fallback zentralisieren
@@ -654,10 +724,14 @@ Pflichtabdeckung:
 - Gesamt-SHA-256-Pruefung
 - Upload-Session-TTL
 - Abort-Cleanup
+- Failure-Retention und Cleanup fuer validierungsfehlgeschlagene Staging-
+  Uploads
 - Schema-Materialisierung nach Upload
 - ungueltiges Schema erzeugt keine `schemaRef`
-- `artifact_chunk_get` Chunk-Berechnung
+- `artifact_chunk_get` Chunk-Berechnung, `maxArtifactChunkBytes`,
+  Text/Base64-Encoding und Chunk-SHA-256
 - `job_status_get` Owner-/Tenant-Regeln
+- `job_status_get` No-Oracle-Fehlerpfad fuer fremde und unbekannte Jobs
 - Audit-Outcome fuer Validierungs-, Payload-, Tenant- und Quota-Fehler
 
 ### 7.2 Adaptertests je Tool
@@ -682,8 +756,11 @@ Zusaetzlich:
 - read-only Upload-Init ohne Approval
 - Segment-Upload mit Resume
 - Upload-Finalisierung zu `schemaRef`
+- Upload-Finalisierung erfolgt ausschliesslich implizit durch das
+  komplettierende Segment
 - Abort eigener Session
 - `artifact_chunk_get` fuer grosses Artefakt
+- `artifact_chunk_get` fuer Binaerartefakt mit Base64-Response
 - `job_status_get` fuer eigenen, fremden und unbekannten Job
 
 ### 7.3 Integrationstests
@@ -730,10 +807,14 @@ Verbindliche Negativfaelle:
 - falscher Segmenthash
 - falscher Gesamthash
 - Segment fuer abgelaufene oder abgebrochene Session
+- Wiederholung des komplettierenden Segments liefert dasselbe
+  Finalisierungsergebnis
 - `artifact_upload_init` mit `uploadIntent=job_input`
 - `schema_compare` mit `connectionRef`
 - unbekannter `schemaRef`
 - fremder Tenant in `schemaRef`, `jobId` oder `artifactId`
+- nicht autorisiert sichtbarer fremder `jobId` liefert nach aussen kein
+  Existenzsignal
 - unbekannter `targetDialect`
 - Validator-/Generatorfehler wird nicht zu `INTERNAL_AGENT_ERROR`
 - grosse DDL-/Diff-Ausgabe wird nicht abgeschnitten
@@ -844,6 +925,7 @@ Gegenmassnahme:
 - `capabilities_list` funktioniert ohne DB-Verbindung.
 - `capabilities_list` enthaelt Tools, Dialekte, Formate und alle
   numerischen Limits.
+- `capabilities_list` enthaelt `maxArtifactChunkBytes=32768`.
 - `schema_validate` akzeptiert `schemaRef` oder kleines Inline-Schema.
 - `schema_validate` liefert strukturierte Findings.
 - `schema_generate` akzeptiert `schemaRef` oder kleines Inline-Schema.
@@ -857,10 +939,18 @@ Gegenmassnahme:
   Approval-Flow.
 - Read-only Schema-Staging nutzt File-Spooling, Gesamt-Hash, Segmenthash,
   TTL- und Abort-Cleanup.
+- Read-only Schema-Staging finalisiert ausschliesslich implizit beim
+  komplettierenden `artifact_upload`-Segment.
 - Nur gueltige gestagte Schemas erzeugen eine `schemaRef`.
+- Ungueltige Staging-Uploads veroeffentlichen kein dauerhaftes Rohartefakt
+  und werden nach `stagingFailureRetention` bereinigt.
 - Policy-pflichtige Upload-Intents bleiben in Phase C nicht verfuegbar.
 - `artifact_chunk_get` kann grosse Artefakte chunkweise liefern.
+- `artifact_chunk_get` hat ein festes Text-/Base64-Response-Schema und
+  begrenzt Rohchunks auf `32768` Bytes.
 - `job_status_get` liefert eigene bzw. erlaubte Jobmetadaten.
+- `job_status_get` nutzt einen no-oracle Fehlerpfad fuer unbekannte,
+  abgelaufene und nicht autorisiert sichtbare Jobs.
 - Owner-, Tenant- und Scope-Pruefungen sind fuer alle Phase-C-Tools aktiv.
 - Output-Limits werden zentral erzwungen.
 - Grosse Ergebnisse werden nicht still abgeschnitten.
@@ -938,17 +1028,23 @@ Verbindlich:
 
 ### 12.4 Read-only Upload-Finalisierung
 
-Default:
+Entscheidung:
 
-- Finalisierung erfolgt beim letzten Segment oder durch expliziten
-  finalize-Schritt, je nachdem welcher Tool-Vertrag in Phase B bereits
-  angelegt wurde
+- Finalisierung erfolgt ausschliesslich implizit durch das
+  `artifact_upload`-Segment, das die erwartete Gesamtgroesse exakt
+  komplettiert.
+- Phase C fuehrt keinen separaten Finalize-Tool-Aufruf und kein optionales
+  `finalize=true`-Feld ein.
 
 Verbindlich:
 
 - Gesamt-SHA-256 wird vor `schemaRef`-Registrierung validiert
 - unvollstaendige Sessions registrieren keine `schemaRef`
 - abgebrochene oder abgelaufene Sessions nehmen keine Segmente mehr an
+- Wiederholungen des komplettierenden Segments liefern bei identischem
+  Payload dasselbe Finalisierungsergebnis
+- validierungsfehlgeschlagene Sessions halten Rohbytes nur bis
+  `stagingFailureRetention` (Default maximal 24 Stunden)
 
 ### 12.5 Umfang von `job_status_get`
 
