@@ -1,6 +1,7 @@
 package dev.dmigrate.server.ports.memory
 
 import dev.dmigrate.server.ports.ArtifactContentStore
+import dev.dmigrate.server.ports.RangeBounds
 import dev.dmigrate.server.ports.WriteArtifactOutcome
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -33,9 +34,9 @@ class InMemoryArtifactContentStore : ArtifactContentStore {
 
     override fun openRangeRead(artifactId: String, offset: Long, length: Long): InputStream {
         val bytes = contents[artifactId] ?: error("artifact $artifactId not found")
-        val from = offset.coerceAtLeast(0).toInt().coerceAtMost(bytes.size)
-        val to = (from + length.toInt()).coerceAtMost(bytes.size)
-        return ByteArrayInputStream(bytes, from, to - from)
+        RangeBounds.check(offset, length, bytes.size.toLong())
+        if (length == 0L) return ByteArrayInputStream(ByteArray(0))
+        return ByteArrayInputStream(bytes, offset.toInt(), length.toInt())
     }
 
     override fun exists(artifactId: String): Boolean = contents.containsKey(artifactId)

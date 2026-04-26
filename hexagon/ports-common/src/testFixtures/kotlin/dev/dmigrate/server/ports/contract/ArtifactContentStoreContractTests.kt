@@ -2,6 +2,7 @@ package dev.dmigrate.server.ports.contract
 
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -46,6 +47,32 @@ abstract class ArtifactContentStoreContractTests(factory: () -> ArtifactContentS
         store.write("range", ByteArrayInputStream(payload), payload.size.toLong())
         val slice = store.openRangeRead("range", offset = 2, length = 4).readAllBytes()
         String(slice) shouldBe "cdef"
+    }
+
+    test("openRangeRead with length=0 returns empty stream") {
+        val store = factory()
+        val payload = "abcdefghij".toByteArray()
+        store.write("range0", ByteArrayInputStream(payload), payload.size.toLong())
+        val slice = store.openRangeRead("range0", offset = 3, length = 0).readAllBytes()
+        slice.size shouldBe 0
+    }
+
+    test("openRangeRead rejects out-of-bounds and negative ranges") {
+        val store = factory()
+        val payload = "abcdefghij".toByteArray()
+        store.write("rangeoob", ByteArrayInputStream(payload), payload.size.toLong())
+        shouldThrow<IllegalArgumentException> {
+            store.openRangeRead("rangeoob", offset = -1, length = 1)
+        }
+        shouldThrow<IllegalArgumentException> {
+            store.openRangeRead("rangeoob", offset = 0, length = -1)
+        }
+        shouldThrow<IllegalArgumentException> {
+            store.openRangeRead("rangeoob", offset = 11, length = 0)
+        }
+        shouldThrow<IllegalArgumentException> {
+            store.openRangeRead("rangeoob", offset = 5, length = 6)
+        }
     }
 
     test("delete removes content") {

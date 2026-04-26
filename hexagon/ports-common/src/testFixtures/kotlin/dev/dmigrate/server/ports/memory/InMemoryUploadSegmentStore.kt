@@ -1,6 +1,7 @@
 package dev.dmigrate.server.ports.memory
 
 import dev.dmigrate.server.core.upload.UploadSegment
+import dev.dmigrate.server.ports.RangeBounds
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.WriteSegmentOutcome
 import java.io.ByteArrayInputStream
@@ -66,9 +67,9 @@ class InMemoryUploadSegmentStore : UploadSegmentStore {
     ): InputStream {
         val stored = segments[Key(uploadSessionId, segmentIndex)]
             ?: error("segment $segmentIndex of $uploadSessionId not found")
-        val from = offset.coerceAtLeast(0).toInt().coerceAtMost(stored.bytes.size)
-        val to = (from + length.toInt()).coerceAtMost(stored.bytes.size)
-        return ByteArrayInputStream(stored.bytes, from, to - from)
+        RangeBounds.check(offset, length, stored.bytes.size.toLong())
+        if (length == 0L) return ByteArrayInputStream(ByteArray(0))
+        return ByteArrayInputStream(stored.bytes, offset.toInt(), length.toInt())
     }
 
     override fun deleteAllForSession(uploadSessionId: String): Int {

@@ -19,6 +19,7 @@ include("adapters:driven:driver-sqlite")
 include("adapters:driven:driver-sqlite-profiling")
 include("adapters:driven:formats")
 include("adapters:driven:integrations")
+include("adapters:driven:storage-file")
 include("adapters:driven:streaming")
 include("adapters:driving:cli")
 

@@ -596,18 +596,60 @@ Aufgaben:
 - `UploadSegmentStore` fuer unfertige Segmente implementieren
 - `ArtifactContentStore` fuer finalisierte Artefakte implementieren
 - file-backed Implementierungen fuer produktnahe Pfade bereitstellen
+  (Konstruktor-Parameter `Path root`; `ServerCoreLimits`-getriebene
+  Konfiguration erst in spaeteren Phasen)
 - In-Memory-Implementierung nur fuer Unit-Tests bereitstellen
 - Hash- und Range-Read-Hilfen definieren
+- Filesystem-Layout verbindlich festlegen:
+  - Segmente unter `<root>/segments/<sessionId>/<segmentIndex>.bin`
+  - Artefakte unter `<root>/artifacts/<sha256(artifactId)[0:2]>/<artifactId>.bin`
+    (Shard wird aus dem `artifactId` abgeleitet, nicht aus dem Inhalt; der
+    Lookup ist damit O(1) ohne Verzeichnisscan)
+  - Sidecar-Datei `<file>.meta.json` mit `sha256` und `sizeBytes` neben
+    jeder finalisierten Datei; `existingSegmentSha256` /
+    `existingSha256` werden aus dem Sidecar gelesen, nicht durch Re-Hash
+    der Zieldatei
+- atomare Schreibstrategie verbindlich festlegen:
+  - Schreiben in `<finalpath>.tmp.<uuid>` im selben Verzeichnis
+  - `sha256` streamend ueber `DigestInputStream` berechnen
+  - `Files.move(... ATOMIC_MOVE)` ohne `REPLACE_EXISTING` als
+    Sichtbarkeitsschritt; existierendes Ziel mappt deterministisch auf
+    `AlreadyStored`/`AlreadyExists` (gleicher Hash) bzw. `Conflict`
+    (anderer Hash); abgebrochene Writes hinterlassen kein sichtbares Ziel
+- Path-Traversal-Schutz: `sessionId` und `artifactId` werden vor jedem
+  Pfadbau gegen ein striktes Whitelist-Pattern (`[A-Za-z0-9_-]{1,128}`)
+  validiert; `segmentIndex` muss nicht negativ sein
+- Range-Read-Semantik (gilt fuer In-Memory und file-backed identisch):
+  - `length == 0` liefert leeren Stream
+  - `offset < 0`, `length < 0`, `offset > size` oder
+    `offset + length > size` werfen `IllegalArgumentException`
+- Cleanup-Vertrag:
+  - TTL-/Abort-/Expiry-Cleanup wird durch den UploadSession-Service
+    getrieben, der je abgelaufener Session `deleteAllForSession(sessionId)`
+    aufruft; keine zusaetzliche Methode am Port-Interface
+  - Crash-Recovery (`cleanupOrphans(activeSessions: Set<String>)`) ist
+    file-backed-spezifisch und liegt direkt am
+    `FileBackedUploadSegmentStore`, nicht auf dem Port; raeumt
+    liegengebliebene `.tmp.*`-Dateien und verwaiste Session-Verzeichnisse
+    beim Serverstart
 
 Abnahme:
 
-- Segmentwrites sind atomar
+- Segmentwrites sind atomar; ein Crash mid-write hinterlaesst kein
+  sichtbares Ziel
 - abweichender Write auf gleiche Session/Position liefert deterministischen
-  Konflikt
-- Range-/Chunk-Reads funktionieren fuer finalisierte Artefakte
-- TTL-/Abort-/Expiry-Cleanup entfernt unfertige Segmente
+  Konflikt; identischer Write liefert `AlreadyStored` ohne Datei-Re-Hash
+- Range-/Chunk-Reads funktionieren fuer Segmente und finalisierte
+  Artefakte; Length-0- und Out-of-Bounds-Faelle sind einheitlich
+  spezifiziert und getestet
+- TTL-/Abort-/Expiry-Cleanup entfernt unfertige Segmente;
+  `cleanupOrphans` raeumt `.tmp.*`-Reste und verwaiste Verzeichnisse
 - file-backed Store besteht dieselben Contract-Tests wie In-Memory plus
-  Tests fuer echte Dateien, atomare Writes und Filesystem-Cleanup
+  Tests fuer echte Dateien, atomare Writes, Filesystem-Cleanup,
+  Crash-Recovery und Path-Traversal-Abwehr
+- parallele Writes auf gleichem `(sessionId, segmentIndex)` werden
+  deterministisch in genau ein `Stored` plus `AlreadyStored`/`Conflict`
+  aufgeloest (Contract-Test mit konkurrierenden Threads)
 
 ### 6.4 Fingerprint-Service implementieren
 
@@ -1198,9 +1240,9 @@ Alle in 5.3 genannten Stores sind Kotlin-`interface`s in
 | Klasse | Paket | Modul |
 | --- | --- | --- |
 | `UploadSegmentStore`, `ArtifactContentStore` | `...server.ports` | `hexagon:ports-common` |
-| `ByteStoreContractTests` (Basisklasse, abstrakt) | `...server.ports.contract` | `hexagon:ports-common` testFixtures |
+| `UploadSegmentStoreContractTests`, `ArtifactContentStoreContractTests` (abstrakt, je eigene Basisklasse) | `...server.ports.contract` | `hexagon:ports-common` testFixtures |
 | `InMemoryUploadSegmentStore`, `InMemoryArtifactContentStore` | `...server.ports.memory` | `hexagon:ports-common` testFixtures |
-| `FileBackedUploadSegmentStore`, `FileBackedArtifactContentStore` | `...server.adapter.storage.file` | `adapters:driven:storage-file` |
+| `FileBackedUploadSegmentStore`, `FileBackedArtifactContentStore` | `...server.adapter.storage.file` | `adapters:driven:storage-file` (NEU) |
 
 #### AP 6.4 Fingerprint-Service
 
@@ -1288,7 +1330,7 @@ Contract-Test-Basisklassen liegen in `src/testFixtures/kotlin/...contract`.
 | --- | --- |
 | 6.1 | `PrincipalContextTest`, `TenantScopeCheckerTest`, `ServerResourceUriParserTest`, `ResourceKindTest`, `JobRecordTest`, `JobVisibilityTest`, `ArtifactRecordTest`, `UploadSessionTransitionsTest`, `UploadSessionFinalizeInvariantsTest`, `ConnectionReferenceTest`, `ToolErrorEnvelopeTest`, `PaginationTest` |
 | 6.2 | `JobStoreContractTest`, `ArtifactStoreContractTest`, `SchemaStoreContractTest`, `ProfileStoreContractTest`, `DiffStoreContractTest`, `UploadSessionStoreContractTest`, `UploadSegmentStoreContractTest`, `ConnectionReferenceStoreContractTest`, `IdempotencyStoreContractTest` (inkl. parallel-reserve, lease-recovery, awaiting-approval, committed, denied, conflict), `SyncEffectIdempotencyStoreContractTest`, `ReadOnlyInitResumeContractTest`, `ApprovalGrantStoreContractTest`, `QuotaStoreContractTest`, `AuditSinkContractTest` |
-| 6.3 | `ByteStoreContractTests` (abstract), `InMemoryUploadSegmentStoreTest`, `InMemoryArtifactContentStoreTest`, `FileBackedUploadSegmentStoreTest`, `FileBackedArtifactContentStoreTest`, `FileBackedAtomicWriteTest`, `FileBackedRangeReadTest`, `FileBackedTtlCleanupTest` |
+| 6.3 | `UploadSegmentStoreContractTests` (abstract), `ArtifactContentStoreContractTests` (abstract), `InMemoryUploadSegmentStoreTest` und `InMemoryArtifactContentStoreTest` (in `InMemoryStoreContractTests`), `FileBackedUploadSegmentStoreTest`, `FileBackedArtifactContentStoreTest`, `FileBackedAtomicWriteTest`, `FileBackedRangeReadTest`, `FileBackedTtlCleanupTest`, `FileBackedConcurrentWriteTest`, `FileBackedOrphanCleanupTest`, `FileBackedPathTraversalTest` |
 | 6.4 | `JsonCanonicalizerTest`, `PayloadFingerprintServiceTest`, `FingerprintTopLevelExclusionTest`, `FingerprintNestedFieldRetentionTest`, `FingerprintArrayOrderTest`, `FingerprintNullAndDefaultsTest`, `FingerprintTenantBindTest`, `UploadSessionFingerprintVsSegmentTest` |
 | 6.5 | `ApprovalGrantValidatorTest` (correlation-kinds, expiry, reuse, scope-mismatch, tenant/caller/tool-mismatch, payload-mismatch), `ApprovalGrantTokenFingerprintTest`, `ApprovalGrantServiceTest` |
 | 6.6 | `QuotaServiceTest` (aktive Jobs, Sessions, Bytes, parallel Segmentwrites, Provider-Calls), `QuotaLifecycleTest` (reserve/commit/release/refund inkl. Terminalstatus, Abort, Expiry, Failed-Finalize, Idempotency-Recovery), `RateLimiterTest`, `TimeoutBudgetTest`, `RateLimitedDetailScrubbingTest` |

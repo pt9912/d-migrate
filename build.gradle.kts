@@ -151,6 +151,7 @@ dependencies {
     kover(project(":adapters:driven:driver-sqlite"))
     kover(project(":adapters:driven:driver-sqlite-profiling"))
     kover(project(":adapters:driven:formats"))
+    kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))
     kover(project(":adapters:driving:cli"))
     kover(project(":test:integration-postgresql"))

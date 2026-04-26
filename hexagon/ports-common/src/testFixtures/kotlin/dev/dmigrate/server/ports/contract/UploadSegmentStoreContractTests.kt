@@ -2,6 +2,7 @@ package dev.dmigrate.server.ports.contract
 
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.WriteSegmentOutcome
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotBeBlank
@@ -59,6 +60,34 @@ abstract class UploadSegmentStoreContractTests(factory: () -> UploadSegmentStore
         store.writeSegment(segment, ByteArrayInputStream(payload))
         val slice = store.openSegmentRangeRead("u1", 0, offset = 2, length = 4).readAllBytes()
         String(slice) shouldBe "cdef"
+    }
+
+    test("openSegmentRangeRead with length=0 returns empty stream") {
+        val store = factory()
+        val payload = "abcdefghij".toByteArray()
+        val segment = Fixtures.uploadSegment("u1", index = 0, sizeBytes = payload.size.toLong())
+        store.writeSegment(segment, ByteArrayInputStream(payload))
+        val slice = store.openSegmentRangeRead("u1", 0, offset = 3, length = 0).readAllBytes()
+        slice.size shouldBe 0
+    }
+
+    test("openSegmentRangeRead rejects out-of-bounds and negative ranges") {
+        val store = factory()
+        val payload = "abcdefghij".toByteArray()
+        val segment = Fixtures.uploadSegment("u1", index = 0, sizeBytes = payload.size.toLong())
+        store.writeSegment(segment, ByteArrayInputStream(payload))
+        shouldThrow<IllegalArgumentException> {
+            store.openSegmentRangeRead("u1", 0, offset = -1, length = 1)
+        }
+        shouldThrow<IllegalArgumentException> {
+            store.openSegmentRangeRead("u1", 0, offset = 0, length = -1)
+        }
+        shouldThrow<IllegalArgumentException> {
+            store.openSegmentRangeRead("u1", 0, offset = 11, length = 0)
+        }
+        shouldThrow<IllegalArgumentException> {
+            store.openSegmentRangeRead("u1", 0, offset = 5, length = 6)
+        }
     }
 
     test("deleteAllForSession removes only that session's segments") {
