@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports
 
+import dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
 import dev.dmigrate.server.core.idempotency.InitResumeOutcome
@@ -32,6 +33,18 @@ interface IdempotencyStore {
     ): InitResumeOutcome
 
     fun markAwaitingApproval(scope: IdempotencyScope, now: Instant): Boolean
+
+    /**
+     * Atomically transitions an `AWAITING_APPROVAL` entry to `PENDING`
+     * so the caller may perform the side-effect (job creation) exactly
+     * once. Concurrent claimers on the same scope: one wins
+     * (`Claimed`), the rest see `AlreadyClaimed`. Already-committed
+     * entries return `Committed` for dedup; denied entries return
+     * `Denied`. Anything else (no entry, expired AWAITING_APPROVAL,
+     * still PENDING from the original reserve) returns
+     * `NotAwaitingApproval`.
+     */
+    fun claimApproved(scope: IdempotencyScope, now: Instant): IdempotencyClaimOutcome
 
     fun commit(scope: IdempotencyScope, resultRef: String, now: Instant): Boolean
 

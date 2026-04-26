@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports.memory
 
+import dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
 import dev.dmigrate.server.core.idempotency.IdempotencyState
@@ -24,6 +25,11 @@ class InMemoryIdempotencyStore(
         val expiresAt: Instant,
         val resultRef: String? = null,
         val deniedReason: String? = null,
+        // Internal-only: distinguishes a fresh PENDING (from `reserve`)
+        // from a claimed PENDING (from `claimApproved` after policy
+        // approval). The public IdempotencyState stays at four values
+        // per the plan §6.2; this flag never crosses the port boundary.
+        val claimed: Boolean = false,
     )
 
     private data class InitEntry(
@@ -114,6 +120,45 @@ class InMemoryIdempotencyStore(
                 }
                 else -> {
                     outcome = InitResumeOutcome.Existing(scope, existing.sessionId, existing.expiresAt)
+                    existing
+                }
+            }
+        }
+        return outcome!!
+    }
+
+    override fun claimApproved(scope: IdempotencyScope, now: Instant): IdempotencyClaimOutcome {
+        var outcome: IdempotencyClaimOutcome? = null
+        entries.compute(scope) { _, existing ->
+            when {
+                existing == null -> {
+                    outcome = IdempotencyClaimOutcome.NotAwaitingApproval(scope)
+                    null
+                }
+                existing.state == IdempotencyState.COMMITTED -> {
+                    outcome = IdempotencyClaimOutcome.Committed(scope, existing.resultRef!!)
+                    existing
+                }
+                existing.state == IdempotencyState.DENIED -> {
+                    outcome = IdempotencyClaimOutcome.Denied(scope, existing.deniedReason!!)
+                    existing
+                }
+                existing.state == IdempotencyState.AWAITING_APPROVAL &&
+                    existing.expiresAt.isAfter(now) -> {
+                    val newLease = now.plusSeconds(pendingLeaseSeconds)
+                    outcome = IdempotencyClaimOutcome.Claimed(scope, newLease)
+                    existing.copy(
+                        state = IdempotencyState.PENDING,
+                        expiresAt = newLease,
+                        claimed = true,
+                    )
+                }
+                existing.state == IdempotencyState.PENDING && existing.claimed -> {
+                    outcome = IdempotencyClaimOutcome.AlreadyClaimed(scope, existing.expiresAt)
+                    existing
+                }
+                else -> {
+                    outcome = IdempotencyClaimOutcome.NotAwaitingApproval(scope)
                     existing
                 }
             }

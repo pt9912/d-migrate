@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports.contract
 
+import dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyKey
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
@@ -127,6 +128,91 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         val final = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(3))
         final.shouldBeInstanceOf<IdempotencyReserveOutcome.Committed>()
         final.resultRef.startsWith("job_") shouldBe true
+    }
+
+    test("claimApproved without an entry returns NotAwaitingApproval") {
+        val store = factory()
+        store.claimApproved(scope("ghost"), Fixtures.NOW)
+            .shouldBeInstanceOf<IdempotencyClaimOutcome.NotAwaitingApproval>()
+    }
+
+    test("claimApproved on PENDING (pre-approval) is NotAwaitingApproval") {
+        val store = factory()
+        val s = scope("pre")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.claimApproved(s, Fixtures.NOW.plusSeconds(1))
+            .shouldBeInstanceOf<IdempotencyClaimOutcome.NotAwaitingApproval>()
+    }
+
+    test("claimApproved transitions AWAITING_APPROVAL atomically — exactly one Claimed under load") {
+        val store = factory()
+        val s = scope("approved")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+
+        val pool = Executors.newFixedThreadPool(8)
+        try {
+            val tasks = List(16) {
+                Callable { store.claimApproved(s, Fixtures.NOW.plusSeconds(2)) }
+            }
+            val results = pool.invokeAll(tasks).map { it.get() }
+            results.count { it is IdempotencyClaimOutcome.Claimed } shouldBe 1
+            results.count { it is IdempotencyClaimOutcome.AlreadyClaimed } shouldBe 15
+        } finally {
+            pool.shutdown()
+            pool.awaitTermination(2, TimeUnit.SECONDS)
+        }
+    }
+
+    test("claimApproved on a committed entry returns Committed for dedup") {
+        val store = factory()
+        val s = scope("done")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+        store.claimApproved(s, Fixtures.NOW.plusSeconds(2))
+            .shouldBeInstanceOf<IdempotencyClaimOutcome.Claimed>()
+        store.commit(s, "job_1", Fixtures.NOW.plusSeconds(3))
+
+        val outcome = store.claimApproved(s, Fixtures.NOW.plusSeconds(4))
+        outcome.shouldBeInstanceOf<IdempotencyClaimOutcome.Committed>()
+        outcome.resultRef shouldBe "job_1"
+    }
+
+    test("claimApproved on a denied entry returns Denied with the reason") {
+        val store = factory()
+        val s = scope("denied")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+        store.deny(s, "policy", Fixtures.NOW.plusSeconds(2))
+
+        val outcome = store.claimApproved(s, Fixtures.NOW.plusSeconds(3))
+        outcome.shouldBeInstanceOf<IdempotencyClaimOutcome.Denied>()
+        outcome.reason shouldBe "policy"
+    }
+
+    test("expired AWAITING_APPROVAL is no longer claimable") {
+        val store = factory()
+        val s = scope("late")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+
+        store.claimApproved(s, Fixtures.NOW.plusSeconds(100_000))
+            .shouldBeInstanceOf<IdempotencyClaimOutcome.NotAwaitingApproval>()
+    }
+
+    test("commit after Claimed transitions to COMMITTED and dedups subsequent reserves") {
+        val store = factory()
+        val s = scope("commit-after-claim")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+        val claim = store.claimApproved(s, Fixtures.NOW.plusSeconds(2))
+        claim.shouldBeInstanceOf<IdempotencyClaimOutcome.Claimed>()
+
+        store.commit(s, "job_42", Fixtures.NOW.plusSeconds(3)) shouldBe true
+
+        val again = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(4))
+        again.shouldBeInstanceOf<IdempotencyReserveOutcome.Committed>()
+        again.resultRef shouldBe "job_42"
     }
 
     test("cleanupExpired removes terminal entries past their retention") {

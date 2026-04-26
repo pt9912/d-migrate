@@ -56,6 +56,38 @@ sealed interface SyncEffectReserveOutcome {
     ) : SyncEffectReserveOutcome
 }
 
+/**
+ * Outcome of `IdempotencyStore.claimApproved(scope, now)` — the atomic
+ * AWAITING_APPROVAL -> PENDING transition the §6.2 plan demands so
+ * exactly one caller is allowed to perform side-effects after a policy
+ * approval.
+ */
+sealed interface IdempotencyClaimOutcome {
+    val scope: IdempotencyScope
+
+    data class Claimed(
+        override val scope: IdempotencyScope,
+        val leaseExpiresAt: Instant,
+    ) : IdempotencyClaimOutcome
+
+    data class AlreadyClaimed(
+        override val scope: IdempotencyScope,
+        val leaseExpiresAt: Instant,
+    ) : IdempotencyClaimOutcome
+
+    data class Committed(
+        override val scope: IdempotencyScope,
+        val resultRef: String,
+    ) : IdempotencyClaimOutcome
+
+    data class Denied(
+        override val scope: IdempotencyScope,
+        val reason: String,
+    ) : IdempotencyClaimOutcome
+
+    data class NotAwaitingApproval(override val scope: IdempotencyScope) : IdempotencyClaimOutcome
+}
+
 sealed interface InitResumeOutcome {
     val scope: InitResumeScope
 
