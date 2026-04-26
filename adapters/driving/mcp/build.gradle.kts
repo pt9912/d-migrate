@@ -23,12 +23,17 @@ dependencies {
     runtimeOnly(project(":adapters:driven:driver-sqlite"))
     runtimeOnly(project(":adapters:driven:driver-sqlite-profiling"))
 
+    // §12.1 — JSON-RPC-Layer (AP 6.4 Initialize-Handler + NDJSON-Framing)
+    implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:${rootProject.properties["lsp4jJsonrpcVersion"]}")
+
     // §12.2 — Ktor (CIO engine) als HTTP-Server (AP 6.2 Bootstrap)
     val ktorVersion = rootProject.properties["ktorVersion"]
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-cio:$ktorVersion")
 
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
+
+    testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
 
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 }

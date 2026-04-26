@@ -6,6 +6,8 @@ import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.net.Socket
 
 class McpServerBootstrapTest : FunSpec({
@@ -60,7 +62,11 @@ class McpServerBootstrapTest : FunSpec({
     }
 
     test("startStdio on valid config returns Started with boundPort=0") {
-        val outcome = McpServerBootstrap.startStdio(McpServerConfig(authMode = AuthMode.DISABLED))
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(authMode = AuthMode.DISABLED),
+            input = ByteArrayInputStream(ByteArray(0)),
+            output = ByteArrayOutputStream(),
+        )
         outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
         try {
             outcome.handle.boundPort shouldBe 0

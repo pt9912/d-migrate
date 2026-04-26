@@ -6,6 +6,8 @@ import dev.dmigrate.format.SchemaFileResolver
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 /**
  * §6.3 Akzeptanz: nach MCP-Serverstart muessen Driver- und Codec-
@@ -30,7 +32,11 @@ class McpServerBootstrapRuntimeLookupTest : FunSpec({
 
     test("after startStdio, DatabaseDriver lookup works as well") {
         DatabaseDriverRegistry.clear()
-        val outcome = McpServerBootstrap.startStdio(McpServerConfig(authMode = AuthMode.DISABLED))
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(authMode = AuthMode.DISABLED),
+            input = ByteArrayInputStream(ByteArray(0)),
+            output = ByteArrayOutputStream(),
+        )
         outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
         try {
             DatabaseDriverRegistry.get(DatabaseDialect.POSTGRESQL) shouldNotBe null
