@@ -31,7 +31,7 @@ abstract class ArtifactContentStoreContractTests(factory: () -> ArtifactContentS
         store.exists("mismatch") shouldBe false
     }
 
-    test("write of existing artifact returns AlreadyExists with same hash") {
+    test("write of existing artifact with same bytes returns AlreadyExists") {
         val store = factory()
         val payload = "static".toByteArray()
         val first = store.write("dup", ByteArrayInputStream(payload), payload.size.toLong())
@@ -39,6 +39,18 @@ abstract class ArtifactContentStoreContractTests(factory: () -> ArtifactContentS
         val second = store.write("dup", ByteArrayInputStream(payload), payload.size.toLong())
         second.shouldBeInstanceOf<WriteArtifactOutcome.AlreadyExists>()
         second.existingSha256 shouldBe first.sha256
+    }
+
+    test("write of existing artifact with different bytes returns Conflict") {
+        val store = factory()
+        val original = "alpha-content".toByteArray()
+        val different = "beta-content_".toByteArray()
+        val first = store.write("dup", ByteArrayInputStream(original), original.size.toLong())
+            as WriteArtifactOutcome.Stored
+        val outcome = store.write("dup", ByteArrayInputStream(different), different.size.toLong())
+        outcome.shouldBeInstanceOf<WriteArtifactOutcome.Conflict>()
+        outcome.existingSha256 shouldBe first.sha256
+        (outcome.existingSha256 == outcome.attemptedSha256) shouldBe false
     }
 
     test("openRangeRead returns the requested slice") {

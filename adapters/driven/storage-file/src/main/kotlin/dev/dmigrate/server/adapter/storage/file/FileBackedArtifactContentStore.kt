@@ -4,7 +4,6 @@ import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
 import java.io.IOException
 import java.io.InputStream
-import java.io.OutputStream
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
@@ -27,14 +26,9 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
         val finalBin = finalBinFor(artifactId)
         val finalMeta = metaFor(finalBin, artifactId)
 
-        if (Files.exists(finalBin)) {
-            source.transferTo(OutputStream.nullOutputStream())
-            return WriteArtifactOutcome.AlreadyExists(
-                artifactId = artifactId,
-                existingSha256 = Sidecar.readOrRecover(finalBin, finalMeta).sha256,
-            )
-        }
-
+        // Always hash the new content first — the §6.3 contract demands
+        // AlreadyExists vs Conflict is decided by the new SHA, not by
+        // mere existence of the slot.
         val tmpBin = stagingDir.resolve("$artifactId${FileLayout.BIN}${FileLayout.TMP_INFIX}${UUID.randomUUID()}")
         val written = try {
             StreamingHashWriter.copyAndHash(source, tmpBin)
@@ -57,7 +51,11 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
         } catch (_: FileAlreadyExistsException) {
             Files.deleteIfExists(tmpBin)
             val existingSha = Sidecar.readOrRecover(finalBin, finalMeta).sha256
-            WriteArtifactOutcome.AlreadyExists(artifactId, existingSha)
+            if (existingSha == written.sha256) {
+                WriteArtifactOutcome.AlreadyExists(artifactId, existingSha)
+            } else {
+                WriteArtifactOutcome.Conflict(artifactId, existingSha, written.sha256)
+            }
         }
     }
 

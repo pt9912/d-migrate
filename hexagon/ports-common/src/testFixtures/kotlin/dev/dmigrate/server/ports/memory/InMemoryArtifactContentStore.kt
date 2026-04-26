@@ -18,18 +18,22 @@ class InMemoryArtifactContentStore : ArtifactContentStore {
         source: InputStream,
         expectedSizeBytes: Long,
     ): WriteArtifactOutcome {
-        val existing = hashes[artifactId]
-        if (existing != null) {
-            return WriteArtifactOutcome.AlreadyExists(artifactId, existing)
-        }
         val bytes = source.readAllBytes()
         if (bytes.size.toLong() != expectedSizeBytes) {
             return WriteArtifactOutcome.SizeMismatch(expectedSizeBytes, bytes.size.toLong())
         }
-        val digest = sha256Hex(bytes)
+        val attemptedSha = sha256Hex(bytes)
+        val existing = hashes[artifactId]
+        if (existing != null) {
+            return if (existing == attemptedSha) {
+                WriteArtifactOutcome.AlreadyExists(artifactId, existing)
+            } else {
+                WriteArtifactOutcome.Conflict(artifactId, existing, attemptedSha)
+            }
+        }
         contents[artifactId] = bytes
-        hashes[artifactId] = digest
-        return WriteArtifactOutcome.Stored(artifactId, digest, bytes.size.toLong())
+        hashes[artifactId] = attemptedSha
+        return WriteArtifactOutcome.Stored(artifactId, attemptedSha, bytes.size.toLong())
     }
 
     override fun openRangeRead(artifactId: String, offset: Long, length: Long): InputStream {

@@ -50,6 +50,7 @@ kover {
                     "dev.dmigrate.server.ports.WriteArtifactOutcome\$Stored",
                     "dev.dmigrate.server.ports.WriteArtifactOutcome\$SizeMismatch",
                     "dev.dmigrate.server.ports.WriteArtifactOutcome\$AlreadyExists",
+                    "dev.dmigrate.server.ports.WriteArtifactOutcome\$Conflict",
                     "dev.dmigrate.server.ports.WriteSegmentOutcome",
                     "dev.dmigrate.server.ports.WriteSegmentOutcome\$Stored",
                     "dev.dmigrate.server.ports.WriteSegmentOutcome\$AlreadyStored",

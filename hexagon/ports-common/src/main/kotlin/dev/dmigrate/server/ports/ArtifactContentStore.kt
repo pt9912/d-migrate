@@ -22,4 +22,9 @@ sealed interface WriteArtifactOutcome {
     data class Stored(val artifactId: String, val sha256: String, val sizeBytes: Long) : WriteArtifactOutcome
     data class SizeMismatch(val expected: Long, val actual: Long) : WriteArtifactOutcome
     data class AlreadyExists(val artifactId: String, val existingSha256: String) : WriteArtifactOutcome
+    data class Conflict(
+        val artifactId: String,
+        val existingSha256: String,
+        val attemptedSha256: String,
+    ) : WriteArtifactOutcome
 }
