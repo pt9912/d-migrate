@@ -565,9 +565,8 @@ Aufgaben:
 - `stdio`-Startpfad implementieren
 - HTTP-Startpfad implementieren
 - Bind-Adresse, Base-URL, Auth-Modus, Issuer, JWKS/Introspection,
-  Clock-Skew und Scope-Mapping konfigurierbar machen
-- `McpLimits`-Block in `ServerCoreLimits` ergaenzen
-  (`sessionIdleTimeout` Default 30 Min, §12.5)
+  Clock-Skew, Session-Idle-Timeout und Scope-Mapping konfigurierbar
+  machen
 - unsichere lokale Demo-Konfiguration explizit markieren
 
 Akzeptanz:
@@ -1074,7 +1073,7 @@ Verbindlich (vorher offen, jetzt fixiert):
   HTTP-Antwort nach Initialize
 - in-memory `ConcurrentHashMap<UUID, SessionState>` haelt
   `(principalContext, lastSeen)`
-- TTL: 30 Minuten Idle (Default; `ServerCoreLimits.mcp.sessionIdleTimeout`)
+- TTL: 30 Minuten Idle (Default; `McpServerConfig.sessionIdleTimeout`)
 - unbekannte/abgelaufene IDs liefern HTTP 404 mit JSON-RPC-Error
   `-32000` `session expired or unknown`
 - `DELETE /mcp` mit gueltiger Session-Id terminiert die Session
@@ -1214,7 +1213,10 @@ data class McpServerConfig(
         "RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
     ),
     val clockSkew: Duration = Duration.ofSeconds(60),
-    val scopeMapping: Map<String, Set<String>> = defaultScopeMapping(), // §12.9
+    val scopeMapping: Map<String, Set<String>> =
+        McpServerConfig.DEFAULT_SCOPE_MAPPING, // §12.9
+    // Session
+    val sessionIdleTimeout: Duration = Duration.ofMinutes(30), // §12.5
     // stdio
     val stdioTokenFile: Path? = null, // §12.10
 )
@@ -1222,6 +1224,8 @@ data class McpServerConfig(
 
 Verbindliche Validierung beim Serverstart (§4.3, §4.4, §12.6):
 
+- `port` muss in `0..65535` liegen
+- `clockSkew` muss in `[0s, 5min]` liegen
 - `authMode == DISABLED` verlangt:
   - `InetAddress.getByName(bindAddress).isLoopbackAddress` `== true`
   - `publicBaseUrl == null`
@@ -1231,15 +1235,15 @@ Verbindliche Validierung beim Serverstart (§4.3, §4.4, §12.6):
   - `issuer != null`, `audience != null`
   - `JWT_JWKS` zusaetzlich `jwksUrl != null`
   - `JWT_INTROSPECTION` zusaetzlich `introspectionUrl != null`
+- `publicBaseUrl != null` verlangt `scheme == "https"` (§4.4 verlangt
+  kanonische HTTPS-URI)
 - `allowedOrigins`:
   - darf `*` (Wildcard alleine) nicht enthalten
   - bei nicht-loopback-Bind muss die Liste explizit gesetzt sein (Default
     nur fuer Loopback erlaubt)
 - `algorithmAllowlist`:
   - darf `none` und `HS*` nicht enthalten
+- `stdioTokenFile != null` verlangt, dass die Datei existiert und
+  lesbar ist (§12.10 — File-Backed Lookup)
 
 Alle Verstoesse sind Startfehler vor dem ersten Client-Request (§5.2).
-
-Session-Idle-Timeout kommt nicht aus `McpServerConfig`, sondern aus
-`ServerCoreLimits.mcp.sessionIdleTimeout` (§12.5). AP 6.2 ergaenzt
-dafuer einen `McpLimits`-Block in `ServerCoreLimits`.

@@ -155,6 +155,7 @@ dependencies {
     kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))
     kover(project(":adapters:driving:cli"))
+    kover(project(":adapters:driving:mcp"))
     kover(project(":test:integration-postgresql"))
     kover(project(":test:integration-mysql"))
     kover(project(":test:consumer-read-probe"))

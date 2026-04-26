@@ -23,6 +23,7 @@ include("adapters:driven:integrations")
 include("adapters:driven:storage-file")
 include("adapters:driven:streaming")
 include("adapters:driving:cli")
+include("adapters:driving:mcp")
 
 // Integration test modules (Testcontainers, separated from driver unit tests)
 include("test:integration-postgresql")

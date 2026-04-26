@@ -73,6 +73,7 @@ COPY --chown=gradle:gradle adapters/driven/integrations/build.gradle.kts adapter
 COPY --chown=gradle:gradle adapters/driven/storage-file/build.gradle.kts adapters/driven/storage-file/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/streaming/build.gradle.kts adapters/driven/streaming/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driving/cli/build.gradle.kts adapters/driving/cli/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driving/mcp/build.gradle.kts adapters/driving/mcp/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-postgresql/build.gradle.kts test/integration-postgresql/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-mysql/build.gradle.kts test/integration-mysql/build.gradle.kts
 COPY --chown=gradle:gradle test/consumer-read-probe/build.gradle.kts test/consumer-read-probe/build.gradle.kts
