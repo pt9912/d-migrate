@@ -731,6 +731,57 @@ Aufgaben:
   - Payload-Fingerprint vergleichen
   - Reuse mit anderem Payload, Tenant, Caller, Tool oder Correlation
     deterministisch ablehnen
+- Eingaben in einem `ApprovalAttempt` zusammenfassen, statt einzelne
+  Parameter durch die API zu reichen:
+  ```kotlin
+  data class ApprovalAttempt(
+      val tokenFingerprint: String,
+      val tenantId: TenantId,
+      val callerId: PrincipalId,
+      val toolName: String,
+      val correlationKind: ApprovalCorrelationKind,
+      val correlationKey: String,
+      val payloadFingerprint: String,
+      val requiredScopes: Set<String>,
+  )
+
+  interface ApprovalGrantService {
+      fun validate(attempt: ApprovalAttempt, now: Instant): ApprovalGrantValidation
+  }
+  ```
+- `ApprovalGrantValidation` als sealed result mit `Valid(grant)` und
+  einer `Invalid`-Hierarchie pro Reject-Grund
+  (`Unknown`, `Expired`, `TenantMismatch`, `CallerMismatch`,
+  `ToolMismatch`, `CorrelationMismatch`, `PayloadMismatch`,
+  `ScopeMismatch(missing)`, optional `IssuerMismatch`)
+- Verantwortungsverteilung:
+  - `ApprovalGrantValidator`: reine Vergleichslogik, kennt keinen Store
+    und kein `now` (nimmt Grant + Attempt + `now`)
+  - `ApprovalGrantService`: orchestriert Store-Lookup -> Validator ->
+    Result; einziges Tor zur Außenwelt
+- `ApprovalTokenFingerprint.compute(rawToken: String): String =
+  sha256_hex(rawToken.utf8)` als Helper, damit Adapter den Übergang zum
+  gespeicherten Fingerprint deterministisch erzeugen koennen; rohe
+  Tokens bleiben am Adapter-Rand
+- Issuer-Pruefung: Validator nimmt eine `IssuerCheck`-Sealed
+  (`Off | AllowList(Set<String>)`). Composition Root muss explizit
+  einen Wert waehlen — kein Default, damit der Security-Default nicht
+  unbemerkt auf "Off" steht. `AllowList(emptySet())` ist Deny-All.
+- Reuse-Semantik: ein Grant ist innerhalb seiner Ablaufzeit fuer
+  identische `ApprovalAttempt` wiederverwendbar (idempotent). Schutz
+  vor Doppel-Ausfuehrung liegt in der Idempotency-State-Machine
+  (AP 6.2), nicht im Approval-Service. Der Store hat kein
+  `markConsumed`, das ist Absicht.
+- Validierungsreihenfolge ist deterministisch:
+  1. `Unknown` (kein Grant fuer `tokenFingerprint` + Tenant)
+  2. `Expired`
+  3. `TenantMismatch`
+  4. `CallerMismatch`
+  5. `ToolMismatch`
+  6. `CorrelationMismatch` (Kind oder Key)
+  7. `PayloadMismatch`
+  8. `ScopeMismatch(missing)`
+  9. `IssuerMismatch` (nur wenn Issuer-Check aktiv)
 
 Abnahme:
 
@@ -740,6 +791,9 @@ Abnahme:
 - rohe Tokens tauchen nicht in Store oder Audit auf
 - abgelaufene Grants werden abgewiesen
 - fehlende Scopes werden abgewiesen
+- `ScopeMismatch.missing` enthaelt die genaue fehlende Scope-Menge
+- Validierungsreihenfolge ist getestet: bei mehreren Fehlern wird der
+  in der Reihenfolge erste gemeldet
 
 ### 6.6 Quota-, Rate-Limit- und Timeout-Grundlagen
 
@@ -1299,9 +1353,13 @@ Alle in 5.3 genannten Stores sind Kotlin-`interface`s in
 
 | Klasse | Paket |
 | --- | --- |
-| `ApprovalGrantService` | `...application.approval` |
+| `ApprovalGrantService` (interface) | `...application.approval` |
+| `DefaultApprovalGrantService` | `...application.approval` |
 | `ApprovalGrantValidator` | `...application.approval` |
-| `ApprovalGrantValidation` (sealed) | `...application.approval` |
+| `ApprovalAttempt` (data class) | `...application.approval` |
+| `ApprovalGrantValidation` (sealed: `Valid`, `Invalid.{Unknown, Expired, TenantMismatch, CallerMismatch, ToolMismatch, CorrelationMismatch, PayloadMismatch, ScopeMismatch, IssuerMismatch}`) | `...application.approval` |
+| `IssuerCheck` (sealed: `Off`, `AllowList(trusted)`) | `...application.approval` |
+| `ApprovalTokenFingerprint` (object, `compute(rawToken)`) | `...application.approval` |
 
 #### AP 6.6 Quota/Rate-Limit/Timeout
 
@@ -1374,7 +1432,7 @@ Contract-Test-Basisklassen liegen in `src/testFixtures/kotlin/...contract`.
 | 6.2 | `JobStoreContractTest`, `ArtifactStoreContractTest`, `SchemaStoreContractTest`, `ProfileStoreContractTest`, `DiffStoreContractTest`, `UploadSessionStoreContractTest`, `UploadSegmentStoreContractTest`, `ConnectionReferenceStoreContractTest`, `IdempotencyStoreContractTest` (inkl. parallel-reserve, lease-recovery, awaiting-approval, committed, denied, conflict), `SyncEffectIdempotencyStoreContractTest`, `ReadOnlyInitResumeContractTest`, `ApprovalGrantStoreContractTest`, `QuotaStoreContractTest`, `AuditSinkContractTest` |
 | 6.3 | `UploadSegmentStoreContractTests` (abstract), `ArtifactContentStoreContractTests` (abstract), `InMemoryUploadSegmentStoreTest` und `InMemoryArtifactContentStoreTest` (in `InMemoryStoreContractTests`), `FileBackedUploadSegmentStoreTest`, `FileBackedArtifactContentStoreTest`, `FileBackedAtomicWriteTest`, `FileBackedRangeReadTest`, `FileBackedTtlCleanupTest`, `FileBackedConcurrentWriteTest`, `FileBackedOrphanCleanupTest`, `FileBackedPathTraversalTest` |
 | 6.4 | `JsonCanonicalizerTest`, `JsonCanonicalizerRfc8785VectorTest`, `JsonValueRejectsFloatAndBigIntTest`, `PayloadFingerprintServiceTest`, `FingerprintTopLevelExclusionTest`, `FingerprintNestedFieldRetentionTest`, `FingerprintArrayOrderTest`, `FingerprintNullAndDefaultsTest`, `FingerprintTenantBindTest`, `FingerprintReservedBindKeyTest`, `UploadSessionFingerprintVsSegmentTest` |
-| 6.5 | `ApprovalGrantValidatorTest` (correlation-kinds, expiry, reuse, scope-mismatch, tenant/caller/tool-mismatch, payload-mismatch), `ApprovalGrantTokenFingerprintTest`, `ApprovalGrantServiceTest` |
+| 6.5 | `ApprovalGrantValidatorTest` (correlation-kinds, expiry, reuse, scope-mismatch, tenant/caller/tool-mismatch, payload-mismatch), `ApprovalGrantValidationOrderTest` (deterministische Reihenfolge bei mehreren Fehlern), `ApprovalGrantTokenFingerprintTest`, `ApprovalGrantServiceTest` (Store-Integration + Issuer-Check on/off) |
 | 6.6 | `QuotaServiceTest` (aktive Jobs, Sessions, Bytes, parallel Segmentwrites, Provider-Calls), `QuotaLifecycleTest` (reserve/commit/release/refund inkl. Terminalstatus, Abort, Expiry, Failed-Finalize, Idempotency-Recovery), `RateLimiterTest`, `TimeoutBudgetTest`, `RateLimitedDetailScrubbingTest` |
 | 6.7 | `ErrorMapperTest` (parametrisiert pro Code: alle 18 Codes aus `docs/ki-mcp.md`), `ValidationErrorMapperTest`, `AppExceptionHierarchyTest` |
 | 6.8 | `AuditScopeAroundFinallyTest`, `AuditEarlyFailureTest` (`AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`, `POLICY_REQUIRED`/`POLICY_DENIED`, `IDEMPOTENCY_CONFLICT`), `SecretScrubberTest`, `AuditOutcomeMappingTest`, `LoggingAuditSinkTest` |

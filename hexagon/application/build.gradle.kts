@@ -10,4 +10,5 @@ dependencies {
     implementation("com.ibm.icu:icu4j:76.1")
 
     testImplementation(project(":adapters:driven:integrations"))
+    testImplementation(testFixtures(project(":hexagon:ports-common")))
 }
