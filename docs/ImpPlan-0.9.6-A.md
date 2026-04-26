@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: A (`Gemeinsamer Serverkern`)
-> **Status**: Draft (2026-04-25)
+> **Status**: Implementiert (2026-04-26) — Phase A komplett, alle DoD-Punkte erfuellt
 > **Referenz**: `docs/implementation-plan-0.9.6.md` Abschnitt 1 bis 5,
 > Abschnitt 8 Phase A, Abschnitt 9.1, Abschnitt 11 und Abschnitt 12;
 > `docs/ki-mcp.md`; `docs/job-contract.md`; `docs/architecture.md`;
