@@ -46,6 +46,9 @@ Weitere betroffene Anwendungspfade:
 
 - `hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/UnicodeCompare.kt`
   - nutzt `UnicodeNormalizer`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/server/application/fingerprint/JsonCanonicalizer.kt`
+  - nutzt `UnicodeNormalizer.normalize(..., NFC)` fuer JCS-Normalisierung
+    von Object-Keys und Stringwerten (0.9.6 Phase A AP 6.4)
 - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/output/OutputFormatter.kt`
   - nutzt `UnicodeNormalizer.normalize(...)`
 - CLI-I18n-Konfiguration nutzt `UnicodeNormalizationMode`
@@ -171,6 +174,12 @@ Abnahme:
   der Formatter erhaelt `UnicodeTextService` ueber CLI-Wiring oder ueber
   einen bereits verdrahteten Formatierungskontext, aber nicht ueber ein
   statisches Application-Utility
+- `hexagon/.../server/application/fingerprint/JsonCanonicalizer.kt` migrieren:
+  der bisher `internal object` ist heute parameterlos; im Zuge der
+  Portierung muss er `UnicodeTextService` als Konstruktor-Parameter
+  erhalten (oder `PayloadFingerprintService` reicht den Service durch).
+  Das ist ein Strukturwechsel von `object` zu `class`, deshalb separat
+  einplanen und in den 6.4-Tests adaptieren.
 - keine globale Singleton-Abkuerzung einfuehren, die den Port wieder
   umgeht
 
