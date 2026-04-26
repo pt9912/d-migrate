@@ -90,11 +90,10 @@ class FileBackedOrphanCleanupTest : FunSpec({
         store.write("art", ByteArrayInputStream(payload), payload.size.toLong())
             .shouldBeInstanceOf<WriteArtifactOutcome.Stored>()
         Files.list(root.resolve("artifacts")).use { stream ->
-            stream.filter { it.fileName.toString() != "__staging" && Files.isDirectory(it) }
-                .forEach { shard ->
-                    val meta = shard.resolve("art.meta.json")
-                    if (Files.exists(meta)) Files.delete(meta)
-                }
+            stream.filter { Files.isDirectory(it) }.forEach { shard ->
+                val meta = shard.resolve("art.meta.json")
+                if (Files.exists(meta)) Files.delete(meta)
+            }
         }
         // Re-write attempt: data createLink fails (existing data still
         // present), and the catch path tries to read the sidecar →

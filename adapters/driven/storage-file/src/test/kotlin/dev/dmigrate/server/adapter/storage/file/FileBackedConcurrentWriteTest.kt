@@ -8,13 +8,14 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class FileBackedConcurrentWriteTest : FunSpec({
 
-    test("identical concurrent writes converge — at least one Stored, the rest AlreadyStored") {
+    test("identical concurrent writes resolve to one Stored and the rest AlreadyStored") {
         val store = FileBackedUploadSegmentStore(Files.createTempDirectory("d-migrate-concurrent-same-"))
         val payload = "abcdefghij".toByteArray()
         val workers = 6
@@ -22,21 +23,15 @@ class FileBackedConcurrentWriteTest : FunSpec({
             val seg = UploadSegment("ses", 0, 0, payload.size.toLong(), "")
             store.writeSegment(seg, ByteArrayInputStream(payload))
         }
-        // Files.move(... ATOMIC_MOVE) on Linux can race past the
-        // pre-`exists` check (rename(2) silently overwrites), so two
-        // writers may both report `Stored` with identical content. The
-        // contract that always holds: every outcome is either Stored
-        // or AlreadyStored, at least one Stored, and the final file
-        // content is consistent with the sidecar.
-        outcomes.size shouldBe workers
-        (outcomes.count { it is WriteSegmentOutcome.Stored } >= 1) shouldBe true
-        outcomes.count {
-            it is WriteSegmentOutcome.Stored || it is WriteSegmentOutcome.AlreadyStored
-        } shouldBe workers
-        store.listSegments("ses").map { it.segmentIndex } shouldBe listOf(0)
+        outcomes.count { it is WriteSegmentOutcome.Stored } shouldBe 1
+        outcomes.count { it is WriteSegmentOutcome.AlreadyStored } shouldBe workers - 1
+        // §6.3: the actual `.bin` content must match the sidecar hash.
+        val storedSha = store.listSegments("ses").single().segmentSha256
+        val actualBytes = store.openSegmentRangeRead("ses", 0, 0, payload.size.toLong()).readAllBytes()
+        sha256Hex(actualBytes) shouldBe storedSha
     }
 
-    test("concurrent writes with conflicting bytes — exactly one winning hash on disk") {
+    test("concurrent writes with conflicting bytes resolve to one Stored and the rest Conflict") {
         val store = FileBackedUploadSegmentStore(Files.createTempDirectory("d-migrate-concurrent-conflict-"))
         val workers = 4
         val outcomes = raceWorkers(workers) { idx ->
@@ -44,28 +39,34 @@ class FileBackedConcurrentWriteTest : FunSpec({
             val seg = UploadSegment("ses", 0, 0, payload.size.toLong(), "")
             store.writeSegment(seg, ByteArrayInputStream(payload))
         }
-        outcomes.size shouldBe workers
-        val winningHash = store.listSegments("ses").single().segmentSha256
-        // Every Conflict's `existingSegmentSha256` matches the final
-        // sidecar's hash (no leak across writers).
+        outcomes.count { it is WriteSegmentOutcome.Stored } shouldBe 1
+        outcomes.count { it is WriteSegmentOutcome.Conflict } shouldBe workers - 1
+        val winner = outcomes.filterIsInstance<WriteSegmentOutcome.Stored>().single().segment.segmentSha256
         outcomes.filterIsInstance<WriteSegmentOutcome.Conflict>().forEach {
-            it.existingSegmentSha256 shouldBe winningHash
+            it.existingSegmentSha256 shouldBe winner
         }
+        // §6.3: the actual `.bin` content must match the winning hash —
+        // no silent overwrite by a losing writer.
+        val payloadSize = "payload-0-fixedlen".toByteArray().size.toLong()
+        val actualBytes = store.openSegmentRangeRead("ses", 0, 0, payloadSize).readAllBytes()
+        sha256Hex(actualBytes) shouldBe winner
     }
 
-    test("artifact concurrent writes with same bytes converge — at least one Stored, rest AlreadyExists") {
+    test("artifact concurrent writes with same bytes converge on AlreadyExists") {
         val store = FileBackedArtifactContentStore(Files.createTempDirectory("d-migrate-art-concurrent-"))
         val payload = "static-content".toByteArray()
         val workers = 6
         val outcomes = raceWorkers(workers) {
             store.write("dup", ByteArrayInputStream(payload), payload.size.toLong())
         }
-        outcomes.size shouldBe workers
-        (outcomes.count { it is WriteArtifactOutcome.Stored } >= 1) shouldBe true
-        outcomes.count {
-            it is WriteArtifactOutcome.Stored || it is WriteArtifactOutcome.AlreadyExists
-        } shouldBe workers
+        outcomes.count { it is WriteArtifactOutcome.Stored } shouldBe 1
+        outcomes.count { it is WriteArtifactOutcome.AlreadyExists } shouldBe workers - 1
         store.exists("dup") shouldBe true
+        // §6.3: actual artifact bytes must match the sidecar's hash.
+        val winningSha = outcomes.filterIsInstance<WriteArtifactOutcome.Stored>()
+            .single().sha256
+        val actualBytes = store.openRangeRead("dup", 0, payload.size.toLong()).readAllBytes()
+        sha256Hex(actualBytes) shouldBe winningSha
     }
 
     test("conflict outcome surfaces existing and attempted hashes") {
@@ -105,4 +106,9 @@ private fun <T> raceWorkers(n: Int, task: (Int) -> T): List<T> {
     } finally {
         pool.shutdown()
     }
+}
+
+private fun sha256Hex(bytes: ByteArray): String {
+    val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+    return digest.joinToString(separator = "") { "%02x".format(it) }
 }

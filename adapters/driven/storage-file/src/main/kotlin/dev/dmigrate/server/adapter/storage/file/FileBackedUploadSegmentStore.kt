@@ -6,16 +6,27 @@ import dev.dmigrate.server.ports.WriteSegmentOutcome
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.io.path.deleteRecursively
 
 class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore {
 
     private val segmentsRoot: Path = root.resolve("segments").also { Files.createDirectories(it) }
+
+    // In-process per-key lock keeps the §6.3 "exactly one Stored under
+    // concurrency" guarantee with `Files.move(... ATOMIC_MOVE)` —
+    // POSIX rename(2) silently overwrites, so without serialization
+    // two writers could publish a (sidecar, data) pair from different
+    // payloads. Phase A is single-process; cross-process locking
+    // would land with a real persistent store.
+    private val keyLocks = ConcurrentHashMap<Pair<String, Int>, ReentrantLock>()
 
     override fun writeSegment(segment: UploadSegment, source: InputStream): WriteSegmentOutcome {
         PathSafety.requireSafeId(segment.uploadSessionId, "uploadSessionId")
@@ -44,24 +55,31 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
             )
         }
 
-        // Sidecar first, then data, both via Files.move(... ATOMIC_MOVE)
-        // per §6.3. Sidecar-first means a crash between the two steps
-        // leaves only a dangling sidecar (no visible target without
-        // sidecar); cleanupOrphans removes it. Pre-`exists` check on
-        // each move provides the plan's "fail-on-existing" semantics
-        // on Linux, where rename(2) overwrites silently otherwise.
-        val sidecar = Sidecar(written.sha256, written.sizeBytes, segment.segmentOffset)
-        if (Files.exists(finalBin)) {
-            Files.deleteIfExists(tmpBin)
-            return resolveExisting(segment, written.sha256, finalMeta)
+        val lock = keyLocks.computeIfAbsent(segment.uploadSessionId to segment.segmentIndex) {
+            ReentrantLock()
         }
-        Sidecar.writeAtomically(finalMeta, sidecar)
-        return try {
-            atomicMove(tmpBin, finalBin)
-            WriteSegmentOutcome.Stored(segment.copy(segmentSha256 = written.sha256))
-        } catch (_: IOException) {
-            Files.deleteIfExists(tmpBin)
-            resolveExisting(segment, written.sha256, finalMeta)
+        lock.lock()
+        try {
+            // Sidecar first, then data, both via Files.move(... ATOMIC_MOVE)
+            // per §6.3. Sidecar-first means a crash between the two
+            // steps leaves only a dangling sidecar (no visible target
+            // without sidecar); cleanupOrphans removes it. Under the
+            // per-key lock, fail-on-existing is deterministic.
+            val sidecar = Sidecar(written.sha256, written.sizeBytes, segment.segmentOffset)
+            if (Files.exists(finalBin)) {
+                Files.deleteIfExists(tmpBin)
+                return resolveExisting(segment, written.sha256, finalMeta)
+            }
+            return try {
+                Sidecar.writeAtomically(finalMeta, sidecar)
+                atomicMove(tmpBin, finalBin)
+                WriteSegmentOutcome.Stored(segment.copy(segmentSha256 = written.sha256))
+            } catch (_: FileAlreadyExistsException) {
+                Files.deleteIfExists(tmpBin)
+                resolveExisting(segment, written.sha256, finalMeta)
+            }
+        } finally {
+            lock.unlock()
         }
     }
 
@@ -83,7 +101,7 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
     }
 
     private fun atomicMove(source: Path, target: Path) {
-        if (Files.exists(target)) throw IOException("target $target already exists")
+        if (Files.exists(target)) throw FileAlreadyExistsException(target.toString())
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
         } catch (_: AtomicMoveNotSupportedException) {

@@ -4,5 +4,4 @@ internal object FileLayout {
     const val BIN = ".bin"
     const val META = ".meta.json"
     const val TMP_INFIX = ".tmp."
-    const val STAGING_DIR = "__staging"
 }

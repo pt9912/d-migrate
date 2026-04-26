@@ -2,6 +2,7 @@ package dev.dmigrate.server.adapter.storage.file
 
 import java.io.IOException
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -63,15 +64,19 @@ internal data class Sidecar(
 
         /**
          * Writes the sidecar atomically via `Files.move(... ATOMIC_MOVE)`
-         * per §6.3. A pre-`exists` check delivers the plan's
-         * "fail-on-existing" semantics on Linux, where `rename(2)`
-         * (which `ATOMIC_MOVE` invokes) silently overwrites by default;
-         * the TOCTOU window between the check and the move is tiny and
-         * accepted in Phase A. If the target already holds the sidecar
-         * (e.g. another writer published it), this method is a no-op.
+         * per §6.3. The method throws
+         * [FileAlreadyExistsException] when the sidecar already exists —
+         * silent skipping would let two writers reach divergent
+         * `(sidecar, data)` pairs under concurrency. Callers serialize
+         * their writes per `(sessionId, segmentIndex)` (or per
+         * artifactId) via the in-process key lock the stores hold, so
+         * the fail-on-existing branch only fires on legitimate
+         * already-published races and on crash-recovery resume.
          */
         fun writeAtomically(target: Path, sidecar: Sidecar) {
-            if (Files.exists(target)) return
+            if (Files.exists(target)) {
+                throw FileAlreadyExistsException(target.toString())
+            }
             val parent = target.parent
             val tmp = parent.resolve("${target.fileName}.tmp.${UUID.randomUUID()}")
             Files.write(
@@ -81,9 +86,10 @@ internal data class Sidecar(
                 StandardOpenOption.WRITE,
             )
             try {
-                if (!Files.exists(target)) {
-                    Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
+                if (Files.exists(target)) {
+                    throw FileAlreadyExistsException(target.toString())
                 }
+                Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(tmp, target)
             } finally {

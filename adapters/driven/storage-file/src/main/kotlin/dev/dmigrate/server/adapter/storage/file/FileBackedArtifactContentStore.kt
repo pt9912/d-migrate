@@ -5,18 +5,20 @@ import dev.dmigrate.server.ports.WriteArtifactOutcome
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 
 class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentStore {
 
     private val artifactsRoot: Path = root.resolve("artifacts").also { Files.createDirectories(it) }
-    private val stagingDir: Path = artifactsRoot.resolve(FileLayout.STAGING_DIR)
-        .also { Files.createDirectories(it) }
+    private val keyLocks = ConcurrentHashMap<String, ReentrantLock>()
 
     override fun write(
         artifactId: String,
@@ -26,11 +28,14 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
         PathSafety.requireSafeId(artifactId, "artifactId")
         val finalBin = finalBinFor(artifactId)
         val finalMeta = metaFor(finalBin, artifactId)
+        val shardDir = finalBin.parent
+        Files.createDirectories(shardDir)
 
-        // Always hash the new content first — the §6.3 contract demands
-        // AlreadyExists vs Conflict is decided by the new SHA, not by
-        // mere existence of the slot.
-        val tmpBin = stagingDir.resolve("$artifactId${FileLayout.BIN}${FileLayout.TMP_INFIX}${UUID.randomUUID()}")
+        // §6.3 demands the tmp file lives next to the final path so
+        // the atomic move never crosses a filesystem boundary.
+        val tmpBin = shardDir.resolve(
+            "$artifactId${FileLayout.BIN}${FileLayout.TMP_INFIX}${UUID.randomUUID()}",
+        )
         val written = try {
             StreamingHashWriter.copyAndHash(source, tmpBin)
         } catch (failure: IOException) {
@@ -43,25 +48,29 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
             return WriteArtifactOutcome.SizeMismatch(expectedSizeBytes, written.sizeBytes)
         }
 
-        Files.createDirectories(finalBin.parent)
-        // Sidecar first, then data, both via Files.move(... ATOMIC_MOVE)
-        // per §6.3. Sidecar-first means a crash between the two steps
-        // leaves only a dangling sidecar (no visible target without
-        // sidecar); cleanupOrphans removes it. Pre-`exists` check on
-        // each move provides the plan's "fail-on-existing" semantics
-        // on Linux, where rename(2) overwrites silently otherwise.
-        val sidecar = Sidecar(written.sha256, written.sizeBytes)
-        if (Files.exists(finalBin)) {
-            Files.deleteIfExists(tmpBin)
-            return resolveExisting(artifactId, written.sha256, finalMeta)
-        }
-        Sidecar.writeAtomically(finalMeta, sidecar)
-        return try {
-            atomicMove(tmpBin, finalBin)
-            WriteArtifactOutcome.Stored(artifactId, written.sha256, written.sizeBytes)
-        } catch (_: IOException) {
-            Files.deleteIfExists(tmpBin)
-            resolveExisting(artifactId, written.sha256, finalMeta)
+        val lock = keyLocks.computeIfAbsent(artifactId) { ReentrantLock() }
+        lock.lock()
+        try {
+            // Sidecar first, then data, both via Files.move(... ATOMIC_MOVE)
+            // per §6.3. The per-key lock plus fail-on-existing in
+            // Sidecar.writeAtomically and atomicMove gives the §6.3
+            // "exactly one Stored under concurrency" contract back —
+            // POSIX rename(2) silently overwrites otherwise.
+            val sidecar = Sidecar(written.sha256, written.sizeBytes)
+            if (Files.exists(finalBin)) {
+                Files.deleteIfExists(tmpBin)
+                return resolveExisting(artifactId, written.sha256, finalMeta)
+            }
+            return try {
+                Sidecar.writeAtomically(finalMeta, sidecar)
+                atomicMove(tmpBin, finalBin)
+                WriteArtifactOutcome.Stored(artifactId, written.sha256, written.sizeBytes)
+            } catch (_: FileAlreadyExistsException) {
+                Files.deleteIfExists(tmpBin)
+                resolveExisting(artifactId, written.sha256, finalMeta)
+            }
+        } finally {
+            lock.unlock()
         }
     }
 
@@ -79,7 +88,7 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
     }
 
     private fun atomicMove(source: Path, target: Path) {
-        if (Files.exists(target)) throw IOException("target $target already exists")
+        if (Files.exists(target)) throw FileAlreadyExistsException(target.toString())
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
         } catch (_: AtomicMoveNotSupportedException) {
