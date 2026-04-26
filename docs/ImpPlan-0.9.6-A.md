@@ -815,6 +815,59 @@ Aufgaben:
     Effects
 - Timeout-Konfiguration fuer spaetere Handler/Runner vorbereiten
 - Fehlerdetails fuer `RATE_LIMITED` und `OPERATION_TIMEOUT` definieren
+- `QuotaService`-API als Wrapper um `QuotaStore`:
+  ```kotlin
+  data class QuotaReservation(val key: QuotaKey, val amount: Long)
+
+  interface QuotaService {
+      fun reserve(key: QuotaKey, amount: Long): QuotaOutcome
+      fun commit(reservation: QuotaReservation)
+      fun release(reservation: QuotaReservation)
+      fun refund(reservation: QuotaReservation)
+  }
+  ```
+  `commit` ist in Phase A ein No-op am Counter (der Reserve-Increment
+  bleibt stehen), dient aber als Audit-Hook fuer AP 6.8. `release` und
+  `refund` dekrementieren den Counter und unterscheiden sich nur im
+  Grund (success-path vs error/idempotency-replay) — wichtig fuer das
+  spaetere Audit-Mapping.
+- `RateLimiter`-Algorithmus Phase A: **Fixed Window**, eine Bucket pro
+  `(QuotaKey, Minute)`, Reset beim Minutenwechsel. Genauere
+  Sliding-Window-/Token-Bucket-Verfahren koennen spaeter ohne
+  API-Bruch ergaenzt werden.
+- `ServerCoreLimits` als data class mit nested Subgruppen, damit der
+  Konstruktor handhabbar bleibt:
+  ```kotlin
+  data class ServerCoreLimits(
+      val idempotency: IdempotencyLimits = IdempotencyLimits(),
+      val approval: ApprovalLimits = ApprovalLimits(),
+      val upload: UploadLimits = UploadLimits(),
+      val quota: QuotaLimits = QuotaLimits(),
+  )
+  ```
+  Defaults stammen aus §14.2.
+- Multi-Reserve-Kompensation: keine `reserveAll`-API in Phase A. Wenn
+  ein Handler mehrere Dimensionen reservieren muss (z.B.
+  `ACTIVE_JOBS` + `UPLOAD_BYTES`) und die zweite RateLimited liefert,
+  ruft er `release` auf den bereits erfolgreichen ersten Reserve. Das
+  Compensating-Pattern wird in `QuotaLifecycleTest` als Pflichtfall
+  dokumentiert.
+- Quota-vs-Idempotency-Verantwortung: `QuotaService` weiss nichts von
+  Idempotency. Der Handler ruft `reserve` **nur**, wenn
+  `IdempotencyStore.reserve(...)` `Reserved` (nicht `ExistingPending`
+  oder `Committed`) liefert. Bei Idempotency-Replay → kein
+  `quota.reserve`, sondern direkter `Committed`-Pfad ohne neue Side
+  Effects.
+- `RateLimited`-Detail-Scrubbing erfolgt am Error-Mapper-Boundary
+  (AP 6.7), nicht im Quota-Vertrag. `QuotaOutcome.RateLimited` haelt
+  intern `key`/`current`/`limit`; beim Mapping zur Tool-Response
+  bleiben nur `dimension`, `current`, `limit` (Werte des eigenen
+  Tenants — keine "fremden" Daten); `key.tenantId` und
+  `key.principalId` werden verworfen.
+- `TimeoutBudget` bleibt in Phase A passiver Wert-Carrier
+  (`Duration` pro Operation); aktive Enforcement (z.B.
+  `Job.cancel(after: deadline)`) folgt im Handler-Layer in spaeteren
+  Phasen.
 
 Abnahme:
 
@@ -828,6 +881,12 @@ Abnahme:
 - Terminalstatus, Abort, Expiry, fehlgeschlagene Finalisierung und
   Idempotency-Recovery geben reservierte Quota deterministisch frei oder
   erstatten sie
+- Multi-Reserve-Compensation ist getestet: bei RateLimited auf der
+  zweiten Dimension wird der erste Reserve via `release` zurueckgenommen
+- `RateLimiter` rolliert deterministisch beim Minutenwechsel (Test mit
+  injizierter Clock)
+- `ServerCoreLimits` ist mit den §14.2-Defaults konstruierbar, ohne
+  dass Tests jeden einzelnen Wert setzen muessen
 
 ### 6.7 Error-Mapper bauen
 
@@ -1365,11 +1424,16 @@ Alle in 5.3 genannten Stores sind Kotlin-`interface`s in
 
 | Klasse | Paket |
 | --- | --- |
-| `QuotaService` | `...application.quota` |
-| `QuotaOutcome` (sealed: `Granted`, `RateLimited(detail)`) | `...application.quota` |
-| `RateLimiter` | `...application.quota` |
-| `TimeoutBudget` | `...application.quota` |
-| `ServerCoreLimits` (config carrier) | `...application.config` |
+| `QuotaService` (interface) | `...application.quota` |
+| `DefaultQuotaService` | `...application.quota` |
+| `QuotaReservation` (data class) | `...application.quota` |
+| `RateLimiter` (interface) | `...application.quota` |
+| `FixedWindowRateLimiter` | `...application.quota` |
+| `TimeoutBudget` (data class, `Duration`-Carrier) | `...application.quota` |
+| `ServerCoreLimits` (data class with nested `IdempotencyLimits`, `ApprovalLimits`, `UploadLimits`, `QuotaLimits`) | `...application.config` |
+
+`QuotaOutcome` lebt bereits seit AP 6.2 in `...server.ports.quota` und
+wird vom Service durchgereicht.
 
 #### AP 6.7 Error-Mapper
 
@@ -1433,7 +1497,7 @@ Contract-Test-Basisklassen liegen in `src/testFixtures/kotlin/...contract`.
 | 6.3 | `UploadSegmentStoreContractTests` (abstract), `ArtifactContentStoreContractTests` (abstract), `InMemoryUploadSegmentStoreTest` und `InMemoryArtifactContentStoreTest` (in `InMemoryStoreContractTests`), `FileBackedUploadSegmentStoreTest`, `FileBackedArtifactContentStoreTest`, `FileBackedAtomicWriteTest`, `FileBackedRangeReadTest`, `FileBackedTtlCleanupTest`, `FileBackedConcurrentWriteTest`, `FileBackedOrphanCleanupTest`, `FileBackedPathTraversalTest` |
 | 6.4 | `JsonCanonicalizerTest`, `JsonCanonicalizerRfc8785VectorTest`, `JsonValueRejectsFloatAndBigIntTest`, `PayloadFingerprintServiceTest`, `FingerprintTopLevelExclusionTest`, `FingerprintNestedFieldRetentionTest`, `FingerprintArrayOrderTest`, `FingerprintNullAndDefaultsTest`, `FingerprintTenantBindTest`, `FingerprintReservedBindKeyTest`, `UploadSessionFingerprintVsSegmentTest` |
 | 6.5 | `ApprovalGrantValidatorTest` (correlation-kinds, expiry, reuse, scope-mismatch, tenant/caller/tool-mismatch, payload-mismatch), `ApprovalGrantValidationOrderTest` (deterministische Reihenfolge bei mehreren Fehlern), `ApprovalGrantTokenFingerprintTest`, `ApprovalGrantServiceTest` (Store-Integration + Issuer-Check on/off) |
-| 6.6 | `QuotaServiceTest` (aktive Jobs, Sessions, Bytes, parallel Segmentwrites, Provider-Calls), `QuotaLifecycleTest` (reserve/commit/release/refund inkl. Terminalstatus, Abort, Expiry, Failed-Finalize, Idempotency-Recovery), `RateLimiterTest`, `TimeoutBudgetTest`, `RateLimitedDetailScrubbingTest` |
+| 6.6 | `QuotaServiceTest` (aktive Jobs, Sessions, Bytes, parallel Segmentwrites, Provider-Calls), `QuotaLifecycleTest` (reserve/commit/release/refund inkl. Terminalstatus, Abort, Expiry, Failed-Finalize, Idempotency-Recovery, Multi-Reserve-Compensation), `FixedWindowRateLimiterTest` (Window-Rollover via injizierte Clock), `TimeoutBudgetTest`, `RateLimitedDetailScrubbingTest`, `ServerCoreLimitsDefaultsTest` |
 | 6.7 | `ErrorMapperTest` (parametrisiert pro Code: alle 18 Codes aus `docs/ki-mcp.md`), `ValidationErrorMapperTest`, `AppExceptionHierarchyTest` |
 | 6.8 | `AuditScopeAroundFinallyTest`, `AuditEarlyFailureTest` (`AUTH_REQUIRED`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`, `POLICY_REQUIRED`/`POLICY_DENIED`, `IDEMPOTENCY_CONFLICT`), `SecretScrubberTest`, `AuditOutcomeMappingTest`, `LoggingAuditSinkTest` |
 
@@ -1496,8 +1560,13 @@ explizit ueberschrieben.
 | `quota.uploadBytesPerTenant` | 1 GiB | konservativ; per Deployment ueberschreibbar |
 | `quota.providerCallsPerMinute` | 60 | KI-Provider-Schutz |
 
-Carrier: `dev.dmigrate.server.application.config.ServerCoreLimits` (data class),
-per Konstruktorinjektion in Services. Unit-Tests setzen abweichende Werte.
+Carrier: `dev.dmigrate.server.application.config.ServerCoreLimits` (data class
+mit nested `IdempotencyLimits`/`ApprovalLimits`/`UploadLimits`/`QuotaLimits`),
+per Konstruktorinjektion in Services. Defaults entsprechen der Tabelle oben;
+Unit-Tests setzen abweichende Werte ueber `copy(...)`. Per-Principal-Limits
+(Subset von `QuotaLimits` mit `principalId`-Override) bleiben in Phase A
+absichtlich offen — `QuotaKey.principalId: PrincipalId?` erlaubt sie schon
+auf Store-Ebene, aber kein Default ist konfiguriert.
 
 ### 14.3 `IdempotencyStore.reserve(...)` Rueckgabetyp
 
