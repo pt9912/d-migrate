@@ -395,19 +395,20 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 
 ### Milestone 0.9.6 — MCP-Server
 
-| Bereich | Aufgabe                                                                                                            | LF-Ref |
-| ------- | ------------------------------------------------------------------------------------------------------------------ | ------ |
-| Server  | MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext       | —      |
-| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface                                   | —      |
-| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung                           | —      |
-| Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs                                      | —      |
-| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                                           | —      |
-| Server  | Job-Steuerung: Statusabfrage und `job_cancel` fuer eigene oder erlaubte Jobs                                       | —      |
-| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                                             | —      |
-| Server  | Segmentierter Artefakt-Upload und `artifact_upload_abort` mit SHA256-Validierung                                   | —      |
-| Server  | KI-nahe MCP-Tools: `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan` mit Policy und Audit | —      |
-| Server  | MCP-Prompts fuer kuratierte Analyse-, Transformations- und Testdatenablaeufe                                       | —      |
-| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                                      | —      |
+| Bereich | Aufgabe                                                                                                            | LF-Ref | Status |
+| ------- | ------------------------------------------------------------------------------------------------------------------ | ------ | ------ |
+| Server  | Phase A: Gemeinsamer Serverkern (Kernmodelle, Store-Ports, Byte-Stores, Fingerprint, Approval, Quota, Error, Audit) — siehe `ImpPlan-0.9.6-A.md` | —      | ✅ (2026-04-26) |
+| Server  | Phase B: MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext | —      |        |
+| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface                                   | —      |        |
+| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung                           | —      |        |
+| Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs                                      | —      |        |
+| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                                           | —      |        |
+| Server  | Job-Steuerung: Statusabfrage und `job_cancel` fuer eigene oder erlaubte Jobs                                       | —      |        |
+| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                                             | —      |        |
+| Server  | Segmentierter Artefakt-Upload und `artifact_upload_abort` mit SHA256-Validierung                                   | —      |        |
+| Server  | KI-nahe MCP-Tools: `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan` mit Policy und Audit | —      |        |
+| Server  | MCP-Prompts fuer kuratierte Analyse-, Transformations- und Testdatenablaeufe                                       | —      |        |
+| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                                      | —      |        |
 
 **Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
 ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
@@ -647,6 +648,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 ---
 
-**Version**: 3.37
-**Stand**: 2026-04-21
-**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; geplant: 0.9.6, 0.9.7, 0.9.8, 0.9.9
+**Version**: 3.38
+**Stand**: 2026-04-26
+**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A (Gemeinsamer Serverkern, `ImpPlan-0.9.6-A.md`) abgeschlossen; geplant: 0.9.6 Phase B/C, 0.9.7, 0.9.8, 0.9.9
