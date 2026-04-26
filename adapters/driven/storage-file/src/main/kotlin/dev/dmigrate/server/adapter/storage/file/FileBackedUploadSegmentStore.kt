@@ -5,10 +5,11 @@ import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.WriteSegmentOutcome
 import java.io.IOException
 import java.io.InputStream
-import java.nio.file.FileAlreadyExistsException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import kotlin.io.path.deleteRecursively
 
@@ -43,18 +44,22 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
             )
         }
 
-        // Data first, then sidecar. The data createLink is the
-        // synchronization point — only one writer wins. The losing
-        // writer reads the existing sidecar (§6.3 forbids rehash) for
-        // conflict resolution. A crash between the two steps leaves
-        // data without sidecar; cleanupOrphans removes it.
+        // Sidecar first, then data, both via Files.move(... ATOMIC_MOVE)
+        // per §6.3. Sidecar-first means a crash between the two steps
+        // leaves only a dangling sidecar (no visible target without
+        // sidecar); cleanupOrphans removes it. Pre-`exists` check on
+        // each move provides the plan's "fail-on-existing" semantics
+        // on Linux, where rename(2) overwrites silently otherwise.
         val sidecar = Sidecar(written.sha256, written.sizeBytes, segment.segmentOffset)
-        return try {
-            Files.createLink(finalBin, tmpBin)
+        if (Files.exists(finalBin)) {
             Files.deleteIfExists(tmpBin)
-            Sidecar.writeAtomically(finalMeta, sidecar)
+            return resolveExisting(segment, written.sha256, finalMeta)
+        }
+        Sidecar.writeAtomically(finalMeta, sidecar)
+        return try {
+            atomicMove(tmpBin, finalBin)
             WriteSegmentOutcome.Stored(segment.copy(segmentSha256 = written.sha256))
-        } catch (_: FileAlreadyExistsException) {
+        } catch (_: IOException) {
             Files.deleteIfExists(tmpBin)
             resolveExisting(segment, written.sha256, finalMeta)
         }
@@ -65,7 +70,7 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
         attemptedSha: String,
         finalMeta: Path,
     ): WriteSegmentOutcome {
-        val existingSha = Sidecar.readWithRetry(finalMeta).sha256
+        val existingSha = Sidecar.read(finalMeta).sha256
         return if (existingSha == attemptedSha) {
             WriteSegmentOutcome.AlreadyStored(segment.copy(segmentSha256 = existingSha))
         } else {
@@ -74,6 +79,15 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
                 existingSegmentSha256 = existingSha,
                 attemptedSegmentSha256 = attemptedSha,
             )
+        }
+    }
+
+    private fun atomicMove(source: Path, target: Path) {
+        if (Files.exists(target)) throw IOException("target $target already exists")
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source, target)
         }
     }
 

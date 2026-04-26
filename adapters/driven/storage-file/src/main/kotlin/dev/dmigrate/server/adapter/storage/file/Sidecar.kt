@@ -1,20 +1,22 @@
 package dev.dmigrate.server.adapter.storage.file
 
 import java.io.IOException
-import java.nio.file.FileAlreadyExistsException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.util.UUID
 
 /**
  * Per-file metadata stored alongside each finalized data file. The
  * §6.3 plan demands `existingSegmentSha256` / `existingSha256` come
- * from the sidecar — never from a re-hash of the data file. To uphold
- * that invariant under crash recovery, callers move the sidecar
- * **before** the data file: `data exists ⇒ sidecar exists`. Dangling
- * sidecars (sidecar without data) are cleaned up by `cleanupOrphans`.
+ * from the sidecar — never from a re-hash of the data file. The
+ * stores publish the **sidecar before the data file**, so a crash
+ * between the two atomic-move steps leaves only a dangling sidecar
+ * (no visible target without sidecar). `cleanupOrphans` removes
+ * dangling sidecars and any leftover tmp files.
  *
  * `segmentOffset` is required for upload segments (Resume + Finalize
  * need to know where each segment fits in the session) and absent for
@@ -60,29 +62,16 @@ internal data class Sidecar(
         }
 
         /**
-         * Bounded retry on the conflict-resolution path, where data has
-         * already been linked but the sidecar may not yet be visible
-         * (the winning writer publishes data first, then sidecar). The
-         * race window is microseconds; a few short polls cover it
-         * without resorting to a rehash, which §6.3 forbids.
+         * Writes the sidecar atomically via `Files.move(... ATOMIC_MOVE)`
+         * per §6.3. A pre-`exists` check delivers the plan's
+         * "fail-on-existing" semantics on Linux, where `rename(2)`
+         * (which `ATOMIC_MOVE` invokes) silently overwrites by default;
+         * the TOCTOU window between the check and the move is tiny and
+         * accepted in Phase A. If the target already holds the sidecar
+         * (e.g. another writer published it), this method is a no-op.
          */
-        fun readWithRetry(path: Path, attempts: Int = MAX_ATTEMPTS): Sidecar {
-            var lastFailure: IOException? = null
-            repeat(attempts) {
-                try {
-                    return read(path)
-                } catch (failure: IOException) {
-                    lastFailure = failure
-                    @Suppress("MagicNumber")
-                    Thread.sleep(1)
-                }
-            }
-            throw lastFailure ?: IOException("sidecar at $path not present after $attempts retries")
-        }
-
-        private const val MAX_ATTEMPTS: Int = 100
-
         fun writeAtomically(target: Path, sidecar: Sidecar) {
+            if (Files.exists(target)) return
             val parent = target.parent
             val tmp = parent.resolve("${target.fileName}.tmp.${UUID.randomUUID()}")
             Files.write(
@@ -92,10 +81,11 @@ internal data class Sidecar(
                 StandardOpenOption.WRITE,
             )
             try {
-                Files.createLink(target, tmp)
-            } catch (_: FileAlreadyExistsException) {
-                // Another writer produced the sidecar in parallel; their content
-                // matches ours by construction, so silently discard the tmp.
+                if (!Files.exists(target)) {
+                    Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE)
+                }
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(tmp, target)
             } finally {
                 Files.deleteIfExists(tmp)
             }

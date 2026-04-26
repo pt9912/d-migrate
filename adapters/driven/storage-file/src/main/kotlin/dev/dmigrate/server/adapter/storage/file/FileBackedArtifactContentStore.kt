@@ -4,10 +4,11 @@ import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
 import java.io.IOException
 import java.io.InputStream
-import java.nio.file.FileAlreadyExistsException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -43,26 +44,46 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
         }
 
         Files.createDirectories(finalBin.parent)
-        // Data first, then sidecar. The data createLink is the
-        // synchronization point — only one writer wins. The losing
-        // writer reads the existing sidecar (§6.3 forbids rehash) for
-        // conflict resolution. A crash between the two steps leaves
-        // data without sidecar; cleanupOrphans (or the next caller via
-        // Sidecar.read's IOException) flags the corruption.
+        // Sidecar first, then data, both via Files.move(... ATOMIC_MOVE)
+        // per §6.3. Sidecar-first means a crash between the two steps
+        // leaves only a dangling sidecar (no visible target without
+        // sidecar); cleanupOrphans removes it. Pre-`exists` check on
+        // each move provides the plan's "fail-on-existing" semantics
+        // on Linux, where rename(2) overwrites silently otherwise.
         val sidecar = Sidecar(written.sha256, written.sizeBytes)
+        if (Files.exists(finalBin)) {
+            Files.deleteIfExists(tmpBin)
+            return resolveExisting(artifactId, written.sha256, finalMeta)
+        }
+        Sidecar.writeAtomically(finalMeta, sidecar)
         return try {
-            Files.createLink(finalBin, tmpBin)
-            Files.deleteIfExists(tmpBin)
-            Sidecar.writeAtomically(finalMeta, sidecar)
+            atomicMove(tmpBin, finalBin)
             WriteArtifactOutcome.Stored(artifactId, written.sha256, written.sizeBytes)
-        } catch (_: FileAlreadyExistsException) {
+        } catch (_: IOException) {
             Files.deleteIfExists(tmpBin)
-            val existingSha = Sidecar.readWithRetry(finalMeta).sha256
-            if (existingSha == written.sha256) {
-                WriteArtifactOutcome.AlreadyExists(artifactId, existingSha)
-            } else {
-                WriteArtifactOutcome.Conflict(artifactId, existingSha, written.sha256)
-            }
+            resolveExisting(artifactId, written.sha256, finalMeta)
+        }
+    }
+
+    private fun resolveExisting(
+        artifactId: String,
+        attemptedSha: String,
+        finalMeta: Path,
+    ): WriteArtifactOutcome {
+        val existingSha = Sidecar.read(finalMeta).sha256
+        return if (existingSha == attemptedSha) {
+            WriteArtifactOutcome.AlreadyExists(artifactId, existingSha)
+        } else {
+            WriteArtifactOutcome.Conflict(artifactId, existingSha, attemptedSha)
+        }
+    }
+
+    private fun atomicMove(source: Path, target: Path) {
+        if (Files.exists(target)) throw IOException("target $target already exists")
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(source, target)
         }
     }
 

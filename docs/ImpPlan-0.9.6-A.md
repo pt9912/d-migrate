@@ -612,16 +612,16 @@ Aufgaben:
 - atomare Schreibstrategie verbindlich festlegen:
   - Schreiben in `<finalpath>.tmp.<uuid>` im selben Verzeichnis
   - `sha256` streamend ueber `DigestInputStream` berechnen
-  - **Atomic-Visibility-Schritt via `Files.createLink(final, tmp)`**
-    statt `Files.move(... ATOMIC_MOVE)` ohne `REPLACE_EXISTING`:
-    auf Linux ueberschreibt `rename(2)` (was `Files.move` mit
-    `ATOMIC_MOVE` aufruft) das Ziel auch ohne `REPLACE_EXISTING`
-    silent — die im urspruenglichen Plan geforderte
-    "fail-on-existing"-Semantik laesst sich damit nicht einhalten.
-    `Files.createLink` (POSIX `link(2)`) liefert exakt die geforderte
-    Atomar-mit-EEXIST-bei-Existenz-Semantik portable und ohne
-    Filesystem-Spezifika; der `tmp`-Pfad wird anschliessend
-    via `Files.deleteIfExists` aufgeraeumt
+  - Atomic-Visibility-Schritt via `Files.move(... ATOMIC_MOVE)` ohne
+    `REPLACE_EXISTING`. Da `rename(2)` auf Linux das Ziel auch ohne
+    `REPLACE_EXISTING` silent ueberschreibt, schiebt die
+    Implementierung einen `Files.exists`-Pre-Check unmittelbar vor den
+    Move (TOCTOU-Window winzig, in Phase A akzeptiert). Die Sidecar-
+    Datei wird **vor** der Daten-Datei sichtbar gemacht: ein Crash
+    zwischen den beiden Move-Schritten hinterlaesst hoechstens eine
+    Sidecar-Datei ohne `.bin`, niemals eine sichtbare `.bin` ohne
+    Sidecar — `cleanupOrphans` raeumt verwaiste Sidecars beim
+    Serverstart
   - existierendes Ziel mappt deterministisch auf
     `AlreadyStored`/`AlreadyExists` (gleicher Hash) bzw. `Conflict`
     (anderer Hash); abgebrochene Writes hinterlassen kein sichtbares Ziel
