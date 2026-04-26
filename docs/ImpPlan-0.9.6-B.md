@@ -1065,6 +1065,41 @@ Verbindlich:
   auf NDJSON umgestellt
 - HTTP nutzt dasselbe lsp4j-Endpoint, eingebettet in den Ktor-Handler
 
+NDJSON-Parser-/Writer-Vertrag (verbindlich, fuer AP 6.4 Implementation):
+
+- Lesen (stdin):
+  - Bytes bis `\n` (LF, `0x0A`) sammeln, dann UTF-8 dekodieren
+  - UTF-8-BOM (`EF BB BF`) am Stream-Anfang tolerieren, sonst nicht
+  - leere Zeilen (nur Whitespace oder leer) werden ueberlesen, nicht
+    als Parse-Error gewertet
+  - Trailing `\r` vor `\n` (CRLF) wird tolerant gestripped
+  - bei JSON-Parse-Error mit erkennbarer `id`: JSON-RPC-`-32700`-
+    Response mit der id zurueckschreiben; ohne `id`: Zeile verworfen
+    plus Audit-Log
+- Schreiben (stdout):
+  - UTF-8-Serialisierung der JSON-RPC-Nachricht
+  - in JSON-Strings ist `\n` JSON-escaped (`\\n`); literal LF im
+    Output-Stream ist ausschliesslich Frame-Trenner
+  - jeder Frame endet mit genau einem `\n`, keine BOM
+  - stdout-Schreibzugriff ist serialisiert (single writer thread oder
+    `synchronized`), damit parallele Server-Antworten nicht
+    interleaven
+- stderr darf vom Server fuer Logging genutzt werden, niemals stdout
+- Reader-Thread laeuft bis EOF oder Cancellation; eine `IOException`
+  stoppt den Server-Lifecycle (kein Silent-Tod des Stream-Loops)
+
+Test-Vertrag (Adapter-Test in AP 6.4):
+
+- Roundtrip serialize -> parse: identitaetserhaltend
+- JSON-String mit eingebettetem `\n`: Frame wird nicht mittendrin
+  getrennt
+- Multi-Frame in einem Read-Call (Buffer enthaelt mehrere `\n`)
+  liefert mehrere `Message`-Instanzen
+- leere Zeilen am Stream-Anfang/zwischen Frames werden ueberlesen
+- UTF-8-BOM am Stream-Anfang wird toleriert
+- Parse-Error mit id liefert `-32700`-Response mit Echo-id
+- Parse-Error ohne id liefert kein Response, der Reader liest weiter
+
 ### 12.5 Session-ID-Lifecycle
 
 Verbindlich (vorher offen, jetzt fixiert):
