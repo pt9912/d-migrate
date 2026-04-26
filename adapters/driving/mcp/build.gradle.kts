@@ -1,6 +1,5 @@
 // adapters:driving:mcp — MCP-v1-Server-Adapter (docs/ImpPlan-0.9.6-B.md §12).
-// Deps werden pro AP dazugenommen, sobald sie tatsaechlich benutzt werden;
-// lsp4j folgt in AP 6.4, Nimbus + ktor-client in AP 6.6.
+// Deps werden pro AP dazugenommen, sobald sie tatsaechlich benutzt werden.
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:application"))
@@ -31,9 +30,18 @@ dependencies {
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-cio:$ktorVersion")
 
+    // §12.3 / §12.14 — Bearer-Validation: Nimbus JOSE-JWT fuer JWT/JWKS,
+    // Ktor-Client fuer RFC 7662 Token-Introspection, Jackson zum
+    // Parsen der Introspection-JSON-Response.
+    implementation("com.nimbusds:nimbus-jose-jwt:${rootProject.properties["nimbusJoseJwtVersion"]}")
+    implementation("io.ktor:ktor-client-core:$ktorVersion")
+    implementation("io.ktor:ktor-client-cio:$ktorVersion")
+    implementation("com.fasterxml.jackson.core:jackson-databind:${rootProject.properties["jacksonVersion"]}")
+
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
+    testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
 
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 }

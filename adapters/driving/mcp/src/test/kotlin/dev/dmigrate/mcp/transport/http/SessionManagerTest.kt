@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.transport.http
 
+import dev.dmigrate.mcp.auth.DisabledAuthValidator
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
@@ -14,6 +15,7 @@ private fun newState(now: Instant) = SessionState(
     createdAt = now,
     lastSeen = now,
     service = McpServiceImpl(serverVersion = "0.1.0"),
+    principalContext = DisabledAuthValidator.ANONYMOUS_PRINCIPAL,
 )
 
 class SessionManagerTest : FunSpec({
