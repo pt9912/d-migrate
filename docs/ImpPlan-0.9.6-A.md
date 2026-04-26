@@ -663,6 +663,38 @@ Aufgaben:
 - Normalisierung fuer verschachtelte Objekte, Arrays, Zahlen, Strings,
   Booleans, `null`, fehlende Felder und Defaultwerte festlegen
 - SHA-256 hex-codiert als Standardausgabe festlegen
+- adapterneutrales JSON-AST `JsonValue` (sealed interface mit `Null`,
+  `Bool`, `Num`, `Str`, `Arr`, `Obj`) in `application.fingerprint`
+  bereitstellen; spaetere MCP-/HTTP-Adapter konvertieren ihre eigene
+  Wire-Repraesentation (Jackson, kotlinx.serialization) in dieses AST.
+  Keine JSON-Library-Abhaengigkeit in `hexagon:application`.
+- `JsonValue.Num` haelt 64-bit-Integer (`Long`); `Double`/`Float` und
+  `BigInteger`/`BigDecimal` werden im Canonicalizer abgewiesen
+  (`IllegalArgumentException`)
+- Service-API als adapterneutrales Interface:
+  ```kotlin
+  interface PayloadFingerprintService {
+      fun fingerprint(
+          scope: FingerprintScope,
+          payload: JsonValue.Obj,
+          bind: BindContext,
+      ): String
+  }
+
+  data class BindContext(
+      val tenantId: TenantId,
+      val callerId: PrincipalId,
+      val toolName: String,
+  )
+  ```
+- `_bind` ist reserved top-level key. Liefert der Caller selbst ein
+  `_bind` im `payload`, wird mit `IllegalArgumentException` abgewiesen.
+  `callerId` stammt immer aus `PrincipalContext.principalId.value`,
+  nicht aus `auditSubject`.
+- `FingerprintScope` enthaelt die Werte `START_TOOL`, `SYNC_TOOL` und
+  `UPLOAD_INIT`. `UPLOAD_SEGMENT` entfaellt — Segmentbytes werden ueber
+  `segmentSha256` direkt gehasht und nie an
+  `PayloadFingerprintService.fingerprint(...)` gereicht.
 
 Abnahme:
 
@@ -676,6 +708,13 @@ Abnahme:
 - Zahlen-/String-Unterschiede, `null` und explizite Defaultwerte sind
   deterministisch getestet
 - Upload-Segmentdaten veraendern den Session-Metadaten-Fingerprint nicht
+- `JsonCanonicalizer` ist gegen mindestens drei publizierte Test-Vektoren
+  aus RFC 8785 Appendix B verifiziert; Edge-Cases fuer NFC, Escape-
+  Pflicht-Zeichen und Long-Grenzen sind separat getestet
+- `payload` mit reserviertem `_bind`-Top-level-Key wird abgewiesen;
+  `Double`/`Float` werden abgewiesen
+- leeres Objekt `{}` ist erlaubt; Fingerprint wird dann von
+  `{"_bind":{...}}` allein berechnet
 
 ### 6.5 Approval-Grant-Service und Store-Vertrag vorbereiten
 
@@ -1248,9 +1287,12 @@ Alle in 5.3 genannten Stores sind Kotlin-`interface`s in
 
 | Klasse | Paket |
 | --- | --- |
-| `PayloadFingerprintService` | `...application.fingerprint` |
+| `PayloadFingerprintService` (interface) | `...application.fingerprint` |
+| `DefaultPayloadFingerprintService` | `...application.fingerprint` |
 | `JsonCanonicalizer` (RFC 8785-kompatibel) | `...application.fingerprint` |
-| `FingerprintScope` | `...application.fingerprint` (enum: `START_TOOL`, `SYNC_TOOL`, `UPLOAD_INIT`, `UPLOAD_SEGMENT`) |
+| `JsonValue` (sealed: `Null`, `Bool`, `Num`, `Str`, `Arr`, `Obj`) | `...application.fingerprint` |
+| `FingerprintScope` | `...application.fingerprint` (enum: `START_TOOL`, `SYNC_TOOL`, `UPLOAD_INIT`) |
+| `BindContext` | `...application.fingerprint` (`tenantId`, `callerId`, `toolName`) |
 | `FingerprintNormalization` | `...application.fingerprint` (Top-level-Control-Exclusion + Tenant-Bind) |
 
 #### AP 6.5 Approval-Grant-Service
@@ -1331,7 +1373,7 @@ Contract-Test-Basisklassen liegen in `src/testFixtures/kotlin/...contract`.
 | 6.1 | `PrincipalContextTest`, `TenantScopeCheckerTest`, `ServerResourceUriParserTest`, `ResourceKindTest`, `JobRecordTest`, `JobVisibilityTest`, `ArtifactRecordTest`, `UploadSessionTransitionsTest`, `UploadSessionFinalizeInvariantsTest`, `ConnectionReferenceTest`, `ToolErrorEnvelopeTest`, `PaginationTest` |
 | 6.2 | `JobStoreContractTest`, `ArtifactStoreContractTest`, `SchemaStoreContractTest`, `ProfileStoreContractTest`, `DiffStoreContractTest`, `UploadSessionStoreContractTest`, `UploadSegmentStoreContractTest`, `ConnectionReferenceStoreContractTest`, `IdempotencyStoreContractTest` (inkl. parallel-reserve, lease-recovery, awaiting-approval, committed, denied, conflict), `SyncEffectIdempotencyStoreContractTest`, `ReadOnlyInitResumeContractTest`, `ApprovalGrantStoreContractTest`, `QuotaStoreContractTest`, `AuditSinkContractTest` |
 | 6.3 | `UploadSegmentStoreContractTests` (abstract), `ArtifactContentStoreContractTests` (abstract), `InMemoryUploadSegmentStoreTest` und `InMemoryArtifactContentStoreTest` (in `InMemoryStoreContractTests`), `FileBackedUploadSegmentStoreTest`, `FileBackedArtifactContentStoreTest`, `FileBackedAtomicWriteTest`, `FileBackedRangeReadTest`, `FileBackedTtlCleanupTest`, `FileBackedConcurrentWriteTest`, `FileBackedOrphanCleanupTest`, `FileBackedPathTraversalTest` |
-| 6.4 | `JsonCanonicalizerTest`, `PayloadFingerprintServiceTest`, `FingerprintTopLevelExclusionTest`, `FingerprintNestedFieldRetentionTest`, `FingerprintArrayOrderTest`, `FingerprintNullAndDefaultsTest`, `FingerprintTenantBindTest`, `UploadSessionFingerprintVsSegmentTest` |
+| 6.4 | `JsonCanonicalizerTest`, `JsonCanonicalizerRfc8785VectorTest`, `JsonValueRejectsFloatAndBigIntTest`, `PayloadFingerprintServiceTest`, `FingerprintTopLevelExclusionTest`, `FingerprintNestedFieldRetentionTest`, `FingerprintArrayOrderTest`, `FingerprintNullAndDefaultsTest`, `FingerprintTenantBindTest`, `FingerprintReservedBindKeyTest`, `UploadSessionFingerprintVsSegmentTest` |
 | 6.5 | `ApprovalGrantValidatorTest` (correlation-kinds, expiry, reuse, scope-mismatch, tenant/caller/tool-mismatch, payload-mismatch), `ApprovalGrantTokenFingerprintTest`, `ApprovalGrantServiceTest` |
 | 6.6 | `QuotaServiceTest` (aktive Jobs, Sessions, Bytes, parallel Segmentwrites, Provider-Calls), `QuotaLifecycleTest` (reserve/commit/release/refund inkl. Terminalstatus, Abort, Expiry, Failed-Finalize, Idempotency-Recovery), `RateLimiterTest`, `TimeoutBudgetTest`, `RateLimitedDetailScrubbingTest` |
 | 6.7 | `ErrorMapperTest` (parametrisiert pro Code: alle 18 Codes aus `docs/ki-mcp.md`), `ValidationErrorMapperTest`, `AppExceptionHierarchyTest` |
@@ -1360,13 +1402,25 @@ explizit ueberschrieben.
 ### 14.1 JSON-Kanonisierung fuer Fingerprints
 
 - Default: **RFC 8785 JCS-kompatibel**
-- Felder lexikographisch nach UTF-16-Codepoint sortiert
+- Felder lexikographisch nach UTF-16-Code-Unit sortiert (Java
+  `String.compareTo`-Semantik)
 - Kein Whitespace
-- Strings: UTF-8, `\uXXXX`-Escapes nur fuer Kontroll-, Quote- und Backslash-Zeichen
-- Zahlen: nur Integer im fingerprintbaren Payload (Groessen, Offsets, Indizes); Floats sind in Phase A nicht erlaubt. Spaetere Tools, die Floats brauchen, fuegen die Zahlen-Kanonisierung in einer eigenen Refinement-Iteration hinzu
+- Strings: UTF-8 Output, Escape-Pflicht:
+  - `\"` fuer `"`
+  - `\\` fuer `\`
+  - `\uXXXX` (lowercase hex) fuer Control-Zeichen `0x00`–`0x1F`
+  - alle anderen Zeichen literal
+- Zahlen: nur ganzzahlig (`Long`, Bereich
+  `Long.MIN_VALUE`..`Long.MAX_VALUE`). Float, Double, BigInteger und
+  BigDecimal sind in Phase A nicht erlaubt und werden vom Canonicalizer
+  mit `IllegalArgumentException` abgewiesen. Spaetere Tools, die Floats
+  brauchen, fuegen die Zahlen-Kanonisierung in einer eigenen Refinement-
+  Iteration hinzu
 - Booleans: `true`/`false`
 - `null`: explizit erhalten
-- Unicode-Normalisierung: NFC fuer alle Stringwerte vor dem Hashing
+- Unicode-Normalisierung: NFC fuer alle Stringwerte **und Object-Keys**
+  vor dem Sortieren und Hashing (ICU4J ist auf
+  `hexagon:application` bereits vorhanden)
 
 ### 14.2 Default-TTLs/-Leases
 
@@ -1462,14 +1516,27 @@ Normalisierung:
 - Top-level Control-Felder entfernen: `idempotencyKey`, `approvalToken`,
   `clientRequestId`, `requestId`
 - Tenant-/Caller-Bindung explizit als
-  `_bind = { tenantId, callerId, toolName, scope }` voranstellen, damit
-  identische Fachpayloads ueber Tenants/Caller hinweg unterschiedliche
-  Fingerprints liefern
+  `_bind = { tenantId, callerId, toolName, scope, ... }` voranstellen,
+  damit identische Fachpayloads ueber Tenants/Caller hinweg
+  unterschiedliche Fingerprints liefern
+- `_bind` ist reserviert; ein vom Caller geliefertes Top-level-`_bind`
+  fuehrt zu `IllegalArgumentException`
+- `callerId` ist `PrincipalContext.principalId.value` (nicht
+  `auditSubject` und nicht `homeTenantId`)
 - alle anderen Felder bleiben strukturell unveraendert
 
-Upload-Init-Fingerprint nutzt `scope = UPLOAD_INIT` und bindet
-`artifactKind`, `mimeType`, `sizeBytes`, `checksumSha256`, `uploadIntent`.
-Upload-Segment-Hash ist davon getrennt und nutzt nur `segmentSha256`.
+`_bind`-Schema pro Scope:
+
+| Scope | `_bind`-Felder |
+| --- | --- |
+| `START_TOOL` | `tenantId`, `callerId`, `toolName`, `scope` |
+| `SYNC_TOOL` | `tenantId`, `callerId`, `toolName`, `scope` |
+| `UPLOAD_INIT` | `tenantId`, `callerId`, `toolName`, `scope`, `artifactKind`, `mimeType`, `sizeBytes`, `checksumSha256`, `uploadIntent` |
+
+Upload-Init-Fingerprint nutzt `scope = UPLOAD_INIT`. Upload-Segment-Hash
+ist davon getrennt und nutzt ausschliesslich `segmentSha256`; der
+`PayloadFingerprintService` sieht Segmentbytes nie. `FingerprintScope`
+hat deshalb in Phase A nur drei Werte (kein `UPLOAD_SEGMENT`).
 
 ### 14.7 `AuditSink`-Vertrag
 
