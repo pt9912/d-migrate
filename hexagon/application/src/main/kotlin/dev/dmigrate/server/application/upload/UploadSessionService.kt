@@ -5,6 +5,7 @@ import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
 import dev.dmigrate.server.core.upload.UploadSessionTransitions
 import dev.dmigrate.server.core.upload.UploadSessionTransitions.FinalizeValidation
+import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
@@ -15,13 +16,14 @@ import java.time.Instant
  * The plan §6.3 demands that TTL/abort/expiry/finalize trigger
  * `UploadSegmentStore.deleteAllForSession(...)` — that responsibility
  * lives here, not on the stores themselves. `finalize` additionally
- * runs the §6.3 finalize invariants so the COMPLETED transition is
- * gated on contiguous segments, valid offsets, matching size and
- * matching total checksum.
+ * runs the §6.3 finalize invariants and verifies that the artifact
+ * has actually been published into the [ArtifactContentStore] before
+ * the session transitions to COMPLETED.
  */
 class UploadSessionService(
     private val sessions: UploadSessionStore,
     private val segments: UploadSegmentStore,
+    private val artifacts: ArtifactContentStore,
 ) {
 
     fun expireDue(now: Instant): List<UploadSession> {
@@ -46,23 +48,27 @@ class UploadSessionService(
     }
 
     /**
-     * Validates the finalize invariants before transitioning the
-     * session to COMPLETED:
-     * - state is ACTIVE (no double-finalize)
-     * - all segments present (no gaps)
-     * - each segment carries a non-blank `segmentSha256`
-     * - segment offsets are contiguous starting at 0
-     * - sum of segment sizes matches `session.sizeBytes`
-     * - the actual aggregated checksum matches `session.checksumSha256`
+     * Validates the finalize invariants, requires the materialized
+     * artifact to be present in the [ArtifactContentStore], then
+     * transitions the session to COMPLETED and clears the spool. The
+     * COMPLETED-transition is therefore *gated on the artifact already
+     * being published* — the kernel itself enforces "successful publish
+     * before COMPLETED", so callers cannot accidentally drop the spool
+     * before the artifact reaches its store.
      *
-     * On `Ok` the session transitions to COMPLETED and the spool is
-     * cleaned. Caller is responsible for having materialized the
-     * segments into the [dev.dmigrate.server.ports.ArtifactContentStore]
-     * before calling — the spool is dropped after this returns.
+     * Returns:
+     *   - `Applied(session)` on success
+     *   - `ValidationFailed(reason)` if [UploadSessionTransitions.validateFinalize]
+     *     reports any of the §6.3 invariants violated
+     *   - `ArtifactNotMaterialized(artifactId)` if `artifacts.exists` is
+     *     false — caller must publish the artifact first and retry
+     *   - `IllegalTransition` / `NotFound` from the session-store
+     *     transition step
      */
     fun finalize(
         tenantId: TenantId,
         uploadSessionId: String,
+        artifactId: String,
         actualTotalChecksum: String,
         now: Instant,
     ): FinalizeOutcome {
@@ -75,6 +81,9 @@ class UploadSessionService(
         )
         if (validation !is FinalizeValidation.Ok) {
             return FinalizeOutcome.ValidationFailed(validation)
+        }
+        if (!artifacts.exists(artifactId)) {
+            return FinalizeOutcome.ArtifactNotMaterialized(artifactId)
         }
         val transition = sessions.transition(
             tenantId = tenantId,
@@ -96,6 +105,7 @@ class UploadSessionService(
     sealed interface FinalizeOutcome {
         data class Applied(val session: UploadSession) : FinalizeOutcome
         data class ValidationFailed(val reason: FinalizeValidation) : FinalizeOutcome
+        data class ArtifactNotMaterialized(val artifactId: String) : FinalizeOutcome
         data class IllegalTransition(
             val from: UploadSessionState,
             val to: UploadSessionState,

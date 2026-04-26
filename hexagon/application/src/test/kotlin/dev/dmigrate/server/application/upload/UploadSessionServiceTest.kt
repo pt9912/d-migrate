@@ -6,6 +6,7 @@ import dev.dmigrate.server.core.upload.UploadSessionState
 import dev.dmigrate.server.core.upload.UploadSessionTransitions
 import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.contract.Fixtures
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSegmentStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import io.kotest.core.spec.style.FunSpec
@@ -19,12 +20,14 @@ class UploadSessionServiceTest : FunSpec({
         val service: UploadSessionService,
         val sessions: InMemoryUploadSessionStore,
         val segments: InMemoryUploadSegmentStore,
+        val artifacts: InMemoryArtifactContentStore,
     )
 
     fun harness(): Harness {
         val sessions = InMemoryUploadSessionStore()
         val segments = InMemoryUploadSegmentStore()
-        return Harness(UploadSessionService(sessions, segments), sessions, segments)
+        val artifacts = InMemoryArtifactContentStore()
+        return Harness(UploadSessionService(sessions, segments, artifacts), sessions, segments, artifacts)
     }
 
     fun seedSegment(segments: InMemoryUploadSegmentStore, sessionId: String, payload: ByteArray) {
@@ -32,6 +35,10 @@ class UploadSessionServiceTest : FunSpec({
             UploadSegment(sessionId, 0, 0, payload.size.toLong(), "ignored"),
             ByteArrayInputStream(payload),
         )
+    }
+
+    fun publishArtifact(artifacts: InMemoryArtifactContentStore, artifactId: String, payload: ByteArray) {
+        artifacts.write(artifactId, ByteArrayInputStream(payload), payload.size.toLong())
     }
 
     test("expireDue transitions sessions and clears their spool") {
@@ -88,7 +95,7 @@ class UploadSessionServiceTest : FunSpec({
         h.segments.listSegments("u1").size shouldBe 1
     }
 
-    test("finalize Applied: validation passes, state COMPLETED, spool cleared") {
+    test("finalize Applied: validation + artifact present -> COMPLETED, spool cleared") {
         val h = harness()
         val payload = "hello".toByteArray()
         h.sessions.save(
@@ -102,10 +109,12 @@ class UploadSessionServiceTest : FunSpec({
             UploadSegment("u1", 0, 0, payload.size.toLong(), "ignored"),
             ByteArrayInputStream(payload),
         )
+        publishArtifact(h.artifacts, "art-1", payload)
 
         val outcome = h.service.finalize(
             tenantId = Fixtures.tenant("acme"),
             uploadSessionId = "u1",
+            artifactId = "art-1",
             actualTotalChecksum = "totalhash",
             now = Fixtures.NOW,
         )
@@ -115,14 +124,46 @@ class UploadSessionServiceTest : FunSpec({
         h.segments.listSegments("u1") shouldBe emptyList()
     }
 
-    test("finalize ValidationFailed: gaps in segments — no state change, spool kept") {
+    test("finalize ArtifactNotMaterialized: validation passes, but artifact missing — no state change") {
         val h = harness()
-        h.sessions.save(Fixtures.uploadSession("u1", segmentTotal = 3))
-        seedSegment(h.segments, "u1", "abc".toByteArray())
+        val payload = "hello".toByteArray()
+        h.sessions.save(
+            Fixtures.uploadSession(
+                "u1",
+                sizeBytes = payload.size.toLong(),
+                segmentTotal = 1,
+            ),
+        )
+        h.segments.writeSegment(
+            UploadSegment("u1", 0, 0, payload.size.toLong(), "ignored"),
+            ByteArrayInputStream(payload),
+        )
+        // intentionally no publishArtifact
 
         val outcome = h.service.finalize(
             tenantId = Fixtures.tenant("acme"),
             uploadSessionId = "u1",
+            artifactId = "missing-art",
+            actualTotalChecksum = "totalhash",
+            now = Fixtures.NOW,
+        )
+
+        outcome.shouldBeInstanceOf<FinalizeOutcome.ArtifactNotMaterialized>()
+        outcome.artifactId shouldBe "missing-art"
+        h.sessions.findById(Fixtures.tenant("acme"), "u1")?.state shouldBe UploadSessionState.ACTIVE
+        h.segments.listSegments("u1").size shouldBe 1
+    }
+
+    test("finalize ValidationFailed: gaps in segments — artifact-check is not even reached") {
+        val h = harness()
+        h.sessions.save(Fixtures.uploadSession("u1", segmentTotal = 3))
+        seedSegment(h.segments, "u1", "abc".toByteArray())
+        // No artifact published — but ValidationFailed should fire first.
+
+        val outcome = h.service.finalize(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "u1",
+            artifactId = "any",
             actualTotalChecksum = "totalhash",
             now = Fixtures.NOW,
         )
@@ -147,10 +188,12 @@ class UploadSessionServiceTest : FunSpec({
             UploadSegment("u1", 0, 0, payload.size.toLong(), "ignored"),
             ByteArrayInputStream(payload),
         )
+        publishArtifact(h.artifacts, "art-1", payload)
 
         val outcome = h.service.finalize(
             tenantId = Fixtures.tenant("acme"),
             uploadSessionId = "u1",
+            artifactId = "art-1",
             actualTotalChecksum = "wrong",
             now = Fixtures.NOW,
         )
@@ -167,6 +210,7 @@ class UploadSessionServiceTest : FunSpec({
         val outcome = h.service.finalize(
             tenantId = Fixtures.tenant("acme"),
             uploadSessionId = "ghost",
+            artifactId = "any",
             actualTotalChecksum = "totalhash",
             now = Fixtures.NOW,
         )
@@ -182,6 +226,7 @@ class UploadSessionServiceTest : FunSpec({
         val outcome = h.service.finalize(
             tenantId = Fixtures.tenant("acme"),
             uploadSessionId = "u1",
+            artifactId = "any",
             actualTotalChecksum = "totalhash",
             now = Fixtures.NOW,
         )
