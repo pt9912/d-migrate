@@ -74,4 +74,39 @@ class StdioJsonRpcTest : FunSpec({
         // pout is unaffected — close from the reader side closes pin.
         pout.close()
     }
+
+    test("awaitTermination returns when stdin reaches EOF (§12.4 Fix-iii)") {
+        // §12.4: stdio reader terminates on EOF. The CLI driver
+        // calls handle.awaitTermination() and expects to wake up
+        // without an external SIGINT — otherwise a closed pipe
+        // hangs the process forever.
+        val input = ByteArrayInputStream(ByteArray(0)) // immediate EOF
+        val output = ByteArrayOutputStream()
+        val rpc = StdioJsonRpc(input, output, McpServiceImpl(serverVersion = "0.1.0"))
+        rpc.start()
+        // Run awaitTermination on a separate thread with a deadline
+        // so a regression doesn't hang the test runner.
+        val done = java.util.concurrent.CountDownLatch(1)
+        Thread { rpc.awaitTermination(); done.countDown() }.apply { isDaemon = true; start() }
+        val woke = done.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        woke shouldBe true
+        rpc.stop()
+    }
+
+    test("awaitTermination returns after stop() even with no input activity") {
+        val pin = PipedInputStream()
+        val pout = PipedOutputStream(pin)
+        val out = ByteArrayOutputStream()
+        val rpc = StdioJsonRpc(pin, out, McpServiceImpl(serverVersion = "0.1.0"))
+        rpc.start()
+        // Trigger termination via stop() — awaitTermination should
+        // return regardless of whether the reader thread saw any data.
+        val done = java.util.concurrent.CountDownLatch(1)
+        Thread { rpc.awaitTermination(); done.countDown() }.apply { isDaemon = true; start() }
+        Thread.sleep(50)
+        rpc.stop()
+        val woke = done.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        woke shouldBe true
+        pout.close()
+    }
 })

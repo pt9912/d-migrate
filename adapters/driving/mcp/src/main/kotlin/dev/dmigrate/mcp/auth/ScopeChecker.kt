@@ -4,13 +4,14 @@ package dev.dmigrate.mcp.auth
  * Method-level scope authorization per `ImpPlan-0.9.6-B.md` §12.9 +
  * §12.14.
  *
- * The route looks up the required scope set via the configured
- * [scopeMapping] (typically `McpServerConfig.scopeMapping`); unknown
- * methods fail-closed to `dmigrate:admin`. Initialize and
+ * Both transports (HTTP route and `McpServiceImpl` for stdio) look
+ * up the required scope set via the configured [scopeMapping]
+ * (typically `McpServerConfig.scopeMapping`); unknown methods
+ * fail-closed to `dmigrate:admin`. Initialize and
  * `notifications/initialized` are scope-free and handled by the
- * route's special-case (not via this checker).
+ * caller's special-case (not via this checker).
  */
-internal object ScopeChecker {
+object ScopeChecker {
 
     private const val FAIL_CLOSED_FALLBACK_SCOPE = "dmigrate:admin"
 

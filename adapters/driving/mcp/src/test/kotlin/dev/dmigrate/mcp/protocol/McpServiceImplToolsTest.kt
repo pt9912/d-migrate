@@ -19,6 +19,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.time.Instant
@@ -108,6 +109,7 @@ class McpServiceImplToolsTest : FunSpec({
             serverVersion = "0.0.0",
             toolRegistry = registry,
             initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("policy_denied_test_tool" to setOf("dmigrate:read")),
         )
         val result = sut.toolsCall(ToolsCallParams(name = "policy_denied_test_tool")).get()
         result.isError shouldBe true
@@ -204,6 +206,7 @@ class McpServiceImplToolsTest : FunSpec({
             serverVersion = "0.0.0",
             toolRegistry = registry,
             initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("custom_envelope_tool" to setOf("dmigrate:read")),
         )
         val result = sut.toolsCall(ToolsCallParams(name = "custom_envelope_tool")).get()
         result.isError shouldBe true
@@ -243,6 +246,7 @@ class McpServiceImplToolsTest : FunSpec({
             serverVersion = "0.0.0",
             toolRegistry = registry,
             initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("validation_test_tool" to setOf("dmigrate:read")),
         )
         val result = sut.toolsCall(ToolsCallParams(name = "validation_test_tool")).get()
         val envelope = JsonParser.parseString(result.content.single().text!!).asJsonObject
@@ -283,6 +287,37 @@ class McpServiceImplToolsTest : FunSpec({
         // Re-binding to null reverts to AUTH_REQUIRED.
         sut.bindPrincipal(null)
         sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get().isError shouldBe true
+    }
+
+    test("tools/list without dmigrate:read scope is rejected at the service layer (§12.9 Fix-ii)") {
+        // §12.14: the HTTP route checks scopes upfront and returns 403
+        // with WWW-Authenticate. stdio reaches the service directly
+        // — McpServiceImpl is the second/only line of defence and
+        // must enforce the same scope contract. With an empty
+        // scope-set, tools/list MUST fail.
+        val emptyScopePrincipal = PRINCIPAL.copy(scopes = emptySet())
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = PhaseBRegistries.toolRegistry(),
+            initialPrincipal = emptyScopePrincipal,
+        )
+        val ex = shouldThrow<ExecutionException> { sut.toolsList(null).get() }
+        val err = (ex.cause as ResponseErrorException).responseError
+        err.code shouldBe ResponseErrorCode.InvalidRequest.value
+        err.message shouldContain "dmigrate:read"
+    }
+
+    test("tools/call capabilities_list with empty scopes returns FORBIDDEN_PRINCIPAL envelope") {
+        val emptyScopePrincipal = PRINCIPAL.copy(scopes = emptySet())
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = PhaseBRegistries.toolRegistry(),
+            initialPrincipal = emptyScopePrincipal,
+        )
+        val result = sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get()
+        result.isError shouldBe true
+        val envelope = JsonParser.parseString(result.content.single().text!!).asJsonObject
+        envelope.get("code").asString shouldBe ToolErrorCode.FORBIDDEN_PRINCIPAL.name
     }
 
     test("ServerCapabilities.tools is set with listChanged=false post-AP6.8") {
@@ -329,6 +364,7 @@ class McpServiceImplToolsTest : FunSpec({
             serverVersion = "0.0.0",
             toolRegistry = registry,
             initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("arg_capture_tool" to setOf("dmigrate:read")),
         )
         val args = JsonObject().apply { addProperty("foo", "bar") }
         sut.toolsCall(ToolsCallParams(name = "arg_capture_tool", arguments = args)).get()

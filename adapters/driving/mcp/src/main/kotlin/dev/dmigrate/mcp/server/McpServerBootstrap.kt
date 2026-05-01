@@ -31,6 +31,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 interface McpServerHandle : AutoCloseable {
     val boundPort: Int
     fun stop()
+
+    /**
+     * Blocks until the server has reached a natural termination
+     * point. Stdio handles return when the reader thread drains
+     * (EOF on stdin or IOException) or after [stop]; HTTP handles
+     * block until [stop] is called from a shutdown-hook (or the JVM
+     * exits). CLI drivers call this after [stop] is registered as a
+     * shutdown hook so a closed stdin terminates the process
+     * cleanly without waiting on SIGINT.
+     */
+    fun awaitTermination() {
+        // Default — HTTP blocks here until JVM exit triggers the
+        // shutdown hook. Stdio overrides to wake on EOF.
+        try {
+            // Thread.sleep with Long.MAX_VALUE is a defensive
+            // alternative to Thread.currentThread().join() which is
+            // a no-op (a thread can't join itself).
+            Thread.sleep(Long.MAX_VALUE)
+        } catch (_: InterruptedException) {
+            // Shutdown hook woke us up — fall through to caller.
+        }
+    }
+
     override fun close() {
         stop()
     }
@@ -99,6 +122,7 @@ object McpServerBootstrap {
                             toolRegistry = toolRegistry,
                             resourceStores = resourceStores,
                             resourceRegistry = resourceRegistry,
+                            scopeMapping = config.scopeMapping,
                         )
                     },
                 )
@@ -150,6 +174,7 @@ object McpServerBootstrap {
             initialPrincipal = principal,
             resourceStores = resourceStores,
             resourceRegistry = resourceRegistry,
+            scopeMapping = config.scopeMapping,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }
@@ -182,5 +207,12 @@ private class StdioHandle(
     override fun stop() {
         if (!stopped.compareAndSet(false, true)) return
         rpc.stop()
+    }
+
+    override fun awaitTermination() {
+        // §12.4: stdio terminates on EOF or IOException. The CLI's
+        // shutdown hook calls stop() on SIGINT, which also wakes
+        // up the latch — either path lets the CLI exit cleanly.
+        rpc.awaitTermination()
     }
 }

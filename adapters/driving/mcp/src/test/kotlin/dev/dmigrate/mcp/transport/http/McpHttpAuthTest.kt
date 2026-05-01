@@ -184,6 +184,92 @@ class McpHttpAuthTest : FunSpec({
         }
     }
 
+    test("tools/call capabilities_list works for a dmigrate:read principal (§12.9 Fix-i)") {
+        // §12.9 + §12.14: the scope-check on tools/call must target
+        // the actual tool name (here `capabilities_list` →
+        // dmigrate:read), NOT the literal method "tools/call" which
+        // would fall through to the admin fail-closed default.
+        val validator = FakeAuthValidator(
+            BearerValidationResult.Valid(principalWithScopes("dmigrate:read")),
+        )
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = {
+                        McpServiceImpl(
+                            serverVersion = "0.1.0",
+                            toolRegistry = dev.dmigrate.mcp.registry.PhaseBRegistries.toolRegistry(),
+                        )
+                    },
+                    authValidatorOverride = validator,
+                )
+            }
+            val initResp = client.post("/mcp") {
+                headers { append(HttpHeaders.Authorization, "Bearer good-token") }
+                setBody(INITIALIZE_BODY)
+            }
+            val sessionId = initResp.headers["MCP-Session-Id"]!!
+            val resp = client.post("/mcp") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer good-token")
+                    append("MCP-Session-Id", sessionId)
+                    append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
+                }
+                setBody(
+                    """{"jsonrpc":"2.0","id":42,"method":"tools/call",""" +
+                        """"params":{"name":"capabilities_list","arguments":{}}}""",
+                )
+            }
+            resp.status shouldBe HttpStatusCode.OK
+            resp.bodyAsText() shouldContain "\"id\":42"
+            resp.bodyAsText() shouldContain "dmigrateContractVersion"
+        }
+    }
+
+    test("tools/call admin-scoped tool with dmigrate:read principal returns 403 (§12.9 Fix-i)") {
+        // Counterpoint to the positive test: a tool whose scope is
+        // dmigrate:admin (e.g. `connections/list` would qualify if it
+        // were a tool — we use a synthetic admin-only mapping here)
+        // must STILL be blocked when the principal only has
+        // dmigrate:read. Verifies the scope-key extraction picks the
+        // correct entry, not the method name.
+        val configWithAdminTool = JWKS_CONFIG.copy(
+            scopeMapping = JWKS_CONFIG.scopeMapping +
+                ("admin_tool" to setOf("dmigrate:admin")),
+        )
+        val validator = FakeAuthValidator(
+            BearerValidationResult.Valid(principalWithScopes("dmigrate:read")),
+        )
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = configWithAdminTool,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = validator,
+                )
+            }
+            val initResp = client.post("/mcp") {
+                headers { append(HttpHeaders.Authorization, "Bearer good-token") }
+                setBody(INITIALIZE_BODY)
+            }
+            val sessionId = initResp.headers["MCP-Session-Id"]!!
+            val resp = client.post("/mcp") {
+                headers {
+                    append(HttpHeaders.Authorization, "Bearer good-token")
+                    append("MCP-Session-Id", sessionId)
+                    append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
+                }
+                setBody(
+                    """{"jsonrpc":"2.0","id":7,"method":"tools/call",""" +
+                        """"params":{"name":"admin_tool","arguments":{}}}""",
+                )
+            }
+            resp.status shouldBe HttpStatusCode.Forbidden
+            resp.headers[HttpHeaders.WWWAuthenticate]!! shouldContain "dmigrate:admin"
+        }
+    }
+
     test("DISABLED mode bypasses Bearer + Scope entirely") {
         testApplication {
             application {

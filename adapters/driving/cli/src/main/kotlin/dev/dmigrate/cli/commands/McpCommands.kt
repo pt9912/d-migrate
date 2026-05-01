@@ -159,9 +159,10 @@ class McpServeCommand : CliktCommand(name = "serve") {
             is McpStartOutcome.Started -> {
                 echo("MCP stdio server started; reading from stdin until EOF/SIGINT.", err = true)
                 Runtime.getRuntime().addShutdownHook(Thread(outcome.handle::stop))
-                // The stdio reader runs on a daemon thread; main blocks
-                // here so the JVM stays up until stdin closes.
-                Thread.currentThread().join()
+                // §12.4: stdio terminates on EOF or IOException. The
+                // handle's awaitTermination wakes the main thread when
+                // either path fires; the shutdown hook covers SIGINT.
+                outcome.handle.awaitTermination()
             }
         }
     }
@@ -172,7 +173,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
             is McpStartOutcome.Started -> {
                 echo("MCP HTTP server listening on $bind:${outcome.handle.boundPort}", err = true)
                 Runtime.getRuntime().addShutdownHook(Thread(outcome.handle::stop))
-                Thread.currentThread().join()
+                outcome.handle.awaitTermination()
             }
         }
     }

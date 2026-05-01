@@ -137,13 +137,48 @@ private suspend fun handleMcpPost(
     if (!checkAccept(call, jsonHandler)) return
     val message = parseBody(call, jsonHandler) ?: return
     val isInitialize = message is RequestMessage && message.method == METHOD_INITIALIZE
-    val method = methodOf(message)
+    // §12.9 + §12.14: for `tools/call`, the scope check applies to
+    // the actual tool from the JSON-RPC body (`params.name`), NOT
+    // the literal method name "tools/call". `tools/call` itself
+    // isn't a key in DEFAULT_SCOPE_MAPPING — using the method name
+    // would fall through to the admin-scope fail-closed fallback,
+    // breaking even `capabilities_list` for a legitimate
+    // `dmigrate:read` token.
+    val method = scopeLookupKey(message)
     val principal = validateBearer(call, config, authValidator) ?: return
     val context = resolveContext(
         call, jsonHandler, sessionManager, serviceFactory, principal, message, isInitialize,
     ) ?: return
     if (!checkScopes(call, config, method, context.principal)) return
     dispatchAndRespond(call, jsonHandler, sessionManager, context, message, isInitialize)
+}
+
+/**
+ * Returns the scope-mapping key for [message] per §12.9. For
+ * `tools/call` we extract `params.name` from the request body so the
+ * scope-check targets the actual tool. Anything else falls back to
+ * the JSON-RPC method name. `null` means "no key derivable" — the
+ * caller treats it as "no scope required" (notifications, malformed
+ * messages already filtered upstream).
+ *
+ * lsp4j's `MessageJsonHandler` deserializes `tools/call` params into
+ * the typed `ToolsCallParams` class (because the supportedMethods
+ * registry knows the parameter type from `@JsonRequest`). The
+ * fallback path (raw `JsonObject`) handles the rare case where
+ * params arrive un-typed (e.g. lenient/unrecognised method).
+ */
+private fun scopeLookupKey(message: Message): String? {
+    val request = message as? RequestMessage ?: return methodOf(message)
+    if (request.method != METHOD_TOOLS_CALL) return request.method
+    val typed = request.params as? dev.dmigrate.mcp.protocol.ToolsCallParams
+    if (typed != null) {
+        return typed.name.takeUnless { it.isBlank() } ?: request.method
+    }
+    val raw = request.params as? com.google.gson.JsonObject ?: return request.method
+    val nameElement = raw.get("name") ?: return request.method
+    if (!nameElement.isJsonPrimitive) return request.method
+    val name = nameElement.asString
+    return if (name.isBlank()) request.method else name
 }
 
 private fun methodOf(message: Message): String? = when (message) {
@@ -492,6 +527,7 @@ private class CaptureConsumer : MessageConsumer {
 private val LOG = LoggerFactory.getLogger("dev.dmigrate.mcp.transport.http.McpHttpRoute")
 private const val DISPATCH_TIMEOUT_MS: Long = 10_000L
 private const val METHOD_INITIALIZE: String = "initialize"
+private const val METHOD_TOOLS_CALL: String = "tools/call"
 private const val HEADER_MCP_SESSION_ID: String = "MCP-Session-Id"
 private const val HEADER_MCP_PROTOCOL_VERSION: String = "MCP-Protocol-Version"
 private const val JSONRPC_ERROR_SESSION_UNKNOWN: Int = -32_000

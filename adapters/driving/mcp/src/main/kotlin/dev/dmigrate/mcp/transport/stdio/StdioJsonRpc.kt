@@ -40,6 +40,7 @@ class StdioJsonRpc(
     private val outbound = NdjsonMessageConsumer(output, jsonHandler)
     private val remote = McpEndpointFactory.remoteEndpoint(service, outbound)
     private val producer = NdjsonMessageProducer(input, jsonHandler, outbound)
+    private val terminationLatch = java.util.concurrent.CountDownLatch(1)
     private var thread: Thread? = null
 
     fun start() {
@@ -53,6 +54,12 @@ class StdioJsonRpc(
                 // which case we land here on a closed-stream read —
                 // benign.
                 LOG.warn("stdio reader stopped on IOException: {}", e.message)
+            } finally {
+                // EOF on stdin or any IOException counts as
+                // termination — wake up [awaitTermination] so the
+                // CLI driver can exit cleanly without waiting on
+                // SIGINT.
+                terminationLatch.countDown()
             }
         }, "mcp-stdio-reader").apply {
             isDaemon = true
@@ -65,6 +72,18 @@ class StdioJsonRpc(
         thread?.interrupt()
         thread?.join(STOP_JOIN_MILLIS)
         thread = null
+        terminationLatch.countDown()
+    }
+
+    /**
+     * Blocks the caller until the stdio reader has stopped — either
+     * because stdin reached EOF, the producer threw IOException, or
+     * [stop] was invoked. CLI drivers use this so they can exit
+     * cleanly when the client closes the pipe; tests use it to wait
+     * for the reader to drain the input fixture.
+     */
+    fun awaitTermination() {
+        terminationLatch.await()
     }
 
     private companion object {

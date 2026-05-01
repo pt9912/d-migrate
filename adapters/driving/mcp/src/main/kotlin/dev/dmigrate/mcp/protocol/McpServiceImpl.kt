@@ -1,6 +1,7 @@
 package dev.dmigrate.mcp.protocol
 
 import com.google.gson.GsonBuilder
+import dev.dmigrate.mcp.auth.ScopeChecker
 import dev.dmigrate.mcp.registry.PhaseBRegistries
 import dev.dmigrate.mcp.registry.ResourceRegistry
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
@@ -10,6 +11,8 @@ import dev.dmigrate.mcp.registry.ToolContent
 import dev.dmigrate.mcp.registry.ToolDescriptor
 import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.mcp.resources.ResourceStores
+import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.mcp.resources.ResourcesListCursor
 import dev.dmigrate.mcp.resources.ResourcesListHandler
 import dev.dmigrate.server.application.error.AuthRequiredException
@@ -53,6 +56,7 @@ class McpServiceImpl(
     private val errorMapper: ErrorMapper = DefaultErrorMapper(),
     resourceStores: ResourceStores = ResourceStores.empty(),
     private val resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+    private val scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -106,6 +110,11 @@ class McpServiceImpl(
     }
 
     override fun toolsList(params: ToolsListParams?): CompletableFuture<ToolsListResult> {
+        // §12.9 + §12.14: tools/list requires dmigrate:read. The HTTP
+        // route checks this upstream (and gets a 403 + scope-challenge
+        // when it fails); stdio reaches the service directly so we
+        // re-check here. Two layers, one truth.
+        enforceScope("tools/list")?.let { return CompletableFuture.failedFuture(it) }
         val tools = toolRegistry.all().map(::toMetadata)
         return CompletableFuture.completedFuture(ToolsListResult(tools = tools, nextCursor = null))
     }
@@ -114,6 +123,13 @@ class McpServiceImpl(
         val handler = toolRegistry.findHandler(params.name)
             ?: return failedWithMethodNotFound("unknown tool '${params.name}'")
         val principal = currentPrincipal.get() ?: return failedAuthRequiredEnvelope(params.name)
+        // §12.9: scope-check uses the actual tool name (not the
+        // method name "tools/call"). FORBIDDEN_PRINCIPAL surfaces as
+        // an isError envelope per §12.8 — `tools/call` errors live on
+        // the tool-result wire, not the JSON-RPC layer.
+        scopeViolation(params.name, principal)?.let { required ->
+            return CompletableFuture.completedFuture(forbiddenPrincipalEnvelope(principal, params.name, required))
+        }
         val context = ToolCallContext(
             name = params.name,
             arguments = params.arguments,
@@ -129,6 +145,10 @@ class McpServiceImpl(
                     ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
                 ),
             )
+        // §12.9: resources/list requires dmigrate:read.
+        scopeViolation("resources/list", principal)?.let { required ->
+            return CompletableFuture.failedFuture(scopeJsonRpcError("resources/list", required))
+        }
         val cursor = try {
             ResourcesListCursor.decode(params?.cursor)
         } catch (e: IllegalArgumentException) {
@@ -152,12 +172,68 @@ class McpServiceImpl(
         // wire — Phase B's clients don't need it for templates).
         // Phase B publishes a static set; no pagination needed,
         // cursor is accepted but ignored.
+        enforceScope("resources/templates/list")?.let { return CompletableFuture.failedFuture(it) }
         return CompletableFuture.completedFuture(
             ResourcesTemplatesListResult(
                 resourceTemplates = resourceRegistry.templates().map(::toWireTemplate),
                 nextCursor = null,
             ),
         )
+    }
+
+    /**
+     * Returns the missing-scope-violation set if [principal] cannot
+     * call [method], or `null` if the call is permitted.
+     * `notifications/initialized` and `initialize` are scope-free
+     * per §12.14 and always return `null`.
+     */
+    private fun scopeViolation(method: String, principal: PrincipalContext): Set<String>? {
+        if (ScopeChecker.isScopeFree(method)) return null
+        val required = ScopeChecker.requiredScopes(method, scopeMapping)
+        return if (ScopeChecker.isSatisfied(principal.scopes, required)) null else required
+    }
+
+    /**
+     * Service-layer enforcement helper for non-tools/call methods.
+     * Returns a `ResponseErrorException`-future-payload (the JSON-RPC
+     * error to fail the request with) if the principal is missing or
+     * scope-deficient; `null` if the call is permitted.
+     *
+     * §12.8: resource/protocol-method errors are JSON-RPC errors, not
+     * tool-result envelopes.
+     */
+    private fun enforceScope(method: String): ResponseErrorException? {
+        val principal = currentPrincipal.get()
+            ?: return ResponseErrorException(
+                ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
+            )
+        val required = scopeViolation(method, principal) ?: return null
+        return scopeJsonRpcError(method, required)
+    }
+
+    private fun scopeJsonRpcError(method: String, required: Set<String>): ResponseErrorException =
+        ResponseErrorException(
+            ResponseError(
+                ResponseErrorCode.InvalidRequest,
+                "principal lacks required scope(s) for '$method': ${required.sorted()}",
+                null,
+            ),
+        )
+
+    private fun forbiddenPrincipalEnvelope(
+        principal: PrincipalContext,
+        toolName: String,
+        required: Set<String>,
+    ): ToolsCallResult {
+        val ex = ForbiddenPrincipalException(
+            principalId = principal.principalId,
+            reason = "missing scope(s): ${required.sorted()}",
+        )
+        val base = errorMapper.map(ex)
+        val withTool = base.copy(
+            details = base.details + dev.dmigrate.server.core.error.ToolErrorDetail("toolName", toolName),
+        )
+        return errorEnvelopeResult(withTool)
     }
 
     private fun toWireTemplate(descriptor: ResourceTemplateDescriptor): ResourceTemplate =
