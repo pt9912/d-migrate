@@ -227,11 +227,14 @@ Phase D definiert Resource-URIs fuer:
 | Profile | `dmigrate://tenants/{tenantId}/profiles/{profileRef}` | Profiling-Metadaten oder Artefaktref |
 | Diff | `dmigrate://tenants/{tenantId}/diffs/{diffRef}` | Diff-Metadaten oder Artefaktref |
 | Connection | `dmigrate://tenants/{tenantId}/connections/{connectionRef}` | secret-freie Connection-Metadaten |
+| Capabilities | `dmigrate://capabilities` | globale, secret-freie Faehigkeitsbeschreibung |
 
 Diese tenant-scoped URI-Familie ist verbindlich und uebernimmt den
 Phase-B-Vertrag. `tenantId` in der URI ist adressierend, nicht autorisierend:
-jede Aufloesung prueft zusaetzlich den Principal-/Tenant-Scope. Eine
-tenantlose URI-Familie ist nicht Teil von Phase D.
+jede Aufloesung prueft zusaetzlich den Principal-/Tenant-Scope.
+`dmigrate://capabilities` bleibt die einzige tenantlose Sonderresource aus dem
+uebergeordneten 0.9.6-Vertrag. Weitere tenantlose Resource-URIs sind nicht
+Teil von Phase D.
 
 Der bestehende `ServerResourceUri`-Parser unterstuetzt bereits
 `dmigrate://tenants/{tenantId}/{kind}/{id}`. Artifact-Chunks brauchen eine
@@ -300,7 +303,9 @@ Listen-Antworten enthalten:
 `totalCount` ist exakt, wenn vorhanden. `totalCountEstimate` muss als
 Naeherung gekennzeichnet sein.
 
-Alle Listen verwenden eine deterministische Standardsortierung. Default:
+Fachliche Listen-Tools (`job_list`, `artifact_list`, `schema_list`,
+`profile_list`, `diff_list`) verwenden eine deterministische
+Standardsortierung. Default:
 
 - primaer `createdAt DESC`
 - sekundaer stabile ID `ASC`
@@ -310,6 +315,18 @@ dokumentiert und getestet sind. Cursor muessen an Tenant, Filter, Limit,
 Sortierung und letzte Sort-Keys gebunden sein. Dadurch bleiben `items` und
 `nextCursor` auch bei gleichzeitigen Inserts/Deletes stabil genug, um keine
 Duplikate oder Luecken durch nichtdeterministische Reihenfolge zu erzeugen.
+
+Diese Sortierregel gilt nicht fuer MCP-`resources/list`. `resources/list`
+folgt weiter dem verbindlichen Phase-B-Resource-Walk:
+
+```text
+JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS -> CONNECTIONS
+```
+
+Der `resources/list`-Cursor bleibt family-basiert (`kind`, `innerToken`) bzw.
+dessen gekapselte Weiterentwicklung. Pro Resource-Familie gilt die jeweilige
+Store-Sortierung; Connection-Refs duerfen keine `createdAt`-Sortierung
+voraussetzen.
 
 ### 6.3 Tool-spezifische Hinweise
 
@@ -453,7 +470,11 @@ Verbindliche Regeln:
 - Cursor-Kapselung im MCP-Adapter implementieren.
 - deterministische Standardsortierung (`createdAt DESC`, `id ASC`) und
   Cursor-Bindung an Tenant, Filter, Limit, Sortierung und letzte Sort-Keys
-  implementieren.
+  fuer fachliche Listen-Tools implementieren.
+- `resources/list` beim Phase-B-Resource-Walk
+  `JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS -> CONNECTIONS`
+  belassen und den family-basierten Cursor (`kind`, `innerToken`) nur
+  kapseln, nicht durch eine globale `createdAt`-Sortierung ersetzen.
 - Kompatibilitaetspfad fuer Phase-B-Cursor planen: bestehende
   Base64-JSON-Cursor (`kind`, `innerToken`) duerfen fuer Phase-B-
   Entwicklungsdaten entweder weiter gelesen und in neue HMAC-gekapselte
@@ -499,10 +520,12 @@ Verbindliche Regeln:
 ## 11. Abnahmekriterien
 
 - Listen liefern stabile `items` und `nextCursor`.
-- Listen verwenden eine dokumentierte deterministische Sortierung,
-  mindestens `createdAt DESC`, `id ASC`.
-- Cursor sind an Tenant, Filter, Limit, Sortierung und letzte Sort-Keys
-  gebunden.
+- Fachliche Listen-Tools verwenden eine dokumentierte deterministische
+  Sortierung, mindestens `createdAt DESC`, `id ASC`.
+- Cursor fachlicher Listen-Tools sind an Tenant, Filter, Limit, Sortierung
+  und letzte Sort-Keys gebunden.
+- `resources/list` folgt dem Phase-B-Resource-Walk und setzt keine globale
+  `createdAt`-Sortierung ueber alle Resource-Familien voraus.
 - `totalCount` ist exakt, wenn vorhanden.
 - `totalCountEstimate` ist optional und als Naeherung gekennzeichnet.
 - modifizierte oder fremde Cursor-/Pagination-Token liefern
@@ -527,7 +550,8 @@ Verbindliche Regeln:
 - MCP-Projektionen von Connection-Refs enthalten weder `credentialRef` noch
   `providerRef`; erlaubt sind nur secret-freie Ersatzfelder wie
   `hasCredential`, `providerKind`, `sensitivity` und `allowedOperations`.
-- tenantlose Resource-URIs werden nicht akzeptiert.
+- tenantlose Resource-URIs werden nicht akzeptiert, mit genau einer
+  Ausnahme: `dmigrate://capabilities`.
 - Artifact-Chunk-URIs werden als eigene verschachtelte Resource-URI-Variante
   geparst und getestet.
 
