@@ -2062,8 +2062,9 @@ Pro `resources/list`-Aufruf:
 
 - `ResourcesListCursor`: encode/decode Roundtrip; null-Token-Roundtrip;
   null-Input -> null; ungueltige Base64 -> IAE; valides Base64 mit
-  nicht-JSON -> IAE; unbekanntes `kind` -> IAE; URL-safe Encoding
-  (kein `+`, `/`, kein Padding).
+  nicht-JSON -> IAE; unbekanntes `kind` -> IAE; bekanntes aber
+  non-listable `kind` (z. B. `UPLOAD_SESSIONS`) -> IAE mit Reason
+  "not listable"; URL-safe Encoding (kein `+`, `/`, kein Padding).
 - `ResourceProjector`:
   - Job: `name=jobId`, `description` enthaelt Operation+Status.
   - Artifact: `name=filename`, `description` enthaelt Kind+SizeBytes.
@@ -2079,14 +2080,60 @@ Pro `resources/list`-Aufruf:
     Reihenfolge stabil.
   - OWNER-Filter blendet fremde Owner-Jobs aus.
   - Foreign-Tenant-Records sind nicht sichtbar.
-  - `pageSize=1` liefert 1 Resource und ggf. `nextCursor`.
+  - `pageSize=1` liefert 1 Resource und einen `nextCursor` (nicht
+    `null`, solange weitere lesbare Items existieren).
   - Walk mit Cursor durchpaginiert konvergiert auf
     `nextCursor=null`.
+  - Store liefert 0 Items + non-null `nextPageToken` -> Antwort hat
+    `resources=[]` und `nextCursor != null` (Cursor pinnt aktuellen
+    Kind+innerToken). Clients muessen weiter paginieren.
   - `pageSize <= 0` -> `IllegalArgumentException`.
+  - Direkt-konstruierter Cursor mit `kind=UPLOAD_SESSIONS` (decode
+    umgangen) -> `IllegalStateException` aus dem `pageFor`-Guard.
+- `EmptyStores`:
+  - alle 6 No-op-Implementierungen sind durch Smoke-Tests abgedeckt
+    (save/find/list/delete) — kein Drift bei zukuenftigen
+    Port-Erweiterungen.
 - `McpServiceImpl`:
   - `resources/templates/list` ohne Principal funktioniert (statisch).
   - `resources/list` ohne Principal -> JSON-RPC `-32600` Invalid Request.
   - `resources/list` mit malformed Cursor -> JSON-RPC `-32602`
     Invalid params.
+  - `resources/list` mit decodebarem aber non-listable Cursor (z. B.
+    `kind=UPLOAD_SESSIONS`) -> JSON-RPC `-32602` Invalid params (vom
+    Decoder geblockt, nicht still als leere Antwort absorbiert).
+  - Cursor-Wire-Roundtrip durch JSON-RPC: opaker `nextCursor` einer
+    Antwort wird verbatim als `cursor` der Folge-Antwort akzeptiert
+    und konvergiert auf `null`.
   - `ServerCapabilities.resources = {"listChanged": false, "subscribe":
     false}`.
+
+**Phase-C-Hand-off (offene Punkte aus AP-6.9-Review)**
+
+- **Defense-in-depth Tenant-Filter** auf Schema/Profile/Diff/Connection
+  ist optional in Phase B (Stores werden mit
+  `tenantId=principal.effectiveTenantId` gequeryed). Phase C, sobald
+  Stores aus weniger vertrauenswuerdigen Quellen kommen, sollte einen
+  per-Record `tenantId == principal.effectiveTenantId`-Recheck nach
+  Store-Query ergaenzen.
+- **`-32600` "principal not bound"** ist ein Server-Bug-Indikator
+  (Bootstrap haette das verhindern muessen). `-32603 Internal error`
+  waere semantisch praeziser; in Phase B bleibt der Code stabil bei
+  `-32600`, weil der Vertrag schon gepinnt ist. Phase-C-Refactor: ggf.
+  auf `-32603` umstellen, wenn die Bootstrap-Garantien hart genug sind.
+- **`ConnectionReference.dialectId` und `displayName`** werden verbatim
+  in `description` gepackt. Phase B vertraut die Connection-Registrierung;
+  in Phase C sollte ein `SecretScrubber.scrub(...)`-Wrapper greifen,
+  bevor freie Strings auf den Wire gehen — Konsistenz mit dem
+  Audit-Pfad.
+- **Gson-`JsonSyntaxException`-Message** im Cursor-Decode-Pfad
+  enthaelt potentiell den vom Client uebergebenen Cursor-Body (Gson
+  zitiert den Fehler-Snippet). Heute risikofrei (Cursor ist opaque,
+  Server loggt nichts), aber Phase C koennte den Decode-Error auf
+  einen konstanten "invalid cursor"-String reduzieren, wenn Logs
+  spaeter angeschaltet werden.
+- **`-32600` ist nur via stdio-ohne-Token erreichbar** — HTTP
+  rebindet den Principal pro Request. Phase-C-Doku-Note: die einzige
+  produktive Quelle dieses Codes ist eine fehlerhafte
+  stdio-Konfiguration (`DMIGRATE_MCP_STDIO_TOKEN` nicht gesetzt
+  ODER `stdioTokenFile` zeigt auf eine Datei ohne passenden Eintrag).
