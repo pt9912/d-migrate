@@ -90,4 +90,55 @@ class CapabilitiesListHandlerTest : FunSpec({
         content.type shouldBe "text"
         content.mimeType shouldBe "application/json"
     }
+
+    test("payload omits inputSchema and outputSchema (capabilities_list is a contract overview)") {
+        // KDoc on CapabilitiesListReadOnlyHandler explicitly says the
+        // schemas are reachable via tools/list and would bloat this
+        // payload — pin that.
+        val sut = CapabilitiesListReadOnlyHandler(
+            tools = listOf(SAMPLE_TOOL),
+            scopeMapping = mapOf("schema_validate" to setOf("dmigrate:read")),
+        )
+        val outcome = sut.handle(ToolCallContext("capabilities_list", null, PRINCIPAL))
+        val text = (outcome as ToolCallOutcome.Success).content.single().text!!
+        val toolJson = JsonParser.parseString(text).asJsonObject
+            .getAsJsonArray("tools").get(0).asJsonObject
+        toolJson.has("inputSchema") shouldBe false
+        toolJson.has("outputSchema") shouldBe false
+    }
+
+    test("scopeTable surfaces multi-scope tools under every required scope") {
+        // §4.4 Protected Resource Metadata depends on this — dropping
+        // a scope would silently fail authorization advertisement.
+        val sut = CapabilitiesListReadOnlyHandler(
+            tools = emptyList(),
+            scopeMapping = mapOf(
+                "data_export_start" to setOf("dmigrate:job:start", "dmigrate:export:approved"),
+                "schema_validate" to setOf("dmigrate:read"),
+            ),
+        )
+        val outcome = sut.handle(ToolCallContext("capabilities_list", null, PRINCIPAL))
+        val text = (outcome as ToolCallOutcome.Success).content.single().text!!
+        val scopeTable = JsonParser.parseString(text).asJsonObject.getAsJsonObject("scopeTable")
+        // data_export_start appears under BOTH scopes
+        scopeTable.getAsJsonArray("dmigrate:job:start").map { it.asString } shouldBe listOf("data_export_start")
+        scopeTable.getAsJsonArray("dmigrate:export:approved").map { it.asString } shouldBe listOf("data_export_start")
+        scopeTable.getAsJsonArray("dmigrate:read").map { it.asString } shouldBe listOf("schema_validate")
+    }
+
+    test("scopeTable skips methods with empty scope sets") {
+        val sut = CapabilitiesListReadOnlyHandler(
+            tools = emptyList(),
+            scopeMapping = mapOf(
+                "initialize" to emptySet(),
+                "schema_validate" to setOf("dmigrate:read"),
+            ),
+        )
+        val outcome = sut.handle(ToolCallContext("capabilities_list", null, PRINCIPAL))
+        val text = (outcome as ToolCallOutcome.Success).content.single().text!!
+        val scopeTable = JsonParser.parseString(text).asJsonObject.getAsJsonObject("scopeTable")
+        scopeTable.has("dmigrate:read") shouldBe true
+        // No bucket for empty-scope methods
+        scopeTable.entrySet().size shouldBe 1
+    }
 })

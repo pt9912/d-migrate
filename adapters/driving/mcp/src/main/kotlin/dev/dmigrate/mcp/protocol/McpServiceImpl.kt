@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Phase B initialize / tools handler per
- * `ImpPlan-0.9.6-B.md` §6.4 + §6.8 + §12.8 + §12.11.
+ * `ImpPlan-0.9.6-B.md` §6.4 + §6.8 + §12.8 + §12.11 + §12.16.
  *
  * AP 6.4: Validates the client's `protocolVersion` and remembers the
  * negotiated version. Wrong `protocolVersion` is mapped to JSON-RPC
@@ -32,25 +32,42 @@ import java.util.concurrent.atomic.AtomicReference
  *   transport carrying `isError=true` with a `ToolErrorEnvelope`
  *   projection from [errorMapper].
  *
- * The principal supplied at construction time is read by tool
- * handlers via [ToolCallContext]. HTTP wires a fresh
- * `McpServiceImpl` per session (so each session sees its session
- * principal); stdio wires one per process. Phase B's only handler —
- * `capabilities_list` — does not consult the principal, but the
- * scaffolding is here so Phase C/D handlers can drop in unchanged.
+ * The current principal is held in an `AtomicReference` and seeded by
+ * [initialPrincipal]. stdio sets it once at bootstrap; HTTP rebinds it
+ * per request via [bindPrincipal] from `McpHttpRoute` so §12.14
+ * "per-request validation is source-of-truth" survives the dispatch.
+ * Phase B's only handler — `capabilities_list` — does not consult the
+ * principal, but the scaffolding is here so Phase C/D handlers drop
+ * in unchanged.
  */
 class McpServiceImpl(
     private val serverVersion: String,
     private val toolRegistry: ToolRegistry = ToolRegistry.builder().build(),
-    private val principalProvider: () -> PrincipalContext? = { null },
+    initialPrincipal: PrincipalContext? = null,
     private val errorMapper: ErrorMapper = DefaultErrorMapper(),
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
+    private val currentPrincipal = AtomicReference(initialPrincipal)
     private val gson = GsonBuilder().disableHtmlEscaping().create()
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
+
+    /**
+     * Updates the principal used by subsequent `tools/call` dispatches
+     * on this service instance. Called by the HTTP route between
+     * Bearer-validation and `tools/call` dispatch (§12.14: per-request
+     * Bearer validation is source-of-truth — the McpServiceImpl
+     * principal must reflect the latest validated request, not the
+     * Initialize-time snapshot).
+     *
+     * Stdio does not call this method after bootstrap; the principal
+     * stays bound to the validated stdio token (§12.15).
+     */
+    fun bindPrincipal(principal: PrincipalContext?) {
+        currentPrincipal.set(principal)
+    }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
         if (params.protocolVersion != McpProtocol.MCP_PROTOCOL_VERSION) {
@@ -86,7 +103,7 @@ class McpServiceImpl(
     override fun toolsCall(params: ToolsCallParams): CompletableFuture<ToolsCallResult> {
         val handler = toolRegistry.findHandler(params.name)
             ?: return failedWithMethodNotFound("unknown tool '${params.name}'")
-        val principal = principalProvider() ?: return failedAuthRequiredEnvelope(params.name)
+        val principal = currentPrincipal.get() ?: return failedAuthRequiredEnvelope(params.name)
         val context = ToolCallContext(
             name = params.name,
             arguments = params.arguments,
@@ -130,14 +147,26 @@ class McpServiceImpl(
         mimeType = content.mimeType,
     )
 
+    /**
+     * Serializes an envelope to the §12.16 wire shape:
+     * `{"code", "message", "details": [{"key", "value"}, ...], "requestId"?}`.
+     *
+     * `details` is a JSON ARRAY of `{key, value}` objects, not an
+     * object — `ValidationErrorException` legitimately emits multiple
+     * details with the same `key` (one per violation on a field), and
+     * an object-shaped `details` would silently drop duplicates.
+     * `requestId` is omitted when null so clients don't see a
+     * literal `null` field.
+     */
     private fun errorEnvelopeResult(
         envelope: dev.dmigrate.server.core.error.ToolErrorEnvelope,
     ): ToolsCallResult {
-        val payload = mapOf(
-            "code" to envelope.code.name,
-            "message" to envelope.message,
-            "details" to envelope.details.associate { it.key to it.value },
-        )
+        val payload = buildMap<String, Any> {
+            put("code", envelope.code.name)
+            put("message", envelope.message)
+            put("details", envelope.details.map { mapOf("key" to it.key, "value" to it.value) })
+            envelope.requestId?.let { put("requestId", it) }
+        }
         return ToolsCallResult(
             content = listOf(
                 ToolsCallContent(
@@ -161,13 +190,20 @@ class McpServiceImpl(
      * §4.2 + §12.15: a missing principal at the stdio layer is
      * surfaced as `AUTH_REQUIRED` on the `tools/call` envelope (NOT a
      * JSON-RPC error). Routes that cannot supply a principal (e.g.
-     * stdio without a configured token registry) wire
-     * [principalProvider] to return `null`; the resulting envelope
-     * tells the client "you must authenticate".
+     * stdio without a configured token registry, or HTTP before the
+     * session is bound) wire [principalProvider] to return `null`;
+     * the resulting envelope tells the client "you must authenticate".
+     *
+     * The tool name is carried in structured `details` (parallel to
+     * `UnsupportedToolOperationException`'s `toolName` detail) — never
+     * in the free-form `message` — so clients can correlate without
+     * parsing.
      */
     private fun failedAuthRequiredEnvelope(toolName: String): CompletableFuture<ToolsCallResult> {
-        val envelope = errorMapper.map(AuthRequiredException())
-        val annotated = envelope.copy(message = "${envelope.message} (tool='$toolName')")
-        return CompletableFuture.completedFuture(errorEnvelopeResult(annotated))
+        val base = errorMapper.map(AuthRequiredException())
+        val withTool = base.copy(
+            details = base.details + dev.dmigrate.server.core.error.ToolErrorDetail("toolName", toolName),
+        )
+        return CompletableFuture.completedFuture(errorEnvelopeResult(withTool))
     }
 }

@@ -9,6 +9,7 @@ import dev.dmigrate.mcp.auth.JwksAuthValidator
 import dev.dmigrate.mcp.auth.ScopeChecker
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.protocol.McpService
+import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.mcp.transport.McpEndpointFactory
@@ -295,6 +296,12 @@ private suspend fun dispatchAndRespond(
     message: Message,
     isInitialize: Boolean,
 ) {
+    // §12.14 + §12.16: bind the per-request validated principal so
+    // tools/call dispatch sees source-of-truth, not the Initialize-time
+    // snapshot. Stdio's McpServiceImpl is initialized with its principal
+    // and never rebound; HTTP rebinds on every request after Bearer
+    // validation succeeded.
+    (context.service as? McpServiceImpl)?.bindPrincipal(context.principal)
     val capture = CaptureConsumer()
     val remote = McpEndpointFactory.remoteEndpoint(context.endpoint, capture)
     try {

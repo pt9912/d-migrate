@@ -83,12 +83,20 @@ class PhaseBRegistriesTest : FunSpec({
     }
 
     test("toolRegistry honours a custom scopeMapping (no DEFAULT bleed-through)") {
-        val custom = mapOf("custom_tool" to setOf("dmigrate:admin"))
+        val custom = mapOf(
+            "capabilities_list" to setOf("dmigrate:read"),
+            "custom_tool" to setOf("dmigrate:admin"),
+        )
         val registry = PhaseBRegistries.toolRegistry(custom)
         registry.names() shouldContain "custom_tool"
         registry.find("custom_tool")!!.requiredScopes shouldBe setOf("dmigrate:admin")
-        // capabilities_list is NOT in the custom map so it shouldn't be there
-        registry.find("capabilities_list") shouldBe null
+        // schema_validate is NOT in the custom map so it shouldn't be there
+        registry.find("schema_validate") shouldBe null
+    }
+
+    test("scopeMapping without capabilities_list is rejected at build time (§12.11)") {
+        val incomplete = mapOf("schema_validate" to setOf("dmigrate:read"))
+        shouldThrow<IllegalStateException> { PhaseBRegistries.toolRegistry(incomplete) }
     }
 
     test("resourceRegistry is empty in Phase B") {

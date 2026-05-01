@@ -48,6 +48,13 @@ object PhaseBRegistries {
     fun toolRegistry(
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     ): ToolRegistry {
+        // §12.11: capabilities_list MUST be present in Phase B —
+        // it's the only tool with a real handler. A scopeMapping that
+        // omits it would silently produce a server with zero working
+        // tools; fail fast at build time instead.
+        check("capabilities_list" in scopeMapping) {
+            "scopeMapping must register 'capabilities_list' (§12.11 — Phase B's only fachlicher Handler)"
+        }
         val descriptors = scopeMapping
             .filterKeys { it !in PROTOCOL_METHODS }
             .map { (name, scopes) -> describe(name, scopes) }

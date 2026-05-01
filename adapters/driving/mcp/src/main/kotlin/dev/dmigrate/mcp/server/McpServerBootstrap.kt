@@ -86,16 +86,13 @@ object McpServerBootstrap {
                 installMcpHttpRoute(
                     config = config,
                     serviceFactory = {
+                        // initialPrincipal=null is correct: the route
+                        // calls McpServiceImpl.bindPrincipal(...) per
+                        // dispatch (after Bearer-validation), so the
+                        // service never sees a stale principal.
                         McpServiceImpl(
                             serverVersion = serverVersion,
                             toolRegistry = toolRegistry,
-                            // HTTP wires the per-session principal at
-                            // session-create time (AP 6.6 §12.14). For
-                            // now the route does not yet thread it into
-                            // the service; AP 6.8 adds the registry but
-                            // not the principal flow — Phase C/D wires
-                            // SessionState.principalContext here.
-                            principalProvider = { null },
                         )
                     },
                 )
@@ -138,7 +135,7 @@ object McpServerBootstrap {
         val service: McpService = McpServiceImpl(
             serverVersion = serverVersion,
             toolRegistry = toolRegistry,
-            principalProvider = { principal },
+            initialPrincipal = principal,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }

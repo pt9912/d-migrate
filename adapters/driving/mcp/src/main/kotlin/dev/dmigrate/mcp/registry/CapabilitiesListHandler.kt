@@ -42,11 +42,7 @@ internal class CapabilitiesListReadOnlyHandler(
             "dmigrateContractVersion" to McpProtocol.DMIGRATE_CONTRACT_VERSION,
             "serverName" to McpProtocol.SERVER_NAME,
             "tools" to tools.map(::projectTool),
-            "scopeTable" to scopeMapping.entries
-                .filter { it.value.isNotEmpty() }
-                .groupBy({ it.value.first() }, { it.key })
-                .toSortedMap()
-                .mapValues { (_, methods) -> methods.sorted() },
+            "scopeTable" to invertScopeMapping(scopeMapping),
         )
         return ToolCallOutcome.Success(
             content = listOf(
@@ -73,4 +69,27 @@ internal class CapabilitiesListReadOnlyHandler(
         }
     }
 
+    /**
+     * Inverts `(method -> scopes)` into `(scope -> methods)` so agents
+     * can list every method requiring a given scope without scanning
+     * the full mapping. Multi-scope tools (a method that demands BOTH
+     * scope A AND scope B) appear under both A and B — losing either
+     * would mean a client could fail Protected Resource Metadata
+     * advertisement (§4.4) for legitimate scope holders.
+     *
+     * Empty scope sets on a method are skipped: a no-scope method is
+     * scope-free per §12.14 (`SCOPE_FREE_METHODS`) and does not belong
+     * in the per-scope projection.
+     */
+    private fun invertScopeMapping(
+        mapping: Map<String, Set<String>>,
+    ): Map<String, List<String>> {
+        val out = sortedMapOf<String, MutableSet<String>>()
+        for ((method, scopes) in mapping) {
+            for (scope in scopes) {
+                out.getOrPut(scope) { sortedSetOf() } += method
+            }
+        }
+        return out.mapValues { (_, methods) -> methods.toList() }
+    }
 }
