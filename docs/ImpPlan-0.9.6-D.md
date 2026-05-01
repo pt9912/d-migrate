@@ -113,6 +113,7 @@ Store-/Index-Vertraege erweitert.
 - MCP-Standard-Discovery:
   - `resources/list`
   - `resources/templates/list`
+  - `resources/read`
 - Resource-URI-Schema fuer Jobs, Artefakte, Schemas, Profile, Diffs und
   Connection-Refs
 - Resource-Resolver pro Resource-Typ
@@ -196,6 +197,11 @@ sind nur abgeleitete, secret-freie Ersatzfelder erlaubt, z. B.:
 - `isProduction`
 - `allowedOperations`
 
+`allowedOperations` und Policy-Hinweise sind reine Metadaten fuer Discovery und
+Resource-Projektionen. Sie bereiten spaetere Start-Tool-Entscheidungen vor,
+ziehen aber `schema_compare_start`, Reverse, Import oder Transfer nicht in den
+Scope von Phase D.
+
 ### 4.4 CLI und MCP teilen Bootstrap-Logik
 
 Die bestehende CLI-Config-/Connection-Aufloesung wird hinter einen
@@ -261,7 +267,27 @@ Groessere Ressourcen liefern:
 - naechsten Chunk-Cursor
 - Groessen- und Hash-Metadaten, soweit vorhanden
 
-### 5.3 Resource-Fehler
+### 5.3 `resources/read`
+
+`resources/read` ist ein eigenes Deliverable in Phase D. Der Request bleibt
+kompatibel zum Phase-B-Vertrag und nimmt nur `uri` entgegen. Chunking,
+Range-Reads oder Filter duerfen nicht als zusaetzliche `resources/read`-
+Parameter eingefuehrt werden.
+
+Der Handler muss:
+
+- die URI syntaktisch validieren
+- per Resource-URI-ADT auf den passenden Resolver dispatchen
+- Principal-, Tenant- und Sichtbarkeitsregeln vor dem Lesen pruefen
+- kleine Inhalte inline und grosse Inhalte als Artefaktref oder Chunk-URI
+  liefern
+- dasselbe Fehler-Mapping nutzen wie Discovery und fachliche Listen-Tools
+
+Tests muessen mindestens URI-only Request-Schema, Resolver-Dispatch,
+Tenant-/Principal-Grenzen, secret-freie Projektionen, `dmigrate://capabilities`
+und Chunk-Grenzen abdecken.
+
+### 5.4 Resource-Fehler
 
 Verbindliche Fehler:
 
@@ -287,7 +313,7 @@ Fehler duerfen keine fremden Ressourcendetails leaken.
 
 Alle Listen-Tools verwenden konsistente Parameter:
 
-- `limit`
+- `pageSize`
 - `cursor`
 - `type` oder resource-spezifischer Filter, falls sinnvoll
 - `createdAfter`
@@ -317,10 +343,15 @@ Standardsortierung. Default:
 - sekundaer stabile ID `ASC`
 
 Resource-spezifische Sortierungen duerfen nur ergaenzt werden, wenn sie
-dokumentiert und getestet sind. Cursor muessen an Tenant, Filter, Limit,
+dokumentiert und getestet sind. Cursor muessen an Tenant, Filter, `pageSize`,
 Sortierung und letzte Sort-Keys gebunden sein. Dadurch bleiben `items` und
 `nextCursor` auch bei gleichzeitigen Inserts/Deletes stabil genug, um keine
 Duplikate oder Luecken durch nichtdeterministische Reihenfolge zu erzeugen.
+
+`pageSize` bleibt fuer Phase D der Wire-Vertrag aus Phase B. `limit` wird in
+Phase D nicht als Alias eingefuehrt, weil die bestehenden JSON-Schemas
+`additionalProperties=false` verwenden. Eine spaetere Umstellung auf `limit`
+braucht einen versionierten Migrationspfad und Golden-Test-Anpassungen.
 
 Diese Sortierregel gilt nicht fuer MCP-`resources/list`. `resources/list`
 folgt weiter dem verbindlichen Phase-B-Resource-Walk:
@@ -381,7 +412,8 @@ Anforderungen:
 
 ### 7.2 `resources/templates/list`
 
-`resources/templates/list` liefert parametrisierte URI-Templates fuer:
+`resources/templates/list` liefert weiter genau die sieben parametrisierten
+Phase-B-URI-Templates fuer:
 
 - Jobs
 - Artefakte
@@ -390,12 +422,12 @@ Anforderungen:
 - Profile
 - Diffs
 - Connection-Refs
-- Capabilities
 
 Chunk-Templates fuer grosse Artefakte muessen sichtbar sein, ohne konkrete
 fremde Artefakte zu bestaetigen.
-`dmigrate://capabilities` bekommt einen expliziten Resolver und ein Template,
-das nur globale, secret-freie Server-Faehigkeiten ausliefert.
+`dmigrate://capabilities` ist direkt lesbar, aber kein Eintrag in
+`resources/templates/list`, damit der Phase-B-Vertrag der statischen
+7-Template-Liste nicht gebrochen wird.
 
 ### 7.3 Initialize-Capabilities
 
@@ -449,7 +481,9 @@ Verbindliche Regeln:
 - Jede Resource-Aufloesung prueft Tenant-Scope.
 - Jede Listen-Antwort ist principal-gefiltert.
 - Cursor duerfen nicht tenant- oder filteruebergreifend wiederverwendbar sein.
-- Sensitive Connection-Refs liefern nur Policy-Metadaten, keine Secrets.
+- Sensitive Connection-Refs liefern nur Policy-Hinweise und
+  `allowedOperations`-Metadaten, keine Secrets und keine ausfuehrbaren
+  Start-Tool-Vertraege.
 - Resource-Fehler leaken keine fremden Details.
 - Audit-Events entstehen auch fuer Validierungs-, Tenant-, Auth- und
   Cursor-Fehler.
@@ -479,10 +513,10 @@ Verbindliche Regeln:
 ### 10.3 Pagination einfuehren
 
 - `PageRequest` / `PageResult` im gemeinsamen Vertrag nutzen oder ergaenzen.
-- Limit-Obergrenzen definieren.
+- `pageSize`-Obergrenzen definieren.
 - Cursor-Kapselung im MCP-Adapter implementieren.
 - deterministische Standardsortierung (`createdAt DESC`, `id ASC`) und
-  Cursor-Bindung an Tenant, Filter, Limit, Sortierung und letzte Sort-Keys
+  Cursor-Bindung an Tenant, Filter, `pageSize`, Sortierung und letzte Sort-Keys
   fuer fachliche Listen-Tools implementieren.
 - `resources/list` beim Phase-B-Resource-Walk
   `JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS -> CONNECTIONS`
@@ -507,10 +541,15 @@ Verbindliche Regeln:
 - `job_status_get` und `artifact_chunk_get` an denselben Resolver-Vertrag
   anbinden.
 
-### 10.5 MCP-Standard-Discovery anbinden
+### 10.5 MCP-Standard-Discovery und Resource-Reads anbinden
 
 - `resources/list`
 - `resources/templates/list`
+- `resources/read` als URI-only Handler anbinden.
+- Resolver-Dispatch fuer `resources/read` ueber dasselbe URI-Modell wie
+  `resources/list` implementieren.
+- Fehler-Mapping fuer `resources/read` mit Discovery, Tenant-Scope und
+  no-oracle `RESOURCE_NOT_FOUND` synchronisieren.
 - Initialize-Capability pruefen.
 - Resource-Registry mit produktiven Resolvern verbinden.
 
@@ -524,7 +563,8 @@ Verbindliche Regeln:
 ### 10.7 Tests und Dokumentation
 
 - Unit-Tests fuer Parser, Cursor, Filter und Resolver.
-- Adaptertests fuer MCP-Tools und `resources/*`.
+- Adaptertests fuer MCP-Tools, `resources/list`, `resources/templates/list` und
+  `resources/read`.
 - Tenant-Scope- und Secret-Scrubbing-Tests.
 - Doku fuer Resource-URIs, Cursor und Connection-Refs ergaenzen.
 
@@ -535,7 +575,7 @@ Verbindliche Regeln:
 - Listen liefern stabile `items` und `nextCursor`.
 - Fachliche Listen-Tools verwenden eine dokumentierte deterministische
   Sortierung, mindestens `createdAt DESC`, `id ASC`.
-- Cursor fachlicher Listen-Tools sind an Tenant, Filter, Limit, Sortierung
+- Cursor fachlicher Listen-Tools sind an Tenant, Filter, `pageSize`, Sortierung
   und letzte Sort-Keys gebunden.
 - `resources/list` folgt dem Phase-B-Resource-Walk und setzt keine globale
   `createdAt`-Sortierung ueber alle Resource-Familien voraus.
@@ -546,8 +586,9 @@ Verbindliche Regeln:
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list` auffindbar,
   auch wenn die Persistenz intern ueber typisierte Artefakte erfolgt.
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`.
-- sensitive Connection-Refs liefern Policy-Metadaten fuer
-  `schema_compare_start`, Reverse, Import und Transfer.
+- sensitive Connection-Refs liefern nur secret-freie `allowedOperations`- und
+  Policy-Hinweise; Phase D implementiert dadurch keine Start-Tools fuer
+  `schema_compare_start`, Reverse, Import oder Transfer.
 - Connection-Refs koennen in Tests aus dokumentierten Seeds geladen werden,
   ohne Secrets in MCP-Payloads zu uebergeben.
 - reale connection-backed Pfade funktionieren nur mit dokumentiertem
@@ -557,8 +598,14 @@ Verbindliche Regeln:
 - CLI- und MCP-Startpfade nutzen dieselbe adapterneutrale
   Config-/Connection-Ref-Aufloesung.
 - ungueltige Cursor liefern `VALIDATION_ERROR`.
-- `resources/list` und `resources/templates/list` nutzen dieselben
-  Resolver-/Tenant-Regeln wie `resources/read`.
+- `resources/list` nutzt dieselben Resolver-/Tenant-Regeln wie
+  `resources/read`.
+- `resources/templates/list` bleibt statisch, principal-unabhaengig, ohne
+  Resource-Aufloesung und beim Phase-B-Vertrag mit genau sieben Templates;
+  `dmigrate://capabilities` ist dort kein zusaetzliches Template.
+- `resources/read` akzeptiert nur `uri`, nutzt Resolver-Dispatch, liefert
+  grosse Inhalte nur ueber Artefaktrefs oder Chunk-URIs und ist mit
+  Adaptertests abgedeckt.
 - `resources/read(dmigrate://capabilities)` liefert die globale, secret-freie
   Faehigkeitsbeschreibung ueber einen expliziten Capability-Resolver.
 - Initialize meldet fuer `resources` explizit `listChanged=false` und
