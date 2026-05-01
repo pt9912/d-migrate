@@ -1,5 +1,15 @@
 package dev.dmigrate.mcp.protocol
 
+import com.google.gson.GsonBuilder
+import dev.dmigrate.mcp.registry.ToolCallContext
+import dev.dmigrate.mcp.registry.ToolCallOutcome
+import dev.dmigrate.mcp.registry.ToolContent
+import dev.dmigrate.mcp.registry.ToolDescriptor
+import dev.dmigrate.mcp.registry.ToolRegistry
+import dev.dmigrate.server.application.error.AuthRequiredException
+import dev.dmigrate.server.application.error.DefaultErrorMapper
+import dev.dmigrate.server.application.error.ErrorMapper
+import dev.dmigrate.server.core.principal.PrincipalContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -7,23 +17,37 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase B AP 6.4 initialize handler.
+ * Phase B initialize / tools handler per
+ * `ImpPlan-0.9.6-B.md` §6.4 + §6.8 + §12.8 + §12.11.
  *
- * Validates the client's `protocolVersion`, returns the negotiated
- * server capabilities, and remembers the negotiated version for
- * follow-up checks (the actual header validation lives in AP 6.5
- * on the HTTP transport).
+ * AP 6.4: Validates the client's `protocolVersion` and remembers the
+ * negotiated version. Wrong `protocolVersion` is mapped to JSON-RPC
+ * error `-32602` (Invalid params), per §12.8.
  *
- * Wrong `protocolVersion` is mapped to JSON-RPC error `-32602`
- * (Invalid params), per §12.8 — `-32001` is reserved for the
- * "session has different version than initialize" follow-up case
- * which AP 6.5 owns.
+ * AP 6.8: Adds `tools/list` and `tools/call`.
+ * - `tools/list` projects [toolRegistry] into MCP shape.
+ * - `tools/call` dispatches via the registry handler. Unknown tool
+ *   names raise JSON-RPC `-32601` (Method not found, §12.8); known
+ *   tools without an implementation produce a successful `tools/call`
+ *   transport carrying `isError=true` with a `ToolErrorEnvelope`
+ *   projection from [errorMapper].
+ *
+ * The principal supplied at construction time is read by tool
+ * handlers via [ToolCallContext]. HTTP wires a fresh
+ * `McpServiceImpl` per session (so each session sees its session
+ * principal); stdio wires one per process. Phase B's only handler —
+ * `capabilities_list` — does not consult the principal, but the
+ * scaffolding is here so Phase C/D handlers can drop in unchanged.
  */
 class McpServiceImpl(
     private val serverVersion: String,
+    private val toolRegistry: ToolRegistry = ToolRegistry.builder().build(),
+    private val principalProvider: () -> PrincipalContext? = { null },
+    private val errorMapper: ErrorMapper = DefaultErrorMapper(),
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
+    private val gson = GsonBuilder().disableHtmlEscaping().create()
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
@@ -36,9 +60,14 @@ class McpServiceImpl(
             return CompletableFuture.failedFuture(ResponseErrorException(err))
         }
         negotiated.set(params.protocolVersion)
+        val capabilities = ServerCapabilities(
+            // §5.3: tools is set once `tools/list` works (AP 6.8).
+            // listChanged stays absent until subscriptions arrive.
+            tools = mapOf("listChanged" to false),
+        )
         val result = InitializeResult(
             protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION,
-            capabilities = ServerCapabilities(),
+            capabilities = capabilities,
             serverInfo = ServerInfo(name = McpProtocol.SERVER_NAME, version = serverVersion),
         )
         return CompletableFuture.completedFuture(result)
@@ -47,5 +76,98 @@ class McpServiceImpl(
     override fun initialized() {
         // Notification — no response. Phase C uses this hook to flip
         // session into "ready" once tool registries exist.
+    }
+
+    override fun toolsList(params: ToolsListParams?): CompletableFuture<ToolsListResult> {
+        val tools = toolRegistry.all().map(::toMetadata)
+        return CompletableFuture.completedFuture(ToolsListResult(tools = tools, nextCursor = null))
+    }
+
+    override fun toolsCall(params: ToolsCallParams): CompletableFuture<ToolsCallResult> {
+        val handler = toolRegistry.findHandler(params.name)
+            ?: return failedWithMethodNotFound("unknown tool '${params.name}'")
+        val principal = principalProvider() ?: return failedAuthRequiredEnvelope(params.name)
+        val context = ToolCallContext(
+            name = params.name,
+            arguments = params.arguments,
+            principal = principal,
+        )
+        return CompletableFuture.completedFuture(dispatch(handler, context))
+    }
+
+    private fun dispatch(
+        handler: dev.dmigrate.mcp.registry.ToolHandler,
+        context: ToolCallContext,
+    ): ToolsCallResult = try {
+        when (val outcome = handler.handle(context)) {
+            is ToolCallOutcome.Success -> ToolsCallResult(
+                content = outcome.content.map(::toWireContent),
+                isError = false,
+            )
+            is ToolCallOutcome.Error -> errorEnvelopeResult(outcome.envelope)
+        }
+    } catch (e: Throwable) {
+        // §12.8: known-but-unimplemented tools raise
+        // UnsupportedToolOperationException; other ApplicationExceptions
+        // surface their own envelopes; anything else lands as
+        // INTERNAL_AGENT_ERROR via the default mapper.
+        errorEnvelopeResult(errorMapper.map(e))
+    }
+
+    private fun toMetadata(descriptor: ToolDescriptor): ToolMetadata = ToolMetadata(
+        name = descriptor.name,
+        title = descriptor.title,
+        description = descriptor.description,
+        inputSchema = descriptor.inputSchema,
+        outputSchema = descriptor.outputSchema,
+        requiredScopes = descriptor.requiredScopes.sorted(),
+    )
+
+    private fun toWireContent(content: ToolContent): ToolsCallContent = ToolsCallContent(
+        type = content.type,
+        text = content.text,
+        data = content.data,
+        mimeType = content.mimeType,
+    )
+
+    private fun errorEnvelopeResult(
+        envelope: dev.dmigrate.server.core.error.ToolErrorEnvelope,
+    ): ToolsCallResult {
+        val payload = mapOf(
+            "code" to envelope.code.name,
+            "message" to envelope.message,
+            "details" to envelope.details.associate { it.key to it.value },
+        )
+        return ToolsCallResult(
+            content = listOf(
+                ToolsCallContent(
+                    type = "text",
+                    text = gson.toJson(payload),
+                    mimeType = "application/json",
+                ),
+            ),
+            isError = true,
+        )
+    }
+
+    private fun failedWithMethodNotFound(message: String): CompletableFuture<ToolsCallResult> =
+        CompletableFuture.failedFuture(
+            ResponseErrorException(
+                ResponseError(ResponseErrorCode.MethodNotFound, message, null),
+            ),
+        )
+
+    /**
+     * §4.2 + §12.15: a missing principal at the stdio layer is
+     * surfaced as `AUTH_REQUIRED` on the `tools/call` envelope (NOT a
+     * JSON-RPC error). Routes that cannot supply a principal (e.g.
+     * stdio without a configured token registry) wire
+     * [principalProvider] to return `null`; the resulting envelope
+     * tells the client "you must authenticate".
+     */
+    private fun failedAuthRequiredEnvelope(toolName: String): CompletableFuture<ToolsCallResult> {
+        val envelope = errorMapper.map(AuthRequiredException())
+        val annotated = envelope.copy(message = "${envelope.message} (tool='$toolName')")
+        return CompletableFuture.completedFuture(errorEnvelopeResult(annotated))
     }
 }

@@ -1,12 +1,16 @@
 package dev.dmigrate.mcp.server
 
 import dev.dmigrate.mcp.auth.FileStdioTokenStore
+import dev.dmigrate.mcp.auth.StdioPrincipalResolution
 import dev.dmigrate.mcp.auth.StdioPrincipalResolver
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
+import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
+import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.ports.StdioTokenStore
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
@@ -52,9 +56,17 @@ sealed interface McpStartOutcome {
  */
 object McpServerBootstrap {
 
+    /**
+     * @param toolRegistry transport-neutral registry per §4.7 — same
+     *  instance is reused for stdio when both transports run in the
+     *  same process. Defaults to [PhaseBRegistries.toolRegistry] which
+     *  registers every 0.9.6 tool with `capabilities_list` as the
+     *  only real handler.
+     */
     fun startHttp(
         config: McpServerConfig,
         serverVersion: String = "0.0.0",
+        toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
     ): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
@@ -67,9 +79,25 @@ object McpServerBootstrap {
                 // AP 6.5: full Streamable-HTTP route (POST/GET/DELETE,
                 // Origin, Session-Id, Protocol-Version, Accept). AP 6.6
                 // wraps Bearer/JWKS auth around the dispatch chain.
+                // AP 6.8: serviceFactory builds an McpServiceImpl per
+                // session that shares the route-level toolRegistry —
+                // §6.8 acceptance ("stdio und HTTP nutzen dieselben
+                // Registry-Instanzen").
                 installMcpHttpRoute(
                     config = config,
-                    serviceFactory = { McpServiceImpl(serverVersion) },
+                    serviceFactory = {
+                        McpServiceImpl(
+                            serverVersion = serverVersion,
+                            toolRegistry = toolRegistry,
+                            // HTTP wires the per-session principal at
+                            // session-create time (AP 6.6 §12.14). For
+                            // now the route does not yet thread it into
+                            // the service; AP 6.8 adds the registry but
+                            // not the principal flow — Phase C/D wires
+                            // SessionState.principalContext here.
+                            principalProvider = { null },
+                        )
+                    },
                 )
             },
         )
@@ -96,16 +124,22 @@ object McpServerBootstrap {
         serverVersion: String = "0.0.0",
         tokenStoreOverride: StdioTokenStore? = null,
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
+        toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
     ): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
         RuntimeBootstrap.initialize()
         val store = tokenStoreOverride ?: config.stdioTokenFile?.let(FileStdioTokenStore::load)
         // §4.2 / §6.7: a missing/unknown principal does NOT crash the
-        // server — initialize is auth-exempt; tool/resource calls in
-        // later phases translate AuthRequired into AUTH_REQUIRED.
+        // server — initialize is auth-exempt; tool/resource calls
+        // surface the principal absence via failedAuthRequiredEnvelope.
         val resolution = StdioPrincipalResolver(tokenSupplier, store).resolve()
-        val service: McpService = McpServiceImpl(serverVersion)
+        val principal: PrincipalContext? = (resolution as? StdioPrincipalResolution.Resolved)?.principal
+        val service: McpService = McpServiceImpl(
+            serverVersion = serverVersion,
+            toolRegistry = toolRegistry,
+            principalProvider = { principal },
+        )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }
         return McpStartOutcome.Started(StdioHandle(rpc))

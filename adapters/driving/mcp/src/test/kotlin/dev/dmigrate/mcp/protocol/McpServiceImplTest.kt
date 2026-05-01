@@ -38,14 +38,15 @@ class McpServiceImplTest : FunSpec({
         sut.negotiatedProtocolVersion() shouldBe null
     }
 
-    test("default capabilities advertise nothing implemented (AP 6.4 minimum)") {
+    test("AP 6.8 capabilities advertise tools but not resources/prompts") {
         val sut = McpServiceImpl(serverVersion = "0.1.0")
         val result = sut.initialize(
             InitializeParams(protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION),
         ).get()
         // §5.3: capabilities reflect only what is implemented. AP 6.8
-        // adds tools, AP 6.9 adds resources.
-        result.capabilities.tools shouldBe null
+        // turns on tools (listChanged stays false until subscriptions
+        // ship); AP 6.9 will turn on resources.
+        result.capabilities.tools shouldBe mapOf("listChanged" to false)
         result.capabilities.resources shouldBe null
         result.capabilities.prompts shouldBe null
     }

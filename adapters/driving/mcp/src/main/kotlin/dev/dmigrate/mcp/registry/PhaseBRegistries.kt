@@ -1,0 +1,153 @@
+package dev.dmigrate.mcp.registry
+
+import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.core.error.ToolErrorCode
+
+/**
+ * Builds the Phase-B default tool/resource registries per
+ * `ImpPlan-0.9.6-B.md` §3.1 + §6.8 + §12.11.
+ *
+ * Phase B registers EVERY 0.9.6 tool so `tools/list` advertises the
+ * full contract; only `capabilities_list` is wired to a real handler
+ * (per §12.11). All other tools dispatch through
+ * [UnsupportedToolHandler], which raises
+ * `UnsupportedToolOperationException` — translated to a tool result
+ * with `isError=true` and a `ToolErrorEnvelope` (§12.8).
+ *
+ * The descriptor metadata (titles, descriptions, error-codes,
+ * inline-limit hints) is stable and reviewed for the contract; AP
+ * 6.10 will replace the placeholder JSON-Schemas with real 2020-12
+ * definitions and add the golden-test gate.
+ *
+ * Tool universe: every entry in `McpServerConfig.scopeMapping` that is
+ * not an MCP-protocol method (`tools/list`, `resources/list`,
+ * `resources/templates/list`, `resources/read`, `connections/list`)
+ * counts as a tool. The protocol methods are scope-checked via the
+ * same `McpServerConfig.scopeMapping` but are not listed in
+ * `tools/list`.
+ */
+object PhaseBRegistries {
+
+    private val PROTOCOL_METHODS: Set<String> = setOf(
+        "tools/list",
+        "tools/call",
+        "resources/list",
+        "resources/templates/list",
+        "resources/read",
+        "connections/list",
+    )
+
+    /**
+     * Builds the default tool registry. Two-phase: (1) build all
+     * descriptors, (2) build handlers — `capabilities_list` reads the
+     * descriptor list, every other tool dispatches to
+     * [UnsupportedToolHandler]. The descriptor list is the source of
+     * truth for `tools/list`; the registry just associates each
+     * descriptor with its handler.
+     */
+    fun toolRegistry(
+        scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
+    ): ToolRegistry {
+        val descriptors = scopeMapping
+            .filterKeys { it !in PROTOCOL_METHODS }
+            .map { (name, scopes) -> describe(name, scopes) }
+        val capabilitiesHandler = CapabilitiesListReadOnlyHandler(descriptors, scopeMapping)
+        val builder = ToolRegistry.builder()
+        for (descriptor in descriptors) {
+            val handler: ToolHandler = if (descriptor.name == "capabilities_list") {
+                capabilitiesHandler
+            } else {
+                UnsupportedToolHandler(descriptor.title)
+            }
+            builder.register(descriptor, handler)
+        }
+        return builder.build()
+    }
+
+    fun resourceRegistry(): ResourceRegistry = ResourceRegistry.empty()
+
+    private fun describe(name: String, scopes: Set<String>): ToolDescriptor =
+        ToolDescriptor(
+            name = name,
+            title = TITLES[name] ?: name,
+            description = DESCRIPTIONS[name]
+                ?: "0.9.6 contract tool '$name' (Phase B: registered, not implemented).",
+            requiredScopes = scopes,
+            inputSchema = STUB_INPUT_SCHEMA,
+            outputSchema = STUB_OUTPUT_SCHEMA,
+            inlineLimits = INLINE_LIMITS[name],
+            resourceFallbackHint = FALLBACK_HINTS[name],
+            errorCodes = ERROR_CODES[name] ?: setOf(ToolErrorCode.UNSUPPORTED_TOOL_OPERATION),
+        )
+
+    /**
+     * Phase B does not pin per-tool input/output JSON schemas — AP
+     * 6.10 swaps these stubs for the real 2020-12 definitions plus
+     * the golden test. The stub deliberately advertises the dialect
+     * via `$schema` so clients see the eventual contract today.
+     */
+    private val STUB_INPUT_SCHEMA: Map<String, Any> = mapOf(
+        "\$schema" to "https://json-schema.org/draft/2020-12/schema",
+        "type" to "object",
+    )
+
+    private val STUB_OUTPUT_SCHEMA: Map<String, Any> = mapOf(
+        "\$schema" to "https://json-schema.org/draft/2020-12/schema",
+        "type" to "object",
+    )
+
+    private val TITLES: Map<String, String> = mapOf(
+        "capabilities_list" to "Capabilities (server contract)",
+        "schema_validate" to "Validate schema document",
+        "schema_compare" to "Compare two schema documents",
+        "schema_generate" to "Generate schema artifacts",
+        "schema_list" to "List schema artifacts",
+        "profile_list" to "List data profiles",
+        "diff_list" to "List schema diffs",
+        "job_list" to "List jobs",
+        "job_status_get" to "Get job status",
+        "artifact_list" to "List artifacts",
+        "artifact_chunk_get" to "Read an artifact chunk",
+        "schema_reverse_start" to "Start schema reverse-engineering job",
+        "schema_compare_start" to "Start schema comparison job",
+        "data_profile_start" to "Start data profiling job",
+        "data_export_start" to "Start data export job",
+        "artifact_upload_init" to "Init artifact upload session",
+        "artifact_upload_chunk" to "Upload an artifact chunk",
+        "artifact_upload_complete" to "Complete artifact upload",
+        "artifact_upload_abort" to "Abort artifact upload",
+        "data_import_start" to "Start data import job",
+        "data_transfer_start" to "Start data transfer job",
+        "job_cancel" to "Cancel a running job",
+        "procedure_transform_plan" to "Plan procedure transform (AI)",
+        "procedure_transform_execute" to "Execute procedure transform (AI)",
+        "testdata_plan" to "Plan test data generation (AI)",
+        "testdata_execute" to "Execute test data generation (AI)",
+    )
+
+    private val DESCRIPTIONS: Map<String, String> = mapOf(
+        "capabilities_list" to (
+            "Returns the static d-migrate contract: protocol versions, the registered tools, " +
+                "and the scope table. Stores- and driver-free per ImpPlan §12.11."
+            ),
+    )
+
+    private val INLINE_LIMITS: Map<String, String> = mapOf(
+        "artifact_chunk_get" to "max 1 MiB per chunk; iterate via successive `chunkId` values",
+        "schema_compare" to "max 1 MiB inline; larger diffs land as artifact",
+    )
+
+    private val FALLBACK_HINTS: Map<String, String> = mapOf(
+        "artifact_chunk_get" to (
+            "use `dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}` " +
+                "template for streaming"
+            ),
+        "schema_list" to (
+            "use `dmigrate://tenants/{tenantId}/schemas/{schemaId}` template for full schema reads"
+            ),
+    )
+
+    private val ERROR_CODES: Map<String, Set<ToolErrorCode>> = mapOf(
+        "capabilities_list" to emptySet(),
+    )
+}
