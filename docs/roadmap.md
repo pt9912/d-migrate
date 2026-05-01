@@ -395,20 +395,20 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 
 ### Milestone 0.9.6 — MCP-Server
 
-| Bereich | Aufgabe                                                                                                            | LF-Ref | Status |
-| ------- | ------------------------------------------------------------------------------------------------------------------ | ------ | ------ |
+| Bereich | Aufgabe                                                                                                                                          | LF-Ref | Status         |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | -------------- |
 | Server  | Phase A: Gemeinsamer Serverkern (Kernmodelle, Store-Ports, Byte-Stores, Fingerprint, Approval, Quota, Error, Audit) — siehe `ImpPlan-0.9.6-A.md` | —      | ✅ (2026-04-26) |
-| Server  | Phase B: MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext | —      |        |
-| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface                                   | —      |        |
-| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung                           | —      |        |
-| Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs                                      | —      |        |
-| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                                           | —      |        |
-| Server  | Job-Steuerung: Statusabfrage und `job_cancel` fuer eigene oder erlaubte Jobs                                       | —      |        |
-| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                                             | —      |        |
-| Server  | Segmentierter Artefakt-Upload und `artifact_upload_abort` mit SHA256-Validierung                                   | —      |        |
-| Server  | KI-nahe MCP-Tools: `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan` mit Policy und Audit | —      |        |
-| Server  | MCP-Prompts fuer kuratierte Analyse-, Transformations- und Testdatenablaeufe                                       | —      |        |
-| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                                      | —      |        |
+| Server  | Phase B: MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext                            | —      |                |
+| Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface                                                                 | —      |                |
+| Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung                                                         | —      |                |
+| Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs                                                                    | —      |                |
+| Server  | Kontrollierte Async-Operationen: Reverse, Profiling mit Idempotency-Keys                                                                         | —      |                |
+| Server  | Job-Steuerung: Statusabfrage und `job_cancel` fuer eigene oder erlaubte Jobs                                                                     | —      |                |
+| Server  | Policy-gesteuerte Datenoperationen: Import, Transfer mit Approval-Flow                                                                           | —      |                |
+| Server  | Segmentierter Artefakt-Upload und `artifact_upload_abort` mit SHA256-Validierung                                                                 | —      |                |
+| Server  | KI-nahe MCP-Tools: `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan` mit Policy und Audit                               | —      |                |
+| Server  | MCP-Prompts fuer kuratierte Analyse-, Transformations- und Testdatenablaeufe                                                                     | —      |                |
+| Test    | MCP-Tool-Integrationstests und strukturierte Fehler-Envelopes                                                                                    | —      |                |
 
 **Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
 ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
@@ -455,6 +455,8 @@ Low-Latency-Integration und Streaming-Szenarien. Details:
 | Docs    | Administrationshandbuch                   | —      |
 | Docs    | Migrations-Leitfaden                      | —      |
 | Docs    | API-Dokumentation                         | —      |
+| Arch    | Parquet-Export/-Import evaluieren, um DuckDB-, Arrow- und Lakehouse-Anschlussfähigkeit zu prüfen — siehe [`parquet-export-import-evaluation.md`](./parquet-export-import-evaluation.md) | —      |
+| Arch    | Object-Storage-ArtifactStore fuer Checkpoints, Reports und grosse Exporte planen — siehe [`object-storage-artifact-store.md`](./object-storage-artifact-store.md) | —      |
 | QA      | Performance-Benchmarks dokumentiert       | —      |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
 
@@ -587,6 +589,20 @@ Validierung deterministisch im Profiling-Kern bleiben.
 | Core    | Teil-Replikation (selektive Tabellen/Datensätze)         | LF-025         |
 | Core    | Automatische Dokumentationsgenerierung (ER-Diagramme)    | LF-016         |
 | Build   | Docker-Images mit vordefinierter DB-Struktur + Testdaten | LF-023         |
+
+### Milestone 1.5.0 — Oekosystem-Integrationen
+
+| Bereich     | Aufgabe                                                                                         | LF-Ref |
+| ----------- | ----------------------------------------------------------------------------------------------- | ------ |
+| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](./profiling-data-quality-export.md) | —      |
+| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](./orchestrator-examples.md) | —      |
+
+### Milestone 1.6.0 — Metadata Catalog und Lakehouse Targets
+
+| Bereich     | Aufgabe                                                                                         | LF-Ref |
+| ----------- | ----------------------------------------------------------------------------------------------- | ------ |
+| Metadata    | Catalog-Publisher fuer Schema-Snapshots, Diffs, Profiling-Reports und Artefaktrefs planen — siehe [`catalog-publisher-lakehouse-targets.md`](./catalog-publisher-lakehouse-targets.md) | —      |
+| Lakehouse   | Iceberg-/Delta-Zieladapter als spaetere Option evaluieren, abhaengig von Parquet- und Object-Storage-Grundlagen | —      |
 
 ### Milestone 2.0.0 — Langfristige Vision
 
