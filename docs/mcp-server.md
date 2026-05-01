@@ -228,7 +228,7 @@ dmigrate://tenants/{tenantId}/connections/{connectionId}
 | Bereich                                      | Status                                                       |
 | -------------------------------------------- | ------------------------------------------------------------ |
 | Tool-Handler (außer `capabilities_list`)     | **Nicht implementiert** — `UNSUPPORTED_TOOL_OPERATION`       |
-| `resources/read`                             | **Nicht implementiert** — Phase C                            |
+| `resources/read`                             | **Nicht implementiert** — Phase D                            |
 | SSE-Push / `notifications/*`                 | **Nicht implementiert**                                      |
 | `subscribe`/`listChanged` Capabilities      | Beide `false` (§12.16, §12.17)                              |
 | `connections/list` (Admin-Filter)           | **Nicht implementiert** als Tool                             |

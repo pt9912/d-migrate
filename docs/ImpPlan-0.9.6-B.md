@@ -1938,8 +1938,9 @@ Unterscheidung)**
 **Geltungsbereich**
 
 - AP 6.9 implementiert `resources/list` und `resources/templates/list`.
-- `resources/read` bleibt Phase C — Phase B liefert nur Discovery, nicht
-  den Datenpfad.
+- `resources/read` bleibt nach Phase B — Phase B liefert nur Discovery, nicht
+  den Datenpfad. Phase D verdrahtet den produktiven Read-Handler auf diesem
+  Vertrag.
 - Beide Methoden brauchen `dmigrate:read` (§12.9).
 
 **`ToolErrorEnvelope` ist hier NICHT der Wire-Pfad**

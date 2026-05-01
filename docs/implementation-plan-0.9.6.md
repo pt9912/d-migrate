@@ -954,8 +954,8 @@ annehmen. Das Modell trennt strikt:
 - der bestehende CLI-Resolver darf nicht unveraendert aus dem MCP-Adapter
   heraus aufgerufen werden, wenn er ENV-Substitution zu vollstaendigen
   Secret-URLs bereits waehrend Discovery/Bootstrap ausfuehrt
-- existiert kein Credential-/Secret-Provider fuer reale Verbindungen,
-  muessen connection-backed Tools fail-closed mit einem klaren
+- existiert kein dokumentierter `ConnectionSecretResolver` fuer reale
+  Verbindungen, muessen connection-backed Tools fail-closed mit einem klaren
   Konfigurationsfehler enden; Test-Seeds duerfen nur non-secret Dummy-
   Referenzen enthalten
 
@@ -1363,9 +1363,12 @@ Weitere Discovery-Tools:
 Gemeinsame Regeln:
 
 - Filter sind allowlist-basiert
-- Paginierung nutzt `limit` und `cursor`
-- `limit` hat ein serverseitiges Maximum
-- Antworten enthalten stabil `items` und `nextCursor`
+- Paginierung nutzt den eingefrorenen Phase-B-Wire-Vertrag `pageSize` und
+  `cursor`; `limit` ist kein Alias, solange die JSON-Schemas
+  `additionalProperties=false` verwenden
+- `pageSize` hat ein serverseitiges Maximum
+- Antworten enthalten stabil das jeweilige typisierte Collection-Feld
+  (`jobs`, `artifacts`, `schemas`, `profiles`, `diffs`) und `nextCursor`
 - `totalCount` ist optional und darf nur gesetzt werden, wenn der Store die
   exakte gefilterte Gesamtzahl ohne vollstaendigen teuren Scan bestimmen
   kann
@@ -2121,21 +2124,22 @@ Detailplan: [`ImpPlan-0.9.6-D.md`](./ImpPlan-0.9.6-D.md)
 
 Abnahmekriterien:
 
-- Listen liefern stabile `items` und `nextCursor`; `totalCount` ist exakt
-  und optional, `totalCountEstimate` ist optional und als Naeherung
-  gekennzeichnet
+- Listen liefern stabile typisierte Collection-Felder (`jobs`, `artifacts`,
+  `schemas`, `profiles`, `diffs`) und `nextCursor`; `totalCount` ist exakt und
+  optional, `totalCountEstimate` ist optional und als Naeherung gekennzeichnet
 - modifizierte oder fremde Cursor-/Pagination-Token liefern
   `VALIDATION_ERROR`, niemals fremde Tenant-Daten
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list`
   auffindbar, auch wenn die Persistenz intern ueber typisierte
   Artefakte erfolgt
 - fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
-- sensitive Connection-Refs liefern Policy-Metadaten fuer
-  `schema_compare_start`, Reverse, Import und Transfer
+- sensitive Connection-Refs liefern nur secret-freie `allowedOperations`- und
+  Policy-Hinweise; Phase D implementiert dadurch keine Start-Tools fuer
+  `schema_compare_start`, Reverse, Import oder Transfer
 - Connection-Refs koennen in Tests aus dokumentierten Seeds
   geladen werden, ohne Secrets in MCP-Payloads zu uebergeben
 - reale connection-backed Pfade funktionieren nur mit dokumentiertem
-  Credential-/Secret-Provider; fehlt dieser, liefern sie einen
+  `ConnectionSecretResolver`; fehlt dieser, liefern sie einen
   fail-closed Konfigurationsfehler statt teilweise expandierter Secret-URLs
 - CLI- und MCP-Startpfade nutzen dieselbe adapterneutrale
   Config-/Connection-Ref-Aufloesung

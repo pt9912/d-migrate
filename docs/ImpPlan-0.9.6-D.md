@@ -229,10 +229,10 @@ Phase D definiert Resource-URIs fuer:
 | Job | `dmigrate://tenants/{tenantId}/jobs/{jobId}` | Job-Metadaten, Status, Artefaktrefs |
 | Artifact | `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` | Artefaktmetadaten, Chunk-Links |
 | Artifact chunk | `dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}` | begrenzter Inhaltsteil |
-| Schema | `dmigrate://tenants/{tenantId}/schemas/{schemaRef}` | Schema-Metadaten oder Inhalt bei kleiner Groesse |
-| Profile | `dmigrate://tenants/{tenantId}/profiles/{profileRef}` | Profiling-Metadaten oder Artefaktref |
-| Diff | `dmigrate://tenants/{tenantId}/diffs/{diffRef}` | Diff-Metadaten oder Artefaktref |
-| Connection | `dmigrate://tenants/{tenantId}/connections/{connectionRef}` | secret-freie Connection-Metadaten |
+| Schema | `dmigrate://tenants/{tenantId}/schemas/{schemaId}` | Schema-Metadaten oder Inhalt bei kleiner Groesse |
+| Profile | `dmigrate://tenants/{tenantId}/profiles/{profileId}` | Profiling-Metadaten oder Artefaktref |
+| Diff | `dmigrate://tenants/{tenantId}/diffs/{diffId}` | Diff-Metadaten oder Artefaktref |
+| Connection | `dmigrate://tenants/{tenantId}/connections/{connectionId}` | secret-freie Connection-Metadaten |
 | Capabilities | `dmigrate://capabilities` | globale, secret-freie Faehigkeitsbeschreibung |
 
 Diese tenant-scoped URI-Familie ist verbindlich und uebernimmt den
@@ -325,12 +325,18 @@ Filter werden strikt validiert. Unbekannte Filter liefern `VALIDATION_ERROR`.
 
 ### 6.2 Gemeinsame Antwortform
 
-Listen-Antworten enthalten:
+Listen-Antworten bleiben kompatibel zum Phase-B-Wire-Vertrag und verwenden
+typisierte Collection-Felder statt eines generischen `items`-Felds:
 
-- `items`
+- `jobs`, `artifacts`, `schemas`, `profiles` oder `diffs`
 - `nextCursor`
 - optional `totalCount`
 - optional `totalCountEstimate`
+
+Interne Ports duerfen weiterhin ein generisches `PageResult<T>` verwenden; der
+MCP-Adapter projiziert dieses Ergebnis auf das jeweilige typisierte
+Output-Schema. Eine Migration auf generisches `items` waere ein versionierter
+Schema-Bruch inklusive Golden-Test-Update und ist nicht Teil von Phase D.
 
 `totalCount` ist exakt, wenn vorhanden. `totalCountEstimate` muss als
 Naeherung gekennzeichnet sein.
@@ -450,6 +456,12 @@ Ein adapterneutraler Port modelliert:
 - Sensitivitaets- und Produktionsmetadaten
 - spaetere Secret-Aufloesung nur fuer autorisierte Runner-/Driver-Pfade
 
+Zusaetzlich definiert Phase D einen adapterneutralen
+`ConnectionSecretResolver`-Contract fuer Ausfuehrungspfade. Discovery und
+Bootstrap duerfen diesen Port nicht materialisieren, sondern nur
+`credentialRef`, `providerKind`, `hasCredential` und weitere secret-freie
+Metadaten projizieren.
+
 ### 8.2 Split der bestehenden CLI-Logik
 
 Die bestehende Named-Connection-Logik wird so geschnitten:
@@ -469,7 +481,7 @@ Tests nutzen explizite Connection-Ref-Seeds:
 - mit Tenant- und Sensitivitaetsmetadaten
 - mit negativen Faellen fuer fehlende Provider
 
-Fehlt ein dokumentierter Credential-/Secret-Provider fuer connection-backed
+Fehlt ein dokumentierter `ConnectionSecretResolver` fuer connection-backed
 Pfade, muss fail-closed mit Konfigurationsfehler geantwortet werden.
 
 ---
@@ -556,6 +568,8 @@ Verbindliche Regeln:
 ### 10.6 Connection-Ref-Bootstrap extrahieren
 
 - adapterneutralen Port definieren.
+- `ConnectionSecretResolver` als separaten Port fuer autorisierte
+  Runner-/Driver-Pfade definieren.
 - CLI-Named-Connection-Parsing splitten.
 - MCP-Bootstrap an gemeinsamen Port anbinden.
 - Secret-Aufloesung in autorisierte Ausfuehrungspfade verschieben.
@@ -572,7 +586,8 @@ Verbindliche Regeln:
 
 ## 11. Abnahmekriterien
 
-- Listen liefern stabile `items` und `nextCursor`.
+- Listen liefern stabile typisierte Collection-Felder (`jobs`, `artifacts`,
+  `schemas`, `profiles`, `diffs`) und `nextCursor`.
 - Fachliche Listen-Tools verwenden eine dokumentierte deterministische
   Sortierung, mindestens `createdAt DESC`, `id ASC`.
 - Cursor fachlicher Listen-Tools sind an Tenant, Filter, `pageSize`, Sortierung
@@ -592,7 +607,7 @@ Verbindliche Regeln:
 - Connection-Refs koennen in Tests aus dokumentierten Seeds geladen werden,
   ohne Secrets in MCP-Payloads zu uebergeben.
 - reale connection-backed Pfade funktionieren nur mit dokumentiertem
-  Credential-/Secret-Provider.
+  `ConnectionSecretResolver`.
 - fehlt dieser Provider, liefern connection-backed Pfade einen fail-closed
   Konfigurationsfehler statt teilweise expandierter Secret-URLs.
 - CLI- und MCP-Startpfade nutzen dieselbe adapterneutrale
