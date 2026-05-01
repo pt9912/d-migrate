@@ -2244,3 +2244,22 @@ Pro `resources/list`-Aufruf:
 - `PhaseBToolSchemasGoldenTest`: serialisierte Schemas matchen
   `phase-b-tool-schemas.json` bis aufs Byte; `UPDATE_GOLDEN`
   regeneriert die Datei.
+
+**Phase-C-Hand-off (offene Punkte aus AP-6.10-Review)**
+
+- **`additionalProperties: true`-Slots** koennen zur Laufzeit beliebige
+  Felder transportieren — der `SchemaSecretGuard` prueft nur explizit
+  benannte Properties im Schema, nicht zur Laufzeit eingehende Daten.
+  Phase-C-Tool-Handler MUESSEN beim Schreiben in solche Slots (z. B.
+  `job_status_get.output.progress`, `capabilities_list.output`-Top-
+  Level) selbst sicherstellen, dass kein Forbidden-Property-Name
+  durchrutscht — entweder durch typisierte Output-Records oder durch
+  expliziten `SecretScrubber`-Pass vor der Serialisierung. Phase B
+  liefert keinen Runtime-Filter dafuer (es gibt keine Handler).
+- **Golden-File-Workflow** ist jetzt in
+  `src/test/resources/golden/README.md` dokumentiert. Phase-C-Autoren,
+  die Schemas verfeinern, lesen dort die Regen-Anleitung.
+- **`Test.workingDir`-Annahme** in `PhaseBToolSchemasGoldenTest`
+  benutzt eine defensive Path-Erkennung (Modul-Root ODER Repo-Root).
+  Wenn Phase C einen weiteren Test-Pfad braucht, sollte er die
+  Erkennung erweitern statt eine dritte Annahme einzubauen.
