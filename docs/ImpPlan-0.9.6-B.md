@@ -1674,3 +1674,189 @@ PrincipalContext(
 - Bootstrap-Smoketest: `startStdio` ohne Env -> Handle traegt
   `AuthRequired`; `startStdio` mit Override-Store + Env -> Handle traegt
   `Resolved` mit erwartetem `principalId`
+
+### 12.16 Tool-/Resource-Registry-Vertraege (verbindlich, fuer AP 6.8 Implementation)
+
+**Geltungsbereich**
+
+- AP 6.8 baut die transportneutrale Tool- und Resource-Registry. Die
+  Resource-Registry ist in Phase B leer (AP 6.9 fuellt sie); die
+  Tool-Registry deckt das vollstaendige 0.9.6-Tool-Vokabular ab.
+- `capabilities_list` ist gemaess §12.11 der einzige fachliche
+  Tool-Handler in Phase B; alle anderen 0.9.6-Tools sind in der
+  Registry gefuehrt, dispatchen aber zum `UnsupportedToolHandler`.
+
+**Tool-Universum**
+
+- Quelle: `McpServerConfig.scopeMapping` (§12.9 Default).
+- Eintraege deren Name in der Menge `{tools/list, tools/call,
+  resources/list, resources/templates/list, resources/read,
+  connections/list}` liegt sind MCP-Protokoll-Methoden und werden
+  NICHT in `tools/list` projiziert.
+- Alle anderen Eintraege werden als `ToolDescriptor` registriert.
+
+**`ToolDescriptor`-Felder (verbindlich)**
+
+```kotlin
+data class ToolDescriptor(
+    val name: String,
+    val title: String,
+    val description: String,
+    val requiredScopes: Set<String>,           // mirrors scopeMapping[name]
+    val inputSchema: Map<String, Any>,         // JSON Schema 2020-12
+    val outputSchema: Map<String, Any>,        // JSON Schema 2020-12
+    val inlineLimits: String? = null,          // capabilities_list-only
+    val resourceFallbackHint: String? = null,  // capabilities_list-only
+    val errorCodes: Set<ToolErrorCode> = emptySet(),
+)
+```
+
+- `inputSchema`/`outputSchema` advertise `$schema =
+  https://json-schema.org/draft/2020-12/schema` und type=object. Phase
+  B liefert minimal valide Stubs; AP 6.10 ersetzt sie durch echte
+  Definitionen (Golden-Test-Vertrag).
+- `inlineLimits` und `resourceFallbackHint` werden NUR ueber
+  `capabilities_list` projiziert, nicht ueber `tools/list` (`tools/list`
+  bleibt MCP-konform Schlank).
+
+**`ToolHandler`-Schnittstelle**
+
+```kotlin
+fun interface ToolHandler {
+    fun handle(context: ToolCallContext): ToolCallOutcome
+}
+
+data class ToolCallContext(
+    val name: String,
+    val arguments: com.google.gson.JsonElement?, // raw lsp4j tree
+    val principal: PrincipalContext,
+)
+
+sealed interface ToolCallOutcome {
+    data class Success(val content: List<ToolContent>) : ToolCallOutcome
+    data class Error(val envelope: ToolErrorEnvelope) : ToolCallOutcome
+}
+```
+
+- Handler werfen bevorzugt `ApplicationException`-Subtypen — der
+  `tools/call`-Dispatcher mappt sie via `DefaultErrorMapper` in einen
+  `ToolErrorEnvelope` mit `isError=true`. `Error` als Rueckgabe ist nur
+  fuer Custom-`details` jenseits des `ApplicationException`-Vertrags.
+
+**`tools/list` (verbindlich)**
+
+- liefert pro registriertem Tool ein `ToolMetadata`:
+  ```kotlin
+  data class ToolMetadata(
+      val name, val title, val description,
+      val inputSchema, val outputSchema,
+      val requiredScopes: List<String>, // sorted; d-migrate-Erweiterung
+  )
+  ```
+- `nextCursor` ist in Phase B konstant `null` — keine Pagination noetig
+  bei ~25 Tools.
+- Reihenfolge entspricht der Registrierungsreihenfolge des Builders.
+
+**`tools/call` (verbindlich)**
+
+- Lookup-Reihenfolge:
+  1. `toolRegistry.findHandler(params.name)` — `null` -> JSON-RPC
+     `-32601` "Method not found, unknown tool '<name>'" (NICHT als
+     Tool-Result mit `isError=true`).
+  2. `principalProvider()` — `null` -> Tool-Result mit `isError=true`
+     und `ToolErrorEnvelope.code = AUTH_REQUIRED` (§4.2/§12.15).
+  3. `handler.handle(context)`:
+     - `Success` -> `ToolsCallResult(content, isError=false)`
+     - `Error(envelope)` -> Tool-Result mit `isError=true` (Envelope in
+       `content[0].text` als JSON, `mimeType=application/json`).
+     - geworfene `ApplicationException` -> via `DefaultErrorMapper` zu
+       `ToolErrorEnvelope` -> wie `Error`.
+     - alles andere -> `INTERNAL_AGENT_ERROR`-Envelope.
+
+**`UNSUPPORTED_TOOL_OPERATION` vs `Method not found` (kritische
+Unterscheidung)**
+
+- unbekannter Toolname (Tippfehler, falsche Spec) -> JSON-RPC `-32601`
+  *Method not found*. Client muss seinen Spec-Stand pruefen.
+- bekannter Toolname ohne Phase-B-Handler -> Tool-Result mit
+  `isError=true`, Envelope `code=UNSUPPORTED_TOOL_OPERATION`,
+  `details=[{"toolName":<name>}, {"operation":<title>}]`. Client weiss
+  "Tool ist im Vertrag, aber dieser Server-Build implementiert es noch
+  nicht".
+
+**`capabilities_list`-Output (verbindlich)**
+
+```json
+{
+  "mcpProtocolVersion": "2025-11-25",
+  "dmigrateContractVersion": "v1",
+  "serverName": "d-migrate",
+  "tools": [
+    {
+      "name": "<tool-name>",
+      "title": "<title>",
+      "description": "<description>",
+      "requiredScopes": ["<scope>", ...],   // sorted
+      "inlineLimits": "<text>",             // optional
+      "resourceFallbackHint": "<text>",     // optional
+      "errorCodes": ["<CODE>", ...]         // optional, sorted
+    }, ...
+  ],
+  "scopeTable": {
+    "<scope>": ["<method>", ...]            // alphabetisch sortiert
+  }
+}
+```
+
+- `serverName` aus `McpProtocol.SERVER_NAME` (`d-migrate`).
+- `dmigrateContractVersion` aus `McpProtocol.DMIGRATE_CONTRACT_VERSION`
+  (`v1`).
+- Output erscheint in `tools/call`-`content[0]` als
+  `type=text`, `mimeType=application/json`.
+
+**Bootstrap-Verhalten**
+
+- `McpServerBootstrap.startHttp` und `startStdio` akzeptieren beide
+  einen optionalen `toolRegistry: ToolRegistry`-Parameter. Default:
+  `PhaseBRegistries.toolRegistry(config.scopeMapping)`.
+- Wenn beide Transporte im selben Prozess laufen, MUSS der Caller
+  dieselbe Registry-Instanz uebergeben (§6.8 Akzeptanz). Test-Hooks
+  nutzen den Override fuer in-memory Registries.
+- `startHttp` erstellt pro HTTP-Session einen frischen
+  `McpServiceImpl`, der die *gemeinsame* `ToolRegistry`-Instanz teilt.
+
+**`ServerCapabilities` (Initialize)**
+
+- AP 6.8 setzt `capabilities.tools = {"listChanged": false}`.
+- `capabilities.resources` bleibt `null` bis AP 6.9.
+- `capabilities.prompts` bleibt `null` (Phase B liefert keine Prompts).
+
+**Test-Vertrag (AP 6.8)**
+
+- `ToolRegistry`: registriert/findet Tools, Reihenfolge stabil,
+  doppelte Registrierung wirft `IllegalArgumentException`.
+- `UnsupportedToolHandler`: wirft `UnsupportedToolOperationException`
+  mit `toolName` aus dem Call-Context und `operation` aus dem
+  Konstruktor.
+- `CapabilitiesListReadOnlyHandler`: Output-JSON enthaelt
+  protocolVersion/contractVersion/serverName/tools/scopeTable;
+  optionale Felder werden bei null/empty ausgelassen; mimeType ist
+  `application/json`.
+- `PhaseBRegistries`: alle 0.9.6-Tools sind registriert,
+  MCP-Protokoll-Methoden NICHT, `capabilities_list`-Handler ist NICHT
+  Unsupported, andere Tools schon; Stub-Schemas advertiseren
+  Draft-2020-12; `requiredScopes` mirror das Mapping.
+- `tools/list` ueber `McpServiceImpl`: liefert Metadaten mit
+  Stub-Schemas, `nextCursor=null`.
+- `tools/call`:
+  - `capabilities_list` -> Erfolgreicher Snapshot.
+  - unbekannter Name -> JSON-RPC `-32601`.
+  - registriert-aber-unimplementiert -> `isError=true`,
+    `code=UNSUPPORTED_TOOL_OPERATION`.
+  - Custom-Handler wirft `ApplicationException` -> `isError=true`,
+    Envelope-Details aus `details()`.
+  - fehlender Principal -> `isError=true`, `code=AUTH_REQUIRED`.
+  - unbekannter Name MIT fehlendem Principal -> trotzdem `-32601`
+    (Reihenfolge: Lookup vor Auth).
+  - Argumente werden verbatim als `JsonElement` durchgereicht.
+- `ServerCapabilities.tools` ist nach AP 6.8 `{"listChanged": false}`.
