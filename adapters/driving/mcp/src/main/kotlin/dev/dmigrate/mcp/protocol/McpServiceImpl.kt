@@ -1,12 +1,14 @@
 package dev.dmigrate.mcp.protocol
 
 import com.google.gson.GsonBuilder
+import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.ResourceRegistry
+import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
 import dev.dmigrate.mcp.registry.ToolCallContext
 import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.registry.ToolContent
 import dev.dmigrate.mcp.registry.ToolDescriptor
 import dev.dmigrate.mcp.registry.ToolRegistry
-import dev.dmigrate.mcp.resources.PhaseBResourceTemplates
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.resources.ResourcesListCursor
 import dev.dmigrate.mcp.resources.ResourcesListHandler
@@ -50,6 +52,7 @@ class McpServiceImpl(
     initialPrincipal: PrincipalContext? = null,
     private val errorMapper: ErrorMapper = DefaultErrorMapper(),
     resourceStores: ResourceStores = ResourceStores.empty(),
+    private val resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -141,16 +144,29 @@ class McpServiceImpl(
     override fun resourcesTemplatesList(
         params: ResourcesTemplatesListParams?,
     ): CompletableFuture<ResourcesTemplatesListResult> {
-        // §6.9: Phase B publishes a static template set; no pagination
-        // needed because the list is short and stable. Cursor is
-        // accepted but ignored.
+        // §4.7 + §6.9: templates come from the shared
+        // [resourceRegistry] so stdio and HTTP can never advertise
+        // divergent template sets. The wire shape (`ResourceTemplate`)
+        // is a strict subset of the registry's
+        // `ResourceTemplateDescriptor` (no `requiredScopes` on the
+        // wire — Phase B's clients don't need it for templates).
+        // Phase B publishes a static set; no pagination needed,
+        // cursor is accepted but ignored.
         return CompletableFuture.completedFuture(
             ResourcesTemplatesListResult(
-                resourceTemplates = PhaseBResourceTemplates.ALL,
+                resourceTemplates = resourceRegistry.templates().map(::toWireTemplate),
                 nextCursor = null,
             ),
         )
     }
+
+    private fun toWireTemplate(descriptor: ResourceTemplateDescriptor): ResourceTemplate =
+        ResourceTemplate(
+            uriTemplate = descriptor.uriTemplate,
+            name = descriptor.name,
+            mimeType = descriptor.mimeType,
+            description = descriptor.description,
+        )
 
     private fun dispatch(
         handler: dev.dmigrate.mcp.registry.ToolHandler,

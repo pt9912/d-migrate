@@ -6,6 +6,7 @@ import dev.dmigrate.mcp.auth.StdioPrincipalResolver
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.ResourceRegistry
 import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
@@ -69,6 +70,7 @@ object McpServerBootstrap {
         serverVersion: String = "0.0.0",
         toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
+        resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
@@ -96,6 +98,7 @@ object McpServerBootstrap {
                             serverVersion = serverVersion,
                             toolRegistry = toolRegistry,
                             resourceStores = resourceStores,
+                            resourceRegistry = resourceRegistry,
                         )
                     },
                 )
@@ -126,6 +129,7 @@ object McpServerBootstrap {
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
         toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
+        resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
         // §12.15: stdio ignores authMode entirely — use the slimmer
         // validation that skips the HTTP-only auth-consistency block.
@@ -145,6 +149,7 @@ object McpServerBootstrap {
             toolRegistry = toolRegistry,
             initialPrincipal = principal,
             resourceStores = resourceStores,
+            resourceRegistry = resourceRegistry,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }

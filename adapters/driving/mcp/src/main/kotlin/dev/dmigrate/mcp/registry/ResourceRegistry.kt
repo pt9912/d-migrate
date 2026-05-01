@@ -2,15 +2,18 @@ package dev.dmigrate.mcp.registry
 
 /**
  * Transport-neutral resource registry per `ImpPlan-0.9.6-B.md` §4.7 +
- * §5.5. Phase B prepares the type contract (so AP 6.9 only needs to
- * fill it with real projections); the registry itself is empty in AP
- * 6.8 because Phase B does not implement `resources/list` yet.
+ * §5.5. The registry is the single source of truth for
+ * `resources/templates/list` (and Phase C `resources/read` tooling);
+ * stdio and HTTP MUST share the same instance so the two transports
+ * can never advertise divergent template sets.
  *
- * AP 6.9 will register one [ResourceTemplateDescriptor] per dmigrate
- * resource family (jobs, artifacts, schemas, profiles, diffs,
- * connections) and per-tenant resource projections via
- * [ResourceDescriptor]. Both stdio and HTTP read the same registry
- * instance.
+ * Phase B (AP 6.9) registers the 7 standard resource templates
+ * (jobs, artifacts, artifact-chunks, schemas, profiles, diffs,
+ * connections) via `PhaseBRegistries.resourceRegistry()`. Concrete
+ * resource projections are NOT registered here — they're produced on
+ * the fly by `ResourcesListHandler` from the configured
+ * `ResourceStores`. Phase C/D can register concrete resources here
+ * if a future feature wants them in `tools/list`-style discovery.
  */
 class ResourceRegistry internal constructor(
     private val resources: List<ResourceDescriptor>,

@@ -15,6 +15,7 @@ import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.mcp.server.McpStartOutcome
 import dev.dmigrate.mcp.server.validate
+import dev.dmigrate.mcp.server.validateForStdio
 import java.net.URI
 
 /**
@@ -104,7 +105,17 @@ class McpServeCommand : CliktCommand(name = "serve") {
 
     override fun run() {
         val config = buildConfig()
-        val errors = config.validate()
+        // §12.15: stdio ignores authMode entirely. Use the slimmer
+        // validation so a default-config (authMode=JWT_JWKS, no
+        // issuer) still starts the stdio server. Both startStdio and
+        // startHttp re-validate at the bootstrap layer with the
+        // matching helper, but the CLI surface produces clearer
+        // error messages when it catches violations early.
+        val errors = when (transport) {
+            "stdio" -> config.validateForStdio()
+            "http" -> config.validate()
+            else -> error("transport check failed: $transport")
+        }
         if (errors.isNotEmpty()) {
             echo("MCP server configuration is invalid:", err = true)
             errors.forEach { echo("  - $it", err = true) }

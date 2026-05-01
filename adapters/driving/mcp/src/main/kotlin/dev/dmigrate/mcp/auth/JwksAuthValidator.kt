@@ -28,9 +28,11 @@ import java.text.ParseException
 internal class JwksAuthValidator(
     config: McpServerConfig,
     keySource: JWKSource<SecurityContext>? = null,
+    private val now: () -> java.time.Instant = java.time.Instant::now,
 ) : AuthValidator {
 
     private val processor: DefaultJWTProcessor<SecurityContext>
+    private val clockSkew: java.time.Duration = config.clockSkew
 
     init {
         val jwksUrl = config.jwksUrl
@@ -74,6 +76,16 @@ internal class JwksAuthValidator(
                     ?: return@withContext BearerValidationResult.Invalid("subject claim missing or empty")
                 val expiry = claims.expirationTime?.toInstant()
                     ?: return@withContext BearerValidationResult.Invalid("exp claim missing")
+                // §12.14: Nimbus' DefaultJWTClaimsVerifier already
+                // covers exp + nbf with maxClockSkew, but iat is NOT
+                // a verifier-tracked claim. The plan requires
+                // "iat | wenn vorhanden: nicht in Zukunft (mit
+                // clockSkew)" — enforce it here.
+                claims.issueTime?.toInstant()?.let { iat ->
+                    if (iat.isAfter(now().plus(clockSkew))) {
+                        return@withContext BearerValidationResult.Invalid("iat in the future (iat=$iat)")
+                    }
+                }
                 val scopes = ClaimsMapper.parseScopes(
                     scopeClaim = claims.getStringClaim("scope"),
                     scpClaim = readStringList(claims, "scp"),

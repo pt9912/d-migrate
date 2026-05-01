@@ -127,7 +127,18 @@ class PhaseBRegistriesTest : FunSpec({
         registry.find("capabilities_list") shouldNotBe null
     }
 
-    test("resourceRegistry is empty in Phase B") {
-        PhaseBRegistries.resourceRegistry().isEmpty() shouldBe true
+    test("resourceRegistry registers the 7 Phase-B templates as the single source of truth (§4.7 + §5.5)") {
+        // §4.7: stdio + HTTP MUST read templates from the same
+        // registry instance. The registry is no longer empty in Phase
+        // B — AP 6.9 fills it with the 7 standard templates from
+        // PhaseBResourceTemplates.ALL so resources/templates/list and
+        // any future template-driven projection can't diverge.
+        val registry = PhaseBRegistries.resourceRegistry()
+        registry.templates().size shouldBe 7
+        registry.templates().any { it.uriTemplate.endsWith("/jobs/{jobId}") } shouldBe true
+        registry.templates().any { it.uriTemplate.endsWith("/chunks/{chunkId}") } shouldBe true
+        // No concrete resources are registered — those are projected
+        // on the fly by ResourcesListHandler.
+        registry.resources() shouldBe emptyList()
     }
 })

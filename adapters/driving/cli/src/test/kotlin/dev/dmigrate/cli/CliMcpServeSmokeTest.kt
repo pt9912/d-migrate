@@ -66,4 +66,28 @@ class CliMcpServeSmokeTest : FunSpec({
             cli().parse(listOf("mcp", "serve", "--transport", "ftp"))
         }
     }
+
+    test("mcp serve --transport stdio with default-config does NOT fail HTTP-only validation (§12.15)") {
+        // §12.15: stdio ignores authMode entirely. The CLI must use
+        // validateForStdio() instead of the HTTP validate() — otherwise
+        // a default config (authMode=JWT_JWKS, no issuer/jwks/audience)
+        // would refuse to start stdio with HTTP-shaped error messages.
+        // We trigger a real stdio-relevant violation (unreadable
+        // stdioTokenFile) and assert the failure surfaces THAT, not
+        // the JWT-JWKS pflicht.
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(
+                listOf(
+                    "mcp", "serve",
+                    "--transport", "stdio",
+                    "--stdio-token-file", "/no/such/path-${System.nanoTime()}.json",
+                ),
+            )
+        }
+        ex.statusCode shouldBe 2
+        // Note: the smoke test asserts the exit code only — the
+        // stderr message containing "stdioTokenFile not readable"
+        // (and NOT "JWT_JWKS requires …") is asserted by the
+        // McpServerConfigStdioValidationTest in the mcp module.
+    }
 })

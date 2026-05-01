@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.resources
 
 import dev.dmigrate.mcp.protocol.Resource
-import dev.dmigrate.mcp.protocol.ResourceTemplate
+import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.job.JobRecord
@@ -82,53 +82,67 @@ internal object ResourceProjector {
  * (acceptance: "Templates enthalten Chunk-URIs"). The list is ordered
  * deterministically — important for golden-test stability and for
  * client UIs that surface templates in registration order.
+ *
+ * The list is `ResourceTemplateDescriptor` (registry-shape, with
+ * `requiredScopes`) rather than the `ResourceTemplate` wire shape, so
+ * `PhaseBRegistries.resourceRegistry()` can register them as the
+ * single source of truth for `resources/templates/list`. The wire
+ * projection happens in `McpServiceImpl.toWireTemplate(...)`.
  */
 internal object PhaseBResourceTemplates {
 
     private const val JSON_MIME = "application/json"
+    private val READ_SCOPE: Set<String> = setOf("dmigrate:read")
 
-    val ALL: List<ResourceTemplate> = listOf(
-        ResourceTemplate(
+    val ALL: List<ResourceTemplateDescriptor> = listOf(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/jobs/{jobId}",
             name = "Job",
             mimeType = JSON_MIME,
             description = "Job metadata, status and progress",
+            requiredScopes = READ_SCOPE,
         ),
-        ResourceTemplate(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/artifacts/{artifactId}",
             name = "Artifact",
             mimeType = JSON_MIME,
             description = "Artifact metadata and inline content (small payloads)",
+            requiredScopes = READ_SCOPE,
         ),
-        ResourceTemplate(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}",
             name = "Artifact chunk",
             mimeType = JSON_MIME,
             description = "Streamable chunk for large artifacts; iterate via successive chunkId values",
+            requiredScopes = READ_SCOPE,
         ),
-        ResourceTemplate(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/schemas/{schemaId}",
             name = "Schema",
             mimeType = JSON_MIME,
             description = "Schema metadata and content",
+            requiredScopes = READ_SCOPE,
         ),
-        ResourceTemplate(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/profiles/{profileId}",
             name = "Profile",
             mimeType = JSON_MIME,
             description = "Data profile metadata and content",
+            requiredScopes = READ_SCOPE,
         ),
-        ResourceTemplate(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/diffs/{diffId}",
             name = "Diff",
             mimeType = JSON_MIME,
             description = "Schema diff metadata and content",
+            requiredScopes = READ_SCOPE,
         ),
-        ResourceTemplate(
+        ResourceTemplateDescriptor(
             uriTemplate = "dmigrate://tenants/{tenantId}/connections/{connectionId}",
             name = "Connection reference",
             mimeType = JSON_MIME,
             description = "Connection metadata; never carries credentials or JDBC URLs",
+            requiredScopes = READ_SCOPE,
         ),
     )
 }

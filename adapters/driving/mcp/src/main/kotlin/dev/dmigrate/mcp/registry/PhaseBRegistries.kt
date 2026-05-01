@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.mcp.resources.PhaseBResourceTemplates
 import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.core.error.ToolErrorCode
@@ -81,7 +82,26 @@ object PhaseBRegistries {
         return builder.build()
     }
 
-    fun resourceRegistry(): ResourceRegistry = ResourceRegistry.empty()
+    /**
+     * Phase B resource registry. §4.7 + §5.5: stdio and HTTP MUST
+     * read templates from the same registry instance; the registry is
+     * the single source of truth so `resources/templates/list` and
+     * any future `resources/list`-template-driven projection in Phase
+     * C/D can't drift apart.
+     *
+     * Phase B registers the 7 templates from [PhaseBResourceTemplates]
+     * (jobs / artifacts / artifact-chunks / schemas / profiles /
+     * diffs / connections) and ZERO concrete resources — concrete
+     * resources are projected on the fly by `ResourcesListHandler`
+     * from the configured stores.
+     */
+    fun resourceRegistry(): ResourceRegistry {
+        val builder = ResourceRegistry.builder()
+        for (template in PhaseBResourceTemplates.ALL) {
+            builder.registerTemplate(template)
+        }
+        return builder.build()
+    }
 
     private fun describe(name: String, scopes: Set<String>): ToolDescriptor {
         val schemas = PhaseBToolSchemas.forTool(name) ?: error(

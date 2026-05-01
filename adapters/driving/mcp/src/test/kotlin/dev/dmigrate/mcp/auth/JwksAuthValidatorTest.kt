@@ -106,6 +106,33 @@ class JwksAuthValidatorTest : FunSpec({
         result.shouldBeInstanceOf<BearerValidationResult.Invalid>()
     }
 
+    test("iat in the future (beyond clock-skew) is rejected (§12.14)") {
+        // §12.14: iat | wenn vorhanden: nicht in Zukunft (mit
+        // clockSkew). Nimbus' DefaultJWTClaimsVerifier covers exp/nbf
+        // but does NOT enforce iat-not-in-future on its own. The JWKS
+        // validator adds that check explicitly.
+        val signer = TestSigner()
+        val validator = JwksAuthValidator(config(), signer.keySource)
+        val futureIat = java.time.Instant.now().plusSeconds(3600)
+        val token = signer.sign(validClaims {
+            issueTime(Date.from(futureIat))
+        })
+        val result = runBlocking { validator.validate(token) }
+        result.shouldBeInstanceOf<BearerValidationResult.Invalid>()
+        result.reason shouldContain "iat in the future"
+    }
+
+    test("iat within clock-skew window is accepted (§12.14)") {
+        // Default clockSkew is 60s — an iat 30s in the future is
+        // legitimate clock drift between issuer and us.
+        val signer = TestSigner()
+        val validator = JwksAuthValidator(config(), signer.keySource)
+        val token = signer.sign(validClaims {
+            issueTime(Date.from(java.time.Instant.now().plusSeconds(30)))
+        })
+        runBlocking { validator.validate(token) }.shouldBeInstanceOf<BearerValidationResult.Valid>()
+    }
+
     test("wrong issuer is rejected") {
         val signer = TestSigner()
         val validator = JwksAuthValidator(config(), signer.keySource)
