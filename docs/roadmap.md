@@ -552,23 +552,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 > Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
 > Privacy-by-Design und der Trennung aus `docs/profiling.md` §10.
 
-### Milestone 1.2.0 — Weitere Datenbanken (MS SQL Server)
-
-| Bereich | Aufgabe                                     | LF-Ref |
-| ------- | ------------------------------------------- | ------ |
-| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | LF-019 |
-| Test    | Cross-DB-Tests mit 4 Datenbanksystemen      | 8.7    |
-
-### Milestone 1.2.5 — Weitere Datenbanken (Oracle)
-
-| Bereich | Aufgabe                                                  | LF-Ref |
-| ------- | -------------------------------------------------------- | ------ |
-| Driver  | Oracle-Treiber (JDBC, PL/SQL-Support)                    | LF-019 |
-| Core    | Erweitertes Typsystem für Oracle/MSSQL-spezifische Typen | LF-019 |
-| Test    | Cross-DB-Tests mit 5 Datenbanksystemen                   | 8.7    |
-
-**Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
-
 ### Milestone 1.3.0 — Testdaten-Generierung
 
 | Bereich | Aufgabe                                                 | LF-Ref |
@@ -604,6 +587,26 @@ Validierung deterministisch im Profiling-Kern bleiben.
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
 | Metadata    | Catalog-Publisher fuer Schema-Snapshots, Diffs, Profiling-Reports und Artefaktrefs planen — siehe [`catalog-publisher-lakehouse-targets.md`](./catalog-publisher-lakehouse-targets.md) | —      |
 | Lakehouse   | Iceberg-/Delta-Zieladapter als spaetere Option evaluieren, abhaengig von Parquet- und Object-Storage-Grundlagen | —      |
+
+### Milestone 1.7.0 — Weitere Datenbanken (MS SQL Server)
+
+| Bereich | Aufgabe                                     | LF-Ref |
+| ------- | ------------------------------------------- | ------ |
+| Driver  | MS SQL Server-Treiber (JDBC, T-SQL-Support) | LF-019 |
+| Test    | Cross-DB-Tests mit 4 Datenbanksystemen      | 8.7    |
+
+**Ergebnis**: Unterstützung für MS SQL Server als viertes relationales
+Datenbanksystem.
+
+### Milestone 1.8.0 — Weitere Datenbanken (Oracle)
+
+| Bereich | Aufgabe                                                  | LF-Ref |
+| ------- | -------------------------------------------------------- | ------ |
+| Driver  | Oracle-Treiber (JDBC, PL/SQL-Support)                    | LF-019 |
+| Core    | Erweitertes Typsystem für Oracle/MSSQL-spezifische Typen | LF-019 |
+| Test    | Cross-DB-Tests mit 5 Datenbanksystemen                   | 8.7    |
+
+**Ergebnis**: Unterstützung für die 5 wichtigsten relationalen Datenbanken.
 
 ### Milestone 2.0.0 — Langfristige Vision
 
