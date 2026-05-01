@@ -2137,3 +2137,110 @@ Pro `resources/list`-Aufruf:
   produktive Quelle dieses Codes ist eine fehlerhafte
   stdio-Konfiguration (`DMIGRATE_MCP_STDIO_TOKEN` nicht gesetzt
   ODER `stdioTokenFile` zeigt auf eine Datei ohne passenden Eintrag).
+
+### 12.18 JSON-Schema-Vertrag (verbindlich, fuer AP 6.10 Implementation)
+
+**Geltungsbereich**
+
+- AP 6.10 pinnt `inputSchema` und `outputSchema` fuer alle 0.9.6-Tools
+  als JSON Schema 2020-12.
+- Die Schemas sind transportneutral — `tools/list` ueber stdio und
+  HTTP liefert exakt dieselben Strings (§5.6: keine
+  Transport-spezifischen Varianten).
+- Phase B verfeinert die Schemas Tool-fuer-Tool nicht weiter; Phase
+  C/D ergaenzen Constraints, sobald die echten Handler kommen. Der
+  Golden-Test pinnt die jetzige Form als Vertrag.
+
+**Dialekt (verbindlich)**
+
+- `JsonSchemaDialect.SCHEMA_URI = "https://json-schema.org/draft/2020-12/schema"`.
+- Jedes Phase-B-Tool-Schema setzt `$schema` auf exakt diesen Wert.
+- Verbotene Draft-07-Keywords (rekursiv geprueft):
+  - `definitions` (durch `$defs` ersetzt)
+  - `id` (durch `$id` ersetzt)
+  - `dependencies` (in `dependentSchemas` / `dependentRequired`
+    aufgeteilt)
+- `type=object` als Wurzel ist Pflicht.
+- `additionalProperties=false` ist Default fuer Inputs (strict
+  payload-shape); Outputs duerfen `additionalProperties=true` setzen,
+  wenn sie offen-gehaltene Metadaten transportieren (z. B.
+  `capabilities_list`-Output).
+
+**Property-Vertrag (verbindlich)**
+
+- `SchemaSecretGuard.FORBIDDEN_PROPERTIES` zaehlt Property-Namen, die
+  in keinem Phase-B-Schema (input ODER output) vorkommen duerfen,
+  case-insensitive — `password`, `passwd`, `secret`, `secrets`,
+  `token`, `apikey`, `api_key`, `credentialref`, `credentialsref`,
+  `providerref`, `jdbcurl`, `connectionstring`, `connection_string`,
+  `privatekey`, `private_key`.
+- Der Guard walkt rekursiv durch `properties`, `items`,
+  `additionalProperties`, `patternProperties`, `oneOf`/`anyOf`/`allOf`,
+  `not`, `if`/`then`/`else`, `$defs`, `definitions` (zur Sicherheit
+  trotz Verbot), `prefixItems`, `contains`, `unevaluatedItems`,
+  `unevaluatedProperties`, `propertyNames`.
+- Ein Schema, das einen verbotenen Property-Namen registriert, schlaegt
+  den `PhaseBToolSchemasTest` (`no schema admits a secret-shaped
+  property name`) — kann also nicht in `PhaseBRegistries` landen.
+
+**Tool-Universum (verbindlich)**
+
+- `PhaseBToolSchemas` registriert genau die Tool-Namen, die in
+  `McpServerConfig.DEFAULT_SCOPE_MAPPING` stehen MINUS der MCP-
+  Protocol-Methoden (`tools/list`, `tools/call`, `resources/list`,
+  `resources/templates/list`, `resources/read`, `connections/list`).
+- `PhaseBRegistries.toolRegistry(custom)` schlaegt mit
+  `IllegalStateException` fehl, wenn das Custom-Mapping einen
+  Tool-Namen enthaelt, fuer den kein Schema in `PhaseBToolSchemas`
+  registriert ist — verhindert "Tool im Vertrag, aber kein Schema".
+
+**Schema-Builder-Konvention**
+
+- Pro Tool ein `Pair(inputSchema, outputSchema)` ueber den
+  internen `SchemaBuilder`.
+- `obj("field" to typeMap, ...).required("a", "b").build()` ist die
+  Standardform; `.required(...)` und `.build()` sind beide terminale
+  Operationen, die `Map<String, Any>` zurueckgeben.
+- Listing-Tools nutzen den `listInput("itemsField")`-Helper fuer
+  Cursor-Pagination.
+- Job-Start-Tools nutzen `jobStart("primaryConnectionField")` fuer
+  die `connectionId`+`includes`/`excludes`+`jobId`-Form.
+
+**Golden-Test (verbindlich)**
+
+- `PhaseBToolSchemasGoldenTest` serialisiert alle Schemas
+  alphabetisch nach Tool-Namen sortiert mit Gson `setPrettyPrinting()`
+  und vergleicht das Ergebnis mit
+  `src/test/resources/golden/phase-b-tool-schemas.json`.
+- Aktualisierung des Golden-Files: `UPDATE_GOLDEN=true` als Env-Var
+  oder `-DUPDATE_GOLDEN=true` als JVM-System-Property beim
+  Test-Lauf. Der Test schreibt dann die Datei neu und beendet
+  erfolgreich; ein Code-Review prueft die Diff.
+- CI laeuft ohne Update-Flag und failt bei Drift.
+
+**Test-Vertrag (AP 6.10)**
+
+- `JsonSchemaDialect`: konstante URIs und Forbidden-Keywords.
+- `SchemaSecretGuard`: clean schema -> empty leaks; top-level,
+  nested, `items`, `oneOf`, `$defs` Property-Leaks werden gefangen;
+  case-insensitive Match; non-`properties` Top-Level-Keys
+  (`type`/`required`/`description`/`title`) werden NICHT als
+  Payload-Namen interpretiert.
+- `PhaseBToolSchemas`:
+  - jedes 0.9.6-Tool aus `DEFAULT_SCOPE_MAPPING` (minus
+    Protocol-Methoden) hat `inputSchema` UND `outputSchema`.
+  - Protocol-Methoden sind NICHT registriert.
+  - jedes Schema hat `$schema = .../draft/2020-12/schema`.
+  - jedes Schema hat `type=object` an der Wurzel.
+  - keine Forbidden-Draft-07-Keywords auf irgendeiner Ebene.
+  - keine Forbidden-Secret-Property-Namen.
+  - `forTool(unknown)` -> `null`.
+  - `toolNames()` ist alphabetisch sortiert (Stabilitaet fuer Golden).
+  - `capabilities_list` Input ist leeres Objekt-Schema.
+  - Listing-Tools (`*_list`) teilen `pageSize`+`cursor`-Inputs.
+  - `schema_validate.input.required` enthaelt `schemaUri`.
+- `PhaseBRegistries`: rejected Custom-Mapping mit Tool-Namen ohne
+  Schema -> `IllegalStateException`.
+- `PhaseBToolSchemasGoldenTest`: serialisierte Schemas matchen
+  `phase-b-tool-schemas.json` bis aufs Byte; `UPDATE_GOLDEN`
+  regeneriert die Datei.
