@@ -98,6 +98,21 @@ Phase B stellt bereit:
 Phase C haengt konkrete read-only Handler an diese Registries. Sie darf
 keine zweite Transportlogik neben Phase B einfuehren.
 
+Offene Punkte aus den Phase-B-Reviews uebernimmt Phase C nur, soweit sie
+read-only Tool-Handler oder deren Runtime-Payloads betreffen:
+
+- Phase-C-Handler revalidieren Tenant-, Principal- und Owner-Grenzen fuer jede
+  gelesene Job-, Artefakt-, Upload- oder Schema-Projektion auch dann, wenn der
+  Store bereits mit `principal.effectiveTenantId` abgefragt wurde.
+- Freie Strings und dynamische Payload-Slots aus Phase-C-Outputs laufen vor der
+  Serialisierung durch Secret-/Path-Scrubbing oder werden durch typisierte
+  Output-Records begrenzt.
+- `resources/list`, `resources/templates/list`, Discovery-Listen und
+  Connection-Ref-Projektionen bleiben Phase D.
+- Phase-B-Transportinvarianten wie "principal not bound" und Cursor-Decode-
+  Fehlercodes werden in Phase C nicht umverdrahtet; Phase-C-Handler muessen
+  trotzdem fail-closed bleiben und duerfen keine fremden Details leaken.
+
 ### 2.3 Bestehende Anwendungspfade muessen wiederverwendet werden
 
 `d-migrate` besitzt bereits fachliche Pfade fuer Schema-Verarbeitung:
@@ -310,6 +325,27 @@ Phase C nutzt das Wire-Mapping aus Phase B:
 Nutzer- oder Payloadfehler duerfen nicht als `INTERNAL_AGENT_ERROR`
 erscheinen.
 
+### 4.7 Runtime-Scrubbing fuer dynamische Outputs
+
+Phase B schuetzt JSON-Schemas statisch vor verbotenen Property-Namen, kann aber
+keine zur Laufzeit erzeugten Inhalte in `additionalProperties: true`-Slots
+bereinigen. Phase C uebernimmt deshalb Runtime-Scrubbing fuer alle konkreten
+read-only Handler.
+
+Verbindlich:
+
+- Handler bevorzugen typisierte Output-Records statt freier Maps.
+- Wo freie Maps fachlich noetig bleiben, laeuft vor der Serialisierung ein
+  `SecretScrubber`-/Forbidden-Key-Pass ueber Keys und Stringwerte.
+- Betroffen sind insbesondere `capabilities_list`-Top-Level-Ergaenzungen,
+  `job_status_get.output.progress`, Findings, Notes, Generatorwarnungen und
+  Artefakt-/Fallback-Summaries.
+- Scrubbing ersetzt oder entfernt rohe Secrets, expandierte Secret-URLs,
+  lokale Pfade, ENV-Werte und verbotene Property-Namen wie `password`,
+  `credentialRef`, `providerRef`, `secret` oder `token`.
+- Audit nutzt denselben Scrubbing-Pfad oder strengere Projektionen, damit Wire
+  und Audit keine widerspruechlichen Leaks erzeugen.
+
 ---
 
 ## 5. Zielarchitektur
@@ -333,6 +369,9 @@ Die Handler:
 - validieren MCP-Payloads gegen die Phase-B-Schemas
 - leiten `PrincipalContext` aus dem Transportkontext weiter
 - pruefen Tenant- und Resource-Scope
+- revalidieren Tenant-/Owner-Scope auf geladenen Datensaetzen, auch wenn der
+  Store bereits tenant-scoped abgefragt wurde
+- scrubben freie Strings und dynamische Output-Slots vor der Serialisierung
 - nutzen Phase-A-Store- und Service-Vertraege
 - delegieren fachliche Schema-Arbeit an bestehende Application-Pfade
 - schneiden Output gemaess Limits zu
@@ -732,6 +771,10 @@ Pflichtabdeckung:
   Text/Base64-Encoding und Chunk-SHA-256
 - `job_status_get` Owner-/Tenant-Regeln
 - `job_status_get` No-Oracle-Fehlerpfad fuer fremde und unbekannte Jobs
+- Secret-/Path-Scrubbing fuer dynamische Output-Slots und freie Strings
+- Forbidden-Key-Filter fuer `additionalProperties: true`-Outputs
+- Defense-in-depth Tenant-/Owner-Recheck nach Store-Load fuer
+  `job_status_get`, `artifact_chunk_get` und `schemaRef`-Materialisierung
 - Audit-Outcome fuer Validierungs-, Payload-, Tenant- und Quota-Fehler
 
 ### 7.2 Adaptertests je Tool
@@ -762,6 +805,9 @@ Zusaetzlich:
 - `artifact_chunk_get` fuer grosses Artefakt
 - `artifact_chunk_get` fuer Binaerartefakt mit Base64-Response
 - `job_status_get` fuer eigenen, fremden und unbekannten Job
+- dynamische Output-Slots mit verbotenen Keys oder Secret-aehnlichen Werten
+  werden gescrubbt oder abgelehnt
+- falsch gescopte Store-Records werden nach dem Laden fail-closed behandelt
 
 ### 7.3 Integrationstests
 
@@ -780,6 +826,8 @@ Gemeinsame Tests fuer `stdio` und HTTP:
 - fachlicher Toolfehler als `isError=true`
 - Resource-Fehler als JSON-RPC-Error
 - keine Tool-Antwort ueber Inline-Limit
+- keine Tool-, Artefakt- oder Audit-Antwort enthaelt verbotene Secret-Keys,
+  rohe Secrets, expandierte Secret-URLs oder lokale Pfade
 
 HTTP-spezifisch:
 
@@ -818,6 +866,9 @@ Verbindliche Negativfaelle:
 - unbekannter `targetDialect`
 - Validator-/Generatorfehler wird nicht zu `INTERNAL_AGENT_ERROR`
 - grosse DDL-/Diff-Ausgabe wird nicht abgeschnitten
+- dynamische Output-Maps mit verbotenen Keys werden gescrubbt oder abgelehnt
+- Store-Records mit abweichendem Tenant/Owner werden nach dem Laden
+  fail-closed behandelt, auch wenn der Store-Query bereits tenant-scoped war
 
 ---
 
@@ -918,6 +969,37 @@ Gegenmassnahme:
 - `TENANT_SCOPE_DENIED` ohne fremde Ressourcendetails
 - Audit intern mit `requestId`, Response bereinigt
 
+### 9.6 Runtime-Slots umgehen den SchemaSecretGuard
+
+Risiko:
+
+- `additionalProperties: true`-Slots koennen zur Laufzeit beliebige Felder
+  tragen, obwohl der Phase-B-`SchemaSecretGuard` nur statische Schema-Properties
+  prueft.
+
+Gegenmassnahme:
+
+- typisierte Output-Records bevorzugen
+- zentrale Runtime-Scrubbing-Funktion vor der Serialisierung
+- Tests mit verbotenen Keys und Secret-aehnlichen Stringwerten in dynamischen
+  Slots
+- Audit- und Wire-Projektionen gegen dieselben Scrubbing-Regeln pruefen
+
+### 9.7 Store-Scope wird implizit vertraut
+
+Risiko:
+
+- ein zukuenftiger Store liefert trotz tenant-scoped Query einen Datensatz mit
+  falschem Tenant, falschem Owner oder fehlender Principal-Sichtbarkeit.
+
+Gegenmassnahme:
+
+- Phase-C-Handler revalidieren geladene Datensaetze gegen
+  `PrincipalContext.effectiveTenantId`, erlaubte Tenants und Owner-/Scope-
+  Regeln
+- Fehlerpfade bleiben no-oracle, wie bei `job_status_get` beschrieben
+- Tests nutzen absichtlich falsch gescopte Store-Records
+
 ---
 
 ## 10. Definition of Done fuer Phase C
@@ -952,6 +1034,10 @@ Gegenmassnahme:
 - `job_status_get` nutzt einen no-oracle Fehlerpfad fuer unbekannte,
   abgelaufene und nicht autorisiert sichtbare Jobs.
 - Owner-, Tenant- und Scope-Pruefungen sind fuer alle Phase-C-Tools aktiv.
+- Geladene Datensaetze werden defense-in-depth gegen Tenant, Owner und
+  Principal-Sichtbarkeit revalidiert.
+- Dynamische Output-Slots und freie Strings werden vor Wire- und Audit-Ausgabe
+  gescrubbt oder typisiert begrenzt.
 - Output-Limits werden zentral erzwungen.
 - Grosse Ergebnisse werden nicht still abgeschnitten.
 - Fachliche Toolfehler werden als `tools/call`-Result mit `isError=true`

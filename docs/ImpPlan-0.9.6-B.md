@@ -2109,35 +2109,18 @@ Pro `resources/list`-Aufruf:
   - `ServerCapabilities.resources = {"listChanged": false, "subscribe":
     false}`.
 
-**Phase-C-Hand-off (offene Punkte aus AP-6.9-Review)**
+**Follow-up-Status aus AP-6.9-Review**
 
-- **Defense-in-depth Tenant-Filter** auf Schema/Profile/Diff/Connection
-  ist optional in Phase B (Stores werden mit
-  `tenantId=principal.effectiveTenantId` gequeryed). Phase C, sobald
-  Stores aus weniger vertrauenswuerdigen Quellen kommen, sollte einen
-  per-Record `tenantId == principal.effectiveTenantId`-Recheck nach
-  Store-Query ergaenzen.
-- **`-32600` "principal not bound"** ist ein Server-Bug-Indikator
-  (Bootstrap haette das verhindern muessen). `-32603 Internal error`
-  waere semantisch praeziser; in Phase B bleibt der Code stabil bei
-  `-32600`, weil der Vertrag schon gepinnt ist. Phase-C-Refactor: ggf.
-  auf `-32603` umstellen, wenn die Bootstrap-Garantien hart genug sind.
-- **`ConnectionReference.dialectId` und `displayName`** werden verbatim
-  in `description` gepackt. Phase B vertraut die Connection-Registrierung;
-  in Phase C sollte ein `SecretScrubber.scrub(...)`-Wrapper greifen,
-  bevor freie Strings auf den Wire gehen — Konsistenz mit dem
-  Audit-Pfad.
-- **Gson-`JsonSyntaxException`-Message** im Cursor-Decode-Pfad
-  enthaelt potentiell den vom Client uebergebenen Cursor-Body (Gson
-  zitiert den Fehler-Snippet). Heute risikofrei (Cursor ist opaque,
-  Server loggt nichts), aber Phase C koennte den Decode-Error auf
-  einen konstanten "invalid cursor"-String reduzieren, wenn Logs
-  spaeter angeschaltet werden.
-- **`-32600` ist nur via stdio-ohne-Token erreichbar** — HTTP
-  rebindet den Principal pro Request. Phase-C-Doku-Note: die einzige
-  produktive Quelle dieses Codes ist eine fehlerhafte
-  stdio-Konfiguration (`DMIGRATE_MCP_STDIO_TOKEN` nicht gesetzt
-  ODER `stdioTokenFile` zeigt auf eine Datei ohne passenden Eintrag).
+- Read-only Handler-Follow-ups sind in
+  [`ImpPlan-0.9.6-C.md`](./ImpPlan-0.9.6-C.md) verschoben:
+  Defense-in-depth Tenant-/Owner-Recheck nach Store-Load sowie Runtime-
+  Scrubbing freier Output-Strings.
+- Discovery-/Connection-Ref-Follow-ups sind Phase D:
+  `resources/list`, `resources/read`, Discovery-Listen und
+  Connection-Ref-Projektionen.
+- Phase-B-Transportinvarianten bleiben in Phase B: `-32600 principal not
+  bound` und Cursor-Decode-Fehlercodes werden durch Phase C nicht
+  umverdrahtet.
 
 ### 12.18 JSON-Schema-Vertrag (verbindlich, fuer AP 6.10 Implementation)
 
@@ -2246,21 +2229,12 @@ Pro `resources/list`-Aufruf:
   `phase-b-tool-schemas.json` bis aufs Byte; `UPDATE_GOLDEN`
   regeneriert die Datei.
 
-**Phase-C-Hand-off (offene Punkte aus AP-6.10-Review)**
+**Follow-up-Status aus AP-6.10-Review**
 
-- **`additionalProperties: true`-Slots** koennen zur Laufzeit beliebige
-  Felder transportieren — der `SchemaSecretGuard` prueft nur explizit
-  benannte Properties im Schema, nicht zur Laufzeit eingehende Daten.
-  Phase-C-Tool-Handler MUESSEN beim Schreiben in solche Slots (z. B.
-  `job_status_get.output.progress`, `capabilities_list.output`-Top-
-  Level) selbst sicherstellen, dass kein Forbidden-Property-Name
-  durchrutscht — entweder durch typisierte Output-Records oder durch
-  expliziten `SecretScrubber`-Pass vor der Serialisierung. Phase B
-  liefert keinen Runtime-Filter dafuer (es gibt keine Handler).
-- **Golden-File-Workflow** ist jetzt in
-  `src/test/resources/golden/README.md` dokumentiert. Phase-C-Autoren,
-  die Schemas verfeinern, lesen dort die Regen-Anleitung.
-- **`Test.workingDir`-Annahme** in `PhaseBToolSchemasGoldenTest`
-  benutzt eine defensive Path-Erkennung (Modul-Root ODER Repo-Root).
-  Wenn Phase C einen weiteren Test-Pfad braucht, sollte er die
-  Erkennung erweitern statt eine dritte Annahme einzubauen.
+- Runtime-Scrubbing fuer `additionalProperties: true`-Slots ist in
+  [`ImpPlan-0.9.6-C.md`](./ImpPlan-0.9.6-C.md) verschoben.
+- Golden-File-Workflow ist in
+  `src/test/resources/golden/README.md` dokumentiert.
+- `PhaseBToolSchemasGoldenTest` nutzt bereits defensive Working-Dir-
+  Erkennung; weitere Testpfade sollen diese Erkennung erweitern statt
+  neue Annahmen einzubauen.
