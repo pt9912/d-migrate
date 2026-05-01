@@ -526,7 +526,9 @@ Pfade, muss fail-closed mit Konfigurationsfehler geantwortet werden.
 Verbindliche Regeln:
 
 - Jede Resource-Aufloesung prueft Tenant-Scope.
-- Jede Listen-Antwort ist principal-gefiltert.
+- Jede fachliche Listen-Antwort und `resources/list` sind principal-gefiltert.
+- `resources/templates/list` ist die einzige Listen-Ausnahme: statisch,
+  principal-unabhaengig und ohne Resource-Aufloesung.
 - Cursor duerfen nicht tenant- oder filteruebergreifend wiederverwendbar sein.
 - Sensitive Connection-Refs liefern nur Policy-Hinweise und
   `allowedOperations`-Metadaten, keine Secrets und keine ausfuehrbaren

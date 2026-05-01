@@ -2091,7 +2091,9 @@ Detailplan: [`ImpPlan-0.9.6-D.md`](./ImpPlan-0.9.6-D.md)
 - `job_status_get`, `job_list`, `artifact_list`, `artifact_chunk_get`,
   `schema_list`, `profile_list` und `diff_list` implementieren
 - MCP-Standard-Discovery `resources/list` und
-  `resources/templates/list` an dieselben Store-/Resolver-Regeln binden
+  `resources/templates/list` anbinden: `resources/list` nutzt Store-/
+  Resolver-Regeln und Principal-Filter, `resources/templates/list` bleibt
+  statisch, principal-unabhaengig und ohne Resource-Aufloesung
 - Resource-Resolver und Store-/Index-Abstraktionen fuer Jobs,
   Artefakte, Schemas, Profile und Diffs implementieren
 - Resource-Resolver und Store fuer tenant-scoped Connection-Refs
