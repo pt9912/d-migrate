@@ -41,6 +41,7 @@ internal class IntrospectionAuthValidator(
     private val expectedAudience: String = requireNotNull(config.audience) {
         "audience is required for JWT_INTROSPECTION mode"
     }
+    private val clockSkew: java.time.Duration = config.clockSkew
 
     override suspend fun validate(token: String): BearerValidationResult {
         val body = try {
@@ -82,8 +83,29 @@ internal class IntrospectionAuthValidator(
         }
         val expiry = json["exp"]?.asLong()?.let { Instant.ofEpochSecond(it) }
             ?: return BearerValidationResult.Invalid("exp claim missing")
-        if (expiry.isBefore(now())) {
+        // §12.14 Pflichtclaims: now <= exp + clockSkew. Allow the
+        // introspector and our clock to differ by up to the configured
+        // skew window — same window the JWKS path uses (Nimbus
+        // `maxClockSkew`).
+        val nowInstant = now()
+        if (nowInstant.isAfter(expiry.plus(clockSkew))) {
             return BearerValidationResult.Invalid("token expired")
+        }
+        // §12.14: nbf and iat are optional, but when present must hold:
+        //   nbf - clockSkew <= now (token not yet valid otherwise)
+        //   iat            <= now + clockSkew (issued in the future =
+        //                                       authority clock is broken)
+        json["nbf"]?.asLong()?.let { nbfEpoch ->
+            val nbf = Instant.ofEpochSecond(nbfEpoch)
+            if (nowInstant.isBefore(nbf.minus(clockSkew))) {
+                return BearerValidationResult.Invalid("token not yet valid (nbf=$nbf)")
+            }
+        }
+        json["iat"]?.asLong()?.let { iatEpoch ->
+            val iat = Instant.ofEpochSecond(iatEpoch)
+            if (iat.isAfter(nowInstant.plus(clockSkew))) {
+                return BearerValidationResult.Invalid("iat in the future (iat=$iat)")
+            }
         }
 
         val scopes = ClaimsMapper.parseScopes(

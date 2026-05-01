@@ -8,14 +8,14 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 
 /**
- * MCP-protocol method names that share the scope-mapping with tools
- * but never appear in `tools/list` (and therefore never get an
- * input/output schema). `tools/call` is intentionally NOT here: it
- * isn't a key in `DEFAULT_SCOPE_MAPPING`, so filtering against it
- * would be a no-op.
+ * §12.16 verbindlich: MCP-protocol method names that must NOT be
+ * registered as tools. Mirror of `PhaseBRegistries.PROTOCOL_METHODS`;
+ * the test asserts that every one of these is absent from
+ * `PhaseBToolSchemas.toolNames()`.
  */
 private val PROTOCOL_METHODS: Set<String> = setOf(
     "tools/list",
+    "tools/call",
     "resources/list",
     "resources/templates/list",
     "resources/read",

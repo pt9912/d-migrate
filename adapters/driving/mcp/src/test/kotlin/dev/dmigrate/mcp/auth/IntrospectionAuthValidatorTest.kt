@@ -142,6 +142,54 @@ class IntrospectionAuthValidatorTest : FunSpec({
         result.reason shouldContain "expired"
     }
 
+    test("exp within configured clock-skew is accepted") {
+        // §12.14: now <= exp + clockSkew. With the default 60s skew,
+        // an exp 30s in the past is still valid.
+        val justPast = Instant.now().minusSeconds(30).epochSecond
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER",
+             "aud": "$AUDIENCE", "exp": $justPast}
+        """.trimIndent()
+        val validator = IntrospectionAuthValidator(config(), mockClient(HttpStatusCode.OK, body))
+        val result = runBlocking { validator.validate("any-token") }
+        result.shouldBeInstanceOf<BearerValidationResult.Valid>()
+    }
+
+    test("nbf in the future (beyond clock-skew) yields Invalid") {
+        val notYetValid = Instant.now().plusSeconds(3600).epochSecond
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER",
+             "aud": "$AUDIENCE", "exp": $FAR_FUTURE, "nbf": $notYetValid}
+        """.trimIndent()
+        val validator = IntrospectionAuthValidator(config(), mockClient(HttpStatusCode.OK, body))
+        val result = runBlocking { validator.validate("any-token") }
+        result.shouldBeInstanceOf<BearerValidationResult.Invalid>()
+        result.reason shouldContain "not yet valid"
+    }
+
+    test("nbf in the past is accepted") {
+        val pastNbf = Instant.now().minusSeconds(60).epochSecond
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER",
+             "aud": "$AUDIENCE", "exp": $FAR_FUTURE, "nbf": $pastNbf}
+        """.trimIndent()
+        val validator = IntrospectionAuthValidator(config(), mockClient(HttpStatusCode.OK, body))
+        val result = runBlocking { validator.validate("any-token") }
+        result.shouldBeInstanceOf<BearerValidationResult.Valid>()
+    }
+
+    test("iat in the future (beyond clock-skew) yields Invalid") {
+        val futureIat = Instant.now().plusSeconds(3600).epochSecond
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER",
+             "aud": "$AUDIENCE", "exp": $FAR_FUTURE, "iat": $futureIat}
+        """.trimIndent()
+        val validator = IntrospectionAuthValidator(config(), mockClient(HttpStatusCode.OK, body))
+        val result = runBlocking { validator.validate("any-token") }
+        result.shouldBeInstanceOf<BearerValidationResult.Invalid>()
+        result.reason shouldContain "iat in the future"
+    }
+
     test("scp array claim is read when scope is absent") {
         val body = """
             {"active": true, "sub": "u", "iss": "$ISSUER",

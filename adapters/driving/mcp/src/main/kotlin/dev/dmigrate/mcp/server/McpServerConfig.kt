@@ -47,27 +47,20 @@ data class McpServerConfig(
 }
 
 /**
- * §12.12 start-time validation. Returns the (possibly empty) list of
- * configuration errors; an empty list means the config can be used to
- * start the server. Callers MUST refuse to start when this list is
- * non-empty (§5.2 — Startfehler vor dem ersten Client-Request).
+ * §12.12 start-time validation for the **HTTP** transport. Returns
+ * the (possibly empty) list of configuration errors; an empty list
+ * means the config can be used to start `startHttp`. Callers MUST
+ * refuse to start when this list is non-empty (§5.2 — Startfehler vor
+ * dem ersten Client-Request).
+ *
+ * §12.15 explicitly says stdio ignores `authMode`, so stdio callers
+ * use [validateForStdio] which skips the auth-mode block.
  */
 @Suppress("CyclomaticComplexMethod")
 fun McpServerConfig.validate(): List<String> {
-    val errors = mutableListOf<String>()
+    val errors = sharedErrors().toMutableList()
 
-    if (port < 0 || port > MAX_PORT) {
-        errors += "port must be in 0..$MAX_PORT (got $port)"
-    }
-    if (clockSkew.isNegative || clockSkew > McpServerConfig.MAX_CLOCK_SKEW) {
-        errors += "clockSkew must be in [0, ${McpServerConfig.MAX_CLOCK_SKEW}] (got $clockSkew)"
-    }
-
-    val bindIsLoopback = runCatching {
-        InetAddress.getByName(bindAddress).isLoopbackAddress
-    }.getOrElse { e ->
-        if (e is UnknownHostException) false else throw e
-    }
+    val bindIsLoopback = bindIsLoopback()
 
     when (authMode) {
         AuthMode.DISABLED -> {
@@ -90,29 +83,60 @@ fun McpServerConfig.validate(): List<String> {
         }
     }
 
-    if (publicBaseUrl != null && publicBaseUrl.scheme != "https") {
-        errors += "publicBaseUrl must use https scheme (got '${publicBaseUrl.scheme}')"
-    }
-
-    if ("*" in allowedOrigins) {
-        errors += "allowedOrigins must not contain wildcard '*'"
-    }
     if (!bindIsLoopback && allowedOrigins == McpServerConfig.DEFAULT_LOOPBACK_ORIGINS) {
         errors += "non-loopback bind '$bindAddress' requires explicit allowedOrigins"
     }
 
+    return errors
+}
+
+/**
+ * §12.15 start-time validation for the **stdio** transport. Skips
+ * every HTTP-only rule (`authMode` consistency, bind/origin checks,
+ * `publicBaseUrl` constraints) — stdio is a per-process pipe, those
+ * fields don't apply. The shared rules (port-range, clock-skew,
+ * algorithm allowlist, `stdioTokenFile` readability, `publicBaseUrl`
+ * scheme, allowedOrigins wildcard) still hold so a stdio-misuse
+ * surface (e.g. `stdioTokenFile` pointing at an unreadable file)
+ * still fails fast.
+ */
+fun McpServerConfig.validateForStdio(): List<String> = sharedErrors()
+
+/**
+ * §12.12 / §12.15 rules that apply to BOTH transports.
+ */
+private fun McpServerConfig.sharedErrors(): List<String> {
+    val errors = mutableListOf<String>()
+
+    if (port < 0 || port > MAX_PORT) {
+        errors += "port must be in 0..$MAX_PORT (got $port)"
+    }
+    if (clockSkew.isNegative || clockSkew > McpServerConfig.MAX_CLOCK_SKEW) {
+        errors += "clockSkew must be in [0, ${McpServerConfig.MAX_CLOCK_SKEW}] (got $clockSkew)"
+    }
+    if (publicBaseUrl != null && publicBaseUrl.scheme != "https") {
+        errors += "publicBaseUrl must use https scheme (got '${publicBaseUrl.scheme}')"
+    }
+    if ("*" in allowedOrigins) {
+        errors += "allowedOrigins must not contain wildcard '*'"
+    }
     val forbiddenAlgs = algorithmAllowlist.filter { alg ->
         alg.equals("none", ignoreCase = true) || alg.startsWith("HS")
     }
     if (forbiddenAlgs.isNotEmpty()) {
         errors += "algorithmAllowlist must not contain $forbiddenAlgs"
     }
-
     if (stdioTokenFile != null && !Files.isReadable(stdioTokenFile)) {
         errors += "stdioTokenFile not readable (path='$stdioTokenFile')"
     }
 
     return errors
+}
+
+private fun McpServerConfig.bindIsLoopback(): Boolean = runCatching {
+    InetAddress.getByName(bindAddress).isLoopbackAddress
+}.getOrElse { e ->
+    if (e is UnknownHostException) false else throw e
 }
 
 private const val MAX_PORT = 65535

@@ -85,6 +85,37 @@ class McpHttpRouteTest : FunSpec({
         }
     }
 
+    test("POST /mcp initialize with stale MCP-Session-Id header is rejected (§12.13)") {
+        // §12.13: a fresh Initialize request must NOT carry session
+        // headers — the server vergibt sie erst durch das Response.
+        testApplication {
+            application {
+                installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
+            }
+            val resp = client.post("/mcp") {
+                headers { append("MCP-Session-Id", java.util.UUID.randomUUID().toString()) }
+                setBody(INITIALIZE_BODY)
+            }
+            resp.status shouldBe HttpStatusCode.BadRequest
+            resp.bodyAsText() shouldContain "initialize must not carry"
+            resp.headers["MCP-Session-Id"] shouldBe null
+        }
+    }
+
+    test("POST /mcp initialize with stale MCP-Protocol-Version header is rejected (§12.13)") {
+        testApplication {
+            application {
+                installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
+            }
+            val resp = client.post("/mcp") {
+                headers { append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION) }
+                setBody(INITIALIZE_BODY)
+            }
+            resp.status shouldBe HttpStatusCode.BadRequest
+            resp.bodyAsText() shouldContain "initialize must not carry"
+        }
+    }
+
     test("POST /mcp follow-up without Session-Id returns 404 + -32000") {
         testApplication {
             application {

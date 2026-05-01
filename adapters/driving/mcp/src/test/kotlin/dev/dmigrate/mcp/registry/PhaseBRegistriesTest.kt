@@ -113,6 +113,20 @@ class PhaseBRegistriesTest : FunSpec({
         shouldThrow<IllegalStateException> { PhaseBRegistries.toolRegistry(rogue) }
     }
 
+    test("custom scopeMapping that includes tools/call drops it (§12.16 PROTOCOL_METHODS)") {
+        // §12.16 verbindlich: tools/call must NEVER appear in
+        // tools/list — even if a custom scope-mapping accidentally
+        // gives it a scope. Otherwise a client could try to dispatch
+        // tools/call on itself.
+        val custom = mapOf(
+            "capabilities_list" to setOf("dmigrate:read"),
+            "tools/call" to setOf("dmigrate:read"),
+        )
+        val registry = PhaseBRegistries.toolRegistry(custom)
+        registry.find("tools/call") shouldBe null
+        registry.find("capabilities_list") shouldNotBe null
+    }
+
     test("resourceRegistry is empty in Phase B") {
         PhaseBRegistries.resourceRegistry().isEmpty() shouldBe true
     }

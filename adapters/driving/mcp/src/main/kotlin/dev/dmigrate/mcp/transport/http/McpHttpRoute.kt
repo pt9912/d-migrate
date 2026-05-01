@@ -208,6 +208,22 @@ private suspend fun validateBearer(
     authValidator: AuthValidator,
 ): PrincipalContext? {
     if (config.authMode == AuthMode.DISABLED) return DisabledAuthValidator.ANONYMOUS_PRINCIPAL
+    // §12.14: tokens MUST come from `Authorization: Bearer …`. Query
+    // parameters (e.g. `?access_token=…`), cookies and request bodies
+    // are never inspected as token sources — and a Bearer-shaped query
+    // parameter is actively REJECTED so a misconfigured client gets
+    // told to fix its request rather than silently falling back to
+    // missing-token.
+    if (call.request.queryParameters[QUERY_TOKEN_PARAM] != null) {
+        respondAuthChallenge(
+            call, HttpStatusCode.Unauthorized,
+            ChallengeBuilder.invalidToken(
+                "tokens via query parameters are not accepted (RFC 6750 §2.3 / §12.14)",
+                resolveMetadataUrl(call, config),
+            ),
+        )
+        return null
+    }
     val token = BearerTokenReader.read(call.request.header(HttpHeaders.Authorization))
     if (token == null) {
         respondAuthChallenge(
@@ -239,6 +255,24 @@ private suspend fun resolveContext(
     isInitialize: Boolean,
 ): ServiceContext? {
     if (isInitialize) {
+        // §12.13 Initialize-Spezialfall: weder MCP-Session-Id noch
+        // MCP-Protocol-Version dürfen am Initial-Request stehen — der
+        // Server vergibt beide erst durch den Initialize-Response.
+        val staleHeaders = listOfNotNull(
+            HEADER_MCP_SESSION_ID.takeIf { call.request.header(HEADER_MCP_SESSION_ID) != null },
+            HEADER_MCP_PROTOCOL_VERSION.takeIf { call.request.header(HEADER_MCP_PROTOCOL_VERSION) != null },
+        )
+        if (staleHeaders.isNotEmpty()) {
+            respondJsonRpcError(
+                call, jsonHandler,
+                HttpStatusCode.BadRequest,
+                id = (message as? RequestMessage)?.id,
+                code = ResponseErrorCode.InvalidRequest.value,
+                message = "initialize must not carry session/protocol-version headers " +
+                    "(got ${staleHeaders.joinToString(", ")})",
+            )
+            return null
+        }
         val service = serviceFactory()
         return ServiceContext(service, GenericEndpoint(service), principal)
     }
@@ -463,3 +497,4 @@ private const val HEADER_MCP_PROTOCOL_VERSION: String = "MCP-Protocol-Version"
 private const val JSONRPC_ERROR_SESSION_UNKNOWN: Int = -32_000
 private const val JSONRPC_ERROR_PROTOCOL_VERSION_MISMATCH: Int = -32_001
 private const val METADATA_PATH: String = "/.well-known/oauth-protected-resource"
+private const val QUERY_TOKEN_PARAM: String = "access_token"

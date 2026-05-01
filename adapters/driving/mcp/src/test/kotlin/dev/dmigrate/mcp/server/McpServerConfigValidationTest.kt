@@ -14,6 +14,51 @@ private val JWKS = URI.create("https://issuer.example/.well-known/jwks.json")
 private val INTROSPECT = URI.create("https://issuer.example/introspect")
 private const val AUDIENCE = "mcp.dmigrate.example"
 
+/**
+ * §12.15 stdio validation tests live here because they share the
+ * config / fixtures with the HTTP path; the function under test is
+ * `McpServerConfig.validateForStdio()`.
+ */
+class McpServerConfigStdioValidationTest : FunSpec({
+
+    test("default-config (JWT_JWKS, no issuer/jwks/audience) is OK for stdio") {
+        // §12.15: stdio ignores authMode entirely. Without this
+        // separation, the McpServerConfig() default — which is
+        // JWT_JWKS-shaped because that's what HTTP wants by default —
+        // would refuse to start a stdio server for no good reason.
+        McpServerConfig().validateForStdio().shouldBeEmpty()
+    }
+
+    test("port-range still applies to stdio") {
+        McpServerConfig(port = -1).validateForStdio()
+            .forAtLeastOne { it shouldContain "port must be in" }
+    }
+
+    test("clockSkew range still applies to stdio") {
+        McpServerConfig(clockSkew = Duration.ofHours(1)).validateForStdio()
+            .forAtLeastOne { it shouldContain "clockSkew" }
+    }
+
+    test("unreadable stdioTokenFile still rejects stdio start") {
+        val nonExistent = java.nio.file.Paths.get("/no/such/path-${System.nanoTime()}.json")
+        McpServerConfig(stdioTokenFile = nonExistent).validateForStdio()
+            .forAtLeastOne { it shouldContain "stdioTokenFile" }
+    }
+
+    test("HTTP-only validate() still rejects the same default-config") {
+        // Sanity: the split is real — validate() (HTTP) and
+        // validateForStdio() must NOT return the same answer for the
+        // same input. Otherwise the §12.15 carve-out is lost.
+        McpServerConfig().validate().shouldNotBeEmpty()
+    }
+
+    test("non-loopback bind is irrelevant for stdio") {
+        // §12.15: stdio is a per-process pipe; bind/origin checks
+        // don't apply.
+        McpServerConfig(bindAddress = "0.0.0.0").validateForStdio().shouldBeEmpty()
+    }
+})
+
 private fun validJwks() = McpServerConfig(
     authMode = AuthMode.JWT_JWKS,
     issuer = ISSUER,

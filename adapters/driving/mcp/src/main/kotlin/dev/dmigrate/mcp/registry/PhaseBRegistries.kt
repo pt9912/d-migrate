@@ -30,15 +30,17 @@ import dev.dmigrate.server.core.error.ToolErrorCode
 object PhaseBRegistries {
 
     /**
-     * MCP-protocol method names that appear in
-     * `McpServerConfig.scopeMapping` but must NOT be projected as
-     * tools. `tools/call` is intentionally absent: it isn't in the
-     * default scope mapping, so filtering against it would be a
-     * no-op. Defensive belt-and-braces against future surplus
-     * mapping entries can be added here when they exist.
+     * §12.16 verbindlich: MCP-protocol method names that must NOT be
+     * projected as tools. The default scope mapping only contains a
+     * subset of these (`tools/call` and `resources/templates/list`
+     * have no scope entry today), but custom scope-mappings can add
+     * any of them and the filter still has to drop them — otherwise
+     * a custom-scoped `tools/call` would land in `tools/list` and a
+     * client could try to dispatch `tools/call` on itself.
      */
     private val PROTOCOL_METHODS: Set<String> = setOf(
         "tools/list",
+        "tools/call",
         "resources/list",
         "resources/templates/list",
         "resources/read",

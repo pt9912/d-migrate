@@ -80,6 +80,31 @@ class McpHttpAuthTest : FunSpec({
         }
     }
 
+    test("401 with invalid_token when access_token is supplied as a query parameter (§12.14)") {
+        // §12.14: tokens MUST come from `Authorization: Bearer …`.
+        // Query parameters are explicitly rejected — even if the
+        // Authorization header is missing, the query-parameter path
+        // must NOT silently fall back. The validator is never asked.
+        testApplication {
+            application {
+                installMcpHttpRoute(
+                    config = JWKS_CONFIG,
+                    serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
+                    authValidatorOverride = FakeAuthValidator(
+                        BearerValidationResult.Valid(principalWithScopes("dmigrate:read")),
+                    ),
+                )
+            }
+            val resp = client.post("/mcp?access_token=some-bearer") {
+                setBody(INITIALIZE_BODY)
+            }
+            resp.status shouldBe HttpStatusCode.Unauthorized
+            val challenge = resp.headers[HttpHeaders.WWWAuthenticate]!!
+            challenge shouldContain "error=\"invalid_token\""
+            challenge shouldContain "query parameters"
+        }
+    }
+
     test("401 with invalid_token when validator rejects") {
         testApplication {
             application {

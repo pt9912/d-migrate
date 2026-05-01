@@ -83,9 +83,31 @@ class McpServerBootstrapTest : FunSpec({
         }
     }
 
-    test("startStdio on invalid config returns ConfigError") {
-        val outcome = McpServerBootstrap.startStdio(McpServerConfig())
+    test("startStdio on invalid stdio-only config returns ConfigError") {
+        // §12.15: stdio ignores authMode entirely, so a default-config
+        // (authMode=JWT_JWKS) must NOT fail stdio validation. We trigger
+        // a real stdio-relevant violation instead — an unreadable
+        // stdioTokenFile.
+        val nonExistent = java.nio.file.Paths.get("/no/such/path-${System.nanoTime()}.json")
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(stdioTokenFile = nonExistent),
+            input = ByteArrayInputStream(ByteArray(0)),
+            output = ByteArrayOutputStream(),
+        )
         outcome.shouldBeInstanceOf<McpStartOutcome.ConfigError>()
+    }
+
+    test("startStdio with default-config (JWT_JWKS) succeeds — §12.15 ignores authMode") {
+        // Counterpart to the above: the default McpServerConfig() is
+        // JWT_JWKS-shaped (no issuer/jwks/audience), but that's
+        // HTTP-only state. stdio MUST start cleanly.
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(),
+            input = ByteArrayInputStream(ByteArray(0)),
+            output = ByteArrayOutputStream(),
+        )
+        outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
+        outcome.handle.close()
     }
 
     test("startStdio without env yields AuthRequired in the bound resolution") {

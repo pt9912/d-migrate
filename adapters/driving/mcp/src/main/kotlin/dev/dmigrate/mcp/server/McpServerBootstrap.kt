@@ -127,7 +127,11 @@ object McpServerBootstrap {
         toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
     ): McpStartOutcome {
-        val errors = config.validate()
+        // §12.15: stdio ignores authMode entirely — use the slimmer
+        // validation that skips the HTTP-only auth-consistency block.
+        // Otherwise a default-config (authMode=JWT_JWKS, no issuer)
+        // would refuse to start stdio for no good reason.
+        val errors = config.validateForStdio()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
         RuntimeBootstrap.initialize()
         val store = tokenStoreOverride ?: config.stdioTokenFile?.let(FileStdioTokenStore::load)
