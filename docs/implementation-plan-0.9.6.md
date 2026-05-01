@@ -1366,6 +1366,9 @@ Gemeinsame Regeln:
 - fachliche Listen-Tools behalten `tenantId` als Phase-B-Wire-Feld; es ist
   adressierend, nicht autorisierend, und wird gegen den Principal-Tenant-Scope
   validiert
+- fehlt `tenantId`, gilt ausschliesslich der deterministische
+  `principal.effectiveTenantId`; Multi-Tenant-Clients muessen fuer jeden
+  gewuenschten Tenant einen eigenen Request mit explizitem `tenantId` senden
 - Paginierung nutzt den eingefrorenen Phase-B-Wire-Vertrag `pageSize` und
   `cursor`; `limit` ist kein Alias, solange die JSON-Schemas
   `additionalProperties=false` verwenden
@@ -2121,8 +2124,10 @@ Detailplan: [`ImpPlan-0.9.6-D.md`](./ImpPlan-0.9.6-D.md)
   durch Token-Modifikation an fremde Daten kommen oder Cursor-
   Stabilitaet brechen koennen. Der Kernvertrag (`PageRequest`/
   `PageResult`) bleibt unveraendert; die Kapselung ist Adapter-
-  Verantwortung. Phase-A-In-Memory-Stores duerfen weiterhin
-  Offset-Tokens verwenden; Tests duerfen die Kapselung nicht annehmen.
+  Verantwortung. Abgelaufene Cursor-/Pagination-/Chunk-Tokens liefern
+  `VALIDATION_ERROR`; Phase D fuehrt keinen separaten `TOKEN_EXPIRED`-
+  Fehlercode ein. Phase-A-In-Memory-Stores duerfen weiterhin Offset-Tokens
+  verwenden; Tests duerfen die Kapselung nicht annehmen.
 - Tenant-Scope-Pruefung fuer jede Resource-Aufloesung erzwingen
 
 Abnahmekriterien:
@@ -2132,6 +2137,9 @@ Abnahmekriterien:
   optional, `totalCountEstimate` ist optional und als Naeherung gekennzeichnet
 - modifizierte oder fremde Cursor-/Pagination-Token liefern
   `VALIDATION_ERROR`, niemals fremde Tenant-Daten
+- abgelaufene Cursor-/Pagination-/Chunk-Tokens liefern ebenfalls
+  `VALIDATION_ERROR`; nur nach Retention geloeschte Ressourcen liefern
+  `RESOURCE_NOT_FOUND`
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list`
   auffindbar, auch wenn die Persistenz intern ueber typisierte
   Artefakte erfolgt

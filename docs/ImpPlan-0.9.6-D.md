@@ -171,8 +171,9 @@ veroeffentlicht, muessen Tokens adapterseitig gekapselt werden:
 - ablauf- oder versionsfaehig, falls der Store das benoetigt
 
 Diese Regel gilt fuer Listen-Cursor und fuer Chunk-Fortsetzungen wie
-`nextChunkCursor`. Manipulierte Tokens liefern `VALIDATION_ERROR`, niemals
-fremde Daten.
+`nextChunkCursor`. Manipulierte, syntaktisch ungueltige, tenant-fremde oder
+abgelaufene Tokens liefern `VALIDATION_ERROR`, niemals fremde Daten. Phase D
+fuehrt keinen separaten `TOKEN_EXPIRED`-Fehlercode ein.
 
 ### 4.3 Connection-Refs sind secret-frei
 
@@ -303,13 +304,13 @@ und Chunk-Grenzen abdecken.
 
 Verbindliche Fehler:
 
-- `RESOURCE_NOT_FOUND` fuer nicht existente, abgelaufene oder fuer den
-  Principal nicht sichtbare bzw. nicht autorisierte Ressourcen im erlaubten
-  Tenant
+- `RESOURCE_NOT_FOUND` fuer nicht existente, nach Retention geloeschte oder
+  fuer den Principal nicht sichtbare bzw. nicht autorisierte Ressourcen im
+  erlaubten Tenant
 - `TENANT_SCOPE_DENIED` fuer Ressourcen-URIs oder explizite `tenantId`-
   Parameter, deren Tenant ausserhalb des erlaubten Principal-Tenant-Scopes liegt
-- `VALIDATION_ERROR` fuer syntaktisch ungueltige Resource-URIs, Cursor oder
-  Filter
+- `VALIDATION_ERROR` fuer syntaktisch ungueltige Resource-URIs, Filter sowie
+  ungueltige, manipulierte, tenant-fremde oder abgelaufene Cursor-/Chunk-Tokens
 - `AUTH_REQUIRED` / `FORBIDDEN` gemaess bestehendem Auth-/Scope-Mapping
 
 Direkte `resources/read`-Zugriffe auf fremde Jobs, Artefakte oder andere
@@ -344,6 +345,12 @@ liegen. Cross-Tenant-Discovery fuer normale Principals bleibt ausserhalb von
 Phase D und liefert `TENANT_SCOPE_DENIED`. Innerhalb des erlaubten Tenants
 werden Listen principal-gefiltert, nicht mit Existenz-/Sichtbarkeitsfehlern
 angereichert.
+
+Fuer Principals mit mehreren erlaubten Tenants ist `effectiveTenantId` der
+deterministische Default des aktuellen Auth-/Session-Kontexts. Phase D liefert
+keine automatische "alle erlaubten Tenants"-Fanout-Liste. Clients muessen fuer
+jeden gewuenschten Tenant einen eigenen Request mit explizitem `tenantId`
+senden.
 
 Filter werden strikt validiert. Unbekannte Filter liefern `VALIDATION_ERROR`.
 
@@ -458,7 +465,10 @@ Chunk-Templates fuer grosse Artefakte muessen sichtbar sein, ohne konkrete
 fremde Artefakte zu bestaetigen.
 `dmigrate://capabilities` ist direkt lesbar, aber kein Eintrag in
 `resources/templates/list`, damit der Phase-B-Vertrag der statischen
-7-Template-Liste nicht gebrochen wird.
+7-Template-Liste nicht gebrochen wird. Clients erhalten diese Sonderresource
+ueber den dokumentierten 0.9.6-Vertrag, `docs/mcp-server.md` und einen
+`capabilities_list.resourceFallbackHint`; sie darf nicht aus der Template-Liste
+abgeleitet werden.
 
 ### 7.3 Initialize-Capabilities
 
@@ -538,6 +548,9 @@ Verbindliche Regeln:
   erweitern.
 - `dmigrate://capabilities` als explizite globale Sonderresource mit eigenem
   Resolver modellieren.
+- `capabilities_list.resourceFallbackHint` auf `dmigrate://capabilities`
+  setzen, damit Clients die globale Sonderresource maschinenlesbar finden,
+  ohne `resources/templates/list` zu erweitern.
 - Fehler-Mapping fuer ungueltige, fehlende und fremde Ressourcen definieren.
 
 ### 10.2 Store-/Index-Abstraktionen erweitern
@@ -626,10 +639,16 @@ Verbindliche Regeln:
 - `tenantId` bleibt in fachlichen Listen-Tool-Schemas erhalten; es ist
   adressierend, nicht autorisierend, und tenant-fremde Werte liefern
   `TENANT_SCOPE_DENIED`.
+- Multi-Tenant-Clients muessen den gewuenschten Tenant pro Request ueber
+  `tenantId` waehlen; fehlt `tenantId`, gilt ausschliesslich der
+  deterministische `principal.effectiveTenantId`.
 - `totalCount` ist exakt, wenn vorhanden.
 - `totalCountEstimate` ist optional und als Naeherung gekennzeichnet.
 - modifizierte oder fremde Cursor-/Pagination-Token liefern
   `VALIDATION_ERROR`, niemals fremde Tenant-Daten.
+- abgelaufene Cursor-/Pagination-/Chunk-Tokens liefern ebenfalls
+  `VALIDATION_ERROR`; nur nach Retention geloeschte Ressourcen liefern
+  `RESOURCE_NOT_FOUND`.
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list` auffindbar,
   auch wenn die Persistenz intern ueber typisierte Artefakte erfolgt.
 - Ressourcen ausserhalb des erlaubten Principal-Tenant-Scopes liefern
@@ -660,6 +679,10 @@ Verbindliche Regeln:
   nicht erlaubt.
 - `resources/read(dmigrate://capabilities)` liefert die globale, secret-freie
   Faehigkeitsbeschreibung ueber einen expliziten Capability-Resolver.
+- Clients entdecken `dmigrate://capabilities` ueber den dokumentierten
+  0.9.6-Vertrag, `docs/mcp-server.md` oder
+  `capabilities_list.resourceFallbackHint`, nicht ueber
+  `resources/templates/list`.
 - Initialize meldet fuer `resources` explizit `listChanged=false` und
   `subscribe=false`.
 - nicht sichtbare bzw. nicht autorisierte Ressourcen im erlaubten Tenant
