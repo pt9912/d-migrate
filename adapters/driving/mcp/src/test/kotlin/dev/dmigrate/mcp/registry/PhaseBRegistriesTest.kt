@@ -82,21 +82,29 @@ class PhaseBRegistriesTest : FunSpec({
         registry.find("procedure_transform_plan")!!.requiredScopes shouldBe setOf("dmigrate:ai:execute")
     }
 
-    test("toolRegistry honours a custom scopeMapping (no DEFAULT bleed-through)") {
+    test("toolRegistry honours a custom scopeMapping subset (no DEFAULT bleed-through)") {
         val custom = mapOf(
             "capabilities_list" to setOf("dmigrate:read"),
-            "custom_tool" to setOf("dmigrate:admin"),
+            "schema_validate" to setOf("dmigrate:admin"),
         )
         val registry = PhaseBRegistries.toolRegistry(custom)
-        registry.names() shouldContain "custom_tool"
-        registry.find("custom_tool")!!.requiredScopes shouldBe setOf("dmigrate:admin")
-        // schema_validate is NOT in the custom map so it shouldn't be there
-        registry.find("schema_validate") shouldBe null
+        registry.names() shouldContain "schema_validate"
+        registry.find("schema_validate")!!.requiredScopes shouldBe setOf("dmigrate:admin")
+        // job_cancel is NOT in the custom map so it shouldn't be there
+        registry.find("job_cancel") shouldBe null
     }
 
     test("scopeMapping without capabilities_list is rejected at build time (§12.11)") {
         val incomplete = mapOf("schema_validate" to setOf("dmigrate:read"))
         shouldThrow<IllegalStateException> { PhaseBRegistries.toolRegistry(incomplete) }
+    }
+
+    test("scopeMapping with an unknown tool name is rejected (no PhaseBToolSchemas entry)") {
+        val rogue = mapOf(
+            "capabilities_list" to setOf("dmigrate:read"),
+            "unregistered_tool" to setOf("dmigrate:read"),
+        )
+        shouldThrow<IllegalStateException> { PhaseBRegistries.toolRegistry(rogue) }
     }
 
     test("resourceRegistry is empty in Phase B") {

@@ -1,0 +1,929 @@
+{
+  "artifact_chunk_get": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "chunkId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId",
+        "chunkId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "base64",
+            "utf8"
+          ]
+        },
+        "isLast": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "content",
+        "encoding",
+        "isLast"
+      ]
+    }
+  },
+  "artifact_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifacts"
+      ]
+    }
+  },
+  "artifact_upload_abort": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "aborted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "aborted"
+      ]
+    }
+  },
+  "artifact_upload_chunk": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "chunkIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "base64"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "chunkIndex",
+        "content",
+        "encoding"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accepted"
+      ]
+    }
+  },
+  "artifact_upload_complete": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId",
+        "sha256"
+      ]
+    }
+  },
+  "artifact_upload_init": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SCHEMA",
+            "PROFILE",
+            "DIFF",
+            "DATA_EXPORT",
+            "UPLOAD_INPUT",
+            "OTHER"
+          ]
+        },
+        "expectedSizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "chunkSizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "chunkSizeBytes"
+      ]
+    }
+  },
+  "capabilities_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mcpProtocolVersion": {
+          "type": "string"
+        },
+        "dmigrateContractVersion": {
+          "type": "string"
+        },
+        "serverName": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array"
+        },
+        "scopeTable": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "data_export_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceConnectionId": {
+          "type": "string"
+        },
+        "querySpecRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceConnectionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  "data_import_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetConnectionId": {
+          "type": "string"
+        },
+        "sourceArtifactId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "targetConnectionId",
+        "sourceArtifactId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  "data_profile_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  "data_transfer_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceConnectionId": {
+          "type": "string"
+        },
+        "targetConnectionId": {
+          "type": "string"
+        },
+        "scopeSpecRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceConnectionId",
+        "targetConnectionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  "diff_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "diffs": {
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "diffs"
+      ]
+    }
+  },
+  "job_cancel": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cancelled"
+      ]
+    }
+  },
+  "job_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobs"
+      ]
+    }
+  },
+  "job_status_get": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "jobId",
+        "status"
+      ]
+    }
+  },
+  "procedure_transform_execute": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "planRef"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId"
+      ]
+    }
+  },
+  "procedure_transform_plan": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceProcedureRef": {
+          "type": "string"
+        },
+        "targetDialect": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceProcedureRef",
+        "targetDialect"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "planRef"
+      ]
+    }
+  },
+  "profile_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profiles": {
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profiles"
+      ]
+    }
+  },
+  "schema_compare": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceUri": {
+          "type": "string"
+        },
+        "targetUri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceUri",
+        "targetUri"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "differences": {
+          "type": "array"
+        },
+        "diffArtifactRef": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "schema_compare_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceUri": {
+          "type": "string"
+        },
+        "targetUri": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceUri",
+        "targetUri"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  "schema_generate": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaId": {
+          "type": "string"
+        },
+        "artifactRef": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "schema_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemas": {
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemas"
+      ]
+    }
+  },
+  "schema_reverse_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "connectionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId"
+      ]
+    }
+  },
+  "schema_validate": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaUri": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaUri"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "violations": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "valid"
+      ]
+    }
+  },
+  "testdata_execute": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "planRef"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId"
+      ]
+    }
+  },
+  "testdata_plan": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaId": {
+          "type": "string"
+        },
+        "sizeHint": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "schemaId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "planRef"
+      ]
+    }
+  }
+}

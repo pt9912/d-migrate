@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.core.error.ToolErrorCode
 
@@ -73,35 +74,23 @@ object PhaseBRegistries {
 
     fun resourceRegistry(): ResourceRegistry = ResourceRegistry.empty()
 
-    private fun describe(name: String, scopes: Set<String>): ToolDescriptor =
-        ToolDescriptor(
+    private fun describe(name: String, scopes: Set<String>): ToolDescriptor {
+        val schemas = PhaseBToolSchemas.forTool(name) ?: error(
+            "no schema registered for tool '$name' — PhaseBToolSchemas must cover every entry in scopeMapping",
+        )
+        return ToolDescriptor(
             name = name,
             title = TITLES[name] ?: name,
             description = DESCRIPTIONS[name]
                 ?: "0.9.6 contract tool '$name' (Phase B: registered, not implemented).",
             requiredScopes = scopes,
-            inputSchema = STUB_INPUT_SCHEMA,
-            outputSchema = STUB_OUTPUT_SCHEMA,
+            inputSchema = schemas.inputSchema,
+            outputSchema = schemas.outputSchema,
             inlineLimits = INLINE_LIMITS[name],
             resourceFallbackHint = FALLBACK_HINTS[name],
             errorCodes = ERROR_CODES[name] ?: setOf(ToolErrorCode.UNSUPPORTED_TOOL_OPERATION),
         )
-
-    /**
-     * Phase B does not pin per-tool input/output JSON schemas — AP
-     * 6.10 swaps these stubs for the real 2020-12 definitions plus
-     * the golden test. The stub deliberately advertises the dialect
-     * via `$schema` so clients see the eventual contract today.
-     */
-    private val STUB_INPUT_SCHEMA: Map<String, Any> = mapOf(
-        "\$schema" to "https://json-schema.org/draft/2020-12/schema",
-        "type" to "object",
-    )
-
-    private val STUB_OUTPUT_SCHEMA: Map<String, Any> = mapOf(
-        "\$schema" to "https://json-schema.org/draft/2020-12/schema",
-        "type" to "object",
-    )
+    }
 
     private val TITLES: Map<String, String> = mapOf(
         "capabilities_list" to "Capabilities (server contract)",
