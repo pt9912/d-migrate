@@ -398,7 +398,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./ImpPlan-0.9.4-6.1.md),
 | Bereich | Aufgabe                                                                                                                                          | LF-Ref | Status         |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | -------------- |
 | Server  | Phase A: Gemeinsamer Serverkern (Kernmodelle, Store-Ports, Byte-Stores, Fingerprint, Approval, Quota, Error, Audit) — siehe `ImpPlan-0.9.6-A.md` | —      | ✅ (2026-04-26) |
-| Server  | Phase B: MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext                            | —      |                |
+| Server  | Phase B: MCP-v1-Server ueber `stdio` und streambares HTTP mit Initialize/Capability-Negotiation und Principal-Kontext — siehe `ImpPlan-0.9.6-B.md` und `docs/mcp-server.md` | —      | ✅ (2026-05-01) |
 | Server  | Read-only Schema-Tools: Validate, Compare, Generate DDL ueber MCP-Tool-Interface                                                                 | —      |                |
 | Server  | Job- und Artefakt-Discovery: List Jobs, Artifacts, Schemas mit Filterung und Paginierung                                                         | —      |                |
 | Server  | MCP-Ressourcen: Jobs, Artifacts, Schemas, Profiles, Diffs und Connection-Refs                                                                    | —      |                |

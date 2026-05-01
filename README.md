@@ -30,6 +30,7 @@ d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migra
 - Inkrementeller Export über `--since-column` / `--since`
 - Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
 - CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `data export`, `data import`, `data transfer` und `data profile`
+- MCP-Server (`d-migrate mcp serve --transport stdio|http`) per MCP 2025-11-25 — Phase B liefert Transport, Auth (JWT-JWKS, JWT-Introspection, stdio-Token-Registry), Discovery (`tools/list`, `resources/list`, `resources/templates/list`) und JSON-Schema-Vertrag; nur `capabilities_list` ist fachlich (Phase C/D ergänzt die Tool-Handler)
 - Internationalisierte CLI-Ausgabe (EN/DE) mit ResourceBundle-Fallback, ICU4J-Unicode-Utilities, expliziter Zeitzonen-/Temporal-Policy und konsolidiertem CSV-/BOM-Encoding-Vertrag
 - OCI-Image für die Nutzung mit Docker
 
