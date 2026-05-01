@@ -182,10 +182,19 @@ mit non-secret Metadaten:
 - Sensitivitaetsklasse
 - Produktionskennzeichen
 - erlaubte Operationen oder Policy-Hinweise
-- `credentialRef` oder `providerRef`
 
 JDBC-URLs mit Passwort, expandierte ENV-Werte und rohe Secrets duerfen in
 Discovery, Audit, Tool-Responses oder Resource-Inhalten nicht erscheinen.
+
+`credentialRef` und `providerRef` bleiben interne Bootstrap-/Runner-
+Metadaten. MCP-Projektionen duerfen sie selbst nicht ausgeben. Nach aussen
+sind nur abgeleitete, secret-freie Ersatzfelder erlaubt, z. B.:
+
+- `hasCredential`
+- `providerKind`
+- `sensitivity`
+- `isProduction`
+- `allowedOperations`
 
 ### 4.4 CLI und MCP teilen Bootstrap-Logik
 
@@ -211,16 +220,30 @@ Phase D definiert Resource-URIs fuer:
 
 | Typ | Beispiel-URI | Inhalt |
 | --- | ------------ | ------ |
-| Job | `dmigrate://jobs/{jobId}` | Job-Metadaten, Status, Artefaktrefs |
-| Artifact | `dmigrate://artifacts/{artifactId}` | Artefaktmetadaten, Chunk-Links |
-| Artifact chunk | `dmigrate://artifacts/{artifactId}/chunks/{chunkRef}` | begrenzter Inhaltsteil |
-| Schema | `dmigrate://schemas/{schemaRef}` | Schema-Metadaten oder Inhalt bei kleiner Groesse |
-| Profile | `dmigrate://profiles/{profileRef}` | Profiling-Metadaten oder Artefaktref |
-| Diff | `dmigrate://diffs/{diffRef}` | Diff-Metadaten oder Artefaktref |
-| Connection | `dmigrate://connections/{connectionRef}` | secret-freie Connection-Metadaten |
+| Job | `dmigrate://tenants/{tenantId}/jobs/{jobId}` | Job-Metadaten, Status, Artefaktrefs |
+| Artifact | `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` | Artefaktmetadaten, Chunk-Links |
+| Artifact chunk | `dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}` | begrenzter Inhaltsteil |
+| Schema | `dmigrate://tenants/{tenantId}/schemas/{schemaRef}` | Schema-Metadaten oder Inhalt bei kleiner Groesse |
+| Profile | `dmigrate://tenants/{tenantId}/profiles/{profileRef}` | Profiling-Metadaten oder Artefaktref |
+| Diff | `dmigrate://tenants/{tenantId}/diffs/{diffRef}` | Diff-Metadaten oder Artefaktref |
+| Connection | `dmigrate://tenants/{tenantId}/connections/{connectionRef}` | secret-freie Connection-Metadaten |
 
-Die konkreten URI-Namen duerfen angepasst werden, muessen aber stabil
-dokumentiert und getestet werden.
+Diese tenant-scoped URI-Familie ist verbindlich und uebernimmt den
+Phase-B-Vertrag. `tenantId` in der URI ist adressierend, nicht autorisierend:
+jede Aufloesung prueft zusaetzlich den Principal-/Tenant-Scope. Eine
+tenantlose URI-Familie ist nicht Teil von Phase D.
+
+Der bestehende `ServerResourceUri`-Parser unterstuetzt bereits
+`dmigrate://tenants/{tenantId}/{kind}/{id}`. Artifact-Chunks brauchen eine
+explizite Erweiterung, weil sie eine verschachtelte URI haben. Phase D muss
+das Parse-Modell deshalb als ADT oder aequivalenten ParseResult erweitern,
+z. B.:
+
+- `TenantResourceUri(tenantId, kind, id)`
+- `ArtifactChunkResourceUri(tenantId, artifactId, chunkId)`
+
+Chunk-URIs duerfen nicht als normales Artifact-`id`-Segment kodiert werden,
+weil sonst Templates, Tenant-Pruefung und Fehlerbehandlung uneindeutig werden.
 
 ### 5.2 Resource-Read-Grenzen
 
@@ -276,6 +299,17 @@ Listen-Antworten enthalten:
 
 `totalCount` ist exakt, wenn vorhanden. `totalCountEstimate` muss als
 Naeherung gekennzeichnet sein.
+
+Alle Listen verwenden eine deterministische Standardsortierung. Default:
+
+- primaer `createdAt DESC`
+- sekundaer stabile ID `ASC`
+
+Resource-spezifische Sortierungen duerfen nur ergaenzt werden, wenn sie
+dokumentiert und getestet sind. Cursor muessen an Tenant, Filter, Limit,
+Sortierung und letzte Sort-Keys gebunden sein. Dadurch bleiben `items` und
+`nextCursor` auch bei gleichzeitigen Inserts/Deletes stabil genug, um keine
+Duplikate oder Luecken durch nichtdeterministische Reihenfolge zu erzeugen.
 
 ### 6.3 Tool-spezifische Hinweise
 
@@ -400,6 +434,9 @@ Verbindliche Regeln:
 
 - Resource-Typen und URI-Templates festlegen.
 - Parser und Validator fuer Resource-URIs implementieren.
+- `ServerResourceUri` oder ein Nachfolgemodell um eine explizite
+  `ArtifactChunkResourceUri(tenantId, artifactId, chunkId)`-Variante
+  erweitern.
 - Fehler-Mapping fuer ungueltige, fehlende und fremde Ressourcen definieren.
 
 ### 10.2 Store-/Index-Abstraktionen erweitern
@@ -414,6 +451,16 @@ Verbindliche Regeln:
 - `PageRequest` / `PageResult` im gemeinsamen Vertrag nutzen oder ergaenzen.
 - Limit-Obergrenzen definieren.
 - Cursor-Kapselung im MCP-Adapter implementieren.
+- deterministische Standardsortierung (`createdAt DESC`, `id ASC`) und
+  Cursor-Bindung an Tenant, Filter, Limit, Sortierung und letzte Sort-Keys
+  implementieren.
+- Kompatibilitaetspfad fuer Phase-B-Cursor planen: bestehende
+  Base64-JSON-Cursor (`kind`, `innerToken`) duerfen fuer Phase-B-
+  Entwicklungsdaten entweder weiter gelesen und in neue HMAC-gekapselte
+  Cursor umgeschrieben oder mit klarer `VALIDATION_ERROR` plus
+  dokumentiertem Breaking-Change abgewiesen werden. Vor einem oeffentlichen
+  Adaptervertrag ist die zweite Variante erlaubt; nach Veroeffentlichung ist
+  ein Migrations-/Dual-Read-Pfad Pflicht.
 - Negative Tests fuer manipulierte Cursor schreiben.
 
 ### 10.4 Discovery-Tools implementieren
@@ -452,6 +499,10 @@ Verbindliche Regeln:
 ## 11. Abnahmekriterien
 
 - Listen liefern stabile `items` und `nextCursor`.
+- Listen verwenden eine dokumentierte deterministische Sortierung,
+  mindestens `createdAt DESC`, `id ASC`.
+- Cursor sind an Tenant, Filter, Limit, Sortierung und letzte Sort-Keys
+  gebunden.
 - `totalCount` ist exakt, wenn vorhanden.
 - `totalCountEstimate` ist optional und als Naeherung gekennzeichnet.
 - modifizierte oder fremde Cursor-/Pagination-Token liefern
@@ -473,6 +524,12 @@ Verbindliche Regeln:
 - `resources/list` und `resources/templates/list` nutzen dieselben
   Resolver-/Tenant-Regeln wie `resources/read`.
 - keine Discovery-, Resource- oder Audit-Antwort enthaelt rohe Secrets.
+- MCP-Projektionen von Connection-Refs enthalten weder `credentialRef` noch
+  `providerRef`; erlaubt sind nur secret-freie Ersatzfelder wie
+  `hasCredential`, `providerKind`, `sensitivity` und `allowedOperations`.
+- tenantlose Resource-URIs werden nicht akzeptiert.
+- Artifact-Chunk-URIs werden als eigene verschachtelte Resource-URI-Variante
+  geparst und getestet.
 
 ---
 
@@ -486,4 +543,3 @@ Connection-Ref-Vertraege anbindet.
 Phase E darf keine eigenen Resource-URI- oder Connection-Ref-Modelle
 einfuehren. Wenn Start-Tools zusaetzliche Metadaten brauchen, werden die in
 Phase D eingefuehrten Store-/Index-Vertraege erweitert.
-
