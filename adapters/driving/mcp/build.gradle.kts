@@ -38,6 +38,9 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("com.fasterxml.jackson.core:jackson-databind:${rootProject.properties["jacksonVersion"]}")
 
+    // §12.10 — File-backed StdioTokenStore akzeptiert .json und .yaml/.yml.
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:${rootProject.properties["jacksonVersion"]}")
+
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")

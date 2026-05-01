@@ -42,6 +42,8 @@ kover {
                     "dev.dmigrate.server.ports.SyncEffectIdempotencyStore",
                     "dev.dmigrate.server.ports.ApprovalGrantStore",
                     "dev.dmigrate.server.ports.AuditSink",
+                    "dev.dmigrate.server.ports.StdioTokenStore",
+                    "dev.dmigrate.server.ports.StdioTokenGrant",
                     "dev.dmigrate.server.ports.quota.QuotaStore",
                     "dev.dmigrate.server.ports.SchemaIndexEntry",
                     "dev.dmigrate.server.ports.ProfileIndexEntry",

@@ -1,10 +1,13 @@
 package dev.dmigrate.mcp.server
 
+import dev.dmigrate.mcp.auth.FileStdioTokenStore
+import dev.dmigrate.mcp.auth.StdioPrincipalResolver
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
+import dev.dmigrate.server.ports.StdioTokenStore
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -75,19 +78,40 @@ object McpServerBootstrap {
         return McpStartOutcome.Started(KtorHandle(engine, resolvedPort))
     }
 
+    /**
+     * @param tokenStoreOverride bypasses the file-backed default
+     *  ([FileStdioTokenStore.load]) — tests inject an in-memory
+     *  `StdioTokenStore` here so they never need to write a token file
+     *  to disk. Production callers leave this `null`; the resolver
+     *  falls back to `config.stdioTokenFile` (or "no registry
+     *  configured" if the field is also null).
+     * @param tokenSupplier `DMIGRATE_MCP_STDIO_TOKEN` accessor;
+     *  defaults to the OS env var. Tests inject a deterministic
+     *  supplier.
+     */
     fun startStdio(
         config: McpServerConfig,
         input: InputStream = System.`in`,
         output: OutputStream = System.out,
         serverVersion: String = "0.0.0",
+        tokenStoreOverride: StdioTokenStore? = null,
+        tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
     ): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
         RuntimeBootstrap.initialize()
+        val store = tokenStoreOverride ?: config.stdioTokenFile?.let(FileStdioTokenStore::load)
+        // §4.2 / §6.7: a missing/unknown principal does NOT crash the
+        // server — initialize is auth-exempt; tool/resource calls in
+        // later phases translate AuthRequired into AUTH_REQUIRED.
+        val resolution = StdioPrincipalResolver(tokenSupplier, store).resolve()
         val service: McpService = McpServiceImpl(serverVersion)
-        val rpc = StdioJsonRpc(input, output, service).apply { start() }
+        val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
+            .apply { start() }
         return McpStartOutcome.Started(StdioHandle(rpc))
     }
+
+    private const val STDIO_TOKEN_ENV: String = "DMIGRATE_MCP_STDIO_TOKEN"
 }
 
 private class KtorHandle(

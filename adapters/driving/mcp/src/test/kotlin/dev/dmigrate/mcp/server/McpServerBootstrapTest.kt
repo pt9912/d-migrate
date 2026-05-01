@@ -1,5 +1,12 @@
 package dev.dmigrate.mcp.server
 
+import dev.dmigrate.mcp.auth.StdioPrincipalResolution
+import dev.dmigrate.mcp.auth.StdioTokenFingerprint
+import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
+import dev.dmigrate.server.core.principal.PrincipalId
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.ports.StdioTokenGrant
+import dev.dmigrate.server.ports.StdioTokenStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.inspectors.forAtLeastOne
 import io.kotest.matchers.ints.shouldBeGreaterThan
@@ -9,6 +16,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.Socket
+import java.time.Instant
 
 class McpServerBootstrapTest : FunSpec({
 
@@ -79,4 +87,74 @@ class McpServerBootstrapTest : FunSpec({
         val outcome = McpServerBootstrap.startStdio(McpServerConfig())
         outcome.shouldBeInstanceOf<McpStartOutcome.ConfigError>()
     }
+
+    test("startStdio without env yields AuthRequired in the bound resolution") {
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(authMode = AuthMode.DISABLED),
+            input = ByteArrayInputStream(ByteArray(0)),
+            output = ByteArrayOutputStream(),
+            tokenSupplier = { null },
+        )
+        outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
+        try {
+            // The handle exposes a StdioJsonRpc which carries the bound
+            // resolution; we reach in via a known wrapper. Failing here
+            // would mean the bootstrap dropped the resolution silently.
+            val rpc = handleRpc(outcome.handle)
+            val resolution = rpc.principalResolution
+            resolution.shouldBeInstanceOf<StdioPrincipalResolution.AuthRequired>()
+            resolution.reason shouldBe "DMIGRATE_MCP_STDIO_TOKEN not set"
+        } finally {
+            outcome.handle.close()
+        }
+    }
+
+    test("startStdio with valid token + override store yields Resolved principal") {
+        val token = "tok_alice"
+        val fp = StdioTokenFingerprint.of(token)
+        val store = object : StdioTokenStore {
+            override fun lookup(tokenFingerprint: String) =
+                if (tokenFingerprint == fp) {
+                    StdioTokenGrant(
+                        principalId = PrincipalId("alice"),
+                        tenantId = TenantId("acme"),
+                        scopes = setOf("dmigrate:read"),
+                        isAdmin = false,
+                        auditSubject = "alice@acme",
+                        expiresAt = Instant.now().plusSeconds(3600),
+                    )
+                } else {
+                    null
+                }
+        }
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(authMode = AuthMode.DISABLED),
+            input = ByteArrayInputStream(ByteArray(0)),
+            output = ByteArrayOutputStream(),
+            tokenStoreOverride = store,
+            tokenSupplier = { token },
+        )
+        outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
+        try {
+            val rpc = handleRpc(outcome.handle)
+            val resolution = rpc.principalResolution
+            resolution.shouldBeInstanceOf<StdioPrincipalResolution.Resolved>()
+            resolution.principal.principalId shouldBe PrincipalId("alice")
+        } finally {
+            outcome.handle.close()
+        }
+    }
 })
+
+/**
+ * Reflection helper — `StdioHandle` is private to McpServerBootstrap.kt.
+ * Tests need at the bound `StdioJsonRpc` to assert the resolution; doing
+ * this via reflection avoids leaking the private wrapper into the public
+ * surface of the bootstrap module.
+ */
+private fun handleRpc(handle: McpServerHandle): StdioJsonRpc {
+    val cls = handle.javaClass
+    val field = cls.getDeclaredField("rpc")
+    field.isAccessible = true
+    return field.get(handle) as StdioJsonRpc
+}

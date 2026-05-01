@@ -1,5 +1,6 @@
 package dev.dmigrate.mcp.transport.stdio
 
+import dev.dmigrate.mcp.auth.StdioPrincipalResolution
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.transport.McpEndpointFactory
 import org.slf4j.LoggerFactory
@@ -15,6 +16,13 @@ import java.io.OutputStream
  * responses through an [NdjsonMessageConsumer] on [output]. The reader
  * loop runs on a daemon thread; [stop] unblocks the loop.
  *
+ * @param principalResolution AP 6.7 — the bound stdio principal (or
+ *  the reason no principal could be derived). Initialize itself does
+ *  not require a principal (parallel to HTTP §12.14 — `initialize` is
+ *  exempt from auth). Tool-/resource-dispatch in Phase C/D MUST consult
+ *  this field and translate `AuthRequired` into `AUTH_REQUIRED`. The
+ *  field is `null` only for tests / internal use that explicitly
+ *  bypass principal binding.
  * @param closeInputOnStop default `true` — closing the input stream
  *  is the only reliable way to unblock a `read()` on `System.in`. Set
  *  `false` only when the input is a shared stream that the server
@@ -25,6 +33,7 @@ class StdioJsonRpc(
     input: InputStream,
     output: OutputStream,
     service: McpService,
+    val principalResolution: StdioPrincipalResolution? = null,
     private val closeInputOnStop: Boolean = true,
 ) {
     private val jsonHandler = McpEndpointFactory.jsonHandler()
