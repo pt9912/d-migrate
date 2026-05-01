@@ -1763,8 +1763,11 @@ sealed interface ToolCallOutcome {
   1. `toolRegistry.findHandler(params.name)` — `null` -> JSON-RPC
      `-32601` "Method not found, unknown tool '<name>'" (NICHT als
      Tool-Result mit `isError=true`).
-  2. `principalProvider()` — `null` -> Tool-Result mit `isError=true`
-     und `ToolErrorEnvelope.code = AUTH_REQUIRED` (§4.2/§12.15).
+  2. `currentPrincipal.get()` — `null` -> Tool-Result mit
+     `isError=true` und `ToolErrorEnvelope.code = AUTH_REQUIRED`
+     (§4.2/§12.15). Der Toolname landet in `details` als
+     `{"key":"toolName", "value":"<name>"}` (parallel zu
+     `UnsupportedToolOperationException.toolName`).
   3. `handler.handle(context)`:
      - `Success` -> `ToolsCallResult(content, isError=false)`
      - `Error(envelope)` -> Tool-Result mit `isError=true` (Envelope in
@@ -1773,6 +1776,44 @@ sealed interface ToolCallOutcome {
        `ToolErrorEnvelope` -> wie `Error`.
      - alles andere -> `INTERNAL_AGENT_ERROR`-Envelope.
 
+**Principal-Bindung (HTTP vs stdio)**
+
+- `McpServiceImpl(initialPrincipal: PrincipalContext?)` setzt einen
+  `AtomicReference`-Slot beim Konstruieren.
+- `McpServiceImpl.bindPrincipal(p)` aktualisiert den Slot zur Laufzeit.
+- HTTP: `McpHttpRoute.dispatchAndRespond` ruft `bindPrincipal(...)`
+  vor jedem Dispatch mit dem in Schritt 5 (Bearer-Validation) frisch
+  validierten Principal auf — §12.14 verlangt per-request
+  Source-of-truth, nicht den Initialize-Snapshot.
+- stdio: `McpServerBootstrap.startStdio` ruft `bindPrincipal` NICHT
+  nach dem Bootstrap auf — der stdio-Token-Principal ist statisch fuer
+  die Lebenszeit des Prozesses (§12.15).
+- `bindPrincipal(null)` ist erlaubt und produziert beim naechsten
+  `tools/call` `AUTH_REQUIRED`.
+
+**Envelope-Wire-Shape (verbindlich)**
+
+```json
+{
+  "code": "<TOOL_ERROR_CODE>",
+  "message": "<text>",
+  "details": [
+    { "key": "<key>", "value": "<value>" },
+    ...
+  ],
+  "requestId": "<id>"   // omitted when ToolErrorEnvelope.requestId == null
+}
+```
+
+- `details` ist eine JSON-ARRAY von `{key, value}`-Objekten, NICHT ein
+  Object. Begruendung: `ValidationErrorException` emittiert legitim
+  mehrere Details mit demselben Key (z. B. mehrere Verstoesse auf
+  demselben Feld); ein objektartiges `details` wuerde Duplikate
+  schweigend dropped.
+- `requestId` wird bei `null` weggelassen (kein literales
+  `"requestId": null`).
+- Reihenfolge der Details bleibt stabil (Liste).
+
 **`UNSUPPORTED_TOOL_OPERATION` vs `Method not found` (kritische
 Unterscheidung)**
 
@@ -1780,9 +1821,9 @@ Unterscheidung)**
   *Method not found*. Client muss seinen Spec-Stand pruefen.
 - bekannter Toolname ohne Phase-B-Handler -> Tool-Result mit
   `isError=true`, Envelope `code=UNSUPPORTED_TOOL_OPERATION`,
-  `details=[{"toolName":<name>}, {"operation":<title>}]`. Client weiss
-  "Tool ist im Vertrag, aber dieser Server-Build implementiert es noch
-  nicht".
+  `details=[{"key":"toolName","value":"<name>"},
+  {"key":"operation","value":"<title>"}]`. Client weiss "Tool ist im
+  Vertrag, aber dieser Server-Build implementiert es noch nicht".
 
 **`capabilities_list`-Output (verbindlich)**
 
@@ -1813,17 +1854,32 @@ Unterscheidung)**
   (`v1`).
 - Output erscheint in `tools/call`-`content[0]` als
   `type=text`, `mimeType=application/json`.
+- `inputSchema` und `outputSchema` werden BEWUSST ausgelassen — sie
+  sind via `tools/list` reachable; die `capabilities_list`-Projektion
+  bleibt schlank.
+- `scopeTable` invertiert die `(method, scopes)`-Map nach
+  `(scope, methods)`. Tools mit mehreren Pflicht-Scopes erscheinen
+  unter JEDEM dieser Scopes (Drop wuerde §4.4 Protected Resource
+  Metadata verfaelschen). Methods mit leerer Scope-Menge (z. B.
+  `initialize`, `notifications/initialized`) werden NICHT projiziert.
 
 **Bootstrap-Verhalten**
 
 - `McpServerBootstrap.startHttp` und `startStdio` akzeptieren beide
   einen optionalen `toolRegistry: ToolRegistry`-Parameter. Default:
   `PhaseBRegistries.toolRegistry(config.scopeMapping)`.
+- `PhaseBRegistries.toolRegistry(scopeMapping)` wirft
+  `IllegalStateException` wenn `capabilities_list` nicht im Mapping
+  steht — §12.11 verlangt mindestens diesen einen funktionsfaehigen
+  Tool, ein zufaellig truncated Mapping wuerde sonst still ein Server
+  ohne nutzbare Tools erzeugen.
 - Wenn beide Transporte im selben Prozess laufen, MUSS der Caller
   dieselbe Registry-Instanz uebergeben (§6.8 Akzeptanz). Test-Hooks
   nutzen den Override fuer in-memory Registries.
 - `startHttp` erstellt pro HTTP-Session einen frischen
-  `McpServiceImpl`, der die *gemeinsame* `ToolRegistry`-Instanz teilt.
+  `McpServiceImpl`, der die *gemeinsame* `ToolRegistry`-Instanz teilt
+  und seinen Principal pro Request via `bindPrincipal` aktualisiert
+  bekommt.
 
 **`ServerCapabilities` (Initialize)**
 
@@ -1847,7 +1903,9 @@ Unterscheidung)**
   Unsupported, andere Tools schon; Stub-Schemas advertiseren
   Draft-2020-12; `requiredScopes` mirror das Mapping.
 - `tools/list` ueber `McpServiceImpl`: liefert Metadaten mit
-  Stub-Schemas, `nextCursor=null`.
+  Stub-Schemas, `nextCursor=null`; leere Registry liefert leere Liste;
+  MCP-Protokoll-Methoden (`tools/list`, `resources/*`,
+  `connections/list`) erscheinen NICHT in der Tool-Projektion.
 - `tools/call`:
   - `capabilities_list` -> Erfolgreicher Snapshot.
   - unbekannter Name -> JSON-RPC `-32601`.
@@ -1855,8 +1913,22 @@ Unterscheidung)**
     `code=UNSUPPORTED_TOOL_OPERATION`.
   - Custom-Handler wirft `ApplicationException` -> `isError=true`,
     Envelope-Details aus `details()`.
-  - fehlender Principal -> `isError=true`, `code=AUTH_REQUIRED`.
+  - Custom-Handler liefert `ToolCallOutcome.Error(envelope)` ->
+    `isError=true`, Envelope wird verbatim auf den Wire serialisiert
+    (inkl. `requestId`, falls gesetzt).
+  - fehlender Principal -> `isError=true`, `code=AUTH_REQUIRED`,
+    `details=[{"key":"toolName","value":"<name>"}]`.
   - unbekannter Name MIT fehlendem Principal -> trotzdem `-32601`
     (Reihenfolge: Lookup vor Auth).
   - Argumente werden verbatim als `JsonElement` durchgereicht.
+  - Envelope-`details` mit doppelten Keys (z. B. zwei
+    `ValidationViolation`s auf demselben Feld) werden als
+    JSON-Array beide erhalten — kein Map-Collapse.
+- `bindPrincipal`: setzt/entfernt den Principal zur Laufzeit;
+  Auswirkung wird beim naechsten `tools/call` sichtbar.
+- `CapabilitiesListReadOnlyHandler.scopeTable`: Multi-Scope-Tools
+  erscheinen unter jedem Scope; leere-Scope-Methoden werden
+  weggelassen.
+- `PhaseBRegistries.toolRegistry({})` ohne `capabilities_list` ->
+  `IllegalStateException`.
 - `ServerCapabilities.tools` ist nach AP 6.8 `{"listChanged": false}`.
