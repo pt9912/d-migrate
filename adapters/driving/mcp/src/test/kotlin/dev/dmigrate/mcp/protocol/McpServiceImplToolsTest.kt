@@ -293,7 +293,8 @@ class McpServiceImplToolsTest : FunSpec({
         )
         val initOut = sut.initialize(InitializeParams(McpProtocol.MCP_PROTOCOL_VERSION)).get()
         initOut.capabilities.tools shouldBe mapOf("listChanged" to false)
-        initOut.capabilities.resources shouldBe null
+        // AP 6.9 lit up resources too.
+        initOut.capabilities.resources shouldBe mapOf("listChanged" to false, "subscribe" to false)
     }
 
     test("ToolsCallContent for a successful call propagates type/text/mimeType") {

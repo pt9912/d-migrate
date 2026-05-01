@@ -6,6 +6,10 @@ import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.registry.ToolContent
 import dev.dmigrate.mcp.registry.ToolDescriptor
 import dev.dmigrate.mcp.registry.ToolRegistry
+import dev.dmigrate.mcp.resources.PhaseBResourceTemplates
+import dev.dmigrate.mcp.resources.ResourceStores
+import dev.dmigrate.mcp.resources.ResourcesListCursor
+import dev.dmigrate.mcp.resources.ResourcesListHandler
 import dev.dmigrate.server.application.error.AuthRequiredException
 import dev.dmigrate.server.application.error.DefaultErrorMapper
 import dev.dmigrate.server.application.error.ErrorMapper
@@ -45,11 +49,13 @@ class McpServiceImpl(
     private val toolRegistry: ToolRegistry = ToolRegistry.builder().build(),
     initialPrincipal: PrincipalContext? = null,
     private val errorMapper: ErrorMapper = DefaultErrorMapper(),
+    resourceStores: ResourceStores = ResourceStores.empty(),
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
     private val currentPrincipal = AtomicReference(initialPrincipal)
     private val gson = GsonBuilder().disableHtmlEscaping().create()
+    private val resourcesListHandler = ResourcesListHandler(resourceStores)
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
@@ -78,9 +84,10 @@ class McpServiceImpl(
         }
         negotiated.set(params.protocolVersion)
         val capabilities = ServerCapabilities(
-            // §5.3: tools is set once `tools/list` works (AP 6.8).
-            // listChanged stays absent until subscriptions arrive.
+            // §5.3: tools lit up in AP 6.8, resources in AP 6.9.
+            // listChanged stays false until subscriptions ship.
             tools = mapOf("listChanged" to false),
+            resources = mapOf("listChanged" to false, "subscribe" to false),
         )
         val result = InitializeResult(
             protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION,
@@ -110,6 +117,39 @@ class McpServiceImpl(
             principal = principal,
         )
         return CompletableFuture.completedFuture(dispatch(handler, context))
+    }
+
+    override fun resourcesList(params: ResourcesListParams?): CompletableFuture<ResourcesListResult> {
+        val principal = currentPrincipal.get()
+            ?: return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
+                ),
+            )
+        val cursor = try {
+            ResourcesListCursor.decode(params?.cursor)
+        } catch (e: IllegalArgumentException) {
+            return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(ResponseErrorCode.InvalidParams, e.message ?: "invalid cursor", null),
+                ),
+            )
+        }
+        return CompletableFuture.completedFuture(resourcesListHandler.list(principal, cursor))
+    }
+
+    override fun resourcesTemplatesList(
+        params: ResourcesTemplatesListParams?,
+    ): CompletableFuture<ResourcesTemplatesListResult> {
+        // §6.9: Phase B publishes a static template set; no pagination
+        // needed because the list is short and stable. Cursor is
+        // accepted but ignored.
+        return CompletableFuture.completedFuture(
+            ResourcesTemplatesListResult(
+                resourceTemplates = PhaseBResourceTemplates.ALL,
+                nextCursor = null,
+            ),
+        )
     }
 
     private fun dispatch(

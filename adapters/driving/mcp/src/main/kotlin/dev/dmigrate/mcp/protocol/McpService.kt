@@ -31,4 +31,10 @@ interface McpService {
 
     @JsonRequest("tools/call")
     fun toolsCall(params: ToolsCallParams): CompletableFuture<ToolsCallResult>
+
+    @JsonRequest("resources/list")
+    fun resourcesList(params: ResourcesListParams?): CompletableFuture<ResourcesListResult>
+
+    @JsonRequest("resources/templates/list")
+    fun resourcesTemplatesList(params: ResourcesTemplatesListParams?): CompletableFuture<ResourcesTemplatesListResult>
 }

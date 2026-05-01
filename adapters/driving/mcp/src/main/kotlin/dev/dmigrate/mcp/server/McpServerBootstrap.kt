@@ -7,6 +7,7 @@ import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.registry.PhaseBRegistries
 import dev.dmigrate.mcp.registry.ToolRegistry
+import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
@@ -67,6 +68,7 @@ object McpServerBootstrap {
         config: McpServerConfig,
         serverVersion: String = "0.0.0",
         toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
+        resourceStores: ResourceStores = ResourceStores.empty(),
     ): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
@@ -93,6 +95,7 @@ object McpServerBootstrap {
                         McpServiceImpl(
                             serverVersion = serverVersion,
                             toolRegistry = toolRegistry,
+                            resourceStores = resourceStores,
                         )
                     },
                 )
@@ -122,6 +125,7 @@ object McpServerBootstrap {
         tokenStoreOverride: StdioTokenStore? = null,
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
         toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
+        resourceStores: ResourceStores = ResourceStores.empty(),
     ): McpStartOutcome {
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
@@ -136,6 +140,7 @@ object McpServerBootstrap {
             serverVersion = serverVersion,
             toolRegistry = toolRegistry,
             initialPrincipal = principal,
+            resourceStores = resourceStores,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }
