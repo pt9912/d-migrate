@@ -1363,6 +1363,9 @@ Weitere Discovery-Tools:
 Gemeinsame Regeln:
 
 - Filter sind allowlist-basiert
+- fachliche Listen-Tools behalten `tenantId` als Phase-B-Wire-Feld; es ist
+  adressierend, nicht autorisierend, und wird gegen den Principal-Tenant-Scope
+  validiert
 - Paginierung nutzt den eingefrorenen Phase-B-Wire-Vertrag `pageSize` und
   `cursor`; `limit` ist kein Alias, solange die JSON-Schemas
   `additionalProperties=false` verwenden
@@ -2132,7 +2135,9 @@ Abnahmekriterien:
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list`
   auffindbar, auch wenn die Persistenz intern ueber typisierte
   Artefakte erfolgt
-- fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`
+- Ressourcen ausserhalb des erlaubten Principal-Tenant-Scopes liefern
+  `TENANT_SCOPE_DENIED`; Ressourcen im erlaubten Tenant ohne Sichtbarkeit fuer
+  den Principal liefern no-oracle `RESOURCE_NOT_FOUND`
 - sensitive Connection-Refs liefern nur secret-freie `allowedOperations`- und
   Policy-Hinweise; Phase D implementiert dadurch keine Start-Tools fuer
   `schema_compare_start`, Reverse, Import oder Transfer

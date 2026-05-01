@@ -52,8 +52,8 @@ Nach Phase D soll gelten:
 - Clients koennen Resource-URIs aus Discovery-Antworten gezielt lesen.
 - grosse Inhalte werden ueber Chunk-Templates oder Artefaktreferenzen
   adressiert, nicht inline in Discovery-Antworten ausgeliefert.
-- fremde Tenant-Ressourcen werden nicht sichtbar und nicht durch Details
-  bestaetigt.
+- Ressourcen ausserhalb des erlaubten Tenant-Scopes werden nicht sichtbar und
+  nicht durch Details bestaetigt.
 - Connection-Refs sind auffindbar, enthalten aber keine Secrets.
 - CLI und MCP nutzen denselben adapterneutralen Connection-Ref-Bootstrap.
 
@@ -170,7 +170,9 @@ veroeffentlicht, muessen Tokens adapterseitig gekapselt werden:
 - tenant- und filtergebunden
 - ablauf- oder versionsfaehig, falls der Store das benoetigt
 
-Manipulierte Tokens liefern `VALIDATION_ERROR`, niemals fremde Daten.
+Diese Regel gilt fuer Listen-Cursor und fuer Chunk-Fortsetzungen wie
+`nextChunkCursor`. Manipulierte Tokens liefern `VALIDATION_ERROR`, niemals
+fremde Daten.
 
 ### 4.3 Connection-Refs sind secret-frei
 
@@ -267,6 +269,16 @@ Groessere Ressourcen liefern:
 - naechsten Chunk-Cursor
 - Groessen- und Hash-Metadaten, soweit vorhanden
 
+Chunk-Fortsetzungen duerfen nicht als nackte `chunkId`-Cursor ausgegeben werden.
+Erlaubt sind:
+
+- tenant-scoped `nextChunkUri` wie
+  `dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}` fuer
+  den naechsten `resources/read`-Aufruf
+- HMAC-gekapselte `nextChunkCursor` fuer Tool-Pfade wie `artifact_chunk_get`,
+  gebunden an Tenant, Resource-/Artifact-ID, Byte-Range bzw. Chunk-ID und
+  optional Version/Expiry
+
 ### 5.3 `resources/read`
 
 `resources/read` ist ein eigenes Deliverable in Phase D. Der Request bleibt
@@ -294,8 +306,8 @@ Verbindliche Fehler:
 - `RESOURCE_NOT_FOUND` fuer nicht existente, abgelaufene oder fuer den
   Principal nicht sichtbare bzw. nicht autorisierte Ressourcen im erlaubten
   Tenant
-- `TENANT_SCOPE_DENIED` fuer fremde Ressourcen, sofern der Pfad den Tenant-
-  Scope verletzt
+- `TENANT_SCOPE_DENIED` fuer Ressourcen-URIs oder explizite `tenantId`-
+  Parameter, deren Tenant ausserhalb des erlaubten Principal-Tenant-Scopes liegt
 - `VALIDATION_ERROR` fuer syntaktisch ungueltige Resource-URIs, Cursor oder
   Filter
 - `AUTH_REQUIRED` / `FORBIDDEN` gemaess bestehendem Auth-/Scope-Mapping
@@ -303,6 +315,9 @@ Verbindliche Fehler:
 Direkte `resources/read`-Zugriffe auf fremde Jobs, Artefakte oder andere
 Ressourcen im erlaubten Tenant werden no-oracle wie nicht vorhandene Ressourcen
 behandelt, ausser ein explizites Admin-/Scope-Modell erlaubt den Zugriff.
+Kurzform: falscher Tenant-Scope ergibt `TENANT_SCOPE_DENIED`; richtiger Tenant,
+aber keine Sichtbarkeit auf den konkreten Datensatz, ergibt
+`RESOURCE_NOT_FOUND`.
 Fehler duerfen keine fremden Ressourcendetails leaken.
 
 ---
@@ -313,6 +328,7 @@ Fehler duerfen keine fremden Ressourcendetails leaken.
 
 Alle Listen-Tools verwenden konsistente Parameter:
 
+- `tenantId`
 - `pageSize`
 - `cursor`
 - `type` oder resource-spezifischer Filter, falls sinnvoll
@@ -320,6 +336,14 @@ Alle Listen-Tools verwenden konsistente Parameter:
 - `createdBefore`
 - `status`, wo fachlich passend
 - `jobId`, wo Artefakte/Profile/Diffs an Jobs gekoppelt sind
+
+`tenantId` bleibt fuer Phase D Teil des Phase-B-Wire-Vertrags. Es ist
+adressierend, nicht autorisierend: fehlt es, wird `principal.effectiveTenantId`
+genutzt; ist es gesetzt, muss es im erlaubten Tenant-Scope des Principals
+liegen. Cross-Tenant-Discovery fuer normale Principals bleibt ausserhalb von
+Phase D und liefert `TENANT_SCOPE_DENIED`. Innerhalb des erlaubten Tenants
+werden Listen principal-gefiltert, nicht mit Existenz-/Sichtbarkeitsfehlern
+angereichert.
 
 Filter werden strikt validiert. Unbekannte Filter liefern `VALIDATION_ERROR`.
 
@@ -350,9 +374,10 @@ Standardsortierung. Default:
 
 Resource-spezifische Sortierungen duerfen nur ergaenzt werden, wenn sie
 dokumentiert und getestet sind. Cursor muessen an Tenant, Filter, `pageSize`,
-Sortierung und letzte Sort-Keys gebunden sein. Dadurch bleiben `items` und
-`nextCursor` auch bei gleichzeitigen Inserts/Deletes stabil genug, um keine
-Duplikate oder Luecken durch nichtdeterministische Reihenfolge zu erzeugen.
+Sortierung und letzte Sort-Keys gebunden sein. Dadurch bleiben die typisierten
+Collection-Felder und `nextCursor` auch bei gleichzeitigen Inserts/Deletes
+stabil genug, um keine Duplikate oder Luecken durch nichtdeterministische
+Reihenfolge zu erzeugen.
 
 `pageSize` bleibt fuer Phase D der Wire-Vertrag aus Phase B. `limit` wird in
 Phase D nicht als Alias eingefuehrt, weil die bestehenden JSON-Schemas
@@ -530,6 +555,10 @@ Verbindliche Regeln:
 - deterministische Standardsortierung (`createdAt DESC`, `id ASC`) und
   Cursor-Bindung an Tenant, Filter, `pageSize`, Sortierung und letzte Sort-Keys
   fuer fachliche Listen-Tools implementieren.
+- `tenantId` als Phase-B-Wire-Feld fuer fachliche Listen-Tools beibehalten und
+  gegen `PrincipalContext.allowedTenantIds` validieren.
+- Chunk-Fortsetzungen als tenant-/resource-gebundene `nextChunkUri` oder
+  HMAC-gekapselte `nextChunkCursor` modellieren.
 - `resources/list` beim Phase-B-Resource-Walk
   `JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS -> CONNECTIONS`
   belassen und den family-basierten Cursor (`kind`, `innerToken`) nur
@@ -594,13 +623,18 @@ Verbindliche Regeln:
   und letzte Sort-Keys gebunden.
 - `resources/list` folgt dem Phase-B-Resource-Walk und setzt keine globale
   `createdAt`-Sortierung ueber alle Resource-Familien voraus.
+- `tenantId` bleibt in fachlichen Listen-Tool-Schemas erhalten; es ist
+  adressierend, nicht autorisierend, und tenant-fremde Werte liefern
+  `TENANT_SCOPE_DENIED`.
 - `totalCount` ist exakt, wenn vorhanden.
 - `totalCountEstimate` ist optional und als Naeherung gekennzeichnet.
 - modifizierte oder fremde Cursor-/Pagination-Token liefern
   `VALIDATION_ERROR`, niemals fremde Tenant-Daten.
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list` auffindbar,
   auch wenn die Persistenz intern ueber typisierte Artefakte erfolgt.
-- fremde Tenant-Ressourcen liefern `TENANT_SCOPE_DENIED`.
+- Ressourcen ausserhalb des erlaubten Principal-Tenant-Scopes liefern
+  `TENANT_SCOPE_DENIED`; Ressourcen im erlaubten Tenant ohne Sichtbarkeit fuer
+  den Principal liefern no-oracle `RESOURCE_NOT_FOUND`.
 - sensitive Connection-Refs liefern nur secret-freie `allowedOperations`- und
   Policy-Hinweise; Phase D implementiert dadurch keine Start-Tools fuer
   `schema_compare_start`, Reverse, Import oder Transfer.
@@ -621,6 +655,9 @@ Verbindliche Regeln:
 - `resources/read` akzeptiert nur `uri`, nutzt Resolver-Dispatch, liefert
   grosse Inhalte nur ueber Artefaktrefs oder Chunk-URIs und ist mit
   Adaptertests abgedeckt.
+- Chunk-Fortsetzungen werden als tenant-scoped `nextChunkUri` oder als
+  HMAC-gekapselter `nextChunkCursor` ausgegeben; nackte `chunkId`-Cursor sind
+  nicht erlaubt.
 - `resources/read(dmigrate://capabilities)` liefert die globale, secret-freie
   Faehigkeitsbeschreibung ueber einen expliziten Capability-Resolver.
 - Initialize meldet fuer `resources` explizit `listChanged=false` und
