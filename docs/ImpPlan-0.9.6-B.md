@@ -1571,3 +1571,106 @@ class SessionState(
 - Protected Resource Metadata Golden-Test (JSON-Field-Set + -Reihenfolge)
 - Introspection-Mode mit `active: false` -> 401
 - Audience als Array enthaelt config -> akzeptiert
+
+### 12.15 stdio-Auth-Vertraege (verbindlich, fuer AP 6.7 Implementation)
+
+**Geltungsbereich**
+
+- Diese Regeln gelten ausschliesslich fuer den stdio-Transport.
+  HTTP-Auth ist §12.14.
+- stdio kennt keine Auth-Modi: die Token-Registry aus §12.10 ist die
+  einzige Principal-Quelle. `authMode` wirkt sich auf stdio nicht aus.
+
+**Token-Quelle (verbindlich)**
+
+- ausschliesslich Env-Var `DMIGRATE_MCP_STDIO_TOKEN`. CLI-Flags,
+  Config-Dateien und ENV-Aliase sind kein Tokenkanal.
+- der rohe Wert verlaesst den Aufruf-Stack nie ungehasht — er wird
+  beim Eintritt in den Resolver per `sha256_hex(utf8(token))` zu
+  einem Fingerprint, der fuer den `StdioTokenStore.lookup` benutzt
+  wird. Audit-/Log-/Fehler-Pfade sehen nur Reason-Strings, nie den
+  Token oder den Fingerprint.
+
+**Resolution-Reihenfolge (verbindlich)**
+
+1. `tokenSupplier()` lesen — `null`/leer -> `AuthRequired("DMIGRATE_MCP_STDIO_TOKEN not set")`
+2. `StdioTokenStore` vorhanden? — `null` (kein `config.stdioTokenFile`)
+   -> `AuthRequired("stdio token registry not configured")`
+3. `store.lookup(sha256_hex(token))` -> `null` ergibt
+   `AuthRequired("stdio token unknown")`
+4. `grant.expiresAt.isAfter(now)` muss `true` sein — sonst
+   `AuthRequired("stdio token expired")`. Ablauf "exakt jetzt" zaehlt
+   als abgelaufen.
+5. Erfolg: `Resolved(PrincipalContext(...))` (Mapping siehe unten).
+
+OS-User, Parent-Prozess-Daten, `pwd`, `pid` und ungeprueftes ENV
+duerfen NICHT zu einem Principal fuehren. Es gibt keinen impliziten
+Demo-Principal fuer stdio.
+
+**Grant -> PrincipalContext Mapping**
+
+```
+PrincipalContext(
+    principalId       = grant.principalId,
+    homeTenantId      = grant.tenantId,
+    effectiveTenantId = grant.tenantId,                    // kein cross-tenant Switch
+    allowedTenantIds  = setOf(grant.tenantId),             // Phase B: nur eigener Tenant
+    scopes            = grant.scopes,
+    isAdmin           = grant.isAdmin,
+    auditSubject      = grant.auditSubject,
+    authSource        = AuthSource.SERVICE_ACCOUNT,
+    expiresAt         = grant.expiresAt,
+)
+```
+
+**File-backed Default (`FileStdioTokenStore`)**
+
+- akzeptiert `.json`, `.yaml`, `.yml` — Format-Wahl ueber Datei-Endung
+  (lowercase). Keine Endung == JSON.
+- Wurzelobjekt: `{ "tokens": [ { "fingerprint": "<hex>", ... } ] }`.
+- Pflichtfelder pro Eintrag: `fingerprint`, `principalId`, `tenantId`,
+  `scopes` (Array), `auditSubject`, `expiresAt` (RFC-3339).
+- Optionale Felder: `isAdmin` (Default `false`).
+- leere/leere-blanke Scope-Strings werden gefiltert.
+- Fehlerklassen werden als `StdioTokenStoreLoadException` geworfen
+  (unreadable, malformed, fehlendes Pflichtfeld, kein RFC-3339 in
+  `expiresAt`, root nicht Objekt, `tokens` nicht Array, Eintrag nicht
+  Objekt).
+- Token-Rotation erfordert Server-Neustart — Phase B haelt die Datei
+  beim Konstruieren einmal in immutable Map. Hot-Reload ist nicht
+  zugesagt.
+
+**Bootstrap-Verhalten**
+
+- `McpServerBootstrap.startStdio` bindet die Resolution einmal beim
+  Start an `StdioJsonRpc.principalResolution`. Ein
+  `AuthRequired`-Resultat verhindert den Serverstart nicht — Initialize
+  ist auth-frei (analog zu §12.14 Schritt 5/6).
+- Tool-/Resource-Dispatch in Phase C/D MUSS die gebundene Resolution
+  konsultieren und `AuthRequired` in `AUTH_REQUIRED` (`tools/call`
+  `isError=true` mit `ToolErrorEnvelope`) bzw. JSON-RPC-Error mit
+  `ToolErrorEnvelope`-Projektion (Resources) uebersetzen.
+- Test-Hooks: `tokenStoreOverride: StdioTokenStore?` und
+  `tokenSupplier: () -> String?` sind nur fuer Tests vorgesehen;
+  Produktiv-Aufrufer lassen beide auf Default.
+
+**Test-Vertrag (AP 6.7)**
+
+- gueltiger Token + Store-Hit -> `Resolved` mit allen Mapping-Feldern
+  (Tenant, Scopes, isAdmin, auditSubject, expiresAt, authSource =
+  SERVICE_ACCOUNT)
+- fehlende Env-Var, leere Env-Var, fehlender Store, unbekannter
+  Fingerprint, abgelaufener Grant, Ablauf "exakt jetzt" -> jeweils
+  `AuthRequired` mit dem oben festgelegten Reason-Text
+- OS-User-Fallback wird explizit getestet: Resolver darf bei null-Token
+  + bestehendem Store kein `Resolved` produzieren
+- `FileStdioTokenStore`: JSON-Pfad, YAML-Pfad (`.yaml` UND `.yml`),
+  fehlendes `tokens`-Feld, nicht-Array `tokens`, nicht-Object Eintrag,
+  fehlendes Pflichtfeld, leeres Pflichtfeld, fehlendes `scopes`,
+  Scope-Filter fuer leere Strings, ungueltiges `expiresAt`, malformed
+  Body, unreadable file
+- `StdioTokenFingerprint`: bekannter SHA-256-Vektor (`abc`), Determinismus,
+  lowercase-Hex, Empty-String-Reject
+- Bootstrap-Smoketest: `startStdio` ohne Env -> Handle traegt
+  `AuthRequired`; `startStdio` mit Override-Store + Env -> Handle traegt
+  `Resolved` mit erwartetem `principalId`
