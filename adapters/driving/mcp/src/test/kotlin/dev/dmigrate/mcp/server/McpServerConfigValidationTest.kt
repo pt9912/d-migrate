@@ -141,11 +141,32 @@ class McpServerConfigValidationTest : FunSpec({
         errs.forAtLeastOne { it shouldContain "explicit allowedOrigins" }
     }
 
-    test("non-loopback bind with explicit origins validates") {
+    test("non-loopback bind with explicit origins + publicBaseUrl validates") {
         validJwks().copy(
             bindAddress = "0.0.0.0",
             allowedOrigins = setOf("https://app.example"),
+            publicBaseUrl = URI.create("https://mcp.example/"),
         ).validate().shouldBeEmpty()
+    }
+
+    test("non-loopback bind without publicBaseUrl rejects (§4.4 + §5.2)") {
+        // §4.4 verlangt eine kanonische HTTPS-URI in Protected Resource
+        // Metadata; §5.2 macht "kanonische HTTP-Resource-URI nicht
+        // bestimmbar" zum Startfehler. Ohne publicBaseUrl muesste der
+        // Server auf den Request-Origin zurueckfallen — das ist nicht
+        // kanonisch (Reverse-Proxy-Header lassen sich injizieren).
+        val errs = validJwks().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://app.example"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "publicBaseUrl" }
+    }
+
+    test("loopback bind without publicBaseUrl is fine") {
+        // Loopback uses request-derived URIs in resource_metadata —
+        // no Reverse-Proxy attack-surface there, and Protected
+        // Resource Metadata isn't normative for AuthMode.DISABLED.
+        validJwks().validate().shouldBeEmpty()
     }
 
     test("algorithmAllowlist containing 'none' rejects (§12.3)") {

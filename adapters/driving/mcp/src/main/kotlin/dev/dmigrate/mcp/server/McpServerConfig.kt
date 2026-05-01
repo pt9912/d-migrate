@@ -86,6 +86,17 @@ fun McpServerConfig.validate(): List<String> {
     if (!bindIsLoopback && allowedOrigins == McpServerConfig.DEFAULT_LOOPBACK_ORIGINS) {
         errors += "non-loopback bind '$bindAddress' requires explicit allowedOrigins"
     }
+    // §4.4 + §5.2: non-loopback HTTP MUST advertise a canonical
+    // HTTPS URI in Protected Resource Metadata. Falling back to the
+    // request's `Origin`/`Host` is not "kanonisch" — a reverse proxy
+    // can inject arbitrary headers, so the metadata document would
+    // depend on the client's request. Force `publicBaseUrl` to be
+    // set when the bind address is non-loopback so the canonical
+    // URI is build-time stable.
+    if (!bindIsLoopback && publicBaseUrl == null) {
+        errors += "non-loopback bind '$bindAddress' requires publicBaseUrl " +
+            "(canonical HTTPS URI per §4.4)"
+    }
 
     return errors
 }

@@ -22,14 +22,20 @@ vollständige Phasen-B-Spezifikation liegt in
 
 Der primäre lokale Agentenpfad ist `stdio` — ein Server-Prozess pro
 Client, gesprächsorientiert über stdin/stdout. **Auch hier ist der
-Aufrufer nicht automatisch vertrauenswürdig** (§4.2): jeder
-`tools/call` braucht einen validierten Principal aus
-`DMIGRATE_MCP_STDIO_TOKEN` plus eine Token-Registry.
+Aufrufer nicht automatisch vertrauenswürdig** (§4.2): jede Methode
+außer `initialize`/`notifications/initialized` braucht einen
+validierten Principal mit den passenden Scopes
+(`DMIGRATE_MCP_STDIO_TOKEN` plus Token-Registry).
 
 Für eine **lokale Demo** ohne Token-Registry genügt
 `AuthMode.DISABLED` über HTTP (siehe unten). stdio-Demo ohne Token
-ist möglich, aber `tools/call`-Aufrufe bekommen `AUTH_REQUIRED` —
-nur `initialize`/`tools/list`/`resources/templates/list` funktionieren.
+ist möglich, aber praktisch nutzlos — nur
+`initialize`/`notifications/initialized` sind scope-frei (§12.14
+`SCOPE_FREE_METHODS`). `tools/list`, `tools/call`, `resources/list`
+und `resources/templates/list` verlangen alle `dmigrate:read` und
+fallen ohne Principal mit `AUTH_REQUIRED` (Tool-Result-Envelope für
+`tools/call`) bzw. JSON-RPC `-32600` (Resource-/Protocol-Methoden,
+§12.8) durch.
 
 ```bash
 # stdio mit Token-Registry (lokaler Dev-Use)
