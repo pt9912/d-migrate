@@ -1932,3 +1932,161 @@ Unterscheidung)**
 - `PhaseBRegistries.toolRegistry({})` ohne `capabilities_list` ->
   `IllegalStateException`.
 - `ServerCapabilities.tools` ist nach AP 6.8 `{"listChanged": false}`.
+
+### 12.17 Resource-Discovery-Vertraege (verbindlich, fuer AP 6.9 Implementation)
+
+**Geltungsbereich**
+
+- AP 6.9 implementiert `resources/list` und `resources/templates/list`.
+- `resources/read` bleibt Phase C — Phase B liefert nur Discovery, nicht
+  den Datenpfad.
+- Beide Methoden brauchen `dmigrate:read` (§12.9).
+
+**`ToolErrorEnvelope` ist hier NICHT der Wire-Pfad**
+
+- Resource-Fehler werden als JSON-RPC-Errors modelliert (§5.5 +
+  §12.8). Sie erscheinen also NICHT als Tool-Result mit
+  `isError=true`. AP 6.9-relevante Codes:
+  - `-32602` Invalid params -> ungueltiger / nicht parsebarer Cursor.
+  - `-32600` Invalid Request -> kein Principal gebunden (Server-Fehler:
+    Bootstrap haette das verhindern muessen).
+
+**`resources/list` (verbindlich)**
+
+- Request: `{ "cursor": "<opaque>" | null | absent }`.
+- Response:
+  ```json
+  {
+    "resources": [
+      { "uri": "dmigrate://...", "name": "...", "mimeType": "application/json", "description": "..." },
+      ...
+    ],
+    "nextCursor": "<opaque>" | null
+  }
+  ```
+- `nextCursor == null` heisst "alle Resource-Familien durchgewalkt".
+- `resources` darf leer sein, auch wenn `nextCursor != null` —
+  Principal-Filter kann eine ganze Store-Page leer machen. Clients
+  MUESSEN solange paginieren bis `nextCursor == null`.
+
+**Resource-Walk (verbindlich)**
+
+Reihenfolge: `JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS ->
+CONNECTIONS`. `UPLOAD_SESSIONS` wird NICHT projiziert (kein
+MCP-Resource).
+
+Pro `resources/list`-Aufruf:
+
+1. Cursor decoden (`null` -> `(JOBS, null)`).
+2. Aktuelle Resource-Familie: `kind`, Innentoken: `innerToken`.
+3. Store fuer `kind` mit `PageRequest(pageSize, innerToken)` aufrufen.
+4. Items principal-/tenant-filtern (siehe unten).
+5. Wenn Store `nextPageToken != null`: `nextCursor = (kind,
+   nextPageToken)`. Stop.
+6. Wenn Familie ausgeschoepft und es gibt eine Folge-Familie:
+   `nextCursor = (next-kind, null)`, weiter sammeln bis pageSize voll.
+7. Wenn alle Familien durch: `nextCursor = null`.
+
+**Cursor-Format (verbindlich)**
+
+- `Base64-URL-safe(JSON({kind: <ResourceKind.name>, innerToken: <store-token>|null}))`.
+- Padding wird weggelassen.
+- Server akzeptiert auch URL-encoded form ohne Padding (Standard).
+- Decode-Fehler (Base64, JSON, unbekanntes `kind`, fehlendes `kind`)
+  -> JSON-RPC `-32602` mit kurzer Reason-Message.
+- Clients behandeln den Cursor als opaque — Server darf das Format
+  zwischen Server-Versionen aendern.
+
+**Principal-/Tenant-Filter (verbindlich)**
+
+- `tenantId = principal.effectiveTenantId` wird beim Store-Lookup gesetzt.
+- `JobRecord` und `ArtifactRecord` werden nach `isReadableBy(principal)`
+  gefiltert (visibility OWNER/TENANT/ADMIN). Damit kann eine
+  Store-Page nach Filter weniger Items haben als `pageSize` —
+  legitim.
+- `SchemaIndexEntry` / `ProfileIndexEntry` / `DiffIndexEntry` haben in
+  Phase B keine per-Record-Visibility — sie werden ungefiltert fuer
+  den Tenant zurueckgegeben.
+- `ConnectionReferenceStore.list` nimmt selbst `PrincipalContext` und
+  filtert intern nach `allowedPrincipalIds`/`allowedScopes`.
+
+**Resource-Wire-Shape (verbindlich)**
+
+- `uri` aus `ServerResourceUri.render()`.
+- `name` aus dem Record:
+  - JOB: `managedJob.jobId`
+  - ARTIFACT: `managedArtifact.filename`
+  - SCHEMA/PROFILE/DIFF: `displayName`
+  - CONNECTION: `displayName`
+- `mimeType` ist konstant `application/json` fuer alle Phase-B-Projektionen.
+- `description` ist menschenlesbarer Kontext (Operation+Status fuer
+  JOB; Kind+Size fuer ARTIFACT; usw.). Optional aber in Phase B
+  immer gesetzt.
+- ConnectionReference-Projektion DARF `credentialRef`,
+  `providerRef`, JDBC-URL oder andere Secret-Felder NICHT enthalten —
+  weder in `name`, `description` noch sonst irgendwo (§6.9 Akzeptanz).
+
+**`resources/templates/list` (verbindlich)**
+
+- Phase B liefert genau diese 7 Templates (geordnet, deterministisch):
+  ```text
+  dmigrate://tenants/{tenantId}/jobs/{jobId}
+  dmigrate://tenants/{tenantId}/artifacts/{artifactId}
+  dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}
+  dmigrate://tenants/{tenantId}/schemas/{schemaId}
+  dmigrate://tenants/{tenantId}/profiles/{profileId}
+  dmigrate://tenants/{tenantId}/diffs/{diffId}
+  dmigrate://tenants/{tenantId}/connections/{connectionId}
+  ```
+- Chunk-Template ist Pflicht (§6.9 Akzeptanz: "Templates enthalten
+  Chunk-URIs").
+- `nextCursor` ist konstant `null` (kein Paging).
+- Cursor im Request wird akzeptiert aber ignoriert.
+
+**`ServerCapabilities.resources` (Initialize)**
+
+- AP 6.9 setzt `capabilities.resources = {"listChanged": false,
+  "subscribe": false}`.
+- Beide Flags bleiben `false` bis Subscriptions / Push-Notifications
+  in einer spaeteren Iteration kommen (Phase C+).
+
+**Bootstrap-Verhalten**
+
+- `McpServerBootstrap.startHttp` und `startStdio` akzeptieren beide
+  einen optionalen `resourceStores: ResourceStores`-Parameter. Default:
+  `ResourceStores.empty()` (no-op stores).
+- Production-Aufrufer wiren echte Stores (Phase C/D); Phase-B-Tests
+  nutzen `testFixtures(:hexagon:ports-common)` InMemory-Stores.
+
+**Test-Vertrag (AP 6.9)**
+
+- `ResourcesListCursor`: encode/decode Roundtrip; null-Token-Roundtrip;
+  null-Input -> null; ungueltige Base64 -> IAE; valides Base64 mit
+  nicht-JSON -> IAE; unbekanntes `kind` -> IAE; URL-safe Encoding
+  (kein `+`, `/`, kein Padding).
+- `ResourceProjector`:
+  - Job: `name=jobId`, `description` enthaelt Operation+Status.
+  - Artifact: `name=filename`, `description` enthaelt Kind+SizeBytes.
+  - Schema/Profile/Diff: `name=displayName`.
+  - Connection: KEIN Secret in `toString()` (kein `credentialRef`,
+    kein `providerRef`, kein `vault://`); `description` enthaelt
+    Dialect+Sensitivity.
+- `PhaseBResourceTemplates`: 7 Templates in dokumentierter Reihenfolge;
+  Chunk-Template enthalten; alle MIME `application/json`.
+- `ResourcesListHandler`:
+  - leere Stores -> leere Liste, `nextCursor=null`.
+  - voll bestueckte Stores -> alle 6 Familien werden projiziert,
+    Reihenfolge stabil.
+  - OWNER-Filter blendet fremde Owner-Jobs aus.
+  - Foreign-Tenant-Records sind nicht sichtbar.
+  - `pageSize=1` liefert 1 Resource und ggf. `nextCursor`.
+  - Walk mit Cursor durchpaginiert konvergiert auf
+    `nextCursor=null`.
+  - `pageSize <= 0` -> `IllegalArgumentException`.
+- `McpServiceImpl`:
+  - `resources/templates/list` ohne Principal funktioniert (statisch).
+  - `resources/list` ohne Principal -> JSON-RPC `-32600` Invalid Request.
+  - `resources/list` mit malformed Cursor -> JSON-RPC `-32602`
+    Invalid params.
+  - `ServerCapabilities.resources = {"listChanged": false, "subscribe":
+    false}`.
