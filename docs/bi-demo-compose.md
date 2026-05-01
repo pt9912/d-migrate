@@ -6,7 +6,9 @@
 >
 > Referenzen: `docs/roadmap.md`, `docs/orchestrator-examples.md`,
 > `docs/profiling-data-quality-export.md`,
-> `docs/parquet-export-import-evaluation.md`
+> `docs/parquet-export-import-evaluation.md`,
+> [The Evolution of Business Intelligence: From Monolithic to Composable Architecture](https://www.pracdata.io/p/the-evolution-of-business-intelligence-stack),
+> [Open Source Data Engineering Landscape 2025](https://www.pracdata.io/p/open-source-data-engineering-landscape-2025)
 
 ---
 
@@ -208,4 +210,3 @@ startbar bleibt.
 - Zu viele Services machen die Demo schwerfaellig. Superset, ClickHouse und
   DuckDB sollten erst nach der Basisdemo optional hinzukommen.
 - Demo-Credentials muessen klar als nicht-produktiv markiert werden.
-
