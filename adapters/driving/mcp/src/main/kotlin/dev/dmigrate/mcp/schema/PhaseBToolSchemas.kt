@@ -22,18 +22,23 @@ package dev.dmigrate.mcp.schema
  */
 internal object PhaseBToolSchemas {
 
-    data class Pair(
+    /**
+     * Tool input/output schema bundle. Named [SchemaPair] (rather than
+     * a bare `Pair`) so callers don't have to disambiguate against
+     * Kotlin's `kotlin.Pair` at every reference site.
+     */
+    data class SchemaPair(
         val inputSchema: Map<String, Any>,
         val outputSchema: Map<String, Any>,
     )
 
     /** Lookup by tool name. Returns `null` if no schema is registered. */
-    fun forTool(name: String): Pair? = SCHEMAS[name]
+    fun forTool(name: String): SchemaPair? = SCHEMAS[name]
 
     /** All registered tool names, deterministic order (alphabetical). */
     fun toolNames(): List<String> = SCHEMAS.keys.sorted()
 
-    private val SCHEMAS: Map<String, Pair> = buildMap {
+    private val SCHEMAS: Map<String, SchemaPair> = buildMap {
         // Discovery / contract
         put("capabilities_list", schemaPair(input = emptyObject(), output = capabilitiesOutput()))
 
@@ -205,8 +210,8 @@ internal object PhaseBToolSchemas {
 
     // ---------- builders ----------
 
-    private fun schemaPair(input: Map<String, Any>, output: Map<String, Any>): Pair =
-        Pair(inputSchema = input, outputSchema = output)
+    private fun schemaPair(input: Map<String, Any>, output: Map<String, Any>): SchemaPair =
+        SchemaPair(inputSchema = input, outputSchema = output)
 
     private fun emptyObject(): Map<String, Any> = mapOf(
         JsonSchemaDialect.SCHEMA_KEYWORD to JsonSchemaDialect.SCHEMA_URI,
@@ -214,15 +219,18 @@ internal object PhaseBToolSchemas {
         "additionalProperties" to false,
     )
 
-    private fun obj(vararg fields: kotlin.Pair<String, Map<String, Any>>): SchemaBuilder =
+    private fun obj(vararg fields: Pair<String, Map<String, Any>>): SchemaBuilder =
         SchemaBuilder(properties = fields.toMap())
 
     /**
      * Mutable builder for object-type schemas. Both [required] and
      * [build] are terminal — they return the assembled
-     * `Map<String, Any>` directly. The split lets call sites end with
-     * `.required(...)` when there are required fields and `.build()`
-     * otherwise, keeping the call shape one-line short.
+     * `Map<String, Any>` directly. Call exactly ONE of them; the
+     * builder has no method that takes a `SchemaBuilder` back, so
+     * `.required(...).required(...)` is a compile error.
+     *
+     * Use `.required("a", "b")` when there are required fields,
+     * `.build()` otherwise. Keeping the call shape one-line short.
      */
     private class SchemaBuilder(
         private val properties: Map<String, Map<String, Any>>,
@@ -258,10 +266,10 @@ internal object PhaseBToolSchemas {
     )
 
     /** Listing-tools share the same input shape (cursor-based pagination). */
-    private fun listInput(itemsField: String): Pair = schemaPair(
+    private fun listInput(itemsField: String): SchemaPair = schemaPair(
         input = obj(
             "tenantId" to stringField(),
-            "pageSize" to integerField(),
+            "pageSize" to mapOf("type" to "integer", "minimum" to 1),
             "cursor" to stringField(),
         ).build(),
         output = obj(
@@ -271,7 +279,7 @@ internal object PhaseBToolSchemas {
     )
 
     /** Job-start tools share `connectionId` + scope-spec + jobId-out. */
-    private fun jobStart(primaryConnectionField: String): Pair = schemaPair(
+    private fun jobStart(primaryConnectionField: String): SchemaPair = schemaPair(
         input = obj(
             primaryConnectionField to stringField(),
             "tenantId" to stringField(),

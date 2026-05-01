@@ -2,7 +2,6 @@ package dev.dmigrate.mcp.schema
 
 import com.google.gson.GsonBuilder
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.shouldBe
 
 /**
  * Golden-file pin for the Phase B tool-schema set per
@@ -30,11 +29,22 @@ class PhaseBToolSchemasGoldenTest : FunSpec({
         if (expected == null) {
             error(
                 "Golden file '$GOLDEN_RESOURCE' missing. " +
-                    "Run with -DUPDATE_GOLDEN=true (or UPDATE_GOLDEN=true env) " +
-                    "to create it. Actual content:\n\n$actual",
+                    "Regenerate it with UPDATE_GOLDEN=true — see " +
+                    "src/test/resources/golden/README.md for the recipe. " +
+                    "Actual content:\n\n$actual",
             )
         }
-        actual shouldBe expected
+        if (actual != expected) {
+            error(
+                "Golden drift detected. The serialised schemas differ from " +
+                    "the pinned file at src/test/resources$GOLDEN_RESOURCE. " +
+                    "If this drift is intentional, regenerate with " +
+                    "UPDATE_GOLDEN=true (see golden/README.md) and commit " +
+                    "the new file alongside your schema change. " +
+                    "Otherwise, something was renamed or restructured by " +
+                    "accident — revert the offending edit.",
+            )
+        }
     }
 })
 
@@ -63,11 +73,22 @@ private fun readGolden(): String? =
     PhaseBToolSchemasGoldenTest::class.java.getResource(GOLDEN_RESOURCE)?.readText()
 
 private fun writeGolden(content: String) {
-    // Gradle's default test workingDir is the module project dir
-    // (`adapters/driving/mcp`), so a path relative to that points
-    // straight at this module's test resources. Only used under
-    // UPDATE_GOLDEN=true — never on CI.
-    val file = java.nio.file.Paths.get("src/test/resources$GOLDEN_RESOURCE").toAbsolutePath()
-    java.nio.file.Files.createDirectories(file.parent)
-    java.nio.file.Files.writeString(file, content)
+    // Resolve the source-tree path defensively: most build setups put
+    // the test workingDir at the module root (`adapters/driving/mcp`),
+    // but a future global `tasks.withType<Test> { workingDir = rootProject.projectDir }`
+    // would silently relocate the write. We probe both candidates and
+    // pick the first where `src/test/kotlin` exists (proof we're at
+    // the module root) or where the module path is reachable.
+    val candidates = listOf(
+        java.nio.file.Paths.get("src/test/resources$GOLDEN_RESOURCE"),
+        java.nio.file.Paths.get("adapters/driving/mcp/src/test/resources$GOLDEN_RESOURCE"),
+    )
+    val target = candidates.firstOrNull { java.nio.file.Files.isDirectory(it.parent.parent.parent) }
+        ?: error(
+            "cannot resolve golden file destination from cwd=${System.getProperty("user.dir")}; " +
+                "tried ${candidates.joinToString { it.toAbsolutePath().toString() }}",
+        )
+    val absolute = target.toAbsolutePath()
+    java.nio.file.Files.createDirectories(absolute.parent)
+    java.nio.file.Files.writeString(absolute, content)
 }

@@ -10,6 +10,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -66,11 +67,16 @@ class PhaseBRegistriesTest : FunSpec({
         }
     }
 
-    test("descriptor metadata uses stub JSON-Schema 2020-12 dialect for AP 6.10 swap-in") {
+    test("descriptors carry typed JSON-Schema 2020-12 input + output (AP 6.10)") {
         val registry = PhaseBRegistries.toolRegistry()
         val descriptor = registry.find("schema_validate")!!
         descriptor.inputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
         descriptor.outputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
+        // AP 6.10 swapped stub schemas for typed shapes — assert the
+        // typed contract surface so a regression to "type:object only"
+        // is caught here too.
+        descriptor.inputSchema["properties"] shouldNotBe null
+        descriptor.inputSchema["required"] shouldNotBe null
     }
 
     test("requiredScopes mirror the supplied scopeMapping") {

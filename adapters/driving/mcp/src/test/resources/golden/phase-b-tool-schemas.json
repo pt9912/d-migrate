@@ -57,7 +57,7 @@
         },
         "pageSize": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "cursor": {
           "type": "string"
@@ -415,7 +415,7 @@
         },
         "pageSize": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "cursor": {
           "type": "string"
@@ -478,7 +478,7 @@
         },
         "pageSize": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "cursor": {
           "type": "string"
@@ -623,7 +623,7 @@
         },
         "pageSize": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "cursor": {
           "type": "string"
@@ -765,7 +765,7 @@
         },
         "pageSize": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "cursor": {
           "type": "string"

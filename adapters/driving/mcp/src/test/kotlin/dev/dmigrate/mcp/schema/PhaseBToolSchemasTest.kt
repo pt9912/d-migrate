@@ -7,9 +7,15 @@ import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 
+/**
+ * MCP-protocol method names that share the scope-mapping with tools
+ * but never appear in `tools/list` (and therefore never get an
+ * input/output schema). `tools/call` is intentionally NOT here: it
+ * isn't a key in `DEFAULT_SCOPE_MAPPING`, so filtering against it
+ * would be a no-op.
+ */
 private val PROTOCOL_METHODS: Set<String> = setOf(
     "tools/list",
-    "tools/call",
     "resources/list",
     "resources/templates/list",
     "resources/read",
@@ -21,9 +27,11 @@ private fun expectedToolNames(): Set<String> =
 
 class PhaseBToolSchemasTest : FunSpec({
 
-    test("every 0.9.6 tool from the default scope mapping has input + output schemas") {
-        val registered = PhaseBToolSchemas.toolNames().toSet()
-        registered shouldContainAll expectedToolNames()
+    test("registered tools match the default scope mapping minus protocol methods exactly") {
+        // §12.18 "Tool-Universum (verbindlich)": equality, not superset —
+        // an accidentally-registered surplus tool would be a contract
+        // breach and must fail this test.
+        PhaseBToolSchemas.toolNames().toSet() shouldBe expectedToolNames()
     }
 
     test("PhaseBToolSchemas does not register protocol-method names") {

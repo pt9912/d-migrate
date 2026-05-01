@@ -118,4 +118,59 @@ class SchemaSecretGuardTest : FunSpec({
         )
         SchemaSecretGuard.findSecretLeaks(schema) shouldBe emptyList()
     }
+
+    test("malformed 'properties' value (string instead of map) does not throw") {
+        // A misconfigured author wrote `properties: "ref-string"`. The
+        // walk should NOT match anything (no payload-name keys to
+        // check) and must NOT throw — early-return path under
+        // walkPropertyKeyedMap.
+        val schema = mapOf<String, Any?>("properties" to "not a map")
+        SchemaSecretGuard.findSecretLeaks(schema) shouldBe emptyList()
+    }
+
+    test("payload field literally named 'properties' is treated as a name, not a keyword") {
+        // Outer `properties` is the JSON-Schema keyword (recursed into).
+        // Inner `properties` is a payload field name — lowercased and
+        // checked against FORBIDDEN_PROPERTIES (which it isn't).
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "properties" to mapOf("type" to "string"),
+            ),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldBe emptyList()
+    }
+
+    test("patternProperties value-schema leak is caught") {
+        // patternProperties keys are regex strings (NOT payload names)
+        // — they must NOT trigger the FORBIDDEN_PROPERTIES check. The
+        // value schema is still walked; a leak inside it must be
+        // caught.
+        val schema = mapOf(
+            "type" to "object",
+            "patternProperties" to mapOf(
+                "^x_.*$" to mapOf(
+                    "type" to "object",
+                    "properties" to mapOf("apiKey" to mapOf("type" to "string")),
+                ),
+            ),
+        )
+        val leaks = SchemaSecretGuard.findSecretLeaks(schema)
+        leaks.any { it.contains("apiKey") } shouldBe true
+        // The regex key itself does NOT appear as a leak path.
+        leaks.any { it == "patternProperties.^x_.*\$" } shouldBe false
+    }
+
+    test("patternProperties regex key matching a forbidden name is NOT flagged (keys aren't payload)") {
+        val schema = mapOf(
+            "type" to "object",
+            "patternProperties" to mapOf(
+                // Even if someone writes `password` as a regex pattern,
+                // it's still a regex (not a payload field name) and
+                // must not raise an alarm.
+                "password" to mapOf("type" to "string"),
+            ),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldBe emptyList()
+    }
 })
