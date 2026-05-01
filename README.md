@@ -64,6 +64,27 @@ noch kein vollautomatischer Standard-Installationspfad.
 ./gradlew build
 ```
 
+#### Makefile-Komfortziele
+
+Das Top-Level-[`Makefile`](Makefile) ist ein duenner Wrapper um die
+kanonischen Gradle-, Docker- und Script-Einstiegspunkte. Die verfuegbaren
+Kurzbefehle zeigt:
+
+```bash
+make help
+```
+
+Haeufige Ziele:
+
+```bash
+make build          # ./gradlew build
+make test           # ./gradlew test
+make smoke          # CLI-Distribution bauen und --version/--help pruefen
+make integration    # Testcontainers-Integrationstests via Docker-Script
+make docs-check     # Markdown-Linkziele in docs/ pruefen
+make release-assets # ZIP, TAR, Fat JAR und SHA256 bauen
+```
+
 #### Release-Assets lokal bauen
 
 ```bash
