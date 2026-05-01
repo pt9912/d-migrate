@@ -244,6 +244,7 @@ z. B.:
 
 - `TenantResourceUri(tenantId, kind, id)`
 - `ArtifactChunkResourceUri(tenantId, artifactId, chunkId)`
+- `GlobalCapabilitiesResourceUri`
 
 Chunk-URIs duerfen nicht als normales Artifact-`id`-Segment kodiert werden,
 weil sonst Templates, Tenant-Pruefung und Fehlerbehandlung uneindeutig werden.
@@ -264,13 +265,18 @@ Groessere Ressourcen liefern:
 
 Verbindliche Fehler:
 
-- `RESOURCE_NOT_FOUND` fuer nicht existente eigene Ressourcen
+- `RESOURCE_NOT_FOUND` fuer nicht existente, abgelaufene oder fuer den
+  Principal nicht sichtbare bzw. nicht autorisierte Ressourcen im erlaubten
+  Tenant
 - `TENANT_SCOPE_DENIED` fuer fremde Ressourcen, sofern der Pfad den Tenant-
   Scope verletzt
 - `VALIDATION_ERROR` fuer syntaktisch ungueltige Resource-URIs, Cursor oder
   Filter
 - `AUTH_REQUIRED` / `FORBIDDEN` gemaess bestehendem Auth-/Scope-Mapping
 
+Direkte `resources/read`-Zugriffe auf fremde Jobs, Artefakte oder andere
+Ressourcen im erlaubten Tenant werden no-oracle wie nicht vorhandene Ressourcen
+behandelt, ausser ein explizites Admin-/Scope-Modell erlaubt den Zugriff.
 Fehler duerfen keine fremden Ressourcendetails leaken.
 
 ---
@@ -384,14 +390,19 @@ Anforderungen:
 - Profile
 - Diffs
 - Connection-Refs
+- Capabilities
 
 Chunk-Templates fuer grosse Artefakte muessen sichtbar sein, ohne konkrete
 fremde Artefakte zu bestaetigen.
+`dmigrate://capabilities` bekommt einen expliziten Resolver und ein Template,
+das nur globale, secret-freie Server-Faehigkeiten ausliefert.
 
 ### 7.3 Initialize-Capabilities
 
-Die `resources` Capability bleibt ohne `subscribe` und ohne `listChanged`,
-solange Resource-Subscriptions nicht implementiert sind.
+Die `resources` Capability setzt explizit `{"listChanged": false,
+"subscribe": false}`, solange Resource-Subscriptions nicht implementiert sind.
+Diese Felder bleiben Teil des Initialize-Vertrags und duerfen nicht durch
+Absent-Werte ersetzt werden.
 
 ---
 
@@ -454,6 +465,8 @@ Verbindliche Regeln:
 - `ServerResourceUri` oder ein Nachfolgemodell um eine explizite
   `ArtifactChunkResourceUri(tenantId, artifactId, chunkId)`-Variante
   erweitern.
+- `dmigrate://capabilities` als explizite globale Sonderresource mit eigenem
+  Resolver modellieren.
 - Fehler-Mapping fuer ungueltige, fehlende und fremde Ressourcen definieren.
 
 ### 10.2 Store-/Index-Abstraktionen erweitern
@@ -546,6 +559,13 @@ Verbindliche Regeln:
 - ungueltige Cursor liefern `VALIDATION_ERROR`.
 - `resources/list` und `resources/templates/list` nutzen dieselben
   Resolver-/Tenant-Regeln wie `resources/read`.
+- `resources/read(dmigrate://capabilities)` liefert die globale, secret-freie
+  Faehigkeitsbeschreibung ueber einen expliziten Capability-Resolver.
+- Initialize meldet fuer `resources` explizit `listChanged=false` und
+  `subscribe=false`.
+- nicht sichtbare bzw. nicht autorisierte Ressourcen im erlaubten Tenant
+  liefern no-oracle `RESOURCE_NOT_FOUND`, sofern kein Admin-/Scope-Modell den
+  Zugriff erlaubt.
 - keine Discovery-, Resource- oder Audit-Antwort enthaelt rohe Secrets.
 - MCP-Projektionen von Connection-Refs enthalten weder `credentialRef` noch
   `providerRef`; erlaubt sind nur secret-freie Ersatzfelder wie
