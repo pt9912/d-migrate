@@ -274,6 +274,7 @@ Detaillierte Dokumentation findest du im [docs/](docs/)-Verzeichnis:
 - [Schema-YAML-Referenz](docs/schema-reference.md)
 - [Spezifikation des neutralen Modells](docs/neutral-model-spec.md)
 - [CLI-Spezifikation](docs/cli-spec.md)
+- [MCP-Server (`d-migrate mcp serve`)](docs/mcp-server.md)
 - [Regeln zur DDL-Generierung](docs/ddl-generation-rules.md)
 - [Verbindungs- und Konfigurationsspezifikation](docs/connection-config-spec.md)
 - [Roadmap](docs/roadmap.md)

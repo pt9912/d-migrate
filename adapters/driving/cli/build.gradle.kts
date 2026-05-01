@@ -52,6 +52,8 @@ dependencies {
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:integrations"))
     implementation(project(":adapters:driven:streaming"))
+    // §6.11: `mcp serve`-Subkommando wrappt McpServerBootstrap.
+    implementation(project(":adapters:driving:mcp"))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
