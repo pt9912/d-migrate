@@ -8,9 +8,21 @@ CLI_BIN ?= adapters/driving/cli/build/install/d-migrate/bin/d-migrate
 ARGS ?= --help
 INTEGRATION_TASKS ?=
 
+# Docker-targeted gradle runs (see docker-check / docker-test).
+# MODULES is a space-separated list of project paths, e.g.
+#   make docker-check MODULES=":adapters:driving:mcp :hexagon:ports-common"
+# An empty MODULES runs `check` / `test` across the whole repo.
+MODULES ?=
+DOCKER_TAG ?= $(IMAGE):dev-targeted
+
+# Build the gradle task list for docker-check / docker-test from MODULES.
+# Falls back to the full repo task when MODULES is empty.
+docker_check_tasks = $(if $(strip $(MODULES)),$(addsuffix :check,$(MODULES)),check)
+docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test)
+
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke release-assets docker-build docker-smoke clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke release-assets docker-build docker-check docker-test docker-smoke clean
 
 help:
 	@printf '%s\n' \
@@ -28,13 +40,17 @@ help:
 		'  make smoke            Build the CLI distribution and run --version/--help' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
 		'  make docker-build     Build the runtime Docker image' \
+		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
+		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make clean            Run Gradle clean' \
 		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
 		'  ARGS="schema validate --source schema.yaml"' \
-		'  INTEGRATION_TASKS=":adapters:driven:driver-postgresql:test"'
+		'  INTEGRATION_TASKS=":adapters:driven:driver-postgresql:test"' \
+		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test)' \
+		'  DOCKER_TAG=d-migrate:dev-targeted'
 
 resolve-deps:
 	$(GRADLE) resolveAllDependencies
@@ -80,6 +96,22 @@ release-assets:
 
 docker-build:
 	$(DOCKER) build -t $(IMAGE):$(IMAGE_TAG) .
+
+# Targeted module check inside the Dockerfile `build` stage.
+#   make docker-check                            # whole repo (slower than docker-build)
+#   make docker-check MODULES=":adapters:driving:mcp"
+#   make docker-check MODULES=":hexagon:ports-common :adapters:driving:mcp"
+docker-check:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="$(strip $(docker_check_tasks))" \
+	  -t $(DOCKER_TAG) .
+
+# Targeted module test inside the Dockerfile `build` stage. Same semantics as
+# docker-check but runs only the test task (no detekt / kover gates).
+docker-test:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
+	  -t $(DOCKER_TAG) .
 
 docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
