@@ -89,7 +89,9 @@ internal class ResourcesListHandler(
         ResourceKind.PROFILES -> projectProfiles(principal, page)
         ResourceKind.DIFFS -> projectDiffs(principal, page)
         ResourceKind.CONNECTIONS -> projectConnections(principal, page)
-        ResourceKind.UPLOAD_SESSIONS -> StorePageProjection(emptyList(), null)
+        ResourceKind.UPLOAD_SESSIONS -> error(
+            "kind=$kind is not listable via resources/list — cursor decoder must reject it",
+        )
     }
 
     private fun projectJobs(principal: PrincipalContext, page: PageRequest): StorePageProjection {
@@ -127,7 +129,7 @@ internal class ResourcesListHandler(
 
     private fun nextKind(current: ResourceKind): ResourceKind? {
         val idx = WALK_ORDER.indexOf(current)
-        return if (idx < 0 || idx == WALK_ORDER.lastIndex) null else WALK_ORDER[idx + 1]
+        return WALK_ORDER.getOrNull(idx + 1)
     }
 
     private companion object {
@@ -135,16 +137,12 @@ internal class ResourcesListHandler(
 
         /**
          * §5.5 + §6.9: jobs, artifacts, schemas, profiles, diffs,
-         * connections. UPLOAD_SESSIONS exists in [ResourceKind] but is
-         * NOT an MCP resource — it's an internal phase-B/C concept.
+         * connections. Pinned at the cursor module
+         * ([ResourcesListCursor.LISTABLE_KINDS]) so the decoder and
+         * the handler share one source of truth — rejecting forged
+         * cursors at decode time is the only way the
+         * `UPLOAD_SESSIONS` branch in [pageFor] stays unreachable.
          */
-        val WALK_ORDER: List<ResourceKind> = listOf(
-            ResourceKind.JOBS,
-            ResourceKind.ARTIFACTS,
-            ResourceKind.SCHEMAS,
-            ResourceKind.PROFILES,
-            ResourceKind.DIFFS,
-            ResourceKind.CONNECTIONS,
-        )
+        val WALK_ORDER: List<ResourceKind> = ResourcesListCursor.LISTABLE_KINDS
     }
 }

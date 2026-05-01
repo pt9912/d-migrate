@@ -42,6 +42,13 @@ class ResourcesListCursorTest : FunSpec({
         ex.message!! shouldContain "UNKNOWN_KIND"
     }
 
+    test("decode rejects a known but non-listable ResourceKind (UPLOAD_SESSIONS)") {
+        val forged = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("""{"kind":"UPLOAD_SESSIONS","innerToken":null}""".toByteArray())
+        val ex = shouldThrow<IllegalArgumentException> { ResourcesListCursor.decode(forged) }
+        ex.message!! shouldContain "not listable"
+    }
+
     test("decode rejects body without 'kind'") {
         val bad = java.util.Base64.getUrlEncoder().withoutPadding()
             .encodeToString("""{"innerToken":"x"}""".toByteArray())

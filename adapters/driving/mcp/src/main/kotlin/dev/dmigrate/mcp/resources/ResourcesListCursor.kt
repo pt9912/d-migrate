@@ -38,10 +38,29 @@ internal data class ResourcesListCursor(
         private val ENCODER = Base64.getUrlEncoder().withoutPadding()
 
         /**
+         * Resource kinds that `resources/list` actually walks. Defined
+         * here so the cursor decoder can reject forged cursors that
+         * point at non-listable kinds (e.g. `UPLOAD_SESSIONS` is in
+         * [ResourceKind] but isn't a Discovery surface — §12.17). The
+         * handler imports this same set as its walk order.
+         */
+        val LISTABLE_KINDS: List<ResourceKind> = listOf(
+            ResourceKind.JOBS,
+            ResourceKind.ARTIFACTS,
+            ResourceKind.SCHEMAS,
+            ResourceKind.PROFILES,
+            ResourceKind.DIFFS,
+            ResourceKind.CONNECTIONS,
+        )
+
+        private val LISTABLE_KIND_SET: Set<ResourceKind> = LISTABLE_KINDS.toSet()
+
+        /**
          * Parses [encoded]. Throws [IllegalArgumentException] when the
          * input is not valid Base64-URL, the inner JSON is malformed,
-         * or the `kind` field doesn't match a known [ResourceKind].
-         * `null` returns `null` (treated as "start of listing").
+         * the `kind` field doesn't match a known [ResourceKind], or
+         * the kind is not in [LISTABLE_KINDS]. `null` returns `null`
+         * (treated as "start of listing").
          */
         fun decode(encoded: String?): ResourcesListCursor? {
             if (encoded == null) return null
@@ -58,6 +77,9 @@ internal data class ResourcesListCursor(
             val kindName = wire?.kind ?: throw IllegalArgumentException("cursor missing 'kind'")
             val kind = runCatching { ResourceKind.valueOf(kindName) }
                 .getOrElse { throw IllegalArgumentException("cursor 'kind=$kindName' is not a known ResourceKind") }
+            require(kind in LISTABLE_KIND_SET) {
+                "cursor 'kind=$kindName' is not listable via resources/list"
+            }
             return ResourcesListCursor(kind = kind, innerToken = wire.innerToken)
         }
     }

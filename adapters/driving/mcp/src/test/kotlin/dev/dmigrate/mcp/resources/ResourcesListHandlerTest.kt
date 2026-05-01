@@ -236,4 +236,47 @@ class ResourcesListHandlerTest : FunSpec({
         }
         ex.message!! shouldBe "pageSize must be > 0 (got 0)"
     }
+
+    test("forged cursor pinning to UPLOAD_SESSIONS hits the defensive guard") {
+        // The cursor decoder rejects this kind, but a direct construction
+        // (e.g. accidentally bypassing decode in a future refactor) MUST
+        // raise IllegalStateException — never silently return empty.
+        val forged = ResourcesListCursor(ResourceKind.UPLOAD_SESSIONS, null)
+        val handler = ResourcesListHandler(ResourceStores.empty())
+        io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            handler.list(principal(ALICE, TENANT), cursor = forged)
+        }
+    }
+
+    test("store returning 0 items + non-null nextPageToken pins cursor and returns empty list") {
+        // §12.17: an empty `resources` list with a non-null nextCursor
+        // is a legal shape (filter or backing store dropped every
+        // record on this page). Clients SHOULD continue paging.
+        val noisyJobStore = object : dev.dmigrate.server.ports.JobStore {
+            private var calls = 0
+            override fun save(record: dev.dmigrate.server.core.job.JobRecord) = record
+            override fun findById(tenantId: dev.dmigrate.server.core.principal.TenantId, jobId: String) = null
+            override fun list(
+                tenantId: dev.dmigrate.server.core.principal.TenantId,
+                page: dev.dmigrate.server.core.pagination.PageRequest,
+                ownerFilter: dev.dmigrate.server.core.principal.PrincipalId?,
+            ): dev.dmigrate.server.core.pagination.PageResult<dev.dmigrate.server.core.job.JobRecord> {
+                calls++
+                // First call: empty items, but more pages available.
+                // Second call: empty items, no more pages.
+                val token = if (calls == 1) "page-2" else null
+                return dev.dmigrate.server.core.pagination.PageResult(emptyList(), token)
+            }
+            override fun deleteExpired(now: java.time.Instant) = 0
+        }
+        val stores = ResourceStores.empty().copy(jobStore = noisyJobStore)
+        val handler = ResourcesListHandler(stores)
+        val first = handler.list(principal(ALICE, TENANT), cursor = null, pageSize = 10)
+        first.resources shouldBe emptyList()
+        first.nextCursor shouldNotBe null
+        // Decoded cursor should point at JOBS with the second-page token.
+        val decoded = ResourcesListCursor.decode(first.nextCursor)!!
+        decoded.kind shouldBe ResourceKind.JOBS
+        decoded.innerToken shouldBe "page-2"
+    }
 })
