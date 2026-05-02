@@ -79,12 +79,6 @@ internal class ArtifactUploadHandler(
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
 
-    @Suppress("LongMethod")
-    // LongMethod: the handler walks the spec's segment-acceptance
-    // checklist top-to-bottom (session lookup → owner → state →
-    // sequence → bytes → hash → quota → store → finalise). Splitting
-    // would scatter the linear story across 6 helpers; keep it inline
-    // and pin the order with section comments.
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val args = parseArguments(context.arguments)
         val tenant = context.principal.effectiveTenantId
@@ -114,34 +108,7 @@ internal class ArtifactUploadHandler(
         validateSegmentHash(args.segmentSha256, bytes)
         validateSegmentBudget(args, bytes.size, session)
 
-        val parallelKey = QuotaKey(
-            tenant,
-            QuotaDimension.PARALLEL_SEGMENT_WRITES,
-            context.principal.principalId,
-        )
-        val reservation = QuotaReservation(parallelKey, amount = 1)
-        val outcome = when (val res = quotaService.reserve(parallelKey, amount = 1)) {
-            is QuotaOutcome.RateLimited -> throw RateLimitedException(RateLimitedDetail.from(res))
-            is QuotaOutcome.Granted -> {
-                try {
-                    segmentStore.writeSegment(
-                        UploadSegment(
-                            uploadSessionId = session.uploadSessionId,
-                            segmentIndex = args.segmentIndex,
-                            segmentOffset = args.segmentOffset,
-                            sizeBytes = bytes.size.toLong(),
-                            segmentSha256 = args.segmentSha256,
-                        ),
-                        ByteArrayInputStream(bytes),
-                    )
-                } finally {
-                    // Always release: the slot is per-write, not
-                    // per-session.
-                    quotaService.release(reservation)
-                }
-            }
-        }
-        val deduplicated = mapStoreOutcome(outcome, args)
+        val deduplicated = writeWithQuota(args, bytes, session, context.principal)
 
         val now = clock.instant()
         val cumulativeBytes = computeCumulativeBytes(session.uploadSessionId)
@@ -182,6 +149,45 @@ internal class ArtifactUploadHandler(
                 ),
             ),
         )
+    }
+
+    /**
+     * Reserve→write→release walk per the QuotaService contract: every
+     * outcome (Stored / AlreadyStored / Conflict / SizeMismatch)
+     * passes through `finally` so the per-write slot can't leak.
+     */
+    private fun writeWithQuota(
+        args: UploadSegmentArgs,
+        bytes: ByteArray,
+        session: UploadSession,
+        principal: PrincipalContext,
+    ): Boolean {
+        val parallelKey = QuotaKey(
+            session.tenantId,
+            QuotaDimension.PARALLEL_SEGMENT_WRITES,
+            principal.principalId,
+        )
+        val reservation = QuotaReservation(parallelKey, amount = 1)
+        val outcome = when (val res = quotaService.reserve(parallelKey, amount = 1)) {
+            is QuotaOutcome.RateLimited -> throw RateLimitedException(RateLimitedDetail.from(res))
+            is QuotaOutcome.Granted -> {
+                try {
+                    segmentStore.writeSegment(
+                        UploadSegment(
+                            uploadSessionId = session.uploadSessionId,
+                            segmentIndex = args.segmentIndex,
+                            segmentOffset = args.segmentOffset,
+                            sizeBytes = bytes.size.toLong(),
+                            segmentSha256 = args.segmentSha256,
+                        ),
+                        ByteArrayInputStream(bytes),
+                    )
+                } finally {
+                    quotaService.release(reservation)
+                }
+            }
+        }
+        return mapStoreOutcome(outcome, args)
     }
 
     private fun parseArguments(raw: JsonElement?): UploadSegmentArgs {
@@ -348,9 +354,20 @@ internal class ArtifactUploadHandler(
             now,
         )) {
             is TransitionOutcome.Applied -> transition.session
-            is TransitionOutcome.IllegalTransition,
-            is TransitionOutcome.NotFound,
-            -> throw InternalAgentErrorException()
+            // A concurrent abort/expire raced our ACTIVE check —
+            // surface the typed lifecycle exception so the client
+            // sees the real cause instead of an internal error.
+            is TransitionOutcome.IllegalTransition -> throw when (transition.from) {
+                UploadSessionState.ABORTED -> UploadSessionAbortedException(session.uploadSessionId)
+                UploadSessionState.EXPIRED -> UploadSessionExpiredException(session.uploadSessionId)
+                UploadSessionState.COMPLETED -> IdempotencyConflictException(
+                    existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
+                )
+                UploadSessionState.ACTIVE -> InternalAgentErrorException()
+            }
+            // The session vanished between our findById and the
+            // transition — also a legitimate concurrent outcome.
+            is TransitionOutcome.NotFound -> throw ResourceNotFoundException(session.resourceUri)
         }
     }
 
@@ -412,11 +429,11 @@ internal class ArtifactUploadHandler(
     )
 
     private companion object {
-        private val HEX_64: Regex = Regex("^[0-9a-f]{64}$")
+        private val HEX_64: Regex = UploadSessionDefaults.SHA256_HEX_PATTERN
 
         // Spec/ki-mcp.md §5.3:610 — absolute hard cap from session
-        // creation. Mirrors `ArtifactUploadInitHandler.DEFAULT_ABSOLUTE_LEASE`.
-        private val MAX_ABSOLUTE_LEASE: Duration = Duration.ofSeconds(3600)
+        // creation. Same value as the init-handler default.
+        private val MAX_ABSOLUTE_LEASE: Duration = UploadSessionDefaults.ABSOLUTE_LEASE
 
         private fun sha256Hex(bytes: ByteArray): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(bytes)

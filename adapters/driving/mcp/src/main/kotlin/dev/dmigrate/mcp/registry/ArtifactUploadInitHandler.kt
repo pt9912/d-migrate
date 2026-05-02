@@ -243,18 +243,17 @@ internal class ArtifactUploadInitHandler(
     companion object {
         const val INTENT_SCHEMA_STAGING_READONLY: String = "schema_staging_readonly"
 
-        // Mirrors the canonical lower-case hex sha256 form used by
-        // the artefact store and CLI.
-        private val CHECKSUM_PATTERN: Regex = Regex("^[0-9a-f]{64}$")
-
         // Per spec/ki-mcp.md §5.3 line 588: segment indices start at 1.
         const val FIRST_SEGMENT_INDEX: Int = 1
         const val FIRST_SEGMENT_OFFSET: Long = 0L
 
-        // Spec defaults from spec/ki-mcp.md §5.3 line 609-617.
-        val DEFAULT_INITIAL_TTL: Duration = Duration.ofSeconds(900)
-        val DEFAULT_IDLE_TIMEOUT: Duration = Duration.ofSeconds(300)
-        val DEFAULT_ABSOLUTE_LEASE: Duration = Duration.ofSeconds(3600)
+        // Spec defaults — re-exported from UploadSessionDefaults so
+        // existing call sites and tests don't have to re-import.
+        val DEFAULT_INITIAL_TTL: Duration = UploadSessionDefaults.INITIAL_TTL
+        val DEFAULT_IDLE_TIMEOUT: Duration = UploadSessionDefaults.IDLE_TIMEOUT
+        val DEFAULT_ABSOLUTE_LEASE: Duration = UploadSessionDefaults.ABSOLUTE_LEASE
+
+        private val CHECKSUM_PATTERN: Regex = UploadSessionDefaults.SHA256_HEX_PATTERN
 
         fun segmentCountFor(totalBytes: Long, segmentSize: Int): Int {
             require(segmentSize > 0) { "segmentSize must be positive" }

@@ -658,6 +658,89 @@ class ArtifactUploadHandlerTest : FunSpec({
         f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.COMPLETED
     }
 
+    test("3-segment session: total hash is computed over all segments in index order") {
+        // Pinning the multi-segment hash walk: a bug in
+        // computeTotalHash that reads segments out of order would
+        // surface as a hash-mismatch on the final segment. The test
+        // declares the canonical segment order, then asserts the
+        // session reaches COMPLETED.
+        val seg1 = "AAAAAAAA".toByteArray()
+        val seg2 = "BBBBBBBB".toByteArray()
+        val seg3 = "CCCCCCCC".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2 + seg3)
+        val f = fixture()
+        stageSession(f, "ups-1", 24, segmentTotal = 3, checksumSha256 = totalHash)
+        // Send segments in order.
+        for ((i, bytes) in listOf(seg1, seg2, seg3).withIndex()) {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = i + 1,
+                            segmentOffset = (i * 8).toLong(),
+                            segmentTotal = 3,
+                            isFinalSegment = i == 2,
+                            bytes = bytes,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.COMPLETED
+    }
+
+    test("concurrent ABORTED race surfaces UPLOAD_SESSION_ABORTED, not INTERNAL_AGENT_ERROR") {
+        // Race window: handler observes ACTIVE state, then a
+        // concurrent abort flips the session before our `transition`
+        // call runs. The store reports IllegalTransition(from=ABORTED,
+        // to=COMPLETED); the handler must surface the typed lifecycle
+        // exception so the client sees the real cause.
+        val payload = "abcdefgh".toByteArray()
+        val totalHash = sha256Hex(payload)
+        val f = fixture()
+        stageSession(f, "ups-1", 8, segmentTotal = 1, checksumSha256 = totalHash)
+
+        // Wrap the session store so the next `transition` call
+        // returns IllegalTransition(from=ABORTED, ...) — simulates
+        // the race.
+        val racingStore = object : dev.dmigrate.server.ports.UploadSessionStore by f.sessionStore {
+            override fun transition(
+                tenantId: dev.dmigrate.server.core.principal.TenantId,
+                uploadSessionId: String,
+                newState: UploadSessionState,
+                now: java.time.Instant,
+            ): dev.dmigrate.server.ports.TransitionOutcome =
+                dev.dmigrate.server.ports.TransitionOutcome.IllegalTransition(
+                    from = UploadSessionState.ABORTED,
+                    to = newState,
+                )
+        }
+        val racingHandler = ArtifactUploadHandler(
+            sessionStore = racingStore,
+            segmentStore = f.segmentStore,
+            quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
+            clock = FIXED_CLOCK,
+            requestIdProvider = { "req-x" },
+        )
+        shouldThrow<UploadSessionAbortedException> {
+            racingHandler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                            isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
     test("PARALLEL_SEGMENT_WRITES quota exhaustion surfaces RATE_LIMITED") {
         val payload = "abcdefgh".toByteArray()
         val f = fixture(parallelLimit = 0)
