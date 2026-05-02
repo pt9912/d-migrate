@@ -15,6 +15,7 @@ import dev.dmigrate.mcp.schema.SchemaSource
 import dev.dmigrate.mcp.schema.SchemaSourceInput
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
@@ -181,7 +182,7 @@ internal class SchemaCompareHandler(
 
     private fun buildPayload(
         identical: Boolean,
-        inlineFindings: List<Map<String, String>>,
+        inlineFindings: List<Map<String, Any?>>,
         totalFindings: Int,
         truncated: Boolean,
         diffArtifactRef: String?,
@@ -200,13 +201,14 @@ internal class SchemaCompareHandler(
         else -> "Schemas differ ($totalFindings change(s))."
     }
 
-    private fun projectFindings(diff: SchemaDiff): List<Map<String, String>> = buildList {
+    private fun projectFindings(diff: SchemaDiff): List<Map<String, Any?>> = buildList {
         diff.schemaMetadata?.let { meta ->
             meta.name?.let {
                 add(
                     finding(
                         SchemaFindingSeverity.WARNING, "SCHEMA_NAME_CHANGED", "name",
                         "schema name changed from '${it.before}' to '${it.after}'",
+                        beforeAfter(it.before, it.after),
                     ),
                 )
             }
@@ -215,6 +217,7 @@ internal class SchemaCompareHandler(
                     finding(
                         SchemaFindingSeverity.INFO, "SCHEMA_VERSION_CHANGED", "version",
                         "schema version changed from '${it.before}' to '${it.after}'",
+                        beforeAfter(it.before, it.after),
                     ),
                 )
             }
@@ -242,20 +245,47 @@ internal class SchemaCompareHandler(
         addAll(diff.triggersChanged.map { changed("TRIGGER_CHANGED", "triggers.${it.name}") })
     }
 
-    private fun finding(severity: String, code: String, path: String, message: String): Map<String, String> =
-        mapOf("severity" to severity, "code" to code, "path" to path, "message" to message)
+    /**
+     * Builds a finding record. `details` is the AP-6.13 machine-
+     * readable supplement to `message`; both pass through
+     * [SecretScrubber] before serialisation so connection URLs,
+     * bearer tokens, and approval-token literals can't leak via the
+     * wire. `message` stays human-readable per the §6.13
+     * backward-compat rule.
+     */
+    private fun finding(
+        severity: String,
+        code: String,
+        path: String,
+        message: String,
+        details: Map<String, String>? = null,
+    ): Map<String, Any?> = buildMap {
+        put("severity", severity)
+        put("code", code)
+        put("path", path)
+        put("message", SecretScrubber.scrub(message))
+        if (!details.isNullOrEmpty()) {
+            put("details", details.mapValues { (_, v) -> SecretScrubber.scrub(v) })
+        }
+    }
+
+    /** Standard `{ before, after }` shape for property-level changes. */
+    private fun beforeAfter(before: Any?, after: Any?): Map<String, String> = mapOf(
+        "before" to before.toString(),
+        "after" to after.toString(),
+    )
 
     // Additive changes are non-breaking by default — surface as info
     // so clients can filter the noise out of the warning channel.
-    private fun added(code: String, path: String): Map<String, String> =
+    private fun added(code: String, path: String): Map<String, Any?> =
         finding(SchemaFindingSeverity.INFO, code, path, "$path was added")
 
     // Removed/changed objects are potentially breaking; clients
     // typically gate deploys on the warning bucket.
-    private fun removed(code: String, path: String): Map<String, String> =
+    private fun removed(code: String, path: String): Map<String, Any?> =
         finding(SchemaFindingSeverity.WARNING, code, path, "$path was removed")
 
-    private fun changed(code: String, path: String): Map<String, String> =
+    private fun changed(code: String, path: String): Map<String, Any?> =
         finding(SchemaFindingSeverity.WARNING, code, path, "$path changed")
 
     /**
@@ -277,7 +307,7 @@ internal class SchemaCompareHandler(
      * (`tables.t1.columns.c1`) so clients can filter or roll-up
      * findings without parsing free-form messages.
      */
-    private fun projectTableDiff(diff: TableDiff): List<Map<String, String>> = buildList {
+    private fun projectTableDiff(diff: TableDiff): List<Map<String, Any?>> = buildList {
         val tablePath = "tables.${diff.name}"
         diff.columnsAdded.forEach { (col, _) ->
             add(added("TABLE_COLUMN_ADDED", "$tablePath.columns.$col"))
@@ -300,6 +330,7 @@ internal class SchemaCompareHandler(
                     "TABLE_PRIMARY_KEY_CHANGED",
                     "$tablePath.primary_key",
                     "primary key changed from ${it.before} to ${it.after}",
+                    beforeAfter(it.before, it.after),
                 ),
             )
         }
@@ -342,12 +373,13 @@ internal class SchemaCompareHandler(
                     "TABLE_METADATA_CHANGED",
                     "$tablePath.metadata",
                     "table metadata changed from ${it.before} to ${it.after}",
+                    beforeAfter(it.before, it.after),
                 ),
             )
         }
     }
 
-    private fun projectColumnDiff(tablePath: String, diff: ColumnDiff): List<Map<String, String>> = buildList {
+    private fun projectColumnDiff(tablePath: String, diff: ColumnDiff): List<Map<String, Any?>> = buildList {
         val colPath = "$tablePath.columns.${diff.name}"
         diff.type?.let {
             add(
@@ -356,6 +388,7 @@ internal class SchemaCompareHandler(
                     "TABLE_COLUMN_TYPE_CHANGED",
                     "$colPath.type",
                     "type changed from ${it.before} to ${it.after}",
+                    beforeAfter(it.before, it.after),
                 ),
             )
         }
@@ -368,6 +401,7 @@ internal class SchemaCompareHandler(
                     "TABLE_COLUMN_DEFAULT_CHANGED",
                     "$colPath.default",
                     "default changed from ${it.before} to ${it.after}",
+                    beforeAfter(it.before, it.after),
                 ),
             )
         }
@@ -378,12 +412,13 @@ internal class SchemaCompareHandler(
                     "TABLE_COLUMN_REFERENCES_CHANGED",
                     "$colPath.references",
                     "foreign-key references changed from ${it.before} to ${it.after}",
+                    beforeAfter(it.before, it.after),
                 ),
             )
         }
     }
 
-    private fun projectRequired(colPath: String, change: ValueChange<Boolean>): Map<String, String> =
+    private fun projectRequired(colPath: String, change: ValueChange<Boolean>): Map<String, Any?> =
         if (!change.before && change.after) {
             // false → true: pre-existing rows may carry NULL; tightening is breaking.
             finding(
@@ -391,6 +426,7 @@ internal class SchemaCompareHandler(
                 "TABLE_COLUMN_REQUIRED_TIGHTENED",
                 "$colPath.required",
                 "column became required",
+                beforeAfter(false, true),
             )
         } else {
             finding(
@@ -398,10 +434,11 @@ internal class SchemaCompareHandler(
                 "TABLE_COLUMN_REQUIRED_RELAXED",
                 "$colPath.required",
                 "column is no longer required",
+                beforeAfter(true, false),
             )
         }
 
-    private fun projectUnique(colPath: String, change: ValueChange<Boolean>): Map<String, String> =
+    private fun projectUnique(colPath: String, change: ValueChange<Boolean>): Map<String, Any?> =
         if (!change.before && change.after) {
             // false → true: pre-existing duplicates would block the
             // unique index — warning rather than error so clients can
@@ -411,6 +448,7 @@ internal class SchemaCompareHandler(
                 "TABLE_COLUMN_UNIQUE_TIGHTENED",
                 "$colPath.unique",
                 "column became unique",
+                beforeAfter(false, true),
             )
         } else {
             finding(
@@ -418,6 +456,7 @@ internal class SchemaCompareHandler(
                 "TABLE_COLUMN_UNIQUE_RELAXED",
                 "$colPath.unique",
                 "column is no longer unique",
+                beforeAfter(true, false),
             )
         }
 

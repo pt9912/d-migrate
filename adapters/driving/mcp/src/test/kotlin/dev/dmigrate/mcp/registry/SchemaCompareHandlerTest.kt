@@ -485,6 +485,131 @@ class SchemaCompareHandlerTest : FunSpec({
         (codes.contains("TABLE_CHANGED")) shouldBe false
     }
 
+    test("AP 6.13: column-type change carries details.before/after with raw values (machine-readable supplement)") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "amount" to "\"type\":\"text\"",
+                ),
+            ),
+        )
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "amount" to "\"type\":\"integer\"",
+                ),
+            ),
+        )
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("code").asString shouldBe "TABLE_COLUMN_TYPE_CHANGED"
+        val details = finding.getAsJsonObject("details")
+        // before/after are stringified — neutral types render via
+        // `toString()`. The exact rendering isn't pinned (depends on
+        // the model's data-class toString), only that both keys are
+        // present and non-blank.
+        details.has("before") shouldBe true
+        details.has("after") shouldBe true
+        (details.get("before").asString.length > 0) shouldBe true
+        (details.get("after").asString.length > 0) shouldBe true
+    }
+
+    test("AP 6.13: required-tightened finding carries details.before=false, details.after=true") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "name" to "\"type\":\"text\",\"required\":false",
+                ),
+            ),
+        )
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "name" to "\"type\":\"text\",\"required\":true",
+                ),
+            ),
+        )
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").map { it.asJsonObject }
+            .first { it.get("code").asString == "TABLE_COLUMN_REQUIRED_TIGHTENED" }
+        val details = finding.getAsJsonObject("details")
+        details.get("before").asString shouldBe "false"
+        details.get("after").asString shouldBe "true"
+    }
+
+    test("AP 6.13: per-object additive findings (no details) coexist with per-property changes (with details)") {
+        // Coverage: confirm `added`/`removed`/`changed` (whole-object
+        // findings without before/after context) don't accidentally
+        // emit an empty `details` map.
+        val setup = setup()
+        stageSchema(setup, "left", schemaJson("orders", "t1"))
+        stageSchema(setup, "right", schemaJson("orders", "t2"))
+        val findings = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").map { it.asJsonObject }
+        for (finding in findings) {
+            // TABLE_ADDED / TABLE_REMOVED carry no before/after —
+            // `details` must be absent rather than present-as-empty.
+            finding.has("details") shouldBe false
+        }
+    }
+
+    test("AP 6.13: schema-name change finding scrubs Bearer tokens out of message + details") {
+        // Defense-in-depth: a tenant whose schema name accidentally
+        // contains a bearer-token literal must not leak it via the
+        // diff response. SecretScrubber is shared infrastructure;
+        // the test pins that schema_compare wires it through.
+        val setup = setup()
+        stageSchema(setup, "left", """{"name":"clean","version":"1.0","tables":{}}""")
+        stageSchema(
+            setup, "right",
+            """{"name":"Bearer abc123secret","version":"1.0","tables":{}}""",
+        )
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("message").asString.contains("abc123secret") shouldBe false
+        finding.get("message").asString.contains("***") shouldBe true
+        val details = finding.getAsJsonObject("details")
+        details.get("after").asString.contains("abc123secret") shouldBe false
+    }
+
     test("response carries application/json mime type and executionMeta.requestId") {
         val setup = setup()
         stageSchema(setup, "left", schemaJson("orders", "t1"))
