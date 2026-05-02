@@ -2,7 +2,13 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: C (`Read-only Tools`)
-> **Status**: In Arbeit (2026-05-02) — AP 6.1 startet auf Phase-B-Registry
+> **Status**: In Arbeit (2026-05-02) — AP 6.1–6.20 abgeschlossen
+> (Phase-C-Handler, zentrale Limits, Audit-Wiring, idempotenter Replay,
+> CLI-Phase-C-Aktivierung); AP 6.21–6.24 offen für die volle
+> "produktiv nutzbar"-Akzeptanz: File-backed Byte-Stores im
+> CLI-Pfad (§4.1), streamingfähige Finalisierung, Output-Schema-Drift
+> für `artifactRef`/`details` (§6.13), stdio+HTTP-Integrationstest-
+> Suite (§7.3).
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase C, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
@@ -1066,6 +1072,149 @@ Akzeptanz:
 - Audit-Events enthalten weder Klartext-Secrets noch komplette
   Payloads (Phase-A-Konventionen aus
   `:hexagon:application/audit/SecretScrubber.kt` greifen)
+
+### 6.21 File-backed Byte-Stores im produktiven CLI-Pfad
+
+Aufgaben:
+
+- `mcp serve`-Wiring (`McpDevelopmentWiring.developmentPhaseCWiring`)
+  auf `FileBackedUploadSegmentStore` und `FileBackedArtifactContentStore`
+  aus `:adapters:driven:storage-file` umstellen. In-Memory-Byte-Stores
+  bleiben nur fuer Unit-Tests erlaubt — Plan §4.1.
+- Spool-Verzeichnis konfigurierbar machen
+  (`--mcp-state-dir`/`DMIGRATE_MCP_STATE_DIR` mit OS-Tempdir-Default
+  `Files.createTempDirectory("dmigrate-mcp-")`); Pfad wird beim
+  Start einmal geloggt (stderr) damit Operatoren wissen, wo die
+  Bytes liegen.
+- Shutdown-Hook in der CLI loescht Spool-Verzeichnis nur, wenn die
+  CLI es selbst angelegt hat (Tempdir-Default). Operator-supplied
+  Pfade bleiben unangetastet, damit kein Datenverlust ueber die
+  Lebensdauer mehrerer Server-Restarts hinweg passiert.
+- Metadata-Stores (`UploadSessionStore`, `ArtifactStore`,
+  `SchemaStore`, `JobStore`, `QuotaStore`) bleiben In-Memory bis ein
+  persistenter Adapter landet — explizit dokumentieren, damit kein
+  Operator faelschlich annimmt der Restart-Erhalt sei vollstaendig.
+
+Akzeptanz:
+
+- `mcp serve` haelt Segment- und Artefakt-Bytes nicht im Heap;
+  ein 100-MB-Schema-Upload erzeugt keine `OutOfMemoryError`-Spirale
+  (Smoke-Test: `Runtime.totalMemory()` waechst nicht proportional
+  zur hochgeladenen Byte-Menge)
+- Tempdir-Defaults werden beim Server-Stop sauber entfernt; explicit
+  `--mcp-state-dir` ueberlebt den Shutdown
+- die CLI-Helptext sagt klar, dass Metadata weiterhin ephemer ist
+
+### 6.22 Streamingfaehige Finalisierung
+
+Aufgaben:
+
+- `ArtifactUploadHandler.assembleSessionBytes` baut heute eine
+  `ByteArray(session.sizeBytes.toInt())` und fuellt sie mit
+  `System.arraycopy` — Plan §4.1 verlangt aber "Finalisierung setzt
+  Segmentbytes streamingfaehig zusammen". Der Heap-Peak ist heute
+  `sizeBytes`; bei `maxArtifactUploadBytes = 200 MiB` ist das
+  realistisch das Limit, aber ein 1-GiB-Cap waere damit nicht mehr
+  haltbar.
+- Refactor: `assembleSessionBytes` schreibt die Segmente sequenziell
+  in einen temporaeren File-Spool und gibt einen `InputStream`
+  zurueck, der den Spool liest. `SchemaStagingFinalizer.complete`
+  bekommt einen `InputStream` (oder `Reader`) statt einer
+  `ByteArray`-Sicht; die JSON-Codecs unterstuetzen das schon.
+- Spool-Datei wird in einem `try`/`finally` geloescht, ob der
+  Finalizer erfolgreich war oder geworfen hat — kein Lecken auf
+  ABORTED-Pfad.
+- Quotas: `maxArtifactUploadBytes` wird beim Schreiben in den Spool
+  parallel zum bestehenden Limit-Check geprueft, damit ein
+  segment-by-segment Spool nicht versehentlich groesser werden kann
+  als der zentrale Cap.
+
+Akzeptanz:
+
+- Heap-Peak waehrend der Finalisierung ist `O(maxUploadSegmentBytes)`
+  statt `O(sizeBytes)`
+- Finalizer-Schnittstelle akzeptiert sowohl Stream als auch (im
+  Test-Pfad) eine `ByteArray`-Konvenience, damit bestehende
+  Unit-Tests nicht reissen
+- ABORTED-Sessions hinterlassen keine Spool-Files
+- existierende AP-6.18 Idempotenz-Tests bleiben gruen (Replay-Pfad
+  liest den schon persistierten `schemaRef`, nicht den Spool)
+
+### 6.23 Output-Schema-Drift fuer `artifactRef` und `findings.details`
+
+Aufgaben:
+
+- `PhaseBToolSchemas.kt` fuer `schema_validate` erweitern:
+  - `artifactRef: { type: string }` als optionales Feld im Output-
+    Schema
+  - `findings`-Item-Schema typisieren mit `severity` (enum:
+    `error`/`warning`/`info`), `code: string`, `path: string`,
+    `message: string`, optional `details: object`
+- `PhaseBToolSchemas.kt` fuer `schema_compare` erweitern:
+  - `findings`-Item-Schema mit `details: { before, after }` fuer
+    aenderungs-Findings (AP 6.6.6 emittiert das schon, aber das
+    Schema akzeptiert es nur als untypisiertes JSON-Objekt)
+  - `diffArtifactRef: { type: string }` als optionales Feld
+- `PhaseBToolSchemas.kt` fuer `schema_generate`: `artifactRef`-Feld
+  spiegelt das `truncated`-Flag.
+- `PhaseBToolSchemas.kt` fuer `job_status_get`/`progress`/`error`:
+  Schema reflektiert die nach AP 6.17 gescrubbten Felder.
+- Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regeneriert,
+  damit Schema-Drift in CI sichtbar wird.
+- Forbidden-Key- und Scrubbing-Regel auf `details` ausweiten:
+  `details.before`/`details.after` werden via `SecretScrubber.scrub`
+  vor der Serialisierung gewaschen — pinnt heute nur ein Compare-Test,
+  soll Schema-Akzeptanz sein.
+
+Akzeptanz:
+
+- jedes Tool, das `artifactRef` (oder `diffArtifactRef`) im Wire-
+  Output emittieren kann, listet das Feld im JSON-Schema
+- `findings`-Item-Schema ist strukturell typisiert, nicht
+  `additionalProperties: true`
+- der goldfile-Pin-Test scheitert bei einer Schema-Aenderung, die
+  nicht bewusst regeneriert wurde
+
+### 6.24 stdio+HTTP-Integrationstest-Suite fuer alle Phase-C-Tools
+
+Aufgaben:
+
+- Neues Test-Source-Set (oder Kotest-`integration`-Tag in
+  `:adapters:driving:mcp`) das beide Transports einmal hochfaehrt
+  und denselben Tool-Flow gegen jeden ausfuehrt — keine doppelten
+  Asserts pro Transport, sondern eine generische `transports.forAll`-
+  Schleife.
+- Abdeckung pro Plan §7.3:
+  - Initialize/Capabilities aus Phase B
+  - `capabilities_list`
+  - `schema_validate` mit kleinem Inline-Schema
+  - `schema_generate` mit kleinem Inline-Schema, `schemaRef`,
+    Artefakt-Fallback
+  - read-only Schema-Staging eines grossen Schemas
+    (`artifact_upload_init` → mehrere `artifact_upload`-Segmente →
+    Finalisierung zu `schemaRef`)
+  - `schema_compare` mit zwei materialisierten `schemaRef`-Eingaengen
+  - `artifact_chunk_get` fuer ein grosses Artefakt
+  - `job_status_get` fuer eigenen Job und unbekannten Job
+  - fachlicher Toolfehler als `isError=true`
+  - Resource-Fehler als JSON-RPC-Error
+  - keine Tool-Antwort ueber Inline-Limit
+  - keine Tool-/Artefakt-/Audit-Antwort enthaelt verbotene
+    Secret-Keys
+- Test nutzt das CLI-Wiring aus AP 6.21 (file-backed) damit der
+  Upload-Flow real persistente Bytes schreibt.
+- Audit-Sink wird auf `InMemoryAuditSink` umgeleitet, damit die
+  Tests pinnen koennen, dass jeder tools/call genau einen
+  AuditEvent erzeugt.
+
+Akzeptanz:
+
+- jede Tool-Flow-Sequenz aus Plan §7.3 laeuft gegen stdio UND HTTP
+  in einem einzigen CI-Lauf
+- gemeinsame Tool-Liste, gemeinsame Fehler-Mappings, gemeinsame
+  Audit-Outcomes
+- der Integrationstest scheitert, sobald ein Phase-C-Tool nur in
+  einem der zwei Transports korrekt funktioniert
 
 ---
 
