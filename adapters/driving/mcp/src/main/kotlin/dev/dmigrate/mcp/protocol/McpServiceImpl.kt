@@ -11,6 +11,8 @@ import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.registry.ToolContent
 import dev.dmigrate.mcp.registry.ToolDescriptor
 import dev.dmigrate.mcp.registry.ToolRegistry
+import dev.dmigrate.server.application.audit.AuditContext
+import dev.dmigrate.server.application.audit.AuditScope
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
@@ -19,6 +21,7 @@ import dev.dmigrate.mcp.resources.ResourcesListHandler
 import dev.dmigrate.server.application.error.AuthRequiredException
 import dev.dmigrate.server.application.error.DefaultErrorMapper
 import dev.dmigrate.server.application.error.ErrorMapper
+import dev.dmigrate.server.application.error.UnsupportedToolOperationException
 import dev.dmigrate.server.core.principal.PrincipalContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
@@ -59,6 +62,8 @@ class McpServiceImpl(
     private val resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     private val scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     private val responseLimitEnforcer: ResponseLimitEnforcer? = null,
+    private val auditScope: AuditScope? = null,
+    private val requestIdProvider: () -> String = ::generateDispatchRequestId,
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -122,22 +127,109 @@ class McpServiceImpl(
     }
 
     override fun toolsCall(params: ToolsCallParams): CompletableFuture<ToolsCallResult> {
+        // §6.8 / Phase-B: `unknown tool` is JSON-RPC `-32601`, NOT
+        // a tool-result envelope. The audit scope only opens after we
+        // know the call addresses a registered tool — Phase-A audit
+        // semantics record tool invocations, not protocol-method
+        // typos.
         val handler = toolRegistry.findHandler(params.name)
             ?: return failedWithMethodNotFound("unknown tool '${params.name}'")
-        val principal = currentPrincipal.get() ?: return failedAuthRequiredEnvelope(params.name)
-        // §12.9: scope-check uses the actual tool name (not the
-        // method name "tools/call"). FORBIDDEN_PRINCIPAL surfaces as
-        // an isError envelope per §12.8 — `tools/call` errors live on
-        // the tool-result wire, not the JSON-RPC layer.
-        scopeViolation(params.name, principal)?.let { required ->
-            return CompletableFuture.completedFuture(forbiddenPrincipalEnvelope(principal, params.name, required))
-        }
-        val context = ToolCallContext(
-            name = params.name,
-            arguments = params.arguments,
-            principal = principal,
+        val requestId = requestIdProvider()
+        val principal = currentPrincipal.get()
+        val auditContext = AuditContext(
+            requestId = requestId,
+            toolName = params.name,
+            tenantId = principal?.effectiveTenantId,
+            principalId = principal?.principalId,
         )
-        return CompletableFuture.completedFuture(dispatch(handler, context))
+        return CompletableFuture.completedFuture(
+            runAudited(auditContext) {
+                // Throws AuthRequiredException / ForbiddenPrincipalException
+                // / handler-internal ApplicationExceptions; the around
+                // wrapper records the matching FAILURE outcome.
+                val resolvedPrincipal = principal ?: throw AuthRequiredException()
+                scopeViolation(params.name, resolvedPrincipal)?.let { required ->
+                    throw ForbiddenPrincipalException(
+                        principalId = resolvedPrincipal.principalId,
+                        reason = "missing scope(s): ${required.sorted()}",
+                    )
+                }
+                val context = ToolCallContext(
+                    name = params.name,
+                    arguments = params.arguments,
+                    principal = resolvedPrincipal,
+                    requestId = requestId,
+                )
+                rawDispatch(handler, context)
+            },
+        )
+    }
+
+    /**
+     * Runs [block] inside the [auditScope] when one is wired and
+     * translates any thrown exception into the same `tools/call`
+     * error envelope `dispatch` would have produced — but only AFTER
+     * `auditScope.around` has captured the failure outcome. Without
+     * an audit scope this collapses to the pre-AP-6.20 try/catch.
+     */
+    private fun runAudited(
+        auditContext: AuditContext,
+        block: () -> ToolsCallResult,
+    ): ToolsCallResult {
+        val scoped: () -> ToolsCallResult = {
+            if (auditScope != null) auditScope.around(auditContext) { block() } else block()
+        }
+        return try {
+            scoped()
+        } catch (e: Throwable) {
+            renderError(e, auditContext.requestId, auditContext.toolName ?: "?")
+        }
+    }
+
+    /**
+     * Pre-AP-6.20 [dispatch] used to wrap handler invocation in its
+     * own try/catch. AP 6.20 hoists the catch one level up so
+     * [auditScope] sees the typed `ApplicationException` and records
+     * the matching FAILURE outcome. `rawDispatch` therefore lets
+     * exceptions propagate; the caller (`runAudited`) maps them.
+     */
+    private fun rawDispatch(
+        handler: dev.dmigrate.mcp.registry.ToolHandler,
+        context: ToolCallContext,
+    ): ToolsCallResult {
+        responseLimitEnforcer?.enforceRequestSize(context.name, context.arguments)
+        val raw = handler.handle(context)
+        val outcome = responseLimitEnforcer
+            ?.enforceResponseSize(context.name, context.principal, raw)
+            ?: raw
+        return when (outcome) {
+            is ToolCallOutcome.Success -> ToolsCallResult(
+                content = outcome.content.map(::toWireContent),
+                isError = false,
+            )
+            is ToolCallOutcome.Error -> errorEnvelopeResult(outcome.envelope)
+        }
+    }
+
+    private fun renderError(e: Throwable, requestId: String, toolName: String): ToolsCallResult {
+        val base = errorMapper.map(e)
+        // Pre-AP-6.20 helpers attached `toolName` as a structured
+        // detail only for the two early-failure paths (AUTH_REQUIRED,
+        // FORBIDDEN_PRINCIPAL); other exceptions carried their own
+        // details from the typed exception's projection. Preserve
+        // that wire shape — a global toolName detail would be a
+        // cross-cutting wire change beyond the scope of AP 6.20.
+        val needsToolName = e is AuthRequiredException || e is ForbiddenPrincipalException
+        val details = if (needsToolName) {
+            base.details + dev.dmigrate.server.core.error.ToolErrorDetail("toolName", toolName)
+        } else {
+            base.details
+        }
+        val enriched = base.copy(
+            requestId = base.requestId ?: requestId,
+            details = details,
+        )
+        return errorEnvelopeResult(enriched)
     }
 
     override fun resourcesList(params: ResourcesListParams?): CompletableFuture<ResourcesListResult> {
@@ -222,22 +314,6 @@ class McpServiceImpl(
             ),
         )
 
-    private fun forbiddenPrincipalEnvelope(
-        principal: PrincipalContext,
-        toolName: String,
-        required: Set<String>,
-    ): ToolsCallResult {
-        val ex = ForbiddenPrincipalException(
-            principalId = principal.principalId,
-            reason = "missing scope(s): ${required.sorted()}",
-        )
-        val base = errorMapper.map(ex)
-        val withTool = base.copy(
-            details = base.details + dev.dmigrate.server.core.error.ToolErrorDetail("toolName", toolName),
-        )
-        return errorEnvelopeResult(withTool)
-    }
-
     private fun toWireTemplate(descriptor: ResourceTemplateDescriptor): ResourceTemplate =
         ResourceTemplate(
             uriTemplate = descriptor.uriTemplate,
@@ -245,38 +321,6 @@ class McpServiceImpl(
             mimeType = descriptor.mimeType,
             description = descriptor.description,
         )
-
-    private fun dispatch(
-        handler: dev.dmigrate.mcp.registry.ToolHandler,
-        context: ToolCallContext,
-    ): ToolsCallResult = try {
-        // AP 6.19: bracket the handler with the request- and
-        // response-byte enforcer when one is wired (Phase-C bootstrap
-        // does, Phase-B tests don't). Both checks run inside this
-        // try, so any ApplicationException they raise — typed
-        // PAYLOAD_TOO_LARGE on a request overflow, an
-        // INTERNAL_AGENT_ERROR if the response-side spill itself
-        // can't fit the artefact cap — flows through the same
-        // errorMapper as a handler exception.
-        responseLimitEnforcer?.enforceRequestSize(context.name, context.arguments)
-        val rawOutcome = handler.handle(context)
-        val outcome = responseLimitEnforcer
-            ?.enforceResponseSize(context.name, context.principal, rawOutcome)
-            ?: rawOutcome
-        when (outcome) {
-            is ToolCallOutcome.Success -> ToolsCallResult(
-                content = outcome.content.map(::toWireContent),
-                isError = false,
-            )
-            is ToolCallOutcome.Error -> errorEnvelopeResult(outcome.envelope)
-        }
-    } catch (e: Throwable) {
-        // §12.8: known-but-unimplemented tools raise
-        // UnsupportedToolOperationException; other ApplicationExceptions
-        // surface their own envelopes; anything else lands as
-        // INTERNAL_AGENT_ERROR via the default mapper.
-        errorEnvelopeResult(errorMapper.map(e))
-    }
 
     private fun toMetadata(descriptor: ToolDescriptor): ToolMetadata = ToolMetadata(
         name = descriptor.name,
@@ -333,24 +377,8 @@ class McpServiceImpl(
             ),
         )
 
-    /**
-     * §4.2 + §12.15: a missing principal at the stdio layer is
-     * surfaced as `AUTH_REQUIRED` on the `tools/call` envelope (NOT a
-     * JSON-RPC error). Routes that cannot supply a principal (e.g.
-     * stdio without a configured token registry, or HTTP before the
-     * session is bound) wire [principalProvider] to return `null`;
-     * the resulting envelope tells the client "you must authenticate".
-     *
-     * The tool name is carried in structured `details` (parallel to
-     * `UnsupportedToolOperationException`'s `toolName` detail) — never
-     * in the free-form `message` — so clients can correlate without
-     * parsing.
-     */
-    private fun failedAuthRequiredEnvelope(toolName: String): CompletableFuture<ToolsCallResult> {
-        val base = errorMapper.map(AuthRequiredException())
-        val withTool = base.copy(
-            details = base.details + dev.dmigrate.server.core.error.ToolErrorDetail("toolName", toolName),
-        )
-        return CompletableFuture.completedFuture(errorEnvelopeResult(withTool))
+    private companion object {
+        fun generateDispatchRequestId(): String =
+            "req-${java.util.UUID.randomUUID().toString().take(8)}"
     }
 }

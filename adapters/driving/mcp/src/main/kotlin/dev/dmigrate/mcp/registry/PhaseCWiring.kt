@@ -9,6 +9,7 @@ import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
+import dev.dmigrate.server.ports.AuditSink
 import dev.dmigrate.server.ports.JobStore
 import dev.dmigrate.server.ports.SchemaStore
 import dev.dmigrate.server.ports.UploadSegmentStore
@@ -55,4 +56,13 @@ data class PhaseCWiring(
         validator = SchemaValidator(),
         clock = clock,
     ),
+    /**
+     * AP 6.20: optional audit sink. When supplied, every `tools/call`
+     * dispatched through `McpServiceImpl` records a single
+     * [dev.dmigrate.server.core.audit.AuditEvent] (success and
+     * failure paths alike). Production wiring usually plugs in
+     * `LoggingAuditSink`; tests can leave this null to opt out, or
+     * supply `InMemoryAuditSink` to assert event shape.
+     */
+    val auditSink: AuditSink? = null,
 )

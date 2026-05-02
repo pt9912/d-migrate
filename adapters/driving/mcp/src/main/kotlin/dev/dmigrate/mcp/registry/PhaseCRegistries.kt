@@ -4,6 +4,7 @@ import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.application.audit.AuditScope
 
 /**
  * Phase-C wiring entry point per `ImpPlan-0.9.6-C.md` §6.1.
@@ -169,16 +170,19 @@ object PhaseCRegistries {
 
     /**
      * Bundles the per-call dispatch components a single `tools/call`
-     * needs — the registry that finds the handler plus the byte-limit
-     * enforcer that brackets it. The bootstrap takes one of these
-     * instead of two correlated parameters with cross-defaults so the
-     * `phaseCWiring?.let { ... }`-fallback expression lives in one
-     * place. Phase-B-only callers (no `PhaseCWiring`) get a registry
-     * with no enforcer — the same shape `dispatch` already handles.
+     * needs — the registry that finds the handler, the byte-limit
+     * enforcer that brackets it, and (AP 6.20) the audit scope that
+     * records one event per call. The bootstrap takes one of these
+     * instead of three correlated parameters with cross-defaults so
+     * the `phaseCWiring?.let { ... }`-fallback expression lives in
+     * one place. Phase-B-only callers (no `PhaseCWiring`) get a
+     * registry with no enforcer and no audit — the same shape
+     * `dispatch` already handles.
      */
     data class McpServiceComponents(
         val toolRegistry: ToolRegistry,
         val responseLimitEnforcer: ResponseLimitEnforcer?,
+        val auditScope: AuditScope?,
     )
 
     fun defaultComponents(
@@ -188,11 +192,13 @@ object PhaseCRegistries {
         McpServiceComponents(
             toolRegistry = defaultToolRegistry(phaseCWiring, scopeMapping),
             responseLimitEnforcer = defaultResponseLimitEnforcer(phaseCWiring),
+            auditScope = phaseCWiring.auditSink?.let { AuditScope(it, phaseCWiring.clock) },
         )
     } else {
         McpServiceComponents(
             toolRegistry = PhaseBRegistries.toolRegistry(scopeMapping),
             responseLimitEnforcer = null,
+            auditScope = null,
         )
     }
 }

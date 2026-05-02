@@ -107,6 +107,7 @@ object McpServerBootstrap {
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
         val responseLimitEnforcer = components.responseLimitEnforcer
+        val auditScope = components.auditScope
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
         RuntimeBootstrap.initialize()
@@ -136,6 +137,7 @@ object McpServerBootstrap {
                             resourceRegistry = resourceRegistry,
                             scopeMapping = config.scopeMapping,
                             responseLimitEnforcer = responseLimitEnforcer,
+                            auditScope = auditScope,
                         )
                     },
                 )
@@ -172,6 +174,7 @@ object McpServerBootstrap {
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
         val responseLimitEnforcer = components.responseLimitEnforcer
+        val auditScope = components.auditScope
         // §12.15: stdio ignores authMode entirely — use the slimmer
         // validation that skips the HTTP-only auth-consistency block.
         // Otherwise a default-config (authMode=JWT_JWKS, no issuer)
@@ -193,6 +196,7 @@ object McpServerBootstrap {
             resourceRegistry = resourceRegistry,
             scopeMapping = config.scopeMapping,
             responseLimitEnforcer = responseLimitEnforcer,
+            auditScope = auditScope,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }

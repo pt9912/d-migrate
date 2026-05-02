@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.JsonElement
 import dev.dmigrate.server.core.principal.PrincipalContext
+import java.util.UUID
 
 /**
  * Per-call dispatch context per `ImpPlan-0.9.6-B.md` §6.8 + §12.8.
@@ -15,11 +16,19 @@ import dev.dmigrate.server.core.principal.PrincipalContext
  * lsp4j (Gson tree). Handlers that take typed arguments deserialize
  * lazily from this tree; handlers that take none ignore it. `null` =
  * the client omitted the field entirely.
+ *
+ * [requestId] is a server-minted correlator (AP 6.20). `McpServiceImpl`
+ * generates a fresh value per `tools/call` and threads it into both
+ * the [dev.dmigrate.server.core.audit.AuditEvent] and (optionally)
+ * the handler's response so an operator can trace one logical
+ * request across audit log + tool wire payload. The default keeps
+ * Phase-B test code compiling without a mandatory rewrite.
  */
 data class ToolCallContext(
     val name: String,
     val arguments: JsonElement?,
     val principal: PrincipalContext,
+    val requestId: String = "req-${UUID.randomUUID().toString().take(8)}",
 )
 
 /**
