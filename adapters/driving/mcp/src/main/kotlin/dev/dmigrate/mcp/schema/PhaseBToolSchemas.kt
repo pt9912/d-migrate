@@ -122,13 +122,30 @@ internal object PhaseBToolSchemas {
             input = obj(
                 "artifactId" to stringField(),
                 "chunkId" to stringField(),
-                "tenantId" to stringField(),
-            ).required("artifactId", "chunkId"),
+            ).required("artifactId"),
             output = obj(
-                "content" to stringField(),
-                "encoding" to enumField("base64", "utf8"),
-                "isLast" to booleanField(),
-            ).required("content", "encoding", "isLast"),
+                "artifactId" to stringField(),
+                "resourceUri" to stringField(),
+                "chunkId" to stringField(),
+                "offset" to integerField(),
+                "lengthBytes" to integerField(),
+                "contentType" to stringField(),
+                "encoding" to enumField("text", "base64"),
+                "text" to stringField(),
+                "contentBase64" to stringField(),
+                "sha256" to stringField(),
+                "nextChunkUri" to stringField(),
+                "executionMeta" to objectField(),
+            ).required(
+                "artifactId",
+                "resourceUri",
+                "chunkId",
+                "offset",
+                "lengthBytes",
+                "contentType",
+                "encoding",
+                "sha256",
+            ),
         ))
 
         // Job-start tools

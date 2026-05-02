@@ -10,14 +10,10 @@
         },
         "chunkId": {
           "type": "string"
-        },
-        "tenantId": {
-          "type": "string"
         }
       },
       "required": [
-        "artifactId",
-        "chunkId"
+        "artifactId"
       ]
     },
     "outputSchema": {
@@ -25,24 +21,59 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "content": {
+        "artifactId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string"
+        },
+        "chunkId": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lengthBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentType": {
           "type": "string"
         },
         "encoding": {
           "type": "string",
           "enum": [
-            "base64",
-            "utf8"
+            "text",
+            "base64"
           ]
         },
-        "isLast": {
-          "type": "boolean"
+        "text": {
+          "type": "string"
+        },
+        "contentBase64": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "nextChunkUri": {
+          "type": "string"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
-        "content",
+        "artifactId",
+        "resourceUri",
+        "chunkId",
+        "offset",
+        "lengthBytes",
+        "contentType",
         "encoding",
-        "isLast"
+        "sha256"
       ]
     }
   },
