@@ -698,7 +698,7 @@ Für jeden Release abhaken:
 ## 8. Referenzen
 
 - [`CHANGELOG.md`](../../CHANGELOG.md) — Keep-a-Changelog Format
-- [`docs/planning/roadmap.md`](../planning/roadmap.md) — Milestone-Übersicht
+- [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) — Milestone-Übersicht
 - [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — Build/Test/Coverage/Release-Assets-CI
 - [`.github/workflows/release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) — GitHub-Release + Homebrew-Tap-Publikation + macOS-Verify
 - [`.github/workflows/verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der repo-lokalen Homebrew-Formula

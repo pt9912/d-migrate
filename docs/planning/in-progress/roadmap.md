@@ -7,8 +7,8 @@
 ## Übersicht
 
 Diese Roadmap beschreibt den geplanten Entwicklungsverlauf von d-migrate in vier Phasen.
-Sie basiert auf den Anforderungen des [Lastenhefts](../../spec/lastenheft-d-migrate.md), der
-[Architektur](../../spec/architecture.md) und der [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md). Die Roadmap wird quartalsweise aktualisiert und ist
+Sie basiert auf den Anforderungen des [Lastenhefts](../../../spec/lastenheft-d-migrate.md), der
+[Architektur](../../../spec/architecture.md) und der [Neutrales-Modell-Spezifikation](../../../spec/neutral-model-spec.md). Die Roadmap wird quartalsweise aktualisiert und ist
 öffentlich auf GitHub Projects einsehbar.
 
 ```
@@ -134,7 +134,7 @@ und Daten-Export/Import nutzen. LF-015 ist in 0.5.0 bewusst nur teilweise
 abgedeckt: `schema compare` vergleicht zwei neutrale Schema-Dateien; der volle
 Vergleich zwischen Umgebungen bzw. Datenbanken folgt in 0.6.0.
 
-Detaillierter Plan: [implementation-plan-0.5.0.md](./done/implementation-plan-0.5.0.md)
+Detaillierter Plan: [implementation-plan-0.5.0.md](../done/implementation-plan-0.5.0.md)
 
 ### Milestone 0.5.5 — Erweitertes Typsystem ✅ (2026-04-13)
 
@@ -155,7 +155,7 @@ Detaillierter Plan: [implementation-plan-0.5.0.md](./done/implementation-plan-0.
 
 **Ergebnis**: Das neutrale Typsystem ist vor Reverse-Engineering (0.6.0) vollständig. Spatial-Daten können ohne Datenverlust zwischen PostgreSQL/PostGIS, MySQL und SQLite/SpatiaLite transportiert werden; JSON/Arrays/Binary/UUID sind modelliert und getestet.
 
-Dieser Milestone basiert auf dem [Change Request Spatial Types](./done/change-request-spatial-types.md) (Phase 1) und zieht die vormals für 0.8.0 geplanten erweiterten Typen vor, damit `schema reverse` ab 0.6.0 von Anfang an gegen ein vollständiges Typsystem arbeiten kann.
+Dieser Milestone basiert auf dem [Change Request Spatial Types](../done/change-request-spatial-types.md) (Phase 1) und zieht die vormals für 0.8.0 geplanten erweiterten Typen vor, damit `schema reverse` ab 0.6.0 von Anfang an gegen ein vollständiges Typsystem arbeiten kann.
 
 ---
 
@@ -221,9 +221,9 @@ hinzu.
 
 **Ergebnis**: Bestehende Datenbanken können vor einer Migration profiliert werden.
 Spaltenweise Kennzahlen, Qualitätswarnungen und Zieltyp-Kompatibilität als
-JSON/YAML-Report. Design: [profiling.md](../../spec/profiling.md).
+JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 
-> Hinweis: Die in [profiling.md §10](../../spec/profiling.md#10-semantische-analyse-llm-erweiterung-spätere-phase)
+> Hinweis: Die in [profiling.md §10](../../../spec/profiling.md#10-semantische-analyse-llm-erweiterung-spätere-phase)
 > beschriebene semantische Analyse ist bewusst **nicht** Teil von 0.7.5.
 > Zuerst wird das deterministische Kern-Profiling stabilisiert; die opt-in
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
@@ -360,7 +360,7 @@ aktivieren. Details und offener Implementierungsvertrag: siehe
 ueber kanonische Hilfsobjekte (`dmg_sequences`, Routinen, Trigger) emulieren
 statt sie mit `E056` zu ueberspringen. Der Modus ist opt-in (`helper_table`).
 Reverse-Engineering und Compare folgen in 0.9.4. Details:
-[`mysql-sequence-emulation-plan.md`](./done/mysql-sequence-emulation-plan.md).
+[`mysql-sequence-emulation-plan.md`](../done/mysql-sequence-emulation-plan.md).
 
 ### Milestone 0.9.4 — Beta: MySQL-Sequence Reverse-Engineering und Compare ✅ (2026-04-21)
 
@@ -380,12 +380,12 @@ zurueckgefaltet und tauchen nicht als Rauschen im Diff auf. Degradierte
 Zustaende (fehlende Support-Routinen oder Trigger) erzeugen `W116` als
 Diagnosemeldung; `schema compare` bleibt dabei exit-code-stabil und zeigt
 `W116` als operandseitige Diagnose, nicht als eigenen Diff. Details:
-[`mysql-sequence-emulation-plan.md`](./done/mysql-sequence-emulation-plan.md) Phase D+E;
-Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./done/ImpPlan-0.9.4-6.1.md),
-[`ImpPlan-0.9.4-6.2.md`](./done/ImpPlan-0.9.4-6.2.md),
-[`ImpPlan-0.9.4-6.3.md`](./done/ImpPlan-0.9.4-6.3.md),
-[`ImpPlan-0.9.4-6.4.md`](./done/ImpPlan-0.9.4-6.4.md),
-[`ImpPlan-0.9.4-6.5.md`](./done/ImpPlan-0.9.4-6.5.md).
+[`mysql-sequence-emulation-plan.md`](../done/mysql-sequence-emulation-plan.md) Phase D+E;
+Teilplaene: [`ImpPlan-0.9.4-6.1.md`](../done/ImpPlan-0.9.4-6.1.md),
+[`ImpPlan-0.9.4-6.2.md`](../done/ImpPlan-0.9.4-6.2.md),
+[`ImpPlan-0.9.4-6.3.md`](../done/ImpPlan-0.9.4-6.3.md),
+[`ImpPlan-0.9.4-6.4.md`](../done/ImpPlan-0.9.4-6.4.md),
+[`ImpPlan-0.9.4-6.5.md`](../done/ImpPlan-0.9.4-6.5.md).
 
 ### Milestone 0.9.5 — Qualitätsverbesserung ✅ (2026-04-24)
 
@@ -414,7 +414,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](./done/ImpPlan-0.9.4-6.1.md),
 ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 `spec/ki-mcp.md` vollstaendig, inklusive beider Transportmodi,
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
-[`ki-mcp.md`](../../spec/ki-mcp.md).
+[`ki-mcp.md`](../../../spec/ki-mcp.md).
 
 ### Milestone 0.9.7 — REST-API
 
@@ -430,7 +430,7 @@ kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 
 **Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
 programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
-[`rest-service.md`](../../spec/rest-service.md).
+[`rest-service.md`](../../../spec/rest-service.md).
 
 ### Milestone 0.9.8 — gRPC-API
 
@@ -445,7 +445,7 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 
 **Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
 Low-Latency-Integration und Streaming-Szenarien. Details:
-[`grpc-service.md`](../../spec/grpc-service.md).
+[`grpc-service.md`](../../../spec/grpc-service.md).
 
 ### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
@@ -455,8 +455,8 @@ Low-Latency-Integration und Streaming-Szenarien. Details:
 | Docs    | Administrationshandbuch                   | —      |
 | Docs    | Migrations-Leitfaden                      | —      |
 | Docs    | API-Dokumentation                         | —      |
-| Arch    | Parquet-Export/-Import evaluieren, um DuckDB-, Arrow- und Lakehouse-Anschlussfähigkeit zu prüfen — siehe [`parquet-export-import-evaluation.md`](./open/parquet-export-import-evaluation.md) | —      |
-| Arch    | Object-Storage-ArtifactStore fuer Checkpoints, Reports und grosse Exporte planen — siehe [`object-storage-artifact-store.md`](../../spec/object-storage-artifact-store.md) | —      |
+| Arch    | Parquet-Export/-Import evaluieren, um DuckDB-, Arrow- und Lakehouse-Anschlussfähigkeit zu prüfen — siehe [`parquet-export-import-evaluation.md`](../open/parquet-export-import-evaluation.md) | —      |
+| Arch    | Object-Storage-ArtifactStore fuer Checkpoints, Reports und grosse Exporte planen — siehe [`object-storage-artifact-store.md`](../open/object-storage-artifact-store.md) | —      |
 | QA      | Performance-Benchmarks dokumentiert       | —      |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
 
@@ -466,7 +466,7 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 > Hinweis: Eine kuratierte Liste geeigneter Beispiel- und Testdatenbanken fuer
 > Pilot-Validierung, Resume-/Streaming-Proben und Performance-nahe Laeufe
 > steht in
-> [`test-database-candidates.md`](./open/test-database-candidates.md).
+> [`test-database-candidates.md`](../open/test-database-candidates.md).
 
 > **Warum ein eigener Milestone für Docs und QA?** Dokumentations- und
 > Pilot-Tasks haben eine deutlich andere Cadence als Code-Features (sie
@@ -577,15 +577,15 @@ Validierung deterministisch im Profiling-Kern bleiben.
 
 | Bereich     | Aufgabe                                                                                         | LF-Ref |
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
-| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](./open/profiling-data-quality-export.md) | —      |
-| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](./open/orchestrator-examples.md) | —      |
-| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](./open/bi-demo-compose.md) | —      |
+| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../open/profiling-data-quality-export.md) | —      |
+| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../open/orchestrator-examples.md) | —      |
+| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../open/bi-demo-compose.md) | —      |
 
 ### Milestone 1.6.0 — Metadata Catalog und Lakehouse Targets
 
 | Bereich     | Aufgabe                                                                                         | LF-Ref |
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
-| Metadata    | Catalog-Publisher fuer Schema-Snapshots, Diffs, Profiling-Reports und Artefaktrefs planen — siehe [`catalog-publisher-lakehouse-targets.md`](../../spec/catalog-publisher-lakehouse-targets.md) | —      |
+| Metadata    | Catalog-Publisher fuer Schema-Snapshots, Diffs, Profiling-Reports und Artefaktrefs planen — siehe [`catalog-publisher-lakehouse-targets.md`](../../../spec/catalog-publisher-lakehouse-targets.md) | —      |
 | Lakehouse   | Iceberg-/Delta-Zieladapter als spaetere Option evaluieren, abhaengig von Parquet- und Object-Storage-Grundlagen | —      |
 
 ### Milestone 1.7.0 — Weitere Datenbanken (MS SQL Server)
@@ -656,7 +656,7 @@ Datenbanksystem.
 
 - Code-Coverage >= 80% (Type-Mapping: 100%)
 - Keine kritischen/hohen Sicherheitslücken
-- Performance-Benchmarks eingehalten (siehe [Lastenheft 8.2](../../spec/lastenheft-d-migrate.md))
+- Performance-Benchmarks eingehalten (siehe [Lastenheft 8.2](../../../spec/lastenheft-d-migrate.md))
 - Build-Dauer < 5 Minuten
 
 ### Projekt-Metriken (nach 1.0.0)

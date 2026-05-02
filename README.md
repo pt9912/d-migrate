@@ -264,7 +264,7 @@ Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](http
 ## Roadmap
 
 Die vollständige Roadmap und den Meilensteinplan findest du in
-[docs/planning/roadmap.md](docs/planning/roadmap.md).
+[docs/planning/roadmap.md](docs/planning/in-progress/roadmap.md).
 
 ## Dokumentation
 
@@ -278,7 +278,7 @@ Detaillierte Dokumentation findest du in [docs/](docs/) und [spec/](spec/):
 - [MCP-Server (`d-migrate mcp serve`)](spec/mcp-server.md)
 - [Regeln zur DDL-Generierung](spec/ddl-generation-rules.md)
 - [Verbindungs- und Konfigurationsspezifikation](spec/connection-config-spec.md)
-- [Roadmap](docs/planning/roadmap.md)
+- [Roadmap](docs/planning/in-progress/roadmap.md)
 - [Release-Leitfaden](docs/user/releasing.md)
 - [Lastenheft (Deutsch)](spec/lastenheft-d-migrate.md)
 

@@ -1232,7 +1232,7 @@ einer ganzen Tabelle blockiert, ist eine separate Generatorwirkung.
 - [Architektur](./architecture.md) — Modul-Struktur, TypeMapper-Implementierung, Driver-SPI
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes, Kommando-Referenz
-- [Roadmap](../docs/planning/roadmap.md) — Phasen, Milestones und Release-Planung
+- [Roadmap](../docs/planning/in-progress/roadmap.md) — Phasen, Milestones und Release-Planung
 - [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---

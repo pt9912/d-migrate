@@ -1204,5 +1204,5 @@ und `snakeyaml-engine` als neue Dependencies.
 - [Lastenheft](../../../spec/lastenheft-d-migrate.md) — LF-008/LF-009, LN-005/LN-007/LN-048
 - [CLI-Spezifikation §6.2](../../../spec/cli-spec.md) — `data export` Command
 - [Connection- und Konfigurationsspezifikation](../../../spec/connection-config-spec.md) — URL-Format §1, HikariCP §2, Profile §5
-- [Roadmap Milestone 0.3.0](../roadmap.md)
+- [Roadmap Milestone 0.3.0](../in-progress/roadmap.md)
 - [Releasing Guide](../../user/releasing.md) — Voraussetzungen für den 0.3.0-Release

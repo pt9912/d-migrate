@@ -4,10 +4,10 @@
 >
 > Status: Entwurf (2026-05-01)
 >
-> Referenzen: `docs/planning/roadmap.md`,
-> `docs/planning/parquet-export-import-evaluation.md`,
-> `spec/object-storage-artifact-store.md`,
-> `docs/planning/profiling-data-quality-export.md`
+> Referenzen: `docs/planning/in-progress/roadmap.md`,
+> `docs/planning/open/parquet-export-import-evaluation.md`,
+> `docs/planning/open/object-storage-artifact-store.md`,
+> `docs/planning/open/profiling-data-quality-export.md`
 
 ---
 

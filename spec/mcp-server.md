@@ -271,5 +271,5 @@ einen Golden-Test gegen Drift gepinnt
 - [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
   Phasen-B-Spezifikation (§5 Architektur, §12.13–§12.18 Implementation
   Contracts).
-- [`docs/planning/roadmap.md`](../docs/planning/roadmap.md) — Plan für Phase C/D
+- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase C/D
   (Tool-Handler, `resources/read`, Upload-Sessions, AI-Tools).

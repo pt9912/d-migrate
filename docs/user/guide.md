@@ -607,6 +607,6 @@ d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch ü
 - [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md) -- Vollständige Typsystem-Referenz
 - [CLI-Spezifikation](../../spec/cli-spec.md) -- Alle Kommandos und Exit-Codes
 - [Design-Dokument](../../spec/design.md) -- Architektur und Designentscheidungen
-- [Roadmap](../planning/roadmap.md) -- Geplante Features und Meilensteine
+- [Roadmap](../planning/in-progress/roadmap.md) -- Geplante Features und Meilensteine
 - [README (English)](../../README.md) -- Projektübersicht auf Englisch
 - [Changelog](../../CHANGELOG.md) -- Alle Änderungen im Überblick
