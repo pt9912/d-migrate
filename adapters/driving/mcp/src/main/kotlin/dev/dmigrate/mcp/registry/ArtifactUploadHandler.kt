@@ -101,9 +101,9 @@ internal class ArtifactUploadHandler(
         }
         // AP 6.18 idempotency: a replay of the completing segment
         // (same index + same hash) returns the persisted schemaRef
-        // instead of IDEMPOTENCY_CONFLICT. Divergent retries
-        // (different hash / index / total) keep the conflict path
-        // through `validateSessionState`.
+        // instead of IDEMPOTENCY_CONFLICT. Divergent retries (other
+        // hash / index / total) still surface the conflict — that
+        // mapping happens inside `handleReplayAfterCompleted`.
         if (session.state == UploadSessionState.COMPLETED) {
             return handleReplayAfterCompleted(session, args)
         }
@@ -235,21 +235,30 @@ internal class ArtifactUploadHandler(
     ): ToolCallOutcome {
         val schemaRef = session.finalisedSchemaRef
             ?: throw IdempotencyConflictException(
-                existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
         if (args.segmentTotal != session.segmentTotal) {
             throw IdempotencyConflictException(
-                existingFingerprint = "session=${session.uploadSessionId},segmentTotal=${session.segmentTotal}",
+                existingFingerprint = UploadFingerprint.segmentTotalMismatch(
+                    session.uploadSessionId,
+                    session.segmentTotal,
+                ),
             )
         }
         val storedSegment = segmentStore.listSegments(session.uploadSessionId)
             .firstOrNull { it.segmentIndex == args.segmentIndex }
             ?: throw IdempotencyConflictException(
-                existingFingerprint = "session=${session.uploadSessionId},segmentIndex=${args.segmentIndex}",
+                existingFingerprint = UploadFingerprint.segmentIndexUnknown(
+                    session.uploadSessionId,
+                    args.segmentIndex,
+                ),
             )
         if (storedSegment.segmentSha256 != args.segmentSha256) {
             throw IdempotencyConflictException(
-                existingFingerprint = "segment=${args.segmentIndex},sha256=${storedSegment.segmentSha256}",
+                existingFingerprint = UploadFingerprint.segmentHashMismatch(
+                    args.segmentIndex,
+                    storedSegment.segmentSha256,
+                ),
             )
         }
         return buildSegmentResponse(
@@ -346,7 +355,7 @@ internal class ArtifactUploadHandler(
         when (session.state) {
             UploadSessionState.ACTIVE -> Unit
             UploadSessionState.COMPLETED -> throw IdempotencyConflictException(
-                existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
             UploadSessionState.ABORTED -> throw UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> throw UploadSessionExpiredException(session.uploadSessionId)
@@ -434,11 +443,10 @@ internal class ArtifactUploadHandler(
         // AP 6.16 defense-in-depth: pin the segment offset to the
         // sequential layout the assembler later reads. Non-final
         // segments must sit at index*chunkSize; the final segment
-        // must close the byte range exactly. Otherwise a client
-        // could sneak overlapping or gap-bearing bytes past the
-        // store and the rebuilt total hash would only catch some
-        // patterns (random byte permutations within a fixed total
-        // can still hash the same if the client controls them).
+        // must close the byte range exactly. Without this check a
+        // client could write overlapping or gap-bearing bytes that
+        // the store accepts segment-by-segment but the assembler
+        // would silently misalign.
         val expectedOffset = (args.segmentIndex - 1).toLong() * limits.maxUploadSegmentBytes.toLong()
         if (!args.isFinalSegment && args.segmentOffset != expectedOffset) {
             throw ValidationErrorException(
@@ -482,7 +490,10 @@ internal class ArtifactUploadHandler(
         is WriteSegmentOutcome.Stored -> false
         is WriteSegmentOutcome.AlreadyStored -> true
         is WriteSegmentOutcome.Conflict -> throw IdempotencyConflictException(
-            existingFingerprint = "segment=${args.segmentIndex},sha256=${outcome.existingSegmentSha256}",
+            existingFingerprint = UploadFingerprint.segmentHashMismatch(
+                args.segmentIndex,
+                outcome.existingSegmentSha256,
+            ),
         )
         is WriteSegmentOutcome.SizeMismatch -> throw InternalAgentErrorException()
     }

@@ -41,7 +41,7 @@ internal fun UploadSessionStore.transitionOrThrow(
             UploadSessionState.ABORTED -> UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> UploadSessionExpiredException(session.uploadSessionId)
             UploadSessionState.COMPLETED -> IdempotencyConflictException(
-                existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
             UploadSessionState.ACTIVE -> InternalAgentErrorException()
         }

@@ -106,7 +106,7 @@ internal class ArtifactUploadAbortHandler(
             UploadSessionState.ABORTED -> throw UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> throw UploadSessionExpiredException(session.uploadSessionId)
             UploadSessionState.COMPLETED -> throw IdempotencyConflictException(
-                existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
         }
     }

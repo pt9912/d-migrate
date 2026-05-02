@@ -593,7 +593,7 @@ class SchemaCompareHandlerTest : FunSpec({
         stageSchema(setup, "left", """{"name":"clean","version":"1.0","tables":{}}""")
         stageSchema(
             setup, "right",
-            """{"name":"Bearer abc123secret","version":"1.0","tables":{}}""",
+            """{"name":"$BEARER_TOKEN_LITERAL","version":"1.0","tables":{}}""",
         )
         val finding = parsePayload(
             setup.handler.handle(
@@ -604,10 +604,9 @@ class SchemaCompareHandlerTest : FunSpec({
                 ),
             ),
         ).getAsJsonArray("findings").get(0).asJsonObject
-        finding.get("message").asString.contains("abc123secret") shouldBe false
+        finding.assertNoBearerLeak("message")
         finding.get("message").asString.contains("***") shouldBe true
-        val details = finding.getAsJsonObject("details")
-        details.get("after").asString.contains("abc123secret") shouldBe false
+        finding.getAsJsonObject("details").assertNoBearerLeak("after")
     }
 
     test("response carries application/json mime type and executionMeta.requestId") {

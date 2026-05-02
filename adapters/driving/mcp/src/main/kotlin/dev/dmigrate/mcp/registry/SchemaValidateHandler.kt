@@ -3,9 +3,7 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import dev.dmigrate.core.validation.SchemaValidator
-import dev.dmigrate.core.validation.ValidationError
 import dev.dmigrate.core.validation.ValidationResult
-import dev.dmigrate.core.validation.ValidationWarning
 import dev.dmigrate.mcp.registry.JsonArgs.optEnum
 import dev.dmigrate.mcp.registry.JsonArgs.optObject
 import dev.dmigrate.mcp.registry.JsonArgs.optString
@@ -74,8 +72,12 @@ internal class SchemaValidateHandler(
     }
 
     private fun buildPayload(result: ValidationResult, strictness: Strictness): Map<String, Any?> {
-        val errorFindings = result.errors.map(::projectError)
-        val warningFindings = result.warnings.map(::projectWarning)
+        val errorFindings = result.errors.map {
+            projectFinding(SchemaFindingSeverity.ERROR, it.code, it.objectPath, it.message)
+        }
+        val warningFindings = result.warnings.map {
+            projectFinding(SchemaFindingSeverity.WARNING, it.code, it.objectPath, it.message)
+        }
         val combined = errorFindings + warningFindings
         val cap = limits.maxInlineFindings
         val truncated = combined.size > cap
@@ -98,18 +100,16 @@ internal class SchemaValidateHandler(
     // accidental Bearer/approval-token/connection-URL leakage out
     // of the wire response. `code` is a curated constant alphabet
     // and not scrubbed.
-    private fun projectError(error: ValidationError): Map<String, String> = mapOf(
-        "severity" to SchemaFindingSeverity.ERROR,
-        "code" to error.code,
-        "path" to SecretScrubber.scrub(error.objectPath),
-        "message" to SecretScrubber.scrub(error.message),
-    )
-
-    private fun projectWarning(warning: ValidationWarning): Map<String, String> = mapOf(
-        "severity" to SchemaFindingSeverity.WARNING,
-        "code" to warning.code,
-        "path" to SecretScrubber.scrub(warning.objectPath),
-        "message" to SecretScrubber.scrub(warning.message),
+    private fun projectFinding(
+        severity: String,
+        code: String,
+        path: String,
+        message: String,
+    ): Map<String, String> = mapOf(
+        "severity" to severity,
+        "code" to code,
+        "path" to SecretScrubber.scrub(path),
+        "message" to SecretScrubber.scrub(message),
     )
 
     private fun summary(errorCount: Int, warningCount: Int, valid: Boolean): String = when {

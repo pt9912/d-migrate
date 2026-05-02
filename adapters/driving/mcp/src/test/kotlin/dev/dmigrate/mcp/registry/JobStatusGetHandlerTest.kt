@@ -365,18 +365,22 @@ class JobStatusGetHandlerTest : FunSpec({
         stageJob(
             f, "job-1",
             status = JobStatus.FAILED,
-            progress = JobProgress(phase = "running Bearer abc123secret", numericValues = emptyMap()),
-            error = JobError(code = "Bearer abc123secret", message = "failed Bearer abc123secret", exitCode = 7),
+            progress = JobProgress(phase = "running $BEARER_TOKEN_LITERAL", numericValues = emptyMap()),
+            error = JobError(
+                code = BEARER_TOKEN_LITERAL,
+                message = "failed $BEARER_TOKEN_LITERAL",
+                exitCode = 7,
+            ),
         )
         val json = parsePayload(
             f.handler.handle(
                 ToolCallContext("job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL),
             ),
         )
-        json.getAsJsonObject("progress").get("phase").asString.contains("abc123secret") shouldBe false
+        json.getAsJsonObject("progress").assertNoBearerLeak("phase")
         val err = json.getAsJsonObject("error")
-        err.get("code").asString.contains("abc123secret") shouldBe false
-        err.get("message").asString.contains("abc123secret") shouldBe false
+        err.assertNoBearerLeak("code")
+        err.assertNoBearerLeak("message")
     }
 
     test("response carries application/json mime type") {

@@ -322,9 +322,9 @@ class SchemaGenerateHandlerTest : FunSpec({
                 TransformationNote(
                     type = NoteType.WARNING,
                     code = "W042",
-                    objectName = "tables.Bearer abc123secret",
-                    message = "object Bearer abc123secret needed adjustment",
-                    hint = "rename to drop Bearer abc123secret prefix",
+                    objectName = "tables.$BEARER_TOKEN_LITERAL",
+                    message = "object $BEARER_TOKEN_LITERAL needed adjustment",
+                    hint = "rename to drop $BEARER_TOKEN_LITERAL prefix",
                 ),
             ),
         )
@@ -337,9 +337,9 @@ class SchemaGenerateHandlerTest : FunSpec({
             ),
         )
         val finding = parsePayload(outcome).getAsJsonArray("findings").get(0).asJsonObject
-        finding.get("path").asString.contains("abc123secret") shouldBe false
-        finding.get("message").asString.contains("abc123secret") shouldBe false
-        finding.get("hint").asString.contains("abc123secret") shouldBe false
+        finding.assertNoBearerLeak("path")
+        finding.assertNoBearerLeak("message")
+        finding.assertNoBearerLeak("hint")
     }
 
     test("AP 6.17: skipped object reason is scrubbed of Bearer tokens") {
@@ -349,7 +349,7 @@ class SchemaGenerateHandlerTest : FunSpec({
                 SkippedObject(
                     type = "view",
                     name = "v1",
-                    reason = "depends on Bearer abc123secret which is unavailable",
+                    reason = "depends on $BEARER_TOKEN_LITERAL which is unavailable",
                     code = "E020",
                 ),
             ),
@@ -363,7 +363,7 @@ class SchemaGenerateHandlerTest : FunSpec({
             ),
         )
         val finding = parsePayload(outcome).getAsJsonArray("findings").get(0).asJsonObject
-        finding.get("message").asString.contains("abc123secret") shouldBe false
+        finding.assertNoBearerLeak("message")
     }
 
     test("DDL phase ordering is preserved by render() (statementCount echoes statements list)") {

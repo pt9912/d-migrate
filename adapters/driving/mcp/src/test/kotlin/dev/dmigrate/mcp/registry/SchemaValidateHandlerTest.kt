@@ -202,7 +202,7 @@ class SchemaValidateHandlerTest : FunSpec({
         // rules use the object name in `path` and `message`, so
         // both routes need scrubbing.
         val schemaWithSecret =
-            """{"name":"x","version":"1.0","tables":{"Bearer abc123secret":{"columns":{}}}}"""
+            """{"name":"x","version":"1.0","tables":{"$BEARER_TOKEN_LITERAL":{"columns":{}}}}"""
         val outcome = handler().handle(
             ToolCallContext(
                 "schema_validate",
@@ -211,8 +211,8 @@ class SchemaValidateHandlerTest : FunSpec({
             ),
         )
         val finding = parsePayload(outcome).getAsJsonArray("findings").get(0).asJsonObject
-        finding.get("path").asString.contains("abc123secret") shouldBe false
-        finding.get("message").asString.contains("abc123secret") shouldBe false
+        finding.assertNoBearerLeak("path")
+        finding.assertNoBearerLeak("message")
     }
 
     test("response carries application/json mime type and text content") {
