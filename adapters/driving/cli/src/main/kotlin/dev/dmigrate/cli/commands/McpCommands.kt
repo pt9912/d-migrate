@@ -19,14 +19,18 @@ import dev.dmigrate.mcp.server.validateForStdio
 import java.net.URI
 
 /**
- * MCP-server entry point per `ImpPlan-0.9.6-B.md` §6.11. Phase B
- * exposes the `serve` subcommand only — `tools/list`, `tools/call`,
- * `resources/list` and `resources/templates/list` work, but only
- * `capabilities_list` has a Phase-B handler. Production use needs
- * Phase C/D handlers wired into the bootstrap.
+ * MCP-server entry point per `ImpPlan-0.9.6-B.md` §6.11 +
+ * `ImpPlan-0.9.6-C.md` §6.14/§6.20. The `serve` subcommand activates
+ * the full Phase-C dispatch chain: every tool from the Phase-C plan
+ * (`schema_validate`, `schema_generate`, `schema_compare`,
+ * `artifact_upload*`, `artifact_chunk_get`, `job_status_get`,
+ * plus `capabilities_list`) routes to its real handler, and every
+ * `tools/call` records one structured audit event. State is
+ * ephemeral (in-memory stores) — durable storage adapters land in a
+ * later phase.
  */
 class McpCommand : CliktCommand(name = "mcp") {
-    override fun help(context: Context) = "MCP-server commands (Phase B: stdio + Streamable HTTP)"
+    override fun help(context: Context) = "MCP-server commands (Phase C: stdio + Streamable HTTP)"
 
     init {
         subcommands(McpServeCommand())
@@ -46,7 +50,8 @@ class McpCommand : CliktCommand(name = "mcp") {
  */
 class McpServeCommand : CliktCommand(name = "serve") {
     override fun help(context: Context) =
-        "Start the MCP server. Phase B: only `capabilities_list` is implemented."
+        "Start the MCP server with the Phase-C dispatch chain " +
+            "(in-memory state — no durable storage yet)."
 
     private val transport by option(
         "--transport",
@@ -154,7 +159,12 @@ class McpServeCommand : CliktCommand(name = "serve") {
     }
 
     private fun startStdio(config: McpServerConfig) {
-        when (val outcome = McpServerBootstrap.startStdio(config = config)) {
+        // AP 6.14 / 6.20: hand the bootstrap a PhaseCWiring so every
+        // tools/call dispatches to its real handler. Without this the
+        // bootstrap silently falls back to the Phase-B registry where
+        // only `capabilities_list` is wired up.
+        val wiring = developmentPhaseCWiring()
+        when (val outcome = McpServerBootstrap.startStdio(config = config, phaseCWiring = wiring)) {
             is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
             is McpStartOutcome.Started -> {
                 echo("MCP stdio server started; reading from stdin until EOF/SIGINT.", err = true)
@@ -168,7 +178,10 @@ class McpServeCommand : CliktCommand(name = "serve") {
     }
 
     private fun startHttp(config: McpServerConfig) {
-        when (val outcome = McpServerBootstrap.startHttp(config = config)) {
+        // AP 6.14 / 6.20: see startStdio comment — same Phase-C wiring
+        // for the HTTP transport so both routes share dispatch shape.
+        val wiring = developmentPhaseCWiring()
+        when (val outcome = McpServerBootstrap.startHttp(config = config, phaseCWiring = wiring)) {
             is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
             is McpStartOutcome.Started -> {
                 echo("MCP HTTP server listening on $bind:${outcome.handle.boundPort}", err = true)

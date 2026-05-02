@@ -35,11 +35,26 @@ import dev.dmigrate.server.core.principal.PrincipalContext
  *
  * The handler delegates to the existing [SchemaComparator]; no
  * fachliche logic is duplicated. The `SchemaDiff` is projected into a
- * unified `findings` list:
- * - added objects → severity `info`  (additive, generally compatible)
- * - removed objects → severity `warning` (potentially breaking)
- * - changed objects → severity `warning`
- * - metadata change → severity `info`
+ * unified `findings` list using the AP-6.6.6 severity policy:
+ *
+ * Top-level objects (tables / views / sequences / customTypes /
+ * functions / procedures / triggers):
+ * - added → severity `info` (additive, generally compatible)
+ * - removed → severity `warning` (potentially breaking)
+ * - changed (non-table objects) → severity `warning`
+ *
+ * Schema metadata:
+ * - `name` change → severity `warning` (identity drift)
+ * - `version` change → severity `info`
+ *
+ * Table-internal changes (per-column / per-PK / per-index / etc.) —
+ * see [projectTableDiff] / [projectColumnDiff] for the full mapping:
+ * - column added → `info`; column removed → `error`
+ * - column type / `required → true` / primary key change → `error`
+ * - column `required → false` / unique relaxation /
+ *   constraint removed / metadata change → `info`
+ * - column `unique → true` / `default` change / `references` change /
+ *   index removed-or-changed / constraint added-or-changed → `warning`
  *
  * When findings exceed `maxInlineFindings` or the rendered envelope
  * would breach `maxToolResponseBytes`, the full diff JSON is written
