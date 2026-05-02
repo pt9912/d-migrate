@@ -166,4 +166,33 @@ object PhaseCRegistries {
                 wiring.clock,
             ),
         )
+
+    /**
+     * Bundles the per-call dispatch components a single `tools/call`
+     * needs — the registry that finds the handler plus the byte-limit
+     * enforcer that brackets it. The bootstrap takes one of these
+     * instead of two correlated parameters with cross-defaults so the
+     * `phaseCWiring?.let { ... }`-fallback expression lives in one
+     * place. Phase-B-only callers (no `PhaseCWiring`) get a registry
+     * with no enforcer — the same shape `dispatch` already handles.
+     */
+    data class McpServiceComponents(
+        val toolRegistry: ToolRegistry,
+        val responseLimitEnforcer: ResponseLimitEnforcer?,
+    )
+
+    fun defaultComponents(
+        phaseCWiring: PhaseCWiring?,
+        scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
+    ): McpServiceComponents = if (phaseCWiring != null) {
+        McpServiceComponents(
+            toolRegistry = defaultToolRegistry(phaseCWiring, scopeMapping),
+            responseLimitEnforcer = defaultResponseLimitEnforcer(phaseCWiring),
+        )
+    } else {
+        McpServiceComponents(
+            toolRegistry = PhaseBRegistries.toolRegistry(scopeMapping),
+            responseLimitEnforcer = null,
+        )
+    }
 }

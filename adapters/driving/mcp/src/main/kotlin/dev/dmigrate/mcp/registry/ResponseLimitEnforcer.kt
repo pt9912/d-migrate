@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
@@ -62,6 +63,14 @@ class ResponseLimitEnforcer internal constructor(
      * outcomes pass through untouched — error envelopes are bounded
      * by construction (`code/message/details/requestId`) and never
      * carry the kind of body this code path needs to spill.
+     *
+     * If even the artefact-spill fails because the response exceeds
+     * `maxArtifactUploadBytes`, we surface that as
+     * `INTERNAL_AGENT_ERROR`, not `PAYLOAD_TOO_LARGE`: the client
+     * sent a perfectly-sized request, the server's per-handler cap
+     * is just smaller than the operator-configured spill cap.
+     * Letting `PAYLOAD_TOO_LARGE` bubble would mislead the client
+     * into thinking it has a request-side fix.
      */
     fun enforceResponseSize(
         toolName: String,
@@ -71,21 +80,37 @@ class ResponseLimitEnforcer internal constructor(
         if (outcome !is ToolCallOutcome.Success) return outcome
         val sole = outcome.content.singleOrNull() ?: return outcome
         val text = sole.text ?: return outcome
+        // Fast path: UTF-8 is at most 4 bytes/char, so `length * 4`
+        // bytes is a hard upper bound. When that already fits, skip
+        // the full encode (saves one byte[] alloc + one full UTF-8
+        // pass per success response on the dispatch hot path).
+        // `Int.toLong()` keeps the multiplication overflow-safe for
+        // the worst-case 2^31-1-char string.
+        val cap = limits.maxToolResponseBytes
+        if (text.length.toLong() * 4 <= cap.toLong()) return outcome
         val bytes = text.toByteArray(Charsets.UTF_8)
-        if (bytes.size <= limits.maxToolResponseBytes) return outcome
+        if (bytes.size <= cap) return outcome
 
-        val artifactUri = artifactSink.writeReadOnly(
-            principal = principal,
-            kind = ArtifactKind.OTHER,
-            contentType = sole.mimeType ?: "application/json",
-            filename = "tool-response-overflow-${toolName}.json",
-            content = bytes,
-            maxArtifactBytes = limits.maxArtifactUploadBytes,
-        )
+        val artifactUri = try {
+            artifactSink.writeReadOnly(
+                principal = principal,
+                kind = ArtifactKind.OTHER,
+                contentType = sole.mimeType ?: "application/json",
+                filename = "tool-response-overflow-${toolName}.json",
+                content = bytes,
+                maxArtifactBytes = limits.maxArtifactUploadBytes,
+            )
+        } catch (e: PayloadTooLargeException) {
+            // The handler produced a response that doesn't even fit
+            // the operator's spill cap. Re-raise as
+            // INTERNAL_AGENT_ERROR (cause-chained) so the client sees
+            // an honest "server-side limit, not your fault" envelope
+            // instead of being told their request was too big.
+            throw InternalAgentErrorException(cause = e)
+        }
         val replacement = mapOf(
             "summary" to "Response of ${bytes.size} bytes exceeded the " +
-                "${limits.maxToolResponseBytes}-byte tool-response limit; " +
-                "full payload moved to artefact.",
+                "${cap}-byte tool-response limit; full payload moved to artefact.",
             "artifactRef" to artifactUri.render(),
             "truncated" to true,
         )
@@ -100,12 +125,13 @@ class ResponseLimitEnforcer internal constructor(
         )
     }
 
+    // The "artifact_upload" literal is also the registry/scope-mapping
+    // key for the segment-upload tool — see PhaseBRegistries,
+    // PhaseCRegistries, McpServerConfig.DEFAULT_SCOPE_MAPPING, and
+    // PhaseBToolSchemas. Project convention is inline strings; if a
+    // future rename happens, all five sites move together.
     private fun capForTool(toolName: String): Int = when (toolName) {
-        UPLOAD_TOOL_NAME -> limits.maxUploadToolRequestBytes
+        "artifact_upload" -> limits.maxUploadToolRequestBytes
         else -> limits.maxNonUploadToolRequestBytes
-    }
-
-    private companion object {
-        const val UPLOAD_TOOL_NAME = "artifact_upload"
     }
 }

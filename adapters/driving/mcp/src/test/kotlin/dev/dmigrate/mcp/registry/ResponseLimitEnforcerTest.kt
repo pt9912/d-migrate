@@ -15,6 +15,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Clock
 import java.time.Instant
 
@@ -31,25 +32,29 @@ private val PRINCIPAL = PrincipalContext(
     expiresAt = Instant.MAX,
 )
 
-private fun enforcer(
-    limits: McpLimitsConfig = McpLimitsConfig(),
-): Triple<ResponseLimitEnforcer, InMemoryArtifactStore, InMemoryArtifactContentStore> {
+private class EnforcerFixture(
+    val sut: ResponseLimitEnforcer,
+    val artifactStore: InMemoryArtifactStore,
+    val contentStore: InMemoryArtifactContentStore,
+)
+
+private fun enforcer(limits: McpLimitsConfig = McpLimitsConfig()): EnforcerFixture {
     val artifactStore = InMemoryArtifactStore()
     val contentStore = InMemoryArtifactContentStore()
     val sink = ArtifactSink(artifactStore, contentStore, Clock.systemUTC())
-    return Triple(ResponseLimitEnforcer(limits, sink), artifactStore, contentStore)
+    return EnforcerFixture(ResponseLimitEnforcer(limits, sink), artifactStore, contentStore)
 }
 
 class ResponseLimitEnforcerTest : FunSpec({
 
     context("enforceRequestSize") {
         test("small payload passes through for non-upload tools") {
-            val (sut, _, _) = enforcer()
+            val sut = enforcer().sut
             sut.enforceRequestSize("schema_validate", JsonParser.parseString("""{"schema":{}}"""))
         }
 
         test("oversized request for a non-upload tool throws PAYLOAD_TOO_LARGE with the limit") {
-            val (sut, _, _) = enforcer(McpLimitsConfig(maxNonUploadToolRequestBytes = 32))
+            val sut = enforcer(McpLimitsConfig(maxNonUploadToolRequestBytes = 32)).sut
             val big = "x".repeat(64)
             val ex = shouldThrow<PayloadTooLargeException> {
                 sut.enforceRequestSize(
@@ -70,7 +75,7 @@ class ResponseLimitEnforcerTest : FunSpec({
                 maxNonUploadToolRequestBytes = 32,
                 maxUploadToolRequestBytes = 4096,
             )
-            val (sut, _, _) = enforcer(limits)
+            val sut = enforcer(limits).sut
             val big = "x".repeat(64)
             sut.enforceRequestSize(
                 "artifact_upload",
@@ -86,14 +91,14 @@ class ResponseLimitEnforcerTest : FunSpec({
         }
 
         test("null arguments are treated as zero bytes") {
-            val (sut, _, _) = enforcer(McpLimitsConfig(maxNonUploadToolRequestBytes = 1))
+            val sut = enforcer(McpLimitsConfig(maxNonUploadToolRequestBytes = 1)).sut
             sut.enforceRequestSize("schema_validate", null)
         }
     }
 
     context("enforceResponseSize") {
         test("small response passes through unchanged") {
-            val (sut, _, _) = enforcer()
+            val sut = enforcer().sut
             val original = ToolCallOutcome.Success(
                 content = listOf(
                     ToolContent(type = "text", text = """{"ok":true}""", mimeType = "application/json"),
@@ -105,30 +110,29 @@ class ResponseLimitEnforcerTest : FunSpec({
 
         test("oversized success response is moved to an artefact with a truncated envelope") {
             val limits = McpLimitsConfig(maxToolResponseBytes = 64)
-            val (sut, artifactStore, contentStore) = enforcer(limits)
+            val f = enforcer(limits)
             val bigText = """{"data":"${"x".repeat(200)}"}"""
             val outcome = ToolCallOutcome.Success(
                 content = listOf(
                     ToolContent(type = "text", text = bigText, mimeType = "application/json"),
                 ),
             )
-            val replaced = sut.enforceResponseSize("schema_validate", PRINCIPAL, outcome)
+            val replaced = f.sut.enforceResponseSize("schema_validate", PRINCIPAL, outcome)
             val text = (replaced as ToolCallOutcome.Success).content.single().text!!
             val json = JsonParser.parseString(text).asJsonObject
             json.get("truncated").asBoolean shouldBe true
             json.get("summary").asString shouldContain "exceeded"
             val artifactRef = json.get("artifactRef").asString
             artifactRef shouldContain "/artifacts/"
-            // The persisted artefact contains the original oversized JSON.
             val artifactId = artifactRef.substringAfterLast("/")
-            val record = artifactStore.findById(ACME_TENANT, artifactId)!!
-            val stored = contentStore.openRangeRead(artifactId, 0L, record.managedArtifact.sizeBytes)
+            val record = f.artifactStore.findById(ACME_TENANT, artifactId)!!
+            val stored = f.contentStore.openRangeRead(artifactId, 0L, record.managedArtifact.sizeBytes)
                 .use { stream -> stream.readBytes() }
             String(stored, Charsets.UTF_8) shouldBe bigText
         }
 
         test("error outcomes pass through without enforcement") {
-            val (sut, _, _) = enforcer(McpLimitsConfig(maxToolResponseBytes = 16))
+            val sut = enforcer(McpLimitsConfig(maxToolResponseBytes = 16)).sut
             val envelope = ToolErrorEnvelope(
                 code = ToolErrorCode.VALIDATION_ERROR,
                 message = "x".repeat(200),
@@ -140,10 +144,12 @@ class ResponseLimitEnforcerTest : FunSpec({
         }
 
         test("multi-content (or non-text) success outcomes pass through unchanged") {
-            // The enforcer can only measure single-text content
-            // payloads. A multi-frame response is left untouched so
-            // the dispatcher's downstream layers can see it as-is.
-            val (sut, _, _) = enforcer(McpLimitsConfig(maxToolResponseBytes = 8))
+            // Forward-compat hedge: every Phase-C handler today emits
+            // a single-text frame, so this branch is dead in production.
+            // We pin the pass-through anyway so a future multi-frame
+            // handler doesn't trip the enforcer on a payload it can't
+            // measure with a single byte count.
+            val sut = enforcer(McpLimitsConfig(maxToolResponseBytes = 8)).sut
             val outcome = ToolCallOutcome.Success(
                 content = listOf(
                     ToolContent(type = "text", text = "first frame", mimeType = "application/json"),
@@ -153,15 +159,19 @@ class ResponseLimitEnforcerTest : FunSpec({
             sut.enforceResponseSize("schema_validate", PRINCIPAL, outcome) shouldBe outcome
         }
 
-        test("oversized response that would breach maxArtifactUploadBytes surfaces PAYLOAD_TOO_LARGE") {
-            // The artefact-fallback can itself trip the upload-bytes
-            // limit. Make sure the failure mode is the structured
-            // typed exception, not a swallow.
+        test("response that doesn't even fit the spill cap surfaces INTERNAL_AGENT_ERROR (not PAYLOAD_TOO_LARGE)") {
+            // The artefact spill itself can trip maxArtifactUploadBytes
+            // when the response is *that* large. The client sent a
+            // perfectly-sized request, so the typed envelope must
+            // discriminate this from a request-side overflow:
+            // INTERNAL_AGENT_ERROR signals "operator must raise the
+            // spill cap" while PAYLOAD_TOO_LARGE would mislead the
+            // client into thinking they have a request fix.
             val limits = McpLimitsConfig(
                 maxToolResponseBytes = 16,
                 maxArtifactUploadBytes = 32,
             )
-            val (sut, _, _) = enforcer(limits)
+            val sut = enforcer(limits).sut
             val outcome = ToolCallOutcome.Success(
                 content = listOf(
                     ToolContent(
@@ -171,9 +181,12 @@ class ResponseLimitEnforcerTest : FunSpec({
                     ),
                 ),
             )
-            shouldThrow<PayloadTooLargeException> {
+            val ex = shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
                 sut.enforceResponseSize("schema_validate", PRINCIPAL, outcome)
             }
+            // Cause-chained for diagnostics (operator can grep the
+            // actual byte mismatch out of the chain).
+            ex.cause.shouldBeInstanceOf<PayloadTooLargeException>()
         }
     }
 

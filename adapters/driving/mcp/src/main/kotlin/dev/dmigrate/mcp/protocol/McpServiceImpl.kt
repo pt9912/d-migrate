@@ -252,9 +252,12 @@ class McpServiceImpl(
     ): ToolsCallResult = try {
         // AP 6.19: bracket the handler with the request- and
         // response-byte enforcer when one is wired (Phase-C bootstrap
-        // does, Phase-B tests don't). Both checks throw or rewrite
-        // INSIDE the try, so the existing error mapper still owns the
-        // envelope shape for any limit breach.
+        // does, Phase-B tests don't). Both checks run inside this
+        // try, so any ApplicationException they raise — typed
+        // PAYLOAD_TOO_LARGE on a request overflow, an
+        // INTERNAL_AGENT_ERROR if the response-side spill itself
+        // can't fit the artefact cap — flows through the same
+        // errorMapper as a handler exception.
         responseLimitEnforcer?.enforceRequestSize(context.name, context.arguments)
         val rawOutcome = handler.handle(context)
         val outcome = responseLimitEnforcer

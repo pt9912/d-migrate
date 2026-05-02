@@ -9,8 +9,6 @@ import dev.dmigrate.mcp.registry.PhaseBRegistries
 import dev.dmigrate.mcp.registry.PhaseCRegistries
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.registry.ResourceRegistry
-import dev.dmigrate.mcp.registry.ResponseLimitEnforcer
-import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
@@ -102,15 +100,13 @@ object McpServerBootstrap {
         config: McpServerConfig,
         serverVersion: String = "0.0.0",
         phaseCWiring: PhaseCWiring? = null,
-        toolRegistry: ToolRegistry = phaseCWiring?.let {
-            PhaseCRegistries.defaultToolRegistry(it, config.scopeMapping)
-        } ?: PhaseBRegistries.toolRegistry(config.scopeMapping),
-        responseLimitEnforcer: ResponseLimitEnforcer? = phaseCWiring?.let {
-            PhaseCRegistries.defaultResponseLimitEnforcer(it)
-        },
+        components: PhaseCRegistries.McpServiceComponents =
+            PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
+        val toolRegistry = components.toolRegistry
+        val responseLimitEnforcer = components.responseLimitEnforcer
         val errors = config.validate()
         if (errors.isNotEmpty()) return McpStartOutcome.ConfigError(errors)
         RuntimeBootstrap.initialize()
@@ -169,15 +165,13 @@ object McpServerBootstrap {
         tokenStoreOverride: StdioTokenStore? = null,
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
         phaseCWiring: PhaseCWiring? = null,
-        toolRegistry: ToolRegistry = phaseCWiring?.let {
-            PhaseCRegistries.defaultToolRegistry(it, config.scopeMapping)
-        } ?: PhaseBRegistries.toolRegistry(config.scopeMapping),
-        responseLimitEnforcer: ResponseLimitEnforcer? = phaseCWiring?.let {
-            PhaseCRegistries.defaultResponseLimitEnforcer(it)
-        },
+        components: PhaseCRegistries.McpServiceComponents =
+            PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
+        val toolRegistry = components.toolRegistry
+        val responseLimitEnforcer = components.responseLimitEnforcer
         // §12.15: stdio ignores authMode entirely — use the slimmer
         // validation that skips the HTTP-only auth-consistency block.
         // Otherwise a default-config (authMode=JWT_JWKS, no issuer)

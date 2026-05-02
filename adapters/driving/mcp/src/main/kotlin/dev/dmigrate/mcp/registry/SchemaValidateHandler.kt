@@ -98,8 +98,9 @@ internal class SchemaValidateHandler(
         // remainder via `artifact_chunk_get`. The inline payload
         // still carries summary + capped findings + `truncated=true`
         // for backward compatibility with Phase-A consumers.
-        val artifactRef = if (truncated && artifactSink != null) {
-            persistFullFindings(combined, principal)
+        val sink = artifactSink
+        val artifactRef = if (truncated && sink != null) {
+            persistFullFindings(sink, combined, principal)
         } else {
             null
         }
@@ -118,10 +119,10 @@ internal class SchemaValidateHandler(
     }
 
     private fun persistFullFindings(
+        sink: ArtifactSink,
         allFindings: List<Map<String, String>>,
         principal: PrincipalContext,
     ): String {
-        val sink = artifactSink ?: return ""
         val bytes = gson.toJson(allFindings).toByteArray(Charsets.UTF_8)
         val uri = sink.writeReadOnly(
             principal = principal,
