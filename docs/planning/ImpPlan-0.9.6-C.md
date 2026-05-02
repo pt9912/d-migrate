@@ -641,6 +641,63 @@ Hinweis: Diese Umbenennung wird vor AP 6.7/6.8 in einem eigenen
 Commit durchgefuehrt, damit Schema- und Golden-Aenderungen nicht mit
 der Handlerlogik vermischt werden.
 
+### 6.6.6 Spaltentiefe Findings fuer `schema_compare`
+
+Aufgaben:
+
+- `TableDiff`-Substruktur (`columnsAdded`, `columnsRemoved`,
+  `columnsChanged`, `primaryKey`, `indicesAdded/Removed/Changed`,
+  `constraintsAdded/Removed/Changed`, `metadata`) pro Property in
+  Findings entfalten
+- `ColumnDiff` mit `type`/`required`/`unique`/`default`/`references`
+  in Einzel-Findings zerlegen
+- Wire-Codes mit gemeinsamem `TABLE_…`-Praefix und gepunktetem Pfad
+  (`tables.t1.columns.c1.type`) vergeben, damit Clients ohne
+  Free-Form-Parsing filtern oder rollup koennen
+- groben `TABLE_CHANGED`-Eintrag entfernen; jede Aenderung wird
+  einzeln sichtbar
+- Severity-Policy am Handler-KDoc dokumentieren (statt im Code zu
+  verstreuen)
+
+Severity-Policy:
+
+| Aenderung | Severity | Begruendung |
+| --- | --- | --- |
+| Spalte hinzugefuegt | `info` | additiv, generell kompatibel |
+| Spalte entfernt | `error` | breaking |
+| Spaltentyp geaendert | `error` | inkompatible Lese-Semantik |
+| `required` false→true | `error` | bestehende NULL-Zeilen blockieren |
+| `required` true→false | `info` | Relaxation, non-breaking |
+| `unique` false→true | `warning` | bestehende Duplikate blockieren |
+| `unique` true→false | `info` | Relaxation |
+| `default`-Aenderung | `warning` | App-Verhalten kann driften |
+| `references`-Aenderung | `warning` | FK-Semantik aendert sich |
+| Primary-Key-Aenderung | `error` | Identitaetsvertrag bricht |
+| Index hinzugefuegt | `info` | additiv |
+| Index entfernt/geaendert | `warning` | Query-Plan kann driften |
+| Constraint hinzugefuegt | `warning` | bestehende Zeilen koennen blockieren |
+| Constraint entfernt | `info` | Relaxation |
+| Constraint geaendert | `warning` | semantischer Drift |
+| Tabellen-Metadaten | `info` | non-breaking Hint |
+
+Akzeptanz:
+
+- `schema_compare`-Findings enthalten pro Property einen Eintrag,
+  nicht eine grobe `TABLE_CHANGED`-Sammelmeldung
+- der Wire-Code `TABLE_CHANGED` wird nicht mehr emittiert
+- Severity-Policy ist im Handler-KDoc dokumentiert und durch Tests
+  pro Code abgesichert
+- non-table Kinds (View/Sequence/CustomType/Function/Procedure/
+  Trigger) behalten ihre coarse `_ADDED/_REMOVED/_CHANGED`-Findings;
+  Sub-Walking dieser Kinds ist nicht Teil von 6.6.6 und kann bei
+  Bedarf separat nachgezogen werden
+
+Bewusst ausgelassen:
+
+- `details: { before, after }`-Wire-Field. Vor- und Nachzustand
+  stehen weiter im `message`; ein zusaetzliches strukturiertes Feld
+  waere ein cross-cutting Wire-Refactor und gehoert zu AP 6.13.
+
 ### 6.7 Read-only Schema-Staging-Init implementieren
 
 Aufgaben:
