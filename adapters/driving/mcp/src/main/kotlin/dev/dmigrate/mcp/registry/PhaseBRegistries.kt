@@ -139,7 +139,7 @@ object PhaseBRegistries {
         "data_export_start" to "Start data export job",
         "artifact_upload_init" to "Open a read-only schema-staging upload session",
         "artifact_upload" to "Upload one segment of an active staging session",
-        "artifact_upload_abort" to "Abort artifact upload",
+        "artifact_upload_abort" to "Abort one's own active staging session",
         "data_import_start" to "Start data import job",
         "data_transfer_start" to "Start data transfer job",
         "job_cancel" to "Cancel a running job",

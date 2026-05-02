@@ -208,8 +208,13 @@ internal object PhaseBToolSchemas {
             ),
         ))
         put("artifact_upload_abort", schemaPair(
-            input = obj("sessionId" to stringField()).required("sessionId"),
-            output = obj("aborted" to booleanField()).required("aborted"),
+            input = obj("uploadSessionId" to stringField()).required("uploadSessionId"),
+            output = obj(
+                "uploadSessionId" to stringField(),
+                "uploadSessionState" to enumField("ABORTED"),
+                "segmentsDeleted" to integerField(),
+                "executionMeta" to objectField(),
+            ).required("uploadSessionId", "uploadSessionState", "segmentsDeleted"),
         ))
 
         // Data-write tools

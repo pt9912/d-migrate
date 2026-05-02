@@ -179,12 +179,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sessionId": {
+        "uploadSessionId": {
           "type": "string"
         }
       },
       "required": [
-        "sessionId"
+        "uploadSessionId"
       ]
     },
     "outputSchema": {
@@ -192,12 +192,28 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "aborted": {
-          "type": "boolean"
+        "uploadSessionId": {
+          "type": "string"
+        },
+        "uploadSessionState": {
+          "type": "string",
+          "enum": [
+            "ABORTED"
+          ]
+        },
+        "segmentsDeleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
-        "aborted"
+        "uploadSessionId",
+        "uploadSessionState",
+        "segmentsDeleted"
       ]
     }
   },

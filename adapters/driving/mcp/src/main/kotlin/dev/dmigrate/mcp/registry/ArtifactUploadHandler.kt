@@ -26,7 +26,6 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
-import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
 import dev.dmigrate.server.ports.WriteSegmentOutcome
@@ -429,27 +428,12 @@ internal class ArtifactUploadHandler(
 
     /**
      * Drives the COMPLETED transition after finalisation succeeds.
-     * Maps store-level race outcomes (concurrent abort/expire) to
-     * typed lifecycle exceptions so the client sees the real cause.
+     * Race outcomes go through the shared
+     * [transitionOrThrow] mapping so the typed lifecycle exception
+     * pattern stays uniform across upload handlers.
      */
     private fun transitionToCompleted(session: UploadSession, now: java.time.Instant): UploadSession =
-        when (val transition = sessionStore.transition(
-            session.tenantId,
-            session.uploadSessionId,
-            UploadSessionState.COMPLETED,
-            now,
-        )) {
-            is TransitionOutcome.Applied -> transition.session
-            is TransitionOutcome.IllegalTransition -> throw when (transition.from) {
-                UploadSessionState.ABORTED -> UploadSessionAbortedException(session.uploadSessionId)
-                UploadSessionState.EXPIRED -> UploadSessionExpiredException(session.uploadSessionId)
-                UploadSessionState.COMPLETED -> IdempotencyConflictException(
-                    existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
-                )
-                UploadSessionState.ACTIVE -> InternalAgentErrorException()
-            }
-            is TransitionOutcome.NotFound -> throw ResourceNotFoundException(session.resourceUri)
-        }
+        sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
 
     private fun computeTotalHash(
         session: UploadSession,
