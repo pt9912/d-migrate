@@ -153,16 +153,22 @@ internal object PhaseBToolSchemas {
         put("artifact_upload_init", schemaPair(
             input = obj(
                 "uploadIntent" to enumField("schema_staging_readonly"),
-                "expectedSizeBytes" to integerField(),
+                "expectedSizeBytes" to integerField(minimum = 1),
                 "checksumSha256" to stringField(),
                 "filename" to stringField(),
             ).required("uploadIntent", "expectedSizeBytes", "checksumSha256"),
             output = obj(
-                "sessionId" to stringField(),
-                "chunkSizeBytes" to integerField(),
-                "expiresAt" to stringField(),
+                "uploadSessionId" to stringField(),
+                "uploadSessionTtlSeconds" to integerField(),
+                "expectedFirstSegmentIndex" to integerField(minimum = 1),
+                "expectedFirstSegmentOffset" to integerField(),
                 "executionMeta" to objectField(),
-            ).required("sessionId", "chunkSizeBytes", "expiresAt"),
+            ).required(
+                "uploadSessionId",
+                "uploadSessionTtlSeconds",
+                "expectedFirstSegmentIndex",
+                "expectedFirstSegmentOffset",
+            ),
         ))
         put("artifact_upload", schemaPair(
             input = obj(
@@ -288,7 +294,8 @@ internal object PhaseBToolSchemas {
 
     private fun stringField(): Map<String, Any> = mapOf("type" to "string")
     private fun booleanField(): Map<String, Any> = mapOf("type" to "boolean")
-    private fun integerField(): Map<String, Any> = mapOf("type" to "integer", "minimum" to 0)
+    private fun integerField(minimum: Int = 0): Map<String, Any> =
+        mapOf("type" to "integer", "minimum" to minimum)
     private fun objectField(): Map<String, Any> =
         mapOf("type" to "object", "additionalProperties" to true)
 

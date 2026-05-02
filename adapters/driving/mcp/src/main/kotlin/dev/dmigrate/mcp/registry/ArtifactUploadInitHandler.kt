@@ -3,7 +3,6 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
-import dev.dmigrate.mcp.registry.JsonArgs.optEnum
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.PayloadTooLargeException
@@ -50,7 +49,7 @@ import java.util.UUID
  * sensible defaults (5 min idle, 60 min absolute lease).
  */
 @Suppress("LongParameterList")
-// LongParameterList: the four trailing params are test seams (clock,
+// LongParameterList: the trailing params are test seams (clock,
 // timeouts, id generators) with sensible production defaults. AP 6.13
 // will fold them into a shared `McpHandlerWiring` config when the
 // bootstrap wires every Phase-C handler at once.
@@ -59,6 +58,7 @@ internal class ArtifactUploadInitHandler(
     private val quotaService: QuotaService,
     private val limits: McpLimitsConfig,
     private val clock: Clock,
+    private val initialTtl: Duration = DEFAULT_INITIAL_TTL,
     private val idleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
     private val absoluteLeaseDuration: Duration = DEFAULT_ABSOLUTE_LEASE,
     private val sessionIdGenerator: () -> String = ::generateSessionId,
@@ -112,10 +112,20 @@ internal class ArtifactUploadInitHandler(
         quotaService.commit(sessionsReservation)
         quotaService.commit(bytesReservation)
 
+        // Spec/ki-mcp.md §5.3: clients see `uploadSessionId` (matches
+        // the core record), the remaining lease as
+        // `uploadSessionTtlSeconds` (initial 900s, capped by absolute
+        // lease), and the explicit first-segment hints so resumable
+        // clients don't have to derive offsets from chunk size. The
+        // chunk size itself is advertised once via
+        // `capabilities_list.limits.maxUploadSegmentBytes` — no need
+        // to repeat it here.
+        val ttlSeconds = effectiveTtlSeconds(now, absoluteExpiresAt)
         val payload = mapOf(
-            "sessionId" to session.uploadSessionId,
-            "chunkSizeBytes" to limits.maxUploadSegmentBytes,
-            "expiresAt" to absoluteExpiresAt.toString(),
+            "uploadSessionId" to session.uploadSessionId,
+            "uploadSessionTtlSeconds" to ttlSeconds,
+            "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
+            "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
             "executionMeta" to mapOf("requestId" to requestIdProvider()),
         )
         return ToolCallOutcome.Success(
@@ -218,6 +228,18 @@ internal class ArtifactUploadInitHandler(
         val checksumSha256: String,
     )
 
+    /**
+     * Computes the lease seconds the client should advertise as
+     * `uploadSessionTtlSeconds`. Per spec/ki-mcp.md §5.3 the response
+     * value is the *minimum* of the configured initial TTL and the
+     * remaining absolute-lease window — the absolute cap takes
+     * precedence so a session can't claim more time than it has.
+     */
+    private fun effectiveTtlSeconds(now: java.time.Instant, absoluteExpiresAt: java.time.Instant): Long {
+        val remainingAbsolute = Duration.between(now, absoluteExpiresAt).seconds
+        return minOf(initialTtl.seconds, remainingAbsolute)
+    }
+
     companion object {
         const val INTENT_SCHEMA_STAGING_READONLY: String = "schema_staging_readonly"
 
@@ -225,8 +247,14 @@ internal class ArtifactUploadInitHandler(
         // the artefact store and CLI.
         private val CHECKSUM_PATTERN: Regex = Regex("^[0-9a-f]{64}$")
 
-        val DEFAULT_IDLE_TIMEOUT: Duration = Duration.ofMinutes(5)
-        val DEFAULT_ABSOLUTE_LEASE: Duration = Duration.ofMinutes(60)
+        // Per spec/ki-mcp.md §5.3 line 588: segment indices start at 1.
+        const val FIRST_SEGMENT_INDEX: Int = 1
+        const val FIRST_SEGMENT_OFFSET: Long = 0L
+
+        // Spec defaults from spec/ki-mcp.md §5.3 line 609-617.
+        val DEFAULT_INITIAL_TTL: Duration = Duration.ofSeconds(900)
+        val DEFAULT_IDLE_TIMEOUT: Duration = Duration.ofSeconds(300)
+        val DEFAULT_ABSOLUTE_LEASE: Duration = Duration.ofSeconds(3600)
 
         fun segmentCountFor(totalBytes: Long, segmentSize: Int): Int {
             require(segmentSize > 0) { "segmentSize must be positive" }

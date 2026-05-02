@@ -184,7 +184,7 @@
         },
         "expectedSizeBytes": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
         "checksumSha256": {
           "type": "string"
@@ -204,15 +204,20 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sessionId": {
+        "uploadSessionId": {
           "type": "string"
         },
-        "chunkSizeBytes": {
+        "uploadSessionTtlSeconds": {
           "type": "integer",
           "minimum": 0
         },
-        "expiresAt": {
-          "type": "string"
+        "expectedFirstSegmentIndex": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expectedFirstSegmentOffset": {
+          "type": "integer",
+          "minimum": 0
         },
         "executionMeta": {
           "type": "object",
@@ -220,9 +225,10 @@
         }
       },
       "required": [
-        "sessionId",
-        "chunkSizeBytes",
-        "expiresAt"
+        "uploadSessionId",
+        "uploadSessionTtlSeconds",
+        "expectedFirstSegmentIndex",
+        "expectedFirstSegmentOffset"
       ]
     }
   },

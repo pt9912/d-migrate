@@ -92,15 +92,69 @@ private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
 private const val VALID_INIT: String =
     """{"uploadIntent":"schema_staging_readonly","expectedSizeBytes":1024,"checksumSha256":"$SHA256_OK"}"""
 
+/**
+ * Records the QuotaService lifecycle calls so tests can pin the
+ * `reserve→commit` (success) and `reserve→refund` (pre-commit
+ * rollback) sequences. `outcomes` is consumed in order — caller
+ * supplies one outcome per expected `reserve` call.
+ *
+ * `DefaultQuotaService.commit` is intentionally a no-op today
+ * (`QuotaService.kt:43-46` documents the AP 6.8 audit hook), so the
+ * recorder is the only way to observe the boundary between
+ * `commit`, `release`, and `refund` without coupling to a
+ * production-side regression.
+ */
+private class RecordingQuotaService(
+    private val outcomes: ArrayDeque<dev.dmigrate.server.ports.quota.QuotaOutcome>,
+    val recorded: MutableList<String> = mutableListOf(),
+) : dev.dmigrate.server.application.quota.QuotaService {
+    override fun reserve(
+        key: QuotaKey,
+        amount: Long,
+    ): dev.dmigrate.server.ports.quota.QuotaOutcome {
+        recorded += "reserve(${key.dimension},$amount)"
+        return outcomes.removeFirst()
+    }
+    override fun commit(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
+        recorded += "commit(${reservation.key.dimension},${reservation.amount})"
+    }
+    override fun release(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
+        recorded += "release(${reservation.key.dimension},${reservation.amount})"
+    }
+    override fun refund(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
+        recorded += "refund(${reservation.key.dimension},${reservation.amount})"
+    }
+}
+
+private fun recordingHandler(
+    service: RecordingQuotaService,
+    sessionStore: InMemoryUploadSessionStore = InMemoryUploadSessionStore(),
+): ArtifactUploadInitHandler = ArtifactUploadInitHandler(
+    sessionStore = sessionStore,
+    quotaService = service,
+    limits = McpLimitsConfig(),
+    clock = FIXED_CLOCK,
+    sessionIdGenerator = { "ups-fixed" },
+    requestIdProvider = { "req-x" },
+)
+
+private fun grant(key: QuotaKey, amount: Long): dev.dmigrate.server.ports.quota.QuotaOutcome.Granted =
+    dev.dmigrate.server.ports.quota.QuotaOutcome.Granted(key, amount, amount, Long.MAX_VALUE)
+
+private fun rateLimit(key: QuotaKey, amount: Long): dev.dmigrate.server.ports.quota.QuotaOutcome.RateLimited =
+    dev.dmigrate.server.ports.quota.QuotaOutcome.RateLimited(key, amount, 0, 100)
+
 class ArtifactUploadInitHandlerTest : FunSpec({
 
-    test("happy path: session is persisted ACTIVE and the response carries sessionId/chunkSize/expiresAt") {
+    test("happy path: session is persisted ACTIVE and the response matches the spec/ki-mcp.md §5.3 shape") {
         val s = setup()
         val outcome = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
         val json = parsePayload(outcome)
-        json.get("sessionId").asString shouldBe "ups-fixed"
-        json.get("chunkSizeBytes").asInt shouldBe McpLimitsConfig().maxUploadSegmentBytes
-        json.get("expiresAt").asString shouldStartWith "2026-05-02T13:" // fixed-now + 60min default lease
+        json.get("uploadSessionId").asString shouldBe "ups-fixed"
+        // Default initial TTL = 900s, capped by 3600s absolute lease.
+        json.get("uploadSessionTtlSeconds").asLong shouldBe 900L
+        json.get("expectedFirstSegmentIndex").asInt shouldBe 1
+        json.get("expectedFirstSegmentOffset").asLong shouldBe 0L
         json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
 
         val session = s.sessionStore.findById(ACME, "ups-fixed")!!
@@ -229,37 +283,14 @@ class ArtifactUploadInitHandlerTest : FunSpec({
     }
 
     test("happy path commits both reservations; rate-limited byte path refunds the session slot") {
-        // Records lifecycle calls so we can pin the QuotaService
-        // contract (reserve→commit on success, reserve→refund on
-        // pre-commit rollback). InMemoryQuotaStore alone can't
-        // distinguish commit from release because both no-op the
-        // counter today; the recorder makes the boundary observable.
-        val recorded = mutableListOf<String>()
-        val recordingService = object : dev.dmigrate.server.application.quota.QuotaService {
-            override fun reserve(key: QuotaKey, amount: Long): dev.dmigrate.server.ports.quota.QuotaOutcome {
-                recorded += "reserve(${key.dimension},$amount)"
-                return dev.dmigrate.server.ports.quota.QuotaOutcome.Granted(key, amount, amount, Long.MAX_VALUE)
-            }
-            override fun commit(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
-                recorded += "commit(${reservation.key.dimension},${reservation.amount})"
-            }
-            override fun release(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
-                recorded += "release(${reservation.key.dimension},${reservation.amount})"
-            }
-            override fun refund(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
-                recorded += "refund(${reservation.key.dimension},${reservation.amount})"
-            }
-        }
-        val handler = ArtifactUploadInitHandler(
-            sessionStore = InMemoryUploadSessionStore(),
-            quotaService = recordingService,
-            limits = McpLimitsConfig(),
-            clock = FIXED_CLOCK,
-            sessionIdGenerator = { "ups-fixed" },
-            requestIdProvider = { "req-x" },
+        val sessionsKey = QuotaKey(ACME, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, ALICE)
+        val bytesKey = QuotaKey(ACME, QuotaDimension.UPLOAD_BYTES, ALICE)
+        val service = RecordingQuotaService(
+            outcomes = ArrayDeque(listOf(grant(sessionsKey, 1), grant(bytesKey, 1024))),
         )
-        handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
-        recorded shouldBe listOf(
+        recordingHandler(service)
+            .handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        service.recorded shouldBe listOf(
             "reserve(ACTIVE_UPLOAD_SESSIONS,1)",
             "reserve(UPLOAD_BYTES,1024)",
             "commit(ACTIVE_UPLOAD_SESSIONS,1)",
@@ -268,40 +299,16 @@ class ArtifactUploadInitHandlerTest : FunSpec({
     }
 
     test("byte-quota rate-limit refunds the session slot via QuotaService.refund (pre-commit)") {
-        val recorded = mutableListOf<String>()
-        val recordingService = object : dev.dmigrate.server.application.quota.QuotaService {
-            private var calls = 0
-            override fun reserve(key: QuotaKey, amount: Long): dev.dmigrate.server.ports.quota.QuotaOutcome {
-                recorded += "reserve(${key.dimension},$amount)"
-                calls += 1
-                return if (calls == 1) {
-                    dev.dmigrate.server.ports.quota.QuotaOutcome.Granted(key, amount, amount, Long.MAX_VALUE)
-                } else {
-                    dev.dmigrate.server.ports.quota.QuotaOutcome.RateLimited(key, amount, 0, 100)
-                }
-            }
-            override fun commit(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
-                recorded += "commit(${reservation.key.dimension},${reservation.amount})"
-            }
-            override fun release(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
-                recorded += "release(${reservation.key.dimension},${reservation.amount})"
-            }
-            override fun refund(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {
-                recorded += "refund(${reservation.key.dimension},${reservation.amount})"
-            }
-        }
-        val handler = ArtifactUploadInitHandler(
-            sessionStore = InMemoryUploadSessionStore(),
-            quotaService = recordingService,
-            limits = McpLimitsConfig(),
-            clock = FIXED_CLOCK,
-            sessionIdGenerator = { "ups-fixed" },
-            requestIdProvider = { "req-x" },
+        val sessionsKey = QuotaKey(ACME, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, ALICE)
+        val bytesKey = QuotaKey(ACME, QuotaDimension.UPLOAD_BYTES, ALICE)
+        val service = RecordingQuotaService(
+            outcomes = ArrayDeque(listOf(grant(sessionsKey, 1), rateLimit(bytesKey, 1024))),
         )
         shouldThrow<RateLimitedException> {
-            handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+            recordingHandler(service)
+                .handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
         }
-        recorded shouldBe listOf(
+        service.recorded shouldBe listOf(
             "reserve(ACTIVE_UPLOAD_SESSIONS,1)",
             "reserve(UPLOAD_BYTES,1024)",
             "refund(ACTIVE_UPLOAD_SESSIONS,1)",
@@ -347,8 +354,12 @@ class ArtifactUploadInitHandlerTest : FunSpec({
         ex.violations.map { it.field } shouldContain "arguments"
     }
 
-    test("session expiresAt equals fixedNow + absoluteLeaseDuration") {
-        val tenMin = Duration.ofMinutes(10)
+    test("uploadSessionTtlSeconds caps at the remaining absolute lease window") {
+        // When the absolute-lease window is shorter than the
+        // configured initial TTL, the response advertises the smaller
+        // value so a client can't claim more time than the session
+        // has — spec/ki-mcp.md §5.3 line 605-617.
+        val tenMin = Duration.ofMinutes(10) // 600s, less than 900s default initial TTL
         val sessionStore = InMemoryUploadSessionStore()
         val quotaStore = InMemoryQuotaStore()
         val handler = ArtifactUploadInitHandler(
@@ -361,6 +372,6 @@ class ArtifactUploadInitHandlerTest : FunSpec({
             requestIdProvider = { "req-x" },
         )
         val outcome = handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
-        parsePayload(outcome).get("expiresAt").asString shouldBe FIXED_NOW.plus(tenMin).toString()
+        parsePayload(outcome).get("uploadSessionTtlSeconds").asLong shouldBe 600L
     }
 })
