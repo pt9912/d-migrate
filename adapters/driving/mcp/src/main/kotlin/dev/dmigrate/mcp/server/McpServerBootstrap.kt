@@ -6,6 +6,8 @@ import dev.dmigrate.mcp.auth.StdioPrincipalResolver
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.PhaseCRegistries
+import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.registry.ResourceRegistry
 import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.mcp.resources.ResourceStores
@@ -87,11 +89,21 @@ object McpServerBootstrap {
      *  same process. Defaults to [PhaseBRegistries.toolRegistry] which
      *  registers every 0.9.6 tool with `capabilities_list` as the
      *  only real handler.
+     * @param phaseCWiring AP 6.14: when supplied, the bootstrap
+     *  builds the registry via [PhaseCRegistries.defaultToolRegistry]
+     *  so every Phase-C handler from §3.1 dispatches to its real
+     *  implementation (instead of `UnsupportedToolHandler`). The
+     *  explicit `toolRegistry` parameter still wins if both are
+     *  supplied, so existing tests can keep injecting custom
+     *  registries.
      */
     fun startHttp(
         config: McpServerConfig,
         serverVersion: String = "0.0.0",
-        toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
+        phaseCWiring: PhaseCWiring? = null,
+        toolRegistry: ToolRegistry = phaseCWiring?.let {
+            PhaseCRegistries.defaultToolRegistry(it, config.scopeMapping)
+        } ?: PhaseBRegistries.toolRegistry(config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
@@ -151,7 +163,10 @@ object McpServerBootstrap {
         serverVersion: String = "0.0.0",
         tokenStoreOverride: StdioTokenStore? = null,
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
-        toolRegistry: ToolRegistry = PhaseBRegistries.toolRegistry(config.scopeMapping),
+        phaseCWiring: PhaseCWiring? = null,
+        toolRegistry: ToolRegistry = phaseCWiring?.let {
+            PhaseCRegistries.defaultToolRegistry(it, config.scopeMapping)
+        } ?: PhaseBRegistries.toolRegistry(config.scopeMapping),
         resourceStores: ResourceStores = ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {

@@ -49,7 +49,7 @@ import java.util.UUID
  * client never sees a raw Jackson stack trace across the trust
  * boundary (§6.4 acceptance is reused here).
  */
-internal fun interface SchemaStagingFinalizer {
+fun interface SchemaStagingFinalizer {
 
     /**
      * Finalises [session] using [assembledBytes] (the rebuilt
@@ -69,7 +69,7 @@ internal fun interface SchemaStagingFinalizer {
  * codecs and validator, then materialises through the Phase-A
  * artefact ports.
  */
-internal class DefaultSchemaStagingFinalizer(
+class DefaultSchemaStagingFinalizer(
     private val artifactStore: ArtifactStore,
     private val artifactContentStore: ArtifactContentStore,
     private val schemaStore: SchemaStore,

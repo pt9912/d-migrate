@@ -1,5 +1,8 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.mcp.schema.SchemaContentLoader
+import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.server.McpServerConfig
 
 /**
@@ -48,5 +51,99 @@ object PhaseCRegistries {
             builder.register(descriptor, handler)
         }
         return builder.build()
+    }
+
+    /**
+     * AP 6.14: builds the production-ready Phase-C registry by
+     * instantiating every fachlichen Handler from §3.1 and routing
+     * them through [toolRegistry]. The bootstrap calls this once at
+     * server start so `tools/call` dispatches into the real handlers
+     * instead of the Phase-B `UnsupportedToolHandler` fallback.
+     *
+     * Stays a separate entry point from [toolRegistry] so existing
+     * Phase-B tests (which call `toolRegistry()` with no overrides)
+     * keep their incremental-fallback semantics — backwards-
+     * compatible per AP 6.14 acceptance.
+     */
+    fun defaultToolRegistry(
+        wiring: PhaseCWiring,
+        scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
+    ): ToolRegistry {
+        // Capabilities first: it surfaces the registered tools list,
+        // so it must be built from the SAME descriptors the
+        // PhaseB-registry hands back. We let PhaseBRegistries seed
+        // the descriptor universe and then override every handler
+        // via this layer's contract.
+        val resolver = SchemaSourceResolver(wiring.schemaStore, wiring.limits)
+        val contentLoader = SchemaContentLoader(
+            wiring.artifactStore,
+            wiring.artifactContentStore,
+            wiring.limits,
+        )
+        val artifactSink = ArtifactSink(
+            wiring.artifactStore,
+            wiring.artifactContentStore,
+            wiring.clock,
+        )
+        val descriptors = PhaseBRegistries.toolRegistry(scopeMapping).all()
+        val capabilitiesHandler = CapabilitiesListReadOnlyHandler(
+            tools = descriptors,
+            scopeMapping = scopeMapping,
+            limits = wiring.limits,
+        )
+        val overrides: Map<String, ToolHandler> = mapOf(
+            "capabilities_list" to capabilitiesHandler,
+            "schema_validate" to SchemaValidateHandler(
+                resolver = resolver,
+                contentLoader = contentLoader,
+                validator = SchemaValidator(),
+                limits = wiring.limits,
+            ),
+            "schema_generate" to SchemaGenerateHandler(
+                resolver = resolver,
+                contentLoader = contentLoader,
+                artifactSink = artifactSink,
+                limits = wiring.limits,
+            ),
+            "schema_compare" to SchemaCompareHandler(
+                resolver = resolver,
+                contentLoader = contentLoader,
+                comparator = dev.dmigrate.core.diff.SchemaComparator(),
+                artifactSink = artifactSink,
+                limits = wiring.limits,
+            ),
+            "artifact_chunk_get" to ArtifactChunkGetHandler(
+                artifactStore = wiring.artifactStore,
+                contentStore = wiring.artifactContentStore,
+                limits = wiring.limits,
+            ),
+            "artifact_upload_init" to ArtifactUploadInitHandler(
+                sessionStore = wiring.uploadSessionStore,
+                quotaService = wiring.quotaService,
+                limits = wiring.limits,
+                clock = wiring.clock,
+            ),
+            "artifact_upload" to ArtifactUploadHandler(
+                sessionStore = wiring.uploadSessionStore,
+                segmentStore = wiring.uploadSegmentStore,
+                quotaService = wiring.quotaService,
+                limits = wiring.limits,
+                clock = wiring.clock,
+                finalizer = wiring.finalizer,
+            ),
+            "artifact_upload_abort" to ArtifactUploadAbortHandler(
+                sessionStore = wiring.uploadSessionStore,
+                segmentStore = wiring.uploadSegmentStore,
+                quotaService = wiring.quotaService,
+                clock = wiring.clock,
+            ),
+            "job_status_get" to JobStatusGetHandler(jobStore = wiring.jobStore),
+        )
+        // Filter to the scope-mapping universe so a deployment that
+        // narrows the tool set (e.g. read-only vs full Phase-C)
+        // doesn't trip the "handlerOverrides target unregistered
+        // tools" guard in `toolRegistry`.
+        val filtered = overrides.filterKeys { it in scopeMapping.keys }
+        return toolRegistry(scopeMapping, filtered)
     }
 }
