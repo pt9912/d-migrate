@@ -19,7 +19,6 @@ import dev.dmigrate.server.ports.UploadSessionStore
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import java.time.Clock
-import java.util.UUID
 
 /**
  * AP 6.10: `artifact_upload_abort` per `ImpPlan-0.9.6-C.md` §6.10
@@ -50,7 +49,6 @@ internal class ArtifactUploadAbortHandler(
     private val segmentStore: UploadSegmentStore,
     private val quotaService: QuotaService,
     private val clock: Clock,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -87,7 +85,7 @@ internal class ArtifactUploadAbortHandler(
             "uploadSessionId" to aborted.uploadSessionId,
             "uploadSessionState" to aborted.state.name,
             "segmentsDeleted" to segmentsDeleted,
-            "executionMeta" to mapOf("requestId" to requestIdProvider()),
+            "executionMeta" to mapOf("requestId" to context.requestId),
         )
         return ToolCallOutcome.Success(
             content = listOf(
@@ -138,8 +136,4 @@ internal class ArtifactUploadAbortHandler(
         )
     }
 
-    private companion object {
-        private fun generateRequestId(): String =
-            "req-${UUID.randomUUID().toString().take(8)}"
-    }
 }

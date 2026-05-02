@@ -39,9 +39,13 @@ private val PRINCIPAL = PrincipalContext(
     expiresAt = Instant.MAX,
 )
 
+private const val TEST_REQUEST_ID = "req-deadbeef"
+
+private fun ctx(args: JsonObject, name: String = "schema_validate"): ToolCallContext =
+    ToolCallContext(name = name, arguments = args, principal = PRINCIPAL, requestId = TEST_REQUEST_ID)
+
 private fun handler(
     limits: McpLimitsConfig = McpLimitsConfig(),
-    requestId: String = "req-deadbeef",
 ): SchemaValidateHandler {
     val schemaStore = InMemorySchemaStore()
     val artifactStore = InMemoryArtifactStore()
@@ -51,7 +55,6 @@ private fun handler(
         contentLoader = SchemaContentLoader(artifactStore, contentStore, limits),
         validator = SchemaValidator(),
         limits = limits,
-        requestIdProvider = { requestId },
     )
 }
 
@@ -66,20 +69,14 @@ class SchemaValidateHandlerTest : FunSpec({
 
     test("inline valid schema returns valid=true and a success summary") {
         val outcome = handler().handle(
-            ToolCallContext(
-                name = "schema_validate",
-                arguments = args(
-                    """{"schema":{"name":"orders","version":"1.0","tables":{}}}""",
-                ),
-                principal = PRINCIPAL,
-            ),
+            ctx(args("""{"schema":{"name":"orders","version":"1.0","tables":{}}}""")),
         )
         val json = parsePayload(outcome)
         json.get("valid").asBoolean shouldBe true
         json.get("summary").asString shouldContain "valid"
         json.getAsJsonArray("findings").size() shouldBe 0
         json.get("truncated").asBoolean shouldBe false
-        json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
+        json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe TEST_REQUEST_ID
     }
 
     test("inline invalid schema produces structured findings (severity, code, path, message)") {
@@ -245,7 +242,6 @@ class SchemaValidateHandlerTest : FunSpec({
             validator = SchemaValidator(),
             limits = limits,
             artifactSink = sink,
-            requestIdProvider = { "req-x" },
         )
         val tables = (1..10).joinToString(",") { """"t$it":{"columns":{}}""" }
         val schema = """{"name":"x","version":"1.0","tables":{$tables}}"""

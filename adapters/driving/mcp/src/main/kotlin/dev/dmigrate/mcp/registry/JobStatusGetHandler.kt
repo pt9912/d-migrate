@@ -17,7 +17,6 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.JobStore
-import java.util.UUID
 
 /**
  * AP 6.12: `job_status_get` per `ImpPlan-0.9.6-C.md` §5.6 + §6.12.
@@ -38,7 +37,6 @@ import java.util.UUID
  */
 internal class JobStatusGetHandler(
     private val jobStore: JobStore,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -62,7 +60,7 @@ internal class JobStatusGetHandler(
             content = listOf(
                 ToolContent(
                     type = "text",
-                    text = gson.toJson(projectJob(record)),
+                    text = gson.toJson(projectJob(record, context.requestId)),
                     mimeType = "application/json",
                 ),
             ),
@@ -124,7 +122,7 @@ internal class JobStatusGetHandler(
             ServerResourceUri(principal.effectiveTenantId, ResourceKind.JOBS, jobId),
         )
 
-    private fun projectJob(record: JobRecord): Map<String, Any?> {
+    private fun projectJob(record: JobRecord, requestId: String): Map<String, Any?> {
         val managed = record.managedJob
         return buildMap {
             put("jobId", managed.jobId)
@@ -142,7 +140,7 @@ internal class JobStatusGetHandler(
             // omit-when-null rule as `error.exitCode` below.
             managed.progress?.let { put("progress", projectProgress(it)) }
             managed.error?.let { put("error", projectError(it)) }
-            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+            put("executionMeta", mapOf("requestId" to requestId))
         }
     }
 
@@ -161,10 +159,5 @@ internal class JobStatusGetHandler(
         put("code", SecretScrubber.scrub(error.code))
         put("message", SecretScrubber.scrub(error.message))
         if (error.exitCode != null) put("exitCode", error.exitCode)
-    }
-
-    private companion object {
-        private fun generateRequestId(): String =
-            "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

@@ -70,7 +70,6 @@ private class UploadFixture(
 private fun fixture(
     limits: McpLimitsConfig = McpLimitsConfig(maxUploadSegmentBytes = 8),
     parallelLimit: Long = 5,
-    requestId: String = "req-deadbeef",
     finalizer: SchemaStagingFinalizer? = null,
 ): UploadFixture {
     val sessionStore = InMemoryUploadSessionStore()
@@ -90,7 +89,6 @@ private fun fixture(
         limits = limits,
         clock = FIXED_CLOCK,
         finalizer = finalizer,
-        requestIdProvider = { requestId },
     )
     return UploadFixture(handler, sessionStore, segmentStore, quotaStore)
 }
@@ -784,7 +782,6 @@ class ArtifactUploadHandlerTest : FunSpec({
             quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
             clock = FIXED_CLOCK,
-            requestIdProvider = { "req-x" },
         )
         shouldThrow<UploadSessionAbortedException> {
             racingHandler.handle(
@@ -825,7 +822,6 @@ class ArtifactUploadHandlerTest : FunSpec({
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
             clock = FIXED_CLOCK,
             finalizer = stubFinalizer,
-            requestIdProvider = { "req-x" },
         )
         sessionStore.save(
             dev.dmigrate.server.core.upload.UploadSession(
@@ -890,7 +886,6 @@ class ArtifactUploadHandlerTest : FunSpec({
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
             clock = FIXED_CLOCK,
             finalizer = angryFinalizer,
-            requestIdProvider = { "req-x" },
         )
         sessionStore.save(
             dev.dmigrate.server.core.upload.UploadSession(

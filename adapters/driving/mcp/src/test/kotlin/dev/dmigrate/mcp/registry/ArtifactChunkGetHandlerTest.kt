@@ -56,6 +56,11 @@ private class ChunkFixture(
     val contentStore: InMemoryArtifactContentStore,
 )
 
+private const val TEST_REQUEST_ID = "req-deadbeef"
+
+private fun ctx(name: String, args: JsonObject, principal: PrincipalContext = PRINCIPAL): ToolCallContext =
+    ToolCallContext(name = name, arguments = args, principal = principal, requestId = TEST_REQUEST_ID)
+
 private fun fixture(maxChunkBytes: Int = 8): ChunkFixture {
     val artifactStore = InMemoryArtifactStore()
     val contentStore = InMemoryArtifactContentStore()
@@ -63,7 +68,6 @@ private fun fixture(maxChunkBytes: Int = 8): ChunkFixture {
         artifactStore = artifactStore,
         contentStore = contentStore,
         limits = McpLimitsConfig(maxArtifactChunkBytes = maxChunkBytes),
-        requestIdProvider = { "req-deadbeef" },
     )
     return ChunkFixture(handler, artifactStore, contentStore)
 }
@@ -111,7 +115,7 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         val f = fixture(maxChunkBytes = 32)
         stageArtifact(f, "art-1", payload.toByteArray(), contentType = "application/json")
         val outcome = f.handler.handle(
-            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), PRINCIPAL),
+            ctx("artifact_chunk_get", args("""{"artifactId":"art-1"}""")),
         )
         val json = parsePayload(outcome)
         json.get("artifactId").asString shouldBe "art-1"
@@ -125,7 +129,7 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         json.has("contentBase64") shouldBe false
         json.get("nextChunkUri").isJsonNull shouldBe true
         json.get("sha256").asString shouldBe sha256Hex(payload.toByteArray())
-        json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
+        json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe TEST_REQUEST_ID
     }
 
     test("binary contentType returns encoding=base64 with contentBase64 (no text field)") {

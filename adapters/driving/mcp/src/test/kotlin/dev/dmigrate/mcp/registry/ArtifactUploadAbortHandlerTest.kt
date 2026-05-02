@@ -69,7 +69,6 @@ private fun fixture(): AbortFixture {
         segmentStore = segmentStore,
         quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
         clock = FIXED_CLOCK,
-        requestIdProvider = { "req-deadbeef" },
     )
     return AbortFixture(handler, sessionStore, segmentStore, quotaStore)
 }
@@ -135,7 +134,6 @@ private fun invokeAbortWithRacingTransition(illegalFrom: UploadSessionState) {
         segmentStore = f.segmentStore,
         quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
         clock = FIXED_CLOCK,
-        requestIdProvider = { "req-x" },
     )
     racing.handle(
         ToolCallContext(
@@ -154,7 +152,12 @@ class ArtifactUploadAbortHandlerTest : FunSpec({
         stageSegment(f, "ups-1", index = 1, bytes = "abcd".toByteArray())
         stageSegment(f, "ups-1", index = 2, bytes = "efgh".toByteArray())
         val outcome = f.handler.handle(
-            ToolCallContext("artifact_upload_abort", args("""{"uploadSessionId":"ups-1"}"""), PRINCIPAL),
+            ToolCallContext(
+                "artifact_upload_abort",
+                args("""{"uploadSessionId":"ups-1"}"""),
+                PRINCIPAL,
+                requestId = "req-deadbeef",
+            ),
         )
         val json = parsePayload(outcome)
         json.get("uploadSessionId").asString shouldBe "ups-1"

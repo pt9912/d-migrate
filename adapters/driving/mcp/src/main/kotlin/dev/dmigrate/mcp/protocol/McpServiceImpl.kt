@@ -21,7 +21,6 @@ import dev.dmigrate.mcp.resources.ResourcesListHandler
 import dev.dmigrate.server.application.error.AuthRequiredException
 import dev.dmigrate.server.application.error.DefaultErrorMapper
 import dev.dmigrate.server.application.error.ErrorMapper
-import dev.dmigrate.server.application.error.UnsupportedToolOperationException
 import dev.dmigrate.server.core.principal.PrincipalContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
@@ -177,6 +176,12 @@ class McpServiceImpl(
         block: () -> ToolsCallResult,
     ): ToolsCallResult {
         val scoped: () -> ToolsCallResult = {
+            // The around-block discards the AuditFields lambda
+            // parameter on purpose: Phase-C handlers don't yet
+            // populate `payloadFingerprint` / `resourceRefs`. When a
+            // future handler needs to surface artifact refs into the
+            // audit event, plumb AuditFields through ToolCallContext
+            // (see AuditScope.kt:33-46).
             if (auditScope != null) auditScope.around(auditContext) { block() } else block()
         }
         return try {

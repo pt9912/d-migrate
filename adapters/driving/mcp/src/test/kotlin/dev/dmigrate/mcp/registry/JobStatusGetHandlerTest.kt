@@ -82,10 +82,7 @@ private class CountingJobStore(private val delegate: JobStore) : JobStore {
 
 private fun fixture(): JobFixture {
     val jobStore = InMemoryJobStore()
-    val handler = JobStatusGetHandler(
-        jobStore = jobStore,
-        requestIdProvider = { "req-deadbeef" },
-    )
+    val handler = JobStatusGetHandler(jobStore = jobStore)
     return JobFixture(handler, jobStore)
 }
 
@@ -140,7 +137,10 @@ class JobStatusGetHandlerTest : FunSpec({
             progress = JobProgress(phase = "reading", numericValues = mapOf("rows" to 1234L)),
         )
         val outcome = f.handler.handle(
-            ToolCallContext("job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL),
+            ToolCallContext(
+                "job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL,
+                requestId = "req-deadbeef",
+            ),
         )
         val json = parsePayload(outcome)
         json.get("jobId").asString shouldBe "job-1"
@@ -260,7 +260,7 @@ class JobStatusGetHandlerTest : FunSpec({
         val tmp = JobFixture(JobStatusGetHandler(backing), backing)
         stageJob(tmp, "job-other", tenant = OTHER, visibility = JobVisibility.TENANT)
         val counting = CountingJobStore(backing)
-        val handler = JobStatusGetHandler(jobStore = counting, requestIdProvider = { "req-x" })
+        val handler = JobStatusGetHandler(jobStore = counting)
         val ex = shouldThrow<TenantScopeDeniedException> {
             handler.handle(
                 ToolCallContext(

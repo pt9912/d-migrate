@@ -16,7 +16,6 @@ import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
-import java.util.UUID
 
 /**
  * AP 6.4: `schema_validate` per `ImpPlan-0.9.6-C.md` §6.4.
@@ -42,7 +41,6 @@ internal class SchemaValidateHandler(
     private val validator: SchemaValidator,
     private val limits: McpLimitsConfig,
     private val artifactSink: ArtifactSink? = null,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -59,7 +57,9 @@ internal class SchemaValidateHandler(
             content = listOf(
                 ToolContent(
                     type = "text",
-                    text = gson.toJson(buildPayload(result, args.strictness, context.principal)),
+                    text = gson.toJson(
+                        buildPayload(result, args.strictness, context.principal, context.requestId),
+                    ),
                     mimeType = "application/json",
                 ),
             ),
@@ -82,6 +82,7 @@ internal class SchemaValidateHandler(
         result: ValidationResult,
         strictness: Strictness,
         principal: PrincipalContext,
+        requestId: String,
     ): Map<String, Any?> {
         val errorFindings = result.errors.map {
             projectFinding(SchemaFindingSeverity.ERROR, it.code, it.objectPath, it.message)
@@ -114,7 +115,7 @@ internal class SchemaValidateHandler(
             put("findings", inline)
             put("truncated", truncated)
             if (artifactRef != null) put("artifactRef", artifactRef)
-            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+            put("executionMeta", mapOf("requestId" to requestId))
         }
     }
 
@@ -164,8 +165,4 @@ internal class SchemaValidateHandler(
         val format: String?,
         val strictness: Strictness,
     )
-
-    private companion object {
-        private fun generateRequestId(): String = "req-${UUID.randomUUID().toString().take(8)}"
-    }
 }

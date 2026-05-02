@@ -37,7 +37,6 @@ import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
 import java.util.Base64
-import java.util.UUID
 
 /**
  * AP 6.8: `artifact_upload` per `ImpPlan-0.9.6-C.md` §6.8 and
@@ -75,7 +74,6 @@ internal class ArtifactUploadHandler(
     private val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
     private val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
     private val finalizer: SchemaStagingFinalizer? = null,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -105,7 +103,7 @@ internal class ArtifactUploadHandler(
         // hash / index / total) still surface the conflict — that
         // mapping happens inside `handleReplayAfterCompleted`.
         if (session.state == UploadSessionState.COMPLETED) {
-            return handleReplayAfterCompleted(session, args)
+            return handleReplayAfterCompleted(session, args, context.requestId)
         }
         validateSessionState(session)
         validateSegmentSequence(args, session)
@@ -163,6 +161,7 @@ internal class ArtifactUploadHandler(
             deduplicated = deduplicated,
             ttlSeconds = effectiveTtlSeconds(now, finalState),
             schemaRef = schemaRef,
+            requestId = context.requestId,
         )
     }
 
@@ -226,12 +225,14 @@ internal class ArtifactUploadHandler(
      * from the original args (different total, missing or different
      * stored segment, missing persisted schemaRef) keeps the conflict
      * path so a divergent retry never silently steals a previous
-     * outcome. `requestId` is freshly minted because per spec §14
-     * each `tools/call` gets its own correlator.
+     * outcome. The replay carries the dispatch [requestId] of the
+     * REPLAY call (not the original) so each tools/call retains its
+     * own correlator per spec §14.
      */
     private fun handleReplayAfterCompleted(
         session: UploadSession,
         args: UploadSegmentArgs,
+        requestId: String,
     ): ToolCallOutcome {
         val schemaRef = session.finalisedSchemaRef
             ?: throw IdempotencyConflictException(
@@ -267,6 +268,7 @@ internal class ArtifactUploadHandler(
             deduplicated = true,
             ttlSeconds = 0L,
             schemaRef = schemaRef,
+            requestId = requestId,
         )
     }
 
@@ -276,6 +278,7 @@ internal class ArtifactUploadHandler(
         deduplicated: Boolean,
         ttlSeconds: Long,
         schemaRef: String?,
+        requestId: String,
     ): ToolCallOutcome {
         val payload = buildMap {
             put("uploadSessionId", session.uploadSessionId)
@@ -285,7 +288,7 @@ internal class ArtifactUploadHandler(
             put("uploadSessionTtlSeconds", ttlSeconds)
             put("uploadSessionState", session.state.name)
             if (schemaRef != null) put("schemaRef", schemaRef)
-            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+            put("executionMeta", mapOf("requestId" to requestId))
         }
         return ToolCallOutcome.Success(
             content = listOf(
@@ -632,8 +635,5 @@ internal class ArtifactUploadHandler(
             val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
             return digest.joinToString("") { "%02x".format(it) }
         }
-
-        private fun generateRequestId(): String =
-            "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

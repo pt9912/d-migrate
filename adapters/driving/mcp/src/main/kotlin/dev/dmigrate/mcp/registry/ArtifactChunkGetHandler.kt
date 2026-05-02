@@ -14,7 +14,6 @@ import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import java.security.MessageDigest
 import java.util.Base64
-import java.util.UUID
 
 /**
  * AP 6.11: `artifact_chunk_get` per `ImpPlan-0.9.6-C.md` §5.5 + §6.11.
@@ -42,7 +41,6 @@ internal class ArtifactChunkGetHandler(
     private val artifactStore: ArtifactStore,
     private val contentStore: ArtifactContentStore,
     private val limits: McpLimitsConfig,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     // serializeNulls is load-bearing: spec/ki-mcp.md §5.5 line 471
@@ -99,7 +97,7 @@ internal class ArtifactChunkGetHandler(
             put("lengthBytes", length)
             put("contentType", contentType)
             put("sha256", sha256)
-            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+            put("executionMeta", mapOf("requestId" to context.requestId))
             if (isText) {
                 put("encoding", "text")
                 put("text", String(bytes, Charsets.UTF_8))
@@ -167,8 +165,5 @@ internal class ArtifactChunkGetHandler(
 
         fun chunkUri(tenantId: String, artifactId: String, chunkId: String): String =
             "dmigrate://tenants/$tenantId/artifacts/$artifactId/chunks/$chunkId"
-
-        private fun generateRequestId(): String =
-            "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

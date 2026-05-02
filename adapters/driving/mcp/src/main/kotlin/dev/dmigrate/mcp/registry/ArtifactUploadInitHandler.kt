@@ -62,7 +62,6 @@ internal class ArtifactUploadInitHandler(
     private val idleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
     private val absoluteLeaseDuration: Duration = DEFAULT_ABSOLUTE_LEASE,
     private val sessionIdGenerator: () -> String = ::generateSessionId,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -126,7 +125,7 @@ internal class ArtifactUploadInitHandler(
             "uploadSessionTtlSeconds" to ttlSeconds,
             "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
             "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
-            "executionMeta" to mapOf("requestId" to requestIdProvider()),
+            "executionMeta" to mapOf("requestId" to context.requestId),
         )
         return ToolCallOutcome.Success(
             content = listOf(
@@ -265,8 +264,5 @@ internal class ArtifactUploadInitHandler(
 
         private fun generateSessionId(): String =
             "ups-${UUID.randomUUID().toString().replace("-", "").take(16)}"
-
-        private fun generateRequestId(): String =
-            "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

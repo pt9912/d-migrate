@@ -25,7 +25,6 @@ import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.core.artifact.ArtifactKind
-import java.util.UUID
 
 /**
  * AP 6.5: `schema_generate` per `ImpPlan-0.9.6-C.md` §6.5.
@@ -55,7 +54,6 @@ internal class SchemaGenerateHandler(
     private val artifactSink: ArtifactSink,
     private val limits: McpLimitsConfig,
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator = ::lookupViaRegistry,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -74,7 +72,11 @@ internal class SchemaGenerateHandler(
         val ddlBytes = ddl.toByteArray(Charsets.UTF_8)
         val inlineThreshold = limits.maxToolResponseBytes / 2
         val payload = if (ddlBytes.size <= inlineThreshold) {
-            buildPayload(args.targetDialect, result, ddl = ddl, artifactRef = null, truncated = false)
+            buildPayload(
+                args.targetDialect, result,
+                ddl = ddl, artifactRef = null, truncated = false,
+                requestId = context.requestId,
+            )
         } else {
             val uri = artifactSink.writeReadOnly(
                 principal = context.principal,
@@ -84,7 +86,11 @@ internal class SchemaGenerateHandler(
                 content = ddlBytes,
                 maxArtifactBytes = limits.maxArtifactUploadBytes,
             )
-            buildPayload(args.targetDialect, result, ddl = null, artifactRef = uri.render(), truncated = true)
+            buildPayload(
+                args.targetDialect, result,
+                ddl = null, artifactRef = uri.render(), truncated = true,
+                requestId = context.requestId,
+            )
         }
         return ToolCallOutcome.Success(
             content = listOf(
@@ -154,6 +160,7 @@ internal class SchemaGenerateHandler(
         ddl: String?,
         artifactRef: String?,
         truncated: Boolean,
+        requestId: String,
     ): Map<String, Any?> {
         val noteFindings = result.notes.map(::projectNote)
         val skippedFindings = result.skippedObjects.map(::projectSkipped)
@@ -169,7 +176,7 @@ internal class SchemaGenerateHandler(
             put("truncated", truncated || findingsTruncated)
             if (ddl != null) put("ddl", ddl)
             if (artifactRef != null) put("artifactRef", artifactRef)
-            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+            put("executionMeta", mapOf("requestId" to requestId))
         }
     }
 
@@ -246,7 +253,5 @@ internal class SchemaGenerateHandler(
 
         private fun lookupViaRegistry(dialect: DatabaseDialect): DdlGenerator =
             DatabaseDriverRegistry.get(dialect).ddlGenerator()
-
-        fun generateRequestId(): String = "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

@@ -185,18 +185,21 @@ class CapabilitiesListHandlerTest : FunSpec({
         limitsJson.get("maxInlineFindings").asInt shouldBe 10
     }
 
-    test("executionMeta carries the requestId from the supplied provider") {
-        val sut = CapabilitiesListReadOnlyHandler(
-            tools = emptyList(),
-            scopeMapping = emptyMap(),
-            requestIdProvider = { "req-deadbeef" },
+    test("executionMeta echoes the requestId from the dispatched ToolCallContext") {
+        // AP 6.20: handlers no longer mint their own requestId; they
+        // surface whatever McpServiceImpl puts into context.requestId
+        // so an operator can correlate the wire response with the
+        // matching audit event.
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
+        val outcome = sut.handle(
+            ToolCallContext("capabilities_list", null, PRINCIPAL, requestId = "req-deadbeef"),
         )
-        val text = invoke(sut)
+        val text = (outcome as ToolCallOutcome.Success).content.single().text!!
         val meta = JsonParser.parseString(text).asJsonObject.getAsJsonObject("executionMeta")
         meta.get("requestId").asString shouldBe "req-deadbeef"
     }
 
-    test("each call gets a fresh requestId from the default generator") {
+    test("each call gets a fresh requestId via the ToolCallContext default") {
         val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
         val first = JsonParser.parseString(invoke(sut)).asJsonObject
             .getAsJsonObject("executionMeta").get("requestId").asString

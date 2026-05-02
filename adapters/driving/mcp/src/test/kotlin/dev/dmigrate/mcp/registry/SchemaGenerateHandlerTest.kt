@@ -74,7 +74,6 @@ private class FakeDdlGenerator(
 private fun handler(
     fake: FakeDdlGenerator,
     limits: McpLimitsConfig = McpLimitsConfig(),
-    requestId: String = "req-deadbeef",
 ): Triple<SchemaGenerateHandler, InMemoryArtifactStore, InMemoryArtifactContentStore> {
     val schemaStore = InMemorySchemaStore()
     val artifactStore = InMemoryArtifactStore()
@@ -89,7 +88,6 @@ private fun handler(
             require(dialect == fake.dialect) { "no generator for $dialect" }
             fake
         },
-        requestIdProvider = { requestId },
     )
     return Triple(sut, artifactStore, contentStore)
 }
@@ -266,7 +264,6 @@ class SchemaGenerateHandlerTest : FunSpec({
             artifactSink = ArtifactSink(InMemoryArtifactStore(), InMemoryArtifactContentStore(), FIXED_CLOCK),
             limits = McpLimitsConfig(),
             generatorLookup = { throw IllegalArgumentException("No DatabaseDriver registered for $it") },
-            requestIdProvider = { "req-x" },
         )
         shouldThrow<ValidationErrorException> {
             sut.handle(

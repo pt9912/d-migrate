@@ -60,7 +60,6 @@ private fun setup(
     sessionLimit: Long = 10,
     bytesLimit: Long = 1_000_000_000,
     sessionId: String = "ups-fixed",
-    requestId: String = "req-deadbeef",
 ): UploadInitFixture {
     val sessionStore = InMemoryUploadSessionStore()
     val quotaStore = InMemoryQuotaStore()
@@ -77,7 +76,6 @@ private fun setup(
         limits = limits,
         clock = FIXED_CLOCK,
         sessionIdGenerator = { sessionId },
-        requestIdProvider = { requestId },
     )
     return UploadInitFixture(handler, sessionStore, quotaStore)
 }
@@ -135,7 +133,6 @@ private fun recordingHandler(
     limits = McpLimitsConfig(),
     clock = FIXED_CLOCK,
     sessionIdGenerator = { "ups-fixed" },
-    requestIdProvider = { "req-x" },
 )
 
 private fun grant(key: QuotaKey, amount: Long): dev.dmigrate.server.ports.quota.QuotaOutcome.Granted =
@@ -148,7 +145,12 @@ class ArtifactUploadInitHandlerTest : FunSpec({
 
     test("happy path: session is persisted ACTIVE and the response matches the spec/ki-mcp.md §5.3 shape") {
         val s = setup()
-        val outcome = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val outcome = s.handler.handle(
+            ToolCallContext(
+                "artifact_upload_init", args(VALID_INIT), PRINCIPAL,
+                requestId = "req-deadbeef",
+            ),
+        )
         val json = parsePayload(outcome)
         json.get("uploadSessionId").asString shouldBe "ups-fixed"
         // Default initial TTL = 900s, capped by 3600s absolute lease.
@@ -369,7 +371,6 @@ class ArtifactUploadInitHandlerTest : FunSpec({
             clock = FIXED_CLOCK,
             absoluteLeaseDuration = tenMin,
             sessionIdGenerator = { "ups-fixed" },
-            requestIdProvider = { "req-x" },
         )
         val outcome = handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
         parsePayload(outcome).get("uploadSessionTtlSeconds").asLong shouldBe 600L

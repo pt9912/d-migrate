@@ -98,7 +98,6 @@ private fun setup(limits: McpLimitsConfig = McpLimitsConfig()): HandlerSetup {
         comparator = SchemaComparator(),
         artifactSink = ArtifactSink(artifactStore, contentStore, FIXED_CLOCK),
         limits = limits,
-        requestIdProvider = { "req-deadbeef" },
     )
     return HandlerSetup(handler, schemaStore, artifactStore, contentStore)
 }
@@ -618,6 +617,7 @@ class SchemaCompareHandlerTest : FunSpec({
                 "schema_compare",
                 args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
                 PRINCIPAL,
+                requestId = "req-deadbeef",
             ),
         )
         val content = (outcome as ToolCallOutcome.Success).content.single()

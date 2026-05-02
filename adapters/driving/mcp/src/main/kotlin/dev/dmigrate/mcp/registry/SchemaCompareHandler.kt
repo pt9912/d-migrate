@@ -21,7 +21,6 @@ import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
-import java.util.UUID
 
 /**
  * AP 6.6: `schema_compare` per `ImpPlan-0.9.6-C.md` §5.3 + §6.6.
@@ -53,7 +52,6 @@ internal class SchemaCompareHandler(
     private val comparator: SchemaComparator,
     private val artifactSink: ArtifactSink,
     private val limits: McpLimitsConfig,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -105,6 +103,7 @@ internal class SchemaCompareHandler(
                             totalFindings = allFindings.size,
                             truncated = findingsTruncated || sizeTruncated,
                             diffArtifactRef = diffArtifactRef,
+                            requestId = context.requestId,
                         ),
                     ),
                     mimeType = "application/json",
@@ -186,13 +185,14 @@ internal class SchemaCompareHandler(
         totalFindings: Int,
         truncated: Boolean,
         diffArtifactRef: String?,
+        requestId: String,
     ): Map<String, Any?> = buildMap {
         put("status", if (identical) "identical" else "different")
         put("summary", summary(identical, totalFindings, diffArtifactRef != null))
         put("findings", inlineFindings)
         put("truncated", truncated)
         if (diffArtifactRef != null) put("diffArtifactRef", diffArtifactRef)
-        put("executionMeta", mapOf("requestId" to requestIdProvider()))
+        put("executionMeta", mapOf("requestId" to requestId))
     }
 
     private fun summary(identical: Boolean, totalFindings: Int, asArtifact: Boolean): String = when {
@@ -465,8 +465,4 @@ internal class SchemaCompareHandler(
         val rightRef: String,
         val format: String?,
     )
-
-    private companion object {
-        fun generateRequestId(): String = "req-${UUID.randomUUID().toString().take(8)}"
-    }
 }

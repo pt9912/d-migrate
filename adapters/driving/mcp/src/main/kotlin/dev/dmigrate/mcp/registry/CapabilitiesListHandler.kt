@@ -5,7 +5,6 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.server.McpLimitsConfig
-import java.util.UUID
 
 /**
  * AP 6.2: Phase-C `capabilities_list` per
@@ -44,7 +43,6 @@ internal class CapabilitiesListReadOnlyHandler(
     limits: McpLimitsConfig = McpLimitsConfig(),
     private val dialects: List<String> = DatabaseDialect.entries.map { it.name },
     private val formats: List<String> = SchemaFileResolver.SUPPORTED_FORMATS,
-    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -62,7 +60,7 @@ internal class CapabilitiesListReadOnlyHandler(
             "dialects" to dialects,
             "formats" to formats,
             "limits" to projectedLimits,
-            "executionMeta" to mapOf("requestId" to requestIdProvider()),
+            "executionMeta" to mapOf("requestId" to context.requestId),
         )
         return ToolCallOutcome.Success(
             content = listOf(
@@ -128,10 +126,4 @@ internal class CapabilitiesListReadOnlyHandler(
         "maxArtifactUploadBytes" to limits.maxArtifactUploadBytes,
     )
 
-    companion object {
-        // Eight hex chars are enough to disambiguate within a session;
-        // the audit log keeps the full request envelope if longer
-        // correlation is needed (spec/ki-mcp.md §14).
-        private fun generateRequestId(): String = "req-${UUID.randomUUID().toString().take(8)}"
-    }
 }
