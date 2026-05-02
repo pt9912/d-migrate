@@ -18,6 +18,15 @@ import kotlin.io.path.outputStream
  */
 object SchemaFileResolver {
 
+    /**
+     * Canonical neutral-schema format names accepted by [codecForFormat].
+     * Single source of truth for adapters that need to advertise the
+     * set (e.g. MCP `capabilities_list.formats`) — keeps the format
+     * universe from drifting between the resolver `when` and external
+     * lists.
+     */
+    val SUPPORTED_FORMATS: List<String> = listOf("json", "yaml")
+
     private val yamlCodec = YamlSchemaCodec()
     private val jsonCodec = JsonSchemaCodec()
 

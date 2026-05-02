@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import java.util.UUID
@@ -33,32 +34,34 @@ import java.util.UUID
  * registry) so [PhaseBRegistries] can build the registry in a single
  * pass without a back-reference cycle.
  *
- * `requestIdProvider` is a function rather than a literal so each
- * `tools/call` invocation gets a fresh correlation id without
- * threading state through the registry. Tests inject a deterministic
- * supplier so the golden of the response stays stable.
+ * Tools, scope table, and limits are precomputed in the constructor
+ * — they're constant for the handler's lifetime, and `tools/call
+ * capabilities_list` runs on every client discovery.
  */
 internal class CapabilitiesListReadOnlyHandler(
-    private val tools: List<ToolDescriptor>,
-    private val scopeMapping: Map<String, Set<String>>,
-    private val limits: McpLimitsConfig = McpLimitsConfig(),
-    private val dialects: List<String> = DatabaseDialect.values().map { it.name },
-    private val formats: List<String> = DEFAULT_FORMATS,
+    tools: List<ToolDescriptor>,
+    scopeMapping: Map<String, Set<String>>,
+    limits: McpLimitsConfig = McpLimitsConfig(),
+    private val dialects: List<String> = DatabaseDialect.entries.map { it.name },
+    private val formats: List<String> = SchemaFileResolver.SUPPORTED_FORMATS,
     private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
+    private val projectedTools: List<Map<String, Any?>> = tools.map(::projectTool)
+    private val scopeTable: Map<String, List<String>> = invertScopeMapping(scopeMapping)
+    private val projectedLimits: Map<String, Number> = projectLimits(limits)
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val payload = mapOf(
             "mcpProtocolVersion" to McpProtocol.MCP_PROTOCOL_VERSION,
             "dmigrateContractVersion" to McpProtocol.DMIGRATE_CONTRACT_VERSION,
             "serverName" to McpProtocol.SERVER_NAME,
-            "tools" to tools.map(::projectTool),
-            "scopeTable" to invertScopeMapping(scopeMapping),
+            "tools" to projectedTools,
+            "scopeTable" to scopeTable,
             "dialects" to dialects,
             "formats" to formats,
-            "limits" to projectLimits(limits),
+            "limits" to projectedLimits,
             "executionMeta" to mapOf("requestId" to requestIdProvider()),
         )
         return ToolCallOutcome.Success(
@@ -110,6 +113,10 @@ internal class CapabilitiesListReadOnlyHandler(
         return out.mapValues { (_, methods) -> methods.toList() }
     }
 
+    /**
+     * Mixed `Int`/`Long` projection — `maxArtifactUploadBytes` is
+     * `Long` per §4.2 and must NOT be downcast.
+     */
     private fun projectLimits(limits: McpLimitsConfig): Map<String, Number> = mapOf(
         "maxToolResponseBytes" to limits.maxToolResponseBytes,
         "maxNonUploadToolRequestBytes" to limits.maxNonUploadToolRequestBytes,
@@ -122,21 +129,9 @@ internal class CapabilitiesListReadOnlyHandler(
     )
 
     companion object {
-        /**
-         * Canonical neutral-schema formats supported by
-         * `:adapters:driven:formats` (`SchemaFileResolver.codecForFormat`).
-         * Listed here as a const so `capabilities_list` does not pull
-         * the formats module onto the MCP-adapter classpath just for
-         * advertisement.
-         */
-        internal val DEFAULT_FORMATS: List<String> = listOf("json", "yaml")
-
-        /**
-         * Server-side correlation id per `spec/ki-mcp.md` §14
-         * ("executionMeta.requestId"). Eight hex chars are enough to
-         * disambiguate within a session; the audit log keeps the full
-         * request envelope if longer correlation is needed.
-         */
+        // Eight hex chars are enough to disambiguate within a session;
+        // the audit log keeps the full request envelope if longer
+        // correlation is needed (spec/ki-mcp.md §14).
         private fun generateRequestId(): String = "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

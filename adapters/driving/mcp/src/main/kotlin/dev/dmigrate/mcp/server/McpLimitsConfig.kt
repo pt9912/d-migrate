@@ -5,9 +5,7 @@ package dev.dmigrate.mcp.server
  *
  * Single source of truth for every byte/findings cap the read-only
  * tools advertise via `capabilities_list` and (later, AP 6.13)
- * enforce on responses. Tests can construct the data class with
- * smaller values so `maxToolResponseBytes` overflow paths are
- * exercisable without crafting megabyte payloads.
+ * enforce on responses.
  */
 data class McpLimitsConfig(
     val maxToolResponseBytes: Int = 65_536,

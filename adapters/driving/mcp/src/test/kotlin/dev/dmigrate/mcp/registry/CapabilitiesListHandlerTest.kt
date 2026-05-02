@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.JsonParser
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.core.error.ToolErrorCode
@@ -11,6 +12,7 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
@@ -146,41 +148,33 @@ class CapabilitiesListHandlerTest : FunSpec({
 
     test("payload includes every supported dialect (AP 6.2)") {
         val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
-        val text = invoke(sut)
-        val dialects = JsonParser.parseString(text).asJsonObject
+        val dialects = JsonParser.parseString(invoke(sut)).asJsonObject
             .getAsJsonArray("dialects").map { it.asString }.toSet()
-        dialects shouldBe DatabaseDialect.values().map { it.name }.toSet()
+        dialects shouldBe DatabaseDialect.entries.map { it.name }.toSet()
     }
 
-    test("payload includes every supported neutral-schema format (AP 6.2)") {
+    test("payload formats align with SchemaFileResolver.SUPPORTED_FORMATS (AP 6.2)") {
+        // Defense-in-depth: if the formats module ever adds a codec
+        // and the handler default isn't updated (or vice-versa), this
+        // catches the drift before it reaches a client.
         val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
-        val text = invoke(sut)
-        val formats = JsonParser.parseString(text).asJsonObject
-            .getAsJsonArray("formats").map { it.asString }.toSet()
-        formats shouldBe setOf("json", "yaml")
+        val formats = JsonParser.parseString(invoke(sut)).asJsonObject
+            .getAsJsonArray("formats").map { it.asString }
+        formats shouldBe SchemaFileResolver.SUPPORTED_FORMATS
     }
 
-    test("payload exposes every numeric limit from McpLimitsConfig (§10 DoD)") {
+    test("payload exposes every numeric limit from McpLimitsConfig including maxArtifactChunkBytes=32768 (§10 DoD)") {
         val limits = McpLimitsConfig()
         val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap(), limits = limits)
-        val text = invoke(sut)
-        val limitsJson = JsonParser.parseString(text).asJsonObject.getAsJsonObject("limits")
+        val limitsJson = JsonParser.parseString(invoke(sut)).asJsonObject.getAsJsonObject("limits")
         limitsJson.get("maxToolResponseBytes").asInt shouldBe limits.maxToolResponseBytes
         limitsJson.get("maxNonUploadToolRequestBytes").asInt shouldBe limits.maxNonUploadToolRequestBytes
         limitsJson.get("maxInlineSchemaBytes").asInt shouldBe limits.maxInlineSchemaBytes
         limitsJson.get("maxUploadToolRequestBytes").asInt shouldBe limits.maxUploadToolRequestBytes
         limitsJson.get("maxUploadSegmentBytes").asInt shouldBe limits.maxUploadSegmentBytes
-        limitsJson.get("maxArtifactChunkBytes").asInt shouldBe limits.maxArtifactChunkBytes
+        limitsJson.get("maxArtifactChunkBytes").asInt shouldBe 32_768
         limitsJson.get("maxInlineFindings").asInt shouldBe limits.maxInlineFindings
         limitsJson.get("maxArtifactUploadBytes").asLong shouldBe limits.maxArtifactUploadBytes
-    }
-
-    test("maxArtifactChunkBytes equals 32768 per §10 DoD") {
-        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
-        val text = invoke(sut)
-        JsonParser.parseString(text).asJsonObject
-            .getAsJsonObject("limits")
-            .get("maxArtifactChunkBytes").asInt shouldBe 32_768
     }
 
     test("custom McpLimitsConfig overrides surface in the payload") {
@@ -208,7 +202,7 @@ class CapabilitiesListHandlerTest : FunSpec({
             .getAsJsonObject("executionMeta").get("requestId").asString
         val second = JsonParser.parseString(invoke(sut)).asJsonObject
             .getAsJsonObject("executionMeta").get("requestId").asString
-        (first != second) shouldBe true
+        first shouldNotBe second
         first.startsWith("req-") shouldBe true
     }
 })
