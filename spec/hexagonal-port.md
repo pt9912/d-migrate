@@ -196,7 +196,7 @@ Neues Modul — enthält **nur Interfaces und zugehörige Datentypen**, keine Im
 > Hinweis: Die spaetere Nachschaerfung von Read-/Write-Schnitt,
 > Optionsmodellen und externer Library-Konsumierbarkeit ist als eigener
 > Refactor-Milestone in
-> [`implementation-plan-0.9.1.md`](../docs/planning/implementation-plan-0.9.1.md)
+> [`implementation-plan-0.9.1.md`](../docs/planning/done/implementation-plan-0.9.1.md)
 > dokumentiert.
 
 **Aus `d-migrate-driver-api` hierher verschoben:**

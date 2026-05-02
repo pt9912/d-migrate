@@ -69,7 +69,7 @@
 
 ## 7. Akzeptanzkriterien
 
-- [x] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../../README.md) verwendet und baut erfolgreich.
+- [x] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../../../README.md) verwendet und baut erfolgreich.
 - [x] `--since-column` und `--since` sind nur gemeinsam zulässig und liefern bei fehlender Kombination Exit `2`.
 - [x] `--since` wird typisiert gebunden, nicht string-concateniert (kein SQL-Injection-Vektor).
 - [x] `--filter + --since` mit Literal `?` wird vor Datenbankzugriff mit Exit `2` hart abgelehnt.

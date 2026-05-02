@@ -723,7 +723,7 @@ Entwicklung eines modularen Frameworks, das eine herstellerunabhängige Verwaltu
 
 Weiterfuehrung: Eine konkrete, priorisierte Kandidatenliste fuer reale
 Beispiel- und Testdatenbanken ist in
-[`test-database-candidates.md`](../docs/planning/test-database-candidates.md) dokumentiert.
+[`test-database-candidates.md`](../docs/planning/open/test-database-candidates.md) dokumentiert.
 
 ### 8.7 Spezifische Testfälle für proprietäre Objekte
 

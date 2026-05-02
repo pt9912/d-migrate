@@ -99,7 +99,7 @@ Kein `-c` Config nötig — `--target` akzeptiert direkte URLs.
 
 ## 7. Akzeptanzkriterien
 
-- [x] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../../README.md) verwendet und baut erfolgreich.
+- [x] `docker build -t d-migrate:dev .` wird als Build/Test-Workflow gemäß [`README.md`](../../../README.md) verwendet und baut erfolgreich.
 - [x] JSON, YAML und CSV je mindestens einmal über den vollen CLI-Importpfad auf SQLite verifiziert.
 - [x] `--truncate` auf SQLite importseitig funktional getestet (bestehende Zieldaten werden in dem Lauf ersetzt).
 - [x] `--on-conflict update` ist auf SQLite per CLI testabgedeckt.

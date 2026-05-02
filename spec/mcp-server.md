@@ -12,7 +12,7 @@ Der MCP-Server ist ein Driving-Adapter zu d-migrate
 (`adapters/driving/mcp`) und implementiert
 **MCP 2025-11-25** mit **stdio**- und **Streamable-HTTP**-Transport. Die
 vollständige Phasen-B-Spezifikation liegt in
-[`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/ImpPlan-0.9.6-B.md).
+[`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md).
 
 ---
 
@@ -268,7 +268,7 @@ einen Golden-Test gegen Drift gepinnt
 
 ## Weiterführend
 
-- [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/ImpPlan-0.9.6-B.md) — Komplette
+- [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
   Phasen-B-Spezifikation (§5 Architektur, §12.13–§12.18 Implementation
   Contracts).
 - [`docs/planning/roadmap.md`](../docs/planning/roadmap.md) — Plan für Phase C/D

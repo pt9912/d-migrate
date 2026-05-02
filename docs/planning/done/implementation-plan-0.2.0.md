@@ -322,7 +322,7 @@ docker run --rm -v $(pwd):/work dmigrate/d-migrate schema generate --source /wor
 ---
 
 **Referenzen**:
-- [DDL-Generierungsregeln](../../spec/ddl-generation-rules.md) — Quoting, Ordering, Dialekt-Regeln
-- [Neutrales-Modell-Spezifikation](../../spec/neutral-model-spec.md) — Typ-Mapping-Tabelle §3
-- [CLI-Spezifikation](../../spec/cli-spec.md) — `schema generate` Command
-- [Architektur](../../spec/architecture.md) — Modul-Struktur, TypeMapper §3.4, SchemaWriter §3.1
+- [DDL-Generierungsregeln](../../../spec/ddl-generation-rules.md) — Quoting, Ordering, Dialekt-Regeln
+- [Neutrales-Modell-Spezifikation](../../../spec/neutral-model-spec.md) — Typ-Mapping-Tabelle §3
+- [CLI-Spezifikation](../../../spec/cli-spec.md) — `schema generate` Command
+- [Architektur](../../../spec/architecture.md) — Modul-Struktur, TypeMapper §3.4, SchemaWriter §3.1

@@ -4,7 +4,7 @@
 **Status:** Planung / Scope-Klaerung
 
 Dieses Dokument haelt Punkte fest, die in der DDL-Zielbild-Spezifikation
-[`spec/ddl-generation-rules.md`](../../spec/ddl-generation-rules.md)
+[`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md)
 beschrieben sind, aber nach aktuellem Implementierungsstand nicht oder nur als
 spaeterer Scope getragen werden.
 
@@ -29,21 +29,21 @@ Planungsdokumenten als spaeterer Scope markiert:
 
 ### Zielbild
 
-[`ddl-generation-rules.md` §5.4](../../spec/ddl-generation-rules.md) beschreibt
+[`ddl-generation-rules.md` §5.4](../../../spec/ddl-generation-rules.md) beschreibt
 Partial Indexes fuer PostgreSQL:
 
 ```sql
 CREATE INDEX "idx_active_orders" ON "orders" ("status") WHERE "status" != 'cancelled';
 ```
 
-[`lastenheft-d-migrate.md` §8.7](../../spec/lastenheft-d-migrate.md) nennt
+[`lastenheft-d-migrate.md` §8.7](../../../spec/lastenheft-d-migrate.md) nennt
 Partial Indexes mit WHERE-Klauseln als PostgreSQL-spezifischen Testfall.
 
 ### Aktueller Implementierungsstand
 
 Partial Indexes werden aktuell nicht modelliert.
 
-- [`IndexDefinition`](../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/IndexDefinition.kt) enthaelt nur `name`, `columns`, `type`, `unique`.
+- [`IndexDefinition`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/IndexDefinition.kt) enthaelt nur `name`, `columns`, `type`, `unique`.
 - Die Schema-Referenz und das JSON-Schema dokumentieren kein `where`-, `predicate`- oder `filter`-Feld fuer Indizes.
 - PostgreSQL erzeugt Index-DDL ohne `WHERE`-Klausel.
 - MySQL und SQLite erzeugen ebenfalls nur normale Indizes oder behandeln nicht unterstuetzte Index-Typen mit `W102`.
@@ -127,7 +127,7 @@ Offene Entscheidung:
 
 ### Zielbild
 
-[`ddl-generation-rules.md` §2.2](../../spec/ddl-generation-rules.md) beschreibt
+[`ddl-generation-rules.md` §2.2](../../../spec/ddl-generation-rules.md) beschreibt
 eine spaetere Option:
 
 ```yaml
@@ -153,7 +153,7 @@ daher deutlich wartungsintensiver als der Nutzen im Normalfall.
 
 ### Zielbild
 
-[`ddl-generation-rules.md` §3.6`-`§3.7](../../spec/ddl-generation-rules.md)
+[`ddl-generation-rules.md` §3.6`-`§3.7](../../../spec/ddl-generation-rules.md)
 beschreibt ALTER-Statements und SQLite-Rebuilds fuer einen spaeteren
 `schema migrate`-Pfad.
 
@@ -162,9 +162,9 @@ beschreibt ALTER-Statements und SQLite-Rebuilds fuer einen spaeteren
 Nicht Teil des aktuellen CLI-Funktionsumfangs. Das ist in mehreren Dokumenten
 explizit abgegrenzt:
 
-- [`cli-spec.md` §7](../../spec/cli-spec.md)
-- [`implementation-plan-0.5.0.md`](./implementation-plan-0.5.0.md)
-- [`implementation-plan-0.7.0.md`](./implementation-plan-0.7.0.md)
+- [`cli-spec.md` §7](../../../spec/cli-spec.md)
+- [`implementation-plan-0.5.0.md`](../done/implementation-plan-0.5.0.md)
+- [`implementation-plan-0.7.0.md`](../done/implementation-plan-0.7.0.md)
 
 ### Bewertung
 
@@ -197,7 +197,7 @@ offene Zielbild-Gaps:
 
 ### Zielbild / Ist-Konflikt
 
-[`ddl-generation-rules.md` §1.2](../../spec/ddl-generation-rules.md) definiert
+[`ddl-generation-rules.md` §1.2](../../../spec/ddl-generation-rules.md) definiert
 fuer generierte DDL einen Header mit Laufzeit-Timestamp:
 
 ```sql

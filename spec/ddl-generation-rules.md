@@ -522,7 +522,7 @@ MySQL: Gesteuert ueber `--mysql-named-sequences` (seit 0.9.3):
   - Cache-Warnung W114 (Preallocation nicht emuliert)
   - Transaktionswarnung W117 (Rollback retrahiert Inkremente)
 
-Details: [`mysql-sequence-emulation-plan.md`](../docs/planning/mysql-sequence-emulation-plan.md).
+Details: [`mysql-sequence-emulation-plan.md`](../docs/planning/done/mysql-sequence-emulation-plan.md).
 
 SQLite: Keine nativen benannten Sequenzen. `action_required` (E056) wird erzeugt.
 

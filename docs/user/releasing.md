@@ -7,7 +7,7 @@
 >
 > Hinweis: Ein öffentlicher Maven-Central-Publish-Vertrag ist bewusst noch
 > nicht Teil dieses Dokuments. Der vorgeschaltete Library-Refactor ist in
-> [`implementation-plan-0.9.1.md`](../planning/implementation-plan-0.9.1.md)
+> [`implementation-plan-0.9.1.md`](../planning/done/implementation-plan-0.9.1.md)
 > beschrieben; Maven-Central-Portal-Publishing folgt erst mit 1.0.0.
 >
 > **1.0.0-Artefaktklassifikation** (vorbereitet in 0.9.1 Phase G):
@@ -140,7 +140,7 @@ Lokales Docker-Netzwerk mit PostgreSQL und MySQL aufsetzen:
 
 Hinweis: Für realistischere DB-Smokes über die eingebauten Fixture-Schemas
 hinaus siehe auch die priorisierte Kandidatenliste in
-[`test-database-candidates.md`](../planning/test-database-candidates.md).
+[`test-database-candidates.md`](../planning/open/test-database-candidates.md).
 
 ```bash
 SMOKE_DIR="$(mktemp -d)"
@@ -330,7 +330,7 @@ rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 
 Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
 identifizieren. Befehle und jq-Filter: siehe
-[`docs/planning/test-coverage.md`](../planning/test-coverage.md).
+[`docs/planning/test-coverage.md`](../planning/open/test-coverage.md).
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 

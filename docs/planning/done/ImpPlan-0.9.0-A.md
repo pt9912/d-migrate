@@ -93,7 +93,7 @@ Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
 
 - `--lang` ist ein aktiver Root-CLI-Override
   (`adapters/driving/cli/.../Main.kt`). Unsupported Werte werden ueber
-  [`UnsupportedLanguageException`](../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/I18nSettingsResolver.kt)
+  [`UnsupportedLanguageException`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/I18nSettingsResolver.kt)
   mit Exit 2 abgewiesen.
 - `I18nSettingsResolver` akzeptiert `langFromCli` als hoechste Prioritaet
   und validiert streng gegen `SUPPORTED_PRODUCT_LANGUAGES = {"de","en"}`;
@@ -272,8 +272,8 @@ Arbeitsvertrag fuer 0.9.0:
 - Exit `2` fuer `--resume` + stdout-Export bzw. stdin-Import
   (CLI-Preflight in den Runnern).
 - Exit `2` fuer unsupported `--lang` an der Root-CLI
-  ([`UnsupportedLanguageException`](../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/I18nSettingsResolver.kt)
-  → [`Main.kt`](../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)).
+  ([`UnsupportedLanguageException`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/I18nSettingsResolver.kt)
+  → [`Main.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/Main.kt)).
 - Exit-Code-Mapping fuer Exit `3` und Exit `7` ist in den Runner-KDocs und
   in `spec/cli-spec.md` **als Zielvertrag** dokumentiert; die tatsaechliche
   Pruefung (Manifest-Lesen, Format-Validierung, Target-Vergleich) liegt

@@ -123,22 +123,22 @@ Konsequenz:
 Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
 
 - neuer expliziter Checkpoint-Port in `hexagon:ports`:
-  [`CheckpointStore`](../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/streaming/checkpoint/CheckpointStore.kt)
+  [`CheckpointStore`](../../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/streaming/checkpoint/CheckpointStore.kt)
   mit `load`/`save`/`list`/`complete` sowie `CheckpointStoreException`
   und `UnsupportedCheckpointVersionException`.
 - versioniertes, persistierbares Manifest-Grundmodell
-  [`CheckpointManifest`](../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/streaming/checkpoint/CheckpointManifest.kt)
+  [`CheckpointManifest`](../../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/streaming/checkpoint/CheckpointManifest.kt)
   mit `schemaVersion` (`CURRENT_SCHEMA_VERSION = 1`), `operationId`,
   `operationType`, `createdAt`/`updatedAt`, `format`, `chunkSize`,
   `tableSlices` (`CheckpointTableSlice`) und `optionsFingerprint`.
   `operationSpecific` ist der Erweiterungspunkt fuer Phase C/D (`sealed
   interface CheckpointOperationSpecifics`).
 - dateibasierter Erstadapter
-  [`FileCheckpointStore`](../../adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/checkpoint/FileCheckpointStore.kt)
+  [`FileCheckpointStore`](../../../adapters/driven/streaming/src/main/kotlin/dev/dmigrate/streaming/checkpoint/FileCheckpointStore.kt)
   mit atomarem `temp -> ATOMIC_MOVE`-Schreibpfad (§4.6), YAML-
   Serialisierung, toleranter `list()` und klaren Fehlern fuer korrupte
   oder inkompatibel versionierte Manifeste.
-- `PipelineConfig` um [`CheckpointConfig`](../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/streaming/PipelineConfig.kt)
+- `PipelineConfig` um [`CheckpointConfig`](../../../hexagon/ports-write/src/main/kotlin/dev/dmigrate/streaming/PipelineConfig.kt)
   erweitert (enabled, rowInterval, maxInterval, directory).
   Name-Mapping zwischen Config-Oberflaeche und Runtime ist explizit:
   `pipeline.checkpoint.interval` -> `rowInterval`;

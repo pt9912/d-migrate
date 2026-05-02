@@ -91,7 +91,7 @@ Konkrete Luecken vor Phase E:
 Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
 
 - zentral benannter Vertrag existiert als
-  [`TemporalFormatPolicy`](../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicy.kt)
+  [`TemporalFormatPolicy`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicy.kt)
   (stateless `object` in `hexagon:application`) mit
   - ISO-Formatter-Konstanten (`ISO_LOCAL_DATE`, `ISO_LOCAL_TIME`,
     `ISO_LOCAL_DATE_TIME`, `ISO_OFFSET_DATE_TIME`),
@@ -109,7 +109,7 @@ Mit Abschluss der Phase (Status „Implemented", 2026-04-16) gilt:
   `TemporalFormatPolicy` benennen (modulgrenz-konform: keine
   Ruckwaertsabhaengigkeit von `formats` auf `application`).
 - Vertragsabdeckung liegt in
-  [`TemporalFormatPolicyTest`](../../hexagon/application/src/test/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicyTest.kt)
+  [`TemporalFormatPolicyTest`](../../../hexagon/application/src/test/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicyTest.kt)
   sowie in ergaenzten Faellen in `ValueSerializerTest`/
   `ValueDeserializerTest`/`DataExportHelpersTest`.
 - Doku ist in `spec/cli-spec.md`, `spec/design.md`,
@@ -437,7 +437,7 @@ Festlegung fuer diesen Plan:
 ### Entscheidung D1 (ehem. Offene Frage O1)
 
 Die Umsetzung waehlt den oeffentlichen Namen
-[`TemporalFormatPolicy`](../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicy.kt)
+[`TemporalFormatPolicy`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/cli/i18n/TemporalFormatPolicy.kt)
 als benannten Einstieg in den Phase-E-Vertrag. Realisiert als stateless
 `object` mit ISO-Formatter-Konstanten, reinen Format-/Parse-Helfern und
 der einzigen explizit-zonierten API `toZoned(local, zone)`.

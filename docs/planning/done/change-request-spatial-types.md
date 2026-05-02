@@ -3,7 +3,7 @@
 > Status: Approved for Milestone 0.5.5 (Phase 1 des CR)
 > Ziel: Erweiterung des neutralen Modells und der DDL-Regeln um raeumliche Datentypen fuer PostgreSQL/PostGIS, MySQL und SQLite/SpatiaLite.
 >
-> Siehe [roadmap.md, Milestone 0.5.5 — Erweitertes Typsystem](./roadmap.md#milestone-055--erweitertes-typsystem).
+> Siehe [roadmap.md, Milestone 0.5.5 — Erweitertes Typsystem](../roadmap.md#milestone-055--erweitertes-typsystem).
 
 > **Hinweis zur Dokumentationsrolle (ab Phase A, 0.5.5)**
 >

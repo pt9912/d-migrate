@@ -31,7 +31,7 @@ Datei → d-migrate data import ... --table <name> --on-conflict update         
 - `StreamingImporter` in `adapters:driven:streaming` (Glue Reader → Writer, mit
   Chunk-Transaktionen und konfigurierbarer Fehler-Politik)
 - Sequence- und `AUTO_INCREMENT`-Reseeding pro Dialekt (siehe
-  [`design-import-sequences-triggers.md`](../../spec/design-import-sequences-triggers.md))
+  [`design-import-sequences-triggers.md`](../../../spec/design-import-sequences-triggers.md))
 - Trigger-Modi `fire`/`disable`/`strict` mit dialektspezifischer Umsetzung
 - Schema-Validierung des Targets vor dem Import (über JDBC `ResultSetMetaData`,
   ohne den noch nicht existierenden `SchemaReader` aus 0.6.0). Das

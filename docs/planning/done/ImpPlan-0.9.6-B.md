@@ -2112,7 +2112,7 @@ Pro `resources/list`-Aufruf:
 **Follow-up-Status aus AP-6.9-Review**
 
 - Read-only Handler-Follow-ups sind in
-  [`ImpPlan-0.9.6-C.md`](./ImpPlan-0.9.6-C.md) verschoben:
+  [`ImpPlan-0.9.6-C.md`](../ImpPlan-0.9.6-C.md) verschoben:
   Defense-in-depth Tenant-/Owner-Recheck nach Store-Load sowie Runtime-
   Scrubbing freier Output-Strings.
 - Discovery-/Connection-Ref-Follow-ups sind Phase D:
@@ -2232,7 +2232,7 @@ Pro `resources/list`-Aufruf:
 **Follow-up-Status aus AP-6.10-Review**
 
 - Runtime-Scrubbing fuer `additionalProperties: true`-Slots ist in
-  [`ImpPlan-0.9.6-C.md`](./ImpPlan-0.9.6-C.md) verschoben.
+  [`ImpPlan-0.9.6-C.md`](../ImpPlan-0.9.6-C.md) verschoben.
 - Golden-File-Workflow ist in
   `src/test/resources/golden/README.md` dokumentiert.
 - `PhaseBToolSchemasGoldenTest` nutzt bereits defensive Working-Dir-

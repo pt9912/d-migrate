@@ -125,6 +125,6 @@ Fuer Branch-Coverage statt Line-Coverage `.counters.LINE` durch
 
 ## 6. Referenzen
 
-- [Dockerfile](../../Dockerfile) — Stages `build`, `coverage-build`, `coverage-json`
-- [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — koverVerify und koverHtmlReport
-- [`docs/user/releasing.md`](../user/releasing.md) — Abschnitt 3.5 verweist hierher
+- [Dockerfile](../../../Dockerfile) — Stages `build`, `coverage-build`, `coverage-json`
+- [`.github/workflows/build.yml`](../../../.github/workflows/build.yml) — koverVerify und koverHtmlReport
+- [`docs/user/releasing.md`](../../user/releasing.md) — Abschnitt 3.5 verweist hierher
