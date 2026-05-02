@@ -137,7 +137,7 @@ object PhaseBRegistries {
         "schema_compare_start" to "Start schema comparison job",
         "data_profile_start" to "Start data profiling job",
         "data_export_start" to "Start data export job",
-        "artifact_upload_init" to "Init artifact upload session",
+        "artifact_upload_init" to "Open a read-only schema-staging upload session",
         "artifact_upload" to "Upload an artifact segment (implicit finalisation)",
         "artifact_upload_abort" to "Abort artifact upload",
         "data_import_start" to "Start data import job",

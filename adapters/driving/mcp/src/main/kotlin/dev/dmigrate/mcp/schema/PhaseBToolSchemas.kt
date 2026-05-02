@@ -152,14 +152,17 @@ internal object PhaseBToolSchemas {
         // Upload-session tools
         put("artifact_upload_init", schemaPair(
             input = obj(
-                "kind" to enumField("SCHEMA", "PROFILE", "DIFF", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
+                "uploadIntent" to enumField("schema_staging_readonly"),
                 "expectedSizeBytes" to integerField(),
+                "checksumSha256" to stringField(),
                 "filename" to stringField(),
-            ).required("kind"),
+            ).required("uploadIntent", "expectedSizeBytes", "checksumSha256"),
             output = obj(
                 "sessionId" to stringField(),
                 "chunkSizeBytes" to integerField(),
-            ).required("sessionId", "chunkSizeBytes"),
+                "expiresAt" to stringField(),
+                "executionMeta" to objectField(),
+            ).required("sessionId", "chunkSizeBytes", "expiresAt"),
         ))
         put("artifact_upload", schemaPair(
             input = obj(

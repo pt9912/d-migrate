@@ -176,27 +176,27 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "kind": {
+        "uploadIntent": {
           "type": "string",
           "enum": [
-            "SCHEMA",
-            "PROFILE",
-            "DIFF",
-            "DATA_EXPORT",
-            "UPLOAD_INPUT",
-            "OTHER"
+            "schema_staging_readonly"
           ]
         },
         "expectedSizeBytes": {
           "type": "integer",
           "minimum": 0
         },
+        "checksumSha256": {
+          "type": "string"
+        },
         "filename": {
           "type": "string"
         }
       },
       "required": [
-        "kind"
+        "uploadIntent",
+        "expectedSizeBytes",
+        "checksumSha256"
       ]
     },
     "outputSchema": {
@@ -210,11 +210,19 @@
         "chunkSizeBytes": {
           "type": "integer",
           "minimum": 0
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
         "sessionId",
-        "chunkSizeBytes"
+        "chunkSizeBytes",
+        "expiresAt"
       ]
     }
   },
