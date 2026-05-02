@@ -3,7 +3,7 @@
 This directory holds golden snapshots used by tests in
 `adapters/driving/mcp` to pin contract-stable artefacts against
 unintentional drift. The full contract lives in
-`docs/ImpPlan-0.9.6-B.md` §12.18.
+`docs/planning/ImpPlan-0.9.6-B.md` §12.18.
 
 ## `phase-b-tool-schemas.json`
 

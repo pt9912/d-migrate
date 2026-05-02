@@ -210,7 +210,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Central SQL identifier quoting** (`SqlIdentifiers`): dialect-aware `quoteIdentifier()`, `quoteQualifiedIdentifier()` and `quoteStringLiteral()` utility; all profiling and introspection adapters route through this single quoting layer, closing the injection surface documented in `docs/quality.md`
+- **Central SQL identifier quoting** (`SqlIdentifiers`): dialect-aware `quoteIdentifier()`, `quoteQualifiedIdentifier()` and `quoteStringLiteral()` utility; all profiling and introspection adapters route through this single quoting layer, closing the injection surface documented in `docs/user/quality.md`
 - **Security tests**: 17 injection tests with malicious table/column names (`"; DROP TABLE …`, Unicode homoglyphs, reserved words) across profiling and DDL paths
 - **`ManualActionRequired` model**: structured replacement for `-- TODO: …` SQL comment placeholders in DDL output; renders as `-- TODO: …` for backward compatibility in 0.9.1
 - **`DialectCapabilities` model**: declares which schema objects each dialect supports natively (views, functions, procedures, triggers, sequences, custom types, partitioning); used by DDL generators for consistent generate/skip/rewrite decisions
@@ -228,7 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DDL generator decomposition**: routine DDL helpers extracted per object type; dialect-specific generators compose through these helpers with per-object rewrite/capability rules
 - **Plan/milestone comments removed** from production code; only `why` comments and invariants remain
 - `AbstractDdlGenerator.getVersion()` returns `0.9.1`
-- Documentation updated: `docs/releasing.md` hardened (accuracy, consistency, Umlaut normalization, SHA source fix, Homebrew rollback step)
+- Documentation updated: `docs/user/releasing.md` hardened (accuracy, consistency, Umlaut normalization, SHA source fix, Homebrew rollback step)
 
 ## [0.9.0] - 2026-04-17
 
@@ -250,9 +250,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--lang` CLI flag is now productive (was rejected with exit 7 in 0.8.0)
 - Normative documentation (`cli-spec.md`, `connection-config-spec.md`, `roadmap.md`, `guide.md`, `design.md`, `architecture.md`) synchronized to the implemented 0.9.0 contract; stale phase placeholders removed
 - Homebrew install block (`packaging/homebrew/d-migrate.rb` und `release-homebrew.yml` `install:`-Key) verwendet `Dir["*"]` statt `Dir["d-migrate-*"].fetch(0)`: Homebrew strippt das einzelne Top-Level-Verzeichnis beim Entpacken, das alte Pattern lieferte daher immer einen leeren Treffer und einen `IndexError` bei der Installation
-- `docs/releasing.md` §4.7: `brew install --formula <path.rb>` durch den modern-homebrew-konformen Ephemeral-Tap-Weg ersetzt; Alternativpfad über den veröffentlichten Tap dokumentiert
-- `docs/releasing.md` §4.7 / §7: ZIP-SHA wird aus dem publizierten Release-Asset (curl/`gh release download`) gelesen, nicht aus `release-assets/*.sha256` — die beiden Workflows bauen den ZIP unabhängig und produzieren unterschiedliche Hashes
-- `docs/releasing.md` §3.5 / §7 / §8: neue Workflows in der Vorbereitungs-, Veröffentlichungs- und Referenzsektion eingetragen
+- `docs/user/releasing.md` §4.7: `brew install --formula <path.rb>` durch den modern-homebrew-konformen Ephemeral-Tap-Weg ersetzt; Alternativpfad über den veröffentlichten Tap dokumentiert
+- `docs/user/releasing.md` §4.7 / §7: ZIP-SHA wird aus dem publizierten Release-Asset (curl/`gh release download`) gelesen, nicht aus `release-assets/*.sha256` — die beiden Workflows bauen den ZIP unabhängig und produzieren unterschiedliche Hashes
+- `docs/user/releasing.md` §3.5 / §7 / §8: neue Workflows in der Vorbereitungs-, Veröffentlichungs- und Referenzsektion eingetragen
 
 ## [0.8.0] - 2026-04-16
 
@@ -266,7 +266,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unicode-aware BOM/encoding tests** across `EncodingDetectorTest`, `CsvChunkReaderTest`, `JsonChunkReaderTest`, `YamlChunkReaderTest`, `CsvChunkWriterTest` with Cyrillic, CJK and emoji payloads
 - **TemporalFormatPolicyTest** covering §4.1–§4.6 of the Phase-E contract including minute-precision read tolerance lock-in
 - **DE-bundle fallback test** in `MessageResolverTest` using a dedicated test-resource pair (`test-messages-phase-g/phasegmsg[_de].properties`) to prove ResourceBundle parent-chain fallback
-- **Phase plans** `docs/ImpPlan-0.8.0-A.md` through `docs/ImpPlan-0.8.0-G.md` documenting the milestone in full
+- **Phase plans** `docs/planning/ImpPlan-0.8.0-A.md` through `docs/planning/ImpPlan-0.8.0-G.md` documenting the milestone in full
 
 ### Changed
 
@@ -274,12 +274,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ValueSerializer` and `ValueDeserializer` temporal branches annotated with Phase-E contract references; behavior unchanged but ISO-8601 handling documented inline (`TIMESTAMP` stays local, `TIMESTAMP WITH TIME ZONE` stays offset-bearing, `ZonedDateTime` serialized offset-based — `ZoneId` region intentionally not part of the 0.8.0 contract)
 - `DataExportHelpers.parseSinceLiteral` delegates to `TemporalFormatPolicy.parseSinceLiteral`, removing the duplicate parser logic and ensuring CLI and format layer share the same contract
 - `--lang` CLI flag is declared but actively rejected in 0.8.0 with exit 7 — the resolution chain runs through `D_MIGRATE_LANG`, `LC_ALL`/`LANG` and `i18n.default_locale`; the final CLI override contract lands in 0.9.0
-- Documentation aligned across `docs/cli-spec.md`, `docs/guide.md`, `docs/design.md`, `docs/architecture.md`, `docs/connection-config-spec.md` and `docs/lastenheft-d-migrate.md` on the Phase-E and Phase-F contracts
+- Documentation aligned across `spec/cli-spec.md`, `docs/user/guide.md`, `spec/design.md`, `spec/architecture.md`, `spec/connection-config-spec.md` and `spec/lastenheft-d-migrate.md` on the Phase-E and Phase-F contracts
 - `CsvChunkWriter.writeBomBytes()` now carries the D1 rationale inline; behavior (UTF-8/UTF-16 BE/LE BOM + non-UTF no-op) unchanged
 
 ### Fixed
 
-- Master plan `docs/implementation-plan-0.8.0.md` cleaned of stale "UTF-8-only" and "CLI > ENV > Config > System > Fallback" claims that contradicted the Phase-E/F/G contracts
+- Master plan `docs/planning/implementation-plan-0.8.0.md` cleaned of stale "UTF-8-only" and "CLI > ENV > Config > System > Fallback" claims that contradicted the Phase-E/F/G contracts
 
 ## [0.7.5] - 2026-04-15
 
@@ -323,7 +323,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - YAML report sidecar via `--report` with notes, skippedObjects, rollbackNotes, rollbackSkippedObjects, exportNotes, and artifact paths
 - Dockerfile `integration-test` stage with JDK + Python + Django + Node.js for runtime validation
 - Runtime validation tests: Flyway→PostgreSQL, Liquibase→PostgreSQL (with rollback), Django→SQLite (with reverse), Knex→SQLite (with rollback)
-- Tool export smoke tests in `docs/releasing.md`
+- Tool export smoke tests in `docs/user/releasing.md`
 - Architecture section 3.6 documenting the full hexagonal export pipeline
 - Extensibility section 8.4 for adding new tool exporters
 
@@ -355,7 +355,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SchemaNodeParser` and `SchemaNodeBuilder` for format-agnostic JSON/YAML codec extraction
 - `JdbcMetadataSession` and typed metadata projections (TableRef, Column, PK, FK, Index, Constraint) in driver-common
 - PostgresTypeMapping, MysqlTypeMapping, SqliteTypeMapping as pure testable type mapping objects
-- Release smoke paths for Reverse, Compare (file/db, db/db), and Transfer in `docs/releasing.md`
+- Release smoke paths for Reverse, Compare (file/db, db/db), and Transfer in `docs/user/releasing.md`
 - `CliDataTransferTest` with flag parsing, validation, and error path coverage
 
 ### Changed
@@ -490,8 +490,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Testcontainers-based integration tests for PostgreSQL 16 and MySQL 8.0 — both at the driver level and end-to-end via the CLI
 - New `.github/workflows/integration.yml` running `./gradlew test koverVerify -PintegrationTests`; default `build.yml` excludes the `integration` Kotest tag and stays under the 5-min CI budget
 - `scripts/test-integration-docker.sh` for running integration tests locally in a disposable Docker container
-- `docs/archive/implementation-plan-0.3.0.md` (1400+ lines), `docs/releasing.md`
-- `data export` section in `docs/cli-spec.md` §6.2 covering all flags, output resolution, exit codes, and 6 example invocations
+- `docs/planning/implementation-plan-0.3.0.md` (1400+ lines), `docs/user/releasing.md`
+- `data export` section in `spec/cli-spec.md` §6.2 covering all flags, output resolution, exit codes, and 6 example invocations
 - 600+ tests across all modules (was 374 in 0.2.0)
 - Kover coverage gates: ≥ 90% for all production modules, ≥ 60% for `d-migrate-cli` (per Plan §11)
 
@@ -500,7 +500,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AbstractDdlGenerator.getVersion()` now returns `0.3.0`
 - Bumped Testcontainers from 1.20.4 to 2.0.4 — module artifacts renamed (`org.testcontainers:postgresql` → `org.testcontainers:testcontainers-postgresql`) and classes relocated (`org.testcontainers.containers.PostgreSQLContainer` → `org.testcontainers.postgresql.PostgreSQLContainer`); resolves Docker Engine ≥ 25.x API negotiation failures
 - `d-migrate-cli` Kover gate raised from 50% to 60% (Plan §11) now that CLI integration tests are in place
-- LF-013 (incremental export/import) moved from milestone 0.9.0 forward to 0.4.0 in `docs/roadmap.md` — paired with `data import`, no longer requires `SchemaReader`
+- LF-013 (incremental export/import) moved from milestone 0.9.0 forward to 0.4.0 in `docs/planning/roadmap.md` — paired with `data import`, no longer requires `SchemaReader`
 - Roadmap milestone 0.9.0 split into 0.9.0 (Beta core: Checkpoint/Resume + `--lang`) and 0.9.5 (Beta docs and pilot QA) — different cadences for code vs. documentation work
 - `cli-spec.md` §6.2 `data export` updated to reflect the actual 0.3.0 surface (named connections, all CSV flags, exit codes 2/7, 6 example invocations)
 - `--quiet` now also suppresses `ValueSerializer` warnings on stderr (per `cli-spec.md` §1.3 — "Nur Fehler"), not just the `ProgressSummary`

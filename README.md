@@ -194,7 +194,7 @@ Hinweise:
 - Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als normalisiertes, JaCoCo-artiges JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
 - Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
 - Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
-- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (`[text](pfad)`) in `docs/` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
+- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (Markdown links) in `docs/`, `spec/`, `README.md` und `CHANGELOG.md` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
 - Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
 - Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
@@ -264,23 +264,23 @@ Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](http
 ## Roadmap
 
 Die vollständige Roadmap und den Meilensteinplan findest du in
-[docs/roadmap.md](docs/roadmap.md).
+[docs/planning/roadmap.md](docs/planning/roadmap.md).
 
 ## Dokumentation
 
-Detaillierte Dokumentation findest du im [docs/](docs/)-Verzeichnis:
+Detaillierte Dokumentation findest du in [docs/](docs/) und [spec/](spec/):
 
-- [Quick Start Guide (Deutsch)](docs/guide.md)
-- [Entwurf](docs/design.md) / [Architektur](docs/architecture.md)
-- [Schema-YAML-Referenz](docs/schema-reference.md)
-- [Spezifikation des neutralen Modells](docs/neutral-model-spec.md)
-- [CLI-Spezifikation](docs/cli-spec.md)
-- [MCP-Server (`d-migrate mcp serve`)](docs/mcp-server.md)
-- [Regeln zur DDL-Generierung](docs/ddl-generation-rules.md)
-- [Verbindungs- und Konfigurationsspezifikation](docs/connection-config-spec.md)
-- [Roadmap](docs/roadmap.md)
-- [Release-Leitfaden](docs/releasing.md)
-- [Lastenheft (Deutsch)](docs/lastenheft-d-migrate.md)
+- [Quick Start Guide (Deutsch)](docs/user/guide.md)
+- [Entwurf](spec/design.md) / [Architektur](spec/architecture.md)
+- [Schema-YAML-Referenz](spec/schema-reference.md)
+- [Spezifikation des neutralen Modells](spec/neutral-model-spec.md)
+- [CLI-Spezifikation](spec/cli-spec.md)
+- [MCP-Server (`d-migrate mcp serve`)](spec/mcp-server.md)
+- [Regeln zur DDL-Generierung](spec/ddl-generation-rules.md)
+- [Verbindungs- und Konfigurationsspezifikation](spec/connection-config-spec.md)
+- [Roadmap](docs/planning/roadmap.md)
+- [Release-Leitfaden](docs/user/releasing.md)
+- [Lastenheft (Deutsch)](spec/lastenheft-d-migrate.md)
 
 ## Mitmachen
 

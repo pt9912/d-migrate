@@ -1,18 +1,64 @@
 #!/usr/bin/env bash
-# Checks that markdown link targets ([text](path)) in docs/ exist.
-# External HTTP(S) links are ignored.
+# Checks that local markdown link targets ([text](path)) in documentation
+# files exist. External links and fragment-only anchors are ignored.
 #
-# Usage: scripts/verify-doc-refs.sh [root-dir]
-#   root-dir defaults to the repository root (parent of this script's dir).
-
+# Usage:
+#   scripts/verify-doc-refs.sh [root-dir]
+#
+# Exit codes:
+#   0  passed
+#   1  broken local link target detected
+#   2  environment error
 set -euo pipefail
 
-ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
-DOCS="$ROOT/docs"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+root="${1:-$repo_root}"
+
+if [[ ! -d "$root" ]]; then
+    echo "ERROR: root directory not found: $root" >&2
+    exit 2
+fi
+
+extract_local_markdown_links() {
+    awk '
+        {
+            line = $0
+            while (match(line, /!?\[[^]]*\]\([^)]*\)/)) {
+                link = substr(line, RSTART, RLENGTH)
+                line = substr(line, RSTART + RLENGTH)
+
+                if (substr(link, 1, 1) == "!") {
+                    continue
+                }
+
+                sub(/^!?\[[^]]*\]\(/, "", link)
+                sub(/\)$/, "", link)
+
+                if (link ~ /^</) {
+                    sub(/^</, "", link)
+                    sub(/>.*/, "", link)
+                } else {
+                    sub(/[[:space:]].*/, "", link)
+                }
+
+                sub(/#.*/, "", link)
+
+                if (link == "" ||
+                    link ~ /^[a-zA-Z][a-zA-Z0-9+.-]*:/) {
+                    continue
+                }
+
+                print link
+            }
+        }
+    ' "$1" | sort -u
+}
+
 broken=0
 
 while IFS= read -r md; do
-    rel="${md#"$ROOT"/}"
+    rel="${md#"$root"/}"
     while IFS= read -r target; do
         if [[ "$target" == /* ]]; then
             resolved="$target"
@@ -23,11 +69,24 @@ while IFS= read -r md; do
             echo "BROKEN: $rel -> $target"
             ((++broken))
         fi
-    done < <(grep -oP '\[.*?\]\(\K(?!https?://)[^)#\s]+' "$md" 2>/dev/null | sort -u)
-done < <(find "$DOCS" -name '*.md' -type f | sort)
+    done < <(extract_local_markdown_links "$md")
+done < <(
+    {
+        for docs_dir in "$root/docs" "$root/spec"; do
+            if [[ -d "$docs_dir" ]]; then
+                find "$docs_dir" -name '*.md' -type f
+            fi
+        done
+        for top_level_doc in "$root/README.md" "$root/CHANGELOG.md"; do
+            if [[ -f "$top_level_doc" ]]; then
+                printf '%s\n' "$top_level_doc"
+            fi
+        done
+    } | sort
+)
 
 if [[ "$broken" -gt 0 ]]; then
-    echo "$broken broken doc link(s) in docs/"
+    echo "$broken broken documentation link(s)"
     exit 1
 fi
-echo "All doc links OK."
+echo "All documentation links OK."
