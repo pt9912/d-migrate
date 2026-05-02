@@ -163,6 +163,28 @@ class SchemaSourceResolverTest : FunSpec({
         (ex.actualBytes > 16L) shouldBe true
     }
 
+    test("inline schema exactly at maxInlineSchemaBytes is accepted (boundary)") {
+        // `>` not `>=` — pin the off-by-one so tightening the check
+        // later breaks this test instead of silently rejecting valid
+        // payloads.
+        val schema = jsonObj("""{"a":"b"}""")
+        val exactLimit = schema.toString().toByteArray(Charsets.UTF_8).size
+        val sut = SchemaSourceResolver(InMemorySchemaStore(), McpLimitsConfig(maxInlineSchemaBytes = exactLimit))
+        val outcome = sut.resolve(SchemaSourceInput(schema = schema), PRINCIPAL)
+        outcome.shouldBeInstanceOf<SchemaSource.Inline>().byteSize shouldBe exactLimit
+    }
+
+    test("inline JSON primitive throws VALIDATION_ERROR (not PAYLOAD_TOO_LARGE)") {
+        // Coverage gap: the array case proves arrays fail; primitives
+        // (string/number/bool) take a different Gson code path. They
+        // must surface the same structural-error diagnostic.
+        val element = JsonParser.parseString("\"just a string\"")
+        val ex = shouldThrow<ValidationErrorException> {
+            resolver().resolve(SchemaSourceInput(schema = element), PRINCIPAL)
+        }
+        ex.violations.map { it.field } shouldContain "schema"
+    }
+
     test("schemaRef with malformed URI throws VALIDATION_ERROR") {
         val ex = shouldThrow<ValidationErrorException> {
             resolver().resolve(SchemaSourceInput(schemaRef = "not-a-uri"), PRINCIPAL)
@@ -203,35 +225,42 @@ class SchemaSourceResolverTest : FunSpec({
         store.findByIdCalls shouldBe 0
     }
 
-    test("schemaRef with allowed cross-tenant scope resolves") {
-        val multiTenantPrincipal = PRINCIPAL.copy(allowedTenantIds = setOf(ACME, OTHER))
+    test("schemaRef matches the principal's effectiveTenantId regardless of allowedTenantIds membership") {
+        // Tenant readability follows the rest of Phase B/C
+        // (JobRecord.isReadableBy, ArtifactRecord.isReadableBy):
+        // effectiveTenantId is the read scope. allowedTenantIds is
+        // about *granting* an effective tenant at request entry, not
+        // about widening reads.
+        val rebound = PRINCIPAL.copy(
+            homeTenantId = ACME,
+            effectiveTenantId = OTHER,
+            allowedTenantIds = setOf(ACME, OTHER),
+        )
         val foreignUri = ServerResourceUri(OTHER, ResourceKind.SCHEMAS, "s1")
         val store = InMemorySchemaStore().apply {
             save(SCHEMA_ENTRY.copy(tenantId = OTHER, resourceUri = foreignUri))
         }
         val outcome = resolver(store).resolve(
             SchemaSourceInput(schemaRef = foreignUri.render()),
-            multiTenantPrincipal,
+            rebound,
         )
         outcome.shouldBeInstanceOf<SchemaSource.Reference>().entry.tenantId shouldBe OTHER
     }
 
-    test("schemaRef pointing at the principal's homeTenantId resolves even when not in allowedTenantIds") {
-        // Defensive: TenantScopeChecker.isReachable includes home in
-        // the allow set, so future code paths that decouple
-        // effectiveTenantId from homeTenantId still let principals
-        // read their own home tenant's schemas.
+    test("schemaRef pointing at home tenant is denied when effectiveTenantId differs") {
+        // Counterpart to the test above: home/allowed-tenant access
+        // does NOT widen read scope. A principal whose effective
+        // tenant is OTHER cannot read ACME schemas just because ACME
+        // is in homeTenantId or allowedTenantIds.
         val rebound = PRINCIPAL.copy(
             homeTenantId = ACME,
             effectiveTenantId = OTHER,
-            allowedTenantIds = setOf(OTHER),
+            allowedTenantIds = setOf(ACME, OTHER),
         )
-        val store = InMemorySchemaStore().apply { save(SCHEMA_ENTRY) }
-        val outcome = resolver(store).resolve(
-            SchemaSourceInput(schemaRef = SCHEMA_URI.render()),
-            rebound,
-        )
-        outcome.shouldBeInstanceOf<SchemaSource.Reference>().entry.tenantId shouldBe ACME
+        val ex = shouldThrow<TenantScopeDeniedException> {
+            resolver().resolve(SchemaSourceInput(schemaRef = SCHEMA_URI.render()), rebound)
+        }
+        ex.requestedTenant shouldBe ACME
     }
 
     test("schemaRef for missing schemaId in same tenant throws RESOURCE_NOT_FOUND") {

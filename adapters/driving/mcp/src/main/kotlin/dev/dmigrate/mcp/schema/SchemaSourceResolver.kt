@@ -91,8 +91,10 @@ class SchemaSourceResolver(
         // store lookup. Otherwise a differential timing channel could
         // distinguish "foreign tenant, schema exists" from "foreign
         // tenant, schema absent" — both must be indistinguishable
-        // from the client's view.
-        if (!TenantScopeChecker.isReachable(principal, uri.tenantId)) {
+        // from the client's view. Same predicate as JobRecord and
+        // ArtifactRecord: tenant readability is `effectiveTenantId`-
+        // only across read-only Phase B/C handlers.
+        if (!TenantScopeChecker.isInScope(principal, uri.tenantId)) {
             throw TenantScopeDeniedException(uri.tenantId)
         }
         val entry = schemaStore.findById(uri.tenantId, uri.id)
