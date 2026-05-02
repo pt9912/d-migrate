@@ -73,7 +73,9 @@
         "lengthBytes",
         "contentType",
         "encoding",
-        "sha256"
+        "sha256",
+        "nextChunkUri",
+        "executionMeta"
       ]
     }
   },

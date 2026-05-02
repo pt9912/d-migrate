@@ -145,6 +145,8 @@ internal object PhaseBToolSchemas {
                 "contentType",
                 "encoding",
                 "sha256",
+                "nextChunkUri",
+                "executionMeta",
             ),
         ))
 

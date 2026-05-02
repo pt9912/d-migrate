@@ -45,7 +45,11 @@ internal class ArtifactChunkGetHandler(
     private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
-    private val gson = GsonBuilder().disableHtmlEscaping().create()
+    // serializeNulls is load-bearing: spec/ki-mcp.md §5.5 line 471
+    // mandates `nextChunkUri: null` on the last chunk rather than
+    // omitting the field. Without `serializeNulls`, Gson silently
+    // drops the null entry from the response map.
+    private val gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val obj = JsonArgs.requireObject(context.arguments)
@@ -64,11 +68,14 @@ internal class ArtifactChunkGetHandler(
         val chunkSize = limits.maxArtifactChunkBytes
         val totalBytes = record.managedArtifact.sizeBytes
         val offset = chunkIndex.toLong() * chunkSize.toLong()
-        if (offset >= totalBytes && totalBytes > 0) {
-            // Out-of-range chunk index for the existing artefact.
+        // Empty artefact (totalBytes == 0) keeps chunk 0 valid as a
+        // zero-byte read; chunks 1+ are out of range. Non-empty
+        // artefacts reject any chunk whose offset would land beyond
+        // the byte stream.
+        if (chunkIndex > 0 && offset >= totalBytes) {
             throw notFound(context.principal, artifactId)
         }
-        val length = minOf(chunkSize.toLong(), totalBytes - offset).toInt()
+        val length = minOf(chunkSize.toLong(), totalBytes - offset).toInt().coerceAtLeast(0)
         val bytes = if (length == 0) {
             ByteArray(0)
         } else {
@@ -100,7 +107,9 @@ internal class ArtifactChunkGetHandler(
                 put("encoding", "base64")
                 put("contentBase64", Base64.getEncoder().encodeToString(bytes))
             }
-            if (nextChunkUri != null) put("nextChunkUri", nextChunkUri)
+            // §5.5 line 471: `nextChunkUri` is mandatory and is
+            // explicitly `null` on the last chunk — emit it always.
+            put("nextChunkUri", nextChunkUri)
         }
         return ToolCallOutcome.Success(
             content = listOf(

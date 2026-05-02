@@ -123,7 +123,7 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         json.get("encoding").asString shouldBe "text"
         json.get("text").asString shouldBe payload
         json.has("contentBase64") shouldBe false
-        json.has("nextChunkUri") shouldBe false
+        json.get("nextChunkUri").isJsonNull shouldBe true
         json.get("sha256").asString shouldBe sha256Hex(payload.toByteArray())
         json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
     }
@@ -182,7 +182,9 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         )
         third.get("offset").asLong shouldBe 8L
         third.get("lengthBytes").asInt shouldBe 2
-        third.has("nextChunkUri") shouldBe false
+        // Spec §5.5 line 471: nextChunkUri is mandatory and `null`
+        // on the last chunk — never omitted.
+        third.get("nextChunkUri").isJsonNull shouldBe true
     }
 
     test("missing artifact throws RESOURCE_NOT_FOUND") {
@@ -195,19 +197,76 @@ class ArtifactChunkGetHandlerTest : FunSpec({
     }
 
     test("artifact in different tenant maps to RESOURCE_NOT_FOUND (no-oracle)") {
-        // The store is tenant-scoped; a foreign-tenant lookup
-        // returns null even if the bytes physically exist for
-        // another tenant. The handler surfaces the same
-        // RESOURCE_NOT_FOUND as a missing id in the caller's
-        // tenant.
+        // Honest cross-tenant test: register a record under
+        // OTHER tenant and try to read it as ACME. The store's
+        // tenant-scoped findById returns null for ACME even
+        // though the record exists; same RESOURCE_NOT_FOUND as a
+        // truly missing id.
         val f = fixture()
-        // Stage an artifact in a different tenant by writing
-        // directly to the content store without registering a
-        // record via ArtifactStore in our tenant.
-        f.contentStore.write("art-foreign", ByteArrayInputStream("x".toByteArray()), 1)
+        val otherTenant = TenantId("other-tenant")
+        val bytes = "secret".toByteArray()
+        f.contentStore.write("art-foreign", ByteArrayInputStream(bytes), bytes.size.toLong())
+        f.artifactStore.save(
+            ArtifactRecord(
+                managedArtifact = ManagedArtifact(
+                    artifactId = "art-foreign",
+                    filename = "art-foreign.bin",
+                    contentType = "text/plain",
+                    sizeBytes = bytes.size.toLong(),
+                    sha256 = sha256Hex(bytes),
+                    createdAt = FIXED_NOW,
+                    expiresAt = FIXED_NOW.plusSeconds(3600),
+                ),
+                kind = ArtifactKind.SCHEMA,
+                tenantId = otherTenant,
+                ownerPrincipalId = ALICE,
+                visibility = JobVisibility.TENANT,
+                resourceUri = ServerResourceUri(otherTenant, ResourceKind.ARTIFACTS, "art-foreign"),
+            ),
+        )
         shouldThrow<ResourceNotFoundException> {
             f.handler.handle(
                 ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-foreign"}"""), PRINCIPAL),
+            )
+        }
+    }
+
+    test("ADMIN-visibility artifact is invisible to a non-admin principal — RESOURCE_NOT_FOUND") {
+        // Closes the ADMIN/non-admin branch of `isReadableBy`.
+        val f = fixture()
+        stageArtifact(f, "art-admin", visibility = JobVisibility.ADMIN)
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-admin"}"""), PRINCIPAL),
+            )
+        }
+    }
+
+    test("chunk 0 of a zero-byte artefact returns an empty payload (not RESOURCE_NOT_FOUND)") {
+        val f = fixture(maxChunkBytes = 8)
+        stageArtifact(f, "art-empty", bytes = ByteArray(0), contentType = "application/octet-stream")
+        val outcome = f.handler.handle(
+            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-empty"}"""), PRINCIPAL),
+        )
+        val json = parsePayload(outcome)
+        json.get("lengthBytes").asInt shouldBe 0
+        json.get("nextChunkUri").isJsonNull shouldBe true
+    }
+
+    test("chunk 1+ of a zero-byte artefact maps to RESOURCE_NOT_FOUND (regression)") {
+        // Pre-fix this path threw IllegalArgumentException from
+        // RangeBounds.check because the offset guard skipped
+        // empty artefacts; now it surfaces the structured
+        // RESOURCE_NOT_FOUND envelope per the no-oracle rule.
+        val f = fixture(maxChunkBytes = 8)
+        stageArtifact(f, "art-empty", bytes = ByteArray(0), contentType = "application/octet-stream")
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-empty","chunkId":"1"}"""),
+                    PRINCIPAL,
+                ),
             )
         }
     }
