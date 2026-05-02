@@ -130,7 +130,7 @@ object PhaseBRegistries {
         "profile_list" to "List data profiles",
         "diff_list" to "List schema diffs",
         "job_list" to "List jobs",
-        "job_status_get" to "Get job status",
+        "job_status_get" to "Get the status and progress of a job",
         "artifact_list" to "List artifacts",
         "artifact_chunk_get" to "Read one chunk of an artifact (text or base64)",
         "schema_reverse_start" to "Start schema reverse-engineering job",

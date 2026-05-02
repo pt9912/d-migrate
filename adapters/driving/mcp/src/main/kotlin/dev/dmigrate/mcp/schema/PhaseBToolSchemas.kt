@@ -108,14 +108,33 @@ internal object PhaseBToolSchemas {
         put("job_status_get", schemaPair(
             input = obj(
                 "jobId" to stringField(),
-                "tenantId" to stringField(),
-            ).required("jobId"),
+                "resourceUri" to stringField(),
+            ).build(),
             output = obj(
                 "jobId" to stringField(),
+                "operation" to stringField(),
                 "status" to enumField("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"),
+                "terminal" to booleanField(),
+                "createdAt" to stringField(),
+                "updatedAt" to stringField(),
+                "expiresAt" to stringField(),
+                "resourceUri" to stringField(),
+                "artifacts" to arrayField("string"),
                 "progress" to objectField(),
                 "error" to objectField(),
-            ).required("jobId", "status"),
+                "executionMeta" to objectField(),
+            ).required(
+                "jobId",
+                "operation",
+                "status",
+                "terminal",
+                "createdAt",
+                "updatedAt",
+                "expiresAt",
+                "resourceUri",
+                "artifacts",
+                "executionMeta",
+            ),
         ))
 
         put("artifact_chunk_get", schemaPair(

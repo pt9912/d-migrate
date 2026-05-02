@@ -610,13 +610,10 @@
         "jobId": {
           "type": "string"
         },
-        "tenantId": {
+        "resourceUri": {
           "type": "string"
         }
-      },
-      "required": [
-        "jobId"
-      ]
+      }
     },
     "outputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -624,6 +621,9 @@
       "additionalProperties": false,
       "properties": {
         "jobId": {
+          "type": "string"
+        },
+        "operation": {
           "type": "string"
         },
         "status": {
@@ -636,6 +636,27 @@
             "CANCELLED"
           ]
         },
+        "terminal": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "progress": {
           "type": "object",
           "additionalProperties": true
@@ -643,11 +664,23 @@
         "error": {
           "type": "object",
           "additionalProperties": true
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
         "jobId",
-        "status"
+        "operation",
+        "status",
+        "terminal",
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "resourceUri",
+        "artifacts",
+        "executionMeta"
       ]
     }
   },
