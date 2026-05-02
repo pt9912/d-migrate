@@ -98,14 +98,20 @@ class PhaseBToolSchemasTest : FunSpec({
         first.outputSchema shouldBe second.outputSchema
     }
 
-    test("schema_validate has typed schemaUri as a required string") {
+    test("schema_validate accepts inline schema or schemaRef with optional format/strictness (AP 6.4)") {
+        // The "exactly one of schema/schemaRef" rule is enforced at
+        // runtime by SchemaSourceResolver — JSON Schema's oneOf would
+        // duplicate that contract on the wire. Pin only the field set
+        // and the optional enum constraints.
         val pair = PhaseBToolSchemas.forTool("schema_validate")!!
         @Suppress("UNCHECKED_CAST")
         val props = pair.inputSchema["properties"] as Map<String, Map<String, Any>>
-        props["schemaUri"]?.get("type") shouldBe "string"
-        @Suppress("UNCHECKED_CAST")
-        val required = pair.inputSchema["required"] as List<String>
-        required shouldContainAll listOf("schemaUri")
+        props["schema"]?.get("type") shouldBe "object"
+        props["schemaRef"]?.get("type") shouldBe "string"
+        props["format"]?.get("enum") shouldBe listOf("json", "yaml")
+        props["strictness"]?.get("enum") shouldBe listOf("lenient", "strict")
+        // No required keys: presence is checked by the resolver.
+        pair.inputSchema.containsKey("required") shouldBe false
     }
 
     test("listing tools share a stable input shape") {

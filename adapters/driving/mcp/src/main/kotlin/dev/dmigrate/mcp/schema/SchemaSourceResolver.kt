@@ -39,10 +39,16 @@ sealed interface SchemaSource {
 
     /**
      * Inline schema embedded directly in the `tools/call` payload.
-     * [byteSize] is the UTF-8 byte count after Gson serialisation —
-     * consumers reuse this rather than re-serialising to measure.
+     * [serialisedJson] is the UTF-8 string the resolver already
+     * computed for the size check; consumers (`SchemaContentLoader`)
+     * feed it back into the codec without re-serialising the
+     * `JsonObject` tree. [byteSize] is its UTF-8 byte length.
      */
-    data class Inline(val schema: JsonObject, val byteSize: Int) : SchemaSource
+    data class Inline(
+        val schema: JsonObject,
+        val serialisedJson: String,
+        val byteSize: Int,
+    ) : SchemaSource
 
     /**
      * `schemaRef` resolved against the tenant-scoped [SchemaStore].
@@ -75,14 +81,19 @@ class SchemaSourceResolver(
                 listOf(ValidationViolation(SCHEMA_FIELD, "must be a JSON object")),
             )
         }
-        val byteSize = element.toString().toByteArray(Charsets.UTF_8).size
+        val serialised = element.toString()
+        val byteSize = serialised.toByteArray(Charsets.UTF_8).size
         if (byteSize > limits.maxInlineSchemaBytes) {
             throw PayloadTooLargeException(
                 actualBytes = byteSize.toLong(),
                 maxBytes = limits.maxInlineSchemaBytes.toLong(),
             )
         }
-        return SchemaSource.Inline(schema = element.asJsonObject, byteSize = byteSize)
+        return SchemaSource.Inline(
+            schema = element.asJsonObject,
+            serialisedJson = serialised,
+            byteSize = byteSize,
+        )
     }
 
     private fun resolveReference(raw: String, principal: PrincipalContext): SchemaSource.Reference {

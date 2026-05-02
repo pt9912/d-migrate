@@ -38,6 +38,9 @@ internal object PhaseBToolSchemas {
     /** All registered tool names, deterministic order (alphabetical). */
     fun toolNames(): List<String> = SCHEMAS.keys.sorted()
 
+    private val FORMAT_NAMES: Array<String> =
+        dev.dmigrate.format.SchemaFileResolver.SUPPORTED_FORMATS.toTypedArray()
+
     private val SCHEMAS: Map<String, SchemaPair> = buildMap {
         // Discovery / contract
         put("capabilities_list", schemaPair(input = emptyObject(), output = capabilitiesOutput()))
@@ -45,13 +48,18 @@ internal object PhaseBToolSchemas {
         // Read-only schema tools
         put("schema_validate", schemaPair(
             input = obj(
-                "schemaUri" to stringField(),
-                "tenantId" to stringField(),
-            ).required("schemaUri"),
+                "schema" to objectField(),
+                "schemaRef" to stringField(),
+                "format" to enumField(*FORMAT_NAMES),
+                "strictness" to enumField(*Strictness.WIRE_VALUES.toTypedArray()),
+            ).build(),
             output = obj(
                 "valid" to booleanField(),
-                "violations" to arrayField(),
-            ).required("valid"),
+                "summary" to stringField(),
+                "findings" to arrayField(),
+                "truncated" to booleanField(),
+                "executionMeta" to objectField(),
+            ).required("valid", "summary", "findings", "truncated"),
         ))
         put("schema_compare", schemaPair(
             input = obj(

@@ -74,9 +74,14 @@ class PhaseBRegistriesTest : FunSpec({
         descriptor.outputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
         // AP 6.10 swapped stub schemas for typed shapes — assert the
         // typed contract surface so a regression to "type:object only"
-        // is caught here too.
+        // is caught here too. AP 6.4 dropped the input `required`
+        // key for schema_validate (the schema/schemaRef one-of is
+        // enforced at runtime, not on the wire); the output side
+        // still has required fields and the `properties` map is
+        // non-empty on both sides.
         descriptor.inputSchema["properties"] shouldNotBe null
-        descriptor.inputSchema["required"] shouldNotBe null
+        descriptor.outputSchema["properties"] shouldNotBe null
+        descriptor.outputSchema["required"] shouldNotBe null
     }
 
     test("requiredScopes mirror the supplied scopeMapping") {

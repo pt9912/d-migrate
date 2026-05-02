@@ -858,16 +858,28 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "schemaUri": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "schemaRef": {
           "type": "string"
         },
-        "tenantId": {
-          "type": "string"
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml"
+          ]
+        },
+        "strictness": {
+          "type": "string",
+          "enum": [
+            "lenient",
+            "strict"
+          ]
         }
-      },
-      "required": [
-        "schemaUri"
-      ]
+      }
     },
     "outputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -877,12 +889,25 @@
         "valid": {
           "type": "boolean"
         },
-        "violations": {
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
           "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
-        "valid"
+        "valid",
+        "summary",
+        "findings",
+        "truncated"
       ]
     }
   },
