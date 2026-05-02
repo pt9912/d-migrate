@@ -3,7 +3,7 @@
 > Dieses Dokument beschreibt den konkreten Implementierungsplan für Milestone 0.4.0.
 > Es dient als laufend gepflegte Spezifikation und Review-Grundlage während der Umsetzung.
 >
-> **Status**: In Arbeit — Phase A bis E (Schritte 1–28) umgesetzt inkl. LF-013; Phase F (Container-E2E) noch offen; Plan wird gegen den Implementierungsstand nachgeführt.
+> **Status**: Abgeschlossen (2026-04-12) — Phasen A bis F umgesetzt inkl. LF-013 und Container-E2E.
 
 ---
 
