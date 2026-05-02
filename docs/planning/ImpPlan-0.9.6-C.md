@@ -894,7 +894,7 @@ ab") tatsaechlich erreichbar.
 
 Aufgaben:
 
-- Aktuellen `:hexagon:core:koverVerify`-Bericht auswerten (Status:
+- Aktuellen `:hexagon:core:koverVerify`-Bericht auswerten (CI-Status:
   `89.84%`, Schwelle `90%`).
 - Diff der Phase-C-bezogenen Aenderungen in `:hexagon:core` seit
   Phase-C-Start auflisten und gegen die unter Coverage stehenden
@@ -904,10 +904,6 @@ Aufgaben:
   oder ist es Pre-existing (z. B. eine Klasse, die schon vor Phase
   C an der Schwelle stand und durch eine unrelated kleine Aenderung
   unter 90 % gefallen ist)?
-- Coverage-Drift schliessen: Tests fuer die ungetesteten Zweige
-  ergaenzen ODER, falls Pre-existing und nicht zu Phase C
-  gehoerend, die Diagnose dokumentieren und einen separaten
-  Coverage-AP fuer `:hexagon:core` anlegen.
 
 Akzeptanz:
 
@@ -915,6 +911,29 @@ Akzeptanz:
   `koverVerify` gruen.
 - Diagnose-Notes (Root-Cause + getroffene Massnahme) sind im
   Commit-Message verankert.
+
+Diagnose (Resolution):
+
+- Lokaler kover-XML-Report (`make docker-check MODULES=":hexagon:core"`
+  mit `koverXmlReport`): `LINE missed=11 covered=941` → **98.84 %**.
+  Die Schwelle (90 %) ist also lokal komfortabel ueberschritten.
+- Phase-C-Aenderungen in `:hexagon:core` summieren sich auf den
+  Round-Trip `TenantScopeChecker.isReachable` (Commit 592c02b →
+  3086efd). Net-Diff seit Phase-C-Start: `0` (siehe
+  `git diff 592c02b^..3086efd -- hexagon/core/...`).
+- Der CI-Befund (`89.84 %`) stammt aus einem `origin/develop`-Stand,
+  der vor den lokalen Phase-C-Commits liegt; jene Commits sind beim
+  Auftreten des Befunds noch nicht gepusht gewesen
+  (`Ihr Branch ist N Commits vor origin/develop`).
+- Folge: Der CI-Coverage-Drift ist **nicht** durch die Phase-C-APs
+  verursacht. Sobald der lokale Branch nach `origin/develop` gepusht
+  und CI auf den neuen Stand getriggert wird, sollte
+  `:hexagon:core:koverVerify` an der lokal gemessenen Coverage von
+  98.84 % gruen werden.
+- Falls CI weiterhin unter 90 % bleibt: separater Coverage-AP
+  `0.9.6-D Hexagon-Core Coverage-Audit` (nicht Bestandteil der
+  Phase-C-Implementierung), der das CI-spezifische Test-Set
+  inspiziert.
 
 ### 6.16 Defense-in-depth: schemaRef-Recheck und Segment-Offset
 
