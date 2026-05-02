@@ -17,6 +17,9 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.pagination.PageRequest
+import dev.dmigrate.server.core.pagination.PageResult
+import dev.dmigrate.server.ports.JobStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -49,6 +52,33 @@ private class JobFixture(
     val handler: JobStatusGetHandler,
     val jobStore: InMemoryJobStore,
 )
+
+/**
+ * Counting decorator used by the no-oracle test to pin that
+ * `JobStatusGetHandler` never reaches the store for foreign-tenant
+ * URIs. Otherwise differential timing/observation could leak
+ * existence — same regression net AP 6.3 introduced via
+ * `CountingSchemaStore`.
+ */
+private class CountingJobStore(private val delegate: JobStore) : JobStore {
+    var findByIdCalls: Int = 0
+        private set
+
+    override fun save(record: JobRecord): JobRecord = delegate.save(record)
+
+    override fun findById(tenantId: TenantId, jobId: String): JobRecord? {
+        findByIdCalls++
+        return delegate.findById(tenantId, jobId)
+    }
+
+    override fun list(
+        tenantId: TenantId,
+        page: PageRequest,
+        ownerFilter: PrincipalId?,
+    ): PageResult<JobRecord> = delegate.list(tenantId, page, ownerFilter)
+
+    override fun deleteExpired(now: Instant): Int = delegate.deleteExpired(now)
+}
 
 private fun fixture(): JobFixture {
     val jobStore = InMemoryJobStore()
@@ -123,7 +153,7 @@ class JobStatusGetHandlerTest : FunSpec({
         val progress = json.getAsJsonObject("progress")
         progress.get("phase").asString shouldBe "reading"
         progress.getAsJsonObject("numericValues").get("rows").asLong shouldBe 1234L
-        json.get("error").isJsonNull shouldBe true
+        json.has("error") shouldBe false
         json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
     }
 
@@ -219,17 +249,20 @@ class JobStatusGetHandlerTest : FunSpec({
         json.get("jobId").asString shouldBe "job-admin"
     }
 
-    test("resourceUri with foreign tenant throws TENANT_SCOPE_DENIED before any store lookup") {
+    test("resourceUri with foreign tenant throws TENANT_SCOPE_DENIED before any store lookup (no-oracle)") {
         // §5.6: TENANT_SCOPE_DENIED is reserved for syntactically
         // out-of-scope tenant URIs. The store must NOT be touched —
         // a counting decorator pins this; otherwise differential
         // timing could leak existence.
-        val f = fixture()
+        val backing = InMemoryJobStore()
         // Stage a job in OTHER tenant so the store has a hit if it's
         // (incorrectly) consulted.
-        stageJob(f, "job-other", tenant = OTHER, visibility = JobVisibility.TENANT)
+        val tmp = JobFixture(JobStatusGetHandler(backing), backing)
+        stageJob(tmp, "job-other", tenant = OTHER, visibility = JobVisibility.TENANT)
+        val counting = CountingJobStore(backing)
+        val handler = JobStatusGetHandler(jobStore = counting, requestIdProvider = { "req-x" })
         val ex = shouldThrow<TenantScopeDeniedException> {
-            f.handler.handle(
+            handler.handle(
                 ToolCallContext(
                     "job_status_get",
                     args("""{"resourceUri":"dmigrate://tenants/other/jobs/job-other"}"""),
@@ -238,6 +271,54 @@ class JobStatusGetHandlerTest : FunSpec({
             )
         }
         ex.requestedTenant shouldBe OTHER
+        counting.findByIdCalls shouldBe 0
+    }
+
+    test("resourceUri with own tenant + unknown id throws RESOURCE_NOT_FOUND") {
+        // Defensive: pin that the resourceUri path falls through to
+        // the store lookup for in-scope tenants and surfaces the
+        // standard not-found envelope. Otherwise a regression that
+        // skipped the lookup for resourceUri inputs would silently
+        // succeed for missing jobs.
+        val f = fixture()
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "job_status_get",
+                    args("""{"resourceUri":"dmigrate://tenants/acme/jobs/missing"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("QUEUED status carries terminal=false") {
+        val f = fixture()
+        stageJob(f, "job-q", status = JobStatus.QUEUED)
+        val json = parsePayload(
+            f.handler.handle(
+                ToolCallContext("job_status_get", args("""{"jobId":"job-q"}"""), PRINCIPAL),
+            ),
+        )
+        json.get("status").asString shouldBe "QUEUED"
+        json.get("terminal").asBoolean shouldBe false
+    }
+
+    test("missing optional fields are omitted from the payload (not emitted as JSON null)") {
+        // Wire-vs-schema alignment: PhaseBToolSchemas declares
+        // `progress` and `error` as `"type":"object"` (not nullable).
+        // When the underlying ManagedJob has neither, the handler
+        // must omit the keys rather than emit JSON null — otherwise
+        // a strict 2020-12 validator would reject the payload.
+        val f = fixture()
+        stageJob(f, "job-1") // no progress, no error
+        val json = parsePayload(
+            f.handler.handle(
+                ToolCallContext("job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL),
+            ),
+        )
+        json.has("progress") shouldBe false
+        json.has("error") shouldBe false
     }
 
     test("resourceUri with own tenant resolves like jobId") {

@@ -40,7 +40,7 @@ internal class JobStatusGetHandler(
     private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
-    private val gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
+    private val gson = GsonBuilder().disableHtmlEscaping().create()
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val obj = JsonArgs.requireObject(context.arguments)
@@ -125,20 +125,24 @@ internal class JobStatusGetHandler(
 
     private fun projectJob(record: JobRecord): Map<String, Any?> {
         val managed = record.managedJob
-        return mapOf(
-            "jobId" to managed.jobId,
-            "operation" to managed.operation,
-            "status" to managed.status.name,
-            "terminal" to managed.status.terminal,
-            "createdAt" to managed.createdAt.toString(),
-            "updatedAt" to managed.updatedAt.toString(),
-            "expiresAt" to managed.expiresAt.toString(),
-            "resourceUri" to record.resourceUri.render(),
-            "artifacts" to managed.artifacts,
-            "progress" to managed.progress?.let(::projectProgress),
-            "error" to managed.error?.let(::projectError),
-            "executionMeta" to mapOf("requestId" to requestIdProvider()),
-        )
+        return buildMap {
+            put("jobId", managed.jobId)
+            put("operation", managed.operation)
+            put("status", managed.status.name)
+            put("terminal", managed.status.terminal)
+            put("createdAt", managed.createdAt.toString())
+            put("updatedAt", managed.updatedAt.toString())
+            put("expiresAt", managed.expiresAt.toString())
+            put("resourceUri", record.resourceUri.render())
+            put("artifacts", managed.artifacts)
+            // Optional fields: emit only when set so the wire matches
+            // the JSON-Schema `"type": "object"` declaration (a null
+            // value would fail strict 2020-12 validation). Same
+            // omit-when-null rule as `error.exitCode` below.
+            managed.progress?.let { put("progress", projectProgress(it)) }
+            managed.error?.let { put("error", projectError(it)) }
+            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+        }
     }
 
     private fun projectProgress(progress: JobProgress): Map<String, Any?> = mapOf(
