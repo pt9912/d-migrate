@@ -5,6 +5,7 @@ import dev.dmigrate.mcp.auth.ScopeChecker
 import dev.dmigrate.mcp.registry.PhaseBRegistries
 import dev.dmigrate.mcp.registry.ResourceRegistry
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
+import dev.dmigrate.mcp.registry.ResponseLimitEnforcer
 import dev.dmigrate.mcp.registry.ToolCallContext
 import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.registry.ToolContent
@@ -57,6 +58,7 @@ class McpServiceImpl(
     resourceStores: ResourceStores = ResourceStores.empty(),
     private val resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     private val scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
+    private val responseLimitEnforcer: ResponseLimitEnforcer? = null,
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -248,7 +250,17 @@ class McpServiceImpl(
         handler: dev.dmigrate.mcp.registry.ToolHandler,
         context: ToolCallContext,
     ): ToolsCallResult = try {
-        when (val outcome = handler.handle(context)) {
+        // AP 6.19: bracket the handler with the request- and
+        // response-byte enforcer when one is wired (Phase-C bootstrap
+        // does, Phase-B tests don't). Both checks throw or rewrite
+        // INSIDE the try, so the existing error mapper still owns the
+        // envelope shape for any limit breach.
+        responseLimitEnforcer?.enforceRequestSize(context.name, context.arguments)
+        val rawOutcome = handler.handle(context)
+        val outcome = responseLimitEnforcer
+            ?.enforceResponseSize(context.name, context.principal, rawOutcome)
+            ?: rawOutcome
+        when (outcome) {
             is ToolCallOutcome.Success -> ToolsCallResult(
                 content = outcome.content.map(::toWireContent),
                 isError = false,

@@ -9,6 +9,7 @@ import dev.dmigrate.mcp.registry.PhaseBRegistries
 import dev.dmigrate.mcp.registry.PhaseCRegistries
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.registry.ResourceRegistry
+import dev.dmigrate.mcp.registry.ResponseLimitEnforcer
 import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
@@ -104,6 +105,9 @@ object McpServerBootstrap {
         toolRegistry: ToolRegistry = phaseCWiring?.let {
             PhaseCRegistries.defaultToolRegistry(it, config.scopeMapping)
         } ?: PhaseBRegistries.toolRegistry(config.scopeMapping),
+        responseLimitEnforcer: ResponseLimitEnforcer? = phaseCWiring?.let {
+            PhaseCRegistries.defaultResponseLimitEnforcer(it)
+        },
         resourceStores: ResourceStores = ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
@@ -135,6 +139,7 @@ object McpServerBootstrap {
                             resourceStores = resourceStores,
                             resourceRegistry = resourceRegistry,
                             scopeMapping = config.scopeMapping,
+                            responseLimitEnforcer = responseLimitEnforcer,
                         )
                     },
                 )
@@ -167,6 +172,9 @@ object McpServerBootstrap {
         toolRegistry: ToolRegistry = phaseCWiring?.let {
             PhaseCRegistries.defaultToolRegistry(it, config.scopeMapping)
         } ?: PhaseBRegistries.toolRegistry(config.scopeMapping),
+        responseLimitEnforcer: ResponseLimitEnforcer? = phaseCWiring?.let {
+            PhaseCRegistries.defaultResponseLimitEnforcer(it)
+        },
         resourceStores: ResourceStores = ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
@@ -190,6 +198,7 @@ object McpServerBootstrap {
             resourceStores = resourceStores,
             resourceRegistry = resourceRegistry,
             scopeMapping = config.scopeMapping,
+            responseLimitEnforcer = responseLimitEnforcer,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }

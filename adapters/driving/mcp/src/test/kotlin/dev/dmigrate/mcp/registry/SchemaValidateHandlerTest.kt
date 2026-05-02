@@ -19,6 +19,7 @@ import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -226,5 +227,65 @@ class SchemaValidateHandlerTest : FunSpec({
         val content = (outcome as ToolCallOutcome.Success).content.single()
         content.type shouldBe "text"
         content.mimeType shouldBe "application/json"
+    }
+
+    test("AP 6.19: truncated findings spill to an artefact and the inline payload carries the artifactRef") {
+        // 10 empty-column tables produce 10 E001 errors; cap=3 trips
+        // the truncation path. The wired ArtifactSink must persist
+        // the FULL findings list while the inline payload stays
+        // capped + carries the artifactRef.
+        val limits = McpLimitsConfig(maxInlineFindings = 3)
+        val schemaStore = InMemorySchemaStore()
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val sink = ArtifactSink(artifactStore, contentStore, java.time.Clock.systemUTC())
+        val sut = SchemaValidateHandler(
+            resolver = SchemaSourceResolver(schemaStore, limits),
+            contentLoader = SchemaContentLoader(artifactStore, contentStore, limits),
+            validator = SchemaValidator(),
+            limits = limits,
+            artifactSink = sink,
+            requestIdProvider = { "req-x" },
+        )
+        val tables = (1..10).joinToString(",") { """"t$it":{"columns":{}}""" }
+        val schema = """{"name":"x","version":"1.0","tables":{$tables}}"""
+        val json = parsePayload(
+            sut.handle(
+                ToolCallContext("schema_validate", args("""{"schema":$schema}"""), PRINCIPAL),
+            ),
+        )
+        json.get("truncated").asBoolean shouldBe true
+        json.getAsJsonArray("findings").size() shouldBe 3
+        val artifactRef = json.get("artifactRef").asString
+        artifactRef shouldContain "/artifacts/"
+        val artifactId = artifactRef.substringAfterLast("/")
+        val record = artifactStore.findById(ACME, artifactId)!!
+        val storedBytes = contentStore.openRangeRead(artifactId, 0L, record.managedArtifact.sizeBytes)
+            .use { stream -> stream.readBytes() }
+        val storedJson = JsonParser.parseString(String(storedBytes, Charsets.UTF_8)).asJsonArray
+        // The artefact carries more findings than fit inline — that is
+        // the whole point of the spill. Assert strictly more than the
+        // inline cap rather than pinning an exact count, because the
+        // validator may legitimately attach extra findings beyond the
+        // 10 E001 errors per table (e.g. global missing-PK warnings).
+        storedJson.size() shouldBeGreaterThan 3
+    }
+
+    test("AP 6.19: without artifactSink the handler stays on the truncate-only contract") {
+        // Backwards-compat with Phase-B-only deployments: when no
+        // sink is wired, the handler must NOT emit an artifactRef
+        // (clients that don't pull artefacts shouldn't see a dangling
+        // ref they can't dereference).
+        val limits = McpLimitsConfig(maxInlineFindings = 3)
+        val sut = handler(limits = limits)
+        val tables = (1..10).joinToString(",") { """"t$it":{"columns":{}}""" }
+        val schema = """{"name":"x","version":"1.0","tables":{$tables}}"""
+        val json = parsePayload(
+            sut.handle(
+                ToolCallContext("schema_validate", args("""{"schema":$schema}"""), PRINCIPAL),
+            ),
+        )
+        json.get("truncated").asBoolean shouldBe true
+        json.has("artifactRef") shouldBe false
     }
 })

@@ -14,6 +14,8 @@ import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.schema.Strictness
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.audit.SecretScrubber
+import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.principal.PrincipalContext
 import java.util.UUID
 
 /**
@@ -28,13 +30,18 @@ import java.util.UUID
  *
  * Findings are capped at [McpLimitsConfig.maxInlineFindings]; the
  * `truncated` flag is `true` when more findings exist than fit
- * inline (AP 6.13 will fold the remainder into an artefact).
+ * inline. AP 6.19 wires the [artifactSink] so the full findings set
+ * is persisted as an artefact in that case and the inline payload
+ * carries the corresponding `artifactRef`. Phase-B unit tests can
+ * leave [artifactSink] null — the handler then falls back to the
+ * pre-AP-6.19 truncate-only behaviour.
  */
 internal class SchemaValidateHandler(
     private val resolver: SchemaSourceResolver,
     private val contentLoader: SchemaContentLoader,
     private val validator: SchemaValidator,
     private val limits: McpLimitsConfig,
+    private val artifactSink: ArtifactSink? = null,
     private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
@@ -52,7 +59,7 @@ internal class SchemaValidateHandler(
             content = listOf(
                 ToolContent(
                     type = "text",
-                    text = gson.toJson(buildPayload(result, args.strictness)),
+                    text = gson.toJson(buildPayload(result, args.strictness, context.principal)),
                     mimeType = "application/json",
                 ),
             ),
@@ -71,7 +78,11 @@ internal class SchemaValidateHandler(
         )
     }
 
-    private fun buildPayload(result: ValidationResult, strictness: Strictness): Map<String, Any?> {
+    private fun buildPayload(
+        result: ValidationResult,
+        strictness: Strictness,
+        principal: PrincipalContext,
+    ): Map<String, Any?> {
         val errorFindings = result.errors.map {
             projectFinding(SchemaFindingSeverity.ERROR, it.code, it.objectPath, it.message)
         }
@@ -82,17 +93,45 @@ internal class SchemaValidateHandler(
         val cap = limits.maxInlineFindings
         val truncated = combined.size > cap
         val inline = if (truncated) combined.take(cap) else combined
+        // AP 6.19: when the inline cap kicks in, persist the FULL
+        // findings list as an artefact so clients can fetch the
+        // remainder via `artifact_chunk_get`. The inline payload
+        // still carries summary + capped findings + `truncated=true`
+        // for backward compatibility with Phase-A consumers.
+        val artifactRef = if (truncated && artifactSink != null) {
+            persistFullFindings(combined, principal)
+        } else {
+            null
+        }
         val effectiveValid = when (strictness) {
             Strictness.STRICT -> result.isValid && warningFindings.isEmpty()
             Strictness.LENIENT -> result.isValid
         }
-        return mapOf(
-            "valid" to effectiveValid,
-            "summary" to summary(errorFindings.size, warningFindings.size, effectiveValid),
-            "findings" to inline,
-            "truncated" to truncated,
-            "executionMeta" to mapOf("requestId" to requestIdProvider()),
+        return buildMap {
+            put("valid", effectiveValid)
+            put("summary", summary(errorFindings.size, warningFindings.size, effectiveValid))
+            put("findings", inline)
+            put("truncated", truncated)
+            if (artifactRef != null) put("artifactRef", artifactRef)
+            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+        }
+    }
+
+    private fun persistFullFindings(
+        allFindings: List<Map<String, String>>,
+        principal: PrincipalContext,
+    ): String {
+        val sink = artifactSink ?: return ""
+        val bytes = gson.toJson(allFindings).toByteArray(Charsets.UTF_8)
+        val uri = sink.writeReadOnly(
+            principal = principal,
+            kind = ArtifactKind.OTHER,
+            contentType = "application/json",
+            filename = "schema-validate-findings.json",
+            content = bytes,
+            maxArtifactBytes = limits.maxArtifactUploadBytes,
         )
+        return uri.render()
     }
 
     // AP 6.17: dynamic strings (path, message) come from validator

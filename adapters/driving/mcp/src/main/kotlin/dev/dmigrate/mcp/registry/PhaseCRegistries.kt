@@ -98,6 +98,7 @@ object PhaseCRegistries {
                 contentLoader = contentLoader,
                 validator = SchemaValidator(),
                 limits = wiring.limits,
+                artifactSink = artifactSink,
             ),
             "schema_generate" to SchemaGenerateHandler(
                 resolver = resolver,
@@ -146,4 +147,23 @@ object PhaseCRegistries {
         val filtered = overrides.filterKeys { it in scopeMapping.keys }
         return toolRegistry(scopeMapping, filtered)
     }
+
+    /**
+     * AP 6.19: the dispatch-time request/response byte enforcer
+     * matching the [defaultToolRegistry]. The bootstrap wires this
+     * into [dev.dmigrate.mcp.protocol.McpServiceImpl] so every
+     * `tools/call` is bracketed by the same byte caps the
+     * [defaultToolRegistry] handlers rely on for their inline /
+     * artefact split. Phase-B-only deployments can leave the
+     * enforcer null — `dispatch` then behaves as before.
+     */
+    fun defaultResponseLimitEnforcer(wiring: PhaseCWiring): ResponseLimitEnforcer =
+        ResponseLimitEnforcer(
+            limits = wiring.limits,
+            artifactSink = ArtifactSink(
+                wiring.artifactStore,
+                wiring.artifactContentStore,
+                wiring.clock,
+            ),
+        )
 }
