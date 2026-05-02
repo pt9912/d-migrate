@@ -737,27 +737,47 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "connectionId": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "schemaRef": {
           "type": "string"
         },
-        "tenantId": {
-          "type": "string"
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml"
+          ]
         },
-        "includes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
         },
-        "excludes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        "spatialProfile": {
+          "type": "string",
+          "enum": [
+            "postgis",
+            "native",
+            "spatialite",
+            "none"
+          ]
+        },
+        "mysqlNamedSequenceMode": {
+          "type": "string",
+          "enum": [
+            "action_required",
+            "helper_table"
+          ]
         }
       },
       "required": [
-        "connectionId"
+        "targetDialect"
       ]
     },
     "outputSchema": {
@@ -765,13 +785,40 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "schemaId": {
+        "dialect": {
+          "type": "string"
+        },
+        "statementCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "ddl": {
           "type": "string"
         },
         "artifactRef": {
           "type": "string"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
-      }
+      },
+      "required": [
+        "dialect",
+        "statementCount",
+        "summary",
+        "findings",
+        "truncated"
+      ]
     }
   },
   "schema_list": {

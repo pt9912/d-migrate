@@ -41,6 +41,9 @@ internal object PhaseBToolSchemas {
     private val FORMAT_NAMES: Array<String> =
         dev.dmigrate.format.SchemaFileResolver.SUPPORTED_FORMATS.toTypedArray()
 
+    private val DIALECT_NAMES: Array<String> =
+        dev.dmigrate.driver.DatabaseDialect.entries.map { it.name }.toTypedArray()
+
     private val SCHEMAS: Map<String, SchemaPair> = buildMap {
         // Discovery / contract
         put("capabilities_list", schemaPair(input = emptyObject(), output = capabilitiesOutput()))
@@ -73,15 +76,23 @@ internal object PhaseBToolSchemas {
         ))
         put("schema_generate", schemaPair(
             input = obj(
-                "connectionId" to stringField(),
-                "tenantId" to stringField(),
-                "includes" to arrayField("string"),
-                "excludes" to arrayField("string"),
-            ).required("connectionId"),
+                "schema" to objectField(),
+                "schemaRef" to stringField(),
+                "format" to enumField(*FORMAT_NAMES),
+                "targetDialect" to enumField(*DIALECT_NAMES),
+                "spatialProfile" to enumField("postgis", "native", "spatialite", "none"),
+                "mysqlNamedSequenceMode" to enumField("action_required", "helper_table"),
+            ).required("targetDialect"),
             output = obj(
-                "schemaId" to stringField(),
+                "dialect" to stringField(),
+                "statementCount" to integerField(),
+                "summary" to stringField(),
+                "findings" to arrayField(),
+                "truncated" to booleanField(),
+                "ddl" to stringField(),
                 "artifactRef" to stringField(),
-            ).build(),
+                "executionMeta" to objectField(),
+            ).required("dialect", "statementCount", "summary", "findings", "truncated"),
         ))
         put("schema_list", listInput("schemas"))
         put("profile_list", listInput("profiles"))

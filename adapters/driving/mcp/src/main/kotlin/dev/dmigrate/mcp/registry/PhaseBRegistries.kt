@@ -125,7 +125,7 @@ object PhaseBRegistries {
         "capabilities_list" to "Capabilities (server contract)",
         "schema_validate" to "Validate schema document",
         "schema_compare" to "Compare two schema documents",
-        "schema_generate" to "Generate schema artifacts",
+        "schema_generate" to "Generate DDL from a neutral schema",
         "schema_list" to "List schema artifacts",
         "profile_list" to "List data profiles",
         "diff_list" to "List schema diffs",
