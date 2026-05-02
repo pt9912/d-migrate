@@ -858,6 +858,117 @@ class ArtifactUploadHandlerTest : FunSpec({
         sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.ABORTED
     }
 
+    test("AP 6.16: non-final segment with offset != (index-1)*chunkSize throws VALIDATION_ERROR") {
+        // Defense-in-depth: a client that sends an offset that
+        // doesn't match the sequential layout the assembler reads
+        // could sneak overlapping bytes past the store. The handler
+        // pins the offset to the exact `(index-1) * chunkSize`
+        // position for non-final segments.
+        val seg1 = "abcdefgh".toByteArray() // 8 bytes
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture()
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        val ex = shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1,
+                            segmentOffset = 4, // wrong: must be 0
+                            segmentTotal = 2,
+                            isFinalSegment = false,
+                            bytes = seg1,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "segmentOffset"
+    }
+
+    test("AP 6.16: final segment with offset != (index-1)*chunkSize throws VALIDATION_ERROR") {
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture()
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        // Stage segment 1 at the right offset.
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                        isFinalSegment = false, bytes = seg1,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        val ex = shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 2,
+                            segmentOffset = 12, // wrong: must be 8
+                            segmentTotal = 2,
+                            isFinalSegment = true,
+                            bytes = seg2,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "segmentOffset"
+    }
+
+    test("AP 6.16: final segment that doesn't close the byte range exactly throws VALIDATION_ERROR") {
+        // 12-byte session, 8-byte chunks, expected segments: 2.
+        // Final segment at index=2 must have offset=8 and size=4 to
+        // close the range. Sending size=8 makes offset+size=16 ≠ 12.
+        val seg1 = "abcdefgh".toByteArray() // 8
+        val seg2 = "1234".toByteArray() // 4
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture()
+        stageSession(f, "ups-1", 12, segmentTotal = 2, checksumSha256 = totalHash)
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                        isFinalSegment = false, bytes = seg1,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        val ex = shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            // Send an oversized final segment that lands offset+size
+            // at 16 instead of 12.
+            val tooLong = "12345678".toByteArray()
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 2, segmentOffset = 8, segmentTotal = 2,
+                            isFinalSegment = true, bytes = tooLong,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "segmentOffset"
+    }
+
     test("PARALLEL_SEGMENT_WRITES quota exhaustion surfaces RATE_LIMITED") {
         val payload = "abcdefgh".toByteArray()
         val f = fixture(parallelLimit = 0)

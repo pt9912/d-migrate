@@ -358,6 +358,51 @@ internal class ArtifactUploadHandler(
                 ),
             )
         }
+        // AP 6.16 defense-in-depth: pin the segment offset to the
+        // sequential layout the assembler later reads. Non-final
+        // segments must sit at index*chunkSize; the final segment
+        // must close the byte range exactly. Otherwise a client
+        // could sneak overlapping or gap-bearing bytes past the
+        // store and the rebuilt total hash would only catch some
+        // patterns (random byte permutations within a fixed total
+        // can still hash the same if the client controls them).
+        val expectedOffset = (args.segmentIndex - 1).toLong() * limits.maxUploadSegmentBytes.toLong()
+        if (!args.isFinalSegment && args.segmentOffset != expectedOffset) {
+            throw ValidationErrorException(
+                listOf(
+                    ValidationViolation(
+                        "segmentOffset",
+                        "non-final segment $args.segmentIndex must have offset=$expectedOffset " +
+                            "(got ${args.segmentOffset})",
+                    ),
+                ),
+            )
+        }
+        if (args.isFinalSegment) {
+            val finalOffset = (args.segmentIndex - 1).toLong() * limits.maxUploadSegmentBytes.toLong()
+            if (args.segmentOffset != finalOffset) {
+                throw ValidationErrorException(
+                    listOf(
+                        ValidationViolation(
+                            "segmentOffset",
+                            "final segment must have offset=$finalOffset (got ${args.segmentOffset})",
+                        ),
+                    ),
+                )
+            }
+            if (args.segmentOffset + decodedSize != session.sizeBytes) {
+                throw ValidationErrorException(
+                    listOf(
+                        ValidationViolation(
+                            "segmentOffset",
+                            "final segment must close the byte range exactly: " +
+                                "offset + size (${args.segmentOffset + decodedSize}) " +
+                                "must equal sizeBytes (${session.sizeBytes})",
+                        ),
+                    ),
+                )
+            }
+        }
     }
 
     private fun mapStoreOutcome(outcome: WriteSegmentOutcome, args: UploadSegmentArgs): Boolean = when (outcome) {

@@ -263,6 +263,31 @@ class SchemaSourceResolverTest : FunSpec({
         ex.requestedTenant shouldBe ACME
     }
 
+    test("AP 6.16: drifted SchemaIndexEntry (tenant/id/uri mismatch) maps to RESOURCE_NOT_FOUND") {
+        // Defense-in-depth: a misbehaving SchemaStore that returns
+        // a record whose tenantId / schemaId / resourceUri doesn't
+        // match the lookup key must NOT be trusted. The handler
+        // surfaces RESOURCE_NOT_FOUND (no-oracle) so a caller can't
+        // confirm the existence of an entry shadowed by a buggy
+        // store.
+        val driftingStore = object : SchemaStore by InMemorySchemaStore() {
+            override fun findById(tenantId: TenantId, schemaId: String): SchemaIndexEntry? =
+                SchemaIndexEntry(
+                    schemaId = "wrong-id",
+                    tenantId = OTHER, // foreign tenant
+                    resourceUri = ServerResourceUri(OTHER, ResourceKind.SCHEMAS, "wrong-id"),
+                    artifactRef = "art-x",
+                    displayName = "drifted",
+                    createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+                    expiresAt = Instant.parse("2027-01-01T00:00:00Z"),
+                )
+        }
+        val sut = SchemaSourceResolver(driftingStore, McpLimitsConfig())
+        shouldThrow<ResourceNotFoundException> {
+            sut.resolve(SchemaSourceInput(schemaRef = SCHEMA_URI.render()), PRINCIPAL)
+        }
+    }
+
     test("schemaRef for missing schemaId in same tenant throws RESOURCE_NOT_FOUND") {
         val missing = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "does-not-exist").render()
         val ex = shouldThrow<ResourceNotFoundException> {

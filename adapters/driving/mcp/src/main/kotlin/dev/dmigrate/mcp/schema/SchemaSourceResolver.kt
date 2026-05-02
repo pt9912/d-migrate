@@ -110,7 +110,25 @@ class SchemaSourceResolver(
         }
         val entry = schemaStore.findById(uri.tenantId, uri.id)
             ?: throw ResourceNotFoundException(uri)
+        // AP 6.16 defense-in-depth: a misbehaving SchemaStore impl
+        // (sharded driver, cache layer, future JDBC adapter) could
+        // theoretically return an entry whose tenantId, schemaId or
+        // resourceUri does not match the lookup key. Surface that
+        // as RESOURCE_NOT_FOUND (no-oracle) rather than trusting the
+        // store contract — the caller already saw "this tenant +
+        // this id existed in scope", so revealing nothing more is
+        // safe.
+        if (!entryMatches(entry, uri)) {
+            throw ResourceNotFoundException(uri)
+        }
         return SchemaSource.Reference(entry)
+    }
+
+    private fun entryMatches(entry: SchemaIndexEntry, uri: ServerResourceUri): Boolean {
+        if (entry.tenantId != uri.tenantId) return false
+        if (entry.schemaId != uri.id) return false
+        val ref = entry.resourceUri
+        return ref.tenantId == uri.tenantId && ref.id == uri.id && ref.kind == uri.kind
     }
 
     private fun parseSchemaRef(raw: String): ServerResourceUri {
