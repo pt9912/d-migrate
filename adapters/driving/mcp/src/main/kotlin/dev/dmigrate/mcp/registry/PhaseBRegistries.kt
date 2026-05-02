@@ -39,7 +39,7 @@ object PhaseBRegistries {
      * a custom-scoped `tools/call` would land in `tools/list` and a
      * client could try to dispatch `tools/call` on itself.
      */
-    private val PROTOCOL_METHODS: Set<String> = setOf(
+    internal val PROTOCOL_METHODS: Set<String> = setOf(
         "tools/list",
         "tools/call",
         "resources/list",

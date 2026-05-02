@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: B (`MCP-Modul und Transport`)
-> **Status**: Draft (2026-04-26)
+> **Status**: Implementiert (2026-05-01) — Phase B komplett, alle DoD-Punkte erfuellt
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 5,
 > Abschnitt 8 Phase B, Abschnitt 9.2, Abschnitt 9.3, Abschnitt 9.4,
 > Abschnitt 11 und Abschnitt 12; `docs/planning/ImpPlan-0.9.6-A.md`;

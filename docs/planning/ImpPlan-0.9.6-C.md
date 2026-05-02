@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: C (`Read-only Tools`)
-> **Status**: Draft (2026-04-26)
+> **Status**: In Arbeit (2026-05-02) — AP 6.1 startet auf Phase-B-Registry
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase C, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
@@ -610,6 +610,36 @@ Akzeptanz:
 - zwei `schemaRef`-Eingaenge koennen synchron verglichen werden
 - `connectionRef` liefert `VALIDATION_ERROR`
 - Diff-Ergebnis verletzt keine Inline-Limits
+
+### 6.6.5 `artifact_upload`-Umbenennung umsetzen (Phase-B-Vertragsdrift)
+
+Aufgaben:
+
+- `artifact_upload_chunk` und `artifact_upload_complete` aus
+  `McpServerConfig.DEFAULT_SCOPE_MAPPING` durch ein einziges
+  `artifact_upload` ersetzen (spec/ki-mcp.md, §3.1, §12.4)
+- entsprechenden JSON-Schema-Eintrag in `PhaseBToolSchemas` zu einem
+  einzigen `artifact_upload`-Schema konsolidieren
+- `PhaseBRegistries`-Titel/Beschreibungen anpassen
+- `tools/list`-Golden in `PhaseBToolSchemasGoldenTest` und
+  vergleichbare Snapshot-Tests neu fixieren
+- `ImpPlan-0.9.6-B.md` §11 (Tabelle Auth/Scopes) entsprechend
+  korrigieren
+- Phase-A-/Phase-B-Wire-Tests, die `artifact_upload_chunk` oder
+  `artifact_upload_complete` namentlich erwarten, anpassen
+
+Akzeptanz:
+
+- `tools/list` enthaelt `artifact_upload` (singular)
+- weder `artifact_upload_chunk` noch `artifact_upload_complete` werden
+  von Server oder Tests vorausgesetzt
+- Phase-B-Goldens reflektieren den neuen Tool-Vertrag
+- AP 6.7 und AP 6.8 koennen Handler unter dem Phase-C-Vertragsnamen
+  registrieren, ohne erneut Goldens anzufassen
+
+Hinweis: Diese Umbenennung wird vor AP 6.7/6.8 in einem eigenen
+Commit durchgefuehrt, damit Schema- und Golden-Aenderungen nicht mit
+der Handlerlogik vermischt werden.
 
 ### 6.7 Read-only Schema-Staging-Init implementieren
 
