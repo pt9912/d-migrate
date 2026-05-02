@@ -52,6 +52,25 @@ die Violation-Menge ändern kann.
 
 ## Tests
 
+## Coverage (Kover)
+
+Das Projekt nutzt Kover als Build-Gate fuer aggregierte Line-Coverage.
+Die Root-Konfiguration in `build.gradle.kts` setzt `minBound(90)`;
+`koverVerify` bricht den Build ab, sobald dieser Mindestwert unterschritten
+wird.
+
+### Lokale Befehle
+
+| Befehl                 | Zweck                                      |
+| ---------------------- | ------------------------------------------ |
+| `make coverage-gate`   | Fuehrt `test koverVerify` aus              |
+| `make coverage-report` | Erzeugt Kover-HTML- und XML-Reports        |
+
+Die Docker-Stages `coverage`, `coverage-json` und `coverage-verify` sind in
+der [README](../../README.md) beschrieben. Das erledigte Analyse-Dokument
+[`test-coverage.md`](../planning/done/test-coverage.md) enthaelt Befehle, um
+Pakete und Klassen unterhalb der 90%-Grenze aus dem JSON-Report zu ermitteln.
+
 ### Tag-Steuerung
 
 Tests sind über Kotest-Tags kategorisiert. Der Gradle-Build filtert
@@ -66,8 +85,9 @@ automatisch je nach Modus:
 
 Perf-Tests (`perf`-Tag) prüfen Memory-Budgets mit großen Fixtures
 (100 MB JSON, 100k YAML) und laufen nie automatisch. Ergebnisse und
-Entscheidungen sind in `docs/perf/` dokumentiert (z. B.
-`0.4.0-phase-d-reorder.md`). Manueller Start:
+Entscheidungen sind im erledigten Planungsdokument
+[`0.4.0-phase-d-reorder.md`](../planning/done/0.4.0-phase-d-reorder.md)
+dokumentiert. Manueller Start:
 
 ```bash
 docker build --target build \

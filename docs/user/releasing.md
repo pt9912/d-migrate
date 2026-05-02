@@ -330,7 +330,7 @@ rg -n "verify-homebrew|homebrew-releaser" .github/workflows/release-homebrew.yml
 
 Coverage-Breakdown auf Paketebene prüfen — Pakete unter 90% Line-Coverage
 identifizieren. Befehle und jq-Filter: siehe
-[`docs/planning/test-coverage.md`](../planning/open/test-coverage.md).
+[`docs/planning/done/test-coverage.md`](../planning/done/test-coverage.md).
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
