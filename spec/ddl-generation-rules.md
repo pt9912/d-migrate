@@ -769,7 +769,7 @@ Function- und Procedure-Bodys enthalten dialektspezifische prozedurale Logik (PL
 
 **Strategie**:
 - **Wenn `source_dialect` = `target_dialect`**: Body wird 1:1 übernommen
-- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design) und [Beispiel Stored Procedure Migration](../docs/user/beispiel-stored-procedure-migration.md))
+- **Wenn Dialekte unterschiedlich**: KI-gestützte Transformation erforderlich (siehe [design.md §4](./design.md#4-ki-integrations-design) und [Beispiel Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md))
 - **Fallback ohne KI**: `action_required` (E053) wird erzeugt mit Hinweis auf `d-migrate transform procedure`
 
 Die Hülle (CREATE FUNCTION/PROCEDURE, Parameter, Return-Typ) wird regelbasiert generiert:

@@ -578,8 +578,8 @@ Validierung deterministisch im Profiling-Kern bleiben.
 | Bereich     | Aufgabe                                                                                         | LF-Ref |
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
 | Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](./open/profiling-data-quality-export.md) | —      |
-| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../user/orchestrator-examples.md) | —      |
-| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../user/bi-demo-compose.md) | —      |
+| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](./open/orchestrator-examples.md) | —      |
+| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](./open/bi-demo-compose.md) | —      |
 
 ### Milestone 1.6.0 — Metadata Catalog und Lakehouse Targets
 

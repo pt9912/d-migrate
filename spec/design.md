@@ -793,7 +793,7 @@ version: "2.3.1"         # Anwendungs-Schema-Version
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
 - [Roadmap](../docs/planning/roadmap.md) — Phasen, Milestones und Release-Planung
 - [Profiling](./profiling.md) — Design für deterministisches Datenbank-Profiling ab 0.7.5
-- [Beispiel: Stored Procedure Migration](../docs/user/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
+- [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
 

@@ -311,7 +311,7 @@ Nach erfolgreicher Migration können weitere Schritte durchgeführt werden:
 
 ## Verwandte Dokumentation
 
-- [Lastenheft d-migrate](../../spec/lastenheft-d-migrate.md) - Vollständige Anforderungsspezifikation
+- [Lastenheft d-migrate](../../../spec/lastenheft-d-migrate.md) - Vollständige Anforderungsspezifikation
 - **LF-004**: Reverse-Engineering von Datenbankstrukturen
 - **LF-017**: KI-gestützte Transformation von Stored Procedures
 - **UC-04**: KI-gestützte Stored Procedure Migration

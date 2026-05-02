@@ -649,7 +649,7 @@ kanonische Keys normalisiert.
 Das `body`-Feld enthält den Quell-Code im **Quell-Dialekt** (angegeben in `source_dialect`). Für die Generierung im Ziel-Dialekt gibt es zwei Wege:
 
 1. **Regelbasiert**: Einfache Syntax-Transformationen (z.B. `:=` → `DEFAULT`, `GET DIAGNOSTICS` → `ROW_COUNT()`)
-2. **KI-gestützt**: Über `d-migrate transform procedure` wird der Body in ein abstraktes Markdown-Zwischenformat transformiert und dann im Ziel-Dialekt neu generiert (siehe [Beispiel Stored Procedure Migration](../docs/user/beispiel-stored-procedure-migration.md))
+2. **KI-gestützt**: Über `d-migrate transform procedure` wird der Body in ein abstraktes Markdown-Zwischenformat transformiert und dann im Ziel-Dialekt neu generiert (siehe [Beispiel Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md))
 
 ---
 
@@ -1233,7 +1233,7 @@ einer ganzen Tabelle blockiert, ist eine separate Generatorwirkung.
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Fehler-Codes, Kommando-Referenz
 - [Roadmap](../docs/planning/roadmap.md) — Phasen, Milestones und Release-Planung
-- [Beispiel: Stored Procedure Migration](../docs/user/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
+- [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
 
