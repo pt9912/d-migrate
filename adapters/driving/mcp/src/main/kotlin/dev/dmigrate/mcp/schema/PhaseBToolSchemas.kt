@@ -66,13 +66,18 @@ internal object PhaseBToolSchemas {
         ))
         put("schema_compare", schemaPair(
             input = obj(
-                "sourceUri" to stringField(),
-                "targetUri" to stringField(),
-            ).required("sourceUri", "targetUri"),
+                "left" to schemaSideField(),
+                "right" to schemaSideField(),
+                "format" to enumField(*FORMAT_NAMES),
+            ).required("left", "right"),
             output = obj(
-                "differences" to arrayField(),
+                "status" to enumField("identical", "different"),
+                "summary" to stringField(),
+                "findings" to arrayField(),
+                "truncated" to booleanField(),
                 "diffArtifactRef" to stringField(),
-            ).build(),
+                "executionMeta" to objectField(),
+            ).required("status", "summary", "findings", "truncated"),
         ))
         put("schema_generate", schemaPair(
             input = obj(
@@ -231,6 +236,19 @@ internal object PhaseBToolSchemas {
 
     private fun schemaPair(input: Map<String, Any>, output: Map<String, Any>): SchemaPair =
         SchemaPair(inputSchema = input, outputSchema = output)
+
+    /**
+     * `schema_compare` operand shape: only `schemaRef` is accepted in
+     * Phase C (§5.3 + §6.6). `connectionRef` and inline `schema` are
+     * runtime-rejected — the JSON-Schema deliberately does NOT list
+     * them so a JSON-Schema-validating client gets the same answer.
+     */
+    private fun schemaSideField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to mapOf("schemaRef" to stringField()),
+        "required" to listOf("schemaRef"),
+    )
 
     private fun emptyObject(): Map<String, Any> = mapOf(
         JsonSchemaDialect.SCHEMA_KEYWORD to JsonSchemaDialect.SCHEMA_URI,

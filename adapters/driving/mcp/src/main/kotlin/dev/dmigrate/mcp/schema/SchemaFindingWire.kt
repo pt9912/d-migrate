@@ -13,6 +13,7 @@ package dev.dmigrate.mcp.schema
 internal object SchemaFindingSeverity {
     const val ERROR: String = "error"
     const val WARNING: String = "warning"
+    const val INFO: String = "info"
 }
 
 internal enum class Strictness(val wire: String) {

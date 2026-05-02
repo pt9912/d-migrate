@@ -124,7 +124,7 @@ object PhaseBRegistries {
     private val TITLES: Map<String, String> = mapOf(
         "capabilities_list" to "Capabilities (server contract)",
         "schema_validate" to "Validate schema document",
-        "schema_compare" to "Compare two schema documents",
+        "schema_compare" to "Compare two registered schemas (schemaRef vs schemaRef)",
         "schema_generate" to "Generate DDL from a neutral schema",
         "schema_list" to "List schema artifacts",
         "profile_list" to "List data profiles",

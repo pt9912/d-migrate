@@ -673,16 +673,41 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sourceUri": {
-          "type": "string"
+        "left": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "schemaRef"
+          ]
         },
-        "targetUri": {
-          "type": "string"
+        "right": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "schemaRef"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml"
+          ]
         }
       },
       "required": [
-        "sourceUri",
-        "targetUri"
+        "left",
+        "right"
       ]
     },
     "outputSchema": {
@@ -690,13 +715,36 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "differences": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "identical",
+            "different"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
           "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
         },
         "diffArtifactRef": {
           "type": "string"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
-      }
+      },
+      "required": [
+        "status",
+        "summary",
+        "findings",
+        "truncated"
+      ]
     }
   },
   "schema_compare_start": {
