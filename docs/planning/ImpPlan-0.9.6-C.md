@@ -840,6 +840,56 @@ Akzeptanz:
 - grosse Ergebnisse sind vollstaendig ueber Artefakte abrufbar
 - gekuerzte Inline-Findings sind als gekuerzt markiert
 
+### 6.14 Phase-C-Bootstrap-Verdrahtung
+
+Aufgaben:
+
+- `PhaseCWiring`-Bundle einfuehren, das die fachlichen Abhaengigkeiten
+  fuer alle Phase-C-Handler buendelt (`UploadSessionStore`,
+  `UploadSegmentStore`, `ArtifactStore`, `ArtifactContentStore`,
+  `SchemaStore`, `JobStore`, `QuotaService`, `McpLimitsConfig`,
+  `Clock`, optional `SchemaStagingFinalizer`-Override fuer Tests)
+- `PhaseCRegistries.defaultToolRegistry(wiring)` implementieren, das
+  die acht produktiven Handler instanziert und ueber
+  `PhaseCRegistries.toolRegistry(handlerOverrides=...)` registriert:
+  - `capabilities_list` → `CapabilitiesListReadOnlyHandler`
+  - `schema_validate` → `SchemaValidateHandler`
+  - `schema_generate` → `SchemaGenerateHandler`
+  - `schema_compare` → `SchemaCompareHandler`
+  - `artifact_chunk_get` → `ArtifactChunkGetHandler`
+  - `artifact_upload_init` → `ArtifactUploadInitHandler`
+  - `artifact_upload` → `ArtifactUploadHandler`
+  - `artifact_upload_abort` → `ArtifactUploadAbortHandler`
+  - `job_status_get` → `JobStatusGetHandler`
+- `McpServerBootstrap.startHttp` und `startStdio` einen optionalen
+  `phaseCWiring: PhaseCWiring?`-Parameter geben; wenn gesetzt wird
+  die Phase-C-Registry verdrahtet, sonst bleibt die Phase-B-Default-
+  Registry aktiv (Backwards-kompatibel fuer bestehende Tests)
+- Integrationstest, der pinnt:
+  - mit `phaseCWiring` ist jeder Phase-C-Tool aus §3.1 ueber
+    `tools/list` sichtbar UND dispatcht NICHT auf
+    `UnsupportedToolHandler`
+  - ohne `phaseCWiring` bleibt das Phase-B-Verhalten unveraendert
+    (nur `capabilities_list` ist fachlich aktiv)
+
+Akzeptanz:
+
+- alle in §3.1 gelisteten Phase-C-Tools sind in der produktiven
+  Laufzeit (HTTP- und stdio-Bootstrap) ueber `tools/call`
+  fachlich aktiv, sobald ein `PhaseCWiring` uebergeben wird
+- `tools/list` reflektiert dieselbe Wahrheit fuer beide Transports
+- der Phase-B-Default bleibt ohne Phase-C-Wiring kompatibel zu den
+  Phase-B-Tests, damit die Umstellung keine bestehenden
+  Smoke-/Integrationstests bricht
+
+Hinweis: Diese Verdrahtung war ueber AP 6.1 bis AP 6.13 hinweg
+bewusst deferiert worden — die Phase-C-Handler liefen in den
+Unit-Tests, dispatchten aber zur Laufzeit auf
+`UnsupportedToolHandler`, weil der Bootstrap die Phase-B-Registry
+weiter benutzt hat. AP 6.14 schliesst diese Luecke und macht das
+§10 DoD ("Adaptertests fuer stdio und HTTP decken alle Phase-C-Tools
+ab") tatsaechlich erreichbar.
+
 ---
 
 ## 7. Verifikationsstrategie
