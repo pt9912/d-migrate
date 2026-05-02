@@ -31,11 +31,10 @@ private val PRINCIPAL = PrincipalContext(
 private val NOOP_HANDLER: ToolHandler = ToolHandler { _ -> ToolCallOutcome.Success(emptyList()) }
 
 /**
- * Phase-C read-only tools per `ImpPlan-0.9.6-C.md` §3.1 that are
- * already part of the Phase-B scope mapping. `artifact_upload`
- * (singular per §3.1) is intentionally absent — the Phase-B registry
- * still uses `artifact_upload_chunk` / `artifact_upload_complete`;
- * AP 6.6.5 aligns the names before AP 6.7-6.10 ship the handlers.
+ * Phase-C read-only tools per `ImpPlan-0.9.6-C.md` §3.1. AP 6.6.5
+ * aligned the registry with the spec by collapsing the legacy
+ * `artifact_upload_chunk`/`artifact_upload_complete` pair into a
+ * single `artifact_upload` segment tool with implicit finalisation.
  */
 private val PHASE_C_READ_ONLY_TOOLS: List<String> = listOf(
     "capabilities_list",
@@ -45,6 +44,7 @@ private val PHASE_C_READ_ONLY_TOOLS: List<String> = listOf(
     "job_status_get",
     "artifact_chunk_get",
     "artifact_upload_init",
+    "artifact_upload",
     "artifact_upload_abort",
 )
 

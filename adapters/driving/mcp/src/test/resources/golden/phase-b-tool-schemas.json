@@ -81,6 +81,67 @@
       ]
     }
   },
+  "artifact_upload": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "segmentIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "base64"
+          ]
+        },
+        "segmentSha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "segmentIndex",
+        "offset",
+        "content",
+        "encoding"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "artifactId": {
+          "type": "string"
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accepted"
+      ]
+    }
+  },
   "artifact_upload_abort": {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -106,82 +167,6 @@
       },
       "required": [
         "aborted"
-      ]
-    }
-  },
-  "artifact_upload_chunk": {
-    "inputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "chunkIndex": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "content": {
-          "type": "string"
-        },
-        "encoding": {
-          "type": "string",
-          "enum": [
-            "base64"
-          ]
-        }
-      },
-      "required": [
-        "sessionId",
-        "chunkIndex",
-        "content",
-        "encoding"
-      ]
-    },
-    "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "accepted": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "accepted"
-      ]
-    }
-  },
-  "artifact_upload_complete": {
-    "inputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "sessionId"
-      ]
-    },
-    "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "artifactId": {
-          "type": "string"
-        },
-        "sha256": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "artifactId",
-        "sha256"
       ]
     }
   },

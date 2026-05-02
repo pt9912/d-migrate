@@ -1171,7 +1171,7 @@ Phase C/D):
 | `capabilities_list`, `tools/list`, `resources/list`, `resources/templates/list`, `resources/read` | `dmigrate:read` |
 | `schema_validate`, `schema_compare`, `schema_generate`, `schema_list`, `profile_list`, `diff_list`, `job_list`, `job_status_get`, `artifact_list`, `artifact_chunk_get` | `dmigrate:read` |
 | `schema_reverse_start`, `schema_compare_start`, `data_profile_start`, `data_export_start` | `dmigrate:job:start` |
-| `artifact_upload_init`, `artifact_upload_chunk`, `artifact_upload_complete`, `artifact_upload_abort` | `dmigrate:artifact:upload` |
+| `artifact_upload_init`, `artifact_upload`, `artifact_upload_abort` | `dmigrate:artifact:upload` |
 | `data_import_start`, `data_transfer_start` | `dmigrate:data:write` |
 | `job_cancel` | `dmigrate:job:cancel` |
 | `procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan`, `testdata_execute` | `dmigrate:ai:execute` |

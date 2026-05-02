@@ -189,10 +189,13 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "schema_compare_start" to jobStart,
         "data_profile_start" to jobStart,
         "data_export_start" to jobStart,
-        // Upload session
+        // Upload session — single segment tool with implicit
+        // finalisation per spec/ki-mcp.md §5.3 + ImpPlan-0.9.6-C.md
+        // §12.4. The completing segment returns the final
+        // artifactId/sha256 in the same response; there is no
+        // separate `artifact_upload_complete` tool.
         "artifact_upload_init" to artifactUpload,
-        "artifact_upload_chunk" to artifactUpload,
-        "artifact_upload_complete" to artifactUpload,
+        "artifact_upload" to artifactUpload,
         "artifact_upload_abort" to artifactUpload,
         // Data-write tools
         "data_import_start" to dataWrite,

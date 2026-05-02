@@ -161,23 +161,21 @@ internal object PhaseBToolSchemas {
                 "chunkSizeBytes" to integerField(),
             ).required("sessionId", "chunkSizeBytes"),
         ))
-        put("artifact_upload_chunk", schemaPair(
+        put("artifact_upload", schemaPair(
             input = obj(
                 "sessionId" to stringField(),
-                "chunkIndex" to integerField(),
+                "segmentIndex" to integerField(),
+                "offset" to integerField(),
                 "content" to stringField(),
                 "encoding" to enumField("base64"),
-            ).required("sessionId", "chunkIndex", "content", "encoding"),
+                "segmentSha256" to stringField(),
+            ).required("sessionId", "segmentIndex", "offset", "content", "encoding"),
             output = obj(
                 "accepted" to booleanField(),
-            ).required("accepted"),
-        ))
-        put("artifact_upload_complete", schemaPair(
-            input = obj("sessionId" to stringField()).required("sessionId"),
-            output = obj(
                 "artifactId" to stringField(),
+                "schemaRef" to stringField(),
                 "sha256" to stringField(),
-            ).required("artifactId", "sha256"),
+            ).required("accepted"),
         ))
         put("artifact_upload_abort", schemaPair(
             input = obj("sessionId" to stringField()).required("sessionId"),
