@@ -71,6 +71,7 @@ private fun fixture(
     limits: McpLimitsConfig = McpLimitsConfig(maxUploadSegmentBytes = 8),
     parallelLimit: Long = 5,
     requestId: String = "req-deadbeef",
+    finalizer: SchemaStagingFinalizer? = null,
 ): UploadFixture {
     val sessionStore = InMemoryUploadSessionStore()
     val segmentStore = InMemoryUploadSegmentStore()
@@ -88,6 +89,7 @@ private fun fixture(
         quotaService = parallelService,
         limits = limits,
         clock = FIXED_CLOCK,
+        finalizer = finalizer,
         requestIdProvider = { requestId },
     )
     return UploadFixture(handler, sessionStore, segmentStore, quotaStore)
@@ -268,101 +270,42 @@ class ArtifactUploadHandlerTest : FunSpec({
     }
 
     test("AP 6.18: replay of completing segment with same hash returns the persisted schemaRef") {
-        // Wire a stub finalizer so the first call lands a real
-        // schemaRef on the session. The second call with identical
-        // args must return the same schemaRef instead of
-        // IDEMPOTENCY_CONFLICT.
+        // Stub finalizer pins the schemaRef on the first call so the
+        // replay has something deterministic to return.
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
-        val stubFinalizer = dev.dmigrate.mcp.schema.SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
+        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
         val payload = "abcdefgh".toByteArray()
         val totalHash = sha256Hex(payload)
-        val sessionStore = InMemoryUploadSessionStore()
-        val handler = ArtifactUploadHandler(
-            sessionStore = sessionStore,
-            segmentStore = InMemoryUploadSegmentStore(),
-            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
-            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
-            finalizer = stubFinalizer,
-            requestIdProvider = { "req-x" },
-        )
-        sessionStore.save(
-            dev.dmigrate.server.core.upload.UploadSession(
-                uploadSessionId = "ups-1",
-                tenantId = ACME,
-                ownerPrincipalId = ALICE,
-                resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, "ups-1"),
-                artifactKind = ArtifactKind.SCHEMA,
-                mimeType = "application/octet-stream",
-                sizeBytes = payload.size.toLong(),
-                segmentTotal = 1,
-                checksumSha256 = totalHash,
-                uploadIntent = "schema_staging_readonly",
-                state = UploadSessionState.ACTIVE,
-                createdAt = FIXED_NOW,
-                updatedAt = FIXED_NOW,
-                idleTimeoutAt = FIXED_NOW.plusSeconds(300),
-                absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
-            ),
-        )
+        val f = fixture(finalizer = stubFinalizer)
+        stageSession(f, "ups-1", payload.size.toLong(), 1, totalHash)
         val argString = segmentArgs(
             segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
             isFinalSegment = true, bytes = payload,
         )
-        // First call: success with schemaRef
+
         val firstResponse = parsePayload(
-            handler.handle(ToolCallContext("artifact_upload", args(argString), PRINCIPAL)),
+            f.handler.handle(ToolCallContext("artifact_upload", args(argString), PRINCIPAL)),
         )
         firstResponse.get("schemaRef").asString shouldBe schemaUri.render()
         firstResponse.get("uploadSessionState").asString shouldBe "COMPLETED"
 
-        // Replay with identical args: same schemaRef, no conflict
         val replayResponse = parsePayload(
-            handler.handle(ToolCallContext("artifact_upload", args(argString), PRINCIPAL)),
+            f.handler.handle(ToolCallContext("artifact_upload", args(argString), PRINCIPAL)),
         )
         replayResponse.get("schemaRef").asString shouldBe schemaUri.render()
         replayResponse.get("uploadSessionState").asString shouldBe "COMPLETED"
         replayResponse.get("deduplicated").asBoolean shouldBe true
-        // Persistence: the session in the store carries the schemaRef.
-        sessionStore.findById(ACME, "ups-1")!!.finalisedSchemaRef shouldBe schemaUri.render()
+        f.sessionStore.findById(ACME, "ups-1")!!.finalisedSchemaRef shouldBe schemaUri.render()
     }
 
     test("AP 6.18: replay with divergent hash at same index throws IDEMPOTENCY_CONFLICT") {
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
-        val stubFinalizer = dev.dmigrate.mcp.schema.SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
+        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
         val payload = "abcdefgh".toByteArray()
         val totalHash = sha256Hex(payload)
-        val sessionStore = InMemoryUploadSessionStore()
-        val handler = ArtifactUploadHandler(
-            sessionStore = sessionStore,
-            segmentStore = InMemoryUploadSegmentStore(),
-            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
-            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
-            finalizer = stubFinalizer,
-            requestIdProvider = { "req-x" },
-        )
-        sessionStore.save(
-            dev.dmigrate.server.core.upload.UploadSession(
-                uploadSessionId = "ups-1",
-                tenantId = ACME,
-                ownerPrincipalId = ALICE,
-                resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, "ups-1"),
-                artifactKind = ArtifactKind.SCHEMA,
-                mimeType = "application/octet-stream",
-                sizeBytes = payload.size.toLong(),
-                segmentTotal = 1,
-                checksumSha256 = totalHash,
-                uploadIntent = "schema_staging_readonly",
-                state = UploadSessionState.ACTIVE,
-                createdAt = FIXED_NOW,
-                updatedAt = FIXED_NOW,
-                idleTimeoutAt = FIXED_NOW.plusSeconds(300),
-                absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
-            ),
-        )
-        // First call: success
-        handler.handle(
+        val f = fixture(finalizer = stubFinalizer)
+        stageSession(f, "ups-1", payload.size.toLong(), 1, totalHash)
+        f.handler.handle(
             ToolCallContext(
                 "artifact_upload",
                 args(
@@ -374,10 +317,9 @@ class ArtifactUploadHandlerTest : FunSpec({
                 PRINCIPAL,
             ),
         )
-        // Replay at same index but with FAKE different hash
         val divergentHash = "f".repeat(64)
         shouldThrow<IdempotencyConflictException> {
-            handler.handle(
+            f.handler.handle(
                 ToolCallContext(
                     "artifact_upload",
                     args(

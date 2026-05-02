@@ -32,12 +32,11 @@ data class UploadSession(
     val bytesReceived: Long = 0,
     /**
      * AP 6.18: persisted finalisation outcome of the read-only
-     * schema-staging session. Populated by `ArtifactUploadHandler`
-     * right before the ACTIVE→COMPLETED transition so a replay of
-     * the completing segment can return the same `schemaRef`
-     * instead of `IDEMPOTENCY_CONFLICT`. `null` while the session
-     * is still ACTIVE or for terminal states that didn't produce a
-     * schemaRef (ABORTED / EXPIRED / failed-validation COMPLETED).
+     * schema-staging session. A replay of the completing segment
+     * reads this back and returns the same `schemaRef` instead of
+     * surfacing `IDEMPOTENCY_CONFLICT`. `null` for any session that
+     * has not produced a schemaRef yet (ACTIVE, ABORTED, EXPIRED,
+     * or a COMPLETED session whose finaliser threw).
      */
     val finalisedSchemaRef: String? = null,
 )
