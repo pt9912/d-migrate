@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.IdempotencyConflictException
@@ -147,6 +148,12 @@ private fun segmentArgs(
     "contentBase64":"${b64(bytes)}"
 }""".replace("\n", "").replace("    ", "")
 
+@Suppress("LargeClass")
+// LargeClass: the spec's segment-acceptance contract has many
+// branches (lifecycle states, sequence/offset/size/hash failures,
+// quota, race outcomes, finaliser hookup); folding them into one
+// FunSpec keeps the "what does artifact_upload do" answer in one
+// place. Splitting by AP number would scatter the contract.
 class ArtifactUploadHandlerTest : FunSpec({
 
     test("single-segment session: final segment marks state COMPLETED with valid total hash") {
@@ -739,6 +746,132 @@ class ArtifactUploadHandlerTest : FunSpec({
                 ),
             )
         }
+    }
+
+    test("AP 6.9: when a finalizer is wired, completing the session returns the registered schemaRef") {
+        // Stub finalizer: returns a fixed schemaRef so the test pins
+        // only the wiring/payload contract — actual parse+validate is
+        // covered by SchemaStagingFinalizerTest.
+        val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
+        val recorded = mutableListOf<String>()
+        val stubFinalizer = SchemaStagingFinalizer { session, principal, bytes, _ ->
+            recorded += "complete(session=${session.uploadSessionId}," +
+                "principal=${principal.principalId.value},bytes=${bytes.size})"
+            schemaUri
+        }
+        val payload = "abcdefgh".toByteArray()
+        val totalHash = sha256Hex(payload)
+        val sessionStore = InMemoryUploadSessionStore()
+        val segmentStore = InMemoryUploadSegmentStore()
+        val quotaStore = InMemoryQuotaStore()
+        val handler = ArtifactUploadHandler(
+            sessionStore = sessionStore,
+            segmentStore = segmentStore,
+            quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
+            clock = FIXED_CLOCK,
+            finalizer = stubFinalizer,
+            requestIdProvider = { "req-x" },
+        )
+        sessionStore.save(
+            dev.dmigrate.server.core.upload.UploadSession(
+                uploadSessionId = "ups-1",
+                tenantId = ACME,
+                ownerPrincipalId = ALICE,
+                resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, "ups-1"),
+                artifactKind = ArtifactKind.SCHEMA,
+                mimeType = "application/octet-stream",
+                sizeBytes = payload.size.toLong(),
+                segmentTotal = 1,
+                checksumSha256 = totalHash,
+                uploadIntent = "schema_staging_readonly",
+                state = UploadSessionState.ACTIVE,
+                createdAt = FIXED_NOW,
+                updatedAt = FIXED_NOW,
+                idleTimeoutAt = FIXED_NOW.plusSeconds(300),
+                absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
+            ),
+        )
+        val outcome = handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                        isFinalSegment = true, bytes = payload,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        val json = parsePayload(outcome)
+        json.get("uploadSessionState").asString shouldBe "COMPLETED"
+        json.get("schemaRef").asString shouldBe schemaUri.render()
+        recorded shouldBe listOf("complete(session=ups-1,principal=alice,bytes=${payload.size})")
+    }
+
+    test("AP 6.9: finalisation failure rolls the session to ABORTED and rethrows the typed exception") {
+        // The finalizer throws ValidationErrorException (parse or
+        // schema-validate failure). The handler must transition the
+        // session to ABORTED so segment cleanup runs on the standard
+        // lifecycle path; the exception propagates so the client sees
+        // structured findings.
+        val angryFinalizer = SchemaStagingFinalizer { _, _, _, _ ->
+            throw dev.dmigrate.server.application.error.ValidationErrorException(
+                listOf(
+                    dev.dmigrate.server.application.error.ValidationViolation(
+                        "schema",
+                        "schema parse failed: malformed",
+                    ),
+                ),
+            )
+        }
+        val payload = "abcdefgh".toByteArray()
+        val totalHash = sha256Hex(payload)
+        val sessionStore = InMemoryUploadSessionStore()
+        val handler = ArtifactUploadHandler(
+            sessionStore = sessionStore,
+            segmentStore = InMemoryUploadSegmentStore(),
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
+            clock = FIXED_CLOCK,
+            finalizer = angryFinalizer,
+            requestIdProvider = { "req-x" },
+        )
+        sessionStore.save(
+            dev.dmigrate.server.core.upload.UploadSession(
+                uploadSessionId = "ups-1",
+                tenantId = ACME,
+                ownerPrincipalId = ALICE,
+                resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, "ups-1"),
+                artifactKind = ArtifactKind.SCHEMA,
+                mimeType = "application/octet-stream",
+                sizeBytes = payload.size.toLong(),
+                segmentTotal = 1,
+                checksumSha256 = totalHash,
+                uploadIntent = "schema_staging_readonly",
+                state = UploadSessionState.ACTIVE,
+                createdAt = FIXED_NOW,
+                updatedAt = FIXED_NOW,
+                idleTimeoutAt = FIXED_NOW.plusSeconds(300),
+                absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
+            ),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                            isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.ABORTED
     }
 
     test("PARALLEL_SEGMENT_WRITES quota exhaustion surfaces RATE_LIMITED") {

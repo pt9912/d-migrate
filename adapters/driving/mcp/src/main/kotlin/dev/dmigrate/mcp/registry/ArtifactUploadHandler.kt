@@ -7,6 +7,7 @@ import dev.dmigrate.mcp.registry.JsonArgs.requireInt
 import dev.dmigrate.mcp.registry.JsonArgs.requireLong
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.mcp.registry.JsonArgs.optString
+import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.IdempotencyConflictException
@@ -74,6 +75,7 @@ internal class ArtifactUploadHandler(
     private val clock: Clock,
     private val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
     private val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
+    private val finalizer: SchemaStagingFinalizer? = null,
     private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
@@ -129,17 +131,28 @@ internal class ArtifactUploadHandler(
         )
         sessionStore.save(updated)
 
-        val finalState = maybeComplete(args, updated, bytes, now)
+        // Finalisation order per spec §5.3 lines 421-433:
+        // 1. session-finality checks pass
+        // 2. parse + validate the assembled bytes
+        // 3. materialise artefact + register schemaRef
+        // 4. transition session to COMPLETED
+        // Failure at step 2 or 3 rolls the still-ACTIVE session to
+        // ABORTED so segment cleanup runs on the standard lifecycle
+        // path; COMPLETED stays terminal per UploadSessionTransitions.
+        val finalisable = isSessionFinalisable(args, updated, bytes)
+        val schemaRef = if (finalisable) finaliseToSchemaRef(updated, context.principal, bytes, now) else null
+        val finalState = if (finalisable) transitionToCompleted(updated, now) else updated
         val ttlSeconds = effectiveTtlSeconds(now, finalState)
-        val payload = mapOf(
-            "uploadSessionId" to finalState.uploadSessionId,
-            "acceptedSegmentIndex" to args.segmentIndex,
-            "deduplicated" to deduplicated,
-            "bytesReceived" to finalState.bytesReceived,
-            "uploadSessionTtlSeconds" to ttlSeconds,
-            "uploadSessionState" to finalState.state.name,
-            "executionMeta" to mapOf("requestId" to requestIdProvider()),
-        )
+        val payload = buildMap {
+            put("uploadSessionId", finalState.uploadSessionId)
+            put("acceptedSegmentIndex", args.segmentIndex)
+            put("deduplicated", deduplicated)
+            put("bytesReceived", finalState.bytesReceived)
+            put("uploadSessionTtlSeconds", ttlSeconds)
+            put("uploadSessionState", finalState.state.name)
+            if (schemaRef != null) put("schemaRef", schemaRef)
+            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+        }
         return ToolCallOutcome.Success(
             content = listOf(
                 ToolContent(
@@ -149,6 +162,59 @@ internal class ArtifactUploadHandler(
                 ),
             ),
         )
+    }
+
+    /**
+     * AP 6.9 hook: assemble the segment bytes in index order and hand
+     * them to the [SchemaStagingFinalizer]. On success the registered
+     * `schemaRef` URI is returned; on parse/validation failure the
+     * session is rolled to `ABORTED` (so segment cleanup runs on
+     * normal lifecycle paths) before the typed error bubbles out.
+     *
+     * If no finalizer is wired (AP 6.7-6.8 standalone tests), the
+     * session stays COMPLETED with no `schemaRef` — the response
+     * shape stays valid and forward-compatible.
+     */
+    private fun finaliseToSchemaRef(
+        session: UploadSession,
+        principal: PrincipalContext,
+        finalSegmentBytes: ByteArray,
+        now: java.time.Instant,
+    ): String? {
+        val finalizer = this.finalizer ?: return null
+        val assembled = assembleSessionBytes(session, finalSegmentBytes)
+        return try {
+            finalizer.complete(session, principal, assembled, format = "json").render()
+        } catch (e: RuntimeException) {
+            // Validation/parse failure: the session must not stay
+            // COMPLETED with bytes that can never become a schemaRef.
+            // Roll to ABORTED so the standard cleanup path runs;
+            // rethrow the typed exception so the client sees the
+            // structured findings.
+            sessionStore.transition(session.tenantId, session.uploadSessionId, UploadSessionState.ABORTED, now)
+            throw e
+        }
+    }
+
+    private fun assembleSessionBytes(session: UploadSession, finalSegmentBytes: ByteArray): ByteArray {
+        val segments = segmentStore.listSegments(session.uploadSessionId).sortedBy { it.segmentIndex }
+        val out = ByteArray(session.sizeBytes.toInt())
+        var pos = 0
+        for (segment in segments) {
+            val bytes = if (segment.segmentIndex == session.segmentTotal) {
+                finalSegmentBytes
+            } else {
+                segmentStore.openSegmentRangeRead(
+                    session.uploadSessionId,
+                    segment.segmentIndex,
+                    offset = 0L,
+                    length = segment.sizeBytes,
+                ).use { it.readAllBytes() }
+            }
+            System.arraycopy(bytes, 0, out, pos, bytes.size)
+            pos += bytes.size
+        }
+        return out
     }
 
     /**
@@ -307,13 +373,24 @@ internal class ArtifactUploadHandler(
     private fun computeCumulativeBytes(sessionId: String): Long =
         segmentStore.listSegments(sessionId).sumOf { it.sizeBytes }
 
-    private fun maybeComplete(
+    /**
+     * Validates that the final segment closes the session per spec
+     * §5.3 line 597-598 — segments complete, cumulative size and
+     * total hash match. Does NOT transition to `COMPLETED`; the
+     * transition is deferred until after AP 6.9 finalisation
+     * succeeds, because `COMPLETED` is a terminal state and the
+     * spec requires the session to roll to `ABORTED` on
+     * validation failure (which `COMPLETED` → anything is not).
+     *
+     * Returns `true` when the segment closes the session and
+     * finalisation should run; `false` for intermediate segments.
+     */
+    private fun isSessionFinalisable(
         args: UploadSegmentArgs,
         session: UploadSession,
         finalBytes: ByteArray,
-        now: java.time.Instant,
-    ): UploadSession {
-        if (!args.isFinalSegment) return session
+    ): Boolean {
+        if (!args.isFinalSegment) return false
         val storedSegments = segmentStore.listSegments(session.uploadSessionId)
         if (storedSegments.size != session.segmentTotal) {
             throw ValidationErrorException(
@@ -347,16 +424,22 @@ internal class ArtifactUploadHandler(
                 ),
             )
         }
-        return when (val transition = sessionStore.transition(
+        return true
+    }
+
+    /**
+     * Drives the COMPLETED transition after finalisation succeeds.
+     * Maps store-level race outcomes (concurrent abort/expire) to
+     * typed lifecycle exceptions so the client sees the real cause.
+     */
+    private fun transitionToCompleted(session: UploadSession, now: java.time.Instant): UploadSession =
+        when (val transition = sessionStore.transition(
             session.tenantId,
             session.uploadSessionId,
             UploadSessionState.COMPLETED,
             now,
         )) {
             is TransitionOutcome.Applied -> transition.session
-            // A concurrent abort/expire raced our ACTIVE check —
-            // surface the typed lifecycle exception so the client
-            // sees the real cause instead of an internal error.
             is TransitionOutcome.IllegalTransition -> throw when (transition.from) {
                 UploadSessionState.ABORTED -> UploadSessionAbortedException(session.uploadSessionId)
                 UploadSessionState.EXPIRED -> UploadSessionExpiredException(session.uploadSessionId)
@@ -365,11 +448,8 @@ internal class ArtifactUploadHandler(
                 )
                 UploadSessionState.ACTIVE -> InternalAgentErrorException()
             }
-            // The session vanished between our findById and the
-            // transition — also a legitimate concurrent outcome.
             is TransitionOutcome.NotFound -> throw ResourceNotFoundException(session.resourceUri)
         }
-    }
 
     private fun computeTotalHash(
         session: UploadSession,
