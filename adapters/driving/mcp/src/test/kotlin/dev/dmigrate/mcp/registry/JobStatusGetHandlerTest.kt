@@ -360,6 +360,25 @@ class JobStatusGetHandlerTest : FunSpec({
         ex.violations.first().reason.contains("expected jobs") shouldBe true
     }
 
+    test("AP 6.17: progress.phase and error.message/code are scrubbed of Bearer tokens") {
+        val f = fixture()
+        stageJob(
+            f, "job-1",
+            status = JobStatus.FAILED,
+            progress = JobProgress(phase = "running Bearer abc123secret", numericValues = emptyMap()),
+            error = JobError(code = "Bearer abc123secret", message = "failed Bearer abc123secret", exitCode = 7),
+        )
+        val json = parsePayload(
+            f.handler.handle(
+                ToolCallContext("job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL),
+            ),
+        )
+        json.getAsJsonObject("progress").get("phase").asString.contains("abc123secret") shouldBe false
+        val err = json.getAsJsonObject("error")
+        err.get("code").asString.contains("abc123secret") shouldBe false
+        err.get("message").asString.contains("abc123secret") shouldBe false
+    }
+
     test("response carries application/json mime type") {
         val f = fixture()
         stageJob(f, "job-1")

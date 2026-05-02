@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.registry.JsonArgs.optString
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.TenantScopeDeniedException
 import dev.dmigrate.server.application.error.ValidationErrorException
@@ -145,14 +146,20 @@ internal class JobStatusGetHandler(
         }
     }
 
+    // AP 6.17: progress.phase and error.message/code can carry job-
+    // runtime strings that originated from user-provided schemas or
+    // connection refs. Scrubbing keeps accidental token /
+    // connection-URL leakage out of the wire response.
+    // numericValues is keyed by curated phase-counter names
+    // ("rows", "bytes", ...) and the values are longs — no scrub.
     private fun projectProgress(progress: JobProgress): Map<String, Any?> = mapOf(
-        "phase" to progress.phase,
+        "phase" to SecretScrubber.scrub(progress.phase),
         "numericValues" to progress.numericValues,
     )
 
     private fun projectError(error: JobError): Map<String, Any?> = buildMap {
-        put("code", error.code)
-        put("message", error.message)
+        put("code", SecretScrubber.scrub(error.code))
+        put("message", SecretScrubber.scrub(error.message))
         if (error.exitCode != null) put("exitCode", error.exitCode)
     }
 

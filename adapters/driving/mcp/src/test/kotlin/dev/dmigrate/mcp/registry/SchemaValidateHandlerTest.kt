@@ -196,6 +196,25 @@ class SchemaValidateHandlerTest : FunSpec({
         }
     }
 
+    test("AP 6.17: validator-produced message + path are scrubbed of Bearer tokens") {
+        // A schema whose object names contain a bearer-token literal
+        // must not leak the literal via finding paths. Validator
+        // rules use the object name in `path` and `message`, so
+        // both routes need scrubbing.
+        val schemaWithSecret =
+            """{"name":"x","version":"1.0","tables":{"Bearer abc123secret":{"columns":{}}}}"""
+        val outcome = handler().handle(
+            ToolCallContext(
+                "schema_validate",
+                args("""{"schema":$schemaWithSecret}"""),
+                PRINCIPAL,
+            ),
+        )
+        val finding = parsePayload(outcome).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("path").asString.contains("abc123secret") shouldBe false
+        finding.get("message").asString.contains("abc123secret") shouldBe false
+    }
+
     test("response carries application/json mime type and text content") {
         val outcome = handler().handle(
             ToolCallContext(

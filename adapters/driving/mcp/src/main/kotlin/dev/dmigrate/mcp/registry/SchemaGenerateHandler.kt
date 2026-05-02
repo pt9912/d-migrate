@@ -21,6 +21,7 @@ import dev.dmigrate.mcp.schema.SchemaFindingSeverity
 import dev.dmigrate.mcp.schema.SchemaSourceInput
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.core.artifact.ArtifactKind
@@ -172,20 +173,24 @@ internal class SchemaGenerateHandler(
         }
     }
 
+    // AP 6.17: dynamic strings (objectName, message, hint, skipped
+    // reason) flow from generator transformations that read user-
+    // supplied schema bytes; scrubbing keeps accidental token /
+    // connection-URL leakage out of the wire response.
     private fun projectNote(note: TransformationNote): Map<String, String?> = buildMap {
         put("severity", noteSeverity(note.type))
         put("code", note.code)
-        put("path", note.objectName)
-        put("message", note.message)
-        if (note.hint != null) put("hint", note.hint)
+        put("path", SecretScrubber.scrub(note.objectName))
+        put("message", SecretScrubber.scrub(note.message))
+        note.hint?.let { put("hint", SecretScrubber.scrub(it)) }
     }
 
     private fun projectSkipped(skipped: SkippedObject): Map<String, String?> = buildMap {
         put("severity", SchemaFindingSeverity.ERROR)
         put("code", skipped.code ?: "SKIPPED")
-        put("path", "${skipped.type}.${skipped.name}")
-        put("message", "skipped: ${skipped.reason}")
-        if (skipped.hint != null) put("hint", skipped.hint)
+        put("path", SecretScrubber.scrub("${skipped.type}.${skipped.name}"))
+        put("message", SecretScrubber.scrub("skipped: ${skipped.reason}"))
+        skipped.hint?.let { put("hint", SecretScrubber.scrub(it)) }
     }
 
     private fun summary(result: DdlResult, dialect: DatabaseDialect, ddlMovedToArtefact: Boolean): String {

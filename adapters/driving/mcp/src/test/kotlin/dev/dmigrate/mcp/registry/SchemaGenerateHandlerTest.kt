@@ -313,6 +313,59 @@ class SchemaGenerateHandlerTest : FunSpec({
         fake.lastOptions!!.spatialProfile shouldBe SpatialProfile.NATIVE
     }
 
+    test("AP 6.17: generator notes have message/path/hint scrubbed of Bearer tokens") {
+        // A note that carries an object name containing a bearer
+        // token must not leak the literal across the wire.
+        val ddl = DdlResult(
+            statements = listOf(DdlStatement(sql = "CREATE TABLE t1 (id BIGINT);")),
+            globalNotes = listOf(
+                TransformationNote(
+                    type = NoteType.WARNING,
+                    code = "W042",
+                    objectName = "tables.Bearer abc123secret",
+                    message = "object Bearer abc123secret needed adjustment",
+                    hint = "rename to drop Bearer abc123secret prefix",
+                ),
+            ),
+        )
+        val (sut, _, _) = handler(FakeDdlGenerator(DatabaseDialect.POSTGRESQL, ddl))
+        val outcome = sut.handle(
+            ToolCallContext(
+                "schema_generate",
+                args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"POSTGRESQL"}"""),
+                PRINCIPAL,
+            ),
+        )
+        val finding = parsePayload(outcome).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("path").asString.contains("abc123secret") shouldBe false
+        finding.get("message").asString.contains("abc123secret") shouldBe false
+        finding.get("hint").asString.contains("abc123secret") shouldBe false
+    }
+
+    test("AP 6.17: skipped object reason is scrubbed of Bearer tokens") {
+        val ddl = DdlResult(
+            statements = emptyList(),
+            skippedObjects = listOf(
+                SkippedObject(
+                    type = "view",
+                    name = "v1",
+                    reason = "depends on Bearer abc123secret which is unavailable",
+                    code = "E020",
+                ),
+            ),
+        )
+        val (sut, _, _) = handler(FakeDdlGenerator(DatabaseDialect.POSTGRESQL, ddl))
+        val outcome = sut.handle(
+            ToolCallContext(
+                "schema_generate",
+                args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"POSTGRESQL"}"""),
+                PRINCIPAL,
+            ),
+        )
+        val finding = parsePayload(outcome).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("message").asString.contains("abc123secret") shouldBe false
+    }
+
     test("DDL phase ordering is preserved by render() (statementCount echoes statements list)") {
         val ddl = DdlResult(
             statements = listOf(

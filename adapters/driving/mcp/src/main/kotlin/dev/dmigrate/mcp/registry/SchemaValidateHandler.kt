@@ -15,6 +15,7 @@ import dev.dmigrate.mcp.schema.SchemaSourceInput
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.schema.Strictness
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.audit.SecretScrubber
 import java.util.UUID
 
 /**
@@ -92,18 +93,23 @@ internal class SchemaValidateHandler(
         )
     }
 
+    // AP 6.17: dynamic strings (path, message) come from validator
+    // rules that read user-supplied schema bytes; scrubbing keeps
+    // accidental Bearer/approval-token/connection-URL leakage out
+    // of the wire response. `code` is a curated constant alphabet
+    // and not scrubbed.
     private fun projectError(error: ValidationError): Map<String, String> = mapOf(
         "severity" to SchemaFindingSeverity.ERROR,
         "code" to error.code,
-        "path" to error.objectPath,
-        "message" to error.message,
+        "path" to SecretScrubber.scrub(error.objectPath),
+        "message" to SecretScrubber.scrub(error.message),
     )
 
     private fun projectWarning(warning: ValidationWarning): Map<String, String> = mapOf(
         "severity" to SchemaFindingSeverity.WARNING,
         "code" to warning.code,
-        "path" to warning.objectPath,
-        "message" to warning.message,
+        "path" to SecretScrubber.scrub(warning.objectPath),
+        "message" to SecretScrubber.scrub(warning.message),
     )
 
     private fun summary(errorCount: Int, warningCount: Int, valid: Boolean): String = when {
