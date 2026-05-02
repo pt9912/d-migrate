@@ -122,6 +122,30 @@ private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
     return JsonParser.parseString(text).asJsonObject
 }
 
+/**
+ * Stages an ACTIVE session, wraps the store with the racing helper,
+ * and runs the abort handler. Used by the four `transition race`
+ * tests to keep the per-branch body to one assertion line.
+ */
+private fun invokeAbortWithRacingTransition(illegalFrom: UploadSessionState) {
+    val f = fixture()
+    stageSession(f, "ups-1")
+    val racing = ArtifactUploadAbortHandler(
+        sessionStore = racingTransitionStore(f.sessionStore, illegalFrom = illegalFrom),
+        segmentStore = f.segmentStore,
+        quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
+        clock = FIXED_CLOCK,
+        requestIdProvider = { "req-x" },
+    )
+    racing.handle(
+        ToolCallContext(
+            "artifact_upload_abort",
+            args("""{"uploadSessionId":"ups-1"}"""),
+            PRINCIPAL,
+        ),
+    )
+}
+
 class ArtifactUploadAbortHandlerTest : FunSpec({
 
     test("happy path: own ACTIVE session is transitioned to ABORTED, segments deleted, response shape matches spec") {
@@ -256,79 +280,32 @@ class ArtifactUploadAbortHandlerTest : FunSpec({
         content.mimeType shouldBe "application/json"
     }
 
-    test("transition race: ACTIVE→ACTIVE rejection (broken store contract) surfaces InternalAgentError") {
-        // Defensive: the lifecycle helper maps `IllegalTransition.from=ACTIVE`
-        // to InternalAgentErrorException because the store contract
-        // says ACTIVE → COMPLETED/ABORTED/EXPIRED is allowed. A
-        // racing store that reports IllegalTransition with
-        // from=ACTIVE is itself broken; the test pins the typed
-        // mapping so no fragment of the lifeline is uncovered.
-        val f = fixture()
-        stageSession(f, "ups-1")
-        val racingStore = object : dev.dmigrate.server.ports.UploadSessionStore by f.sessionStore {
-            override fun transition(
-                tenantId: dev.dmigrate.server.core.principal.TenantId,
-                uploadSessionId: String,
-                newState: UploadSessionState,
-                now: java.time.Instant,
-            ): dev.dmigrate.server.ports.TransitionOutcome =
-                dev.dmigrate.server.ports.TransitionOutcome.IllegalTransition(
-                    from = UploadSessionState.ACTIVE,
-                    to = newState,
-                )
-        }
-        val racingHandler = ArtifactUploadAbortHandler(
-            sessionStore = racingStore,
-            segmentStore = f.segmentStore,
-            quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
-            clock = FIXED_CLOCK,
-            requestIdProvider = { "req-x" },
-        )
-        shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
-            racingHandler.handle(
-                ToolCallContext(
-                    "artifact_upload_abort",
-                    args("""{"uploadSessionId":"ups-1"}"""),
-                    PRINCIPAL,
-                ),
-            )
+    test("transition race: concurrent ABORTED surfaces UPLOAD_SESSION_ABORTED") {
+        shouldThrow<UploadSessionAbortedException> {
+            invokeAbortWithRacingTransition(illegalFrom = UploadSessionState.ABORTED)
         }
     }
 
-    test("transition race: concurrent ABORTED surfaces UPLOAD_SESSION_ABORTED, not InternalAgentError") {
-        // Race window between rejectTerminal's ACTIVE check and the
-        // store transition: a concurrent abort flips state to
-        // ABORTED. Surface the typed lifecycle exception so the
-        // client sees the real cause.
-        val f = fixture()
-        stageSession(f, "ups-1")
-        val racingStore = object : dev.dmigrate.server.ports.UploadSessionStore by f.sessionStore {
-            override fun transition(
-                tenantId: dev.dmigrate.server.core.principal.TenantId,
-                uploadSessionId: String,
-                newState: UploadSessionState,
-                now: java.time.Instant,
-            ): dev.dmigrate.server.ports.TransitionOutcome =
-                dev.dmigrate.server.ports.TransitionOutcome.IllegalTransition(
-                    from = UploadSessionState.ABORTED,
-                    to = newState,
-                )
+    test("transition race: concurrent EXPIRED surfaces UPLOAD_SESSION_EXPIRED") {
+        shouldThrow<UploadSessionExpiredException> {
+            invokeAbortWithRacingTransition(illegalFrom = UploadSessionState.EXPIRED)
         }
-        val racingHandler = ArtifactUploadAbortHandler(
-            sessionStore = racingStore,
-            segmentStore = f.segmentStore,
-            quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
-            clock = FIXED_CLOCK,
-            requestIdProvider = { "req-x" },
-        )
-        shouldThrow<UploadSessionAbortedException> {
-            racingHandler.handle(
-                ToolCallContext(
-                    "artifact_upload_abort",
-                    args("""{"uploadSessionId":"ups-1"}"""),
-                    PRINCIPAL,
-                ),
-            )
+    }
+
+    test("transition race: concurrent COMPLETED surfaces IDEMPOTENCY_CONFLICT") {
+        shouldThrow<IdempotencyConflictException> {
+            invokeAbortWithRacingTransition(illegalFrom = UploadSessionState.COMPLETED)
+        }
+    }
+
+    test("transition race: ACTIVE→ACTIVE rejection (broken store contract) surfaces InternalAgentError") {
+        // Defensive: ACTIVE→COMPLETED/ABORTED/EXPIRED is allowed by
+        // UploadSessionTransitions. A racing store that reports
+        // IllegalTransition with from=ACTIVE is itself broken; the
+        // helper maps that to InternalAgentErrorException so no
+        // fragment of the lifeline is uncovered.
+        shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
+            invokeAbortWithRacingTransition(illegalFrom = UploadSessionState.ACTIVE)
         }
     }
 

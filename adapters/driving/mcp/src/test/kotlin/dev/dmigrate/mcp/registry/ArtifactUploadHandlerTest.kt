@@ -699,33 +699,17 @@ class ArtifactUploadHandlerTest : FunSpec({
     }
 
     test("concurrent ABORTED race surfaces UPLOAD_SESSION_ABORTED, not INTERNAL_AGENT_ERROR") {
-        // Race window: handler observes ACTIVE state, then a
-        // concurrent abort flips the session before our `transition`
-        // call runs. The store reports IllegalTransition(from=ABORTED,
-        // to=COMPLETED); the handler must surface the typed lifecycle
-        // exception so the client sees the real cause.
+        // Race window: the handler observes ACTIVE state, then a
+        // concurrent abort flips the session before the COMPLETED
+        // transition runs. The shared `transitionOrThrow` helper
+        // maps that to the typed lifecycle exception so the client
+        // sees the real cause.
         val payload = "abcdefgh".toByteArray()
         val totalHash = sha256Hex(payload)
         val f = fixture()
         stageSession(f, "ups-1", 8, segmentTotal = 1, checksumSha256 = totalHash)
-
-        // Wrap the session store so the next `transition` call
-        // returns IllegalTransition(from=ABORTED, ...) — simulates
-        // the race.
-        val racingStore = object : dev.dmigrate.server.ports.UploadSessionStore by f.sessionStore {
-            override fun transition(
-                tenantId: dev.dmigrate.server.core.principal.TenantId,
-                uploadSessionId: String,
-                newState: UploadSessionState,
-                now: java.time.Instant,
-            ): dev.dmigrate.server.ports.TransitionOutcome =
-                dev.dmigrate.server.ports.TransitionOutcome.IllegalTransition(
-                    from = UploadSessionState.ABORTED,
-                    to = newState,
-                )
-        }
         val racingHandler = ArtifactUploadHandler(
-            sessionStore = racingStore,
+            sessionStore = racingTransitionStore(f.sessionStore, illegalFrom = UploadSessionState.ABORTED),
             segmentStore = f.segmentStore,
             quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
