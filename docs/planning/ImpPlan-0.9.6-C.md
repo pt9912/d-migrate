@@ -890,6 +890,164 @@ weiter benutzt hat. AP 6.14 schliesst diese Luecke und macht das
 §10 DoD ("Adaptertests fuer stdio und HTTP decken alle Phase-C-Tools
 ab") tatsaechlich erreichbar.
 
+### 6.15 Coverage-Verifikation `:hexagon:core`
+
+Aufgaben:
+
+- Aktuellen `:hexagon:core:koverVerify`-Bericht auswerten (Status:
+  `89.84%`, Schwelle `90%`).
+- Diff der Phase-C-bezogenen Aenderungen in `:hexagon:core` seit
+  Phase-C-Start auflisten und gegen die unter Coverage stehenden
+  Klassen halten.
+- Root-Cause klaeren: Kommt der Drift aus den Phase-C-APs (z. B.
+  ungetestete Zweige in einer hinzugefuegten/modifizierten Klasse)
+  oder ist es Pre-existing (z. B. eine Klasse, die schon vor Phase
+  C an der Schwelle stand und durch eine unrelated kleine Aenderung
+  unter 90 % gefallen ist)?
+- Coverage-Drift schliessen: Tests fuer die ungetesteten Zweige
+  ergaenzen ODER, falls Pre-existing und nicht zu Phase C
+  gehoerend, die Diagnose dokumentieren und einen separaten
+  Coverage-AP fuer `:hexagon:core` anlegen.
+
+Akzeptanz:
+
+- `make docker-check MODULES=":hexagon:core"` laeuft mit
+  `koverVerify` gruen.
+- Diagnose-Notes (Root-Cause + getroffene Massnahme) sind im
+  Commit-Message verankert.
+
+### 6.16 Defense-in-depth: schemaRef-Recheck und Segment-Offset
+
+Aufgaben:
+
+- `SchemaSourceResolver.resolveReference` revalidiert nach dem
+  `SchemaStore.findById`-Hit das geladene `SchemaIndexEntry`:
+  - `entry.tenantId == principal.effectiveTenantId`
+  - `entry.resourceUri.tenantId == principal.effectiveTenantId`
+  - `entry.resourceUri.id == requested schemaId`
+  - bei einem Mismatch wird `RESOURCE_NOT_FOUND` geworfen (no-oracle),
+    nicht `INTERNAL_AGENT_ERROR`
+- `ArtifactUploadHandler.validateSegmentBudget` erweitert die Pruefung
+  auf Offset-Konsistenz: nicht-finale Segmente muessen
+  `segmentOffset == (segmentIndex - 1) * maxUploadSegmentBytes` haben;
+  das finale Segment muss `segmentOffset == sum(prior segments.size)`
+  haben (oder gleichwertig: `segmentOffset + decodedSize == session.sizeBytes`).
+- Tests pinnen beide Pfade: gefakter Store mit driftendem Entry plus
+  ein Segment mit absichtlich falschem Offset.
+
+Akzeptanz:
+
+- ein vom Store zurueckgegebener `SchemaIndexEntry`, dessen
+  `tenantId`/`resourceUri` nicht zur Anfrage passt, kommt nicht durch
+- ein Segment mit inkonsistentem `segmentOffset` wird mit
+  `VALIDATION_ERROR(field=segmentOffset)` abgewiesen
+- `RESOURCE_NOT_FOUND` bleibt no-oracle (keine Existenz wird leaken)
+
+### 6.17 Runtime-Scrubbing in den verbleibenden Read-only Handlern
+
+Aufgaben:
+
+- `SchemaValidateHandler` laesst `message`, `path` und (kuenftig)
+  `details` aller Findings durch `SecretScrubber.scrub`.
+- `SchemaGenerateHandler` scrubbt Generator-`message`, `path`, `hint`
+  und Skipped-Object-Felder.
+- `JobStatusGetHandler` scrubbt `progress.phase`, alle
+  `progress.numericValues`-Strings (sofern stringifiziert),
+  `error.message` und `error.code`.
+- Defense-in-depth-Tests fuer jeden Handler: ein Bearer-Token-Literal
+  in einem Eingabewert taucht nicht im Response-Payload auf.
+
+Akzeptanz:
+
+- kein Phase-C-Handler emittiert dynamische Strings ungescrubbt
+- `SecretScrubber.scrub` ist die einzige Quelle der Scrubbing-Wahrheit
+  ueber alle Handler
+
+### 6.18 Idempotenter Final-Segment-Replay
+
+Aufgaben:
+
+- `ArtifactUploadHandler` muss bei einem Replay des komplettierenden
+  Segments dasselbe Finalisierungsergebnis (Erfolg: `schemaRef`;
+  Fehler: derselbe strukturierte `VALIDATION_ERROR`) liefern wie
+  beim Erstaufruf.
+- Erforderliche Persistenz: das `schemaRef`-Ergebnis (oder die
+  fehlerhafte Validierung) muss an der Session beobachtbar sein.
+  Optionen: Zusatzfelder am `UploadSession`-Modell oder eine kleine
+  `FinalisationOutcomeStore`-Tabelle, die die letzte Finalisierung
+  pro `uploadSessionId` haelt.
+- Replay-Pfad: bei `state == COMPLETED` und identischem `args`
+  liefert der Handler die persistierte Outcome zurueck statt
+  `IDEMPOTENCY_CONFLICT` zu werfen; bei abweichenden Args bleibt der
+  Conflict-Pfad.
+- Test-Update: der bisherige `IDEMPOTENCY_CONFLICT`-Test fuer Replay
+  nach COMPLETED wird ersetzt durch einen, der die identische
+  Antwort beim Replay pinnt.
+
+Akzeptanz:
+
+- Replay des komplettierenden Segments mit identischem
+  `segmentSha256`/`contentBase64` liefert die gleiche `schemaRef`-
+  Antwort
+- Replay mit abweichendem Hash am gleichen Index liefert weiterhin
+  `IDEMPOTENCY_CONFLICT`
+- die vorhandene "session COMPLETED → IDEMPOTENCY_CONFLICT"-Semantik
+  ist fuer ECHTE Conflicts (anderer Hash) erhalten
+
+### 6.19 Zentrale Output- und Request-Limits
+
+Aufgaben:
+
+- `ResponseLimitEnforcer` (oder gleichwertige `dispatch`-interne
+  Pruefung) einfuehren, der vor jedem Phase-C-Handler-Aufruf prueft:
+  - serialisierte Request-Groesse <= `maxNonUploadToolRequestBytes`
+    fuer Nicht-Upload-Tools
+  - serialisierte Request-Groesse <= `maxUploadToolRequestBytes`
+    fuer `artifact_upload`
+- nach jedem Handler-Aufruf prueft der Enforcer:
+  - Response-Bytes <= `maxToolResponseBytes`
+  - bei Ueberschreitung: Schreiben des Payloads als Artefakt via
+    `ArtifactSink` und Ersatz-Response mit Summary, `artifactRef`,
+    `truncated=true` analog zu AP 6.5/6.6
+- `SchemaValidateHandler` wechselt vom Inline-Findings-Cap auf den
+  zentralen Pfad: bei Ueberschreitung schreibt der Enforcer das
+  vollstaendige Findings-Set ins Artefakt; inline bleiben Summary +
+  gekuerzte Findings + `truncated=true`.
+
+Akzeptanz:
+
+- keine Phase-C-Tool-Antwort ueberschreitet `maxToolResponseBytes`
+- ein zu grosser Request liefert `PAYLOAD_TOO_LARGE` mit dem
+  jeweiligen Limit-Wert in den Details
+- `schema_validate` mit ueberlangem Findings-Set liefert eine
+  Inline-Zusammenfassung plus `artifactRef`, anstatt nur zu kappen
+
+### 6.20 Audit-Wiring fuer alle Phase-C-Tools
+
+Aufgaben:
+
+- `PhaseCWiring` um einen `AuditSink` erweitern (Bestand aus
+  `:hexagon:application/audit`).
+- `McpServiceImpl.dispatch` (oder ein vorgelagerter Wrapper) emittiert
+  pro `tools/call` einen Audit-Event mit:
+  - Tool-Name, Tenant, Principal, Outcome (success / validation /
+    payload-too-large / tenant-scope-denied / quota / auth-required /
+    unsupported-tool-operation / internal-error)
+  - `requestId` zur Korrelation mit `executionMeta.requestId`
+  - sanitisierten Resource-Refs (kein Payload-Roh-Inhalt)
+- bestehende Audit-Konventionen aus Phase A wiederverwenden — kein
+  neues Event-Schema erfinden.
+
+Akzeptanz:
+
+- jeder Phase-C-Tool-Aufruf in der produktiven Laufzeit erzeugt
+  genau einen Audit-Event
+- Validation/Payload/Tenant/Quota/Auth-Fehler erzeugen ebenfalls
+  einen Audit-Event mit dem korrekten Outcome
+- Audit-Events enthalten weder Klartext-Secrets noch komplette
+  Payloads (Phase-A-Konventionen aus
+  `:hexagon:application/audit/SecretScrubber.kt` greifen)
+
 ---
 
 ## 7. Verifikationsstrategie
