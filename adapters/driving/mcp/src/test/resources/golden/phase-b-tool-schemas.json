@@ -259,6 +259,26 @@
         "scopeTable": {
           "type": "object",
           "additionalProperties": true
+        },
+        "dialects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       }
     }

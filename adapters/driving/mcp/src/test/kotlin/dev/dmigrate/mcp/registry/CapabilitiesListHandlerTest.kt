@@ -1,7 +1,9 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.JsonParser
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.mcp.protocol.McpProtocol
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.core.error.ToolErrorCode
 import dev.dmigrate.server.core.principal.AuthSource
 import dev.dmigrate.server.core.principal.PrincipalContext
@@ -141,4 +143,77 @@ class CapabilitiesListHandlerTest : FunSpec({
         // No bucket for empty-scope methods
         scopeTable.entrySet().size shouldBe 1
     }
+
+    test("payload includes every supported dialect (AP 6.2)") {
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
+        val text = invoke(sut)
+        val dialects = JsonParser.parseString(text).asJsonObject
+            .getAsJsonArray("dialects").map { it.asString }.toSet()
+        dialects shouldBe DatabaseDialect.values().map { it.name }.toSet()
+    }
+
+    test("payload includes every supported neutral-schema format (AP 6.2)") {
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
+        val text = invoke(sut)
+        val formats = JsonParser.parseString(text).asJsonObject
+            .getAsJsonArray("formats").map { it.asString }.toSet()
+        formats shouldBe setOf("json", "yaml")
+    }
+
+    test("payload exposes every numeric limit from McpLimitsConfig (§10 DoD)") {
+        val limits = McpLimitsConfig()
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap(), limits = limits)
+        val text = invoke(sut)
+        val limitsJson = JsonParser.parseString(text).asJsonObject.getAsJsonObject("limits")
+        limitsJson.get("maxToolResponseBytes").asInt shouldBe limits.maxToolResponseBytes
+        limitsJson.get("maxNonUploadToolRequestBytes").asInt shouldBe limits.maxNonUploadToolRequestBytes
+        limitsJson.get("maxInlineSchemaBytes").asInt shouldBe limits.maxInlineSchemaBytes
+        limitsJson.get("maxUploadToolRequestBytes").asInt shouldBe limits.maxUploadToolRequestBytes
+        limitsJson.get("maxUploadSegmentBytes").asInt shouldBe limits.maxUploadSegmentBytes
+        limitsJson.get("maxArtifactChunkBytes").asInt shouldBe limits.maxArtifactChunkBytes
+        limitsJson.get("maxInlineFindings").asInt shouldBe limits.maxInlineFindings
+        limitsJson.get("maxArtifactUploadBytes").asLong shouldBe limits.maxArtifactUploadBytes
+    }
+
+    test("maxArtifactChunkBytes equals 32768 per §10 DoD") {
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
+        val text = invoke(sut)
+        JsonParser.parseString(text).asJsonObject
+            .getAsJsonObject("limits")
+            .get("maxArtifactChunkBytes").asInt shouldBe 32_768
+    }
+
+    test("custom McpLimitsConfig overrides surface in the payload") {
+        val custom = McpLimitsConfig(maxToolResponseBytes = 4_096, maxInlineFindings = 10)
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap(), limits = custom)
+        val limitsJson = JsonParser.parseString(invoke(sut)).asJsonObject.getAsJsonObject("limits")
+        limitsJson.get("maxToolResponseBytes").asInt shouldBe 4_096
+        limitsJson.get("maxInlineFindings").asInt shouldBe 10
+    }
+
+    test("executionMeta carries the requestId from the supplied provider") {
+        val sut = CapabilitiesListReadOnlyHandler(
+            tools = emptyList(),
+            scopeMapping = emptyMap(),
+            requestIdProvider = { "req-deadbeef" },
+        )
+        val text = invoke(sut)
+        val meta = JsonParser.parseString(text).asJsonObject.getAsJsonObject("executionMeta")
+        meta.get("requestId").asString shouldBe "req-deadbeef"
+    }
+
+    test("each call gets a fresh requestId from the default generator") {
+        val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
+        val first = JsonParser.parseString(invoke(sut)).asJsonObject
+            .getAsJsonObject("executionMeta").get("requestId").asString
+        val second = JsonParser.parseString(invoke(sut)).asJsonObject
+            .getAsJsonObject("executionMeta").get("requestId").asString
+        (first != second) shouldBe true
+        first.startsWith("req-") shouldBe true
+    }
 })
+
+private fun invoke(handler: CapabilitiesListReadOnlyHandler): String {
+    val outcome = handler.handle(ToolCallContext("capabilities_list", null, PRINCIPAL))
+    return (outcome as ToolCallOutcome.Success).content.single().text!!
+}

@@ -1,13 +1,14 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.mcp.protocol.McpProtocol
+import dev.dmigrate.mcp.server.McpLimitsConfig
+import java.util.UUID
 
 /**
- * Phase B's only fachlicher Tool-Handler per
- * `ImpPlan-0.9.6-B.md` §12.11. Surfaces the static contract — tool
- * names, scope mapping, and the d-migrate contract version — so
- * agents can negotiate without touching stores or drivers.
+ * AP 6.2: Phase-C `capabilities_list` per
+ * `ImpPlan-0.9.6-C.md` §6.2 + §10.
  *
  * Output shape (stable across 0.9.6):
  * ```json
@@ -15,23 +16,35 @@ import dev.dmigrate.mcp.protocol.McpProtocol
  *   "mcpProtocolVersion": "2025-11-25",
  *   "dmigrateContractVersion": "v1",
  *   "serverName": "d-migrate",
- *   "tools": [ { "name", "description", "requiredScopes", ... }, ... ],
- *   "scopeTable": { "<scope>": ["<method>", ...], ... }
+ *   "tools": [ ... ],
+ *   "scopeTable": { ... },
+ *   "dialects": [ "POSTGRESQL", "MYSQL", "SQLITE" ],
+ *   "formats": [ "json", "yaml" ],
+ *   "limits": { "maxToolResponseBytes": 65536, ... },
+ *   "executionMeta": { "requestId": "req-…" }
  * }
  * ```
  *
- * The handler intentionally does NOT include the JSON schemas — they
- * are reachable via `tools/list` and would bloat the
- * `capabilities_list` payload. Inline limits and resource fallback
- * hints are forwarded so agents can plan large-payload paths.
+ * Per §6.2, tool schemas are reachable via `tools/list` and would
+ * bloat this payload — they stay out. Inline limits and resource
+ * fallback hints stay in so agents can plan large-payload paths.
  *
  * The descriptor list is supplied at construction time (NOT via the
  * registry) so [PhaseBRegistries] can build the registry in a single
  * pass without a back-reference cycle.
+ *
+ * `requestIdProvider` is a function rather than a literal so each
+ * `tools/call` invocation gets a fresh correlation id without
+ * threading state through the registry. Tests inject a deterministic
+ * supplier so the golden of the response stays stable.
  */
 internal class CapabilitiesListReadOnlyHandler(
     private val tools: List<ToolDescriptor>,
     private val scopeMapping: Map<String, Set<String>>,
+    private val limits: McpLimitsConfig = McpLimitsConfig(),
+    private val dialects: List<String> = DatabaseDialect.values().map { it.name },
+    private val formats: List<String> = DEFAULT_FORMATS,
+    private val requestIdProvider: () -> String = ::generateRequestId,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -43,6 +56,10 @@ internal class CapabilitiesListReadOnlyHandler(
             "serverName" to McpProtocol.SERVER_NAME,
             "tools" to tools.map(::projectTool),
             "scopeTable" to invertScopeMapping(scopeMapping),
+            "dialects" to dialects,
+            "formats" to formats,
+            "limits" to projectLimits(limits),
+            "executionMeta" to mapOf("requestId" to requestIdProvider()),
         )
         return ToolCallOutcome.Success(
             content = listOf(
@@ -91,5 +108,35 @@ internal class CapabilitiesListReadOnlyHandler(
             }
         }
         return out.mapValues { (_, methods) -> methods.toList() }
+    }
+
+    private fun projectLimits(limits: McpLimitsConfig): Map<String, Number> = mapOf(
+        "maxToolResponseBytes" to limits.maxToolResponseBytes,
+        "maxNonUploadToolRequestBytes" to limits.maxNonUploadToolRequestBytes,
+        "maxInlineSchemaBytes" to limits.maxInlineSchemaBytes,
+        "maxUploadToolRequestBytes" to limits.maxUploadToolRequestBytes,
+        "maxUploadSegmentBytes" to limits.maxUploadSegmentBytes,
+        "maxArtifactChunkBytes" to limits.maxArtifactChunkBytes,
+        "maxInlineFindings" to limits.maxInlineFindings,
+        "maxArtifactUploadBytes" to limits.maxArtifactUploadBytes,
+    )
+
+    companion object {
+        /**
+         * Canonical neutral-schema formats supported by
+         * `:adapters:driven:formats` (`SchemaFileResolver.codecForFormat`).
+         * Listed here as a const so `capabilities_list` does not pull
+         * the formats module onto the MCP-adapter classpath just for
+         * advertisement.
+         */
+        internal val DEFAULT_FORMATS: List<String> = listOf("json", "yaml")
+
+        /**
+         * Server-side correlation id per `spec/ki-mcp.md` §14
+         * ("executionMeta.requestId"). Eight hex chars are enough to
+         * disambiguate within a session; the audit log keeps the full
+         * request envelope if longer correlation is needed.
+         */
+        private fun generateRequestId(): String = "req-${UUID.randomUUID().toString().take(8)}"
     }
 }

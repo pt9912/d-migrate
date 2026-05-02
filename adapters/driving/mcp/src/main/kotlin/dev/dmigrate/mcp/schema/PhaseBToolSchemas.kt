@@ -303,6 +303,10 @@ internal object PhaseBToolSchemas {
             "serverName" to stringField(),
             "tools" to arrayField(),
             "scopeTable" to objectField(),
+            "dialects" to arrayField(itemType = "string"),
+            "formats" to arrayField(itemType = "string"),
+            "limits" to objectField(),
+            "executionMeta" to objectField(),
         ),
     )
 }
