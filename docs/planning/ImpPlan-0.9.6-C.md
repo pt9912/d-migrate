@@ -819,6 +819,13 @@ Aufgaben:
 
 - gemeinsame Limit-Pruefung fuer read-only Tool-Responses bauen
 - Findings auf `maxInlineFindings` begrenzen
+- strukturiertes `details`-Wire-Feld fuer Diff-/Finding-Records einfuehren,
+  mindestens `{ before, after }` fuer schema_compare-Aenderungen
+- Backward-Compatibility-Regel festlegen: `message` bleibt lesbar und
+  enthaelt weiterhin eine knappe Zusammenfassung; `details` ist die
+  maschinenlesbare Ergaenzung fuer Clients
+- JSON-Schema fuer `details` ergaenzen und Forbidden-Key-/Scrubbing-Regeln
+  auf `details` anwenden
 - grosse DDL-/Diff-/Finding-Resultate als Artefakt schreiben
 - Summary, `artifactId`, `resourceUri`, `truncated` und
   `executionMeta` konsistent mappen
@@ -826,6 +833,10 @@ Aufgaben:
 Akzeptanz:
 
 - keine Phase-C-Tool-Antwort ueberschreitet `64 KiB`
+- schema_compare-Findings koennen Vor- und Nachzustand strukturiert ueber
+  `details.before` und `details.after` transportieren
+- `details` wird wie `message` auf Secrets, lokale Pfade und verbotene Keys
+  geprueft
 - grosse Ergebnisse sind vollstaendig ueber Artefakte abrufbar
 - gekuerzte Inline-Findings sind als gekuerzt markiert
 
