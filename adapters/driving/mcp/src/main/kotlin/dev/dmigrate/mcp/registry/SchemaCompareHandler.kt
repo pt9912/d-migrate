@@ -3,8 +3,11 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaFindingSeverity
@@ -218,7 +221,7 @@ internal class SchemaCompareHandler(
         }
         addAll(diff.tablesAdded.map { added("TABLE_ADDED", "tables.${it.name}") })
         addAll(diff.tablesRemoved.map { removed("TABLE_REMOVED", "tables.${it.name}") })
-        addAll(diff.tablesChanged.map { changed("TABLE_CHANGED", "tables.${it.name}") })
+        diff.tablesChanged.forEach { addAll(projectTableDiff(it)) }
         addAll(diff.viewsAdded.map { added("VIEW_ADDED", "views.${it.name}") })
         addAll(diff.viewsRemoved.map { removed("VIEW_REMOVED", "views.${it.name}") })
         addAll(diff.viewsChanged.map { changed("VIEW_CHANGED", "views.${it.name}") })
@@ -254,6 +257,169 @@ internal class SchemaCompareHandler(
 
     private fun changed(code: String, path: String): Map<String, String> =
         finding(SchemaFindingSeverity.WARNING, code, path, "$path changed")
+
+    /**
+     * Walks a [TableDiff] into one finding per change instead of a
+     * single coarse `TABLE_CHANGED` entry. Severity policy:
+     * - column added → info; column removed → error.
+     * - column type change → error (incompatible read).
+     * - `required` flipped to true → error (existing rows may
+     *   violate); flipped to false → info (relaxation).
+     * - `unique` tightened → warning (existing dupes block); relaxed
+     *   → info.
+     * - `default` / `references` change → warning (semantic drift).
+     * - primary key change → error (identity contract change).
+     * - index added → info; removed/changed → warning.
+     * - constraint added/changed → warning; removed → info.
+     * - metadata change → info.
+     *
+     * Codes share the `TABLE_…` prefix and a dotted path
+     * (`tables.t1.columns.c1`) so clients can filter or roll-up
+     * findings without parsing free-form messages.
+     */
+    private fun projectTableDiff(diff: TableDiff): List<Map<String, String>> = buildList {
+        val tablePath = "tables.${diff.name}"
+        diff.columnsAdded.forEach { (col, _) ->
+            add(added("TABLE_COLUMN_ADDED", "$tablePath.columns.$col"))
+        }
+        diff.columnsRemoved.forEach { (col, _) ->
+            add(
+                finding(
+                    SchemaFindingSeverity.ERROR,
+                    "TABLE_COLUMN_REMOVED",
+                    "$tablePath.columns.$col",
+                    "$tablePath.columns.$col was removed",
+                ),
+            )
+        }
+        diff.columnsChanged.forEach { addAll(projectColumnDiff(tablePath, it)) }
+        diff.primaryKey?.let {
+            add(
+                finding(
+                    SchemaFindingSeverity.ERROR,
+                    "TABLE_PRIMARY_KEY_CHANGED",
+                    "$tablePath.primary_key",
+                    "primary key changed from ${it.before} to ${it.after}",
+                ),
+            )
+        }
+        diff.indicesAdded.forEach {
+            add(added("TABLE_INDEX_ADDED", "$tablePath.indices.${it.name ?: it.columns.joinToString(",")}"))
+        }
+        diff.indicesRemoved.forEach {
+            add(removed("TABLE_INDEX_REMOVED", "$tablePath.indices.${it.name ?: it.columns.joinToString(",")}"))
+        }
+        diff.indicesChanged.forEach {
+            add(
+                changed(
+                    "TABLE_INDEX_CHANGED",
+                    "$tablePath.indices.${it.before.name ?: it.before.columns.joinToString(",")}",
+                ),
+            )
+        }
+        diff.constraintsAdded.forEach {
+            // Tightening: a new constraint may reject pre-existing
+            // rows; surface as warning, not info.
+            add(changed("TABLE_CONSTRAINT_ADDED", "$tablePath.constraints.${it.name}"))
+        }
+        diff.constraintsRemoved.forEach {
+            add(
+                finding(
+                    SchemaFindingSeverity.INFO,
+                    "TABLE_CONSTRAINT_REMOVED",
+                    "$tablePath.constraints.${it.name}",
+                    "constraint ${it.name} was removed",
+                ),
+            )
+        }
+        diff.constraintsChanged.forEach {
+            add(changed("TABLE_CONSTRAINT_CHANGED", "$tablePath.constraints.${it.before.name}"))
+        }
+        diff.metadata?.let {
+            add(
+                finding(
+                    SchemaFindingSeverity.INFO,
+                    "TABLE_METADATA_CHANGED",
+                    "$tablePath.metadata",
+                    "table metadata changed from ${it.before} to ${it.after}",
+                ),
+            )
+        }
+    }
+
+    private fun projectColumnDiff(tablePath: String, diff: ColumnDiff): List<Map<String, String>> = buildList {
+        val colPath = "$tablePath.columns.${diff.name}"
+        diff.type?.let {
+            add(
+                finding(
+                    SchemaFindingSeverity.ERROR,
+                    "TABLE_COLUMN_TYPE_CHANGED",
+                    "$colPath.type",
+                    "type changed from ${it.before} to ${it.after}",
+                ),
+            )
+        }
+        diff.required?.let { add(projectRequired(colPath, it)) }
+        diff.unique?.let { add(projectUnique(colPath, it)) }
+        diff.default?.let {
+            add(
+                finding(
+                    SchemaFindingSeverity.WARNING,
+                    "TABLE_COLUMN_DEFAULT_CHANGED",
+                    "$colPath.default",
+                    "default changed from ${it.before} to ${it.after}",
+                ),
+            )
+        }
+        diff.references?.let {
+            add(
+                finding(
+                    SchemaFindingSeverity.WARNING,
+                    "TABLE_COLUMN_REFERENCES_CHANGED",
+                    "$colPath.references",
+                    "foreign-key references changed from ${it.before} to ${it.after}",
+                ),
+            )
+        }
+    }
+
+    private fun projectRequired(colPath: String, change: ValueChange<Boolean>): Map<String, String> =
+        if (!change.before && change.after) {
+            // false → true: pre-existing rows may carry NULL; tightening is breaking.
+            finding(
+                SchemaFindingSeverity.ERROR,
+                "TABLE_COLUMN_REQUIRED_TIGHTENED",
+                "$colPath.required",
+                "column became required",
+            )
+        } else {
+            finding(
+                SchemaFindingSeverity.INFO,
+                "TABLE_COLUMN_REQUIRED_RELAXED",
+                "$colPath.required",
+                "column is no longer required",
+            )
+        }
+
+    private fun projectUnique(colPath: String, change: ValueChange<Boolean>): Map<String, String> =
+        if (!change.before && change.after) {
+            // false → true: pre-existing duplicates would block the
+            // unique index — warning rather than error so clients can
+            // still ship after a data audit.
+            finding(
+                SchemaFindingSeverity.WARNING,
+                "TABLE_COLUMN_UNIQUE_TIGHTENED",
+                "$colPath.unique",
+                "column became unique",
+            )
+        } else {
+            finding(
+                SchemaFindingSeverity.INFO,
+                "TABLE_COLUMN_UNIQUE_RELAXED",
+                "$colPath.unique",
+                "column is no longer unique",
+            )
+        }
 
     private data class SchemaCompareArgs(
         val leftRef: String,

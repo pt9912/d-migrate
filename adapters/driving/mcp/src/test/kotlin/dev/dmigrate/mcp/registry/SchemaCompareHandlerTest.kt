@@ -126,6 +126,22 @@ private fun schemaJson(name: String, vararg tables: String): String {
     return """{"name":"$name","version":"1.0","tables":{$tablePairs}}"""
 }
 
+/**
+ * Builds a single-table schema for AP-6.6.6 column-level diff tests.
+ * `columns` is a map of column-name → JSON column body (without the
+ * surrounding braces). `pk` is the primary-key column list.
+ */
+private fun singleTable(
+    table: String = "t1",
+    columns: Map<String, String>,
+    pk: List<String> = listOf("id"),
+): String {
+    val cols = columns.entries.joinToString(",") { (n, body) -> "\"$n\":{$body}" }
+    val pkJson = pk.joinToString(",") { "\"$it\"" }
+    return """{"name":"x","version":"1.0","tables":{"$table":{"columns":{$cols},""" +
+        """"primary_key":[$pkJson]}}}"""
+}
+
 class SchemaCompareHandlerTest : FunSpec({
 
     test("identical schemas surface status=identical, empty findings") {
@@ -290,6 +306,183 @@ class SchemaCompareHandlerTest : FunSpec({
             ),
         )
         json.has("diffArtifactRef") shouldBe false
+    }
+
+    test("column added produces TABLE_COLUMN_ADDED info finding (AP 6.6.6)") {
+        val setup = setup()
+        stageSchema(setup, "left", singleTable(columns = mapOf("id" to "\"type\":\"identifier\"")))
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf("id" to "\"type\":\"identifier\"", "name" to "\"type\":\"text\""),
+            ),
+        )
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("code").asString shouldBe "TABLE_COLUMN_ADDED"
+        finding.get("severity").asString shouldBe "info"
+        finding.get("path").asString shouldBe "tables.t1.columns.name"
+    }
+
+    test("column removed produces TABLE_COLUMN_REMOVED error finding (AP 6.6.6)") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf("id" to "\"type\":\"identifier\"", "name" to "\"type\":\"text\""),
+            ),
+        )
+        stageSchema(setup, "right", singleTable(columns = mapOf("id" to "\"type\":\"identifier\"")))
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("code").asString shouldBe "TABLE_COLUMN_REMOVED"
+        finding.get("severity").asString shouldBe "error"
+        finding.get("path").asString shouldBe "tables.t1.columns.name"
+    }
+
+    test("column type change is breaking — TABLE_COLUMN_TYPE_CHANGED error with before/after in message") {
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "amount" to "\"type\":\"text\"",
+                ),
+            ),
+        )
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "amount" to "\"type\":\"integer\"",
+                ),
+            ),
+        )
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("code").asString shouldBe "TABLE_COLUMN_TYPE_CHANGED"
+        finding.get("severity").asString shouldBe "error"
+        finding.get("path").asString shouldBe "tables.t1.columns.amount.type"
+        finding.get("message").asString shouldContain "from"
+        finding.get("message").asString shouldContain "to"
+    }
+
+    test("required tightened (false→true) is error; relaxed (true→false) is info (AP 6.6.6)") {
+        val setup = setup()
+        // left: name optional, opt required.
+        // right: name required, opt optional.
+        // Exercises both directions in a single diff.
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "name" to "\"type\":\"text\",\"required\":false",
+                    "opt" to "\"type\":\"text\",\"required\":true",
+                ),
+            ),
+        )
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf(
+                    "id" to "\"type\":\"identifier\"",
+                    "name" to "\"type\":\"text\",\"required\":true",
+                    "opt" to "\"type\":\"text\",\"required\":false",
+                ),
+            ),
+        )
+        val findings = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").map { it.asJsonObject }
+        val byCode = findings.associateBy { it.get("code").asString }
+        byCode.getValue("TABLE_COLUMN_REQUIRED_TIGHTENED").get("severity").asString shouldBe "error"
+        byCode.getValue("TABLE_COLUMN_REQUIRED_TIGHTENED").get("path").asString shouldBe
+            "tables.t1.columns.name.required"
+        byCode.getValue("TABLE_COLUMN_REQUIRED_RELAXED").get("severity").asString shouldBe "info"
+        byCode.getValue("TABLE_COLUMN_REQUIRED_RELAXED").get("path").asString shouldBe
+            "tables.t1.columns.opt.required"
+    }
+
+    test("primary key change is breaking — TABLE_PRIMARY_KEY_CHANGED error") {
+        val setup = setup()
+        val cols = mapOf(
+            "id" to "\"type\":\"identifier\"",
+            "alt" to "\"type\":\"identifier\"",
+        )
+        stageSchema(setup, "left", singleTable(columns = cols, pk = listOf("id")))
+        stageSchema(setup, "right", singleTable(columns = cols, pk = listOf("alt")))
+        val finding = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").get(0).asJsonObject
+        finding.get("code").asString shouldBe "TABLE_PRIMARY_KEY_CHANGED"
+        finding.get("severity").asString shouldBe "error"
+        finding.get("path").asString shouldBe "tables.t1.primary_key"
+    }
+
+    test("a single TableDiff fans out into one finding per change (no coarse TABLE_CHANGED entry)") {
+        // Defensive: verifies AP 6.6.6 actually emits per-property
+        // findings instead of the pre-AP catch-all `TABLE_CHANGED`.
+        val setup = setup()
+        stageSchema(
+            setup, "left",
+            singleTable(
+                columns = mapOf("id" to "\"type\":\"identifier\"", "a" to "\"type\":\"text\""),
+            ),
+        )
+        stageSchema(
+            setup, "right",
+            singleTable(
+                columns = mapOf("id" to "\"type\":\"identifier\"", "b" to "\"type\":\"integer\""),
+            ),
+        )
+        val codes = parsePayload(
+            setup.handler.handle(
+                ToolCallContext(
+                    "schema_compare",
+                    args("""{"left":{"schemaRef":"${ref("left")}"},"right":{"schemaRef":"${ref("right")}"}}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        ).getAsJsonArray("findings").map { it.asJsonObject.get("code").asString }.toSet()
+        codes shouldContain "TABLE_COLUMN_REMOVED"
+        codes shouldContain "TABLE_COLUMN_ADDED"
+        (codes.contains("TABLE_CHANGED")) shouldBe false
     }
 
     test("response carries application/json mime type and executionMeta.requestId") {
