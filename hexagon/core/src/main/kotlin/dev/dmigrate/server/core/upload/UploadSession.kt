@@ -30,4 +30,14 @@ data class UploadSession(
     val idleTimeoutAt: Instant,
     val absoluteLeaseExpiresAt: Instant,
     val bytesReceived: Long = 0,
+    /**
+     * AP 6.18: persisted finalisation outcome of the read-only
+     * schema-staging session. Populated by `ArtifactUploadHandler`
+     * right before the ACTIVE→COMPLETED transition so a replay of
+     * the completing segment can return the same `schemaRef`
+     * instead of `IDEMPOTENCY_CONFLICT`. `null` while the session
+     * is still ACTIVE or for terminal states that didn't produce a
+     * schemaRef (ABORTED / EXPIRED / failed-validation COMPLETED).
+     */
+    val finalisedSchemaRef: String? = null,
 )

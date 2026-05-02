@@ -99,6 +99,14 @@ internal class ArtifactUploadHandler(
                 reason = "session belongs to a different principal",
             )
         }
+        // AP 6.18 idempotency: a replay of the completing segment
+        // (same index + same hash) returns the persisted schemaRef
+        // instead of IDEMPOTENCY_CONFLICT. Divergent retries
+        // (different hash / index / total) keep the conflict path
+        // through `validateSessionState`.
+        if (session.state == UploadSessionState.COMPLETED) {
+            return handleReplayAfterCompleted(session, args)
+        }
         validateSessionState(session)
         validateSegmentSequence(args, session)
 
@@ -140,7 +148,17 @@ internal class ArtifactUploadHandler(
         // path; COMPLETED stays terminal per UploadSessionTransitions.
         val finalisable = isSessionFinalisable(args, updated, bytes)
         val schemaRef = if (finalisable) finaliseToSchemaRef(updated, context.principal, bytes, now) else null
-        val finalState = if (finalisable) transitionToCompleted(updated, now) else updated
+        // AP 6.18: persist the schemaRef onto the session BEFORE the
+        // COMPLETED transition so a replay of the completing segment
+        // can read it. The store's `transition` later copies the
+        // state without touching the rest of the record (data class
+        // copy semantics), so the schemaRef survives the transition.
+        val withSchemaRef = if (schemaRef != null) {
+            sessionStore.save(updated.copy(finalisedSchemaRef = schemaRef))
+        } else {
+            updated
+        }
+        val finalState = if (finalisable) transitionToCompleted(withSchemaRef, now) else withSchemaRef
         val ttlSeconds = effectiveTtlSeconds(now, finalState)
         val payload = buildMap {
             put("uploadSessionId", finalState.uploadSessionId)
@@ -214,6 +232,69 @@ internal class ArtifactUploadHandler(
             pos += bytes.size
         }
         return out
+    }
+
+    /**
+     * AP 6.18: an idempotent replay of the completing segment after
+     * the session has gone COMPLETED returns the persisted
+     * `schemaRef` instead of `IDEMPOTENCY_CONFLICT`. The replay is
+     * authorised iff:
+     * - the requested `(segmentIndex, segmentSha256)` matches an
+     *   existing stored segment for the session
+     * - the requested `segmentTotal` matches `session.segmentTotal`
+     * - the session carries a non-null `finalisedSchemaRef`
+     * Anything else is treated as a divergent retry and surfaces as
+     * `IDEMPOTENCY_CONFLICT`.
+     *
+     * The reused response carries `deduplicated=true` because that
+     * is exactly what a same-bytes replay observed against the
+     * segment store would yield, and `uploadSessionState=COMPLETED`
+     * because the session is terminal. `requestId` is freshly minted
+     * per call (per spec §14 each `tools/call` gets its own
+     * correlator).
+     */
+    private fun handleReplayAfterCompleted(
+        session: UploadSession,
+        args: UploadSegmentArgs,
+    ): ToolCallOutcome {
+        val schemaRef = session.finalisedSchemaRef
+            ?: throw IdempotencyConflictException(
+                existingFingerprint = "session=${session.uploadSessionId},state=COMPLETED",
+            )
+        if (args.segmentTotal != session.segmentTotal) {
+            throw IdempotencyConflictException(
+                existingFingerprint = "session=${session.uploadSessionId},segmentTotal=${session.segmentTotal}",
+            )
+        }
+        val storedSegment = segmentStore.listSegments(session.uploadSessionId)
+            .firstOrNull { it.segmentIndex == args.segmentIndex }
+            ?: throw IdempotencyConflictException(
+                existingFingerprint = "session=${session.uploadSessionId},segmentIndex=${args.segmentIndex}",
+            )
+        if (storedSegment.segmentSha256 != args.segmentSha256) {
+            throw IdempotencyConflictException(
+                existingFingerprint = "segment=${args.segmentIndex},sha256=${storedSegment.segmentSha256}",
+            )
+        }
+        val payload = buildMap {
+            put("uploadSessionId", session.uploadSessionId)
+            put("acceptedSegmentIndex", args.segmentIndex)
+            put("deduplicated", true)
+            put("bytesReceived", session.bytesReceived)
+            put("uploadSessionTtlSeconds", 0L)
+            put("uploadSessionState", session.state.name)
+            put("schemaRef", schemaRef)
+            put("executionMeta", mapOf("requestId" to requestIdProvider()))
+        }
+        return ToolCallOutcome.Success(
+            content = listOf(
+                ToolContent(
+                    type = "text",
+                    text = gson.toJson(payload),
+                    mimeType = "application/json",
+                ),
+            ),
+        )
     }
 
     /**
