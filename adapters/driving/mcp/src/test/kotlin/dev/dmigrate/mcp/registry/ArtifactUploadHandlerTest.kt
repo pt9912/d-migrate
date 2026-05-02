@@ -1,0 +1,680 @@
+package dev.dmigrate.mcp.registry
+
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.error.ForbiddenPrincipalException
+import dev.dmigrate.server.application.error.IdempotencyConflictException
+import dev.dmigrate.server.application.error.PayloadTooLargeException
+import dev.dmigrate.server.application.error.RateLimitedException
+import dev.dmigrate.server.application.error.ResourceNotFoundException
+import dev.dmigrate.server.application.error.UploadSessionAbortedException
+import dev.dmigrate.server.application.error.UploadSessionExpiredException
+import dev.dmigrate.server.application.error.ValidationErrorException
+import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.principal.AuthSource
+import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.core.principal.PrincipalId
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.upload.UploadSession
+import dev.dmigrate.server.core.upload.UploadSessionState
+import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSegmentStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import java.security.MessageDigest
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+import java.util.Base64
+
+private val ACME = TenantId("acme")
+private val ALICE = PrincipalId("alice")
+private val BOB = PrincipalId("bob")
+
+private val PRINCIPAL = PrincipalContext(
+    principalId = ALICE,
+    homeTenantId = ACME,
+    effectiveTenantId = ACME,
+    allowedTenantIds = setOf(ACME),
+    scopes = setOf("dmigrate:artifact:upload"),
+    isAdmin = false,
+    auditSubject = "alice",
+    authSource = AuthSource.SERVICE_ACCOUNT,
+    expiresAt = Instant.MAX,
+)
+
+private val FIXED_NOW = Instant.parse("2026-05-02T12:00:00Z")
+private val FIXED_CLOCK: Clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC)
+
+private fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+private fun b64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
+
+private class UploadFixture(
+    val handler: ArtifactUploadHandler,
+    val sessionStore: InMemoryUploadSessionStore,
+    val segmentStore: InMemoryUploadSegmentStore,
+    val quotaStore: InMemoryQuotaStore,
+)
+
+private fun fixture(
+    limits: McpLimitsConfig = McpLimitsConfig(maxUploadSegmentBytes = 8),
+    parallelLimit: Long = 5,
+    requestId: String = "req-deadbeef",
+): UploadFixture {
+    val sessionStore = InMemoryUploadSessionStore()
+    val segmentStore = InMemoryUploadSegmentStore()
+    val quotaStore = InMemoryQuotaStore()
+    val parallelService = DefaultQuotaService(quotaStore) {
+        if (it.dimension == dev.dmigrate.server.ports.quota.QuotaDimension.PARALLEL_SEGMENT_WRITES) {
+            parallelLimit
+        } else {
+            Long.MAX_VALUE
+        }
+    }
+    val handler = ArtifactUploadHandler(
+        sessionStore = sessionStore,
+        segmentStore = segmentStore,
+        quotaService = parallelService,
+        limits = limits,
+        clock = FIXED_CLOCK,
+        requestIdProvider = { requestId },
+    )
+    return UploadFixture(handler, sessionStore, segmentStore, quotaStore)
+}
+
+private fun stageSession(
+    fixture: UploadFixture,
+    sessionId: String,
+    sizeBytes: Long,
+    segmentTotal: Int,
+    checksumSha256: String,
+    state: UploadSessionState = UploadSessionState.ACTIVE,
+    owner: PrincipalId = ALICE,
+) {
+    fixture.sessionStore.save(
+        UploadSession(
+            uploadSessionId = sessionId,
+            tenantId = ACME,
+            ownerPrincipalId = owner,
+            resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, sessionId),
+            artifactKind = ArtifactKind.SCHEMA,
+            mimeType = "application/octet-stream",
+            sizeBytes = sizeBytes,
+            segmentTotal = segmentTotal,
+            checksumSha256 = checksumSha256,
+            uploadIntent = ArtifactUploadInitHandler.INTENT_SCHEMA_STAGING_READONLY,
+            state = state,
+            createdAt = FIXED_NOW,
+            updatedAt = FIXED_NOW,
+            idleTimeoutAt = FIXED_NOW.plusSeconds(300),
+            absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
+        ),
+    )
+}
+
+private fun args(content: String): JsonObject = JsonParser.parseString(content).asJsonObject
+
+private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
+    val text = outcome.shouldBeInstanceOf<ToolCallOutcome.Success>().content.single().text!!
+    return JsonParser.parseString(text).asJsonObject
+}
+
+private fun segmentArgs(
+    sessionId: String = "ups-1",
+    segmentIndex: Int,
+    segmentOffset: Long,
+    segmentTotal: Int,
+    isFinalSegment: Boolean,
+    bytes: ByteArray,
+    segmentSha256: String = sha256Hex(bytes),
+): String = """{
+    "uploadSessionId":"$sessionId",
+    "segmentIndex":$segmentIndex,
+    "segmentOffset":$segmentOffset,
+    "segmentTotal":$segmentTotal,
+    "isFinalSegment":$isFinalSegment,
+    "segmentSha256":"$segmentSha256",
+    "contentBase64":"${b64(bytes)}"
+}""".replace("\n", "").replace("    ", "")
+
+class ArtifactUploadHandlerTest : FunSpec({
+
+    test("single-segment session: final segment marks state COMPLETED with valid total hash") {
+        val payload = "schema-bytes".toByteArray() // 12 bytes
+        val totalHash = sha256Hex(payload)
+        val f = fixture(limits = McpLimitsConfig(maxUploadSegmentBytes = 16))
+        stageSession(
+            f, "ups-1",
+            sizeBytes = payload.size.toLong(),
+            segmentTotal = 1,
+            checksumSha256 = totalHash,
+        )
+        val outcome = f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1,
+                        segmentOffset = 0,
+                        segmentTotal = 1,
+                        isFinalSegment = true,
+                        bytes = payload,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        val json = parsePayload(outcome)
+        json.get("uploadSessionId").asString shouldBe "ups-1"
+        json.get("acceptedSegmentIndex").asInt shouldBe 1
+        json.get("deduplicated").asBoolean shouldBe false
+        json.get("bytesReceived").asLong shouldBe payload.size.toLong()
+        json.get("uploadSessionState").asString shouldBe "COMPLETED"
+        json.get("uploadSessionTtlSeconds").asLong shouldBe 0L
+        // Session state has actually been transitioned in the store.
+        f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.COMPLETED
+    }
+
+    test("multi-segment session: intermediate segments stay ACTIVE; final segment completes the session") {
+        // 8-byte segments, 16 bytes total → 2 segments.
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture(limits = McpLimitsConfig(maxUploadSegmentBytes = 8))
+        stageSession(
+            f, "ups-1",
+            sizeBytes = (seg1.size + seg2.size).toLong(),
+            segmentTotal = 2,
+            checksumSha256 = totalHash,
+        )
+
+        val first = parsePayload(
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1,
+                            segmentOffset = 0,
+                            segmentTotal = 2,
+                            isFinalSegment = false,
+                            bytes = seg1,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        first.get("uploadSessionState").asString shouldBe "ACTIVE"
+        first.get("bytesReceived").asLong shouldBe 8L
+
+        val second = parsePayload(
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 2,
+                            segmentOffset = 8,
+                            segmentTotal = 2,
+                            isFinalSegment = true,
+                            bytes = seg2,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        second.get("uploadSessionState").asString shouldBe "COMPLETED"
+        second.get("bytesReceived").asLong shouldBe 16L
+    }
+
+    test("retrying after the session has gone COMPLETED throws IDEMPOTENCY_CONFLICT") {
+        // Once a session is terminal, no further segment writes can
+        // be honoured. Surfacing the typed idempotency error keeps
+        // the contract distinct from VALIDATION_ERROR so clients can
+        // safely treat it as "we already finished, stop retrying".
+        val payload = "abcdefgh".toByteArray()
+        val totalHash = sha256Hex(payload)
+        val f = fixture(limits = McpLimitsConfig(maxUploadSegmentBytes = 8))
+        stageSession(f, "ups-1", payload.size.toLong(), segmentTotal = 1, checksumSha256 = totalHash)
+        val argString = segmentArgs(
+            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+            isFinalSegment = true, bytes = payload,
+        )
+        f.handler.handle(ToolCallContext("artifact_upload", args(argString), PRINCIPAL))
+        shouldThrow<IdempotencyConflictException> {
+            f.handler.handle(ToolCallContext("artifact_upload", args(argString), PRINCIPAL))
+        }
+    }
+
+    test("identical segment retry inside an ACTIVE session surfaces deduplicated=true") {
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture()
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        val first = segmentArgs(
+            segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+            isFinalSegment = false, bytes = seg1,
+        )
+        f.handler.handle(ToolCallContext("artifact_upload", args(first), PRINCIPAL))
+        val replay = parsePayload(
+            f.handler.handle(ToolCallContext("artifact_upload", args(first), PRINCIPAL)),
+        )
+        replay.get("deduplicated").asBoolean shouldBe true
+        replay.get("uploadSessionState").asString shouldBe "ACTIVE"
+    }
+
+    test("conflicting segment (same index, different bytes) raises IDEMPOTENCY_CONFLICT") {
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture()
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                        isFinalSegment = false, bytes = seg1,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        // Same index, different bytes → store returns Conflict.
+        val different = "DIFFERENT".toByteArray().copyOf(8)
+        shouldThrow<IdempotencyConflictException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                            isFinalSegment = false, bytes = different,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("unknown sessionId throws RESOURCE_NOT_FOUND") {
+        val f = fixture()
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            sessionId = "ups-missing", segmentIndex = 1, segmentOffset = 0,
+                            segmentTotal = 1, isFinalSegment = true, bytes = "x".toByteArray(),
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("session owned by a different principal throws FORBIDDEN_PRINCIPAL") {
+        val payload = "hello".toByteArray()
+        val f = fixture()
+        stageSession(
+            f, "ups-1", payload.size.toLong(), segmentTotal = 1,
+            checksumSha256 = sha256Hex(payload), owner = BOB,
+        )
+        shouldThrow<ForbiddenPrincipalException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                            isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("aborted session surfaces UPLOAD_SESSION_ABORTED; expired surfaces UPLOAD_SESSION_EXPIRED") {
+        val payload = "x".toByteArray()
+        val totalHash = sha256Hex(payload)
+        val f = fixture()
+        stageSession(
+            f, "ups-aborted", 1, segmentTotal = 1, checksumSha256 = totalHash,
+            state = UploadSessionState.ABORTED,
+        )
+        stageSession(
+            f, "ups-expired", 1, segmentTotal = 1, checksumSha256 = totalHash,
+            state = UploadSessionState.EXPIRED,
+        )
+        shouldThrow<UploadSessionAbortedException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            sessionId = "ups-aborted", segmentIndex = 1, segmentOffset = 0,
+                            segmentTotal = 1, isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        shouldThrow<UploadSessionExpiredException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            sessionId = "ups-expired", segmentIndex = 1, segmentOffset = 0,
+                            segmentTotal = 1, isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("segmentTotal mismatch throws VALIDATION_ERROR") {
+        val payload = "x".toByteArray()
+        val f = fixture()
+        stageSession(f, "ups-1", 1, segmentTotal = 2, checksumSha256 = sha256Hex(payload))
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 5,
+                            isFinalSegment = false, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "segmentTotal"
+    }
+
+    test("isFinalSegment flag must match segmentIndex == segmentTotal") {
+        val payload = "x".toByteArray()
+        val f = fixture()
+        stageSession(f, "ups-1", 1, segmentTotal = 2, checksumSha256 = sha256Hex(payload))
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                            isFinalSegment = true, // wrong: 1 < 2
+                            bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "isFinalSegment"
+    }
+
+    test("decoded segment over maxUploadSegmentBytes throws PAYLOAD_TOO_LARGE") {
+        val tinyLimits = McpLimitsConfig(maxUploadSegmentBytes = 4)
+        val f = fixture(limits = tinyLimits)
+        val payload = "TOO-LONG-FOR-LIMIT".toByteArray()
+        stageSession(
+            f, "ups-1", payload.size.toLong(), segmentTotal = 1,
+            checksumSha256 = sha256Hex(payload),
+        )
+        shouldThrow<PayloadTooLargeException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                            isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("segmentSha256 mismatch throws VALIDATION_ERROR with field=segmentSha256") {
+        val payload = "abcdefgh".toByteArray()
+        val f = fixture()
+        stageSession(f, "ups-1", 8, segmentTotal = 1, checksumSha256 = sha256Hex(payload))
+        val wrongHash = "f".repeat(64)
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                            isFinalSegment = true, bytes = payload, segmentSha256 = wrongHash,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "segmentSha256"
+    }
+
+    test("malformed base64 in contentBase64 throws VALIDATION_ERROR") {
+        val payload = "x".toByteArray()
+        val f = fixture()
+        stageSession(f, "ups-1", 1, segmentTotal = 1, checksumSha256 = sha256Hex(payload))
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        """{"uploadSessionId":"ups-1","segmentIndex":1,"segmentOffset":0,
+                        "segmentTotal":1,"isFinalSegment":true,
+                        "segmentSha256":"${sha256Hex(payload)}",
+                        "contentBase64":"!!! not base64 !!!"}""".trimIndent().replace("\n", ""),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "contentBase64"
+    }
+
+    test("non-final segment with size != maxUploadSegmentBytes throws VALIDATION_ERROR") {
+        val seg1 = "ab".toByteArray() // only 2 bytes; maxUploadSegmentBytes = 8
+        val totalHash = sha256Hex(seg1 + ByteArray(14))
+        val f = fixture()
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                            isFinalSegment = false, bytes = seg1,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "contentBase64"
+    }
+
+    test("final segment with cumulative-hash mismatch throws VALIDATION_ERROR (no COMPLETED transition)") {
+        // Two segments stored, but session.checksumSha256 declares a
+        // hash that doesn't match the actual concatenated bytes.
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val claimedTotalHash = "f".repeat(64) // wrong on purpose
+        val f = fixture()
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = claimedTotalHash)
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                        isFinalSegment = false, bytes = seg1,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 2, segmentOffset = 8, segmentTotal = 2,
+                            isFinalSegment = true, bytes = seg2,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "checksumSha256"
+        // Session must remain ACTIVE — no silent COMPLETED with bad hash.
+        f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.ACTIVE
+    }
+
+    test("each accepted segment extends absoluteLeaseExpiresAt, capped at createdAt + 3600s (spec §5.3:614)") {
+        // Stage a session whose original absoluteLeaseExpiresAt is
+        // 30 min after creation; after a successful segment with the
+        // fixed clock at creation+0, the lease should advance to
+        // min(now + initialTtl=900s, createdAt + 3600s).
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture()
+        // sessionStore.save uses our fixed clock at creation; we
+        // replace the session post-stage so absoluteLeaseExpiresAt is
+        // closer than the spec ceiling, ensuring the cap kicks in.
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        val original = f.sessionStore.findById(ACME, "ups-1")!!
+        f.sessionStore.save(original.copy(absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(120)))
+
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                        isFinalSegment = false, bytes = seg1,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+
+        val updated = f.sessionStore.findById(ACME, "ups-1")!!
+        // FIXED_NOW + 900s (initialTtl), capped by FIXED_NOW + 3600s
+        // (createdAt + MAX_ABSOLUTE_LEASE) — initialTtl wins.
+        updated.absoluteLeaseExpiresAt shouldBe FIXED_NOW.plusSeconds(900)
+        // Idle window is min(now + 300s, newAbsolute).
+        updated.idleTimeoutAt shouldBe FIXED_NOW.plusSeconds(300)
+    }
+
+    test("Conflict store-outcome releases the PARALLEL_SEGMENT_WRITES slot before throwing") {
+        // The handler reserves one slot per segment and must release
+        // it on every store-outcome. Otherwise repeated Conflicts
+        // would burn the per-principal quota until the counter
+        // exhausts.
+        val seg1 = "abcdefgh".toByteArray()
+        val seg2 = "12345678".toByteArray()
+        val totalHash = sha256Hex(seg1 + seg2)
+        val f = fixture(parallelLimit = 1)
+        stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = totalHash)
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                        isFinalSegment = false, bytes = seg1,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        // Same index, different bytes → Conflict from the store.
+        val conflicting = "DIFFERENT".toByteArray().copyOf(8)
+        shouldThrow<IdempotencyConflictException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 2,
+                            isFinalSegment = false, bytes = conflicting,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        // After the Conflict, the slot must be free again so a
+        // legitimate second-segment write succeeds.
+        f.handler.handle(
+            ToolCallContext(
+                "artifact_upload",
+                args(
+                    segmentArgs(
+                        segmentIndex = 2, segmentOffset = 8, segmentTotal = 2,
+                        isFinalSegment = true, bytes = seg2,
+                    ),
+                ),
+                PRINCIPAL,
+            ),
+        )
+        f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.COMPLETED
+    }
+
+    test("PARALLEL_SEGMENT_WRITES quota exhaustion surfaces RATE_LIMITED") {
+        val payload = "abcdefgh".toByteArray()
+        val f = fixture(parallelLimit = 0)
+        stageSession(f, "ups-1", payload.size.toLong(), segmentTotal = 1, checksumSha256 = sha256Hex(payload))
+        shouldThrow<RateLimitedException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(
+                        segmentArgs(
+                            segmentIndex = 1, segmentOffset = 0, segmentTotal = 1,
+                            isFinalSegment = true, bytes = payload,
+                        ),
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+})

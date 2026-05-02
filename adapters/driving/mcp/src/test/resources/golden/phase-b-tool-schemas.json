@@ -87,36 +87,42 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sessionId": {
+        "uploadSessionId": {
           "type": "string"
         },
         "segmentIndex": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
         },
-        "offset": {
+        "segmentOffset": {
           "type": "integer",
           "minimum": 0
         },
-        "content": {
-          "type": "string"
+        "segmentTotal": {
+          "type": "integer",
+          "minimum": 1
         },
-        "encoding": {
-          "type": "string",
-          "enum": [
-            "base64"
-          ]
+        "isFinalSegment": {
+          "type": "boolean"
         },
         "segmentSha256": {
+          "type": "string"
+        },
+        "contentBase64": {
+          "type": "string"
+        },
+        "clientRequestId": {
           "type": "string"
         }
       },
       "required": [
-        "sessionId",
+        "uploadSessionId",
         "segmentIndex",
-        "offset",
-        "content",
-        "encoding"
+        "segmentOffset",
+        "segmentTotal",
+        "isFinalSegment",
+        "segmentSha256",
+        "contentBase64"
       ]
     },
     "outputSchema": {
@@ -124,21 +130,46 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "accepted": {
+        "uploadSessionId": {
+          "type": "string"
+        },
+        "acceptedSegmentIndex": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "deduplicated": {
           "type": "boolean"
         },
-        "artifactId": {
-          "type": "string"
+        "bytesReceived": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uploadSessionTtlSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uploadSessionState": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "COMPLETED"
+          ]
         },
         "schemaRef": {
           "type": "string"
         },
-        "sha256": {
-          "type": "string"
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
-        "accepted"
+        "uploadSessionId",
+        "acceptedSegmentIndex",
+        "deduplicated",
+        "bytesReceived",
+        "uploadSessionTtlSeconds",
+        "uploadSessionState"
       ]
     }
   },
