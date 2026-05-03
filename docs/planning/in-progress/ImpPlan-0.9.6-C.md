@@ -1544,6 +1544,13 @@ Aufgaben:
     `ArtifactSink` ausgelagert werden; `truncated=true` ohne
     `artifactRef` ist nur erlaubt, wenn kein `ArtifactSink` im Wiring
     vorhanden ist und muss in Tests als degradierter Pfad gepinnt sein
+  - die Fallback-Entscheidung darf nicht nur an der DDL-Groesse
+    haengen: Findings-Truncation allein muss bei verfuegbarem
+    `ArtifactSink` ebenfalls ein Artefakt mit der vollstaendigen,
+    gescrubbten Ausgabe erzeugen und `artifactRef` setzen. Der
+    Runtime-Pfad in `SchemaGenerateHandler` muss deshalb DDL-Overflow
+    und Findings-Overflow ueber denselben Artifact-Fallback
+    zusammenfuehren.
   - Generatorwarnungen nutzen das gemeinsame Finding-Basisschema plus
     explizit erlaubtem optionalem `hint: string`, weil die Runtime
     heute `hint` top-level emittiert. `hint` bleibt scrubbed und ist
@@ -1560,6 +1567,11 @@ Aufgaben:
     die Werte heute via `toString()` serialisiert. Strukturierte JSON-
     Values waeren ein eigener Handler-/Wire-Refactor und gehoeren
     nicht zu AP 6.23.
+  - das `details`-Schema muss `additionalProperties=false` und eine
+    Nicht-Leer-Regel (`minProperties: 1` oder passendes
+    `required`/`oneOf`) erzwingen. Sobald `details` emittiert wird,
+    muss mindestens `before` oder `after` vorhanden sein; ein formal
+    gueltiges leeres Objekt ist nicht erlaubt.
   - additive/removal-Findings ohne Vor-/Nachzustand lassen `details`
     weg; ein leeres `details: {}` ist kein gueltiger Ersatz
 - `job_status_get` Output-Schema wird mit AP 6.17 abgeglichen:
@@ -1584,6 +1596,11 @@ Aufgaben:
     Tests/Fixtures mit nackten IDs wie `art-1` muessen entsprechend auf
     Resource-URIs migriert werden; nackte IDs sind nur interne
     Speicherwerte, kein `job_status_get`-Output.
+  - AP 6.23 umfasst die Runtime-Umruestung in
+    `JobStatusGetHandler`: `managed.artifacts` darf nicht mehr direkt
+    durchgereicht werden. Unit-Tests muessen sowohl den positiven
+    URI-Output als auch die schema-seitige Ablehnung nackter IDs
+    pinnen.
 - Wichtige Abgrenzung: Finding-`details` ist ein Objekt auf
   Tool-Output-Findings. Toolfehler-`details` im `isError=true`-
   Envelope bleibt gemaess `McpServiceImpl` ein Array von
@@ -1628,8 +1645,9 @@ Akzeptanz:
 - `findings`-Item-Schema ist strukturell typisiert, nicht
   `additionalProperties: true`
 - `schema_compare` akzeptiert `details.before`/`details.after` fuer
-  Aenderungsfindings als Strings, lehnt aber `details: {}` und
-  unbekannte Credential-Key-Felder ab
+  Aenderungsfindings als Strings; das Details-Schema erzwingt
+  `additionalProperties=false` plus Nicht-Leer-Regel und lehnt
+  `details: {}` sowie unbekannte Credential-Key-Felder ab
 - `schema_validate` und `schema_generate` koennen optionale
   Finding-`details` schema-valide transportieren; `schema_generate`
   akzeptiert ueber einen tool-spezifischen Finding-Helper zusaetzlich
@@ -1644,7 +1662,9 @@ Akzeptanz:
   ist `executionMeta.requestId` required und scrubbed
 - `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
   `ArtifactSink` ein `artifactRef`; der degradierte Pfad ohne Sink ist
-  gesondert getestet
+  gesondert getestet. Ein Testfall deckt Findings-only-Overflow bei
+  kleiner DDL ab, damit der Fallback nicht DDL-groessenabhaengig
+  bleibt.
 - Runtime-Outputs der vier betroffenen Tools validieren gegen ihre
   eigenen Output-Schemas
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
