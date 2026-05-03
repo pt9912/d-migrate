@@ -120,7 +120,9 @@ Phase E uebernimmt den E0-Cancel-Vertrag vollstaendig:
   `OperationCancelledException.reason` bleiben beobachtbar und erhalten den
   zuerst gesetzten Grund.
 - CLI- oder CLI-artige `execute(...): Int`-Adaptergrenzen mappen
-  `OperationCancelledException` auf den stabilen Exit-Code `130`.
+  `OperationCancelledException` signalquellenabhaengig: `JOB_CANCEL` auf den
+  stabilen Exit-Code `130`, `RUNNER_TIMEOUT` auf
+  `OPERATION_TIMEOUT`/Timeout-Fehlerprojektion und niemals auf `130`.
 - Catch-All-Fehlerbehandlung in Runnern, Invokern und Worker-Adaptern muss
   `OperationCancelledException` vor generischem Fehler-Mapping behandeln.
 
