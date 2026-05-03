@@ -194,11 +194,12 @@ class ArtifactUploadCrashReplayTest : FunSpec({
         ex.violations.first().reason shouldBe "schema parse failed: malformed"
     }
 
-    test("Reclaim during finaliser dispatch surfaces IdempotencyConflict on SUCCEEDED-persist") {
-        // Race guard for the AP-6.22 review #3: while the original
-        // owner is inside finalizer.complete(), a second caller
-        // reclaims the lease. The original owner's
-        // persistFinalizationOutcome(SUCCEEDED) must fail with
+    test("Reclaim during finaliser dispatch surfaces IdempotencyConflict on commitFinalization") {
+        // Race guard for the AP-6.22 review #3 + #B: while the
+        // original owner is inside finalizer.complete(), a second
+        // caller reclaims the lease. The original owner's atomic
+        // commitFinalization() (SUCCEEDED outcome + schemaRef +
+        // COMPLETED state, all gated on claimId) must fail with
         // ClaimMismatch and surface a retryable Conflict — NOT
         // silently overwrite the new owner's state.
         val payloadBytes = "abcdefgh".toByteArray()

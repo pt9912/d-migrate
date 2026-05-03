@@ -281,18 +281,7 @@ internal class StreamingFinalizer(
                 sanitizedErrorCode = sanitizedErrorCodeOf(failure),
                 sanitizedErrorMessage = sanitizedErrorMessageOf(failure),
             )
-            // Best-effort under our claim: a Reclaim that raced past
-            // us means the new owner will drive the terminal state on
-            // its own, so ignore claim-loss outcomes here and re-throw
-            // the original failure to the caller.
-            sessionStore.persistFinalizationOutcome(
-                tenantId = session.tenantId,
-                uploadSessionId = session.uploadSessionId,
-                claimId = claimId,
-                outcome = outcome,
-                now = now,
-            )
-            transitionToAbortedBestEffort(session, now)
+            persistFailedOutcomeBestEffort(session, claimId, outcome, now)
             throw failure
         }
     }
@@ -309,14 +298,37 @@ internal class StreamingFinalizer(
             sanitizedErrorCode = sanitizedErrorCodeOf(failure),
             sanitizedErrorMessage = sanitizedErrorMessageOf(failure),
         )
-        sessionStore.persistFinalizationOutcome(
+        persistFailedOutcomeBestEffort(session, claimId, failed, now)
+    }
+
+    /**
+     * Persists the FAILED [FinalizationOutcome] best-effort and
+     * transitions the session to `ABORTED` only when the persist
+     * actually landed under our claim id. Reclaim-after-failure
+     * means the new owner drives the terminal state — we must not
+     * transition behind their back. The caller re-throws the
+     * original `failure` regardless so the structured error always
+     * reaches the client.
+     */
+    private fun persistFailedOutcomeBestEffort(
+        session: UploadSession,
+        claimId: String,
+        outcome: FinalizationOutcome,
+        now: Instant,
+    ) {
+        val persisted = sessionStore.persistFinalizationOutcome(
             tenantId = session.tenantId,
             uploadSessionId = session.uploadSessionId,
             claimId = claimId,
-            outcome = failed,
+            outcome = outcome,
             now = now,
         )
-        transitionToAbortedBestEffort(session, now)
+        when (persisted) {
+            is PersistOutcome.Persisted -> transitionToAbortedBestEffort(session, now)
+            is PersistOutcome.ClaimMismatch,
+            is PersistOutcome.WrongState,
+            is PersistOutcome.NotFound -> Unit
+        }
     }
 
     /**
