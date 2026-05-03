@@ -10,24 +10,30 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
+import dev.dmigrate.cli.cliVersion
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.mcp.server.McpStartOutcome
 import dev.dmigrate.mcp.server.validate
 import dev.dmigrate.mcp.server.validateForStdio
+import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
+import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import java.net.URI
 
 /**
  * MCP-server entry point per `ImpPlan-0.9.6-B.md` §6.11 +
- * `ImpPlan-0.9.6-C.md` §6.14/§6.20. The `serve` subcommand activates
- * the full Phase-C dispatch chain: every tool from the Phase-C plan
- * (`schema_validate`, `schema_generate`, `schema_compare`,
+ * `ImpPlan-0.9.6-C.md` §6.14/§6.20/§6.21. The `serve` subcommand
+ * activates the full Phase-C dispatch chain: every tool from the
+ * Phase-C plan (`schema_validate`, `schema_generate`, `schema_compare`,
  * `artifact_upload*`, `artifact_chunk_get`, `job_status_get`,
  * plus `capabilities_list`) routes to its real handler, and every
- * `tools/call` records one structured audit event. State is
- * ephemeral (in-memory stores) — durable storage adapters land in a
- * later phase.
+ * `tools/call` records one structured audit event.
+ *
+ * §6.21: byte content (upload segments, artefact bodies) is file-backed
+ * under the resolved state dir (`--mcp-state-dir`). Metadata stores
+ * (sessions, artefacts, schemas, jobs, quotas) remain in-process for
+ * now — durable metadata adapters land post-0.9.6.
  */
 class McpCommand : CliktCommand(name = "mcp") {
     override fun help(context: Context) = "MCP-server commands (Phase C: stdio + Streamable HTTP)"
@@ -47,11 +53,16 @@ class McpCommand : CliktCommand(name = "mcp") {
  *
  * stdio: blocks until stdin closes (or SIGINT).
  * HTTP: blocks until SIGINT.
+ *
+ * §6.21 lifecycle: state dir is resolved + validated + locked before
+ * any transport starts; CLI-owned tempdirs are deleted best-effort on
+ * normal stop, SIGINT, and the start-error path.
  */
 class McpServeCommand : CliktCommand(name = "serve") {
     override fun help(context: Context) =
-        "Start the MCP server with the Phase-C dispatch chain " +
-            "(in-memory state — no durable storage yet)."
+        "Start the MCP server with the Phase-C dispatch chain. " +
+            "Byte content is file-backed under --mcp-state-dir " +
+            "(metadata is ephemeral — survives only the process)."
 
     private val transport by option(
         "--transport",
@@ -108,6 +119,25 @@ class McpServeCommand : CliktCommand(name = "serve") {
         help = "Origin allow-list entry (repeatable). Default loopback origins apply when the bind is loopback.",
     ).multiple()
 
+    private val mcpStateDir by option(
+        "--mcp-state-dir",
+        help = "State dir for file-backed upload segments and artefact content. " +
+            "Wins over \$DMIGRATE_MCP_STATE_DIR. Falls back to a CLI-owned tempdir " +
+            "(deleted on stop). Operator-supplied dirs are single-writer (advisory " +
+            ".lock) and survive the process; metadata stays in-process either way.",
+    ).path()
+
+    private val mcpStateOrphanRetention by option(
+        "--mcp-state-orphan-retention",
+        help = "Retention for orphaned byte files at startup. Wins over " +
+            "\$DMIGRATE_MCP_STATE_ORPHAN_RETENTION; default 24h. Accepts " +
+            "`never` (skip sweep — forensic mode), `0`/`0s` (delete every " +
+            "store file at boot), <number><ms|s|m|h|d>, or ISO-8601 PT… . " +
+            "Upload segments without surviving session metadata are always " +
+            "swept under any non-`never` policy because they are " +
+            "unreferenceable after restart.",
+    )
+
     override fun run() {
         val config = buildConfig()
         // §12.15: stdio ignores authMode entirely. Use the slimmer
@@ -126,11 +156,84 @@ class McpServeCommand : CliktCommand(name = "serve") {
             errors.forEach { echo("  - $it", err = true) }
             throw ProgramResult(2)
         }
-        when (transport) {
-            "stdio" -> startStdio(config)
-            "http" -> startHttp(config)
-            else -> error("transport check failed: $transport")
+
+        val retention = parseRetentionOrExit()
+        val owner = resolveStateDirOrExit()
+        try {
+            try {
+                StateDirValidator.validate(owner.resolved.path)
+            } catch (failure: StateDirConfigError) {
+                reportStateDirFailure(failure)
+            }
+
+            val lock = acquireLockOrExit(owner)
+            // Both lock.close() and owner.cleanupIfOwned() are idempotent
+            // (AtomicBoolean-guarded), so the outer try/finally below
+            // can safely double-call them when McpServerLifecycle has
+            // already cleaned up via its own shutdown-hook path.
+            try {
+                runStartupSweepOrExit(owner, retention)
+                echoStartStateLine(owner)
+                when (transport) {
+                    "stdio" -> startStdio(config, owner, lock)
+                    "http" -> startHttp(config, owner, lock)
+                    else -> error("transport check failed: $transport")
+                }
+            } finally {
+                lock.close()
+            }
+        } finally {
+            owner.cleanupIfOwned()
         }
+    }
+
+    private fun parseRetentionOrExit(): RetentionPolicy {
+        return try {
+            RetentionParser.resolve(cliOption = mcpStateOrphanRetention)
+        } catch (failure: StateDirConfigError) {
+            echo("MCP server configuration is invalid:", err = true)
+            echo("  - ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+    }
+
+    private fun runStartupSweepOrExit(owner: StateDirOwner, retention: RetentionPolicy) {
+        if (retention is RetentionPolicy.Never) {
+            echo(
+                "MCP startup sweep skipped (retention=never) for state dir ${owner.resolved.path}.",
+                err = true,
+            )
+            return
+        }
+        val artefactRetention = when (retention) {
+            is RetentionPolicy.Immediate -> null
+            is RetentionPolicy.After -> retention.duration
+            is RetentionPolicy.Never -> error("never branch handled above")
+        }
+        // §6.21 Z. 1156–1163: a sweep failure is a startup-error path,
+        // because unbounded disk growth is exactly what the sweep is
+        // there to prevent. The outer try/finally still cleans the
+        // tempdir (CLI-owned) and releases the lock before exit.
+        val segmentsRemoved = try {
+            FileBackedUploadSegmentStore.cleanupOrphans(owner.resolved.path, emptySet())
+        } catch (failure: java.io.IOException) {
+            echo("MCP startup sweep: segment cleanup failed for state dir " +
+                "${owner.resolved.path}: ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+        val artefactsRemoved = try {
+            FileBackedArtifactContentStore.cleanupOrphans(owner.resolved.path, artefactRetention)
+        } catch (failure: java.io.IOException) {
+            echo("MCP startup sweep: artefact cleanup failed for state dir " +
+                "${owner.resolved.path}: ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+        echo(
+            "MCP startup sweep (state dir ${owner.resolved.path}): " +
+                "removed $segmentsRemoved upload-segment session(s), " +
+                "$artefactsRemoved artefact file(s).",
+            err = true,
+        )
     }
 
     private fun buildConfig(): McpServerConfig {
@@ -158,35 +261,81 @@ class McpServeCommand : CliktCommand(name = "serve") {
         )
     }
 
-    private fun startStdio(config: McpServerConfig) {
-        // AP 6.14 / 6.20: hand the bootstrap a PhaseCWiring so every
-        // tools/call dispatches to its real handler. Without this the
-        // bootstrap silently falls back to the Phase-B registry where
-        // only `capabilities_list` is wired up.
-        val wiring = developmentPhaseCWiring()
-        when (val outcome = McpServerBootstrap.startStdio(config = config, phaseCWiring = wiring)) {
-            is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
-            is McpStartOutcome.Started -> {
-                echo("MCP stdio server started; reading from stdin until EOF/SIGINT.", err = true)
-                Runtime.getRuntime().addShutdownHook(Thread(outcome.handle::stop))
-                // §12.4: stdio terminates on EOF or IOException. The
-                // handle's awaitTermination wakes the main thread when
-                // either path fires; the shutdown hook covers SIGINT.
-                outcome.handle.awaitTermination()
+    private fun resolveStateDirOrExit(): StateDirOwner {
+        val resolved = try {
+            StateDirResolver.resolve(cliOption = mcpStateDir)
+        } catch (failure: StateDirConfigError) {
+            echo("MCP server configuration is invalid:", err = true)
+            echo("  - ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+        return StateDirOwner.of(resolved)
+    }
+
+    private fun reportStateDirFailure(failure: StateDirConfigError): Nothing {
+        echo("MCP server configuration is invalid:", err = true)
+        echo("  - ${failure.message}", err = true)
+        throw ProgramResult(2)
+    }
+
+    private fun acquireLockOrExit(owner: StateDirOwner): McpStateDirLock {
+        return when (val outcome = McpStateDirLock.tryAcquire(owner.resolved.path, cliVersion())) {
+            is McpStateDirLock.AcquireOutcome.Acquired -> outcome.lock
+            is McpStateDirLock.AcquireOutcome.Conflict -> {
+                echo("MCP server cannot start:", err = true)
+                echo("  - ${outcome.diagnostic}", err = true)
+                throw ProgramResult(2)
+            }
+            is McpStateDirLock.AcquireOutcome.Failed -> {
+                echo("MCP server cannot start:", err = true)
+                echo("  - ${outcome.message}", err = true)
+                throw ProgramResult(2)
             }
         }
     }
 
-    private fun startHttp(config: McpServerConfig) {
-        // AP 6.14 / 6.20: see startStdio comment — same Phase-C wiring
-        // for the HTTP transport so both routes share dispatch shape.
-        val wiring = developmentPhaseCWiring()
+    private fun echoStartStateLine(owner: StateDirOwner) {
+        val tag = if (owner.resolved.owned) "CLI-owned temporary" else "operator-supplied"
+        echo(
+            "MCP state dir: ${owner.resolved.path} [$tag] — " +
+                "metadata is ephemeral; only byte content is file-backed.",
+            err = true,
+        )
+    }
+
+    private fun startStdio(config: McpServerConfig, owner: StateDirOwner, lock: McpStateDirLock) {
+        // AP 6.14 / 6.20 / 6.21: hand the bootstrap the file-backed
+        // CLI wiring so every tools/call dispatches to its real
+        // handler with byte content on disk under the locked state dir.
+        val wiring = McpCliPhaseCWiring.phaseCWiring(stateDir = owner.resolved.path)
+        when (val outcome = McpServerBootstrap.startStdio(config = config, phaseCWiring = wiring)) {
+            is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
+            is McpStartOutcome.Started -> {
+                echo("MCP stdio server started; reading from stdin until EOF/SIGINT.", err = true)
+                // §12.4: stdio terminates on EOF or IOException; the
+                // shutdown hook covers SIGINT. McpServerLifecycle wires
+                // both paths into a single idempotent cleanup so the
+                // tempdir is removed even when SIGINT kills the JVM
+                // before awaitTermination unblocks.
+                McpServerLifecycle.run(outcome.handle, lock, owner)
+            }
+        }
+    }
+
+    private fun startHttp(config: McpServerConfig, owner: StateDirOwner, lock: McpStateDirLock) {
+        // AP 6.14 / 6.20 / 6.21: same file-backed Phase-C wiring for
+        // the HTTP transport so both routes share dispatch shape and
+        // on-disk layout.
+        val wiring = McpCliPhaseCWiring.phaseCWiring(stateDir = owner.resolved.path)
         when (val outcome = McpServerBootstrap.startHttp(config = config, phaseCWiring = wiring)) {
             is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
             is McpStartOutcome.Started -> {
                 echo("MCP HTTP server listening on $bind:${outcome.handle.boundPort}", err = true)
-                Runtime.getRuntime().addShutdownHook(Thread(outcome.handle::stop))
-                outcome.handle.awaitTermination()
+                // HTTP's awaitTermination defaults to Thread.sleep
+                // which never wakes from KtorHandle.stop(); the
+                // lifecycle wrap puts cleanup into the shutdown hook
+                // itself so SIGINT actually removes CLI-owned tempdirs.
+                McpServerLifecycle.run(outcome.handle, lock, owner)
             }
         }
     }

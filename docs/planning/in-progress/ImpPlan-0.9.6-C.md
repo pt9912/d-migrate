@@ -2,13 +2,17 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: C (`Read-only Tools`)
-> **Status**: In Arbeit (2026-05-02) — AP 6.1–6.20 abgeschlossen
+> **Status**: In Arbeit (2026-05-03) — AP 6.1–6.20 abgeschlossen
 > (Phase-C-Handler, zentrale Limits, Audit-Wiring, idempotenter Replay,
-> CLI-Phase-C-Aktivierung); AP 6.21–6.24 offen für die volle
-> "produktiv nutzbar"-Akzeptanz: File-backed Byte-Stores im
-> CLI-Pfad (§4.1), streamingfähige Finalisierung, Output-Schema-Drift
-> für `artifactRef`/`details` (§6.13), stdio+HTTP-Integrationstest-
-> Suite (§7.3).
+> CLI-Phase-C-Aktivierung). AP 6.21 implementiert (file-backed
+> Byte-Stores im produktiven `mcp serve`-Pfad, neutraler
+> `McpCliPhaseCWiring`, `--mcp-state-dir`/Env, single-writer Advisory-
+> Lock, idempotenter Tempdir-Owner, `--mcp-state-orphan-retention`
+> mit Startup-Sweep) — final-Done erst zusammen mit AP 6.22 + 6.24,
+> wie Akzeptanzkriterium am Ende des AP fordert.
+> Offen: AP 6.22 (streamingfähige Finalisierung), AP 6.23
+> (Output-Schema-Drift für `artifactRef`/`details` §6.13),
+> AP 6.24 (stdio+HTTP-Integrationstest-Suite §7.3).
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase C, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;

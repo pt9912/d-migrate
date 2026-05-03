@@ -14,21 +14,20 @@ import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import java.time.Clock
 
 /**
- * Builds a [PhaseCWiring] backed by in-memory ports + the
- * `dev.dmigrate.audit` log appender. Used by `mcp serve` so every
- * Phase-C tool from `ImpPlan-0.9.6-C.md` §3.1 dispatches to its real
- * handler instead of the Phase-B `UnsupportedToolHandler` fallback.
+ * Builds a [PhaseCWiring] backed entirely by in-memory ports + the
+ * `dev.dmigrate.audit` log appender.
  *
- * **State is ephemeral.** Sessions, segments, schemas, and artefacts
- * live in process memory and disappear on restart. This is the
- * intended shape for local development, smoke tests, and
- * integration-test bootstraps; production deployments must replace
- * these stores with durable adapters (file-backed for content,
- * SQL/object-store for metadata) once they land.
+ * **Test/dev only.** Per `ImpPlan-0.9.6-C.md` §6.21 this helper is no
+ * longer the production anchor for `mcp serve` — production CLI
+ * wiring goes through [McpCliPhaseCWiring.phaseCWiring], which puts
+ * upload segments and artefact content on disk under the resolved
+ * state dir. Use this helper for Phase-C handler unit tests and for
+ * embedded smoke tests where byte content does not need to survive
+ * the process.
  *
  * Quota enforcement defaults to "no limit" (`Long.MAX_VALUE` for every
- * dimension) — same shape the Phase-C handler tests use. Operators
- * who want real quota policing wire a [DefaultQuotaService] with the
+ * dimension) — same shape the Phase-C handler tests use. Tests that
+ * want real quota policing wire a [DefaultQuotaService] with the
  * desired `limitFor` lambda before reaching this helper.
  */
 internal fun developmentPhaseCWiring(

@@ -165,44 +165,63 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
         return binCount
     }
 
-    @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    fun cleanupOrphans(activeSessions: Set<String>): Int {
-        if (!Files.exists(segmentsRoot)) return 0
-        val sessionDirs = Files.list(segmentsRoot).use { it.toList() }
-        var removed = 0
-        for (sessionDir in sessionDirs) {
-            val name = sessionDir.fileName.toString()
-            if (name !in activeSessions) {
-                sessionDir.deleteRecursively()
-                removed++
-            } else {
-                removed += cleanupSessionInternals(sessionDir)
-            }
-        }
-        return removed
-    }
+    fun cleanupOrphans(activeSessions: Set<String>): Int =
+        cleanupOrphans(root, activeSessions)
 
-    private fun cleanupSessionInternals(sessionDir: Path): Int {
-        val entries = Files.list(sessionDir).use { it.toList() }
-        var removed = 0
-        for (entry in entries) {
-            val name = entry.fileName.toString()
-            val isTmp = name.contains(FileLayout.TMP_INFIX)
-            // Sidecar present without matching .bin = crash between
-            // sidecar-move and data-move. Drop the dangling sidecar so
-            // a retry can write a fresh one.
-            val isOrphanMeta = name.endsWith(FileLayout.META) &&
-                !Files.exists(sessionDir.resolve(name.removeSuffix(FileLayout.META) + FileLayout.BIN))
-            // Data present without matching .meta.json = crash before
-            // sidecar move (impossible under the new write order, but
-            // covered for completeness in case a legacy spool exists).
-            val isOrphanBin = name.endsWith(FileLayout.BIN) &&
-                !Files.exists(sessionDir.resolve(name.removeSuffix(FileLayout.BIN) + FileLayout.META))
-            if (isTmp || isOrphanMeta || isOrphanBin) {
-                Files.deleteIfExists(entry)
-                removed++
+    companion object {
+        /**
+         * Layout-aware orphan sweep over `<root>/segments/...` for the
+         * §6.21 startup cleanup. Session dirs whose id is NOT in
+         * [activeSessions] are dropped recursively (segments without
+         * surviving session metadata are unreferenceable after restart);
+         * dirs that ARE active have their internal tmp / dangling
+         * sidecar / dangling bin leftovers removed.
+         *
+         * The companion form lets `McpCommands` run the sweep without
+         * constructing a [FileBackedUploadSegmentStore] (which would
+         * eagerly create `segments/`). Returns the number of session
+         * dirs and orphan internals removed.
+         */
+        @OptIn(kotlin.io.path.ExperimentalPathApi::class)
+        fun cleanupOrphans(root: Path, activeSessions: Set<String>): Int {
+            val segmentsRoot = root.resolve("segments")
+            if (!Files.exists(segmentsRoot)) return 0
+            val sessionDirs = Files.list(segmentsRoot).use { it.toList() }
+            var removed = 0
+            for (sessionDir in sessionDirs) {
+                val name = sessionDir.fileName.toString()
+                if (name !in activeSessions) {
+                    sessionDir.deleteRecursively()
+                    removed++
+                } else {
+                    removed += cleanupSessionInternals(sessionDir)
+                }
             }
+            return removed
         }
-        return removed
+
+        private fun cleanupSessionInternals(sessionDir: Path): Int {
+            val entries = Files.list(sessionDir).use { it.toList() }
+            var removed = 0
+            for (entry in entries) {
+                val name = entry.fileName.toString()
+                val isTmp = name.contains(FileLayout.TMP_INFIX)
+                // Sidecar present without matching .bin = crash between
+                // sidecar-move and data-move. Drop the dangling sidecar
+                // so a retry can write a fresh one.
+                val isOrphanMeta = name.endsWith(FileLayout.META) &&
+                    !Files.exists(sessionDir.resolve(name.removeSuffix(FileLayout.META) + FileLayout.BIN))
+                // Data present without matching .meta.json = crash
+                // before sidecar move (impossible under the new write
+                // order, covered defensively for legacy spools).
+                val isOrphanBin = name.endsWith(FileLayout.BIN) &&
+                    !Files.exists(sessionDir.resolve(name.removeSuffix(FileLayout.BIN) + FileLayout.META))
+                if (isTmp || isOrphanMeta || isOrphanBin) {
+                    Files.deleteIfExists(entry)
+                    removed++
+                }
+            }
+            return removed
+        }
     }
 }

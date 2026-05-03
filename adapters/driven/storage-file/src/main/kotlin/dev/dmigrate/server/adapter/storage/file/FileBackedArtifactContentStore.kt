@@ -11,6 +11,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -128,5 +131,77 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
     private fun shardOf(artifactId: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(artifactId.toByteArray(Charsets.UTF_8))
         return digest.toHex().substring(0, 2)
+    }
+
+    companion object {
+        /**
+         * Layout-aware orphan sweep over `<root>/artifacts/<shard>/...`
+         * for the §6.21 startup cleanup. `.bin` and matching
+         * `.meta.json` siblings are treated as a unit; dangling
+         * sidecar / tmp leftovers are removed defensively after the
+         * same retention cutoff. Files that do not look like store
+         * artefacts (extension neither `.bin`, `.meta.json` nor a
+         * `.tmp.<uuid>` infix) are left untouched so operator-managed
+         * tooling can drop diagnostic files into the dir.
+         *
+         * @param olderThan keep files newer than this; pass `null`
+         *   for "delete every store file unconditionally" — used by
+         *   the `0`/`0s` retention policy.
+         * @return number of `.bin` files removed (sidecar/tmp deletions
+         *   are not counted to keep the operator-facing diagnostic
+         *   stable).
+         */
+        fun cleanupOrphans(
+            root: Path,
+            olderThan: Duration?,
+            clock: Clock = Clock.systemUTC(),
+        ): Int {
+            val artifactsRoot = root.resolve("artifacts")
+            if (!Files.exists(artifactsRoot)) return 0
+            val cutoff: Instant? = olderThan?.let { Instant.now(clock).minus(it) }
+            val storeFiles = Files.walk(artifactsRoot).use { walk ->
+                walk
+                    .filter { Files.isRegularFile(it) }
+                    .filter {
+                        val name = it.fileName.toString()
+                        name.endsWith(FileLayout.BIN) ||
+                            name.endsWith(FileLayout.META) ||
+                            name.contains(FileLayout.TMP_INFIX)
+                    }
+                    .toList()
+            }
+            var removed = 0
+            // Pass 1: drop bin + matching meta as a unit so sidecars
+            // never outlive their data file.
+            for (file in storeFiles) {
+                val name = file.fileName.toString()
+                if (!name.endsWith(FileLayout.BIN)) continue
+                val mtime = file.lastModified() ?: continue
+                if (!shouldDelete(mtime, cutoff)) continue
+                val meta = file.resolveSibling(name.removeSuffix(FileLayout.BIN) + FileLayout.META)
+                if (Files.deleteIfExists(file)) removed++
+                Files.deleteIfExists(meta)
+            }
+            // Pass 2: prune dangling sidecars and tmp leftovers.
+            for (file in storeFiles) {
+                if (!Files.exists(file)) continue
+                val name = file.fileName.toString()
+                if (name.endsWith(FileLayout.BIN)) continue
+                val mtime = file.lastModified() ?: continue
+                if (shouldDelete(mtime, cutoff)) {
+                    Files.deleteIfExists(file)
+                }
+            }
+            return removed
+        }
+
+        private fun shouldDelete(mtime: Instant, cutoff: Instant?): Boolean =
+            cutoff == null || mtime.isBefore(cutoff)
+
+        private fun Path.lastModified(): Instant? = try {
+            Files.getLastModifiedTime(this).toInstant()
+        } catch (_: IOException) {
+            null
+        }
     }
 }

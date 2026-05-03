@@ -103,4 +103,26 @@ class FileBackedOrphanCleanupTest : FunSpec({
             store.write("art", ByteArrayInputStream(payload), payload.size.toLong())
         }
     }
+
+    test("companion cleanupOrphans drops session dirs without instantiating the store") {
+        val root = Files.createTempDirectory("d-migrate-companion-orphan-")
+        val store = FileBackedUploadSegmentStore(root)
+        val payload = "abc".toByteArray()
+        store.writeSegment(
+            UploadSegment("session-1", 0, 0, payload.size.toLong(), ""),
+            ByteArrayInputStream(payload),
+        )
+
+        // Drive the sweep via the companion form — no second adapter
+        // instance needed (the §6.21 startup sweep relies on this).
+        val removed = FileBackedUploadSegmentStore.cleanupOrphans(root, activeSessions = emptySet())
+
+        removed shouldBe 1
+        Files.exists(root.resolve("segments").resolve("session-1")) shouldBe false
+    }
+
+    test("companion cleanupOrphans on a missing segments root returns 0") {
+        val root = Files.createTempDirectory("d-migrate-companion-empty-")
+        FileBackedUploadSegmentStore.cleanupOrphans(root, activeSessions = emptySet()) shouldBe 0
+    }
 })

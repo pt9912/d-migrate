@@ -55,12 +55,15 @@ dependencies {
     implementation(project(":adapters:driven:audit-logging"))
     // §6.11: `mcp serve`-Subkommando wrappt McpServerBootstrap.
     implementation(project(":adapters:driving:mcp"))
-    // AP 6.20+: `mcp serve` activates Phase C with an in-memory dev
-    // wiring. The InMemory*Store/InMemoryAuditSink classes live in
-    // `:hexagon:ports-common`'s testFixtures source set today; pulling
-    // the testFixtures jar in as a production dependency lets the CLI
-    // ship a working `mcp serve` without forking the implementations.
-    // Replace with persistent storage adapters once they land.
+    // AP 6.21: `mcp serve` constructs file-backed byte-stores for
+    // uploads (`FileBackedUploadSegmentStore`) and artefact content
+    // (`FileBackedArtifactContentStore`) under the resolved state dir.
+    implementation(project(":adapters:driven:storage-file"))
+    // AP 6.21: the metadata stores (UploadSessionStore, ArtifactStore,
+    // SchemaStore, JobStore, QuotaStore) plus `InMemoryAuditSink` still
+    // come from `:hexagon:ports-common`'s testFixtures source set —
+    // durable metadata adapters will land post-0.9.6. Until then `mcp
+    // serve` is byte-content file-backed only; metadata stays ephemeral.
     implementation(testFixtures(project(":hexagon:ports-common")))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
