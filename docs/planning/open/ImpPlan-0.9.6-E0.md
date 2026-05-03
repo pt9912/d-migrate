@@ -270,9 +270,10 @@ Verbindliche Regel:
   Reverse-Fehler mit Exit-Code `5`, `7` oder einem sonstigen fachlichen
   Fehlercode verschleiert werden.
 - Wenn ein bestehender `execute(...)`-Pfad zwingend `Int` zurueckgibt, muss E0
-  eine zentrale, dokumentierte Adapter-Mapping-Regel liefern; die
-  adapterneutrale Runner-Grenze bleibt trotzdem typisiert als Cancel
-  erkennbar.
+  die zentrale Mapping-Regel `OperationCancelledException` -> CLI-Exit-Code
+  `130` aus `spec/job-contract.md` verwenden. Die adapterneutrale Runner-
+  Grenze bleibt trotzdem typisiert als Cancel erkennbar; E0 darf keinen neuen
+  Cancel-Sondercode einfuehren.
 - `finally`-/Cleanup-Bloecke duerfen Cancel nicht ueberschreiben. Cleanup-
   Fehler werden hoechstens suppressed oder als Cleanup-Risiko dokumentiert,
   waehrend das Primaer-Outcome Cancel bleibt.
@@ -314,6 +315,7 @@ Der adapterneutrale Vertrag soll klein bleiben:
 ```kotlin
 interface CancellationToken {
     val isCancellationRequested: Boolean
+    val cancellationReason: String?
     fun throwIfCancellationRequested()
 }
 ```
@@ -335,7 +337,10 @@ anderen Worker-Thread, Coroutine-Kontext oder MCP-Job-Controller ausgeloest
 wird, muss fuer alle beobachtenden Runner mit atomic-/volatile-aequivalenter
 Sichtbarkeit lesbar sein. `cancel(...)` muss idempotent sein; mehrere
 Cancel-Aufrufe duerfen weder den ersten Grund verlieren noch neue Side Effects
-ausloesen.
+ausloesen. Der erste Grund ist ueber `CancellationToken.cancellationReason`
+beobachtbar; spaetere `cancel(...)`-Aufrufe duerfen ihn nicht ueberschreiben.
+`throwIfCancellationRequested()` muss eine `OperationCancelledException`
+werfen, die denselben Grund traegt.
 
 ### 5.2 Cancel-Result
 
@@ -345,14 +350,15 @@ Kanonischer Carrier fuer E0 ist eine zentrale, typisierte
 
 Erlaubte Form:
 
-- `OperationCancelledException`
+- `OperationCancelledException`, mit beobachtbarem optionalem `reason`
 
 Abweichungen sind nur zulaessig, wenn eine bestehende Runner-Signatur bereits
 ein geschlossenes Result-Modell erzwingt. Dann muss die Result-Variante in E0
 am Runner-Rand unmittelbar und verlustfrei auf die kanonische
 `OperationCancelledException` oder ein daraus eindeutig ableitbares
-`Cancelled`-Outcome gemappt werden. Gemischte freie Carrier pro Runner oder
-Port sind nicht erlaubt.
+`Cancelled`-Outcome gemappt werden. Wenn der Cancel-Grund vorhanden ist, muss
+dieses Mapping ihn erhalten. Gemischte freie Carrier pro Runner oder Port sind
+nicht erlaubt.
 
 Nicht erlaubt:
 
@@ -567,8 +573,11 @@ Tests:
 
 - `none()` ist nie gecancelt
 - gecancelter Token wirft typisierte Cancel-Signalisierung
+- gecancelter Token macht den ersten Cancel-Grund ueber
+  `cancellationReason` und `OperationCancelledException.reason` beobachtbar
 - Cancel aus anderem Thread/Task wird deterministisch sichtbar
-- mehrfaches `cancel(...)` ist idempotent
+- mehrfaches `cancel(...)` ist idempotent und erhaelt den zuerst gesetzten
+  Grund
 - Hook-Token kann Checkpoints deterministisch ausloesen
 
 ### 7.2 AP E0.2: Side-Effect-Inventar erstellen
@@ -691,6 +700,8 @@ Tests:
   Fortschrittssignal fuer einen nicht abgeschlossenen Abschnitt
 - Cancel wird an Invoker-/Runner-Catch-All-Grenzen nicht als generischer
   Import-/Transferfehler gemappt
+- `execute(...): Int`-Adaptergrenzen mappen `OperationCancelledException`
+  deterministisch auf CLI-Exit-Code `130`
 - Fake-Writer zaehlt Aufrufe und beweist Side-Effect-Stopp
 
 ### 7.6 AP E0.6: Gate-Entscheidung dokumentieren
@@ -796,6 +807,9 @@ Mindesttests:
 - Bestehende CLI-Pfade bleiben ohne expliziten Cancel-Token kompatibel.
 - `CancellationToken` und `CancellationTokenSource` garantieren thread-/
   task-sichere Sichtbarkeit und idempotentes Cancel.
+- `CancellationToken.cancellationReason` und
+  `OperationCancelledException.reason` machen den ersten Cancel-Grund
+  beobachtbar; wiederholte `cancel(...)`-Aufrufe ueberschreiben ihn nicht.
 - Cancel vor Artefakt-/Report-Publish verhindert neue Artefakte bzw. Reports.
 - Cancel vor Quell-Reader-Open oder Source-Read-Call verhindert neue
   Transfer-Reads bzw. klassifiziert den Call nach Abschnitt 4.1.
@@ -815,6 +829,8 @@ Mindesttests:
   Result-basierte Abweichung ist zentral gemappt und begruendet.
 - Catch-All-Fehlerbehandlung in Runnern, Invokern und Adaptern behandelt
   `OperationCancelledException` vor generischem Fehler-Mapping.
+- Bestehende `execute(...): Int`-Pfade mappen Cancel auf den stabilen
+  CLI-Exit-Code `130` aus `spec/job-contract.md`.
 - Das typisierte Cancel-Outcome ist so eindeutig, dass Phase E daraus ohne
   weitere fachliche Interpretation `cancelled`-Status, Audit-Event und
   Worker-Handle-Cleanup ableiten kann.
