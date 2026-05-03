@@ -79,6 +79,8 @@ private class CountingSchemaStore(private val delegate: SchemaStore) : SchemaSto
         delegate.list(tenantId, page)
 
     override fun deleteExpired(now: Instant): Int = delegate.deleteExpired(now)
+
+    override fun register(entry: SchemaIndexEntry) = delegate.register(entry)
 }
 
 class SchemaSourceResolverTest : FunSpec({

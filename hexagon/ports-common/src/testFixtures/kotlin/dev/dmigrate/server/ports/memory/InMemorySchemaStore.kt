@@ -4,6 +4,7 @@ import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.ports.SchemaRegisterOutcome
 import dev.dmigrate.server.ports.SchemaStore
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -35,5 +36,26 @@ class InMemorySchemaStore : SchemaStore {
             .map { it.key }
         expired.forEach { entries.remove(it) }
         return expired.size
+    }
+
+    override fun register(entry: SchemaIndexEntry): SchemaRegisterOutcome {
+        val key = Key(entry.tenantId, entry.schemaId)
+        var outcome: SchemaRegisterOutcome? = null
+        entries.compute(key) { _, existing ->
+            if (existing == null) {
+                outcome = SchemaRegisterOutcome.Registered(entry)
+                entry
+            } else if (existing.tenantId == entry.tenantId && existing.artifactRef == entry.artifactRef) {
+                // Idempotent re-registration: same artefact behind the
+                // same deterministic schemaId. Return the persisted
+                // entry so callers reuse its createdAt / labels.
+                outcome = SchemaRegisterOutcome.AlreadyRegistered(existing)
+                existing
+            } else {
+                outcome = SchemaRegisterOutcome.Conflict(existing, entry)
+                existing
+            }
+        }
+        return outcome ?: SchemaRegisterOutcome.Registered(entry)
     }
 }

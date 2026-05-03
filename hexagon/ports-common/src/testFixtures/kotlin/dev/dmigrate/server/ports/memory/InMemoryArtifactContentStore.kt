@@ -26,7 +26,11 @@ class InMemoryArtifactContentStore : ArtifactContentStore {
         val existing = hashes[artifactId]
         if (existing != null) {
             return if (existing == attemptedSha) {
-                WriteArtifactOutcome.AlreadyExists(artifactId, existing)
+                WriteArtifactOutcome.AlreadyExists(
+                    artifactId = artifactId,
+                    existingSha256 = existing,
+                    existingSizeBytes = (contents[artifactId]?.size ?: 0).toLong(),
+                )
             } else {
                 WriteArtifactOutcome.Conflict(artifactId, existing, attemptedSha)
             }

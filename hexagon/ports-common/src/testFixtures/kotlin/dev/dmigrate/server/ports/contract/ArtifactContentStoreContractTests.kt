@@ -31,14 +31,17 @@ abstract class ArtifactContentStoreContractTests(factory: () -> ArtifactContentS
         store.exists("mismatch") shouldBe false
     }
 
-    test("write of existing artifact with same bytes returns AlreadyExists") {
+    test("write of existing artifact with same bytes returns AlreadyExists with size") {
         val store = factory()
         val payload = "static".toByteArray()
         val first = store.write("dup", ByteArrayInputStream(payload), payload.size.toLong())
             as WriteArtifactOutcome.Stored
         val second = store.write("dup", ByteArrayInputStream(payload), payload.size.toLong())
-        second.shouldBeInstanceOf<WriteArtifactOutcome.AlreadyExists>()
-        second.existingSha256 shouldBe first.sha256
+        val already = second.shouldBeInstanceOf<WriteArtifactOutcome.AlreadyExists>()
+        already.existingSha256 shouldBe first.sha256
+        // AP 6.22: callers (the deterministic-id replay path) compare
+        // both SHA AND size — the contract surfaces both.
+        already.existingSizeBytes shouldBe payload.size.toLong()
     }
 
     test("write of existing artifact with different bytes returns Conflict") {

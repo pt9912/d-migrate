@@ -59,6 +59,8 @@ internal object EmptySchemaStore : SchemaStore {
     override fun list(tenantId: TenantId, page: PageRequest): PageResult<SchemaIndexEntry> =
         PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
+    override fun register(entry: SchemaIndexEntry): dev.dmigrate.server.ports.SchemaRegisterOutcome =
+        dev.dmigrate.server.ports.SchemaRegisterOutcome.Registered(entry)
 }
 
 internal object EmptyProfileStore : ProfileStore {

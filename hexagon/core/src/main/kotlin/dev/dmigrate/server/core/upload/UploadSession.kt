@@ -75,4 +75,12 @@ data class UploadSession(
      * clock jumps must NOT extend the stored value.
      */
     val finalizingLeaseExpiresAt: Instant? = null,
+    /**
+     * AP 6.22: deterministic outcome record reserved before the first
+     * side effect of finalisation. Survives a crash between artefact
+     * write and `COMPLETED` so the next attempt replays the same
+     * artefact/schemaRef instead of producing duplicates. `null` for
+     * any session that has never entered FINALIZING.
+     */
+    val finalizationOutcome: FinalizationOutcome? = null,
 )

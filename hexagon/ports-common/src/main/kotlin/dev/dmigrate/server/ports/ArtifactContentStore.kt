@@ -21,7 +21,21 @@ interface ArtifactContentStore {
 sealed interface WriteArtifactOutcome {
     data class Stored(val artifactId: String, val sha256: String, val sizeBytes: Long) : WriteArtifactOutcome
     data class SizeMismatch(val expected: Long, val actual: Long) : WriteArtifactOutcome
-    data class AlreadyExists(val artifactId: String, val existingSha256: String) : WriteArtifactOutcome
+
+    /**
+     * AP 6.22: an artefact under [artifactId] is already present
+     * with the same [existingSha256] and [existingSizeBytes].
+     * Returned for the deterministic-id idempotent path; callers
+     * may treat it as a successful no-op when it matches the
+     * payload they intended to write. Differing SHA / size under
+     * the same id remains a hard inconsistency reported via
+     * [Conflict].
+     */
+    data class AlreadyExists(
+        val artifactId: String,
+        val existingSha256: String,
+        val existingSizeBytes: Long,
+    ) : WriteArtifactOutcome
     data class Conflict(
         val artifactId: String,
         val existingSha256: String,

@@ -82,11 +82,15 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
         attemptedSha: String,
         finalMeta: Path,
     ): WriteArtifactOutcome {
-        val existingSha = Sidecar.read(finalMeta).sha256
-        return if (existingSha == attemptedSha) {
-            WriteArtifactOutcome.AlreadyExists(artifactId, existingSha)
+        val existing = Sidecar.read(finalMeta)
+        return if (existing.sha256 == attemptedSha) {
+            WriteArtifactOutcome.AlreadyExists(
+                artifactId = artifactId,
+                existingSha256 = existing.sha256,
+                existingSizeBytes = existing.sizeBytes,
+            )
         } else {
-            WriteArtifactOutcome.Conflict(artifactId, existingSha, attemptedSha)
+            WriteArtifactOutcome.Conflict(artifactId, existing.sha256, attemptedSha)
         }
     }
 
