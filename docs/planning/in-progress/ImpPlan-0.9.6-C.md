@@ -1110,30 +1110,45 @@ Aufgaben:
   2. Environment `DMIGRATE_MCP_STATE_DIR`
   3. Default `Files.createTempDirectory("dmigrate-mcp-")`
   Die CLI-Option gewinnt gegen die Environment-Variable. Relative
-  Pfade werden gegen das aktuelle Arbeitsverzeichnis normalisiert und
-  danach per `toAbsolutePath().normalize()` geloggt.
-- Beim Start wird genau einmal auf stderr ausgegeben:
+  Pfade werden gegen das aktuelle Arbeitsverzeichnis normalisiert.
+- Im erfolgreichen Startpfad wird einmal auf stderr ausgegeben:
   - effektiver State-Dir-Pfad
   - ob der Pfad operator-supplied oder CLI-owned temporary ist
   - der Hinweis `metadata is ephemeral; only byte content is file-backed`
-  Secrets oder lokale Eingabepfade aus Tool-Payloads duerfen dabei
-  nicht geloggt werden.
+  Fehler-, Shutdown- und Cleanup-Diagnosen duerfen zusaetzlich eigene
+  stderr-Zeilen schreiben; die Start-State-Zusammenfassung selbst soll
+  nicht mehrfach erscheinen. Secrets oder lokale Eingabepfade aus
+  Tool-Payloads duerfen dabei nicht geloggt werden.
 - Directory-Vorbedingungen fail-fast pruefen: Pfad existiert oder kann
   angelegt werden, ist ein Verzeichnis, ist lesbar und beschreibbar.
   Fehler werden als CLI-Konfigurationsfehler mit Exit 2 gemeldet, bevor
   HTTP-Port oder stdio-Loop gestartet werden.
 - Operator-supplied State-Dirs sind exklusive Laufzeit-Workdirs. Die
-  CLI legt beim Start ein Interprozess-Lock unter `<stateDir>/.lock`
-  an und haelt es bis zum Stop. Ein zweiter `mcp serve` mit demselben
+  CLI oeffnet beim Start `<stateDir>/.lock`, schreibt eine Diagnose-
+  Payload (PID, Startzeit, random UUID, Version) hinein und haelt
+  darauf ein OS-gestuetztes Advisory-Lock via `FileChannel.tryLock()`
+  bis zum Stop. Das Lock darf nicht als reine Lockfile-Existenzpruefung
+  implementiert werden, weil Crashs sonst den State-Dir dauerhaft
+  blockieren koennten; das Betriebssystem muss das Lock beim
+  Prozessende freigeben. Ein zweiter `mcp serve` mit demselben
   State-Dir scheitert vor Serverstart mit Exit 2 und klarer stderr-
-  Diagnose. Ohne dieses Single-Writer-Lock waeren die ephemeren
-  Metadata-Stores pro Prozess, die Byte-Dateien aber gemeinsam, was
-  Segment-/Artefakt-Zuordnungen unzuverlaessig machen wuerde.
+  Diagnose inklusive der aus dem Lockfile gelesenen PID/UUID, soweit
+  vorhanden. Stale Lockfiles ohne aktives Advisory-Lock duerfen beim
+  naechsten erfolgreichen Start ueberschrieben werden. Ohne dieses
+  Single-Writer-Lock waeren die ephemeren Metadata-Stores pro Prozess,
+  die Byte-Dateien aber gemeinsam, was Segment-/Artefakt-Zuordnungen
+  unzuverlaessig machen wuerde.
 - Shutdown-/Lifecycle-Regel:
   - CLI-owned Tempdir wird ueber einen idempotenten Owner verwaltet,
     der bei normalem Ende, SIGINT/JVM-Shutdown und explizitem
     programmgesteuertem `McpServerHandle.stop()` best-effort rekursiv
     loescht.
+  - Wenn nach `Files.createTempDirectory("dmigrate-mcp-")` ein
+    Startfehler passiert (Directory-Validierung, Lock, Sweep,
+    Bootstrap-Konfiguration oder Transportstart), muss derselbe Owner
+    im Fehlerpfad best-effort aufraeumen, bevor Exit 2 zurueckgegeben
+    wird. Tempdirs duerfen nicht erst nach erfolgreichem Serverstart
+    registriert werden.
   - Die Loeschung darf nicht davon abhaengen, dass
     `awaitTermination()` durch `stop()` geweckt wird; der CLI-Adapter
     muss Cleanup entweder um das Handle wrappen oder in einer
@@ -1163,9 +1178,13 @@ Aufgaben:
     werden nicht blind geloescht, sondern nach einer konfigurierbaren
     Retention-Grenze fuer orphaned Byte Files entfernt
     (`--mcp-state-orphan-retention`/
-    `DMIGRATE_MCP_STATE_ORPHAN_RETENTION`, Default z.B. `24h`);
-    Retention `0` bedeutet sofort loeschen, `never` deaktiviert den
-    Sweep explizit fuer forensische Betriebsmodi
+    `DMIGRATE_MCP_STATE_ORPHAN_RETENTION`, Default z.B. `24h`)
+  - Retention-Parsing ist eine explizite String-Union:
+    `never` deaktiviert den Sweep fuer forensische Betriebsmodi,
+    `0`/`0s` bedeutet sofort loeschen, ansonsten werden nur positive
+    Durations akzeptiert (`<number>ms|s|m|h|d` plus optional
+    ISO-8601-`Duration.parse` fuer `PT...`-Werte). Ungueltige Werte
+    liefern Exit 2 vor Serverstart.
   - Cleanup-Aktionen werden nur als Counts und State-Dir-Scope geloggt,
     nie mit Payload-Inhalten oder Secrets
 - Keine Store-API erweitern fuer diesen AP. Falls Glue-Code fuer
@@ -1193,17 +1212,23 @@ Akzeptanz:
   proportional zur Uploadgroesse im Heap; die vollstaendige
   End-to-End-Heap-Garantie fuer Finalisierung ist die Abhaengigkeit aus
   AP 6.22.
-- `--mcp-state-dir` und `DMIGRATE_MCP_STATE_DIR` werden in Helptext,
-  Tests und Startlog sichtbar; die Option hat Vorrang vor der
-  Environment-Variable.
+- `--mcp-state-dir`, `DMIGRATE_MCP_STATE_DIR`,
+  `--mcp-state-orphan-retention` und
+  `DMIGRATE_MCP_STATE_ORPHAN_RETENTION` werden in Helptext, Tests und
+  Startlog sichtbar; die jeweiligen CLI-Optionen haben Vorrang vor den
+  Environment-Variablen.
 - CLI-owned Tempdirs werden beim normalen Stop und beim SIGINT-Pfad
   best-effort entfernt; operator-supplied State-Dirs ueberleben den
-  Shutdown inklusive ihrer Byte-Dateien.
+  Shutdown inklusive ihrer Byte-Dateien. CLI-owned Tempdirs werden auch
+  bei Startfehlern nach Tempdir-Erzeugung best-effort entfernt.
 - Zwei parallele `mcp serve`-Prozesse mit demselben State-Dir koennen
-  nicht starten; der zweite Prozess endet mit Exit 2.
+  nicht starten; der zweite Prozess endet mit Exit 2. Ein nach Crash
+  zurueckgebliebenes `.lock`-File ohne aktives Advisory-Lock blockiert
+  den naechsten Start nicht.
 - Startup-Sweep begrenzt orphaned Segment- und Artefaktbytes aus
   frueheren Prozessen gemaess Retention-Konfiguration; Tests decken
-  Default-Retention, `0` und `never` ab.
+  Default-Retention, `0`, `never`, eine positive Duration und einen
+  ungueltigen Wert ab.
 - Ungueltige State-Dirs liefern vor Serverstart Exit 2 mit klarer
   stderr-Diagnose.
 - Helptext und Startlog sagen eindeutig, dass nur Byte-Content
