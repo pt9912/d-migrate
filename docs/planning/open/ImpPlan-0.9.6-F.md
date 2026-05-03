@@ -152,6 +152,7 @@ Phase F braucht dafuer eine explizite Adapter-Schicht:
   - `ACTIVE`
   - `FINALIZING`
   - `COMPLETED`
+  - `FAILED`
   - `EXPIRED`
   - `ABORTED`
 - `UploadSegmentStore` und `ArtifactContentStore` fuer produktnahe Bytes
@@ -285,6 +286,29 @@ Verbindlich:
 - keine freien JDBC-Strings
 - kein rohes SQL im Payload
 
+### 4.6 MCP-Authorization-Scopes sind vor Side Effects
+
+Phase F uebernimmt die 0.9.6-Scope-Mapping-Regeln:
+
+- `artifact_upload_init` und `artifact_upload` fuer policy-pflichtige
+  Upload-Intents verlangen `dmigrate:artifact:upload`.
+- `artifact_upload_abort` verlangt immer `dmigrate:artifact:upload`, auch beim
+  Abbruch eigener Sessions; die read-only Upload-Ausnahme gilt nicht fuer
+  Abort.
+- `artifact_upload_init` und `artifact_upload` fuer
+  `uploadIntent=schema_staging_readonly` bleiben beim Phase-C-Vertrag
+  `dmigrate:read` plus session-scoped read-only Upload-Berechtigung.
+- `data_import_start` und `data_transfer_start` verlangen
+  `dmigrate:data:write`.
+
+Der jeweilige Scope-Check laeuft nach Transport-Auth und struktureller
+Payload-Formpruefung, aber vor SyncEffect-/Idempotency-Reserve,
+Policy/Approval, Quota, Session-/Job-Lookup, Upload-Session-Erzeugung,
+Segmentwrite, Abort-Outcome-Lookup und Runner-/Secret-Materialisierung.
+Fehlende oder unzureichende Scopes liefern 403 mit Scope-Challenge, werden
+auditiert und schreiben keine SyncEffect-, Idempotency-, Policy-, Quota-,
+Session-, Segment-, Abort-Outcome- oder Job-Store-Eintraege.
+
 ---
 
 ## 5. Upload-Vertrag
@@ -356,6 +380,9 @@ Regeln:
   `sizeBytes=0` ungueltig und liefert `VALIDATION_ERROR`, weil kein nutzbares
   Schema materialisiert werden kann.
 - `sizeBytes` darf maximal `209715200` Bytes betragen.
+- `sizeBytes > maxArtifactUploadBytes` liefert `PAYLOAD_TOO_LARGE` vor
+  SyncEffect-/Upload-Store-Writes und erzeugt keine Session, Upload-
+  Berechtigung oder Quota-Reservierung.
 - `checksumSha256` ist Pflicht und Teil des Init-Fingerprints.
 
 Migrationsregel:
@@ -419,6 +446,12 @@ Validierungen:
   `isFinalSegment`-Wert tragen wie der urspruengliche akzeptierte Write;
   abweichende Retries liefern `IDEMPOTENCY_CONFLICT` oder
   `VALIDATION_ERROR`, bevor Bytes neu geschrieben werden
+- Jede Ueberschreitung von `sizeBytes`, `maxUploadSegmentBytes`,
+  `maxUploadToolRequestBytes` oder `maxArtifactUploadBytes` beendet die
+  Session sofort terminal mit `FAILED`, Fehlercode `PAYLOAD_TOO_LARGE`,
+  persisted Failure-Outcome, Segment-/Staging-Cleanup und Quota-Release.
+  Nach diesem Status duerfen keine weiteren Segmente angenommen werden;
+  idempotente Wiederholungen replayen das Failure-Outcome.
 
 Antwort:
 
@@ -566,7 +599,15 @@ Bei finalem Segment:
 - Terminale `finalizationOutcome`-Ergebnisse werden erst nach dauerhaftem
   Zustand persistiert: Erfolgs-Outcome nach durable Bytes plus notwendiger
   Metadaten-/Schema-Registrierung, Fehler-Outcome nach dauerhaftem
-  ABORT-/Failure-Zustand und Quota-Refund.
+  `FAILED`-Status und Quota-Release.
+- Finalisierungsfehler, Upload-Finalisierungs-Timeouts, Hash-/Groessenfehler
+  im finalen Segment, Schema-Validierungsfehler fuer nicht publizierbare
+  Uploads und interne nicht-retrybare Materialisierungsfehler wechseln die
+  Session terminal nach `FAILED`. `ABORTED` bleibt expliziten Abbruechen
+  vorbehalten, `EXPIRED` TTL-/Idle-Ablauf. `FAILED` speichert strukturiertes
+  Fehleroutcome, entfernt oder tombstoned nicht publizierte Zwischenbytes,
+  gibt aktive Session- und reservierte Upload-Byte-Quota frei und laesst
+  bereits vor dem Fehler immutable publizierte Artefakte unveraendert.
 - `mimeType` wird zu `contentType`
 - `checksumSha256` wird zu `sha256`
 - `artifactKind=schema` wird zusaetzlich validiert und in `SchemaStore`
@@ -871,13 +912,14 @@ Quota-Lifecycle:
   reservierte Upload-Bytes frei. Fuer veroeffentlichte Artefakte werden
   gespeicherte Artefaktbytes einmalig auf Basis der finalen, validierten
   Artefaktgroesse gebucht.
-- `ABORTED`, `EXPIRED`, fehlgeschlagene Finalisierung und expliziter Abort
+- `FAILED`, `ABORTED`, `EXPIRED`, fehlgeschlagene Finalisierung,
+  `PAYLOAD_TOO_LARGE` und expliziter Abort
   geben aktive Session-Slots, reservierte Upload-Bytes und Segmentwrite-Slots
   frei; nicht veroeffentlichte Segment-/Stagingbytes werden entfernt oder als
   cleanup-faehige Orphans markiert.
 - `FINALIZING` haelt die aktive Session- und Upload-Byte-Reservierung, bis die
-  Session nach `COMPLETED` oder `ABORTED` wechselt oder die Finalizing-Lease
-  reclaimt wird.
+  Session nach `COMPLETED`, `FAILED`, `ABORTED` oder `EXPIRED` wechselt oder
+  die Finalizing-Lease reclaimt wird.
 - Retention-Cleanup fuer veroeffentlichte Artefakte gibt gespeicherte
   Artefaktbytes frei. Diese Freigabe darf reservierte Upload-Bytes nicht noch
   einmal veraendern.
@@ -947,7 +989,7 @@ Tests:
 - Retry mit gleichem `approvalKey` liefert dieselbe ID
 - andere Metadaten mit gleichem Scope -> `IDEMPOTENCY_CONFLICT`
 - erlaubte Transitionen enthalten `ACTIVE -> FINALIZING` und
-  `FINALIZING -> COMPLETED/ABORTED`
+  `FINALIZING -> COMPLETED/FAILED/ABORTED`
 - abgelaufener `FINALIZING`-Claim kann ohne doppelte Materialisierung
   reclaimed werden
 
@@ -1050,6 +1092,8 @@ Tests:
 
 - fehlendes `contentBase64`
 - zu grosses Segment -> `PAYLOAD_TOO_LARGE`
+- zu grosses Segment setzt Session terminal auf `FAILED`, speichert ein
+  Failure-Outcome, startet Cleanup und gibt Quotas frei
 - nicht-finales Segment mit zu kleiner Groesse -> `VALIDATION_ERROR`
 - finales Segment schliesst Bytebereich nicht exakt -> `VALIDATION_ERROR`
 - Segmentoffset weicht von der festen Segmentgroessen-Position ab ->
@@ -1365,7 +1409,8 @@ Tests:
   reservierte Upload-Bytes frei
 - Retention-Cleanup gibt gespeicherte Artefaktbytes genau einmal frei
 - Segmentwrite-Quota -> `RATE_LIMITED`
-- Upload-Finalisierungs-Timeout -> `OPERATION_TIMEOUT`
+- Upload-Finalisierungs-Timeout -> `OPERATION_TIMEOUT`, Session `FAILED`,
+  Cleanup/Tombstone und Quota-Release
 - Audit enthaelt keine rohen Uploadbytes oder Approval-Tokens
 
 ### 8.10 AP F.10: Dokumentation und Integrationstests
@@ -1448,6 +1493,8 @@ Mindesttestklassen:
 Mindestfaelle:
 
 - policy-pflichtiges Init ohne `approvalKey`
+- policy-pflichtiges Init ohne `dmigrate:artifact:upload` erzeugt 403 ohne
+  SyncEffect-, Policy-, Quota- oder Session-Store-Write
 - Init ohne Gesamt-`checksumSha256`
 - Init mit nicht erlaubtem MIME-Type
 - Init-Retry mit gleichem `approvalKey`
@@ -1474,6 +1521,8 @@ Mindestfaelle:
 - finales Segment schliesst Bytebereich nicht exakt
 - Segmentoffset weicht von der festen Segmentgroessen-Position ab
 - genehmigter administrativer Upload-Abbruch
+- `artifact_upload_abort` ohne `dmigrate:artifact:upload` erzeugt 403 ohne
+  Session-Lookup, Abort-Outcome-Lookup, Policy- oder Quota-Store-Write
 - Abort-Approval-Reuse fuer andere Session, anderen Caller oder anderen
   `reason`
 - Abort-Retry nach Cleanup nutzt persistiertes Abort-Outcome trotz geaendertem
@@ -1481,6 +1530,9 @@ Mindestfaelle:
 - Abort einer finalisierten Session loescht kein Artefakt
 - fehlendes `contentBase64`
 - zu grosses Segment
+- zu grosses Segment beendet die Session als `FAILED`, speichert ein
+  Failure-Outcome, startet Cleanup/Quota-Release und verhindert weitere
+  Segmentannahme
 - Segmenthash-Mismatch
 - Upload nach Abort
 - Upload nach Expiry
@@ -1528,11 +1580,15 @@ Mindestfaelle:
 - erfundene MCP-Mode-Werte statt Runner-naher Optionen
 - `truncate=true` als destruktive, nicht-atomare Option im Fingerprint
 - Import ohne Approval
+- Import ohne `dmigrate:data:write` erzeugt 403 ohne Idempotency-, Policy-,
+  Quota-, Resource- oder Job-Store-Write
 - Import ohne Approval fuehrt keine Secret-Store-Reads, Artefakt-/Schema-
   Spools, Pool-/Driver-Initialisierung oder Runner-Adapter-Aufrufe aus
 - Import mit `RATE_LIMITED` fuehrt keine Secret-Store-Reads, Artefakt-/
   Schema-Spools, Pool-/Driver-Initialisierung oder Runner-Adapter-Aufrufe aus
 - Transfer ohne Approval
+- Transfer ohne `dmigrate:data:write` erzeugt 403 ohne Idempotency-, Policy-,
+  Quota-, Resource- oder Job-Store-Write
 - Transfer ohne Approval fuehrt keine Secret-Store-Reads, Pool-/Driver-
   Initialisierung oder Runner-Adapter-Aufrufe aus
 - Transfer mit `RATE_LIMITED` fuehrt keine Secret-Store-Reads,
@@ -1563,6 +1619,8 @@ Mindestfaelle:
   Session-/Upload-Berechtigungs-/Quota-Commit; Crash-Retry erzeugt keine
   zweite Session und replayt ueber `uploadSessionId` oder
   `UploadInitOutcomeStore`.
+- Fehlender `dmigrate:artifact:upload`-Scope wird vor SyncEffect-, Policy-,
+  Quota- und Session-Store-Writes abgewiesen.
 - Policy-pflichtiges Init ohne Grant liefert `POLICY_REQUIRED` ohne
   `uploadSessionId`, Upload-Berechtigung, Session-Record, aktive Session-
   Quota oder reservierte Upload-Bytes; `RATE_LIMITED` vor Init-Commit erzeugt
@@ -1603,6 +1661,9 @@ Mindestfaelle:
   parallele finale Segmente und Reclaim nach Lease-Ablauf erzeugen maximal ein
   Artefakt und replayen persistierte Finalisierungsergebnisse nur nach
   durablem terminalem `finalizationOutcome`.
+- Fehlgeschlagene Finalisierung, Finalisierungs-Timeouts und
+  `PAYLOAD_TOO_LARGE` terminalisieren die Upload-Session als `FAILED`, geben
+  Upload-Quotas frei und replayen ein persistiertes Failure-Outcome.
 - Neue Segmentwrites sind nur in `ACTIVE` erlaubt; finale/idempotente Retries
   gegen `FINALIZING`, `COMPLETED` oder persistierte Fehler-Outcomes replayen
   Ergebnis, In-Flight-Status oder reclaimen eine abgelaufene Lease ohne
@@ -1664,6 +1725,8 @@ Mindestfaelle:
   strukturelle/Form-Fehler vor Idempotency ohne Store-Write, vollstaendige
   `reserveOrGet`-Outcome-Verzweigung, Policy nur mit secret-freien Metadaten
   und aktive Job-Quota vor Secret-/Artefakt-/Schema-/Runner-Materialisierung.
+- Fehlender `dmigrate:data:write`-Scope fuer `data_import_start` wird vor
+  Idempotency-, Policy-, Quota-, Resource- und Job-Store-Writes abgewiesen.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
   Artefakt-/MIME-/Format-Kombination: aktuell `ArtifactKind.UPLOAD_INPUT`
   plus `wireArtifactKind=seed-data` mit JSON/YAML/CSV oder explizit
@@ -1678,6 +1741,8 @@ Mindestfaelle:
   `reserveOrGet`-Outcome-Verzweigung, Policy nur mit secret-freien
   Connection-Metadaten und aktive Job-Quota vor Secret-/Pool-/Driver-/Runner-
   Materialisierung.
+- Fehlender `dmigrate:data:write`-Scope fuer `data_transfer_start` wird vor
+  Idempotency-, Policy-, Quota-, Resource- und Job-Store-Writes abgewiesen.
 - Import und Transfer materialisieren tenant-scoped Connection-Refs nur fuer
   die Dauer der Job-Ausfuehrung ueber
   einen `ConnectionReferenceResolver`/`ConnectionSecretResolver` und einen
