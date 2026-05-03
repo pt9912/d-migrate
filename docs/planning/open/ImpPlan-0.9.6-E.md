@@ -345,13 +345,16 @@ Quota-/Rate-Limit-Verletzungen liefern `RATE_LIMITED`. Timeouts liefern
 `OPERATION_TIMEOUT`. Beide Outcomes werden auditiert.
 
 Bei bereits gestarteten Jobs muss der Jobstatus gemaess `spec/job-contract.md`
-aktualisiert werden; weitere Side Effects werden ueber Cancel-/Cleanup-Pfade
-gestoppt.
+auf `failed` mit `error.code = OPERATION_TIMEOUT` aktualisiert werden.
+Runner-Timeouts sind keine fachlichen Cancels; weitere Side Effects werden
+ueber Cancel-/Cleanup-Pfade gestoppt.
 
 Aktive Quota-Slots folgen dem bestehenden `QuotaService`-Lifecycle:
 `reserve` belegt den Slot vor Job-Erzeugung atomar, `commit` bestaetigt den
-Erfolgspfad nur fuer Audit/Beobachtbarkeit, `refund` gibt Pre-Commit-Fehler
-und Idempotency-Replays zurueck, `release` gibt terminalisierte Jobs frei.
+Erfolgspfad nur fuer Audit/Beobachtbarkeit, `refund` gibt nur konkrete
+Pre-Commit-Reservationen des aktuellen Pipeline-Owners zurueck, `release` gibt
+terminalisierte Jobs frei. Idempotency-Replays besitzen keine Quota-
+Reservation und muessen `reserve`, `refund` und `release` ueberspringen.
 Runner-Timeouts muessen denselben `release`-Pfad ausloesen, auch wenn der
 Worker erst ueber Cleanup oder Watchdog terminalisiert wird.
 
@@ -688,6 +691,12 @@ Tests/Gate:
 ### 7.2 AP E.2: Job-Orchestrierung einfuehren
 
 - Job-Start-Service definieren.
+- `JobStore`-Port um atomare Status-Transitionen erweitern, z.B.
+  `compareAndSetStatus` oder typisierte `transition*`-Methoden fuer
+  `queued -> running`, `queued -> cancelled`, `running -> cancelled`,
+  `running -> succeeded` und `running -> failed`.
+- InMemory- und produktive Stores duerfen Status nicht mehr blind
+  ueberschreiben; Race-Konflikte liefern ein eindeutiges Transition-Outcome.
 - Worker-Handle-Registry oder aequivalente laufende Job-Zuordnung einfuehren.
 - Job-Lifecycle auf `queued`, `running`, `succeeded`, `failed`, `cancelled`
   begrenzen.
@@ -700,6 +709,8 @@ Tests:
 
 - neuer Job startet in erlaubtem Zustand
 - terminale Status bleiben terminal
+- JobStore-Contract-Tests decken erfolgreiche und scheiternde CAS-
+  Transitionen sowie konkurrierende terminale Updates ab
 - Worker-Handle wird fuer laufende Jobs gefunden
 - `COMMITTED`-Idempotency-Key bleibt mindestens bis `job.expiresAt`
   deduplizierbar
@@ -756,7 +767,9 @@ Tests:
   `POLICY_REQUIRED` plus genehmigten Retry.
 - Optionalen Demo-Auto-Approval-Modus nur fuer Loopback/`stdio` zulassen,
   deutlich markieren und auditieren.
-- Ohne konfigurierten Grant-Aussteller fail-closed verhalten.
+- Ohne konfigurierten Grant-Aussteller fail-closed fuer
+  `RequiresApproval`-/Challenge-Flows verhalten. Explizit konfigurierte direkte
+  `ALLOW`-Policies bleiben erlaubt und erzeugen keinen Grant.
 
 Tests:
 
@@ -772,6 +785,8 @@ Tests:
   Requests, erzeugt aber kein `approvalToken`
 - rohe Tokens erscheinen nicht in Store oder Audit
 - fehlender Grant-Aussteller ist dokumentiert fail-closed
+- direkte `ALLOW`-Policy ohne Grant-Aussteller startet erlaubte Requests,
+  waehrend `RequiresApproval` ohne Grant-Aussteller fail-closed bleibt
 
 ### 7.5 AP E.5: Genehmigten Retry atomar committen
 
@@ -795,8 +810,11 @@ Tests:
   `schema_compare_start` finalisieren.
 - `idempotencyKey` als Pflichtfeld erzwingen.
 - `dmigrate:job:start` vor Idempotency-/Policy-/Quota-Store-Writes pruefen.
-- `connectionRef` tenant-scoped validieren.
-- `schemaRef` tenant-scoped oder sichtbar fuer den Tenant validieren.
+- Vor `reserveOrGet` nur syntaktische Form, Tenant-Prefix und freie
+  JDBC-Strings validieren.
+- `connectionRef`- und `schemaRef`-Sichtbarkeit, Lookup und Materialisierung
+  nur fuer neue oder geclaimte Starts nach dem `COMMITTED`-Kurzschluss
+  ausfuehren.
 - freie JDBC-Strings abweisen.
 - Output-Schema auf `jobId`, `resourceUri`, `executionMeta` festlegen.
 - Tool-Registry von Unsupported-Handlern auf produktive Handler umstellen.
@@ -806,8 +824,9 @@ Tests:
 - fehlender `idempotencyKey`
 - fehlender oder unzureichender `dmigrate:job:start`-Scope -> 403 mit
   Scope-Challenge und ohne Idempotency-Store-Write
-- ungueltige Connection-Ref
-- nicht sichtbare oder fremde Schema-Ref
+- syntaktisch ungueltige Connection-/Schema-Ref vor Idempotency
+- nicht sichtbare oder fremde Connection-/Schema-Ref nach Idempotency als
+  gespeichertes finales Outcome
 - freie JDBC-URL
 - fehlender Grant
 - erfolgreicher genehmigter Start
@@ -884,8 +903,12 @@ Tests:
   `RATE_LIMITED` ohne Job liefern.
 - `commit` nur nach erfolgreichem Job-Commit als Success-/Audit-Hook
   aufrufen; der Slot bleibt belegt.
-- `refund` fuer Start-Timeouts, technische Pre-Commit-Fehler und
-  Idempotency-Replays nach bereits reservierter Quota aufrufen.
+- `refund` nur fuer Start-Timeouts und technische Pre-Commit-Fehler aufrufen,
+  wenn genau dieser Pipeline-Owner eine konkrete `QuotaReservation` erhalten
+  hat.
+- Idempotency-Replays (`ExistingPending`, `COMMITTED`) duerfen keine neue
+  Quota reservieren und duerfen keine fremde oder historische Reservation
+  refunden.
 - `release` bei `succeeded`, `failed`, `cancelled` und
   Runner-Timeout-Cleanup freigeben.
 - `RATE_LIMITED` mit strukturierten Details liefern.
@@ -898,9 +921,11 @@ Tests:
 - deduplizierter Retry verbraucht keine neue Quote
 - parallele neue Starts koennen Quota durch `reserve` nicht ueberbuchen
 - Start-Timeout oder technischer Fehler vor Job-Commit ruft `refund`
+- Idempotency-Replay ruft weder `reserve` noch `refund`
 - Slot wird nach `succeeded`, `failed` und `cancelled` freigegeben
 - Start-Timeout -> `OPERATION_TIMEOUT`
-- Runner-Timeout stoppt weitere Side Effects und gibt aktive Slots frei
+- Runner-Timeout setzt Jobstatus `failed(error.code=OPERATION_TIMEOUT)`,
+  stoppt weitere Side Effects und gibt aktive Slots frei
 
 ### 7.10 AP E.10: Audit und Dokumentation
 
@@ -924,7 +949,8 @@ Tests:
 - fehlende Start-/Cancel-Scopes werden auditiert, ohne Idempotency-,
   Challenge-, Quota- oder Job-Lookup-Store-Writes auszufuehren
 - keine Approval-Tokens, Secrets oder rohen Connection-Daten im Audit
-- Doku beschreibt fail-closed Verhalten ohne Grant-Aussteller
+- Doku beschreibt fail-closed Verhalten fuer `RequiresApproval` ohne
+  Grant-Aussteller und direkte `ALLOW`-Policies ohne Grant-Ausstellung
 
 ---
 
@@ -1043,7 +1069,8 @@ Mindestfaelle:
 - Policy-pflichtige Tools koennen ueber mindestens einen Grant-Pfad produktiv
   freigegeben werden.
 - ohne konfigurierten Grant-Aussteller ist das Verhalten fail-closed und
-  dokumentiert.
+  fuer `RequiresApproval`-/Challenge-Flows dokumentiert.
+- direkte `ALLOW`-Policies koennen auch ohne Grant-Aussteller starten.
 - erster policy-pflichtiger Start ohne Grant erzeugt `AWAITING_APPROVAL`.
 - zweiter Aufruf mit gueltigem Grant startet genau einen Job und setzt die
   Reservierung auf `COMMITTED`.
@@ -1060,7 +1087,9 @@ Mindestfaelle:
 - Quota- und Timeout-Faelle liefern `RATE_LIMITED` bzw.
   `OPERATION_TIMEOUT` und werden auditiert.
 - Quota folgt `reserve -> commit/refund/release`; `reserve` verhindert
-  Ueberbuchung, `refund` deckt Pre-Commit-Fehler ab, `release` terminale Jobs.
+  Ueberbuchung, `refund` deckt nur eigene konkrete Pre-Commit-Reservationen
+  ab, `release` terminale Jobs.
+- Idempotency-Replays ueberspringen Quota-`reserve` und Quota-`refund`.
 - `RATE_LIMITED`, Start-Timeouts und retrybare technische Startfehler lassen
   keine dauerhaft haengenden `PENDING`-Reservierungen zurueck.
 - `RATE_LIMITED`-Retries vor `retryAfter` liefern deterministisch
@@ -1069,6 +1098,8 @@ Mindestfaelle:
   `FAILED`; retrybare Materialisierungsfehler bleiben recoverable.
 - `COMMITTED`-Idempotency-Eintraege bleiben mindestens bis `job.expiresAt`
   erhalten.
+- Runner-Timeout terminalisiert gestartete Jobs als
+  `failed(error.code=OPERATION_TIMEOUT)`, nicht als `cancelled`.
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job und
   dedupliziert ueber `idempotencyKey`.
 - `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
@@ -1092,6 +1123,8 @@ Mindestfaelle:
   `succeeded`/`failed` nicht ueberschreiben.
 - `queued`-Jobs koennen vor Dispatch per CAS auf `cancelled` gesetzt werden;
   der Dispatcher startet bereits gecancelte Jobs nie.
+- JobStore-Port und Stores bieten atomare Status-Transitionen; blindes
+  Ueberschreiben reicht fuer Phase E nicht.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
