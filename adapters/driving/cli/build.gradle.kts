@@ -79,6 +79,11 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
+
+    // AP 6.24: integration-test harnesses build JSON-RPC payloads with Gson.
+    // The mcp module uses Gson internally (transitive via lsp4j) but does
+    // not re-export it; the CLI test source-set declares it explicitly.
+    testImplementation("com.google.code.gson:gson:2.14.0")
 }
 
 tasks.named<ProcessResources>("processResources") {
