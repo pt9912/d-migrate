@@ -1816,39 +1816,137 @@ Akzeptanz:
 Aufgaben:
 
 - Neues Test-Source-Set (oder Kotest-`integration`-Tag in
-  `:adapters:driving:mcp`) das beide Transports einmal hochfaehrt
-  und denselben Tool-Flow gegen jeden ausfuehrt — keine doppelten
-  Asserts pro Transport, sondern eine generische `transports.forAll`-
-  Schleife.
+  `:adapters:driving:mcp`) mit einem transportneutralen
+  `McpClientHarness`:
+  - `StdioHarness` startet den echten CLI-/Bootstrap-Pfad mit
+    NDJSON-stdin/stdout, liest stderr separat und beendet den Prozess
+    deterministisch ueber EOF/Stop-Handle.
+  - `HttpHarness` startet den echten HTTP-Bootstrap auf Loopback mit
+    Port `0`, liest den gebundenen Port aus dem Handle und nutzt
+    denselben JSON-RPC-Client wie stdio ab der Request-Erzeugung.
+  - beide Harnesses expose nur `initialize()`,
+    `initializedNotification()`, `toolsList()`, `toolsCall(...)`,
+    `resourcesRead(...)`, `close()` und Transport-Metadaten
+    (`name`, `stateDir`, `principal`), damit Asserts nicht
+    transport-spezifisch dupliziert werden.
+- Der Test fuehrt denselben Szenario-Plan gegen beide Transports aus:
+  `transports.forAll { transport -> runPhaseCScenario(transport) }`.
+  Transport-spezifische Unterschiede sind nur erlaubt fuer:
+  - HTTP-Session-Header, Auth-Header und HTTP-Status vor JSON-RPC-
+    Dispatch
+  - stdio-Token-/Principal-Ableitung
+  - Start-/Stop-Mechanik und stderr-Startmeldung
+  Alle Tool-Response-, Fehler-, Audit- und Artefakt-Asserts muessen
+  identisch sein.
+- Test-Isolation:
+  - jeder Transportlauf bekommt ein eigenes Temp-`stateDir`, einen
+    eigenen Tenant/Principal und eigene deterministic Request-IDs
+  - kein Test teilt Upload-Session-IDs, Artifact-IDs, Schema-IDs oder
+    HTTP-Session-IDs zwischen stdio und HTTP
+  - der State-Dir wird nach jedem Transportlauf geprueft: Tempdirs
+    werden geloescht, operator-supplied Testdirs behalten nur
+    erwartete Artefakte, keine `.lock` bleibt gehalten
+  - parallele CI-Ausfuehrung darf keine festen Ports oder globalen
+    Dateien nutzen
 - Abdeckung pro Plan §7.3:
   - Initialize/Capabilities aus Phase B
   - `capabilities_list`
-  - `schema_validate` mit kleinem Inline-Schema
+  - `schema_validate` mit kleinem Inline-Schema und mit
+    Findings-Truncation plus `artifactRef` bei vorhandenem
+    `ArtifactSink`
   - `schema_generate` mit kleinem Inline-Schema, `schemaRef`,
-    Artefakt-Fallback
+    Artefakt-Fallback fuer grosse DDL und separatem
+    Findings-only-Overflow
   - read-only Schema-Staging eines grossen Schemas
     (`artifact_upload_init` → mehrere `artifact_upload`-Segmente →
-    Finalisierung zu `schemaRef`)
-  - `schema_compare` mit zwei materialisierten `schemaRef`-Eingaengen
-  - `artifact_chunk_get` fuer ein grosses Artefakt
-  - `job_status_get` fuer eigenen Job und unbekannten Job
+    Finalisierung zu `schemaRef`) inklusive Replay des finalen Segments
+    und `artifact_upload_abort` fuer eigene aktive Session
+  - `schema_compare` mit zwei materialisierten `schemaRef`-Eingaengen,
+    `details.before`/`details.after` und Diff-Fallback via
+    `diffArtifactRef`
+  - `artifact_chunk_get` fuer ein grosses Artefakt inklusive
+    `nextChunkUri`, Chunk-SHA und letztem Chunk
+  - `job_status_get` fuer eigenen Job, unbekannten Job und
+    Artifact-Backfill von interner ID auf Resource-URI
   - fachlicher Toolfehler als `isError=true`
   - Resource-Fehler als JSON-RPC-Error
   - keine Tool-Antwort ueber Inline-Limit
   - keine Tool-/Artefakt-/Audit-Antwort enthaelt verbotene
     Secret-Keys
-- Test nutzt das CLI-Wiring aus AP 6.21 (file-backed) damit der
-  Upload-Flow real persistente Bytes schreibt.
+- Zusaetzliche AP-6.21/6.22/6.23-Kopplungen:
+  - Test nutzt das produktive CLI-Wiring aus AP 6.21 (file-backed),
+    nicht Development-/In-Memory-Byte-Stores; der Upload-Flow schreibt
+    reale Segment-, Assembly- und Artifact-Dateien in `stateDir`.
+  - grosse Upload-/Generate-/Compare-Szenarien muessen oberhalb der
+    bisherigen `ByteArray`-Gefahr liegen und pruefen nur bounded
+    Inline-Responses; Heap-/Allokationsmessung bleibt Unit-/Adapter-
+    Aufgabe, aber der Integrationstest darf keine komplette
+    Artefaktnutzlast inline vergleichen.
+  - Streaming-Finalisierung wird ueber Artefaktabruf verifiziert:
+    `schemaRef` ist nutzbar, das erzeugte Artefakt ist chunkbar, und
+    Replays liefern denselben terminalen Outcome.
+  - Output-Schemas aus `PhaseBToolSchemas` werden fuer die vier
+    betroffenen Tools im Integrationstest geladen und gegen die echten
+    Runtime-Outputs validiert, inklusive `truncated`/`artifactRef`-
+    bzw. `diffArtifactRef`-Kopplung.
+- Security-/Scrubbing-Asserts:
+  - Fixtures enthalten absichtlich Bearer-Token, Passwort-Key,
+    `api_token`, `dbPassword`, `JDBCUrl` und lokale Pfade in
+    Schemainhalten, Finding-Details, Toolfehler-Details und
+    Job-Progress-/Error-Texten.
+  - Der Test durchsucht Inline-Responses, ausgelagerte Artefakte,
+    AuditEvents und stderr/HTTP-Fehlertexte nach diesen Rohwerten.
+    Treffer sind ein Testfehler; erlaubte Ausgabe ist nur die
+    gescrubbte Projektion.
+  - Toolfehler-Envelopes werden separat geprueft: `isError=true`
+    bleibt JSON-RPC-success, `error.details[].value` ist scrubbed;
+    Transport-/Protocol-Fehler bleiben JSON-RPC-Error bzw. HTTP-
+    Statusfehler vor Tool-Dispatch.
 - Audit-Sink wird auf `InMemoryAuditSink` umgeleitet, damit die
   Tests pinnen koennen, dass jeder tools/call genau einen
-  AuditEvent erzeugt.
+  AuditEvent erzeugt. Der Audit-Assert prueft pro Call:
+  `requestId`, `toolName`, Tenant/Principal, Outcome (`SUCCESS`,
+  fachlicher Fehler, Auth/Scope/Resource-Fehler) und dass keine
+  Secret-Rohwerte im Event landen.
+- CI-Integration:
+  - AP 6.24 laeuft im normalen MCP/CLI-Testpfad, wenn die Laufzeit
+    ohne externe Datenbank auskommt; falls das Szenario Docker oder
+    echte Treiber braucht, wird es mit dem bestehenden
+    `integration`-Tag und `-PintegrationTests` verdrahtet.
+  - Der Test darf nicht flaky sein: feste Timeouts pro Request,
+    Prozess-/Server-Cleanup in `finally`, keine Sleeps als
+    Synchronisation ausserhalb von Polling mit Deadline.
+  - Bei Fehlschlag schreibt der Harness pro Transport ein kompaktes
+    Diagnosepaket (letzte JSON-RPC-Requests/Responses, stderr,
+    HTTP-Status/Headers ohne Secrets, State-Dir-Dateiliste ohne
+    Inhaltsdump).
 
 Akzeptanz:
 
 - jede Tool-Flow-Sequenz aus Plan §7.3 laeuft gegen stdio UND HTTP
   in einem einzigen CI-Lauf
-- gemeinsame Tool-Liste, gemeinsame Fehler-Mappings, gemeinsame
-  Audit-Outcomes
+- ein einziger transportneutraler Szenario-Runner erzeugt Requests und
+  Asserts; stdio/HTTP unterscheiden sich nur im Harness
+- gemeinsame Tool-Liste, gemeinsame Output-Schema-Validation,
+  gemeinsame Fehler-Mappings, gemeinsame Audit-Outcomes
+- beide Transports nutzen file-backed Byte-Stores aus AP 6.21 und
+  verifizieren Upload, Streaming-Finalisierung, Chunk-Abruf und
+  Cleanup-/Lock-Verhalten auf isolierten State-Dirs
+- `schema_validate`, `schema_generate`, `schema_compare` und
+  `job_status_get` validieren im Integrationstest gegen ihre
+  `PhaseBToolSchemas`-Output-Schemas; generische
+  `ResponseLimitEnforcer`-Envelopes fuer diese Tools lassen den Test
+  scheitern
+- truncation-Faelle erzeugen bei verfuegbarem Sink die passende
+  `artifactRef`/`diffArtifactRef`; No-Sink-Degradation wird nur
+  getestet, wenn der betreffende Handler im Wiring wirklich optionalen
+  Sink unterstuetzt
+- Inline-Responses, Artefakte, AuditEvents, stderr und HTTP-
+  Fehlertexte enthalten keine verbotenen Secret-/Pfad-Rohwerte
+- jeder `tools/call` erzeugt genau ein AuditEvent mit korrektem
+  Outcome und Request-Korrelation
+- der Test prueft mindestens einen fachlichen `isError=true`-Fehler
+  und einen echten JSON-RPC-/HTTP-Resource-Fehler pro Transport
 - der Integrationstest scheitert, sobald ein Phase-C-Tool nur in
   einem der zwei Transports korrekt funktioniert
 
