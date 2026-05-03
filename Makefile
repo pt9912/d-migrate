@@ -22,7 +22,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-smoke clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-coverage-gate docker-smoke docker-gates docker-full-gates clean
 
 help:
 	@printf '%s\n' \
@@ -44,7 +44,10 @@ help:
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
 		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
+		'  make docker-coverage-gate  Run Kover verification inside Docker' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
+		'  make docker-gates     Run Docker build, coverage and smoke gates' \
+		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
 		'  make clean            Run Gradle clean' \
 		'' \
 		'Variables:' \
@@ -119,9 +122,16 @@ docker-test:
 	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
 	  -t $(DOCKER_TAG) .
 
+docker-coverage-gate:
+	$(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .
+
 docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
+
+docker-gates: docker-build docker-coverage-gate docker-smoke
+
+docker-full-gates: docker-gates integration
 
 clean:
 	$(GRADLE) clean
