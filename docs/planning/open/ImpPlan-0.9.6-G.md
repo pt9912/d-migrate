@@ -500,7 +500,7 @@ Pflichtfelder fuer konfigurierte Provider:
 - `enabled`
 - `endpoint`
 - `allowedModels`
-- `secretRef`
+- `secretRef`, nur fuer Provider-Kinds/Adapter, die Authentisierung brauchen
 - `defaultTimeout`
 - `maxPromptBytes`
 - `maxOutputBytes`
@@ -511,7 +511,12 @@ Regeln:
 
 - `enabled=false` blockiert Provider-Aufrufe.
 - `allowExternalNetwork=false` blockiert nicht-lokale Endpoints.
-- `secretRef` wird erst im Provider-Adapter aufgeloest.
+- `secretRef` ist fuer auth-pflichtige externe Provider Pflicht und wird erst
+  im Provider-Adapter aufgeloest.
+- Fuer lokale Provider wie Ollama/LM Studio oder andere nicht auth-pflichtige
+  Adapter ist `secretRef` explizit absent/null erlaubt.
+- Roh-Secrets sind in Provider-Konfiguration und Tool-Payloads nie erlaubt;
+  nur serverseitige Secret-Refs duerfen konfiguriert werden.
 - Secrets werden nie in `capabilities_list`, Tool-Responses, Prompts oder
   Audit-Events ausgegeben.
 - Lokale Provider duerfen nur explizit konfigurierte Loopback- oder
@@ -825,7 +830,9 @@ Aufgaben:
 - serverseitige Provider-Konfiguration modellieren
 - lokale Provider-Ziele fuer Ollama/LM Studio vorbereiten
 - externe Provider nur explizit konfigurierbar machen
-- Secret-Refs statt Secret-Werte verwenden
+- Secret-Refs statt Secret-Werte verwenden; `secretRef` nur fuer
+  auth-pflichtige Provider verlangen und fuer lokale nicht auth-pflichtige
+  Provider absent/null erlauben
 - Policy-Check vor externer Provider-Nutzung erzwingen
 - Audit-Metadaten fuer Provider-Entscheidungen schreiben
 
@@ -835,6 +842,10 @@ Tests:
   deterministisch mit `FORBIDDEN_PRINCIPAL` oder `POLICY_DENIED` blockiert
 - fehlende serverseitige Default-Provider-Konfiguration in einem erlaubten
   Pfad liefert `INTERNAL_AGENT_ERROR`
+- lokaler Ollama-/LM-Studio-Provider ohne `secretRef` ist gueltig, sofern
+  Endpoint und Policy erlaubt sind
+- auth-pflichtiger externer Provider ohne `secretRef` wird fail-closed
+  abgewiesen
 - externer Provider ohne Policy wird blockiert
 - fehlendes Secret wird nicht geleakt
 - lokaler Provider ist nur bei erlaubtem Endpoint aktivierbar
