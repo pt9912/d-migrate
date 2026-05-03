@@ -303,8 +303,16 @@ Phase F uebernimmt die 0.9.6-Scope-Mapping-Regeln:
 
 Der jeweilige Scope-Check laeuft nach Transport-Auth und struktureller
 Payload-Formpruefung, aber vor SyncEffect-/Idempotency-Reserve,
-Policy/Approval, Quota, Session-/Job-Lookup, Upload-Session-Erzeugung,
-Segmentwrite, Abort-Outcome-Lookup und Runner-/Secret-Materialisierung.
+Policy/Approval, Quota, Job-Lookup, Upload-Session-Erzeugung, Segmentwrite,
+Abort-Outcome-Lookup und Runner-/Secret-Materialisierung.
+Ausnahme: `artifact_upload` darf nach syntaktischer `uploadSessionId`-
+Validation einen minimalen no-oracle Session-/Upload-Berechtigungs-Lookup
+ausfuehren, um `uploadIntent`, Tenant und erforderlichen Scope zu bestimmen.
+Dieser Lookup darf keine Segmentbytes lesen oder schreiben, keine TTL
+erneuern, keine Quota veraendern, kein Audit mit fremden Ressourcendetails
+erzeugen und bei fehlender/nicht sichtbarer Session weiterhin nur
+`RESOURCE_NOT_FOUND` bzw. `TENANT_SCOPE_DENIED` nach dem bestehenden
+No-Oracle-Vertrag liefern.
 Fehlende oder unzureichende Scopes liefern 403 mit Scope-Challenge, werden
 auditiert und schreiben keine SyncEffect-, Idempotency-, Policy-, Quota-,
 Session-, Segment-, Abort-Outcome- oder Job-Store-Eintraege.
@@ -412,6 +420,12 @@ Pflichteingaben:
 Validierungen:
 
 - `uploadSessionId` syntaktisch gueltig
+- minimaler no-oracle Session-/Upload-Berechtigungs-Lookup bestimmt
+  `uploadIntent`, Tenant, Owner und den erforderlichen MCP-Scope, ohne Bytes,
+  TTL, Quota oder Segmentzustand zu veraendern
+- erforderlicher Scope passt zum `uploadIntent`:
+  `dmigrate:artifact:upload` fuer `job_input` bzw. policy-pflichtige Intents,
+  `dmigrate:read` fuer `schema_staging_readonly`
 - Session existiert und gehoert zu Tenant/Principal oder erlaubtem Scope
 - neue oder abweichende Segmentwrites sind nur fuer `ACTIVE` erlaubt
 - finale/idempotente Retries duerfen auch `FINALIZING`, `COMPLETED` oder
@@ -446,12 +460,20 @@ Validierungen:
   `isFinalSegment`-Wert tragen wie der urspruengliche akzeptierte Write;
   abweichende Retries liefern `IDEMPOTENCY_CONFLICT` oder
   `VALIDATION_ERROR`, bevor Bytes neu geschrieben werden
-- Jede Ueberschreitung von `sizeBytes`, `maxUploadSegmentBytes`,
-  `maxUploadToolRequestBytes` oder `maxArtifactUploadBytes` beendet die
-  Session sofort terminal mit `FAILED`, Fehlercode `PAYLOAD_TOO_LARGE`,
-  persisted Failure-Outcome, Segment-/Staging-Cleanup und Quota-Release.
-  Nach diesem Status duerfen keine weiteren Segmente angenommen werden;
-  idempotente Wiederholungen replayen das Failure-Outcome.
+- Ueberschreitung von `sizeBytes`, `maxUploadSegmentBytes` oder
+  `maxArtifactUploadBytes`, die nach Session-Lookup und Segment-Decoding
+  festgestellt wird, beendet die Session sofort terminal mit `FAILED`,
+  Fehlercode `PAYLOAD_TOO_LARGE`, persisted Failure-Outcome,
+  Segment-/Staging-Cleanup und Quota-Release. Nach diesem Status duerfen keine
+  weiteren Segmente angenommen werden; idempotente Wiederholungen replayen das
+  Failure-Outcome.
+- Ueberschreitung von `maxUploadToolRequestBytes` ist ein Transport-/Envelope-
+  Limit vor Handler-Parsing. Wenn der Server `uploadSessionId` und Intent
+  nicht verlaesslich aus einem validierten Request lesen kann, liefert er
+  `PAYLOAD_TOO_LARGE` ohne Session-Lookup, Sessionmutation, Cleanup oder
+  Quota-Release. Nur wenn der Handler den Request bereits gueltig geparst und
+  die Session sicher geladen hat, duerfen nachgelagerte Segmentlimits die
+  Session terminalisieren.
 
 Antwort:
 
@@ -884,7 +906,12 @@ Quota- und Materialisierungsreihenfolge:
 
 Zu grosse Payloads liefern:
 
-- `PAYLOAD_TOO_LARGE` fuer Groessenlimits
+- `PAYLOAD_TOO_LARGE` fuer Groessenlimits. Transportweite Envelope-Limits wie
+  `maxUploadToolRequestBytes` werden vor Handler-Parsing ohne Sessionmutation
+  abgewiesen, wenn `uploadSessionId`/Intent nicht verlaesslich validiert
+  vorliegen. Decodierte Segment- oder Gesamtgroessenlimits nach Session-Lookup
+  koennen dagegen die Session gemaess Upload-Vertrag terminal nach `FAILED`
+  setzen.
 - `VALIDATION_ERROR` fuer fehlende oder syntaktisch ungueltige Felder
 
 ### 7.2 Quotas
@@ -1071,6 +1098,9 @@ Tests:
 ### 8.4 AP F.4: Segmentannahme und Hashvalidierung
 
 - `artifact_upload` gegen bestehende Session verdrahten.
+- Minimalen no-oracle Session-/Upload-Berechtigungs-Lookup vor dem
+  intentabhaengigen Scope-Check implementieren; erst danach
+  `dmigrate:artifact:upload` oder `dmigrate:read` pruefen.
 - Base64 decodieren.
 - Segmentgroesse gegen `maxUploadSegmentBytes` pruefen.
 - nicht-finale Segmentgroesse exakt gegen `maxUploadSegmentBytes` pruefen.
@@ -1091,9 +1121,17 @@ Tests:
 Tests:
 
 - fehlendes `contentBase64`
+- `artifact_upload` fuer `job_input` ohne `dmigrate:artifact:upload` erzeugt
+  403 nach minimalem no-oracle Session-/Berechtigungs-Lookup, aber ohne
+  Segmentwrite, TTL-Erneuerung oder Quota-Aenderung
+- `artifact_upload` fuer `schema_staging_readonly` mit `dmigrate:read` bleibt
+  zulaessig und nutzt nur die session-scoped read-only Upload-Berechtigung
 - zu grosses Segment -> `PAYLOAD_TOO_LARGE`
 - zu grosses Segment setzt Session terminal auf `FAILED`, speichert ein
   Failure-Outcome, startet Cleanup und gibt Quotas frei
+- transportweit zu grosser `tools/call`-Envelope ueber
+  `maxUploadToolRequestBytes` liefert `PAYLOAD_TOO_LARGE` ohne
+  Sessionmutation, wenn der Request nicht verlaesslich geparst wurde
 - nicht-finales Segment mit zu kleiner Groesse -> `VALIDATION_ERROR`
 - finales Segment schliesst Bytebereich nicht exakt -> `VALIDATION_ERROR`
 - Segmentoffset weicht von der festen Segmentgroessen-Position ab ->
@@ -1529,10 +1567,14 @@ Mindestfaelle:
   Session-Status/Byte-Kontext
 - Abort einer finalisierten Session loescht kein Artefakt
 - fehlendes `contentBase64`
+- `artifact_upload` fuer `job_input` ohne `dmigrate:artifact:upload`
+- `artifact_upload` fuer `schema_staging_readonly` mit `dmigrate:read`
 - zu grosses Segment
 - zu grosses Segment beendet die Session als `FAILED`, speichert ein
   Failure-Outcome, startet Cleanup/Quota-Release und verhindert weitere
   Segmentannahme
+- transportweit zu grosser `tools/call`-Envelope mutiert keine Session, wenn
+  `uploadSessionId`/Intent nicht verlaesslich geparst wurden
 - Segmenthash-Mismatch
 - Upload nach Abort
 - Upload nach Expiry
@@ -1664,10 +1706,19 @@ Mindestfaelle:
 - Fehlgeschlagene Finalisierung, Finalisierungs-Timeouts und
   `PAYLOAD_TOO_LARGE` terminalisieren die Upload-Session als `FAILED`, geben
   Upload-Quotas frei und replayen ein persistiertes Failure-Outcome.
+- Transportweite `maxUploadToolRequestBytes`-Verletzungen vor verlaesslichem
+  Handler-Parsing liefern `PAYLOAD_TOO_LARGE` ohne Sessionmutation; nur
+  decodierte Segment-/Gesamtgroessenverletzungen nach Session-Lookup
+  terminalisieren die Session.
 - Neue Segmentwrites sind nur in `ACTIVE` erlaubt; finale/idempotente Retries
   gegen `FINALIZING`, `COMPLETED` oder persistierte Fehler-Outcomes replayen
   Ergebnis, In-Flight-Status oder reclaimen eine abgelaufene Lease ohne
   zweite Materialisierung.
+- `artifact_upload` entscheidet den Scope intentabhaengig nach minimalem
+  no-oracle Session-/Upload-Berechtigungs-Lookup; dieser Lookup mutiert weder
+  TTL noch Quota noch Segmentzustand. `job_input` verlangt
+  `dmigrate:artifact:upload`, `schema_staging_readonly` bleibt bei
+  `dmigrate:read`.
 - `artifact_chunk_get`, Import aus Artefakt und Resource-Chunk-Reads lesen
   aus `ArtifactContentStore`, nicht aus Tool-Response- oder Heap-Kopien.
 - `data_import_start` nutzt einen Artefakt-zu-Import-Adapter, der
