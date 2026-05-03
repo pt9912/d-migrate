@@ -161,6 +161,73 @@ class SchemaSecretGuardTest : FunSpec({
         leaks.any { it == "patternProperties.^x_.*\$" } shouldBe false
     }
 
+    // ──────────────────────────────────────────────────────────────
+    // AP 6.23: normalised forbidden-key detection. Variants like
+    // `dbPassword`, `credentialToken`, `api_token`, `JDBCUrl` must
+    // be blocked even though they are not exact lowercase matches
+    // for an existing FORBIDDEN_TOKENS entry.
+    // ──────────────────────────────────────────────────────────────
+
+    test("AP 6.23: dbPassword (substring of password) is detected") {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("dbPassword" to mapOf("type" to "string")),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.dbPassword"
+    }
+
+    test("AP 6.23: credentialToken (two forbidden substrings) is detected") {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("credentialToken" to mapOf("type" to "string")),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.credentialToken"
+    }
+
+    test("AP 6.23: api_token (separator-tolerant) is detected") {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("api_token" to mapOf("type" to "string")),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.api_token"
+    }
+
+    test("AP 6.23: JDBCUrl (mixed case + no separator) is detected") {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("JDBCUrl" to mapOf("type" to "string")),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.JDBCUrl"
+    }
+
+    test("AP 6.23: separator-tolerant connection.string is detected") {
+        val schema = mapOf(
+            "type" to "object",
+            "properties" to mapOf("connection.string" to mapOf("type" to "string")),
+        )
+        SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.connection.string"
+    }
+
+    test("AP 6.23: SchemaSecretGuard.normalize collapses case + separators") {
+        SchemaSecretGuard.normalize("dbPassword") shouldBe "dbpassword"
+        SchemaSecretGuard.normalize("DB_PASSWORD") shouldBe "dbpassword"
+        SchemaSecretGuard.normalize("api-key") shouldBe "apikey"
+        SchemaSecretGuard.normalize("Api.Token") shouldBe "apitoken"
+        SchemaSecretGuard.normalize("JDBC-Url") shouldBe "jdbcurl"
+    }
+
+    test("AP 6.23: SchemaSecretGuard.isForbidden direct check") {
+        SchemaSecretGuard.isForbidden("dbPassword") shouldBe true
+        SchemaSecretGuard.isForbidden("credentialToken") shouldBe true
+        SchemaSecretGuard.isForbidden("api_token") shouldBe true
+        SchemaSecretGuard.isForbidden("JDBCUrl") shouldBe true
+        SchemaSecretGuard.isForbidden("providerRef") shouldBe true
+        // Negative cases.
+        SchemaSecretGuard.isForbidden("tenantId") shouldBe false
+        SchemaSecretGuard.isForbidden("schemaRef") shouldBe false
+        SchemaSecretGuard.isForbidden("scopes") shouldBe false
+    }
+
     test("patternProperties regex key matching a forbidden name is NOT flagged (keys aren't payload)") {
         val schema = mapOf(
             "type" to "object",

@@ -18,29 +18,67 @@ package dev.dmigrate.mcp.schema
 internal object SchemaSecretGuard {
 
     /**
-     * Property names that MUST NOT appear in a Phase-B tool input or
-     * output schema. The list is intentionally explicit (not a
-     * fuzzy regex) so future additions go through review. Comparison
-     * is case-insensitive — `Password`, `PASSWORD`, `password` all
-     * map to the same forbidden name.
+     * Substring tokens that MUST NOT appear in any Phase-B tool input
+     * / output schema property name AFTER normalisation (lowercase +
+     * stripping of `_`, `-`, `.`). AP 6.23 widens AP-6.10's exact-
+     * lowercase match to a normalised substring match so variants
+     * like `dbPassword`, `credentialToken`, `api_token`, `JDBC.Url`
+     * are blocked without an explicit allowlist entry per spelling.
+     *
+     * The list is intentionally explicit (not a fuzzy regex) so
+     * future additions go through review.
      */
-    val FORBIDDEN_PROPERTIES: Set<String> = setOf(
+    val FORBIDDEN_TOKENS: Set<String> = setOf(
         "password",
         "passwd",
         "secret",
-        "secrets",
         "token",
-        "apikey",
-        "api_key",
-        "credentialref",
-        "credentialsref",
-        "providerref",
-        "jdbcurl",
+        "credential",
         "connectionstring",
-        "connection_string",
+        "jdbcurl",
+        "apikey",
         "privatekey",
-        "private_key",
     )
+
+    /**
+     * Forbidden names that are not safe to substring-match (because
+     * the substring would itself be too generic). Match is on the
+     * fully normalised name only.
+     */
+    val FORBIDDEN_EXACT: Set<String> = setOf(
+        "providerref",
+    )
+
+    /**
+     * AP 6.23: backwards-compat alias. Old call sites or tests that
+     * inspect the forbidden list see the normalised substrings; the
+     * exact-only entries are folded in. Use [isForbidden] for
+     * decisions — it applies the same normalisation as the walker.
+     */
+    @Deprecated(
+        "Use isForbidden(name); FORBIDDEN_PROPERTIES no longer enumerates every variant.",
+        ReplaceWith("isForbidden(name)"),
+    )
+    val FORBIDDEN_PROPERTIES: Set<String> = FORBIDDEN_TOKENS + FORBIDDEN_EXACT
+
+    /**
+     * AP 6.23 normalisation: lowercase + drop `_`, `-`, `.` so
+     * `db_password`, `dbPassword`, `Db.Password`, `DB-PASSWORD` all
+     * collapse to `dbpassword`. The walker compares the normalised
+     * form against [FORBIDDEN_TOKENS] (substring) and
+     * [FORBIDDEN_EXACT] (full match).
+     */
+    fun normalize(name: String): String =
+        name.lowercase().replace(NORMALISATION_REGEX, "")
+
+    /** True if [name] (after normalisation) hits a forbidden token / exact entry. */
+    fun isForbidden(name: String): Boolean {
+        val normalised = normalize(name)
+        if (normalised in FORBIDDEN_EXACT) return true
+        return FORBIDDEN_TOKENS.any { it in normalised }
+    }
+
+    private val NORMALISATION_REGEX: Regex = Regex("[_\\-.]")
 
     /**
      * Walks [schema] and returns a list of paths (e.g.
@@ -101,7 +139,7 @@ internal object SchemaSecretGuard {
         for ((rawKey, child) in node) {
             val keyName = rawKey as? String ?: continue
             val childPath = if (parentPath.isEmpty()) "$keyword.$keyName" else "$parentPath.$keyword.$keyName"
-            if (checkKeyName && keyName.lowercase() in FORBIDDEN_PROPERTIES) {
+            if (checkKeyName && isForbidden(keyName)) {
                 leaks += childPath
             }
             walk(child, childPath, leaks)
