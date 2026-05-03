@@ -1882,7 +1882,9 @@ Aufgaben:
     `resources/read` gelesen und gegen denselben Tenant/Owner
     geprueft
   - ein fremder oder unbekannter Resource-URI erzeugt pro Transport
-    denselben no-oracle Fehlerpfad
+    denselben no-oracle Fehlerpfad: gleicher JSON-RPC-Error-Code bzw.
+    gleicher Tool-Error-Code, gleiche `isError`-Einordnung und gleiche
+    scrubbed Message-Klasse nach Normalisierung dynamischer IDs
   - Ressourcen-Lesefehler nach JSON-RPC-Dispatch zaehlen zu den
     transport-neutralen Assertions; HTTP-vor-Dispatch-Fehler bleiben
     Transport-Assertions
@@ -2006,10 +2008,11 @@ Aufgaben:
   transport-spezifischen Audit-Assert:
   - HTTP-vor-Dispatch-Fehler wie `PAYLOAD_TOO_LARGE`, fehlende Auth
     oder ungueltige Session duerfen `0` Tool-AuditEvents erzeugen,
-    koennen aber ein Transport-/Security-AuditEvent erzeugen, falls
-    diese Schicht eins vorsieht.
+    muessen aber genau `0` oder genau `1` Transport-/Security-
+    AuditEvent nach dokumentierter Transportpolicy erzeugen; der
+    erwartete Wert wird pro Fehlerklasse im Test fest gepinnt.
   - Stdio-vor-Dispatch-Fehler bei Token-/Principal-Ablehnung folgen
-    derselben Regel.
+    derselben Regel mit eigener erwarteter 0/1-Policy.
   - Der Test darf solche Vorabfehler nicht in die "genau ein Event pro
     tools/call"-Zaehlung aufnehmen.
 - CI-Integration:
@@ -2050,7 +2053,9 @@ Akzeptanz:
   Pfad abgeleitet
 - `resources/read` liest mindestens eine im Szenario erzeugte
   Resource-URI erfolgreich und pinnt einen fremden/unbekannten
-  Resource-URI als no-oracle Fehlerpfad fuer beide Transports
+  Resource-URI als no-oracle Fehlerpfad fuer beide Transports;
+  Fehlercode, `isError`-/JSON-RPC-Einordnung und scrubbed Message-
+  Klasse sind nach Normalisierung identisch
 - transport-neutrale Gleichheitsassertions nutzen eine dokumentierte
   Normalisierung fuer Request-IDs, Session-IDs, dynamische
   Resource-IDs, Pfade und Zeitwerte; fachliche Felder werden nicht
@@ -2073,8 +2078,9 @@ Akzeptanz:
 - jeder bis zum Dispatcher gelangte `tools/call` erzeugt genau ein
   AuditEvent mit korrektem Outcome und Request-Korrelation;
   Vorabfehler vor Dispatch haben einen separaten 0-oder-
-  Transportevent-Assert; Audit-Sinks sind per Transportlauf frisch und
-  voneinander isoliert
+  Transportevent-Assert; die erwartete 0/1-Eventzahl wird je
+  Fehlerklasse fest gepinnt. Audit-Sinks sind per Transportlauf frisch
+  und voneinander isoliert
 - der Test prueft mindestens einen fachlichen `isError=true`-Fehler
   und einen echten JSON-RPC-/HTTP-Resource-Fehler pro Transport
 - ein Konkurrenzstart mit demselben operator-supplied `stateDir`
