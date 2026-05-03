@@ -1087,9 +1087,14 @@ Aufgaben:
   ephemeren Metadata-Stores noetig; der Kommentar im Gradle-File wird
   entsprechend korrigiert, damit die CLI nicht mehr als vollstaendig
   in-memory dokumentiert ist.
-- `McpDevelopmentWiring.developmentPhaseCWiring` wird zu einem
-  CLI-Wiring mit expliziter State-Konfiguration erweitert, z.B.
-  `developmentPhaseCWiring(stateDir: Path, ownsStateDir: Boolean, ...)`.
+- Das produktive CLI-Wiring bekommt einen neutralen Namen, z.B.
+  `McpCliPhaseCWiring.phaseCWiring(stateDir: Path, ownsStateDir: Boolean, ...)`.
+  `McpDevelopmentWiring.developmentPhaseCWiring` darf hoechstens als
+  test-/dev-nahe Delegation oder Compatibility-Alias bestehen bleiben,
+  darf aber nicht mehr der Produktions-Anker fuer `mcp serve` sein.
+  Produktiver CLI-Code darf keine Testfixture-Defaults versehentlich
+  hinter einem `Development`-Helper verstecken.
+- Das CLI-Wiring wird mit expliziter State-Konfiguration aufgebaut.
   Darin werden:
   - `FileBackedUploadSegmentStore(stateDir)`
     fuer `UploadSegmentStore`
@@ -1117,6 +1122,13 @@ Aufgaben:
   angelegt werden, ist ein Verzeichnis, ist lesbar und beschreibbar.
   Fehler werden als CLI-Konfigurationsfehler mit Exit 2 gemeldet, bevor
   HTTP-Port oder stdio-Loop gestartet werden.
+- Operator-supplied State-Dirs sind exklusive Laufzeit-Workdirs. Die
+  CLI legt beim Start ein Interprozess-Lock unter `<stateDir>/.lock`
+  an und haelt es bis zum Stop. Ein zweiter `mcp serve` mit demselben
+  State-Dir scheitert vor Serverstart mit Exit 2 und klarer stderr-
+  Diagnose. Ohne dieses Single-Writer-Lock waeren die ephemeren
+  Metadata-Stores pro Prozess, die Byte-Dateien aber gemeinsam, was
+  Segment-/Artefakt-Zuordnungen unzuverlaessig machen wuerde.
 - Shutdown-/Lifecycle-Regel:
   - CLI-owned Tempdir wird ueber einen idempotenten Owner verwaltet,
     der bei normalem Ende, SIGINT/JVM-Shutdown und explizitem
@@ -1138,10 +1150,30 @@ Aufgaben:
   nicht wieder ueber MCP referenziert werden; sie sind nur
   diagnostische/forensische Reste bis ein persistenter Metadata-
   Adapter landet.
+- Operator-supplied State-Dirs bekommen trotzdem eine begrenzte
+  Dateiebene-Cleanup-Strategie, damit Crashs und abgebrochene Sessions
+  nicht zu unbounded Disk Growth fuehren:
+  - beim Start nach erfolgreichem Lock wird ein best-effort Startup-
+    Sweep ausgefuehrt
+  - `FileBackedUploadSegmentStore.cleanupOrphans(activeSessions=emptySet())`
+    darf Segment-Sessions aus frueheren Prozessen entfernen, weil die
+    passende `UploadSessionStore`-Metadaten nach Restart ohnehin
+    fehlen
+  - nicht referenzierbare Artefaktdateien aus frueheren Prozessen
+    werden nicht blind geloescht, sondern nach einer konfigurierbaren
+    Retention-Grenze fuer orphaned Byte Files entfernt
+    (`--mcp-state-orphan-retention`/
+    `DMIGRATE_MCP_STATE_ORPHAN_RETENTION`, Default z.B. `24h`);
+    Retention `0` bedeutet sofort loeschen, `never` deaktiviert den
+    Sweep explizit fuer forensische Betriebsmodi
+  - Cleanup-Aktionen werden nur als Counts und State-Dir-Scope geloggt,
+    nie mit Payload-Inhalten oder Secrets
 - Keine Store-API erweitern fuer diesen AP. Falls Glue-Code fuer
   State-Dir/cleanup noetig ist, bleibt er im CLI-Adapter; die
   file-backed Store-Contracts aus `:adapters:driven:storage-file`
-  bleiben unveraendert.
+  bleiben unveraendert, ausser wenn fuer die Artefakt-Orphan-
+  Retention eine eng begrenzte file-adapter-interne Cleanup-API noetig
+  ist.
 - Bestehende read-only Handler-Unit-Tests bleiben in-memory. Neue
   CLI-/Bootstrap-Tests muessen dagegen das echte `mcp serve`-Wiring
   verwenden und dadurch die file-backed Byte-Stores pinnen.
@@ -1152,6 +1184,9 @@ Akzeptanz:
   `FileBackedUploadSegmentStore` und `FileBackedArtifactContentStore`;
   `InMemoryUploadSegmentStore` und `InMemoryArtifactContentStore`
   tauchen im produktiven CLI-Wiring nicht mehr auf.
+- Produktives `mcp serve` nutzt ein neutral benanntes CLI-Wiring; ein
+  `Development`-Helper ist nicht der Einstiegspunkt fuer die
+  Produktionsverdrahtung.
 - Uploadsegmente liegen unter dem effektiven State-Dir auf Platte und
   Artefaktbytes werden aus dem file-backed `ArtifactContentStore`
   gelesen. Die Segment-/Artefakt-Store-Auswahl selbst haelt keine Bytes
@@ -1164,10 +1199,17 @@ Akzeptanz:
 - CLI-owned Tempdirs werden beim normalen Stop und beim SIGINT-Pfad
   best-effort entfernt; operator-supplied State-Dirs ueberleben den
   Shutdown inklusive ihrer Byte-Dateien.
+- Zwei parallele `mcp serve`-Prozesse mit demselben State-Dir koennen
+  nicht starten; der zweite Prozess endet mit Exit 2.
+- Startup-Sweep begrenzt orphaned Segment- und Artefaktbytes aus
+  frueheren Prozessen gemaess Retention-Konfiguration; Tests decken
+  Default-Retention, `0` und `never` ab.
 - Ungueltige State-Dirs liefern vor Serverstart Exit 2 mit klarer
   stderr-Diagnose.
 - Helptext und Startlog sagen eindeutig, dass nur Byte-Content
-  file-backed ist und Metadata weiterhin ephemer bleibt.
+  file-backed ist, Metadata weiterhin ephemer bleibt, State-Dirs
+  single-writer sind und orphaned Byte Files nach Retention
+  aufgeraeumt werden.
 - Der AP gilt erst als abgeschlossen, wenn AP 6.24 seinen Upload-Flow
   mit diesem CLI-Wiring laufen lassen kann und AP 6.22 die
   streamingfaehige Finalisierung geliefert hat; sonst waere der
