@@ -242,6 +242,12 @@ Die Entscheidungslogik trennt drei "fremd"-Faelle:
 Diese Logik wird als zentraler, golden-getesteter Error-Resolver fuer alle
 Cursor-Handler umgesetzt. Einzelne Handler duerfen die Reihenfolge nicht
 nachbauen.
+Golden-Tests muessen die identische Praezedenz fuer `resources/list`,
+`resources/read`, `artifact_chunk_get` und alle fachlichen Listen-Tools
+erzwingen. Die Testfaelle muessen insbesondere pruefen, dass tenant-fremde
+Requests vor Cursor-Decode mit `TENANT_SCOPE_DENIED` enden und dass
+manipulierte, abgelaufene oder anders gebundene Cursor im erlaubten Tenant
+einheitlich `VALIDATION_ERROR` liefern.
 
 ### 4.3 Connection-Refs sind secret-frei
 
@@ -376,6 +382,13 @@ Groessere Ressourcen liefern:
 - Chunk-Template
 - naechsten Chunk-Cursor
 - Groessen- und Hash-Metadaten, soweit vorhanden
+
+Binaere oder unbekannte MIME-Typen duerfen auch dann nicht inline geliefert
+werden, wenn ihr Body klein genug waere. `resources/read` muss in diesem Fall
+immer eine weiterverfolgbare Referenz liefern: entweder einen tenant-scoped
+`artifactRef` oder eine tenant-scoped `nextChunkUri`. Falls der Resolver keine
+solche Referenz bilden kann, gilt das als Implementierungs-/Adapterfehler und
+darf nicht als leere oder teilweise erfolgreiche Resource-Antwort erscheinen.
 
 Chunk-Fortsetzungen duerfen nicht als nackte `chunkId`-Cursor ausgegeben werden.
 Erlaubt sind:
@@ -791,6 +804,16 @@ Umsetzung:
   - jeder Key hat stabile `kid`
   - alte Keys duerfen nur bis zur maximalen Cursor-TTL plus Clock-Skew
     akzeptiert werden
+- Key-Rotation muss deployment-uebergreifend deterministisch sein:
+  - Rollout N+1 verteilt zuerst den neuen Key als Validation-Key auf alle
+    Instanzen, ohne ihn bereits als aktiven Signing-Key zu verwenden.
+  - Erst nachdem alle Instanzen den neuen Key validieren koennen, wird er in
+    Rollout N+2 zum aktiven Signing-Key.
+  - Der alte aktive Key bleibt auf allen Instanzen mindestens bis
+    `maxCursorTtl + clockSkew` nach dem letzten moeglichen Signaturzeitpunkt als
+    Validation-Key konfiguriert.
+  - Erst danach darf der alte Key entfernt werden; uneinheitliche Keyrings
+    zwischen Instanzen gelten als fail-closed Konfigurationsfehler.
 - Dev-/Test-Modus nutzt explizit benannten Test-Key, keinen zufaelligen
   Prozess-Key fuer reproduzierbare Tests.
 - Manipulierte, tenant-fremde, filter-fremde, abgelaufene und syntaktisch
@@ -812,6 +835,9 @@ Tests:
   `VALIDATION_ERROR`
 - Key-Rotation: neuer aktiver `kid` signiert neue Cursor, alter Validation-Key
   validiert bestehende Cursor bis TTL-Ablauf, danach nicht mehr
+- Key-Rotation ueber Rollout-Grenzen: neue Keys werden vor Aktivierung als
+  Validation-Key akzeptiert; alte Keys bleiben bis `maxCursorTtl + clockSkew`
+  nach letzter Signatur gueltig und werden danach abgewiesen
 - `resources/list` behaelt family-basierten Walk statt globaler Sortierung
 
 ### 10.4 AP D4: Store-/Index-Vertraege fuer Listen
@@ -928,6 +954,9 @@ Tests:
 - grosse Ressource liefert Referenz/Chunk-URI statt zu grossem Inline-Content
 - JSON/Text knapp unterhalb der Inline-Grenze wird inline geliefert; Inhalt
   oberhalb der Grenze und binaere MIME-Typen liefern Referenz/Chunk-URI
+- kleine binaere oder unbekannte MIME-Typen liefern zwingend `artifactRef` oder
+  `nextChunkUri`, niemals Inline-Base64 und niemals eine Antwort ohne
+  weiterverfolgbare Referenz
 - fremder Tenant vs. fehlende Sichtbarkeit korrekt gemappt
 
 ### 10.8 AP D8: `resources/list` produktiv verdrahten
