@@ -1518,6 +1518,12 @@ Aufgaben:
   - `code`, `path`, `message`: string
   - optional `details`
   - keine zusaetzlichen Properties auf Finding-Ebene
+  - `details`-Value-Slots erlauben nur scrubbed Skalare oder Arrays
+    davon mit `maxItems: 16`; Array-Elemente sind ebenfalls auf
+    `string`/`number`/`boolean`/`null` beschraenkt und Arrays duerfen
+    nicht geschachtelt werden. Strings in `details` nutzen dieselbe
+    Laengenbegrenzung wie andere kurze Output-Strings, damit "kleine
+    Arrays" schema-pruefbar bleibt.
   `path` bleibt string und darf leer sein, wenn der fachliche Pfad
   unbekannt ist; `message` bleibt lesbare Kurzfassung.
 - `schema_generate` nutzt einen eigenen Finding-Helper, z.B.
@@ -1642,6 +1648,15 @@ Aufgaben:
     Finding-Details und Tool-Error-Detail-Values mit Bearer-Token,
     Passwort oder JDBC-URL nur gescrubbt im Wire-Output und im Artefakt
     vorkommen.
+- `ResponseLimitEnforcer` darf fuer die vier AP-6.23-Tools kein
+  generisches Truncated-Envelope emittieren, das die per-Tool-
+  Output-Schemas umgeht. Groessen-Fallbacks muessen entweder
+  tool-spezifisch vor dem Enforcer passieren und alle Pflichtfelder des
+  jeweiligen Schemas erhalten, oder der Enforcer bekommt pro Tool einen
+  schema-kompatiblen Fallback-Builder. Ein generisches
+  `{summary, artifactRef, truncated}`-Objekt ist fuer
+  `schema_validate`, `schema_generate`, `schema_compare` und
+  `job_status_get` kein valider AP-6.23-Output.
 - Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regenerieren und
   dabei die Diffs bewusst reviewen. Zusaetzlich zu Goldenfiles braucht
   AP 6.23 Runtime-Schema-Validation-Tests: exemplarische Outputs von
@@ -1662,7 +1677,9 @@ Akzeptanz:
   Output emittieren kann, listet das Feld im JSON-Schema mit
   Resource-URI-Pattern
 - `findings`-Item-Schema ist strukturell typisiert, nicht
-  `additionalProperties: true`
+  `additionalProperties: true`; `details`-Arrays haben ein hartes
+  `maxItems` und lehnen geschachtelte Arrays oder unbeschraenkte
+  Detail-Listen schema-seitig ab
 - `schema_compare` akzeptiert `details.before`/`details.after` fuer
   Aenderungsfindings als Strings; das Details-Schema erzwingt
   `additionalProperties=false` plus Nicht-Leer-Regel und lehnt
@@ -1687,7 +1704,9 @@ Akzeptanz:
   kleiner DDL ab, damit der Fallback nicht DDL-groessenabhaengig
   bleibt.
 - Runtime-Outputs der vier betroffenen Tools validieren gegen ihre
-  eigenen Output-Schemas
+  eigenen Output-Schemas, auch wenn der Response-Groessenfallback
+  greift; der generische `ResponseLimitEnforcer`-Envelope wird fuer
+  diese Tools nicht als schema-valider Ersatz akzeptiert
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
   werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
   und lokalen Pfad
