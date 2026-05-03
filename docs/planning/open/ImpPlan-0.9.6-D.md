@@ -190,12 +190,25 @@ veroeffentlicht, muessen Tokens adapterseitig gekapselt werden:
 - Base64-codiert und strukturiert
 - signiert oder per HMAC-MAC versiegelt
 - tenant- und filtergebunden
-- ablauf- oder versionsfaehig, falls der Store das benoetigt
+- versioniert
+- mit `kid` fuer Key-Rotation versehen
+- mit `issuedAt` und `expiresAt` versehen
 
 Diese Regel gilt fuer Listen-Cursor und fuer Chunk-Fortsetzungen wie
 `nextChunkCursor`. Manipulierte, syntaktisch ungueltige, tenant-fremde oder
 abgelaufene Tokens liefern `VALIDATION_ERROR`, niemals fremde Daten. Phase D
 fuehrt keinen separaten `TOKEN_EXPIRED`-Fehlercode ein.
+
+Produktive MCP-Cursor muessen ablaufen. Defaults:
+
+- fachliche Listen-Cursor: `15min`
+- `resources/list`-Cursor: `15min`
+- Chunk-Cursor fuer `artifact_chunk_get`: `5min`
+
+Test- und lokale Dev-Konfigurationen duerfen kuerzere oder laengere TTLs
+setzen, muessen dies aber explizit konfigurieren. Ein fehlendes `expiresAt`,
+ein unbekannter `version`-Wert oder ein unbekannter `kid` liefert
+`VALIDATION_ERROR`.
 
 Fehlerpraezedenz bei Requests mit Cursor:
 
@@ -217,15 +230,18 @@ Fehlerpraezedenz bei Requests mit Cursor:
    sichtbare Datensaetze im erlaubten Tenant liefern no-oracle
    `RESOURCE_NOT_FOUND`.
 
-Konkrete kombinierte Faelle:
+Die Entscheidungslogik trennt drei "fremd"-Faelle:
 
-| Request-Zustand | Verbindlicher Fehler |
-| --- | --- |
-| syntaktisch ungueltige URI, Tenant nicht parsebar | `VALIDATION_ERROR` |
-| parsebarer fremder Tenant + beliebiger Cursor | `TENANT_SCOPE_DENIED` |
-| erlaubter Tenant + manipulierter Cursor | `VALIDATION_ERROR` |
-| erlaubter Tenant + valider Cursor fuer anderen Tenant | `VALIDATION_ERROR` |
-| erlaubter Tenant + valider Cursor + nicht sichtbarer Datensatz | `RESOURCE_NOT_FOUND` |
+| Stufe | Beispiel | Verbindlicher Fehler |
+| --- | --- | --- |
+| Expliziter Request-Tenant ist syntaktisch nicht bestimmbar | URI oder `tenantId` nicht parsebar | `VALIDATION_ERROR` |
+| Expliziter Request-Tenant ist bestimmbar, aber nicht erlaubt | `tenantId=other` oder URI mit fremdem Tenant | `TENANT_SCOPE_DENIED`; Cursor wird nicht gelesen |
+| Request-Tenant ist erlaubt, aber Cursor ist manipuliert, abgelaufen oder anders gebunden | Cursor-Tenant, Filter, `pageSize`, Tool/Familie, Sortierung, `version` oder `kid` passt nicht | `VALIDATION_ERROR` |
+| Request-Tenant ist erlaubt und Cursor ist gueltig, aber Datensatz ist nicht sichtbar | fremder Job im erlaubten Tenant | `RESOURCE_NOT_FOUND` |
+
+Diese Logik wird als zentraler, golden-getesteter Error-Resolver fuer alle
+Cursor-Handler umgesetzt. Einzelne Handler duerfen die Reihenfolge nicht
+nachbauen.
 
 ### 4.3 Connection-Refs sind secret-frei
 
@@ -309,6 +325,22 @@ z. B.:
 
 Chunk-URIs duerfen nicht als normales Artifact-`id`-Segment kodiert werden,
 weil sonst Templates, Tenant-Pruefung und Fehlerbehandlung uneindeutig werden.
+
+`ResourceKind.UPLOAD_SESSIONS` bleibt im Kernmodell parsebar, weil Upload-
+Tools und interne Stores den bestehenden URI-Vertrag weiter nutzen. Fuer Phase
+D ist dieser Kind jedoch vollstaendig MCP-resource-blocked:
+
+- kein Eintrag in `resources/list`
+- kein Eintrag in `resources/templates/list`
+- kein `resources/read`
+- kein Resolver-Zugriff auf Upload-Session-Stores
+
+Ein `resources/read` auf
+`dmigrate://tenants/{tenantId}/upload-sessions/{uploadSessionId}` validiert
+zunaechst URI und Tenant gemaess Abschnitt 4.2. Ist der Tenant erlaubt, endet
+der Request ohne Store-Lookup mit `VALIDATION_ERROR`, weil dieser Resource-Kind
+in Phase D nicht lesbar ist. Dadurch kann das Erraten von Upload-Session-IDs
+keine Existenz bestaetigen.
 
 ### 5.2 Resource-Read-Grenzen
 
@@ -640,10 +672,14 @@ Verbindliche Regeln:
 - `resources/templates/list` ist die einzige Listen-Ausnahme: statisch,
   principal-unabhaengig und ohne Resource-Aufloesung.
 - Cursor duerfen nicht tenant- oder filteruebergreifend wiederverwendbar sein.
+- Produktive MCP-Cursor enthalten `version`, `kid`, `issuedAt` und `expiresAt`;
+  Cursor ohne Ablaufzeit sind ungueltig.
 - Sensitive Connection-Refs liefern nur Policy-Hinweise und
   `allowedOperations`-Metadaten, keine Secrets und keine ausfuehrbaren
   Start-Tool-Vertraege.
 - Resource-Fehler leaken keine fremden Details.
+- `UPLOAD_SESSIONS` ist in Phase D kein lesbarer MCP-Resource-Kind, auch wenn
+  der Kernparser die URI fuer interne Upload-Pfade weiterhin versteht.
 - Audit-Events entstehen auch fuer Validierungs-, Tenant-, Auth- und
   Cursor-Fehler.
 
@@ -671,7 +707,7 @@ Umsetzung:
   - `GlobalCapabilitiesResourceUri`
 - `ResourceKind.UPLOAD_SESSIONS` bleibt im Kernmodell erlaubt, wird aber in
   Phase D nicht ueber `resources/list` oder `resources/templates/list`
-  advertised.
+  advertised und nicht ueber `resources/read` aufgeloest.
 - Parser-Regeln fuer Segment-Zeichensatz, leere Segmente, unbekannte Kinds,
   zu viele Segmente und tenantlose URIs explizit testen.
 - Renderer fuer alle erlaubten Varianten bereitstellen, damit Discovery und
@@ -685,6 +721,8 @@ Tests:
 - andere tenantlose URIs liefern `VALIDATION_ERROR`
 - Upload-Session-URI bleibt parsebar, aber nicht listbar/template-visible in
   Phase D
+- Upload-Session-URI ist fuer `resources/read` als Phase-D-blocked Kind
+  klassifiziert
 
 ### 10.2 AP D2: Resolver-Vertrag und Fehler-Mapping
 
@@ -706,9 +744,11 @@ Umsetzung:
   - syntaktische Fehler -> `VALIDATION_ERROR`
   - Tenant ausserhalb `allowedTenantIds` -> `TENANT_SCOPE_DENIED`
   - nicht sichtbarer Datensatz im erlaubten Tenant -> `RESOURCE_NOT_FOUND`
+  - erlaubter Tenant, aber Phase-D-blocked Resource-Kind wie
+    `UPLOAD_SESSIONS` -> `VALIDATION_ERROR` ohne Store-Lookup
   - fehlende Scopes -> bestehendes Auth-/Scope-Mapping
-- Fehlerpraezedenz aus Abschnitt 4.2 in einem zentralen Helper oder Test-
-  Fixture abbilden, damit Listen-Tools, `resources/read` und
+- Fehlerpraezedenz aus Abschnitt 4.2 in einem zentralen, golden-getesteten
+  Error-Resolver abbilden, damit Listen-Tools, `resources/read` und
   `artifact_chunk_get` keine divergierende Reihenfolge implementieren.
 - `dmigrate://capabilities` als eigener Resolver, nicht als Sonderfall im
   JSON-RPC-Handler.
@@ -716,8 +756,10 @@ Umsetzung:
 Tests:
 
 - Resolver-Dispatch je URI-Variante
-- kombinierte Fehlerfaelle aus der Praezedenztabelle in Abschnitt 4.2
+- kombinierte Fehlerfaelle aus der Entscheidungslogik in Abschnitt 4.2
 - Tenant-fremde URI bestaetigt keine Existenz fremder Datensaetze
+- erlaubter Tenant + Upload-Session-URI liefert `VALIDATION_ERROR` ohne
+  Upload-Session-Store-Zugriff
 - Datensatz im erlaubten Tenant, aber ohne Sichtbarkeit, liefert
   `RESOURCE_NOT_FOUND`
 - Capability-Resolver liefert nur secret-freie Daten
@@ -731,20 +773,31 @@ Umsetzung:
 
 - MCP-seitigen Cursor-Codec fuer fachliche Listen-Tools einfuehren.
 - Cursor-Payload mindestens:
-  - Cursor-Typ / Version
+  - Cursor-Typ
+  - `version`
+  - `kid`
   - Tenant
   - Tool oder Resource-Familie
   - validierte Filter
   - `pageSize`
   - Sortierung
   - letzte Sort-Keys oder Store-`innerToken`
-  - optional `issuedAt` / `expiresAt`
+  - `issuedAt`
+  - `expiresAt`
 - Payload Base64-url-safe serialisieren und per HMAC versiegeln.
-- Secret fuer HMAC aus Serverkonfiguration laden; Dev-/Test-Modus nutzt
-  explizit benannten Test-Key, keinen zufaelligen Prozess-Key fuer
-  reproduzierbare Tests.
+- HMAC-Keyring aus Serverkonfiguration laden:
+  - genau ein aktiver Signing-Key
+  - null oder mehr Validation-Keys fuer Rotation
+  - jeder Key hat stabile `kid`
+  - alte Keys duerfen nur bis zur maximalen Cursor-TTL plus Clock-Skew
+    akzeptiert werden
+- Dev-/Test-Modus nutzt explizit benannten Test-Key, keinen zufaelligen
+  Prozess-Key fuer reproduzierbare Tests.
 - Manipulierte, tenant-fremde, filter-fremde, abgelaufene und syntaktisch
   ungueltige Cursor liefern `VALIDATION_ERROR`.
+- Unbekannte `version`, fehlende TTL-Felder, `expiresAt <= issuedAt`,
+  unbekannte `kid` oder Signatur mit nicht mehr akzeptiertem Key liefern
+  `VALIDATION_ERROR`.
 - Bestehenden Phase-B-`ResourcesListCursor` entweder dual-read-faehig machen
   oder vor oeffentlicher Veroeffentlichung bewusst mit `VALIDATION_ERROR`
   abweisen und in `spec/mcp-server.md` dokumentieren.
@@ -755,6 +808,10 @@ Tests:
 - HMAC-Tampering
 - Tenant-/Filter-/Sortier-Mismatch
 - Expiry-Mapping auf `VALIDATION_ERROR`
+- fehlende `expiresAt` / unbekannte `version` / unbekannte `kid` liefern
+  `VALIDATION_ERROR`
+- Key-Rotation: neuer aktiver `kid` signiert neue Cursor, alter Validation-Key
+  validiert bestehende Cursor bis TTL-Ablauf, danach nicht mehr
 - `resources/list` behaelt family-basierten Walk statt globaler Sortierung
 
 ### 10.4 AP D4: Store-/Index-Vertraege fuer Listen
@@ -866,6 +923,8 @@ Tests:
 - Request mit `cursor`, `range`, `chunkId` oder anderen Zusatzfeldern
   fehlschlaegt
 - read fuer Job, Artifact, Schema, Profile, Diff, Connection und Capability
+- read fuer Upload-Session-URI im erlaubten Tenant liefert `VALIDATION_ERROR`
+  ohne Store-Lookup
 - grosse Ressource liefert Referenz/Chunk-URI statt zu grossem Inline-Content
 - JSON/Text knapp unterhalb der Inline-Grenze wird inline geliefert; Inhalt
   oberhalb der Grenze und binaere MIME-Typen liefern Referenz/Chunk-URI
@@ -1010,6 +1069,12 @@ Tests/Gates:
   Sortierung, mindestens `createdAt DESC`, `id ASC`.
 - Cursor fachlicher Listen-Tools sind an Tenant, Filter, `pageSize`, Sortierung
   und letzte Sort-Keys gebunden.
+- Produktive fachliche Listen-Cursor, `resources/list`-Cursor und
+  Chunk-Cursor enthalten verpflichtend `version`, `kid`, `issuedAt` und
+  `expiresAt`; fehlende oder ungueltige Felder liefern `VALIDATION_ERROR`.
+- Cursor-Key-Rotation ist ueber `kid` und HMAC-Keyring getestet: neue Cursor
+  werden mit dem aktiven Key signiert, alte Cursor bleiben nur bis zur
+  konfigurierten TTL plus Clock-Skew ueber Validation-Keys gueltig.
 - `resources/list` folgt dem Phase-B-Resource-Walk und setzt keine globale
   `createdAt`-Sortierung ueber alle Resource-Familien voraus.
 - `tenantId` bleibt in fachlichen Listen-Tool-Schemas erhalten; es ist
@@ -1029,6 +1094,9 @@ Tests/Gates:
   adressierter fremder Tenant schlaegt Cursor-Decode und liefert
   `TENANT_SCOPE_DENIED`; nach erfolgreicher Tenant-Aufloesung liefern alle
   Cursor-Bindungsfehler `VALIDATION_ERROR`.
+- diese Fehlerpraezedenz wird ueber einen zentralen, golden-getesteten Error-
+  Resolver umgesetzt; einzelne Handler duerfen keine eigene Reihenfolge
+  implementieren.
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list` auffindbar,
   auch wenn die Persistenz intern ueber typisierte Artefakte erfolgt.
 - Ressourcen ausserhalb des erlaubten Principal-Tenant-Scopes liefern
@@ -1048,6 +1116,10 @@ Tests/Gates:
 - ungueltige Cursor liefern `VALIDATION_ERROR`.
 - `resources/list` nutzt dieselben Resolver-/Tenant-Regeln wie
   `resources/read`.
+- `ResourceKind.UPLOAD_SESSIONS` ist in Phase D zwar parsebar, aber fuer MCP-
+  Resources blockiert: nicht listbar, kein Template, kein `resources/read` und
+  kein Store-Lookup; bei erlaubtem Tenant liefert `resources/read` dafuer
+  `VALIDATION_ERROR`.
 - `resources/templates/list` bleibt statisch, principal-unabhaengig, ohne
   Resource-Aufloesung und beim Phase-B-Vertrag mit genau sieben Templates;
   `dmigrate://capabilities` ist dort kein zusaetzliches Template.
