@@ -114,6 +114,43 @@ class PhaseBToolSchemasTest : FunSpec({
         pair.inputSchema.containsKey("required") shouldBe false
     }
 
+    test("AP 6.23: schema_compare output uses compareDetails findings + truncated→diffArtifactRef") {
+        val output = PhaseBToolSchemas.forTool("schema_compare")!!.outputSchema
+
+        @Suppress("UNCHECKED_CAST")
+        val props = output["properties"] as Map<String, Any>
+
+        // findings carry the compare-specific details (before/after).
+        @Suppress("UNCHECKED_CAST")
+        val findings = props["findings"] as Map<String, Any>
+        findings shouldBe PhaseBToolSchemas.findingArray(
+            detailsSchema = PhaseBToolSchemas.compareDetailsSchema(),
+        )
+
+        props["diffArtifactRef"] shouldBe PhaseBToolSchemas.artifactRefField()
+        props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
+
+        @Suppress("UNCHECKED_CAST")
+        val allOf = output["allOf"] as List<Map<String, Any>>
+        allOf shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("diffArtifactRef"))
+    }
+
+    test("AP 6.23: compareDetailsSchema closes details and rejects empty / blank slots") {
+        val schema = PhaseBToolSchemas.compareDetailsSchema()
+        schema["type"] shouldBe "object"
+        schema["additionalProperties"] shouldBe false
+        // minProperties=1 means `details: {}` is structurally invalid.
+        schema["minProperties"] shouldBe 1
+        @Suppress("UNCHECKED_CAST")
+        val props = schema["properties"] as Map<String, Any>
+        props.keys shouldBe setOf("before", "after")
+        // Both fields are scrubbed strings with a non-blank pattern.
+        @Suppress("UNCHECKED_CAST")
+        val before = props["before"] as Map<String, Any>
+        before["type"] shouldBe "string"
+        before["pattern"] shouldBe "\\S"
+    }
+
     test("AP 6.23: schema_validate output is strict and pins truncated→artifactRef") {
         val output = PhaseBToolSchemas.forTool("schema_validate")!!.outputSchema
 

@@ -79,14 +79,22 @@ internal object PhaseBToolSchemas {
                 "right" to schemaSideField(),
                 "format" to enumField(*FORMAT_NAMES),
             ).required("left", "right"),
+            // AP 6.23: findings carry an optional compare-specific
+            // details slot ({before?, after?} as scrubbed strings,
+            // additionalProperties=false, minProperties=1 so a `{}`
+            // is not a valid placeholder); diffArtifactRef uses the
+            // shared URI pattern; truncated → diffArtifactRef is
+            // pinned by the if/then constraint.
             output = obj(
                 "status" to enumField("identical", "different"),
                 "summary" to stringField(),
-                "findings" to arrayField(),
+                "findings" to findingArray(detailsSchema = compareDetailsSchema()),
                 "truncated" to booleanField(),
-                "diffArtifactRef" to stringField(),
-                "executionMeta" to objectField(),
-            ).required("status", "summary", "findings", "truncated"),
+                "diffArtifactRef" to artifactRefField(),
+                "executionMeta" to executionMetaField(),
+            )
+                .withAllOf(truncatedRequiresField("diffArtifactRef"))
+                .required("status", "summary", "findings", "truncated"),
         ))
         put("schema_generate", schemaPair(
             input = obj(
@@ -389,6 +397,24 @@ internal object PhaseBToolSchemas {
             "required" to listOf("truncated"),
         ),
         "then" to mapOf("required" to listOf(refField)),
+    )
+
+    /**
+     * AP 6.23: `schema_compare`-specific finding details. Either
+     * `before`, `after`, or both are present — each is a non-empty
+     * scrubbed string (pattern `\S` rejects blanks / pure whitespace).
+     * `additionalProperties=false` plus `minProperties=1` means an
+     * empty `details: {}` placeholder is invalid; additive / removal
+     * findings without before/after omit `details` entirely.
+     */
+    internal fun compareDetailsSchema(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "minProperties" to 1,
+        "properties" to mapOf(
+            "before" to mapOf("type" to "string", "pattern" to "\\S"),
+            "after" to mapOf("type" to "string", "pattern" to "\\S"),
+        ),
     )
 
     private fun stringField(): Map<String, Any> = mapOf("type" to "string")

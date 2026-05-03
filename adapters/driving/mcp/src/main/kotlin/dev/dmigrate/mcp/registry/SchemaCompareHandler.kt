@@ -284,11 +284,21 @@ internal class SchemaCompareHandler(
         }
     }
 
-    /** Standard `{ before, after }` shape for property-level changes. */
-    private fun beforeAfter(before: Any?, after: Any?): Map<String, String> = mapOf(
-        "before" to before.toString(),
-        "after" to after.toString(),
-    )
+    /**
+     * Standard `{ before, after }` shape for property-level changes.
+     * AP 6.23: the output schema rejects blanks / pure whitespace via
+     * `pattern: "\\S"` and demands at least one of the two fields
+     * (`minProperties: 1`). Drop null / blank sides defensively so a
+     * missing operand never lands as `"null"` or `""` in the wire
+     * payload; if both sides are blank, `finding(...)` skips the
+     * `details` slot entirely (additive/removal-style behaviour).
+     */
+    private fun beforeAfter(before: Any?, after: Any?): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        before?.toString()?.takeIf { it.isNotBlank() }?.let { result["before"] = it }
+        after?.toString()?.takeIf { it.isNotBlank() }?.let { result["after"] = it }
+        return result
+    }
 
     // Additive changes are non-breaking by default — surface as info
     // so clients can filter the noise out of the warning channel.
