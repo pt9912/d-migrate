@@ -1542,6 +1542,14 @@ Aufgaben:
   - `truncated=true` bedeutet: inline Findings sind gekuerzt; wenn ein
     `ArtifactSink` verfuegbar war, muss `artifactRef` auf die
     vollstaendige Findings-Projektion zeigen
+  - ohne `ArtifactSink` darf `schema_validate` keine unbounded
+    Inline-Ausgabe am `ResponseLimitEnforcer` vorbei erzeugen. Der
+    einzige erlaubte No-Sink-Pfad ist ein tool-spezifischer, bounded
+    degradierter Output mit `truncated=true`, gekappten Findings und
+    explizitem `truncationReason: "artifact_sink_unavailable"`;
+    alternativ darf der Handler einen scrubbed Toolfehler liefern. Der
+    generische ResponseLimit-Enforcer-Fallback bleibt auch hier
+    ungueltig.
 - `schema_generate` Output-Schema:
   - `artifactRef` optional fuer grossen DDL-/Finding-Fallback
   - `ddl` optional, weil grosse DDL vollstaendig ins Artefakt wandert
@@ -1636,10 +1644,13 @@ Aufgaben:
   (`ErrorMapper`/`McpServiceImpl`) die Detail-Values vor der
   Serialisierung scrubben; das ist getrennt vom `job_status_get.error`
   Output.
-  Diese Scrub-Stufe ist Teil von AP 6.23, sobald
-  `error.details[].value` im Toolfehler-Envelope schema-validiert oder
-  goldenfile-gepinnt wird; weder `ErrorMapper` noch `McpServiceImpl`
-  duerfen Detail-Values 1:1 ins Wire-Payload schreiben.
+  Diese Scrub-Stufe ist eine unbedingte Serialisierungsgrenze von
+  AP 6.23: alle vorhandenen, gemappten oder weitergereichten
+  Fehlerobjekte muessen direkt vor dem MCP-Wire-Payload durchlaufen.
+  Weder `ErrorMapper` noch `McpServiceImpl` duerfen
+  `error.details[].value` 1:1 ins Wire-Payload schreiben; bereits
+  persistierte oder upstream erzeugte Detailwerte werden beim
+  Antworten ebenfalls scrubbed projiziert.
 - Forbidden-Key- und Scrubbing-Regel auf alle Output-`details`
   ausweiten:
   - `details`, `details.before`, `details.after`,
@@ -1654,6 +1665,8 @@ Aufgaben:
     `connectionString`, `jdbcUrl`, `apiKey`, `privateKey`. Varianten
     wie `dbPassword`, `credentialToken` oder `api_token` muessen
     blockiert oder vor der Serialisierung umbenannt/gescrubbt werden.
+    `SchemaSecretGuard` muss dieselbe Normalisierung nutzen; exakte
+    Lowercase-Token-Vergleiche reichen fuer AP 6.23 nicht aus.
   - Scrubbing findet vor Artefakt-Fallback statt, damit auch
     ausgelagerte Findings-/DDL-/Diff-Artefakte keine Secrets oder
     lokalen Pfade enthalten
@@ -1671,6 +1684,18 @@ Aufgaben:
   `{summary, artifactRef, truncated}`-Objekt ist fuer
   `schema_validate`, `schema_generate`, `schema_compare` und
   `job_status_get` kein valider AP-6.23-Output.
+- `PhaseBToolSchemas` bildet die `truncated`-/Ref-Kopplung
+  maschinenpruefbar ab:
+  - fuer `schema_validate` und `schema_generate`: `if
+    truncated=true` dann `artifactRef` required, ausser der Output
+    traegt explizit `truncationReason:
+    "artifact_sink_unavailable"` fuer den getesteten No-Sink-
+    Degradationspfad
+  - fuer `schema_compare`: `if truncated=true` dann
+    `diffArtifactRef` required, ausser derselbe No-Sink-
+    Degradationsgrund ist gesetzt
+  - fuer alle anderen Faelle darf `truncationReason` fehlen; der
+    Grund ist kein Ersatz fuer einen vorhandenen `ArtifactSink`.
 - Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regenerieren und
   dabei die Diffs bewusst reviewen. Zusaetzlich zu Goldenfiles braucht
   AP 6.23 Runtime-Schema-Validation-Tests: exemplarische Outputs von
@@ -1705,7 +1730,8 @@ Akzeptanz:
 - `schema_validate` setzt bei `truncated=true` und verfuegbarem
   `ArtifactSink` ein `artifactRef` auf die vollstaendige gescrubbte
   Findings-Projektion; der degradierte Pfad ohne Sink ist gesondert
-  getestet
+  getestet und bleibt bounded mit `truncationReason:
+  "artifact_sink_unavailable"` oder liefert einen scrubbed Toolfehler
 - `schema_validate` und `schema_generate` koennen optionale
   Finding-`details` schema-valide transportieren; `schema_generate`
   akzeptiert ueber einen tool-spezifischen Finding-Helper zusaetzlich
@@ -1717,7 +1743,11 @@ Akzeptanz:
   validieren gegen Resource-URI-Patterns; lokale Pfade oder nackte
   IDs werden schema-seitig abgelehnt. Runtime-Tests decken den
   Backfill-Fall ab, in dem `managed.artifacts` nackte IDs enthaelt und
-  der Handler trotzdem Resource-URIs emittiert.
+  der Handler trotzdem Resource-URIs emittiert. Die Migration ist
+  dual-read/single-write: interne Legacy-IDs werden akzeptiert und im
+  Output projiziert, neue Job-Metadaten speichern nach Moeglichkeit
+  Resource-URIs oder eindeutig ableitbare Artifact-IDs, nie lokale
+  Pfade.
 - `executionMeta` darf als Ganzes fehlen; sobald es emittiert wird,
   ist `executionMeta.requestId` required und scrubbed
 - `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
@@ -1729,6 +1759,10 @@ Akzeptanz:
   eigenen Output-Schemas, auch wenn der Response-Groessenfallback
   greift; der generische `ResponseLimitEnforcer`-Envelope wird fuer
   diese Tools nicht als schema-valider Ersatz akzeptiert
+- JSON-Schema-Tests pinnen die `if/then`-Constraints fuer
+  `truncated=true`: ohne Ref ist nur der explizite No-Sink-
+  Degradationsgrund gueltig; bei verfuegbarem Sink muss die passende
+  `artifactRef`/`diffArtifactRef` vorhanden sein
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
   werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
   und lokalen Pfad
