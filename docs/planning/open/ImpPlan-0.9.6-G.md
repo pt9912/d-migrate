@@ -285,8 +285,11 @@ Der serverseitige Scope-Key besteht aus:
 - `toolName`
 - `approvalKey`
 
-Der Fingerprint wird aus normalisiertem Payload ohne `approvalToken`
-gebildet.
+Der Fingerprint wird aus normalisiertem Payload ohne Top-Level-Control-Felder
+gebildet. Ausgeschlossen sind mindestens `approvalKey`, `approvalToken`,
+`idempotencyKey`, `clientRequestId` und `requestId`. `approvalKey` ist der
+Scope-/Idempotency-Key fuer synchrone KI-Tools und darf nicht Teil des
+Payload-Fingerprints sein.
 
 Regeln:
 
@@ -733,9 +736,11 @@ Regeln:
   `planRef`, `targetDialect` und Ausfuehrungsoptionen.
 - Stale, fremde, manuell hochgeladene oder andersartige Artefakte duerfen
   nicht als Transformationsplan verwendet werden. Abweichende Provenance,
-  falscher `wireArtifactKind`, fremder Tenant, falscher Dialekt oder nicht zum
-  Execute-Payload passende Source-Refs liefern einen fachlichen Fehler vor
-  Provider-Aufruf.
+  falscher `wireArtifactKind`, fremder Tenant oder falscher Dialekt liefern
+  einen fachlichen Fehler vor Provider-Aufruf. Der Execute-Payload enthaelt
+  keine eigenen Source-Refs; Source-Refs werden ausschliesslich aus der
+  Provenance des Plan-Artefakts validiert und in die Execute-Provenance
+  uebernommen.
 - Provider-, Modell- und operationsspezifische Prompt-/Payload-Fingerprints
   sind auditpflichtig. Bei Execute werden Plan-Fingerprints und
   Execute-Fingerprints getrennt auditisiert.
@@ -1017,7 +1022,8 @@ Tests:
 - `procedure_transform_execute` lehnt fehlenden/falschen `wireArtifactKind`,
   fremden Tenant,
   nicht aus `procedure_transform_plan` erzeugte Artefakte, falschen Dialekt,
-  abweichende Source-Refs und abweichende Plan-Provenance ab.
+  abweichende Plan-Provenance oder fehlende/unerwartete Source-Refs in der
+  Plan-Provenance ab; der Execute-Payload selbst enthaelt keine Source-Refs.
 - Provider-Result mit grossem Output erzeugt erst nach Output-Hygiene und
   Scrubbing ein d-migrate-Artefakt; geblockter Output publiziert kein Artefakt.
 - `procedure_transform_execute`-Zielartefakt traegt
@@ -1041,6 +1047,11 @@ Aufgaben:
 - Prompt-Registry mit drei Pflichtprompts implementieren
 - `prompts/list` anbinden
 - `prompts/get` anbinden
+- `prompts/list` und `prompts/get` in
+  `McpServerConfig.DEFAULT_SCOPE_MAPPING` mit `dmigrate:read` eintragen. Ohne
+  explizite Scope-Zuordnung fallen unbekannte Methoden fail-closed auf
+  `dmigrate:admin` und waeren trotz `capabilities.prompts` fuer normale
+  Read-Principals nicht nutzbar.
 - `initialize`/`ServerCapabilities` setzt `capabilities.prompts`, sobald
   `prompts/list` und `prompts/get` verfuegbar sind.
 - Prompt-Argument-Schemas definieren
@@ -1054,6 +1065,8 @@ Aufgaben:
 Tests:
 
 - `initialize` enthaelt `capabilities.prompts`
+- `prompts/list` und `prompts/get` verlangen `dmigrate:read`, nicht den
+  fail-closed Fallback `dmigrate:admin`
 - `prompts/list` ueber `stdio`
 - `prompts/list` ueber HTTP
 - `prompts/get` fuer jeden Pflichtprompt mit gueltigen Argumenten
@@ -1421,6 +1434,9 @@ Pflichtfaelle:
   `targetDialect`, `planPromptFingerprint`, `planPayloadFingerprint` und
   `wireArtifactKind=procedure-transform-plan` bzw. explizit erweitertem
   Core-Artifact-Kind. Execute-Fingerprints bleiben davon getrennt.
+- `prompts/list` und `prompts/get` sind in
+  `McpServerConfig.DEFAULT_SCOPE_MAPPING` mit `dmigrate:read` eingetragen und
+  fallen nicht auf `dmigrate:admin` zurueck.
 - KI-Artefakte verwenden verbindliche Typen:
   `procedure-transform-plan`, `procedure-transform-output` und `testdata-plan`
   mit passendem `aiIntent` und Provenance.
