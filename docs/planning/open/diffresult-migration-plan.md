@@ -152,8 +152,8 @@ Vorgeschlagene Richtung:
 
 ```kotlin
 interface DiffDdlGenerator {
-    fun generateMigration(diff: DiffResult, options: DdlGenerationOptions): MigrationDdlResult
-    fun generateRollback(diff: DiffResult, options: DdlGenerationOptions): MigrationDdlResult
+    fun generateUp(diff: DiffResult, options: DdlGenerationOptions): MigrationDdlResult
+    fun generateDown(diff: DiffResult, options: DdlGenerationOptions): MigrationDdlResult
 }
 ```
 
@@ -191,8 +191,8 @@ Skizze:
 
 ```kotlin
 data class DiffResult(
-    val source: DiffEndpoint,
-    val target: DiffEndpoint,
+    val current: DiffEndpoint,
+    val desired: DiffEndpoint,
     val schemaDiff: SchemaDiff,
     val operations: List<DiffOperation>,
     val diagnostics: List<DiffDiagnostic> = emptyList(),
@@ -205,12 +205,16 @@ data class DiffEndpoint(
 )
 ```
 
-Die Einbettung von `schemaDiff` ist optional, aber sinnvoll:
+Der erste interne Vertrag bettet `schemaDiff` bewusst ein:
 
 - `SchemaDiff` bleibt die verlustarme strukturelle Diagnose.
 - `DiffResult.operations` ist die ausfuehrbare Migrationsebene.
 - Reports koennen beide Ebenen zeigen, ohne den Operationsplan zu
   ueberfrachten.
+- Falls `DiffResult` spaeter als oeffentliches Artefakt serialisiert wird,
+  kann diese Einbettung durch eine versionierte Projektion oder einen
+  Fingerprint ersetzt werden. Das ist keine Entscheidung fuer den ersten
+  internen Core-Vertrag.
 
 ### 4.3 Operationen
 
@@ -367,11 +371,11 @@ Fehler bzw. einen Plan-Report, aber keine ausfuehrbare Migration.
 ### 5.1 Vorgeschlagene Architektur
 
 ```text
-source operand  -> materialisiertes Ist-Schema
-target schema   -> materialisiertes Soll-Schema
+current schema  -> materialisiertes Ist-Schema
+desired schema  -> materialisiertes Soll-Schema
                          |
                          v
-                 SchemaComparator
+         SchemaComparator.compare(current, desired)
                          |
                          v
                     SchemaDiff
@@ -435,7 +439,7 @@ Vorgeschlagene neue Ports:
 
 ```kotlin
 interface DiffPlanner {
-    fun plan(source: SchemaDefinition, target: SchemaDefinition, diff: SchemaDiff): DiffResult
+    fun plan(current: SchemaDefinition, desired: SchemaDefinition, diff: SchemaDiff): DiffResult
 }
 
 interface DiffDdlGenerator {
@@ -467,12 +471,17 @@ Erste Zieloperationen:
 - `ALTER TABLE ALTER COLUMN SET/DROP NOT NULL`
 - `ALTER TABLE ADD/DROP CONSTRAINT`
 - `CREATE/DROP INDEX`
-- `CREATE/ALTER/DROP SEQUENCE`
 - `CREATE OR REPLACE VIEW`
+
+Bewusst nicht in der ersten PostgreSQL-Zielmatrix:
+
+- `CREATE/ALTER/DROP SEQUENCE`
 - `CREATE OR REPLACE FUNCTION`
 - `CREATE OR REPLACE PROCEDURE`
-- `CREATE OR REPLACE TRIGGER` nur falls die neutrale Semantik eindeutig
-  renderbar ist, sonst Drop/Create mit Risiko-Diagnose
+- `CREATE OR REPLACE TRIGGER`
+
+Diese Operationen bleiben als `DiffOperation`-Kategorien vorgesehen, werden im
+ersten DDL-Slice aber nur geplant bzw. als nicht renderbar diagnostiziert.
 
 Offene Punkte:
 
@@ -485,13 +494,21 @@ Offene Punkte:
 
 Erste Zieloperationen:
 
+- `CREATE TABLE`
+- `DROP TABLE`
 - `ALTER TABLE ADD COLUMN`
 - `ALTER TABLE DROP COLUMN`
 - `MODIFY COLUMN`
 - `ALTER TABLE ADD/DROP INDEX`
 - `ALTER TABLE ADD CONSTRAINT`
 - `ALTER TABLE DROP FOREIGN KEY`
-- View/Routine-Replacement mit bestehenden Helpern
+- View-Replacement mit bestehenden Helpern
+
+Bewusst nicht in der ersten MySQL-Zielmatrix:
+
+- Routine-Migration
+- Trigger-Migration
+- Sequence-Emulation-Migration
 
 Besondere Risiken:
 
@@ -520,8 +537,11 @@ Rebuild-pflichtig:
 - PK-Aenderungen
 - bestimmte Drop-Column-Faelle
 
-Rebuild-Operationen sollten im `DiffResult` nicht als einzelne SQL-Zeilen
-versteckt werden. Sie brauchen eine eigene Operation oder Markierung:
+SQLite-Rebuilds sollten nicht als einzelne SQL-Zeilen versteckt werden. Der
+dialektneutrale `DiffResult` bleibt jedoch bei den fachlichen Operationen
+(`AlterColumnType`, `DropConstraint`, `AddConstraint`, usw.). Erst ein
+nachgelagerter, dialektspezifischer Folgeplan darf daraus einen
+`RebuildTable`-Schritt bilden:
 
 ```kotlin
 data class RebuildTable(
@@ -575,17 +595,29 @@ Flag-Skizze:
 | `--plan-only` | Nein | Boolean | nur DiffResult/Report schreiben, kein SQL |
 | `--report` | Nein | Pfad | strukturierter Plan-/Risiko-Report |
 
+Die CLI-Namen folgen dem bestehenden Stub in `spec/cli-spec.md`:
+`--source` bezeichnet das Soll-Schema, `--target` die Ist-Datenbank. Intern
+soll der Runner diese Werte sofort auf die eindeutigen Begriffe `desired` und
+`current` abbilden. `SchemaComparator.compare(current, desired)` ist die
+verbindliche Richtung fuer den Operationsplan.
+
 Exit-Codes sollten sich an bestehenden Mustern orientieren:
 
 | Exit | Bedeutung |
 |---|---|
 | `0` | Erfolg |
-| `1` | keine Migration erzeugt, weil kein Diff vorhanden ist oder plan-only ohne Fehler |
 | `2` | ungueltige CLI-Argumente |
 | `3` | Schema-Validierungsfehler |
 | `4` | Verbindungsfehler |
 | `7` | I/O-, Planungs- oder Renderfehler |
 | `8` | destruktive/nicht reversible Operation ohne Freigabe |
+
+Exit `0` gilt auch fuer erfolgreiche No-op-Laeufe, wenn kein Diff vorhanden
+ist, und fuer erfolgreiche `--plan-only`-Laeufe. Das unterscheidet
+`schema migrate` bewusst von `schema compare`, wo Exit `1` "Unterschiede
+gefunden" bedeutet. Ein Plan mit Risiken bleibt erfolgreich, solange er nicht
+als ausfuehrbare Migration gerendert werden soll oder durch fehlende Freigaben
+blockiert wird.
 
 Die konkrete Exit-Code-Matrix muss vor Implementierung mit `spec/cli-spec.md`
 abgeglichen werden.
@@ -630,7 +662,7 @@ Empfohlene Stufen:
 
 Report-Inhalte:
 
-- Quell- und Ziel-Fingerprint
+- Ist- und Soll-Fingerprint (`current` / `desired`)
 - Anzahl Operationen nach Typ/Phase
 - destruktive Operationen
 - nicht reversible Operationen
@@ -687,7 +719,7 @@ Nicht in der ersten Matrix:
 
 - vollstaendige Routine-Migration
 - vollstaendige Trigger-Migration
-- Sequence-Emulation-Migrationen
+- Sequence-Migrationen, inklusive Sequence-Emulationen
 - automatische Daten-Transformationen
 
 ### Phase E - CLI-Runner
