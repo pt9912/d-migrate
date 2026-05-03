@@ -132,6 +132,7 @@ Konfiguration.
 - session-scoped Upload-Berechtigung
 - `UploadSession`-Zustandsautomat:
   - `ACTIVE`
+  - `FINALIZING`
   - `COMPLETED`
   - `EXPIRED`
   - `ABORTED`
@@ -195,7 +196,7 @@ aus Session-Metadaten gebildet:
 
 - `artifactKind`
 - `mimeType`
-- `sizeBytes`
+- `expectedSizeBytes`
 - `checksumSha256`
 - `uploadIntent`
 - Tenant
@@ -222,13 +223,18 @@ Berechtigung um. Diese ist gebunden an:
 - Principal
 - `artifactKind`
 - `mimeType`
-- `sizeBytes`
+- `expectedSizeBytes`
 - `checksumSha256`
 - Approval-Fingerprint
 - Ablaufzeit
 
 `artifact_upload` prueft diese Berechtigung statt pro Segment eine neue
 Policy-Freigabe zu verlangen.
+
+Das oeffentliche Init-Vertragsfeld bleibt fuer Phase F
+`expectedSizeBytes`. Das interne Domain-Modell darf dieses Feld beim Anlegen
+der `UploadSession` nach `sizeBytes` mappen; `sizeBytes` ist damit kein
+zusaetzliches Pflichtfeld im Toolvertrag.
 
 ### 4.4 Segmentbytes werden ueber MCP-JSON-RPC transportiert
 
@@ -270,7 +276,7 @@ Pflichteingaben:
 - `uploadIntent`
 - `artifactKind`
 - `mimeType`
-- `sizeBytes`
+- `expectedSizeBytes`
 - `checksumSha256`
 - fuer policy-pflichtige Intents:
   - `approvalKey`
@@ -300,8 +306,18 @@ Regeln:
 - gleicher Tenant, Caller, Toolname, `approvalKey` und
   `payloadFingerprint` liefern dieselbe Session.
 - gleicher Scope mit abweichendem Payload liefert `IDEMPOTENCY_CONFLICT`.
-- `sizeBytes` darf maximal `209715200` Bytes betragen.
+- `expectedSizeBytes` darf maximal `209715200` Bytes betragen.
 - `checksumSha256` ist Pflicht und Teil des Init-Fingerprints.
+
+Migrationsregel:
+
+- `expectedSizeBytes` bleibt das kanonische Vertragsfeld fuer bestehendes
+  Phase-B/C- und read-only Schema-Staging.
+- Falls Phase F `sizeBytes` als Alias akzeptiert, ist der Alias additiv:
+  `expectedSizeBytes` und `sizeBytes` duerfen nicht widersprechen; ein
+  widersprechender Doppelwert liefert `VALIDATION_ERROR`.
+- Golden Tests fuer den bisherigen `expectedSizeBytes`-Pfad bleiben erhalten
+  und werden um Alias-/Konfliktfaelle ergaenzt.
 
 ### 5.2 `artifact_upload`
 
@@ -385,18 +401,41 @@ TTL-Regeln:
 Bei finalem Segment:
 
 - alle Segmente muessen vorhanden sein
-- Gesamtgroesse muss `sizeBytes` entsprechen
+- Gesamtgroesse muss der Session-Groesse entsprechen, die aus
+  `expectedSizeBytes` nach `UploadSession.sizeBytes` gemappt wurde
 - Gesamt-SHA-256 muss `checksumSha256` entsprechen
-- Artefakt wird immutable in `ArtifactContentStore` materialisiert
-- Metadaten werden in `ArtifactStore` registriert
+- Finalisierung wechselt atomar von `ACTIVE` nach `FINALIZING` und setzt
+  einen opaken `finalizingClaimId` mit Lease.
+- Nur der Inhaber des aktuellen `FINALIZING`-Claims darf Assemblierung,
+  Validierung, Artefakt-/Schema-Materialisierung und Statuswechsel
+  ausfuehren.
+- Konkurrierende finale Segmente, die den Claim nicht erhalten, duerfen keine
+  zweite Assemblierung oder Materialisierung starten; sie lesen entweder das
+  persistierte Ergebnis oder liefern einen deterministischen In-Flight-
+  Fehler.
+- Eine abgelaufene `FINALIZING`-Lease darf durch eine neue finale Anfrage
+  reclaimt werden; der Reclaim muss ein vorhandenes
+  `finalizationOutcome` wiederverwenden, statt ein zweites Artefakt zu
+  erzeugen.
+- Fuer `uploadIntent=job_input` wird das Artefakt immutable in
+  `ArtifactContentStore` materialisiert und erst danach in `ArtifactStore`
+  registriert.
+- Fuer `uploadIntent=schema_staging_readonly` duerfen Rohbytes vor der
+  Schema-Validierung nur als nicht publizierter Staging-/Finalisierungsinhalt
+  existieren.
+- Fuer `schema_staging_readonly` werden `ArtifactStore`-Metadaten,
+  `artifactRef` und nutzbare `schemaRef` erst nach erfolgreicher
+  Schema-Validierung veroeffentlicht.
 - `mimeType` wird zu `contentType`
 - `checksumSha256` wird zu `sha256`
 - `artifactKind=schema` wird zusaetzlich validiert und in `SchemaStore`
   materialisiert, sofern gueltig
 
 Ungueltige Schema-Artefakte liefern strukturiertes Validierungsergebnis ohne
-Schema-Registrierung. Das Rohartefakt darf nicht implizit als gueltige
-`schemaRef` erscheinen.
+Schema-Registrierung. Im read-only Staging erzeugen sie auch keine dauerhaft
+nutzbare Rohartefakt-Registrierung; eventuell geschriebene Staging-Bytes
+werden cleanup-faehig markiert oder entfernt. Das Rohartefakt darf nicht
+implizit als gueltige `schemaRef` erscheinen.
 
 ---
 
@@ -495,6 +534,31 @@ Quota-Verletzungen liefern `RATE_LIMITED` mit strukturierten Details wie
 `limitName`, `retryAfterSeconds`, Tenant-/Principal-Scope und ohne fremde
 Ressourcendetails.
 
+Quota-Lifecycle:
+
+- Init reserviert genau eine aktive Upload-Session und `expectedSizeBytes`
+  reservierte Upload-Bytes im Tenant-/Principal-Scope.
+- Segmentannahme darf keine zusaetzlichen Gesamtbytes reservieren; sie
+  verbraucht nur parallele Segmentwrite-Slots fuer die Dauer des atomaren
+  Writes.
+- Erfolgreiche Finalisierung (`COMPLETED`) gibt aktive Session-Slots und
+  reservierte Upload-Bytes frei. Fuer veroeffentlichte Artefakte werden
+  gespeicherte Artefaktbytes einmalig auf Basis der finalen, validierten
+  Artefaktgroesse gebucht.
+- `ABORTED`, `EXPIRED`, fehlgeschlagene Finalisierung und expliziter Abort
+  geben aktive Session-Slots, reservierte Upload-Bytes und Segmentwrite-Slots
+  frei; nicht veroeffentlichte Segment-/Stagingbytes werden entfernt oder als
+  cleanup-faehige Orphans markiert.
+- `FINALIZING` haelt die aktive Session- und Upload-Byte-Reservierung, bis die
+  Session nach `COMPLETED` oder `ABORTED` wechselt oder die Finalizing-Lease
+  reclaimt wird.
+- Retention-Cleanup fuer veroeffentlichte Artefakte gibt gespeicherte
+  Artefaktbytes frei. Diese Freigabe darf reservierte Upload-Bytes nicht noch
+  einmal veraendern.
+- Alle Reserve-/Commit-/Refund-/Release-Schritte sind idempotent an Session
+  bzw. Artefakt-ID gebunden, damit Retry und Crash-Recovery keine Quotas
+  doppelt buchen oder doppelt freigeben.
+
 ### 7.3 Cleanup
 
 Cleanup-Pfade:
@@ -532,6 +596,9 @@ Tests/Gate:
 - `UploadSession` um policy-pflichtige Init-Metadaten erweitern.
 - session-scoped Upload-Berechtigung modellieren.
 - TTL-/Idle-/Max-Lease-Felder abbilden.
+- `FINALIZING` als transienten Single-Writer-Claim mit
+  `finalizingClaimId`, `finalizingLeaseExpiresAt` und reclaim-faehigem
+  `finalizationOutcome` im Store abbilden.
 - `uploadSessionId` serverseitig opak erzeugen und validieren.
 - clientseitige Session-ID-Kandidaten in Init abweisen.
 
@@ -541,12 +608,18 @@ Tests:
 - Init ohne clientseitige Session-ID erzeugt neue ID
 - Retry mit gleichem `approvalKey` liefert dieselbe ID
 - andere Metadaten mit gleichem Scope -> `IDEMPOTENCY_CONFLICT`
+- erlaubte Transitionen enthalten `ACTIVE -> FINALIZING` und
+  `FINALIZING -> COMPLETED/ABORTED`
+- abgelaufener `FINALIZING`-Claim kann ohne doppelte Materialisierung
+  reclaimed werden
 
 ### 8.3 AP F.3: Policy-pflichtiges `artifact_upload_init`
 
 - `uploadIntent=job_input` implementieren.
 - Approval-Fingerprint ueber Session-Metadaten bilden.
 - `approvalKey` fuer policy-pflichtige Init-Pfade erzwingen.
+- `expectedSizeBytes` als kanonisches Vertragsfeld beibehalten und nach
+  `UploadSession.sizeBytes` mappen.
 - fehlende Freigabe -> `POLICY_REQUIRED`
 - gueltiger Grant -> Session erzeugen und Upload-Berechtigung ausstellen.
 - read-only `schema_staging_readonly` unveraendert ohne Write-Policy lassen.
@@ -558,6 +631,9 @@ Tests:
 - genehmigter Init erzeugt Session
 - Retry erzeugt keine zweite Session
 - `schema_staging_readonly` mit anderem `artifactKind` -> `VALIDATION_ERROR`
+- bestehender Golden-Test mit `expectedSizeBytes` bleibt gruen
+- optionaler `sizeBytes`-Alias wird nur additiv akzeptiert; widersprechende
+  Doppelwerte liefern `VALIDATION_ERROR`
 
 ### 8.4 AP F.4: Segmentannahme und Hashvalidierung
 
@@ -583,21 +659,30 @@ Tests:
 ### 8.5 AP F.5: Finalisierung und Artefaktmaterialisierung
 
 - finale Segmentannahme erkennt vollstaendigen Upload.
+- finale Segmentannahme claimt atomar `FINALIZING`.
 - Gesamtgroesse und `checksumSha256` pruefen.
+- `finalizationOutcome` vor nicht idempotenten Side Effects persistieren.
 - Artefaktbytes immutable in `ArtifactContentStore` schreiben.
-- Artefaktmetadaten registrieren.
+- Artefaktmetadaten fuer `job_input` erst nach erfolgreicher Byte- und
+  Checksum-Validierung registrieren.
+- Artefaktmetadaten fuer `schema_staging_readonly` erst nach erfolgreicher
+  Schema-Validierung veroeffentlichen.
 - Schema-Artefakte validieren und ggf. `schemaRef` materialisieren.
 - ungueltige Schema-Artefakte liefern strukturiertes Validierungsergebnis
-  ohne Schema-Registrierung.
+  ohne Schema- oder nutzbare Rohartefakt-Registrierung.
 
 Tests:
 
 - finaler Hash-Mismatch
 - fehlendes Segment bei Finalisierung
+- parallele finale Segmente erzeugen maximal einen `FINALIZING`-Claim und ein
+  Artefakt
+- Crash/Reclaim nach `FINALIZING` replayt `finalizationOutcome`
 - finalisiertes Artefakt ist immutable
 - `artifact_chunk_get` liest aus `ArtifactContentStore`
 - gueltiges Schema erzeugt `schemaRef`
-- ungueltiges Schema erzeugt keine `schemaRef`
+- ungueltiges read-only Schema erzeugt keine `schemaRef` und keine nutzbare
+  Rohartefakt-Registrierung
 - 200-MiB-Upload nutzt File-Spooling oder gleichwertigen Byte-Store
 
 ### 8.6 AP F.6: Abort, Expiry und Cleanup
@@ -607,6 +692,8 @@ Tests:
 - `UPLOAD_SESSION_ABORTED` und `UPLOAD_SESSION_EXPIRED` mappen.
 - TTL- und Idle-Expiry implementieren.
 - Cleanup gegen Segment- und Artefaktspools ausfuehren.
+- Quota-Release fuer Abort, Expiry und fehlgeschlagene Finalisierung
+  idempotent ausfuehren.
 
 Tests:
 
@@ -616,6 +703,8 @@ Tests:
 - Upload nach Abort -> `UPLOAD_SESSION_ABORTED`
 - Upload nach Expiry -> `UPLOAD_SESSION_EXPIRED`
 - Cleanup entfernt Zwischenbytes, aber keine finalisierten Artefakte
+- Abort/Expiry/fehlgeschlagene Finalisierung geben aktive Session- und
+  reservierte Upload-Byte-Quotas frei
 
 ### 8.7 AP F.7: `data_import_start`
 
@@ -658,6 +747,8 @@ Tests:
 ### 8.9 AP F.9: Quota, Timeout und Audit
 
 - Upload-Session-, Byte- und Segmentwrite-Quotas anbinden.
+- Reserve-/Commit-/Refund-/Release-Lifecycle fuer aktive Upload-Sessions,
+  reservierte Upload-Bytes und gespeicherte Artefaktbytes implementieren.
 - Import-/Transfer-Jobquotas anbinden.
 - Upload-Finalisierungs-Timeout konfigurieren.
 - Runner-Timeouts fuer Import/Transfer anbinden.
@@ -668,6 +759,9 @@ Tests:
 
 - aktive Session-Quota -> `RATE_LIMITED`
 - Byte-Quota -> `RATE_LIMITED`
+- `COMPLETED` bucht gespeicherte Artefaktbytes genau einmal und gibt
+  reservierte Upload-Bytes frei
+- Retention-Cleanup gibt gespeicherte Artefaktbytes genau einmal frei
 - Segmentwrite-Quota -> `RATE_LIMITED`
 - Upload-Finalisierungs-Timeout -> `OPERATION_TIMEOUT`
 - Audit enthaelt keine rohen Uploadbytes oder Approval-Tokens
@@ -732,6 +826,7 @@ Mindesttestklassen:
 - `artifact_upload`-Handler-Tests
 - `artifact_upload_abort`-Handler-Tests
 - `UploadSegmentStore`-/`ArtifactContentStore`-Contract-Tests
+- `FINALIZING`-Claim-/Reclaim- und Crash-Replay-Tests
 - File-Spooling-/200-MiB-Smoke-Test
 - `data_import_start`-Handler-Tests
 - `data_transfer_start`-Handler-Tests
@@ -746,19 +841,24 @@ Mindestfaelle:
 - Init mit nicht erlaubtem MIME-Type
 - Init-Retry mit gleichem `approvalKey`
 - Init-Retry mit anderem Payload
+- Init mit kanonischem `expectedSizeBytes`
+- optionaler Init-Alias `sizeBytes` widerspricht `expectedSizeBytes`
 - fehlendes `contentBase64`
 - zu grosses Segment
 - Segmenthash-Mismatch
 - Upload nach Abort
 - Upload nach Expiry
 - Gesamtchecksumme falsch
+- parallele finale Segmente materialisieren genau ein Artefakt
+- ungueltiges read-only Schema erzeugt keine nutzbare Rohartefakt-
+  Registrierung
 - read-only Staging als Import-Input
 - Import ohne Approval
 - Transfer ohne Approval
 - Import/Transfer ohne `idempotencyKey`
 - Import/Transfer mit gleichem Key, aber anderem Payload
 - genehmigte parallele Retries erzeugen maximal einen Job
-- Quota- und Timeout-Faelle
+- Quota-Reserve-/Commit-/Refund-/Release- und Timeout-Faelle
 
 ---
 
@@ -767,6 +867,9 @@ Mindestfaelle:
 - Policy-pflichtiges `artifact_upload_init` mit vollstaendigen
   Session-Metadaten, Gesamt-Checksumme und serverseitiger Session-Erzeugung
   ist implementiert.
+- `artifact_upload_init` verwendet `expectedSizeBytes` als kanonisches
+  Vertragsfeld; interne `sizeBytes`-Mappings und optionale Aliase brechen den
+  bestehenden read-only Pfad nicht.
 - Upload-Init liefert vor dem ersten Segment `uploadSessionId`,
   `uploadSessionTtlSeconds`, erwarteten `segmentIndex` und erwarteten
   `segmentOffset`.
@@ -776,6 +879,8 @@ Mindestfaelle:
   `IDEMPOTENCY_CONFLICT`.
 - Read-only Schema-Staging kann weiterhin grosse Schemas ohne Write-Policy zu
   einer nur read-only nutzbaren `schemaRef` materialisieren.
+- Ungueltiges read-only Schema-Staging erzeugt weder `schemaRef` noch
+  dauerhaft nutzbare Rohartefakt-Registrierung.
 - Versuch, `schema_staging_readonly` als Import-/Transfer-/KI-Input zu nutzen,
   liefert `VALIDATION_ERROR` oder `POLICY_REQUIRED` fuer einen neuen
   policy-pflichtigen Pfad.
@@ -785,12 +890,19 @@ Mindestfaelle:
   `PAYLOAD_TOO_LARGE` abgewiesen.
 - Segmentwrites sind atomar; konkurrierende abweichende Writes fuer dieselbe
   Session/Position liefern deterministischen Fehler.
+- Finale Segmentverarbeitung nutzt `FINALIZING` als Single-Writer-Claim;
+  parallele finale Segmente und Reclaim nach Lease-Ablauf erzeugen maximal ein
+  Artefakt und replayen persistierte Finalisierungsergebnisse.
 - `artifact_chunk_get`, Import aus Artefakt und Resource-Chunk-Reads lesen
   aus `ArtifactContentStore`, nicht aus Tool-Response- oder Heap-Kopien.
 - 200-MiB-Upload-Test nutzt File-Spooling oder gleichwertigen Byte-Store und
   belegt, dass keine RAM-only-Implementierung erforderlich ist.
 - Quota-Verletzungen fuer aktive Sessions, Bytes oder parallele Segmentwrites
   liefern `RATE_LIMITED`.
+- Aktive Session-Slots, reservierte Upload-Bytes und gespeicherte
+  Artefaktbytes haben idempotente Reserve-/Commit-/Refund-/Release-Pfade fuer
+  `COMPLETED`, `ABORTED`, `EXPIRED`, fehlgeschlagene Finalisierung und
+  Retention-Cleanup.
 - Finalisierte Artefakte sind immutable.
 - `artifact_upload_abort` eigener aktiver Sessions funktioniert ohne Policy
   und prueft Owner/Sitzungsstatus.
