@@ -443,8 +443,18 @@ Der Port bleibt adapterneutral und enthaelt keine MCP-Typen.
 Minimaler Vertrag:
 
 ```kotlin
+sealed interface AiProviderExecutionResult
+
+data class AiProviderSuccess(
+    val result: AiProviderResult,
+) : AiProviderExecutionResult
+
+data class AiProviderFailure(
+    val error: AiProviderError,
+) : AiProviderExecutionResult
+
 interface AiProviderPort {
-    fun execute(request: AiProviderRequest): AiProviderResult
+    fun execute(request: AiProviderRequest): AiProviderExecutionResult
 }
 ```
 
@@ -479,6 +489,30 @@ interface AiProviderPort {
 - `usage`
 - `finishReason`
 - `rawProviderMetadata`, bereinigt und optional
+
+`AiProviderError` enthaelt:
+
+- normalisierte Fehlerklasse, z. B. `TIMEOUT`, `QUOTA`, `UNAVAILABLE`,
+  `RETRYABLE_PROVIDER_ERROR`, `TERMINAL_PROVIDER_ERROR`
+- gemappten d-migrate-Fehlercode, z. B. `OPERATION_TIMEOUT`, `RATE_LIMITED`
+  oder `INTERNAL_AGENT_ERROR`
+- `retryable`
+- `providerRequestId`, soweit vorhanden
+- Provider-/Modell-Metadaten
+- gescrubbte, kurze Fehlermeldung
+- optionale strukturierte Details ohne Secrets, Tokens oder Rohdaten
+
+Regeln:
+
+- Provider-Adapter fangen provider-spezifische Exceptions und mappen sie auf
+  `AiProviderFailure`; solche Exceptions duerfen nicht bis in Tool-Handler
+  leaken.
+- Timeout-, Quota- und Provider-Fehler-Mapping, Retrybarkeit und
+  `AiToolOutcomeStore`-Persistenz verwenden den normalisierten
+  `AiProviderError`.
+- Tool-Handler erzeugen daraus das gescrubbte Tool-Error-Envelope und
+  persistieren es als `FAILED_TERMINAL` oder `FAILED_RETRYABLE`, bevor ein
+  identischer Retry replayt werden darf.
 
 Nicht erlaubt:
 
@@ -627,10 +661,12 @@ Artefaktmodell:
   - `wireArtifactKind=testdata-plan`, `aiIntent=testdata_plan` fuer
     Testdatenplaene aus `testdata_plan`
 - Alle KI-Artefakte speichern persistente Provenance mit Tenant,
-  Principal/Policy-Intent, Source-Refs, `targetDialect`, Prompt-/Payload-
-  Fingerprint, Provider-/Modell-Metadaten, erzeugendem Toolnamen und bei
-  Execute-Outputs zusaetzlich `planRef`/`planArtifactId` samt Plan-
-  Fingerprint.
+  Principal/Policy-Intent, Source-Refs, `targetDialect`, Provider-/Modell-
+  Metadaten und erzeugendem Toolnamen. Fingerprints werden nach Operation
+  getrennt benannt: Plan-Artefakte speichern `planPromptFingerprint` und
+  `planPayloadFingerprint`; Execute-Outputs speichern zusaetzlich
+  `executePromptFingerprint` und `executePayloadFingerprint` sowie
+  `planRef`/`planArtifactId` samt `planArtifactFingerprint`.
 - `procedure_transform_execute`, Resource-Reads und Prompts duerfen Plan-
   Artefakte nur ueber diese Metadaten als Procedure-Transformationsplan
   akzeptieren. Ein Core-`ArtifactKind.OTHER` ohne diese Metadaten ist kein
@@ -644,10 +680,11 @@ Artefaktmodell:
 - Ein separater `AiArtifactMetadataStore` enthaelt mindestens `tenantId`,
   `artifactId`, `resourceUri`, `wireArtifactKind`, `aiIntent`,
   `originToolName`, `ownerPrincipalId`, `policyIntent` bzw. Approval-Scope,
-  Source-Refs, `targetDialect`, Prompt-/Payload-Fingerprint,
-  Provider-/Modell-Metadaten, optional Plan-Ref/-Fingerprint,
-  Output-Fingerprint, `createdAt` und Retention-/Deletion-Bindung an das
-  zugrunde liegende Artefakt.
+  Source-Refs, `targetDialect`, operationsspezifische Fingerprints
+  (`planPromptFingerprint`/`planPayloadFingerprint` oder
+  `executePromptFingerprint`/`executePayloadFingerprint`), Provider-/Modell-
+  Metadaten, optional Plan-Ref/-Fingerprint, Output-Fingerprint, `createdAt`
+  und Retention-/Deletion-Bindung an das zugrunde liegende Artefakt.
 - Store-Contract: atomar zusammen mit Artefakt-Publish oder vor Freigabe der
   Result-Ref schreiben; Lookup nach `(tenantId, artifactId)` und
   `(tenantId, resourceUri)`; Validierung von `wireArtifactKind`/`aiIntent` und
@@ -681,19 +718,26 @@ Regeln:
 - Tool erzeugt hoechstens Artefakte, fuehrt aber keinen Ziel-DB-Code aus.
 - Erfolgreiche Zielartefakte nutzen `wireArtifactKind=procedure-transform-output`,
   `aiIntent=procedure_transform_execute` und persistieren Provenance inklusive
-  verwendeter Plan-Referenz, Plan-Fingerprint, Source-Refs, `targetDialect`,
-  Prompt-/Payload-Fingerprint und Provider-/Modell-Metadaten.
+  verwendeter Plan-Referenz, `planArtifactFingerprint`, Source-Refs,
+  `targetDialect`, `executePromptFingerprint`, `executePayloadFingerprint` und
+  Provider-/Modell-Metadaten.
 - `planRef`/`planArtifactId` muss auf ein freigegebenes Plan-Artefakt aus
   `procedure_transform_plan` zeigen. Zulaessig ist nur ein Plan mit passendem
   Tenant, berechtigtem Principal bzw. Policy-Intent, passendem Source-Ref-
-  Set, `targetDialect`, Prompt-/Payload-Fingerprint, Provider-/Modell-
-  Provenance und `wireArtifactKind=procedure-transform-plan`.
+  Set, `targetDialect`, Plan-Provenance, `planPromptFingerprint`,
+  `planPayloadFingerprint`, Provider-/Modell-Provenance und
+  `wireArtifactKind=procedure-transform-plan`. Diese Plan-Fingerprints werden
+  nicht mit den Execute-Fingerprints gleichgesetzt; der Execute-Aufruf bildet
+  eigene `executePromptFingerprint`/`executePayloadFingerprint` ueber
+  `planRef`, `targetDialect` und Ausfuehrungsoptionen.
 - Stale, fremde, manuell hochgeladene oder andersartige Artefakte duerfen
   nicht als Transformationsplan verwendet werden. Abweichende Provenance,
   falscher `wireArtifactKind`, fremder Tenant, falscher Dialekt oder nicht zum
   Execute-Payload passende Source-Refs liefern einen fachlichen Fehler vor
   Provider-Aufruf.
-- Provider-, Modell-, Prompt- und Payload-Fingerprints sind auditpflichtig.
+- Provider-, Modell- und operationsspezifische Prompt-/Payload-Fingerprints
+  sind auditpflichtig. Bei Execute werden Plan-Fingerprints und
+  Execute-Fingerprints getrennt auditisiert.
 - Output-Artefakte sind immutable.
 - Wiederholung mit gleichem `approvalKey` und identischem Payload liefert
   dieselbe Zielreferenz.
@@ -732,8 +776,9 @@ Regeln:
 - Jeder erfolgreiche Aufruf persistiert einen immutable Testdatenplan mit
   `wireArtifactKind=testdata-plan`, `aiIntent=testdata_plan` und Provenance
   ueber Tenant, Principal/Policy-Intent, `schemaRef`, optionale `profileRef`,
-  `targetDialect`, Prompt-/Payload-Fingerprint sowie Provider-/Modell-
-  Metadaten. Inline-`summary`/`findings` sind nur Preview.
+  `targetDialect`, `testdataPromptFingerprint`, `testdataPayloadFingerprint`
+  sowie Provider-/Modell-Metadaten. Inline-`summary`/`findings` sind nur
+  Preview.
 - Grosse Plaene werden ausschliesslich als Artefakt/Resource referenziert.
 
 Output:
@@ -780,7 +825,7 @@ Jeder Prompt enthaelt:
 - Fehler aus `prompts/list`/`prompts/get` sind keine `tools/call`-Resultate.
   Unbekannter Prompt, ungueltige Argumente, Tenant-/Resource-Fehler und
   Prompt-Hygiene-Blockaden werden als MCP-/JSON-RPC-Fehler mit
-  `error.data.code` gemappt. Verbindlich gilt: unbekannter Prompt ->
+  `error.data.dmigrateCode` gemappt. Verbindlich gilt: unbekannter Prompt ->
   `RESOURCE_NOT_FOUND`; bekannter Prompt mit ungueltigen Argumenten ->
   `VALIDATION_ERROR`; Prompt-Hygiene-Blockade ->
   `PROMPT_HYGIENE_BLOCKED`.
@@ -810,7 +855,9 @@ Ergebnis:
 Aufgaben:
 
 - `AiProviderPort` definieren
-- Request-/Result-Datenklassen anlegen
+- Request-/Result-Datenklassen als sealed Success/Failure-Vertrag anlegen;
+  Provider-spezifische Exceptions werden in `AiProviderFailure`/`AiProviderError`
+  normalisiert.
 - `NoOpAiProvider` implementieren
 - Provider-Registry oder Provider-Factory einhaengen
 - `capabilities_list` um Provider-/Modell-Faehigkeiten erweitern
@@ -821,6 +868,9 @@ Tests:
 - `NoOp` liefert deterministische Ergebnisse
 - kein Netzwerkzugriff im Defaultpfad
 - Provider-Timeout wird als `OPERATION_TIMEOUT` strukturiert gemappt
+- Provider-Quota wird als `RATE_LIMITED` strukturiert gemappt
+- retrybare und terminale Provider-Fehler liefern normalisierte
+  `AiProviderError`-Werte ohne provider-spezifische Exception im Handler.
 - unbekannter Provider wird deterministisch abgewiesen
 
 ### AP G.3 - Provider-Konfiguration fail-closed
@@ -918,8 +968,9 @@ Aufgaben:
   Projection und Retention/Cleanup anbinden.
 - `procedure_transform_execute` muss `planRef`/`planArtifactId` gegen
   Plan-Provenance, Tenant, Principal/Policy-Intent, Source-Refs,
-  `targetDialect`, Prompt-/Payload-Fingerprint und
-  `wireArtifactKind=procedure-transform-plan` pruefen.
+  `targetDialect`, `planPromptFingerprint`, `planPayloadFingerprint` und
+  `wireArtifactKind=procedure-transform-plan` pruefen; Execute bildet eigene
+  `executePromptFingerprint`/`executePayloadFingerprint`.
 - Provider-Port-Resultate erst nach Output-Hygiene, Limitierung und Scrubbing
   durch die Tool-Schicht als d-migrate-Artefakt publizieren; der Provider-Port
   liefert keine vertrauenswuerdige d-migrate-`artifactRef`.
@@ -971,10 +1022,12 @@ Tests:
 - `procedure_transform_execute`-Zielartefakt traegt
   `wireArtifactKind=procedure-transform-output`,
   `aiIntent=procedure_transform_execute` und Provenance inklusive Plan-
-  Referenz/Fingerprint.
+  Referenz, `planArtifactFingerprint`, `executePromptFingerprint` und
+  `executePayloadFingerprint`.
 - `testdata_plan`-Artefakt traegt `wireArtifactKind=testdata-plan`,
   `aiIntent=testdata_plan` und Provenance inklusive `schemaRef`,
-  optionalem `profileRef`, `targetDialect` und Fingerprints.
+  optionalem `profileRef`, `targetDialect`, `testdataPromptFingerprint` und
+  `testdataPayloadFingerprint`.
 - Resource-Reads/Prompts lehnen KI-Artefakte mit fehlendem oder falschem
   `wireArtifactKind`/`aiIntent` ab.
 - Provider-Fehler wird als strukturierter Tool-Fehler gemappt
@@ -992,7 +1045,7 @@ Aufgaben:
 - Prompt-Argument-Schemas definieren
 - Prompt-Argumentvalidierung implementieren
 - Prompt-Fehler als MCP-/JSON-RPC-Fehler mit d-migrate-Code in
-  `error.data.code` mappen, einschliesslich unbekanntem Prompt,
+  `error.data.dmigrateCode` mappen, einschliesslich unbekanntem Prompt,
   `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND` und `PROMPT_HYGIENE_BLOCKED`
 - Prompt-Hygiene in `prompts/get` erzwingen
 - Prompt-Nachrichten klein und referenzbasiert halten
@@ -1004,11 +1057,11 @@ Tests:
 - `prompts/list` ueber HTTP
 - `prompts/get` fuer jeden Pflichtprompt mit gueltigen Argumenten
 - unbekannter Prompt als JSON-RPC-Fehler mit
-  `error.data.code=RESOURCE_NOT_FOUND`
+  `error.data.dmigrateCode=RESOURCE_NOT_FOUND`
 - ungueltige Argumente als JSON-RPC-Fehler mit
-  `error.data.code=VALIDATION_ERROR`
+  `error.data.dmigrateCode=VALIDATION_ERROR`
 - Secret-/Rohdatenparameter als JSON-RPC-Fehler mit
-  `error.data.code=PROMPT_HYGIENE_BLOCKED`
+  `error.data.dmigrateCode=PROMPT_HYGIENE_BLOCKED`
 - keine versteckte Tool-Ausfuehrung durch `prompts/get`
 
 ### AP G.8 - Quotas, Timeouts und Audit-Golden-Tests
@@ -1161,7 +1214,7 @@ Regeln:
 - `prompts/list`/`prompts/get` liefern keine `tools/call`-Resultate. Alle
   Prompt-Fehler, einschliesslich unbekanntem Prompt, ungueltigen Argumenten,
   Tenant-/Resource-Fehlern und Prompt-Hygiene-Blockaden, sind
-  MCP-/JSON-RPC-Fehler mit d-migrate-Code in `error.data.code`.
+  MCP-/JSON-RPC-Fehler mit d-migrate-Code in `error.data.dmigrateCode`.
 - Fuer Prompt-Methoden gilt verbindlich: unbekannter Prompt ->
   `RESOURCE_NOT_FOUND`; bekannter Prompt mit ungueltigen Argumenten ->
   `VALIDATION_ERROR`; Prompt-Hygiene-Blockade -> `PROMPT_HYGIENE_BLOCKED`.
@@ -1228,7 +1281,8 @@ Pflichtabdeckung:
 - `PromptHygieneService`
 - Secret-Pattern
 - Rohdaten-/Massendaten-Erkennung
-- Prompt-/Payload-Fingerprint
+- operationsspezifische Prompt-/Payload-Fingerprints inklusive getrennter
+  Plan- und Execute-Fingerprints
 - Provider-Result-Limitierung
 - Prompt-Registry
 - Prompt-Argumentvalidierung
@@ -1356,8 +1410,9 @@ Pflichtfaelle:
   `IDEMPOTENCY_CONFLICT`.
 - `procedure_transform_execute` akzeptiert nur freigegebene Plan-Artefakte mit
   passender Provenance, Tenant-/Principal-Bindung, Source-Refs,
-  `targetDialect`, Fingerprints und `wireArtifactKind=procedure-transform-plan`
-  bzw. explizit erweitertem Core-Artifact-Kind.
+  `targetDialect`, `planPromptFingerprint`, `planPayloadFingerprint` und
+  `wireArtifactKind=procedure-transform-plan` bzw. explizit erweitertem
+  Core-Artifact-Kind. Execute-Fingerprints bleiben davon getrennt.
 - KI-Artefakte verwenden verbindliche Typen:
   `procedure-transform-plan`, `procedure-transform-output` und `testdata-plan`
   mit passendem `aiIntent` und Provenance.
@@ -1380,7 +1435,7 @@ Pflichtfaelle:
   Prompt-Nachrichten.
 - `prompts/get` fuehrt keine Tools aus.
 - Alle Fehler aus `prompts/list`/`prompts/get` liefern MCP-konforme
-  JSON-RPC-Fehler mit d-migrate-Code in `error.data.code`.
+  JSON-RPC-Fehler mit d-migrate-Code in `error.data.dmigrateCode`.
 - Ungueltige Prompt-Argumente mappen auf `VALIDATION_ERROR`.
 - Unbekannte Prompts mappen auf `RESOURCE_NOT_FOUND`.
 - Prompt-Hygiene-Verletzungen in `prompts/get` mappen auf
