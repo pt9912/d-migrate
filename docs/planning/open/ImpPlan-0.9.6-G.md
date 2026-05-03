@@ -435,6 +435,47 @@ Audit-Events duerfen nicht enthalten:
 - rohe Massendaten
 - vollstaendige Prompts mit sensiblen Daten
 
+### 4.9 MCP-Scopes und materialisierungsfreie Vorpruefung
+
+KI-nahe `tools/call`-Methoden erben den MCP-Auth-Vertrag aus den vorherigen
+Phasen und duerfen nicht erst in Policy-/Provider-Code autorisiert werden.
+
+Verbindliche Scope-Zuordnung:
+
+- `procedure_transform_plan`: `dmigrate:ai:execute`
+- `procedure_transform_execute`: `dmigrate:ai:execute`
+- `testdata_plan`: `dmigrate:ai:execute`
+- `prompts/list`: `dmigrate:read`
+- `prompts/get`: `dmigrate:read`
+
+Der MCP-Scope-Check laeuft fuer KI-nahe Tools nach Auth, unbekanntem Toolnamen,
+struktureller Schema-/Formvalidierung und fehlendem `approvalKey`, aber vor
+`AiToolOutcomeStore`-/SyncEffect-Claims, Policy-/Approval-Pruefung, Quota,
+Provider-Konfiguration, Secret-Aufloesung, Artifact-Publish und Provider-
+Aufruf.
+
+Vor diesem Scope-Gate sind nur materialisierungsfreie Pruefungen erlaubt:
+
+- JSON-/Tool-Schema, Pflichtfelder, Enum-Werte und einfache Typgrenzen
+- syntaktische Resource-/Artifact-/Connection-Ref-Form inklusive Tenant-Prefix
+- Verbot freier JDBC-Strings, Roh-Secrets, Inline-Massendaten und Base64-
+  Artefakte ausserhalb der dafuer vorgesehenen Upload-Pfade
+- `approvalKey`-Praesenz
+
+Nicht erlaubt vor erfolgreichem Scope-Gate:
+
+- Secret-Store-Reads oder Provider-Secret-Aufloesung
+- Provider-Factory-/Client-Erzeugung
+- Artefakt- oder Resource-Materialisierung
+- Policy-/Approval-Lookups
+- Quota-Reservierung
+- Outcome-/Idempotency-Claims
+- Provider-Aufruf
+
+Eine Scope-Verletzung liefert den bestehenden MCP-Auth-/403-Fehler mit
+Scope-Challenge, schreibt keinen `AiToolOutcomeStore`-Record und startet keine
+Policy-, Quota-, Provider- oder Artefakt-Side-Effects.
+
 ---
 
 ## 5. Vertragsmodell
@@ -549,7 +590,9 @@ Regeln:
 - `enabled=false` blockiert Provider-Aufrufe.
 - `allowExternalNetwork=false` blockiert nicht-lokale Endpoints.
 - `secretRef` ist fuer auth-pflichtige externe Provider Pflicht und wird erst
-  im Provider-Adapter aufgeloest.
+  im Provider-Adapter aufgeloest. Die tatsaechliche Secret-Materialisierung
+  passiert erst nach erfolgreicher Scope-, Idempotency-/Outcome-, Policy-,
+  Hygiene- und Provider-Quota-Entscheidung.
 - Fuer lokale Provider wie Ollama/LM Studio oder andere nicht auth-pflichtige
   Adapter ist `secretRef` explizit absent/null erlaubt.
 - Roh-Secrets sind in Provider-Konfiguration und Tool-Payloads nie erlaubt;
@@ -933,13 +976,19 @@ Aufgaben:
 
 - JSON Schema 2020-12 fuer alle drei Tools definieren
 - Toolbeschreibungen in Registry ergaenzen
-- Scope- und Policy-Metadaten setzen
+- Scope- und Policy-Metadaten setzen; alle drei KI-nahen Tools verlangen
+  `dmigrate:ai:execute`, waehrend Prompt-Methoden separat `dmigrate:read`
+  nutzen.
 - Output-Schemas oder strukturierte Output-Vertraege definieren
 - Limits aus `capabilities_list` wiederverwenden
 
 Tests:
 
 - Schema-Golden-Tests fuer alle drei Tools
+- Registry-/Scope-Golden-Test: `procedure_transform_plan`,
+  `procedure_transform_execute` und `testdata_plan` sind mit
+  `dmigrate:ai:execute` registriert und fallen nicht auf `dmigrate:admin` oder
+  `dmigrate:read` zurueck.
 - gueltiger Minimalaufruf pro Tool
 - ungueltiger Payload pro Tool
 - fehlender `approvalKey` pro Tool
@@ -952,6 +1001,13 @@ Aufgaben:
 - `procedure_transform_plan` anbinden
 - `procedure_transform_execute` anbinden
 - `testdata_plan` anbinden
+- Handler-Pipeline in zwei Validierungsphasen trennen:
+  materialisierungsfreie Schema-/Form-/Ref-Syntax-Validierung vor Scope und
+  semantische Resource-/Artifact-/Provider-Validierung erst nach Scope,
+  Idempotency-/Outcome-Replay und Policy.
+- `dmigrate:ai:execute` vor `AiToolOutcomeStore`-/SyncEffect-Claim, Policy,
+  Quota, Provider-Konfiguration, Secret-Aufloesung, Artifact-Publish und
+  Provider-Aufruf erzwingen.
 - Policy-Required-Flow einheitlich nutzen
 - `approvalKey`-Idempotency fuer synchrone Side Effects mit atomarer
   Single-Writer-/Pending-Semantik nutzen; der bestehende
@@ -980,11 +1036,17 @@ Aufgaben:
 - Provider-Port-Resultate erst nach Output-Hygiene, Limitierung und Scrubbing
   durch die Tool-Schicht als d-migrate-Artefakt publizieren; der Provider-Port
   liefert keine vertrauenswuerdige d-migrate-`artifactRef`.
+- Bestehende `AiToolOutcomeStore`-Outcomes und retrybare Pending-/Recovery-
+  Zustaende replayen, bevor Policy, Provider-Konfiguration, Quota oder
+  Secret-Aufloesung erneut laufen.
 - grosse Ergebnisse als Artefakt/Resource referenzieren
 - Audit fuer alle Erfolg- und Fehlerpfade schreiben
 
 Tests:
 
+- fehlender `dmigrate:ai:execute` liefert Scope-/403-Fehler ohne
+  `AiToolOutcomeStore`-Write, Policy-Lookup, Quota-Reservierung,
+  Secret-Store-Read, Artifact-Lookup oder Provider-Aufruf.
 - fehlende Policy liefert `POLICY_REQUIRED`
 - genehmigter Aufruf nutzt Provider
 - identischer Retry erzeugt keinen zweiten Provider-Aufruf
@@ -1007,6 +1069,8 @@ Tests:
   parallele zweite Provider-Aufrufe und liefert einen retrybaren Status.
 - abweichender Payload mit gleichem `approvalKey` liefert
   `IDEMPOTENCY_CONFLICT`
+- identischer Retry mit terminalem oder retrybarem Outcome replayt vor
+  Policy-/Approval-Pruefung und ohne Provider-Secret-Aufloesung.
 - `procedure_transform_plan` liefert bei kleinen und grossen Planinhalten immer
   eine persistierte `planRef` oder `planArtifactId`; `summary`/`findings`
   duerfen nur Preview sein.
@@ -1083,6 +1147,9 @@ Tests:
 Aufgaben:
 
 - Provider-Quota in vorhandene Quota-Struktur integrieren
+- Provider-Quota vor Provider-Secret-Aufloesung, Provider-Client-Erzeugung und
+  Provider-Aufruf reservieren; `RATE_LIMITED` darf keine Provider- oder
+  Secret-Side-Effects ausloesen.
 - Provider-Timeouts konfigurieren
 - Audit-Events fuer KI-nahe Tools golden-testen
 - Audit-Events fuer Prompt-Hygiene-Blockaden testen
@@ -1091,6 +1158,8 @@ Aufgaben:
 Tests:
 
 - Provider-Quota liefert `RATE_LIMITED`
+- Provider-Quota-Verletzung liest keine Provider-Secrets, erzeugt keinen
+  Provider-Client und ruft keinen Provider auf.
 - Provider-Timeout liefert `OPERATION_TIMEOUT`
 - Audit enthaelt Provider-/Modell-Metadaten
 - Audit enthaelt keine Secrets
@@ -1119,6 +1188,7 @@ Mindestfaelle:
 
 - `initialize` enthaelt `capabilities.prompts`
 - KI-nahes Tool ohne `approvalKey`
+- KI-nahes Tool ohne `dmigrate:ai:execute`
 - KI-nahes Tool ohne Policy-Freigabe
 - KI-nahes Tool-Retry mit gleichem `approvalKey`
 - gleicher `approvalKey` mit anderem Payload
@@ -1129,7 +1199,7 @@ Mindestfaelle:
 - `prompts/get` mit ungueltigen Argumenten
 - `prompts/get` mit Prompt-Hygiene-Blockade
 - Provider-Timeout
-- Provider-Quota
+- Provider-Quota ohne Secret-Aufloesung oder Provider-Client-Erzeugung
 
 ### AP G.10 - Dokumentation und Roadmap-Abschluss
 
@@ -1170,29 +1240,37 @@ Reihenfolge:
 2. unbekannter Toolname als MCP-/JSON-RPC-Protokollfehler
 3. Payload-Schema-Validierung
 4. fehlender `approvalKey`
-5. Tenant-/Resource-Scope-Pruefung
-6. Payload-Fingerprint fuer `(tenant, caller, toolName, approvalKey)` pruefen;
+5. MCP-Authorization-Scope (`dmigrate:ai:execute`) pruefen; Scope-Verletzung
+   liefert den bestehenden Auth-/403-Fehler mit Scope-Challenge und ohne
+   Outcome-/Policy-/Provider-/Artifact-Side-Effect
+6. Tenant-/Resource-Ref-Syntax materialisierungsfrei pruefen
+7. Payload-Fingerprint fuer `(tenant, caller, toolName, approvalKey)` pruefen;
    abweichender Fingerprint liefert `IDEMPOTENCY_CONFLICT`
-7. bestehendes `AiToolOutcomeStore`-Outcome mit identischem Fingerprint
+8. bestehendes `AiToolOutcomeStore`-Outcome mit identischem Fingerprint
    replayen:
    - `SUCCEEDED` -> gleiche Tool-Response bzw. Result-Ref
    - `FAILED_TERMINAL` -> gleiches gescrubbtes Error-Envelope
    - `FAILED_RETRYABLE` -> gleicher retrybarer Pending-/Recovery-Status
-8. Policy-/Approval-Pruefung nur fuer neue Claims oder Reclaims, die einen
+9. Policy-/Approval-Pruefung nur fuer neue Claims oder Reclaims, die einen
    neuen Provider-Side-Effect starten koennten
-9. Provider-Konfiguration, Provider-Auswahl, Endpoint und Modell validieren;
+10. Semantische Tenant-/Resource-/Artifact-/Provenance-Pruefung ohne Secret-
+    Materialisierung
+11. Provider-Konfiguration, Provider-Auswahl, Endpoint und Modell validieren;
    unbekannter/nicht konfigurierter Provider, blockierter Endpoint oder
    blockiertes Modell werden nach Abschnitt 4.2 gemappt
-10. Prompt-Hygiene
-11. Provider-Quota
-12. Provider-Timeout
-13. Provider-Ausfuehrung
-14. Result-Limitierung und Artifact-Publish
+12. Prompt-Hygiene
+13. Provider-Quota reservieren
+14. Provider-Secret-Aufloesung und Provider-Client-Erzeugung
+15. Provider-Timeout
+16. Provider-Ausfuehrung
+17. Result-Limitierung und Artifact-Publish
 
 Begruendung:
 
 - offensichtliche Clientfehler sollen deterministisch vor teuren Policy- oder
   Provider-Pfaden enden
+- MCP-Scope-Verletzungen duerfen keine Outcome-, Policy-, Quota-, Secret-,
+  Artifact- oder Provider-Side-Effects erzeugen
 - Idempotency-Konflikte duerfen keine Policy-Informationen leaken
 - bestehende terminale oder retrybare Outcomes duerfen nicht durch abgelaufene
   oder fehlende Approval-Tokens in neue Policy-Entscheidungen umgebogen werden
@@ -1200,7 +1278,10 @@ Begruendung:
   Prompt-Hygiene entschieden werden, damit ein unbekannter Provider mit
   problematischem Payload deterministisch als Provider-/Policy-Fehler und
   nicht als Hygiene-Fehler golden-getestet wird
-- neue Provider-Aufrufe duerfen erst nach Policy und Hygiene stattfinden
+- Provider-Quota schuetzt vor Secret-/Client-Materialisierung; `RATE_LIMITED`
+  darf keine Provider-Secrets lesen und keinen Provider-Client erzeugen
+- neue Provider-Aufrufe duerfen erst nach Policy, Hygiene, Quota und
+  Secret-Aufloesung stattfinden
 
 ### 7.2 Fehlercodes
 
@@ -1316,7 +1397,8 @@ Pflichtabdeckung je KI-nahem Tool:
 - gueltiger Minimalaufruf
 - ungueltiger Payload
 - fehlender `approvalKey`
-- Scope-Verletzung
+- Scope-Verletzung: ohne `dmigrate:ai:execute` kein Outcome-Write, kein
+  Policy-Lookup, keine Quota, keine Secret-Aufloesung und kein Provider-Aufruf
 - Policy-Required-Flow
 - genehmigter Flow mit `NoOp`
 - identischer Retry
@@ -1407,13 +1489,18 @@ Pflichtfaelle:
 - Audit-Events enthalten keine Approval-Tokens, Provider-Secrets,
   Connection-Secrets oder unredigierten Massendaten.
 - `procedure_transform_plan` ist registriert, policy-gesteuert,
-  auditierbar, mit `NoOp` testbar und persistiert bei jedem erfolgreichen
-  Aufruf ein immutable Plan-Artefakt bzw. eine stabile `planRef`.
+  mit `dmigrate:ai:execute` geschuetzt, auditierbar, mit `NoOp` testbar und
+  persistiert bei jedem erfolgreichen Aufruf ein immutable Plan-Artefakt bzw.
+  eine stabile `planRef`.
 - `procedure_transform_execute` ist registriert, bestaetigungspflichtig,
-  policy-gesteuert, auditierbar und mit `NoOp` testbar.
-- `testdata_plan` ist registriert, policy-gesteuert, auditierbar und mit
+  policy-gesteuert, mit `dmigrate:ai:execute` geschuetzt, auditierbar und mit
   `NoOp` testbar.
+- `testdata_plan` ist registriert, policy-gesteuert, mit
+  `dmigrate:ai:execute` geschuetzt, auditierbar und mit `NoOp` testbar.
 - Alle drei KI-nahen Tools verlangen `approvalKey`.
+- Scope-Verletzungen fuer KI-nahe Tools enden vor `AiToolOutcomeStore`-Write,
+  Policy-Lookup, Quota-Reservierung, Secret-Aufloesung, Artifact-Lookup und
+  Provider-Aufruf.
 - Fehlender `approvalKey` liefert `VALIDATION_ERROR`.
 - Fehlende Freigabe liefert `POLICY_REQUIRED` ohne verwendbares
   `approvalToken`.
@@ -1450,6 +1537,8 @@ Pflichtfaelle:
 - Grosse KI-Ergebnisse werden als Artefakt oder Resource-Ref referenziert.
 - Provider-Timeouts liefern `OPERATION_TIMEOUT`.
 - Provider-Quotas liefern `RATE_LIMITED`.
+- Provider-Quotas werden vor Provider-Secret-Aufloesung und Provider-Client-
+  Erzeugung entschieden.
 - MCP-Prompts sind ueber `prompts/list` sichtbar.
 - `initialize` setzt `capabilities.prompts`, wenn die Prompt-Methoden
   verfuegbar sind.
