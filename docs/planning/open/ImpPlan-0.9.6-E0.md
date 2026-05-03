@@ -118,13 +118,16 @@ einen zweiten Async-Job-Runner neben dem d-migrate-Jobmodell einfuehren.
 - Checkpoint-Matrix pro Runner:
   - Start-/Preflight-Grenzen
   - Schleifen ueber Tabellen, Dateien, Chunks oder Queries
+  - Resume-/Skip-Loops
   - vor Artefakt-Publish
   - vor Import-/Transfer-Schreibabschnitten
   - vor Commit-/Finish-/Checkpoint-Persistenz
+  - vor Progress-/Completion-Callbacks mit externer Beobachtbarkeit
 - Side-Effect-Matrix pro Runner:
   - Artefakte
   - Checkpoints
   - Datenbank-Schreiboperationen
+  - Progress-/Completion-Callbacks
   - Profiling-Reports
   - temporare Dateien
 - Tests mit kontrollierbaren Fake-Ports/Fake-Writern, die Cancel an
@@ -252,6 +255,53 @@ gilt nicht als anschlussfaehig.
 Der Anschlussnachweis bleibt in E0 dokumentativ und adapterneutral. E0 darf
 keine produktive Cancel-Status-Verarbeitung, keine Store-Transition zu
 `cancelled` und keine produktiven Audit-Events fuer `job_cancel` einfuehren.
+
+### 4.5 Cancel hat Vorrang vor generischem Fehler-Mapping
+
+Bestehende Runner fangen heute an mehreren Stellen breite `Throwable`- oder
+`Exception`-Typen ab und mappen sie auf CLI-Exit-Codes oder user-facing
+Fehlertexte. E0 muss sicherstellen, dass `OperationCancelledException` an
+allen Runner-, Invoker- und Adaptergrenzen vor solchen Catch-All-Pfaden
+behandelt wird.
+
+Verbindliche Regel:
+
+- `OperationCancelledException` darf nicht als Import-/Transfer-/Profiling-/
+  Reverse-Fehler mit Exit-Code `5`, `7` oder einem sonstigen fachlichen
+  Fehlercode verschleiert werden.
+- Wenn ein bestehender `execute(...)`-Pfad zwingend `Int` zurueckgibt, muss E0
+  eine zentrale, dokumentierte Adapter-Mapping-Regel liefern; die
+  adapterneutrale Runner-Grenze bleibt trotzdem typisiert als Cancel
+  erkennbar.
+- `finally`-/Cleanup-Bloecke duerfen Cancel nicht ueberschreiben. Cleanup-
+  Fehler werden hoechstens suppressed oder als Cleanup-Risiko dokumentiert,
+  waehrend das Primaer-Outcome Cancel bleibt.
+- Progress-, Completion- oder Checkpoint-Callbacks duerfen nach erkanntem
+  Cancel kein erfolgreiches Fortschritts- oder Abschlussereignis mehr
+  emittieren.
+
+Tests muessen mindestens einen Catch-All-Pfad pro betroffenen Runner abdecken
+und beweisen, dass Cancel nicht in den generischen Fehlerzweig faellt.
+
+### 4.6 Resume-, Skip- und Callback-Pfade sind keine Nebenpfade
+
+Cancel-Checkpoints gelten nicht nur fuer den "frischen" Hauptlauf. Resume- und
+Skip-Logik kann grosse Mengen Daten lesen, Checkpoints fortschreiben oder
+Callbacks ausloesen und ist deshalb gate-relevant.
+
+Verbindliche Regel:
+
+- Resume-Skip-Loops muessen vor jedem potentiell langen `nextChunk`-/Read-Call
+  und vor jedem nachgelagerten Write/Commit den Token pruefen.
+- Ein Cancel waehrend Resume-Skip darf keinen neuen Fortschritts-Checkpoint
+  persistieren, der nach Cancel gelesene Chunks als erfolgreich bestaetigt.
+- Lifecycle-Callbacks wie `onChunkCommitted`, `onTableCompleted`,
+  `onTableTransferred` und Progress-Reporter sind als Side Effects zu
+  klassifizieren, wenn sie dauerhaften Fortschritt, Erfolg oder externe
+  Beobachtbarkeit erzeugen.
+- In-memory Fortschrittszaehler duerfen fuer lokale Cleanup-Entscheidungen
+  fortgeschrieben werden; dauerhafte oder nach aussen sichtbare Fortschritts-
+  Projektionen brauchen einen Checkpoint direkt davor.
 
 ---
 
@@ -398,7 +448,9 @@ Pflicht-Checkpoints:
 
 - nach Preflight und vor Writer-Open
 - vor jeder neuen Tabelle
+- vor Resume-Skip-Reads und vor dem ersten nicht uebersprungenen Read
 - vor jedem neuen Chunk-Write
+- vor jedem dauerhaften Chunk-Checkpoint und vor jedem Completion-Callback
 - vor `finish`/Commit einer Tabelle, soweit der Writer-Port diese Grenze
   sichtbar macht
 - vor Checkpoint-Persistenz, wenn der Checkpoint Fortschritt bestaetigt
@@ -406,7 +458,11 @@ Pflicht-Checkpoints:
 Spike-Abnahme:
 
 - Cancel vor erstem Chunk startet keinen Datenwrite
+- Cancel waehrend Resume-Skip startet keinen Write und persistiert keinen
+  neuen Fortschritts-Checkpoint
 - Cancel zwischen Chunks startet keinen weiteren Chunk-Write
+- Cancel vor `onChunkCommitted`/`onTableCompleted` erzeugt kein erfolgreiches
+  Fortschritts- oder Completion-Signal fuer den abgebrochenen Abschnitt
 - Cancel vor finalem Finish startet kein weiteres Finish/Commit
 - bereits begonnener atomarer Chunk-Write darf beendet werden; danach endet
   der Runner als Cancel
@@ -423,6 +479,9 @@ Betroffene Pfade:
 
 Pflicht-Checkpoints:
 
+- vor Source-/Target-Pool-Materialisierung, soweit der Aufruf potentiell
+  lange blockieren kann oder Reconnect-/Retry-Logik startet
+- vor Source- und Target-Schema-Read im Preflight
 - nach Preflight und vor Ziel-Writer-Open
 - vor Quell-Reader-Open bzw. Reader-Initialisierung
 - vor jedem potentiell langen Source-Read-Call
@@ -431,15 +490,21 @@ Pflicht-Checkpoints:
 - vor Ziel-Write
 - vor Finish/Commit
 - vor Fortschritts-Checkpoint, falls vorhanden
+- vor `onTableTransferred` oder aequivalentem Completion-Callback
 
 Spike-Abnahme:
 
+- Connection-/Pool-Open und Schema-Reads sind als cancelbar,
+  atomar-nicht-cancelbar oder blockierend klassifiziert, inklusive
+  Timeout-/Retry-Verhalten
 - Quell-Reader-Open und Source-Read-Calls sind als cancelbar,
   atomar-nicht-cancelbar oder blockierend klassifiziert, inklusive
   Timeout-/Retry-Verhalten
 - Cancel vor Ziel-Write startet keine Ziel-Schreiboperation
 - Cancel zwischen Chunks verhindert weitere Ziel-Chunks
 - Cancel zwischen Tabellen verhindert die naechste Tabelle
+- Cancel vor Completion-Callback meldet keine Tabelle als erfolgreich
+  uebertragen
 - Runner liefert erkennbares Cancel-Ergebnis statt Erfolg mit Teildaten
 
 ### 6.5 Streaming-/Reader-/Writer-Pfade
@@ -465,6 +530,9 @@ E0 muss entscheiden, wo Cancel-Pruefung liegt:
 Spike-Abnahme:
 
 - dokumentierte Entscheidung pro Port-Grenze
+- Import-Delegationsgrenzen (`DataImportRunner` -> `ImportStreamingInvoker` ->
+  `ImportExecutor` -> `StreamingImporter` -> `TableImporter`) reichen Token,
+  Cancel-Outcome und Cleanup-Anforderungen ohne MCP-Abhaengigkeit durch
 - Fake-Reader-Test beweist: nach Cancel wird kein weiterer Source-Read-Call
   gestartet
 - Fake-Writer-Test beweist: nach Cancel wird kein weiterer `write`-Aufruf
@@ -522,7 +590,7 @@ Pflichtschema fuer die Checkpoint-/Side-Effect-Matrix:
 | `pipeline` | fachlicher Pfad, z. B. Reverse-Publish oder Import-Chunk |
 | `operation` | konkreter Call oder Schritt |
 | `operation_type` | `loop`, `side_effect`, `monolithic_call`, `cleanup` |
-| `side_effect` | Artefakt, Source-Read, DB-Write, Checkpoint, Spool, Session oder `none` |
+| `side_effect` | Artefakt, Source-Read, DB-Write, Checkpoint, Progress-/Completion-Callback, Spool, Session oder `none` |
 | `checkpoint_before` | konkrete Code-/Port-Grenze vor dem Side Effect |
 | `cancel_reaction` | `OperationCancelledException`/zentrales Mapping, kein weiterer Read/Write, abort/close usw. |
 | `atomicity` | `atomic`, `multi_step`, `unknown` |
@@ -549,6 +617,18 @@ Tests/Gate:
 
 - `SchemaReverseRunner`, `DataProfileRunner`, `DataImportRunner` und
   `DataTransferRunner` um optionalen Cancel-Token erweitern.
+- Import-seitige Delegations-DTOs und Funktionsgrenzen (`ImportExecutionContext`,
+  `ImportExecutionOptions`, `ImportResumeState`, `ImportCallbacks`,
+  `ImportExecutor`, `ImportStreamingInvoker`, `StreamingImporter`,
+  `TableImporter`) so erweitern, dass der Token bis zur Tabellen-/Chunk-
+  Schleife sichtbar ist. Der Token darf nicht nur am `DataImportRunner` enden.
+- Transfer-seitige Delegationsgrenzen (`DataTransferRunner`,
+  `TransferExecutionContext`, `TransferExecutor` und Reader-/Writer-Aufrufe)
+  so erweitern, dass der Token vor Schema-Reads, Source-Reads, Writes,
+  Commits, Finish und Completion-Callbacks geprueft werden kann.
+- Profiling-Services (`ProfileDatabaseService`, `ProfileTableService`) so
+  erweitern, dass Checkpoints zwischen Tabellen und zwischen spaltenweisen
+  Profiling-Queries moeglich sind.
 - Bestehende CLI-Kommandos uebergeben Default-Token.
 - Tests/Fakes koennen echte Tokens uebergeben.
 - Keine MCP-Abhaengigkeit in Runnern einfuehren.
@@ -557,17 +637,26 @@ Tests:
 
 - bestehende Runner-Tests bleiben ohne expliziten Token lauffaehig
 - neuer Cancel-Token wird in den jeweiligen Pfad propagiert
+- Import-, Transfer- und Profiling-Fakes beweisen, dass der Token an der
+  tiefsten relevanten Loop-/Port-Grenze sichtbar ist und nicht an der
+  Runner-Fassade verloren geht
 
 ### 7.4 AP E0.4: Checkpoints in read-/artefaktnahe Pfade setzen
 
 - `SchemaReverseRunner` und Profiling-Pfade instrumentieren.
 - Checkpoints vor Artefakt-/Report-Publish setzen.
 - Profiling-Loops zwischen Tabellen/Scopes pruefen.
+- Profiling-Checkpoints zwischen `listTables`, `listColumns`, `rowCount`,
+  `columnMetrics`, `topValues`, optionalen Statistik-Queries und
+  `reportWriter` setzen bzw. jeden einzelnen Query-Aufruf nach Abschnitt 4.1
+  klassifizieren.
 
 Tests:
 
 - Cancel vor Publish erzeugt kein Artefakt
 - Cancel zwischen Profiling-Tabellen startet keine weitere Tabelle
+- Cancel zwischen Profiling-Spalten startet keine weitere spaltenbezogene
+  Query
 - Cancel wird als Cancel und nicht als fachlicher Fehler gemeldet
 
 ### 7.5 AP E0.5: Checkpoints in Import- und Transfer-Pfade setzen
@@ -576,6 +665,12 @@ Tests:
   `DataTransferRunner` und `TransferExecutor` instrumentieren.
 - Checkpoints vor Tabelle, Quell-Reader-Open, Source-Read-Call, Chunk,
   Ziel-Write, Finish/Commit und Checkpoint-Persistenz setzen.
+- Resume-Skip-Loops, `onChunkCommitted`, `onTableCompleted`,
+  `onTableTransferred`, Progress-Reporter und Abschluss-Summaries als eigene
+  Side-Effect-Grenzen bewerten und vor dauerhafter oder externer
+  Fortschrittsprojektion pruefen.
+- `ImportStreamingInvoker` und vergleichbare Catch-All-Grenzen muessen
+  `OperationCancelledException` vor generischem Fehler-Mapping behandeln.
 - Falls ein Port-Aufruf lange laufen kann oder selbst mehrere Side Effects
   startet, muss E0 den Port-/Adapter-Vertrag schaerfen oder den Pfad fuer das
   Gate blockieren; eine reine Phase-E-Notiz reicht nicht.
@@ -588,8 +683,14 @@ Tests:
 - Cancel vor Quell-Reader-Open startet keine Reader-Initialisierung
 - Cancel vor Source-Read-Call startet keinen weiteren Source-Read
 - Cancel vor erstem Write startet keinen Write
+- Cancel waehrend Resume-Skip startet weder Write noch neuen dauerhaften
+  Fortschritts-Checkpoint
 - Cancel zwischen Chunks startet keinen weiteren Write
 - Cancel vor Finish/Commit startet kein Finish/Commit
+- Cancel vor Completion-/Progress-Callback erzeugt kein erfolgreiches
+  Fortschrittssignal fuer einen nicht abgeschlossenen Abschnitt
+- Cancel wird an Invoker-/Runner-Catch-All-Grenzen nicht als generischer
+  Import-/Transferfehler gemappt
 - Fake-Writer zaehlt Aufrufe und beweist Side-Effect-Stopp
 
 ### 7.6 AP E0.6: Gate-Entscheidung dokumentieren
@@ -665,15 +766,23 @@ Mindesttests:
 - `SchemaReverseRunner`: Cancel vor Publish
 - `DataProfileRunner` / Profiling-Service: Cancel zwischen Tabellen und vor
   Report-Persistenz
-- `DataImportRunner`: Cancel vor erstem Chunk, zwischen Chunks und vor Finish
+- Profiling-Service: Cancel zwischen Spalten/Profiling-Queries startet keine
+  weitere Query
+- `DataImportRunner`: Cancel vor erstem Chunk, waehrend Resume-Skip, zwischen
+  Chunks, vor dauerhaftem Chunk-Checkpoint, vor Completion-Callback und vor
+  Finish
 - `DataTransferRunner`: Cancel vor Quell-Reader-Open, vor Source-Read-Call,
-  vor Ziel-Write und zwischen Chunks
+  vor Ziel-Write, zwischen Chunks, vor Completion-Callback und vor
+  Fortschrittsprojektion
 - Streaming-/Reader-Fake: nach Cancel kein weiterer Source-Read
 - Streaming-/Writer-Fake: nach Cancel kein weiterer `write`
 - Cleanup-Fake: nach Cancel sind offene Writer/Sessions beendet und temporaere
   Spools nicht als Erfolg registriert
 - monolithischer Call-Fake: langer Port-Aufruf ist cancelbar, nachweislich
   atomar ohne nachgelagerte Side Effects oder blockiert das Gate
+- Catch-All-Fake: `OperationCancelledException` passiert Invoker-/Runner-
+  Grenzen als typisiertes Cancel und wird nicht in generische Exit-/Fehlerpfade
+  gemappt
 
 ---
 
@@ -693,15 +802,25 @@ Mindesttests:
 - Cancel vor Import-/Transfer-Write verhindert neue Daten-Schreibabschnitte.
 - Cancel zwischen Chunks oder Tabellen verhindert den naechsten Chunk bzw. die
   naechste Tabelle.
+- Cancel waehrend Resume-/Skip-Pfaden startet keinen Write, keinen neuen
+  dauerhaften Fortschritts-Checkpoint und kein erfolgreiches Completion-Signal.
+- Completion-, Progress- und Checkpoint-Callbacks sind in der Matrix als Side
+  Effects bewertet, sofern sie dauerhaften oder extern sichtbaren Fortschritt
+  erzeugen.
 - Bereits begonnene atomare Operationen duerfen kontrolliert fertiglaufen,
   danach startet kein weiterer Side Effect.
 - Cancel wird typisiert als Cancel signalisiert und nicht als generischer
   fachlicher Fehler verschleiert.
 - `OperationCancelledException` ist der kanonische E0-Carrier; jede
   Result-basierte Abweichung ist zentral gemappt und begruendet.
+- Catch-All-Fehlerbehandlung in Runnern, Invokern und Adaptern behandelt
+  `OperationCancelledException` vor generischem Fehler-Mapping.
 - Das typisierte Cancel-Outcome ist so eindeutig, dass Phase E daraus ohne
   weitere fachliche Interpretation `cancelled`-Status, Audit-Event und
   Worker-Handle-Cleanup ableiten kann.
+- Der Cancel-Token ist bis zu den tiefsten relevanten Import-, Transfer- und
+  Profiling-Loop-/Port-Grenzen propagiert; ein Token nur an der Runner-Fassade
+  erfuellt E0 nicht.
 - Writer, Sessions, Transaktionen, temporaere Dateien und Spools haben
   deterministische Cleanup-/Abort-Assertions oder sind begruendet nicht
   betroffen.
