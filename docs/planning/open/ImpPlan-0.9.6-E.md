@@ -931,8 +931,10 @@ Tests:
 - Laufende Jobs ueber Worker-Handle signalisieren.
 - Wartende Jobs per CAS `queued -> cancelled` vor Dispatch terminalisieren.
 - Dispatcher-Barriere verhindert Start bereits gecancelter `queued`-Jobs.
-- Bis `cancelAckTimeout` auf Side-Effect-Barriere oder Worker-Ack warten,
-  bevor Cancel als angenommen gilt.
+- Bei erfolgreichem `queued -> cancelled`-CAS gilt Cancel sofort als
+  angenommen; es gibt keinen Worker-Ack-Pfad fuer `queued`-Jobs.
+- Nur fuer laufende Jobs bis `cancelAckTimeout` auf Side-Effect-Barriere oder
+  Worker-Ack warten, bevor Cancel als angenommen gilt.
 - Bei Ack-Timeout nicht blockieren: aktuellen nicht-terminalen Status mit
   `executionMeta.cancelRequested=true`, `cancelAckPending=true` und
   `retryAfter` zurueckgeben.
