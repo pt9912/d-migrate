@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.registry.JsonArgs.optString
+import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.TenantScopeDeniedException
@@ -133,7 +134,7 @@ internal class JobStatusGetHandler(
             put("updatedAt", managed.updatedAt.toString())
             put("expiresAt", managed.expiresAt.toString())
             put("resourceUri", record.resourceUri.render())
-            put("artifacts", managed.artifacts)
+            put("artifacts", projectArtifacts(record.tenantId, managed.artifacts))
             // Optional fields: emit only when set so the wire matches
             // the JSON-Schema `"type": "object"` declaration (a null
             // value would fail strict 2020-12 validation). Same
@@ -144,15 +145,35 @@ internal class JobStatusGetHandler(
         }
     }
 
+    /**
+     * AP 6.23: project `managed.artifacts` onto the canonical
+     * `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` URI form
+     * before serialisation. Naked artefact ids accumulated by older
+     * job pipelines are backfilled (single-write happens upstream;
+     * this tool is read-only). Already-URI values are validated and
+     * passed through verbatim — no double-rewrite.
+     */
+    private fun projectArtifacts(tenantId: TenantId, artifacts: List<String>): List<String> =
+        artifacts.map { entry ->
+            if (entry.startsWith("dmigrate://")) {
+                entry
+            } else {
+                ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, entry).render()
+            }
+        }
+
     // AP 6.17: progress.phase and error.message/code can carry job-
     // runtime strings that originated from user-provided schemas or
     // connection refs. Scrubbing keeps accidental token /
     // connection-URL leakage out of the wire response.
-    // numericValues is keyed by curated phase-counter names
-    // ("rows", "bytes", ...) and the values are longs — no scrub.
+    // AP 6.23: numericValues is filtered through a curated allowlist
+    // (PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS); unknown internal
+    // counter names are dropped so the wire output validates against
+    // the closed schema.
     private fun projectProgress(progress: JobProgress): Map<String, Any?> = mapOf(
         "phase" to SecretScrubber.scrub(progress.phase),
-        "numericValues" to progress.numericValues,
+        "numericValues" to progress.numericValues
+            .filterKeys { it in PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS },
     )
 
     private fun projectError(error: JobError): Map<String, Any?> = buildMap {

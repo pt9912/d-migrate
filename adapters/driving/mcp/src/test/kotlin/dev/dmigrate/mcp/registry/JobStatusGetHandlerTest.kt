@@ -129,12 +129,20 @@ private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
 
 class JobStatusGetHandlerTest : FunSpec({
 
-    test("own job by jobId: returns the truncated projection") {
+    test("own job by jobId: returns the truncated projection (artefact ids backfilled to URIs, allowlisted counters)") {
+        // AP 6.23: naked artefact ids in the stored job are backfilled
+        // to dmigrate://tenants/{tenantId}/artifacts/{artifactId}
+        // before serialisation, and progress.numericValues is filtered
+        // through the allowlist (`rows` is NOT in the allowlist —
+        // dropped — but `processed` is and survives).
         val f = fixture()
         stageJob(
             f, "job-1",
             artifacts = listOf("art-1", "art-2"),
-            progress = JobProgress(phase = "reading", numericValues = mapOf("rows" to 1234L)),
+            progress = JobProgress(
+                phase = "reading",
+                numericValues = mapOf("rows" to 1234L, "processed" to 7L),
+            ),
         )
         val outcome = f.handler.handle(
             ToolCallContext(
@@ -149,12 +157,38 @@ class JobStatusGetHandlerTest : FunSpec({
         json.get("terminal").asBoolean shouldBe false
         json.get("resourceUri").asString shouldBe "dmigrate://tenants/acme/jobs/job-1"
         val artifacts = json.getAsJsonArray("artifacts").map { it.asString }
-        artifacts shouldBe listOf("art-1", "art-2")
+        artifacts shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/art-1",
+            "dmigrate://tenants/acme/artifacts/art-2",
+        )
         val progress = json.getAsJsonObject("progress")
         progress.get("phase").asString shouldBe "reading"
-        progress.getAsJsonObject("numericValues").get("rows").asLong shouldBe 1234L
+        val numeric = progress.getAsJsonObject("numericValues")
+        numeric.has("rows") shouldBe false  // not in allowlist → dropped
+        numeric.get("processed").asLong shouldBe 7L
         json.has("error") shouldBe false
         json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
+    }
+
+    test("AP 6.23: artefact entries already in URI form are not double-rewritten") {
+        val f = fixture()
+        stageJob(
+            f, "job-1",
+            artifacts = listOf(
+                "dmigrate://tenants/acme/artifacts/art-pre-existing",
+                "art-still-naked",
+            ),
+        )
+        val json = parsePayload(
+            f.handler.handle(
+                ToolCallContext("job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL),
+            ),
+        )
+        val artifacts = json.getAsJsonArray("artifacts").map { it.asString }
+        artifacts shouldBe listOf(
+            "dmigrate://tenants/acme/artifacts/art-pre-existing",
+            "dmigrate://tenants/acme/artifacts/art-still-naked",
+        )
     }
 
     test("terminal jobs (SUCCEEDED/FAILED/CANCELLED) carry terminal=true and stay readable until retention") {

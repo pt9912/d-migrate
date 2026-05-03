@@ -20,7 +20,31 @@ package dev.dmigrate.mcp.schema
  *   any name that looks like a credential at build time; schemas
  *   below are written with that constraint in mind.
  */
+/**
+ * File-level constant so it is initialised before the
+ * [PhaseBToolSchemas] object's `SCHEMAS` builder runs (which
+ * references it via `jobProgressField()` → `jobProgressNumericValuesField()`
+ * → here).
+ */
+private val JOB_PROGRESS_NUMERIC_KEYS_DATA: List<String> = listOf(
+    "processed",
+    "total",
+    "succeeded",
+    "failed",
+    "skipped",
+    "bytesRead",
+    "bytesWritten",
+)
+
+@Suppress("TooManyFunctions")
 internal object PhaseBToolSchemas {
+    // TooManyFunctions: this object is the central schema registry
+    // for every Phase-B/C tool plus the AP-6.23 D1-D6 building blocks
+    // (artifactRefField, executionMetaField, findingItem,
+    // generatorFindingItem, jobProgressField, jobErrorField, etc.).
+    // Splitting the helpers across files would break the lookup-by-
+    // tool-name table that drives the golden file. The function count
+    // grows linearly with new tools — by design.
 
     /**
      * Tool input/output schema bundle. Named [SchemaPair] (rather than
@@ -135,6 +159,12 @@ internal object PhaseBToolSchemas {
                 "jobId" to stringField(),
                 "resourceUri" to stringField(),
             ).build(),
+            // AP 6.23: typed progress + error, allowlist-filtered
+            // numericValues, artefact + job URI patterns, closed
+            // executionMeta. resourceUri is the job-resource-URI
+            // pattern (different from artifactRef); artifacts[] uses
+            // the artefact-resource-URI pattern so naked ids cannot
+            // leak past the schema validator.
             output = obj(
                 "jobId" to stringField(),
                 "operation" to stringField(),
@@ -143,11 +173,14 @@ internal object PhaseBToolSchemas {
                 "createdAt" to stringField(),
                 "updatedAt" to stringField(),
                 "expiresAt" to stringField(),
-                "resourceUri" to stringField(),
-                "artifacts" to arrayField("string"),
-                "progress" to objectField(),
-                "error" to objectField(),
-                "executionMeta" to objectField(),
+                "resourceUri" to jobResourceUriField(),
+                "artifacts" to mapOf(
+                    "type" to "array",
+                    "items" to artifactRefField(),
+                ),
+                "progress" to jobProgressField(),
+                "error" to jobErrorField(),
+                "executionMeta" to executionMetaField(),
             ).required(
                 "jobId",
                 "operation",
@@ -447,6 +480,62 @@ internal object PhaseBToolSchemas {
     internal fun generatorFindingArray(): Map<String, Any> = mapOf(
         "type" to "array",
         "items" to generatorFindingItem(),
+    )
+
+    /**
+     * Job-resource URI pattern for `dmigrate://tenants/{tenantId}/jobs/{jobId}`.
+     * Different from [artifactRefField] so a `resourceUri` field
+     * accidentally pointing at an artefact fails schema validation.
+     */
+    internal const val JOB_RESOURCE_URI_PATTERN: String =
+        """^dmigrate://tenants/[^/]+/jobs/[^/]+$"""
+
+    internal fun jobResourceUriField(): Map<String, Any> = mapOf(
+        "type" to "string",
+        "pattern" to JOB_RESOURCE_URI_PATTERN,
+    )
+
+    /**
+     * AP 6.23: allowlist for `JobProgress.numericValues` keys. The
+     * underlying `Map<String, Long>` stays free internally; the
+     * handler projects through this allowlist before serialisation
+     * and the schema enforces `additionalProperties=false` so an
+     * unknown key fails wire validation.
+     *
+     * Backed by a file-level [JOB_PROGRESS_NUMERIC_KEYS_DATA] so the
+     * value is initialised before [SCHEMAS] runs (`jobProgressField`
+     * is called inside the SCHEMAS init block — referencing a
+     * not-yet-initialised member would NPE).
+     */
+    val JOB_PROGRESS_NUMERIC_KEYS: List<String> get() = JOB_PROGRESS_NUMERIC_KEYS_DATA
+
+    internal fun jobProgressField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to mapOf(
+            "phase" to stringField(),
+            "numericValues" to jobProgressNumericValuesField(),
+        ),
+        "required" to listOf("phase", "numericValues"),
+    )
+
+    private fun jobProgressNumericValuesField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to JOB_PROGRESS_NUMERIC_KEYS.associateWith {
+            mapOf("type" to "integer")
+        },
+    )
+
+    internal fun jobErrorField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to mapOf(
+            "code" to stringField(),
+            "message" to stringField(),
+            "exitCode" to mapOf("type" to "integer"),
+        ),
+        "required" to listOf("code", "message"),
     )
 
     private fun stringField(): Map<String, Any> = mapOf("type" to "string")

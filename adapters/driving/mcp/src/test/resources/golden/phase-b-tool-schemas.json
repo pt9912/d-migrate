@@ -649,25 +649,86 @@
           "type": "string"
         },
         "resourceUri": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
         },
         "artifacts": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
           }
         },
         "progress": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "type": "string"
+            },
+            "numericValues": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "processed": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "succeeded": {
+                  "type": "integer"
+                },
+                "failed": {
+                  "type": "integer"
+                },
+                "skipped": {
+                  "type": "integer"
+                },
+                "bytesRead": {
+                  "type": "integer"
+                },
+                "bytesWritten": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "required": [
+            "phase",
+            "numericValues"
+          ]
         },
         "error": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "exitCode": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
         },
         "executionMeta": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
