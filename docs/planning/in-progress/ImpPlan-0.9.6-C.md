@@ -1840,8 +1840,17 @@ Aufgaben:
     Dispatch
   - stdio-Token-/Principal-Ableitung
   - Start-/Stop-Mechanik und stderr-Startmeldung
-  Alle Tool-Response-, Fehler-, Audit- und Artefakt-Asserts muessen
-  identisch sein.
+  Assertions werden in zwei Cluster getrennt:
+  - Transport-neutral: alles, was nach erfolgreichem JSON-RPC-
+    Dispatch bei `tools/call`/`resources/read` entsteht. Tool-
+    Responses, Tool-Error-Envelopes, JSON-RPC-Fehler nach Dispatch,
+    Artefakte und Audit-Outcomes muessen hier fuer stdio und HTTP
+    identisch sein.
+  - Transport-spezifisch: Fehler vor JSON-RPC-Dispatch, z.B.
+    HTTP-Status/Headers fuer Auth, Payload-Limits oder Session-
+    Validierung sowie stdio-Principal-/Token-Ablehnung. Diese Pfade
+    haben eigene Asserts und werden nicht mit Tool-Response-
+    Gleichheit vermischt.
 - Vor dem Szenario wird `tools/list` fuer beide Transports gegen die
   definierte Phase-C-Tool-Matrix aus §3.1 bzw. die Phase-C-Registry
   verglichen:
@@ -1862,9 +1871,17 @@ Aufgaben:
   - Audit-Sinks sind per Transportlauf konstruiert, nicht global
     wiederverwendet; vor jedem Szenario ist der Sink leer und nach
     `close()` duerfen keine neuen Events eintreffen
+  - Retention/Cleanup-Konfiguration ist testkontrolliert: Temp-
+    `stateDir`-Laeufe nutzen kurze feste TTL/Retention-Werte und eine
+    injizierte Clock bzw. expliziten Sweep-Trigger, operator-supplied
+    Testdirs nutzen `--mcp-state-orphan-retention` mit bekanntem Wert.
+    Cleanup-Asserts beziehen sich nur auf diese konfigurierte
+    Erwartung, nicht auf wall-clock-Zufaelle.
   - der State-Dir wird nach jedem Transportlauf geprueft: Tempdirs
-    werden geloescht, operator-supplied Testdirs behalten nur
-    erwartete Artefakte, keine `.lock` bleibt gehalten
+    werden nach dem kontrollierten Shutdown/Sweep geloescht,
+    operator-supplied Testdirs behalten nur erwartete Artefakte bzw.
+    bewusst konfigurierte Retention-Reste, keine `.lock` bleibt
+    gehalten
   - parallele CI-Ausfuehrung darf keine festen Ports oder globalen
     Dateien nutzen
 - Abdeckung pro Plan §7.3:
@@ -1932,12 +1949,22 @@ Aufgaben:
     Statusfehler vor Tool-Dispatch.
 - Audit-Sink wird pro Transportlauf auf einen frisch konstruierten
   `InMemoryAuditSink` umgeleitet, damit die Tests pinnen koennen, dass
-  jeder tools/call genau einen AuditEvent erzeugt und keine Events aus
-  einem anderen Transportlauf mitgezaehlt werden. Der Audit-Assert
-  prueft pro Call:
+  jeder bis zum Tool-Dispatcher gelangte `tools/call` genau einen
+  AuditEvent erzeugt und keine Events aus einem anderen Transportlauf
+  mitgezaehlt werden. Der Audit-Assert prueft pro dispatchtem Call:
   `requestId`, `toolName`, Tenant/Principal, Outcome (`SUCCESS`,
   fachlicher Fehler, Auth/Scope/Resource-Fehler) und dass keine
   Secret-Rohwerte im Event landen.
+- Fuer nicht dispatchte Requests gibt es einen separaten
+  transport-spezifischen Audit-Assert:
+  - HTTP-vor-Dispatch-Fehler wie `PAYLOAD_TOO_LARGE`, fehlende Auth
+    oder ungueltige Session duerfen `0` Tool-AuditEvents erzeugen,
+    koennen aber ein Transport-/Security-AuditEvent erzeugen, falls
+    diese Schicht eins vorsieht.
+  - Stdio-vor-Dispatch-Fehler bei Token-/Principal-Ablehnung folgen
+    derselben Regel.
+  - Der Test darf solche Vorabfehler nicht in die "genau ein Event pro
+    tools/call"-Zaehlung aufnehmen.
 - CI-Integration:
   - AP 6.24 laeuft im normalen MCP/CLI-Testpfad, wenn die Laufzeit
     ohne externe Datenbank auskommt; falls das Szenario Docker oder
@@ -1964,9 +1991,14 @@ Akzeptanz:
   Asserts; stdio/HTTP unterscheiden sich nur im Harness
 - gemeinsame Tool-Liste, gemeinsame Output-Schema-Validation,
   gemeinsame Fehler-Mappings, gemeinsame Audit-Outcomes
+- transport-neutrale Assertions gelten nur fuer Requests nach
+  erfolgreichem JSON-RPC-Dispatch; HTTP-/stdio-spezifische
+  Vorabfehler haben eigene Transport-Assertions und duerfen nicht als
+  Tool-Response-Divergenz bewertet werden
 - beide Transports nutzen file-backed Byte-Stores aus AP 6.21 und
   verifizieren Upload, Streaming-Finalisierung, Chunk-Abruf und
-  Cleanup-/Lock-Verhalten auf isolierten State-Dirs
+  Cleanup-/Lock-Verhalten auf isolierten State-Dirs mit
+  testkontrollierten Retention-/TTL-Werten
 - `schema_validate`, `schema_generate`, `schema_compare` und
   `job_status_get` validieren im Integrationstest gegen ihre
   `PhaseBToolSchemas`-Output-Schemas; generische
@@ -1980,9 +2012,11 @@ Akzeptanz:
   Fehlertexte enthalten keine verbotenen Secret-/Pfad-Rohwerte; der
   Scan nutzt nur deterministische Fixture-Rohwerte und dokumentierte
   Feld-/Metadaten-Grenzen, keine breiten Heuristik-Regexe
-- jeder `tools/call` erzeugt genau ein AuditEvent mit korrektem
-  Outcome und Request-Korrelation; Audit-Sinks sind per Transportlauf
-  frisch und voneinander isoliert
+- jeder bis zum Dispatcher gelangte `tools/call` erzeugt genau ein
+  AuditEvent mit korrektem Outcome und Request-Korrelation;
+  Vorabfehler vor Dispatch haben einen separaten 0-oder-
+  Transportevent-Assert; Audit-Sinks sind per Transportlauf frisch und
+  voneinander isoliert
 - der Test prueft mindestens einen fachlichen `isError=true`-Fehler
   und einen echten JSON-RPC-/HTTP-Resource-Fehler pro Transport
 - der Integrationstest scheitert, sobald ein Phase-C-Tool nur in
