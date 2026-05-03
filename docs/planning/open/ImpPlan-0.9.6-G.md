@@ -681,8 +681,9 @@ Artefaktmodell:
   `artifactId`, `resourceUri`, `wireArtifactKind`, `aiIntent`,
   `originToolName`, `ownerPrincipalId`, `policyIntent` bzw. Approval-Scope,
   Source-Refs, `targetDialect`, operationsspezifische Fingerprints
-  (`planPromptFingerprint`/`planPayloadFingerprint` oder
-  `executePromptFingerprint`/`executePayloadFingerprint`), Provider-/Modell-
+  (`planPromptFingerprint`/`planPayloadFingerprint`,
+  `executePromptFingerprint`/`executePayloadFingerprint` oder
+  `testdataPromptFingerprint`/`testdataPayloadFingerprint`), Provider-/Modell-
   Metadaten, optional Plan-Ref/-Fingerprint, Output-Fingerprint, `createdAt`
   und Retention-/Deletion-Bindung an das zugrunde liegende Artefakt.
 - Store-Contract: atomar zusammen mit Artefakt-Publish oder vor Freigabe der
@@ -799,7 +800,7 @@ Pflichtprompts:
 | --- | --- | --- |
 | `procedure_analysis` | Procedure-Analyse auf Basis von Schema-/Artefaktreferenzen | `schemaRef` oder `artifactRef`, optional `procedureName` |
 | `procedure_transformation` | Procedure-Transformation mit explizitem Policy-Hinweis | `planRef` oder `planArtifactId` bzw. `artifactRef` nur mit `wireArtifactKind=procedure-transform-plan`, `targetDialect` |
-| `testdata_planning` | Testdatenplanung auf Basis von Schema, Regeln und Profil-Summaries | `schemaRef`, optional `profileRef`, optionale `rules` |
+| `testdata_planning` | Testdatenplanung auf Basis von Schema, Regeln und Profil-Summaries | `schemaRef`, `targetDialect`, optional `profileRef`, optionale `rules` |
 
 Jeder Prompt enthaelt:
 
@@ -1166,11 +1167,14 @@ Reihenfolge:
    - `FAILED_RETRYABLE` -> gleicher retrybarer Pending-/Recovery-Status
 8. Policy-/Approval-Pruefung nur fuer neue Claims oder Reclaims, die einen
    neuen Provider-Side-Effect starten koennten
-9. Prompt-Hygiene
-10. Provider-Quota
-11. Provider-Timeout
-12. Provider-Ausfuehrung
-13. Result-Limitierung und Artifact-Publish
+9. Provider-Konfiguration, Provider-Auswahl, Endpoint und Modell validieren;
+   unbekannter/nicht konfigurierter Provider, blockierter Endpoint oder
+   blockiertes Modell werden nach Abschnitt 4.2 gemappt
+10. Prompt-Hygiene
+11. Provider-Quota
+12. Provider-Timeout
+13. Provider-Ausfuehrung
+14. Result-Limitierung und Artifact-Publish
 
 Begruendung:
 
@@ -1179,6 +1183,10 @@ Begruendung:
 - Idempotency-Konflikte duerfen keine Policy-Informationen leaken
 - bestehende terminale oder retrybare Outcomes duerfen nicht durch abgelaufene
   oder fehlende Approval-Tokens in neue Policy-Entscheidungen umgebogen werden
+- Provider-Konfigurations-, Endpoint- und Modellfehler muessen vor
+  Prompt-Hygiene entschieden werden, damit ein unbekannter Provider mit
+  problematischem Payload deterministisch als Provider-/Policy-Fehler und
+  nicht als Hygiene-Fehler golden-getestet wird
 - neue Provider-Aufrufe duerfen erst nach Policy und Hygiene stattfinden
 
 ### 7.2 Fehlercodes
