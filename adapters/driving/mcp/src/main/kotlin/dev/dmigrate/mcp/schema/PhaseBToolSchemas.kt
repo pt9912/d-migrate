@@ -105,16 +105,24 @@ internal object PhaseBToolSchemas {
                 "spatialProfile" to enumField("postgis", "native", "spatialite", "none"),
                 "mysqlNamedSequenceMode" to enumField("action_required", "helper_table"),
             ).required("targetDialect"),
+            // AP 6.23: findings use the generator-specific item
+            // (base findingItem + optional `hint`). artifactRef
+            // carries the URI pattern; ddl is optional (large DDL
+            // moves into the artefact); truncated → artifactRef is
+            // pinned by the if/then constraint and now covers
+            // findings-only overflow as well.
             output = obj(
                 "dialect" to stringField(),
                 "statementCount" to integerField(),
                 "summary" to stringField(),
-                "findings" to arrayField(),
+                "findings" to generatorFindingArray(),
                 "truncated" to booleanField(),
                 "ddl" to stringField(),
-                "artifactRef" to stringField(),
-                "executionMeta" to objectField(),
-            ).required("dialect", "statementCount", "summary", "findings", "truncated"),
+                "artifactRef" to artifactRefField(),
+                "executionMeta" to executionMetaField(),
+            )
+                .withAllOf(truncatedRequiresField("artifactRef"))
+                .required("dialect", "statementCount", "summary", "findings", "truncated"),
         ))
         put("schema_list", listInput("schemas"))
         put("profile_list", listInput("profiles"))
@@ -415,6 +423,30 @@ internal object PhaseBToolSchemas {
             "before" to mapOf("type" to "string", "pattern" to "\\S"),
             "after" to mapOf("type" to "string", "pattern" to "\\S"),
         ),
+    )
+
+    /**
+     * AP 6.23: `schema_generate`-specific finding item — the common
+     * [findingItem] base plus the legacy top-level `hint: string`
+     * (kept here because the runtime emits it that way; a future
+     * `details.hint` migration would be a separate wire-contract
+     * change). `additionalProperties=false` is preserved.
+     */
+    internal fun generatorFindingItem(): Map<String, Any> {
+        @Suppress("UNCHECKED_CAST")
+        val baseProps = findingItem()["properties"] as Map<String, Map<String, Any>>
+        return mapOf(
+            "type" to "object",
+            "additionalProperties" to false,
+            "properties" to (baseProps + ("hint" to stringField())),
+            "required" to listOf("severity", "code", "path", "message"),
+        )
+    }
+
+    /** Array of [generatorFindingItem]s. */
+    internal fun generatorFindingArray(): Map<String, Any> = mapOf(
+        "type" to "array",
+        "items" to generatorFindingItem(),
     )
 
     private fun stringField(): Map<String, Any> = mapOf("type" to "string")

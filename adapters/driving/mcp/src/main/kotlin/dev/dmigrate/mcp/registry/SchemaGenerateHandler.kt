@@ -68,30 +68,34 @@ internal class SchemaGenerateHandler(
         val options = buildOptions(args)
         val generator = lookupGenerator(args.targetDialect)
         val result = generator.generate(schemaDef, options)
-        val ddl = result.render()
+        // AP 6.23: scrub DDL through the same SecretScrubber pipe as
+        // the inline findings/messages so an artefact write cannot
+        // leak Bearer-tokens, JDBC URLs or approval-tokens that
+        // accidentally landed in DEFAULTs / comments / quoted
+        // identifiers.
+        val ddl = SecretScrubber.scrub(result.render())
         val ddlBytes = ddl.toByteArray(Charsets.UTF_8)
         val inlineThreshold = limits.maxToolResponseBytes / 2
-        val payload = if (ddlBytes.size <= inlineThreshold) {
-            buildPayload(
-                args.targetDialect, result,
-                ddl = ddl, artifactRef = null, truncated = false,
-                requestId = context.requestId,
-            )
-        } else {
-            val uri = artifactSink.writeReadOnly(
-                principal = context.principal,
-                kind = ArtifactKind.SCHEMA,
-                contentType = "text/plain; charset=utf-8",
-                filename = "ddl-${args.targetDialect.name.lowercase()}.sql",
-                content = ddlBytes,
-                maxArtifactBytes = limits.maxArtifactUploadBytes,
-            )
-            buildPayload(
-                args.targetDialect, result,
-                ddl = null, artifactRef = uri.render(), truncated = true,
-                requestId = context.requestId,
-            )
-        }
+        val ddlOverflow = ddlBytes.size > inlineThreshold
+
+        val noteFindings = result.notes.map(::projectNote)
+        val skippedFindings = result.skippedObjects.map(::projectSkipped)
+        val combinedFindings = noteFindings + skippedFindings
+        val cap = limits.maxInlineFindings
+        val findingsTruncated = combinedFindings.size > cap
+
+        val payload = renderResponse(
+            RenderInput(
+                dialect = args.targetDialect,
+                result = result,
+                ddl = ddl,
+                ddlBytes = ddlBytes,
+                ddlOverflow = ddlOverflow,
+                combinedFindings = combinedFindings,
+                findingsTruncated = findingsTruncated,
+            ),
+            context,
+        )
         return ToolCallOutcome.Success(
             content = listOf(
                 ToolContent(
@@ -100,6 +104,73 @@ internal class SchemaGenerateHandler(
                     mimeType = "application/json",
                 ),
             ),
+        )
+    }
+
+    /** Inputs for [renderResponse], kept off the parameter list so detekt's LongParameterList stays happy. */
+    private data class RenderInput(
+        val dialect: DatabaseDialect,
+        val result: DdlResult,
+        val ddl: String,
+        val ddlBytes: ByteArray,
+        val ddlOverflow: Boolean,
+        val combinedFindings: List<Map<String, String?>>,
+        val findingsTruncated: Boolean,
+    )
+
+    private fun renderResponse(input: RenderInput, context: ToolCallContext): Map<String, Any?> {
+        // AP 6.23: the truncated → artifactRef coupling now covers
+        // both DDL overflow AND findings-only overflow. DDL has
+        // priority for the artefact (text/plain SQL); findings-only
+        // overflow spills the full findings list as a JSON artefact
+        // analogous to schema_validate.
+        val artifactRef: String? = when {
+            input.ddlOverflow -> writeDdlArtifact(input.dialect, input.ddlBytes, context).render()
+            input.findingsTruncated -> writeFindingsArtifact(input.combinedFindings, context).render()
+            else -> null
+        }
+        val inlineDdl = if (input.ddlOverflow) null else input.ddl
+        val inlineFindings = if (input.findingsTruncated) {
+            input.combinedFindings.take(limits.maxInlineFindings)
+        } else {
+            input.combinedFindings
+        }
+        return buildPayload(
+            input.dialect, input.result,
+            ddl = inlineDdl,
+            artifactRef = artifactRef,
+            truncated = input.ddlOverflow || input.findingsTruncated,
+            findings = inlineFindings,
+            requestId = context.requestId,
+        )
+    }
+
+    private fun writeDdlArtifact(
+        dialect: DatabaseDialect,
+        ddlBytes: ByteArray,
+        context: ToolCallContext,
+    ): dev.dmigrate.server.core.resource.ServerResourceUri =
+        artifactSink.writeReadOnly(
+            principal = context.principal,
+            kind = ArtifactKind.SCHEMA,
+            contentType = "text/plain; charset=utf-8",
+            filename = "ddl-${dialect.name.lowercase()}.sql",
+            content = ddlBytes,
+            maxArtifactBytes = limits.maxArtifactUploadBytes,
+        )
+
+    private fun writeFindingsArtifact(
+        findings: List<Map<String, String?>>,
+        context: ToolCallContext,
+    ): dev.dmigrate.server.core.resource.ServerResourceUri {
+        val bytes = gson.toJson(findings).toByteArray(Charsets.UTF_8)
+        return artifactSink.writeReadOnly(
+            principal = context.principal,
+            kind = ArtifactKind.OTHER,
+            contentType = "application/json",
+            filename = "schema-generate-findings.json",
+            content = bytes,
+            maxArtifactBytes = limits.maxArtifactUploadBytes,
         )
     }
 
@@ -154,30 +225,24 @@ internal class SchemaGenerateHandler(
         )
     }
 
+    @Suppress("LongParameterList")
     private fun buildPayload(
         dialect: DatabaseDialect,
         result: DdlResult,
         ddl: String?,
         artifactRef: String?,
         truncated: Boolean,
+        findings: List<Map<String, String?>>,
         requestId: String,
-    ): Map<String, Any?> {
-        val noteFindings = result.notes.map(::projectNote)
-        val skippedFindings = result.skippedObjects.map(::projectSkipped)
-        val combined = noteFindings + skippedFindings
-        val cap = limits.maxInlineFindings
-        val findingsTruncated = combined.size > cap
-        val findings = if (findingsTruncated) combined.take(cap) else combined
-        return buildMap {
-            put("dialect", dialect.name)
-            put("statementCount", result.statements.size)
-            put("summary", summary(result, dialect, truncated))
-            put("findings", findings)
-            put("truncated", truncated || findingsTruncated)
-            if (ddl != null) put("ddl", ddl)
-            if (artifactRef != null) put("artifactRef", artifactRef)
-            put("executionMeta", mapOf("requestId" to requestId))
-        }
+    ): Map<String, Any?> = buildMap {
+        put("dialect", dialect.name)
+        put("statementCount", result.statements.size)
+        put("summary", summary(result, dialect, truncated))
+        put("findings", findings)
+        put("truncated", truncated)
+        if (ddl != null) put("ddl", ddl)
+        if (artifactRef != null) put("artifactRef", artifactRef)
+        put("executionMeta", mapOf("requestId" to requestId))
     }
 
     // AP 6.17: dynamic strings (objectName, message, hint, skipped

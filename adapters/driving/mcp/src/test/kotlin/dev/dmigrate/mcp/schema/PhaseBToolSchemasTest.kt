@@ -114,6 +114,34 @@ class PhaseBToolSchemasTest : FunSpec({
         pair.inputSchema.containsKey("required") shouldBe false
     }
 
+    test("AP 6.23: schema_generate output uses generatorFindings + truncated→artifactRef") {
+        val output = PhaseBToolSchemas.forTool("schema_generate")!!.outputSchema
+
+        @Suppress("UNCHECKED_CAST")
+        val props = output["properties"] as Map<String, Any>
+
+        // Findings carry the generator-specific item (base + hint).
+        props["findings"] shouldBe PhaseBToolSchemas.generatorFindingArray()
+        props["artifactRef"] shouldBe PhaseBToolSchemas.artifactRefField()
+        props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
+
+        @Suppress("UNCHECKED_CAST")
+        val allOf = output["allOf"] as List<Map<String, Any>>
+        allOf shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
+    }
+
+    test("AP 6.23: generatorFindingItem extends findingItem with optional hint") {
+        val item = PhaseBToolSchemas.generatorFindingItem()
+        item["additionalProperties"] shouldBe false
+        @Suppress("UNCHECKED_CAST")
+        val props = item["properties"] as Map<String, Any>
+        props.keys shouldBe setOf("severity", "code", "path", "message", "hint")
+        @Suppress("UNCHECKED_CAST")
+        val required = item["required"] as List<String>
+        // hint is optional — same as the base findingItem.
+        required shouldBe listOf("severity", "code", "path", "message")
+    }
+
     test("AP 6.23: schema_compare output uses compareDetails findings + truncated→diffArtifactRef") {
         val output = PhaseBToolSchemas.forTool("schema_compare")!!.outputSchema
 

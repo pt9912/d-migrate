@@ -1028,7 +1028,39 @@
           "type": "string"
         },
         "findings": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
         },
         "truncated": {
           "type": "boolean"
@@ -1037,11 +1069,20 @@
           "type": "string"
         },
         "artifactRef": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
         },
         "executionMeta": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
@@ -1050,6 +1091,25 @@
         "summary",
         "findings",
         "truncated"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "truncated"
+            ]
+          },
+          "then": {
+            "required": [
+              "artifactRef"
+            ]
+          }
+        }
       ]
     }
   },
