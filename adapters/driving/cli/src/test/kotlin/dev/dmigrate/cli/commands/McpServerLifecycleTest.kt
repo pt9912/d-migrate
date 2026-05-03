@@ -28,26 +28,29 @@ class McpServerLifecycleTest : FunSpec({
         override fun awaitTermination() { awaitImpl() }
     }
 
-    test("normal-return path runs cleanup exactly once") {
+    test("normal-return path runs cleanup once and unregisters the hook") {
         val dir = Files.createTempDirectory("dmigrate-mcp-lifecycle-")
         val lock = McpStateDirLock.tryAcquire(dir, "v")
             .shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Acquired>().lock
         val owner = StateDirOwner.of(ResolvedStateDir(dir, owned = true))
         val handle = CountingHandle()
         val capturedHook = AtomicReference<Thread?>()
+        val unregistered = AtomicReference<Thread?>()
 
         McpServerLifecycle.run(
             handle = handle,
             lock = lock,
             owner = owner,
             registerShutdownHook = { capturedHook.set(it) },
+            unregisterShutdownHook = { unregistered.set(it) },
         )
 
         handle.stopCount.get() shouldBe 1
         Files.exists(dir).shouldBeFalse()
+        unregistered.get() shouldBe capturedHook.get()
 
-        // Hook still registered (we did not deregister it) — fire it
-        // manually and confirm the AtomicBoolean guard makes it a no-op.
+        // Hook is still a valid Runnable instance — fire it manually
+        // and confirm the AtomicBoolean guard makes it a no-op.
         capturedHook.get()!!.run()
         handle.stopCount.get() shouldBe 1
     }

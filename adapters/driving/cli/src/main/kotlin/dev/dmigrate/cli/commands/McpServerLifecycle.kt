@@ -29,6 +29,7 @@ internal object McpServerLifecycle {
         lock: McpStateDirLock,
         owner: StateDirOwner,
         registerShutdownHook: (Thread) -> Unit = { Runtime.getRuntime().addShutdownHook(it) },
+        unregisterShutdownHook: (Thread) -> Unit = ::defaultUnregisterShutdownHook,
     ) {
         val cleanedUp = AtomicBoolean(false)
         val cleanup = Runnable {
@@ -43,11 +44,33 @@ internal object McpServerLifecycle {
                 }
             }
         }
-        registerShutdownHook(Thread(cleanup, "dmigrate-mcp-shutdown"))
+        val hookThread = Thread(cleanup, "dmigrate-mcp-shutdown")
+        registerShutdownHook(hookThread)
         try {
             handle.awaitTermination()
         } finally {
-            cleanup.run()
+            try {
+                cleanup.run()
+            } finally {
+                // Drop the hook on the normal-return path so a long-
+                // lived caller running `serve` repeatedly does not
+                // accumulate stale hooks pointing at already-cleaned
+                // owners. JVM-in-shutdown / hook-already-fired throws
+                // are expected on the SIGINT path and swallowed.
+                unregisterShutdownHook(hookThread)
+            }
+        }
+    }
+
+    private fun defaultUnregisterShutdownHook(thread: Thread) {
+        try {
+            Runtime.getRuntime().removeShutdownHook(thread)
+        } catch (_: IllegalStateException) {
+            // JVM is already in shutdown — the hook either fired or
+            // is firing, nothing to remove.
+        } catch (_: IllegalArgumentException) {
+            // Hook was never actually registered (e.g. tests that
+            // inject a no-op registerShutdownHook).
         }
     }
 }
