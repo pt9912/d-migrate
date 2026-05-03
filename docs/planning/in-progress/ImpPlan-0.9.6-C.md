@@ -1604,7 +1604,10 @@ Aufgaben:
     scrubbed Strings, weil `SchemaCompareHandler.beforeAfter(...)`
     die Werte heute via `toString()` serialisiert. Strukturierte JSON-
     Values waeren ein eigener Handler-/Wire-Refactor und gehoeren
-    nicht zu AP 6.23.
+    nicht zu AP 6.23. Beide Felder muessen, wenn vorhanden, nach
+    Trimmen mindestens ein sichtbares Zeichen enthalten
+    (`pattern: "\\S"` bzw. aequivalente Nicht-Whitespace-Regel);
+    leere Strings oder reine Whitespace-Strings sind ungueltig.
   - das `details`-Schema muss `additionalProperties=false` und eine
     Nicht-Leer-Regel (`minProperties: 1` oder passendes
     `required`/`oneOf`) erzwingen. Sobald `details` emittiert wird,
@@ -1715,6 +1718,9 @@ Aufgaben:
   - fuer alle anderen Faelle darf `truncationReason` fehlen; der
     Grund ist kein Ersatz fuer einen vorhandenen oder konstruktiv
     garantierten `ArtifactSink`.
+  - `truncationReason` ist ausschliesslich zulaessig, wenn
+    `truncated=true` gilt. Bei `truncated=false` oder fehlendem
+    `truncated` lehnt das Schema jedes `truncationReason`-Feld ab.
 - Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regenerieren und
   dabei die Diffs bewusst reviewen. Zusaetzlich zu Goldenfiles braucht
   AP 6.23 Runtime-Schema-Validation-Tests: exemplarische Outputs von
@@ -1741,7 +1747,8 @@ Akzeptanz:
 - `schema_compare` akzeptiert `details.before`/`details.after` fuer
   Aenderungsfindings als Strings; das Details-Schema erzwingt
   `additionalProperties=false` plus Nicht-Leer-Regel und lehnt
-  `details: {}` sowie unbekannte Credential-Key-Felder ab
+  `details: {}`, leere bzw. reine Whitespace-Strings in
+  `before`/`after` sowie unbekannte Credential-Key-Felder ab
 - `schema_compare` setzt bei Diff-/Finding-Truncation mit verfuegbarem
   `ArtifactSink` ein `diffArtifactRef` und behaelt alle
   tool-spezifischen Pflichtfelder im Inline-Output; generische
@@ -1789,7 +1796,9 @@ Akzeptanz:
   Degradationsgrund gueltig, wenn das jeweilige Tool-Schema den
   optionalen Sink-Pfad ueberhaupt freischaltet; bei verfuegbarem oder
   konstruktiv garantiertem Sink muss die passende
-  `artifactRef`/`diffArtifactRef` vorhanden sein
+  `artifactRef`/`diffArtifactRef` vorhanden sein. Zusaetzlich pinnen
+  Tests, dass `truncationReason` bei `truncated=false` oder fehlendem
+  `truncated` schema-ungueltig ist.
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
   werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
   und lokalen Pfad
