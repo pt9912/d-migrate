@@ -236,9 +236,14 @@ Fehlerzuordnung:
 
 - fehlende erlaubende Policy: `POLICY_REQUIRED` oder
   `FORBIDDEN_PRINCIPAL`, je nach Policy-Entscheidung
-- fehlende oder deaktivierte serverseitige Provider-Konfiguration:
-  `INTERNAL_AGENT_ERROR`, weil die Serverkonfiguration den erlaubten Pfad nicht
-  bereitstellen kann
+- vom Client gewaehlter unbekannter, nicht konfigurierter oder deaktivierter
+  externer Provider: deterministischer fachlicher Fehler vor Provider-Aufruf,
+  `FORBIDDEN_PRINCIPAL` oder `POLICY_DENIED` je nach Principal-/Policy-
+  Entscheidung; kein `INTERNAL_AGENT_ERROR`
+- fehlende oder deaktivierte serverseitige Provider-Konfiguration in einem
+  bereits erlaubten und serverseitig ausgewaehlten Default-Pfad:
+  `INTERNAL_AGENT_ERROR`, weil die Serverkonfiguration einen versprochenen
+  erlaubten Pfad nicht bereitstellen kann
 - blockierter Endpoint oder blockiertes Modell:
   `FORBIDDEN_PRINCIPAL` oder `POLICY_DENIED`, je nachdem ob Principal- oder
   Policy-Regel den Zugriff verweigert
@@ -770,8 +775,10 @@ Jeder Prompt enthaelt:
 - Fehler aus `prompts/list`/`prompts/get` sind keine `tools/call`-Resultate.
   Unbekannter Prompt, ungueltige Argumente, Tenant-/Resource-Fehler und
   Prompt-Hygiene-Blockaden werden als MCP-/JSON-RPC-Fehler mit
-  `error.data.code` gemappt, zum Beispiel `RESOURCE_NOT_FOUND`,
-  `VALIDATION_ERROR` oder `PROMPT_HYGIENE_BLOCKED`.
+  `error.data.code` gemappt. Verbindlich gilt: unbekannter Prompt ->
+  `RESOURCE_NOT_FOUND`; bekannter Prompt mit ungueltigen Argumenten ->
+  `VALIDATION_ERROR`; Prompt-Hygiene-Blockade ->
+  `PROMPT_HYGIENE_BLOCKED`.
 
 ---
 
@@ -824,7 +831,10 @@ Aufgaben:
 
 Tests:
 
-- externer Provider ohne Konfiguration wird blockiert
+- vom Client gewaehlter unbekannter/nicht konfigurierter externer Provider wird
+  deterministisch mit `FORBIDDEN_PRINCIPAL` oder `POLICY_DENIED` blockiert
+- fehlende serverseitige Default-Provider-Konfiguration in einem erlaubten
+  Pfad liefert `INTERNAL_AGENT_ERROR`
 - externer Provider ohne Policy wird blockiert
 - fehlendes Secret wird nicht geleakt
 - lokaler Provider ist nur bei erlaubtem Endpoint aktivierbar
@@ -982,7 +992,8 @@ Tests:
 - `prompts/list` ueber `stdio`
 - `prompts/list` ueber HTTP
 - `prompts/get` fuer jeden Pflichtprompt mit gueltigen Argumenten
-- unbekannter Prompt als JSON-RPC-Fehler mit `error.data.code`
+- unbekannter Prompt als JSON-RPC-Fehler mit
+  `error.data.code=RESOURCE_NOT_FOUND`
 - ungueltige Argumente als JSON-RPC-Fehler mit
   `error.data.code=VALIDATION_ERROR`
 - Secret-/Rohdatenparameter als JSON-RPC-Fehler mit
@@ -1140,6 +1151,9 @@ Regeln:
   Prompt-Fehler, einschliesslich unbekanntem Prompt, ungueltigen Argumenten,
   Tenant-/Resource-Fehlern und Prompt-Hygiene-Blockaden, sind
   MCP-/JSON-RPC-Fehler mit d-migrate-Code in `error.data.code`.
+- Fuer Prompt-Methoden gilt verbindlich: unbekannter Prompt ->
+  `RESOURCE_NOT_FOUND`; bekannter Prompt mit ungueltigen Argumenten ->
+  `VALIDATION_ERROR`; Prompt-Hygiene-Blockade -> `PROMPT_HYGIENE_BLOCKED`.
 - Fehlerdetails werden gescrubbt.
 
 ### 7.3 Prompt-Hygiene-Blockaden
@@ -1357,8 +1371,7 @@ Pflichtfaelle:
 - Alle Fehler aus `prompts/list`/`prompts/get` liefern MCP-konforme
   JSON-RPC-Fehler mit d-migrate-Code in `error.data.code`.
 - Ungueltige Prompt-Argumente mappen auf `VALIDATION_ERROR`.
-- Unbekannte Prompts mappen auf `RESOURCE_NOT_FOUND` oder
-  `VALIDATION_ERROR`, gemaess bestehendem MCP-Fehlervertrag.
+- Unbekannte Prompts mappen auf `RESOURCE_NOT_FOUND`.
 - Prompt-Hygiene-Verletzungen in `prompts/get` mappen auf
   `PROMPT_HYGIENE_BLOCKED`.
 - Integrationstests decken `stdio` und HTTP fuer Tools und Prompts ab.
