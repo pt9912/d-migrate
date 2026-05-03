@@ -1823,7 +1823,11 @@ Aufgaben:
     deterministisch ueber EOF/Stop-Handle.
   - `HttpHarness` startet den echten HTTP-Bootstrap auf Loopback mit
     Port `0`, liest den gebundenen Port aus dem Handle und nutzt
-    denselben JSON-RPC-Client wie stdio ab der Request-Erzeugung.
+    denselben JSON-RPC-Client wie stdio ab der Request-Erzeugung. Nach
+    Start wartet der Harness mit bounded Retry/Deadline auf Readiness,
+    z.B. bis ein minimaler `initialize`-Probe-Call oder eine explizite
+    Bootstrap-Readiness-Anzeige erfolgreich ist; erst danach beginnt
+    der eigentliche Szenario-Runner.
   - beide Harnesses expose nur `initialize()`,
     `initializedNotification()`, `toolsList()`, `toolsCall(...)`,
     `resourcesRead(...)`, `close()` und Transport-Metadaten
@@ -1838,11 +1842,26 @@ Aufgaben:
   - Start-/Stop-Mechanik und stderr-Startmeldung
   Alle Tool-Response-, Fehler-, Audit- und Artefakt-Asserts muessen
   identisch sein.
+- Vor dem Szenario wird `tools/list` fuer beide Transports gegen die
+  definierte Phase-C-Tool-Matrix aus §3.1 bzw. die Phase-C-Registry
+  verglichen:
+  - alle erwarteten Phase-C-Tools und Aliase muessen vorhanden sein
+  - keine erwarteten Tools duerfen nur in einem Transport fehlen
+  - jedes Tool aus der Matrix muss mindestens einen
+    transportuebergreifenden `tools/call`-Smoke-Pfad haben; bei Tools,
+    die im Hauptszenario nur indirekt genutzt werden, genuegt ein
+    Minimal-/Fehlerpfad mit identischem Mapping
+  - der Test gibt bei Drift die fehlenden/unerwarteten Toolnamen pro
+    Transport aus
 - Test-Isolation:
   - jeder Transportlauf bekommt ein eigenes Temp-`stateDir`, einen
-    eigenen Tenant/Principal und eigene deterministic Request-IDs
+    eigenen Tenant/Principal, einen eigenen `InMemoryAuditSink` und
+    eigene deterministic Request-IDs
   - kein Test teilt Upload-Session-IDs, Artifact-IDs, Schema-IDs oder
     HTTP-Session-IDs zwischen stdio und HTTP
+  - Audit-Sinks sind per Transportlauf konstruiert, nicht global
+    wiederverwendet; vor jedem Szenario ist der Sink leer und nach
+    `close()` duerfen keine neuen Events eintreffen
   - der State-Dir wird nach jedem Transportlauf geprueft: Tempdirs
     werden geloescht, operator-supplied Testdirs behalten nur
     erwartete Artefakte, keine `.lock` bleibt gehalten
@@ -1894,17 +1913,28 @@ Aufgaben:
     `api_token`, `dbPassword`, `JDBCUrl` und lokale Pfade in
     Schemainhalten, Finding-Details, Toolfehler-Details und
     Job-Progress-/Error-Texten.
-  - Der Test durchsucht Inline-Responses, ausgelagerte Artefakte,
-    AuditEvents und stderr/HTTP-Fehlertexte nach diesen Rohwerten.
+  - Secret-Scans sind auf deterministische Test-Rohwerte und definierte
+    Felder beschraenkt: JSON-RPC `result`/`error`, Tool-Error-
+    Envelope, ausgelagerte Artefaktinhalte, AuditEvent-Payloads,
+    kontrollierte stderr-Start-/Fehlerzeilen und HTTP-Fehlertexte aus
+    dem MCP-Handler. Framework-/Netzwerk-Metadaten wie zufaellige
+    Header, Ports, Threadnamen oder Tempdir-Prefixe sind nur zu
+    scannen, wenn sie vom Test selbst gesetzte Secret-Fixtures
+    enthalten koennen.
+  - Gesucht werden exakt die in Fixtures eingebrachten Rohwerte und
+    Pfadstrings, nicht generische token-/pfad-aehnliche Regexe.
     Treffer sind ein Testfehler; erlaubte Ausgabe ist nur die
-    gescrubbte Projektion.
+    gescrubbte Projektion. Eine kleine Ausnahme-Matrix dokumentiert
+    pro Transport, welche Metadaten nicht Teil des Secret-Scans sind.
   - Toolfehler-Envelopes werden separat geprueft: `isError=true`
     bleibt JSON-RPC-success, `error.details[].value` ist scrubbed;
     Transport-/Protocol-Fehler bleiben JSON-RPC-Error bzw. HTTP-
     Statusfehler vor Tool-Dispatch.
-- Audit-Sink wird auf `InMemoryAuditSink` umgeleitet, damit die
-  Tests pinnen koennen, dass jeder tools/call genau einen
-  AuditEvent erzeugt. Der Audit-Assert prueft pro Call:
+- Audit-Sink wird pro Transportlauf auf einen frisch konstruierten
+  `InMemoryAuditSink` umgeleitet, damit die Tests pinnen koennen, dass
+  jeder tools/call genau einen AuditEvent erzeugt und keine Events aus
+  einem anderen Transportlauf mitgezaehlt werden. Der Audit-Assert
+  prueft pro Call:
   `requestId`, `toolName`, Tenant/Principal, Outcome (`SUCCESS`,
   fachlicher Fehler, Auth/Scope/Resource-Fehler) und dass keine
   Secret-Rohwerte im Event landen.
@@ -1925,6 +1955,11 @@ Akzeptanz:
 
 - jede Tool-Flow-Sequenz aus Plan §7.3 laeuft gegen stdio UND HTTP
   in einem einzigen CI-Lauf
+- `tools/list` beider Transports entspricht der Phase-C-Tool-Matrix
+  aus §3.1/Registry; jedes erwartete Tool bzw. jeder erwartete Alias
+  hat mindestens einen stdio- und HTTP-`tools/call`-Nachweis
+- HTTP-Harness wartet mit bounded Readiness-Retry vor dem ersten
+  Szenario-Request; direkte Sleeps ohne Probe sind nicht zulaessig
 - ein einziger transportneutraler Szenario-Runner erzeugt Requests und
   Asserts; stdio/HTTP unterscheiden sich nur im Harness
 - gemeinsame Tool-Liste, gemeinsame Output-Schema-Validation,
@@ -1942,9 +1977,12 @@ Akzeptanz:
   getestet, wenn der betreffende Handler im Wiring wirklich optionalen
   Sink unterstuetzt
 - Inline-Responses, Artefakte, AuditEvents, stderr und HTTP-
-  Fehlertexte enthalten keine verbotenen Secret-/Pfad-Rohwerte
+  Fehlertexte enthalten keine verbotenen Secret-/Pfad-Rohwerte; der
+  Scan nutzt nur deterministische Fixture-Rohwerte und dokumentierte
+  Feld-/Metadaten-Grenzen, keine breiten Heuristik-Regexe
 - jeder `tools/call` erzeugt genau ein AuditEvent mit korrektem
-  Outcome und Request-Korrelation
+  Outcome und Request-Korrelation; Audit-Sinks sind per Transportlauf
+  frisch und voneinander isoliert
 - der Test prueft mindestens einen fachlichen `isError=true`-Fehler
   und einen echten JSON-RPC-/HTTP-Resource-Fehler pro Transport
 - der Integrationstest scheitert, sobald ein Phase-C-Tool nur in
