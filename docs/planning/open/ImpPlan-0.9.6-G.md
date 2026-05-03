@@ -306,6 +306,12 @@ Regeln:
 - zweiter Aufruf muss denselben `approvalKey` und ein extern ausgestelltes,
   passendes `approvalToken` senden
 - Approval-Token werden nie in Tool-Responses erzeugt
+- Top-Level-Control-Felder (`approvalKey`, `approvalToken`,
+  `idempotencyKey`, `clientRequestId`, `requestId` und aequivalente
+  Transport-/Retry-Felder) bleiben nur fuer Auth, Policy/Approval,
+  Idempotency und Audit sichtbar. Sie werden vor Prompt-Hygiene,
+  Provider-Request-Building, Provider-Payload-Fingerprinting und Artifact-
+  Publish strikt aus dem fachlichen Prompt-/Provider-Payload entfernt.
 - `SyncEffectIdempotencyStore` darf fuer KI-nahe Provider-Side-Effects nicht
   nur als spaeter Replay-Store genutzt werden. Phase G muss eine atomare
   Single-Writer-/Pending-Semantik einfuehren, entweder als Store-Erweiterung
@@ -449,10 +455,10 @@ Verbindliche Scope-Zuordnung:
 - `prompts/get`: `dmigrate:read`
 
 Der MCP-Scope-Check laeuft fuer KI-nahe Tools nach Auth, unbekanntem Toolnamen,
-struktureller Schema-/Formvalidierung und fehlendem `approvalKey`, aber vor
-`AiToolOutcomeStore`-/SyncEffect-Claims, Policy-/Approval-Pruefung, Quota,
-Provider-Konfiguration, Secret-Aufloesung, Artifact-Publish und Provider-
-Aufruf.
+struktureller Schema-/Formvalidierung, syntaktischer Ref-Formpruefung und
+fehlendem `approvalKey`, aber vor `AiToolOutcomeStore`-/SyncEffect-Claims,
+Policy-/Approval-Pruefung, Quota, Provider-Konfiguration,
+Secret-Aufloesung, Artifact-Publish und Provider-Aufruf.
 
 Vor diesem Scope-Gate sind nur materialisierungsfreie Pruefungen erlaubt:
 
@@ -632,12 +638,14 @@ interface PromptHygieneService {
 - Entscheidung `ALLOW` oder `BLOCK`
 - deterministischer Fehlergrund bei `BLOCK`
 
-Blockierende Faelle:
+Blockierende Faelle nach Entfernen der erlaubten Top-Level-Control-Felder:
 
 - freier JDBC-String
 - Secret-Pattern
 - API-Key-Pattern
-- `approvalToken` im Prompt-Payload
+- `approvalToken` oder andere Control-Felder im fachlichen Prompt-/Provider-
+  Payload, etwa verschachtelt in `rules`, `options`, Prompt-Text,
+  Provider-Overrides oder Artefaktmetadaten
 - rohe Massendaten oberhalb der Inline-Limits
 - nicht erlaubter Resource-Kind
 - tenantfremde Resource
@@ -1005,6 +1013,10 @@ Aufgaben:
   materialisierungsfreie Schema-/Form-/Ref-Syntax-Validierung vor Scope und
   semantische Resource-/Artifact-/Provider-Validierung erst nach Scope,
   Idempotency-/Outcome-Replay und Policy.
+- Top-Level-Control-Felder vor Prompt-Hygiene und Provider-Request-Building
+  aus dem fachlichen Payload entfernen; `approvalToken` bleibt nur fuer
+  Policy/Approval validierbar und darf nie in Provider-Prompts oder
+  Provider-Payloads gelangen.
 - `dmigrate:ai:execute` vor `AiToolOutcomeStore`-/SyncEffect-Claim, Policy,
   Quota, Provider-Konfiguration, Secret-Aufloesung, Artifact-Publish und
   Provider-Aufruf erzwingen.
@@ -1047,8 +1059,14 @@ Tests:
 - fehlender `dmigrate:ai:execute` liefert Scope-/403-Fehler ohne
   `AiToolOutcomeStore`-Write, Policy-Lookup, Quota-Reservierung,
   Secret-Store-Read, Artifact-Lookup oder Provider-Aufruf.
+- malformed Resource-/Artifact-/Connection-Ref plus fehlender Scope liefert
+  den Ref-/Schema-Fehler, weil Ref-Syntax Teil der materialisierungsfreien
+  Vorvalidierung vor dem Scope-Gate ist.
 - fehlende Policy liefert `POLICY_REQUIRED`
 - genehmigter Aufruf nutzt Provider
+- genehmigter Retry mit gueltigem `approvalToken` durchlaeuft Prompt-Hygiene
+  ohne `PROMPT_HYGIENE_BLOCKED`, und der Provider-Request enthaelt weder
+  `approvalToken` noch andere Control-Felder.
 - identischer Retry erzeugt keinen zweiten Provider-Aufruf
 - parallele identische Retries erzeugen genau einen Provider-Aufruf und genau
   ein Artefakt; parallele Verlierer warten/replayen oder erhalten einen
@@ -1240,10 +1258,12 @@ Reihenfolge:
 2. unbekannter Toolname als MCP-/JSON-RPC-Protokollfehler
 3. Payload-Schema-Validierung
 4. fehlender `approvalKey`
-5. MCP-Authorization-Scope (`dmigrate:ai:execute`) pruefen; Scope-Verletzung
+5. Tenant-/Resource-/Artifact-/Connection-Ref-Syntax materialisierungsfrei
+   pruefen. Malformed Refs sind Teil der strukturellen Vorvalidierung und
+   gewinnen gegen eine gleichzeitige Scope-Verletzung.
+6. MCP-Authorization-Scope (`dmigrate:ai:execute`) pruefen; Scope-Verletzung
    liefert den bestehenden Auth-/403-Fehler mit Scope-Challenge und ohne
    Outcome-/Policy-/Provider-/Artifact-Side-Effect
-6. Tenant-/Resource-Ref-Syntax materialisierungsfrei pruefen
 7. Payload-Fingerprint fuer `(tenant, caller, toolName, approvalKey)` pruefen;
    abweichender Fingerprint liefert `IDEMPOTENCY_CONFLICT`
 8. bestehendes `AiToolOutcomeStore`-Outcome mit identischem Fingerprint
