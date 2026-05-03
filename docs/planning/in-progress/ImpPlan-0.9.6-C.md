@@ -1549,7 +1549,11 @@ Aufgaben:
     explizitem `truncationReason: "artifact_sink_unavailable"`;
     alternativ darf der Handler einen scrubbed Toolfehler liefern. Der
     generische ResponseLimit-Enforcer-Fallback bleibt auch hier
-    ungueltig.
+    ungueltig. Dieser Zweig ist nur zu implementieren/testen, wenn das
+    Wiring fuer den jeweiligen Handler `ArtifactSink` wirklich optional
+    injiziert; bei non-null Konstruktoren ist Sink-Verfuegbarkeit eine
+    Invariante und der No-Sink-Degradationszweig wird nicht in das
+    Runtime-Schema aufgenommen.
 - `schema_generate` Output-Schema:
   - `artifactRef` optional fuer grossen DDL-/Finding-Fallback
   - `ddl` optional, weil grosse DDL vollstaendig ins Artefakt wandert
@@ -1563,8 +1567,12 @@ Aufgaben:
     ein interner Rohdump.
   - Findings-Overflow muss wie `schema_validate` ueber
     `ArtifactSink` ausgelagert werden; `truncated=true` ohne
-    `artifactRef` ist nur erlaubt, wenn kein `ArtifactSink` im Wiring
-    vorhanden ist und muss in Tests als degradierter Pfad gepinnt sein
+    `artifactRef` ist nur erlaubt, wenn das Wiring `ArtifactSink`
+    optional macht und zur Laufzeit keiner vorhanden ist; dieser
+    degradierte Pfad muss dann in Tests gepinnt sein. Solange
+    `SchemaGenerateHandler` einen non-null `ArtifactSink` verlangt,
+    darf das Schema keinen No-Sink-Ast fuer `schema_generate`
+    akzeptieren.
   - die Fallback-Entscheidung darf nicht nur an der DDL-Groesse
     haengen: Findings-Truncation allein muss bei verfuegbarem
     `ArtifactSink` ebenfalls ein Artefakt mit der vollstaendigen,
@@ -1611,6 +1619,15 @@ Aufgaben:
     Counter-Namen und `Long`-Zahlenwerten; keine
     `completedUnits`/`totalUnits`/`unit`-Felder ohne separaten Core-
     Refactor
+  - weil `ManagedJob.JobProgress.numericValues` intern eine freie
+    `Map<String, Long>` bleibt, muss `JobStatusGetHandler` vor dem
+    Wire-Output eine Allowlist-Projektion anwenden. Nur dokumentierte
+    Counter-Keys wie z.B. `processed`, `total`, `succeeded`,
+    `failed`, `skipped`, `bytesRead`, `bytesWritten` werden
+    serialisiert; unbekannte Keys werden verworfen oder in ein
+    scrubbed Diagnosefeld ausserhalb des strikten Output-Schemas
+    ueberfuehrt. Das Schema validiert die projizierte Map mit
+    `additionalProperties=false`.
   - `error` ist optional, aber wenn vorhanden geschlossen typisiert
     nach aktuellem `JobError`: `code`, `message`, optional
     `exitCode`; kein `error.details` in `job_status_get`, solange
@@ -1687,15 +1704,17 @@ Aufgaben:
 - `PhaseBToolSchemas` bildet die `truncated`-/Ref-Kopplung
   maschinenpruefbar ab:
   - fuer `schema_validate` und `schema_generate`: `if
-    truncated=true` dann `artifactRef` required, ausser der Output
-    traegt explizit `truncationReason:
-    "artifact_sink_unavailable"` fuer den getesteten No-Sink-
-    Degradationspfad
+    truncated=true` dann `artifactRef` required. Die Ausnahme
+    `truncationReason: "artifact_sink_unavailable"` wird nur in das
+    jeweilige Tool-Schema aufgenommen, wenn dessen Wiring
+    `ArtifactSink` optional injiziert und der No-Sink-Pfad getestet
+    ist; bei non-null Sink-Konstruktoren ist die Ausnahme ungueltig
   - fuer `schema_compare`: `if truncated=true` dann
     `diffArtifactRef` required, ausser derselbe No-Sink-
     Degradationsgrund ist gesetzt
   - fuer alle anderen Faelle darf `truncationReason` fehlen; der
-    Grund ist kein Ersatz fuer einen vorhandenen `ArtifactSink`.
+    Grund ist kein Ersatz fuer einen vorhandenen oder konstruktiv
+    garantierten `ArtifactSink`.
 - Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regenerieren und
   dabei die Diffs bewusst reviewen. Zusaetzlich zu Goldenfiles braucht
   AP 6.23 Runtime-Schema-Validation-Tests: exemplarische Outputs von
@@ -1730,15 +1749,19 @@ Akzeptanz:
 - `schema_validate` setzt bei `truncated=true` und verfuegbarem
   `ArtifactSink` ein `artifactRef` auf die vollstaendige gescrubbte
   Findings-Projektion; der degradierte Pfad ohne Sink ist gesondert
-  getestet und bleibt bounded mit `truncationReason:
-  "artifact_sink_unavailable"` oder liefert einen scrubbed Toolfehler
+  getestet, falls das Wiring einen optionalen Sink ermoeglicht, und
+  bleibt dann bounded mit `truncationReason:
+  "artifact_sink_unavailable"` oder liefert einen scrubbed Toolfehler.
+  Bei non-null Sink-Konstruktion muss `artifactRef` gesetzt werden
 - `schema_validate` und `schema_generate` koennen optionale
   Finding-`details` schema-valide transportieren; `schema_generate`
   akzeptiert ueber einen tool-spezifischen Finding-Helper zusaetzlich
   das explizite legacy-`hint`-Feld, waehrend `schema_validate` und
   `schema_compare` dieses Feld ablehnen
 - `job_status_get.progress` und `job_status_get.error` sind typisiert
-  und spiegeln die AP-6.17-Scrubbing-Projektion
+  und spiegeln die AP-6.17-Scrubbing-Projektion; `numericValues`
+  validiert nur die kuratierte Allowlist-Projektion und lehnt freie
+  Map-Keys schema-seitig ab
 - `job_status_get.resourceUri` und jedes `job_status_get.artifacts[]`
   validieren gegen Resource-URI-Patterns; lokale Pfade oder nackte
   IDs werden schema-seitig abgelehnt. Runtime-Tests decken den
@@ -1752,7 +1775,9 @@ Akzeptanz:
   ist `executionMeta.requestId` required und scrubbed
 - `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
   `ArtifactSink` ein `artifactRef`; der degradierte Pfad ohne Sink ist
-  gesondert getestet. Ein Testfall deckt Findings-only-Overflow bei
+  nur erlaubt, wenn das Wiring einen optionalen Sink ermoeglicht, und
+  dann gesondert getestet. Bei non-null Sink-Konstruktion muss
+  `artifactRef` gesetzt werden. Ein Testfall deckt Findings-only-Overflow bei
   kleiner DDL ab, damit der Fallback nicht DDL-groessenabhaengig
   bleibt.
 - Runtime-Outputs der vier betroffenen Tools validieren gegen ihre
@@ -1761,7 +1786,9 @@ Akzeptanz:
   diese Tools nicht als schema-valider Ersatz akzeptiert
 - JSON-Schema-Tests pinnen die `if/then`-Constraints fuer
   `truncated=true`: ohne Ref ist nur der explizite No-Sink-
-  Degradationsgrund gueltig; bei verfuegbarem Sink muss die passende
+  Degradationsgrund gueltig, wenn das jeweilige Tool-Schema den
+  optionalen Sink-Pfad ueberhaupt freischaltet; bei verfuegbarem oder
+  konstruktiv garantiertem Sink muss die passende
   `artifactRef`/`diffArtifactRef` vorhanden sein
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
   werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
