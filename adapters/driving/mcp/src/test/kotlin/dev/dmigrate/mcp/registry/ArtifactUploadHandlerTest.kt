@@ -605,10 +605,15 @@ class ArtifactUploadHandlerTest : FunSpec({
     test("final segment with cumulative-hash mismatch throws VALIDATION_ERROR (rolls to ABORTED per AP 6.22)") {
         // Two segments stored, but session.checksumSha256 declares a
         // hash that doesn't match the actual concatenated bytes.
+        // The streaming-assembly SHA check runs inside the finaliser
+        // pipeline, so a stub finaliser must be wired for AP 6.22's
+        // ABORTED + sanitised-FAILED-outcome path to exercise.
         val seg1 = "abcdefgh".toByteArray()
         val seg2 = "12345678".toByteArray()
         val claimedTotalHash = "f".repeat(64) // wrong on purpose
-        val f = fixture()
+        val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "stub")
+        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
+        val f = fixture(finalizer = stubFinalizer)
         stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = claimedTotalHash)
         f.handler.handle(
             ToolCallContext(
