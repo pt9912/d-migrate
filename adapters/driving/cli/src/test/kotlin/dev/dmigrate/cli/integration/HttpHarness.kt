@@ -56,13 +56,7 @@ internal class HttpHarness(
 
     val auditSink: InMemoryAuditSink get() = auditSinkRef
 
-    /**
-     * AP 6.24 E3+: the Phase-C wiring this harness's server runs on,
-     * exposed so scenarios can pre-stage server-side state directly
-     * without going through the upload flow. Symmetric with the
-     * stdio handle.
-     */
-    val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
+    override val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()

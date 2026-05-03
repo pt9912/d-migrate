@@ -9,7 +9,10 @@ import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.artifact.ManagedArtifact
+import dev.dmigrate.server.core.job.JobRecord
+import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.core.job.JobVisibility
+import dev.dmigrate.server.core.job.ManagedJob
 import dev.dmigrate.server.core.principal.AuthSource
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
@@ -168,6 +171,86 @@ internal object IntegrationFixtures {
             ),
         )
         return schemaUri.render()
+    }
+
+    /**
+     * AP 6.24 E5: stages an artefact (record + content) directly via
+     * the in-memory stores so the chunk-read scenarios don't need to
+     * drive the upload flow end-to-end again. Returns the artifactId
+     * the test passes back to `artifact_chunk_get`.
+     */
+    fun stageArtifact(
+        wiring: PhaseCWiring,
+        principal: PrincipalContext,
+        artifactId: String,
+        content: ByteArray,
+        contentType: String = "application/json",
+        filename: String = "$artifactId.bin",
+        kind: ArtifactKind = ArtifactKind.OTHER,
+        clock: Clock = Clock.systemUTC(),
+    ): String {
+        val tenantId = principal.effectiveTenantId
+        val now = clock.instant()
+        val expires = now.plusSeconds(SECONDS_PER_HOUR.toLong())
+        val managed = ManagedArtifact(
+            artifactId = artifactId,
+            filename = filename,
+            contentType = contentType,
+            sizeBytes = content.size.toLong(),
+            sha256 = "0".repeat(SHA256_HEX_LEN),
+            createdAt = now,
+            expiresAt = expires,
+        )
+        val record = ArtifactRecord(
+            managedArtifact = managed,
+            kind = kind,
+            tenantId = tenantId,
+            ownerPrincipalId = principal.principalId,
+            visibility = JobVisibility.TENANT,
+            resourceUri = ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, artifactId),
+        )
+        wiring.artifactStore.save(record)
+        wiring.artifactContentStore.write(artifactId, ByteArrayInputStream(content), content.size.toLong())
+        return artifactId
+    }
+
+    /**
+     * AP 6.24 E5: stages a [JobRecord] directly so the
+     * `job_status_get` scenarios get a deterministic terminal job
+     * with a known artefact list (the artefact-backfill projection
+     * needs an entry to lift onto a `ServerResourceUri`).
+     */
+    @Suppress("LongParameterList")
+    fun stageJob(
+        wiring: PhaseCWiring,
+        principal: PrincipalContext,
+        jobId: String,
+        operation: String = "schema_validate",
+        status: JobStatus = JobStatus.SUCCEEDED,
+        artifacts: List<String> = emptyList(),
+        clock: Clock = Clock.systemUTC(),
+    ): String {
+        val tenantId = principal.effectiveTenantId
+        val now = clock.instant()
+        val managed = ManagedJob(
+            jobId = jobId,
+            operation = operation,
+            status = status,
+            createdAt = now,
+            updatedAt = now,
+            expiresAt = now.plusSeconds(SECONDS_PER_HOUR.toLong()),
+            createdBy = principal.principalId.value,
+            artifacts = artifacts,
+        )
+        val record = JobRecord(
+            managedJob = managed,
+            tenantId = tenantId,
+            ownerPrincipalId = principal.principalId,
+            visibility = JobVisibility.TENANT,
+            resourceUri = ServerResourceUri(tenantId, ResourceKind.JOBS, jobId),
+        )
+        wiring.jobStore.save(record)
+        return jobId
     }
 
     private const val SECONDS_PER_HOUR: Int = 3600

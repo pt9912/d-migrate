@@ -39,6 +39,16 @@ internal interface McpClientHarness : AutoCloseable {
     val stateDir: Path
     val principal: PrincipalContext
 
+    /**
+     * AP 6.24 E3+: the Phase-C wiring this harness's server runs on.
+     * Scenario tests pre-stage server-side state (schemas, artefacts,
+     * jobs) directly via the in-memory stores instead of always
+     * driving the upload flow end-to-end. Both [StdioHarness] and
+     * [HttpHarness] expose the same wiring instance their bootstrap
+     * was built from.
+     */
+    val wiring: dev.dmigrate.mcp.registry.PhaseCWiring
+
     fun initialize(params: InitializeParams = defaultInitializeParams()): InitializeResult
 
     fun initializedNotification()
