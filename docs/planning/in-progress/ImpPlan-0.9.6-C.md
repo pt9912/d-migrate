@@ -14,10 +14,19 @@
 > deterministische `artifactId`/`schemaId`, idempotenter
 > `ArtifactContentStore`/`SchemaStore`-Replay, Stale-Lease-Reclaim,
 > sanitisierte `FinalizationOutcome`-Replay, AP-6.21-Sweep um
-> `<stateDir>/assembly/...` erweitert). AP 6.21 + 6.22 final-Done erst
-> zusammen mit AP 6.24, wie Akzeptanzkriterium fordert.
-> Offen: AP 6.23 (Output-Schema-Drift für `artifactRef`/`details`
-> §6.13), AP 6.24 (stdio+HTTP-Integrationstest-Suite §7.3).
+> `<stateDir>/assembly/...` erweitert). AP 6.23 implementiert
+> (geteilte Schema-Helper für `findingItem`/`artifactRefField`/
+> `executionMetaField`, normalisierte Forbidden-Key-Detection in
+> `SchemaSecretGuard`, strict Output-Schemas für `schema_validate`/
+> `schema_compare`/`schema_generate`/`job_status_get` mit
+> `truncated→artifactRef` if/then-Constraint, scrubbed DDL-Artefakt,
+> Findings-only-Overflow-Fallback, `numericValues`-Allowlist mit
+> Backfill-Projektion auf Resource-URIs, `ResponseLimitEnforcer`-
+> Skip für schema-aware Tools, zentraler `error.details[].(key,value)`-
+> Scrub am Serialisierungsboundary).
+> AP 6.21 + 6.22 + 6.23 final-Done erst zusammen mit AP 6.24, wie
+> Akzeptanzkriterien fordern.
+> Offen: AP 6.24 (stdio+HTTP-Integrationstest-Suite §7.3).
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase C, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
