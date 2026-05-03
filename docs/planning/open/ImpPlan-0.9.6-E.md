@@ -145,9 +145,10 @@ bleibt:
 - Approval-Challenge mit `approvalRequestId`
 - Approval-Grant-Validierung
 - mindestens ein produktiv nutzbarer Grant-Aussteller:
-  - lokale Policy-Allowlist
-  - oder schmales MCP-Admin-Grant-Unterkommando
+  - schmales MCP-Admin-Grant-Unterkommando
   - oder signierte Grant-Datei
+  - oder lokale Allowlist mit explizitem GrantIssuer-Modus
+- lokale Policy-Allowlist als reine Policy-Allow-Quelle ohne Grant-Ausstellung
 - optionaler Local-Demo-Auto-Approval-Modus nur fuer Loopback/`stdio`, klar
   unsicher markiert und auditpflichtig
 - Quotas fuer aktive Jobs pro Tenant/Principal/Operation
@@ -196,6 +197,10 @@ normalisierten Payload ohne transiente Kontrollfelder:
 - `clientRequestId`
 - `requestId`
 
+Die Normalisierung wendet schema- und toolseitige Defaults vor der
+Serialisierung an. Implizit fehlende Defaults und explizit gesetzte
+Default-Werte ergeben denselben Fingerprint.
+
 ### 4.2 Policy prueft neue Starts, nicht Konflikte
 
 Pipeline-Reihenfolge fuer Start-Tools:
@@ -204,16 +209,51 @@ Pipeline-Reihenfolge fuer Start-Tools:
 2. Audit-Scope oeffnen
 3. Principal aus Transportkontext ableiten
 4. Tool-Payload gegen Schema validieren
-5. Tenant-, Scope- und Resource-Regeln pruefen
+5. syntaktische Tenant-Prefix-, Scope-Key- und Resource-Ref-Form pruefen
 6. Idempotency-Reservierung atomar pruefen oder anlegen
 7. Idempotency-Konflikte sofort mit `IDEMPOTENCY_CONFLICT` beenden
-8. Policy fuer neue oder noch nicht genehmigte Starts pruefen
-9. Quota nur fuer neue Side Effects pruefen
-10. Job erzeugen oder bestehendes Ergebnis zurueckgeben
+8. `COMMITTED` direkt dedupliziert zurueckgeben, ohne Resource-
+   Materialisierung, Policy oder Quota erneut auszufuehren
+9. Resource-Sichtbarkeit, Policy und Materialisierung nur fuer neue oder mit
+   Grant atomar geclaimte Starts pruefen
+10. Quota fuer neue Side Effects reservieren
+11. Job erzeugen oder bestehendes Ergebnis zurueckgeben
 
 Policy wird niemals fuer abweichende Payloads geprueft. Ein Konflikt mit
 gleichem Store-Key und anderem Fingerprint liefert deterministisch
 `IDEMPOTENCY_CONFLICT`.
+
+Die Idempotency-Reservierung bleibt vor Policy- und Quota-Pruefung. Deshalb
+muessen alle Outcomes nach angelegter Reservierung eine verbindliche
+Reservation-Transition haben:
+
+- `POLICY_REQUIRED`: `PENDING` wird atomar zu `AWAITING_APPROVAL` mit
+  `approvalRequestId` und `awaitingApprovalExpiresAt`.
+- `RATE_LIMITED`: keine Job-Erzeugung; die Reservierung bleibt recoverable
+  `PENDING` mit `pendingLeaseExpiresAt` maximal bis `retryAfter`. Identische
+  Retries vor Ablauf liefern erneut `RATE_LIMITED`, identische Retries nach
+  Ablauf duerfen die Reservierung recovern und Quota erneut pruefen.
+- Quota-Reservierung erfolgreich, aber Fehler vor Job-Commit: die
+  Quota-Reservierung wird per `refund` zurueckgegeben und die
+  Idempotency-Reservierung bleibt nach Fehlerart recoverable `PENDING` oder
+  wird final `FAILED`.
+- `OPERATION_TIMEOUT` vor Job-Commit: keine Job-Erzeugung; die Reservierung
+  wird als recoverable `PENDING` mit abgelaufener oder kurzer Lease
+  freigegeben, damit identische Retries die Start-Pipeline neu claimen
+  koennen.
+- technische Startfehler vor Job-Commit: keine Job-Erzeugung; retrybare
+  Fehler werden wie recoverable `PENDING` behandelt, nicht-retrybare
+  deterministische Fehler setzen `FAILED`.
+- technische Fehler nach Job-Erzeugung, aber vor Response: muessen
+  `COMMITTED(jobId)` recovern oder atomar fertigstellen; es darf kein Job ohne
+  deduplizierbare Reservierung entstehen.
+
+Nur die syntaktische Ref-Form und ein expliziter Tenant-Prefix duerfen vor
+Idempotency geprueft werden. Ein identischer Retry fuer eine `COMMITTED`-
+Reservierung muss denselben Job liefern, auch wenn referenzierte Connections,
+Schemas oder Policy-Sichtbarkeit inzwischen geloescht, rotiert oder entzogen
+wurden. Resource-Lookup und Secret-/Schema-Materialisierung finden deshalb
+erst nach dem `COMMITTED`-Dedupe-Pfad statt.
 
 ### 4.3 Policy-Freigabe startet nicht automatisch
 
@@ -252,7 +292,9 @@ Zustandsaenderung im gemeinsamen Jobmodell:
 
 - eigene Jobs duerfen abgebrochen werden
 - Admins duerfen Jobs innerhalb desselben Tenants abbrechen
-- Cross-Tenant-Cancel liefert `TENANT_SCOPE_DENIED`
+- explizite Cross-Tenant-Job-`resourceUri` liefert `TENANT_SCOPE_DENIED`
+- opake `jobId`-Eingaben bleiben tenant-lokal und liefern fuer fremde oder
+  fehlende Jobs `RESOURCE_NOT_FOUND`
 - nicht erlaubte Jobs liefern `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben terminal
 - erfolgreich angenommene Abbrueche enden im Jobstatus `cancelled`
@@ -268,6 +310,13 @@ Quota-/Rate-Limit-Verletzungen liefern `RATE_LIMITED`. Timeouts liefern
 Bei bereits gestarteten Jobs muss der Jobstatus gemaess `spec/job-contract.md`
 aktualisiert werden; weitere Side Effects werden ueber Cancel-/Cleanup-Pfade
 gestoppt.
+
+Aktive Quota-Slots folgen dem bestehenden `QuotaService`-Lifecycle:
+`reserve` belegt den Slot vor Job-Erzeugung atomar, `commit` bestaetigt den
+Erfolgspfad nur fuer Audit/Beobachtbarkeit, `refund` gibt Pre-Commit-Fehler
+und Idempotency-Replays zurueck, `release` gibt terminalisierte Jobs frei.
+Runner-Timeouts muessen denselben `release`-Pfad ausloesen, auch wenn der
+Worker erst ueber Cleanup oder Watchdog terminalisiert wird.
 
 ---
 
@@ -312,7 +361,7 @@ Zustaende:
 | `AWAITING_APPROVAL` | Policy-Challenge offen |
 | `DENIED` | Freigabe explizit abgelehnt |
 | `COMMITTED` | Job wurde erzeugt und ist deduplizierbar |
-| `FAILED` | nicht-retrybarer Fehler oder abgelaufene/abgeschlossene Reservierung |
+| `FAILED` | endgueltige, nicht-retrybare Reservierung ohne Job |
 
 Pflichtfelder:
 
@@ -325,6 +374,7 @@ Pflichtfelder:
 - `awaitingApprovalExpiresAt`, wenn `AWAITING_APPROVAL`
 - `approvalRequestId`, wenn Freigabe offen
 - `jobId`, wenn `COMMITTED`
+- `denialExpiresAt`, wenn `DENIED`
 - Denial-Metadaten, wenn `DENIED`
 
 Regeln:
@@ -336,6 +386,14 @@ Regeln:
 - abgelaufene `AWAITING_APPROVAL`-Challenges liefern neue Challenge oder
   erneuern die bestehende Challenge atomar
 - `DENIED` liefert bis `denialExpiresAt` `POLICY_DENIED`
+- nach `denialExpiresAt` darf ein identischer Retry wieder eine neue
+  Policy-Entscheidung ausloesen; die alte Ablehnung bleibt auditierbar
+- `FAILED` ist final fuer denselben Scope/Fingerprint und darf nicht fuer
+  abgelaufene `PENDING`-Leases oder `AWAITING_APPROVAL`-Challenges verwendet
+  werden
+- recoverable `PENDING` aus `RATE_LIMITED`, `OPERATION_TIMEOUT` vor Commit
+  oder retrybaren technischen Startfehlern darf nur von einem identischen
+  Scope/Fingerprint neu geclaimt werden
 
 ### 5.3 Payload-Fingerprint
 
@@ -343,6 +401,8 @@ Fingerprint-Kanonik:
 
 - strukturierter Payload wird deterministisch serialisiert
 - Map-/Objekt-Feldreihenfolge ist stabil
+- schema- und toolseitige Defaults werden vor der Serialisierung materialisiert
+- implizite Defaults und explizit gesetzte Default-Werte sind gleichwertig
 - transiente Felder sind ausgeschlossen
 - `approvalToken` beeinflusst den Fingerprint nie
 - Connection-Refs werden als tenant-scoped Resource-URIs normalisiert
@@ -412,7 +472,11 @@ Regeln:
 
 - unbekannte oder nicht sichtbare Jobs im erlaubten Tenant liefern
   no-oracle `RESOURCE_NOT_FOUND`
-- fremde Tenants liefern `TENANT_SCOPE_DENIED`
+- explizit fremde Tenants in tenant-scoped Job-`resourceUri` liefern
+  `TENANT_SCOPE_DENIED`
+- opake `jobId`-Eingaben duerfen keinen globalen Cross-Tenant-Lookup machen;
+  fremde oder fehlende opake IDs liefern im Principal-Tenant
+  `RESOURCE_NOT_FOUND`
 - fremde Jobs im selben Tenant ohne Berechtigung liefern
   `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben unveraendert terminal
@@ -483,6 +547,9 @@ Regeln:
 
 - Tool ist immer policy-gesteuert, auch ohne Connection-Ref
 - Connection-Refs muessen tenant-scoped sein
+- Schema-Refs muessen tenant-scoped oder fuer den Tenant explizit sichtbar sein
+- nicht sichtbare `schemaRef` liefert `RESOURCE_NOT_FOUND` oder
+  `TENANT_SCOPE_DENIED` ohne Oracle-Details
 - freie JDBC-Strings sind verboten
 - synchroner `schema_compare` akzeptiert keine `connectionRef`
 - `schema_compare_start` kann per `job_cancel` abgebrochen werden
@@ -539,6 +606,10 @@ Tests:
 
 ### 7.3 AP E.3: Idempotency-Service implementieren
 
+- Core-/Port-Migration fuer `FAILED` explizit durchfuehren:
+  `IdempotencyState` erweitern, Store-Outcomes/Mapper anpassen,
+  Fehler-Mapping definieren, InMemory-Store nachziehen und Contract Tests
+  aktualisieren.
 - Scope-Key bilden: `(tenantId, callerId, operation, idempotencyKey)`.
 - `payloadFingerprint` bilden und transiente Felder ausschliessen.
 - `reserveOrGet` atomar implementieren.
@@ -554,6 +625,11 @@ Tests:
 - anderer Fingerprint -> `IDEMPOTENCY_CONFLICT`
 - parallele identische Requests erzeugen hoechstens einen Job
 - abgelaufene `PENDING`-Lease wird nur fuer identischen Fingerprint recovered
+- Store/Port/Contract Tests decken `FAILED` als neuen Core-State ab
+- recoverable `PENDING` nach `RATE_LIMITED` oder Start-Timeout wird nicht als
+  final `FAILED` behandelt
+- `FAILED` blockiert identische Retries nur fuer endgueltige
+  nicht-retrybare Reservierungen
 
 ### 7.4 AP E.4: Policy-Service und Grant-Aussteller
 
@@ -561,7 +637,11 @@ Tests:
 - Policy-Entscheidungen fuer alle drei Start-Tools konfigurieren.
 - `ApprovalGrantStore` ohne rohe Tokens verwenden.
 - Mindestens einen produktiv nutzbaren Grant-Aussteller implementieren:
-  lokale Allowlist, Admin-Unterkommando oder signierte Grant-Datei.
+  Admin-Unterkommando, signierte Grant-Datei oder lokale Allowlist mit
+  explizitem GrantIssuer-Modus.
+- Reine lokale Policy-Allowlist ohne GrantIssuer-Modus darf nur direkte
+  `ALLOW`-Entscheidungen liefern und zaehlt nicht als Grant-Pfad fuer
+  `POLICY_REQUIRED` plus genehmigten Retry.
 - Optionalen Demo-Auto-Approval-Modus nur fuer Loopback/`stdio` zulassen,
   deutlich markieren und auditieren.
 - Ohne konfigurierten Grant-Aussteller fail-closed verhalten.
@@ -571,6 +651,8 @@ Tests:
 - fehlender Grant -> `POLICY_REQUIRED` mit Challenge
 - ungueltiger Grant -> weiterhin keine Job-Erzeugung
 - gueltiger Grant passt nur fuer gebundenen Fingerprint
+- konfigurierte Policy-Allowlist ohne GrantIssuer startet direkt erlaubte
+  Requests, erzeugt aber kein `approvalToken`
 - rohe Tokens erscheinen nicht in Store oder Audit
 - fehlender Grant-Aussteller ist dokumentiert fail-closed
 
@@ -587,6 +669,7 @@ Tests:
 - parallele genehmigte Retries erzeugen genau einen Job
 - zweiter Retry nach Commit liefert denselben Job
 - abgelehnter Grant liefert `POLICY_DENIED`
+- `DENIED` enthaelt `denialExpiresAt` und laeuft danach recoverable aus
 - Idempotency-Konflikt prueft keine Policy
 
 ### 7.6 AP E.6: Start-Tool-Schemas und Handler verdrahten
@@ -595,6 +678,7 @@ Tests:
   `schema_compare_start` finalisieren.
 - `idempotencyKey` als Pflichtfeld erzwingen.
 - `connectionRef` tenant-scoped validieren.
+- `schemaRef` tenant-scoped oder sichtbar fuer den Tenant validieren.
 - freie JDBC-Strings abweisen.
 - Output-Schema auf `jobId`, `resourceUri`, `executionMeta` festlegen.
 - Tool-Registry von Unsupported-Handlern auf produktive Handler umstellen.
@@ -603,6 +687,7 @@ Tests:
 
 - fehlender `idempotencyKey`
 - ungueltige Connection-Ref
+- nicht sichtbare oder fremde Schema-Ref
 - freie JDBC-URL
 - fehlender Grant
 - erfolgreicher genehmigter Start
@@ -639,7 +724,8 @@ Tests:
 Tests:
 
 - eigener laufender Job wird gecancelt
-- fremder Tenant -> `TENANT_SCOPE_DENIED`
+- tenant-scoped URI mit fremdem Tenant -> `TENANT_SCOPE_DENIED`
+- opake fremde oder fehlende `jobId` -> `RESOURCE_NOT_FOUND`
 - fremder Principal ohne Admin -> `FORBIDDEN_PRINCIPAL`
 - unbekannter Job -> `RESOURCE_NOT_FOUND`
 - terminaler Job bleibt terminal
@@ -650,6 +736,16 @@ Tests:
 - aktive Joblimits pro Tenant/Principal/Operation konfigurieren.
 - Quota-Pruefung nur fuer neue Job-Erzeugung ausfuehren, nicht fuer
   deduplizierte `COMMITTED`-Antworten.
+- Bestehenden `QuotaService`-Vertrag festschreiben:
+  `reserve -> commit/refund/release`.
+- `reserve` vor Job-Erzeugung ausfuehren und bei `RateLimited`
+  `RATE_LIMITED` ohne Job liefern.
+- `commit` nur nach erfolgreichem Job-Commit als Success-/Audit-Hook
+  aufrufen; der Slot bleibt belegt.
+- `refund` fuer Start-Timeouts, technische Pre-Commit-Fehler und
+  Idempotency-Replays nach bereits reservierter Quota aufrufen.
+- `release` bei `succeeded`, `failed`, `cancelled` und
+  Runner-Timeout-Cleanup freigeben.
 - `RATE_LIMITED` mit strukturierten Details liefern.
 - Start-Timeout und Runner-Timeout konfigurieren.
 - Timeout auf `OPERATION_TIMEOUT` mappen und Worker-Cancel/Cleanup ausloesen.
@@ -658,8 +754,11 @@ Tests:
 
 - aktive Jobquote ueberschritten -> `RATE_LIMITED`
 - deduplizierter Retry verbraucht keine neue Quote
+- parallele neue Starts koennen Quota durch `reserve` nicht ueberbuchen
+- Start-Timeout oder technischer Fehler vor Job-Commit ruft `refund`
+- Slot wird nach `succeeded`, `failed` und `cancelled` freigegeben
 - Start-Timeout -> `OPERATION_TIMEOUT`
-- Runner-Timeout stoppt weitere Side Effects
+- Runner-Timeout stoppt weitere Side Effects und gibt aktive Slots frei
 
 ### 7.10 AP E.10: Audit und Dokumentation
 
@@ -695,7 +794,7 @@ Verbindliche Fehler:
 - `POLICY_DENIED` fuer abgelehnte Reservierung
 - `RATE_LIMITED` fuer Quota-/Rate-Limit-Verletzungen
 - `OPERATION_TIMEOUT` fuer Start-/Runner-Timeout
-- `TENANT_SCOPE_DENIED` fuer fremde Tenants
+- `TENANT_SCOPE_DENIED` fuer explizit fremde tenant-scoped Resource-URIs
 - `FORBIDDEN_PRINCIPAL` fuer nicht erlaubten Job-Cancel im selben Tenant
 - `RESOURCE_NOT_FOUND` fuer unbekannte oder nicht sichtbare Jobs im erlaubten
   Tenant
@@ -706,6 +805,7 @@ Security-Regeln:
 - keine rohen Approval-Tokens speichern oder auditieren
 - keine JDBC-Secrets in Tool-Responses, Jobs, Artefakten oder Audit
 - Connection-Refs muessen tenant-scoped sein
+- Schema-Refs muessen tenant-scoped oder fuer den Tenant sichtbar sein
 - produktive/sensitive Connections duerfen nur mit Policy-Freigabe genutzt
   werden
 - `approvalToken` ist transient und nie Teil des Payload-Fingerprints
@@ -731,16 +831,27 @@ Mindesttestklassen:
 Mindestfaelle:
 
 - fehlender `idempotencyKey`
+- implizite Defaults und explizite Default-Werte ergeben denselben Fingerprint
 - identischer Retry vor und nach `COMMITTED`
+- `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
+  unsichtbarer Resource
 - Konflikt ohne Policy-Pruefung
 - erster Start ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
 - zweiter Start mit Grant -> genau ein Job
 - parallele genehmigte Retries -> ein Job
+- `DENIED` gilt nur bis `denialExpiresAt`
 - Grant abgelaufen oder falscher Fingerprint
 - Quota ueberschritten
+- Quota-`reserve` verhindert parallele Ueberbuchung
+- Quota-`refund` bei Start-Timeout und Pre-Commit-Fehler
+- Quota-Slot-Release nach `succeeded`, `failed`, `cancelled` und
+  Runner-Timeout
 - Timeout
+- recoverable Start-Timeout blockiert identischen Retry nicht dauerhaft
+- `schema_compare_start` mit fremder oder nicht sichtbarer `schemaRef`
 - Cancel eigener Job
-- Cancel fremder Tenant
+- Cancel tenant-scoped URI mit fremdem Tenant
+- Cancel opake fremde oder fehlende `jobId`
 - Cancel fremder Principal im selben Tenant
 - Worker-Side-Effect-Stopp nach Cancel
 
@@ -753,6 +864,9 @@ Mindestfaelle:
 - alle drei Start-Tools verlangen `idempotencyKey`.
 - fehlender `idempotencyKey` liefert `IDEMPOTENCY_KEY_REQUIRED`.
 - identische Wiederholung liefert denselben Job.
+- identische Wiederholung nach `COMMITTED` materialisiert keine Resources neu
+  und bleibt stabil, wenn referenzierte Resources spaeter geloescht oder
+  unsichtbar wurden.
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT` ohne Policy-Pruefung.
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`.
 - Policy-pflichtige Tools koennen ueber mindestens einen Grant-Pfad produktiv
@@ -765,15 +879,23 @@ Mindestfaelle:
 - wiederholter zweiter Aufruf nach `COMMITTED` liefert denselben Job.
 - parallele genehmigte Retries erzeugen hoechstens einen Job.
 - `DENIED`-Reservierungen liefern `POLICY_DENIED`.
+- `DENIED` ist ueber `denialExpiresAt` begrenzt und danach neu entscheidbar.
 - Quota- und Timeout-Faelle liefern `RATE_LIMITED` bzw.
   `OPERATION_TIMEOUT` und werden auditiert.
+- Quota folgt `reserve -> commit/refund/release`; `reserve` verhindert
+  Ueberbuchung, `refund` deckt Pre-Commit-Fehler ab, `release` terminale Jobs.
+- `RATE_LIMITED`, Start-Timeouts und retrybare technische Startfehler lassen
+  keine dauerhaft haengenden `PENDING`-Reservierungen zurueck.
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job und
   dedupliziert ueber `idempotencyKey`.
 - `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
   policy-pflichtig und auditierbar.
 - Connection-backed Starts akzeptieren nur tenant-scoped `connectionRef`.
+- Schema-backed Starts akzeptieren nur tenant-scoped oder sichtbare
+  `schemaRef`.
 - freie JDBC-Strings werden mit `VALIDATION_ERROR` abgewiesen.
-- `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen.
+- `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen; opake `jobId`
+  macht keinen globalen Cross-Tenant-Lookup.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
