@@ -217,6 +217,7 @@ aus Session-Metadaten gebildet:
 - `sizeBytes`
 - `checksumSha256`
 - `uploadIntent`
+- optionales `targetTable` fuer Single-File-`job_input`
 - Tenant
 - Principal
 - optionaler Zielkontext
@@ -300,6 +301,7 @@ Pflichteingaben:
 - fuer policy-pflichtige Intents:
   - `approvalKey`
   - optional `approvalToken`
+  - optional `targetTable` fuer Single-File-`job_input`
 - fuer resumable read-only Staging optional:
   - `clientRequestId`
 
@@ -322,6 +324,11 @@ Regeln:
   erlaubt.
 - `uploadIntent=job_input` ist policy-pflichtig.
 - `approvalKey` ist fuer policy-pflichtige Init-Pfade Pflicht.
+- `targetTable` ist nur fuer `uploadIntent=job_input` erlaubt, muss der
+  bestehenden CLI-Identifier-Validierung entsprechen und wird in
+  Approval-/Payload-Fingerprint sowie persistente Upload-Metadaten
+  uebernommen. Ohne `targetTable` bleibt `table` bei `data_import_start` fuer
+  Single-File-Artefakte verpflichtend.
 - gleicher Tenant, Caller, Toolname, `approvalKey` und
   `payloadFingerprint` liefern dieselbe Session.
 - gleicher Scope mit abweichendem Payload liefert `IDEMPOTENCY_CONFLICT`.
@@ -908,6 +915,13 @@ Tests:
   Berechtigung und Quota-Reservierung erzeugen; parallele gleiche Retries
   warten, liefern In-Progress oder replayen das spaetere Outcome, duerfen aber
   keine zweite Session erzeugen.
+  Der Init-Claim braucht eine Lease mit Claim-ID, `claimedAt` und
+  `leaseExpiresAt`. Ein Retry mit gleichem `(approvalKey, payloadFingerprint)`
+  darf eine aktive Lease nicht uebernehmen. Nach Lease-Ablauf darf ein neuer
+  Claim-Inhaber reclaimen, muss zuerst nach durablem Session-/Outcome-Record
+  suchen und diesen replayen bzw. den SyncEffect-Commit nachholen; nur wenn
+  kein solcher Record existiert, darf er die Session-Erzeugung fortsetzen.
+  Negative Clock-Jumps duerfen Leases nicht verlaengern.
   `commit(scope, resultRef)` darf erst nach durablem Commit von
   `UploadSession`, session-scoped Upload-Berechtigung und Quota-Reservierung
   erfolgen. `resultRef` ist entweder die `uploadSessionId` selbst oder eine
@@ -930,8 +944,16 @@ Tests:
 - Retry erzeugt keine zweite Session
 - parallele gleiche genehmigte Init-Retries erzeugen durch Init-Single-Writer-
   Claim maximal eine Session
+- Init-Claim mit aktiver Lease blockiert gleiche parallele Retries als
+  In-Progress
+- abgelaufener Init-Claim kann reclaimed werden und replayt zuerst durable
+  Session-/Outcome-Records
 - Retry nach Crash zwischen Session-Commit und SyncEffect-Commit replayt
   dieselbe `uploadSessionId`
+- `targetTable` in Init wird validiert, fingerprintet und als Upload-Metadatum
+  persistiert
+- ungueltiges oder fuer `schema_staging_readonly` gesetztes `targetTable` ->
+  `VALIDATION_ERROR`
 - `SyncEffectReserveOutcome.Existing(resultRef)` replayt dieselben Init-
   Antwortdaten ueber `uploadSessionId` oder `UploadInitOutcomeStore`
 - `schema_staging_readonly` mit anderem `artifactKind` -> `VALIDATION_ERROR`
@@ -1252,7 +1274,7 @@ Tests:
 - `spec/mcp-server.md` und `spec/ki-mcp.md` fuer Phase F aktualisieren.
 - CSV-Upload-MIME-Types `text/csv` und `application/csv` in der
   `spec/ki-mcp.md`-Allowlist, den Tool-Schemas, Beispielen und Golden Tests
-  nachziehen, sofern CSV-Import-Artefakte in Phase F erlaubt bleiben.
+  verbindlich nachziehen, weil CSV-Import-Artefakte in Phase F erlaubt sind.
 - Upload-Limits in `capabilities_list.limits` pruefen.
 - stdio-Integrationstest fuer mehrsegmentigen Upload.
 - HTTP-Integrationstest fuer mehrsegmentigen Upload ueber `contentBase64`.
@@ -1335,6 +1357,10 @@ Mindestfaelle:
   SyncEffect-Commit
 - parallele gleiche genehmigte Init-Retries waehlen genau einen Init-Claim-
   Besitzer
+- Init-Claim mit aktiver Lease liefert In-Progress, abgelaufene Lease wird
+  reclaimed und replayt durable Session-/Outcome-Records
+- `targetTable` in Init gueltig/ungueltig und fuer
+  `schema_staging_readonly` verboten
 - Init mit kanonischem `sizeBytes`
 - Init mit `sizeBytes=0` fuer erlaubtes nicht-Schema-`job_input`
 - Init mit `sizeBytes=0` fuer `schema_staging_readonly` oder
@@ -1426,7 +1452,9 @@ Mindestfaelle:
 - Parallele gleiche genehmigte Init-Retries sind single-writer; Phase F
   erweitert den SyncEffect-Store oder nutzt einen daran gebundenen
   `UploadInitClaimStore`, sodass maximal ein Claim-Inhaber Session,
-  Upload-Berechtigung und Quota-Reservierung erzeugt.
+  Upload-Berechtigung und Quota-Reservierung erzeugt. Der Claim hat
+  Lease-/Reclaim-Semantik, damit Crash vor Commit nicht dauerhaft
+  In-Progress blockiert.
 - Abweichender Payload mit gleichem `approvalKey`-Scope liefert
   `IDEMPOTENCY_CONFLICT`.
 - Read-only Schema-Staging kann weiterhin grosse Schemas ohne Write-Policy zu
