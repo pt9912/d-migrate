@@ -63,8 +63,8 @@ Nach Phase E soll gelten:
 - `schema_compare_start` laeuft auch ohne Connection-Ref policy-pflichtig und
   auditierbar.
 - `job_cancel` kann eigene oder erlaubte Jobs kontrolliert abbrechen.
-- Nach angenommenem Cancel publiziert der Worker keine neuen Artefakte und
-  startet keine weiteren Daten-Schreibabschnitte.
+- Nach angenommenem Cancel publizieren Phase-E-gemanagte Worker keine neuen
+  Artefakte und starten keine weiteren Schreibabschnitte.
 
 Wichtig: Phase E implementiert nicht `data_import_start`,
 `data_transfer_start`, policy-pflichtige Upload-Intents, KI-nahe Tools oder
@@ -336,8 +336,8 @@ Zustandsaenderung im gemeinsamen Jobmodell:
 - erfolgreich angenommene Abbrueche enden erst nach Worker-Ack oder
   Side-Effect-Barriere im Jobstatus `cancelled`
 - Worker beobachten `CancellationToken` oder Worker-Handle
-- nach angenommenem Cancel keine neuen Artefakte und keine neuen
-  Daten-Schreibabschnitte
+- nach angenommenem Cancel starten Phase-E-gemanagte Worker keine neuen
+  Artefakte oder Schreibabschnitte
 
 ### 4.6 Timeouts und Quotas sind fachliche Outcomes
 
@@ -383,6 +383,9 @@ Ausgabe:
 - Job-`resourceUri`
 - `executionMeta`
 - bei aktiver `PENDING`-Reservierung ohne `jobId`:
+  gespeichertes Retry-Outcome (`RATE_LIMITED` oder temporaerer
+  Materialisierungsfehler) wird deterministisch wiederholt; ohne
+  gespeichertes Outcome liefert der Aufruf nach Start-Budget
   `OPERATION_TIMEOUT` mit `retryable=true`, `retryAfter` und ohne internen
   Idempotency-State in der Response
 - bei fehlender Freigabe: `POLICY_REQUIRED` mit Challenge
@@ -596,7 +599,9 @@ Regeln:
 - freie JDBC-Strings sind verboten
 - Tool ist immer policy-gesteuert
 - fehlender `idempotencyKey` liefert `IDEMPOTENCY_KEY_REQUIRED`
-- fehlender Grant liefert `POLICY_REQUIRED`
+- fehlender Grant liefert nur dann `POLICY_REQUIRED`, wenn die Policy-
+  Entscheidung `RequiresApproval` ist; direkte `ALLOW`-Policy startet ohne
+  Grant
 - genehmigter Retry startet genau einen Job
 
 ### 6.2 `data_profile_start`
@@ -676,6 +681,10 @@ Regeln:
 - Bei `Blocked` Phase E nicht fortsetzen.
 - `CancellationToken` / Worker-Handle-Vertrag final platzieren.
 - Runner-Checkpoints aus E0 als verbindliche Eingabe fuer Phase E uebernehmen.
+- E0-Ergebnisse fuer `DataImportRunner` und `DataTransferRunner` als
+  dokumentierte Vorarbeit uebernehmen, aber keine produktive Phase-E-
+  Abnahme fuer Import-/Transfer-Cancel beanspruchen, solange
+  `data_import_start` und `data_transfer_start` nicht in Scope sind.
 - Zusaetzliches Phase-E-Gate fuer `schema_compare_start` definieren, weil E0
   neue Start-Tools ausschliesst: Compare-Materialisierung, Diff-Berechnung und
   Artefakt-/Resource-Publish muessen Cancel-Checkpoints nachweisen, bevor
@@ -685,6 +694,8 @@ Tests/Gate:
 
 - E0-Ergebnis ist dokumentiert
 - relevante Runner koennen Cancel typisiert signalisieren
+- Import-/Transfer-Cancel-Nachweis aus E0 ist dokumentiert und als
+  Folgeumfang markiert, nicht als Phase-E-Produktivabnahme
 - Compare-Cancel-Gate ist dokumentiert und blockiert Phase E bei fehlendem
   Nachweis
 
@@ -773,7 +784,8 @@ Tests:
 
 Tests:
 
-- fehlender Grant -> `POLICY_REQUIRED` mit Challenge
+- fehlender Grant bei `RequiresApproval` -> `POLICY_REQUIRED` mit Challenge
+- direkte `ALLOW`-Policy startet ohne Grant
 - ungueltiger Grant -> weiterhin keine Job-Erzeugung
 - gueltiger Grant passt nur fuer gebundenen Fingerprint
 - gueltiger Grant passt nur fuer aktuelle `approvalRequestId`
@@ -784,7 +796,8 @@ Tests:
 - konfigurierte Policy-Allowlist ohne GrantIssuer startet direkt erlaubte
   Requests, erzeugt aber kein `approvalToken`
 - rohe Tokens erscheinen nicht in Store oder Audit
-- fehlender Grant-Aussteller ist dokumentiert fail-closed
+- fehlender Grant-Aussteller ist fuer `RequiresApproval` dokumentiert
+  fail-closed
 - direkte `ALLOW`-Policy ohne Grant-Aussteller startet erlaubte Requests,
   waehrend `RequiresApproval` ohne Grant-Aussteller fail-closed bleibt
 
@@ -828,7 +841,8 @@ Tests:
 - nicht sichtbare oder fremde Connection-/Schema-Ref nach Idempotency als
   gespeichertes finales Outcome
 - freie JDBC-URL
-- fehlender Grant
+- fehlender Grant bei `RequiresApproval`
+- direkte `ALLOW`-Policy ohne Grant
 - erfolgreicher genehmigter Start
 - deduplizierter Retry
 
@@ -852,6 +866,8 @@ Tests:
 - `schema_compare_start` ohne Connection-Ref bleibt policy-pflichtig
 - Cancel vor oder waehrend Compare-Materialisierung verhindert Diff- und
   Artefakt-Publish
+- Import-/Transfer-Runner sind in Phase E nicht produktiv verdrahtet; deren
+  Daten-Schreibstopp bleibt auf E0-Nachweis und Folgephase begrenzt
 - Secrets erscheinen nicht in Job-, Artefakt- oder Audit-Projektionen
 
 ### 7.8 AP E.8: `job_cancel` implementieren
@@ -1013,9 +1029,11 @@ Mindestfaelle:
 - `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
   unsichtbarer Resource
 - paralleler identischer Start auf aktiver `PENDING`-Reservierung liefert
-  retrybares `OPERATION_TIMEOUT` statt internem State
+  gespeichertes Retry-Outcome oder ohne gespeichertes Outcome retrybares
+  `OPERATION_TIMEOUT` statt internem State
 - Konflikt ohne Policy-Pruefung
-- erster Start ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
+- erster `RequiresApproval`-Start ohne Grant -> `AWAITING_APPROVAL` +
+  `POLICY_REQUIRED`
 - zweiter Start mit Grant -> genau ein Job
 - genehmigter Retry nach recoverable `PENDING` braucht gespeicherte gueltige
   Approval-Bindung oder neuen gueltigen Grant
@@ -1035,6 +1053,8 @@ Mindestfaelle:
   deterministisch wiederholt
 - temporaerer Materialisierungsfehler nach Idempotency bleibt recoverable
 - Compare-Cancel vor Materialisierung/Diff-Publish
+- Phase-E-Cancel-Abnahme beansprucht keine produktive Import-/Transfer-
+  Cancel-Integration
 - Cancel eigener Job
 - Cancel ohne Scope erzeugt Audit/403 ohne Job-Lookup
 - Cancel tenant-scoped URI ausserhalb `allowedTenantIds`
@@ -1060,8 +1080,9 @@ Mindestfaelle:
   und bleibt stabil, wenn referenzierte Resources spaeter geloescht oder
   unsichtbar wurden.
 - aktive `PENDING`-Reservierungen ohne `jobId` werden nicht als interner State
-  exponiert; identische parallele Aufrufe liefern nach Start-Budget
-  retrybares `OPERATION_TIMEOUT`.
+  exponiert; gespeicherte Retry-Outcomes werden deterministisch wiederholt,
+  sonst liefern identische parallele Aufrufe nach Start-Budget retrybares
+  `OPERATION_TIMEOUT`.
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT` ohne Policy-Pruefung.
 - fehlender oder unzureichender `dmigrate:job:start`-Scope erzeugt keine
   Idempotency-Reservierung und keine Approval-Challenge.
@@ -1071,7 +1092,7 @@ Mindestfaelle:
 - ohne konfigurierten Grant-Aussteller ist das Verhalten fail-closed und
   fuer `RequiresApproval`-/Challenge-Flows dokumentiert.
 - direkte `ALLOW`-Policies koennen auch ohne Grant-Aussteller starten.
-- erster policy-pflichtiger Start ohne Grant erzeugt `AWAITING_APPROVAL`.
+- erster Start mit `RequiresApproval` ohne Grant erzeugt `AWAITING_APPROVAL`.
 - zweiter Aufruf mit gueltigem Grant startet genau einen Job und setzt die
   Reservierung auf `COMMITTED`.
 - Approval-Grants sind an die aktuelle `approvalRequestId` der
@@ -1106,6 +1127,10 @@ Mindestfaelle:
   policy-pflichtig und auditierbar.
 - `schema_compare_start` ist erst produktiv aktivierbar, wenn Compare-
   Materialisierung und Diff-/Artefakt-Publish Cancel-Checkpoints nachweisen.
+- Phase E garantiert den Side-Effect-Stopp nur fuer Phase-E-gemanagte Worker
+  (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`);
+  Import-/Transfer-Cancel bleibt bis zur Aufnahme dieser Start-Tools
+  Folgeumfang.
 - Connection-backed Starts akzeptieren nur tenant-scoped `connectionRef`.
 - Schema-backed Starts akzeptieren nur tenant-scoped oder sichtbare
   `schemaRef`.
@@ -1128,8 +1153,8 @@ Mindestfaelle:
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
-- nach angenommenem Cancel publiziert der Worker keine neuen Artefakte und
-  startet keine weiteren Daten-Schreiboperationen.
+- nach angenommenem Cancel publizieren Phase-E-gemanagte Worker keine neuen
+  Artefakte und starten keine weiteren Schreibabschnitte.
 - rohe Approval-Tokens, Connection-Secrets und JDBC-URLs erscheinen nicht in
   Stores, Tool-Responses oder Audit.
 - alle fruehen Fehlerpfade werden im Around-/Finally-Audit abgeschlossen.
