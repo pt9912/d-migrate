@@ -14,52 +14,56 @@ import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.upload.AssembledUploadPayload
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.ports.SchemaRegisterOutcome
 import dev.dmigrate.server.ports.SchemaStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
-import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.time.Clock
 import java.time.Duration
-import java.util.UUID
 
 /**
- * AP 6.9: finalises a COMPLETED read-only schema-staging session per
- * `ImpPlan-0.9.6-C.md` §6.9 and `spec/ki-mcp.md` §5.3 line 421-426.
+ * AP 6.9 + AP 6.22: finalises a `FINALIZING` read-only schema-staging
+ * session per `ImpPlan-0.9.6-C.md` §6.9 + §6.22.
  *
- * Called by `ArtifactUploadHandler` once `isFinalSegment=true` has
- * passed every AP-6.8 invariant (segments complete, cumulative size
- * matches, total SHA-256 matches). The finaliser:
+ * Called by `StreamingFinalizer` (the upload handler's claim-and-
+ * finalise pipeline) after the streaming-assembly spool has produced
+ * a re-openable [AssembledUploadPayload]. The finaliser:
  *
- * 1. parses the assembled bytes via the existing format codec
+ * 1. parses the assembled bytes via the existing format codec —
+ *    streaming via [AssembledUploadPayload.openStream]
  * 2. validates the parsed `SchemaDefinition` via [SchemaValidator]
  * 3. on success: materialises an immutable artefact in
- *    [ArtifactContentStore], registers the matching [ArtifactRecord]
- *    and a tenant-scoped [SchemaIndexEntry], and returns the
- *    `schemaRef` URI for the wire response
+ *    [ArtifactContentStore] under the supplied deterministic
+ *    [artifactId], registers the matching [ArtifactRecord], and
+ *    idempotently registers the [SchemaIndexEntry] under the
+ *    deterministic [schemaId]; returns the `schemaRef` URI
  * 4. on parse/validation failure: throws `VALIDATION_ERROR` with
- *    structured findings; AP 6.8 catches the throw, rolls the
- *    session to `ABORTED` so the bytes get cleaned up, and bubbles
- *    the typed envelope to the client
+ *    structured findings; `StreamingFinalizer` catches the throw,
+ *    persists a sanitised [dev.dmigrate.server.core.upload.FinalizationOutcome]
+ *    and rolls the session to `ABORTED`
  *
- * Codec/IO exceptions are sanitised to `VALIDATION_ERROR` so the
- * client never sees a raw Jackson stack trace across the trust
- * boundary (§6.4 acceptance is reused here).
+ * AP 6.22 idempotency: a replay carrying the same [artifactId] /
+ * [schemaId] (because the deterministic derivation produces the same
+ * IDs for the same payload) is a no-op — `ArtifactContentStore.write`
+ * returns `AlreadyExists` and `SchemaStore.register` returns
+ * `AlreadyRegistered`, both of which are accepted as success here.
+ * Differing SHA / size / `artifactRef` under the same id is hard
+ * internal inconsistency and surfaces as
+ * [InternalAgentErrorException].
  */
 fun interface SchemaStagingFinalizer {
 
-    /**
-     * Finalises [session] using [assembledBytes] (the rebuilt
-     * payload from all segments in index order). Returns the
-     * registered `schemaRef` URI on success; throws on failure.
-     */
     fun complete(
         session: UploadSession,
         principal: PrincipalContext,
-        assembledBytes: ByteArray,
+        payload: AssembledUploadPayload,
+        artifactId: String,
+        schemaId: String,
         format: String,
     ): ServerResourceUri
 }
@@ -67,7 +71,9 @@ fun interface SchemaStagingFinalizer {
 /**
  * Production implementation: parses + validates with the existing
  * codecs and validator, then materialises through the Phase-A
- * artefact ports.
+ * artefact ports. Streams the payload twice via
+ * [AssembledUploadPayload.openStream] so the heap stays bounded by
+ * the codec / store buffer sizes, not by the payload size.
  */
 class DefaultSchemaStagingFinalizer(
     private val artifactStore: ArtifactStore,
@@ -77,17 +83,17 @@ class DefaultSchemaStagingFinalizer(
     private val clock: Clock,
     private val artifactTtl: Duration = ARTIFACT_TTL,
     private val schemaTtl: Duration = SCHEMA_TTL,
-    private val artifactIdGenerator: () -> String = ::generateArtifactId,
-    private val schemaIdGenerator: () -> String = ::generateSchemaId,
 ) : SchemaStagingFinalizer {
 
     override fun complete(
         session: UploadSession,
         principal: PrincipalContext,
-        assembledBytes: ByteArray,
+        payload: AssembledUploadPayload,
+        artifactId: String,
+        schemaId: String,
         format: String,
     ): ServerResourceUri {
-        val schemaDef = parseSchema(assembledBytes, format)
+        val schemaDef = parseSchema(payload, format)
         val result = validator.validate(schemaDef)
         if (!result.isValid) {
             throw ValidationErrorException(
@@ -96,12 +102,12 @@ class DefaultSchemaStagingFinalizer(
                 },
             )
         }
-        val artifactId = materialiseArtifact(session, principal, assembledBytes)
-        return registerSchemaRef(session, principal, schemaDef, artifactId)
+        materialiseArtifact(session, principal, payload, artifactId)
+        return registerSchemaRef(session, principal, schemaDef, artifactId, schemaId)
     }
 
     @Suppress("SwallowedException")
-    private fun parseSchema(bytes: ByteArray, format: String): SchemaDefinition {
+    private fun parseSchema(payload: AssembledUploadPayload, format: String): SchemaDefinition {
         val codec = try {
             SchemaFileResolver.codecForFormat(format)
         } catch (e: IllegalArgumentException) {
@@ -111,12 +117,12 @@ class DefaultSchemaStagingFinalizer(
                 listOf(ValidationViolation("format", e.message ?: "unsupported format '$format'")),
             )
         }
-        return readBytesAsSchema(codec, bytes)
+        return readPayloadAsSchema(codec, payload)
     }
 
     @Suppress("SwallowedException")
-    private fun readBytesAsSchema(codec: SchemaCodec, bytes: ByteArray): SchemaDefinition = try {
-        ByteArrayInputStream(bytes).use { codec.read(it) }
+    private fun readPayloadAsSchema(codec: SchemaCodec, payload: AssembledUploadPayload): SchemaDefinition = try {
+        payload.openStream().use { codec.read(it) }
     } catch (e: IOException) {
         // SwallowedException: same trust-boundary rule as AP 6.4 —
         // never leak the raw codec stack across the wire.
@@ -132,23 +138,34 @@ class DefaultSchemaStagingFinalizer(
     private fun materialiseArtifact(
         session: UploadSession,
         principal: PrincipalContext,
-        bytes: ByteArray,
-    ): String {
-        val artifactId = artifactIdGenerator()
-        when (
+        payload: AssembledUploadPayload,
+        artifactId: String,
+    ) {
+        // AP 6.22: idempotent — `AlreadyExists` is accepted only when
+        // the persisted SHA + size match the supplied payload (the
+        // deterministic [artifactId] derivation guarantees the SHA
+        // match, but a defensive size cross-check catches store
+        // metadata drift).
+        val outcome = payload.openStream().use { source ->
             artifactContentStore.write(
                 artifactId = artifactId,
-                source = ByteArrayInputStream(bytes),
-                expectedSizeBytes = bytes.size.toLong(),
+                source = source,
+                expectedSizeBytes = payload.sizeBytes,
             )
-        ) {
-            is WriteArtifactOutcome.Stored,
-            is WriteArtifactOutcome.AlreadyExists -> Unit
+        }
+        when (outcome) {
+            is WriteArtifactOutcome.Stored -> Unit
+            is WriteArtifactOutcome.AlreadyExists -> {
+                if (outcome.existingSha256 != payload.sha256 ||
+                    outcome.existingSizeBytes != payload.sizeBytes
+                ) {
+                    throw InternalAgentErrorException()
+                }
+            }
             is WriteArtifactOutcome.SizeMismatch,
             is WriteArtifactOutcome.Conflict -> throw InternalAgentErrorException()
         }
         val now = clock.instant()
-        val sha256 = sha256Hex(bytes)
         val resourceUri = ServerResourceUri(session.tenantId, ResourceKind.ARTIFACTS, artifactId)
         artifactStore.save(
             ArtifactRecord(
@@ -156,8 +173,8 @@ class DefaultSchemaStagingFinalizer(
                     artifactId = artifactId,
                     filename = "schema-${session.uploadSessionId}.json",
                     contentType = "application/json",
-                    sizeBytes = bytes.size.toLong(),
-                    sha256 = sha256,
+                    sizeBytes = payload.sizeBytes,
+                    sha256 = payload.sha256,
                     createdAt = now,
                     expiresAt = now.plus(artifactTtl),
                 ),
@@ -168,7 +185,6 @@ class DefaultSchemaStagingFinalizer(
                 resourceUri = resourceUri,
             ),
         )
-        return artifactId
     }
 
     private fun registerSchemaRef(
@@ -176,43 +192,37 @@ class DefaultSchemaStagingFinalizer(
         principal: PrincipalContext,
         schema: SchemaDefinition,
         artifactRef: String,
+        schemaId: String,
     ): ServerResourceUri {
-        val schemaId = schemaIdGenerator()
         val now = clock.instant()
         val schemaUri = ServerResourceUri(session.tenantId, ResourceKind.SCHEMAS, schemaId)
         val displayName = schema.name.ifBlank { schemaId }
-        schemaStore.save(
-            SchemaIndexEntry(
-                schemaId = schemaId,
-                tenantId = session.tenantId,
-                resourceUri = schemaUri,
-                artifactRef = artifactRef,
-                displayName = displayName,
-                createdAt = now,
-                expiresAt = now.plus(schemaTtl),
-                jobRef = null,
-                labels = mapOf(
-                    "uploadSessionId" to session.uploadSessionId,
-                    "ownerPrincipalId" to principal.principalId.value,
-                ),
+        val entry = SchemaIndexEntry(
+            schemaId = schemaId,
+            tenantId = session.tenantId,
+            resourceUri = schemaUri,
+            artifactRef = artifactRef,
+            displayName = displayName,
+            createdAt = now,
+            expiresAt = now.plus(schemaTtl),
+            jobRef = null,
+            labels = mapOf(
+                "uploadSessionId" to session.uploadSessionId,
+                "ownerPrincipalId" to principal.principalId.value,
             ),
         )
-        return schemaUri
-    }
-
-    private fun sha256Hex(bytes: ByteArray): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
-        return digest.joinToString("") { "%02x".format(it) }
+        return when (val outcome = schemaStore.register(entry)) {
+            is SchemaRegisterOutcome.Registered -> outcome.entry.resourceUri
+            // AP 6.22: replay of the same deterministic schemaId with
+            // the same artefact is idempotent — return the previously
+            // registered URI verbatim.
+            is SchemaRegisterOutcome.AlreadyRegistered -> outcome.existing.resourceUri
+            is SchemaRegisterOutcome.Conflict -> throw InternalAgentErrorException()
+        }
     }
 
     companion object {
         val ARTIFACT_TTL: Duration = Duration.ofDays(7)
         val SCHEMA_TTL: Duration = Duration.ofDays(7)
-
-        private fun generateArtifactId(): String =
-            "art-${UUID.randomUUID().toString().replace("-", "").take(16)}"
-
-        private fun generateSchemaId(): String =
-            "schema-${UUID.randomUUID().toString().replace("-", "").take(16)}"
     }
 }

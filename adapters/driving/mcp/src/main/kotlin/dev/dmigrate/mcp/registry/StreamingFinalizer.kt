@@ -94,14 +94,16 @@ internal class StreamingFinalizer(
             )
 
             val schemaUri = try {
-                // C5 will replace this readAllBytes() bridge with a
-                // streaming finaliser API; the spool already keeps
-                // the on-wire heap deterministic so only the local
-                // finaliser copy still scales with payload size.
+                // AP 6.22 C5: pass the payload through directly so the
+                // finaliser parses + materialises via streams. Heap
+                // peak is now `O(maxUploadSegmentBytes + buffer)`,
+                // not `O(sizeBytes)`.
                 finalizer.complete(
                     session = claimedSession,
                     principal = principal,
-                    assembledBytes = payload.openStream().use { it.readAllBytes() },
+                    payload = payload,
+                    artifactId = artifactId,
+                    schemaId = schemaId,
                     format = format,
                 )
             } catch (failure: RuntimeException) {

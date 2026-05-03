@@ -120,7 +120,7 @@ class PhaseCWiringTest : FunSpec({
         // staging strategy. The default-registry must thread it
         // through to ArtifactUploadHandler.
         val recorded = mutableListOf<String>()
-        val stub = SchemaStagingFinalizer { session, _, _, _ ->
+        val stub = SchemaStagingFinalizer { session, _, _, _, _, _ ->
             recorded += "complete=${session.uploadSessionId}"
             dev.dmigrate.server.core.resource.ServerResourceUri(
                 session.tenantId,

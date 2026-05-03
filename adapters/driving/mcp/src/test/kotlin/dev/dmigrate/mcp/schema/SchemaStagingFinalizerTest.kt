@@ -9,6 +9,7 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.upload.AssembledUploadPayload
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
 import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
@@ -18,8 +19,8 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain as shouldContainString
+import java.security.MessageDigest
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -57,7 +58,7 @@ private fun session(
     segmentTotal = 1,
     checksumSha256 = checksumSha256,
     uploadIntent = "schema_staging_readonly",
-    state = UploadSessionState.COMPLETED,
+    state = UploadSessionState.FINALIZING,
     createdAt = FIXED_NOW,
     updatedAt = FIXED_NOW,
     idleTimeoutAt = FIXED_NOW.plusSeconds(300),
@@ -72,17 +73,19 @@ private fun finalizer(
     artifactStore: InMemoryArtifactStore = InMemoryArtifactStore(),
     contentStore: InMemoryArtifactContentStore = InMemoryArtifactContentStore(),
     schemaStore: InMemorySchemaStore = InMemorySchemaStore(),
-    artifactId: String = "art-fixed",
-    schemaId: String = "schema-fixed",
 ): DefaultSchemaStagingFinalizer = DefaultSchemaStagingFinalizer(
     artifactStore = artifactStore,
     artifactContentStore = contentStore,
     schemaStore = schemaStore,
     validator = SchemaValidator(),
     clock = FIXED_CLOCK,
-    artifactIdGenerator = { artifactId },
-    schemaIdGenerator = { schemaId },
 )
+
+private fun payloadOf(bytes: ByteArray): AssembledUploadPayload =
+    AssembledUploadPayload.fromBytes(bytes, sha256Hex(bytes))
+
+private fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 class SchemaStagingFinalizerTest : FunSpec({
 
@@ -92,21 +95,27 @@ class SchemaStagingFinalizerTest : FunSpec({
         val schemaStore = InMemorySchemaStore()
         val sut = finalizer(artifactStore, contentStore, schemaStore)
         val bytes = VALID_SCHEMA.toByteArray()
-        val uri = sut.complete(session(bytes.size.toLong()), PRINCIPAL, bytes, format = "json")
+        val uri = sut.complete(
+            session = session(bytes.size.toLong(), checksumSha256 = sha256Hex(bytes)),
+            principal = PRINCIPAL,
+            payload = payloadOf(bytes),
+            artifactId = "art-fixed",
+            schemaId = "schema-fixed",
+            format = "json",
+        )
 
         uri.tenantId shouldBe ACME
         uri.kind shouldBe ResourceKind.SCHEMAS
         uri.id shouldBe "schema-fixed"
 
-        // Artefact persisted with bytes and metadata.
         contentStore.exists("art-fixed") shouldBe true
         val record = artifactStore.findById(ACME, "art-fixed")!!
         record.kind shouldBe ArtifactKind.SCHEMA
         record.tenantId shouldBe ACME
         record.ownerPrincipalId shouldBe ALICE
         record.managedArtifact.sizeBytes shouldBe bytes.size.toLong()
+        record.managedArtifact.sha256 shouldBe sha256Hex(bytes)
 
-        // Schema index entry registered with the artefact link.
         val entry = schemaStore.findById(ACME, "schema-fixed")!!
         entry.artifactRef shouldBe "art-fixed"
         entry.displayName shouldBe "orders"
@@ -119,21 +128,32 @@ class SchemaStagingFinalizerTest : FunSpec({
         val sut = finalizer(schemaStore = schemaStore)
         val malformed = "{ not valid json".toByteArray()
         val ex = shouldThrow<ValidationErrorException> {
-            sut.complete(session(malformed.size.toLong()), PRINCIPAL, malformed, format = "json")
+            sut.complete(
+                session = session(malformed.size.toLong()),
+                principal = PRINCIPAL,
+                payload = payloadOf(malformed),
+                artifactId = "art-fixed",
+                schemaId = "schema-fixed",
+                format = "json",
+            )
         }
         ex.violations.map { it.field } shouldContain "schema"
-        // No schemaRef must be registered on a parse failure.
         schemaStore.findById(ACME, "schema-fixed") shouldBe null
     }
 
     test("invalid SchemaDefinition surfaces every validator error as a structured violation") {
-        // Table with no columns triggers SchemaStructure E001
-        // ("Table has no columns").
         val schemaStore = InMemorySchemaStore()
         val sut = finalizer(schemaStore = schemaStore)
         val invalid = """{"name":"x","version":"1.0","tables":{"t1":{"columns":{}}}}""".toByteArray()
         val ex = shouldThrow<ValidationErrorException> {
-            sut.complete(session(invalid.size.toLong()), PRINCIPAL, invalid, format = "json")
+            sut.complete(
+                session = session(invalid.size.toLong()),
+                principal = PRINCIPAL,
+                payload = payloadOf(invalid),
+                artifactId = "art-fixed",
+                schemaId = "schema-fixed",
+                format = "json",
+            )
         }
         ex.violations.map { it.field } shouldContain "tables.t1"
         ex.violations.first().reason shouldContainString "E001"
@@ -144,21 +164,50 @@ class SchemaStagingFinalizerTest : FunSpec({
         val sut = finalizer()
         val bytes = VALID_SCHEMA.toByteArray()
         val ex = shouldThrow<ValidationErrorException> {
-            sut.complete(session(bytes.size.toLong()), PRINCIPAL, bytes, format = "toml")
+            sut.complete(
+                session = session(bytes.size.toLong()),
+                principal = PRINCIPAL,
+                payload = payloadOf(bytes),
+                artifactId = "art-fixed",
+                schemaId = "schema-fixed",
+                format = "toml",
+            )
         }
         ex.violations.map { it.field } shouldContain "format"
     }
 
-    test("two finalisations of the same session content produce distinct schemaRef ids") {
-        // Each call mints a fresh schemaId and artifactId per the
-        // generator hooks; the test confirms the finalizer doesn't
-        // accidentally dedupe by content alone (callers manage
-        // idempotency at the upload-session layer).
-        val firstRun = finalizer(artifactId = "art-1", schemaId = "schema-1")
-        val secondRun = finalizer(artifactId = "art-2", schemaId = "schema-2")
+    test("AP 6.22: re-finalising the same payload under the same deterministic ids is idempotent") {
+        // Replays after a crash carry the same deterministic
+        // artifactId / schemaId derived from (tenant, sessionId,
+        // payloadSha, format). The finaliser must accept
+        // ArtifactContentStore.AlreadyExists + SchemaStore.AlreadyRegistered
+        // as success and return the same schemaRef URI.
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val schemaStore = InMemorySchemaStore()
+        val sut = finalizer(artifactStore, contentStore, schemaStore)
         val bytes = VALID_SCHEMA.toByteArray()
-        val a = firstRun.complete(session(bytes.size.toLong(), "ups-a"), PRINCIPAL, bytes, format = "json")
-        val b = secondRun.complete(session(bytes.size.toLong(), "ups-b"), PRINCIPAL, bytes, format = "json")
-        a.id shouldNotBe b.id
+
+        val first = sut.complete(
+            session = session(bytes.size.toLong()),
+            principal = PRINCIPAL,
+            payload = payloadOf(bytes),
+            artifactId = "art-det",
+            schemaId = "schema-det",
+            format = "json",
+        )
+        val second = sut.complete(
+            session = session(bytes.size.toLong()),
+            principal = PRINCIPAL,
+            payload = payloadOf(bytes),
+            artifactId = "art-det",
+            schemaId = "schema-det",
+            format = "json",
+        )
+
+        first shouldBe second
+        // Still exactly one persisted entry under each id.
+        contentStore.exists("art-det") shouldBe true
+        schemaStore.findById(ACME, "schema-det")!!.artifactRef shouldBe "art-det"
     }
 })

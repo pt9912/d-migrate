@@ -271,7 +271,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         // Stub finalizer pins the schemaRef on the first call so the
         // replay has something deterministic to return.
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
-        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
+        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _, _, _ -> schemaUri }
         val payload = "abcdefgh".toByteArray()
         val totalHash = sha256Hex(payload)
         val f = fixture(finalizer = stubFinalizer)
@@ -298,7 +298,7 @@ class ArtifactUploadHandlerTest : FunSpec({
 
     test("AP 6.18: replay with divergent hash at same index throws IDEMPOTENCY_CONFLICT") {
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
-        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
+        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _, _, _ -> schemaUri }
         val payload = "abcdefgh".toByteArray()
         val totalHash = sha256Hex(payload)
         val f = fixture(finalizer = stubFinalizer)
@@ -612,7 +612,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         val seg2 = "12345678".toByteArray()
         val claimedTotalHash = "f".repeat(64) // wrong on purpose
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "stub")
-        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _ -> schemaUri }
+        val stubFinalizer = SchemaStagingFinalizer { _, _, _, _, _, _ -> schemaUri }
         val f = fixture(finalizer = stubFinalizer)
         stageSession(f, "ups-1", 16, segmentTotal = 2, checksumSha256 = claimedTotalHash)
         f.handler.handle(
@@ -813,9 +813,9 @@ class ArtifactUploadHandlerTest : FunSpec({
         // covered by SchemaStagingFinalizerTest.
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
         val recorded = mutableListOf<String>()
-        val stubFinalizer = SchemaStagingFinalizer { session, principal, bytes, _ ->
+        val stubFinalizer = SchemaStagingFinalizer { session, principal, payload, _, _, _ ->
             recorded += "complete(session=${session.uploadSessionId}," +
-                "principal=${principal.principalId.value},bytes=${bytes.size})"
+                "principal=${principal.principalId.value},bytes=${payload.sizeBytes})"
             schemaUri
         }
         val payload = "abcdefgh".toByteArray()
@@ -874,7 +874,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         // session to ABORTED so segment cleanup runs on the standard
         // lifecycle path; the exception propagates so the client sees
         // structured findings.
-        val angryFinalizer = SchemaStagingFinalizer { _, _, _, _ ->
+        val angryFinalizer = SchemaStagingFinalizer { _, _, _, _, _, _ ->
             throw dev.dmigrate.server.application.error.ValidationErrorException(
                 listOf(
                     dev.dmigrate.server.application.error.ValidationViolation(
