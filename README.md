@@ -80,6 +80,8 @@ Haeufige Ziele:
 ```bash
 make build          # ./gradlew build
 make test           # ./gradlew test
+make gates          # Gradle check, Coverage-Gate und docs-check
+make ci             # ./gradlew build plus Coverage-Gate und docs-check
 make smoke          # CLI-Distribution bauen und --version/--help pruefen
 make integration    # Testcontainers-Integrationstests via Docker-Script
 make docs-check     # Markdown-Linkziele in docs/ pruefen

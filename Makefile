@@ -22,7 +22,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke release-assets docker-build docker-check docker-test docker-smoke clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-smoke clean
 
 help:
 	@printf '%s\n' \
@@ -38,6 +38,8 @@ help:
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links in docs/' \
 		'  make smoke            Build the CLI distribution and run --version/--help' \
+		'  make gates            Run check, coverage and docs gates' \
+		'  make ci               Run build, coverage and docs gates' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
@@ -90,6 +92,10 @@ smoke:
 	$(GRADLE) $(CLI_PROJECT):installDist
 	$(CLI_BIN) --version
 	$(CLI_BIN) --help
+
+gates: check coverage-gate docs-check
+
+ci: build coverage-gate docs-check
 
 release-assets:
 	$(GRADLE) $(CLI_PROJECT):assembleReleaseAssets
