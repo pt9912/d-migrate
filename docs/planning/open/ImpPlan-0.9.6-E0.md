@@ -172,6 +172,19 @@ unkontrolliert lange blockieren kann. In diesem Fall muss E0 entweder eine
 kooperative Cancel-Grenze am Port/Adapter nachweisen oder den Pfad als
 blockierend markieren.
 
+Ein nicht-cancelbarer, aber atomarer Call ist nur gate-faehig, wenn alle
+folgenden Schwellen eingehalten und dokumentiert sind:
+
+- kein interner Retry-/Reconnect-Loop ohne hartes Timeout
+- maximale erwartete Laufzeit und Timeout liegen innerhalb des fuer Phase E
+  akzeptierten Cancel-Reaktionsfensters
+- nach Timeout oder Fehler startet der Runner keinen weiteren Side Effect
+- der Call haelt keine offene Transaktion, Session, Sperre oder temporaere
+  Ressource ueber das Timeout hinaus
+
+Ohne belegtes Timeout-/Laufzeitfenster gilt `atomar aber nicht cancelbar` als
+`Blocked`, nicht als `Go mit Nacharbeiten`.
+
 Verbindliche Folge:
 
 - kein `Thread.stop`
@@ -453,11 +466,32 @@ Tests:
 - Ergebnis in diesem Plan oder einer separaten Tabelle unter
   `docs/planning/open/` nachziehen.
 
+Pflichtschema fuer die Checkpoint-/Side-Effect-Matrix:
+
+| Feld | Pflichtinhalt |
+| --- | --- |
+| `runner` | betroffener Runner/Service/Adapter |
+| `pipeline` | fachlicher Pfad, z. B. Reverse-Publish oder Import-Chunk |
+| `operation` | konkreter Call oder Schritt |
+| `operation_type` | `loop`, `side_effect`, `monolithic_call`, `cleanup` |
+| `side_effect` | Artefakt, DB-Write, Checkpoint, Spool, Session oder `none` |
+| `checkpoint_before` | konkrete Code-/Port-Grenze vor dem Side Effect |
+| `cancel_reaction` | Exception/Result, kein weiterer Write, abort/close usw. |
+| `atomicity` | `atomic`, `multi_step`, `unknown` |
+| `timeout_or_bound` | Timeout, Laufzeitgrenze oder begruendetes `not_applicable` |
+| `cleanup_contract` | `close`, `abort`, Rollback, Delete oder `not_needed` |
+| `test_coverage` | Testname oder `missing` |
+| `gate_result` | `go`, `go_followup`, `blocked` |
+| `followup` | nur fuer nicht-blockierende Nacharbeit, sonst leer |
+
 Tests/Gate:
 
 - Inventar deckt Reverse, Profiling, Import, Transfer und Streaming-/Writer-
   Pfade ab
 - kein Side Effect ohne vorherigen Cancel-Checkpoint bleibt unbegruendet
+- jede Matrix-Zeile mit `test_coverage = missing`, `atomicity = unknown` oder
+  fehlendem `timeout_or_bound` ist automatisch `blocked`, sofern ein externer
+  Side Effect oder ein potentiell langer monolithischer Call betroffen ist
 
 ### 7.3 AP E0.3: Runner-Signaturen minimal erweitern
 
@@ -533,6 +567,22 @@ Gate-Regel:
   Cancel-Stopp, keine Cleanup-Assertion, kein typisiertes Cancel-Outcome oder
   keine belastbare Klassifikation eines langen monolithischen Calls nachweist.
 
+Zulaessige `Go mit Nacharbeiten`-Nacharbeiten sind ausschliesslich:
+
+- Dokumentationsverdichtung ohne neue technische Semantik
+- zusaetzliche positive Tests fuer bereits abgedeckte Pfade
+- Refactoring bereits nachgewiesener Checkpoint-Platzierung ohne
+  Vertragsaenderung
+- Phase-E-Wiring von bereits typisierten Cancel-Outcomes in Status und Audit
+
+Nicht zulaessig fuer `Go mit Nacharbeiten` und daher `Blocked`:
+
+- fehlende Tests fuer eine Side-Effect-Pipeline
+- unbekannte Atomaritaet oder fehlende Timeout-/Laufzeitgrenze
+- noch zu definierende Port-/Adapter-Cancel-Vertraege
+- unbewiesener Cleanup fuer Writer, Sessions, Transaktionen oder Spools
+- mehrdeutige Cancel-Signalisierung, die Phase E interpretieren muesste
+
 ---
 
 ## 8. Teststrategie
@@ -590,6 +640,11 @@ Mindesttests:
 - Lange monolithische Calls wie `open`, Preflight, einzelne Import-/Transfer-
   APIs, lange Queries und Writer-Initialisierung sind pro Pfad als cancelbar,
   atomar-nicht-cancelbar oder blockierend klassifiziert.
+- Atomar-nicht-cancelbare Calls haben ein belegtes Timeout-/Laufzeitfenster,
+  keine ungebundenen Retry-/Reconnect-Loops und hinterlassen nach Timeout
+  keine offenen Ressourcen.
+- Die Checkpoint-/Side-Effect-Matrix nutzt das Pflichtschema aus Abschnitt 7.2
+  und enthaelt keine `missing`-/`unknown`-Felder fuer gate-relevante Pfade.
 - Tests beweisen fuer jeden relevanten Runner mindestens einen Cancel-Punkt vor
   einem extern sichtbaren Side Effect.
 - Tests oder Gate-Matrix beweisen fuer jede relevante Side-Effect-Pipeline
