@@ -15,7 +15,7 @@
 > `docs/planning/open/ImpPlan-0.9.6-E.md`;
 > `docs/planning/open/ImpPlan-0.9.6-F.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
-> `docs/user/guide.md`; `docs/planning/roadmap.md`;
+> `docs/user/guide.md`; `docs/planning/in-progress/roadmap.md`;
 > `adapters/driving/mcp`; `hexagon/application`;
 > `hexagon/ports-common`; `hexagon/ports-read`; `hexagon/ports-write`.
 
@@ -174,7 +174,7 @@ Das Ziel ist:
 - Dokumentationsupdates fuer:
   - `spec/ki-mcp.md`
   - `docs/user/guide.md`
-  - `docs/planning/roadmap.md`
+  - `docs/planning/in-progress/roadmap.md`
   - ggf. lokale MCP-Startdokumente
 
 ### 3.2 Nicht in Scope
@@ -236,12 +236,18 @@ Fehlerzuordnung:
 
 - fehlende erlaubende Policy: `POLICY_REQUIRED` oder
   `FORBIDDEN_PRINCIPAL`, je nach Policy-Entscheidung
-- blockierte externe Provider-Konfiguration: `PROMPT_HYGIENE_BLOCKED` oder
-  `FORBIDDEN_PRINCIPAL`
+- fehlende oder deaktivierte serverseitige Provider-Konfiguration:
+  `INTERNAL_AGENT_ERROR`, weil die Serverkonfiguration den erlaubten Pfad nicht
+  bereitstellen kann
+- blockierter Endpoint oder blockiertes Modell:
+  `FORBIDDEN_PRINCIPAL` oder `POLICY_DENIED`, je nachdem ob Principal- oder
+  Policy-Regel den Zugriff verweigert
 - fehlendes Secret in einem erlaubten Providerpfad:
   `INTERNAL_AGENT_ERROR` fuer fehlerhafte Serverkonfiguration oder
   `FORBIDDEN_PRINCIPAL`/`POLICY_DENIED`, wenn der Principal bzw. die Policy
   die Secret-/Provider-Nutzung nicht erlaubt.
+- echte Prompt-Hygiene-Verletzung, zum Beispiel Secret, freier JDBC-String oder
+  Rohdaten im Prompt-/Provider-Payload: `PROMPT_HYGIENE_BLOCKED`
 - Provider-Timeout: `OPERATION_TIMEOUT`
 - Provider-Quota: `RATE_LIMITED`
 
@@ -545,7 +551,10 @@ Blockierende Faelle:
 - rohe Massendaten oberhalb der Inline-Limits
 - nicht erlaubter Resource-Kind
 - tenantfremde Resource
-- externe Provider-Nutzung ohne erlaubenden Kontext
+- Provider-Payload enthaelt Secrets, freie JDBC-Strings oder Rohdaten. Fehlende
+  Provider-Policy, blockierte Provider-Konfiguration, blockierter Endpoint oder
+  blockiertes Modell sind keine Hygiene-Entscheidungen, sondern werden vor
+  Hygiene nach Abschnitt 4.2 gemappt.
 
 ### 5.4 `procedure_transform_plan`
 
@@ -758,6 +767,11 @@ Jeder Prompt enthaelt:
 - erzeugt nur Prompt-Nachrichten
 - nennt benoetigte Tools und Resource-Refs
 - liefert keine Secrets oder Rohdaten
+- Fehler aus `prompts/list`/`prompts/get` sind keine `tools/call`-Resultate.
+  Unbekannter Prompt, ungueltige Argumente, Tenant-/Resource-Fehler und
+  Prompt-Hygiene-Blockaden werden als MCP-/JSON-RPC-Fehler mit
+  `error.data.code` gemappt, zum Beispiel `RESOURCE_NOT_FOUND`,
+  `VALIDATION_ERROR` oder `PROMPT_HYGIENE_BLOCKED`.
 
 ---
 
@@ -952,21 +966,27 @@ Aufgaben:
 - Prompt-Registry mit drei Pflichtprompts implementieren
 - `prompts/list` anbinden
 - `prompts/get` anbinden
+- `initialize`/`ServerCapabilities` setzt `capabilities.prompts`, sobald
+  `prompts/list` und `prompts/get` verfuegbar sind.
 - Prompt-Argument-Schemas definieren
 - Prompt-Argumentvalidierung implementieren
-- unbekannten Prompt als MCP-/JSON-RPC-Fehler mit d-migrate-Code in
-  `error.data` mappen
+- Prompt-Fehler als MCP-/JSON-RPC-Fehler mit d-migrate-Code in
+  `error.data.code` mappen, einschliesslich unbekanntem Prompt,
+  `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND` und `PROMPT_HYGIENE_BLOCKED`
 - Prompt-Hygiene in `prompts/get` erzwingen
 - Prompt-Nachrichten klein und referenzbasiert halten
 
 Tests:
 
+- `initialize` enthaelt `capabilities.prompts`
 - `prompts/list` ueber `stdio`
 - `prompts/list` ueber HTTP
 - `prompts/get` fuer jeden Pflichtprompt mit gueltigen Argumenten
-- unbekannter Prompt
-- ungueltige Argumente
-- Secret-/Rohdatenparameter
+- unbekannter Prompt als JSON-RPC-Fehler mit `error.data.code`
+- ungueltige Argumente als JSON-RPC-Fehler mit
+  `error.data.code=VALIDATION_ERROR`
+- Secret-/Rohdatenparameter als JSON-RPC-Fehler mit
+  `error.data.code=PROMPT_HYGIENE_BLOCKED`
 - keine versteckte Tool-Ausfuehrung durch `prompts/get`
 
 ### AP G.8 - Quotas, Timeouts und Audit-Golden-Tests
@@ -992,6 +1012,8 @@ Tests:
 Aufgaben:
 
 - MCP-Integrationstests fuer `initialize`
+- `initialize` muss `capabilities.prompts` neben Tools/Resources ausweisen,
+  wenn die Prompt-Methoden registriert sind.
 - Tool-Discovery-Test
 - Resource-Discovery-Test
 - Prompt-Discovery-Test
@@ -1006,6 +1028,7 @@ Aufgaben:
 
 Mindestfaelle:
 
+- `initialize` enthaelt `capabilities.prompts`
 - KI-nahes Tool ohne `approvalKey`
 - KI-nahes Tool ohne Policy-Freigabe
 - KI-nahes Tool-Retry mit gleichem `approvalKey`
@@ -1015,6 +1038,7 @@ Mindestfaelle:
 - Prompt mit Rohdatenparameter
 - `prompts/get` mit unbekanntem Prompt
 - `prompts/get` mit ungueltigen Argumenten
+- `prompts/get` mit Prompt-Hygiene-Blockade
 - Provider-Timeout
 - Provider-Quota
 
@@ -1037,7 +1061,7 @@ Aufgaben:
   - keine freie SQL-Ausfuehrung
   - keine Rohdaten im Prompt
   - keine versteckten Tool-Ausfuehrungen durch Prompts
-- `docs/planning/roadmap.md` fuer 0.9.6-Abdeckung aktualisieren
+- `docs/planning/in-progress/roadmap.md` fuer 0.9.6-Abdeckung aktualisieren
 
 Ergebnis:
 
@@ -1112,8 +1136,10 @@ Regeln:
 - fachliche Toolfehler erscheinen als `tools/call`-Result mit
   `isError=true`.
 - unbekannte Tools sind Protokollfehler, kein fachlicher Toolfehler.
-- unbekannte Prompts sind MCP-/JSON-RPC-Fehler mit d-migrate-Code in
-  `error.data`.
+- `prompts/list`/`prompts/get` liefern keine `tools/call`-Resultate. Alle
+  Prompt-Fehler, einschliesslich unbekanntem Prompt, ungueltigen Argumenten,
+  Tenant-/Resource-Fehlern und Prompt-Hygiene-Blockaden, sind
+  MCP-/JSON-RPC-Fehler mit d-migrate-Code in `error.data.code`.
 - Fehlerdetails werden gescrubbt.
 
 ### 7.3 Prompt-Hygiene-Blockaden
@@ -1321,15 +1347,19 @@ Pflichtfaelle:
 - Provider-Timeouts liefern `OPERATION_TIMEOUT`.
 - Provider-Quotas liefern `RATE_LIMITED`.
 - MCP-Prompts sind ueber `prompts/list` sichtbar.
+- `initialize` setzt `capabilities.prompts`, wenn die Prompt-Methoden
+  verfuegbar sind.
 - `prompts/list` liefert Name, Beschreibung, Revision und Argument-Schema.
 - `prompts/get` liefert fuer `procedure_analysis`,
   `procedure_transformation` und `testdata_planning` validierte
   Prompt-Nachrichten.
 - `prompts/get` fuehrt keine Tools aus.
-- Ungueltige Prompt-Argumente liefern `VALIDATION_ERROR`.
-- Unbekannte Prompts liefern MCP-konforme JSON-RPC-Fehler mit d-migrate-Code
-  in `error.data`.
-- Prompt-Hygiene-Verletzungen in `prompts/get` liefern
+- Alle Fehler aus `prompts/list`/`prompts/get` liefern MCP-konforme
+  JSON-RPC-Fehler mit d-migrate-Code in `error.data.code`.
+- Ungueltige Prompt-Argumente mappen auf `VALIDATION_ERROR`.
+- Unbekannte Prompts mappen auf `RESOURCE_NOT_FOUND` oder
+  `VALIDATION_ERROR`, gemaess bestehendem MCP-Fehlervertrag.
+- Prompt-Hygiene-Verletzungen in `prompts/get` mappen auf
   `PROMPT_HYGIENE_BLOCKED`.
 - Integrationstests decken `stdio` und HTTP fuer Tools und Prompts ab.
 - Fehler-Envelope-Golden-Tests sind aktualisiert.
@@ -1338,7 +1368,8 @@ Pflichtfaelle:
 - Dokumentation nennt lokale und entfernte MCP-Startpfade.
 - Dokumentation beschreibt Sicherheitsmodell, Tool-Liste, Prompt-Liste,
   Provider-Defaults und bekannte Grenzen.
-- `docs/planning/roadmap.md` ist mit dem 0.9.6-Abschluss abgeglichen.
+- `docs/planning/in-progress/roadmap.md` ist mit dem 0.9.6-Abschluss
+  abgeglichen.
 
 ---
 
