@@ -240,6 +240,14 @@ Reservation-Transition haben:
   `PENDING` mit `pendingLeaseExpiresAt` maximal bis `retryAfter`. Identische
   Retries vor Ablauf liefern erneut `RATE_LIMITED`, identische Retries nach
   Ablauf duerfen die Reservierung recovern und Quota erneut pruefen.
+- `RESOURCE_NOT_FOUND`, `TENANT_SCOPE_DENIED` und `VALIDATION_ERROR` aus
+  Resource-Lookup oder Materialisierung nach Idempotency werden als
+  deterministische Startfehler in `FAILED` mit gespeichertem Outcome
+  ueberfuehrt. Identische Retries liefern denselben Fehler ohne neue Policy-
+  oder Quota-Pruefung.
+- retrybare Materialisierungsfehler, zum Beispiel temporaere Resolver- oder
+  Secret-Store-Fehler, bleiben recoverable `PENDING` mit gespeichertem
+  Outcome, `retryAfter` und kurzer Lease.
 - Quota-Reservierung erfolgreich, aber Fehler vor Job-Commit: die
   Quota-Reservierung wird per `refund` zurueckgegeben und die
   Idempotency-Reservierung bleibt nach Fehlerart recoverable `PENDING` oder
@@ -355,6 +363,9 @@ Ausgabe:
 - bestehender oder neuer `jobId`
 - Job-`resourceUri`
 - `executionMeta`
+- bei aktiver `PENDING`-Reservierung ohne `jobId`:
+  `OPERATION_TIMEOUT` mit `retryable=true`, `retryAfter` und ohne internen
+  Idempotency-State in der Response
 - bei fehlender Freigabe: `POLICY_REQUIRED` mit Challenge
 - bei Konflikt: `IDEMPOTENCY_CONFLICT`
 
@@ -363,6 +374,9 @@ Verbindlich:
 - Job-Anlage und `COMMITTED`-Transition duerfen nicht auseinanderfallen.
 - Parallele genehmigte Retries duerfen hoechstens einen Job erzeugen.
 - Deduplizierte `COMMITTED`-Antworten verbrauchen keine neue Quota.
+- Parallele identische Starts duerfen aktive `PENDING` nicht nach aussen
+  leaken; sie warten nur innerhalb des Start-Timeout-Budgets und liefern
+  danach retrybares `OPERATION_TIMEOUT`.
 
 ### 5.2 Idempotency-Zustandsautomat
 
@@ -384,11 +398,17 @@ Pflichtfelder:
 - `createdAt`
 - `updatedAt`
 - `pendingLeaseExpiresAt`, wenn `PENDING`
+- gespeichertes retrybares Outcome mit `retryAfter` und strukturierten
+  Details, wenn `PENDING` einen determinierten Retry-Fehler wie
+  `RATE_LIMITED` oder temporaeren Materialisierungsfehler repraesentiert
 - `awaitingApprovalExpiresAt`, wenn `AWAITING_APPROVAL`
 - `approvalRequestId`, wenn Freigabe offen
 - `jobId`, wenn `COMMITTED`
+- `idempotencyRetentionExpiresAt`, wenn `COMMITTED`; mindestens `job.expiresAt`
 - `denialExpiresAt`, wenn `DENIED`
 - Denial-Metadaten, wenn `DENIED`
+- gespeichertes finales Fehleroutcome mit strukturierten Details, wenn
+  `FAILED`
 
 Regeln:
 
@@ -407,6 +427,17 @@ Regeln:
 - recoverable `PENDING` aus `RATE_LIMITED`, `OPERATION_TIMEOUT` vor Commit
   oder retrybaren technischen Startfehlern darf nur von einem identischen
   Scope/Fingerprint neu geclaimt werden
+- aktive nicht abgelaufene `PENDING` ohne gespeichertes Outcome darf nicht als
+  interner Zustand an Clients ausgegeben werden; identische parallele Aufrufe
+  warten bis zum Start-Timeout-Budget und liefern dann retrybares
+  `OPERATION_TIMEOUT`
+- `PENDING` mit gespeichertem `RATE_LIMITED`-Outcome liefert bis
+  `retryAfter` deterministisch erneut `RATE_LIMITED`
+- `FAILED` liefert das gespeicherte finale Fehleroutcome deterministisch fuer
+  identische Scope/Fingerprint-Retries
+- `COMMITTED`-Eintraege duerfen fruehestens nach `idempotencyRetentionExpiresAt`
+  geloescht werden; dieser Zeitpunkt ist mindestens `job.expiresAt` gemaess
+  `spec/job-contract.md`
 
 ### 5.3 Payload-Fingerprint
 
@@ -498,7 +529,8 @@ Regeln:
 - fremde Jobs im selben Tenant ohne Berechtigung liefern
   `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben unveraendert terminal
-- angenommener Cancel setzt oder bestaetigt `cancelled`
+- angenommener Cancel setzt oder bestaetigt `cancelled` nur per CAS von einem
+  nicht-terminalen Zustand
 - Worker-Handle wird gecancelt, falls der Job noch laeuft
 - wenn der Worker bereits terminal ist, gewinnt der terminale Zustand
 
@@ -620,6 +652,8 @@ Tests/Gate:
 - Job-Lifecycle auf `queued`, `running`, `succeeded`, `failed`, `cancelled`
   begrenzen.
 - `expiresAt` fuer Retention nutzen, keinen neuen Jobstatus einfuehren.
+- `COMMITTED`-Idempotency-Retention an Job-Retention binden:
+  `idempotencyRetentionExpiresAt >= job.expiresAt`.
 - Artefakt-Publish an Jobkontext binden.
 
 Tests:
@@ -627,6 +661,8 @@ Tests:
 - neuer Job startet in erlaubtem Zustand
 - terminale Status bleiben terminal
 - Worker-Handle wird fuer laufende Jobs gefunden
+- `COMMITTED`-Idempotency-Key bleibt mindestens bis `job.expiresAt`
+  deduplizierbar
 
 ### 7.3 AP E.3: Idempotency-Service implementieren
 
@@ -652,6 +688,14 @@ Tests:
 - Store/Port/Contract Tests decken `FAILED` als neuen Core-State ab
 - recoverable `PENDING` nach `RATE_LIMITED` oder Start-Timeout wird nicht als
   final `FAILED` behandelt
+- aktives `PENDING` ohne Job liefert nach Start-Timeout retrybares
+  `OPERATION_TIMEOUT`, keinen internen State
+- `PENDING` mit gespeichertem `RATE_LIMITED` liefert bis `retryAfter`
+  deterministisch erneut `RATE_LIMITED`
+- Resource-/Tenant-/Validation-Fehler nach Ref-Lookup werden final `FAILED`
+  und bei identischem Retry deterministisch wiederholt
+- temporaere Materialisierungsfehler bleiben recoverable `PENDING` und
+  blockieren identische Retries nicht dauerhaft
 - `FAILED` blockiert identische Retries nur fuer endgueltige
   nicht-retrybare Reservierungen
 
@@ -752,7 +796,8 @@ Tests:
 - Tenant-, Principal- und Admin-Regeln pruefen.
 - Terminale Jobs unveraendert lassen.
 - Laufende Jobs ueber Worker-Handle canceln.
-- Jobstatus `cancelled` setzen, wenn Cancel angenommen wurde.
+- Jobstatus `cancelled` per Compare-and-Set nur aus nicht-terminalem Zustand
+  setzen, wenn Cancel angenommen wurde.
 - Reason scrubben und auditieren.
 
 Tests:
@@ -765,6 +810,8 @@ Tests:
 - fremder Principal ohne Admin -> `FORBIDDEN_PRINCIPAL`
 - unbekannter Job -> `RESOURCE_NOT_FOUND`
 - terminaler Job bleibt terminal
+- Worker wird zwischen Lookup und Cancel terminal -> `succeeded`/`failed`
+  bleibt erhalten und wird nicht durch `cancelled` ueberschrieben
 - Worker publiziert nach Cancel keine neuen Artefakte
 
 ### 7.9 AP E.9: Quotas, Rate Limits und Timeouts
@@ -879,6 +926,8 @@ Mindestfaelle:
 - identischer Retry vor und nach `COMMITTED`
 - `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
   unsichtbarer Resource
+- paralleler identischer Start auf aktiver `PENDING`-Reservierung liefert
+  retrybares `OPERATION_TIMEOUT` statt internem State
 - Konflikt ohne Policy-Pruefung
 - erster Start ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
 - zweiter Start mit Grant -> genau ein Job
@@ -894,12 +943,16 @@ Mindestfaelle:
 - Timeout
 - recoverable Start-Timeout blockiert identischen Retry nicht dauerhaft
 - `schema_compare_start` mit fremder oder nicht sichtbarer `schemaRef`
+- Resource-/Tenant-/Validation-Fehler nach Idempotency werden final und
+  deterministisch wiederholt
+- temporaerer Materialisierungsfehler nach Idempotency bleibt recoverable
 - Compare-Cancel vor Materialisierung/Diff-Publish
 - Cancel eigener Job
 - Cancel ohne Scope erzeugt Audit/403 ohne Job-Lookup
 - Cancel tenant-scoped URI mit fremdem Tenant
 - Cancel opake fremde oder fehlende `jobId`
 - Cancel fremder Principal im selben Tenant
+- Cancel-Race: Worker terminalisiert zwischen Lookup und CAS
 - Worker-Side-Effect-Stopp nach Cancel
 
 ---
@@ -914,6 +967,9 @@ Mindestfaelle:
 - identische Wiederholung nach `COMMITTED` materialisiert keine Resources neu
   und bleibt stabil, wenn referenzierte Resources spaeter geloescht oder
   unsichtbar wurden.
+- aktive `PENDING`-Reservierungen ohne `jobId` werden nicht als interner State
+  exponiert; identische parallele Aufrufe liefern nach Start-Budget
+  retrybares `OPERATION_TIMEOUT`.
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT` ohne Policy-Pruefung.
 - fehlender oder unzureichender `dmigrate:job:start`-Scope erzeugt keine
   Idempotency-Reservierung und keine Approval-Challenge.
@@ -937,6 +993,12 @@ Mindestfaelle:
   Ueberbuchung, `refund` deckt Pre-Commit-Fehler ab, `release` terminale Jobs.
 - `RATE_LIMITED`, Start-Timeouts und retrybare technische Startfehler lassen
   keine dauerhaft haengenden `PENDING`-Reservierungen zurueck.
+- `RATE_LIMITED`-Retries vor `retryAfter` liefern deterministisch
+  `RATE_LIMITED` aus gespeicherten Outcome-Metadaten.
+- finale Resource-/Tenant-/Validation-Fehler nach Idempotency setzen
+  `FAILED`; retrybare Materialisierungsfehler bleiben recoverable.
+- `COMMITTED`-Idempotency-Eintraege bleiben mindestens bis `job.expiresAt`
+  erhalten.
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job und
   dedupliziert ueber `idempotencyKey`.
 - `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
@@ -951,6 +1013,8 @@ Mindestfaelle:
   macht keinen globalen Cross-Tenant-Lookup.
 - fehlender oder unzureichender `dmigrate:job:cancel`-Scope fuehrt zu 403 mit
   Scope-Challenge ohne Job-Lookup.
+- `job_cancel` setzt `cancelled` nur per CAS aus nicht-terminalem Zustand;
+  terminale Worker-Races duerfen `succeeded`/`failed` nicht ueberschreiben.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
