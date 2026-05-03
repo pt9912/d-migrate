@@ -647,6 +647,32 @@ bleibt ausschliesslich `truncate=true`; es ist nicht atomar und muss im
 Policy-Fingerprint, Audit und Approval-Challenge als destruktive Option
 sichtbar sein.
 
+`schemaRef` wird nicht in einen Client- oder CLI-Pfad aufgeloest. Phase F muss
+dafuer einen `SchemaRefImportPreflightAdapter` bereitstellen:
+
+- Schema wird tenant-/principal-geprueft aus `SchemaStore` geladen.
+- Fuer Runner-Pfade, die weiter `DataImportRequest.schema: Path?` erwarten,
+  wird entweder ein direkter In-Memory-/Domain-Adapter fuer
+  `ImportPreflightResolver` gebaut oder ein serverseitiger, cleanup-faehiger
+  Temp-Spool erzeugt.
+- Temp-Spool-Pfade werden serverseitig erstellt, nie aus Tool-Payloads
+  gelesen, nicht in Audit/Idempotency/Job-Response persistiert und bei Job-
+  Ende, Cancel, Timeout oder Fehler entfernt.
+- Wenn kein `schemaRef` gesetzt ist, bleibt der bisherige Runner-Preflight nur
+  fuer Artefakte zulaessig, deren Format/Metadaten eine sichere
+  Zieltabellen-Ableitung erlauben.
+
+Tabellenoptionen folgen der bestehenden CLI-Semantik:
+
+- `table` und `tables` sind gegenseitig exklusiv.
+- Single-File- bzw. stdin-aequivalente Artefakte brauchen `table`, sofern
+  kein `schemaRef` oder keine Artefaktmetadaten die Zieltabellen eindeutig
+  bestimmen.
+- Directory-/Mehrtabellen-Artefakte nutzen `tables` als optionale geordnete
+  Filter-/Importliste; `table` ist dafuer ungueltig.
+- `tables` darf nicht leer sein und alle Identifier muessen der bestehenden
+  CLI-Identifier-Validierung entsprechen.
+
 Nicht erlaubte Import-Optionen:
 
 - rohe SQL-Statements
@@ -773,6 +799,13 @@ Quota-Lifecycle:
 - Retention-Cleanup fuer veroeffentlichte Artefakte gibt gespeicherte
   Artefaktbytes frei. Diese Freigabe darf reservierte Upload-Bytes nicht noch
   einmal veraendern.
+- Wenn Phase F einen separaten `ArtifactUploadMetadataStore` nutzt, ist dessen
+  Lifecycle an `ArtifactStore`/`ArtifactContentStore` gekoppelt:
+  - Metadaten werden mit der erfolgreichen Artefaktregistrierung committed.
+  - Retention-Cleanup loescht oder tombstoned Metadaten zusammen mit den
+    Artefaktbytes.
+  - `data_import_start` muss Metadaten ohne vorhandene Artefaktbytes bzw.
+    Artefaktbytes ohne passende Metadaten deterministisch ablehnen.
 - Alle Reserve-/Commit-/Refund-/Release-Schritte sind idempotent an Session
   bzw. Artefakt-ID gebunden, damit Retry und Crash-Recovery keine Quotas
   doppelt buchen oder doppelt freigeben.
@@ -789,7 +822,10 @@ Cleanup-Pfade:
 
 Cleanup muss Segmentbytes und nicht finalisierte Artefaktbytes aus
 `UploadSegmentStore` bzw. `ArtifactContentStore` entfernen oder eindeutig als
-orphaned markieren. Finalisierte Artefakte bleiben immutable.
+orphaned markieren. Finalisierte Artefakte bleiben immutable bis zu ihrer
+Retention. Upload-Metadaten fuer finalisierte Artefakte folgen derselben
+Retention-/Tombstone-Entscheidung wie das Artefakt; dangling Metadaten ohne
+Bytes sind nicht als importierbares Artefakt nutzbar.
 
 ---
 
@@ -939,9 +975,12 @@ Tests:
   Abschnitt 5.3 an Policy anbinden.
 - terminales Abort-Outcome fuer administrative/fremde Abbrueche ueber
   `SyncEffectIdempotencyStore.commit(scope, resultRef)` persistieren; der
-  `resultRef` verweist auf einen strukturierten `AbortOutcomeStore`-Record und
-  wird geschrieben, bevor Cleanup den Session-Status oder Byte-Kontext fuer
-  Retry-Fingerprints veraendert.
+  `resultRef` verweist auf einen strukturierten `AbortOutcomeStore`-Record.
+  Der terminale Erfolgs-`resultRef` darf erst committed werden, nachdem
+  Session-Status `ABORTED`, Cleanup/Tombstone der Zwischenbytes und Quota-
+  Release dauerhaft abgeschlossen sind. Vorher darf hoechstens ein
+  nicht-terminaler In-Progress-Record existieren, der bei Retry weiterarbeitet
+  oder deterministisch In-Flight meldet.
 - Persistierte Abort-Outcomes mit dem vollstaendigen Abort-Fingerprint
   verknuepfen oder vor der Rueckgabe gegen den aktuellen Request-Fingerprint
   vergleichen.
@@ -961,6 +1000,9 @@ Tests:
 - Retry desselben genehmigten administrativen Abbruchs ist idempotent
 - Retry nach Cleanup liest persistiertes Abort-Outcome, statt den aktuellen
   Session-Status oder Byte-Kontext erneut in den Fingerprint zu rechnen
+- Crash vor durablem `ABORTED`/Cleanup/Quota-Release committed keinen
+  terminalen Erfolgs-`resultRef`; Retry setzt Abort fort oder meldet
+  In-Flight
 - Retry nach Cleanup mit anderem `reason` oder anderem
   Abort-Fingerprint-Material gibt nicht das alte Outcome zurueck
 - `SyncEffectReserveOutcome.Existing(resultRef)` wird ueber
@@ -1005,6 +1047,9 @@ Tests:
   materialisieren; keine CLI-Konfiguration und keine rohen JDBC-Strings aus
   dem Tool-Payload verwenden.
 - `idempotencyKey` erzwingen.
+- `schemaRef` ueber `SchemaStore` und `SchemaRefImportPreflightAdapter`
+  materialisieren; keine lokalen Schema-Pfade aus Tool-Payloads verwenden.
+- `table`/`tables`-Semantik aus Abschnitt 6.1 validieren.
 - normalisierte Import-Optionen in den Policy-/Idempotency-Fingerprint
   aufnehmen.
 - Policy-/Approval-Flow aus Phase E anbinden.
@@ -1021,6 +1066,13 @@ Tests:
   serverseitigem Temp-Spool, ohne lokale Pfade im Tool-Payload
 - fehlende persistente Upload-Metadaten fuer Import-Artefakt ->
   `VALIDATION_ERROR` oder `RESOURCE_NOT_FOUND`
+- `schemaRef` wird aus `SchemaStore` geladen oder serverseitig gespult, nicht
+  aus lokalem Pfad
+- `table` und `tables` gemeinsam -> `VALIDATION_ERROR`
+- Single-File-Artefakt ohne ableitbare Zieltabelle und ohne `table` ->
+  `VALIDATION_ERROR`
+- Directory-/Mehrtabellen-Artefakt mit `table` -> `VALIDATION_ERROR`
+- leere oder syntaktisch ungueltige `tables` -> `VALIDATION_ERROR`
 - unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder JDBC-Secret in Import-Optionen -> `VALIDATION_ERROR`
 - `wireArtifactKind=schema`, `ddl`, `transform-script` oder `rules` als
@@ -1178,6 +1230,7 @@ Mindesttestklassen:
 - ConnectionReference-/ConnectionSecretResolver-Adaptertests fuer Import und
   Transfer
 - ArtifactContentStore-zu-ImportSource-Adaptertests
+- SchemaStore-zu-ImportPreflight-Adaptertests fuer `schemaRef`
 - ArtifactUploadMetadataStore- bzw. Artifact-Metadaten-Contract-Tests
 - AbortOutcomeStore-/SyncEffect-resultRef-Tests
 - Import-/Transfer-Runner-Cancel-Tests
@@ -1228,7 +1281,11 @@ Mindestfaelle:
 - ConnectionRef-Aufloesung ohne Secret/Provider, mit falschem Tenant oder
   ohne Principal-Berechtigung
 - Import aus `ArtifactContentStore` ohne lokale Pfade
+- `schemaRef`-Preflight ohne lokale Schema-Pfade
+- `table`/`tables` gegenseitig exklusiv und topology-spezifisch validiert
 - Import-Artefakt ohne persistente Upload-Metadaten
+- Retention loescht/tombstoned Upload-Metadaten zusammen mit Artefaktbytes
+- dangling Upload-Metadaten ohne Artefaktbytes sind nicht importierbar
 - SyncEffect-`resultRef` zeigt auf Abort-Outcome mit abweichendem Fingerprint
 - unbekannte Import-/Transfer-Optionsfelder
 - rohe SQL-/JDBC-/Secret-Werte in Import-/Transfer-Optionen
@@ -1296,10 +1353,20 @@ Mindestfaelle:
   Artefaktbytes aus `ArtifactContentStore` streamt oder serverseitig
   kontrolliert spoolt; der bestehende `DataImportRunner.source` erhaelt keine
   Client- oder Tool-Payload-Pfade.
+- `schemaRef` fuer Import-Preflight wird ueber `SchemaStore` und einen
+  `SchemaRefImportPreflightAdapter` materialisiert oder serverseitig
+  cleanup-faehig gespult; der bestehende `DataImportRequest.schema` erhaelt
+  keine Client- oder Tool-Payload-Pfade.
+- `table` und `tables` uebernehmen die bestehende CLI-Semantik: gegenseitig
+  exklusiv, `table` fuer Single-File-Artefakte ohne eindeutige Ableitung,
+  `tables` fuer Directory-/Mehrtabellen-Artefakte.
 - `job_input`-Finalisierung speichert dauerhafte Upload-Metadaten
   (`uploadIntent`, `wireArtifactKind`, MIME/Format, Source-Session, Policy-
   und Byte-Fingerprint), und `data_import_start` validiert Import-Eignung nur
   gegen diese persistenten Metadaten.
+- Retention/Cleanup haelt Upload-Metadaten und Artefaktbytes synchron:
+  dangling Metadaten ohne Bytes oder Bytes ohne passende Metadaten werden nicht
+  als importierbar akzeptiert.
 - 200-MiB-Upload-Test nutzt File-Spooling oder gleichwertigen Byte-Store und
   belegt, dass keine RAM-only-Implementierung erforderlich ist.
 - Quota-Verletzungen fuer aktive Sessions, Bytes oder parallele Segmentwrites
@@ -1324,6 +1391,8 @@ Mindestfaelle:
   Request passt. Der bestehende `SyncEffectIdempotencyStore` speichert dabei
   nur `resultRef`; strukturierte Abort-Daten liegen in einem referenzierten
   `AbortOutcomeStore`-Record oder einer gleichwertigen Store-Erweiterung.
+  Terminaler Erfolgs-`resultRef` wird erst nach durablem `ABORTED`, Cleanup
+  und Quota-Release committed.
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
