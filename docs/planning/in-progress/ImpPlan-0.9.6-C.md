@@ -1309,6 +1309,12 @@ Aufgaben:
     deterministischen `artifactId` idempotent behandelbar sein, sofern
     der vorhandene SHA/Size zum Payload passt; Konflikte bleiben harte
     interne Inkonsistenz
+  - `SchemaStore` muss denselben deterministischen `schemaId` ebenso
+    idempotent behandeln: existiert bereits ein Eintrag mit gleichem
+    Tenant, Schema-Hash/normalisierter Schema-Projektion,
+    Artifact-Ref und Format, ist die Registrierung ein No-op und
+    liefert dieselbe `schemaRef`; abweichende Inhalte unter derselben
+    `schemaId` bleiben harte interne Inkonsistenz
   - Nach erfolgreichem Artefaktwrite und SchemaStore-Registrierung
     wird `finalisedSchemaRef` zusammen mit Artifact-/Schema-Ids und
     Payload-SHA persistiert, bevor die Session auf `COMPLETED`
@@ -1335,6 +1341,12 @@ Aufgaben:
     streaming mit und vergleicht beides mit Session-/Request-
     Finalitaetsdaten. Mismatch fuehrt zu `VALIDATION_ERROR` bzw. dem
     bestehenden Upload-Fehlermapping, bevor der Finalizer startet.
+  - Das zentrale Cap wird waehrend jedes Segment-Leseschritts hart
+    erzwungen: `runningBytes + read > maxArtifactUploadBytes` bricht
+    sofort ab, loescht die temporaere Spool-Datei und liefert den
+    bestehenden `PAYLOAD_TOO_LARGE`/Quota-Fehler. Die Implementierung
+    darf nicht erst nach kompletter Assembly feststellen, dass
+    inkonsistente Store-Metadaten zu viele Bytes geschrieben haben.
   - Persistente Assembly-Inkonsistenzen (Luecken, Duplikate,
     Offsetbruch, Size-/SHA-Mismatch nach gespeicherten Segmenten)
     werden als terminaler, replay-stabiler Session-Outcome gespeichert
@@ -1397,12 +1409,15 @@ Aufgaben:
     einen terminalen `UPLOAD_SESSION_ABORTED`/Conflict-Fehler ohne
     erneute Finalisierung und ohne neue Side Effects
   - `ABORTED` ist nie ein Signal, die Assembly erneut zu starten
-- Fehlersemantik bleibt unveraendert: Parse-/Validierungsfehler
-  rollen die noch aktive Session auf `ABORTED` und liefern die
-  strukturierten Findings; IO-Fehler beim Assembly-Spool oder
-  Artefaktschreiben werden in das bestehende interne/temporale
-  Fehlermapping uebersetzt, ohne lokale Pfade in Tool-Responses zu
-  leaken.
+- Fehlersemantik bleibt fuer fachliche Fehler unveraendert:
+  Parse-/Validierungsfehler rollen die noch aktive Session auf
+  `ABORTED` und liefern die strukturierten Findings.
+  Transiente Storage-/IO-Fehler beim Assembly-Spool,
+  Artefaktschreiben oder SchemaStore-Commit duerfen die Session nicht
+  vorschnell auf `ABORTED` setzen; sie bleiben retrybar innerhalb des
+  `FINALIZING`-Lease-/Reclaim-Modells oder werden als interner
+  retrybarer Fehler gemappt. Lokale Pfade duerfen in Tool-Responses
+  nicht leaken.
 
 Akzeptanz:
 
@@ -1431,6 +1446,12 @@ Akzeptanz:
   `COMPLETED`, wird replay-stabil fortgesetzt: deterministischer
   Artifact-/Schema-Outcome verhindert doppelte Artefakte und fuehrt am
   Ende zu derselben `schemaRef`.
+- SchemaStore-Registrierung ist fuer denselben deterministischen
+  `schemaId` idempotent: gleicher Inhalt/Artifact-Ref liefert dieselbe
+  `schemaRef`, abweichender Inhalt ist eine interne Inkonsistenz.
+- `maxArtifactUploadBytes` wird pro Buffer-Read waehrend der Assembly
+  erzwungen; ein korruptes Segment oder falsche Store-Metadaten koennen
+  keine Spool-Datei groesser als den zentralen Cap schreiben.
 - Parse-/Validation-/IO-Fehler und ABORTED-Sessions hinterlassen keine
   Assembly-Spool-Files im normalen Prozesspfad.
 - Replays fuer ABORTED-Sessions starten keine neue Assembly; sie
