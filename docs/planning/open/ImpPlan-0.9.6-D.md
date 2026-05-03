@@ -2,12 +2,13 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: D (`Discovery und Ressourcen`)
-> **Status**: Draft (2026-05-01)
-> **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
+> **Status**: Draft, verfeinert (2026-05-03)
+> **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase D, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
-> `docs/planning/ImpPlan-0.9.6-A.md`; `docs/planning/ImpPlan-0.9.6-B.md`;
-> `docs/planning/ImpPlan-0.9.6-C.md`; `spec/ki-mcp.md`;
+> `docs/planning/done/ImpPlan-0.9.6-A.md`;
+> `docs/planning/done/ImpPlan-0.9.6-B.md`;
+> `docs/planning/in-progress/ImpPlan-0.9.6-C.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
 > `spec/cli-spec.md`; `hexagon/application`; `hexagon/ports-common`;
 > `hexagon/ports-read`; `hexagon/ports-write`; `hexagon/profiling`;
@@ -34,13 +35,16 @@ Phase D liefert konkrete technische Ergebnisse:
 - MCP-Standard-Discovery:
   - `resources/list`
   - `resources/templates/list`
+  - `resources/read`
 - Resource-Resolver fuer:
   - Jobs
   - Artefakte
+  - Artefakt-Chunks
   - Schemas
   - Profile
   - Diffs
   - Connection-Refs
+  - `dmigrate://capabilities`
 - cursorbasierte Paginierung mit validierten, gekapselten Tokens
 - tenant-sichere Resource-Aufloesung
 - adapterneutrale Connection-Ref-Konfiguration fuer CLI und MCP
@@ -94,6 +98,24 @@ auffindbar und lesbar.
 Phase D darf Phase-C-Tools nicht auf eigene Artefaktmodelle umstellen. Wenn
 zusaetzliche Discovery-Metadaten noetig sind, werden die gemeinsamen
 Store-/Index-Vertraege erweitert.
+
+### 2.4 Bestehende Phase-B-Implementierung ist Startpunkt
+
+Phase B hat bereits konkrete Adapterbausteine geliefert, die Phase D
+weiterverwendet statt ersetzt:
+
+- `ResourceStores` als Buendel der sechs listbaren Store-Ports
+- `ResourcesListHandler` mit festem Resource-Walk
+- `ResourcesListCursor` als Base64-JSON-Cursor fuer `(kind, innerToken)`
+- `ResourceProjector` fuer MCP-`resources/list`-Projektionen
+- `PhaseBResourceTemplates.ALL` als Quelle der sieben statischen Templates
+- `ServerResourceUri` fuer einfache tenant-scoped URIs
+- `PageRequest` / `PageResult` im gemeinsamen Kernvertrag
+
+Phase D darf diese Typen umbauen, wenn es fuer HMAC-Cursor, Chunk-URIs oder
+`resources/read` noetig ist. Sie darf aber keine zweite parallele
+Resource-Registry oder zweite Resource-URI-Syntax neben diesen Bausteinen
+einfuehren.
 
 ---
 
@@ -431,6 +453,33 @@ voraussetzen.
 - Diffs sind auffindbar, auch wenn sie intern typisierte Artefakte sind
 - zeigt Quell-/Zielbezug und Statussummary
 
+### 6.4 Mindestfelder der Listen-Projektionen
+
+Alle Listen-Projektionen enthalten mindestens:
+
+- stabile ID des fachlichen Objekts
+- `resourceUri`
+- `tenantId`
+- `createdAt`, soweit der Store diese Information besitzt
+- `expiresAt` oder Retention-Hinweis, soweit vorhanden
+- `ownerPrincipalId` oder eine bereits gescrubbte Sichtbarkeitsklasse, soweit
+  die Information fuer Clients relevant ist
+
+Resource-spezifische Mindestfelder:
+
+| Tool | Collection-Feld | Mindestfelder je Eintrag |
+| --- | --- | --- |
+| `job_list` | `jobs` | `jobId`, `status`, `operation`, `resourceUri`, `createdAt`, `updatedAt`, optionale `artifactUris` |
+| `artifact_list` | `artifacts` | `artifactId`, `artifactKind`, `jobId`, `filename`, `sizeBytes`, `contentType`, `resourceUri`, optionale `chunkTemplate` |
+| `schema_list` | `schemas` | `schemaId`, `format`, `origin`, `sizeBytes`, `resourceUri`, optionale `hash` |
+| `profile_list` | `profiles` | `profileId`, `jobId`, `connectionId` oder `connectionResourceUri`, `scope`, `resourceUri`, optionale `warningCount` |
+| `diff_list` | `diffs` | `diffId`, `jobId`, `leftSchemaId`, `rightSchemaId`, `statusSummary`, `resourceUri` |
+
+Felder mit potentiell sensitiven Werten, z. B. lokale Pfade, JDBC-URLs,
+rohe Connection-Strings oder ENV-Expansionen, werden nicht in diese
+Projektionen aufgenommen. Wenn ein bestehendes Kernmodell solche Felder
+enthaelt, muss die MCP-Projektion explizit scrubben oder das Feld weglassen.
+
 ---
 
 ## 7. MCP-Standard-Discovery
@@ -541,90 +590,346 @@ Verbindliche Regeln:
 
 ## 10. Umsetzungsschritte
 
-### 10.1 Resource-URI- und Resolver-Vertrag definieren
+Die Arbeit wird in kleinen, testbaren Paketen umgesetzt. Jedes Paket darf
+gemergt werden, wenn seine lokalen Tests gruen sind und der bestehende
+Phase-C-Stand nicht regressiert. Die Reihenfolge ist verbindlich, weil
+spaetere Pakete auf denselben URI-, Resolver- und Cursor-Vertraegen aufbauen.
 
-- Resource-Typen und URI-Templates festlegen.
-- Parser und Validator fuer Resource-URIs implementieren.
-- `ServerResourceUri` oder ein Nachfolgemodell um eine explizite
-  `ArtifactChunkResourceUri(tenantId, artifactId, chunkId)`-Variante
+### 10.1 AP D1: Resource-URI-ADT und Parser
+
+Ziel: Ein gemeinsames Parse-Modell fuer alle in Phase D lesbaren URIs.
+
+Umsetzung:
+
+- `ServerResourceUri` oder ein Nachfolgemodell von einem einfachen
+  `data class`-Vertrag auf eine ADT / sealed hierarchy erweitern.
+- Varianten mindestens:
+  - `TenantResourceUri(tenantId, kind, id)` fuer Jobs, Artefakte, Schemas,
+    Profile, Diffs und Connections
+  - `ArtifactChunkResourceUri(tenantId, artifactId, chunkId)`
+  - `GlobalCapabilitiesResourceUri`
+- `ResourceKind.UPLOAD_SESSIONS` bleibt im Kernmodell erlaubt, wird aber in
+  Phase D nicht ueber `resources/list` oder `resources/templates/list`
+  advertised.
+- Parser-Regeln fuer Segment-Zeichensatz, leere Segmente, unbekannte Kinds,
+  zu viele Segmente und tenantlose URIs explizit testen.
+- Renderer fuer alle erlaubten Varianten bereitstellen, damit Discovery und
+  `resources/read` keine URI-Strings handbauen.
+
+Tests:
+
+- gueltige URIs aller acht lesbaren Resource-Familien
+- verschachtelte Chunk-URI wird nicht als Artifact-ID missverstanden
+- `dmigrate://capabilities` ist gueltig und tenantlos
+- andere tenantlose URIs liefern `VALIDATION_ERROR`
+- Upload-Session-URI bleibt parsebar, aber nicht listbar/template-visible in
+  Phase D
+
+### 10.2 AP D2: Resolver-Vertrag und Fehler-Mapping
+
+Ziel: Ein adapterneutraler Resolver-Vertrag, den `resources/read`,
+`job_status_get`, `artifact_chunk_get` und die Discovery-Listen gemeinsam
+nutzen koennen.
+
+Umsetzung:
+
+- `ResourceResolver`-Interface oder aequivalente Dispatcher-Schicht definieren.
+- Resolver-Eingabe enthaelt mindestens `PrincipalContext`, parsebare
+  Resource-URI, Inline-/Chunk-Limits und Audit-Kontext.
+- Resolver-Ausgabe unterscheidet:
+  - JSON/Text-Inline-Inhalt innerhalb des Limits
+  - Metadaten mit Artefaktref
+  - Chunk-Weiterleitung ueber `nextChunkUri`
+  - no-oracle `not found`
+- Gemeinsames Mapping fuer:
+  - syntaktische Fehler -> `VALIDATION_ERROR`
+  - Tenant ausserhalb `allowedTenantIds` -> `TENANT_SCOPE_DENIED`
+  - nicht sichtbarer Datensatz im erlaubten Tenant -> `RESOURCE_NOT_FOUND`
+  - fehlende Scopes -> bestehendes Auth-/Scope-Mapping
+- `dmigrate://capabilities` als eigener Resolver, nicht als Sonderfall im
+  JSON-RPC-Handler.
+
+Tests:
+
+- Resolver-Dispatch je URI-Variante
+- Tenant-fremde URI bestaetigt keine Existenz fremder Datensaetze
+- Datensatz im erlaubten Tenant, aber ohne Sichtbarkeit, liefert
+  `RESOURCE_NOT_FOUND`
+- Capability-Resolver liefert nur secret-freie Daten
+
+### 10.3 AP D3: Cursor-Kapselung und Page-Vertrag
+
+Ziel: Opaque, validierte Cursor fuer oeffentliche Adapter ohne Aenderung des
+internen `PageRequest` / `PageResult`-Kernvertrags.
+
+Umsetzung:
+
+- MCP-seitigen Cursor-Codec fuer fachliche Listen-Tools einfuehren.
+- Cursor-Payload mindestens:
+  - Cursor-Typ / Version
+  - Tenant
+  - Tool oder Resource-Familie
+  - validierte Filter
+  - `pageSize`
+  - Sortierung
+  - letzte Sort-Keys oder Store-`innerToken`
+  - optional `issuedAt` / `expiresAt`
+- Payload Base64-url-safe serialisieren und per HMAC versiegeln.
+- Secret fuer HMAC aus Serverkonfiguration laden; Dev-/Test-Modus nutzt
+  explizit benannten Test-Key, keinen zufaelligen Prozess-Key fuer
+  reproduzierbare Tests.
+- Manipulierte, tenant-fremde, filter-fremde, abgelaufene und syntaktisch
+  ungueltige Cursor liefern `VALIDATION_ERROR`.
+- Bestehenden Phase-B-`ResourcesListCursor` entweder dual-read-faehig machen
+  oder vor oeffentlicher Veroeffentlichung bewusst mit `VALIDATION_ERROR`
+  abweisen und in `spec/mcp-server.md` dokumentieren.
+
+Tests:
+
+- Roundtrip je Cursor-Typ
+- HMAC-Tampering
+- Tenant-/Filter-/Sortier-Mismatch
+- Expiry-Mapping auf `VALIDATION_ERROR`
+- `resources/list` behaelt family-basierten Walk statt globaler Sortierung
+
+### 10.4 AP D4: Store-/Index-Vertraege fuer Listen
+
+Ziel: Listen-Tools koennen Metadaten aus gemeinsamen Stores lesen, ohne eigene
+MCP-Datenmodelle einzufuehren.
+
+Umsetzung:
+
+- Bestehende Store-Ports pruefen und nur dort erweitern, wo Filter oder
+  Sortierung fehlen.
+- Pro Store einen filterbaren Listenrequest definieren:
+  - `JobListFilter`
+  - `ArtifactListFilter`
+  - `SchemaListFilter`
+  - `ProfileListFilter`
+  - `DiffListFilter`
+  - optional `ConnectionListFilter`
+- Filter enthalten nur fachliche Felder aus Abschnitt 6.1 und Abschnitt 6.4.
+- In-Memory-Stores implementieren dieselbe Sortierung und Filterlogik wie der
+  Port-Vertrag fordert.
+- Store-Contract-Tests um Filter, Sortierung und no-oracle Sichtbarkeit
   erweitern.
-- `dmigrate://capabilities` als explizite globale Sonderresource mit eigenem
-  Resolver modellieren.
-- `capabilities_list.resourceFallbackHint` auf `dmigrate://capabilities`
-  setzen, damit Clients die globale Sonderresource maschinenlesbar finden,
-  ohne `resources/templates/list` zu erweitern.
-- Fehler-Mapping fuer ungueltige, fehlende und fremde Ressourcen definieren.
 
-### 10.2 Store-/Index-Abstraktionen erweitern
+Tests:
 
-- Job-, Artifact- und Schema-Stores um Listen-/Index-Funktionen erweitern.
-- Profile und Diffs als eigene Index-Sicht oder typisierte Artefakte
-  modellieren.
-- Connection-Ref-Store einfuehren.
+- Default-Sortierung `createdAt DESC`, stabile ID `ASC`
+- Zeitfenstergrenzen inkl. Gleichheit am Rand
+- Status-/Kind-/Job-Filter
+- `pageSize`-Grenzen und fortlaufende Pagination
+- keine Secrets in Connection-Indexeintraegen
 
-### 10.3 Pagination einfuehren
+### 10.5 AP D5: Listen-Tool-Schemas und Projections
 
-- `PageRequest` / `PageResult` im gemeinsamen Vertrag nutzen oder ergaenzen.
-- `pageSize`-Obergrenzen definieren.
-- Cursor-Kapselung im MCP-Adapter implementieren.
-- deterministische Standardsortierung (`createdAt DESC`, `id ASC`) und
-  Cursor-Bindung an Tenant, Filter, `pageSize`, Sortierung und letzte Sort-Keys
-  fuer fachliche Listen-Tools implementieren.
-- `tenantId` als Phase-B-Wire-Feld fuer fachliche Listen-Tools beibehalten und
-  gegen `PrincipalContext.allowedTenantIds` validieren.
-- Chunk-Fortsetzungen als tenant-/resource-gebundene `nextChunkUri` oder
-  HMAC-gekapselte `nextChunkCursor` modellieren.
-- `resources/list` beim Phase-B-Resource-Walk
-  `JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS -> CONNECTIONS`
-  belassen und den family-basierten Cursor (`kind`, `innerToken`) nur
-  kapseln, nicht durch eine globale `createdAt`-Sortierung ersetzen.
-- Kompatibilitaetspfad fuer Phase-B-Cursor planen: bestehende
-  Base64-JSON-Cursor (`kind`, `innerToken`) duerfen fuer Phase-B-
-  Entwicklungsdaten entweder weiter gelesen und in neue HMAC-gekapselte
-  Cursor umgeschrieben oder mit klarer `VALIDATION_ERROR` plus
-  dokumentiertem Breaking-Change abgewiesen werden. Vor einem oeffentlichen
-  Adaptervertrag ist die zweite Variante erlaubt; nach Veroeffentlichung ist
-  ein Migrations-/Dual-Read-Pfad Pflicht.
-- Negative Tests fuer manipulierte Cursor schreiben.
+Ziel: JSON-Schemas und Projektionen der fuenf Discovery-Tools sind stabil,
+typisiert und golden-getestet.
 
-### 10.4 Discovery-Tools implementieren
+Umsetzung:
 
-- `job_list`
-- `artifact_list`
-- `schema_list`
-- `profile_list`
-- `diff_list`
-- `job_status_get` und `artifact_chunk_get` an denselben Resolver-Vertrag
-  anbinden.
+- Input-Schemas fuer `job_list`, `artifact_list`, `schema_list`,
+  `profile_list`, `diff_list` mit `additionalProperties=false` pruefen und
+  ggf. erweitern.
+- `tenantId`, `pageSize`, `cursor`, Zeitfenster und resource-spezifische
+  Filter exakt dokumentieren.
+- Output-Schemas auf typisierte Collection-Felder festlegen:
+  `jobs`, `artifacts`, `schemas`, `profiles`, `diffs`.
+- `items` in Phase D nicht einfuehren.
+- `totalCount` und `totalCountEstimate` optional halten.
+- Projection-Funktionen pro Tool einfuehren oder bestehende Projektionen
+  erweitern; alle potentiell sensitiven Felder scrubben.
 
-### 10.5 MCP-Standard-Discovery und Resource-Reads anbinden
+Tests:
 
-- `resources/list`
-- `resources/templates/list`
-- `resources/read` als URI-only Handler anbinden.
-- Resolver-Dispatch fuer `resources/read` ueber dasselbe URI-Modell wie
-  `resources/list` implementieren.
-- Fehler-Mapping fuer `resources/read` mit Discovery, Tenant-Scope und
-  no-oracle `RESOURCE_NOT_FOUND` synchronisieren.
-- Initialize-Capability pruefen.
-- Resource-Registry mit produktiven Resolvern verbinden.
+- Schema-Golden-Tests fuer Input und Output
+- unbekannte Filter -> `VALIDATION_ERROR`
+- `limit` wird nicht als Alias akzeptiert
+- Collection-Feld heisst korrekt und `nextCursor` ist stabil
 
-### 10.6 Connection-Ref-Bootstrap extrahieren
+### 10.6 AP D6: Discovery-Tool-Handler
 
-- adapterneutralen Port definieren.
-- `ConnectionSecretResolver` als separaten Port fuer autorisierte
-  Runner-/Driver-Pfade definieren.
-- CLI-Named-Connection-Parsing splitten.
-- MCP-Bootstrap an gemeinsamen Port anbinden.
-- Secret-Aufloesung in autorisierte Ausfuehrungspfade verschieben.
+Ziel: Die fuenf Listen-Tools laufen fachlich gegen die Store-/Index-Vertraege.
 
-### 10.7 Tests und Dokumentation
+Umsetzung:
 
-- Unit-Tests fuer Parser, Cursor, Filter und Resolver.
-- Adaptertests fuer MCP-Tools, `resources/list`, `resources/templates/list` und
-  `resources/read`.
-- Tenant-Scope- und Secret-Scrubbing-Tests.
-- Doku fuer Resource-URIs, Cursor und Connection-Refs ergaenzen.
+- Handler fuer:
+  - `job_list`
+  - `artifact_list`
+  - `schema_list`
+  - `profile_list`
+  - `diff_list`
+- Gemeinsamen Helper fuer Tenant-Auswahl:
+  - fehlende `tenantId` -> `principal.effectiveTenantId`
+  - gesetzte `tenantId` muss in `allowedTenantIds` liegen
+  - kein Cross-Tenant-Fanout
+- Gemeinsamen Helper fuer `pageSize`-Obergrenzen und Cursor-Decode.
+- Audit um Erfolgs-, Validierungs-, Tenant- und Cursor-Fehler ergaenzen.
+- Handler in Tool-Registry von `UNSUPPORTED_TOOL_OPERATION` auf produktive
+  Implementierung umhaengen.
+
+Tests:
+
+- jeder Handler mit leerem Store, einem Treffer und mehreren Seiten
+- Tenant-Default und explizite Tenant-Auswahl
+- principal-gefilterte Ergebnisse ohne Existenzdetails
+- Audit-Events fuer Erfolg und Fehler
+
+### 10.7 AP D7: `resources/read`
+
+Ziel: MCP-konformer URI-only Resource-Read fuer alle Phase-D-Resource-Typen.
+
+Umsetzung:
+
+- `ResourcesReadParams` strikt auf `uri` begrenzen; schemafremde Felder
+  werden abgewiesen.
+- JSON-RPC-Methode an `McpServiceImpl` / Protokollschicht anbinden, sofern
+  noch nicht produktiv verdrahtet.
+- Handler nutzt ausschliesslich Resource-URI-ADT und Resolver-Dispatcher.
+- Rueckgabe fuer JSON-Records als MCP-Text-Content mit `mimeType` /
+  Resource-Metadaten gemaess bestehendem Wire-Modell.
+- Grosse Inhalte nicht ueber zusaetzliche `resources/read`-Parameter loesen;
+  stattdessen Artefaktref oder `nextChunkUri`.
+- `dmigrate://capabilities` direkt lesbar machen.
+
+Tests:
+
+- Request mit nur `uri` erfolgreich
+- Request mit `cursor`, `range`, `chunkId` oder anderen Zusatzfeldern
+  fehlschlaegt
+- read fuer Job, Artifact, Schema, Profile, Diff, Connection und Capability
+- grosse Ressource liefert Referenz/Chunk-URI statt zu grossem Inline-Content
+- fremder Tenant vs. fehlende Sichtbarkeit korrekt gemappt
+
+### 10.8 AP D8: `resources/list` produktiv verdrahten
+
+Ziel: Der bestehende Resource-Walk liefert echte produktive Ressourcen aus den
+Stores und dieselben Resource-URIs wie `resources/read`.
+
+Umsetzung:
+
+- `ResourceStores.empty()` bleibt Test-/Bootstrap-Fallback, aber der normale
+  `mcp serve`-Pfad verdrahtet die produktiven Stores.
+- `ResourceProjector` auf Abschnitt 6.4 und Secret-Scrubbing pruefen.
+- Connection-Projektionen enthalten weder `credentialRef` noch `providerRef`.
+- Cursor von `resources/list` kapseln, ohne den Walk
+  `JOBS -> ARTIFACTS -> SCHEMAS -> PROFILES -> DIFFS -> CONNECTIONS` zu
+  veraendern.
+- `resources/templates/list` bleibt statisch bei genau sieben Templates.
+
+Tests:
+
+- Walk ueber alle sechs Familien
+- leere Seite mit nicht-null Cursor bleibt erlaubt
+- Templates-Golden-Test bleibt bei sieben Eintraegen
+- Capability-Resource erscheint nicht in Templates
+- `resources/list` und `resources/read` stimmen fuer dieselben URIs ueberein
+
+### 10.9 AP D9: `job_status_get` und `artifact_chunk_get` vereinheitlichen
+
+Ziel: Phase-C-Tool-Pfade verwenden denselben Resource-/Tenant-/Cursor-Vertrag
+wie `resources/read`.
+
+Umsetzung:
+
+- `job_status_get` akzeptiert weiterhin `jobId` oder `resourceUri`, normalisiert
+  intern aber auf Resource-URI-ADT.
+- `artifact_chunk_get` akzeptiert weiterhin den Phase-C-Vertrag, erzeugt
+  `nextChunkUri` fuer `resources/read` und optional HMAC-gekapselten
+  `nextChunkCursor` fuer Tool-Fortsetzungen.
+- Nackte `nextChunkId` nur beibehalten, wenn das bestehende Output-Schema es
+  zwingend erfordert; dann als legacy/deprecated markieren und nicht als
+  alleinige Fortsetzung verwenden.
+- Fehler fuer fremde Tenants, fehlende Sichtbarkeit und manipulierte Chunk-
+  Cursor an AP D2/D3 anbinden.
+
+Tests:
+
+- `jobId` und `resourceUri` fuehren zu identischem Status-Resultat
+- Chunk-Pagination ueber `nextChunkUri`
+- manipulierte Chunk-Cursor -> `VALIDATION_ERROR`
+- Retention-geloeschtes Artefakt -> `RESOURCE_NOT_FOUND`
+
+### 10.10 AP D10: Connection-Ref-Bootstrap extrahieren
+
+Ziel: CLI und MCP laden Connection-Refs ueber denselben adapterneutralen
+Bootstrap, ohne Secrets in Discovery-Pfade zu materialisieren.
+
+Umsetzung:
+
+- Neuen neutralen Port fuer Connection-Konfiguration definieren, z. B.
+  `ConnectionReferenceConfigLoader` oder aequivalent.
+- Bestehenden `NamedConnectionResolver` schneiden:
+  - Parsing und secret-freie Referenzextraktion in neutrales Modul
+  - Secret-/ENV-Expansion nur in autorisierte Runner-/Driver-Pfade
+- `ConnectionSecretResolver` als separaten Port fuer spaetere
+  connection-backed Ausfuehrungspfade definieren.
+- MCP-Bootstrap laedt nur secret-freie `ConnectionReference`-Records in den
+  `ConnectionReferenceStore`.
+- CLI-Pfade behalten ihr bisheriges Verhalten, nutzen aber den neutralen
+  Bootstrap statt eigener Parser-Duplizierung.
+- Konfigurationsfehler fuer fehlenden Secret-Provider fail-closed mappen.
+
+Tests:
+
+- YAML/Projektconfig mit Connection-Refs ohne Secret-Ausgabe
+- ENV-Platzhalter wird im Discovery-Pfad nicht expandiert
+- CLI-Regression fuer bestehende Named-Connection-Aufloesung
+- MCP-Connection-Resource ohne `credentialRef`/`providerRef`
+- fehlender Provider in connection-backed Pfad -> Konfigurationsfehler
+
+### 10.11 AP D11: Integrationstests fuer stdio und HTTP
+
+Ziel: Discovery und Resources funktionieren ueber beide MCP-Transporte mit
+identischem Vertrag.
+
+Umsetzung:
+
+- Test-Seeds fuer Jobs, Artefakte, Schemas, Profile, Diffs und Connections
+  bereitstellen.
+- stdio-Suite:
+  - `tools/list`
+  - fuenf Listen-Tools
+  - `resources/list`
+  - `resources/templates/list`
+  - `resources/read`
+- HTTP-Suite mit Auth/Scopes:
+  - `dmigrate:read` erfolgreich
+  - fehlender Scope -> bestehendes Scope-Fehlermapping
+  - fremder Tenant -> `TENANT_SCOPE_DENIED`
+- Negative Tests fuer manipulierte Cursor und secret-scrubbed Payloads.
+
+Tests:
+
+- Transport-Suites laufen gegen dieselben Fixtures
+- JSON-Schema- und Golden-Outputs bleiben stabil
+- keine Payload enthaelt Test-Secrets, JDBC-Passwoerter oder expandierte ENV-
+  Werte
+
+### 10.12 AP D12: Dokumentation und Statusnachzug
+
+Ziel: Nach Phase D sind Spezifikation, Nutzer-Doku und Implementierungsplan
+konsistent.
+
+Umsetzung:
+
+- `spec/mcp-server.md` um produktive Discovery-Tools, `resources/read`,
+  Cursor-Kapselung und `dmigrate://capabilities`-Discovery ergaenzen.
+- `spec/ki-mcp.md` nur dort anpassen, wo Phase-D-Entscheidungen vom
+  uebergeordneten Zielbild abweichen oder praezisiert wurden.
+- CLI-/MCP-Doku fuer Connection-Ref-Bootstrap und Secret-Grenzen ergaenzen.
+- Implementierungsstatus dieses Dokuments nach Abschluss auf
+  `Implementiert` setzen und offene Nacharbeiten explizit listen.
+- Falls Phase-B-Cursor nicht dual-read-faehig bleiben, den Breaking-Change
+  mit Datum und Begruendung dokumentieren.
+
+Tests/Gates:
+
+- `./gradlew :adapters:driving:mcp:test`
+- `./gradlew :adapters:driving:cli:test`
+- betroffene Store-/Core-Tests
+- vorhandene stdio+HTTP-Integrationstests aus Phase C/D
 
 ---
 
