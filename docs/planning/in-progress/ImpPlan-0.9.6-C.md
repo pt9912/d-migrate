@@ -1283,6 +1283,13 @@ Aufgaben:
   - `FINALIZING` akzeptiert keine weiteren Segmente und ist kein
     erfolgreicher terminaler Zustand; es ist nur der exklusive
     Side-Effect-Claim fuer die laufende Finalisierung.
+  - Der Claim ist lease-basiert (`finalizingClaimId`,
+    `finalizingClaimedAt`, `finalizingLeaseExpiresAt`) oder bekommt
+    eine aequivalente Stale-Erkennung. Crasht der Prozess zwischen
+    Claim und Terminal-State, darf die Session nicht dauerhaft in
+    `FINALIZING` haengen: nach Lease-Ablauf kann ein neuer completing
+    call denselben deterministischen Finalisierungsversuch reclaimen.
+    Vor Lease-Ablauf bleibt es beim retrybaren Busy-/Conflict-Pfad.
   - Verliert ein konkurrierender `isFinalSegment=true`-Call den Claim,
     darf er keine Assembly starten und kein Artefakt/schemaRef
     erzeugen. Er laedt den aktuellen Session-Zustand neu: bei
@@ -1292,6 +1299,24 @@ Aufgaben:
   - Der Claim und die spaetere Persistierung von `finalisedSchemaRef`
     muessen in den Store-Contracts testbar sein; ein einfacher
     read-then-save ohne CAS reicht fuer diesen AP nicht.
+- Die Finalisierung bekommt einen deterministischen Outcome-Anker, der
+  Crashs zwischen Artefaktwrite und Session-Commit replayfaehig macht:
+  - `artifactId` und `schemaId` werden fuer read-only Schema-Staging
+    aus Tenant, UploadSessionId, Gesamt-SHA und Format deterministisch
+    abgeleitet oder in einem atomaren Finalization-Outcome-Record am
+    Session-Datensatz reserviert, bevor der erste Side Effect startet
+  - `ArtifactContentStore.write` muss mit `AlreadyExists` fuer den
+    deterministischen `artifactId` idempotent behandelbar sein, sofern
+    der vorhandene SHA/Size zum Payload passt; Konflikte bleiben harte
+    interne Inkonsistenz
+  - Nach erfolgreichem Artefaktwrite und SchemaStore-Registrierung
+    wird `finalisedSchemaRef` zusammen mit Artifact-/Schema-Ids und
+    Payload-SHA persistiert, bevor die Session auf `COMPLETED`
+    wechselt. Ein Crash nach Artefaktwrite, aber vor `COMPLETED`, kann
+    nach FINALIZING-Lease-Ablauf denselben Outcome rekonstruieren und
+    ohne zweites Artefakt/schemaRef fortfahren.
+  - Der AP darf nicht auf zufaellige `UUID`-Generatoren als alleinige
+    Idempotenzbasis fuer Artefakt/schemaRef setzen.
 - `assembleSessionBytes` wird durch `assembleSessionPayload` ersetzt:
   - Segmente werden aus `UploadSegmentStore.listSegments(...)` streng
     nach `segmentIndex` sortiert und auf Luecken, Duplikate,
@@ -1310,6 +1335,13 @@ Aufgaben:
     streaming mit und vergleicht beides mit Session-/Request-
     Finalitaetsdaten. Mismatch fuehrt zu `VALIDATION_ERROR` bzw. dem
     bestehenden Upload-Fehlermapping, bevor der Finalizer startet.
+  - Persistente Assembly-Inkonsistenzen (Luecken, Duplikate,
+    Offsetbruch, Size-/SHA-Mismatch nach gespeicherten Segmenten)
+    werden als terminaler, replay-stabiler Session-Outcome gespeichert
+    (ABORTED mit sanitisiertem Fehlercode/Details oder aequivalenter
+    Rejection-Record). Retrys derselben completing Anfrage erhalten
+    denselben Fehlerpfad und starten keine neue Assembly-Schleife mit
+    abweichender Diagnose.
 - Primaerer Produktionspfad: Assembly schreibt in eine temporaere
   Spool-Datei unter dem AP-6.21-State-Dir, z.B.
   `<stateDir>/assembly/<uploadSessionId>/<uuid>.bin`, und gibt eine
@@ -1356,6 +1388,15 @@ Aufgaben:
   den persistierten `finalisedSchemaRef` aus der Session. Nur der erste
   echte completing call, der den Finalisierungs-Claim gewonnen hat,
   erzeugt einen Assembly-Spool.
+- Replay nach terminalem Fehler wird ebenfalls explizit:
+  - `ABORTED` wegen Parse-/Validierungsfehler oder Assembly-
+    Inkonsistenz liefert deterministisch denselben sanitisierten
+    Fehlercode/Details aus dem Session-Outcome, soweit dieser
+    persistiert wurde
+  - falls keine Details persistiert werden koennen, liefert ein Retry
+    einen terminalen `UPLOAD_SESSION_ABORTED`/Conflict-Fehler ohne
+    erneute Finalisierung und ohne neue Side Effects
+  - `ABORTED` ist nie ein Signal, die Assembly erneut zu starten
 - Fehlersemantik bleibt unveraendert: Parse-/Validierungsfehler
   rollen die noch aktive Session auf `ABORTED` und liefern die
   strukturierten Findings; IO-Fehler beim Assembly-Spool oder
@@ -1383,8 +1424,21 @@ Akzeptanz:
   nicht beide finalisieren: genau ein Call gewinnt den atomaren
   Finalisierungs-Claim, Verlierer erzeugen keinen Assembly-Spool, kein
   Artefakt und keine `schemaRef`.
+- Ein stale `FINALIZING` nach simuliertem Crash wird nach Lease-Ablauf
+  deterministisch reclaimt; vor Lease-Ablauf erhalten weitere Calls
+  einen retrybaren Busy-/Conflict-Fehler ohne Side Effects.
+- Crash nach erfolgreichem `ArtifactContentStore.write`, aber vor
+  `COMPLETED`, wird replay-stabil fortgesetzt: deterministischer
+  Artifact-/Schema-Outcome verhindert doppelte Artefakte und fuehrt am
+  Ende zu derselben `schemaRef`.
 - Parse-/Validation-/IO-Fehler und ABORTED-Sessions hinterlassen keine
   Assembly-Spool-Files im normalen Prozesspfad.
+- Replays fuer ABORTED-Sessions starten keine neue Assembly; sie
+  liefern entweder den persistierten sanitisierten Fehler-Outcome oder
+  einen terminalen Abort-/Conflict-Fehler.
+- Persistente Segment-/Assembly-Inkonsistenzen werden als terminaler
+  Session-Outcome dedupliziert; wiederholte completing calls erzeugen
+  dieselbe Antwortklasse und keine neuen Side Effects.
 - Verwaiste Assembly-Spool-Files aus simuliertem Crash/Kill unter
   `<stateDir>/assembly/...` werden beim naechsten Start gemaess
   Orphan-Retention bereinigt; Tests decken Retention noch nicht
