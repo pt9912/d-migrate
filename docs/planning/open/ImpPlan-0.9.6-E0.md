@@ -176,14 +176,27 @@ Ein nicht-cancelbarer, aber atomarer Call ist nur gate-faehig, wenn alle
 folgenden Schwellen eingehalten und dokumentiert sind:
 
 - kein interner Retry-/Reconnect-Loop ohne hartes Timeout
-- maximale erwartete Laufzeit und Timeout liegen innerhalb des fuer Phase E
-  akzeptierten Cancel-Reaktionsfensters
+- maximale erwartete Laufzeit und Timeout liegen innerhalb des E0-Cancel-
+  Reaktionsbudgets
 - nach Timeout oder Fehler startet der Runner keinen weiteren Side Effect
 - der Call haelt keine offene Transaktion, Session, Sperre oder temporaere
   Ressource ueber das Timeout hinaus
 
-Ohne belegtes Timeout-/Laufzeitfenster gilt `atomar aber nicht cancelbar` als
-`Blocked`, nicht als `Go mit Nacharbeiten`.
+Messbares E0-Cancel-Reaktionsbudget:
+
+- kooperative Checkpoint-Pfade muessen nach gesetztem Cancel-Signal vor dem
+  naechsten Side Effect reagieren; der Testnachweis muss deterministisch sein
+  und darf nicht von Wall-Clock-Sleeping abhaengen.
+- atomar-nicht-cancelbare monolithische Calls duerfen nach gesetztem Cancel-
+  Signal hoechstens ein gebundenes Operation-Timeout von `<= 30s` verbrauchen.
+- Retry-/Reconnect-Logik muss in dieses `<= 30s`-Gesamtbudget fallen; ein
+  einzelnes Timeout pro Versuch reicht nicht, wenn mehrere Versuche moeglich
+  sind.
+- Wenn ein produktiver Driver heute kein solches Gesamtbudget konfigurieren
+  oder messen kann, ist der Pfad `Blocked`.
+
+Ohne belegtes Timeout-/Laufzeitfenster und Messnachweis gilt `atomar aber
+nicht cancelbar` als `Blocked`, nicht als `Go mit Nacharbeiten`.
 
 Verbindliche Folge:
 
@@ -514,6 +527,8 @@ Pflichtschema fuer die Checkpoint-/Side-Effect-Matrix:
 | `cancel_reaction` | `OperationCancelledException`/zentrales Mapping, kein weiterer Read/Write, abort/close usw. |
 | `atomicity` | `atomic`, `multi_step`, `unknown` |
 | `timeout_or_bound` | Timeout, Laufzeitgrenze oder begruendetes `not_applicable` |
+| `cancel_budget_ms` | `<=30000` fuer atomar-nicht-cancelbare Calls oder `not_applicable` |
+| `measurement_evidence` | Testname, Fake-Clock-/Timeout-Nachweis oder `missing` |
 | `cleanup_contract` | `close`, `abort`, Rollback, Delete oder `not_needed` |
 | `test_coverage` | Testname oder `missing` |
 | `gate_result` | `go`, `go_followup`, `blocked` |
@@ -527,6 +542,8 @@ Tests/Gate:
 - jede Matrix-Zeile mit `test_coverage = missing`, `atomicity = unknown` oder
   fehlendem `timeout_or_bound` ist automatisch `blocked`, sofern ein externer
   Side Effect oder ein potentiell langer monolithischer Call betroffen ist
+- jede atomar-nicht-cancelbare Matrix-Zeile ohne `cancel_budget_ms <= 30000`
+  oder ohne `measurement_evidence` ist automatisch `blocked`
 
 ### 7.3 AP E0.3: Runner-Signaturen minimal erweitern
 
@@ -613,6 +630,11 @@ Zulaessige `Go mit Nacharbeiten`-Nacharbeiten sind ausschliesslich:
 - dokumentativer Phase-E-Anschluss von bereits typisierten Cancel-Outcomes an
   Status und Audit
 
+Der dokumentative Phase-E-Anschluss ist ausschliesslich eine Mapping-Tabelle
+oder Gate-Notiz. Er darf in E0 keine Job-Store-Schreibpfade, keine
+Status-Transitionen, keine Audit-Emissionen und keine produktive
+`job_cancel`-Wiring-Logik enthalten.
+
 Nicht zulaessig fuer `Go mit Nacharbeiten` und daher `Blocked`:
 
 - fehlende Tests fuer eine Side-Effect-Pipeline
@@ -687,8 +709,9 @@ Mindesttests:
   APIs, lange Queries und Writer-Initialisierung sind pro Pfad als cancelbar,
   atomar-nicht-cancelbar oder blockierend klassifiziert.
 - Atomar-nicht-cancelbare Calls haben ein belegtes Timeout-/Laufzeitfenster,
-  keine ungebundenen Retry-/Reconnect-Loops und hinterlassen nach Timeout
-  keine offenen Ressourcen.
+  ein gemessenes E0-Cancel-Reaktionsbudget von `<= 30s`, keine ungebundenen
+  Retry-/Reconnect-Loops und hinterlassen nach Timeout keine offenen
+  Ressourcen.
 - Die Checkpoint-/Side-Effect-Matrix nutzt das Pflichtschema aus Abschnitt 7.2
   und enthaelt keine `missing`-/`unknown`-Felder fuer gate-relevante Pfade.
 - Tests beweisen fuer jeden relevanten Runner mindestens einen Cancel-Punkt vor
@@ -734,3 +757,8 @@ Der E0-Abschluss muss Phase E ausserdem eine eindeutige Abbildung liefern:
 Diese Abbildung ist in E0 nur Vertrag und Gate-Artefakt. Produktive
 Status-Transitionen, Job-Store-Mutationen und Audit-Emissionen bleiben
 vollstaendig Phase E.
+
+Als E0-Artefakt ist nur eine nicht-ausfuehrende Mapping-Tabelle erlaubt. Jede
+Implementierung, die bereits `cancelled` persistiert, Audit-Events emittiert
+oder `job_cancel` produktiv verdrahtet, ist Scope-Drift und gehoert nicht in
+E0.
