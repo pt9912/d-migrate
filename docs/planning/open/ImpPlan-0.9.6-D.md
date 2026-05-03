@@ -365,8 +365,10 @@ Phase D legt dafuer verbindliche Adapter-Konstanten fest:
 Nur textuelle Inhalte mit `application/json`, `text/*` oder einem explizit
 dokumentierten textuellen MIME-Typ duerfen inline als MCP-Text-Content
 geliefert werden. Binaere oder unbekannte MIME-Typen werden nicht als Base64-
-Ersatzpayload in `resources/read` erfunden, sondern nur ueber Artefaktrefs
-oder Chunk-URIs adressiert.
+Ersatzpayload in `resources/read` erfunden. Sie werden entweder als natives
+MCP-Blob-Content geliefert, sofern die verwendete MCP-Bibliothek Blob-Contents
+fuer `resources/read` unterstuetzt und die Antwortlimits eingehalten werden,
+oder ueber Artefaktrefs bzw. Chunk-URIs adressiert.
 
 Ein Resource-Resolver darf inline liefern, wenn alle Bedingungen gelten:
 
@@ -383,11 +385,12 @@ Groessere Ressourcen liefern:
 - naechsten Chunk-Cursor
 - Groessen- und Hash-Metadaten, soweit vorhanden
 
-Binaere oder unbekannte MIME-Typen duerfen auch dann nicht inline geliefert
-werden, wenn ihr Body klein genug waere. `resources/read` muss in diesem Fall
-immer eine weiterverfolgbare Referenz liefern: entweder einen tenant-scoped
-`artifactRef` oder eine tenant-scoped `nextChunkUri`. Falls der Resolver keine
-solche Referenz bilden kann, gilt das als Implementierungs-/Adapterfehler und
+Binaere oder unbekannte MIME-Typen duerfen auch dann nicht als Text-Content
+oder Base64-in-JSON geliefert werden, wenn ihr Body klein genug waere.
+`resources/read` muss in diesem Fall entweder natives MCP-Blob-Content liefern
+oder eine weiterverfolgbare Referenz bilden: einen tenant-scoped `artifactRef`
+oder eine tenant-scoped `nextChunkUri`. Falls der Resolver weder Blob-Content
+noch Referenz bilden kann, gilt das als Implementierungs-/Adapterfehler und
 darf nicht als leere oder teilweise erfolgreiche Resource-Antwort erscheinen.
 
 Chunk-Fortsetzungen duerfen nicht als nackte `chunkId`-Cursor ausgegeben werden.
@@ -422,6 +425,12 @@ und Chunk-Grenzen abdecken.
 
 ### 5.4 Resource-Fehler
 
+Resource-Request-Fehler sind MCP-/JSON-RPC-Fehler, keine
+`tools/call`-Resultate mit `isError=true`. Der numerische JSON-RPC-
+`error.code` folgt dem bestehenden MCP-/0.9.6-Mapping; der stabile
+d-migrate-Code steht verbindlich in `error.data.dmigrateCode`. Phase D fuehrt
+kein alternatives Feld wie `error.data.code` fuer Resource-Fehler ein.
+
 Verbindliche Fehler:
 
 - `RESOURCE_NOT_FOUND` fuer nicht existente, nach Retention geloeschte oder
@@ -431,7 +440,8 @@ Verbindliche Fehler:
   Parameter, deren Tenant ausserhalb des erlaubten Principal-Tenant-Scopes liegt
 - `VALIDATION_ERROR` fuer syntaktisch ungueltige Resource-URIs, Filter sowie
   ungueltige, manipulierte, tenant-fremde oder abgelaufene Cursor-/Chunk-Tokens
-- `AUTH_REQUIRED` / `FORBIDDEN` gemaess bestehendem Auth-/Scope-Mapping
+- `AUTH_REQUIRED` / `FORBIDDEN_PRINCIPAL` gemaess bestehendem
+  Auth-/Scope-Mapping
 
 Direkte `resources/read`-Zugriffe auf fremde Jobs, Artefakte oder andere
 Ressourcen im erlaubten Tenant werden no-oracle wie nicht vorhandene Ressourcen
@@ -440,6 +450,15 @@ Kurzform: falscher Tenant-Scope ergibt `TENANT_SCOPE_DENIED`; richtiger Tenant,
 aber keine Sichtbarkeit auf den konkreten Datensatz, ergibt
 `RESOURCE_NOT_FOUND`.
 Fehler duerfen keine fremden Ressourcendetails leaken.
+
+Beispiele:
+
+- fehlende Resource im erlaubten Tenant:
+  JSON-RPC-Fehler mit `error.data.dmigrateCode=RESOURCE_NOT_FOUND`
+- syntaktisch ungueltige URI:
+  JSON-RPC-Fehler mit `error.data.dmigrateCode=VALIDATION_ERROR`
+- Tenant ausserhalb `allowedTenantIds`:
+  JSON-RPC-Fehler mit `error.data.dmigrateCode=TENANT_SCOPE_DENIED`
 
 ---
 
@@ -632,6 +651,29 @@ Die `resources` Capability setzt explizit `{"listChanged": false,
 Diese Felder bleiben Teil des Initialize-Vertrags und duerfen nicht durch
 Absent-Werte ersetzt werden.
 
+### 7.4 Scope-Mapping fuer Discovery und Resources
+
+Phase D muss die produktiven Resource- und Discovery-Methoden explizit in der
+Runtime-Scope-Tabelle verdrahten. In `McpServerConfig.DEFAULT_SCOPE_MAPPING`
+oder der aequivalenten Serverkonfiguration gelten mindestens:
+
+- `resources/list` -> `dmigrate:read`
+- `resources/templates/list` -> `dmigrate:read`
+- `resources/read` -> `dmigrate:read`
+- `job_list` -> `dmigrate:read`
+- `artifact_list` -> `dmigrate:read`
+- `schema_list` -> `dmigrate:read`
+- `profile_list` -> `dmigrate:read`
+- `diff_list` -> `dmigrate:read`
+- `job_status_get` -> `dmigrate:read`
+- `artifact_chunk_get` -> `dmigrate:read`
+
+Unbekannte Methoden fallen weiterhin fail-closed auf den bestehenden
+Admin-Fallback. Phase D darf deshalb keine produktive Discovery- oder
+Resource-Methode aus der Scope-Tabelle auslassen; sonst waeren die Methoden
+trotz `initialize.capabilities.resources` fuer normale Read-Principals nicht
+nutzbar.
+
 ---
 
 ## 8. Connection-Ref-Bootstrap
@@ -683,7 +725,9 @@ Verbindliche Regeln:
 - Jede Resource-Aufloesung prueft Tenant-Scope.
 - Jede fachliche Listen-Antwort und `resources/list` sind principal-gefiltert.
 - `resources/templates/list` ist die einzige Listen-Ausnahme: statisch,
-  principal-unabhaengig und ohne Resource-Aufloesung.
+  nicht principal-gefiltert und ohne Resource-Aufloesung. Die Methode ist
+  trotzdem Auth-/Scope-pflichtig und verlangt `dmigrate:read`; sie ist nicht
+  scope-frei und darf nicht ohne validierten Principal ausgefuehrt werden.
 - Cursor duerfen nicht tenant- oder filteruebergreifend wiederverwendbar sein.
 - Produktive MCP-Cursor enthalten `version`, `kid`, `issuedAt` und `expiresAt`;
   Cursor ohne Ablaufzeit sind ungueltig.
@@ -760,6 +804,9 @@ Umsetzung:
   - erlaubter Tenant, aber Phase-D-blocked Resource-Kind wie
     `UPLOAD_SESSIONS` -> `VALIDATION_ERROR` ohne Store-Lookup
   - fehlende Scopes -> bestehendes Auth-/Scope-Mapping
+- Resource-Fehler als JSON-RPC-Error mit stabilem d-migrate-Code in
+  `error.data.dmigrateCode` modellieren; keine Resource-Fehler als
+  `tools/call`-Result ausgeben.
 - Fehlerpraezedenz aus Abschnitt 4.2 in einem zentralen, golden-getesteten
   Error-Resolver abbilden, damit Listen-Tools, `resources/read` und
   `artifact_chunk_get` keine divergierende Reihenfolge implementieren.
@@ -776,6 +823,8 @@ Tests:
 - Datensatz im erlaubten Tenant, aber ohne Sichtbarkeit, liefert
   `RESOURCE_NOT_FOUND`
 - Capability-Resolver liefert nur secret-freie Daten
+- Resource-Fehler enthalten `error.data.dmigrateCode` und kein alternatives
+  `error.data.code`
 
 ### 10.3 AP D3: Cursor-Kapselung und Page-Vertrag
 
@@ -934,6 +983,8 @@ Umsetzung:
   werden abgewiesen.
 - JSON-RPC-Methode an `McpServiceImpl` / Protokollschicht anbinden, sofern
   noch nicht produktiv verdrahtet.
+- Methode in der Scope-Tabelle mit `dmigrate:read` verdrahten; fehlende
+  Mapping-Eintraege duerfen nicht auf `dmigrate:admin` zurueckfallen.
 - Handler nutzt ausschliesslich Resource-URI-ADT und Resolver-Dispatcher.
 - Rueckgabe fuer JSON-Records als MCP-Text-Content mit `mimeType` /
   Resource-Metadaten gemaess bestehendem Wire-Modell.
@@ -946,6 +997,9 @@ Umsetzung:
 Tests:
 
 - Request mit nur `uri` erfolgreich
+- normaler Read-Principal mit `dmigrate:read` darf `resources/read`,
+  `resources/list` und `resources/templates/list` nutzen
+- fehlender Scope liefert das bestehende Auth-/Scope-Fehlermapping
 - Request mit `cursor`, `range`, `chunkId` oder anderen Zusatzfeldern
   fehlschlaegt
 - read fuer Job, Artifact, Schema, Profile, Diff, Connection und Capability
@@ -954,9 +1008,11 @@ Tests:
 - grosse Ressource liefert Referenz/Chunk-URI statt zu grossem Inline-Content
 - JSON/Text knapp unterhalb der Inline-Grenze wird inline geliefert; Inhalt
   oberhalb der Grenze und binaere MIME-Typen liefern Referenz/Chunk-URI
-- kleine binaere oder unbekannte MIME-Typen liefern zwingend `artifactRef` oder
-  `nextChunkUri`, niemals Inline-Base64 und niemals eine Antwort ohne
-  weiterverfolgbare Referenz
+- kleine binaere oder unbekannte MIME-Typen liefern entweder MCP-Blob-Content,
+  falls die verwendete MCP-Bibliothek Blob-Contents fuer `resources/read`
+  nativ unterstuetzt und die Antwortlimits eingehalten werden, oder zwingend
+  `artifactRef`/`nextChunkUri`; niemals Inline-Base64-in-JSON und niemals eine
+  Antwort ohne weiterverfolgbare Referenz
 - fremder Tenant vs. fehlende Sichtbarkeit korrekt gemappt
 
 ### 10.8 AP D8: `resources/list` produktiv verdrahten
@@ -982,6 +1038,8 @@ Tests:
 - Templates-Golden-Test bleibt bei sieben Eintraegen
 - Capability-Resource erscheint nicht in Templates
 - `resources/list` und `resources/read` stimmen fuer dieselben URIs ueberein
+- `resources/list` und `resources/templates/list` sind mit `dmigrate:read`
+  gemappt und fallen nicht auf den Admin-Fallback
 
 ### 10.9 AP D9: `job_status_get` und `artifact_chunk_get` vereinheitlichen
 
@@ -1003,6 +1061,10 @@ Umsetzung:
   diese Felder nicht enthalten.
 - Fehler fuer fremde Tenants, fehlende Sichtbarkeit und manipulierte Chunk-
   Cursor an AP D2/D3 anbinden.
+- `artifact_chunk_get` bleibt als Tool-Methode in der Scope-Tabelle
+  `dmigrate:read` und nutzt fuer fachliche Tool-Fehler weiterhin das
+  Tool-Error-Envelope; Resource-URI-Reads derselben Chunks nutzen dagegen das
+  JSON-RPC-Resource-Fehlermapping aus Abschnitt 5.4.
 
 Tests:
 
@@ -1012,6 +1074,7 @@ Tests:
 - Response enthaelt keine nackte `nextChunkId` oder `chunkId`-Cursor
 - manipulierte Chunk-Cursor -> `VALIDATION_ERROR`
 - Retention-geloeschtes Artefakt -> `RESOURCE_NOT_FOUND`
+- Scope-Mapping fuer `artifact_chunk_get` bleibt `dmigrate:read`
 
 ### 10.10 AP D10: Connection-Ref-Bootstrap extrahieren
 
@@ -1136,6 +1199,9 @@ Tests/Gates:
 - Ressourcen ausserhalb des erlaubten Principal-Tenant-Scopes liefern
   `TENANT_SCOPE_DENIED`; Ressourcen im erlaubten Tenant ohne Sichtbarkeit fuer
   den Principal liefern no-oracle `RESOURCE_NOT_FOUND`.
+- Resource-Request-Fehler werden als MCP-/JSON-RPC-Fehler mit stabilem
+  d-migrate-Code in `error.data.dmigrateCode` geliefert, nicht als
+  `tools/call`-Result und nicht ueber ein alternatives `error.data.code`-Feld.
 - sensitive Connection-Refs liefern nur secret-freie `allowedOperations`- und
   Policy-Hinweise; Phase D implementiert dadurch keine Start-Tools fuer
   `schema_compare_start`, Reverse, Import oder Transfer.
@@ -1154,17 +1220,25 @@ Tests/Gates:
   Resources blockiert: nicht listbar, kein Template, kein `resources/read` und
   kein Store-Lookup; bei erlaubtem Tenant liefert `resources/read` dafuer
   `VALIDATION_ERROR`.
-- `resources/templates/list` bleibt statisch, principal-unabhaengig, ohne
-  Resource-Aufloesung und beim Phase-B-Vertrag mit genau sieben Templates;
-  `dmigrate://capabilities` ist dort kein zusaetzliches Template.
+- `resources/templates/list` bleibt statisch, nicht principal-gefiltert, ohne
+  Resource-Aufloesung und beim Phase-B-Vertrag mit genau sieben Templates,
+  verlangt aber weiterhin Auth und `dmigrate:read`; `dmigrate://capabilities`
+  ist dort kein zusaetzliches Template.
 - `resources/read` akzeptiert nur `uri`, nutzt Resolver-Dispatch, liefert
   grosse Inhalte nur ueber Artefaktrefs oder Chunk-URIs und ist mit
   Adaptertests abgedeckt.
+- `resources/list`, `resources/templates/list`, `resources/read`,
+  `job_list`, `artifact_list`, `schema_list`, `profile_list`, `diff_list`,
+  `job_status_get` und `artifact_chunk_get` sind explizit mit
+  `dmigrate:read` gemappt und fallen nicht auf den Admin-Fallback fuer
+  unbekannte Methoden zurueck.
 - `resources/read` liefert nur textuelle Inhalte inline, wenn der Body
   hoechstens `MAX_INLINE_RESOURCE_CONTENT_BYTES = 49152` Bytes umfasst und
   die serialisierte Antwort hoechstens
   `MAX_RESOURCE_READ_RESPONSE_BYTES = 65536` Bytes umfasst; binaere oder
-  unbekannte MIME-Typen werden nicht inline base64-kodiert.
+  unbekannte MIME-Typen werden nicht inline base64-kodiert, sondern als
+  natives MCP-Blob-Content oder ueber `artifactRef`/`nextChunkUri`
+  bereitgestellt.
 - Chunk-Fortsetzungen werden als tenant-scoped `nextChunkUri` oder als
   HMAC-gekapselter `nextChunkCursor` ausgegeben; nackte `chunkId`-Cursor sind
   nicht erlaubt.
