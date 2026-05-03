@@ -1849,12 +1849,22 @@ Aufgaben:
     Dispatch bei `tools/call`/`resources/read` entsteht. Tool-
     Responses, Tool-Error-Envelopes, JSON-RPC-Fehler nach Dispatch,
     Artefakte und Audit-Outcomes muessen hier fuer stdio und HTTP
-    identisch sein.
+    fachlich identisch sein.
   - Transport-spezifisch: Fehler vor JSON-RPC-Dispatch, z.B.
     HTTP-Status/Headers fuer Auth, Payload-Limits oder Session-
     Validierung sowie stdio-Principal-/Token-Ablehnung. Diese Pfade
     haben eigene Asserts und werden nicht mit Tool-Response-
     Gleichheit vermischt.
+- Transport-neutrale Gleichheitsvergleiche normalisieren
+  transport-/laufzeitabhaengige Felder vor dem Vergleich:
+  `requestId`, HTTP-Session-ID, dynamisch erzeugte Artifact-/Schema-/
+  Upload-IDs, absolute `stateDir`-/Temp-Pfade, Timestamps,
+  Duration-/Progress-Rohwerte und Reihenfolge nicht semantischer
+  Maps werden entweder durch stabile Platzhalter ersetzt oder ueber
+  per-Feld-Prädikate verglichen. Nicht normalisiert werden fachliche
+  Felder wie Toolname, Error-Code, `isError`, `schemaRef`-/Resource-
+  URI-Shape, `truncated`, `artifactRef`/`diffArtifactRef`,
+  Finding-Code/Severity/Path und Audit-Outcome.
 - Vor dem Szenario wird `tools/list` fuer beide Transports gegen die
   definierte Phase-C-Tool-Matrix aus §3.1 bzw. die Phase-C-Registry
   verglichen:
@@ -1866,6 +1876,16 @@ Aufgaben:
     Minimal-/Fehlerpfad mit identischem Mapping
   - der Test gibt bei Drift die fehlenden/unerwarteten Toolnamen pro
     Transport aus
+- `resources/read` ist ein Pflichtfluss, nicht nur Harness-Zubehoer:
+  - nach `schema_generate`, Upload-Finalisierung oder
+    `schema_compare` wird mindestens eine erzeugte Resource-URI ueber
+    `resources/read` gelesen und gegen denselben Tenant/Owner
+    geprueft
+  - ein fremder oder unbekannter Resource-URI erzeugt pro Transport
+    denselben no-oracle Fehlerpfad
+  - Ressourcen-Lesefehler nach JSON-RPC-Dispatch zaehlen zu den
+    transport-neutralen Assertions; HTTP-vor-Dispatch-Fehler bleiben
+    Transport-Assertions
 - Test-Isolation:
   - jeder Transportlauf bekommt ein eigenes Temp-`stateDir`, einen
     eigenen Tenant/Principal, einen eigenen `InMemoryAuditSink` und
@@ -1888,6 +1908,16 @@ Aufgaben:
     gehalten
   - parallele CI-Ausfuehrung darf keine festen Ports oder globalen
     Dateien nutzen
+- Lock-/Konkurrenztest:
+  - zusaetzlich zu den isolierten Transportlaeufen startet der Harness
+    je Transport einen zweiten Server mit demselben operator-supplied
+    `stateDir`, waehrend der erste noch laeuft
+  - der zweite Start muss vor JSON-RPC-Dispatch fail-fast scheitern
+    (CLI Exit 2 bzw. HTTP-Bootstrap-Config/Startup-Fehler) und darf
+    kein Tool-AuditEvent erzeugen
+  - nach Stop des ersten Servers muss ein erneuter Start mit demselben
+    `stateDir` moeglich sein; stale Lockfile-Payloads ohne aktives
+    Advisory-Lock blockieren nicht
 - Abdeckung pro Plan §7.3:
   - Initialize/Capabilities aus Phase B
   - `capabilities_list`
@@ -1917,6 +1947,13 @@ Aufgaben:
   - Test nutzt das produktive CLI-Wiring aus AP 6.21 (file-backed),
     nicht Development-/In-Memory-Byte-Stores; der Upload-Flow schreibt
     reale Segment-, Assembly- und Artifact-Dateien in `stateDir`.
+  - HTTP darf diese Anforderung nicht implizit vom CLI-stdio-Pfad
+    erben: AP 6.24 muss entweder ein explizites HTTP-Test-Wiring mit
+    denselben file-backed Byte-Stores bereitstellen oder den HTTP-
+    Bootstrap so konfigurieren, dass `FileBackedUploadSegmentStore`
+    und `FileBackedArtifactContentStore` unter dem HTTP-`stateDir`
+    verdrahtet sind. Der Test prueft fuer beide Transports reale
+    Dateien unter `<stateDir>/segments` und `<stateDir>/artifacts`.
   - grosse Upload-/Generate-/Compare-Szenarien muessen oberhalb der
     bisherigen `ByteArray`-Gefahr liegen und pruefen nur bounded
     Inline-Responses; Heap-/Allokationsmessung bleibt Unit-/Adapter-
@@ -1947,6 +1984,12 @@ Aufgaben:
     Treffer sind ein Testfehler; erlaubte Ausgabe ist nur die
     gescrubbte Projektion. Eine kleine Ausnahme-Matrix dokumentiert
     pro Transport, welche Metadaten nicht Teil des Secret-Scans sind.
+  - Um False Negatives zu vermeiden, enthalten die Fixtures zusaetzlich
+    ein Canary-Secret in einem bisher nicht erwarteten freien
+    Output-/Error-Feld. Der Test muss entweder belegen, dass dieses
+    Feld schema-seitig abgelehnt wird, oder dass der Canary-Wert in
+    der serialisierten Ausgabe gescrubbt ist. Damit bleibt der Scan
+    deterministisch, deckt aber neue unerwartete Felder ab.
   - Toolfehler-Envelopes werden separat geprueft: `isError=true`
     bleibt JSON-RPC-success, `error.details[].value` ist scrubbed;
     Transport-/Protocol-Fehler bleiben JSON-RPC-Error bzw. HTTP-
@@ -2002,7 +2045,16 @@ Akzeptanz:
 - beide Transports nutzen file-backed Byte-Stores aus AP 6.21 und
   verifizieren Upload, Streaming-Finalisierung, Chunk-Abruf und
   Cleanup-/Lock-Verhalten auf isolierten State-Dirs mit
-  testkontrollierten Retention-/TTL-Werten
+  testkontrollierten Retention-/TTL-Werten; fuer HTTP ist das
+  file-backed Wiring explizit konfiguriert und nicht nur aus dem CLI-
+  Pfad abgeleitet
+- `resources/read` liest mindestens eine im Szenario erzeugte
+  Resource-URI erfolgreich und pinnt einen fremden/unbekannten
+  Resource-URI als no-oracle Fehlerpfad fuer beide Transports
+- transport-neutrale Gleichheitsassertions nutzen eine dokumentierte
+  Normalisierung fuer Request-IDs, Session-IDs, dynamische
+  Resource-IDs, Pfade und Zeitwerte; fachliche Felder werden nicht
+  normalisiert
 - `schema_validate`, `schema_generate`, `schema_compare` und
   `job_status_get` validieren im Integrationstest gegen ihre
   `PhaseBToolSchemas`-Output-Schemas; generische
@@ -2015,7 +2067,9 @@ Akzeptanz:
 - Inline-Responses, Artefakte, AuditEvents, stderr und HTTP-
   Fehlertexte enthalten keine verbotenen Secret-/Pfad-Rohwerte; der
   Scan nutzt nur deterministische Fixture-Rohwerte und dokumentierte
-  Feld-/Metadaten-Grenzen, keine breiten Heuristik-Regexe
+  Feld-/Metadaten-Grenzen, keine breiten Heuristik-Regexe. Ein
+  Canary-Secret in einem unerwarteten freien Feld wird entweder
+  schema-seitig abgelehnt oder gescrubbt
 - jeder bis zum Dispatcher gelangte `tools/call` erzeugt genau ein
   AuditEvent mit korrektem Outcome und Request-Korrelation;
   Vorabfehler vor Dispatch haben einen separaten 0-oder-
@@ -2023,6 +2077,9 @@ Akzeptanz:
   voneinander isoliert
 - der Test prueft mindestens einen fachlichen `isError=true`-Fehler
   und einen echten JSON-RPC-/HTTP-Resource-Fehler pro Transport
+- ein Konkurrenzstart mit demselben operator-supplied `stateDir`
+  scheitert pro Transport vor Dispatch, erzeugt kein Tool-AuditEvent
+  und ein anschliessender Neustart nach Stop des ersten Servers gelingt
 - der Integrationstest scheitert, sobald ein Phase-C-Tool nur in
   einem der zwei Transports korrekt funktioniert
 
