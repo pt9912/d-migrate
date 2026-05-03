@@ -307,6 +307,10 @@ Regeln:
 - gleicher Tenant, Caller, Toolname, `approvalKey` und
   `payloadFingerprint` liefern dieselbe Session.
 - gleicher Scope mit abweichendem Payload liefert `IDEMPOTENCY_CONFLICT`.
+- `sizeBytes` darf `0` sein; ein Null-Byte-Upload besteht aus genau einem
+  finalen Segment mit `segmentIndex=1`, `segmentOffset=0`, `segmentTotal=1`,
+  `isFinalSegment=true`, `contentBase64=""` und dem SHA-256 des leeren
+  Byte-Arrays.
 - `sizeBytes` darf maximal `209715200` Bytes betragen.
 - `checksumSha256` ist Pflicht und Teil des Init-Fingerprints.
 
@@ -342,11 +346,20 @@ Validierungen:
 - session-scoped Upload-Berechtigung passt
 - `segmentIndex` beginnt bei `1` und ist fortlaufend
 - `segmentTotal` ist positiv, bleibt fuer die Session stabil und passt zur
-  beim Init berechneten Segmentanzahl
+  beim Init berechneten Segmentanzahl:
+  `max(1, ceil(sizeBytes / maxUploadSegmentBytes))`
 - `segmentIndex <= segmentTotal`
 - `isFinalSegment == (segmentIndex == segmentTotal)`
-- `segmentOffset` passt zur decodierten Byteposition
+- fuer nicht-finale Segmente gilt:
+  `segmentOffset == (segmentIndex - 1) * maxUploadSegmentBytes`
+- fuer finale Segmente gilt derselbe Offset aus der festen Segmentgroesse der
+  Vorgaenger; zusammen mit `decodedSize` muss er `sizeBytes` exakt erreichen
 - decodierte Segmentgroesse maximal `4194304` Bytes
+- nicht-finale Segmente muessen exakt `maxUploadSegmentBytes` decodierte Bytes
+  enthalten
+- das finale Segment muss den Bytebereich exakt schliessen:
+  `segmentOffset + decodedSize == sizeBytes`; es darf kleiner als
+  `maxUploadSegmentBytes` sein und ist nur fuer `sizeBytes=0` leer
 - `segmentSha256` ist SHA-256 ueber decodierte Bytes
 - Gesamt-`checksumSha256` passt bei finalem Segment
 - wiederholte Segmente muessen denselben `segmentTotal`- und
@@ -489,17 +502,39 @@ Regeln:
 
 Erlaubte Import-Optionen fuer Phase F:
 
-- `mode`: `append`, `replace` oder `validate_only`
-- `batchSize`: positive Ganzzahl bis `10000`
-- `failOnRowError`: Boolean
-- `mappingRef`: optionale tenant-scoped Resource-Ref
+- `format`: `json`, `yaml` oder `csv`, sofern nicht eindeutig aus dem
+  Artefakt ableitbar
+- `schemaRef`: optionale tenant-scoped Schema-Ref fuer Preflight und
+  Tabellenreihenfolge
+- `table`: optionaler Zieltabellen-Identifier fuer Single-File-/stdin-
+  aequivalente Artefakte
+- `tables`: optionale geordnete Liste von Tabellen-Identifiern fuer
+  Directory-/Mehrtabellen-Artefakte
+- `onError`: `abort`, `skip` oder `log`
+- `onConflict`: `abort`, `skip` oder `update`
+- `triggerMode`: `fire`, `disable` oder `strict`
+- `truncate`: Boolean, default `false`
+- `disableFkChecks`: Boolean, default `false`
+- `reseedSequences`: Boolean, default `true`
+- `encoding`: optionaler Encoding-Name wie im CLI-Vertrag
+- `csvNoHeader`: Boolean, default `false`
+- `csvNullString`: String, default `""`
+- `chunkSize`: positive Ganzzahl bis `10000`, default `10000`
+
+Diese Optionsschicht ist eine strukturierte MCP-Abbildung der vorhandenen
+`DataImportRequest`-/`ImportOptions`-Runner-Vertraege. Phase F fuehrt keine
+neuen Mode-Werte wie `replace` oder `validate_only` ein. Destruktives Leeren
+bleibt ausschliesslich `truncate=true`; es ist nicht atomar und muss im
+Policy-Fingerprint, Audit und Approval-Challenge als destruktive Option
+sichtbar sein.
 
 Nicht erlaubte Import-Optionen:
 
 - rohe SQL-Statements
 - JDBC-URLs oder Connection-Secrets
-- freie Zieltabellen- oder Schema-Namen ausserhalb einer erlaubten,
-  strukturierten Mapping-Ref
+- Tabellen-/Schema-Identifier, die nicht der bestehenden CLI-Identifier-
+  Validierung entsprechen
+- `resume`, `checkpointDir`, lokale Pfade oder lokale CLI-Konfigurationspfade
 - unbekannte Optionsfelder; sie liefern `VALIDATION_ERROR`
 
 ### 6.2 `data_transfer_start`
@@ -528,18 +563,31 @@ Regeln:
 
 Erlaubte Transfer-Optionen fuer Phase F:
 
-- `mode`: `copy`, `compare_only` oder `validate_only`
-- `batchSize`: positive Ganzzahl bis `10000`
-- `includeSchemas`: Liste expliziter Schema-Namen, optional
-- `excludeSchemas`: Liste expliziter Schema-Namen, optional
-- `mappingRef`: optionale tenant-scoped Resource-Ref
+- `tables`: optionale Liste von Tabellen-Identifiern
+- `filter`: optionale Filter-DSL nach bestehendem CLI-Vertrag; keine rohen
+  SQL-Fragmente
+- `sinceColumn`: optionaler Marker-Identifier, nur zusammen mit `since`
+- `since`: optionale untere Marker-Grenze, nur zusammen mit `sinceColumn`
+- `onConflict`: `abort`, `skip` oder `update`
+- `triggerMode`: `fire`, `disable` oder `strict`
+- `truncate`: Boolean, default `false`
+- `chunkSize`: positive Ganzzahl bis `10000`, default `10000`
+
+Diese Optionsschicht ist eine strukturierte MCP-Abbildung von
+`DataTransferRequest` und `DataTransferRunner`. Phase F fuehrt keine neuen
+Mode-Werte wie `copy`, `compare_only` oder `validate_only` ein. Destruktives
+Leeren bleibt ausschliesslich `truncate=true`; es ist nicht atomar und muss im
+Policy-Fingerprint, Audit und Approval-Challenge als destruktive Option
+sichtbar sein.
 
 Nicht erlaubte Transfer-Optionen:
 
 - rohe SQL-Statements
 - JDBC-URLs oder Connection-Secrets
-- freie Source-/Target-Objektpfade ausserhalb strukturierter
-  Include-/Exclude-Listen oder Mapping-Refs
+- `filter`-Werte, die nicht der bestehenden Filter-DSL entsprechen
+- Tabellen-/Marker-Identifier, die nicht der bestehenden CLI-Identifier-
+  Validierung entsprechen
+- lokale CLI-Konfigurationspfade
 - unbekannte Optionsfelder; sie liefern `VALIDATION_ERROR`
 
 ### 6.3 Idempotency fuer Import und Transfer
@@ -693,11 +741,16 @@ Tests:
 - `artifact_upload` gegen bestehende Session verdrahten.
 - Base64 decodieren.
 - Segmentgroesse gegen `maxUploadSegmentBytes` pruefen.
+- nicht-finale Segmentgroesse exakt gegen `maxUploadSegmentBytes` pruefen.
+- finales Segment muss `segmentOffset + decodedSize == sizeBytes` erfuellen.
 - `segmentSha256` ueber decodierte Bytes berechnen.
 - `segmentIndex`, `segmentOffset`, `segmentTotal` und `isFinalSegment`
   fortlaufend validieren.
+- feste Offset-Regel `segmentOffset == (segmentIndex - 1) *
+  maxUploadSegmentBytes` fuer alle Segmente pinnen.
 - `segmentTotal` pro Session stabil halten.
 - `isFinalSegment` nur fuer `segmentIndex == segmentTotal` akzeptieren.
+- Null-Byte-Upload als ein finales leeres Segment modellieren und validieren.
 - atomare Segmentwrites in `UploadSegmentStore` nutzen.
 - wiederholte identische Segmente idempotent behandeln.
 - abweichende Wiederholung einschliesslich anderer Segment-Metadaten
@@ -707,7 +760,12 @@ Tests:
 
 - fehlendes `contentBase64`
 - zu grosses Segment -> `PAYLOAD_TOO_LARGE`
+- nicht-finales Segment mit zu kleiner Groesse -> `VALIDATION_ERROR`
+- finales Segment schliesst Bytebereich nicht exakt -> `VALIDATION_ERROR`
+- Segmentoffset weicht von der festen Segmentgroessen-Position ab ->
+  `VALIDATION_ERROR`
 - Hash ueber falsche Bytes -> `VALIDATION_ERROR`
+- `sizeBytes=0` mit leerem finalem Segment und Empty-SHA erfolgreich
 - `segmentIndex=0`
 - `segmentIndex > segmentTotal`
 - `isFinalSegment` widerspricht `segmentIndex == segmentTotal`
@@ -771,7 +829,8 @@ Tests:
 ### 8.7 AP F.7: `data_import_start`
 
 - Tool-Schema finalisieren.
-- erlaubte Import-Optionen aus Abschnitt 6.1 im Schema pinnen.
+- erlaubte Import-Optionen aus Abschnitt 6.1 als Runner-nahe
+  `DataImportRequest`-/`ImportOptions`-Abbildung im Schema pinnen.
 - `artifactId` / Artefakt-`resourceUri` validieren.
 - `targetConnectionRef` erzwingen.
 - `idempotencyKey` erzwingen.
@@ -780,6 +839,8 @@ Tests:
 - Policy-/Approval-Flow aus Phase E anbinden.
 - Import-Runner als abbrechbaren Job starten.
 - read-only Staging-Artefakte als `job_input` abweisen.
+- `truncate=true` als nicht-atomare destruktive Option in Policy, Audit und
+  Approval-Challenge kennzeichnen.
 
 Tests:
 
@@ -787,6 +848,9 @@ Tests:
 - fehlender `targetConnectionRef`
 - unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder JDBC-Secret in Import-Optionen -> `VALIDATION_ERROR`
+- neuer MCP-Mode wie `replace` oder `validate_only` ->
+  `VALIDATION_ERROR`
+- `truncate=true` erscheint im Policy-Fingerprint und Audit als destruktiv
 - Import ohne Approval
 - unbekanntes Artefakt
 - read-only gestagtes Schema als Job-Input -> `VALIDATION_ERROR`
@@ -798,7 +862,8 @@ Tests:
 ### 8.8 AP F.8: `data_transfer_start`
 
 - Tool-Schema finalisieren.
-- erlaubte Transfer-Optionen aus Abschnitt 6.2 im Schema pinnen.
+- erlaubte Transfer-Optionen aus Abschnitt 6.2 als Runner-nahe
+  `DataTransferRequest`-Abbildung im Schema pinnen.
 - Source-/Target-Connection-Refs tenant-scoped validieren.
 - `idempotencyKey` erzwingen.
 - freie JDBC-Strings abweisen.
@@ -806,6 +871,8 @@ Tests:
   aufnehmen.
 - Policy-/Approval-Flow aus Phase E anbinden.
 - Transfer-Runner als abbrechbaren Job starten.
+- `truncate=true` als nicht-atomare destruktive Option in Policy, Audit und
+  Approval-Challenge kennzeichnen.
 
 Tests:
 
@@ -815,6 +882,9 @@ Tests:
 - unbekanntes Transfer-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder Connection-Secret in Transfer-Optionen ->
   `VALIDATION_ERROR`
+- neuer MCP-Mode wie `copy`, `compare_only` oder `validate_only` ->
+  `VALIDATION_ERROR`
+- `truncate=true` erscheint im Policy-Fingerprint und Audit als destruktiv
 - Transfer ohne Approval
 - genehmigter Retry dedupliziert
 - abweichende Transfer-Option mit gleichem `idempotencyKey` ->
@@ -919,8 +989,12 @@ Mindestfaelle:
 - Init-Retry mit gleichem `approvalKey`
 - Init-Retry mit anderem Payload
 - Init mit kanonischem `sizeBytes`
+- Init mit `sizeBytes=0`
 - optionaler Init-Alias `expectedSizeBytes` widerspricht `sizeBytes`
 - ungueltige `segmentTotal`-/`isFinalSegment`-Kombination
+- nicht-finales Segment ist kleiner als `maxUploadSegmentBytes`
+- finales Segment schliesst Bytebereich nicht exakt
+- Segmentoffset weicht von der festen Segmentgroessen-Position ab
 - fehlendes `contentBase64`
 - zu grosses Segment
 - Segmenthash-Mismatch
@@ -933,6 +1007,8 @@ Mindestfaelle:
 - read-only Staging als Import-Input
 - unbekannte Import-/Transfer-Optionsfelder
 - rohe SQL-/JDBC-/Secret-Werte in Import-/Transfer-Optionen
+- erfundene MCP-Mode-Werte statt Runner-naher Optionen
+- `truncate=true` als destruktive, nicht-atomare Option im Fingerprint
 - Import ohne Approval
 - Transfer ohne Approval
 - Import/Transfer ohne `idempotencyKey`
@@ -973,6 +1049,12 @@ Mindestfaelle:
 - `segmentTotal` bleibt pro Session stabil, `segmentIndex <= segmentTotal`
   wird erzwungen und `isFinalSegment` muss exakt
   `segmentIndex == segmentTotal` entsprechen.
+- Nicht-finale Segmente sind exakt `maxUploadSegmentBytes` gross; nur das
+  finale Segment darf kleiner sein und muss den Bytebereich exakt schliessen.
+  Segmentoffsets folgen fuer alle Segmente der festen Position
+  `(segmentIndex - 1) * maxUploadSegmentBytes`.
+- `sizeBytes=0` ist erlaubt und wird als ein finales leeres Segment mit
+  Empty-SHA validiert.
 - Finale Segmentverarbeitung nutzt `FINALIZING` als Single-Writer-Claim;
   parallele finale Segmente und Reclaim nach Lease-Ablauf erzeugen maximal ein
   Artefakt und replayen persistierte Finalisierungsergebnisse nur nach
@@ -996,10 +1078,14 @@ Mindestfaelle:
 - `data_transfer_start` bindet Source-/Target-Connection-Refs an Policy und
   Idempotency.
 - Import- und Transfer-Optionen sind als strukturierte Allowlist-Schemas
-  gepinnt; unbekannte Felder, rohe SQL-Werte, JDBC-URLs und Secrets werden
-  vor Policy-Claim mit `VALIDATION_ERROR` abgelehnt.
+  gepinnt und bilden die bestehenden Runner-Vertraege ab; unbekannte Felder,
+  neue MCP-Mode-Werte, rohe SQL-Werte, JDBC-URLs und Secrets werden vor
+  Policy-Claim mit `VALIDATION_ERROR` abgelehnt.
 - Normalisierte Import-/Transfer-Optionen sind Teil des Policy- und
   Idempotency-Fingerprints.
+- `truncate=true` ist der einzige Phase-F-Mechanismus fuer destruktives Leeren
+  von Zielen; er wird nicht als `replace` abstrahiert und erscheint sichtbar
+  in Policy, Audit und Approval-Challenge.
 - Import/Transfer-Retries mit gleichem Idempotency-Store-Key deduplizieren.
 - Abweichender Import-/Transfer-Payload mit gleichem Store-Key liefert
   `IDEMPOTENCY_CONFLICT`.
