@@ -20,6 +20,7 @@ import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.time.Instant
@@ -219,6 +220,48 @@ class McpServiceImplToolsTest : FunSpec({
             obj.get("key").asString to obj.get("value").asString
         }
         pairs shouldBe listOf("policyName" to "x", "custom" to "y")
+    }
+
+    test("AP 6.23: errorEnvelope scrubs message + details[].value as a serialisation boundary") {
+        // Plan §6.23: Tool-Error-Envelopes scrub error.details[].value
+        // (and message) at the serialisation boundary so an upstream
+        // exception carrying a Bearer / approval-token / JDBC URL in
+        // its details cannot leak across the wire — even if the
+        // exception was constructed without going through SecretScrubber.
+        val descriptor = ToolDescriptor(
+            name = "leaky_test_tool",
+            title = "Leaky",
+            description = "fixture",
+            requiredScopes = setOf("dmigrate:read"),
+            inputSchema = mapOf("type" to "object"),
+            outputSchema = mapOf("type" to "object"),
+        )
+        val handler = ToolHandler {
+            throw dev.dmigrate.server.application.error.ValidationErrorException(
+                listOf(
+                    dev.dmigrate.server.application.error.ValidationViolation(
+                        field = "auth",
+                        reason = "header was 'Bearer abcdef0123' — refused",
+                    ),
+                ),
+            )
+        }
+        val registry = ToolRegistry.builder().register(descriptor, handler).build()
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = registry,
+            initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("leaky_test_tool" to setOf("dmigrate:read")),
+        )
+        val result = sut.toolsCall(ToolsCallParams(name = "leaky_test_tool")).get()
+        result.isError shouldBe true
+        val envelope = JsonParser.parseString(result.content.single().text!!).asJsonObject
+        val details = envelope.getAsJsonArray("details")
+        val authValue = details.first { it.asJsonObject.get("key").asString == "auth" }
+            .asJsonObject.get("value").asString
+        // Scrubber turns "Bearer abcdef0123" into "Bearer ***".
+        authValue shouldContain "Bearer ***"
+        authValue shouldNotContain "abcdef0123"
     }
 
     test("envelope details survive duplicate keys (ValidationError-style)") {

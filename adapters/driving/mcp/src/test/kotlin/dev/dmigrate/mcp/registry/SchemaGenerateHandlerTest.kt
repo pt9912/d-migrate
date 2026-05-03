@@ -29,6 +29,8 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Clock
@@ -158,6 +160,81 @@ class SchemaGenerateHandlerTest : FunSpec({
         json.get("truncated").asBoolean shouldBe true
         artifactStore.list(ACME, dev.dmigrate.server.core.pagination.PageRequest(20))
             .items.size shouldBe 1
+    }
+
+    test("AP 6.23: DDL persisted as artefact is scrubbed (Bearer / approval-token / connection URL)") {
+        // Plan §6.23: DDL bytes flow through SecretScrubber before
+        // any ArtifactSink write so a Bearer / approval-token / JDBC
+        // URL accidentally landing in DEFAULTs / comments / quoted
+        // identifiers cannot leak through the spilled artefact.
+        val tinyLimits = McpLimitsConfig(maxToolResponseBytes = 64) // threshold = 32
+        val largeSqlWithSecrets = "-- Bearer abcdef0123456789\n" +
+            "CREATE TABLE t1 (note TEXT DEFAULT '${"x".repeat(40)}');\n" +
+            "-- callback tok_helloworld_secret\n"
+        val ddl = DdlResult(statements = listOf(DdlStatement(sql = largeSqlWithSecrets)))
+        val (sut, artifactStore, contentStore) = handler(
+            FakeDdlGenerator(DatabaseDialect.POSTGRESQL, ddl),
+            limits = tinyLimits,
+        )
+        val outcome = sut.handle(
+            ToolCallContext(
+                "schema_generate",
+                args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"POSTGRESQL"}"""),
+                PRINCIPAL,
+            ),
+        )
+        val json = parsePayload(outcome)
+        val artifactId = json.get("artifactRef").asString.substringAfterLast("/")
+        val record = artifactStore.findById(ACME, artifactId)!!
+        val storedBytes = contentStore.openRangeRead(artifactId, 0L, record.managedArtifact.sizeBytes)
+            .use { it.readBytes() }
+        val storedSql = String(storedBytes, Charsets.UTF_8)
+        // Bearer + approval-token must be redacted in the persisted artefact.
+        storedSql shouldContain "Bearer ***"
+        storedSql shouldNotContain "abcdef0123456789"
+        storedSql shouldNotContain "tok_helloworld_secret"
+    }
+
+    test("AP 6.23: findings-only overflow (small DDL) still emits artifactRef with the full findings") {
+        // Plan §6.23: the truncated → artifactRef coupling no longer
+        // hangs on DDL size. Findings-only overflow with a small DDL
+        // still produces an artefact (JSON list of all findings) and
+        // sets artifactRef so the schema's if/then constraint holds.
+        val limits = McpLimitsConfig(
+            maxToolResponseBytes = 1_000_000, // DDL inline OK
+            maxInlineFindings = 2,
+        )
+        val notes = (1..5).map {
+            TransformationNote(NoteType.WARNING, "W$it", "schema.t$it", "warning $it")
+        }
+        val ddl = DdlResult(
+            statements = listOf(DdlStatement(sql = "CREATE TABLE t1 (id BIGINT);")),
+            globalNotes = notes,
+        )
+        val (sut, artifactStore, contentStore) = handler(
+            FakeDdlGenerator(DatabaseDialect.POSTGRESQL, ddl),
+            limits = limits,
+        )
+        val outcome = sut.handle(
+            ToolCallContext(
+                "schema_generate",
+                args("""{"schema":${SIMPLE_SCHEMA},"targetDialect":"POSTGRESQL"}"""),
+                PRINCIPAL,
+            ),
+        )
+        val json = parsePayload(outcome)
+        json.get("truncated").asBoolean shouldBe true
+        json.has("ddl") shouldBe true // small DDL still inline
+        val artifactRef = json.get("artifactRef").asString
+        artifactRef shouldStartWith "dmigrate://tenants/acme/artifacts/"
+        // Inline findings are capped to 2; the artefact carries all 5.
+        json.getAsJsonArray("findings").size() shouldBe 2
+        val artifactId = artifactRef.substringAfterLast("/")
+        val record = artifactStore.findById(ACME, artifactId)!!
+        val storedBytes = contentStore.openRangeRead(artifactId, 0L, record.managedArtifact.sizeBytes)
+            .use { it.readBytes() }
+        val storedJson = JsonParser.parseString(String(storedBytes, Charsets.UTF_8)).asJsonArray
+        storedJson.size() shouldBe 5
     }
 
     test("note severities map per the wire contract (action_required → error, info → info)") {

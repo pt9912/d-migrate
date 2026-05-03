@@ -13,6 +13,7 @@ import dev.dmigrate.mcp.registry.ToolDescriptor
 import dev.dmigrate.mcp.registry.ToolRegistry
 import dev.dmigrate.server.application.audit.AuditContext
 import dev.dmigrate.server.application.audit.AuditScope
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
@@ -357,10 +358,19 @@ class McpServiceImpl(
     private fun errorEnvelopeResult(
         envelope: dev.dmigrate.server.core.error.ToolErrorEnvelope,
     ): ToolsCallResult {
+        // AP 6.23: scrub the message + every details[].value through
+        // SecretScrubber as a serialisation boundary. Upstream
+        // mappers already scrub typed validation messages, but
+        // generic / forwarded errors can still carry Bearer tokens,
+        // JDBC URLs or local paths in their details — this is the
+        // last hop before the wire payload is rendered.
         val payload = buildMap<String, Any> {
             put("code", envelope.code.name)
-            put("message", envelope.message)
-            put("details", envelope.details.map { mapOf("key" to it.key, "value" to it.value) })
+            put("message", SecretScrubber.scrub(envelope.message))
+            put(
+                "details",
+                envelope.details.map { mapOf("key" to it.key, "value" to SecretScrubber.scrub(it.value)) },
+            )
             envelope.requestId?.let { put("requestId", it) }
         }
         return ToolsCallResult(
