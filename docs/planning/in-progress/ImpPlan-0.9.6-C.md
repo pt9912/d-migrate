@@ -1271,6 +1271,27 @@ Aufgaben:
   openStream(), close/delete)`. Sie ist wiederoeffnend, weil der
   Finalizer denselben Payload mindestens zweimal braucht: einmal fuer
   Parse/Validate und einmal fuer `ArtifactContentStore.write`.
+- Neben dem Streaming-Refactor wird die Finalisierung explizit
+  single-writer gemacht. Vor Assembly, Parse, Artefaktschreiben oder
+  `SchemaStore`-Registrierung muss der completing call die Session
+  atomar claimen, z.B. ueber einen neuen transienten
+  `UploadSessionState.FINALIZING` oder einen vergleichbaren
+  Compare-and-set-Claim im `UploadSessionStore`.
+  - Erlaubter Kernpfad: `ACTIVE -> FINALIZING -> COMPLETED` bei
+    Erfolg und `ACTIVE -> FINALIZING -> ABORTED` bei Parse-,
+    Validierungs- oder Materialisierungsfehlern.
+  - `FINALIZING` akzeptiert keine weiteren Segmente und ist kein
+    erfolgreicher terminaler Zustand; es ist nur der exklusive
+    Side-Effect-Claim fuer die laufende Finalisierung.
+  - Verliert ein konkurrierender `isFinalSegment=true`-Call den Claim,
+    darf er keine Assembly starten und kein Artefakt/schemaRef
+    erzeugen. Er laedt den aktuellen Session-Zustand neu: bei
+    `COMPLETED` mit `finalisedSchemaRef` greift der AP-6.18-Replay-
+    Pfad, bei noch laufender `FINALIZING` gibt es einen bestehenden
+    retrybaren Konflikt/Busy-Fehler ohne Side Effects.
+  - Der Claim und die spaetere Persistierung von `finalisedSchemaRef`
+    muessen in den Store-Contracts testbar sein; ein einfacher
+    read-then-save ohne CAS reicht fuer diesen AP nicht.
 - `assembleSessionBytes` wird durch `assembleSessionPayload` ersetzt:
   - Segmente werden aus `UploadSegmentStore.listSegments(...)` streng
     nach `segmentIndex` sortiert und auf Luecken, Duplikate,
@@ -1300,6 +1321,15 @@ Aufgaben:
   oder Session-Transition fehlschlaegt. Der ABORTED-Pfad darf keine
   Assembly-Spools zuruecklassen; AP 6.21 Startup-Sweep darf verwaiste
   Assembly-Spools aus Crashs nach Retention entfernen.
+- Assembly-Spool-Cleanup ist Teil dieses APs, nicht nur ein Verweis
+  auf 6.21:
+  - normaler Prozesspfad: jede erzeugte Assembly-Datei und ihr
+    Session-Unterverzeichnis werden in `finally` best-effort entfernt
+  - Crash-/Kill-Pfad: der AP-6.21 Startup-Sweep muss
+    `<stateDir>/assembly/<uploadSessionId>/...` rekursiv kennen und
+    Dateien nach derselben Orphan-Retention-Policy entfernen
+  - unbekannte Dateien ausserhalb des Assembly-Layouts bleiben
+    unangetastet; Cleanup-Logs nennen nur Counts und State-Dir-Scope
 - `SchemaStagingFinalizer.complete` erhaelt eine streambasierte,
   wiederoeffnende Payload-Sicht statt `ByteArray`. Die Default-
   Implementierung:
@@ -1324,7 +1354,8 @@ Aufgaben:
 - Idempotenz-/Replay-Grenze: Ein Replay nach erfolgreicher
   Finalisierung darf keine neue Assembly starten. Es liest wie AP 6.18
   den persistierten `finalisedSchemaRef` aus der Session. Nur der erste
-  echte completing call erzeugt einen Assembly-Spool.
+  echte completing call, der den Finalisierungs-Claim gewonnen hat,
+  erzeugt einen Assembly-Spool.
 - Fehlersemantik bleibt unveraendert: Parse-/Validierungsfehler
   rollen die noch aktive Session auf `ABORTED` und liefern die
   strukturierten Findings; IO-Fehler beim Assembly-Spool oder
@@ -1348,8 +1379,16 @@ Akzeptanz:
 - Erfolgreiche Finalisierung schreibt genau ein normales Artefakt in
   `ArtifactContentStore` und registriert genau eine `schemaRef`;
   temporaere Assembly-Dateien werden nie als Artefakte registriert.
+- Zwei konkurrierende completing calls fuer dieselbe Session koennen
+  nicht beide finalisieren: genau ein Call gewinnt den atomaren
+  Finalisierungs-Claim, Verlierer erzeugen keinen Assembly-Spool, kein
+  Artefakt und keine `schemaRef`.
 - Parse-/Validation-/IO-Fehler und ABORTED-Sessions hinterlassen keine
   Assembly-Spool-Files im normalen Prozesspfad.
+- Verwaiste Assembly-Spool-Files aus simuliertem Crash/Kill unter
+  `<stateDir>/assembly/...` werden beim naechsten Start gemaess
+  Orphan-Retention bereinigt; Tests decken Retention noch nicht
+  faellige Dateien und faellige Dateien ab.
 - existierende AP-6.18 Idempotenz-Tests bleiben gruen; ein Replay-Pfad
   liest den schon persistierten `schemaRef` und oeffnet keinen neuen
   Assembly-Spool.
