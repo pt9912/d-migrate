@@ -1265,29 +1265,97 @@ Aufgaben:
   `sizeBytes`; bei `maxArtifactUploadBytes = 200 MiB` ist das
   realistisch das Limit, aber ein 1-GiB-Cap waere damit nicht mehr
   haltbar.
-- Refactor: `assembleSessionBytes` schreibt die Segmente sequenziell
-  in einen temporaeren File-Spool und gibt einen `InputStream`
-  zurueck, der den Spool liest. `SchemaStagingFinalizer.complete`
-  bekommt einen `InputStream` (oder `Reader`) statt einer
-  `ByteArray`-Sicht; die JSON-Codecs unterstuetzen das schon.
-- Spool-Datei wird in einem `try`/`finally` geloescht, ob der
-  Finalizer erfolgreich war oder geworfen hat — kein Lecken auf
-  ABORTED-Pfad.
-- Quotas: `maxArtifactUploadBytes` wird beim Schreiben in den Spool
+- Zielbild: `ArtifactUploadHandler` baut keine Gesamtdaten-
+  `ByteArray` mehr. Stattdessen wird eine kleine interne Abstraktion
+  eingefuehrt, z.B. `AssembledUploadPayload(sizeBytes, sha256,
+  openStream(), close/delete)`. Sie ist wiederoeffnend, weil der
+  Finalizer denselben Payload mindestens zweimal braucht: einmal fuer
+  Parse/Validate und einmal fuer `ArtifactContentStore.write`.
+- `assembleSessionBytes` wird durch `assembleSessionPayload` ersetzt:
+  - Segmente werden aus `UploadSegmentStore.listSegments(...)` streng
+    nach `segmentIndex` sortiert und auf Luecken, Duplikate,
+    Offset-Kontinuitaet, `segmentTotal` und erwartete Gesamtgroesse
+    validiert.
+  - Fuer jedes Segment wird `openSegmentRangeRead(..., length =
+    segment.sizeBytes)` genutzt und mit einem festen Buffer
+    (`<= 64 KiB`, keine `readAllBytes()`) in den Payload geschrieben.
+  - Das gerade komplettierende Segment darf nur als bereits im
+    `UploadSegmentStore` gespeichertes Segment in die Assembly
+    eingehen. Falls der Implementierungspfad die Request-Bytes als
+    Optimierung weiterreicht, bleibt diese ByteArray-Nutzung auf
+    `maxUploadSegmentBytes` begrenzt und darf nicht zur Gesamtpayload-
+    Kopie werden.
+  - Die Assembly berechnet Gesamt-SHA-256 und geschriebenes Byte-Count
+    streaming mit und vergleicht beides mit Session-/Request-
+    Finalitaetsdaten. Mismatch fuehrt zu `VALIDATION_ERROR` bzw. dem
+    bestehenden Upload-Fehlermapping, bevor der Finalizer startet.
+- Primaerer Produktionspfad: Assembly schreibt in eine temporaere
+  Spool-Datei unter dem AP-6.21-State-Dir, z.B.
+  `<stateDir>/assembly/<uploadSessionId>/<uuid>.bin`, und gibt eine
+  wiederoeffnende Payload-Sicht auf diese Datei zurueck. Die Spool-
+  Datei ist nur Arbeitszustand, wird nie als normales Artefakt
+  registriert und erscheint nicht in MCP-Responses.
+- Die Spool-Datei wird in `try/finally` geloescht, egal ob Parse,
+  Validierung, Artefaktmaterialisierung, `SchemaStore`-Registrierung
+  oder Session-Transition fehlschlaegt. Der ABORTED-Pfad darf keine
+  Assembly-Spools zuruecklassen; AP 6.21 Startup-Sweep darf verwaiste
+  Assembly-Spools aus Crashs nach Retention entfernen.
+- `SchemaStagingFinalizer.complete` erhaelt eine streambasierte,
+  wiederoeffnende Payload-Sicht statt `ByteArray`. Die Default-
+  Implementierung:
+  - parst via `payload.openStream().use { codec.read(it) }`
+  - validiert das `SchemaDefinition`
+  - schreibt bei Erfolg via neu geoeffnetem Stream in
+    `ArtifactContentStore.write(artifactId, source,
+    expectedSizeBytes = payload.sizeBytes)`
+  - nutzt `payload.sha256` fuer Plausibilitaets-/Testasserts, aber
+    verlaesst sich weiterhin auf das `WriteArtifactOutcome` des Stores
+    fuer die publizierte Artefakt-Integritaet
+- Fuer handlernahe Tests bleibt eine ByteArray-Konvenience erlaubt,
+  z.B. `AssembledUploadPayload.fromBytes(bytes)`. Sie darf nicht im
+  produktiven CLI-Wiring genutzt werden und muss in Tests sichtbar vom
+  file-backed Assembly-Pfad unterscheidbar sein.
+- Quotas: `maxArtifactUploadBytes` wird beim Assembly-Schreiben
   parallel zum bestehenden Limit-Check geprueft, damit ein
   segment-by-segment Spool nicht versehentlich groesser werden kann
-  als der zentrale Cap.
+  als der zentrale Cap. Bei Ueberschreitung wird die temporaere Datei
+  sofort geloescht und der bestehende `PAYLOAD_TOO_LARGE`/Quota-
+  Fehlerpfad genutzt.
+- Idempotenz-/Replay-Grenze: Ein Replay nach erfolgreicher
+  Finalisierung darf keine neue Assembly starten. Es liest wie AP 6.18
+  den persistierten `finalisedSchemaRef` aus der Session. Nur der erste
+  echte completing call erzeugt einen Assembly-Spool.
+- Fehlersemantik bleibt unveraendert: Parse-/Validierungsfehler
+  rollen die noch aktive Session auf `ABORTED` und liefern die
+  strukturierten Findings; IO-Fehler beim Assembly-Spool oder
+  Artefaktschreiben werden in das bestehende interne/temporale
+  Fehlermapping uebersetzt, ohne lokale Pfade in Tool-Responses zu
+  leaken.
 
 Akzeptanz:
 
-- Heap-Peak waehrend der Finalisierung ist `O(maxUploadSegmentBytes)`
-  statt `O(sizeBytes)`
-- Finalizer-Schnittstelle akzeptiert sowohl Stream als auch (im
-  Test-Pfad) eine `ByteArray`-Konvenience, damit bestehende
-  Unit-Tests nicht reissen
-- ABORTED-Sessions hinterlassen keine Spool-Files
-- existierende AP-6.18 Idempotenz-Tests bleiben gruen (Replay-Pfad
-  liest den schon persistierten `schemaRef`, nicht den Spool)
+- `ArtifactUploadHandler` enthaelt im Finalisierungspfad keine
+  `ByteArray(session.sizeBytes.toInt())`, kein `System.arraycopy` ueber
+  Gesamtpayload und kein `readAllBytes()` fuer gespeicherte Segmente.
+- Heap-Peak waehrend der Assembly ist `O(maxUploadSegmentBytes +
+  copyBuffer)` statt `O(sizeBytes)`; im produktiven CLI-Wiring ist die
+  grosse Payload nur als Datei/Stream sichtbar.
+- `SchemaStagingFinalizer` parst und materialisiert ueber Streams; die
+  ByteArray-Konvenience ist nur fuer Tests und kleine Fixtures erlaubt.
+- Gesamtgroesse, Segmentreihenfolge, Offsets und Gesamt-SHA werden im
+  Streaming-Pfad erneut validiert; fehlerhafte Stored-Segmente koennen
+  nicht zu einem `schemaRef` werden.
+- Erfolgreiche Finalisierung schreibt genau ein normales Artefakt in
+  `ArtifactContentStore` und registriert genau eine `schemaRef`;
+  temporaere Assembly-Dateien werden nie als Artefakte registriert.
+- Parse-/Validation-/IO-Fehler und ABORTED-Sessions hinterlassen keine
+  Assembly-Spool-Files im normalen Prozesspfad.
+- existierende AP-6.18 Idempotenz-Tests bleiben gruen; ein Replay-Pfad
+  liest den schon persistierten `schemaRef` und oeffnet keinen neuen
+  Assembly-Spool.
+- AP 6.24 deckt den End-to-End-Pfad mit file-backed Byte-Stores ab und
+  pinnt, dass ein grosser Upload nicht proportional zur Gesamtgroesse
+  Heap allokiert.
 
 ### 6.23 Output-Schema-Drift fuer `artifactRef` und `findings.details`
 
