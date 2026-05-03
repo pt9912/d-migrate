@@ -2,6 +2,7 @@ package dev.dmigrate.cli.integration
 
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 
 /**
  * AP 6.24: normalisation helpers for transport-neutral equality
@@ -43,6 +44,31 @@ internal object TransportNormalisation {
         DYNAMIC_RESOURCE_URI.replace(raw) { match ->
             "${match.groupValues[1]}/<masked>"
         }
+
+    /**
+     * AP 6.24 E2: walks [node] recursively and replaces every string
+     * value that matches a Phase-C resource-URI shape with its
+     * normalised form (dynamic id → `<masked>`). Used for transport-
+     * neutral equality of payloads that carry per-call dynamic ids in
+     * `artifactRef`, `schemaRef`, `diffArtifactRef`, etc.
+     *
+     * Plan §6.24: the URI shape (tenant + kind + dynamic-id slot) is
+     * a fachliches Feld and stays asserted; only the dynamic id is
+     * masked.
+     */
+    fun normaliseResourceUris(node: JsonElement): JsonElement = when {
+        node.isJsonObject -> JsonObject().also { copy ->
+            for ((key, value) in node.asJsonObject.entrySet()) {
+                copy.add(key, normaliseResourceUris(value))
+            }
+        }
+        node.isJsonArray -> com.google.gson.JsonArray().also { copy ->
+            for (element in node.asJsonArray) copy.add(normaliseResourceUris(element))
+        }
+        node.isJsonPrimitive && node.asJsonPrimitive.isString ->
+            JsonPrimitive(normaliseResourceUri(node.asString))
+        else -> node.deepCopy()
+    }
 
     const val MASKED: String = "<masked>"
 

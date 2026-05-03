@@ -45,12 +45,14 @@ internal object IntegrationFixtures {
         Files.createTempDirectory(prefix)
 
     /**
-     * AP 6.24: shared principal for both transports. HTTP under
-     * `AuthMode.DISABLED` always sees the anonymous-admin principal
-     * synthesised by `DisabledAuthValidator.ANONYMOUS_PRINCIPAL`.
-     * The stdio harness wires its [StubStdioTokenStore] with the
-     * same shape so transport-neutral assertions on tenant /
-     * principal id work without per-transport branches.
+     * AP 6.24: shared principal for both transports. Mirrors
+     * [DisabledAuthValidator.ANONYMOUS_PRINCIPAL] (the principal HTTP
+     * `AuthMode.DISABLED` synthesises) exactly — `isAdmin = true`
+     * triggers [ScopeChecker.isSatisfied]'s admin-bypass so both the
+     * route- and service-layer scope checks agree even though the
+     * principal only enumerates `dmigrate:admin`. Keeping the
+     * fixtures aligned ensures stdio + HTTP transport-neutral asserts
+     * do not need per-transport principal differences.
      */
     val INTEGRATION_TENANT: TenantId = TenantId("default")
 

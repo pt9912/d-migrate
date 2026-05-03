@@ -60,7 +60,14 @@ internal interface McpClientHarness : AutoCloseable {
     override fun close()
 
     companion object {
-        const val PROTOCOL_VERSION: String = "2025-06-18"
+        /**
+         * Mirrors the server's pinned MCP protocol version
+         * ([dev.dmigrate.mcp.protocol.McpProtocol.MCP_PROTOCOL_VERSION]).
+         * The server's `initialize` handler returns
+         * `INVALID_PARAMS -32602` for any other value, so the harness
+         * cannot diverge.
+         */
+        const val PROTOCOL_VERSION: String = dev.dmigrate.mcp.protocol.McpProtocol.MCP_PROTOCOL_VERSION
 
         fun defaultInitializeParams(): InitializeParams = InitializeParams(
             protocolVersion = PROTOCOL_VERSION,

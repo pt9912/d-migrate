@@ -156,11 +156,15 @@ internal class HttpHarness(
             limits: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
         ): HttpHarness {
             val wiringBundle = IntegrationFixtures.integrationWiring(stateDir, limits = limits)
+            // Default scope mapping: PhaseCRegistries.defaultToolRegistry
+            // requires `capabilities_list` (and the rest of the Phase-C
+            // tools) to be present in the scope mapping at registration
+            // time, even though `AuthMode.DISABLED` short-circuits the
+            // route's runtime scope check.
             val config = McpServerConfig(
                 bindAddress = "127.0.0.1",
                 port = 0,
                 authMode = AuthMode.DISABLED,
-                scopeMapping = emptyMap(), // AuthMode.DISABLED skips scope checks anyway.
             )
             val outcome = McpServerBootstrap.startHttp(
                 config = config,
