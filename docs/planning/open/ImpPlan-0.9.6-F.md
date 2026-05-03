@@ -117,6 +117,22 @@ Phase F bindet diese Pfade als Jobs an. Zielauswahl erfolgt im MCP-Vertrag
 ueber tenant-scoped Connection-Refs, nicht ueber implizite lokale CLI-
 Konfiguration.
 
+Die Runner duerfen im MCP-Pfad keine rohen CLI-Connection-Strings erhalten.
+Phase F braucht dafuer eine explizite Adapter-Schicht:
+
+- `ConnectionReferenceResolver` validiert tenant-scoped
+  `targetConnectionRef`/`sourceConnectionRef` gegen Tenant, Principal,
+  Sensitivitaet und erlaubte Scopes.
+- `ConnectionSecretResolver` materialisiert aus `credentialRef` bzw.
+  `providerRef` kurzlebige, nicht auditierte Connection-Secrets.
+- `McpDataRunnerAdapter` uebergibt den bestehenden Runnern nur intern
+  materialisierte Source-/Target-Strings und passende Resolver,
+  URL-Parser und `ConnectionPoolFactory`; Tool-Payloads, Audit und
+  Idempotency-Fingerprints enthalten weiter nur Connection-Refs.
+- Secret-Materialisierung ist zeitlich auf den Job-Start begrenzt und wird
+  nicht in Idempotency-, Approval-, Job-, Audit- oder Artifact-Stores
+  persistiert.
+
 ---
 
 ## 3. Scope fuer Phase F
@@ -307,10 +323,13 @@ Regeln:
 - gleicher Tenant, Caller, Toolname, `approvalKey` und
   `payloadFingerprint` liefern dieselbe Session.
 - gleicher Scope mit abweichendem Payload liefert `IDEMPOTENCY_CONFLICT`.
-- `sizeBytes` darf `0` sein; ein Null-Byte-Upload besteht aus genau einem
-  finalen Segment mit `segmentIndex=1`, `segmentOffset=0`, `segmentTotal=1`,
+- `sizeBytes=0` ist nur fuer `uploadIntent=job_input` mit nicht-Schema-
+  Artefakten erlaubt. Ein Null-Byte-Upload besteht aus genau einem finalen
+  Segment mit `segmentIndex=1`, `segmentOffset=0`, `segmentTotal=1`,
   `isFinalSegment=true`, `contentBase64=""` und dem SHA-256 des leeren
-  Byte-Arrays.
+  Byte-Arrays. Fuer `schema_staging_readonly` und `artifactKind=schema` ist
+  `sizeBytes=0` ungueltig und liefert `VALIDATION_ERROR`, weil kein nutzbares
+  Schema materialisiert werden kann.
 - `sizeBytes` darf maximal `209715200` Bytes betragen.
 - `checksumSha256` ist Pflicht und Teil des Init-Fingerprints.
 
@@ -342,7 +361,16 @@ Validierungen:
 
 - `uploadSessionId` syntaktisch gueltig
 - Session existiert und gehoert zu Tenant/Principal oder erlaubtem Scope
-- Session ist `ACTIVE`
+- neue oder abweichende Segmentwrites sind nur fuer `ACTIVE` erlaubt
+- finale/idempotente Retries duerfen auch `FINALIZING`, `COMPLETED` oder
+  persistierte Failure-Outcomes sehen:
+  - `FINALIZING` mit aktiver Lease liefert deterministischen In-Flight-Status
+    oder vorhandenes persistiertes Ergebnis
+  - `FINALIZING` mit abgelaufener Lease darf den Finalisierungsclaim reclaimen
+  - `COMPLETED` replayt das persistierte erfolgreiche Ergebnis, sofern Segment
+    und Fingerprint identisch sind
+  - persistierte Fehler-Outcomes werden idempotent replayt, statt neue
+    Side Effects zu starten
 - session-scoped Upload-Berechtigung passt
 - `segmentIndex` beginnt bei `1` und ist fortlaufend
 - `segmentTotal` ist positiv, bleibt fuer die Session stabil und passt zur
@@ -396,15 +424,18 @@ Regeln:
 - eigene aktive Session prueft Tenant, Principal, Owner und Status
 - fremde oder administrative Abbrueche sind policy-gesteuert
 - vor der Policy-Pruefung wird fuer fremde/administrative Abbrueche ein
-  persistierter Abort-Claim bzw. Idempotency-Record fuer
-  `(tenant, caller, approvalKey, uploadSessionId)` geprueft. Existiert bereits
-  ein terminales Abort-Outcome fuer denselben Claim, wird das gespeicherte
-  Abort-Fingerprint-Material mit dem aktuellen Request-Fingerprint verglichen.
-  Nur bei identischem Fingerprint wird das Outcome zurueckgegeben, ohne den
+  Eintrag im bestehenden SyncEffect-/Idempotency-Scope fuer
+  `(tenant, caller, toolName, approvalKey, payloadFingerprint)` geprueft.
+  Der `payloadFingerprint` ist der vollstaendige Abort-Fingerprint, nicht nur
+  `uploadSessionId`. Existiert bereits ein terminales Abort-Outcome fuer
+  denselben SyncEffect-Eintrag, wird das gespeicherte Abort-Fingerprint-
+  Material mit dem aktuellen Request-Fingerprint verglichen. Nur bei
+  identischem Fingerprint wird das Outcome zurueckgegeben, ohne den
   Approval-Fingerprint aus dem aktuellen Sessionzustand neu zu berechnen.
   Abweichende Request-Felder wie `reason`, Caller oder Session-ID liefern
   `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED` oder `POLICY_DENIED` je nach
-  Store-/Policy-Zustand.
+  Store-/Policy-Zustand. Phase F fuehrt dafuer keine zweite Idempotency-
+  Architektur und keinen separaten Abort-Claim-Key ein.
 - der Approval-Fingerprint fuer fremde/administrative Abbrueche bindet den
   vorab genehmigten Pre-Abort-Zustand:
   - Toolname `artifact_upload_abort`
@@ -528,19 +559,37 @@ Regeln:
 - read-only gestagte Schema-Artefakte sind nicht als Import-Eingabe erlaubt
   und werden hart mit `VALIDATION_ERROR` abgelehnt; Approval darf bestehende
   read-only Refs nicht implizit zu `job_input` upgraden
+- Phase F richtet die Import-Eignung am aktuellen Core-Enum aus. Ohne
+  Core-Migration gilt:
+  - importierbare Datenartefakte werden als `ArtifactKind.UPLOAD_INPUT`
+    persistiert und muessen zusaetzliche Upload-Metadaten
+    `wireArtifactKind`/`uploadIntent` enthalten
+  - `wireArtifactKind=seed-data` entspricht einem importierbaren
+    Datenartefakt
+  - `wireArtifactKind=generic` ist nur mit explizitem `format` importierbar
+  - `ArtifactKind.SCHEMA`, `PROFILE`, `DIFF`, `DATA_EXPORT` und `OTHER` sind
+    nicht automatisch importierbar
+- Falls Phase F das Core-Enum stattdessen erweitert, muss dieser Schritt
+  Masterplan, Spec, Stores, Golden Tests und Migrationen synchron auf
+  `SEED_DATA`/`GENERIC` bzw. die finalen Namen bringen. Bis dahin duerfen
+  Handler nicht auf nicht existierende Core-Enum-Werte wie `seed-data`
+  pruefen.
 - erlaubte Artefakt-/Format-Kombinationen sind:
-  - `artifactKind=seed-data`, `mimeType=application/json`, `format=json`
-  - `artifactKind=seed-data`, `mimeType=application/yaml` oder `text/yaml`,
-    `format=yaml`
-  - `artifactKind=seed-data`, `mimeType=text/csv` oder `application/csv`,
-    `format=csv`
-  - `artifactKind=generic` nur, wenn `format` explizit gesetzt ist und der
-    `mimeType` eindeutig zu diesem Format passt
-- `artifactKind=schema`, `ddl`, `transform-script` und `rules` sind fuer
-  `data_import_start` nicht als Datenquelle erlaubt; sie liefern
+  - `ArtifactKind.UPLOAD_INPUT`, `wireArtifactKind=seed-data`,
+    `mimeType=application/json`, `format=json`
+  - `ArtifactKind.UPLOAD_INPUT`, `wireArtifactKind=seed-data`,
+    `mimeType=application/yaml` oder `text/yaml`, `format=yaml`
+  - `ArtifactKind.UPLOAD_INPUT`, `wireArtifactKind=seed-data`,
+    `mimeType=text/csv` oder `application/csv`, `format=csv`
+  - `ArtifactKind.UPLOAD_INPUT`, `wireArtifactKind=generic` nur, wenn
+    `format` explizit gesetzt ist und der `mimeType` eindeutig zu diesem
+    Format passt
+- `wireArtifactKind=schema`, `ddl`, `transform-script` und `rules` sind fuer
+  `data_import_start` nicht als Datenquelle erlaubt; ebenso alle Core-Kinds
+  ausser `UPLOAD_INPUT`. Sie liefern
   `VALIDATION_ERROR`
 - `format` darf entfallen, wenn `mimeType` es eindeutig bestimmt; bei
-  `artifactKind=generic` oder mehrdeutigem `mimeType` ist `format` Pflicht
+  `wireArtifactKind=generic` oder mehrdeutigem `mimeType` ist `format` Pflicht
 - `format` und `mimeType` muessen kompatibel sein; widerspruechliche
   Kombinationen liefern `VALIDATION_ERROR`
 - unbekannte Artefakte liefern `RESOURCE_NOT_FOUND`
@@ -813,7 +862,10 @@ Tests:
 - Segmentoffset weicht von der festen Segmentgroessen-Position ab ->
   `VALIDATION_ERROR`
 - Hash ueber falsche Bytes -> `VALIDATION_ERROR`
-- `sizeBytes=0` mit leerem finalem Segment und Empty-SHA erfolgreich
+- `sizeBytes=0` mit leerem finalem Segment und Empty-SHA fuer erlaubtes
+  nicht-Schema-`job_input` erfolgreich
+- `sizeBytes=0` fuer `schema_staging_readonly` oder `artifactKind=schema` ->
+  `VALIDATION_ERROR`
 - `segmentIndex=0`
 - `segmentIndex > segmentTotal`
 - `isFinalSegment` widerspricht `segmentIndex == segmentTotal`
@@ -858,9 +910,9 @@ Tests:
 - `artifact_upload_abort` fuer eigene aktive Sessions implementieren.
 - administrative/fremde Abbrueche mit eigenem Abort-Approval-Fingerprint aus
   Abschnitt 5.3 an Policy anbinden.
-- Abort-Claim und terminales Abort-Outcome fuer administrative/fremde
-  Abbrueche persistieren, bevor Cleanup den Session-Status oder Byte-Kontext
-  fuer Retry-Fingerprints veraendert.
+- terminales Abort-Outcome fuer administrative/fremde Abbrueche im
+  bestehenden SyncEffect-/Idempotency-Eintrag persistieren, bevor Cleanup den
+  Session-Status oder Byte-Kontext fuer Retry-Fingerprints veraendert.
 - Persistierte Abort-Outcomes mit dem vollstaendigen Abort-Fingerprint
   verknuepfen oder vor der Rueckgabe gegen den aktuellen Request-Fingerprint
   vergleichen.
@@ -886,6 +938,8 @@ Tests:
   -> `IDEMPOTENCY_CONFLICT` oder `POLICY_REQUIRED`
 - Abort-Grant kann nicht fuer andere Session, anderen Owner, anderen Caller
   oder anderen Session-Status wiederverwendet werden
+- administrative/fremde Abbrueche nutzen den bestehenden SyncEffect-Scope mit
+  vollstaendigem Abort-`payloadFingerprint`, keinen separaten Abort-Claim-Key
 - Abort einer bereits `COMPLETED` Session loescht kein Artefakt und liefert
   deterministischen Fehler oder unveraenderten Terminalstatus gemaess
   Handler-Vertrag
@@ -901,8 +955,15 @@ Tests:
 - erlaubte Import-Optionen aus Abschnitt 6.1 als Runner-nahe
   `DataImportRequest`-/`ImportOptions`-Abbildung im Schema pinnen.
 - Import-Artefakt-Eignungsmatrix aus Abschnitt 6.1 im Handler pinnen.
+- Core-ArtifactKind-Abbildung festlegen: entweder `UPLOAD_INPUT` plus
+  `wireArtifactKind`/`uploadIntent`-Metadaten verwenden oder Core-Enum,
+  Stores, Specs und Migrationen synchron erweitern.
 - `artifactId` / Artefakt-`resourceUri` validieren.
 - `targetConnectionRef` erzwingen.
+- `targetConnectionRef` ueber `ConnectionReferenceResolver` und
+  `ConnectionSecretResolver` in einen runner-internen Pool/Connection-String
+  materialisieren; keine CLI-Konfiguration und keine rohen JDBC-Strings aus
+  dem Tool-Payload verwenden.
 - `idempotencyKey` erzwingen.
 - normalisierte Import-Optionen in den Policy-/Idempotency-Fingerprint
   aufnehmen.
@@ -918,10 +979,17 @@ Tests:
 - fehlender `targetConnectionRef`
 - unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder JDBC-Secret in Import-Optionen -> `VALIDATION_ERROR`
-- `artifactKind=schema`, `ddl`, `transform-script` oder `rules` als
+- `wireArtifactKind=schema`, `ddl`, `transform-script` oder `rules` als
   Import-Artefakt -> `VALIDATION_ERROR`
-- `artifactKind=generic` ohne explizites `format` -> `VALIDATION_ERROR`
+- Core-Kind ausser `UPLOAD_INPUT` als Import-Artefakt ->
+  `VALIDATION_ERROR`
+- `wireArtifactKind=generic` ohne explizites `format` -> `VALIDATION_ERROR`
 - `format` widerspricht `mimeType` -> `VALIDATION_ERROR`
+- `targetConnectionRef` ohne aufloesbare ConnectionReference, Secret oder
+  Principal-Berechtigung -> `RESOURCE_NOT_FOUND`, `TENANT_SCOPE_DENIED` oder
+  `FORBIDDEN_PRINCIPAL`
+- Runner erhaelt materialisierte interne Connection, waehrend Audit/Job/
+  Idempotency nur die Connection-Ref enthalten
 - neuer MCP-Mode wie `replace` oder `validate_only` ->
   `VALIDATION_ERROR`
 - `truncate=true` erscheint im Policy-Fingerprint und Audit als destruktiv
@@ -939,6 +1007,10 @@ Tests:
 - erlaubte Transfer-Optionen aus Abschnitt 6.2 als Runner-nahe
   `DataTransferRequest`-Abbildung im Schema pinnen.
 - Source-/Target-Connection-Refs tenant-scoped validieren.
+- Source-/Target-Connection-Refs ueber `ConnectionReferenceResolver` und
+  `ConnectionSecretResolver` in runner-interne Pools/Connection-Strings
+  materialisieren; keine CLI-Konfiguration und keine rohen JDBC-Strings aus
+  dem Tool-Payload verwenden.
 - `idempotencyKey` erzwingen.
 - freie JDBC-Strings abweisen.
 - normalisierte Transfer-Optionen in den Policy-/Idempotency-Fingerprint
@@ -952,6 +1024,11 @@ Tests:
 
 - fehlender `idempotencyKey`
 - fehlende oder ungueltige Connection-Ref
+- ConnectionRef ohne aufloesbare Secret-/Provider-Referenz oder Principal-
+  Berechtigung -> `RESOURCE_NOT_FOUND`, `TENANT_SCOPE_DENIED` oder
+  `FORBIDDEN_PRINCIPAL`
+- Runner erhaelt materialisierte interne Connections, waehrend Audit/Job/
+  Idempotency nur Connection-Refs enthalten
 - freie JDBC-URL
 - unbekanntes Transfer-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder Connection-Secret in Transfer-Optionen ->
@@ -1054,6 +1131,8 @@ Mindesttestklassen:
 - File-Spooling-/200-MiB-Smoke-Test
 - `data_import_start`-Handler-Tests
 - `data_transfer_start`-Handler-Tests
+- ConnectionReference-/ConnectionSecretResolver-Adaptertests fuer Import und
+  Transfer
 - Import-/Transfer-Runner-Cancel-Tests
 - Quota-/Timeout-/Audit-Tests
 - stdio- und HTTP-Integrationstests
@@ -1066,7 +1145,9 @@ Mindestfaelle:
 - Init-Retry mit gleichem `approvalKey`
 - Init-Retry mit anderem Payload
 - Init mit kanonischem `sizeBytes`
-- Init mit `sizeBytes=0`
+- Init mit `sizeBytes=0` fuer erlaubtes nicht-Schema-`job_input`
+- Init mit `sizeBytes=0` fuer `schema_staging_readonly` oder
+  `artifactKind=schema` -> `VALIDATION_ERROR`
 - optionaler Init-Alias `expectedSizeBytes` widerspricht `sizeBytes`
 - ungueltige `segmentTotal`-/`isFinalSegment`-Kombination
 - nicht-finales Segment ist kleiner als `maxUploadSegmentBytes`
@@ -1085,12 +1166,18 @@ Mindestfaelle:
 - Upload nach Expiry
 - Gesamtchecksumme falsch
 - parallele finale Segmente materialisieren genau ein Artefakt
+- finaler Retry gegen `FINALIZING`/`COMPLETED` replayt Ergebnis oder
+  In-Flight-Status ohne neuen Segmentwrite
 - ungueltiges read-only Schema erzeugt keine nutzbare Rohartefakt-
   Registrierung
 - read-only Staging als Import-Input
-- `schema`, `ddl`, `transform-script` oder `rules` als Import-Artefakt
-- `generic` als Import-Artefakt ohne explizites `format`
+- Core-`ArtifactKind` ausser `UPLOAD_INPUT` als Import-Artefakt
+- `wireArtifactKind=schema`, `ddl`, `transform-script` oder `rules` als
+  Import-Artefakt
+- `wireArtifactKind=generic` als Import-Artefakt ohne explizites `format`
 - inkompatible `mimeType`-/`format`-Kombination
+- ConnectionRef-Aufloesung ohne Secret/Provider, mit falschem Tenant oder
+  ohne Principal-Berechtigung
 - unbekannte Import-/Transfer-Optionsfelder
 - rohe SQL-/JDBC-/Secret-Werte in Import-/Transfer-Optionen
 - erfundene MCP-Mode-Werte statt Runner-naher Optionen
@@ -1139,12 +1226,18 @@ Mindestfaelle:
   finale Segment darf kleiner sein und muss den Bytebereich exakt schliessen.
   Segmentoffsets folgen fuer alle Segmente der festen Position
   `(segmentIndex - 1) * maxUploadSegmentBytes`.
-- `sizeBytes=0` ist erlaubt und wird als ein finales leeres Segment mit
-  Empty-SHA validiert.
+- `sizeBytes=0` ist nur fuer erlaubte nicht-Schema-`job_input`-Artefakte
+  erlaubt und wird dort als ein finales leeres Segment mit Empty-SHA
+  validiert; Schema-Staging und `artifactKind=schema` lehnen Null-Byte-
+  Uploads ab.
 - Finale Segmentverarbeitung nutzt `FINALIZING` als Single-Writer-Claim;
   parallele finale Segmente und Reclaim nach Lease-Ablauf erzeugen maximal ein
   Artefakt und replayen persistierte Finalisierungsergebnisse nur nach
   durablem terminalem `finalizationOutcome`.
+- Neue Segmentwrites sind nur in `ACTIVE` erlaubt; finale/idempotente Retries
+  gegen `FINALIZING`, `COMPLETED` oder persistierte Fehler-Outcomes replayen
+  Ergebnis, In-Flight-Status oder reclaimen eine abgelaufene Lease ohne
+  zweite Materialisierung.
 - `artifact_chunk_get`, Import aus Artefakt und Resource-Chunk-Reads lesen
   aus `ArtifactContentStore`, nicht aus Tool-Response- oder Heap-Kopien.
 - 200-MiB-Upload-Test nutzt File-Spooling oder gleichwertigen Byte-Store und
@@ -1172,11 +1265,19 @@ Mindestfaelle:
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
-  Artefakt-/MIME-/Format-Kombination: primaer `seed-data` mit JSON/YAML/CSV
-  oder explizit formatierte `generic`-Artefakte. Schema-, DDL-, Transform- und
-  Rules-Artefakte werden als Import-Datenquelle abgelehnt.
+  Artefakt-/MIME-/Format-Kombination: aktuell `ArtifactKind.UPLOAD_INPUT`
+  plus `wireArtifactKind=seed-data` mit JSON/YAML/CSV oder explizit
+  formatierte `wireArtifactKind=generic`-Artefakte. Schema-, DDL-,
+  Transform- und Rules-Artefakte sowie Core-Kinds ausser `UPLOAD_INPUT` werden
+  als Import-Datenquelle abgelehnt, sofern das Core-Enum nicht synchron
+  migriert wurde.
 - `data_transfer_start` bindet Source-/Target-Connection-Refs an Policy und
   Idempotency.
+- Import und Transfer materialisieren tenant-scoped Connection-Refs nur ueber
+  einen `ConnectionReferenceResolver`/`ConnectionSecretResolver` und einen
+  MCP-Runner-Adapter zu kurzlebigen runner-internen Connections; rohe
+  JDBC-Strings oder lokale CLI-Konfiguration gelangen nicht aus Tool-Payloads
+  in die Runner.
 - Import- und Transfer-Optionen sind als strukturierte Allowlist-Schemas
   gepinnt und bilden die bestehenden Runner-Vertraege ab; unbekannte Felder,
   neue MCP-Mode-Werte, rohe SQL-Werte, JDBC-URLs und Secrets werden vor
