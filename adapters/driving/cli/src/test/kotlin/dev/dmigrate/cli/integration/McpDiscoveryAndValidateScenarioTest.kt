@@ -11,6 +11,8 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
+private val IntegrationTag = NamedTag("integration")
+
 /**
  * AP 6.24 E2: drift guard + transport-neutral smoke for the two
  * read-only discovery / validation tools per §7.3 (Pflichtflüsse):
@@ -31,7 +33,7 @@ import kotlin.io.path.deleteRecursively
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpDiscoveryAndValidateScenarioTest : FunSpec({
 
-    tags(NamedTag("integration"))
+    tags(IntegrationTag)
 
     test("tools/list advertises the Phase-C tool matrix on both transports") {
         val (stdioTools, httpTools) = withFreshTransports { stdio, http ->

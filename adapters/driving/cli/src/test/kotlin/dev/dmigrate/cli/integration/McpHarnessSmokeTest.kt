@@ -7,6 +7,8 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import kotlin.io.path.deleteRecursively
 
+private val IntegrationTag = NamedTag("integration")
+
 /**
  * AP 6.24 E1 smoke test: starts both transports against the
  * AP-6.21 file-backed wiring, runs `initialize` + `tools/list`
@@ -18,12 +20,16 @@ import kotlin.io.path.deleteRecursively
  *
  * Tagged `integration` so the default fast-test loop skips it
  * (see root `build.gradle.kts` — `kotest.tags=!integration & !perf`
- * by default; `-PintegrationTests` flips it on).
+ * by default; `-PintegrationTests` flips it on). Uses the same
+ * file-level `IntegrationTag` constant as the other Phase-F E2E
+ * tests in this module — Kotest 6's discovery filter has been
+ * observed to ignore inline `tags(NamedTag("…"))` calls in CI,
+ * even though they work locally.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpHarnessSmokeTest : FunSpec({
 
-    tags(NamedTag("integration"))
+    tags(IntegrationTag)
 
     test("stdio harness completes initialize and tools/list against the file-backed wiring") {
         val stateDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
