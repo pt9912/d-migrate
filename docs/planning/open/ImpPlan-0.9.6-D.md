@@ -964,11 +964,14 @@ Umsetzung:
 - `job_status_get` akzeptiert weiterhin `jobId` oder `resourceUri`, normalisiert
   intern aber auf Resource-URI-ADT.
 - `artifact_chunk_get` akzeptiert weiterhin den Phase-C-Vertrag, erzeugt
-  `nextChunkUri` fuer `resources/read` und optional HMAC-gekapselten
-  `nextChunkCursor` fuer Tool-Fortsetzungen.
-- Nackte `nextChunkId` nur beibehalten, wenn das bestehende Output-Schema es
-  zwingend erfordert; dann als legacy/deprecated markieren und nicht als
-  alleinige Fortsetzung verwenden.
+  aber fuer Fortsetzungen ausschliesslich `nextChunkUri` fuer
+  `resources/read` oder HMAC-gekapselte `nextChunkCursor` fuer Tool-Pfade.
+- Nackte `nextChunkId` oder `chunkId`-Cursor duerfen nicht mehr in Responses
+  ausgegeben werden. Falls bestehende Clients solche Werte als Eingabe
+  senden, werden sie nur als befristete Legacy-Eingabe akzeptiert,
+  serverseitig sofort in den kanonischen Cursor-/URI-Pfad normalisiert und
+  ueber Release Notes als deprecated markiert; neue Output-Schemas duerfen
+  diese Felder nicht enthalten.
 - Fehler fuer fremde Tenants, fehlende Sichtbarkeit und manipulierte Chunk-
   Cursor an AP D2/D3 anbinden.
 
@@ -976,6 +979,8 @@ Tests:
 
 - `jobId` und `resourceUri` fuehren zu identischem Status-Resultat
 - Chunk-Pagination ueber `nextChunkUri`
+- Tool-Fortsetzung ueber HMAC-gekapselten `nextChunkCursor`
+- Response enthaelt keine nackte `nextChunkId` oder `chunkId`-Cursor
 - manipulierte Chunk-Cursor -> `VALIDATION_ERROR`
 - Retention-geloeschtes Artefakt -> `RESOURCE_NOT_FOUND`
 
