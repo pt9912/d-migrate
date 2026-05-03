@@ -1495,34 +1495,118 @@ Akzeptanz:
 
 Aufgaben:
 
-- `PhaseBToolSchemas.kt` fuer `schema_validate` erweitern:
-  - `artifactRef: { type: string }` als optionales Feld im Output-
-    Schema
-  - `findings`-Item-Schema typisieren mit `severity` (enum:
-    `error`/`warning`/`info`), `code: string`, `path: string`,
-    `message: string`, optional `details: object`
-- `PhaseBToolSchemas.kt` fuer `schema_compare` erweitern:
-  - `findings`-Item-Schema mit `details: { before, after }` fuer
-    aenderungs-Findings (AP 6.6.6 emittiert das schon, aber das
-    Schema akzeptiert es nur als untypisiertes JSON-Objekt)
-  - `diffArtifactRef: { type: string }` als optionales Feld
-- `PhaseBToolSchemas.kt` fuer `schema_generate`: `artifactRef`-Feld
-  spiegelt das `truncated`-Flag.
-- `PhaseBToolSchemas.kt` fuer `job_status_get`/`progress`/`error`:
-  Schema reflektiert die nach AP 6.17 gescrubbten Felder.
-- Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regeneriert,
-  damit Schema-Drift in CI sichtbar wird.
-- Forbidden-Key- und Scrubbing-Regel auf `details` ausweiten:
-  `details.before`/`details.after` werden via `SecretScrubber.scrub`
-  vor der Serialisierung gewaschen — pinnt heute nur ein Compare-Test,
-  soll Schema-Akzeptanz sein.
+- Ziel: JSON-Schema und Runtime-Wire-Output muessen denselben Phase-C-
+  Contract beschreiben. AP 6.13/6.19 haben bereits Runtime-Felder wie
+  `artifactRef`, `diffArtifactRef`, `truncated` und Finding-`details`
+  eingefuehrt; AP 6.23 macht diese Felder im `tools/list`-Schema
+  explizit, streng und drift-getestet.
+- `PhaseBToolSchemas.kt` bekommt gemeinsame Output-Bausteine statt
+  freier `arrayField()`/`objectField()`-Platzhalter:
+  - `findingArray(detailsSchema: Map<String, Any>? = null)`
+  - `findingItem(...)` mit `additionalProperties=false`
+  - `artifactRefField()` fuer `dmigrate://tenants/{tenantId}/artifacts/{artifactId}`
+  - `executionMetaField()` mit mindestens `requestId` optional,
+    aber ohne offene Secret-/Debug-Slots
+  Die Helper verwenden die bestehenden Wire-Konstanten aus
+  `SchemaFindingSeverity`, damit Handler und Schema nicht auseinander
+  laufen.
+- Gemeinsames `findings`-Item-Schema fuer `schema_validate`,
+  `schema_generate` und `schema_compare`:
+  - required: `severity`, `code`, `path`, `message`
+  - `severity`: enum `error`/`warning`/`info`
+  - `code`, `path`, `message`: string
+  - optional `details`
+  - keine zusaetzlichen Properties auf Finding-Ebene
+  `path` bleibt string und darf leer sein, wenn der fachliche Pfad
+  unbekannt ist; `message` bleibt lesbare Kurzfassung.
+- `schema_validate` Output-Schema:
+  - `artifactRef` optional, Format string mit URI-Pattern fuer
+    Artefakt-Resource-Refs
+  - `findings` nutzt das gemeinsame Finding-Schema; `details` ist fuer
+    Validierungsfindings optional, aber wenn vorhanden ein geschlossenes
+    Objekt mit nur scrubbed skalaren Feldern (`string`/`number`/
+    `boolean`/`null`) oder kleinen Arrays davon
+  - `truncated=true` bedeutet: inline Findings sind gekuerzt; wenn ein
+    `ArtifactSink` verfuegbar war, muss `artifactRef` auf die
+    vollstaendige Findings-Projektion zeigen
+- `schema_generate` Output-Schema:
+  - `artifactRef` optional fuer grossen DDL-/Finding-Fallback
+  - `ddl` optional, weil grosse DDL vollstaendig ins Artefakt wandert
+  - `truncated=true` bedeutet: inline DDL und/oder Findings sind nur
+    Summary; vollstaendige Ausgabe ist ueber `artifactRef` abrufbar
+  - Generatorwarnungen nutzen dasselbe Finding-Schema; `details` ist
+    optional und geschlossen wie bei `schema_validate`
+- `schema_compare` Output-Schema:
+  - `diffArtifactRef` optional, URI-Pattern wie `artifactRef`
+  - `findings` nutzt ein compare-spezifisches Finding-Schema, bei dem
+    `details` optional ist und, falls vorhanden, ein geschlossenes
+    Objekt mit `before` und `after` enthaelt
+  - `details.before` und `details.after` sind scrubbed JSON-Werte. Um
+    bestehende Runtime-Projektionen nicht kuenstlich zu verengen,
+    erlaubt das Schema `string`/`number`/`boolean`/`null` sowie kleine
+    Objekte/Arrays aus diesen skalaren Werten, aber keine freien
+    Credential-Schluessel
+  - additive/removal-Findings ohne Vor-/Nachzustand lassen `details`
+    weg; ein leeres `details: {}` ist kein gueltiger Ersatz
+- `job_status_get` Output-Schema wird mit AP 6.17 abgeglichen:
+  - `progress` ist optional, aber wenn vorhanden geschlossen
+    typisiert (`completedUnits`, `totalUnits`, `unit`, `message`
+    optional, keine freien Properties)
+  - `error` ist optional, aber wenn vorhanden geschlossen typisiert
+    (`code`, `message`, optional `details` als Array von
+    `{key, value}` wie in `McpServiceImpl`-Toolfehlern)
+  - `artifacts` bleibt Array von Resource-URI-Strings; rohe lokale
+    Pfade, Connection-Strings oder Secret-Felder sind nicht erlaubt
+- Wichtige Abgrenzung: Finding-`details` ist ein Objekt auf
+  Tool-Output-Findings. Toolfehler-`details` im `isError=true`-
+  Envelope bleibt gemaess `McpServiceImpl` ein Array von
+  `{key, value}`. AP 6.23 darf diese zwei Wire-Shapes nicht
+  zusammenfuehren.
+- Forbidden-Key- und Scrubbing-Regel auf alle Output-`details`
+  ausweiten:
+  - `details`, `details.before`, `details.after`, `progress.message`,
+    `error.message` und `error.details[].value` laufen vor
+    Serialisierung durch `SecretScrubber.scrub`
+  - Schema-Builder/Golden-Tests muessen Felder mit Namen wie
+    `password`, `secret`, `token`, `credential`, `connectionString`,
+    `jdbcUrl` in Output-Details blockieren
+  - Scrubbing findet vor Artefakt-Fallback statt, damit auch
+    ausgelagerte Findings-/DDL-/Diff-Artefakte keine Secrets oder
+    lokalen Pfade enthalten
+- Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regenerieren und
+  dabei die Diffs bewusst reviewen. Zusaetzlich zu Goldenfiles braucht
+  AP 6.23 Runtime-Schema-Validation-Tests: exemplarische Outputs von
+  `schema_validate`, `schema_generate`, `schema_compare` und
+  `job_status_get` muessen gegen ihr eigenes `PhaseBToolSchemas`-
+  Output-Schema validieren.
+- Backward-Compatibility:
+  - bestehende Top-Level-Felder bleiben erhalten
+  - neu typisierte optionale Felder duerfen fehlen, wenn der Handler
+    sie nicht emittiert
+  - `additionalProperties=false` gilt fuer neue strukturierte
+    Objekte; dynamische Fachwerte duerfen nur in den explizit
+    erlaubten `details`-Value-Slots liegen
 
 Akzeptanz:
 
 - jedes Tool, das `artifactRef` (oder `diffArtifactRef`) im Wire-
-  Output emittieren kann, listet das Feld im JSON-Schema
+  Output emittieren kann, listet das Feld im JSON-Schema mit
+  Resource-URI-Pattern
 - `findings`-Item-Schema ist strukturell typisiert, nicht
   `additionalProperties: true`
+- `schema_compare` akzeptiert `details.before`/`details.after` fuer
+  Aenderungsfindings, lehnt aber `details: {}` und unbekannte
+  Credential-Key-Felder ab
+- `schema_validate` und `schema_generate` koennen optionale
+  Finding-`details` schema-valide transportieren, ohne freie
+  `additionalProperties` auf Finding-Ebene zu oeffnen
+- `job_status_get.progress` und `job_status_get.error` sind typisiert
+  und spiegeln die AP-6.17-Scrubbing-Projektion
+- Runtime-Outputs der vier betroffenen Tools validieren gegen ihre
+  eigenen Output-Schemas
+- `details`-Werte in Inline-Responses und ausgelagerten Artefakten
+  werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
+  und lokalen Pfad
 - der goldfile-Pin-Test scheitert bei einer Schema-Aenderung, die
   nicht bewusst regeneriert wurde
 
