@@ -1104,7 +1104,11 @@ Aufgaben:
   kanonischen Unterverzeichnisse `segments` und `artifacts` an; der
   CLI-Plan darf keine zweiten sprechenden Unterordner vorschalten,
   damit das finale Layout stabil bei `<stateDir>/segments/...` und
-  `<stateDir>/artifacts/...` bleibt.
+  `<stateDir>/artifacts/...` bleibt. Artefakt-Sharding ist Teil dieses
+  stabilen Layouts: `FileBackedArtifactContentStore` legt Artefakte
+  unter `<stateDir>/artifacts/<sha256-prefix>/<artifactId>.bin` plus
+  Sidecar ab; Cleanup- oder Diagnose-Code darf daher nicht von einem
+  flachen `artifacts/*`-Layout ausgehen.
 - State-Directory-Aufloesung in `McpCommands` zentralisieren:
   1. CLI-Option `--mcp-state-dir`
   2. Environment `DMIGRATE_MCP_STATE_DIR`
@@ -1133,11 +1137,16 @@ Aufgaben:
   Prozessende freigeben. Ein zweiter `mcp serve` mit demselben
   State-Dir scheitert vor Serverstart mit Exit 2 und klarer stderr-
   Diagnose inklusive der aus dem Lockfile gelesenen PID/UUID, soweit
-  vorhanden. Stale Lockfiles ohne aktives Advisory-Lock duerfen beim
-  naechsten erfolgreichen Start ueberschrieben werden. Ohne dieses
-  Single-Writer-Lock waeren die ephemeren Metadata-Stores pro Prozess,
-  die Byte-Dateien aber gemeinsam, was Segment-/Artefakt-Zuordnungen
-  unzuverlaessig machen wuerde.
+  die Payload gueltig lesbar ist. Kaputte, teilgeschriebene oder
+  unbekannt formatierte Lockfile-Payloads duerfen die Diagnose
+  degradieren, aber nicht die Lock-Entscheidung ersetzen: bei aktivem
+  Advisory-Lock bleibt es Exit 2, ohne aktives Advisory-Lock darf der
+  naechste Start die Payload ueberschreiben. Stale Lockfiles ohne
+  aktives Advisory-Lock duerfen beim naechsten erfolgreichen Start
+  ueberschrieben werden. Ohne dieses Single-Writer-Lock waeren die
+  ephemeren Metadata-Stores pro Prozess, die Byte-Dateien aber
+  gemeinsam, was Segment-/Artefakt-Zuordnungen unzuverlaessig machen
+  wuerde.
 - Shutdown-/Lifecycle-Regel:
   - CLI-owned Tempdir wird ueber einen idempotenten Owner verwaltet,
     der bei normalem Ende, SIGINT/JVM-Shutdown und explizitem
@@ -1179,6 +1188,11 @@ Aufgaben:
     Retention-Grenze fuer orphaned Byte Files entfernt
     (`--mcp-state-orphan-retention`/
     `DMIGRATE_MCP_STATE_ORPHAN_RETENTION`, Default z.B. `24h`)
+  - Artefakt-Orphan-Sweep ist store-layout-aware und rekursiv ueber
+    die Shards unter `<stateDir>/artifacts/<sha256-prefix>/...`; er
+    behandelt `.bin` und zugehoerige `.meta.json` als Einheit, entfernt
+    verwaiste Temp-/Sidecar-Reste defensiv nach Retention und laesst
+    unbekannte Dateien ausserhalb des Store-Layouts unangetastet
   - Retention-Parsing ist eine explizite String-Union:
     `never` deaktiviert den Sweep fuer forensische Betriebsmodi,
     `0`/`0s` bedeutet sofort loeschen, ansonsten werden nur positive
