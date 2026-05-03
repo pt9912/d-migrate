@@ -80,7 +80,16 @@ internal class ArtifactUploadHandler(
     private val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
     private val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
     private val finalizer: SchemaStagingFinalizer? = null,
-    payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
+    /**
+     * AP 6.22: exposed as `internal val` so wiring-end-to-end tests
+     * in `:adapters:driving:mcp` can pin that the production CLI
+     * threads `FileSpoolAssembledUploadPayloadFactory` all the way to
+     * the handler — a guard against the original review-#1
+     * regression where the file-spool factory only landed in the
+     * `PhaseCWiring` DTO but was substituted by the in-memory default
+     * during handler construction.
+     */
+    internal val payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
     finalizingLeaseTtl: Duration = DEFAULT_FINALIZING_LEASE_TTL,
 ) : ToolHandler {
 

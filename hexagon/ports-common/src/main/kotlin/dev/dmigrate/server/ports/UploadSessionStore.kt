@@ -105,6 +105,36 @@ interface UploadSessionStore {
         outcome: FinalizationOutcome,
         now: Instant,
     ): PersistOutcome
+
+    /**
+     * AP 6.22: atomic commit of the successful finalisation — sets
+     * [FinalizationOutcome] (status = `SUCCEEDED`) AND
+     * [UploadSession.finalisedSchemaRef] AND transitions the state
+     * `FINALIZING → COMPLETED` in a single CAS step keyed on the
+     * active claim id.
+     *
+     * The atomicity matters because splitting the three updates into
+     * separate calls leaves a race window where a stale-lease
+     * reclaim could land between the SUCCEEDED-persist and the
+     * COMPLETED-transition; last-writer-wins on the schemaRef-save
+     * would then stomp the reclaimer's claim. This call avoids that
+     * by gating all three writes on `finalizingClaimId == claimId`.
+     *
+     * Returns [PersistOutcome.Persisted] with the post-commit
+     * session, [PersistOutcome.ClaimMismatch] when the supplied
+     * claim id does not match the live one,
+     * [PersistOutcome.WrongState] when the session is not in
+     * `FINALIZING` anymore (e.g. concurrent abort), or
+     * [PersistOutcome.NotFound].
+     */
+    fun commitFinalization(
+        tenantId: TenantId,
+        uploadSessionId: String,
+        claimId: String,
+        outcome: FinalizationOutcome,
+        finalisedSchemaRef: String,
+        now: Instant,
+    ): PersistOutcome
 }
 
 sealed interface TransitionOutcome {

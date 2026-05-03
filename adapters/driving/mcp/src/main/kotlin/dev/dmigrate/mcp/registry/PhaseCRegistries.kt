@@ -132,6 +132,11 @@ object PhaseCRegistries {
                 limits = wiring.limits,
                 clock = wiring.clock,
                 finalizer = wiring.finalizer,
+                // AP 6.22: thread the file-spool factory from the
+                // wiring DTO into the handler — the handler default is
+                // the in-memory variant, which would defeat the
+                // streaming heap guarantee in production.
+                payloadFactory = wiring.assembledUploadPayloadFactory,
             ),
             "artifact_upload_abort" to ArtifactUploadAbortHandler(
                 sessionStore = wiring.uploadSessionStore,

@@ -124,31 +124,23 @@ internal class StreamingFinalizer(
             }
 
             val succeeded = inProgress.copy(status = FinalizationOutcomeStatus.SUCCEEDED)
+            val rendered = schemaUri.render()
+            // AP 6.22: atomic claim-keyed CAS that flips outcome,
+            // persists the schemaRef AND transitions to COMPLETED in
+            // one shot. The split persist + save + transition flow
+            // had a Reclaim race window between the steps; this call
+            // gates all three writes on `finalizingClaimId == claimId`.
             requirePersistOrConflict(
                 claimedSession.uploadSessionId,
-                sessionStore.persistFinalizationOutcome(
+                sessionStore.commitFinalization(
                     tenantId = claimedSession.tenantId,
                     uploadSessionId = claimedSession.uploadSessionId,
                     claimId = claimId,
                     outcome = succeeded,
+                    finalisedSchemaRef = rendered,
                     now = now,
                 ),
             )
-            val rendered = schemaUri.render()
-            // AP 6.18: persist the schemaRef on the session BEFORE the
-            // COMPLETED transition so a replay reads it back. Re-fetch
-            // and re-check the claim before save() so a Reclaim that
-            // raced past our SUCCEEDED-persist does not get
-            // overwritten by our last-writer-wins save().
-            val pre = sessionStore.findById(claimedSession.tenantId, claimedSession.uploadSessionId)
-                ?: throw InternalAgentErrorException()
-            if (pre.finalizingClaimId != claimId) {
-                throw IdempotencyConflictException(
-                    existingFingerprint = UploadFingerprint.sessionCompleted(claimedSession.uploadSessionId),
-                )
-            }
-            sessionStore.save(pre.copy(finalisedSchemaRef = rendered))
-            sessionStore.transitionOrThrow(pre, UploadSessionState.COMPLETED, now)
             rendered
         }
     }

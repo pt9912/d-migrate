@@ -114,6 +114,19 @@ class PhaseCWiringTest : FunSpec({
         registry.find("artifact_upload_init") shouldBe null
     }
 
+    test("AP 6.22: defaultToolRegistry threads the AssembledUploadPayloadFactory into ArtifactUploadHandler") {
+        // Regression guard for the AP-6.22 review: it is not enough
+        // for `PhaseCWiring.assembledUploadPayloadFactory` to hold the
+        // file-spool variant — the field must also reach the actual
+        // `ArtifactUploadHandler` constructed by `PhaseCRegistries`.
+        // A pin on the wiring DTO alone is a false-positive guard.
+        val customFactory = dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory.inMemory()
+        val wiring = inMemoryWiring().copy(assembledUploadPayloadFactory = customFactory)
+        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val handler = registry.findHandler("artifact_upload") as ArtifactUploadHandler
+        handler.payloadFactory shouldBe customFactory
+    }
+
     test("AP 6.14: a custom finalizer in the wiring is honoured by the artifact_upload handler") {
         // Defensive: the wiring exposes `finalizer` as a seam so
         // tests / future deployments can swap in a different

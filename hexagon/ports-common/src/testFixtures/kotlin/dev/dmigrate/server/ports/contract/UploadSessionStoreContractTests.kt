@@ -286,6 +286,76 @@ abstract class UploadSessionStoreContractTests(factory: () -> UploadSessionStore
         ok.session.state shouldBe UploadSessionState.FINALIZING
     }
 
+    test("commitFinalization atomically sets SUCCEEDED outcome + schemaRef + COMPLETED state") {
+        val store = factory()
+        store.save(Fixtures.uploadSession("u1"))
+        val claimedAt = Fixtures.NOW
+        store.tryClaimFinalization(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "u1",
+            claimId = "claim-1",
+            claimedAt = claimedAt,
+            leaseExpiresAt = claimedAt.plusSeconds(60),
+        )
+
+        val outcome = FinalizationOutcome(
+            claimId = "claim-1",
+            payloadSha256 = "0".repeat(64),
+            artifactId = "art-1",
+            schemaId = "sch-1",
+            format = "json",
+            status = FinalizationOutcomeStatus.SUCCEEDED,
+        )
+        val result = store.commitFinalization(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "u1",
+            claimId = "claim-1",
+            outcome = outcome,
+            finalisedSchemaRef = "dmigrate://tenants/acme/schemas/sch-1",
+            now = claimedAt.plusSeconds(5),
+        )
+
+        val ok = result.shouldBeInstanceOf<PersistOutcome.Persisted>()
+        ok.session.state shouldBe UploadSessionState.COMPLETED
+        ok.session.finalizationOutcome shouldBe outcome
+        ok.session.finalisedSchemaRef shouldBe "dmigrate://tenants/acme/schemas/sch-1"
+    }
+
+    test("commitFinalization rejects a stale claim id with ClaimMismatch and leaves state untouched") {
+        val store = factory()
+        store.save(Fixtures.uploadSession("u1"))
+        store.tryClaimFinalization(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "u1",
+            claimId = "claim-1",
+            claimedAt = Fixtures.NOW,
+            leaseExpiresAt = Fixtures.NOW.plusSeconds(60),
+        )
+
+        val outcome = FinalizationOutcome(
+            claimId = "claim-2",
+            payloadSha256 = "0".repeat(64),
+            artifactId = "art-1",
+            schemaId = "sch-1",
+            format = "json",
+            status = FinalizationOutcomeStatus.SUCCEEDED,
+        )
+        val rejected = store.commitFinalization(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "u1",
+            claimId = "claim-2",
+            outcome = outcome,
+            finalisedSchemaRef = "dmigrate://tenants/acme/schemas/sch-1",
+            now = Fixtures.NOW.plusSeconds(5),
+        )
+
+        rejected.shouldBeInstanceOf<PersistOutcome.ClaimMismatch>()
+            .currentClaimId shouldBe "claim-1"
+        // State and schemaRef untouched: still FINALIZING under claim-1.
+        store.findById(Fixtures.tenant("acme"), "u1")!!.state shouldBe UploadSessionState.FINALIZING
+        store.findById(Fixtures.tenant("acme"), "u1")!!.finalisedSchemaRef shouldBe null
+    }
+
     test("persistFinalizationOutcome rejects a stale claim id with ClaimMismatch") {
         val store = factory()
         store.save(Fixtures.uploadSession("u1"))

@@ -207,4 +207,39 @@ class InMemoryUploadSessionStore : UploadSessionStore {
         }
         return result ?: PersistOutcome.NotFound
     }
+
+    override fun commitFinalization(
+        tenantId: TenantId,
+        uploadSessionId: String,
+        claimId: String,
+        outcome: FinalizationOutcome,
+        finalisedSchemaRef: String,
+        now: Instant,
+    ): PersistOutcome {
+        val key = Key(tenantId, uploadSessionId)
+        var result: PersistOutcome? = null
+        sessions.compute(key) { _, existing ->
+            if (existing == null) {
+                result = PersistOutcome.NotFound
+                return@compute null
+            }
+            if (existing.state != UploadSessionState.FINALIZING) {
+                result = PersistOutcome.WrongState(existing.state)
+                return@compute existing
+            }
+            if (existing.finalizingClaimId != claimId) {
+                result = PersistOutcome.ClaimMismatch(existing.finalizingClaimId)
+                return@compute existing
+            }
+            val updated = existing.copy(
+                state = UploadSessionState.COMPLETED,
+                updatedAt = now,
+                finalizationOutcome = outcome,
+                finalisedSchemaRef = finalisedSchemaRef,
+            )
+            result = PersistOutcome.Persisted(updated)
+            updated
+        }
+        return result ?: PersistOutcome.NotFound
+    }
 }
