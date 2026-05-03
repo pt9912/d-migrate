@@ -32,7 +32,7 @@ Phase E0 liefert konkrete technische Ergebnisse:
   - Profiling-Runner/-Services
   - `DataImportRunner`
   - `DataTransferRunner`
-  - betroffene Streaming-/Writer-Pfade
+  - betroffene Streaming-/Reader-/Writer-Pfade
 - adapterneutraler Cancel-Vertrag fuer bestehende Runner:
   - `CancellationToken` oder aequivalenter Worker-Handle
   - kooperative Checkpoints
@@ -236,6 +236,10 @@ Status-Transition, Audit-Event und Worker-Handle-Cleanup ueberfuehren kann.
 Eine reine Reduktion auf `cancel_requested` oder ein mehrdeutiger Fehlerpfad
 gilt nicht als anschlussfaehig.
 
+Der Anschlussnachweis bleibt in E0 dokumentativ und adapterneutral. E0 darf
+keine produktive Cancel-Status-Verarbeitung, keine Store-Transition zu
+`cancelled` und keine produktiven Audit-Events fuer `job_cancel` einfuehren.
+
 ---
 
 ## 5. Cancel-Vertrag
@@ -263,13 +267,29 @@ interface CancellationTokenSource {
 Die konkrete Paketlage ist im Spike zu entscheiden. Der Vertrag gehoert in
 einen gemeinsamen, adapterneutralen Bereich, nicht in `adapters:driving:mcp`.
 
+Der Token-Vertrag muss thread-/task-sicher sein. Ein Cancel, das aus einem
+anderen Worker-Thread, Coroutine-Kontext oder MCP-Job-Controller ausgeloest
+wird, muss fuer alle beobachtenden Runner mit atomic-/volatile-aequivalenter
+Sichtbarkeit lesbar sein. `cancel(...)` muss idempotent sein; mehrere
+Cancel-Aufrufe duerfen weder den ersten Grund verlieren noch neue Side Effects
+ausloesen.
+
 ### 5.2 Cancel-Result
 
 Runner muessen Cancel unterscheidbar von fachlichen Fehlern signalisieren.
-Erlaubte Formen:
+Kanonischer Carrier fuer E0 ist eine zentrale, typisierte
+`OperationCancelledException` aus dem adapterneutralen Cancel-Paket.
 
-- typisierte `OperationCancelledException`
-- typisiertes Runner-Result wie `Cancelled`
+Erlaubte Form:
+
+- `OperationCancelledException`
+
+Abweichungen sind nur zulaessig, wenn eine bestehende Runner-Signatur bereits
+ein geschlossenes Result-Modell erzwingt. Dann muss die Result-Variante in E0
+am Runner-Rand unmittelbar und verlustfrei auf die kanonische
+`OperationCancelledException` oder ein daraus eindeutig ableitbares
+`Cancelled`-Outcome gemappt werden. Gemischte freie Carrier pro Runner oder
+Port sind nicht erlaubt.
 
 Nicht erlaubt:
 
@@ -277,6 +297,7 @@ Nicht erlaubt:
 - Cancel als normaler fachlicher Fehler mit Exit-Code-Mapping ohne
   Erkennbarkeit fuer den spaeteren Jobkern
 - stilles Schlucken des Cancel-Signals
+- mehrere gleichrangige Cancel-Signalformen ohne zentrale Mapping-Regel
 
 ### 5.3 Cleanup-Vertrag
 
@@ -390,6 +411,8 @@ Betroffene Pfade:
 Pflicht-Checkpoints:
 
 - nach Preflight und vor Ziel-Writer-Open
+- vor Quell-Reader-Open bzw. Reader-Initialisierung
+- vor jedem potentiell langen Source-Read-Call
 - vor jeder neuen Tabelle
 - vor jedem neuen Transfer-Chunk
 - vor Ziel-Write
@@ -398,32 +421,39 @@ Pflicht-Checkpoints:
 
 Spike-Abnahme:
 
+- Quell-Reader-Open und Source-Read-Calls sind als cancelbar,
+  atomar-nicht-cancelbar oder blockierend klassifiziert, inklusive
+  Timeout-/Retry-Verhalten
 - Cancel vor Ziel-Write startet keine Ziel-Schreiboperation
 - Cancel zwischen Chunks verhindert weitere Ziel-Chunks
 - Cancel zwischen Tabellen verhindert die naechste Tabelle
 - Runner liefert erkennbares Cancel-Ergebnis statt Erfolg mit Teildaten
 
-### 6.5 Streaming-/Writer-Pfade
+### 6.5 Streaming-/Reader-/Writer-Pfade
 
 Betroffene Ports und Adapter:
 
 - `StreamingImporter`
 - `StreamingExporter`, falls spaetere Start-Tools ihn als Langlaeufer nutzen
+- Quell-Reader-/Export-Ports im Transfer-Pfad
 - `DataChunkWriter`
 - `DataWriter`
 - `TableImportSession`
-- driver-spezifische Writer in `adapters/driven/driver-*`
+- driver-spezifische Reader und Writer in `adapters/driven/driver-*`
 
 E0 muss entscheiden, wo Cancel-Pruefung liegt:
 
 - im Runner vor Port-Aufrufen
 - im Streaming-Adapter zwischen Chunks
-- verpflichtend in Writer-/Driver-Ports, wenn ein einzelner Port-Aufruf selbst
-  lange laufen kann oder mehrere neue Side Effects startet
+- verpflichtend in Reader-/Writer-/Driver-Ports, wenn ein einzelner
+  Port-Aufruf selbst lange laufen kann, Ressourcen blockiert oder mehrere neue
+  Side Effects startet
 
 Spike-Abnahme:
 
 - dokumentierte Entscheidung pro Port-Grenze
+- Fake-Reader-Test beweist: nach Cancel wird kein weiterer Source-Read-Call
+  gestartet
 - Fake-Writer-Test beweist: nach Cancel wird kein weiterer `write`-Aufruf
   gestartet
 - keine stille Semantik, bei der ein Writer nach Cancel weiter neue Chunks
@@ -443,16 +473,21 @@ Spike-Abnahme:
 - Paket fuer adapterneutralen `CancellationToken` festlegen.
 - `CancellationToken.none()` oder aequivalent fuer bestehende CLI-Pfade
   bereitstellen.
+- Token-Implementierung mit atomic-/volatile-aequivalenter Sichtbarkeit und
+  idempotentem `cancel(...)` bereitstellen.
 - Test-Token mit deterministischen Hooks bereitstellen:
   - Cancel nach N Checkpoints
   - Cancel vor naechstem Side Effect
   - sofort gecancelter Token
-- Cancel-Exception oder Cancel-Result definieren.
+- Kanonische `OperationCancelledException` definieren; Result-basierte Runner
+  duerfen nur ueber eine zentrale Mapping-Regel angebunden werden.
 
 Tests:
 
 - `none()` ist nie gecancelt
 - gecancelter Token wirft typisierte Cancel-Signalisierung
+- Cancel aus anderem Thread/Task wird deterministisch sichtbar
+- mehrfaches `cancel(...)` ist idempotent
 - Hook-Token kann Checkpoints deterministisch ausloesen
 
 ### 7.2 AP E0.2: Side-Effect-Inventar erstellen
@@ -474,9 +509,9 @@ Pflichtschema fuer die Checkpoint-/Side-Effect-Matrix:
 | `pipeline` | fachlicher Pfad, z. B. Reverse-Publish oder Import-Chunk |
 | `operation` | konkreter Call oder Schritt |
 | `operation_type` | `loop`, `side_effect`, `monolithic_call`, `cleanup` |
-| `side_effect` | Artefakt, DB-Write, Checkpoint, Spool, Session oder `none` |
+| `side_effect` | Artefakt, Source-Read, DB-Write, Checkpoint, Spool, Session oder `none` |
 | `checkpoint_before` | konkrete Code-/Port-Grenze vor dem Side Effect |
-| `cancel_reaction` | Exception/Result, kein weiterer Write, abort/close usw. |
+| `cancel_reaction` | `OperationCancelledException`/zentrales Mapping, kein weiterer Read/Write, abort/close usw. |
 | `atomicity` | `atomic`, `multi_step`, `unknown` |
 | `timeout_or_bound` | Timeout, Laufzeitgrenze oder begruendetes `not_applicable` |
 | `cleanup_contract` | `close`, `abort`, Rollback, Delete oder `not_needed` |
@@ -486,8 +521,8 @@ Pflichtschema fuer die Checkpoint-/Side-Effect-Matrix:
 
 Tests/Gate:
 
-- Inventar deckt Reverse, Profiling, Import, Transfer und Streaming-/Writer-
-  Pfade ab
+- Inventar deckt Reverse, Profiling, Import, Transfer und Streaming-/Reader-/
+  Writer-Pfade ab
 - kein Side Effect ohne vorherigen Cancel-Checkpoint bleibt unbegruendet
 - jede Matrix-Zeile mit `test_coverage = missing`, `atomicity = unknown` oder
   fehlendem `timeout_or_bound` ist automatisch `blocked`, sofern ein externer
@@ -522,17 +557,19 @@ Tests:
 
 - `DataImportRunner`, `ImportStreamingInvoker`, `StreamingImporter`,
   `DataTransferRunner` und `TransferExecutor` instrumentieren.
-- Checkpoints vor Tabelle, Chunk, Ziel-Write, Finish/Commit und Checkpoint-
-  Persistenz setzen.
+- Checkpoints vor Tabelle, Quell-Reader-Open, Source-Read-Call, Chunk,
+  Ziel-Write, Finish/Commit und Checkpoint-Persistenz setzen.
 - Falls ein Port-Aufruf lange laufen kann oder selbst mehrere Side Effects
   startet, muss E0 den Port-/Adapter-Vertrag schaerfen oder den Pfad fuer das
   Gate blockieren; eine reine Phase-E-Notiz reicht nicht.
 - Cancel-Pruefung an Runner-Grenzen ist Mindeststandard. Port-/Adapterebene
-  muss zusaetzlich pruefen, sobald sie eigenstaendig Chunks, Writes, Commits,
-  Spools oder Sessions sequenziert.
+  muss zusaetzlich pruefen, sobald sie eigenstaendig Source-Reads, Chunks,
+  Writes, Commits, Spools oder Sessions sequenziert.
 
 Tests:
 
+- Cancel vor Quell-Reader-Open startet keine Reader-Initialisierung
+- Cancel vor Source-Read-Call startet keinen weiteren Source-Read
 - Cancel vor erstem Write startet keinen Write
 - Cancel zwischen Chunks startet keinen weiteren Write
 - Cancel vor Finish/Commit startet kein Finish/Commit
@@ -573,7 +610,8 @@ Zulaessige `Go mit Nacharbeiten`-Nacharbeiten sind ausschliesslich:
 - zusaetzliche positive Tests fuer bereits abgedeckte Pfade
 - Refactoring bereits nachgewiesener Checkpoint-Platzierung ohne
   Vertragsaenderung
-- Phase-E-Wiring von bereits typisierten Cancel-Outcomes in Status und Audit
+- dokumentativer Phase-E-Anschluss von bereits typisierten Cancel-Outcomes an
+  Status und Audit
 
 Nicht zulaessig fuer `Go mit Nacharbeiten` und daher `Blocked`:
 
@@ -606,7 +644,9 @@ Mindesttests:
 - `DataProfileRunner` / Profiling-Service: Cancel zwischen Tabellen und vor
   Report-Persistenz
 - `DataImportRunner`: Cancel vor erstem Chunk, zwischen Chunks und vor Finish
-- `DataTransferRunner`: Cancel vor Ziel-Write und zwischen Chunks
+- `DataTransferRunner`: Cancel vor Quell-Reader-Open, vor Source-Read-Call,
+  vor Ziel-Write und zwischen Chunks
+- Streaming-/Reader-Fake: nach Cancel kein weiterer Source-Read
 - Streaming-/Writer-Fake: nach Cancel kein weiterer `write`
 - Cleanup-Fake: nach Cancel sind offene Writer/Sessions beendet und temporaere
   Spools nicht als Erfolg registriert
@@ -618,12 +658,16 @@ Mindesttests:
 ## 9. Abnahmekriterien
 
 - Fuer `SchemaReverseRunner`, Profiling, `DataImportRunner`,
-  `DataTransferRunner` und betroffene Streaming-/Writer-Pfade existiert eine
-  dokumentierte Checkpoint- und Side-Effect-Matrix.
+  `DataTransferRunner` und betroffene Streaming-/Reader-/Writer-Pfade
+  existiert eine dokumentierte Checkpoint- und Side-Effect-Matrix.
 - Ein adapterneutraler Cancel-Vertrag existiert und wird nicht im MCP-Adapter
   definiert.
 - Bestehende CLI-Pfade bleiben ohne expliziten Cancel-Token kompatibel.
+- `CancellationToken` und `CancellationTokenSource` garantieren thread-/
+  task-sichere Sichtbarkeit und idempotentes Cancel.
 - Cancel vor Artefakt-/Report-Publish verhindert neue Artefakte bzw. Reports.
+- Cancel vor Quell-Reader-Open oder Source-Read-Call verhindert neue
+  Transfer-Reads bzw. klassifiziert den Call nach Abschnitt 4.1.
 - Cancel vor Import-/Transfer-Write verhindert neue Daten-Schreibabschnitte.
 - Cancel zwischen Chunks oder Tabellen verhindert den naechsten Chunk bzw. die
   naechste Tabelle.
@@ -631,6 +675,8 @@ Mindesttests:
   danach startet kein weiterer Side Effect.
 - Cancel wird typisiert als Cancel signalisiert und nicht als generischer
   fachlicher Fehler verschleiert.
+- `OperationCancelledException` ist der kanonische E0-Carrier; jede
+  Result-basierte Abweichung ist zentral gemappt und begruendet.
 - Das typisierte Cancel-Outcome ist so eindeutig, dass Phase E daraus ohne
   weitere fachliche Interpretation `cancelled`-Status, Audit-Event und
   Worker-Handle-Cleanup ableiten kann.
@@ -684,3 +730,7 @@ Der E0-Abschluss muss Phase E ausserdem eine eindeutige Abbildung liefern:
 - welche Worker-/Token-Handles nach Cancel freigegeben werden
 - welche offenen Phase-E-Nacharbeiten keine neue Side-Effect-Semantik
   einfuehren
+
+Diese Abbildung ist in E0 nur Vertrag und Gate-Artefakt. Produktive
+Status-Transitionen, Job-Store-Mutationen und Audit-Emissionen bleiben
+vollstaendig Phase E.
