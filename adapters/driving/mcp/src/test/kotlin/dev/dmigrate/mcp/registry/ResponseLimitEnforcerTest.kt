@@ -108,7 +108,10 @@ class ResponseLimitEnforcerTest : FunSpec({
             result shouldBe original
         }
 
-        test("oversized success response is moved to an artefact with a truncated envelope") {
+        test("oversized success response is moved to an artefact with a truncated envelope (non-schema-aware tool)") {
+            // AP 6.23: schema-aware tools (schema_validate etc.) are
+            // never wrapped by the generic envelope; this test uses a
+            // tool that has no per-output schema (artifact_chunk_get).
             val limits = McpLimitsConfig(maxToolResponseBytes = 64)
             val f = enforcer(limits)
             val bigText = """{"data":"${"x".repeat(200)}"}"""
@@ -117,7 +120,7 @@ class ResponseLimitEnforcerTest : FunSpec({
                     ToolContent(type = "text", text = bigText, mimeType = "application/json"),
                 ),
             )
-            val replaced = f.sut.enforceResponseSize("schema_validate", PRINCIPAL, outcome)
+            val replaced = f.sut.enforceResponseSize("artifact_chunk_get", PRINCIPAL, outcome)
             val text = (replaced as ToolCallOutcome.Success).content.single().text!!
             val json = JsonParser.parseString(text).asJsonObject
             json.get("truncated").asBoolean shouldBe true
@@ -129,6 +132,28 @@ class ResponseLimitEnforcerTest : FunSpec({
             val stored = f.contentStore.openRangeRead(artifactId, 0L, record.managedArtifact.sizeBytes)
                 .use { stream -> stream.readBytes() }
             String(stored, Charsets.UTF_8) shouldBe bigText
+        }
+
+        test("AP 6.23: oversized response from a schema-aware tool surfaces INTERNAL_AGENT_ERROR") {
+            // Plan §6.23: the generic {summary, artifactRef, truncated}
+            // envelope does not match the per-tool output schemas of
+            // schema_validate / schema_compare / schema_generate /
+            // job_status_get. An oversize response from one of these
+            // tools is a handler-side bug — the handler's own
+            // truncated/artifactRef path should have downgraded it.
+            val limits = McpLimitsConfig(maxToolResponseBytes = 32)
+            val f = enforcer(limits)
+            val bigText = """{"valid":true,"summary":"x","findings":[],"truncated":false,"junk":"${"x".repeat(200)}"}"""
+            val outcome = ToolCallOutcome.Success(
+                content = listOf(
+                    ToolContent(type = "text", text = bigText, mimeType = "application/json"),
+                ),
+            )
+            for (tool in setOf("schema_validate", "schema_compare", "schema_generate", "job_status_get")) {
+                shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
+                    f.sut.enforceResponseSize(tool, PRINCIPAL, outcome)
+                }
+            }
         }
 
         test("error outcomes pass through without enforcement") {
@@ -182,7 +207,10 @@ class ResponseLimitEnforcerTest : FunSpec({
                 ),
             )
             val ex = shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
-                sut.enforceResponseSize("schema_validate", PRINCIPAL, outcome)
+                // AP 6.23: use a non-schema-aware tool so the spill
+                // path runs (schema-aware tools short-circuit to
+                // InternalAgentError without a PayloadTooLarge cause).
+                sut.enforceResponseSize("artifact_chunk_get", PRINCIPAL, outcome)
             }
             // Cause-chained for diagnostics (operator can grep the
             // actual byte mismatch out of the chain).

@@ -64,6 +64,18 @@ class ResponseLimitEnforcer internal constructor(
      * by construction (`code/message/details/requestId`) and never
      * carry the kind of body this code path needs to spill.
      *
+     * AP 6.23: the four schema-strict tools — `schema_validate`,
+     * `schema_compare`, `schema_generate`, `job_status_get` — own
+     * their tool-specific truncated/artifactRef fallback in the
+     * handler. The generic `{summary, artifactRef, truncated}`
+     * envelope below does NOT match their per-tool output schemas
+     * (e.g. `schema_validate` requires `valid + summary + findings +
+     * truncated`; `job_status_get` requires `jobId + operation +
+     * status + ...`). For these tools, an oversize response is a
+     * handler-side bug and surfaces as `INTERNAL_AGENT_ERROR` —
+     * the tool's own oversize path should have downgraded the
+     * payload before it reached the enforcer.
+     *
      * If even the artefact-spill fails because the response exceeds
      * `maxArtifactUploadBytes`, we surface that as
      * `INTERNAL_AGENT_ERROR`, not `PAYLOAD_TOO_LARGE`: the client
@@ -90,6 +102,15 @@ class ResponseLimitEnforcer internal constructor(
         if (text.length.toLong() * 4 <= cap.toLong()) return outcome
         val bytes = text.toByteArray(Charsets.UTF_8)
         if (bytes.size <= cap) return outcome
+
+        // AP 6.23: tools with their own per-output-schema cannot be
+        // wrapped in the generic truncated envelope (it would fail
+        // their schema's required-field constraint). The handler is
+        // expected to downgrade itself; an oversize response here is
+        // treated as an internal handler bug.
+        if (toolName in SCHEMA_AWARE_TOOLS) {
+            throw InternalAgentErrorException()
+        }
 
         val artifactUri = try {
             artifactSink.writeReadOnly(
@@ -133,5 +154,21 @@ class ResponseLimitEnforcer internal constructor(
     private fun capForTool(toolName: String): Int = when (toolName) {
         "artifact_upload" -> limits.maxUploadToolRequestBytes
         else -> limits.maxNonUploadToolRequestBytes
+    }
+
+    internal companion object {
+        /**
+         * AP 6.23: tools whose output schema requires per-tool fields
+         * (e.g. `valid`, `dialect`, `status`, …) and therefore cannot
+         * be wrapped in the generic `{summary, artifactRef, truncated}`
+         * fallback envelope without violating their JSON-Schema. Each
+         * of these handlers owns its own oversize path.
+         */
+        val SCHEMA_AWARE_TOOLS: Set<String> = setOf(
+            "schema_validate",
+            "schema_compare",
+            "schema_generate",
+            "job_status_get",
+        )
     }
 }
