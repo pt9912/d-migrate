@@ -226,10 +226,13 @@ Pipeline-Reihenfolge fuer Start-Tools:
 8. Idempotency-Konflikte sofort mit `IDEMPOTENCY_CONFLICT` beenden
 9. `COMMITTED` direkt dedupliziert zurueckgeben, ohne Resource-
    Materialisierung, Policy oder Quota erneut auszufuehren
-10. Resource-Sichtbarkeit, Policy und Materialisierung nur fuer neue oder mit
-   Grant atomar geclaimte Starts pruefen
-11. Quota fuer neue Side Effects reservieren
-12. Job erzeugen oder bestehendes Ergebnis zurueckgeben
+10. secret-freie Resource-Metadaten und Sichtbarkeit fuer Policy pruefen
+11. Policy entscheiden, ohne Secrets, Driver-Pools oder Schema-/Connection-
+   Materialisierung auszuloesen
+12. Bei direktem `Allowed` oder gueltigem Grant/Claim erst jetzt Secret-,
+   Schema-, Connection- und Driver-Materialisierung ausfuehren
+13. Quota fuer neue Side Effects reservieren
+14. Job erzeugen oder bestehendes Ergebnis zurueckgeben
 
 Policy wird niemals fuer abweichende Payloads geprueft. Ein Konflikt mit
 gleichem Store-Key und anderem Fingerprint liefert deterministisch
@@ -245,13 +248,16 @@ muessen alle Outcomes nach angelegter Reservierung eine verbindliche
 Reservation-Transition haben:
 
 - `POLICY_REQUIRED`: `PENDING` wird atomar zu `AWAITING_APPROVAL` mit
-  `approvalRequestId` und `awaitingApprovalExpiresAt`.
+  `approvalRequestId` und `awaitingApprovalExpiresAt`. Dieser Pfad darf keine
+  Secret-Store-Reads, Pool-/Driver-Initialisierung, Schema-Materialisierung
+  oder sonstige Runner-nahe Materialisierung ausfuehren.
 - `RATE_LIMITED`: keine Job-Erzeugung; die Reservierung bleibt recoverable
   `PENDING` mit `pendingLeaseExpiresAt` maximal bis `retryAfter`. Identische
   Retries vor Ablauf liefern erneut `RATE_LIMITED`, identische Retries nach
   Ablauf duerfen die Reservierung recovern und Quota erneut pruefen.
 - `RESOURCE_NOT_FOUND`, `TENANT_SCOPE_DENIED` und `VALIDATION_ERROR` aus
-  Resource-Lookup oder Materialisierung nach Idempotency werden als
+  secret-freiem Resource-/Visibility-Lookup oder aus autorisierter
+  Materialisierung nach Policy/Grant werden als
   deterministische Startfehler in `FAILED` mit gespeichertem Outcome
   ueberfuehrt. Identische Retries liefern denselben Fehler ohne neue Policy-
   oder Quota-Pruefung.
@@ -934,8 +940,10 @@ Tests:
 - Vor `reserveOrGet` nur syntaktische Form, Tenant-Prefix und freie
   JDBC-Strings validieren.
 - `connectionRef`- und `schemaRef`-Sichtbarkeit, Lookup und Materialisierung
-  nur fuer neue oder geclaimte Starts nach dem `COMMITTED`-Kurzschluss
-  ausfuehren.
+  trennen: vor Policy nur secret-freie Metadaten-/Visibility-Lookups, nach
+  direktem `ALLOW` oder gueltigem Grant/Claim erst Secret-Store-Reads,
+  Schema-Content-Materialisierung, Pool-/Driver-Initialisierung und Runner-
+  nahe Materialisierung ausfuehren.
 - freie JDBC-Strings abweisen.
 - Output-Schema auf `jobId`, `resourceUri`, `executionMeta` festlegen.
 - Tool-Registry von Unsupported-Handlern auf produktive Handler umstellen.
@@ -950,6 +958,9 @@ Tests:
 - syntaktisch ungueltige Connection-/Schema-Ref vor Idempotency
 - nicht sichtbare oder fremde Connection-/Schema-Ref nach Idempotency als
   gespeichertes finales Outcome
+- fehlender Grant bei `RequiresApproval` liefert `POLICY_REQUIRED` ohne
+  Secret-Store-Read, Pool-/Driver-Initialisierung oder Schema-/Connection-
+  Materialisierung
 - freie JDBC-URL
 - fehlender Grant bei `RequiresApproval`
 - direkte `ALLOW`-Policy ohne Grant
@@ -1209,6 +1220,9 @@ Mindestfaelle:
 - identischer Retry vor und nach `COMMITTED`
 - `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
   unsichtbarer Resource
+- `RequiresApproval` ohne Grant fuehrt nur secret-freie Resource-
+  Metadaten-/Visibility-Lookups aus und ruft keine Secret-Stores, Driver-
+  Pools, Schema-Content-Materialisierung oder Runner-Adapter auf
 - JobStart-Transaction verhindert sichtbaren Job ohne
   Idempotency-`COMMITTED`
 - paralleler identischer Start auf aktiver `PENDING`-Reservierung liefert
@@ -1322,6 +1336,9 @@ Mindestfaelle:
   `RATE_LIMITED` aus gespeicherten Outcome-Metadaten.
 - finale Resource-/Tenant-/Validation-Fehler nach Idempotency setzen
   `FAILED`; retrybare Materialisierungsfehler bleiben recoverable.
+- `POLICY_REQUIRED` entsteht vor Secret-/Schema-/Connection-/Driver-
+  Materialisierung; fehlende Freigabe erzeugt keine Secret-Store-Reads und
+  keine Runner-nahe Materialisierung.
 - `COMMITTED`-Idempotency-Eintraege bleiben mindestens bis `job.expiresAt`
   erhalten.
 - Runner-Timeout terminalisiert gestartete Jobs als
