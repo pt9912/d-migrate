@@ -71,5 +71,56 @@ class FileSpoolAssembledUploadPayload internal constructor(
             Files.createDirectories(sessionDir)
             return sessionDir.resolve("${UUID.randomUUID()}${FileLayout.BIN}")
         }
+
+        /**
+         * AP 6.22 §6.21 startup sweep: layout-aware orphan cleanup
+         * over `<root>/assembly/<sessionId>/...`. Removes any `.bin`
+         * (or `.bin.tmp.<uuid>`) file whose `lastModifiedTime` is
+         * older than [olderThan]; with [olderThan] = `null` every
+         * matching file is dropped unconditionally (the `0`/`0s`
+         * retention policy).
+         *
+         * Files that do not look like assembly spools (extension
+         * neither `.bin` nor a `.tmp.<uuid>` infix) are left alone
+         * so operator-managed tooling can keep diagnostic notes in
+         * the dir without losing them.
+         *
+         * Returns the number of `.bin` files removed (sidecar / tmp
+         * leftovers are silently dropped to keep the operator-facing
+         * diagnostic stable).
+         */
+        fun cleanupOrphans(
+            root: Path,
+            olderThan: java.time.Duration?,
+            clock: java.time.Clock = java.time.Clock.systemUTC(),
+        ): Int {
+            val assemblyRoot = root.resolve(ASSEMBLY_DIR_NAME)
+            if (!Files.exists(assemblyRoot)) return 0
+            val cutoff: java.time.Instant? = olderThan?.let { java.time.Instant.now(clock).minus(it) }
+            val storeFiles = Files.walk(assemblyRoot).use { walk ->
+                walk
+                    .filter { Files.isRegularFile(it) }
+                    .filter {
+                        val name = it.fileName.toString()
+                        name.endsWith(FileLayout.BIN) || name.contains(FileLayout.TMP_INFIX)
+                    }
+                    .toList()
+            }
+            var removed = 0
+            for (file in storeFiles) {
+                val name = file.fileName.toString()
+                val mtime = try {
+                    Files.getLastModifiedTime(file).toInstant()
+                } catch (_: java.io.IOException) {
+                    continue
+                }
+                val shouldDelete = cutoff == null || mtime.isBefore(cutoff)
+                if (!shouldDelete) continue
+                if (Files.deleteIfExists(file) && name.endsWith(FileLayout.BIN)) {
+                    removed++
+                }
+            }
+            return removed
+        }
     }
 }

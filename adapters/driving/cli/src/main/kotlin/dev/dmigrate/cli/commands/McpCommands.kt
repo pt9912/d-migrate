@@ -19,6 +19,7 @@ import dev.dmigrate.mcp.server.validate
 import dev.dmigrate.mcp.server.validateForStdio
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
+import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayload
 import java.net.URI
 
 /**
@@ -228,10 +229,21 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 "${owner.resolved.path}: ${failure.message}", err = true)
             throw ProgramResult(2)
         }
+        // AP 6.22: assembly spools left behind by a crashed
+        // streaming-finalisation are bounded by the same orphan
+        // retention. Layout-aware sweep over <stateDir>/assembly/...
+        val spoolsRemoved = try {
+            FileSpoolAssembledUploadPayload.cleanupOrphans(owner.resolved.path, artefactRetention)
+        } catch (failure: java.io.IOException) {
+            echo("MCP startup sweep: assembly cleanup failed for state dir " +
+                "${owner.resolved.path}: ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
         echo(
             "MCP startup sweep (state dir ${owner.resolved.path}): " +
                 "removed $segmentsRemoved upload-segment session(s), " +
-                "$artefactsRemoved artefact file(s).",
+                "$artefactsRemoved artefact file(s), " +
+                "$spoolsRemoved assembly spool(s).",
             err = true,
         )
     }
