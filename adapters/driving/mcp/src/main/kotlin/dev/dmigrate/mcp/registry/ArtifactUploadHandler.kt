@@ -60,6 +60,16 @@ import java.util.Base64
  * - any retry against a live `FINALIZING` claim → retryable Conflict
  *   without side effects
  */
+/**
+ * @property finalizer production wiring MUST inject a finaliser
+ *   (Phase-C wiring defaults to [dev.dmigrate.mcp.schema.DefaultSchemaStagingFinalizer]).
+ *   The `null` default is reserved for AP 6.7-6.8 standalone tests
+ *   that exercise the segment-write path without producing a
+ *   `schemaRef`. With `null`, the completing segment uses the
+ *   legacy `ACTIVE → COMPLETED` shortcut WITHOUT a single-writer
+ *   FINALIZING claim — concurrent calls in such a setup may race
+ *   into both COMPLETED, which is unsafe for production.
+ */
 @Suppress("LongParameterList")
 internal class ArtifactUploadHandler(
     private val sessionStore: UploadSessionStore,

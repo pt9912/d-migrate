@@ -5,6 +5,7 @@ import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.adapter.audit.logging.LoggingAuditSink
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
+import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayloadFactory
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
@@ -15,17 +16,26 @@ import java.nio.file.Path
 import java.time.Clock
 
 /**
- * Production CLI wiring for `mcp serve` per `ImpPlan-0.9.6-C.md` §6.21.
+ * Production CLI wiring for `mcp serve` per `ImpPlan-0.9.6-C.md`
+ * §6.21 + §6.22.
  *
  * Byte-Stores are file-backed under [stateDir]:
  * - `FileBackedUploadSegmentStore(stateDir)` lays out segments under
  *   `<stateDir>/segments/<uploadSessionId>/...`.
- * - `FileBackedArtifactContentStore(stateDir)` lays out artefacts under
- *   `<stateDir>/artifacts/<sha256-prefix>/<artifactId>.bin` plus sidecar.
+ * - `FileBackedArtifactContentStore(stateDir)` lays out artefacts
+ *   under `<stateDir>/artifacts/<sha256-prefix>/<artifactId>.bin`
+ *   plus sidecar.
+ * - `FileSpoolAssembledUploadPayloadFactory(stateDir)` keeps the
+ *   AP-6.22 streaming-finalisation spool off-heap under
+ *   `<stateDir>/assembly/<uploadSessionId>/<uuid>.bin`. The default
+ *   `AssembledUploadPayloadFactory.inMemory()` from `PhaseCWiring`
+ *   would defeat the AP-6.22 heap guarantee — production CLI MUST
+ *   inject the file-spool factory here.
  *
- * Both adapters create their own canonical sub-directories — no extra
- * speaking sub-folder is interposed so the on-disk layout stays stable
- * at exactly `<stateDir>/segments/...` and `<stateDir>/artifacts/...`.
+ * Both byte adapters create their own canonical sub-directories — no
+ * extra speaking sub-folder is interposed so the on-disk layout stays
+ * stable at exactly `<stateDir>/segments/...`, `<stateDir>/artifacts/...`
+ * and `<stateDir>/assembly/...`.
  *
  * Metadata stores remain ephemeral (`InMemoryUploadSessionStore`,
  * `InMemoryArtifactStore`, `InMemorySchemaStore`, `InMemoryJobStore`,
@@ -61,6 +71,7 @@ internal object McpCliPhaseCWiring {
             limits = limits,
             clock = clock,
             auditSink = LoggingAuditSink(),
+            assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
         )
     }
 }

@@ -19,6 +19,8 @@ import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
 import dev.dmigrate.server.ports.ClaimOutcome
+import dev.dmigrate.server.ports.PersistOutcome
+import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
 import java.io.ByteArrayInputStream
@@ -85,19 +87,29 @@ internal class StreamingFinalizer(
                 format = format,
                 status = FinalizationOutcomeStatus.IN_PROGRESS,
             )
-            sessionStore.persistFinalizationOutcome(
-                tenantId = claimedSession.tenantId,
-                uploadSessionId = claimedSession.uploadSessionId,
-                claimId = claimId,
-                outcome = inProgress,
-                now = now,
+            // AP 6.22: every claim-keyed CAS is checked. If we lose
+            // the claim mid-finalisation (Reclaim by another caller
+            // after lease expiry), bail out before any further side
+            // effect — the new owner drives the deterministic-id
+            // pipeline and the persisted outcome stays consistent.
+            requirePersistOrConflict(
+                claimedSession.uploadSessionId,
+                sessionStore.persistFinalizationOutcome(
+                    tenantId = claimedSession.tenantId,
+                    uploadSessionId = claimedSession.uploadSessionId,
+                    claimId = claimId,
+                    outcome = inProgress,
+                    now = now,
+                ),
             )
 
             val schemaUri = try {
                 // AP 6.22 C5: pass the payload through directly so the
-                // finaliser parses + materialises via streams. Heap
-                // peak is now `O(maxUploadSegmentBytes + buffer)`,
-                // not `O(sizeBytes)`.
+                // finaliser parses + materialises via streams. The
+                // file-spool keeps `artifactContentStore.write` heap
+                // bounded; the schema codec still loads the parsed
+                // SchemaDefinition tree on-heap, but that scales with
+                // the schema, not the artefact size.
                 finalizer.complete(
                     session = claimedSession,
                     principal = principal,
@@ -112,21 +124,50 @@ internal class StreamingFinalizer(
             }
 
             val succeeded = inProgress.copy(status = FinalizationOutcomeStatus.SUCCEEDED)
-            sessionStore.persistFinalizationOutcome(
-                tenantId = claimedSession.tenantId,
-                uploadSessionId = claimedSession.uploadSessionId,
-                claimId = claimId,
-                outcome = succeeded,
-                now = now,
+            requirePersistOrConflict(
+                claimedSession.uploadSessionId,
+                sessionStore.persistFinalizationOutcome(
+                    tenantId = claimedSession.tenantId,
+                    uploadSessionId = claimedSession.uploadSessionId,
+                    claimId = claimId,
+                    outcome = succeeded,
+                    now = now,
+                ),
             )
             val rendered = schemaUri.render()
-            // AP 6.18: persist the schemaRef onto the session BEFORE
-            // the COMPLETED transition so a replay reads it back.
-            val current = sessionStore.findById(claimedSession.tenantId, claimedSession.uploadSessionId)
+            // AP 6.18: persist the schemaRef on the session BEFORE the
+            // COMPLETED transition so a replay reads it back. Re-fetch
+            // and re-check the claim before save() so a Reclaim that
+            // raced past our SUCCEEDED-persist does not get
+            // overwritten by our last-writer-wins save().
+            val pre = sessionStore.findById(claimedSession.tenantId, claimedSession.uploadSessionId)
                 ?: throw InternalAgentErrorException()
-            sessionStore.save(current.copy(finalisedSchemaRef = rendered))
-            sessionStore.transitionOrThrow(current, UploadSessionState.COMPLETED, now)
+            if (pre.finalizingClaimId != claimId) {
+                throw IdempotencyConflictException(
+                    existingFingerprint = UploadFingerprint.sessionCompleted(claimedSession.uploadSessionId),
+                )
+            }
+            sessionStore.save(pre.copy(finalisedSchemaRef = rendered))
+            sessionStore.transitionOrThrow(pre, UploadSessionState.COMPLETED, now)
             rendered
+        }
+    }
+
+    /**
+     * AP 6.22: maps a [PersistOutcome] returned by
+     * [UploadSessionStore.persistFinalizationOutcome] to the typed
+     * exception that matches the failure class. A `ClaimMismatch`
+     * means our lease expired and another caller reclaimed, so we
+     * surface the same retryable Conflict as a `COMPLETED`-replay.
+     */
+    private fun requirePersistOrConflict(sessionId: String, outcome: PersistOutcome) {
+        when (outcome) {
+            is PersistOutcome.Persisted -> Unit
+            is PersistOutcome.ClaimMismatch -> throw IdempotencyConflictException(
+                existingFingerprint = UploadFingerprint.sessionCompleted(sessionId),
+            )
+            is PersistOutcome.WrongState -> throw mapWrongState(outcome.state, sessionId)
+            is PersistOutcome.NotFound -> throw InternalAgentErrorException()
         }
     }
 
@@ -246,8 +287,12 @@ internal class StreamingFinalizer(
                 format = format,
                 status = FinalizationOutcomeStatus.FAILED,
                 sanitizedErrorCode = sanitizedErrorCodeOf(failure),
-                sanitizedErrorMessage = failure.message?.take(SANITIZED_MESSAGE_MAX_CHARS),
+                sanitizedErrorMessage = sanitizedErrorMessageOf(failure),
             )
+            // Best-effort under our claim: a Reclaim that raced past
+            // us means the new owner will drive the terminal state on
+            // its own, so ignore claim-loss outcomes here and re-throw
+            // the original failure to the caller.
             sessionStore.persistFinalizationOutcome(
                 tenantId = session.tenantId,
                 uploadSessionId = session.uploadSessionId,
@@ -255,7 +300,7 @@ internal class StreamingFinalizer(
                 outcome = outcome,
                 now = now,
             )
-            sessionStore.transition(session.tenantId, session.uploadSessionId, UploadSessionState.ABORTED, now)
+            transitionToAbortedBestEffort(session, now)
             throw failure
         }
     }
@@ -270,7 +315,7 @@ internal class StreamingFinalizer(
         val failed = inProgress.copy(
             status = FinalizationOutcomeStatus.FAILED,
             sanitizedErrorCode = sanitizedErrorCodeOf(failure),
-            sanitizedErrorMessage = failure.message?.take(SANITIZED_MESSAGE_MAX_CHARS),
+            sanitizedErrorMessage = sanitizedErrorMessageOf(failure),
         )
         sessionStore.persistFinalizationOutcome(
             tenantId = session.tenantId,
@@ -279,7 +324,23 @@ internal class StreamingFinalizer(
             outcome = failed,
             now = now,
         )
-        sessionStore.transition(session.tenantId, session.uploadSessionId, UploadSessionState.ABORTED, now)
+        transitionToAbortedBestEffort(session, now)
+    }
+
+    /**
+     * Transition our claimed session to `ABORTED`. If the CAS races
+     * with a Reclaim (state may already be FINALIZING under another
+     * claim, or COMPLETED if the new owner finished), do nothing —
+     * the persisted FAILED outcome under our claimId still drives
+     * the replay diagnostic, and the new owner / completed state
+     * is authoritative.
+     */
+    private fun transitionToAbortedBestEffort(session: UploadSession, now: Instant) {
+        when (sessionStore.transition(session.tenantId, session.uploadSessionId, UploadSessionState.ABORTED, now)) {
+            is TransitionOutcome.Applied,
+            is TransitionOutcome.IllegalTransition,
+            is TransitionOutcome.NotFound -> Unit
+        }
     }
 
     private fun assembleSessionPayload(
@@ -419,6 +480,21 @@ internal class StreamingFinalizer(
         is PayloadTooLargeException -> "PAYLOAD_TOO_LARGE"
         is InternalAgentErrorException -> "INTERNAL_ERROR"
         else -> "FINALIZATION_FAILED"
+    }
+
+    /**
+     * Allowlist for the human-readable sanitised message persisted in
+     * [FinalizationOutcome.sanitizedErrorMessage]. Only domain-error
+     * messages (`ValidationErrorException`) are passed through — they
+     * are constructed from validator findings without local paths or
+     * raw exception traces. Everything else (IO failures, internal
+     * errors, third-party stack messages) is dropped to `null` so
+     * spool paths or codec-internal diagnostics do NOT leak into
+     * tool responses on a replay.
+     */
+    private fun sanitizedErrorMessageOf(failure: Throwable): String? = when (failure) {
+        is ValidationErrorException -> failure.message?.take(SANITIZED_MESSAGE_MAX_CHARS)
+        else -> null
     }
 
     private fun hexOf(bytes: ByteArray): String =

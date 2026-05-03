@@ -71,9 +71,19 @@ fun interface SchemaStagingFinalizer {
 /**
  * Production implementation: parses + validates with the existing
  * codecs and validator, then materialises through the Phase-A
- * artefact ports. Streams the payload twice via
- * [AssembledUploadPayload.openStream] so the heap stays bounded by
- * the codec / store buffer sizes, not by the payload size.
+ * artefact ports.
+ *
+ * The artefact-write path streams the payload through
+ * [ArtifactContentStore.write] without an intermediate `ByteArray`,
+ * so the heap-peak from the byte copy is bounded by the
+ * implementation's buffer (file-backed adapters use `<= 64 KiB`).
+ * The schema-parse path, by contrast, materialises the full
+ * [dev.dmigrate.core.model.SchemaDefinition] object tree on-heap
+ * via the JSON/YAML codec — that scales with the parsed schema
+ * complexity, not with the artefact size, and is acceptable
+ * because schema payloads in this AP are bounded by
+ * `maxArtifactUploadBytes` and never resemble the multi-GB
+ * datasets that AP 6.22's streaming guarantee targets.
  */
 class DefaultSchemaStagingFinalizer(
     private val artifactStore: ArtifactStore,

@@ -194,6 +194,132 @@ class ArtifactUploadCrashReplayTest : FunSpec({
         ex.violations.first().reason shouldBe "schema parse failed: malformed"
     }
 
+    test("Reclaim during finaliser dispatch surfaces IdempotencyConflict on SUCCEEDED-persist") {
+        // Race guard for the AP-6.22 review #3: while the original
+        // owner is inside finalizer.complete(), a second caller
+        // reclaims the lease. The original owner's
+        // persistFinalizationOutcome(SUCCEEDED) must fail with
+        // ClaimMismatch and surface a retryable Conflict — NOT
+        // silently overwrite the new owner's state.
+        val payloadBytes = "abcdefgh".toByteArray()
+        val totalHash = sha256Hex(payloadBytes)
+        val sessionStore = InMemoryUploadSessionStore()
+        val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
+        // Mid-finalisation finaliser that simulates a parallel
+        // Reclaim by overwriting the stored claim id directly.
+        val racingFinalizer = SchemaStagingFinalizer { session, _, _, _, _, _ ->
+            val current = sessionStore.findById(session.tenantId, session.uploadSessionId)!!
+            sessionStore.save(
+                current.copy(
+                    finalizingClaimId = "stolen-by-reclaimer",
+                    finalizingClaimedAt = FIXED_NOW,
+                    finalizingLeaseExpiresAt = FIXED_NOW.plusSeconds(120),
+                ),
+            )
+            schemaUri
+        }
+        val segmentStore = InMemoryUploadSegmentStore()
+        val quotaStore = InMemoryQuotaStore()
+        val handler = ArtifactUploadHandler(
+            sessionStore = sessionStore,
+            segmentStore = segmentStore,
+            quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
+            clock = FIXED_CLOCK,
+            finalizer = racingFinalizer,
+        )
+        // ACTIVE session that the handler will claim for finalisation.
+        sessionStore.save(
+            UploadSession(
+                uploadSessionId = "ups-1",
+                tenantId = ACME,
+                ownerPrincipalId = ALICE,
+                resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, "ups-1"),
+                artifactKind = ArtifactKind.SCHEMA,
+                mimeType = "application/octet-stream",
+                sizeBytes = payloadBytes.size.toLong(),
+                segmentTotal = 1,
+                checksumSha256 = totalHash,
+                uploadIntent = ArtifactUploadInitHandler.INTENT_SCHEMA_STAGING_READONLY,
+                state = UploadSessionState.ACTIVE,
+                createdAt = FIXED_NOW,
+                updatedAt = FIXED_NOW,
+                idleTimeoutAt = FIXED_NOW.plusSeconds(300),
+                absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
+            ),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.IdempotencyConflictException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(completingArgs("ups-1", payloadBytes)),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        // Session is still under the reclaimer's claim id — original
+        // owner did NOT silently transition it to COMPLETED.
+        val after = sessionStore.findById(ACME, "ups-1")!!
+        after.finalizingClaimId shouldBe "stolen-by-reclaimer"
+    }
+
+    test("Non-ValidationError finaliser failures drop their message in FAILED outcome (sanitised allowlist)") {
+        // Race guard for review #6: a finaliser failure carrying a
+        // local path or codec stack message must NOT land in the
+        // FinalizationOutcome.sanitizedErrorMessage and bleed into
+        // the replay error class. Allowlist passes only
+        // ValidationErrorException messages through; anything else
+        // (Internal, IO, generic Runtime) collapses to null.
+        val payloadBytes = "abcdefgh".toByteArray()
+        val totalHash = sha256Hex(payloadBytes)
+        val internalFailingFinalizer = SchemaStagingFinalizer { _, _, _, _, _, _ ->
+            throw dev.dmigrate.server.application.error.InternalAgentErrorException()
+        }
+        val sessionStore = InMemoryUploadSessionStore()
+        val handler = ArtifactUploadHandler(
+            sessionStore = sessionStore,
+            segmentStore = InMemoryUploadSegmentStore(),
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
+            clock = FIXED_CLOCK,
+            finalizer = internalFailingFinalizer,
+        )
+        sessionStore.save(
+            UploadSession(
+                uploadSessionId = "ups-1",
+                tenantId = ACME,
+                ownerPrincipalId = ALICE,
+                resourceUri = ServerResourceUri(ACME, ResourceKind.UPLOAD_SESSIONS, "ups-1"),
+                artifactKind = ArtifactKind.SCHEMA,
+                mimeType = "application/octet-stream",
+                sizeBytes = payloadBytes.size.toLong(),
+                segmentTotal = 1,
+                checksumSha256 = totalHash,
+                uploadIntent = ArtifactUploadInitHandler.INTENT_SCHEMA_STAGING_READONLY,
+                state = UploadSessionState.ACTIVE,
+                createdAt = FIXED_NOW,
+                updatedAt = FIXED_NOW,
+                idleTimeoutAt = FIXED_NOW.plusSeconds(300),
+                absoluteLeaseExpiresAt = FIXED_NOW.plusSeconds(3600),
+            ),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_upload",
+                    args(completingArgs("ups-1", payloadBytes)),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        val after = sessionStore.findById(ACME, "ups-1")!!
+        val outcome = after.finalizationOutcome
+            ?: error("expected FinalizationOutcome to be persisted on FAILED path")
+        outcome.status shouldBe FinalizationOutcomeStatus.FAILED
+        outcome.sanitizedErrorCode shouldBe "INTERNAL_ERROR"
+        outcome.sanitizedErrorMessage shouldBe null
+    }
+
     test("ABORTED without persisted FAILED outcome falls through to plain Aborted exception") {
         val payloadBytes = "abcdefgh".toByteArray()
         val (handler, sessionStore) = newFixture(stubFinalizer())
