@@ -7,6 +7,7 @@ import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.quota.QuotaService
+import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.AuditSink
@@ -65,4 +66,11 @@ data class PhaseCWiring(
      * supply `InMemoryAuditSink` to assert event shape.
      */
     val auditSink: AuditSink? = null,
+    /**
+     * AP 6.22: factory that allocates a streaming spool for the
+     * `ArtifactUploadHandler` finalisation path. Production CLI
+     * wires the file-spool variant under the AP-6.21 state dir;
+     * tests/dev default to `AssembledUploadPayloadFactory.inMemory()`.
+     */
+    val assembledUploadPayloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
 )

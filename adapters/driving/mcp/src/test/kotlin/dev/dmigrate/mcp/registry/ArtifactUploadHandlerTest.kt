@@ -602,7 +602,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         ex.violations.map { it.field } shouldContain "contentBase64"
     }
 
-    test("final segment with cumulative-hash mismatch throws VALIDATION_ERROR (no COMPLETED transition)") {
+    test("final segment with cumulative-hash mismatch throws VALIDATION_ERROR (rolls to ABORTED per AP 6.22)") {
         // Two segments stored, but session.checksumSha256 declares a
         // hash that doesn't match the actual concatenated bytes.
         val seg1 = "abcdefgh".toByteArray()
@@ -637,8 +637,11 @@ class ArtifactUploadHandlerTest : FunSpec({
             )
         }
         ex.violations.map { it.field } shouldContain "checksumSha256"
-        // Session must remain ACTIVE — no silent COMPLETED with bad hash.
-        f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.ACTIVE
+        // AP 6.22: persistent assembly inconsistencies (size/SHA
+        // mismatch over stored segments) become a terminal ABORTED
+        // outcome with a sanitised FAILED FinalizationOutcome. Replays
+        // get the same error class without a fresh assembly attempt.
+        f.sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.ABORTED
     }
 
     test("each accepted segment extends absoluteLeaseExpiresAt, capped at createdAt + 3600s (spec §5.3:614)") {

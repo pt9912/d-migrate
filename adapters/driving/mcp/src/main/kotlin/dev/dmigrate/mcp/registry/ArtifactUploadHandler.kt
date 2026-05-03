@@ -23,6 +23,7 @@ import dev.dmigrate.server.application.quota.QuotaReservation
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.application.quota.RateLimitedDetail
 import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
 import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
@@ -39,44 +40,49 @@ import java.time.Duration
 import java.util.Base64
 
 /**
- * AP 6.8: `artifact_upload` per `ImpPlan-0.9.6-C.md` §6.8 and
- * `spec/ki-mcp.md` §5.3.
+ * AP 6.8 + AP 6.22: `artifact_upload` per `ImpPlan-0.9.6-C.md` §6.8 +
+ * §6.22 and `spec/ki-mcp.md` §5.3.
  *
  * Accepts one segment at a time for an active read-only schema-
  * staging session. Validates session ownership, sequence, offset,
- * size, and per-segment hash before persisting; the session is
- * advanced to `COMPLETED` only when `isFinalSegment=true`, all
- * preceding segments are present, the cumulative byte count matches
- * `session.sizeBytes`, and the rebuilt total hash matches
- * `session.checksumSha256`. Schema parsing and `schemaRef`
- * registration land in AP 6.9 — this handler stops at the
- * `COMPLETED` transition.
+ * size, and per-segment hash before persisting. The completing
+ * segment delegates to [StreamingFinalizer] which atomically claims
+ * `FINALIZING`, streams the assembled payload off-heap, and persists
+ * a deterministic [dev.dmigrate.server.core.upload.FinalizationOutcome]
+ * before any artefact / schema side effect.
  *
- * Idempotency: identical retries (same index + same hash) surface as
- * `deduplicated=true` per the spec's resumability contract; same
- * index with a different hash → `IDEMPOTENCY_CONFLICT` so the client
- * sees a structured error rather than a silent overwrite.
- *
- * Quotas: each accepted segment reserves one slot in
- * `PARALLEL_SEGMENT_WRITES`, released after the store call regardless
- * of outcome so a Conflict/SizeMismatch doesn't leak the slot.
+ * Idempotency / replay:
+ * - same segment retried on `ACTIVE` → `deduplicated=true`
+ * - completing-segment retry on `COMPLETED` → returns persisted
+ *   `schemaRef` (AP 6.18)
+ * - completing-segment retry on `ABORTED` whose outcome was `FAILED`
+ *   → re-throws sanitised error class (AP 6.22)
+ * - any retry against a live `FINALIZING` claim → retryable Conflict
+ *   without side effects
  */
 @Suppress("LongParameterList")
-// LongParameterList: trailing params are test seams (clock, lease
-// extension, request-id provider). AP 6.13 will fold them into a
-// shared wiring config.
 internal class ArtifactUploadHandler(
     private val sessionStore: UploadSessionStore,
-    private val segmentStore: UploadSegmentStore,
+    segmentStore: UploadSegmentStore,
     private val quotaService: QuotaService,
     private val limits: McpLimitsConfig,
     private val clock: Clock,
     private val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
     private val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
     private val finalizer: SchemaStagingFinalizer? = null,
+    payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
+    finalizingLeaseTtl: Duration = DEFAULT_FINALIZING_LEASE_TTL,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
+    private val segmentStoreRef = segmentStore
+    private val streamingFinalizer = StreamingFinalizer(
+        sessionStore = sessionStore,
+        segmentStore = segmentStore,
+        limits = limits,
+        payloadFactory = payloadFactory,
+        finalizingLeaseTtl = finalizingLeaseTtl,
+    )
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val args = parseArguments(context.arguments)
@@ -90,20 +96,21 @@ internal class ArtifactUploadHandler(
                 ),
             )
 
-        // §5.3 line 562-564: session is bound to its owner.
         if (session.ownerPrincipalId != context.principal.principalId) {
             throw ForbiddenPrincipalException(
                 principalId = context.principal.principalId,
                 reason = "session belongs to a different principal",
             )
         }
-        // AP 6.18 idempotency: a replay of the completing segment
-        // (same index + same hash) returns the persisted schemaRef
-        // instead of IDEMPOTENCY_CONFLICT. Divergent retries (other
-        // hash / index / total) still surface the conflict — that
-        // mapping happens inside `handleReplayAfterCompleted`.
         if (session.state == UploadSessionState.COMPLETED) {
             return handleReplayAfterCompleted(session, args, context.requestId)
+        }
+        if (session.state == UploadSessionState.ABORTED) {
+            // AP 6.22: if a sanitised FAILED outcome was persisted,
+            // re-throw the same error class so retries are
+            // deterministic. Otherwise fall through to the regular
+            // Aborted exception path.
+            streamingFinalizer.replayFailedOutcomeIfAvailable(session)
         }
         validateSessionState(session)
         validateSegmentSequence(args, session)
@@ -118,43 +125,14 @@ internal class ArtifactUploadHandler(
         val deduplicated = writeWithQuota(args, bytes, session, context.principal)
 
         val now = clock.instant()
-        val cumulativeBytes = computeCumulativeBytes(session.uploadSessionId)
-        // Lease extension per spec/ki-mcp.md §5.3:614 — each accepted
-        // segment may extend the absolute lease, capped at
-        // (createdAt + 3600s). Idle window resets to (now + idle).
-        // Both extensions are bounded by the original absolute hard
-        // cap so a stalled-then-resumed upload can't outlive the
-        // session-creation window.
-        val absoluteHardCap = session.createdAt.plus(MAX_ABSOLUTE_LEASE)
-        val newAbsolute = minOf(now.plus(initialTtl), absoluteHardCap)
-        val newIdle = minOf(now.plus(idleTimeout), newAbsolute)
-        val updated = session.copy(
-            bytesReceived = cumulativeBytes,
-            updatedAt = now,
-            idleTimeoutAt = newIdle,
-            absoluteLeaseExpiresAt = newAbsolute,
-        )
-        sessionStore.save(updated)
-
-        // Finalisation order per spec §5.3 lines 421-433:
-        // 1. session-finality checks pass
-        // 2. parse + validate the assembled bytes
-        // 3. materialise artefact + register schemaRef
-        // 4. transition session to COMPLETED
-        // Failure at step 2 or 3 rolls the still-ACTIVE session to
-        // ABORTED so segment cleanup runs on the standard lifecycle
-        // path; COMPLETED stays terminal per UploadSessionTransitions.
-        val finalisable = isSessionFinalisable(args, updated, bytes)
-        val schemaRef = if (finalisable) finaliseToSchemaRef(updated, context.principal, bytes, now) else null
-        // AP 6.18: persist the schemaRef onto the session before the
-        // COMPLETED transition so a replay of the completing segment
-        // can read it back from the store.
-        val withSchemaRef = if (schemaRef != null) {
-            sessionStore.save(updated.copy(finalisedSchemaRef = schemaRef))
+        val updated = saveLeaseExtension(session, now)
+        val finalisable = isSessionFinalisable(args, updated)
+        val schemaRef = if (finalisable) runFinalisation(updated, context.principal, bytes, now) else null
+        val finalState = if (finalisable) {
+            sessionStore.findById(updated.tenantId, updated.uploadSessionId) ?: updated
         } else {
             updated
         }
-        val finalState = if (finalisable) transitionToCompleted(withSchemaRef, now) else withSchemaRef
         return buildSegmentResponse(
             session = finalState,
             acceptedSegmentIndex = args.segmentIndex,
@@ -165,70 +143,46 @@ internal class ArtifactUploadHandler(
         )
     }
 
-    /**
-     * AP 6.9 hook: assemble the segment bytes in index order and hand
-     * them to the [SchemaStagingFinalizer]. On success the registered
-     * `schemaRef` URI is returned; on parse/validation failure the
-     * session is rolled to `ABORTED` (so segment cleanup runs on
-     * normal lifecycle paths) before the typed error bubbles out.
-     *
-     * If no finalizer is wired (AP 6.7-6.8 standalone tests), the
-     * session stays COMPLETED with no `schemaRef` — the response
-     * shape stays valid and forward-compatible.
-     */
-    private fun finaliseToSchemaRef(
+    private fun runFinalisation(
         session: UploadSession,
         principal: PrincipalContext,
         finalSegmentBytes: ByteArray,
         now: java.time.Instant,
     ): String? {
-        val finalizer = this.finalizer ?: return null
-        val assembled = assembleSessionBytes(session, finalSegmentBytes)
-        return try {
-            finalizer.complete(session, principal, assembled, format = "json").render()
-        } catch (e: RuntimeException) {
-            // Validation/parse failure: the session must not stay
-            // COMPLETED with bytes that can never become a schemaRef.
-            // Roll to ABORTED so the standard cleanup path runs;
-            // rethrow the typed exception so the client sees the
-            // structured findings.
-            sessionStore.transition(session.tenantId, session.uploadSessionId, UploadSessionState.ABORTED, now)
-            throw e
+        val finalizer = this.finalizer
+        return if (finalizer == null) {
+            // Test-only path: no finaliser was wired (AP 6.7-6.8
+            // standalone tests). Keep the legacy ACTIVE → COMPLETED
+            // transition so those tests stay green.
+            sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
+            null
+        } else {
+            streamingFinalizer.finalise(
+                finalizer = finalizer,
+                session = session,
+                principal = principal,
+                finalSegmentBytes = finalSegmentBytes,
+                format = "json",
+                now = now,
+            )
         }
     }
 
-    private fun assembleSessionBytes(session: UploadSession, finalSegmentBytes: ByteArray): ByteArray {
-        val segments = segmentStore.listSegments(session.uploadSessionId).sortedBy { it.segmentIndex }
-        val out = ByteArray(session.sizeBytes.toInt())
-        var pos = 0
-        for (segment in segments) {
-            val bytes = if (segment.segmentIndex == session.segmentTotal) {
-                finalSegmentBytes
-            } else {
-                segmentStore.openSegmentRangeRead(
-                    session.uploadSessionId,
-                    segment.segmentIndex,
-                    offset = 0L,
-                    length = segment.sizeBytes,
-                ).use { it.readAllBytes() }
-            }
-            System.arraycopy(bytes, 0, out, pos, bytes.size)
-            pos += bytes.size
-        }
-        return out
+    private fun saveLeaseExtension(session: UploadSession, now: java.time.Instant): UploadSession {
+        val cumulativeBytes = computeCumulativeBytes(session.uploadSessionId)
+        val absoluteHardCap = session.createdAt.plus(MAX_ABSOLUTE_LEASE)
+        val newAbsolute = minOf(now.plus(initialTtl), absoluteHardCap)
+        val newIdle = minOf(now.plus(idleTimeout), newAbsolute)
+        val updated = session.copy(
+            bytesReceived = cumulativeBytes,
+            updatedAt = now,
+            idleTimeoutAt = newIdle,
+            absoluteLeaseExpiresAt = newAbsolute,
+        )
+        sessionStore.save(updated)
+        return updated
     }
 
-    /**
-     * AP 6.18: an idempotent replay of the completing segment after
-     * the session has gone COMPLETED returns the persisted
-     * `schemaRef` instead of `IDEMPOTENCY_CONFLICT`. Any divergence
-     * from the original args (different total, missing or different
-     * stored segment, missing persisted schemaRef) keeps the conflict
-     * path so a divergent retry never silently steals a previous
-     * outcome. The replay carries the dispatch [requestId] of the
-     * REPLAY call (not the original) so each tools/call retains its
-     * own correlator per spec §14.
-     */
     private fun handleReplayAfterCompleted(
         session: UploadSession,
         args: UploadSegmentArgs,
@@ -246,7 +200,7 @@ internal class ArtifactUploadHandler(
                 ),
             )
         }
-        val storedSegment = segmentStore.listSegments(session.uploadSessionId)
+        val storedSegment = segmentStoreRef.listSegments(session.uploadSessionId)
             .firstOrNull { it.segmentIndex == args.segmentIndex }
             ?: throw IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.segmentIndexUnknown(
@@ -301,11 +255,6 @@ internal class ArtifactUploadHandler(
         )
     }
 
-    /**
-     * Reserve→write→release walk per the QuotaService contract: every
-     * outcome (Stored / AlreadyStored / Conflict / SizeMismatch)
-     * passes through `finally` so the per-write slot can't leak.
-     */
     private fun writeWithQuota(
         args: UploadSegmentArgs,
         bytes: ByteArray,
@@ -322,7 +271,7 @@ internal class ArtifactUploadHandler(
             is QuotaOutcome.RateLimited -> throw RateLimitedException(RateLimitedDetail.from(res))
             is QuotaOutcome.Granted -> {
                 try {
-                    segmentStore.writeSegment(
+                    segmentStoreRef.writeSegment(
                         UploadSegment(
                             uploadSessionId = session.uploadSessionId,
                             segmentIndex = args.segmentIndex,
@@ -362,11 +311,6 @@ internal class ArtifactUploadHandler(
             )
             UploadSessionState.ABORTED -> throw UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> throw UploadSessionExpiredException(session.uploadSessionId)
-            // AP 6.22 C1: another completing call already holds the
-            // FINALIZING claim. The loser surfaces the same retryable
-            // Conflict as a COMPLETED-replay; client retries see the
-            // resolved terminal state. C4 will refine this once the
-            // claim CAS is wired into the streaming handler.
             UploadSessionState.FINALIZING -> throw IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
@@ -427,7 +371,6 @@ internal class ArtifactUploadHandler(
     }
 
     private fun validateSegmentBudget(args: UploadSegmentArgs, decodedSize: Int, session: UploadSession) {
-        // Offset + size must fit inside the declared total.
         if (args.segmentOffset + decodedSize > session.sizeBytes) {
             throw ValidationErrorException(
                 listOf(
@@ -439,8 +382,6 @@ internal class ArtifactUploadHandler(
                 ),
             )
         }
-        // Non-final segments must run at the maximum segment size so
-        // the client and server agree on offsets without round-trips.
         if (!args.isFinalSegment && decodedSize.toLong() != limits.maxUploadSegmentBytes.toLong()) {
             throw ValidationErrorException(
                 listOf(
@@ -451,13 +392,6 @@ internal class ArtifactUploadHandler(
                 ),
             )
         }
-        // AP 6.16 defense-in-depth: pin the segment offset to the
-        // sequential layout the assembler later reads. Non-final
-        // segments must sit at index*chunkSize; the final segment
-        // must close the byte range exactly. Without this check a
-        // client could write overlapping or gap-bearing bytes that
-        // the store accepts segment-by-segment but the assembler
-        // would silently misalign.
         val expectedOffset = (args.segmentIndex - 1).toLong() * limits.maxUploadSegmentBytes.toLong()
         if (!args.isFinalSegment && args.segmentOffset != expectedOffset) {
             throw ValidationErrorException(
@@ -510,27 +444,11 @@ internal class ArtifactUploadHandler(
     }
 
     private fun computeCumulativeBytes(sessionId: String): Long =
-        segmentStore.listSegments(sessionId).sumOf { it.sizeBytes }
+        segmentStoreRef.listSegments(sessionId).sumOf { it.sizeBytes }
 
-    /**
-     * Validates that the final segment closes the session per spec
-     * §5.3 line 597-598 — segments complete, cumulative size and
-     * total hash match. Does NOT transition to `COMPLETED`; the
-     * transition is deferred until after AP 6.9 finalisation
-     * succeeds, because `COMPLETED` is a terminal state and the
-     * spec requires the session to roll to `ABORTED` on
-     * validation failure (which `COMPLETED` → anything is not).
-     *
-     * Returns `true` when the segment closes the session and
-     * finalisation should run; `false` for intermediate segments.
-     */
-    private fun isSessionFinalisable(
-        args: UploadSegmentArgs,
-        session: UploadSession,
-        finalBytes: ByteArray,
-    ): Boolean {
+    private fun isSessionFinalisable(args: UploadSegmentArgs, session: UploadSession): Boolean {
         if (!args.isFinalSegment) return false
-        val storedSegments = segmentStore.listSegments(session.uploadSessionId)
+        val storedSegments = segmentStoreRef.listSegments(session.uploadSessionId)
         if (storedSegments.size != session.segmentTotal) {
             throw ValidationErrorException(
                 listOf(
@@ -541,64 +459,7 @@ internal class ArtifactUploadHandler(
                 ),
             )
         }
-        val totalSize = storedSegments.sumOf { it.sizeBytes }
-        if (totalSize != session.sizeBytes) {
-            throw ValidationErrorException(
-                listOf(
-                    ValidationViolation(
-                        "isFinalSegment",
-                        "cumulative segment bytes ($totalSize) do not match session.sizeBytes (${session.sizeBytes})",
-                    ),
-                ),
-            )
-        }
-        val totalHash = computeTotalHash(session, storedSegments, finalBytes)
-        if (totalHash != session.checksumSha256) {
-            throw ValidationErrorException(
-                listOf(
-                    ValidationViolation(
-                        "checksumSha256",
-                        "rebuilt total hash does not match init checksumSha256",
-                    ),
-                ),
-            )
-        }
         return true
-    }
-
-    /**
-     * Drives the COMPLETED transition after finalisation succeeds.
-     * Race outcomes go through the shared
-     * [transitionOrThrow] mapping so the typed lifecycle exception
-     * pattern stays uniform across upload handlers.
-     */
-    private fun transitionToCompleted(session: UploadSession, now: java.time.Instant): UploadSession =
-        sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
-
-    private fun computeTotalHash(
-        session: UploadSession,
-        storedSegments: List<UploadSegment>,
-        finalBytes: ByteArray,
-    ): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val ordered = storedSegments.sortedBy { it.segmentIndex }
-        for (segment in ordered) {
-            val bytes = if (segment.segmentIndex == session.segmentTotal) {
-                // The completing segment is in hand; reuse the bytes
-                // we already decoded instead of round-tripping through
-                // the store.
-                finalBytes
-            } else {
-                segmentStore.openSegmentRangeRead(
-                    uploadSessionId = session.uploadSessionId,
-                    segmentIndex = segment.segmentIndex,
-                    offset = 0L,
-                    length = segment.sizeBytes,
-                ).use { it.readAllBytes() }
-            }
-            digest.update(bytes)
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun effectiveTtlSeconds(now: java.time.Instant, session: UploadSession): Long {
@@ -611,11 +472,6 @@ internal class ArtifactUploadHandler(
     private fun decodeBase64(payload: String): ByteArray = try {
         Base64.getDecoder().decode(payload)
     } catch (e: IllegalArgumentException) {
-        // SwallowedException: the JDK's IllegalArgumentException
-        // carries position-of-bad-byte detail; surfacing the cause
-        // would leak unbounded base64 chunks across the trust
-        // boundary. The sanitised message is enough for the client
-        // to fix their encoding.
         throw ValidationErrorException(
             listOf(ValidationViolation("contentBase64", e.message ?: "not valid base64")),
         )
@@ -634,10 +490,8 @@ internal class ArtifactUploadHandler(
 
     private companion object {
         private val HEX_64: Regex = UploadSessionDefaults.SHA256_HEX_PATTERN
-
-        // Spec/ki-mcp.md §5.3:610 — absolute hard cap from session
-        // creation. Same value as the init-handler default.
         private val MAX_ABSOLUTE_LEASE: Duration = UploadSessionDefaults.ABSOLUTE_LEASE
+        val DEFAULT_FINALIZING_LEASE_TTL: Duration = Duration.ofMinutes(5)
 
         private fun sha256Hex(bytes: ByteArray): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
