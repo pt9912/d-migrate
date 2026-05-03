@@ -1540,6 +1540,12 @@ Aufgaben:
   - `ddl` optional, weil grosse DDL vollstaendig ins Artefakt wandert
   - `truncated=true` bedeutet: inline DDL und/oder Findings sind nur
     Summary; vollstaendige Ausgabe ist ueber `artifactRef` abrufbar
+  - DDL- und Findings-Bytes muessen vor jedem `ArtifactSink`-Write aus
+    `SchemaGenerateHandler` durch denselben Scrubbing-/Projection-Pfad
+    laufen wie Inline-Output. `artifactSink.writeReadOnly(...,
+    content = ddlBytes, ...)` darf nicht mehr ungefilterte DDL
+    persistieren; Artefaktinhalt ist der gescrubbte Wire-View, nicht
+    ein interner Rohdump.
   - Findings-Overflow muss wie `schema_validate` ueber
     `ArtifactSink` ausgelagert werden; `truncated=true` ohne
     `artifactRef` ist nur erlaubt, wenn kein `ArtifactSink` im Wiring
@@ -1596,6 +1602,10 @@ Aufgaben:
     Tests/Fixtures mit nackten IDs wie `art-1` muessen entsprechend auf
     Resource-URIs migriert werden; nackte IDs sind nur interne
     Speicherwerte, kein `job_status_get`-Output.
+    Falls bestehende In-Memory-/Fixture-Daten bereits nackte IDs
+    enthalten, behandelt AP 6.23 sie als Backfill-Projektion im
+    Handler: ID rein, Resource-URI raus. Bereits URI-foermige Werte
+    werden validiert und nicht doppelt umgeschrieben.
   - AP 6.23 umfasst die Runtime-Umruestung in
     `JobStatusGetHandler`: `managed.artifacts` darf nicht mehr direkt
     durchgereicht werden. Unit-Tests muessen sowohl den positiven
@@ -1610,6 +1620,10 @@ Aufgaben:
   (`ErrorMapper`/`McpServiceImpl`) die Detail-Values vor der
   Serialisierung scrubben; das ist getrennt vom `job_status_get.error`
   Output.
+  Diese Scrub-Stufe ist Teil von AP 6.23, sobald
+  `error.details[].value` im Toolfehler-Envelope schema-validiert oder
+  goldenfile-gepinnt wird; weder `ErrorMapper` noch `McpServiceImpl`
+  duerfen Detail-Values 1:1 ins Wire-Payload schreiben.
 - Forbidden-Key- und Scrubbing-Regel auf alle Output-`details`
   ausweiten:
   - `details`, `details.before`, `details.after`,
@@ -1623,6 +1637,11 @@ Aufgaben:
   - Scrubbing findet vor Artefakt-Fallback statt, damit auch
     ausgelagerte Findings-/DDL-/Diff-Artefakte keine Secrets oder
     lokalen Pfade enthalten
+  - Regressionstests lesen den tatsaechlich geschriebenen
+    `schema_generate`-Artefaktinhalt und pinnen, dass DDL-Defaults,
+    Finding-Details und Tool-Error-Detail-Values mit Bearer-Token,
+    Passwort oder JDBC-URL nur gescrubbt im Wire-Output und im Artefakt
+    vorkommen.
 - Goldenfile-Pin-Test (`phase-b-tool-schemas.json`) regenerieren und
   dabei die Diffs bewusst reviewen. Zusaetzlich zu Goldenfiles braucht
   AP 6.23 Runtime-Schema-Validation-Tests: exemplarische Outputs von
@@ -1657,7 +1676,9 @@ Akzeptanz:
   und spiegeln die AP-6.17-Scrubbing-Projektion
 - `job_status_get.resourceUri` und jedes `job_status_get.artifacts[]`
   validieren gegen Resource-URI-Patterns; lokale Pfade oder nackte
-  IDs werden schema-seitig abgelehnt
+  IDs werden schema-seitig abgelehnt. Runtime-Tests decken den
+  Backfill-Fall ab, in dem `managed.artifacts` nackte IDs enthaelt und
+  der Handler trotzdem Resource-URIs emittiert.
 - `executionMeta` darf als Ganzes fehlen; sobald es emittiert wird,
   ist `executionMeta.requestId` required und scrubbed
 - `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
@@ -1670,6 +1691,9 @@ Akzeptanz:
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
   werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
   und lokalen Pfad
+- Tool-Error-Envelopes scrubben `error.details[].value` zentral vor
+  der Serialisierung; ein Regressionstest deckt einen Fehlerdetail-
+  Wert mit Secret ab
 - der goldfile-Pin-Test scheitert bei einer Schema-Aenderung, die
   nicht bewusst regeneriert wurde
 
