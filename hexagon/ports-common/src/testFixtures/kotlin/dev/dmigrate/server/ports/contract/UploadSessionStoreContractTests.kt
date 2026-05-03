@@ -321,6 +321,52 @@ abstract class UploadSessionStoreContractTests(factory: () -> UploadSessionStore
         ok.session.finalisedSchemaRef shouldBe "dmigrate://tenants/acme/schemas/sch-1"
     }
 
+    test("commitFinalization on a non-FINALIZING session returns WrongState and does not flip state") {
+        val store = factory()
+        store.save(Fixtures.uploadSession("u1", state = UploadSessionState.ACTIVE))
+        val outcome = FinalizationOutcome(
+            claimId = "claim-1",
+            payloadSha256 = "0".repeat(64),
+            artifactId = "art-1",
+            schemaId = "sch-1",
+            format = "json",
+            status = FinalizationOutcomeStatus.SUCCEEDED,
+        )
+        val result = store.commitFinalization(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "u1",
+            claimId = "claim-1",
+            outcome = outcome,
+            finalisedSchemaRef = "dmigrate://tenants/acme/schemas/sch-1",
+            now = Fixtures.NOW.plusSeconds(5),
+        )
+        result.shouldBeInstanceOf<PersistOutcome.WrongState>()
+            .state shouldBe UploadSessionState.ACTIVE
+        store.findById(Fixtures.tenant("acme"), "u1")!!.state shouldBe UploadSessionState.ACTIVE
+        store.findById(Fixtures.tenant("acme"), "u1")!!.finalisedSchemaRef shouldBe null
+    }
+
+    test("commitFinalization on an unknown session returns NotFound") {
+        val store = factory()
+        val outcome = FinalizationOutcome(
+            claimId = "claim-1",
+            payloadSha256 = "0".repeat(64),
+            artifactId = "art-1",
+            schemaId = "sch-1",
+            format = "json",
+            status = FinalizationOutcomeStatus.SUCCEEDED,
+        )
+        val result = store.commitFinalization(
+            tenantId = Fixtures.tenant("acme"),
+            uploadSessionId = "missing",
+            claimId = "claim-1",
+            outcome = outcome,
+            finalisedSchemaRef = "dmigrate://tenants/acme/schemas/sch-1",
+            now = Fixtures.NOW,
+        )
+        result shouldBe PersistOutcome.NotFound
+    }
+
     test("commitFinalization rejects a stale claim id with ClaimMismatch and leaves state untouched") {
         val store = factory()
         store.save(Fixtures.uploadSession("u1"))

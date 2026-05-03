@@ -23,6 +23,7 @@ import dev.dmigrate.server.ports.PersistOutcome
 import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import org.slf4j.LoggerFactory
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.security.MessageDigest
@@ -325,9 +326,18 @@ internal class StreamingFinalizer(
         )
         when (persisted) {
             is PersistOutcome.Persisted -> transitionToAbortedBestEffort(session, now)
-            is PersistOutcome.ClaimMismatch,
-            is PersistOutcome.WrongState,
-            is PersistOutcome.NotFound -> Unit
+            is PersistOutcome.ClaimMismatch -> LOG.debug(
+                "FAILED-outcome skipped: claim {} for session {} no longer current ({})",
+                claimId, session.uploadSessionId, persisted.currentClaimId,
+            )
+            is PersistOutcome.WrongState -> LOG.debug(
+                "FAILED-outcome skipped: session {} no longer FINALIZING (state={})",
+                session.uploadSessionId, persisted.state,
+            )
+            is PersistOutcome.NotFound -> LOG.debug(
+                "FAILED-outcome skipped: session {} not found",
+                session.uploadSessionId,
+            )
         }
     }
 
@@ -508,5 +518,8 @@ internal class StreamingFinalizer(
         const val BUFFER_BYTES: Int = 64 * 1024
         const val DETERMINISTIC_ID_BYTES: Int = 24
         const val SANITIZED_MESSAGE_MAX_CHARS: Int = 200
+
+        @JvmStatic
+        private val LOG = LoggerFactory.getLogger(StreamingFinalizer::class.java)
     }
 }
