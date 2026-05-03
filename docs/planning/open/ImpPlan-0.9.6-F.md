@@ -395,25 +395,33 @@ Regeln:
 - eigene aktive Session braucht keine Policy
 - eigene aktive Session prueft Tenant, Principal, Owner und Status
 - fremde oder administrative Abbrueche sind policy-gesteuert
-- der Approval-Fingerprint fuer fremde/administrative Abbrueche bindet:
+- vor der Policy-Pruefung wird fuer fremde/administrative Abbrueche ein
+  persistierter Abort-Claim bzw. Idempotency-Record fuer
+  `(tenant, caller, approvalKey, uploadSessionId)` geprueft. Existiert bereits
+  ein terminales Abort-Outcome fuer denselben Claim, wird dieses zurueckgegeben,
+  ohne den Approval-Fingerprint aus dem aktuellen Sessionzustand neu zu
+  berechnen.
+- der Approval-Fingerprint fuer fremde/administrative Abbrueche bindet den
+  vorab genehmigten Pre-Abort-Zustand:
   - Toolname `artifact_upload_abort`
   - `uploadSessionId`
   - Session-Tenant
   - Session-Owner-Principal
   - Admin-/Caller-Principal
-  - aktuellen Session-Status
+  - Pre-Abort-Session-Status
   - `artifactKind`
   - `uploadIntent`
-  - bisher reservierte bzw. empfangene Bytes
+  - Pre-Abort reservierte bzw. empfangene Bytes
   - optionalen `reason`
 - ein Grant fuer einen fremden/administrativen Abbruch darf nur fuer denselben
-  Fingerprint verwendet werden; andere Session, anderer Owner, anderer
-  Status, anderer Caller oder anderer `reason` liefern
+  Pre-Abort-Fingerprint verwendet werden; andere Session, anderer Owner,
+  anderer Pre-Abort-Status, anderer Caller oder anderer `reason` liefern
   `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED` oder `POLICY_DENIED` je nach
   Store-/Policy-Zustand
-- Retry desselben genehmigten Abbruchs ist idempotent und liefert denselben
-  terminalen `ABORTED`-Status, solange die Session nicht zwischenzeitlich
-  `COMPLETED` wurde
+- nach erfolgreichem Abort wird das terminale Abort-Outcome persistiert.
+  Retry desselben genehmigten Abbruchs ist idempotent und liefert dieses
+  Outcome auch dann zurueck, wenn Session-Status oder Byte-Kontext durch Abort
+  und Cleanup inzwischen veraendert wurden
 - abgebrochene Sessions werden `ABORTED`
 - Zwischensegmente werden verworfen oder als nicht finalisierte Spool-Dateien
   fuer Cleanup markiert
@@ -845,6 +853,9 @@ Tests:
 - `artifact_upload_abort` fuer eigene aktive Sessions implementieren.
 - administrative/fremde Abbrueche mit eigenem Abort-Approval-Fingerprint aus
   Abschnitt 5.3 an Policy anbinden.
+- Abort-Claim und terminales Abort-Outcome fuer administrative/fremde
+  Abbrueche persistieren, bevor Cleanup den Session-Status oder Byte-Kontext
+  fuer Retry-Fingerprints veraendert.
 - `UPLOAD_SESSION_ABORTED` und `UPLOAD_SESSION_EXPIRED` mappen.
 - TTL- und Idle-Expiry implementieren.
 - Cleanup gegen Segment- und Artefaktspools ausfuehren.
@@ -859,6 +870,8 @@ Tests:
 - genehmigter administrativer Abort setzt fremde aktive Session auf
   `ABORTED`
 - Retry desselben genehmigten administrativen Abbruchs ist idempotent
+- Retry nach Cleanup liest persistiertes Abort-Outcome, statt den aktuellen
+  Session-Status oder Byte-Kontext erneut in den Fingerprint zu rechnen
 - gleicher `approvalKey` mit anderer `uploadSessionId` oder anderem `reason`
   -> `IDEMPOTENCY_CONFLICT` oder `POLICY_REQUIRED`
 - Abort-Grant kann nicht fuer andere Session, anderen Owner, anderen Caller
@@ -967,6 +980,9 @@ Tests:
 ### 8.10 AP F.10: Dokumentation und Integrationstests
 
 - `spec/mcp-server.md` und `spec/ki-mcp.md` fuer Phase F aktualisieren.
+- CSV-Upload-MIME-Types `text/csv` und `application/csv` in der
+  `spec/ki-mcp.md`-Allowlist, den Tool-Schemas, Beispielen und Golden Tests
+  nachziehen, sofern CSV-Import-Artefakte in Phase F erlaubt bleiben.
 - Upload-Limits in `capabilities_list.limits` pruefen.
 - stdio-Integrationstest fuer mehrsegmentigen Upload.
 - HTTP-Integrationstest fuer mehrsegmentigen Upload ueber `contentBase64`.
@@ -1049,6 +1065,8 @@ Mindestfaelle:
 - genehmigter administrativer Upload-Abbruch
 - Abort-Approval-Reuse fuer andere Session, anderen Caller oder anderen
   `reason`
+- Abort-Retry nach Cleanup nutzt persistiertes Abort-Outcome trotz geaendertem
+  Session-Status/Byte-Kontext
 - Abort einer finalisierten Session loescht kein Artefakt
 - fehlendes `contentBase64`
 - zu grosses Segment
@@ -1132,9 +1150,13 @@ Mindestfaelle:
   und prueft Owner/Sitzungsstatus.
 - Administrative oder fremde Upload-Abbrueche brauchen Policy-Freigabe.
 - Der Approval-Fingerprint fuer administrative/fremde Upload-Abbrueche bindet
-  Session, Tenant, Ziel-Owner, Admin-/Caller-Principal, Status, Intent, Kind,
-  Byte-Kontext und `reason`; Grants sind nicht fuer andere Sessions oder
-  veraenderte Payloads wiederverwendbar.
+  den persistierten Pre-Abort-Zustand aus Session, Tenant, Ziel-Owner,
+  Admin-/Caller-Principal, Status, Intent, Kind, Byte-Kontext und `reason`;
+  Grants sind nicht fuer andere Sessions oder veraenderte Payloads
+  wiederverwendbar.
+- Idempotente Abort-Retries lesen ein persistiertes terminales Abort-Outcome,
+  bevor aktueller Session-Status oder durch Cleanup veraenderter Byte-Kontext
+  in eine neue Policy-Bewertung einfliesst.
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
