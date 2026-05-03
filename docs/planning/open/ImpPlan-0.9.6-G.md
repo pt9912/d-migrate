@@ -299,6 +299,15 @@ Regeln:
     retrybaren Pending-Status.
   - nach durablem Provider-Ergebnis, Artefakt-Commit und Outcome-Commit liefert
     jeder identische Retry `Existing(resultRef)` bzw. dasselbe Tool-Result.
+  - terminale Fehler nach einem begonnenen Provider-Aufruf muessen ebenfalls
+    als Outcome committed werden, auch wenn kein Artefakt publiziert wurde.
+    Dazu zaehlen Output-Hygiene-Blockaden, Provider-Timeouts,
+    Provider-Ausfuehrungsfehler und Result-Limitierungsfehler. Identische
+    Retries replayen denselben strukturierten Fehler und starten keinen
+    zweiten Provider-Aufruf, solange der Fehler als terminal klassifiziert ist.
+  - nicht-terminal klassifizierte Provider-/Recovery-Zustaende muessen
+    explizit als retrybarer Pending-/Recovery-Outcome persistiert werden; auch
+    dann darf ein Retry nicht parallel einen zweiten Provider-Aufruf starten.
   - ein Crash vor terminalem Outcome darf den Scope nicht dauerhaft blockieren;
     Pending-Claims brauchen Lease-/Reclaim-Semantik oder einen
     crash-sicheren Outcome-Commit, der vor Replay immer durable Artefakte
@@ -431,7 +440,8 @@ interface AiProviderPort {
 - `createdAt`
 - `summary`
 - `findings`
-- `artifactRef`
+- strukturierte, sanitisierbare Provider-Ausgabe, aber keine d-migrate-
+  Artefaktreferenz
 - `usage`
 - `finishReason`
 - `rawProviderMetadata`, bereinigt und optional
@@ -441,6 +451,8 @@ Nicht erlaubt:
 - MCP-Request-Objekte im Port
 - freie Secret-Strings im Request
 - unredigierte Connection-Konfiguration
+- d-migrate-`artifactRef`/`resourceUri` im Provider-Result vor
+  Output-Hygiene und Publish
 - Provider-spezifische Exceptions bis in Tool-Handler
 
 ### 5.2 Provider-Konfiguration
@@ -538,7 +550,7 @@ Regeln:
 - Tool ist policy-gesteuert.
 - Ergebnis ist ein Plan, kein ausfuehrbarer Zielcode.
 - Jeder erfolgreiche Aufruf persistiert ein immutable Plan-Artefakt mit
-  Artifact-Kind fuer Procedure-Transformationsplaene und gibt eine stabile
+  verbindlichem `wireArtifactKind=procedure-transform-plan` und gibt eine stabile
   `planRef` bzw. `planArtifactId` zurueck. Inline-Daten in `summary` und
   `findings` sind nur Preview und duerfen nicht als Execute-Quelle gelten.
 - Grosse Planinhalte werden nicht inline geliefert, sondern ausschliesslich
@@ -555,6 +567,36 @@ Output:
 - optional `planResourceUri` als lesbare Resource-Referenz fuer grosse Plaene
 - `providerMeta`
 - `executionMeta`
+
+Artefaktmodell:
+
+- Phase G fuehrt kein stillschweigendes neues Core-`ArtifactKind` ein. Solange
+  der Core-Enum nur `SCHEMA`, `PROFILE`, `DIFF`, `DATA_EXPORT`,
+  `UPLOAD_INPUT` und `OTHER` kennt, werden KI-nahe Plan-/Output-Artefakte als
+  `ArtifactKind.OTHER` gespeichert.
+- Die fachliche Typisierung ist dann Pflicht-Metadatum, nicht frei
+  interpretierbarer Text. Verbindliche Werte fuer Phase G:
+  - `wireArtifactKind=procedure-transform-plan`,
+    `aiIntent=procedure_transform_plan` fuer Plaene aus
+    `procedure_transform_plan`
+  - `wireArtifactKind=procedure-transform-output`,
+    `aiIntent=procedure_transform_execute` fuer Zielartefakte aus
+    `procedure_transform_execute`
+  - `wireArtifactKind=testdata-plan`, `aiIntent=testdata_plan` fuer
+    Testdatenplaene aus `testdata_plan`
+- Alle KI-Artefakte speichern persistente Provenance mit Tenant,
+  Principal/Policy-Intent, Source-Refs, `targetDialect`, Prompt-/Payload-
+  Fingerprint, Provider-/Modell-Metadaten, erzeugendem Toolnamen und bei
+  Execute-Outputs zusaetzlich `planRef`/`planArtifactId` samt Plan-
+  Fingerprint.
+- `procedure_transform_execute`, Resource-Reads und Prompts duerfen Plan-
+  Artefakte nur ueber diese Metadaten als Procedure-Transformationsplan
+  akzeptieren. Ein Core-`ArtifactKind.OTHER` ohne diese Metadaten ist kein
+  gueltiger Plan.
+- Falls Phase G stattdessen den Core-Enum erweitert, muss derselbe AP auch
+  Artifact-Stores, Specs, Schemas, Golden-Tests, Resource-Kind-Mapping und
+  Migration/Kompatibilitaet aktualisieren; beide Modelle duerfen nicht
+  uneinheitlich nebeneinander verwendet werden.
 
 ### 5.5 `procedure_transform_execute`
 
@@ -575,14 +617,18 @@ Regeln:
 
 - Tool ist bestaetigungspflichtig und policy-gesteuert.
 - Tool erzeugt hoechstens Artefakte, fuehrt aber keinen Ziel-DB-Code aus.
+- Erfolgreiche Zielartefakte nutzen `wireArtifactKind=procedure-transform-output`,
+  `aiIntent=procedure_transform_execute` und persistieren Provenance inklusive
+  verwendeter Plan-Referenz, Plan-Fingerprint, Source-Refs, `targetDialect`,
+  Prompt-/Payload-Fingerprint und Provider-/Modell-Metadaten.
 - `planRef`/`planArtifactId` muss auf ein freigegebenes Plan-Artefakt aus
   `procedure_transform_plan` zeigen. Zulaessig ist nur ein Plan mit passendem
   Tenant, berechtigtem Principal bzw. Policy-Intent, passendem Source-Ref-
   Set, `targetDialect`, Prompt-/Payload-Fingerprint, Provider-/Modell-
-  Provenance und Artifact-Kind fuer Procedure-Transformationsplaene.
+  Provenance und `wireArtifactKind=procedure-transform-plan`.
 - Stale, fremde, manuell hochgeladene oder andersartige Artefakte duerfen
   nicht als Transformationsplan verwendet werden. Abweichende Provenance,
-  falscher Artifact-Kind, fremder Tenant, falscher Dialekt oder nicht zum
+  falscher `wireArtifactKind`, fremder Tenant, falscher Dialekt oder nicht zum
   Execute-Payload passende Source-Refs liefern einen fachlichen Fehler vor
   Provider-Aufruf.
 - Provider-, Modell-, Prompt- und Payload-Fingerprints sind auditpflichtig.
@@ -621,7 +667,12 @@ Regeln:
 - Tool darf keine echten sensiblen Daten in Testdaten kopieren.
 - Profiling-Daten duerfen nur als verdichtete Summary oder erlaubte
   Resource-Ref genutzt werden.
-- Grosse Plaene werden als Artefakt referenziert.
+- Jeder erfolgreiche Aufruf persistiert einen immutable Testdatenplan mit
+  `wireArtifactKind=testdata-plan`, `aiIntent=testdata_plan` und Provenance
+  ueber Tenant, Principal/Policy-Intent, `schemaRef`, optionale `profileRef`,
+  `targetDialect`, Prompt-/Payload-Fingerprint sowie Provider-/Modell-
+  Metadaten. Inline-`summary`/`findings` sind nur Preview.
+- Grosse Plaene werden ausschliesslich als Artefakt/Resource referenziert.
 
 Output:
 
@@ -640,7 +691,7 @@ Pflichtprompts:
 | Name | Zweck | Mindestargumente |
 | --- | --- | --- |
 | `procedure_analysis` | Procedure-Analyse auf Basis von Schema-/Artefaktreferenzen | `schemaRef` oder `artifactRef`, optional `procedureName` |
-| `procedure_transformation` | Procedure-Transformation mit explizitem Policy-Hinweis | `planRef` oder `planArtifactId` bzw. `artifactRef` nur mit Procedure-Transformationsplan-Kind, `targetDialect` |
+| `procedure_transformation` | Procedure-Transformation mit explizitem Policy-Hinweis | `planRef` oder `planArtifactId` bzw. `artifactRef` nur mit `wireArtifactKind=procedure-transform-plan`, `targetDialect` |
 | `testdata_planning` | Testdatenplanung auf Basis von Schema, Regeln und Profil-Summaries | `schemaRef`, optional `profileRef`, optionale `rules` |
 
 Jeder Prompt enthaelt:
@@ -776,9 +827,17 @@ Aufgaben:
 - `procedure_transform_plan` muss auch fuer kleine Ergebnisse ein immutable
   Plan-Artefakt bzw. eine stabile `planRef` persistieren; Inline-Preview ist
   kein Execute-Eingang.
+- KI-nahe Artefaktmetadaten fuer Plan-/Output-Artefakte modellieren oder den
+  Core-`ArtifactKind` inklusive Stores, Specs, Schemas und Goldens explizit
+  erweitern. Ohne Enum-Erweiterung gilt `ArtifactKind.OTHER` plus
+  verpflichtendes `wireArtifactKind`/`aiIntent`/Provenance-Metadatenmodell.
 - `procedure_transform_execute` muss `planRef`/`planArtifactId` gegen
   Plan-Provenance, Tenant, Principal/Policy-Intent, Source-Refs,
-  `targetDialect`, Prompt-/Payload-Fingerprint und Artifact-Kind pruefen.
+  `targetDialect`, Prompt-/Payload-Fingerprint und
+  `wireArtifactKind=procedure-transform-plan` pruefen.
+- Provider-Port-Resultate erst nach Output-Hygiene, Limitierung und Scrubbing
+  durch die Tool-Schicht als d-migrate-Artefakt publizieren; der Provider-Port
+  liefert keine vertrauenswuerdige d-migrate-`artifactRef`.
 - grosse Ergebnisse als Artefakt/Resource referenzieren
 - Audit fuer alle Erfolg- und Fehlerpfade schreiben
 
@@ -793,14 +852,35 @@ Tests:
 - Crash-/Reclaim-Fall vor terminalem Outcome blockiert den Scope nicht
   dauerhaft und startet vorhandene durable Ergebnisse nicht erneut beim
   Provider.
+- identischer Retry nach terminalem Output-Hygiene-Block, Provider-Timeout
+  oder Provider-Ausfuehrungsfehler replayt denselben strukturierten Fehler und
+  startet keinen zweiten Provider-Aufruf.
+- retrybarer Pending-/Recovery-Outcome nach Provider-Versuch blockiert
+  parallele zweite Provider-Aufrufe und liefert einen retrybaren Status.
 - abweichender Payload mit gleichem `approvalKey` liefert
   `IDEMPOTENCY_CONFLICT`
 - `procedure_transform_plan` liefert bei kleinen und grossen Planinhalten immer
   eine persistierte `planRef` oder `planArtifactId`; `summary`/`findings`
   duerfen nur Preview sein.
-- `procedure_transform_execute` lehnt falschen Artifact-Kind, fremden Tenant,
+- `procedure_transform_plan` speichert `ArtifactKind.OTHER` plus
+  `wireArtifactKind=procedure-transform-plan`, `aiIntent` und vollstaendige
+  Provenance oder nutzt einen explizit erweiterten Core-Enum mit denselben
+  Store-/Spec-/Golden-Anpassungen.
+- `procedure_transform_execute` lehnt fehlenden/falschen `wireArtifactKind`,
+  fremden Tenant,
   nicht aus `procedure_transform_plan` erzeugte Artefakte, falschen Dialekt,
   abweichende Source-Refs und abweichende Plan-Provenance ab.
+- Provider-Result mit grossem Output erzeugt erst nach Output-Hygiene und
+  Scrubbing ein d-migrate-Artefakt; geblockter Output publiziert kein Artefakt.
+- `procedure_transform_execute`-Zielartefakt traegt
+  `wireArtifactKind=procedure-transform-output`,
+  `aiIntent=procedure_transform_execute` und Provenance inklusive Plan-
+  Referenz/Fingerprint.
+- `testdata_plan`-Artefakt traegt `wireArtifactKind=testdata-plan`,
+  `aiIntent=testdata_plan` und Provenance inklusive `schemaRef`,
+  optionalem `profileRef`, `targetDialect` und Fingerprints.
+- Resource-Reads/Prompts lehnen KI-Artefakte mit fehlendem oder falschem
+  `wireArtifactKind`/`aiIntent` ab.
 - Provider-Fehler wird als strukturierter Tool-Fehler gemappt
 - Resultate verletzen keine Inline-Limits
 
@@ -994,15 +1074,22 @@ Vor Tool-Response oder Artifact-Publish gilt:
 - Output-Hygiene pruefen
 - Inline-Limits anwenden
 - Secrets scrubben oder Ergebnis blockieren
+- erst danach darf die Tool-Schicht ein d-migrate-Artefakt oder eine Resource-
+  Referenz erzeugen
 - grosse Outputs als Artefakt speichern
-- Artifact-Kind und Intent setzen
+- Core-`ArtifactKind` und verpflichtende `wireArtifactKind`-/Intent-/
+  Provenance-Metadaten setzen
 - Audit mit Output-Fingerprint schreiben
+- fuer terminale Fehler nach Provider-Versuch einen replaybaren Outcome-
+  Record committen, auch wenn kein Artefakt publiziert wurde
 
 Wenn Output-Hygiene blockiert:
 
 - Tool liefert `PROMPT_HYGIENE_BLOCKED`
 - Provider-Aufruf bleibt auditierbar
 - sensibles Output-Material wird nicht in Tool-Response geschrieben
+- kein d-migrate-Artefakt wird publiziert
+- identischer Retry replayt denselben Fehler ohne zweiten Provider-Aufruf
 
 ---
 
@@ -1135,11 +1222,21 @@ Pflichtfaelle:
   liefert dasselbe Ergebnis bzw. dieselbe Artefakt-/Provider-Referenz.
 - Parallele identische Retries mit gleichem `approvalKey` starten keinen
   zweiten Provider-Aufruf und erzeugen kein zweites Artefakt.
+- Identische Retries nach terminalem post-provider Fehler, etwa
+  Output-Hygiene-Block, Provider-Timeout oder Provider-Ausfuehrungsfehler,
+  replayen denselben strukturierten Fehler ohne zweiten Provider-Aufruf.
 - Abweichender Payload mit gleichem `approvalKey`-Scope liefert
   `IDEMPOTENCY_CONFLICT`.
 - `procedure_transform_execute` akzeptiert nur freigegebene Plan-Artefakte mit
   passender Provenance, Tenant-/Principal-Bindung, Source-Refs,
-  `targetDialect`, Fingerprints und Artifact-Kind.
+  `targetDialect`, Fingerprints und `wireArtifactKind=procedure-transform-plan`
+  bzw. explizit erweitertem Core-Artifact-Kind.
+- KI-Artefakte verwenden verbindliche Typen:
+  `procedure-transform-plan`, `procedure-transform-output` und `testdata-plan`
+  mit passendem `aiIntent` und Provenance.
+- Provider-Port-Resultate enthalten keine d-migrate-Artefaktreferenz; die
+  Tool-Schicht publiziert Artefakte erst nach Output-Hygiene, Limitierung und
+  Scrubbing.
 - KI-nahe Tool-Resultate verletzen keine Inline-Limits.
 - Grosse KI-Ergebnisse werden als Artefakt oder Resource-Ref referenziert.
 - Provider-Timeouts liefern `OPERATION_TIMEOUT`.
