@@ -307,16 +307,19 @@ Pflichteingaben:
 
 Antwort:
 
-- `uploadSessionId`
-- Uploadstatus
-- erwarteter erster `segmentIndex`
-- erwarteter erster `segmentOffset`
-- `uploadSessionTtlSeconds`
+- bei erfolgreichem Init oder idempotentem Erfolgs-Replay:
+  - `uploadSessionId`
+  - Uploadstatus
+  - erwarteter erster `segmentIndex`
+  - erwarteter erster `segmentOffset`
+  - `uploadSessionTtlSeconds`
 - bei fehlender Policy-Freigabe:
   - `POLICY_REQUIRED`
   - `approvalRequestId`
   - Challenge-Metadaten
   - kein verwendbares `approvalToken`
+  - keine `uploadSessionId`, keine Upload-Berechtigung, keine aktive
+    Upload-Session-Quota und keine reservierten Upload-Bytes
 
 Regeln:
 
@@ -332,6 +335,19 @@ Regeln:
 - gleicher Tenant, Caller, Toolname, `approvalKey` und
   `payloadFingerprint` liefern dieselbe Session.
 - gleicher Scope mit abweichendem Payload liefert `IDEMPOTENCY_CONFLICT`.
+- Strukturelle Init-Validation laeuft vor SyncEffect-/Idempotency-Reserve:
+  Pflichtfelder, Typen, `uploadIntent`, `artifactKind`, MIME-Form,
+  `sizeBytes`, `checksumSha256`, `approvalKey`, `targetTable`-Identifier und
+  Legacy-Alias-Konflikte. Fehler daraus schreiben keinen SyncEffect- oder
+  Upload-Store-Eintrag.
+- Nach erfolgreichem Reserve/Claim duerfen nur policy-relevante, secret-freie
+  Init-Metadaten bewertet werden. `POLICY_REQUIRED` setzt hoechstens den
+  Approval-/SyncEffect-Zustand, erzeugt aber keine Session, keine
+  session-scoped Upload-Berechtigung und keine Quota-Reservierung.
+- Erst bei direktem Allow oder gueltigem Grant/Claim werden aktive
+  Upload-Session-Quota und reservierte Upload-Bytes reserviert; erst nach
+  erfolgreicher Quota-Reservierung darf die `UploadSession` samt Upload-
+  Berechtigung durable erzeugt werden.
 - `sizeBytes=0` ist nur fuer `uploadIntent=job_input` mit nicht-Schema-
   Artefakten erlaubt. Ein Null-Byte-Upload besteht aus genau einem finalen
   Segment mit `segmentIndex=1`, `segmentOffset=0`, `segmentTotal=1`,
@@ -770,10 +786,49 @@ Import und Transfer verwenden denselben Start-Tool-Vertrag aus Phase E:
 - `payloadFingerprint` ohne `approvalToken`, `clientRequestId`, `requestId`
 - normalisierte Import-/Transfer-Optionen sind Teil des
   `payloadFingerprint`
+- direkt nach `reserveOrGet` gilt die vollstaendige Phase-E-Outcome-Tabelle:
+  Konflikte, `COMMITTED`, aktive/abgelaufene `AWAITING_APPROVAL`, `DENIED`,
+  `FAILED` und aktive/recoverable `PENDING` werden vor Resource-Lookup,
+  Policy, Quota und Materialisierung verzweigt
 - erster Aufruf ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
 - genehmigter Retry claimt Reservierung atomar
 - `COMMITTED` liefert denselben Job
 - abweichender Payload -> `IDEMPOTENCY_CONFLICT`
+- `POLICY_REQUIRED`, `DENIED`, `FAILED` und aktive `PENDING`-Replays duerfen
+  keine Connection-Secrets lesen, keine Pools/Driver initialisieren, keine
+  Artefaktbytes oder Schema-Refs spoolen und keine Import-/Transfer-Runner-
+  Adapter aufrufen
+
+Validation ist wie in Phase E zweistufig:
+
+- Vor `reserveOrGet` laufen nur strukturelles Schema, Pflichtfeld-/Typ-/Enum-
+  Pruefungen, syntaktische Resource-URI-Form, Tenant-Prefix-Form,
+  `idempotencyKey`-Pflicht, geschlossene Optionsobjekte und fruehe Security-
+  Formfehler wie rohe JDBC-URLs, Connection-Secrets, lokale Pfade, rohe SQL-
+  Felder oder unbekannte Optionsfelder. Diese Fehler schreiben keinen
+  Idempotency-Store-Eintrag.
+- Nach `reserveOrGet` laufen semantische und materialisierungsnahe
+  Validierungen, deren Ergebnis replaybar sein muss: Artefakt-Sichtbarkeit,
+  Upload-Metadaten/Eignung, `schemaRef`-Sichtbarkeit, ConnectionReference-
+  Aufloesbarkeit, Secret-/Provider-Verfuegbarkeit, Runner-Capabilities,
+  Filter-/Identifier-Semantik und Format-/MIME-Kompatibilitaet.
+  Nicht-retrybare Fehler setzen `FAILED`; retrybare technische Resolver-,
+  Secret-Store-, Byte-Store- oder Driver-Materialisierungsfehler bleiben
+  recoverable `PENDING`.
+
+Quota- und Materialisierungsreihenfolge:
+
+- Fuer neue oder geclaimte Import-/Transfer-Starts prueft Policy zuerst nur
+  secret-freie Resource-/Connection-/Artefakt-Metadaten.
+- Nach direktem `ALLOW` oder gueltigem Grant wird die aktive Job-Quota
+  reserviert, bevor Connection-Secrets, Pools/Driver, Artefaktbytes,
+  `schemaRef`-Spools oder Runner-nahe Adapter materialisiert werden.
+- `RATE_LIMITED` entsteht dadurch vor Secret-Store-Reads, Byte-/Schema-
+  Spooling, Pool-/Driver-Initialisierung und Runner-Adapter-Aufrufen.
+- Wenn eine spaetere autorisierte Materialisierung fehlschlaegt, folgt sie dem
+  Phase-E-Pre-Commit-Quota-Lifecycle: konkrete Reservation des Pipeline-
+  Owners `refund`, retrybares `PENDING` oder finales `FAILED` je nach
+  Fehlerart; Replays reservieren oder refunden nicht erneut.
 
 ---
 
@@ -903,7 +958,8 @@ Tests:
 - `approvalKey` fuer policy-pflichtige Init-Pfade erzwingen.
 - `sizeBytes` als kanonisches Vertragsfeld beibehalten und in
   `UploadSession.sizeBytes` uebernehmen.
-- fehlende Freigabe -> `POLICY_REQUIRED`
+- fehlende Freigabe -> `POLICY_REQUIRED` ohne `uploadSessionId`, ohne Upload-
+  Berechtigung und ohne Upload-Quota-Reservierung.
 - gueltiger Grant -> Session erzeugen und Upload-Berechtigung durable
   ausstellen.
 - policy-pflichtiges Init nutzt den bestehenden
@@ -943,8 +999,13 @@ Tests:
 Tests:
 
 - policy-pflichtiges Init ohne `approvalKey` -> `VALIDATION_ERROR`
-- policy-pflichtiges Init ohne Grant -> `POLICY_REQUIRED`
+- policy-pflichtiges Init ohne Grant -> `POLICY_REQUIRED` ohne
+  `uploadSessionId`, Session-Record, Upload-Berechtigung, aktive Session-
+  Quota oder reservierte Upload-Bytes
 - genehmigter Init erzeugt Session
+- genehmigter Init reserviert aktive Session- und Upload-Byte-Quota vor
+  durablem Session-/Berechtigungs-Commit; `RATE_LIMITED` erzeugt keine
+  Session und keine Upload-Berechtigung
 - Retry erzeugt keine zweite Session
 - parallele gleiche genehmigte Init-Retries erzeugen durch Init-Single-Writer-
   Claim maximal eine Session
@@ -1102,6 +1163,10 @@ Tests:
 - Tool-Schema finalisieren.
 - erlaubte Import-Optionen aus Abschnitt 6.1 als Runner-nahe
   `DataImportRequest`-/`ImportOptions`-Abbildung im Schema pinnen.
+- Phase-E-Start-Pipeline vollstaendig anwenden: strukturelle/Form-Validation
+  vor Idempotency ohne Store-Write; danach vollstaendige `reserveOrGet`-
+  Outcome-Tabelle; Policy nur mit secret-freien Metadaten; aktive Job-Quota
+  vor Secret-/Byte-/Schema-/Runner-Materialisierung.
 - Import-Artefakt-Eignungsmatrix aus Abschnitt 6.1 im Handler pinnen.
 - Core-ArtifactKind-Abbildung festlegen: entweder `UPLOAD_INPUT` plus
   `wireArtifactKind`/`uploadIntent`-Metadaten verwenden oder Core-Enum,
@@ -1147,6 +1212,18 @@ Tests:
 
 - fehlender `idempotencyKey`
 - fehlender `targetConnectionRef`
+- strukturell ungueltige Import-Payloads, freie JDBC-URLs, lokale Pfade,
+  rohe SQL-Felder oder unbekannte Optionsfelder werden vor Idempotency ohne
+  Store-Write abgewiesen
+- Retries auf `COMMITTED`, aktive/abgelaufene `AWAITING_APPROVAL`, `DENIED`,
+  `FAILED` und aktive/recoverable `PENDING` folgen der Phase-E-
+  Outcome-Tabelle und loesen keine versehentliche Artefakt-/Connection-/
+  Schema-Materialisierung aus
+- `POLICY_REQUIRED` ohne Grant fuehrt keine Secret-Store-Reads,
+  ArtifactContentStore-Spools, SchemaRef-Spools, Pool-/Driver-
+  Initialisierung oder Runner-Adapter-Aufrufe aus
+- `RATE_LIMITED` entsteht vor Secret-Store-Reads, Artefakt-/Schema-Spooling,
+  Pool-/Driver-Initialisierung und Runner-Adapter-Aufrufen
 - Artefakt-zu-Import-Adapter streamt aus `ArtifactContentStore` oder
   serverseitigem Temp-Spool, ohne lokale Pfade im Tool-Payload
 - fehlende persistente Upload-Metadaten fuer Import-Artefakt ->
@@ -1197,6 +1274,10 @@ Tests:
 - Tool-Schema finalisieren.
 - erlaubte Transfer-Optionen aus Abschnitt 6.2 als Runner-nahe
   `DataTransferRequest`-Abbildung im Schema pinnen.
+- Phase-E-Start-Pipeline vollstaendig anwenden: strukturelle/Form-Validation
+  vor Idempotency ohne Store-Write; danach vollstaendige `reserveOrGet`-
+  Outcome-Tabelle; Policy nur mit secret-freien Connection-Metadaten; aktive
+  Job-Quota vor Secret-/Pool-/Driver-/Runner-Materialisierung.
 - Source-/Target-Connection-Refs tenant-scoped validieren.
 - Source-/Target-Connection-Refs ueber `ConnectionReferenceResolver` und
   `ConnectionSecretResolver` in runner-interne Pools/Connection-Strings
@@ -1226,6 +1307,17 @@ Tests:
 
 - fehlender `idempotencyKey`
 - fehlende oder ungueltige Connection-Ref
+- strukturell ungueltige Transfer-Payloads, freie JDBC-URLs, rohe SQL-Felder,
+  Connection-Secrets, lokale CLI-Pfade oder unbekannte Optionsfelder werden
+  vor Idempotency ohne Store-Write abgewiesen
+- Retries auf `COMMITTED`, aktive/abgelaufene `AWAITING_APPROVAL`, `DENIED`,
+  `FAILED` und aktive/recoverable `PENDING` folgen der Phase-E-
+  Outcome-Tabelle und loesen keine versehentliche Connection-/Driver-
+  Materialisierung aus
+- `POLICY_REQUIRED` ohne Grant fuehrt keine Secret-Store-Reads,
+  Pool-/Driver-Initialisierung oder Runner-Adapter-Aufrufe aus
+- `RATE_LIMITED` entsteht vor Secret-Store-Reads, Pool-/Driver-
+  Initialisierung und Runner-Adapter-Aufrufen
 - ConnectionRef ohne aufloesbare Secret-/Provider-Referenz oder Principal-
   Berechtigung -> `RESOURCE_NOT_FOUND`, `TENANT_SCOPE_DENIED` oder
   `FORBIDDEN_PRINCIPAL`
@@ -1362,6 +1454,10 @@ Mindestfaelle:
 - Init-Retry mit anderem Payload
 - policy-pflichtiges Init-Retry nach Crash zwischen Session-Commit und
   SyncEffect-Commit
+- policy-pflichtiges Init ohne Grant liefert `POLICY_REQUIRED` ohne Session,
+  Upload-Berechtigung oder Upload-Quota-Reservierung
+- policy-pflichtiges Init mit Quota-`RATE_LIMITED` erzeugt keine Session und
+  keine Upload-Berechtigung
 - parallele gleiche genehmigte Init-Retries waehlen genau einen Init-Claim-
   Besitzer
 - Init-Claim mit aktiver Lease liefert In-Progress, abgelaufene Lease wird
@@ -1432,7 +1528,15 @@ Mindestfaelle:
 - erfundene MCP-Mode-Werte statt Runner-naher Optionen
 - `truncate=true` als destruktive, nicht-atomare Option im Fingerprint
 - Import ohne Approval
+- Import ohne Approval fuehrt keine Secret-Store-Reads, Artefakt-/Schema-
+  Spools, Pool-/Driver-Initialisierung oder Runner-Adapter-Aufrufe aus
+- Import mit `RATE_LIMITED` fuehrt keine Secret-Store-Reads, Artefakt-/
+  Schema-Spools, Pool-/Driver-Initialisierung oder Runner-Adapter-Aufrufe aus
 - Transfer ohne Approval
+- Transfer ohne Approval fuehrt keine Secret-Store-Reads, Pool-/Driver-
+  Initialisierung oder Runner-Adapter-Aufrufe aus
+- Transfer mit `RATE_LIMITED` fuehrt keine Secret-Store-Reads,
+  Pool-/Driver-Initialisierung oder Runner-Adapter-Aufrufe aus
 - Import/Transfer ohne `idempotencyKey`
 - Import/Transfer mit gleichem Key, aber anderem Payload
 - Cancel stoppt Import/Transfer an Table-/Chunk-Grenzen und schliesst
@@ -1459,6 +1563,10 @@ Mindestfaelle:
   Session-/Upload-Berechtigungs-/Quota-Commit; Crash-Retry erzeugt keine
   zweite Session und replayt ueber `uploadSessionId` oder
   `UploadInitOutcomeStore`.
+- Policy-pflichtiges Init ohne Grant liefert `POLICY_REQUIRED` ohne
+  `uploadSessionId`, Upload-Berechtigung, Session-Record, aktive Session-
+  Quota oder reservierte Upload-Bytes; `RATE_LIMITED` vor Init-Commit erzeugt
+  ebenfalls keine Session und keine Upload-Berechtigung.
 - Parallele gleiche genehmigte Init-Retries sind single-writer; Phase F
   erweitert den SyncEffect-Store oder nutzt einen daran gebundenen
   `UploadInitClaimStore`, sodass maximal ein Claim-Inhaber Session,
@@ -1552,6 +1660,10 @@ Mindestfaelle:
   und Quota-Release committed.
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
+- `data_import_start` uebernimmt die Phase-E-Start-Pipeline vollstaendig:
+  strukturelle/Form-Fehler vor Idempotency ohne Store-Write, vollstaendige
+  `reserveOrGet`-Outcome-Verzweigung, Policy nur mit secret-freien Metadaten
+  und aktive Job-Quota vor Secret-/Artefakt-/Schema-/Runner-Materialisierung.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
   Artefakt-/MIME-/Format-Kombination: aktuell `ArtifactKind.UPLOAD_INPUT`
   plus `wireArtifactKind=seed-data` mit JSON/YAML/CSV oder explizit
@@ -1561,6 +1673,11 @@ Mindestfaelle:
   migriert wurde.
 - `data_transfer_start` bindet Source-/Target-Connection-Refs an Policy und
   Idempotency.
+- `data_transfer_start` uebernimmt dieselbe Phase-E-Start-Pipeline:
+  strukturelle/Form-Fehler vor Idempotency ohne Store-Write, vollstaendige
+  `reserveOrGet`-Outcome-Verzweigung, Policy nur mit secret-freien
+  Connection-Metadaten und aktive Job-Quota vor Secret-/Pool-/Driver-/Runner-
+  Materialisierung.
 - Import und Transfer materialisieren tenant-scoped Connection-Refs nur fuer
   die Dauer der Job-Ausfuehrung ueber
   einen `ConnectionReferenceResolver`/`ConnectionSecretResolver` und einen
