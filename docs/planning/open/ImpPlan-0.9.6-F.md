@@ -129,9 +129,11 @@ Phase F braucht dafuer eine explizite Adapter-Schicht:
   materialisierte Source-/Target-Strings und passende Resolver,
   URL-Parser und `ConnectionPoolFactory`; Tool-Payloads, Audit und
   Idempotency-Fingerprints enthalten weiter nur Connection-Refs.
-- Secret-Materialisierung ist zeitlich auf den Job-Start begrenzt und wird
-  nicht in Idempotency-, Approval-, Job-, Audit- oder Artifact-Stores
-  persistiert.
+- Secret-Materialisierung ist zeitlich auf die Job-Ausfuehrung begrenzt.
+  Secrets duerfen waehrend des laufenden Jobs in kurzlebigen Pools/Handles
+  leben, muessen bei Job-Ende, Cancel, Timeout oder Fehler geschlossen werden
+  und werden nicht in Idempotency-, Approval-, Job-, Audit- oder
+  Artifact-Stores persistiert.
 
 ---
 
@@ -425,17 +427,20 @@ Regeln:
 - fremde oder administrative Abbrueche sind policy-gesteuert
 - vor der Policy-Pruefung wird fuer fremde/administrative Abbrueche ein
   Eintrag im bestehenden SyncEffect-/Idempotency-Scope fuer
-  `(tenant, caller, toolName, approvalKey, payloadFingerprint)` geprueft.
-  Der `payloadFingerprint` ist der vollstaendige Abort-Fingerprint, nicht nur
-  `uploadSessionId`. Existiert bereits ein terminales Abort-Outcome fuer
-  denselben SyncEffect-Eintrag, wird das gespeicherte Abort-Fingerprint-
-  Material mit dem aktuellen Request-Fingerprint verglichen. Nur bei
-  identischem Fingerprint wird das Outcome zurueckgegeben, ohne den
-  Approval-Fingerprint aus dem aktuellen Sessionzustand neu zu berechnen.
-  Abweichende Request-Felder wie `reason`, Caller oder Session-ID liefern
-  `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED` oder `POLICY_DENIED` je nach
-  Store-/Policy-Zustand. Phase F fuehrt dafuer keine zweite Idempotency-
-  Architektur und keinen separaten Abort-Claim-Key ein.
+  `(tenant, caller, toolName, approvalKey)` reserviert; der
+  `payloadFingerprint`-Reserve-Input ist der vollstaendige Abort-Fingerprint,
+  nicht nur `uploadSessionId`. Existiert bereits
+  `SyncEffectReserveOutcome.Existing(resultRef)`, wird `resultRef` in einem
+  `AbortOutcomeStore` auf einen strukturierten Abort-Outcome-Record aufgeloest.
+  Dieser Record enthaelt mindestens Abort-Fingerprint, `uploadSessionId`,
+  Pre-Abort-Status, terminalen Status, Quota-Release-Status, Zeitpunkt und
+  optionale Fehler-/Antwortdetails. Nur bei identischem Fingerprint wird das
+  Outcome zurueckgegeben, ohne den Approval-Fingerprint aus dem aktuellen
+  Sessionzustand neu zu berechnen. Abweichende Request-Felder wie `reason`,
+  Caller oder Session-ID liefern `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED`
+  oder `POLICY_DENIED` je nach Store-/Policy-Zustand. Phase F fuehrt dafuer
+  keine zweite Idempotency-Architektur und keinen separaten Abort-Claim-Key
+  ein; der SyncEffect-Store bleibt ResultRef-basiert.
 - der Approval-Fingerprint fuer fremde/administrative Abbrueche bindet den
   vorab genehmigten Pre-Abort-Zustand:
   - Toolname `artifact_upload_abort`
@@ -508,6 +513,23 @@ Bei finalem Segment:
 - Fuer `uploadIntent=job_input` wird das Artefakt immutable in
   `ArtifactContentStore` materialisiert und erst danach in `ArtifactStore`
   registriert.
+- Fuer policy-pflichtige `job_input`-Artefakte werden dauerhafte
+  Upload-Metadaten registriert. Phase F muss dafuer entweder
+  `ArtifactRecord`/`ManagedArtifact` bzw. den Artifact-Store um strukturierte
+  Metadaten erweitern oder einen tenant-scoped `ArtifactUploadMetadataStore`
+  einfuehren. Mindestfelder:
+  - `artifactId` / `resourceUri`
+  - `uploadIntent`
+  - `wireArtifactKind`
+  - `mimeType` / `contentType`
+  - optional abgeleitetes `format`
+  - `sourceUploadSessionId`
+  - `ownerPrincipalId` / Tenant
+  - `policyFingerprint`
+  - `sizeBytes` / `sha256`
+  Diese Metadaten sind die verbindliche Grundlage fuer `data_import_start`;
+  Tool-Responses oder fluechtige Session-Felder duerfen dafuer nicht die
+  einzige Quelle sein.
 - Fuer `uploadIntent=schema_staging_readonly` duerfen Rohbytes vor der
   Schema-Validierung nur als nicht publizierter Staging-/Finalisierungsinhalt
   existieren.
@@ -883,6 +905,9 @@ Tests:
 - Artefaktbytes immutable in `ArtifactContentStore` schreiben.
 - Artefaktmetadaten fuer `job_input` erst nach erfolgreicher Byte- und
   Checksum-Validierung registrieren.
+- persistente `ArtifactUploadMetadata` fuer `job_input` mit
+  `uploadIntent`, `wireArtifactKind`, Format-/MIME-Informationen und
+  Source-Session-ID registrieren.
 - Artefaktmetadaten fuer `schema_staging_readonly` erst nach erfolgreicher
   Schema-Validierung veroeffentlichen.
 - Schema-Artefakte validieren und ggf. `schemaRef` materialisieren.
@@ -899,6 +924,8 @@ Tests:
   Artefakt
 - Crash/Reclaim nach `FINALIZING` replayt `finalizationOutcome`
 - finalisiertes Artefakt ist immutable
+- Upload-Metadaten sind nach Finalisierung persistent aus dem Artifact-Store
+  oder `ArtifactUploadMetadataStore` lesbar
 - `artifact_chunk_get` liest aus `ArtifactContentStore`
 - gueltiges Schema erzeugt `schemaRef`
 - ungueltiges read-only Schema erzeugt keine `schemaRef` und keine nutzbare
@@ -910,9 +937,11 @@ Tests:
 - `artifact_upload_abort` fuer eigene aktive Sessions implementieren.
 - administrative/fremde Abbrueche mit eigenem Abort-Approval-Fingerprint aus
   Abschnitt 5.3 an Policy anbinden.
-- terminales Abort-Outcome fuer administrative/fremde Abbrueche im
-  bestehenden SyncEffect-/Idempotency-Eintrag persistieren, bevor Cleanup den
-  Session-Status oder Byte-Kontext fuer Retry-Fingerprints veraendert.
+- terminales Abort-Outcome fuer administrative/fremde Abbrueche ueber
+  `SyncEffectIdempotencyStore.commit(scope, resultRef)` persistieren; der
+  `resultRef` verweist auf einen strukturierten `AbortOutcomeStore`-Record und
+  wird geschrieben, bevor Cleanup den Session-Status oder Byte-Kontext fuer
+  Retry-Fingerprints veraendert.
 - Persistierte Abort-Outcomes mit dem vollstaendigen Abort-Fingerprint
   verknuepfen oder vor der Rueckgabe gegen den aktuellen Request-Fingerprint
   vergleichen.
@@ -934,6 +963,9 @@ Tests:
   Session-Status oder Byte-Kontext erneut in den Fingerprint zu rechnen
 - Retry nach Cleanup mit anderem `reason` oder anderem
   Abort-Fingerprint-Material gibt nicht das alte Outcome zurueck
+- `SyncEffectReserveOutcome.Existing(resultRef)` wird ueber
+  `AbortOutcomeStore` aufgeloest; fehlender oder fingerprint-fremder Record
+  liefert deterministischen Fehler
 - gleicher `approvalKey` mit anderer `uploadSessionId` oder anderem `reason`
   -> `IDEMPOTENCY_CONFLICT` oder `POLICY_REQUIRED`
 - Abort-Grant kann nicht fuer andere Session, anderen Owner, anderen Caller
@@ -958,7 +990,15 @@ Tests:
 - Core-ArtifactKind-Abbildung festlegen: entweder `UPLOAD_INPUT` plus
   `wireArtifactKind`/`uploadIntent`-Metadaten verwenden oder Core-Enum,
   Stores, Specs und Migrationen synchron erweitern.
+- persistente Upload-Metadaten aus AP F.5 lesen und nicht aus transienten
+  Upload-Session- oder Tool-Response-Daten ableiten.
 - `artifactId` / Artefakt-`resourceUri` validieren.
+- Artefaktbytes aus `ArtifactContentStore` in den Import-Pfad einspeisen.
+  Phase F muss dafuer entweder einen `ArtifactImportSourceAdapter` fuer
+  `ImportStreamingInvoker` bauen oder kontrolliertes Temp-/File-Spooling
+  verwenden, das serverseitig erzeugt, tenant-scoped, cleanup-faehig und nicht
+  im Tool-Payload sichtbar ist. Lokale Client-Pfade, CLI-Konfigurationspfade
+  oder rohe Dateipfade aus Optionen bleiben verboten.
 - `targetConnectionRef` erzwingen.
 - `targetConnectionRef` ueber `ConnectionReferenceResolver` und
   `ConnectionSecretResolver` in einen runner-internen Pool/Connection-String
@@ -977,6 +1017,10 @@ Tests:
 
 - fehlender `idempotencyKey`
 - fehlender `targetConnectionRef`
+- Artefakt-zu-Import-Adapter streamt aus `ArtifactContentStore` oder
+  serverseitigem Temp-Spool, ohne lokale Pfade im Tool-Payload
+- fehlende persistente Upload-Metadaten fuer Import-Artefakt ->
+  `VALIDATION_ERROR` oder `RESOURCE_NOT_FOUND`
 - unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder JDBC-Secret in Import-Optionen -> `VALIDATION_ERROR`
 - `wireArtifactKind=schema`, `ddl`, `transform-script` oder `rules` als
@@ -1133,6 +1177,9 @@ Mindesttestklassen:
 - `data_transfer_start`-Handler-Tests
 - ConnectionReference-/ConnectionSecretResolver-Adaptertests fuer Import und
   Transfer
+- ArtifactContentStore-zu-ImportSource-Adaptertests
+- ArtifactUploadMetadataStore- bzw. Artifact-Metadaten-Contract-Tests
+- AbortOutcomeStore-/SyncEffect-resultRef-Tests
 - Import-/Transfer-Runner-Cancel-Tests
 - Quota-/Timeout-/Audit-Tests
 - stdio- und HTTP-Integrationstests
@@ -1168,6 +1215,8 @@ Mindestfaelle:
 - parallele finale Segmente materialisieren genau ein Artefakt
 - finaler Retry gegen `FINALIZING`/`COMPLETED` replayt Ergebnis oder
   In-Flight-Status ohne neuen Segmentwrite
+- finalisiertes `job_input` speichert `uploadIntent`, `wireArtifactKind`,
+  MIME/Format und Source-Session-ID dauerhaft
 - ungueltiges read-only Schema erzeugt keine nutzbare Rohartefakt-
   Registrierung
 - read-only Staging als Import-Input
@@ -1178,6 +1227,9 @@ Mindestfaelle:
 - inkompatible `mimeType`-/`format`-Kombination
 - ConnectionRef-Aufloesung ohne Secret/Provider, mit falschem Tenant oder
   ohne Principal-Berechtigung
+- Import aus `ArtifactContentStore` ohne lokale Pfade
+- Import-Artefakt ohne persistente Upload-Metadaten
+- SyncEffect-`resultRef` zeigt auf Abort-Outcome mit abweichendem Fingerprint
 - unbekannte Import-/Transfer-Optionsfelder
 - rohe SQL-/JDBC-/Secret-Werte in Import-/Transfer-Optionen
 - erfundene MCP-Mode-Werte statt Runner-naher Optionen
@@ -1240,6 +1292,14 @@ Mindestfaelle:
   zweite Materialisierung.
 - `artifact_chunk_get`, Import aus Artefakt und Resource-Chunk-Reads lesen
   aus `ArtifactContentStore`, nicht aus Tool-Response- oder Heap-Kopien.
+- `data_import_start` nutzt einen Artefakt-zu-Import-Adapter, der
+  Artefaktbytes aus `ArtifactContentStore` streamt oder serverseitig
+  kontrolliert spoolt; der bestehende `DataImportRunner.source` erhaelt keine
+  Client- oder Tool-Payload-Pfade.
+- `job_input`-Finalisierung speichert dauerhafte Upload-Metadaten
+  (`uploadIntent`, `wireArtifactKind`, MIME/Format, Source-Session, Policy-
+  und Byte-Fingerprint), und `data_import_start` validiert Import-Eignung nur
+  gegen diese persistenten Metadaten.
 - 200-MiB-Upload-Test nutzt File-Spooling oder gleichwertigen Byte-Store und
   belegt, dass keine RAM-only-Implementierung erforderlich ist.
 - Quota-Verletzungen fuer aktive Sessions, Bytes oder parallele Segmentwrites
@@ -1261,7 +1321,9 @@ Mindestfaelle:
   bevor aktueller Session-Status oder durch Cleanup veraenderter Byte-Kontext
   in eine neue Policy-Bewertung einfliesst; das Outcome wird nur
   zurueckgegeben, wenn der gespeicherte Abort-Fingerprint zum aktuellen
-  Request passt.
+  Request passt. Der bestehende `SyncEffectIdempotencyStore` speichert dabei
+  nur `resultRef`; strukturierte Abort-Daten liegen in einem referenzierten
+  `AbortOutcomeStore`-Record oder einer gleichwertigen Store-Erweiterung.
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
@@ -1273,7 +1335,8 @@ Mindestfaelle:
   migriert wurde.
 - `data_transfer_start` bindet Source-/Target-Connection-Refs an Policy und
   Idempotency.
-- Import und Transfer materialisieren tenant-scoped Connection-Refs nur ueber
+- Import und Transfer materialisieren tenant-scoped Connection-Refs nur fuer
+  die Dauer der Job-Ausfuehrung ueber
   einen `ConnectionReferenceResolver`/`ConnectionSecretResolver` und einen
   MCP-Runner-Adapter zu kurzlebigen runner-internen Connections; rohe
   JDBC-Strings oder lokale CLI-Konfiguration gelangen nicht aus Tool-Payloads
