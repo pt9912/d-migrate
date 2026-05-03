@@ -8,6 +8,19 @@ import java.time.Instant
 
 enum class UploadSessionState(val terminal: Boolean) {
     ACTIVE(terminal = false),
+
+    /**
+     * AP 6.22: transient single-writer claim while a completing
+     * `tools/call` runs assembly + parse + validate +
+     * artefact/schema materialisation. NOT a successful terminal
+     * state — only the exclusive side-effect lock for the in-flight
+     * finalisation. Concurrent completing calls compete for this
+     * claim via [UploadSession.finalizingClaimId] /
+     * [UploadSession.finalizingLeaseExpiresAt]; the loser must not
+     * start a new assembly.
+     */
+    FINALIZING(terminal = false),
+
     COMPLETED(terminal = true),
     ABORTED(terminal = true),
     EXPIRED(terminal = true),
@@ -39,4 +52,27 @@ data class UploadSession(
      * or a COMPLETED session whose finaliser threw).
      */
     val finalisedSchemaRef: String? = null,
+    /**
+     * AP 6.22: opaque single-writer claim id held by the completing
+     * `tools/call` that owns the in-flight finalisation. Set when
+     * the session enters [UploadSessionState.FINALIZING]; cleared
+     * once the session reaches a terminal state (COMPLETED /
+     * ABORTED). A reclaim after lease expiry overwrites this with
+     * the new claim's id. `null` for any session that has never
+     * been claimed.
+     */
+    val finalizingClaimId: String? = null,
+    /**
+     * AP 6.22: wall-clock timestamp at which the current claim was
+     * acquired. Diagnostic — the actual ownership decision is
+     * driven by [finalizingLeaseExpiresAt].
+     */
+    val finalizingClaimedAt: Instant? = null,
+    /**
+     * AP 6.22: wall-clock cutoff after which the current claim is
+     * stale and may be reclaimed by a fresh completing call. Compared
+     * against the injected `Clock` of the Phase-C wiring; negative
+     * clock jumps must NOT extend the stored value.
+     */
+    val finalizingLeaseExpiresAt: Instant? = null,
 )

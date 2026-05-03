@@ -106,6 +106,14 @@ internal class ArtifactUploadAbortHandler(
             UploadSessionState.COMPLETED -> throw IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
+            // AP 6.22 C1: an explicit abort while the session is being
+            // finalised is treated as a Conflict — the completing call
+            // owns the FINALIZING claim and is about to land on
+            // COMPLETED or ABORTED on its own. Retry sees the resolved
+            // state.
+            UploadSessionState.FINALIZING -> throw IdempotencyConflictException(
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
+            )
         }
     }
 

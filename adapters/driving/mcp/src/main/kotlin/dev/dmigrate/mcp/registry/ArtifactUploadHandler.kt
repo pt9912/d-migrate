@@ -362,6 +362,14 @@ internal class ArtifactUploadHandler(
             )
             UploadSessionState.ABORTED -> throw UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> throw UploadSessionExpiredException(session.uploadSessionId)
+            // AP 6.22 C1: another completing call already holds the
+            // FINALIZING claim. The loser surfaces the same retryable
+            // Conflict as a COMPLETED-replay; client retries see the
+            // resolved terminal state. C4 will refine this once the
+            // claim CAS is wired into the streaming handler.
+            UploadSessionState.FINALIZING -> throw IdempotencyConflictException(
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
+            )
         }
     }
 

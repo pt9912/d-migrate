@@ -3,10 +3,23 @@ package dev.dmigrate.server.core.upload
 object UploadSessionTransitions {
 
     private val allowed: Map<UploadSessionState, Set<UploadSessionState>> = mapOf(
+        // AP 6.22: ACTIVE → FINALIZING is the new claim-and-then-
+        // finalise path; the legacy ACTIVE → COMPLETED edge stays
+        // until the streaming handler refactor in C4 cuts the direct
+        // shortcut. ABORTED/EXPIRED remain reachable from ACTIVE so
+        // explicit aborts and lease-expiry sweeps keep working.
         UploadSessionState.ACTIVE to setOf(
+            UploadSessionState.FINALIZING,
             UploadSessionState.COMPLETED,
             UploadSessionState.ABORTED,
             UploadSessionState.EXPIRED,
+        ),
+        // AP 6.22 Z. 1284–1289: success → COMPLETED, parse/validate/
+        // materialisation failure → ABORTED. FINALIZING is a transient
+        // single-writer claim and is NOT a successful terminal state.
+        UploadSessionState.FINALIZING to setOf(
+            UploadSessionState.COMPLETED,
+            UploadSessionState.ABORTED,
         ),
         UploadSessionState.COMPLETED to emptySet(),
         UploadSessionState.ABORTED to emptySet(),

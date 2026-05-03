@@ -5,7 +5,8 @@ import io.kotest.matchers.shouldBe
 
 class UploadSessionTransitionsTest : FunSpec({
 
-    test("ACTIVE may transition to COMPLETED, ABORTED, EXPIRED") {
+    test("ACTIVE may transition to FINALIZING, COMPLETED, ABORTED, EXPIRED") {
+        UploadSessionTransitions.isAllowed(UploadSessionState.ACTIVE, UploadSessionState.FINALIZING) shouldBe true
         UploadSessionTransitions.isAllowed(UploadSessionState.ACTIVE, UploadSessionState.COMPLETED) shouldBe true
         UploadSessionTransitions.isAllowed(UploadSessionState.ACTIVE, UploadSessionState.ABORTED) shouldBe true
         UploadSessionTransitions.isAllowed(UploadSessionState.ACTIVE, UploadSessionState.EXPIRED) shouldBe true
@@ -13,6 +14,22 @@ class UploadSessionTransitionsTest : FunSpec({
 
     test("ACTIVE cannot transition to itself") {
         UploadSessionTransitions.isAllowed(UploadSessionState.ACTIVE, UploadSessionState.ACTIVE) shouldBe false
+    }
+
+    test("FINALIZING may transition to COMPLETED or ABORTED only") {
+        // AP 6.22: success → COMPLETED, parse/validate/materialise failure → ABORTED.
+        UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.COMPLETED) shouldBe true
+        UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.ABORTED) shouldBe true
+        // Not allowed: back to ACTIVE, sideways to FINALIZING/EXPIRED.
+        UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.ACTIVE) shouldBe false
+        UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.FINALIZING) shouldBe false
+        UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.EXPIRED) shouldBe false
+    }
+
+    test("FINALIZING is not terminal and rejects new segments / resume") {
+        UploadSessionState.FINALIZING.terminal shouldBe false
+        UploadSessionTransitions.acceptsSegments(UploadSessionState.FINALIZING) shouldBe false
+        UploadSessionTransitions.canResume(UploadSessionState.FINALIZING) shouldBe false
     }
 
     test("terminal states accept no further transitions") {

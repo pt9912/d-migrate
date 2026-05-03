@@ -43,6 +43,14 @@ internal fun UploadSessionStore.transitionOrThrow(
             UploadSessionState.COMPLETED -> IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
+            // AP 6.22 C1: a competing completing call that lost the
+            // FINALIZING claim sees the session mid-finalisation and
+            // gets the same retryable Conflict surface as a COMPLETED
+            // replay. C4 may refine the diagnostic when the streaming
+            // handler lands; the Conflict shape stays.
+            UploadSessionState.FINALIZING -> IdempotencyConflictException(
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
+            )
             UploadSessionState.ACTIVE -> InternalAgentErrorException()
         }
         is TransitionOutcome.NotFound -> throw ResourceNotFoundException(session.resourceUri)
