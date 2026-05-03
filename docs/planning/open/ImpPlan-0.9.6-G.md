@@ -537,7 +537,12 @@ Regeln:
 
 - Tool ist policy-gesteuert.
 - Ergebnis ist ein Plan, kein ausfuehrbarer Zielcode.
-- Grosse Ergebnisse werden als Artefakt referenziert.
+- Jeder erfolgreiche Aufruf persistiert ein immutable Plan-Artefakt mit
+  Artifact-Kind fuer Procedure-Transformationsplaene und gibt eine stabile
+  `planRef` bzw. `planArtifactId` zurueck. Inline-Daten in `summary` und
+  `findings` sind nur Preview und duerfen nicht als Execute-Quelle gelten.
+- Grosse Planinhalte werden nicht inline geliefert, sondern ausschliesslich
+  ueber `planRef`/`planArtifactId` bzw. Resource-Reads referenziert.
 - Secrets und Rohdaten sind verboten.
 - `schema_staging_readonly` darf nur als Analysekontext genutzt werden, wenn
   Resource-Kind, Intent und Policy dies erlauben.
@@ -546,7 +551,8 @@ Output:
 
 - `summary`
 - `findings`
-- `planArtifactId` oder `planResourceUri`, falls gross
+- `planRef` oder `planArtifactId`
+- optional `planResourceUri` als lesbare Resource-Referenz fuer grosse Plaene
 - `providerMeta`
 - `executionMeta`
 
@@ -634,7 +640,7 @@ Pflichtprompts:
 | Name | Zweck | Mindestargumente |
 | --- | --- | --- |
 | `procedure_analysis` | Procedure-Analyse auf Basis von Schema-/Artefaktreferenzen | `schemaRef` oder `artifactRef`, optional `procedureName` |
-| `procedure_transformation` | Procedure-Transformation mit explizitem Policy-Hinweis | `planRef` oder `artifactRef`, `targetDialect` |
+| `procedure_transformation` | Procedure-Transformation mit explizitem Policy-Hinweis | `planRef` oder `planArtifactId` bzw. `artifactRef` nur mit Procedure-Transformationsplan-Kind, `targetDialect` |
 | `testdata_planning` | Testdatenplanung auf Basis von Schema, Regeln und Profil-Summaries | `schemaRef`, optional `profileRef`, optionale `rules` |
 
 Jeder Prompt enthaelt:
@@ -767,6 +773,9 @@ Aufgaben:
   `SyncEffectIdempotencyStore` reicht unveraendert nicht aus, wenn parallele
   gleiche Pending-Reserves erneut `Reserved` liefern.
 - Provider-Aufrufe ueber Hygiene-Service und Port fuehren
+- `procedure_transform_plan` muss auch fuer kleine Ergebnisse ein immutable
+  Plan-Artefakt bzw. eine stabile `planRef` persistieren; Inline-Preview ist
+  kein Execute-Eingang.
 - `procedure_transform_execute` muss `planRef`/`planArtifactId` gegen
   Plan-Provenance, Tenant, Principal/Policy-Intent, Source-Refs,
   `targetDialect`, Prompt-/Payload-Fingerprint und Artifact-Kind pruefen.
@@ -786,6 +795,9 @@ Tests:
   Provider.
 - abweichender Payload mit gleichem `approvalKey` liefert
   `IDEMPOTENCY_CONFLICT`
+- `procedure_transform_plan` liefert bei kleinen und grossen Planinhalten immer
+  eine persistierte `planRef` oder `planArtifactId`; `summary`/`findings`
+  duerfen nur Preview sein.
 - `procedure_transform_execute` lehnt falschen Artifact-Kind, fremden Tenant,
   nicht aus `procedure_transform_plan` erzeugte Artefakte, falschen Dialekt,
   abweichende Source-Refs und abweichende Plan-Provenance ab.
@@ -922,18 +934,27 @@ Begruendung:
 
 ### 7.2 Fehlercodes
 
-Verbindliche Codes:
+Phase G erbt den bestehenden 0.9.6-Fehlercodevertrag und darf keine engere
+Teilmenge definieren. Verbindliche Codes fuer Golden-Tests, Tool-Registry und
+Error-Mapping bleiben:
 
-- `VALIDATION_ERROR`
-- `TENANT_SCOPE_DENIED`
-- `IDEMPOTENCY_CONFLICT`
+- `AUTH_REQUIRED`
+- `FORBIDDEN_PRINCIPAL`
 - `POLICY_REQUIRED`
 - `POLICY_DENIED`
-- `FORBIDDEN_PRINCIPAL`
-- `PROMPT_HYGIENE_BLOCKED`
+- `IDEMPOTENCY_KEY_REQUIRED`
+- `IDEMPOTENCY_CONFLICT`
+- `RESOURCE_NOT_FOUND`
+- `VALIDATION_ERROR`
 - `RATE_LIMITED`
 - `OPERATION_TIMEOUT`
 - `PAYLOAD_TOO_LARGE`
+- `UPLOAD_SESSION_EXPIRED`
+- `UPLOAD_SESSION_ABORTED`
+- `UNSUPPORTED_MEDIA_TYPE`
+- `UNSUPPORTED_TOOL_OPERATION`
+- `PROMPT_HYGIENE_BLOCKED`
+- `TENANT_SCOPE_DENIED`
 - `INTERNAL_AGENT_ERROR`
 
 Regeln:
@@ -1100,7 +1121,8 @@ Pflichtfaelle:
 - Audit-Events enthalten keine Approval-Tokens, Provider-Secrets,
   Connection-Secrets oder unredigierten Massendaten.
 - `procedure_transform_plan` ist registriert, policy-gesteuert,
-  auditierbar und mit `NoOp` testbar.
+  auditierbar, mit `NoOp` testbar und persistiert bei jedem erfolgreichen
+  Aufruf ein immutable Plan-Artefakt bzw. eine stabile `planRef`.
 - `procedure_transform_execute` ist registriert, bestaetigungspflichtig,
   policy-gesteuert, auditierbar und mit `NoOp` testbar.
 - `testdata_plan` ist registriert, policy-gesteuert, auditierbar und mit
