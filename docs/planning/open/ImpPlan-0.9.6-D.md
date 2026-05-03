@@ -197,6 +197,36 @@ Diese Regel gilt fuer Listen-Cursor und fuer Chunk-Fortsetzungen wie
 abgelaufene Tokens liefern `VALIDATION_ERROR`, niemals fremde Daten. Phase D
 fuehrt keinen separaten `TOKEN_EXPIRED`-Fehlercode ein.
 
+Fehlerpraezedenz bei Requests mit Cursor:
+
+1. Auth-/Scope-Pruefung bleibt das bestehende vorgelagerte MCP-Mapping.
+2. Request-Schema, bekannte Parameter, Datums-/Enum-Formate, `pageSize` und
+   syntaktisch parsebare Resource-URI werden zuerst validiert. Fehler liefern
+   `VALIDATION_ERROR`.
+3. Danach wird der adressierte Tenant aus explizitem `tenantId`, Resource-URI
+   oder `principal.effectiveTenantId` bestimmt. Liegt dieser Tenant ausserhalb
+   `PrincipalContext.allowedTenantIds`, liefert der Request
+   `TENANT_SCOPE_DENIED`. Ein mitgelieferter Cursor wird in diesem Fall nicht
+   decodiert.
+4. Erst nach erfolgreicher Tenant-Aufloesung wird ein Cursor decodiert,
+   HMAC-validiert und gegen Tenant, Tool/Resource-Familie, Filter, `pageSize`
+   und Sortierung gebunden. Jeder Fehler in diesem Schritt liefert
+   `VALIDATION_ERROR`, auch wenn der Cursor selbst einen anderen Tenant
+   enthaelt.
+5. Erst danach wird gegen Stores/Resolver gelesen. Fehlende oder nicht
+   sichtbare Datensaetze im erlaubten Tenant liefern no-oracle
+   `RESOURCE_NOT_FOUND`.
+
+Konkrete kombinierte Faelle:
+
+| Request-Zustand | Verbindlicher Fehler |
+| --- | --- |
+| syntaktisch ungueltige URI, Tenant nicht parsebar | `VALIDATION_ERROR` |
+| parsebarer fremder Tenant + beliebiger Cursor | `TENANT_SCOPE_DENIED` |
+| erlaubter Tenant + manipulierter Cursor | `VALIDATION_ERROR` |
+| erlaubter Tenant + valider Cursor fuer anderen Tenant | `VALIDATION_ERROR` |
+| erlaubter Tenant + valider Cursor + nicht sichtbarer Datensatz | `RESOURCE_NOT_FOUND` |
+
 ### 4.3 Connection-Refs sind secret-frei
 
 Connection-Refs duerfen in Discovery und Resource-Reads sichtbar sein, aber nur
@@ -283,8 +313,31 @@ weil sonst Templates, Tenant-Pruefung und Fehlerbehandlung uneindeutig werden.
 ### 5.2 Resource-Read-Grenzen
 
 Resource-Reads muessen dieselben Inline-Grenzen beachten wie Tool-Responses.
+Phase D legt dafuer verbindliche Adapter-Konstanten fest:
 
-Kleine textuelle Ressourcen duerfen als MCP-Text-Content geliefert werden.
+- `MAX_RESOURCE_READ_RESPONSE_BYTES = 65536`
+  - harte Obergrenze fuer die serialisierte MCP-`resources/read`-Antwort
+    inklusive Content-Array und Metadaten
+- `MAX_INLINE_RESOURCE_CONTENT_BYTES = 49152`
+  - Obergrenze fuer den UTF-8-Body eines einzelnen inline ausgelieferten
+    Text-/JSON-Inhalts, damit die Gesamtantwort unter 64 KiB bleibt
+- `MAX_ARTIFACT_CHUNK_BYTES = 32768`
+  - bestehende Phase-C-Grenze fuer Artefakt-Chunk-Rohdaten
+
+Nur textuelle Inhalte mit `application/json`, `text/*` oder einem explizit
+dokumentierten textuellen MIME-Typ duerfen inline als MCP-Text-Content
+geliefert werden. Binaere oder unbekannte MIME-Typen werden nicht als Base64-
+Ersatzpayload in `resources/read` erfunden, sondern nur ueber Artefaktrefs
+oder Chunk-URIs adressiert.
+
+Ein Resource-Resolver darf inline liefern, wenn alle Bedingungen gelten:
+
+- MIME-Typ ist textuell erlaubt.
+- UTF-8-Content-Body ist kleiner oder gleich
+  `MAX_INLINE_RESOURCE_CONTENT_BYTES`.
+- geschaetzte bzw. tatsaechlich serialisierte Gesamtantwort bleibt kleiner
+  oder gleich `MAX_RESOURCE_READ_RESPONSE_BYTES`.
+
 Groessere Ressourcen liefern:
 
 - Artefaktref
@@ -462,8 +515,8 @@ Alle Listen-Projektionen enthalten mindestens:
 - `tenantId`
 - `createdAt`, soweit der Store diese Information besitzt
 - `expiresAt` oder Retention-Hinweis, soweit vorhanden
-- `ownerPrincipalId` oder eine bereits gescrubbte Sichtbarkeitsklasse, soweit
-  die Information fuer Clients relevant ist
+- eine neutralisierte `visibilityClass`, soweit die Information fuer Clients
+  relevant ist
 
 Resource-spezifische Mindestfelder:
 
@@ -479,6 +532,14 @@ Felder mit potentiell sensitiven Werten, z. B. lokale Pfade, JDBC-URLs,
 rohe Connection-Strings oder ENV-Expansionen, werden nicht in diese
 Projektionen aufgenommen. Wenn ein bestehendes Kernmodell solche Felder
 enthaelt, muss die MCP-Projektion explizit scrubben oder das Feld weglassen.
+
+`ownerPrincipalId` gilt fuer MCP-Discovery als potentielles PII-Feld und ist
+kein Standardfeld der v1-Listen-Projektionen. Standard-Projektionen verwenden
+stattdessen eine neutrale Sichtbarkeitsklasse, z. B. `own`, `tenantVisible`,
+`shared` oder `adminVisible`. Eine rohe `ownerPrincipalId` darf nur in
+internen Test-/Diagnoseprojektionen oder spaeteren Admin-spezifischen
+Vertraegen mit explizitem Scope erscheinen; dieser Admin-Vertrag ist nicht
+Teil von Phase D.
 
 ---
 
@@ -646,12 +707,16 @@ Umsetzung:
   - Tenant ausserhalb `allowedTenantIds` -> `TENANT_SCOPE_DENIED`
   - nicht sichtbarer Datensatz im erlaubten Tenant -> `RESOURCE_NOT_FOUND`
   - fehlende Scopes -> bestehendes Auth-/Scope-Mapping
+- Fehlerpraezedenz aus Abschnitt 4.2 in einem zentralen Helper oder Test-
+  Fixture abbilden, damit Listen-Tools, `resources/read` und
+  `artifact_chunk_get` keine divergierende Reihenfolge implementieren.
 - `dmigrate://capabilities` als eigener Resolver, nicht als Sonderfall im
   JSON-RPC-Handler.
 
 Tests:
 
 - Resolver-Dispatch je URI-Variante
+- kombinierte Fehlerfaelle aus der Praezedenztabelle in Abschnitt 4.2
 - Tenant-fremde URI bestaetigt keine Existenz fremder Datensaetze
 - Datensatz im erlaubten Tenant, aber ohne Sichtbarkeit, liefert
   `RESOURCE_NOT_FOUND`
@@ -791,6 +856,8 @@ Umsetzung:
   Resource-Metadaten gemaess bestehendem Wire-Modell.
 - Grosse Inhalte nicht ueber zusaetzliche `resources/read`-Parameter loesen;
   stattdessen Artefaktref oder `nextChunkUri`.
+- Inline-Entscheidung strikt ueber `MAX_INLINE_RESOURCE_CONTENT_BYTES`,
+  `MAX_RESOURCE_READ_RESPONSE_BYTES` und MIME-Regeln aus Abschnitt 5.2 treffen.
 - `dmigrate://capabilities` direkt lesbar machen.
 
 Tests:
@@ -800,6 +867,8 @@ Tests:
   fehlschlaegt
 - read fuer Job, Artifact, Schema, Profile, Diff, Connection und Capability
 - grosse Ressource liefert Referenz/Chunk-URI statt zu grossem Inline-Content
+- JSON/Text knapp unterhalb der Inline-Grenze wird inline geliefert; Inhalt
+  oberhalb der Grenze und binaere MIME-Typen liefern Referenz/Chunk-URI
 - fremder Tenant vs. fehlende Sichtbarkeit korrekt gemappt
 
 ### 10.8 AP D8: `resources/list` produktiv verdrahten
@@ -956,6 +1025,10 @@ Tests/Gates:
 - abgelaufene Cursor-/Pagination-/Chunk-Tokens liefern ebenfalls
   `VALIDATION_ERROR`; nur nach Retention geloeschte Ressourcen liefern
   `RESOURCE_NOT_FOUND`.
+- kombinierte Fehlerfaelle folgen der Praezedenz aus Abschnitt 4.2: explizit
+  adressierter fremder Tenant schlaegt Cursor-Decode und liefert
+  `TENANT_SCOPE_DENIED`; nach erfolgreicher Tenant-Aufloesung liefern alle
+  Cursor-Bindungsfehler `VALIDATION_ERROR`.
 - Profile und Diffs sind ueber `profile_list` bzw. `diff_list` auffindbar,
   auch wenn die Persistenz intern ueber typisierte Artefakte erfolgt.
 - Ressourcen ausserhalb des erlaubten Principal-Tenant-Scopes liefern
@@ -981,6 +1054,11 @@ Tests/Gates:
 - `resources/read` akzeptiert nur `uri`, nutzt Resolver-Dispatch, liefert
   grosse Inhalte nur ueber Artefaktrefs oder Chunk-URIs und ist mit
   Adaptertests abgedeckt.
+- `resources/read` liefert nur textuelle Inhalte inline, wenn der Body
+  hoechstens `MAX_INLINE_RESOURCE_CONTENT_BYTES = 49152` Bytes umfasst und
+  die serialisierte Antwort hoechstens
+  `MAX_RESOURCE_READ_RESPONSE_BYTES = 65536` Bytes umfasst; binaere oder
+  unbekannte MIME-Typen werden nicht inline base64-kodiert.
 - Chunk-Fortsetzungen werden als tenant-scoped `nextChunkUri` oder als
   HMAC-gekapselter `nextChunkCursor` ausgegeben; nackte `chunkId`-Cursor sind
   nicht erlaubt.
@@ -996,6 +1074,9 @@ Tests/Gates:
   liefern no-oracle `RESOURCE_NOT_FOUND`, sofern kein Admin-/Scope-Modell den
   Zugriff erlaubt.
 - keine Discovery-, Resource- oder Audit-Antwort enthaelt rohe Secrets.
+- v1-Listen-Projektionen enthalten keine rohe `ownerPrincipalId`; sie nutzen
+  eine neutrale `visibilityClass`, sofern Besitz-/Sichtbarkeitsinformation fuer
+  Clients relevant ist.
 - MCP-Projektionen von Connection-Refs enthalten weder `credentialRef` noch
   `providerRef`; erlaubt sind nur secret-freie Ersatzfelder wie
   `hasCredential`, `providerKind`, `sensitivity` und `allowedOperations`.
