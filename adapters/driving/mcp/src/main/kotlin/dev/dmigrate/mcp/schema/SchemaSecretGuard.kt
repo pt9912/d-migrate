@@ -50,6 +50,17 @@ internal object SchemaSecretGuard {
     )
 
     /**
+     * AP 6.23 review W1 escape hatch: normalised property names that
+     * would match a [FORBIDDEN_TOKENS] substring but are documented-
+     * legitimate (e.g. `tokenizer`, `tokenBucketRate`). Empty today
+     * because no Phase-B/C schema collides; entries MUST go through
+     * code review and carry a comment that justifies the override.
+     * The list lets future tools opt out of a false-positive without
+     * weakening the substring match for everyone else.
+     */
+    val ALLOWED_OVERRIDES: Set<String> = emptySet()
+
+    /**
      * AP 6.23: backwards-compat alias. Old call sites or tests that
      * inspect the forbidden list see the normalised substrings; the
      * exact-only entries are folded in. Use [isForbidden] for
@@ -71,9 +82,13 @@ internal object SchemaSecretGuard {
     fun normalize(name: String): String =
         name.lowercase().replace(NORMALISATION_REGEX, "")
 
-    /** True if [name] (after normalisation) hits a forbidden token / exact entry. */
+    /**
+     * True if [name] (after normalisation) hits a forbidden token /
+     * exact entry, unless explicitly listed in [ALLOWED_OVERRIDES].
+     */
     fun isForbidden(name: String): Boolean {
         val normalised = normalize(name)
+        if (normalised in ALLOWED_OVERRIDES) return false
         if (normalised in FORBIDDEN_EXACT) return true
         return FORBIDDEN_TOKENS.any { it in normalised }
     }

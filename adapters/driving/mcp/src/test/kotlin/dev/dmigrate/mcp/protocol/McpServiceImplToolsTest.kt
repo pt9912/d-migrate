@@ -264,6 +264,49 @@ class McpServiceImplToolsTest : FunSpec({
         authValue shouldNotContain "abcdef0123"
     }
 
+    test("AP 6.23 review N8: errorEnvelopeResult scrubs both details[].key and details[].value") {
+        // ApplicationException is sealed, so we exercise the only
+        // typed-mapper path that lets us steer both `key` and
+        // `value` through directly: ValidationErrorException copies
+        // ValidationViolation.field into details[].key and
+        // ValidationViolation.reason into details[].value verbatim.
+        // The DefaultErrorMapper does NOT scrub these — the Bearer
+        // literal can only be redacted by McpServiceImpl.errorEnvelopeResult.
+        val descriptor = ToolDescriptor(
+            name = "raw_envelope_test_tool",
+            title = "Raw envelope",
+            description = "fixture",
+            requiredScopes = setOf("dmigrate:read"),
+            inputSchema = mapOf("type" to "object"),
+            outputSchema = mapOf("type" to "object"),
+        )
+        val handler = ToolHandler {
+            throw dev.dmigrate.server.application.error.ValidationErrorException(
+                listOf(
+                    dev.dmigrate.server.application.error.ValidationViolation(
+                        field = "callback Bearer 0123456789abcdef key",
+                        reason = "raw value with Bearer fedcba9876543210 inside",
+                    ),
+                ),
+            )
+        }
+        val registry = ToolRegistry.builder().register(descriptor, handler).build()
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = registry,
+            initialPrincipal = PRINCIPAL,
+            scopeMapping = mapOf("raw_envelope_test_tool" to setOf("dmigrate:read")),
+        )
+        val result = sut.toolsCall(ToolsCallParams(name = "raw_envelope_test_tool")).get()
+        result.isError shouldBe true
+        val envelope = JsonParser.parseString(result.content.single().text!!).asJsonObject
+        val detail = envelope.getAsJsonArray("details").single().asJsonObject
+        detail.get("key").asString shouldContain "Bearer ***"
+        detail.get("key").asString shouldNotContain "0123456789abcdef"
+        detail.get("value").asString shouldContain "Bearer ***"
+        detail.get("value").asString shouldNotContain "fedcba9876543210"
+    }
+
     test("envelope details survive duplicate keys (ValidationError-style)") {
         // §12.16: details is a JSON array of {key,value}, NOT an object.
         // ValidationErrorException can emit two violations on the same

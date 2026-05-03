@@ -73,6 +73,14 @@ internal class SchemaGenerateHandler(
         // leak Bearer-tokens, JDBC URLs or approval-tokens that
         // accidentally landed in DEFAULTs / comments / quoted
         // identifiers.
+        //
+        // Review N7: this transforms legitimate SQL strings that
+        // happen to match the scrubber patterns (e.g. `INSERT INTO
+        // logs VALUES ('Bearer abc')` becomes `... 'Bearer ***')`).
+        // The artefact is a read-back diagnostic for client tooling,
+        // NOT a re-executable SQL source — operators who need a
+        // verbatim DDL execute the generator with a sanitised
+        // schema and consume the inline `ddl` field below.
         val ddl = SecretScrubber.scrub(result.render())
         val ddlBytes = ddl.toByteArray(Charsets.UTF_8)
         val inlineThreshold = limits.maxToolResponseBytes / 2

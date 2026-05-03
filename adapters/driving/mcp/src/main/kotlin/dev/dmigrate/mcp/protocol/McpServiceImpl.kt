@@ -358,18 +358,27 @@ class McpServiceImpl(
     private fun errorEnvelopeResult(
         envelope: dev.dmigrate.server.core.error.ToolErrorEnvelope,
     ): ToolsCallResult {
-        // AP 6.23: scrub the message + every details[].value through
-        // SecretScrubber as a serialisation boundary. Upstream
-        // mappers already scrub typed validation messages, but
-        // generic / forwarded errors can still carry Bearer tokens,
-        // JDBC URLs or local paths in their details — this is the
-        // last hop before the wire payload is rendered.
+        // AP 6.23: scrub the message + every details[].(key,value)
+        // through SecretScrubber as a serialisation boundary.
+        // Upstream mappers already scrub typed validation messages,
+        // but generic / forwarded errors can still carry Bearer
+        // tokens, JDBC URLs or local paths in their details — this
+        // is the last hop before the wire payload is rendered. The
+        // key is also scrubbed because ValidationViolation.field is
+        // upstream-derived (e.g. dotted JSON paths into user-supplied
+        // schemas) and could in principle carry the same kind of
+        // accidental secret as the value (review W3).
         val payload = buildMap<String, Any> {
             put("code", envelope.code.name)
             put("message", SecretScrubber.scrub(envelope.message))
             put(
                 "details",
-                envelope.details.map { mapOf("key" to it.key, "value" to SecretScrubber.scrub(it.value)) },
+                envelope.details.map {
+                    mapOf(
+                        "key" to SecretScrubber.scrub(it.key),
+                        "value" to SecretScrubber.scrub(it.value),
+                    )
+                },
             )
             envelope.requestId?.let { put("requestId", it) }
         }

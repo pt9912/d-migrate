@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.server.application.audit.SecretScrubber
+import org.slf4j.LoggerFactory
 import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.TenantScopeDeniedException
 import dev.dmigrate.server.application.error.ValidationErrorException
@@ -169,16 +170,32 @@ internal class JobStatusGetHandler(
     // AP 6.23: numericValues is filtered through a curated allowlist
     // (PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS); unknown internal
     // counter names are dropped so the wire output validates against
-    // the closed schema.
-    private fun projectProgress(progress: JobProgress): Map<String, Any?> = mapOf(
-        "phase" to SecretScrubber.scrub(progress.phase),
-        "numericValues" to progress.numericValues
-            .filterKeys { it in PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS },
-    )
+    // the closed schema. Dropped keys are logged at WARN so operators
+    // notice when a worker emits a counter the allowlist doesn't yet
+    // know about (review W2).
+    private fun projectProgress(progress: JobProgress): Map<String, Any?> {
+        val allowed = PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
+        val dropped = progress.numericValues.keys.filterNot { it in allowed }
+        if (dropped.isNotEmpty()) {
+            LOG.warn(
+                "JobStatusGet dropped non-allowlisted progress key(s): {}",
+                dropped.joinToString(","),
+            )
+        }
+        return mapOf(
+            "phase" to SecretScrubber.scrub(progress.phase),
+            "numericValues" to progress.numericValues.filterKeys { it in allowed },
+        )
+    }
 
     private fun projectError(error: JobError): Map<String, Any?> = buildMap {
         put("code", SecretScrubber.scrub(error.code))
         put("message", SecretScrubber.scrub(error.message))
         if (error.exitCode != null) put("exitCode", error.exitCode)
+    }
+
+    private companion object {
+        @JvmStatic
+        private val LOG = LoggerFactory.getLogger(JobStatusGetHandler::class.java)
     }
 }

@@ -431,6 +431,15 @@ internal object PhaseBToolSchemas {
      * the truncated-output / artefact-fallback contract machine-
      * checkable in the JSON-Schema layer instead of relying on
      * runtime tests alone.
+     *
+     * Review N3: the `required: ["truncated"]` inside the `if` block
+     * is defensive — JSON-Schema 2020-12 evaluates `properties.X.const=Y`
+     * as vacuously true when `X` is absent. Adding `required` makes
+     * the predicate strict and prevents a future schema where
+     * `truncated` becomes optional from silently disabling the
+     * constraint. All four AP-6.23 tools mark `truncated` as required
+     * in the outer schema, so this is redundant today but cheap
+     * insurance.
      */
     internal fun truncatedRequiresField(refField: String): Map<String, Any> = mapOf(
         "if" to mapOf(
@@ -557,6 +566,13 @@ internal object PhaseBToolSchemas {
      * — used by `artifactRef`, `diffArtifactRef`, and the per-element
      * shape inside `job_status_get.artifacts[]`. Tenant- and artefact-
      * id segments are non-empty and contain no `/`.
+     *
+     * Review N1: this is a STRUCTURAL match, not an authoritative
+     * trust boundary. `[^/]+` accepts URL-encoded bytes / Unicode /
+     * control characters that the upstream `ServerResourceUri.parse`
+     * would reject. The schema-level guarantee is "looks like a
+     * tenant-scoped artefact URI"; the canonical validation lives
+     * in `ServerResourceUri`.
      */
     internal const val ARTIFACT_REF_PATTERN: String =
         """^dmigrate://tenants/[^/]+/artifacts/[^/]+$"""

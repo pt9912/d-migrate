@@ -3,11 +3,13 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
+import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
+import org.slf4j.LoggerFactory
 
 /**
  * AP 6.19: centralised request- and response-byte enforcement for the
@@ -107,8 +109,14 @@ class ResponseLimitEnforcer internal constructor(
         // wrapped in the generic truncated envelope (it would fail
         // their schema's required-field constraint). The handler is
         // expected to downgrade itself; an oversize response here is
-        // treated as an internal handler bug.
+        // treated as an internal handler bug. Log size + tool name
+        // (NEVER the payload bytes — those may contain secrets)
+        // so operators can debug a stuck handler (review N5).
         if (toolName in SCHEMA_AWARE_TOOLS) {
+            LOG.warn(
+                "schema-aware tool '{}' produced oversize response: {} > {} bytes",
+                toolName, bytes.size, cap,
+            )
             throw InternalAgentErrorException()
         }
 
@@ -170,5 +178,20 @@ class ResponseLimitEnforcer internal constructor(
             "schema_generate",
             "job_status_get",
         )
+
+        @JvmStatic
+        private val LOG = LoggerFactory.getLogger(ResponseLimitEnforcer::class.java)
+
+        init {
+            // Review N4: detect drift between this hardcoded set and
+            // the registered tool catalogue. If a tool is renamed in
+            // PhaseBToolSchemas without updating SCHEMA_AWARE_TOOLS,
+            // the wrong path would silently activate at runtime.
+            val unknown = SCHEMA_AWARE_TOOLS.filter { PhaseBToolSchemas.forTool(it) == null }
+            require(unknown.isEmpty()) {
+                "SCHEMA_AWARE_TOOLS references tools not registered in " +
+                    "PhaseBToolSchemas: $unknown"
+            }
+        }
     }
 }
