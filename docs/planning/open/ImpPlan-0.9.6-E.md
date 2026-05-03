@@ -252,6 +252,13 @@ Reservation-Transition haben:
   Quota-Reservierung wird per `refund` zurueckgegeben und die
   Idempotency-Reservierung bleibt nach Fehlerart recoverable `PENDING` oder
   wird final `FAILED`.
+- genehmigte, aber noch nicht committete Starts, die durch `RATE_LIMITED`,
+  Start-Timeout oder retrybare technische Fehler recoverable `PENDING`
+  bleiben, speichern die erfuellte Approval-Bindung
+  (`approvalRequestId`, Grant-/Issuer-Fingerprint, Grant-Ablauf,
+  requiredScopes). Ein spaeterer Retry darf diese Reservierung nur reclaimen,
+  wenn diese gespeicherte Freigabe noch gueltig ist oder ein erneut gueltiger
+  `approvalToken` fuer die aktuelle Challenge validiert wird.
 - `OPERATION_TIMEOUT` vor Job-Commit: keine Job-Erzeugung; die Reservierung
   wird als recoverable `PENDING` mit abgelaufener oder kurzer Lease
   freigegeben, damit identische Retries die Start-Pipeline neu claimen
@@ -321,8 +328,9 @@ Zustandsaenderung im gemeinsamen Jobmodell:
 - explizite Cross-Tenant-Job-`resourceUri` ohne passenden
   `allowedTenantIds`/`effectiveTenantId`-Eintrag liefert
   `TENANT_SCOPE_DENIED`
-- opake `jobId`-Eingaben bleiben tenant-lokal und liefern fuer fremde oder
-  fehlende Jobs `RESOURCE_NOT_FOUND`
+- opake `jobId`-Eingaben bleiben tenant-lokal im `effectiveTenantId`;
+  fehlende oder cross-tenant IDs liefern `RESOURCE_NOT_FOUND`, existierende
+  Same-Tenant-Fremdjobs ohne Admin-Recht liefern `FORBIDDEN_PRINCIPAL`
 - nicht erlaubte Jobs liefern `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben terminal
 - erfolgreich angenommene Abbrueche enden erst nach Worker-Ack oder
@@ -409,6 +417,9 @@ Pflichtfelder:
 - gespeichertes retrybares Outcome mit `retryAfter` und strukturierten
   Details, wenn `PENDING` einen determinierten Retry-Fehler wie
   `RATE_LIMITED` oder temporaeren Materialisierungsfehler repraesentiert
+- erfuellte Approval-Bindung mit `approvalRequestId`,
+  Grant-/Issuer-Fingerprint, Grant-Ablauf und requiredScopes, wenn `PENDING`
+  bereits mit gueltigem Grant geclaimt wurde, aber noch nicht `COMMITTED` ist
 - `awaitingApprovalExpiresAt`, wenn `AWAITING_APPROVAL`
 - `approvalRequestId`, wenn Freigabe offen
 - `jobId`, wenn `COMMITTED`
@@ -434,7 +445,9 @@ Regeln:
   werden
 - recoverable `PENDING` aus `RATE_LIMITED`, `OPERATION_TIMEOUT` vor Commit
   oder retrybaren technischen Startfehlern darf nur von einem identischen
-  Scope/Fingerprint neu geclaimt werden
+  Scope/Fingerprint neu geclaimt werden; falls die Reservierung schon mit
+  Grant geclaimt war, muss zusaetzlich die gespeicherte Approval-Bindung noch
+  gueltig sein oder ein neuer gueltiger `approvalToken` validiert werden
 - aktive nicht abgelaufene `PENDING` ohne gespeichertes Outcome darf nicht als
   interner Zustand an Clients ausgegeben werden; identische parallele Aufrufe
   warten bis zum Start-Timeout-Budget und liefern dann retrybares
@@ -535,14 +548,20 @@ Regeln:
 - tenant-scoped Job-`resourceUri` in einem explizit erlaubten Zieltenant darf
   fuer eigene oder administrativ erlaubte Jobs gecancelt werden
 - opake `jobId`-Eingaben duerfen keinen globalen Cross-Tenant-Lookup machen;
-  fremde oder fehlende opake IDs liefern im Principal-Tenant
+  tenant-lokaler Lookup erfolgt nur im `effectiveTenantId`
+- opake `jobId` ohne Treffer im `effectiveTenantId` liefert no-oracle
   `RESOURCE_NOT_FOUND`
+- opake `jobId` mit Treffer im `effectiveTenantId`, aber fremdem Principal
+  ohne Admin-Recht liefert `FORBIDDEN_PRINCIPAL`
 - fremde Jobs im erlaubten Zieltenant ohne Berechtigung liefern
   `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben unveraendert terminal
 - angenommener Cancel setzt oder bestaetigt `cancelled` nur per CAS von einem
   nicht-terminalen Zustand
-- Worker-Handle wird signalisiert, falls der Job noch laeuft
+- `queued`-Jobs duerfen vor Dispatch per CAS `queued -> cancelled`
+  terminalisiert werden; der Dispatcher muss `cancelled` vor Start pruefen und
+  darf solche Jobs nie an einen Worker uebergeben
+- Worker-Handle wird signalisiert, falls der Job bereits laeuft
 - Cancel gilt erst als angenommen, wenn das CancellationToken gesetzt ist und
   der Worker die naechste Side-Effect-Barriere oder einen kooperativen
   Ack-Checkpoint erreicht hat; erst danach darf der Job per CAS auf
@@ -709,6 +728,8 @@ Tests:
 - Store/Port/Contract Tests decken `FAILED` als neuen Core-State ab
 - recoverable `PENDING` nach `RATE_LIMITED` oder Start-Timeout wird nicht als
   final `FAILED` behandelt
+- genehmigtes recoverable `PENDING` startet ohne gespeicherte gueltige
+  Approval-Bindung oder neuen gueltigen `approvalToken` keinen Job
 - aktives `PENDING` ohne Job liefert nach Start-Timeout retrybares
   `OPERATION_TIMEOUT`, keinen internen State
 - `PENDING` mit gespeichertem `RATE_LIMITED` liefert bis `retryAfter`
@@ -725,6 +746,8 @@ Tests:
 - Policy-Service-Interface definieren.
 - Policy-Entscheidungen fuer alle drei Start-Tools konfigurieren.
 - `ApprovalGrantStore` ohne rohe Tokens verwenden.
+- `ApprovalAttempt` und `ApprovalGrantValidator` um `approvalRequestId`
+  erweitern und gegen die aktuelle Challenge validieren.
 - Mindestens einen produktiv nutzbaren Grant-Aussteller implementieren:
   Admin-Unterkommando, signierte Grant-Datei oder lokale Allowlist mit
   explizitem GrantIssuer-Modus.
@@ -743,6 +766,7 @@ Tests:
 - gueltiger Grant passt nur fuer aktuelle `approvalRequestId`
 - `approvalRequestId` ist kein Tool-Input; Server prueft sie aus dem Grant
   gegen die aktuelle Challenge
+- Validator-/DTO-Test deckt `ApprovalAttempt.approvalRequestId` ab
 - Grant fuer erneuerte/alte Challenge liefert wieder `POLICY_REQUIRED`
 - konfigurierte Policy-Allowlist ohne GrantIssuer startet direkt erlaubte
   Requests, erzeugt aber kein `approvalToken`
@@ -820,6 +844,8 @@ Tests:
   `allowedTenantIds` pruefen.
 - Terminale Jobs unveraendert lassen.
 - Laufende Jobs ueber Worker-Handle signalisieren.
+- Wartende Jobs per CAS `queued -> cancelled` vor Dispatch terminalisieren.
+- Dispatcher-Barriere verhindert Start bereits gecancelter `queued`-Jobs.
 - Side-Effect-Barriere oder Worker-Ack abwarten, bevor Cancel als angenommen
   gilt.
 - Jobstatus `cancelled` per Compare-and-Set erst nach beobachtetem
@@ -835,10 +861,13 @@ Tests:
   `effectiveTenantId` -> `TENANT_SCOPE_DENIED`
 - tenant-scoped URI in explizit erlaubtem Zieltenant kann mit Admin-Recht
   gecancelt werden
-- opake fremde oder fehlende `jobId` -> `RESOURCE_NOT_FOUND`
+- opake fehlende oder cross-tenant `jobId` -> `RESOURCE_NOT_FOUND`
+- opake same-tenant `jobId` mit fremdem Principal ohne Admin ->
+  `FORBIDDEN_PRINCIPAL`
 - fremder Principal ohne Admin -> `FORBIDDEN_PRINCIPAL`
 - unbekannter Job -> `RESOURCE_NOT_FOUND`
 - terminaler Job bleibt terminal
+- queued Job wird vor Dispatch per CAS `cancelled` und nie gestartet
 - kein `cancelled` vor Worker-Ack/Side-Effect-Barriere
 - Worker wird zwischen Lookup und Cancel terminal -> `succeeded`/`failed`
   bleibt erhalten und wird nicht durch `cancelled` ueberschrieben
@@ -912,7 +941,8 @@ Verbindliche Fehler:
 - `RATE_LIMITED` fuer Quota-/Rate-Limit-Verletzungen
 - `OPERATION_TIMEOUT` fuer Start-/Runner-Timeout
 - `TENANT_SCOPE_DENIED` fuer explizit fremde tenant-scoped Resource-URIs
-- `FORBIDDEN_PRINCIPAL` fuer nicht erlaubten Job-Cancel im selben Tenant
+- `FORBIDDEN_PRINCIPAL` fuer nicht erlaubten Job-Cancel im erlaubten
+  Zieltenant
 - `RESOURCE_NOT_FOUND` fuer unbekannte oder nicht sichtbare Jobs im erlaubten
   Tenant
 - `VALIDATION_ERROR` fuer ungueltige Payloads und freie JDBC-Strings
@@ -961,6 +991,8 @@ Mindestfaelle:
 - Konflikt ohne Policy-Pruefung
 - erster Start ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
 - zweiter Start mit Grant -> genau ein Job
+- genehmigter Retry nach recoverable `PENDING` braucht gespeicherte gueltige
+  Approval-Bindung oder neuen gueltigen Grant
 - Grant mit alter oder falscher `approvalRequestId`
 - parallele genehmigte Retries -> ein Job
 - `DENIED` gilt nur bis `denialExpiresAt`
@@ -981,8 +1013,10 @@ Mindestfaelle:
 - Cancel ohne Scope erzeugt Audit/403 ohne Job-Lookup
 - Cancel tenant-scoped URI ausserhalb `allowedTenantIds`
 - Cancel tenant-scoped URI in explizit erlaubtem Zieltenant mit Admin-Recht
-- Cancel opake fremde oder fehlende `jobId`
+- Cancel opake fehlende oder cross-tenant `jobId`
+- Cancel opake same-tenant `jobId` mit fremdem Principal ohne Admin
 - Cancel fremder Principal im selben Tenant
+- Cancel queued Job vor Dispatch
 - Cancel-Ack-Barriere vor `cancelled`-Terminalisierung
 - Cancel-Race: Worker terminalisiert zwischen Lookup und CAS
 - Worker-Side-Effect-Stopp nach Cancel
@@ -1016,6 +1050,9 @@ Mindestfaelle:
 - Approval-Grants sind an die aktuelle `approvalRequestId` der
   `AWAITING_APPROVAL`-Challenge gebunden; die `approvalRequestId` wird nicht
   als Tool-Input gesendet, sondern aus dem Grant geprueft.
+- genehmigte, aber recoverable `PENDING`-Reservierungen koennen ohne
+  gespeicherte gueltige Approval-Bindung oder neuen gueltigen Grant nicht
+  gestartet werden.
 - wiederholter zweiter Aufruf nach `COMMITTED` liefert denselben Job.
 - parallele genehmigte Retries erzeugen hoechstens einen Job.
 - `DENIED`-Reservierungen liefern `POLICY_DENIED`.
@@ -1045,11 +1082,16 @@ Mindestfaelle:
 - `job_cancel` kann eigene oder erlaubte Jobs abbrechen; Cross-Tenant-Cancel
   ist nur mit explizitem `allowedTenantIds`/`effectiveTenantId`-Eintrag
   moeglich, waehrend opake `jobId` keinen globalen Cross-Tenant-Lookup macht.
+- opake `jobId` ohne Treffer im `effectiveTenantId` liefert
+  `RESOURCE_NOT_FOUND`; opake same-tenant Treffer ohne Berechtigung liefern
+  `FORBIDDEN_PRINCIPAL`.
 - fehlender oder unzureichender `dmigrate:job:cancel`-Scope fuehrt zu 403 mit
   Scope-Challenge ohne Job-Lookup.
 - `job_cancel` setzt `cancelled` erst nach Worker-Ack oder Side-Effect-Barriere
   und nur per CAS aus nicht-terminalem Zustand; terminale Worker-Races duerfen
   `succeeded`/`failed` nicht ueberschreiben.
+- `queued`-Jobs koennen vor Dispatch per CAS auf `cancelled` gesetzt werden;
+  der Dispatcher startet bereits gecancelte Jobs nie.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
