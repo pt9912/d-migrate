@@ -219,20 +219,43 @@ Pipeline-Reihenfolge fuer Start-Tools:
 1. `requestId` erzeugen
 2. Audit-Scope oeffnen
 3. Principal aus Transportkontext ableiten
-4. Tool-Payload gegen Schema validieren
-5. syntaktische Tenant-Prefix-, Scope-Key- und Resource-Ref-Form pruefen
+4. Tool-Payload gegen das strukturelle Schema validieren: JSON-Shape,
+   Pflichtfelder, Typen, Enums, geschlossene Objektform und erlaubte
+   Top-Level-Felder
+5. syntaktische Tenant-Prefix-, Scope-Key- und Resource-Ref-Form pruefen;
+   freie JDBC-Strings als fruehen Security-/Formfehler abweisen
 6. MCP-Authorization-Scope fuer Start pruefen (`dmigrate:job:start`)
 7. Idempotency-Reservierung atomar pruefen oder anlegen
-8. Idempotency-Konflikte sofort mit `IDEMPOTENCY_CONFLICT` beenden
-9. `COMMITTED` direkt dedupliziert zurueckgeben, ohne Resource-
-   Materialisierung, Policy oder Quota erneut auszufuehren
-10. secret-freie Resource-Metadaten und Sichtbarkeit fuer Policy pruefen
-11. Policy entscheiden, ohne Secrets, Driver-Pools oder Schema-/Connection-
+8. Reservierungs-Outcome vollstaendig auswerten (siehe Tabelle unten)
+9. Nur fuer neu geclaimte Starts: secret-freie Resource-Metadaten und
+   Sichtbarkeit fuer Policy pruefen
+10. Policy entscheiden, ohne Secrets, Driver-Pools oder Schema-/Connection-
    Materialisierung auszuloesen
-12. Bei direktem `Allowed` oder gueltigem Grant/Claim erst jetzt Secret-,
-   Schema-, Connection- und Driver-Materialisierung ausfuehren
-13. Quota fuer neue Side Effects reservieren
+11. Bei direktem `Allowed` oder gueltigem Grant/Claim Quota fuer den neuen
+   Job/Side Effect reservieren
+12. Erst nach erfolgreicher Quota-Reservierung Secret-, Schema-, Connection-
+   und Driver-Materialisierung ausfuehren
+13. semantische/materialisierungsnahe Validation ausfuehren, z. B.
+   Resource-Sichtbarkeit nach Aufloesung, Options-/Capability-Kombinationen
+   und Schema-/Connection-Kompatibilitaet
 14. Job erzeugen oder bestehendes Ergebnis zurueckgeben
+
+Outcome-Tabelle direkt nach `reserveOrGet`:
+
+| Outcome | Verbindliche Reaktion |
+| --- | --- |
+| gleicher Scope, anderer Fingerprint | `IDEMPOTENCY_CONFLICT`; keine Policy, kein Resource-Lookup, keine Quota, keine Materialisierung |
+| `COMMITTED(jobId)` | gespeicherten Job direkt zurueckgeben; keine Resource-Materialisierung, Policy, Quota oder Secret-Reads |
+| aktive `AWAITING_APPROVAL` | aktuelle `POLICY_REQUIRED`-Challenge replayen; keine Policy-Neuentscheidung, keine Quota, keine Materialisierung |
+| abgelaufene `AWAITING_APPROVAL` | Challenge atomar erneuern oder neue Challenge erzeugen; nur secret-freier Policy-Lookup, keine Materialisierung |
+| `DENIED` vor `denialExpiresAt` | `POLICY_DENIED` replayen; keine Resource-/Policy-/Quota-/Materialisierungsarbeit |
+| `DENIED` nach `denialExpiresAt` | identischen Retry als neuen Policy-Claim behandeln; alte Ablehnung bleibt auditierbar |
+| `FAILED` | gespeichertes finales Fehleroutcome replayen; keine Resource-/Policy-/Quota-/Materialisierungsarbeit |
+| aktive `PENDING` mit gespeichertem `RATE_LIMITED` | `RATE_LIMITED` samt `retryAfter` replayen; keine Quota-Neureservierung |
+| aktive `PENDING` mit gespeichertem retrybarem Materialisierungs-/Startfehler | gespeichertes retrybares Outcome replayen; keine Materialisierung, solange Lease aktiv ist |
+| aktive `PENDING` ohne gespeichertes Outcome | bis zum Start-Budget warten; danach retrybares `OPERATION_TIMEOUT`, kein interner State |
+| abgelaufene recoverable `PENDING` | nur identischer Scope/Fingerprint darf claimen; danach bei gespeicherter gueltiger Approval-Bindung oder neuem Grant fortsetzen |
+| neue Reservierung | mit secret-freiem Resource-/Policy-Lookup fortfahren |
 
 Policy wird niemals fuer abweichende Payloads geprueft. Ein Konflikt mit
 gleichem Store-Key und anderem Fingerprint liefert deterministisch
@@ -242,6 +265,18 @@ Fehlende oder unzureichende MCP-Authorization-Scopes werden vor
 `reserveOrGet` abgewiesen. Sie erzeugen Audit mit Scope-Challenge/403, aber
 keine Idempotency-Reservierung, keine Approval-Challenge, keine Policy-
 Entscheidung und keine Quota-Reservierung.
+
+Validation ist zweistufig:
+
+- Vor `reserveOrGet` laufen nur strukturales Schema, Pflichtfeld-/Typ-/Enum-
+  Pruefungen, syntaktische Resource-URI-Form, Tenant-Prefix-Form und
+  Security-Formfehler wie freie JDBC-Strings. Diese Fehler erzeugen keinen
+  Idempotency-Store-Write.
+- Nach `reserveOrGet` laufen semantische und materialisierungsnahe
+  Validierungen, deren Ergebnis fuer identische Retries replaybar sein muss:
+  Sichtbarkeit, nicht vorhandene Resources, Capabilities, Optionskombinationen
+  und Schema-/Connection-Kompatibilitaet. Nicht-retrybare Fehler daraus setzen
+  `FAILED`; retrybare technische Fehler bleiben recoverable `PENDING`.
 
 Die Idempotency-Reservierung bleibt vor Policy- und Quota-Pruefung. Deshalb
 muessen alle Outcomes nach angelegter Reservierung eine verbindliche
@@ -293,12 +328,14 @@ Reservation-Transition haben:
   `COMMITTED(jobId)` recovern oder atomar fertigstellen; es darf kein Job ohne
   deduplizierbare Reservierung entstehen.
 
-Nur die syntaktische Ref-Form und ein expliziter Tenant-Prefix duerfen vor
-Idempotency geprueft werden. Ein identischer Retry fuer eine `COMMITTED`-
-Reservierung muss denselben Job liefern, auch wenn referenzierte Connections,
-Schemas oder Policy-Sichtbarkeit inzwischen geloescht, rotiert oder entzogen
-wurden. Resource-Lookup und Secret-/Schema-Materialisierung finden deshalb
-erst nach dem `COMMITTED`-Dedupe-Pfad statt.
+Nur strukturelle Payload-Validation, syntaktische Ref-Form, freie-JDBC-
+Ablehnung und expliziter Tenant-Prefix duerfen vor Idempotency geprueft
+werden. Ein identischer Retry fuer eine `COMMITTED`-Reservierung muss
+denselben Job liefern, auch wenn referenzierte Connections, Schemas oder
+Policy-Sichtbarkeit inzwischen geloescht, rotiert oder entzogen wurden.
+Secret-freier Resource-Lookup findet deshalb erst nach dem `COMMITTED`-
+Dedupe-Pfad statt; Secret-/Schema-/Connection-/Driver-Materialisierung erst
+nach Policy-Approval und erfolgreicher Quota-Reservierung.
 
 ### 4.3 Policy-Freigabe startet nicht automatisch
 
@@ -698,7 +735,14 @@ Eingabe:
 
 Regeln:
 
+- `connectionRef` muss tenant-scoped sein
+- freie JDBC-Strings sind verboten
 - Tool ist immer policy-gesteuert
+- fehlender `idempotencyKey` liefert `IDEMPOTENCY_KEY_REQUIRED`
+- fehlender Grant liefert nur dann `POLICY_REQUIRED`, wenn die Policy-
+  Entscheidung `RequiresApproval` ist; direkte `ALLOW`-Policy startet ohne
+  Grant
+- genehmigter Retry startet genau einen Job
 - produktive oder sensitive Connections brauchen sichtbare Policy-Entscheidung
 - Profiling-Reports werden als Artefakte/Resources publiziert
 - Cancel vor Report-Publish verhindert neue Reports
@@ -937,13 +981,18 @@ Tests:
   `job_cancel` einheitlich verwenden.
 - `idempotencyKey` als Pflichtfeld erzwingen.
 - `dmigrate:job:start` vor Idempotency-/Policy-/Quota-Store-Writes pruefen.
-- Vor `reserveOrGet` nur syntaktische Form, Tenant-Prefix und freie
-  JDBC-Strings validieren.
+- Vor `reserveOrGet` nur strukturelles Schema, Pflichtfeld-/Typ-/Enum-
+  Pruefungen, syntaktische Resource-URI-Form, Tenant-Prefix und freie
+  JDBC-Strings validieren; diese fruehen Fehler schreiben nicht in den
+  Idempotency-Store.
 - `connectionRef`- und `schemaRef`-Sichtbarkeit, Lookup und Materialisierung
   trennen: vor Policy nur secret-freie Metadaten-/Visibility-Lookups, nach
-  direktem `ALLOW` oder gueltigem Grant/Claim erst Secret-Store-Reads,
-  Schema-Content-Materialisierung, Pool-/Driver-Initialisierung und Runner-
-  nahe Materialisierung ausfuehren.
+  direktem `ALLOW` oder gueltigem Grant/Claim zuerst Quota reservieren und
+  erst danach Secret-Store-Reads, Schema-Content-Materialisierung,
+  Pool-/Driver-Initialisierung und Runner-nahe Materialisierung ausfuehren.
+- Semantische/materialisierungsnahe Validation nach `reserveOrGet`
+  durchfuehren und nicht-retrybare Fehler als gespeichertes `FAILED`-Outcome
+  replaybar machen.
 - freie JDBC-Strings abweisen.
 - Output-Schema auf `jobId`, `resourceUri`, `executionMeta` festlegen.
 - Tool-Registry von Unsupported-Handlern auf produktive Handler umstellen.
@@ -955,7 +1004,9 @@ Tests:
 - fehlender `idempotencyKey`
 - fehlender oder unzureichender `dmigrate:job:start`-Scope -> 403 mit
   Scope-Challenge und ohne Idempotency-Store-Write
-- syntaktisch ungueltige Connection-/Schema-Ref vor Idempotency
+- strukturell ungueltiger Payload, syntaktisch ungueltige
+  Connection-/Schema-Ref oder freie JDBC-URL vor Idempotency ohne
+  Idempotency-Store-Write
 - nicht sichtbare oder fremde Connection-/Schema-Ref nach Idempotency als
   gespeichertes finales Outcome
 - fehlender Grant bei `RequiresApproval` liefert `POLICY_REQUIRED` ohne
@@ -965,6 +1016,9 @@ Tests:
 - fehlender Grant bei `RequiresApproval`
 - direkte `ALLOW`-Policy ohne Grant
 - erfolgreicher genehmigter Start
+- direkter `ALLOW`-/Grant-Start reserviert Quota vor Secret-Store-Reads,
+  Schema-Content-Materialisierung, Pool-/Driver-Initialisierung und Runner-
+  naher Materialisierung
 - deduplizierter Retry
 - `job_cancel`-Schema akzeptiert `jobId` oder `resourceUri`
 - `job_cancel`-Golden-Response enthaelt aktuellen Jobstatus und
@@ -1079,6 +1133,10 @@ Tests:
   `reserve -> commit/refund/release`.
 - `reserve` vor Job-Erzeugung ausfuehren und bei `RateLimited`
   `RATE_LIMITED` ohne Job liefern.
+- `reserve` muss vor Secret-Store-Reads, Schema-Content-Materialisierung,
+  Pool-/Driver-Initialisierung und Runner-naher Materialisierung fuer neue
+  Starts erfolgen. Rate-limitierte Starts duerfen diese teuren oder
+  sensitiven Pfade nicht ausloesen.
 - Quota-/Rate-Limit-Port um `retryAfter` erweitern oder einen
   `retryAfterProvider` im `QuotaService` definieren. Fuer Window-Rate-Limits
   kommt `retryAfter` aus dem naechsten Window-Reset; fuer aktive Jobquoten aus
@@ -1107,6 +1165,9 @@ Tests:
 Tests:
 
 - aktive Jobquote ueberschritten -> `RATE_LIMITED`
+- `RATE_LIMITED` entsteht vor Secret-Store-Reads, Schema-Content-
+  Materialisierung, Pool-/Driver-Initialisierung und Runner-naher
+  Materialisierung
 - `RATE_LIMITED` enthaelt `retryAfter`; Idempotency-Lease ist darauf
   ausgerichtet
 - deduplizierter Retry verbraucht keine neue Quote
@@ -1166,6 +1227,12 @@ Verbindliche Fehler:
   Tenant
 - `VALIDATION_ERROR` fuer ungueltige Payloads und freie JDBC-Strings
 
+`VALIDATION_ERROR` ist je nach Validierungsstufe unterschiedlich zu
+persistieren: strukturelle Schema-/Formfehler und freie JDBC-Strings werden
+vor Idempotency ohne Store-Write abgewiesen; semantische oder
+materialisierungsnahe Validation nach `reserveOrGet` wird als gespeichertes
+`FAILED`-Outcome replaybar.
+
 Cancel-/Timeout-Fehlerprojektion:
 
 - `OperationCancelledException` aus der Signalquelle `JOB_CANCEL` ist kein
@@ -1216,13 +1283,22 @@ Mindestfaelle:
 - fehlender `idempotencyKey`
 - fehlender Start-Scope erzeugt Audit/403 ohne Idempotency- oder Challenge-
   Store-Write
+- strukturelle Schema-/Formfehler und freie JDBC-Strings erzeugen keinen
+  Idempotency-Store-Write; semantische/materialisierungsnahe Validation nach
+  Idempotency wird als `FAILED` oder recoverable `PENDING` replaybar
+  gespeichert
 - implizite Defaults und explizite Default-Werte ergeben denselben Fingerprint
 - identischer Retry vor und nach `COMMITTED`
 - `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
   unsichtbarer Resource
+- Retries auf aktive/abgelaufene `AWAITING_APPROVAL`, `DENIED`, `FAILED` und
+  aktive `PENDING`-Outcomes folgen der Outcome-Tabelle und loesen nicht
+  versehentlich Resource-Lookup, Policy oder Materialisierung neu aus
 - `RequiresApproval` ohne Grant fuehrt nur secret-freie Resource-
   Metadaten-/Visibility-Lookups aus und ruft keine Secret-Stores, Driver-
   Pools, Schema-Content-Materialisierung oder Runner-Adapter auf
+- `RATE_LIMITED` entsteht vor Secret-Store-Reads, Pool-/Driver-
+  Initialisierung, Schema-Content-Materialisierung und Runner-Adapter-Aufruf
 - JobStart-Transaction verhindert sichtbaren Job ohne
   Idempotency-`COMMITTED`
 - paralleler identischer Start auf aktiver `PENDING`-Reservierung liefert
@@ -1293,9 +1369,16 @@ Mindestfaelle:
   exponiert; gespeicherte Retry-Outcomes werden deterministisch wiederholt,
   sonst liefern identische parallele Aufrufe nach Start-Budget retrybares
   `OPERATION_TIMEOUT`.
+- `reserveOrGet`-Outcomes fuer `COMMITTED`, aktive/abgelaufene
+  `AWAITING_APPROVAL`, `DENIED`, `FAILED` und aktive/recoverable `PENDING`
+  werden vollstaendig vor Resource-Lookup, Policy, Quota und Materialisierung
+  verzweigt.
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT` ohne Policy-Pruefung.
 - fehlender oder unzureichender `dmigrate:job:start`-Scope erzeugt keine
   Idempotency-Reservierung und keine Approval-Challenge.
+- strukturelle Schema-/Formfehler und freie JDBC-Strings werden vor
+  Idempotency ohne Store-Write abgewiesen; semantische/materialisierungsnahe
+  Validation nach Idempotency wird replaybar gespeichert.
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`.
 - Policy-pflichtige Tools koennen ueber mindestens einen Grant-Pfad produktiv
   freigegeben werden.
@@ -1326,6 +1409,10 @@ Mindestfaelle:
   ab, `release` terminale Jobs.
 - `RATE_LIMITED` liefert `retryAfter`; recoverable `PENDING`-Leases laufen
   nicht laenger als dieser Retry-Hinweis.
+- `RATE_LIMITED` wird vor Secret-/Schema-/Connection-/Driver-
+  Materialisierung entschieden; rate-limitierte Starts loesen keine
+  Secret-Store-Reads, Pool-/Driver-Initialisierung oder Runner-nahe
+  Materialisierung aus.
 - Idempotency-Replays ueberspringen Quota-`reserve` und Quota-`refund`.
 - persistente Quota-Reservation-Owner mit Lease verhindern Slot-Leaks nach
   Crash zwischen `reserve` und Job-Commit; ein Sweeper refunded abgelaufene
