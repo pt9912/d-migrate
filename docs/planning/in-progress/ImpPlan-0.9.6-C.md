@@ -1511,7 +1511,7 @@ Aufgaben:
   `SchemaFindingSeverity`, damit Handler und Schema nicht auseinander
   laufen.
 - Gemeinsames `findings`-Item-Schema fuer `schema_validate`,
-  `schema_generate` und `schema_compare`:
+  `schema_compare` und als Basis fuer `schema_generate`:
   - required: `severity`, `code`, `path`, `message`
   - `severity`: enum `error`/`warning`/`info`
   - `code`, `path`, `message`: string
@@ -1534,39 +1534,56 @@ Aufgaben:
   - `ddl` optional, weil grosse DDL vollstaendig ins Artefakt wandert
   - `truncated=true` bedeutet: inline DDL und/oder Findings sind nur
     Summary; vollstaendige Ausgabe ist ueber `artifactRef` abrufbar
-  - Generatorwarnungen nutzen dasselbe Finding-Schema; `details` ist
-    optional und geschlossen wie bei `schema_validate`
+  - Findings-Overflow muss wie `schema_validate` ueber
+    `ArtifactSink` ausgelagert werden; `truncated=true` ohne
+    `artifactRef` ist nur erlaubt, wenn kein `ArtifactSink` im Wiring
+    vorhanden ist und muss in Tests als degradierter Pfad gepinnt sein
+  - Generatorwarnungen nutzen das gemeinsame Finding-Basisschema plus
+    explizit erlaubtem optionalem `hint: string`, weil die Runtime
+    heute `hint` top-level emittiert. `hint` bleibt scrubbed und ist
+    keine freie `additionalProperties`-Oeffnung. Eine spaetere
+    Migration nach `details.hint` waere ein separater Wire-Contract-
+    Change.
 - `schema_compare` Output-Schema:
   - `diffArtifactRef` optional, URI-Pattern wie `artifactRef`
   - `findings` nutzt ein compare-spezifisches Finding-Schema, bei dem
     `details` optional ist und, falls vorhanden, ein geschlossenes
     Objekt mit `before` und `after` enthaelt
-  - `details.before` und `details.after` sind scrubbed JSON-Werte. Um
-    bestehende Runtime-Projektionen nicht kuenstlich zu verengen,
-    erlaubt das Schema `string`/`number`/`boolean`/`null` sowie kleine
-    Objekte/Arrays aus diesen skalaren Werten, aber keine freien
-    Credential-Schluessel
+  - `details.before` und `details.after` sind im Phase-C-Wire-Contract
+    scrubbed Strings, weil `SchemaCompareHandler.beforeAfter(...)`
+    die Werte heute via `toString()` serialisiert. Strukturierte JSON-
+    Values waeren ein eigener Handler-/Wire-Refactor und gehoeren
+    nicht zu AP 6.23.
   - additive/removal-Findings ohne Vor-/Nachzustand lassen `details`
     weg; ein leeres `details: {}` ist kein gueltiger Ersatz
 - `job_status_get` Output-Schema wird mit AP 6.17 abgeglichen:
   - `progress` ist optional, aber wenn vorhanden geschlossen
-    typisiert (`completedUnits`, `totalUnits`, `unit`, `message`
-    optional, keine freien Properties)
+    typisiert nach dem aktuellen `ManagedJob.JobProgress`-Wire:
+    `phase: string` und `numericValues: object` mit kuratierten
+    Counter-Namen und `Long`-Zahlenwerten; keine
+    `completedUnits`/`totalUnits`/`unit`-Felder ohne separaten Core-
+    Refactor
   - `error` ist optional, aber wenn vorhanden geschlossen typisiert
-    (`code`, `message`, optional `details` als Array von
-    `{key, value}` wie in `McpServiceImpl`-Toolfehlern)
+    nach aktuellem `JobError`: `code`, `message`, optional
+    `exitCode`; kein `error.details` in `job_status_get`, solange
+    `ManagedJob.JobError` dieses Feld nicht besitzt
   - `artifacts` bleibt Array von Resource-URI-Strings; rohe lokale
     Pfade, Connection-Strings oder Secret-Felder sind nicht erlaubt
 - Wichtige Abgrenzung: Finding-`details` ist ein Objekt auf
   Tool-Output-Findings. Toolfehler-`details` im `isError=true`-
   Envelope bleibt gemaess `McpServiceImpl` ein Array von
   `{key, value}`. AP 6.23 darf diese zwei Wire-Shapes nicht
-  zusammenfuehren.
+  zusammenfuehren. Falls AP 6.23 Schema-Validation fuer
+  Toolfehler-Envelopes ergaenzt, muss die zentrale Fehlerpipeline
+  (`ErrorMapper`/`McpServiceImpl`) die Detail-Values vor der
+  Serialisierung scrubben; das ist getrennt vom `job_status_get.error`
+  Output.
 - Forbidden-Key- und Scrubbing-Regel auf alle Output-`details`
   ausweiten:
   - `details`, `details.before`, `details.after`, `progress.message`,
-    `error.message` und `error.details[].value` laufen vor
-    Serialisierung durch `SecretScrubber.scrub`
+    `job_status_get.error.message` und, fuer Toolfehler-Envelopes,
+    `error.details[].value` laufen vor Serialisierung durch
+    `SecretScrubber.scrub`
   - Schema-Builder/Golden-Tests muessen Felder mit Namen wie
     `password`, `secret`, `token`, `credential`, `connectionString`,
     `jdbcUrl` in Output-Details blockieren
@@ -1595,13 +1612,17 @@ Akzeptanz:
 - `findings`-Item-Schema ist strukturell typisiert, nicht
   `additionalProperties: true`
 - `schema_compare` akzeptiert `details.before`/`details.after` fuer
-  Aenderungsfindings, lehnt aber `details: {}` und unbekannte
-  Credential-Key-Felder ab
+  Aenderungsfindings als Strings, lehnt aber `details: {}` und
+  unbekannte Credential-Key-Felder ab
 - `schema_validate` und `schema_generate` koennen optionale
-  Finding-`details` schema-valide transportieren, ohne freie
+  Finding-`details` schema-valide transportieren; `schema_generate`
+  akzeptiert zusaetzlich das explizite legacy-`hint`-Feld ohne freie
   `additionalProperties` auf Finding-Ebene zu oeffnen
 - `job_status_get.progress` und `job_status_get.error` sind typisiert
   und spiegeln die AP-6.17-Scrubbing-Projektion
+- `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
+  `ArtifactSink` ein `artifactRef`; der degradierte Pfad ohne Sink ist
+  gesondert getestet
 - Runtime-Outputs der vier betroffenen Tools validieren gegen ihre
   eigenen Output-Schemas
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
