@@ -157,6 +157,21 @@ Runner werden nicht gewaltsam beendet. Cancel wird ueber einen Token oder
 Worker-Handle beobachtet. Langlaufende Loops pruefen den Token an stabilen
 Checkpoint-Stellen und beenden den Pfad kontrolliert.
 
+Das gilt auch fuer lange, nicht-iterative Operationen. Jeder monolithische
+I/O-, Driver- oder DB-Aufruf, der in E0 als potentiell langlaufend bewertet
+wird, muss explizit klassifiziert werden:
+
+- cancelbar ueber vorhandene Port-/Driver-API
+- nicht cancelbar, aber atomar und ohne neue nachgelagerte Side Effects
+- nicht cancelbar und blockierend fuer das E0-Gate
+
+Bei `open`, Preflight, einzelner Import-/Transfer-API, langer Query oder
+Writer-Initialisierung reicht ein Checkpoint nur vor und nach dem Aufruf nicht
+aus, wenn der Aufruf selbst neue extern sichtbare Side Effects startet oder
+unkontrolliert lange blockieren kann. In diesem Fall muss E0 entweder eine
+kooperative Cancel-Grenze am Port/Adapter nachweisen oder den Pfad als
+blockierend markieren.
+
 Verbindliche Folge:
 
 - kein `Thread.stop`
@@ -200,6 +215,13 @@ angebunden.
 
 E0 darf in Tests typisierte Cancel-Ergebnisse oder Exceptions nutzen, aber
 keine abweichenden Jobstatus einfuehren.
+
+Trotzdem muss E0 einen minimalen Anschlussnachweis fuer Phase E liefern: Das
+Cancel-Signal muss an jeder Runner-Grenze als eindeutig typisiertes Outcome
+beobachtbar sein, so dass Phase E es ohne weitere Interpretation in
+Status-Transition, Audit-Event und Worker-Handle-Cleanup ueberfuehren kann.
+Eine reine Reduktion auf `cancel_requested` oder ein mehrdeutiger Fehlerpfad
+gilt nicht als anschlussfaehig.
 
 ---
 
@@ -255,6 +277,16 @@ Nach Cancel gilt:
   erfolgreiche Artefakte registrieren
 - Audit-/Job-Ebene in Phase E darf Cancel als kontrolliertes Outcome
   erfassen
+
+E0 muss fuer jeden betroffenen Writer, jede Session und jede temporaere
+Datei-/Spool-Ressource einen harten Cleanup-Nachweis liefern. Tests duerfen
+hier nicht nur auf fehlenden Erfolgs-Publish pruefen, sondern muessen
+deterministisch assertieren, dass `close`, `abort`, Rollback oder
+Temporaerdatei-Loeschung entsprechend dem jeweiligen Port-Vertrag aufgerufen
+wurde. Wenn ein Port keine beobachtbare Cleanup-/Abort-Grenze anbietet, muss
+dies als Risiko in der Gate-Entscheidung erscheinen und darf nur dann `Go mit
+Nacharbeiten` sein, wenn keine offene Ressource, Transaktion oder sperrende
+Session zurueckbleiben kann.
 
 ---
 
@@ -373,8 +405,8 @@ E0 muss entscheiden, wo Cancel-Pruefung liegt:
 
 - im Runner vor Port-Aufrufen
 - im Streaming-Adapter zwischen Chunks
-- optional in Writer-Ports, falls ein einzelner Port-Aufruf selbst lange
-  laufen kann
+- verpflichtend in Writer-/Driver-Ports, wenn ein einzelner Port-Aufruf selbst
+  lange laufen kann oder mehrere neue Side Effects startet
 
 Spike-Abnahme:
 
@@ -383,6 +415,11 @@ Spike-Abnahme:
   gestartet
 - keine stille Semantik, bei der ein Writer nach Cancel weiter neue Chunks
   annimmt
+- gleiche Cancel-Erwartung fuer alle Adapter, die denselben Port-Vertrag
+  implementieren; adapterspezifische Abweichungen muessen begruendet und im
+  Gate als Risiko bewertet werden
+- monolithische Port-Aufrufe sind als cancelbar, atomar-nicht-cancelbar oder
+  blockierend klassifiziert
 
 ---
 
@@ -453,8 +490,12 @@ Tests:
   `DataTransferRunner` und `TransferExecutor` instrumentieren.
 - Checkpoints vor Tabelle, Chunk, Ziel-Write, Finish/Commit und Checkpoint-
   Persistenz setzen.
-- Falls ein Port-Aufruf lange laufen kann, dokumentieren, ob Phase E
-  zusaetzliche Port-Erweiterung braucht.
+- Falls ein Port-Aufruf lange laufen kann oder selbst mehrere Side Effects
+  startet, muss E0 den Port-/Adapter-Vertrag schaerfen oder den Pfad fuer das
+  Gate blockieren; eine reine Phase-E-Notiz reicht nicht.
+- Cancel-Pruefung an Runner-Grenzen ist Mindeststandard. Port-/Adapterebene
+  muss zusaetzlich pruefen, sobald sie eigenstaendig Chunks, Writes, Commits,
+  Spools oder Sessions sequenziert.
 
 Tests:
 
@@ -468,6 +509,9 @@ Tests:
 - Ergebnisse pro Runner zusammenfassen:
   - Checkpoints nachgewiesen
   - Side Effects gestoppt
+  - monolithische Calls klassifiziert und ggf. cancelbar gemacht
+  - Cleanup-/Abort-Assertions nachgewiesen
+  - typisiertes Cancel-Outcome fuer Phase E anschlussfaehig
   - offene Risiken
   - benoetigte Phase-E-Nacharbeiten
 - Gate-Status setzen:
@@ -475,6 +519,19 @@ Tests:
   - `Blocked`
   - `Go mit Nacharbeiten`
 - Bei `Blocked` konkrete blockierende Pfade und fehlende Tests nennen.
+
+Gate-Regel:
+
+- `Go` ist nur erlaubt, wenn alle relevanten Runner, Streaming-Pfade,
+  Writer-/Session-Grenzen, Artefakt-/Spool-Pfade und bekannten monolithischen
+  Calls die harte Semantik aus Abschnitt 9 erfuellen.
+- `Go mit Nacharbeiten` ist nur erlaubt, wenn die harte Side-Effect- und
+  Cleanup-Semantik bereits nachgewiesen ist und die Nacharbeiten keine
+  zusaetzliche Cancel-Interpretation, keinen neuen Port-Vertrag und keine
+  ungetestete Side-Effect-Pipeline betreffen.
+- `Blocked` ist Pflicht, sobald ein relevanter Pfad keinen deterministischen
+  Cancel-Stopp, keine Cleanup-Assertion, kein typisiertes Cancel-Outcome oder
+  keine belastbare Klassifikation eines langen monolithischen Calls nachweist.
 
 ---
 
@@ -489,6 +546,8 @@ Pflichtmuster:
 - Token, der an definierter Checkpoint-Nummer cancel ausloest
 - Assertion, dass nach Cancel keine weiteren Side-Effect-Aufrufe passieren
 - Assertion, dass Cancel typisiert propagiert wird
+- Assertion, dass Writer/Sessions/Spools deterministisch geschlossen,
+  abgebrochen, zurueckgerollt oder geloescht wurden
 - Regressionstest, dass Default-Token bestehendes Verhalten nicht veraendert
 
 Mindesttests:
@@ -499,6 +558,10 @@ Mindesttests:
 - `DataImportRunner`: Cancel vor erstem Chunk, zwischen Chunks und vor Finish
 - `DataTransferRunner`: Cancel vor Ziel-Write und zwischen Chunks
 - Streaming-/Writer-Fake: nach Cancel kein weiterer `write`
+- Cleanup-Fake: nach Cancel sind offene Writer/Sessions beendet und temporaere
+  Spools nicht als Erfolg registriert
+- monolithischer Call-Fake: langer Port-Aufruf ist cancelbar, nachweislich
+  atomar ohne nachgelagerte Side Effects oder blockiert das Gate
 
 ---
 
@@ -518,8 +581,19 @@ Mindesttests:
   danach startet kein weiterer Side Effect.
 - Cancel wird typisiert als Cancel signalisiert und nicht als generischer
   fachlicher Fehler verschleiert.
+- Das typisierte Cancel-Outcome ist so eindeutig, dass Phase E daraus ohne
+  weitere fachliche Interpretation `cancelled`-Status, Audit-Event und
+  Worker-Handle-Cleanup ableiten kann.
+- Writer, Sessions, Transaktionen, temporaere Dateien und Spools haben
+  deterministische Cleanup-/Abort-Assertions oder sind begruendet nicht
+  betroffen.
+- Lange monolithische Calls wie `open`, Preflight, einzelne Import-/Transfer-
+  APIs, lange Queries und Writer-Initialisierung sind pro Pfad als cancelbar,
+  atomar-nicht-cancelbar oder blockierend klassifiziert.
 - Tests beweisen fuer jeden relevanten Runner mindestens einen Cancel-Punkt vor
   einem extern sichtbaren Side Effect.
+- Tests oder Gate-Matrix beweisen fuer jede relevante Side-Effect-Pipeline
+  vollstaendige Abdeckung; teilweise Abdeckung reicht nicht fuer `Go`.
 - Reduzierte Semantik wie nur `cancel_requested`, Store-Status ohne Worker-
   Propagation oder best effort ohne Side-Effect-Stopp erfuellt E0 nicht.
 - Wenn ein relevanter Langlaeufer keine kooperative Cancel-Propagation mit
@@ -547,3 +621,11 @@ Phase E implementiert danach:
 
 Phase E darf keine reduzierte `cancel_requested`-Semantik als Ersatz fuer
 Worker-Propagation verwenden.
+
+Der E0-Abschluss muss Phase E ausserdem eine eindeutige Abbildung liefern:
+
+- welches Runner-Cancel-Outcome in `cancelled` ueberfuehrt wird
+- an welcher Grenze Audit fuer Cancel-Annahme und Cancel-Abschluss entsteht
+- welche Worker-/Token-Handles nach Cancel freigegeben werden
+- welche offenen Phase-E-Nacharbeiten keine neue Side-Effect-Semantik
+  einfuehren
