@@ -606,6 +606,15 @@ Regeln:
   - `ArtifactKind.UPLOAD_INPUT`, `wireArtifactKind=generic` nur, wenn
     `format` explizit gesetzt ist und der `mimeType` eindeutig zu diesem
     Format passt
+- Ohne explizit spezifiziertes Bundle-/Archivformat ist ein MCP-Upload-
+  Import immer ein Single-File-/stdin-aequivalentes Artefakt und mappt auf
+  `ImportInput.Stdin` bzw. serverseitig gespultes `ImportInput.SingleFile`.
+  `ImportInput.Directory` und `tables` fuer Mehrtabellenimporte sind in Phase F
+  nur erlaubt, wenn ein Bundle-Format mit MIME-Type, Manifest,
+  Entpackung/Path-Sanitizing, Artefakt-Fingerprint und Cleanup explizit
+  eingefuehrt wird. Solange dieses Bundle-Format nicht definiert ist, sind
+  `tables` und Directory-/Mehrtabellen-Topologien fuer Upload-Importe
+  `VALIDATION_ERROR`.
 - `wireArtifactKind=schema`, `ddl`, `transform-script` und `rules` sind fuer
   `data_import_start` nicht als Datenquelle erlaubt; ebenso alle Core-Kinds
   ausser `UPLOAD_INPUT`. Sie liefern
@@ -627,8 +636,8 @@ Erlaubte Import-Optionen fuer Phase F:
   Tabellenreihenfolge
 - `table`: optionaler Zieltabellen-Identifier fuer Single-File-/stdin-
   aequivalente Artefakte
-- `tables`: optionale geordnete Liste von Tabellen-Identifiern fuer
-  Directory-/Mehrtabellen-Artefakte
+- `tables`: nur fuer explizit definierte Bundle-/Directory-Artefakte; ohne
+  Bundle-Format nicht erlaubt
 - `onError`: `abort`, `skip` oder `log`
 - `onConflict`: `abort`, `skip` oder `update`
 - `triggerMode`: `fire`, `disable` oder `strict`
@@ -669,7 +678,9 @@ Tabellenoptionen folgen der bestehenden CLI-Semantik:
   kein `schemaRef` oder keine Artefaktmetadaten die Zieltabellen eindeutig
   bestimmen.
 - Directory-/Mehrtabellen-Artefakte nutzen `tables` als optionale geordnete
-  Filter-/Importliste; `table` ist dafuer ungueltig.
+  Filter-/Importliste; `table` ist dafuer ungueltig. Diese Topologie ist fuer
+  Phase-F-Upload-Artefakte blockiert, solange kein Bundle-Format spezifiziert
+  ist.
 - `tables` darf nicht leer sein und alle Identifier muessen der bestehenden
   CLI-Identifier-Validierung entsprechen.
 
@@ -877,7 +888,22 @@ Tests:
 - `sizeBytes` als kanonisches Vertragsfeld beibehalten und in
   `UploadSession.sizeBytes` uebernehmen.
 - fehlende Freigabe -> `POLICY_REQUIRED`
-- gueltiger Grant -> Session erzeugen und Upload-Berechtigung ausstellen.
+- gueltiger Grant -> Session erzeugen und Upload-Berechtigung durable
+  ausstellen.
+- policy-pflichtiges Init nutzt den bestehenden
+  `SyncEffectIdempotencyStore`: `reserve(scope, payloadFingerprint)` mit
+  `scope=(tenant, caller, artifact_upload_init, approvalKey)`.
+  `commit(scope, resultRef)` darf erst nach durablem Commit von
+  `UploadSession`, session-scoped Upload-Berechtigung und Quota-Reservierung
+  erfolgen. `resultRef` ist entweder die `uploadSessionId` selbst oder eine
+  `UploadInitOutcomeStore`-Referenz, die `uploadSessionId`,
+  `payloadFingerprint`, TTL, Quota-Reservierung und Antwortdaten enthaelt.
+  Die Wahl muss in Phase F festgelegt und getestet werden.
+- Crash vor SyncEffect-Commit darf beim Retry keine zweite Session erzeugen:
+  Retry muss entweder den durable Session-/Outcome-Record finden und den
+  SyncEffect-Eintrag nachcommitten oder einen deterministischen Konflikt
+  liefern, aber nie eine zweite Session fuer denselben
+  `(approvalKey, payloadFingerprint)` erzeugen.
 - read-only `schema_staging_readonly` unveraendert ohne Write-Policy lassen.
 
 Tests:
@@ -886,6 +912,11 @@ Tests:
 - policy-pflichtiges Init ohne Grant -> `POLICY_REQUIRED`
 - genehmigter Init erzeugt Session
 - Retry erzeugt keine zweite Session
+- Retry nach Crash zwischen Session-Commit und SyncEffect-Commit replayt
+  dieselbe `uploadSessionId` oder liefert deterministischen Konflikt, aber
+  erzeugt keine zweite Session
+- `SyncEffectReserveOutcome.Existing(resultRef)` replayt dieselben Init-
+  Antwortdaten ueber `uploadSessionId` oder `UploadInitOutcomeStore`
 - `schema_staging_readonly` mit anderem `artifactKind` -> `VALIDATION_ERROR`
 - Golden Tests, Schemas und Beispiele verwenden kanonisch `sizeBytes`
 - optionaler `expectedSizeBytes`-Legacy-Alias wird nur additiv akzeptiert;
@@ -1123,10 +1154,17 @@ Tests:
   dem Tool-Payload verwenden.
 - `idempotencyKey` erzwingen.
 - freie JDBC-Strings abweisen.
+- `filter` mit derselben Filter-DSL wie CLI-`data transfer` parsen und in eine
+  kanonische, parametrisierte Form ueberfuehren; blanke oder ungueltige Filter
+  liefern `VALIDATION_ERROR`.
+- `sinceColumn` und `since` paarweise validieren: beide fehlen oder beide
+  gesetzt. `sinceColumn` nutzt dieselbe Identifier-Validierung wie CLI,
+  `since` wird wie im bestehenden Runner typisiert/normalisiert.
 - MCP-spezifischen Transfer-Fingerprint bilden: `sourceConnectionRef`,
-  `targetConnectionRef`, normalisierte Transfer-Optionen, Tenant und
-  Principal. Der Fingerprint darf keine materialisierten JDBC-URLs,
-  Connection-Secrets oder lokalen CLI-Pfade enthalten.
+  `targetConnectionRef`, kanonische Filterform, normalisierte `since`-
+  Optionen, weitere normalisierte Transfer-Optionen, Tenant und Principal.
+  Der Fingerprint darf keine materialisierten JDBC-URLs, Connection-Secrets
+  oder lokalen CLI-Pfade enthalten.
 - Policy-/Approval-Flow aus Phase E anbinden.
 - Transfer-Runner als abbrechbaren Job starten und Cancel bis in
   Table-/Chunk-Grenzen, Source-/Target-Reader/Writer-Sessions und
@@ -1149,6 +1187,11 @@ Tests:
   `VALIDATION_ERROR`
 - Transfer-Fingerprint enthaelt Connection-Refs und normalisierte Optionen,
   aber keine materialisierten Source-/Target-URLs
+- blanker oder ungueltiger `filter` -> `VALIDATION_ERROR`
+- `filter`-Fingerprint nutzt kanonische DSL-Form, nicht rohe Eingabestrings
+- `sinceColumn` ohne `since` oder `since` ohne `sinceColumn` ->
+  `VALIDATION_ERROR`
+- ungueltiger `sinceColumn`-Identifier -> `VALIDATION_ERROR`
 - ungueltiges `onConflict` oder `triggerMode` -> `VALIDATION_ERROR`
 - `chunkSize=0` oder `chunkSize>10000` -> `VALIDATION_ERROR`
 - neuer MCP-Mode wie `copy`, `compare_only` oder `validate_only` ->
@@ -1267,6 +1310,8 @@ Mindestfaelle:
 - Init mit nicht erlaubtem MIME-Type
 - Init-Retry mit gleichem `approvalKey`
 - Init-Retry mit anderem Payload
+- policy-pflichtiges Init-Retry nach Crash zwischen Session-Commit und
+  SyncEffect-Commit
 - Init mit kanonischem `sizeBytes`
 - Init mit `sizeBytes=0` fuer erlaubtes nicht-Schema-`job_input`
 - Init mit `sizeBytes=0` fuer `schema_staging_readonly` oder
@@ -1306,10 +1351,14 @@ Mindestfaelle:
 - Import aus `ArtifactContentStore` ohne lokale Pfade
 - `schemaRef`-Preflight ohne lokale Schema-Pfade
 - `table`/`tables` gegenseitig exklusiv und topology-spezifisch validiert
+- `tables` ohne explizit definiertes Bundle-/Directory-Artefakt ->
+  `VALIDATION_ERROR`
 - MCP-Import-Fingerprint enthaelt keine Temp-Pfade, materialisierte URLs oder
   Connection-Secrets
 - MCP-Transfer-Fingerprint enthaelt keine materialisierten URLs oder
   Connection-Secrets
+- Transfer-`filter` blank/ungueltig und kanonische Filterform im Fingerprint
+- Transfer-`sinceColumn`/`since` nur paarweise gueltig
 - ungueltige Import-Optionswerte `onError`/`onConflict`/`triggerMode`
 - ungueltige Transfer-Optionswerte `onConflict`/`triggerMode`
 - `chunkSize=0` und `chunkSize>10000` fuer Import und Transfer
@@ -1345,6 +1394,10 @@ Mindestfaelle:
   `segmentOffset`.
 - Wiederholtes policy-pflichtiges Init mit gleichem `approvalKey` und
   identischem Payload liefert dieselbe Session.
+- Policy-pflichtiges Init committed SyncEffect-`resultRef` erst nach durablem
+  Session-/Upload-Berechtigungs-/Quota-Commit; Crash-Retry erzeugt keine
+  zweite Session und replayt ueber `uploadSessionId` oder
+  `UploadInitOutcomeStore`.
 - Abweichender Payload mit gleichem `approvalKey`-Scope liefert
   `IDEMPOTENCY_CONFLICT`.
 - Read-only Schema-Staging kann weiterhin grosse Schemas ohne Write-Policy zu
@@ -1392,6 +1445,9 @@ Mindestfaelle:
 - `table` und `tables` uebernehmen die bestehende CLI-Semantik: gegenseitig
   exklusiv, `table` fuer Single-File-Artefakte ohne eindeutige Ableitung,
   `tables` fuer Directory-/Mehrtabellen-Artefakte.
+- Mehrtabellen-Upload-Import ist ohne explizit spezifiziertes Bundle-/Archiv-
+  Format nicht erlaubt; `tables` fuer normale einzelne Upload-Artefakte liefert
+  `VALIDATION_ERROR`.
 - `job_input`-Finalisierung speichert dauerhafte Upload-Metadaten
   (`uploadIntent`, `wireArtifactKind`, MIME/Format, Source-Session, Policy-
   und Byte-Fingerprint), und `data_import_start` validiert Import-Eignung nur
@@ -1451,6 +1507,9 @@ Mindestfaelle:
   keine serverseitigen Temp-Pfade, materialisierten JDBC-URLs oder
   Connection-Secrets. Der CLI-Import-Fingerprint darf nicht unveraendert
   wiederverwendet werden.
+- Transfer-`filter` wird mit derselben DSL wie die CLI geparst,
+  blanke/ungueltige Filter werden abgelehnt, `sinceColumn`/`since` sind nur
+  paarweise gueltig, und der Fingerprint nutzt die kanonische Filterform.
 - `truncate=true` ist der einzige Phase-F-Mechanismus fuer destruktives Leeren
   von Zielen; er wird nicht als `replace` abstrahiert und erscheint sichtbar
   in Policy, Audit und Approval-Challenge.
