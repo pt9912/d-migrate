@@ -1290,6 +1290,11 @@ Aufgaben:
     `FINALIZING` haengen: nach Lease-Ablauf kann ein neuer completing
     call denselben deterministischen Finalisierungsversuch reclaimen.
     Vor Lease-Ablauf bleibt es beim retrybaren Busy-/Conflict-Pfad.
+    Lease-Zeit wird ausschliesslich mit der injizierten `Clock` des
+    Phase-C-Wirings berechnet; negative Clock-Jumps verlaengern keinen
+    bereits gespeicherten Lease, sondern behalten den gespeicherten
+    `finalizingLeaseExpiresAt` als obere Grenze. Tests muessen
+    Vorwaerts- und Rueckwaerts-Clock-Jumps simulieren.
   - Verliert ein konkurrierender `isFinalSegment=true`-Call den Claim,
     darf er keine Assembly starten und kein Artefakt/schemaRef
     erzeugen. Er laedt den aktuellen Session-Zustand neu: bei
@@ -1301,10 +1306,14 @@ Aufgaben:
     read-then-save ohne CAS reicht fuer diesen AP nicht.
 - Die Finalisierung bekommt einen deterministischen Outcome-Anker, der
   Crashs zwischen Artefaktwrite und Session-Commit replayfaehig macht:
-  - `artifactId` und `schemaId` werden fuer read-only Schema-Staging
-    aus Tenant, UploadSessionId, Gesamt-SHA und Format deterministisch
-    abgeleitet oder in einem atomaren Finalization-Outcome-Record am
-    Session-Datensatz reserviert, bevor der erste Side Effect startet
+  - Prioritaer wird ein atomarer `FinalizationOutcome`-Record am
+    Session-Datensatz reserviert, bevor der erste Side Effect startet.
+    Der Record enthaelt mindestens `claimId`, `payloadSha256`,
+    `artifactId`, `schemaId`, `format`, Status (`IN_PROGRESS`,
+    `FAILED`, `SUCCEEDED`) und optional sanitisierten Fehlercode/
+    Details. `artifactId` und `schemaId` sind darin deterministisch
+    aus Tenant, UploadSessionId, Gesamt-SHA und Format abgeleitet,
+    damit der Record auch nach Crash rekonstruiert werden kann.
   - `ArtifactContentStore.write` muss mit `AlreadyExists` fuer den
     deterministischen `artifactId` idempotent behandelbar sein, sofern
     der vorhandene SHA/Size zum Payload passt; Konflikte bleiben harte
@@ -1331,6 +1340,10 @@ Aufgaben:
   - Fuer jedes Segment wird `openSegmentRangeRead(..., length =
     segment.sizeBytes)` genutzt und mit einem festen Buffer
     (`<= 64 KiB`, keine `readAllBytes()`) in den Payload geschrieben.
+    Alle Byte-Zaehler, Offsets, Segmentlaengen, `runningBytes` und
+    Limits sind `Long`; Addition wird vorab gegen Overflow geprueft
+    (`runningBytes > Long.MAX_VALUE - read` ist ein interner Fehler),
+    damit Upload-Caps oberhalb 1 GiB defensiv bleiben.
   - Das gerade komplettierende Segment darf nur als bereits im
     `UploadSegmentStore` gespeichertes Segment in die Assembly
     eingehen. Falls der Implementierungspfad die Request-Bytes als
@@ -1403,11 +1416,12 @@ Aufgaben:
 - Replay nach terminalem Fehler wird ebenfalls explizit:
   - `ABORTED` wegen Parse-/Validierungsfehler oder Assembly-
     Inkonsistenz liefert deterministisch denselben sanitisierten
-    Fehlercode/Details aus dem Session-Outcome, soweit dieser
-    persistiert wurde
-  - falls keine Details persistiert werden koennen, liefert ein Retry
-    einen terminalen `UPLOAD_SESSION_ABORTED`/Conflict-Fehler ohne
-    erneute Finalisierung und ohne neue Side Effects
+    Fehlercode/Details aus dem persistierten `FinalizationOutcome`
+  - kann der Fehler-Outcome nicht persistiert werden, gilt die
+    Finalisierung als nicht abgeschlossen und bleibt retrybar innerhalb
+    des `FINALIZING`-Lease-/Reclaim-Modells; ein erfolgreicher Abort
+    ohne persistierten sanitized Outcome ist fuer diesen AP nicht
+    akzeptabel
   - `ABORTED` ist nie ein Signal, die Assembly erneut zu starten
 - Fehlersemantik bleibt fuer fachliche Fehler unveraendert:
   Parse-/Validierungsfehler rollen die noch aktive Session auf
@@ -1441,7 +1455,12 @@ Akzeptanz:
   Artefakt und keine `schemaRef`.
 - Ein stale `FINALIZING` nach simuliertem Crash wird nach Lease-Ablauf
   deterministisch reclaimt; vor Lease-Ablauf erhalten weitere Calls
-  einen retrybaren Busy-/Conflict-Fehler ohne Side Effects.
+  einen retrybaren Busy-/Conflict-Fehler ohne Side Effects. Tests
+  nutzen die injizierte `Clock` und decken Vorwaerts- sowie
+  Rueckwaerts-Clock-Jumps ab.
+- Der `FinalizationOutcome`-Record ist der priorisierte
+  Implementierungsweg; reine deterministische ID-Ableitung ohne
+  persistierten Outcome-Record reicht fuer AP 6.22 nicht.
 - Crash nach erfolgreichem `ArtifactContentStore.write`, aber vor
   `COMPLETED`, wird replay-stabil fortgesetzt: deterministischer
   Artifact-/Schema-Outcome verhindert doppelte Artefakte und fuehrt am
@@ -1451,12 +1470,13 @@ Akzeptanz:
   `schemaRef`, abweichender Inhalt ist eine interne Inkonsistenz.
 - `maxArtifactUploadBytes` wird pro Buffer-Read waehrend der Assembly
   erzwungen; ein korruptes Segment oder falsche Store-Metadaten koennen
-  keine Spool-Datei groesser als den zentralen Cap schreiben.
+  keine Spool-Datei groesser als den zentralen Cap schreiben. Byte-
+  Arithmetik nutzt `Long` und prueft Addition auf Overflow.
 - Parse-/Validation-/IO-Fehler und ABORTED-Sessions hinterlassen keine
   Assembly-Spool-Files im normalen Prozesspfad.
 - Replays fuer ABORTED-Sessions starten keine neue Assembly; sie
-  liefern entweder den persistierten sanitisierten Fehler-Outcome oder
-  einen terminalen Abort-/Conflict-Fehler.
+  liefern den persistierten sanitisierten Fehler-Outcome aus
+  `FinalizationOutcome`.
 - Persistente Segment-/Assembly-Inkonsistenzen werden als terminaler
   Session-Outcome dedupliziert; wiederholte completing calls erzeugen
   dieselbe Antwortklasse und keine neuen Side Effects.
