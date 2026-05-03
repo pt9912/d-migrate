@@ -42,6 +42,7 @@ internal class StdioHarness(
     override val stateDir: Path,
     override val principal: PrincipalContext,
     private val auditSinkRef: InMemoryAuditSink,
+    private val wiringRef: dev.dmigrate.mcp.registry.PhaseCWiring,
     private val handle: dev.dmigrate.mcp.server.McpServerHandle,
     private val clientToServer: PipedOutputStream,
     private val serverToClient: PipedInputStream,
@@ -53,6 +54,15 @@ internal class StdioHarness(
     override val name: String = "stdio"
 
     val auditSink: InMemoryAuditSink get() = auditSinkRef
+
+    /**
+     * AP 6.24 E3+: the Phase-C wiring this harness's server runs on,
+     * exposed so scenarios can pre-stage server-side state (schemas,
+     * artefacts, jobs) directly via the in-memory stores without
+     * driving the upload flow end-to-end. The HTTP harness exposes
+     * the symmetric handle.
+     */
+    val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
@@ -172,6 +182,7 @@ internal class StdioHarness(
                 stateDir = stateDir,
                 principal = principal,
                 auditSinkRef = wiringBundle.auditSink,
+                wiringRef = wiringBundle.wiring,
                 handle = handle,
                 clientToServer = clientOut,
                 serverToClient = clientIn,

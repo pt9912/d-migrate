@@ -47,6 +47,7 @@ internal class HttpHarness(
     override val stateDir: Path,
     override val principal: PrincipalContext,
     private val auditSinkRef: InMemoryAuditSink,
+    private val wiringRef: dev.dmigrate.mcp.registry.PhaseCWiring,
     private val handle: dev.dmigrate.mcp.server.McpServerHandle,
     private val baseUri: URI,
 ) : McpClientHarness {
@@ -54,6 +55,14 @@ internal class HttpHarness(
     override val name: String = "http"
 
     val auditSink: InMemoryAuditSink get() = auditSinkRef
+
+    /**
+     * AP 6.24 E3+: the Phase-C wiring this harness's server runs on,
+     * exposed so scenarios can pre-stage server-side state directly
+     * without going through the upload flow. Symmetric with the
+     * stdio handle.
+     */
+    val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
@@ -185,6 +194,7 @@ internal class HttpHarness(
                 stateDir = stateDir,
                 principal = principal,
                 auditSinkRef = wiringBundle.auditSink,
+                wiringRef = wiringBundle.wiring,
                 handle = started.handle,
                 baseUri = baseUri,
             )

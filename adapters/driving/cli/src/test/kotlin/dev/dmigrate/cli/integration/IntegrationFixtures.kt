@@ -6,16 +6,24 @@ import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayloadFactory
 import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ManagedArtifact
+import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.principal.AuthSource
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryAuditSink
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
+import java.io.ByteArrayInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
@@ -106,4 +114,62 @@ internal object IntegrationFixtures {
         return IntegrationWiring(wiring, auditSink, stateDir)
     }
 
+    /**
+     * AP 6.24 E3: stages a schema-staging-readonly artefact + the
+     * matching `SchemaIndexEntry` directly via the in-memory stores
+     * exposed by [PhaseCWiring]. Returns the wire-shape `schemaRef`
+     * (`dmigrate://tenants/<tenant>/schemas/<schemaId>`) the test can
+     * pass to `schema_compare` / `schema_generate`.
+     *
+     * The end-to-end upload flow lives in E4; E3 only needs both
+     * transports' stores pre-populated with parsable schemas.
+     */
+    fun stageSchema(
+        wiring: PhaseCWiring,
+        principal: PrincipalContext,
+        schemaId: String,
+        json: String,
+        clock: Clock = Clock.systemUTC(),
+    ): String {
+        val tenantId = principal.effectiveTenantId
+        val artifactId = "art-$schemaId"
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        val now = clock.instant()
+        val expires = now.plusSeconds(SECONDS_PER_HOUR.toLong())
+        val managed = ManagedArtifact(
+            artifactId = artifactId,
+            filename = "$schemaId.json",
+            contentType = "application/json",
+            sizeBytes = bytes.size.toLong(),
+            sha256 = "0".repeat(SHA256_HEX_LEN),
+            createdAt = now,
+            expiresAt = expires,
+        )
+        val record = ArtifactRecord(
+            managedArtifact = managed,
+            kind = ArtifactKind.SCHEMA,
+            tenantId = tenantId,
+            ownerPrincipalId = principal.principalId,
+            visibility = JobVisibility.TENANT,
+            resourceUri = ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, artifactId),
+        )
+        wiring.artifactStore.save(record)
+        wiring.artifactContentStore.write(artifactId, ByteArrayInputStream(bytes), bytes.size.toLong())
+        val schemaUri = ServerResourceUri(tenantId, ResourceKind.SCHEMAS, schemaId)
+        wiring.schemaStore.save(
+            SchemaIndexEntry(
+                schemaId = schemaId,
+                tenantId = tenantId,
+                resourceUri = schemaUri,
+                artifactRef = artifactId,
+                displayName = "integration test schema $schemaId",
+                createdAt = now,
+                expiresAt = expires,
+            ),
+        )
+        return schemaUri.render()
+    }
+
+    private const val SECONDS_PER_HOUR: Int = 3600
+    private const val SHA256_HEX_LEN: Int = 64
 }
