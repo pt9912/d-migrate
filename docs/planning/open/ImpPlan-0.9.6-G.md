@@ -60,8 +60,8 @@ Nach Phase G soll gelten:
   Prompt-Hygiene und Audit-Metadaten auf.
 - Der Default-Testpfad nutzt keinen Netzwerkzugriff und keine externen
   Secrets.
-- Identische Retries mit gleichem `approvalKey` und identischem Payload
-  erzeugen keinen zweiten Provider-Aufruf und kein zweites Artefakt.
+- Identische und parallele Retries mit gleichem `approvalKey` und identischem
+  Payload erzeugen keinen zweiten Provider-Aufruf und kein zweites Artefakt.
 - Prompts sind ueber MCP-Discovery sichtbar, versioniert und
   argumentvalidiert.
 - Prompts fuehren keine versteckten Tools aus und kopieren keine Secrets oder
@@ -239,8 +239,10 @@ Fehlerzuordnung:
 - blockierte externe Provider-Konfiguration: `PROMPT_HYGIENE_BLOCKED` oder
   `FORBIDDEN_PRINCIPAL`
 - fehlendes Secret in einem erlaubten Providerpfad:
-  `PROVIDER_UNAVAILABLE`
-- Provider-Timeout: `TIMEOUT`
+  `INTERNAL_AGENT_ERROR` fuer fehlerhafte Serverkonfiguration oder
+  `FORBIDDEN_PRINCIPAL`/`POLICY_DENIED`, wenn der Principal bzw. die Policy
+  die Secret-/Provider-Nutzung nicht erlaubt.
+- Provider-Timeout: `OPERATION_TIMEOUT`
 - Provider-Quota: `RATE_LIMITED`
 
 ### 4.3 Prompt-Hygiene ist zentral und vor jedem Provider-Aufruf
@@ -286,6 +288,25 @@ Regeln:
 - zweiter Aufruf muss denselben `approvalKey` und ein extern ausgestelltes,
   passendes `approvalToken` senden
 - Approval-Token werden nie in Tool-Responses erzeugt
+- `SyncEffectIdempotencyStore` darf fuer KI-nahe Provider-Side-Effects nicht
+  nur als spaeter Replay-Store genutzt werden. Phase G muss eine atomare
+  Single-Writer-/Pending-Semantik einfuehren, entweder als Store-Erweiterung
+  oder als dedizierter Outcome-Store fuer KI-Tool-Aufrufe:
+  - erster Caller mit neuem `(tenantId, callerId, toolName, approvalKey,
+    payloadFingerprint)` erhaelt den Ausfuehrungs-Claim.
+  - parallele identische Caller duerfen keinen Provider-Aufruf starten und kein
+    zweites Artefakt schreiben; sie warten/replayen oder erhalten einen klar
+    retrybaren Pending-Status.
+  - nach durablem Provider-Ergebnis, Artefakt-Commit und Outcome-Commit liefert
+    jeder identische Retry `Existing(resultRef)` bzw. dasselbe Tool-Result.
+  - ein Crash vor terminalem Outcome darf den Scope nicht dauerhaft blockieren;
+    Pending-Claims brauchen Lease-/Reclaim-Semantik oder einen
+    crash-sicheren Outcome-Commit, der vor Replay immer durable Artefakte
+    nachweist.
+  - ein Crash nach Provider-Ergebnis, aber vor Outcome-Commit darf beim Reclaim
+    nicht ungeprueft einen zweiten Provider-Aufruf starten; zuerst ist anhand
+    persistenter Artefakte/Provider-Request-Metadaten ein vorhandenes Ergebnis
+    zu replayen oder sauber als retrybarer Pending-/Recovery-Zustand zu melden.
 
 ### 4.5 Prompts sind Vorlagen, keine versteckten Tool-Ausfuehrungen
 
@@ -548,6 +569,16 @@ Regeln:
 
 - Tool ist bestaetigungspflichtig und policy-gesteuert.
 - Tool erzeugt hoechstens Artefakte, fuehrt aber keinen Ziel-DB-Code aus.
+- `planRef`/`planArtifactId` muss auf ein freigegebenes Plan-Artefakt aus
+  `procedure_transform_plan` zeigen. Zulaessig ist nur ein Plan mit passendem
+  Tenant, berechtigtem Principal bzw. Policy-Intent, passendem Source-Ref-
+  Set, `targetDialect`, Prompt-/Payload-Fingerprint, Provider-/Modell-
+  Provenance und Artifact-Kind fuer Procedure-Transformationsplaene.
+- Stale, fremde, manuell hochgeladene oder andersartige Artefakte duerfen
+  nicht als Transformationsplan verwendet werden. Abweichende Provenance,
+  falscher Artifact-Kind, fremder Tenant, falscher Dialekt oder nicht zum
+  Execute-Payload passende Source-Refs liefern einen fachlichen Fehler vor
+  Provider-Aufruf.
 - Provider-, Modell-, Prompt- und Payload-Fingerprints sind auditpflichtig.
 - Output-Artefakte sind immutable.
 - Wiederholung mit gleichem `approvalKey` und identischem Payload liefert
@@ -663,7 +694,7 @@ Tests:
 
 - `NoOp` liefert deterministische Ergebnisse
 - kein Netzwerkzugriff im Defaultpfad
-- Provider-Timeout wird strukturiert gemappt
+- Provider-Timeout wird als `OPERATION_TIMEOUT` strukturiert gemappt
 - unbekannter Provider wird deterministisch abgewiesen
 
 ### AP G.3 - Provider-Konfiguration fail-closed
@@ -731,8 +762,14 @@ Aufgaben:
 - `procedure_transform_execute` anbinden
 - `testdata_plan` anbinden
 - Policy-Required-Flow einheitlich nutzen
-- `approvalKey`-Idempotency fuer synchrone Side Effects nutzen
+- `approvalKey`-Idempotency fuer synchrone Side Effects mit atomarer
+  Single-Writer-/Pending-Semantik nutzen; der bestehende
+  `SyncEffectIdempotencyStore` reicht unveraendert nicht aus, wenn parallele
+  gleiche Pending-Reserves erneut `Reserved` liefern.
 - Provider-Aufrufe ueber Hygiene-Service und Port fuehren
+- `procedure_transform_execute` muss `planRef`/`planArtifactId` gegen
+  Plan-Provenance, Tenant, Principal/Policy-Intent, Source-Refs,
+  `targetDialect`, Prompt-/Payload-Fingerprint und Artifact-Kind pruefen.
 - grosse Ergebnisse als Artefakt/Resource referenzieren
 - Audit fuer alle Erfolg- und Fehlerpfade schreiben
 
@@ -741,8 +778,17 @@ Tests:
 - fehlende Policy liefert `POLICY_REQUIRED`
 - genehmigter Aufruf nutzt Provider
 - identischer Retry erzeugt keinen zweiten Provider-Aufruf
+- parallele identische Retries erzeugen genau einen Provider-Aufruf und genau
+  ein Artefakt; parallele Verlierer warten/replayen oder erhalten einen
+  retrybaren Pending-Status.
+- Crash-/Reclaim-Fall vor terminalem Outcome blockiert den Scope nicht
+  dauerhaft und startet vorhandene durable Ergebnisse nicht erneut beim
+  Provider.
 - abweichender Payload mit gleichem `approvalKey` liefert
   `IDEMPOTENCY_CONFLICT`
+- `procedure_transform_execute` lehnt falschen Artifact-Kind, fremden Tenant,
+  nicht aus `procedure_transform_plan` erzeugte Artefakte, falschen Dialekt,
+  abweichende Source-Refs und abweichende Plan-Provenance ab.
 - Provider-Fehler wird als strukturierter Tool-Fehler gemappt
 - Resultate verletzen keine Inline-Limits
 
@@ -783,7 +829,7 @@ Aufgaben:
 Tests:
 
 - Provider-Quota liefert `RATE_LIMITED`
-- Provider-Timeout liefert `TIMEOUT`
+- Provider-Timeout liefert `OPERATION_TIMEOUT`
 - Audit enthaelt Provider-/Modell-Metadaten
 - Audit enthaelt keine Secrets
 - blockierte Hygiene-Faelle sind auditierbar
@@ -885,11 +931,10 @@ Verbindliche Codes:
 - `POLICY_DENIED`
 - `FORBIDDEN_PRINCIPAL`
 - `PROMPT_HYGIENE_BLOCKED`
-- `PROVIDER_UNAVAILABLE`
 - `RATE_LIMITED`
-- `TIMEOUT`
+- `OPERATION_TIMEOUT`
 - `PAYLOAD_TOO_LARGE`
-- `INTERNAL_ERROR`
+- `INTERNAL_AGENT_ERROR`
 
 Regeln:
 
@@ -1066,11 +1111,16 @@ Pflichtfaelle:
   `approvalToken`.
 - Identischer Retry mit gleichem `approvalKey` und identischem Payload
   liefert dasselbe Ergebnis bzw. dieselbe Artefakt-/Provider-Referenz.
+- Parallele identische Retries mit gleichem `approvalKey` starten keinen
+  zweiten Provider-Aufruf und erzeugen kein zweites Artefakt.
 - Abweichender Payload mit gleichem `approvalKey`-Scope liefert
   `IDEMPOTENCY_CONFLICT`.
+- `procedure_transform_execute` akzeptiert nur freigegebene Plan-Artefakte mit
+  passender Provenance, Tenant-/Principal-Bindung, Source-Refs,
+  `targetDialect`, Fingerprints und Artifact-Kind.
 - KI-nahe Tool-Resultate verletzen keine Inline-Limits.
 - Grosse KI-Ergebnisse werden als Artefakt oder Resource-Ref referenziert.
-- Provider-Timeouts liefern `TIMEOUT`.
+- Provider-Timeouts liefern `OPERATION_TIMEOUT`.
 - Provider-Quotas liefern `RATE_LIMITED`.
 - MCP-Prompts sind ueber `prompts/list` sichtbar.
 - `prompts/list` liefert Name, Beschreibung, Revision und Argument-Schema.

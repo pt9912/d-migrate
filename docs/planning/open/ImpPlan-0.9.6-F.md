@@ -689,6 +689,10 @@ Tabellenoptionen folgen der bestehenden CLI-Semantik:
   kein persistentes `targetTable` in den Upload-Metadaten existiert.
   `schemaRef` allein reicht nicht als Zieltabellenableitung; es validiert nur
   gegen die Zieltabelle.
+- Wenn ein persistentes `targetTable` existiert, darf `data_import_start`
+  entweder kein `table` senden oder denselben Identifier wiederholen. Ein
+  abweichendes `table` liefert `VALIDATION_ERROR`; `targetTable` ist kein
+  ueberschreibbares Default-Feld, sondern Teil des genehmigten Upload-Kontexts.
 - Directory-/Mehrtabellen-Artefakte nutzen `tables` als optionale geordnete
   Filter-/Importliste; `table` ist dafuer ungueltig. Diese Topologie ist fuer
   Phase-F-Upload-Artefakte blockiert, solange kein Bundle-Format spezifiziert
@@ -1152,6 +1156,9 @@ Tests:
 - `table` und `tables` gemeinsam -> `VALIDATION_ERROR`
 - Single-File-Artefakt ohne persistentes `targetTable` und ohne `table` ->
   `VALIDATION_ERROR`
+- Single-File-Artefakt mit persistentem `targetTable` und abweichendem
+  `table` im Import-Payload -> `VALIDATION_ERROR`; gleicher Wert ist
+  idempotent zulaessig.
 - Directory-/Mehrtabellen-Artefakt mit `table` -> `VALIDATION_ERROR`
 - leere oder syntaktisch ungueltige `tables` -> `VALIDATION_ERROR`
 - unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
@@ -1402,6 +1409,9 @@ Mindestfaelle:
 - `table`/`tables` gegenseitig exklusiv und topology-spezifisch validiert
 - Single-File-Import ohne `table` und ohne persistentes `targetTable` ->
   `VALIDATION_ERROR`
+- Single-File-Import mit persistentem `targetTable` und abweichendem `table`
+  im Import-Payload -> `VALIDATION_ERROR`; gleicher `table`-Wert wird als
+  idempotente Wiederholung akzeptiert.
 - `tables` ohne explizit definiertes Bundle-/Directory-Artefakt ->
   `VALIDATION_ERROR`
 - MCP-Import-Fingerprint enthaelt keine Temp-Pfade, materialisierte URLs oder
@@ -1501,7 +1511,9 @@ Mindestfaelle:
   keine Client- oder Tool-Payload-Pfade.
 - `table` und `tables` uebernehmen die bestehende CLI-Semantik: gegenseitig
   exklusiv, `table` fuer Single-File-Artefakte ohne persistentes
-  `targetTable`, `tables` fuer Directory-/Mehrtabellen-Artefakte.
+  `targetTable`, `tables` fuer Directory-/Mehrtabellen-Artefakte. Ein
+  persistentes `targetTable` darf durch `table` nicht auf einen anderen
+  Identifier umgebogen werden.
 - Mehrtabellen-Upload-Import ist ohne explizit spezifiziertes Bundle-/Archiv-
   Format nicht erlaubt; `tables` fuer normale einzelne Upload-Artefakte liefert
   `VALIDATION_ERROR`.
