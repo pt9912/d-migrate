@@ -457,6 +457,18 @@ zusaetzliche Felder:
 - `destructiveOperations`
 - `nonReversibleOperations`
 - `requiresConfirmation`
+- `blockedReason`
+
+`blockedReason` trennt mindestens:
+
+- `DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`
+- `ROLLBACK_NOT_POSSIBLE`
+- `DIALECT_UNSUPPORTED_OPERATION`
+
+Damit kann ein Runner unterscheiden, ob der Up-Plan wegen fehlendem
+`--allow-destructive` blockiert ist, ob nur `--generate-rollback` wegen
+`NOT_REVERSIBLE` scheitert, oder ob der Ziel-Dialekt eine Operation nicht
+rendern kann.
 
 ### 6.2 PostgreSQL
 
@@ -610,14 +622,23 @@ Exit-Codes sollten sich an bestehenden Mustern orientieren:
 | `3` | Schema-Validierungsfehler |
 | `4` | Verbindungsfehler |
 | `7` | I/O-, Planungs- oder Renderfehler |
-| `8` | destruktive/nicht reversible Operation ohne Freigabe |
+| `8` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar |
 
 Exit `0` gilt auch fuer erfolgreiche No-op-Laeufe, wenn kein Diff vorhanden
 ist, und fuer erfolgreiche `--plan-only`-Laeufe. Das unterscheidet
 `schema migrate` bewusst von `schema compare`, wo Exit `1` "Unterschiede
 gefunden" bedeutet. Ein Plan mit Risiken bleibt erfolgreich, solange er nicht
-als ausfuehrbare Migration gerendert werden soll oder durch fehlende Freigaben
-blockiert wird.
+als ausfuehrbare Migration gerendert werden soll oder durch fehlende Freigaben,
+nicht moeglichen Rollback oder nicht renderbare Dialektoperationen blockiert
+wird.
+
+Exit `8` muss im strukturierten Fehler zwischen mindestens drei Faellen
+unterscheiden:
+
+- destruktive Up-Operation ohne `--allow-destructive`
+- `--generate-rollback` angefordert, aber mindestens eine Operation ist
+  `NOT_REVERSIBLE`
+- Ziel-Dialekt kann eine geplante Operation nicht rendern
 
 Die konkrete Exit-Code-Matrix muss vor Implementierung mit `spec/cli-spec.md`
 abgeglichen werden.
@@ -773,25 +794,45 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 
 ---
 
-## 11. Offene Entscheidungen
+## 11. Entscheidungen fuer den ersten Slice
 
-- Soll der erste `schema migrate`-Slice nur Datei-zu-DB unterstuetzen oder
-  direkt auch Datei-zu-Datei als SQL-Plan?
-- Wird `DiffResult` selbst serialisiert oder nur ein stabiler Report?
-- Wie streng soll `--generate-rollback` bei teilweise nicht reversiblen
-  Operationen sein: harter Fehler oder Down-Datei plus Warn-/Manual-Blocks?
-- Wie wird Nutzerbestaetigung fuer destruktive Operationen im Non-TTY-Betrieb
-  modelliert?
-- Soll SQLite-Rebuild als dialektneutraler Operationstyp oder als
-  dialektspezifischer Folgeplan abgebildet werden?
-- Ab wann werden Rename-Hints zu expliziten Rename-Operationen?
+Der erste `DiffResult`-Slice soll bewusst eng bleiben. Er muss den fachlichen
+Kernvertrag stabilisieren, ohne gleichzeitig alle spaeteren Migrationsvarianten
+als Nutzervertrag freizugeben.
 
-Empfehlung fuer den ersten Slice:
+Verbindlich fuer den ersten Slice:
 
-- kein automatisches Rename
-- kein serialisierter `DiffResult` als oeffentlicher Input
-- `--allow-destructive` als Pflicht fuer destruktive Up-DDL
-- harter Fehler bei `--generate-rollback`, wenn nicht reversible Operationen
-  enthalten sind, ausser der Nutzer setzt spaeter einen expliziten
-  `--allow-partial-rollback`
-- SQLite-Rebuild zunaechst als Dialektfolgeplan, nicht als Kernoperation
+- `schema migrate` unterstuetzt zunaechst Datei-zu-DB:
+  - `--source` ist das Soll-Schema als Datei.
+  - `--target` ist die Ist-Datenbank.
+  - Datei-zu-Datei als reiner SQL-Plan bleibt spaeterer Scope.
+- `DiffResult` wird nicht als oeffentliches Input-Artefakt serialisiert.
+  Stattdessen gibt es einen stabilen Report-Vertrag.
+- `--generate-rollback` ist streng:
+  - enthaelt der Plan mindestens eine `NOT_REVERSIBLE`-Operation, bricht
+    Rollback-Erzeugung mit Exit `8` und `blockedReason = ROLLBACK_NOT_POSSIBLE`
+    ab.
+  - Teil-Rollbacks mit Warn-/Manual-Blocks sind spaeterer Scope.
+- Destruktive Up-DDL braucht explizit `--allow-destructive`.
+  Ohne diesen Schalter endet Rendering mit Exit `8` und
+  `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`.
+- Non-TTY-Betrieb nutzt keine interaktive Rueckfrage. Die Bestaetigung erfolgt
+  ausschliesslich ueber explizite Flags wie `--allow-destructive`.
+- Rename-Hints bleiben reine Diagnose. Es gibt kein automatisches Rename und
+  keine `RenameTable`-/`RenameColumn`-Operation im ersten Slice.
+- SQLite-Rebuild bleibt dialektspezifischer Folgeplan und wird nicht als
+  Kernoperation im dialektneutralen `DiffResult` modelliert.
+
+Bewusst spaeter zu entscheiden:
+
+- versionierte `DiffResult`-Serialisierung als moeglicher Input fuer
+  `schema rollback`
+- `--allow-partial-rollback` oder ein aequivalenter Vertrag fuer bewusst
+  unvollstaendige Down-Artefakte
+- Datei-zu-Datei-Planung ohne Live-Datenbank als eigener CLI-Modus
+- explizite Rename-Operationen mit Nutzer-Mapping
+- konkrete Ausgestaltung des SQLite-`DialectMigrationPlan`, insbesondere:
+  - Spaltenmapping
+  - temporaere Namen
+  - Index-/Constraint-Wiederaufbau
+  - Fehler-Rollback bei abgebrochenem Rebuild
