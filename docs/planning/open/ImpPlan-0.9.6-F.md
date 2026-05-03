@@ -395,6 +395,25 @@ Regeln:
 - eigene aktive Session braucht keine Policy
 - eigene aktive Session prueft Tenant, Principal, Owner und Status
 - fremde oder administrative Abbrueche sind policy-gesteuert
+- der Approval-Fingerprint fuer fremde/administrative Abbrueche bindet:
+  - Toolname `artifact_upload_abort`
+  - `uploadSessionId`
+  - Session-Tenant
+  - Session-Owner-Principal
+  - Admin-/Caller-Principal
+  - aktuellen Session-Status
+  - `artifactKind`
+  - `uploadIntent`
+  - bisher reservierte bzw. empfangene Bytes
+  - optionalen `reason`
+- ein Grant fuer einen fremden/administrativen Abbruch darf nur fuer denselben
+  Fingerprint verwendet werden; andere Session, anderer Owner, anderer
+  Status, anderer Caller oder anderer `reason` liefern
+  `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED` oder `POLICY_DENIED` je nach
+  Store-/Policy-Zustand
+- Retry desselben genehmigten Abbruchs ist idempotent und liefert denselben
+  terminalen `ABORTED`-Status, solange die Session nicht zwischenzeitlich
+  `COMPLETED` wurde
 - abgebrochene Sessions werden `ABORTED`
 - Zwischensegmente werden verworfen oder als nicht finalisierte Spool-Dateien
   fuer Cleanup markiert
@@ -491,10 +510,26 @@ Regeln:
 - `idempotencyKey` ist Pflicht
 - `targetConnectionRef` ist Pflicht
 - freie JDBC-Strings sind verboten
-- Import-Artefakt muss policy-pflichtig bzw. als `job_input` geeignet sein
+- Import-Artefakt muss policy-pflichtig als `uploadIntent=job_input`
+  finalisiert worden sein
 - read-only gestagte Schema-Artefakte sind nicht als Import-Eingabe erlaubt
   und werden hart mit `VALIDATION_ERROR` abgelehnt; Approval darf bestehende
   read-only Refs nicht implizit zu `job_input` upgraden
+- erlaubte Artefakt-/Format-Kombinationen sind:
+  - `artifactKind=seed-data`, `mimeType=application/json`, `format=json`
+  - `artifactKind=seed-data`, `mimeType=application/yaml` oder `text/yaml`,
+    `format=yaml`
+  - `artifactKind=seed-data`, `mimeType=text/csv` oder `application/csv`,
+    `format=csv`
+  - `artifactKind=generic` nur, wenn `format` explizit gesetzt ist und der
+    `mimeType` eindeutig zu diesem Format passt
+- `artifactKind=schema`, `ddl`, `transform-script` und `rules` sind fuer
+  `data_import_start` nicht als Datenquelle erlaubt; sie liefern
+  `VALIDATION_ERROR`
+- `format` darf entfallen, wenn `mimeType` es eindeutig bestimmt; bei
+  `artifactKind=generic` oder mehrdeutigem `mimeType` ist `format` Pflicht
+- `format` und `mimeType` muessen kompatibel sein; widerspruechliche
+  Kombinationen liefern `VALIDATION_ERROR`
 - unbekannte Artefakte liefern `RESOURCE_NOT_FOUND`
 - fremde Tenant-Artefakte oder Ziel-Connections liefern
   `TENANT_SCOPE_DENIED`
@@ -808,7 +843,8 @@ Tests:
 ### 8.6 AP F.6: Abort, Expiry und Cleanup
 
 - `artifact_upload_abort` fuer eigene aktive Sessions implementieren.
-- administrative/fremde Abbrueche mit Policy anbinden.
+- administrative/fremde Abbrueche mit eigenem Abort-Approval-Fingerprint aus
+  Abschnitt 5.3 an Policy anbinden.
 - `UPLOAD_SESSION_ABORTED` und `UPLOAD_SESSION_EXPIRED` mappen.
 - TTL- und Idle-Expiry implementieren.
 - Cleanup gegen Segment- und Artefaktspools ausfuehren.
@@ -820,6 +856,16 @@ Tests:
 - eigener Abort ohne Policy erfolgreich
 - fremde Session ohne Owner-Recht -> `FORBIDDEN_PRINCIPAL`
 - administrativer Abort ohne Freigabe -> `POLICY_REQUIRED`
+- genehmigter administrativer Abort setzt fremde aktive Session auf
+  `ABORTED`
+- Retry desselben genehmigten administrativen Abbruchs ist idempotent
+- gleicher `approvalKey` mit anderer `uploadSessionId` oder anderem `reason`
+  -> `IDEMPOTENCY_CONFLICT` oder `POLICY_REQUIRED`
+- Abort-Grant kann nicht fuer andere Session, anderen Owner, anderen Caller
+  oder anderen Session-Status wiederverwendet werden
+- Abort einer bereits `COMPLETED` Session loescht kein Artefakt und liefert
+  deterministischen Fehler oder unveraenderten Terminalstatus gemaess
+  Handler-Vertrag
 - Upload nach Abort -> `UPLOAD_SESSION_ABORTED`
 - Upload nach Expiry -> `UPLOAD_SESSION_EXPIRED`
 - Cleanup entfernt Zwischenbytes, aber keine finalisierten Artefakte
@@ -831,6 +877,7 @@ Tests:
 - Tool-Schema finalisieren.
 - erlaubte Import-Optionen aus Abschnitt 6.1 als Runner-nahe
   `DataImportRequest`-/`ImportOptions`-Abbildung im Schema pinnen.
+- Import-Artefakt-Eignungsmatrix aus Abschnitt 6.1 im Handler pinnen.
 - `artifactId` / Artefakt-`resourceUri` validieren.
 - `targetConnectionRef` erzwingen.
 - `idempotencyKey` erzwingen.
@@ -848,6 +895,10 @@ Tests:
 - fehlender `targetConnectionRef`
 - unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder JDBC-Secret in Import-Optionen -> `VALIDATION_ERROR`
+- `artifactKind=schema`, `ddl`, `transform-script` oder `rules` als
+  Import-Artefakt -> `VALIDATION_ERROR`
+- `artifactKind=generic` ohne explizites `format` -> `VALIDATION_ERROR`
+- `format` widerspricht `mimeType` -> `VALIDATION_ERROR`
 - neuer MCP-Mode wie `replace` oder `validate_only` ->
   `VALIDATION_ERROR`
 - `truncate=true` erscheint im Policy-Fingerprint und Audit als destruktiv
@@ -995,6 +1046,10 @@ Mindestfaelle:
 - nicht-finales Segment ist kleiner als `maxUploadSegmentBytes`
 - finales Segment schliesst Bytebereich nicht exakt
 - Segmentoffset weicht von der festen Segmentgroessen-Position ab
+- genehmigter administrativer Upload-Abbruch
+- Abort-Approval-Reuse fuer andere Session, anderen Caller oder anderen
+  `reason`
+- Abort einer finalisierten Session loescht kein Artefakt
 - fehlendes `contentBase64`
 - zu grosses Segment
 - Segmenthash-Mismatch
@@ -1005,6 +1060,9 @@ Mindestfaelle:
 - ungueltiges read-only Schema erzeugt keine nutzbare Rohartefakt-
   Registrierung
 - read-only Staging als Import-Input
+- `schema`, `ddl`, `transform-script` oder `rules` als Import-Artefakt
+- `generic` als Import-Artefakt ohne explizites `format`
+- inkompatible `mimeType`-/`format`-Kombination
 - unbekannte Import-/Transfer-Optionsfelder
 - rohe SQL-/JDBC-/Secret-Werte in Import-/Transfer-Optionen
 - erfundene MCP-Mode-Werte statt Runner-naher Optionen
@@ -1073,8 +1131,16 @@ Mindestfaelle:
 - `artifact_upload_abort` eigener aktiver Sessions funktioniert ohne Policy
   und prueft Owner/Sitzungsstatus.
 - Administrative oder fremde Upload-Abbrueche brauchen Policy-Freigabe.
+- Der Approval-Fingerprint fuer administrative/fremde Upload-Abbrueche bindet
+  Session, Tenant, Ziel-Owner, Admin-/Caller-Principal, Status, Intent, Kind,
+  Byte-Kontext und `reason`; Grants sind nicht fuer andere Sessions oder
+  veraenderte Payloads wiederverwendbar.
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
+- `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
+  Artefakt-/MIME-/Format-Kombination: primaer `seed-data` mit JSON/YAML/CSV
+  oder explizit formatierte `generic`-Artefakte. Schema-, DDL-, Transform- und
+  Rules-Artefakte werden als Import-Datenquelle abgelehnt.
 - `data_transfer_start` bindet Source-/Target-Connection-Refs an Policy und
   Idempotency.
 - Import- und Transfer-Optionen sind als strukturierte Allowlist-Schemas
