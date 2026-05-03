@@ -8,11 +8,16 @@
 > Byte-Stores im produktiven `mcp serve`-Pfad, neutraler
 > `McpCliPhaseCWiring`, `--mcp-state-dir`/Env, single-writer Advisory-
 > Lock, idempotenter Tempdir-Owner, `--mcp-state-orphan-retention`
-> mit Startup-Sweep) — final-Done erst zusammen mit AP 6.22 + 6.24,
-> wie Akzeptanzkriterium am Ende des AP fordert.
-> Offen: AP 6.22 (streamingfähige Finalisierung), AP 6.23
-> (Output-Schema-Drift für `artifactRef`/`details` §6.13),
-> AP 6.24 (stdio+HTTP-Integrationstest-Suite §7.3).
+> mit Startup-Sweep). AP 6.22 implementiert (FINALIZING-Claim mit
+> Lease + atomare `commitFinalization`-CAS, `AssembledUploadPayload`-
+> Streaming via `FileSpoolAssembledUploadPayloadFactory`,
+> deterministische `artifactId`/`schemaId`, idempotenter
+> `ArtifactContentStore`/`SchemaStore`-Replay, Stale-Lease-Reclaim,
+> sanitisierte `FinalizationOutcome`-Replay, AP-6.21-Sweep um
+> `<stateDir>/assembly/...` erweitert). AP 6.21 + 6.22 final-Done erst
+> zusammen mit AP 6.24, wie Akzeptanzkriterium fordert.
+> Offen: AP 6.23 (Output-Schema-Drift für `artifactRef`/`details`
+> §6.13), AP 6.24 (stdio+HTTP-Integrationstest-Suite §7.3).
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase C, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
