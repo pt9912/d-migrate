@@ -196,7 +196,7 @@ aus Session-Metadaten gebildet:
 
 - `artifactKind`
 - `mimeType`
-- `expectedSizeBytes`
+- `sizeBytes`
 - `checksumSha256`
 - `uploadIntent`
 - Tenant
@@ -223,7 +223,7 @@ Berechtigung um. Diese ist gebunden an:
 - Principal
 - `artifactKind`
 - `mimeType`
-- `expectedSizeBytes`
+- `sizeBytes`
 - `checksumSha256`
 - Approval-Fingerprint
 - Ablaufzeit
@@ -231,10 +231,11 @@ Berechtigung um. Diese ist gebunden an:
 `artifact_upload` prueft diese Berechtigung statt pro Segment eine neue
 Policy-Freigabe zu verlangen.
 
-Das oeffentliche Init-Vertragsfeld bleibt fuer Phase F
-`expectedSizeBytes`. Das interne Domain-Modell darf dieses Feld beim Anlegen
-der `UploadSession` nach `sizeBytes` mappen; `sizeBytes` ist damit kein
-zusaetzliches Pflichtfeld im Toolvertrag.
+Das oeffentliche Init-Vertragsfeld bleibt fuer Phase F gemaess Masterplan und
+`spec/ki-mcp.md` `sizeBytes`. Falls bestehende Phase-B/C-Handler oder Golden
+Tests noch `expectedSizeBytes` verwenden, ist das ein Legacy-Alias, der in
+Phase F auf `sizeBytes` migriert oder eindeutig als kompatibler Alias
+getestet werden muss.
 
 ### 4.4 Segmentbytes werden ueber MCP-JSON-RPC transportiert
 
@@ -276,7 +277,7 @@ Pflichteingaben:
 - `uploadIntent`
 - `artifactKind`
 - `mimeType`
-- `expectedSizeBytes`
+- `sizeBytes`
 - `checksumSha256`
 - fuer policy-pflichtige Intents:
   - `approvalKey`
@@ -306,18 +307,19 @@ Regeln:
 - gleicher Tenant, Caller, Toolname, `approvalKey` und
   `payloadFingerprint` liefern dieselbe Session.
 - gleicher Scope mit abweichendem Payload liefert `IDEMPOTENCY_CONFLICT`.
-- `expectedSizeBytes` darf maximal `209715200` Bytes betragen.
+- `sizeBytes` darf maximal `209715200` Bytes betragen.
 - `checksumSha256` ist Pflicht und Teil des Init-Fingerprints.
 
 Migrationsregel:
 
-- `expectedSizeBytes` bleibt das kanonische Vertragsfeld fuer bestehendes
-  Phase-B/C- und read-only Schema-Staging.
-- Falls Phase F `sizeBytes` als Alias akzeptiert, ist der Alias additiv:
-  `expectedSizeBytes` und `sizeBytes` duerfen nicht widersprechen; ein
+- `sizeBytes` ist das kanonische Wire-Feld in Masterplan, Spec, Schemas,
+  Golden Tests und Beispielen fuer Phase F.
+- Falls Phase F `expectedSizeBytes` als Legacy-Alias akzeptiert, ist der Alias
+  additiv: `expectedSizeBytes` und `sizeBytes` duerfen nicht widersprechen; ein
   widersprechender Doppelwert liefert `VALIDATION_ERROR`.
-- Golden Tests fuer den bisherigen `expectedSizeBytes`-Pfad bleiben erhalten
-  und werden um Alias-/Konfliktfaelle ergaenzt.
+- Bestehende Phase-B/C-Golden-Tests werden entweder auf `sizeBytes` migriert
+  oder explizit als Legacy-Alias-Tests gekennzeichnet und um
+  Alias-/Konfliktfaelle ergaenzt.
 
 ### 5.2 `artifact_upload`
 
@@ -339,10 +341,18 @@ Validierungen:
 - Session ist `ACTIVE`
 - session-scoped Upload-Berechtigung passt
 - `segmentIndex` beginnt bei `1` und ist fortlaufend
+- `segmentTotal` ist positiv, bleibt fuer die Session stabil und passt zur
+  beim Init berechneten Segmentanzahl
+- `segmentIndex <= segmentTotal`
+- `isFinalSegment == (segmentIndex == segmentTotal)`
 - `segmentOffset` passt zur decodierten Byteposition
 - decodierte Segmentgroesse maximal `4194304` Bytes
 - `segmentSha256` ist SHA-256 ueber decodierte Bytes
 - Gesamt-`checksumSha256` passt bei finalem Segment
+- wiederholte Segmente muessen denselben `segmentTotal`- und
+  `isFinalSegment`-Wert tragen wie der urspruengliche akzeptierte Write;
+  abweichende Retries liefern `IDEMPOTENCY_CONFLICT` oder
+  `VALIDATION_ERROR`, bevor Bytes neu geschrieben werden
 
 Antwort:
 
@@ -402,10 +412,12 @@ Bei finalem Segment:
 
 - alle Segmente muessen vorhanden sein
 - Gesamtgroesse muss der Session-Groesse entsprechen, die aus
-  `expectedSizeBytes` nach `UploadSession.sizeBytes` gemappt wurde
+  `sizeBytes` in `UploadSession.sizeBytes` uebernommen wurde
 - Gesamt-SHA-256 muss `checksumSha256` entsprechen
 - Finalisierung wechselt atomar von `ACTIVE` nach `FINALIZING` und setzt
   einen opaken `finalizingClaimId` mit Lease.
+- Vor nicht idempotenten Side Effects darf nur ein Finalisierungsplan bzw.
+  Claim persistiert werden, kein terminaler Erfolg.
 - Nur der Inhaber des aktuellen `FINALIZING`-Claims darf Assemblierung,
   Validierung, Artefakt-/Schema-Materialisierung und Statuswechsel
   ausfuehren.
@@ -415,8 +427,8 @@ Bei finalem Segment:
   Fehler.
 - Eine abgelaufene `FINALIZING`-Lease darf durch eine neue finale Anfrage
   reclaimt werden; der Reclaim muss ein vorhandenes
-  `finalizationOutcome` wiederverwenden, statt ein zweites Artefakt zu
-  erzeugen.
+  Finalisierungsplan-/Claim-Record wiederverwenden, statt ein zweites
+  Artefakt zu erzeugen.
 - Fuer `uploadIntent=job_input` wird das Artefakt immutable in
   `ArtifactContentStore` materialisiert und erst danach in `ArtifactStore`
   registriert.
@@ -426,6 +438,10 @@ Bei finalem Segment:
 - Fuer `schema_staging_readonly` werden `ArtifactStore`-Metadaten,
   `artifactRef` und nutzbare `schemaRef` erst nach erfolgreicher
   Schema-Validierung veroeffentlicht.
+- Terminale `finalizationOutcome`-Ergebnisse werden erst nach dauerhaftem
+  Zustand persistiert: Erfolgs-Outcome nach durable Bytes plus notwendiger
+  Metadaten-/Schema-Registrierung, Fehler-Outcome nach dauerhaftem
+  ABORT-/Failure-Zustand und Quota-Refund.
 - `mimeType` wird zu `contentType`
 - `checksumSha256` wird zu `sha256`
 - `artifactKind=schema` wird zusaetzlich validiert und in `SchemaStore`
@@ -464,10 +480,27 @@ Regeln:
 - freie JDBC-Strings sind verboten
 - Import-Artefakt muss policy-pflichtig bzw. als `job_input` geeignet sein
 - read-only gestagte Schema-Artefakte sind nicht als Import-Eingabe erlaubt
+  und werden hart mit `VALIDATION_ERROR` abgelehnt; Approval darf bestehende
+  read-only Refs nicht implizit zu `job_input` upgraden
 - unbekannte Artefakte liefern `RESOURCE_NOT_FOUND`
 - fremde Tenant-Artefakte oder Ziel-Connections liefern
   `TENANT_SCOPE_DENIED`
 - Cancel propagiert in Import-Runner und Streaming-/Writer-Pfade
+
+Erlaubte Import-Optionen fuer Phase F:
+
+- `mode`: `append`, `replace` oder `validate_only`
+- `batchSize`: positive Ganzzahl bis `10000`
+- `failOnRowError`: Boolean
+- `mappingRef`: optionale tenant-scoped Resource-Ref
+
+Nicht erlaubte Import-Optionen:
+
+- rohe SQL-Statements
+- JDBC-URLs oder Connection-Secrets
+- freie Zieltabellen- oder Schema-Namen ausserhalb einer erlaubten,
+  strukturierten Mapping-Ref
+- unbekannte Optionsfelder; sie liefern `VALIDATION_ERROR`
 
 ### 6.2 `data_transfer_start`
 
@@ -493,12 +526,30 @@ Regeln:
   Operation
 - Cancel propagiert in Transfer-Runner, Source-Reader und Target-Writer
 
+Erlaubte Transfer-Optionen fuer Phase F:
+
+- `mode`: `copy`, `compare_only` oder `validate_only`
+- `batchSize`: positive Ganzzahl bis `10000`
+- `includeSchemas`: Liste expliziter Schema-Namen, optional
+- `excludeSchemas`: Liste expliziter Schema-Namen, optional
+- `mappingRef`: optionale tenant-scoped Resource-Ref
+
+Nicht erlaubte Transfer-Optionen:
+
+- rohe SQL-Statements
+- JDBC-URLs oder Connection-Secrets
+- freie Source-/Target-Objektpfade ausserhalb strukturierter
+  Include-/Exclude-Listen oder Mapping-Refs
+- unbekannte Optionsfelder; sie liefern `VALIDATION_ERROR`
+
 ### 6.3 Idempotency fuer Import und Transfer
 
 Import und Transfer verwenden denselben Start-Tool-Vertrag aus Phase E:
 
 - Store-Key `(tenantId, callerId, operation, idempotencyKey)`
 - `payloadFingerprint` ohne `approvalToken`, `clientRequestId`, `requestId`
+- normalisierte Import-/Transfer-Optionen sind Teil des
+  `payloadFingerprint`
 - erster Aufruf ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
 - genehmigter Retry claimt Reservierung atomar
 - `COMMITTED` liefert denselben Job
@@ -536,7 +587,7 @@ Ressourcendetails.
 
 Quota-Lifecycle:
 
-- Init reserviert genau eine aktive Upload-Session und `expectedSizeBytes`
+- Init reserviert genau eine aktive Upload-Session und `sizeBytes`
   reservierte Upload-Bytes im Tenant-/Principal-Scope.
 - Segmentannahme darf keine zusaetzlichen Gesamtbytes reservieren; sie
   verbraucht nur parallele Segmentwrite-Slots fuer die Dauer des atomaren
@@ -598,7 +649,9 @@ Tests/Gate:
 - TTL-/Idle-/Max-Lease-Felder abbilden.
 - `FINALIZING` als transienten Single-Writer-Claim mit
   `finalizingClaimId`, `finalizingLeaseExpiresAt` und reclaim-faehigem
-  `finalizationOutcome` im Store abbilden.
+  Finalisierungsplan im Store abbilden.
+- Terminales `finalizationOutcome` getrennt davon erst nach dauerhaftem
+  Erfolgs- oder Fehlerzustand speichern.
 - `uploadSessionId` serverseitig opak erzeugen und validieren.
 - clientseitige Session-ID-Kandidaten in Init abweisen.
 
@@ -618,8 +671,8 @@ Tests:
 - `uploadIntent=job_input` implementieren.
 - Approval-Fingerprint ueber Session-Metadaten bilden.
 - `approvalKey` fuer policy-pflichtige Init-Pfade erzwingen.
-- `expectedSizeBytes` als kanonisches Vertragsfeld beibehalten und nach
-  `UploadSession.sizeBytes` mappen.
+- `sizeBytes` als kanonisches Vertragsfeld beibehalten und in
+  `UploadSession.sizeBytes` uebernehmen.
 - fehlende Freigabe -> `POLICY_REQUIRED`
 - gueltiger Grant -> Session erzeugen und Upload-Berechtigung ausstellen.
 - read-only `schema_staging_readonly` unveraendert ohne Write-Policy lassen.
@@ -631,9 +684,9 @@ Tests:
 - genehmigter Init erzeugt Session
 - Retry erzeugt keine zweite Session
 - `schema_staging_readonly` mit anderem `artifactKind` -> `VALIDATION_ERROR`
-- bestehender Golden-Test mit `expectedSizeBytes` bleibt gruen
-- optionaler `sizeBytes`-Alias wird nur additiv akzeptiert; widersprechende
-  Doppelwerte liefern `VALIDATION_ERROR`
+- Golden Tests, Schemas und Beispiele verwenden kanonisch `sizeBytes`
+- optionaler `expectedSizeBytes`-Legacy-Alias wird nur additiv akzeptiert;
+  widersprechende Doppelwerte liefern `VALIDATION_ERROR`
 
 ### 8.4 AP F.4: Segmentannahme und Hashvalidierung
 
@@ -641,10 +694,14 @@ Tests:
 - Base64 decodieren.
 - Segmentgroesse gegen `maxUploadSegmentBytes` pruefen.
 - `segmentSha256` ueber decodierte Bytes berechnen.
-- `segmentIndex` und `segmentOffset` fortlaufend validieren.
+- `segmentIndex`, `segmentOffset`, `segmentTotal` und `isFinalSegment`
+  fortlaufend validieren.
+- `segmentTotal` pro Session stabil halten.
+- `isFinalSegment` nur fuer `segmentIndex == segmentTotal` akzeptieren.
 - atomare Segmentwrites in `UploadSegmentStore` nutzen.
 - wiederholte identische Segmente idempotent behandeln.
-- abweichende Wiederholung deterministisch ablehnen.
+- abweichende Wiederholung einschliesslich anderer Segment-Metadaten
+  deterministisch ablehnen.
 
 Tests:
 
@@ -652,6 +709,9 @@ Tests:
 - zu grosses Segment -> `PAYLOAD_TOO_LARGE`
 - Hash ueber falsche Bytes -> `VALIDATION_ERROR`
 - `segmentIndex=0`
+- `segmentIndex > segmentTotal`
+- `isFinalSegment` widerspricht `segmentIndex == segmentTotal`
+- Retry mit abweichendem `segmentTotal`
 - nicht fortlaufender Segmentindex
 - gleicher Segmentindex mit anderem Inhalt
 - parallele gleiche Writes konvergieren deterministisch
@@ -661,13 +721,15 @@ Tests:
 - finale Segmentannahme erkennt vollstaendigen Upload.
 - finale Segmentannahme claimt atomar `FINALIZING`.
 - Gesamtgroesse und `checksumSha256` pruefen.
-- `finalizationOutcome` vor nicht idempotenten Side Effects persistieren.
+- Finalisierungsplan/Claim vor nicht idempotenten Side Effects persistieren.
 - Artefaktbytes immutable in `ArtifactContentStore` schreiben.
 - Artefaktmetadaten fuer `job_input` erst nach erfolgreicher Byte- und
   Checksum-Validierung registrieren.
 - Artefaktmetadaten fuer `schema_staging_readonly` erst nach erfolgreicher
   Schema-Validierung veroeffentlichen.
 - Schema-Artefakte validieren und ggf. `schemaRef` materialisieren.
+- terminales `finalizationOutcome` erst nach durablem Erfolg oder durablem
+  Fehlerzustand persistieren.
 - ungueltige Schema-Artefakte liefern strukturiertes Validierungsergebnis
   ohne Schema- oder nutzbare Rohartefakt-Registrierung.
 
@@ -709,9 +771,12 @@ Tests:
 ### 8.7 AP F.7: `data_import_start`
 
 - Tool-Schema finalisieren.
+- erlaubte Import-Optionen aus Abschnitt 6.1 im Schema pinnen.
 - `artifactId` / Artefakt-`resourceUri` validieren.
 - `targetConnectionRef` erzwingen.
 - `idempotencyKey` erzwingen.
+- normalisierte Import-Optionen in den Policy-/Idempotency-Fingerprint
+  aufnehmen.
 - Policy-/Approval-Flow aus Phase E anbinden.
 - Import-Runner als abbrechbaren Job starten.
 - read-only Staging-Artefakte als `job_input` abweisen.
@@ -720,18 +785,25 @@ Tests:
 
 - fehlender `idempotencyKey`
 - fehlender `targetConnectionRef`
+- unbekanntes Import-Optionsfeld -> `VALIDATION_ERROR`
+- rohes SQL oder JDBC-Secret in Import-Optionen -> `VALIDATION_ERROR`
 - Import ohne Approval
 - unbekanntes Artefakt
-- read-only gestagtes Schema als Job-Input
+- read-only gestagtes Schema als Job-Input -> `VALIDATION_ERROR`
 - genehmigter Retry startet genau einen Job
+- abweichende Import-Option mit gleichem `idempotencyKey` ->
+  `IDEMPOTENCY_CONFLICT`
 - Cancel stoppt weitere Writes
 
 ### 8.8 AP F.8: `data_transfer_start`
 
 - Tool-Schema finalisieren.
+- erlaubte Transfer-Optionen aus Abschnitt 6.2 im Schema pinnen.
 - Source-/Target-Connection-Refs tenant-scoped validieren.
 - `idempotencyKey` erzwingen.
 - freie JDBC-Strings abweisen.
+- normalisierte Transfer-Optionen in den Policy-/Idempotency-Fingerprint
+  aufnehmen.
 - Policy-/Approval-Flow aus Phase E anbinden.
 - Transfer-Runner als abbrechbaren Job starten.
 
@@ -740,8 +812,13 @@ Tests:
 - fehlender `idempotencyKey`
 - fehlende oder ungueltige Connection-Ref
 - freie JDBC-URL
+- unbekanntes Transfer-Optionsfeld -> `VALIDATION_ERROR`
+- rohes SQL oder Connection-Secret in Transfer-Optionen ->
+  `VALIDATION_ERROR`
 - Transfer ohne Approval
 - genehmigter Retry dedupliziert
+- abweichende Transfer-Option mit gleichem `idempotencyKey` ->
+  `IDEMPOTENCY_CONFLICT`
 - Cancel stoppt weitere Target-Writes
 
 ### 8.9 AP F.9: Quota, Timeout und Audit
@@ -841,8 +918,9 @@ Mindestfaelle:
 - Init mit nicht erlaubtem MIME-Type
 - Init-Retry mit gleichem `approvalKey`
 - Init-Retry mit anderem Payload
-- Init mit kanonischem `expectedSizeBytes`
-- optionaler Init-Alias `sizeBytes` widerspricht `expectedSizeBytes`
+- Init mit kanonischem `sizeBytes`
+- optionaler Init-Alias `expectedSizeBytes` widerspricht `sizeBytes`
+- ungueltige `segmentTotal`-/`isFinalSegment`-Kombination
 - fehlendes `contentBase64`
 - zu grosses Segment
 - Segmenthash-Mismatch
@@ -853,6 +931,8 @@ Mindestfaelle:
 - ungueltiges read-only Schema erzeugt keine nutzbare Rohartefakt-
   Registrierung
 - read-only Staging als Import-Input
+- unbekannte Import-/Transfer-Optionsfelder
+- rohe SQL-/JDBC-/Secret-Werte in Import-/Transfer-Optionen
 - Import ohne Approval
 - Transfer ohne Approval
 - Import/Transfer ohne `idempotencyKey`
@@ -867,9 +947,9 @@ Mindestfaelle:
 - Policy-pflichtiges `artifact_upload_init` mit vollstaendigen
   Session-Metadaten, Gesamt-Checksumme und serverseitiger Session-Erzeugung
   ist implementiert.
-- `artifact_upload_init` verwendet `expectedSizeBytes` als kanonisches
-  Vertragsfeld; interne `sizeBytes`-Mappings und optionale Aliase brechen den
-  bestehenden read-only Pfad nicht.
+- `artifact_upload_init` verwendet `sizeBytes` als kanonisches Vertragsfeld;
+  optionale `expectedSizeBytes`-Legacy-Aliase brechen den bestehenden
+  read-only Pfad nicht und widersprechende Doppelwerte werden abgelehnt.
 - Upload-Init liefert vor dem ersten Segment `uploadSessionId`,
   `uploadSessionTtlSeconds`, erwarteten `segmentIndex` und erwarteten
   `segmentOffset`.
@@ -882,17 +962,21 @@ Mindestfaelle:
 - Ungueltiges read-only Schema-Staging erzeugt weder `schemaRef` noch
   dauerhaft nutzbare Rohartefakt-Registrierung.
 - Versuch, `schema_staging_readonly` als Import-/Transfer-/KI-Input zu nutzen,
-  liefert `VALIDATION_ERROR` oder `POLICY_REQUIRED` fuer einen neuen
-  policy-pflichtigen Pfad.
+  liefert `VALIDATION_ERROR`; Approval darf bestehende read-only Refs nicht
+  implizit zu `job_input` upgraden.
 - Upload-Resume mit wiederholten identischen Segmenten funktioniert.
 - Hash-Abweichungen werden abgewiesen.
 - Fehlendes oder zu grosses `contentBase64` wird mit `VALIDATION_ERROR` bzw.
   `PAYLOAD_TOO_LARGE` abgewiesen.
 - Segmentwrites sind atomar; konkurrierende abweichende Writes fuer dieselbe
   Session/Position liefern deterministischen Fehler.
+- `segmentTotal` bleibt pro Session stabil, `segmentIndex <= segmentTotal`
+  wird erzwungen und `isFinalSegment` muss exakt
+  `segmentIndex == segmentTotal` entsprechen.
 - Finale Segmentverarbeitung nutzt `FINALIZING` als Single-Writer-Claim;
   parallele finale Segmente und Reclaim nach Lease-Ablauf erzeugen maximal ein
-  Artefakt und replayen persistierte Finalisierungsergebnisse.
+  Artefakt und replayen persistierte Finalisierungsergebnisse nur nach
+  durablem terminalem `finalizationOutcome`.
 - `artifact_chunk_get`, Import aus Artefakt und Resource-Chunk-Reads lesen
   aus `ArtifactContentStore`, nicht aus Tool-Response- oder Heap-Kopien.
 - 200-MiB-Upload-Test nutzt File-Spooling oder gleichwertigen Byte-Store und
@@ -911,6 +995,11 @@ Mindestfaelle:
   `targetConnectionRef` an Policy und Idempotency.
 - `data_transfer_start` bindet Source-/Target-Connection-Refs an Policy und
   Idempotency.
+- Import- und Transfer-Optionen sind als strukturierte Allowlist-Schemas
+  gepinnt; unbekannte Felder, rohe SQL-Werte, JDBC-URLs und Secrets werden
+  vor Policy-Claim mit `VALIDATION_ERROR` abgelehnt.
+- Normalisierte Import-/Transfer-Optionen sind Teil des Policy- und
+  Idempotency-Fingerprints.
 - Import/Transfer-Retries mit gleichem Idempotency-Store-Key deduplizieren.
 - Abweichender Import-/Transfer-Payload mit gleichem Store-Key liefert
   `IDEMPOTENCY_CONFLICT`.
