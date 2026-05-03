@@ -1050,10 +1050,17 @@ Tests:
 - `schemaRef` ueber `SchemaStore` und `SchemaRefImportPreflightAdapter`
   materialisieren; keine lokalen Schema-Pfade aus Tool-Payloads verwenden.
 - `table`/`tables`-Semantik aus Abschnitt 6.1 validieren.
-- normalisierte Import-Optionen in den Policy-/Idempotency-Fingerprint
-  aufnehmen.
+- MCP-spezifischen Import-Fingerprint bilden: `artifactId`/`resourceUri`,
+  Artefakt-`sha256`, persistente Upload-Metadaten, `targetConnectionRef`,
+  optional `schemaRef`, normalisierte Import-Optionen, Tenant und Principal.
+  Der Fingerprint darf keine serverseitigen Temp-/Spool-Pfade,
+  materialisierten JDBC-URLs, Connection-Secrets oder lokalen CLI-Pfade
+  enthalten und darf den bestehenden CLI-`ImportOptionsFingerprint` nicht
+  unveraendert wiederverwenden.
 - Policy-/Approval-Flow aus Phase E anbinden.
-- Import-Runner als abbrechbaren Job starten.
+- Import-Runner als abbrechbaren Job starten und Cancel bis in
+  Table-/Chunk-Grenzen, Writer-Sessions, Artefakt-/Schema-Temp-Spool-Cleanup
+  und ConnectionPool-/Secret-Handle-Close durchreichen.
 - read-only Staging-Artefakte als `job_input` abweisen.
 - `truncate=true` als nicht-atomare destruktive Option in Policy, Audit und
   Approval-Challenge kennzeichnen.
@@ -1086,6 +1093,12 @@ Tests:
   `FORBIDDEN_PRINCIPAL`
 - Runner erhaelt materialisierte interne Connection, waehrend Audit/Job/
   Idempotency nur die Connection-Ref enthalten
+- Import-Fingerprint enthaelt Artefakt-Hash, `targetConnectionRef`,
+  `schemaRef` und normalisierte Optionen, aber keine Temp-Pfade oder
+  materialisierte Ziel-URL
+- ungueltiges `onError`, `onConflict` oder `triggerMode` ->
+  `VALIDATION_ERROR`
+- `chunkSize=0` oder `chunkSize>10000` -> `VALIDATION_ERROR`
 - neuer MCP-Mode wie `replace` oder `validate_only` ->
   `VALIDATION_ERROR`
 - `truncate=true` erscheint im Policy-Fingerprint und Audit als destruktiv
@@ -1095,7 +1108,8 @@ Tests:
 - genehmigter Retry startet genau einen Job
 - abweichende Import-Option mit gleichem `idempotencyKey` ->
   `IDEMPOTENCY_CONFLICT`
-- Cancel stoppt weitere Writes
+- Cancel stoppt an der naechsten Table-/Chunk-Grenze weitere Writes, schliesst
+  Writer-Session/Pool/Secret-Handles und raeumt Temp-Spools auf
 
 ### 8.8 AP F.8: `data_transfer_start`
 
@@ -1109,10 +1123,14 @@ Tests:
   dem Tool-Payload verwenden.
 - `idempotencyKey` erzwingen.
 - freie JDBC-Strings abweisen.
-- normalisierte Transfer-Optionen in den Policy-/Idempotency-Fingerprint
-  aufnehmen.
+- MCP-spezifischen Transfer-Fingerprint bilden: `sourceConnectionRef`,
+  `targetConnectionRef`, normalisierte Transfer-Optionen, Tenant und
+  Principal. Der Fingerprint darf keine materialisierten JDBC-URLs,
+  Connection-Secrets oder lokalen CLI-Pfade enthalten.
 - Policy-/Approval-Flow aus Phase E anbinden.
-- Transfer-Runner als abbrechbaren Job starten.
+- Transfer-Runner als abbrechbaren Job starten und Cancel bis in
+  Table-/Chunk-Grenzen, Source-/Target-Reader/Writer-Sessions und
+  ConnectionPool-/Secret-Handle-Close durchreichen.
 - `truncate=true` als nicht-atomare destruktive Option in Policy, Audit und
   Approval-Challenge kennzeichnen.
 
@@ -1129,6 +1147,10 @@ Tests:
 - unbekanntes Transfer-Optionsfeld -> `VALIDATION_ERROR`
 - rohes SQL oder Connection-Secret in Transfer-Optionen ->
   `VALIDATION_ERROR`
+- Transfer-Fingerprint enthaelt Connection-Refs und normalisierte Optionen,
+  aber keine materialisierten Source-/Target-URLs
+- ungueltiges `onConflict` oder `triggerMode` -> `VALIDATION_ERROR`
+- `chunkSize=0` oder `chunkSize>10000` -> `VALIDATION_ERROR`
 - neuer MCP-Mode wie `copy`, `compare_only` oder `validate_only` ->
   `VALIDATION_ERROR`
 - `truncate=true` erscheint im Policy-Fingerprint und Audit als destruktiv
@@ -1136,7 +1158,8 @@ Tests:
 - genehmigter Retry dedupliziert
 - abweichende Transfer-Option mit gleichem `idempotencyKey` ->
   `IDEMPOTENCY_CONFLICT`
-- Cancel stoppt weitere Target-Writes
+- Cancel stoppt an der naechsten Table-/Chunk-Grenze weitere Target-Writes und
+  schliesst Source-/Target-Sessions, Pools und Secret-Handles
 
 ### 8.9 AP F.9: Quota, Timeout und Audit
 
@@ -1283,6 +1306,13 @@ Mindestfaelle:
 - Import aus `ArtifactContentStore` ohne lokale Pfade
 - `schemaRef`-Preflight ohne lokale Schema-Pfade
 - `table`/`tables` gegenseitig exklusiv und topology-spezifisch validiert
+- MCP-Import-Fingerprint enthaelt keine Temp-Pfade, materialisierte URLs oder
+  Connection-Secrets
+- MCP-Transfer-Fingerprint enthaelt keine materialisierten URLs oder
+  Connection-Secrets
+- ungueltige Import-Optionswerte `onError`/`onConflict`/`triggerMode`
+- ungueltige Transfer-Optionswerte `onConflict`/`triggerMode`
+- `chunkSize=0` und `chunkSize>10000` fuer Import und Transfer
 - Import-Artefakt ohne persistente Upload-Metadaten
 - Retention loescht/tombstoned Upload-Metadaten zusammen mit Artefaktbytes
 - dangling Upload-Metadaten ohne Artefaktbytes sind nicht importierbar
@@ -1295,6 +1325,8 @@ Mindestfaelle:
 - Transfer ohne Approval
 - Import/Transfer ohne `idempotencyKey`
 - Import/Transfer mit gleichem Key, aber anderem Payload
+- Cancel stoppt Import/Transfer an Table-/Chunk-Grenzen und schliesst
+  Writer-/Reader-Sessions, Pools, Secrets und Temp-Spools
 - genehmigte parallele Retries erzeugen maximal einen Job
 - Quota-Reserve-/Commit-/Refund-/Release- und Timeout-Faelle
 
@@ -1414,8 +1446,11 @@ Mindestfaelle:
   gepinnt und bilden die bestehenden Runner-Vertraege ab; unbekannte Felder,
   neue MCP-Mode-Werte, rohe SQL-Werte, JDBC-URLs und Secrets werden vor
   Policy-Claim mit `VALIDATION_ERROR` abgelehnt.
-- Normalisierte Import-/Transfer-Optionen sind Teil des Policy- und
-  Idempotency-Fingerprints.
+- MCP-spezifische Import-/Transfer-Fingerprints enthalten Artefakt-Refs,
+  Artefakt-Hash, Connection-Refs, `schemaRef` und normalisierte Optionen, aber
+  keine serverseitigen Temp-Pfade, materialisierten JDBC-URLs oder
+  Connection-Secrets. Der CLI-Import-Fingerprint darf nicht unveraendert
+  wiederverwendet werden.
 - `truncate=true` ist der einzige Phase-F-Mechanismus fuer destruktives Leeren
   von Zielen; er wird nicht als `replace` abstrahiert und erscheint sichtbar
   in Policy, Audit und Approval-Challenge.
@@ -1423,7 +1458,9 @@ Mindestfaelle:
 - Abweichender Import-/Transfer-Payload mit gleichem Store-Key liefert
   `IDEMPOTENCY_CONFLICT`.
 - Import und Transfer koennen per `job_cancel` kontrolliert abgebrochen
-  werden und starten nach Cancel keine weiteren Daten-Schreibabschnitte.
+  werden, pruefen Cancel an Table-/Chunk-Grenzen, starten danach keine
+  weiteren Daten-Schreibabschnitte und schliessen Writer-/Reader-Sessions,
+  Pools, Secret-Handles sowie Temp-Spools.
 - Rohe Uploadbytes, Approval-Tokens und Connection-Secrets erscheinen nicht in
   Audit, Stores oder Tool-Responses.
 
