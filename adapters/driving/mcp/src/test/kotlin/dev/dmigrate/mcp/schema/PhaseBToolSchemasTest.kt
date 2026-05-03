@@ -114,6 +114,30 @@ class PhaseBToolSchemasTest : FunSpec({
         pair.inputSchema.containsKey("required") shouldBe false
     }
 
+    test("AP 6.23: schema_validate output is strict and pins truncated→artifactRef") {
+        val output = PhaseBToolSchemas.forTool("schema_validate")!!.outputSchema
+
+        @Suppress("UNCHECKED_CAST")
+        val props = output["properties"] as Map<String, Any>
+
+        // findings: array of findingItem
+        @Suppress("UNCHECKED_CAST")
+        val findings = props["findings"] as Map<String, Any>
+        findings["type"] shouldBe "array"
+        findings["items"] shouldBe PhaseBToolSchemas.findingItem()
+
+        // artifactRef: URI-pattern string
+        props["artifactRef"] shouldBe PhaseBToolSchemas.artifactRefField()
+
+        // executionMeta: closed (additionalProperties=false), required requestId
+        props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
+
+        // allOf carries the truncated → artifactRef coupling
+        @Suppress("UNCHECKED_CAST")
+        val allOf = output["allOf"] as List<Map<String, Any>>
+        allOf shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
+    }
+
     test("listing tools share a stable input shape") {
         for (name in listOf("schema_list", "profile_list", "diff_list", "job_list", "artifact_list")) {
             val pair = PhaseBToolSchemas.forTool(name)!!

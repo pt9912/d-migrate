@@ -40,7 +40,14 @@ internal class SchemaValidateHandler(
     private val contentLoader: SchemaContentLoader,
     private val validator: SchemaValidator,
     private val limits: McpLimitsConfig,
-    private val artifactSink: ArtifactSink? = null,
+    /**
+     * AP 6.23: required (non-null). The output schema's
+     * `truncated → artifactRef` coupling is unconditional; production
+     * wiring always provides a sink, and tests get a stub via the
+     * test-only `handler()` helper. A nullable parameter would be
+     * incompatible with the schema's `if/then` constraint.
+     */
+    private val artifactSink: ArtifactSink,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -99,9 +106,8 @@ internal class SchemaValidateHandler(
         // remainder via `artifact_chunk_get`. The inline payload
         // still carries summary + capped findings + `truncated=true`
         // for backward compatibility with Phase-A consumers.
-        val sink = artifactSink
-        val artifactRef = if (truncated && sink != null) {
-            persistFullFindings(sink, combined, principal)
+        val artifactRef = if (truncated) {
+            persistFullFindings(artifactSink, combined, principal)
         } else {
             null
         }

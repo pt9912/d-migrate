@@ -56,13 +56,22 @@ internal object PhaseBToolSchemas {
                 "format" to enumField(*FORMAT_NAMES),
                 "strictness" to enumField(*Strictness.WIRE_VALUES.toTypedArray()),
             ).build(),
+            // AP 6.23: closed shapes — findings use the shared
+            // findingItem helper, artifactRef carries the resource-URI
+            // pattern, executionMeta is required-keyed. The if/then
+            // constraint pins the truncated → artifactRef coupling so
+            // a handler that emits truncated=true without an artifact
+            // fallback fails JSON-Schema validation.
             output = obj(
                 "valid" to booleanField(),
                 "summary" to stringField(),
-                "findings" to arrayField(),
+                "findings" to findingArray(),
                 "truncated" to booleanField(),
-                "executionMeta" to objectField(),
-            ).required("valid", "summary", "findings", "truncated"),
+                "artifactRef" to artifactRefField(),
+                "executionMeta" to executionMetaField(),
+            )
+                .withAllOf(truncatedRequiresField("artifactRef"))
+                .required("valid", "summary", "findings", "truncated"),
         ))
         put("schema_compare", schemaPair(
             input = obj(
@@ -331,18 +340,27 @@ internal object PhaseBToolSchemas {
         SchemaBuilder(properties = fields.toMap())
 
     /**
-     * Mutable builder for object-type schemas. Both [required] and
-     * [build] are terminal — they return the assembled
-     * `Map<String, Any>` directly. Call exactly ONE of them; the
-     * builder has no method that takes a `SchemaBuilder` back, so
-     * `.required(...).required(...)` is a compile error.
+     * Mutable builder for object-type schemas. [required] and [build]
+     * are terminal — they return the assembled `Map<String, Any>`
+     * directly. AP 6.23 adds [withAllOf] for cross-field constraints
+     * (e.g. `if truncated=true then artifactRef required`). Chain
+     * `withAllOf(...)` before the terminal call:
      *
-     * Use `.required("a", "b")` when there are required fields,
-     * `.build()` otherwise. Keeping the call shape one-line short.
+     * ```
+     * obj("a" to ..., "b" to ...)
+     *     .withAllOf(truncatedRequiresField("artifactRef"))
+     *     .required("a")
+     * ```
      */
     private class SchemaBuilder(
         private val properties: Map<String, Map<String, Any>>,
     ) {
+        private val allOf = mutableListOf<Map<String, Any>>()
+
+        fun withAllOf(constraint: Map<String, Any>): SchemaBuilder = apply {
+            allOf.add(constraint)
+        }
+
         fun required(vararg names: String): Map<String, Any> = assemble(names.toList())
 
         fun build(): Map<String, Any> = assemble(emptyList())
@@ -353,8 +371,25 @@ internal object PhaseBToolSchemas {
             put("additionalProperties", false)
             if (properties.isNotEmpty()) put("properties", properties)
             if (required.isNotEmpty()) put("required", required)
+            if (allOf.isNotEmpty()) put("allOf", allOf.toList())
         }
     }
+
+    /**
+     * AP 6.23: `if truncated=true then required [refField]`.
+     * Used by `schema_validate` (artifactRef), `schema_compare`
+     * (diffArtifactRef), and `schema_generate` (artifactRef) to make
+     * the truncated-output / artefact-fallback contract machine-
+     * checkable in the JSON-Schema layer instead of relying on
+     * runtime tests alone.
+     */
+    internal fun truncatedRequiresField(refField: String): Map<String, Any> = mapOf(
+        "if" to mapOf(
+            "properties" to mapOf("truncated" to mapOf("const" to true)),
+            "required" to listOf("truncated"),
+        ),
+        "then" to mapOf("required" to listOf(refField)),
+    )
 
     private fun stringField(): Map<String, Any> = mapOf("type" to "string")
     private fun booleanField(): Map<String, Any> = mapOf("type" to "boolean")

@@ -50,11 +50,19 @@ private fun handler(
     val schemaStore = InMemorySchemaStore()
     val artifactStore = InMemoryArtifactStore()
     val contentStore = InMemoryArtifactContentStore()
+    // AP 6.23: SchemaValidateHandler requires a non-null sink so the
+    // truncated → artifactRef schema coupling holds unconditionally.
+    val sink = dev.dmigrate.mcp.registry.ArtifactSink(
+        artifactStore,
+        contentStore,
+        java.time.Clock.systemUTC(),
+    )
     return SchemaValidateHandler(
         resolver = SchemaSourceResolver(schemaStore, limits),
         contentLoader = SchemaContentLoader(artifactStore, contentStore, limits),
         validator = SchemaValidator(),
         limits = limits,
+        artifactSink = sink,
     )
 }
 
@@ -267,21 +275,9 @@ class SchemaValidateHandlerTest : FunSpec({
         storedJson.size() shouldBeGreaterThan 3
     }
 
-    test("AP 6.19: without artifactSink the handler stays on the truncate-only contract") {
-        // Backwards-compat with Phase-B-only deployments: when no
-        // sink is wired, the handler must NOT emit an artifactRef
-        // (clients that don't pull artefacts shouldn't see a dangling
-        // ref they can't dereference).
-        val limits = McpLimitsConfig(maxInlineFindings = 3)
-        val sut = handler(limits = limits)
-        val tables = (1..10).joinToString(",") { """"t$it":{"columns":{}}""" }
-        val schema = """{"name":"x","version":"1.0","tables":{$tables}}"""
-        val json = parsePayload(
-            sut.handle(
-                ToolCallContext("schema_validate", args("""{"schema":$schema}"""), PRINCIPAL),
-            ),
-        )
-        json.get("truncated").asBoolean shouldBe true
-        json.has("artifactRef") shouldBe false
-    }
+    // AP 6.23 retired the "no sink wired" path: SchemaValidateHandler's
+    // ArtifactSink is now non-null, and the schema's `truncated → artifactRef`
+    // if/then makes the truncate-only fallback structurally invalid.
+    // The artifactRef-on-truncate behaviour is exercised in
+    // "AP 6.19: when findings exceed maxInline, persist them as an artefact".
 })
