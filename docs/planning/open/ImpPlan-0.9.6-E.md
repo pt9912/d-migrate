@@ -144,6 +144,7 @@ bleibt:
 - Policy-Service und Policy-Entscheidungen
 - Approval-Challenge mit `approvalRequestId`
 - Approval-Grant-Validierung
+- MCP-Authorization-Scopes `dmigrate:job:start` und `dmigrate:job:cancel`
 - mindestens ein produktiv nutzbarer Grant-Aussteller:
   - schmales MCP-Admin-Grant-Unterkommando
   - oder signierte Grant-Datei
@@ -210,18 +211,24 @@ Pipeline-Reihenfolge fuer Start-Tools:
 3. Principal aus Transportkontext ableiten
 4. Tool-Payload gegen Schema validieren
 5. syntaktische Tenant-Prefix-, Scope-Key- und Resource-Ref-Form pruefen
-6. Idempotency-Reservierung atomar pruefen oder anlegen
-7. Idempotency-Konflikte sofort mit `IDEMPOTENCY_CONFLICT` beenden
-8. `COMMITTED` direkt dedupliziert zurueckgeben, ohne Resource-
+6. MCP-Authorization-Scope fuer Start pruefen (`dmigrate:job:start`)
+7. Idempotency-Reservierung atomar pruefen oder anlegen
+8. Idempotency-Konflikte sofort mit `IDEMPOTENCY_CONFLICT` beenden
+9. `COMMITTED` direkt dedupliziert zurueckgeben, ohne Resource-
    Materialisierung, Policy oder Quota erneut auszufuehren
-9. Resource-Sichtbarkeit, Policy und Materialisierung nur fuer neue oder mit
+10. Resource-Sichtbarkeit, Policy und Materialisierung nur fuer neue oder mit
    Grant atomar geclaimte Starts pruefen
-10. Quota fuer neue Side Effects reservieren
-11. Job erzeugen oder bestehendes Ergebnis zurueckgeben
+11. Quota fuer neue Side Effects reservieren
+12. Job erzeugen oder bestehendes Ergebnis zurueckgeben
 
 Policy wird niemals fuer abweichende Payloads geprueft. Ein Konflikt mit
 gleichem Store-Key und anderem Fingerprint liefert deterministisch
 `IDEMPOTENCY_CONFLICT`.
+
+Fehlende oder unzureichende MCP-Authorization-Scopes werden vor
+`reserveOrGet` abgewiesen. Sie erzeugen Audit mit Scope-Challenge/403, aber
+keine Idempotency-Reservierung, keine Approval-Challenge, keine Policy-
+Entscheidung und keine Quota-Reservierung.
 
 Die Idempotency-Reservierung bleibt vor Policy- und Quota-Pruefung. Deshalb
 muessen alle Outcomes nach angelegter Reservierung eine verbindliche
@@ -258,15 +265,18 @@ erst nach dem `COMMITTED`-Dedupe-Pfad statt.
 ### 4.3 Policy-Freigabe startet nicht automatisch
 
 Fehlt eine Freigabe, liefert das Tool `POLICY_REQUIRED` mit Challenge-
-Metadaten, aber ohne verwendbares `approvalToken`.
+Metadaten inklusive `approvalRequestId`, aber ohne verwendbares
+`approvalToken`.
 
 Ein verwendbares `approvalToken` entsteht nur durch einen serverseitigen
-Policy-, Human- oder Admin-Mechanismus. Ein blosser Retry desselben Agenten
-darf keine Freigabe erzeugen.
+Policy-, Human- oder Admin-Mechanismus, der die `approvalRequestId` der
+aktuellen Challenge prueft. Ein blosser Retry desselben Agenten darf keine
+Freigabe erzeugen.
 
 Der genehmigte zweite Aufruf muss denselben `idempotencyKey`, denselben
-Payload-Fingerprint und ein passendes `approvalToken` verwenden. Er claimt die
-Reservierung atomar und erzeugt genau einen Job.
+Payload-Fingerprint, dieselbe aktuelle `approvalRequestId` und ein passendes
+`approvalToken` verwenden. Er claimt die Reservierung atomar und erzeugt genau
+einen Job.
 
 ### 4.4 Grants enthalten keine rohen Tokens
 
@@ -277,6 +287,7 @@ Reservierung atomar und erzeugt genau einen Job.
 - Toolname / Operation
 - `correlationKind`
 - `correlationKey`
+- `approvalRequestId`
 - `payloadFingerprint`
 - Ablaufzeit
 - Issuer-Fingerprint
@@ -290,6 +301,8 @@ Der Store speichert nie rohe Approval-Tokens.
 `job_cancel` ist kein Kill-Schalter. Es ist eine berechtigte
 Zustandsaenderung im gemeinsamen Jobmodell:
 
+- Principal braucht `dmigrate:job:cancel`, bevor Job-Lookup oder Worker-
+  Zugriff erfolgt
 - eigene Jobs duerfen abgebrochen werden
 - Admins duerfen Jobs innerhalb desselben Tenants abbrechen
 - explizite Cross-Tenant-Job-`resourceUri` liefert `TENANT_SCOPE_DENIED`
@@ -447,6 +460,7 @@ Ein Grant ist gueltig nur, wenn alle Bindungen passen:
 - Toolname / Operation
 - `correlationKind = idempotencyKey`
 - `correlationKey = idempotencyKey`
+- `approvalRequestId` entspricht der aktuellen `AWAITING_APPROVAL`-Challenge
 - `payloadFingerprint`
 - Ablaufzeit
 - erforderliche Scopes
@@ -454,6 +468,8 @@ Ein Grant ist gueltig nur, wenn alle Bindungen passen:
 
 Ungueltige oder abgelaufene Grants liefern weiter `POLICY_REQUIRED` oder
 `POLICY_DENIED` gemaess Reservierungszustand, nicht `AUTH_REQUIRED`.
+Ein Grant fuer eine alte oder erneuerte `approvalRequestId` ist ungueltig; der
+Retry liefert erneut `POLICY_REQUIRED` mit der aktuellen Challenge.
 
 ### 5.6 Job-Cancel-Vertrag
 
@@ -470,6 +486,8 @@ Antwort:
 
 Regeln:
 
+- fehlender `dmigrate:job:cancel`-Scope liefert 403 mit Scope-Challenge,
+  auditiert ohne Job-Lookup und ohne Worker-Zugriff
 - unbekannte oder nicht sichtbare Jobs im erlaubten Tenant liefern
   no-oracle `RESOURCE_NOT_FOUND`
 - explizit fremde Tenants in tenant-scoped Job-`resourceUri` liefern
@@ -583,11 +601,17 @@ Regeln:
 - Bei `Blocked` Phase E nicht fortsetzen.
 - `CancellationToken` / Worker-Handle-Vertrag final platzieren.
 - Runner-Checkpoints aus E0 als verbindliche Eingabe fuer Phase E uebernehmen.
+- Zusaetzliches Phase-E-Gate fuer `schema_compare_start` definieren, weil E0
+  neue Start-Tools ausschliesst: Compare-Materialisierung, Diff-Berechnung und
+  Artefakt-/Resource-Publish muessen Cancel-Checkpoints nachweisen, bevor
+  `schema_compare_start` produktiv aktiviert wird.
 
 Tests/Gate:
 
 - E0-Ergebnis ist dokumentiert
 - relevante Runner koennen Cancel typisiert signalisieren
+- Compare-Cancel-Gate ist dokumentiert und blockiert Phase E bei fehlendem
+  Nachweis
 
 ### 7.2 AP E.2: Job-Orchestrierung einfuehren
 
@@ -651,6 +675,8 @@ Tests:
 - fehlender Grant -> `POLICY_REQUIRED` mit Challenge
 - ungueltiger Grant -> weiterhin keine Job-Erzeugung
 - gueltiger Grant passt nur fuer gebundenen Fingerprint
+- gueltiger Grant passt nur fuer aktuelle `approvalRequestId`
+- Grant fuer erneuerte/alte Challenge liefert wieder `POLICY_REQUIRED`
 - konfigurierte Policy-Allowlist ohne GrantIssuer startet direkt erlaubte
   Requests, erzeugt aber kein `approvalToken`
 - rohe Tokens erscheinen nicht in Store oder Audit
@@ -677,6 +703,7 @@ Tests:
 - JSON-Schemas fuer `schema_reverse_start`, `data_profile_start` und
   `schema_compare_start` finalisieren.
 - `idempotencyKey` als Pflichtfeld erzwingen.
+- `dmigrate:job:start` vor Idempotency-/Policy-/Quota-Store-Writes pruefen.
 - `connectionRef` tenant-scoped validieren.
 - `schemaRef` tenant-scoped oder sichtbar fuer den Tenant validieren.
 - freie JDBC-Strings abweisen.
@@ -686,6 +713,8 @@ Tests:
 Tests:
 
 - fehlender `idempotencyKey`
+- fehlender oder unzureichender `dmigrate:job:start`-Scope -> 403 mit
+  Scope-Challenge und ohne Idempotency-Store-Write
 - ungueltige Connection-Ref
 - nicht sichtbare oder fremde Schema-Ref
 - freie JDBC-URL
@@ -698,6 +727,8 @@ Tests:
 - `SchemaReverseRunner` als Job-Worker anbinden.
 - Profiling-Services/`DataProfileRunner` als Job-Worker anbinden.
 - `schema_compare_start` materialisiert noetige Inputs und laeuft als Job.
+- Compare-Materialisierung und Diff-/Artefakt-Publish erhalten eigene
+  Cancel-Checkpoints, falls sie nicht durch E0 abgedeckt sind.
 - Connection-Refs secret-frei in Discovery, aber autorisiert im Runner
   materialisieren.
 - Artefakte und Jobstatus nach `spec/job-contract.md` publizieren.
@@ -709,12 +740,15 @@ Tests:
 - erfolgreicher Profiling-Job publiziert Report/Resource
 - `schema_compare_start` mit `connectionRef` laeuft als abbrechbarer Job
 - `schema_compare_start` ohne Connection-Ref bleibt policy-pflichtig
+- Cancel vor oder waehrend Compare-Materialisierung verhindert Diff- und
+  Artefakt-Publish
 - Secrets erscheinen nicht in Job-, Artefakt- oder Audit-Projektionen
 
 ### 7.8 AP E.8: `job_cancel` implementieren
 
 - Handler fuer `job_cancel` anbinden.
 - `jobId` oder Job-`resourceUri` normalisieren.
+- `dmigrate:job:cancel` vor Job-Lookup und Worker-Zugriff pruefen.
 - Tenant-, Principal- und Admin-Regeln pruefen.
 - Terminale Jobs unveraendert lassen.
 - Laufende Jobs ueber Worker-Handle canceln.
@@ -724,6 +758,8 @@ Tests:
 Tests:
 
 - eigener laufender Job wird gecancelt
+- fehlender oder unzureichender `dmigrate:job:cancel`-Scope -> 403 mit
+  Scope-Challenge und ohne Job-Lookup
 - tenant-scoped URI mit fremdem Tenant -> `TENANT_SCOPE_DENIED`
 - opake fremde oder fehlende `jobId` -> `RESOURCE_NOT_FOUND`
 - fremder Principal ohne Admin -> `FORBIDDEN_PRINCIPAL`
@@ -779,6 +815,8 @@ Tests:
 Tests:
 
 - jedes Fehleroutcome wird auditiert
+- fehlende Start-/Cancel-Scopes werden auditiert, ohne Idempotency-,
+  Challenge-, Quota- oder Job-Lookup-Store-Writes auszufuehren
 - keine Approval-Tokens, Secrets oder rohen Connection-Daten im Audit
 - Doku beschreibt fail-closed Verhalten ohne Grant-Aussteller
 
@@ -788,6 +826,8 @@ Tests:
 
 Verbindliche Fehler:
 
+- 403 mit Scope-Challenge fuer fehlende oder unzureichende MCP-
+  Authorization-Scopes
 - `IDEMPOTENCY_KEY_REQUIRED` fuer fehlenden Key bei Start-Tools
 - `IDEMPOTENCY_CONFLICT` fuer gleichen Store-Key mit anderem Fingerprint
 - `POLICY_REQUIRED` fuer fehlende Freigabe
@@ -802,6 +842,8 @@ Verbindliche Fehler:
 
 Security-Regeln:
 
+- fehlende MCP-Authorization-Scopes werden vor Idempotency-/Policy-/Quota-
+  Store-Writes und vor Job-Lookup abgewiesen
 - keine rohen Approval-Tokens speichern oder auditieren
 - keine JDBC-Secrets in Tool-Responses, Jobs, Artefakten oder Audit
 - Connection-Refs muessen tenant-scoped sein
@@ -831,6 +873,8 @@ Mindesttestklassen:
 Mindestfaelle:
 
 - fehlender `idempotencyKey`
+- fehlender Start-Scope erzeugt Audit/403 ohne Idempotency- oder Challenge-
+  Store-Write
 - implizite Defaults und explizite Default-Werte ergeben denselben Fingerprint
 - identischer Retry vor und nach `COMMITTED`
 - `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
@@ -838,6 +882,7 @@ Mindestfaelle:
 - Konflikt ohne Policy-Pruefung
 - erster Start ohne Grant -> `AWAITING_APPROVAL` + `POLICY_REQUIRED`
 - zweiter Start mit Grant -> genau ein Job
+- Grant mit alter oder falscher `approvalRequestId`
 - parallele genehmigte Retries -> ein Job
 - `DENIED` gilt nur bis `denialExpiresAt`
 - Grant abgelaufen oder falscher Fingerprint
@@ -849,7 +894,9 @@ Mindestfaelle:
 - Timeout
 - recoverable Start-Timeout blockiert identischen Retry nicht dauerhaft
 - `schema_compare_start` mit fremder oder nicht sichtbarer `schemaRef`
+- Compare-Cancel vor Materialisierung/Diff-Publish
 - Cancel eigener Job
+- Cancel ohne Scope erzeugt Audit/403 ohne Job-Lookup
 - Cancel tenant-scoped URI mit fremdem Tenant
 - Cancel opake fremde oder fehlende `jobId`
 - Cancel fremder Principal im selben Tenant
@@ -868,6 +915,8 @@ Mindestfaelle:
   und bleibt stabil, wenn referenzierte Resources spaeter geloescht oder
   unsichtbar wurden.
 - Payload-Konflikte liefern `IDEMPOTENCY_CONFLICT` ohne Policy-Pruefung.
+- fehlender oder unzureichender `dmigrate:job:start`-Scope erzeugt keine
+  Idempotency-Reservierung und keine Approval-Challenge.
 - fehlende Policy-Freigabe liefert `POLICY_REQUIRED`.
 - Policy-pflichtige Tools koennen ueber mindestens einen Grant-Pfad produktiv
   freigegeben werden.
@@ -876,6 +925,8 @@ Mindestfaelle:
 - erster policy-pflichtiger Start ohne Grant erzeugt `AWAITING_APPROVAL`.
 - zweiter Aufruf mit gueltigem Grant startet genau einen Job und setzt die
   Reservierung auf `COMMITTED`.
+- Approval-Grants sind an die aktuelle `approvalRequestId` der
+  `AWAITING_APPROVAL`-Challenge gebunden.
 - wiederholter zweiter Aufruf nach `COMMITTED` liefert denselben Job.
 - parallele genehmigte Retries erzeugen hoechstens einen Job.
 - `DENIED`-Reservierungen liefern `POLICY_DENIED`.
@@ -890,12 +941,16 @@ Mindestfaelle:
   dedupliziert ueber `idempotencyKey`.
 - `schema_compare_start` ohne Connection-Ref bleibt ebenfalls
   policy-pflichtig und auditierbar.
+- `schema_compare_start` ist erst produktiv aktivierbar, wenn Compare-
+  Materialisierung und Diff-/Artefakt-Publish Cancel-Checkpoints nachweisen.
 - Connection-backed Starts akzeptieren nur tenant-scoped `connectionRef`.
 - Schema-backed Starts akzeptieren nur tenant-scoped oder sichtbare
   `schemaRef`.
 - freie JDBC-Strings werden mit `VALIDATION_ERROR` abgewiesen.
 - `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen; opake `jobId`
   macht keinen globalen Cross-Tenant-Lookup.
+- fehlender oder unzureichender `dmigrate:job:cancel`-Scope fuehrt zu 403 mit
+  Scope-Challenge ohne Job-Lookup.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
