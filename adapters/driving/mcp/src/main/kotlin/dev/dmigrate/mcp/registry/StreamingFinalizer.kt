@@ -160,19 +160,57 @@ internal class StreamingFinalizer(
         now: Instant,
         leaseExpires: Instant,
     ): UploadSession {
-        val outcome = sessionStore.tryClaimFinalization(
+        val first = sessionStore.tryClaimFinalization(
             tenantId = session.tenantId,
             uploadSessionId = session.uploadSessionId,
             claimId = claimId,
             claimedAt = now,
             leaseExpiresAt = leaseExpires,
         )
-        return when (outcome) {
-            is ClaimOutcome.Acquired -> outcome.session
+        return when (first) {
+            is ClaimOutcome.Acquired -> first.session
+            is ClaimOutcome.AlreadyClaimed -> resolveAlreadyClaimed(session, claimId, now, leaseExpires, first)
+            is ClaimOutcome.WrongState -> throw mapWrongState(first.state, session.uploadSessionId)
+            is ClaimOutcome.NotFound -> throw ResourceNotFoundException(session.resourceUri)
+        }
+    }
+
+    /**
+     * AP 6.22: when [ClaimOutcome.AlreadyClaimed] comes back the
+     * session is already in `FINALIZING`. If the existing lease is
+     * still live, the second completing call surfaces a retryable
+     * Conflict without side effects. If the lease has expired,
+     * [UploadSessionStore.reclaimStaleFinalization] takes the claim
+     * over deterministically and the new owner drives the same
+     * finalisation pipeline; the deterministic artefact / schema ids
+     * keep the side effects idempotent.
+     */
+    private fun resolveAlreadyClaimed(
+        session: UploadSession,
+        claimId: String,
+        now: Instant,
+        leaseExpires: Instant,
+        previous: ClaimOutcome.AlreadyClaimed,
+    ): UploadSession {
+        if (!previous.leaseExpiresAt.isBefore(now)) {
+            throw IdempotencyConflictException(
+                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
+            )
+        }
+        val reclaim = sessionStore.reclaimStaleFinalization(
+            tenantId = session.tenantId,
+            uploadSessionId = session.uploadSessionId,
+            newClaimId = claimId,
+            claimedAt = now,
+            leaseExpiresAt = leaseExpires,
+            now = now,
+        )
+        return when (reclaim) {
+            is ClaimOutcome.Acquired -> reclaim.session
             is ClaimOutcome.AlreadyClaimed -> throw IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
-            is ClaimOutcome.WrongState -> throw mapWrongState(outcome.state, session.uploadSessionId)
+            is ClaimOutcome.WrongState -> throw mapWrongState(reclaim.state, session.uploadSessionId)
             is ClaimOutcome.NotFound -> throw ResourceNotFoundException(session.resourceUri)
         }
     }

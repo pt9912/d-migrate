@@ -112,7 +112,7 @@ internal class ArtifactUploadHandler(
             // Aborted exception path.
             streamingFinalizer.replayFailedOutcomeIfAvailable(session)
         }
-        validateSessionState(session)
+        validateSessionState(session, args)
         validateSegmentSequence(args, session)
 
         val bytes = decodeBase64(args.contentBase64)
@@ -303,7 +303,7 @@ internal class ArtifactUploadHandler(
         )
     }
 
-    private fun validateSessionState(session: UploadSession) {
+    private fun validateSessionState(session: UploadSession, args: UploadSegmentArgs) {
         when (session.state) {
             UploadSessionState.ACTIVE -> Unit
             UploadSessionState.COMPLETED -> throw IdempotencyConflictException(
@@ -311,9 +311,19 @@ internal class ArtifactUploadHandler(
             )
             UploadSessionState.ABORTED -> throw UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> throw UploadSessionExpiredException(session.uploadSessionId)
-            UploadSessionState.FINALIZING -> throw IdempotencyConflictException(
-                existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
-            )
+            // AP 6.22: a completing-segment retry against a FINALIZING
+            // session is a possible reclaim attempt — let it fall
+            // through so StreamingFinalizer.claimOrThrow can decide
+            // (live lease → Conflict, expired lease → reclaim). Non-
+            // final-segment retries are always a Conflict because
+            // FINALIZING accepts no new segments.
+            UploadSessionState.FINALIZING -> {
+                if (!args.isFinalSegment) {
+                    throw IdempotencyConflictException(
+                        existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
+                    )
+                }
+            }
         }
     }
 
