@@ -1571,6 +1571,13 @@ Aufgaben:
     Change.
 - `schema_compare` Output-Schema:
   - `diffArtifactRef` optional, URI-Pattern wie `artifactRef`
+  - `truncated=true` bedeutet: inline Diff-/Finding-Ausgabe ist
+    gekuerzt; wenn ein `ArtifactSink` verfuegbar war, muss
+    `diffArtifactRef` auf die vollstaendige, gescrubbte Diff-Projektion
+    zeigen. Inline-Pflichtfelder wie Summary, `findings`, `truncated`
+    und `diffArtifactRef` bleiben auch im Fallback schema-kompatibel;
+    der globale `ResponseLimitEnforcer` darf sie nicht durch ein
+    generisches Envelope ersetzen.
   - `findings` nutzt ein compare-spezifisches Finding-Schema, bei dem
     `details` optional ist und, falls vorhanden, ein geschlossenes
     Objekt mit `before` und `after` enthaelt
@@ -1637,9 +1644,13 @@ Aufgaben:
     und, fuer Toolfehler-Envelopes,
     `error.details[].value` laufen vor Serialisierung durch
     `SecretScrubber.scrub`
-  - Schema-Builder/Golden-Tests muessen Felder mit Namen wie
-    `password`, `secret`, `token`, `credential`, `connectionString`,
-    `jdbcUrl` in Output-Details blockieren
+  - Schema-Builder/Golden-Tests muessen verbotene Detail-Keys
+    normalisiert pruefen: case-insensitive, Separatoren wie `_`, `-`
+    und `.` ignorierend, und als Substring-/Pattern-Treffer fuer
+    Woerter wie `password`, `secret`, `token`, `credential`,
+    `connectionString`, `jdbcUrl`, `apiKey`, `privateKey`. Varianten
+    wie `dbPassword`, `credentialToken` oder `api_token` muessen
+    blockiert oder vor der Serialisierung umbenannt/gescrubbt werden.
   - Scrubbing findet vor Artefakt-Fallback statt, damit auch
     ausgelagerte Findings-/DDL-/Diff-Artefakte keine Secrets oder
     lokalen Pfade enthalten
@@ -1684,6 +1695,14 @@ Akzeptanz:
   Aenderungsfindings als Strings; das Details-Schema erzwingt
   `additionalProperties=false` plus Nicht-Leer-Regel und lehnt
   `details: {}` sowie unbekannte Credential-Key-Felder ab
+- `schema_compare` setzt bei Diff-/Finding-Truncation mit verfuegbarem
+  `ArtifactSink` ein `diffArtifactRef` und behaelt alle
+  tool-spezifischen Pflichtfelder im Inline-Output; generische
+  Fallback-Envelopes sind kein gueltiger Ersatz
+- `schema_validate` setzt bei `truncated=true` und verfuegbarem
+  `ArtifactSink` ein `artifactRef` auf die vollstaendige gescrubbte
+  Findings-Projektion; der degradierte Pfad ohne Sink ist gesondert
+  getestet
 - `schema_validate` und `schema_generate` koennen optionale
   Finding-`details` schema-valide transportieren; `schema_generate`
   akzeptiert ueber einen tool-spezifischen Finding-Helper zusaetzlich
@@ -1710,6 +1729,9 @@ Akzeptanz:
 - `details`-Werte in Inline-Responses und ausgelagerten Artefakten
   werden gescrubbt; Tests pinnen mindestens Bearer-Token, Passwort-Key
   und lokalen Pfad
+- verbotene Detail-Keys werden normalisiert und case-insensitive
+  erkannt; Tests pinnen Varianten wie `dbPassword`,
+  `credentialToken`, `api_token` und `JDBCUrl`
 - Tool-Error-Envelopes scrubben `error.details[].value` zentral vor
   der Serialisierung; ein Regressionstest deckt einen Fehlerdetail-
   Wert mit Secret ab
