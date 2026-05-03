@@ -284,6 +284,10 @@ Regeln:
   Artefakt-/Provider-Referenz
 - gleicher Scope-Key mit anderem Payload liefert `IDEMPOTENCY_CONFLICT`
   ohne vorherige Policy-Pruefung
+- Bei identischem Scope-Key und identischem Payload-Fingerprint wird zuerst
+  ein vorhandenes `SUCCEEDED`, `FAILED_TERMINAL` oder `FAILED_RETRYABLE`
+  Outcome replayt. Policy-/Approval-Pruefung ist nur fuer neue Claims oder
+  Reclaims erforderlich, die einen neuen Provider-Side-Effect starten koennten.
 - erster Aufruf ohne Grant liefert `POLICY_REQUIRED`
 - zweiter Aufruf muss denselben `approvalKey` und ein extern ausgestelltes,
   passendes `approvalToken` senden
@@ -308,6 +312,25 @@ Regeln:
   - nicht-terminal klassifizierte Provider-/Recovery-Zustaende muessen
     explizit als retrybarer Pending-/Recovery-Outcome persistiert werden; auch
     dann darf ein Retry nicht parallel einen zweiten Provider-Aufruf starten.
+  - Dafuer braucht Phase G einen expliziten `AiToolOutcomeStore` oder eine
+    aequivalente Erweiterung des SyncEffect-Vertrags. `commit(scope,
+    resultRef)` allein reicht nicht aus, weil Fehler-Outcomes ohne Artefakt
+    replaybar sein muessen.
+  - Der Outcome-Record ist an `(tenantId, callerId, toolName, approvalKey,
+    payloadFingerprint)` gebunden und enthaelt mindestens `status` (`PENDING`,
+    `SUCCEEDED`, `FAILED_TERMINAL`, `FAILED_RETRYABLE`), Claim-/Lease-Daten,
+    `providerRequestId` soweit vorhanden, Provider-/Modell-Metadaten,
+    `promptFingerprint`, `payloadFingerprint`, Ergebnis-Artifact-/Resource-
+    Ref bei Erfolg, ein gescrubbtes Tool-Error-Envelope bei Fehler,
+    `retryable`, `createdAt`, `updatedAt` und `completedAt`.
+  - Replay-Regel: `SUCCEEDED` replayt dieselbe Tool-Response bzw. Result-Ref;
+    `FAILED_TERMINAL` replayt dasselbe gescrubbte Error-Envelope;
+    `FAILED_RETRYABLE` liefert denselben retrybaren Pending-/Recovery-Status,
+    bis Lease/Reclaim eine eindeutige neue Entscheidung trifft.
+  - Der Outcome darf erst terminal committed werden, wenn alle dazugehoerigen
+    Artefakt-/Metadatenwrites oder Fehlerdetails dauerhaft sind. Ein
+    terminaler Fehler-Outcome muss keine Artefakt-Ref haben, aber immer ein
+    replaybares, gescrubbtes Error-Envelope.
   - ein Crash vor terminalem Outcome darf den Scope nicht dauerhaft blockieren;
     Pending-Claims brauchen Lease-/Reclaim-Semantik oder einen
     crash-sicheren Outcome-Commit, der vor Replay immer durable Artefakte
@@ -593,6 +616,26 @@ Artefaktmodell:
   Artefakte nur ueber diese Metadaten als Procedure-Transformationsplan
   akzeptieren. Ein Core-`ArtifactKind.OTHER` ohne diese Metadaten ist kein
   gueltiger Plan.
+- Der Persistenzort ist verbindlich festzulegen. Phase G muss entweder
+  `ArtifactRecord`/`ArtifactStore` um KI-Metadaten und Provenance erweitern
+  oder einen separaten `AiArtifactMetadataStore` einfuehren. Da der aktuelle
+  `ArtifactRecord` keine Metadata-Felder hat und `ArtifactStore.list` nur nach
+  Core-`ArtifactKind` filtert, ist ohne eine dieser Aenderungen kein
+  verlaesslicher Execute-/Resource-/Prompt-Lookup erlaubt.
+- Ein separater `AiArtifactMetadataStore` enthaelt mindestens `tenantId`,
+  `artifactId`, `resourceUri`, `wireArtifactKind`, `aiIntent`,
+  `originToolName`, `ownerPrincipalId`, `policyIntent` bzw. Approval-Scope,
+  Source-Refs, `targetDialect`, Prompt-/Payload-Fingerprint,
+  Provider-/Modell-Metadaten, optional Plan-Ref/-Fingerprint,
+  Output-Fingerprint, `createdAt` und Retention-/Deletion-Bindung an das
+  zugrunde liegende Artefakt.
+- Store-Contract: atomar zusammen mit Artefakt-Publish oder vor Freigabe der
+  Result-Ref schreiben; Lookup nach `(tenantId, artifactId)` und
+  `(tenantId, resourceUri)`; Validierung von `wireArtifactKind`/`aiIntent` und
+  Tenant/Principal; Cleanup entfernt Metadata mit dem Artefakt oder markiert
+  orphaned Metadata als Fehlerfall fuer Resource-Reads.
+- Resource-Projection und Golden-Tests muessen die KI-Metadaten enthalten,
+  aber keine Secrets, Approval-Tokens, Provider-Secrets oder Rohdaten.
 - Falls Phase G stattdessen den Core-Enum erweitert, muss derselbe AP auch
   Artifact-Stores, Specs, Schemas, Golden-Tests, Resource-Kind-Mapping und
   Migration/Kompatibilitaet aktualisieren; beide Modelle duerfen nicht
@@ -823,6 +866,10 @@ Aufgaben:
   Single-Writer-/Pending-Semantik nutzen; der bestehende
   `SyncEffectIdempotencyStore` reicht unveraendert nicht aus, wenn parallele
   gleiche Pending-Reserves erneut `Reserved` liefern.
+- `AiToolOutcomeStore` oder eine aequivalente SyncEffect-Erweiterung fuer
+  `PENDING`/`SUCCEEDED`/`FAILED_TERMINAL`/`FAILED_RETRYABLE` mit
+  Fingerprintbindung, Lease/Reclaim, ProviderRequestId, Result-Ref und
+  gescrubbtem Error-Envelope definieren.
 - Provider-Aufrufe ueber Hygiene-Service und Port fuehren
 - `procedure_transform_plan` muss auch fuer kleine Ergebnisse ein immutable
   Plan-Artefakt bzw. eine stabile `planRef` persistieren; Inline-Preview ist
@@ -831,6 +878,9 @@ Aufgaben:
   Core-`ArtifactKind` inklusive Stores, Specs, Schemas und Goldens explizit
   erweitern. Ohne Enum-Erweiterung gilt `ArtifactKind.OTHER` plus
   verpflichtendes `wireArtifactKind`/`aiIntent`/Provenance-Metadatenmodell.
+- `AiArtifactMetadataStore` oder eine ArtifactRecord-/ArtifactStore-
+  Erweiterung fuer `wireArtifactKind`, `aiIntent`, Provenance, Resource-
+  Projection und Retention/Cleanup anbinden.
 - `procedure_transform_execute` muss `planRef`/`planArtifactId` gegen
   Plan-Provenance, Tenant, Principal/Policy-Intent, Source-Refs,
   `targetDialect`, Prompt-/Payload-Fingerprint und
@@ -855,6 +905,12 @@ Tests:
 - identischer Retry nach terminalem Output-Hygiene-Block, Provider-Timeout
   oder Provider-Ausfuehrungsfehler replayt denselben strukturierten Fehler und
   startet keinen zweiten Provider-Aufruf.
+- `AiToolOutcomeStore` speichert und replayt `SUCCEEDED`,
+  `FAILED_TERMINAL` und `FAILED_RETRYABLE` fuer denselben
+  `(tenantId, callerId, toolName, approvalKey, payloadFingerprint)`; anderer
+  Fingerprint im gleichen Scope liefert `IDEMPOTENCY_CONFLICT`.
+- Crash zwischen Provider-Versuch und Outcome-Commit wird per Lease/Reclaim
+  ohne dauerhaften Lock und ohne parallelen zweiten Provider-Aufruf behandelt.
 - retrybarer Pending-/Recovery-Outcome nach Provider-Versuch blockiert
   parallele zweite Provider-Aufrufe und liefert einen retrybaren Status.
 - abweichender Payload mit gleichem `approvalKey` liefert
@@ -866,6 +922,11 @@ Tests:
   `wireArtifactKind=procedure-transform-plan`, `aiIntent` und vollstaendige
   Provenance oder nutzt einen explizit erweiterten Core-Enum mit denselben
   Store-/Spec-/Golden-Anpassungen.
+- fehlende KI-Metadaten fuer ein `ArtifactKind.OTHER`-Artefakt liefern bei
+  Execute, Resource-Read und Prompt-Argumentvalidierung `VALIDATION_ERROR` oder
+  `RESOURCE_NOT_FOUND`, aber niemals einen impliziten Plan-Match.
+- Metadata-Cleanup folgt Artefakt-Retention; orphaned Metadata wird als
+  Resource-Read-Fehler getestet.
 - `procedure_transform_execute` lehnt fehlenden/falschen `wireArtifactKind`,
   fremden Tenant,
   nicht aus `procedure_transform_plan` erzeugte Artefakte, falschen Dialekt,
@@ -997,20 +1058,29 @@ Reihenfolge:
 3. Payload-Schema-Validierung
 4. fehlender `approvalKey`
 5. Tenant-/Resource-Scope-Pruefung
-6. Idempotency-Konflikt ueber `approvalKey`
-7. Policy-/Approval-Pruefung
-8. Prompt-Hygiene
-9. Provider-Quota
-10. Provider-Timeout
-11. Provider-Ausfuehrung
-12. Result-Limitierung und Artifact-Publish
+6. Payload-Fingerprint fuer `(tenant, caller, toolName, approvalKey)` pruefen;
+   abweichender Fingerprint liefert `IDEMPOTENCY_CONFLICT`
+7. bestehendes `AiToolOutcomeStore`-Outcome mit identischem Fingerprint
+   replayen:
+   - `SUCCEEDED` -> gleiche Tool-Response bzw. Result-Ref
+   - `FAILED_TERMINAL` -> gleiches gescrubbtes Error-Envelope
+   - `FAILED_RETRYABLE` -> gleicher retrybarer Pending-/Recovery-Status
+8. Policy-/Approval-Pruefung nur fuer neue Claims oder Reclaims, die einen
+   neuen Provider-Side-Effect starten koennten
+9. Prompt-Hygiene
+10. Provider-Quota
+11. Provider-Timeout
+12. Provider-Ausfuehrung
+13. Result-Limitierung und Artifact-Publish
 
 Begruendung:
 
 - offensichtliche Clientfehler sollen deterministisch vor teuren Policy- oder
   Provider-Pfaden enden
 - Idempotency-Konflikte duerfen keine Policy-Informationen leaken
-- Provider-Aufrufe duerfen erst nach Policy und Hygiene stattfinden
+- bestehende terminale oder retrybare Outcomes duerfen nicht durch abgelaufene
+  oder fehlende Approval-Tokens in neue Policy-Entscheidungen umgebogen werden
+- neue Provider-Aufrufe duerfen erst nach Policy und Hygiene stattfinden
 
 ### 7.2 Fehlercodes
 
@@ -1082,6 +1152,9 @@ Vor Tool-Response oder Artifact-Publish gilt:
 - Audit mit Output-Fingerprint schreiben
 - fuer terminale Fehler nach Provider-Versuch einen replaybaren Outcome-
   Record committen, auch wenn kein Artefakt publiziert wurde
+- Outcome-Record ueber `AiToolOutcomeStore` oder aequivalente SyncEffect-
+  Erweiterung speichern, damit Retry ohne Artefakt-`resultRef` dasselbe
+  gescrubbte Error-Envelope replayen kann
 
 Wenn Output-Hygiene blockiert:
 
@@ -1225,6 +1298,9 @@ Pflichtfaelle:
 - Identische Retries nach terminalem post-provider Fehler, etwa
   Output-Hygiene-Block, Provider-Timeout oder Provider-Ausfuehrungsfehler,
   replayen denselben strukturierten Fehler ohne zweiten Provider-Aufruf.
+- `AiToolOutcomeStore` oder eine aequivalente SyncEffect-Erweiterung persistiert
+  Erfolgs-, terminale Fehler- und retrybare Pending-/Recovery-Outcomes mit
+  Fingerprintbindung, ProviderRequestId und gescrubbtem Error-Envelope.
 - Abweichender Payload mit gleichem `approvalKey`-Scope liefert
   `IDEMPOTENCY_CONFLICT`.
 - `procedure_transform_execute` akzeptiert nur freigegebene Plan-Artefakte mit
@@ -1234,6 +1310,9 @@ Pflichtfaelle:
 - KI-Artefakte verwenden verbindliche Typen:
   `procedure-transform-plan`, `procedure-transform-output` und `testdata-plan`
   mit passendem `aiIntent` und Provenance.
+- KI-Artefaktmetadaten sind in `ArtifactRecord`/`ArtifactStore` oder einem
+  `AiArtifactMetadataStore` dauerhaft gespeichert, in Resource-Projections
+  verfuegbar und an Retention/Cleanup des Artefakts gekoppelt.
 - Provider-Port-Resultate enthalten keine d-migrate-Artefaktreferenz; die
   Tool-Schicht publiziert Artefakte erst nach Output-Hygiene, Limitierung und
   Scrubbing.
