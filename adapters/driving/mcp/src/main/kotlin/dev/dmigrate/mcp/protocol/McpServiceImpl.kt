@@ -290,7 +290,11 @@ class McpServiceImpl(
     private fun scopeViolation(method: String, principal: PrincipalContext): Set<String>? {
         if (ScopeChecker.isScopeFree(method)) return null
         val required = ScopeChecker.requiredScopes(method, scopeMapping)
-        return if (ScopeChecker.isSatisfied(principal.scopes, required)) null else required
+        return if (ScopeChecker.isSatisfied(principal.scopes, required, principal.isAdmin)) {
+            null
+        } else {
+            required
+        }
     }
 
     /**

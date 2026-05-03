@@ -348,7 +348,7 @@ private suspend fun checkScopes(
     if (method == null) return true
     if (ScopeChecker.isScopeFree(method)) return true
     val required = ScopeChecker.requiredScopes(method, config.scopeMapping)
-    if (ScopeChecker.isSatisfied(principal.scopes, required)) return true
+    if (ScopeChecker.isSatisfied(principal.scopes, required, principal.isAdmin)) return true
     respondAuthChallenge(
         call, HttpStatusCode.Forbidden,
         ChallengeBuilder.insufficientScope(required, resolveMetadataUrl(call, config)),

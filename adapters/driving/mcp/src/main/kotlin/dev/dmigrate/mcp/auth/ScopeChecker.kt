@@ -30,7 +30,22 @@ object ScopeChecker {
     fun requiredScopes(method: String, scopeMapping: Map<String, Set<String>>): Set<String> =
         scopeMapping[method] ?: setOf(FAIL_CLOSED_FALLBACK_SCOPE)
 
-    /** True when [granted] is a superset of [required]. */
-    fun isSatisfied(granted: Set<String>, required: Set<String>): Boolean =
-        granted.containsAll(required)
+    /**
+     * True when the principal may invoke a method requiring [required].
+     *
+     * - [isAdmin] short-circuits the check: a principal carrying
+     *   `dmigrate:admin` (and therefore `isAdmin = true` per
+     *   [ClaimsMapper]) is unrestricted across all method-level scope
+     *   gates. This matches both the §12.14 wording ("admin scope is
+     *   highest privilege") and the route-level
+     *   `AuthMode.DISABLED → ANONYMOUS_PRINCIPAL` flow, where the
+     *   principal carries `isAdmin = true` but does not enumerate every
+     *   method-specific scope. Without the bypass the service-layer
+     *   re-check would silently veto every read tool that the route
+     *   already greenlit, yielding inconsistent decisions across the
+     *   two enforcement layers.
+     * - When [isAdmin] is `false`, the original superset check applies.
+     */
+    fun isSatisfied(granted: Set<String>, required: Set<String>, isAdmin: Boolean = false): Boolean =
+        isAdmin || granted.containsAll(required)
 }

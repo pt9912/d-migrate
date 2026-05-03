@@ -44,4 +44,23 @@ class ScopeCheckerTest : FunSpec({
     test("isSatisfied is true for empty required (scope-free contract)") {
         ScopeChecker.isSatisfied(emptySet(), emptySet()) shouldBe true
     }
+
+    test("isAdmin=true bypasses the scope check even when granted is empty") {
+        // §12.14: admin (isAdmin=true) is unrestricted across method-
+        // level gates; the route's AuthMode.DISABLED path and the
+        // service-layer re-check rely on this so both layers agree.
+        ScopeChecker.isSatisfied(
+            granted = emptySet(),
+            required = setOf("dmigrate:read"),
+            isAdmin = true,
+        ) shouldBe true
+    }
+
+    test("isAdmin=false preserves the original superset semantics") {
+        ScopeChecker.isSatisfied(
+            granted = setOf("dmigrate:read"),
+            required = setOf("dmigrate:job:start"),
+            isAdmin = false,
+        ) shouldBe false
+    }
 })
