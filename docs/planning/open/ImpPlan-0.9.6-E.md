@@ -394,6 +394,10 @@ Ausgabe:
 Verbindlich:
 
 - Job-Anlage und `COMMITTED`-Transition duerfen nicht auseinanderfallen.
+- Phase E verwendet dafuer einen gemeinsamen `JobStartTransaction`-/
+  Unit-of-Work-Port ueber JobStore und IdempotencyStore. Produktive Handler
+  duerfen Job-Save und Idempotency-`COMMITTED` nicht als zwei unabhaengige
+  Writes ausfuehren.
 - Parallele genehmigte Retries duerfen hoechstens einen Job erzeugen.
 - Deduplizierte `COMMITTED`-Antworten verbrauchen keine neue Quota.
 - Parallele identische Starts duerfen aktive `PENDING` nicht nach aussen
@@ -541,6 +545,9 @@ Antwort:
 - aktueller Jobstatus gemaess `spec/job-contract.md`
 - `executionMeta`
 - optional Job-`resourceUri`
+- bei signalisiertem, aber noch nicht bestaetigtem laufendem Cancel:
+  nicht-terminaler Status mit `executionMeta.cancelRequested=true`,
+  `executionMeta.cancelAckPending=true` und `retryAfter`
 
 Regeln:
 
@@ -572,6 +579,11 @@ Regeln:
   der Worker die naechste Side-Effect-Barriere oder einen kooperativen
   Ack-Checkpoint erreicht hat; erst danach darf der Job per CAS auf
   `cancelled` terminalisiert werden
+- `job_cancel` wartet nur bis `cancelAckTimeout` auf den Worker-Ack. Wenn der
+  Ack ausbleibt, blockiert der MCP-Call nicht weiter: die Response liefert den
+  aktuellen nicht-terminalen Jobstatus mit `cancelAckPending=true` und
+  `retryAfter`; ein erneuter `job_cancel` ist idempotent und darf den
+  signalisierten Cancel weiter beobachten.
 - wenn der Worker bereits terminal ist, gewinnt der terminale Zustand
 
 ---
@@ -702,6 +714,12 @@ Tests/Gate:
 ### 7.2 AP E.2: Job-Orchestrierung einfuehren
 
 - Job-Start-Service definieren.
+- `JobStartTransaction`-/Unit-of-Work-Port einfuehren, der Job-Anlage und
+  Idempotency-`COMMITTED(jobId)` in einer atomaren Operation committed.
+- Wenn ein Backend keine gemeinsame Datenbanktransaktion bietet, muss der
+  Adapter einen gemeinsamen Store oder eine gleichwertige atomare Primitive
+  bereitstellen; eine recoverable Saga mit sichtbarem Job-ohne-Idempotency-
+  Commit ist fuer Phase E nicht zulaessig.
 - `JobStore`-Port um atomare Status-Transitionen erweitern, z.B.
   `compareAndSetStatus` oder typisierte `transition*`-Methoden fuer
   `queued -> running`, `queued -> cancelled`, `running -> cancelled`,
@@ -719,6 +737,9 @@ Tests/Gate:
 Tests:
 
 - neuer Job startet in erlaubtem Zustand
+- Transaction-Contract-Test: Job und Idempotency werden gemeinsam sichtbar
+- Transaction-Contract-Test: Fehler beim Idempotency-Commit macht den Job
+  nicht sichtbar und erzeugt keinen deduplizierbaren Halbzustand
 - terminale Status bleiben terminal
 - JobStore-Contract-Tests decken erfolgreiche und scheiternde CAS-
   Transitionen sowie konkurrierende terminale Updates ab
@@ -817,10 +838,13 @@ Tests:
 - `DENIED` enthaelt `denialExpiresAt` und laeuft danach recoverable aus
 - Idempotency-Konflikt prueft keine Policy
 
-### 7.6 AP E.6: Start-Tool-Schemas und Handler verdrahten
+### 7.6 AP E.6: Start- und Cancel-Tool-Schemas verdrahten
 
 - JSON-Schemas fuer `schema_reverse_start`, `data_profile_start` und
   `schema_compare_start` finalisieren.
+- JSON-Schema fuer `job_cancel` finalisieren: Eingabe `jobId` oder
+  Job-`resourceUri`, optional `reason`; Ausgabe aktueller Jobstatus,
+  `executionMeta` und optional Job-`resourceUri`, kein `cancelled: boolean`.
 - `idempotencyKey` als Pflichtfeld erzwingen.
 - `dmigrate:job:start` vor Idempotency-/Policy-/Quota-Store-Writes pruefen.
 - Vor `reserveOrGet` nur syntaktische Form, Tenant-Prefix und freie
@@ -831,6 +855,8 @@ Tests:
 - freie JDBC-Strings abweisen.
 - Output-Schema auf `jobId`, `resourceUri`, `executionMeta` festlegen.
 - Tool-Registry von Unsupported-Handlern auf produktive Handler umstellen.
+- Phase-B-Golden-Schema fuer `job_cancel` migrieren, falls es noch
+  `jobId -> cancelled: boolean` beschreibt.
 
 Tests:
 
@@ -845,6 +871,9 @@ Tests:
 - direkte `ALLOW`-Policy ohne Grant
 - erfolgreicher genehmigter Start
 - deduplizierter Retry
+- `job_cancel`-Schema akzeptiert `jobId` oder `resourceUri`
+- `job_cancel`-Golden-Response enthaelt aktuellen Jobstatus und
+  `executionMeta`, aber kein `cancelled: boolean`
 
 ### 7.7 AP E.7: Runner-Integration fuer Reverse, Profiling und Compare
 
@@ -881,8 +910,11 @@ Tests:
 - Laufende Jobs ueber Worker-Handle signalisieren.
 - Wartende Jobs per CAS `queued -> cancelled` vor Dispatch terminalisieren.
 - Dispatcher-Barriere verhindert Start bereits gecancelter `queued`-Jobs.
-- Side-Effect-Barriere oder Worker-Ack abwarten, bevor Cancel als angenommen
-  gilt.
+- Bis `cancelAckTimeout` auf Side-Effect-Barriere oder Worker-Ack warten,
+  bevor Cancel als angenommen gilt.
+- Bei Ack-Timeout nicht blockieren: aktuellen nicht-terminalen Status mit
+  `executionMeta.cancelRequested=true`, `cancelAckPending=true` und
+  `retryAfter` zurueckgeben.
 - Jobstatus `cancelled` per Compare-and-Set erst nach beobachtetem
   kooperativem Abbruch aus nicht-terminalem Zustand setzen.
 - Reason scrubben und auditieren.
@@ -904,6 +936,8 @@ Tests:
 - terminaler Job bleibt terminal
 - queued Job wird vor Dispatch per CAS `cancelled` und nie gestartet
 - kein `cancelled` vor Worker-Ack/Side-Effect-Barriere
+- Worker-Ack-Timeout liefert nicht-terminalen Status mit
+  `cancelAckPending=true` und ist retrybar
 - Worker wird zwischen Lookup und Cancel terminal -> `succeeded`/`failed`
   bleibt erhalten und wird nicht durch `cancelled` ueberschrieben
 - Worker publiziert nach Cancel keine neuen Artefakte
@@ -917,6 +951,10 @@ Tests:
   `reserve -> commit/refund/release`.
 - `reserve` vor Job-Erzeugung ausfuehren und bei `RateLimited`
   `RATE_LIMITED` ohne Job liefern.
+- Quota-/Rate-Limit-Port um `retryAfter` erweitern oder einen
+  `retryAfterProvider` im `QuotaService` definieren. Fuer Window-Rate-Limits
+  kommt `retryAfter` aus dem naechsten Window-Reset; fuer aktive Jobquoten aus
+  einem konfigurierten Retry-Hint, weil Slot-Freigabe ereignisgetrieben ist.
 - `commit` nur nach erfolgreichem Job-Commit als Success-/Audit-Hook
   aufrufen; der Slot bleibt belegt.
 - `refund` nur fuer Start-Timeouts und technische Pre-Commit-Fehler aufrufen,
@@ -928,12 +966,16 @@ Tests:
 - `release` bei `succeeded`, `failed`, `cancelled` und
   Runner-Timeout-Cleanup freigeben.
 - `RATE_LIMITED` mit strukturierten Details liefern.
+- `RATE_LIMITED`-Details muessen `retryAfter` enthalten und
+  `pendingLeaseExpiresAt` hoechstens auf `now + retryAfter` setzen.
 - Start-Timeout und Runner-Timeout konfigurieren.
 - Timeout auf `OPERATION_TIMEOUT` mappen und Worker-Cancel/Cleanup ausloesen.
 
 Tests:
 
 - aktive Jobquote ueberschritten -> `RATE_LIMITED`
+- `RATE_LIMITED` enthaelt `retryAfter`; Idempotency-Lease ist darauf
+  ausgerichtet
 - deduplizierter Retry verbraucht keine neue Quote
 - parallele neue Starts koennen Quota durch `reserve` nicht ueberbuchen
 - Start-Timeout oder technischer Fehler vor Job-Commit ruft `refund`
@@ -1028,6 +1070,8 @@ Mindestfaelle:
 - identischer Retry vor und nach `COMMITTED`
 - `COMMITTED`-Retry dedupliziert auch bei inzwischen geloeschter oder
   unsichtbarer Resource
+- JobStart-Transaction verhindert sichtbaren Job ohne
+  Idempotency-`COMMITTED`
 - paralleler identischer Start auf aktiver `PENDING`-Reservierung liefert
   gespeichertes Retry-Outcome oder ohne gespeichertes Outcome retrybares
   `OPERATION_TIMEOUT` statt internem State
@@ -1042,6 +1086,7 @@ Mindestfaelle:
 - `DENIED` gilt nur bis `denialExpiresAt`
 - Grant abgelaufen oder falscher Fingerprint
 - Quota ueberschritten
+- `RATE_LIMITED` enthaelt `retryAfter` und richtet `PENDING`-Lease daran aus
 - Quota-`reserve` verhindert parallele Ueberbuchung
 - Quota-`refund` bei Start-Timeout und Pre-Commit-Fehler
 - Quota-Slot-Release nach `succeeded`, `failed`, `cancelled` und
@@ -1064,8 +1109,11 @@ Mindestfaelle:
 - Cancel fremder Principal im selben Tenant
 - Cancel queued Job vor Dispatch
 - Cancel-Ack-Barriere vor `cancelled`-Terminalisierung
+- Cancel-Ack-Timeout liefert nicht-terminalen Ack-Pending-Status
 - Cancel-Race: Worker terminalisiert zwischen Lookup und CAS
 - Worker-Side-Effect-Stopp nach Cancel
+- `job_cancel`-Schema-/Golden-Test fuer Jobstatus-Response ohne
+  `cancelled: boolean`
 
 ---
 
@@ -1095,6 +1143,8 @@ Mindestfaelle:
 - erster Start mit `RequiresApproval` ohne Grant erzeugt `AWAITING_APPROVAL`.
 - zweiter Aufruf mit gueltigem Grant startet genau einen Job und setzt die
   Reservierung auf `COMMITTED`.
+- Job-Anlage und Idempotency-`COMMITTED` werden ueber eine gemeinsame
+  Transaction/Unit-of-Work-Grenze atomar sichtbar.
 - Approval-Grants sind an die aktuelle `approvalRequestId` der
   `AWAITING_APPROVAL`-Challenge gebunden; die `approvalRequestId` wird nicht
   als Tool-Input gesendet, sondern aus dem Grant geprueft.
@@ -1110,6 +1160,8 @@ Mindestfaelle:
 - Quota folgt `reserve -> commit/refund/release`; `reserve` verhindert
   Ueberbuchung, `refund` deckt nur eigene konkrete Pre-Commit-Reservationen
   ab, `release` terminale Jobs.
+- `RATE_LIMITED` liefert `retryAfter`; recoverable `PENDING`-Leases laufen
+  nicht laenger als dieser Retry-Hinweis.
 - Idempotency-Replays ueberspringen Quota-`reserve` und Quota-`refund`.
 - `RATE_LIMITED`, Start-Timeouts und retrybare technische Startfehler lassen
   keine dauerhaft haengenden `PENDING`-Reservierungen zurueck.
@@ -1143,9 +1195,14 @@ Mindestfaelle:
   `FORBIDDEN_PRINCIPAL`.
 - fehlender oder unzureichender `dmigrate:job:cancel`-Scope fuehrt zu 403 mit
   Scope-Challenge ohne Job-Lookup.
+- `job_cancel`-Schema liefert aktuellen Jobstatus plus `executionMeta`, nicht
+  `cancelled: boolean`.
 - `job_cancel` setzt `cancelled` erst nach Worker-Ack oder Side-Effect-Barriere
   und nur per CAS aus nicht-terminalem Zustand; terminale Worker-Races duerfen
   `succeeded`/`failed` nicht ueberschreiben.
+- wenn der Worker nicht bis `cancelAckTimeout` bestaetigt, liefert
+  `job_cancel` einen nicht-terminalen Status mit `cancelAckPending=true` und
+  `retryAfter`.
 - `queued`-Jobs koennen vor Dispatch per CAS auf `cancelled` gesetzt werden;
   der Dispatcher startet bereits gecancelte Jobs nie.
 - JobStore-Port und Stores bieten atomare Status-Transitionen; blindes
