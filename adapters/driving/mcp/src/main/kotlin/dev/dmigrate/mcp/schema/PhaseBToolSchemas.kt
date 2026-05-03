@@ -363,6 +363,78 @@ internal object PhaseBToolSchemas {
     private fun objectField(): Map<String, Any> =
         mapOf("type" to "object", "additionalProperties" to true)
 
+    // ──────────────────────────────────────────────────────────────
+    // AP 6.23: shared output schema building blocks. The four
+    // affected tools (schema_validate, schema_compare, schema_generate,
+    // job_status_get) get refactored onto these helpers in D3-D6 so
+    // the JSON-Schema and the runtime wire stay in lockstep.
+    // ──────────────────────────────────────────────────────────────
+
+    /**
+     * Resource-URI pattern for `dmigrate://tenants/{tenantId}/artifacts/{artifactId}`
+     * — used by `artifactRef`, `diffArtifactRef`, and the per-element
+     * shape inside `job_status_get.artifacts[]`. Tenant- and artefact-
+     * id segments are non-empty and contain no `/`.
+     */
+    internal const val ARTIFACT_REF_PATTERN: String =
+        """^dmigrate://tenants/[^/]+/artifacts/[^/]+$"""
+
+    /** Closed-shape `artifactRef` field with the [ARTIFACT_REF_PATTERN]. */
+    internal fun artifactRefField(): Map<String, Any> = mapOf(
+        "type" to "string",
+        "pattern" to ARTIFACT_REF_PATTERN,
+    )
+
+    /**
+     * Closed-shape `executionMeta` object — required `requestId`, no
+     * additional properties (so a future debug field cannot land
+     * secrets in tool responses by accident).
+     */
+    internal fun executionMetaField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to mapOf("requestId" to stringField()),
+        "required" to listOf("requestId"),
+    )
+
+    /**
+     * Common finding item: `severity` enum (uses [SchemaFindingSeverity]
+     * wire constants), `code`/`path`/`message` strings, optional
+     * `details` slot governed by [detailsSchema] (e.g. compare-specific
+     * `before`/`after`). `additionalProperties=false` so the wire
+     * shape is closed; tools that need extra keys (e.g.
+     * `schema_generate`'s `hint`) get a tool-specific helper that
+     * widens the property set explicitly.
+     */
+    internal fun findingItem(detailsSchema: Map<String, Any>? = null): Map<String, Any> {
+        val properties = buildMap<String, Map<String, Any>> {
+            put(
+                "severity",
+                enumField(
+                    SchemaFindingSeverity.ERROR,
+                    SchemaFindingSeverity.WARNING,
+                    SchemaFindingSeverity.INFO,
+                ),
+            )
+            put("code", stringField())
+            put("path", stringField())
+            put("message", stringField())
+            if (detailsSchema != null) put("details", detailsSchema)
+        }
+        return mapOf(
+            "type" to "object",
+            "additionalProperties" to false,
+            "properties" to properties,
+            "required" to listOf("severity", "code", "path", "message"),
+        )
+    }
+
+    /** Array of [findingItem]s. */
+    internal fun findingArray(detailsSchema: Map<String, Any>? = null): Map<String, Any> = mapOf(
+        "type" to "array",
+        "items" to findingItem(detailsSchema),
+    )
+
     private fun arrayField(itemType: String? = null): Map<String, Any> = if (itemType == null) {
         mapOf("type" to "array")
     } else {

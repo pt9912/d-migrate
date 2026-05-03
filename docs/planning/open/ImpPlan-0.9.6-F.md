@@ -523,6 +523,10 @@ Bei finalem Segment:
   - `wireArtifactKind`
   - `mimeType` / `contentType`
   - optional abgeleitetes `format`
+  - optionales `targetTable` fuer Single-File-Artefakte, falls beim Upload
+    explizit angegeben
+  - optionales `targetTables`/Topologie nur fuer spaeter definierte
+    Bundle-/Directory-Artefakte
   - `sourceUploadSessionId`
   - `ownerPrincipalId` / Tenant
   - `policyFingerprint`
@@ -675,8 +679,9 @@ Tabellenoptionen folgen der bestehenden CLI-Semantik:
 
 - `table` und `tables` sind gegenseitig exklusiv.
 - Single-File- bzw. stdin-aequivalente Artefakte brauchen `table`, sofern
-  kein `schemaRef` oder keine Artefaktmetadaten die Zieltabellen eindeutig
-  bestimmen.
+  kein persistentes `targetTable` in den Upload-Metadaten existiert.
+  `schemaRef` allein reicht nicht als Zieltabellenableitung; es validiert nur
+  gegen die Zieltabelle.
 - Directory-/Mehrtabellen-Artefakte nutzen `tables` als optionale geordnete
   Filter-/Importliste; `table` ist dafuer ungueltig. Diese Topologie ist fuer
   Phase-F-Upload-Artefakte blockiert, solange kein Bundle-Format spezifiziert
@@ -893,6 +898,16 @@ Tests:
 - policy-pflichtiges Init nutzt den bestehenden
   `SyncEffectIdempotencyStore`: `reserve(scope, payloadFingerprint)` mit
   `scope=(tenant, caller, artifact_upload_init, approvalKey)`.
+  Weil der bestehende Store gleiche Pending-Reserves nicht als
+  `AlreadyClaimed` unterscheidet, muss Phase F zusaetzlich einen atomaren
+  Single-Writer-Claim fuer Init einfuehren: entweder als
+  `SyncEffectIdempotencyStore`-Erweiterung (`Reserved` nur fuer den ersten
+  Besitzer, `AlreadyReserved`/`InProgress` fuer gleiche parallele Fingerprints)
+  oder als separaten, an denselben SyncEffect-Scope gebundenen
+  `UploadInitClaimStore`. Nur der Claim-Inhaber darf Session, Upload-
+  Berechtigung und Quota-Reservierung erzeugen; parallele gleiche Retries
+  warten, liefern In-Progress oder replayen das spaetere Outcome, duerfen aber
+  keine zweite Session erzeugen.
   `commit(scope, resultRef)` darf erst nach durablem Commit von
   `UploadSession`, session-scoped Upload-Berechtigung und Quota-Reservierung
   erfolgen. `resultRef` ist entweder die `uploadSessionId` selbst oder eine
@@ -901,9 +916,10 @@ Tests:
   Die Wahl muss in Phase F festgelegt und getestet werden.
 - Crash vor SyncEffect-Commit darf beim Retry keine zweite Session erzeugen:
   Retry muss entweder den durable Session-/Outcome-Record finden und den
-  SyncEffect-Eintrag nachcommitten oder einen deterministischen Konflikt
-  liefern, aber nie eine zweite Session fuer denselben
-  `(approvalKey, payloadFingerprint)` erzeugen.
+  SyncEffect-Eintrag nachcommitten oder bis zum vorhandenen In-Progress-Claim
+  konvergieren. Fuer denselben `(approvalKey, payloadFingerprint)` ist ein
+  Konflikt kein gueltiges Crash-Retry-Ergebnis; der Retry-Vertrag ist Replay
+  derselben Session.
 - read-only `schema_staging_readonly` unveraendert ohne Write-Policy lassen.
 
 Tests:
@@ -912,9 +928,10 @@ Tests:
 - policy-pflichtiges Init ohne Grant -> `POLICY_REQUIRED`
 - genehmigter Init erzeugt Session
 - Retry erzeugt keine zweite Session
+- parallele gleiche genehmigte Init-Retries erzeugen durch Init-Single-Writer-
+  Claim maximal eine Session
 - Retry nach Crash zwischen Session-Commit und SyncEffect-Commit replayt
-  dieselbe `uploadSessionId` oder liefert deterministischen Konflikt, aber
-  erzeugt keine zweite Session
+  dieselbe `uploadSessionId`
 - `SyncEffectReserveOutcome.Existing(resultRef)` replayt dieselben Init-
   Antwortdaten ueber `uploadSessionId` oder `UploadInitOutcomeStore`
 - `schema_staging_readonly` mit anderem `artifactKind` -> `VALIDATION_ERROR`
@@ -1063,6 +1080,10 @@ Tests:
 - Core-ArtifactKind-Abbildung festlegen: entweder `UPLOAD_INPUT` plus
   `wireArtifactKind`/`uploadIntent`-Metadaten verwenden oder Core-Enum,
   Stores, Specs und Migrationen synchron erweitern.
+- optionale Zieltabellen-Metadaten (`targetTable` fuer Single-File, spaetere
+  `targetTables` nur fuer Bundle-/Directory-Artefakte) im
+  Upload-Metadatenmodell beruecksichtigen oder `table` im Import-Payload
+  verpflichtend machen.
 - persistente Upload-Metadaten aus AP F.5 lesen und nicht aus transienten
   Upload-Session- oder Tool-Response-Daten ableiten.
 - `artifactId` / Artefakt-`resourceUri` validieren.
@@ -1107,7 +1128,7 @@ Tests:
 - `schemaRef` wird aus `SchemaStore` geladen oder serverseitig gespult, nicht
   aus lokalem Pfad
 - `table` und `tables` gemeinsam -> `VALIDATION_ERROR`
-- Single-File-Artefakt ohne ableitbare Zieltabelle und ohne `table` ->
+- Single-File-Artefakt ohne persistentes `targetTable` und ohne `table` ->
   `VALIDATION_ERROR`
 - Directory-/Mehrtabellen-Artefakt mit `table` -> `VALIDATION_ERROR`
 - leere oder syntaktisch ungueltige `tables` -> `VALIDATION_ERROR`
@@ -1312,6 +1333,8 @@ Mindestfaelle:
 - Init-Retry mit anderem Payload
 - policy-pflichtiges Init-Retry nach Crash zwischen Session-Commit und
   SyncEffect-Commit
+- parallele gleiche genehmigte Init-Retries waehlen genau einen Init-Claim-
+  Besitzer
 - Init mit kanonischem `sizeBytes`
 - Init mit `sizeBytes=0` fuer erlaubtes nicht-Schema-`job_input`
 - Init mit `sizeBytes=0` fuer `schema_staging_readonly` oder
@@ -1351,6 +1374,8 @@ Mindestfaelle:
 - Import aus `ArtifactContentStore` ohne lokale Pfade
 - `schemaRef`-Preflight ohne lokale Schema-Pfade
 - `table`/`tables` gegenseitig exklusiv und topology-spezifisch validiert
+- Single-File-Import ohne `table` und ohne persistentes `targetTable` ->
+  `VALIDATION_ERROR`
 - `tables` ohne explizit definiertes Bundle-/Directory-Artefakt ->
   `VALIDATION_ERROR`
 - MCP-Import-Fingerprint enthaelt keine Temp-Pfade, materialisierte URLs oder
@@ -1398,6 +1423,10 @@ Mindestfaelle:
   Session-/Upload-Berechtigungs-/Quota-Commit; Crash-Retry erzeugt keine
   zweite Session und replayt ueber `uploadSessionId` oder
   `UploadInitOutcomeStore`.
+- Parallele gleiche genehmigte Init-Retries sind single-writer; Phase F
+  erweitert den SyncEffect-Store oder nutzt einen daran gebundenen
+  `UploadInitClaimStore`, sodass maximal ein Claim-Inhaber Session,
+  Upload-Berechtigung und Quota-Reservierung erzeugt.
 - Abweichender Payload mit gleichem `approvalKey`-Scope liefert
   `IDEMPOTENCY_CONFLICT`.
 - Read-only Schema-Staging kann weiterhin grosse Schemas ohne Write-Policy zu
@@ -1443,8 +1472,8 @@ Mindestfaelle:
   cleanup-faehig gespult; der bestehende `DataImportRequest.schema` erhaelt
   keine Client- oder Tool-Payload-Pfade.
 - `table` und `tables` uebernehmen die bestehende CLI-Semantik: gegenseitig
-  exklusiv, `table` fuer Single-File-Artefakte ohne eindeutige Ableitung,
-  `tables` fuer Directory-/Mehrtabellen-Artefakte.
+  exklusiv, `table` fuer Single-File-Artefakte ohne persistentes
+  `targetTable`, `tables` fuer Directory-/Mehrtabellen-Artefakte.
 - Mehrtabellen-Upload-Import ist ohne explizit spezifiziertes Bundle-/Archiv-
   Format nicht erlaubt; `tables` fuer normale einzelne Upload-Artefakte liefert
   `VALIDATION_ERROR`.
