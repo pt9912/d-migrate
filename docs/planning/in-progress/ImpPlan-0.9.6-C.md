@@ -1519,6 +1519,11 @@ Aufgaben:
   - keine zusaetzlichen Properties auf Finding-Ebene
   `path` bleibt string und darf leer sein, wenn der fachliche Pfad
   unbekannt ist; `message` bleibt lesbare Kurzfassung.
+- `schema_generate` nutzt einen eigenen Finding-Helper, z.B.
+  `generatorFindingItem()`, der das gemeinsame Basisschema erweitert
+  und ausschliesslich dort `hint: string` als optionales Feld erlaubt.
+  `schema_validate` und `schema_compare` muessen weiterhin ohne
+  `hint` validieren; kein globales `additionalProperties=true`.
 - `schema_validate` Output-Schema:
   - `artifactRef` optional, Format string mit URI-Pattern fuer
     Artefakt-Resource-Refs
@@ -1568,7 +1573,10 @@ Aufgaben:
     `exitCode`; kein `error.details` in `job_status_get`, solange
     `ManagedJob.JobError` dieses Feld nicht besitzt
   - `artifacts` bleibt Array von Resource-URI-Strings; rohe lokale
-    Pfade, Connection-Strings oder Secret-Felder sind nicht erlaubt
+    Pfade, Connection-Strings oder Secret-Felder sind nicht erlaubt.
+    Das Schema nutzt fuer jedes `artifacts[]`-Element dasselbe
+    Artefakt-Resource-URI-Pattern wie `artifactRef`; `resourceUri`
+    selbst nutzt das Job-Resource-URI-Pattern
 - Wichtige Abgrenzung: Finding-`details` ist ein Objekt auf
   Tool-Output-Findings. Toolfehler-`details` im `isError=true`-
   Envelope bleibt gemaess `McpServiceImpl` ein Array von
@@ -1580,8 +1588,9 @@ Aufgaben:
   Output.
 - Forbidden-Key- und Scrubbing-Regel auf alle Output-`details`
   ausweiten:
-  - `details`, `details.before`, `details.after`, `progress.message`,
-    `job_status_get.error.message` und, fuer Toolfehler-Envelopes,
+  - `details`, `details.before`, `details.after`,
+    `job_status_get.progress.phase`, `job_status_get.error.message`
+    und, fuer Toolfehler-Envelopes,
     `error.details[].value` laufen vor Serialisierung durch
     `SecretScrubber.scrub`
   - Schema-Builder/Golden-Tests muessen Felder mit Namen wie
@@ -1616,10 +1625,14 @@ Akzeptanz:
   unbekannte Credential-Key-Felder ab
 - `schema_validate` und `schema_generate` koennen optionale
   Finding-`details` schema-valide transportieren; `schema_generate`
-  akzeptiert zusaetzlich das explizite legacy-`hint`-Feld ohne freie
-  `additionalProperties` auf Finding-Ebene zu oeffnen
+  akzeptiert ueber einen tool-spezifischen Finding-Helper zusaetzlich
+  das explizite legacy-`hint`-Feld, waehrend `schema_validate` und
+  `schema_compare` dieses Feld ablehnen
 - `job_status_get.progress` und `job_status_get.error` sind typisiert
   und spiegeln die AP-6.17-Scrubbing-Projektion
+- `job_status_get.resourceUri` und jedes `job_status_get.artifacts[]`
+  validieren gegen Resource-URI-Patterns; lokale Pfade oder nackte
+  IDs werden schema-seitig abgelehnt
 - `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
   `ArtifactSink` ein `artifactRef`; der degradierte Pfad ohne Sink ist
   gesondert getestet
