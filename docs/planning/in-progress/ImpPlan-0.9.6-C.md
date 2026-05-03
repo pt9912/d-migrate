@@ -1505,8 +1505,9 @@ Aufgaben:
   - `findingArray(detailsSchema: Map<String, Any>? = null)`
   - `findingItem(...)` mit `additionalProperties=false`
   - `artifactRefField()` fuer `dmigrate://tenants/{tenantId}/artifacts/{artifactId}`
-  - `executionMetaField()` mit mindestens `requestId` optional,
-    aber ohne offene Secret-/Debug-Slots
+  - `executionMetaField()` als optionales Top-Level-Feld, aber wenn
+    vorhanden mit `required: ["requestId"]` und ohne offene Secret-/
+    Debug-Slots
   Die Helper verwenden die bestehenden Wire-Konstanten aus
   `SchemaFindingSeverity`, damit Handler und Schema nicht auseinander
   laufen.
@@ -1577,6 +1578,12 @@ Aufgaben:
     Das Schema nutzt fuer jedes `artifacts[]`-Element dasselbe
     Artefakt-Resource-URI-Pattern wie `artifactRef`; `resourceUri`
     selbst nutzt das Job-Resource-URI-Pattern
+  - der Handler darf intern weiterhin Artefakt-IDs aus Job-Metadaten
+    lesen, muss sie vor dem Wire-Output aber tenantgebunden in
+    `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` projizieren.
+    Tests/Fixtures mit nackten IDs wie `art-1` muessen entsprechend auf
+    Resource-URIs migriert werden; nackte IDs sind nur interne
+    Speicherwerte, kein `job_status_get`-Output.
 - Wichtige Abgrenzung: Finding-`details` ist ein Objekt auf
   Tool-Output-Findings. Toolfehler-`details` im `isError=true`-
   Envelope bleibt gemaess `McpServiceImpl` ein Array von
@@ -1633,6 +1640,8 @@ Akzeptanz:
 - `job_status_get.resourceUri` und jedes `job_status_get.artifacts[]`
   validieren gegen Resource-URI-Patterns; lokale Pfade oder nackte
   IDs werden schema-seitig abgelehnt
+- `executionMeta` darf als Ganzes fehlen; sobald es emittiert wird,
+  ist `executionMeta.requestId` required und scrubbed
 - `schema_generate` setzt bei Findings-Overflow mit verfuegbarem
   `ArtifactSink` ein `artifactRef`; der degradierte Pfad ohne Sink ist
   gesondert getestet
