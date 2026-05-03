@@ -114,6 +114,16 @@ Phase E darf `job_cancel` nur fertigstellen, wenn Phase E0 nachweist, dass die
 betroffenen Runner kooperative Cancel-Checkpoints und Side-Effect-Stopp
 unterstuetzen. Ist E0 `Blocked`, ist Phase E ebenfalls blockiert.
 
+Phase E uebernimmt den E0-Cancel-Vertrag vollstaendig:
+
+- `CancellationToken.cancellationReason` und
+  `OperationCancelledException.reason` bleiben beobachtbar und erhalten den
+  zuerst gesetzten Grund.
+- CLI- oder CLI-artige `execute(...): Int`-Adaptergrenzen mappen
+  `OperationCancelledException` auf den stabilen Exit-Code `130`.
+- Catch-All-Fehlerbehandlung in Runnern, Invokern und Worker-Adaptern muss
+  `OperationCancelledException` vor generischem Fehler-Mapping behandeln.
+
 ### 2.4 d-migrate-Jobs bleiben das Async-Modell
 
 Phase E fuehrt keine parallele MCP-Tasks-Abstraktion ein. Das Async-Modell
@@ -342,9 +352,23 @@ Zustandsaenderung im gemeinsamen Jobmodell:
 - terminale Jobs bleiben terminal
 - erfolgreich angenommene Abbrueche enden erst nach Worker-Ack oder
   Side-Effect-Barriere im Jobstatus `cancelled`
-- Worker beobachten `CancellationToken` oder Worker-Handle
+- Worker beobachten `CancellationToken` oder Worker-Handle; das Signal traegt
+  eine Quelle (`JOB_CANCEL` oder `RUNNER_TIMEOUT`) und einen optionalen
+  scrubbed Reason
 - nach angenommenem Cancel starten Phase-E-gemanagte Worker keine neuen
   Artefakte oder Schreibabschnitte
+
+Cancel-Reason-Regeln:
+
+- Der erste angenommene `job_cancel`-Grund wird persistent am Job als
+  `cancelRequestedReason` bzw. aequivalentes Execution-Metadatum gespeichert.
+- Wiederholte `job_cancel`-Aufrufe fuer denselben bereits signalisierten Job
+  duerfen diesen Grund nicht ueberschreiben. Ein anderer spaeterer Reason wird
+  nur als erneuter Audit-Versuch erfasst.
+- Der Worker-Token erhaelt genau diesen zuerst gespeicherten Grund; seine
+  `OperationCancelledException.reason` muss ihn tragen.
+- Reason-Werte werden vor Persistenz, Audit und Response gescrubbt und
+  laengenbegrenzt; rohe Secrets, JDBC-URLs und Approval-Tokens sind verboten.
 
 ### 4.6 Timeouts und Quotas sind fachliche Outcomes
 
@@ -355,6 +379,15 @@ Bei bereits gestarteten Jobs muss der Jobstatus gemaess `spec/job-contract.md`
 auf `failed` mit `error.code = OPERATION_TIMEOUT` aktualisiert werden.
 Runner-Timeouts sind keine fachlichen Cancels; weitere Side Effects werden
 ueber Cancel-/Cleanup-Pfade gestoppt.
+
+Wenn der Orchestrator fuer Runner-Timeouts denselben Worker-Token setzt, ist
+die Signalquelle `RUNNER_TIMEOUT` verbindlich zu speichern und auszuwerten:
+ein daraus entstehendes `OperationCancelledException`-Outcome terminalisiert
+den Job als `failed(error.code=OPERATION_TIMEOUT)`, nicht als `cancelled` und
+nicht als CLI-Cancel `130`. Falls eine CLI-kompatible Projektion noetig ist,
+muss sie dem Timeout-Vertrag folgen und darf nicht den Cancel-Exit-Code `130`
+verwenden. Nur die Signalquelle `JOB_CANCEL` darf in Phase E zum Jobstatus
+`cancelled` fuehren.
 
 Aktive Quota-Slots folgen dem bestehenden `QuotaService`-Lifecycle:
 `reserve` belegt den Slot vor Job-Erzeugung atomar, `commit` bestaetigt den
@@ -564,6 +597,10 @@ Antwort:
 - bei signalisiertem, aber noch nicht bestaetigtem laufendem Cancel:
   nicht-terminaler Status mit `executionMeta.cancelRequested=true`,
   `executionMeta.cancelAckPending=true` und `retryAfter`
+- bei bereits durable angefordertem Cancel: dieselbe
+  `cancelRequestedReason`/Signalquelle und derselbe Pending- oder Terminal-
+  Status; der Request-Reason des Retries ueberschreibt die gespeicherte
+  Bindung nicht
 
 Regeln:
 
@@ -591,6 +628,8 @@ Regeln:
   terminalisiert werden; der Dispatcher muss `cancelled` vor Start pruefen und
   darf solche Jobs nie an einen Worker uebergeben
 - Worker-Handle wird signalisiert, falls der Job bereits laeuft
+- `cancelRequested*`-Metadaten werden vor Worker-Signalisierung durable per
+  CAS gesetzt; Retry nach Crash darf daran anknuepfen
 - Fuer laufende Jobs gilt Cancel erst als angenommen, wenn das
   CancellationToken gesetzt ist und der Worker die naechste
   Side-Effect-Barriere oder einen kooperativen Ack-Checkpoint erreicht hat;
@@ -601,6 +640,9 @@ Regeln:
   aktuellen nicht-terminalen Jobstatus mit `cancelAckPending=true` und
   `retryAfter`; ein erneuter `job_cancel` ist idempotent und darf den
   signalisierten Cancel weiter beobachten.
+- `CancellationToken.cancellationReason` und
+  `OperationCancelledException.reason` muessen den ersten persistenten
+  `cancelRequestedReason` tragen
 - wenn der Worker bereits terminal ist, gewinnt der terminale Zustand
 
 ---
@@ -750,6 +792,16 @@ Tests/Gate:
 - `COMMITTED`-Idempotency-Retention an Job-Retention binden:
   `idempotencyRetentionExpiresAt >= job.expiresAt`.
 - Artefakt-Publish an Jobkontext binden.
+- Job-/Execution-Metadaten fuer Cancel einfuehren oder erweitern:
+  `cancelRequested`, `cancelAckPending`, `cancelRequestedAt`,
+  `cancelRequestedBy`, `cancelRequestedReason`, `cancelSignalSource`,
+  `cancelAckedAt`. Diese Felder muessen fuer `job_status_get`,
+  `job_cancel`-Responses und Worker-Replays aus demselben Job-/Execution-
+  Record projizierbar sein; reine Response-only Felder reichen nicht.
+- Worker-Handle-Signalisierung und Job-Metadaten-Update duerfen nicht
+  auseinanderfallen: erst durable `cancelRequested*` per CAS setzen, dann
+  Worker signalisieren. Wenn Signalisierung fehlschlaegt, bleibt der Job
+  nicht-terminal mit `cancelAckPending=true` und retrybarem `job_cancel`.
 
 Tests:
 
@@ -763,6 +815,11 @@ Tests:
 - Worker-Handle wird fuer laufende Jobs gefunden
 - `COMMITTED`-Idempotency-Key bleibt mindestens bis `job.expiresAt`
   deduplizierbar
+- Cancel-Metadaten sind nach JobStore-Reload sichtbar und werden in
+  `job_status_get`/`job_cancel` konsistent projiziert
+- Retry nach durablem `cancelRequested*`, aber vor Worker-Ack signalisiert den
+  Worker erneut oder beobachtet denselben Pending-Cancel, ohne Reason oder
+  Request-Metadaten zu ueberschreiben
 
 ### 7.3 AP E.3: Idempotency-Service implementieren
 
@@ -866,6 +923,12 @@ Tests:
 - JSON-Schema fuer `job_cancel` finalisieren: Eingabe `jobId` oder
   Job-`resourceUri`, optional `reason`; Ausgabe aktueller Jobstatus,
   `executionMeta` und optional Job-`resourceUri`, kein `cancelled: boolean`.
+- `executionMeta` fuer Jobs um Cancel-Felder erweitern:
+  `cancelRequested`, `cancelAckPending`, `cancelRequestedAt`,
+  `cancelRequestedBy`, optional `cancelReason` bzw. scrubbed
+  `cancelRequestedReason`, `cancelSignalSource` und `retryAfter` fuer
+  Ack-Pending. Das Schema muss diese Felder fuer `job_status_get` und
+  `job_cancel` einheitlich verwenden.
 - `idempotencyKey` als Pflichtfeld erzwingen.
 - `dmigrate:job:start` vor Idempotency-/Policy-/Quota-Store-Writes pruefen.
 - Vor `reserveOrGet` nur syntaktische Form, Tenant-Prefix und freie
@@ -895,6 +958,9 @@ Tests:
 - `job_cancel`-Schema akzeptiert `jobId` oder `resourceUri`
 - `job_cancel`-Golden-Response enthaelt aktuellen Jobstatus und
   `executionMeta`, aber kein `cancelled: boolean`
+- `job_status_get`- und `job_cancel`-Goldens zeigen dieselbe
+  `executionMeta`-Form fuer Pending-Cancel, Ack-Pending und terminales
+  `cancelled`
 
 ### 7.7 AP E.7: Runner-Integration fuer Reverse, Profiling und Compare
 
@@ -907,6 +973,15 @@ Tests:
   materialisieren.
 - Artefakte und Jobstatus nach `spec/job-contract.md` publizieren.
 - E0-Cancel-Checkpoints produktiv nutzen.
+- Worker-Adapter behandeln `OperationCancelledException` vor generischem
+  Catch-All-Mapping:
+  - Quelle `JOB_CANCEL` -> Jobstatus `cancelled`, kein `failed`
+  - Quelle `RUNNER_TIMEOUT` -> `failed(error.code=OPERATION_TIMEOUT)`, kein
+    `cancelled`
+  - CLI-/Runner-`execute(...): Int`-Grenzen fuer echte Cancel-Operationen
+    verwenden Exit-Code `130`
+- Worker-Adapter erhalten den Cancel-Reason aus dem Token und projizieren ihn
+  nur scrubbed in Job-/Audit-Metadaten.
 
 Tests:
 
@@ -919,6 +994,12 @@ Tests:
 - Import-/Transfer-Runner sind in Phase E nicht produktiv verdrahtet; deren
   Daten-Schreibstopp bleibt auf E0-Nachweis und Folgephase begrenzt
 - Secrets erscheinen nicht in Job-, Artefakt- oder Audit-Projektionen
+- `OperationCancelledException` aus `JOB_CANCEL` wird nicht als generischer
+  Runner-Fehler gemappt und fuehrt nicht zu `failed`
+- `OperationCancelledException` aus `RUNNER_TIMEOUT` fuehrt zu
+  `failed(error.code=OPERATION_TIMEOUT)` und nicht zu `cancelled`
+- CLI-artige Runner-Grenzen mappen echte Cancel-Outcomes auf Exit-Code `130`
+  und nicht auf Exit-Code `5`/`7`
 
 ### 7.8 AP E.8: `job_cancel` implementieren
 
@@ -940,7 +1021,14 @@ Tests:
   `retryAfter` zurueckgeben.
 - Jobstatus `cancelled` per Compare-and-Set erst nach beobachtetem
   kooperativem Abbruch aus nicht-terminalem Zustand setzen.
-- Reason scrubben und auditieren.
+- Reason scrubben, laengenbegrenzen und auditieren.
+- Ersten Reason per CAS/durablem Update erhalten. Ein erneuter `job_cancel`
+  mit anderem Reason ueberschreibt weder `cancelRequestedReason` noch den
+  Token-Reason; er erzeugt nur ein eigenes Audit-Event fuer den Retry.
+- Pending-Cancel-Replay ist vor erneuter Worker-Signalisierung zu pruefen:
+  falls `cancelRequested=true` bereits durable gespeichert ist, liefert
+  `job_cancel` denselben Ack-Pending- oder terminalen Status und darf den
+  Reason nicht neu binden.
 
 Tests:
 
@@ -962,6 +1050,11 @@ Tests:
 - kein `cancelled` vor Worker-Ack/Side-Effect-Barriere
 - Worker-Ack-Timeout liefert nicht-terminalen Status mit
   `cancelAckPending=true` und ist retrybar
+- wiederholter `job_cancel` mit identischem Reason bleibt idempotent
+- wiederholter `job_cancel` mit anderem Reason ueberschreibt den ersten
+  persistierten Reason nicht
+- Crash/Retry nach persistiertem `cancelRequested`, aber vor Worker-Ack liefert
+  denselben Pending-Cancel und signalisiert hoechstens denselben Worker erneut
 - Worker wird zwischen Lookup und Cancel terminal -> `succeeded`/`failed`
   bleibt erhalten und wird nicht durch `cancelled` ueberschrieben
 - Worker publiziert nach Cancel keine neuen Artefakte
@@ -1062,6 +1155,19 @@ Verbindliche Fehler:
   Tenant
 - `VALIDATION_ERROR` fuer ungueltige Payloads und freie JDBC-Strings
 
+Cancel-/Timeout-Fehlerprojektion:
+
+- `OperationCancelledException` aus der Signalquelle `JOB_CANCEL` ist kein
+  fachlicher Fehler des Workers. Der Job endet nach Ack/Side-Effect-Barriere
+  als `cancelled`; CLI-artige synchrone Adaptergrenzen verwenden dafuer den
+  stabilen Exit-Code `130`.
+- `OperationCancelledException` aus der Signalquelle `RUNNER_TIMEOUT` ist kein
+  User-Cancel. Der Job endet als `failed(error.code=OPERATION_TIMEOUT)`;
+  Exit-Code `130` ist dafuer verboten.
+- Generic-Catch-All-Pfade duerfen `OperationCancelledException` nicht als
+  `VALIDATION_ERROR`, `INTERNAL_AGENT_ERROR`, Exit-Code `5` oder Exit-Code
+  `7` verschleiern.
+
 Security-Regeln:
 
 - fehlende MCP-Authorization-Scopes werden vor Idempotency-/Policy-/Quota-
@@ -1074,6 +1180,8 @@ Security-Regeln:
   werden
 - `approvalToken` ist transient und nie Teil des Payload-Fingerprints
 - Policy- und Tenant-Fehler leaken keine fremden Ressourcendetails
+- Cancel-Reasons werden gescrubbt und laengenbegrenzt; der erste persistierte
+  Reason gewinnt und wird durch Retries nicht ueberschrieben
 
 ---
 
@@ -1145,6 +1253,11 @@ Mindestfaelle:
 - Cancel queued Job benoetigt keinen Worker-Ack
 - Cancel-Ack-Barriere vor `cancelled`-Terminalisierung
 - Cancel-Ack-Timeout liefert nicht-terminalen Ack-Pending-Status
+- Cancel-Reason wird im Token, in `OperationCancelledException.reason` und in
+  Job-/Audit-Metadaten scrubbed erhalten
+- wiederholter Cancel mit anderem Reason ueberschreibt den ersten Reason nicht
+- `OperationCancelledException` aus User-Cancel -> `cancelled` bzw. CLI-Code
+  `130`; aus Runner-Timeout -> `failed(error.code=OPERATION_TIMEOUT)`
 - Cancel-Race: Worker terminalisiert zwischen Lookup und CAS
 - Worker-Side-Effect-Stopp nach Cancel
 - `job_cancel`-Schema-/Golden-Test fuer Jobstatus-Response ohne
@@ -1237,12 +1350,17 @@ Mindestfaelle:
   Scope-Challenge ohne Job-Lookup.
 - `job_cancel`-Schema liefert aktuellen Jobstatus plus `executionMeta`, nicht
   `cancelled: boolean`.
+- `executionMeta` enthaelt fuer Jobstatus- und Cancel-Responses konsistente
+  Cancel-Metadaten inklusive `cancelRequested`, `cancelAckPending`,
+  Zeitstempeln, Signalquelle und scrubbed Reason, soweit gesetzt.
 - laufende Jobs setzt `job_cancel` erst nach Worker-Ack oder
   Side-Effect-Barriere per CAS auf `cancelled`; terminale Worker-Races duerfen
   `succeeded`/`failed` nicht ueberschreiben.
 - wenn der Worker nicht bis `cancelAckTimeout` bestaetigt, liefert
   `job_cancel` einen nicht-terminalen Status mit `cancelAckPending=true` und
   `retryAfter`.
+- wiederholte `job_cancel`-Aufrufe sind idempotent; der erste persistierte
+  Reason bleibt erhalten und abweichende Retry-Reasons werden nur auditiert.
 - `queued`-Jobs koennen vor Dispatch per CAS auf `cancelled` gesetzt werden;
   der Dispatcher startet bereits gecancelte Jobs nie, und queued Cancel
   braucht keinen Worker-Ack.
@@ -1250,6 +1368,9 @@ Mindestfaelle:
   Ueberschreiben reicht fuer Phase E nicht.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
+- `OperationCancelledException` wird gemaess Signalquelle gemappt:
+  User-Cancel fuehrt zu `cancelled` bzw. CLI-Code `130`, Runner-Timeout zu
+  `failed(error.code=OPERATION_TIMEOUT)`.
 - terminale Jobs bleiben terminal.
 - nach angenommenem Cancel publizieren Phase-E-gemanagte Worker keine neuen
   Artefakte und starten keine weiteren Schreibabschnitte.
