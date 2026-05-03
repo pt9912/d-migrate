@@ -398,9 +398,13 @@ Regeln:
 - vor der Policy-Pruefung wird fuer fremde/administrative Abbrueche ein
   persistierter Abort-Claim bzw. Idempotency-Record fuer
   `(tenant, caller, approvalKey, uploadSessionId)` geprueft. Existiert bereits
-  ein terminales Abort-Outcome fuer denselben Claim, wird dieses zurueckgegeben,
-  ohne den Approval-Fingerprint aus dem aktuellen Sessionzustand neu zu
-  berechnen.
+  ein terminales Abort-Outcome fuer denselben Claim, wird das gespeicherte
+  Abort-Fingerprint-Material mit dem aktuellen Request-Fingerprint verglichen.
+  Nur bei identischem Fingerprint wird das Outcome zurueckgegeben, ohne den
+  Approval-Fingerprint aus dem aktuellen Sessionzustand neu zu berechnen.
+  Abweichende Request-Felder wie `reason`, Caller oder Session-ID liefern
+  `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED` oder `POLICY_DENIED` je nach
+  Store-/Policy-Zustand.
 - der Approval-Fingerprint fuer fremde/administrative Abbrueche bindet den
   vorab genehmigten Pre-Abort-Zustand:
   - Toolname `artifact_upload_abort`
@@ -420,8 +424,9 @@ Regeln:
   Store-/Policy-Zustand
 - nach erfolgreichem Abort wird das terminale Abort-Outcome persistiert.
   Retry desselben genehmigten Abbruchs ist idempotent und liefert dieses
-  Outcome auch dann zurueck, wenn Session-Status oder Byte-Kontext durch Abort
-  und Cleanup inzwischen veraendert wurden
+  Outcome nur bei identischem gespeicherten Abort-Fingerprint zurueck, auch
+  wenn Session-Status oder Byte-Kontext durch Abort und Cleanup inzwischen
+  veraendert wurden
 - abgebrochene Sessions werden `ABORTED`
 - Zwischensegmente werden verworfen oder als nicht finalisierte Spool-Dateien
   fuer Cleanup markiert
@@ -856,6 +861,9 @@ Tests:
 - Abort-Claim und terminales Abort-Outcome fuer administrative/fremde
   Abbrueche persistieren, bevor Cleanup den Session-Status oder Byte-Kontext
   fuer Retry-Fingerprints veraendert.
+- Persistierte Abort-Outcomes mit dem vollstaendigen Abort-Fingerprint
+  verknuepfen oder vor der Rueckgabe gegen den aktuellen Request-Fingerprint
+  vergleichen.
 - `UPLOAD_SESSION_ABORTED` und `UPLOAD_SESSION_EXPIRED` mappen.
 - TTL- und Idle-Expiry implementieren.
 - Cleanup gegen Segment- und Artefaktspools ausfuehren.
@@ -872,6 +880,8 @@ Tests:
 - Retry desselben genehmigten administrativen Abbruchs ist idempotent
 - Retry nach Cleanup liest persistiertes Abort-Outcome, statt den aktuellen
   Session-Status oder Byte-Kontext erneut in den Fingerprint zu rechnen
+- Retry nach Cleanup mit anderem `reason` oder anderem
+  Abort-Fingerprint-Material gibt nicht das alte Outcome zurueck
 - gleicher `approvalKey` mit anderer `uploadSessionId` oder anderem `reason`
   -> `IDEMPOTENCY_CONFLICT` oder `POLICY_REQUIRED`
 - Abort-Grant kann nicht fuer andere Session, anderen Owner, anderen Caller
@@ -1156,7 +1166,9 @@ Mindestfaelle:
   wiederverwendbar.
 - Idempotente Abort-Retries lesen ein persistiertes terminales Abort-Outcome,
   bevor aktueller Session-Status oder durch Cleanup veraenderter Byte-Kontext
-  in eine neue Policy-Bewertung einfliesst.
+  in eine neue Policy-Bewertung einfliesst; das Outcome wird nur
+  zurueckgegeben, wenn der gespeicherte Abort-Fingerprint zum aktuellen
+  Request passt.
 - `data_import_start` bindet hochgeladene Artefakte und
   `targetConnectionRef` an Policy und Idempotency.
 - `data_import_start` akzeptiert nur `job_input`-Artefakte mit kompatibler
