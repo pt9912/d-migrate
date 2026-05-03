@@ -249,9 +249,12 @@ Reservation-Transition haben:
   Secret-Store-Fehler, bleiben recoverable `PENDING` mit gespeichertem
   Outcome, `retryAfter` und kurzer Lease.
 - Quota-Reservierung erfolgreich, aber Fehler vor Job-Commit: die
-  Quota-Reservierung wird per `refund` zurueckgegeben und die
-  Idempotency-Reservierung bleibt nach Fehlerart recoverable `PENDING` oder
-  wird final `FAILED`.
+  Quota-Reservierung wird als Reservation-Owner mit Lease im
+  Idempotency-/JobStart-Transaction-Kontext persistiert. Der aktive
+  Pipeline-Owner refunded sie bei erkanntem Pre-Commit-Fehler; nach Crash
+  refunded ein Sweeper nur abgelaufene, nicht committed Reservation-Owners.
+  Die Idempotency-Reservierung bleibt nach Fehlerart recoverable `PENDING`
+  oder wird final `FAILED`.
 - genehmigte, aber noch nicht committete Starts, die durch `RATE_LIMITED`,
   Start-Timeout oder retrybare technische Fehler recoverable `PENDING`
   bleiben, speichern die erfuellte Approval-Bindung
@@ -259,6 +262,10 @@ Reservation-Transition haben:
   requiredScopes). Ein spaeterer Retry darf diese Reservierung nur reclaimen,
   wenn diese gespeicherte Freigabe noch gueltig ist oder ein erneut gueltiger
   `approvalToken` fuer die aktuelle Challenge validiert wird.
+- Ist die gespeicherte Approval-Bindung abgelaufen oder ungueltig, liefert ein
+  identischer Retry `POLICY_REQUIRED` mit erneuerter `approvalRequestId` und
+  setzt die Reservierung atomar zurueck auf `AWAITING_APPROVAL`, statt den Job
+  ohne Grant zu starten.
 - `OPERATION_TIMEOUT` vor Job-Commit: keine Job-Erzeugung; die Reservierung
   wird als recoverable `PENDING` mit abgelaufener oder kurzer Lease
   freigegeben, damit identische Retries die Start-Pipeline neu claimen
@@ -430,6 +437,9 @@ Pflichtfelder:
 - erfuellte Approval-Bindung mit `approvalRequestId`,
   Grant-/Issuer-Fingerprint, Grant-Ablauf und requiredScopes, wenn `PENDING`
   bereits mit gueltigem Grant geclaimt wurde, aber noch nicht `COMMITTED` ist
+- persistenter Quota-Reservation-Owner mit Reservation-ID, Lease und
+  refunded/committed-Markierung, wenn `PENDING` nach erfolgreichem
+  Quota-`reserve` noch nicht `COMMITTED` ist
 - `awaitingApprovalExpiresAt`, wenn `AWAITING_APPROVAL`
 - `approvalRequestId`, wenn Freigabe offen
 - `jobId`, wenn `COMMITTED`
@@ -458,6 +468,12 @@ Regeln:
   Scope/Fingerprint neu geclaimt werden; falls die Reservierung schon mit
   Grant geclaimt war, muss zusaetzlich die gespeicherte Approval-Bindung noch
   gueltig sein oder ein neuer gueltiger `approvalToken` validiert werden
+- ist die gespeicherte Approval-Bindung abgelaufen, wird der identische Retry
+  atomar zu `AWAITING_APPROVAL` mit neuer Challenge ueberfuehrt und liefert
+  `POLICY_REQUIRED`
+- persistierte Quota-Reservation-Owner duerfen nur vom aktuellen Pipeline-
+  Owner oder vom Sweeper nach Lease-Ablauf refunded werden; Replays refunden
+  nicht direkt
 - aktive nicht abgelaufene `PENDING` ohne gespeichertes Outcome darf nicht als
   interner Zustand an Clients ausgegeben werden; identische parallele Aufrufe
   warten bis zum Start-Timeout-Budget und liefern dann retrybares
@@ -575,10 +591,11 @@ Regeln:
   terminalisiert werden; der Dispatcher muss `cancelled` vor Start pruefen und
   darf solche Jobs nie an einen Worker uebergeben
 - Worker-Handle wird signalisiert, falls der Job bereits laeuft
-- Cancel gilt erst als angenommen, wenn das CancellationToken gesetzt ist und
-  der Worker die naechste Side-Effect-Barriere oder einen kooperativen
-  Ack-Checkpoint erreicht hat; erst danach darf der Job per CAS auf
-  `cancelled` terminalisiert werden
+- Fuer laufende Jobs gilt Cancel erst als angenommen, wenn das
+  CancellationToken gesetzt ist und der Worker die naechste
+  Side-Effect-Barriere oder einen kooperativen Ack-Checkpoint erreicht hat;
+  erst danach darf der Job per CAS auf `cancelled` terminalisiert werden.
+  `queued`-Jobs brauchen keinen Worker-Ack.
 - `job_cancel` wartet nur bis `cancelAckTimeout` auf den Worker-Ack. Wenn der
   Ack ausbleibt, blockiert der MCP-Call nicht weiter: die Response liefert den
   aktuellen nicht-terminalen Jobstatus mit `cancelAckPending=true` und
@@ -773,6 +790,10 @@ Tests:
   final `FAILED` behandelt
 - genehmigtes recoverable `PENDING` startet ohne gespeicherte gueltige
   Approval-Bindung oder neuen gueltigen `approvalToken` keinen Job
+- abgelaufene Approval-Bindung in recoverable `PENDING` erzeugt neue
+  `AWAITING_APPROVAL`-Challenge und liefert `POLICY_REQUIRED`
+- persistierter Quota-Reservation-Owner wird nach Lease-Ablauf vom Sweeper
+  genau einmal refunded
 - aktives `PENDING` ohne Job liefert nach Start-Timeout retrybares
   `OPERATION_TIMEOUT`, keinen internen State
 - `PENDING` mit gespeichertem `RATE_LIMITED` liefert bis `retryAfter`
@@ -935,6 +956,7 @@ Tests:
 - unbekannter Job -> `RESOURCE_NOT_FOUND`
 - terminaler Job bleibt terminal
 - queued Job wird vor Dispatch per CAS `cancelled` und nie gestartet
+- queued Cancel benoetigt keinen Worker-Ack
 - kein `cancelled` vor Worker-Ack/Side-Effect-Barriere
 - Worker-Ack-Timeout liefert nicht-terminalen Status mit
   `cancelAckPending=true` und ist retrybar
@@ -957,9 +979,14 @@ Tests:
   einem konfigurierten Retry-Hint, weil Slot-Freigabe ereignisgetrieben ist.
 - `commit` nur nach erfolgreichem Job-Commit als Success-/Audit-Hook
   aufrufen; der Slot bleibt belegt.
+- Erfolgreiche Quota-Reservierungen vor Job-Commit als persistenten
+  Reservation-Owner mit Lease im JobStart-/Idempotency-Kontext speichern.
 - `refund` nur fuer Start-Timeouts und technische Pre-Commit-Fehler aufrufen,
   wenn genau dieser Pipeline-Owner eine konkrete `QuotaReservation` erhalten
   hat.
+- Sweeper fuer persistente Quota-Reservation-Owner implementieren: nach
+  Lease-Ablauf und ohne `COMMITTED` refunded er genau einmal und markiert den
+  Owner als refunded.
 - Idempotency-Replays (`ExistingPending`, `COMMITTED`) duerfen keine neue
   Quota reservieren und duerfen keine fremde oder historische Reservation
   refunden.
@@ -979,6 +1006,8 @@ Tests:
 - deduplizierter Retry verbraucht keine neue Quote
 - parallele neue Starts koennen Quota durch `reserve` nicht ueberbuchen
 - Start-Timeout oder technischer Fehler vor Job-Commit ruft `refund`
+- Crash nach Quota-`reserve` und vor Job-Commit wird durch Sweeper refunded
+- Sweeper refunded nicht, wenn Job/Idempotency bereits `COMMITTED` ist
 - Idempotency-Replay ruft weder `reserve` noch `refund`
 - Slot wird nach `succeeded`, `failed` und `cancelled` freigegeben
 - Start-Timeout -> `OPERATION_TIMEOUT`
@@ -1081,6 +1110,8 @@ Mindestfaelle:
 - zweiter Start mit Grant -> genau ein Job
 - genehmigter Retry nach recoverable `PENDING` braucht gespeicherte gueltige
   Approval-Bindung oder neuen gueltigen Grant
+- abgelaufene Approval-Bindung in recoverable `PENDING` erzeugt eine erneuerte
+  Challenge
 - Grant mit alter oder falscher `approvalRequestId`
 - parallele genehmigte Retries -> ein Job
 - `DENIED` gilt nur bis `denialExpiresAt`
@@ -1089,6 +1120,7 @@ Mindestfaelle:
 - `RATE_LIMITED` enthaelt `retryAfter` und richtet `PENDING`-Lease daran aus
 - Quota-`reserve` verhindert parallele Ueberbuchung
 - Quota-`refund` bei Start-Timeout und Pre-Commit-Fehler
+- Quota-Reservation-Sweeper refunded Crash-Leases nach `reserve` vor Commit
 - Quota-Slot-Release nach `succeeded`, `failed`, `cancelled` und
   Runner-Timeout
 - Timeout
@@ -1108,6 +1140,7 @@ Mindestfaelle:
 - Cancel opake same-tenant `jobId` mit fremdem Principal ohne Admin
 - Cancel fremder Principal im selben Tenant
 - Cancel queued Job vor Dispatch
+- Cancel queued Job benoetigt keinen Worker-Ack
 - Cancel-Ack-Barriere vor `cancelled`-Terminalisierung
 - Cancel-Ack-Timeout liefert nicht-terminalen Ack-Pending-Status
 - Cancel-Race: Worker terminalisiert zwischen Lookup und CAS
@@ -1151,6 +1184,8 @@ Mindestfaelle:
 - genehmigte, aber recoverable `PENDING`-Reservierungen koennen ohne
   gespeicherte gueltige Approval-Bindung oder neuen gueltigen Grant nicht
   gestartet werden.
+- abgelaufene Approval-Bindungen in recoverable `PENDING` werden zu neuer
+  `AWAITING_APPROVAL`-Challenge erneuert.
 - wiederholter zweiter Aufruf nach `COMMITTED` liefert denselben Job.
 - parallele genehmigte Retries erzeugen hoechstens einen Job.
 - `DENIED`-Reservierungen liefern `POLICY_DENIED`.
@@ -1163,6 +1198,9 @@ Mindestfaelle:
 - `RATE_LIMITED` liefert `retryAfter`; recoverable `PENDING`-Leases laufen
   nicht laenger als dieser Retry-Hinweis.
 - Idempotency-Replays ueberspringen Quota-`reserve` und Quota-`refund`.
+- persistente Quota-Reservation-Owner mit Lease verhindern Slot-Leaks nach
+  Crash zwischen `reserve` und Job-Commit; ein Sweeper refunded abgelaufene
+  nicht-committete Owner genau einmal.
 - `RATE_LIMITED`, Start-Timeouts und retrybare technische Startfehler lassen
   keine dauerhaft haengenden `PENDING`-Reservierungen zurueck.
 - `RATE_LIMITED`-Retries vor `retryAfter` liefern deterministisch
@@ -1197,14 +1235,15 @@ Mindestfaelle:
   Scope-Challenge ohne Job-Lookup.
 - `job_cancel`-Schema liefert aktuellen Jobstatus plus `executionMeta`, nicht
   `cancelled: boolean`.
-- `job_cancel` setzt `cancelled` erst nach Worker-Ack oder Side-Effect-Barriere
-  und nur per CAS aus nicht-terminalem Zustand; terminale Worker-Races duerfen
+- laufende Jobs setzt `job_cancel` erst nach Worker-Ack oder
+  Side-Effect-Barriere per CAS auf `cancelled`; terminale Worker-Races duerfen
   `succeeded`/`failed` nicht ueberschreiben.
 - wenn der Worker nicht bis `cancelAckTimeout` bestaetigt, liefert
   `job_cancel` einen nicht-terminalen Status mit `cancelAckPending=true` und
   `retryAfter`.
 - `queued`-Jobs koennen vor Dispatch per CAS auf `cancelled` gesetzt werden;
-  der Dispatcher startet bereits gecancelte Jobs nie.
+  der Dispatcher startet bereits gecancelte Jobs nie, und queued Cancel
+  braucht keinen Worker-Ack.
 - JobStore-Port und Stores bieten atomare Status-Transitionen; blindes
   Ueberschreiben reicht fuer Phase E nicht.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
