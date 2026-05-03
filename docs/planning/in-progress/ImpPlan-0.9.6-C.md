@@ -1498,8 +1498,9 @@ Aufgaben:
 - Ziel: JSON-Schema und Runtime-Wire-Output muessen denselben Phase-C-
   Contract beschreiben. AP 6.13/6.19 haben bereits Runtime-Felder wie
   `artifactRef`, `diffArtifactRef`, `truncated` und Finding-`details`
-  eingefuehrt; AP 6.23 macht diese Felder im `tools/list`-Schema
-  explizit, streng und drift-getestet.
+  eingefuehrt; AP 6.23 macht diese Felder in den
+  `PhaseBToolSchemas`-Output-Schemas der betroffenen Tools explizit,
+  streng und drift-getestet.
 - `PhaseBToolSchemas.kt` bekommt gemeinsame Output-Bausteine statt
   freier `arrayField()`/`objectField()`-Platzhalter:
   - `findingArray(detailsSchema: Map<String, Any>? = null)`
@@ -1580,7 +1581,9 @@ Aufgaben:
     generisches Envelope ersetzen.
   - `findings` nutzt ein compare-spezifisches Finding-Schema, bei dem
     `details` optional ist und, falls vorhanden, ein geschlossenes
-    Objekt mit `before` und `after` enthaelt
+    Objekt mit den optionalen Feldern `before` und `after` enthaelt.
+    Gueltig sind `before` allein, `after` allein oder beide zusammen;
+    null-/leere Platzhalter ersetzen fehlende Seiten nicht.
   - `details.before` und `details.after` sind im Phase-C-Wire-Contract
     scrubbed Strings, weil `SchemaCompareHandler.beforeAfter(...)`
     die Werte heute via `toString()` serialisiert. Strukturierte JSON-
