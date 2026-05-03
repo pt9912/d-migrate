@@ -282,9 +282,11 @@ aktuellen Challenge prueft. Ein blosser Retry desselben Agenten darf keine
 Freigabe erzeugen.
 
 Der genehmigte zweite Aufruf muss denselben `idempotencyKey`, denselben
-Payload-Fingerprint, dieselbe aktuelle `approvalRequestId` und ein passendes
-`approvalToken` verwenden. Er claimt die Reservierung atomar und erzeugt genau
-einen Job.
+Payload-Fingerprint und ein passendes `approvalToken` verwenden. Der Client
+sendet keine `approvalRequestId` im Tool-Input; der Server loest das Token auf
+den Grant auf und prueft dessen `approvalRequestId` gegen die aktuelle
+`AWAITING_APPROVAL`-Challenge. Der Aufruf claimt die Reservierung atomar und
+erzeugt genau einen Job.
 
 ### 4.4 Grants enthalten keine rohen Tokens
 
@@ -312,13 +314,19 @@ Zustandsaenderung im gemeinsamen Jobmodell:
 - Principal braucht `dmigrate:job:cancel`, bevor Job-Lookup oder Worker-
   Zugriff erfolgt
 - eigene Jobs duerfen abgebrochen werden
-- Admins duerfen Jobs innerhalb desselben Tenants abbrechen
-- explizite Cross-Tenant-Job-`resourceUri` liefert `TENANT_SCOPE_DENIED`
+- Admins duerfen Jobs innerhalb ihres `effectiveTenantId` abbrechen
+- Cross-Tenant-Cancel ist nur erlaubt, wenn `PrincipalContext` den Zieltenant
+  explizit in `allowedTenantIds` enthaelt und `effectiveTenantId` passend
+  gesetzt ist; `isAdmin` allein hebt die Tenant-Grenze nicht auf
+- explizite Cross-Tenant-Job-`resourceUri` ohne passenden
+  `allowedTenantIds`/`effectiveTenantId`-Eintrag liefert
+  `TENANT_SCOPE_DENIED`
 - opake `jobId`-Eingaben bleiben tenant-lokal und liefern fuer fremde oder
   fehlende Jobs `RESOURCE_NOT_FOUND`
 - nicht erlaubte Jobs liefern `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben terminal
-- erfolgreich angenommene Abbrueche enden im Jobstatus `cancelled`
+- erfolgreich angenommene Abbrueche enden erst nach Worker-Ack oder
+  Side-Effect-Barriere im Jobstatus `cancelled`
 - Worker beobachten `CancellationToken` oder Worker-Handle
 - nach angenommenem Cancel keine neuen Artefakte und keine neuen
   Daten-Schreibabschnitte
@@ -521,17 +529,24 @@ Regeln:
   auditiert ohne Job-Lookup und ohne Worker-Zugriff
 - unbekannte oder nicht sichtbare Jobs im erlaubten Tenant liefern
   no-oracle `RESOURCE_NOT_FOUND`
-- explizit fremde Tenants in tenant-scoped Job-`resourceUri` liefern
+- tenant-scoped Job-`resourceUri` in einem Zieltenant ausserhalb von
+  `allowedTenantIds` oder ohne passenden `effectiveTenantId` liefert
   `TENANT_SCOPE_DENIED`
+- tenant-scoped Job-`resourceUri` in einem explizit erlaubten Zieltenant darf
+  fuer eigene oder administrativ erlaubte Jobs gecancelt werden
 - opake `jobId`-Eingaben duerfen keinen globalen Cross-Tenant-Lookup machen;
   fremde oder fehlende opake IDs liefern im Principal-Tenant
   `RESOURCE_NOT_FOUND`
-- fremde Jobs im selben Tenant ohne Berechtigung liefern
+- fremde Jobs im erlaubten Zieltenant ohne Berechtigung liefern
   `FORBIDDEN_PRINCIPAL`
 - terminale Jobs bleiben unveraendert terminal
 - angenommener Cancel setzt oder bestaetigt `cancelled` nur per CAS von einem
   nicht-terminalen Zustand
-- Worker-Handle wird gecancelt, falls der Job noch laeuft
+- Worker-Handle wird signalisiert, falls der Job noch laeuft
+- Cancel gilt erst als angenommen, wenn das CancellationToken gesetzt ist und
+  der Worker die naechste Side-Effect-Barriere oder einen kooperativen
+  Ack-Checkpoint erreicht hat; erst danach darf der Job per CAS auf
+  `cancelled` terminalisiert werden
 - wenn der Worker bereits terminal ist, gewinnt der terminale Zustand
 
 ---
@@ -550,6 +565,8 @@ Eingabe:
 - `idempotencyKey`
 - Reverse-/Schema-Optionen
 - optional `approvalToken`
+- kein `approvalRequestId`-Input; Bindung wird serverseitig ueber den Grant
+  geprueft
 
 Regeln:
 
@@ -572,6 +589,8 @@ Eingabe:
 - `idempotencyKey`
 - Profiling-Optionen / Scope
 - optional `approvalToken`
+- kein `approvalRequestId`-Input; Bindung wird serverseitig ueber den Grant
+  geprueft
 
 Regeln:
 
@@ -592,6 +611,8 @@ Eingabe:
 - `idempotencyKey`
 - Compare-Optionen
 - optional `approvalToken`
+- kein `approvalRequestId`-Input; Bindung wird serverseitig ueber den Grant
+  geprueft
 
 Regeln:
 
@@ -720,6 +741,8 @@ Tests:
 - ungueltiger Grant -> weiterhin keine Job-Erzeugung
 - gueltiger Grant passt nur fuer gebundenen Fingerprint
 - gueltiger Grant passt nur fuer aktuelle `approvalRequestId`
+- `approvalRequestId` ist kein Tool-Input; Server prueft sie aus dem Grant
+  gegen die aktuelle Challenge
 - Grant fuer erneuerte/alte Challenge liefert wieder `POLICY_REQUIRED`
 - konfigurierte Policy-Allowlist ohne GrantIssuer startet direkt erlaubte
   Requests, erzeugt aber kein `approvalToken`
@@ -793,11 +816,14 @@ Tests:
 - Handler fuer `job_cancel` anbinden.
 - `jobId` oder Job-`resourceUri` normalisieren.
 - `dmigrate:job:cancel` vor Job-Lookup und Worker-Zugriff pruefen.
-- Tenant-, Principal- und Admin-Regeln pruefen.
+- Tenant-, Principal- und Admin-Regeln gegen `effectiveTenantId` und
+  `allowedTenantIds` pruefen.
 - Terminale Jobs unveraendert lassen.
-- Laufende Jobs ueber Worker-Handle canceln.
-- Jobstatus `cancelled` per Compare-and-Set nur aus nicht-terminalem Zustand
-  setzen, wenn Cancel angenommen wurde.
+- Laufende Jobs ueber Worker-Handle signalisieren.
+- Side-Effect-Barriere oder Worker-Ack abwarten, bevor Cancel als angenommen
+  gilt.
+- Jobstatus `cancelled` per Compare-and-Set erst nach beobachtetem
+  kooperativem Abbruch aus nicht-terminalem Zustand setzen.
 - Reason scrubben und auditieren.
 
 Tests:
@@ -805,11 +831,15 @@ Tests:
 - eigener laufender Job wird gecancelt
 - fehlender oder unzureichender `dmigrate:job:cancel`-Scope -> 403 mit
   Scope-Challenge und ohne Job-Lookup
-- tenant-scoped URI mit fremdem Tenant -> `TENANT_SCOPE_DENIED`
+- tenant-scoped URI ausserhalb `allowedTenantIds` oder ohne passenden
+  `effectiveTenantId` -> `TENANT_SCOPE_DENIED`
+- tenant-scoped URI in explizit erlaubtem Zieltenant kann mit Admin-Recht
+  gecancelt werden
 - opake fremde oder fehlende `jobId` -> `RESOURCE_NOT_FOUND`
 - fremder Principal ohne Admin -> `FORBIDDEN_PRINCIPAL`
 - unbekannter Job -> `RESOURCE_NOT_FOUND`
 - terminaler Job bleibt terminal
+- kein `cancelled` vor Worker-Ack/Side-Effect-Barriere
 - Worker wird zwischen Lookup und Cancel terminal -> `succeeded`/`failed`
   bleibt erhalten und wird nicht durch `cancelled` ueberschrieben
 - Worker publiziert nach Cancel keine neuen Artefakte
@@ -949,9 +979,11 @@ Mindestfaelle:
 - Compare-Cancel vor Materialisierung/Diff-Publish
 - Cancel eigener Job
 - Cancel ohne Scope erzeugt Audit/403 ohne Job-Lookup
-- Cancel tenant-scoped URI mit fremdem Tenant
+- Cancel tenant-scoped URI ausserhalb `allowedTenantIds`
+- Cancel tenant-scoped URI in explizit erlaubtem Zieltenant mit Admin-Recht
 - Cancel opake fremde oder fehlende `jobId`
 - Cancel fremder Principal im selben Tenant
+- Cancel-Ack-Barriere vor `cancelled`-Terminalisierung
 - Cancel-Race: Worker terminalisiert zwischen Lookup und CAS
 - Worker-Side-Effect-Stopp nach Cancel
 
@@ -982,7 +1014,8 @@ Mindestfaelle:
 - zweiter Aufruf mit gueltigem Grant startet genau einen Job und setzt die
   Reservierung auf `COMMITTED`.
 - Approval-Grants sind an die aktuelle `approvalRequestId` der
-  `AWAITING_APPROVAL`-Challenge gebunden.
+  `AWAITING_APPROVAL`-Challenge gebunden; die `approvalRequestId` wird nicht
+  als Tool-Input gesendet, sondern aus dem Grant geprueft.
 - wiederholter zweiter Aufruf nach `COMMITTED` liefert denselben Job.
 - parallele genehmigte Retries erzeugen hoechstens einen Job.
 - `DENIED`-Reservierungen liefern `POLICY_DENIED`.
@@ -1009,12 +1042,14 @@ Mindestfaelle:
 - Schema-backed Starts akzeptieren nur tenant-scoped oder sichtbare
   `schemaRef`.
 - freie JDBC-Strings werden mit `VALIDATION_ERROR` abgewiesen.
-- `job_cancel` kann nur eigene oder erlaubte Jobs abbrechen; opake `jobId`
-  macht keinen globalen Cross-Tenant-Lookup.
+- `job_cancel` kann eigene oder erlaubte Jobs abbrechen; Cross-Tenant-Cancel
+  ist nur mit explizitem `allowedTenantIds`/`effectiveTenantId`-Eintrag
+  moeglich, waehrend opake `jobId` keinen globalen Cross-Tenant-Lookup macht.
 - fehlender oder unzureichender `dmigrate:job:cancel`-Scope fuehrt zu 403 mit
   Scope-Challenge ohne Job-Lookup.
-- `job_cancel` setzt `cancelled` nur per CAS aus nicht-terminalem Zustand;
-  terminale Worker-Races duerfen `succeeded`/`failed` nicht ueberschreiben.
+- `job_cancel` setzt `cancelled` erst nach Worker-Ack oder Side-Effect-Barriere
+  und nur per CAS aus nicht-terminalem Zustand; terminale Worker-Races duerfen
+  `succeeded`/`failed` nicht ueberschreiben.
 - `job_cancel` erzeugt einen stabilen `cancelled`-Status gemaess
   `spec/job-contract.md`, sofern der Job noch nicht terminal war.
 - terminale Jobs bleiben terminal.
