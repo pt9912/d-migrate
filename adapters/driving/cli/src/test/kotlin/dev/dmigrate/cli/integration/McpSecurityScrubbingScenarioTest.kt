@@ -116,6 +116,79 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
         }
     }
 
+    test("HTTP error body scrubs a planted Bearer in a rejected Origin header") {
+        // §6.24 final-review: McpHttpRoute echoes the rejected
+        // Origin string into the 403 response body. A client that
+        // sends `Origin: Bearer <token>` would otherwise see the
+        // raw token reflected back. Scan the rejection body for
+        // every fixture secret fragment.
+        withFreshTransports { _, h ->
+            val (status, body) = h.postUnchecked(
+                """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""",
+                extraHeaders = mapOf("Origin" to "http://$BEARER_CANARY"),
+            )
+            check(status == HTTP_STATUS_FORBIDDEN) {
+                "expected 403 Forbidden for non-allowlisted Origin, got $status; body=$body"
+            }
+            assertNoSecretLeaks("http", "Origin-rejection-body", body)
+        }
+    }
+
+    test("artifact_chunk_get text response scrubs planted secrets in artifact bytes") {
+        // §6.24 acceptance: artefacts MUST NOT carry Secret-/JDBC-/
+        // tok_-Rohwerte. AP-6.23 already scrubs DDL artefacts at
+        // SchemaGenerateHandler write-time; the read-time defense-
+        // in-depth here covers user-uploaded artefacts (where the
+        // raw bytes were never routed through SecretScrubber on
+        // ingestion). Stage an artefact whose bytes contain a
+        // Bearer + JDBC URL, read it via artifact_chunk_get, and
+        // pin that the wire `text` response is scrubbed.
+        withFreshTransports { s, h ->
+            for (harness in listOf(s, h)) {
+                val artifactId = "art-e8b-content-${harness.name}"
+                val plantedContent = """
+                    -- DDL with embedded leak vectors:
+                    -- $BEARER_CANARY
+                    CREATE TABLE secrets (
+                        id INT,
+                        token VARCHAR(255) DEFAULT '$APPROVAL_CANARY',
+                        connection_uri VARCHAR(2048) DEFAULT '$JDBC_CANARY'
+                    );
+                """.trimIndent()
+                IntegrationFixtures.stageArtifact(
+                    wiring = harness.wiring,
+                    principal = harness.principal,
+                    artifactId = artifactId,
+                    content = plantedContent.toByteArray(Charsets.UTF_8),
+                    // The chunk_get handler emits `encoding=text`
+                    // for known text-shaped MIME types; "application/sql"
+                    // would land in the base64 branch (which is
+                    // out-of-scope for the scrubbing test). Use a
+                    // text-shaped MIME so the scrubbing code path
+                    // is exercised.
+                    contentType = "application/json",
+                )
+                val response = harness.toolsCall(
+                    "artifact_chunk_get",
+                    JsonObject().apply {
+                        addProperty("artifactId", artifactId)
+                        addProperty("chunkId", "0")
+                    },
+                )
+                response.isError shouldBe false
+                val payload = parsePayload(
+                    response.content.firstOrNull()?.text
+                        ?: error("${harness.name}: chunk_get response had no text content"),
+                )
+                // The chunk's `text` field is the wire-visible byte
+                // projection — must be scrubbed.
+                val chunkText = payload.get("text")?.asString
+                    ?: error("${harness.name}: chunk_get did not surface text encoding")
+                assertNoSecretLeaks(harness.name, "artifact_chunk_get[text]", chunkText)
+            }
+        }
+    }
+
     test("server log output scrubs planted Bearer/tok_ values from non-allowlisted progress keys") {
         // AP 6.24 final-review: JobStatusGetHandler.projectProgress
         // logs dropped non-allowlisted numeric-value keys via SLF4J
@@ -188,6 +261,9 @@ private const val APPROVAL_CANARY: String = "tok_e8bcanaryapproval0123"
 
 /** JDBC URL raw value with embedded credentials planted into job state. */
 private const val JDBC_CANARY: String = "jdbc:postgresql://e8buser:e8bcanarypwd@db.example/internal"
+
+/** HTTP 403 status for the Origin-rejection scrubbing test. */
+private const val HTTP_STATUS_FORBIDDEN: Int = 403
 
 /**
  * Substring fragments scanned for in wire output. The full raw

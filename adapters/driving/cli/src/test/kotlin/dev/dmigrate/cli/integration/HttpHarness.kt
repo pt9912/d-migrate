@@ -134,6 +134,41 @@ internal class HttpHarness(
         }
     }
 
+    /**
+     * AP 6.24 §6.24 final-review: posts a raw JSON-RPC body and
+     * returns `(statusCode, body)` WITHOUT the 2xx-only assertion in
+     * [sendRequestRaw]. Scenario tests that need to scan an HTTP
+     * error body (Origin-rejection, session-validation failure,
+     * payload-too-large, etc.) for secret leaks dispatch through
+     * this method. Optional [extraHeaders] can override (or replace)
+     * the standard headers; pass `Origin = ""` to skip that header
+     * entirely so the route's allowlist rejects the request.
+     */
+    fun postUnchecked(
+        body: String,
+        extraHeaders: Map<String, String> = emptyMap(),
+    ): Pair<Int, String> {
+        val builder = HttpRequest.newBuilder(baseUri)
+            .timeout(REQUEST_TIMEOUT)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body, Charsets.UTF_8))
+        // Default Origin if caller didn't override.
+        if ("Origin" !in extraHeaders) {
+            builder.header("Origin", baseUri.scheme + "://" + baseUri.authority)
+        }
+        extraHeaders.forEach { (k, v) ->
+            // Empty-string sentinel = "skip this header". Lets the
+            // test send a request with NO Origin to trigger the
+            // "<absent>" branch of the allowlist rejection.
+            if (v.isNotEmpty()) builder.header(k, v)
+        }
+        val response = httpClient.send(
+            builder.build(),
+            HttpResponse.BodyHandlers.ofString(Charsets.UTF_8),
+        )
+        return response.statusCode() to response.body()
+    }
+
     private fun sendNotification(method: String, params: JsonElement?) {
         val body = rpc.notification(method, params)
         val req = buildRequest(body, allowSessionHeaders = true)

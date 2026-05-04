@@ -13,6 +13,7 @@ import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.mcp.transport.McpEndpointFactory
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.principal.PrincipalContext
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -190,8 +191,15 @@ private fun methodOf(message: Message): String? = when (message) {
 private suspend fun checkOrigin(call: ApplicationCall, config: McpServerConfig): Boolean {
     val origin = call.request.header(HttpHeaders.Origin)
     if (OriginValidator.isAllowed(origin, config.allowedOrigins)) return true
+    // §6.24 final-review: SecretScrubber on the echoed origin so a
+    // client that sends `Origin: Bearer <token>` does not see the
+    // raw token reflected in the 403 body. The origin is operator-
+    // supplied input; the rejection diagnostic stays useful for
+    // legitimate misconfigurations because patterns that aren't
+    // secret-shaped pass through unchanged.
+    val safeOrigin = origin?.let(SecretScrubber::scrub) ?: "<absent>"
     call.respondText(
-        text = "origin '${origin ?: "<absent>"}' is not in the allowlist",
+        text = "origin '$safeOrigin' is not in the allowlist",
         contentType = ContentType.Text.Plain,
         status = HttpStatusCode.Forbidden,
     )

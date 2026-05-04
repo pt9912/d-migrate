@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
@@ -100,7 +101,19 @@ internal class ArtifactChunkGetHandler(
             put("executionMeta", mapOf("requestId" to context.requestId))
             if (isText) {
                 put("encoding", "text")
-                put("text", String(bytes, Charsets.UTF_8))
+                // §6.24 final-review: defense-in-depth scrub on the
+                // wire-visible text projection. Server-emitted DDL
+                // artefacts are already scrubbed at write-time
+                // (SchemaGenerateHandler); user-uploaded text was
+                // not, and the chunk_get response is the surface a
+                // client agent would re-read into a prompt. The
+                // base64 branch is left unchanged — opaque binary
+                // bytes don't get pattern-scrubbed safely. `sha256`
+                // continues to describe the raw stored bytes per
+                // §5.5, so a client doing byte-level integrity
+                // checks against the original artifact metadata
+                // sees consistent state.
+                put("text", SecretScrubber.scrub(String(bytes, Charsets.UTF_8)))
             } else {
                 put("encoding", "base64")
                 put("contentBase64", Base64.getEncoder().encodeToString(bytes))
