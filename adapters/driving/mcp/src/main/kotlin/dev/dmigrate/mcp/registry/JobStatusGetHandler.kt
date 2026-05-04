@@ -14,24 +14,39 @@ import dev.dmigrate.server.core.job.JobProgress
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.TenantId
-import dev.dmigrate.server.core.principal.TenantScopeChecker
+import dev.dmigrate.server.core.resource.McpResourceUri
+import dev.dmigrate.server.core.resource.McpResourceUriParseResult
 import dev.dmigrate.server.core.resource.ResourceKind
-import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.resource.TenantResourceUri
 import dev.dmigrate.server.ports.JobStore
 
 /**
- * AP 6.12: `job_status_get` per `ImpPlan-0.9.6-C.md` §5.6 + §6.12.
+ * AP 6.12 + AP D9: `job_status_get` per `ImpPlan-0.9.6-C.md` §5.6 +
+ * `ImpPlan-0.9.6-D.md` §10.9.
  *
  * Read-only metadata fetch for a single job. Either `jobId` (in the
  * caller's tenant) or `resourceUri` (a fully-qualified
  * `dmigrate://tenants/{tenantId}/jobs/{jobId}`) is accepted; exactly
  * one must be supplied.
  *
- * Error policy follows §5.6 strictly:
- * - syntactically foreign tenant URIs surface `TENANT_SCOPE_DENIED`
- *   without a store lookup — the only path that confirms tenant
- *   identity (no concrete-job-existence is implied)
+ * AP D9 unifies the resolver path with `resources/read`:
+ * - `resourceUri` parsing now goes through the Phase-D
+ *   [McpResourceUri] ADT instead of the legacy [ServerResourceUri].
+ * - Tenant-scope check uses [PrincipalContext.allowedTenantIds]
+ *   (Plan-D §4.2 / §5.4) so a principal whose effective tenant
+ *   differs from the URI tenant can still resolve as long as the
+ *   URI tenant is in the allowed set — same broadening AP D6 list-
+ *   tools and AP D7 `resources/read` adopted.
+ * - Per-record visibility threads the addressed tenant into
+ *   [JobRecord.isReadableBy] so an explicit allowed-but-non-
+ *   effective tenant URI doesn't silently drop every record.
+ *
+ * Error policy stays §5.6:
+ * - syntactically foreign tenant URIs (outside `allowedTenantIds`)
+ *   surface `TENANT_SCOPE_DENIED` without a store lookup — the
+ *   only path that confirms tenant identity (no concrete-job-
+ *   existence is implied)
  * - everything else (unknown id, expired-but-not-yet-cleaned-up,
  *   wrong owner, wrong visibility) maps uniformly to
  *   `RESOURCE_NOT_FOUND`, so a client cannot distinguish "id you
@@ -50,12 +65,17 @@ internal class JobStatusGetHandler(
         val (tenant, id) = resolveTarget(jobId, resourceUri, context.principal)
 
         val record = jobStore.findById(tenant, id)
-            ?: throw notFound(context.principal, id)
-        if (!record.isReadableBy(context.principal)) {
+            ?: throw notFound(tenant, id)
+        // AP D9: pass the addressed tenant — `tenant` may be an
+        // allowed-but-not-effective tenant when the caller used a
+        // resourceUri to switch into another tenant they have access
+        // to. Without the override, the AP D6 default (effectiveTenantId)
+        // would silently drop every cross-tenant record.
+        if (!record.isReadableBy(context.principal, tenant)) {
             // No-oracle: same RESOURCE_NOT_FOUND envelope as a
             // genuinely missing id, so the client can't infer
             // whether the id is unknown or just hidden.
-            throw notFound(context.principal, id)
+            throw notFound(tenant, id)
         }
 
         return ToolCallOutcome.Success(
@@ -94,34 +114,46 @@ internal class JobStatusGetHandler(
     }
 
     private fun parseJobUri(raw: String, principal: PrincipalContext): Pair<TenantId, String> {
-        val uri = when (val parsed = ServerResourceUri.parse(raw)) {
-            is ResourceUriParseResult.Valid -> parsed.uri
-            is ResourceUriParseResult.Invalid -> throw ValidationErrorException(
-                listOf(ValidationViolation("resourceUri", "invalid URI: ${parsed.reason}")),
+        // AP D9: route through the Phase-D ADT so the parser /
+        // grammar / blocked-kind contract matches `resources/read`.
+        val parsed = when (val r = McpResourceUri.parse(raw)) {
+            is McpResourceUriParseResult.Valid -> r.uri
+            is McpResourceUriParseResult.Invalid -> throw ValidationErrorException(
+                listOf(ValidationViolation("resourceUri", "invalid URI: ${r.reason}")),
             )
         }
-        if (uri.kind != ResourceKind.JOBS) {
+        val tenantUri = parsed as? TenantResourceUri
+            ?: throw ValidationErrorException(
+                listOf(
+                    ValidationViolation(
+                        "resourceUri",
+                        "expected tenant-scoped jobs URI, got ${parsed.javaClass.simpleName}",
+                    ),
+                ),
+            )
+        if (tenantUri.kind != ResourceKind.JOBS) {
             throw ValidationErrorException(
                 listOf(
                     ValidationViolation(
                         "resourceUri",
-                        "expected jobs resource, got ${uri.kind.pathSegment}",
+                        "expected jobs resource, got ${tenantUri.kind.pathSegment}",
                     ),
                 ),
             )
         }
-        // §5.6: TENANT_SCOPE_DENIED is reserved for syntactically
-        // out-of-scope tenant URIs. Inside-scope-but-unknown ids
-        // fall through to RESOURCE_NOT_FOUND below.
-        if (!TenantScopeChecker.isInScope(principal, uri.tenantId)) {
-            throw TenantScopeDeniedException(uri.tenantId)
+        // Plan-D §4.2 / §5.4: tenant-scope check uses
+        // allowedTenantIds (broader than Phase-C's effectiveTenantId-
+        // only check). A principal with allowedTenantIds=[A,B] and
+        // effectiveTenantId=A may resolve a B-tenant URI.
+        if (tenantUri.tenantId !in principal.allowedTenantIds) {
+            throw TenantScopeDeniedException(tenantUri.tenantId)
         }
-        return uri.tenantId to uri.id
+        return tenantUri.tenantId to tenantUri.id
     }
 
-    private fun notFound(principal: PrincipalContext, jobId: String): ResourceNotFoundException =
+    private fun notFound(tenantId: TenantId, jobId: String): ResourceNotFoundException =
         ResourceNotFoundException(
-            ServerResourceUri(principal.effectiveTenantId, ResourceKind.JOBS, jobId),
+            ServerResourceUri(tenantId, ResourceKind.JOBS, jobId),
         )
 
     private fun projectJob(record: JobRecord, requestId: String): Map<String, Any?> {

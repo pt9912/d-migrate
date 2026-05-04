@@ -431,4 +431,79 @@ class JobStatusGetHandlerTest : FunSpec({
         )
         (outcome as ToolCallOutcome.Success).content.single().mimeType shouldBe "application/json"
     }
+
+    test("AP D9: jobId path and resourceUri path produce identical projections") {
+        // Plan-D §10.9 acceptance: "jobId und resourceUri fuehren
+        // zu identischem Status-Resultat". Pin both wire shapes
+        // emit the SAME body modulo executionMeta.requestId, so a
+        // future regression that drifts one resolver path from the
+        // other fails immediately.
+        val f = fixture()
+        stageJob(f, "job-1", visibility = JobVisibility.TENANT, status = JobStatus.SUCCEEDED)
+        val viaJobId = parsePayload(
+            f.handler.handle(
+                ToolCallContext("job_status_get", args("""{"jobId":"job-1"}"""), PRINCIPAL),
+            ),
+        )
+        val viaResourceUri = parsePayload(
+            f.handler.handle(
+                ToolCallContext(
+                    "job_status_get",
+                    args("""{"resourceUri":"dmigrate://tenants/acme/jobs/job-1"}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        // executionMeta.requestId is per-call — strip it before comparing.
+        viaJobId.remove("executionMeta")
+        viaResourceUri.remove("executionMeta")
+        viaJobId shouldBe viaResourceUri
+    }
+
+    test("AP D9: resourceUri pointing at a tenant in allowedTenantIds (not effectiveTenantId) resolves") {
+        // Plan-D §4.2 / §5.4 broadens the tenant-scope check from
+        // strict `effectiveTenantId` to `allowedTenantIds`. A
+        // principal with allowedTenantIds=[acme,beta] and
+        // effectiveTenantId=acme can resolve a beta-tenant URI
+        // through `job_status_get` — same broadening AP D7
+        // `resources/read` adopted.
+        val f = fixture()
+        val betaTenant = TenantId("beta")
+        val multiTenantPrincipal = PRINCIPAL.copy(
+            allowedTenantIds = setOf(ACME, betaTenant),
+        )
+        stageJob(f, "job-x", tenant = betaTenant, visibility = JobVisibility.TENANT)
+        val json = parsePayload(
+            f.handler.handle(
+                ToolCallContext(
+                    "job_status_get",
+                    args("""{"resourceUri":"dmigrate://tenants/beta/jobs/job-x"}"""),
+                    multiTenantPrincipal,
+                ),
+            ),
+        )
+        json.get("jobId").asString shouldBe "job-x"
+        json.get("resourceUri").asString shouldBe "dmigrate://tenants/beta/jobs/job-x"
+    }
+
+    test("AP D9: resourceUri with chunk-segment (5-segment) shape rejected with VALIDATION_ERROR") {
+        // The Phase-D ADT also accepts ArtifactChunkResourceUri
+        // (4-segment artefact-chunk URIs). job_status_get must
+        // reject anything that isn't a TenantResourceUri pointing
+        // at JOBS so a chunk URI never silently routes to a
+        // jobStore lookup.
+        val f = fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "job_status_get",
+                    args(
+                        """{"resourceUri":"dmigrate://tenants/acme/artifacts/a1/chunks/0"}""",
+                    ),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.first().field shouldBe "resourceUri"
+    }
 })
