@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.integration
 
 import dev.dmigrate.mcp.protocol.ToolMetadata
+import dev.dmigrate.mcp.server.McpServerConfig
 
 /**
  * AP 6.24 E2: canonical Phase-C tool matrix per
@@ -41,6 +42,31 @@ internal object PhaseCToolMatrix {
     )
 
     val PHASE_C_TOOL_ALIASES: Map<String, Set<String>> = emptyMap()
+
+    /**
+     * Canonical Phase-B+C tool universe — the set every transport's
+     * `tools/list` MUST be a subset of. Built from
+     * [McpServerConfig.DEFAULT_SCOPE_MAPPING]'s keys minus the
+     * MCP protocol method names (which are dispatched separately and
+     * never advertised as tools, per `PhaseBRegistries.PROTOCOL_METHODS`).
+     *
+     * This is the deterministic source the drift assertion checks
+     * against — passing the union of stdio + http advertised names
+     * would only catch a transport-asymmetric divergence, missing a
+     * common-extra-tool regression where both transports gain the
+     * same surplus tool.
+     */
+    val EXPECTED_TOOL_SUPERSET: Set<String> = run {
+        val protocolMethods = setOf(
+            "tools/list",
+            "tools/call",
+            "resources/list",
+            "resources/templates/list",
+            "resources/read",
+            "connections/list",
+        )
+        McpServerConfig.DEFAULT_SCOPE_MAPPING.keys - protocolMethods
+    }
 
     /**
      * @return per-transport drift report:

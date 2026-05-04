@@ -71,6 +71,72 @@ class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
             TransportNormalisation.maskFields(http, REQUEST_ID_MASK + "ddl")
     }
 
+    test("schema_generate via schemaRef (materialised) is transport-equivalent") {
+        // §7.3: schema_generate with `schemaRef` (not inline schema) —
+        // the source resolver must accept either form. Stage a small
+        // schema first, then call schema_generate with the resulting
+        // dmigrate://-URI as schemaRef.
+        val (stdio, http) = withFreshTransports { s, h ->
+            val sRef = IntegrationFixtures.stageSchema(
+                s.wiring, s.principal, "gen-by-ref-stdio",
+                schemaJson("orders", "t1"),
+            )
+            val hRef = IntegrationFixtures.stageSchema(
+                h.wiring, h.principal, "gen-by-ref-http",
+                schemaJson("orders", "t1"),
+            )
+            val sArgs = JsonParser.parseString(
+                """{"schemaRef":"$sRef","targetDialect":"POSTGRESQL"}""",
+            ).asJsonObject
+            val hArgs = JsonParser.parseString(
+                """{"schemaRef":"$hRef","targetDialect":"POSTGRESQL"}""",
+            ).asJsonObject
+            parsePayload(s.toolsCall("schema_generate", sArgs).text()) to
+                parsePayload(h.toolsCall("schema_generate", hArgs).text())
+        }
+        for ((name, payload) in listOf("stdio" to stdio, "http" to http)) {
+            withClue("$name schemaRef path must produce inline DDL for a small schema") {
+                payload.get("dialect").asString shouldBe "POSTGRESQL"
+                payload.get("truncated").asBoolean shouldBe false
+                payload.has("ddl") shouldBe true
+                payload.has("artifactRef") shouldBe false
+            }
+        }
+        // Mask schemaId-bearing URIs and the time-stamp DDL header
+        // so structural equality holds across the two transports.
+        val maskedStdio = TransportNormalisation.maskFields(
+            TransportNormalisation.normaliseResourceUris(stdio),
+            REQUEST_ID_MASK + "ddl",
+        )
+        val maskedHttp = TransportNormalisation.maskFields(
+            TransportNormalisation.normaliseResourceUris(http),
+            REQUEST_ID_MASK + "ddl",
+        )
+        maskedStdio shouldBe maskedHttp
+    }
+
+    // §7.3 line 1944-1945 mentions a "Findings-only-Overflow"
+    // truncation case for `schema_generate` — i.e. the inline DDL
+    // stays under budget but the `findings` array exceeds
+    // `maxInlineFindings`. Triggering that case organically requires
+    // a schema-shape that the PostgreSQL generator emits many
+    // `TransformationNote`s or `SkippedObject`s for, which is
+    // driver-specific and brittle to pin in an integration test.
+    //
+    // The truncated/artifactRef-coupling that the bullet protects is
+    // already exercised end-to-end by E2's
+    // `schema_validate truncation produces transport-equivalent
+    // artifactRef shape` (same `maxInlineFindings` boundary, same
+    // `allOf` enforced by the typed output schema). E8(A)'s
+    // `schema_compare truncated=true output (diffArtifactRef
+    // coupling) validates against the schema` covers the variant
+    // for `schema_compare`. Re-deriving the same coupling for
+    // `schema_generate` against the actual generator-finding stream
+    // is a Phase-D follow-up — driver-supplied note shape is not
+    // stable enough for a deterministic integration scenario today.
+    //
+    // Tracked under §7.3 final-review as a known-deferred carve-out.
+
     test("schema_generate large DDL spills to artefact on both transports") {
         // maxToolResponseBytes=1024 → inlineThreshold=512. A four-table
         // schema with a handful of columns each generates well above
@@ -150,6 +216,91 @@ class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
         maskedStdio shouldBe maskedHttp
     }
 
+    test("schema_compare of large diverging schemas surfaces diffArtifactRef + details.before/after coupling") {
+        // §7.3: schema_compare must surface a `diffArtifactRef` when
+        // findings overflow `maxInlineFindings`. The remaining
+        // findings spill to the artefact; the inline tail keeps the
+        // structured `details.before/after` on each finding so the
+        // PhaseBToolSchemas compareDetailsSchema (`{ before, after }`,
+        // additionalProperties=false) coupling holds end-to-end.
+        // Size-based truncation triggers diffArtifactRef when the
+        // serialised diff exceeds `maxToolResponseBytes/2`. Setting
+        // a tiny response budget AND a small inline-cap exercises
+        // both knobs at once: the inline list caps at
+        // maxInlineFindings, the size threshold forces the artifact.
+        val tinyFindings = McpLimitsConfig(
+            maxInlineFindings = COMPARE_OVERFLOW_FINDINGS,
+            maxToolResponseBytes = COMPARE_OVERFLOW_RESPONSE_BUDGET,
+        )
+        val (stdio, http) = withFreshTransports(limits = tinyFindings) { s, h ->
+            // Two schemas that diverge in many tables AND in the
+            // top-level schema version. The schema-version change
+            // emits ONE finding with typed details.before/after
+            // (per SchemaCompareHandler's `beforeAfter(...)` slot),
+            // and the table-set divergence stuffs the inline list
+            // with TABLE_ADDED/REMOVED findings so the size budget
+            // overflows and `diffArtifactRef` lights up.
+            val sLeft = IntegrationFixtures.stageSchema(
+                s.wiring, s.principal, "left",
+                schemaJsonVersioned(
+                    "orders", "1.0",
+                    *(1..COMPARE_OVERFLOW_TABLES_LEFT).map { "t$it" }.toTypedArray(),
+                ),
+            )
+            val sRight = IntegrationFixtures.stageSchema(
+                s.wiring, s.principal, "right",
+                schemaJsonVersioned(
+                    "orders", "2.0",
+                    *(1..COMPARE_OVERFLOW_TABLES_RIGHT).map { "u$it" }.toTypedArray(),
+                ),
+            )
+            val hLeft = IntegrationFixtures.stageSchema(
+                h.wiring, h.principal, "left",
+                schemaJsonVersioned(
+                    "orders", "1.0",
+                    *(1..COMPARE_OVERFLOW_TABLES_LEFT).map { "t$it" }.toTypedArray(),
+                ),
+            )
+            val hRight = IntegrationFixtures.stageSchema(
+                h.wiring, h.principal, "right",
+                schemaJsonVersioned(
+                    "orders", "2.0",
+                    *(1..COMPARE_OVERFLOW_TABLES_RIGHT).map { "u$it" }.toTypedArray(),
+                ),
+            )
+            parsePayload(s.toolsCall("schema_compare", compareArgs(sLeft, sRight)).text()) to
+                parsePayload(h.toolsCall("schema_compare", compareArgs(hLeft, hRight)).text())
+        }
+        for ((name, payload) in listOf("stdio" to stdio, "http" to http)) {
+            withClue("$name large compare must set truncated=true") {
+                payload.get("truncated").asBoolean shouldBe true
+            }
+            withClue("$name large compare must surface diffArtifactRef") {
+                payload.has("diffArtifactRef") shouldBe true
+                payload.get("diffArtifactRef").asString
+                    .startsWith("dmigrate://tenants/") shouldBe true
+            }
+            withClue("$name inline findings still cap at maxInlineFindings") {
+                payload.getAsJsonArray("findings").size() shouldBe COMPARE_OVERFLOW_FINDINGS
+            }
+            // The SCHEMA_VERSION_CHANGED finding carries typed
+            // `details.before/after` per the compareDetailsSchema
+            // contract. Search the inline-cap window for it (it's
+            // always emitted before TABLE_ADDED/REMOVED but the
+            // ordering is per-handler not per-test).
+            withClue("$name inline findings must include a typed details.before/after entry") {
+                val findings = payload.getAsJsonArray("findings")
+                val versionChange = (0 until findings.size())
+                    .map { findings.get(it).asJsonObject }
+                    .firstOrNull { it.get("code").asString == "SCHEMA_VERSION_CHANGED" }
+                    ?: error("$name: SCHEMA_VERSION_CHANGED missing from inline findings: $findings")
+                val details = versionChange.getAsJsonObject("details")
+                details.get("before").asString shouldBe "1.0"
+                details.get("after").asString shouldBe "2.0"
+            }
+        }
+    }
+
     test("schema_compare of diverging schemaRefs surfaces transport-equivalent findings") {
         val (stdio, http) = withFreshTransports { s, h ->
             val sLeft = IntegrationFixtures.stageSchema(s.wiring, s.principal, "left", schemaJson("orders", "t1"))
@@ -192,11 +343,30 @@ private val REQUEST_ID_MASK: Set<String> = setOf("requestId")
 private const val SMALL_RESPONSE_LIMIT: Int = 1024
 private const val GENERATE_TABLES: Int = 4
 
-private fun schemaJson(name: String, vararg tables: String): String {
+// §7.3 final-review additions: caps for the schema_compare
+// findings-overflow path. Bigger than the cap so we always cross
+// it deterministically, regardless of the comparator's
+// per-finding granularity.
+private const val COMPARE_OVERFLOW_FINDINGS: Int = 3
+private const val COMPARE_OVERFLOW_TABLES_LEFT: Int = 30
+private const val COMPARE_OVERFLOW_TABLES_RIGHT: Int = 30
+
+/**
+ * 1 KB response budget → 512 B inline-diff threshold. With 60 diff
+ * findings (≈ 100 B each in serialised JSON) the threshold is
+ * crossed and the schema_compare handler writes the full diff to
+ * the artefact sink, surfacing `diffArtifactRef`.
+ */
+private const val COMPARE_OVERFLOW_RESPONSE_BUDGET: Int = 1024
+
+private fun schemaJson(name: String, vararg tables: String): String =
+    schemaJsonVersioned(name, "1.0", *tables)
+
+private fun schemaJsonVersioned(name: String, version: String, vararg tables: String): String {
     val tablePairs = tables.joinToString(",") { table ->
         """"$table":{"columns":{"id":{"type":"identifier"}},"primary_key":["id"]}"""
     }
-    return """{"name":"$name","version":"1.0","tables":{$tablePairs}}"""
+    return """{"name":"$name","version":"$version","tables":{$tablePairs}}"""
 }
 
 private fun compareArgs(leftRef: String, rightRef: String): JsonObject =

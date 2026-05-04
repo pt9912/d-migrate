@@ -41,8 +41,15 @@ class McpDiscoveryAndValidateScenarioTest : FunSpec({
         }
         val stdioNames = PhaseCToolMatrix.toolNames(stdioTools.tools)
         val httpNames = PhaseCToolMatrix.toolNames(httpTools.tools)
-        val stdioDrift = PhaseCToolMatrix.drift(stdioNames, expectedSuperset = stdioNames + httpNames)
-        val httpDrift = PhaseCToolMatrix.drift(httpNames, expectedSuperset = stdioNames + httpNames)
+        // §6.24 final-review: pin against the CANONICAL superset
+        // (McpServerConfig.DEFAULT_SCOPE_MAPPING minus PROTOCOL_METHODS),
+        // not against the union of what the transports happen to
+        // advertise. The union form would silently accept a
+        // common-extra-tool regression where BOTH transports gain
+        // the same surplus tool.
+        val expectedSuperset = PhaseCToolMatrix.EXPECTED_TOOL_SUPERSET
+        val stdioDrift = PhaseCToolMatrix.drift(stdioNames, expectedSuperset = expectedSuperset)
+        val httpDrift = PhaseCToolMatrix.drift(httpNames, expectedSuperset = expectedSuperset)
         if (!stdioDrift.isEmpty() || !httpDrift.isEmpty()) {
             fail(
                 listOf(stdioDrift.render("stdio"), httpDrift.render("http")).joinToString("\n"),

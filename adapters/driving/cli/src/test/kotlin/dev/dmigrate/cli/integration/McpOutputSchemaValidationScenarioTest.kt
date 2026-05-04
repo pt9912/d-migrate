@@ -9,6 +9,7 @@ import com.networknt.schema.JsonSchema
 import com.networknt.schema.JsonSchemaFactory
 import com.networknt.schema.SpecVersion
 import dev.dmigrate.mcp.protocol.ToolMetadata
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.withClue
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
@@ -111,6 +112,68 @@ class McpOutputSchemaValidationScenarioTest : FunSpec({
         }
     }
 
+    test("schema_generate truncated=true output (artifactRef coupling) validates against the schema") {
+        // §7.3: the typed allOf clause in schema_generate's output
+        // schema requires `artifactRef` whenever `truncated=true`.
+        // A generic ResponseLimitEnforcer envelope would NOT carry
+        // either field — the validator catches the regression.
+        val tinyLimits = McpLimitsConfig(maxToolResponseBytes = 1024)
+        withFreshTransports(limits = tinyLimits) { s, h ->
+            for (harness in listOf(s, h)) {
+                val schemas = collectOutputSchemas(harness)
+                val tables = (1..4).joinToString(",") { idx ->
+                    """"orders_$idx":{"columns":{"id":{"type":"identifier"},""" +
+                        """"customer_$idx":{"type":"text","max_length":255}},""" +
+                        """"primary_key":["id"]}"""
+                }
+                val arguments = JsonParser.parseString(
+                    """{"schema":{"name":"orders","version":"1.0","tables":{$tables}},""" +
+                        """"targetDialect":"POSTGRESQL"}""",
+                ).asJsonObject
+                val result = harness.toolsCall("schema_generate", arguments)
+                result.isError shouldBe false
+                val payload = parsePayload(result.text())
+                payload.get("truncated").asBoolean shouldBe true
+                payload.has("artifactRef") shouldBe true
+                assertValidAgainstOutputSchema(harness.name, "schema_generate", schemas, payload)
+            }
+        }
+    }
+
+    test("schema_compare truncated=true output (diffArtifactRef coupling) validates against the schema") {
+        // §7.3 + §6.23: schema_compare's allOf requires
+        // `diffArtifactRef` when `truncated=true`. The handler ties
+        // `diffArtifactRef` to a SIZE budget (`maxToolResponseBytes/2`)
+        // — squeezing both knobs guarantees the artifact-ref path
+        // lights up regardless of per-finding byte cost.
+        val tinyFindings = McpLimitsConfig(
+            maxInlineFindings = 3,
+            maxToolResponseBytes = 1024,
+        )
+        withFreshTransports(limits = tinyFindings) { s, h ->
+            for (harness in listOf(s, h)) {
+                val schemas = collectOutputSchemas(harness)
+                val left = IntegrationFixtures.stageSchema(
+                    harness.wiring, harness.principal, "e8a-trunc-left",
+                    schemaWithTables("orders", (1..30).map { "t$it" }),
+                )
+                val right = IntegrationFixtures.stageSchema(
+                    harness.wiring, harness.principal, "e8a-trunc-right",
+                    schemaWithTables("orders", (1..30).map { "u$it" }),
+                )
+                val arguments = JsonParser.parseString(
+                    """{"left":{"schemaRef":"$left"},"right":{"schemaRef":"$right"}}""",
+                ).asJsonObject
+                val result = harness.toolsCall("schema_compare", arguments)
+                result.isError shouldBe false
+                val payload = parsePayload(result.text())
+                payload.get("truncated").asBoolean shouldBe true
+                payload.has("diffArtifactRef") shouldBe true
+                assertValidAgainstOutputSchema(harness.name, "schema_compare", schemas, payload)
+            }
+        }
+    }
+
     test("job_status_get runtime output validates against the wire-published output schema") {
         withFreshTransports { s, h ->
             for (harness in listOf(s, h)) {
@@ -180,6 +243,12 @@ private fun assertValidAgainstOutputSchema(
 private fun parsePayload(text: String): JsonObject =
     JsonParser.parseString(text).asJsonObject
 
+private fun schemaWithTables(name: String, tables: List<String>): String {
+    val table = """"columns":{"id":{"type":"identifier"}},"primary_key":["id"]"""
+    val tablePairs = tables.joinToString(",") { """"$it":{$table}""" }
+    return """{"name":"$name","version":"1.0","tables":{$tablePairs}}"""
+}
+
 private fun dev.dmigrate.mcp.protocol.ToolsCallResult.text(): String {
     val body = content.firstOrNull()?.text ?: error("tools/call response carried no text content")
     return body
@@ -190,12 +259,13 @@ private fun dev.dmigrate.mcp.protocol.ToolsCallResult.text(): String {
  * assertions; cleanup runs even on failure.
  */
 private fun withFreshTransports(
+    limits: McpLimitsConfig = McpLimitsConfig(),
     block: (StdioHarness, HttpHarness) -> Unit,
 ) {
     val stdioDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
     val httpDir = IntegrationFixtures.freshStateDir("dmigrate-it-http-")
-    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
-    val http = HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
+    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL, limits)
+    val http = HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL, limits)
     try {
         stdio.initialize()
         stdio.initializedNotification()
