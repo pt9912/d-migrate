@@ -53,8 +53,11 @@ data class ResourceStores(
             jobStore = wiring.jobStore,
             artifactStore = wiring.artifactStore,
             schemaStore = wiring.schemaStore,
-            profileStore = EmptyProfileStore,
-            diffStore = EmptyDiffStore,
+            // AP D6 added profile/diff stores to PhaseCWiring (default
+            // Empty); wire them through so Phase-D `resources/read` and
+            // the discovery list handlers see the same backing store.
+            profileStore = wiring.profileStore,
+            diffStore = wiring.diffStore,
             connectionStore = EmptyConnectionStore,
         )
     }

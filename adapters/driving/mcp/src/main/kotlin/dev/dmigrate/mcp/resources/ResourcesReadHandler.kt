@@ -4,59 +4,84 @@ import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.protocol.ReadResourceResult
 import dev.dmigrate.mcp.protocol.ResourceContents
 import dev.dmigrate.server.core.principal.PrincipalContext
-import dev.dmigrate.server.core.principal.TenantScopeChecker
+import dev.dmigrate.server.core.resource.ArtifactChunkResourceUri
+import dev.dmigrate.server.core.resource.GlobalCapabilitiesResourceUri
+import dev.dmigrate.server.core.resource.McpResourceError
+import dev.dmigrate.server.core.resource.McpResourceUri
+import dev.dmigrate.server.core.resource.ResourceClassification
+import dev.dmigrate.server.core.resource.ResourceErrorPrecedence
 import dev.dmigrate.server.core.resource.ResourceKind
-import dev.dmigrate.server.core.resource.ResourceUriParseResult
-import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.resource.TenantResourceUri
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 
 /**
- * Handles `resources/read` per `ImpPlan-0.9.6-B.md` §5.5 + §5.6 + §6.9.
+ * Handles `resources/read` per `ImpPlan-0.9.6-D.md` §4.2 + §5.3 + §10.7.
  *
- * Error mapping (§12.8: protocol-method errors are JSON-RPC errors,
- * never tool-result envelopes):
+ * Phase-D upgrade over the Phase-B handler:
  *
- * - Missing or malformed URI → `-32602 InvalidParams`. The wire
- *   message is the constant `"invalid resource URI"` — concrete
- *   parse reasons stay in the audit log so the error class never
- *   leaks the URI grammar path the caller probed.
- * - URI tenant not equal to the principal's
- *   [PrincipalContext.effectiveTenantId] (matched via
- *   [TenantScopeChecker.isInScope]) → `-32600 InvalidRequest`
- *   with the message `"tenant scope denied for requested resource"`.
- *   No record-level lookup runs in this branch, so the response
- *   never confirms whether the requested resource exists.
- *   §5.6 sanctions this differentiation (`TENANT_SCOPE_DENIED`
- *   distinct from `RESOURCE_NOT_FOUND`) for syntactically-valid
- *   foreign-tenant URIs; the principal already knows their own
- *   `effectiveTenantId`, so the only signal leaked is whether the
- *   *URI grammar* the caller submitted parsed cleanly — the same
- *   signal the InvalidParams branch carries.
- * - Within-tenant: lookup + per-record visibility (`isReadableBy`
- *   for jobs/artifacts; tenant scoping by `effectiveTenantId` is
- *   sufficient for the index-only stores). Unknown ids, expired
- *   records, records the principal cannot see, and the non-listable
- *   [ResourceKind.UPLOAD_SESSIONS] kind all collapse uniformly to
- *   the [MCP_RESOURCE_NOT_FOUND_CODE] no-oracle branch. The error
- *   message NEVER mentions the requested URI or whether the
- *   resource exists.
+ * - Goes through [ResourceErrorPrecedence] so URI-grammar / tenant-
+ *   scope / blocked-kind precedence is centralised and shared with
+ *   the discovery list-tools and the chunk/status resolvers landed
+ *   later in Phase D.
+ * - Tenant-scope is `allowedTenantIds` (Plan-D §4.2 / §5.4) — a
+ *   principal whose home tenant differs from the URI tenant may
+ *   still read records there as long as the URI tenant is in the
+ *   allowed set. Phase-B used `effectiveTenantId` (strict equality);
+ *   Plan-D explicitly broadens the contract.
+ * - Every JSON-RPC error envelope carries
+ *   `error.data.dmigrateCode` (`VALIDATION_ERROR`,
+ *   `TENANT_SCOPE_DENIED`, `RESOURCE_NOT_FOUND`) so clients can
+ *   branch on the stable d-migrate code without parsing the
+ *   numeric JSON-RPC code. Phase-B left `error.data` null.
+ * - `dmigrate://capabilities` is a first-class readable resource
+ *   per Plan-D §5.1 / §10.7. The capabilities body is supplied by
+ *   the bootstrap so this handler stays free of registry/limits
+ *   plumbing.
+ * - `UPLOAD_SESSIONS` URIs in an *allowed* tenant collapse to
+ *   `VALIDATION_ERROR` (Plan-D §5.1: kind not readable in Phase D)
+ *   instead of the Phase-B `RESOURCE_NOT_FOUND` no-oracle. The
+ *   precedence chain runs the blocked-kind gate before any store
+ *   lookup so an attacker cannot probe upload-session ids through
+ *   the not-found timing channel.
  *
- * Successful responses carry a single [ResourceContents] slice with
- * `mimeType=application/json`. The body is produced by
- * [ResourceContentProjector] from the same record types
- * `resources/list` walks, so the secrets-free guarantees match across
- * the two methods.
+ * Wire details that stay identical to Phase-B:
+ *
+ * - Successful responses carry a single [ResourceContents] slice
+ *   with `mimeType=application/json`. The body comes from
+ *   [ResourceContentProjector] and is identical for jobs / artefacts
+ *   / schemas / profiles / diffs / connections.
+ * - Within-tenant lookups still apply per-record visibility
+ *   ([JobRecord.isReadableBy] / [ArtifactRecord.isReadableBy]) —
+ *   the addressed tenant from the URI is threaded into the check
+ *   so an explicit allowed-but-non-effective tenant URI doesn't
+ *   silently drop every record.
+ * - Unknown ids, expired records and records the principal cannot
+ *   see all collapse to [MCP_RESOURCE_NOT_FOUND_CODE] with
+ *   `dmigrateCode=RESOURCE_NOT_FOUND`. Error messages NEVER
+ *   mention the requested URI or whether the resource exists.
+ *
+ * AP D7 sub-commit 1 leaves the inline-vs-artefactRef byte
+ * threshold (Plan-D §5.2) and the strict request-parameter shape
+ * (`additionalProperties=false` on `ReadResourceParams`) for
+ * follow-up sub-commits — they are independent of the
+ * precedence-chain refactor and the capabilities resolver.
  */
-internal class ResourcesReadHandler(private val stores: ResourceStores) {
+internal class ResourcesReadHandler(
+    private val stores: ResourceStores,
+    private val capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
+) {
 
     private val gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
 
     fun read(principal: PrincipalContext, rawUri: String): ReadResourceResult {
-        val uri = parse(rawUri)
-        ensureTenantInScope(principal, uri)
-        val payload = lookupContent(principal, uri) ?: throw notFound()
+        val classification = ResourceErrorPrecedence.classify(rawUri, principal)
+        val uri = when (classification) {
+            is ResourceClassification.Resolved -> classification.uri
+            is ResourceClassification.Failed -> throw classification.error.toResponseError()
+        }
+        val payload = lookup(principal, uri) ?: throw McpResourceError.ResourceNotFound.toResponseError()
         return ReadResourceResult(
             contents = listOf(
                 ResourceContents(
@@ -68,47 +93,32 @@ internal class ResourcesReadHandler(private val stores: ResourceStores) {
         )
     }
 
-    private fun parse(rawUri: String): ServerResourceUri =
-        when (val parsed = ServerResourceUri.parse(rawUri)) {
-            is ResourceUriParseResult.Valid -> parsed.uri
-            is ResourceUriParseResult.Invalid -> throw ResponseErrorException(
-                // The concrete parse reason ("missing scheme prefix",
-                // "unknown resource kind: x", ...) would distinguish
-                // grammar-failure paths and let a caller probe URI
-                // shape without lookup. Keep the wire message
-                // constant; reasons belong in the audit log.
-                ResponseError(ResponseErrorCode.InvalidParams, INVALID_URI_MESSAGE, null),
-            )
-        }
-
-    private fun ensureTenantInScope(principal: PrincipalContext, uri: ServerResourceUri) {
-        // §5.5 / §5.6: tenant addressing is bound to the principal's
-        // *active* tenant. allowedTenantIds is the set the principal
-        // may switch INTO via impersonation; reading from a non-active
-        // allowed tenant would be a silent cross-tenant read. Use
-        // TenantScopeChecker.isInScope so resources/read agrees with
-        // resources/list (which scopes every store call by
-        // effectiveTenantId).
-        if (TenantScopeChecker.isInScope(principal, uri.tenantId)) return
-        throw ResponseErrorException(
-            ResponseError(
-                ResponseErrorCode.InvalidRequest,
-                "tenant scope denied for requested resource",
-                null,
-            ),
-        )
+    private fun lookup(
+        principal: PrincipalContext,
+        uri: McpResourceUri,
+    ): Map<String, Any?>? = when (uri) {
+        is GlobalCapabilitiesResourceUri -> capabilitiesProvider()
+            .takeIf { it.isNotEmpty() }
+        is TenantResourceUri -> lookupTenantResource(principal, uri)
+        // ArtifactChunkResourceUri is the four-segment chunked-read
+        // URI. AP D9 wires it onto `artifact_chunk_get`'s resolver
+        // so the same Phase-D precedence chain governs both paths.
+        // Until then the chunk resolver isn't bound here — the
+        // request collapses into the no-oracle not-found branch
+        // rather than ever returning a bogus content slice.
+        is ArtifactChunkResourceUri -> null
     }
 
-    private fun lookupContent(
+    private fun lookupTenantResource(
         principal: PrincipalContext,
-        uri: ServerResourceUri,
+        uri: TenantResourceUri,
     ): Map<String, Any?>? = when (uri.kind) {
         ResourceKind.JOBS -> stores.jobStore.findById(uri.tenantId, uri.id)
-            ?.takeIf { it.isReadableBy(principal) }
+            ?.takeIf { it.isReadableBy(principal, uri.tenantId) }
             ?.let(ResourceContentProjector::projectContent)
 
         ResourceKind.ARTIFACTS -> stores.artifactStore.findById(uri.tenantId, uri.id)
-            ?.takeIf { it.isReadableBy(principal) }
+            ?.takeIf { it.isReadableBy(principal, uri.tenantId) }
             ?.let(ResourceContentProjector::projectContent)
 
         ResourceKind.SCHEMAS -> stores.schemaStore.findById(uri.tenantId, uri.id)
@@ -123,16 +133,41 @@ internal class ResourcesReadHandler(private val stores: ResourceStores) {
         ResourceKind.CONNECTIONS -> stores.connectionStore.findById(uri.tenantId, uri.id)
             ?.let(ResourceContentProjector::projectContent)
 
-        // Upload sessions are not MCP-readable (they are write-only
-        // session state, not resource projections). Collapse into the
-        // no-oracle not-found branch so an attacker can't probe the
-        // upload-session id space through resources/read.
+        // UPLOAD_SESSIONS is filtered upstream by ResourceErrorPrecedence
+        // (Stage 3) — this branch is unreachable because the request
+        // already failed with VALIDATION_ERROR. Kept exhaustive so
+        // adding a new ResourceKind forces a compile-time decision.
         ResourceKind.UPLOAD_SESSIONS -> null
     }
 
-    private fun notFound(): ResponseErrorException = ResponseErrorException(
-        ResponseError(MCP_RESOURCE_NOT_FOUND_CODE, "Resource not found", null),
-    )
+    private fun McpResourceError.toResponseError(): ResponseErrorException {
+        val code = when (this) {
+            is McpResourceError.ValidationError -> ResponseErrorCode.InvalidParams.value
+            is McpResourceError.TenantScopeDenied -> ResponseErrorCode.InvalidRequest.value
+            McpResourceError.ResourceNotFound -> MCP_RESOURCE_NOT_FOUND_CODE
+        }
+        // Wire-message stays generic for the no-oracle branches:
+        // the parse-reason / probe never lands in the message field.
+        // The dmigrateCode in error.data is the stable d-migrate
+        // discriminator clients should branch on.
+        val message = when (this) {
+            is McpResourceError.ValidationError -> when {
+                // Phase-B kept the wire message as the literal
+                // "invalid resource URI" so a caller can't probe
+                // grammar paths. Phase-D keeps that contract for
+                // grammar failures; UPLOAD_SESSIONS-blocked-kind
+                // gets its own distinct message because the kind
+                // segment is observable by the client (Plan-D
+                // §5.1 lists upload-sessions as not-readable).
+                message.startsWith("resource kind '") -> message
+                else -> INVALID_URI_MESSAGE
+            }
+            is McpResourceError.TenantScopeDenied -> "tenant scope denied for requested resource"
+            McpResourceError.ResourceNotFound -> "Resource not found"
+        }
+        val data = mapOf("dmigrateCode" to dmigrateCode)
+        return ResponseErrorException(ResponseError(code, message, data))
+    }
 
     companion object {
         const val JSON_MIME: String = "application/json"

@@ -50,18 +50,26 @@ internal class CapabilitiesListReadOnlyHandler(
     private val scopeTable: Map<String, List<String>> = invertScopeMapping(scopeMapping)
     private val projectedLimits: Map<String, Number> = projectLimits(limits)
 
+    /**
+     * AP D7: capabilities payload sans `executionMeta`. Lets the
+     * `resources/read dmigrate://capabilities` handler emit the same
+     * static document Phase-D agents see through `capabilities_list`
+     * — without the per-call `requestId` field that only makes sense
+     * for tool invocations.
+     */
+    fun staticPayload(): Map<String, Any?> = mapOf(
+        "mcpProtocolVersion" to McpProtocol.MCP_PROTOCOL_VERSION,
+        "dmigrateContractVersion" to McpProtocol.DMIGRATE_CONTRACT_VERSION,
+        "serverName" to McpProtocol.SERVER_NAME,
+        "tools" to projectedTools,
+        "scopeTable" to scopeTable,
+        "dialects" to dialects,
+        "formats" to formats,
+        "limits" to projectedLimits,
+    )
+
     override fun handle(context: ToolCallContext): ToolCallOutcome {
-        val payload = mapOf(
-            "mcpProtocolVersion" to McpProtocol.MCP_PROTOCOL_VERSION,
-            "dmigrateContractVersion" to McpProtocol.DMIGRATE_CONTRACT_VERSION,
-            "serverName" to McpProtocol.SERVER_NAME,
-            "tools" to projectedTools,
-            "scopeTable" to scopeTable,
-            "dialects" to dialects,
-            "formats" to formats,
-            "limits" to projectedLimits,
-            "executionMeta" to mapOf("requestId" to context.requestId),
-        )
+        val payload = staticPayload() + ("executionMeta" to mapOf("requestId" to context.requestId))
         return ToolCallOutcome.Success(
             content = listOf(
                 ToolContent(

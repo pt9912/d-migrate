@@ -65,13 +65,24 @@ class McpServiceImpl(
     private val responseLimitEnforcer: ResponseLimitEnforcer? = null,
     private val auditScope: AuditScope? = null,
     private val requestIdProvider: () -> String = ::generateDispatchRequestId,
+    /**
+     * AP D7: builds the capabilities document for `resources/read
+     * dmigrate://capabilities`. Defaults to an empty map — the
+     * bootstrap supplies the real provider (the one
+     * [dev.dmigrate.mcp.registry.CapabilitiesListReadOnlyHandler]
+     * uses) so the two surfaces stay in lock-step. An empty map
+     * means the URI exists but the document is unconfigured —
+     * the handler treats that as `RESOURCE_NOT_FOUND` so a stale
+     * deployment never returns a half-baked capabilities body.
+     */
+    capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
     private val currentPrincipal = AtomicReference(initialPrincipal)
     private val gson = GsonBuilder().disableHtmlEscaping().create()
     private val resourcesListHandler = ResourcesListHandler(resourceStores)
-    private val resourcesReadHandler = ResourcesReadHandler(resourceStores)
+    private val resourcesReadHandler = ResourcesReadHandler(resourceStores, capabilitiesProvider)
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
@@ -281,9 +292,12 @@ class McpServiceImpl(
         val raw = params.uri ?: return CompletableFuture.failedFuture(
             ResponseErrorException(
                 ResponseError(
-                    ResponseErrorCode.InvalidParams,
+                    ResponseErrorCode.InvalidParams.value,
                     "resources/read requires 'uri'",
-                    null,
+                    // Phase-D §5.4: every resource error carries
+                    // error.data.dmigrateCode. A missing 'uri' is
+                    // a request-shape failure → VALIDATION_ERROR.
+                    mapOf("dmigrateCode" to "VALIDATION_ERROR"),
                 ),
             ),
         )

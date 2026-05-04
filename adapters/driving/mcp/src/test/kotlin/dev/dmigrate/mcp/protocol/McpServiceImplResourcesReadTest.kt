@@ -335,24 +335,20 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
     }
 
-    test("resources/read with tenant in allowedTenantIds but not effectiveTenantId is denied") {
-        // §5.5: tenant addressing binds to *active* tenant.
-        // allowedTenantIds = the set this principal could switch INTO
-        // (impersonation), not a license to read across them silently.
-        // A leak here would be a critical cross-tenant read on the
-        // index-only kinds (schemas/profiles/diffs/connections) that
-        // have no per-record visibility check — the index store would
-        // happily return the record because the principal's allowed
-        // set covers the tenant. Pin that the protocol layer rejects
-        // BEFORE the store lookup.
+    test("resources/read with tenant in allowedTenantIds (not effectiveTenantId) reads in Phase D") {
+        // Plan-D §4.2 / §5.4 broadens the Phase-B contract: tenant
+        // addressing checks `allowedTenantIds`, not strict
+        // `effectiveTenantId`. A principal whose home tenant differs
+        // from the URI tenant may still read records there as long
+        // as the URI tenant is in the allowed set — same surface the
+        // AP D6 list-tools expose for an explicit `tenantId`
+        // argument.
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
             initialPrincipal = principal(
                 tenant = TENANT,
                 allowedTenants = setOf(TENANT, SECONDARY_TENANT),
             ),
-            // Seed a connection in the secondary tenant — if the
-            // bug regresses, this is the record that would leak.
             resourceStores = stores(
                 connections = listOf(
                     ConnectionReference(
@@ -366,16 +362,17 @@ class McpServiceImplResourcesReadTest : FunSpec({
                 ),
             ),
         )
-        val ex = shouldThrow<ExecutionException> {
+        val body = parseTextContent(
             sut.resourcesRead(
                 ReadResourceParams("dmigrate://tenants/beta/connections/secret-conn"),
-            ).get()
-        }
-        val err = jsonRpcErrorOf(ex).responseError
-        err.code shouldBe ResponseErrorCode.InvalidRequest.value
-        check(err.message.contains("tenant scope denied")) {
-            "non-effective tenant should still be tenant-scope-denied, was: ${err.message}"
-        }
+            ).get(),
+        )
+        body["connectionId"] shouldBe "secret-conn"
+        body["tenantId"] shouldBe SECONDARY_TENANT.value
+        // Defense-in-depth: the secret-free projection contract still
+        // holds across an allowed-non-effective tenant read.
+        body.containsKey("credentialRef") shouldBe false
+        body.containsKey("providerRef") shouldBe false
     }
 
     test("resources/read for an unknown id within tenant fails with -32002 Resource not found") {
@@ -421,11 +418,16 @@ class McpServiceImplResourcesReadTest : FunSpec({
         err.message shouldBe "Resource not found"
     }
 
-    test("resources/read on the upload-sessions kind also surfaces as Resource not found") {
-        // Upload sessions are not MCP-readable; the resources/read
-        // dispatch MUST collapse this kind into the no-oracle branch
-        // so an attacker can't probe upload-session ids through the
-        // protocol.
+    test("resources/read on the upload-sessions kind in an allowed tenant surfaces VALIDATION_ERROR") {
+        // Plan-D §5.1 / §10.7: UPLOAD_SESSIONS is not a Phase-D
+        // readable kind. The precedence chain (§4.2 stage 3) runs
+        // the blocked-kind gate BEFORE any store lookup, so an
+        // attacker cannot probe upload-session ids through the
+        // not-found timing channel. Phase-B collapsed this into
+        // RESOURCE_NOT_FOUND; Phase-D narrows the wire shape so a
+        // client gets a precise reason for the kind-rejection while
+        // still preserving the no-oracle property (existence is
+        // never confirmed because no lookup runs).
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
             initialPrincipal = principal(),
@@ -436,8 +438,10 @@ class McpServiceImplResourcesReadTest : FunSpec({
             ).get()
         }
         val err = jsonRpcErrorOf(ex).responseError
-        err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
-        err.message shouldBe "Resource not found"
+        err.code shouldBe ResponseErrorCode.InvalidParams.value
+        @Suppress("UNCHECKED_CAST")
+        val data = err.data as Map<String, Any?>
+        data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
     }
 
     test("resources/read on a FAILED job surfaces error.message and progress.phase") {
@@ -493,5 +497,92 @@ class McpServiceImplResourcesReadTest : FunSpec({
             ReadResourceParams("dmigrate://tenants/acme/jobs/tenant-job"),
         ).get()
         parseTextContent(result)["jobId"] shouldBe "tenant-job"
+    }
+
+    test("resources/read on dmigrate://capabilities returns the capabilities document") {
+        // Plan-D §5.1 / §10.7: dmigrate://capabilities is the only
+        // tenantless resource Phase D supports. The body must match
+        // the `capabilities_list` tool's payload shape (sans
+        // `executionMeta`) so a client reading capabilities through
+        // either surface gets the same view.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            capabilitiesProvider = {
+                mapOf(
+                    "mcpProtocolVersion" to "2025-11-25",
+                    "serverName" to "d-migrate",
+                    "tools" to emptyList<Map<String, Any?>>(),
+                    "scopeTable" to emptyMap<String, List<String>>(),
+                    "limits" to mapOf("maxToolResponseBytes" to 65_536),
+                )
+            },
+        )
+        val result = sut.resourcesRead(ReadResourceParams("dmigrate://capabilities")).get()
+        result.contents.single().uri shouldBe "dmigrate://capabilities"
+        val body = parseTextContent(result)
+        body["mcpProtocolVersion"] shouldBe "2025-11-25"
+        body["serverName"] shouldBe "d-migrate"
+        // executionMeta is `capabilities_list` only — Plan-D §5.1
+        // pins the static document for resources/read.
+        body.containsKey("executionMeta") shouldBe false
+    }
+
+    test("resources/read on dmigrate://capabilities with no provider falls back to RESOURCE_NOT_FOUND") {
+        // The default empty-map provider models a stale deployment
+        // that hasn't wired capabilities. Plan-D's no-oracle contract
+        // demands resources/read never returns a half-baked body —
+        // an empty document collapses to the standard not-found
+        // branch with `dmigrateCode=RESOURCE_NOT_FOUND`.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://capabilities")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
+        @Suppress("UNCHECKED_CAST")
+        val data = err.data as Map<String, Any?>
+        data["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
+    }
+
+    test("error envelopes carry error.data.dmigrateCode for every Phase-D error class") {
+        // Plan-D §5.4 pins three stable codes on the wire:
+        //   VALIDATION_ERROR     — URI grammar / blocked kind
+        //   TENANT_SCOPE_DENIED  — tenant outside allowedTenantIds
+        //   RESOURCE_NOT_FOUND   — visible-but-absent / not-readable
+        // The numeric JSON-RPC code is the transport-level
+        // discriminator; the d-migrate code is the stable contract
+        // surface clients branch on.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(allowedTenants = setOf(TENANT)),
+            resourceStores = stores(),
+        )
+        // VALIDATION_ERROR: malformed URI
+        val malformed = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("not-a-uri")).get()
+        }
+        @Suppress("UNCHECKED_CAST")
+        ((jsonRpcErrorOf(malformed).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
+            "VALIDATION_ERROR"
+
+        // TENANT_SCOPE_DENIED: tenant outside allowedTenantIds
+        val foreign = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/never/jobs/x")).get()
+        }
+        @Suppress("UNCHECKED_CAST")
+        ((jsonRpcErrorOf(foreign).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
+            "TENANT_SCOPE_DENIED"
+
+        // RESOURCE_NOT_FOUND: allowed tenant, no record
+        val absent = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/missing")).get()
+        }
+        @Suppress("UNCHECKED_CAST")
+        ((jsonRpcErrorOf(absent).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
+            "RESOURCE_NOT_FOUND"
     }
 })

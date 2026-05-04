@@ -124,11 +124,11 @@ class McpResourcesReadScenarioTest : FunSpec({
     }
 
     test("resources/read for a foreign tenant URI surfaces an identical -32600 tenant-scope-denied on both transports") {
-        // The principal is admin in INTEGRATION_TENANT but not in
-        // "foreign" — TenantScopeChecker.isInScope is strict
-        // equality, so the protocol layer rejects BEFORE any store
-        // lookup happens. Both transports MUST return the exact same
-        // wire shape.
+        // Plan-D §4.2 stage 2: tenant addressing checks
+        // `allowedTenantIds`. The integration principal's allowed set
+        // is `{INTEGRATION_TENANT}`, so a URI under "foreign" fails
+        // BEFORE any store lookup runs. Both transports MUST return
+        // the exact same wire shape.
         withFreshTransports { s, h ->
             val foreignUri = "dmigrate://tenants/$FOREIGN_TENANT/jobs/$NONEXISTENT_ID"
             val (stdioErr, httpErr) = bothErrors(s, h) { it.resourcesReadRaw(foreignUri) }
@@ -141,16 +141,24 @@ class McpResourcesReadScenarioTest : FunSpec({
         }
     }
 
-    test("resources/read on the upload-sessions kind collapses into the same -32002 no-oracle error") {
-        // upload-sessions are not MCP-readable; the protocol must
-        // return the SAME code and SAME message as a missing resource
-        // so an attacker cannot probe the upload-session id space.
+    test("resources/read on the upload-sessions kind collapses into the same VALIDATION_ERROR on both transports") {
+        // Plan-D §5.1 / §10.7: upload-sessions are not MCP-readable.
+        // The precedence chain runs the blocked-kind gate BEFORE any
+        // store lookup, so a specific session id is never confirmed —
+        // the no-oracle property holds for IDs even though the kind
+        // rejection is now distinguishable. Both transports MUST
+        // emit the SAME code and SAME message.
         withFreshTransports { s, h ->
             val (stdioErr, httpErr) = bothErrors(s, h) { harness ->
                 val tenant = harness.principal.effectiveTenantId.value
                 harness.resourcesReadRaw("dmigrate://tenants/$tenant/upload-sessions/probe-id")
             }
-            assertNoOracleEqual(stdioErr, httpErr, expectedCode = MCP_RESOURCE_NOT_FOUND, expectedMessage = MSG_NOT_FOUND)
+            assertNoOracleEqual(
+                stdioErr,
+                httpErr,
+                expectedCode = JSONRPC_INVALID_PARAMS,
+                expectedMessage = MSG_KIND_BLOCKED,
+            )
         }
     }
 
@@ -194,6 +202,7 @@ private const val JSONRPC_INVALID_PARAMS: Int = -32602
 private const val MSG_NOT_FOUND: String = "Resource not found"
 private const val MSG_TENANT_DENIED: String = "tenant scope denied for requested resource"
 private const val MSG_INVALID_URI: String = "invalid resource URI"
+private const val MSG_KIND_BLOCKED: String = "resource kind 'upload-sessions' is not readable in Phase D"
 
 /**
  * Scrubbed, transport-comparable view of a JSON-RPC error: the

@@ -194,16 +194,33 @@ object PhaseCRegistries {
         val toolRegistry: ToolRegistry,
         val responseLimitEnforcer: ResponseLimitEnforcer?,
         val auditScope: AuditScope?,
+        /**
+         * AP D7: capabilities document for `resources/read
+         * dmigrate://capabilities`. Built from the same descriptors +
+         * scope mapping + limits the [CapabilitiesListReadOnlyHandler]
+         * uses so the resource and the tool stay in lock-step.
+         * Empty map means the URI is wired but the document is
+         * unconfigured — `resources/read` falls back to
+         * `RESOURCE_NOT_FOUND` for that case.
+         */
+        val capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
     )
 
     fun defaultComponents(
         phaseCWiring: PhaseCWiring?,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     ): McpServiceComponents = if (phaseCWiring != null) {
+        val toolRegistry = defaultToolRegistry(phaseCWiring, scopeMapping)
+        val capabilitiesHandler = CapabilitiesListReadOnlyHandler(
+            tools = toolRegistry.all(),
+            scopeMapping = scopeMapping,
+            limits = phaseCWiring.limits,
+        )
         McpServiceComponents(
-            toolRegistry = defaultToolRegistry(phaseCWiring, scopeMapping),
+            toolRegistry = toolRegistry,
             responseLimitEnforcer = defaultResponseLimitEnforcer(phaseCWiring),
             auditScope = phaseCWiring.auditSink?.let { AuditScope(it, phaseCWiring.clock) },
+            capabilitiesProvider = capabilitiesHandler::staticPayload,
         )
     } else {
         McpServiceComponents(

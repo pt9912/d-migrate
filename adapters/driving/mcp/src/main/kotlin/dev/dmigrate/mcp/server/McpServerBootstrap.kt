@@ -144,6 +144,7 @@ object McpServerBootstrap {
                             scopeMapping = config.scopeMapping,
                             responseLimitEnforcer = responseLimitEnforcer,
                             auditScope = auditScope,
+                            capabilitiesProvider = components.capabilitiesProvider,
                         )
                     },
                     authValidatorOverride = authValidatorOverride,
@@ -204,6 +205,7 @@ object McpServerBootstrap {
             scopeMapping = config.scopeMapping,
             responseLimitEnforcer = responseLimitEnforcer,
             auditScope = auditScope,
+            capabilitiesProvider = components.capabilitiesProvider,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }
