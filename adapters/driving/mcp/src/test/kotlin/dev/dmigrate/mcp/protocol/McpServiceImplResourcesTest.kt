@@ -156,6 +156,99 @@ class McpServiceImplResourcesTest : FunSpec({
         collected shouldContain "dmigrate://tenants/acme/connections/c3"
     }
 
+    test("HMAC-sealed cursor round-trips through resources/list when codec is wired") {
+        // AP D8: when McpServiceImpl receives a non-null cursorCodec,
+        // resources/list emits HMAC-sealed cursors and accepts them
+        // back. Seed enough jobs to overflow the handler's default
+        // 50-row page so the first response carries a non-null
+        // sealed cursor, then round-trip it through a second call.
+        val keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+            signing = dev.dmigrate.mcp.cursor.CursorKey(
+                kid = "test-k1",
+                secret = ByteArray(32) { it.toByte() },
+            ),
+        )
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(keyring = keyring)
+        val jobStore = InMemoryJobStore().apply {
+            (1..60).forEach { i ->
+                save(
+                    dev.dmigrate.server.core.job.JobRecord(
+                        managedJob = dev.dmigrate.server.core.job.ManagedJob(
+                            jobId = "job-%03d".format(i),
+                            operation = "schema_validate",
+                            status = dev.dmigrate.server.core.job.JobStatus.SUCCEEDED,
+                            createdAt = Instant.parse("2026-05-04T10:00:00Z"),
+                            updatedAt = Instant.parse("2026-05-04T10:00:00Z"),
+                            expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+                            createdBy = "alice",
+                        ),
+                        tenantId = TENANT,
+                        ownerPrincipalId = PrincipalId("alice"),
+                        visibility = dev.dmigrate.server.core.job.JobVisibility.TENANT,
+                        resourceUri = ServerResourceUri(TENANT, ResourceKind.JOBS, "job-%03d".format(i)),
+                    ),
+                )
+            }
+        }
+        val stores = ResourceStores(
+            jobStore = jobStore,
+            artifactStore = InMemoryArtifactStore(),
+            schemaStore = InMemorySchemaStore(),
+            profileStore = InMemoryProfileStore(),
+            diffStore = InMemoryDiffStore(),
+            connectionStore = InMemoryConnectionReferenceStore(),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = PRINCIPAL,
+            resourceStores = stores,
+            cursorCodec = codec,
+        )
+        val first = sut.resourcesList(ResourcesListParams(cursor = null)).get()
+        // 50 jobs surface in the first page; the 60th forces a
+        // non-null next cursor pointing at the JOBS family.
+        first.resources.size shouldBe 50
+        // Sealed wire format: <payload>.<signature>.
+        first.nextCursor!!.contains('.') shouldBe true
+        // Round-trip the sealed cursor — second call MUST resume
+        // mid-walk and surface the remaining 10 jobs without
+        // re-emitting any of the first page.
+        val firstIds = first.resources.map { it.uri }.toSet()
+        val second = sut.resourcesList(ResourcesListParams(cursor = first.nextCursor)).get()
+        val secondJobIds = second.resources.map { it.uri }.filter { it.contains("/jobs/") }
+        secondJobIds.size shouldBe 10
+        secondJobIds.intersect(firstIds).size shouldBe 0
+    }
+
+    test("tampered HMAC-sealed cursor fails with VALIDATION_ERROR") {
+        // AP D8: a cursor whose payload bytes have been altered must
+        // fail the HMAC check and surface as VALIDATION_ERROR with
+        // dmigrateCode populated, NOT a silent rebind to a different
+        // listing.
+        val keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+            signing = dev.dmigrate.mcp.cursor.CursorKey(
+                kid = "test-k1",
+                secret = ByteArray(32) { it.toByte() },
+            ),
+        )
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(keyring = keyring)
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = PRINCIPAL,
+            cursorCodec = codec,
+        )
+        // Forge a cursor that LOOKS sealed but has a fake signature.
+        val forged = "Zm9vYmFy.AAAAAAAA"
+        val ex = io.kotest.assertions.throwables.shouldThrow<java.util.concurrent.ExecutionException> {
+            sut.resourcesList(ResourcesListParams(cursor = forged)).get()
+        }
+        val err = (ex.cause as org.eclipse.lsp4j.jsonrpc.ResponseErrorException).responseError
+        err.code shouldBe org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams.value
+        @Suppress("UNCHECKED_CAST")
+        val data = err.data as Map<String, Any?>
+        data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
+    }
+
     test("forged cursor with non-listable kind fails with -32602") {
         // Belt-and-braces alongside the "malformed cursor" test: a
         // cursor that decodes cleanly but points at a non-listable

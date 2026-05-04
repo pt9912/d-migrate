@@ -86,6 +86,15 @@ class McpServiceImpl(
      * caps.
      */
     limitsConfig: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
+    /**
+     * AP D8: HMAC cursor codec for `resources/list`. When non-null,
+     * cursors are sealed via [dev.dmigrate.mcp.resources.SealedResourcesListCursor]
+     * with tenant + pageSize + expiry binding. Null falls back to
+     * the Phase-B unsigned Base64 path so existing tests + Phase-B
+     * harnesses stay green; production bootstrap always wires a
+     * codec via the Phase-C wiring's keyring.
+     */
+    private val cursorCodec: dev.dmigrate.mcp.cursor.McpCursorCodec? = null,
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -93,6 +102,9 @@ class McpServiceImpl(
     private val gson = GsonBuilder().disableHtmlEscaping().create()
     private val resourcesListHandler = ResourcesListHandler(resourceStores)
     private val resourcesReadHandler = ResourcesReadHandler(resourceStores, capabilitiesProvider, limitsConfig)
+    private val sealedListCursor = cursorCodec?.let {
+        dev.dmigrate.mcp.resources.SealedResourcesListCursor(it)
+    }
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
@@ -273,15 +285,51 @@ class McpServiceImpl(
             return CompletableFuture.failedFuture(scopeJsonRpcError("resources/list", required))
         }
         val cursor = try {
-            ResourcesListCursor.decode(params?.cursor)
+            decodeListCursor(params?.cursor, principal.effectiveTenantId)
         } catch (e: IllegalArgumentException) {
             return CompletableFuture.failedFuture(
                 ResponseErrorException(
-                    ResponseError(ResponseErrorCode.InvalidParams, e.message ?: "invalid cursor", null),
+                    ResponseError(
+                        ResponseErrorCode.InvalidParams.value,
+                        e.message ?: "invalid cursor",
+                        // Plan-D §4.2 cursor errors collapse to
+                        // VALIDATION_ERROR alongside the rest of
+                        // the resource-error chain.
+                        mapOf("dmigrateCode" to "VALIDATION_ERROR"),
+                    ),
                 ),
             )
         }
-        return CompletableFuture.completedFuture(resourcesListHandler.list(principal, cursor))
+        val raw = resourcesListHandler.list(principal, cursor)
+        // Re-seal the next cursor so the wire string is HMAC-bound
+        // to (tenant, pageSize, family). When no codec is wired,
+        // pass the unsigned cursor through unchanged for Phase-B
+        // backward compatibility.
+        val sealed = sealedListCursor
+        val out = if (sealed != null && raw.nextCursor != null) {
+            val inner = ResourcesListCursor.decode(raw.nextCursor)
+                ?: error("handler emitted cursor that fails its own decoder")
+            ResourcesListResult(
+                resources = raw.resources,
+                nextCursor = sealed.seal(inner, principal.effectiveTenantId),
+            )
+        } else {
+            raw
+        }
+        return CompletableFuture.completedFuture(out)
+    }
+
+    private fun decodeListCursor(
+        wire: String?,
+        tenantId: dev.dmigrate.server.core.principal.TenantId,
+    ): ResourcesListCursor? {
+        if (wire == null) return null
+        val sealed = sealedListCursor ?: return ResourcesListCursor.decode(wire)
+        return when (val outcome = sealed.unseal(wire, tenantId)) {
+            is dev.dmigrate.mcp.resources.SealedResourcesListCursor.Result.Success -> outcome.cursor
+            is dev.dmigrate.mcp.resources.SealedResourcesListCursor.Result.Failure ->
+                throw IllegalArgumentException(outcome.reason)
+        }
     }
 
     override fun resourcesRead(params: ReadResourceParams): CompletableFuture<ReadResourceResult> {

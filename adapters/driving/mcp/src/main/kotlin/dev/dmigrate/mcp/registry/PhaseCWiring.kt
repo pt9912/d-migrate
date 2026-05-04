@@ -1,6 +1,8 @@
 package dev.dmigrate.mcp.registry
 
 import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.mcp.cursor.CursorKey
+import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.schema.DefaultSchemaStagingFinalizer
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
@@ -19,7 +21,9 @@ import dev.dmigrate.server.ports.ProfileStore
 import dev.dmigrate.server.ports.SchemaStore
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import java.security.SecureRandom
 import java.time.Clock
+import java.util.UUID
 
 /**
  * Phase-C wiring bundle per `ImpPlan-0.9.6-C.md` §6.14. Holds every
@@ -94,4 +98,27 @@ data class PhaseCWiring(
      * tools will.
      */
     val diffStore: DiffStore = EmptyDiffStore,
+
+    /**
+     * AP D8: HMAC keyring backing every Phase-D MCP cursor
+     * (`resources/list`, `*_list` discovery tools, chunk
+     * follow-ups). The default mints a fresh random secret per
+     * server start — fine for single-instance deployments where
+     * cursors are short-lived (15 min TTL) and clients re-paginate
+     * cleanly when the server restarts. Multi-instance / blue-green
+     * deployments MUST override with a deterministic keyring read
+     * from a shared secret store; otherwise a cursor minted by
+     * instance A fails verification on instance B.
+     */
+    val cursorKeyring: CursorKeyring = randomDefaultCursorKeyring(),
 )
+
+private fun randomDefaultCursorKeyring(): CursorKeyring {
+    val secret = ByteArray(32).also { SecureRandom().nextBytes(it) }
+    return CursorKeyring(
+        signing = CursorKey(
+            kid = "auto-${UUID.randomUUID()}",
+            secret = secret,
+        ),
+    )
+}

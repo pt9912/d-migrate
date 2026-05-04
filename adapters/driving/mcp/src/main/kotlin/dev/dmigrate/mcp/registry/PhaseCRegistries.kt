@@ -1,6 +1,7 @@
 package dev.dmigrate.mcp.registry
 
 import dev.dmigrate.core.validation.SchemaValidator
+import dev.dmigrate.mcp.cursor.McpCursorCodec
 import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -204,6 +205,14 @@ object PhaseCRegistries {
          * `RESOURCE_NOT_FOUND` for that case.
          */
         val capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
+        /**
+         * AP D8: HMAC cursor codec backing `resources/list` and the
+         * `*_list` discovery tools. Null in Phase-B-only deployments
+         * (no PhaseCWiring) — the dispatcher then falls back to the
+         * legacy unsigned Base64 cursor for resources/list and to
+         * `nextCursor=null` for the discovery tools (AP D6 no-op).
+         */
+        val cursorCodec: McpCursorCodec? = null,
     )
 
     fun defaultComponents(
@@ -221,6 +230,10 @@ object PhaseCRegistries {
             responseLimitEnforcer = defaultResponseLimitEnforcer(phaseCWiring),
             auditScope = phaseCWiring.auditSink?.let { AuditScope(it, phaseCWiring.clock) },
             capabilitiesProvider = capabilitiesHandler::staticPayload,
+            cursorCodec = McpCursorCodec(
+                keyring = phaseCWiring.cursorKeyring,
+                clock = phaseCWiring.clock,
+            ),
         )
     } else {
         McpServiceComponents(

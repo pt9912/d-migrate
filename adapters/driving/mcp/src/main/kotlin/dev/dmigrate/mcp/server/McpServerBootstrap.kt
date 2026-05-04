@@ -146,6 +146,7 @@ object McpServerBootstrap {
                             auditScope = auditScope,
                             capabilitiesProvider = components.capabilitiesProvider,
                             limitsConfig = phaseCWiring?.limits ?: McpLimitsConfig(),
+                            cursorCodec = components.cursorCodec,
                         )
                     },
                     authValidatorOverride = authValidatorOverride,
@@ -208,6 +209,7 @@ object McpServerBootstrap {
             auditScope = auditScope,
             capabilitiesProvider = components.capabilitiesProvider,
             limitsConfig = phaseCWiring?.limits ?: McpLimitsConfig(),
+            cursorCodec = components.cursorCodec,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }
