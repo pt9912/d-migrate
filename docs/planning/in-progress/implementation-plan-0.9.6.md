@@ -2086,7 +2086,7 @@ Abnahmekriterien:
 
 ### Phase D - Discovery und Ressourcen
 
-Detailplan: [`ImpPlan-0.9.6-D.md`](../open/ImpPlan-0.9.6-D.md)
+Detailplan: [`ImpPlan-0.9.6-D.md`](../in-progress/ImpPlan-0.9.6-D.md)
 
 - `job_status_get`, `job_list`, `artifact_list`, `artifact_chunk_get`,
   `schema_list`, `profile_list` und `diff_list` implementieren

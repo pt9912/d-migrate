@@ -10,8 +10,8 @@
 > Abschnitt 9.1 bis 9.4, Abschnitt 11 und Abschnitt 12;
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;
 > `docs/planning/done/ImpPlan-0.9.6-B.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-C.md`;
-> `docs/planning/open/ImpPlan-0.9.6-D.md`;
+> `docs/planning/done/ImpPlan-0.9.6-C.md`;
+> `docs/planning/in-progress/ImpPlan-0.9.6-D.md`;
 > `docs/planning/open/ImpPlan-0.9.6-E0.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
 > `spec/cli-spec.md`; `hexagon/application`; `hexagon/ports-common`;

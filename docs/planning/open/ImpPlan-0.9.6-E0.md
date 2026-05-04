@@ -8,8 +8,8 @@
 > Abschnitt 8 Phase E, Abschnitt 11 und Abschnitt 12;
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;
 > `docs/planning/done/ImpPlan-0.9.6-B.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-C.md`;
-> `docs/planning/open/ImpPlan-0.9.6-D.md`; `spec/ki-mcp.md`;
+> `docs/planning/done/ImpPlan-0.9.6-C.md`;
+> `docs/planning/in-progress/ImpPlan-0.9.6-D.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
 > `spec/cli-spec.md`; `hexagon/application`; `hexagon/ports-write`;
 > `hexagon/profiling`; `adapters/driven/streaming`;

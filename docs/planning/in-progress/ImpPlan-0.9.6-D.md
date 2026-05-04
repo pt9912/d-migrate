@@ -2,13 +2,14 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: D (`Discovery und Ressourcen`)
-> **Status**: Draft, verfeinert (2026-05-03)
+> **Status**: In Arbeit (2026-05-04) — Plan-A/B/C abgeschlossen,
+> Phase D startet auf der Phase-C-Codebase.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase D, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;
 > `docs/planning/done/ImpPlan-0.9.6-B.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-C.md`; `spec/ki-mcp.md`;
+> `docs/planning/done/ImpPlan-0.9.6-C.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
 > `spec/cli-spec.md`; `hexagon/application`; `hexagon/ports-common`;
 > `hexagon/ports-read`; `hexagon/ports-write`; `hexagon/profiling`;

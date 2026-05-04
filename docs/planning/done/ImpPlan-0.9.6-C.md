@@ -2,31 +2,23 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: C (`Read-only Tools`)
-> **Status**: In Arbeit (2026-05-03) — AP 6.1–6.20 abgeschlossen
-> (Phase-C-Handler, zentrale Limits, Audit-Wiring, idempotenter Replay,
-> CLI-Phase-C-Aktivierung). AP 6.21 implementiert (file-backed
-> Byte-Stores im produktiven `mcp serve`-Pfad, neutraler
-> `McpCliPhaseCWiring`, `--mcp-state-dir`/Env, single-writer Advisory-
-> Lock, idempotenter Tempdir-Owner, `--mcp-state-orphan-retention`
-> mit Startup-Sweep). AP 6.22 implementiert (FINALIZING-Claim mit
-> Lease + atomare `commitFinalization`-CAS, `AssembledUploadPayload`-
-> Streaming via `FileSpoolAssembledUploadPayloadFactory`,
-> deterministische `artifactId`/`schemaId`, idempotenter
-> `ArtifactContentStore`/`SchemaStore`-Replay, Stale-Lease-Reclaim,
-> sanitisierte `FinalizationOutcome`-Replay, AP-6.21-Sweep um
-> `<stateDir>/assembly/...` erweitert). AP 6.23 implementiert
-> (geteilte Schema-Helper für `findingItem`/`artifactRefField`/
-> `executionMetaField`, normalisierte Forbidden-Key-Detection in
-> `SchemaSecretGuard`, strict Output-Schemas für `schema_validate`/
-> `schema_compare`/`schema_generate`/`job_status_get` mit
-> `truncated→artifactRef` if/then-Constraint, scrubbed DDL-Artefakt,
-> Findings-only-Overflow-Fallback, `numericValues`-Allowlist mit
-> Backfill-Projektion auf Resource-URIs, `ResponseLimitEnforcer`-
-> Skip für schema-aware Tools, zentraler `error.details[].(key,value)`-
-> Scrub am Serialisierungsboundary).
-> AP 6.21 + 6.22 + 6.23 final-Done erst zusammen mit AP 6.24, wie
-> Akzeptanzkriterien fordern.
-> Offen: AP 6.24 (stdio+HTTP-Integrationstest-Suite §7.3).
+> **Status**: **Done (2026-05-04)** — alle Arbeitspakete AP 6.1–6.24
+> abgeschlossen, inkl. nachgezogenem Phase-B AP 6.9 (`resources/read`-
+> Handler, war als Phase-B-Lücke identifiziert) und mehreren
+> User-Audit-Runden gegen die §6.24 Akzeptanz-Bullets. AP 6.21 + 6.22 +
+> 6.23 + 6.24 zusammen final-Done. Bewusste, dokumentierte
+> Wortlaut-Carve-outs (siehe Memory `feedback_ap624_carveouts.md`):
+> (1) Stdio-/HttpHarness laufen in-process via `McpServerBootstrap.startStdio/Http`,
+> nicht als forked JVM — der echte CLI-/Bootstrap-/Lifecycle-Pfad ist
+> durch `McpRealCliSubprocessTest` als dedizierter Subprocess-Smoke
+> abgedeckt; (2) AP 6.24 §7.3-Bullet "schema_generate Findings-only-
+> Overflow" als Phase-D-Carve-out dokumentiert (driver-spezifischer
+> Notes-Stream nicht deterministisch triggerbar; truncated/artifactRef-
+> Coupling für Generate ist über E8(A) `schema_compare` und E2
+> `schema_validate`-Truncation strukturäquivalent gedeckt);
+> (3) "single transport-neutraler Szenario-Runner" als Carve-out
+> dokumentiert — fachliche Coverage komplett, Konsolidierung 9er-
+> Spec-Bündel würde Failure-Locality verschlechtern.
 > **Referenz**: `docs/planning/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase C, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
