@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.connection.LoaderBackedConnectionReferenceStore
+import dev.dmigrate.connection.YamlConnectionReferenceLoader
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.adapter.audit.logging.LoggingAuditSink
@@ -7,6 +9,7 @@ import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayloadFactory
 import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
@@ -54,13 +57,29 @@ import java.time.Clock
  * and locked.
  */
 internal object McpCliPhaseCWiring {
+    /**
+     * @param connectionConfigPath optional path to the project YAML
+     *  carrying Phase-D connection references (Plan-D §8 + §10.10).
+     *  When set, the CLI builds a [LoaderBackedConnectionReferenceStore]
+     *  so `resources/list`, `resources/read` and the discovery list-
+     *  tools see the deployment's connection refs without ever
+     *  materialising the resolved JDBC URL or the expanded secret.
+     *  When null, the wiring falls back to an empty connection store —
+     *  Phase-C-only deployments that haven't migrated to the YAML
+     *  schema keep working unchanged.
+     * @param tenantId tenant the loaded references are scoped to.
+     *  Multi-tenant deployments wire one CLI invocation per tenant or
+     *  override this helper.
+     */
     fun phaseCWiring(
         stateDir: Path,
         limits: McpLimitsConfig = McpLimitsConfig(),
         clock: Clock = Clock.systemUTC(),
+        connectionConfigPath: Path? = null,
+        tenantId: TenantId = TenantId("default"),
     ): PhaseCWiring {
         val quotaStore = InMemoryQuotaStore()
-        return PhaseCWiring(
+        val baseWiring = PhaseCWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = FileBackedUploadSegmentStore(stateDir),
             artifactStore = InMemoryArtifactStore(),
@@ -73,5 +92,21 @@ internal object McpCliPhaseCWiring {
             auditSink = LoggingAuditSink(),
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
         )
+        // AP D10: when a YAML config path is provided, wrap the
+        // base wiring with a `LoaderBackedConnectionReferenceStore`.
+        // Default branch keeps PhaseCWiring's Empty default — Phase-C-
+        // only deployments without a YAML migrate untouched.
+        return if (connectionConfigPath != null) {
+            baseWiring.copy(
+                connectionStore = LoaderBackedConnectionReferenceStore(
+                    YamlConnectionReferenceLoader(
+                        configPath = connectionConfigPath,
+                        defaultTenantId = tenantId,
+                    ),
+                ),
+            )
+        } else {
+            baseWiring
+        }
     }
 }

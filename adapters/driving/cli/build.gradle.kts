@@ -53,6 +53,10 @@ dependencies {
     implementation(project(":adapters:driven:integrations"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:audit-logging"))
+    // AP D10: Plan-D §8 + §10.10 secret-freier Connection-Bootstrap.
+    // Sowohl der CLI- als auch der MCP-Pfad (über McpCliPhaseCWiring)
+    // konsumieren denselben YamlConnectionReferenceLoader.
+    implementation(project(":adapters:driven:connection-config"))
     // §6.11: `mcp serve`-Subkommando wrappt McpServerBootstrap.
     implementation(project(":adapters:driving:mcp"))
     // AP 6.21: `mcp serve` constructs file-backed byte-stores for

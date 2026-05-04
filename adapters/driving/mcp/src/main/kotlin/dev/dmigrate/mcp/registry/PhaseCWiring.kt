@@ -10,11 +10,13 @@ import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
+import dev.dmigrate.mcp.resources.EmptyConnectionStore
 import dev.dmigrate.mcp.resources.EmptyDiffStore
 import dev.dmigrate.mcp.resources.EmptyProfileStore
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.AuditSink
+import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.DiffStore
 import dev.dmigrate.server.ports.JobStore
 import dev.dmigrate.server.ports.ProfileStore
@@ -98,6 +100,18 @@ data class PhaseCWiring(
      * tools will.
      */
     val diffStore: DiffStore = EmptyDiffStore,
+
+    /**
+     * AP D10: secret-free connection-reference store. The MCP
+     * bootstrap typically wires
+     * `LoaderBackedConnectionReferenceStore(YamlConnectionReferenceLoader(...))`
+     * so `resources/list`, `resources/read` and the discovery
+     * tools see the deployment's connection refs without ever
+     * materialising the resolved JDBC URL or the expanded secret.
+     * The default stays empty for tests / CLI-only deployments
+     * that don't carry a Phase-D YAML.
+     */
+    val connectionStore: ConnectionReferenceStore = EmptyConnectionStore,
 
     /**
      * AP D8: HMAC keyring backing every Phase-D MCP cursor

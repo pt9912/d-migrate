@@ -58,7 +58,11 @@ data class ResourceStores(
             // the discovery list handlers see the same backing store.
             profileStore = wiring.profileStore,
             diffStore = wiring.diffStore,
-            connectionStore = EmptyConnectionStore,
+            // AP D10: thread the connection-reference store from the
+            // wiring so production bootstrap (which wires a
+            // `LoaderBackedConnectionReferenceStore`) seeds the
+            // discovery surface with secret-free connection records.
+            connectionStore = wiring.connectionStore,
         )
     }
 }
