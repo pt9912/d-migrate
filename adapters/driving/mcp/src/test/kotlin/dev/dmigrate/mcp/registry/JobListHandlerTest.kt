@@ -221,4 +221,68 @@ class JobListHandlerTest : FunSpec({
         val ids = payload.getAsJsonArray("jobs").map { it.asJsonObject.get("jobId").asString }
         ids shouldBe listOf("j-mid")
     }
+
+    test("HMAC-sealed cursor round-trips through the handler when codec is wired") {
+        // AP D8 sub-commit 2: the handler accepts an incoming
+        // sealed `cursor` argument, decodes its resumeToken, and
+        // emits a fresh sealed cursor when the store reports a
+        // next-page token. Wire it end-to-end through 60 jobs +
+        // pageSize=50 so the response carries a non-null cursor.
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val sealed = SealedListToolCursor(codec)
+        val handler = JobListHandler(jobStore = InMemoryJobStore().apply {
+            (1..60).forEach { i ->
+                save(job(jobId = "job-%03d".format(i)))
+            }
+        }, cursorCodec = sealed)
+        val firstOutcome = handler.handle(
+            ToolCallContext(
+                name = "job_list",
+                arguments = JsonParser.parseString("""{"pageSize":50}"""),
+                principal = principal(),
+            ),
+        ) as ToolCallOutcome.Success
+        val firstPayload = JsonParser.parseString(firstOutcome.content.single().text!!).asJsonObject
+        firstPayload.getAsJsonArray("jobs").size() shouldBe 50
+        val nextCursor = firstPayload.get("nextCursor").asString
+        nextCursor.contains('.') shouldBe true
+
+        // Round-trip: pass the cursor back, expect remaining 10
+        // jobs without re-emitting the first page.
+        val firstIds = firstPayload.getAsJsonArray("jobs")
+            .map { it.asJsonObject.get("jobId").asString }
+            .toSet()
+        val secondOutcome = handler.handle(
+            ToolCallContext(
+                name = "job_list",
+                arguments = JsonParser.parseString("""{"pageSize":50,"cursor":"$nextCursor"}"""),
+                principal = principal(),
+            ),
+        ) as ToolCallOutcome.Success
+        val secondPayload = JsonParser.parseString(secondOutcome.content.single().text!!).asJsonObject
+        val secondIds = secondPayload.getAsJsonArray("jobs")
+            .map { it.asJsonObject.get("jobId").asString }
+        secondIds.size shouldBe 10
+        secondIds.toSet().intersect(firstIds).size shouldBe 0
+        // No more pages — the second cursor MUST be null.
+        secondPayload.get("nextCursor").isJsonNull shouldBe true
+    }
+
+    test("incoming cursor without a configured codec surfaces VALIDATION_ERROR") {
+        // Phase-B / legacy wiring path: a client that supplies a
+        // cursor MUST be rejected loudly rather than silently
+        // restarting at page 1, which would mask a paginate-only
+        // bug at the application layer.
+        val store = InMemoryJobStore().apply { save(job("j-1")) }
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            runHandler(store, principal(), """{"cursor":"some-cursor-value"}""")
+        }
+    }
 })

@@ -93,6 +93,15 @@ object PhaseCRegistries {
             scopeMapping = scopeMapping,
             limits = wiring.limits,
         )
+        // AP D8: one cursor codec instance, shared across the five
+        // discovery list-tools. SealedListToolCursor stamps a
+        // per-tool `cursorType` into the binding, so the shared
+        // codec still emits cursors that can't be replayed across
+        // tools.
+        val listToolCursor = SealedListToolCursor(
+            codec = McpCursorCodec(keyring = wiring.cursorKeyring, clock = wiring.clock),
+            clock = wiring.clock,
+        )
         val overrides: Map<String, ToolHandler> = mapOf(
             "capabilities_list" to capabilitiesHandler,
             "schema_validate" to SchemaValidateHandler(
@@ -146,12 +155,16 @@ object PhaseCRegistries {
                 clock = wiring.clock,
             ),
             "job_status_get" to JobStatusGetHandler(jobStore = wiring.jobStore),
-            // AP D6: discovery list tools.
-            "job_list" to JobListHandler(jobStore = wiring.jobStore),
-            "artifact_list" to ArtifactListHandler(artifactStore = wiring.artifactStore),
-            "schema_list" to SchemaListHandler(schemaStore = wiring.schemaStore),
-            "profile_list" to ProfileListHandler(profileStore = wiring.profileStore),
-            "diff_list" to DiffListHandler(diffStore = wiring.diffStore),
+            // AP D6 + AP D8: discovery list tools with HMAC-sealed
+            // cursors. The shared SealedListToolCursor wraps every
+            // per-tool resumeToken so a cursor minted for tool A /
+            // tenant X / filters F cannot be replayed against tool B
+            // or filters F'.
+            "job_list" to JobListHandler(wiring.jobStore, listToolCursor),
+            "artifact_list" to ArtifactListHandler(wiring.artifactStore, listToolCursor),
+            "schema_list" to SchemaListHandler(wiring.schemaStore, listToolCursor),
+            "profile_list" to ProfileListHandler(wiring.profileStore, listToolCursor),
+            "diff_list" to DiffListHandler(wiring.diffStore, listToolCursor),
         )
         // Filter to the scope-mapping universe so a deployment that
         // narrows the tool set (e.g. read-only vs full Phase-C)
