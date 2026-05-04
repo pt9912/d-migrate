@@ -62,6 +62,7 @@ internal class StdioHarness(
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
     private val writer = PrintWriter(OutputStreamWriter(clientToServer, StandardCharsets.UTF_8), false)
+    private val diagnosticHistory = java.util.concurrent.ConcurrentLinkedDeque<HarnessRpcExchange>()
 
     override fun initialize(params: InitializeParams): InitializeResult {
         val raw = call("initialize", gson.toJsonTree(params))
@@ -77,8 +78,12 @@ internal class StdioHarness(
 
     override fun toolsCall(name: String, arguments: JsonElement?): ToolsCallResult {
         val params = ToolsCallParams(name = name, arguments = arguments)
-        return gson.fromJson(call("tools/call", gson.toJsonTree(params)), ToolsCallResult::class.java)
+        val raw = callRaw("tools/call", gson.toJsonTree(params), toolName = name)
+        return gson.fromJson(raw.resultOrThrow(), ToolsCallResult::class.java)
     }
+
+    override fun dumpDiagnostics(reason: String): String =
+        HarnessDiagnostics.render(name, stateDir, diagnosticHistory.toList(), reason)
 
     override fun resourcesRead(uri: String): JsonElement = resourcesReadRaw(uri).resultOrThrow()
 
@@ -89,14 +94,34 @@ internal class StdioHarness(
 
     private fun call(method: String, params: JsonElement?): JsonElement = callRaw(method, params).resultOrThrow()
 
-    private fun callRaw(method: String, params: JsonElement?): JsonRpcResponse {
+    private fun callRaw(
+        method: String,
+        params: JsonElement?,
+        toolName: String? = null,
+    ): JsonRpcResponse {
         val id = rpc.nextId()
         send(rpc.request(method, params, id))
         val raw = responseQueue.poll(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             ?: error("stdio: no response within ${REQUEST_TIMEOUT_SECONDS}s for $method")
         val parsed = rpc.parseResponse(raw)
         require(parsed.id == id) { "stdio: response id ${parsed.id} != request id $id" }
+        recordExchange(method, parsed, toolName)
         return parsed
+    }
+
+    /**
+     * AP 6.24 E8(C): append the most recent JSON-RPC call to the
+     * diagnostic ring buffer, evicting the oldest entry when the
+     * buffer exceeds [McpClientHarness.DIAGNOSTIC_RPC_HISTORY_SIZE].
+     * Outcome is collapsed to a one-line string — only the wire
+     * shape needed for failure-debugging, never raw payload.
+     */
+    private fun recordExchange(method: String, response: JsonRpcResponse, toolName: String?) {
+        val outcome = response.error?.let { "err ${it.get("code")?.asInt}" } ?: "ok"
+        diagnosticHistory.add(HarnessRpcExchange(method, outcome, toolName))
+        while (diagnosticHistory.size > McpClientHarness.DIAGNOSTIC_RPC_HISTORY_SIZE) {
+            diagnosticHistory.pollFirst()
+        }
     }
 
     @Suppress("unused")

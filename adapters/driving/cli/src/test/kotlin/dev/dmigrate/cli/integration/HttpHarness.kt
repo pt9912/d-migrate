@@ -65,6 +65,7 @@ internal class HttpHarness(
     private val httpClient: HttpClient = HttpClient.newBuilder()
         .connectTimeout(CONNECT_TIMEOUT)
         .build()
+    private val diagnosticHistory = java.util.concurrent.ConcurrentLinkedDeque<HarnessRpcExchange>()
 
     @Volatile private var sessionId: String? = null
     @Volatile private var protocolVersion: String = McpClientHarness.PROTOCOL_VERSION
@@ -88,8 +89,12 @@ internal class HttpHarness(
 
     override fun toolsCall(name: String, arguments: JsonElement?): ToolsCallResult {
         val params = ToolsCallParams(name = name, arguments = arguments)
-        return gson.fromJson(call("tools/call", gson.toJsonTree(params)), ToolsCallResult::class.java)
+        val raw = sendRequestRaw("tools/call", gson.toJsonTree(params), allowSessionHeaders = true, toolName = name)
+        return gson.fromJson(raw.parsed.resultOrThrow(), ToolsCallResult::class.java)
     }
+
+    override fun dumpDiagnostics(reason: String): String =
+        HarnessDiagnostics.render(name, stateDir, diagnosticHistory.toList(), reason)
 
     override fun resourcesRead(uri: String): JsonElement = resourcesReadRaw(uri).resultOrThrow()
 
@@ -105,6 +110,7 @@ internal class HttpHarness(
         method: String,
         params: JsonElement?,
         allowSessionHeaders: Boolean,
+        toolName: String? = null,
     ): HttpRpcResult {
         val id = rpc.nextId()
         val body = rpc.request(method, params, id)
@@ -115,7 +121,17 @@ internal class HttpHarness(
         }
         val parsed = rpc.parseResponse(response.body())
         require(parsed.id == id) { "HTTP: response id ${parsed.id} != request id $id (method=$method)" }
+        recordExchange(method, parsed, toolName)
         return HttpRpcResult(parsed, response.headers())
+    }
+
+    /** Same ring-buffer semantics as [StdioHarness.recordExchange]. */
+    private fun recordExchange(method: String, response: JsonRpcResponse, toolName: String?) {
+        val outcome = response.error?.let { "err ${it.get("code")?.asInt}" } ?: "ok"
+        diagnosticHistory.add(HarnessRpcExchange(method, outcome, toolName))
+        while (diagnosticHistory.size > McpClientHarness.DIAGNOSTIC_RPC_HISTORY_SIZE) {
+            diagnosticHistory.pollFirst()
+        }
     }
 
     private fun sendNotification(method: String, params: JsonElement?) {
