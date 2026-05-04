@@ -100,6 +100,16 @@ internal class StdioHarness(
         return callRaw("resources/read", params)
     }
 
+    override fun resourcesListRaw(cursor: String?): JsonRpcResponse {
+        val params = com.google.gson.JsonObject().apply {
+            if (cursor != null) addProperty("cursor", cursor)
+        }
+        return callRaw("resources/list", params)
+    }
+
+    override fun resourcesTemplatesListRaw(): JsonRpcResponse =
+        callRaw("resources/templates/list", com.google.gson.JsonObject())
+
     private fun call(method: String, params: JsonElement?): JsonElement = callRaw(method, params).resultOrThrow()
 
     private fun callRaw(

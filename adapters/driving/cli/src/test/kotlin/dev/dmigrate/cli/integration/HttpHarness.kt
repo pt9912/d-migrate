@@ -105,6 +105,16 @@ internal class HttpHarness(
         return sendRequestRaw("resources/read", params, allowSessionHeaders = true).parsed
     }
 
+    override fun resourcesListRaw(cursor: String?): JsonRpcResponse {
+        val params = JsonObject().apply {
+            if (cursor != null) addProperty("cursor", cursor)
+        }
+        return sendRequestRaw("resources/list", params, allowSessionHeaders = true).parsed
+    }
+
+    override fun resourcesTemplatesListRaw(): JsonRpcResponse =
+        sendRequestRaw("resources/templates/list", JsonObject(), allowSessionHeaders = true).parsed
+
     private fun call(method: String, params: JsonElement?): JsonElement =
         sendRequestRaw(method, params, allowSessionHeaders = true).parsed.resultOrThrow()
 

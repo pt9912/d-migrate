@@ -89,6 +89,21 @@ internal interface McpClientHarness : AutoCloseable {
     fun resourcesReadRaw(uri: String): JsonRpcResponse
 
     /**
+     * AP D11: raw `resources/list` for the Phase-D HMAC-cursor
+     * round-trip + tampering scenarios. `cursor=null` requests
+     * the first page; subsequent calls feed back the
+     * `nextCursor` from the previous response.
+     */
+    fun resourcesListRaw(cursor: String? = null): JsonRpcResponse
+
+    /**
+     * AP D11: raw `resources/templates/list` for the static-7-
+     * templates pin. Plan-D §10.11 acceptance: the template list
+     * stays bound at exactly seven entries.
+     */
+    fun resourcesTemplatesListRaw(): JsonRpcResponse
+
+    /**
      * AP 6.24 E8(C): compact diagnostic dump per
      * `ImpPlan-0.9.6-C.md` §6.24 Z. 2040-2043. Returns a
      * multi-line text report intended for `System.err` printing
