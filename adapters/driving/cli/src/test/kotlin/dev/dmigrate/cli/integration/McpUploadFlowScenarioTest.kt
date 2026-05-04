@@ -111,7 +111,7 @@ class McpUploadFlowScenarioTest : FunSpec({
 
         withFreshTransports(limits = tinyLimits) { s, h ->
             for (harness in listOf(s, h)) {
-                val sessionId = initSession(harness, bytes, segments.size)
+                val sessionId = initSession(harness, bytes)
                 val nonFinalCount = segments.size - 1
                 for (i in 0 until nonFinalCount) {
                     callSegment(harness, sessionId, segments, i, isFinal = false)
@@ -142,7 +142,7 @@ class McpUploadFlowScenarioTest : FunSpec({
 
         withFreshTransports(limits = tinyLimits) { s, h ->
             for (harness in listOf(s, h)) {
-                val sessionId = initSession(harness, bytes, segments.size)
+                val sessionId = initSession(harness, bytes)
                 // Upload the first segment to make the session non-empty,
                 // so segmentsDeleted is observable.
                 callSegment(harness, sessionId, segments, 0, isFinal = false)
@@ -207,7 +207,7 @@ private fun uploadAll(
     bytes: ByteArray,
     segments: List<ByteArray>,
 ): JsonObject {
-    val sessionId = initSession(harness, bytes, segments.size)
+    val sessionId = initSession(harness, bytes)
     var last: JsonObject? = null
     for (i in segments.indices) {
         val isFinal = i == segments.size - 1
@@ -219,7 +219,6 @@ private fun uploadAll(
 private fun initSession(
     harness: McpClientHarness,
     fullBytes: ByteArray,
-    @Suppress("UNUSED_PARAMETER") segmentTotal: Int,
 ): String {
     val initArgs = JsonObject().apply {
         addProperty("uploadIntent", "schema_staging_readonly")

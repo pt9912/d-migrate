@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingException
 import dev.dmigrate.profiling.model.DatabaseProfile
@@ -35,7 +36,7 @@ data class DataProfileRequest(
 class DataProfileRunner(
     private val connectionResolver: (String) -> String,
     private val dialectResolver: (String) -> DatabaseDialect,
-    private val poolFactory: (String, DatabaseDialect) -> AutoCloseable,
+    private val poolFactory: (String, DatabaseDialect) -> ConnectionPool,
     private val adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet,
     private val databaseProduct: (AutoCloseable) -> String = { "unknown" },
     private val databaseVersion: (AutoCloseable) -> String? = { null },
@@ -93,11 +94,9 @@ class DataProfileRunner(
         return try {
             val service = ProfileDatabaseService(adapters,
                 dev.dmigrate.profiling.service.ProfileTableService(adapters, topN = request.topN))
-            @Suppress("UNCHECKED_CAST")
-            val connPool = pool as dev.dmigrate.driver.connection.ConnectionPool
 
             val profile = service.profile(
-                pool = connPool,
+                pool = pool,
                 databaseProduct = databaseProduct(pool),
                 databaseVersion = databaseVersion(pool),
                 schema = request.schema,

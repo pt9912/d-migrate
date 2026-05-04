@@ -174,6 +174,16 @@ class McpServeCommand : CliktCommand(name = "serve") {
 
         val retention = parseRetentionOrExit()
         val cursorKeyring = parseCursorKeyringOrExit()
+        // Plan-D §10.3 review: a deployment that runs HTTP with
+        // any non-disabled auth-mode (i.e. jwt-jwks / jwt-
+        // introspection — the production paths) MUST NOT silently
+        // fall through to PhaseCWiring's `DEV_DEFAULT` keyring.
+        // The DEV_DEFAULT secret is publicly known (`0x00..0x1F`);
+        // signing production cursors with it is a security flaw.
+        // stdio + HTTP-disabled (loopback dev) keep working with
+        // the DEV_DEFAULT — those are explicit single-instance dev
+        // surfaces.
+        rejectDevKeyringInProductionOrExit(cursorKeyring)
         val owner = resolveStateDirOrExit()
         try {
             try {
@@ -342,6 +352,31 @@ class McpServeCommand : CliktCommand(name = "serve") {
             echo("  - ${failure.message}", err = true)
             throw ProgramResult(2)
         }
+    }
+
+    /**
+     * Plan-D §10.3 fail-closed: when transport is HTTP and
+     * `--auth-mode` is one of the production modes, the
+     * deployment MUST supply a deterministic
+     * `--cursor-keyring-file`. Otherwise the wiring would fall
+     * through to `PhaseCWiring.DEV_DEFAULT` — a publicly-known
+     * secret. Loopback / stdio dev paths keep working: those
+     * surfaces are explicit single-instance dev contracts.
+     */
+    private fun rejectDevKeyringInProductionOrExit(cursorKeyring: CursorKeyring?) {
+        if (cursorKeyring != null) return
+        val isProductionAuth = transport == "http" && authMode != "disabled"
+        if (!isProductionAuth) return
+        echo("MCP server configuration is invalid:", err = true)
+        echo(
+            "  - --cursor-keyring-file is required for production HTTP deployments " +
+                "(transport=http with --auth-mode=$authMode). The fallback dev keyring uses a " +
+                "publicly-known secret and MUST NOT sign production cursors. " +
+                "Generate one via 'd-migrate mcp cursor-key generate' and supply it via " +
+                "--cursor-keyring-file <path>.",
+            err = true,
+        )
+        throw ProgramResult(2)
     }
 
     private fun startStdio(

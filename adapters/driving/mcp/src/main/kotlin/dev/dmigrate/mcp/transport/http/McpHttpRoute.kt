@@ -81,6 +81,7 @@ fun Application.installMcpHttpRoute(
     val jsonHandler = McpEndpointFactory.jsonHandler()
     val sessionManager = SessionManager(idleTimeout = config.sessionIdleTimeout)
     val authValidator = authValidatorOverride ?: createAuthValidator(config)
+    val runtime = McpHttpRuntime(config, jsonHandler, sessionManager, authValidator, serviceFactory)
 
     monitor.subscribe(ApplicationStopping) {
         sessionManager.close()
@@ -89,7 +90,7 @@ fun Application.installMcpHttpRoute(
 
     routing {
         post("/mcp") {
-            handleMcpPost(call, config, jsonHandler, sessionManager, authValidator, serviceFactory)
+            handleMcpPost(call, runtime)
         }
         get("/mcp") {
             call.respond(HttpStatusCode.MethodNotAllowed)
@@ -113,6 +114,14 @@ private fun createAuthValidator(config: McpServerConfig): AuthValidator = when (
     AuthMode.JWT_INTROSPECTION -> IntrospectionAuthValidator(config)
 }
 
+private class McpHttpRuntime(
+    val config: McpServerConfig,
+    val jsonHandler: MessageJsonHandler,
+    val sessionManager: SessionManager,
+    val authValidator: AuthValidator,
+    val serviceFactory: () -> McpService,
+)
+
 /**
  * Resolved per-request handler: the local [service] (used to register
  * the session on Initialize success), the cached lsp4j [endpoint],
@@ -125,18 +134,13 @@ private class ServiceContext(
     val principal: PrincipalContext,
 )
 
-@Suppress("LongParameterList")
 private suspend fun handleMcpPost(
     call: ApplicationCall,
-    config: McpServerConfig,
-    jsonHandler: MessageJsonHandler,
-    sessionManager: SessionManager,
-    authValidator: AuthValidator,
-    serviceFactory: () -> McpService,
+    runtime: McpHttpRuntime,
 ) {
-    if (!checkOrigin(call, config)) return
-    if (!checkAccept(call, jsonHandler)) return
-    val message = parseBody(call, jsonHandler) ?: return
+    if (!checkOrigin(call, runtime.config)) return
+    if (!checkAccept(call)) return
+    val message = parseBody(call, runtime.jsonHandler) ?: return
     val isInitialize = message is RequestMessage && message.method == METHOD_INITIALIZE
     // §12.9 + §12.14: for `tools/call`, the scope check applies to
     // the actual tool from the JSON-RPC body (`params.name`), NOT
@@ -146,12 +150,10 @@ private suspend fun handleMcpPost(
     // breaking even `capabilities_list` for a legitimate
     // `dmigrate:read` token.
     val method = scopeLookupKey(message)
-    val principal = validateBearer(call, config, authValidator) ?: return
-    val context = resolveContext(
-        call, jsonHandler, sessionManager, serviceFactory, principal, message, isInitialize,
-    ) ?: return
-    if (!checkScopes(call, config, method, context.principal)) return
-    dispatchAndRespond(call, jsonHandler, sessionManager, context, message, isInitialize)
+    val principal = validateBearer(call, runtime.config, runtime.authValidator) ?: return
+    val context = resolveContext(call, runtime, principal, message, isInitialize) ?: return
+    if (!checkScopes(call, runtime.config, method, context.principal)) return
+    dispatchAndRespond(call, runtime, context, message, isInitialize)
 }
 
 /**
@@ -206,11 +208,11 @@ private suspend fun checkOrigin(call: ApplicationCall, config: McpServerConfig):
     return false
 }
 
-private suspend fun checkAccept(call: ApplicationCall, jsonHandler: MessageJsonHandler): Boolean {
+private suspend fun checkAccept(call: ApplicationCall): Boolean {
     val accept = call.request.header(HttpHeaders.Accept)
     if (AcceptHeaderHandler.acceptsJson(accept)) return true
     respondJsonRpcError(
-        call, jsonHandler,
+        call,
         HttpStatusCode.NotAcceptable,
         id = null,
         code = ResponseErrorCode.InvalidRequest.value,
@@ -223,7 +225,7 @@ private suspend fun parseBody(call: ApplicationCall, jsonHandler: MessageJsonHan
     val body = call.receiveText()
     if (body.isBlank()) {
         respondJsonRpcError(
-            call, jsonHandler,
+            call,
             HttpStatusCode.BadRequest,
             id = null,
             code = ResponseErrorCode.InvalidRequest.value,
@@ -235,7 +237,7 @@ private suspend fun parseBody(call: ApplicationCall, jsonHandler: MessageJsonHan
         jsonHandler.parseMessage(body)
     } catch (e: Exception) {
         respondJsonRpcError(
-            call, jsonHandler,
+            call,
             HttpStatusCode.BadRequest,
             id = null,
             code = ResponseErrorCode.ParseError.value,
@@ -296,12 +298,9 @@ private suspend fun validateBearer(
     }
 }
 
-@Suppress("LongParameterList")
 private suspend fun resolveContext(
     call: ApplicationCall,
-    jsonHandler: MessageJsonHandler,
-    sessionManager: SessionManager,
-    serviceFactory: () -> McpService,
+    runtime: McpHttpRuntime,
     principal: PrincipalContext,
     message: Message,
     isInitialize: Boolean,
@@ -316,7 +315,7 @@ private suspend fun resolveContext(
         )
         if (staleHeaders.isNotEmpty()) {
             respondJsonRpcError(
-                call, jsonHandler,
+                call,
                 HttpStatusCode.BadRequest,
                 id = (message as? RequestMessage)?.id,
                 code = ResponseErrorCode.InvalidRequest.value,
@@ -325,13 +324,13 @@ private suspend fun resolveContext(
             )
             return null
         }
-        val service = serviceFactory()
+        val service = runtime.serviceFactory()
         return ServiceContext(service, GenericEndpoint(service), principal)
     }
     val sessionId = parseSessionIdHeader(call)
-    val state = sessionId?.let { sessionManager.peek(it) } ?: run {
+    val state = sessionId?.let { runtime.sessionManager.peek(it) } ?: run {
         respondJsonRpcError(
-            call, jsonHandler,
+            call,
             HttpStatusCode.NotFound,
             id = (message as? RequestMessage)?.id,
             code = JSONRPC_ERROR_SESSION_UNKNOWN,
@@ -342,7 +341,7 @@ private suspend fun resolveContext(
     val versionHeader = call.request.header(HEADER_MCP_PROTOCOL_VERSION)
     if (versionHeader != state.negotiatedProtocolVersion) {
         respondJsonRpcError(
-            call, jsonHandler,
+            call,
             HttpStatusCode.BadRequest,
             id = (message as? RequestMessage)?.id,
             code = JSONRPC_ERROR_PROTOCOL_VERSION_MISMATCH,
@@ -351,7 +350,7 @@ private suspend fun resolveContext(
         )
         return null
     }
-    sessionManager.touch(sessionId)
+    runtime.sessionManager.touch(sessionId)
     return ServiceContext(state.service, state.endpoint, principal)
 }
 
@@ -373,11 +372,9 @@ private suspend fun checkScopes(
     return false
 }
 
-@Suppress("LongParameterList")
 private suspend fun dispatchAndRespond(
     call: ApplicationCall,
-    jsonHandler: MessageJsonHandler,
-    sessionManager: SessionManager,
+    runtime: McpHttpRuntime,
     context: ServiceContext,
     message: Message,
     isInitialize: Boolean,
@@ -395,7 +392,7 @@ private suspend fun dispatchAndRespond(
     } catch (e: Exception) {
         LOG.error("dispatch failed", e)
         respondJsonRpcError(
-            call, jsonHandler,
+            call,
             HttpStatusCode.InternalServerError,
             id = (message as? RequestMessage)?.id,
             code = ResponseErrorCode.InternalError.value,
@@ -411,9 +408,9 @@ private suspend fun dispatchAndRespond(
 
     val response = awaitResponse(capture, message)
     if (isInitialize && response.error == null) {
-        registerSessionAfterInitialize(call, sessionManager, context.service, context.principal)
+        registerSessionAfterInitialize(call, runtime.sessionManager, context.service, context.principal)
     }
-    call.respondText(jsonHandler.serialize(response), ContentType.Application.Json)
+    call.respondText(runtime.jsonHandler.serialize(response), ContentType.Application.Json)
 }
 
 private suspend fun awaitResponse(capture: CaptureConsumer, message: Message): ResponseMessage {
@@ -505,7 +502,6 @@ private fun resolveBaseUrl(call: ApplicationCall, config: McpServerConfig): Stri
 
 private suspend fun respondJsonRpcError(
     call: ApplicationCall,
-    @Suppress("unused") jsonHandler: MessageJsonHandler,
     httpStatus: HttpStatusCode,
     id: String?,
     code: Int,

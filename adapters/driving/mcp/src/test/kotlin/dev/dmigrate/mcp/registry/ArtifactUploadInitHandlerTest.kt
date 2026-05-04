@@ -74,8 +74,10 @@ private fun setup(
         sessionStore = sessionStore,
         quotaService = quotaService,
         limits = limits,
-        clock = FIXED_CLOCK,
-        sessionIdGenerator = { sessionId },
+        options = ArtifactUploadInitHandler.Options(
+            clock = FIXED_CLOCK,
+            sessionIdGenerator = { sessionId },
+        ),
     )
     return UploadInitFixture(handler, sessionStore, quotaStore)
 }
@@ -131,8 +133,10 @@ private fun recordingHandler(
     sessionStore = sessionStore,
     quotaService = service,
     limits = McpLimitsConfig(),
-    clock = FIXED_CLOCK,
-    sessionIdGenerator = { "ups-fixed" },
+    options = ArtifactUploadInitHandler.Options(
+        clock = FIXED_CLOCK,
+        sessionIdGenerator = { "ups-fixed" },
+    ),
 )
 
 private fun grant(key: QuotaKey, amount: Long): dev.dmigrate.server.ports.quota.QuotaOutcome.Granted =
@@ -368,9 +372,11 @@ class ArtifactUploadInitHandlerTest : FunSpec({
             sessionStore = sessionStore,
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
             limits = McpLimitsConfig(),
-            clock = FIXED_CLOCK,
-            absoluteLeaseDuration = tenMin,
-            sessionIdGenerator = { "ups-fixed" },
+            options = ArtifactUploadInitHandler.Options(
+                clock = FIXED_CLOCK,
+                absoluteLeaseDuration = tenMin,
+                sessionIdGenerator = { "ups-fixed" },
+            ),
         )
         val outcome = handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
         parsePayload(outcome).get("uploadSessionTtlSeconds").asLong shouldBe 600L

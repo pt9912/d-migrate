@@ -144,13 +144,37 @@ internal class SchemaGenerateHandler(
             input.combinedFindings
         }
         return buildPayload(
-            input.dialect, input.result,
-            ddl = inlineDdl,
-            artifactRef = artifactRef,
-            truncated = input.ddlOverflow || input.findingsTruncated,
-            findings = inlineFindings,
-            requestId = context.requestId,
+            PayloadInput(
+                dialect = input.dialect,
+                result = input.result,
+                ddl = inlineDdl,
+                artifactRef = artifactRef,
+                truncated = input.ddlOverflow || input.findingsTruncated,
+                findings = inlineFindings,
+                requestId = context.requestId,
+            ),
         )
+    }
+
+    private data class PayloadInput(
+        val dialect: DatabaseDialect,
+        val result: DdlResult,
+        val ddl: String?,
+        val artifactRef: String?,
+        val truncated: Boolean,
+        val findings: List<Map<String, String?>>,
+        val requestId: String,
+    )
+
+    private fun buildPayload(input: PayloadInput): Map<String, Any?> = buildMap {
+        put("dialect", input.dialect.name)
+        put("statementCount", input.result.statements.size)
+        put("summary", summary(input.result, input.dialect, input.truncated))
+        put("findings", input.findings)
+        put("truncated", input.truncated)
+        if (input.ddl != null) put("ddl", input.ddl)
+        if (input.artifactRef != null) put("artifactRef", input.artifactRef)
+        put("executionMeta", mapOf("requestId" to input.requestId))
     }
 
     private fun writeDdlArtifact(
@@ -231,26 +255,6 @@ internal class SchemaGenerateHandler(
         throw ValidationErrorException(
             listOf(ValidationViolation("targetDialect", e.message ?: "no generator registered for $dialect")),
         )
-    }
-
-    @Suppress("LongParameterList")
-    private fun buildPayload(
-        dialect: DatabaseDialect,
-        result: DdlResult,
-        ddl: String?,
-        artifactRef: String?,
-        truncated: Boolean,
-        findings: List<Map<String, String?>>,
-        requestId: String,
-    ): Map<String, Any?> = buildMap {
-        put("dialect", dialect.name)
-        put("statementCount", result.statements.size)
-        put("summary", summary(result, dialect, truncated))
-        put("findings", findings)
-        put("truncated", truncated)
-        if (ddl != null) put("ddl", ddl)
-        if (artifactRef != null) put("artifactRef", artifactRef)
-        put("executionMeta", mapOf("requestId" to requestId))
     }
 
     // AP 6.17: dynamic strings (objectName, message, hint, skipped

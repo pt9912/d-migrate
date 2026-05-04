@@ -70,16 +70,14 @@ import java.util.Base64
  *   FINALIZING claim — concurrent calls in such a setup may race
  *   into both COMPLETED, which is unsafe for production.
  */
-@Suppress("LongParameterList")
 internal class ArtifactUploadHandler(
     private val sessionStore: UploadSessionStore,
     segmentStore: UploadSegmentStore,
     private val quotaService: QuotaService,
     private val limits: McpLimitsConfig,
-    private val clock: Clock,
-    private val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
-    private val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
-    private val finalizer: SchemaStagingFinalizer? = null,
+    private val options: Options,
+) : ToolHandler {
+
     /**
      * AP 6.22: exposed as `internal val` so wiring-end-to-end tests
      * in `:adapters:driving:mcp` can pin that the production CLI
@@ -89,9 +87,7 @@ internal class ArtifactUploadHandler(
      * `PhaseCWiring` DTO but was substituted by the in-memory default
      * during handler construction.
      */
-    internal val payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
-    finalizingLeaseTtl: Duration = DEFAULT_FINALIZING_LEASE_TTL,
-) : ToolHandler {
+    internal val payloadFactory: AssembledUploadPayloadFactory = options.payloadFactory
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
     private val segmentStoreRef = segmentStore
@@ -100,7 +96,7 @@ internal class ArtifactUploadHandler(
         segmentStore = segmentStore,
         limits = limits,
         payloadFactory = payloadFactory,
-        finalizingLeaseTtl = finalizingLeaseTtl,
+        finalizingLeaseTtl = options.finalizingLeaseTtl,
     )
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
@@ -143,7 +139,7 @@ internal class ArtifactUploadHandler(
 
         val deduplicated = writeWithQuota(args, bytes, session, context.principal)
 
-        val now = clock.instant()
+        val now = options.clock.instant()
         val updated = saveLeaseExtension(session, now)
         val finalisable = isSessionFinalisable(args, updated)
         val schemaRef = if (finalisable) runFinalisation(updated, context.principal, bytes, now) else null
@@ -168,7 +164,7 @@ internal class ArtifactUploadHandler(
         finalSegmentBytes: ByteArray,
         now: java.time.Instant,
     ): String? {
-        val finalizer = this.finalizer
+        val finalizer = options.finalizer
         return if (finalizer == null) {
             // Test-only path: no finaliser was wired (AP 6.7-6.8
             // standalone tests). Keep the legacy ACTIVE → COMPLETED
@@ -190,8 +186,8 @@ internal class ArtifactUploadHandler(
     private fun saveLeaseExtension(session: UploadSession, now: java.time.Instant): UploadSession {
         val cumulativeBytes = computeCumulativeBytes(session.uploadSessionId)
         val absoluteHardCap = session.createdAt.plus(MAX_ABSOLUTE_LEASE)
-        val newAbsolute = minOf(now.plus(initialTtl), absoluteHardCap)
-        val newIdle = minOf(now.plus(idleTimeout), newAbsolute)
+        val newAbsolute = minOf(now.plus(options.initialTtl), absoluteHardCap)
+        val newIdle = minOf(now.plus(options.idleTimeout), newAbsolute)
         val updated = session.copy(
             bytesReceived = cumulativeBytes,
             updatedAt = now,
@@ -494,7 +490,7 @@ internal class ArtifactUploadHandler(
     private fun effectiveTtlSeconds(now: java.time.Instant, session: UploadSession): Long {
         if (session.state.terminal) return 0L
         val remainingAbsolute = Duration.between(now, session.absoluteLeaseExpiresAt).seconds
-        return minOf(initialTtl.seconds, remainingAbsolute).coerceAtLeast(0L)
+        return minOf(options.initialTtl.seconds, remainingAbsolute).coerceAtLeast(0L)
     }
 
     @Suppress("SwallowedException")
@@ -515,6 +511,15 @@ internal class ArtifactUploadHandler(
         val segmentSha256: String,
         val contentBase64: String,
         val clientRequestId: String?,
+    )
+
+    internal data class Options(
+        val clock: Clock,
+        val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
+        val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
+        val finalizer: SchemaStagingFinalizer? = null,
+        val payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
+        val finalizingLeaseTtl: Duration = Duration.ofMinutes(5),
     )
 
     private companion object {

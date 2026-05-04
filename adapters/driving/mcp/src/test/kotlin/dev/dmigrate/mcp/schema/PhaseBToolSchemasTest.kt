@@ -104,12 +104,11 @@ class PhaseBToolSchemasTest : FunSpec({
         // duplicate that contract on the wire. Pin only the field set
         // and the optional enum constraints.
         val pair = PhaseBToolSchemas.forTool("schema_validate")!!
-        @Suppress("UNCHECKED_CAST")
-        val props = pair.inputSchema["properties"] as Map<String, Map<String, Any>>
-        props["schema"]?.get("type") shouldBe "object"
-        props["schemaRef"]?.get("type") shouldBe "string"
-        props["format"]?.get("enum") shouldBe listOf("json", "yaml")
-        props["strictness"]?.get("enum") shouldBe listOf("lenient", "strict")
+        val props = mapValue(pair.inputSchema["properties"])
+        mapValue(props["schema"])["type"] shouldBe "object"
+        mapValue(props["schemaRef"])["type"] shouldBe "string"
+        mapValue(props["format"])["enum"] shouldBe listOf("json", "yaml")
+        mapValue(props["strictness"])["enum"] shouldBe listOf("lenient", "strict")
         // No required keys: presence is checked by the resolver.
         pair.inputSchema.containsKey("required") shouldBe false
     }
@@ -117,27 +116,22 @@ class PhaseBToolSchemasTest : FunSpec({
     test("AP 6.23: schema_generate output uses generatorFindings + truncated→artifactRef") {
         val output = PhaseBToolSchemas.forTool("schema_generate")!!.outputSchema
 
-        @Suppress("UNCHECKED_CAST")
-        val props = output["properties"] as Map<String, Any>
+        val props = mapValue(output["properties"])
 
         // Findings carry the generator-specific item (base + hint).
         props["findings"] shouldBe PhaseBToolSchemas.generatorFindingArray()
         props["artifactRef"] shouldBe artifactRefField()
         props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
 
-        @Suppress("UNCHECKED_CAST")
-        val allOf = output["allOf"] as List<Map<String, Any>>
-        allOf shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
+        output["allOf"] shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
     }
 
     test("AP 6.23: generatorFindingItem extends findingItem with optional hint") {
         val item = PhaseBToolSchemas.generatorFindingItem()
         item["additionalProperties"] shouldBe false
-        @Suppress("UNCHECKED_CAST")
-        val props = item["properties"] as Map<String, Any>
+        val props = mapValue(item["properties"])
         props.keys shouldBe setOf("severity", "code", "path", "message", "hint")
-        @Suppress("UNCHECKED_CAST")
-        val required = item["required"] as List<String>
+        val required = stringListValue(item["required"])
         // hint is optional — same as the base findingItem.
         required shouldBe listOf("severity", "code", "path", "message")
     }
@@ -145,12 +139,10 @@ class PhaseBToolSchemasTest : FunSpec({
     test("AP 6.23: schema_compare output uses compareDetails findings + truncated→diffArtifactRef") {
         val output = PhaseBToolSchemas.forTool("schema_compare")!!.outputSchema
 
-        @Suppress("UNCHECKED_CAST")
-        val props = output["properties"] as Map<String, Any>
+        val props = mapValue(output["properties"])
 
         // findings carry the compare-specific details (before/after).
-        @Suppress("UNCHECKED_CAST")
-        val findings = props["findings"] as Map<String, Any>
+        val findings = mapValue(props["findings"])
         findings shouldBe PhaseBToolSchemas.findingArray(
             detailsSchema = PhaseBToolSchemas.compareDetailsSchema(),
         )
@@ -158,9 +150,7 @@ class PhaseBToolSchemasTest : FunSpec({
         props["diffArtifactRef"] shouldBe artifactRefField()
         props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
 
-        @Suppress("UNCHECKED_CAST")
-        val allOf = output["allOf"] as List<Map<String, Any>>
-        allOf shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("diffArtifactRef"))
+        output["allOf"] shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("diffArtifactRef"))
     }
 
     test("AP 6.23: compareDetailsSchema closes details and rejects empty / blank slots") {
@@ -169,12 +159,10 @@ class PhaseBToolSchemasTest : FunSpec({
         schema["additionalProperties"] shouldBe false
         // minProperties=1 means `details: {}` is structurally invalid.
         schema["minProperties"] shouldBe 1
-        @Suppress("UNCHECKED_CAST")
-        val props = schema["properties"] as Map<String, Any>
+        val props = mapValue(schema["properties"])
         props.keys shouldBe setOf("before", "after")
         // Both fields are scrubbed strings with a non-blank pattern.
-        @Suppress("UNCHECKED_CAST")
-        val before = props["before"] as Map<String, Any>
+        val before = mapValue(props["before"])
         before["type"] shouldBe "string"
         before["pattern"] shouldBe "\\S"
     }
@@ -182,12 +170,10 @@ class PhaseBToolSchemasTest : FunSpec({
     test("AP 6.23: schema_validate output is strict and pins truncated→artifactRef") {
         val output = PhaseBToolSchemas.forTool("schema_validate")!!.outputSchema
 
-        @Suppress("UNCHECKED_CAST")
-        val props = output["properties"] as Map<String, Any>
+        val props = mapValue(output["properties"])
 
         // findings: array of findingItem
-        @Suppress("UNCHECKED_CAST")
-        val findings = props["findings"] as Map<String, Any>
+        val findings = mapValue(props["findings"])
         findings["type"] shouldBe "array"
         findings["items"] shouldBe PhaseBToolSchemas.findingItem()
 
@@ -198,16 +184,13 @@ class PhaseBToolSchemasTest : FunSpec({
         props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
 
         // allOf carries the truncated → artifactRef coupling
-        @Suppress("UNCHECKED_CAST")
-        val allOf = output["allOf"] as List<Map<String, Any>>
-        allOf shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
+        output["allOf"] shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
     }
 
     test("listing tools share a stable input shape") {
         for (name in listOf("schema_list", "profile_list", "diff_list", "job_list", "artifact_list")) {
             val pair = PhaseBToolSchemas.forTool(name)!!
-            @Suppress("UNCHECKED_CAST")
-            val props = pair.inputSchema["properties"] as Map<String, Map<String, Any>>
+            val props = mapValue(pair.inputSchema["properties"])
             props["pageSize"] shouldNotBe null
             props["cursor"] shouldNotBe null
         }
@@ -227,4 +210,12 @@ private fun assertNoForbiddenKeyword(schema: Any?, location: String) {
         is List<*> -> schema.forEach { assertNoForbiddenKeyword(it, location) }
         else -> Unit
     }
+}
+
+private fun mapValue(value: Any?): Map<*, *> =
+    value as? Map<*, *> ?: error("expected map, got ${value?.let { it::class.simpleName } ?: "null"}")
+
+private fun stringListValue(value: Any?): List<String> {
+    val list = value as? List<*> ?: error("expected list, got ${value?.let { it::class.simpleName } ?: "null"}")
+    return list.map { it as? String ?: error("expected string list item, got ${it?.let { v -> v::class.simpleName } ?: "null"}") }
 }

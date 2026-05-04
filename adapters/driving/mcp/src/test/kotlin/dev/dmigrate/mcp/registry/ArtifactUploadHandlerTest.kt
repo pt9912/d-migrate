@@ -87,8 +87,10 @@ private fun fixture(
         segmentStore = segmentStore,
         quotaService = parallelService,
         limits = limits,
-        clock = FIXED_CLOCK,
-        finalizer = finalizer,
+        options = ArtifactUploadHandler.Options(
+            clock = FIXED_CLOCK,
+            finalizer = finalizer,
+        ),
     )
     return UploadFixture(handler, sessionStore, segmentStore, quotaStore)
 }
@@ -789,7 +791,7 @@ class ArtifactUploadHandlerTest : FunSpec({
             segmentStore = f.segmentStore,
             quotaService = DefaultQuotaService(f.quotaStore) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
+            options = ArtifactUploadHandler.Options(clock = FIXED_CLOCK),
         )
         shouldThrow<UploadSessionAbortedException> {
             racingHandler.handle(
@@ -828,8 +830,10 @@ class ArtifactUploadHandlerTest : FunSpec({
             segmentStore = segmentStore,
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
-            finalizer = stubFinalizer,
+            options = ArtifactUploadHandler.Options(
+                clock = FIXED_CLOCK,
+                finalizer = stubFinalizer,
+            ),
         )
         sessionStore.save(
             dev.dmigrate.server.core.upload.UploadSession(
@@ -892,8 +896,10 @@ class ArtifactUploadHandlerTest : FunSpec({
             segmentStore = InMemoryUploadSegmentStore(),
             quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
-            finalizer = angryFinalizer,
+            options = ArtifactUploadHandler.Options(
+                clock = FIXED_CLOCK,
+                finalizer = angryFinalizer,
+            ),
         )
         sessionStore.save(
             dev.dmigrate.server.core.upload.UploadSession(

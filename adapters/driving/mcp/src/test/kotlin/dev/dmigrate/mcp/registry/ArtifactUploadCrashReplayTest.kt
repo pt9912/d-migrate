@@ -226,8 +226,10 @@ class ArtifactUploadCrashReplayTest : FunSpec({
             segmentStore = segmentStore,
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
-            finalizer = racingFinalizer,
+            options = ArtifactUploadHandler.Options(
+                clock = FIXED_CLOCK,
+                finalizer = racingFinalizer,
+            ),
         )
         // ACTIVE session that the handler will claim for finalisation.
         sessionStore.save(
@@ -282,8 +284,10 @@ class ArtifactUploadCrashReplayTest : FunSpec({
             segmentStore = InMemoryUploadSegmentStore(),
             quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
             limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-            clock = FIXED_CLOCK,
-            finalizer = internalFailingFinalizer,
+            options = ArtifactUploadHandler.Options(
+                clock = FIXED_CLOCK,
+                finalizer = internalFailingFinalizer,
+            ),
         )
         sessionStore.save(
             UploadSession(
@@ -348,8 +352,10 @@ private fun newFixture(
         segmentStore = segmentStore,
         quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
         limits = McpLimitsConfig(maxUploadSegmentBytes = 8),
-        clock = FIXED_CLOCK,
-        finalizer = finalizer,
+        options = ArtifactUploadHandler.Options(
+            clock = FIXED_CLOCK,
+            finalizer = finalizer,
+        ),
     )
     return Triple(handler, sessionStore, segmentStore)
 }

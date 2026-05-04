@@ -244,8 +244,7 @@ class McpServiceImplResourcesTest : FunSpec({
         }
         val err = (ex.cause as org.eclipse.lsp4j.jsonrpc.ResponseErrorException).responseError
         err.code shouldBe org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams.value
-        @Suppress("UNCHECKED_CAST")
-        val data = err.data as Map<String, Any?>
+        val data = mapValue(err.data)
         data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
     }
 
@@ -264,3 +263,6 @@ class McpServiceImplResourcesTest : FunSpec({
         err.code shouldBe org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams.value
     }
 })
+
+private fun mapValue(value: Any?): Map<*, *> =
+    value as? Map<*, *> ?: error("expected map, got ${value?.let { it::class.simpleName } ?: "null"}")

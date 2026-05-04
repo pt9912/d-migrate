@@ -137,13 +137,13 @@ private fun stores(
 private fun jsonRpcErrorOf(throwable: Throwable): ResponseErrorException =
     ((throwable as ExecutionException).cause as ResponseErrorException)
 
-private fun parseTextContent(result: ReadResourceResult): Map<String, Any?> {
+private fun parseTextContent(result: ReadResourceResult): Map<*, *> {
     result.contents.size shouldBe 1
     val slice = result.contents.single()
     slice.mimeType shouldBe "application/json"
     slice.blob shouldBe null
-    @Suppress("UNCHECKED_CAST")
-    return Gson().fromJson(slice.text, Map::class.java) as Map<String, Any?>
+    val parsed: Any? = Gson().fromJson(slice.text, Map::class.java)
+    return mapValue(parsed)
 }
 
 class McpServiceImplResourcesReadTest : FunSpec({
@@ -501,8 +501,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
         val err = jsonRpcErrorOf(ex).responseError
         err.code shouldBe ResponseErrorCode.InvalidParams.value
-        @Suppress("UNCHECKED_CAST")
-        val data = err.data as Map<String, Any?>
+        val data = mapValue(err.data)
         data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
     }
 
@@ -536,12 +535,10 @@ class McpServiceImplResourcesReadTest : FunSpec({
             sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/job-failed")).get(),
         )
         body["status"] shouldBe "FAILED"
-        @Suppress("UNCHECKED_CAST")
-        val errMap = body["error"] as Map<String, Any?>
+        val errMap = mapValue(body["error"])
         errMap["code"] shouldBe "DRIVER_ERROR"
         errMap["message"] shouldBe "connection refused"
-        @Suppress("UNCHECKED_CAST")
-        val progMap = body["progress"] as Map<String, Any?>
+        val progMap = mapValue(body["progress"])
         progMap["phase"] shouldBe "introspect"
     }
 
@@ -605,8 +602,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
         val err = jsonRpcErrorOf(ex).responseError
         err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
-        @Suppress("UNCHECKED_CAST")
-        val data = err.data as Map<String, Any?>
+        val data = mapValue(err.data)
         data["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
     }
 
@@ -639,8 +635,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
             check(err.message.contains(name)) {
                 "rejection message should name the offending field, was: ${err.message}"
             }
-            @Suppress("UNCHECKED_CAST")
-            val data = err.data as Map<String, Any?>
+            val data = mapValue(err.data)
             data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
         }
     }
@@ -715,8 +710,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
         val err = jsonRpcErrorOf(ex).responseError
         err.code shouldBe ResponseErrorCode.InvalidParams.value
-        @Suppress("UNCHECKED_CAST")
-        val data = err.data as Map<String, Any?>
+        val data = mapValue(err.data)
         data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
         check(err.message.contains("maxInlineResourceContentBytes")) {
             "cap-exceeded message should reference the cap, was: ${err.message}"
@@ -772,25 +766,19 @@ class McpServiceImplResourcesReadTest : FunSpec({
         val malformed = shouldThrow<ExecutionException> {
             sut.resourcesRead(ReadResourceParams("not-a-uri")).get()
         }
-        @Suppress("UNCHECKED_CAST")
-        ((jsonRpcErrorOf(malformed).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
-            "VALIDATION_ERROR"
+        errorData(malformed)["dmigrateCode"] shouldBe "VALIDATION_ERROR"
 
         // TENANT_SCOPE_DENIED: tenant outside allowedTenantIds
         val foreign = shouldThrow<ExecutionException> {
             sut.resourcesRead(ReadResourceParams("dmigrate://tenants/never/jobs/x")).get()
         }
-        @Suppress("UNCHECKED_CAST")
-        ((jsonRpcErrorOf(foreign).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
-            "TENANT_SCOPE_DENIED"
+        errorData(foreign)["dmigrateCode"] shouldBe "TENANT_SCOPE_DENIED"
 
         // RESOURCE_NOT_FOUND: allowed tenant, no record
         val absent = shouldThrow<ExecutionException> {
             sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/missing")).get()
         }
-        @Suppress("UNCHECKED_CAST")
-        ((jsonRpcErrorOf(absent).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
-            "RESOURCE_NOT_FOUND"
+        errorData(absent)["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
     }
 
     test("Plan-D §5.2 review: maxResourceReadResponseBytes is enforced on the full envelope") {
@@ -818,11 +806,100 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
         val err = jsonRpcErrorOf(ex).responseError
         err.code shouldBe ResponseErrorCode.InvalidParams.value
-        @Suppress("UNCHECKED_CAST")
-        val data = err.data as Map<String, Any?>
+        val data = mapValue(err.data)
         data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
         check(err.message.contains("maxResourceReadResponseBytes")) {
             "envelope-cap message must reference the cap, was: ${err.message}"
         }
     }
+
+    test("Plan-D §6.4 review: connection NOT in allowedPrincipalIds collapses to RESOURCE_NOT_FOUND on resources/read") {
+        // The list-store filter at LoaderBackedConnectionReferenceStore.list()
+        // already hides un-allowed connections from `resources/list`, but
+        // the `resources/read` direct-by-URI lookup used to bypass that
+        // gate — a principal who knows the URI could read a connection
+        // their `list` call deliberately hides. No-oracle: same
+        // RESOURCE_NOT_FOUND envelope as a genuinely missing id so the
+        // existence channel stays closed.
+        val privateConn = ConnectionReference(
+            connectionId = "private-conn",
+            tenantId = TENANT,
+            displayName = "Bob's Private DB",
+            dialectId = "postgresql",
+            sensitivity = ConnectionSensitivity.PRODUCTION,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.CONNECTIONS, "private-conn"),
+            allowedPrincipalIds = setOf(BOB),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(id = ALICE),
+            resourceStores = stores(connections = listOf(privateConn)),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(
+                ReadResourceParams("dmigrate://tenants/acme/connections/private-conn"),
+            ).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
+        @Suppress("UNCHECKED_CAST")
+        ((err.data) as Map<String, Any?>)["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
+    }
+
+    test("Plan-D §6.4 review: connection in allowedPrincipalIds reads successfully") {
+        // Sanity check: the visibility gate must NOT reject a
+        // legitimate read so a future regression that drifts the
+        // allowlist semantics fails loudly.
+        val sharedConn = ConnectionReference(
+            connectionId = "shared-conn",
+            tenantId = TENANT,
+            displayName = "Alice + Bob",
+            dialectId = "postgresql",
+            sensitivity = ConnectionSensitivity.NON_PRODUCTION,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.CONNECTIONS, "shared-conn"),
+            allowedPrincipalIds = setOf(ALICE, BOB),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(id = ALICE),
+            resourceStores = stores(connections = listOf(sharedConn)),
+        )
+        val body = parseTextContent(
+            sut.resourcesRead(
+                ReadResourceParams("dmigrate://tenants/acme/connections/shared-conn"),
+            ).get(),
+        )
+        body["connectionId"] shouldBe "shared-conn"
+    }
+
+    test("Plan-D §6.4 review: admin principal bypasses the connection-allowlist") {
+        // Mirrors LoaderBackedConnectionReferenceStore.list()'s admin-
+        // bypass so list/read agree end-to-end.
+        val privateConn = ConnectionReference(
+            connectionId = "ops-only",
+            tenantId = TENANT,
+            displayName = "Ops",
+            dialectId = "postgresql",
+            sensitivity = ConnectionSensitivity.SENSITIVE,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.CONNECTIONS, "ops-only"),
+            allowedPrincipalIds = setOf(BOB),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(id = ALICE, isAdmin = true),
+            resourceStores = stores(connections = listOf(privateConn)),
+        )
+        val body = parseTextContent(
+            sut.resourcesRead(
+                ReadResourceParams("dmigrate://tenants/acme/connections/ops-only"),
+            ).get(),
+        )
+        body["connectionId"] shouldBe "ops-only"
+    }
 })
+
+private fun errorData(throwable: Throwable): Map<*, *> =
+    mapValue(jsonRpcErrorOf(throwable).responseError.data)
+
+private fun mapValue(value: Any?): Map<*, *> =
+    value as? Map<*, *> ?: error("expected map, got ${value?.let { it::class.simpleName } ?: "null"}")

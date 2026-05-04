@@ -48,20 +48,11 @@ import java.util.UUID
  * configurable so tests don't have to wall-clock; production picks
  * sensible defaults (5 min idle, 60 min absolute lease).
  */
-@Suppress("LongParameterList")
-// LongParameterList: the trailing params are test seams (clock,
-// timeouts, id generators) with sensible production defaults. AP 6.13
-// will fold them into a shared `McpHandlerWiring` config when the
-// bootstrap wires every Phase-C handler at once.
 internal class ArtifactUploadInitHandler(
     private val sessionStore: UploadSessionStore,
     private val quotaService: QuotaService,
     private val limits: McpLimitsConfig,
-    private val clock: Clock,
-    private val initialTtl: Duration = DEFAULT_INITIAL_TTL,
-    private val idleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
-    private val absoluteLeaseDuration: Duration = DEFAULT_ABSOLUTE_LEASE,
-    private val sessionIdGenerator: () -> String = ::generateSessionId,
+    private val options: Options,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -93,8 +84,8 @@ internal class ArtifactUploadInitHandler(
             is QuotaOutcome.Granted -> Unit
         }
 
-        val now = clock.instant()
-        val absoluteExpiresAt = now.plus(absoluteLeaseDuration)
+        val now = options.clock.instant()
+        val absoluteExpiresAt = now.plus(options.absoluteLeaseDuration)
         val session = newSession(context, args, now, absoluteExpiresAt)
         try {
             sessionStore.save(session)
@@ -145,7 +136,7 @@ internal class ArtifactUploadInitHandler(
         absoluteExpiresAt: java.time.Instant,
     ): UploadSession {
         val tenantId = context.principal.effectiveTenantId
-        val sessionId = sessionIdGenerator()
+        val sessionId = options.sessionIdGenerator()
         val resourceUri = ServerResourceUri(tenantId, ResourceKind.UPLOAD_SESSIONS, sessionId)
         return UploadSession(
             uploadSessionId = sessionId,
@@ -161,7 +152,7 @@ internal class ArtifactUploadInitHandler(
             state = UploadSessionState.ACTIVE,
             createdAt = now,
             updatedAt = now,
-            idleTimeoutAt = now.plus(idleTimeout),
+            idleTimeoutAt = now.plus(options.idleTimeout),
             absoluteLeaseExpiresAt = absoluteExpiresAt,
             bytesReceived = 0,
         )
@@ -227,6 +218,14 @@ internal class ArtifactUploadInitHandler(
         val checksumSha256: String,
     )
 
+    internal data class Options(
+        val clock: Clock,
+        val initialTtl: Duration = DEFAULT_INITIAL_TTL,
+        val idleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
+        val absoluteLeaseDuration: Duration = DEFAULT_ABSOLUTE_LEASE,
+        val sessionIdGenerator: () -> String = ::generateSessionId,
+    )
+
     /**
      * Computes the lease seconds the client should advertise as
      * `uploadSessionTtlSeconds`. Per spec/ki-mcp.md §5.3 the response
@@ -236,7 +235,7 @@ internal class ArtifactUploadInitHandler(
      */
     private fun effectiveTtlSeconds(now: java.time.Instant, absoluteExpiresAt: java.time.Instant): Long {
         val remainingAbsolute = Duration.between(now, absoluteExpiresAt).seconds
-        return minOf(initialTtl.seconds, remainingAbsolute)
+        return minOf(options.initialTtl.seconds, remainingAbsolute)
     }
 
     companion object {

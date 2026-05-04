@@ -33,8 +33,7 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
         field["type"] shouldBe "object"
         field["additionalProperties"] shouldBe false
         field["required"] shouldBe listOf("requestId")
-        @Suppress("UNCHECKED_CAST")
-        val properties = field["properties"] as Map<String, Any>
+        val properties = mapValue(field["properties"])
         properties.keys shouldBe setOf("requestId")
     }
 
@@ -42,20 +41,15 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
         val item = PhaseBToolSchemas.findingItem()
         item["type"] shouldBe "object"
         item["additionalProperties"] shouldBe false
-        @Suppress("UNCHECKED_CAST")
-        val required = item["required"] as List<String>
+        val required = stringListValue(item["required"])
         required shouldContainAll listOf("severity", "code", "path", "message")
-        @Suppress("UNCHECKED_CAST")
-        val properties = item["properties"] as Map<String, Any>
+        val properties = mapValue(item["properties"])
         properties.keys shouldBe setOf("severity", "code", "path", "message")
     }
 
     test("findingItem severity enum uses the wire constants from SchemaFindingSeverity") {
-        @Suppress("UNCHECKED_CAST")
-        val severity = (PhaseBToolSchemas.findingItem()["properties"] as Map<String, Any>)["severity"]
-            as Map<String, Any>
-        @Suppress("UNCHECKED_CAST")
-        val values = severity["enum"] as List<String>
+        val severity = mapValue(mapValue(PhaseBToolSchemas.findingItem()["properties"])["severity"])
+        val values = stringListValue(severity["enum"])
         values shouldBe listOf(
             SchemaFindingSeverity.ERROR,
             SchemaFindingSeverity.WARNING,
@@ -70,8 +64,7 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
             "properties" to mapOf("foo" to mapOf("type" to "string")),
         )
         val item = PhaseBToolSchemas.findingItem(detailsSchema = customDetails)
-        @Suppress("UNCHECKED_CAST")
-        val properties = item["properties"] as Map<String, Any>
+        val properties = mapValue(item["properties"])
         properties["details"] shouldBe customDetails
     }
 
@@ -81,3 +74,11 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
         arr["items"] shouldBe PhaseBToolSchemas.findingItem()
     }
 })
+
+private fun mapValue(value: Any?): Map<*, *> =
+    value as? Map<*, *> ?: error("expected map, got ${value?.let { it::class.simpleName } ?: "null"}")
+
+private fun stringListValue(value: Any?): List<String> {
+    val list = value as? List<*> ?: error("expected list, got ${value?.let { it::class.simpleName } ?: "null"}")
+    return list.map { it as? String ?: error("expected string list item, got ${it?.let { v -> v::class.simpleName } ?: "null"}") }
+}

@@ -269,7 +269,6 @@ internal object IntegrationFixtures {
      * with a known artefact list (the artefact-backfill projection
      * needs an entry to lift onto a `ServerResourceUri`).
      */
-    @Suppress("LongParameterList")
     fun stageJob(
         wiring: PhaseCWiring,
         principal: PrincipalContext,
@@ -277,10 +276,9 @@ internal object IntegrationFixtures {
         operation: String = "schema_validate",
         status: JobStatus = JobStatus.SUCCEEDED,
         artifacts: List<String> = emptyList(),
-        clock: Clock = Clock.systemUTC(),
     ): String {
         val tenantId = principal.effectiveTenantId
-        val now = clock.instant()
+        val now = Clock.systemUTC().instant()
         val managed = ManagedJob(
             jobId = jobId,
             operation = operation,
@@ -368,14 +366,10 @@ internal object IntegrationFixtures {
      * §10.10 secret-free guarantee: this helper accepts a plain
      * `credentialRef` string but never expands it.
      */
-    @Suppress("LongParameterList")
     fun stageConnection(
         wiring: PhaseCWiring,
         principal: PrincipalContext,
         connectionId: String,
-        displayName: String = "integration connection $connectionId",
-        dialectId: String = "postgresql",
-        sensitivity: ConnectionSensitivity = ConnectionSensitivity.NON_PRODUCTION,
         credentialRef: String? = "env:INTEGRATION_PASS",
     ): String {
         val tenantId = principal.effectiveTenantId
@@ -383,9 +377,9 @@ internal object IntegrationFixtures {
             ConnectionReference(
                 connectionId = connectionId,
                 tenantId = tenantId,
-                displayName = displayName,
-                dialectId = dialectId,
-                sensitivity = sensitivity,
+                displayName = "integration connection $connectionId",
+                dialectId = "postgresql",
+                sensitivity = ConnectionSensitivity.NON_PRODUCTION,
                 resourceUri = ServerResourceUri(tenantId, ResourceKind.CONNECTIONS, connectionId),
                 credentialRef = credentialRef,
             ),

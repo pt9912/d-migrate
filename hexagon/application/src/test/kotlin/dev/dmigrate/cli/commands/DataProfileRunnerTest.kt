@@ -69,7 +69,7 @@ class DataProfileRunnerTest : FunSpec({
     fun runner(
         connectionResolver: (String) -> String = { "postgresql://localhost/test" },
         dialectResolver: (String) -> DatabaseDialect = { DatabaseDialect.POSTGRESQL },
-        poolFactory: (String, DatabaseDialect) -> AutoCloseable = { _, _ -> fakePool },
+        poolFactory: (String, DatabaseDialect) -> ConnectionPool = { _, _ -> fakePool },
         adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet = { fakeAdapters },
     ) = DataProfileRunner(
         connectionResolver = connectionResolver,

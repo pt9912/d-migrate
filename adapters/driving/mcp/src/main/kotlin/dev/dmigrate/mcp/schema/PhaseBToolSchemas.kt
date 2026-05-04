@@ -430,8 +430,8 @@ internal object PhaseBToolSchemas {
      * change). `additionalProperties=false` is preserved.
      */
     internal fun generatorFindingItem(): Map<String, Any> {
-        @Suppress("UNCHECKED_CAST")
-        val baseProps = findingItem()["properties"] as Map<String, Map<String, Any>>
+        val baseProps = findingItem()["properties"] as? Map<*, *>
+            ?: error("findingItem properties must be an object schema")
         return mapOf(
             "type" to "object",
             "additionalProperties" to false,

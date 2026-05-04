@@ -94,13 +94,12 @@ class H3NullRowPropertyTest : FunSpec({
             .toSet()
 
     /** Parst YAML-Output zu einer Liste von Maps via SnakeYAML Load-API. */
-    @Suppress("UNCHECKED_CAST")
-    fun parseYamlRows(yamlOutput: String): List<Map<String, Any?>> {
+    fun parseYamlRows(yamlOutput: String): List<Map<*, *>> {
         val load = Load(LoadSettings.builder().build())
         val parsed = load.loadFromInputStream(
             ByteArrayInputStream(yamlOutput.toByteArray(Charsets.UTF_8)),
         ) as List<*>
-        return parsed.map { it as Map<String, Any?> }
+        return parsed.map { it as Map<*, *> }
     }
 
     // ═══════════════════════════════════════════════════════════

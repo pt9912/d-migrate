@@ -280,7 +280,16 @@ internal class ResourcesReadHandler(
         ResourceKind.DIFFS -> stores.diffStore.findById(uri.tenantId, uri.id)
             ?.let(ResourceContentProjector::projectContent)
 
+        // Plan-D §6.4 + §10.10 review: connection-refs honour
+        // `allowedPrincipalIds` / `allowedScopes` BOTH on
+        // `resources/list` (via the store's `list()` filter) and
+        // `resources/read`. Without the per-record `isReadableBy`
+        // check, a principal who knows the URI could read a
+        // connection that `list` deliberately hides from them.
+        // No-oracle: same `RESOURCE_NOT_FOUND` envelope as a
+        // genuinely missing id so existence isn't probeable.
         ResourceKind.CONNECTIONS -> stores.connectionStore.findById(uri.tenantId, uri.id)
+            ?.takeIf { it.isReadableBy(principal, uri.tenantId) }
             ?.let(ResourceContentProjector::projectContent)
 
         // UPLOAD_SESSIONS is filtered upstream by ResourceErrorPrecedence

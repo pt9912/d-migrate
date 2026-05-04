@@ -81,8 +81,7 @@ class ValueDeserializerTestPart2 : FunSpec({
 
     test("ARRAY: List passthrough") {
         val list = listOf(1, 2, 3)
-        @Suppress("UNCHECKED_CAST")
-        val out = forCol(Types.ARRAY).deserialize(tableName, "c", list) as List<Any?>
+        val out = forCol(Types.ARRAY).deserialize(tableName, "c", list) as List<*>
         out shouldContainExactly list
     }
 
@@ -275,8 +274,7 @@ class ValueDeserializerTestPart2 : FunSpec({
 
     test("ARRAY: Java Array<Any?> input is converted to List") {
         val arr: Array<Any?> = arrayOf(1, 2, 3)
-        @Suppress("UNCHECKED_CAST")
-        val out = forCol(Types.ARRAY).deserialize(tableName, "c", arr) as List<Any?>
+        val out = forCol(Types.ARRAY).deserialize(tableName, "c", arr) as List<*>
         out shouldContainExactly listOf<Any?>(1, 2, 3)
     }
 

@@ -287,8 +287,8 @@ class McpServiceImpl(
         // default; tools that need a permissive schema set it to
         // `true` explicitly.
         if (inputSchema["additionalProperties"] != false) return
-        @Suppress("UNCHECKED_CAST")
-        val allowed = (inputSchema["properties"] as? Map<String, *>)?.keys ?: emptySet()
+        val allowed = (inputSchema["properties"] as? Map<*, *>)?.keys?.filterIsInstance<String>()?.toSet()
+            ?: emptySet()
         val received = args.asJsonObject.entrySet().map { it.key }
         val unknown = received.filter { it !in allowed }
         if (unknown.isNotEmpty()) {

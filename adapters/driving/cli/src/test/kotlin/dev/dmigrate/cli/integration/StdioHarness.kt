@@ -142,9 +142,6 @@ internal class StdioHarness(
         }
     }
 
-    @Suppress("unused")
-    fun notificationsObserved(): Long = notificationsHandled.get()
-
     private fun send(line: String) {
         writer.println(line)
         writer.flush()

@@ -250,8 +250,7 @@ class YamlChunkReaderEdgeCaseTest : FunSpec({
         """.trimIndent()
         reader(yaml).use { r ->
             val chunk = r.nextChunk()!!
-            @Suppress("UNCHECKED_CAST")
-            val data = chunk.rows[0][0] as Map<String, Any?>
+            val data = chunk.rows[0][0] as Map<*, *>
             data["pos"] shouldBe Double.POSITIVE_INFINITY
             data["neg"] shouldBe Double.NEGATIVE_INFINITY
             (data["nan"] as Double).shouldBeNaN()
@@ -267,8 +266,7 @@ class YamlChunkReaderEdgeCaseTest : FunSpec({
         """.trimIndent()
         reader(yaml).use { r ->
             val chunk = r.nextChunk()!!
-            @Suppress("UNCHECKED_CAST")
-            val values = chunk.rows[0][0] as List<Any?>
+            val values = chunk.rows[0][0] as List<*>
             values[0] shouldBe Double.POSITIVE_INFINITY
             values[1] shouldBe Double.NEGATIVE_INFINITY
             (values[2] as Double).shouldBeNaN()

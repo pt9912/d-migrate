@@ -151,7 +151,6 @@ class I18nSettingsResolver(
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun loadConfig(configPath: EffectiveConfigPath): ParsedI18nConfig {
         if (!Files.isRegularFile(configPath.path)) {
             return when (configPath.source) {
@@ -180,11 +179,11 @@ class I18nSettingsResolver(
             )
         }
 
-        val root = parsed as? Map<String, Any?>
+        val root = parsed as? Map<*, *>
             ?: throw ConfigResolveException("Failed to parse ${configPath.path}: top-level YAML must be a mapping")
 
         val i18nRaw = root["i18n"] ?: return ParsedI18nConfig(sourcePath = configPath.path)
-        val i18n = i18nRaw as? Map<String, Any?>
+        val i18n = i18nRaw as? Map<*, *>
             ?: throw ConfigResolveException("i18n in ${configPath.path} must be a mapping")
 
         return ParsedI18nConfig(
@@ -195,7 +194,7 @@ class I18nSettingsResolver(
         )
     }
 
-    private fun readOptionalString(values: Map<String, Any?>, key: String, configPath: Path): String? {
+    private fun readOptionalString(values: Map<*, *>, key: String, configPath: Path): String? {
         val value = values[key] ?: return null
         return when (value) {
             is String -> value
