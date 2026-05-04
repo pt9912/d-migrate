@@ -42,7 +42,7 @@ class McpResourcesReadScenarioTest : FunSpec({
         withFreshTransports { s, h ->
             for (harness in listOf(s, h)) {
                 val schemaUri = IntegrationFixtures.stageSchema(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     schemaId = SCHEMA_ID,
                     json = """{ "fields": [{"name":"id","type":"INT"}] }""",
@@ -66,7 +66,7 @@ class McpResourcesReadScenarioTest : FunSpec({
             for (harness in listOf(s, h)) {
                 val tenant = harness.principal.effectiveTenantId.value
                 IntegrationFixtures.stageJob(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     jobId = JOB_ID,
                     operation = "schema_generate",
@@ -90,7 +90,7 @@ class McpResourcesReadScenarioTest : FunSpec({
             for (harness in listOf(s, h)) {
                 val tenant = harness.principal.effectiveTenantId.value
                 IntegrationFixtures.stageArtifact(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     artifactId = ARTIFACT_ID,
                     content = "fixture-payload".toByteArray(),

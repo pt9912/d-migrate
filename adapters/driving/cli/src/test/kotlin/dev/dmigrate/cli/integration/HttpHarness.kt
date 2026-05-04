@@ -58,7 +58,8 @@ internal class HttpHarness(
 
     val auditSink: InMemoryAuditSink get() = auditSinkRef
 
-    override val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
+    /** Test-only wiring access; see [StdioHarness.wiring]. */
+    internal val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()

@@ -57,7 +57,15 @@ internal class StdioHarness(
 
     val auditSink: InMemoryAuditSink get() = auditSinkRef
 
-    override val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
+    /**
+     * AP 6.24 §6.24 final-review: removed from the
+     * [McpClientHarness] interface (Z. 1849 forbids non-client
+     * methods on the harness surface). Still exposed `internal` on
+     * the concrete class so test-only fixture helpers can stage
+     * state via [testWiring]; not visible to test code that types
+     * `harness: McpClientHarness`.
+     */
+    internal val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()

@@ -52,7 +52,7 @@ class McpArtifactAndJobStatusScenarioTest : FunSpec({
         withFreshTransports(limits = tinyLimits) { s, h ->
             for (harness in listOf(s, h)) {
                 IntegrationFixtures.stageArtifact(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     artifactId = ARTIFACT_ID,
                     content = artefactBytes,
@@ -96,7 +96,7 @@ class McpArtifactAndJobStatusScenarioTest : FunSpec({
         withFreshTransports(limits = tinyLimits) { s, h ->
             for (harness in listOf(s, h)) {
                 IntegrationFixtures.stageArtifact(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     artifactId = ARTIFACT_ID,
                     content = artefactBytes,
@@ -130,13 +130,13 @@ class McpArtifactAndJobStatusScenarioTest : FunSpec({
                 // Stage the linked artefact first so the artefact-
                 // backfill projection has something to lift onto a URI.
                 IntegrationFixtures.stageArtifact(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     artifactId = ARTIFACT_ID,
                     content = "ok".toByteArray(Charsets.UTF_8),
                 )
                 IntegrationFixtures.stageJob(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     jobId = JOB_ID,
                     operation = "schema_validate",

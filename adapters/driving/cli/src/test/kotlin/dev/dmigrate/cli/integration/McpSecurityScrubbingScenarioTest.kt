@@ -156,7 +156,7 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
                     );
                 """.trimIndent()
                 IntegrationFixtures.stageArtifact(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     artifactId = artifactId,
                     content = plantedContent.toByteArray(Charsets.UTF_8),
@@ -299,7 +299,7 @@ private fun stageArtifactWithSecretsInMetadata(harness: McpClientHarness, artifa
         visibility = JobVisibility.TENANT,
         resourceUri = ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, artifactId),
     )
-    harness.wiring.artifactStore.save(record)
+    harness.testWiring().artifactStore.save(record)
 }
 
 private fun stageJobWithSecrets(harness: McpClientHarness, jobId: String) {
@@ -344,7 +344,7 @@ private fun stageJobWithSecrets(harness: McpClientHarness, jobId: String) {
         visibility = JobVisibility.TENANT,
         resourceUri = ServerResourceUri(tenantId, ResourceKind.JOBS, jobId),
     )
-    harness.wiring.jobStore.save(record)
+    harness.testWiring().jobStore.save(record)
 }
 
 private fun assertNoSecretLeaks(transportName: String, surface: String, text: String) {

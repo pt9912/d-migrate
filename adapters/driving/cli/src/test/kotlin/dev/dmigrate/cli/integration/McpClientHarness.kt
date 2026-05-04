@@ -39,16 +39,6 @@ internal interface McpClientHarness : AutoCloseable {
     val stateDir: Path
     val principal: PrincipalContext
 
-    /**
-     * AP 6.24 E3+: the Phase-C wiring this harness's server runs on.
-     * Scenario tests pre-stage server-side state (schemas, artefacts,
-     * jobs) directly via the in-memory stores instead of always
-     * driving the upload flow end-to-end. Both [StdioHarness] and
-     * [HttpHarness] expose the same wiring instance their bootstrap
-     * was built from.
-     */
-    val wiring: dev.dmigrate.mcp.registry.PhaseCWiring
-
     fun initialize(params: InitializeParams = defaultInitializeParams()): InitializeResult
 
     fun initializedNotification()
@@ -117,6 +107,25 @@ internal interface McpClientHarness : AutoCloseable {
             capabilities = dev.dmigrate.mcp.protocol.ClientCapabilities(),
         )
     }
+}
+
+/**
+ * AP 6.24 §6.24 final-review (Z. 1849): the harness's CLIENT-FACING
+ * surface (`McpClientHarness`) is restricted to the methods a real
+ * MCP client would use — `initialize`, `toolsList`, `toolsCall`,
+ * `resourcesRead`, `close` plus metadata. Direct `PhaseCWiring`
+ * access is NOT on that surface.
+ *
+ * Tests that pre-stage server-side state (schemas, jobs, artefacts)
+ * still need a wiring handle, but only via this typed test-fixture
+ * narrowing helper — never via a public interface property a real
+ * client could ever observe. The narrowing fails fast if a future
+ * harness type forgets to register here.
+ */
+internal fun McpClientHarness.testWiring(): dev.dmigrate.mcp.registry.PhaseCWiring = when (this) {
+    is StdioHarness -> wiring
+    is HttpHarness -> wiring
+    else -> error("McpClientHarness.testWiring(): unsupported harness type ${this::class}")
 }
 
 /**

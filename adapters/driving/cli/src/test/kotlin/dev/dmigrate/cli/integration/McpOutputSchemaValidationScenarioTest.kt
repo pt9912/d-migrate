@@ -90,13 +90,13 @@ class McpOutputSchemaValidationScenarioTest : FunSpec({
             for (harness in listOf(s, h)) {
                 val schemas = collectOutputSchemas(harness)
                 val sourceUri = IntegrationFixtures.stageSchema(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     schemaId = "schema-e8-source",
                     json = """{"name":"a","version":"1.0","tables":{}}""",
                 )
                 val targetUri = IntegrationFixtures.stageSchema(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     schemaId = "schema-e8-target",
                     json = """{"name":"a","version":"1.0","tables":{}}""",
@@ -154,11 +154,11 @@ class McpOutputSchemaValidationScenarioTest : FunSpec({
             for (harness in listOf(s, h)) {
                 val schemas = collectOutputSchemas(harness)
                 val left = IntegrationFixtures.stageSchema(
-                    harness.wiring, harness.principal, "e8a-trunc-left",
+                    harness.testWiring(), harness.principal, "e8a-trunc-left",
                     schemaWithTables("orders", (1..30).map { "t$it" }),
                 )
                 val right = IntegrationFixtures.stageSchema(
-                    harness.wiring, harness.principal, "e8a-trunc-right",
+                    harness.testWiring(), harness.principal, "e8a-trunc-right",
                     schemaWithTables("orders", (1..30).map { "u$it" }),
                 )
                 val arguments = JsonParser.parseString(
@@ -180,7 +180,7 @@ class McpOutputSchemaValidationScenarioTest : FunSpec({
                 val schemas = collectOutputSchemas(harness)
                 val tenant = harness.principal.effectiveTenantId.value
                 IntegrationFixtures.stageJob(
-                    wiring = harness.wiring,
+                    wiring = harness.testWiring(),
                     principal = harness.principal,
                     jobId = "job-e8-fixture",
                     operation = "schema_generate",
