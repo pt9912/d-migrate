@@ -548,6 +548,41 @@ class McpServiceImplResourcesReadTest : FunSpec({
         data["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
     }
 
+    test("resources/read rejects unknown request parameters with VALIDATION_ERROR") {
+        // Plan-D §5.3 / §10.7: `uri` is the ONLY accepted field.
+        // The strict adapter captures the first offender into
+        // ReadResourceParams.unknownParameter; the dispatcher rejects
+        // BEFORE the URI even parses so a probe like {"chunkId":"x"}
+        // can't elicit a parse-grammar oracle. Test the dispatcher
+        // surface directly via a constructed params object — the
+        // wire-shape adapter is exercised end-to-end through the
+        // integration tests landing in AP D11.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(),
+        )
+        val rejectedNames = listOf("cursor", "range", "chunkId", "limit")
+        for (name in rejectedNames) {
+            val ex = shouldThrow<ExecutionException> {
+                sut.resourcesRead(
+                    ReadResourceParams(
+                        uri = "dmigrate://tenants/acme/jobs/job-1",
+                        unknownParameter = name,
+                    ),
+                ).get()
+            }
+            val err = jsonRpcErrorOf(ex).responseError
+            err.code shouldBe ResponseErrorCode.InvalidParams.value
+            check(err.message.contains(name)) {
+                "rejection message should name the offending field, was: ${err.message}"
+            }
+            @Suppress("UNCHECKED_CAST")
+            val data = err.data as Map<String, Any?>
+            data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
+        }
+    }
+
     test("error envelopes carry error.data.dmigrateCode for every Phase-D error class") {
         // Plan-D §5.4 pins three stable codes on the wire:
         //   VALIDATION_ERROR     — URI grammar / blocked kind

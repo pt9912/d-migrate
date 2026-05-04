@@ -63,13 +63,32 @@ data class ResourceTemplate(
 
 /**
  * MCP `resources/read` request shape per the 2025-11-25 specification
- * + `ImpPlan-0.9.6-B.md` §5.5 + §6.9. `uri` MUST be a fully-resolved
- * `dmigrate://tenants/{tenantId}/{kind}/{id}` URI; templated URIs
- * (with literal `{placeholder}` segments) are rejected as
- * `-32602 InvalidParams`. A missing `uri` field is also `-32602`.
+ * + `ImpPlan-0.9.6-B.md` §5.5 + §6.9 + `ImpPlan-0.9.6-D.md` §5.3 + §10.7.
+ *
+ * `uri` MUST be a fully-resolved `dmigrate://...` URI. Plan-D §5.3
+ * pins the request shape: `uri` is the ONLY accepted field —
+ * `cursor`, `range`, `chunkId` and any other extension key are
+ * rejected as `-32602 InvalidParams` with
+ * `error.data.dmigrateCode=VALIDATION_ERROR`. The strict-shape
+ * enforcement runs through [StrictReadResourceParamsAdapter];
+ * carrying [unknownParameter] as a typed marker lets the
+ * dispatcher build the error envelope with the same JSON-RPC code
+ * + dmigrateCode pair as the rest of the resource-error chain
+ * instead of the raw Gson exception lsp4j would otherwise wrap as
+ * `-32700 ParseError`.
+ *
+ * A missing `uri` field is also `-32602` with
+ * `dmigrateCode=VALIDATION_ERROR`.
  */
+@com.google.gson.annotations.JsonAdapter(StrictReadResourceParamsAdapter::class)
 data class ReadResourceParams(
     val uri: String? = null,
+    /**
+     * Plan-D §5.3: name of the first unexpected parameter the
+     * client carried. Non-null means the request is malformed and
+     * the dispatcher MUST reject it before the URI even parses.
+     */
+    val unknownParameter: String? = null,
 )
 
 /**

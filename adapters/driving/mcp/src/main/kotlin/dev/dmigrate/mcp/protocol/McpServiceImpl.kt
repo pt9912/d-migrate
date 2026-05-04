@@ -289,6 +289,26 @@ class McpServiceImpl(
                     ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
                 ),
             )
+        // Plan-D §5.3 / §10.7: `uri` is the ONLY accepted field on
+        // `resources/read`. Any other key (cursor, range, chunkId,
+        // unknown extension) is captured by
+        // [StrictReadResourceParamsAdapter] and surfaces here as a
+        // typed VALIDATION_ERROR. Done before the missing-uri check
+        // so a request like `{"chunkId":"x"}` reports "unknown
+        // parameter" rather than "missing uri" — the surface a
+        // probing client touches first matters for the no-oracle
+        // contract.
+        params.unknownParameter?.let { unknown ->
+            return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.InvalidParams.value,
+                        "resources/read does not accept '$unknown'",
+                        mapOf("dmigrateCode" to "VALIDATION_ERROR"),
+                    ),
+                ),
+            )
+        }
         val raw = params.uri ?: return CompletableFuture.failedFuture(
             ResponseErrorException(
                 ResponseError(
