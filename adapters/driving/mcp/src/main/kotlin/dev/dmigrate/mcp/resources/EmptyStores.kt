@@ -10,7 +10,9 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.ArtifactListFilter
+import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
+import dev.dmigrate.server.ports.WriteArtifactOutcome
 import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.DiffIndexEntry
 import dev.dmigrate.server.ports.DiffListFilter
@@ -23,6 +25,8 @@ import dev.dmigrate.server.ports.ProfileStore
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.SchemaListFilter
 import dev.dmigrate.server.ports.SchemaStore
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.time.Instant
 
 /**
@@ -66,6 +70,21 @@ internal object EmptyArtifactStore : ArtifactStore {
         page: PageRequest,
     ): PageResult<ArtifactRecord> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
+}
+
+internal object EmptyArtifactContentStore : ArtifactContentStore {
+    override fun write(
+        artifactId: String,
+        source: InputStream,
+        expectedSizeBytes: Long,
+    ): WriteArtifactOutcome = WriteArtifactOutcome.SizeMismatch(expectedSizeBytes, 0)
+
+    override fun openRangeRead(artifactId: String, offset: Long, length: Long): InputStream =
+        ByteArrayInputStream(ByteArray(0))
+
+    override fun exists(artifactId: String): Boolean = false
+
+    override fun delete(artifactId: String): Boolean = false
 }
 
 internal object EmptySchemaStore : SchemaStore {

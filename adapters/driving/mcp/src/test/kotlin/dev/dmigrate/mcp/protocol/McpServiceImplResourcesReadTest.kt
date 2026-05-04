@@ -24,6 +24,7 @@ import dev.dmigrate.server.ports.DiffIndexEntry
 import dev.dmigrate.server.ports.ProfileIndexEntry
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
 import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
 import dev.dmigrate.server.ports.memory.InMemoryDiffStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
@@ -87,12 +88,14 @@ private fun artifactRecord(
     owner: PrincipalId = ALICE,
     visibility: JobVisibility = JobVisibility.OWNER,
     tenant: TenantId = TENANT,
+    contentType: String = "application/sql",
+    sizeBytes: Long = 1024,
 ): ArtifactRecord = ArtifactRecord(
     managedArtifact = ManagedArtifact(
         artifactId = artifactId,
         filename = "schema.sql",
-        contentType = "application/sql",
-        sizeBytes = 1024,
+        contentType = contentType,
+        sizeBytes = sizeBytes,
         sha256 = "deadbeef",
         createdAt = Instant.parse("2026-01-01T00:00:00Z"),
         expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
@@ -112,6 +115,7 @@ private fun stores(
     profiles: List<ProfileIndexEntry> = emptyList(),
     diffs: List<DiffIndexEntry> = emptyList(),
     connections: List<ConnectionReference> = emptyList(),
+    artifactContentStore: InMemoryArtifactContentStore = InMemoryArtifactContentStore(),
 ): ResourceStores {
     val jobStore = InMemoryJobStore().apply { jobs.forEach { save(it) } }
     val artifactStore = InMemoryArtifactStore().apply { artifacts.forEach { save(it) } }
@@ -126,6 +130,7 @@ private fun stores(
         profileStore = profileStore,
         diffStore = diffStore,
         connectionStore = connectionStore,
+        artifactContentStore = artifactContentStore,
     )
 }
 
@@ -176,6 +181,63 @@ class McpServiceImplResourcesReadTest : FunSpec({
         body["kind"] shouldBe "SCHEMA"
         // sha256 surfaces — it is a content hash, not a secret.
         body["sha256"] shouldBe "deadbeef"
+    }
+
+    test("resources/read on a binary artifact chunk returns native MCP blob content") {
+        val bytes = byteArrayOf(0, 1, 2, 3, 4, 5)
+        val contentStore = InMemoryArtifactContentStore().apply {
+            write("art-bin", bytes.inputStream(), bytes.size.toLong())
+        }
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(
+                artifacts = listOf(
+                    artifactRecord(
+                        artifactId = "art-bin",
+                        contentType = "application/octet-stream",
+                        sizeBytes = bytes.size.toLong(),
+                    ),
+                ),
+                artifactContentStore = contentStore,
+            ),
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams(uri = "dmigrate://tenants/acme/artifacts/art-bin/chunks/0"),
+        ).get()
+        val slice = result.contents.single()
+        slice.uri shouldBe "dmigrate://tenants/acme/artifacts/art-bin/chunks/0"
+        slice.mimeType shouldBe "application/octet-stream"
+        slice.text shouldBe null
+        slice.blob shouldBe java.util.Base64.getEncoder().encodeToString(bytes)
+    }
+
+    test("resources/read on a text artifact chunk returns text content") {
+        val bytes = "select 1;".toByteArray()
+        val contentStore = InMemoryArtifactContentStore().apply {
+            write("art-text", bytes.inputStream(), bytes.size.toLong())
+        }
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(
+                artifacts = listOf(
+                    artifactRecord(
+                        artifactId = "art-text",
+                        contentType = "text/plain; charset=utf-8",
+                        sizeBytes = bytes.size.toLong(),
+                    ),
+                ),
+                artifactContentStore = contentStore,
+            ),
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams(uri = "dmigrate://tenants/acme/artifacts/art-text/chunks/0"),
+        ).get()
+        val slice = result.contents.single()
+        slice.mimeType shouldBe "text/plain; charset=utf-8"
+        slice.text shouldBe "select 1;"
+        slice.blob shouldBe null
     }
 
     test("resources/read on a connection projects without credentialRef/providerRef") {

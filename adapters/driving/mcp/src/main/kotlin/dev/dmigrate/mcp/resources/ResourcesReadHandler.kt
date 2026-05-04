@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.protocol.ReadResourceResult
 import dev.dmigrate.mcp.protocol.ResourceContents
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.resource.ArtifactChunkResourceUri
 import dev.dmigrate.server.core.resource.GlobalCapabilitiesResourceUri
@@ -16,6 +17,7 @@ import dev.dmigrate.server.core.resource.TenantResourceUri
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.util.Base64
 
 /**
  * Handles `resources/read` per `ImpPlan-0.9.6-D.md` §4.2 + §5.3 + §10.7.
@@ -89,6 +91,9 @@ internal class ResourcesReadHandler(
             is ResourceClassification.Resolved -> classification.uri
             is ResourceClassification.Failed -> throw classification.error.toResponseError()
         }
+        if (uri is ArtifactChunkResourceUri) {
+            return ReadResourceResult(contents = listOf(readArtifactChunk(principal, uri)))
+        }
         val payload = lookup(principal, uri) ?: throw McpResourceError.ResourceNotFound.toResponseError()
         val (text, mime) = serialiseWithInlineCap(uri, payload)
         return ReadResourceResult(
@@ -142,6 +147,78 @@ internal class ResourcesReadHandler(
 
     private fun utf8Size(text: String): Int = text.toByteArray(Charsets.UTF_8).size
 
+    private fun readArtifactChunk(
+        principal: PrincipalContext,
+        uri: ArtifactChunkResourceUri,
+    ): ResourceContents {
+        val chunkIndex = parseChunkIndex(uri.chunkId)
+        val record = stores.artifactStore.findById(uri.tenantId, uri.artifactId)
+            ?: throw McpResourceError.ResourceNotFound.toResponseError()
+        if (!record.isReadableBy(principal, uri.tenantId)) {
+            throw McpResourceError.ResourceNotFound.toResponseError()
+        }
+        if (!stores.artifactContentStore.exists(uri.artifactId)) {
+            throw McpResourceError.ResourceNotFound.toResponseError()
+        }
+
+        val chunkSize = limits.maxArtifactChunkBytes
+        val totalBytes = record.managedArtifact.sizeBytes
+        val offset = chunkIndex.toLong() * chunkSize.toLong()
+        if (chunkIndex > 0 && offset >= totalBytes) {
+            throw McpResourceError.ResourceNotFound.toResponseError()
+        }
+        val length = minOf(chunkSize.toLong(), totalBytes - offset).toInt().coerceAtLeast(0)
+        val bytes = if (length == 0) {
+            ByteArray(0)
+        } else {
+            stores.artifactContentStore.openRangeRead(uri.artifactId, offset, length.toLong())
+                .use { it.readAllBytes() }
+        }
+
+        return if (isTextContentType(record.managedArtifact.contentType)) {
+            val text = SecretScrubber.scrub(String(bytes, Charsets.UTF_8))
+            ensureInlineFits(text, "text chunk")
+            ResourceContents(
+                uri = uri.render(),
+                mimeType = record.managedArtifact.contentType,
+                text = text,
+            )
+        } else {
+            val blob = Base64.getEncoder().encodeToString(bytes)
+            ensureInlineFits(blob, "blob chunk")
+            ResourceContents(
+                uri = uri.render(),
+                mimeType = record.managedArtifact.contentType,
+                blob = blob,
+            )
+        }
+    }
+
+    private fun parseChunkIndex(raw: String): Int {
+        val value = raw.toIntOrNull()
+            ?: throw McpResourceError.ValidationError("artifact chunk id must be a non-negative integer")
+                .toResponseError()
+        if (value < 0) {
+            throw McpResourceError.ValidationError("artifact chunk id must be >= 0").toResponseError()
+        }
+        return value
+    }
+
+    private fun ensureInlineFits(body: String, label: String) {
+        val size = utf8Size(body)
+        if (size > limits.maxInlineResourceContentBytes) {
+            throw McpResourceError.ValidationError(
+                "resource $label exceeds maxInlineResourceContentBytes " +
+                    "($size > ${limits.maxInlineResourceContentBytes})",
+            ).toResponseError()
+        }
+    }
+
+    private fun isTextContentType(contentType: String): Boolean {
+        val ct = contentType.substringBefore(";").trim().lowercase()
+        return ct.startsWith("text/") || ct in TEXT_APPLICATION_TYPES
+    }
+
     private fun lookup(
         principal: PrincipalContext,
         uri: McpResourceUri,
@@ -149,12 +226,7 @@ internal class ResourcesReadHandler(
         is GlobalCapabilitiesResourceUri -> capabilitiesProvider()
             .takeIf { it.isNotEmpty() }
         is TenantResourceUri -> lookupTenantResource(principal, uri)
-        // ArtifactChunkResourceUri is the four-segment chunked-read
-        // URI. AP D9 wires it onto `artifact_chunk_get`'s resolver
-        // so the same Phase-D precedence chain governs both paths.
-        // Until then the chunk resolver isn't bound here — the
-        // request collapses into the no-oracle not-found branch
-        // rather than ever returning a bogus content slice.
+        // Handled before the JSON-projection path in [read].
         is ArtifactChunkResourceUri -> null
     }
 
@@ -231,6 +303,13 @@ internal class ResourcesReadHandler(
 
         private const val FIELD_ARTIFACT_REF: String = "artifactRef"
         private const val FIELD_TENANT_ID: String = "tenantId"
+
+        private val TEXT_APPLICATION_TYPES: Set<String> = setOf(
+            "application/json",
+            "application/yaml",
+            "application/x-yaml",
+            "application/xml",
+        )
 
         /**
          * MCP custom server-error code for `resources/read`-not-found

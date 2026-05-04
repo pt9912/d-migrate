@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.resources
 
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.server.ports.ArtifactStore
+import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.DiffStore
 import dev.dmigrate.server.ports.JobStore
@@ -27,6 +28,7 @@ data class ResourceStores(
     val profileStore: ProfileStore,
     val diffStore: DiffStore,
     val connectionStore: ConnectionReferenceStore,
+    val artifactContentStore: ArtifactContentStore = EmptyArtifactContentStore,
 ) {
     companion object {
         fun empty(): ResourceStores = ResourceStores(
@@ -36,6 +38,7 @@ data class ResourceStores(
             profileStore = EmptyProfileStore,
             diffStore = EmptyDiffStore,
             connectionStore = EmptyConnectionStore,
+            artifactContentStore = EmptyArtifactContentStore,
         )
 
         /**
@@ -63,6 +66,7 @@ data class ResourceStores(
             // `LoaderBackedConnectionReferenceStore`) seeds the
             // discovery surface with secret-free connection records.
             connectionStore = wiring.connectionStore,
+            artifactContentStore = wiring.artifactContentStore,
         )
     }
 }
