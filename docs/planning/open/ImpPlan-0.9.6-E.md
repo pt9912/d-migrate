@@ -11,7 +11,7 @@
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;
 > `docs/planning/done/ImpPlan-0.9.6-B.md`;
 > `docs/planning/done/ImpPlan-0.9.6-C.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-D.md`;
+> `docs/planning/done/ImpPlan-0.9.6-D.md`;
 > `docs/planning/open/ImpPlan-0.9.6-E0.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
 > `spec/cli-spec.md`; `hexagon/application`; `hexagon/ports-common`;
@@ -1438,6 +1438,24 @@ Mindestfaelle:
   policy-pflichtig und auditierbar.
 - `schema_compare_start` ist erst produktiv aktivierbar, wenn Compare-
   Materialisierung und Diff-/Artefakt-Publish Cancel-Checkpoints nachweisen.
+- `data_profile_start` schreibt nach erfolgreichem Jobabschluss einen
+  `ProfileIndexEntry` in den gemeinsamen Profile-Store. Der Eintrag enthaelt
+  mindestens `profileId`, `tenantId`, `jobRef`, `artifactRef`,
+  `resourceUri`, `createdAt`, `expiresAt`, `displayName` und die fuer
+  `profile_list` dokumentierten Filter-/Projektionsfelder.
+- `schema_compare_start` schreibt nach erfolgreichem Jobabschluss einen
+  `DiffIndexEntry` in den gemeinsamen Diff-Store. Der Eintrag enthaelt
+  mindestens `diffId`, `tenantId`, `jobRef`, `artifactRef`, `sourceRef`,
+  `targetRef`, `resourceUri`, `createdAt`, `expiresAt`, `displayName` und die
+  fuer `diff_list` dokumentierten Filter-/Projektionsfelder.
+- Die durch Phase-E-Start-Tools erzeugten Profile und Diffs sind ohne
+  Zusatzadapter ueber `profile_list`, `diff_list`, `resources/list` und
+  `resources/read` auffindbar. Die Resource-URIs muessen den Phase-D-
+  Resolvern entsprechen; es darf kein zweites MCP-spezifisches Indexmodell
+  entstehen.
+- Idempotency-Replays nach `COMMITTED` schreiben keine weiteren
+  `ProfileIndexEntry`- oder `DiffIndexEntry`-Records und materialisieren keine
+  neuen Profil-/Diff-Artefakte.
 - Phase E garantiert den Side-Effect-Stopp nur fuer Phase-E-gemanagte Worker
   (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`);
   Import-/Transfer-Cancel bleibt bis zur Aufnahme dieser Start-Tools
