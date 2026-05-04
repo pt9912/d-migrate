@@ -155,19 +155,28 @@ class NamedConnectionResolverTest : FunSpec({
         ex.message!! shouldContain "Failed to parse"
     }
 
-    test("§6.14.3: connection value is not a string → clear error") {
+    test("Plan-D §8.2: a Phase-D map-form connection is invisible to the legacy resolver") {
+        // Plan-D §8.2 splits Phase-C and Phase-D YAML formats:
+        // bare-string entries belong to NamedConnectionResolver,
+        // map-form entries (with displayName/dialectId/...) are
+        // handled by YamlConnectionReferenceLoader. The legacy
+        // resolver MUST NOT resolve map-form entries — surfaces
+        // them as "not defined" so a CLI that addresses a
+        // Phase-D-only connection by name fails loudly instead of
+        // pulling secrets from a discovery-only record.
         val cfg = tempConfig(
             """
             database:
               connections:
                 local_pg:
-                  host: localhost
-                  port: 5432
+                  displayName: PG
+                  dialectId: postgresql
+                  sensitivity: PRODUCTION
             """.trimIndent()
         )
         val resolver = NamedConnectionResolver(configPathFromCli = cfg)
         val ex = shouldThrow<ConfigResolveException> { resolver.resolve("local_pg") }
-        ex.message!! shouldContain "must be a string"
+        ex.message!! shouldContain "not defined"
     }
 
     // ─── ${ENV_VAR}-Substitution ─────────────────────────────────

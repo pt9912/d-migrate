@@ -1,7 +1,7 @@
 package dev.dmigrate.cli.config
 
-import org.snakeyaml.engine.v2.api.Load
-import org.snakeyaml.engine.v2.api.LoadSettings
+import dev.dmigrate.connection.PhaseCConnectionConfigException
+import dev.dmigrate.connection.PhaseCConnectionConfigParser
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -148,34 +148,16 @@ class NamedConnectionResolver(
 
     /**
      * Liest `database.<key>` aus der bereits geparsten Config-Datei.
-     * Gibt `null` zurück wenn der Key nicht gesetzt ist.
+     * Gibt `null` zurück wenn der Key nicht gesetzt ist. Plan-D §8.2:
+     * delegiert an den adapter-neutralen [PhaseCConnectionConfigParser]
+     * und übersetzt dessen typisierte Fehler in
+     * [ConfigResolveException], damit der CLI-Exit-Code-Vertrag
+     * unverändert bleibt.
      */
-    @Suppress("UNCHECKED_CAST")
-    private fun lookupDefaultValue(configPath: Path, key: String): String? {
-        val parsed: Any? = try {
-            val settings = LoadSettings.builder().build()
-            Files.newInputStream(configPath).use { input ->
-                Load(settings).loadFromInputStream(input)
-            }
-        } catch (t: Throwable) {
-            throw ConfigResolveException(
-                "Failed to parse $configPath: ${t.message ?: t::class.simpleName}",
-                cause = t,
-            )
-        }
-
-        val root = parsed as? Map<String, Any?>
-            ?: throw ConfigResolveException("Failed to parse $configPath: top-level YAML must be a mapping")
-
-        val database = root["database"] as? Map<String, Any?> ?: return null
-        val value = database[key] ?: return null
-
-        return when (value) {
-            is String -> value
-            else -> throw ConfigResolveException(
-                "database.$key in $configPath must be a string, got ${value::class.simpleName}"
-            )
-        }
+    private fun lookupDefaultValue(configPath: Path, key: String): String? = try {
+        PhaseCConnectionConfigParser.parseDefault(configPath, key)
+    } catch (e: PhaseCConnectionConfigException) {
+        throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
     }
 
     /**
@@ -190,40 +172,22 @@ class NamedConnectionResolver(
         ).resolve()
 
     /**
-     * Liest die Config-Datei mit SnakeYAML Engine und löst
-     * `database.connections.<name>` auf. Die Datei wird hier zum ersten Mal
-     * geöffnet, damit `${ENV_VAR}`-Fehler mit dem Connection-Namen
-     * attribuiert werden können.
+     * Plan-D §8.2: das eigentliche YAML-Parsing wandert in den
+     * adapter-neutralen [PhaseCConnectionConfigParser]; dieser
+     * Resolver behält nur noch die CLI-spezifische
+     * Pfad-Resolution und die ENV-Substitution. Das `${VAR}`-
+     * Expansion bleibt CLI-only — der Discovery-Pfad (MCP) darf
+     * den Resolver nie aufrufen.
      */
-    @Suppress("UNCHECKED_CAST")
     private fun lookupConnectionUrl(configPath: Path, name: String): String {
-        val parsed: Any? = try {
-            val settings = LoadSettings.builder().build()
-            Files.newInputStream(configPath).use { input ->
-                Load(settings).loadFromInputStream(input)
-            }
-        } catch (t: Throwable) {
-            throw ConfigResolveException(
-                "Failed to parse $configPath: ${t.message ?: t::class.simpleName}",
-                cause = t,
-            )
+        val connections = try {
+            PhaseCConnectionConfigParser.parseConnections(configPath)
+        } catch (e: PhaseCConnectionConfigException) {
+            throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
         }
-
-        val root = parsed as? Map<String, Any?>
-            ?: throw ConfigResolveException("Failed to parse $configPath: top-level YAML must be a mapping")
-
-        val notDefinedMsg = "Connection name '$name' is not defined in $configPath under database.connections."
-        val raw = (root["database"] as? Map<String, Any?>)
-            ?.let { it["connections"] as? Map<String, Any?> }
-            ?.get(name)
-            ?: throw ConfigResolveException(notDefinedMsg)
-
-        return when (raw) {
-            is String -> raw
-            else -> throw ConfigResolveException(
-                "Connection '$name' in $configPath must be a string, got ${raw::class.simpleName}"
-            )
-        }
+        return connections[name] ?: throw ConfigResolveException(
+            "Connection name '$name' is not defined in $configPath under database.connections.",
+        )
     }
 
     /**
