@@ -583,6 +583,116 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
     }
 
+    test("oversized schema projection with artifactRef strips to a referral payload") {
+        // Plan-D §5.2 / §10.7: a JSON projection whose serialised
+        // size exceeds maxInlineResourceContentBytes MUST surface as
+        // a referral (`artifactRef` follow-up) rather than an
+        // oversized inline body. The schema projection carries a
+        // `labels` map under operator control — synthesise one large
+        // enough to push the body over a (deliberately small) cap and
+        // pin the stripped referral shape.
+        val tinyLimits = dev.dmigrate.mcp.server.McpLimitsConfig(
+            maxInlineResourceContentBytes = 256,
+            maxResourceReadResponseBytes = 1024,
+        )
+        val largeLabels = (0 until 50).associate { i -> "label-key-$i" to "label-value-$i".repeat(8) }
+        val schema = SchemaIndexEntry(
+            schemaId = "schema-bloat",
+            tenantId = TENANT,
+            displayName = "Bloated",
+            artifactRef = "art://big",
+            createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+            expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+            jobRef = null,
+            labels = largeLabels,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.SCHEMAS, "schema-bloat"),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(schemas = listOf(schema)),
+            limitsConfig = tinyLimits,
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams("dmigrate://tenants/acme/schemas/schema-bloat"),
+        ).get()
+        val body = parseTextContent(result)
+        body["uri"] shouldBe "dmigrate://tenants/acme/schemas/schema-bloat"
+        body["tenantId"] shouldBe TENANT.value
+        body["artifactRef"] shouldBe "art://big"
+        body["inlineLimitExceeded"] shouldBe true
+        // Original projection's bloat fields MUST NOT survive into
+        // the referral — that's the entire point of stripping.
+        body.containsKey("labels") shouldBe false
+        body.containsKey("displayName") shouldBe false
+    }
+
+    test("oversized capabilities (no artifactRef) surfaces VALIDATION_ERROR") {
+        // Plan-D §5.2: an over-cap projection without an artifactRef
+        // referral path is a server-side limit-exceeded error. The
+        // capabilities document has no backing artefact, so a
+        // pathological deployment with too many tools registered
+        // surfaces here loudly rather than silently truncating.
+        val tinyLimits = dev.dmigrate.mcp.server.McpLimitsConfig(
+            maxInlineResourceContentBytes = 64,
+            maxResourceReadResponseBytes = 256,
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            limitsConfig = tinyLimits,
+            capabilitiesProvider = {
+                mapOf(
+                    "tools" to (0 until 100).map { mapOf("name" to "tool-$it") },
+                    "scopeTable" to mapOf("dmigrate:read" to (0 until 100).map { "method-$it" }),
+                )
+            },
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://capabilities")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResponseErrorCode.InvalidParams.value
+        @Suppress("UNCHECKED_CAST")
+        val data = err.data as Map<String, Any?>
+        data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
+        check(err.message.contains("maxInlineResourceContentBytes")) {
+            "cap-exceeded message should reference the cap, was: ${err.message}"
+        }
+    }
+
+    test("a projection just under the inline cap stays inline (no referral wrapping)") {
+        // Boundary check: a body that fits MUST NOT be wrapped in
+        // the referral envelope. Pin that the inline-vs-referral
+        // discriminator is strictly size-driven, not "always strip".
+        val schema = SchemaIndexEntry(
+            schemaId = "schema-small",
+            tenantId = TENANT,
+            displayName = "Small",
+            artifactRef = "art://small",
+            createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+            expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+            jobRef = null,
+            labels = mapOf("k" to "v"),
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.SCHEMAS, "schema-small"),
+        )
+        // Default limits are 49152 bytes — way bigger than the
+        // small projection.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(schemas = listOf(schema)),
+        )
+        val body = parseTextContent(
+            sut.resourcesRead(
+                ReadResourceParams("dmigrate://tenants/acme/schemas/schema-small"),
+            ).get(),
+        )
+        body["schemaId"] shouldBe "schema-small"
+        body["displayName"] shouldBe "Small"
+        body.containsKey("inlineLimitExceeded") shouldBe false
+    }
+
     test("error envelopes carry error.data.dmigrateCode for every Phase-D error class") {
         // Plan-D §5.4 pins three stable codes on the wire:
         //   VALIDATION_ERROR     — URI grammar / blocked kind

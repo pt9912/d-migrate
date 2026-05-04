@@ -76,13 +76,23 @@ class McpServiceImpl(
      * deployment never returns a half-baked capabilities body.
      */
     capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
+    /**
+     * AP D7 sub-commit 3: inline-vs-artifactRef byte cap (§5.2).
+     * Defaults to a fresh [McpLimitsConfig], which carries the
+     * Plan-D MAX_INLINE_RESOURCE_CONTENT_BYTES and
+     * MAX_RESOURCE_READ_RESPONSE_BYTES constants. Production
+     * bootstrap supplies the deployment's tuned config so a server
+     * with raised tool-response caps uses the matching resource
+     * caps.
+     */
+    limitsConfig: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
     private val currentPrincipal = AtomicReference(initialPrincipal)
     private val gson = GsonBuilder().disableHtmlEscaping().create()
     private val resourcesListHandler = ResourcesListHandler(resourceStores)
-    private val resourcesReadHandler = ResourcesReadHandler(resourceStores, capabilitiesProvider)
+    private val resourcesReadHandler = ResourcesReadHandler(resourceStores, capabilitiesProvider, limitsConfig)
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()

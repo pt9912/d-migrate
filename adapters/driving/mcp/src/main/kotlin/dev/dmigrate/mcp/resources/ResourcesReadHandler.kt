@@ -3,6 +3,7 @@ package dev.dmigrate.mcp.resources
 import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.protocol.ReadResourceResult
 import dev.dmigrate.mcp.protocol.ResourceContents
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.resource.ArtifactChunkResourceUri
 import dev.dmigrate.server.core.resource.GlobalCapabilitiesResourceUri
@@ -62,15 +63,22 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
  *   `dmigrateCode=RESOURCE_NOT_FOUND`. Error messages NEVER
  *   mention the requested URI or whether the resource exists.
  *
- * AP D7 sub-commit 1 leaves the inline-vs-artefactRef byte
- * threshold (Plan-D §5.2) and the strict request-parameter shape
- * (`additionalProperties=false` on `ReadResourceParams`) for
- * follow-up sub-commits — they are independent of the
- * precedence-chain refactor and the capabilities resolver.
+ * AP D7 sub-commit 3 adds the inline-byte enforcement from
+ * Plan-D §5.2: every JSON projection's serialised UTF-8 size must
+ * stay at or below [McpLimitsConfig.maxInlineResourceContentBytes].
+ * Projections that carry an `artifactRef` get stripped to a
+ * referral payload (`uri`, `tenantId`, `artifactRef`, plus an
+ * `inlineLimitExceeded` marker) so the response stays under the
+ * cap while keeping a follow-up pointer. Projections without an
+ * artifactRef (capabilities, jobs, connections) cannot build a
+ * referral; those collapse to `VALIDATION_ERROR` with a server-
+ * side cap-exceeded message because Plan-D §5.2 forbids both an
+ * empty/partial response and an inline payload above the limit.
  */
 internal class ResourcesReadHandler(
     private val stores: ResourceStores,
     private val capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
+    private val limits: McpLimitsConfig = McpLimitsConfig(),
 ) {
 
     private val gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
@@ -82,16 +90,57 @@ internal class ResourcesReadHandler(
             is ResourceClassification.Failed -> throw classification.error.toResponseError()
         }
         val payload = lookup(principal, uri) ?: throw McpResourceError.ResourceNotFound.toResponseError()
+        val (text, mime) = serialiseWithInlineCap(uri, payload)
         return ReadResourceResult(
             contents = listOf(
                 ResourceContents(
                     uri = uri.render(),
-                    mimeType = JSON_MIME,
-                    text = gson.toJson(payload),
+                    mimeType = mime,
+                    text = text,
                 ),
             ),
         )
     }
+
+    /**
+     * Plan-D §5.2 enforcement: an inline payload's UTF-8 byte size
+     * MUST be `<= maxInlineResourceContentBytes`. Returns the
+     * serialised body that fits in the inline budget — either the
+     * original projection (when small enough) or a stripped
+     * referral pointing to the projection's `artifactRef`.
+     */
+    private fun serialiseWithInlineCap(
+        uri: McpResourceUri,
+        payload: Map<String, Any?>,
+    ): Pair<String, String> {
+        val firstAttempt = gson.toJson(payload)
+        val firstSize = utf8Size(firstAttempt)
+        if (firstSize <= limits.maxInlineResourceContentBytes) {
+            return firstAttempt to JSON_MIME
+        }
+        val artifactRef = payload[FIELD_ARTIFACT_REF] as? String
+            ?: throw McpResourceError.ValidationError(
+                "resource projection exceeds maxInlineResourceContentBytes " +
+                    "($firstSize > ${limits.maxInlineResourceContentBytes}) " +
+                    "and the projection has no artifactRef referral path",
+            ).toResponseError()
+        val referral = mapOf(
+            "uri" to uri.render(),
+            "tenantId" to payload[FIELD_TENANT_ID],
+            "artifactRef" to artifactRef,
+            // Diagnostic markers — clients branch on them rather
+            // than on field presence, since artifactRef alone is
+            // also present on inline projections (Plan-D §5.2 keeps
+            // the artifactRef field on the inline metadata to act
+            // as a content pointer).
+            "inlineLimitExceeded" to true,
+            "inlineSizeBytes" to firstSize,
+            "inlineLimitBytes" to limits.maxInlineResourceContentBytes,
+        )
+        return gson.toJson(referral) to JSON_MIME
+    }
+
+    private fun utf8Size(text: String): Int = text.toByteArray(Charsets.UTF_8).size
 
     private fun lookup(
         principal: PrincipalContext,
@@ -159,7 +208,13 @@ internal class ResourcesReadHandler(
                 // gets its own distinct message because the kind
                 // segment is observable by the client (Plan-D
                 // §5.1 lists upload-sessions as not-readable).
+                // Inline-cap-exceeded errors (Plan-D §5.2) keep
+                // their specific message because the cap is a
+                // server-side limit already advertised via
+                // capabilities_list — there is no grammar oracle
+                // to leak.
                 message.startsWith("resource kind '") -> message
+                message.startsWith("resource projection exceeds") -> message
                 else -> INVALID_URI_MESSAGE
             }
             is McpResourceError.TenantScopeDenied -> "tenant scope denied for requested resource"
@@ -173,6 +228,9 @@ internal class ResourcesReadHandler(
         const val JSON_MIME: String = "application/json"
 
         const val INVALID_URI_MESSAGE: String = "invalid resource URI"
+
+        private const val FIELD_ARTIFACT_REF: String = "artifactRef"
+        private const val FIELD_TENANT_ID: String = "tenantId"
 
         /**
          * MCP custom server-error code for `resources/read`-not-found
