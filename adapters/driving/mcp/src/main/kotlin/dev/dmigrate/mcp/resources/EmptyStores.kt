@@ -9,14 +9,19 @@ import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.ports.ArtifactListFilter
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.DiffIndexEntry
+import dev.dmigrate.server.ports.DiffListFilter
 import dev.dmigrate.server.ports.DiffStore
+import dev.dmigrate.server.ports.JobListFilter
 import dev.dmigrate.server.ports.JobStore
 import dev.dmigrate.server.ports.ProfileIndexEntry
+import dev.dmigrate.server.ports.ProfileListFilter
 import dev.dmigrate.server.ports.ProfileStore
 import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.ports.SchemaListFilter
 import dev.dmigrate.server.ports.SchemaStore
 import java.time.Instant
 
@@ -38,6 +43,11 @@ internal object EmptyJobStore : JobStore {
         page: PageRequest,
         ownerFilter: PrincipalId?,
     ): PageResult<JobRecord> = PageResult(emptyList(), null)
+    override fun list(
+        tenantId: TenantId,
+        filter: JobListFilter,
+        page: PageRequest,
+    ): PageResult<JobRecord> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
 }
 
@@ -50,6 +60,11 @@ internal object EmptyArtifactStore : ArtifactStore {
         ownerFilter: PrincipalId?,
         kindFilter: ArtifactKind?,
     ): PageResult<ArtifactRecord> = PageResult(emptyList(), null)
+    override fun list(
+        tenantId: TenantId,
+        filter: ArtifactListFilter,
+        page: PageRequest,
+    ): PageResult<ArtifactRecord> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
 }
 
@@ -58,6 +73,11 @@ internal object EmptySchemaStore : SchemaStore {
     override fun findById(tenantId: TenantId, schemaId: String): SchemaIndexEntry? = null
     override fun list(tenantId: TenantId, page: PageRequest): PageResult<SchemaIndexEntry> =
         PageResult(emptyList(), null)
+    override fun list(
+        tenantId: TenantId,
+        filter: SchemaListFilter,
+        page: PageRequest,
+    ): PageResult<SchemaIndexEntry> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
     override fun register(entry: SchemaIndexEntry): dev.dmigrate.server.ports.SchemaRegisterOutcome =
         dev.dmigrate.server.ports.SchemaRegisterOutcome.Registered(entry)
@@ -68,6 +88,11 @@ internal object EmptyProfileStore : ProfileStore {
     override fun findById(tenantId: TenantId, profileId: String): ProfileIndexEntry? = null
     override fun list(tenantId: TenantId, page: PageRequest): PageResult<ProfileIndexEntry> =
         PageResult(emptyList(), null)
+    override fun list(
+        tenantId: TenantId,
+        filter: ProfileListFilter,
+        page: PageRequest,
+    ): PageResult<ProfileIndexEntry> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
 }
 
@@ -76,6 +101,11 @@ internal object EmptyDiffStore : DiffStore {
     override fun findById(tenantId: TenantId, diffId: String): DiffIndexEntry? = null
     override fun list(tenantId: TenantId, page: PageRequest): PageResult<DiffIndexEntry> =
         PageResult(emptyList(), null)
+    override fun list(
+        tenantId: TenantId,
+        filter: DiffListFilter,
+        page: PageRequest,
+    ): PageResult<DiffIndexEntry> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
 }
 

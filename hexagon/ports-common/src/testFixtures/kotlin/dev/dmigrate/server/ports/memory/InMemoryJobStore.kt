@@ -5,6 +5,7 @@ import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.ports.JobListFilter
 import dev.dmigrate.server.ports.JobStore
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -32,6 +33,26 @@ class InMemoryJobStore : JobStore {
             .filter { it.tenantId == tenantId }
             .filter { ownerFilter == null || it.ownerPrincipalId == ownerFilter }
             .sortedBy { it.managedJob.createdAt }
+        return paginate(matching, page)
+    }
+
+    override fun list(
+        tenantId: TenantId,
+        filter: JobListFilter,
+        page: PageRequest,
+    ): PageResult<JobRecord> {
+        val matching = records.values
+            .filter { it.tenantId == tenantId }
+            .filter { filter.ownerFilter == null || it.ownerPrincipalId == filter.ownerFilter }
+            .filter { filter.status == null || it.managedJob.status == filter.status }
+            .filter { filter.operation == null || it.managedJob.operation == filter.operation }
+            .filter { filter.createdAfter == null || !it.managedJob.createdAt.isBefore(filter.createdAfter) }
+            .filter { filter.createdBefore == null || !it.managedJob.createdAt.isAfter(filter.createdBefore) }
+            // §6.2 default sort: createdAt DESC, jobId ASC.
+            .sortedWith(
+                compareByDescending<JobRecord> { it.managedJob.createdAt }
+                    .thenBy { it.managedJob.jobId },
+            )
         return paginate(matching, page)
     }
 

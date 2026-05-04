@@ -23,6 +23,16 @@ data class SchemaIndexEntry(
     val labels: Map<String, String> = emptyMap(),
 )
 
+/**
+ * Phase-D §6.3 + §10.4 filter for `schema_list`. `jobRef` matches
+ * `SchemaIndexEntry.jobRef`; time window inclusive at both ends.
+ */
+data class SchemaListFilter(
+    val jobRef: String? = null,
+    val createdAfter: Instant? = null,
+    val createdBefore: Instant? = null,
+)
+
 interface SchemaStore {
 
     fun save(entry: SchemaIndexEntry): SchemaIndexEntry
@@ -30,6 +40,17 @@ interface SchemaStore {
     fun findById(tenantId: TenantId, schemaId: String): SchemaIndexEntry?
 
     fun list(tenantId: TenantId, page: PageRequest): PageResult<SchemaIndexEntry>
+
+    /**
+     * Phase-D filtered list. Default sort:
+     *   1. `createdAt` DESC
+     *   2. `schemaId` ASC (stable id tiebreaker)
+     */
+    fun list(
+        tenantId: TenantId,
+        filter: SchemaListFilter,
+        page: PageRequest,
+    ): PageResult<SchemaIndexEntry>
 
     fun deleteExpired(now: Instant): Int
 

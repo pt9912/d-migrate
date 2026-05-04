@@ -20,6 +20,20 @@ data class DiffIndexEntry(
     val labels: Map<String, String> = emptyMap(),
 )
 
+/**
+ * Phase-D §6.3 + §10.4 filter for `diff_list`. `sourceRef` /
+ * `targetRef` match the `DiffIndexEntry.sourceRef` /
+ * `DiffIndexEntry.targetRef` exactly so a Phase-D client can find
+ * every diff for a given schema pair; time window inclusive.
+ */
+data class DiffListFilter(
+    val jobRef: String? = null,
+    val sourceRef: String? = null,
+    val targetRef: String? = null,
+    val createdAfter: Instant? = null,
+    val createdBefore: Instant? = null,
+)
+
 interface DiffStore {
 
     fun save(entry: DiffIndexEntry): DiffIndexEntry
@@ -27,6 +41,17 @@ interface DiffStore {
     fun findById(tenantId: TenantId, diffId: String): DiffIndexEntry?
 
     fun list(tenantId: TenantId, page: PageRequest): PageResult<DiffIndexEntry>
+
+    /**
+     * Phase-D filtered list. Default sort:
+     *   1. `createdAt` DESC
+     *   2. `diffId` ASC
+     */
+    fun list(
+        tenantId: TenantId,
+        filter: DiffListFilter,
+        page: PageRequest,
+    ): PageResult<DiffIndexEntry>
 
     fun deleteExpired(now: Instant): Int
 }

@@ -4,6 +4,7 @@ import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.ports.SchemaListFilter
 import dev.dmigrate.server.ports.SchemaRegisterOutcome
 import dev.dmigrate.server.ports.SchemaStore
 import java.time.Instant
@@ -27,6 +28,23 @@ class InMemorySchemaStore : SchemaStore {
         val matching = entries.values
             .filter { it.tenantId == tenantId }
             .sortedBy { it.createdAt }
+        return paginate(matching, page)
+    }
+
+    override fun list(
+        tenantId: TenantId,
+        filter: SchemaListFilter,
+        page: PageRequest,
+    ): PageResult<SchemaIndexEntry> {
+        val matching = entries.values
+            .filter { it.tenantId == tenantId }
+            .filter { filter.jobRef == null || it.jobRef == filter.jobRef }
+            .filter { filter.createdAfter == null || !it.createdAt.isBefore(filter.createdAfter) }
+            .filter { filter.createdBefore == null || !it.createdAt.isAfter(filter.createdBefore) }
+            .sortedWith(
+                compareByDescending<SchemaIndexEntry> { it.createdAt }
+                    .thenBy { it.schemaId },
+            )
         return paginate(matching, page)
     }
 

@@ -24,6 +24,17 @@ data class ProfileIndexEntry(
     val labels: Map<String, String> = emptyMap(),
 )
 
+/**
+ * Phase-D §6.3 + §10.4 filter for `profile_list`. `jobRef` ties
+ * profiles to a producing job when the profile was emitted by one;
+ * time window inclusive at both ends.
+ */
+data class ProfileListFilter(
+    val jobRef: String? = null,
+    val createdAfter: Instant? = null,
+    val createdBefore: Instant? = null,
+)
+
 interface ProfileStore {
 
     fun save(entry: ProfileIndexEntry): ProfileIndexEntry
@@ -31,6 +42,17 @@ interface ProfileStore {
     fun findById(tenantId: TenantId, profileId: String): ProfileIndexEntry?
 
     fun list(tenantId: TenantId, page: PageRequest): PageResult<ProfileIndexEntry>
+
+    /**
+     * Phase-D filtered list. Default sort:
+     *   1. `createdAt` DESC
+     *   2. `profileId` ASC
+     */
+    fun list(
+        tenantId: TenantId,
+        filter: ProfileListFilter,
+        page: PageRequest,
+    ): PageResult<ProfileIndexEntry>
 
     fun deleteExpired(now: Instant): Int
 }

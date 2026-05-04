@@ -77,6 +77,12 @@ private class CountingJobStore(private val delegate: JobStore) : JobStore {
         ownerFilter: PrincipalId?,
     ): PageResult<JobRecord> = delegate.list(tenantId, page, ownerFilter)
 
+    override fun list(
+        tenantId: TenantId,
+        filter: dev.dmigrate.server.ports.JobListFilter,
+        page: PageRequest,
+    ): PageResult<JobRecord> = delegate.list(tenantId, filter, page)
+
     override fun deleteExpired(now: Instant): Int = delegate.deleteExpired(now)
 }
 

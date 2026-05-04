@@ -267,6 +267,12 @@ class ResourcesListHandlerTest : FunSpec({
                 val token = if (calls == 1) "page-2" else null
                 return dev.dmigrate.server.core.pagination.PageResult(emptyList(), token)
             }
+            override fun list(
+                tenantId: dev.dmigrate.server.core.principal.TenantId,
+                filter: dev.dmigrate.server.ports.JobListFilter,
+                page: dev.dmigrate.server.core.pagination.PageRequest,
+            ): dev.dmigrate.server.core.pagination.PageResult<dev.dmigrate.server.core.job.JobRecord> =
+                dev.dmigrate.server.core.pagination.PageResult(emptyList(), null)
             override fun deleteExpired(now: java.time.Instant) = 0
         }
         val stores = ResourceStores.empty().copy(jobStore = noisyJobStore)
