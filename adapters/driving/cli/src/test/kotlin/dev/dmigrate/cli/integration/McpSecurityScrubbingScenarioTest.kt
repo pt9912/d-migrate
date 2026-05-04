@@ -93,6 +93,67 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
         }
     }
 
+    test("resources/read on an artifact scrubs planted secrets from filename AND contentType") {
+        // AP 6.24 final-review: contentType is operator-supplied via
+        // `artifact_upload_init` headers — same scrubbing surface as
+        // filename. A planted Bearer/JDBC/tok_ value in contentType
+        // must not leak through resources/read.
+        withFreshTransports { s, h ->
+            for (harness in listOf(s, h)) {
+                val tenant = harness.principal.effectiveTenantId.value
+                val artifactId = "art-e8b-ct-${harness.name}"
+                stageArtifactWithSecretsInMetadata(harness, artifactId)
+
+                val response = harness.resourcesReadRaw(
+                    "dmigrate://tenants/$tenant/artifacts/$artifactId",
+                )
+                val resultEl = response.result
+                    ?: error("${harness.name}: resources/read returned an error: ${response.error}")
+                val text = resultEl.asJsonObject.getAsJsonArray("contents")
+                    .get(0).asJsonObject.get("text").asString
+                assertNoSecretLeaks(harness.name, "resources/read[artifact]", text)
+            }
+        }
+    }
+
+    test("server log output scrubs planted Bearer/tok_ values from non-allowlisted progress keys") {
+        // AP 6.24 final-review: JobStatusGetHandler.projectProgress
+        // logs dropped non-allowlisted numeric-value keys via SLF4J
+        // (which Logback routes to stderr). User-supplied keys MUST
+        // be scrubbed BEFORE the log call so a Bearer-/tok_-shaped
+        // key never lands in stderr verbatim. Capture the SLF4J
+        // event stream during the dispatch and scan the rendered
+        // lines for the deterministic fixture fragments.
+        withFreshTransports { s, h ->
+            for (harness in listOf(s, h)) {
+                val jobId = "job-e8b-log-${harness.name}"
+                stageJobWithSecrets(harness, jobId)
+
+                val capture = LogbackCapture.during {
+                    harness.toolsCall(
+                        "job_status_get",
+                        JsonObject().apply { addProperty("jobId", jobId) },
+                    )
+                }
+                capture.value.isError shouldBe false
+
+                val warningLogs = capture.events
+                    .filter { it.loggerName.endsWith("JobStatusGetHandler") }
+                    .map { "[${it.level}] ${it.formattedMessage}" }
+
+                withClue("${harness.name}: at least one log entry from JobStatusGetHandler must capture (sanity)") {
+                    warningLogs.isNotEmpty() shouldBe true
+                }
+                val joined = warningLogs.joinToString("|")
+                PLANTED_SECRET_FRAGMENTS.forEach { secret ->
+                    withClue("${harness.name}: log output MUST NOT leak planted secret '$secret'; lines=$joined") {
+                        joined.contains(secret) shouldBe false
+                    }
+                }
+            }
+        }
+    }
+
     test("resources/read on a job with planted secrets scrubs them in the projected JSON content") {
         withFreshTransports { s, h ->
             for (harness in listOf(s, h)) {
@@ -142,6 +203,29 @@ private val PLANTED_SECRET_FRAGMENTS: List<String> = listOf(
     "e8buser:e8bcanarypwd",
 )
 
+private fun stageArtifactWithSecretsInMetadata(harness: McpClientHarness, artifactId: String) {
+    val tenantId = harness.principal.effectiveTenantId
+    val now = Instant.now()
+    val record = dev.dmigrate.server.core.artifact.ArtifactRecord(
+        managedArtifact = dev.dmigrate.server.core.artifact.ManagedArtifact(
+            artifactId = artifactId,
+            // Both fields operator-supplied — both must be scrubbed.
+            filename = "leaky-${BEARER_CANARY}.bin",
+            contentType = "application/x-leak; charset=$BEARER_CANARY",
+            sizeBytes = 0,
+            sha256 = "0".repeat(64),
+            createdAt = now,
+            expiresAt = now.plusSeconds(3600),
+        ),
+        kind = dev.dmigrate.server.core.artifact.ArtifactKind.OTHER,
+        tenantId = tenantId,
+        ownerPrincipalId = harness.principal.principalId,
+        visibility = JobVisibility.TENANT,
+        resourceUri = ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, artifactId),
+    )
+    harness.wiring.artifactStore.save(record)
+}
+
 private fun stageJobWithSecrets(harness: McpClientHarness, jobId: String) {
     val tenantId = harness.principal.effectiveTenantId
     val now = Instant.now()
@@ -166,7 +250,17 @@ private fun stageJobWithSecrets(harness: McpClientHarness, jobId: String) {
             ),
             progress = JobProgress(
                 phase = "polling-with-leak: $BEARER_CANARY",
-                numericValues = mapOf("attempts" to 3L),
+                // AP 6.24 final-review: keys must also be a no-leak
+                // surface — a planted Bearer-shaped key would slip
+                // into wire output if either projector or handler
+                // copied the map verbatim. JobStatusGetHandler drops
+                // non-allowlisted keys; ResourceContentProjector
+                // applies the same filter; both surfaces must hold.
+                numericValues = mapOf(
+                    "attempts" to 3L,
+                    BEARER_CANARY to 1L,
+                    APPROVAL_CANARY to 2L,
+                ),
             ),
         ),
         tenantId = tenantId,

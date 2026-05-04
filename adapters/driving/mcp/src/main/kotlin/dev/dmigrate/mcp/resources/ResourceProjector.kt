@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.resources
 
 import dev.dmigrate.mcp.protocol.Resource
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
+import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.connection.ConnectionReference
@@ -122,7 +123,18 @@ internal object ResourceContentProjector {
             mapOf("code" to scrub(it.code), "message" to scrub(it.message), "exitCode" to it.exitCode)
         },
         "progress" to job.managedJob.progress?.let {
-            mapOf("phase" to scrub(it.phase), "numericValues" to it.numericValues)
+            // Mirror JobStatusGetHandler.projectProgress: numericValues
+            // keys are allowlist-filtered so a planted Bearer-/JDBC-/
+            // tok_-shaped key cannot ride into the resources/read body
+            // via an unexpected key. Phase value still goes through
+            // SecretScrubber so a planted secret in `phase` itself
+            // (which IS user-supplied free text) is also redacted.
+            mapOf(
+                "phase" to scrub(it.phase),
+                "numericValues" to it.numericValues.filterKeys { k ->
+                    k in PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
+                },
+            )
         },
     )
 
@@ -132,7 +144,12 @@ internal object ResourceContentProjector {
         "artifactId" to artifact.managedArtifact.artifactId,
         "filename" to scrub(artifact.managedArtifact.filename),
         "kind" to artifact.kind.name,
-        "contentType" to artifact.managedArtifact.contentType,
+        // contentType is operator-supplied via the multipart header
+        // on `artifact_upload_init` — same scrubbing contract as
+        // filename. Asymmetric scrubbing here would let a planted
+        // Bearer/JDBC value slip through the resources/read path
+        // (AP 6.24 final-review finding).
+        "contentType" to scrub(artifact.managedArtifact.contentType),
         "sizeBytes" to artifact.managedArtifact.sizeBytes,
         "sha256" to artifact.managedArtifact.sha256,
         "visibility" to artifact.visibility.name,

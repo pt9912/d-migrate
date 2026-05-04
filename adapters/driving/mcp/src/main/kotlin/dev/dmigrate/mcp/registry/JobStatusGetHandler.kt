@@ -177,9 +177,14 @@ internal class JobStatusGetHandler(
         val allowed = PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
         val dropped = progress.numericValues.keys.filterNot { it in allowed }
         if (dropped.isNotEmpty()) {
+            // AP 6.24 final-review: scrub the dropped keys before
+            // logging — they are user-supplied and a Bearer-/JDBC-/
+            // tok_-shaped key would otherwise land in stderr/log
+            // output verbatim, bypassing the on-wire scrubbing
+            // boundary.
             LOG.warn(
                 "JobStatusGet dropped non-allowlisted progress key(s): {}",
-                dropped.joinToString(","),
+                dropped.joinToString(",") { SecretScrubber.scrub(it) },
             )
         }
         return mapOf(
