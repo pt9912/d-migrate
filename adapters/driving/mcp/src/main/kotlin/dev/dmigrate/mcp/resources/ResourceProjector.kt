@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.resources
 
 import dev.dmigrate.mcp.protocol.Resource
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.job.JobRecord
@@ -108,17 +109,20 @@ internal object ResourceContentProjector {
         "createdAt" to job.managedJob.createdAt.toString(),
         "updatedAt" to job.managedJob.updatedAt.toString(),
         "expiresAt" to job.managedJob.expiresAt.toString(),
-        "createdBy" to job.managedJob.createdBy,
+        "createdBy" to scrub(job.managedJob.createdBy),
         "artifacts" to job.managedJob.artifacts,
         // Operators reading a FAILED or in-flight job through
         // resources/read need the failure cause and the latest
         // progress phase — same fields tools/job_status_get exposes,
-        // so the two surfaces stay coherent.
+        // so the two surfaces stay coherent. SecretScrubber matches
+        // the JobStatusGetHandler scrubbing surface so a planted
+        // Bearer/JDBC-URL/tok_ value never leaks via either path
+        // (AP 6.24 E8(B)).
         "error" to job.managedJob.error?.let {
-            mapOf("code" to it.code, "message" to it.message, "exitCode" to it.exitCode)
+            mapOf("code" to scrub(it.code), "message" to scrub(it.message), "exitCode" to it.exitCode)
         },
         "progress" to job.managedJob.progress?.let {
-            mapOf("phase" to it.phase, "numericValues" to it.numericValues)
+            mapOf("phase" to scrub(it.phase), "numericValues" to it.numericValues)
         },
     )
 
@@ -126,7 +130,7 @@ internal object ResourceContentProjector {
         "uri" to artifact.resourceUri.render(),
         "tenantId" to artifact.tenantId.value,
         "artifactId" to artifact.managedArtifact.artifactId,
-        "filename" to artifact.managedArtifact.filename,
+        "filename" to scrub(artifact.managedArtifact.filename),
         "kind" to artifact.kind.name,
         "contentType" to artifact.managedArtifact.contentType,
         "sizeBytes" to artifact.managedArtifact.sizeBytes,
@@ -141,38 +145,38 @@ internal object ResourceContentProjector {
         "uri" to schema.resourceUri.render(),
         "tenantId" to schema.tenantId.value,
         "schemaId" to schema.schemaId,
-        "displayName" to schema.displayName,
+        "displayName" to scrub(schema.displayName),
         "artifactRef" to schema.artifactRef,
         "createdAt" to schema.createdAt.toString(),
         "expiresAt" to schema.expiresAt.toString(),
         "jobRef" to schema.jobRef,
-        "labels" to schema.labels,
+        "labels" to scrubLabels(schema.labels),
     )
 
     fun projectContent(profile: ProfileIndexEntry): Map<String, Any?> = mapOf(
         "uri" to profile.resourceUri.render(),
         "tenantId" to profile.tenantId.value,
         "profileId" to profile.profileId,
-        "displayName" to profile.displayName,
+        "displayName" to scrub(profile.displayName),
         "artifactRef" to profile.artifactRef,
         "createdAt" to profile.createdAt.toString(),
         "expiresAt" to profile.expiresAt.toString(),
         "jobRef" to profile.jobRef,
-        "labels" to profile.labels,
+        "labels" to scrubLabels(profile.labels),
     )
 
     fun projectContent(diff: DiffIndexEntry): Map<String, Any?> = mapOf(
         "uri" to diff.resourceUri.render(),
         "tenantId" to diff.tenantId.value,
         "diffId" to diff.diffId,
-        "displayName" to diff.displayName,
+        "displayName" to scrub(diff.displayName),
         "artifactRef" to diff.artifactRef,
         "sourceRef" to diff.sourceRef,
         "targetRef" to diff.targetRef,
         "createdAt" to diff.createdAt.toString(),
         "expiresAt" to diff.expiresAt.toString(),
         "jobRef" to diff.jobRef,
-        "labels" to diff.labels,
+        "labels" to scrubLabels(diff.labels),
     )
 
     /**
@@ -186,10 +190,15 @@ internal object ResourceContentProjector {
         "uri" to connection.resourceUri.render(),
         "tenantId" to connection.tenantId.value,
         "connectionId" to connection.connectionId,
-        "displayName" to connection.displayName,
+        "displayName" to scrub(connection.displayName),
         "dialectId" to connection.dialectId,
         "sensitivity" to connection.sensitivity.name,
     )
+
+    private fun scrub(text: String): String = SecretScrubber.scrub(text)
+
+    private fun scrubLabels(labels: Map<String, String>): Map<String, String> =
+        labels.mapValues { (_, v) -> SecretScrubber.scrub(v) }
 }
 
 /**

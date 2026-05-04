@@ -1,0 +1,245 @@
+package dev.dmigrate.cli.integration
+
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import dev.dmigrate.server.core.audit.AuditEvent
+import dev.dmigrate.server.core.job.JobError
+import dev.dmigrate.server.core.job.JobProgress
+import dev.dmigrate.server.core.job.JobRecord
+import dev.dmigrate.server.core.job.JobStatus
+import dev.dmigrate.server.core.job.JobVisibility
+import dev.dmigrate.server.core.job.ManagedJob
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import io.kotest.assertions.withClue
+import io.kotest.core.NamedTag
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import java.time.Instant
+import kotlin.io.path.deleteRecursively
+
+private val IntegrationTag = NamedTag("integration")
+
+/**
+ * AP 6.24 E8(B): security-scrubbing canary per
+ * `ImpPlan-0.9.6-C.md` §6.24 Akzeptanz Z. 2086-2091.
+ *
+ * Plants three deterministic fixture secrets — a Bearer token, a
+ * JDBC URL with embedded credentials, and an approval-token-shaped
+ * string — into job state the Phase-C handlers project back onto
+ * the wire (`progress.phase`, `error.code`, `error.message`).
+ * Drives `job_status_get` and `resources/read` end-to-end on stdio
+ * AND http and asserts the planted raw values NEVER appear in:
+ *
+ * - the JSON-RPC `result` payload of either tool (the wire-visible
+ *   `content[0].text`)
+ * - any `AuditEvent` recorded by the per-transport audit sink
+ *   (resourceRefs / errorCode / fingerprint surface)
+ *
+ * Pattern coverage matches `SecretScrubber.scrub(...)`:
+ * - `Bearer <token>` → `Bearer ***`
+ * - `tok_<base62>` → `***`
+ * - JDBC `user:pwd@host` and `?password=…` → `***`
+ *
+ * If a future handler bypasses [SecretScrubber] on a covered field,
+ * this test surfaces it as a wire leak — no heuristic regex
+ * involved, only the deterministic fixture rawvalues are scanned.
+ *
+ * Out of scope for this commit (deferred to follow-up):
+ * - stderr scrubbing (the harness does not capture server stderr)
+ * - HTTP error-body scrubbing (the harness throws on non-2xx so
+ *   error bodies are not currently inspected)
+ * - artifact-content scrubbing (large artefact bodies have their
+ *   own scrubbing pipeline and need their own scenario)
+ *
+ * The complementary "what's NOT scrubbed by design" boundary
+ * (generic passwords, local paths, arbitrary canaries) is covered
+ * by `SchemaSecretGuard` at schema-construction time and not
+ * exercised here.
+ */
+@OptIn(kotlin.io.path.ExperimentalPathApi::class)
+class McpSecurityScrubbingScenarioTest : FunSpec({
+
+    tags(IntegrationTag)
+
+    test("job_status_get scrubs planted Bearer / JDBC URL / tok_ values on both transports") {
+        withFreshTransports { s, h ->
+            for (harness in listOf(s, h)) {
+                val tenant = harness.principal.effectiveTenantId.value
+                val jobId = "job-e8b-${harness.name}"
+                stageJobWithSecrets(harness, jobId)
+
+                val payload = parsePayload(
+                    harness.toolsCall(
+                        "job_status_get",
+                        JsonObject().apply { addProperty("jobId", jobId) },
+                    ).text(),
+                )
+
+                val raw = payload.toString()
+                assertNoSecretLeaks(harness.name, "job_status_get", raw)
+                assertAuditSinkNoLeaks(harness, harness.name, "job_status_get")
+
+                // Sanity: the projection MUST still surface the
+                // structural fields — proving the scrubber redacted
+                // VALUES, not stripped the whole projection.
+                payload.get("status").asString shouldBe "FAILED"
+                payload.get("error").asJsonObject.get("code").asString.let {
+                    withClue("$tenant/${harness.name} error.code must remain present, scrubbed") {
+                        it shouldBe "DRIVER" // pure-letter code untouched by all three regexes
+                    }
+                }
+            }
+        }
+    }
+
+    test("resources/read on a job with planted secrets scrubs them in the projected JSON content") {
+        withFreshTransports { s, h ->
+            for (harness in listOf(s, h)) {
+                val tenant = harness.principal.effectiveTenantId.value
+                val jobId = "job-e8b-res-${harness.name}"
+                stageJobWithSecrets(harness, jobId)
+
+                // resources/read goes through ResourceContentProjector,
+                // a different code path than tools/call → JobStatusGetHandler.
+                // Both paths MUST scrub identically — pin that here.
+                val response = harness.resourcesReadRaw(
+                    "dmigrate://tenants/$tenant/jobs/$jobId",
+                )
+                val resultEl = response.result
+                    ?: error("${harness.name}: resources/read returned an error: ${response.error}")
+                val contents = resultEl.asJsonObject.getAsJsonArray("contents")
+                contents.size() shouldBe 1
+                val text = contents.get(0).asJsonObject.get("text").asString
+                assertNoSecretLeaks(harness.name, "resources/read", text)
+            }
+        }
+    }
+})
+
+// --- E8(B) fixtures + helpers -----------------------------------------------
+
+/** Bearer-token raw value planted into job state. */
+private const val BEARER_CANARY: String = "Bearer e8b-canary-bearer-abcdef0123456789"
+
+/** Approval-token raw value planted into job state. */
+private const val APPROVAL_CANARY: String = "tok_e8bcanaryapproval0123"
+
+/** JDBC URL raw value with embedded credentials planted into job state. */
+private const val JDBC_CANARY: String = "jdbc:postgresql://e8buser:e8bcanarypwd@db.example/internal"
+
+/**
+ * Substring fragments scanned for in wire output. The full raw
+ * values would already trip the assertion; we additionally scan for
+ * the SECRET-bearing portion alone (`abcdef0123456789` for the
+ * Bearer, the user:password segment for the JDBC URL) so a partial
+ * leak (e.g. only the password gets through) still fails.
+ */
+private val PLANTED_SECRET_FRAGMENTS: List<String> = listOf(
+    "e8b-canary-bearer-abcdef0123456789",
+    "e8bcanaryapproval",
+    "e8bcanarypwd",
+    "e8buser:e8bcanarypwd",
+)
+
+private fun stageJobWithSecrets(harness: McpClientHarness, jobId: String) {
+    val tenantId = harness.principal.effectiveTenantId
+    val now = Instant.now()
+    val record = JobRecord(
+        managedJob = ManagedJob(
+            jobId = jobId,
+            operation = "schema_validate",
+            status = JobStatus.FAILED,
+            createdAt = now,
+            updatedAt = now,
+            expiresAt = now.plusSeconds(3600),
+            createdBy = harness.principal.principalId.value,
+            artifacts = emptyList(),
+            // Three planted secrets in the fields handlers project to
+            // the wire. JobStatusGetHandler uses SecretScrubber on
+            // each of these; the test asserts the wire never leaks
+            // the raw values regardless of handler path.
+            error = JobError(
+                code = "DRIVER",
+                message = "connection failed: $BEARER_CANARY (auth header) " +
+                    "via $JDBC_CANARY ; previous approval $APPROVAL_CANARY",
+            ),
+            progress = JobProgress(
+                phase = "polling-with-leak: $BEARER_CANARY",
+                numericValues = mapOf("attempts" to 3L),
+            ),
+        ),
+        tenantId = tenantId,
+        ownerPrincipalId = harness.principal.principalId,
+        visibility = JobVisibility.TENANT,
+        resourceUri = ServerResourceUri(tenantId, ResourceKind.JOBS, jobId),
+    )
+    harness.wiring.jobStore.save(record)
+}
+
+private fun assertNoSecretLeaks(transportName: String, surface: String, text: String) {
+    PLANTED_SECRET_FRAGMENTS.forEach { secret ->
+        withClue("$transportName/$surface MUST NOT leak planted secret '$secret'; payload was: $text") {
+            text.contains(secret) shouldBe false
+        }
+    }
+}
+
+private fun assertAuditSinkNoLeaks(harness: McpClientHarness, transportName: String, surface: String) {
+    // AuditEvent doesn't carry raw payload — only metadata + IDs +
+    // resourceRefs. Scan the rendered string of every recorded
+    // event for the planted secret fragments so a future change
+    // that lifts payload snippets into resourceRefs / errorCode
+    // / fingerprint surfaces them.
+    val sink = when (harness) {
+        is StdioHarness -> harness.auditSink
+        is HttpHarness -> harness.auditSink
+        else -> error("unsupported harness type: ${harness::class}")
+    }
+    val rendered = sink.recorded().joinToString("|") { it.renderForScan() }
+    PLANTED_SECRET_FRAGMENTS.forEach { secret ->
+        withClue("$transportName/$surface AuditEvent surface MUST NOT leak planted secret '$secret'") {
+            rendered.contains(secret) shouldBe false
+        }
+    }
+}
+
+private fun AuditEvent.renderForScan(): String =
+    listOf(
+        "requestId=$requestId",
+        "outcome=$outcome",
+        "toolName=$toolName",
+        "tenantId=$tenantId",
+        "principalId=$principalId",
+        "errorCode=$errorCode",
+        "fingerprint=$payloadFingerprint",
+        "resourceRefs=${resourceRefs.joinToString(",")}",
+    ).joinToString("|")
+
+private fun parsePayload(text: String): JsonObject =
+    JsonParser.parseString(text).asJsonObject
+
+private fun dev.dmigrate.mcp.protocol.ToolsCallResult.text(): String =
+    content.firstOrNull()?.text ?: error("tools/call response carried no text content")
+
+@OptIn(kotlin.io.path.ExperimentalPathApi::class)
+private fun withFreshTransports(
+    block: (StdioHarness, HttpHarness) -> Unit,
+) {
+    val stdioDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
+    val httpDir = IntegrationFixtures.freshStateDir("dmigrate-it-http-")
+    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
+    val http = HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
+    try {
+        stdio.initialize()
+        stdio.initializedNotification()
+        http.initialize()
+        http.initializedNotification()
+        block(stdio, http)
+    } finally {
+        try { stdio.close() } catch (_: Throwable) {}
+        try { http.close() } catch (_: Throwable) {}
+        try { stdioDir.deleteRecursively() } catch (_: Throwable) {}
+        try { httpDir.deleteRecursively() } catch (_: Throwable) {}
+    }
+}
