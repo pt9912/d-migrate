@@ -84,6 +84,12 @@ dependencies {
     // The mcp module uses Gson internally (transitive via lsp4j) but does
     // not re-export it; the CLI test source-set declares it explicitly.
     testImplementation("com.google.code.gson:gson:2.14.0")
+
+    // AP 6.24 E8: validate Phase-C tool runtime outputs against the
+    // PhaseBToolSchemas output schemas (JSON Schema 2020-12). Test-
+    // scope only — the production server publishes the schemas via
+    // tools/list but does not validate dispatch responses against them.
+    testImplementation("com.networknt:json-schema-validator:1.5.4")
 }
 
 tasks.named<ProcessResources>("processResources") {
