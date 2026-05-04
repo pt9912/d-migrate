@@ -127,6 +127,50 @@ class PhaseCWiringTest : FunSpec({
         handler.payloadFactory shouldBe customFactory
     }
 
+    test("Plan-D §10.3 review: cursorKeyring default is the deterministic dev keyring (NOT a fresh random)") {
+        // A random per-process default makes integration tests
+        // and dev workflows non-reproducible — a cursor minted
+        // by one PhaseCWiring instance can't be verified by
+        // another. Pin that the default is the explicit
+        // dev keyring so the value is observable and stable.
+        val a = PhaseCWiring(
+            uploadSessionStore = InMemoryUploadSessionStore(),
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            jobStore = InMemoryJobStore(),
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = FIXED_CLOCK,
+        )
+        val b = PhaseCWiring(
+            uploadSessionStore = InMemoryUploadSessionStore(),
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            jobStore = InMemoryJobStore(),
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = FIXED_CLOCK,
+        )
+        a.cursorKeyring shouldBe b.cursorKeyring
+        a.cursorKeyring shouldBe PhaseCWiring.DEV_DEFAULT
+        a.cursorKeyring.signing.kid shouldBe "dev-default"
+    }
+
+    test("Plan-D §10.3: randomCursorKeyring() opt-in produces unique key material per call") {
+        // Single-instance production deployments without a
+        // wired keyring file use this factory explicitly. Pin
+        // that two calls produce different `kid`s + secrets
+        // — proves the helper is actually random and not the
+        // shared dev default.
+        val a = PhaseCWiring.randomCursorKeyring()
+        val b = PhaseCWiring.randomCursorKeyring()
+        a.signing.kid shouldNotBe b.signing.kid
+    }
+
     test("AP 6.14: a custom finalizer in the wiring is honoured by the artifact_upload handler") {
         // Defensive: the wiring exposes `finalizer` as a seam so
         // tests / future deployments can swap in a different

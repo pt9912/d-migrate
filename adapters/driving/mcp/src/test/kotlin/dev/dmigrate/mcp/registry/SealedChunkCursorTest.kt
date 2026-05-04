@@ -67,4 +67,26 @@ class SealedChunkCursorTest : FunSpec({
             sut.unseal("not-a-valid-cursor", tenantA, "art-1", 32_768)
         }
     }
+
+    test("Plan-D §10.9 review: chunk-cursor default TTL is 5 minutes (NOT the 15-minute generic default)") {
+        // Tight chunk walks finish well within 5 minutes; the
+        // generic 15-minute TTL would needlessly extend the
+        // replay window for stale cursors.
+        SealedChunkCursor.DEFAULT_CHUNK_TTL shouldBe java.time.Duration.ofMinutes(5)
+
+        // End-to-end: a cursor minted at t=0 must be rejected at
+        // t=6min when the codec uses the default TTL — pin the
+        // narrowing of the window vs the codec's 15-min ceiling.
+        val issuedAt = Instant.parse("2026-05-04T10:00:00Z")
+        val signCodec = McpCursorCodec(keyring(), clock = fixedClock(issuedAt))
+        val signSut = SealedChunkCursor(signCodec, clock = fixedClock(issuedAt))
+        val sealed = signSut.seal(tenantA, "art-1", 32_768, nextChunkIndex = 1)
+
+        val verifyAt = issuedAt.plus(java.time.Duration.ofMinutes(6))
+        val verifyCodec = McpCursorCodec(keyring(), clock = fixedClock(verifyAt))
+        val verifySut = SealedChunkCursor(verifyCodec, clock = fixedClock(verifyAt))
+        shouldThrow<ValidationErrorException> {
+            verifySut.unseal(sealed, tenantA, "art-1", 32_768)
+        }
+    }
 })

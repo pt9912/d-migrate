@@ -91,20 +91,49 @@ internal class ResourcesReadHandler(
             is ResourceClassification.Resolved -> classification.uri
             is ResourceClassification.Failed -> throw classification.error.toResponseError()
         }
-        if (uri is ArtifactChunkResourceUri) {
-            return ReadResourceResult(contents = listOf(readArtifactChunk(principal, uri)))
-        }
-        val payload = lookup(principal, uri) ?: throw McpResourceError.ResourceNotFound.toResponseError()
-        val (text, mime) = serialiseWithInlineCap(uri, payload)
-        return ReadResourceResult(
-            contents = listOf(
-                ResourceContents(
-                    uri = uri.render(),
-                    mimeType = mime,
-                    text = text,
+        val result = if (uri is ArtifactChunkResourceUri) {
+            ReadResourceResult(contents = listOf(readArtifactChunk(principal, uri)))
+        } else {
+            val payload = lookup(principal, uri)
+                ?: throw McpResourceError.ResourceNotFound.toResponseError()
+            val (text, mime) = serialiseWithInlineCap(uri, payload)
+            ReadResourceResult(
+                contents = listOf(
+                    ResourceContents(
+                        uri = uri.render(),
+                        mimeType = mime,
+                        text = text,
+                    ),
                 ),
-            ),
-        )
+            )
+        }
+        // Plan-D §5.2 review: the per-content inline cap
+        // (maxInlineResourceContentBytes) is necessary but not
+        // sufficient — the full envelope (multi-content + the
+        // outer ReadResourceResult shell) MUST also fit under
+        // maxResourceReadResponseBytes. A future multi-content
+        // resolver could otherwise stack several "inline-OK"
+        // slices into an oversized response.
+        enforceResponseCap(result)
+        return result
+    }
+
+    /**
+     * Plan-D §5.2 hard ceiling on the entire `resources/read`
+     * response envelope. Serialises the [ReadResourceResult]
+     * via Gson and rejects bodies above
+     * [McpLimitsConfig.maxResourceReadResponseBytes] with the
+     * same `VALIDATION_ERROR` family the inline-cap path uses.
+     */
+    private fun enforceResponseCap(result: ReadResourceResult) {
+        val rendered = gson.toJson(result)
+        val size = utf8Size(rendered)
+        if (size > limits.maxResourceReadResponseBytes) {
+            throw McpResourceError.ValidationError(
+                "resource read response exceeds maxResourceReadResponseBytes " +
+                    "($size > ${limits.maxResourceReadResponseBytes})",
+            ).toResponseError()
+        }
     }
 
     /**
@@ -287,6 +316,10 @@ internal class ResourcesReadHandler(
                 // to leak.
                 message.startsWith("resource kind '") -> message
                 message.startsWith("resource projection exceeds") -> message
+                message.startsWith("resource read response exceeds") -> message
+                message.startsWith("resource ") && message.contains("exceeds maxInlineResourceContentBytes") ->
+                    message
+                message.startsWith("artifact chunk id ") -> message
                 else -> INVALID_URI_MESSAGE
             }
             is McpResourceError.TenantScopeDenied -> "tenant scope denied for requested resource"

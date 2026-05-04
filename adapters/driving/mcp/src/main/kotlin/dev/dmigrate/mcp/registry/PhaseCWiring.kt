@@ -114,25 +114,56 @@ data class PhaseCWiring(
     val connectionStore: ConnectionReferenceStore = EmptyConnectionStore,
 
     /**
-     * AP D8: HMAC keyring backing every Phase-D MCP cursor
-     * (`resources/list`, `*_list` discovery tools, chunk
-     * follow-ups). The default mints a fresh random secret per
-     * server start — fine for single-instance deployments where
-     * cursors are short-lived (15 min TTL) and clients re-paginate
-     * cleanly when the server restarts. Multi-instance / blue-green
-     * deployments MUST override with a deterministic keyring read
-     * from a shared secret store; otherwise a cursor minted by
-     * instance A fails verification on instance B.
+     * AP D8 + Plan-D §10.3 review: HMAC keyring backing every
+     * Phase-D MCP cursor (`resources/list`, `*_list` discovery
+     * tools, chunk follow-ups).
+     *
+     * Default is the **deterministic dev keyring** ([DEV_DEFAULT])
+     * so tests and single-process dev runs stay reproducible —
+     * a cursor minted in one test method round-trips into the
+     * next without surprise verification failures, and Phase-D
+     * integration suites do not depend on random key material.
+     *
+     * Production / multi-instance / blue-green deployments MUST
+     * override with [randomCursorKeyring] (single-instance,
+     * fresh-random-per-start) or a deterministic keyring loaded
+     * from a shared secret store. The CLI's
+     * `--cursor-keyring-file` flag wires the production keyring;
+     * production wiring without an override is a misconfig.
      */
-    val cursorKeyring: CursorKeyring = randomDefaultCursorKeyring(),
-)
+    val cursorKeyring: CursorKeyring = DEV_DEFAULT,
+) {
+    companion object {
 
-private fun randomDefaultCursorKeyring(): CursorKeyring {
-    val secret = ByteArray(32).also { SecureRandom().nextBytes(it) }
-    return CursorKeyring(
-        signing = CursorKey(
-            kid = "auto-${UUID.randomUUID()}",
-            secret = secret,
-        ),
-    )
+        /**
+         * Plan-D §10.3 dev/test keyring: a fixed `kid`/secret pair
+         * so dev workflows + tests get reproducible cursor wire
+         * shapes. Bytes are an obvious "do-not-use-in-production"
+         * marker (`0x00..0x1F`) — production wiring MUST replace
+         * this via [randomCursorKeyring] or a config-loaded keyring.
+         */
+        val DEV_DEFAULT: CursorKeyring = CursorKeyring(
+            signing = CursorKey(
+                kid = "dev-default",
+                secret = ByteArray(32) { it.toByte() },
+            ),
+        )
+
+        /**
+         * Generates a random per-process keyring for single-instance
+         * deployments that don't carry an external keyring file.
+         * Cursors stay valid for the duration of one server process;
+         * a restart invalidates outstanding cursors (clients
+         * re-paginate). NOT suitable for multi-instance deployments.
+         */
+        fun randomCursorKeyring(): CursorKeyring {
+            val secret = ByteArray(32).also { SecureRandom().nextBytes(it) }
+            return CursorKeyring(
+                signing = CursorKey(
+                    kid = "auto-${UUID.randomUUID()}",
+                    secret = secret,
+                ),
+            )
+        }
+    }
 }

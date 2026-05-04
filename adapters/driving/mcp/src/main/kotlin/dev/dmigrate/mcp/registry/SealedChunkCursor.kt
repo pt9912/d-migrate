@@ -36,7 +36,7 @@ import java.time.Instant
  */
 internal class SealedChunkCursor(
     private val codec: McpCursorCodec,
-    private val ttl: Duration = McpCursorCodec.DEFAULT_MAX_TTL,
+    private val ttl: Duration = DEFAULT_CHUNK_TTL,
     private val clock: Clock = Clock.systemUTC(),
 ) {
 
@@ -123,5 +123,15 @@ internal class SealedChunkCursor(
          * cursor reuse across artefacts.
          */
         const val FAMILY: String = "artifact-chunks"
+
+        /**
+         * Plan-D §10.9 review: chunk-cursor TTL is shorter than
+         * the generic 15-minute `McpCursorCodec.DEFAULT_MAX_TTL`.
+         * Five minutes matches the chunked-read interaction
+         * pattern — clients walk an artefact serially and the
+         * window closes long before retention TTLs become
+         * relevant.
+         */
+        val DEFAULT_CHUNK_TTL: Duration = Duration.ofMinutes(5)
     }
 }

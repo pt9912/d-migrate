@@ -792,4 +792,37 @@ class McpServiceImplResourcesReadTest : FunSpec({
         ((jsonRpcErrorOf(absent).responseError.data) as Map<String, Any?>)["dmigrateCode"] shouldBe
             "RESOURCE_NOT_FOUND"
     }
+
+    test("Plan-D §5.2 review: maxResourceReadResponseBytes is enforced on the full envelope") {
+        // The inline-byte cap (sub-commit 3) protects the per-content
+        // body, but a multi-content resolver could still stack
+        // "inline-OK" slices into an oversized envelope. Pin the
+        // outer cap with a fresh limits config tight enough that even
+        // a small projection trips it.
+        val tinyLimits = dev.dmigrate.mcp.server.McpLimitsConfig(
+            // big inline cap so the inline-cap doesn't fire,
+            // but the response-cap is tight enough that the
+            // serialised ReadResourceResult shell + the small
+            // projection together overflow.
+            maxInlineResourceContentBytes = 10_000,
+            maxResourceReadResponseBytes = 64,
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(jobs = listOf(jobRecord(visibility = JobVisibility.TENANT))),
+            limitsConfig = tinyLimits,
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/job-1")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResponseErrorCode.InvalidParams.value
+        @Suppress("UNCHECKED_CAST")
+        val data = err.data as Map<String, Any?>
+        data["dmigrateCode"] shouldBe "VALIDATION_ERROR"
+        check(err.message.contains("maxResourceReadResponseBytes")) {
+            "envelope-cap message must reference the cap, was: ${err.message}"
+        }
+    }
 })
