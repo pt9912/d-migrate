@@ -110,6 +110,16 @@ internal object ResourceContentProjector {
         "expiresAt" to job.managedJob.expiresAt.toString(),
         "createdBy" to job.managedJob.createdBy,
         "artifacts" to job.managedJob.artifacts,
+        // Operators reading a FAILED or in-flight job through
+        // resources/read need the failure cause and the latest
+        // progress phase — same fields tools/job_status_get exposes,
+        // so the two surfaces stay coherent.
+        "error" to job.managedJob.error?.let {
+            mapOf("code" to it.code, "message" to it.message, "exitCode" to it.exitCode)
+        },
+        "progress" to job.managedJob.progress?.let {
+            mapOf("phase" to it.phase, "numericValues" to it.numericValues)
+        },
     )
 
     fun projectContent(artifact: ArtifactRecord): Map<String, Any?> = mapOf(

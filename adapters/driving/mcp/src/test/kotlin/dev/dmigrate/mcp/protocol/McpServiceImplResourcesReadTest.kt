@@ -8,6 +8,8 @@ import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.artifact.ManagedArtifact
 import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.connection.ConnectionSensitivity
+import dev.dmigrate.server.core.job.JobError
+import dev.dmigrate.server.core.job.JobProgress
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.core.job.JobVisibility
@@ -36,6 +38,7 @@ import java.time.Instant
 import java.util.concurrent.ExecutionException
 
 private val TENANT = TenantId("acme")
+private val SECONDARY_TENANT = TenantId("beta")
 private val ALICE = PrincipalId("alice")
 private val BOB = PrincipalId("bob")
 
@@ -201,12 +204,15 @@ class McpServiceImplResourcesReadTest : FunSpec({
         // refs even when the source record carries them.
         body.containsKey("credentialRef") shouldBe false
         body.containsKey("providerRef") shouldBe false
-        // Defense-in-depth: scan the serialized text for the secret
-        // values themselves so a future field rename can't quietly
-        // re-introduce a leak.
+        // Defense-in-depth: scan the serialized text for both the
+        // secret values themselves AND the source field names. Value
+        // scanning catches a field rename, name scanning catches a
+        // future provider that emits a different scheme prefix.
         val raw = result.contents.single().text!!
         check(!raw.contains("vault://")) { "credentialRef value leaked into resources/read body" }
         check(!raw.contains("providers://")) { "providerRef value leaked into resources/read body" }
+        check(!raw.contains("credentialRef")) { "credentialRef field name leaked" }
+        check(!raw.contains("providerRef")) { "providerRef field name leaked" }
     }
 
     test("resources/read for a schema/profile/diff index entry returns its metadata") {
@@ -288,12 +294,26 @@ class McpServiceImplResourcesReadTest : FunSpec({
         jsonRpcErrorOf(ex).responseError.code shouldBe ResponseErrorCode.InvalidParams.value
     }
 
-    test("resources/read with malformed URI fails with InvalidParams") {
+    test("resources/read with malformed URI fails with constant InvalidParams message (no parse-reason echo)") {
+        // Pinning the exact wire message defends against a future
+        // refactor that re-introduces the parse reason; varying
+        // reasons would let a caller probe URI grammar without ever
+        // touching a store.
         val sut = McpServiceImpl(serverVersion = "0.0.0", initialPrincipal = principal())
-        val ex = shouldThrow<ExecutionException> {
-            sut.resourcesRead(ReadResourceParams("https://example.com/resource")).get()
+        val grammarVariants = listOf(
+            "https://example.com/resource",
+            "dmigrate://tenants/acme/unknown-kind/x",
+            "dmigrate://tenants/acme/jobs/has spaces",
+            "dmigrate://tenants/!!!/jobs/x",
+        )
+        grammarVariants.forEach { input ->
+            val ex = shouldThrow<ExecutionException> {
+                sut.resourcesRead(ReadResourceParams(input)).get()
+            }
+            val err = jsonRpcErrorOf(ex).responseError
+            err.code shouldBe ResponseErrorCode.InvalidParams.value
+            err.message shouldBe ResourcesReadHandler.INVALID_URI_MESSAGE
         }
-        jsonRpcErrorOf(ex).responseError.code shouldBe ResponseErrorCode.InvalidParams.value
     }
 
     test("resources/read with foreign tenant outside allowedTenantIds fails with InvalidRequest") {
@@ -315,6 +335,49 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
     }
 
+    test("resources/read with tenant in allowedTenantIds but not effectiveTenantId is denied") {
+        // §5.5: tenant addressing binds to *active* tenant.
+        // allowedTenantIds = the set this principal could switch INTO
+        // (impersonation), not a license to read across them silently.
+        // A leak here would be a critical cross-tenant read on the
+        // index-only kinds (schemas/profiles/diffs/connections) that
+        // have no per-record visibility check — the index store would
+        // happily return the record because the principal's allowed
+        // set covers the tenant. Pin that the protocol layer rejects
+        // BEFORE the store lookup.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(
+                tenant = TENANT,
+                allowedTenants = setOf(TENANT, SECONDARY_TENANT),
+            ),
+            // Seed a connection in the secondary tenant — if the
+            // bug regresses, this is the record that would leak.
+            resourceStores = stores(
+                connections = listOf(
+                    ConnectionReference(
+                        connectionId = "secret-conn",
+                        tenantId = SECONDARY_TENANT,
+                        displayName = "Secondary",
+                        dialectId = "postgresql",
+                        sensitivity = ConnectionSensitivity.PRODUCTION,
+                        resourceUri = ServerResourceUri(SECONDARY_TENANT, ResourceKind.CONNECTIONS, "secret-conn"),
+                    ),
+                ),
+            ),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(
+                ReadResourceParams("dmigrate://tenants/beta/connections/secret-conn"),
+            ).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResponseErrorCode.InvalidRequest.value
+        check(err.message.contains("tenant scope denied")) {
+            "non-effective tenant should still be tenant-scope-denied, was: ${err.message}"
+        }
+    }
+
     test("resources/read for an unknown id within tenant fails with -32002 Resource not found") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
@@ -327,6 +390,15 @@ class McpServiceImplResourcesReadTest : FunSpec({
         val err = jsonRpcErrorOf(ex).responseError
         err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
         err.message shouldBe "Resource not found"
+    }
+
+    test("MCP_RESOURCE_NOT_FOUND_CODE is the literal -32002 from the MCP 2025-11-25 spec") {
+        // Pin the raw integer (not the const reference) so a future
+        // refactor that swaps the constant for the lsp4j enum value
+        // — which assigns -32002 to ServerNotInitialized — fails
+        // loudly. The wire integer is the only thing MCP clients see
+        // and they read it as "Resource not found" per the spec.
+        ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE shouldBe -32002
     }
 
     test("resources/read for a job owned by a different principal collapses to Resource not found (no-oracle)") {
@@ -366,6 +438,45 @@ class McpServiceImplResourcesReadTest : FunSpec({
         val err = jsonRpcErrorOf(ex).responseError
         err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
         err.message shouldBe "Resource not found"
+    }
+
+    test("resources/read on a FAILED job surfaces error.message and progress.phase") {
+        // Operators reading resources/read for a FAILED job need the
+        // failure reason — same shape job_status_get returns, so the
+        // two surfaces stay coherent.
+        val failed = JobRecord(
+            managedJob = ManagedJob(
+                jobId = "job-failed",
+                operation = "schema_generate",
+                status = JobStatus.FAILED,
+                createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+                updatedAt = Instant.parse("2026-01-01T00:01:00Z"),
+                expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+                createdBy = ALICE.value,
+                error = JobError(code = "DRIVER_ERROR", message = "connection refused", exitCode = 1),
+                progress = JobProgress(phase = "introspect", numericValues = mapOf("tables" to 7L)),
+            ),
+            tenantId = TENANT,
+            ownerPrincipalId = ALICE,
+            visibility = JobVisibility.OWNER,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.JOBS, "job-failed"),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(jobs = listOf(failed)),
+        )
+        val body = parseTextContent(
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/job-failed")).get(),
+        )
+        body["status"] shouldBe "FAILED"
+        @Suppress("UNCHECKED_CAST")
+        val errMap = body["error"] as Map<String, Any?>
+        errMap["code"] shouldBe "DRIVER_ERROR"
+        errMap["message"] shouldBe "connection refused"
+        @Suppress("UNCHECKED_CAST")
+        val progMap = body["progress"] as Map<String, Any?>
+        progMap["phase"] shouldBe "introspect"
     }
 
     test("admin principal can read a TENANT-scoped record across the tenant") {
