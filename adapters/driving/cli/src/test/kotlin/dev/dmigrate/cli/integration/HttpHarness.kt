@@ -9,6 +9,7 @@ import dev.dmigrate.mcp.protocol.InitializeResult
 import dev.dmigrate.mcp.protocol.ToolsCallParams
 import dev.dmigrate.mcp.protocol.ToolsCallResult
 import dev.dmigrate.mcp.protocol.ToolsListResult
+import dev.dmigrate.cli.commands.McpStateDirLock
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -50,6 +51,7 @@ internal class HttpHarness(
     private val wiringRef: dev.dmigrate.mcp.registry.PhaseCWiring,
     private val handle: dev.dmigrate.mcp.server.McpServerHandle,
     private val baseUri: URI,
+    private val stateDirLock: McpStateDirLock,
 ) : McpClientHarness {
 
     override val name: String = "http"
@@ -141,6 +143,10 @@ internal class HttpHarness(
 
     override fun close() {
         handle.stop()
+        // Release the advisory lock LAST so a parallel start racing
+        // on the same stateDir can never see it free while ktor is
+        // still tearing down its connectors.
+        try { stateDirLock.close() } catch (_: Throwable) {}
     }
 
     private data class HttpRpcResult(
@@ -159,7 +165,35 @@ internal class HttpHarness(
             stateDir: Path,
             principal: PrincipalContext,
             limits: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
-        ): HttpHarness {
+        ): HttpHarness = when (val outcome = tryStart(stateDir, principal, limits)) {
+            is StartOutcome.Started -> outcome.harness
+            is StartOutcome.LockConflict -> error("http harness lock conflict: ${outcome.diagnostic}")
+            is StartOutcome.BootstrapError -> error("http bootstrap failed: ${outcome.errors.joinToString()}")
+            is StartOutcome.LockFailed -> error("http harness lock failed: ${outcome.message}")
+        }
+
+        /**
+         * AP 6.24 E7: factory variant that surfaces the lock-conflict
+         * branch so the lock-/concurrency-test can pin it without
+         * unwinding through `error(...)`. Mirrors
+         * [StdioHarness.tryStart] so the scenario runner can call
+         * either transport polymorphically.
+         */
+        fun tryStart(
+            stateDir: Path,
+            principal: PrincipalContext,
+            limits: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
+        ): StartOutcome {
+            // §6.24 + §6.21: acquire the advisory lock BEFORE any
+            // wiring or ktor engine construction so a conflicting
+            // start produces zero side effects (no audit sink, no
+            // bound port, no ktor threads). Mirrors McpCommand.run().
+            val lock = when (val r = McpStateDirLock.tryAcquire(stateDir, version = LOCK_VERSION)) {
+                is McpStateDirLock.AcquireOutcome.Acquired -> r.lock
+                is McpStateDirLock.AcquireOutcome.Conflict -> return StartOutcome.LockConflict(r.diagnostic)
+                is McpStateDirLock.AcquireOutcome.Failed -> return StartOutcome.LockFailed(r.message)
+            }
+
             val wiringBundle = IntegrationFixtures.integrationWiring(stateDir, limits = limits)
             // Default scope mapping: PhaseCRegistries.defaultToolRegistry
             // requires `capabilities_list` (and the rest of the Phase-C
@@ -177,8 +211,10 @@ internal class HttpHarness(
             )
             val started = when (outcome) {
                 is McpStartOutcome.Started -> outcome
-                is McpStartOutcome.ConfigError ->
-                    error("http bootstrap failed: ${outcome.errors.joinToString()}")
+                is McpStartOutcome.ConfigError -> {
+                    try { lock.close() } catch (_: Throwable) {}
+                    return StartOutcome.BootstrapError(outcome.errors)
+                }
             }
             val baseUri = URI.create("http://127.0.0.1:${started.handle.boundPort}/mcp")
             // AuthMode.DISABLED means the route does not derive the
@@ -186,14 +222,27 @@ internal class HttpHarness(
             // pins the principal at the wiring layer instead. We pass
             // it back on the harness surface so spec asserts can
             // reference it.
-            return HttpHarness(
-                stateDir = stateDir,
-                principal = principal,
-                auditSinkRef = wiringBundle.auditSink,
-                wiringRef = wiringBundle.wiring,
-                handle = started.handle,
-                baseUri = baseUri,
+            return StartOutcome.Started(
+                HttpHarness(
+                    stateDir = stateDir,
+                    principal = principal,
+                    auditSinkRef = wiringBundle.auditSink,
+                    wiringRef = wiringBundle.wiring,
+                    handle = started.handle,
+                    baseUri = baseUri,
+                    stateDirLock = lock,
+                ),
             )
         }
+
+        private const val LOCK_VERSION: String = "0.0.0-it-http"
+    }
+
+    /** AP 6.24 E7: typed start outcome — see [StdioHarness.StartOutcome]. */
+    sealed interface StartOutcome {
+        data class Started(val harness: HttpHarness) : StartOutcome
+        data class LockConflict(val diagnostic: String) : StartOutcome
+        data class BootstrapError(val errors: List<String>) : StartOutcome
+        data class LockFailed(val message: String) : StartOutcome
     }
 }

@@ -72,13 +72,13 @@ class CliMcpServeSmokeTest : FunSpec({
     }
 
     test("mcp serve fails with exit 2 when another process holds the state-dir lock") {
-        // NOTE: this test exercises the in-process OverlappingFileLockException
+        // This test exercises the in-process OverlappingFileLockException
         // fallback in McpStateDirLock — both lock attempts run in the same
         // JVM, so the JDK rejects the second tryLock() before it ever asks
-        // the kernel. The plan-mandated "two-process" path (Akzeptanz §6.21
-        // Z. 1242–1245) needs a forked JVM and lands with the AP 6.24
-        // stdio+HTTP integration-test suite. TODO(AP 6.24): cover real
-        // cross-process lock conflict via ProcessBuilder.
+        // the kernel. AP 6.24 E7 (`McpStateDirLockScenarioTest`) covers
+        // the harness-level transport-symmetric path against a real
+        // running server, including the post-stop restart and the
+        // stale-payload-no-lock case.
         @OptIn(kotlin.io.path.ExperimentalPathApi::class)
         val dir = Files.createTempDirectory("dmigrate-mcp-cli-lock-")
         val held = McpStateDirLock.tryAcquire(dir, "test")
