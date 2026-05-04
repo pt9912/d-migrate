@@ -10,6 +10,9 @@
         },
         "chunkId": {
           "type": "string"
+        },
+        "nextChunkCursor": {
+          "type": "string"
         }
       },
       "required": [
@@ -60,6 +63,9 @@
         "nextChunkUri": {
           "type": "string"
         },
+        "nextChunkCursor": {
+          "type": "string"
+        },
         "executionMeta": {
           "type": "object",
           "additionalProperties": true
@@ -75,6 +81,7 @@
         "encoding",
         "sha256",
         "nextChunkUri",
+        "nextChunkCursor",
         "executionMeta"
       ]
     }

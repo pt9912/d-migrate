@@ -382,4 +382,160 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         first.get("nextChunkUri").asString shouldStartWith
             "dmigrate://tenants/acme/artifacts/art-1/chunks/1"
     }
+
+    test("AP D9: response carries nextChunkCursor (sealed) when codec is wired") {
+        // Plan-D §10.9: alongside `nextChunkUri`, the Phase-D
+        // response emits an HMAC-sealed `nextChunkCursor` so a
+        // tools/call-driven client stays on the tool wire instead
+        // of jumping to resources/read.
+        val payload = "abcdefghij".toByteArray() // 10 bytes
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val sealedCursor = SealedChunkCursor(codec)
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = artifactStore,
+            contentStore = contentStore,
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 4),
+            cursorCodec = sealedCursor,
+        )
+        val f = ChunkFixture(handler, artifactStore, contentStore)
+        stageArtifact(f, "art-d9", payload)
+
+        val first = parsePayload(
+            handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-d9"}"""), PRINCIPAL),
+            ),
+        )
+        first.get("chunkId").asString shouldBe "0"
+        first.get("nextChunkUri").asString shouldStartWith
+            "dmigrate://tenants/acme/artifacts/art-d9/chunks/1"
+        val cursor = first.get("nextChunkCursor").asString
+        cursor.contains('.') shouldBe true
+
+        // Round-trip: pass cursor back; expect chunk 1.
+        val second = parsePayload(
+            handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-d9","nextChunkCursor":"$cursor"}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        second.get("chunkId").asString shouldBe "1"
+        second.get("offset").asLong shouldBe 4L
+    }
+
+    test("AP D9: last chunk emits nextChunkCursor=null") {
+        val payload = "abc".toByteArray()
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val sealedCursor = SealedChunkCursor(codec)
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = artifactStore,
+            contentStore = contentStore,
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 32),
+            cursorCodec = sealedCursor,
+        )
+        val f = ChunkFixture(handler, artifactStore, contentStore)
+        stageArtifact(f, "art-tiny", payload)
+
+        val response = parsePayload(
+            handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-tiny"}"""), PRINCIPAL),
+            ),
+        )
+        // Both fields must be explicit null (Phase-C invariant
+        // preserved + Phase-D additive `nextChunkCursor`).
+        response.get("nextChunkUri").isJsonNull shouldBe true
+        response.get("nextChunkCursor").isJsonNull shouldBe true
+    }
+
+    test("AP D9: tampered nextChunkCursor surfaces VALIDATION_ERROR") {
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = InMemoryArtifactStore(),
+            contentStore = InMemoryArtifactContentStore(),
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 4),
+            cursorCodec = SealedChunkCursor(codec),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-x","nextChunkCursor":"forged.cursor"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("AP D9: chunkId AND nextChunkCursor on the same call rejected with VALIDATION_ERROR") {
+        // Plan-D §10.9: clients must commit to one wire shape so
+        // a future deprecation of the legacy chunkId path stays
+        // observable.
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = InMemoryArtifactStore(),
+            contentStore = InMemoryArtifactContentStore(),
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 4),
+            cursorCodec = SealedChunkCursor(codec),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-x","chunkId":"1","nextChunkCursor":"some.cursor"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("AP D9: nextChunkCursor without configured codec rejected with VALIDATION_ERROR") {
+        // Phase-B / legacy harness path: refuse to silently restart
+        // at chunk 0 when a client sends a sealed cursor against a
+        // server with no codec — surfaces a misconfig loudly.
+        val f = fixture(maxChunkBytes = 4)
+        stageArtifact(f, "art-1", "abcdefghij".toByteArray())
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","nextChunkCursor":"some.cursor"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
 })

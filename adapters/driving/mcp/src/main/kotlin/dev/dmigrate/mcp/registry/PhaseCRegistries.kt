@@ -128,6 +128,16 @@ object PhaseCRegistries {
                 artifactStore = wiring.artifactStore,
                 contentStore = wiring.artifactContentStore,
                 limits = wiring.limits,
+                // AP D9: wire the HMAC-sealed `nextChunkCursor` so
+                // the chunk-walk produces both `nextChunkUri` and
+                // `nextChunkCursor` (Tool-pfad). The shared codec is
+                // safe — SealedChunkCursor stamps cursorType into
+                // the binding so the cursor can't be replayed
+                // across tools.
+                cursorCodec = SealedChunkCursor(
+                    codec = McpCursorCodec(keyring = wiring.cursorKeyring, clock = wiring.clock),
+                    clock = wiring.clock,
+                ),
             ),
             "artifact_upload_init" to ArtifactUploadInitHandler(
                 sessionStore = wiring.uploadSessionStore,

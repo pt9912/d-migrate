@@ -17,18 +17,36 @@ import java.security.MessageDigest
 import java.util.Base64
 
 /**
- * AP 6.11: `artifact_chunk_get` per `ImpPlan-0.9.6-C.md` §5.5 + §6.11.
+ * AP 6.11 + AP D9: `artifact_chunk_get` per `ImpPlan-0.9.6-C.md`
+ * §5.5 + `ImpPlan-0.9.6-D.md` §10.9.
  *
  * Reads a single chunk of an artefact. The chunk index is a
  * sequential integer starting at 0; the offset is computed
  * server-side as `chunkIndex * maxArtifactChunkBytes`. The first
- * call without `chunkId` returns chunk `"0"`; subsequent calls
- * follow `nextChunkUri` (which the response carries when more
- * chunks remain).
+ * call without `chunkId` / `nextChunkCursor` returns chunk `"0"`;
+ * subsequent calls follow either the HMAC-sealed
+ * `nextChunkCursor` (Plan-D Tool-Pfad) or the `nextChunkUri`
+ * (Plan-D `resources/read`-Pfad).
+ *
+ * AP D9 changes:
+ * - The response now carries an HMAC-sealed `nextChunkCursor`
+ *   alongside `nextChunkUri` so a Tool-Caller stays on the
+ *   `tools/call` contract instead of jumping to `resources/read`.
+ *   Both fields are explicit `null` on the last chunk per the
+ *   §5.5 invariant.
+ * - The naked `chunkId` integer is still accepted as input
+ *   (Phase-C compatibility, Plan-D §10.9 "befristete Legacy-
+ *   Eingabe"), but the response no longer emits a `nextChunkId`
+ *   field — Plan-D §10.9 forbids it.
+ * - Cursor binding ties (tenant, artifactId, chunkSize) so a
+ *   sealed cursor minted for artefact A in tenant X cannot be
+ *   replayed against artefact B, tenant Y, or with a different
+ *   chunkSize.
  *
  * Errors map per the no-oracle pattern §5.6: missing or not-readable
  * artefacts surface uniformly as `RESOURCE_NOT_FOUND` so a client
  * can't distinguish "wrong id" from "no permission to know".
+ * Manipulated `nextChunkCursor` collapses to `VALIDATION_ERROR`.
  *
  * Encoding policy: any `text/...` MIME type and the canonical text
  * application types (`application/json`, `application/yaml`,
@@ -42,6 +60,7 @@ internal class ArtifactChunkGetHandler(
     private val artifactStore: ArtifactStore,
     private val contentStore: ArtifactContentStore,
     private val limits: McpLimitsConfig,
+    private val cursorCodec: SealedChunkCursor? = null,
 ) : ToolHandler {
 
     // serializeNulls is load-bearing: spec/ki-mcp.md §5.5 line 471
@@ -53,8 +72,29 @@ internal class ArtifactChunkGetHandler(
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val obj = JsonArgs.requireObject(context.arguments)
         val artifactId = obj.requireString("artifactId")
-        val chunkId = obj.optString("chunkId") ?: "0"
-        val chunkIndex = parseChunkIndex(chunkId)
+        val chunkSize = limits.maxArtifactChunkBytes
+        // AP D9: prefer the HMAC-sealed `nextChunkCursor` over the
+        // naked `chunkId` integer. Both inputs MUST NOT be set on
+        // the same call — a client should commit to one wire shape.
+        val nakedChunkId = obj.optString("chunkId")
+        val sealedCursor = obj.optString("nextChunkCursor")
+        if (!nakedChunkId.isNullOrBlank() && !sealedCursor.isNullOrBlank()) {
+            throw ValidationErrorException(
+                listOf(
+                    ValidationViolation(
+                        "input",
+                        "exactly one of 'chunkId' (legacy) or 'nextChunkCursor' (Phase-D) is allowed",
+                    ),
+                ),
+            )
+        }
+        val chunkIndex = when {
+            !sealedCursor.isNullOrBlank() -> resolveSealedCursor(
+                sealedCursor, context.principal.effectiveTenantId, artifactId, chunkSize,
+            )
+            !nakedChunkId.isNullOrBlank() -> parseChunkIndex(nakedChunkId)
+            else -> 0
+        }
 
         val record = artifactStore.findById(context.principal.effectiveTenantId, artifactId)
             ?: throw notFound(context.principal, artifactId)
@@ -64,7 +104,6 @@ internal class ArtifactChunkGetHandler(
             throw notFound(context.principal, artifactId)
         }
 
-        val chunkSize = limits.maxArtifactChunkBytes
         val totalBytes = record.managedArtifact.sizeBytes
         val offset = chunkIndex.toLong() * chunkSize.toLong()
         // Empty artefact (totalBytes == 0) keeps chunk 0 valid as a
@@ -84,8 +123,19 @@ internal class ArtifactChunkGetHandler(
         val contentType = record.managedArtifact.contentType
         val isText = isTextContentType(contentType)
         val sha256 = sha256Hex(bytes)
-        val nextChunkUri = if (offset + length < totalBytes) {
+        val hasMore = offset + length < totalBytes
+        val nextChunkUri = if (hasMore) {
             chunkUri(record.tenantId.value, artifactId, (chunkIndex + 1).toString())
+        } else {
+            null
+        }
+        // Plan-D §10.9: when a codec is wired (production path),
+        // emit the HMAC-sealed continuation cursor alongside the
+        // resource-URI form. Phase-B-only deployments without a
+        // configured codec emit `null` and rely on `nextChunkUri`
+        // for follow-ups.
+        val nextChunkCursor = if (hasMore) {
+            cursorCodec?.seal(record.tenantId, artifactId, chunkSize, chunkIndex + 1)
         } else {
             null
         }
@@ -121,6 +171,12 @@ internal class ArtifactChunkGetHandler(
             // §5.5 line 471: `nextChunkUri` is mandatory and is
             // explicitly `null` on the last chunk — emit it always.
             put("nextChunkUri", nextChunkUri)
+            // Plan-D §10.9: Phase-D output ALWAYS carries
+            // nextChunkCursor (null on last chunk, sealed string
+            // otherwise) when a codec is wired. Phase-B-only
+            // deployments emit null on every chunk — clients pick
+            // up `nextChunkUri`.
+            put("nextChunkCursor", nextChunkCursor)
         }
         return ToolCallOutcome.Success(
             content = listOf(
@@ -131,6 +187,33 @@ internal class ArtifactChunkGetHandler(
                 ),
             ),
         )
+    }
+
+    /**
+     * Plan-D §10.9: decode a sealed continuation cursor and return
+     * the next chunk index. The codec verifies (tenant, artifactId,
+     * chunkSize) so a cursor minted for a different artefact /
+     * tenant / chunkSize collapses to `VALIDATION_ERROR` via the
+     * thrown [ValidationErrorException]. Phase-B-only deployments
+     * without a wired codec reject any client-supplied
+     * `nextChunkCursor` rather than silently restarting at chunk 0.
+     */
+    private fun resolveSealedCursor(
+        sealed: String,
+        tenantId: dev.dmigrate.server.core.principal.TenantId,
+        artifactId: String,
+        chunkSize: Int,
+    ): Int {
+        val codec = cursorCodec
+            ?: throw ValidationErrorException(
+                listOf(
+                    ValidationViolation(
+                        "nextChunkCursor",
+                        "cursor verification is not configured on this server",
+                    ),
+                ),
+            )
+        return codec.unseal(sealed, tenantId, artifactId, chunkSize)
     }
 
     @Suppress("SwallowedException")

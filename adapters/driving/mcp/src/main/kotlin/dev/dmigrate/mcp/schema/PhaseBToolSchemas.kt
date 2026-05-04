@@ -204,7 +204,13 @@ internal object PhaseBToolSchemas {
         put("artifact_chunk_get", schemaPair(
             input = obj(
                 "artifactId" to stringField(),
+                // AP D9: `chunkId` stays as Phase-C compat input;
+                // `nextChunkCursor` is the Phase-D continuation
+                // path. Exactly one of the two MUST be supplied
+                // (server-side check); both unset means "first
+                // chunk".
                 "chunkId" to stringField(),
+                "nextChunkCursor" to stringField(),
             ).required("artifactId"),
             output = obj(
                 "artifactId" to stringField(),
@@ -218,6 +224,9 @@ internal object PhaseBToolSchemas {
                 "contentBase64" to stringField(),
                 "sha256" to stringField(),
                 "nextChunkUri" to stringField(),
+                // AP D9: HMAC-sealed continuation cursor for the
+                // tools/call-only walk; null on the last chunk.
+                "nextChunkCursor" to stringField(),
                 "executionMeta" to objectField(),
             ).required(
                 "artifactId",
@@ -229,6 +238,7 @@ internal object PhaseBToolSchemas {
                 "encoding",
                 "sha256",
                 "nextChunkUri",
+                "nextChunkCursor",
                 "executionMeta",
             ),
         ))
