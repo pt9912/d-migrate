@@ -94,6 +94,26 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SCHEMA",
+            "PROFILE",
+            "DIFF",
+            "DATA_EXPORT",
+            "UPLOAD_INPUT",
+            "OTHER"
+          ]
+        },
+        "jobId": {
+          "type": "string"
         }
       }
     },
@@ -103,10 +123,83 @@
       "additionalProperties": false,
       "properties": {
         "artifacts": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "artifactKind": {
+                "type": "string",
+                "enum": [
+                  "SCHEMA",
+                  "PROFILE",
+                  "DIFF",
+                  "DATA_EXPORT",
+                  "UPLOAD_INPUT",
+                  "OTHER"
+                ]
+              },
+              "jobId": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "contentType": {
+                "type": "string"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "chunkTemplate": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "visibilityClass": {
+                "type": "string",
+                "enum": [
+                  "OWN",
+                  "TENANT_VISIBLE",
+                  "ADMIN_VISIBLE"
+                ]
+              }
+            },
+            "required": [
+              "artifactId",
+              "tenantId",
+              "artifactKind",
+              "filename",
+              "sizeBytes",
+              "contentType",
+              "resourceUri"
+            ]
+          }
         },
         "nextCursor": {
           "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -518,6 +611,21 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "sourceRef": {
+          "type": "string"
+        },
+        "targetRef": {
+          "type": "string"
         }
       }
     },
@@ -527,10 +635,63 @@
       "additionalProperties": false,
       "properties": {
         "diffs": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "diffId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "artifactRef": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/diffs/[^/]+$"
+              },
+              "sourceRef": {
+                "type": "string"
+              },
+              "targetRef": {
+                "type": "string"
+              },
+              "jobId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "diffId",
+              "tenantId",
+              "resourceUri",
+              "sourceRef",
+              "targetRef",
+              "createdAt"
+            ]
+          }
         },
         "nextCursor": {
           "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -581,6 +742,25 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "operation": {
+          "type": "string"
         }
       }
     },
@@ -590,10 +770,79 @@
       "additionalProperties": false,
       "properties": {
         "jobs": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "jobId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "QUEUED",
+                  "RUNNING",
+                  "SUCCEEDED",
+                  "FAILED",
+                  "CANCELLED"
+                ]
+              },
+              "operation": {
+                "type": "string"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "visibilityClass": {
+                "type": "string",
+                "enum": [
+                  "OWN",
+                  "TENANT_VISIBLE",
+                  "ADMIN_VISIBLE"
+                ]
+              },
+              "artifactUris": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+                }
+              }
+            },
+            "required": [
+              "jobId",
+              "tenantId",
+              "status",
+              "operation",
+              "resourceUri",
+              "createdAt",
+              "updatedAt"
+            ]
+          }
         },
         "nextCursor": {
           "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -820,6 +1069,15 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
         }
       }
     },
@@ -829,10 +1087,55 @@
       "additionalProperties": false,
       "properties": {
         "profiles": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "profileId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "artifactRef": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/profiles/[^/]+$"
+              },
+              "jobId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profileId",
+              "tenantId",
+              "resourceUri",
+              "createdAt"
+            ]
+          }
         },
         "nextCursor": {
           "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1189,6 +1492,15 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
         }
       }
     },
@@ -1198,10 +1510,55 @@
       "additionalProperties": false,
       "properties": {
         "schemas": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "schemaId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "artifactRef": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/schemas/[^/]+$"
+              },
+              "jobId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "schemaId",
+              "tenantId",
+              "resourceUri",
+              "createdAt"
+            ]
+          }
         },
         "nextCursor": {
           "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
         }
       },
       "required": [
