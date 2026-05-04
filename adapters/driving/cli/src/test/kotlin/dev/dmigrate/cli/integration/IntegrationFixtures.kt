@@ -19,10 +19,17 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.connection.ConnectionReference
+import dev.dmigrate.server.core.connection.ConnectionSensitivity
+import dev.dmigrate.server.ports.DiffIndexEntry
+import dev.dmigrate.server.ports.ProfileIndexEntry
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryAuditSink
+import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
+import dev.dmigrate.server.ports.memory.InMemoryDiffStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryProfileStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
@@ -149,6 +156,12 @@ internal object IntegrationFixtures {
             // suite needs the in-memory sink to assert event counts.
             auditSink = auditSink,
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
+            // AP D11: replace the default Empty-stores with seedable
+            // InMemory variants so the discovery scenario suite can
+            // round-trip every list-tool family + connection-resource.
+            profileStore = InMemoryProfileStore(),
+            diffStore = InMemoryDiffStore(),
+            connectionStore = InMemoryConnectionReferenceStore(),
         )
         return IntegrationWiring(wiring, auditSink, stateDir)
     }
@@ -287,6 +300,97 @@ internal object IntegrationFixtures {
         )
         wiring.jobStore.save(record)
         return jobId
+    }
+
+    /**
+     * AP D11: stages a [ProfileIndexEntry] directly so the
+     * `profile_list` / `resources/list` scenarios get deterministic
+     * discovery records without driving the (Phase-D-future) profile
+     * upload flow end-to-end.
+     */
+    fun stageProfile(
+        wiring: PhaseCWiring,
+        principal: PrincipalContext,
+        profileId: String,
+        artifactRef: String? = null,
+        clock: Clock = Clock.systemUTC(),
+    ): String {
+        val tenantId = principal.effectiveTenantId
+        val now = clock.instant()
+        wiring.profileStore.save(
+            ProfileIndexEntry(
+                profileId = profileId,
+                tenantId = tenantId,
+                resourceUri = ServerResourceUri(tenantId, ResourceKind.PROFILES, profileId),
+                artifactRef = artifactRef ?: "art-$profileId",
+                displayName = "integration profile $profileId",
+                createdAt = now,
+                expiresAt = now.plusSeconds(SECONDS_PER_HOUR.toLong()),
+            ),
+        )
+        return profileId
+    }
+
+    /**
+     * AP D11: stages a [DiffIndexEntry] directly so the `diff_list`
+     * scenario sees a populated store. Phase-D start tools will write
+     * diffs in a future milestone; the integration suite seeds them
+     * by hand for now.
+     */
+    fun stageDiff(
+        wiring: PhaseCWiring,
+        principal: PrincipalContext,
+        diffId: String,
+        clock: Clock = Clock.systemUTC(),
+    ): String {
+        val tenantId = principal.effectiveTenantId
+        val now = clock.instant()
+        wiring.diffStore.save(
+            DiffIndexEntry(
+                diffId = diffId,
+                tenantId = tenantId,
+                resourceUri = ServerResourceUri(tenantId, ResourceKind.DIFFS, diffId),
+                artifactRef = "art-$diffId",
+                displayName = "integration diff $diffId",
+                sourceRef = "schema-source-$diffId",
+                targetRef = "schema-target-$diffId",
+                createdAt = now,
+                expiresAt = now.plusSeconds(SECONDS_PER_HOUR.toLong()),
+            ),
+        )
+        return diffId
+    }
+
+    /**
+     * AP D11: stages a [ConnectionReference] directly so the
+     * `connection_list` (well, `resources/list` / `resources/read`)
+     * scenarios see a populated connection-reference store. Plan-D
+     * §10.10 secret-free guarantee: this helper accepts a plain
+     * `credentialRef` string but never expands it.
+     */
+    @Suppress("LongParameterList")
+    fun stageConnection(
+        wiring: PhaseCWiring,
+        principal: PrincipalContext,
+        connectionId: String,
+        displayName: String = "integration connection $connectionId",
+        dialectId: String = "postgresql",
+        sensitivity: ConnectionSensitivity = ConnectionSensitivity.NON_PRODUCTION,
+        credentialRef: String? = "env:INTEGRATION_PASS",
+    ): String {
+        val tenantId = principal.effectiveTenantId
+        wiring.connectionStore.save(
+            ConnectionReference(
+                connectionId = connectionId,
+                tenantId = tenantId,
+                displayName = displayName,
+                dialectId = dialectId,
+                sensitivity = sensitivity,
+                resourceUri = ServerResourceUri(tenantId, ResourceKind.CONNECTIONS, connectionId),
+                credentialRef = credentialRef,
+            ),
+        )
+        return connectionId
     }
 
     private const val SECONDS_PER_HOUR: Int = 3600
