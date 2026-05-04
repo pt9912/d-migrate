@@ -21,6 +21,29 @@ data class SchemaIndexEntry(
     val expiresAt: Instant,
     val jobRef: String? = null,
     val labels: Map<String, String> = emptyMap(),
+    /**
+     * Plan-D §6.4 mindestfeld for `schema_list`: serialised
+     * format hint (`json`, `yaml`, ...). Null means "not yet
+     * recorded by the producer" — Phase-E start tools fill it
+     * when staging.
+     */
+    val format: String? = null,
+    /**
+     * Plan-D §6.4: lineage tag — typically `schema_generate`,
+     * `schema_reverse_start` (Phase E), `upload`, or another
+     * canonical operation id the producer used.
+     */
+    val origin: String? = null,
+    /**
+     * Plan-D §6.4: serialised payload byte length. Null when
+     * the producer did not capture it.
+     */
+    val sizeBytes: Long? = null,
+    /**
+     * Plan-D §6.4 optional hash hint (typically the sha256 of
+     * the underlying artefact bytes, hex-lowercase).
+     */
+    val hash: String? = null,
 )
 
 /**

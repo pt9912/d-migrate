@@ -670,14 +670,23 @@
                 "type": "string",
                 "pattern": "^dmigrate://tenants/[^/]+/diffs/[^/]+$"
               },
-              "sourceRef": {
+              "leftSchemaId": {
                 "type": "string"
               },
-              "targetRef": {
+              "rightSchemaId": {
                 "type": "string"
+              },
+              "statusSummary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "jobId": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "createdAt": {
                 "type": "string"
@@ -690,8 +699,9 @@
               "diffId",
               "tenantId",
               "resourceUri",
-              "sourceRef",
-              "targetRef",
+              "leftSchemaId",
+              "rightSchemaId",
+              "statusSummary",
               "createdAt"
             ]
           }
@@ -1123,7 +1133,28 @@
                 "pattern": "^dmigrate://tenants/[^/]+/profiles/[^/]+$"
               },
               "jobId": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connectionRef": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "warningCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
               },
               "createdAt": {
                 "type": "string"
@@ -1136,6 +1167,8 @@
               "profileId",
               "tenantId",
               "resourceUri",
+              "connectionRef",
+              "scope",
               "createdAt"
             ]
           }
@@ -1546,7 +1579,34 @@
                 "pattern": "^dmigrate://tenants/[^/]+/schemas/[^/]+$"
               },
               "jobId": {
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "format": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "origin": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sizeBytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "createdAt": {
                 "type": "string"
@@ -1559,6 +1619,9 @@
               "schemaId",
               "tenantId",
               "resourceUri",
+              "format",
+              "origin",
+              "sizeBytes",
               "createdAt"
             ]
           }

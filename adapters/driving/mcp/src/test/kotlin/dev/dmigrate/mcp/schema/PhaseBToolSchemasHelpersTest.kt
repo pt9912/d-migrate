@@ -15,13 +15,13 @@ import io.kotest.matchers.shouldBe
 class PhaseBToolSchemasHelpersTest : FunSpec({
 
     test("artifactRefField is a string field constrained by the resource-URI pattern") {
-        val field = PhaseBToolSchemas.artifactRefField()
+        val field = artifactRefField()
         field shouldContainExactly mapOf(
             "type" to "string",
-            "pattern" to PhaseBToolSchemas.ARTIFACT_REF_PATTERN,
+            "pattern" to ARTIFACT_REF_PATTERN,
         )
         // Pattern MUST match a tenant-scoped artefact URI.
-        val pattern = Regex(PhaseBToolSchemas.ARTIFACT_REF_PATTERN)
+        val pattern = Regex(ARTIFACT_REF_PATTERN)
         pattern.matches("dmigrate://tenants/acme/artifacts/art-1") shouldBe true
         pattern.matches("dmigrate://tenants/acme/artifacts/") shouldBe false
         pattern.matches("dmigrate://tenants//artifacts/art-1") shouldBe false

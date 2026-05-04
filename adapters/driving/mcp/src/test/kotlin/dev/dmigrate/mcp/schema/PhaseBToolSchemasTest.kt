@@ -122,7 +122,7 @@ class PhaseBToolSchemasTest : FunSpec({
 
         // Findings carry the generator-specific item (base + hint).
         props["findings"] shouldBe PhaseBToolSchemas.generatorFindingArray()
-        props["artifactRef"] shouldBe PhaseBToolSchemas.artifactRefField()
+        props["artifactRef"] shouldBe artifactRefField()
         props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
 
         @Suppress("UNCHECKED_CAST")
@@ -155,7 +155,7 @@ class PhaseBToolSchemasTest : FunSpec({
             detailsSchema = PhaseBToolSchemas.compareDetailsSchema(),
         )
 
-        props["diffArtifactRef"] shouldBe PhaseBToolSchemas.artifactRefField()
+        props["diffArtifactRef"] shouldBe artifactRefField()
         props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
 
         @Suppress("UNCHECKED_CAST")
@@ -192,7 +192,7 @@ class PhaseBToolSchemasTest : FunSpec({
         findings["items"] shouldBe PhaseBToolSchemas.findingItem()
 
         // artifactRef: URI-pattern string
-        props["artifactRef"] shouldBe PhaseBToolSchemas.artifactRefField()
+        props["artifactRef"] shouldBe artifactRefField()
 
         // executionMeta: closed (additionalProperties=false), required requestId
         props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()

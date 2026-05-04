@@ -11,13 +11,29 @@ data class DiffIndexEntry(
     val tenantId: TenantId,
     val resourceUri: ServerResourceUri,
     val artifactRef: String,
+    /**
+     * Plan-D §6.4 wire-name `leftSchemaId` (kept as
+     * `sourceRef` here for backward-compatibility with existing
+     * stage helpers; the projector renders it as
+     * `leftSchemaId`).
+     */
     val sourceRef: String,
+    /**
+     * Plan-D §6.4 wire-name `rightSchemaId`. See [sourceRef].
+     */
     val targetRef: String,
     val displayName: String,
     val createdAt: Instant,
     val expiresAt: Instant,
     val jobRef: String? = null,
     val labels: Map<String, String> = emptyMap(),
+    /**
+     * Plan-D §6.4 mindestfeld `statusSummary`: short canonical
+     * outcome label (e.g. `IDENTICAL`, `DIFF_PRESENT`,
+     * `INCOMPATIBLE`). Null when the producer did not record
+     * one.
+     */
+    val statusSummary: String? = null,
 )
 
 /**

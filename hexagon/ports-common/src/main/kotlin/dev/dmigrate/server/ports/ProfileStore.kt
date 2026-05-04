@@ -22,6 +22,27 @@ data class ProfileIndexEntry(
     val expiresAt: Instant,
     val jobRef: String? = null,
     val labels: Map<String, String> = emptyMap(),
+    /**
+     * Plan-D §6.4: identifies the connection the profile was
+     * generated from. Either a bare `connectionId` (Phase-E
+     * start tools fill it from the connection-ref store) or a
+     * full `connectionResourceUri`. Null means the producer did
+     * not record one.
+     */
+    val connectionRef: String? = null,
+    /**
+     * Plan-D §6.4: profiling scope (e.g. `full`, `tables-only`,
+     * a comma-separated table allowlist). Operator-supplied —
+     * Phase-D §6.4 explicitly excludes raw paths / connection
+     * URLs / ENV expansions, but Profile-Scope strings are
+     * already metadata that survives scrubbing safely.
+     */
+    val scope: String? = null,
+    /**
+     * Plan-D §6.4 optional `warningCount` — cumulative profiling
+     * warnings the producer raised. Null when not recorded.
+     */
+    val warningCount: Int? = null,
 )
 
 /**

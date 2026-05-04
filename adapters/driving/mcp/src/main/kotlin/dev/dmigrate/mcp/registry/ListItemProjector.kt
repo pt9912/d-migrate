@@ -74,6 +74,14 @@ internal object ListItemProjector {
         "artifactRef" to entry.artifactRef,
         "resourceUri" to entry.resourceUri.render(),
         "jobId" to entry.jobRef,
+        // Plan-D §6.4 mindestfelder: `format`, `origin`, `sizeBytes`,
+        // optional `hash`. Wire-shape declares them required + nullable
+        // because the producer may not record every field
+        // (Phase-E start tools will fill them all).
+        "format" to entry.format,
+        "origin" to entry.origin,
+        "sizeBytes" to entry.sizeBytes,
+        "hash" to entry.hash,
         "createdAt" to entry.createdAt.toString(),
         "expiresAt" to entry.expiresAt.toString(),
     )
@@ -85,6 +93,12 @@ internal object ListItemProjector {
         "artifactRef" to entry.artifactRef,
         "resourceUri" to entry.resourceUri.render(),
         "jobId" to entry.jobRef,
+        // Plan-D §6.4: connection identity + profiling scope are
+        // mindestfelder. SecretScrubber on `scope` because operator-
+        // supplied free text could carry an embedded URL/token.
+        "connectionRef" to entry.connectionRef,
+        "scope" to entry.scope?.let { SecretScrubber.scrub(it) },
+        "warningCount" to entry.warningCount,
         "createdAt" to entry.createdAt.toString(),
         "expiresAt" to entry.expiresAt.toString(),
     )
@@ -95,8 +109,12 @@ internal object ListItemProjector {
         "displayName" to SecretScrubber.scrub(entry.displayName),
         "artifactRef" to entry.artifactRef,
         "resourceUri" to entry.resourceUri.render(),
-        "sourceRef" to entry.sourceRef,
-        "targetRef" to entry.targetRef,
+        // Plan-D §6.4 wire-names: leftSchemaId / rightSchemaId
+        // (the model field is `sourceRef` / `targetRef` for
+        // backward-compatibility with the staging helpers).
+        "leftSchemaId" to entry.sourceRef,
+        "rightSchemaId" to entry.targetRef,
+        "statusSummary" to entry.statusSummary,
         "jobId" to entry.jobRef,
         "createdAt" to entry.createdAt.toString(),
         "expiresAt" to entry.expiresAt.toString(),

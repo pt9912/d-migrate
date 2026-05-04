@@ -36,25 +36,14 @@ private val JOB_PROGRESS_NUMERIC_KEYS_DATA: List<String> = listOf(
     "bytesWritten",
 )
 
-@Suppress("TooManyFunctions")
 internal object PhaseBToolSchemas {
-    // TooManyFunctions: this object is the central schema registry
-    // for every Phase-B/C tool plus the AP-6.23 D1-D6 building blocks
-    // (artifactRefField, executionMetaField, findingItem,
-    // generatorFindingItem, jobProgressField, jobErrorField, etc.).
-    // Splitting the helpers across files would break the lookup-by-
-    // tool-name table that drives the golden file. The function count
-    // grows linearly with new tools — by design.
-
-    /**
-     * Tool input/output schema bundle. Named [SchemaPair] (rather than
-     * a bare `Pair`) so callers don't have to disambiguate against
-     * Kotlin's `kotlin.Pair` at every reference site.
-     */
-    data class SchemaPair(
-        val inputSchema: Map<String, Any>,
-        val outputSchema: Map<String, Any>,
-    )
+    // Schema-builder primitives (stringField, obj, schemaPair, …)
+    // live as top-level functions in `SchemaPrimitives.kt`.
+    // List-tool schemas (job_list / artifact_list / schema_list /
+    // profile_list / diff_list) live in `PhaseDListToolSchemas` —
+    // this object stays focused on Phase-B/C tool registrations
+    // and the AP-6.23 D1-D6 building blocks the typed Phase-C
+    // tools share.
 
     /** Lookup by tool name. Returns `null` if no schema is registered. */
     fun forTool(name: String): SchemaPair? = SCHEMAS[name]
@@ -148,17 +137,11 @@ internal object PhaseBToolSchemas {
                 .withAllOf(truncatedRequiresField("artifactRef"))
                 .required("dialect", "statementCount", "summary", "findings", "truncated"),
         ))
-        // Phase-D §10.5 + §6.4: typed list-tool schemas. Each tool
-        // has (1) a strictly-additive input schema with shared
-        // tenantId / pageSize / cursor / time-window fields plus
-        // resource-specific filters, and (2) an output schema with
-        // a typed collection field (jobs/artifacts/...) carrying
-        // the §6.4 minimum-field set per row.
-        put("schema_list", schemaListPair())
-        put("profile_list", profileListPair())
-        put("diff_list", diffListPair())
-        put("job_list", jobListPair())
-        put("artifact_list", artifactListPair())
+        // Phase-D §10.5 + §6.4: typed list-tool schemas live in
+        // `PhaseDListToolSchemas`; the registry merges them in
+        // through one putAll so the lookup-by-tool-name surface
+        // stays unified.
+        putAll(PhaseDListToolSchemas.allPairs())
 
         put("job_status_get", schemaPair(
             input = obj(
@@ -381,10 +364,7 @@ internal object PhaseBToolSchemas {
         ))
     }
 
-    // ---------- builders ----------
-
-    private fun schemaPair(input: Map<String, Any>, output: Map<String, Any>): SchemaPair =
-        SchemaPair(inputSchema = input, outputSchema = output)
+    // ---------- AP-6.23 typed-tool building blocks ----------
 
     /**
      * `schema_compare` operand shape: only `schemaRef` is accepted in
@@ -398,51 +378,6 @@ internal object PhaseBToolSchemas {
         "properties" to mapOf("schemaRef" to stringField()),
         "required" to listOf("schemaRef"),
     )
-
-    private fun emptyObject(): Map<String, Any> = mapOf(
-        JsonSchemaDialect.SCHEMA_KEYWORD to JsonSchemaDialect.SCHEMA_URI,
-        "type" to "object",
-        "additionalProperties" to false,
-    )
-
-    private fun obj(vararg fields: Pair<String, Map<String, Any>>): SchemaBuilder =
-        SchemaBuilder(properties = fields.toMap())
-
-    /**
-     * Mutable builder for object-type schemas. [required] and [build]
-     * are terminal — they return the assembled `Map<String, Any>`
-     * directly. AP 6.23 adds [withAllOf] for cross-field constraints
-     * (e.g. `if truncated=true then artifactRef required`). Chain
-     * `withAllOf(...)` before the terminal call:
-     *
-     * ```
-     * obj("a" to ..., "b" to ...)
-     *     .withAllOf(truncatedRequiresField("artifactRef"))
-     *     .required("a")
-     * ```
-     */
-    private class SchemaBuilder(
-        private val properties: Map<String, Map<String, Any>>,
-    ) {
-        private val allOf = mutableListOf<Map<String, Any>>()
-
-        fun withAllOf(constraint: Map<String, Any>): SchemaBuilder = apply {
-            allOf.add(constraint)
-        }
-
-        fun required(vararg names: String): Map<String, Any> = assemble(names.toList())
-
-        fun build(): Map<String, Any> = assemble(emptyList())
-
-        private fun assemble(required: List<String>): Map<String, Any> = buildMap {
-            put(JsonSchemaDialect.SCHEMA_KEYWORD, JsonSchemaDialect.SCHEMA_URI)
-            put("type", "object")
-            put("additionalProperties", false)
-            if (properties.isNotEmpty()) put("properties", properties)
-            if (required.isNotEmpty()) put("required", required)
-            if (allOf.isNotEmpty()) put("allOf", allOf.toList())
-        }
-    }
 
     /**
      * AP 6.23: `if truncated=true then required [refField]`.
@@ -512,19 +447,6 @@ internal object PhaseBToolSchemas {
     )
 
     /**
-     * Job-resource URI pattern for `dmigrate://tenants/{tenantId}/jobs/{jobId}`.
-     * Different from [artifactRefField] so a `resourceUri` field
-     * accidentally pointing at an artefact fails schema validation.
-     */
-    internal const val JOB_RESOURCE_URI_PATTERN: String =
-        """^dmigrate://tenants/[^/]+/jobs/[^/]+$"""
-
-    internal fun jobResourceUriField(): Map<String, Any> = mapOf(
-        "type" to "string",
-        "pattern" to JOB_RESOURCE_URI_PATTERN,
-    )
-
-    /**
      * AP 6.23: allowlist for `JobProgress.numericValues` keys. The
      * underlying `Map<String, Long>` stays free internally; the
      * handler projects through this allowlist before serialisation
@@ -567,52 +489,14 @@ internal object PhaseBToolSchemas {
         "required" to listOf("code", "message"),
     )
 
-    private fun stringField(): Map<String, Any> = mapOf("type" to "string")
-
-    /**
-     * AP D9 review fix: a string-or-null field for wire fields that
-     * the runtime emits as explicit `null` on terminal states (e.g.
-     * `artifact_chunk_get.nextChunkUri` / `.nextChunkCursor` on the
-     * last chunk). JSON-Schema 2020-12 type-arrays are the
-     * idiomatic spelling; stays compatible with both
-     * Schema-validating and Schema-ignoring clients.
-     */
-    private fun nullableStringField(): Map<String, Any> = mapOf("type" to listOf("string", "null"))
-
-    private fun booleanField(): Map<String, Any> = mapOf("type" to "boolean")
-    private fun integerField(minimum: Int = 0): Map<String, Any> =
-        mapOf("type" to "integer", "minimum" to minimum)
-    private fun objectField(): Map<String, Any> =
-        mapOf("type" to "object", "additionalProperties" to true)
-
     // ──────────────────────────────────────────────────────────────
     // AP 6.23: shared output schema building blocks. The four
     // affected tools (schema_validate, schema_compare, schema_generate,
     // job_status_get) get refactored onto these helpers in D3-D6 so
     // the JSON-Schema and the runtime wire stay in lockstep.
+    // Field-primitives (stringField/integerField/etc.) and the
+    // shared `artifactRef` pattern live in `SchemaPrimitives.kt`.
     // ──────────────────────────────────────────────────────────────
-
-    /**
-     * Resource-URI pattern for `dmigrate://tenants/{tenantId}/artifacts/{artifactId}`
-     * — used by `artifactRef`, `diffArtifactRef`, and the per-element
-     * shape inside `job_status_get.artifacts[]`. Tenant- and artefact-
-     * id segments are non-empty and contain no `/`.
-     *
-     * Review N1: this is a STRUCTURAL match, not an authoritative
-     * trust boundary. `[^/]+` accepts URL-encoded bytes / Unicode /
-     * control characters that the upstream `ServerResourceUri.parse`
-     * would reject. The schema-level guarantee is "looks like a
-     * tenant-scoped artefact URI"; the canonical validation lives
-     * in `ServerResourceUri`.
-     */
-    internal const val ARTIFACT_REF_PATTERN: String =
-        """^dmigrate://tenants/[^/]+/artifacts/[^/]+$"""
-
-    /** Closed-shape `artifactRef` field with the [ARTIFACT_REF_PATTERN]. */
-    internal fun artifactRefField(): Map<String, Any> = mapOf(
-        "type" to "string",
-        "pattern" to ARTIFACT_REF_PATTERN,
-    )
 
     /**
      * Closed-shape `executionMeta` object — required `requestId`, no
@@ -664,221 +548,9 @@ internal object PhaseBToolSchemas {
         "items" to findingItem(detailsSchema),
     )
 
-    private fun arrayField(itemType: String? = null): Map<String, Any> = if (itemType == null) {
-        mapOf("type" to "array")
-    } else {
-        mapOf("type" to "array", "items" to mapOf("type" to itemType))
-    }
-
-    private fun enumField(vararg values: String): Map<String, Any> = mapOf(
-        "type" to "string",
-        "enum" to values.toList(),
-    )
-
-    // ──────────────────────────────────────────────────────────────
-    // Phase-D §10.5 + §6.4: typed list-tool schemas. The legacy
-    // `listInput(itemsField)` helper from Phase B was removed —
-    // every Phase-D list tool now publishes a dedicated input
-    // schema with resource-specific filters, and the output schema
-    // pins the §6.4 minimum-field set per item.
-    // ──────────────────────────────────────────────────────────────
-
-    /**
-     * Common input fields every Phase-D list tool advertises:
-     * `tenantId`, `pageSize`, `cursor`, plus inclusive time-window
-     * filters. Resource-specific filter fields are merged in by
-     * the per-tool builders below.
-     */
-    private fun listInputCommon(): Map<String, Map<String, Any>> = mapOf(
-        "tenantId" to stringField(),
-        "pageSize" to mapOf("type" to "integer", "minimum" to 1),
-        "cursor" to stringField(),
-        "createdAfter" to stringField(),
-        "createdBefore" to stringField(),
-    )
-
-    /**
-     * Common output shape for list tools: typed collection field +
-     * opaque `nextCursor` + optional totals. `additionalProperties=false`
-     * forbids ad-hoc `items` fallback.
-     */
-    private fun listOutputObj(
-        collectionField: String,
-        itemSchema: Map<String, Any>,
-    ): Map<String, Any> = obj(
-        collectionField to mapOf("type" to "array", "items" to itemSchema),
-        "nextCursor" to stringField(),
-        "totalCount" to integerField(),
-        "totalCountEstimate" to booleanField(),
-    ).required(collectionField)
-
-    private fun jobListPair(): SchemaPair = schemaPair(
-        input = obj(
-            *(
-                listInputCommon() + mapOf(
-                    "status" to enumField("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"),
-                    "operation" to stringField(),
-                )
-                ).entries.map { it.key to it.value }.toTypedArray(),
-        ).build(),
-        output = listOutputObj("jobs", jobListItem()),
-    )
-
-    private fun artifactListPair(): SchemaPair = schemaPair(
-        input = obj(
-            *(
-                listInputCommon() + mapOf(
-                    "kind" to enumField("SCHEMA", "PROFILE", "DIFF", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
-                    "jobId" to stringField(),
-                )
-                ).entries.map { it.key to it.value }.toTypedArray(),
-        ).build(),
-        output = listOutputObj("artifacts", artifactListItem()),
-    )
-
-    private fun schemaListPair(): SchemaPair = schemaPair(
-        input = obj(
-            *(
-                listInputCommon() + mapOf(
-                    "jobId" to stringField(),
-                )
-                ).entries.map { it.key to it.value }.toTypedArray(),
-        ).build(),
-        output = listOutputObj("schemas", schemaListItem()),
-    )
-
-    private fun profileListPair(): SchemaPair = schemaPair(
-        input = obj(
-            *(
-                listInputCommon() + mapOf(
-                    "jobId" to stringField(),
-                )
-                ).entries.map { it.key to it.value }.toTypedArray(),
-        ).build(),
-        output = listOutputObj("profiles", profileListItem()),
-    )
-
-    private fun diffListPair(): SchemaPair = schemaPair(
-        input = obj(
-            *(
-                listInputCommon() + mapOf(
-                    "jobId" to stringField(),
-                    "sourceRef" to stringField(),
-                    "targetRef" to stringField(),
-                )
-                ).entries.map { it.key to it.value }.toTypedArray(),
-        ).build(),
-        output = listOutputObj("diffs", diffListItem()),
-    )
-
-    /**
-     * §6.4 minimum fields per `jobs[]` entry. `artifactUris` is
-     * optional so a job with no artefacts still validates.
-     */
-    private fun jobListItem(): Map<String, Any> = mapOf(
-        "type" to "object",
-        "additionalProperties" to false,
-        "properties" to mapOf(
-            "jobId" to stringField(),
-            "tenantId" to stringField(),
-            "status" to enumField("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"),
-            "operation" to stringField(),
-            "resourceUri" to jobResourceUriField(),
-            "createdAt" to stringField(),
-            "updatedAt" to stringField(),
-            "expiresAt" to stringField(),
-            "visibilityClass" to enumField("OWN", "TENANT_VISIBLE", "ADMIN_VISIBLE"),
-            "artifactUris" to mapOf("type" to "array", "items" to artifactRefField()),
-        ),
-        "required" to listOf(
-            "jobId", "tenantId", "status", "operation", "resourceUri", "createdAt", "updatedAt",
-        ),
-    )
-
-    /** §6.4 minimum fields per `artifacts[]` entry. */
-    private fun artifactListItem(): Map<String, Any> = mapOf(
-        "type" to "object",
-        "additionalProperties" to false,
-        "properties" to mapOf(
-            "artifactId" to stringField(),
-            "tenantId" to stringField(),
-            "artifactKind" to enumField("SCHEMA", "PROFILE", "DIFF", "DATA_EXPORT", "UPLOAD_INPUT", "OTHER"),
-            "jobId" to stringField(),
-            "filename" to stringField(),
-            "sizeBytes" to integerField(),
-            "contentType" to stringField(),
-            "resourceUri" to artifactRefField(),
-            "chunkTemplate" to stringField(),
-            "createdAt" to stringField(),
-            "expiresAt" to stringField(),
-            "visibilityClass" to enumField("OWN", "TENANT_VISIBLE", "ADMIN_VISIBLE"),
-        ),
-        "required" to listOf(
-            "artifactId", "tenantId", "artifactKind", "filename", "sizeBytes", "contentType", "resourceUri",
-        ),
-    )
-
-    /** §6.4 minimum fields per `schemas[]` entry. */
-    private fun schemaListItem(): Map<String, Any> = mapOf(
-        "type" to "object",
-        "additionalProperties" to false,
-        "properties" to mapOf(
-            "schemaId" to stringField(),
-            "tenantId" to stringField(),
-            "displayName" to stringField(),
-            "artifactRef" to artifactRefField(),
-            "resourceUri" to mapOf(
-                "type" to "string",
-                "pattern" to """^dmigrate://tenants/[^/]+/schemas/[^/]+$""",
-            ),
-            "jobId" to stringField(),
-            "createdAt" to stringField(),
-            "expiresAt" to stringField(),
-        ),
-        "required" to listOf("schemaId", "tenantId", "resourceUri", "createdAt"),
-    )
-
-    /** §6.4 minimum fields per `profiles[]` entry. */
-    private fun profileListItem(): Map<String, Any> = mapOf(
-        "type" to "object",
-        "additionalProperties" to false,
-        "properties" to mapOf(
-            "profileId" to stringField(),
-            "tenantId" to stringField(),
-            "displayName" to stringField(),
-            "artifactRef" to artifactRefField(),
-            "resourceUri" to mapOf(
-                "type" to "string",
-                "pattern" to """^dmigrate://tenants/[^/]+/profiles/[^/]+$""",
-            ),
-            "jobId" to stringField(),
-            "createdAt" to stringField(),
-            "expiresAt" to stringField(),
-        ),
-        "required" to listOf("profileId", "tenantId", "resourceUri", "createdAt"),
-    )
-
-    /** §6.4 minimum fields per `diffs[]` entry. */
-    private fun diffListItem(): Map<String, Any> = mapOf(
-        "type" to "object",
-        "additionalProperties" to false,
-        "properties" to mapOf(
-            "diffId" to stringField(),
-            "tenantId" to stringField(),
-            "displayName" to stringField(),
-            "artifactRef" to artifactRefField(),
-            "resourceUri" to mapOf(
-                "type" to "string",
-                "pattern" to """^dmigrate://tenants/[^/]+/diffs/[^/]+$""",
-            ),
-            "sourceRef" to stringField(),
-            "targetRef" to stringField(),
-            "jobId" to stringField(),
-            "createdAt" to stringField(),
-            "expiresAt" to stringField(),
-        ),
-        "required" to listOf("diffId", "tenantId", "resourceUri", "sourceRef", "targetRef", "createdAt"),
-    )
+    // arrayField/enumField extracted to SchemaPrimitives.kt;
+    // list-tool schemas + their items extracted to
+    // PhaseDListToolSchemas.kt (Plan-D §10.5/§6.4).
 
     /** Job-start tools share `connectionId` + scope-spec + jobId-out. */
     private fun jobStart(primaryConnectionField: String): SchemaPair = schemaPair(
