@@ -1,12 +1,15 @@
-# MCP-Server (Phase B)
+# MCP-Server (Phase B + C + D)
 
-> **Status (0.9.6 Phase B):** Transport, Authorisierung, Discovery und
-> JSON-Schemas sind fertig — fachlich liefert der Server in Phase B nur
-> `capabilities_list` (siehe §12.11). Alle anderen 0.9.6-Tools sind in
-> der Tool-Registry geführt, dispatchen aber zum
-> `UnsupportedToolHandler` und antworten mit
-> `ToolErrorEnvelope.code = UNSUPPORTED_TOOL_OPERATION`. Phase C/D
-> ergänzen die echten Handler.
+> **Status (0.9.6):** Phase B (Transport / Auth / Discovery /
+> JSON-Schemas), Phase C (typisierte Schema-Tools, Upload-Flow,
+> `job_status_get`, `artifact_chunk_get`) und Phase D (Discovery-
+> Listen-Tools, produktives `resources/read`, HMAC-Cursor,
+> Connection-Ref-Bootstrap) sind abgeschlossen. Verbleibende
+> `UNSUPPORTED_TOOL_OPERATION`-Tools sind die Phase-E Job-Start-
+> Tools (`schema_reverse_start`, `data_profile_start`,
+> `schema_compare_start`, `data_export_start`) und die Phase-F
+> AI-Tools. Details der jeweiligen Phase: §"Phase D: Discovery und
+> Ressourcen" unten + die done-Pläne unter `docs/planning/done/`.
 
 Der MCP-Server ist ein Driving-Adapter zu d-migrate
 (`adapters/driving/mcp`) und implementiert

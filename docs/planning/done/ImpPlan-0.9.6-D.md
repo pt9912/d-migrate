@@ -1297,7 +1297,25 @@ Phase D eingefuehrten Store-/Index-Vertraege erweitert.
 | D9   | `job_status_get` + `artifact_chunk_get` Vereinheitlichung          | Implementiert | `c6328fa` `5c546e6` |
 | D10  | Connection-Ref-Bootstrap (Ports + YAML-Loader + Wiring)            | Implementiert | `d55455c` `c7fde30` |
 | D11  | stdio + HTTP Integrationstests (Discovery + Resources/List)        | Implementiert | `255d5a4` `1900e90` |
-| D12  | Doku + Statusnachzug                                               | Implementiert | (this commit) |
+| D12  | Doku + Statusnachzug                                               | Implementiert | `eb099d9` |
+
+**Review-Iterationen** (nach D12 — Plan-Wortlaut-Audit deckte
+Lücken auf, alle gefixt):
+
+| Iteration | Beschreibung                                                         | Commits |
+| --------- | -------------------------------------------------------------------- | ------- |
+| Review #1 | Strict Input-Properties (§6.1 unbekannte Filter → VALIDATION_ERROR), |         |
+|           | `artifact_chunk_get` Schema-Konsistenz (`nextChunkUri`/`Cursor` als nullable) | `eb099d9` |
+| Review #2 | Cursor-CLI-Konfig (`--cursor-keyring-file` + `mcp cursor-key generate`), |         |
+|           | Artifact-Chunk-Pfad in `resources/read`, Plan-E IndexEntry-Doku       | `8f426f6` `0818e43` `f5e405b` |
+| Review #3 | Chunk-TTL 5min (statt 15min), `maxResourceReadResponseBytes`         |         |
+|           | Gesamtenvelope-Cap, deterministischer `DEV_DEFAULT`-Keyring          | `2197e0c` |
+| Review #4 | §6.4 Mindestfelder (`format`/`origin`/`sizeBytes` etc.) +            |         |
+|           | LargeClass-Refactor (`SchemaPrimitives.kt` + `PhaseDListToolSchemas.kt`) | `e5ffffd` |
+| Review #5 | `NamedConnectionResolver` delegiert YAML-Parsing an neutralen        |         |
+|           | `PhaseCConnectionConfigParser` (Plan-D §8.2)                         | `d23a101` |
+| Review #6 | Connection-Ref `isReadableBy` auch in `resources/read` +             |         |
+|           | Production-fail-closed-Gate gegen DEV_DEFAULT-Keyring                | `4a703a5` |
 
 **Abnahmekriterien §11 erfuellt:**
 
