@@ -112,10 +112,13 @@ class McpResourcesReadScenarioTest : FunSpec({
         // the URI back into the message immediately fails the no-oracle
         // assertion. The transports MUST agree by the time the
         // server's responseError reaches the client.
+        // §6.24 final-review: each transport uses its own
+        // per-run tenant, so the URI must be built per-transport.
         withFreshTransports { s, h ->
-            val tenant = s.principal.effectiveTenantId.value
-            val unknownUri = "dmigrate://tenants/$tenant/jobs/$NONEXISTENT_ID"
-            val (stdioErr, httpErr) = bothErrors(s, h) { it.resourcesReadRaw(unknownUri) }
+            val (stdioErr, httpErr) = bothErrors(s, h) { harness ->
+                val tenant = harness.principal.effectiveTenantId.value
+                harness.resourcesReadRaw("dmigrate://tenants/$tenant/jobs/$NONEXISTENT_ID")
+            }
             assertNoOracleEqual(stdioErr, httpErr, expectedCode = MCP_RESOURCE_NOT_FOUND, expectedMessage = MSG_NOT_FOUND)
         }
     }
@@ -143,9 +146,10 @@ class McpResourcesReadScenarioTest : FunSpec({
         // return the SAME code and SAME message as a missing resource
         // so an attacker cannot probe the upload-session id space.
         withFreshTransports { s, h ->
-            val tenant = s.principal.effectiveTenantId.value
-            val sessionUri = "dmigrate://tenants/$tenant/upload-sessions/probe-id"
-            val (stdioErr, httpErr) = bothErrors(s, h) { it.resourcesReadRaw(sessionUri) }
+            val (stdioErr, httpErr) = bothErrors(s, h) { harness ->
+                val tenant = harness.principal.effectiveTenantId.value
+                harness.resourcesReadRaw("dmigrate://tenants/$tenant/upload-sessions/probe-id")
+            }
             assertNoOracleEqual(stdioErr, httpErr, expectedCode = MCP_RESOURCE_NOT_FOUND, expectedMessage = MSG_NOT_FOUND)
         }
     }
@@ -257,8 +261,8 @@ private fun withFreshTransports(
 ) {
     val stdioDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
     val httpDir = IntegrationFixtures.freshStateDir("dmigrate-it-http-")
-    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
-    val http = HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
+    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.freshTransportPrincipal("stdio"))
+    val http = HttpHarness.start(httpDir, IntegrationFixtures.freshTransportPrincipal("http"))
     try {
         stdio.initialize()
         stdio.initializedNotification()

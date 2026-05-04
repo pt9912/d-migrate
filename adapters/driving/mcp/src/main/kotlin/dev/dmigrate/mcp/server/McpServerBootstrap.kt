@@ -104,6 +104,12 @@ object McpServerBootstrap {
             PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
         resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+        // §6.24: integration tests inject a custom DisabledAuthValidator
+        // (with a per-run principal) so AP-6.24 per-transport-run
+        // principal isolation works on AuthMode.DISABLED. Production
+        // callers leave this `null`; the route falls back to the
+        // built-in `createAuthValidator(config)`.
+        authValidatorOverride: dev.dmigrate.mcp.auth.AuthValidator? = null,
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
         val responseLimitEnforcer = components.responseLimitEnforcer
@@ -140,6 +146,7 @@ object McpServerBootstrap {
                             auditScope = auditScope,
                         )
                     },
+                    authValidatorOverride = authValidatorOverride,
                 )
             },
         )

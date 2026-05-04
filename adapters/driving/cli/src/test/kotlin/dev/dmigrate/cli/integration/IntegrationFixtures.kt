@@ -56,17 +56,20 @@ internal object IntegrationFixtures {
         Files.createTempDirectory(prefix)
 
     /**
-     * AP 6.24: shared principal for both transports. Mirrors
-     * [DisabledAuthValidator.ANONYMOUS_PRINCIPAL] (the principal HTTP
-     * `AuthMode.DISABLED` synthesises) exactly — `isAdmin = true`
-     * triggers [ScopeChecker.isSatisfied]'s admin-bypass so both the
-     * route- and service-layer scope checks agree even though the
-     * principal only enumerates `dmigrate:admin`. Keeping the
-     * fixtures aligned ensures stdio + HTTP transport-neutral asserts
-     * do not need per-transport principal differences.
+     * Default tenant for the legacy [INTEGRATION_PRINCIPAL] constant.
+     * Per-transport-run scenarios MUST use [freshTransportPrincipal]
+     * — see the KDoc there for why.
      */
     val INTEGRATION_TENANT: TenantId = TenantId("default")
 
+    /**
+     * Legacy shared principal — kept for non-scenario unit tests that
+     * have no isolation requirement (e.g. `McpHarnessSmokeTest`'s
+     * cross-transport drift assertion). Scenario tests that pre-stage
+     * tenant-scoped state and assert audit-event correlation MUST use
+     * [freshTransportPrincipal] instead so AP 6.24's "eigene
+     * Tenant/Principal je Transportlauf" requirement holds end-to-end.
+     */
     val INTEGRATION_PRINCIPAL: PrincipalContext = PrincipalContext(
         principalId = PrincipalId("anonymous"),
         homeTenantId = INTEGRATION_TENANT,
@@ -78,6 +81,39 @@ internal object IntegrationFixtures {
         authSource = AuthSource.ANONYMOUS,
         expiresAt = Instant.MAX,
     )
+
+    /**
+     * AP 6.24 §6.24 final-review: per-transport-run principal so a
+     * stdio + HTTP pair invoked from the same `withFreshTransports`
+     * helper see DIFFERENT tenants/principals server-side. Each
+     * harness instance gets its own, with a unique 8-char suffix
+     * embedded in `tenantId` / `principalId` / `auditSubject` so
+     * audit-event correlation tests can pin per-transport identity
+     * without cross-pollution.
+     *
+     * `isAdmin = true` keeps `ScopeChecker.isSatisfied`'s admin-bypass
+     * working (the same loophole AuthMode.DISABLED relies on for
+     * loopback tooling) so handler-level scope checks pass without
+     * requiring the principal to enumerate every Phase-C scope.
+     */
+    fun freshTransportPrincipal(transport: String): PrincipalContext {
+        val suffix = java.util.UUID.randomUUID().toString().take(SUFFIX_LEN)
+        val tenantId = TenantId("it-$transport-$suffix")
+        val principalId = PrincipalId("it-$transport-$suffix")
+        return PrincipalContext(
+            principalId = principalId,
+            homeTenantId = tenantId,
+            effectiveTenantId = tenantId,
+            allowedTenantIds = setOf(tenantId),
+            scopes = setOf("dmigrate:admin"),
+            isAdmin = true,
+            auditSubject = "it-$transport-$suffix",
+            authSource = AuthSource.ANONYMOUS,
+            expiresAt = Instant.MAX,
+        )
+    }
+
+    private const val SUFFIX_LEN: Int = 8
 
     /**
      * Builds a Phase-C wiring identical in shape to the production

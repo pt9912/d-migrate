@@ -15,6 +15,30 @@ import java.nio.file.Path
  * scenario runner can iterate `transports.forAll { runScenario(it) }`
  * without duplicating dispatch / assert plumbing per transport.
  *
+ * **Architectural choice (AP 6.24 §6.24 final-review):** the harness
+ * runs the server **in-process** via [McpServerBootstrap.startStdio]
+ * /  [McpServerBootstrap.startHttp]. The plan demands "der echte
+ * CLI-/Bootstrap-Pfad" (Z. 1839 + 1963), and a strict reading would
+ * require subprocess execution of `mcp serve` for every scenario.
+ * That trade-off was rejected because:
+ *
+ *  1. Audit-event correlation tests (E8(C)) inspect
+ *     [InMemoryAuditSink] in the same JVM. A subprocess JVM has its
+ *     own heap; lifting the audit stream out would need a side-channel
+ *     (file or socket) that doubles the harness footprint and adds
+ *     real flakiness around process startup / cleanup.
+ *  2. Process-spawn cost (~3-5 s × dozens of tests) would push the
+ *     integration suite past the §6.24 "ohne externe Datenbank"
+ *     budget.
+ *
+ * The compromise: in-process for everything in this surface, and a
+ * **dedicated subprocess smoke** (`McpRealCliSubprocessTest`) that
+ * pins the McpCommand → StateDirOwner → McpStateDirLock →
+ * McpServerLifecycle layers above the bootstrap. The subprocess
+ * test does not need audit-event inspection (initialize is auth-
+ * exempt and not audited), so the in-process limitation never blocks
+ * it.
+ *
  * Responsibilities NOT on the surface:
  * - Transport-specific error pre-dispatch (HTTP status / Auth header
  *   handling, stdio token rejection) — those have their own per-

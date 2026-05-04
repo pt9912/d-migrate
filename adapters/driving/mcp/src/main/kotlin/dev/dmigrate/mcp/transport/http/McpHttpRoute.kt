@@ -250,7 +250,16 @@ private suspend fun validateBearer(
     config: McpServerConfig,
     authValidator: AuthValidator,
 ): PrincipalContext? {
-    if (config.authMode == AuthMode.DISABLED) return DisabledAuthValidator.ANONYMOUS_PRINCIPAL
+    if (config.authMode == AuthMode.DISABLED) {
+        // §6.24: AP 6.24 demands per-transport-run principal
+        // isolation. The validator's [principal] field is the
+        // injection point — production wiring uses
+        // [DisabledAuthValidator.ANONYMOUS_PRINCIPAL] (the default
+        // constructor arg); integration tests inject a fresh
+        // per-run principal via authValidatorOverride.
+        return (authValidator as? DisabledAuthValidator)?.principal
+            ?: DisabledAuthValidator.ANONYMOUS_PRINCIPAL
+    }
     // §12.14: tokens MUST come from `Authorization: Bearer …`. Query
     // parameters (e.g. `?access_token=…`), cookies and request bodies
     // are never inspected as token sources — and a Bearer-shaped query

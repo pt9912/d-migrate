@@ -14,19 +14,27 @@ import java.time.Instant
  * of the supplied token. Configuration validation (§12.12) blocks
  * this mode unless the bind address is loopback and there is no
  * public base URL — the fail-closed validators catch any escape.
+ *
+ * The injected [principal] defaults to [ANONYMOUS_PRINCIPAL] for
+ * production parity. Integration tests override this so each
+ * transport-run gets its own principal (AP 6.24 §6.24 demands
+ * "eigene Tenant/Principal je Transportlauf"); production code
+ * never constructs the override path.
  */
-internal class DisabledAuthValidator : AuthValidator {
+class DisabledAuthValidator(
+    val principal: PrincipalContext = ANONYMOUS_PRINCIPAL,
+) : AuthValidator {
 
     override suspend fun validate(token: String): BearerValidationResult {
-        return BearerValidationResult.Valid(ANONYMOUS_PRINCIPAL)
+        return BearerValidationResult.Valid(principal)
     }
 
     /**
-     * Builds the anonymous PrincipalContext used both when no token is
-     * supplied AND when a token IS supplied (the disabled validator
-     * doesn't inspect tokens). The route avoids calling
-     * [AuthValidator.validate] entirely in DISABLED mode but exposes
-     * the principal via this helper so the session can be initialised.
+     * Default anonymous PrincipalContext for production. The route
+     * avoids calling [AuthValidator.validate] entirely on the
+     * DISABLED short-circuit; instead it reads the validator's
+     * [principal] field directly (which falls back to this default
+     * when no override is supplied).
      */
     companion object {
         val ANONYMOUS_PRINCIPAL: PrincipalContext = PrincipalContext(

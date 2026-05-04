@@ -146,8 +146,8 @@ private fun <T> withFreshTransports(
 ): T {
     val stdioDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
     val httpDir = IntegrationFixtures.freshStateDir("dmigrate-it-http-")
-    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL, limits)
-    val http = HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL, limits)
+    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.freshTransportPrincipal("stdio"), limits)
+    val http = HttpHarness.start(httpDir, IntegrationFixtures.freshTransportPrincipal("http"), limits)
     return try {
         // Always run the initialize / initialized handshake once per
         // harness so the scenario block sees a session-ready surface.

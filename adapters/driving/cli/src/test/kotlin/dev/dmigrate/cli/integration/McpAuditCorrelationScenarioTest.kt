@@ -203,8 +203,8 @@ private fun withFreshTransports(
 ) {
     val stdioDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
     val httpDir = IntegrationFixtures.freshStateDir("dmigrate-it-http-")
-    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
-    val http = HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL)
+    val stdio = StdioHarness.start(stdioDir, IntegrationFixtures.freshTransportPrincipal("stdio"))
+    val http = HttpHarness.start(httpDir, IntegrationFixtures.freshTransportPrincipal("http"))
     try {
         stdio.initialize()
         stdio.initializedNotification()

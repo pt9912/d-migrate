@@ -77,12 +77,12 @@ class McpHarnessSmokeTest : FunSpec({
         try {
             val stdioTools: Set<String>
             val httpTools: Set<String>
-            StdioHarness.start(stdioDir, IntegrationFixtures.INTEGRATION_PRINCIPAL).use {
+            StdioHarness.start(stdioDir, IntegrationFixtures.freshTransportPrincipal("stdio")).use {
                 it.initialize()
                 it.initializedNotification()
                 stdioTools = it.toolsList().tools.map { d -> d.name }.toSet()
             }
-            HttpHarness.start(httpDir, IntegrationFixtures.INTEGRATION_PRINCIPAL).use {
+            HttpHarness.start(httpDir, IntegrationFixtures.freshTransportPrincipal("http")).use {
                 it.initialize()
                 it.initializedNotification()
                 httpTools = it.toolsList().tools.map { d -> d.name }.toSet()

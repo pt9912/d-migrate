@@ -10,6 +10,7 @@ import dev.dmigrate.mcp.protocol.ToolsCallParams
 import dev.dmigrate.mcp.protocol.ToolsCallResult
 import dev.dmigrate.mcp.protocol.ToolsListResult
 import dev.dmigrate.cli.commands.McpStateDirLock
+import dev.dmigrate.mcp.auth.DisabledAuthValidator
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -257,9 +258,17 @@ internal class HttpHarness(
                 port = 0,
                 authMode = AuthMode.DISABLED,
             )
+            // §6.24: inject a per-run DisabledAuthValidator so the
+            // HTTP route's AuthMode.DISABLED short-circuit returns
+            // THIS harness's principal — not the static
+            // ANONYMOUS_PRINCIPAL the production default uses. This
+            // is what makes per-transport-run principal isolation
+            // work end-to-end on HTTP without switching to a
+            // non-DISABLED auth flow.
             val outcome = McpServerBootstrap.startHttp(
                 config = config,
                 phaseCWiring = wiringBundle.wiring,
+                authValidatorOverride = DisabledAuthValidator(principal = principal),
             )
             val started = when (outcome) {
                 is McpStartOutcome.Started -> outcome
@@ -269,6 +278,14 @@ internal class HttpHarness(
                 }
             }
             val baseUri = URI.create("http://127.0.0.1:${started.handle.boundPort}/mcp")
+            // §6.24: bounded readiness retry before the first
+            // scenario request. Probe the well-known metadata
+            // endpoint (always 200 OK on AuthMode.DISABLED, no
+            // session required) until reachable or the timeout
+            // elapses. In-process Ktor returns once the connector
+            // is bound, but the spec demands an explicit probe so a
+            // future async-bind change cannot regress the suite.
+            awaitHttpReadiness(started.handle.boundPort)
             // AuthMode.DISABLED means the route does not derive the
             // principal from a Bearer token — the integration suite
             // pins the principal at the wiring layer instead. We pass
@@ -288,6 +305,41 @@ internal class HttpHarness(
         }
 
         private const val LOCK_VERSION: String = "0.0.0-it-http"
+
+        /**
+         * Bounded readiness retry per §6.24 acceptance:
+         * "HTTP-Harness wartet mit bounded Readiness-Retry vor dem
+         * ersten Szenario-Request; direkte Sleeps ohne Probe sind
+         * nicht zulaessig". Probes the well-known metadata
+         * endpoint (always 200 OK on AuthMode.DISABLED) at fixed
+         * intervals until it answers or the deadline elapses.
+         * Throws on timeout — a non-ready engine is a hard test
+         * setup failure, never silently swallowed.
+         */
+        private fun awaitHttpReadiness(port: Int) {
+            val client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(READINESS_PROBE_INTERVAL_MS))
+                .build()
+            val probeUri = URI.create("http://127.0.0.1:$port/.well-known/oauth-protected-resource")
+            val req = HttpRequest.newBuilder(probeUri)
+                .timeout(Duration.ofMillis(READINESS_PROBE_INTERVAL_MS))
+                .GET()
+                .build()
+            val deadline = System.currentTimeMillis() + READINESS_DEADLINE_MS
+            while (System.currentTimeMillis() < deadline) {
+                val ok = runCatching {
+                    val r = client.send(req, HttpResponse.BodyHandlers.discarding())
+                    r.statusCode() == HTTP_STATUS_OK
+                }.getOrDefault(false)
+                if (ok) return
+                Thread.sleep(READINESS_PROBE_INTERVAL_MS)
+            }
+            error("HTTP harness: server on port $port did not become ready within ${READINESS_DEADLINE_MS}ms")
+        }
+
+        private const val READINESS_PROBE_INTERVAL_MS: Long = 50
+        private const val READINESS_DEADLINE_MS: Long = 5_000
+        private const val HTTP_STATUS_OK: Int = 200
     }
 
     /** AP 6.24 E7: typed start outcome — see [StdioHarness.StartOutcome]. */

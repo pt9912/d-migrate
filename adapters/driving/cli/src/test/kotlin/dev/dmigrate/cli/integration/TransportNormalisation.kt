@@ -35,14 +35,16 @@ internal object TransportNormalisation {
     }
 
     /**
-     * Strips the trailing `/{dynamicId}` from artefact / schema /
-     * upload-session resource URIs so two responses that produced
-     * different (but well-formed) ids still compare equal at the
-     * shape layer.
+     * Strips the dynamic ID AND the tenant segment from artefact /
+     * schema / upload-session resource URIs so two responses produced
+     * by transports with DIFFERENT per-run principals (AP 6.24 §6.24
+     * "eigene Tenant/Principal je Transportlauf") still compare equal
+     * at the shape layer. The kind segment remains unmasked because
+     * tools/list parity demands it stays as a fachliches Feld.
      */
     fun normaliseResourceUri(raw: String): String =
         DYNAMIC_RESOURCE_URI.replace(raw) { match ->
-            "${match.groupValues[1]}/<masked>"
+            "dmigrate://tenants/<tenant>/${match.groupValues[2]}/<masked>"
         }
 
     /**
@@ -72,6 +74,13 @@ internal object TransportNormalisation {
 
     const val MASKED: String = "<masked>"
 
+    /**
+     * Group 1 = `dmigrate://tenants` (the scheme + tenants prefix);
+     * Group 2 = the kind segment. The tenant ID + the trailing
+     * dynamic ID are both replaced with sentinels at substitution
+     * time so cross-transport equality holds when stdio + http use
+     * different per-run principals.
+     */
     private val DYNAMIC_RESOURCE_URI: Regex =
-        Regex("""(dmigrate://tenants/[^/]+/(?:artifacts|schemas|upload_sessions|jobs))/[^/\s"]+""")
+        Regex("""(dmigrate://tenants)/[^/]+/(artifacts|schemas|upload_sessions|jobs)/[^/\s"]+""")
 }
