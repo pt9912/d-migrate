@@ -15,8 +15,9 @@ import java.util.concurrent.CompletableFuture
  * `tools/call` per §6.8 + §12.8 — `tools/list` advertises the registry
  * descriptors, `tools/call` dispatches into the handler chain.
  *
- * Resource methods (`resources/list`, `resources/templates/list`,
- * `resources/read`) follow in AP 6.9.
+ * AP 6.9 lights up the resource surface: `resources/list`,
+ * `resources/templates/list`, `resources/read`. All three are
+ * scope-gated on `dmigrate:read` per §12.9.
  */
 interface McpService {
 
@@ -37,4 +38,7 @@ interface McpService {
 
     @JsonRequest("resources/templates/list")
     fun resourcesTemplatesList(params: ResourcesTemplatesListParams?): CompletableFuture<ResourcesTemplatesListResult>
+
+    @JsonRequest("resources/read")
+    fun resourcesRead(params: ReadResourceParams): CompletableFuture<ReadResourceResult>
 }

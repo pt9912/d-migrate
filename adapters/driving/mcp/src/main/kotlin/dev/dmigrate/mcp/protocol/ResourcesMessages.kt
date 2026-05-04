@@ -60,3 +60,36 @@ data class ResourceTemplate(
     val mimeType: String,
     val description: String? = null,
 )
+
+/**
+ * MCP `resources/read` request shape per the 2025-11-25 specification
+ * + `ImpPlan-0.9.6-B.md` §5.5 + §6.9. `uri` MUST be a fully-resolved
+ * `dmigrate://tenants/{tenantId}/{kind}/{id}` URI; templated URIs
+ * (with literal `{placeholder}` segments) are rejected as
+ * `-32602 InvalidParams`. A missing `uri` field is also `-32602`.
+ */
+data class ReadResourceParams(
+    val uri: String? = null,
+)
+
+/**
+ * MCP `resources/read` response. `contents` is a list because the
+ * spec allows multi-part resources (e.g. metadata + binary blob);
+ * Phase B always returns exactly one JSON projection.
+ */
+data class ReadResourceResult(
+    val contents: List<ResourceContents>,
+)
+
+/**
+ * One content slice of a `resources/read` response. Exactly one of
+ * `text` (UTF-8 string) or `blob` (Base64-encoded bytes) MUST be
+ * populated. Phase B always returns `text` with
+ * `mimeType=application/json`.
+ */
+data class ResourceContents(
+    val uri: String,
+    val mimeType: String,
+    val text: String? = null,
+    val blob: String? = null,
+)

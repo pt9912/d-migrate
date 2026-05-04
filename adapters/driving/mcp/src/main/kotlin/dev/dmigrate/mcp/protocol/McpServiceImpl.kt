@@ -15,6 +15,7 @@ import dev.dmigrate.server.application.audit.AuditContext
 import dev.dmigrate.server.application.audit.AuditScope
 import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.mcp.resources.ResourceStores
+import dev.dmigrate.mcp.resources.ResourcesReadHandler
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.mcp.resources.ResourcesListCursor
@@ -70,6 +71,7 @@ class McpServiceImpl(
     private val currentPrincipal = AtomicReference(initialPrincipal)
     private val gson = GsonBuilder().disableHtmlEscaping().create()
     private val resourcesListHandler = ResourcesListHandler(resourceStores)
+    private val resourcesReadHandler = ResourcesReadHandler(resourceStores)
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
@@ -259,6 +261,37 @@ class McpServiceImpl(
             )
         }
         return CompletableFuture.completedFuture(resourcesListHandler.list(principal, cursor))
+    }
+
+    override fun resourcesRead(params: ReadResourceParams): CompletableFuture<ReadResourceResult> {
+        // §12.9 + §12.14: resources/read requires dmigrate:read.
+        // Stdio reaches the service directly; HTTP also re-checks
+        // upstream — the service-layer enforce keeps both transports
+        // honest from one place.
+        enforceScope("resources/read")?.let { return CompletableFuture.failedFuture(it) }
+        // enforceScope guarantees a non-null principal when it returns
+        // null, but HTTP can rebind concurrently between the scope
+        // check and the read; re-fetch and re-check defensively.
+        val principal = currentPrincipal.get()
+            ?: return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
+                ),
+            )
+        val raw = params.uri ?: return CompletableFuture.failedFuture(
+            ResponseErrorException(
+                ResponseError(
+                    ResponseErrorCode.InvalidParams,
+                    "resources/read requires 'uri'",
+                    null,
+                ),
+            ),
+        )
+        return try {
+            CompletableFuture.completedFuture(resourcesReadHandler.read(principal, raw))
+        } catch (e: ResponseErrorException) {
+            CompletableFuture.failedFuture(e)
+        }
     }
 
     override fun resourcesTemplatesList(

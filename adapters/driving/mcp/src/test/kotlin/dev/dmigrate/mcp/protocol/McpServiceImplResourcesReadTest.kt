@@ -1,0 +1,386 @@
+package dev.dmigrate.mcp.protocol
+
+import com.google.gson.Gson
+import dev.dmigrate.mcp.resources.ResourceStores
+import dev.dmigrate.mcp.resources.ResourcesReadHandler
+import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ManagedArtifact
+import dev.dmigrate.server.core.connection.ConnectionReference
+import dev.dmigrate.server.core.connection.ConnectionSensitivity
+import dev.dmigrate.server.core.job.JobRecord
+import dev.dmigrate.server.core.job.JobStatus
+import dev.dmigrate.server.core.job.JobVisibility
+import dev.dmigrate.server.core.job.ManagedJob
+import dev.dmigrate.server.core.principal.AuthSource
+import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.core.principal.PrincipalId
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.DiffIndexEntry
+import dev.dmigrate.server.ports.ProfileIndexEntry
+import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
+import dev.dmigrate.server.ports.memory.InMemoryDiffStore
+import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryProfileStore
+import dev.dmigrate.server.ports.memory.InMemorySchemaStore
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.time.Instant
+import java.util.concurrent.ExecutionException
+
+private val TENANT = TenantId("acme")
+private val ALICE = PrincipalId("alice")
+private val BOB = PrincipalId("bob")
+
+private fun principal(
+    id: PrincipalId = ALICE,
+    tenant: TenantId = TENANT,
+    allowedTenants: Set<TenantId> = setOf(TENANT),
+    scopes: Set<String> = setOf("dmigrate:read"),
+    isAdmin: Boolean = false,
+): PrincipalContext = PrincipalContext(
+    principalId = id,
+    homeTenantId = tenant,
+    effectiveTenantId = tenant,
+    allowedTenantIds = allowedTenants,
+    scopes = scopes,
+    isAdmin = isAdmin,
+    auditSubject = id.value,
+    authSource = AuthSource.SERVICE_ACCOUNT,
+    expiresAt = Instant.MAX,
+)
+
+private fun jobRecord(
+    jobId: String = "job-1",
+    owner: PrincipalId = ALICE,
+    visibility: JobVisibility = JobVisibility.OWNER,
+    tenant: TenantId = TENANT,
+): JobRecord = JobRecord(
+    managedJob = ManagedJob(
+        jobId = jobId,
+        operation = "schema_generate",
+        status = JobStatus.SUCCEEDED,
+        createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+        updatedAt = Instant.parse("2026-01-01T00:01:00Z"),
+        expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+        createdBy = owner.value,
+        artifacts = listOf("artifact-1"),
+    ),
+    tenantId = tenant,
+    ownerPrincipalId = owner,
+    visibility = visibility,
+    resourceUri = ServerResourceUri(tenant, ResourceKind.JOBS, jobId),
+)
+
+private fun artifactRecord(
+    artifactId: String = "art-1",
+    owner: PrincipalId = ALICE,
+    visibility: JobVisibility = JobVisibility.OWNER,
+    tenant: TenantId = TENANT,
+): ArtifactRecord = ArtifactRecord(
+    managedArtifact = ManagedArtifact(
+        artifactId = artifactId,
+        filename = "schema.sql",
+        contentType = "application/sql",
+        sizeBytes = 1024,
+        sha256 = "deadbeef",
+        createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+        expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+    ),
+    kind = ArtifactKind.SCHEMA,
+    tenantId = tenant,
+    ownerPrincipalId = owner,
+    visibility = visibility,
+    resourceUri = ServerResourceUri(tenant, ResourceKind.ARTIFACTS, artifactId),
+    jobRef = "job-1",
+)
+
+private fun stores(
+    jobs: List<JobRecord> = emptyList(),
+    artifacts: List<ArtifactRecord> = emptyList(),
+    schemas: List<SchemaIndexEntry> = emptyList(),
+    profiles: List<ProfileIndexEntry> = emptyList(),
+    diffs: List<DiffIndexEntry> = emptyList(),
+    connections: List<ConnectionReference> = emptyList(),
+): ResourceStores {
+    val jobStore = InMemoryJobStore().apply { jobs.forEach { save(it) } }
+    val artifactStore = InMemoryArtifactStore().apply { artifacts.forEach { save(it) } }
+    val schemaStore = InMemorySchemaStore().apply { schemas.forEach { save(it) } }
+    val profileStore = InMemoryProfileStore().apply { profiles.forEach { save(it) } }
+    val diffStore = InMemoryDiffStore().apply { diffs.forEach { save(it) } }
+    val connectionStore = InMemoryConnectionReferenceStore().apply { connections.forEach { save(it) } }
+    return ResourceStores(
+        jobStore = jobStore,
+        artifactStore = artifactStore,
+        schemaStore = schemaStore,
+        profileStore = profileStore,
+        diffStore = diffStore,
+        connectionStore = connectionStore,
+    )
+}
+
+private fun jsonRpcErrorOf(throwable: Throwable): ResponseErrorException =
+    ((throwable as ExecutionException).cause as ResponseErrorException)
+
+private fun parseTextContent(result: ReadResourceResult): Map<String, Any?> {
+    result.contents.size shouldBe 1
+    val slice = result.contents.single()
+    slice.mimeType shouldBe "application/json"
+    slice.blob shouldBe null
+    @Suppress("UNCHECKED_CAST")
+    return Gson().fromJson(slice.text, Map::class.java) as Map<String, Any?>
+}
+
+class McpServiceImplResourcesReadTest : FunSpec({
+
+    test("resources/read returns the projected content for an own OWNER-visibility job") {
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(jobs = listOf(jobRecord())),
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams(uri = "dmigrate://tenants/acme/jobs/job-1"),
+        ).get()
+        result.contents.single().uri shouldBe "dmigrate://tenants/acme/jobs/job-1"
+        val body = parseTextContent(result)
+        body["jobId"] shouldBe "job-1"
+        body["operation"] shouldBe "schema_generate"
+        body["status"] shouldBe "SUCCEEDED"
+        body["visibility"] shouldBe "OWNER"
+        body["tenantId"] shouldBe "acme"
+    }
+
+    test("resources/read returns the projected content for an own artifact") {
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(artifacts = listOf(artifactRecord())),
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams(uri = "dmigrate://tenants/acme/artifacts/art-1"),
+        ).get()
+        val body = parseTextContent(result)
+        body["artifactId"] shouldBe "art-1"
+        body["filename"] shouldBe "schema.sql"
+        body["kind"] shouldBe "SCHEMA"
+        // sha256 surfaces — it is a content hash, not a secret.
+        body["sha256"] shouldBe "deadbeef"
+    }
+
+    test("resources/read on a connection projects without credentialRef/providerRef") {
+        val withCredentials = ConnectionReference(
+            connectionId = "conn-1",
+            tenantId = TENANT,
+            displayName = "Local DB",
+            dialectId = "postgresql",
+            sensitivity = ConnectionSensitivity.NON_PRODUCTION,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.CONNECTIONS, "conn-1"),
+            credentialRef = "vault://acme/db/main",
+            providerRef = "providers://aws-secrets-manager",
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(connections = listOf(withCredentials)),
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams(uri = "dmigrate://tenants/acme/connections/conn-1"),
+        ).get()
+        val body = parseTextContent(result)
+        body.containsKey("dialectId") shouldBe true
+        body.containsKey("sensitivity") shouldBe true
+        // §6.9 secrets-free contract — the projection MUST drop both
+        // refs even when the source record carries them.
+        body.containsKey("credentialRef") shouldBe false
+        body.containsKey("providerRef") shouldBe false
+        // Defense-in-depth: scan the serialized text for the secret
+        // values themselves so a future field rename can't quietly
+        // re-introduce a leak.
+        val raw = result.contents.single().text!!
+        check(!raw.contains("vault://")) { "credentialRef value leaked into resources/read body" }
+        check(!raw.contains("providers://")) { "providerRef value leaked into resources/read body" }
+    }
+
+    test("resources/read for a schema/profile/diff index entry returns its metadata") {
+        val schema = SchemaIndexEntry(
+            schemaId = "schema-1",
+            tenantId = TENANT,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.SCHEMAS, "schema-1"),
+            artifactRef = "dmigrate://tenants/acme/artifacts/art-1",
+            displayName = "users.sql",
+            createdAt = Instant.parse("2026-02-01T00:00:00Z"),
+            expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+        )
+        val profile = ProfileIndexEntry(
+            profileId = "profile-1",
+            tenantId = TENANT,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.PROFILES, "profile-1"),
+            artifactRef = "dmigrate://tenants/acme/artifacts/art-2",
+            displayName = "Q1 profile",
+            createdAt = Instant.parse("2026-02-02T00:00:00Z"),
+            expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+        )
+        val diff = DiffIndexEntry(
+            diffId = "diff-1",
+            tenantId = TENANT,
+            resourceUri = ServerResourceUri(TENANT, ResourceKind.DIFFS, "diff-1"),
+            artifactRef = "dmigrate://tenants/acme/artifacts/art-3",
+            sourceRef = "dmigrate://tenants/acme/schemas/schema-0",
+            targetRef = "dmigrate://tenants/acme/schemas/schema-1",
+            displayName = "schema-0 → schema-1",
+            createdAt = Instant.parse("2026-02-03T00:00:00Z"),
+            expiresAt = Instant.parse("2026-12-31T00:00:00Z"),
+        )
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(schemas = listOf(schema), profiles = listOf(profile), diffs = listOf(diff)),
+        )
+
+        parseTextContent(
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/schemas/schema-1")).get(),
+        )["schemaId"] shouldBe "schema-1"
+        parseTextContent(
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/profiles/profile-1")).get(),
+        )["profileId"] shouldBe "profile-1"
+        parseTextContent(
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/diffs/diff-1")).get(),
+        )["diffId"] shouldBe "diff-1"
+    }
+
+    test("resources/read without bound principal fails with InvalidRequest") {
+        val sut = McpServiceImpl(serverVersion = "0.0.0", initialPrincipal = null)
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/job-1")).get()
+        }
+        jsonRpcErrorOf(ex).responseError.code shouldBe ResponseErrorCode.InvalidRequest.value
+    }
+
+    test("resources/read without dmigrate:read scope fails with InvalidRequest") {
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(scopes = emptySet()),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/job-1")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResponseErrorCode.InvalidRequest.value
+        // The scope-error message names the method (not the URI) so
+        // operators can debug; this is the documented enforce-scope
+        // shape, not a no-oracle leak.
+        check(err.message.contains("resources/read")) {
+            "scope error message should name the method, was: ${err.message}"
+        }
+    }
+
+    test("resources/read with missing uri parameter fails with InvalidParams") {
+        val sut = McpServiceImpl(serverVersion = "0.0.0", initialPrincipal = principal())
+        val ex = shouldThrow<ExecutionException> { sut.resourcesRead(ReadResourceParams(uri = null)).get() }
+        jsonRpcErrorOf(ex).responseError.code shouldBe ResponseErrorCode.InvalidParams.value
+    }
+
+    test("resources/read with malformed URI fails with InvalidParams") {
+        val sut = McpServiceImpl(serverVersion = "0.0.0", initialPrincipal = principal())
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("https://example.com/resource")).get()
+        }
+        jsonRpcErrorOf(ex).responseError.code shouldBe ResponseErrorCode.InvalidParams.value
+    }
+
+    test("resources/read with foreign tenant outside allowedTenantIds fails with InvalidRequest") {
+        // syntactically valid URI, tenant explicitly outside the
+        // principal's allowed set → tenant-scope-denied per §5.6.
+        // The error surfaces BEFORE any record lookup, so the response
+        // never reveals whether `other/jobs/job-x` exists.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(allowedTenants = setOf(TENANT)),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/other/jobs/job-x")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResponseErrorCode.InvalidRequest.value
+        check(err.message.contains("tenant scope denied")) {
+            "tenant-scope-denied error should be classified, was: ${err.message}"
+        }
+    }
+
+    test("resources/read for an unknown id within tenant fails with -32002 Resource not found") {
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+            resourceStores = stores(),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/missing")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
+        err.message shouldBe "Resource not found"
+    }
+
+    test("resources/read for a job owned by a different principal collapses to Resource not found (no-oracle)") {
+        // The job exists, but visibility=OWNER and the requester is
+        // not the owner → the no-oracle pattern (§5.6) demands the
+        // exact same error as "id never existed". A test that asserts
+        // the same wire shape for both branches is the only way to
+        // prove the oracle is closed.
+        val foreign = jobRecord(jobId = "bobs-job", owner = BOB, visibility = JobVisibility.OWNER)
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(id = ALICE),
+            resourceStores = stores(jobs = listOf(foreign)),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(ReadResourceParams("dmigrate://tenants/acme/jobs/bobs-job")).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
+        err.message shouldBe "Resource not found"
+    }
+
+    test("resources/read on the upload-sessions kind also surfaces as Resource not found") {
+        // Upload sessions are not MCP-readable; the resources/read
+        // dispatch MUST collapse this kind into the no-oracle branch
+        // so an attacker can't probe upload-session ids through the
+        // protocol.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(),
+        )
+        val ex = shouldThrow<ExecutionException> {
+            sut.resourcesRead(
+                ReadResourceParams("dmigrate://tenants/acme/upload-sessions/session-x"),
+            ).get()
+        }
+        val err = jsonRpcErrorOf(ex).responseError
+        err.code shouldBe ResourcesReadHandler.MCP_RESOURCE_NOT_FOUND_CODE
+        err.message shouldBe "Resource not found"
+    }
+
+    test("admin principal can read a TENANT-scoped record across the tenant") {
+        // OWNER vs ADMIN: pin that the admin bypass works through
+        // resources/read just like through tools/call so an operator
+        // playbook touching both surfaces stays consistent.
+        val tenantJob = jobRecord(jobId = "tenant-job", owner = BOB, visibility = JobVisibility.TENANT)
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            initialPrincipal = principal(id = ALICE, isAdmin = true),
+            resourceStores = stores(jobs = listOf(tenantJob)),
+        )
+        val result = sut.resourcesRead(
+            ReadResourceParams("dmigrate://tenants/acme/jobs/tenant-job"),
+        ).get()
+        parseTextContent(result)["jobId"] shouldBe "tenant-job"
+    }
+})

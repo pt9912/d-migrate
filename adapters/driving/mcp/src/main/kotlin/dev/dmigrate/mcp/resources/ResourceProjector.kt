@@ -77,6 +77,112 @@ internal object ResourceProjector {
 }
 
 /**
+ * Phase B `resources/read` content projections per §5.5 + §6.9.
+ *
+ * Where [ResourceProjector] yields the small `Resource` envelope used
+ * by `resources/list`, this projector yields the JSON map that
+ * becomes the `text` body of `resources/read`. The two share one
+ * security responsibility — secrets MUST NOT cross the projection
+ * boundary; the connection projection in particular drops
+ * `credentialRef`, `providerRef` and any JDBC URL.
+ *
+ * The shape is intentionally minimal: identifiers, status/timestamps,
+ * the canonical URI plus a few descriptive fields per kind. Phase D
+ * may add typed payload sections (e.g. inline schema bodies) by
+ * appending to the same map; clients MUST tolerate unknown fields.
+ *
+ * Returned maps may contain nullable values; the caller serialises
+ * them with Gson which renders `null` literally — that's intentional
+ * so clients can distinguish "field absent" (older server) from
+ * "field present, no value" (e.g. no `jobRef` for an ad-hoc upload).
+ */
+internal object ResourceContentProjector {
+
+    fun projectContent(job: JobRecord): Map<String, Any?> = mapOf(
+        "uri" to job.resourceUri.render(),
+        "tenantId" to job.tenantId.value,
+        "jobId" to job.managedJob.jobId,
+        "operation" to job.managedJob.operation,
+        "status" to job.managedJob.status.name,
+        "visibility" to job.visibility.name,
+        "createdAt" to job.managedJob.createdAt.toString(),
+        "updatedAt" to job.managedJob.updatedAt.toString(),
+        "expiresAt" to job.managedJob.expiresAt.toString(),
+        "createdBy" to job.managedJob.createdBy,
+        "artifacts" to job.managedJob.artifacts,
+    )
+
+    fun projectContent(artifact: ArtifactRecord): Map<String, Any?> = mapOf(
+        "uri" to artifact.resourceUri.render(),
+        "tenantId" to artifact.tenantId.value,
+        "artifactId" to artifact.managedArtifact.artifactId,
+        "filename" to artifact.managedArtifact.filename,
+        "kind" to artifact.kind.name,
+        "contentType" to artifact.managedArtifact.contentType,
+        "sizeBytes" to artifact.managedArtifact.sizeBytes,
+        "sha256" to artifact.managedArtifact.sha256,
+        "visibility" to artifact.visibility.name,
+        "createdAt" to artifact.managedArtifact.createdAt.toString(),
+        "expiresAt" to artifact.managedArtifact.expiresAt.toString(),
+        "jobRef" to artifact.jobRef,
+    )
+
+    fun projectContent(schema: SchemaIndexEntry): Map<String, Any?> = mapOf(
+        "uri" to schema.resourceUri.render(),
+        "tenantId" to schema.tenantId.value,
+        "schemaId" to schema.schemaId,
+        "displayName" to schema.displayName,
+        "artifactRef" to schema.artifactRef,
+        "createdAt" to schema.createdAt.toString(),
+        "expiresAt" to schema.expiresAt.toString(),
+        "jobRef" to schema.jobRef,
+        "labels" to schema.labels,
+    )
+
+    fun projectContent(profile: ProfileIndexEntry): Map<String, Any?> = mapOf(
+        "uri" to profile.resourceUri.render(),
+        "tenantId" to profile.tenantId.value,
+        "profileId" to profile.profileId,
+        "displayName" to profile.displayName,
+        "artifactRef" to profile.artifactRef,
+        "createdAt" to profile.createdAt.toString(),
+        "expiresAt" to profile.expiresAt.toString(),
+        "jobRef" to profile.jobRef,
+        "labels" to profile.labels,
+    )
+
+    fun projectContent(diff: DiffIndexEntry): Map<String, Any?> = mapOf(
+        "uri" to diff.resourceUri.render(),
+        "tenantId" to diff.tenantId.value,
+        "diffId" to diff.diffId,
+        "displayName" to diff.displayName,
+        "artifactRef" to diff.artifactRef,
+        "sourceRef" to diff.sourceRef,
+        "targetRef" to diff.targetRef,
+        "createdAt" to diff.createdAt.toString(),
+        "expiresAt" to diff.expiresAt.toString(),
+        "jobRef" to diff.jobRef,
+        "labels" to diff.labels,
+    )
+
+    /**
+     * Connection content — same secret-free contract as
+     * [ResourceProjector.project]. `credentialRef`, `providerRef`,
+     * `allowedPrincipalIds` and `allowedScopes` are deliberately
+     * dropped: they are authorization metadata, not connection
+     * surface that callers of `resources/read` need.
+     */
+    fun projectContent(connection: ConnectionReference): Map<String, Any?> = mapOf(
+        "uri" to connection.resourceUri.render(),
+        "tenantId" to connection.tenantId.value,
+        "connectionId" to connection.connectionId,
+        "displayName" to connection.displayName,
+        "dialectId" to connection.dialectId,
+        "sensitivity" to connection.sensitivity.name,
+    )
+}
+
+/**
  * Static templates per `ImpPlan-0.9.6-B.md` §5.5 + §6.9. Phase B
  * publishes one template per resource family plus the chunk template
  * (acceptance: "Templates enthalten Chunk-URIs"). The list is ordered
