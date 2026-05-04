@@ -8,10 +8,14 @@ import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
+import dev.dmigrate.mcp.resources.EmptyDiffStore
+import dev.dmigrate.mcp.resources.EmptyProfileStore
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.AuditSink
+import dev.dmigrate.server.ports.DiffStore
 import dev.dmigrate.server.ports.JobStore
+import dev.dmigrate.server.ports.ProfileStore
 import dev.dmigrate.server.ports.SchemaStore
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
@@ -73,4 +77,21 @@ data class PhaseCWiring(
      * tests/dev default to `AssembledUploadPayloadFactory.inMemory()`.
      */
     val assembledUploadPayloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
+
+    /**
+     * AP D6: store backing `profile_list`. No Phase-C tool emits
+     * profile records yet (Phase-D start tools will), so the
+     * default is the no-op [EmptyProfileStore]. Integration tests
+     * inject an `InMemoryProfileStore` so staged profiles
+     * round-trip through the discovery handler.
+     */
+    val profileStore: ProfileStore = EmptyProfileStore,
+
+    /**
+     * AP D6: store backing `diff_list`. Same default-empty
+     * rationale as [profileStore] — `schema_compare` produces
+     * `diffArtifactRef` but no DiffIndexEntry yet; Phase-D start
+     * tools will.
+     */
+    val diffStore: DiffStore = EmptyDiffStore,
 )

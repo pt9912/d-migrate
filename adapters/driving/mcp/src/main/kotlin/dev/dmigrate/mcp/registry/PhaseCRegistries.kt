@@ -145,6 +145,12 @@ object PhaseCRegistries {
                 clock = wiring.clock,
             ),
             "job_status_get" to JobStatusGetHandler(jobStore = wiring.jobStore),
+            // AP D6: discovery list tools.
+            "job_list" to JobListHandler(jobStore = wiring.jobStore),
+            "artifact_list" to ArtifactListHandler(artifactStore = wiring.artifactStore),
+            "schema_list" to SchemaListHandler(schemaStore = wiring.schemaStore),
+            "profile_list" to ProfileListHandler(profileStore = wiring.profileStore),
+            "diff_list" to DiffListHandler(diffStore = wiring.diffStore),
         )
         // Filter to the scope-mapping universe so a deployment that
         // narrows the tool set (e.g. read-only vs full Phase-C)

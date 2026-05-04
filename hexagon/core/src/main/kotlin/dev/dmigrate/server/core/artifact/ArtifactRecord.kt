@@ -25,8 +25,11 @@ data class ArtifactRecord(
     val adminScope: String? = null,
     val jobRef: String? = null,
 ) {
-    fun isReadableBy(principal: PrincipalContext): Boolean {
-        if (tenantId != principal.effectiveTenantId) return false
+    fun isReadableBy(
+        principal: PrincipalContext,
+        addressedTenantId: TenantId = principal.effectiveTenantId,
+    ): Boolean {
+        if (tenantId != addressedTenantId) return false
         return when (visibility) {
             JobVisibility.OWNER -> principal.principalId == ownerPrincipalId
             JobVisibility.TENANT -> true
