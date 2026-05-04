@@ -78,12 +78,11 @@ internal class StdioHarness(
         return gson.fromJson(call("tools/call", gson.toJsonTree(params)), ToolsCallResult::class.java)
     }
 
-    override fun resourcesRead(uri: String): JsonElement {
+    override fun resourcesRead(uri: String): JsonElement = resourcesReadRaw(uri).resultOrThrow()
+
+    override fun resourcesReadRaw(uri: String): JsonRpcResponse {
         val params = com.google.gson.JsonObject().apply { addProperty("uri", uri) }
-        // Returns the raw response result OR throws if the JSON-RPC
-        // came back as an error. Spec callers handle both branches
-        // explicitly (E6 no-oracle).
-        return callRaw("resources/read", params).resultOrThrow()
+        return callRaw("resources/read", params)
     }
 
     private fun call(method: String, params: JsonElement?): JsonElement = callRaw(method, params).resultOrThrow()

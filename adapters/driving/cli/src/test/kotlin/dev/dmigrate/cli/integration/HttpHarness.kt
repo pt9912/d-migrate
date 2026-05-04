@@ -89,9 +89,11 @@ internal class HttpHarness(
         return gson.fromJson(call("tools/call", gson.toJsonTree(params)), ToolsCallResult::class.java)
     }
 
-    override fun resourcesRead(uri: String): JsonElement {
+    override fun resourcesRead(uri: String): JsonElement = resourcesReadRaw(uri).resultOrThrow()
+
+    override fun resourcesReadRaw(uri: String): JsonRpcResponse {
         val params = JsonObject().apply { addProperty("uri", uri) }
-        return sendRequestRaw("resources/read", params, allowSessionHeaders = true).parsed.resultOrThrow()
+        return sendRequestRaw("resources/read", params, allowSessionHeaders = true).parsed
     }
 
     private fun call(method: String, params: JsonElement?): JsonElement =

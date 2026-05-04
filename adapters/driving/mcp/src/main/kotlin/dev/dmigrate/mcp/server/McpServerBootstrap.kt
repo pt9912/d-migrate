@@ -102,7 +102,7 @@ object McpServerBootstrap {
         phaseCWiring: PhaseCWiring? = null,
         components: PhaseCRegistries.McpServiceComponents =
             PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
-        resourceStores: ResourceStores = ResourceStores.empty(),
+        resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
@@ -169,7 +169,7 @@ object McpServerBootstrap {
         phaseCWiring: PhaseCWiring? = null,
         components: PhaseCRegistries.McpServiceComponents =
             PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
-        resourceStores: ResourceStores = ResourceStores.empty(),
+        resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry

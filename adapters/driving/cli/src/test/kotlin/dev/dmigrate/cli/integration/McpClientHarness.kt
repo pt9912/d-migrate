@@ -58,14 +58,21 @@ internal interface McpClientHarness : AutoCloseable {
     fun toolsCall(name: String, arguments: JsonElement?): ToolsCallResult
 
     /**
-     * AP 6.9 / AP 6.24 E6: `resources/read` may not yet be wired in
-     * the protocol layer; the harness exposes it on the surface so
-     * the E6 scenarios can fail fast with a clear "method not found"
-     * if the wire-API isn't there. Returns a [JsonElement] (rather
-     * than a typed result) so the spec can branch on the JSON-RPC
-     * error vs a result body without parsing twice.
+     * AP 6.9 / AP 6.24 E6: `resources/read` happy-path. Returns the
+     * `result` JsonElement; throws if the server returned a JSON-RPC
+     * error. Use [resourcesReadRaw] when the spec needs to inspect
+     * the error branch (no-oracle assertions).
      */
     fun resourcesRead(uri: String): JsonElement
+
+    /**
+     * AP 6.24 E6: raw `resources/read` for no-oracle scenarios.
+     * Returns the full [JsonRpcResponse] so the spec can pin both
+     * the success projection and the error envelope (code, scrubbed
+     * message class) on a single call. The return type carries
+     * `result` and `error` mutually-exclusively per JSON-RPC 2.0.
+     */
+    fun resourcesReadRaw(uri: String): JsonRpcResponse
 
     override fun close()
 
