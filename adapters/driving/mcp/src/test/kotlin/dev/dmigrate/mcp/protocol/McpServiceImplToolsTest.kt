@@ -456,4 +456,50 @@ class McpServiceImplToolsTest : FunSpec({
         sut.toolsCall(ToolsCallParams(name = "arg_capture_tool", arguments = args)).get()
         captured.single()!!.get("foo").asString shouldBe "bar"
     }
+
+    test("AP D6 review: unknown property on a published list-tool input fails with VALIDATION_ERROR") {
+        // Plan-D §6.1: "Filter werden strikt validiert. Unbekannte
+        // Filter liefern VALIDATION_ERROR." The check runs at the
+        // dispatcher layer (`enforceStrictInputProperties`) so the
+        // 5 list-tools, the 4 typed Phase-C tools and any other
+        // schema with `additionalProperties=false` get the same
+        // strict surface — the runtime contract finally matches
+        // the published input-schema.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = PhaseBRegistries.toolRegistry(),
+            initialPrincipal = PRINCIPAL,
+        )
+        val args = JsonObject().apply {
+            addProperty("limit", 10) // not a Phase-D filter
+        }
+        val result = sut.toolsCall(ToolsCallParams(name = "job_list", arguments = args)).get()
+        result.isError shouldBe true
+        val envelope = JsonParser.parseString(result.content.single().text!!).asJsonObject
+        envelope.get("code").asString shouldBe ToolErrorCode.VALIDATION_ERROR.name
+        val details = envelope.getAsJsonArray("details")
+        details.any { it.asJsonObject.get("key").asString == "limit" } shouldBe true
+    }
+
+    test("AP D6 review: known properties pass through (no false-positive on Phase-D filters)") {
+        // Sanity: the strict-properties check must NOT reject a
+        // valid `*_list` filter. Pin a positive case so a future
+        // refactor that drifts the allowlist breaks loudly.
+        val sut = McpServiceImpl(
+            serverVersion = "0.0.0",
+            toolRegistry = PhaseBRegistries.toolRegistry(),
+            initialPrincipal = PRINCIPAL,
+        )
+        val args = JsonObject().apply {
+            addProperty("status", "SUCCEEDED") // known job_list filter
+            addProperty("pageSize", 50)
+        }
+        val result = sut.toolsCall(ToolsCallParams(name = "job_list", arguments = args)).get()
+        // Phase-B registry returns UNSUPPORTED_TOOL_OPERATION because
+        // the production handler isn't wired here — but the strict-
+        // properties check is upstream, so VALIDATION_ERROR would be
+        // surfaced first if the check rejected the filter.
+        val envelope = JsonParser.parseString(result.content.single().text!!).asJsonObject
+        envelope.get("code").asString shouldBe ToolErrorCode.UNSUPPORTED_TOOL_OPERATION.name
+    }
 })

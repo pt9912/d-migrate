@@ -10,7 +10,7 @@
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;
 > `docs/planning/done/ImpPlan-0.9.6-B.md`;
 > `docs/planning/done/ImpPlan-0.9.6-C.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-D.md`;
+> `docs/planning/done/ImpPlan-0.9.6-D.md`;
 > `docs/planning/open/ImpPlan-0.9.6-E0.md`;
 > `docs/planning/open/ImpPlan-0.9.6-E.md`;
 > `docs/planning/open/ImpPlan-0.9.6-F.md`; `spec/ki-mcp.md`;

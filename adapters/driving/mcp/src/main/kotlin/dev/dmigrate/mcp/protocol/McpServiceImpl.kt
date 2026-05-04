@@ -239,6 +239,15 @@ class McpServiceImpl(
         context: ToolCallContext,
     ): ToolsCallResult {
         responseLimitEnforcer?.enforceRequestSize(context.name, context.arguments)
+        // Plan-D §6.1 + AP D6 review: enforce
+        // `additionalProperties=false` from the published
+        // input schema. Without this, an unknown filter
+        // (`{"limit": 10}` on a `*_list` tool, or any other
+        // typo) would be silently dropped — the spec says
+        // VALIDATION_ERROR. Tools whose schema deliberately
+        // accepts arbitrary properties (or that have no
+        // schema entry) skip the check.
+        enforceStrictInputProperties(context.name, context.arguments)
         val raw = handler.handle(context)
         val outcome = responseLimitEnforcer
             ?.enforceResponseSize(context.name, context.principal, raw)
@@ -249,6 +258,48 @@ class McpServiceImpl(
                 isError = false,
             )
             is ToolCallOutcome.Error -> errorEnvelopeResult(outcome.envelope)
+        }
+    }
+
+    /**
+     * Plan-D §6.1 + AP D6 review: every tool whose published
+     * `inputSchema` declares `additionalProperties=false` must
+     * have its incoming `arguments` checked against the schema's
+     * top-level `properties` keys. Unknown keys collapse to a
+     * typed `VALIDATION_ERROR`. Tools without a registered schema
+     * (or with `additionalProperties=true`) skip the check.
+     *
+     * The check is intentionally shallow — only the top-level
+     * keys are validated. Nested filter objects and wire-shape
+     * details stay the responsibility of the handler. This
+     * matches the Plan-D §6.1 acceptance ("Filter werden strikt
+     * validiert. Unbekannte Filter liefern VALIDATION_ERROR")
+     * without dragging in a full JSON-Schema validator.
+     */
+    private fun enforceStrictInputProperties(
+        toolName: String,
+        args: com.google.gson.JsonElement?,
+    ) {
+        if (args == null || !args.isJsonObject) return
+        val schemaPair = dev.dmigrate.mcp.schema.PhaseBToolSchemas.forTool(toolName) ?: return
+        val inputSchema = schemaPair.inputSchema
+        // The `obj()` helper sets `additionalProperties=false` by
+        // default; tools that need a permissive schema set it to
+        // `true` explicitly.
+        if (inputSchema["additionalProperties"] != false) return
+        @Suppress("UNCHECKED_CAST")
+        val allowed = (inputSchema["properties"] as? Map<String, *>)?.keys ?: emptySet()
+        val received = args.asJsonObject.entrySet().map { it.key }
+        val unknown = received.filter { it !in allowed }
+        if (unknown.isNotEmpty()) {
+            throw dev.dmigrate.server.application.error.ValidationErrorException(
+                unknown.map {
+                    dev.dmigrate.server.application.error.ValidationViolation(
+                        it,
+                        "unknown property '$it' (additionalProperties=false)",
+                    )
+                },
+            )
         }
     }
 

@@ -2,8 +2,9 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: D (`Discovery und Ressourcen`)
-> **Status**: In Arbeit (2026-05-04) — Plan-A/B/C abgeschlossen,
-> Phase D startet auf der Phase-C-Codebase.
+> **Status**: **Implementiert (2026-05-04)** — Plan-A/B/C/D abgeschlossen.
+> AP D1–D12 gelandet auf `develop`. Offene Nacharbeiten siehe §14
+> "Nacharbeiten" am Plan-Ende.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase D, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
@@ -1278,3 +1279,55 @@ Connection-Ref-Vertraege anbindet.
 Phase E darf keine eigenen Resource-URI- oder Connection-Ref-Modelle
 einfuehren. Wenn Start-Tools zusaetzliche Metadaten brauchen, werden die in
 Phase D eingefuehrten Store-/Index-Vertraege erweitert.
+
+---
+
+## 13. Implementierungsstatus (AP D1–D12)
+
+| AP   | Beschreibung                                                       | Status        | Commits |
+| ---- | ------------------------------------------------------------------ | ------------- | ------- |
+| D1   | Resource-URI-ADT und Parser (`McpResourceUri`)                     | Implementiert | `15b9f01` |
+| D2   | Resolver-Vertrag und Fehler-Mapping (`ResourceErrorPrecedence`)    | Implementiert | `b908331` |
+| D3   | Cursor-Kapselung (HMAC-`McpCursorCodec`)                           | Implementiert | `a906a40` |
+| D4   | Store-/Index-Vertraege fuer Listen (`*ListFilter`)                 | Implementiert | `5b8c91b` |
+| D5   | Listen-Tool-Schemas und Projections                                | Implementiert | `f88e476` |
+| D6   | Discovery-Tool-Handler (5 `*_list`-Tools)                          | Implementiert | `a594df4` |
+| D7   | `resources/read` produktiv (3 sub-commits: ADT + strict + cap)     | Implementiert | `6ca3b5a` `3f620d4` `c154afc` |
+| D8   | HMAC-Cursor `resources/list` + 5 List-Tools (2 sub-commits)        | Implementiert | `950392c` `8f8dc07` |
+| D9   | `job_status_get` + `artifact_chunk_get` Vereinheitlichung          | Implementiert | `c6328fa` `5c546e6` |
+| D10  | Connection-Ref-Bootstrap (Ports + YAML-Loader + Wiring)            | Implementiert | `d55455c` `c7fde30` |
+| D11  | stdio + HTTP Integrationstests (Discovery + Resources/List)        | Implementiert | `255d5a4` `1900e90` |
+| D12  | Doku + Statusnachzug                                               | Implementiert | (this commit) |
+
+**Abnahmekriterien §11 erfuellt:**
+
+- ✅ Listen liefern stabile typisierte Collection-Felder + `nextCursor`.
+- ✅ Default-Sortierung `createdAt DESC, id ASC` ist im Store + Test gepinnt.
+- ✅ Cursor an Tenant, Filter, `pageSize`, Sortierung gebunden
+  (`McpCursorCodec` Binding).
+- ✅ Produktive MCP-Cursor tragen `version`, `kid`, `issuedAt`,
+  `expiresAt`; ungekapselte Cursor-Tokens sind nicht mehr im Output.
+- ✅ `resources/read` liefert URI-only-Antworten mit Inline-vs-
+  artifactRef-Schwelle und `dmigrate://capabilities` als
+  Sonder-Resource.
+- ✅ `error.data.dmigrateCode` ist auf jedem Resource-Fehler-Envelope
+  gesetzt.
+- ✅ Connection-Refs werden ohne Secret-Materialisierung in Discovery
+  geliefert.
+
+## 14. Nacharbeiten (offen)
+
+Der folgende Punkt bleibt fuer Phase E offen:
+
+1. **Profile-/Diff-Start-Tools** — `profile_list` und `diff_list`
+   liefern bisher nur extern eingespielte Index-Eintraege. Phase E
+   muss als Akzeptanzkriterium nachweisen, dass:
+   - `data_profile_start` nach erfolgreichem Jobabschluss einen
+     `ProfileIndexEntry` in den gemeinsamen Profile-Store schreibt.
+   - `schema_compare_start` nach erfolgreichem Jobabschluss einen
+     `DiffIndexEntry` in den gemeinsamen Diff-Store schreibt.
+   - die erzeugten Profile und Diffs ohne zweiten MCP-Index ueber
+     `profile_list`, `diff_list`, `resources/list` und `resources/read`
+     auffindbar sind.
+   - Idempotency-Replays nach `COMMITTED` keine weiteren Profile-/Diff-
+     IndexRecords oder Artefakte materialisieren.

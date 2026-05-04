@@ -61,10 +61,16 @@
           "type": "string"
         },
         "nextChunkUri": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "nextChunkCursor": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "executionMeta": {
           "type": "object",

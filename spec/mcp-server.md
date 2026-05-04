@@ -227,16 +227,16 @@ dmigrate://tenants/{tenantId}/connections/{connectionId}
 
 | Bereich                                      | Status                                                       |
 | -------------------------------------------- | ------------------------------------------------------------ |
-| Tool-Handler (außer `capabilities_list`)     | **Nicht implementiert** — `UNSUPPORTED_TOOL_OPERATION`       |
-| `resources/read`                             | **Nicht implementiert** — Phase D                            |
+| Tool-Handler (außer `capabilities_list`)     | **Phase C+D produktiv** — Schema-Tools, Upload-Flow, `job_status_get`, `artifact_chunk_get` (Phase C); `*_list`-Discovery (Phase D). |
+| `resources/read`                             | **Phase D produktiv** — siehe Abschnitt "Phase D: Discovery und Ressourcen" unten. |
 | SSE-Push / `notifications/*`                 | **Nicht implementiert**                                      |
 | `subscribe`/`listChanged` Capabilities      | Beide `false` (§12.16, §12.17)                              |
-| `connections/list` (Admin-Filter)           | **Nicht implementiert** als Tool                             |
-| `job_cancel`                                 | Registry-Eintrag — Handler folgt Phase C/D                   |
-| Upload-Session-Tools                         | Registry-Einträge — Handler folgen Phase C/D                 |
-| AI-Tools (procedure_transform_*, testdata_*) | Registry-Einträge — Handler folgen Phase C/D                 |
-| Resource-Stores (Real-Backends)              | `ResourceStores.empty()` als Default — Phase C/D verdrahtet |
-| Cross-Tenant-Reads                           | **Nicht implementiert**                                      |
+| `connections/list` (Admin-Filter)           | **Phase D**: Connection-Refs erscheinen in `resources/list` und sind via `resources/read` lesbar (secret-frei). |
+| `job_cancel`                                 | Registry-Eintrag — Handler folgt Phase E (Job-Lifecycle).   |
+| Upload-Session-Tools                         | **Phase C produktiv** (`artifact_upload_init`, `artifact_upload`, `artifact_upload_abort`). |
+| AI-Tools (procedure_transform_*, testdata_*) | Registry-Einträge — Handler folgen Phase F (AI-Tools).      |
+| Resource-Stores (Real-Backends)              | **Phase D**: `ResourceStores.fromPhaseCWiring(...)` lädt Job/Artifact/Schema/Profile/Diff/Connection aus produktiver Wiring. |
+| Cross-Tenant-Reads                           | **Phase D**: Tenant-Scope ueber `allowedTenantIds`; Cross-Tenant-Reads erlaubt, wenn der URI-Tenant in `allowedTenantIds` liegt. |
 | OAuth Authorization Server / DCR             | **Nicht implementiert**                                      |
 | Multi-Scope-Tools                            | Heute nicht im Default-Mapping — Wire-Format ist vorbereitet |
 
@@ -245,6 +245,191 @@ Tool kommt in Phase C/D mit den jeweiligen Handlern; Phase-B-Schemas
 sind typisiert auf die offensichtlichen Top-Level-Argumente und durch
 einen Golden-Test gegen Drift gepinnt
 (`adapters/driving/mcp/src/test/resources/golden/phase-b-tool-schemas.json`).
+
+---
+
+## Phase D: Discovery und Ressourcen
+
+Phase D (`docs/planning/done/ImpPlan-0.9.6-D.md`) macht Jobs,
+Artefakte, Schemas, Profile, Diffs und Connection-Refs ueber MCP
+auffindbar und gezielt lesbar. Die Phase ergaenzt Phase B/C
+additiv — bestehende Tools/Wire-Vertraege bleiben rueckwaerts-
+kompatibel, sofern hier nicht ausdruecklich anders dokumentiert.
+
+### Discovery-Tools (`*_list`)
+
+Phase D liefert fuenf produktive Discovery-Tools, alle mit
+`dmigrate:read`-Scope:
+
+| Tool             | Collection-Feld | Wire-spezifische Filter                              |
+| ---------------- | --------------- | ---------------------------------------------------- |
+| `job_list`       | `jobs`          | `status`, `operation`, `createdAfter/Before`         |
+| `artifact_list`  | `artifacts`     | `kind`, `jobId`, `createdAfter/Before`               |
+| `schema_list`    | `schemas`       | `jobId`, `createdAfter/Before`                       |
+| `profile_list`   | `profiles`      | `jobId`, `createdAfter/Before`                       |
+| `diff_list`      | `diffs`         | `jobId`, `sourceRef`, `targetRef`, `createdAfter/Before` |
+
+Gemeinsame Parameter aller fuenf Tools: `tenantId` (optional,
+adressierend, muss in `allowedTenantIds` liegen), `pageSize`
+(1..200, Default 50), `cursor` (HMAC-gekapselt). Standard-Sortierung:
+`createdAt DESC, id ASC`. Antwort-Form: typisiertes Collection-Feld
+plus `nextCursor` (`null` bei letzter Seite).
+
+### `resources/read` produktiv
+
+`resources/read` akzeptiert nur `uri` als Eingabe — `cursor`,
+`range`, `chunkId` und andere Zusatzfelder werden mit
+`-32602 InvalidParams` + `error.data.dmigrateCode=VALIDATION_ERROR`
+abgewiesen.
+
+Resource-URI-Familie:
+
+```
+dmigrate://capabilities                                   (tenantless, statisch)
+dmigrate://tenants/{tenantId}/jobs/{jobId}
+dmigrate://tenants/{tenantId}/artifacts/{artifactId}
+dmigrate://tenants/{tenantId}/artifacts/{artifactId}/chunks/{chunkId}
+dmigrate://tenants/{tenantId}/schemas/{schemaId}
+dmigrate://tenants/{tenantId}/profiles/{profileId}
+dmigrate://tenants/{tenantId}/diffs/{diffId}
+dmigrate://tenants/{tenantId}/connections/{connectionId}
+```
+
+`upload-sessions` ist parsebar fuer interne Upload-Pfade, aber als
+MCP-Resource-Kind blockiert: `resources/read` auf eine
+`upload-sessions`-URI in einem erlaubten Tenant kollabiert auf
+`-32602 InvalidParams` mit
+`dmigrateCode=VALIDATION_ERROR` *vor* jedem Store-Lookup, damit
+keine Upload-Session-ID via Existenz-Test eruiert werden kann.
+
+Fehlerfamilien (alle `error.data.dmigrateCode` gesetzt):
+
+| dmigrateCode            | JSON-RPC-Code   | Trigger                                                                  |
+| ----------------------- | --------------- | ------------------------------------------------------------------------ |
+| `VALIDATION_ERROR`      | `-32602`        | URI-Grammar-Fehler, blockierter Kind, unbekannter Parameter, Cursor-Tampering |
+| `TENANT_SCOPE_DENIED`   | `-32600`        | URI-Tenant ausserhalb `allowedTenantIds`                                |
+| `RESOURCE_NOT_FOUND`    | `-32002` (MCP)  | unbekannte ID / nicht-sichtbarer Datensatz / abgelaufenes Artefakt      |
+
+Inline-vs-`artifactRef`: jede serialisierte JSON-Projektion bleibt
+unter `MAX_INLINE_RESOURCE_CONTENT_BYTES` (Default 49152). Ueber-
+volume Projektionen werden auf eine Stripped-Form mit
+`artifactRef`/`inlineLimitExceeded`-Marker verkuerzt; Projektionen
+ohne `artifactRef` (z. B. die Capabilities-Doc selbst) liefern
+`VALIDATION_ERROR` mit dem Cap als Detail.
+
+Artifact-Chunk-URIs liefern den adressierten Chunk direkt ueber
+`resources/read`: Text-MIME-Typen (`text/*`, `application/json`,
+`application/yaml`, `application/x-yaml`, `application/xml`) werden
+als MCP-`text`-Content ausgegeben, binaere oder unbekannte MIME-Typen
+als natives MCP-`blob`-Content-Feld mit Base64-Bytes. Groessere
+Artefakte iterieren weiter ueber die `nextChunkUri` /
+`nextChunkCursor`-Mechanik von `artifact_chunk_get`; `resources/read`
+nimmt dafuer weiterhin nur die jeweilige URI entgegen.
+
+### `dmigrate://capabilities`
+
+Die einzige tenantlose Resource-URI. Liefert dieselbe
+Capabilities-Projektion wie das `capabilities_list`-Tool, ohne den
+per-Call `executionMeta.requestId`. Eine leer konfigurierte
+Capabilities-Provider-Function (Phase-B-/legacy-Pfad) kollabiert
+auf `RESOURCE_NOT_FOUND`, damit ein Stale-Deployment niemals einen
+halbfertigen Capabilities-Body liefert.
+
+### Cursor-Kapselung (HMAC)
+
+`resources/list` und alle fuenf `*_list`-Tools sealen Cursor mit
+HMAC-SHA256 (`McpCursorCodec`). Gebunden ist jeder Cursor an:
+
+- `cursorType` (z. B. `"job_list"`, `"resources/list"`)
+- `tenantId`
+- `family` (Tool-spezifisch oder fixed `"resources/list-walk"`)
+- `filters` (deterministische Map, leer bei `resources/list`)
+- `pageSize`
+- `sort` (heute immer `null`; Plan-E reserviert)
+- `version`, `kid`, `issuedAt`, `expiresAt` (TTL 15 min)
+
+`artifact_chunk_get` produziert einen HMAC-gesealtenen
+`nextChunkCursor` zusaetzlich zum `nextChunkUri`. Bindung:
+(tenant, artifactId, chunkSize). Eingangsseitig akzeptiert das Tool
+weiterhin den nackten `chunkId`-Integer (befristete Phase-C-
+Kompatibilitaet) und wirft `VALIDATION_ERROR`, wenn beide gesetzt
+sind. Der Output enthaelt nie ein `nextChunkId`-Feld.
+
+Manipulierte Cursor (HMAC-Signatur falsch, Tenant-/Filter-/Page-
+Size-Mismatch) kollabieren auf `VALIDATION_ERROR` — Tool-Pfade
+ueber das Tool-Error-Envelope, `resources/list` ueber
+JSON-RPC-`-32602`. Multi-Instanz-Deployments muessen einen
+deterministischen `cursorKeyring` wiren; der Default-Random-
+Keyring funktioniert nur fuer Single-Instance-Setups.
+
+Legacy-Phase-B-Cursor werden nicht dual-read-faehig gemacht, sobald
+ein HMAC-Codec gewired ist. Der alte unsigned `resources/list`-Cursor
+(Base64 von `{kind, innerToken}`) bleibt nur in Phase-B-only
+Deployments ohne Codec gueltig. Produktive Deployments mit Codec
+weisen unsigned Cursor mit `VALIDATION_ERROR` ab. Ein spaeteres
+Compat-Flag darf additiv eingefuehrt werden, muss aber explizit
+aktiviert werden; der Default bleibt fail-closed.
+
+Produktive Multi-Instanz-Deployments starten `mcp serve` mit
+`--cursor-keyring-file <path>`. Datei-Format:
+
+```yaml
+signing:
+  kid: "cursor-2026-05"
+  secretBase64: "base64-encoded-32-byte-secret"
+validation:
+  - kid: "cursor-2026-04"
+    secretBase64: "base64-encoded-32-byte-secret"
+```
+
+Ein initiales File kann lokal erzeugt werden:
+
+```bash
+d-migrate mcp cursor-key generate --kid cursor-2026-05 > cursor-keyring.yaml
+d-migrate mcp cursor-key validate --cursor-keyring-file cursor-keyring.yaml
+```
+
+Rotation folgt strikt `validation-first -> activate -> drop`:
+
+1. **validation-first**: neuen Key auf allen Instanzen nur unter
+   `validation` ausrollen; `signing.kid` bleibt unveraendert.
+2. **activate**: nach vollstaendigem Rollout wird derselbe neue Key
+   auf allen Instanzen als `signing` gesetzt; der alte Signing-Key
+   bleibt unter `validation`.
+3. **drop**: erst nach `maxCursorTtl + clockSkew` seit dem letzten
+   moeglichen Signaturzeitpunkt wird der alte Key aus `validation`
+   entfernt.
+
+Kollidierende `kid`s mit unterschiedlichen Secrets sind ein
+Startfehler. Validation-Keys duerfen den aktiven Signing-Key nur mit
+identischem Secret duplizieren; die Duplikation wird ignoriert.
+
+### Connection-Ref-Bootstrap
+
+Phase D liefert einen adapter-neutralen Bootstrap fuer Connection-
+Refs in `adapters/driven/connection-config`:
+
+- `ConnectionReferenceConfigLoader` (Port) — laedt secret-freie
+  `ConnectionReference`-Records aus Projekt-/Server-Config.
+- `ConnectionSecretResolver` (Port) — separate Secret-Aufloesung
+  fuer Runner-/Driver-Pfade. Discovery darf den Resolver NIE
+  aufrufen; `ResolvedConnection.Failure` mit stabilen
+  reason-Codes (`PROVIDER_MISSING`, `ENV_NOT_SET`,
+  `PRINCIPAL_NOT_AUTHORISED`, `NO_CREDENTIAL_REF`).
+- `YamlConnectionReferenceLoader` — produktive Implementation.
+  Erwartet die Map-Form pro Connection (mit `displayName`,
+  `dialectId`, `sensitivity`, `credentialRef`, `providerRef`,
+  `allowedPrincipalIds`, `allowedScopes`). Phase-C-String-Form
+  (bare URL) wird silent gedroppt — Phase-D §3.7 verbietet das
+  Materialisieren expandierter Secrets im Discovery-Pfad.
+- `EnvConnectionSecretResolver` — Default-Resolver fuer das
+  `env:VAR_NAME`-Schema. Authorisiert via
+  `allowedPrincipalIds`/`allowedScopes` mit Admin-Bypass.
+
+`resources/read` auf eine Connection-URI dropt `credentialRef`,
+`providerRef`, `allowedPrincipalIds` und `allowedScopes` aus der
+Wire-Projektion. Discovery-Konsumenten sehen ausschliesslich
+`connectionId`, `tenantId`, `displayName`, `dialectId`, `sensitivity`.
 
 ---
 
@@ -263,6 +448,8 @@ einen Golden-Test gegen Drift gepinnt
 | `--audience`                | Erwartetes `aud`/Resource-Indicator.                             |
 | `--stdio-token-file`        | Token-Registry für stdio (JSON oder YAML).                       |
 | `--allow-origin`            | Origin-Allowlist-Eintrag (mehrfach setzbar).                     |
+| `--connection-config`       | Project/server YAML fuer Phase-D Connection-Refs. Wenn nicht gesetzt, wird ein globales `--config <path>` wiederverwendet. |
+| `--cursor-keyring-file`     | YAML-Keyring fuer deterministische HMAC-Cursor in Multi-Instanz-Deployments. |
 
 ---
 
@@ -271,5 +458,10 @@ einen Golden-Test gegen Drift gepinnt
 - [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
   Phasen-B-Spezifikation (§5 Architektur, §12.13–§12.18 Implementation
   Contracts).
-- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase C/D
+- [`docs/planning/done/ImpPlan-0.9.6-C.md`](../docs/planning/done/ImpPlan-0.9.6-C.md) —
+  Phase-C: produktive Tool-Handler, Upload-Flow, AP 6.24 Integrationssuite.
+- [`docs/planning/done/ImpPlan-0.9.6-D.md`](../docs/planning/done/ImpPlan-0.9.6-D.md) —
+  Phase-D: Discovery, `resources/read`, HMAC-Cursor, Connection-Ref-
+  Bootstrap (siehe oben "Phase D: Discovery und Ressourcen").
+- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase E+
   (Tool-Handler, `resources/read`, Upload-Sessions, AI-Tools).

@@ -223,10 +223,14 @@ internal object PhaseBToolSchemas {
                 "text" to stringField(),
                 "contentBase64" to stringField(),
                 "sha256" to stringField(),
-                "nextChunkUri" to stringField(),
-                // AP D9: HMAC-sealed continuation cursor for the
-                // tools/call-only walk; null on the last chunk.
-                "nextChunkCursor" to stringField(),
+                // AP D9 review: nextChunkUri and nextChunkCursor are
+                // wire-explicit `null` on the last chunk per §5.5
+                // line 471 ("nextChunkUri MUST be present, null on
+                // the last chunk") and Plan-D §10.9. Declared as
+                // string|null so a Schema-validating client doesn't
+                // reject the terminal response.
+                "nextChunkUri" to nullableStringField(),
+                "nextChunkCursor" to nullableStringField(),
                 "executionMeta" to objectField(),
             ).required(
                 "artifactId",
@@ -564,6 +568,17 @@ internal object PhaseBToolSchemas {
     )
 
     private fun stringField(): Map<String, Any> = mapOf("type" to "string")
+
+    /**
+     * AP D9 review fix: a string-or-null field for wire fields that
+     * the runtime emits as explicit `null` on terminal states (e.g.
+     * `artifact_chunk_get.nextChunkUri` / `.nextChunkCursor` on the
+     * last chunk). JSON-Schema 2020-12 type-arrays are the
+     * idiomatic spelling; stays compatible with both
+     * Schema-validating and Schema-ignoring clients.
+     */
+    private fun nullableStringField(): Map<String, Any> = mapOf("type" to listOf("string", "null"))
+
     private fun booleanField(): Map<String, Any> = mapOf("type" to "boolean")
     private fun integerField(minimum: Int = 0): Map<String, Any> =
         mapOf("type" to "integer", "minimum" to minimum)
