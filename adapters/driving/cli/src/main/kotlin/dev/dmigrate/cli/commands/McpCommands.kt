@@ -7,10 +7,13 @@ import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
+import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.cliVersion
+import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -40,7 +43,7 @@ class McpCommand : CliktCommand(name = "mcp") {
     override fun help(context: Context) = "MCP-server commands (Phase C: stdio + Streamable HTTP)"
 
     init {
-        subcommands(McpServeCommand())
+        subcommands(McpServeCommand(), McpCursorKeyCommand())
     }
 
     override fun run() = Unit
@@ -139,6 +142,17 @@ class McpServeCommand : CliktCommand(name = "serve") {
             "unreferenceable after restart.",
     )
 
+    private val connectionConfigPath by option(
+        "--connection-config",
+        help = "Project/server YAML for Phase-D secret-free connection references. " +
+            "Defaults to the root --config path when set.",
+    ).path()
+
+    private val cursorKeyringFile by option(
+        "--cursor-keyring-file",
+        help = "YAML keyring for HMAC-sealed MCP cursors. Required for deterministic multi-instance deployments.",
+    ).path()
+
     override fun run() {
         val config = buildConfig()
         // §12.15: stdio ignores authMode entirely. Use the slimmer
@@ -159,6 +173,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         }
 
         val retention = parseRetentionOrExit()
+        val cursorKeyring = parseCursorKeyringOrExit()
         val owner = resolveStateDirOrExit()
         try {
             try {
@@ -176,8 +191,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 runStartupSweepOrExit(owner, retention)
                 echoStartStateLine(owner)
                 when (transport) {
-                    "stdio" -> startStdio(config, owner, lock)
-                    "http" -> startHttp(config, owner, lock)
+                    "stdio" -> startStdio(config, owner, lock, cursorKeyring)
+                    "http" -> startHttp(config, owner, lock, cursorKeyring)
                     else -> error("transport check failed: $transport")
                 }
             } finally {
@@ -315,11 +330,34 @@ class McpServeCommand : CliktCommand(name = "serve") {
         )
     }
 
-    private fun startStdio(config: McpServerConfig, owner: StateDirOwner, lock: McpStateDirLock) {
+    private fun effectiveConnectionConfigPath() =
+        connectionConfigPath ?: (currentContext.parent?.parent?.command as? DMigrate)?.config
+
+    private fun parseCursorKeyringOrExit(): CursorKeyring? {
+        val path = cursorKeyringFile ?: return null
+        return try {
+            McpCursorKeyringConfig.load(path)
+        } catch (failure: McpCursorKeyringConfigError) {
+            echo("MCP server configuration is invalid:", err = true)
+            echo("  - ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+    }
+
+    private fun startStdio(
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        lock: McpStateDirLock,
+        cursorKeyring: CursorKeyring?,
+    ) {
         // AP 6.14 / 6.20 / 6.21: hand the bootstrap the file-backed
         // CLI wiring so every tools/call dispatches to its real
         // handler with byte content on disk under the locked state dir.
-        val wiring = McpCliPhaseCWiring.phaseCWiring(stateDir = owner.resolved.path)
+        val wiring = McpCliPhaseCWiring.phaseCWiring(
+            stateDir = owner.resolved.path,
+            connectionConfigPath = effectiveConnectionConfigPath(),
+            cursorKeyring = cursorKeyring,
+        )
         when (val outcome = McpServerBootstrap.startStdio(config = config, phaseCWiring = wiring)) {
             is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
             is McpStartOutcome.Started -> {
@@ -334,11 +372,20 @@ class McpServeCommand : CliktCommand(name = "serve") {
         }
     }
 
-    private fun startHttp(config: McpServerConfig, owner: StateDirOwner, lock: McpStateDirLock) {
+    private fun startHttp(
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        lock: McpStateDirLock,
+        cursorKeyring: CursorKeyring?,
+    ) {
         // AP 6.14 / 6.20 / 6.21: same file-backed Phase-C wiring for
         // the HTTP transport so both routes share dispatch shape and
         // on-disk layout.
-        val wiring = McpCliPhaseCWiring.phaseCWiring(stateDir = owner.resolved.path)
+        val wiring = McpCliPhaseCWiring.phaseCWiring(
+            stateDir = owner.resolved.path,
+            connectionConfigPath = effectiveConnectionConfigPath(),
+            cursorKeyring = cursorKeyring,
+        )
         when (val outcome = McpServerBootstrap.startHttp(config = config, phaseCWiring = wiring)) {
             is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
             is McpStartOutcome.Started -> {
@@ -356,5 +403,47 @@ class McpServeCommand : CliktCommand(name = "serve") {
         echo("MCP server configuration is invalid:", err = true)
         errors.forEach { echo("  - $it", err = true) }
         throw ProgramResult(2)
+    }
+}
+
+class McpCursorKeyCommand : CliktCommand(name = "cursor-key") {
+    override fun help(context: Context) = "Generate and validate MCP cursor keyring files"
+
+    init {
+        subcommands(McpCursorKeyGenerateCommand(), McpCursorKeyValidateCommand())
+    }
+
+    override fun run() = Unit
+}
+
+class McpCursorKeyGenerateCommand : CliktCommand(name = "generate") {
+    override fun help(context: Context) = "Generate a YAML cursor keyring with one active signing key"
+
+    private val kid by option(
+        "--kid",
+        help = "Stable key id to place into future cursor envelopes.",
+    ).required()
+
+    override fun run() {
+        echo(McpCursorKeyringConfig.renderSingleKeyFile(kid))
+    }
+}
+
+class McpCursorKeyValidateCommand : CliktCommand(name = "validate") {
+    override fun help(context: Context) = "Validate a cursor keyring YAML file"
+
+    private val keyringFile by option(
+        "--cursor-keyring-file",
+        help = "YAML keyring to validate.",
+    ).path().required()
+
+    override fun run() {
+        try {
+            McpCursorKeyringConfig.load(keyringFile)
+            echo("cursor keyring valid: $keyringFile")
+        } catch (failure: McpCursorKeyringConfigError) {
+            echo("cursor keyring invalid: ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
     }
 }

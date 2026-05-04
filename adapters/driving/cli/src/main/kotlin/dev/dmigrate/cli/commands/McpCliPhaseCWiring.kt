@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.connection.LoaderBackedConnectionReferenceStore
 import dev.dmigrate.connection.YamlConnectionReferenceLoader
+import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.adapter.audit.logging.LoggingAuditSink
@@ -77,6 +78,7 @@ internal object McpCliPhaseCWiring {
         clock: Clock = Clock.systemUTC(),
         connectionConfigPath: Path? = null,
         tenantId: TenantId = TenantId("default"),
+        cursorKeyring: CursorKeyring? = null,
     ): PhaseCWiring {
         val quotaStore = InMemoryQuotaStore()
         val baseWiring = PhaseCWiring(
@@ -92,12 +94,13 @@ internal object McpCliPhaseCWiring {
             auditSink = LoggingAuditSink(),
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
         )
+        val keyedWiring = cursorKeyring?.let { baseWiring.copy(cursorKeyring = it) } ?: baseWiring
         // AP D10: when a YAML config path is provided, wrap the
         // base wiring with a `LoaderBackedConnectionReferenceStore`.
         // Default branch keeps PhaseCWiring's Empty default — Phase-C-
         // only deployments without a YAML migrate untouched.
         return if (connectionConfigPath != null) {
-            baseWiring.copy(
+            keyedWiring.copy(
                 connectionStore = LoaderBackedConnectionReferenceStore(
                     YamlConnectionReferenceLoader(
                         configPath = connectionConfigPath,
@@ -106,7 +109,7 @@ internal object McpCliPhaseCWiring {
                 ),
             )
         } else {
-            baseWiring
+            keyedWiring
         }
     }
 }

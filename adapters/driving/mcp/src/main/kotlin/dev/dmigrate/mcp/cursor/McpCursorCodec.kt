@@ -253,11 +253,16 @@ class CursorKeyring(
      */
     val allValidation: List<CursorKey> = buildList {
         add(signing)
+        val seen = linkedMapOf(signing.kid to signing)
         for (k in additionalValidation) {
-            require(k.kid != signing.kid || k == signing) {
-                "validation key '${k.kid}' collides with active signing key"
+            val existing = seen[k.kid]
+            require(existing == null || existing == k) {
+                "validation key '${k.kid}' collides with a different secret"
             }
-            if (k.kid != signing.kid) add(k)
+            if (existing == null) {
+                seen[k.kid] = k
+                add(k)
+            }
         }
     }
 

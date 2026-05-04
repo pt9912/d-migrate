@@ -284,6 +284,14 @@ class McpCursorCodecTest : FunSpec({
         }
     }
 
+    test("CursorKeyring rejects duplicate validation kid with different secrets") {
+        val first = CursorKey("kid-validation", ByteArray(SECRET_LEN) { 3 })
+        val second = CursorKey("kid-validation", ByteArray(SECRET_LEN) { 4 })
+        shouldThrow<IllegalArgumentException> {
+            CursorKeyring(signing = activeKey, additionalValidation = listOf(first, second))
+        }
+    }
+
     test("CursorKey rejects blank kid / empty secret at construction") {
         shouldThrow<IllegalArgumentException> { CursorKey("", ByteArray(SECRET_LEN) { 1 }) }
         shouldThrow<IllegalArgumentException> { CursorKey("kid", ByteArray(0)) }
