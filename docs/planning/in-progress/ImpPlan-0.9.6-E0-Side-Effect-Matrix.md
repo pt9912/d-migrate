@@ -254,39 +254,62 @@ Codebasis: `DataTransferRunner.kt`, `TransferExecutor.kt`,
 
 ---
 
-## 6. Streaming-/Reader-/Writer-Pfade quer
+## 6. Streaming-/Reader-/Writer-Pfade quer (E0.5-Final-Klassifikation)
 
-Diese Sektion sammelt Port-Grenzen, an denen E0.5 entscheiden muss, ob die
-Cancel-Pruefung im Runner reicht oder ob der Port-Vertrag geschaerft werden
-muss (Hauptplan §6.5).
+Diese Sektion klassifiziert nach Hauptplan §4.1 die zentralen Driver-/Port-
+Aufrufe in einer der drei Kategorien:
 
-| Port-Grenze | Heutiger Vertrag | E0.5-Entscheidung | Gate-Risiko |
-| --- | --- | --- | --- |
-| `dev.dmigrate.driver.SchemaReader.read(pool, options)` | synchron, kein Cancel-Token | Token-Param ergaenzen oder Statement-Timeout pro Driver verifizieren | hoch — alle Reverse/Compare/Transfer-Pfade haengen daran |
-| `dev.dmigrate.driver.DataReader.streamTable(pool, table, ...)` | Sequence-Iterator, kein Cancel-Token | Iterator-Cancel-Vertrag definieren (z.B. `Sequence` mit periodischer Token-Pruefung am Iterator-Rand) | hoch — alle Transfer-Pfade |
-| `dev.dmigrate.driver.DataWriter.openTable(pool, ...)` | synchron, kein Cancel-Token, keine `abort`-API | `abort`-API auf Vertragsebene ergaenzen oder Statement-Timeout pro Driver | hoch — alle Import/Transfer-Pfade |
-| `TableImportSession.write(chunk)` / `commitChunk()` / `finishTable()` | synchron, kein Cancel-Token | Token-Param am Session-Vertrag oder periodische Pruefung am Adapter-Rand | hoch — alle Import/Transfer-Pfade |
-| `dev.dmigrate.streaming.StreamingImporter` (Top-Level) | Token wird in E0.3 als Param ergaenzt | Token bis `TableImporter.importChunks` durchreichen, dort Loop-Head pruefen | mittel |
-| `dev.dmigrate.streaming.format.DataChunkReader.nextChunk()` (per Format) | synchron, kein Cancel-Token | Format-Reader-Vertrag um Token erweitern oder Wrapper-Reader | mittel |
-| `CheckpointStore.save/load/complete` | synchron, kein Cancel-Token | save/load sind Filesystem-Calls; AP E0.5 prueft, ob Token-Param noetig ist oder Runner-Checkpoint reicht | niedrig |
-| `ProgressReporter.report(...)` | synchron, in-memory | nach Cancel-Pruefung im Runner unterdrueckt; Reporter selbst bleibt unveraendert | niedrig |
-| `connectionResolver.resolve(...)` (Transfer) | startet 2 Pools | Token-Param oder Pre-Open-Checkpoint im Runner | mittel |
+- **`cancelbar`** — Port-Vertrag oder Driver-API erlaubt kooperatives Stoppen
+  während des Calls.
+- **`atomic-nicht-cancelbar`** — Call läuft bis Ende durch, Hauptplan §4.1
+  fordert dafür belegtes Timeout/Laufzeitfenster `<= 30s`,
+  Measurement-Evidence, kein interner Retry-Loop, kein Ressourcen-Leak nach
+  Timeout.
+- **`blockierend`** — keine der obigen Bedingungen heute erfüllt; Pfad
+  blockiert das E0-Gate, bis Adapter-Konfiguration oder Port-Erweiterung
+  den Status auf `cancelbar` oder `atomic-nicht-cancelbar` hebt.
+
+| Port-Grenze | Heutiger Vertrag | E0.5-Klassifikation | Begründung | Phase-E-Nacharbeit |
+| --- | --- | --- | --- | --- |
+| `dev.dmigrate.driver.SchemaReader.read(pool, options)` | synchron, kein Cancel-Token, kein per-Statement-Timeout | **blockierend** | Reverse-Schema-Lesen kann beliebig viele DDL-Queries triggern (Tabellen-/Spalten-/Index-Introspection). Heute setzt kein Adapter `Statement.setQueryTimeout(...)`. Ohne belegtes Timeout-Fenster ist Plan §4.1-Schwelle `<= 30s` nicht erfüllt. | Adapter postgresql/mysql/sqlite konfigurieren `setQueryTimeout(30)` an der gemeinsamen `prepareStatement(...)`-Stelle; Bench-Test pro Driver. Kein Port-Vertrag-Wechsel. |
+| `dev.dmigrate.driver.DataReader.streamTable(pool, table, filter, chunkSize)` | `ChunkSequence` (Sequence + AutoCloseable), kein Cancel-Token, kein Statement-Timeout | **blockierend** | Single-`SELECT`-Stream über JDBC-`ResultSet`; lange Source-Tabellen können beliebig blockieren. Das `use { }`-Pattern schließt sauber, aber Cancel mid-stream landet erst beim nächsten Chunk-Read der Adapter-Schicht. | (a) Statement-Timeout für den initiierenden `SELECT` setzen — gibt obere Schranke für Stream-Open-Latenz. (b) Optional: Token-Param am Reader-Iterator-Rand für inter-Chunk-Cancel. (a) reicht für E0-Gate. |
+| `dev.dmigrate.driver.DataWriter.openTable(pool, table, options)` | synchron, kein Cancel-Token, keine `abort`-API; setzt evtl. Trigger-/FK-/Sequence-State um | **blockierend** | DDL-/Trigger-Manipulation ist driver-spezifisch und kann mehrere DDL-Statements emittieren. Trigger-Disable in MySQL/PostgreSQL ist mehrstufig. | `setQueryTimeout(30)` pro Driver-Adapter setzen; Cleanup-Pfad `session.close()` (existiert bereits) decken Cancel-Mid-Open ab. |
+| `TableImportSession.write(chunk)` | synchron, INSERT/UPSERT-Batch, kein Cancel-Token | **blockierend** (heute), realistisch **atomic-nicht-cancelbar** mit Statement-Timeout | Chunk-Größe ist über `PipelineConfig.chunkSize` (Default 10 000 Rows) gebunden — Batch-Insert hat eine fachlich plausible obere Schranke pro Call. Aber ohne explizites `setQueryTimeout` ist das Fenster nicht belegt. | Statement-Timeout `30 s` pro Adapter; Phase-E-Bench-Test mit großem Chunk gegen langsame DB belegt `<=30 s`. |
+| `TableImportSession.commitChunk()` | JDBC-Transaktion-Commit, kein Cancel-Token | **atomic-nicht-cancelbar** (Annahme) | Commits an JDBC-Connection sind in der Praxis sub-second, blockieren nur durch Lock-Wait. Plan §4.1 erlaubt `atomic-nicht-cancelbar`, sofern Timeout belegt. Bei Lock-Wait kann Commit unbounded blockieren — daher heute ohne `Connection.setNetworkTimeout(...)` formal **blockierend**. | `Connection.setNetworkTimeout(executor, 30000)` in Pool-Bootstrap; gilt auch für `Statement.executeQuery`. |
+| `TableImportSession.finishTable()` | mehrstufig: Trigger-Re-Enable, Sequence-Anpassung, FK-Re-Enable, Foreign-Statement, dialekt-spezifisch | **blockierend** | Mehrere DDL-Statements pro Aufruf, jedes ohne Timeout. Plan §4.1 fordert "kein interner Retry-Loop ohne hartes Timeout" — derzeit nicht belegt. | Pro DDL-Statement im Adapter `setQueryTimeout(30)`; Phase-E ergänzt `failedFinish`-Pfad-Coverage für Cancel-Mid-Finish-Cleanup. |
+| `dev.dmigrate.format.data.DataChunkReader.nextChunk()` (Format-Reader) | synchron, lokales Filesystem (JSONL/CSV/YAML); kein Netzwerk, kein Cancel-Token | **atomic-nicht-cancelbar** (lokale FS-Reads) | Format-Reader liest lokale Files mit chunk-bounded Buffer. Plan §4.1 `bound = local-FS read time` ist akzeptiert. Remote-FS-Inputs (S3, HTTP, NFS) sind heute nicht Teil von 0.9.6. | keine; falls 0.9.7+ remote inputs ergänzt, Token-Param am Format-Reader. |
+| `CheckpointStore.save(manifest)` / `load(opId)` / `complete(opId)` | synchron, lokales FS (atomic-rename Pattern), kein Cancel-Token | **atomic** | Lokale FS-Operationen, jeweils sub-second. Cancel zwischen Save-Calls über Runner-Checkpoint abgefangen. | keine. |
+| `ProgressReporter.report(event)` | synchron, in-memory + stderr | **atomic** | In-Memory + sync-stderr; nicht relevant. | keine. |
+| `connectionResolver.resolve(...)` (Transfer) | öffnet Source- + Target-Pool sequenziell | **blockierend** (in Bezug auf Pool-Open-Latenz) | Pool-Open kann Connection-Init-Latenz haben (Server-RTT, SSL-Handshake). Ohne `Connection.setNetworkTimeout` unbounded. | `Connection.setNetworkTimeout(executor, 30000)` in `HikariConnectionPoolFactory`. |
+
+**Konsequenz für das E0-Gate (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md`):**
+
+Alle als **blockierend** klassifizierten Pfade haben dieselbe Wurzel: kein
+Driver-Adapter setzt heute ein `Statement.setQueryTimeout(...)` oder
+`Connection.setNetworkTimeout(...)`. Das ist eine **Adapter-Konfigurations-
+änderung**, kein Port-Vertrag-Wechsel — Plan §7.6 erlaubt das als
+`Go mit Nacharbeiten`-Followup, sofern die harte Side-Effect-Stop-Semantik
+**zwischen** den Driver-Calls bereits nachgewiesen ist (was sie ist —
+E0.4-Tests + E0.5-Tests decken alle Inter-Call-Grenzen). Die Phase-E-
+Nacharbeit ist konkret, abgegrenzt und ohne Cancel-Interpretation.
+
+Das Gate ist daher **`Go mit Nacharbeiten`**, mit der oben gelisteten
+queryTimeout-/networkTimeout-Konfiguration als Pflicht-Pre-Phase-E-Arbeit.
+Alle Details in `ImpPlan-0.9.6-E0-Gate-Decision.md`.
 
 **Streaming-Anmerkungen:**
 
-- Die mit `hoch` markierten Port-Grenzen sind die Schluesselrisiken fuer das
-  E0-Gate. Wenn AP E0.5 fuer einen Driver keinen `Go`-Pfad herstellen kann,
-  ist der Milestone gemaess Hauptplan §2.2 blockiert.
-- Der `TableImportSession`-Vertrag hat heute keine `abort`-Grenze. Cancel-
-  Cleanup laeuft heute ueber `session.close()`. AP E0.5 muss klaeren, ob
-  ein dedizierter `abort()`-Pfad noetig ist oder ob `close()` nach
-  unvollstaendigem `commitChunk` ausreichend ist (driver-/transaction-
-  abhaengig).
-- `DataChunkReader` (Format-Reader, JSONL/Parquet/CSV) ist heute eine
-  rein lesende Sequence; Cancel zwischen Chunks reicht in der Regel. Lange
-  einzelne `nextChunk()`-Calls sind nur kritisch, wenn der Format-Reader
-  selbst auf Filesystem oder Netzwerk wartet — bei lokalem FS ist `bound`
-  not_applicable.
+- Der `TableImportSession`-Vertrag bietet heute kein dediziertes `abort()`.
+  E0.5-Spike hat geprüft: `session.close()` nach unvollständigem
+  `commitChunk` reicht für PostgreSQL/MySQL/SQLite, weil JDBC-Auto-Rollback
+  bei Connection-Close greift. SQLite-WAL benötigt zusätzliches `ROLLBACK`,
+  das im Adapter-`close()` bereits enthalten ist (`SqliteImportSession`).
+  Phase-E muss kein neuer `abort()` ergänzt werden.
+- `DataChunkReader` ist heute lokales FS — `bound = local FS read time`.
+  Remote-FS-Inputs sind nicht Teil von 0.9.6.
+- `CheckpointStore` ist file-basiert (`FileCheckpointStore`) — alle
+  Operationen sind sub-second. Token-Param am Store-Vertrag ist nicht
+  notwendig; Runner-Checkpoints zwischen Store-Calls reichen.
 
 ---
 
@@ -298,17 +321,22 @@ Reine `gate_result`-Verteilung der oben gelisteten Zeilen:
 | --- | --- | --- | --- | --- |
 | 2026-05-05 (E0.2) | 0 | 0 | 4 | ~70 |
 | 2026-05-05 (E0.4) | ~10 | ~12 | 4 | ~50 |
+| 2026-05-05 (E0.5) | ~25 (alle Inter-Call-Checkpoints + Resume-Skip + Callbacks) | ~10 (Driver-`atomic-nicht-cancelbar`-Kandidaten mit queryTimeout-Followup) | 4 | ~10 (`blockierend`-Treffer in Section 6: alle ohne `setQueryTimeout`-Konfiguration) |
 
-Erwartete Bewegung durch AP E0.5:
+E0.6-Gate-Entscheidung (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md`):
 
-- AP E0.5 produziert Tests fuer Import + Transfer + Streaming-Ports; ~50
-  Zeilen wechseln. Driver-Vertraege (`SchemaReader`, `DataReader`,
-  `DataWriter`, `TableImportSession`) sind die Knackpunkte; sind sie nicht
-  erweiterbar, bleibt der Pfad `blocked` und Phase E ist gemaess Hauptplan
-  §2.2 nicht ausschliessbar.
-- E0.4-`go_followup`-Zeilen werden zu `go` oder bleiben `go_followup`,
-  sobald Driver-Statement-Cancel-Verträge stehen.
-- AP E0.6 finalisiert das Gate.
+- **Inter-Call-Cancel ist vollständig nachgewiesen** für Reverse, Profile,
+  Import und Transfer (E0.4 + E0.5-Tests).
+- **During-Driver-Call-Cancel** ist nicht nachgewiesen: kein Adapter setzt
+  heute `Statement.setQueryTimeout` oder `Connection.setNetworkTimeout`.
+  Das ist die einzige offene Bedingung gegen Plan §4.1
+  "atomar-nicht-cancelbar mit `<=30 s`-Budget".
+- Das ist eine **Adapter-Konfigurationsänderung**, kein Port-Vertrag.
+  Plan §7.6 erlaubt diese als Phase-E-Nacharbeit, sofern die harte Side-
+  Effect-Stop-Semantik zwischen den Calls bereits nachgewiesen ist
+  (sie ist).
+- Verdict: **`Go mit Nacharbeiten`** mit Pflicht-Pre-Phase-E-Arbeit
+  "queryTimeout-/networkTimeout-Konfiguration in Driver-Adaptern".
 
 ---
 
@@ -318,3 +346,6 @@ Erwartete Bewegung durch AP E0.5:
 | --- | --- | --- |
 | 2026-05-05 | E0.2 | Initial-Snapshot — alle externen Side-Effect-Zeilen `blocked` (`tests = missing`); 4 In-Memory-Zeilen `tentative-go`. |
 | 2026-05-05 | E0.4 | Reverse-Pipeline (3 Checkpoints + Exit-130-Mapping) + Profile-Pipeline (Checkpoints in `ProfileDatabaseService`/`ProfileTableService`/`profileColumn` + Exit-130 in `DataProfileRunner`). Reverse: 4 Zeilen `go`, 2 Zeilen `go_followup`, 1 Zeile bleibt `blocked` (`reader.read` E0.5-Driver-Vertrag). Profile: 2 Zeilen `go`, 9 Zeilen `go_followup` (in-flight Cancel benötigt Driver-Statement-Cancel — E0.5), 1 Zeile bleibt `go_followup` (Pre-Pool-Checkpoint optional, Cleanup über `finally { pool.close() }`). Tests: `SchemaReverseRunnerCancelCheckpointTest`, `ProfileServiceCancelCheckpointTest`, `DataProfileRunnerCancelCheckpointTest`. |
+| 2026-05-05 | E0.5 (1/3) | Import-Pipeline: `DataImportRunner` Outer-130-Mapping, `ImportStreamingInvoker` Cancel-Re-Throw, `StreamingImporter` Tabellen-Loop-Checkpoints, `TableImporter` prepareImport/skipCommittedChunks/finishImport-Checkpoints, `importChunks` chunk-loop-Checkpoints (außerhalb der 3 chunk-failure try-Blöcke; Plan §4.5). Tests: `DataImportRunnerCancelCheckpointTest`, `StreamingImporterCancelCheckpointTest`, `TableImporterCancelCheckpointTest`. Inter-Call-Zeilen wechseln zu `go`. |
+| 2026-05-05 | E0.5 (2/3) | Transfer-Pipeline: `DataTransferRunner` Outer-130-Mapping + Cancel-Filter in Schema-Read- und Transfer-Execute-catches, `TransferExecutor` Tabellen-Loop + transferTable-Entry + Chunk-Loop-Checkpoints + pre-finish-Checkpoint. Tests: `DataTransferRunnerCancelCheckpointTest`, `TransferExecutorCancelCheckpointTest`. Inter-Call-Zeilen wechseln zu `go`. |
+| 2026-05-05 | E0.5 (3/3) | Driver-/Port-Vertrags-Klassifikation in Section 6: alle monolithic-driver-call-Zeilen sind heute **blockierend** wegen fehlender `Statement.setQueryTimeout`/`Connection.setNetworkTimeout`-Konfiguration in Driver-Adaptern. Phase-E-Nacharbeit ist Adapter-Konfiguration (kein Port-Vertrag-Wechsel). Format-Reader (`DataChunkReader.nextChunk`), `CheckpointStore`, `ProgressReporter` sind als `atomic` klassifiziert. |

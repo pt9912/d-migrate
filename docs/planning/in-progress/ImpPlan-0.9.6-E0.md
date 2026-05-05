@@ -713,6 +713,10 @@ Tests:
 
 ### 7.6 AP E0.6: Gate-Entscheidung dokumentieren
 
+Entscheidung in [`ImpPlan-0.9.6-E0-Gate-Decision.md`](./ImpPlan-0.9.6-E0-Gate-Decision.md)
+(Stand 2026-05-05, Verdict: **`Blocked`** mit eng abgegrenzter Pre-Phase-E-
+Arbeit "AP E0.7 Driver-Adapter-Timeout-Konfiguration").
+
 - Ergebnisse pro Runner zusammenfassen:
   - Checkpoints nachgewiesen
   - Side Effects gestoppt
