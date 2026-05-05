@@ -807,30 +807,152 @@ Regeln:
 
 ### 7.1 AP E.1: E0-Gate pruefen und Cancel-Vertrag fixieren
 
-- Status von `docs/planning/done/ImpPlan-0.9.6-E0.md` pruefen
-  (E0-Gate-Verdict liegt in
-  `docs/planning/done/ImpPlan-0.9.6-E0-Gate-Decision.md`; Stand
-  2026-05-05 = `Go` nach E0.7-Abschluss).
-- Bei `Blocked` Phase E nicht fortsetzen.
-- `CancellationToken` / Worker-Handle-Vertrag final platzieren.
-- Runner-Checkpoints aus E0 als verbindliche Eingabe fuer Phase E uebernehmen.
-- E0-Ergebnisse fuer `DataImportRunner` und `DataTransferRunner` als
-  dokumentierte Vorarbeit uebernehmen, aber keine produktive Phase-E-
-  Abnahme fuer Import-/Transfer-Cancel beanspruchen, solange
-  `data_import_start` und `data_transfer_start` nicht in Scope sind.
-- Zusaetzliches Phase-E-Gate fuer `schema_compare_start` definieren, weil E0
-  neue Start-Tools ausschliesst: Compare-Materialisierung, Diff-Berechnung und
-  Artefakt-/Resource-Publish muessen Cancel-Checkpoints nachweisen, bevor
-  `schema_compare_start` produktiv aktiviert wird.
+#### 7.1.1 E0-Gate-Stand (Stand 2026-05-05)
+
+- E0-Plan: [`docs/planning/done/ImpPlan-0.9.6-E0.md`](../done/ImpPlan-0.9.6-E0.md)
+  (alle AP E0.1–E0.6 abgeschlossen, Move nach `done/` erfolgt).
+- Side-Effect-Matrix:
+  [`docs/planning/done/ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`](../done/ImpPlan-0.9.6-E0-Side-Effect-Matrix.md)
+  (final-klassifiziert nach E0.7.5: `go ~74`, `blocked = 0`).
+- Gate-Decision:
+  [`docs/planning/done/ImpPlan-0.9.6-E0-Gate-Decision.md`](../done/ImpPlan-0.9.6-E0-Gate-Decision.md)
+  Verdict **`Go`** (initial `Blocked` 2026-05-05, re-stempelt nach
+  E0.7.5).
+- Pre-Phase-E-Auflösung E0.7:
+  [`docs/planning/done/ImpPlan-0.9.6-E0.7.md`](../done/ImpPlan-0.9.6-E0.7.md)
+  (alle E0.7.1–E0.7.6 abgeschlossen).
+
+Phase E darf gemäß Hauptplan §10 starten.
+
+#### 7.1.2 Cancel-Vertrag-Plazierung (final)
+
+Adapterneutrale Bausteine in `hexagon:core`:
+
+- `dev.dmigrate.core.cancel.CancellationToken` (Interface mit
+  `none()`-Default; AP E0.1).
+- `dev.dmigrate.core.cancel.CancellationTokenSource` (Interface +
+  `create()`-Factory mit `AtomicReference`-CAS; idempotentes
+  `cancel(...)`, erster Grund gewinnt).
+- `dev.dmigrate.core.cancel.OperationCancelledException` (kanonischer
+  typisierter Carrier; CLI-Exit-Code-Mapping `130` per
+  `spec/job-contract.md`).
+- `TestCancellationTokenSource` (Test-Fixture in `hexagon:core`-
+  testFixtures mit `cancelAfterCheckpoints(n)`-Hook).
+
+Der Vertrag bleibt unverändert für Phase E. Der **Worker-Handle-
+Vertrag** (Job-Worker-Registry, Status-Transitions) ist explizit AP
+E.2 / AP E.8 — nicht E.1.
+
+#### 7.1.3 Runner-Status (Übernahme aus E0)
+
+| Runner | Token-Param | Cancel-Checkpoints | Phase-E-Status |
+| --- | --- | --- | --- |
+| `SchemaReverseRunner` | ✅ E0.3 | ✅ E0.4 (3 Checkpoints + Exit-130-Mapping) | **ready** für `schema_reverse_start` (AP E.7) |
+| `DataProfileRunner` + `ProfileDatabaseService` + `ProfileTableService` | ✅ E0.3 | ✅ E0.4 (Tabellen-Loop, Spalten-Loop, vor jedem `data.*`-Call, Exit-130 in Runner) | **ready** für `data_profile_start` (AP E.7) |
+| `DataImportRunner` + Streaming-Pipeline | ✅ E0.3 | ✅ E0.5 (1/3) (alle Side-Effect-Grenzen, Resume-Skip, Callbacks, Chunk-Loop) | E0-Vorarbeit für Phase F dokumentiert; **NICHT** Phase-E-Produktivabnahme — `data_import_start` ist Phase F |
+| `DataTransferRunner` + `TransferExecutor` | ✅ E0.3 | ✅ E0.5 (2/3) (Tabellen-Loop, Reader-/Writer-Open, Chunk-Loop, finishTable, onTableTransferred) | E0-Vorarbeit für Phase F dokumentiert; **NICHT** Phase-E-Produktivabnahme — `data_transfer_start` ist Phase F |
+| `SchemaCompareRunner` | ❌ noch nicht | ❌ noch nicht (siehe §7.1.4 unten) | **BLOCKED** für `schema_compare_start` bis AP E.7-Compare-Checkpoints platziert sind |
+
+Driver-Adapter-Layer (E0.7):
+
+- `PoolSettings.statementTimeoutMs` + `networkTimeoutMs` (Default
+  30_000ms, Plan §4.1-Schwelle).
+- `HikariConnectionPoolFactory.connectionInitSqlFor(...)` setzt
+  driver-spezifischen Server-Side-Timeout (PostgreSQL
+  `statement_timeout`, MySQL `MAX_EXECUTION_TIME`, SQLite
+  `busy_timeout`).
+- `TimeoutDecoratedConnection` in `driver-common` setzt
+  `setQueryTimeout(...)` auf jedem von `pool.borrow()` erzeugten
+  Statement automatisch — alle Reader/Writer/Schema-Reader/
+  Profiling-Adapter sind transparent abgedeckt.
+- `Connection.setNetworkTimeout(...)` beim `borrow()` mit
+  `SQLFeatureNotSupportedException`-Resilienz.
+- Bench-Tests pro Driver belegen empirisch (`E07PostgresTimeoutBench`,
+  `E07MysqlTimeoutBench`); SQLite-Wiring via Unit-Tests.
+
+#### 7.1.4 Compare-Cancel-Gate (zusätzlich für `schema_compare_start`)
+
+E0 hat bewusst keine Start-Tools eingeführt; `schema_compare_start`
+ist Phase E (Hauptplan §6.4). Da `SchemaCompareRunner.execute(...)`
+heute keinen `CancellationToken`-Parameter trägt und keine Cancel-
+Checkpoints platziert hat, definiert E.1 hier das Phase-E-Gate für
+Compare:
+
+**Side-Effect-Pipeline** (`hexagon/application/.../SchemaCompareRunner.kt`):
+
+| # | Schritt | Side-Effect | E0.7-Coverage |
+| --- | --- | --- | --- |
+| 1 | `operandParser(request.source)`, `operandParser(request.target)` | rein in-memory | `atomic` |
+| 2 | Output-Collision-Check | rein in-memory | `atomic` |
+| 3 | `loadOperand(sourceOp, ...)` | DB-Operand: `dbLoader(...)` ruft intern `pool.borrow()` + `schemaReader().read(...)`; File-Operand: `fileLoader(...)` lokales FS | DB-Pfad: `atomic-nicht-cancelbar mit <=30s` via E0.7-`TimeoutDecoratedConnection`; File-Pfad: `atomic` (lokales FS) |
+| 4 | `loadOperand(targetOp, ...)` | wie Schritt 3 | wie Schritt 3 |
+| 5 | `normalizer(sourceResolved)`, `normalizer(targetResolved)` | rein in-memory (Marker-Normalisierung) | `atomic` |
+| 6 | Validation | rein in-memory | `atomic` |
+| 7 | `comparator(source, target)` → `SchemaDiff` | rein CPU, kann bei sehr großen Schemas (10k+ Tabellen) mehrere Sekunden dauern | `atomic` für realistische Schema-Größen; bei Bedarf Phase-E §9 Quotas/Timeouts |
+| 8 | `projectDiff(diff)` + `buildSummary(diff)` | rein in-memory | `atomic` |
+| 9 | `outputDocument(...)` → optional File-Write | lokales FS-Write | `atomic` (multi-step write+flush; Cancel mid-write ist Phase F-Followup wie bei Reverse) |
+
+**Pflicht-Cancel-Checkpoints** (für AP E.7-Compare-Integration):
+
+- nach Schritt 2 (Parse + Output-Check), vor Schritt 3 (Source-Load):
+  Cancel hier startet keinen DB-Connect.
+- nach Schritt 3 (Source geladen), vor Schritt 4 (Target-Load): Cancel
+  hier startet keinen zweiten DB-Connect.
+- nach Schritt 6 (Validation OK), vor Schritt 7 (Diff-Compute): Cancel
+  hier startet keine CPU-intensive Diff-Berechnung.
+- nach Schritt 7 (Diff fertig), vor Schritt 9 (Output-Write): Cancel
+  hier publiziert kein Diff-Artefakt.
+- Outer try/catch in `execute(...)` mappt
+  `OperationCancelledException` auf `CANCELLED_EXIT_CODE = 130`,
+  bevor die bestehenden `catch (e: Exception)`-Pfade (Exit 4 / 7 / 3)
+  ihn verschleiern könnten — gleiches Pattern wie
+  `SchemaReverseRunner` aus E0.4.
+
+**Phase-E-Akzeptanz für `schema_compare_start`**:
+
+- AP E.7 fügt `cancellationToken: CancellationToken =
+  CancellationToken.none()`-Param zu `SchemaCompareRunner.execute(...)`
+  hinzu.
+- AP E.7 platziert die fünf oben gelisteten Checkpoints + outer-
+  Catch.
+- AP E.7 verifiziert mit `SchemaCompareRunnerCancelCheckpointTest` im
+  E0.4-Stil: counting-Loaders + counting-Comparators + counting-Output-
+  Writer beweisen, dass nach Cancel der jeweilige Side-Effect nicht
+  startet.
+- Wenn diese Checkpoints und Tests fehlen, **darf
+  `schema_compare_start` nicht produktiv freigegeben werden** (Phase-E-
+  Gate für Compare).
+
+**Status heute**: noch nicht nachgewiesen. AP E.7 ist
+verantwortlich.
+
+#### 7.1.5 Import-/Transfer-Cancel-Followup (out-of-scope für Phase E)
+
+E0.5 hat `DataImportRunner` und `DataTransferRunner` produktiv mit
+Cancel-Checkpoints + Exit-130-Mapping versehen (für CLI-Pfad
+nutzbar). Diese Arbeit ist **dokumentierte Vorarbeit**; sie wird
+**nicht** als Phase-E-Produktivabnahme beansprucht. Begründung:
+
+- `data_import_start` und `data_transfer_start` sind Hauptplan §6.7 /
+  §3.1 explizit Phase F (`docs/planning/open/ImpPlan-0.9.6-F.md`).
+- Phase E aktiviert nur die drei Read-Start-Tools
+  (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`).
+- Phase F kann das E0.5-Vorarbeitsergebnis ohne weitere Cancel-
+  Vertrags-Erweiterung in produktive `data_import_start`- und
+  `data_transfer_start`-MCP-Tools überführen.
 
 Tests/Gate:
 
-- E0-Ergebnis ist dokumentiert
-- relevante Runner koennen Cancel typisiert signalisieren
+- E0-Ergebnis ist dokumentiert ✅ (Verlinkung in §7.1.1 oben).
+- Relevante Runner koennen Cancel typisiert signalisieren ✅
+  (Reverse/Profile via E0.4, Import/Transfer via E0.5;
+  Compare-Runner-Token-Wiring offen für AP E.7 — siehe §7.1.4).
 - Import-/Transfer-Cancel-Nachweis aus E0 ist dokumentiert und als
-  Folgeumfang markiert, nicht als Phase-E-Produktivabnahme
-- Compare-Cancel-Gate ist dokumentiert und blockiert Phase E bei fehlendem
-  Nachweis
+  Folgeumfang markiert, nicht als Phase-E-Produktivabnahme ✅
+  (§7.1.5).
+- Compare-Cancel-Gate ist dokumentiert und blockiert Phase-E-
+  Aktivierung von `schema_compare_start` bei fehlendem Nachweis ✅
+  (§7.1.4).
 
 ### 7.2 AP E.2: Job-Orchestrierung einfuehren
 
