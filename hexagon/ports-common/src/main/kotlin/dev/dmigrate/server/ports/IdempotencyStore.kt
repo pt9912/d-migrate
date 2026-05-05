@@ -70,5 +70,31 @@ interface IdempotencyStore {
 
     fun deny(scope: IdempotencyScope, reason: String, now: Instant): Boolean
 
+    /**
+     * Phase E §5.2 / §7.3: transitioniert eine `PENDING`- oder
+     * `AWAITING_APPROVAL`-Reservierung in den finalen [IdempotencyState.FAILED]-
+     * Zustand. Im Gegensatz zu [deny] (explizite Policy-Ablehnung)
+     * ist FAILED für endgültige technische Fehler vorgesehen
+     * (Resource-/Tenant-/Validation-Fehler nach Ref-Lookup, nicht-
+     * retrybare Materialisierungsfehler). Identische Scope/Fingerprint-
+     * Retries liefern deterministisch dasselbe Fehler-Outcome bis
+     * `retentionUntil` bzw. zum Default-Retention-Ende.
+     *
+     * Plan §5.2: FAILED ist final und darf NICHT für abgelaufene
+     * `PENDING`-Leases oder `AWAITING_APPROVAL`-Challenges verwendet
+     * werden — diese erlauben eine Recovery-Reservierung mit identischem
+     * Fingerprint.
+     *
+     * @return `true` wenn die Transition stattfand; `false` wenn der
+     *   Eintrag fehlt oder bereits in einem anderen finalen Zustand
+     *   (`COMMITTED`/`DENIED`/`FAILED`) ist.
+     */
+    fun markFailed(
+        scope: IdempotencyScope,
+        reason: String,
+        now: Instant,
+        retentionUntil: Instant? = null,
+    ): Boolean
+
     fun cleanupExpired(now: Instant): Int
 }

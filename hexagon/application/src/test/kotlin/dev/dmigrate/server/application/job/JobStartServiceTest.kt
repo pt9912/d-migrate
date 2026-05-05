@@ -126,6 +126,17 @@ class JobStartServiceTest : FunSpec({
         fx.jobIdSeq.get() shouldBe 0
     }
 
+    test("Failed: Idempotency-Reserve liefert Failed → Service propagiert Reason") {
+        val fx = Fixture()
+        val scope = freshScope("k-fail")
+        fx.idempotencyStore.reserve(scope, "fp", fx.now)
+        fx.idempotencyStore.markFailed(scope, "validation-error", fx.now)
+
+        val outcome = fx.service.start(scope, "fp", fx.now, fx.jobBuilder())
+        outcome.shouldBeInstanceOf<JobStartOutcome.Failed>()
+        outcome.reason shouldBe "validation-error"
+    }
+
     test("Denied: Idempotency-Reserve liefert Denied → Service propagiert Reason") {
         val fx = Fixture()
         val scope = freshScope("k-deny")

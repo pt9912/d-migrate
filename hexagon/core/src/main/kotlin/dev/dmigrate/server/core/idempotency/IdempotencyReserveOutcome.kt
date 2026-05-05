@@ -31,6 +31,17 @@ sealed interface IdempotencyReserveOutcome {
         val reason: String,
     ) : IdempotencyReserveOutcome
 
+    /**
+     * Phase E §5.2 / §7.3: endgültige, nicht-retrybare Reservierung
+     * ohne Job. Identische Retries liefern deterministisch dasselbe
+     * Outcome bis [expiresAt]; danach kann ein neuer Versuch laufen.
+     */
+    data class Failed(
+        override val scope: IdempotencyScope,
+        val expiresAt: Instant,
+        val reason: String,
+    ) : IdempotencyReserveOutcome
+
     data class Conflict(
         override val scope: IdempotencyScope,
         val existingFingerprint: String,

@@ -219,11 +219,107 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         val store = factory()
         val s1 = scope("k1")
         val s2 = scope("k2")
+        val s3 = scope("k3")
         store.reserve(s1, "fp1", Fixtures.NOW)
         store.commit(s1, "r", Fixtures.NOW.plusSeconds(1))
         store.reserve(s2, "fp2", Fixtures.NOW)
         store.deny(s2, "no", Fixtures.NOW.plusSeconds(1))
+        store.reserve(s3, "fp3", Fixtures.NOW)
+        store.markFailed(s3, "validation-error", Fixtures.NOW.plusSeconds(1))
         val removed = store.cleanupExpired(Fixtures.NOW.plusSeconds(100_000))
-        removed shouldBe 2
+        removed shouldBe 3
+    }
+
+    // ── Phase E §7.3: FAILED state ───────────────────────────────
+
+    test("markFailed transitions PENDING to FAILED and reserve returns Failed with reason") {
+        val store = factory()
+        val s = scope("k-failed")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markFailed(s, "validation-error", Fixtures.NOW.plusSeconds(1)) shouldBe true
+
+        val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(2))
+        outcome.shouldBeInstanceOf<IdempotencyReserveOutcome.Failed>()
+        outcome.reason shouldBe "validation-error"
+    }
+
+    test("markFailed transitions AWAITING_APPROVAL to FAILED") {
+        val store = factory()
+        val s = scope("k-failed-from-await")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
+        store.markFailed(s, "ref-not-found", Fixtures.NOW.plusSeconds(2)) shouldBe true
+
+        val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(3))
+        outcome.shouldBeInstanceOf<IdempotencyReserveOutcome.Failed>()
+        outcome.reason shouldBe "ref-not-found"
+    }
+
+    test("FAILED is final — markFailed/commit/deny on a FAILED entry are no-ops") {
+        val store = factory()
+        val s = scope("k-failed-final")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markFailed(s, "first-failure", Fixtures.NOW.plusSeconds(1))
+
+        // None of these should transition the FAILED state.
+        store.markFailed(s, "second-attempt", Fixtures.NOW.plusSeconds(2)) shouldBe false
+        store.commit(s, "should-not-stick", Fixtures.NOW.plusSeconds(3)) shouldBe false
+        store.deny(s, "should-not-stick", Fixtures.NOW.plusSeconds(4)) shouldBe false
+
+        val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(5))
+        outcome.shouldBeInstanceOf<IdempotencyReserveOutcome.Failed>()
+        outcome.reason shouldBe "first-failure"
+    }
+
+    test("FAILED returns Conflict for different fingerprint, like other terminal states") {
+        val store = factory()
+        val s = scope("k-failed-conflict")
+        store.reserve(s, "fp-original", Fixtures.NOW)
+        store.markFailed(s, "x", Fixtures.NOW.plusSeconds(1))
+
+        val outcome = store.reserve(s, "fp-different", Fixtures.NOW.plusSeconds(2))
+        outcome.shouldBeInstanceOf<IdempotencyReserveOutcome.Conflict>()
+    }
+
+    test("markFailed honors retentionUntil over the default retention") {
+        val store = factory()
+        val s = scope("k-failed-retention")
+        store.reserve(s, "fp", Fixtures.NOW)
+        val farRetention = Fixtures.NOW.plusSeconds(7 * 86_400)
+        store.markFailed(s, "x", Fixtures.NOW.plusSeconds(1), retentionUntil = farRetention)
+
+        // Past the default ~10min retention, before the requested far retention:
+        // the entry is still observable as Failed.
+        val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(10 * 86_400 / 2))
+        outcome.shouldBeInstanceOf<IdempotencyReserveOutcome.Failed>()
+    }
+
+    test("claimApproved on a FAILED entry returns NotAwaitingApproval") {
+        val store = factory()
+        val s = scope("k-failed-claim")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markFailed(s, "x", Fixtures.NOW.plusSeconds(1))
+
+        val outcome = store.claimApproved(s, Fixtures.NOW.plusSeconds(2))
+        outcome.shouldBeInstanceOf<dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome.NotAwaitingApproval>()
+    }
+
+    test("markFailed on a non-existent scope returns false") {
+        val store = factory()
+        val s = scope("k-never-reserved")
+        store.markFailed(s, "x", Fixtures.NOW) shouldBe false
+    }
+
+    test("expired AWAITING_APPROVAL with identical fingerprint can still be recovered to Reserved (FAILED is NOT used for expiry)") {
+        val store = factory()
+        val s = scope("k-await-recovery")
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.markAwaitingApproval(s, Fixtures.NOW)
+        // Far past the awaiting-approval expiry.
+        val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(10_000))
+        // Plan §5.2: expired AWAITING_APPROVAL is recoverable, not FAILED.
+        // The implementation may return Reserved (recovery), or AwaitingApproval
+        // (renewed). Both satisfy the contract — but it MUST NOT be Failed.
+        (outcome is IdempotencyReserveOutcome.Failed) shouldBe false
     }
 })

@@ -15,6 +15,7 @@ class InMemoryIdempotencyStore(
     private val awaitingApprovalSeconds: Long = 600,
     private val deniedRetentionSeconds: Long = 600,
     private val committedRetentionSeconds: Long = 86_400,
+    private val failedRetentionSeconds: Long = 600,
     private val initResumeSeconds: Long = 600,
 ) : IdempotencyStore {
 
@@ -25,10 +26,11 @@ class InMemoryIdempotencyStore(
         val expiresAt: Instant,
         val resultRef: String? = null,
         val deniedReason: String? = null,
+        val failedReason: String? = null,
         // Internal-only: distinguishes a fresh PENDING (from `reserve`)
         // from a claimed PENDING (from `claimApproved` after policy
-        // approval). The public IdempotencyState stays at four values
-        // per the plan §6.2; this flag never crosses the port boundary.
+        // approval). The public IdempotencyState stays at the documented
+        // states per Plan §5.2; this flag never crosses the port boundary.
         val claimed: Boolean = false,
     )
 
@@ -81,6 +83,8 @@ class InMemoryIdempotencyStore(
                 IdempotencyReserveOutcome.Committed(scope, existing.resultRef!!)
             IdempotencyState.DENIED ->
                 IdempotencyReserveOutcome.Denied(scope, existing.expiresAt, existing.deniedReason!!)
+            IdempotencyState.FAILED ->
+                IdempotencyReserveOutcome.Failed(scope, existing.expiresAt, existing.failedReason!!)
         }
     }
 
@@ -97,6 +101,7 @@ class InMemoryIdempotencyStore(
         is IdempotencyReserveOutcome.AwaitingApproval,
         is IdempotencyReserveOutcome.Committed,
         is IdempotencyReserveOutcome.Denied,
+        is IdempotencyReserveOutcome.Failed,
         is IdempotencyReserveOutcome.Conflict -> existing!!
     }
 
@@ -234,9 +239,43 @@ class InMemoryIdempotencyStore(
         return transitioned
     }
 
+    override fun markFailed(
+        scope: IdempotencyScope,
+        reason: String,
+        now: Instant,
+        retentionUntil: Instant?,
+    ): Boolean {
+        var transitioned = false
+        entries.computeIfPresent(scope) { _, existing ->
+            if (existing.state == IdempotencyState.PENDING ||
+                existing.state == IdempotencyState.AWAITING_APPROVAL
+            ) {
+                transitioned = true
+                val defaultExpiresAt = now.plusSeconds(failedRetentionSeconds)
+                val expiresAt = if (retentionUntil != null && retentionUntil.isAfter(defaultExpiresAt)) {
+                    retentionUntil
+                } else {
+                    defaultExpiresAt
+                }
+                existing.copy(
+                    state = IdempotencyState.FAILED,
+                    failedReason = reason,
+                    expiresAt = expiresAt,
+                )
+            } else {
+                existing
+            }
+        }
+        return transitioned
+    }
+
     override fun cleanupExpired(now: Instant): Int {
         var removed = 0
-        val terminal = setOf(IdempotencyState.COMMITTED, IdempotencyState.DENIED)
+        val terminal = setOf(
+            IdempotencyState.COMMITTED,
+            IdempotencyState.DENIED,
+            IdempotencyState.FAILED,
+        )
         val expiredKeys = entries.entries
             .filter { it.value.state in terminal && it.value.expiresAt.isBefore(now) }
             .map { it.key }

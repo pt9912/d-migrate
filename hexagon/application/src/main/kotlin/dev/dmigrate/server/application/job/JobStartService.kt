@@ -81,6 +81,7 @@ class JobStartService(
             is IdempotencyReserveOutcome.ExistingPending -> JobStartOutcome.Pending(reserve.leaseExpiresAt)
             is IdempotencyReserveOutcome.AwaitingApproval -> JobStartOutcome.AwaitingApproval(reserve.expiresAt)
             is IdempotencyReserveOutcome.Denied -> JobStartOutcome.Denied(reserve.reason, reserve.expiresAt)
+            is IdempotencyReserveOutcome.Failed -> JobStartOutcome.Failed(reserve.reason, reserve.expiresAt)
             is IdempotencyReserveOutcome.Conflict -> JobStartOutcome.Conflict(reserve.existingFingerprint)
         }
     }
@@ -133,6 +134,13 @@ sealed interface JobStartOutcome {
 
     /** Reservierung wurde explizit abgelehnt. */
     data class Denied(val reason: String, val expiresAt: Instant) : JobStartOutcome
+
+    /**
+     * Endgültige, nicht-retrybare Reservierung ohne Job (Plan §5.2).
+     * Identische Retries liefern deterministisch dieselbe Antwort bis
+     * [expiresAt].
+     */
+    data class Failed(val reason: String, val expiresAt: Instant) : JobStartOutcome
 
     /** Payload-Fingerprint stimmt nicht mit Bestands-Reservierung überein. */
     data class Conflict(val existingFingerprint: String) : JobStartOutcome
