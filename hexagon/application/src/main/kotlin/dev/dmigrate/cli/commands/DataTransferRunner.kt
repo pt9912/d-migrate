@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
@@ -57,11 +58,25 @@ class DataTransferRunner(
         request: DataTransferRequest,
         cancellationToken: CancellationToken = CancellationToken.none(),
     ): Int {
+        return try {
+            executeWithCancel(request, cancellationToken)
+        } catch (_: OperationCancelledException) {
+            // Plan §4.5 — Cancel maps to CLI exit 130, never to the generic
+            // 4 (schema read) or 5 (transfer error) paths.
+            CANCELLED_EXIT_CODE
+        }
+    }
+
+    private fun executeWithCancel(
+        request: DataTransferRequest,
+        cancellationToken: CancellationToken,
+    ): Int {
         val safeSrc = userFacingErrors.scrubRef(request.source)
 
         val err = validateFlags(request)
         if (err != null) { userFacingPrintError(err, safeSrc); return 2 }
 
+        cancellationToken.throwIfCancellationRequested()
         val connections = when (val result = connectionResolver.resolve(request)) {
             is TransferConnectionResult.Ok -> result.connections
             is TransferConnectionResult.Exit -> return result.code
@@ -87,9 +102,13 @@ class DataTransferRunner(
         val readOpts = SchemaReadOptions(includeViews = false, includeProcedures = false,
             includeFunctions = false, includeTriggers = false)
         val srcSchema: SchemaDefinition; val tgtSchema: SchemaDefinition
+        cancellationToken.throwIfCancellationRequested()
         try {
             srcSchema = srcDrv.schemaReader().read(srcPool, readOpts).schema
+            cancellationToken.throwIfCancellationRequested()
             tgtSchema = tgtDrv.schemaReader().read(tgtPool, readOpts).schema
+        } catch (e: OperationCancelledException) {
+            throw e
         } catch (e: Exception) { userFacingPrintError("Schema read: ${e.message}", srcRef); return 4 }
 
         val tables: List<String>
@@ -115,6 +134,7 @@ class DataTransferRunner(
         )
         val reader = srcDrv.dataReader(); val writer = tgtDrv.dataWriter()
 
+        cancellationToken.throwIfCancellationRequested()
         try {
             transferExecutor.execute(
                 TransferExecutionContext(
@@ -131,6 +151,11 @@ class DataTransferRunner(
             ) { table ->
                 if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")
             }
+        } catch (e: OperationCancelledException) {
+            // Plan §4.5: Cancel must travel through this catch-all boundary
+            // unmodified so the runner can map it to exit 130 instead of the
+            // generic 5 path.
+            throw e
         } catch (e: ImportSchemaMismatchException) {
             userFacingPrintError("Schema mismatch: ${e.message}", tgtRef); return 3
         } catch (e: UnsupportedTriggerModeException) {
@@ -142,6 +167,11 @@ class DataTransferRunner(
         if (!request.quiet && !request.noProgress)
             userFacingStderr("Transfer complete: ${tables.size} table(s) $srcRef -> $tgtRef")
         return 0
+    }
+
+    companion object {
+        /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
+        const val CANCELLED_EXIT_CODE = 130
     }
 
     private fun validateFlags(r: DataTransferRequest): String? {
