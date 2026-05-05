@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationTokenSource
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.diff.*
 import dev.dmigrate.core.model.*
 import dev.dmigrate.core.validation.ValidationError
@@ -9,6 +11,7 @@ import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.connection.ConnectionSecretMasker
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -358,4 +361,24 @@ class SchemaCompareRunnerTest : FunSpec({
 
     // ── Reverse marker normalization ────────────
 
+    // ── Cancel-Token (E.7 (5/6) — Compare-Cancel-Gate Followup) ──
+
+    test("pre-cancelled token wirft OperationCancelledException vor parse") {
+        val h = Harness()
+        val source = CancellationTokenSource.create()
+        source.cancel("user-cancel")
+        val ex = shouldThrow<OperationCancelledException> {
+            h.runner().execute(request(), source.token)
+        }
+        ex.reason shouldBe "user-cancel"
+        // Loader/Comparator wurden nicht aufgerufen — saubere Fruehzeit-
+        // Verteidigung. (Token-Check VOR Parse + Loader.)
+        h.fileWrites shouldBe emptyList()
+    }
+
+    test("Default-Token (none) laesst execute unveraendert durchlaufen") {
+        val h = Harness()
+        // Kein Token-Argument: backward-compat Default = CancellationToken.none().
+        h.runner().execute(request()) shouldBe 0
+    }
 })

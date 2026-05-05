@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.SchemaReadSeverity
@@ -47,7 +48,17 @@ class SchemaCompareRunner(
     private val userFacingPrintError = userFacingErrors.printError(printError)
     private val userFacingStderr = userFacingErrors.stderrSink(stderr)
 
-    fun execute(request: SchemaCompareRequest): Int {
+    fun execute(
+        request: SchemaCompareRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
+        // Phase E §7.7 Compare-Cancel-Gate (E.1-Followup): Cancel-Checkpoints
+        // an den Materialisierungs-, Diff- und Publish-Grenzen. Zwischen
+        // den Phasen kann der Aufrufer (CLI oder Job-Worker) den Token
+        // signalisieren; eine geworfene OperationCancelledException
+        // wandert ueber den catch-all-Pfad ohne Generic-Mapping
+        // (Plan §4.5).
+        cancellationToken.throwIfCancellationRequested()
         // 1. Parse operands
         val sourceOp: CompareOperand
         val targetOp: CompareOperand
@@ -74,10 +85,12 @@ class SchemaCompareRunner(
             }
         }
 
-        // 3. Load source operand
+        cancellationToken.throwIfCancellationRequested()
+        // 3. Load source operand (Materialisierung)
         val sourceResolved = loadOperand(sourceOp, request.source, request.cliConfigPath) ?: return lastExitCode
 
-        // 4. Load target operand
+        cancellationToken.throwIfCancellationRequested()
+        // 4. Load target operand (Materialisierung)
         val targetResolved = loadOperand(targetOp, request.target, request.cliConfigPath) ?: return lastExitCode
 
         // 5. Normalize reverse markers
@@ -116,7 +129,8 @@ class SchemaCompareRunner(
             emitWarnings(targetNormalized, "target", request)
         }
 
-        // 8. Compare and project
+        cancellationToken.throwIfCancellationRequested()
+        // 8. Compare and project (Diff-Phase)
         val diff = comparator(sourceNormalized.schema, targetNormalized.schema)
         val identical = diff.isEmpty()
         val diffView = if (identical) null else projectDiff(diff)
@@ -142,7 +156,8 @@ class SchemaCompareRunner(
             targetOperand = operandInfo(targetResolved),
         )
 
-        // 10. Render and output
+        cancellationToken.throwIfCancellationRequested()
+        // 10. Render and output (Artefakt-Publish-Phase)
         return outputDocument(request, doc) ?: doc.exitCode
     }
 
