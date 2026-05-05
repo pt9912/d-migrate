@@ -50,7 +50,7 @@ class PhaseERegistriesTest : FunSpec({
         )
     }
 
-    test("defaultToolRegistry: Phase-E Start-Tools sind produktive Handler") {
+    test("defaultToolRegistry: Phase-E Start-Tools + job_cancel sind produktive Handler") {
         val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
         registry.findHandler("schema_reverse_start")
             .shouldBeInstanceOf<SchemaReverseStartHandler>()
@@ -58,15 +58,19 @@ class PhaseERegistriesTest : FunSpec({
             .shouldBeInstanceOf<DataProfileStartHandler>()
         registry.findHandler("schema_compare_start")
             .shouldBeInstanceOf<SchemaCompareStartHandler>()
+        registry.findHandler("job_cancel")
+            .shouldBeInstanceOf<JobCancelHandler>()
     }
 
-    test("defaultToolRegistry: Start-Tools sind nicht mehr UnsupportedToolHandler") {
+    test("defaultToolRegistry: Start-Tools + job_cancel sind nicht mehr UnsupportedToolHandler") {
         val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
         registry.findHandler("schema_reverse_start")
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
         registry.findHandler("data_profile_start")
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
         registry.findHandler("schema_compare_start")
+            .shouldNotBeInstanceOf<UnsupportedToolHandler>()
+        registry.findHandler("job_cancel")
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
     }
 

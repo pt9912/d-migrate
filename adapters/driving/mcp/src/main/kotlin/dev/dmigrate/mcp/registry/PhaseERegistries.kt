@@ -41,6 +41,7 @@ object PhaseERegistries {
             wiring = eWiring.phaseCWiring,
             scopeMapping = scopeMapping,
         )
+        val cancelHandler = JobCancelHandler(eWiring.jobCancelService, clock)
         val builder = ToolRegistry.builder()
         for (descriptor in baseRegistry.all()) {
             val handler = when (descriptor.name) {
@@ -50,6 +51,8 @@ object PhaseERegistries {
                     DataProfileStartHandler(orchestrator, clock)
                 SchemaCompareStartHandler.TOOL_NAME ->
                     SchemaCompareStartHandler(orchestrator, clock)
+                JobCancelHandler.TOOL_NAME ->
+                    cancelHandler
                 else ->
                     baseRegistry.findHandler(descriptor.name)!!
             }

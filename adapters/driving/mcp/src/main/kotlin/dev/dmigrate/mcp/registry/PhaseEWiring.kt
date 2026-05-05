@@ -9,6 +9,7 @@ import dev.dmigrate.server.application.approval.GrantIssuer
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.PayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
+import dev.dmigrate.server.application.job.JobCancelService
 import dev.dmigrate.server.application.job.JobDispatcher
 import dev.dmigrate.server.application.job.JobStartService
 import dev.dmigrate.server.application.job.SyncExecutor
@@ -85,5 +86,9 @@ data class PhaseEWiring(
         jobStore = phaseCWiring.jobStore,
         executor = workerExecutor,
         clock = phaseCWiring.clock,
+    ),
+    val jobCancelService: JobCancelService = JobCancelService(
+        jobStore = phaseCWiring.jobStore,
+        workerHandleRegistry = workerHandleRegistry,
     ),
 )
