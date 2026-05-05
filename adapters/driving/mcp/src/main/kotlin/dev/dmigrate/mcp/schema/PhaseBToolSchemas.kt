@@ -169,7 +169,9 @@ internal object PhaseBToolSchemas {
                 ),
                 "progress" to jobProgressField(),
                 "error" to jobErrorField(),
-                "executionMeta" to executionMetaField(),
+                // Plan §7.6: dieselbe `executionMeta`-Form wie `job_cancel`
+                // (Cancel-Felder bei Pending/Ack-Pending/Terminal-Cancel).
+                "executionMeta" to executionMetaJobField(),
             ).required(
                 "jobId",
                 "operation",
@@ -236,8 +238,11 @@ internal object PhaseBToolSchemas {
             input = obj(
                 "sourceUri" to stringField(),
                 "targetUri" to stringField(),
-            ).required("sourceUri", "targetUri"),
-            output = jobIdOut(),
+                "tenantId" to stringField(),
+                "idempotencyKey" to stringField(),
+                "approvalToken" to stringField(),
+            ).required("sourceUri", "targetUri", "idempotencyKey"),
+            output = jobStartOut(),
         ))
         put("data_profile_start", jobStart("connectionId"))
         put("data_export_start", schemaPair(
@@ -333,10 +338,27 @@ internal object PhaseBToolSchemas {
             output = jobIdOut(),
         ))
 
-        // Cancel
+        // Cancel — Plan §5.6 / §7.6: Eingabe `jobId` ODER tenant-scoped
+        // `resourceUri` (server-side check stellt "exactly-one" sicher);
+        // optional `reason`. Output liefert aktuellen Jobstatus +
+        // `executionMeta` mit Cancel-Feldern, KEIN `cancelled: boolean`
+        // mehr (Phase-B-Golden-Migration). `executionMeta` teilt sich die
+        // Form mit `job_status_get`, damit Pending-/Ack-Pending-/Terminal-
+        // Cancel einheitlich projiziert werden (Plan §7.6).
         put("job_cancel", schemaPair(
-            input = obj("jobId" to stringField()).required("jobId"),
-            output = obj("cancelled" to booleanField()).required("cancelled"),
+            input = obj(
+                "jobId" to stringField(),
+                "resourceUri" to jobResourceUriField(),
+                "reason" to stringField(),
+            ).build(),
+            output = obj(
+                "jobId" to stringField(),
+                "operation" to stringField(),
+                "status" to enumField("QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"),
+                "terminal" to booleanField(),
+                "resourceUri" to jobResourceUriField(),
+                "executionMeta" to executionMetaJobField(),
+            ).required("jobId", "operation", "status", "terminal", "resourceUri", "executionMeta"),
         ))
 
         // AI tools
@@ -511,6 +533,40 @@ internal object PhaseBToolSchemas {
     )
 
     /**
+     * Job-aware `executionMeta` object per Plan §7.6 / §5.6 — adds
+     * the durable Cancel-Felder, die `job_status_get` und `job_cancel`
+     * EINHEITLICH projizieren muessen. `requestId` bleibt das einzige
+     * Pflichtfeld; Cancel-Felder werden nur bei aktivem oder
+     * angefordertem Cancel gesetzt. Das Schema bleibt geschlossen
+     * (`additionalProperties=false`), damit kein Debug-Feld Secrets
+     * leakt.
+     *
+     * Felder gemaess Plan §7.6 line 1110-1115:
+     * - `cancelRequested`: Cancel ist durable angefordert.
+     * - `cancelAckPending`: Worker-Ack noch ausstehend (mit `retryAfter`).
+     * - `cancelRequestedAt`: Zeitpunkt der durable angeforderten Cancel.
+     * - `cancelRequestedBy`: Principal, der den Cancel angefordert hat.
+     * - `cancelRequestedReason`: scrubbed Reason-Projektion.
+     * - `cancelSignalSource`: Quelle (job-cancel, runner-timeout, …).
+     * - `retryAfter`: Sekunden bis zum naechsten `job_cancel`-Retry.
+     */
+    internal fun executionMetaJobField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to mapOf(
+            "requestId" to stringField(),
+            "cancelRequested" to booleanField(),
+            "cancelAckPending" to booleanField(),
+            "cancelRequestedAt" to stringField(),
+            "cancelRequestedBy" to stringField(),
+            "cancelRequestedReason" to stringField(),
+            "cancelSignalSource" to stringField(),
+            "retryAfter" to integerField(),
+        ),
+        "required" to listOf("requestId"),
+    )
+
+    /**
      * Common finding item: `severity` enum (uses [SchemaFindingSeverity]
      * wire constants), `code`/`path`/`message` strings, optional
      * `details` slot governed by [detailsSchema] (e.g. compare-specific
@@ -552,17 +608,43 @@ internal object PhaseBToolSchemas {
     // list-tool schemas + their items extracted to
     // PhaseDListToolSchemas.kt (Plan-D §10.5/§6.4).
 
-    /** Job-start tools share `connectionId` + scope-spec + jobId-out. */
+    /**
+     * Phase-E §7.6 Job-Start-Tools (`schema_reverse_start`,
+     * `data_profile_start`): teilen `connectionId` + scope-spec, plus die
+     * Phase-E-Pflichtfelder `idempotencyKey` (Plan §7.6 "idempotencyKey
+     * als Pflichtfeld erzwingen") und das optionale `approvalToken`
+     * (Plan §5.5: Caller liefert Token nach `RequiresApproval` nach).
+     */
     private fun jobStart(primaryConnectionField: String): SchemaPair = schemaPair(
         input = obj(
             primaryConnectionField to stringField(),
             "tenantId" to stringField(),
+            "idempotencyKey" to stringField(),
+            "approvalToken" to stringField(),
             "includes" to arrayField("string"),
             "excludes" to arrayField("string"),
-        ).required(primaryConnectionField),
-        output = jobIdOut(),
+        ).required(primaryConnectionField, "idempotencyKey"),
+        output = jobStartOut(),
     )
 
+    /**
+     * Phase-E §7.6 Output-Schema fuer Start-Tools: `jobId` + `resourceUri`
+     * + (job-aware) `executionMeta`. Wird von `schema_reverse_start`,
+     * `data_profile_start` und `schema_compare_start` geteilt.
+     */
+    private fun jobStartOut(): Map<String, Any> =
+        obj(
+            "jobId" to stringField(),
+            "resourceUri" to jobResourceUriField(),
+            "executionMeta" to executionMetaJobField(),
+        ).required("jobId", "resourceUri", "executionMeta")
+
+    /**
+     * Phase-B-Output fuer noch nicht E-aktive Start-Tools
+     * (`data_export_start`, `data_import_start`, `data_transfer_start`).
+     * Bleibt schmal `{jobId}`, weil diese Tools in Phase E noch
+     * `UnsupportedToolHandler` sind (Plan §3.2 Carve-out).
+     */
     private fun jobIdOut(): Map<String, Any> =
         obj("jobId" to stringField()).required("jobId")
 

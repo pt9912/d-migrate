@@ -58,7 +58,16 @@ internal object SchemaSecretGuard {
      * The list lets future tools opt out of a false-positive without
      * weakening the substring match for everyone else.
      */
-    val ALLOWED_OVERRIDES: Set<String> = emptySet()
+    val ALLOWED_OVERRIDES: Set<String> = setOf(
+        // Phase E §7.4: `approvalToken` ist ein client-praesentiertes
+        // Approval-Token im Approved-Retry-Flow. Es wandert nie in
+        // Store/Audit — der Server fingerprint't es per
+        // ApprovalTokenFingerprint.compute(...) und verwirft das Klartext-
+        // Token sofort danach. Der Substring `token` matcht generisch,
+        // aber dieses Feld ist ausdruecklich Teil des MCP-Protokolls
+        // (Plan §5.5 / §7.6 input).
+        "approvaltoken",
+    )
 
     /**
      * AP 6.23: backwards-compat alias. Old call sites or tests that

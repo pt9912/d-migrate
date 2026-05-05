@@ -115,6 +115,15 @@ subprojects {
         // Restoring test outputs from the build cache can leave coverage
         // verification with stale or incomplete counters on CI.
         outputs.cacheIf { false }
+
+        // Forward UPDATE_GOLDEN to the forked test JVM so golden-pinned
+        // tests (PhaseBToolSchemasGoldenTest, AP-6.24-Goldens, …)
+        // regenerate via `gradle -DUPDATE_GOLDEN=true ...` without manual
+        // env wiring per task.
+        val updateGolden = System.getProperty("UPDATE_GOLDEN") ?: System.getenv("UPDATE_GOLDEN")
+        if (updateGolden != null) {
+            systemProperty("UPDATE_GOLDEN", updateGolden)
+        }
     }
 
     tasks.withType<Test>().configureEach {

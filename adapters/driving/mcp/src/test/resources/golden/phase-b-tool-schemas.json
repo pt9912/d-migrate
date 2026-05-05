@@ -543,6 +543,12 @@
         "tenantId": {
           "type": "string"
         },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
         "includes": {
           "type": "array",
           "items": {
@@ -557,7 +563,8 @@
         }
       },
       "required": [
-        "connectionId"
+        "connectionId",
+        "idempotencyKey"
       ]
     },
     "outputSchema": {
@@ -567,10 +574,50 @@
       "properties": {
         "jobId": {
           "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "jobId"
+        "jobId",
+        "resourceUri",
+        "executionMeta"
       ]
     }
   },
@@ -730,23 +777,86 @@
       "properties": {
         "jobId": {
           "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "reason": {
+          "type": "string"
         }
-      },
-      "required": [
-        "jobId"
-      ]
+      }
     },
     "outputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "cancelled": {
+        "jobId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "terminal": {
           "type": "boolean"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "cancelled"
+        "jobId",
+        "operation",
+        "status",
+        "terminal",
+        "resourceUri",
+        "executionMeta"
       ]
     }
   },
@@ -996,6 +1106,28 @@
           "properties": {
             "requestId": {
               "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
@@ -1352,11 +1484,21 @@
         },
         "targetUri": {
           "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
         }
       },
       "required": [
         "sourceUri",
-        "targetUri"
+        "targetUri",
+        "idempotencyKey"
       ]
     },
     "outputSchema": {
@@ -1366,10 +1508,50 @@
       "properties": {
         "jobId": {
           "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "jobId"
+        "jobId",
+        "resourceUri",
+        "executionMeta"
       ]
     }
   },
@@ -1654,6 +1836,12 @@
         "tenantId": {
           "type": "string"
         },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
         "includes": {
           "type": "array",
           "items": {
@@ -1668,7 +1856,8 @@
         }
       },
       "required": [
-        "connectionId"
+        "connectionId",
+        "idempotencyKey"
       ]
     },
     "outputSchema": {
@@ -1678,10 +1867,50 @@
       "properties": {
         "jobId": {
           "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "jobId"
+        "jobId",
+        "resourceUri",
+        "executionMeta"
       ]
     }
   },
