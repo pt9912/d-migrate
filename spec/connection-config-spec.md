@@ -148,6 +148,8 @@ Beispiel: Passwort `p@ss:word` → `postgresql://admin:p%40ss%3Aword@localhost/m
 | `idleTimeout` | `300000` | Max. Idle-Zeit (ms, 5 Min) |
 | `maxLifetime` | `600000` | Max. Lebenszeit einer Verbindung (ms, 10 Min) |
 | `keepaliveTime` | `60000` | Keepalive-Intervall (ms) |
+| `statementTimeout` | `30000` | Per-Statement-Timeout (ms). Begrenzt jede atomar-nicht-cancelbare Driver-Operation auf das Cancel-Reaktionsbudget aus implementation-plan-0.9.6 §4.1 (`<=30s`). Wert `0` deaktiviert das Timeout; negative Werte sind Konstruktionsfehler. |
+| `networkTimeout` | `30000` | Per-Connection-Network-Timeout (ms). Schützt Commit-/Socket-/Connection-I/O-Pfade, die nicht über `Statement.setQueryTimeout` erfasst werden (z.B. `Connection.metaData.getPrimaryKeys` in PostgreSQL/MySQL-Writer). Wert `0` deaktiviert; negative Werte sind Konstruktionsfehler. |
 
 Für SQLite: Pool-Size auf `1` (SQLite unterstützt keine parallelen Schreibzugriffe).
 
