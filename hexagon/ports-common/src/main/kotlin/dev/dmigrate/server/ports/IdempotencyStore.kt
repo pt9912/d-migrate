@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports
 
+import dev.dmigrate.server.core.approval.ApprovalChallenge
 import dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
@@ -32,7 +33,21 @@ interface IdempotencyStore {
         now: Instant,
     ): InitResumeOutcome
 
-    fun markAwaitingApproval(scope: IdempotencyScope, now: Instant): Boolean
+    /**
+     * Phase E §5.5 (Review-Fix Blocker #3): markAwaitingApproval-Variante,
+     * die die durable [ApprovalChallenge] mitspeichert. Beim spaeteren
+     * `reserve` (Approved-Retry) liefert die `AwaitingApproval`-Antwort
+     * die gespeicherte Challenge zurueck, sodass der Caller den
+     * `approvalRequestId`-Anti-Replay-Check echt durchfuehren kann.
+     *
+     * Default-Argument `challenge = null` haelt Bestands-Caller
+     * backward-compat (keine Challenge gespeichert).
+     */
+    fun markAwaitingApproval(
+        scope: IdempotencyScope,
+        now: Instant,
+        challenge: ApprovalChallenge? = null,
+    ): Boolean
 
     /**
      * Atomically transitions an `AWAITING_APPROVAL` entry to `PENDING`

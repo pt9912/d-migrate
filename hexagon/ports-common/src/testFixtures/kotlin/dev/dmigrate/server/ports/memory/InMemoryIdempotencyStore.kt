@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports.memory
 
+import dev.dmigrate.server.core.approval.ApprovalChallenge
 import dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
@@ -32,6 +33,14 @@ class InMemoryIdempotencyStore(
         // approval). The public IdempotencyState stays at the documented
         // states per Plan §5.2; this flag never crosses the port boundary.
         val claimed: Boolean = false,
+        /**
+         * Phase E §5.5 (Review-Fix Blocker #3): durable Approval-
+         * Challenge, die beim `markAwaitingApproval` persistiert wird.
+         * Wird beim spaeteren `reserve` in
+         * `IdempotencyReserveOutcome.AwaitingApproval.challenge`
+         * zurueckgegeben.
+         */
+        val challenge: ApprovalChallenge? = null,
     )
 
     private data class InitEntry(
@@ -78,7 +87,7 @@ class InMemoryIdempotencyStore(
                 }
             }
             IdempotencyState.AWAITING_APPROVAL ->
-                IdempotencyReserveOutcome.AwaitingApproval(scope, existing.expiresAt)
+                IdempotencyReserveOutcome.AwaitingApproval(scope, existing.expiresAt, existing.challenge)
             IdempotencyState.COMMITTED ->
                 IdempotencyReserveOutcome.Committed(scope, existing.resultRef!!)
             IdempotencyState.DENIED ->
@@ -175,7 +184,11 @@ class InMemoryIdempotencyStore(
         return outcome!!
     }
 
-    override fun markAwaitingApproval(scope: IdempotencyScope, now: Instant): Boolean {
+    override fun markAwaitingApproval(
+        scope: IdempotencyScope,
+        now: Instant,
+        challenge: ApprovalChallenge?,
+    ): Boolean {
         var transitioned = false
         entries.computeIfPresent(scope) { _, existing ->
             if (existing.state == IdempotencyState.PENDING) {
@@ -183,6 +196,13 @@ class InMemoryIdempotencyStore(
                 existing.copy(
                     state = IdempotencyState.AWAITING_APPROVAL,
                     expiresAt = now.plusSeconds(awaitingApprovalSeconds),
+                    // Plan §5.5 (Review-Fix Blocker #3): die durable
+                    // Challenge wird hier gespeichert. Wenn der Caller
+                    // null uebergibt (Bestands-Pfad), bleibt das Feld
+                    // leer und der spaetere reserve liefert
+                    // AwaitingApproval(challenge = null) — kein
+                    // Anti-Replay moeglich.
+                    challenge = challenge,
                 )
             } else {
                 existing

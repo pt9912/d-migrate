@@ -1,5 +1,6 @@
 package dev.dmigrate.server.core.idempotency
 
+import dev.dmigrate.server.core.approval.ApprovalChallenge
 import java.time.Instant
 
 sealed interface IdempotencyReserveOutcome {
@@ -18,6 +19,13 @@ sealed interface IdempotencyReserveOutcome {
     data class AwaitingApproval(
         override val scope: IdempotencyScope,
         val expiresAt: Instant,
+        /**
+         * Phase E §5.5 (Review-Fix Blocker #3): durable Challenge,
+         * die beim Statuswechsel nach AWAITING_APPROVAL persistiert
+         * wurde. `null` fuer Bestands-Stores ohne Challenge-Support
+         * (backward compat).
+         */
+        val challenge: ApprovalChallenge? = null,
     ) : IdempotencyReserveOutcome
 
     data class Committed(

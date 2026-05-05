@@ -142,7 +142,8 @@ class JobStartOrchestrator(
             is IdempotencyReserveOutcome.Reserved -> handleReserved(request, scope, fingerprint)
             is IdempotencyReserveOutcome.Committed -> JobStartHandlerOutcome.AlreadyStarted(reserve.resultRef)
             is IdempotencyReserveOutcome.ExistingPending -> JobStartHandlerOutcome.Pending(reserve.leaseExpiresAt)
-            is IdempotencyReserveOutcome.AwaitingApproval -> handleExistingAwaitingApproval(request, scope, fingerprint)
+            is IdempotencyReserveOutcome.AwaitingApproval ->
+                handleExistingAwaitingApproval(request, scope, fingerprint, reserve.challenge)
             is IdempotencyReserveOutcome.Denied -> JobStartHandlerOutcome.PolicyDenied(reserve.reason, reserve.expiresAt)
             is IdempotencyReserveOutcome.Failed -> JobStartHandlerOutcome.Failed(reserve.reason, reserve.expiresAt)
             is IdempotencyReserveOutcome.Conflict -> JobStartHandlerOutcome.IdempotencyConflict(reserve.existingFingerprint)
@@ -263,7 +264,17 @@ class JobStartOrchestrator(
         scope: IdempotencyScope,
         decision: PolicyDecision.RequiresApproval,
     ): JobStartHandlerOutcome {
-        idempotencyStore.markAwaitingApproval(scope, request.now)
+        // Plan §5.5 (Review-Fix Blocker #3): die durable Challenge wird
+        // beim Statuswechsel persistiert, damit der Approved-Retry den
+        // approvalRequestId-Anti-Replay-Check echt durchfuehren kann.
+        val challenge = dev.dmigrate.server.core.approval.ApprovalChallenge(
+            approvalRequestId = decision.approvalRequestId,
+            correlationKind = decision.correlationKind,
+            correlationKey = decision.correlationKey,
+            requiredScopes = decision.requiredScopes,
+            reasons = decision.reasons,
+        )
+        idempotencyStore.markAwaitingApproval(scope, request.now, challenge)
         return JobStartHandlerOutcome.PolicyRequired(
             approvalRequestId = decision.approvalRequestId,
             correlationKind = decision.correlationKind,
@@ -285,14 +296,28 @@ class JobStartOrchestrator(
         request: JobStartRequest,
         scope: IdempotencyScope,
         fingerprint: String,
+        durableChallenge: dev.dmigrate.server.core.approval.ApprovalChallenge?,
     ): JobStartHandlerOutcome {
         val token = request.approvalToken
         return if (token != null) {
-            handleApprovedRetry(request, scope, fingerprint, token)
+            handleApprovedRetry(request, scope, fingerprint, token, durableChallenge)
+        } else if (durableChallenge != null) {
+            // Plan §5.5 (Review-Fix Blocker #3): Replay-Pfad ohne Token
+            // liefert die DURABLE-gespeicherte Challenge zurueck — gleicher
+            // approvalRequestId, gleiche requiredScopes, kein
+            // re-decide-Drift.
+            JobStartHandlerOutcome.PolicyRequired(
+                approvalRequestId = durableChallenge.approvalRequestId,
+                correlationKind = durableChallenge.correlationKind,
+                correlationKey = durableChallenge.correlationKey,
+                requiredScopes = durableChallenge.requiredScopes,
+                reasons = durableChallenge.reasons,
+            )
         } else {
-            // Replay-Pfad ohne Token: re-decide Policy fuer aktuelle
-            // Challenge. Plan §5.5: "Retry liefert erneut POLICY_REQUIRED
-            // mit der aktuellen Challenge".
+            // Bestands-Pfad ohne durable Challenge (z.B. wenn ein
+            // Bestands-Caller markAwaitingApproval ohne challenge gerufen
+            // hat): re-decide Policy. Defensive — die Phase-E-Production-
+            // Wirebahn liefert immer eine durable Challenge.
             val attempt = PolicyAttempt(
                 tenantId = request.tenantId,
                 callerId = request.callerId,
@@ -311,11 +336,7 @@ class JobStartOrchestrator(
                         requiredScopes = decision.requiredScopes,
                         reasons = decision.reasons,
                     )
-                is PolicyDecision.Allowed ->
-                    // Policy-Toggle waehrend AwaitingApproval: erlaube den
-                    // Direkt-Start ueber denselben commit-Pfad. claimApproved
-                    // greift NICHT, weil wir keinen Grant haben.
-                    commitJob(request, scope)
+                is PolicyDecision.Allowed -> commitJob(request, scope)
                 is PolicyDecision.Denied -> denyAndReturn(scope, decision.reasonCode, request.now)
             }
         }
@@ -326,31 +347,38 @@ class JobStartOrchestrator(
         scope: IdempotencyScope,
         fingerprint: String,
         rawToken: String,
+        durableChallenge: dev.dmigrate.server.core.approval.ApprovalChallenge?,
     ): JobStartHandlerOutcome {
         val tokenFingerprint = ApprovalTokenFingerprint.compute(rawToken)
-        // E.6 (3a) Workaround: Lookup grant.approvalRequestId aus dem Store
-        // statt aus einer durable Challenge. Damit umgeht der Aufruf den
-        // ApprovalRequestIdMismatch-Check in ApprovalGrantValidator.
-        // Vollstaendige Anti-Replay-Bindung verlangt eine Store-Extension
-        // (Idempotency-Eintrag traegt die Challenge mit) — TODO(plan-§5.5).
-        val grantApprovalRequestId =
-            approvalGrantStore.findByTokenFingerprint(request.tenantId, tokenFingerprint)
+        // Plan §5.5 (Review-Fix Blocker #3): die Challenge wurde beim
+        // markAwaitingApproval durabel gespeichert. ApprovalAttempt
+        // benutzt JETZT die durable approvalRequestId + requiredScopes —
+        // damit greift der ApprovalGrantValidator-Anti-Replay-Check
+        // (Plan §5.5 "Ein Grant fuer eine alte oder erneuerte
+        // approvalRequestId ist ungueltig") echt: ein Grant fuer einen
+        // anderen approvalRequestId wird via ApprovalRequestIdMismatch
+        // abgelehnt. ScopeMismatch greift ebenfalls — die durable
+        // requiredScopes sind nicht mehr empty.
+        //
+        // durableChallenge == null ist Bestands-Compat (Stores ohne
+        // Challenge-Persistierung); dann faellt der Service auf das
+        // alte E.6-(3a)-Verhalten zurueck (Approval-Request-Id-Lookup
+        // im Grant — Anti-Replay-Bypass).
+        val approvalRequestId = durableChallenge?.approvalRequestId
+            ?: approvalGrantStore.findByTokenFingerprint(request.tenantId, tokenFingerprint)
                 ?.approvalRequestId
                 ?: ""
-        // requiredScopes kennen wir nicht aus dem Store — auf empty setzen.
-        // Validator-Check `containsAll(empty)` ist trivial true; engt nichts ein.
-        // Tool-Handler aus AP E.6 (3b) loesen das ueber expliziten Scope-
-        // Vertrag pro Tool, nicht durch den Grant.
+        val requiredScopes = durableChallenge?.requiredScopes ?: emptySet()
         val attempt = ApprovalAttempt(
             tokenFingerprint = tokenFingerprint,
-            approvalRequestId = grantApprovalRequestId,
+            approvalRequestId = approvalRequestId,
             tenantId = request.tenantId,
             callerId = request.callerId,
             toolName = request.toolName,
             correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
             correlationKey = request.idempotencyKey!!,
             payloadFingerprint = fingerprint,
-            requiredScopes = emptySet(),
+            requiredScopes = requiredScopes,
         )
         val outcome = approvedRetryService.retry(attempt, scope, request.now, request.jobBuilder)
         return outcome.toHandlerOutcome()
