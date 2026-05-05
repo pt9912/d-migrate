@@ -221,7 +221,10 @@ server:
   `FAILED` (`error.code=EXECUTOR_SETUP_FAILED` bzw.
   `EXECUTOR_CLOSED`) und geben weiterhin `Started(jobId, record,
   source)` zurueck. Der Caller erhaelt damit einen stabilen Job-Ref und
-  sieht den Fehler ueber `job_status_get`.
+  sieht den Fehler ueber `job_status_get`. Nach erfolgreicher
+  `QUEUED -> FAILED`-Transition gibt der Orchestrator den
+  Quota-Owner frei; wenn bereits ein Worker-Handle registriert wurde,
+  wird es unregistert.
 - `Closed` vor dem Job-Commit darf nicht nur ein synthetisches
   `Failed` returnen. Weil der Idempotency-Slot bereits reserviert ist,
   muss der Orchestrator den Slot via `idempotencyStore.markFailed(...)`
@@ -323,7 +326,7 @@ das Lifecycle für `Runtime.addShutdownHook` bzw. Ktor
 |---|---|---|
 | **E3.1** | `JobDispatchAdmission` + `JobExecutorLifecycle` + Sync-Implementierungen + `BoundedAsyncJobDispatchAdmission`/`BoundedAsyncJobExecutor` (Pool-Konstruktion mit benannten Threads, Reject-Handler, Lifecycle-Wrapper) — alles in `hexagon/application/.../job/` | Unit-Tests: Admission vergibt exakt `maxThreads + queueCapacity` Permits; weiteres Acquire liefert `Saturated`; Permit-Release macht Kapazitaet frei; `shutdown(timeout)` schliesst Admission, drainiert in-flight; uncaught Exceptions werden geloggt ohne Pool-Death |
 | **E3.2** | `JobExecutorConfig`-Datenklasse + `JobExecutorFactory.create(config)` + Validierung (z.B. `coreThreads > 0`, `maxThreads >= coreThreads`, `queueCapacity > 0` bei `ArrayBlockingQueue`) | Factory-Test: SYNC liefert `SyncExecutor`+SyncAdmission+no-op-Lifecycle; ASYNC liefert Pool/Admission mit konfigurierten Werten; ungültige Werte werfen `IllegalArgumentException` |
-| **E3.3** | Admission-Pfad im Auto-Dispatch-Zweig von `JobStartOrchestrator.commitJob` VOR `jobBuilder`/`JobStartTransaction.commit`; `RateLimited.reason="EXECUTOR_SATURATED"`; `Closed` markiert Idempotency als failed; kein Admission-Acquire ohne Dispatcher/Factory; Permit-Release bei Quota-Reject, Commit-Failure, skipped Worker und Job-Terminal; post-commit Setup-Fehler terminalisieren den Job pollbar | Tests: voll ausgelastete Admission ⇒ tools/call-Antwort ist `RATE_LIMITED`; KEINE JobStore-Zeile, KEIN WorkerHandle; `Closed` liefert deterministischen Failed-Replay statt stale Pending; Idempotency-Reservation expired regulaer; bei `dispatcher == null` oder `factory == null` wird kein Permit acquired; nach Quota-Reject/`worker == null`/abgeschlossenem Job wird ein Permit frei; `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit setzen Job `FAILED` und returnen `Started` |
+| **E3.3** | Admission-Pfad im Auto-Dispatch-Zweig von `JobStartOrchestrator.commitJob` VOR `jobBuilder`/`JobStartTransaction.commit`; `RateLimited.reason="EXECUTOR_SATURATED"`; `Closed` markiert Idempotency als failed; kein Admission-Acquire ohne Dispatcher/Factory; Permit-Release bei Quota-Reject, Commit-Failure, skipped Worker und Job-Terminal; post-commit Setup-Fehler terminalisieren den Job pollbar und cleanen Quota/Handle | Tests: voll ausgelastete Admission ⇒ tools/call-Antwort ist `RATE_LIMITED`; KEINE JobStore-Zeile, KEIN WorkerHandle; `Closed` liefert deterministischen Failed-Replay statt stale Pending; Idempotency-Reservation expired regulaer; bei `dispatcher == null` oder `factory == null` wird kein Permit acquired; nach Quota-Reject/`worker == null`/abgeschlossenem Job wird ein Permit frei; `worker == null` unregistert das bereits registrierte Handle; `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit setzen Job `FAILED`, releasen Quota, unregistern ggf. das Handle und returnen `Started` |
 | **E3.4** | Cancel-while-queued: `JobDispatcher.runOnce` behandelt `transitionStatus(QUEUED→RUNNING)` mit `current=CANCELLED` als skip/cancelled ohne Worker-Aufruf und ohne `applyTerminal` | Tests: Cancel nach Submit, aber vor Worker-Start ⇒ Job bleibt CANCELLED; Worker `execute()` wird NIE aufgerufen; `signalAcked = true`, `ackedAt` und Reason stammen aus `JobCancelService`; Quota wird nicht doppelt released |
 | **E3.5** | Wiring: `PhaseEWiring.executorBundle` + `McpServerConfig.jobs.executor` + Bootstrap-Code im MCP-Server-Entrypoint (Bundle-Aufbau, Shutdown-Hook-/ApplicationStopping-Registry) | E2E-Test: Async-Modus startet/stoppt sauber; bei Shutdown laufen in-flight-Jobs zu Ende oder werden nach Timeout interrupted; KEIN Thread-Leak laut JMX-Snapshot/Tests |
 | **E3.6** | Observability: drei strukturierte Log-Events + `JobExecutorStatus`-Snapshot über Lifecycle/API fuer Tests und zukuenftige Hosts; kein HTTP-Health-Routing | Tests prüfen die Log-Felder pro Event; Snapshot zeigt active/queued/completed/rejected/capacity-Counts |
@@ -438,17 +441,20 @@ val permit = when (val admission = dispatchAdmission.tryAcquire(request.now)) {
 // Quota-Reserve + JobStartTransaction.commit passieren vor diesem
 // Block. Jeder Early-Return vor dem Commit schliesst zuerst das Permit.
 val outcome = committedOutcome
+var handleRegistered = false
 try {
     workerHandleRegistry.register(jobId, source)
+    handleRegistered = true
     val worker = factory?.create(outcome.record, request)
     if (worker == null) {
         permit.close()
+        workerHandleRegistry.unregister(jobId)
         return JobStartHandlerOutcome.Started(jobId, outcome.record, source)
     }
     dispatcher.dispatch(outcome.record, worker, source.token, permit)
 } catch (t: Throwable) {
     permit.close()
-    markExecutorSetupFailed(outcome.record, request.now, t)
+    markExecutorSetupFailed(outcome.record, request.now, t, handleRegistered)
     return JobStartHandlerOutcome.Started(jobId, outcome.record, source)
 }
 ```
@@ -459,8 +465,9 @@ Wenn `JobStartTransaction.commit` nicht eligible ist, wird das Permit
 vor dem `Pending`-Return geschlossen. Wenn kein Dispatcher oder keine
 Factory gewired ist, wird gar kein Permit acquired. Wenn die Factory
 fuer einen committeten Record `null` liefert, bleibt der Job bewusst
-`QUEUED`; das Admission-Permit wird sofort geschlossen, weil kein
-Runnable existiert, das es spaeter freigeben koennte.
+`QUEUED`; das Admission-Permit wird sofort geschlossen und das bereits
+registrierte Worker-Handle wird entfernt, weil kein Runnable existiert,
+das diese Laufzeitressourcen spaeter freigeben koennte.
 
 Nach erfolgreichem Commit ist der Start-Ref stabil. Darum werden
 Setup-Fehler danach nicht mehr als Tool-Exception propagiert:
@@ -468,7 +475,10 @@ Setup-Fehler danach nicht mehr als Tool-Exception propagiert:
 `QUEUED -> FAILED(error.code=EXECUTOR_SETUP_FAILED)`; der Handler
 returnt weiter `Started`, und der Poll-Pfad zeigt den Fehler. Der
 spezielle `RejectedExecutionException`-/Shutdown-Fall darf denselben
-Helfer mit `error.code=EXECUTOR_CLOSED` verwenden.
+Helfer mit `error.code=EXECUTOR_CLOSED` verwenden. Falls die
+Transition applied, gibt der Helfer den Quota-Slot frei. Falls vor dem
+Fehler bereits ein Worker-Handle registriert wurde, unregistert der
+Helfer es unabhaengig vom Transition-Ergebnis.
 
 ### 6.3 Cancel-while-queued
 
@@ -535,13 +545,18 @@ details = listOf(
 ### 6.5 Post-Commit Setup-Fehler
 
 ```kotlin
-private fun markExecutorSetupFailed(record: JobRecord, now: Instant, error: Throwable) {
+private fun markExecutorSetupFailed(
+    record: JobRecord,
+    now: Instant,
+    error: Throwable,
+    handleRegistered: Boolean,
+) {
     val code = if (error is RejectedExecutionException) {
         "EXECUTOR_CLOSED"
     } else {
         "EXECUTOR_SETUP_FAILED"
     }
-    jobStore.transitionStatus(
+    val transition = jobStore.transitionStatus(
         tenantId = record.tenantId,
         jobId = record.managedJob.jobId,
         allowedFromStatuses = setOf(JobStatus.QUEUED),
@@ -555,21 +570,31 @@ private fun markExecutorSetupFailed(record: JobRecord, now: Instant, error: Thro
             ),
         )
     }
+    if (transition is JobTransitionOutcome.Applied) {
+        transition.record.quotaReservationOwnerId?.let { ownerId ->
+            quotaService?.releaseForOwner(ownerId, now)
+        }
+    }
+    if (handleRegistered) {
+        workerHandleRegistry.unregister(record.managedJob.jobId)
+    }
 }
 ```
 
 Der Handler liefert in diesen seltenen Races weiter `Started`, weil
 der Job bereits committet ist; der Poll-Pfad sieht sofort `FAILED`.
 Tests pinnen `workerHandleRegistry.register`-Throw, `factory.create`-
-Throw und `dispatcher.dispatch`-/`RejectedExecutionException`.
+Throw und `dispatcher.dispatch`-/`RejectedExecutionException`, jeweils
+inklusive Quota-Release und Handle-Unregister, wenn diese Side-Effects
+vor dem Fehler bereits stattgefunden haben.
 
 ## 7. Risiken
 
 | Risiko | Wahrscheinlichkeit | Mitigation |
 |---|---|---|
 | Thread-Leak bei Test-Shutdown (Pool nicht gestoppt) | mittel | `JobExecutorLifecycle.shutdown(timeout)` ist obligatorisch im Test-Teardown; CI-Hook checkt aktive Threads nach Test-Ende |
-| Permit-Leak bei Commit-/Dispatch-Race | mittel | Ohne Dispatcher/Factory wird kein Permit acquired; sonst wird `JobDispatchPermit` in jedem pre-commit Fehlerpfad, bei skipped Worker, bei post-commit Setup-Fehlern und im Dispatcher-`finally` geschlossen; Tests fuer `IdempotencyNotEligible`, `dispatcher == null`, `factory == null`, `worker == null`, Worker-Exception, queued-cancel, setup-failure und shutdown-reject |
-| Post-Commit Setup-Fehler laesst Job dauerhaft QUEUED | mittel | `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit werden via `markExecutorSetupFailed` auf `FAILED` gemappt; Handler returnt `Started`, damit Polling den terminalen Fehler sieht |
+| Permit-/Handle-Leak bei Commit-/Dispatch-Race | mittel | Ohne Dispatcher/Factory wird kein Permit acquired; sonst wird `JobDispatchPermit` in jedem pre-commit Fehlerpfad, bei skipped Worker, bei post-commit Setup-Fehlern und im Dispatcher-`finally` geschlossen; nach Register + skipped Worker wird das Handle unregistered; Tests fuer `IdempotencyNotEligible`, `dispatcher == null`, `factory == null`, `worker == null`, Worker-Exception, queued-cancel, setup-failure und shutdown-reject |
+| Post-Commit Setup-Fehler laesst Job dauerhaft QUEUED | mittel | `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit werden via `markExecutorSetupFailed` auf `FAILED` gemappt; Handler returnt `Started`, damit Polling den terminalen Fehler sieht; bei applied Transition wird Quota released, bei bereits registriertem Handle wird unregistered |
 | Deadlock: Worker submitted weiteren Job auf denselben Pool | gering | E3 dokumentiert: Pool ist **Single-Layer**. Worker-internes Spawning verboten — Convention statt Mechanik |
 | Slow shutdown bei lang laufenden Workern | mittel | `shutdownTimeoutMillis` konfigurierbar; nach Timeout `shutdownNow()` (interrupt) — workers MUESSEN auf `Thread.interrupted()` reagieren (existiert für Cancel-Pfad bereits) |
 | Test-Flake durch Timing-Asserts in Async-Tests | mittel | `Awaitility` mit großzügigen Timeouts (5s+); SyncExecutor in Tests, die Ordering-Asserts brauchen |
@@ -592,7 +617,8 @@ Phase E3 gilt als done, wenn:
    Closed-Admission ohne stale Pending, kein Acquire ohne Dispatcher/Factory,
    Permit-Release bei Quota-Reject/skipped Worker/Commit-Race/
    Setup-Fehler/Job-Terminal, post-commit Setup-Failure ->
-   pollbares FAILED, Cancel-while-queued, graceful Shutdown.
+   pollbares FAILED + Quota-Release + Handle-Unregister,
+   Cancel-while-queued, graceful Shutdown.
 4. ✅ `JobStartOutcome.RateLimited(reason="EXECUTOR_SATURATED")`
    bzw. `JobStartHandlerOutcome.RateLimited(reason=...)` ist
    rueckwaertskompatibel eingefuehrt und in
