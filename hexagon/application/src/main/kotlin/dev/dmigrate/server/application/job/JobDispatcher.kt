@@ -1,6 +1,7 @@
 package dev.dmigrate.server.application.job
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelSource
 import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.server.core.job.JobError
 import dev.dmigrate.server.core.job.JobRecord
@@ -103,7 +104,19 @@ class JobDispatcher(
         val outcome = try {
             worker.execute(runningRecord, token)
         } catch (e: OperationCancelledException) {
-            JobWorkerOutcome.Cancelled(reason = e.reason ?: REASON_GENERIC_CANCEL)
+            // Plan §7.7: Source-Klassifikation. JOB_CANCEL ist eine
+            // echte Cancel-Operation -> job-status CANCELLED.
+            // RUNNER_TIMEOUT ist eine Budget-Grenze -> job-status
+            // FAILED(error.code=OPERATION_TIMEOUT).
+            when (e.source) {
+                OperationCancelSource.JOB_CANCEL ->
+                    JobWorkerOutcome.Cancelled(reason = e.reason ?: REASON_GENERIC_CANCEL)
+                OperationCancelSource.RUNNER_TIMEOUT ->
+                    JobWorkerOutcome.Failed(
+                        errorCode = ERROR_CODE_OPERATION_TIMEOUT,
+                        errorMessage = e.reason ?: REASON_GENERIC_TIMEOUT,
+                    )
+            }
         } catch (e: Exception) {
             JobWorkerOutcome.Failed(
                 errorCode = REASON_RUNNER_ERROR,
@@ -162,6 +175,10 @@ class JobDispatcher(
         const val REASON_DISPATCH_NOT_FOUND: String = "DISPATCH_NOT_FOUND"
         const val REASON_RUNNER_ERROR: String = "RUNNER_ERROR"
         const val REASON_GENERIC_CANCEL: String = "operation cancelled"
+        const val REASON_GENERIC_TIMEOUT: String = "runner timeout"
+
+        /** Plan §7.7: error.code-Wert fuer RUNNER_TIMEOUT-induzierten FAILED. */
+        const val ERROR_CODE_OPERATION_TIMEOUT: String = "OPERATION_TIMEOUT"
     }
 }
 

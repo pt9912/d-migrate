@@ -1,6 +1,7 @@
 package dev.dmigrate.server.application.job
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelSource
 import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.ports.JobWorker
@@ -68,7 +69,7 @@ class JobDispatcherTest : FunSpec({
         final.managedJob.cancelRequest.ackedAt.shouldNotBeNull()
     }
 
-    test("OperationCancelledException → Cancelled-Outcome (Fallback wenn Worker propagiert)") {
+    test("OperationCancelledException JOB_CANCEL → Cancelled-Outcome (Default-Source)") {
         val store = seedQueued()
         val dispatcher = JobDispatcher(store, clock = clock)
         val record = store.findById(tenant, "j1")!!
@@ -78,6 +79,48 @@ class JobDispatcherTest : FunSpec({
         outcome.shouldBeInstanceOf<JobWorkerOutcome.Cancelled>()
         outcome.reason shouldBe "from-token"
         store.findById(tenant, "j1")!!.managedJob.status shouldBe JobStatus.CANCELLED
+    }
+
+    test("OperationCancelledException RUNNER_TIMEOUT → Failed(OPERATION_TIMEOUT), kein Cancelled") {
+        // Plan §7.7: RUNNER_TIMEOUT-Source darf NICHT als generischer
+        // Cancel gemapped werden; Job-Status wird FAILED mit
+        // error.code=OPERATION_TIMEOUT.
+        val store = seedQueued()
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j1")!!
+        val worker = JobWorker { _, _ ->
+            throw OperationCancelledException(
+                reason = "runner budget exhausted",
+                source = OperationCancelSource.RUNNER_TIMEOUT,
+            )
+        }
+
+        val outcome = dispatcher.dispatch(record, worker, CancellationToken.none()).get()
+        outcome.shouldBeInstanceOf<JobWorkerOutcome.Failed>()
+        outcome.errorCode shouldBe JobDispatcher.ERROR_CODE_OPERATION_TIMEOUT
+        outcome.errorMessage shouldBe "runner budget exhausted"
+
+        val final = store.findById(tenant, "j1")!!
+        final.managedJob.status shouldBe JobStatus.FAILED
+        final.managedJob.error?.code shouldBe "OPERATION_TIMEOUT"
+        // Defensive: kein CANCELLED, kein signalAcked-Bookkeeping.
+        final.managedJob.cancelRequest.signalAcked shouldBe false
+    }
+
+    test("OperationCancelledException explizit JOB_CANCEL → Cancelled (gleich wie Default)") {
+        val store = seedQueued()
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j1")!!
+        val worker = JobWorker { _, _ ->
+            throw OperationCancelledException(
+                reason = "user-cancel",
+                source = OperationCancelSource.JOB_CANCEL,
+            )
+        }
+
+        val outcome = dispatcher.dispatch(record, worker, CancellationToken.none()).get()
+        outcome.shouldBeInstanceOf<JobWorkerOutcome.Cancelled>()
+        outcome.reason shouldBe "user-cancel"
     }
 
     test("Failed → RUNNING → FAILED, error im Record") {

@@ -69,6 +69,25 @@ class CancellationTokenTest : FunSpec({
         error.cause shouldBe rootCause
     }
 
+    test("OperationCancelledException defaults source to JOB_CANCEL (Plan §7.7)") {
+        // Phase E.7 (2/6): backward-compat default — Phase-E0-Caller, die
+        // den source-Parameter nicht setzen, landen auf der Cancel-Seite
+        // (nicht auf RUNNER_TIMEOUT/Failed).
+        OperationCancelledException("user-cancel").source shouldBe
+            OperationCancelSource.JOB_CANCEL
+        OperationCancelledException("with-cause", IllegalStateException("x")).source shouldBe
+            OperationCancelSource.JOB_CANCEL
+    }
+
+    test("OperationCancelledException carries explicit RUNNER_TIMEOUT source") {
+        val ex = OperationCancelledException(
+            reason = "budget-exhausted",
+            source = OperationCancelSource.RUNNER_TIMEOUT,
+        )
+        ex.source shouldBe OperationCancelSource.RUNNER_TIMEOUT
+        ex.reason shouldBe "budget-exhausted"
+    }
+
     // --- Idempotent cancel — first reason wins ---
 
     test("repeated cancel calls preserve the first reason") {
