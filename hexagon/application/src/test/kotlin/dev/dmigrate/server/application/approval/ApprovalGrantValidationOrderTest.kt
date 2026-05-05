@@ -38,11 +38,18 @@ class ApprovalGrantValidationOrderTest : FunSpec({
             ApprovalGrantValidation.Invalid.CallerMismatch
     }
 
-    test("Tool beats Correlation") {
-        val grant = ApprovalFixtures.grant(tool = "x", correlationKey = "k1")
-        val attempt = ApprovalFixtures.attempt(tool = "y", correlationKey = "k2")
+    test("Tool beats ApprovalRequestId") {
+        val grant = ApprovalFixtures.grant(tool = "x", approvalRequestId = "req-1")
+        val attempt = ApprovalFixtures.attempt(tool = "y", approvalRequestId = "req-2")
         validator.validate(grant, attempt, ApprovalFixtures.NOW) shouldBe
             ApprovalGrantValidation.Invalid.ToolMismatch
+    }
+
+    test("ApprovalRequestId beats Correlation") {
+        val grant = ApprovalFixtures.grant(approvalRequestId = "req-1", correlationKey = "k1")
+        val attempt = ApprovalFixtures.attempt(approvalRequestId = "req-2", correlationKey = "k2")
+        validator.validate(grant, attempt, ApprovalFixtures.NOW) shouldBe
+            ApprovalGrantValidation.Invalid.ApprovalRequestIdMismatch
     }
 
     test("Correlation beats Payload") {
