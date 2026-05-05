@@ -745,7 +745,10 @@ data class ShadowTablePlan(
     val columnMappings: List<ShadowColumnMapping>,
     val filters: List<ShadowFilter> = emptyList(),
     val ordering: ShadowOrdering? = null,
-    val partitioning: ShadowPartitioning? = null
+    val partitioning: ShadowPartitioning? = null,
+    val ddlPolicy: ShadowSpecialOperationPolicy = ShadowSpecialOperationPolicy.FAIL_FAST,
+    val truncatePolicy: ShadowSpecialOperationPolicy = ShadowSpecialOperationPolicy.REJECT,
+    val allowExplicitTruncateApply: Boolean = false
 )
 ```
 
@@ -755,6 +758,17 @@ enum class ShadowTableMode {
     SNAPSHOT_ONLY,
     CDC_ONLY,
     APPEND_ONLY
+}
+```
+
+```kotlin
+enum class ShadowSpecialOperationPolicy {
+    FAIL_FAST,
+    REJECT,
+    RECORD_AND_WARN,
+    DEAD_LETTER,
+    IGNORE_EXPLICIT,
+    APPLY_EXPLICIT
 }
 ```
 
@@ -952,11 +966,14 @@ Erlaubte Policies:
 
 ```text
 FAIL_FAST
+REJECT
 RECORD_AND_WARN
 DEAD_LETTER
 IGNORE_EXPLICIT
 APPLY_EXPLICIT
 ```
+
+Diese Policies werden pro Tabelle in `ShadowTablePlan.ddlPolicy` und `ShadowTablePlan.truncatePolicy` gespeichert.
 
 `APPLY_EXPLICIT` ist für `TRUNCATE` nur erlaubt, wenn der Shadow Plan die betroffene Tabelle explizit dafür freigibt.
 
@@ -1870,6 +1887,36 @@ message ShadowMigrationOptions {
   optional string required_stable_duration = 4;
   bool allow_many_source_tables_to_one_target = 5;
   bool allow_experimental_flink_cdc_schema_evolution = 6;
+}
+```
+
+```proto
+enum SchemaDriftPolicy {
+  SCHEMA_DRIFT_POLICY_UNSPECIFIED = 0;
+  SCHEMA_DRIFT_POLICY_FAIL_FAST = 1;
+  SCHEMA_DRIFT_POLICY_RECORD_AND_WARN = 2;
+  SCHEMA_DRIFT_POLICY_AUTO_EVOLVE_ADDITIVE_ONLY = 3;
+}
+```
+
+```proto
+enum DeadLetterPolicy {
+  DEAD_LETTER_POLICY_UNSPECIFIED = 0;
+  DEAD_LETTER_POLICY_FAIL_FAST = 1;
+  DEAD_LETTER_POLICY_WRITE_AND_CONTINUE = 2;
+  DEAD_LETTER_POLICY_WRITE_AND_DEGRADE = 3;
+}
+```
+
+```proto
+enum ShadowSpecialOperationPolicy {
+  SHADOW_SPECIAL_OPERATION_POLICY_UNSPECIFIED = 0;
+  SHADOW_SPECIAL_OPERATION_POLICY_FAIL_FAST = 1;
+  SHADOW_SPECIAL_OPERATION_POLICY_REJECT = 2;
+  SHADOW_SPECIAL_OPERATION_POLICY_RECORD_AND_WARN = 3;
+  SHADOW_SPECIAL_OPERATION_POLICY_DEAD_LETTER = 4;
+  SHADOW_SPECIAL_OPERATION_POLICY_IGNORE_EXPLICIT = 5;
+  SHADOW_SPECIAL_OPERATION_POLICY_APPLY_EXPLICIT = 6;
 }
 ```
 
