@@ -123,6 +123,64 @@ class JobDispatcherTest : FunSpec({
         outcome.reason shouldBe "user-cancel"
     }
 
+    test("Cancel-Reason wird SCRUBBED in cancelRequest.requestedReason projiziert (Plan §7.7)") {
+        val store = seedQueued()
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j1")!!
+        val worker = JobWorker { _, _ ->
+            JobWorkerOutcome.Cancelled(reason = "leak Bearer abc.def.ghi token")
+        }
+
+        dispatcher.dispatch(record, worker, CancellationToken.none()).get()
+
+        val final = store.findById(tenant, "j1")!!
+        final.managedJob.status shouldBe JobStatus.CANCELLED
+        // Bearer-Token wurde redigiert.
+        final.managedJob.cancelRequest.requestedReason shouldBe "leak Bearer *** token"
+    }
+
+    test("Cancel-Reason ueberschreibt NICHT einen schon durabel gesetzten requestedReason (Plan §7.2)") {
+        val store = InMemoryJobStore()
+        store.save(
+            Fixtures.jobRecord("j-pre-cancelled").copy(
+                managedJob = Fixtures.jobRecord("j-pre-cancelled").managedJob.copy(
+                    status = JobStatus.QUEUED,
+                    cancelRequest = dev.dmigrate.server.core.job.JobCancelRequest(
+                        requested = true,
+                        requestedAt = now,
+                        requestedBy = "alice",
+                        requestedReason = "first-reason-from-job-cancel-tool",
+                        signalSource = "job_cancel",
+                    ),
+                ),
+            ),
+        )
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j-pre-cancelled")!!
+        val worker = JobWorker { _, _ ->
+            JobWorkerOutcome.Cancelled(reason = "later-worker-reason")
+        }
+
+        dispatcher.dispatch(record, worker, CancellationToken.none()).get()
+
+        val final = store.findById(tenant, "j-pre-cancelled")!!
+        // Der ERSTE Reason gewinnt — Worker-Reason ueberschreibt nicht.
+        final.managedJob.cancelRequest.requestedReason shouldBe "first-reason-from-job-cancel-tool"
+    }
+
+    test("Custom scrubber wird angewandt") {
+        val store = seedQueued()
+        val dispatcher = JobDispatcher(
+            store,
+            clock = clock,
+            cancelReasonScrubber = { it.uppercase() },
+        )
+        val record = store.findById(tenant, "j1")!!
+        val worker = JobWorker { _, _ -> JobWorkerOutcome.Cancelled(reason = "shouted") }
+        dispatcher.dispatch(record, worker, CancellationToken.none()).get()
+        store.findById(tenant, "j1")!!.managedJob.cancelRequest.requestedReason shouldBe "SHOUTED"
+    }
+
     test("Failed → RUNNING → FAILED, error im Record") {
         val store = seedQueued()
         val dispatcher = JobDispatcher(store, clock = clock)

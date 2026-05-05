@@ -3,6 +3,7 @@ package dev.dmigrate.server.application.job
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.OperationCancelSource
 import dev.dmigrate.core.cancel.OperationCancelledException
+import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.job.JobError
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.job.JobStatus
@@ -55,6 +56,14 @@ class JobDispatcher(
     private val jobStore: JobStore,
     private val executor: Executor = SyncExecutor,
     private val clock: Clock = Clock.systemUTC(),
+    /**
+     * Plan §7.7 line 1182-1183: Cancel-Reason wandert nur SCRUBBED in
+     * Job-/Audit-Metadaten. Default ist [SecretScrubber.scrub], die
+     * Bearer-/Approval-Token-/JDBC-URL-Marker entfernt. Tests koennen
+     * die Identitaet `{ it }` setzen, wenn sie den rohen Reason
+     * inspizieren wollen.
+     */
+    private val cancelReasonScrubber: (String) -> String = SecretScrubber::scrub,
 ) {
 
     fun dispatch(
@@ -141,12 +150,20 @@ class JobDispatcher(
                 )
             }
             is JobWorkerOutcome.Cancelled -> { mj ->
+                // Plan §7.2 Idempotenz: ein bereits durabel gespeicherter
+                // requestedReason (via JobStore.markCancelRequested aus
+                // job_cancel) wird NICHT ueberschrieben. Der Worker-
+                // Reason ist nur ein Fallback fuer Worker-internen Cancel.
+                // Plan §7.7 line 1182-1183: Reason wandert nur SCRUBBED in
+                // die Job-Metadaten.
+                val scrubbed = cancelReasonScrubber(outcome.reason)
                 mj.copy(
                     status = JobStatus.CANCELLED,
                     updatedAt = terminalAt,
                     cancelRequest = mj.cancelRequest.copy(
                         signalAcked = true,
                         ackedAt = terminalAt,
+                        requestedReason = mj.cancelRequest.requestedReason ?: scrubbed,
                     ),
                 )
             }
