@@ -162,18 +162,24 @@ internal object JobStartHandlerSupport {
                 ),
             )
         is JobStartHandlerOutcome.Failed -> {
-            // Review-Fix #6: Failed ist ein gespeicherter Final-Failure-
-            // Replay (Plan §5.2 line 568-569), KEIN Timeout. Der
-            // ursprungliche Wire-Code wird aus dem reason-Praefix
-            // abgeleitet, damit der Caller dieselbe Klassifikation
-            // bekommt wie beim ersten Failed-Outcome:
-            // - "policy:..." -> POLICY_DENIED
-            // - "validation:..." -> VALIDATION_ERROR
-            // - sonst -> INTERNAL_AGENT_ERROR (catch-all)
-            val code = when {
-                outcome.reason.startsWith("policy:") -> ToolErrorCode.POLICY_DENIED
-                outcome.reason.startsWith("validation:") -> ToolErrorCode.VALIDATION_ERROR
-                else -> ToolErrorCode.INTERNAL_AGENT_ERROR
+            // Review-Fix #6 + Re-Review B1: Failed ist ein gespeicherter
+            // Final-Failure-Replay (Plan §5.2 line 568-569), KEIN
+            // Timeout. Der urspruengliche Wire-Code wird aus dem reason-
+            // Praefix abgeleitet, damit der Caller dieselbe
+            // Klassifikation bekommt wie beim ersten Failed-Outcome.
+            //
+            // Akzeptiert mehrere Separator-Konventionen, weil der
+            // Bestands-Code (z.B. IdempotencyStoreContractTests,
+            // verschiedene markFailed-Caller) sowohl `policy:`,
+            // `policy-`, `validation:`, `validation-` als auch
+            // `validation_` verwendet. Re-Review B1 hat den
+            // Mapping-Schmalspur-Fall aufgedeckt, bei dem
+            // "validation-error" faelschlich auf INTERNAL_AGENT_ERROR
+            // gemappt wurde.
+            val code = when (reasonClassOf(outcome.reason)) {
+                ReasonClass.POLICY -> ToolErrorCode.POLICY_DENIED
+                ReasonClass.VALIDATION -> ToolErrorCode.VALIDATION_ERROR
+                ReasonClass.OTHER -> ToolErrorCode.INTERNAL_AGENT_ERROR
             }
             ToolCallOutcome.Error(
                 envelope = ToolErrorEnvelope(
@@ -233,4 +239,21 @@ internal object JobStartHandlerSupport {
             is JobStartInputValidation.Invalid.TenantPrefixMismatch ->
                 listOf(ValidationViolation(invalid.field, "tenant prefix mismatch: caller is ${invalid.expected.value}"))
         }
+
+    /**
+     * Re-Review B1: klassifiziere einen gespeicherten Failed-Reason in
+     * eine ToolErrorCode-Familie. Akzeptiert sowohl `:`-, `-`- als auch
+     * `_`-Separatoren, weil der Bestands-Code beide Konventionen
+     * verwendet. Match auf den ersten Token-Block VOR dem Separator.
+     */
+    private fun reasonClassOf(reason: String): ReasonClass {
+        val token = reason.substringBefore(':').substringBefore('-').substringBefore('_')
+        return when (token) {
+            "policy" -> ReasonClass.POLICY
+            "validation" -> ReasonClass.VALIDATION
+            else -> ReasonClass.OTHER
+        }
+    }
+
+    private enum class ReasonClass { POLICY, VALIDATION, OTHER }
 }

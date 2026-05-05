@@ -230,6 +230,27 @@ class JobStartHandlerSupportTest : FunSpec({
         result.envelope.code shouldBe ToolErrorCode.INTERNAL_AGENT_ERROR
     }
 
+    test("toToolCallOutcome: Failed mit Hyphen-Separator policy-denied -> POLICY_DENIED (Re-Review B1)") {
+        // Bestands-Code emittiert auch "policy-denied", "validation-error"
+        // statt der Phase-E-`:`-Konvention. Alle Schreibweisen muessen auf
+        // den korrekten Wire-Code mappen, sonst wuerden legitime
+        // Validierungs-/Policy-Fehler hinter INTERNAL_AGENT_ERROR
+        // versteckt.
+        val outcome = JobStartHandlerOutcome.Failed("policy-denied", now)
+        val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "r")
+        result.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        result.envelope.code shouldBe ToolErrorCode.POLICY_DENIED
+    }
+
+    test("toToolCallOutcome: Failed mit validation-error / validation_failed -> VALIDATION_ERROR") {
+        listOf("validation-error", "validation_failed", "validation:bad-payload").forEach { reason ->
+            val outcome = JobStartHandlerOutcome.Failed(reason, now)
+            val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "r")
+            result.shouldBeInstanceOf<ToolCallOutcome.Error>()
+            result.envelope.code shouldBe ToolErrorCode.VALIDATION_ERROR
+        }
+    }
+
     test("toToolCallOutcome: RateLimited -> RATE_LIMITED-Envelope mit retryAfter/current/limit") {
         val outcome = JobStartHandlerOutcome.RateLimited(
             retryAfter = java.time.Duration.ofSeconds(45),

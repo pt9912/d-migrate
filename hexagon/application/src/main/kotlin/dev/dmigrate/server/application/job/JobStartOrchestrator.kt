@@ -433,6 +433,21 @@ data class JobStartRequest(
  */
 sealed interface JobStartHandlerOutcome {
 
+    /**
+     * Phase E §7.7: Job ist commited und (bei wired Auto-Dispatch) an
+     * den Worker uebergeben.
+     *
+     * **WICHTIG (Re-Review B2):** [record] ist der Snapshot UNMITTELBAR
+     * NACH `JobStartTransaction.commit`, also typisch `status=QUEUED`.
+     * Bei `SyncExecutor` hat der Auto-Dispatch den Worker bereits
+     * synchron abgeschlossen, bevor diese Outcome zurueckkehrt — der
+     * echte aktuelle Status liegt dann im
+     * [dev.dmigrate.server.ports.JobStore] (z.B. SUCCEEDED). Caller,
+     * die den Endstatus brauchen, muessen den Job-Store erneut
+     * abfragen. [record] spiegelt nur den Commit-Zeitpunkt — Plan §7.7
+     * async-Charakter, der Wire-Response gibt `jobId + QUEUED + poll`
+     * zurueck.
+     */
     data class Started(
         val jobId: String,
         val record: JobRecord,
