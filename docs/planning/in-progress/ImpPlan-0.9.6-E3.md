@@ -445,10 +445,10 @@ val permit = when (val admission = dispatchAdmission.tryAcquire(request.now)) {
 // Quota-Reserve + JobStartTransaction.commit passieren vor diesem
 // Block. Jeder Early-Return vor dem Commit schliesst zuerst das Permit.
 val outcome = committedOutcome
-var handleRegistered = false
+var handleRegistrationAttempted = false
 try {
+    handleRegistrationAttempted = true
     workerHandleRegistry.register(jobId, source)
-    handleRegistered = true
     val worker = factory.create(outcome.record, request)
     if (worker == null) {
         throw WorkerNotRegisteredException(outcome.record.managedJob.operation)
@@ -456,7 +456,7 @@ try {
     dispatcher.dispatch(outcome.record, worker, source.token, permit)
 } catch (t: Throwable) {
     closePermitBestEffort(permit, jobId)
-    markExecutorSetupFailed(outcome.record, request.now, t, handleRegistered)
+    markExecutorSetupFailed(outcome.record, request.now, t, handleRegistrationAttempted)
     return JobStartHandlerOutcome.Started(jobId, outcome.record, source)
 }
 ```
@@ -555,7 +555,7 @@ private fun markExecutorSetupFailed(
     record: JobRecord,
     now: Instant,
     error: Throwable,
-    handleRegistered: Boolean,
+    handleRegistrationAttempted: Boolean,
 ) {
     val code = when (error) {
         is RejectedExecutionException -> "EXECUTOR_CLOSED"
@@ -579,7 +579,7 @@ private fun markExecutorSetupFailed(
             )
         }
     } finally {
-        if (handleRegistered) {
+        if (handleRegistrationAttempted) {
             unregisterSetupHandleBestEffort(record.managedJob.jobId)
         }
     }
@@ -639,6 +639,10 @@ pollbare `FAILED`-Wahrheit garantieren kann.
 Quota-Release und Handle-Unregister sind dagegen sekundaere
 best-effort Schritte und werden nur geloggt/suppressed, damit
 Cleanup-Fehler nicht erneut durch den Start-`catch` laufen.
+Der Handle-Cleanup haengt an `handleRegistrationAttempted`, nicht am
+erfolgreichen `register`-Return: `WorkerHandleRegistry.unregister` ist
+idempotent, darum raeumt der Setup-Failure-Pfad auch partielle
+Register-Fehler sicher auf.
 Dasselbe gilt fuer `JobDispatchPermit.close()`: Der Permit-Vertrag ist
 idempotent/no-throw; der Orchestrator ruft ihn im post-commit
 Setup-Failure-Pfad trotzdem ueber `closePermitBestEffort`, damit ein
@@ -648,9 +652,11 @@ Tests pinnen `workerHandleRegistry.register`-Throw, `factory.create`
 liefert `null`, `factory.create`-Throw und `dispatcher.dispatch`-/
 `RejectedExecutionException`, jeweils inklusive Quota-Release und
 Handle-Unregister, wenn diese Side-Effects vor dem Fehler bereits
-stattgefunden haben. Zusaetzlich pinnen Cleanup-Failure-Tests, dass
-Permit-Close-, Quota-Release- und Handle-Unregister-Fehler nicht zum
-Start-Handler zurueckwerfen, waehrend ein JobStore-Fehler beim primaeren
+stattgefunden haben. Der Register-Throw-Test pinnt explizit, dass
+`unregister(jobId)` trotz Throw best-effort gerufen wird.
+Zusaetzlich pinnen Cleanup-Failure-Tests, dass Permit-Close-,
+Quota-Release- und Handle-Unregister-Fehler nicht zum Start-Handler
+zurueckwerfen, waehrend ein JobStore-Fehler beim primaeren
 `QUEUED -> FAILED`-Markieren nicht suppressed wird.
 
 ## 7. Risiken
@@ -658,7 +664,7 @@ Start-Handler zurueckwerfen, waehrend ein JobStore-Fehler beim primaeren
 | Risiko | Wahrscheinlichkeit | Mitigation |
 |---|---|---|
 | Thread-Leak bei Test-Shutdown (Pool nicht gestoppt) | mittel | `JobExecutorLifecycle.shutdown(timeout)` ist obligatorisch im Test-Teardown; CI-Hook checkt aktive Threads nach Test-Ende |
-| Permit-/Handle-Leak bei Commit-/Dispatch-Race | mittel | Ohne Dispatcher/Factory wird kein Permit acquired; sonst wird `JobDispatchPermit` in jedem pre-commit Fehlerpfad, bei missing Worker, bei post-commit Setup-Fehlern und im Dispatcher-`finally` geschlossen; Permit-Close ist idempotent/no-throw und im post-commit Catch best-effort, damit es die primaere Fehler-Markierung nicht blockiert; nach Register + missing Worker wird das Handle unregistered; Tests fuer `IdempotencyNotEligible`, `dispatcher == null`, `factory == null`, `worker == null`, Worker-Exception, queued-cancel, setup-failure und shutdown-reject |
+| Permit-/Handle-Leak bei Commit-/Dispatch-Race | mittel | Ohne Dispatcher/Factory wird kein Permit acquired; sonst wird `JobDispatchPermit` in jedem pre-commit Fehlerpfad, bei missing Worker, bei post-commit Setup-Fehlern und im Dispatcher-`finally` geschlossen; Permit-Close ist idempotent/no-throw und im post-commit Catch best-effort, damit es die primaere Fehler-Markierung nicht blockiert; nach jedem Register-Versuch wird bei Setup-Failure best-effort unregistered, auch wenn `register` selbst wirft; Tests fuer `IdempotencyNotEligible`, `dispatcher == null`, `factory == null`, `worker == null`, Worker-Exception, queued-cancel, setup-failure und shutdown-reject |
 | Post-Commit Setup-Fehler laesst Job dauerhaft QUEUED | mittel | `worker == null`, `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit werden via `markExecutorSetupFailed` auf `FAILED` gemappt; Handler returnt nur nach erfolgreicher primaerer Markierung `Started`, damit Polling den terminalen Fehler sieht; bei applied Transition wird Quota released, bei bereits registriertem Handle wird unregistered; ein JobStore-Fehler beim Markieren wird nicht suppressed |
 | Deadlock: Worker submitted weiteren Job auf denselben Pool | gering | E3 dokumentiert: Pool ist **Single-Layer**. Worker-internes Spawning verboten — Convention statt Mechanik |
 | Slow shutdown bei lang laufenden Workern | mittel | `shutdownTimeoutMillis` konfigurierbar; nach Timeout `shutdownNow()` (interrupt) — workers MUESSEN auf `Thread.interrupted()` reagieren (existiert für Cancel-Pfad bereits) |
