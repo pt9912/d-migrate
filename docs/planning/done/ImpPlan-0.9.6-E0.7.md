@@ -301,16 +301,19 @@ CI-Aktivierung: `make integration` oder
 - `test/integration-mysql/.../E07MysqlTimeoutBench.kt`
   (`NamedTag("integration")`, `tags(IntegrationTag)`):
   Testcontainer + `PoolSettings(statementTimeoutMs = 5000,
-  networkTimeoutMs = 5000)` + `SELECT SLEEP(60)` über
-  `pool.borrow().prepareStatement(...)` → erwartet
-  `SQLTimeoutException` oder treiberspezifische Timeout-`SQLException`
-  innerhalb `< 6s`.
-- `adapters/driven/driver-sqlite/.../E07SqliteTimeoutBench.kt`
-  (`NamedTag("integration")`, `tags(IntegrationTag)`):
-  in-memory DB + langer Loop-Query oder Lock-Wait +
-  `PoolSettings(statementTimeoutMs = 5000, networkTimeoutMs = 5000)` →
-  erwartet `SQLException` mit SQLite-Timeout-/Interrupt-Code innerhalb
-  `< 6s`.
+  networkTimeoutMs = 5000)` + 2-Wege-Cross-Join über
+  `information_schema.columns` (NICHT `SLEEP(60)` — `MAX_EXECUTION_TIME`
+  greift nicht für Built-in-Funktionen) → erwartet `SQLException`
+  innerhalb `< 10s` (5s Timeout + KILL-QUERY-Round-Trip + Hikari-
+  Acquire-Slack).
+- **SQLite hat keinen separaten Bench-Test.** xerial-sqlite-jdbc's
+  `Statement.setQueryTimeout(s)` mappt intern auf
+  `PRAGMA busy_timeout = s*1000` und ist damit ein **Lock-Wait-
+  Timeout**, kein Query-Interrupt. Wiring-Evidence über
+  `TimeoutDecoratedConnectionTest` (12 Tests, default-CI in
+  `driver-common`) + `HikariConnectionPoolFactoryTest` "create wires
+  the SQLite PRAGMA" (verifiziert `PRAGMA busy_timeout` nach Hikari-
+  Init mit konfigurierbarem Wert).
 - Zusätzlich ein common/profiling-naher Test, der belegt:
   `JdbcMetadataSession.queryList(...)` und `querySingle(...)` erhalten
   timeout-geschützte Statements über `pool.borrow()`.

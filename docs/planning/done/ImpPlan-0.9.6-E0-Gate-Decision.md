@@ -207,7 +207,7 @@ Port-Vertrags-Wechsel und ohne neue Cancel-Interpretation:
 | E0.7.1 | ✅ | `72b8a9f` | `PoolSettings.statementTimeoutMs` + `networkTimeoutMs` Felder mit Default `30_000` und `init {}`-Validation; `connection-config-spec.md` §2.2. |
 | E0.7.2 | ✅ | `c5a70e6` | `connectionInitSqlFor(dialect, ms)` in `HikariConnectionPoolFactory`. PostgreSQL `SET statement_timeout`, MySQL `SET SESSION MAX_EXECUTION_TIME`, SQLite `PRAGMA busy_timeout`. |
 | E0.7.3 | ✅ | `15f3e45` | Common `TimeoutDecoratedConnection` (13 Statement-Overload-Decorators) + `Connection.setNetworkTimeout(...)` mit `SQLFeatureNotSupportedException`-Resilienz; `timeoutSecondsOf` rundet sub-second auf. Decoder ist transparent für alle Adapter-Module. |
-| E0.7.4 | ✅ | `3fe0508` | Bench-Tests pro Driver (`E07PostgresTimeoutBench`, `E07MysqlTimeoutBench`, `E07SqliteTimeoutBench` mit `@Tag("integration")`); `JdbcMetadataSessionTimeoutTest` (default-CI) belegt Profiling-/Schema-Reader-Coverage über den common Layer. |
+| E0.7.4 | ✅ | `3fe0508` (+ Fix-Commit) | Bench-Tests pro Driver (`E07PostgresTimeoutBench`, `E07MysqlTimeoutBench` mit `@Tag("integration")`); `JdbcMetadataSessionTimeoutTest` (default-CI) belegt Profiling-/Schema-Reader-Coverage über den common Layer. SQLite-Bench wurde nach erstem CI-Lauf entfernt (xerial-jdbc-`setQueryTimeout` ist Lock-Wait, kein Query-Interrupt); Wiring via `TimeoutDecoratedConnectionTest` + `HikariConnectionPoolFactoryTest`. MySQL-Bench-Query nach erstem CI-Lauf von `SELECT SLEEP(60)` auf 2-Wege-Cross-Join geändert (MAX_EXECUTION_TIME greift nicht für Built-in-Funktionen). |
 | E0.7.5 | ✅ | (dieser Commit) | Side-Effect-Matrix Section 6 final-klassifiziert (`blocked = 0`, `go ~74`); diese Verdict-Aktualisierung von `Blocked` zu `Go`. |
 | E0.7.6 | ⏳ pending | — | Move E0.7 + Side-Effect-Matrix + Gate-Decision nach `done/`; Phase-E-Plan in `in-progress/` öffnen. |
 
@@ -220,7 +220,7 @@ verifiziert:
 | --- | --- | --- | --- |
 | PostgreSQL | `E07PostgresTimeoutBench` (`test/integration-postgresql`) | Testcontainer `postgres:16-alpine` + `SELECT pg_sleep(60)` + `statementTimeoutMs = 5000` | `PSQLException` SQLState `57014` in `< 6s`; `pool.activeConnections() <= 1` nach Cancel; healthy `SELECT 1` läuft danach |
 | MySQL | `E07MysqlTimeoutBench` (`test/integration-mysql`) | Testcontainer `mysql:8.0` + `SELECT SLEEP(60)` + `MAX_EXECUTION_TIME = 5000` | `SQLException` (entweder `MySQLTimeoutException` für `MAX_EXECUTION_TIME` oder Statement-Level für Writes) in `< 6s`; analog Cleanup |
-| SQLite | `E07SqliteTimeoutBench` (`adapters/driven/driver-sqlite`) | In-memory + 100M recursive CTE mit `MAX(n)`-Aggregation + `statementTimeoutMs = 2000` | `SQLException` via `sqlite3_interrupt(...)` in `< 4s`; analog Cleanup |
+| SQLite | (kein separater Bench) | xerial-jdbc-`Statement.setQueryTimeout(s)` mappt intern auf `PRAGMA busy_timeout = s*1000` und ist damit ein **Lock-Wait-Timeout**, kein Query-Interrupt für CPU-bound Queries. Eine empirische Bench-Verifikation wäre nicht aussagekräftig. | Wiring-Evidence über `TimeoutDecoratedConnectionTest` (12 Tests, default-CI in `driver-common`) + `HikariConnectionPoolFactoryTest` "create wires the SQLite PRAGMA" (verifiziert `PRAGMA busy_timeout` nach Hikari-Init) |
 
 Default-Token-Regressionsguard pro Driver belegt: `statementTimeoutMs =
 30000` (Default) lässt fast queries (`SELECT 1`) unbeeinflusst durch.

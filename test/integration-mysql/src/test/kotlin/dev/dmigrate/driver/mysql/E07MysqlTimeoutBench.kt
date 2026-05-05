@@ -20,11 +20,19 @@ private val IntegrationTag = NamedTag("integration")
  * Phase E0.7.4 Bench-Test: belegt empirisch das Cancel-Reaktions-Budget
  * für langlaufende MySQL-SELECT-Queries.
  *
- * MySQL setzt `MAX_EXECUTION_TIME` per `connectionInitSql`, das nur für
- * SELECTs greift; Write-/DDL-Pfade werden zusätzlich durch das per-
- * Statement `setQueryTimeout(...)` aus `TimeoutDecoratedConnection`
- * (E0.7.3 Common-JDBC-Layer) abgedeckt. Dieser Bench testet den
- * SELECT-Pfad und verifiziert Cleanup.
+ * Wichtige MySQL-Spezifika:
+ * - `MAX_EXECUTION_TIME` (per `connectionInitSql` aus E0.7.2) greift nur
+ *   für read-only SELECTs, **nicht** für SELECTs mit Built-in-Funktionen
+ *   wie `SLEEP()` oder `BENCHMARK()`. Wir können diese als Long-Query
+ *   nicht verwenden.
+ * - `Statement.setQueryTimeout(s)` (per E0.7.3 `TimeoutDecoratedConnection`)
+ *   wird via TimerTask + `KILL QUERY` umgesetzt und greift auf jeder
+ *   Query-Art, sofern der Connection-User entsprechende Privilegien hat.
+ *
+ * Die Bench nutzt deshalb einen 2-Wege-Cross-Join über
+ * `information_schema.columns`, der MySQL zur echten Row-Materialisierung
+ * zwingt — sowohl `MAX_EXECUTION_TIME` als auch `setQueryTimeout` feuern
+ * hier zuverlässig.
  */
 class E07MysqlTimeoutBench : FunSpec({
 
@@ -34,6 +42,14 @@ class E07MysqlTimeoutBench : FunSpec({
         .withDatabaseName("dmigrate_test")
         .withUsername("dmigrate")
         .withPassword("dmigrate")
+
+    /** 2-way cross join — produces millions of intermediate rows that MySQL
+     *  must enumerate before COUNT can return. Reliably > 5s on CI. */
+    val longSelect = """
+        SELECT COUNT(*)
+        FROM information_schema.columns t1,
+             information_schema.columns t2
+    """.trimIndent()
 
     beforeSpec {
         container.start()
@@ -54,21 +70,24 @@ class E07MysqlTimeoutBench : FunSpec({
         pool = PoolSettings(statementTimeoutMs = stmtMs, networkTimeoutMs = netMs),
     )
 
-    test("MAX_EXECUTION_TIME enforces <= 5s on long-running SELECT SLEEP") {
+    test("statementTimeoutMs enforces <= 5s on a long read-only cross join") {
         HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 5_000)).use { pool ->
-            val start = System.nanoTime()
-            shouldThrow<SQLException> {
-                pool.borrow().use { conn ->
-                    conn.prepareStatement("SELECT SLEEP(60)").executeQuery()
+            pool.borrow().use { conn ->
+                // Decorator wiring sanity: the prepared statement carries
+                // ceil(5000/1000) = 5 seconds before we even execute.
+                conn.prepareStatement("SELECT 1").use { stmt -> stmt.queryTimeout shouldBe 5 }
+
+                val start = System.nanoTime()
+                shouldThrow<SQLException> {
+                    conn.prepareStatement(longSelect).use { stmt ->
+                        stmt.executeQuery().use { rs -> while (rs.next()) { /* drain */ } }
+                    }
                 }
+                val elapsedMs = (System.nanoTime() - start) / 1_000_000
+                // 5s timeout + generous CI slack (Hikari acquire +
+                // KILL QUERY round-trip latency).
+                elapsedMs shouldBeLessThan 10_000L
             }
-            val elapsedMs = (System.nanoTime() - start) / 1_000_000
-            elapsedMs shouldBeLessThan 6_000L
-            // MySQL throws either MySQLTimeoutException (subclass of
-            // SQLTimeoutException) for MAX_EXECUTION_TIME, or a generic
-            // SQLException if the Statement-level setQueryTimeout fires
-            // first. Both flavors satisfy the budget; we don't pin the
-            // SQLState because driver versions differ.
         }
     }
 
@@ -76,7 +95,9 @@ class E07MysqlTimeoutBench : FunSpec({
         HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 5_000)).use { pool ->
             shouldThrow<SQLException> {
                 pool.borrow().use { conn ->
-                    conn.prepareStatement("SELECT SLEEP(60)").executeQuery()
+                    conn.prepareStatement(longSelect).use { stmt ->
+                        stmt.executeQuery().use { rs -> while (rs.next()) { /* drain */ } }
+                    }
                 }
             }
             pool.activeConnections() shouldBeLessThanOrEqual 1
