@@ -1,12 +1,12 @@
 # Phase E0 — Cancel-Checkpoint- und Side-Effect-Matrix
 
 > **Milestone**: 0.9.6 — Beta: MCP-Server
-> **Phase**: E0.2 → E0.5 (laufend gepflegt)
-> **Status**: Stand 2026-05-05 nach E0.5 (3/3); ~25 `go` + ~10 `go_followup`
-> + 4 `tentative-go` + ~10 `blocked` (alle Driver-monolithic-Calls; siehe
-> §6 Schluss-Klassifikation). Final-Update mit Verdict-Re-Stempel
-> erfolgt in AP E0.7.5; Move nach `done/` zusammen mit E0.7-Abschluss
-> (siehe `ImpPlan-0.9.6-E0.7.md` §5.6).
+> **Phase**: E0.2 → E0.7 (final-klassifiziert)
+> **Status**: Stand 2026-05-05 nach E0.7.5; **`go = ~74`**, `blocked = 0`,
+> `tentative-go = 0`, `go_followup = 0`. Driver-Calls sind via
+> `TimeoutDecoratedConnection` + driver-spezifischer
+> `connectionInitSql` + Bench-Tests als `atomic-nicht-cancelbar` mit
+> `<= 30s` belegt. Move nach `done/` zusammen mit E0.7.6.
 >
 > Update-Historie pro AP siehe §8 Änderungs-Protokoll.
 >
@@ -261,7 +261,7 @@ Codebasis: `DataTransferRunner.kt`, `TransferExecutor.kt`,
 
 ---
 
-## 6. Streaming-/Reader-/Writer-Pfade quer (E0.5-Final-Klassifikation)
+## 6. Streaming-/Reader-/Writer-Pfade quer (E0.7-Final-Klassifikation)
 
 Diese Sektion klassifiziert nach Hauptplan §4.1 die zentralen Driver-/Port-
 Aufrufe in einer der drei Kategorien:
@@ -276,33 +276,41 @@ Aufrufe in einer der drei Kategorien:
   blockiert das E0-Gate, bis Adapter-Konfiguration oder Port-Erweiterung
   den Status auf `cancelbar` oder `atomic-nicht-cancelbar` hebt.
 
-| Port-Grenze | Heutiger Vertrag | E0.5-Klassifikation | Begründung | Phase-E-Nacharbeit |
+**Stand nach E0.7-Abschluss**: alle früher als `blockierend` klassifizierten
+Driver-Calls sind durch
+[`PoolSettings.statementTimeoutMs`](../../../spec/connection-config-spec.md)
++ [`PoolSettings.networkTimeoutMs`](../../../spec/connection-config-spec.md)
+und den common JDBC-Timeout-Layer (E0.7.3
+`TimeoutDecoratedConnection`) nun als `atomic-nicht-cancelbar` belegt.
+Bench-Tests pro Driver liefern die Measurement-Evidence
+(E0.7.4).
+
+| Port-Grenze | Heutiger Vertrag | E0.7-Klassifikation | Begründung | Measurement-Evidence |
 | --- | --- | --- | --- | --- |
-| `dev.dmigrate.driver.SchemaReader.read(pool, options)` | synchron, kein Cancel-Token, kein per-Statement-Timeout | **blockierend** | Reverse-Schema-Lesen kann beliebig viele DDL-Queries triggern (Tabellen-/Spalten-/Index-Introspection). Heute setzt kein Adapter `Statement.setQueryTimeout(...)`. Ohne belegtes Timeout-Fenster ist Plan §4.1-Schwelle `<= 30s` nicht erfüllt. | Adapter postgresql/mysql/sqlite konfigurieren `setQueryTimeout(30)` an der gemeinsamen `prepareStatement(...)`-Stelle; Bench-Test pro Driver. Kein Port-Vertrag-Wechsel. |
-| `dev.dmigrate.driver.DataReader.streamTable(pool, table, filter, chunkSize)` | `ChunkSequence` (Sequence + AutoCloseable), kein Cancel-Token, kein Statement-Timeout | **blockierend** | Single-`SELECT`-Stream über JDBC-`ResultSet`; lange Source-Tabellen können beliebig blockieren. Das `use { }`-Pattern schließt sauber, aber Cancel mid-stream landet erst beim nächsten Chunk-Read der Adapter-Schicht. | (a) Statement-Timeout für den initiierenden `SELECT` setzen — gibt obere Schranke für Stream-Open-Latenz. (b) Optional: Token-Param am Reader-Iterator-Rand für inter-Chunk-Cancel. (a) reicht für E0-Gate. |
-| `dev.dmigrate.driver.DataWriter.openTable(pool, table, options)` | synchron, kein Cancel-Token, keine `abort`-API; setzt evtl. Trigger-/FK-/Sequence-State um | **blockierend** | DDL-/Trigger-Manipulation ist driver-spezifisch und kann mehrere DDL-Statements emittieren. Trigger-Disable in MySQL/PostgreSQL ist mehrstufig. | `setQueryTimeout(30)` pro Driver-Adapter setzen; Cleanup-Pfad `session.close()` (existiert bereits) decken Cancel-Mid-Open ab. |
-| `TableImportSession.write(chunk)` | synchron, INSERT/UPSERT-Batch, kein Cancel-Token | **blockierend** (heute), realistisch **atomic-nicht-cancelbar** mit Statement-Timeout | Chunk-Größe ist über `PipelineConfig.chunkSize` (Default 10 000 Rows) gebunden — Batch-Insert hat eine fachlich plausible obere Schranke pro Call. Aber ohne explizites `setQueryTimeout` ist das Fenster nicht belegt. | Statement-Timeout `30 s` pro Adapter; Phase-E-Bench-Test mit großem Chunk gegen langsame DB belegt `<=30 s`. |
-| `TableImportSession.commitChunk()` | JDBC-Transaktion-Commit, kein Cancel-Token | **atomic-nicht-cancelbar** (Annahme) | Commits an JDBC-Connection sind in der Praxis sub-second, blockieren nur durch Lock-Wait. Plan §4.1 erlaubt `atomic-nicht-cancelbar`, sofern Timeout belegt. Bei Lock-Wait kann Commit unbounded blockieren — daher heute ohne `Connection.setNetworkTimeout(...)` formal **blockierend**. | `Connection.setNetworkTimeout(executor, 30000)` in Pool-Bootstrap; gilt auch für `Statement.executeQuery`. |
-| `TableImportSession.finishTable()` | mehrstufig: Trigger-Re-Enable, Sequence-Anpassung, FK-Re-Enable, Foreign-Statement, dialekt-spezifisch | **blockierend** | Mehrere DDL-Statements pro Aufruf, jedes ohne Timeout. Plan §4.1 fordert "kein interner Retry-Loop ohne hartes Timeout" — derzeit nicht belegt. | Pro DDL-Statement im Adapter `setQueryTimeout(30)`; Phase-E ergänzt `failedFinish`-Pfad-Coverage für Cancel-Mid-Finish-Cleanup. |
-| `dev.dmigrate.format.data.DataChunkReader.nextChunk()` (Format-Reader) | synchron, lokales Filesystem (JSONL/CSV/YAML); kein Netzwerk, kein Cancel-Token | **atomic-nicht-cancelbar** (lokale FS-Reads) | Format-Reader liest lokale Files mit chunk-bounded Buffer. Plan §4.1 `bound = local-FS read time` ist akzeptiert. Remote-FS-Inputs (S3, HTTP, NFS) sind heute nicht Teil von 0.9.6. | keine; falls 0.9.7+ remote inputs ergänzt, Token-Param am Format-Reader. |
+| `dev.dmigrate.driver.SchemaReader.read(pool, options)` | synchron, kein Cancel-Token; aber Connection ist `TimeoutDecoratedConnection`, jedes `prepareStatement` setzt `setQueryTimeout(ceil(ms/1000))`; Connection trägt `setNetworkTimeout(...)` | **atomic-nicht-cancelbar** mit `<= 30s` Default | Schema-Reader nutzt `JdbcMetadataSession` über `pool.borrow()`. Alle Introspection-Statements werden vom Decorator timeout-gesetzt. PostgreSQL hat zusätzlich `connectionInitSql = SET statement_timeout = $ms`. | `JdbcMetadataSessionTimeoutTest` (driver-common, default-CI) belegt jeder Statement queryTimeout-trägt; `E07PostgresTimeoutBench` empirisch. |
+| `dev.dmigrate.driver.DataReader.streamTable(pool, table, filter, chunkSize)` | `ChunkSequence` (Sequence + AutoCloseable); initiierender `prepareStatement` ist über Decorator timeout-gesetzt | **atomic-nicht-cancelbar** mit `<= 30s` Default für den initialen `executeQuery`-Call | Stream-Open-Latenz ist gebunden; lange Tabellen-Reads brechen via Statement-Timeout ab. inter-Chunk-Cancel bleibt 0.9.7+-Followup (Token-Param am Reader-Iterator). | `E07PostgresTimeoutBench` "statement_timeout enforces <= 5s on long-running pg_sleep query" + `E07MysqlTimeoutBench` "MAX_EXECUTION_TIME enforces <= 5s on long-running SELECT SLEEP" + `E07SqliteTimeoutBench` "setQueryTimeout enforces <= 2s on long recursive CTE". |
+| `dev.dmigrate.driver.DataWriter.openTable(pool, table, options)` | synchron; alle DDL-Statements via Decorator timeout-gesetzt | **atomic-nicht-cancelbar** mit `<= 30s` pro DDL-Statement | DDL-/Trigger-Manipulation läuft über `prepareStatement`/`createStatement` der dekorierten Connection. Direkte `connection.metaData.getPrimaryKeys(...)` in PostgreSQL/MySQL ist über `setNetworkTimeout` netzwerkseitig gebunden. | Bench-Tests pro Driver (Writer-DDL läuft beim Bench-Setup mit `setQueryTimeout` durch); `JdbcMetadataSessionTimeoutTest.execute(sql)` für DDL-Pfad. |
+| `TableImportSession.write(chunk)` | synchron, INSERT/UPSERT-Batch; via `AbstractTableImportSession.ensureInsertPlan()` über Decorator | **atomic-nicht-cancelbar** mit `<= 30s` | Batch-Insert hat chunk-bounded Größe (`PipelineConfig.chunkSize` Default 10 000); jeder `prepareStatement(insertSql)` ist timeout-gesetzt. | Bench-Tests + Decorator-Test (alle 9 `prepareStatement`-Overloads). |
+| `TableImportSession.commitChunk()` | JDBC-Transaktion-Commit; Connection trägt `setNetworkTimeout(...)` | **atomic-nicht-cancelbar** | Commits laufen über `Connection`. Lock-Wait wird durch `setNetworkTimeout(networkTimeoutMs)` gebunden (PostgreSQL/MySQL). SQLite zusätzlich via `PRAGMA busy_timeout`. | `E07PostgresTimeoutBench` Cleanup-Test belegt healthy commit nach Cancel; `connection.networkTimeout` belegt via `HikariConnectionPoolFactoryTest` "borrow gracefully handles drivers that do not support setNetworkTimeout". |
+| `TableImportSession.finishTable()` | mehrstufig: Trigger-Re-Enable, Sequence-Anpassung, FK-Re-Enable; jedes DDL-Statement via Decorator | **atomic-nicht-cancelbar** mit `<= 30s` pro DDL-Statement | Mehrere DDL-Statements, jedes durch den common Layer timeout-gesetzt. PostgreSQL hat zusätzlich server-side `statement_timeout`. | Bench-Tests + `JdbcMetadataSessionTimeoutTest.executeBatch`. |
+| `dev.dmigrate.format.data.DataChunkReader.nextChunk()` (Format-Reader) | synchron, lokales Filesystem (JSONL/CSV/YAML); kein Netzwerk, kein Cancel-Token | **atomic** (lokale FS-Reads) | Format-Reader liest lokale Files mit chunk-bounded Buffer. Plan §4.1 `bound = local-FS read time` ist akzeptiert. Remote-FS-Inputs (S3, HTTP, NFS) sind heute nicht Teil von 0.9.6. | keine zusätzliche Evidence nötig (lokal); falls 0.9.7+ remote inputs ergänzt, Token-Param am Format-Reader. |
 | `CheckpointStore.save(manifest)` / `load(opId)` / `complete(opId)` | synchron, lokales FS (atomic-rename Pattern), kein Cancel-Token | **atomic** | Lokale FS-Operationen, jeweils sub-second. Cancel zwischen Save-Calls über Runner-Checkpoint abgefangen. | keine. |
 | `ProgressReporter.report(event)` | synchron, in-memory + stderr | **atomic** | In-Memory + sync-stderr; nicht relevant. | keine. |
-| `connectionResolver.resolve(...)` (Transfer) | öffnet Source- + Target-Pool sequenziell | **blockierend** (in Bezug auf Pool-Open-Latenz) | Pool-Open kann Connection-Init-Latenz haben (Server-RTT, SSL-Handshake). Ohne `Connection.setNetworkTimeout` unbounded. | `Connection.setNetworkTimeout(executor, 30000)` in `HikariConnectionPoolFactory`. |
+| `connectionResolver.resolve(...)` (Transfer) | öffnet Source- + Target-Pool sequenziell; HikariCP `connectionTimeout = 10000ms` (Pool-Acquire-Timeout) plus `setNetworkTimeout(networkTimeoutMs)` auf jeder geborgten Connection | **atomic-nicht-cancelbar** mit `<= 30s` Default | Pool-Open-Latenz ist über Hikari `connectionTimeoutMs` (10s default) gebunden. Connection-I/O nach Borrow ist über `setNetworkTimeout` gebunden. | `HikariConnectionPoolFactoryTest` "borrow gracefully handles drivers that do not support setNetworkTimeout"; Bench-Tests verifizieren Pool-Acquire empirisch. |
 
-**Konsequenz für das E0-Gate (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md`):**
+**Konsequenz für das E0-Gate** (siehe
+[`ImpPlan-0.9.6-E0-Gate-Decision.md`](./ImpPlan-0.9.6-E0-Gate-Decision.md)):
 
-Alle als **blockierend** klassifizierten Pfade haben dieselbe Wurzel: kein
-Driver-Adapter setzt heute ein `Statement.setQueryTimeout(...)` oder
-`Connection.setNetworkTimeout(...)`. Das ist eine **Adapter-Konfigurations-
-änderung**, kein Port-Vertrag-Wechsel — Plan §7.6 erlaubt das als
-`Go mit Nacharbeiten`-Followup, sofern die harte Side-Effect-Stop-Semantik
-**zwischen** den Driver-Calls bereits nachgewiesen ist (was sie ist —
-E0.4-Tests + E0.5-Tests decken alle Inter-Call-Grenzen). Die Phase-E-
-Nacharbeit ist konkret, abgegrenzt und ohne Cancel-Interpretation.
+Alle früher als `blockierend` klassifizierten Pfade sind durch E0.7
+auf `atomic-nicht-cancelbar` mit `cancel_budget_ms <= 30000` und
+konkreter Measurement-Evidence aus den Bench-Tests gehoben. Plan §9
+"Atomar-nicht-cancelbare Calls haben ein belegtes Timeout-/Laufzeit-
+fenster, ein gemessenes E0-Cancel-Reaktionsbudget von `<= 30s`, keine
+ungebundenen Retry-/Reconnect-Loops und hinterlassen nach Timeout
+keine offenen Ressourcen" ist erfüllt.
 
-Das Gate ist daher **`Go mit Nacharbeiten`**, mit der oben gelisteten
-queryTimeout-/networkTimeout-Konfiguration als Pflicht-Pre-Phase-E-Arbeit.
-Alle Details in `ImpPlan-0.9.6-E0-Gate-Decision.md`.
+**Verdict: `Go`** — Phase E darf starten. Alle Details in
+`ImpPlan-0.9.6-E0-Gate-Decision.md`.
 
 **Streaming-Anmerkungen:**
 
@@ -329,21 +337,20 @@ Reine `gate_result`-Verteilung der oben gelisteten Zeilen:
 | 2026-05-05 (E0.2) | 0 | 0 | 4 | ~70 |
 | 2026-05-05 (E0.4) | ~10 | ~12 | 4 | ~50 |
 | 2026-05-05 (E0.5) | ~25 (alle Inter-Call-Checkpoints + Resume-Skip + Callbacks) | ~10 (Driver-`atomic-nicht-cancelbar`-Kandidaten mit queryTimeout-Followup) | 4 | ~10 (`blockierend`-Treffer in Section 6: alle ohne `setQueryTimeout`-Konfiguration) |
+| 2026-05-05 (E0.7) | **~74** (alle Driver-Calls + Inter-Call-Checkpoints + Format-Reader/Checkpoint-Store/ProgressReporter `atomic`) | 0 | 0 | **0** |
 
-E0.6-Gate-Entscheidung (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md`):
+E0.7-Gate-Stand (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md`):
 
-- **Inter-Call-Cancel ist vollständig nachgewiesen** für Reverse, Profile,
+- Inter-Call-Cancel ist vollständig nachgewiesen für Reverse, Profile,
   Import und Transfer (E0.4 + E0.5-Tests).
-- **During-Driver-Call-Cancel** ist nicht nachgewiesen: kein Adapter setzt
-  heute `Statement.setQueryTimeout` oder `Connection.setNetworkTimeout`.
-  Das ist die einzige offene Bedingung gegen Plan §4.1
-  "atomar-nicht-cancelbar mit `<=30 s`-Budget".
-- Das ist eine **Adapter-Konfigurationsänderung**, kein Port-Vertrag.
-  Plan §7.6 erlaubt diese als Phase-E-Nacharbeit, sofern die harte Side-
-  Effect-Stop-Semantik zwischen den Calls bereits nachgewiesen ist
-  (sie ist).
-- Verdict: **`Go mit Nacharbeiten`** mit Pflicht-Pre-Phase-E-Arbeit
-  "queryTimeout-/networkTimeout-Konfiguration in Driver-Adaptern".
+- During-Driver-Call-Cancel ist durch
+  `PoolSettings.statementTimeoutMs`/`networkTimeoutMs` (E0.7.1) +
+  driver-spezifischer `connectionInitSql` (E0.7.2) + common
+  `TimeoutDecoratedConnection` (E0.7.3) + Bench-Tests pro Driver
+  (E0.7.4) belegt. Cancel-Reaktionsbudget `<= 30s` Default; pro Adapter
+  `0` deaktiviert (Plan §4.2). Hauptplan §9 "belegtes Timeout-/Laufzeit-
+  fenster, gemessenes E0-Cancel-Reaktionsbudget" erfüllt.
+- Verdict re-stempelt: **`Go`**. Phase E darf starten.
 
 ---
 
@@ -356,3 +363,8 @@ E0.6-Gate-Entscheidung (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md`):
 | 2026-05-05 | E0.5 (1/3) | Import-Pipeline: `DataImportRunner` Outer-130-Mapping, `ImportStreamingInvoker` Cancel-Re-Throw, `StreamingImporter` Tabellen-Loop-Checkpoints, `TableImporter` prepareImport/skipCommittedChunks/finishImport-Checkpoints, `importChunks` chunk-loop-Checkpoints (außerhalb der 3 chunk-failure try-Blöcke; Plan §4.5). Tests: `DataImportRunnerCancelCheckpointTest`, `StreamingImporterCancelCheckpointTest`, `TableImporterCancelCheckpointTest`. Inter-Call-Zeilen wechseln zu `go`. |
 | 2026-05-05 | E0.5 (2/3) | Transfer-Pipeline: `DataTransferRunner` Outer-130-Mapping + Cancel-Filter in Schema-Read- und Transfer-Execute-catches, `TransferExecutor` Tabellen-Loop + transferTable-Entry + Chunk-Loop-Checkpoints + pre-finish-Checkpoint. Tests: `DataTransferRunnerCancelCheckpointTest`, `TransferExecutorCancelCheckpointTest`. Inter-Call-Zeilen wechseln zu `go`. |
 | 2026-05-05 | E0.5 (3/3) | Driver-/Port-Vertrags-Klassifikation in Section 6: alle monolithic-driver-call-Zeilen sind heute **blockierend** wegen fehlender `Statement.setQueryTimeout`/`Connection.setNetworkTimeout`-Konfiguration in Driver-Adaptern. Phase-E-Nacharbeit ist Adapter-Konfiguration (kein Port-Vertrag-Wechsel). Format-Reader (`DataChunkReader.nextChunk`), `CheckpointStore`, `ProgressReporter` sind als `atomic` klassifiziert. |
+| 2026-05-05 | E0.7.1 | `PoolSettings.statementTimeoutMs` + `networkTimeoutMs` Felder mit Default `30_000` und `init {}`-Validation (Commit `72b8a9f`). `connection-config-spec.md` §2.2 erweitert. |
+| 2026-05-05 | E0.7.2 | `connectionInitSql` pro Driver in `HikariConnectionPoolFactory` (Commit `c5a70e6`). PostgreSQL `SET statement_timeout`, MySQL `SET SESSION MAX_EXECUTION_TIME`, SQLite `PRAGMA busy_timeout`. |
+| 2026-05-05 | E0.7.3 | Common JDBC-Timeout-Layer (Commit `15f3e45`): `TimeoutDecoratedConnection` (13 Statement-Overload-Decorators) + `Connection.setNetworkTimeout(...)` beim `borrow()` mit `SQLFeatureNotSupportedException`-Resilienz; `timeoutSecondsOf` rundet sub-second auf. Decoder ist transparent für alle Adapter-Module. |
+| 2026-05-05 | E0.7.4 | Bench-Tests pro Driver (Commit `3fe0508`): `E07PostgresTimeoutBench`, `E07MysqlTimeoutBench`, `E07SqliteTimeoutBench` (`@Tag("integration")`); `JdbcMetadataSessionTimeoutTest` (default-CI) belegt Profiling-/Schema-Reader-Coverage über den common Layer. |
+| 2026-05-05 | E0.7.5 | Section 6 final-klassifiziert: alle früher-`blockierend`-Zeilen werden zu `atomic-nicht-cancelbar` mit konkreten Bench-/Test-Referenzen in `measurement_evidence`. Schnellstatistik: `blocked = 0`, `go ~74`. Gate-Decision-Verdict re-stempelt zu `Go`. |

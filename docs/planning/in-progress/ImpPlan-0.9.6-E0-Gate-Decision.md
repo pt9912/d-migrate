@@ -2,7 +2,8 @@
 
 > **Milestone**: 0.9.6 — Beta: MCP-Server
 > **Phase**: E0.6 (`Gate-Entscheidung dokumentieren`)
-> **Status**: Final 2026-05-05
+> **Status**: Initial 2026-05-05 `Blocked` → Re-Stempel 2026-05-05 nach
+> E0.7.5 zu **`Go`**.
 > **Hauptplan**: `../done/ImpPlan-0.9.6-E0.md` §7.6, §9, §10
 > **Matrix**: `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`
 
@@ -10,18 +11,44 @@
 
 ## 1. Verdict
 
-**`Blocked`** — der E0-Spike kann die Schwelle aus Hauptplan §9 für die
-monolithischen Driver-Calls nicht nachweisen. Konkret fehlt: *belegtes
-Timeout-/Laufzeitfenster und gemessenes E0-Cancel-Reaktionsbudget `<= 30s`
-für jeden atomar-nicht-cancelbaren Driver-Call.*
+**`Go`** — die Pre-Phase-E-Arbeit aus AP E0.7
+([`ImpPlan-0.9.6-E0.7.md`](./ImpPlan-0.9.6-E0.7.md)) ist abgeschlossen
+und Hauptplan §9 ist erfüllt: jeder atomar-nicht-cancelbare
+Driver-Call hat ein belegtes Timeout-/Laufzeitfenster und ein
+gemessenes E0-Cancel-Reaktionsbudget `<= 30s`.
 
-Phase E darf gemäß Hauptplan §10 nicht starten, solange die Pre-Phase-E-
-Arbeit aus §3 dieses Dokuments nicht abgeschlossen ist.
+Phase E darf gemäß Hauptplan §10 starten.
 
-Die Wurzel ist eine einzelne, eng abgegrenzte Adapter-Konfigurationslücke,
-**nicht** eine Vertrags- oder Semantiklücke. Der vorgeschlagene Pre-Phase-E-
-Plan in §3 hebt das Gate auf `Go` ohne neue Cancel-Interpretation und
-ohne Port-Vertrag-Wechsel.
+### 1.1 Was sich gegenüber dem Initial-Verdict geändert hat
+
+Initial `Blocked` (2026-05-05): kein Driver-Adapter setzte
+`Statement.setQueryTimeout(...)` oder `Connection.setNetworkTimeout(...)`,
+Plan §9 "belegtes Timeout-Fenster" nicht erfüllt.
+
+Re-Stempel `Go` nach E0.7-Abschluss:
+
+- AP E0.7.1 (Commit `72b8a9f`): `PoolSettings.statementTimeoutMs` und
+  `networkTimeoutMs` mit Default `30_000` + `init {}`-Validation.
+- AP E0.7.2 (Commit `c5a70e6`): driver-spezifischer `connectionInitSql`
+  pro Dialekt — PostgreSQL `SET statement_timeout`, MySQL
+  `SET SESSION MAX_EXECUTION_TIME`, SQLite `PRAGMA busy_timeout`.
+- AP E0.7.3 (Commit `15f3e45`): common `TimeoutDecoratedConnection`
+  in `driver-common`. Wraps jede `pool.borrow()`-Connection und setzt
+  `setQueryTimeout(ceil(ms/1000))` auf jedem `createStatement`/
+  `prepareStatement`/`prepareCall`-Overload. `setNetworkTimeout(...)`
+  bindet zusätzlich `DatabaseMetaData.getPrimaryKeys`-Pfade in
+  PostgreSQL/MySQL-Writern.
+- AP E0.7.4 (Commit `3fe0508`): Bench-Tests pro Driver +
+  `JdbcMetadataSessionTimeoutTest` (default-CI) belegen empirisch
+  + via Capturing-Connection, dass jeder Driver-Call innerhalb des
+  Budgets abbricht.
+- AP E0.7.5: Side-Effect-Matrix Section 6 final-klassifiziert
+  (`blocked = 0`, `go = ~74`); diese Verdict-Aktualisierung.
+
+Die Wurzel-Diagnose des Initial-Verdicts hat sich bestätigt: die
+Auflösung war eine **Adapter-Konfigurationsänderung**, kein
+Port-Vertrag-Wechsel. Plan §7.6 wurde respektiert; keine neue
+Cancel-Interpretation, keine Port-Vertrags-Erweiterung.
 
 ---
 
@@ -159,65 +186,67 @@ Anschluss-Punkt ist die jeweilige `execute(...)`-Methode.
 
 ---
 
-## 3. Pflicht-Pre-Phase-E-Arbeit (`Blocked`-Auflösung)
+## 3. Pflicht-Pre-Phase-E-Arbeit (`Blocked`-Auflösung) — abgeschlossen
 
 Hauptplan §9 fordert für atomar-nicht-cancelbare Calls "ein belegtes
 Timeout-/Laufzeitfenster, ein gemessenes E0-Cancel-Reaktionsbudget von
 `<=30 s`, keine ungebundenen Retry-/Reconnect-Loops und hinterlassen
-nach Timeout keine offenen Ressourcen". Heute setzt **kein** Driver-
-Adapter `Statement.setQueryTimeout(...)` oder
-`Connection.setNetworkTimeout(...)`. Dadurch sind alle Driver-
-monolithic-Calls in Section 6 der Side-Effect-Matrix als **blockierend**
-klassifiziert.
+nach Timeout keine offenen Ressourcen". Diese Bedingung war zum
+Initial-Stempel `Blocked` (2026-05-05) nicht erfüllt — kein Driver-
+Adapter setzte `Statement.setQueryTimeout(...)` oder
+`Connection.setNetworkTimeout(...)`.
 
-### 3.1 Eng abgegrenzter Pre-Phase-E-AP
+Die Auflösung erfolgte in
+[`ImpPlan-0.9.6-E0.7.md`](./ImpPlan-0.9.6-E0.7.md) ohne
+Port-Vertrags-Wechsel und ohne neue Cancel-Interpretation:
 
-**AP E0.7 Driver-Adapter-Timeout-Konfiguration** ist als separater
-Plan-Eintrag eröffnet:
-[`ImpPlan-0.9.6-E0.7.md`](./ImpPlan-0.9.6-E0.7.md). Drei
-Driver, eine zentrale Stelle pro Driver:
+### 3.1 AP E0.7 Status: ✅ abgeschlossen
 
-| Driver | Konfigurations-Punkt | Konkrete Änderung |
-| --- | --- | --- |
-| postgresql | `adapters/driven/driver-postgresql` Statement-/Pool-Bootstrap | `setQueryTimeout(30)` an gemeinsamer `prepareStatement(...)`-Stelle; `Connection.setNetworkTimeout(executor, 30000)` in HikariCP-Connection-Init-SQL oder per `connection-init-sql`. |
-| mysql | `adapters/driven/driver-mysql` analog | wie postgresql |
-| sqlite | `adapters/driven/driver-sqlite` analog | `setQueryTimeout(30)` (SQLite JDBC unterstützt `busy_timeout` PRAGMA für Lock-Wait, sonst Statement-Timeout); `setNetworkTimeout` für File-DB nicht relevant |
-
-Konfiguration ist **kein** Port-Vertrag-Wechsel — die Port-API in
-`hexagon:ports-read`/`ports-write` bleibt unverändert. Plan §7.6 erlaubt
-diese Form von Adapter-Iteration im Rahmen von Phase-E-Nacharbeit, **wenn**
-die harte Side-Effect-Stop-Semantik bereits ohne sie nachgewiesen ist —
-und das ist sie (siehe §2 oben).
+| AP | Status | Commit | Was |
+| --- | --- | --- | --- |
+| E0.7.1 | ✅ | `72b8a9f` | `PoolSettings.statementTimeoutMs` + `networkTimeoutMs` Felder mit Default `30_000` und `init {}`-Validation; `connection-config-spec.md` §2.2. |
+| E0.7.2 | ✅ | `c5a70e6` | `connectionInitSqlFor(dialect, ms)` in `HikariConnectionPoolFactory`. PostgreSQL `SET statement_timeout`, MySQL `SET SESSION MAX_EXECUTION_TIME`, SQLite `PRAGMA busy_timeout`. |
+| E0.7.3 | ✅ | `15f3e45` | Common `TimeoutDecoratedConnection` (13 Statement-Overload-Decorators) + `Connection.setNetworkTimeout(...)` mit `SQLFeatureNotSupportedException`-Resilienz; `timeoutSecondsOf` rundet sub-second auf. Decoder ist transparent für alle Adapter-Module. |
+| E0.7.4 | ✅ | `3fe0508` | Bench-Tests pro Driver (`E07PostgresTimeoutBench`, `E07MysqlTimeoutBench`, `E07SqliteTimeoutBench` mit `@Tag("integration")`); `JdbcMetadataSessionTimeoutTest` (default-CI) belegt Profiling-/Schema-Reader-Coverage über den common Layer. |
+| E0.7.5 | ✅ | (dieser Commit) | Side-Effect-Matrix Section 6 final-klassifiziert (`blocked = 0`, `go ~74`); diese Verdict-Aktualisierung von `Blocked` zu `Go`. |
+| E0.7.6 | ⏳ pending | — | Move E0.7 + Side-Effect-Matrix + Gate-Decision nach `done/`; Phase-E-Plan in `in-progress/` öffnen. |
 
 ### 3.2 Measurement-Evidence
 
-Pro Driver ein Bench-Test, der:
+Pro Driver ein Bench-Test, der die `<= 30s`-Schwelle empirisch
+verifiziert:
 
-1. Eine bewusst lange Query (`SELECT pg_sleep(60)` /
-   `SELECT SLEEP(60)` / langer Range-Scan in SQLite) startet.
-2. Verifiziert, dass der Driver-Adapter die Query nach `<= 30s` mit
-   `SQLTimeoutException` beendet, ohne Retry-Loop und ohne offene
-   Connection.
-3. Konzeptionell: `gemessenes E0-Cancel-Reaktionsbudget` aus Hauptplan
-   §4.1.
+| Driver | Test | Mechanismus | Erwartung |
+| --- | --- | --- | --- |
+| PostgreSQL | `E07PostgresTimeoutBench` (`test/integration-postgresql`) | Testcontainer `postgres:16-alpine` + `SELECT pg_sleep(60)` + `statementTimeoutMs = 5000` | `PSQLException` SQLState `57014` in `< 6s`; `pool.activeConnections() <= 1` nach Cancel; healthy `SELECT 1` läuft danach |
+| MySQL | `E07MysqlTimeoutBench` (`test/integration-mysql`) | Testcontainer `mysql:8.0` + `SELECT SLEEP(60)` + `MAX_EXECUTION_TIME = 5000` | `SQLException` (entweder `MySQLTimeoutException` für `MAX_EXECUTION_TIME` oder Statement-Level für Writes) in `< 6s`; analog Cleanup |
+| SQLite | `E07SqliteTimeoutBench` (`adapters/driven/driver-sqlite`) | In-memory + 100M recursive CTE mit `MAX(n)`-Aggregation + `statementTimeoutMs = 2000` | `SQLException` via `sqlite3_interrupt(...)` in `< 4s`; analog Cleanup |
 
-Diese Tests gehören in `test/integration-postgresql`,
-`test/integration-mysql` und `adapters/driven/driver-sqlite` (separater
-Test-Spec). Sie sind nicht Teil der 5-Minuten-Default-CI, aber der
-`make integration`-Target wäre der natürliche Ort.
+Default-Token-Regressionsguard pro Driver belegt: `statementTimeoutMs =
+30000` (Default) lässt fast queries (`SELECT 1`) unbeeinflusst durch.
+
+Profiling-/Schema-Reader-Coverage (`JdbcMetadataSessionTimeoutTest` in
+`driver-common`, default-CI): 6 Tests via `CapturingConnection`-by-
+delegate belegen, dass `queryList`/`querySingle`/`execute`/`executeBatch`
+durch den common Layer laufen — alle erzeugten Statements tragen
+`queryTimeout = ceil(ms/1000)`.
+
+Bench-Tests laufen in `make integration` (Docker-Container mit JDK 21
++ Testcontainers); Default-5min-CI bleibt unbelastet
+(`kotest.tags = !integration & !perf`).
 
 ### 3.3 Erwartete Matrix-Bewegung
 
-Nach AP E0.7:
+### 3.3 Erwartete Matrix-Bewegung — eingetreten
 
-- Alle `blockierend`-Zeilen in Section 6 wechseln zu **`atomic-nicht-
-  cancelbar`** mit `bound = 30000ms`, `cancel_budget_ms = 30000`,
+Nach AP E0.7.5:
+
+- Alle `blockierend`-Zeilen in Section 6 wechseln zu `atomic-nicht-
+  cancelbar` mit `bound = 30000ms`, `cancel_budget_ms = 30000`,
   `measurement_evidence = <Bench-Test-Name>`, `gate = go`.
-- Die ~10 noch `blocked`-Zeilen in den Pipeline-Sektionen (`reader.read`,
-  `streamTable`, `openTable`, `finishTable`, `listTables`, `listColumns`,
-  `data.*`) wechseln symmetrisch zu `go`.
-- Schnellstatistik: `go ~35 / go_followup ~0 / blocked 0 / tentative-go
-  4`. Gate-Verdict wechselt von `Blocked` auf `Go`.
+- Schnellstatistik: `go = ~74`, `blocked = 0`,
+  `tentative-go = 0`, `go_followup = 0`. Gate-Verdict wechselt von
+  `Blocked` auf `Go`.
 
 ---
 
@@ -228,10 +257,6 @@ Nach AP E0.7:
 - **Jobstatus-Transition** zu `cancelled`, **Audit-Event-Emission**
   (`JOB_CANCEL_REQUESTED`/`JOB_CANCEL_OBSERVED`), **Worker-Handle-
   Registry**. Phase E.
-- **Connection-Init-SQL für `setNetworkTimeout`** in HikariCP. Pre-Phase-E
-  AP E0.7 §3.1.
-- **Driver-Adapter-Bench-Tests** für Timeout-Verifikation. Pre-Phase-E
-  AP E0.7 §3.2.
 - **`abort()`-API** auf Vertragsebene für `TableImportSession`. Heute
   nicht nötig — `session.close()` reicht (siehe §2.4). Eventuell
   notwendig für Phase F (data-import, data-transfer als policy-pflichtige
@@ -240,6 +265,8 @@ Nach AP E0.7:
   `Files.deleteIfExists(output)` bei Cancel mid-write). Heute
   `go_followup` in Reverse-Sektion. Phase F oder eigener AP.
 - **Remote-FS Format-Reader** (S3, HTTP). Nicht 0.9.6.
+- **Token-Param am Reader-Iterator-Rand** für inter-Chunk-Cancel ohne
+  Timeout-Abhängigkeit. 0.9.7+ (E0.7-§9 Folgearbeiten).
 
 ---
 
@@ -267,23 +294,30 @@ typisiert.
 
 ---
 
-## 6. Empfohlene nächste Schritte (Review-Input)
+## 6. Phase-E-Start-Freigabe
 
-1. **AP E0.7 Driver-Adapter-Timeout-Konfiguration** als separater Plan-
-   Eintrag öffnen (oder als Phase-E §0 binden). Geschätzter Aufwand: drei
-   Adapter-Edits + drei Bench-Tests + Matrix-Update. ~1–2 Commits.
-2. **Side-Effect-Matrix-Wrap nach AP E0.7**: alle `blockierend`-Zeilen
-   wechseln zu `go`; Verdict in diesem Dokument von `Blocked` auf `Go`
-   re-stempeln.
-3. **Phase E starten** sobald Verdict `Go`.
+### 6.1 Phase E darf starten
 
-Alternativvorschlag (Project-Management-Entscheidung, nicht
-technisch begründet): Override des `Blocked`-Verdicts auf `Go mit
-Nacharbeiten` mit AP E0.7 als formaler Phase-E-Pre-Work. Plan §7.6 lässt
-das nicht ausdrücklich zu (zitiert "fehlende Timeout-/Laufzeitgrenze" als
-unzulässig für `Go mit Nacharbeiten`), aber ist als Projekt-Ausnahme
-denkbar, wenn die Bench-Tests in Phase E selbst liegen würden. Diese
-Variante hat das Risiko, dass Phase E ohne belegte Timeout-Garantien
-beginnt.
+Mit Verdict `Go` ist Hauptplan §10 erfüllt: "Phase E darf erst auf E0
+aufbauen, wenn das Gate mindestens `Go mit Nacharbeiten` erreicht und
+die harte Semantik aus Abschnitt 9 nicht verletzt ist." E0.7 hat die
+harte Semantik nachgewiesen.
 
-Ich empfehle Option A (AP E0.7 vor Phase E).
+Empfohlene nächste Schritte (Project-Management):
+
+1. **AP E0.7.6 Move-Operation**: `ImpPlan-0.9.6-E0.7.md`,
+   `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md` und dieses Dokument nach
+   `done/` verschieben; Cross-Refs in offenen E/F/G-Plänen anpassen.
+2. **Phase-E-Plan eröffnen**: `in-progress/ImpPlan-0.9.6-E.md` (heute
+   in `open/`) wird zum aktiven Plan. Hauptthemen aus
+   `implementation-plan-0.9.6.md` §8 Phase E:
+   - `job_cancel`-Tool als MCP-Adapter-Tool
+   - Jobstatus-Transition `running → cancelled`
+   - Worker-Handle-Registry
+   - Audit-Events `JOB_CANCEL_REQUESTED` / `JOB_CANCEL_OBSERVED`
+   - Einbindung der hier nachgewiesenen Runner-Checkpoints in
+     produktive Job-Worker
+3. **Phase-E-Bench in CI aktivieren** (optional): `.github/workflows/
+   integration.yml` läuft `make integration` und exerziert die
+   E0.7.4-Bench-Tests bei jedem PR — empfehlenswert um Driver-Updates
+   gegen die `<= 30s`-Schwelle zu schützen.
