@@ -1657,11 +1657,8 @@ shadow:
 
 ```bash
 d-migrate shadow start \
-  --source legacy \
-  --target modern \
-  --mapping migration.yaml \
+  --plan-artifact artifact_shadow_plan_001 \
   --execution-backend flink-cdc-pipeline \
-  --tables customers,orders,order_items \
   --checkpoint-dir s3://dmigrate-checkpoints/prod-shadow \
   --artifact-dir s3://dmigrate-artifacts/prod-shadow
 ```
@@ -1712,6 +1709,8 @@ d-migrate shadow stop \
 --target-connection-id <id>
 --mapping <file>
 --tables <list>
+--plan <file>
+--plan-artifact <artifact-id>
 --execution-backend local|flink|flink-cdc-pipeline
 --checkpoint-dir <uri>
 --artifact-dir <uri>
@@ -1725,7 +1724,11 @@ d-migrate shadow stop \
 
 CLI darf `--source` und `--target` als nutzerfreundliche Aliase verwenden.
 
-API-Verträge verwenden `sourceConnectionId` und `targetConnectionId`.
+`shadow plan` darf `--source`, `--target`, `--mapping` und `--tables` verwenden.
+
+`shadow start` verwendet `--plan` oder `--plan-artifact`; Source, Target, Mapping und Tabellen kommen aus dem immutable Plan.
+
+API-Verträge referenzieren beim Start ein Plan-Artefakt. `sourceConnectionId` und `targetConnectionId` bleiben Felder des Plans.
 
 ---
 
@@ -1743,10 +1746,7 @@ Content-Type: application/json
 
 ```json
 {
-  "sourceConnectionId": "conn_legacy",
-  "targetConnectionId": "conn_modern",
-  "mappingArtifactId": "artifact_mapping_v12",
-  "tables": ["customers", "orders", "order_items"],
+  "planArtifactId": "artifact_shadow_plan_001",
   "executionBackend": "FLINK_CDC_PIPELINE",
   "checkpointUri": "s3://dmigrate-checkpoints/prod-shadow",
   "artifactUri": "s3://dmigrate-artifacts/prod-shadow",
@@ -1760,6 +1760,12 @@ Content-Type: application/json
   }
 }
 ```
+
+Der Start-Request referenziert immer ein immutable `shadow-plan` Artefakt.
+
+Der Plan enthält `sourceConnectionId`, `targetConnectionId`, `mappingRef`, Tabellen, Routen, Filter, Table-Modes und per-table Policies.
+
+`sourceConnectionId` und `targetConnectionId` dürfen im Start-Request nicht erneut überschrieben werden.
 
 Response:
 
@@ -1848,15 +1854,12 @@ service ShadowMigrationService {
 
 ```proto
 message StartShadowMigrationRequest {
-  string source_connection_id = 1;
-  string target_connection_id = 2;
-  string mapping_artifact_id = 3;
-  repeated string tables = 4;
-  ExecutionBackend execution_backend = 5;
-  string checkpoint_uri = 6;
-  string artifact_uri = 7;
-  ShadowExecutionOptions execution_options = 8;
-  ShadowMigrationOptions migration_options = 9;
+  string plan_artifact_id = 1;
+  ExecutionBackend execution_backend = 2;
+  string checkpoint_uri = 3;
+  string artifact_uri = 4;
+  ShadowExecutionOptions execution_options = 5;
+  ShadowMigrationOptions migration_options = 6;
 }
 ```
 
@@ -1942,10 +1945,7 @@ Tool-Argumente:
 
 ```json
 {
-  "sourceConnectionId": "conn_legacy",
-  "targetConnectionId": "conn_modern",
-  "mappingArtifactId": "artifact_mapping_v12",
-  "tables": ["orders"],
+  "planArtifactId": "artifact_shadow_plan_001",
   "executionBackend": "FLINK_CDC_PIPELINE",
   "checkpointUri": "s3://dmigrate-checkpoints/prod-shadow",
   "artifactUri": "s3://dmigrate-artifacts/prod-shadow",
@@ -2363,7 +2363,7 @@ Shadow-Migration gilt als akzeptiert, wenn:
 2. `hexagon:shadow` keine Flink-Dependency besitzt.
 3. Flink nur über ein optionales Execution Backend eingebunden ist.
 4. Shadow-Migration nutzt immutable Plan- und Mapping-Artefakte.
-5. Source und Target werden über Connection IDs referenziert.
+5. Source und Target werden im immutable Plan über Connection IDs referenziert.
 6. Primary Keys sind für CDC-Modi verpflichtend.
 7. Upsert-by-primary-key ist die Default-Sink-Strategie.
 8. Delete-Verhalten ist explizit modelliert.
@@ -2396,6 +2396,7 @@ Shadow-Migration gilt als akzeptiert, wenn:
 35. `operator.uid.prefix` wird gesetzt.
 36. Das Pipeline-YAML wird als immutable Artefakt mit SHA-256 gespeichert.
 37. Flink-CDC-spezifische Begriffe leaken nicht in `hexagon:core`.
+38. Start-APIs referenzieren ein immutable `shadow-plan` Artefakt statt flacher Tabellenlisten.
 
 ---
 
@@ -2489,10 +2490,7 @@ d-migrate shadow plan \
 
 ```bash
 d-migrate shadow start \
-  --source legacy \
-  --target modern \
-  --mapping migration.yaml \
-  --tables orders,order_items \
+  --plan shadow-plan.yaml \
   --execution-backend flink-cdc-pipeline \
   --checkpoint-dir s3://dmigrate-checkpoints/prod-shadow \
   --artifact-dir s3://dmigrate-artifacts/prod-shadow \
