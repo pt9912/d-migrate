@@ -114,12 +114,12 @@ Codebasis: `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/Schema
 
 | op | kind | side | checkpoint | reaction | atom | bound | budget | evid | clean | tests | gate | followup |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `poolFactory(ctx.config).use { p -> ... }` | side_effect | session | nach Token-Propagation am Runner-Entry, vor `pool.use` | `OperationCancelledException`, kein Pool-Borrow | unknown | not_applicable | not_applicable | missing | `close` (`use {}`) | missing | blocked | E0.4-Token + Test |
-| `reader.read(p, options)` | monolithic_call | source-read | direkt vor Driver-Aufruf | `OperationCancelledException` vor Aufruf, danach kein Schema-Publish | unknown | missing (Driver-API hat heute keine Cancel-/Timeout-Grenze) | missing | missing | not_needed (read liefert Wert) | missing | blocked | E0.4-Klassifizierung pro Driver: `atomic` mit Statement-Timeout oder `blocked` |
-| `request.output.parent?.mkdirs()` | side_effect | artefact | direkt vor `mkdirs` | `OperationCancelledException`, kein Verzeichnis erzeugen | atomic | not_applicable | not_applicable | not_applicable | not_needed | missing | blocked | E0.4-Test "Cancel vor Publish erzeugt kein Verzeichnis" |
-| `schemaWriter(output, schema, format)` | side_effect | artefact | direkt vor Aufruf | `OperationCancelledException`, kein Schema-Artefakt schreiben | multi_step (write+flush) | not_applicable | not_applicable | not_applicable | bei Cancel waehrend Write: `Files.deleteIfExists(output)` als Cleanup-Nacharbeit | missing | blocked | E0.4-Test + Atomic-Move-Pattern wie Export pruefen |
-| `request.reportPath.parent?.mkdirs()` | side_effect | artefact | vor `mkdirs` | `OperationCancelledException`, kein Verzeichnis erzeugen | atomic | not_applicable | not_applicable | not_applicable | not_needed | missing | blocked | E0.4-Test "Cancel vor Report erzeugt kein Verzeichnis" |
-| `reportWriter(reportPath, reportInput)` | side_effect | artefact | direkt vor Aufruf | `OperationCancelledException`, kein Report schreiben | multi_step | not_applicable | not_applicable | not_applicable | bei Cancel waehrend Write: Pfad loeschen | missing | blocked | E0.4-Test |
+| `poolFactory(ctx.config).use { p -> ... }` | side_effect | session | Runner-Token-Check unmittelbar vor `readSchema()` | `OperationCancelledException` → Exit 130, kein Pool-Borrow | unknown | not_applicable | not_applicable | `SchemaReverseRunnerCancelCheckpointTest` "cancel before introspection" | `close` (`use {}`) | `SchemaReverseRunnerCancelCheckpointTest` | go | — |
+| `reader.read(p, options)` | monolithic_call | source-read | direkt vor Driver-Aufruf | `OperationCancelledException` vor Aufruf, danach kein Schema-Publish | unknown | missing (Driver-API hat heute keine Cancel-/Timeout-Grenze) | missing | missing | not_needed (read liefert Wert) | missing | blocked | E0.5-Klassifizierung pro Driver: `atomic` mit Statement-Timeout oder `blocked` |
+| `request.output.parent?.mkdirs()` | side_effect | artefact | Runner-Token-Check unmittelbar vor `writeSchemaFile()` | `OperationCancelledException` → Exit 130, kein Verzeichnis erzeugen | atomic | not_applicable | not_applicable | `SchemaReverseRunnerCancelCheckpointTest` "cancel between introspection and schema publish" | not_needed | `SchemaReverseRunnerCancelCheckpointTest` | go | — |
+| `schemaWriter(output, schema, format)` | side_effect | artefact | Runner-Token-Check unmittelbar vor `writeSchemaFile()` | `OperationCancelledException` → Exit 130, kein Schema-Artefakt schreiben | multi_step (write+flush) | not_applicable | not_applicable | `SchemaReverseRunnerCancelCheckpointTest` "cancel between introspection and schema publish" | bei Cancel mid-write (E0.5): `Files.deleteIfExists(output)` als Followup | `SchemaReverseRunnerCancelCheckpointTest` | go_followup | E0.5: in-flight-write Cleanup wenn Driver-Vertrag erweitert wird |
+| `request.reportPath.parent?.mkdirs()` | side_effect | artefact | Runner-Token-Check unmittelbar vor `writeReportFile()` | `OperationCancelledException` → Exit 130, kein Verzeichnis erzeugen | atomic | not_applicable | not_applicable | `SchemaReverseRunnerCancelCheckpointTest` "cancel between schema publish and report publish" | not_needed | `SchemaReverseRunnerCancelCheckpointTest` | go | — |
+| `reportWriter(reportPath, reportInput)` | side_effect | artefact | Runner-Token-Check unmittelbar vor `writeReportFile()` | `OperationCancelledException` → Exit 130, kein Report schreiben | multi_step | not_applicable | not_applicable | `SchemaReverseRunnerCancelCheckpointTest` "cancel between schema publish and report publish" | bei Cancel mid-write (E0.5): Pfad loeschen | `SchemaReverseRunnerCancelCheckpointTest` | go_followup | E0.5: in-flight-write Cleanup wenn Driver-Vertrag erweitert wird |
 
 **Reverse-Anmerkungen:**
 
@@ -141,20 +141,20 @@ Codebasis: `DataProfileRunner.kt`, `ProfileDatabaseService.kt`,
 
 | op | kind | side | checkpoint | reaction | atom | bound | budget | evid | clean | tests | gate | followup |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `poolFactory(url, dialect)` | side_effect | session | Runner-Entry, vor Pool-Allokation | `OperationCancelledException`, kein Pool | unknown | not_applicable | not_applicable | missing | `pool.close()` in finally | missing | blocked | E0.4-Token |
-| `introspection.listTables(pool, schema)` | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4-Klassifizierung pro Driver |
-| `for table in targetTables` | loop | none | Loop-Head vor jeder Tabelle | `OperationCancelledException` startet keine weitere Tabelle | atomic (Loop-Head selbst) | not_applicable | not_applicable | not_applicable | not_needed | missing | blocked | E0.4-Test "Cancel zwischen Tabellen" |
-| `tableService.profile(pool, table, ...)` | side_effect (Komposit) | source-read | innerhalb (siehe Spalten-Loop) | composed | multi_step | not_applicable | not_applicable | not_applicable | not_needed | missing | blocked | E0.4-Komposit-Test |
-| `introspection.listColumns(pool, table, schema)` | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `data.rowCount(pool, table, schema)` | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `for col in columns` | loop | none | Loop-Head vor jeder Spalte | `OperationCancelledException` startet keine weitere Spalte | atomic | not_applicable | not_applicable | not_applicable | not_needed | missing | blocked | E0.4-Test "Cancel zwischen Spalten" |
-| `data.columnMetrics(pool, table, column)` | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `data.topValues(pool, table, column, topN)` | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `data.numericStats(...)` (optional) | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `data.temporalStats(...)` (optional) | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `data.targetTypeCompatibility(...)` (optional) | monolithic_call | source-read | vor Aufruf | `OperationCancelledException` | unknown | missing | missing | missing | not_needed | missing | blocked | E0.4 |
-| `reportWriter(profile, format, output)` | side_effect | artefact | direkt vor Aufruf | `OperationCancelledException`, kein Report schreiben | multi_step | not_applicable | not_applicable | not_applicable | bei Cancel waehrend Write: Pfad loeschen | missing | blocked | E0.4-Test |
-| `pool.close()` (finally) | cleanup | session | wird nach Cancel UNVERAENDERT ausgefuehrt | nicht abbrechen | atomic | not_applicable | not_applicable | not_applicable | `close` | missing | tentative-go (Cleanup laeuft auch nach Cancel) | E0.4-Test "Cleanup nach Cancel" |
+| `poolFactory(url, dialect)` | side_effect | session | (vor Pool-Allokation kein Token-Check; nachfolgender `service.profile`-Entry-Check fängt Cancel ab und Cleanup über `pool.close()` in finally) | Pool wird geöffnet, danach kein Profiling-Side-Effect; `pool.close()` in `finally` schließt sauber | unknown | not_applicable | not_applicable | `DataProfileRunnerCancelCheckpointTest` belegt Pfad indirekt (kein Profiling-/Report-Side-Effect nach Cancel) | `pool.close()` | `DataProfileRunnerCancelCheckpointTest` | go_followup | E0.5: optionaler Pre-Pool-Checkpoint, sobald Driver-Pool-Open eigene Cancel-Grenze trägt |
+| `introspection.listTables(pool, schema)` | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` am Entry von `ProfileDatabaseService.profile()` | `OperationCancelledException` → Runner mappt auf 130, keine `listTables`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` "cancel before listTables halts before any introspection call" | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5: in-flight-listTables-Cancel benötigt Driver-Statement-Cancel |
+| `for table in targetTables` | loop | none | `cancellationToken.throwIfCancellationRequested()` als erstes Statement in `targetTables.map { ... }` | nach Cancel keine weitere Tabelle | atomic | not_applicable | not_applicable | `ProfileServiceCancelCheckpointTest` "cancel between table iterations starts no further table profiling" | not_needed | `ProfileServiceCancelCheckpointTest` | go | — |
+| `tableService.profile(pool, table, ...)` | side_effect (Komposit) | source-read | composed (siehe Profile-Table-Zeilen darunter) | composed | multi_step | not_applicable | not_applicable | `ProfileServiceCancelCheckpointTest` (DB-Service + Table-Service zusammen) | not_needed | `ProfileServiceCancelCheckpointTest` | go | — |
+| `introspection.listColumns(pool, table, schema)` | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` am Entry von `ProfileTableService.profile()` | `OperationCancelledException`, keine `listColumns`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` "cancel before listColumns halts before introspection" | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5: in-flight-listColumns-Cancel benötigt Driver-Statement-Cancel |
+| `data.rowCount(pool, table, schema)` | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` zwischen `listColumns` und `rowCount` in `ProfileTableService` | `OperationCancelledException`, keine `rowCount`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` "cancel between listColumns and rowCount halts before rowCount" | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5: in-flight-rowCount-Cancel benötigt Driver-Statement-Cancel |
+| `for col in columns` | loop | none | `cancellationToken.throwIfCancellationRequested()` als erstes Statement in `columns.map { col -> ... }` | nach Cancel keine weitere Spalte | atomic | not_applicable | not_applicable | `ProfileServiceCancelCheckpointTest` "cancel between column iterations starts no further column profiling" | not_needed | `ProfileServiceCancelCheckpointTest` | go | — |
+| `data.columnMetrics(pool, table, column)` | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` als erstes Statement in `profileColumn(...)` | `OperationCancelledException`, keine `columnMetrics`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` (über column-iteration-Test indirekt; Cancel nach Spalte 1 verhindert Spalte-2 columnMetrics) | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5: in-flight-Cancel benötigt Driver-Statement-Cancel |
+| `data.topValues(pool, table, column, topN)` | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` zwischen `columnMetrics` und `topValues` | `OperationCancelledException`, keine `topValues`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` "cancel between columnMetrics and topValues starts no topValues query" | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5 |
+| `data.numericStats(...)` (optional) | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` direkt vor optionalem Aufruf, NICHT innerhalb `optionalProfilingValue { ... }` (sonst würde Cancel als `ProfilingQueryError` verschleiert) | `OperationCancelledException`, keine `numericStats`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` indirekt (Cancel vor Spalte-2 deckt alle Spalte-2-Calls ab) | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5 |
+| `data.temporalStats(...)` (optional) | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` direkt vor optionalem Aufruf | `OperationCancelledException`, keine `temporalStats`-Query | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` indirekt | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5 |
+| `data.targetTypeCompatibility(...)` (optional) | monolithic_call | source-read | `cancellationToken.throwIfCancellationRequested()` direkt vor optionalem Aufruf | `OperationCancelledException` | unknown | missing | missing | `ProfileServiceCancelCheckpointTest` indirekt | not_needed | `ProfileServiceCancelCheckpointTest` | go_followup | E0.5 |
+| `reportWriter(profile, format, output)` | side_effect | artefact | `cancellationToken.throwIfCancellationRequested()` in `DataProfileRunner.execute()` zwischen `service.profile()` und `reportWriter(...)` | `OperationCancelledException` → Exit 130, kein Report | multi_step | not_applicable | not_applicable | `DataProfileRunnerCancelCheckpointTest` "cancel between profiling and report writer returns 130 and writes no report" | bei Cancel mid-write (E0.5): Pfad loeschen | `DataProfileRunnerCancelCheckpointTest` | go_followup | E0.5: in-flight-write Cleanup |
+| `pool.close()` (finally) | cleanup | session | wird nach Cancel UNVERAENDERT ausgefuehrt | nicht abbrechen | atomic | not_applicable | not_applicable | `DataProfileRunnerCancelCheckpointTest` (alle Cancel-Pfade nutzen `finally { pool.close() }` ohne Override) | `close` | `DataProfileRunnerCancelCheckpointTest` | go | — |
 
 **Profile-Anmerkungen:**
 
@@ -290,29 +290,24 @@ muss (Hauptplan §6.5).
 
 ---
 
-## 7. Schnellstatistik (Snapshot 2026-05-05)
+## 7. Schnellstatistik
 
 Reine `gate_result`-Verteilung der oben gelisteten Zeilen:
 
-- `tentative-go`: 4 (`pool.close()` Profile, `preflightPlanner.planTables`,
-  `chunk.rows.map` Transfer, `buildCallbacks` Import)
-- `blocked`: alle uebrigen ~70 Zeilen, einheitlich wegen
-  `tests = missing` plus mehrheitlich `atomicity = unknown` und
-  `bound = missing`
-- `go_followup`: 0
+| Stand | `go` | `go_followup` | `tentative-go` | `blocked` |
+| --- | --- | --- | --- | --- |
+| 2026-05-05 (E0.2) | 0 | 0 | 4 | ~70 |
+| 2026-05-05 (E0.4) | ~10 | ~12 | 4 | ~50 |
 
-Erwartete Bewegung durch AP E0.3–E0.5:
+Erwartete Bewegung durch AP E0.5:
 
-- AP E0.3 fuegt Token-Propagation ein (kein `gate_result`-Wechsel, nur
-  Vorbedingung).
-- AP E0.4 produziert Tests fuer Reverse + Profile; ~17 Zeilen wechseln
-  von `blocked` auf `go` oder `go_followup`, sofern Driver-Klassifikation
-  gelingt.
 - AP E0.5 produziert Tests fuer Import + Transfer + Streaming-Ports; ~50
   Zeilen wechseln. Driver-Vertraege (`SchemaReader`, `DataReader`,
   `DataWriter`, `TableImportSession`) sind die Knackpunkte; sind sie nicht
   erweiterbar, bleibt der Pfad `blocked` und Phase E ist gemaess Hauptplan
   §2.2 nicht ausschliessbar.
+- E0.4-`go_followup`-Zeilen werden zu `go` oder bleiben `go_followup`,
+  sobald Driver-Statement-Cancel-Verträge stehen.
 - AP E0.6 finalisiert das Gate.
 
 ---
@@ -322,3 +317,4 @@ Erwartete Bewegung durch AP E0.3–E0.5:
 | Datum | AP | Aenderung |
 | --- | --- | --- |
 | 2026-05-05 | E0.2 | Initial-Snapshot — alle externen Side-Effect-Zeilen `blocked` (`tests = missing`); 4 In-Memory-Zeilen `tentative-go`. |
+| 2026-05-05 | E0.4 | Reverse-Pipeline (3 Checkpoints + Exit-130-Mapping) + Profile-Pipeline (Checkpoints in `ProfileDatabaseService`/`ProfileTableService`/`profileColumn` + Exit-130 in `DataProfileRunner`). Reverse: 4 Zeilen `go`, 2 Zeilen `go_followup`, 1 Zeile bleibt `blocked` (`reader.read` E0.5-Driver-Vertrag). Profile: 2 Zeilen `go`, 9 Zeilen `go_followup` (in-flight Cancel benötigt Driver-Statement-Cancel — E0.5), 1 Zeile bleibt `go_followup` (Pre-Pool-Checkpoint optional, Cleanup über `finally { pool.close() }`). Tests: `SchemaReverseRunnerCancelCheckpointTest`, `ProfileServiceCancelCheckpointTest`, `DataProfileRunnerCancelCheckpointTest`. |

@@ -29,6 +29,7 @@ class ProfileDatabaseService(
         tables: List<String>? = null,
         cancellationToken: CancellationToken = CancellationToken.none(),
     ): DatabaseProfile {
+        cancellationToken.throwIfCancellationRequested()
         val allTables = try {
             adapters.introspection.listTables(pool, schema)
         } catch (e: Exception) {
@@ -43,6 +44,7 @@ class ProfileDatabaseService(
         }
 
         val tableProfiles = targetTables.map { table ->
+            cancellationToken.throwIfCancellationRequested()
             tableService.profile(pool, table.name, schema ?: table.schema, cancellationToken)
         }
 

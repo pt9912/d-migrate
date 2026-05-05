@@ -31,14 +31,16 @@ open class ProfileTableService(
         pool: ConnectionPool,
         tableName: String,
         schema: String? = null,
-        @Suppress("UNUSED_PARAMETER") cancellationToken: CancellationToken = CancellationToken.none(),
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): TableProfile {
+        cancellationToken.throwIfCancellationRequested()
         val columns = try {
             adapters.introspection.listColumns(pool, tableName, schema)
         } catch (e: Exception) {
             throw SchemaIntrospectionError("Failed to list columns for table '$tableName': ${e.message}", e)
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val rowCount = try {
             adapters.data.rowCount(pool, tableName, schema)
         } catch (e: Exception) {
@@ -46,7 +48,8 @@ open class ProfileTableService(
         }
 
         val columnProfiles = columns.map { col ->
-            profileColumn(pool, tableName, col.name, col.dbType, col.nullable, rowCount, schema)
+            cancellationToken.throwIfCancellationRequested()
+            profileColumn(pool, tableName, col.name, col.dbType, col.nullable, rowCount, schema, cancellationToken)
         }
 
         val tableWarnings = warningEvaluator.evaluateTable(
@@ -61,6 +64,7 @@ open class ProfileTableService(
         )
     }
 
+    @Suppress("LongParameterList")
     private fun profileColumn(
         pool: ConnectionPool,
         table: String,
@@ -69,6 +73,7 @@ open class ProfileTableService(
         nullable: Boolean,
         rowCount: Long,
         schema: String? = null,
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): ColumnProfile {
         val logicalType = try {
             adapters.typeResolver.resolve(dbType)
@@ -77,12 +82,14 @@ open class ProfileTableService(
                 "Failed to resolve type for '$table.$column' (dbType: $dbType): ${e.message}", e)
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val metrics = try {
             adapters.data.columnMetrics(pool, table, column, dbType, schema)
         } catch (e: Exception) {
             throw ProfilingQueryError("Failed to profile column '$table.$column': ${e.message}", e)
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val topValues = try {
             adapters.data.topValues(pool, table, column, topN, schema)
         } catch (e: Exception) {
@@ -90,6 +97,7 @@ open class ProfileTableService(
         }
 
         val numericStats = if (logicalType in setOf(LogicalType.INTEGER, LogicalType.DECIMAL)) {
+            cancellationToken.throwIfCancellationRequested()
             optionalProfilingValue(
                 operation = "numericStats",
                 table = table,
@@ -101,6 +109,7 @@ open class ProfileTableService(
         } else null
 
         val temporalStats = if (logicalType in setOf(LogicalType.DATE, LogicalType.DATETIME)) {
+            cancellationToken.throwIfCancellationRequested()
             optionalProfilingValue(
                 operation = "temporalStats",
                 table = table,
@@ -111,6 +120,7 @@ open class ProfileTableService(
             }
         } else null
 
+        cancellationToken.throwIfCancellationRequested()
         val compatibility = optionalProfilingValue(
             operation = "targetTypeCompatibility",
             table = table,

@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -108,9 +109,13 @@ class DataProfileRunner(
                 cancellationToken = cancellationToken,
             )
 
+            cancellationToken.throwIfCancellationRequested()
             reportWriter(profile, request.format, request.output)
             if (!request.quiet) stderr("Profiling complete: ${profile.tables.size} table(s)")
             0
+        } catch (_: OperationCancelledException) {
+            // Plan §4.5: Cancel maps to CLI exit 130, not the generic 5 path.
+            CANCELLED_EXIT_CODE
         } catch (e: ProfilingException) {
             stderr("[ERROR] Profiling failed: ${e.message}")
             5
@@ -120,5 +125,10 @@ class DataProfileRunner(
         } finally {
             pool.close()
         }
+    }
+
+    companion object {
+        /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
+        const val CANCELLED_EXIT_CODE = 130
     }
 }

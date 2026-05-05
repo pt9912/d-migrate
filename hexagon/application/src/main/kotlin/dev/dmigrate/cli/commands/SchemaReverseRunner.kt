@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -80,25 +81,33 @@ class SchemaReverseRunner(
     )
 
     /**
-     * Run the reverse pipeline. [cancellationToken] is threaded through so
-     * Phase E0.4 can place cooperative cancel checkpoints around schema
-     * read and artefact publish; in this AP the token is propagated but
-     * not yet observed.
+     * Run the reverse pipeline. Cooperative cancel checkpoints sit between
+     * preflight and introspection, between introspection and schema publish,
+     * and between schema publish and report publish. [OperationCancelledException]
+     * is mapped to CLI exit code 130 per `spec/job-contract.md` and must not
+     * be reported as a fachlicher error (implementation-plan-0.9.6 §4.5).
      */
     fun execute(
         request: SchemaReverseRequest,
-        @Suppress("UNUSED_PARAMETER") cancellationToken: CancellationToken = CancellationToken.none(),
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): Int {
         val ctx = when (val r = validateAndResolve(request)) {
             is ResolvedContext -> r
             else -> return r as Int
         }
 
-        val result = readSchema(request, ctx) ?: return 4
-        writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
-        writeReportFile(ctx, result)?.let { return it }
-        printOutput(request, result, ctx.userFacingSource, ctx.reportPath)
-        return 0
+        return try {
+            cancellationToken.throwIfCancellationRequested()
+            val result = readSchema(request, ctx) ?: return 4
+            cancellationToken.throwIfCancellationRequested()
+            writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
+            cancellationToken.throwIfCancellationRequested()
+            writeReportFile(ctx, result)?.let { return it }
+            printOutput(request, result, ctx.userFacingSource, ctx.reportPath)
+            0
+        } catch (_: OperationCancelledException) {
+            CANCELLED_EXIT_CODE
+        }
     }
 
     private fun validateAndResolve(request: SchemaReverseRequest): Any {
@@ -215,6 +224,9 @@ class SchemaReverseRunner(
     }
 
     companion object {
+        /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
+        const val CANCELLED_EXIT_CODE = 130
+
         private fun esc(s: String) = s
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")

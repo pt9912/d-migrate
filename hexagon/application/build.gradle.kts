@@ -11,4 +11,7 @@ dependencies {
 
     testImplementation(project(":adapters:driven:integrations"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+
+    // Phase E0.1 cancel-test fixtures (TestCancellationTokenSource).
+    testImplementation(testFixtures(project(":hexagon:core")))
 }
