@@ -12,6 +12,7 @@ import dev.dmigrate.server.core.principal.TenantId
  */
 data class ApprovalAttempt(
     val tokenFingerprint: String,
+    val approvalRequestId: String,
     val tenantId: TenantId,
     val callerId: PrincipalId,
     val toolName: String,

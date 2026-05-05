@@ -18,6 +18,8 @@ sealed interface ApprovalGrantValidation {
 
         data object ToolMismatch : Invalid
 
+        data object ApprovalRequestIdMismatch : Invalid
+
         data object CorrelationMismatch : Invalid
 
         data object PayloadMismatch : Invalid

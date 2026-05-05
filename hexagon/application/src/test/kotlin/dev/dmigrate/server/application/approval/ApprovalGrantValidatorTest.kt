@@ -56,6 +56,15 @@ class ApprovalGrantValidatorTest : FunSpec({
         result shouldBe ApprovalGrantValidation.Invalid.ToolMismatch
     }
 
+    test("approvalRequestId mismatch is rejected") {
+        val result = validator.validate(
+            grant = ApprovalFixtures.grant(approvalRequestId = "req-1"),
+            attempt = ApprovalFixtures.attempt(approvalRequestId = "req-2"),
+            now = ApprovalFixtures.NOW,
+        )
+        result shouldBe ApprovalGrantValidation.Invalid.ApprovalRequestIdMismatch
+    }
+
     test("correlation kind mismatch is rejected") {
         val result = validator.validate(
             grant = ApprovalFixtures.grant(

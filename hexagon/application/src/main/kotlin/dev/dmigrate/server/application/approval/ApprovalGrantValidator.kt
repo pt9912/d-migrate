@@ -23,6 +23,9 @@ class ApprovalGrantValidator(
         if (grant.tenantId != attempt.tenantId) return ApprovalGrantValidation.Invalid.TenantMismatch
         if (grant.callerId != attempt.callerId) return ApprovalGrantValidation.Invalid.CallerMismatch
         if (grant.toolName != attempt.toolName) return ApprovalGrantValidation.Invalid.ToolMismatch
+        if (grant.approvalRequestId != attempt.approvalRequestId) {
+            return ApprovalGrantValidation.Invalid.ApprovalRequestIdMismatch
+        }
         if (grant.correlationKind != attempt.correlationKind ||
             grant.correlationKey != attempt.correlationKey
         ) {

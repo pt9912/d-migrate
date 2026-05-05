@@ -17,6 +17,7 @@ internal object ApprovalFixtures {
 
     fun grant(
         tokenFingerprint: String = TOKEN_FP,
+        approvalRequestId: String = "req-1",
         tenant: String = "acme",
         caller: String = "alice",
         tool: String = "start.export.data",
@@ -27,7 +28,7 @@ internal object ApprovalFixtures {
         scopes: Set<String> = setOf("data.export"),
         expiresAt: Instant = FUTURE,
     ) = ApprovalGrant(
-        approvalRequestId = "req-1",
+        approvalRequestId = approvalRequestId,
         correlationKind = correlationKind,
         correlationKey = correlationKey,
         approvalTokenFingerprint = tokenFingerprint,
@@ -43,6 +44,7 @@ internal object ApprovalFixtures {
 
     fun attempt(
         tokenFingerprint: String = TOKEN_FP,
+        approvalRequestId: String = "req-1",
         tenant: String = "acme",
         caller: String = "alice",
         tool: String = "start.export.data",
@@ -52,6 +54,7 @@ internal object ApprovalFixtures {
         requiredScopes: Set<String> = setOf("data.export"),
     ) = ApprovalAttempt(
         tokenFingerprint = tokenFingerprint,
+        approvalRequestId = approvalRequestId,
         tenantId = Fixtures.tenant(tenant),
         callerId = Fixtures.principal(caller),
         toolName = tool,
