@@ -43,10 +43,42 @@ object HikariConnectionPoolFactory {
             idleTimeout = effectivePool.idleTimeoutMs
             maxLifetime = effectivePool.maxLifetimeMs
             keepaliveTime = effectivePool.keepaliveTimeMs
+            connectionInitSqlFor(config.dialect, effectivePool.statementTimeoutMs)?.let {
+                connectionInitSql = it
+            }
         }
 
         val dataSource = HikariDataSource(hikariConfig)
         return HikariConnectionPool(config.dialect, dataSource)
+    }
+
+    /**
+     * Erzeugt das driver-spezifische `connectionInitSql` aus dem
+     * Cancel-Reaktions-Budget aus implementation-plan-0.9.6 §4.1.
+     *
+     * Pro Dialekt:
+     * - PostgreSQL: `SET statement_timeout = $ms` — wirkt auf alle
+     *   Statements (SELECT/INSERT/UPDATE/DDL) der jeweiligen Connection.
+     * - MySQL: `SET SESSION MAX_EXECUTION_TIME = $ms` — wirkt **nur auf
+     *   SELECTs** (MySQL-Quirk). Write-Pfade benötigen zusätzlich den
+     *   gemeinsamen JDBC-Timeout-Layer aus E0.7.3.
+     * - SQLite: `PRAGMA busy_timeout = $ms` — Lock-Wait-Timeout. Lange
+     *   Range-Scans benötigen zusätzlich `setQueryTimeout` aus dem
+     *   gemeinsamen Layer.
+     *
+     * Wert `0` deaktiviert den Init-SQL-Pfad (Treiber-Default greift,
+     * üblicherweise unbegrenzt). Negative Werte sind durch
+     * [PoolSettings.init] bereits ausgeschlossen.
+     *
+     * `internal` für Tests.
+     */
+    internal fun connectionInitSqlFor(dialect: DatabaseDialect, statementTimeoutMs: Int): String? {
+        if (statementTimeoutMs <= 0) return null
+        return when (dialect) {
+            DatabaseDialect.POSTGRESQL -> "SET statement_timeout = $statementTimeoutMs"
+            DatabaseDialect.MYSQL -> "SET SESSION MAX_EXECUTION_TIME = $statementTimeoutMs"
+            DatabaseDialect.SQLITE -> "PRAGMA busy_timeout = $statementTimeoutMs"
+        }
     }
 
     /**

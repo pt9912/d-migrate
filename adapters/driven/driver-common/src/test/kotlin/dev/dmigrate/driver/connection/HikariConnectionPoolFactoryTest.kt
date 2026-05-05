@@ -197,4 +197,99 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         val cfg = memoryConfig(mapOf("a" to "1", "b" to "2", "c" to "3"))
         cfg.params.keys.toList() shouldContainExactly listOf("a", "b", "c")
     }
+
+    // ─── E0.7.2: connectionInitSqlFor ──────────────────────────
+
+    test("connectionInitSqlFor builds PostgreSQL statement_timeout SQL") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.POSTGRESQL, 30_000,
+        ) shouldBe "SET statement_timeout = 30000"
+    }
+
+    test("connectionInitSqlFor builds MySQL MAX_EXECUTION_TIME SQL") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MYSQL, 30_000,
+        ) shouldBe "SET SESSION MAX_EXECUTION_TIME = 30000"
+    }
+
+    test("connectionInitSqlFor builds SQLite busy_timeout PRAGMA") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.SQLITE, 30_000,
+        ) shouldBe "PRAGMA busy_timeout = 30000"
+    }
+
+    test("connectionInitSqlFor honors a custom positive timeout") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.POSTGRESQL, 5_000,
+        ) shouldBe "SET statement_timeout = 5000"
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MYSQL, 5_000,
+        ) shouldBe "SET SESSION MAX_EXECUTION_TIME = 5000"
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.SQLITE, 5_000,
+        ) shouldBe "PRAGMA busy_timeout = 5000"
+    }
+
+    test("connectionInitSqlFor returns null for statementTimeoutMs == 0 (disabled)") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.POSTGRESQL, 0,
+        ) shouldBe null
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MYSQL, 0,
+        ) shouldBe null
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.SQLITE, 0,
+        ) shouldBe null
+    }
+
+    test("create wires the SQLite PRAGMA into the live pool — busy_timeout is observable") {
+        // SQLite is the only dialect we can verify end-to-end without
+        // a Testcontainer. After the connection-init-SQL runs,
+        // `PRAGMA busy_timeout` must report the configured value.
+        val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 7_500))
+        HikariConnectionPoolFactory.create(cfg).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1) shouldBe 7_500
+                    }
+                }
+            }
+        }
+    }
+
+    test("create with statementTimeoutMs == 0 does not set our PRAGMA — driver default applies") {
+        // Compare against the value we would get if init-SQL ran. With
+        // `statementTimeoutMs = 0` the factory must skip the PRAGMA so
+        // the driver default (whatever the xerial JDBC build chose,
+        // 0 or its hardcoded default) remains in effect.
+        val ourValue = 7_500
+        val withInit = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = ourValue))
+        val withoutInit = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 0))
+
+        val driverDefault = HikariConnectionPoolFactory.create(withoutInit).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1)
+                    }
+                }
+            }
+        }
+        // Init-SQL ran path returns ourValue; disabled path returns the
+        // driver default which by definition differs from `ourValue`.
+        driverDefault shouldNotBe ourValue
+        HikariConnectionPoolFactory.create(withInit).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1) shouldBe ourValue
+                    }
+                }
+            }
+        }
+    }
 })
