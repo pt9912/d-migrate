@@ -10,6 +10,8 @@
 > - `spec/job-contract.md` (Exit-Code 130, Cancel-Reaktionsbudget)
 > - `adapters/driven/driver-common/.../HikariConnectionPoolFactory.kt`
 > - `adapters/driven/driver-postgresql/`, `driver-mysql/`, `driver-sqlite/`
+> - `adapters/driven/driver-postgresql-profiling/`,
+>   `driver-mysql-profiling/`, `driver-sqlite-profiling/`
 
 ---
 
@@ -25,7 +27,8 @@ Konkret liefert E0.7:
 
 - pro Driver-Adapter (postgresql, mysql, sqlite) eine zentrale
   Statement-/Connection-Timeout-Konfiguration mit Default `30000ms`,
-  konfigurierbar pro `ConnectionConfig`/`PoolSettings`
+  konfigurierbar pro `ConnectionConfig`/`PoolSettings`; Profiling-
+  Adapter sind durch denselben gemeinsamen JDBC-Timeout-Layer abgedeckt
 - pro Driver einen Bench-Test, der zeigt: eine bewusst lange Operation
   (ServerSleep/LangerScan) wird nach `<= 30s` mit `SQLTimeoutException`
   oder `SQLException` (driver-spezifisch) abgebrochen, ohne Retry-Loop
@@ -55,12 +58,19 @@ Bewusst nicht Teil von E0.7:
 
 `adapters/driven/driver-common/.../HikariConnectionPoolFactory.kt`
 konfiguriert HikariCP mit Pool-Acquire-Timeout, Idle-Timeout und
-Max-Lifetime — aber keine Per-Statement- oder Per-Connection-Query-
-Timeout. Die `PoolSettings`-Datenstruktur trägt diese Felder nicht.
+Max-Lifetime — aber keine Per-Statement- oder Per-Connection-Laufzeit-
+Timeouts. Die `PoolSettings`-Datenstruktur trägt diese Felder nicht.
 
 Driver-Adapter (`driver-postgresql`, `driver-mysql`, `driver-sqlite`)
 erzeugen Statements und PreparedStatements direkt aus
 `pool.borrow().prepareStatement(...)` ohne `setQueryTimeout(...)`.
+Profiling-Adapter erzeugen Queries über `JdbcMetadataSession`, das
+ebenfalls direkt `createStatement()`/`prepareStatement(...)` auf der
+geborgten Connection nutzt.
+Zusätzlich nutzen PostgreSQL- und MySQL-Writer beim `openTable(...)`
+direkt `Connection.metaData.getPrimaryKeys(...)`; diese
+`DatabaseMetaData`-Pfadklasse wird nicht automatisch durch einen
+Statement-Decorator erfasst und muss separat belegt oder ersetzt werden.
 
 ### 2.2 Driver-spezifische Fakten
 
@@ -81,8 +91,8 @@ erzeugen Statements und PreparedStatements direkt aus
   `Connection.setNetworkTimeout` plus Server-Cancel-Mechanismus.
 - HikariCP-Hook für SELECTs: `connectionInitSql = "SET SESSION
   MAX_EXECUTION_TIME = 30000"`.
-- Für Writes: zentrale `Connection.createStatement()`-Wrapper-Helper
-  in `driver-mysql`, der `setQueryTimeout(30)` setzt.
+- Für Writes: der gemeinsame JDBC-Timeout-Layer setzt
+  `Statement.setQueryTimeout(30)` auf allen erzeugten Statements.
 - Driver-Verhalten: Timeout wirft `SQLTimeoutException` (oder
   `MySQLTransactionRollbackException` für Lock-Wait).
 
@@ -102,8 +112,15 @@ für alle drei Driver einheitlich. Wir brauchen:
 
 1. HikariCP-`connectionInitSql` pro Driver (kümmert sich um SELECT-
    und Lock-Wait-Timeouts)
-2. einen zentralen Hook in der gemeinsamen Statement-Erzeugung pro
-   Driver, der `setQueryTimeout(...)` setzt — für Write/DDL-Pfade
+2. einen zentralen Hook im gemeinsamen JDBC-Borrow-/Statement-Layer, der
+   jedes `createStatement(...)`/`prepareStatement(...)` mit
+   `setQueryTimeout(...)` versieht — auch für `JdbcMetadataSession` und
+   Profiling-Adapter
+3. `Connection.setNetworkTimeout(...)` beim Borrow, damit Commit-,
+   Socket- und Connection-I/O-nahe Blockaden aus der E0-Matrix nicht
+   unbounded bleiben. Pool-Acquire bleibt über das bestehende
+   `connectionTimeoutMs` gebunden; E0.7 dokumentiert zusätzlich, dass
+   keine Hikari-/Driver-Retry-Schleife das 30s-Gesamtbudget aushebelt.
 
 ---
 
@@ -112,18 +129,25 @@ für alle drei Driver einheitlich. Wir brauchen:
 ### 3.1 In Scope
 
 - Erweiterung von `PoolSettings` um `statementTimeoutMs: Int = 30000`
-  (Default = 30s nach Plan §4.1).
+  und `networkTimeoutMs: Int = 30000` (Default = 30s nach Plan §4.1).
 - Erweiterung von `HikariConnectionPoolFactory` um driver-spezifischen
   `connectionInitSql`-Build aus `statementTimeoutMs`.
-- Driver-Adapter-Erweiterung: pro Driver eine zentrale
-  `prepareStatementWithTimeout`-Helper-Funktion oder ein Statement-
-  Decorator-Layer, das `setQueryTimeout(statementTimeoutMs / 1000)`
-  setzt (JDBC nimmt Sekunden).
+- Gemeinsamer JDBC-Timeout-Layer in `driver-common`: die von
+  `ConnectionPool.borrow()` zurückgegebene Connection wendet
+  `setNetworkTimeout(...)` an und liefert Statements, auf denen
+  `setQueryTimeout(timeoutSeconds)` gesetzt ist (JDBC nimmt Sekunden;
+  Rundung siehe §5.3). Das `ConnectionPool`-Interface bleibt
+  unverändert.
 - Bench-Test pro Driver in `test/integration-postgresql`,
   `test/integration-mysql` und einem neuen Test-Spec im
   `driver-sqlite`-Modul (SQLite braucht keinen Testcontainer, hat
   in-memory-File-DB).
-- `connection-config-spec.md`-Update um `statementTimeoutMs`-Feld.
+- Profiling-Adapter-Abdeckung: keine separaten Timeout-Implementierungen
+  in `driver-*-profiling`; die Tests belegen, dass `JdbcMetadataSession`
+  über den gemeinsamen Borrow-/Statement-Layer timeout-geschützte
+  Statements erhält.
+- `connection-config-spec.md`-Update um `statementTimeoutMs`- und
+  `networkTimeoutMs`-Felder.
 - Side-Effect-Matrix Section 6 + Section 7 + Changelog Section 8 update.
 - Gate-Decision-Doc §1 + §3 re-stempeln.
 
@@ -145,30 +169,41 @@ für alle drei Driver einheitlich. Wir brauchen:
 
 ### 4.1 Default `30000ms` aus Plan §4.1
 
-`statementTimeoutMs` defaultet auf `30000`. Plan §4.1 verlangt
-`<=30s`-Cancel-Reaktionsbudget; Default = obere Schranke. Tests verifi-
-zieren mit kürzeren Werten (z.B. `5000ms`) für CI-Geschwindigkeit.
+`statementTimeoutMs` und `networkTimeoutMs` defaulten auf `30000`. Plan
+§4.1 verlangt `<=30s`-Cancel-Reaktionsbudget; Default = obere Schranke.
+Tests verifizieren mit kürzeren Werten (z.B. `5000ms`) für CI-
+Geschwindigkeit.
 
 ### 4.2 Konfigurierbar pro `ConnectionConfig`
 
-`PoolSettings.statementTimeoutMs` ist konfigurierbar — kein Hard-Code.
+`PoolSettings.statementTimeoutMs` und `networkTimeoutMs` sind
+konfigurierbar — kein Hard-Code.
 Begründung: Test-Scenarien können kürzere Timeouts setzen, produktive
 Bulk-Imports können den Default-30s überschreiben (Plan §4.1 erlaubt
 das, sofern dokumentiert und für die jeweilige Operation begründet).
 
-Ein Wert von `0` deaktiviert das Timeout (für Tests, die genau das
-prüfen). Ein negativer Wert ist ein Validierungsfehler in
-`ConnectionConfig.validate()`.
+Ein Wert von `0` deaktiviert das jeweilige Timeout (für Tests, die genau
+das prüfen). Negative Werte sind Validierungsfehler. Da
+`ConnectionConfig.validate()` heute noch nicht existiert, führt E0.7
+entweder diese Funktion explizit in `hexagon:ports-common` ein oder
+platziert die Validierung an der bestehenden Config-Parsing-Grenze; der
+Plan darf nicht stillschweigend eine vorhandene API voraussetzen.
 
 ### 4.3 HikariCP-Init-SQL für Server-Side, Statement-Level für Write/DDL
 
 Pro Driver:
 
-| Driver | HikariCP `connectionInitSql` | Statement-Level |
-| --- | --- | --- |
-| PostgreSQL | `SET statement_timeout = ${ms}` | nicht zusätzlich nötig (server enforced für alle Statements) |
-| MySQL | `SET SESSION MAX_EXECUTION_TIME = ${ms}` (nur SELECTs) | `setQueryTimeout(s)` zentral in `MysqlPreparedStatementSupport`-Helper für Write/DDL-Pfade |
-| SQLite | `PRAGMA busy_timeout = ${ms}` (Lock-Wait) | `setQueryTimeout(s)` zentral in `SqlitePreparedStatementSupport` für lange Queries |
+| Driver | HikariCP `connectionInitSql` | Statement-Level | Connection-Level |
+| --- | --- | --- | --- |
+| PostgreSQL | `SET statement_timeout = ${ms}` | zusätzlich durch gemeinsamen Statement-Timeout-Layer, damit Tests und direkte JDBC-Pfade konsistent bleiben | `Connection.setNetworkTimeout(executor, ms)` |
+| MySQL | `SET SESSION MAX_EXECUTION_TIME = ${ms}` (nur SELECTs) | gemeinsamer Statement-Timeout-Layer für Write/DDL/Profile-Pfade | `Connection.setNetworkTimeout(executor, ms)` |
+| SQLite | `PRAGMA busy_timeout = ${ms}` (Lock-Wait) | gemeinsamer Statement-Timeout-Layer für lange Queries/Profile-Pfade | nicht für File-DB zwingend, aber wenn der Treiber es unterstützt: `Connection.setNetworkTimeout(executor, ms)`; Unsupported-Fälle werden dokumentiert und getestet |
+
+Der Statement-Level-Hook liegt bevorzugt in `driver-common`, nicht in
+`MysqlDataReader`/`SqliteDataReader` selbst. Grund: Die Port-Methoden
+sehen heute nur `ConnectionPool`; ein adapterlokaler Helper könnte den
+konfigurierten Timeout-Wert nicht ohne zusätzliche Vertragsänderung aus
+`ConnectionConfig` lesen.
 
 ### 4.4 Cleanup nach Timeout-Throw
 
@@ -195,12 +230,17 @@ CI-Aktivierung: `make integration` oder
 
 ## 5. Umsetzungsschritte
 
-### 5.1 AP E0.7.1: `PoolSettings.statementTimeoutMs` ergänzen
+### 5.1 AP E0.7.1: `PoolSettings` um Laufzeit-Timeouts ergänzen
 
 - `dev.dmigrate.driver.connection.PoolSettings` um
-  `statementTimeoutMs: Int = 30000`.
-- `ConnectionConfig.validate()` rejected `statementTimeoutMs < 0`.
-- `connection-config-spec.md` (`spec/`) dokumentiert Feld + Default.
+  `statementTimeoutMs: Int = 30000` und
+  `networkTimeoutMs: Int = 30000`.
+- Eine reale Validierungsgrenze ergänzen:
+  - bevorzugt `ConnectionConfig.validate()` neu in `hexagon:ports-common`
+  - alternativ Validierung direkt im Connection-Config-Parsing
+- Validation rejected `statementTimeoutMs < 0` und
+  `networkTimeoutMs < 0`.
+- `connection-config-spec.md` (`spec/`) dokumentiert Felder + Defaults.
 - Bestehende Connection-Config-Tests bleiben grün (Default).
 
 ### 5.2 AP E0.7.2: HikariCP-`connectionInitSql` pro Driver
@@ -215,28 +255,65 @@ CI-Aktivierung: `make integration` oder
 - Für `statementTimeoutMs = 0`: kein `connectionInitSql` (Driver-
   Default).
 
-### 5.3 AP E0.7.3: Statement-Level-Timeout für Writes/DDL
+### 5.3 AP E0.7.3: Common JDBC-Timeout-Layer
 
-- `driver-postgresql`: keine zusätzliche Aktion (server enforced).
-- `driver-mysql`: zentrale `MysqlStatementSupport.setTimeoutOn(stmt,
-  config)`-Funktion in einem neuen oder bestehenden Helper-File;
-  alle `prepareStatement(...)`-Stellen in `MysqlDataReader`,
-  `MysqlDataWriter`, `MysqlSchemaReader` rufen sie auf.
-- `driver-sqlite`: gleiche Pattern in `SqliteStatementSupport`.
+- `HikariConnectionPool.borrow()` setzt bei `networkTimeoutMs > 0`
+  `Connection.setNetworkTimeout(DIRECT_EXECUTOR, networkTimeoutMs)` auf
+  der geborgten Connection.
+- `HikariConnectionPoolFactory` dokumentiert das Zusammenspiel mit
+  `connectionTimeoutMs`: Pool-Acquire ist bereits hart begrenzt; E0.7
+  ergänzt die Query-/Socket-/Commit-Grenze und verifiziert, dass keine
+  Retry-/Reconnect-Schleife das `<=30s`-Budget überschreitet.
+- Die zurückgegebene `Connection` wird durch einen leichten
+  Timeout-Decorator oder eine gemeinsame Statement-Factory geschützt:
+  alle `createStatement(...)`- und `prepareStatement(...)`-Overloads, die
+  im Code genutzt werden, setzen bei `statementTimeoutMs > 0`
+  `Statement.setQueryTimeout(timeoutSeconds)`.
+- Direkte `DatabaseMetaData`-Calls (`conn.metaData.getPrimaryKeys(...)`
+  in PostgreSQL/MySQL-Writer-Open) werden nicht als "durch den
+  Statement-Decorator abgedeckt" gezählt. E0.7 muss sie entweder auf
+  timeout-geschützte SQL/JdbcMetadataSession-Queries umstellen oder mit
+  `networkTimeoutMs` plus Bench-/Regressionstest als bounded belegen.
+- `timeoutSeconds` wird aufgerundet (`ceil(ms / 1000.0)`), damit Werte
+  wie `500ms` nicht versehentlich zu `0` und damit "disabled" werden.
+- Der Layer deckt automatisch ab:
+  - `AbstractJdbcDataReader`
+  - `AbstractTableImportSession`
+  - `JdbcMetadataSession`
+  - explizit geprüfte oder ersetzte `DatabaseMetaData`-Calls in
+    PostgreSQL/MySQL-Writer-Open
+  - `MysqlDataWriter`/`SqliteDataWriter`-DDL- und FK-Helper
+  - Profiling-Adapter (`driver-*-profiling`)
+- Driver-spezifische Helper sind nur nötig, wenn ein Treiber-Overload vom
+  Common-Layer technisch nicht sauber dekoriert werden kann. In diesem
+  Fall muss die betroffene Stelle explizit im Plan und in Tests stehen.
 
 ### 5.4 AP E0.7.4: Bench-Test pro Driver
 
-- `test/integration-postgresql/.../E07PostgresTimeoutBench.kt`:
-  Testcontainer + `SELECT pg_sleep(60)` + `setQueryTimeout(5)` →
-  erwartet `PSQLException` SQLState `57014` innerhalb `< 6s`.
-- `test/integration-mysql/.../E07MysqlTimeoutBench.kt`:
-  Testcontainer + `SELECT SLEEP(60)` + `MAX_EXECUTION_TIME = 5000` →
-  erwartet `SQLTimeoutException` innerhalb `< 6s`.
-- `adapters/driven/driver-sqlite/.../E07SqliteTimeoutBench.kt`:
-  in-memory DB + langer Loop-Query oder Lock-Wait + `busy_timeout =
-  5000` → erwartet `SQLException` mit SQLite-Lock-Code innerhalb `<
-  6s`.
-- Tests sind `@Tag("integration")` und laufen nur unter
+- `test/integration-postgresql/.../E07PostgresTimeoutBench.kt`
+  (`NamedTag("integration")`, `tags(IntegrationTag)`):
+  Testcontainer + `PoolSettings(statementTimeoutMs = 5000,
+  networkTimeoutMs = 5000)` + `SELECT pg_sleep(60)` über
+  `pool.borrow().prepareStatement(...)` → erwartet `PSQLException`
+  SQLState `57014` innerhalb `< 6s`.
+- `test/integration-mysql/.../E07MysqlTimeoutBench.kt`
+  (`NamedTag("integration")`, `tags(IntegrationTag)`):
+  Testcontainer + `PoolSettings(statementTimeoutMs = 5000,
+  networkTimeoutMs = 5000)` + `SELECT SLEEP(60)` über
+  `pool.borrow().prepareStatement(...)` → erwartet
+  `SQLTimeoutException` oder treiberspezifische Timeout-`SQLException`
+  innerhalb `< 6s`.
+- `adapters/driven/driver-sqlite/.../E07SqliteTimeoutBench.kt`
+  (`NamedTag("integration")`, `tags(IntegrationTag)`):
+  in-memory DB + langer Loop-Query oder Lock-Wait +
+  `PoolSettings(statementTimeoutMs = 5000, networkTimeoutMs = 5000)` →
+  erwartet `SQLException` mit SQLite-Timeout-/Interrupt-Code innerhalb
+  `< 6s`.
+- Zusätzlich ein common/profiling-naher Test, der belegt:
+  `JdbcMetadataSession.queryList(...)` und `querySingle(...)` erhalten
+  timeout-geschützte Statements über `pool.borrow()`.
+- Tests sind mit Kotest `NamedTag("integration")` markiert und laufen nur
+  unter
   `make integration` / `./gradlew test -PintegrationTests`.
 
 ### 5.5 AP E0.7.5: Side-Effect-Matrix + Gate-Decision-Update
@@ -267,11 +344,19 @@ CI-Aktivierung: `make integration` oder
 - `HikariConnectionPoolFactoryTest`-Erweiterung: Driver-
   spezifische `connectionInitSql`-Strings werden korrekt gebaut für
   `statementTimeoutMs = 30000`, `5000`, `0` (kein Init-SQL).
+- `HikariConnectionPoolFactoryTest`-Erweiterung: `borrow()` setzt
+  `networkTimeoutMs` bzw. dokumentiert treiberspezifisch, wenn ein JDBC-
+  Treiber `setNetworkTimeout` nicht unterstützt.
+- Common-Layer-Test: alle im Code genutzten `createStatement(...)`- und
+  `prepareStatement(...)`-Overloads bekommen `queryTimeout` gesetzt.
+- `DatabaseMetaData`-Regressionsguard: `PostgresDataWriter.openTable`
+  und `MysqlDataWriter.openTable` behalten kein ungebundenes
+  `getPrimaryKeys(...)`; entweder durch Ersatzquery oder durch belegten
+  `networkTimeoutMs`-Pfad.
 - `PoolSettingsTest`-Erweiterung: Validation rejected negative
-  Werte; Default = `30000`.
-- `MysqlStatementSupportTest`/`SqliteStatementSupportTest`:
-  `setTimeoutOn(stmt, config)` ruft `setQueryTimeout(seconds)` mit
-  `statementTimeoutMs / 1000` auf; bei `0` keine Anpassung.
+  Werte; Defaults = `30000`.
+- Profiling-Regressionsguard: `JdbcMetadataSession` nutzt den common
+  Timeout-Layer; keine separaten Profiling-Adapter-Timeouts.
 
 ### 6.2 Integration-Bench-Tests (`integration`-Tag)
 
@@ -304,6 +389,10 @@ Pro Bench-Test zusätzlich:
   zurückgegeben, kein Leak).
 - ein nachfolgender `pool.borrow().use { ... healthy SQL }` läuft
   durch (Connection ist nicht permanent korrupt).
+- für commit-/network-nahe Pfade: ein Test oder eine dokumentierte
+  Treiber-Einschränkung belegt, dass `networkTimeoutMs` gesetzt ist und
+  damit die E0-Matrix-Zeilen für `commitChunk()`/Connection-I/O nicht
+  unbounded bleiben.
 
 ### 6.4 Default-Token-Regressionsguard
 
@@ -317,27 +406,36 @@ False-Positive.
 
 - `PoolSettings.statementTimeoutMs` mit Default `30000`, Validation
   rejected `< 0`.
+- `PoolSettings.networkTimeoutMs` mit Default `30000`, Validation
+  rejected `< 0`.
 - `HikariConnectionPoolFactory` setzt driver-spezifischen
   `connectionInitSql` aus `statementTimeoutMs`.
-- `MysqlStatementSupport.setTimeoutOn(stmt, config)` und
-  `SqliteStatementSupport.setTimeoutOn(stmt, config)` exportieren
-  einheitliche Helper-API.
-- Alle Adapter-Stellen, die `prepareStatement(...)` für
-  Reader/Writer/SchemaReader nutzen, rufen die Helper auf —
-  oder die zugrundeliegende Hikari-Init-SQL deckt den Pfad bereits ab.
+- `HikariConnectionPool.borrow()` setzt `networkTimeoutMs` oder
+  dokumentiert und testet eine treiberspezifische Nichtunterstützung.
+- Der gemeinsame JDBC-Timeout-Layer setzt `queryTimeout` auf allen im
+  Code genutzten Statement-/PreparedStatement-Erzeugungspfaden.
+- Reader/Writer/SchemaReader/Profile-Adapter nutzen keine ungeschützten
+  JDBC-Statement-Pfade; Ausnahmen sind explizit begründet und getestet.
+- Direkte `DatabaseMetaData`-Calls in PostgreSQL/MySQL-Writer-Open sind
+  ersetzt oder mit Timeout-/Cleanup-Evidence belegt.
 - Integration-Bench-Tests pro Driver (PostgreSQL, MySQL, SQLite)
   beweisen: `<= statementTimeoutMs + 1s`-Reaktion auf langsame
   Operation, mit Cleanup-Verifikation.
+- Profiling-/`JdbcMetadataSession`-Regressionsguard beweist, dass
+  Profiling-Queries ebenfalls timeout-geschützt sind.
 - Default-Token-Regressionsguard pro Driver beweist: Healthy-Query
   läuft normal.
 - Side-Effect-Matrix Section 6: alle `blockierend`-Zeilen wechseln
   zu `atomic-nicht-cancelbar`/`go` mit konkreten Bench-Test-Referenzen
   in `measurement_evidence`.
 - Gate-Decision-Doc §1 Verdict: `Go`. §3 dokumentiert E0.7-Abschluss.
-- `make docker-check MODULES=":adapters:driven:driver-common
-  :adapters:driven:driver-postgresql :adapters:driven:driver-mysql
-  :adapters:driven:driver-sqlite"` grün, alle koverVerify-Gates
-  ≥90 % gehalten.
+- `make docker-check MODULES=":hexagon:ports-common
+  :adapters:driven:driver-common :adapters:driven:driver-postgresql
+  :adapters:driven:driver-mysql :adapters:driven:driver-sqlite
+  :adapters:driven:driver-postgresql-profiling
+  :adapters:driven:driver-mysql-profiling
+  :adapters:driven:driver-sqlite-profiling"` grün, alle
+  koverVerify-Gates ≥90 % gehalten.
 - `make integration` (mit Docker für Testcontainers) grün für die
   drei neuen Bench-Tests.
 
@@ -348,8 +446,8 @@ False-Positive.
 ### 8.1 MySQL-`MAX_EXECUTION_TIME` deckt nur SELECTs ab
 
 **Risiko**: Lange Bulk-INSERTs könnten weiterhin unbounded laufen.
-**Gegenmassnahme**: Statement-Level `setQueryTimeout(s)` in
-`MysqlStatementSupport` für alle Write-Pfade. Bench-Test deckt sowohl
+**Gegenmassnahme**: Statement-Level `setQueryTimeout(s)` im gemeinsamen
+JDBC-Timeout-Layer für alle Write-Pfade. Bench-Test deckt sowohl
 SELECT-`SLEEP(60)` als auch Bulk-INSERT-Timeout ab.
 
 ### 8.2 Driver-Quirks bei Timeout-Verhalten
@@ -373,8 +471,9 @@ Phase F oder spätere Iteration prüft. Out-of-scope für E0.7.
 
 **Risiko**: Jeder Bench-Test startet einen Docker-Container, ggf. 10–
 30s. Drei Tests + CI-Last.
-**Gegenmassnahme**: Tests sind `@Tag("integration")` und laufen nur
-unter `make integration`. Default-5min-CI bleibt unbelastet.
+**Gegenmassnahme**: Tests sind mit Kotest `NamedTag("integration")`
+markiert und laufen nur unter `make integration`. Default-5min-CI
+bleibt unbelastet.
 
 ---
 
@@ -386,5 +485,5 @@ unter `make integration`. Default-5min-CI bleibt unbelastet.
   Statement-Timeout in der Praxis zu grob ist.
 - 0.9.7+: Token-Param am Reader-Iterator-Rand (Port-Vertrag-
   Erweiterung) für inter-Chunk-Cancel ohne Timeout-Abhängigkeit.
-- 0.9.7+: Statement-Timeout für `schema_generate`/`tools_export`/
-  Profiling-Adapter (waren nicht Teil von E0).
+- 0.9.7+: Timeout-Nachweise für `schema_generate`/`tools_export` und
+  sonstige nicht von den vier E0-Runnern genutzte DDL-/Tool-Pfade.
