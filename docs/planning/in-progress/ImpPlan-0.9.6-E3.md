@@ -220,7 +220,8 @@ server:
   durchschlagen. Fehlender Worker sowie Fehler in WorkerHandle-Register,
   Worker-Factory oder Dispatch-Submit markieren den bereits committeten
   Job pollbar als `FAILED` (`error.code=WORKER_NOT_REGISTERED`,
-  `EXECUTOR_SETUP_FAILED` bzw. `EXECUTOR_CLOSED`) und geben weiterhin
+  `EXECUTOR_SETUP_FAILED` bzw. `EXECUTOR_CLOSED`). Wenn diese
+  primaere Markierung persistiert ist, gibt der Handler weiterhin
   `Started(jobId, record, source)` zurueck. Der Caller erhaelt damit
   einen stabilen Job-Ref und sieht den Fehler ueber `job_status_get`.
   Nach erfolgreicher
@@ -449,14 +450,7 @@ try {
     handleRegistered = true
     val worker = factory.create(outcome.record, request)
     if (worker == null) {
-        permit.close()
-        markExecutorSetupFailed(
-            outcome.record,
-            request.now,
-            WorkerNotRegisteredException(outcome.record.managedJob.operation),
-            handleRegistered,
-        )
-        return JobStartHandlerOutcome.Started(jobId, outcome.record, source)
+        throw WorkerNotRegisteredException(outcome.record.managedJob.operation)
     }
     dispatcher.dispatch(outcome.record, worker, source.token, permit)
 } catch (t: Throwable) {
@@ -482,13 +476,14 @@ Verhalten, wenn gar kein Dispatcher oder gar keine Factory gewired ist.
 Nach erfolgreichem Commit ist der Start-Ref stabil. Darum werden
 Setup-Fehler danach nicht mehr als Tool-Exception propagiert:
 `markExecutorSetupFailed` macht eine CAS-Transition
-`QUEUED -> FAILED(error.code=EXECUTOR_SETUP_FAILED)`; der Handler
-returnt weiter `Started`, und der Poll-Pfad zeigt den Fehler. Der
-spezielle `RejectedExecutionException`-/Shutdown-Fall darf denselben
-Helfer mit `error.code=EXECUTOR_CLOSED` verwenden. Falls die
-Transition applied, gibt der Helfer den Quota-Slot frei. Falls vor dem
-Fehler bereits ein Worker-Handle registriert wurde, unregistert der
-Helfer es unabhaengig vom Transition-Ergebnis.
+`QUEUED -> FAILED(error.code=EXECUTOR_SETUP_FAILED)`; wenn diese
+primaere Markierung gelingt, returnt der Handler weiter `Started` und
+der Poll-Pfad zeigt den Fehler. Der spezielle
+`RejectedExecutionException`-/Shutdown-Fall darf denselben Helfer mit
+`error.code=EXECUTOR_CLOSED` verwenden. Falls die Transition applied,
+gibt der Helfer den Quota-Slot frei. Falls vor dem Fehler bereits ein
+Worker-Handle registriert wurde, unregistert der Helfer es auch dann
+best-effort, wenn die primaere Markierung wirft.
 
 ### 6.3 Cancel-while-queued
 
@@ -566,8 +561,9 @@ private fun markExecutorSetupFailed(
         is WorkerNotRegisteredException -> "WORKER_NOT_REGISTERED"
         else -> "EXECUTOR_SETUP_FAILED"
     }
-    val transition = try {
-        jobStore.transitionStatus(
+    var transition: JobTransitionOutcome? = null
+    try {
+        transition = jobStore.transitionStatus(
             tenantId = record.tenantId,
             jobId = record.managedJob.jobId,
             allowedFromStatuses = setOf(JobStatus.QUEUED),
@@ -581,30 +577,41 @@ private fun markExecutorSetupFailed(
                 ),
             )
         }
-    } catch (cleanup: Throwable) {
-        logSetupCleanupFailure(record.managedJob.jobId, cleanup)
-        null
-    }
-    if (transition is JobTransitionOutcome.Applied) {
-        transition.record.quotaReservationOwnerId?.let { ownerId ->
-            try {
-                quotaService?.releaseForOwner(ownerId, now)
-            } catch (cleanup: Throwable) {
-                logSetupCleanupFailure(record.managedJob.jobId, cleanup)
-            }
+    } finally {
+        if (handleRegistered) {
+            unregisterSetupHandleBestEffort(record.managedJob.jobId)
         }
     }
-    if (handleRegistered) {
-        try {
-            workerHandleRegistry.unregister(record.managedJob.jobId)
-        } catch (cleanup: Throwable) {
-            logSetupCleanupFailure(record.managedJob.jobId, cleanup)
+
+    if (transition is JobTransitionOutcome.Applied) {
+        transition.record.quotaReservationOwnerId?.let { ownerId ->
+            releaseSetupQuotaBestEffort(record.managedJob.jobId, ownerId, now)
         }
     }
 }
 
+private fun releaseSetupQuotaBestEffort(
+    jobId: String,
+    ownerId: String,
+    now: Instant,
+) {
+    try {
+        quotaService?.releaseForOwner(ownerId, now)
+    } catch (cleanup: Throwable) {
+        logSetupCleanupFailure(jobId, cleanup)
+    }
+}
+
+private fun unregisterSetupHandleBestEffort(jobId: String) {
+    try {
+        workerHandleRegistry.unregister(jobId)
+    } catch (cleanup: Throwable) {
+        logSetupCleanupFailure(jobId, cleanup)
+    }
+}
+
 private fun logSetupCleanupFailure(jobId: String, cleanup: Throwable) {
-    // log + suppress: Dieser Helper darf nie in den Start-Catch
+    // log + suppress: Sekundaerer Cleanup darf nie in den Start-Catch
     // zurueckwerfen, sonst wuerde der Cleanup-Pfad rekursiv laufen.
 }
 
@@ -614,18 +621,23 @@ private class WorkerNotRegisteredException(
 ```
 
 Der Handler liefert in diesen seltenen Races weiter `Started`, weil
-der Job bereits committet ist; der Poll-Pfad sieht sofort `FAILED`.
-`markExecutorSetupFailed` ist ein no-throw/best-effort Helper:
-Store-Transition-, Quota-Release- und Handle-Unregister-Fehler werden
-geloggt und suppressed, damit Cleanup-Fehler nicht erneut durch den
-Start-`catch` laufen.
+der Job bereits committet ist; der Poll-Pfad sieht sofort `FAILED`,
+**wenn** die primaere `QUEUED -> FAILED`-Transition erfolgreich
+persistiert wurde. Die Transition selbst ist kein best-effort Cleanup:
+wirft der JobStore beim Markieren, darf der Fehler aus
+`markExecutorSetupFailed` propagieren, weil der Handler dann keine
+pollbare `FAILED`-Wahrheit garantieren kann.
+Quota-Release und Handle-Unregister sind dagegen sekundaere
+best-effort Schritte und werden nur geloggt/suppressed, damit
+Cleanup-Fehler nicht erneut durch den Start-`catch` laufen.
 Tests pinnen `workerHandleRegistry.register`-Throw, `factory.create`
 liefert `null`, `factory.create`-Throw und `dispatcher.dispatch`-/
 `RejectedExecutionException`, jeweils inklusive Quota-Release und
 Handle-Unregister, wenn diese Side-Effects vor dem Fehler bereits
-stattgefunden haben. Zusaetzlich pinnt ein Cleanup-Failure-Test, dass
-`markExecutorSetupFailed` Fehler aus Store-Transition, Quota-Release
-oder Handle-Unregister nicht zum Start-Handler zurueckwirft.
+stattgefunden haben. Zusaetzlich pinnen Cleanup-Failure-Tests, dass
+Quota-Release- und Handle-Unregister-Fehler nicht zum Start-Handler
+zurueckwerfen, waehrend ein JobStore-Fehler beim primaeren
+`QUEUED -> FAILED`-Markieren nicht suppressed wird.
 
 ## 7. Risiken
 
@@ -633,7 +645,7 @@ oder Handle-Unregister nicht zum Start-Handler zurueckwirft.
 |---|---|---|
 | Thread-Leak bei Test-Shutdown (Pool nicht gestoppt) | mittel | `JobExecutorLifecycle.shutdown(timeout)` ist obligatorisch im Test-Teardown; CI-Hook checkt aktive Threads nach Test-Ende |
 | Permit-/Handle-Leak bei Commit-/Dispatch-Race | mittel | Ohne Dispatcher/Factory wird kein Permit acquired; sonst wird `JobDispatchPermit` in jedem pre-commit Fehlerpfad, bei missing Worker, bei post-commit Setup-Fehlern und im Dispatcher-`finally` geschlossen; nach Register + missing Worker wird das Handle unregistered; Tests fuer `IdempotencyNotEligible`, `dispatcher == null`, `factory == null`, `worker == null`, Worker-Exception, queued-cancel, setup-failure und shutdown-reject |
-| Post-Commit Setup-Fehler laesst Job dauerhaft QUEUED | mittel | `worker == null`, `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit werden via `markExecutorSetupFailed` auf `FAILED` gemappt; Handler returnt `Started`, damit Polling den terminalen Fehler sieht; bei applied Transition wird Quota released, bei bereits registriertem Handle wird unregistered |
+| Post-Commit Setup-Fehler laesst Job dauerhaft QUEUED | mittel | `worker == null`, `workerHandleRegistry.register`, `factory.create` und `dispatcher.dispatch`-Fehler nach Commit werden via `markExecutorSetupFailed` auf `FAILED` gemappt; Handler returnt nur nach erfolgreicher primaerer Markierung `Started`, damit Polling den terminalen Fehler sieht; bei applied Transition wird Quota released, bei bereits registriertem Handle wird unregistered; ein JobStore-Fehler beim Markieren wird nicht suppressed |
 | Deadlock: Worker submitted weiteren Job auf denselben Pool | gering | E3 dokumentiert: Pool ist **Single-Layer**. Worker-internes Spawning verboten — Convention statt Mechanik |
 | Slow shutdown bei lang laufenden Workern | mittel | `shutdownTimeoutMillis` konfigurierbar; nach Timeout `shutdownNow()` (interrupt) — workers MUESSEN auf `Thread.interrupted()` reagieren (existiert für Cancel-Pfad bereits) |
 | Test-Flake durch Timing-Asserts in Async-Tests | mittel | `Awaitility` mit großzügigen Timeouts (5s+); SyncExecutor in Tests, die Ordering-Asserts brauchen |
