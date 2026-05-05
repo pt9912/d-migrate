@@ -44,7 +44,22 @@ internal object JobStartHandlerSupport {
             val p = element.asJsonPrimitive
             when {
                 p.isBoolean -> JsonValue.Bool(p.asBoolean)
-                p.isNumber -> JsonValue.Num(p.asLong)
+                p.isNumber -> {
+                    // Review-Fix #7 (Fingerprint-Kollisions-Schutz):
+                    // JsonValue.Num ist Long-only. Eine fraktionale Zahl
+                    // (z.B. 1.5 oder 1.7) wuerde durch p.asLong auf 1
+                    // truncatet — beide Inputs ergeben den gleichen
+                    // Fingerprint, was Idempotenz-Replays verfaelscht
+                    // (verschiedene Requests werden als gleicher
+                    // Request behandelt). Fractional Numbers werden
+                    // daher als String kanonisiert, damit jede
+                    // Numeric-Repraesentation einen eigenen Fingerprint
+                    // bekommt.
+                    val n = p.asNumber
+                    val asLong = n.toLong()
+                    if (n.toDouble() == asLong.toDouble()) JsonValue.Num(asLong)
+                    else JsonValue.Str(n.toString())
+                }
                 p.isString -> JsonValue.Str(p.asString)
                 else -> JsonValue.Str(p.toString())
             }
@@ -135,6 +150,9 @@ internal object JobStartHandlerSupport {
         is JobStartHandlerOutcome.ValidationError ->
             throw ValidationErrorException(toViolations(outcome.invalid))
         is JobStartHandlerOutcome.Pending ->
+            // Plan §5.2: aktive PENDING ohne gespeichertes Outcome ->
+            // OPERATION_TIMEOUT (retrybar). Das passt fuer den
+            // Pending-Branch.
             ToolCallOutcome.Error(
                 envelope = ToolErrorEnvelope(
                     code = ToolErrorCode.OPERATION_TIMEOUT,
@@ -143,11 +161,24 @@ internal object JobStartHandlerSupport {
                     requestId = requestId,
                 ),
             )
-        is JobStartHandlerOutcome.Failed ->
+        is JobStartHandlerOutcome.Failed -> {
+            // Review-Fix #6: Failed ist ein gespeicherter Final-Failure-
+            // Replay (Plan §5.2 line 568-569), KEIN Timeout. Der
+            // ursprungliche Wire-Code wird aus dem reason-Praefix
+            // abgeleitet, damit der Caller dieselbe Klassifikation
+            // bekommt wie beim ersten Failed-Outcome:
+            // - "policy:..." -> POLICY_DENIED
+            // - "validation:..." -> VALIDATION_ERROR
+            // - sonst -> INTERNAL_AGENT_ERROR (catch-all)
+            val code = when {
+                outcome.reason.startsWith("policy:") -> ToolErrorCode.POLICY_DENIED
+                outcome.reason.startsWith("validation:") -> ToolErrorCode.VALIDATION_ERROR
+                else -> ToolErrorCode.INTERNAL_AGENT_ERROR
+            }
             ToolCallOutcome.Error(
                 envelope = ToolErrorEnvelope(
-                    code = ToolErrorCode.OPERATION_TIMEOUT,
-                    message = "Start failed",
+                    code = code,
+                    message = "Start failed (deterministic replay)",
                     details = listOf(
                         ToolErrorDetail("reason", outcome.reason),
                         ToolErrorDetail("expiresAt", outcome.expiresAt.toString()),
@@ -155,6 +186,7 @@ internal object JobStartHandlerSupport {
                     requestId = requestId,
                 ),
             )
+        }
         is JobStartHandlerOutcome.RateLimited ->
             ToolCallOutcome.Error(
                 envelope = ToolErrorEnvelope(
@@ -169,6 +201,7 @@ internal object JobStartHandlerSupport {
                 ),
             )
     }
+
 
     private fun successResponse(jobId: String, tenant: TenantId, requestId: String): ToolCallOutcome.Success {
         val payload = mapOf(

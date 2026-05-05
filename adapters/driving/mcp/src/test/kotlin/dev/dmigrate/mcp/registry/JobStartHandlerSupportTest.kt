@@ -207,13 +207,27 @@ class JobStartHandlerSupportTest : FunSpec({
         result.envelope.code shouldBe ToolErrorCode.OPERATION_TIMEOUT
     }
 
-    test("toToolCallOutcome: Failed -> Error-Envelope OPERATION_TIMEOUT mit reason") {
+    test("toToolCallOutcome: Failed mit policy:-Reason -> POLICY_DENIED-Envelope (Review-Fix #6)") {
         val outcome = JobStartHandlerOutcome.Failed("policy:not-awaiting", now)
         val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "r")
         result.shouldBeInstanceOf<ToolCallOutcome.Error>()
-        result.envelope.code shouldBe ToolErrorCode.OPERATION_TIMEOUT
+        result.envelope.code shouldBe ToolErrorCode.POLICY_DENIED
         val keyed = result.envelope.details.associate { it.key to it.value }
         keyed["reason"] shouldBe "policy:not-awaiting"
+    }
+
+    test("toToolCallOutcome: Failed mit validation:-Reason -> VALIDATION_ERROR-Envelope") {
+        val outcome = JobStartHandlerOutcome.Failed("validation:bad-payload", now)
+        val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "r")
+        result.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        result.envelope.code shouldBe ToolErrorCode.VALIDATION_ERROR
+    }
+
+    test("toToolCallOutcome: Failed mit unbekanntem Reason-Praefix -> INTERNAL_AGENT_ERROR (catch-all)") {
+        val outcome = JobStartHandlerOutcome.Failed("unknown:reason-x", now)
+        val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "r")
+        result.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        result.envelope.code shouldBe ToolErrorCode.INTERNAL_AGENT_ERROR
     }
 
     test("toToolCallOutcome: RateLimited -> RATE_LIMITED-Envelope mit retryAfter/current/limit") {
