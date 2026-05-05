@@ -55,6 +55,7 @@ kover {
                     "dev.dmigrate.server.core.job.ManagedJob",
                     "dev.dmigrate.server.core.job.JobError",
                     "dev.dmigrate.server.core.job.JobProgress",
+                    "dev.dmigrate.server.core.job.JobCancelRequest",
                     "dev.dmigrate.server.core.artifact.ManagedArtifact",
                     "dev.dmigrate.server.core.upload.UploadSession",
                     "dev.dmigrate.server.core.upload.UploadSegment",

@@ -1,12 +1,15 @@
 package dev.dmigrate.server.ports.memory
 
 import dev.dmigrate.server.core.job.JobRecord
+import dev.dmigrate.server.core.job.JobStatus
+import dev.dmigrate.server.core.job.ManagedJob
 import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.JobListFilter
 import dev.dmigrate.server.ports.JobStore
+import dev.dmigrate.server.ports.JobTransitionOutcome
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
@@ -62,5 +65,70 @@ class InMemoryJobStore : JobStore {
             .map { it.key }
         expired.forEach { records.remove(it) }
         return expired.size
+    }
+
+    override fun transitionStatus(
+        tenantId: TenantId,
+        jobId: String,
+        allowedFromStatuses: Set<JobStatus>,
+        transformer: (ManagedJob) -> ManagedJob,
+    ): JobTransitionOutcome {
+        val key = Key(tenantId, jobId)
+        var outcome: JobTransitionOutcome = JobTransitionOutcome.NotFound
+        records.compute(key) { _, current ->
+            if (current == null) {
+                outcome = JobTransitionOutcome.NotFound
+                null
+            } else if (current.managedJob.status !in allowedFromStatuses) {
+                outcome = JobTransitionOutcome.IllegalTransition(current.managedJob.status)
+                current
+            } else {
+                val next = current.copy(managedJob = transformer(current.managedJob))
+                outcome = JobTransitionOutcome.Applied(next)
+                next
+            }
+        }
+        return outcome
+    }
+
+    override fun markCancelRequested(
+        tenantId: TenantId,
+        jobId: String,
+        requestedAt: Instant,
+        requestedBy: String,
+        signalSource: String,
+        reason: String?,
+    ): JobTransitionOutcome {
+        val key = Key(tenantId, jobId)
+        var outcome: JobTransitionOutcome = JobTransitionOutcome.NotFound
+        records.compute(key) { _, current ->
+            if (current == null) {
+                outcome = JobTransitionOutcome.NotFound
+                null
+            } else if (current.managedJob.status.terminal) {
+                outcome = JobTransitionOutcome.IllegalTransition(current.managedJob.status)
+                current
+            } else if (current.managedJob.cancelRequest.requested) {
+                // Idempotent retry: keep first reason + first metadata,
+                // do not overwrite (Plan §7.2).
+                outcome = JobTransitionOutcome.Applied(current)
+                current
+            } else {
+                val updated = current.managedJob.copy(
+                    updatedAt = requestedAt,
+                    cancelRequest = current.managedJob.cancelRequest.copy(
+                        requested = true,
+                        requestedAt = requestedAt,
+                        requestedBy = requestedBy,
+                        requestedReason = reason,
+                        signalSource = signalSource,
+                    ),
+                )
+                val next = current.copy(managedJob = updated)
+                outcome = JobTransitionOutcome.Applied(next)
+                next
+            }
+        }
+        return outcome
     }
 }

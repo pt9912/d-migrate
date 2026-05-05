@@ -274,6 +274,22 @@ class ResourcesListHandlerTest : FunSpec({
             ): dev.dmigrate.server.core.pagination.PageResult<dev.dmigrate.server.core.job.JobRecord> =
                 dev.dmigrate.server.core.pagination.PageResult(emptyList(), null)
             override fun deleteExpired(now: java.time.Instant) = 0
+            override fun transitionStatus(
+                tenantId: dev.dmigrate.server.core.principal.TenantId,
+                jobId: String,
+                allowedFromStatuses: Set<dev.dmigrate.server.core.job.JobStatus>,
+                transformer: (dev.dmigrate.server.core.job.ManagedJob) -> dev.dmigrate.server.core.job.ManagedJob,
+            ): dev.dmigrate.server.ports.JobTransitionOutcome =
+                dev.dmigrate.server.ports.JobTransitionOutcome.NotFound
+            override fun markCancelRequested(
+                tenantId: dev.dmigrate.server.core.principal.TenantId,
+                jobId: String,
+                requestedAt: java.time.Instant,
+                requestedBy: String,
+                signalSource: String,
+                reason: String?,
+            ): dev.dmigrate.server.ports.JobTransitionOutcome =
+                dev.dmigrate.server.ports.JobTransitionOutcome.NotFound
         }
         val stores = ResourceStores.empty().copy(jobStore = noisyJobStore)
         val handler = ResourcesListHandler(stores)

@@ -53,6 +53,22 @@ internal object EmptyJobStore : JobStore {
         page: PageRequest,
     ): PageResult<JobRecord> = PageResult(emptyList(), null)
     override fun deleteExpired(now: Instant): Int = 0
+    override fun transitionStatus(
+        tenantId: TenantId,
+        jobId: String,
+        allowedFromStatuses: Set<dev.dmigrate.server.core.job.JobStatus>,
+        transformer: (dev.dmigrate.server.core.job.ManagedJob) -> dev.dmigrate.server.core.job.ManagedJob,
+    ): dev.dmigrate.server.ports.JobTransitionOutcome =
+        dev.dmigrate.server.ports.JobTransitionOutcome.NotFound
+    override fun markCancelRequested(
+        tenantId: TenantId,
+        jobId: String,
+        requestedAt: Instant,
+        requestedBy: String,
+        signalSource: String,
+        reason: String?,
+    ): dev.dmigrate.server.ports.JobTransitionOutcome =
+        dev.dmigrate.server.ports.JobTransitionOutcome.NotFound
 }
 
 internal object EmptyArtifactStore : ArtifactStore {

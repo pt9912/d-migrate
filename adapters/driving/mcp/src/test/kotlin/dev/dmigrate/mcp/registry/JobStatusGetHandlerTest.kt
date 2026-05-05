@@ -84,6 +84,22 @@ private class CountingJobStore(private val delegate: JobStore) : JobStore {
     ): PageResult<JobRecord> = delegate.list(tenantId, filter, page)
 
     override fun deleteExpired(now: Instant): Int = delegate.deleteExpired(now)
+
+    override fun transitionStatus(
+        tenantId: TenantId,
+        jobId: String,
+        allowedFromStatuses: Set<dev.dmigrate.server.core.job.JobStatus>,
+        transformer: (dev.dmigrate.server.core.job.ManagedJob) -> dev.dmigrate.server.core.job.ManagedJob,
+    ) = delegate.transitionStatus(tenantId, jobId, allowedFromStatuses, transformer)
+
+    override fun markCancelRequested(
+        tenantId: TenantId,
+        jobId: String,
+        requestedAt: Instant,
+        requestedBy: String,
+        signalSource: String,
+        reason: String?,
+    ) = delegate.markCancelRequested(tenantId, jobId, requestedAt, requestedBy, signalSource, reason)
 }
 
 private fun fixture(): JobFixture {
