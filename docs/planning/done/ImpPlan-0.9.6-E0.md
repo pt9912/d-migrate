@@ -611,7 +611,7 @@ Tests:
   `docs/planning/open/` nachziehen.
 
 Initial-Snapshot des Inventars liegt in
-[`ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`](./ImpPlan-0.9.6-E0-Side-Effect-Matrix.md)
+[`ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`](../in-progress/ImpPlan-0.9.6-E0-Side-Effect-Matrix.md)
 (Stand 2026-05-05). Die Matrix folgt dem Pflichtschema unten und faengt mit
 allen externen Side-Effect-Zeilen auf `blocked` an, weil `test_coverage` und
 `measurement_evidence` erst durch AP E0.3–E0.5 entstehen. AP E0.4–E0.5
@@ -732,7 +732,7 @@ Tests:
 
 ### 7.6 AP E0.6: Gate-Entscheidung dokumentieren
 
-Entscheidung in [`ImpPlan-0.9.6-E0-Gate-Decision.md`](./ImpPlan-0.9.6-E0-Gate-Decision.md)
+Entscheidung in [`ImpPlan-0.9.6-E0-Gate-Decision.md`](../in-progress/ImpPlan-0.9.6-E0-Gate-Decision.md)
 (Stand 2026-05-05, Verdict: **`Blocked`** mit eng abgegrenzter Pre-Phase-E-
 Arbeit "AP E0.7 Driver-Adapter-Timeout-Konfiguration").
 

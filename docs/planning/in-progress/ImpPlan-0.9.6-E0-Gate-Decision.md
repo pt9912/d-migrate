@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.6 — Beta: MCP-Server
 > **Phase**: E0.6 (`Gate-Entscheidung dokumentieren`)
 > **Status**: Final 2026-05-05
-> **Hauptplan**: `ImpPlan-0.9.6-E0.md` §7.6, §9, §10
+> **Hauptplan**: `../done/ImpPlan-0.9.6-E0.md` §7.6, §9, §10
 > **Matrix**: `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`
 
 ---

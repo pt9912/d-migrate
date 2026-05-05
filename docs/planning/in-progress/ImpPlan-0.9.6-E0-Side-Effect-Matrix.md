@@ -3,8 +3,8 @@
 > **Milestone**: 0.9.6 — Beta: MCP-Server
 > **Phase**: E0.2 (Side-Effect-Inventar)
 > **Status**: Initial-Snapshot 2026-05-05
-> **Hauptplan**: `ImpPlan-0.9.6-E0.md` §7.2
-> **Pflichtschema**: `ImpPlan-0.9.6-E0.md` §7.2 (Tabelle direkt nach AP E0.2)
+> **Hauptplan**: `../done/ImpPlan-0.9.6-E0.md` §7.2
+> **Pflichtschema**: `../done/ImpPlan-0.9.6-E0.md` §7.2 (Tabelle direkt nach AP E0.2)
 
 ---
 

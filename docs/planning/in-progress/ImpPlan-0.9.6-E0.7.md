@@ -4,7 +4,7 @@
 > **Phase**: E0.7 (Pre-Phase-E-Auflösung des E0-Gate-`Blocked`)
 > **Status**: Draft (2026-05-05)
 > **Referenzen**:
-> - `docs/planning/in-progress/ImpPlan-0.9.6-E0.md` §4.1, §4.2, §6, §7.6, §9, §10
+> - `docs/planning/done/ImpPlan-0.9.6-E0.md` §4.1, §4.2, §6, §7.6, §9, §10
 > - `docs/planning/in-progress/ImpPlan-0.9.6-E0-Side-Effect-Matrix.md` §6
 > - `docs/planning/in-progress/ImpPlan-0.9.6-E0-Gate-Decision.md` §3
 > - `spec/job-contract.md` (Exit-Code 130, Cancel-Reaktionsbudget)
@@ -329,9 +329,12 @@ CI-Aktivierung: `make integration` oder
 
 ### 5.6 AP E0.7.6: Move E0 + E0.7 nach `done/`
 
-- `ImpPlan-0.9.6-E0.md` → `done/`
-- `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md` → `done/`
-- `ImpPlan-0.9.6-E0-Gate-Decision.md` → `done/`
+- `ImpPlan-0.9.6-E0.md` → `done/` ✅ (bereits erfolgt nach E0.6, Header
+  zeigt finalen AP-Stand; Plan-Datei selbst ist frozen)
+- `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md` → `done/` (nach E0.7.5-Update
+  von Section 6 + Schnellstatistik)
+- `ImpPlan-0.9.6-E0-Gate-Decision.md` → `done/` (nach E0.7.5-Verdict-
+  Re-Stempel `Blocked → Go`)
 - `ImpPlan-0.9.6-E0.7.md` → `done/`
 - Phase-E-Plan in `in-progress/` öffnen (eigenes AP).
 
