@@ -68,7 +68,14 @@ interface IdempotencyStore {
         retentionUntil: Instant? = null,
     ): Boolean
 
-    fun deny(scope: IdempotencyScope, reason: String, now: Instant): Boolean
+    /**
+     * Phase E §7.5: transitioniert eine `PENDING`- oder
+     * `AWAITING_APPROVAL`-Reservierung in `DENIED`. Die Retention bestimmt
+     * der Store; der zurueckgegebene [Instant] (`null` bei Nicht-Anwendbar)
+     * ist `expiresAt` des neuen Eintrags und MUSS vom Caller fuer das
+     * `POLICY_DENIED`-Wire-Outcome (`denialExpiresAt`) uebernommen werden.
+     */
+    fun deny(scope: IdempotencyScope, reason: String, now: Instant): Instant?
 
     /**
      * Phase E §5.2 / §7.3: transitioniert eine `PENDING`- oder

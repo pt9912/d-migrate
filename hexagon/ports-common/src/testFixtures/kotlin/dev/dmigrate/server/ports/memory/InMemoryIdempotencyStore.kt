@@ -145,7 +145,11 @@ class InMemoryIdempotencyStore(
                     existing
                 }
                 existing.state == IdempotencyState.DENIED -> {
-                    outcome = IdempotencyClaimOutcome.Denied(scope, existing.deniedReason!!)
+                    outcome = IdempotencyClaimOutcome.Denied(
+                        scope = scope,
+                        expiresAt = existing.expiresAt,
+                        reason = existing.deniedReason!!,
+                    )
                     existing
                 }
                 existing.state == IdempotencyState.AWAITING_APPROVAL &&
@@ -220,23 +224,24 @@ class InMemoryIdempotencyStore(
         return transitioned
     }
 
-    override fun deny(scope: IdempotencyScope, reason: String, now: Instant): Boolean {
-        var transitioned = false
+    override fun deny(scope: IdempotencyScope, reason: String, now: Instant): Instant? {
+        var newExpiresAt: Instant? = null
         entries.computeIfPresent(scope) { _, existing ->
             if (existing.state == IdempotencyState.PENDING ||
                 existing.state == IdempotencyState.AWAITING_APPROVAL
             ) {
-                transitioned = true
+                val expiresAt = now.plusSeconds(deniedRetentionSeconds)
+                newExpiresAt = expiresAt
                 existing.copy(
                     state = IdempotencyState.DENIED,
                     deniedReason = reason,
-                    expiresAt = now.plusSeconds(deniedRetentionSeconds),
+                    expiresAt = expiresAt,
                 )
             } else {
                 existing
             }
         }
-        return transitioned
+        return newExpiresAt
     }
 
     override fun markFailed(

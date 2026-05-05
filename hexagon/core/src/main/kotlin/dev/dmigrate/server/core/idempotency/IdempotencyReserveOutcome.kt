@@ -93,6 +93,7 @@ sealed interface IdempotencyClaimOutcome {
 
     data class Denied(
         override val scope: IdempotencyScope,
+        val expiresAt: Instant,
         val reason: String,
     ) : IdempotencyClaimOutcome
 

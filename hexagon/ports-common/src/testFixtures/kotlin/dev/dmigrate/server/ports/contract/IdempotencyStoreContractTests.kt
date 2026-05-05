@@ -6,6 +6,7 @@ import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
 import dev.dmigrate.server.ports.IdempotencyStore
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.util.concurrent.Callable
@@ -76,7 +77,7 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         val store = factory()
         val s = scope()
         store.reserve(s, "fp", Fixtures.NOW)
-        store.deny(s, "policy violation", Fixtures.NOW.plusSeconds(2)) shouldBe true
+        store.deny(s, "policy violation", Fixtures.NOW.plusSeconds(2)).shouldNotBeNull()
         val again = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(3))
         again.shouldBeInstanceOf<IdempotencyReserveOutcome.Denied>()
         again.reason shouldBe "policy violation"
@@ -88,7 +89,7 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         store.reserve(s, "fp", Fixtures.NOW)
         store.commit(s, "ref", Fixtures.NOW.plusSeconds(1)) shouldBe true
         store.commit(s, "ref2", Fixtures.NOW.plusSeconds(2)) shouldBe false
-        store.deny(s, "n/a", Fixtures.NOW.plusSeconds(3)) shouldBe false
+        store.deny(s, "n/a", Fixtures.NOW.plusSeconds(3)) shouldBe null
     }
 
     test("parallel identical reserves yield exactly one Reserved") {
@@ -178,16 +179,30 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         outcome.resultRef shouldBe "job_1"
     }
 
-    test("claimApproved on a denied entry returns Denied with the reason") {
+    test("claimApproved on a denied entry returns Denied with reason and expiresAt") {
         val store = factory()
         val s = scope("denied")
         store.reserve(s, "fp", Fixtures.NOW)
         store.markAwaitingApproval(s, Fixtures.NOW.plusSeconds(1))
-        store.deny(s, "policy", Fixtures.NOW.plusSeconds(2))
+        val denyExpiresAt = store.deny(s, "policy", Fixtures.NOW.plusSeconds(2))
+        denyExpiresAt.shouldNotBeNull()
 
         val outcome = store.claimApproved(s, Fixtures.NOW.plusSeconds(3))
         outcome.shouldBeInstanceOf<IdempotencyClaimOutcome.Denied>()
         outcome.reason shouldBe "policy"
+        outcome.expiresAt shouldBe denyExpiresAt
+    }
+
+    test("deny on a missing or terminal entry returns null") {
+        val store = factory()
+        val s = scope("noop-deny")
+        // No reserve -> nothing to deny.
+        store.deny(s, "policy", Fixtures.NOW) shouldBe null
+
+        // Reserve, commit -> deny is no-op.
+        store.reserve(s, "fp", Fixtures.NOW)
+        store.commit(s, "job-1", Fixtures.NOW.plusSeconds(1))
+        store.deny(s, "policy", Fixtures.NOW.plusSeconds(2)) shouldBe null
     }
 
     test("expired AWAITING_APPROVAL is no longer claimable") {
@@ -264,7 +279,7 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         // None of these should transition the FAILED state.
         store.markFailed(s, "second-attempt", Fixtures.NOW.plusSeconds(2)) shouldBe false
         store.commit(s, "should-not-stick", Fixtures.NOW.plusSeconds(3)) shouldBe false
-        store.deny(s, "should-not-stick", Fixtures.NOW.plusSeconds(4)) shouldBe false
+        store.deny(s, "should-not-stick", Fixtures.NOW.plusSeconds(4)) shouldBe null
 
         val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(5))
         outcome.shouldBeInstanceOf<IdempotencyReserveOutcome.Failed>()
