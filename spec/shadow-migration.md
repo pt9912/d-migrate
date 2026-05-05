@@ -1724,6 +1724,7 @@ Optionen für `shadow plan`:
 --target-connection-id <id>
 --mapping <file>
 --tables <list>
+--output <file>
 --schema-drift-policy fail-fast|record-and-warn|auto-evolve-additive-only
 --dead-letter-policy fail-fast|write-and-continue|write-and-degrade
 --max-lag-ms <long>
