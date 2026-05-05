@@ -1,5 +1,15 @@
 // d-migrate-core: Pure domain model and validation
-// ZERO external dependencies — only Kotlin stdlib
+// ZERO external dependencies — only Kotlin stdlib (test fixtures may add
+// kotest for shared test helpers; see Phase E0.1 cancel-contract fixture).
+
+plugins {
+    `java-library`
+    `java-test-fixtures`
+}
+
+dependencies {
+    testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+}
 
 kover {
     reports {
