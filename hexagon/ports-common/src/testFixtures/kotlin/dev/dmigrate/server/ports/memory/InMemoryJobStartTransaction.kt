@@ -32,11 +32,17 @@ class InMemoryJobStartTransaction(
         now: Instant,
     ): JobStartTransactionOutcome {
         synchronized(lock) {
-            // Save the job first so a parallel caller hitting the
-            // idempotency store after our commit finds the matching
-            // job. The lock guarantees atomicity for InMemory; if the
-            // idempotency commit fails, we revert the save below.
-            val saved = jobStore.save(jobRecord)
+            // Plan §7.2 verbietet "sichtbaren Job ohne Idempotency-
+            // Commit". Reihenfolge: erst Idempotency committen, dann
+            // den Job speichern. Wenn die Idempotency-Transition nicht
+            // greift (Scope unreserved oder bereits committed), wird
+            // der Job nie gespeichert — kein Halbzustand.
+            //
+            // Production-Adapter (SQL-backed) nutzen eine gemeinsame
+            // DB-Transaktion und können in beliebiger Reihenfolge
+            // arbeiten. Für InMemory garantiert das `synchronized`-
+            // Lock zusammen mit dieser Reihenfolge die geforderte
+            // jointly-visibility.
             val idempotencyApplied = idempotencyStore.commit(
                 scope = idempotencyScope,
                 resultRef = jobRecord.managedJob.jobId,
@@ -44,14 +50,12 @@ class InMemoryJobStartTransaction(
                 retentionUntil = jobRecord.managedJob.expiresAt,
             )
             if (!idempotencyApplied) {
-                // Plan §7.2: no recoverable Saga. Roll back the save by
-                // marking the job as expired immediately so deleteExpired
-                // collects it. We cannot remove records via the public
-                // JobStore API, but a follow-up cleanup pass will handle
-                // it. For test fixtures this is acceptable; production
-                // adapters use real transactions.
                 return JobStartTransactionOutcome.IdempotencyNotEligible
             }
+            // `JobStore.save` ist für InMemory unfehlbar; production-
+            // Adapter würden hier in derselben DB-Transaktion sitzen
+            // und beide Updates atomar rollback-fähig halten.
+            val saved = jobStore.save(jobRecord)
             return JobStartTransactionOutcome.Committed(saved)
         }
     }

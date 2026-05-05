@@ -3,7 +3,6 @@ package dev.dmigrate.server.ports.memory
 import dev.dmigrate.server.core.idempotency.IdempotencyKey
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
-import dev.dmigrate.server.core.idempotency.IdempotencyState
 import dev.dmigrate.server.ports.JobStartTransactionOutcome
 import dev.dmigrate.server.ports.contract.Fixtures
 import io.kotest.core.spec.style.FunSpec
@@ -119,7 +118,7 @@ class InMemoryJobStartTransactionTest : FunSpec({
         jobStore.findById(tenant, "job_B").shouldNotBeNull()
     }
 
-    test("commit on already-COMMITTED scope returns IdempotencyNotEligible") {
+    test("commit on already-COMMITTED scope returns IdempotencyNotEligible — second job is NOT saved") {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val tx = InMemoryJobStartTransaction(jobStore, idempotencyStore)
@@ -133,12 +132,11 @@ class InMemoryJobStartTransactionTest : FunSpec({
         val second = tx.commit(Fixtures.jobRecord("job_second"), scope, now)
         second shouldBe JobStartTransactionOutcome.IdempotencyNotEligible
 
-        // The second job was saved (visible in jobStore) — caller MUST
-        // re-check via reserve to detect this. Plan §7.2 documents this
-        // as a Saga-detection that the JobStartService recovers from.
-        // Add cleanup hint in adapter docs (already there).
+        // Plan §7.2 verbietet "sichtbaren Job ohne Idempotency-Commit".
+        // Die InMemory-Implementation committed Idempotency vor dem
+        // Save, und der zweite Save findet nicht statt — kein
+        // Halbzustand.
+        jobStore.findById(tenant, "job_first").shouldNotBeNull()
+        jobStore.findById(tenant, "job_second") shouldBe null
     }
-
-    @Suppress("UNUSED_VARIABLE")
-    val statesTouched = IdempotencyState.entries.toSet()
 })
