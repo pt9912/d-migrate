@@ -29,6 +29,13 @@ class OwnerAwareQuotaService(
      * Reserviert + registriert den Owner. Bei [QuotaOutcome.RateLimited]
      * wird KEIN Owner-Eintrag angelegt — der Caller bekommt die
      * RateLimited-Antwort ohne side-effect am Owner-Store.
+     *
+     * Review-Fix #4 (Atomicity): `synchronized(this)` umfasst beide
+     * Schritte (delegate.reserve + ownerStore.register), sodass kein
+     * Sweeper-/Concurrent-Reserve dazwischen einen partiellen State
+     * sieht. Fuer JVM-Crash zwischen den Schritten gibt InMemory
+     * keine Garantien (alles ist eh weg); persistente Backings
+     * muessen ein gemeinsames Transaktions-Primitive bereitstellen.
      */
     fun reserve(
         key: QuotaKey,
@@ -36,7 +43,7 @@ class OwnerAwareQuotaService(
         ownerId: String,
         leaseExpiresAt: Instant,
         now: Instant,
-    ): QuotaOutcome {
+    ): QuotaOutcome = synchronized(this) {
         val outcome = delegate.reserve(key, amount)
         if (outcome is QuotaOutcome.Granted) {
             ownerStore.register(
@@ -46,7 +53,7 @@ class OwnerAwareQuotaService(
                 now = now,
             )
         }
-        return outcome
+        outcome
     }
 
     /**
@@ -67,11 +74,17 @@ class OwnerAwareQuotaService(
      * Plan §7.9 line 1291-1292: bei `succeeded`/`failed`/`cancelled`/
      * Runner-Timeout-Cleanup freigeben. Counter wird via [delegate]
      * dekrementiert; Owner-Status auf RELEASED.
+     *
+     * Review-Fix #5 (Double-Release-Race): markReleased ZUERST (CAS-
+     * Gewinn), dann delegate.release nur wenn der CAS erfolgreich war.
+     * Zwei concurrent Caller (z.B. Dispatcher + JobCancelService)
+     * koennen beide findById=COMMITTED sehen, aber nur EINER gewinnt
+     * markReleased. Der Verlierer bekommt null und uebergeht
+     * delegate.release — kein doppelter Counter-Decrement.
      */
     fun releaseForOwner(ownerId: String, now: Instant) {
-        val owner = ownerStore.findById(ownerId) ?: return
-        delegate.release(owner.reservation)
-        ownerStore.markReleased(ownerId, now)
+        val transitioned = ownerStore.markReleased(ownerId, now) ?: return
+        delegate.release(transitioned.reservation)
     }
 
     /**
@@ -79,11 +92,13 @@ class OwnerAwareQuotaService(
      * technische Pre-Commit-Fehler des konkreten Pipeline-Owners.
      * Owner-Status auf REFUNDED — der Sweeper sieht den Eintrag dann
      * nicht mehr in `listExpiredPending`.
+     *
+     * Review-Fix #5 (Double-Refund-Race): symmetrisch zu
+     * releaseForOwner — markRefunded zuerst, delegate.refund nur bei
+     * CAS-Gewinn.
      */
     fun refundForOwner(ownerId: String, now: Instant) {
-        val owner = ownerStore.findById(ownerId) ?: return
-        if (owner.status != QuotaReservationStatus.PENDING) return
-        delegate.refund(owner.reservation)
-        ownerStore.markRefunded(ownerId, now)
+        val transitioned = ownerStore.markRefunded(ownerId, now) ?: return
+        delegate.refund(transitioned.reservation)
     }
 }
