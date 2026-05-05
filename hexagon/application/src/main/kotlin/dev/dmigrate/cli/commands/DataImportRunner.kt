@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -123,7 +124,10 @@ class DataImportRunner(
         stderr = userFacingStderr,
     )
 
-    fun execute(request: DataImportRequest): Int {
+    fun execute(
+        request: DataImportRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
         val ctx = when (val result = resolveRequest(request)) {
             is ImportPreflightResolution.Ok -> result.value
             is ImportPreflightResolution.Exit -> return result.code
@@ -132,7 +136,7 @@ class DataImportRunner(
         val pool = connect(ctx.connectionConfig) ?: return 4
 
         return try {
-            runImport(request, ctx, pool)
+            runImport(request, ctx, pool, cancellationToken)
         } finally {
             runCatching { pool.close() }
         }
@@ -154,6 +158,7 @@ class DataImportRunner(
         request: DataImportRequest,
         context: ImportPreflightContext,
         pool: ConnectionPool,
+        cancellationToken: CancellationToken,
     ): Int {
         val executionPlan = when (
             val result = executionPlanner.prepare(
@@ -174,6 +179,7 @@ class DataImportRunner(
                 pool,
                 context.preparedImport,
                 executionPlan,
+                cancellationToken,
             )
         ) {
             is StreamingResult.Ok -> r.value

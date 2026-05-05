@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataWriter
@@ -25,6 +26,7 @@ internal data class TableImportParams(
     val tableCount: Int,
     val resumeState: ImportTableResumeState?,
     val onChunkCommitted: (ImportChunkCommit) -> Unit,
+    val cancellationToken: CancellationToken = CancellationToken.none(),
 )
 
 internal data class PreparedTableImport(
@@ -34,12 +36,12 @@ internal data class PreparedTableImport(
     val chunkContext: ChunkContext,
 )
 
-internal class TableImporter(
+internal open class TableImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
 ) {
 
-    fun import(params: TableImportParams): TableImportSummary {
+    open fun import(params: TableImportParams): TableImportSummary {
         val tableStartedAt = System.nanoTime()
         var reader: DataChunkReader? = null
         var session: TableImportSession? = null

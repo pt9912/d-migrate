@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -78,7 +79,16 @@ class SchemaReverseRunner(
         val config: dev.dmigrate.driver.connection.ConnectionConfig,
     )
 
-    fun execute(request: SchemaReverseRequest): Int {
+    /**
+     * Run the reverse pipeline. [cancellationToken] is threaded through so
+     * Phase E0.4 can place cooperative cancel checkpoints around schema
+     * read and artefact publish; in this AP the token is propagated but
+     * not yet observed.
+     */
+    fun execute(
+        request: SchemaReverseRequest,
+        @Suppress("UNUSED_PARAMETER") cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
         val ctx = when (val r = validateAndResolve(request)) {
             is ResolvedContext -> r
             else -> return r as Int

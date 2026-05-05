@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -44,7 +45,10 @@ class DataProfileRunner(
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
-    fun execute(request: DataProfileRequest): Int {
+    fun execute(
+        request: DataProfileRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
         // ─── 1. Validate request ────────────────────────────────
         if (request.topN < 1 || request.topN > 1000) {
             stderr("[ERROR] topN must be between 1 and 1000, got: ${request.topN}")
@@ -101,6 +105,7 @@ class DataProfileRunner(
                 databaseVersion = databaseVersion(pool),
                 schema = request.schema,
                 tables = request.tables,
+                cancellationToken = cancellationToken,
             )
 
             reportWriter(profile, request.format, request.output)

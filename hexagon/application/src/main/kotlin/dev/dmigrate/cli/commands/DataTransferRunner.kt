@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriver
@@ -36,6 +37,7 @@ class DataTransferRunner(
     urlScrubber: (String) -> String = { it },
     printError: (String, String) -> Unit,
     stderr: (String) -> Unit = { System.err.println(it) },
+    private val transferExecutor: TransferExecutor = TransferExecutor(),
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
     private val userFacingPrintError = userFacingErrors.printError(printError)
@@ -50,9 +52,11 @@ class DataTransferRunner(
         printError = userFacingPrintError,
     )
     private val preflightPlanner = TransferPreflightPlanner()
-    private val transferExecutor = TransferExecutor()
 
-    fun execute(request: DataTransferRequest): Int {
+    fun execute(
+        request: DataTransferRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
         val safeSrc = userFacingErrors.scrubRef(request.source)
 
         val err = validateFlags(request)
@@ -64,11 +68,15 @@ class DataTransferRunner(
         }
 
         try {
-            return executeWithConnections(request, connections)
+            return executeWithConnections(request, connections, cancellationToken)
         } finally { connections.close() }
     }
 
-    private fun executeWithConnections(request: DataTransferRequest, connections: TransferConnections): Int {
+    private fun executeWithConnections(
+        request: DataTransferRequest,
+        connections: TransferConnections,
+        cancellationToken: CancellationToken,
+    ): Int {
         val srcCfg = connections.source.config
         val tgtCfg = connections.target.config
         val srcPool = connections.source.pool
@@ -118,6 +126,7 @@ class DataTransferRunner(
                     filter = filter,
                     chunkSize = request.chunkSize,
                     importOptions = opts,
+                    cancellationToken = cancellationToken,
                 )
             ) { table ->
                 if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")

@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.DataFilter
@@ -8,7 +9,7 @@ import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.driver.data.ImportOptions
 
-internal data class TransferExecutionContext(
+data class TransferExecutionContext(
     val reader: DataReader,
     val writer: DataWriter,
     val sourcePool: ConnectionPool,
@@ -17,11 +18,12 @@ internal data class TransferExecutionContext(
     val filter: DataFilter?,
     val chunkSize: Int,
     val importOptions: ImportOptions,
+    val cancellationToken: CancellationToken = CancellationToken.none(),
 )
 
-internal class TransferExecutor {
+open class TransferExecutor {
 
-    fun execute(context: TransferExecutionContext, onTableTransferred: (String) -> Unit) {
+    open fun execute(context: TransferExecutionContext, onTableTransferred: (String) -> Unit) {
         for (table in context.tables) {
             transferTable(
                 TransferTableContext(

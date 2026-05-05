@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -44,6 +45,7 @@ data class SchemaPreflightResult(
 data class ImportExecutionContext(
     val pool: ConnectionPool,
     val input: ImportInput,
+    val cancellationToken: CancellationToken = CancellationToken.none(),
 )
 
 /** Grouped import options and format configuration. */

@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
@@ -19,6 +20,7 @@ internal class ImportStreamingInvoker(
         pool: ConnectionPool,
         preparedImport: SchemaPreflightResult,
         executionPlan: ImportExecutionPlan,
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): StreamingResult {
         val options = executionPlan.options
         val resumeContext = executionPlan.resumeContext
@@ -29,6 +31,7 @@ internal class ImportStreamingInvoker(
                 context = ImportExecutionContext(
                     pool = pool,
                     input = preparedImport.input,
+                    cancellationToken = cancellationToken,
                 ),
                 options = ImportExecutionOptions(
                     format = format,

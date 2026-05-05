@@ -1,5 +1,6 @@
 package dev.dmigrate.profiling.service
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.SchemaIntrospectionError
@@ -26,6 +27,7 @@ class ProfileDatabaseService(
         databaseVersion: String? = null,
         schema: String? = null,
         tables: List<String>? = null,
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): DatabaseProfile {
         val allTables = try {
             adapters.introspection.listTables(pool, schema)
@@ -41,7 +43,7 @@ class ProfileDatabaseService(
         }
 
         val tableProfiles = targetTables.map { table ->
-            tableService.profile(pool, table.name, schema ?: table.schema)
+            tableService.profile(pool, table.name, schema ?: table.schema, cancellationToken)
         }
 
         return DatabaseProfile(

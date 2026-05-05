@@ -1,5 +1,6 @@
 package dev.dmigrate.profiling.service
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingQueryError
@@ -15,7 +16,7 @@ import java.sql.SQLFeatureNotSupportedException
  * Orchestrates profiling for a single table.
  * Loads metadata, profiles each column, resolves types, evaluates warnings.
  */
-class ProfileTableService(
+open class ProfileTableService(
     private val adapters: ProfilingAdapterSet,
     private val warningEvaluator: WarningEvaluator = WarningEvaluator(),
     private val targetTypes: List<TargetLogicalType> = listOf(
@@ -26,7 +27,12 @@ class ProfileTableService(
     private val topN: Int = 10,
 ) {
 
-    fun profile(pool: ConnectionPool, tableName: String, schema: String? = null): TableProfile {
+    open fun profile(
+        pool: ConnectionPool,
+        tableName: String,
+        schema: String? = null,
+        @Suppress("UNUSED_PARAMETER") cancellationToken: CancellationToken = CancellationToken.none(),
+    ): TableProfile {
         val columns = try {
             adapters.introspection.listColumns(pool, tableName, schema)
         } catch (e: Exception) {
