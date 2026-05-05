@@ -463,12 +463,18 @@ liefern `AlreadyClaimed`, wie `IdempotencyStoreContractTests`
 UPDATE idempotency_reservations
 SET state = 'COMMITTED', result_ref = ?,
     claimed = FALSE,
-    expires_at = GREATEST(retention_until, ?::timestamptz),
-    retention_until = GREATEST(retention_until, ?::timestamptz),
+    expires_at = ?,
+    retention_until = ?,
     updated_at = ?
 WHERE … AND state IN ('PENDING','AWAITING_APPROVAL')
 RETURNING state, expires_at;
 ```
+
+Der Adapter berechnet den Terminalwert vor dem SQL-Call:
+`terminalExpiresAt = max(now + committedRetentionSeconds, retentionUntil?)`.
+Dieser Wert wird fuer `expires_at` und `retention_until` identisch
+gesetzt. Er darf NICHT aus dem bisherigen Zeilenwert abgeleitet werden,
+weil dieser im Vorzustand die PENDING-/AWAITING_APPROVAL-Lease sein kann.
 
 Standalone-Aufruf (z.B. von synchronen Tools ohne Job) → eigene
 Connection, READ_COMMITTED. Inside `JobStartTransaction.commit` →
@@ -580,12 +586,16 @@ Double-Release/Double-Refund-Schutz liegt beim owner-aware Pfad im
 UPDATE quota_reservation_owners
 SET state = ?, updated_at = ?
 WHERE owner_id = ? AND state = ?
-RETURNING reservation, state;
+RETURNING owner_id, reservation, state, lease_expires_at, created_at, updated_at;
 ```
 
 Genau-eins-Sieger über `affectedRows`. CAS-Verlierer in
 `releaseForOwner`/`refundForOwner` überspringen den Counter-Decrement
-⇒ Double-Release-Schutz wie InMemory.
+⇒ Double-Release-Schutz wie InMemory. Der Adapter mappt die
+`RETURNING`-Zeile auf den vollständigen `QuotaReservationOwner`
+(`ownerId`, `reservation`, `status`, `leaseExpiresAt`, `createdAt`,
+`updatedAt`), weil der Port nicht nur Status/Reservation zurückgibt und
+die Contract-Tests `updatedAt` prüfen.
 
 Für das JDBC-`OwnerAwareQuotaService`-Wiring reicht diese Einzeloperation
 nicht: `markReleased`/`markRefunded` und der folgende Counter-Decrement
