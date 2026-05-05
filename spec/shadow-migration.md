@@ -846,6 +846,9 @@ tables:
     primaryKey:
       - id
     mode: SNAPSHOT_AND_CDC
+    ddlPolicy: FAIL_FAST
+    truncatePolicy: REJECT
+    allowExplicitTruncateApply: false
     columnMappings:
       - sourceColumn: id
         targetColumn: id
@@ -1712,6 +1715,8 @@ d-migrate shadow stop \
 
 ### 19.7 CLI-Optionen
 
+Optionen für `shadow plan`:
+
 ```text
 --source <connection-alias>
 --target <connection-alias>
@@ -1719,6 +1724,15 @@ d-migrate shadow stop \
 --target-connection-id <id>
 --mapping <file>
 --tables <list>
+--schema-drift-policy fail-fast|record-and-warn|auto-evolve-additive-only
+--dead-letter-policy fail-fast|write-and-continue|write-and-degrade
+--max-lag-ms <long>
+--required-stable-duration <duration>
+```
+
+Optionen für `shadow start`:
+
+```text
 --plan <file>
 --plan-artifact <artifact-id>
 --execution-backend local|flink|flink-cdc-pipeline
@@ -1726,10 +1740,6 @@ d-migrate shadow stop \
 --artifact-dir <uri>
 --parallelism <int>
 --checkpoint-interval-ms <long>
---schema-drift-policy fail-fast|record-and-warn|auto-evolve-additive-only
---dead-letter-policy fail-fast|write-and-continue|write-and-degrade
---max-lag-ms <long>
---required-stable-duration <duration>
 ```
 
 CLI darf `--source` und `--target` als nutzerfreundliche Aliase verwenden.
