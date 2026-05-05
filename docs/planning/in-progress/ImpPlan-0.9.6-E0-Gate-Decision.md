@@ -172,9 +172,10 @@ klassifiziert.
 
 ### 3.1 Eng abgegrenzter Pre-Phase-E-AP
 
-Vorschlag: **AP E0.7 Driver-Adapter-Timeout-Konfiguration** (separater
-Plan-Eintrag oder Phase-E §0). Drei Driver, eine zentrale Stelle pro
-Driver:
+**AP E0.7 Driver-Adapter-Timeout-Konfiguration** ist als separater
+Plan-Eintrag eröffnet:
+[`open/ImpPlan-0.9.6-E0.7.md`](../open/ImpPlan-0.9.6-E0.7.md). Drei
+Driver, eine zentrale Stelle pro Driver:
 
 | Driver | Konfigurations-Punkt | Konkrete Änderung |
 | --- | --- | --- |
