@@ -60,6 +60,7 @@ internal class SchemaCompareStartHandler(
                 RefField(name = "targetUri", value = targetUri, expectedKind = ResourceKind.SCHEMAS),
             ),
             now = now,
+            auditFields = context.auditFields,
             jobBuilder = { jobId, createdAt ->
                 JobRecord(
                     managedJob = ManagedJob(

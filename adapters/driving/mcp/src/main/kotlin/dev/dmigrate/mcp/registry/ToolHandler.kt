@@ -29,6 +29,17 @@ data class ToolCallContext(
     val arguments: JsonElement?,
     val principal: PrincipalContext,
     val requestId: String = "req-${UUID.randomUUID().toString().take(8)}",
+    /**
+     * Phase E §7.10 (Review-Fix #8): mutable AuditFields, die der
+     * Tool-Handler waehrend des Aufrufs befuellen kann (z.B.
+     * payloadFingerprint, resourceRefs). Der McpServiceImpl reicht
+     * dieselbe Instanz an [dev.dmigrate.server.application.audit.AuditScope.around],
+     * sodass das emittierte AuditEvent die populated Felder traegt.
+     * Default = neue leere AuditFields-Instanz fuer Bestands-Tests, die
+     * keine AuditScope-Wirung haben.
+     */
+    val auditFields: dev.dmigrate.server.application.audit.AuditFields =
+        dev.dmigrate.server.application.audit.AuditFields(),
 )
 
 /**

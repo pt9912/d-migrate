@@ -30,9 +30,20 @@ class AuditScope(
     private val clock: Clock,
 ) {
 
-    fun <T> around(context: AuditContext, block: (AuditFields) -> T): T {
+    /**
+     * Phase E §7.10 (Review-Fix #8): erlaubt optional eine vorhandene
+     * [AuditFields]-Instanz zu uebergeben. Der McpServiceImpl reicht
+     * dieselbe Instanz an [ToolCallContext.auditFields], sodass der
+     * Handler die Felder waehrend der Bearbeitung populieren kann und
+     * die finally-Branch sie sieht. Default `AuditFields()` haelt
+     * Bestands-Caller backward-compat.
+     */
+    fun <T> around(
+        context: AuditContext,
+        fields: AuditFields = AuditFields(),
+        block: (AuditFields) -> T,
+    ): T {
         val startedAt: Instant = Instant.now(clock)
-        val fields = AuditFields()
         var errorCode: ToolErrorCode? = null
         try {
             return block(fields)

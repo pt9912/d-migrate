@@ -52,6 +52,7 @@ internal class DataProfileStartHandler(
                 ),
             ),
             now = now,
+            auditFields = context.auditFields,
             jobBuilder = { jobId, createdAt ->
                 JobRecord(
                     managedJob = ManagedJob(

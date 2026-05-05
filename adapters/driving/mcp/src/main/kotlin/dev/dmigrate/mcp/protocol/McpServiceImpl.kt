@@ -177,8 +177,14 @@ class McpServiceImpl(
             tenantId = principal?.effectiveTenantId,
             principalId = principal?.principalId,
         )
+        // Phase E §7.10 Review-Fix #8: AuditFields-Plumbing. Eine Instanz
+        // wird hier erzeugt und SOWOHL an die ToolCallContext (handler
+        // schreibt) ALS AUCH an auditScope.around (finally liest) gereicht.
+        // Damit landen payloadFingerprint + resourceRefs aus dem Handler
+        // im AuditEvent.
+        val auditFields = dev.dmigrate.server.application.audit.AuditFields()
         return CompletableFuture.completedFuture(
-            runAudited(auditContext) {
+            runAudited(auditContext, auditFields) {
                 // Throws AuthRequiredException / ForbiddenPrincipalException
                 // / handler-internal ApplicationExceptions; the around
                 // wrapper records the matching FAILURE outcome.
@@ -194,6 +200,7 @@ class McpServiceImpl(
                     arguments = params.arguments,
                     principal = resolvedPrincipal,
                     requestId = requestId,
+                    auditFields = auditFields,
                 )
                 rawDispatch(handler, context)
             },
@@ -206,19 +213,17 @@ class McpServiceImpl(
      * error envelope `dispatch` would have produced — but only AFTER
      * `auditScope.around` has captured the failure outcome. Without
      * an audit scope this collapses to the pre-AP-6.20 try/catch.
+     *
+     * Phase E §7.10 (Review-Fix #8): [fields] werden in around
+     * weitergereicht (gleiche Instanz wie ToolCallContext.auditFields).
      */
     private fun runAudited(
         auditContext: AuditContext,
+        fields: dev.dmigrate.server.application.audit.AuditFields,
         block: () -> ToolsCallResult,
     ): ToolsCallResult {
         val scoped: () -> ToolsCallResult = {
-            // The around-block discards the AuditFields lambda
-            // parameter on purpose: Phase-C handlers don't yet
-            // populate `payloadFingerprint` / `resourceRefs`. When a
-            // future handler needs to surface artifact refs into the
-            // audit event, plumb AuditFields through ToolCallContext
-            // (see AuditScope.kt:33-46).
-            if (auditScope != null) auditScope.around(auditContext) { block() } else block()
+            if (auditScope != null) auditScope.around(auditContext, fields) { block() } else block()
         }
         return try {
             scoped()

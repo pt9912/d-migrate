@@ -131,6 +131,16 @@ class JobStartOrchestrator(
             ),
         )
 
+        // Phase E §7.10 (Review-Fix #8): AuditFields populieren, sobald
+        // bekannt. payloadFingerprint deterministisch aus dem Payload,
+        // resourceRefs aus den expliziten RefField-Eintraegen des
+        // Requests. Schreibt nur wenn der Caller eine AuditFields-
+        // Instanz mitgegeben hat.
+        request.auditFields?.also { fields ->
+            fields.payloadFingerprint = fingerprint
+            fields.resourceRefs = request.refs.map { it.value }
+        }
+
         val scope = IdempotencyScope(
             tenantId = request.tenantId,
             callerId = request.callerId,
@@ -406,6 +416,14 @@ data class JobStartRequest(
     val refs: List<RefField>,
     val now: Instant,
     val jobBuilder: (jobId: String, createdAt: Instant) -> JobRecord,
+    /**
+     * Phase E §7.10 (Review-Fix #8): optionaler AuditFields-Sink. Wenn
+     * gesetzt, schreibt der Orchestrator den berechneten
+     * payloadFingerprint und die resourceRefs in dieses Objekt — der
+     * `AuditScope.around`-finally-Pfad sieht die populated Werte beim
+     * Emit des AuditEvent. `null` haelt Bestands-Caller unveraendert.
+     */
+    val auditFields: dev.dmigrate.server.application.audit.AuditFields? = null,
 )
 
 /**
