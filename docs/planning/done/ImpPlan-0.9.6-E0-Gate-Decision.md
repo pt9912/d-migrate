@@ -4,8 +4,8 @@
 > **Phase**: E0.6 (`Gate-Entscheidung dokumentieren`)
 > **Status**: Initial 2026-05-05 `Blocked` → Re-Stempel 2026-05-05 nach
 > E0.7.5 zu **`Go`**.
-> **Hauptplan**: `../done/ImpPlan-0.9.6-E0.md` §7.6, §9, §10
-> **Matrix**: `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`
+> **Hauptplan**: `./ImpPlan-0.9.6-E0.md` §7.6, §9, §10
+> **Matrix**: `./ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`
 
 ---
 

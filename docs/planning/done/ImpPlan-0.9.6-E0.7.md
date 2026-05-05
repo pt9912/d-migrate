@@ -2,11 +2,13 @@
 
 > **Milestone**: 0.9.6 — Beta: MCP-Server
 > **Phase**: E0.7 (Pre-Phase-E-Auflösung des E0-Gate-`Blocked`)
-> **Status**: Draft (2026-05-05)
+> **Status**: AP E0.7.1–E0.7.6 abgeschlossen (2026-05-05). Gate-Verdict
+> in [`ImpPlan-0.9.6-E0-Gate-Decision.md`](./ImpPlan-0.9.6-E0-Gate-Decision.md)
+> re-stempelt zu **`Go`**.
 > **Referenzen**:
 > - `docs/planning/done/ImpPlan-0.9.6-E0.md` §4.1, §4.2, §6, §7.6, §9, §10
-> - `docs/planning/in-progress/ImpPlan-0.9.6-E0-Side-Effect-Matrix.md` §6
-> - `docs/planning/in-progress/ImpPlan-0.9.6-E0-Gate-Decision.md` §3
+> - `docs/planning/done/ImpPlan-0.9.6-E0-Side-Effect-Matrix.md` §6
+> - `docs/planning/done/ImpPlan-0.9.6-E0-Gate-Decision.md` §3
 > - `spec/job-contract.md` (Exit-Code 130, Cancel-Reaktionsbudget)
 > - `adapters/driven/driver-common/.../HikariConnectionPoolFactory.kt`
 > - `adapters/driven/driver-postgresql/`, `driver-mysql/`, `driver-sqlite/`

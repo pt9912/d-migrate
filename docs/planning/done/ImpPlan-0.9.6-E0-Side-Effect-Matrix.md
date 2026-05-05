@@ -2,16 +2,16 @@
 
 > **Milestone**: 0.9.6 — Beta: MCP-Server
 > **Phase**: E0.2 → E0.7 (final-klassifiziert)
-> **Status**: Stand 2026-05-05 nach E0.7.5; **`go = ~74`**, `blocked = 0`,
+> **Status**: Stand 2026-05-05 nach E0.7.6; **`go = ~74`**, `blocked = 0`,
 > `tentative-go = 0`, `go_followup = 0`. Driver-Calls sind via
 > `TimeoutDecoratedConnection` + driver-spezifischer
 > `connectionInitSql` + Bench-Tests als `atomic-nicht-cancelbar` mit
-> `<= 30s` belegt. Move nach `done/` zusammen mit E0.7.6.
+> `<= 30s` belegt. Final.
 >
 > Update-Historie pro AP siehe §8 Änderungs-Protokoll.
 >
-> **Hauptplan**: `../done/ImpPlan-0.9.6-E0.md` §7.2
-> **Pflichtschema**: `../done/ImpPlan-0.9.6-E0.md` §7.2 (Tabelle direkt nach AP E0.2)
+> **Hauptplan**: `./ImpPlan-0.9.6-E0.md` §7.2
+> **Pflichtschema**: `./ImpPlan-0.9.6-E0.md` §7.2 (Tabelle direkt nach AP E0.2)
 
 ---
 
