@@ -403,7 +403,9 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](../done/ImpPlan-0.9.4-6.1.md),
 | Server  | Phase D: Discovery-Tools (`job_list`, `artifact_list`, `schema_list`, `profile_list`, `diff_list`) + MCP-Standard-Discovery (`resources/list`, `resources/templates/list`, `resources/read`) + Resource-Resolver/Stores + Connection-Refs + adapterneutraler Connection-Bootstrap — siehe `ImpPlan-0.9.6-D.md` | —      | ✅ (2026-05-04) |
 | Server  | Phase E0: Cancel-Gate fuer bestehende Runner (Cancel-Vertrag in `hexagon:core`, Token-Propagation durch Reverse/Profile/Import/Transfer, Cancel-Checkpoints + Exit-130-Mapping, Side-Effect-Matrix, Driver-Vertrags-Klassifikation) — siehe `ImpPlan-0.9.6-E0.md`, `ImpPlan-0.9.6-E0-Side-Effect-Matrix.md`, `ImpPlan-0.9.6-E0-Gate-Decision.md` (Verdict `Go`) | —      | ✅ (2026-05-05) |
 | Server  | Phase E0.7: Driver-Adapter-Timeout-Konfiguration (`PoolSettings.statementTimeoutMs`/`networkTimeoutMs`, driver-spezifischer `connectionInitSql`, common `TimeoutDecoratedConnection`-Layer, Bench-Tests pro Driver) — siehe `ImpPlan-0.9.6-E0.7.md` | —      | ✅ (2026-05-05) |
-| Server  | Phase E: Async-Jobs, Idempotenz und Policy — Job-Start-Service fuer `schema_reverse_start`/`data_profile_start`/`schema_compare_start`, produktiver `job_cancel` mit Worker-Handle-Registry, Idempotency-Zustandsautomat, Policy/Approval-Grants, Quotas und Timeouts — siehe `ImpPlan-0.9.6-E.md` | —      | 🔄 (2026-05-05) |
+| Server  | Phase E: Async-Jobs, Idempotenz und Policy — Job-Start-Service fuer `schema_reverse_start`/`data_profile_start`/`schema_compare_start`, produktiver `job_cancel` mit Worker-Handle-Registry, Idempotency-Zustandsautomat, Policy/Approval-Grants, Quotas und Timeouts; produktive Persistenz und Async-Executor folgen als Sub-Plaene **E2**/**E3** — siehe `ImpPlan-0.9.6-E.md` und `spec/phase-e-port-atomicity.md` | —      | 🔄 (2026-05-05) |
+| Server  | Phase E2: Persistente Phase-E-Port-Adapter (JDBC/Postgres) — `JdbcTransactionRunner`, `JdbcIdempotencyStore`, `JdbcJobStore`, `JdbcJobStartTransaction`, `JdbcQuotaService`/`JdbcQuotaReservationOwnerStore` mit Flyway-Initial-Migration und Contract-Test-Lauf gegen Testcontainers-Postgres — siehe `ImpPlan-0.9.6-E2.md` und `spec/phase-e-port-atomicity.md` | —      | ⏳             |
+| Server  | Phase E3: Async-Executor Production-Tuning — `BoundedAsyncJobExecutor` mit `JobExecutorLifecycle`, `JobDispatchAdmission`-Gate, Backpressure (`RateLimited` reason `EXECUTOR_SATURATED`), Cancel-while-queued, graceful Shutdown; `SyncExecutor` bleibt Default, Async ist opt-in via `server.jobs.executor.mode` — siehe `ImpPlan-0.9.6-E3.md` | —      | ⏳             |
 | Server  | Phase F: Policy-gesteuerte Datenoperationen (`data_import_start`, `data_transfer_start`) + policy-pflichtige `artifact_upload_init`-Variante mit Session-Metadaten und Approval-Flow — siehe `ImpPlan-0.9.6-F.md` | —      | ⏳             |
 | Server  | Phase G: KI-nahe MCP-Tools (`procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan`) + MCP-Prompts + abschliessende Integrationstests und Fehler-Envelope-Haertung — siehe `ImpPlan-0.9.6-G.md` | —      | ⏳             |
 
@@ -665,6 +667,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.38
-**Stand**: 2026-04-26
-**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A (Gemeinsamer Serverkern, `ImpPlan-0.9.6-A.md`) abgeschlossen; geplant: 0.9.6 Phase B/C, 0.9.7, 0.9.8, 0.9.9
+**Version**: 3.39
+**Stand**: 2026-05-05
+**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A/B/C/D/E0/E0.7 abgeschlossen; 0.9.6 Phase E aktiv (Atomicity-Vertrag dokumentiert, Sub-Plaene E2/E3 entworfen); geplant: 0.9.6 Phase E2/E3/F/G, 0.9.7, 0.9.8, 0.9.9
