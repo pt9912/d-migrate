@@ -78,6 +78,20 @@ data class PhaseEWiring(
         jobIdFactory = jobIdFactory,
         cancellationSourceFactory = cancellationSourceFactory,
     ),
+    /**
+     * Phase E §7.9 owner-aware Quota-Service. Default-Komposition:
+     * delegate auf [PhaseCWiring.quotaService], owner-Store als
+     * In-Memory. Production-Wiring kann eine persistente OwnerStore-
+     * Implementierung injizieren.
+     *
+     * Muss VOR `approvedRetryService` deklariert sein, damit dessen
+     * Default auf den Service referenzieren kann (Review-Fix Blocker #2).
+     */
+    val quotaReservationOwnerStore: QuotaReservationOwnerStore = InMemoryQuotaReservationOwnerStore(),
+    val ownerAwareQuotaService: OwnerAwareQuotaService = OwnerAwareQuotaService(
+        delegate = phaseCWiring.quotaService,
+        ownerStore = quotaReservationOwnerStore,
+    ),
     val approvedRetryService: ApprovedRetryService = ApprovedRetryService(
         approvalGrantService = approvalGrantService,
         idempotencyStore = idempotencyStore,
@@ -85,19 +99,9 @@ data class PhaseEWiring(
         workerHandleRegistry = workerHandleRegistry,
         jobIdFactory = jobIdFactory,
         cancellationSourceFactory = cancellationSourceFactory,
+        quotaService = ownerAwareQuotaService,
     ),
     val workerExecutor: java.util.concurrent.Executor = SyncExecutor,
-    /**
-     * Phase E §7.9 owner-aware Quota-Service. Default-Komposition:
-     * delegate auf [PhaseCWiring.quotaService], owner-Store als
-     * In-Memory. Production-Wiring kann eine persistente OwnerStore-
-     * Implementierung injizieren.
-     */
-    val quotaReservationOwnerStore: QuotaReservationOwnerStore = InMemoryQuotaReservationOwnerStore(),
-    val ownerAwareQuotaService: OwnerAwareQuotaService = OwnerAwareQuotaService(
-        delegate = phaseCWiring.quotaService,
-        ownerStore = quotaReservationOwnerStore,
-    ),
     val jobDispatcher: JobDispatcher = JobDispatcher(
         jobStore = phaseCWiring.jobStore,
         executor = workerExecutor,

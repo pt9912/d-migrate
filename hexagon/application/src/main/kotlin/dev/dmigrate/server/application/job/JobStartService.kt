@@ -144,4 +144,17 @@ sealed interface JobStartOutcome {
 
     /** Payload-Fingerprint stimmt nicht mit Bestands-Reservierung überein. */
     data class Conflict(val existingFingerprint: String) : JobStartOutcome
+
+    /**
+     * Phase E §7.9 Rate-Limit-Branch (Review-Fix Blocker #2): aktive
+     * Jobquote ueberschritten. ApprovedRetryService produziert das, wenn
+     * `quota.reserve` vor `JobStartTransaction.commit` ablehnt.
+     * JobStartService selbst erzeugt diesen Branch nicht — Quota-
+     * Pruefung lebt im Orchestrator/ApprovedRetry.
+     */
+    data class RateLimited(
+        val retryAfter: java.time.Duration,
+        val current: Long,
+        val limit: Long,
+    ) : JobStartOutcome
 }

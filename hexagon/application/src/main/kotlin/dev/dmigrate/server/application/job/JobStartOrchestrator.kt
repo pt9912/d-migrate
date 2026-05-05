@@ -436,4 +436,5 @@ private fun JobStartOutcome.toHandlerOutcome(): JobStartHandlerOutcome = when (t
     is JobStartOutcome.Denied -> JobStartHandlerOutcome.PolicyDenied(reason, expiresAt)
     is JobStartOutcome.Failed -> JobStartHandlerOutcome.Failed(reason, expiresAt)
     is JobStartOutcome.Conflict -> JobStartHandlerOutcome.IdempotencyConflict(existingFingerprint)
+    is JobStartOutcome.RateLimited -> JobStartHandlerOutcome.RateLimited(retryAfter, current, limit)
 }
