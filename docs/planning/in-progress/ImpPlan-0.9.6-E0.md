@@ -2,7 +2,26 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: E0 (`Cancel-Gate fuer bestehende Runner`)
-> **Status**: Draft (2026-05-03)
+> **Status**: AP E0.1–E0.6 abgeschlossen (2026-05-05); Gate-Verdict
+> **`Blocked`** mit Pre-Phase-E-Auflösung über `ImpPlan-0.9.6-E0.7.md`.
+> Move nach `done/` erfolgt zusammen mit E0.7-Abschluss
+> (siehe `ImpPlan-0.9.6-E0-Gate-Decision.md` §3 + AP E0.7.6).
+>
+> AP-Status:
+> - E0.1 ✅ Cancel-Vertrag in `hexagon:core` (Commit `5416f9d`)
+> - E0.2 ✅ Side-Effect-Matrix Initial-Snapshot (`0eb707a`)
+> - E0.3 ✅ Token-Propagation durch alle 4 Runner (`74e6b73`)
+> - E0.4 ✅ Cancel-Checkpoints in Reverse + Profile (`c4a62dd`)
+> - E0.5 (1/3) ✅ Cancel-Checkpoints in Import-Pipeline (`bebde02`)
+> - E0.5 (2/3) ✅ Cancel-Checkpoints in Transfer-Pipeline (`4859ea7`)
+> - E0.5 (3/3) ✅ Driver-Vertrags-Klassifikation + Matrix-Wrap (`95303ad`)
+> - E0.6 ✅ Gate-Entscheidung dokumentiert (`95303ad`)
+>
+> Pre-Phase-E-Auflösung:
+> - AP E0.7 Driver-Adapter-Timeout-Konfiguration —
+>   `ImpPlan-0.9.6-E0.7.md` (in-progress, Plan-Commits `4a12164`,
+>   `8f3b2f2`, Move `ccae7b3`).
+>
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
 > Abschnitt 4.7, Abschnitt 4.9, Abschnitt 6.9, Abschnitt 8 Phase E0,
 > Abschnitt 8 Phase E, Abschnitt 11 und Abschnitt 12;
