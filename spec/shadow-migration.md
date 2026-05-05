@@ -822,10 +822,20 @@ Jeder Shadow-Migration-Job referenziert einen immutable Plan.
 planVersion: "1"
 sourceConnectionId: "conn_legacy"
 targetConnectionId: "conn_modern"
+mappingRef:
+  artifactId: artifact_mapping_v12
+  sha256: "..."
 schemaFingerprint:
   sourceSchemaSha256: "..."
   targetSchemaSha256: "..."
   mappingSha256: "..."
+options:
+  schemaDriftPolicy: FAIL_FAST
+  deadLetterPolicy: FAIL_FAST
+  maxLagMs: 5000
+  requiredStableDuration: PT30M
+  allowManySourceTablesToOneTarget: false
+  allowExperimentalFlinkCdcSchemaEvolution: false
 tables:
   - sourceTable:
       schema: public
@@ -2371,7 +2381,7 @@ Shadow-Migration gilt als akzeptiert, wenn:
 15. Readiness-Gates sind explizit und maschinenlesbar.
 16. Cutover wird nicht automatisch ohne explizite Nutzeraktion durchgeführt.
 17. REST-Starts verlangen einen Idempotency-Key.
-18. CLI darf Aliase verwenden, APIs nutzen Connection IDs.
+18. Plan-Erzeugung darf CLI-Aliase verwenden; Start-APIs referenzieren Plan-Artefakte.
 19. MCP gibt standardmäßig keine Rohdaten-Payloads aus.
 20. Stabile Reports enthalten kein `generatedAt`.
 21. Reports sind deterministisch sortiert.
