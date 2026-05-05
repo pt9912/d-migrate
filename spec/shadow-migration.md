@@ -1726,7 +1726,9 @@ CLI darf `--source` und `--target` als nutzerfreundliche Aliase verwenden.
 
 `shadow plan` darf `--source`, `--target`, `--mapping` und `--tables` verwenden.
 
-`shadow start` verwendet `--plan` oder `--plan-artifact`; Source, Target, Mapping und Tabellen kommen aus dem immutable Plan.
+`shadow start` verwendet `--plan` oder `--plan-artifact`; Source, Target, Mapping, Tabellen und Migrations-Policies kommen aus dem immutable Plan.
+
+Bei `--plan <file>` muss d-migrate den Plan vor Job-Start validieren, fingerprinten und als immutable `shadow-plan` Artefakt registrieren.
 
 API-Verträge referenzieren beim Start ein Plan-Artefakt. `sourceConnectionId` und `targetConnectionId` bleiben Felder des Plans.
 
@@ -1753,10 +1755,6 @@ Content-Type: application/json
   "executionOptions": {
     "parallelism": 8,
     "checkpointIntervalMs": 30000
-  },
-  "migrationOptions": {
-    "schemaDriftPolicy": "FAIL_FAST",
-    "deadLetterPolicy": "FAIL_FAST"
   }
 }
 ```
@@ -1766,6 +1764,8 @@ Der Start-Request referenziert immer ein immutable `shadow-plan` Artefakt.
 Der Plan enthält `sourceConnectionId`, `targetConnectionId`, `mappingRef`, Tabellen, Routen, Filter, Table-Modes und per-table Policies.
 
 `sourceConnectionId` und `targetConnectionId` dürfen im Start-Request nicht erneut überschrieben werden.
+
+`ShadowMigrationOptions` kommen aus dem Plan und dürfen im Start-Request nicht überschrieben werden.
 
 Response:
 
@@ -1859,7 +1859,6 @@ message StartShadowMigrationRequest {
   string checkpoint_uri = 3;
   string artifact_uri = 4;
   ShadowExecutionOptions execution_options = 5;
-  ShadowMigrationOptions migration_options = 6;
 }
 ```
 
@@ -1952,10 +1951,6 @@ Tool-Argumente:
   "executionOptions": {
     "parallelism": 8,
     "checkpointIntervalMs": 30000
-  },
-  "migrationOptions": {
-    "schemaDriftPolicy": "FAIL_FAST",
-    "deadLetterPolicy": "FAIL_FAST"
   }
 }
 ```
