@@ -174,7 +174,7 @@ klassifiziert.
 
 **AP E0.7 Driver-Adapter-Timeout-Konfiguration** ist als separater
 Plan-Eintrag eröffnet:
-[`open/ImpPlan-0.9.6-E0.7.md`](../open/ImpPlan-0.9.6-E0.7.md). Drei
+[`ImpPlan-0.9.6-E0.7.md`](./ImpPlan-0.9.6-E0.7.md). Drei
 Driver, eine zentrale Stelle pro Driver:
 
 | Driver | Konfigurations-Punkt | Konkrete Änderung |
