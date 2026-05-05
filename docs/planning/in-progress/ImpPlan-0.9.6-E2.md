@@ -309,7 +309,7 @@ CREATE TABLE quota_counters (
 |---|---|---|
 | **E2.1** | Modul-Setup `adapters/driven/persistence-jdbc` (build.gradle.kts, Hikari-/Flyway-Wiring), `JdbcTransactionRunner` als `internal`-Klasse + Unit-Tests (Begin/Commit/Rollback, Exception-Pfade) | Modul baut; Runner-Tests grün |
 | **E2.2** | Flyway-Setup + V1__phase_e_initial.sql (alle 5 Tabellen aus § 4) | Flyway-Migrate gegen Testcontainers grün; Idempotenz der Migration-Anwendung in CI |
-| **E2.3** | `JdbcIdempotencyStore` — regulärer Idempotency-Pfad ohne `reserveInitResume`: `reserve`, `markAwaitingApproval`, `claimApproved`, `commit`, `deny`, `markFailed`, `cleanupExpired` mit konkreten SQL-Patterns aus § 6 | `IdempotencyStoreContractTests` grün gegen Postgres (inkl. Recovery-Tests für expired PENDING/AWAITING_APPROVAL-Leases); `markAwaitingApproval`-Challenge-Roundtrip-Test grün |
+| **E2.3** | `JdbcIdempotencyStore` — regulärer Idempotency-Pfad ohne `reserveInitResume`: `reserve`, `markAwaitingApproval`, `claimApproved`, `commit`, `deny`, `markFailed`, `cleanupExpired` mit konkreten SQL-Patterns aus § 6 | `IdempotencyStoreContractTests` grün gegen Postgres (inkl. Recovery-Tests für expired PENDING/AWAITING_APPROVAL-Leases); `markAwaitingApproval`-Challenge-Roundtrip-Test grün; Approval-Lease wird beim Übergang nach AWAITING_APPROVAL auf `now + awaitingApprovalSeconds` verlängert |
 | **E2.4** | `JdbcIdempotencyStore.reserveInitResume`-Pfad gegen `init_resume_reservations` (separate Methode/Helper, keine Misch-Logik mit § 6.1) | Init-Resume-Contract-Suite (`ReadOnlyInitResumeContractTests` o.ä. — Name verifizieren in E2.4-Start) grün gegen Postgres |
 | **E2.5** | `JdbcJobStore` (CRUD, Pagination, `transitionStatus` mit `transformer` + `NotFound`/`IllegalTransition`-Diskriminierung, `markCancelRequested`-CAS) | `JobStoreContractTests` grün; insbesondere die Contract-Tests, die `IllegalTransition.currentStatus` lesen, müssen passen |
 | **E2.6** | `JdbcJobStartTransaction` — komponiert E2.3+E2.5 in einer DB-TX über `JdbcTransactionRunner` | `JobStartTransactionContractTests` grün (inkl. parallel-commit-Test); Atomicity-Vertrag aus `spec/phase-e-port-atomicity.md` § 3 ausführbar verifiziert |
@@ -409,13 +409,21 @@ gegen die Contract-Tests verifizieren).
 
 ```sql
 UPDATE idempotency_reservations
-SET state = 'AWAITING_APPROVAL', claimed = FALSE, challenge = ?::jsonb, updated_at = ?
+SET state = 'AWAITING_APPROVAL',
+    claimed = FALSE,
+    challenge = ?::jsonb,
+    expires_at = ?,
+    updated_at = ?
 WHERE tenant_id = ? AND caller_id = ? AND tool_name = ? AND idempotency_key = ?
   AND state = 'PENDING' AND expires_at > ?;  -- not expired
 ```
 
 `affectedRows = 1` ⇒ true; `0` ⇒ false. Challenge ist JSONB, wird
 beim folgenden `reserve` aus der Tabelle gelesen ⇒ durable.
+`expires_at` MUSS auf die Approval-Lease (`now + awaitingApprovalSeconds`)
+gesetzt werden; andernfalls würde `claimApproved` die ursprüngliche
+kurze PENDING-Lease verwenden und legitime Approval-Retries zu früh als
+abgelaufen behandeln.
 
 ### 6.4 IdempotencyStore.claimApproved
 
