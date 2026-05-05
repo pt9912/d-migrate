@@ -211,8 +211,9 @@ server:
   Admission; falls eine Shutdown-Race nach dem Commit dennoch
   `RejectedExecutionException` erzeugt, muss der Orchestrator den
   gerade committeten Job deterministisch terminalisieren
-  (`FAILED`, `error.code=EXECUTOR_CLOSED`) oder den Start als
-  `Failed` markieren — dieser seltene Race-Pfad bekommt einen
+  (`FAILED`, `error.code=EXECUTOR_CLOSED`) und weiter
+  `Started(jobId, record, source)` returnen, damit der Caller den
+  stabilen Job-Ref pollt. Dieser seltene Race-Pfad bekommt einen
   eigenen Test.
 - Nach erfolgreichem `JobStartTransaction.commit` duerfen
   Setup-Fehler nicht als rohe Exception bis zum Tool-Handler
@@ -565,28 +566,46 @@ private fun markExecutorSetupFailed(
         is WorkerNotRegisteredException -> "WORKER_NOT_REGISTERED"
         else -> "EXECUTOR_SETUP_FAILED"
     }
-    val transition = jobStore.transitionStatus(
-        tenantId = record.tenantId,
-        jobId = record.managedJob.jobId,
-        allowedFromStatuses = setOf(JobStatus.QUEUED),
-    ) { mj ->
-        mj.copy(
-            status = JobStatus.FAILED,
-            updatedAt = now,
-            error = JobError(
-                code = code,
-                message = error.message ?: error::class.simpleName.orEmpty(),
-            ),
-        )
+    val transition = try {
+        jobStore.transitionStatus(
+            tenantId = record.tenantId,
+            jobId = record.managedJob.jobId,
+            allowedFromStatuses = setOf(JobStatus.QUEUED),
+        ) { mj ->
+            mj.copy(
+                status = JobStatus.FAILED,
+                updatedAt = now,
+                error = JobError(
+                    code = code,
+                    message = error.message ?: error::class.simpleName.orEmpty(),
+                ),
+            )
+        }
+    } catch (cleanup: Throwable) {
+        logSetupCleanupFailure(record.managedJob.jobId, cleanup)
+        null
     }
     if (transition is JobTransitionOutcome.Applied) {
         transition.record.quotaReservationOwnerId?.let { ownerId ->
-            quotaService?.releaseForOwner(ownerId, now)
+            try {
+                quotaService?.releaseForOwner(ownerId, now)
+            } catch (cleanup: Throwable) {
+                logSetupCleanupFailure(record.managedJob.jobId, cleanup)
+            }
         }
     }
     if (handleRegistered) {
-        workerHandleRegistry.unregister(record.managedJob.jobId)
+        try {
+            workerHandleRegistry.unregister(record.managedJob.jobId)
+        } catch (cleanup: Throwable) {
+            logSetupCleanupFailure(record.managedJob.jobId, cleanup)
+        }
     }
+}
+
+private fun logSetupCleanupFailure(jobId: String, cleanup: Throwable) {
+    // log + suppress: Dieser Helper darf nie in den Start-Catch
+    // zurueckwerfen, sonst wuerde der Cleanup-Pfad rekursiv laufen.
 }
 
 private class WorkerNotRegisteredException(
@@ -596,11 +615,17 @@ private class WorkerNotRegisteredException(
 
 Der Handler liefert in diesen seltenen Races weiter `Started`, weil
 der Job bereits committet ist; der Poll-Pfad sieht sofort `FAILED`.
+`markExecutorSetupFailed` ist ein no-throw/best-effort Helper:
+Store-Transition-, Quota-Release- und Handle-Unregister-Fehler werden
+geloggt und suppressed, damit Cleanup-Fehler nicht erneut durch den
+Start-`catch` laufen.
 Tests pinnen `workerHandleRegistry.register`-Throw, `factory.create`
 liefert `null`, `factory.create`-Throw und `dispatcher.dispatch`-/
 `RejectedExecutionException`, jeweils inklusive Quota-Release und
 Handle-Unregister, wenn diese Side-Effects vor dem Fehler bereits
-stattgefunden haben.
+stattgefunden haben. Zusaetzlich pinnt ein Cleanup-Failure-Test, dass
+`markExecutorSetupFailed` Fehler aus Store-Transition, Quota-Release
+oder Handle-Unregister nicht zum Start-Handler zurueckwirft.
 
 ## 7. Risiken
 
