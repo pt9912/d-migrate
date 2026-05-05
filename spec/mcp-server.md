@@ -456,6 +456,113 @@ Wire-Projektion. Discovery-Konsumenten sehen ausschliesslich
 
 ---
 
+## Phase E: Async-Jobs, Idempotency, Policy
+
+Phase E (`ImpPlan-0.9.6-E.md`) wirelt vier produktive Tool-Slots:
+
+- `schema_reverse_start` — startet einen Schema-Reverse-Job (read-only, async).
+- `data_profile_start` — startet einen Daten-Profiling-Job (read-only).
+- `schema_compare_start` — startet einen Schema-Vergleichs-Job (zwei Refs).
+- `job_cancel` — cancelt einen laufenden oder gequeueten Job.
+
+### Wire-Contracts
+
+**Start-Tools (alle drei symmetrisch)**:
+
+```jsonc
+// Input
+{
+  "connectionId": "dmigrate://tenants/<t>/connections/<id>",  // bzw. sourceUri/targetUri für compare
+  "idempotencyKey": "<uuid>",       // Pflichtfeld
+  "approvalToken": "<opaque>"        // optional, für Approved-Retry
+}
+
+// Output (Erfolg)
+{
+  "jobId": "job_...",
+  "resourceUri": "dmigrate://tenants/<t>/jobs/job_...",
+  "executionMeta": { "requestId": "..." }
+}
+```
+
+**`job_cancel`** — genau eines von `jobId | resourceUri`, optional `reason`:
+
+```jsonc
+// Output (Plan §5.6 / §7.6)
+{
+  "jobId": "...",
+  "operation": "schema_reverse",
+  "status": "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED",
+  "terminal": true | false,
+  "resourceUri": "dmigrate://...",
+  "executionMeta": {
+    "requestId": "...",
+    "cancelRequested": true,
+    "cancelAckPending": true,        // bei RUNNING-Cancel
+    "retryAfter": 2,
+    "cancelRequestedReason": "...",  // scrubbed
+    "cancelSignalSource": "job_cancel"
+  }
+}
+```
+
+`job_status_get` projiziert `executionMeta` einheitlich mit `job_cancel`.
+
+### Approval-Flow + fail-closed Grant-Aussteller
+
+Wenn die Policy für einen Start `RequiresApproval` zurückgibt, antwortet
+der Server mit `POLICY_REQUIRED` plus `approvalRequestId` +
+`requiredScopes`. Der Client muss einen `approvalToken` vom Grant-
+Aussteller einholen und im Retry mitsenden.
+
+**Grant-Aussteller-Modi** (Plan §7.4):
+
+- `FailClosedGrantIssuer` — **Default ohne Konfiguration**. Lehnt jeden
+  Issue-Versuch mit `policy:no-issuer-configured` ab. Eine laufende
+  Instanz ohne explizite Konfiguration kann KEINEN `RequiresApproval`-
+  Flow abschließen — direkte `ALLOW`-Policies bleiben unberührt.
+- `ConfiguredAllowlistGrantIssuer` — produktive Allowlist mit
+  `GrantIssuanceRule`-Liste; matchende Regeln stellen Grants aus,
+  Nicht-Matchende liefern `NotIssuable`.
+- `DemoAutoApprovalGrantIssuer` — **unsicher, nur für Loopback/stdio**.
+  Stellt jeden Request aus; Audit-Markierung über fixierten
+  `issuerFingerprint = "demo-auto-approval"` damit `IssuerCheck.AllowList`
+  den Demo-Mode aussortieren kann. Transport-Restriktion (loopback only)
+  erzwingt das Bootstrap-Wiring, nicht der Issuer selbst.
+
+### Quotas + Rate-Limiting
+
+Aktive Jobs werden pro `(tenantId, ACTIVE_JOBS, principalId, operation)`
+gezählt. Überschreitet eine neue Reservierung den Limit-Wert, antwortet
+der Start mit `RATE_LIMITED` (Plan §7.9):
+
+```jsonc
+{
+  "code": "RATE_LIMITED",
+  "details": { "retryAfter": "30", "current": "3", "limit": "3" }
+}
+```
+
+Wichtig (Plan §7.9 line 1270-1273): RATE_LIMITED entsteht **vor**
+`jobBuilder`-Aufruf — keine Secret-Store-Reads, keine Pool-Initialisierung,
+keine Schema-Materialisierung bei rate-limited Starts.
+
+Slots werden freigegeben bei:
+- erfolgreichem Job-Abschluss (succeeded/failed/cancelled über Dispatcher)
+- queued-Cancel via `job_cancel` (über JobCancelService)
+- Lease-Ablauf vor JobStartTransaction.commit (über
+  `QuotaReservationSweeper`)
+
+### Audit
+
+Jeder `tools/call` durchläuft `AuditScope.around` und emittiert genau
+ein `AuditEvent` (SUCCESS oder FAILURE mit ToolErrorCode). Phase-E-
+Outcomes bekommen damit automatisch Audit-Coverage. Reasons (z.B. im
+Cancel-Pfad) werden über `SecretScrubber` gescrubbed bevor sie in
+`cancelRequestedReason` oder Audit-Felder wandern.
+
+---
+
 ## Weiterführend
 
 - [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
@@ -466,5 +573,7 @@ Wire-Projektion. Discovery-Konsumenten sehen ausschliesslich
 - [`docs/planning/done/ImpPlan-0.9.6-D.md`](../docs/planning/done/ImpPlan-0.9.6-D.md) —
   Phase-D: Discovery, `resources/read`, HMAC-Cursor, Connection-Ref-
   Bootstrap (siehe oben "Phase D: Discovery und Ressourcen").
-- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase E+
-  (Tool-Handler, `resources/read`, Upload-Sessions, AI-Tools).
+- [`docs/planning/in-progress/ImpPlan-0.9.6-E.md`](../docs/planning/in-progress/ImpPlan-0.9.6-E.md) —
+  Phase-E: Async-Jobs, Idempotency, Policy, Quotas, Cancel (siehe oben
+  "Phase E: Async-Jobs, Idempotency, Policy").
+- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase F+.
