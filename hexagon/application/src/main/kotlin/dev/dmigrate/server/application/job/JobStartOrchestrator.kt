@@ -91,6 +91,21 @@ class JobStartOrchestrator(
      */
     private val quotaService: OwnerAwareQuotaService? = null,
     private val quotaLeaseDuration: Duration = DEFAULT_QUOTA_LEASE,
+    /**
+     * Phase E §7.7 Auto-Dispatch-Hook (Review-Fix Blocker #1). Wenn
+     * beide gesetzt sind, ruft der Orchestrator unmittelbar nach
+     * `JobStartTransaction.commit` die [jobWorkerFactory] und reicht
+     * den entstehenden Worker an den [jobDispatcher] — fire-and-forget,
+     * Resultat wird NICHT awaited. Fuer SyncExecutor laeuft der Worker
+     * synchron (Tests, Single-Process-Bootstrap). Fuer
+     * ExecutorService-Async kehrt dispatch sofort zurueck und der
+     * Worker laeuft im Hintergrund.
+     *
+     * Beide null = Bestands-Verhalten: Job bleibt QUEUED, Caller (Test)
+     * dispatcht manuell.
+     */
+    private val jobDispatcher: JobDispatcher? = null,
+    private val jobWorkerFactory: JobWorkerFactory? = null,
 ) {
 
     fun start(request: JobStartRequest): JobStartHandlerOutcome {
@@ -177,6 +192,22 @@ class JobStartOrchestrator(
                 if (ownerId != null) quotaService?.commitForOwner(ownerId, request.now)
                 val source = cancellationSourceFactory()
                 workerHandleRegistry.register(jobId, source)
+
+                // Phase E §7.7 Auto-Dispatch (Review-Fix Blocker #1):
+                // Wenn Dispatcher + Factory gewired sind, kicke den Worker
+                // hier an. fire-and-forget — die CompletableFuture wird
+                // bewusst NICHT awaited, damit der Handler-Response sofort
+                // mit `Started + jobId` zurueckgehen kann (Plan §7.7
+                // async-Charakter).
+                val factory = jobWorkerFactory
+                val dispatcher = jobDispatcher
+                if (factory != null && dispatcher != null) {
+                    val worker = factory.create(outcome.record, request)
+                    if (worker != null) {
+                        dispatcher.dispatch(outcome.record, worker, source.token)
+                    }
+                }
+
                 JobStartHandlerOutcome.Started(jobId, outcome.record, source)
             }
             is JobStartTransactionOutcome.IdempotencyNotEligible -> {

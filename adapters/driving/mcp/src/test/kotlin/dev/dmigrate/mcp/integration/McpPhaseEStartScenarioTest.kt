@@ -28,6 +28,7 @@ import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain as shouldContainItem
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.time.Clock
@@ -219,6 +220,24 @@ class McpPhaseEStartScenarioTest : FunSpec({
         text shouldContain ToolErrorCode.POLICY_REQUIRED.name
         text shouldContain "approvalRequestId"
         text shouldContain "data.read"
+    }
+
+    test("Auto-Dispatch (Review-Fix Blocker #1): Worker laeuft synchron via SyncExecutor; Job ist SUCCEEDED") {
+        val w = phaseEWiring(PolicyEffect.Allow)
+        val svc = service(w)
+        val args = JsonParser.parseString(
+            """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-auto-dispatch"}""",
+        ).asJsonObject
+        val text = callStart(svc, "schema_reverse_start", args)
+        val payload = JsonParser.parseString(text).asJsonObject
+        val jobId = payload.get("jobId").asString
+
+        // Plan §7.7: nach Auto-Dispatch + SyncExecutor + Passthrough-Worker
+        // ist der Job bereits SUCCEEDED, NICHT mehr QUEUED.
+        val finalRecord = w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), jobId)!!
+        finalRecord.managedJob.status shouldBe dev.dmigrate.server.core.job.JobStatus.SUCCEEDED
+        // Counter freigegeben (Slot released).
+        finalRecord.quotaReservationOwnerId.shouldNotBeNull()
     }
 
     test("Schema in PhaseBToolSchemas reflektiert die produktiven Handler") {

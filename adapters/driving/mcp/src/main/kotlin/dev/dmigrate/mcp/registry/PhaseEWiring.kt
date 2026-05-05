@@ -12,6 +12,8 @@ import dev.dmigrate.server.application.job.ApprovedRetryService
 import dev.dmigrate.server.application.job.JobCancelService
 import dev.dmigrate.server.application.job.JobDispatcher
 import dev.dmigrate.server.application.job.JobStartService
+import dev.dmigrate.server.application.job.JobWorkerFactory
+import dev.dmigrate.server.application.job.PassthroughJobWorkerFactory
 import dev.dmigrate.server.application.job.SyncExecutor
 import dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore
 import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
@@ -107,4 +109,14 @@ data class PhaseEWiring(
         workerHandleRegistry = workerHandleRegistry,
         quotaService = ownerAwareQuotaService,
     ),
+    /**
+     * Phase E §7.7 Worker-Factory fuer Auto-Dispatch (Review-Fix
+     * Blocker #1). Default ist [PassthroughJobWorkerFactory] — ein
+     * no-op-Worker, der sofort succeeded und damit den Job-Lifecycle
+     * QUEUED -> SUCCEEDED schliesst, OHNE echte Reader/Profiler/
+     * Compare-Adapter. Production-Wiring uebergibt eine Operation-
+     * basierte Factory mit echten SchemaReverse-/DataProfile-/
+     * SchemaCompare-Workern.
+     */
+    val jobWorkerFactory: JobWorkerFactory = PassthroughJobWorkerFactory,
 )

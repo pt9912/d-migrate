@@ -32,6 +32,8 @@ object PhaseERegistries {
             jobIdFactory = eWiring.jobIdFactory,
             cancellationSourceFactory = eWiring.cancellationSourceFactory,
             quotaService = eWiring.ownerAwareQuotaService,
+            jobDispatcher = eWiring.jobDispatcher,
+            jobWorkerFactory = eWiring.jobWorkerFactory,
         )
         val clock = eWiring.phaseCWiring.clock
 
