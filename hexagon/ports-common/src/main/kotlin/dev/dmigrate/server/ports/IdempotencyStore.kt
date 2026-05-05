@@ -46,7 +46,27 @@ interface IdempotencyStore {
      */
     fun claimApproved(scope: IdempotencyScope, now: Instant): IdempotencyClaimOutcome
 
-    fun commit(scope: IdempotencyScope, resultRef: String, now: Instant): Boolean
+    /**
+     * Transitions a `PENDING` or `AWAITING_APPROVAL` entry to `COMMITTED`.
+     *
+     * Phase E §7.2: when committing as part of a Job-Start, the resulting
+     * COMMITTED-retention MUST cover the job's retention so a deduplicated
+     * `COMMITTED` answer is still observable while the job exists. Pass
+     * [retentionUntil] = `jobRecord.expiresAt` from the
+     * [JobStartTransaction]. The store MUST honor `max(default, retentionUntil)`.
+     *
+     * For non-job callers (synchronous tools without a job record),
+     * [retentionUntil] = `null` keeps the store's default retention.
+     *
+     * @return `true` if the transition happened, `false` if the entry
+     *   was missing or in a non-eligible state.
+     */
+    fun commit(
+        scope: IdempotencyScope,
+        resultRef: String,
+        now: Instant,
+        retentionUntil: Instant? = null,
+    ): Boolean
 
     fun deny(scope: IdempotencyScope, reason: String, now: Instant): Boolean
 

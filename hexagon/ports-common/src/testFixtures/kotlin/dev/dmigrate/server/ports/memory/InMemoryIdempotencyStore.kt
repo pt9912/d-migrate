@@ -182,17 +182,31 @@ class InMemoryIdempotencyStore(
         return transitioned
     }
 
-    override fun commit(scope: IdempotencyScope, resultRef: String, now: Instant): Boolean {
+    override fun commit(
+        scope: IdempotencyScope,
+        resultRef: String,
+        now: Instant,
+        retentionUntil: Instant?,
+    ): Boolean {
         var transitioned = false
         entries.computeIfPresent(scope) { _, existing ->
             if (existing.state == IdempotencyState.PENDING ||
                 existing.state == IdempotencyState.AWAITING_APPROVAL
             ) {
                 transitioned = true
+                val defaultExpiresAt = now.plusSeconds(committedRetentionSeconds)
+                // Plan §7.2: COMMITTED-retention MUST cover the linked
+                // job's retention. Take the later of the store default
+                // and the caller-supplied `retentionUntil`.
+                val expiresAt = if (retentionUntil != null && retentionUntil.isAfter(defaultExpiresAt)) {
+                    retentionUntil
+                } else {
+                    defaultExpiresAt
+                }
                 existing.copy(
                     state = IdempotencyState.COMMITTED,
                     resultRef = resultRef,
-                    expiresAt = now.plusSeconds(committedRetentionSeconds),
+                    expiresAt = expiresAt,
                 )
             } else {
                 existing
