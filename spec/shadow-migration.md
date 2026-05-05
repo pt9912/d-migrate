@@ -322,8 +322,7 @@ data class ShadowExecutionOptions(
     val checkpointIntervalMs: Long? = null,
     val checkpointTimeoutMs: Long? = null,
     val maxRestartAttempts: Int? = null,
-    val restartDelayMs: Long? = null,
-    val failFastOnSchemaDrift: Boolean = true
+    val restartDelayMs: Long? = null
 )
 ```
 
@@ -938,7 +937,34 @@ enum class ShadowOperation {
 }
 ```
 
-### 10.2 Source Offset
+### 10.2 Sonderoperationen
+
+`DDL` und `TRUNCATE` dürfen nicht stillschweigend auf das Target angewendet werden.
+
+Default:
+
+```text
+DDL -> FAIL_FAST und Schema-Drift-Artefakt
+TRUNCATE -> REJECT und Dead-Letter- oder Failure-Artefakt
+```
+
+Erlaubte Policies:
+
+```text
+FAIL_FAST
+RECORD_AND_WARN
+DEAD_LETTER
+IGNORE_EXPLICIT
+APPLY_EXPLICIT
+```
+
+`APPLY_EXPLICIT` ist für `TRUNCATE` nur erlaubt, wenn der Shadow Plan die betroffene Tabelle explizit dafür freigibt.
+
+`APPLY_EXPLICIT` für `DDL` ist im produktiven Default nicht erlaubt und darf nur über connector-spezifische, dokumentierte Schema-Evolution-Regeln aktiviert werden.
+
+Für Postgres Flink CDC Pipeline Source bleibt DDL-Synchronisierung nicht unterstützt; DDL muss durch d-migrate als Drift erkannt und gemäß `SchemaDriftPolicy` behandelt werden.
+
+### 10.3 Source Offset
 
 ```kotlin
 data class SourceOffset(
@@ -947,17 +973,57 @@ data class SourceOffset(
 )
 ```
 
-### 10.3 Event-ID
+### 10.4 Event-ID
 
 Die Event-ID muss stabil sein.
 
-Vorschlag:
+Die Eingabe für den Hash muss kanonisch serialisiert werden.
 
-```text
-sha256(sourceConnectionId + table + operation + primaryKey + sourceOffset)
+Kanonische Form:
+
+```json
+{
+  "sourceConnectionId": "conn_legacy",
+  "table": {
+    "schema": "public",
+    "name": "orders"
+  },
+  "operation": "UPDATE",
+  "primaryKey": {
+    "id": {
+      "type": "INT64",
+      "value": "123"
+    }
+  },
+  "sourceOffset": {
+    "connector": "postgres-cdc",
+    "value": {
+      "lsn": "0/16B6C50"
+    }
+  }
+}
 ```
 
-### 10.4 Event Ordering
+Serialisierungsregeln:
+
+```text
+UTF-8 JSON
+Objekt-Keys lexikografisch sortiert
+keine optionalen Felder mit implizitem Default
+Nullwerte explizit als JSON null
+ProfileValue immer mit type und value serialisieren
+Binärwerte base64url ohne Padding
+Timestamps als ISO-8601 UTC mit Nanosekunden, falls vorhanden
+keine Whitespace-Formatierung
+```
+
+Hash:
+
+```text
+eventId = sha256(canonical-json-bytes)
+```
+
+### 10.5 Event Ordering
 
 Ordering muss mindestens pro Tabelle und Primary Key stabil sein.
 
@@ -971,7 +1037,7 @@ not required:
 
 Wenn ein Backend diese Garantie nicht liefern kann, muss der Plan abgelehnt werden oder eine explizite schwächere Semantik dokumentieren.
 
-### 10.5 Snapshot/CDC-Handoff
+### 10.6 Snapshot/CDC-Handoff
 
 Der Übergang vom initialen Snapshot zur CDC-Verarbeitung muss nachvollziehbar sein.
 
@@ -1309,7 +1375,7 @@ enum class CutoverRecommendation {
 Pflicht-Gates:
 
 ```text
-job status is IN_SYNC or DRAINED
+job status is IN_SYNC, CUTOVER_READY or DRAINED
 source lag <= configured max lag
 stable duration >= configured duration
 failed events == 0
@@ -1320,6 +1386,10 @@ checksum validation == pass, if configured
 mapping fingerprint matches
 target schema fingerprint matches
 ```
+
+`CUTOVER_READY` darf nur gesetzt werden, wenn dieselben Gates erfüllt sind, die auch `ReadinessStatus.READY` erzeugen.
+
+Alternativ darf eine Implementierung `CUTOVER_READY` weglassen und Cutover-Freigabe ausschließlich über `ShadowReadiness.status = READY` ausdrücken. In diesem Fall bleibt der Job-Status `IN_SYNC` bis Drain oder Stop.
 
 ### 15.3 Beispielkonfiguration
 
@@ -1663,9 +1733,11 @@ Content-Type: application/json
   "executionBackend": "FLINK_CDC_PIPELINE",
   "checkpointUri": "s3://dmigrate-checkpoints/prod-shadow",
   "artifactUri": "s3://dmigrate-artifacts/prod-shadow",
-  "options": {
+  "executionOptions": {
     "parallelism": 8,
-    "checkpointIntervalMs": 30000,
+    "checkpointIntervalMs": 30000
+  },
+  "migrationOptions": {
     "schemaDriftPolicy": "FAIL_FAST",
     "deadLetterPolicy": "FAIL_FAST"
   }
@@ -1766,7 +1838,8 @@ message StartShadowMigrationRequest {
   ExecutionBackend execution_backend = 5;
   string checkpoint_uri = 6;
   string artifact_uri = 7;
-  ShadowMigrationOptions options = 8;
+  ShadowExecutionOptions execution_options = 8;
+  ShadowMigrationOptions migration_options = 9;
 }
 ```
 
@@ -1780,13 +1853,23 @@ enum ExecutionBackend {
 ```
 
 ```proto
-message ShadowMigrationOptions {
+message ShadowExecutionOptions {
   optional int32 parallelism = 1;
   optional int64 checkpoint_interval_ms = 2;
-  SchemaDriftPolicy schema_drift_policy = 3;
-  DeadLetterPolicy dead_letter_policy = 4;
-  optional int64 max_lag_ms = 5;
-  optional string required_stable_duration = 6;
+  optional int64 checkpoint_timeout_ms = 3;
+  optional int32 max_restart_attempts = 4;
+  optional int64 restart_delay_ms = 5;
+}
+```
+
+```proto
+message ShadowMigrationOptions {
+  SchemaDriftPolicy schema_drift_policy = 1;
+  DeadLetterPolicy dead_letter_policy = 2;
+  optional int64 max_lag_ms = 3;
+  optional string required_stable_duration = 4;
+  bool allow_many_source_tables_to_one_target = 5;
+  bool allow_experimental_flink_cdc_schema_evolution = 6;
 }
 ```
 
@@ -1819,9 +1902,11 @@ Tool-Argumente:
   "executionBackend": "FLINK_CDC_PIPELINE",
   "checkpointUri": "s3://dmigrate-checkpoints/prod-shadow",
   "artifactUri": "s3://dmigrate-artifacts/prod-shadow",
-  "options": {
+  "executionOptions": {
     "parallelism": 8,
-    "checkpointIntervalMs": 30000,
+    "checkpointIntervalMs": 30000
+  },
+  "migrationOptions": {
     "schemaDriftPolicy": "FAIL_FAST",
     "deadLetterPolicy": "FAIL_FAST"
   }
