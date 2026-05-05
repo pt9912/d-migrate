@@ -217,8 +217,8 @@ CREATE TABLE idempotency_reservations (
   result_ref         TEXT,
   challenge          JSONB,                  -- ApprovalChallenge serialized
   reason             TEXT,
-  expires_at         TIMESTAMPTZ NOT NULL,   -- lease for PENDING/AWAITING_APPROVAL
-  retention_until    TIMESTAMPTZ NOT NULL,   -- terminal-state retention
+  expires_at         TIMESTAMPTZ NOT NULL,   -- lease for non-terminal, outcome expiry for terminal
+  retention_until    TIMESTAMPTZ NOT NULL,   -- terminal-state retention; equals expires_at once terminal
   created_at         TIMESTAMPTZ NOT NULL,
   updated_at         TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (tenant_id, caller_id, tool_name, idempotency_key)
@@ -309,11 +309,11 @@ CREATE TABLE quota_counters (
 |---|---|---|
 | **E2.1** | Modul-Setup `adapters/driven/persistence-jdbc` (build.gradle.kts, Hikari-/Flyway-Wiring), `JdbcTransactionRunner` als `internal`-Klasse + Unit-Tests (Begin/Commit/Rollback, Exception-Pfade) | Modul baut; Runner-Tests grün |
 | **E2.2** | Flyway-Setup + V1__phase_e_initial.sql (alle 5 Tabellen aus § 4) | Flyway-Migrate gegen Testcontainers grün; Idempotenz der Migration-Anwendung in CI |
-| **E2.3** | `JdbcIdempotencyStore` — alle 8 Operationen aus dem regulären Pfad mit konkreten SQL-Patterns aus § 6 | `IdempotencyStoreContractTests` grün gegen Postgres (inkl. Recovery-Tests für expired PENDING/AWAITING_APPROVAL-Leases); `markAwaitingApproval`-Challenge-Roundtrip-Test grün |
+| **E2.3** | `JdbcIdempotencyStore` — regulärer Idempotency-Pfad ohne `reserveInitResume`: `reserve`, `markAwaitingApproval`, `claimApproved`, `commit`, `deny`, `markFailed`, `cleanupExpired` mit konkreten SQL-Patterns aus § 6 | `IdempotencyStoreContractTests` grün gegen Postgres (inkl. Recovery-Tests für expired PENDING/AWAITING_APPROVAL-Leases); `markAwaitingApproval`-Challenge-Roundtrip-Test grün |
 | **E2.4** | `JdbcIdempotencyStore.reserveInitResume`-Pfad gegen `init_resume_reservations` (separate Methode/Helper, keine Misch-Logik mit § 6.1) | Init-Resume-Contract-Suite (`ReadOnlyInitResumeContractTests` o.ä. — Name verifizieren in E2.4-Start) grün gegen Postgres |
 | **E2.5** | `JdbcJobStore` (CRUD, Pagination, `transitionStatus` mit `transformer` + `NotFound`/`IllegalTransition`-Diskriminierung, `markCancelRequested`-CAS) | `JobStoreContractTests` grün; insbesondere die Contract-Tests, die `IllegalTransition.currentStatus` lesen, müssen passen |
 | **E2.6** | `JdbcJobStartTransaction` — komponiert E2.3+E2.5 in einer DB-TX über `JdbcTransactionRunner` | `JobStartTransactionContractTests` grün (inkl. parallel-commit-Test); Atomicity-Vertrag aus `spec/phase-e-port-atomicity.md` § 3 ausführbar verifiziert |
-| **E2.7** | `JdbcQuotaService` (Counter-UPSERT mit Limit-Check § 6.8) + `JdbcQuotaReservationOwnerStore` (markX-CAS § 6.9) + JDBC-Variante des `OwnerAwareQuotaService`-Wirings | (a) `QuotaStoreContractTests` aus `hexagon/ports-common/src/testFixtures/.../contract/QuotaStoreContractTests.kt` grün. (b) `QuotaReservationOwnerStoreContractTests` grün gegen Postgres. (c) `OwnerAwareQuotaService`-Atomicity-Tests (Reserve+Register, Double-Release, Double-Refund) laufen gegen das JDBC-Wiring grün |
+| **E2.7** | `JdbcQuotaService` (Counter-UPSERT mit Limit-Check § 6.8) + `JdbcQuotaReservationOwnerStore` (markX-CAS § 6.9) + JDBC-Variante des `OwnerAwareQuotaService`-Wirings. Owner-aware `reserve`, `releaseForOwner`, `refundForOwner` und Sweeper-Refund laufen als gemeinsame DB-TX über Owner-Status + Counter. | (a) `QuotaStoreContractTests` aus `hexagon/ports-common/src/testFixtures/.../contract/QuotaStoreContractTests.kt` grün. (b) `QuotaReservationOwnerStoreContractTests` grün gegen Postgres. (c) `OwnerAwareQuotaService`-Atomicity-Tests (Reserve+Register, Double-Release, Double-Refund) laufen gegen das JDBC-Wiring grün. (d) Crash-Window-Test/Failure-Injection: Exception zwischen Owner-markX und Counter-Decrement rollbackt beides |
 | **E2.8** | End-to-End-Test: Phase-E §7.x-Akzeptanz-Pins gegen Postgres-Wiring (Job-Start → Dispatch → Cancel → Quota-Refund-Cycle); Sweeper findet orphane Owner-Einträge | E2E-Suite grün; `QuotaReservationSweeper` exactly-once-refunded gegen Postgres |
 | **E2.9** | Doku: `spec/phase-e2-persistence.md` — Implementor-Guide für andere Backings (MySQL/SQLite-Skizze als Folge), Flyway-Workflow, Operations-Hinweise (Backup, Connection-Limits); Cross-Refs in `spec/phase-e-port-atomicity.md` § Cross-Refs ergänzt | Doku reviewed; Spec-Cross-Ref-Eintrag „Persistente Implementoren siehe phase-e2-persistence.md" |
 
@@ -455,10 +455,11 @@ liefern `AlreadyClaimed`, wie `IdempotencyStoreContractTests`
 UPDATE idempotency_reservations
 SET state = 'COMMITTED', result_ref = ?,
     claimed = FALSE,
+    expires_at = GREATEST(retention_until, ?::timestamptz),
     retention_until = GREATEST(retention_until, ?::timestamptz),
     updated_at = ?
 WHERE … AND state IN ('PENDING','AWAITING_APPROVAL')
-RETURNING state;
+RETURNING state, expires_at;
 ```
 
 Standalone-Aufruf (z.B. von synchronen Tools ohne Job) → eigene
@@ -468,10 +469,18 @@ ausgeführt, die auch das `JobStore`-INSERT/UPDATE benutzt → eine TX,
 gemeinsame Visibility, beide Statements committen oder rollbacken
 zusammen. Das ist genau das in `spec § 3` geforderte Verhalten.
 
+Terminal rows use one observable expiry: `expires_at == retention_until`.
+`IdempotencyReserveOutcome.Committed` itself only exposes `resultRef`,
+but `Denied`/`Failed` expose `expiresAt`; those outcomes MUST read the
+terminal value from `expires_at`.
+
 ### 6.6 IdempotencyStore.deny / markFailed / cleanupExpired
 
-- `deny`: `UPDATE … SET state='DENIED', claimed=FALSE, reason=?, retention_until=? WHERE state IN ('PENDING','AWAITING_APPROVAL') RETURNING retention_until`.
-- `markFailed`: analog auf `state='FAILED'` und `claimed=FALSE`.
+- `deny`: `UPDATE … SET state='DENIED', claimed=FALSE, reason=?, expires_at=?, retention_until=? WHERE state IN ('PENDING','AWAITING_APPROVAL') RETURNING expires_at`.
+- `markFailed`: analog auf `state='FAILED'` und `claimed=FALSE`;
+  `expires_at` und `retention_until` werden auf denselben terminalen
+  Ablauf gesetzt. Bei `retentionUntil != null` gilt
+  `max(defaultFailedRetention, retentionUntil)`.
 - `cleanupExpired`: regulärer Pfad löscht NUR terminale Einträge
   (`COMMITTED`/`DENIED`/`FAILED`) mit `retention_until < ?`; abgelaufene
   `PENDING`/`AWAITING_APPROVAL` bleiben erhalten, damit `reserve` sie
@@ -570,6 +579,24 @@ Genau-eins-Sieger über `affectedRows`. CAS-Verlierer in
 `releaseForOwner`/`refundForOwner` überspringen den Counter-Decrement
 ⇒ Double-Release-Schutz wie InMemory.
 
+Für das JDBC-`OwnerAwareQuotaService`-Wiring reicht diese Einzeloperation
+nicht: `markReleased`/`markRefunded` und der folgende Counter-Decrement
+MÜSSEN in derselben DB-Transaktion laufen. Sonst entsteht bei Crash nach
+Owner-Statuswechsel, aber vor `QuotaStore.release/refund`, ein
+dauerhaft belegter Slot mit terminalem Owner.
+
+```kotlin
+tx.inTransaction { conn ->
+    val transitioned = ownerStore.markReleasedWithConnection(conn, ownerId, now) ?: return
+    quotaService.releaseWithConnection(conn, transitioned.reservation)
+}
+```
+
+`refundForOwner` und `QuotaReservationSweeper` nutzen denselben
+connection-scoped Pfad. Failure-Injection-Tests in E2.7 muessen
+erzwingen, dass eine Exception zwischen `markX` und Counter-Decrement
+beide Änderungen rollbackt.
+
 ## 7. Risiken
 
 | Risiko | Wahrscheinlichkeit | Mitigation |
@@ -580,6 +607,7 @@ Genau-eins-Sieger über `affectedRows`. CAS-Verlierer in
 | `JSONB`-Serialisierung (ApprovalChallenge, ManagedJob) braucht Schema-Versionierung | mittel | Plain-Jackson + `schema_version`-Feld im JSON; Migrations-Bumps via Flyway |
 | Connection-Pool-Erschöpfung unter Job-Storm | gering | Hikari-`maximumPoolSize` konfigurierbar; Sweeper benutzt Read-Only-Pfad ohne TX |
 | `quota_counters` ohne `limit_value` ⇒ Limits aus QuotaConfig müssen runtime-stabil sein | mittel | Existing `QuotaConfig` ist immutable per construction; bei Hot-Reload Owner muss bewusst entscheiden, was mit Counter > new-Limit passiert. In E2.7 dokumentieren. |
+| Owner-aware Release/Refund kann bei Crash zwischen Owner-markX und Counter-Decrement Slots leaken | mittel | JDBC-`OwnerAwareQuotaService` nutzt connection-scoped `markXWithConnection` + `releaseWithConnection` in einer DB-TX; Failure-Injection-Test in E2.7 |
 | `markCancelRequested`-Idempotenz (Reason nicht überschreiben) muss als CAS umgesetzt sein | mittel | Pattern: `UPDATE … SET cancel_requested = TRUE, cancel_source = COALESCE(cancel_source, ?) WHERE …` — explicit unit-test in E2.5 |
 | `JobStore.list`-Pagination auf SQL umsetzen | mittel | Contract-kompatible Offset-Tokens (`"2"`, `"4"`, …) beibehalten; optional spaeteres Keyset-Format nur nach bewusster Contract-Aenderung |
 | Flyway-Baseline bei Bestands-Datenbanken | n/a | Phase E2 = Greenfield; Migrations-Plan startet bei V1 |
@@ -597,7 +625,8 @@ Phase E2 gilt als done, wenn:
    inkl. `IllegalTransition.currentStatus`-Diskriminierung;
    `JobStartTransactionContractTests` inkl. parallel-commit;
    `QuotaReservationOwnerStoreContractTests` inkl. parallel-markX;
-   `OwnerAwareQuotaService`-Atomicity);
+   `OwnerAwareQuotaService`-Atomicity inkl. Rollback zwischen Owner-
+   markX und Counter-Decrement);
 2. ✅ die Atomicity-Tests aus `spec/phase-e-port-atomicity.md` § E
    sind ausführbar gegen das JDBC-Wiring;
 3. ✅ Phase-E §7.x-Akzeptanz-Pins (E.9 (3/3), E.10) laufen end-to-end
