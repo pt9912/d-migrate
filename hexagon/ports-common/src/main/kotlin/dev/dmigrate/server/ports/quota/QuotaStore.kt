@@ -2,6 +2,7 @@ package dev.dmigrate.server.ports.quota
 
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import java.time.Duration
 
 enum class QuotaDimension {
     ACTIVE_JOBS,
@@ -48,7 +49,27 @@ sealed interface QuotaOutcome {
         override val amount: Long,
         val current: Long,
         val limit: Long,
+        /**
+         * Phase E §7.9 line 1294-1295: `RATE_LIMITED`-Details muessen
+         * `retryAfter` enthalten. Fuer Window-Rate-Limits aus dem
+         * naechsten Window-Reset; fuer aktive Jobquoten aus einem
+         * konfigurierten Retry-Hint, weil Slot-Freigabe ereignisgetrieben
+         * ist. Default ist [DEFAULT_ACTIVE_JOB_RETRY_AFTER] — Wert > 0,
+         * damit das Idempotency-Lease auf maximal `now + retryAfter`
+         * gesetzt werden kann (Plan §7.9 line 1295).
+         */
+        val retryAfter: Duration = DEFAULT_ACTIVE_JOB_RETRY_AFTER,
     ) : QuotaOutcome
+
+    companion object {
+        /**
+         * Default-`retryAfter` fuer aktive Jobquoten, wenn keine
+         * spezifische Window-Reset-Zeit greift. 30 Sekunden ist ein
+         * konservativer Hint; Bootstrap-Wiring kann ueber den
+         * QuotaService-Pfad einen anderen Wert injizieren.
+         */
+        val DEFAULT_ACTIVE_JOB_RETRY_AFTER: Duration = Duration.ofSeconds(30)
+    }
 }
 
 /**
