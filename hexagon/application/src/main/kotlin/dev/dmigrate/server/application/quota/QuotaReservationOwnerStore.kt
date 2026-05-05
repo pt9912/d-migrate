@@ -16,6 +16,12 @@ import java.util.concurrent.ConcurrentHashMap
  * Production-Adapter persistieren in der Datenbank; die hier mitgelieferte
  * [InMemoryQuotaReservationOwnerStore] reicht fuer Single-Process-Boot
  * + Tests.
+ *
+ * Implementoren MUESSEN die `QuotaReservationOwnerStoreContractTests`-
+ * Suite durchlaufen (siehe
+ * `hexagon/application/src/test/.../QuotaReservationOwnerStoreContractTests.kt`)
+ * — Detail-Vertrag inkl. exactly-once-CAS-Garantien in
+ * `spec/phase-e-port-atomicity.md` Abschnitt (5).
  */
 interface QuotaReservationOwnerStore {
 

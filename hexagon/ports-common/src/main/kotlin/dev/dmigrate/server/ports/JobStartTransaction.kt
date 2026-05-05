@@ -21,7 +21,9 @@ import java.time.Instant
  * The InMemory adapter uses a process-level lock; production adapters
  * MUST provide an equivalent atomic primitive (shared transaction or
  * shared store). Plan §7.2 explicitly forbids "recoverable Saga mit
- * sichtbarem Job-ohne-Idempotency-Commit".
+ * sichtbarem Job-ohne-Idempotency-Commit". Implementoren MUESSEN die
+ * `JobStartTransactionContractTests`-Suite durchlaufen — Detail-
+ * Vertrag in `spec/phase-e-port-atomicity.md` Abschnitt (3).
  *
  * The caller (typically `JobStartService`) is expected to have:
  * - reserved (or claimed) the [IdempotencyScope] before calling this

@@ -36,6 +36,9 @@ class OwnerAwareQuotaService(
      * sieht. Fuer JVM-Crash zwischen den Schritten gibt InMemory
      * keine Garantien (alles ist eh weg); persistente Backings
      * muessen ein gemeinsames Transaktions-Primitive bereitstellen.
+     *
+     * Vollstaendige Atomicity-Vertrags-Beschreibung + Implementor-Guide:
+     * `spec/phase-e-port-atomicity.md` Abschnitt (4).
      */
     fun reserve(
         key: QuotaKey,

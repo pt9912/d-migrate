@@ -17,6 +17,13 @@ import java.time.Instant
  * State machine: `PENDING` -> (`AWAITING_APPROVAL` -> )? `COMMITTED` | `DENIED`.
  * Lease/recovery semantics are documented in `docs/ImpPlan-0.9.6-A.md`
  * §6.2 / §14.2.
+ *
+ * Implementoren MUESSEN die `IdempotencyStoreContractTests`-Suite
+ * durchlaufen — der Atomicity-Vertrag (parallele identische Reserves
+ * liefern exactly-one Reserved; durable Approval-Challenge ueberlebt
+ * den `markAwaitingApproval` -> `reserve`-Roundtrip) ist in
+ * `spec/phase-e-port-atomicity.md` Abschnitte (1) + (2)
+ * dokumentiert.
  */
 interface IdempotencyStore {
 

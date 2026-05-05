@@ -7,6 +7,7 @@ import dev.dmigrate.server.ports.contract.AuditSinkContractTests
 import dev.dmigrate.server.ports.contract.ConnectionReferenceStoreContractTests
 import dev.dmigrate.server.ports.contract.DiffStoreContractTests
 import dev.dmigrate.server.ports.contract.IdempotencyStoreContractTests
+import dev.dmigrate.server.ports.contract.JobStartTransactionContractTests
 import dev.dmigrate.server.ports.contract.JobStoreContractTests
 import dev.dmigrate.server.ports.contract.ProfileStoreContractTests
 import dev.dmigrate.server.ports.contract.QuotaStoreContractTests
@@ -53,3 +54,10 @@ class InMemoryApprovalGrantStoreContractTest :
 class InMemoryAuditSinkContractTest : AuditSinkContractTests({ InMemoryAuditSink() })
 
 class InMemoryQuotaStoreContractTest : QuotaStoreContractTests({ InMemoryQuotaStore() })
+
+class InMemoryJobStartTransactionContractTest :
+    JobStartTransactionContractTests(
+        factory = { idempotencyStore, jobStore ->
+            InMemoryJobStartTransaction(jobStore, idempotencyStore)
+        },
+    )
