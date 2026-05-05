@@ -605,8 +605,10 @@ dauerhaft belegter Slot mit terminalem Owner.
 
 ```kotlin
 tx.inTransaction { conn ->
-    val transitioned = ownerStore.markReleasedWithConnection(conn, ownerId, now) ?: return
-    quotaService.releaseWithConnection(conn, transitioned.reservation)
+    val transitioned = ownerStore.markReleasedWithConnection(conn, ownerId, now)
+    if (transitioned != null) {
+        quotaService.releaseWithConnection(conn, transitioned.reservation)
+    }
 }
 ```
 
