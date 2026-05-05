@@ -21,6 +21,9 @@ dependencies {
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 
     testImplementation(project(":adapters:driven:driver-sqlite"))
+
+    // Phase E0.1 cancel-test fixtures (TestCancellationTokenSource).
+    testImplementation(testFixtures(project(":hexagon:core")))
 }
 
 kover {

@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
@@ -53,6 +54,11 @@ internal class ImportStreamingInvoker(
                 ),
             )
             StreamingResult.Ok(rawResult.copy(operationId = resumeContext.operationId))
+        } catch (e: OperationCancelledException) {
+            // Plan §4.5: Cancel must travel through this catch-all boundary
+            // unmodified so the runner can map it to exit 130 instead of the
+            // generic 5 (import failure) path.
+            throw e
         } catch (e: UnsupportedTriggerModeException) {
             stderr("Error: ${e.message}")
             StreamingResult.Exit(2)

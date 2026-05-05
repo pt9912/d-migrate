@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.data.FinishTableResult
@@ -38,6 +39,7 @@ internal data class ChunkContext(
     val deserializer: ValueDeserializer,
 )
 
+@Suppress("LongParameterList")
 internal fun importChunks(
     reader: DataChunkReader,
     session: TableImportSession,
@@ -46,9 +48,17 @@ internal fun importChunks(
     reporter: ProgressReporter,
     onChunkCommitted: (ImportChunkCommit) -> Unit,
     firstChunk: DataChunk?,
+    cancellationToken: CancellationToken = CancellationToken.none(),
 ) {
     var nextChunk: DataChunk? = firstChunk
     while (nextChunk != null) {
+        // Plan §6.3: cancel between chunks must not start the next chunk's
+        // normalize/write. Cancel checkpoints sit OUTSIDE the per-call try
+        // blocks so OperationCancelledException never travels through the
+        // chunk-failure catches (Plan §4.5 — would otherwise be mapped to
+        // a fachlicher chunk error).
+        cancellationToken.throwIfCancellationRequested()
+
         val normalizedChunk = try {
             normalizeChunk(
                 nextChunk,
@@ -64,6 +74,7 @@ internal fun importChunks(
             continue
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val writeResult = try {
             session.write(normalizedChunk)
         } catch (throwable: Throwable) {
@@ -74,37 +85,62 @@ internal fun importChunks(
             continue
         }
 
-        try {
-            session.commitChunk()
-            applyWriteResult(writeResult, state)
-            reportChunkProcessed(reporter, context, normalizedChunk, state)
-            state.chunksCommittedTotal += 1
-            runCatching {
-                onChunkCommitted(
-                    ImportChunkCommit(
-                        table = context.table,
-                        chunkIndex = normalizedChunk.chunkIndex,
-                        chunksCommitted = state.chunksCommittedTotal,
-                        rowsInsertedTotal = state.rowsInserted,
-                        rowsUpdatedTotal = state.rowsUpdated,
-                        rowsSkippedTotal = state.rowsSkipped,
-                        rowsUnknownTotal = state.rowsUnknown,
-                        rowsFailedTotal = state.rowsFailed,
-                    )
+        cancellationToken.throwIfCancellationRequested()
+        val commitFailed = commitAndAccount(session, writeResult, normalizedChunk, context, state, reporter)
+        if (commitFailed) break
+
+        // Plan §4.6: callbacks that persist progress are side effects. Cancel
+        // before the callback prevents a fake-progress manifest entry for an
+        // otherwise-finished chunk.
+        cancellationToken.throwIfCancellationRequested()
+        runCatching {
+            onChunkCommitted(
+                ImportChunkCommit(
+                    table = context.table,
+                    chunkIndex = normalizedChunk.chunkIndex,
+                    chunksCommitted = state.chunksCommittedTotal,
+                    rowsInsertedTotal = state.rowsInserted,
+                    rowsUpdatedTotal = state.rowsUpdated,
+                    rowsSkippedTotal = state.rowsSkipped,
+                    rowsUnknownTotal = state.rowsUnknown,
+                    rowsFailedTotal = state.rowsFailed,
                 )
-            }
-        } catch (throwable: Throwable) {
-            state.rowsFailed += normalizedChunk.rows.size.toLong()
-            when (handleChunkFailure(normalizedChunk, throwable, context.options, state.chunkFailures)) {
-                ChunkDecision.ABORT -> throw throwable
-                ChunkDecision.CONTINUE -> {
-                    state.error = throwable.message ?: throwable::class.simpleName
-                    break
-                }
-            }
+            )
         }
 
         nextChunk = advanceOrBreak(reader, context, state, normalizedChunk.chunkIndex + 1) ?: break
+    }
+}
+
+/**
+ * Commits the chunk and updates loop state. Returns `true` if a
+ * non-fatal commit failure asked the loop to break; throws on ABORT.
+ * Extracted from [importChunks] so the cancel checkpoint can sit
+ * cleanly outside the chunk-failure catch (Plan §4.5).
+ */
+private fun commitAndAccount(
+    session: TableImportSession,
+    writeResult: WriteResult,
+    normalizedChunk: DataChunk,
+    context: ChunkContext,
+    state: ImportLoopState,
+    reporter: ProgressReporter,
+): Boolean {
+    return try {
+        session.commitChunk()
+        applyWriteResult(writeResult, state)
+        reportChunkProcessed(reporter, context, normalizedChunk, state)
+        state.chunksCommittedTotal += 1
+        false
+    } catch (throwable: Throwable) {
+        state.rowsFailed += normalizedChunk.rows.size.toLong()
+        when (handleChunkFailure(normalizedChunk, throwable, context.options, state.chunkFailures)) {
+            ChunkDecision.ABORT -> throw throwable
+            ChunkDecision.CONTINUE -> {
+                state.error = throwable.message ?: throwable::class.simpleName
+                true
+            }
+        }
     }
 }
 

@@ -51,6 +51,7 @@ class StreamingImporter(
             "No tables to import from $input"
         }
 
+        cancellationToken.throwIfCancellationRequested()
         progressReporter.report(ProgressEvent.RunStarted(
             operation = ProgressOperation.IMPORT,
             totalTables = discoveredInputs.size,
@@ -62,6 +63,7 @@ class StreamingImporter(
         val summaries = mutableListOf<TableImportSummary>()
 
         for ((index, tableInput) in discoveredInputs.withIndex()) {
+            cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
             val summary = tableImporter.import(TableImportParams(
                 pool = pool,
@@ -79,6 +81,7 @@ class StreamingImporter(
                 cancellationToken = cancellationToken,
             ))
             summaries += summary
+            cancellationToken.throwIfCancellationRequested()
             onTableCompleted(summary)
         }
 

@@ -45,7 +45,7 @@ internal class FakeReaderFactory(
     }
 }
 
-internal class FakeReader(
+internal open class FakeReader(
     private val header: List<String>?,
     private val chunks: List<DataChunk>,
     private val nextChunkFailures: Map<Int, Throwable> = emptyMap(),
@@ -53,7 +53,11 @@ internal class FakeReader(
 ) : DataChunkReader {
     private var index = 0
 
-    override fun nextChunk(): DataChunk? {
+    override fun nextChunk(): DataChunk? = consumeNextChunk()
+
+    /** Subclasses observe `nextChunk` via this open hook to keep the
+     *  `nextChunkFailures` semantic intact while allowing instrumentation. */
+    protected open fun consumeNextChunk(): DataChunk? {
         nextChunkFailures[index]?.let { throw it }
         return if (index >= chunks.size) null else chunks[index++]
     }
