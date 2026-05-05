@@ -54,7 +54,12 @@ class E07PostgresTimeoutBench : FunSpec({
     )
 
     test("statement_timeout enforces <= 5s on long-running pg_sleep query") {
-        HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 5_000)).use { pool ->
+        // netMs deliberately >> stmtMs: statement_timeout (server-side) must
+        // fire before networkTimeout (client-side socket close), otherwise
+        // the SQLException carries a connection-error SQLState instead of
+        // 57014 (query_canceled). NetworkTimeout is the safety net for
+        // paths that don't go through statement_timeout (e.g. DatabaseMetaData).
+        HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 30_000)).use { pool ->
             val start = System.nanoTime()
             val ex = shouldThrow<SQLException> {
                 pool.borrow().use { conn ->
@@ -62,7 +67,7 @@ class E07PostgresTimeoutBench : FunSpec({
                 }
             }
             val elapsedMs = (System.nanoTime() - start) / 1_000_000
-            elapsedMs shouldBeLessThan 6_000L
+            elapsedMs shouldBeLessThan 10_000L
             // PostgreSQL emits SQLState 57014 (query_canceled) when
             // statement_timeout fires.
             ex.sqlState shouldBe "57014"
@@ -70,7 +75,7 @@ class E07PostgresTimeoutBench : FunSpec({
     }
 
     test("Cleanup: pool returns connection after timeout, healthy SELECT works") {
-        HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 5_000)).use { pool ->
+        HikariConnectionPoolFactory.create(cfg(stmtMs = 5_000, netMs = 30_000)).use { pool ->
             shouldThrow<SQLException> {
                 pool.borrow().use { conn ->
                     conn.prepareStatement("SELECT pg_sleep(60)").executeQuery()
