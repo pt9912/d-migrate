@@ -155,6 +155,19 @@ internal object JobStartHandlerSupport {
                     requestId = requestId,
                 ),
             )
+        is JobStartHandlerOutcome.RateLimited ->
+            ToolCallOutcome.Error(
+                envelope = ToolErrorEnvelope(
+                    code = ToolErrorCode.RATE_LIMITED,
+                    message = "Rate limit exceeded",
+                    details = listOf(
+                        ToolErrorDetail("retryAfter", outcome.retryAfter.seconds.toString()),
+                        ToolErrorDetail("current", outcome.current.toString()),
+                        ToolErrorDetail("limit", outcome.limit.toString()),
+                    ),
+                    requestId = requestId,
+                ),
+            )
     }
 
     private fun successResponse(jobId: String, tenant: TenantId, requestId: String): ToolCallOutcome.Success {

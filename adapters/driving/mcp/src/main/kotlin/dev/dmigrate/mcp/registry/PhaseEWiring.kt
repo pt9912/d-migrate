@@ -13,6 +13,9 @@ import dev.dmigrate.server.application.job.JobCancelService
 import dev.dmigrate.server.application.job.JobDispatcher
 import dev.dmigrate.server.application.job.JobStartService
 import dev.dmigrate.server.application.job.SyncExecutor
+import dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore
+import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
+import dev.dmigrate.server.application.quota.QuotaReservationOwnerStore
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyService
 import dev.dmigrate.server.ports.ApprovalGrantStore
@@ -82,13 +85,26 @@ data class PhaseEWiring(
         cancellationSourceFactory = cancellationSourceFactory,
     ),
     val workerExecutor: java.util.concurrent.Executor = SyncExecutor,
+    /**
+     * Phase E §7.9 owner-aware Quota-Service. Default-Komposition:
+     * delegate auf [PhaseCWiring.quotaService], owner-Store als
+     * In-Memory. Production-Wiring kann eine persistente OwnerStore-
+     * Implementierung injizieren.
+     */
+    val quotaReservationOwnerStore: QuotaReservationOwnerStore = InMemoryQuotaReservationOwnerStore(),
+    val ownerAwareQuotaService: OwnerAwareQuotaService = OwnerAwareQuotaService(
+        delegate = phaseCWiring.quotaService,
+        ownerStore = quotaReservationOwnerStore,
+    ),
     val jobDispatcher: JobDispatcher = JobDispatcher(
         jobStore = phaseCWiring.jobStore,
         executor = workerExecutor,
         clock = phaseCWiring.clock,
+        quotaService = ownerAwareQuotaService,
     ),
     val jobCancelService: JobCancelService = JobCancelService(
         jobStore = phaseCWiring.jobStore,
         workerHandleRegistry = workerHandleRegistry,
+        quotaService = ownerAwareQuotaService,
     ),
 )

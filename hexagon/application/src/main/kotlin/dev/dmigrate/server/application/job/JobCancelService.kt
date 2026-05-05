@@ -1,6 +1,7 @@
 package dev.dmigrate.server.application.job
 
 import dev.dmigrate.server.application.audit.SecretScrubber
+import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.core.principal.PrincipalContext
@@ -57,6 +58,17 @@ class JobCancelService(
     private val cancelReasonScrubber: (String) -> String = SecretScrubber::scrub,
     private val maxReasonLength: Int = DEFAULT_MAX_REASON_LENGTH,
     private val ackPendingRetryAfter: Duration = DEFAULT_RETRY_AFTER,
+    /**
+     * Phase E §7.9: optionaler owner-aware Quota-Service. Wird auf
+     * `releaseForOwner` gerufen bei `QUEUED -> CANCELLED`-CAS, weil
+     * der Dispatcher fuer queued-Jobs nie laeuft und somit kein
+     * Terminal-Release ausloest. Plan §7.9 line 1291-1292.
+     *
+     * Fuer RUNNING-Cancel macht der Dispatcher den Release beim
+     * Worker-Outcome — der Service hier ruft NICHT zusaetzlich, sonst
+     * Doppel-Release.
+     */
+    private val quotaService: OwnerAwareQuotaService? = null,
 ) {
 
     fun cancel(
@@ -144,7 +156,14 @@ class JobCancelService(
             )
         }
         return when (outcome) {
-            is JobTransitionOutcome.Applied -> JobCancelOutcome.Cancelled(outcome.record)
+            is JobTransitionOutcome.Applied -> {
+                // Plan §7.9 line 1291-1292: Slot freigeben — fuer
+                // queued-Cancel passiert das hier (Dispatcher laeuft nie).
+                outcome.record.quotaReservationOwnerId?.let { ownerId ->
+                    quotaService?.releaseForOwner(ownerId, now)
+                }
+                JobCancelOutcome.Cancelled(outcome.record)
+            }
             is JobTransitionOutcome.IllegalTransition ->
                 // Race: zwischen Lookup und CAS hat ein Worker den Status
                 // geaendert. Re-read und als AlreadyTerminal/AckPending

@@ -215,6 +215,21 @@ class JobStartHandlerSupportTest : FunSpec({
         val keyed = result.envelope.details.associate { it.key to it.value }
         keyed["reason"] shouldBe "policy:not-awaiting"
     }
+
+    test("toToolCallOutcome: RateLimited -> RATE_LIMITED-Envelope mit retryAfter/current/limit") {
+        val outcome = JobStartHandlerOutcome.RateLimited(
+            retryAfter = java.time.Duration.ofSeconds(45),
+            current = 3L,
+            limit = 3L,
+        )
+        val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "req-rl")
+        result.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        result.envelope.code shouldBe ToolErrorCode.RATE_LIMITED
+        val keyed = result.envelope.details.associate { it.key to it.value }
+        keyed["retryAfter"] shouldBe "45"
+        keyed["current"] shouldBe "3"
+        keyed["limit"] shouldBe "3"
+    }
 })
 
 private fun mockJobRecord(jobId: String): dev.dmigrate.server.core.job.JobRecord =

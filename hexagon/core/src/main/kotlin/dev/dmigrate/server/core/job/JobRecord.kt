@@ -14,6 +14,19 @@ data class JobRecord(
     val visibility: JobVisibility,
     val resourceUri: ServerResourceUri,
     val adminScope: String? = null,
+    /**
+     * Phase E §7.9 quota-Reservation-Owner-Bindung. Wenn der
+     * JobStartOrchestrator vor der Job-Commit eine Quota-Reservierung
+     * registriert hat, traegt dieses Feld die zugehoerige
+     * `ownerId` (typischerweise aus dem IdempotencyScope abgeleitet),
+     * sodass JobDispatcher und JobCancelService den Slot beim
+     * Terminal-/Cancel-Pfad ueber `OwnerAwareQuotaService.releaseForOwner`
+     * freigeben koennen.
+     *
+     * `null` bedeutet "kein Owner-Tracking" (z.B. fuer Bestands-Tests
+     * oder Pfade, die nicht durch den Phase-E-Orchestrator laufen).
+     */
+    val quotaReservationOwnerId: String? = null,
 ) {
     fun isReadableBy(
         principal: PrincipalContext,

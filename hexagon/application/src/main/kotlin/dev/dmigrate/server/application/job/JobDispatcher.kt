@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.OperationCancelSource
 import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.server.application.audit.SecretScrubber
+import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
 import dev.dmigrate.server.core.job.JobError
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.job.JobStatus
@@ -64,6 +65,14 @@ class JobDispatcher(
      * inspizieren wollen.
      */
     private val cancelReasonScrubber: (String) -> String = SecretScrubber::scrub,
+    /**
+     * Phase E §7.9: optionaler owner-aware Quota-Service. Wenn gesetzt,
+     * gibt der Dispatcher beim Terminal-Pfad (succeeded/failed/cancelled
+     * + Runner-Timeout-Cleanup) den Slot via
+     * `releaseForOwner(record.quotaReservationOwnerId, now)` frei.
+     * Plan §7.9 line 1291-1292.
+     */
+    private val quotaService: OwnerAwareQuotaService? = null,
 ) {
 
     fun dispatch(
@@ -185,6 +194,11 @@ class JobDispatcher(
             allowedFromStatuses = setOf(JobStatus.RUNNING),
             transformer = transformer,
         )
+        // Plan §7.9 line 1291-1292: release nach succeeded/failed/cancelled.
+        // Wenn KEIN OwnerId auf dem Record (Bestands-Pfad ohne Quota) -> no-op.
+        record.quotaReservationOwnerId?.let { ownerId ->
+            quotaService?.releaseForOwner(ownerId, terminalAt)
+        }
     }
 
     companion object {

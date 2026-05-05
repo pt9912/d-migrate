@@ -9,6 +9,11 @@ import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.application.fingerprint.PayloadFingerprintService
 import dev.dmigrate.server.application.policy.PolicyAttempt
 import dev.dmigrate.server.application.policy.PolicyService
+import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
+import dev.dmigrate.server.ports.quota.QuotaDimension
+import dev.dmigrate.server.ports.quota.QuotaKey
+import dev.dmigrate.server.ports.quota.QuotaOutcome
+import java.time.Duration
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import dev.dmigrate.server.core.idempotency.IdempotencyKey
 import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
@@ -77,6 +82,15 @@ class JobStartOrchestrator(
     private val jobIdFactory: () -> String,
     private val cancellationSourceFactory: () -> CancellationTokenSource =
         { CancellationTokenSource.create() },
+    /**
+     * Phase E §7.9 owner-aware Quota-Service. Wenn `null`, ueberspringt
+     * der Orchestrator die Quota-Reserve/Commit/Refund-Schritte
+     * komplett — sinnvoll fuer Bestands-Tests, die keine Quota-Logik
+     * unter sich haben. Phase-E-Production-Wiring (PhaseEWiring) setzt
+     * eine echte Instanz.
+     */
+    private val quotaService: OwnerAwareQuotaService? = null,
+    private val quotaLeaseDuration: Duration = DEFAULT_QUOTA_LEASE,
 ) {
 
     fun start(request: JobStartRequest): JobStartHandlerOutcome {
@@ -145,19 +159,72 @@ class JobStartOrchestrator(
         request: JobStartRequest,
         scope: IdempotencyScope,
     ): JobStartHandlerOutcome {
+        // Phase E §7.9: Quota.reserve VOR jobBuilder + JobStartTransaction.commit.
+        // RateLimited liefert sofort zurueck — keine Job-Erzeugung, keine
+        // Secret-Store-Reads (Plan §7.9 line 1270-1273).
+        val quotaReservation = reserveQuota(request, scope)
+        if (quotaReservation is QuotaReserveResult.RateLimited) {
+            return quotaReservation.outcome
+        }
+        val ownerId = (quotaReservation as? QuotaReserveResult.Granted)?.ownerId
+
         val jobId = jobIdFactory()
-        val record = request.jobBuilder(jobId, request.now)
+        val baseRecord = request.jobBuilder(jobId, request.now)
+        val record = if (ownerId != null) baseRecord.copy(quotaReservationOwnerId = ownerId) else baseRecord
+
         return when (val outcome = jobStartTransaction.commit(record, scope, request.now)) {
             is JobStartTransactionOutcome.Committed -> {
+                if (ownerId != null) quotaService?.commitForOwner(ownerId, request.now)
                 val source = cancellationSourceFactory()
                 workerHandleRegistry.register(jobId, source)
                 JobStartHandlerOutcome.Started(jobId, outcome.record, source)
             }
-            is JobStartTransactionOutcome.IdempotencyNotEligible ->
+            is JobStartTransactionOutcome.IdempotencyNotEligible -> {
                 // Race: parallel commit zwischen reserve und transaction-commit.
-                // Caller retries; das Reserve sieht dann Committed → AlreadyStarted.
+                // Plan §7.9 line 1282-1284: refund nur fuer pre-commit Fehler
+                // dieses Pipeline-Owners. Sweeper kann auf Lease-Ablauf NICHT
+                // refunden, weil der OwnerStore-Eintrag PENDING ist.
+                if (ownerId != null) quotaService?.refundForOwner(ownerId, request.now)
                 JobStartHandlerOutcome.Pending(request.now.plusSeconds(1))
+            }
         }
+    }
+
+    private fun reserveQuota(request: JobStartRequest, scope: IdempotencyScope): QuotaReserveResult {
+        val service = quotaService ?: return QuotaReserveResult.SkipNoService
+        val key = QuotaKey(
+            tenantId = request.tenantId,
+            dimension = QuotaDimension.ACTIVE_JOBS,
+            principalId = request.callerId,
+            operation = request.toolName,
+        )
+        val ownerId = quotaOwnerIdFor(scope)
+        val outcome = service.reserve(
+            key = key,
+            amount = QUOTA_AMOUNT_PER_JOB,
+            ownerId = ownerId,
+            leaseExpiresAt = request.now.plus(quotaLeaseDuration),
+            now = request.now,
+        )
+        return when (outcome) {
+            is QuotaOutcome.Granted -> QuotaReserveResult.Granted(ownerId)
+            is QuotaOutcome.RateLimited -> QuotaReserveResult.RateLimited(
+                JobStartHandlerOutcome.RateLimited(
+                    retryAfter = outcome.retryAfter,
+                    current = outcome.current,
+                    limit = outcome.limit,
+                ),
+            )
+        }
+    }
+
+    private fun quotaOwnerIdFor(scope: IdempotencyScope): String =
+        "${scope.tenantId.value}:${scope.callerId.value}:${scope.toolName}:${scope.idempotencyKey.value}"
+
+    private sealed interface QuotaReserveResult {
+        data object SkipNoService : QuotaReserveResult
+        data class Granted(val ownerId: String) : QuotaReserveResult
+        data class RateLimited(val outcome: JobStartHandlerOutcome.RateLimited) : QuotaReserveResult
     }
 
     private fun markAwaitingAndChallenge(
@@ -260,6 +327,8 @@ class JobStartOrchestrator(
 
     companion object {
         const val DENIAL_FALLBACK_SECONDS: Long = 600
+        const val QUOTA_AMOUNT_PER_JOB: Long = 1L
+        val DEFAULT_QUOTA_LEASE: Duration = Duration.ofSeconds(60)
     }
 }
 
@@ -312,6 +381,18 @@ sealed interface JobStartHandlerOutcome {
     data class IdempotencyConflict(val existingFingerprint: String) : JobStartHandlerOutcome
 
     data class ValidationError(val invalid: JobStartInputValidation.Invalid) : JobStartHandlerOutcome
+
+    /**
+     * Phase E §7.9: aktive Jobquote ueberschritten. Plan §7.9 line
+     * 1294-1295: `retryAfter` ist Pflichtfeld; Tool-Handler projiziert
+     * es in den `RATE_LIMITED`-Envelope und richtet die Idempotency-
+     * Lease auf maximal `now + retryAfter` aus.
+     */
+    data class RateLimited(
+        val retryAfter: Duration,
+        val current: Long,
+        val limit: Long,
+    ) : JobStartHandlerOutcome
 }
 
 private fun JobStartOutcome.toHandlerOutcome(): JobStartHandlerOutcome = when (this) {

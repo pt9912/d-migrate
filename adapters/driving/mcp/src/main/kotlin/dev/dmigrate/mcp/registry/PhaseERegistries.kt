@@ -31,6 +31,7 @@ object PhaseERegistries {
             payloadFingerprintService = eWiring.payloadFingerprintService,
             jobIdFactory = eWiring.jobIdFactory,
             cancellationSourceFactory = eWiring.cancellationSourceFactory,
+            quotaService = eWiring.ownerAwareQuotaService,
         )
         val clock = eWiring.phaseCWiring.clock
 
