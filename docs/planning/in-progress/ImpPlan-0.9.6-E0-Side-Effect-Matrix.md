@@ -1,8 +1,15 @@
-# Phase E0.2 — Cancel-Checkpoint- und Side-Effect-Matrix
+# Phase E0 — Cancel-Checkpoint- und Side-Effect-Matrix
 
 > **Milestone**: 0.9.6 — Beta: MCP-Server
-> **Phase**: E0.2 (Side-Effect-Inventar)
-> **Status**: Initial-Snapshot 2026-05-05
+> **Phase**: E0.2 → E0.5 (laufend gepflegt)
+> **Status**: Stand 2026-05-05 nach E0.5 (3/3); ~25 `go` + ~10 `go_followup`
+> + 4 `tentative-go` + ~10 `blocked` (alle Driver-monolithic-Calls; siehe
+> §6 Schluss-Klassifikation). Final-Update mit Verdict-Re-Stempel
+> erfolgt in AP E0.7.5; Move nach `done/` zusammen mit E0.7-Abschluss
+> (siehe `ImpPlan-0.9.6-E0.7.md` §5.6).
+>
+> Update-Historie pro AP siehe §8 Änderungs-Protokoll.
+>
 > **Hauptplan**: `../done/ImpPlan-0.9.6-E0.md` §7.2
 > **Pflichtschema**: `../done/ImpPlan-0.9.6-E0.md` §7.2 (Tabelle direkt nach AP E0.2)
 
