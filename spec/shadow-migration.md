@@ -163,7 +163,7 @@ Artifact Store:
   Pläne, Reports, Dead Letters, Checkpoints, Logs, Validierungen halten
 ```
 
-### 5.2 Modulplatzierung
+### 5.2 Ziel-Modulplatzierung
 
 ```text
 hexagon:shadow
@@ -215,7 +215,23 @@ adapters:driving:mcp
   Shadow-Migration Tools und Ressourcen
 ```
 
-### 5.3 Dependency-Regeln
+### 5.3 Übergang zur aktuellen Repo-Struktur
+
+Die Modulnamen in 5.2 beschreiben das Zielbild.
+
+Im aktuellen Repository existieren einige Zielmodule noch nicht. Bis sie angelegt werden, gilt folgende Zuordnung:
+
+| Zielbereich | Aktuelle Platzierung |
+| --- | --- |
+| `hexagon:jobs` | bestehende Job-Contracts in `hexagon:core`, Job-Orchestrierung in `hexagon:application`, Ports in `hexagon:ports-*` |
+| `hexagon:shadow` | neues Modul, sobald Shadow-Contracts implementiert werden |
+| `adapters:driving:rest` | neues Modul, sobald REST als eigener Driving Adapter eingeführt wird |
+| `adapters:driving:grpc` | neues Modul, sobald gRPC als eigener Driving Adapter eingeführt wird |
+| `adapters:driving:mcp` | bestehendes Modul für MCP-Tools und Ressourcen |
+
+Die erste Implementierung darf bestehende Job- und Artefakt-Contracts wiederverwenden, muss aber Shadow-spezifische Domain-Status, Readiness und Artefakte klar vom generischen Job-Lifecycle trennen.
+
+### 5.4 Dependency-Regeln
 
 `hexagon:core` darf nicht abhängig sein von:
 
@@ -426,6 +442,7 @@ source:
   tables: app.public.orders
   decoding.plugin.name: pgoutput
   slot.name: dmigrate_shadow_orders
+  table-id.include-database: true
 
 sink:
   type: postgres
@@ -502,6 +519,10 @@ Für Postgres als Flink-CDC-Pipeline-Source gilt:
 Postgres CDC kann Snapshot- und inkrementelle Daten lesen.
 Postgres CDC Pipeline Source unterstützt aktuell keine Synchronisierung von Tabellenstrukturänderungen.
 ```
+
+Wenn d-migrate Route- oder Transform-Regeln mit dreiteiligen Table IDs (`database.schema.table`) generiert, muss für Postgres `table-id.include-database: true` gesetzt werden.
+
+Ohne `table-id.include-database: true` muss d-migrate die von Flink CDC verwendete Table-ID-Form ohne Database-Anteil (`schema.table`) in `route.source-table` und `transform.source-table` verwenden.
 
 Konsequenz für d-migrate:
 
@@ -665,6 +686,36 @@ enum class ShadowMigrationStatus {
 | `STOPPED`            | Job wurde kontrolliert gestoppt                        |
 | `FAILED`             | Job ist fehlgeschlagen                                 |
 | `CANCELLED`          | Job wurde abgebrochen                                  |
+
+### 7.4 Generischer JobStatus vs. ShadowMigrationStatus
+
+`ShadowMigrationStatus` ist ein Domain-Status und ersetzt nicht den bestehenden generischen `JobStatus`.
+
+Der bestehende `JobStatus` bleibt der grobe technische Job-Lifecycle:
+
+```text
+QUEUED
+RUNNING
+SUCCEEDED
+FAILED
+CANCELLED
+```
+
+Shadow-spezifische Phasen werden in `ShadowMigrationJob.status` und im `shadow-status.json` Artefakt gespeichert.
+
+Falls ein bestehender `ManagedJob` verwendet wird, darf `JobProgress.phase` den aktuellen `ShadowMigrationStatus` als String spiegeln. Die Quelle der Wahrheit bleibt aber der Shadow-Domain-Status.
+
+Mapping:
+
+| `ShadowMigrationStatus` | generischer `JobStatus` |
+| --- | --- |
+| `PLANNED` | `QUEUED` |
+| `INITIALIZING` bis `STOPPING` | `RUNNING` |
+| `STOPPED` | `SUCCEEDED` |
+| `FAILED` | `FAILED` |
+| `CANCELLED` | `CANCELLED` |
+
+`DRAINED` ist nur dann `SUCCEEDED`, wenn der Backend-Job danach kontrolliert beendet wurde. Läuft der Shadow-Job nach dem Drain weiter oder wartet auf Cutover-Aktion, bleibt der generische `JobStatus` `RUNNING`.
 
 ---
 
