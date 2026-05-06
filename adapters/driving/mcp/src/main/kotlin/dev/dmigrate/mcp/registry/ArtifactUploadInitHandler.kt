@@ -178,6 +178,19 @@ internal class ArtifactUploadInitHandler(
         val mimeType = raw.optString("mimeType") ?: DEFAULT_POLICY_MIME_TYPE
         val artifactKind = parseArtifactKind(raw)
         val targetTable = raw.optString("targetTable")
+        // Phase F § 8.4 (F.4 2/3): `sizeBytes=0` ist nur fuer
+        // nicht-Schema-`job_input` als Single-Empty-Segment gueltig
+        // (Plan: "leeres finales Segment + Empty-SHA"). Schema-Artefakte
+        // muessen Bytes haben — ein leeres Schema-Dokument ist kein
+        // valider DDL-/Schema-JSON-Inhalt.
+        if (sizeBytes == 0L && artifactKind == ArtifactKind.SCHEMA) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "sizeBytes",
+                    "must be > 0 for artifactKind=SCHEMA",
+                )),
+            )
+        }
 
         val tenantId = context.principal.effectiveTenantId
         val callerId = context.principal.principalId

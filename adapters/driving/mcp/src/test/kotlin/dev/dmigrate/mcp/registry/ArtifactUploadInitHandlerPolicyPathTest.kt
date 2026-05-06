@@ -386,6 +386,26 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         parseSuccess(outcome).get("uploadSessionId").asString shouldBe "ups-1"
     }
 
+    test("F.4 (2/3): sizeBytes=0 + artifactKind=SCHEMA -> VALIDATION_ERROR (kein leeres Schema)") {
+        val fx = Fixture(policyDefault = PolicyEffect.Allow)
+        val empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ToolCallContext(
+                    "artifact_upload_init",
+                    args(
+                        """{"uploadIntent":"job_input","approvalKey":"key-empty-schema",""" +
+                            """"sizeBytes":0,"checksumSha256":"$empty","artifactKind":"SCHEMA"}""",
+                    ),
+                    principal,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "sizeBytes"
+        // Plan § 8.4: keine Session entsteht (Pre-Store-Validation).
+        fx.sessionStore.findById(tenant, "ups-1") shouldBe null
+    }
+
     test("Ungueltiger artifactKind -> VALIDATION_ERROR(artifactKind)") {
         val fx = Fixture()
         val ex = shouldThrow<ValidationErrorException> {

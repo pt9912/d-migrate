@@ -22,6 +22,7 @@ import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.application.quota.QuotaReservation
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.application.quota.RateLimitedDetail
+import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
 import dev.dmigrate.server.core.upload.UploadSegment
@@ -118,6 +119,7 @@ internal class ArtifactUploadHandler(
             )
         }
         enforceIntentScope(session, context.principal)
+        validateSessionSizeContract(session)
         if (session.state == UploadSessionState.COMPLETED) {
             return handleReplayAfterCompleted(session, args, context.requestId)
         }
@@ -235,6 +237,36 @@ internal class ArtifactUploadHandler(
         // beiden Werte; eine Session mit fremdem Intent waere ein
         // Server-Fehler in F-Tests.
         else -> SCOPE_ARTIFACT_UPLOAD
+    }
+
+    /**
+     * Phase F § 8.4 (F.4 2/3): defensive Pruefung gegen Session-
+     * Misskonfiguration. `sizeBytes=0` ist nur fuer das Single-Empty-
+     * Segment in nicht-Schema-`job_input` zulaessig (Plan: "Null-Byte-
+     * Upload als ein finales leeres Segment modellieren"). Init blockt
+     * die verbotenen Kombinationen bereits, aber Sessions koennten
+     * theoretisch ueber Store-Manipulation entstehen — der Handler
+     * lehnt sie deterministisch mit `VALIDATION_ERROR` ab, statt
+     * unbeabsichtigt zu finalisieren.
+     */
+    private fun validateSessionSizeContract(session: UploadSession) {
+        if (session.sizeBytes != 0L) return
+        if (session.uploadIntent == ArtifactUploadInitHandler.INTENT_SCHEMA_STAGING_READONLY) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "sizeBytes",
+                    "must be > 0 for uploadIntent=schema_staging_readonly",
+                )),
+            )
+        }
+        if (session.artifactKind == ArtifactKind.SCHEMA) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "sizeBytes",
+                    "must be > 0 for artifactKind=SCHEMA",
+                )),
+            )
+        }
     }
 
     private fun handleReplayAfterCompleted(
