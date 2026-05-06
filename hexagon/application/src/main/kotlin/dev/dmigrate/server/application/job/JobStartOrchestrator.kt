@@ -26,8 +26,13 @@ import dev.dmigrate.server.ports.ApprovalGrantStore
 import dev.dmigrate.server.ports.IdempotencyStore
 import dev.dmigrate.server.ports.JobStartTransaction
 import dev.dmigrate.server.ports.JobStartTransactionOutcome
+import dev.dmigrate.server.ports.JobStore
+import dev.dmigrate.server.ports.JobTransitionOutcome
 import dev.dmigrate.server.ports.WorkerHandleRegistry
+import dev.dmigrate.server.core.job.JobError
+import dev.dmigrate.server.core.job.JobStatus
 import java.time.Instant
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Phase E §7.6 Orchestrator: kombiniert die Phase-E-Bausteine zu einem
@@ -121,6 +126,20 @@ class JobStartOrchestrator(
      * — passt zum Bestands-Test-Setup mit SyncExecutor.
      */
     private val dispatchAdmission: JobDispatchAdmission = SyncJobDispatchAdmission,
+    /**
+     * Phase E3 § 6.5: optionaler [JobStore] fuer
+     * `markExecutorSetupFailed` — eine `QUEUED -> FAILED`-CAS-Transition,
+     * die einen post-commit Setup-Fehler (worker == null,
+     * factory.create-Throw, dispatcher.dispatch-Throw,
+     * RejectedExecutionException) pollbar fuer den Caller macht.
+     *
+     * `null`-Default haelt Bestands-Tests unveraendert: ohne JobStore
+     * faellt der Setup-Failure-Pfad auf "Permit close + Started zurueck"
+     * zurueck (kein pollbares FAILED, Job bleibt QUEUED). Production-
+     * Wiring (PhaseEWiring) MUSS den jobStore mitliefern, damit
+     * Plan § 3.5 Setup-Failure-Akzeptanz greift.
+     */
+    private val jobStore: JobStore? = null,
 ) {
 
     fun start(request: JobStartRequest): JobStartHandlerOutcome {
@@ -259,30 +278,28 @@ class JobStartOrchestrator(
             is JobStartTransactionOutcome.Committed -> {
                 if (ownerId != null) quotaService?.commitForOwner(ownerId, request.now)
                 val source = cancellationSourceFactory()
-                workerHandleRegistry.register(jobId, source)
 
-                // Phase E §7.7 Auto-Dispatch (Review-Fix Blocker #1):
-                // Wenn Dispatcher + Factory gewired sind, kicke den Worker
-                // hier an. fire-and-forget — die CompletableFuture wird
-                // bewusst NICHT awaited, damit der Handler-Response sofort
-                // mit `Started + jobId` zurueckgehen kann (Plan §7.7
-                // async-Charakter). Plan E3 § 6.2: Permit wandert zum
-                // Dispatcher, der es im Worker-Runnable-finally schliesst.
+                // Phase E §7.7 Auto-Dispatch + Plan E3 § 6.2/§ 6.5:
+                // Setup-Steps (register + factory.create + dispatch) sind
+                // im Auto-Dispatch-Pfad in einem try-catch verpackt — bei
+                // post-commit Fehler markiert `markExecutorSetupFailed`
+                // den Job pollbar als FAILED. Im Bestands-Pfad
+                // (kein factory/dispatcher) bleibt es bei
+                // workerHandleRegistry.register ohne try-catch.
                 if (factory != null && dispatcher != null) {
-                    val worker = factory.create(outcome.record, request)
-                    if (worker != null) {
-                        dispatcher.dispatch(outcome.record, worker, source.token, permit)
-                    } else {
-                        // (3/4)-Interim: kein Worker → Permit nicht
-                        // dispatchen, sondern lokal schliessen. Plan E3
-                        // § 3.5 verlangt zusaetzlich markExecutorSetupFailed-
-                        // Pfad — kommt in (4/4).
-                        permit?.close()
-                    }
+                    runAutoDispatch(
+                        request = request,
+                        record = outcome.record,
+                        jobId = jobId,
+                        source = source,
+                        factory = factory,
+                        dispatcher = dispatcher,
+                        permit = permit,
+                    )
                 } else {
-                    // Defensive: kein Auto-Dispatch wired, daher auch
-                    // kein Permit acquired (siehe oben). Diese Branch
-                    // ist mit `permit == null` per construction.
+                    workerHandleRegistry.register(jobId, source)
+                    // Defensive: ohne Auto-Dispatch ist permit per
+                    // construction null — `?.close()` ist no-op.
                     permit?.close()
                 }
 
@@ -462,6 +479,125 @@ class JobStartOrchestrator(
         return outcome.toHandlerOutcome()
     }
 
+    /**
+     * Plan E3 § 6.2: setup-Steps fuer Auto-Dispatch — register + factory
+     * + dispatch — laufen in einem try-catch. Bei jedem Throwable wird
+     * der Permit best-effort geschlossen und `markExecutorSetupFailed`
+     * persistiert die FAILED-Transition. Der Aufrufer returnt weiter
+     * `Started`, der Poll-Pfad sieht den Fehler.
+     */
+    private fun runAutoDispatch(
+        request: JobStartRequest,
+        record: JobRecord,
+        jobId: String,
+        source: dev.dmigrate.core.cancel.CancellationTokenSource,
+        factory: JobWorkerFactory,
+        dispatcher: JobDispatcher,
+        permit: JobDispatchPermit?,
+    ) {
+        var handleRegistrationAttempted = false
+        try {
+            handleRegistrationAttempted = true
+            workerHandleRegistry.register(jobId, source)
+            val worker = factory.create(record, request)
+                ?: throw WorkerNotRegisteredException(record.managedJob.operation)
+            dispatcher.dispatch(record, worker, source.token, permit)
+        } catch (cause: Throwable) {
+            closePermitBestEffort(permit, jobId)
+            markExecutorSetupFailed(record, request.now, cause, handleRegistrationAttempted)
+        }
+    }
+
+    /**
+     * Plan E3 § 6.5: CAS-Transition `QUEUED -> FAILED` mit error-code-
+     * Mapping (RejectedExecutionException -> EXECUTOR_CLOSED,
+     * WorkerNotRegisteredException -> WORKER_NOT_REGISTERED, sonst
+     * EXECUTOR_SETUP_FAILED). JobStore-Fehler propagieren — der Handler
+     * darf `Started` nur returnen wenn diese primaere Markierung
+     * erfolgreich persistiert wurde. Quota-Release und Handle-
+     * Unregister sind sekundaere best-effort Schritte (Logged statt
+     * geworfen), damit Cleanup-Fehler nicht erneut durch den Start-
+     * `catch` laufen.
+     */
+    private fun markExecutorSetupFailed(
+        record: JobRecord,
+        now: Instant,
+        error: Throwable,
+        handleRegistrationAttempted: Boolean,
+    ) {
+        val store = jobStore ?: return
+        val code = when (error) {
+            is RejectedExecutionException -> ERROR_CODE_EXECUTOR_CLOSED
+            is WorkerNotRegisteredException -> ERROR_CODE_WORKER_NOT_REGISTERED
+            else -> ERROR_CODE_EXECUTOR_SETUP_FAILED
+        }
+        var transition: JobTransitionOutcome? = null
+        try {
+            transition = store.transitionStatus(
+                tenantId = record.tenantId,
+                jobId = record.managedJob.jobId,
+                allowedFromStatuses = setOf(JobStatus.QUEUED),
+            ) { mj ->
+                mj.copy(
+                    status = JobStatus.FAILED,
+                    updatedAt = now,
+                    error = JobError(
+                        code = code,
+                        message = error.message ?: error::class.simpleName.orEmpty(),
+                    ),
+                )
+            }
+        } finally {
+            if (handleRegistrationAttempted) {
+                unregisterSetupHandleBestEffort(record.managedJob.jobId)
+            }
+        }
+        if (transition is JobTransitionOutcome.Applied) {
+            transition.record.quotaReservationOwnerId?.let { ownerId ->
+                releaseSetupQuotaBestEffort(record.managedJob.jobId, ownerId, now)
+            }
+        }
+    }
+
+    private fun closePermitBestEffort(permit: JobDispatchPermit?, jobId: String) {
+        if (permit == null) return
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        try {
+            permit.close()
+        } catch (cleanup: Throwable) {
+            logSetupCleanupFailure(jobId, "permit-close", cleanup)
+        }
+    }
+
+    private fun releaseSetupQuotaBestEffort(jobId: String, ownerId: String, now: Instant) {
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        try {
+            quotaService?.releaseForOwner(ownerId, now)
+        } catch (cleanup: Throwable) {
+            logSetupCleanupFailure(jobId, "quota-release", cleanup)
+        }
+    }
+
+    private fun unregisterSetupHandleBestEffort(jobId: String) {
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        try {
+            workerHandleRegistry.unregister(jobId)
+        } catch (cleanup: Throwable) {
+            logSetupCleanupFailure(jobId, "handle-unregister", cleanup)
+        }
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun logSetupCleanupFailure(jobId: String, stage: String, cleanup: Throwable) {
+        // Plan E3 § 6.5: Cleanup-Fehler werden NIE in den Start-Catch
+        // zurueckgeworfen, sonst wuerde der Cleanup-Pfad rekursiv laufen.
+        // Logging-Routing (slf4j) lebt zentral im Adapter — hier nur
+        // deterministisches Suppress zur Vertragssicherheit.
+    }
+
+    private class WorkerNotRegisteredException(operation: String) :
+        RuntimeException("No worker registered for operation $operation")
+
     companion object {
         const val DENIAL_FALLBACK_SECONDS: Long = 600
         const val QUOTA_AMOUNT_PER_JOB: Long = 1L
@@ -477,6 +613,11 @@ class JobStartOrchestrator(
          * deterministisches Replay innerhalb des Shutdown-Race-Fensters.
          */
         const val EXECUTOR_CLOSED_RETENTION_SECONDS: Long = 1
+
+        /** Plan E3 § 6.5: error-code-Werte fuer setup-Failure-Pfade. */
+        const val ERROR_CODE_EXECUTOR_CLOSED: String = "EXECUTOR_CLOSED"
+        const val ERROR_CODE_WORKER_NOT_REGISTERED: String = "WORKER_NOT_REGISTERED"
+        const val ERROR_CODE_EXECUTOR_SETUP_FAILED: String = "EXECUTOR_SETUP_FAILED"
     }
 }
 
