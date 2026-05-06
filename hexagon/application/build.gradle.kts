@@ -1,6 +1,10 @@
 // hexagon:application — Use case runners (application layer).
 // Depends only on hexagon:core and hexagon:ports, never on adapters.
 
+plugins {
+    `java-test-fixtures`
+}
+
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:ports"))
@@ -19,4 +23,10 @@ dependencies {
 
     // Phase E0.1 cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))
+
+    // Phase E2.7: Contract-Test-Fixture fuer QuotaReservationOwnerStore
+    // braucht Kotest fuer abstract FunSpec-Definition.
+    testFixturesApi(project(":hexagon:ports-common"))
+    testFixturesApi("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
+    testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
 }

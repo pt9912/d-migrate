@@ -20,7 +20,7 @@ import java.time.Instant
  * unveraendert. Caller, die kein Owner-Tracking brauchen (z.B. Phase-C
  * Upload-Slots), nutzen weiterhin den simpel-Pfad direkt.
  */
-class OwnerAwareQuotaService(
+open class OwnerAwareQuotaService(
     private val delegate: QuotaService,
     private val ownerStore: QuotaReservationOwnerStore,
 ) {
@@ -35,12 +35,13 @@ class OwnerAwareQuotaService(
      * Sweeper-/Concurrent-Reserve dazwischen einen partiellen State
      * sieht. Fuer JVM-Crash zwischen den Schritten gibt InMemory
      * keine Garantien (alles ist eh weg); persistente Backings
-     * muessen ein gemeinsames Transaktions-Primitive bereitstellen.
+     * muessen ein gemeinsames Transaktions-Primitive bereitstellen
+     * (siehe `JdbcOwnerAwareQuotaService`).
      *
      * Vollstaendige Atomicity-Vertrags-Beschreibung + Implementor-Guide:
      * `spec/phase-e-port-atomicity.md` Abschnitt (4).
      */
-    fun reserve(
+    open fun reserve(
         key: QuotaKey,
         amount: Long,
         ownerId: String,
@@ -67,7 +68,7 @@ class OwnerAwareQuotaService(
      * Wenn kein Owner-Eintrag existiert (z.B. weil das vorherige
      * `reserve` ohne Owner-Tracking lief), ist der Aufruf no-op.
      */
-    fun commitForOwner(ownerId: String, now: Instant) {
+    open fun commitForOwner(ownerId: String, now: Instant) {
         val owner = ownerStore.findById(ownerId) ?: return
         delegate.commit(owner.reservation)
         ownerStore.markCommitted(ownerId, now)
@@ -85,7 +86,7 @@ class OwnerAwareQuotaService(
      * markReleased. Der Verlierer bekommt null und uebergeht
      * delegate.release — kein doppelter Counter-Decrement.
      */
-    fun releaseForOwner(ownerId: String, now: Instant) {
+    open fun releaseForOwner(ownerId: String, now: Instant) {
         val transitioned = ownerStore.markReleased(ownerId, now) ?: return
         delegate.release(transitioned.reservation)
     }
@@ -100,7 +101,7 @@ class OwnerAwareQuotaService(
      * releaseForOwner — markRefunded zuerst, delegate.refund nur bei
      * CAS-Gewinn.
      */
-    fun refundForOwner(ownerId: String, now: Instant) {
+    open fun refundForOwner(ownerId: String, now: Instant) {
         val transitioned = ownerStore.markRefunded(ownerId, now) ?: return
         delegate.refund(transitioned.reservation)
     }

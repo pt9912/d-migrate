@@ -9,6 +9,9 @@ plugins {
 
 dependencies {
     api(project(":hexagon:ports-common"))
+    // Phase E2.7: QuotaReservationOwnerStore + OwnerAwareQuotaService liegen
+    // in hexagon:application; der JDBC-Adapter implementiert beide.
+    api(project(":hexagon:application"))
     api("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
     implementation("org.postgresql:postgresql:${rootProject.properties["postgresqlJdbcVersion"]}")
     implementation("org.flywaydb:flyway-core:11.8.2")
@@ -36,6 +39,9 @@ dependencies {
     // Fixtures.tenant/principal/NOW). Selber JAR fuer alle Phase-E-
     // JDBC-Adapter-Contract-Tests (E2.4–E2.7).
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    // Phase E2.7: QuotaReservationOwnerStoreContractTests aus
+    // hexagon:application testFixtures.
+    testImplementation(testFixtures(project(":hexagon:application")))
 }
 
 kover {
@@ -69,6 +75,17 @@ kover {
                     // -PintegrationTests.
                     "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction",
                 )
+                // Phase E2.7: Quota-Stack (JdbcQuotaStore +
+                // JdbcQuotaReservationOwnerStore + JdbcOwnerAwareQuotaService
+                // plus QuotaJson-Wire-Codec). Postgres-only Logik
+                // (INSERT…ON CONFLICT mit Limit-Check, jsonb, GREATEST,
+                // RETURNING). Gedeckt durch JdbcQuotaStoreContractTest +
+                // JdbcQuotaReservationOwnerStoreContractTest +
+                // JdbcOwnerAwareQuotaServiceTest unter -PintegrationTests.
+                // QuotaJson hat zwar einen Default-Unit-Test, wird aber
+                // mit dem Stack zusammen exkludiert, weil Wire-Code-
+                // Versionierung mit der Schema-Version koppelt.
+                packages("dev.dmigrate.server.persistence.jdbc.quota")
             }
         }
         verify {
