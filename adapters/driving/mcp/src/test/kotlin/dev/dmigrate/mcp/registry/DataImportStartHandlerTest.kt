@@ -1,17 +1,27 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
+import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
+import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ManagedArtifact
+import dev.dmigrate.server.core.job.JobVisibility
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
@@ -50,11 +60,14 @@ class DataImportStartHandlerTest : FunSpec({
     class Fixture(
         policyDefault: PolicyEffect = PolicyEffect.Allow,
         val jobIdSeq: AtomicInteger = AtomicInteger(0),
+        val tenant: TenantId = Fixtures.tenant("acme"),
+        seedDefaultArtifact: Boolean = true,
     ) {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val workerHandleRegistry = InMemoryWorkerHandleRegistry()
         val approvalGrantStore = InMemoryApprovalGrantStore()
+        val artifactStore = InMemoryArtifactStore()
         val transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore)
         val grantService = DefaultApprovalGrantService(approvalGrantStore, ApprovalGrantValidator())
         val approvedRetryService = ApprovedRetryService(
@@ -74,7 +87,38 @@ class DataImportStartHandlerTest : FunSpec({
             payloadFingerprintService = DefaultPayloadFingerprintService(),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
-        val handler = DataImportStartHandler(orchestrator, clock)
+        val handler = DataImportStartHandler(orchestrator, artifactStore, clock)
+
+        init {
+            if (seedDefaultArtifact) {
+                seedArtifact(artifactId = "art-deadbeef", kind = ArtifactKind.UPLOAD_INPUT)
+            }
+        }
+
+        fun seedArtifact(
+            artifactId: String,
+            kind: ArtifactKind = ArtifactKind.UPLOAD_INPUT,
+            mimeType: String = "text/csv",
+        ) {
+            artifactStore.save(
+                ArtifactRecord(
+                    managedArtifact = ManagedArtifact(
+                        artifactId = artifactId,
+                        filename = "upload-ups-1-$artifactId.bin",
+                        contentType = mimeType,
+                        sizeBytes = 1024,
+                        sha256 = "deadbeef".repeat(8),
+                        createdAt = now,
+                        expiresAt = now.plusSeconds(86_400),
+                    ),
+                    kind = kind,
+                    tenantId = tenant,
+                    ownerPrincipalId = Fixtures.principal("alice"),
+                    visibility = JobVisibility.TENANT,
+                    resourceUri = ServerResourceUri(tenant, ResourceKind.ARTIFACTS, artifactId),
+                ),
+            )
+        }
     }
 
     fun ctx(args: JsonObject) = ToolCallContext(
@@ -214,5 +258,127 @@ class DataImportStartHandlerTest : FunSpec({
             )
         }
         fx.jobIdSeq.get() shouldBe 0
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // F.7 (3/5) — Artifact-Eligibility + table-Topologie.
+    // ──────────────────────────────────────────────────────────────
+
+    test("artifactId zeigt auf nicht existierendes Artefakt -> RESOURCE_NOT_FOUND") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        shouldThrow<ResourceNotFoundException> {
+            fx.handler.handle(ctx(args(artifactId = "art-missing")))
+        }
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("Artefakt mit kind=SCHEMA (read-only Schema-Staging) -> VALIDATION_ERROR") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(artifactId = "art-schema-1", kind = ArtifactKind.SCHEMA)
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-schema-1")))
+        }
+        ex.violations.first().field shouldBe "artifactId"
+        ex.violations.first().reason shouldContain "UPLOAD_INPUT"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("Artefakt mit kind=PROFILE -> VALIDATION_ERROR (kein Import-Material)") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(artifactId = "art-profile-1", kind = ArtifactKind.PROFILE)
+        shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-profile-1")))
+        }
+    }
+
+    test("sourceArtifactRef wird tenant-scoped aufgeloest und gegen ArtifactStore validiert") {
+        val fx = Fixture()
+        val result = fx.handler.handle(
+            ctx(
+                args(
+                    artifactId = null,
+                    sourceArtifactRef = "dmigrate://tenants/acme/artifacts/art-deadbeef",
+                ),
+            ),
+        )
+        result.shouldBeInstanceOf<ToolCallOutcome.Success>()
+    }
+
+    test("sourceArtifactRef mit anderem Tenant -> VALIDATION_ERROR (Tenant-Mismatch)") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(
+                    args(
+                        artifactId = null,
+                        sourceArtifactRef = "dmigrate://tenants/other/artifacts/art-deadbeef",
+                    ),
+                ),
+            )
+        }
+        ex.violations.first().field shouldBe "sourceArtifactRef"
+    }
+
+    test("sourceArtifactRef mit kind=jobs (falsche ResourceKind) -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(
+                    args(
+                        artifactId = null,
+                        sourceArtifactRef = "dmigrate://tenants/acme/jobs/some-job",
+                    ),
+                ),
+            )
+        }
+    }
+
+    test("table und tables gleichzeitig -> VALIDATION_ERROR (mutually exclusive)") {
+        val fx = Fixture()
+        val tablesArr = JsonArray().apply { add("warehouse.events") }
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(
+                    args(extraFields = mapOf("table" to "warehouse.events", "tables" to tablesArr)),
+                ),
+            )
+        }
+        ex.violations.first().reason shouldContain "mutually exclusive"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("tables in Phase F nicht erlaubt (kein Bundle-Format) -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val tablesArr = JsonArray().apply { add("warehouse.events"); add("warehouse.users") }
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("tables" to tablesArr))))
+        }
+        ex.violations.first().field shouldBe "tables"
+        ex.violations.first().reason shouldContain "bundle format"
+    }
+
+    test("tables als leeres Array -> VALIDATION_ERROR (auch ohne Bundle-Format-Carve-out)") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("tables" to JsonArray()))))
+        }
+        ex.violations.first().reason shouldContain "must not be empty"
+    }
+
+    test("tables mit leeren Strings -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val tablesArr = JsonArray().apply { add(""); add("warehouse.users") }
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("tables" to tablesArr))))
+        }
+        ex.violations.first().reason shouldContain "non-blank strings"
+    }
+
+    test("table allein bleibt zulaessig (Single-File-Topologie)") {
+        val fx = Fixture()
+        val result = fx.handler.handle(
+            ctx(args(extraFields = mapOf("table" to "warehouse.events"))),
+        )
+        result.shouldBeInstanceOf<ToolCallOutcome.Success>()
     }
 })
