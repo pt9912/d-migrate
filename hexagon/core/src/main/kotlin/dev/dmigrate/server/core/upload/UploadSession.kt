@@ -83,4 +83,37 @@ data class UploadSession(
      * any session that has never entered FINALIZING.
      */
     val finalizationOutcome: FinalizationOutcome? = null,
+    /**
+     * Phase F § 4.2 + § 5.1 (F.2): durable Bindung an die Approval-
+     * Freigabe fuer policy-pflichtige Init-Pfade
+     * (`uploadIntent = job_input`). Teil des SyncEffect-Scopes
+     * `(tenant, caller, artifact_upload_init, approvalKey)` aus § 8.3 —
+     * gleicher Tenant/Caller/Toolname/`approvalKey` plus identisches
+     * `payloadFingerprint` liefert dieselbe Session.
+     *
+     * `null` fuer den read-only Schema-Staging-Pfad
+     * (`uploadIntent = schema_staging_readonly`); dort uebernimmt
+     * `clientRequestId` die Resume-Identitaet.
+     */
+    val approvalKey: String? = null,
+    /**
+     * Phase F § 4.2 (F.2): durable SHA-256 Fingerprint der Init-
+     * Metadaten (`artifactKind`, `mimeType`, `sizeBytes`,
+     * `checksumSha256`, `uploadIntent`, optional `targetTable`,
+     * Tenant, Principal, optionaler Zielkontext). Wird beim
+     * `markAwaitingApproval`/Approval-Grant gespeichert; `reserve`-
+     * Replays vergleichen gegen diesen Wert (Plan § 5.1
+     * "abweichender Payload -> IDEMPOTENCY_CONFLICT"). `null` fuer
+     * Bestands-Sessions ohne policy-Pfad.
+     */
+    val approvalFingerprint: String? = null,
+    /**
+     * Phase F § 5.1 (F.2): optionaler `targetTable`-Hint fuer
+     * Single-File-`job_input`-Uploads. Faellt ohne `targetTable` auf
+     * den `data_import_start.table`-Pflichtpfad zurueck (Plan § 5.1).
+     * Wird in den Approval-/Payload-Fingerprint eingerechnet (§ 4.2),
+     * sodass abweichende `targetTable`-Werte zwischen Init und Import
+     * via SyncEffect-/Idempotency-Conflict abgewiesen werden.
+     */
+    val targetTable: String? = null,
 )
