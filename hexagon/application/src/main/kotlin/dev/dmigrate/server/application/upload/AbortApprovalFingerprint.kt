@@ -21,11 +21,32 @@ import dev.dmigrate.server.core.upload.UploadSessionState
  * - Session-Tenant
  * - Session-Owner-Principal
  * - Admin-/Caller-Principal
- * - Pre-Abort-Session-Status
+ * - **Pre-Abort-Session-Status** (Plan-Carve-out F.6 3/3, siehe unten)
  * - `artifactKind`
  * - `uploadIntent`
- * - Pre-Abort reservierte bzw. empfangene Bytes
+ * - **Pre-Abort reservierte bzw. empfangene Bytes** (Plan-Carve-out)
  * - optionalen `reason`
+ *
+ * **Plan-Carve-out (F.6 3/3)**: `preAbortState` und `preAbortBytes`
+ * werden im `AbortOutcome`-Record durabel gespeichert, fliessen aber
+ * NICHT in den Fingerprint. Hintergrund: der Plan fordert gleichzeitig
+ * "Retry desselben genehmigten Abbruchs ist idempotent". Wuerde der
+ * Fingerprint den `session.state`-Wert enthalten, koennte ein zweiter
+ * Aufruf mit derselben Approval-Eingabe nicht denselben Hash
+ * reproduzieren — der erste Call setzt die Session auf ABORTED, der
+ * zweite Call sieht ABORTED, der Fingerprint waere ein anderer und
+ * `SyncEffectIdempotencyStore.reserve` lieferte
+ * `Conflict` statt `Existing(resultRef)`. Idempotenz und State-Bindung
+ * sind daher gegensatzfrei nur erreichbar, wenn die im Verlauf
+ * mutierenden Felder ausserhalb des Fingerprints leben (Plan § 5.3
+ * Alternative B: "vor der Rueckgabe gegen den aktuellen Request-
+ * Fingerprint vergleichen"). Der durable `AbortOutcome.preAbortState`
+ * konserviert das Material fuer Audit und Debugging.
+ *
+ * `preAbortBytes` faellt ins gleiche Argument: ein Cleanup-Implementor
+ * koennte `bytesReceived` beim Abort zuruecksetzen, was den
+ * Fingerprint zwischen Calls aendern wuerde. Daher ebenfalls nur im
+ * AbortOutcome-Record.
  *
  * Verwendet die bestehende [FingerprintScope.UPLOAD_INIT]-Bindung —
  * fuer Phase F unterscheidet das `toolName`-Feld in `BindContext` den
@@ -41,10 +62,8 @@ class AbortApprovalFingerprint(
             put("uploadSessionId", JsonValue.str(attempt.uploadSessionId))
             put("sessionTenantId", JsonValue.str(attempt.sessionTenantId.value))
             put("sessionOwnerPrincipalId", JsonValue.str(attempt.sessionOwnerPrincipalId.value))
-            put("preAbortState", JsonValue.str(attempt.preAbortState.name))
             put("artifactKind", JsonValue.str(attempt.artifactKind.name))
             put("uploadIntent", JsonValue.str(attempt.uploadIntent))
-            put("preAbortBytes", JsonValue.num(attempt.preAbortBytes))
             // Plan § 5.3: optionaler `reason` muss in den Fingerprint —
             // sonst koennte ein zweiter Aufruf mit veraendertem
             // `reason` denselben Outcome zurueckbekommen, was die
@@ -85,11 +104,13 @@ class AbortApprovalFingerprint(
  *   bindet den Approval-Grant an genau diesen Pre-Abort-Owner.
  * @property uploadSessionId opaque Session-ID.
  * @property preAbortState Session-Status zum Zeitpunkt des
- *   Approval-Grants (Plan: ACTIVE, FINALIZING, etc.).
+ *   Approval-Grants. **Wird durabel im AbortOutcome gespeichert,
+ *   fliesst aber nicht in den Fingerprint** (siehe
+ *   [AbortApprovalFingerprint] Plan-Carve-out F.6 3/3).
  * @property artifactKind, [uploadIntent] Session-Vertragsfelder.
- * @property preAbortBytes Pre-Abort reservierte / empfangene Bytes;
- *   verhindert, dass ein Approval-Grant aus einer leeren Session
- *   gegen eine spaeter "groessere" Session repurposed wird.
+ * @property preAbortBytes Pre-Abort reservierte / empfangene Bytes.
+ *   **Wird im AbortOutcome gespeichert, fliesst NICHT in den
+ *   Fingerprint** — gleicher Idempotenz-Carve-out wie preAbortState.
  * @property reason optionaler Caller-Grund.
  */
 data class AbortApprovalAttempt(

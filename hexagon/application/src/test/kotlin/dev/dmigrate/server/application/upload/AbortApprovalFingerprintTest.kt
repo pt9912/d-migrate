@@ -61,18 +61,31 @@ class AbortApprovalFingerprintTest : FunSpec({
         (service.fingerprint(base().copy(callerId = PrincipalId("admin-2"))) == baseFp) shouldBe false
     }
 
-    test("preAbortState aendert den Fingerprint") {
+    test("Carve-out F.6 (3/3): preAbortState gehoert NICHT in den Fingerprint (Idempotenz-Vertrag)") {
+        // Plan § 5.3 listet preAbortState als Material, aber Plan-
+        // gleichzeitig fordert idempotenten Replay. Ein zweiter Call
+        // sieht ABORTED-State und kann den ACTIVE-Fingerprint nicht
+        // mehr reproduzieren -> SyncEffect-Conflict statt Replay.
+        // Der Carve-out konserviert preAbortState im durablen
+        // AbortOutcome-Record, NICHT im Fingerprint.
         val baseFp = service.fingerprint(base())
         val finalizingFp = service.fingerprint(base().copy(preAbortState = UploadSessionState.FINALIZING))
-        (finalizingFp == baseFp) shouldBe false
+        finalizingFp shouldBe baseFp
     }
 
-    test("artifactKind + uploadIntent + preAbortBytes gehen jeweils in den Hash ein") {
+    test("Carve-out F.6 (3/3): preAbortBytes gehoert ebenfalls NICHT in den Fingerprint") {
+        // Cleanup-Implementoren koennten `bytesReceived` beim Abort
+        // zuruecksetzen — daher gleiche Argumentation wie preAbortState.
+        val baseFp = service.fingerprint(base())
+        val biggerFp = service.fingerprint(base().copy(preAbortBytes = 2048L))
+        biggerFp shouldBe baseFp
+    }
+
+    test("artifactKind + uploadIntent gehen jeweils in den Hash ein") {
         val baseFp = service.fingerprint(base())
         val variants = listOf(
             base().copy(artifactKind = ArtifactKind.SCHEMA),
             base().copy(uploadIntent = "schema_staging_readonly"),
-            base().copy(preAbortBytes = 2048L),
         )
         for (variant in variants) {
             (service.fingerprint(variant) == baseFp) shouldBe false

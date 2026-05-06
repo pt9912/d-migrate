@@ -1,17 +1,21 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
+import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.IdempotencyConflictException
 import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.UploadSessionAbortedException
 import dev.dmigrate.server.application.error.UploadSessionExpiredException
+import dev.dmigrate.server.application.error.ValidationErrorException
+import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.application.quota.QuotaReservation
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.core.upload.AbortOutcome
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
 import dev.dmigrate.server.ports.UploadSegmentStore
@@ -49,6 +53,15 @@ internal class ArtifactUploadAbortHandler(
     private val segmentStore: UploadSegmentStore,
     private val quotaService: QuotaService,
     private val clock: Clock,
+    /**
+     * Phase F § 5.3 + § 8.6 (F.6 3/3): wenn gewired, faengt der
+     * Handler administrative / fremde Abbrueche und delegiert an die
+     * [AdministrativeAbortPipeline]. Default `null` haelt die
+     * Phase-C-Owner-only-Semantik unveraendert (Bestands-Tests
+     * gruen) — fremde Sessions liefern dann weiter
+     * `FORBIDDEN_PRINCIPAL`.
+     */
+    private val administrativeAbortPipeline: AdministrativeAbortPipeline? = null,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -56,17 +69,49 @@ internal class ArtifactUploadAbortHandler(
     override fun handle(context: ToolCallContext): ToolCallOutcome {
         val args = JsonArgs.requireObject(context.arguments)
         val uploadSessionId = args.requireString("uploadSessionId")
+        val reason = args.optString("reason")
+        val approvalKey = args.optString("approvalKey")
         val tenant = context.principal.effectiveTenantId
         val session = sessionStore.findById(tenant, uploadSessionId)
             ?: throw ResourceNotFoundException(
                 ServerResourceUri(tenant, ResourceKind.UPLOAD_SESSIONS, uploadSessionId),
             )
-        if (session.ownerPrincipalId != context.principal.principalId) {
-            throw ForbiddenPrincipalException(
+
+        // Phase C: eigener Owner -> direkter Abort ohne Policy.
+        if (session.ownerPrincipalId == context.principal.principalId) {
+            return handleOwnerAbort(session, context, reason)
+        }
+
+        // Phase F § 5.3: fremder Owner -> administrative Pipeline.
+        // Ohne gewirete Pipeline bleibt die Phase-C-Semantik
+        // (Forbidden) — Bestands-Caller-Tests unveraendert.
+        val pipeline = administrativeAbortPipeline
+            ?: throw ForbiddenPrincipalException(
                 principalId = context.principal.principalId,
                 reason = "session belongs to a different principal",
             )
+        if (approvalKey.isNullOrBlank()) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "approvalKey",
+                    "is required for administrative/cross-principal abort",
+                )),
+            )
         }
+        val outcome = pipeline.executeOrThrow(
+            session = session,
+            principal = context.principal,
+            approvalKey = approvalKey,
+            reason = reason,
+        )
+        return buildAdminAbortResponse(outcome, context.requestId)
+    }
+
+    private fun handleOwnerAbort(
+        session: UploadSession,
+        context: ToolCallContext,
+        reason: String?,
+    ): ToolCallOutcome {
         rejectTerminal(session)
 
         val now = clock.instant()
@@ -81,12 +126,33 @@ internal class ArtifactUploadAbortHandler(
             releaseQuotas(session, context.principal)
         }
 
-        val payload = mapOf(
-            "uploadSessionId" to aborted.uploadSessionId,
-            "uploadSessionState" to aborted.state.name,
-            "segmentsDeleted" to segmentsDeleted,
-            "executionMeta" to mapOf("requestId" to context.requestId),
+        val payload = buildMap {
+            put("uploadSessionId", aborted.uploadSessionId)
+            put("uploadSessionState", aborted.state.name)
+            put("segmentsDeleted", segmentsDeleted)
+            if (reason != null) put("reason", reason)
+            put("executionMeta", mapOf("requestId" to context.requestId))
+        }
+        return ToolCallOutcome.Success(
+            content = listOf(
+                ToolContent(
+                    type = "text",
+                    text = gson.toJson(payload),
+                    mimeType = "application/json",
+                ),
+            ),
         )
+    }
+
+    private fun buildAdminAbortResponse(outcome: AbortOutcome, requestId: String): ToolCallOutcome {
+        val payload = buildMap {
+            put("uploadSessionId", outcome.uploadSessionId)
+            put("uploadSessionState", outcome.terminalState?.name ?: UploadSessionState.ABORTED.name)
+            put("preAbortState", outcome.preAbortState.name)
+            put("quotaReleased", outcome.quotaReleased)
+            if (outcome.reason != null) put("reason", outcome.reason)
+            put("executionMeta", mapOf("requestId" to requestId))
+        }
         return ToolCallOutcome.Success(
             content = listOf(
                 ToolContent(
