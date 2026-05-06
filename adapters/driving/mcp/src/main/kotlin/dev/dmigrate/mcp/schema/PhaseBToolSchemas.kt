@@ -366,13 +366,33 @@ internal object PhaseBToolSchemas {
             ).required("idempotencyKey", "targetConnectionRef"),
             output = jobStartOut(),
         ))
+        // Phase F § 6.2 + § 8.8 (F.8 1/4): Vollstaendiges
+        // `data_transfer_start`-Tool-Schema. Plan-§-6.2-Optionen werden
+        // flat unter dem Input gefuehrt (analog zu data_import_start
+        // aus F.7), damit `additionalProperties=false` unbekannte
+        // Optionsnamen direkt am Schema-Gate blockiert.
         put("data_transfer_start", schemaPair(
             input = obj(
-                "sourceConnectionId" to stringField(),
-                "targetConnectionId" to stringField(),
-                "scopeSpecRef" to stringField(),
-            ).required("sourceConnectionId", "targetConnectionId"),
-            output = jobIdOut(),
+                // Plan § 6.2: Pflicht-Identitaet
+                "idempotencyKey" to stringField(),
+                "sourceConnectionRef" to stringField(),
+                "targetConnectionRef" to stringField(),
+                // Plan § 6.2 Transfer-Optionen
+                "tables" to arrayField("string"),
+                "filter" to stringField(),
+                "sinceColumn" to stringField(),
+                "since" to stringField(),
+                "onConflict" to enumField("abort", "skip", "update"),
+                "triggerMode" to enumField("fire", "disable", "strict"),
+                "truncate" to booleanField(),
+                // chunkSize: positive Ganzzahl bis 10000 (Plan § 6.2).
+                // Schema sichert minimum=1; Handler validiert <=10000.
+                "chunkSize" to integerField(minimum = 1),
+                // Plan § 5.5: Caller liefert Token nach
+                // `RequiresApproval` nach.
+                "approvalToken" to stringField(),
+            ).required("idempotencyKey", "sourceConnectionRef", "targetConnectionRef"),
+            output = jobStartOut(),
         ))
 
         // Cancel — Plan §5.6 / §7.6: Eingabe `jobId` ODER tenant-scoped
@@ -678,13 +698,15 @@ internal object PhaseBToolSchemas {
 
     /**
      * Phase-B-Output fuer noch nicht E-/F-aktive Start-Tools
-     * (`data_export_start`, `data_transfer_start`). Bleibt schmal
-     * `{jobId}`, weil diese Tools in Phase E noch
-     * `UnsupportedToolHandler` sind (Plan §3.2 Carve-out).
+     * (`data_export_start`). Bleibt schmal `{jobId}`, weil dieses
+     * Tool noch `UnsupportedToolHandler` ist (Plan §3.2 Carve-out).
      *
      * Phase F § 8.7 (F.7 1/5): `data_import_start` ist NICHT mehr in
      * dieser Liste — der vollstaendige `jobStartOut()`-Output mit
      * `resourceUri` + `executionMeta` ist Phase-F-aktiv.
+     *
+     * Phase F § 8.8 (F.8 1/4): `data_transfer_start` ebenfalls
+     * Phase-F-aktiv und nutzt jetzt `jobStartOut()`.
      */
     private fun jobIdOut(): Map<String, Any> =
         obj("jobId" to stringField()).required("jobId")
