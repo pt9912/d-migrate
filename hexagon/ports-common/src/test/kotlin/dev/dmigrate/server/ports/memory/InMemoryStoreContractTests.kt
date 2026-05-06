@@ -65,3 +65,8 @@ class InMemoryJobStartTransactionContractTest :
             transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
         )
     })
+
+class InMemoryUploadInitClaimStoreContractTest :
+    dev.dmigrate.server.ports.contract.UploadInitClaimStoreContractTests({
+        InMemoryUploadInitClaimStore()
+    })
