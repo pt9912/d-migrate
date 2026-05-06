@@ -259,3 +259,14 @@ Spezifikationen definiert.
 | Artefakt-Download | `GET /artifacts/{id}` + `ETag` | `DownloadArtifact` + `artifact_version` | Resource-URI `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` |
 | Idempotency-Key | HTTP-Header | Request-Feld / Metadaten | Tool-Input-Feld |
 | Fehlerstruktur | JSON `error`-Objekt mit `exitCode` | `google.rpc.Status` + `ErrorInfo` | MCP Error mit `code` |
+
+---
+
+## 10. Operations-Cross-Refs
+
+- Phase-E Job-Executor (Pool-Sizing, Saturation-Diagnose,
+  Sync-vs-Async-Tradeoffs, Shutdown-Verhalten):
+  [`docs/operations/job-executor.md`](../docs/operations/job-executor.md)
+- Phase-E2 persistente Server-State-Adapter (Schema, Flyway-Workflow,
+  Atomicity-Realisierung, MySQL/SQLite-Skizze):
+  [`spec/phase-e2-persistence.md`](./phase-e2-persistence.md)

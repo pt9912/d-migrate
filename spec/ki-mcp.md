@@ -907,3 +907,12 @@ Fuer eine KI-Umgebung sollte `d-migrate` nicht nur "auch per REST erreichbar"
 sein. Es sollte einen eigenen MCP-Adapter bekommen. Damit werden die
 bestehenden Migrationsfunktionen fuer Agenten nutzbar, ohne die Sicherheits-
 und Audit-Anforderungen einer autonomen KI-Nutzung zu verwischen.
+
+---
+
+## 13. Operations-Cross-Refs
+
+- Phase-E Job-Executor (Pool-Sizing, Saturation-Diagnose, Sync-vs-Async-Tradeoffs):
+  [`docs/operations/job-executor.md`](../docs/operations/job-executor.md)
+- Phase-E2 persistente Server-State-Adapter (Schema, Flyway, Backup,
+  Connection-Limits): [`spec/phase-e2-persistence.md`](./phase-e2-persistence.md)
