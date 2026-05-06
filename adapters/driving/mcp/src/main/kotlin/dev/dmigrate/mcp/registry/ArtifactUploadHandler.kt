@@ -25,6 +25,8 @@ import dev.dmigrate.server.application.quota.RateLimitedDetail
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
+import dev.dmigrate.server.core.upload.FinalizationOutcome
+import dev.dmigrate.server.core.upload.FinalizationOutcomeStatus
 import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
@@ -38,6 +40,7 @@ import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.util.Base64
 
 /**
@@ -135,7 +138,12 @@ internal class ArtifactUploadHandler(
 
         val bytes = decodeBase64(args.contentBase64)
         if (bytes.size > limits.maxUploadSegmentBytes) {
-            throw PayloadTooLargeException(bytes.size.toLong(), limits.maxUploadSegmentBytes.toLong())
+            terminallyFailWithPayloadTooLarge(
+                session = session,
+                actualBytes = bytes.size.toLong(),
+                principal = context.principal,
+                now = options.clock.instant(),
+            )
         }
         validateSegmentHash(args.segmentSha256, bytes)
         validateSegmentBudget(args, bytes.size, session)
@@ -237,6 +245,85 @@ internal class ArtifactUploadHandler(
         // beiden Werte; eine Session mit fremdem Intent waere ein
         // Server-Fehler in F-Tests.
         else -> SCOPE_ARTIFACT_UPLOAD
+    }
+
+    /**
+     * Phase F § 8.4 (F.4 3/3): terminale Failure-Pipeline fuer
+     * oversize Segmente. Plan: "zu grosses Segment setzt Session
+     * terminal auf FAILED, speichert ein Failure-Outcome, startet
+     * Cleanup und gibt Quotas frei". Reihenfolge ist wichtig — der
+     * Outcome wird VOR der Transition gespeichert, sodass ein Retry
+     * gegen die ABORTED-Session via
+     * `replayFailedOutcomeIfAvailable` denselben sanitisierten
+     * Fehler bekommt (Plan-Wortlaut "abweichende Wiederholung
+     * deterministisch ablehnen").
+     *
+     * Cleanup laeuft best-effort: ein Fehler beim Loeschen der
+     * Segmente darf den Quota-Release nicht verhindern, sonst bleibt
+     * der Tenant im aktiven-Session-Counter haengen, obwohl die
+     * Session ABORTED ist.
+     */
+    @Suppress("ThrowsCount") // einzig der finale Throw nach allen Side Effects
+    private fun terminallyFailWithPayloadTooLarge(
+        session: UploadSession,
+        actualBytes: Long,
+        principal: PrincipalContext,
+        now: Instant,
+    ): Nothing {
+        val maxBytes = limits.maxUploadSegmentBytes.toLong()
+        val outcome = FinalizationOutcome(
+            // Pre-Finalisation-Failure hat keinen echten FINALIZING-
+            // Claim — `pre-finalisation` ist ein deterministischer
+            // sentinel-Wert, der `claimId`-CAS-Vergleiche im Replay
+            // nicht trifft (replayFailedOutcomeIfAvailable schaut
+            // nur status + sanitizedErrorCode an).
+            claimId = "pre-finalisation",
+            payloadSha256 = "n/a",
+            artifactId = "n/a",
+            schemaId = null,
+            format = "n/a",
+            status = FinalizationOutcomeStatus.FAILED,
+            sanitizedErrorCode = "PAYLOAD_TOO_LARGE",
+            sanitizedErrorMessage = "segment exceeded maxUploadSegmentBytes",
+        )
+        sessionStore.save(
+            session.copy(
+                finalizationOutcome = outcome,
+                updatedAt = now,
+            ),
+        )
+        sessionStore.transitionOrThrow(session, UploadSessionState.ABORTED, now)
+        runCatching { segmentStoreRef.deleteAllForSession(session.uploadSessionId) }
+        releaseInitQuotas(session, principal)
+        throw PayloadTooLargeException(actualBytes = actualBytes, maxBytes = maxBytes)
+    }
+
+    private fun releaseInitQuotas(session: UploadSession, principal: PrincipalContext) {
+        // Init reservierte ACTIVE_UPLOAD_SESSIONS=1 + UPLOAD_BYTES=
+        // session.sizeBytes (siehe ArtifactUploadInitHandler.
+        // QuotaService.reserve). Beide Reservierungen werden hier
+        // freigegeben, sonst bleibt der Tenant nach einem Terminal-
+        // Failure in seinen Limits gebunden.
+        quotaService.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.ACTIVE_UPLOAD_SESSIONS,
+                    principal.principalId,
+                ),
+                amount = 1,
+            ),
+        )
+        quotaService.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.UPLOAD_BYTES,
+                    principal.principalId,
+                ),
+                amount = session.sizeBytes,
+            ),
+        )
     }
 
     /**
