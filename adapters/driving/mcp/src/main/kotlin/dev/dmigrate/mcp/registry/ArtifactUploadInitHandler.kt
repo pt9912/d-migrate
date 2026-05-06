@@ -115,6 +115,13 @@ internal class ArtifactUploadInitHandler(
         val now = options.clock.instant()
         val absoluteExpiresAt = now.plus(options.absoluteLeaseDuration)
         val session = newSession(context, args, now, absoluteExpiresAt)
+        // Phase F § 8.9 (F.9 3/3): durable AuditFields-Population.
+        // Plan-Akzeptanz "Audit enthaelt keine rohen Uploadbytes oder
+        // Approval-Tokens" wird strukturell durch das AuditEvent-Schema
+        // erfuellt; hier wird der `resourceRefs`-Slot mit der
+        // tenant-scoped Session-URI gefuellt, sodass Audit-Konsumenten
+        // den Upload-Context tracen koennen.
+        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
         try {
             sessionStore.save(session)
         } catch (e: RuntimeException) {

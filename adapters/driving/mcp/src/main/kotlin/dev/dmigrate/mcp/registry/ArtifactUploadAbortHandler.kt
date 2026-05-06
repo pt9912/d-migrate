@@ -77,6 +77,11 @@ internal class ArtifactUploadAbortHandler(
                 ServerResourceUri(tenant, ResourceKind.UPLOAD_SESSIONS, uploadSessionId),
             )
 
+        // Phase F § 8.9 (F.9 3/3): AuditFields-Population fuer
+        // Around-/Finally-Audit (Plan: "Around-/Finally-Audit fuer
+        // Init, Segment, Abort ... vervollstaendigen").
+        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
+
         // Phase C: eigener Owner -> direkter Abort ohne Policy.
         if (session.ownerPrincipalId == context.principal.principalId) {
             return handleOwnerAbort(session, context, reason)

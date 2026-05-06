@@ -127,6 +127,10 @@ internal class ArtifactUploadHandler(
         }
         enforceIntentScope(session, context.principal)
         validateSessionSizeContract(session)
+        // Phase F § 8.9 (F.9 3/3): AuditFields-Population fuer
+        // Around-/Finally-Audit (Plan: "Around-/Finally-Audit fuer
+        // Init, Segment, Abort ... vervollstaendigen").
+        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
         if (session.state == UploadSessionState.COMPLETED) {
             return handleReplayAfterCompleted(session, args, context.requestId)
         }
