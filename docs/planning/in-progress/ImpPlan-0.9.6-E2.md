@@ -159,12 +159,27 @@ keine DB-Transaktion. Phase E2 liefert:
 > committen gemeinsam" existiert bereits — `JobStartTransaction`. Eine
 > zweite Abstraktion ist Doppelung.
 
-**Beschluss**: `JdbcTransactionRunner` lebt im JDBC-Adapter-Modul,
-ist `internal`/package-private. Aufbau:
+**Beschluss**: `JdbcTransactionRunner` lebt im JDBC-Adapter-Modul.
+
+**Sichtbarkeit (E2.3-Carve-out, 2026-05-06)**: `public class` innerhalb
+des Adapter-Moduls. Der Erst-Entwurf hatte „internal/package-private"
+als Wortlaut; in der Implementierung scheitert das an Kotlins Regel
+„`public` function exposes its `internal` parameter type" — die
+public Stores (`JdbcIdempotencyStore` etc.) muessen den Runner im
+Konstruktor entgegennehmen, weil die Bootstrap-Komposition aus
+AP E2.6 (`JdbcJobStartTransaction`) eine **gemeinsame** Runner-
+Instanz fuer Cross-Store-TX braucht. Diese Komposition lebt im
+MCP-Adapter-Modul (`adapters/driving/mcp`) — modulinterne
+Sichtbarkeit waere zu eng.
+
+**Plan-Intention bleibt erfuellt**: der Runner taucht in **keinem**
+`hexagon:*`-Interface auf, fuehrt also keinen `java.sql.Connection`
+in die Hexagon-Schicht. „Public class im Adapter-Modul" ≠ „Hexagon-
+Port". Aufbau:
 
 ```kotlin
 // adapters/driven/persistence-jdbc/.../internal/JdbcTransactionRunner.kt
-internal class JdbcTransactionRunner(private val ds: javax.sql.DataSource) {
+class JdbcTransactionRunner(private val ds: javax.sql.DataSource) {
     fun <T> inTransaction(block: (java.sql.Connection) -> T): T {
         ds.connection.use { conn ->
             conn.autoCommit = false
@@ -172,9 +187,11 @@ internal class JdbcTransactionRunner(private val ds: javax.sql.DataSource) {
                 val result = block(conn)
                 conn.commit()
                 return result
-            } catch (e: Throwable) {
-                conn.rollback()
-                throw e
+            } catch (primary: Throwable) {
+                try { conn.rollback() } catch (rollback: Throwable) {
+                    primary.addSuppressed(rollback)
+                }
+                throw primary
             }
         }
     }
@@ -185,6 +202,8 @@ internal class JdbcTransactionRunner(private val ds: javax.sql.DataSource) {
 `JdbcIdempotencyStore`/`JdbcJobStore`. Cross-store-Operationen rufen
 `internal fun commitWithConnection(conn, ...)` auf den Stores auf
 (neben den public Port-Methoden, die ihre eigene Connection borgen).
+Die `commitWithConnection`-Helfer bleiben `internal` zum Modul —
+nur die Cross-Store-Komposition aus E2.6 nutzt sie.
 
 InMemory-Welt bleibt unverändert: `synchronized`-Blöcke in
 `InMemoryJobStartTransaction` brauchen keinen Runner. Es entsteht

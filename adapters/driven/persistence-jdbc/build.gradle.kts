@@ -15,6 +15,12 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql:11.8.2")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
+    // Phase E2.3: ApprovalChallenge JSON-Codec fuer JSONB-Persistenz
+    // (idempotency_reservations.challenge). Jackson-databind +
+    // kotlin-Modul reichen; YAML wird hier nicht gebraucht.
+    implementation("com.fasterxml.jackson.core:jackson-databind:${rootProject.properties["jacksonVersion"]}")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:${rootProject.properties["jacksonVersion"]}")
+
     testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
 
     // Phase E2.2: Flyway-Migrate gegen Testcontainers-Postgres als
@@ -22,6 +28,11 @@ dependencies {
     // (.github/workflows/integration.yml) ausgefuehrt.
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
+
+    // Phase E2.3: Contract-Test-Fixtures (IdempotencyStoreContractTests +
+    // Fixtures.tenant/principal/NOW). Selber JAR fuer alle Phase-E-
+    // JDBC-Adapter-Contract-Tests (E2.4–E2.7).
+    testImplementation(testFixtures(project(":hexagon:ports-common")))
 }
 
 kover {
@@ -37,6 +48,13 @@ kover {
                 classes(
                     "dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner",
                     "dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner\$Companion",
+                    // Phase E2.3: Postgres-only JDBC-Logik (JSONB,
+                    // SELECT FOR UPDATE, INSERT…ON CONFLICT…RETURNING) —
+                    // gedeckt durch JdbcIdempotencyStoreContractTest unter
+                    // -PintegrationTests, kein in-process-Postgres-Aequivalent.
+                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore",
+                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$EntryRow",
+                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$Companion",
                 )
             }
         }
