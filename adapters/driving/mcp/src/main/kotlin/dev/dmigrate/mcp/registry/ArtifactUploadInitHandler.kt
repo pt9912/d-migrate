@@ -3,9 +3,12 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.error.IdempotencyConflictException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
+import dev.dmigrate.server.application.error.PolicyDeniedException
 import dev.dmigrate.server.application.error.PolicyRequiredException
 import dev.dmigrate.server.application.error.RateLimitedException
 import dev.dmigrate.server.application.error.ValidationErrorException
@@ -13,7 +16,13 @@ import dev.dmigrate.server.application.quota.QuotaReservation
 import dev.dmigrate.server.application.quota.RateLimitedDetail
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.application.quota.QuotaService
+import dev.dmigrate.server.application.upload.UploadInitApprovalAttempt
+import dev.dmigrate.server.application.upload.UploadInitOutcome
+import dev.dmigrate.server.application.upload.UploadInitRequest
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.error.ToolErrorCode
+import dev.dmigrate.server.core.error.ToolErrorDetail
+import dev.dmigrate.server.core.error.ToolErrorEnvelope
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
@@ -53,11 +62,30 @@ internal class ArtifactUploadInitHandler(
     private val quotaService: QuotaService,
     private val limits: McpLimitsConfig,
     private val options: Options,
+    /**
+     * Phase F § 5.1 + § 8.3 (F.3 4/4): wenn gesetzt, faengt der Handler
+     * `uploadIntent=job_input` und delegiert an den
+     * [dev.dmigrate.server.application.upload.UploadInitOrchestrator].
+     * Default `null` haelt den Phase-C Read-only-Pfad unveraendert —
+     * Bestands-Tests, die keinen Orchestrator wiren, bekommen weiterhin
+     * `POLICY_REQUIRED` fuer non-readonly Intents.
+     */
+    private val uploadInitOrchestrator: dev.dmigrate.server.application.upload.UploadInitOrchestrator? = null,
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
+        // Phase F § 5.1 (F.3 4/4): policy-pflichtige Intents werden vor
+        // dem Phase-C Read-only-Pfad abgefangen. Wenn ein
+        // `UploadInitOrchestrator` gewired ist, geht `uploadIntent=
+        // job_input` durch die F.3-Pipeline; ohne Orchestrator faellt
+        // der Pfad weiter auf das Phase-C `POLICY_REQUIRED`-Verhalten
+        // zurueck (Bestands-Caller unveraendert).
+        if (uploadInitOrchestrator != null) {
+            policyInitOutcomeOrNull(context)?.let { return it }
+        }
+
         // TODO(AP 6.13): idempotency key per ImpPlan-0.9.6-B §5.3.5
         // — read-only staging is not user-state-changing on retry,
         // but a same-checksum replay should ideally hit the existing
@@ -117,6 +145,208 @@ internal class ArtifactUploadInitHandler(
             "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
             "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
             "executionMeta" to mapOf("requestId" to context.requestId),
+        )
+        return ToolCallOutcome.Success(
+            content = listOf(
+                ToolContent(
+                    type = "text",
+                    text = gson.toJson(payload),
+                    mimeType = "application/json",
+                ),
+            ),
+        )
+    }
+
+    /**
+     * Phase F § 5.1 + § 8.3 (F.3 4/4) — Policy-Init-Pfad fuer
+     * `uploadIntent=job_input`. Retourniert `null` wenn der Intent
+     * nicht zum Policy-Pfad gehoert (Legacy-Pfad uebernimmt) oder wenn
+     * der `uploadIntent` ueberhaupt fehlt (Legacy-Pfad emittiert die
+     * `VALIDATION_ERROR`).
+     */
+    private fun policyInitOutcomeOrNull(context: ToolCallContext): ToolCallOutcome? {
+        val raw = JsonArgs.requireObject(context.arguments)
+        val intent = raw.optString("uploadIntent") ?: return null
+        if (intent != INTENT_JOB_INPUT) return null
+
+        val approvalKey = raw.optString("approvalKey")
+            ?: throw ValidationErrorException(
+                listOf(ValidationViolation("approvalKey", "is required for uploadIntent=job_input")),
+            )
+        val sizeBytes = parsePolicySize(raw)
+        val checksum = parsePolicyChecksum(raw)
+        val mimeType = raw.optString("mimeType") ?: DEFAULT_POLICY_MIME_TYPE
+        val artifactKind = parseArtifactKind(raw)
+        val targetTable = raw.optString("targetTable")
+
+        val tenantId = context.principal.effectiveTenantId
+        val callerId = context.principal.principalId
+        val request = UploadInitRequest(
+            tenantId = tenantId,
+            callerId = callerId,
+            approvalKey = approvalKey,
+            attempt = UploadInitApprovalAttempt(
+                tenantId = tenantId,
+                callerId = callerId,
+                artifactKind = artifactKind,
+                mimeType = mimeType,
+                sizeBytes = sizeBytes,
+                checksumSha256 = checksum,
+                uploadIntent = intent,
+                targetTable = targetTable,
+            ),
+            segmentTotal = policySegmentCount(sizeBytes, limits.maxUploadSegmentBytes),
+            now = options.clock.instant(),
+        )
+        // !! Safe: handle() guards on uploadInitOrchestrator != null
+        // before invoking this helper. The redundant !! satisfies the
+        // nullable field type without leaking the guard up here.
+        val outcome = uploadInitOrchestrator!!.init(request)
+        return mapPolicyInitOutcome(outcome, context.requestId)
+    }
+
+    private fun parsePolicySize(obj: JsonObject): Long {
+        val canonical = obj.get("sizeBytes")?.takeUnless { it.isJsonNull }
+        val alias = obj.get("expectedSizeBytes")?.takeUnless { it.isJsonNull }
+        val element = canonical ?: alias
+            ?: throw ValidationErrorException(
+                listOf(ValidationViolation("sizeBytes", "is required")),
+            )
+        val size = sizeAsLong(element, fieldName = if (canonical != null) "sizeBytes" else "expectedSizeBytes")
+        if (size < 0) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation("sizeBytes", "must be >= 0")),
+            )
+        }
+        // Plan § 8.3: Legacy-Alias additiv, widersprechende Doppelwerte ->
+        // VALIDATION_ERROR.
+        if (canonical != null && alias != null) {
+            val aliasSize = sizeAsLong(alias, fieldName = "expectedSizeBytes")
+            if (aliasSize != size) {
+                throw ValidationErrorException(
+                    listOf(ValidationViolation(
+                        "expectedSizeBytes",
+                        "must equal sizeBytes when both are provided",
+                    )),
+                )
+            }
+        }
+        if (size > limits.maxArtifactUploadBytes) {
+            throw PayloadTooLargeException(actualBytes = size, maxBytes = limits.maxArtifactUploadBytes)
+        }
+        return size
+    }
+
+    private fun sizeAsLong(element: JsonElement, fieldName: String): Long {
+        val primitive = element as? JsonPrimitive
+        if (primitive == null || !primitive.isNumber) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(fieldName, "must be a non-negative integer")),
+            )
+        }
+        return primitive.asLong
+    }
+
+    private fun parsePolicyChecksum(obj: JsonObject): String {
+        val checksum = obj.optString("checksumSha256")
+            ?: throw ValidationErrorException(
+                listOf(ValidationViolation("checksumSha256", "is required")),
+            )
+        if (!CHECKSUM_PATTERN.matches(checksum)) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation("checksumSha256", "must be 64 lowercase hex chars")),
+            )
+        }
+        return checksum
+    }
+
+    private fun parseArtifactKind(obj: JsonObject): ArtifactKind {
+        val raw = obj.optString("artifactKind") ?: return ArtifactKind.UPLOAD_INPUT
+        return runCatching { ArtifactKind.valueOf(raw) }.getOrElse {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "artifactKind",
+                    "must be one of ${ArtifactKind.entries.map { it.name }.sorted()}",
+                )),
+            )
+        }
+    }
+
+    /**
+     * Phase F § 8.3: `sizeBytes=0` ist fuer `job_input` ein gueltiger
+     * Single-Empty-Segment-Upload. `segmentCountFor` rundet 0 / N auf 0,
+     * der Orchestrator-Vertrag erwartet aber ein finales Segment.
+     */
+    private fun policySegmentCount(sizeBytes: Long, segmentSize: Int): Int =
+        if (sizeBytes == 0L) 1 else segmentCountFor(sizeBytes, segmentSize)
+
+    private fun mapPolicyInitOutcome(
+        outcome: UploadInitOutcome,
+        requestId: String,
+    ): ToolCallOutcome = when (outcome) {
+        is UploadInitOutcome.Initialized -> policyInitSuccess(
+            sessionId = outcome.uploadSessionId,
+            ttlSeconds = outcome.ttlSeconds,
+            firstSegmentIndex = outcome.expectedFirstSegmentIndex,
+            firstSegmentOffset = outcome.expectedFirstSegmentOffset,
+            requestId = requestId,
+        )
+        is UploadInitOutcome.AlreadyInitialized -> policyInitSuccess(
+            sessionId = outcome.uploadSessionId,
+            ttlSeconds = outcome.ttlSeconds,
+            firstSegmentIndex = FIRST_SEGMENT_INDEX,
+            firstSegmentOffset = FIRST_SEGMENT_OFFSET,
+            requestId = requestId,
+        )
+        is UploadInitOutcome.PolicyRequired -> ToolCallOutcome.Error(
+            envelope = ToolErrorEnvelope(
+                code = ToolErrorCode.POLICY_REQUIRED,
+                message = "Policy approval required",
+                details = listOf(
+                    ToolErrorDetail("policyName", "upload_intent.$INTENT_JOB_INPUT"),
+                    ToolErrorDetail("approvalRequestId", outcome.approvalRequestId),
+                    ToolErrorDetail("correlationKind", outcome.correlationKind.name),
+                    ToolErrorDetail("correlationKey", outcome.correlationKey),
+                    ToolErrorDetail("requiredScopes", outcome.requiredScopes.sorted().joinToString(",")),
+                    ToolErrorDetail("reasons", outcome.reasons.joinToString("|")),
+                ),
+                requestId = requestId,
+            ),
+        )
+        is UploadInitOutcome.PolicyDenied -> throw PolicyDeniedException(
+            policyName = "upload_intent.$INTENT_JOB_INPUT",
+            reason = outcome.reasonCode,
+        )
+        is UploadInitOutcome.IdempotencyConflict ->
+            throw IdempotencyConflictException(existingFingerprint = outcome.existingFingerprint)
+        is UploadInitOutcome.InProgress -> ToolCallOutcome.Error(
+            envelope = ToolErrorEnvelope(
+                code = ToolErrorCode.OPERATION_TIMEOUT,
+                message = "Upload init in progress (single-writer claim active)",
+                details = listOf(
+                    ToolErrorDetail("claimLeaseExpiresAt", outcome.claimLeaseExpiresAt.toString()),
+                ),
+                requestId = requestId,
+            ),
+        )
+        is UploadInitOutcome.ValidationError -> throw ValidationErrorException(
+            listOf(ValidationViolation("arguments", outcome.reason)),
+        )
+    }
+
+    private fun policyInitSuccess(
+        sessionId: String,
+        ttlSeconds: Long,
+        firstSegmentIndex: Int,
+        firstSegmentOffset: Long,
+        requestId: String,
+    ): ToolCallOutcome.Success {
+        val payload = mapOf(
+            "uploadSessionId" to sessionId,
+            "uploadSessionTtlSeconds" to ttlSeconds,
+            "expectedFirstSegmentIndex" to firstSegmentIndex,
+            "expectedFirstSegmentOffset" to firstSegmentOffset,
+            "executionMeta" to mapOf("requestId" to requestId),
         )
         return ToolCallOutcome.Success(
             content = listOf(
@@ -240,6 +470,21 @@ internal class ArtifactUploadInitHandler(
 
     companion object {
         const val INTENT_SCHEMA_STAGING_READONLY: String = "schema_staging_readonly"
+
+        /** Phase F § 8.3 (F.3 4/4): policy-pflichtiger Init-Intent. */
+        const val INTENT_JOB_INPUT: String = "job_input"
+
+        /**
+         * Phase F § 8.3 (F.3 4/4): Default-MIME-Type fuer den
+         * Policy-Init-Pfad, wenn der Caller keinen `mimeType` angibt.
+         * Schliesst die Luecke zwischen Approval-Fingerprint
+         * (`mimeType` floss in den Plan-§-4.2-Fingerprint ein) und
+         * Wire-Optionalitaet — der Default ist eine deterministische,
+         * dem Spec entsprechende Wahl, sodass abweichende
+         * `mimeType`-Folgeretries via Idempotency-Conflict abgewiesen
+         * werden.
+         */
+        const val DEFAULT_POLICY_MIME_TYPE: String = "application/octet-stream"
 
         // Per spec/ki-mcp.md §5.3 line 588: segment indices start at 1.
         const val FIRST_SEGMENT_INDEX: Int = 1
