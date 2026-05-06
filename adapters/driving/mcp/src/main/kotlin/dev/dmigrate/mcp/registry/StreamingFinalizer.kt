@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.mcp.upload.JobInputFinalizer
 import dev.dmigrate.server.application.error.IdempotencyConflictException
 import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
@@ -11,6 +12,7 @@ import dev.dmigrate.server.application.error.UploadSessionExpiredException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.core.upload.AssembledUploadPayload
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
 import dev.dmigrate.server.core.upload.FinalizationOutcome
@@ -63,6 +65,74 @@ internal class StreamingFinalizer(
         finalSegmentBytes: ByteArray,
         format: String,
         now: Instant,
+    ): String = finaliseWith(
+        session = session,
+        finalSegmentBytes = finalSegmentBytes,
+        format = format,
+        now = now,
+        deriveSchemaId = { payloadSha -> deterministicSchemaId(session, payloadSha, format) },
+        runFinalizer = { claimedSession, payload, artifactId, schemaId ->
+            finalizer.complete(
+                session = claimedSession,
+                principal = principal,
+                payload = payload,
+                artifactId = artifactId,
+                schemaId = schemaId!!,
+                format = format,
+            )
+        },
+    )
+
+    /**
+     * Phase F § 8.5 (F.5 2/3) — Pendant zu [finalise] fuer
+     * `uploadIntent=job_input`. Faehrt dieselbe Claim-/Assembly-/
+     * Outcome-/Commit-Pipeline, ueberlaesst aber die Bytes-
+     * Materialisierung dem [JobInputFinalizer] (kein Schema-Parse,
+     * keine `schemaRef`). Rueckgabe ist der gerenderte
+     * `artifactRef`-URI; das Feld `UploadSession.finalisedSchemaRef`
+     * dient hier generisch als Final-Reference (siehe Plan § 8.5
+     * "Upload-Metadaten sind nach Finalisierung persistent ...
+     * lesbar"). `FinalizationOutcome.schemaId` bleibt `null` (Plan-
+     * konform per KDoc).
+     */
+    fun finaliseJobInput(
+        finalizer: JobInputFinalizer,
+        session: UploadSession,
+        principal: PrincipalContext,
+        finalSegmentBytes: ByteArray,
+        format: String,
+        now: Instant,
+    ): String = finaliseWith(
+        session = session,
+        finalSegmentBytes = finalSegmentBytes,
+        format = format,
+        now = now,
+        deriveSchemaId = { _ -> null },
+        runFinalizer = { claimedSession, payload, artifactId, _ ->
+            finalizer.complete(
+                session = claimedSession,
+                principal = principal,
+                payload = payload,
+                artifactId = artifactId,
+                format = format,
+            )
+        },
+    )
+
+    /**
+     * Gemeinsame Pipeline fuer beide Finaliser-Pfade:
+     * Claim → Assembly → IN_PROGRESS-Outcome → finalizerseitige
+     * Materialisierung → SUCCEEDED-Commit + COMPLETED-Transition.
+     * Schema-spezifischer `schemaId`-Derivat wird per
+     * [deriveSchemaId] injiziert (`null` fuer job_input).
+     */
+    private fun finaliseWith(
+        session: UploadSession,
+        finalSegmentBytes: ByteArray,
+        format: String,
+        now: Instant,
+        deriveSchemaId: (String) -> String?,
+        runFinalizer: (UploadSession, AssembledUploadPayload, String, String?) -> ServerResourceUri,
     ): String {
         val claimId = claimIdGenerator()
         val leaseExpires = now.plus(finalizingLeaseTtl)
@@ -78,7 +148,7 @@ internal class StreamingFinalizer(
 
         return payload.use {
             val artifactId = deterministicArtifactId(claimedSession, payload.sha256, format)
-            val schemaId = deterministicSchemaId(claimedSession, payload.sha256, format)
+            val schemaId = deriveSchemaId(payload.sha256)
 
             val inProgress = FinalizationOutcome(
                 claimId = claimId,
@@ -104,33 +174,29 @@ internal class StreamingFinalizer(
                 ),
             )
 
-            val schemaUri = try {
+            val resultUri = try {
                 // AP 6.22 C5: pass the payload through directly so the
                 // finaliser parses + materialises via streams. The
                 // file-spool keeps `artifactContentStore.write` heap
-                // bounded; the schema codec still loads the parsed
-                // SchemaDefinition tree on-heap, but that scales with
-                // the schema, not the artefact size.
-                finalizer.complete(
-                    session = claimedSession,
-                    principal = principal,
-                    payload = payload,
-                    artifactId = artifactId,
-                    schemaId = schemaId,
-                    format = format,
-                )
+                // bounded; for schema staging the codec still loads
+                // the parsed `SchemaDefinition` on-heap, which scales
+                // with the schema, not the artefact size.
+                runFinalizer(claimedSession, payload, artifactId, schemaId)
             } catch (failure: RuntimeException) {
                 persistFailedOutcomeAndAbort(claimedSession, claimId, inProgress, failure, now)
                 throw failure
             }
 
             val succeeded = inProgress.copy(status = FinalizationOutcomeStatus.SUCCEEDED)
-            val rendered = schemaUri.render()
+            val rendered = resultUri.render()
             // AP 6.22: atomic claim-keyed CAS that flips outcome,
-            // persists the schemaRef AND transitions to COMPLETED in
+            // persists the final-ref AND transitions to COMPLETED in
             // one shot. The split persist + save + transition flow
             // had a Reclaim race window between the steps; this call
             // gates all three writes on `finalizingClaimId == claimId`.
+            // Phase F (F.5 2/3): das Feld heisst `finalisedSchemaRef`,
+            // dient aber generisch als final-ref (artifactRef fuer
+            // job_input).
             requirePersistOrConflict(
                 claimedSession.uploadSessionId,
                 sessionStore.commitFinalization(

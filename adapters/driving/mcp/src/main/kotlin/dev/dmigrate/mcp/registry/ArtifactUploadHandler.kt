@@ -9,6 +9,7 @@ import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.mcp.upload.JobInputFinalizer
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.IdempotencyConflictException
 import dev.dmigrate.server.application.error.InternalAgentErrorException
@@ -169,7 +170,30 @@ internal class ArtifactUploadHandler(
         )
     }
 
+    /**
+     * Phase F § 8.5 (F.5 2/3): dispatchet die finalisierung anhand
+     * des `session.uploadIntent`. `schema_staging_readonly` geht
+     * weiter durch den AP-6.22-Schema-Pfad ([SchemaStagingFinalizer]),
+     * `job_input` durch den neuen [JobInputFinalizer] (Bytes-only,
+     * keine Schema-Validierung). Ohne passend gewireten Finaliser
+     * faellt der Pfad auf den legacy `ACTIVE → COMPLETED`-Shortcut
+     * zurueck — Bestands-Tests ohne Finaliser-Wiring bleiben gruen.
+     */
     private fun runFinalisation(
+        session: UploadSession,
+        principal: PrincipalContext,
+        finalSegmentBytes: ByteArray,
+        now: java.time.Instant,
+    ): String? {
+        return when (session.uploadIntent) {
+            ArtifactUploadInitHandler.INTENT_JOB_INPUT ->
+                runJobInputFinalisation(session, principal, finalSegmentBytes, now)
+            else ->
+                runSchemaStagingFinalisation(session, principal, finalSegmentBytes, now)
+        }
+    }
+
+    private fun runSchemaStagingFinalisation(
         session: UploadSession,
         principal: PrincipalContext,
         finalSegmentBytes: ByteArray,
@@ -177,9 +201,6 @@ internal class ArtifactUploadHandler(
     ): String? {
         val finalizer = options.finalizer
         return if (finalizer == null) {
-            // Test-only path: no finaliser was wired (AP 6.7-6.8
-            // standalone tests). Keep the legacy ACTIVE → COMPLETED
-            // transition so those tests stay green.
             sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
             null
         } else {
@@ -192,6 +213,50 @@ internal class ArtifactUploadHandler(
                 now = now,
             )
         }
+    }
+
+    private fun runJobInputFinalisation(
+        session: UploadSession,
+        principal: PrincipalContext,
+        finalSegmentBytes: ByteArray,
+        now: java.time.Instant,
+    ): String? {
+        val finalizer = options.jobInputFinalizer
+        return if (finalizer == null) {
+            // Tests ohne JobInputFinalizer-Wiring: legacy COMPLETED-
+            // Transition; in Production muss F.5 (3/3) den Finaliser
+            // wiren, sonst bleibt der Artefakt-Materialise-Schritt aus.
+            sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
+            null
+        } else {
+            streamingFinalizer.finaliseJobInput(
+                finalizer = finalizer,
+                session = session,
+                principal = principal,
+                finalSegmentBytes = finalSegmentBytes,
+                format = formatFromMimeType(session.mimeType),
+                now = now,
+            )
+        }
+    }
+
+    /**
+     * Phase F § 8.5 (F.5 2/3): leichter MIME-zu-Format-Mapper fuer
+     * den deterministischen `artifactId`-Material-String. Werte
+     * folgen [SchemaFileResolver]-/AP-6.22-Konventionen ("json",
+     * "yaml") und fallen sonst auf "bin" zurueck. Der MIME-Type
+     * selbst landet trotzdem 1:1 in `ArtifactRecord.contentType`,
+     * sodass der Wire-Klient die volle Information sieht.
+     */
+    private fun formatFromMimeType(mimeType: String): String = when {
+        mimeType.equals("application/json", ignoreCase = true) ||
+            mimeType.endsWith("+json", ignoreCase = true) -> "json"
+        mimeType.equals("text/csv", ignoreCase = true) -> "csv"
+        mimeType.equals("text/plain", ignoreCase = true) -> "txt"
+        mimeType.equals("application/x-ndjson", ignoreCase = true) -> "ndjson"
+        mimeType.equals("application/yaml", ignoreCase = true) ||
+            mimeType.equals("text/yaml", ignoreCase = true) -> "yaml"
+        else -> "bin"
     }
 
     private fun saveLeaseExtension(session: UploadSession, now: java.time.Instant): UploadSession {
@@ -676,6 +741,13 @@ internal class ArtifactUploadHandler(
         val initialTtl: Duration = ArtifactUploadInitHandler.DEFAULT_INITIAL_TTL,
         val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
         val finalizer: SchemaStagingFinalizer? = null,
+        /**
+         * Phase F § 8.5 (F.5 2/3): policy-pflichtiger
+         * `uploadIntent=job_input`-Pfad. Default `null` haelt
+         * Bestands-Tests gruen; Production wiring muss den Finaliser
+         * setzen, sonst materialisiert F.5 keine Artefaktbytes.
+         */
+        val jobInputFinalizer: JobInputFinalizer? = null,
         val payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
         val finalizingLeaseTtl: Duration = Duration.ofMinutes(5),
     )
