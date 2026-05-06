@@ -9,6 +9,17 @@ enum class QuotaDimension {
     ACTIVE_UPLOAD_SESSIONS,
     UPLOAD_BYTES,
     PARALLEL_SEGMENT_WRITES,
+    /**
+     * Phase F § 8.9 (F.9 1/3): persistierte Artefakt-Bytes nach
+     * erfolgreicher Finalisierung. Die [ACTIVE_UPLOAD_SESSIONS]-
+     * und [UPLOAD_BYTES]-Reservierungen aus Init werden auf
+     * `COMPLETED` freigegeben; die Bytes wandern in diese Dimension,
+     * sodass ein Tenant nur fuer den durablen Bestand bezahlt (nicht
+     * fuer in-flight + durabel doppelt). Plan § 8.9 wortlaeufig:
+     * "COMPLETED bucht gespeicherte Artefaktbytes genau einmal und
+     * gibt reservierte Upload-Bytes frei".
+     */
+    STORED_ARTIFACT_BYTES,
     PROVIDER_CALLS,
 }
 

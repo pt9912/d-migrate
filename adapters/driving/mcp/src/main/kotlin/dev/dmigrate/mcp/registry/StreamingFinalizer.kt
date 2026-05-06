@@ -220,8 +220,74 @@ internal class StreamingFinalizer(
                     now = now,
                 ),
             )
+            // Phase F § 8.9 (F.9 1/3): Quota-Swap nach COMPLETED.
+            // Init-time reserved ACTIVE_UPLOAD_SESSIONS + UPLOAD_BYTES
+            // werden freigegeben; die durabel persistierten
+            // Artefaktbytes wandern in die STORED_ARTIFACT_BYTES-
+            // Dimension. Plan § 8.9 wortlaeufig: "COMPLETED bucht
+            // gespeicherte Artefaktbytes genau einmal und gibt
+            // reservierte Upload-Bytes frei".
+            bookSuccessfulFinalisation(claimedSession, payload.sizeBytes)
             rendered
         }
+    }
+
+    /**
+     * Phase F § 8.9 (F.9 1/3): COMPLETED-Quota-Swap.
+     *
+     * - Release `ACTIVE_UPLOAD_SESSIONS` (1) — die Session ist nicht
+     *   mehr aktiv.
+     * - Release `UPLOAD_BYTES` (`session.sizeBytes` — was zur Init-
+     *   Zeit reserviert wurde).
+     * - Reserve `STORED_ARTIFACT_BYTES` (`payloadSizeBytes` — die
+     *   tatsaechlich materialisierten Bytes). Bei `RateLimited` wird
+     *   der Counter nicht hochgezaehlt — die Plan-Akzeptanz "buche
+     *   genau einmal" laesst den Caller in Ruhe (das Artefakt ist
+     *   schon durabel; ein weiterer Reserve-Versuch beim
+     *   Retention-Tick ist Plan-konform). Ein Limit-Reached fuer
+     *   diese Dimension ist eine Operator-Diagnose, kein
+     *   Caller-Fehler — der Upload ist bereits committed.
+     *
+     * Idempotent: ein zweiter `commitFinalization`-Aufruf kommt nicht
+     * vor (claim-keyed CAS), aber selbst wenn — die Quota-Calls sind
+     * idempotent gegenueber Counter-0-Untergrenzen.
+     */
+    private fun bookSuccessfulFinalisation(session: UploadSession, payloadSizeBytes: Long) {
+        val service = quotaService ?: return
+        service.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.ACTIVE_UPLOAD_SESSIONS,
+                    session.ownerPrincipalId,
+                ),
+                amount = 1,
+            ),
+        )
+        service.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.UPLOAD_BYTES,
+                    session.ownerPrincipalId,
+                ),
+                amount = session.sizeBytes,
+            ),
+        )
+        // Plan § 8.9: das Plan-Limit fuer STORED_ARTIFACT_BYTES ist
+        // operator-konfiguriert; ein RateLimited-Outcome wird hier
+        // bewusst geschluckt — das Artefakt ist bereits durabel.
+        // Das Limit-Reached ist eine Operator-Diagnose und keine
+        // Caller-Reaktion mehr.
+        @Suppress("UNUSED_VARIABLE")
+        val outcome = service.reserve(
+            QuotaKey(
+                session.tenantId,
+                QuotaDimension.STORED_ARTIFACT_BYTES,
+                session.ownerPrincipalId,
+            ),
+            amount = payloadSizeBytes,
+        )
     }
 
     /**
