@@ -36,6 +36,7 @@ class JdbcIdempotencyStore(
     private val deniedRetentionSeconds: Long = DEFAULT_DENIED_RETENTION_SECONDS,
     private val committedRetentionSeconds: Long = DEFAULT_COMMITTED_RETENTION_SECONDS,
     private val failedRetentionSeconds: Long = DEFAULT_FAILED_RETENTION_SECONDS,
+    private val initResumeSeconds: Long = DEFAULT_INIT_RESUME_SECONDS,
 ) : IdempotencyStore {
 
     override fun reserve(
@@ -179,8 +180,55 @@ class JdbcIdempotencyStore(
         payloadFingerprint: String,
         sessionId: String,
         now: Instant,
-    ): InitResumeOutcome = throw NotImplementedError(
-        "reserveInitResume kommt in AP E2.4 (init_resume_reservations-Tabelle, separate Methode)",
+    ): InitResumeOutcome = transactionRunner.inTransaction { conn ->
+        // Plan §6.2 (1): try insert-if-absent; bei Erfolg sofort Reserved.
+        val expiresAt = now.plusSeconds(initResumeSeconds)
+        val inserted = conn.querySingle(
+            sql = """
+                INSERT INTO init_resume_reservations
+                  (tenant_id, caller_id, tool_name, client_request_id,
+                   session_id, payload_fingerprint,
+                   expires_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (tenant_id, caller_id, tool_name, client_request_id)
+                  DO NOTHING
+                RETURNING session_id, expires_at
+            """.trimIndent(),
+            scope.tenantId.value, scope.callerId.value, scope.toolName, scope.clientRequestId,
+            sessionId, payloadFingerprint, expiresAt, now, now,
+        ) { rs -> InitRow(rs.getString("session_id"), null, rs.getInstant("expires_at")) }
+
+        if (inserted != null) {
+            return@inTransaction InitResumeOutcome.Reserved(scope, inserted.sessionId, inserted.expiresAt)
+        }
+
+        // Plan §6.2 (2): existing row — dispatch by fingerprint.
+        val existing = conn.querySingle(
+            sql = """
+                SELECT session_id, payload_fingerprint, expires_at
+                  FROM init_resume_reservations
+                 WHERE tenant_id = ? AND caller_id = ? AND tool_name = ? AND client_request_id = ?
+            """.trimIndent(),
+            scope.tenantId.value, scope.callerId.value, scope.toolName, scope.clientRequestId,
+        ) { rs ->
+            InitRow(
+                rs.getString("session_id"),
+                rs.getString("payload_fingerprint"),
+                rs.getInstant("expires_at"),
+            )
+        } ?: error("Race: insert returned no row but SELECT found nothing for $scope")
+
+        if (existing.fingerprint != payloadFingerprint) {
+            InitResumeOutcome.Conflict(scope, existing.fingerprint!!)
+        } else {
+            InitResumeOutcome.Existing(scope, existing.sessionId, existing.expiresAt)
+        }
+    }
+
+    private data class InitRow(
+        val sessionId: String,
+        val fingerprint: String?,
+        val expiresAt: Instant,
     )
 
     override fun markAwaitingApproval(
@@ -344,10 +392,11 @@ class JdbcIdempotencyStore(
     }
 
     override fun cleanupExpired(now: Instant): Int = transactionRunner.inTransaction { conn ->
-        // Plan § 6.6: regulaerer Pfad loescht NUR terminale Eintraege.
-        // Abgelaufene PENDING/AWAITING_APPROVAL bleiben fuer Recovery
-        // erhalten — sie werden im naechsten reserve(...) recovered.
-        conn.executeUpdate(
+        // Plan § 6.6: regulaerer Pfad loescht NUR terminale Eintraege
+        // der idempotency_reservations. Abgelaufene PENDING/
+        // AWAITING_APPROVAL bleiben fuer Recovery erhalten — sie werden
+        // im naechsten reserve(...) recovered.
+        val deletedIdempotency = conn.executeUpdate(
             """
             DELETE FROM idempotency_reservations
               WHERE state IN ('COMMITTED','DENIED','FAILED')
@@ -355,6 +404,13 @@ class JdbcIdempotencyStore(
             """.trimIndent(),
             now,
         )
+        // Plan § 6.6: InitResume hat keinen Recovery-Pfad — abgelaufene
+        // Eintraege werden direkt geloescht.
+        val deletedInit = conn.executeUpdate(
+            "DELETE FROM init_resume_reservations WHERE expires_at < ?",
+            now,
+        )
+        deletedIdempotency + deletedInit
     }
 
     private fun terminalExpiry(
@@ -386,5 +442,6 @@ class JdbcIdempotencyStore(
         const val DEFAULT_DENIED_RETENTION_SECONDS: Long = 600
         const val DEFAULT_COMMITTED_RETENTION_SECONDS: Long = 86_400
         const val DEFAULT_FAILED_RETENTION_SECONDS: Long = 600
+        const val DEFAULT_INIT_RESUME_SECONDS: Long = 600
     }
 }
