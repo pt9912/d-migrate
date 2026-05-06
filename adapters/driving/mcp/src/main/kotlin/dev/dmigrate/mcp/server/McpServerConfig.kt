@@ -194,8 +194,16 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         // §12.4. The completing segment returns the final
         // artifactId/sha256 in the same response; there is no
         // separate `artifact_upload_complete` tool.
+        //
+        // Phase F § 8.4 (F.4 1/3): das method-level Gate fuer
+        // `artifact_upload` ist `dmigrate:read` — der intentabhaengige
+        // Scope-Check passiert im Handler nach dem no-oracle Session-/
+        // Owner-Lookup. `job_input`-Sessions erzwingen dort zusaetzlich
+        // `dmigrate:artifact:upload`, wahrend `schema_staging_readonly`
+        // mit reinem `dmigrate:read` zulaessig bleibt (Plan § 8.4).
+        // `init`/`abort` behalten das strenge upload-Scope-Gate.
         "artifact_upload_init" to artifactUpload,
-        "artifact_upload" to artifactUpload,
+        "artifact_upload" to read,
         "artifact_upload_abort" to artifactUpload,
         // Data-write tools
         "data_import_start" to dataWrite,

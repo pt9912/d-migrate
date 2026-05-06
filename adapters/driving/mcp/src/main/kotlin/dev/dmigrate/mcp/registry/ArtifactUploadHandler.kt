@@ -117,6 +117,7 @@ internal class ArtifactUploadHandler(
                 reason = "session belongs to a different principal",
             )
         }
+        enforceIntentScope(session, context.principal)
         if (session.state == UploadSessionState.COMPLETED) {
             return handleReplayAfterCompleted(session, args, context.requestId)
         }
@@ -196,6 +197,44 @@ internal class ArtifactUploadHandler(
         )
         sessionStore.save(updated)
         return updated
+    }
+
+    /**
+     * Phase F § 8.4 (F.4 1/3): intent-abhaengiger Scope-Check nach
+     * dem no-oracle Session-/Owner-Lookup. Dispatch erzwingt nur das
+     * lockere `dmigrate:read`-Gate; der Handler erzwingt zusaetzlich
+     * `dmigrate:artifact:upload` fuer policy-pflichtige
+     * `job_input`-Sessions, sodass ein read-only Caller einen
+     * `job_input`-Upload nicht ueberschreiben kann. Ein
+     * `schema_staging_readonly`-Caller darf mit reinem
+     * `dmigrate:read` bleiben (Plan § 8.4 "session-scoped read-only
+     * Upload-Berechtigung") — ein staerkerer Scope wie
+     * `dmigrate:artifact:upload` reicht ebenfalls. Der Aufruf liegt
+     * VOR jeder Segment-/Quota-/TTL-Mutation; ein gescheiterter
+     * Scope-Check produziert Forbidden ohne Side Effects.
+     */
+    private fun enforceIntentScope(session: UploadSession, principal: PrincipalContext) {
+        if (principal.isAdmin) return
+        val intent = session.uploadIntent
+        val acceptable = intentScopesFor(intent)
+        if (principal.scopes.intersect(acceptable).isEmpty()) {
+            throw ForbiddenPrincipalException(
+                principalId = principal.principalId,
+                reason = "missing scope(s) for uploadIntent=$intent: any of ${acceptable.sorted()}",
+            )
+        }
+    }
+
+    private fun intentScopesFor(intent: String): Set<String> = when (intent) {
+        ArtifactUploadInitHandler.INTENT_SCHEMA_STAGING_READONLY ->
+            // `dmigrate:read` reicht; ein staerkerer Caller mit
+            // `dmigrate:artifact:upload` darf auch read-only stagen.
+            SCOPE_READONLY_ACCEPTED
+        ArtifactUploadInitHandler.INTENT_JOB_INPUT -> SCOPE_ARTIFACT_UPLOAD
+        // Fail-closed fuer unbekannte Intents. Phase-F erlaubt nur die
+        // beiden Werte; eine Session mit fremdem Intent waere ein
+        // Server-Fehler in F-Tests.
+        else -> SCOPE_ARTIFACT_UPLOAD
     }
 
     private fun handleReplayAfterCompleted(
@@ -526,6 +565,11 @@ internal class ArtifactUploadHandler(
         private val HEX_64: Regex = UploadSessionDefaults.SHA256_HEX_PATTERN
         private val MAX_ABSOLUTE_LEASE: Duration = UploadSessionDefaults.ABSOLUTE_LEASE
         val DEFAULT_FINALIZING_LEASE_TTL: Duration = Duration.ofMinutes(5)
+
+        /** Phase F § 8.4 (F.4 1/3): Intent-zu-Scope-Mapping. */
+        private val SCOPE_ARTIFACT_UPLOAD: Set<String> = setOf("dmigrate:artifact:upload")
+        private val SCOPE_READONLY_ACCEPTED: Set<String> =
+            setOf("dmigrate:read", "dmigrate:artifact:upload")
 
         private fun sha256Hex(bytes: ByteArray): String {
             val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
