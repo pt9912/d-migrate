@@ -27,24 +27,27 @@ import java.util.concurrent.atomic.AtomicInteger
  * `IdempotencyStore.commit` und `JobStore.save` MUESSEN gemeinsam
  * sichtbar werden.
  *
- * Implementoren leiten ab und liefern eine Factory:
+ * Implementoren leiten ab und liefern ein `setup`-Lambda, das pro
+ * Test-Aufruf ein frisches Tripel `(IdempotencyStore, JobStore,
+ * JobStartTransaction)` liefert. Stores und Transaction muessen
+ * konsistent verkabelt sein — fuer Production-Adapter heisst das
+ * typischerweise: alle drei teilen sich denselben DB-Konnektor.
  *
  * ```
  * class MyDbBackedJobStartTransactionContractTest :
- *     JobStartTransactionContractTests(
- *         factory = { tenant, ipdStore, jobStore ->
- *             MyDbBackedJobStartTransaction(...)
- *         },
- *     )
+ *     JobStartTransactionContractTests({
+ *         val ipd = MyDbBackedIdempotencyStore(...)
+ *         val jobs = MyDbBackedJobStore(...)
+ *         JobStartTransactionFixture(
+ *             idempotencyStore = ipd,
+ *             jobStore = jobs,
+ *             transaction = MyDbBackedJobStartTransaction(ipd, jobs, ...),
+ *         )
+ *     })
  * ```
- *
- * Die Factory bekommt das vorbereitete `(IdempotencyStore, JobStore)`-
- * Paar, das die Test-Suite seedet (Idempotency-Reserve hat schon
- * stattgefunden) — der Implementor wired sein konkretes
- * Transaction-Objekt darauf.
  */
 abstract class JobStartTransactionContractTests(
-    factory: (IdempotencyStore, JobStore) -> JobStartTransaction,
+    fixtureFactory: () -> JobStartTransactionFixture,
 ) : FunSpec({
 
     val tenant = Fixtures.tenant("acme")
@@ -66,10 +69,8 @@ abstract class JobStartTransactionContractTests(
     )
 
     fun setup(): Triple<IdempotencyStore, JobStore, JobStartTransaction> {
-        val idempotencyStore = dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore()
-        val jobStore = dev.dmigrate.server.ports.memory.InMemoryJobStore()
-        val transaction = factory(idempotencyStore, jobStore)
-        return Triple(idempotencyStore, jobStore, transaction)
+        val fixture = fixtureFactory()
+        return Triple(fixture.idempotencyStore, fixture.jobStore, fixture.transaction)
     }
 
     test("Committed: IdempotencyStore + JobStore werden GEMEINSAM SICHTBAR") {
@@ -160,6 +161,18 @@ abstract class JobStartTransactionContractTests(
         }
     }
 })
+
+/**
+ * Fixture-Tripel fuer [JobStartTransactionContractTests]. Implementoren
+ * konstruieren konsistent verkabelte Stores + Transaction (Production-
+ * Adapter teilen typischerweise denselben DB-Konnektor, damit
+ * Plan §7.2-Atomicity greift).
+ */
+data class JobStartTransactionFixture(
+    val idempotencyStore: IdempotencyStore,
+    val jobStore: JobStore,
+    val transaction: JobStartTransaction,
+)
 
 private infix fun Any?.shouldNotBe(other: Any?) {
     if (this == other) error("expected $this != $other")

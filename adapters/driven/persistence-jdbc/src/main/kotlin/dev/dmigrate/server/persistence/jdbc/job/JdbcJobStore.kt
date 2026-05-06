@@ -36,6 +36,17 @@ class JdbcJobStore(
 ) : JobStore {
 
     override fun save(record: JobRecord): JobRecord = transactionRunner.inTransaction { conn ->
+        saveOnConnection(conn, record)
+    }
+
+    /**
+     * Plan E2 § 3.5 + § 6.5 Cross-Store-Komposition: erlaubt
+     * [JdbcJobStartTransaction] das `save` und ein `IdempotencyStore.commit`
+     * in derselben DB-TX auszufuehren. Caller MUSS im
+     * `JdbcTransactionRunner.inTransaction`-Block sein und die
+     * Connection durchreichen.
+     */
+    internal fun saveOnConnection(conn: Connection, record: JobRecord): JobRecord {
         val mj = record.managedJob
         val cancelRequested = mj.cancelRequest.requested
         val cancelSource = mj.cancelRequest.signalSource
@@ -59,7 +70,7 @@ class JdbcJobStore(
             cancelRequested, cancelSource,
             mj.createdAt, mj.updatedAt, mj.expiresAt,
         )
-        record
+        return record
     }
 
     override fun findById(tenantId: TenantId, jobId: String): JobRecord? =

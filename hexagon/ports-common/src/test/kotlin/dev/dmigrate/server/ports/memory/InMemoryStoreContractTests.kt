@@ -56,8 +56,12 @@ class InMemoryAuditSinkContractTest : AuditSinkContractTests({ InMemoryAuditSink
 class InMemoryQuotaStoreContractTest : QuotaStoreContractTests({ InMemoryQuotaStore() })
 
 class InMemoryJobStartTransactionContractTest :
-    JobStartTransactionContractTests(
-        factory = { idempotencyStore, jobStore ->
-            InMemoryJobStartTransaction(jobStore, idempotencyStore)
-        },
-    )
+    JobStartTransactionContractTests({
+        val idempotencyStore = InMemoryIdempotencyStore()
+        val jobStore = InMemoryJobStore()
+        dev.dmigrate.server.ports.contract.JobStartTransactionFixture(
+            idempotencyStore = idempotencyStore,
+            jobStore = jobStore,
+            transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
+        )
+    })

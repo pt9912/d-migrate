@@ -317,6 +317,23 @@ class JdbcIdempotencyStore(
         now: Instant,
         retentionUntil: Instant?,
     ): Boolean = transactionRunner.inTransaction { conn ->
+        commitOnConnection(conn, scope, resultRef, now, retentionUntil)
+    }
+
+    /**
+     * Plan E2 § 3.5 + § 6.5 Cross-Store-Komposition: erlaubt
+     * [JdbcJobStartTransaction] das `commit` UND ein `JobStore.save`
+     * in derselben DB-TX auszufuehren. Caller MUSS im
+     * `JdbcTransactionRunner.inTransaction`-Block sein und die
+     * Connection durchreichen.
+     */
+    internal fun commitOnConnection(
+        conn: Connection,
+        scope: IdempotencyScope,
+        resultRef: String,
+        now: Instant,
+        retentionUntil: Instant?,
+    ): Boolean {
         val terminalExpiresAt = terminalExpiry(now, committedRetentionSeconds, retentionUntil)
         val updated = conn.executeUpdate(
             """
@@ -333,7 +350,7 @@ class JdbcIdempotencyStore(
             resultRef, terminalExpiresAt, terminalExpiresAt, now,
             scope.tenantId.value, scope.callerId.value, scope.toolName, scope.idempotencyKey.value,
         )
-        updated == 1
+        return updated == 1
     }
 
     override fun deny(

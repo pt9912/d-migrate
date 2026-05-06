@@ -63,6 +63,11 @@ kover {
                     // SELECT FOR UPDATE, ON CONFLICT). Gedeckt durch
                     // JdbcJobStoreContractTest unter -PintegrationTests.
                     "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore",
+                    // Phase E2.6: JdbcJobStartTransaction — Cross-Store-
+                    // TX-Komposition. Gedeckt durch
+                    // JdbcJobStartTransactionContractTest unter
+                    // -PintegrationTests.
+                    "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction",
                 )
             }
         }
