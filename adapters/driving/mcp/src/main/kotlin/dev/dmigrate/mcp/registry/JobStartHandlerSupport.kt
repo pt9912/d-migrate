@@ -198,10 +198,14 @@ internal object JobStartHandlerSupport {
                 envelope = ToolErrorEnvelope(
                     code = ToolErrorCode.RATE_LIMITED,
                     message = "Rate limit exceeded",
+                    // Plan E3 § 3.5 / § 10 Q5: `reason` ist IMMER im Wire
+                    // sichtbar — `ACTIVE_JOBS_QUOTA` fuer Tenant-Quota,
+                    // `EXECUTOR_SATURATED` fuer Pool-Saturation.
                     details = listOf(
                         ToolErrorDetail("retryAfter", outcome.retryAfter.seconds.toString()),
                         ToolErrorDetail("current", outcome.current.toString()),
                         ToolErrorDetail("limit", outcome.limit.toString()),
+                        ToolErrorDetail("reason", outcome.reason),
                     ),
                     requestId = requestId,
                 ),

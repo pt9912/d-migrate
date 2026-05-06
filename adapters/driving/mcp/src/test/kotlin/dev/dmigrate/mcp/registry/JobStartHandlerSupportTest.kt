@@ -251,7 +251,7 @@ class JobStartHandlerSupportTest : FunSpec({
         }
     }
 
-    test("toToolCallOutcome: RateLimited -> RATE_LIMITED-Envelope mit retryAfter/current/limit") {
+    test("toToolCallOutcome: RateLimited -> RATE_LIMITED-Envelope mit retryAfter/current/limit + reason=ACTIVE_JOBS_QUOTA (Default)") {
         val outcome = JobStartHandlerOutcome.RateLimited(
             retryAfter = java.time.Duration.ofSeconds(45),
             current = 3L,
@@ -264,6 +264,21 @@ class JobStartHandlerSupportTest : FunSpec({
         keyed["retryAfter"] shouldBe "45"
         keyed["current"] shouldBe "3"
         keyed["limit"] shouldBe "3"
+        // Plan E3 § 3.5 / § 10 Q5: reason ist immer im Wire, Default ACTIVE_JOBS_QUOTA.
+        keyed["reason"] shouldBe "ACTIVE_JOBS_QUOTA"
+    }
+
+    test("toToolCallOutcome: RateLimited mit reason=EXECUTOR_SATURATED -> Wire-reason=EXECUTOR_SATURATED") {
+        val outcome = JobStartHandlerOutcome.RateLimited(
+            retryAfter = java.time.Duration.ofSeconds(1),
+            current = 32L,
+            limit = 32L,
+            reason = "EXECUTOR_SATURATED",
+        )
+        val result = JobStartHandlerSupport.toToolCallOutcome(outcome, tenant, "req-rl-pool")
+        result.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        val keyed = result.envelope.details.associate { it.key to it.value }
+        keyed["reason"] shouldBe "EXECUTOR_SATURATED"
     }
 })
 

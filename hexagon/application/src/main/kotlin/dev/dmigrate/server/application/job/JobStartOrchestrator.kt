@@ -484,6 +484,14 @@ sealed interface JobStartHandlerOutcome {
         val retryAfter: Duration,
         val current: Long,
         val limit: Long,
+        /**
+         * Phase E3 § 3.5 / § 10 Q5: Diskriminator zwischen
+         * Tenant-/Caller-Quota (`ACTIVE_JOBS_QUOTA`, Default — Phase-E
+         * Quota-Pfad) und Executor-Pool-Saturation (`EXECUTOR_SATURATED`,
+         * Phase-E3 Admission-Pfad). Wire-Caller sehen das Feld immer in
+         * den `RATE_LIMITED`-Details.
+         */
+        val reason: String = JobStartReason.ACTIVE_JOBS_QUOTA,
     ) : JobStartHandlerOutcome
 }
 
@@ -497,5 +505,6 @@ private fun JobStartOutcome.toHandlerOutcome(): JobStartHandlerOutcome = when (t
     is JobStartOutcome.Denied -> JobStartHandlerOutcome.PolicyDenied(reason, expiresAt)
     is JobStartOutcome.Failed -> JobStartHandlerOutcome.Failed(reason, expiresAt)
     is JobStartOutcome.Conflict -> JobStartHandlerOutcome.IdempotencyConflict(existingFingerprint)
-    is JobStartOutcome.RateLimited -> JobStartHandlerOutcome.RateLimited(retryAfter, current, limit)
+    is JobStartOutcome.RateLimited ->
+        JobStartHandlerOutcome.RateLimited(retryAfter, current, limit, reason)
 }
