@@ -505,16 +505,92 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "targetConnectionId": {
+        "idempotencyKey": {
           "type": "string"
         },
-        "sourceArtifactId": {
+        "targetConnectionRef": {
+          "type": "string"
+        },
+        "artifactId": {
+          "type": "string"
+        },
+        "sourceArtifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "table": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml",
+            "csv"
+          ]
+        },
+        "onError": {
+          "type": "string",
+          "enum": [
+            "abort",
+            "skip",
+            "log"
+          ]
+        },
+        "onConflict": {
+          "type": "string",
+          "enum": [
+            "abort",
+            "skip",
+            "update"
+          ]
+        },
+        "triggerMode": {
+          "type": "string",
+          "enum": [
+            "fire",
+            "disable",
+            "strict"
+          ]
+        },
+        "truncate": {
+          "type": "boolean"
+        },
+        "disableFkChecks": {
+          "type": "boolean"
+        },
+        "reseedSequences": {
+          "type": "boolean"
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "csvNoHeader": {
+          "type": "boolean"
+        },
+        "csvNullString": {
+          "type": "string"
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approvalToken": {
           "type": "string"
         }
       },
       "required": [
-        "targetConnectionId",
-        "sourceArtifactId"
+        "idempotencyKey",
+        "targetConnectionRef"
       ]
     },
     "outputSchema": {
@@ -524,10 +600,50 @@
       "properties": {
         "jobId": {
           "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "jobId"
+        "jobId",
+        "resourceUri",
+        "executionMeta"
       ]
     }
   },

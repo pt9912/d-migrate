@@ -322,12 +322,49 @@ internal object PhaseBToolSchemas {
         ))
 
         // Data-write tools
+        // Phase F § 6.1 + § 8.7 (F.7 1/5): Vollstaendiges
+        // `data_import_start`-Tool-Schema. Plan-§-6.1-Optionen werden
+        // flat unter dem Input gefuehrt (nicht in einem `options`-
+        // Wrapper), damit das additionalProperties=false-Gate
+        // unbekannte Optionsnamen direkt blockiert. Die fachliche
+        // Validierung (table/tables-Exklusivitaet, format/mimeType-
+        // Kompatibilitaet, Artefakt-Eignung, chunkSize<=10000 etc.)
+        // liegt im Handler, sodass strukturelle vs. semantische
+        // Fehler getrennt diagnostizierbar bleiben.
         put("data_import_start", schemaPair(
             input = obj(
-                "targetConnectionId" to stringField(),
-                "sourceArtifactId" to stringField(),
-            ).required("targetConnectionId", "sourceArtifactId"),
-            output = jobIdOut(),
+                // Plan § 6.1: Pflicht-Identitaet
+                "idempotencyKey" to stringField(),
+                "targetConnectionRef" to stringField(),
+                // Eingabe-Artefakt — `artifactId` oder
+                // `sourceArtifactRef`; Handler erzwingt exactly-one.
+                "artifactId" to stringField(),
+                "sourceArtifactRef" to artifactRefField(),
+                // Optional Tabellen-Bindung (Single-File / Bundle).
+                "table" to stringField(),
+                "tables" to arrayField("string"),
+                // Optional Schema-Preflight + Format-Override.
+                "schemaRef" to stringField(),
+                "format" to enumField("json", "yaml", "csv"),
+                // Plan § 6.1 Import-Optionen.
+                "onError" to enumField("abort", "skip", "log"),
+                "onConflict" to enumField("abort", "skip", "update"),
+                "triggerMode" to enumField("fire", "disable", "strict"),
+                "truncate" to booleanField(),
+                "disableFkChecks" to booleanField(),
+                "reseedSequences" to booleanField(),
+                "encoding" to stringField(),
+                "csvNoHeader" to booleanField(),
+                "csvNullString" to stringField(),
+                // Plan § 6.1: chunkSize positive Ganzzahl bis 10000.
+                // Schema sichert minimum=1; Handler validiert <=10000
+                // (semantic).
+                "chunkSize" to integerField(minimum = 1),
+                // Plan § 5.5: Caller liefert Token nach
+                // `RequiresApproval` nach.
+                "approvalToken" to stringField(),
+            ).required("idempotencyKey", "targetConnectionRef"),
+            output = jobStartOut(),
         ))
         put("data_transfer_start", schemaPair(
             input = obj(
@@ -640,10 +677,14 @@ internal object PhaseBToolSchemas {
         ).required("jobId", "resourceUri", "executionMeta")
 
     /**
-     * Phase-B-Output fuer noch nicht E-aktive Start-Tools
-     * (`data_export_start`, `data_import_start`, `data_transfer_start`).
-     * Bleibt schmal `{jobId}`, weil diese Tools in Phase E noch
+     * Phase-B-Output fuer noch nicht E-/F-aktive Start-Tools
+     * (`data_export_start`, `data_transfer_start`). Bleibt schmal
+     * `{jobId}`, weil diese Tools in Phase E noch
      * `UnsupportedToolHandler` sind (Plan §3.2 Carve-out).
+     *
+     * Phase F § 8.7 (F.7 1/5): `data_import_start` ist NICHT mehr in
+     * dieser Liste — der vollstaendige `jobStartOut()`-Output mit
+     * `resourceUri` + `executionMeta` ist Phase-F-aktiv.
      */
     private fun jobIdOut(): Map<String, Any> =
         obj("jobId" to stringField()).required("jobId")
