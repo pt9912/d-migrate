@@ -79,6 +79,20 @@ class JobDispatcher(
         record: JobRecord,
         worker: JobWorker,
         token: CancellationToken,
+        /**
+         * Phase E3 § 3.5 + § 6.2: optionaler [JobDispatchPermit] aus dem
+         * Admission-Gate. Der Dispatcher schliesst ihn im `finally` der
+         * Worker-Runnable — also exakt nach `applyTerminal` oder einem
+         * Defensive-Catch. Default `null` haelt Bestands-Tests/Wiring
+         * unveraendert (Sync-Pfad ohne Admission, kein Permit-Acquire).
+         *
+         * Plan-Akzeptanz: `JobDispatchPermit.close()` ist idempotent und
+         * no-throw (siehe [SyncJobDispatchAdmission.NoOpPermit] und
+         * [BoundedAsyncJobDispatchAdmission.SinglePermit]) — deshalb
+         * muss der Dispatcher den Release nicht in einen weiteren
+         * try-catch verpacken.
+         */
+        permit: JobDispatchPermit? = null,
     ): CompletableFuture<JobWorkerOutcome> {
         val future = CompletableFuture<JobWorkerOutcome>()
         executor.execute {
@@ -88,6 +102,8 @@ class JobDispatcher(
                 // Defensive: applyTerminal-Folgefehler oder
                 // unerwartete jobStore-Exceptions erreichen den Caller.
                 future.completeExceptionally(t)
+            } finally {
+                permit?.close()
             }
         }
         return future

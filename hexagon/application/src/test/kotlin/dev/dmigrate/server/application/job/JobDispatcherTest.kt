@@ -289,4 +289,57 @@ class JobDispatcherTest : FunSpec({
         dispatcher.dispatch(record, JobWorker { _, _ -> JobWorkerOutcome.Succeeded() }, CancellationToken.none()).get()
         executorThread shouldBe callerThread
     }
+
+    // ── Phase E3 § 3.5 + § 6.2: Permit-Release im Dispatcher-finally ─
+
+    test("dispatch(...,permit) schliesst Permit nach Worker-Erfolg") {
+        val store = seedQueued("j-permit-ok")
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j-permit-ok")!!
+        val closeCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val permit = JobDispatchPermit { closeCount.incrementAndGet() }
+
+        dispatcher.dispatch(
+            record = record,
+            worker = JobWorker { _, _ -> JobWorkerOutcome.Succeeded() },
+            token = CancellationToken.none(),
+            permit = permit,
+        ).get()
+
+        closeCount.get() shouldBe 1
+    }
+
+    test("dispatch(...,permit) schliesst Permit auch wenn Worker wirft") {
+        val store = seedQueued("j-permit-throw")
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j-permit-throw")!!
+        val closeCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val permit = JobDispatchPermit { closeCount.incrementAndGet() }
+
+        // Worker wirft generische Exception → RUNNER_ERROR-Pfad; Permit
+        // muss trotzdem im finally geschlossen werden.
+        dispatcher.dispatch(
+            record = record,
+            worker = JobWorker { _, _ -> error("worker fail") },
+            token = CancellationToken.none(),
+            permit = permit,
+        ).get()
+
+        closeCount.get() shouldBe 1
+    }
+
+    test("dispatch ohne permit (Default null) ist Bestands-Verhalten") {
+        val store = seedQueued("j-permit-default")
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j-permit-default")!!
+
+        // Default-permit-Aufruf darf nicht werfen — keine Permit-
+        // Operation, kein Cleanup-Pfad.
+        val outcome = dispatcher.dispatch(
+            record = record,
+            worker = JobWorker { _, _ -> JobWorkerOutcome.Succeeded() },
+            token = CancellationToken.none(),
+        ).get()
+        outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>()
+    }
 })
