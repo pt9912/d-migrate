@@ -106,6 +106,21 @@ class JobStartOrchestrator(
      */
     private val jobDispatcher: JobDispatcher? = null,
     private val jobWorkerFactory: JobWorkerFactory? = null,
+    /**
+     * Phase E3 § 3.5 + § 6.2: Admission-Gate fuer den Auto-Dispatch.
+     * Wird **nur** befragt, wenn [jobDispatcher] und [jobWorkerFactory]
+     * gesetzt sind — sonst kein Permit-Acquire (Bestands-Wiring ohne
+     * Auto-Dispatch hat keinen Pool, der saturieren koennte). Bei
+     * `Saturated` liefert der Orchestrator `RateLimited` mit
+     * `reason = EXECUTOR_SATURATED`; bei `Closed` wird die
+     * Idempotency-Reservation via `markFailed` deterministisch
+     * terminalisiert (Plan § 3.5: kein stale PENDING-Slot bei
+     * Shutdown-Race).
+     *
+     * Default [SyncJobDispatchAdmission] vergibt unbeschraenkt Permits
+     * — passt zum Bestands-Test-Setup mit SyncExecutor.
+     */
+    private val dispatchAdmission: JobDispatchAdmission = SyncJobDispatchAdmission,
 ) {
 
     fun start(request: JobStartRequest): JobStartHandlerOutcome {
@@ -185,11 +200,53 @@ class JobStartOrchestrator(
         request: JobStartRequest,
         scope: IdempotencyScope,
     ): JobStartHandlerOutcome {
+        val factory = jobWorkerFactory
+        val dispatcher = jobDispatcher
+
+        // Phase E3 § 6.2: Admission-Acquire NUR wenn Auto-Dispatch
+        // verkabelt ist. Ohne Dispatcher+Factory landet kein Runnable
+        // im Pool, also kein Permit-Acquire. So bleiben Bestands-Tests
+        // (kein jobDispatcher) unveraendert.
+        val permit: JobDispatchPermit? = if (factory != null && dispatcher != null) {
+            when (val admission = dispatchAdmission.tryAcquire(request.now)) {
+                is JobDispatchAdmissionOutcome.Granted -> admission.permit
+                is JobDispatchAdmissionOutcome.Saturated ->
+                    return JobStartHandlerOutcome.RateLimited(
+                        retryAfter = admission.retryAfter,
+                        current = admission.current,
+                        limit = admission.limit,
+                        reason = JobStartReason.EXECUTOR_SATURATED,
+                    )
+                JobDispatchAdmissionOutcome.Closed -> {
+                    // Plan E3 § 3.5: Closed darf nicht als syntethisches
+                    // Failed retournieren — die Idempotency-Reservation
+                    // muss in einen terminalen FAILED-Replay-Zustand,
+                    // sonst bleibt sie als stale PENDING haengen.
+                    val expiresAt = request.now.plusSeconds(EXECUTOR_CLOSED_RETENTION_SECONDS)
+                    idempotencyStore.markFailed(
+                        scope = scope,
+                        reason = REASON_EXECUTOR_CLOSED,
+                        now = request.now,
+                        retentionUntil = expiresAt,
+                    )
+                    return JobStartHandlerOutcome.Failed(
+                        reason = REASON_EXECUTOR_CLOSED,
+                        expiresAt = expiresAt,
+                    )
+                }
+            }
+        } else {
+            null
+        }
+
         // Phase E §7.9: Quota.reserve VOR jobBuilder + JobStartTransaction.commit.
         // RateLimited liefert sofort zurueck — keine Job-Erzeugung, keine
-        // Secret-Store-Reads (Plan §7.9 line 1270-1273).
+        // Secret-Store-Reads (Plan §7.9 line 1270-1273). Plan E3 § 3.5:
+        // bei Quota-Reject muss das bereits-vergebene Permit synchron
+        // zurueck.
         val quotaReservation = reserveQuota(request, scope)
         if (quotaReservation is QuotaReserveResult.RateLimited) {
+            permit?.close()
             return quotaReservation.outcome
         }
         val ownerId = (quotaReservation as? QuotaReserveResult.Granted)?.ownerId
@@ -209,14 +266,24 @@ class JobStartOrchestrator(
                 // hier an. fire-and-forget — die CompletableFuture wird
                 // bewusst NICHT awaited, damit der Handler-Response sofort
                 // mit `Started + jobId` zurueckgehen kann (Plan §7.7
-                // async-Charakter).
-                val factory = jobWorkerFactory
-                val dispatcher = jobDispatcher
+                // async-Charakter). Plan E3 § 6.2: Permit wandert zum
+                // Dispatcher, der es im Worker-Runnable-finally schliesst.
                 if (factory != null && dispatcher != null) {
                     val worker = factory.create(outcome.record, request)
                     if (worker != null) {
-                        dispatcher.dispatch(outcome.record, worker, source.token)
+                        dispatcher.dispatch(outcome.record, worker, source.token, permit)
+                    } else {
+                        // (3/4)-Interim: kein Worker → Permit nicht
+                        // dispatchen, sondern lokal schliessen. Plan E3
+                        // § 3.5 verlangt zusaetzlich markExecutorSetupFailed-
+                        // Pfad — kommt in (4/4).
+                        permit?.close()
                     }
+                } else {
+                    // Defensive: kein Auto-Dispatch wired, daher auch
+                    // kein Permit acquired (siehe oben). Diese Branch
+                    // ist mit `permit == null` per construction.
+                    permit?.close()
                 }
 
                 JobStartHandlerOutcome.Started(jobId, outcome.record, source)
@@ -227,6 +294,7 @@ class JobStartOrchestrator(
                 // dieses Pipeline-Owners. Sweeper kann auf Lease-Ablauf NICHT
                 // refunden, weil der OwnerStore-Eintrag PENDING ist.
                 if (ownerId != null) quotaService?.refundForOwner(ownerId, request.now)
+                permit?.close()
                 JobStartHandlerOutcome.Pending(request.now.plusSeconds(1))
             }
         }
@@ -398,6 +466,17 @@ class JobStartOrchestrator(
         const val DENIAL_FALLBACK_SECONDS: Long = 600
         const val QUOTA_AMOUNT_PER_JOB: Long = 1L
         val DEFAULT_QUOTA_LEASE: Duration = Duration.ofSeconds(60)
+
+        /** Plan E3 § 3.5: Reason fuer Idempotency-FAILED bei Closed-Admission. */
+        const val REASON_EXECUTOR_CLOSED: String = "executor:closed"
+
+        /**
+         * Retention-Window fuer den Closed-FAILED-Slot. Kurz genug, dass
+         * der Caller mit demselben Idempotency-Key nach dem regulaeren
+         * Server-Restart einen frischen Start erreicht; lang genug fuer
+         * deterministisches Replay innerhalb des Shutdown-Race-Fensters.
+         */
+        const val EXECUTOR_CLOSED_RETENTION_SECONDS: Long = 1
     }
 }
 
