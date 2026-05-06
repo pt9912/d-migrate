@@ -1,5 +1,7 @@
 package dev.dmigrate.server.application.upload
 
+import dev.dmigrate.server.application.quota.QuotaReservation
+import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
@@ -9,6 +11,8 @@ import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import dev.dmigrate.server.ports.quota.QuotaDimension
+import dev.dmigrate.server.ports.quota.QuotaKey
 import java.time.Instant
 
 /**
@@ -24,14 +28,54 @@ class UploadSessionService(
     private val sessions: UploadSessionStore,
     private val segments: UploadSegmentStore,
     private val artifacts: ArtifactContentStore,
+    /**
+     * Phase F § 8.6 (F.6 1/3): optionaler [QuotaService] fuer den
+     * Expiry-Sweeper. Wenn gewired, gibt der Service auf TTL-/Idle-
+     * Expiry die Init-Quotas (`ACTIVE_UPLOAD_SESSIONS=1`,
+     * `UPLOAD_BYTES=session.sizeBytes`) frei, sodass ein Tenant
+     * nach Idle-Timeout nicht in den Limits gebunden bleibt.
+     * Default `null` haelt Bestands-Tests gruen — Production-Wiring
+     * (CLI-Sweeper, Phase-E-Bootstrap) reicht den Service durch.
+     */
+    private val quotaService: QuotaService? = null,
 ) {
 
     fun expireDue(now: Instant): List<UploadSession> {
         val expired = sessions.expireDue(now)
         for (session in expired) {
             segments.deleteAllForSession(session.uploadSessionId)
+            // Plan § 8.6: "Quota-Release fuer Abort, Expiry und
+            // fehlgeschlagene Finalisierung idempotent ausfuehren".
+            // Der QuotaService.release ist idempotent (no-op bei
+            // nicht-positivem aktuellem Counter); doppelter Sweep
+            // dieselbe Session ist sicher.
+            releaseInitQuotas(session)
         }
         return expired
+    }
+
+    private fun releaseInitQuotas(session: UploadSession) {
+        val service = quotaService ?: return
+        service.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.ACTIVE_UPLOAD_SESSIONS,
+                    session.ownerPrincipalId,
+                ),
+                amount = 1,
+            ),
+        )
+        service.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.UPLOAD_BYTES,
+                    session.ownerPrincipalId,
+                ),
+                amount = session.sizeBytes,
+            ),
+        )
     }
 
     fun abort(tenantId: TenantId, uploadSessionId: String, now: Instant): TransitionOutcome {

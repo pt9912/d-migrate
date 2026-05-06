@@ -102,6 +102,9 @@ internal class ArtifactUploadHandler(
         limits = limits,
         payloadFactory = payloadFactory,
         finalizingLeaseTtl = options.finalizingLeaseTtl,
+        // Phase F § 8.6 (F.6 1/3): Init-Quotas auf Validation-/Parse-
+        // Failure freigeben (analog zur F.4-(3/3)-oversize-Pipeline).
+        quotaService = quotaService,
     )
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {

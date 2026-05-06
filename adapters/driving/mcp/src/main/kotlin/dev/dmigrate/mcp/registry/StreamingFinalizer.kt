@@ -4,6 +4,8 @@ import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.upload.JobInputFinalizer
 import dev.dmigrate.server.application.error.IdempotencyConflictException
+import dev.dmigrate.server.application.quota.QuotaReservation
+import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
 import dev.dmigrate.server.application.error.ResourceNotFoundException
@@ -25,6 +27,8 @@ import dev.dmigrate.server.ports.PersistOutcome
 import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import dev.dmigrate.server.ports.quota.QuotaDimension
+import dev.dmigrate.server.ports.quota.QuotaKey
 import org.slf4j.LoggerFactory
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -47,6 +51,14 @@ internal class StreamingFinalizer(
     private val limits: McpLimitsConfig,
     private val payloadFactory: AssembledUploadPayloadFactory,
     private val finalizingLeaseTtl: Duration,
+    /**
+     * Phase F § 8.6 (F.6 1/3): optionaler [QuotaService] fuer den
+     * Failure-Pfad. Wenn gewired, gibt der Finaliser auf Validation-/
+     * Parse-Fehler die Init-Quotas (`ACTIVE_UPLOAD_SESSIONS`,
+     * `UPLOAD_BYTES`) frei — analog zur F.4-(3/3)-oversize-Pipeline.
+     * Default `null` haelt Bestands-Tests gruen.
+     */
+    private val quotaService: QuotaService? = null,
     private val claimIdGenerator: () -> String = { UUID.randomUUID().toString() },
 ) {
 
@@ -391,7 +403,15 @@ internal class StreamingFinalizer(
             now = now,
         )
         when (persisted) {
-            is PersistOutcome.Persisted -> transitionToAbortedBestEffort(session, now)
+            is PersistOutcome.Persisted -> {
+                transitionToAbortedBestEffort(session, now)
+                // Phase F § 8.6 (F.6 1/3): nach durablem ABORTED gibt
+                // der Finaliser die Init-Quotas frei, damit der Tenant
+                // nach einem Validation-/Parse-Fehler nicht in seinen
+                // Limits gebunden bleibt. Idempotent — nur der erste
+                // Persist-Persisted-Pfad ruft release.
+                releaseInitQuotas(session)
+            }
             is PersistOutcome.ClaimMismatch -> LOG.debug(
                 "FAILED-outcome skipped: claim {} for session {} no longer current ({})",
                 claimId, session.uploadSessionId, persisted.currentClaimId,
@@ -405,6 +425,37 @@ internal class StreamingFinalizer(
                 session.uploadSessionId,
             )
         }
+    }
+
+    /**
+     * Phase F § 8.6 (F.6 1/3): gibt die Init-time Quotas
+     * (`ACTIVE_UPLOAD_SESSIONS=1`, `UPLOAD_BYTES=session.sizeBytes`)
+     * fuer den Session-Owner frei. Idempotent (`QuotaService.release`
+     * ist no-op bei nicht-positivem aktuellem Counter). No-op wenn
+     * kein QuotaService gewired ist (Bestands-Tests).
+     */
+    private fun releaseInitQuotas(session: UploadSession) {
+        val service = quotaService ?: return
+        service.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.ACTIVE_UPLOAD_SESSIONS,
+                    session.ownerPrincipalId,
+                ),
+                amount = 1,
+            ),
+        )
+        service.release(
+            QuotaReservation(
+                key = QuotaKey(
+                    session.tenantId,
+                    QuotaDimension.UPLOAD_BYTES,
+                    session.ownerPrincipalId,
+                ),
+                amount = session.sizeBytes,
+            ),
+        )
     }
 
     /**
