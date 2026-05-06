@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports.memory
 
+import dev.dmigrate.server.ports.contract.AbortOutcomeStoreContractTests
 import dev.dmigrate.server.ports.contract.ApprovalGrantStoreContractTests
 import dev.dmigrate.server.ports.contract.ArtifactContentStoreContractTests
 import dev.dmigrate.server.ports.contract.ArtifactStoreContractTests
@@ -70,3 +71,6 @@ class InMemoryUploadInitClaimStoreContractTest :
     dev.dmigrate.server.ports.contract.UploadInitClaimStoreContractTests({
         InMemoryUploadInitClaimStore()
     })
+
+class InMemoryAbortOutcomeStoreContractTest :
+    AbortOutcomeStoreContractTests({ InMemoryAbortOutcomeStore() })
