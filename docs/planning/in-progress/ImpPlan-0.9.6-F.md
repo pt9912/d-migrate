@@ -2,7 +2,13 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: F (`Datenoperationen und policy-pflichtige Uploads`)
-> **Status**: Draft (2026-05-03)
+> **Status**: in Arbeit (2026-05-06) — AP F.1 (Phase-E-Verträge-Gate)
+> grün durch Abschluss von Phase E inkl. E2 (persistente JDBC-Adapter)
+> und E3 (Async-Executor); Sub-Pläne in
+> [`../done/`](../done/). Phase-E-`job_cancel` und Cancel-Propagation
+> für Reverse/Profile/Compare aus AP E0 + AP E.7/E.8 verfügbar; Import-
+> und Transfer-Worker bekommen Cancel-Token via E0.3 ebenfalls. Damit
+> ist die F.1-Akzeptanz aus § 8.1 erfüllt.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
 > Abschnitt 4.5, Abschnitt 4.6, Abschnitt 5.4, Abschnitt 6.1a,
 > Abschnitt 6.7, Abschnitt 6.8, Abschnitt 8 Phase F, Abschnitt 9.1,
