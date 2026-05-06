@@ -72,6 +72,16 @@ object PhaseERegistries {
                         schemaStore = eWiring.phaseCWiring.schemaStore,
                         clock = clock,
                     )
+                // Phase F § 8.8 (F.8 4/4): produktiver
+                // `data_transfer_start`-Handler. Tenant-scoped
+                // Lookup fuer Source + Target ConnectionRef ueber
+                // den geteilten ConnectionReferenceStore.
+                DataTransferStartHandler.TOOL_NAME ->
+                    DataTransferStartHandler(
+                        orchestrator = orchestrator,
+                        connectionStore = eWiring.phaseCWiring.connectionStore,
+                        clock = clock,
+                    )
                 JobCancelHandler.TOOL_NAME ->
                     cancelHandler
                 else ->
