@@ -52,17 +52,24 @@ class JobDispatchAdmissionTest : FunSpec({
         }
 
         test("Permit.close() ist idempotent — zweite Close gibt KEIN zweites Permit frei") {
-            val admission = BoundedAsyncJobDispatchAdmission(cfg(maxThreads = 1, queueCapacity = 0))
-            val permit = admission.tryAcquire(now)
+            val admission = BoundedAsyncJobDispatchAdmission(cfg(maxThreads = 1, queueCapacity = 1))
+            // capacity = 2 (1 thread + 1 queue slot)
+            val first = admission.tryAcquire(now)
+                .shouldBeInstanceOf<JobDispatchAdmissionOutcome.Granted>().permit
+            admission.availablePermits() shouldBe 1
+            val second = admission.tryAcquire(now)
                 .shouldBeInstanceOf<JobDispatchAdmissionOutcome.Granted>().permit
             admission.availablePermits() shouldBe 0
 
-            permit.close()
+            first.close()
             admission.availablePermits() shouldBe 1
-            permit.close()
+            first.close()
             admission.availablePermits() shouldBe 1
-            permit.close()
+            first.close()
             admission.availablePermits() shouldBe 1
+
+            second.close()
+            admission.availablePermits() shouldBe 2
         }
 
         test("nach close() liefert tryAcquire Closed; bereits ausgegebene Permits bleiben gueltig") {
@@ -79,12 +86,16 @@ class JobDispatchAdmissionTest : FunSpec({
 
         test("Saturated.retryAfter kommt aus der Config") {
             val admission = BoundedAsyncJobDispatchAdmission(
-                cfg(maxThreads = 1, queueCapacity = 0, retryMs = 750),
+                cfg(maxThreads = 1, queueCapacity = 1, retryMs = 750),
             )
+            // capacity = 2; drain both before expecting Saturated
+            admission.tryAcquire(now)
             admission.tryAcquire(now)
             val saturated = admission.tryAcquire(now)
                 .shouldBeInstanceOf<JobDispatchAdmissionOutcome.Saturated>()
             saturated.retryAfter shouldBe Duration.ofMillis(750)
+            saturated.current shouldBe 2L
+            saturated.limit shouldBe 2L
         }
     }
 })

@@ -34,6 +34,30 @@ sealed interface JobExecutorConfig {
         val threadNamePrefix: String = DEFAULT_THREAD_NAME_PREFIX,
     ) : JobExecutorConfig {
 
+        init {
+            require(coreThreads > 0) {
+                "coreThreads must be > 0, got $coreThreads"
+            }
+            require(maxThreads >= coreThreads) {
+                "maxThreads ($maxThreads) must be >= coreThreads ($coreThreads)"
+            }
+            require(queueCapacity > 0) {
+                "queueCapacity must be > 0 (ArrayBlockingQueue requirement), got $queueCapacity"
+            }
+            require(keepAliveSeconds >= 0) {
+                "keepAliveSeconds must be >= 0, got $keepAliveSeconds"
+            }
+            require(!retryAfter.isNegative) {
+                "retryAfter must be non-negative, got $retryAfter"
+            }
+            require(!shutdownTimeout.isNegative) {
+                "shutdownTimeout must be non-negative, got $shutdownTimeout"
+            }
+            require(threadNamePrefix.isNotBlank()) {
+                "threadNamePrefix must not be blank"
+            }
+        }
+
         /** Gesamtkapazitaet (Threads + Queue) — Admission-Permits. */
         val admissionCapacity: Int get() = maxThreads + queueCapacity
 
