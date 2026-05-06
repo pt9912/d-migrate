@@ -20,6 +20,9 @@ dependencies {
     // kotlin-Modul reichen; YAML wird hier nicht gebraucht.
     implementation("com.fasterxml.jackson.core:jackson-databind:${rootProject.properties["jacksonVersion"]}")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:${rootProject.properties["jacksonVersion"]}")
+    // Phase E2.5: jsr310-Modul fuer Instant-Felder in
+    // ManagedJob/JobError/JobProgress/JobCancelRequest (managed_job-JSONB).
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${rootProject.properties["jacksonVersion"]}")
 
     testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
 
@@ -54,7 +57,12 @@ kover {
                     // -PintegrationTests, kein in-process-Postgres-Aequivalent.
                     "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore",
                     "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$EntryRow",
+                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$InitRow",
                     "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$Companion",
+                    // Phase E2.5: JdbcJobStore — Postgres-only (JSONB,
+                    // SELECT FOR UPDATE, ON CONFLICT). Gedeckt durch
+                    // JdbcJobStoreContractTest unter -PintegrationTests.
+                    "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore",
                 )
             }
         }
