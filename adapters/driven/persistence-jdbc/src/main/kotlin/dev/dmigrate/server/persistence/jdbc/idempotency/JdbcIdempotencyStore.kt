@@ -20,7 +20,7 @@ import java.time.Instant
  * Postgres-/JDBC-Implementierung des [IdempotencyStore]-Vertrags.
  *
  * SQL-Patterns: Plan § 6.1–§ 6.6 in
- * `docs/planning/in-progress/ImpPlan-0.9.6-E2.md`. Atomicity:
+ * `docs/planning/done/ImpPlan-0.9.6-E2.md`. Atomicity:
  * INSERT…ON CONFLICT DO NOTHING fuer den Hot-Path; SELECT…FOR UPDATE
  * fuer Recovery- und Claim-Pfade; CAS via `WHERE state IN (...)
  * AND expires_at <= ?` im Recovery-UPDATE.

@@ -161,12 +161,14 @@ dependencies {
     kover(project(":adapters:driven:driver-sqlite-profiling"))
     kover(project(":adapters:driven:audit-logging"))
     kover(project(":adapters:driven:formats"))
+    kover(project(":adapters:driven:persistence-jdbc"))
     kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))
     kover(project(":adapters:driving:cli"))
     kover(project(":adapters:driving:mcp"))
     kover(project(":test:integration-postgresql"))
     kover(project(":test:integration-mysql"))
+    kover(project(":test:integration-server-state"))
     kover(project(":test:consumer-read-probe"))
 }
 

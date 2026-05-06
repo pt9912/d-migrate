@@ -8,8 +8,8 @@ import javax.sql.DataSource
  * Wendet die Phase-E Server-State-Migrationen via Flyway an. Plan-Ref:
  * `ImpPlan-0.9.6-E2.md` § 3.2 + § 4.
  *
- * Production-Pfad ist ein expliziter `make migrate`-/Ops-Step (Plan
- * § 3.2 + § 10 Q3). Auto-Migrate beim Server-Start ist opt-in via
+ * Production-Pfad ist ein expliziter Ops-Migrationslauf (Plan § 3.2
+ * + § 10 Q3). Auto-Migrate beim Server-Start ist opt-in via
  * `server.state.migrations.auto = true` und wird vom Bootstrap im
  * MCP-Adapter — nicht in diesem Runner — gewrapped.
  *

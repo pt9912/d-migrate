@@ -1,5 +1,5 @@
 -- Phase E2 initial migration for the d-migrate Server-State-DB.
--- Plan: docs/planning/in-progress/ImpPlan-0.9.6-E2.md § 4 (V1__phase_e_initial.sql).
+-- Plan: docs/planning/done/ImpPlan-0.9.6-E2.md § 4 (V1__phase_e_initial.sql).
 --
 -- Targets PostgreSQL >= 14 (technical minimum; PG 16+ recommended for new
 -- deployments — see plan § 3.1). Uses JSONB, TIMESTAMPTZ, and partial

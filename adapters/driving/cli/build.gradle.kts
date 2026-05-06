@@ -51,6 +51,9 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:integrations"))
+    // Phase E2: persistent MCP server-state adapters for production
+    // metadata (IdempotencyStore, JobStore, JobStartTransaction, Quota).
+    implementation(project(":adapters:driven:persistence-jdbc"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:audit-logging"))
     // AP D10: Plan-D §8 + §10.10 secret-freier Connection-Bootstrap.
@@ -63,11 +66,9 @@ dependencies {
     // uploads (`FileBackedUploadSegmentStore`) and artefact content
     // (`FileBackedArtifactContentStore`) under the resolved state dir.
     implementation(project(":adapters:driven:storage-file"))
-    // AP 6.21: the metadata stores (UploadSessionStore, ArtifactStore,
-    // SchemaStore, JobStore, QuotaStore) plus `InMemoryAuditSink` still
-    // come from `:hexagon:ports-common`'s testFixtures source set —
-    // durable metadata adapters will land post-0.9.6. Until then `mcp
-    // serve` is byte-content file-backed only; metadata stays ephemeral.
+    // AP 6.21 + Phase E2: default metadata stores still come from
+    // `:hexagon:ports-common` testFixtures, while `server.state.*`
+    // opt-in switches Phase-E Job/Quota/Idempotency metadata to JDBC.
     implementation(testFixtures(project(":hexagon:ports-common")))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")

@@ -14,6 +14,10 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.cliVersion
 import dev.dmigrate.mcp.cursor.CursorKeyring
+import dev.dmigrate.mcp.registry.PhaseCRegistries
+import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.PhaseERegistries
+import dev.dmigrate.mcp.registry.PhaseEWiring
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -23,6 +27,19 @@ import dev.dmigrate.mcp.server.validateForStdio
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayload
+import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
+import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
+import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction
+import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore
+import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
+import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
+import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
+import com.zaxxer.hikari.HikariConfig
+import com.zaxxer.hikari.HikariDataSource
 import java.net.URI
 
 /**
@@ -35,9 +52,9 @@ import java.net.URI
  * `tools/call` records one structured audit event.
  *
  * §6.21: byte content (upload segments, artefact bodies) is file-backed
- * under the resolved state dir (`--mcp-state-dir`). Metadata stores
- * (sessions, artefacts, schemas, jobs, quotas) remain in-process for
- * now — durable metadata adapters land post-0.9.6.
+ * under the resolved state dir (`--mcp-state-dir`). Phase E2 can also
+ * persist the Phase-E server-state stores when `server.state.jdbcUrl`
+ * or `D_MIGRATE_SERVER_STATE_JDBC_URL` is configured.
  */
 class McpCommand : CliktCommand(name = "mcp") {
     override fun help(context: Context) = "MCP-server commands (Phase C: stdio + Streamable HTTP)"
@@ -66,7 +83,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
     override fun help(context: Context) =
         "Start the MCP server with the Phase-C dispatch chain. " +
             "Byte content is file-backed under --mcp-state-dir " +
-            "(metadata is ephemeral — survives only the process)."
+            "(Phase-E server-state can be JDBC-backed via server.state)."
 
     private val transport by option(
         "--transport",
@@ -335,7 +352,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         val tag = if (owner.resolved.owned) "CLI-owned temporary" else "operator-supplied"
         echo(
             "MCP state dir: ${owner.resolved.path} [$tag] — " +
-                "metadata is ephemeral; only byte content is file-backed.",
+                "byte content is file-backed; Phase-E metadata uses server.state when configured.",
             err = true,
         )
     }
@@ -385,24 +402,22 @@ class McpServeCommand : CliktCommand(name = "serve") {
         lock: McpStateDirLock,
         cursorKeyring: CursorKeyring?,
     ) {
-        // AP 6.14 / 6.20 / 6.21: hand the bootstrap the file-backed
-        // CLI wiring so every tools/call dispatches to its real
-        // handler with byte content on disk under the locked state dir.
-        val wiring = McpCliPhaseCWiring.phaseCWiring(
-            stateDir = owner.resolved.path,
-            connectionConfigPath = effectiveConnectionConfigPath(),
-            cursorKeyring = cursorKeyring,
-        )
-        when (val outcome = McpServerBootstrap.startStdio(config = config, phaseCWiring = wiring)) {
-            is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
-            is McpStartOutcome.Started -> {
-                echo("MCP stdio server started; reading from stdin until EOF/SIGINT.", err = true)
-                // §12.4: stdio terminates on EOF or IOException; the
-                // shutdown hook covers SIGINT. McpServerLifecycle wires
-                // both paths into a single idempotent cleanup so the
-                // tempdir is removed even when SIGINT kills the JVM
-                // before awaitTermination unblocks.
-                McpServerLifecycle.run(outcome.handle, lock, owner)
+        buildRuntimeWiringOrExit(config, owner, cursorKeyring).use { runtime ->
+            when (val outcome = McpServerBootstrap.startStdio(
+                config = config,
+                phaseCWiring = runtime.phaseCWiring,
+                components = runtime.components,
+            )) {
+                is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
+                is McpStartOutcome.Started -> {
+                    echo("MCP stdio server started; reading from stdin until EOF/SIGINT.", err = true)
+                    // §12.4: stdio terminates on EOF or IOException; the
+                    // shutdown hook covers SIGINT. McpServerLifecycle wires
+                    // both paths into a single idempotent cleanup so the
+                    // tempdir is removed even when SIGINT kills the JVM
+                    // before awaitTermination unblocks.
+                    McpServerLifecycle.run(outcome.handle, lock, owner)
+                }
             }
         }
     }
@@ -413,24 +428,124 @@ class McpServeCommand : CliktCommand(name = "serve") {
         lock: McpStateDirLock,
         cursorKeyring: CursorKeyring?,
     ) {
-        // AP 6.14 / 6.20 / 6.21: same file-backed Phase-C wiring for
-        // the HTTP transport so both routes share dispatch shape and
-        // on-disk layout.
-        val wiring = McpCliPhaseCWiring.phaseCWiring(
+        buildRuntimeWiringOrExit(config, owner, cursorKeyring).use { runtime ->
+            when (val outcome = McpServerBootstrap.startHttp(
+                config = config,
+                phaseCWiring = runtime.phaseCWiring,
+                components = runtime.components,
+            )) {
+                is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
+                is McpStartOutcome.Started -> {
+                    echo("MCP HTTP server listening on $bind:${outcome.handle.boundPort}", err = true)
+                    // HTTP's awaitTermination defaults to Thread.sleep
+                    // which never wakes from KtorHandle.stop(); the
+                    // lifecycle wrap puts cleanup into the shutdown hook
+                    // itself so SIGINT actually removes CLI-owned tempdirs.
+                    McpServerLifecycle.run(outcome.handle, lock, owner)
+                }
+            }
+        }
+    }
+
+    private fun buildRuntimeWiringOrExit(
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        cursorKeyring: CursorKeyring?,
+    ): McpCliRuntimeWiring {
+        // AP 6.14 / 6.20 / 6.21: the base wiring keeps byte content
+        // file-backed under the locked state dir.
+        val phaseC = McpCliPhaseCWiring.phaseCWiring(
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath(),
             cursorKeyring = cursorKeyring,
         )
-        when (val outcome = McpServerBootstrap.startHttp(config = config, phaseCWiring = wiring)) {
-            is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
-            is McpStartOutcome.Started -> {
-                echo("MCP HTTP server listening on $bind:${outcome.handle.boundPort}", err = true)
-                // HTTP's awaitTermination defaults to Thread.sleep
-                // which never wakes from KtorHandle.stop(); the
-                // lifecycle wrap puts cleanup into the shutdown hook
-                // itself so SIGINT actually removes CLI-owned tempdirs.
-                McpServerLifecycle.run(outcome.handle, lock, owner)
+        val state = resolveServerStateConfigOrExit() ?: return McpCliRuntimeWiring(
+            phaseCWiring = phaseC,
+            components = PhaseCRegistries.defaultComponents(phaseC, config.scopeMapping),
+            closeable = null,
+        )
+
+        val dataSource = createServerStateDataSource(state)
+        try {
+            applyOrValidateMigrations(dataSource, state)
+            val runner = JdbcTransactionRunner(dataSource)
+            val jobStore = JdbcJobStore(runner)
+            val quotaStore = JdbcQuotaStore(runner, phaseC.clock)
+            val ownerStore = JdbcQuotaReservationOwnerStore(runner)
+            val idempotencyStore = JdbcIdempotencyStore(runner)
+            val quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE }
+            val phaseCWithJdbc = phaseC.copy(
+                jobStore = jobStore,
+                quotaService = quotaService,
+            )
+            val phaseE = PhaseEWiring(
+                phaseCWiring = phaseCWithJdbc,
+                idempotencyStore = idempotencyStore,
+                jobStartTransaction = JdbcJobStartTransaction(runner, idempotencyStore, jobStore),
+                workerHandleRegistry = InMemoryWorkerHandleRegistry(),
+                approvalGrantStore = InMemoryApprovalGrantStore(),
+                quotaReservationOwnerStore = ownerStore,
+                ownerAwareQuotaService = JdbcOwnerAwareQuotaService(
+                    transactionRunner = runner,
+                    jdbcQuotaStore = quotaStore,
+                    jdbcOwnerStore = ownerStore,
+                    limitFor = { Long.MAX_VALUE },
+                ),
+            )
+            val components = PhaseCRegistries.defaultComponents(phaseCWithJdbc, config.scopeMapping).copy(
+                toolRegistry = PhaseERegistries.defaultToolRegistry(phaseE, config.scopeMapping),
+            )
+            echo(
+                "MCP server-state: JDBC/Postgres enabled " +
+                    "(migrations.auto=${state.migrationsAuto}).",
+                err = true,
+            )
+            return McpCliRuntimeWiring(phaseCWithJdbc, components, dataSource)
+        } catch (failure: Throwable) {
+            dataSource.close()
+            throw failure
+        }
+    }
+
+    private fun resolveServerStateConfigOrExit(): McpServerStateConfig? = try {
+        McpServerStateConfigResolver(effectiveConnectionConfigPath()).resolve()
+    } catch (failure: McpServerStateConfigError) {
+        echo("MCP server configuration is invalid:", err = true)
+        echo("  - ${failure.message}", err = true)
+        throw ProgramResult(2)
+    }
+
+    private fun createServerStateDataSource(state: McpServerStateConfig): HikariDataSource {
+        val cfg = HikariConfig().apply {
+            jdbcUrl = state.jdbcUrl
+            state.username?.let { username = it }
+            state.password?.let { password = it }
+            maximumPoolSize = state.maximumPoolSize
+            connectionTimeout = state.connectionTimeoutMs
+            poolName = "dmigrate-server-state"
+        }
+        return HikariDataSource(cfg)
+    }
+
+    private fun applyOrValidateMigrations(
+        dataSource: HikariDataSource,
+        state: McpServerStateConfig,
+    ) {
+        try {
+            val migrations = PhaseEMigrationRunner(dataSource)
+            if (state.migrationsAuto) {
+                migrations.migrate()
+            } else {
+                migrations.validate()
             }
+        } catch (failure: Throwable) {
+            echo("MCP server configuration is invalid:", err = true)
+            echo(
+                "  - server.state migration validation failed: " +
+                    "${failure.message ?: failure::class.simpleName}",
+                err = true,
+            )
+            throw ProgramResult(2)
         }
     }
 
@@ -438,6 +553,16 @@ class McpServeCommand : CliktCommand(name = "serve") {
         echo("MCP server configuration is invalid:", err = true)
         errors.forEach { echo("  - $it", err = true) }
         throw ProgramResult(2)
+    }
+}
+
+private data class McpCliRuntimeWiring(
+    val phaseCWiring: PhaseCWiring,
+    val components: PhaseCRegistries.McpServiceComponents,
+    private val closeable: AutoCloseable?,
+) : AutoCloseable {
+    override fun close() {
+        closeable?.close()
     }
 }
 

@@ -15,7 +15,7 @@ import java.time.Instant
 /**
  * Postgres-/JDBC-Implementierung des [QuotaReservationOwnerStore]-
  * Vertrags. SQL-Patterns: Plan § 6.9 in
- * `docs/planning/in-progress/ImpPlan-0.9.6-E2.md`.
+ * `docs/planning/done/ImpPlan-0.9.6-E2.md`.
  *
  * Atomicity:
  * - `register` ist `INSERT` (ohne ON CONFLICT). Doppel-register fuer

@@ -2,8 +2,8 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: E2 (Sub-Plan zu Phase E — `Persistente Phase-E-Port-Adapter`)
-> **Status**: Approved (2026-05-06) — Architektur-Approval § 3 erteilt,
-> § 10 Q1–Q6 entschieden (siehe § 10 „Resolved"). Vorlauf:
+> **Status**: Abgeschlossen (2026-05-06) — Architektur-Approval § 3 erteilt,
+> § 10 Q1–Q6 entschieden und umgesetzt (siehe § 10 „Resolved"). Vorlauf:
 > Entwurf v2 (2026-05-05, Review-1-Befunde: Recovery-CAS,
 > InitResume-Schema, transitionStatus-Transformer,
 > Quota-Counter-UPSERT, Spec-Section-Refs, Tx-Primitive-Lokalisierung).
@@ -125,9 +125,11 @@ keine DB-Transaktion. Phase E2 liefert:
   Modul, NICHT in `driver-postgresql` (das ist ein Migration-Target-
   Adapter, andere Verantwortung).
 - **Migration-Workflow**: Production-Pfad ist ein expliziter
-  `make migrate`-/Ops-Step gegen die Server-State-DB; der MCP-Server
-  fährt **nicht** automatisch Flyway beim Start. Dev/Test-Convenience
-  via `server.state.migrations.auto = true` (Default `false`); bei
+  Ops-Migrationslauf gegen die Server-State-DB
+  (`PhaseEMigrationRunner(dataSource).migrate()` aus Deployment-Script
+  oder gleichwertigem Ops-Job); der MCP-Server fährt **nicht**
+  automatisch Flyway beim Start. Dev/Test-Convenience via
+  `server.state.migrations.auto = true` (Default `false`); bei
   `auto = false` und drift fährt der Server nicht hoch.
 
 ### 3.3 SQL-Framework: plain JDBC + Kotlin-Helpers
@@ -704,8 +706,7 @@ Phase E2 gilt als done, wenn:
 5. ✅ `spec/phase-e2-persistence.md` reviewed,
    `spec/phase-e-port-atomicity.md § Cross-Refs` erweitert um
    „Persistente Implementoren siehe phase-e2-persistence.md";
-6. ✅ Plan-Move
-   `docs/planning/in-progress/ImpPlan-0.9.6-E2.md → done/`;
+6. ✅ Plan-Move nach `docs/planning/done/ImpPlan-0.9.6-E2.md`;
    `roadmap.md` aktualisiert.
 
 ## 9. Out-of-Scope
@@ -729,8 +730,8 @@ Phase E2 gilt als done, wenn:
   `application.yaml` plus Env-Overrides — **nicht** Env-only. Die
   State-DB ist ein Server-Betriebsmittel, kein Migration-Target.
   Siehe § 3.6.
-- **Q3**: Production-Pfad ist ein expliziter `make migrate`-/Ops-Step.
-  Auto-Flyway nur explizit opt-in für Dev/Test über
+- **Q3**: Production-Pfad ist ein expliziter Ops-Migrationslauf
+  vor dem Server-Start. Auto-Flyway nur explizit opt-in für Dev/Test über
   `server.state.migrations.auto = true`. Siehe § 3.2.
 - **Q4**: `JdbcTransactionRunner` bleibt adapter-intern. Kein Hexagon-
   Port-`TxHandle`; Cross-Port-Atomicity bleibt über die bestehenden

@@ -19,7 +19,7 @@ import java.time.Instant
 
 /**
  * Postgres-/JDBC-Implementierung des [JobStore]-Vertrags. SQL-Patterns:
- * Plan § 6.7 in `docs/planning/in-progress/ImpPlan-0.9.6-E2.md`.
+ * Plan § 6.7 in `docs/planning/done/ImpPlan-0.9.6-E2.md`.
  *
  * Atomicity: alle Statusuebergaenge laufen ueber `SELECT … FOR UPDATE`
  * + UPDATE in einer TX (siehe `transitionStatus`/`markCancelRequested`).

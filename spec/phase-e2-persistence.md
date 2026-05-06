@@ -1,12 +1,12 @@
 # Phase E2 — Persistente Server-State-Adapter (JDBC/Postgres)
 
 > **Status**: aktiv (2026-05-06)
-> **Geltung**: Phase-E2 (`docs/planning/in-progress/ImpPlan-0.9.6-E2.md`)
+> **Geltung**: Phase-E2 (`docs/planning/done/ImpPlan-0.9.6-E2.md`)
 > **Cross-Refs**:
 > [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Atomicity-Verträge der Ports;
 > [`spec/mcp-server.md`](./mcp-server.md) Phase-E-Sektion — Wire-Verträge;
 > [`spec/hexagonal-port.md`](./hexagonal-port.md);
-> `docs/planning/in-progress/ImpPlan-0.9.6-E2.md` §3–§9
+> `docs/planning/done/ImpPlan-0.9.6-E2.md` §3–§9
 
 ## Warum dieses Dokument existiert
 
@@ -101,16 +101,15 @@ Index/SQL-Query-Performance. JSONB ist source-of-truth.
 
 ### 2.3 Flyway-Workflow
 
-**Production (Plan-§-3.2 + §-10 Q3):** expliziter Ops-Step.
+**Production (Plan-§-3.2 + §-10 Q3):** expliziter Ops-Step vor dem
+Server-Start.
 
-```bash
-# nach Code-Deploy, vor MCP-Server-Start
-make migrate
-```
-
-(Make-Target-Wiring kommt mit dem Bootstrap in einem Folge-AP; Heute
-ruft der Operator `PhaseEMigrationRunner(dataSource).migrate()` aus
-einem Script.)
+Der Operator ruft `PhaseEMigrationRunner(dataSource).migrate()` aus
+einem Deployment-Script oder einem aequivalenten Ops-Job gegen die
+Server-State-DB auf. Der Repo-`Makefile` bietet fuer E2 bewusst nur
+Build-/Test-/Gate-Targets; ein generisches `make migrate` ohne
+umgebungsspezifische Secret- und JDBC-URL-Uebergabe ist kein Teil der
+0.9.6-E2-Implementierung.
 
 Der Server selbst ruft Flyway **nicht** automatisch beim Start. Bei
 Drift schlägt der Bootstrap fehl (`PhaseEMigrationRunner.validate()`
@@ -357,9 +356,9 @@ Idempotency-Cleanup.
 
 ## 6. Cross-Refs
 
-- [Plan §3 Architektur-Entscheidungen (E2)](../docs/planning/in-progress/ImpPlan-0.9.6-E2.md#3-architektur-entscheidungen)
-- [Plan §4 Schema-Skizze](../docs/planning/in-progress/ImpPlan-0.9.6-E2.md#4-schema-skizze-v1__phase_e_initialsql)
-- [Plan §6 SQL-Patterns pro Port](../docs/planning/in-progress/ImpPlan-0.9.6-E2.md#6-sql-patterns-pro-port)
+- [Plan §3 Architektur-Entscheidungen (E2)](../docs/planning/done/ImpPlan-0.9.6-E2.md#3-architektur-entscheidungen)
+- [Plan §4 Schema-Skizze](../docs/planning/done/ImpPlan-0.9.6-E2.md#4-schema-skizze-v1__phase_e_initialsql)
+- [Plan §6 SQL-Patterns pro Port](../docs/planning/done/ImpPlan-0.9.6-E2.md#6-sql-patterns-pro-port)
 - [`spec/phase-e-port-atomicity.md`](./phase-e-port-atomicity.md) — Port-Verträge (was muss atomar sein)
 - [`spec/mcp-server.md`](./mcp-server.md) Phase-E-Sektion — Wire-Verträge
 - [`spec/connection-config-spec.md`](./connection-config-spec.md) — Connection-Pool-Konfiguration

@@ -5,8 +5,9 @@
 > **Status**: Approved (2026-05-06) — Architektur-Approval § 3 erteilt,
 > § 10 Q1–Q6 entschieden (siehe § 10 „Resolved"). Vorlauf:
 > Entwurf (2026-05-05).
-> **Positionierung**: parallel zu `ImpPlan-0.9.6-E2.md` (persistente
-> Adapter); kein Hard-Dependency in beiden Richtungen — siehe § 0.
+> **Positionierung**: parallel zu `../done/ImpPlan-0.9.6-E2.md`
+> (persistente Adapter); kein Hard-Dependency in beiden Richtungen —
+> siehe § 0.
 > **Referenz**:
 > `hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/JobDispatcher.kt`
 > (`SyncExecutor`-Default + `executor: Executor`-Auspraegungs-Punkt);

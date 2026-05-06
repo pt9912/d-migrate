@@ -11,7 +11,7 @@ import java.time.Clock
 
 /**
  * Postgres-/JDBC-Implementierung des [QuotaStore]-Vertrags. SQL-Patterns:
- * Plan § 6.8 in `docs/planning/in-progress/ImpPlan-0.9.6-E2.md`.
+ * Plan § 6.8 in `docs/planning/done/ImpPlan-0.9.6-E2.md`.
  *
  * Atomicity:
  * - `reserve` nutzt `INSERT … ON CONFLICT DO UPDATE WHERE limit-check`,
