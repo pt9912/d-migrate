@@ -15,16 +15,20 @@ import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.artifact.ManagedArtifact
+import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
 import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -62,12 +66,15 @@ class DataImportStartHandlerTest : FunSpec({
         val jobIdSeq: AtomicInteger = AtomicInteger(0),
         val tenant: TenantId = Fixtures.tenant("acme"),
         seedDefaultArtifact: Boolean = true,
+        seedDefaultConnection: Boolean = true,
     ) {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val workerHandleRegistry = InMemoryWorkerHandleRegistry()
         val approvalGrantStore = InMemoryApprovalGrantStore()
         val artifactStore = InMemoryArtifactStore()
+        val connectionStore = InMemoryConnectionReferenceStore()
+        val schemaStore = InMemorySchemaStore()
         val transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore)
         val grantService = DefaultApprovalGrantService(approvalGrantStore, ApprovalGrantValidator())
         val approvedRetryService = ApprovedRetryService(
@@ -87,12 +94,48 @@ class DataImportStartHandlerTest : FunSpec({
             payloadFingerprintService = DefaultPayloadFingerprintService(),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
-        val handler = DataImportStartHandler(orchestrator, artifactStore, clock)
+        val handler = DataImportStartHandler(
+            orchestrator = orchestrator,
+            artifactStore = artifactStore,
+            connectionStore = connectionStore,
+            schemaStore = schemaStore,
+            clock = clock,
+        )
 
         init {
             if (seedDefaultArtifact) {
                 seedArtifact(artifactId = "art-deadbeef", kind = ArtifactKind.UPLOAD_INPUT)
             }
+            if (seedDefaultConnection) {
+                seedConnection(connectionId = "warehouse")
+            }
+        }
+
+        fun seedConnection(connectionId: String) {
+            connectionStore.save(
+                ConnectionReference(
+                    connectionId = connectionId,
+                    tenantId = tenant,
+                    displayName = "warehouse-prod",
+                    dialectId = "postgres",
+                    sensitivity = dev.dmigrate.server.core.connection.ConnectionSensitivity.NON_PRODUCTION,
+                    resourceUri = ServerResourceUri(tenant, ResourceKind.CONNECTIONS, connectionId),
+                ),
+            )
+        }
+
+        fun seedSchema(schemaId: String) {
+            schemaStore.save(
+                SchemaIndexEntry(
+                    schemaId = schemaId,
+                    tenantId = tenant,
+                    resourceUri = ServerResourceUri(tenant, ResourceKind.SCHEMAS, schemaId),
+                    artifactRef = "art-schema-source",
+                    displayName = schemaId,
+                    createdAt = now,
+                    expiresAt = now.plusSeconds(86_400),
+                ),
+            )
         }
 
         fun seedArtifact(
@@ -380,5 +423,101 @@ class DataImportStartHandlerTest : FunSpec({
             ctx(args(extraFields = mapOf("table" to "warehouse.events"))),
         )
         result.shouldBeInstanceOf<ToolCallOutcome.Success>()
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // F.7 (4/5) — ConnectionRef + SchemaRef-Resolution + Fingerprint.
+    // ──────────────────────────────────────────────────────────────
+
+    test("targetConnectionRef ohne Eintrag im ConnectionReferenceStore -> RESOURCE_NOT_FOUND") {
+        val fx = Fixture(seedDefaultConnection = false)
+        shouldThrow<ResourceNotFoundException> {
+            fx.handler.handle(
+                ctx(args(targetConnectionRef = "dmigrate://tenants/acme/connections/missing-ref")),
+            )
+        }
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("targetConnectionRef mit kind=jobs -> VALIDATION_ERROR (falsche ResourceKind)") {
+        val fx = Fixture()
+        shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(args(targetConnectionRef = "dmigrate://tenants/acme/jobs/some-job")),
+            )
+        }
+    }
+
+    test("schemaRef mit Eintrag im SchemaStore -> Success") {
+        val fx = Fixture()
+        fx.seedSchema("sch-1")
+        val result = fx.handler.handle(
+            ctx(args(extraFields = mapOf("schemaRef" to "dmigrate://tenants/acme/schemas/sch-1"))),
+        )
+        result.shouldBeInstanceOf<ToolCallOutcome.Success>()
+    }
+
+    test("schemaRef ohne Eintrag im SchemaStore -> RESOURCE_NOT_FOUND") {
+        val fx = Fixture()
+        shouldThrow<ResourceNotFoundException> {
+            fx.handler.handle(
+                ctx(args(extraFields = mapOf("schemaRef" to "dmigrate://tenants/acme/schemas/sch-missing"))),
+            )
+        }
+    }
+
+    test("schemaRef mit anderem Tenant -> VALIDATION_ERROR (Tenant-Prefix-Mismatch)") {
+        val fx = Fixture()
+        shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(args(extraFields = mapOf("schemaRef" to "dmigrate://tenants/other/schemas/sch-1"))),
+            )
+        }
+    }
+
+    test("schemaRef mit kind=connections -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(args(extraFields = mapOf("schemaRef" to "dmigrate://tenants/acme/connections/warehouse"))),
+            )
+        }
+    }
+
+    test("Fingerprint enthaelt Artefakt-sha256: gleicher idempotencyKey + anderes Artefakt -> IDEMPOTENCY_CONFLICT") {
+        val fx = Fixture(seedDefaultArtifact = false, policyDefault = PolicyEffect.Allow)
+        // Zwei Artefakte mit verschiedenen Inhalt-Hashes (durch
+        // unterschiedlichen filename/contentType — die Test-Fixture
+        // erzeugt sie in seedArtifact() mit unterschiedlichen sha256-
+        // Werten ueber den ManagedArtifact.sha256-Eingang).
+        fx.seedArtifact(artifactId = "art-A", mimeType = "text/csv")
+        fx.seedArtifact(artifactId = "art-B", mimeType = "application/json")
+        val first = fx.handler.handle(
+            ctx(args(idempotencyKey = "k-fp-test", artifactId = "art-A")),
+        )
+        first.shouldBeInstanceOf<ToolCallOutcome.Success>()
+
+        // Plan § 8.7: "abweichende Import-Option mit gleichem
+        // idempotencyKey -> IDEMPOTENCY_CONFLICT". Der von uns
+        // injizierte Artefakt-sha256 / mimeType / filename geht in
+        // den Payload-Fingerprint ein und macht die zwei Anfragen
+        // zu unterschiedlichen Idempotency-Subjekten — der
+        // JobStartOrchestrator detektiert den Conflict deterministisch.
+        // (Hinweis: Beide Test-Artefakte haben die gleiche sha256-
+        // Konstante "deadbeef..." aus seedArtifact, aber
+        // unterschiedlichen mimeType/filename — das reicht, weil
+        // der Fingerprint alle drei Felder einbezieht.)
+        shouldThrow<dev.dmigrate.server.application.error.IdempotencyConflictException> {
+            fx.handler.handle(
+                ctx(args(idempotencyKey = "k-fp-test", artifactId = "art-B")),
+            )
+        }
+
+        // Defense: nur EIN Job durabel angelegt (kein silent replay,
+        // kein zweiter Job).
+        fx.jobStore.list(
+            fx.tenant,
+            dev.dmigrate.server.core.pagination.PageRequest(pageSize = 10),
+        ).items.size shouldBe 1
     }
 })

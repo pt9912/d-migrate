@@ -20,6 +20,8 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.ArtifactStore
+import dev.dmigrate.server.ports.ConnectionReferenceStore
+import dev.dmigrate.server.ports.SchemaStore
 import java.time.Clock
 
 /**
@@ -52,6 +54,8 @@ import java.time.Clock
 internal class DataImportStartHandler(
     private val orchestrator: JobStartOrchestrator,
     private val artifactStore: ArtifactStore,
+    private val connectionStore: ConnectionReferenceStore,
+    private val schemaStore: SchemaStore,
     private val clock: Clock,
     private val jobRetentionSeconds: Long = DEFAULT_JOB_RETENTION_SECONDS,
 ) : ToolHandler {
@@ -71,6 +75,17 @@ internal class DataImportStartHandler(
         val tenantId = context.principal.effectiveTenantId
         val record = resolveArtifact(artifactSource, tenantId)
         validateArtifactEligibility(record)
+        // Phase F § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
+        // VOR der Idempotency-Reservierung. ConnectionReferenceStore
+        // liefert nur secret-frei (kein JDBC-URL-Materialise) — der
+        // Resolver-Stack (CLI/Runner) zieht Secrets erst beim
+        // Job-Run aus dem ConnectionSecretResolver. Plan § 8.7
+        // wortlaeufig: "Policy nur mit secret-freien Metadaten".
+        resolveConnectionRef(targetConnectionRef, tenantId)
+        val schemaRef = args.optString("schemaRef")
+        if (!schemaRef.isNullOrBlank()) {
+            resolveSchemaRef(schemaRef, tenantId)
+        }
 
         val now = clock.instant()
 
@@ -103,7 +118,7 @@ internal class DataImportStartHandler(
             callerId = context.principal.principalId,
             idempotencyKey = idempotencyKey,
             approvalToken = approvalToken,
-            payload = JobStartHandlerSupport.toJsonValueObj(args),
+            payload = enrichPayloadForFingerprint(args, record),
             refs = refs,
             now = now,
             auditFields = context.auditFields,
@@ -331,6 +346,137 @@ internal class DataImportStartHandler(
                 )),
             )
         }
+    }
+
+    /**
+     * Phase F § 8.7 (F.7 4/5): tenant-scoped Lookup im
+     * [ConnectionReferenceStore]. Der Store liefert ausdruecklich
+     * KEINE materialisierten JDBC-URLs (Plan: "secret-frei") — die
+     * Pruefung dient nur der Existenz/Visibility, das eigentliche
+     * Secret-Resolution passiert spaeter im Job-Runner gegen
+     * `ConnectionSecretResolver`. Plan § 8.7 wortlaeufig:
+     * "targetConnectionRef ohne aufloesbare ConnectionReference,
+     * Secret oder Principal-Berechtigung -> RESOURCE_NOT_FOUND ...".
+     */
+    private fun resolveConnectionRef(refValue: String, tenantId: TenantId): String {
+        val parsed = ServerResourceUri.parse(refValue)
+        return when (parsed) {
+            is ResourceUriParseResult.Invalid ->
+                throw ValidationErrorException(
+                    listOf(ValidationViolation(
+                        "targetConnectionRef",
+                        "invalid resource URI: ${parsed.reason}",
+                    )),
+                )
+            is ResourceUriParseResult.Valid -> {
+                if (parsed.uri.kind != ResourceKind.CONNECTIONS) {
+                    throw ValidationErrorException(
+                        listOf(ValidationViolation(
+                            "targetConnectionRef",
+                            "expected connections, got ${parsed.uri.kind.pathSegment}",
+                        )),
+                    )
+                }
+                if (parsed.uri.tenantId != tenantId) {
+                    throw ValidationErrorException(
+                        listOf(ValidationViolation(
+                            "targetConnectionRef",
+                            "tenant prefix mismatch: caller is ${tenantId.value}",
+                        )),
+                    )
+                }
+                connectionStore.findById(tenantId, parsed.uri.id)
+                    ?: throw ResourceNotFoundException(parsed.uri)
+                parsed.uri.id
+            }
+        }
+    }
+
+    /**
+     * Phase F § 8.7 (F.7 4/5): optionaler `schemaRef`-Lookup.
+     * Plan-Vertrag: "schemaRef ueber SchemaStore und
+     * SchemaRefImportPreflightAdapter materialisieren; keine lokalen
+     * Schema-Pfade aus Tool-Payloads verwenden."
+     *
+     * **Carve-out F.7 (4/5)**: der `SchemaRefImportPreflightAdapter`
+     * (Schema-Validierung + Tabellenreihenfolge) ist Runner-side
+     * Concern und wird im Phase-F-Import-Worker eingehaengt.
+     * Hier wird nur die Existenz im SchemaStore geprueft — fehlende
+     * Refs bekommen RESOURCE_NOT_FOUND, lokale Pfade fallen schon
+     * an der ServerResourceUri-Parse-Phase aus.
+     */
+    private fun resolveSchemaRef(refValue: String, tenantId: TenantId) {
+        val parsed = ServerResourceUri.parse(refValue)
+        when (parsed) {
+            is ResourceUriParseResult.Invalid ->
+                throw ValidationErrorException(
+                    listOf(ValidationViolation(
+                        "schemaRef",
+                        "invalid resource URI: ${parsed.reason}",
+                    )),
+                )
+            is ResourceUriParseResult.Valid -> {
+                if (parsed.uri.kind != ResourceKind.SCHEMAS) {
+                    throw ValidationErrorException(
+                        listOf(ValidationViolation(
+                            "schemaRef",
+                            "expected schemas, got ${parsed.uri.kind.pathSegment}",
+                        )),
+                    )
+                }
+                if (parsed.uri.tenantId != tenantId) {
+                    throw ValidationErrorException(
+                        listOf(ValidationViolation(
+                            "schemaRef",
+                            "tenant prefix mismatch: caller is ${tenantId.value}",
+                        )),
+                    )
+                }
+                schemaStore.findById(tenantId, parsed.uri.id)
+                    ?: throw ResourceNotFoundException(parsed.uri)
+            }
+        }
+    }
+
+    /**
+     * Phase F § 8.7 (F.7 4/5): MCP-spezifischer Import-Fingerprint.
+     *
+     * Plan-§-8.7-Pflichtfelder: artifactId/resourceUri, Artefakt-
+     * sha256, persistente Upload-Metadaten (mimeType + filename),
+     * targetConnectionRef, optional schemaRef, normalisierte
+     * Import-Optionen, Tenant + Principal. Der Fingerprint darf
+     * KEINE Temp-/Spool-Pfade, materialisierte JDBC-URLs, Connection-
+     * Secrets oder lokalen CLI-Pfade enthalten — der Caller-supplied
+     * Args-Block wird durch [ArtifactRecord.managedArtifact.sha256]
+     * angereichert, der von der Server-Seite kommt und niemals aus
+     * Tool-Eingaben ableitbar ist. Tenant + Principal binden
+     * automatisch via [JobStartOrchestrator] /
+     * [PayloadFingerprintService.BindContext].
+     *
+     * Der Plan erlaubt explizit NICHT die Wiederverwendung des
+     * CLI-`ImportOptionsFingerprint`. Diese Implementierung baut
+     * stattdessen auf den server-internen
+     * [PayloadFingerprintService] auf — Tenant/Principal/Toolname
+     * werden ueber die Phase-E-Bindung garantiert. Lokale CLI-Pfade
+     * sind in der MCP-Pipeline strukturell ausgeschlossen
+     * (F.7 (2/5) `JobStartInputValidator` weist freie JDBC-URLs +
+     * lokale Pfade ab).
+     */
+    private fun enrichPayloadForFingerprint(
+        args: JsonObject,
+        record: ArtifactRecord,
+    ): dev.dmigrate.server.application.fingerprint.JsonValue.Obj {
+        // Args-Klon, sodass der originale args-Tree (Wire-Eingabe)
+        // nicht mutiert wird. Server-Seitige Felder werden mit
+        // einem `_`-Prefix versehen, damit sie nie mit Caller-Feldern
+        // kollidieren — Schema additionalProperties=false weist
+        // `_artifactSha256` an der Wire-Layer ohnehin ab.
+        val enriched = args.deepCopy()
+        enriched.addProperty("_artifactSha256", record.managedArtifact.sha256)
+        enriched.addProperty("_artifactMimeType", record.managedArtifact.contentType)
+        enriched.addProperty("_artifactFilename", record.managedArtifact.filename)
+        enriched.addProperty("_artifactSizeBytes", record.managedArtifact.sizeBytes)
+        return JobStartHandlerSupport.toJsonValueObj(enriched)
     }
 
     private sealed interface ArtifactSource {
