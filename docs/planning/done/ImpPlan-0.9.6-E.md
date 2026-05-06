@@ -2,7 +2,10 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: E (`Async-Jobs, Idempotenz und Policy`)
-> **Status**: aktiver Plan (2026-05-05) — Phase-E-Start durch
+> **Status**: abgeschlossen (2026-05-06) — AP E.1 bis E.10 grün; die
+> beiden Sub-Pläne [E2 — persistente JDBC-Adapter](../done/ImpPlan-0.9.6-E2.md)
+> und [E3 — Async-Executor Production-Tuning](../done/ImpPlan-0.9.6-E3.md)
+> sind ebenfalls abgeschlossen. Phase-E-Start war durch
 > `docs/planning/done/ImpPlan-0.9.6-E0-Gate-Decision.md` §1 freigegeben
 > (Verdict `Go`); E0-Cancel-Vertrag, Runner-Token-Propagation,
 > Cancel-Checkpoints und Driver-Timeout-Konfiguration sind über

@@ -581,7 +581,7 @@ Cancel-Pfad) werden über `SecretScrubber` gescrubbed bevor sie in
 - [`docs/planning/done/ImpPlan-0.9.6-D.md`](../docs/planning/done/ImpPlan-0.9.6-D.md) —
   Phase-D: Discovery, `resources/read`, HMAC-Cursor, Connection-Ref-
   Bootstrap (siehe oben "Phase D: Discovery und Ressourcen").
-- [`docs/planning/in-progress/ImpPlan-0.9.6-E.md`](../docs/planning/in-progress/ImpPlan-0.9.6-E.md) —
+- [`docs/planning/done/ImpPlan-0.9.6-E.md`](../docs/planning/done/ImpPlan-0.9.6-E.md) —
   Phase-E: Async-Jobs, Idempotency, Policy, Quotas, Cancel (siehe oben
   "Phase E: Async-Jobs, Idempotency, Policy").
 - [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase F+.

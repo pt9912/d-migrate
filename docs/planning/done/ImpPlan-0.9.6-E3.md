@@ -17,7 +17,7 @@
 > (Auto-Dispatch-Pfad);
 > `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/PhaseEWiring.kt`
 > (`workerExecutor`/`jobWorkerFactory`-Wiring);
-> `docs/planning/in-progress/ImpPlan-0.9.6-E.md` (Phase-E-Bezug);
+> `docs/planning/done/ImpPlan-0.9.6-E.md` (Phase-E-Bezug);
 > `spec/job-contract.md`; `spec/ki-mcp.md`.
 
 ---
