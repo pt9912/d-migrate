@@ -3,6 +3,7 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.JsonObject
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
+import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.application.job.JobStartOrchestrator
@@ -12,8 +13,11 @@ import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.job.ManagedJob
+import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.ConnectionReferenceStore
 import java.time.Clock
 
 /**
@@ -50,6 +54,7 @@ import java.time.Clock
  */
 internal class DataTransferStartHandler(
     private val orchestrator: JobStartOrchestrator,
+    private val connectionStore: ConnectionReferenceStore,
     private val clock: Clock,
     private val jobRetentionSeconds: Long = DEFAULT_JOB_RETENTION_SECONDS,
 ) : ToolHandler {
@@ -65,6 +70,15 @@ internal class DataTransferStartHandler(
         validateSincePair(args)
 
         val tenantId = context.principal.effectiveTenantId
+        // Phase F § 8.8 (F.8 3/4): Existenz-/Tenant-Lookup VOR der
+        // Idempotency-Reservierung. Plan-Wortlaut: "ConnectionRef
+        // ohne aufloesbare Secret-/Provider-Referenz oder Principal-
+        // Berechtigung -> RESOURCE_NOT_FOUND". Beide Refs werden
+        // separat geprueft, sodass der Caller den genauen Fehler-
+        // Pfad sieht. ConnectionReferenceStore liefert KEINE
+        // materialisierten JDBC-URLs (Plan: "secret-frei").
+        resolveConnectionRef(sourceConnectionRef, tenantId, "sourceConnectionRef")
+        resolveConnectionRef(targetConnectionRef, tenantId, "targetConnectionRef")
         val now = clock.instant()
 
         val refs = listOf(
@@ -196,6 +210,66 @@ internal class DataTransferStartHandler(
                     "must be a valid SQL identifier (alphanumeric, '.', '_')",
                 )),
             )
+        }
+    }
+
+    /**
+     * Phase F § 8.8 (F.8 3/4): tenant-scoped ConnectionRef-Lookup
+     * mit `field`-spezifischer Fehlerausgabe (sourceConnectionRef vs
+     * targetConnectionRef), sodass der Caller den genauen Pfad sieht
+     * statt einer generischen "Connection not found"-Antwort.
+     *
+     * Plan § 8.8 wortlaeufig:
+     * - tenant-scoped Validierung der ConnectionRef-URI
+     * - findById im [ConnectionReferenceStore] -> RESOURCE_NOT_FOUND
+     * - keine Secret-/JDBC-Materialisierung im Tool-Pfad
+     *
+     * MCP-Transfer-Fingerprint: der Plan-§-8.8-Fingerprint-Vertrag
+     * (sourceConnectionRef, targetConnectionRef, kanonische
+     * Filterform, normalisierte since-Optionen, weitere
+     * normalisierte Transfer-Optionen, Tenant + Principal) wird
+     * automatisch durch den existierenden
+     * [dev.dmigrate.server.application.fingerprint.PayloadFingerprintService]
+     * via JobStartOrchestrator gebildet — die Args fliessen 1:1 in
+     * den Hash, Tenant + Principal kommen ueber `BindContext`.
+     * Carve-out: kanonische Filter-DSL-Normalisierung
+     * (`WHERE x=1` == `where  x  = 1`) ist Runner-side concern;
+     * der MVP-Fingerprint nutzt die Roh-Eingabe — abweichende
+     * Whitespaces zwischen Calls produzieren unterschiedliche
+     * Fingerprints, was nicht idempotenz-falsch (Plan-konforme
+     * VALIDATION_ERROR oder IDEMPOTENCY_CONFLICT auf abweichendem
+     * Whitespace ist akzeptabel).
+     */
+    private fun resolveConnectionRef(refValue: String, tenantId: TenantId, fieldName: String) {
+        val parsed = ServerResourceUri.parse(refValue)
+        when (parsed) {
+            is ResourceUriParseResult.Invalid ->
+                throw ValidationErrorException(
+                    listOf(ValidationViolation(
+                        fieldName,
+                        "invalid resource URI: ${parsed.reason}",
+                    )),
+                )
+            is ResourceUriParseResult.Valid -> {
+                if (parsed.uri.kind != ResourceKind.CONNECTIONS) {
+                    throw ValidationErrorException(
+                        listOf(ValidationViolation(
+                            fieldName,
+                            "expected connections, got ${parsed.uri.kind.pathSegment}",
+                        )),
+                    )
+                }
+                if (parsed.uri.tenantId != tenantId) {
+                    throw ValidationErrorException(
+                        listOf(ValidationViolation(
+                            fieldName,
+                            "tenant prefix mismatch: caller is ${tenantId.value}",
+                        )),
+                    )
+                }
+                connectionStore.findById(tenantId, parsed.uri.id)
+                    ?: throw ResourceNotFoundException(parsed.uri)
+            }
         }
     }
 

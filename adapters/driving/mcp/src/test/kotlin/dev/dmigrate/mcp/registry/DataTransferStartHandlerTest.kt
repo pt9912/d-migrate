@@ -4,14 +4,21 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
+import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
+import dev.dmigrate.server.core.connection.ConnectionReference
+import dev.dmigrate.server.core.connection.ConnectionSensitivity
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
 import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
 import dev.dmigrate.server.ports.memory.InMemoryJobStore
@@ -50,11 +57,14 @@ class DataTransferStartHandlerTest : FunSpec({
     class Fixture(
         policyDefault: PolicyEffect = PolicyEffect.Allow,
         val jobIdSeq: AtomicInteger = AtomicInteger(0),
+        val tenant: TenantId = Fixtures.tenant("acme"),
+        seedDefaultConnections: Boolean = true,
     ) {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val workerHandleRegistry = InMemoryWorkerHandleRegistry()
         val approvalGrantStore = InMemoryApprovalGrantStore()
+        val connectionStore = InMemoryConnectionReferenceStore()
         val transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore)
         val grantService = DefaultApprovalGrantService(approvalGrantStore, ApprovalGrantValidator())
         val approvedRetryService = ApprovedRetryService(
@@ -74,7 +84,27 @@ class DataTransferStartHandlerTest : FunSpec({
             payloadFingerprintService = DefaultPayloadFingerprintService(),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
-        val handler = DataTransferStartHandler(orchestrator, clock)
+        val handler = DataTransferStartHandler(orchestrator, connectionStore, clock)
+
+        init {
+            if (seedDefaultConnections) {
+                seedConnection("source-db")
+                seedConnection("target-db")
+            }
+        }
+
+        fun seedConnection(connectionId: String) {
+            connectionStore.save(
+                ConnectionReference(
+                    connectionId = connectionId,
+                    tenantId = tenant,
+                    displayName = connectionId,
+                    dialectId = "postgres",
+                    sensitivity = ConnectionSensitivity.NON_PRODUCTION,
+                    resourceUri = ServerResourceUri(tenant, ResourceKind.CONNECTIONS, connectionId),
+                ),
+            )
+        }
     }
 
     fun ctx(args: JsonObject) = ToolCallContext(
@@ -263,5 +293,72 @@ class DataTransferStartHandlerTest : FunSpec({
             )
         }
         ex.violations.first().field shouldBe "sinceColumn"
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // F.8 (3/4) — ConnectionRef-Resolution + Transfer-Fingerprint.
+    // ──────────────────────────────────────────────────────────────
+
+    test("sourceConnectionRef ohne Eintrag im Store -> RESOURCE_NOT_FOUND") {
+        val fx = Fixture(seedDefaultConnections = false)
+        fx.seedConnection("target-db")
+        shouldThrow<ResourceNotFoundException> {
+            fx.handler.handle(
+                ctx(args(sourceConnectionRef = "dmigrate://tenants/acme/connections/missing-source")),
+            )
+        }
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("targetConnectionRef ohne Eintrag im Store -> RESOURCE_NOT_FOUND") {
+        val fx = Fixture(seedDefaultConnections = false)
+        fx.seedConnection("source-db")
+        shouldThrow<ResourceNotFoundException> {
+            fx.handler.handle(
+                ctx(args(targetConnectionRef = "dmigrate://tenants/acme/connections/missing-target")),
+            )
+        }
+    }
+
+    test("sourceConnectionRef mit kind=jobs -> VALIDATION_ERROR(sourceConnectionRef)") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(args(sourceConnectionRef = "dmigrate://tenants/acme/jobs/some-job")),
+            )
+        }
+        ex.violations.first().field shouldBe "sourceConnectionRef"
+    }
+
+    test("targetConnectionRef mit kind=schemas -> VALIDATION_ERROR(targetConnectionRef)") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(args(targetConnectionRef = "dmigrate://tenants/acme/schemas/sch-1")),
+            )
+        }
+        ex.violations.first().field shouldBe "targetConnectionRef"
+    }
+
+    test("Fingerprint umfasst Transfer-Optionen: gleicher idempotencyKey + anderer filter -> IDEMPOTENCY_CONFLICT") {
+        val fx = Fixture(policyDefault = PolicyEffect.Allow)
+        val first = fx.handler.handle(
+            ctx(args(idempotencyKey = "k-fp", extraFields = mapOf("filter" to "tenant_id = 1"))),
+        )
+        first.shouldBeInstanceOf<ToolCallOutcome.Success>()
+
+        // Plan § 8.8: "abweichende Transfer-Option mit gleichem
+        // idempotencyKey -> IDEMPOTENCY_CONFLICT".
+        shouldThrow<dev.dmigrate.server.application.error.IdempotencyConflictException> {
+            fx.handler.handle(
+                ctx(args(idempotencyKey = "k-fp", extraFields = mapOf("filter" to "tenant_id = 2"))),
+            )
+        }
+
+        // Defense: nur EIN durabler Job angelegt.
+        fx.jobStore.list(
+            fx.tenant,
+            dev.dmigrate.server.core.pagination.PageRequest(pageSize = 10),
+        ).items.size shouldBe 1
     }
 })
