@@ -153,6 +153,13 @@ object PhaseCRegistries {
                 options = ArtifactUploadHandler.Options(
                     clock = wiring.clock,
                     finalizer = wiring.finalizer,
+                    // Phase F § 8.5 (F.5 3/3): wire the policy-init
+                    // (`job_input`) Finaliser, sodass durable Bytes
+                    // tatsaechlich in den ArtifactContentStore landen.
+                    // Ohne Wiring fiel der job_input-Pfad auf den
+                    // legacy COMPLETED-Shortcut zurueck — kein
+                    // Artefakt, kein chunk_get.
+                    jobInputFinalizer = wiring.jobInputFinalizer,
                     // AP 6.22: thread the file-spool factory from the
                     // wiring DTO into the handler — the handler default is
                     // the in-memory variant, which would defeat the

@@ -8,6 +8,8 @@ import dev.dmigrate.mcp.schema.SchemaContentLoader
 import dev.dmigrate.mcp.schema.SchemaSourceResolver
 import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.mcp.upload.DefaultJobInputFinalizer
+import dev.dmigrate.mcp.upload.JobInputFinalizer
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
 import dev.dmigrate.mcp.resources.EmptyConnectionStore
@@ -65,6 +67,19 @@ data class PhaseCWiring(
         artifactContentStore = artifactContentStore,
         schemaStore = schemaStore,
         validator = SchemaValidator(),
+        clock = clock,
+    ),
+    /**
+     * Phase F § 8.5 (F.5 3/3): Finaliser fuer policy-pflichtige
+     * `uploadIntent=job_input`-Sessions. Materialisiert die
+     * Bytes via [artifactContentStore] und registriert den
+     * [ArtifactRecord] (kind=session.artifactKind,
+     * contentType=session.mimeType). Default = [DefaultJobInputFinalizer]
+     * mit den Bestands-Stores; Tests duerfen einen Stub injizieren.
+     */
+    val jobInputFinalizer: JobInputFinalizer = DefaultJobInputFinalizer(
+        artifactStore = artifactStore,
+        artifactContentStore = artifactContentStore,
         clock = clock,
     ),
     /**
