@@ -16,10 +16,30 @@ dependencies {
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
     testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
+
+    // Phase E2.2: Flyway-Migrate gegen Testcontainers-Postgres als
+    // tagged @Tag("integration") — werden mit -PintegrationTests
+    // (.github/workflows/integration.yml) ausgefuehrt.
+    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
+    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
 }
 
 kover {
     reports {
+        filters {
+            excludes {
+                // Phase E2.2: Thin Flyway-Wrapper — die produktive Logik
+                // (Migration-Anwendung gegen ein echtes Postgres) wird durch
+                // PhaseEMigrationRunnerIntegrationTest unter
+                // -PintegrationTests gedeckt. Im Default-Test-Lauf gibt es
+                // keine in-process-Postgres-Alternative, die JSONB +
+                // partielle Indizes (siehe V1__phase_e_initial.sql) versteht.
+                classes(
+                    "dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner",
+                    "dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner\$Companion",
+                )
+            }
+        }
         verify {
             rule {
                 minBound(90)
