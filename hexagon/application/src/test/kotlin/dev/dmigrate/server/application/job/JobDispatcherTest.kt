@@ -251,6 +251,83 @@ class JobDispatcherTest : FunSpec({
         outcome.errorCode shouldBe JobDispatcher.REASON_DISPATCH_NOT_FOUND
     }
 
+    // ── Phase E3 § 3.6 + § 6.3: cancel-while-queued ──
+
+    test("Cancel-while-queued: Job auf CANCELLED → kein Worker-Aufruf, kein applyTerminal-Overwrite") {
+        // Plan E3 § 3.6: JobCancelService.cancelQueuedJob hat den Job schon
+        // terminalisiert (status=CANCELLED, signalAcked=true, ackedAt,
+        // requestedReason). Der Dispatcher sieht IllegalTransition(CANCELLED)
+        // und skippt den Worker, OHNE die Cancel-Metadaten zu ueberschreiben.
+        val acked = now.plusSeconds(2)
+        val cancelledRecord = Fixtures.jobRecord("j-cancelled").copy(
+            managedJob = Fixtures.jobRecord("j-cancelled").managedJob.copy(
+                status = JobStatus.CANCELLED,
+                createdAt = now,
+                updatedAt = acked,
+                cancelRequest = dev.dmigrate.server.core.job.JobCancelRequest(
+                    requested = true,
+                    signalAcked = true,
+                    requestedAt = now.plusSeconds(1),
+                    requestedBy = "alice",
+                    requestedReason = "user-cancel",
+                    signalSource = "mcp:job_cancel",
+                    ackedAt = acked,
+                ),
+            ),
+        )
+        val store = InMemoryJobStore().apply { save(cancelledRecord) }
+        val dispatcher = JobDispatcher(store, clock = clock)
+
+        var workerInvoked = false
+        val worker = JobWorker { _, _ ->
+            workerInvoked = true
+            JobWorkerOutcome.Succeeded()
+        }
+
+        val outcome = dispatcher.dispatch(cancelledRecord, worker, CancellationToken.none()).get()
+        outcome.shouldBeInstanceOf<JobWorkerOutcome.Cancelled>()
+        outcome.reason shouldBe JobDispatcher.REASON_GENERIC_CANCEL
+        workerInvoked shouldBe false
+
+        // Cancel-Metadaten unveraendert — applyTerminal wurde NICHT gerufen.
+        val final = store.findById(tenant, "j-cancelled")!!.managedJob
+        final.status shouldBe JobStatus.CANCELLED
+        final.cancelRequest.signalAcked shouldBe true
+        final.cancelRequest.ackedAt shouldBe acked
+        final.cancelRequest.requestedReason shouldBe "user-cancel"
+        final.cancelRequest.requestedBy shouldBe "alice"
+    }
+
+    test("Cancel-while-queued: kein Doppel-Quota-Release durch dispatcher") {
+        // Plan E3 § 3.6 + § 7.9 line 1291-1292: queued-cancel released
+        // Quota direkt im JobCancelService. Der Dispatcher darf NICHT
+        // erneut releasen, sonst entsteht ein Doppel-Decrement.
+        val cancelledRecord = Fixtures.jobRecord("j-q").copy(
+            quotaReservationOwnerId = "owner-q",
+            managedJob = Fixtures.jobRecord("j-q").managedJob.copy(
+                status = JobStatus.CANCELLED,
+                cancelRequest = dev.dmigrate.server.core.job.JobCancelRequest(
+                    requested = true, signalAcked = true,
+                ),
+            ),
+        )
+        val store = InMemoryJobStore().apply { save(cancelledRecord) }
+        val countingQuota = CountingQuotaService()
+        val dispatcher = JobDispatcher(
+            jobStore = store,
+            clock = clock,
+            quotaService = countingQuota,
+        )
+
+        dispatcher.dispatch(
+            cancelledRecord,
+            JobWorker { _, _ -> error("worker must not run") },
+            CancellationToken.none(),
+        ).get()
+
+        countingQuota.releaseCount.get() shouldBe 0
+    }
+
     test("Async Executor: dispatch laeuft im Worker-Thread, future erfuellt sich asynchron") {
         val store = seedQueued()
         val pool = Executors.newSingleThreadExecutor()
@@ -343,3 +420,22 @@ class JobDispatcherTest : FunSpec({
         outcome.shouldBeInstanceOf<JobWorkerOutcome.Succeeded>()
     }
 })
+
+private class CountingQuotaService : dev.dmigrate.server.application.quota.OwnerAwareQuotaService(
+    delegate = object : dev.dmigrate.server.application.quota.QuotaService {
+        override fun reserve(key: dev.dmigrate.server.ports.quota.QuotaKey, amount: Long) =
+            error("not used by cancel-while-queued test")
+        override fun commit(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {}
+        override fun release(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {}
+        override fun refund(reservation: dev.dmigrate.server.application.quota.QuotaReservation) {}
+    },
+    ownerStore = dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore(),
+) {
+    val releaseCount: java.util.concurrent.atomic.AtomicInteger =
+        java.util.concurrent.atomic.AtomicInteger(0)
+
+    override fun releaseForOwner(ownerId: String, now: Instant) {
+        releaseCount.incrementAndGet()
+        super.releaseForOwner(ownerId, now)
+    }
+}

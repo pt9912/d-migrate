@@ -123,11 +123,27 @@ class JobDispatcher(
 
         val runningRecord = when (running) {
             is JobTransitionOutcome.Applied -> running.record
-            is JobTransitionOutcome.IllegalTransition ->
+            is JobTransitionOutcome.IllegalTransition -> {
+                // Plan E3 § 3.6 + § 6.3: cancel-while-queued. Wenn der
+                // Job zwischen Submit und Worker-Start durch
+                // JobCancelService.cancelQueuedJob auf CANCELLED gesetzt
+                // wurde, fuehren wir den Worker NICHT aus. Der finale
+                // Record (signalAcked = true, ackedAt, requestedReason)
+                // wurde bereits beim QUEUED -> CANCELLED CAS persistiert;
+                // applyTerminal wird hier NICHT gerufen, weshalb auch
+                // kein zweiter Quota-Release stattfindet (JobCancelService
+                // hat den Slot bereits freigegeben — Plan §7.9 line
+                // 1291-1292). Nur fuer andere IllegalTransition-Quellen
+                // (z.B. RUNNING, SUCCEEDED) bleibt das DISPATCH_RACE-
+                // Failed-Mapping aktiv.
+                if (running.currentStatus == JobStatus.CANCELLED) {
+                    return JobWorkerOutcome.Cancelled(reason = REASON_GENERIC_CANCEL)
+                }
                 return JobWorkerOutcome.Failed(
                     errorCode = REASON_DISPATCH_RACE,
                     errorMessage = "Job not in QUEUED (current=${running.currentStatus})",
                 )
+            }
             is JobTransitionOutcome.NotFound ->
                 return JobWorkerOutcome.Failed(
                     errorCode = REASON_DISPATCH_NOT_FOUND,
