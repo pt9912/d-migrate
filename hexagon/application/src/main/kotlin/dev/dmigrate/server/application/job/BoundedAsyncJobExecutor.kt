@@ -52,9 +52,7 @@ class BoundedAsyncJobExecutor(
     /**
      * Graceful shutdown: blockiert neue Submissions und wartet bis zu
      * [timeout] auf den Drain. Liefert `true` wenn alle in-flight
-     * Tasks vor Ablauf beendet sind, `false` sonst. Der Caller (oder
-     * [BoundedAsyncJobExecutorLifecycle]) entscheidet, ob ein
-     * `false`-Result zu [shutdownNow] eskaliert.
+     * Tasks vor Ablauf beendet sind, `false` sonst.
      */
     fun shutdown(timeout: Duration): Boolean {
         pool.shutdown()
@@ -100,7 +98,9 @@ class ExecutorClosedException(message: String) : RejectedExecutionException(mess
 /**
  * Lifecycle-Wrapper, der Admission und Pool zusammen schliesst (Plan
  * §3.3): admission-close vor pool-shutdown verhindert neue
- * Permit-Acquires waehrend des Drain.
+ * Permit-Acquires waehrend des Drain. Bei Timeout eskaliert der
+ * Lifecycle gemaess Plan §7 per [BoundedAsyncJobExecutor.shutdownNow],
+ * damit lang laufende Worker ein Interrupt-Signal bekommen.
  */
 class BoundedAsyncJobExecutorLifecycle(
     private val executor: BoundedAsyncJobExecutor,
@@ -111,6 +111,10 @@ class BoundedAsyncJobExecutorLifecycle(
 
     override fun shutdown(timeout: Duration): Boolean {
         admission.close()
-        return executor.shutdown(timeout)
+        val drained = executor.shutdown(timeout)
+        if (!drained) {
+            executor.shutdownNow()
+        }
+        return drained
     }
 }

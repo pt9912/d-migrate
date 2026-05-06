@@ -162,4 +162,34 @@ class BoundedAsyncJobExecutorTest : FunSpec({
         lifecycle.status().completed shouldBe 1L
         permit.close()
     }
+
+    test("BoundedAsyncJobExecutorLifecycle: shutdown timeout escalates to interrupt") {
+        val cfg = smallCfg(threads = 1, queue = 1)
+        val executor = BoundedAsyncJobExecutor(cfg)
+        val admission = BoundedAsyncJobDispatchAdmission(cfg)
+        val lifecycle = BoundedAsyncJobExecutorLifecycle(executor, admission)
+        val started = CountDownLatch(1)
+        val interrupted = AtomicReference<Boolean>(false)
+
+        executor.execute {
+            started.countDown()
+            try {
+                Thread.sleep(60_000)
+            } catch (_: InterruptedException) {
+                interrupted.set(true)
+                Thread.currentThread().interrupt()
+            }
+        }
+        started.await(2, TimeUnit.SECONDS) shouldBe true
+
+        lifecycle.shutdown(Duration.ZERO) shouldBe false
+
+        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+        while (executor.status().active > 0 && System.nanoTime() < deadline) {
+            Thread.sleep(10)
+        }
+        executor.status().active shouldBe 0L
+        interrupted.get() shouldBe true
+        admission.tryAcquire(now) shouldBe JobDispatchAdmissionOutcome.Closed
+    }
 })

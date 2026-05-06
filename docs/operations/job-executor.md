@@ -1,7 +1,7 @@
 # Operations: Phase-E Job-Executor
 
 > **Status**: aktiv (2026-05-06)
-> **Geltung**: Phase-E3 Async-Executor (Plan: `docs/planning/in-progress/ImpPlan-0.9.6-E3.md`)
+> **Geltung**: Phase-E3 Async-Executor (Plan: `docs/planning/done/ImpPlan-0.9.6-E3.md`)
 > **Cross-Refs**:
 > [`spec/ki-mcp.md`](../../spec/ki-mcp.md) — MCP-Server-Vertrag;
 > [`spec/job-contract.md`](../../spec/job-contract.md) — Job-Lifecycle;
@@ -172,14 +172,13 @@ cancel-while-queued, dispatch-race, not-found). Differenz
    zurückgewiesen.
 3. **Auf Termination warten**: bis zu `timeout`
    (`shutdownTimeoutMillis`). Liefert `true` wenn vor Ablauf
-   gedrained, `false` sonst.
-
-**Bei `false`-Return**: Worker laufen noch. Der Caller (typisch
-JVM-Shutdown-Hook im CLI) kann eskalieren über
-`JobExecutorBundle.executor.shutdownNow()` (sendet `Thread.interrupt()`
-an alle Worker). Worker MÜSSEN auf `Thread.interrupted()` reagieren —
-der Phase-E-Cancel-Pfad tut das bereits via
-`OperationCancelledException`.
+   gedrained wurde.
+4. **Bei Timeout eskalieren**: `JobExecutorLifecycle.shutdown(...)`
+   ruft `shutdownNow()` und sendet `Thread.interrupt()` an in-flight
+   Worker. Der Return-Wert bleibt `false`, damit Hosts Timeout-
+   Shutdowns protokollieren können. Worker MÜSSEN auf
+   `Thread.interrupted()` reagieren — der Phase-E-Cancel-Pfad tut das
+   bereits via `OperationCancelledException`.
 
 **CLI-Bootstrap (`McpCommand`)** registriert die
 `McpCliRuntimeWiring.close()`-Sequenz:

@@ -2,10 +2,10 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: E3 (Sub-Plan zu Phase E — `Async-Executor Production-Tuning`)
-> **Status**: Approved (2026-05-06) — Architektur-Approval § 3 erteilt,
+> **Status**: Done (2026-05-06) — Architektur-Approval § 3 erteilt,
 > § 10 Q1–Q6 entschieden (siehe § 10 „Resolved"). Vorlauf:
 > Entwurf (2026-05-05).
-> **Positionierung**: parallel zu `../done/ImpPlan-0.9.6-E2.md`
+> **Positionierung**: parallel zu `./ImpPlan-0.9.6-E2.md`
 > (persistente Adapter); kein Hard-Dependency in beiden Richtungen —
 > siehe § 0.
 > **Referenz**:
@@ -712,8 +712,7 @@ Phase E3 gilt als done, wenn:
 5. ✅ Operations-Guide `docs/operations/job-executor.md` reviewed —
    Pool-Sizing, Shutdown-Behavior, Symptom→Aktion-Mapping vorhanden.
 6. ✅ Coverage-Schwelle 90% pro Modul (mit `kover-CI-Flake`-Toleranz).
-7. ✅ Plan-Move
-   `docs/planning/in-progress/ImpPlan-0.9.6-E3.md → done/`;
+7. ✅ Plan-Move nach `docs/planning/done/ImpPlan-0.9.6-E3.md`;
    `roadmap.md` aktualisiert.
 
 ## 9. Out-of-Scope

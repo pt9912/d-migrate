@@ -692,13 +692,18 @@ Human- oder Admin-Grant ausgegeben werden.
 
 `RATE_LIMITED` deckt Rate Limits und Quotas pro Tenant/Principal ab, u.a.
 aktive Jobs, aktive Upload-Sessions, Upload-/Artefaktbytes, parallele
-Segmentwrites und KI-/Provider-Aufrufe. `OPERATION_TIMEOUT` deckt
-Runner-Starts, Upload-Finalisierung, langlaufende Tool-Handler und
-Provider-Aufrufe ab. Beide Fehler muessen auditierbar sein und duerfen
-keine fremden Ressourcendetails leaken. Reine Deduplizierungsantworten fuer
-bereits angelegte Jobs, Sessions oder Artefakt-/Provider-Referenzen
-verbrauchen keine neue Quota; neue Jobs, Sessions, Segmente,
-Finalisierungen und Provider-Aufrufe werden vor der Nebenwirkung quotiert.
+Segmentwrites und KI-/Provider-Aufrufe. Bei Job-Start-Tools enthaelt der
+Fehler immer ein strukturiertes Detail `reason`: `ACTIVE_JOBS_QUOTA` fuer
+Tenant-/Caller-Quota und `EXECUTOR_SATURATED` fuer den bounded
+Async-Executor. Beide Varianten enthalten `retryAfter`, `current` und
+`limit`; Executor-Saturation entsteht vor dem Job-Commit und erzeugt keinen
+JobStore-Eintrag. `OPERATION_TIMEOUT` deckt Runner-Starts,
+Upload-Finalisierung, langlaufende Tool-Handler und Provider-Aufrufe ab.
+Beide Fehler muessen auditierbar sein und duerfen keine fremden
+Ressourcendetails leaken. Reine Deduplizierungsantworten fuer bereits
+angelegte Jobs, Sessions oder Artefakt-/Provider-Referenzen verbrauchen
+keine neue Quota; neue Jobs, Sessions, Segmente, Finalisierungen und
+Provider-Aufrufe werden vor der Nebenwirkung quotiert.
 
 MCP-Wire-Mapping:
 

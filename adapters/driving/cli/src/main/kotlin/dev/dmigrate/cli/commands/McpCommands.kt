@@ -578,7 +578,8 @@ private data class McpCliRuntimeWiring(
      * Phase E3 (E3.5): wenn der JDBC-Pfad einen Async-Bundle gebaut
      * hat, wird das Lifecycle hier gehalten — `close()` ruft
      * `shutdown(timeout)` vor `closeable.close()`. So drainen in-flight
-     * Jobs sauber, bevor die DataSource zugemacht wird.
+     * Jobs sauber, bevor die DataSource zugemacht wird; bei Timeout
+     * eskaliert der Executor-Lifecycle selbst per Interrupt.
      */
     private val executorLifecycle: dev.dmigrate.server.application.job.JobExecutorLifecycle? = null,
     private val executorShutdownTimeout: java.time.Duration =

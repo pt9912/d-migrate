@@ -245,6 +245,16 @@ Spezifikationen definiert.
   (z. B. ungültige Parameter, fehlende Berechtigung)
 - Laufzeitfehler werden über den Jobstatus `failed` kommuniziert, nicht als
   Transportfehler des Start-Requests
+- Quota- und Backpressure-Fehler bei der Job-Annahme werden als
+  `RATE_LIMITED` mit `retryAfter`, `current`, `limit` und `reason`
+  kommuniziert. `reason=ACTIVE_JOBS_QUOTA` bezeichnet Tenant-/Caller-Quota;
+  `reason=EXECUTOR_SATURATED` bezeichnet Saturation des bounded
+  Async-Executors. Executor-Saturation wird vor dem Job-Commit entschieden
+  und erzeugt keinen Job.
+- Wenn ein Job bereits committet ist und der Executor-Setup-Pfad danach
+  scheitert, bleibt der Start-Ref stabil; der Job wird pollbar als
+  `failed` markiert, z. B. mit `error.code=WORKER_NOT_REGISTERED`,
+  `EXECUTOR_SETUP_FAILED` oder `EXECUTOR_CLOSED`.
 
 ---
 

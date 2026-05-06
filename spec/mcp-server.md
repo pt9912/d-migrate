@@ -539,13 +539,21 @@ der Start mit `RATE_LIMITED` (Plan §7.9):
 ```jsonc
 {
   "code": "RATE_LIMITED",
-  "details": { "retryAfter": "30", "current": "3", "limit": "3" }
+  "details": {
+    "retryAfter": "30",
+    "current": "3",
+    "limit": "3",
+    "reason": "ACTIVE_JOBS_QUOTA"
+  }
 }
 ```
 
 Wichtig (Plan §7.9 line 1270-1273): RATE_LIMITED entsteht **vor**
 `jobBuilder`-Aufruf — keine Secret-Store-Reads, keine Pool-Initialisierung,
 keine Schema-Materialisierung bei rate-limited Starts.
+Der `reason`-Wert ist immer vorhanden: `ACTIVE_JOBS_QUOTA` fuer aktive
+Job-Quota, `EXECUTOR_SATURATED` fuer bounded-Executor-Saturation vor
+dem Job-Commit.
 
 Slots werden freigegeben bei:
 - erfolgreichem Job-Abschluss (succeeded/failed/cancelled über Dispatcher)
